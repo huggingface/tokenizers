@@ -260,7 +260,7 @@ impl Tokenizer {
       .into_iter()
       .map(|tok| (*tok).clone().into())
       .collect();
-    self.tokenizer.write().unwrap().add_tokens(&tokens) as u32
+    self.tokenizer.write().unwrap().add_tokens(tokens) as u32
   }
 
   #[napi]
@@ -269,7 +269,7 @@ impl Tokenizer {
       .into_iter()
       .map(|tok| tk::AddedToken::from(tok, false))
       .collect();
-    self.tokenizer.write().unwrap().add_tokens(&tokens) as u32
+    self.tokenizer.write().unwrap().add_tokens(tokens) as u32
   }
 
   #[napi(ts_return_type = "Promise<JsEncoding>")]

@@ -18,7 +18,7 @@ fn add_tokens() {
     assert_eq!(tokenizer.token_to_id("<sep>"), Some(1));
 
     assert_eq!(
-        tokenizer.add_tokens(&[
+        tokenizer.add_tokens([
             AddedToken::from("hello", false),
             AddedToken::from("world", false)
         ]),

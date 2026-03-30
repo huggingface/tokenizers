@@ -1175,7 +1175,7 @@ where
     }
 
     /// Add the given tokens to the added vocabulary
-    pub fn add_tokens(&mut self, tokens: &[AddedToken]) -> usize {
+    pub fn add_tokens(&mut self, tokens: impl IntoIterator<Item = AddedToken>) -> usize {
         self.added_vocabulary
             .add_tokens(tokens, &self.model, self.normalizer.as_ref())
     }

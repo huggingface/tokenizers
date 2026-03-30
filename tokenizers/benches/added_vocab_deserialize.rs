@@ -19,7 +19,7 @@ fn saved_tokenizer_path<N: Normalizer + Into<NormalizerWrapper>>(
     let tokens: Vec<_> = (0..size)
         .map(|i| AddedToken::from(format!("tok{i}"), special_tokens))
         .collect();
-    tokenizer.add_tokens(&tokens);
+    tokenizer.add_tokens(tokens);
 
     let path = std::env::temp_dir().join(format!(
         "bench_tok_{size}_{special_tokens}_{}.json",

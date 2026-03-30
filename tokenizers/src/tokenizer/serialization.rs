@@ -164,8 +164,8 @@ where
                 }
             }
         }
-        let added_tokens: Vec<_> = tokens.into_iter().map(|token| token.token).collect();
-        tokenizer.add_tokens(&added_tokens[..]);
+        let added_tokens = tokens.into_iter().map(|token| token.token);
+        tokenizer.add_tokens(added_tokens);
 
         Ok(tokenizer)
     }

@@ -1608,7 +1608,7 @@ impl PyTokenizer {
             })
             .collect::<PyResult<Vec<_>>>()?;
 
-        Ok(self.tokenizer.add_tokens(&tokens))
+        Ok(self.tokenizer.add_tokens(tokens))
     }
 
     /// Add the given special tokens to the Tokenizer.

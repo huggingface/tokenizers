@@ -16,7 +16,7 @@ fn test_decoding_with_added_bpe() {
         )
         .unwrap(),
     )));
-    tokenizer.add_tokens(&[AddedToken::from("嗎", false).normalized(false)]);
+    tokenizer.add_tokens([AddedToken::from("嗎", false).normalized(false)]);
     let encoded = tokenizer
         .encode("Hey! how is this token: 嗎", false)
         .unwrap();
@@ -32,7 +32,7 @@ fn test_decoding_with_added_bpe() {
     let decoded = tokenizer.decode(encoded.get_ids(), false);
     assert_eq!(decoded.unwrap(), "Hey! how is this token: 嗎");
 
-    tokenizer.add_tokens(&[AddedToken::from("д", false).normalized(true)]);
+    tokenizer.add_tokens([AddedToken::from("д", false).normalized(true)]);
     let encoded = tokenizer
         .encode("Hey! how is this token: д", false)
         .unwrap();

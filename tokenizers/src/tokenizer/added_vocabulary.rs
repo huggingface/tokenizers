@@ -146,11 +146,6 @@ pub struct AddedVocabulary {
     /// and classic.
     added_tokens_map_r: AHashMap<u32, AddedToken>,
 
-    /// Contains only the classic AddedToken, in the specific order the user gave them.
-    added_tokens: Vec<AddedToken>,
-    /// Contains only the special AddedToken, in the specific order the user gave them.
-    special_tokens: Vec<AddedToken>,
-
     /// A Set, containing all the special token for easy access while decoding. This let's
     /// us remove them easily with an O(1) complexity.
     special_tokens_set: AHashSet<String>,
@@ -169,8 +164,6 @@ impl std::fmt::Debug for AddedVocabulary {
         f.debug_struct("AddedVocabulary")
             .field("added_tokens_map", &self.added_tokens_map)
             .field("added_tokens_map_r", &self.added_tokens_map_r)
-            .field("added_tokens", &self.added_tokens)
-            .field("special_tokens", &self.special_tokens)
             .field("special_tokens_set", &self.special_tokens_set)
             .field("encode_special_tokens", &self.encode_special_tokens)
             .finish_non_exhaustive()
@@ -182,8 +175,6 @@ impl AddedVocabulary {
         Self {
             added_tokens_map: AHashMap::new(),
             added_tokens_map_r: AHashMap::new(),
-            added_tokens: vec![],
-            special_tokens: vec![],
             special_tokens_set: AHashSet::new(),
             split_trie: None,
             split_normalized_trie: None,
@@ -256,24 +247,23 @@ impl AddedVocabulary {
         model: &impl Model,
         normalizer: Option<&N>,
     ) -> usize {
-        self.add_tokens(tokens, model, normalizer)
+        self.add_tokens(tokens.iter().cloned(), model, normalizer)
     }
 
     /// Add some tokens to the vocabulary
     pub fn add_tokens<N: Normalizer>(
         &mut self,
-        tokens: &[AddedToken],
+        tokens: impl IntoIterator<Item = AddedToken>,
         model: &impl Model,
         normalizer: Option<&N>,
     ) -> usize {
         let mut ignored = 0;
+        let mut total = 0;
 
-        let mut existing: AHashSet<AddedToken> =
-            self.added_tokens_map_r.values().cloned().collect();
-        let mut next_id = self.added_tokens_map_r.keys().copied().max().map_or(
+        let mut next_id = self.added_tokens_map_r.keys().max().map_or(
             model.get_vocab_size() as u32,
             |max| {
-                if max >= model.get_vocab_size() as u32 || model.get_vocab_size() == 0 {
+                if *max >= model.get_vocab_size() as u32 || model.get_vocab_size() == 0 {
                     max + 1
                 } else {
                     model.get_vocab_size() as u32
@@ -281,8 +271,9 @@ impl AddedVocabulary {
             },
         );
 
-        for mut token in tokens.iter().cloned() {
-            if token.content.is_empty() || existing.contains(&token) {
+        for mut token in tokens {
+            total += 1;
+            if token.content.is_empty() || self.added_tokens_map.contains_key(&token.content) {
                 ignored += 1;
                 continue;
             }
@@ -308,27 +299,21 @@ impl AddedVocabulary {
                 .entry(token.content.clone())
                 .or_default() = new_id;
 
-            *self.added_tokens_map_r.entry(new_id).or_default() = token.clone();
-            // Make sure to remove previous entry (if the token gets a new id)
-            if token.special
+            
+            // Insert into the reverse map first (consuming token), then record the ID
+            let is_new_special = token.special
                 && !token.content.is_empty()
-                && !self.special_tokens_set.contains(&token.content)
-            {
-                self.special_tokens.push(token.to_owned());
+                && !self.special_tokens_set.contains(&token.content);
+            if is_new_special {
                 self.special_tokens_set.insert(token.content.clone());
-            } else {
-                // Finally add the token to the classic set if special
-
-                self.added_tokens.push(token.clone());
             }
-
-            existing.insert(token.clone());
+            self.added_tokens_map_r.entry(new_id).or_insert(token);
         }
 
         self.refresh_added_tokens(model, normalizer);
 
         // Return the number of added tokens
-        tokens.len() - ignored
+        total - ignored
     }
 
     /// Reconstruct our internal RegexSet when new tokens are added to the vocabulary.
@@ -661,7 +646,7 @@ mod tests {
         // Add tokens normally
         assert_eq!(
             vocab.add_tokens(
-                &[AddedToken::from("added_token_1", false)],
+                [AddedToken::from("added_token_1", false)],
                 &model,
                 normalizer
             ),
@@ -674,7 +659,7 @@ mod tests {
         // Does not add multiple time the same token
         assert_eq!(
             vocab.add_tokens(
-                &[
+                [
                     AddedToken::from("added_token_2", false),
                     AddedToken::from("added_token_2", false)
                 ],
@@ -688,7 +673,7 @@ mod tests {
         // Also adds tokens already covered by the model
         let added_token = AddedToken::from("test", false);
         assert_eq!(
-            vocab.add_tokens(std::slice::from_ref(&added_token), &model, normalizer),
+            vocab.add_tokens([added_token.clone()], &model, normalizer),
             1
         );
         assert_eq!(vocab.len(), 3);
@@ -745,7 +730,7 @@ mod tests {
         assert!(vocab.added_tokens_map_r.contains_key(&0));
 
         vocab.add_tokens(
-            &[
+            [
                 AddedToken::from("tost", true),
                 AddedToken::from("another_two", false),
             ],
@@ -780,7 +765,7 @@ mod tests {
         let normalizer: Option<&NormalizerWrapper> = None;
 
         vocab.add_tokens(
-            &[
+            [
                 AddedToken::from("my", false),
                 AddedToken::from("name", false),
             ],
@@ -827,7 +812,7 @@ mod tests {
         let mut vocab = AddedVocabulary::new();
 
         vocab.add_tokens(
-            &[
+            [
                 AddedToken::from("my", false).lstrip(true).rstrip(true),
                 AddedToken::from("name", false),
                 AddedToken::from("ony", false).single_word(true),
@@ -878,7 +863,7 @@ mod tests {
         let normalizer = Lowercase;
 
         vocab.add_tokens(
-            &[AddedToken::from("<mask>", false).single_word(true)],
+            [AddedToken::from("<mask>", false).single_word(true)],
             &model,
             Some(&normalizer),
         );
@@ -908,7 +893,7 @@ mod tests {
         assert_eq!(vocab.len(), 0);
 
         vocab.add_tokens(
-            &[AddedToken::from("<mask>", false).single_word(true)],
+            [AddedToken::from("<mask>", false).single_word(true)],
             &model,
             Some(&normalizer),
         );
@@ -934,7 +919,7 @@ mod tests {
         let normalizer = Lowercase;
 
         vocab.add_tokens(
-            &[AddedToken::from("<mask>", false)
+            [AddedToken::from("<mask>", false)
                 .lstrip(true)
                 .rstrip(true)
                 .single_word(true)],
@@ -966,7 +951,7 @@ mod tests {
         let normalizer = Lowercase;
 
         vocab.add_tokens(
-            &[
+            [
                 AddedToken::from("<mask>", true)
                     .lstrip(true)
                     .rstrip(true)
@@ -1029,7 +1014,7 @@ mod tests {
         let normalizer: Option<&NormalizerWrapper> = Some(&from);
 
         vocab.add_tokens(
-            &[AddedToken::from("my", false), AddedToken::from("今", false)],
+            [AddedToken::from("my", false), AddedToken::from("今", false)],
             &model,
             normalizer,
         );
