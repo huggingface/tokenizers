@@ -2,7 +2,7 @@ use super::{
     normalizer::Range, Model, NormalizedString, Normalizer, Offsets, PreTokenizedString, Token,
 };
 use ahash::{AHashMap, AHashSet};
-use daachorse::{DoubleArrayAhoCorasick, DoubleArrayAhoCorasickBuilder, MatchKind};
+use aho_corasick::{AhoCorasick, AhoCorasickBuilder, MatchKind};
 use regex::Regex;
 use serde::{ser::SerializeSeq, Deserialize, Serialize, Serializer};
 use std::sync::LazyLock;
@@ -93,7 +93,7 @@ impl std::hash::Hash for AddedToken {
     }
 }
 
-type MatchingSet = Option<DoubleArrayAhoCorasick<u32>>;
+type MatchingSet = Option<(AhoCorasick, Vec<u32>)>;
 
 static STARTS_WITH_WORD: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\w").unwrap());
 static ENDS_WITH_WORD: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\w$").unwrap());
@@ -137,7 +137,7 @@ fn space_rightmost_at_start(sentence: &str) -> usize {
 /// were to add new tokens after this training process, we couldn't make sure the merges pairs
 /// exist as required.
 ///
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct AddedVocabulary {
     /// Contains the mapping from String (token content) to ID. This map contains both special
     /// tokens and classic added tokens that were added to the this vocabulary.
@@ -157,17 +157,6 @@ pub struct AddedVocabulary {
 
     /// Whether or not special tokens should be splitted when encoding. This is equivalent to ignoring them
     encode_special_tokens: bool,
-}
-
-impl std::fmt::Debug for AddedVocabulary {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("AddedVocabulary")
-            .field("added_tokens_map", &self.added_tokens_map)
-            .field("added_tokens_map_r", &self.added_tokens_map_r)
-            .field("special_tokens_set", &self.special_tokens_set)
-            .field("encode_special_tokens", &self.encode_special_tokens)
-            .finish_non_exhaustive()
-    }
 }
 
 impl AddedVocabulary {
@@ -338,28 +327,18 @@ impl AddedVocabulary {
         let (ntokens, nids): (Vec<&mut AddedToken>, Vec<u32>) = normalized.into_iter().unzip();
 
         // Build both tries in parallel — each is independent.
-        // Token IDs are stored directly as values in the automaton, eliminating the Vec<u32> indirection.
-        // daachorse requires at least 1 pattern, so we skip building for empty sets.
-        let build = |toks: &[&mut AddedToken], token_ids: &[u32]| -> MatchingSet {
+        let build = |toks: &[&mut AddedToken], token_ids: Vec<u32>| -> MatchingSet {
             if toks.is_empty() {
                 return None;
             }
-            Some(
-                DoubleArrayAhoCorasickBuilder::new()
-                    .match_kind(MatchKind::LeftmostLongest)
-                    .build_with_values(
-                        toks.iter()
-                            .map(|t| &t.content)
-                            .zip(token_ids.iter().copied()),
-                    )
-                    .expect("Failed to build trie when refreshing tokens"),
-            )
+            let trie = AhoCorasickBuilder::new()
+                .match_kind(MatchKind::LeftmostLongest)
+                .build(toks.iter().map(|t| &t.content))
+                .expect("Failed to build trie when refreshing tokens");
+            Some((trie, token_ids))
         };
-        let (trie, normalized_trie) =
-            rayon::join(|| build(&tokens, &ids), || build(&ntokens, &nids));
-
-        self.split_normalized_trie = normalized_trie;
-        self.split_trie = trie;
+        self.split_trie = build(&tokens, ids);
+        self.split_normalized_trie = build(&ntokens, nids);
     }
 
     /// Find any AddedToken in the given sentence, using the provided MatchingSet.
@@ -374,16 +353,16 @@ impl AddedVocabulary {
         let mut start_offset = 0;
         let mut splits = vec![];
 
-        let trie = match split_re {
+        let (trie, ids) = match split_re {
             Some(t) => t,
             None => {
                 return vec![(None, (0, sentence.len()))];
             }
         };
-        for mat in trie.leftmost_find_iter(sentence) {
+        for mat in trie.find_iter(sentence) {
             let mut start = mat.start();
             let mut stop = mat.end();
-            let id = mat.value();
+            let id = ids[mat.pattern()];
             let added_token = &self.added_tokens_map_r.get(&id).unwrap();
 
             if self.encode_special_tokens && self.special_tokens_set.contains(&added_token.content)
