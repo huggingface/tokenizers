@@ -52,13 +52,16 @@ test: $(TESTS_RESOURCES)
 	python -m pytest -s -v tests
 	$(CARGO_ENV) cargo test --no-default-features
 
+HF_TEST_DATA = https://huggingface.co/datasets/hf-internal-testing/tokenizers-test-data/resolve/main
+
 $(DATA_DIR)/big.txt :
 	$(dir_guard)
-	wget https://norvig.com/big.txt -O $@
+	wget $(HF_TEST_DATA)/big.txt -O $@
 
-$(DATA_DIR)/small.txt : $(DATA_DIR)/big.txt
-	head -100 $(DATA_DIR)/big.txt > $@
+$(DATA_DIR)/small.txt :
+	$(dir_guard)
+	wget $(HF_TEST_DATA)/small.txt -O $@
 
 $(DATA_DIR)/roberta.json :
 	$(dir_guard)
-	wget https://huggingface.co/roberta-large/raw/main/tokenizer.json -O $@
+	wget $(HF_TEST_DATA)/roberta.json -O $@
