@@ -181,6 +181,18 @@ macro_rules! setter {
 ///         This can help with reducing polluting your vocabulary with
 ///         highly repetitive tokens like `======` for wikipedia
 ///
+/// Example::
+///
+///     >>> from tokenizers.models import BPE
+///     >>> from tokenizers.trainers import BpeTrainer
+///     >>> trainer = BpeTrainer(
+///     ...     vocab_size=30000,
+///     ...     special_tokens=["<unk>", "<s>", "</s>"],
+///     ...     min_frequency=2,
+///     ... )
+///     >>> tokenizer = Tokenizer(BPE())
+///     >>> tokenizer.train(["path/to/corpus.txt"], trainer)
+///
 #[pyclass(extends=PyTrainer, module = "tokenizers.trainers", name = "BpeTrainer")]
 pub struct PyBpeTrainer {}
 #[pymethods]
@@ -440,6 +452,18 @@ impl PyBpeTrainer {
 ///
 ///     end_of_word_suffix (:obj:`str`, `optional`):
 ///         A suffix to be used for every subword that is a end-of-word.
+///
+/// Example::
+///
+///     >>> from tokenizers.models import WordPiece
+///     >>> from tokenizers.trainers import WordPieceTrainer
+///     >>> trainer = WordPieceTrainer(
+///     ...     vocab_size=30000,
+///     ...     special_tokens=["[UNK]", "[CLS]", "[SEP]", "[PAD]", "[MASK]"],
+///     ... )
+///     >>> tokenizer = Tokenizer(WordPiece(unk_token="[UNK]"))
+///     >>> tokenizer.train(["path/to/corpus.txt"], trainer)
+///
 #[pyclass(extends=PyTrainer, module = "tokenizers.trainers", name = "WordPieceTrainer")]
 pub struct PyWordPieceTrainer {}
 #[pymethods]
@@ -618,7 +642,7 @@ impl PyWordPieceTrainer {
     }
 }
 
-/// Trainer capable of training a WorldLevel model
+/// Trainer capable of training a WordLevel model
 ///
 /// Args:
 ///     vocab_size (:obj:`int`, `optional`):
@@ -632,6 +656,19 @@ impl PyWordPieceTrainer {
 ///
 ///     special_tokens (:obj:`List[Union[str, AddedToken]]`):
 ///         A list of special tokens the model should know of.
+///
+/// Example::
+///
+///     >>> from tokenizers.models import WordLevel
+///     >>> from tokenizers.trainers import WordLevelTrainer
+///     >>> trainer = WordLevelTrainer(
+///     ...     vocab_size=10000,
+///     ...     special_tokens=["<unk>"],
+///     ...     min_frequency=1,
+///     ... )
+///     >>> tokenizer = Tokenizer(WordLevel(unk_token="<unk>"))
+///     >>> tokenizer.train(["path/to/corpus.txt"], trainer)
+///
 #[pyclass(extends=PyTrainer, module = "tokenizers.trainers", name = "WordLevelTrainer")]
 pub struct PyWordLevelTrainer {}
 #[pymethods]
@@ -791,6 +828,19 @@ impl PyWordLevelTrainer {
 ///     n_sub_iterations (:obj:`int`):
 ///         The number of iterations of the EM algorithm to perform before
 ///         pruning the vocabulary.
+///
+/// Example::
+///
+///     >>> from tokenizers.models import Unigram
+///     >>> from tokenizers.trainers import UnigramTrainer
+///     >>> trainer = UnigramTrainer(
+///     ...     vocab_size=8000,
+///     ...     special_tokens=["<unk>", "<s>", "</s>"],
+///     ...     unk_token="<unk>",
+///     ... )
+///     >>> tokenizer = Tokenizer(Unigram())
+///     >>> tokenizer.train(["path/to/corpus.txt"], trainer)
+///
 #[pyclass(extends=PyTrainer, module = "tokenizers.trainers", name = "UnigramTrainer")]
 pub struct PyUnigramTrainer {}
 #[pymethods]
