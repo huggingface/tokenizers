@@ -889,6 +889,13 @@ impl PyWordLevel {
 ///     byte_fallback (:obj:`bool`, `optional`, defaults to :obj:`False`):
 ///         Whether to use SentencePiece byte fallback for characters not in the vocabulary.
 ///
+///     alpha (:obj:`float`, `optional`):
+///         A float between 0 and 1 that represents the smoothing parameter (temperature) to use.
+///
+///     nbest_size (:obj:`int`, `optional`):
+///         An integer greater than 0 that represents the maximum number of best paths to consider.
+///         If not set, it samples from the full lattice (i.e. all valid subword segmentations).
+///
 /// Example::
 ///
 ///     >>> from tokenizers.models import Unigram
