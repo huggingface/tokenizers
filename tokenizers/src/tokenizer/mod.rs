@@ -1674,4 +1674,104 @@ mod tests {
             "Left-truncated should match last 3 tokens of full encoding"
         );
     }
+
+    #[test]
+    fn pair_right_truncation_longest_first() {
+        // Seq A: "a b c d e f g h i j" → 10 tokens
+        // Seq B: "a b c d e"           → 5 tokens
+        // Total: 15, max_length: 6, LongestFirst → should trim A more than B
+        let seq_a = "a b c d e f g h i j";
+        let seq_b = "a b c d e";
+
+        let mut tok = test_tokenizer();
+        tok.with_truncation(Some(TruncationParams {
+            max_length: 6,
+            strategy: TruncationStrategy::LongestFirst,
+            stride: 0,
+            direction: TruncationDirection::Right,
+        }))
+        .unwrap();
+        let truncated = tok.encode((seq_a, seq_b), false).unwrap();
+
+        assert_eq!(
+            truncated.get_ids().len(),
+            6,
+            "Pair encoding should have exactly max_length tokens"
+        );
+        // First N tokens should match the start of the full encoding
+        assert_eq!(
+            &truncated.get_ids()[..truncated.get_ids().len()],
+            &[0, 1, 2, 0, 1, 2],
+            "Truncated pair should match prefix of full pair encoding"
+        );
+    }
+
+    #[test]
+    fn pair_only_second_does_not_truncate_first() {
+        // Seq A: "a b c d e" → 5 tokens
+        // Seq B: "a b c d e f g h i j" → 10 tokens
+        // max_length: 8, OnlySecond → A stays at 5, B truncated to 3
+        let seq_a = "a b c d e";
+        let seq_b = "a b c d e f g h i j";
+
+        let mut tok = test_tokenizer();
+        tok.with_truncation(Some(TruncationParams {
+            max_length: 8,
+            strategy: TruncationStrategy::OnlySecond,
+            stride: 0,
+            direction: TruncationDirection::Right,
+        }))
+        .unwrap();
+        let truncated = tok.encode((seq_a, seq_b), false).unwrap();
+
+        assert_eq!(
+            truncated.get_ids().len(),
+            8,
+            "Pair encoding should have exactly max_length tokens"
+        );
+
+        // First sequence should be fully preserved (5 tokens)
+        let tok_full = test_tokenizer();
+        let full_a = tok_full.encode(seq_a, false).unwrap();
+        assert_eq!(
+            &truncated.get_ids()[..5],
+            full_a.get_ids(),
+            "OnlySecond should not truncate the first sequence"
+        );
+    }
+
+    #[test]
+    fn pair_only_first_does_not_truncate_second() {
+        // Seq A: "a b c d e f g h i j" → 10 tokens
+        // Seq B: "a b c d e" → 5 tokens
+        // max_length: 8, OnlyFirst → B stays at 5, A truncated to 3
+        let seq_a = "a b c d e f g h i j";
+        let seq_b = "a b c d e";
+
+        let mut tok = test_tokenizer();
+        tok.with_truncation(Some(TruncationParams {
+            max_length: 8,
+            strategy: TruncationStrategy::OnlyFirst,
+            stride: 0,
+            direction: TruncationDirection::Right,
+        }))
+        .unwrap();
+        let truncated = tok.encode((seq_a, seq_b), false).unwrap();
+
+        assert_eq!(
+            truncated.get_ids().len(),
+            8,
+            "Pair encoding should have exactly max_length tokens"
+        );
+
+        // Second sequence should be fully preserved (last 5 tokens)
+        let tok_full = test_tokenizer();
+        let full_b = tok_full.encode(seq_b, false).unwrap();
+        let ids = truncated.get_ids();
+        assert_eq!(
+            &ids[ids.len() - 5..],
+            full_b.get_ids(),
+            "OnlyFirst should not truncate the second sequence"
+        );
+    }
 }

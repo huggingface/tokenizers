@@ -127,6 +127,7 @@ impl PreTokenizedString {
         Ok(())
     }
 
+    /// Early exits when `max_tokens` have been produced, [`TruncationDirection`] aware.
     pub fn tokenize_with_limit<F>(
         &mut self,
         tokenize: F,
