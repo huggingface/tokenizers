@@ -8,6 +8,24 @@ use tokenizers as tk;
 use crate::error::{deprecation_warning, PyError};
 
 /// The :class:`~tokenizers.Encoding` represents the output of a :class:`~tokenizers.Tokenizer`.
+///
+/// It holds all the information about the tokenized input, including the token IDs,
+/// token strings, attention masks, offsets, and more. This is the main data structure
+/// returned by :meth:`~tokenizers.Tokenizer.encode` and
+/// :meth:`~tokenizers.Tokenizer.encode_batch`.
+///
+/// Example::
+///
+///     >>> from tokenizers import Tokenizer
+///     >>> tokenizer = Tokenizer.from_pretrained("bert-base-uncased")
+///     >>> encoding = tokenizer.encode("Hello, world!")
+///     >>> encoding.ids
+///     [101, 7592, 1010, 2088, 999, 102]
+///     >>> encoding.tokens
+///     ['[CLS]', 'hello', ',', 'world', '!', '[SEP]']
+///     >>> encoding.offsets
+///     [(0, 0), (0, 5), (5, 6), (7, 12), (12, 13), (0, 0)]
+///
 #[pyclass(dict, module = "tokenizers", name = "Encoding")]
 #[repr(transparent)]
 pub struct PyEncoding {
