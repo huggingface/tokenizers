@@ -1,24 +1,72 @@
+"""
+Models Module
+"""
+
 from collections.abc import Sequence
 from tokenizers import Token
 from typing import Any, final
 
 @final
 class BPE(Model):
+    """
+    An implementation of the BPE (Byte-Pair Encoding) algorithm
+
+    Args:
+        vocab (:obj:`Dict[str, int]`, `optional`):
+            A dictionary of string keys and their ids :obj:`{"am": 0,...}`
+
+        merges (:obj:`List[Tuple[str, str]]`, `optional`):
+            A list of pairs of tokens (:obj:`Tuple[str, str]`) :obj:`[("a", "b"),...]`
+
+        cache_capacity (:obj:`int`, `optional`):
+            The number of words that the BPE cache can contain. The cache allows
+            to speed-up the process by keeping the result of the merge operations
+            for a number of words.
+
+        dropout (:obj:`float`, `optional`):
+            A float between 0 and 1 that represents the BPE dropout to use.
+
+        unk_token (:obj:`str`, `optional`):
+            The unknown token to be used by the model.
+
+        continuing_subword_prefix (:obj:`str`, `optional`):
+            The prefix to attach to subword units that don't represent a beginning of word.
+
+        end_of_word_suffix (:obj:`str`, `optional`):
+            The suffix to attach to subword units that represent an end of word.
+
+        fuse_unk (:obj:`bool`, `optional`):
+            Whether to fuse any subsequent unknown tokens into a single one
+
+        byte_fallback (:obj:`bool`, `optional`):
+            Whether to use spm byte-fallback trick (defaults to False)
+
+        ignore_merges (:obj:`bool`, `optional`):
+            Whether or not to match tokens with the vocab before using merges.
+
+    Example::
+
+        >>> from tokenizers.models import BPE
+        >>> # Build an empty model (to be trained)
+        >>> model = BPE(unk_token="<unk>")
+        >>> # Load from vocabulary and merges files
+        >>> model = BPE.from_file("vocab.json", "merges.txt")
+    """
     def __new__(
         cls,
         /,
         vocab: dict[str, int] | str | None = None,
         merges: Sequence[tuple[str, str]] | str | None = None,
         **kwargs,
-    ) -> BPE:
-        """Create and return a new object.  See help(type) for accurate signature."""
-        ...
+    ) -> BPE: ...
     def _clear_cache(self, /) -> "None":
-        """Clears the internal cache"""
-        ...
+        """
+        Clears the internal cache
+        """
     def _resize_cache(self, /, capacity: int) -> "None":
-        """Resize the internal cache"""
-        ...
+        """
+        Resize the internal cache
+        """
     @property
     def byte_fallback(self, /) -> bool: ...
     @byte_fallback.setter
@@ -59,7 +107,6 @@ class BPE(Model):
         Returns:
             :class:`~tokenizers.models.BPE`: An instance of BPE loaded from these files
         """
-        ...
     @property
     def fuse_unk(self, /) -> bool: ...
     @fuse_unk.setter
@@ -88,24 +135,25 @@ class BPE(Model):
             A :obj:`Tuple` with the vocab and the merges:
                 The vocabulary and merges loaded into memory
         """
-        ...
     @property
     def unk_token(self, /) -> str | None: ...
     @unk_token.setter
     def unk_token(self, /, unk_token: str | None) -> None: ...
 
 class Model:
+    """
+    Base class for all models
+
+    The model represents the actual tokenization algorithm. This is the part that
+    will contain and manage the learned vocabulary.
+
+    This class cannot be constructed directly. Please use one of the concrete models.
+    """
     def __getstate__(self, /) -> Any: ...
-    def __new__(cls, /) -> "Model":
-        """Create and return a new object.  See help(type) for accurate signature."""
-        ...
-    def __repr__(self, /) -> str:
-        """Return repr(self)."""
-        ...
+    def __new__(cls, /) -> "Model": ...
+    def __repr__(self, /) -> str: ...
     def __setstate__(self, /, state: Any) -> None: ...
-    def __str__(self, /) -> str:
-        """Return str(self)."""
-        ...
+    def __str__(self, /) -> str: ...
     def get_trainer(self, /) -> Any:
         """
         Get the associated :class:`~tokenizers.trainers.Trainer`
@@ -116,7 +164,6 @@ class Model:
         Returns:
             :class:`~tokenizers.trainers.Trainer`: The Trainer used to train this model
         """
-        ...
     def id_to_token(self, /, id: int) -> str | None:
         """
         Get the token associated to an ID
@@ -128,7 +175,6 @@ class Model:
         Returns:
             :obj:`str`: The token associated to the ID
         """
-        ...
     def save(self, /, folder: str, prefix: str | None = None, name: str | None = None) -> "list[str]":
         """
         Save the current model
@@ -147,7 +193,6 @@ class Model:
         Returns:
             :obj:`List[str]`: The list of saved files
         """
-        ...
     def token_to_id(self, /, token: str) -> int | None:
         """
         Get the ID associated to a token
@@ -159,7 +204,6 @@ class Model:
         Returns:
             :obj:`int`: The ID associated to the token
         """
-        ...
     def tokenize(self, /, sequence: str) -> list[Token]:
         """
         Tokenize a sequence
@@ -171,31 +215,76 @@ class Model:
         Returns:
             A :obj:`List` of :class:`~tokenizers.Token`: The generated tokens
         """
-        ...
 
 @final
 class Unigram(Model):
+    """
+    An implementation of the Unigram algorithm
+
+    The Unigram algorithm is a subword tokenization algorithm based on unigram language
+    models, as used in SentencePiece. It learns a vocabulary by starting with a large
+    initial vocabulary and iteratively pruning it using the EM algorithm.
+
+    Args:
+        vocab (:obj:`List[Tuple[str, float]]`, `optional`):
+            A list of vocabulary items and their log-probability scores,
+            e.g. ``[("am", -0.2442), ...]``. If not provided, an empty model is created.
+
+        unk_id (:obj:`int`, `optional`):
+            The index of the unknown token in the vocabulary list.
+
+        byte_fallback (:obj:`bool`, `optional`, defaults to :obj:`False`):
+            Whether to use SentencePiece byte fallback for characters not in the vocabulary.
+
+    Example::
+
+        >>> from tokenizers.models import Unigram
+        >>> # Build an empty model (to be trained)
+        >>> model = Unigram()
+        >>> # Build from a vocabulary list
+        >>> vocab = [("<unk>", 0.0), ("hello", -1.0), ("world", -1.5)]
+        >>> model = Unigram(vocab=vocab, unk_id=0)
+    """
     def __new__(
         cls,
         /,
         vocab: Sequence[tuple[str, float]] | None = None,
         unk_id: int | None = None,
         byte_fallback: bool | None = None,
-    ) -> Unigram:
-        """Create and return a new object.  See help(type) for accurate signature."""
-        ...
+    ) -> Unigram: ...
     def _clear_cache(self, /) -> "None":
-        """Clears the internal cache"""
-        ...
+        """
+        Clears the internal cache
+        """
     def _resize_cache(self, /, capacity: int) -> "None":
-        """Resize the internal cache"""
-        ...
+        """
+        Resize the internal cache
+        """
 
 @final
 class WordLevel(Model):
-    def __new__(cls, /, vocab: dict[str, int] | str | None = None, unk_token: str | None = None) -> WordLevel:
-        """Create and return a new object.  See help(type) for accurate signature."""
-        ...
+    """
+    An implementation of the WordLevel algorithm
+
+    Most simple tokenizer model based on mapping tokens to their corresponding id.
+
+    Args:
+        vocab (:obj:`str`, `optional`):
+            A dictionary of string keys and their ids :obj:`{"am": 0,...}`
+
+        unk_token (:obj:`str`, `optional`):
+            The unknown token to be used by the model.
+
+    Example::
+
+        >>> from tokenizers.models import WordLevel
+        >>> # Build from a vocabulary dictionary
+        >>> vocab = {"hello": 0, "world": 1, "<unk>": 2}
+        >>> model = WordLevel(vocab=vocab, unk_token="<unk>")
+        >>> # Load from file
+        >>> model = WordLevel.from_file("vocab.json", unk_token="<unk>")
+    """
+    def __new__(cls, /, vocab: dict[str, int] | str | None = None, unk_token: str | None = None) -> WordLevel: ...
     @classmethod
     def from_file(cls, /, vocab: str, unk_token: str | None = None) -> "WordLevel":
         """
@@ -217,7 +306,6 @@ class WordLevel(Model):
         Returns:
             :class:`~tokenizers.models.WordLevel`: An instance of WordLevel loaded from file
         """
-        ...
     @staticmethod
     def read_file(vocab: str) -> dict[str, int]:
         """
@@ -234,7 +322,6 @@ class WordLevel(Model):
         Returns:
             :obj:`Dict[str, int]`: The vocabulary as a :obj:`dict`
         """
-        ...
     @property
     def unk_token(self, /) -> str: ...
     @unk_token.setter
@@ -242,9 +329,28 @@ class WordLevel(Model):
 
 @final
 class WordPiece(Model):
-    def __new__(cls, /, vocab: dict[str, int] | str | None = None, **kwargs) -> WordPiece:
-        """Create and return a new object.  See help(type) for accurate signature."""
-        ...
+    """
+    An implementation of the WordPiece algorithm
+
+    Args:
+        vocab (:obj:`Dict[str, int]`, `optional`):
+            A dictionary of string keys and their ids :obj:`{"am": 0,...}`
+
+        unk_token (:obj:`str`, `optional`):
+            The unknown token to be used by the model.
+
+        max_input_chars_per_word (:obj:`int`, `optional`):
+            The maximum number of characters to authorize in a single word.
+
+    Example::
+
+        >>> from tokenizers.models import WordPiece
+        >>> # Build an empty model (to be trained)
+        >>> model = WordPiece(unk_token="[UNK]")
+        >>> # Load from a vocabulary file
+        >>> model = WordPiece.from_file("vocab.txt")
+    """
+    def __new__(cls, /, vocab: dict[str, int] | str | None = None, **kwargs) -> WordPiece: ...
     @property
     def continuing_subword_prefix(self, /) -> str: ...
     @continuing_subword_prefix.setter
@@ -270,7 +376,6 @@ class WordPiece(Model):
         Returns:
             :class:`~tokenizers.models.WordPiece`: An instance of WordPiece loaded from file
         """
-        ...
     @property
     def max_input_chars_per_word(self, /) -> int: ...
     @max_input_chars_per_word.setter
@@ -292,7 +397,6 @@ class WordPiece(Model):
         Returns:
             :obj:`Dict[str, int]`: The vocabulary as a :obj:`dict`
         """
-        ...
     @property
     def unk_token(self, /) -> str: ...
     @unk_token.setter
