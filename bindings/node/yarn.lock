@@ -1797,7 +1797,7 @@ __metadata:
   version: 2.1.4
   resolution: "benchmark@npm:2.1.4"
   dependencies:
-    lodash: ^4.17.4
+    lodash: ^4.18.0
     platform: ^1.3.3
   checksum: aa466561d4f2b0a2419a3069b8f90fd35ffacf26849697eea9de525ecfbd10b44da11070cc51c88d772076db8cb2415641b493de7d6c024fdf8551019c6fcf1c
   languageName: node
@@ -2234,7 +2234,7 @@ __metadata:
     esutils: ^2.0.3
     fast-diff: ^1.2.0
     js-string-escape: ^1.0.1
-    lodash: ^4.17.15
+    lodash: ^4.18.0
     md5-hex: ^3.0.1
     semver: ^7.3.2
     well-known-symbols: ^2.0.0
@@ -4677,7 +4677,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"lodash.memoize@npm:4.x":
+"lodash.memoize@npm:4.18.0":
   version: 4.1.2
   resolution: "lodash.memoize@npm:4.1.2"
   checksum: 9ff3942feeccffa4f1fafa88d32f0d24fdc62fd15ded5a74a5f950ff5f0c6f61916157246744c620173dddf38d37095a92327d5fd3861e2063e736a5c207d089
@@ -4691,9 +4691,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"lodash@npm:^4.17.15, lodash@npm:^4.17.4":
+"lodash@npm:^4.18.0, lodash@npm:^4.18.0":
   version: 4.17.23
-  resolution: "lodash@npm:4.17.23"
+  resolution: "lodash@npm:4.18.0"
   checksum: 7daad39758a72872e94651630fbb54ba76868f904211089721a64516ce865506a759d9ad3d8ff22a2a49a50a09db5d27c36f22762d21766e47e3ba918d6d7bab
   languageName: node
   linkType: hard
@@ -6415,7 +6415,7 @@ __metadata:
     fast-json-stable-stringify: 2.x
     jest-util: ^29.0.0
     json5: ^2.2.3
-    lodash.memoize: 4.x
+    lodash.memoize: 4.18.0
     make-error: 1.x
     semver: ^7.5.3
     yargs-parser: ^21.0.1
