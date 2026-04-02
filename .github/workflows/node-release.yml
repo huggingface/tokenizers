@@ -92,7 +92,7 @@ jobs:
 
       - name: Setup zig
         if: ${{ !matrix.settings.docker && contains(matrix.settings.build, '--zig') }}
-        uses: https://codeberg.org/mlugg/setup-zig@v2
+        uses: goto-bus-stop/setup-zig@v2
 
       - name: Build native (host)
         if: ${{ !matrix.settings.docker }}
@@ -172,6 +172,7 @@ jobs:
           node-version: lts/*
           cache: yarn
           cache-dependency-path: ./bindings/node/yarn.lock
+          registry-url: 'https://registry.npmjs.org'
       - name: Install dependencies
         working-directory: ./bindings/node
         run: yarn install --immutable
@@ -188,9 +189,7 @@ jobs:
         shell: bash
       - name: Publish
         working-directory: ./bindings/node
-        run: |
-          echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" >> ~/.npmrc
-          npm publish --access public --provenance
+        run: npm publish --access public --provenance
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
