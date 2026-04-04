@@ -1,9 +1,11 @@
 name: Node Release
 
 env:
-  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-  AWS_DEFAULT_REGION: us-east-1
+  APP_NAME: tokenizers
+  MACOSX_DEPLOYMENT_TARGET: '12.0'
+
+permissions:
+  contents: read
 
 on:
   push:
@@ -12,81 +14,170 @@ on:
 
 jobs:
   build:
-    env:
-      MACOSX_DEPLOYMENT_TARGET: 10.11
     strategy:
+      fail-fast: false
       matrix:
         settings:
           - host: macos-latest
             target: x86_64-apple-darwin
+            build: |
+              yarn build --target x86_64-apple-darwin
+              strip -x *.node
+          - host: macos-latest
+            target: aarch64-apple-darwin
+            build: |
+              yarn build --target aarch64-apple-darwin
+              strip -x *.node
           - host: windows-latest
             target: x86_64-pc-windows-msvc
+            build: yarn build --target x86_64-pc-windows-msvc
+          - host: windows-latest
+            target: i686-pc-windows-msvc
+            build: yarn build --target i686-pc-windows-msvc
+          - host: windows-latest
+            target: aarch64-pc-windows-msvc
+            build: yarn build --target aarch64-pc-windows-msvc
           - host: ubuntu-latest
             target: x86_64-unknown-linux-gnu
+            docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-debian@sha256:6f910fc8a723a1eeab2483d2302e8c1fabe36e54c51eb0da27fafd5c3083e08c
+            build: |
+              set -e
+              yarn build --target x86_64-unknown-linux-gnu
+              strip *.node
+          - host: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            build: yarn build --target x86_64-unknown-linux-musl --zig
+          - host: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            build: yarn build --target aarch64-unknown-linux-gnu --zig
+          - host: ubuntu-latest
+            target: aarch64-unknown-linux-musl
+            build: yarn build --target aarch64-unknown-linux-musl --zig
+          - host: ubuntu-latest
+            target: armv7-unknown-linux-gnueabihf
+            build: yarn build --target armv7-unknown-linux-gnueabihf --zig
+          - host: ubuntu-latest
+            target: aarch64-linux-android
+            build: yarn build --target aarch64-linux-android
+          - host: ubuntu-latest
+            target: armv7-linux-androideabi
+            build: yarn build --target armv7-linux-androideabi
+          - host: ubuntu-latest
+            target: x86_64-unknown-freebsd
+            build: yarn build --target x86_64-unknown-freebsd --zig
+    name: build - ${{ matrix.settings.target }}
     runs-on: ${{ matrix.settings.host }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      # Necessary for now for the cargo cache: https://github.com/actions/cache/issues/133#issuecomment-599102035
-      - if: matrix.os == 'ubuntu-latest'
-        run: sudo chown -R $(whoami):$(id -ng) ~/.cargo/
-
-      - name: Cache Cargo Registry
-        uses: actions/cache@v4
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        if: ${{ !matrix.settings.docker }}
         with:
-          path: ~/.cargo/registry
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.toml') }}
+          toolchain: stable
+          targets: ${{ matrix.settings.target }}
 
-      - name: Install Node ${{ matrix.node-version }}
-        uses: actions/setup-node@v4
+      - name: Setup node
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f  # v6
+        if: ${{ !matrix.settings.docker }}
         with:
-          node-version: latest
+          node-version: lts/*
           cache: yarn
-          cache-dependency-path: ./bindings/node/
+          cache-dependency-path: ./bindings/node/yarn.lock
 
-      - name: Install npm dependencies
+      - name: Install dependencies
+        if: ${{ !matrix.settings.docker }}
         working-directory: ./bindings/node
-        run: yarn install
+        run: yarn install --immutable
 
-      - name: Build and package rust
+      - name: Setup zig
+        if: ${{ !matrix.settings.docker && contains(matrix.settings.build, '--zig') }}
+        uses: goto-bus-stop/setup-zig@abea47f85e598557f500fa1fd2ab7464fcb39406  # v2.2.1
+
+      - name: Build native (host)
+        if: ${{ !matrix.settings.docker }}
         working-directory: ./bindings/node
-        run: |
-          yarn build &&
-          strip -x *.node
+        run: ${{ matrix.settings.build }}
 
-      - name: Install Python
-        uses: actions/setup-python@v5
+      - name: Build native (docker)
+        if: ${{ matrix.settings.docker }}
+        uses: addnab/docker-run-action@4f65fabd2431ebc8d299f8e5a018d79a769ae185  # v3
         with:
-          python-version: 3.x
+          image: ${{ matrix.settings.docker }}
+          options: >-
+            --user 0:0
+            -v ${{ github.workspace }}:/build
+            -w /build/bindings/node
+          run: |
+            corepack enable
+            yarn install --immutable
+            ${{ matrix.settings.build }}
+
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f  # v7
         with:
           name: bindings-${{ matrix.settings.target }}
-          path: ${{ env.APP_NAME }}bindings/node/*.node
+          path: bindings/node/*.node
           if-no-files-found: error
+
+  universal-macOS:
+    name: Build universal macOS binary
+    needs: build
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - name: Setup node
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f  # v6
+        with:
+          node-version: lts/*
+          cache: yarn
+          cache-dependency-path: ./bindings/node/yarn.lock
+      - name: Install dependencies
+        working-directory: ./bindings/node
+        run: yarn install --immutable
+      - name: Download macOS x86_64 artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8
+        with:
+          name: bindings-x86_64-apple-darwin
+          path: ./bindings/node/artifacts
+      - name: Download macOS aarch64 artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8
+        with:
+          name: bindings-aarch64-apple-darwin
+          path: ./bindings/node/artifacts
+      - name: Combine into universal binary
+        working-directory: ./bindings/node
+        run: npx napi universal --name ${{ env.APP_NAME }}
+      - name: Upload universal artifact
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f  # v7
+        with:
+          name: bindings-universal-apple-darwin
+          path: bindings/node/${{ env.APP_NAME }}.*.node
+          if-no-files-found: error
+
   publish:
+    permissions:
+      contents: read
+      id-token: write
     name: Publish
     runs-on: ubuntu-latest
     needs:
       - build
+      - universal-macOS
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
       - name: Setup node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f  # v6
         with:
-          node-version: latest
-          check-latest: true
+          node-version: lts/*
           cache: yarn
-          cache-dependency-path: ./bindings/node/
+          cache-dependency-path: ./bindings/node/yarn.lock
+          registry-url: 'https://registry.npmjs.org'
       - name: Install dependencies
         working-directory: ./bindings/node
-        run: yarn install
+        run: yarn install --immutable
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8
         with:
           path: ./bindings/node/artifacts
       - name: Move artifacts
@@ -98,9 +189,7 @@ jobs:
         shell: bash
       - name: Publish
         working-directory: ./bindings/node
-        run: |
-          echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" >> ~/.npmrc
-          npm publish --access public --tag next
+        run: npm publish --access public --provenance
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

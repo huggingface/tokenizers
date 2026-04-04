@@ -445,6 +445,7 @@ impl Tokenizer {
         Ok(tokenizer)
     }
     #[cfg(feature = "http")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "http")))]
     pub fn from_pretrained<S: AsRef<str>>(
         identifier: S,
         params: Option<crate::utils::from_pretrained::FromPretrainedParameters>,
@@ -1139,7 +1140,20 @@ where
         offsets_type: OffsetType,
     ) -> Result<Encoding> {
         let mut pretokenized: PreTokenizedString = pretokenized.into();
-        pretokenized.tokenize(|normalized| self.model.tokenize(normalized.get()))?;
+        match self.truncation.as_ref() {
+            Some(TruncationParams {
+                direction,
+                max_length,
+                strategy,
+                ..
+            }) if *strategy != TruncationStrategy::OnlySecond || type_id != 0 => pretokenized
+                .tokenize_with_limit(
+                    |normalized| self.model.tokenize(normalized.get()),
+                    *max_length,
+                    *direction,
+                )?,
+            _ => pretokenized.tokenize(|normalized| self.model.tokenize(normalized.get()))?,
+        }
         pretokenized.into_encoding(word_idx, type_id, offsets_type)
     }
 }
@@ -1539,6 +1553,7 @@ where
         note = "Users should download the file separately using https://github.com/huggingface/hf-hub instead, which splits concerns of accessing the web, and should use the new cache layout"
     )]
     #[cfg(feature = "http")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "http")))]
     /// Instantiate a new Tokenizer from a file hosted on the Hugging Face Hub.
     /// It expects the `identifier` of a model that includes a `tokenizer.json` file.
     pub fn from_pretrained<S: AsRef<str>>(
@@ -1575,5 +1590,188 @@ where
         file.write_all(serialized.as_bytes())?;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::wordlevel::WordLevelBuilder;
+    use crate::pre_tokenizers::whitespace::WhitespaceSplit;
+    use ahash::AHashMap;
+
+    /// Build a tokenizer with a known vocabulary: "a"=0, "b"=1, ... "j"=9, "<unk>"=10
+    /// Uses WhitespaceSplit so each space-separated word maps to one token.
+    fn test_tokenizer() -> Tokenizer {
+        let vocab: AHashMap<String, u32> = ('a'..='j')
+            .enumerate()
+            .map(|(i, c)| (c.to_string(), i as u32))
+            .chain(std::iter::once(("<unk>".to_string(), 10)))
+            .collect();
+
+        let model = WordLevelBuilder::new()
+            .vocab(vocab)
+            .unk_token("<unk>".to_string())
+            .build()
+            .unwrap();
+
+        let mut tokenizer = Tokenizer::new(model);
+        tokenizer.with_pre_tokenizer(Some(WhitespaceSplit));
+        tokenizer
+    }
+
+    #[test]
+    fn right_truncation_early_exit_matches_full_encode() {
+        // "a b c d e f g h i j" → 10 tokens [0,1,2,3,4,5,6,7,8,9]
+        // Right truncation to 3 → [0,1,2]
+        let input = "a b c d e f g h i j";
+
+        let mut tok = test_tokenizer();
+        tok.with_truncation(Some(TruncationParams {
+            max_length: 3,
+            strategy: TruncationStrategy::LongestFirst,
+            stride: 0,
+            direction: TruncationDirection::Right,
+        }))
+        .unwrap();
+        let truncated = tok.encode(input, false).unwrap();
+
+        let tok_full = test_tokenizer();
+        let full = tok_full.encode(input, false).unwrap();
+
+        assert_eq!(truncated.get_ids().len(), 3);
+        assert_eq!(
+            truncated.get_ids(),
+            &full.get_ids()[..3],
+            "Right-truncated should match first 3 tokens of full encoding"
+        );
+    }
+
+    #[test]
+    fn left_truncation_keeps_tail_tokens() {
+        // "a b c d e f g h i j" → 10 tokens [0,1,2,3,4,5,6,7,8,9]
+        // Left truncation to 3 → [7,8,9]
+        let input = "a b c d e f g h i j";
+
+        let mut tok = test_tokenizer();
+        tok.with_truncation(Some(TruncationParams {
+            max_length: 3,
+            strategy: TruncationStrategy::LongestFirst,
+            stride: 0,
+            direction: TruncationDirection::Left,
+        }))
+        .unwrap();
+        let truncated = tok.encode(input, false).unwrap();
+
+        let tok_full = test_tokenizer();
+        let full = tok_full.encode(input, false).unwrap();
+        let n = full.get_ids().len();
+
+        assert_eq!(truncated.get_ids().len(), 3);
+        assert_eq!(
+            truncated.get_ids(),
+            &full.get_ids()[n - 3..],
+            "Left-truncated should match last 3 tokens of full encoding"
+        );
+    }
+
+    #[test]
+    fn pair_right_truncation_longest_first() {
+        // Seq A: "a b c d e f g h i j" → 10 tokens
+        // Seq B: "a b c d e"           → 5 tokens
+        // Total: 15, max_length: 6, LongestFirst → should trim A more than B
+        let seq_a = "a b c d e f g h i j";
+        let seq_b = "a b c d e";
+
+        let mut tok = test_tokenizer();
+        tok.with_truncation(Some(TruncationParams {
+            max_length: 6,
+            strategy: TruncationStrategy::LongestFirst,
+            stride: 0,
+            direction: TruncationDirection::Right,
+        }))
+        .unwrap();
+        let truncated = tok.encode((seq_a, seq_b), false).unwrap();
+
+        assert_eq!(
+            truncated.get_ids().len(),
+            6,
+            "Pair encoding should have exactly max_length tokens"
+        );
+        // First N tokens should match the start of the full encoding
+        assert_eq!(
+            &truncated.get_ids()[..truncated.get_ids().len()],
+            &[0, 1, 2, 0, 1, 2],
+            "Truncated pair should match prefix of full pair encoding"
+        );
+    }
+
+    #[test]
+    fn pair_only_second_does_not_truncate_first() {
+        // Seq A: "a b c d e" → 5 tokens
+        // Seq B: "a b c d e f g h i j" → 10 tokens
+        // max_length: 8, OnlySecond → A stays at 5, B truncated to 3
+        let seq_a = "a b c d e";
+        let seq_b = "a b c d e f g h i j";
+
+        let mut tok = test_tokenizer();
+        tok.with_truncation(Some(TruncationParams {
+            max_length: 8,
+            strategy: TruncationStrategy::OnlySecond,
+            stride: 0,
+            direction: TruncationDirection::Right,
+        }))
+        .unwrap();
+        let truncated = tok.encode((seq_a, seq_b), false).unwrap();
+
+        assert_eq!(
+            truncated.get_ids().len(),
+            8,
+            "Pair encoding should have exactly max_length tokens"
+        );
+
+        // First sequence should be fully preserved (5 tokens)
+        let tok_full = test_tokenizer();
+        let full_a = tok_full.encode(seq_a, false).unwrap();
+        assert_eq!(
+            &truncated.get_ids()[..5],
+            full_a.get_ids(),
+            "OnlySecond should not truncate the first sequence"
+        );
+    }
+
+    #[test]
+    fn pair_only_first_does_not_truncate_second() {
+        // Seq A: "a b c d e f g h i j" → 10 tokens
+        // Seq B: "a b c d e" → 5 tokens
+        // max_length: 8, OnlyFirst → B stays at 5, A truncated to 3
+        let seq_a = "a b c d e f g h i j";
+        let seq_b = "a b c d e";
+
+        let mut tok = test_tokenizer();
+        tok.with_truncation(Some(TruncationParams {
+            max_length: 8,
+            strategy: TruncationStrategy::OnlyFirst,
+            stride: 0,
+            direction: TruncationDirection::Right,
+        }))
+        .unwrap();
+        let truncated = tok.encode((seq_a, seq_b), false).unwrap();
+
+        assert_eq!(
+            truncated.get_ids().len(),
+            8,
+            "Pair encoding should have exactly max_length tokens"
+        );
+
+        // Second sequence should be fully preserved (last 5 tokens)
+        let tok_full = test_tokenizer();
+        let full_b = tok_full.encode(seq_b, false).unwrap();
+        let ids = truncated.get_ids();
+        assert_eq!(
+            &ids[ids.len() - 5..],
+            full_b.get_ids(),
+            "OnlyFirst should not truncate the second sequence"
+        );
     }
 }

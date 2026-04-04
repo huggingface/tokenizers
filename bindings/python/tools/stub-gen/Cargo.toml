@@ -1,0 +1,14 @@
+[package]
+name = "stub-gen"
+version = "0.1.0"
+edition = "2021"
+description = "Stub generation tool for tokenizers Python bindings"
+
+[[bin]]
+name = "stub-gen"
+path = "src/main.rs"
+
+[dependencies]
+env_logger = "0.11"
+pyo3 = { git = "https://github.com/PyO3/pyo3.git", rev = "2ba9cda59a8b2fb07ad9b2b7f20d82e96d7ab0d2", default-features = false, features = ["auto-initialize", "experimental-inspect"] }
+pyo3-introspection = { git = "https://github.com/PyO3/pyo3.git", rev = "2ba9cda59a8b2fb07ad9b2b7f20d82e96d7ab0d2"}

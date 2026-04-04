@@ -28,7 +28,13 @@ use super::error::ToPyResult;
 ///
 /// This class is not supposed to be instantiated directly. Instead, any implementation of
 /// a Decoder will return an instance of this class when instantiated.
-#[pyclass(dict, module = "tokenizers.decoders", name = "Decoder", subclass)]
+#[pyclass(
+    dict,
+    module = "tokenizers.decoders",
+    name = "Decoder",
+    subclass,
+    from_py_object
+)]
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(transparent)]
 pub struct PyDecoder {
@@ -98,7 +104,7 @@ impl PyDecoder {
                 })?;
                 Ok(())
             }
-            Err(e) => Err(e),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -162,8 +168,18 @@ macro_rules! setter {
 
 /// ByteLevel Decoder
 ///
-/// This decoder is to be used in tandem with the :class:`~tokenizers.pre_tokenizers.ByteLevel`
-/// :class:`~tokenizers.pre_tokenizers.PreTokenizer`.
+/// This decoder is to be used in tandem with the
+/// :class:`~tokenizers.pre_tokenizers.ByteLevel` pre-tokenizer. It reverses the
+/// byte-to-unicode mapping applied during pre-tokenization, converting the special
+/// Unicode characters back into the original bytes to reconstruct the original string.
+///
+/// Example::
+///
+///     >>> from tokenizers.decoders import ByteLevel
+///     >>> decoder = ByteLevel()
+///     >>> decoder.decode(["ĠHello", "Ġworld"])
+///     ' Hello world'
+///
 #[pyclass(extends=PyDecoder, module = "tokenizers.decoders", name = "ByteLevel")]
 pub struct PyByteLevelDec {}
 #[pymethods]
@@ -177,8 +193,25 @@ impl PyByteLevelDec {
 
 /// Replace Decoder
 ///
-/// This decoder is to be used in tandem with the :class:`~tokenizers.pre_tokenizers.Replace`
-/// :class:`~tokenizers.pre_tokenizers.PreTokenizer`.
+/// This decoder is to be used in tandem with the
+/// :class:`~tokenizers.normalizers.Replace` normalizer or a similar replace operation.
+/// It reverses a string replacement by substituting the replacement content back
+/// with the original pattern.
+///
+/// Args:
+///     pattern (:obj:`str` or :class:`~tokenizers.Regex`):
+///         The pattern that was used as the replacement target during encoding.
+///
+///     content (:obj:`str`):
+///         The string to replace each match of the pattern with during decoding.
+///
+/// Example::
+///
+///     >>> from tokenizers.decoders import Replace
+///     >>> decoder = Replace("▁", " ")
+///     >>> decoder.decode(["▁Hello", "▁world"])
+///     ' Hello world'
+///
 #[pyclass(extends=PyDecoder, module = "tokenizers.decoders", name = "Replace")]
 pub struct PyReplaceDec {}
 #[pymethods]
@@ -202,6 +235,14 @@ impl PyReplaceDec {
 ///     cleanup (:obj:`bool`, `optional`, defaults to :obj:`True`):
 ///         Whether to cleanup some tokenization artifacts. Mainly spaces before punctuation,
 ///         and some abbreviated english forms.
+///
+/// Example::
+///
+///     >>> from tokenizers.decoders import WordPiece
+///     >>> decoder = WordPiece()
+///     >>> decoder.decode(["Hello", ",", "##world", "!"])
+///     'Hello, world!'
+///
 #[pyclass(extends=PyDecoder, module = "tokenizers.decoders", name = "WordPiece")]
 pub struct PyWordPieceDec {}
 #[pymethods]
@@ -234,9 +275,20 @@ impl PyWordPieceDec {
 }
 
 /// ByteFallback Decoder
-/// ByteFallback is a simple trick which converts tokens looking like `<0x61>`
-/// to pure bytes, and attempts to make them into a string. If the tokens
-/// cannot be decoded you will get � instead for each inconvertible byte token
+///
+/// ByteFallback is a decoder that handles tokens representing raw bytes in the
+/// ``<0xNN>`` format (e.g., ``<0x61>`` for the byte ``0x61`` = ``'a'``). It converts
+/// such tokens to their corresponding bytes and attempts to decode the resulting byte
+/// sequence as UTF-8. This is used in LLaMA/SentencePiece models that use byte fallback
+/// for unknown characters. Inconvertible byte tokens are replaced with the Unicode
+/// replacement character (U+FFFD).
+///
+/// Example::
+///
+///     >>> from tokenizers.decoders import ByteFallback, Fuse, Sequence
+///     >>> decoder = Sequence([ByteFallback(), Fuse()])
+///     >>> decoder.decode(["<0x48>", "<0x65>", "<0x6C>", "<0x6C>", "<0x6F>"])
+///     'Hello'
 ///
 #[pyclass(extends=PyDecoder, module = "tokenizers.decoders", name = "ByteFallback")]
 pub struct PyByteFallbackDec {}
@@ -250,9 +302,18 @@ impl PyByteFallbackDec {
 }
 
 /// Fuse Decoder
-/// Fuse simply fuses every token into a single string.
-/// This is the last step of decoding, this decoder exists only if
-/// there is need to add other decoders *after* the fusion
+///
+/// Fuse simply concatenates every token into a single string without any separator.
+/// This is typically the last step in a decoder chain when other decoders need to
+/// operate on individual tokens before they are joined together.
+///
+/// Example::
+///
+///     >>> from tokenizers.decoders import Fuse
+///     >>> decoder = Fuse()
+///     >>> decoder.decode(["Hello", ",", " ", "world", "!"])
+///     'Hello, world!'
+///
 #[pyclass(extends=PyDecoder, module = "tokenizers.decoders", name = "Fuse")]
 pub struct PyFuseDec {}
 #[pymethods]
@@ -264,8 +325,31 @@ impl PyFuseDec {
     }
 }
 
-/// Strip normalizer
-/// Strips n left characters of each token, or n right characters of each token
+/// Strip Decoder
+///
+/// Strips a given number of occurrences of a character from the left and/or right
+/// side of each token. This is useful for removing padding characters or special
+/// prefix/suffix markers added during tokenization.
+///
+/// Args:
+///     content (:obj:`str`, defaults to :obj:`" "`):
+///         The character to strip from each token.
+///
+///     left (:obj:`int`, defaults to :obj:`0`):
+///         The number of occurrences of :obj:`content` to remove from the left
+///         side of each token.
+///
+///     right (:obj:`int`, defaults to :obj:`0`):
+///         The number of occurrences of :obj:`content` to remove from the right
+///         side of each token.
+///
+/// Example::
+///
+///     >>> from tokenizers.decoders import Strip
+///     >>> decoder = Strip(content="▁", left=1)
+///     >>> decoder.decode(["▁Hello", "▁world"])
+///     'Hello world'
+///
 #[pyclass(extends=PyDecoder, module = "tokenizers.decoders", name = "Strip")]
 pub struct PyStrip {}
 #[pymethods]
@@ -322,6 +406,14 @@ impl PyStrip {
 ///         lets us treat `hello` exactly like `say hello`.
 ///         Choices: "always", "never", "first". First means the space is only added on the first
 ///         token (relevant when special tokens are used or other pre_tokenizer are used).
+///
+/// Example::
+///
+///     >>> from tokenizers.decoders import Metaspace
+///     >>> decoder = Metaspace()
+///     >>> decoder.decode(["▁Hello", "▁my", "▁friend"])
+///     'Hello my friend'
+///
 #[pyclass(extends=PyDecoder, module = "tokenizers.decoders", name = "Metaspace")]
 pub struct PyMetaspaceDec {}
 #[pymethods]
@@ -382,6 +474,14 @@ impl PyMetaspaceDec {
 ///     suffix (:obj:`str`, `optional`, defaults to :obj:`</w>`):
 ///         The suffix that was used to characterize an end-of-word. This suffix will
 ///         be replaced by whitespaces during the decoding
+///
+/// Example::
+///
+///     >>> from tokenizers.decoders import BPEDecoder
+///     >>> decoder = BPEDecoder()
+///     >>> decoder.decode(["Hello</w>", "world</w>"])
+///     'Hello world'
+///
 #[pyclass(extends=PyDecoder, module = "tokenizers.decoders", name = "BPEDecoder")]
 pub struct PyBPEDecoder {}
 #[pymethods]
@@ -413,6 +513,14 @@ impl PyBPEDecoder {
 ///     cleanup (:obj:`bool`, `optional`, defaults to :obj:`True`):
 ///         Whether to cleanup some tokenization artifacts.
 ///         Mainly spaces before punctuation, and some abbreviated english forms.
+///
+/// Example::
+///
+///     >>> from tokenizers.decoders import CTC
+///     >>> decoder = CTC()
+///     >>> decoder.decode(["h", "e", "e", "<pad>", "l", "l", "o", "|", "w", "o", "r", "l", "d"])
+///     'hello world'
+///
 #[pyclass(extends=PyDecoder, module = "tokenizers.decoders", name = "CTC")]
 pub struct PyCTCDecoder {}
 #[pymethods]
@@ -464,9 +572,21 @@ impl PyCTCDecoder {
 
 /// Sequence Decoder
 ///
+/// Chains multiple decoders together, applying them in order. Each decoder in the
+/// sequence processes the output of the previous one, allowing complex decoding
+/// pipelines to be built from simpler components.
+///
 /// Args:
-///     decoders (:obj:`List[Decoder]`)
-///         The decoders that need to be chained
+///     decoders (:obj:`List[Decoder]`):
+///         The list of decoders to chain together.
+///
+/// Example::
+///
+///     >>> from tokenizers.decoders import ByteFallback, Fuse, Metaspace, Sequence
+///     >>> decoder = Sequence([ByteFallback(), Fuse(), Metaspace()])
+///     >>> decoder.decode(["▁Hello", "▁world"])
+///     'Hello world'
+///
 #[pyclass(extends=PyDecoder, module = "tokenizers.decoders", name="Sequence")]
 pub struct PySequenceDecoder {}
 #[pymethods]
@@ -581,25 +701,66 @@ impl Decoder for PyDecoderWrapper {
 
 /// Decoders Module
 #[pymodule]
-pub fn decoders(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<PyDecoder>()?;
-    m.add_class::<PyByteLevelDec>()?;
-    m.add_class::<PyReplaceDec>()?;
-    m.add_class::<PyWordPieceDec>()?;
-    m.add_class::<PyByteFallbackDec>()?;
-    m.add_class::<PyFuseDec>()?;
-    m.add_class::<PyStrip>()?;
-    m.add_class::<PyMetaspaceDec>()?;
-    m.add_class::<PyBPEDecoder>()?;
-    m.add_class::<PyCTCDecoder>()?;
-    m.add_class::<PySequenceDecoder>()?;
-    m.add_class::<PyDecodeStream>()?;
-    Ok(())
+pub mod decoders {
+    #[pymodule_export]
+    pub use super::PyBPEDecoder;
+    #[pymodule_export]
+    pub use super::PyByteFallbackDec;
+    #[pymodule_export]
+    pub use super::PyByteLevelDec;
+    #[pymodule_export]
+    pub use super::PyCTCDecoder;
+    #[pymodule_export]
+    pub use super::PyDecodeStream;
+    #[pymodule_export]
+    pub use super::PyDecoder;
+    #[pymodule_export]
+    pub use super::PyFuseDec;
+    #[pymodule_export]
+    pub use super::PyMetaspaceDec;
+    #[pymodule_export]
+    pub use super::PyReplaceDec;
+    #[pymodule_export]
+    pub use super::PySequenceDecoder;
+    #[pymodule_export]
+    pub use super::PyStrip;
+    #[pymodule_export]
+    pub use super::PyWordPieceDec;
 }
 
-/// Class needed for streaming decode
+/// Provides incremental decoding of token IDs as they are generated, yielding
+/// decoded text chunks as soon as they are available.
 ///
-#[pyclass(module = "tokenizers.decoders", name = "DecodeStream")]
+/// Unlike batch decoding, streaming decode is designed for use with autoregressive
+/// generation — tokens arrive one at a time and the decoder needs to handle
+/// multi-byte sequences (e.g., UTF-8 characters split across token boundaries) and
+/// byte-fallback tokens gracefully.
+///
+/// The decoder internally buffers tokens until it can produce a valid UTF-8 string
+/// chunk, then yields that chunk and advances its internal state. This means
+/// individual calls to :meth:`~tokenizers.decoders.DecodeStream.step` may return
+/// :obj:`None` when the current token completes a partial sequence that cannot yet
+/// be decoded.
+///
+/// Args:
+///     skip_special_tokens (:obj:`bool`, defaults to :obj:`False`):
+///         Whether to skip special tokens (e.g. ``[CLS]``, ``[SEP]``, ``<s>``) when
+///         decoding.
+///
+/// Example::
+///
+///     >>> from tokenizers import Tokenizer
+///     >>> from tokenizers.decoders import DecodeStream
+///     >>> tokenizer = Tokenizer.from_pretrained("gpt2")
+///     >>> stream = DecodeStream(skip_special_tokens=True)
+///     >>> # Simulate streaming token-by-token generation
+///     >>> token_ids = tokenizer.encode("Hello, streaming world!").ids
+///     >>> for token_id in token_ids:
+///     ...     chunk = stream.step(tokenizer, token_id)
+///     ...     if chunk is not None:
+///     ...         print(chunk, end="", flush=True)
+///
+#[pyclass(module = "tokenizers.decoders", name = "DecodeStream", from_py_object)]
 #[derive(Clone)]
 pub struct PyDecodeStream {
     /// Regular decode option that is kept throughout.
@@ -630,8 +791,10 @@ enum StreamInput {
     Ids(Vec<u32>),
 }
 
-impl FromPyObject<'_> for StreamInput {
-    fn extract_bound(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for StreamInput {
+    type Error = PyErr;
+
+    fn extract(obj: Borrowed<'a, 'py, PyAny>) -> Result<Self, Self::Error> {
         if let Ok(id) = obj.extract::<u32>() {
             Ok(StreamInput::Id(id))
         } else if let Ok(ids) = obj.extract::<Vec<u32>>() {
@@ -657,18 +820,25 @@ impl PyDecodeStream {
         }
     }
 
-    /// Streaming decode step
+    /// Add the next token ID (or list of IDs) to the stream and return the next
+    /// decoded text chunk if one is available.
+    ///
+    /// Because some characters span multiple tokens (e.g. multi-byte UTF-8
+    /// sequences or byte-fallback tokens), this method may return :obj:`None`
+    /// when the provided token does not yet complete a decodable unit. Callers
+    /// should simply continue feeding tokens until a non-:obj:`None` value is
+    /// returned.
     ///
     /// Args:
     ///     tokenizer (:class:`~tokenizers.Tokenizer`):
-    ///        The tokenizer to use for decoding
-    ///    id (:obj:`int` or `List[int]`):
-    ///       The next token id or list of token ids to add to the stream
+    ///         The tokenizer whose decoder pipeline will be used.
     ///
+    ///     id (:obj:`int` or :obj:`List[int]`):
+    ///         The next token ID, or a list of token IDs to append to the stream.
     ///
     /// Returns:
-    ///     :obj:`Optional[str]`: The next decoded string chunk, or None if not enough
-    ///         tokens have been provided yet.
+    ///     :obj:`Optional[str]`: The next decoded text chunk if enough tokens have
+    ///         accumulated, or :obj:`None` if more tokens are still needed.
     #[pyo3(signature = (tokenizer, id), text_signature = "(self, tokenizer, id)")]
     fn step(&mut self, tokenizer: &PyTokenizer, id: StreamInput) -> PyResult<Option<String>> {
         let id: Vec<u32> = match id {
@@ -684,6 +854,13 @@ impl PyDecodeStream {
             &mut self.prefix_index,
         ))
         .into()
+    }
+    fn __copy__(&self) -> Self {
+        self.clone()
+    }
+
+    fn __deepcopy__(&self, _memo: &Bound<'_, PyDict>) -> Self {
+        self.clone()
     }
 }
 

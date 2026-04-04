@@ -63,7 +63,7 @@ class TestBpeTrainer:
     def test_can_pickle(self):
         assert (
             trainers.BpeTrainer(min_frequency=12).__getstate__()
-            == b"""{"BpeTrainer":{"min_frequency":12,"vocab_size":30000,"show_progress":true,"special_tokens":[],"limit_alphabet":null,"initial_alphabet":[],"continuing_subword_prefix":null,"end_of_word_suffix":null,"max_token_length":null,"words":{}}}"""
+            == b"""{"BpeTrainer":{"min_frequency":12,"vocab_size":30000,"show_progress":true,"progress_format":"Indicatif","special_tokens":[],"limit_alphabet":null,"initial_alphabet":[],"continuing_subword_prefix":null,"end_of_word_suffix":null,"max_token_length":null,"words":{}}}"""
         )
         assert isinstance(pickle.loads(pickle.dumps(trainers.BpeTrainer(min_frequency=12))), trainers.BpeTrainer)
 
@@ -150,6 +150,7 @@ class TestWordLevelTrainer:
 
 
 class TestUnigram:
+    @pytest.mark.network
     def test_train(self, train_files):
         tokenizer = SentencePieceUnigramTokenizer()
         tokenizer.train(train_files["small"], show_progress=False)
@@ -158,6 +159,7 @@ class TestUnigram:
         tokenizer.save(filename)
         os.remove(filename)
 
+    @pytest.mark.network
     def test_train_parallelism_with_custom_pretokenizer(self, train_files):
         class GoodCustomPretok:
             def split(self, n, normalized):
@@ -184,6 +186,7 @@ class TestUnigram:
 
     def test_train_with_special_tokens(self):
         filename = "tests/data/dummy-unigram-special_tokens-train.txt"
+        os.makedirs("tests/data", exist_ok=True)
         with open(filename, "w") as f:
             f.write(
                 """
@@ -287,6 +290,7 @@ class TestUnigram:
         trainer.initial_alphabet = ["d", "z"]
         assert sorted(trainer.initial_alphabet) == ["d", "z"]
 
+    @pytest.mark.network
     def test_continuing_prefix_trainer_mismatch(self, train_files):
         UNK = "[UNK]"
         special_tokens = [UNK]
