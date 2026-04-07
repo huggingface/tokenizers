@@ -68,7 +68,7 @@ jobs:
     name: build - ${{ matrix.settings.target }}
     runs-on: ${{ matrix.settings.host }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
@@ -78,7 +78,7 @@ jobs:
           targets: ${{ matrix.settings.target }}
 
       - name: Setup node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f  # v6
         if: ${{ !matrix.settings.docker }}
         with:
           node-version: lts/*
@@ -92,7 +92,7 @@ jobs:
 
       - name: Setup zig
         if: ${{ !matrix.settings.docker && contains(matrix.settings.build, '--zig') }}
-        uses: goto-bus-stop/setup-zig@v2
+        uses: goto-bus-stop/setup-zig@abea47f85e598557f500fa1fd2ab7464fcb39406  # v2.2.1
 
       - name: Build native (host)
         if: ${{ !matrix.settings.docker }}
@@ -101,7 +101,7 @@ jobs:
 
       - name: Build native (docker)
         if: ${{ matrix.settings.docker }}
-        uses: addnab/docker-run-action@v3
+        uses: addnab/docker-run-action@4f65fabd2431ebc8d299f8e5a018d79a769ae185  # v3
         with:
           image: ${{ matrix.settings.docker }}
           options: >-
@@ -114,7 +114,7 @@ jobs:
             ${{ matrix.settings.build }}
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f  # v7
         with:
           name: bindings-${{ matrix.settings.target }}
           path: bindings/node/*.node
@@ -125,9 +125,9 @@ jobs:
     needs: build
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
       - name: Setup node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f  # v6
         with:
           node-version: lts/*
           cache: yarn
@@ -136,12 +136,12 @@ jobs:
         working-directory: ./bindings/node
         run: yarn install --immutable
       - name: Download macOS x86_64 artifact
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8
         with:
           name: bindings-x86_64-apple-darwin
           path: ./bindings/node/artifacts
       - name: Download macOS aarch64 artifact
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8
         with:
           name: bindings-aarch64-apple-darwin
           path: ./bindings/node/artifacts
@@ -149,7 +149,7 @@ jobs:
         working-directory: ./bindings/node
         run: npx napi universal --name ${{ env.APP_NAME }}
       - name: Upload universal artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f  # v7
         with:
           name: bindings-universal-apple-darwin
           path: bindings/node/${{ env.APP_NAME }}.*.node
@@ -165,9 +165,9 @@ jobs:
       - build
       - universal-macOS
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
       - name: Setup node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f  # v6
         with:
           node-version: lts/*
           cache: yarn
@@ -177,7 +177,7 @@ jobs:
         working-directory: ./bindings/node
         run: yarn install --immutable
       - name: Download all artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8
         with:
           path: ./bindings/node/artifacts
       - name: Move artifacts
