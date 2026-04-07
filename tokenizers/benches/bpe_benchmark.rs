@@ -4,6 +4,7 @@ extern crate criterion;
 mod common;
 
 use criterion::{Criterion, Throughput};
+use tokenizers::decoders::byte_level::ByteLevel as ByteLevelDecoder;
 use tokenizers::models::bpe::{BpeTrainerBuilder, BPE};
 use tokenizers::models::TrainerWrapper;
 use tokenizers::pre_tokenizers::byte_level::ByteLevel;
@@ -19,7 +20,7 @@ static BATCH_SIZE: usize = 1_000;
 fn create_gpt2_tokenizer(bpe: BPE) -> Tokenizer {
     let mut tokenizer = Tokenizer::new(bpe);
     tokenizer.with_pre_tokenizer(Some(ByteLevel::default()));
-    tokenizer.with_decoder(Some(ByteLevel::default()));
+    tokenizer.with_decoder(Some(ByteLevelDecoder::default()));
     tokenizer.add_tokens(&[AddedToken::from("ing", false).single_word(false)]);
     tokenizer.add_special_tokens(&[AddedToken::from("[ENT]", true).single_word(true)]);
     tokenizer
