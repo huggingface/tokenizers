@@ -345,20 +345,31 @@ impl AddedVocabulary {
             .partition(|(token, _)| token.normalized);
 
         let (tokens, ids): (Vec<&AddedToken>, Vec<u32>) = non_normalized.into_iter().unzip();
-        self.split_trie = if tokens.is_empty() {
+        // Deduplicate patterns by content (keeping first occurrence) and filter empty strings
+        // to avoid DuplicatePattern / ZeroLengthPattern errors from daachorse.
+        let mut seen: AHashSet<&str> = AHashSet::new();
+        let (deduped_patterns, deduped_ids): (Vec<&str>, Vec<u32>) = tokens
+            .iter()
+            .map(|t| t.content.as_str())
+            .zip(ids.iter().copied())
+            .filter(|(content, _)| !content.is_empty() && seen.insert(content))
+            .unzip();
+        self.split_trie = if deduped_patterns.is_empty() {
             None
         } else {
-            Some(
-                DoubleArrayAhoCorasickBuilder::new()
-                    .match_kind(MatchKind::LeftmostLongest)
-                    .build_with_values(
-                        tokens
-                            .iter()
-                            .map(|token| &token.content)
-                            .zip(ids.iter().copied()),
-                    )
-                    .expect("Failed to build trie when refreshing tokens"),
-            )
+            match DoubleArrayAhoCorasickBuilder::new()
+                .match_kind(MatchKind::LeftmostLongest)
+                .build_with_values(deduped_patterns.into_iter().zip(deduped_ids))
+            {
+                Ok(trie) => Some(trie),
+                Err(e) => panic!(
+                    "Failed to build trie when refreshing tokens: {}. \
+                     This is likely because the total size of all patterns exceeded the \
+                     double-array capacity (~4 GB). Consider reducing the number or size \
+                     of added tokens.",
+                    e
+                ),
+            }
         };
 
         let (ntokens, nids): (Vec<&AddedToken>, Vec<u32>) = normalized.into_iter().unzip();
@@ -372,20 +383,31 @@ impl AddedVocabulary {
                 content
             })
             .collect();
-        self.split_normalized_trie = if ntokens.is_empty() {
+        // Deduplicate normalized patterns by their normalized form and filter empty strings
+        // (normalization can collapse a non-empty token to an empty string).
+        let mut seen_norm: AHashSet<&str> = AHashSet::new();
+        let (deduped_norm_patterns, deduped_nids): (Vec<&str>, Vec<u32>) = patterns
+            .iter()
+            .map(|content| content.get())
+            .zip(nids.iter().copied())
+            .filter(|(content, _)| !content.is_empty() && seen_norm.insert(content))
+            .unzip();
+        self.split_normalized_trie = if deduped_norm_patterns.is_empty() {
             None
         } else {
-            Some(
-                DoubleArrayAhoCorasickBuilder::new()
-                    .match_kind(MatchKind::LeftmostLongest)
-                    .build_with_values(
-                        patterns
-                            .iter()
-                            .map(|content| content.get())
-                            .zip(nids.iter().copied()),
-                    )
-                    .expect("Failed to build trie when refreshing tokens (normalized)"),
-            )
+            match DoubleArrayAhoCorasickBuilder::new()
+                .match_kind(MatchKind::LeftmostLongest)
+                .build_with_values(deduped_norm_patterns.into_iter().zip(deduped_nids))
+            {
+                Ok(trie) => Some(trie),
+                Err(e) => panic!(
+                    "Failed to build trie when refreshing tokens (normalized): {}. \
+                     This is likely because the total size of all patterns exceeded the \
+                     double-array capacity (~4 GB). Consider reducing the number or size \
+                     of added tokens.",
+                    e
+                ),
+            }
         };
     }
 
