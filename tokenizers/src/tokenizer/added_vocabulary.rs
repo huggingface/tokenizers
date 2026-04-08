@@ -2,7 +2,7 @@ use super::{
     normalizer::Range, Model, NormalizedString, Normalizer, Offsets, PreTokenizedString, Token,
 };
 use ahash::{AHashMap, AHashSet};
-use aho_corasick::{AhoCorasick, AhoCorasickBuilder, MatchKind};
+use daachorse::{DoubleArrayAhoCorasick, DoubleArrayAhoCorasickBuilder, MatchKind};
 use regex::Regex;
 use serde::{ser::SerializeSeq, Deserialize, Serialize, Serializer};
 use std::sync::LazyLock;
@@ -93,7 +93,7 @@ impl std::hash::Hash for AddedToken {
     }
 }
 
-type MatchingSet = (AhoCorasick, Vec<u32>);
+type MatchingSet = Option<DoubleArrayAhoCorasick<u32>>;
 
 static STARTS_WITH_WORD: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\w").unwrap());
 static ENDS_WITH_WORD: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\w$").unwrap());
@@ -137,7 +137,7 @@ fn space_rightmost_at_start(sentence: &str) -> usize {
 /// were to add new tokens after this training process, we couldn't make sure the merges pairs
 /// exist as required.
 ///
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct AddedVocabulary {
     /// Contains the mapping from String (token content) to ID. This map contains both special
     /// tokens and classic added tokens that were added to the this vocabulary.
@@ -164,24 +164,27 @@ pub struct AddedVocabulary {
     encode_special_tokens: bool,
 }
 
+impl std::fmt::Debug for AddedVocabulary {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AddedVocabulary")
+            .field("added_tokens_map", &self.added_tokens_map)
+            .field("added_tokens_map_r", &self.added_tokens_map_r)
+            .field("special_tokens_set", &self.special_tokens_set)
+            .field("encode_special_tokens", &self.encode_special_tokens)
+            .finish_non_exhaustive()
+    }
+}
+
 impl AddedVocabulary {
     pub fn new() -> Self {
-        let trie = AhoCorasickBuilder::new()
-            .match_kind(MatchKind::LeftmostLongest)
-            .build::<_, &&[u8]>([])
-            .expect("The trie should build correctly");
-        let normalized_trie = AhoCorasickBuilder::new()
-            .match_kind(MatchKind::LeftmostLongest)
-            .build::<_, &&[u8]>([])
-            .expect("The normalized trie should build correctly");
         Self {
             added_tokens_map: AHashMap::new(),
             added_tokens_map_r: AHashMap::new(),
             added_tokens: vec![],
             special_tokens: vec![],
             special_tokens_set: AHashSet::new(),
-            split_trie: (trie, vec![]),
-            split_normalized_trie: (normalized_trie, vec![]),
+            split_trie: None,
+            split_normalized_trie: None,
             encode_special_tokens: false,
         }
     }
@@ -342,11 +345,32 @@ impl AddedVocabulary {
             .partition(|(token, _)| token.normalized);
 
         let (tokens, ids): (Vec<&AddedToken>, Vec<u32>) = non_normalized.into_iter().unzip();
-        let trie = AhoCorasickBuilder::new()
-            .match_kind(MatchKind::LeftmostLongest)
-            .build(tokens.iter().map(|token| &token.content))
-            .expect("Failed to build tried when refreshing tokens");
-        self.split_trie = (trie, ids);
+        // Deduplicate patterns by content (keeping first occurrence) and filter empty strings
+        // to avoid DuplicatePattern / ZeroLengthPattern errors from daachorse.
+        let mut seen: AHashSet<&str> = AHashSet::new();
+        let (deduped_patterns, deduped_ids): (Vec<&str>, Vec<u32>) = tokens
+            .iter()
+            .map(|t| t.content.as_str())
+            .zip(ids.iter().copied())
+            .filter(|(content, _)| !content.is_empty() && seen.insert(content))
+            .unzip();
+        self.split_trie = if deduped_patterns.is_empty() {
+            None
+        } else {
+            match DoubleArrayAhoCorasickBuilder::new()
+                .match_kind(MatchKind::LeftmostLongest)
+                .build_with_values(deduped_patterns.into_iter().zip(deduped_ids))
+            {
+                Ok(trie) => Some(trie),
+                Err(e) => panic!(
+                    "Failed to build trie when refreshing tokens: {}. \
+                     This is likely because the total size of all patterns exceeded the \
+                     double-array capacity (~4 GB). Consider reducing the number or size \
+                     of added tokens.",
+                    e
+                ),
+            }
+        };
 
         let (ntokens, nids): (Vec<&AddedToken>, Vec<u32>) = normalized.into_iter().unzip();
         let patterns: Vec<_> = ntokens
@@ -359,11 +383,32 @@ impl AddedVocabulary {
                 content
             })
             .collect();
-        let normalized_trie = AhoCorasickBuilder::new()
-            .match_kind(MatchKind::LeftmostLongest)
-            .build(patterns.iter().map(|content| content.get()))
-            .expect("Failed to build tried when refreshing tokens (normalized)");
-        self.split_normalized_trie = (normalized_trie, nids);
+        // Deduplicate normalized patterns by their normalized form and filter empty strings
+        // (normalization can collapse a non-empty token to an empty string).
+        let mut seen_norm: AHashSet<&str> = AHashSet::new();
+        let (deduped_norm_patterns, deduped_nids): (Vec<&str>, Vec<u32>) = patterns
+            .iter()
+            .map(|content| content.get())
+            .zip(nids.iter().copied())
+            .filter(|(content, _)| !content.is_empty() && seen_norm.insert(content))
+            .unzip();
+        self.split_normalized_trie = if deduped_norm_patterns.is_empty() {
+            None
+        } else {
+            match DoubleArrayAhoCorasickBuilder::new()
+                .match_kind(MatchKind::LeftmostLongest)
+                .build_with_values(deduped_norm_patterns.into_iter().zip(deduped_nids))
+            {
+                Ok(trie) => Some(trie),
+                Err(e) => panic!(
+                    "Failed to build trie when refreshing tokens (normalized): {}. \
+                     This is likely because the total size of all patterns exceeded the \
+                     double-array capacity (~4 GB). Consider reducing the number or size \
+                     of added tokens.",
+                    e
+                ),
+            }
+        };
     }
 
     /// Find any AddedToken in the given sentence, using the provided MatchingSet.
@@ -378,11 +423,16 @@ impl AddedVocabulary {
         let mut start_offset = 0;
         let mut splits = vec![];
 
-        for mat in split_re.0.find_iter(sentence) {
+        let trie = match split_re {
+            Some(t) => t,
+            None => {
+                return vec![(None, (0, sentence.len()))];
+            }
+        };
+        for mat in trie.leftmost_find_iter(sentence) {
             let mut start = mat.start();
             let mut stop = mat.end();
-            let aho_id = mat.pattern();
-            let id = split_re.1[aho_id];
+            let id = mat.value();
             let added_token = &self.added_tokens_map_r.get(&id).unwrap();
 
             if self.encode_special_tokens && self.special_tokens_set.contains(&added_token.content)

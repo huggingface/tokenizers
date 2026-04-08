@@ -317,6 +317,14 @@ where
 ///
 ///     cls (:obj:`Tuple[str, int]`):
 ///         A tuple with the string representation of the CLS token, and its id
+///
+/// Example::
+///
+///     >>> from tokenizers.processors import BertProcessing
+///     >>> processor = BertProcessing(("[SEP]", 102), ("[CLS]", 101))
+///     >>> processor.process(encoding)
+///     # Encoding with [CLS] at start and [SEP] at end
+///
 #[pyclass(extends=PyPostProcessor, module = "tokenizers.processors", name = "BertProcessing")]
 pub struct PyBertProcessing {}
 #[pymethods]
@@ -393,6 +401,14 @@ impl PyBertProcessing {
 ///     add_prefix_space (:obj:`bool`, `optional`, defaults to :obj:`True`):
 ///         Whether the add_prefix_space option was enabled during pre-tokenization. This
 ///         is relevant because it defines the way the offsets are trimmed out.
+///
+/// Example::
+///
+///     >>> from tokenizers.processors import RobertaProcessing
+///     >>> processor = RobertaProcessing(("</s>", 2), ("<s>", 0))
+///     >>> processor.process(encoding)
+///     # Encoding with <s> at start and </s> at end
+///
 #[pyclass(extends=PyPostProcessor, module = "tokenizers.processors", name = "RobertaProcessing")]
 pub struct PyRobertaProcessing {}
 #[pymethods]
@@ -486,6 +502,13 @@ impl PyRobertaProcessing {
 ///         If :obj:`True`, keeps the first token's offset as is. If :obj:`False`, increments
 ///         the start of the first token's offset by 1. Only has an effect if :obj:`trim_offsets`
 ///         is set to :obj:`True`.
+///
+/// Example::
+///
+///     >>> from tokenizers.processors import ByteLevel
+///     >>> processor = ByteLevel(trim_offsets=True)
+///     >>> # Offsets will be trimmed to exclude leading whitespace bytes
+///
 #[pyclass(extends=PyPostProcessor, module = "tokenizers.processors", name = "ByteLevel")]
 pub struct PyByteLevel {}
 #[pymethods]
@@ -738,9 +761,18 @@ impl PyTemplateProcessing {
 
 /// Sequence Processor
 ///
+/// Chains multiple post-processors together, applying them in order. Each processor
+/// in the sequence processes the output of the previous one.
+///
 /// Args:
-///     processors (:obj:`List[PostProcessor]`)
-///         The processors that need to be chained
+///     processors (:obj:`List[PostProcessor]`):
+///         The list of post-processors to chain together.
+///
+/// Example::
+///
+///     >>> from tokenizers.processors import BertProcessing, ByteLevel, Sequence
+///     >>> processor = Sequence([ByteLevel(trim_offsets=True), BertProcessing(("[SEP]", 102), ("[CLS]", 101))])
+///
 #[pyclass(extends=PyPostProcessor, module = "tokenizers.processors", name = "Sequence")]
 pub struct PySequence {}
 
