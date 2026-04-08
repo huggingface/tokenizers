@@ -310,7 +310,7 @@ impl AddedVocabulary {
             self.added_tokens_map_r.entry(new_id).or_insert(token);
         }
 
-        self.refresh_added_tokens(model, normalizer);
+        self.refresh_added_tokens();
 
         // Return the number of added tokens
         total - ignored
@@ -320,11 +320,7 @@ impl AddedVocabulary {
     /// # TODO @ArthurZucker we should probably make this async? rebuilding the regex takes a long time.
     /// We keep two different RegexSet, one that will take care of matching against the
     /// non-normalized string, and one matching against the normalized one.
-    fn refresh_added_tokens<N: Normalizer>(
-        &mut self,
-        _model: &impl Model,
-        normalizer: Option<&N>,
-    ) {
+    fn refresh_added_tokens(&mut self) {
         // Single pass: map to (content, id, is_normalized), then partition.
         // The boolean is dropped by destructuring in each arm below.
         let (normalized_pairs, non_normalized_pairs): (Vec<_>, Vec<_>) = self
@@ -339,7 +335,11 @@ impl AddedVocabulary {
             Some(
                 DoubleArrayAhoCorasickBuilder::new()
                     .match_kind(MatchKind::LeftmostLongest)
-                    .build_with_values(non_normalized_pairs.iter().map(|(content, id, _)| (*content, *id)))
+                    .build_with_values(
+                        non_normalized_pairs
+                            .iter()
+                            .map(|(content, id, _)| (*content, *id)),
+                    )
                     .expect("Failed to build trie when refreshing tokens"),
             )
         };
@@ -350,7 +350,11 @@ impl AddedVocabulary {
             Some(
                 DoubleArrayAhoCorasickBuilder::new()
                     .match_kind(MatchKind::LeftmostLongest)
-                    .build_with_values(normalized_pairs.iter().map(|(content, id, _)| (*content, *id)))
+                    .build_with_values(
+                        normalized_pairs
+                            .iter()
+                            .map(|(content, id, _)| (*content, *id)),
+                    )
                     .expect("Failed to build trie when refreshing tokens (normalized)"),
             )
         };
