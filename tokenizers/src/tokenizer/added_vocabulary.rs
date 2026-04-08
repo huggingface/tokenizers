@@ -274,7 +274,12 @@ impl AddedVocabulary {
 
         for mut token in tokens {
             total += 1;
-            if token.content.is_empty() || self.added_tokens_map.contains_key(&token.content) {
+            let is_different = if let Some(id) = self.added_tokens_map.get(&token.content) {
+                self.added_tokens_map_r.get(id).unwrap() == &token
+            } else {
+                false
+            };
+            if token.content.is_empty() || is_different {
                 ignored += 1;
                 continue;
             }
@@ -738,7 +743,7 @@ mod tests {
         assert_eq!(vocab.len(), 5); // New token was added
         assert_eq!(vocab.get_vocab()["another_two"], 4); // New token was added, but the index is not the length of the vocab
 
-        // Let's add an already added token again
+        // Let's add an already added token again, but change normalized
         assert_eq!(
             vocab.add_special_tokens(&[AddedToken::from("another_two", true)], &model, normalizer),
             1
