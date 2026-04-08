@@ -35,20 +35,22 @@ jobs:
           workspaces: tokenizers
 
       - name: Download benchmark data
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
+          pip install huggingface_hub
           mkdir -p data
-          # GPT-2 vocab + merges
-          curl -sL "https://huggingface.co/openai-community/gpt2/resolve/main/vocab.json" -o data/gpt2-vocab.json
-          curl -sL "https://huggingface.co/openai-community/gpt2/resolve/main/merges.txt" -o data/gpt2-merges.txt
-          # Llama-3 tokenizer
-          curl -sL "https://huggingface.co/meta-llama/Llama-3.2-1B/resolve/main/tokenizer.json" -o data/llama-3-tokenizer.json
-          # Roberta tokenizer
-          curl -sL "https://huggingface.co/FacebookAI/roberta-base/resolve/main/tokenizer.json" -o data/roberta.json
-          # Albert tokenizer
-          curl -sL "https://huggingface.co/albert/albert-base-v1/resolve/main/tokenizer.json" -o data/albert-base-v1-tokenizer.json
-          # Training data: Project Gutenberg excerpt
+          huggingface-cli download openai-community/gpt2 vocab.json merges.txt --local-dir data
+          mv data/vocab.json data/gpt2-vocab.json
+          mv data/merges.txt data/gpt2-merges.txt
+          huggingface-cli download meta-llama/Llama-3.2-1B tokenizer.json --local-dir data
+          mv data/tokenizer.json data/llama-3-tokenizer.json
+          huggingface-cli download FacebookAI/roberta-base tokenizer.json --local-dir data
+          mv data/tokenizer.json data/roberta.json
+          huggingface-cli download albert/albert-base-v1 tokenizer.json --local-dir data
+          mv data/tokenizer.json data/albert-base-v1-tokenizer.json
+          # Training corpus
           curl -sL "https://www.gutenberg.org/files/100/100-0.txt" -o data/big.txt
-          # Small training data
           head -100 data/big.txt > data/small.txt
 
       - name: Run benchmarks
@@ -92,13 +94,20 @@ jobs:
           workspaces: tokenizers
 
       - name: Download benchmark data
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
+          pip install huggingface_hub
           mkdir -p data
-          curl -sL "https://huggingface.co/openai-community/gpt2/resolve/main/vocab.json" -o data/gpt2-vocab.json
-          curl -sL "https://huggingface.co/openai-community/gpt2/resolve/main/merges.txt" -o data/gpt2-merges.txt
-          curl -sL "https://huggingface.co/meta-llama/Llama-3.2-1B/resolve/main/tokenizer.json" -o data/llama-3-tokenizer.json
-          curl -sL "https://huggingface.co/FacebookAI/roberta-base/resolve/main/tokenizer.json" -o data/roberta.json
-          curl -sL "https://huggingface.co/albert/albert-base-v1/resolve/main/tokenizer.json" -o data/albert-base-v1-tokenizer.json
+          huggingface-cli download openai-community/gpt2 vocab.json merges.txt --local-dir data
+          mv data/vocab.json data/gpt2-vocab.json
+          mv data/merges.txt data/gpt2-merges.txt
+          huggingface-cli download meta-llama/Llama-3.2-1B tokenizer.json --local-dir data
+          mv data/tokenizer.json data/llama-3-tokenizer.json
+          huggingface-cli download FacebookAI/roberta-base tokenizer.json --local-dir data
+          mv data/tokenizer.json data/roberta.json
+          huggingface-cli download albert/albert-base-v1 tokenizer.json --local-dir data
+          mv data/tokenizer.json data/albert-base-v1-tokenizer.json
           curl -sL "https://www.gutenberg.org/files/100/100-0.txt" -o data/big.txt
           head -100 data/big.txt > data/small.txt
 
