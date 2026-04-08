@@ -274,14 +274,21 @@ impl AddedVocabulary {
 
         for mut token in tokens {
             total += 1;
-            let is_different = if let Some(id) = self.added_tokens_map.get(&token.content) {
-                self.added_tokens_map_r.get(id).unwrap() == &token
-            } else {
-                false
-            };
-            if token.content.is_empty() || is_different {
+            if token.content.is_empty() {
                 ignored += 1;
                 continue;
+            }
+            // Fast path: only compare properties if this content is already in the map.
+            if let Some(id) = self.added_tokens_map.get(&token.content) {
+                let existing = self.added_tokens_map_r.get(id).unwrap();
+                if existing.normalized == token.normalized
+                    && existing.lstrip == token.lstrip
+                    && existing.rstrip == token.rstrip
+                    && existing.special == token.special
+                {
+                    ignored += 1;
+                    continue;
+                }
             }
 
             let new_id = if let Some(new_id) = self.token_to_id(&token.content, model) {
@@ -345,7 +352,7 @@ impl AddedVocabulary {
                             .iter()
                             .map(|(content, id, _)| (*content, *id)),
                     )
-                    .expect("Failed to build trie when refreshing tokens"),
+                    .unwrap(),
             )
         };
 
