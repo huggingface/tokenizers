@@ -9,30 +9,20 @@ on:
     paths:
       - "tokenizers/**"
 
-# Require maintainer approval before running on external PRs (expensive runner time)
-# https://docs.github.com/en/actions/managing-workflow-runs/approving-workflow-runs-from-public-forks
-env:
-  # This is handled by the repository setting:
-  #   Settings → Actions → General → "Require approval for all outside collaborators"
-  # The workflow itself uses the `environment` key below to gate on approval.
-
 permissions:
   contents: write
   pull-requests: write
   deployments: write
 
 jobs:
-  benchmark:
-    name: Run benchmarks
+  # On push to main: run benchmarks and store baseline (no approval needed)
+  baseline:
+    if: github.event_name == 'push'
+    name: Store baseline
     runs-on: ubuntu-latest
-    # Requires manual approval from a maintainer before running on PRs.
-    # Create an environment called "benchmarks" in repo Settings → Environments
-    # with required reviewers.
-    environment: ${{ github.event_name == 'pull_request' && 'benchmarks' || '' }}
     defaults:
       run:
         working-directory: tokenizers
-
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
@@ -47,9 +37,7 @@ jobs:
       - name: Run benchmarks
         run: cargo bench --bench ci_benchmark -- --output-format bencher | tee output.txt
 
-      # On push to main: store the results as the new baseline in gh-pages
-      - name: Store baseline (main only)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      - name: Store baseline
         uses: benchmark-action/github-action-benchmark@d48d326b4ca9ba73ca0cd0d59f108f9e02a381c7
         with:
           name: Tokenizers Rust Benchmarks
@@ -58,13 +46,36 @@ jobs:
           gh-pages-branch: gh-pages
           benchmark-data-dir-path: bench
           auto-push: true
-          # Only alert on >15% regression
           alert-threshold: "115%"
           comment-on-alert: true
 
-      # On PRs: compare against the stored baseline and post a comment
-      - name: Compare with baseline (PRs only)
-        if: github.event_name == 'pull_request'
+  # On PRs: require approval, then run benchmarks and compare against baseline
+  compare:
+    if: github.event_name == 'pull_request'
+    name: Compare with baseline
+    runs-on: ubuntu-latest
+    # Requires manual approval from a maintainer before running.
+    # Create an environment called "benchmarks" in repo Settings → Environments
+    # with required reviewers.
+    environment: benchmarks
+    defaults:
+      run:
+        working-directory: tokenizers
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@82a92a6e8fbeee089604da2575dc567ae9ddeaab
+        with:
+          workspaces: tokenizers
+
+      - name: Run benchmarks
+        run: cargo bench --bench ci_benchmark -- --output-format bencher | tee output.txt
+
+      - name: Compare with baseline
         uses: benchmark-action/github-action-benchmark@d48d326b4ca9ba73ca0cd0d59f108f9e02a381c7
         with:
           name: Tokenizers Rust Benchmarks
@@ -73,11 +84,8 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           gh-pages-branch: gh-pages
           benchmark-data-dir-path: bench
-          # Do not push results from PRs — only compare
           auto-push: false
-          # Post or update a single comment on the PR
           comment-always: true
-          # Warn but don't fail on regression
           alert-threshold: "115%"
           fail-on-alert: false
           comment-on-alert: true
