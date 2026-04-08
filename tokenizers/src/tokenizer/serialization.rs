@@ -7,7 +7,7 @@ use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
 };
 
-use super::{added_vocabulary::AddedTokenWithId, TokenizerImpl};
+use super::{added_vocabulary::{AddedToken, AddedTokenWithId}, TokenizerImpl};
 use crate::{Decoder, Model, Normalizer, PostProcessor, PreTokenizer, TokenizerBuilder};
 
 static SERIALIZATION_VERSION: &str = "1.0";
@@ -150,30 +150,25 @@ where
             .build()
             .map_err(|e| V::Error::custom(e.to_string()))?;
 
-        // We take care of deserializing the added_tokens (instead of `AddedVocabulary` directly
-        // because it let us check that associated IDs are still good, and warn the user otherwise
-        for token in &tokens {
-            // Warn the user if the id is different than expected
-            let received_id = tokenizer.token_to_id(&token.token.content);
+        // Consume `tokens` in a single pass: warn on ID mismatches, move the
+        // pre-computed normalized form into the cache, and collect the bare
+        // AddedTokens for `add_tokens`.  Everything is moved — no clones.
+        let mut added_tokens: Vec<AddedToken> = Vec::with_capacity(tokens.len());
+        for t in tokens {
+            let received_id = tokenizer.token_to_id(&t.token.content);
             if let Some(rid) = received_id {
-                if rid != token.id {
+                if rid != t.id {
                     warn!(
                         "Warning: Token '{}' was expected to have ID '{}' but was given ID '{}'",
-                        token.token.content, token.id, rid
+                        t.token.content, t.id, rid
                     );
                 }
             }
-        }
-
-        // Pre-populate the normalized cache from the serialized data so that
-        // `add_tokens` below can skip re-running the normalizer entirely.
-        for t in &tokens {
-            if let Some(ref nc) = t.normalized_content {
-                tokenizer.added_vocabulary.seed_normalized_cache(t.id, nc.clone());
+            if let Some(nc) = t.normalized_content {
+                tokenizer.added_vocabulary.seed_normalized_cache(t.id, nc);
             }
+            added_tokens.push(t.token);
         }
-
-        let added_tokens = tokens.into_iter().map(|token| token.token);
         tokenizer.add_tokens(added_tokens);
 
         Ok(tokenizer)
