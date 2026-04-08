@@ -37,7 +37,11 @@ static BATCH_SIZE: usize = 1_000;
 
 /// Read big.txt and split into owned lines and batches.
 /// Returns `(raw_data, lines, batches)` where lines/batches own their strings.
-fn load_data() -> (String, Vec<EncodeInput<'static>>, Vec<Vec<EncodeInput<'static>>>) {
+fn load_data() -> (
+    String,
+    Vec<EncodeInput<'static>>,
+    Vec<Vec<EncodeInput<'static>>>,
+) {
     let data = std::fs::read_to_string("data/big.txt").unwrap();
     let mut lines: Vec<EncodeInput> = vec![];
     let mut batches: Vec<Vec<EncodeInput>> = vec![vec![]];

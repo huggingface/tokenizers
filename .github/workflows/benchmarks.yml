@@ -59,6 +59,7 @@ jobs:
           name: Tokenizers Rust Benchmarks
           tool: cargo
           output-file-path: tokenizers/output.txt
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           gh-pages-branch: gh-pages
           benchmark-data-dir-path: bench
           # Do not push results from PRs — only compare
@@ -68,5 +69,4 @@ jobs:
           # Warn but don't fail on regression
           alert-threshold: "115%"
           fail-on-alert: false
-          # This identifies the comment so it gets updated, not duplicated
           comment-on-alert: true

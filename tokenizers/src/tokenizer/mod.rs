@@ -152,6 +152,7 @@ pub enum ProcessorError {
 /// A `Decoder` changes the raw tokens into its more readable form.
 pub trait Decoder {
     fn decode(&self, tokens: Vec<String>) -> Result<String> {
+        // or if normalized = False -> dont use the decoder????
         let results = self.decode_chain(tokens)?;
         Ok(results.join(""))
     }
