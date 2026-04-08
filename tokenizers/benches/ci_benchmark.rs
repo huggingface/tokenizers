@@ -1,4 +1,5 @@
 //! Consolidated benchmark suite for CI regression detection.
+//! Results are stored on HF Hub at hf-internal-testing/tokenizers-bench.
 //!
 //! Covers the key performance surfaces in a single binary:
 //!   - BPE GPT-2 encode (single, batch, cached, uncached)

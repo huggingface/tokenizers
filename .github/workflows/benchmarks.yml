@@ -5,6 +5,7 @@ on:
     branches: [main, ci-benchmarks]  # TODO: remove ci-benchmarks before merge
     paths:
       - "tokenizers/**"
+      - ".github/workflows/benchmarks.yml"
   workflow_dispatch:
     inputs:
       pr_number:
