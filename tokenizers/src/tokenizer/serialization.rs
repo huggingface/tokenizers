@@ -164,6 +164,15 @@ where
                 }
             }
         }
+
+        // Pre-populate the normalized cache from the serialized data so that
+        // `add_tokens` below can skip re-running the normalizer entirely.
+        for t in &tokens {
+            if let Some(ref nc) = t.normalized_content {
+                tokenizer.added_vocabulary.seed_normalized_cache(t.id, nc.clone());
+            }
+        }
+
         let added_tokens = tokens.into_iter().map(|token| token.token);
         tokenizer.add_tokens(added_tokens);
 

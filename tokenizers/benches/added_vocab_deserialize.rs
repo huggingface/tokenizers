@@ -37,7 +37,7 @@ fn bench_deserialize(c: &mut Criterion) {
     let normalizers: Vec<(&str, Option<fn() -> NormalizerWrapper>)> =
         vec![("none", None), ("nfkc", Some(|| NFKC.into()))];
 
-    for &size in &[100_000] {
+    for &size in &[100_000, 400_000] {
         for (norm_name, maybe_factory) in &normalizers {
             let label = format!(
                 "special tokens deserialize_added_vocab_{}_norm_{}",

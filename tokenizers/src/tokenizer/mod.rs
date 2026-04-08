@@ -551,9 +551,18 @@ where
         }
     }
 
-    /// Set the normalizer
+    /// Set the normalizer.
+    ///
+    /// # Performance note
+    ///
+    /// When added tokens with `normalized = true` are already present, this method
+    /// re-normalizes all of them and rebuilds the matching trie. For tokenizers with
+    /// many added tokens this may be slow. Prefer setting the normalizer before adding
+    /// tokens when constructing a tokenizer programmatically.
     pub fn with_normalizer(&mut self, normalizer: Option<impl Into<N>>) -> &mut Self {
         self.normalizer = normalizer.map(|norm| norm.into());
+        self.added_vocabulary
+            .refresh_normalized_tokens(self.normalizer.as_ref());
         self
     }
     /// Get the normalizer
