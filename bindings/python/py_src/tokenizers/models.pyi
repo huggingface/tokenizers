@@ -236,6 +236,13 @@ class Unigram(Model):
         byte_fallback (:obj:`bool`, `optional`, defaults to :obj:`False`):
             Whether to use SentencePiece byte fallback for characters not in the vocabulary.
 
+        alpha (:obj:`float`, `optional`):
+            A float between 0 and 1 that represents the smoothing parameter (temperature) to use.
+
+        nbest_size (:obj:`int`, `optional`):
+            An integer greater than 0 that represents the maximum number of best paths to consider.
+            If not set, it samples from the full lattice (i.e. all valid subword segmentations).
+
     Example::
 
         >>> from tokenizers.models import Unigram
@@ -251,6 +258,8 @@ class Unigram(Model):
         vocab: Sequence[tuple[str, float]] | None = None,
         unk_id: int | None = None,
         byte_fallback: bool | None = None,
+        alpha: float | None = None,
+        nbest_size: int | None = None,
     ) -> Unigram: ...
     def _clear_cache(self, /) -> "None":
         """
@@ -260,6 +269,14 @@ class Unigram(Model):
         """
         Resize the internal cache
         """
+    @property
+    def alpha(self, /) -> float | None: ...
+    @alpha.setter
+    def alpha(self, /, alpha: float | None) -> None: ...
+    @property
+    def nbest_size(self, /) -> int | None: ...
+    @nbest_size.setter
+    def nbest_size(self, /, nbest_size: int | None) -> None: ...
 
 @final
 class WordLevel(Model):

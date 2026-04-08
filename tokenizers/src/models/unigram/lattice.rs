@@ -428,6 +428,27 @@ impl<'a> Lattice<'a> {
             .map(|node| self.piece(&node.borrow()))
             .collect()
     }
+
+    pub fn sample_nbest(&mut self, n: usize, theta: f64) -> Vec<NodeRef> {
+        let nbest_paths = self.nbest(n);
+        if nbest_paths.is_empty() {
+            return self.viterbi();
+        }
+
+        let mut probs: Vec<f64> = Vec::with_capacity(nbest_paths.len());
+        for p in &nbest_paths {
+            let path_score: f64 = p.iter().map(|node| node.borrow().score).sum();
+            probs.push((theta * path_score).exp());
+        }
+
+        if let Ok(dist) = WeightedIndex::new(&probs) {
+            let mut rng = rng();
+            let index = dist.sample(&mut rng);
+            nbest_paths[index].clone()
+        } else {
+            nbest_paths[0].clone()
+        }
+    }
 }
 
 #[cfg(test)]

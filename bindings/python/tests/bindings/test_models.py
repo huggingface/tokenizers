@@ -2,7 +2,7 @@ import pickle
 
 import pytest
 
-from tokenizers.models import BPE, Model, WordLevel, WordPiece
+from tokenizers.models import BPE, Model, Unigram, WordLevel, WordPiece
 from ..utils import bert_files, data_dir, roberta_files
 
 
@@ -40,6 +40,24 @@ class TestBPE:
     def test_dropout_zero(self):
         model = BPE(dropout=0.0)
         assert model.dropout == 0.0
+
+
+class TestUnigram:
+    def test_can_modify(self):
+        model = Unigram(alpha=0.5)
+
+        assert model.alpha == 0.5
+        assert model.nbest_size is None
+
+        # Modify these
+        model.alpha = 0.1
+        assert pytest.approx(model.alpha) == 0.1
+        model.nbest_size = 64
+        assert model.nbest_size == 64
+
+    def test_alpha_zero(self):
+        model = Unigram(alpha=0.0)
+        assert model.alpha == 0.0
 
 
 class TestWordPiece:
