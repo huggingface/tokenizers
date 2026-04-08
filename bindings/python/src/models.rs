@@ -932,7 +932,7 @@ impl PyUnigram {
 
     #[new]
     #[pyo3(
-        signature = (vocab=None, unk_id=None, byte_fallback=None, alpha=None, nbest_size=None), 
+        signature = (vocab=None, unk_id=None, byte_fallback=None, alpha=None, nbest_size=None),
         text_signature = "(self, vocab=None, unk_id=None, byte_fallback=None, alpha=None, nbest_size=None)"
     )]
     fn new(
@@ -944,8 +944,8 @@ impl PyUnigram {
     ) -> PyResult<(Self, PyModel)> {
         match (vocab, unk_id, byte_fallback) {
             (Some(vocab), unk_id, byte_fallback) => {
-                let mut model =
-                    Unigram::from(vocab, unk_id, byte_fallback.unwrap_or(false)).map_err(|e| {
+                let mut model = Unigram::from(vocab, unk_id, byte_fallback.unwrap_or(false))
+                    .map_err(|e| {
                         exceptions::PyException::new_err(format!(
                             "Error while loading Unigram: {e}"
                         ))
@@ -959,7 +959,7 @@ impl PyUnigram {
                 model.alpha = alpha;
                 model.nbest_size = nbest_size;
                 Ok((PyUnigram {}, model.into()))
-            },
+            }
             _ => Err(exceptions::PyValueError::new_err(
                 "`vocab` and `unk_id` must be both specified",
             )),
