@@ -5,20 +5,23 @@ on:
     branches: [main]
     paths:
       - "tokenizers/**"
-  pull_request:
-    paths:
-      - "tokenizers/**"
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "PR number to post benchmark results to (leave empty to just store baseline)"
+        required: false
+        type: string
 
 permissions:
   contents: write
-  pull-requests: write
-  deployments: write
+
+env:
+  RUSTC_WRAPPER: sccache
+  SCCACHE_GHA_ENABLED: "true"
 
 jobs:
-  # On push to main: run benchmarks and store baseline (no approval needed)
-  baseline:
-    if: github.event_name == 'push'
-    name: Store baseline
+  benchmark:
+    name: Run benchmarks
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -29,10 +32,8 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Rust cache
-        uses: Swatinem/rust-cache@82a92a6e8fbeee089604da2575dc567ae9ddeaab
-        with:
-          workspaces: tokenizers
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
 
       - name: Install uv
         uses: astral-sh/setup-uv@v6
@@ -42,7 +43,6 @@ jobs:
 
       - name: Run benchmarks
         run: cargo bench --bench ci_benchmark -- --output-format bencher | tee output.txt
-        continue-on-error: true
 
       - name: Store baseline
         if: hashFiles('tokenizers/output.txt') != ''
@@ -55,53 +55,4 @@ jobs:
           benchmark-data-dir-path: bench
           auto-push: true
           alert-threshold: "115%"
-          comment-on-alert: true
-
-  # On PRs: require approval, then run benchmarks and compare against baseline
-  compare:
-    if: github.event_name == 'pull_request'
-    name: Compare with baseline
-    runs-on: ubuntu-latest
-    # Requires manual approval from a maintainer before running.
-    # Create an environment called "benchmarks" in repo Settings → Environments
-    # with required reviewers.
-    environment: benchmarks
-    defaults:
-      run:
-        working-directory: tokenizers
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Rust cache
-        uses: Swatinem/rust-cache@82a92a6e8fbeee089604da2575dc567ae9ddeaab
-        with:
-          workspaces: tokenizers
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v6
-
-      - name: Download benchmark data
-        run: uvx --from huggingface_hub hf download hf-internal-testing/tokenizers-bench-data --repo-type dataset --local-dir data
-
-      - name: Run benchmarks
-        run: cargo bench --bench ci_benchmark -- --output-format bencher | tee output.txt
-        continue-on-error: true
-
-      - name: Compare with baseline
-        if: hashFiles('tokenizers/output.txt') != ''
-        uses: benchmark-action/github-action-benchmark@d48d326b4ca9ba73ca0cd0d59f108f9e02a381c7
-        with:
-          name: Tokenizers Rust Benchmarks
-          tool: cargo
-          output-file-path: tokenizers/output.txt
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          gh-pages-branch: gh-pages
-          benchmark-data-dir-path: bench
-          auto-push: false
-          comment-always: true
-          alert-threshold: "115%"
-          fail-on-alert: false
           comment-on-alert: true
