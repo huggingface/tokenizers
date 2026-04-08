@@ -13,7 +13,7 @@ on:
         type: string
 
 permissions:
-  contents: write
+  contents: read
   pull-requests: write
 
 env:
@@ -45,47 +45,89 @@ jobs:
       - name: Run benchmarks
         run: cargo bench --bench ci_benchmark -- --output-format bencher | tee output.txt
 
-      - name: Store baseline
+      # Upload results to HF Hub as the new baseline
+      - name: Upload baseline to HF Hub
         if: hashFiles('tokenizers/output.txt') != ''
-        uses: benchmark-action/github-action-benchmark@d48d326b4ca9ba73ca0cd0d59f108f9e02a381c7
-        with:
-          name: Tokenizers Rust Benchmarks
-          tool: cargo
-          output-file-path: tokenizers/output.txt
-          gh-pages-branch: gh-pages
-          benchmark-data-dir-path: bench
-          auto-push: true
-          alert-threshold: "115%"
-          comment-on-alert: true
-
-      # When triggered via workflow_dispatch with a PR number, post results as a comment
-      - name: Post results to PR
-        if: inputs.pr_number != '' && hashFiles('tokenizers/output.txt') != ''
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        working-directory: tokenizers
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
+          # Save with commit SHA for history
+          cp output.txt "output-${{ github.sha }}.txt"
+          uvx --from huggingface_hub hf upload hf-internal-testing/tokenizers-bench \
+            output.txt baseline.txt --repo-type dataset
+          uvx --from huggingface_hub hf upload hf-internal-testing/tokenizers-bench \
+            "output-${{ github.sha }}.txt" "history/output-${{ github.sha }}.txt" --repo-type dataset
+
+      # Download previous baseline and compare
+      - name: Compare with baseline
+        if: hashFiles('tokenizers/output.txt') != ''
+        id: compare
+        run: |
+          # Try to download previous baseline
+          uvx --from huggingface_hub hf download hf-internal-testing/tokenizers-bench \
+            baseline.txt --repo-type dataset --local-dir baseline_dir 2>/dev/null || true
+
+          if [ ! -f baseline_dir/baseline.txt ]; then
+            echo "No previous baseline found — skipping comparison"
+            echo "has_comparison=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "has_comparison=true" >> "$GITHUB_OUTPUT"
+
+          # Build comparison markdown
           {
             echo "## Benchmark results"
             echo ""
             echo "Commit: \`${{ github.sha }}\`"
             echo ""
-            echo "| Benchmark | ns/iter | ± |"
-            echo "|-----------|--------:|--:|"
-            grep '^test ' output.txt | sed 's/^test //' | while read -r line; do
-              name=$(echo "$line" | sed 's/ \.\.\. bench: .*//')
-              ns=$(echo "$line" | sed 's/.* bench: *\([0-9,]*\) ns\/iter.*/\1/')
-              pm=$(echo "$line" | sed 's/.*(+\/- \([0-9,]*\)).*/\1/')
-              echo "| $name | $ns | $pm |"
-            done
-          } > comment.md
+            echo "| Benchmark | Baseline (ns/iter) | This run (ns/iter) | Δ |"
+            echo "|-----------|-------------------:|-------------------:|--:|"
 
+            # Parse both files into associative lookup
+            while IFS= read -r line; do
+              name=$(echo "$line" | sed 's/^test \(.*\) \.\.\. bench:.*/\1/')
+              ns=$(echo "$line" | sed 's/.*bench: *\([0-9,]*\) ns\/iter.*/\1/' | tr -d ',')
+              echo "$name $ns"
+            done < output.txt | sort > /tmp/current.tsv
+
+            while IFS= read -r line; do
+              name=$(echo "$line" | sed 's/^test \(.*\) \.\.\. bench:.*/\1/')
+              ns=$(echo "$line" | sed 's/.*bench: *\([0-9,]*\) ns\/iter.*/\1/' | tr -d ',')
+              echo "$name $ns"
+            done < baseline_dir/baseline.txt | sort > /tmp/baseline.tsv
+
+            join /tmp/baseline.tsv /tmp/current.tsv | while read -r name base_ns cur_ns; do
+              if [ "$base_ns" -gt 0 ] 2>/dev/null; then
+                delta=$(( (cur_ns - base_ns) * 100 / base_ns ))
+                if [ "$delta" -gt 0 ]; then
+                  delta_str="+${delta}%"
+                else
+                  delta_str="${delta}%"
+                fi
+                # Format with commas for readability
+                base_fmt=$(printf "%'d" "$base_ns")
+                cur_fmt=$(printf "%'d" "$cur_ns")
+                echo "| $name | $base_fmt | $cur_fmt | $delta_str |"
+              fi
+            done
+          } > comparison.md
+
+          cat comparison.md
+
+      # Post comparison as PR comment when triggered via workflow_dispatch
+      - name: Post results to PR
+        if: inputs.pr_number != '' && steps.compare.outputs.has_comparison == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        working-directory: tokenizers
+        run: |
           existing=$(gh api "repos/${{ github.repository }}/issues/${{ inputs.pr_number }}/comments" \
             --jq '.[] | select(.body | startswith("## Benchmark results")) | .id' | head -1)
 
           if [ -n "$existing" ]; then
             gh api "repos/${{ github.repository }}/issues/comments/$existing" \
-              -X PATCH -F "body=@comment.md"
+              -X PATCH -F "body=@comparison.md"
           else
-            gh pr comment "${{ inputs.pr_number }}" --body-file comment.md
+            gh pr comment "${{ inputs.pr_number }}" --body-file comparison.md
           fi
