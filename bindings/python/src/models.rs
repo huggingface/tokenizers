@@ -263,6 +263,15 @@ impl PyModel {
 ///
 ///     ignore_merges (:obj:`bool`, `optional`):
 ///         Whether or not to match tokens with the vocab before using merges.
+///
+/// Example::
+///
+///     >>> from tokenizers.models import BPE
+///     >>> # Build an empty model (to be trained)
+///     >>> model = BPE(unk_token="<unk>")
+///     >>> # Load from vocabulary and merges files
+///     >>> model = BPE.from_file("vocab.json", "merges.txt")
+///
 #[pyclass(extends=PyModel, module = "tokenizers.models", name = "BPE")]
 pub struct PyBPE {}
 
@@ -566,6 +575,15 @@ impl PyBPE {
 ///
 ///     max_input_chars_per_word (:obj:`int`, `optional`):
 ///         The maximum number of characters to authorize in a single word.
+///
+/// Example::
+///
+///     >>> from tokenizers.models import WordPiece
+///     >>> # Build an empty model (to be trained)
+///     >>> model = WordPiece(unk_token="[UNK]")
+///     >>> # Load from a vocabulary file
+///     >>> model = WordPiece.from_file("vocab.txt")
+///
 #[pyclass(extends=PyModel, module = "tokenizers.models", name = "WordPiece")]
 pub struct PyWordPiece {}
 
@@ -734,6 +752,16 @@ impl PyWordPiece {
 ///
 ///     unk_token (:obj:`str`, `optional`):
 ///         The unknown token to be used by the model.
+///
+/// Example::
+///
+///     >>> from tokenizers.models import WordLevel
+///     >>> # Build from a vocabulary dictionary
+///     >>> vocab = {"hello": 0, "world": 1, "<unk>": 2}
+///     >>> model = WordLevel(vocab=vocab, unk_token="<unk>")
+///     >>> # Load from file
+///     >>> model = WordLevel.from_file("vocab.json", unk_token="<unk>")
+///
 #[pyclass(extends=PyModel, module = "tokenizers.models", name = "WordLevel")]
 pub struct PyWordLevel {}
 
@@ -846,9 +874,30 @@ impl PyWordLevel {
 
 /// An implementation of the Unigram algorithm
 ///
+/// The Unigram algorithm is a subword tokenization algorithm based on unigram language
+/// models, as used in SentencePiece. It learns a vocabulary by starting with a large
+/// initial vocabulary and iteratively pruning it using the EM algorithm.
+///
 /// Args:
-///     vocab (:obj:`List[Tuple[str, float]]`, `optional`, `optional`):
-///         A list of vocabulary items and their relative score [("am", -0.2442),...]
+///     vocab (:obj:`List[Tuple[str, float]]`, `optional`):
+///         A list of vocabulary items and their log-probability scores,
+///         e.g. ``[("am", -0.2442), ...]``. If not provided, an empty model is created.
+///
+///     unk_id (:obj:`int`, `optional`):
+///         The index of the unknown token in the vocabulary list.
+///
+///     byte_fallback (:obj:`bool`, `optional`, defaults to :obj:`False`):
+///         Whether to use SentencePiece byte fallback for characters not in the vocabulary.
+///
+/// Example::
+///
+///     >>> from tokenizers.models import Unigram
+///     >>> # Build an empty model (to be trained)
+///     >>> model = Unigram()
+///     >>> # Build from a vocabulary list
+///     >>> vocab = [("<unk>", 0.0), ("hello", -1.0), ("world", -1.5)]
+///     >>> model = Unigram(vocab=vocab, unk_id=0)
+///
 #[pyclass(extends=PyModel, module = "tokenizers.models", name = "Unigram")]
 pub struct PyUnigram {}
 
