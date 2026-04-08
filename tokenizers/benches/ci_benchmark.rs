@@ -185,32 +185,46 @@ fn bench_llama3(c: &mut Criterion) {
 fn bench_serialization(c: &mut Criterion) {
     let mut group = c.benchmark_group("serialization");
 
-    // GPT-2: load BPE model from vocab + merges files
-    group.bench_function("gpt2-load", |b| {
+    // Tokenizer::from_file — the real user-facing load path
+    group.bench_function("from-file-roberta", |b| {
+        b.iter(|| black_box(Tokenizer::from_file("data/roberta.json").unwrap()))
+    });
+    group.bench_function("from-file-llama3", |b| {
+        b.iter(|| black_box(Tokenizer::from_file("data/llama-3-tokenizer.json").unwrap()))
+    });
+    group.bench_function("from-file-albert", |b| {
+        b.iter(|| black_box(Tokenizer::from_file("data/albert-base-v1-tokenizer.json").unwrap()))
+    });
+
+    // BPE::from_file — raw vocab+merges loading (no tokenizer wrapper)
+    group.bench_function("bpe-from-file-gpt2", |b| {
         b.iter(|| {
-            let bpe = BPE::from_file("data/gpt2-vocab.json", "data/gpt2-merges.txt")
-                .build()
-                .unwrap();
-            black_box(bpe);
+            black_box(
+                BPE::from_file("data/gpt2-vocab.json", "data/gpt2-merges.txt")
+                    .build()
+                    .unwrap(),
+            )
         })
     });
 
-    // Llama-3 round-trip: load tokenizer.json (128k vocab)
-    group.bench_function("llama3-load", |b| {
-        b.iter(|| {
-            let tok = Tokenizer::from_file("data/llama-3-tokenizer.json").unwrap();
-            black_box(tok);
-        })
-    });
-
+    // Save path
     let llama3_tok = Tokenizer::from_file("data/llama-3-tokenizer.json").unwrap();
     let llama3_json = serde_json::to_string(&llama3_tok).unwrap();
     group.throughput(Throughput::Bytes(llama3_json.len() as u64));
-    group.bench_function("llama3-save", |b| {
+    group.bench_function("save-llama3", |b| {
         b.iter(|| {
             let json = serde_json::to_string(black_box(&llama3_tok)).unwrap();
             black_box(json);
         })
+    });
+
+    // Deserialize from JSON string (no file I/O)
+    let roberta_json = std::fs::read_to_string("data/roberta.json").unwrap();
+    group.bench_function("deserialize-roberta", |b| {
+        b.iter(|| black_box(serde_json::from_str::<Tokenizer>(&roberta_json).unwrap()))
+    });
+    group.bench_function("deserialize-llama3", |b| {
+        b.iter(|| black_box(serde_json::from_str::<Tokenizer>(&llama3_json).unwrap()))
     });
 
     group.finish();
