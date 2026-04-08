@@ -29,10 +29,16 @@ pub struct Unigram {
     fuse_unk: bool,
     is_optimized: bool,
     byte_fallback: bool,
+
+    pub alpha: Option<f64>,
+    pub nbest_size: Option<usize>,
 }
 impl PartialEq for Unigram {
     fn eq(&self, other: &Self) -> bool {
-        self.unk_id == other.unk_id && self.vocab == other.vocab
+        self.unk_id == other.unk_id
+            && self.vocab == other.vocab
+            && self.alpha == other.alpha
+            && self.nbest_size == other.nbest_size
     }
 }
 
@@ -53,6 +59,8 @@ impl Clone for Unigram {
             fuse_unk: self.fuse_unk,
             is_optimized: self.is_optimized,
             byte_fallback: self.byte_fallback,
+            alpha: self.alpha,
+            nbest_size: self.nbest_size,
         }
     }
 }
@@ -137,6 +145,8 @@ impl Unigram {
             cache: Cache::default(),
             is_optimized,
             byte_fallback,
+            alpha: None,
+            nbest_size: None,
         })
     }
 
@@ -222,17 +232,22 @@ impl Unigram {
         if sentence.is_empty() {
             return Ok(vec![]);
         }
-        if let Some(result) = self.cache.get(sentence) {
-            Ok(result.to_vec())
-        } else {
-            let result = if self.is_optimized {
-                self.encode_optimized(sentence)?
+        if self.alpha.is_none() || self.alpha == Some(0.0) {
+            if let Some(result) = self.cache.get(sentence) {
+                Ok(result.to_vec())
             } else {
-                self.encode_unoptimized(sentence)?
-            };
-            if sentence.len() < MAX_LENGTH {
-                self.cache.set(sentence.to_owned(), result.clone());
+                let result = if self.is_optimized {
+                    self.encode_optimized(sentence)?
+                } else {
+                    self.encode_unoptimized(sentence)?
+                };
+                if sentence.len() < MAX_LENGTH {
+                    self.cache.set(sentence.to_owned(), result.clone());
+                }
+                Ok(result)
             }
+        } else {
+            let result = self.encode_unoptimized(sentence)?;
             Ok(result)
         }
     }
@@ -331,10 +346,15 @@ impl Unigram {
     fn encode_unoptimized(&self, sentence: &str) -> Result<Vec<String>> {
         let mut lattice = Lattice::from(sentence, self.bos_id, self.eos_id);
         self.populate_nodes(&mut lattice);
+        let path = match (self.nbest_size, self.alpha) {
+            (Some(n), Some(alpha)) if n > 0 => lattice.sample_nbest(n, alpha),
+            (_, Some(alpha)) => lattice.sample(alpha),
+            _ => lattice.viterbi(),
+        };
         if self.fuse_unk {
             let mut results = vec![];
             let mut token = String::new();
-            for node in lattice.viterbi().iter() {
+            for node in path.iter() {
                 let item = lattice.piece(&node.borrow());
                 if node.borrow().id == self.unk_id.ok_or(UnigramError::MissingUnkId)? {
                     token.push_str(&item);
@@ -351,7 +371,11 @@ impl Unigram {
             }
             Ok(results)
         } else {
-            Ok(lattice.tokens())
+            let results: Vec<String> = path
+                .iter()
+                .map(|node| lattice.piece(&node.borrow()))
+                .collect();
+            Ok(results)
         }
     }
 
