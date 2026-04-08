@@ -4,6 +4,7 @@ extern crate criterion;
 mod common;
 
 use criterion::{Criterion, Throughput};
+use tokenizers::decoders::byte_level::ByteLevel as ByteLevelDecoder;
 use tokenizers::models::bpe::{BpeTrainerBuilder, BPE};
 use tokenizers::models::TrainerWrapper;
 use tokenizers::pre_tokenizers::byte_level::{ByteLevel, ByteLevelDecoder};
