@@ -7,6 +7,7 @@
 //!   - BPE training (small corpus)
 //!
 //! Run locally:
+//!
 //!   cargo bench --bench ci_benchmark
 //!
 //! In CI the workflow pipes `--output-format bencher` to produce machine-readable
