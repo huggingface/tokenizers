@@ -323,81 +323,48 @@ impl AddedVocabulary {
     fn refresh_added_tokens<N: Normalizer>(
         &mut self,
         _model: &impl Model,
-        _normalizer: Option<&N>,
+        normalizer: Option<&N>,
     ) {
-        type TupleTokenId<'a> = (&'a AddedToken, u32);
-
-        // IDs come directly from the map keys — no token_to_id lookup needed.
-        let (normalized, non_normalized): (Vec<TupleTokenId>, Vec<TupleTokenId>) = self
+        // Single pass: map to (content, id, is_normalized), then partition.
+        // The boolean is dropped by destructuring in each arm below.
+        let (normalized_pairs, non_normalized_pairs): (Vec<_>, Vec<_>) = self
             .added_tokens_map_r
             .iter()
-            .map(|(idx, token)| (token, *idx))
-            .partition(|(token, _)| token.normalized);
+            .map(|(id, token)| (token.content.as_str(), *id, token.normalized))
+            .partition(|(_, _, is_normalized)| *is_normalized);
 
-        let (tokens, ids): (Vec<&AddedToken>, Vec<u32>) = non_normalized.into_iter().unzip();
-        // Deduplicate patterns by content (keeping first occurrence) and filter empty strings
-        // to avoid DuplicatePattern / ZeroLengthPattern errors from daachorse.
-        let mut seen: AHashSet<&str> = AHashSet::new();
-        let (deduped_patterns, deduped_ids): (Vec<&str>, Vec<u32>) = tokens
-            .iter()
-            .map(|t| t.content.as_str())
-            .zip(ids.iter().copied())
-            .filter(|(content, _)| !content.is_empty() && seen.insert(content))
-            .unzip();
-        self.split_trie = if deduped_patterns.is_empty() {
+        self.split_trie = if non_normalized_pairs.is_empty() {
             None
         } else {
-            match DoubleArrayAhoCorasickBuilder::new()
-                .match_kind(MatchKind::LeftmostLongest)
-                .build_with_values(deduped_patterns.into_iter().zip(deduped_ids))
-            {
-                Ok(trie) => Some(trie),
-                Err(e) => panic!(
-                    "Failed to build trie when refreshing tokens: {}. \
-                     This is likely because the total size of all patterns exceeded the \
-                     double-array capacity (~4 GB). Consider reducing the number or size \
-                     of added tokens.",
-                    e
-                ),
-            }
+            Some(
+                DoubleArrayAhoCorasickBuilder::new()
+                    .match_kind(MatchKind::LeftmostLongest)
+                    .build_with_values(non_normalized_pairs.iter().map(|(content, id, _)| (*content, *id)))
+                    .expect("Failed to build trie when refreshing tokens"),
+            )
         };
 
-        let (ntokens, nids): (Vec<&AddedToken>, Vec<u32>) = normalized.into_iter().unzip();
-        let patterns: Vec<_> = ntokens
-            .iter()
-            .map(|token| {
-                let mut content = NormalizedString::from(token.content.as_ref());
-                if let Some(n) = normalizer {
-                    n.normalize(&mut content).unwrap();
-                }
-                content
-            })
-            .collect();
-        // Deduplicate normalized patterns by their normalized form and filter empty strings
-        // (normalization can collapse a non-empty token to an empty string).
-        let mut seen_norm: AHashSet<&str> = AHashSet::new();
-        let (deduped_norm_patterns, deduped_nids): (Vec<&str>, Vec<u32>) = patterns
-            .iter()
-            .map(|content| content.get())
-            .zip(nids.iter().copied())
-            .filter(|(content, _)| !content.is_empty() && seen_norm.insert(content))
-            .unzip();
-        self.split_normalized_trie = if deduped_norm_patterns.is_empty() {
+        self.split_normalized_trie = if normalized_pairs.is_empty() {
             None
         } else {
-            match DoubleArrayAhoCorasickBuilder::new()
-                .match_kind(MatchKind::LeftmostLongest)
-                .build_with_values(deduped_norm_patterns.into_iter().zip(deduped_nids))
-            {
-                Ok(trie) => Some(trie),
-                Err(e) => panic!(
-                    "Failed to build trie when refreshing tokens (normalized): {}. \
-                     This is likely because the total size of all patterns exceeded the \
-                     double-array capacity (~4 GB). Consider reducing the number or size \
-                     of added tokens.",
-                    e
-                ),
-            }
+            // Normalize each content string, collecting owned NormalizedStrings so
+            // the &str references remain valid when we hand them to the builder.
+            let normalized_strings: Vec<(NormalizedString, u32)> = normalized_pairs
+                .iter()
+                .map(|(content, id, _)| {
+                    let mut ns = NormalizedString::from(*content);
+                    if let Some(n) = normalizer {
+                        n.normalize(&mut ns).unwrap();
+                    }
+                    (ns, *id)
+                })
+                .collect();
+            Some(
+                DoubleArrayAhoCorasickBuilder::new()
+                    .match_kind(MatchKind::LeftmostLongest)
+                    .build_with_values(normalized_strings.iter().map(|(ns, id)| (ns.get(), *id)))
+                    .expect("Failed to build trie when refreshing tokens (normalized)"),
+            )
         };
     }
 
