@@ -9,6 +9,13 @@ on:
     paths:
       - "tokenizers/**"
 
+# Require maintainer approval before running on external PRs (expensive runner time)
+# https://docs.github.com/en/actions/managing-workflow-runs/approving-workflow-runs-from-public-forks
+env:
+  # This is handled by the repository setting:
+  #   Settings → Actions → General → "Require approval for all outside collaborators"
+  # The workflow itself uses the `environment` key below to gate on approval.
+
 permissions:
   contents: write
   pull-requests: write
@@ -18,6 +25,10 @@ jobs:
   benchmark:
     name: Run benchmarks
     runs-on: ubuntu-latest
+    # Requires manual approval from a maintainer before running on PRs.
+    # Create an environment called "benchmarks" in repo Settings → Environments
+    # with required reviewers.
+    environment: ${{ github.event_name == 'pull_request' && 'benchmarks' || '' }}
     defaults:
       run:
         working-directory: tokenizers
