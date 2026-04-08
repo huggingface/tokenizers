@@ -2,7 +2,7 @@ name: Benchmarks
 
 on:
   push:
-    branches: [main]
+    branches: [main, ci-benchmarks]  # TODO: remove ci-benchmarks before merge
     paths:
       - "tokenizers/**"
   workflow_dispatch:
