@@ -8,12 +8,13 @@ on:
   workflow_dispatch:
     inputs:
       pr_number:
-        description: "PR number to post benchmark results to (leave empty to just store baseline)"
+        description: "PR number to post benchmark comment to (leave empty to just store baseline)"
         required: false
         type: string
 
 permissions:
   contents: write
+  pull-requests: write
 
 env:
   RUSTC_WRAPPER: sccache
@@ -56,3 +57,35 @@ jobs:
           auto-push: true
           alert-threshold: "115%"
           comment-on-alert: true
+
+      # When triggered via workflow_dispatch with a PR number, post results as a comment
+      - name: Post results to PR
+        if: inputs.pr_number != '' && hashFiles('tokenizers/output.txt') != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        working-directory: tokenizers
+        run: |
+          {
+            echo "## Benchmark results"
+            echo ""
+            echo "Commit: \`${{ github.sha }}\`"
+            echo ""
+            echo "| Benchmark | ns/iter | ± |"
+            echo "|-----------|--------:|--:|"
+            grep '^test ' output.txt | sed 's/^test //' | while read -r line; do
+              name=$(echo "$line" | sed 's/ \.\.\. bench: .*//')
+              ns=$(echo "$line" | sed 's/.* bench: *\([0-9,]*\) ns\/iter.*/\1/')
+              pm=$(echo "$line" | sed 's/.*(+\/- \([0-9,]*\)).*/\1/')
+              echo "| $name | $ns | $pm |"
+            done
+          } > comment.md
+
+          existing=$(gh api "repos/${{ github.repository }}/issues/${{ inputs.pr_number }}/comments" \
+            --jq '.[] | select(.body | startswith("## Benchmark results")) | .id' | head -1)
+
+          if [ -n "$existing" ]; then
+            gh api "repos/${{ github.repository }}/issues/comments/$existing" \
+              -X PATCH -F "body=@comment.md"
+          else
+            gh pr comment "${{ inputs.pr_number }}" --body-file comment.md
+          fi
