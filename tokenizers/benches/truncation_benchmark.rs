@@ -4,7 +4,7 @@ extern crate criterion;
 use criterion::{BenchmarkId, Criterion, Throughput};
 use std::hint::black_box;
 use tokenizers::models::bpe::BPE;
-use tokenizers::pre_tokenizers::byte_level::ByteLevel;
+use tokenizers::pre_tokenizers::byte_level::{ByteLevel, ByteLevelDecoder};
 use tokenizers::tokenizer::{
     AddedToken, TruncationDirection, TruncationParams, TruncationStrategy,
 };
@@ -16,7 +16,7 @@ fn create_gpt2_tokenizer() -> Tokenizer {
         .unwrap();
     let mut tokenizer = Tokenizer::new(bpe);
     tokenizer.with_pre_tokenizer(Some(ByteLevel::default()));
-    tokenizer.with_decoder(Some(ByteLevel::default()));
+    tokenizer.with_decoder(Some(ByteLevelDecoder::default()));
     tokenizer.add_tokens(&[AddedToken::from("ing", false).single_word(false)]);
     tokenizer.add_special_tokens(&[AddedToken::from("[ENT]", true).single_word(true)]);
     tokenizer
