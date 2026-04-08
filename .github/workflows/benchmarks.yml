@@ -84,21 +84,7 @@ jobs:
         uses: astral-sh/setup-uv@v6
 
       - name: Download benchmark data
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: |
-          mkdir -p data
-          uvx --from huggingface_hub hf download openai-community/gpt2 vocab.json merges.txt --local-dir data
-          mv data/vocab.json data/gpt2-vocab.json
-          mv data/merges.txt data/gpt2-merges.txt
-          uvx --from huggingface_hub hf download meta-llama/Llama-3.2-1B tokenizer.json --local-dir data
-          mv data/tokenizer.json data/llama-3-tokenizer.json
-          uvx --from huggingface_hub hf download FacebookAI/roberta-base tokenizer.json --local-dir data
-          mv data/tokenizer.json data/roberta.json
-          uvx --from huggingface_hub hf download albert/albert-base-v1 tokenizer.json --local-dir data
-          mv data/tokenizer.json data/albert-base-v1-tokenizer.json
-          curl -sL "https://www.gutenberg.org/files/100/100-0.txt" -o data/big.txt
-          head -100 data/big.txt > data/small.txt
+        run: uvx --from huggingface_hub hf download hf-internal-testing/tokenizers-bench-data --repo-type dataset --local-dir data
 
       - name: Run benchmarks
         run: cargo bench --bench ci_benchmark -- --output-format bencher | tee output.txt
