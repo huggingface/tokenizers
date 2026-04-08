@@ -1,0 +1,348 @@
+name: Benchmarks
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "tokenizers/**"
+      - "bindings/python/**"
+      - ".github/workflows/benchmarks.yml"
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "PR number to post benchmark comment to (leave empty to just store baseline)"
+        required: false
+        type: string
+      check_run_id:
+        description: "Check run ID to update with results (set by benchmark-trigger)"
+        required: false
+        type: string
+      head_sha:
+        description: "PR head SHA for the check run (set by benchmark-trigger)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+
+env:
+  RUSTC_WRAPPER: sccache
+  SCCACHE_GHA_ENABLED: "true"
+
+jobs:
+  benchmark:
+    name: Run Rust benchmarks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tokenizers
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Mark check run in progress
+        if: inputs.check_run_id != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api "repos/${{ github.repository }}/check-runs/${{ inputs.check_run_id }}" \
+            -X PATCH \
+            -f "status=in_progress" \
+            -f "output[title]=Benchmarks running" \
+            -f "output[summary]=Compiling and running benchmarks..."
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Download benchmark data
+        run: uvx --from huggingface_hub hf download hf-internal-testing/tokenizers-bench-data --repo-type dataset --local-dir data
+
+      # Download saved criterion baseline from HF Hub (if exists)
+      - name: Download criterion baseline
+        run: |
+          uvx --from huggingface_hub hf download hf-internal-testing/tokenizers-bench \
+            criterion-baseline.tar.gz --repo-type dataset --local-dir /tmp/baseline 2>/dev/null || true
+          if [ -f /tmp/baseline/criterion-baseline.tar.gz ]; then
+            mkdir -p target/criterion
+            tar -xzf /tmp/baseline/criterion-baseline.tar.gz -C target/criterion
+            echo "Restored criterion baseline"
+          else
+            echo "No criterion baseline found"
+          fi
+
+      # On push to main: save as the new baseline
+      # On workflow_dispatch (PR): compare against the saved baseline
+      - name: Run benchmarks (save baseline)
+        if: github.event_name == 'push'
+        run: |
+          cargo bench --bench ci_benchmark -- \
+            --save-baseline main \
+            --output-format bencher | tee output.txt
+
+      - name: Run benchmarks (compare against baseline)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          cargo bench --bench ci_benchmark -- \
+            --baseline main \
+            --output-format bencher | tee output.txt
+
+      # Export criterion artifacts to HF Hub (main only)
+      - name: Upload criterion baseline to HF Hub
+        if: github.event_name == 'push' && env.HF_TOKEN != ''
+        continue-on-error: true
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          # Tar up the criterion data for the ci_benchmark
+          tar -czf /tmp/criterion-baseline.tar.gz -C target/criterion .
+          uvx --from huggingface_hub hf upload hf-internal-testing/tokenizers-bench \
+            /tmp/criterion-baseline.tar.gz criterion-baseline.tar.gz --repo-type dataset
+          # Also store the bencher text output
+          cp output.txt "output-${{ github.sha }}.txt"
+          uvx --from huggingface_hub hf upload hf-internal-testing/tokenizers-bench \
+            output.txt baseline.txt --repo-type dataset
+          uvx --from huggingface_hub hf upload hf-internal-testing/tokenizers-bench \
+            "output-${{ github.sha }}.txt" "history/output-${{ github.sha }}.txt" --repo-type dataset
+
+      # Export criterion HTML report as artifact for easy inspection
+      - name: Upload criterion report
+        if: always() && hashFiles('tokenizers/target/criterion') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: criterion-report
+          path: tokenizers/target/criterion/**/report/
+          retention-days: 30
+
+      # Build PNG comparison chart and upload to HF Hub for embedding
+      - name: Build comparison chart
+        if: hashFiles('tokenizers/output.txt') != ''
+        id: compare
+        run: |
+          uvx --from huggingface_hub hf download hf-internal-testing/tokenizers-bench \
+            baseline.txt --repo-type dataset --local-dir /tmp/prev_baseline 2>/dev/null || true
+
+          if [ ! -f /tmp/prev_baseline/baseline.txt ]; then
+            echo "No previous baseline found — skipping comparison"
+            echo "has_comparison=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "has_comparison=true" >> "$GITHUB_OUTPUT"
+
+          uvx --with cairosvg python ${{ github.workspace }}/.github/scripts/render_bench_svg.py \
+            --baseline /tmp/prev_baseline/baseline.txt \
+            --current output.txt \
+            --output rust_bench.png \
+            --title "Rust Benchmarks — ${{ github.sha }}"
+
+      - name: Upload chart to HF Hub
+        if: steps.compare.outputs.has_comparison == 'true' && env.HF_TOKEN != ''
+        continue-on-error: true
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        working-directory: tokenizers
+        run: |
+          uvx --from huggingface_hub hf upload hf-internal-testing/tokenizers-bench \
+            rust_bench.png "charts/rust-${{ github.sha }}.png" --repo-type dataset
+
+      - name: Upload chart artifact
+        if: steps.compare.outputs.has_comparison == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-bench-chart
+          path: tokenizers/rust_bench.png
+          retention-days: 30
+
+      - name: Post Rust results to PR
+        if: inputs.pr_number != '' && steps.compare.outputs.has_comparison == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        working-directory: tokenizers
+        run: |
+          img_url="https://huggingface.co/datasets/hf-internal-testing/tokenizers-bench/resolve/main/charts/rust-${{ github.sha }}.png"
+
+          {
+            echo "## Rust Benchmark Results"
+            echo ""
+            echo "Commit: \`${{ github.sha }}\`"
+            echo ""
+            echo "![Rust Benchmarks]($img_url)"
+          } > comparison.md
+
+          existing=$(gh api "repos/${{ github.repository }}/issues/${{ inputs.pr_number }}/comments" \
+            --jq '.[] | select(.body | startswith("## Rust Benchmark Results")) | .id' | head -1)
+
+          if [ -n "$existing" ]; then
+            gh api "repos/${{ github.repository }}/issues/comments/$existing" \
+              -X PATCH -F "body=@comparison.md"
+          else
+            gh pr comment "${{ inputs.pr_number }}" --body-file comparison.md
+          fi
+
+      # Update the check run on the PR with final results
+      - name: Complete check run (success)
+        if: always() && inputs.check_run_id != '' && !failure() && !cancelled()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api "repos/${{ github.repository }}/check-runs/${{ inputs.check_run_id }}" \
+            -X PATCH \
+            -f "status=completed" \
+            -f "conclusion=success" \
+            -f "output[title]=Benchmarks passed" \
+            -F "output[summary]=@tokenizers/comparison.md" 2>/dev/null || \
+          gh api "repos/${{ github.repository }}/check-runs/${{ inputs.check_run_id }}" \
+            -X PATCH \
+            -f "status=completed" \
+            -f "conclusion=success" \
+            -f "output[title]=Benchmarks passed" \
+            -f "output[summary]=Benchmarks completed. See workflow run for details."
+
+      - name: Complete check run (failure)
+        if: always() && inputs.check_run_id != '' && (failure() || cancelled())
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api "repos/${{ github.repository }}/check-runs/${{ inputs.check_run_id }}" \
+            -X PATCH \
+            -f "status=completed" \
+            -f "conclusion=failure" \
+            -f "output[title]=Benchmarks failed" \
+            -f "output[summary]=Benchmark workflow failed or was cancelled. Check the workflow run for details."
+
+  benchmark-python:
+    name: Run Python benchmarks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Download benchmark data
+        run: uvx --from huggingface_hub hf download hf-internal-testing/tokenizers-bench-data --repo-type dataset --local-dir tokenizers/data
+
+      - name: Install Python bindings + benchmark deps
+        working-directory: bindings/python
+        run: |
+          uv venv .venv
+          source .venv/bin/activate
+          uv pip install maturin pytest pytest-benchmark
+          maturin develop --release --manifest-path Cargo.toml
+          echo "$VIRTUAL_ENV/bin" >> "$GITHUB_PATH"
+
+      - name: Run Python benchmarks
+        working-directory: bindings/python
+        run: |
+          source .venv/bin/activate
+          python -m pytest tests/test_benchmarks.py \
+            --benchmark-json=bench_output.json \
+            --benchmark-min-rounds=15 \
+            --benchmark-columns=mean,stddev,rounds \
+            --benchmark-sort=name \
+            -v
+
+      # Upload as artifact for easy download
+      - name: Upload Python benchmark results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-benchmark-results
+          path: bindings/python/bench_output.json
+          retention-days: 30
+
+      # Compare against saved baseline
+      - name: Compare Python results with baseline
+        id: py_compare
+        working-directory: bindings/python
+        run: |
+          source .venv/bin/activate
+          uvx --from huggingface_hub hf download hf-internal-testing/tokenizers-bench \
+            python-baseline.json --repo-type dataset --local-dir baseline_dir 2>/dev/null || true
+
+          if [ ! -f baseline_dir/python-baseline.json ]; then
+            echo "No previous Python baseline found — skipping comparison"
+            echo "has_comparison=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "has_comparison=true" >> "$GITHUB_OUTPUT"
+
+          uvx --with cairosvg python ${{ github.workspace }}/.github/scripts/render_bench_svg.py \
+            --baseline-json baseline_dir/python-baseline.json \
+            --current-json bench_output.json \
+            --output python_bench.png \
+            --title "Python Benchmarks — ${{ github.sha }}"
+
+      - name: Upload Python chart to HF Hub
+        if: steps.py_compare.outputs.has_comparison == 'true' && env.HF_TOKEN != ''
+        continue-on-error: true
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        working-directory: bindings/python
+        run: |
+          source .venv/bin/activate
+          uvx --from huggingface_hub hf upload hf-internal-testing/tokenizers-bench \
+            python_bench.png "charts/python-${{ github.sha }}.png" --repo-type dataset
+
+      - name: Upload chart artifact
+        if: steps.py_compare.outputs.has_comparison == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-bench-chart
+          path: bindings/python/python_bench.png
+          retention-days: 30
+
+      # Upload baseline on push to main only
+      - name: Upload Python baseline to HF Hub
+        if: github.event_name == 'push' && env.HF_TOKEN != ''
+        continue-on-error: true
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        working-directory: bindings/python
+        run: |
+          source .venv/bin/activate
+          cp bench_output.json "python-output-${{ github.sha }}.json"
+          uvx --from huggingface_hub hf upload hf-internal-testing/tokenizers-bench \
+            bench_output.json python-baseline.json --repo-type dataset
+          uvx --from huggingface_hub hf upload hf-internal-testing/tokenizers-bench \
+            "python-output-${{ github.sha }}.json" "history/python-output-${{ github.sha }}.json" --repo-type dataset
+
+      - name: Post Python results to PR
+        if: inputs.pr_number != '' && steps.py_compare.outputs.has_comparison == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        working-directory: bindings/python
+        run: |
+          img_url="https://huggingface.co/datasets/hf-internal-testing/tokenizers-bench/resolve/main/charts/python-${{ github.sha }}.png"
+
+          {
+            echo "## Python Benchmark Results"
+            echo ""
+            echo "Commit: \`${{ github.sha }}\`"
+            echo ""
+            echo "![Python Benchmarks]($img_url)"
+          } > py_comparison.md
+
+          existing=$(gh api "repos/${{ github.repository }}/issues/${{ inputs.pr_number }}/comments" \
+            --jq '.[] | select(.body | startswith("## Python Benchmark Results")) | .id' | head -1)
+
+          if [ -n "$existing" ]; then
+            gh api "repos/${{ github.repository }}/issues/comments/$existing" \
+              -X PATCH -F "body=@py_comparison.md"
+          else
+            gh pr comment "${{ inputs.pr_number }}" --body-file py_comparison.md
+          fi

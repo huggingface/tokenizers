@@ -152,11 +152,11 @@ export interface JsFromPretrainedParameters {
 export function slice(s: string, beginIndex?: number | undefined | null, endIndex?: number | undefined | null): string
 export function mergeEncodings(encodings: Array<Encoding>, growingOffsets?: boolean | undefined | null): Encoding
 /** Decoder */
-export class Decoder {
+export declare class Decoder {
   decode(tokens: Array<string>): string
 }
 export type JsEncoding = Encoding
-export class Encoding {
+export declare class Encoding {
   constructor()
   getLength(): number
   getNSequences(): number
@@ -183,41 +183,41 @@ export class Encoding {
   getSequenceIds(): Array<number | undefined | null>
   tokenToSequence(token: number): number | null
 }
-export class Model {}
+export declare class Model {}
 export type Bpe = BPE
-export class BPE {
+export declare class BPE {
   static empty(): Model
-  static init(vocab: Vocab, merges: Merges, options?: BpeOptions | undefined | null): Model
+  static init(vocab: Record<string, number>, merges: Merges, options?: BpeOptions | undefined | null): Model
   static fromFile(vocab: string, merges: string, options?: BpeOptions | undefined | null): Promise<Model>
 }
-export class WordPiece {
-  static init(vocab: Vocab, options?: WordPieceOptions | undefined | null): Model
+export declare class WordPiece {
+  static init(vocab: Record<string, number>, options?: WordPieceOptions | undefined | null): Model
   static empty(): WordPiece
   static fromFile(vocab: string, options?: WordPieceOptions | undefined | null): Promise<Model>
 }
-export class WordLevel {
-  static init(vocab: Vocab, options?: WordLevelOptions | undefined | null): Model
+export declare class WordLevel {
+  static init(vocab: Record<string, number>, options?: WordLevelOptions | undefined | null): Model
   static empty(): WordLevel
   static fromFile(vocab: string, options?: WordLevelOptions | undefined | null): Promise<Model>
 }
-export class Unigram {
+export declare class Unigram {
   static init(vocab: Array<[string, number]>, options?: UnigramOptions | undefined | null): Model
   static empty(): Model
 }
 /** Normalizer */
-export class Normalizer {
+export declare class Normalizer {
   normalizeString(sequence: string): string
 }
 /** PreTokenizers */
-export class PreTokenizer {
+export declare class PreTokenizer {
   preTokenizeString(sequence: string): [string, [number, number]][]
 }
-export class Processor {}
-export class AddedToken {
+export declare class Processor {}
+export declare class AddedToken {
   constructor(token: string, isSpecial: boolean, options?: AddedTokenOptions | undefined | null)
   getContent(): string
 }
-export class Tokenizer {
+export declare class Tokenizer {
   constructor(model: Model)
   setPreTokenizer(preTokenizer: PreTokenizer): void
   setDecoder(decoder: Decoder): void
@@ -258,4 +258,4 @@ export class Tokenizer {
     addSpecialTokens?: boolean | undefined | null,
   ): Encoding
 }
-export class Trainer {}
+export declare class Trainer {}

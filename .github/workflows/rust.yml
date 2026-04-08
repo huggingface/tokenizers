@@ -16,10 +16,10 @@ jobs:
         os: [ubuntu-latest, windows-latest, macOS-latest]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
       - name: Install Rust Stable
-        uses: actions-rs/toolchain@v1
+        uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af  # v1
         with:
           toolchain: stable
           components: rustfmt, clippy
@@ -29,39 +29,42 @@ jobs:
       - if: matrix.os == 'ubuntu-latest'
         run: sudo chown -R $(whoami):$(id -ng) ~/.cargo/
 
+      - name: Cache cargo registry / git / target
+        uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc  # v2.9.1
+        with:
+          workspaces: tokenizers
+
       - name: Install cargo-readme for Ubuntu
         if: matrix.os == 'ubuntu-latest'
-        uses: actions-rs/cargo@v1
+        uses: taiki-e/install-action@74e87cbfa15a59692b158178d8905a61bf6fca95  # v2.75.20
         with:
-          command: install
-          args: cargo-readme
+          tool: cargo-readme
 
-      - name: Install audit
-        uses: actions-rs/cargo@v1
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@74e87cbfa15a59692b158178d8905a61bf6fca95  # v2.75.20
         with:
-          command: install
-          args: cargo-audit
+          tool: cargo-audit
 
       - name: Build
-        uses: actions-rs/cargo@v1
+        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505  # v1
         with:
           command: build
           args: --all-targets --verbose --manifest-path ./tokenizers/Cargo.toml
 
       - name: Lint with RustFmt
-        uses: actions-rs/cargo@v1
+        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505  # v1
         with:
           command: fmt
           args: --manifest-path ./tokenizers/Cargo.toml -- --check
 
       - name: Lint Benchmarks with RustFmt
-        uses: actions-rs/cargo@v1
+        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505  # v1
         with:
           command: fmt
           args: --manifest-path ./tokenizers/Cargo.toml -- ./tokenizers/benches/bpe_benchmark.rs --check
 
       - name: Lint with Clippy
-        uses: actions-rs/cargo@v1
+        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505  # v1
         with:
           command: clippy
           args: --manifest-path ./tokenizers/Cargo.toml --all-targets --all-features -- -D warnings
@@ -75,23 +78,20 @@ jobs:
       # Skip integration tests for now on Windows
       - name: Run lib Tests on Windows
         if: matrix.os == 'windows-latest'
-        uses: actions-rs/cargo@v1
+        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505  # v1
         with:
           command: test
           args: --verbose --manifest-path ./tokenizers/Cargo.toml --lib
 
       - name: Run doc Tests on Windows
         if: matrix.os == 'windows-latest'
-        uses: actions-rs/cargo@v1
+        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505  # v1
         with:
           command: test
           args: --verbose --manifest-path ./tokenizers/Cargo.toml --doc
 
-      - name: Install cargo-audit
-        run: cargo install cargo-audit
-
       - name: Run Audit
-        uses: actions-rs/cargo@v1
+        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505  # v1
         with:
           command: audit
           args: -D warnings -f ./tokenizers/Cargo.lock --ignore RUSTSEC-2024-0436 --ignore RUSTSEC-2025-0014 --ignore RUSTSEC-2025-0119
@@ -105,6 +105,6 @@ jobs:
 
       - name: Check semver
         if: matrix.os == 'ubuntu-latest'
-        uses: obi1kenobi/cargo-semver-checks-action@v2
+        uses: obi1kenobi/cargo-semver-checks-action@5b298c9520f7096a4683c0bd981a7ac5a7e249ae  # v2
         with:
           manifest-path: ./tokenizers/Cargo.toml
