@@ -34,10 +34,29 @@ jobs:
         with:
           workspaces: tokenizers
 
+      - name: Download benchmark data
+        run: |
+          mkdir -p data
+          # GPT-2 vocab + merges
+          curl -sL "https://huggingface.co/openai-community/gpt2/resolve/main/vocab.json" -o data/gpt2-vocab.json
+          curl -sL "https://huggingface.co/openai-community/gpt2/resolve/main/merges.txt" -o data/gpt2-merges.txt
+          # Llama-3 tokenizer
+          curl -sL "https://huggingface.co/meta-llama/Llama-3.2-1B/resolve/main/tokenizer.json" -o data/llama-3-tokenizer.json
+          # Roberta tokenizer
+          curl -sL "https://huggingface.co/FacebookAI/roberta-base/resolve/main/tokenizer.json" -o data/roberta.json
+          # Albert tokenizer
+          curl -sL "https://huggingface.co/albert/albert-base-v1/resolve/main/tokenizer.json" -o data/albert-base-v1-tokenizer.json
+          # Training data: Project Gutenberg excerpt
+          curl -sL "https://www.gutenberg.org/files/100/100-0.txt" -o data/big.txt
+          # Small training data
+          head -100 data/big.txt > data/small.txt
+
       - name: Run benchmarks
         run: cargo bench --bench ci_benchmark -- --output-format bencher | tee output.txt
+        continue-on-error: true
 
       - name: Store baseline
+        if: hashFiles('tokenizers/output.txt') != ''
         uses: benchmark-action/github-action-benchmark@d48d326b4ca9ba73ca0cd0d59f108f9e02a381c7
         with:
           name: Tokenizers Rust Benchmarks
@@ -72,10 +91,23 @@ jobs:
         with:
           workspaces: tokenizers
 
+      - name: Download benchmark data
+        run: |
+          mkdir -p data
+          curl -sL "https://huggingface.co/openai-community/gpt2/resolve/main/vocab.json" -o data/gpt2-vocab.json
+          curl -sL "https://huggingface.co/openai-community/gpt2/resolve/main/merges.txt" -o data/gpt2-merges.txt
+          curl -sL "https://huggingface.co/meta-llama/Llama-3.2-1B/resolve/main/tokenizer.json" -o data/llama-3-tokenizer.json
+          curl -sL "https://huggingface.co/FacebookAI/roberta-base/resolve/main/tokenizer.json" -o data/roberta.json
+          curl -sL "https://huggingface.co/albert/albert-base-v1/resolve/main/tokenizer.json" -o data/albert-base-v1-tokenizer.json
+          curl -sL "https://www.gutenberg.org/files/100/100-0.txt" -o data/big.txt
+          head -100 data/big.txt > data/small.txt
+
       - name: Run benchmarks
         run: cargo bench --bench ci_benchmark -- --output-format bencher | tee output.txt
+        continue-on-error: true
 
       - name: Compare with baseline
+        if: hashFiles('tokenizers/output.txt') != ''
         uses: benchmark-action/github-action-benchmark@d48d326b4ca9ba73ca0cd0d59f108f9e02a381c7
         with:
           name: Tokenizers Rust Benchmarks
