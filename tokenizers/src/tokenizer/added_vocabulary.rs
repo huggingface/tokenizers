@@ -347,22 +347,10 @@ impl AddedVocabulary {
         self.split_normalized_trie = if normalized_pairs.is_empty() {
             None
         } else {
-            // Normalize each content string, collecting owned NormalizedStrings so
-            // the &str references remain valid when we hand them to the builder.
-            let normalized_strings: Vec<(NormalizedString, u32)> = normalized_pairs
-                .iter()
-                .map(|(content, id, _)| {
-                    let mut ns = NormalizedString::from(*content);
-                    if let Some(n) = normalizer {
-                        n.normalize(&mut ns).unwrap();
-                    }
-                    (ns, *id)
-                })
-                .collect();
             Some(
                 DoubleArrayAhoCorasickBuilder::new()
                     .match_kind(MatchKind::LeftmostLongest)
-                    .build_with_values(normalized_strings.iter().map(|(ns, id)| (ns.get(), *id)))
+                    .build_with_values(normalized_pairs.iter().map(|(content, id, _)| (*content, *id)))
                     .expect("Failed to build trie when refreshing tokens (normalized)"),
             )
         };
