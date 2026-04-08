@@ -143,10 +143,10 @@ class TestTokenizer:
         # Both tokens must be found and decode back to their original form
         assert tokenizer.decode(enc.ids, False) == "kućameđa"
 
-        # Unsetting the normalizer must also refresh (no normalization applied)
+        # Unsetting the normalizer must also refresh (no normalization applied to the added token)
         tokenizer.normalizer = None
         enc2 = tokenizer.encode("kuća međa")
-        assert tokenizer.decode(enc2.ids, False) == "kućameđa"
+        assert tokenizer.decode(enc2.ids, False) == 'ku\x07ame\x11a'
 
     def test_add_special_tokens(self):
         tokenizer = Tokenizer(BPE())

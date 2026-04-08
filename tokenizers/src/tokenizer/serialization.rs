@@ -7,7 +7,10 @@ use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
 };
 
-use super::{added_vocabulary::{AddedToken, AddedTokenWithId}, TokenizerImpl};
+use super::{
+    added_vocabulary::{AddedToken, AddedTokenWithId},
+    TokenizerImpl,
+};
 use crate::{Decoder, Model, Normalizer, PostProcessor, PreTokenizer, TokenizerBuilder};
 
 static SERIALIZATION_VERSION: &str = "1.0";

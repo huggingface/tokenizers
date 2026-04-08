@@ -323,7 +323,11 @@ impl AddedVocabulary {
                     let mut s = NormalizedString::from(token.content.as_ref());
                     n.normalize(&mut s).unwrap();
                     let normed = s.get().to_string();
-                    if normed != token.content { Some(normed) } else { None }
+                    if normed != token.content {
+                        Some(normed)
+                    } else {
+                        None
+                    }
                 }) {
                     self.normalized_cache.insert(new_id, norm);
                 }
@@ -1087,7 +1091,10 @@ mod tests {
         let normalizer = Lowercase;
 
         vocab.add_tokens(
-            [AddedToken::from("Hello", false), AddedToken::from("[CLS]", true)],
+            [
+                AddedToken::from("Hello", false),
+                AddedToken::from("[CLS]", true),
+            ],
             &model,
             Some(&normalizer),
         );
