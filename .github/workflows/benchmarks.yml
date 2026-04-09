@@ -47,20 +47,7 @@ jobs:
       - name: Run benchmarks
         run: cargo bench --bench ci_benchmark -- --output-format bencher | tee output.txt
 
-      # Upload results to HF Hub as the new baseline (requires HF_TOKEN secret)
-      - name: Upload baseline to HF Hub
-        if: hashFiles('tokenizers/output.txt') != '' && env.HF_TOKEN != ''
-        continue-on-error: true
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: |
-          cp output.txt "output-${{ github.sha }}.txt"
-          uvx --from huggingface_hub hf upload hf-internal-testing/tokenizers-bench \
-            output.txt baseline.txt --repo-type dataset
-          uvx --from huggingface_hub hf upload hf-internal-testing/tokenizers-bench \
-            "output-${{ github.sha }}.txt" "history/output-${{ github.sha }}.txt" --repo-type dataset
-
-      # Download previous baseline and compare
+      # Compare BEFORE uploading so we diff against the previous baseline
       - name: Compare with baseline
         if: hashFiles('tokenizers/output.txt') != ''
         id: compare
@@ -117,6 +104,20 @@ jobs:
 
           cat comparison.md
 
+      # Upload AFTER comparison so we don't overwrite the baseline we just diffed against
+      - name: Upload Rust baseline to HF Hub
+        if: hashFiles('tokenizers/output.txt') != '' && env.HF_TOKEN != ''
+        continue-on-error: true
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        working-directory: tokenizers
+        run: |
+          cp output.txt "output-${{ github.sha }}.txt"
+          uvx --from huggingface_hub hf upload hf-internal-testing/tokenizers-bench \
+            output.txt baseline.txt --repo-type dataset
+          uvx --from huggingface_hub hf upload hf-internal-testing/tokenizers-bench \
+            "output-${{ github.sha }}.txt" "history/output-${{ github.sha }}.txt" --repo-type dataset
+
       # Post comparison as PR comment when triggered via workflow_dispatch
       - name: Post Rust results to PR
         if: inputs.pr_number != '' && steps.compare.outputs.has_comparison == 'true'
@@ -171,20 +172,7 @@ jobs:
             --benchmark-sort=name \
             -v
 
-      - name: Upload Python baseline to HF Hub
-        if: env.HF_TOKEN != ''
-        continue-on-error: true
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        working-directory: bindings/python
-        run: |
-          source .venv/bin/activate
-          cp bench_output.json "python-output-${{ github.sha }}.json"
-          uvx --from huggingface_hub hf upload hf-internal-testing/tokenizers-bench \
-            bench_output.json python-baseline.json --repo-type dataset
-          uvx --from huggingface_hub hf upload hf-internal-testing/tokenizers-bench \
-            "python-output-${{ github.sha }}.json" "history/python-output-${{ github.sha }}.json" --repo-type dataset
-
+      # Compare BEFORE uploading so we diff against the previous baseline
       - name: Compare Python results with baseline
         id: py_compare
         working-directory: bindings/python
@@ -233,6 +221,21 @@ jobs:
           with open('py_comparison.md', 'w') as f:
               f.write(md)
           "
+
+      # Upload AFTER comparison so we don't overwrite the baseline we just diffed against
+      - name: Upload Python baseline to HF Hub
+        if: env.HF_TOKEN != ''
+        continue-on-error: true
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        working-directory: bindings/python
+        run: |
+          source .venv/bin/activate
+          cp bench_output.json "python-output-${{ github.sha }}.json"
+          uvx --from huggingface_hub hf upload hf-internal-testing/tokenizers-bench \
+            bench_output.json python-baseline.json --repo-type dataset
+          uvx --from huggingface_hub hf upload hf-internal-testing/tokenizers-bench \
+            "python-output-${{ github.sha }}.json" "history/python-output-${{ github.sha }}.json" --repo-type dataset
 
       - name: Post Python results to PR
         if: inputs.pr_number != '' && steps.py_compare.outputs.has_comparison == 'true'
