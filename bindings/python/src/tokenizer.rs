@@ -1608,9 +1608,7 @@ impl PyTokenizer {
             })
             .collect::<PyResult<Vec<_>>>()?;
 
-        self.tokenizer
-            .add_tokens(tokens)
-            .map_err(|e| exceptions::PyException::new_err(e.to_string()))
+        ToPyResult(self.tokenizer.add_tokens(tokens)).into()
     }
 
     /// Add the given special tokens to the Tokenizer.
@@ -1647,9 +1645,7 @@ impl PyTokenizer {
             })
             .collect::<PyResult<Vec<_>>>()?;
 
-        self.tokenizer
-            .add_special_tokens(&tokens)
-            .map_err(|e| exceptions::PyException::new_err(e.to_string()))
+        ToPyResult(self.tokenizer.add_special_tokens(&tokens)).into()
     }
 
     /// Train the Tokenizer using the given files.
@@ -1812,10 +1808,7 @@ impl PyTokenizer {
     #[setter]
     fn set_normalizer(&mut self, normalizer: Option<PyRef<PyNormalizer>>) -> PyResult<()> {
         let normalizer_option = normalizer.map(|norm| norm.clone());
-        self.tokenizer
-            .with_normalizer(normalizer_option)
-            .map_err(|e| exceptions::PyException::new_err(e.to_string()))?;
-        Ok(())
+        ToPyResult(self.tokenizer.with_normalizer(normalizer_option).map(|_| ())).into()
     }
 
     /// The `optional` :class:`~tokenizers.pre_tokenizers.PreTokenizer` in use by the Tokenizer
