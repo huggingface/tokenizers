@@ -124,6 +124,12 @@
 //!
 //! # Features
 //!
+//! - **training**: Enables tokenizer training support (trainers, training methods). Enabled by default.
+//!   Disable this for inference-only deployments to significantly reduce binary size.
+//!
+//! - **spm**: Enables SentencePiece precompiled normalizer support. Enabled by default.
+//!   Disable this if you only use BPE-based tokenizers (GPT, Llama, etc.).
+//!
 //! - **progressbar**: The progress bar visualization is enabled by default. It might be disabled if
 //!   compilation for certain targets is not supported by the [termios](https://crates.io/crates/termios)
 //!   dependency of the [indicatif](https://crates.io/crates/indicatif) progress bar.
@@ -133,9 +139,6 @@
 
 #[macro_use]
 extern crate log;
-
-#[macro_use]
-extern crate derive_builder;
 
 #[macro_use]
 pub mod utils;

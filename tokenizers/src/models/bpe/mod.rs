@@ -1,8 +1,10 @@
 //! [Byte Pair Encoding](https://www.aclweb.org/anthology/P16-1162/) model.
+#[cfg(feature = "training")]
 use std::{iter, mem};
 
 mod model;
 mod serialization;
+#[cfg(feature = "training")]
 pub mod trainer;
 mod word;
 
@@ -35,11 +37,13 @@ pub enum Error {
     InvalidDropout,
 }
 
+#[cfg(feature = "training")]
 /// Provides access to the `FirstLastIterator` to any Iterator
 pub(crate) trait WithFirstLastIterator: Iterator + Sized {
     fn with_first_and_last(self) -> FirstLastIterator<Self>;
 }
 
+#[cfg(feature = "training")]
 impl<I> WithFirstLastIterator for I
 where
     I: Iterator,
@@ -52,6 +56,7 @@ where
     }
 }
 
+#[cfg(feature = "training")]
 /// Provides information about whether an item is the first and/or the last of the iterator
 pub(crate) struct FirstLastIterator<I>
 where
@@ -61,6 +66,7 @@ where
     iter: iter::Peekable<I>,
 }
 
+#[cfg(feature = "training")]
 impl<I> Iterator for FirstLastIterator<I>
 where
     I: Iterator,
@@ -78,5 +84,6 @@ where
 
 // Re-export
 pub use model::*;
+#[cfg(feature = "training")]
 pub use trainer::*;
 use word::*;

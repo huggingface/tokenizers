@@ -20,6 +20,7 @@ pub(crate) use indicatif::{ProgressBar, ProgressStyle};
 
 #[cfg(not(feature = "progressbar"))]
 mod progressbar {
+    #![allow(dead_code)]
     use std::borrow::Cow;
     pub struct ProgressBar;
     impl ProgressBar {
@@ -46,4 +47,5 @@ mod progressbar {
     }
 }
 #[cfg(not(feature = "progressbar"))]
+#[allow(unused_imports)]
 pub(crate) use progressbar::{ProgressBar, ProgressStyle};

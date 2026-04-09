@@ -1,5 +1,7 @@
 use dary_heap::QuaternaryHeap;
+#[cfg(feature = "training")]
 use rand::distr::weighted::WeightedIndex;
+#[cfg(feature = "training")]
 use rand::{prelude::*, rng};
 use std::cell::RefCell;
 use std::cmp::{min, Ordering};
@@ -377,6 +379,7 @@ impl<'a> Lattice<'a> {
         freq * z
     }
 
+    #[cfg(feature = "training")]
     pub fn sample(&self, theta: f64) -> Vec<NodeRef> {
         let len = self.len();
         if len == 0 {
@@ -422,6 +425,7 @@ impl<'a> Lattice<'a> {
         results
     }
 
+    #[cfg(feature = "training")]
     pub fn sample_token(&self, theta: f64) -> Vec<String> {
         self.sample(theta)
             .iter()
@@ -429,6 +433,7 @@ impl<'a> Lattice<'a> {
             .collect()
     }
 
+    #[cfg(feature = "training")]
     pub fn sample_nbest(&mut self, n: usize, theta: f64) -> Vec<NodeRef> {
         let nbest_paths = self.nbest(n);
         if nbest_paths.is_empty() {

@@ -1,6 +1,7 @@
 use super::Pair;
 use ahash::AHashMap;
 use dary_heap::QuaternaryHeap;
+#[cfg(feature = "training")]
 use rand::{rng, Rng};
 use std::cmp::Ordering;
 
@@ -75,6 +76,7 @@ impl std::fmt::Debug for Word {
 }
 
 impl Word {
+    #[cfg_attr(not(feature = "training"), allow(dead_code))]
     pub(super) fn new() -> Self {
         Word { symbols: vec![] }
     }
@@ -104,6 +106,7 @@ impl Word {
         });
     }
 
+    #[cfg_attr(not(feature = "training"), allow(dead_code))]
     pub(super) fn merge(
         &mut self,
         c1: u32,
@@ -178,7 +181,18 @@ impl Word {
         );
 
         while let Some(top) = queue.pop() {
-            if dropout.map(|d| rng().random::<f32>() < d).unwrap_or(false) {
+            let should_skip = {
+                #[cfg(feature = "training")]
+                {
+                    dropout.map(|d| rng().random::<f32>() < d).unwrap_or(false)
+                }
+                #[cfg(not(feature = "training"))]
+                {
+                    let _ = &dropout;
+                    false
+                }
+            };
+            if should_skip {
                 skip.push(top);
             } else {
                 // Re-insert the skipped elements
@@ -249,6 +263,7 @@ impl Word {
         self.symbols.retain(|s| s.len != 0);
     }
 
+    #[cfg_attr(not(feature = "training"), allow(dead_code))]
     pub(super) fn get_chars(&self) -> Vec<u32> {
         self.symbols.iter().map(|s| s.c).collect()
     }

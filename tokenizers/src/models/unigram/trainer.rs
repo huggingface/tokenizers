@@ -45,35 +45,105 @@ fn to_log_prob(pieces: &mut [SentencePiece]) {
 
 /// A `UnigramTrainer` can train a `Unigram` model from `word_counts`.
 #[non_exhaustive]
-#[derive(Builder, Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UnigramTrainer {
-    #[builder(default = "true")]
     pub show_progress: bool,
-    #[builder(default = "8000")]
     pub vocab_size: u32,
-    #[builder(default = "2")]
     pub n_sub_iterations: u32,
-    #[builder(default = "0.75")]
     pub shrinking_factor: f64,
-    #[builder(default = "vec![]")]
     pub special_tokens: Vec<AddedToken>,
-    #[builder(default = "AHashSet::new()")]
     pub initial_alphabet: AHashSet<char>,
-
-    #[builder(default = "None")]
     pub unk_token: Option<String>,
-
-    #[builder(default = "16")]
     pub max_piece_length: usize,
-    #[builder(default = "1_000_000")]
     seed_size: usize,
-    #[builder(default = "AHashMap::new()")]
     words: AHashMap<String, u32>,
 }
 
 impl Default for UnigramTrainer {
     fn default() -> Self {
-        Self::builder().build().unwrap()
+        Self {
+            show_progress: true,
+            vocab_size: 8000,
+            n_sub_iterations: 2,
+            shrinking_factor: 0.75,
+            special_tokens: vec![],
+            initial_alphabet: AHashSet::new(),
+            unk_token: None,
+            max_piece_length: 16,
+            seed_size: 1_000_000,
+            words: AHashMap::new(),
+        }
+    }
+}
+
+/// Builder for `UnigramTrainer`.
+#[derive(Debug, Clone, Default)]
+pub struct UnigramTrainerBuilder {
+    show_progress: Option<bool>,
+    vocab_size: Option<u32>,
+    n_sub_iterations: Option<u32>,
+    shrinking_factor: Option<f64>,
+    special_tokens: Option<Vec<AddedToken>>,
+    initial_alphabet: Option<AHashSet<char>>,
+    unk_token: Option<Option<String>>,
+    max_piece_length: Option<usize>,
+    seed_size: Option<usize>,
+}
+
+impl UnigramTrainerBuilder {
+    pub fn show_progress(&mut self, show_progress: bool) -> &mut Self {
+        self.show_progress = Some(show_progress);
+        self
+    }
+    pub fn vocab_size(&mut self, vocab_size: u32) -> &mut Self {
+        self.vocab_size = Some(vocab_size);
+        self
+    }
+    pub fn n_sub_iterations(&mut self, n_sub_iterations: u32) -> &mut Self {
+        self.n_sub_iterations = Some(n_sub_iterations);
+        self
+    }
+    pub fn shrinking_factor(&mut self, shrinking_factor: f64) -> &mut Self {
+        self.shrinking_factor = Some(shrinking_factor);
+        self
+    }
+    pub fn special_tokens(&mut self, special_tokens: Vec<AddedToken>) -> &mut Self {
+        self.special_tokens = Some(special_tokens);
+        self
+    }
+    pub fn initial_alphabet(&mut self, initial_alphabet: AHashSet<char>) -> &mut Self {
+        self.initial_alphabet = Some(initial_alphabet);
+        self
+    }
+    pub fn unk_token(&mut self, unk_token: Option<String>) -> &mut Self {
+        self.unk_token = Some(unk_token);
+        self
+    }
+    pub fn max_piece_length(&mut self, max_piece_length: usize) -> &mut Self {
+        self.max_piece_length = Some(max_piece_length);
+        self
+    }
+    pub fn seed_size(&mut self, seed_size: usize) -> &mut Self {
+        self.seed_size = Some(seed_size);
+        self
+    }
+    pub fn build(&self) -> Result<UnigramTrainer> {
+        let default = UnigramTrainer::default();
+        Ok(UnigramTrainer {
+            show_progress: self.show_progress.unwrap_or(default.show_progress),
+            vocab_size: self.vocab_size.unwrap_or(default.vocab_size),
+            n_sub_iterations: self.n_sub_iterations.unwrap_or(default.n_sub_iterations),
+            shrinking_factor: self.shrinking_factor.unwrap_or(default.shrinking_factor),
+            special_tokens: self.special_tokens.clone().unwrap_or(default.special_tokens),
+            initial_alphabet: self
+                .initial_alphabet
+                .clone()
+                .unwrap_or(default.initial_alphabet),
+            unk_token: self.unk_token.clone().unwrap_or(default.unk_token),
+            max_piece_length: self.max_piece_length.unwrap_or(default.max_piece_length),
+            seed_size: self.seed_size.unwrap_or(default.seed_size),
+            words: AHashMap::new(),
+        })
     }
 }
 

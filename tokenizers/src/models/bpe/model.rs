@@ -1,4 +1,6 @@
-use super::{super::OrderedVocabIter, trainer::BpeTrainer, Error, Pair, Word};
+use super::{super::OrderedVocabIter, Error, Pair, Word};
+#[cfg(feature = "training")]
+use super::trainer::BpeTrainer;
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::cache::{Cache, DEFAULT_CACHE_CAPACITY, MAX_LENGTH};
 use crate::utils::iter::ResultShunt;
@@ -497,6 +499,7 @@ impl BPE {
 }
 
 impl Model for BPE {
+    #[cfg(feature = "training")]
     type Trainer = BpeTrainer;
 
     fn get_vocab(&self) -> HashMap<String, u32> {
@@ -572,6 +575,7 @@ impl Model for BPE {
         Ok(vec![vocab_path, merges_path])
     }
 
+    #[cfg(feature = "training")]
     fn get_trainer(&self) -> BpeTrainer {
         BpeTrainer::default()
     }

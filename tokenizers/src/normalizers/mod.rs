@@ -1,5 +1,6 @@
 pub mod bert;
 pub mod byte_level;
+#[cfg(feature = "spm")]
 pub mod precompiled;
 pub mod prepend;
 pub mod replace;
@@ -8,6 +9,7 @@ pub mod unicode;
 pub mod utils;
 pub use crate::normalizers::bert::BertNormalizer;
 pub use crate::normalizers::byte_level::ByteLevel;
+#[cfg(feature = "spm")]
 pub use crate::normalizers::precompiled::Precompiled;
 pub use crate::normalizers::prepend::Prepend;
 pub use crate::normalizers::replace::Replace;
@@ -32,6 +34,7 @@ pub enum NormalizerWrapper {
     Sequence(Sequence),
     Lowercase(Lowercase),
     Nmt(Nmt),
+    #[cfg(feature = "spm")]
     Precompiled(Precompiled),
     Replace(Replace),
     Prepend(Prepend),
@@ -88,7 +91,6 @@ impl<'de> Deserialize<'de> for NormalizerWrapper {
             Sequence(Sequence),
             Lowercase(Lowercase),
             Nmt(Nmt),
-            Precompiled(Precompiled),
             Replace(Replace),
             Prepend(Prepend),
             ByteLevel(ByteLevel),
@@ -135,13 +137,24 @@ impl<'de> Deserialize<'de> for NormalizerWrapper {
                     EnumType::Nmt => NormalizerWrapper::Nmt(
                         serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                     ),
-                    EnumType::Precompiled => NormalizerWrapper::Precompiled(
-                        serde_json::from_str(
-                            &serde_json::to_string(&values).expect("Can reserialize precompiled"),
-                        )
-                        // .map_err(serde::de::Error::custom)
-                        .expect("Precompiled"),
-                    ),
+                    EnumType::Precompiled => {
+                        #[cfg(feature = "spm")]
+                        {
+                            NormalizerWrapper::Precompiled(
+                                serde_json::from_str(
+                                    &serde_json::to_string(&values)
+                                        .expect("Can reserialize precompiled"),
+                                )
+                                .expect("Precompiled"),
+                            )
+                        }
+                        #[cfg(not(feature = "spm"))]
+                        {
+                            return Err(serde::de::Error::custom(
+                                "Precompiled normalizer requires the `spm` feature",
+                            ));
+                        }
+                    }
                     EnumType::Replace => NormalizerWrapper::Replace(
                         serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                     ),
@@ -171,7 +184,6 @@ impl<'de> Deserialize<'de> for NormalizerWrapper {
                     NormalizerUntagged::Sequence(seq) => NormalizerWrapper::Sequence(seq),
                     NormalizerUntagged::Lowercase(bpe) => NormalizerWrapper::Lowercase(bpe),
                     NormalizerUntagged::Nmt(bpe) => NormalizerWrapper::Nmt(bpe),
-                    NormalizerUntagged::Precompiled(bpe) => NormalizerWrapper::Precompiled(bpe),
                     NormalizerUntagged::Replace(bpe) => NormalizerWrapper::Replace(bpe),
                     NormalizerUntagged::Prepend(bpe) => NormalizerWrapper::Prepend(bpe),
                     NormalizerUntagged::ByteLevel(bpe) => NormalizerWrapper::ByteLevel(bpe),
@@ -194,6 +206,7 @@ impl Normalizer for NormalizerWrapper {
             Self::Sequence(sequence) => sequence.normalize(normalized),
             Self::Lowercase(lc) => lc.normalize(normalized),
             Self::Nmt(lc) => lc.normalize(normalized),
+            #[cfg(feature = "spm")]
             Self::Precompiled(lc) => lc.normalize(normalized),
             Self::Replace(lc) => lc.normalize(normalized),
             Self::Prepend(lc) => lc.normalize(normalized),
@@ -212,6 +225,7 @@ impl_enum_from!(StripAccents, NormalizerWrapper, StripAccents);
 impl_enum_from!(Sequence, NormalizerWrapper, Sequence);
 impl_enum_from!(Lowercase, NormalizerWrapper, Lowercase);
 impl_enum_from!(Nmt, NormalizerWrapper, Nmt);
+#[cfg(feature = "spm")]
 impl_enum_from!(Precompiled, NormalizerWrapper, Precompiled);
 impl_enum_from!(Replace, NormalizerWrapper, Replace);
 impl_enum_from!(Prepend, NormalizerWrapper, Prepend);

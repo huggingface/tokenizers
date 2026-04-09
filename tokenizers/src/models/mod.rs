@@ -11,11 +11,21 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::models::bpe::{BpeTrainer, BPE};
-use crate::models::unigram::{Unigram, UnigramTrainer};
-use crate::models::wordlevel::{WordLevel, WordLevelTrainer};
-use crate::models::wordpiece::{WordPiece, WordPieceTrainer};
-use crate::{AddedToken, Model, Result, Token, Trainer};
+use crate::models::bpe::BPE;
+#[cfg(feature = "training")]
+use crate::models::bpe::BpeTrainer;
+use crate::models::unigram::Unigram;
+#[cfg(feature = "training")]
+use crate::models::unigram::UnigramTrainer;
+use crate::models::wordlevel::WordLevel;
+#[cfg(feature = "training")]
+use crate::models::wordlevel::WordLevelTrainer;
+use crate::models::wordpiece::WordPiece;
+#[cfg(feature = "training")]
+use crate::models::wordpiece::WordPieceTrainer;
+use crate::{Model, Result, Token};
+#[cfg(feature = "training")]
+use crate::{AddedToken, Trainer};
 
 /// Wraps a vocab mapping (ID -> token) to a struct that will be serialized in order
 /// of token ID, smallest to largest.
@@ -141,6 +151,7 @@ impl_enum_from!(BPE, ModelWrapper, BPE);
 impl_enum_from!(Unigram, ModelWrapper, Unigram);
 
 impl Model for ModelWrapper {
+    #[cfg(feature = "training")]
     type Trainer = TrainerWrapper;
 
     fn tokenize(&self, tokens: &str) -> Result<Vec<Token>> {
@@ -197,6 +208,7 @@ impl Model for ModelWrapper {
         }
     }
 
+    #[cfg(feature = "training")]
     fn get_trainer(&self) -> Self::Trainer {
         match self {
             Self::WordLevel(t) => t.get_trainer().into(),
@@ -224,6 +236,7 @@ impl ModelWrapper {
     }
 }
 
+#[cfg(feature = "training")]
 #[derive(Clone, Serialize, Deserialize)]
 pub enum TrainerWrapper {
     BpeTrainer(BpeTrainer),
@@ -232,6 +245,7 @@ pub enum TrainerWrapper {
     UnigramTrainer(UnigramTrainer),
 }
 
+#[cfg(feature = "training")]
 impl Trainer for TrainerWrapper {
     type Model = ModelWrapper;
 
@@ -280,9 +294,13 @@ impl Trainer for TrainerWrapper {
     }
 }
 
+#[cfg(feature = "training")]
 impl_enum_from!(BpeTrainer, TrainerWrapper, BpeTrainer);
+#[cfg(feature = "training")]
 impl_enum_from!(WordPieceTrainer, TrainerWrapper, WordPieceTrainer);
+#[cfg(feature = "training")]
 impl_enum_from!(UnigramTrainer, TrainerWrapper, UnigramTrainer);
+#[cfg(feature = "training")]
 impl_enum_from!(WordLevelTrainer, TrainerWrapper, WordLevelTrainer);
 
 #[cfg(test)]

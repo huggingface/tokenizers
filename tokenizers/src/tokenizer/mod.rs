@@ -12,16 +12,20 @@
 use ahash::AHashMap;
 use std::{
     fs::{read_to_string, File},
-    io::{prelude::*, BufReader},
+    io::prelude::*,
     ops::{Deref, DerefMut},
     path::{Path, PathBuf},
 };
+#[cfg(feature = "training")]
+use std::io::BufReader;
 
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "training")]
 use crate::utils::iter::ResultShunt;
 use crate::utils::parallelism::*;
+#[cfg(feature = "training")]
 use crate::utils::progress::{ProgressBar, ProgressStyle};
 
 mod added_vocabulary;
@@ -68,6 +72,7 @@ pub trait PreTokenizer {
 
 /// Represents a model used during Tokenization (like BPE or Word or Unigram).
 pub trait Model {
+    #[cfg(feature = "training")]
     type Trainer: Trainer + Sync;
     /// Tokenize the given sequence into multiple underlying `Token`. The `offsets` on the `Token`
     /// are expected to be relative to the given sequence.
@@ -84,6 +89,7 @@ pub trait Model {
     /// files that need to be saved.
     fn save(&self, folder: &Path, prefix: Option<&str>) -> Result<Vec<PathBuf>>;
     /// Get an instance of a Trainer capable of training this Model
+    #[cfg(feature = "training")]
     fn get_trainer(&self) -> <Self as Model>::Trainer;
 }
 
@@ -160,6 +166,7 @@ pub trait Decoder {
 
 /// A `Trainer` has the responsibility to train a model. We feed it with lines/sentences
 /// and then it can train the given `Model`.
+#[cfg(feature = "training")]
 pub trait Trainer {
     type Model: Model + Sized;
     /// Whether we should show progress during the training.
@@ -1371,6 +1378,7 @@ where
     }
 
     /// Train our Model from files
+    #[cfg(feature = "training")]
     pub fn train_from_files<T>(&mut self, trainer: &mut T, files: Vec<String>) -> Result<&mut Self>
     where
         T: Trainer<Model = M> + Sync,
@@ -1392,9 +1400,15 @@ where
                         // We read new lines using this API instead of the Lines Iterator
                         // on purpose. We want to keep the `\n` and potential `\r` between each lines
                         // We use an iterator to be able to chain with par_bridge.
-                        itertools::Either::Left(file.lines_with_ending())
+                        let iter: Box<dyn Iterator<Item = std::io::Result<String>> + Send> =
+                            Box::new(file.lines_with_ending());
+                        iter
                     }
-                    Err(e) => itertools::Either::Right(std::iter::once(Err(e))),
+                    Err(e) => {
+                        let iter: Box<dyn Iterator<Item = std::io::Result<String>> + Send> =
+                            Box::new(std::iter::once(Err(e)));
+                        iter
+                    }
                 }
             }),
             |sequences| -> Result<()> {
@@ -1444,6 +1458,7 @@ where
     }
 
     /// Train our Model, using the given Trainer and iterator
+    #[cfg(feature = "training")]
     pub fn train<T, I, S>(&mut self, trainer: &mut T, sequences: I) -> Result<&mut Self>
     where
         T: Trainer<Model = M> + Sync,

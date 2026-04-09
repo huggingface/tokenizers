@@ -58,7 +58,6 @@
 //!
 use crate::{Encoding, PostProcessor, Result};
 use ahash::{AHashMap, AHashSet};
-use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::convert::{TryFrom, TryInto};
 use std::result::Result as StdResult;
@@ -333,21 +332,15 @@ impl From<AHashMap<String, SpecialToken>> for Tokens {
 ///     .unwrap();
 /// ```
 ///
-#[derive(Debug, Clone, PartialEq, Builder, Serialize, Deserialize, Eq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq)]
 #[serde(tag = "type", from = "TemplateProcessingDeserializer")]
-#[builder(build_fn(validate = "Self::validate"))]
 pub struct TemplateProcessing {
-    #[builder(try_setter, default = "\"$0\".try_into().unwrap()")]
     pub single: Template,
-    #[builder(try_setter, default = "\"$A:0 $B:1\".try_into().unwrap()")]
     pair: Template,
-    #[builder(setter(skip), default = "self.default_added(true)")]
     #[serde(skip)]
     added_single: usize,
-    #[builder(setter(skip), default = "self.default_added(false)")]
     #[serde(skip)]
     added_pair: usize,
-    #[builder(setter(into), default)]
     special_tokens: Tokens,
 }
 
@@ -405,7 +398,13 @@ impl TemplateProcessing {
 
 impl From<&str> for TemplateProcessingBuilderError {
     fn from(e: &str) -> Self {
-        e.to_string().into()
+        TemplateProcessingBuilderError(e.to_string())
+    }
+}
+
+impl From<String> for TemplateProcessingBuilderError {
+    fn from(e: String) -> Self {
+        TemplateProcessingBuilderError(e)
     }
 }
 
@@ -439,33 +438,54 @@ impl From<TemplateProcessingDeserializer> for TemplateProcessing {
     }
 }
 
-/// Count the number of added tokens in the given template
-fn count_added(container: &Template, special_tokens: Option<&Tokens>) -> usize {
-    container
-        .0
-        .iter()
-        .map(|p| match p {
-            Piece::Sequence { .. } => 0,
-            Piece::SpecialToken { id, .. } => {
-                special_tokens.map_or(0, |spt| spt.0.get(id).map_or(0, |s| s.ids.len()))
-            }
-        })
-        .sum()
+/// Error type for `TemplateProcessingBuilder`.
+#[derive(Debug, Clone)]
+pub struct TemplateProcessingBuilderError(String);
+
+impl std::fmt::Display for TemplateProcessingBuilderError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl std::error::Error for TemplateProcessingBuilderError {}
+
+/// Builder for `TemplateProcessing`.
+#[derive(Debug, Clone, Default)]
+pub struct TemplateProcessingBuilder {
+    single: Option<Template>,
+    pair: Option<Template>,
+    special_tokens: Option<Tokens>,
 }
 
 impl TemplateProcessingBuilder {
-    fn default_added(&self, is_single: bool) -> usize {
-        let container = if is_single {
-            self.single.as_ref()
-        } else {
-            self.pair.as_ref()
-        };
-        container.map_or(0, |pieces| {
-            count_added(pieces, self.special_tokens.as_ref())
-        })
+    /// Set the single template. Accepts anything that can be tried into a Template.
+    pub fn try_single<V>(&mut self, single: V) -> StdResult<&mut Self, V::Error>
+    where
+        V: TryInto<Template>,
+        V::Error: std::fmt::Debug,
+    {
+        self.single = Some(single.try_into()?);
+        Ok(self)
     }
 
-    fn validate(&self) -> std::result::Result<(), String> {
+    /// Set the pair template. Accepts anything that can be tried into a Template.
+    pub fn try_pair<V>(&mut self, pair: V) -> StdResult<&mut Self, V::Error>
+    where
+        V: TryInto<Template>,
+        V::Error: std::fmt::Debug,
+    {
+        self.pair = Some(pair.try_into()?);
+        Ok(self)
+    }
+
+    /// Set the special tokens.
+    pub fn special_tokens<V: Into<Tokens>>(&mut self, special_tokens: V) -> &mut Self {
+        self.special_tokens = Some(special_tokens.into());
+        self
+    }
+
+    fn validate(&self) -> StdResult<(), String> {
         let pair_has_both = self.pair.as_ref().is_none_or(|pair| {
             let mut has_a = false;
             let mut has_b = false;
@@ -516,12 +536,54 @@ impl TemplateProcessingBuilder {
         if missing.is_empty() {
             Ok(())
         } else {
+            let missing_str: Vec<&str> = missing.into_iter().collect();
             Err(format!(
                 "Missing SpecialToken(s) with id(s) `{}`",
-                missing.iter().join(", ")
+                missing_str.join(", ")
             ))
         }
     }
+
+    /// Build the `TemplateProcessing`, validating the configuration.
+    pub fn build(&self) -> StdResult<TemplateProcessing, TemplateProcessingBuilderError> {
+        self.validate()
+            .map_err(TemplateProcessingBuilderError::from)?;
+
+        let single = self
+            .single
+            .clone()
+            .unwrap_or_else(|| "$0".try_into().unwrap());
+        let pair = self
+            .pair
+            .clone()
+            .unwrap_or_else(|| "$A:0 $B:1".try_into().unwrap());
+        let special_tokens = self.special_tokens.clone().unwrap_or_default();
+
+        let added_single = count_added(&single, Some(&special_tokens));
+        let added_pair = count_added(&pair, Some(&special_tokens));
+
+        Ok(TemplateProcessing {
+            single,
+            pair,
+            added_single,
+            added_pair,
+            special_tokens,
+        })
+    }
+}
+
+/// Count the number of added tokens in the given template
+fn count_added(container: &Template, special_tokens: Option<&Tokens>) -> usize {
+    container
+        .0
+        .iter()
+        .map(|p| match p {
+            Piece::Sequence { .. } => 0,
+            Piece::SpecialToken { id, .. } => {
+                special_tokens.map_or(0, |spt| spt.0.get(id).map_or(0, |s| s.ids.len()))
+            }
+        })
+        .sum()
 }
 
 impl Default for TemplateProcessing {
