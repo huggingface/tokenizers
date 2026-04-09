@@ -1,7 +1,7 @@
 use crate::arc_rwlock_serde;
 use crate::tasks::models::{BPEFromFilesTask, WordLevelFromFilesTask, WordPieceFromFilesTask};
 use crate::trainers::Trainer;
-use ahash::AHashMap;
+use tokenizers::utils::AHashMap;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use serde::{Deserialize, Serialize};

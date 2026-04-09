@@ -1,6 +1,6 @@
 use std::iter::FromIterator;
 
-use ahash::AHashMap;
+use tokenizers::utils::AHashMap;
 use tokenizers::decoders::byte_fallback::ByteFallback;
 use tokenizers::models::bpe::{BpeTrainerBuilder, BPE};
 use tokenizers::normalizers::{Sequence, Strip, NFC};

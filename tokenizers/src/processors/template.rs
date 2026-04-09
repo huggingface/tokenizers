@@ -479,6 +479,18 @@ impl TemplateProcessingBuilder {
         Ok(self)
     }
 
+    /// Set the single template directly.
+    pub fn single(&mut self, single: Template) -> &mut Self {
+        self.single = Some(single);
+        self
+    }
+
+    /// Set the pair template directly.
+    pub fn pair(&mut self, pair: Template) -> &mut Self {
+        self.pair = Some(pair);
+        self
+    }
+
     /// Set the special tokens.
     pub fn special_tokens<V: Into<Tokens>>(&mut self, special_tokens: V) -> &mut Self {
         self.special_tokens = Some(special_tokens.into());

@@ -4,7 +4,7 @@ use std::sync::{Arc, RwLock};
 
 use crate::token::PyToken;
 use crate::trainers::PyTrainer;
-use ahash::AHashMap;
+use tk::utils::AHashMap;
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
