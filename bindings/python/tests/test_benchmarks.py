@@ -9,13 +9,13 @@ operations benchmarked on the Rust side.  Run with:
 Requires: pytest-benchmark, tokenizers (built with maturin develop --release)
 """
 
-import json
-import os
 import asyncio
 import concurrent.futures
 from pathlib import Path
 
 import pytest
+
+pytest.importorskip("pytest_benchmark")
 
 from tokenizers import Tokenizer, AddedToken
 from tokenizers.models import BPE
