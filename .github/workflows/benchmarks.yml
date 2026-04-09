@@ -2,7 +2,7 @@ name: Benchmarks
 
 on:
   push:
-    branches: [main, ci-benchmarks]  # TODO: remove ci-benchmarks before merge
+    branches: [main]
     paths:
       - "tokenizers/**"
       - "bindings/python/**"
