@@ -1,0 +1,46 @@
+name: Benchmark Trigger
+
+# A maintainer comments "/benchmark" on a PR to trigger benchmark comparison.
+# This workflow extracts the PR number and head SHA, then dispatches the
+# main Benchmarks workflow which runs on the PR's code and posts results
+# as a comment.
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  actions: write
+  pull-requests: read
+
+jobs:
+  trigger:
+    name: Trigger benchmarks
+    if: >-
+      github.event.issue.pull_request &&
+      contains(github.event.comment.body, '/benchmark') &&
+      github.event.comment.author_association == 'MEMBER' ||
+      github.event.comment.author_association == 'OWNER' ||
+      github.event.comment.author_association == 'COLLABORATOR'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get PR head SHA
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          pr_number=${{ github.event.issue.number }}
+          head_sha=$(gh api "repos/${{ github.repository }}/pulls/$pr_number" --jq '.head.sha')
+          head_ref=$(gh api "repos/${{ github.repository }}/pulls/$pr_number" --jq '.head.ref')
+          echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
+          echo "head_sha=$head_sha" >> "$GITHUB_OUTPUT"
+          echo "head_ref=$head_ref" >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch benchmark workflow
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run benchmarks.yml \
+            --repo "${{ github.repository }}" \
+            --ref "${{ steps.pr.outputs.head_ref }}" \
+            -f pr_number="${{ steps.pr.outputs.pr_number }}"

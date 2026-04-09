@@ -104,9 +104,9 @@ jobs:
 
           cat comparison.md
 
-      # Upload AFTER comparison so we don't overwrite the baseline we just diffed against
+      # Only update baseline on push to main — never on workflow_dispatch (PR runs)
       - name: Upload Rust baseline to HF Hub
-        if: hashFiles('tokenizers/output.txt') != '' && env.HF_TOKEN != ''
+        if: github.event_name == 'push' && hashFiles('tokenizers/output.txt') != '' && env.HF_TOKEN != ''
         continue-on-error: true
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
@@ -222,9 +222,9 @@ jobs:
               f.write(md)
           "
 
-      # Upload AFTER comparison so we don't overwrite the baseline we just diffed against
+      # Only update baseline on push to main — never on workflow_dispatch (PR runs)
       - name: Upload Python baseline to HF Hub
-        if: env.HF_TOKEN != ''
+        if: github.event_name == 'push' && env.HF_TOKEN != ''
         continue-on-error: true
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
