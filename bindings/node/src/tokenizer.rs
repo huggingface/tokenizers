@@ -235,12 +235,14 @@ impl Tokenizer {
   }
 
   #[napi]
-  pub fn set_normalizer(&mut self, normalizer: &Normalizer) {
+  pub fn set_normalizer(&mut self, normalizer: &Normalizer) -> Result<()> {
     self
       .tokenizer
       .write()
       .unwrap()
-      .with_normalizer(Some((*normalizer).clone()));
+      .with_normalizer(Some((*normalizer).clone()))
+      .map_err(|e| Error::from_reason(format!("{e}")))?;
+    Ok(())
   }
 
   #[napi]
@@ -255,21 +257,25 @@ impl Tokenizer {
   }
 
   #[napi]
-  pub fn add_added_tokens(&mut self, tokens: Vec<&AddedToken>) -> u32 {
+  pub fn add_added_tokens(&mut self, tokens: Vec<&AddedToken>) -> Result<u32> {
     let tokens: Vec<_> = tokens
       .into_iter()
       .map(|tok| (*tok).clone().into())
       .collect();
-    self.tokenizer.write().unwrap().add_tokens(tokens) as u32
+    self.tokenizer.write().unwrap().add_tokens(tokens)
+      .map(|n| n as u32)
+      .map_err(|e| Error::from_reason(format!("{e}")))
   }
 
   #[napi]
-  pub fn add_tokens(&mut self, tokens: Vec<String>) -> u32 {
+  pub fn add_tokens(&mut self, tokens: Vec<String>) -> Result<u32> {
     let tokens: Vec<_> = tokens
       .into_iter()
       .map(|tok| tk::AddedToken::from(tok, false))
       .collect();
-    self.tokenizer.write().unwrap().add_tokens(tokens) as u32
+    self.tokenizer.write().unwrap().add_tokens(tokens)
+      .map(|n| n as u32)
+      .map_err(|e| Error::from_reason(format!("{e}")))
   }
 
   #[napi(ts_return_type = "Promise<JsEncoding>")]
@@ -357,12 +363,14 @@ impl Tokenizer {
   }
 
   #[napi]
-  pub fn add_special_tokens(&mut self, tokens: Vec<String>) {
+  pub fn add_special_tokens(&mut self, tokens: Vec<String>) -> Result<()> {
     let tokens: Vec<_> = tokens
       .into_iter()
       .map(|s| tk::AddedToken::from(s, true))
       .collect();
-    self.tokenizer.write().unwrap().add_special_tokens(&tokens);
+    self.tokenizer.write().unwrap().add_special_tokens(&tokens)
+      .map(|_| ())
+      .map_err(|e| Error::from_reason(format!("{e}")))
   }
 
   #[napi]

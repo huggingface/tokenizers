@@ -4,13 +4,13 @@ use tokenizers::{normalizers::NormalizerWrapper, AddedToken, Tokenizer};
 fn main() {
     // Build tokenizer: t5-small base, strip its normalizer (None), 100_000 special added tokens
     let mut tokenizer = Tokenizer::from_pretrained("t5-small", None).unwrap();
-    tokenizer.with_normalizer(None::<NormalizerWrapper>);
+    tokenizer.with_normalizer(None::<NormalizerWrapper>).unwrap();
 
     let tokens: Vec<_> = (0..100_000)
         .map(|i| AddedToken::from(format!("tok{i}"), true))
         .collect();
 
-    std::hint::black_box(tokenizer.add_tokens(tokens));
+    std::hint::black_box(tokenizer.add_tokens(tokens).unwrap());
 
     let path = Path::new("/tmp/profile_added_vocab.json");
     tokenizer.save(path, false).unwrap();

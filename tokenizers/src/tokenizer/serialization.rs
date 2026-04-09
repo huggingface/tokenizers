@@ -8,7 +8,7 @@ use serde::{
 };
 
 use super::{
-    added_vocabulary::{AddedToken, AddedTokenWithId},
+    added_vocabulary::AddedTokenWithId,
     TokenizerImpl,
 };
 use crate::{Decoder, Model, Normalizer, PostProcessor, PreTokenizer, TokenizerBuilder};
@@ -153,13 +153,10 @@ where
             .build()
             .map_err(|e| V::Error::custom(e.to_string()))?;
 
-        // Consume `tokens` in a single pass: warn on ID mismatches, move the
-        // pre-computed normalized form into the cache, and collect the bare
-        // AddedTokens for `add_tokens`.  Everything is moved — no clones.
-        let mut added_tokens: Vec<AddedToken> = Vec::with_capacity(tokens.len());
-        for t in tokens {
-            let received_id = tokenizer.token_to_id(&t.token.content);
-            if let Some(rid) = received_id {
+        // Single-pass: warn on ID mismatches, then add all tokens.
+        // `add_tokens` computes normalization internally for tokens with `normalized = true`.
+        for t in &tokens {
+            if let Some(rid) = tokenizer.token_to_id(&t.token.content) {
                 if rid != t.id {
                     warn!(
                         "Warning: Token '{}' was expected to have ID '{}' but was given ID '{}'",
@@ -167,12 +164,10 @@ where
                     );
                 }
             }
-            if let Some(nc) = t.normalized_content {
-                tokenizer.added_vocabulary.seed_normalized_cache(t.id, nc);
-            }
-            added_tokens.push(t.token);
         }
-        tokenizer.add_tokens(added_tokens);
+        tokenizer
+            .add_tokens(tokens.into_iter().map(|t| t.token))
+            .map_err(|e| V::Error::custom(e.to_string()))?;
 
         Ok(tokenizer)
     }

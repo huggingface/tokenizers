@@ -1608,7 +1608,9 @@ impl PyTokenizer {
             })
             .collect::<PyResult<Vec<_>>>()?;
 
-        Ok(self.tokenizer.add_tokens(tokens))
+        self.tokenizer
+            .add_tokens(tokens)
+            .map_err(|e| exceptions::PyException::new_err(e.to_string()))
     }
 
     /// Add the given special tokens to the Tokenizer.
@@ -1645,7 +1647,9 @@ impl PyTokenizer {
             })
             .collect::<PyResult<Vec<_>>>()?;
 
-        Ok(self.tokenizer.add_special_tokens(&tokens))
+        self.tokenizer
+            .add_special_tokens(&tokens)
+            .map_err(|e| exceptions::PyException::new_err(e.to_string()))
     }
 
     /// Train the Tokenizer using the given files.
@@ -1806,9 +1810,12 @@ impl PyTokenizer {
 
     /// Set the :class:`~tokenizers.normalizers.Normalizer`
     #[setter]
-    fn set_normalizer(&mut self, normalizer: Option<PyRef<PyNormalizer>>) {
+    fn set_normalizer(&mut self, normalizer: Option<PyRef<PyNormalizer>>) -> PyResult<()> {
         let normalizer_option = normalizer.map(|norm| norm.clone());
-        self.tokenizer.with_normalizer(normalizer_option);
+        self.tokenizer
+            .with_normalizer(normalizer_option)
+            .map_err(|e| exceptions::PyException::new_err(e.to_string()))?;
+        Ok(())
     }
 
     /// The `optional` :class:`~tokenizers.pre_tokenizers.PreTokenizer` in use by the Tokenizer
@@ -1874,12 +1881,14 @@ mod test {
     #[test]
     fn serialize() {
         let mut tokenizer = Tokenizer::new(PyModel::from(BPE::default()));
-        tokenizer.with_normalizer(Some(PyNormalizer::new(PyNormalizerTypeWrapper::Sequence(
-            vec![
-                Arc::new(RwLock::new(NFKC.into())),
-                Arc::new(RwLock::new(Lowercase.into())),
-            ],
-        ))));
+        tokenizer
+            .with_normalizer(Some(PyNormalizer::new(PyNormalizerTypeWrapper::Sequence(
+                vec![
+                    Arc::new(RwLock::new(NFKC.into())),
+                    Arc::new(RwLock::new(Lowercase.into())),
+                ],
+            ))))
+            .unwrap();
 
         let tmp = NamedTempFile::new().unwrap().into_temp_path();
         tokenizer.save(&tmp, false).unwrap();
@@ -1890,12 +1899,14 @@ mod test {
     #[test]
     fn serde_pyo3() {
         let mut tokenizer = Tokenizer::new(PyModel::from(BPE::default()));
-        tokenizer.with_normalizer(Some(PyNormalizer::new(PyNormalizerTypeWrapper::Sequence(
-            vec![
-                Arc::new(RwLock::new(NFKC.into())),
-                Arc::new(RwLock::new(Lowercase.into())),
-            ],
-        ))));
+        tokenizer
+            .with_normalizer(Some(PyNormalizer::new(PyNormalizerTypeWrapper::Sequence(
+                vec![
+                    Arc::new(RwLock::new(NFKC.into())),
+                    Arc::new(RwLock::new(Lowercase.into())),
+                ],
+            ))))
+            .unwrap();
 
         let output = crate::utils::serde_pyo3::to_string(&tokenizer).unwrap();
         assert_eq!(output, "Tokenizer(version=\"1.0\", truncation=None, padding=None, added_tokens=[], normalizer=Sequence(normalizers=[NFKC(), Lowercase()]), pre_tokenizer=None, post_processor=None, decoder=None, model=BPE(dropout=None, unk_token=None, continuing_subword_prefix=None, end_of_word_suffix=None, fuse_unk=False, byte_fallback=False, ignore_merges=False, vocab={}, merges=[]))");
