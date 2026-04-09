@@ -13,9 +13,18 @@ on:
         description: "PR number to post benchmark comment to (leave empty to just store baseline)"
         required: false
         type: string
+      check_run_id:
+        description: "Check run ID to update with results (set by benchmark-trigger)"
+        required: false
+        type: string
+      head_sha:
+        description: "PR head SHA for the check run (set by benchmark-trigger)"
+        required: false
+        type: string
 
 permissions:
   contents: read
+  checks: write
   pull-requests: write
 
 env:
@@ -31,6 +40,17 @@ jobs:
         working-directory: tokenizers
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Mark check run in progress
+        if: inputs.check_run_id != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api "repos/${{ github.repository }}/check-runs/${{ inputs.check_run_id }}" \
+            -X PATCH \
+            -f "status=in_progress" \
+            -f "output[title]=Benchmarks running" \
+            -f "output[summary]=Compiling and running benchmarks..."
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -134,6 +154,41 @@ jobs:
           else
             gh pr comment "${{ inputs.pr_number }}" --body-file comparison.md
           fi
+
+      # Update the check run on the PR with final results
+      - name: Complete check run (success)
+        if: always() && inputs.check_run_id != '' && !failure() && !cancelled()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          summary="Benchmarks completed successfully."
+          if [ -f tokenizers/comparison.md ]; then
+            summary=$(cat tokenizers/comparison.md)
+          fi
+          gh api "repos/${{ github.repository }}/check-runs/${{ inputs.check_run_id }}" \
+            -X PATCH \
+            -f "status=completed" \
+            -f "conclusion=success" \
+            -f "output[title]=Benchmarks passed" \
+            -F "output[summary]=@tokenizers/comparison.md" 2>/dev/null || \
+          gh api "repos/${{ github.repository }}/check-runs/${{ inputs.check_run_id }}" \
+            -X PATCH \
+            -f "status=completed" \
+            -f "conclusion=success" \
+            -f "output[title]=Benchmarks passed" \
+            -f "output[summary]=Benchmarks completed. See workflow run for details."
+
+      - name: Complete check run (failure)
+        if: always() && inputs.check_run_id != '' && (failure() || cancelled())
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api "repos/${{ github.repository }}/check-runs/${{ inputs.check_run_id }}" \
+            -X PATCH \
+            -f "status=completed" \
+            -f "conclusion=failure" \
+            -f "output[title]=Benchmarks failed" \
+            -f "output[summary]=Benchmark workflow failed or was cancelled. Check the workflow run for details."
 
   benchmark-python:
     name: Run Python benchmarks

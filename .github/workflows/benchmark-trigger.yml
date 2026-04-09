@@ -1,9 +1,8 @@
 name: Benchmark Trigger
 
 # A maintainer comments "/benchmark" on a PR to trigger benchmark comparison.
-# This workflow extracts the PR number and head SHA, then dispatches the
-# main Benchmarks workflow which runs on the PR's code and posts results
-# as a comment.
+# Creates a check run on the PR's head SHA so it appears in the PR's checks
+# list and can be made a required check in branch protection.
 
 on:
   issue_comment:
@@ -11,6 +10,7 @@ on:
 
 permissions:
   actions: write
+  checks: write
   pull-requests: read
 
 jobs:
@@ -19,12 +19,12 @@ jobs:
     if: >-
       github.event.issue.pull_request &&
       contains(github.event.comment.body, '/benchmark') &&
-      github.event.comment.author_association == 'MEMBER' ||
-      github.event.comment.author_association == 'OWNER' ||
-      github.event.comment.author_association == 'COLLABORATOR'
+      (github.event.comment.author_association == 'MEMBER' ||
+       github.event.comment.author_association == 'OWNER' ||
+       github.event.comment.author_association == 'COLLABORATOR')
     runs-on: ubuntu-latest
     steps:
-      - name: Get PR head SHA
+      - name: Get PR info
         id: pr
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -36,6 +36,21 @@ jobs:
           echo "head_sha=$head_sha" >> "$GITHUB_OUTPUT"
           echo "head_ref=$head_ref" >> "$GITHUB_OUTPUT"
 
+      - name: Create check run on PR
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          check_id=$(gh api "repos/${{ github.repository }}/check-runs" \
+            -X POST \
+            -f "name=Benchmark Results" \
+            -f "head_sha=${{ steps.pr.outputs.head_sha }}" \
+            -f "status=queued" \
+            -f "output[title]=Benchmarks queued" \
+            -f "output[summary]=Benchmark workflow has been dispatched. Results will appear here when complete." \
+            --jq '.id')
+          echo "check_id=$check_id" >> "$GITHUB_OUTPUT"
+
       - name: Dispatch benchmark workflow
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -43,4 +58,6 @@ jobs:
           gh workflow run benchmarks.yml \
             --repo "${{ github.repository }}" \
             --ref "${{ steps.pr.outputs.head_ref }}" \
-            -f pr_number="${{ steps.pr.outputs.pr_number }}"
+            -f pr_number="${{ steps.pr.outputs.pr_number }}" \
+            -f check_run_id="${{ steps.check.outputs.check_id }}" \
+            -f head_sha="${{ steps.pr.outputs.head_sha }}"
