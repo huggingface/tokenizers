@@ -33,7 +33,7 @@ env:
 
 jobs:
   benchmark:
-    name: Run benchmarks
+    name: Run Rust benchmarks
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -64,36 +64,87 @@ jobs:
       - name: Download benchmark data
         run: uvx --from huggingface_hub hf download hf-internal-testing/tokenizers-bench-data --repo-type dataset --local-dir data
 
-      - name: Run benchmarks
-        run: cargo bench --bench ci_benchmark -- --output-format bencher | tee output.txt
+      # Download saved criterion baseline from HF Hub (if exists)
+      - name: Download criterion baseline
+        run: |
+          uvx --from huggingface_hub hf download hf-internal-testing/tokenizers-bench \
+            criterion-baseline.tar.gz --repo-type dataset --local-dir /tmp/baseline 2>/dev/null || true
+          if [ -f /tmp/baseline/criterion-baseline.tar.gz ]; then
+            mkdir -p target/criterion
+            tar -xzf /tmp/baseline/criterion-baseline.tar.gz -C target/criterion
+            echo "Restored criterion baseline"
+          else
+            echo "No criterion baseline found"
+          fi
 
-      # Compare BEFORE uploading so we diff against the previous baseline
-      - name: Compare with baseline
+      # On push to main: save as the new baseline
+      # On workflow_dispatch (PR): compare against the saved baseline
+      - name: Run benchmarks (save baseline)
+        if: github.event_name == 'push'
+        run: |
+          cargo bench --bench ci_benchmark -- \
+            --save-baseline main \
+            --output-format bencher | tee output.txt
+
+      - name: Run benchmarks (compare against baseline)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          cargo bench --bench ci_benchmark -- \
+            --baseline main \
+            --output-format bencher | tee output.txt
+
+      # Export criterion artifacts to HF Hub (main only)
+      - name: Upload criterion baseline to HF Hub
+        if: github.event_name == 'push' && env.HF_TOKEN != ''
+        continue-on-error: true
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          # Tar up the criterion data for the ci_benchmark
+          tar -czf /tmp/criterion-baseline.tar.gz -C target/criterion .
+          uvx --from huggingface_hub hf upload hf-internal-testing/tokenizers-bench \
+            /tmp/criterion-baseline.tar.gz criterion-baseline.tar.gz --repo-type dataset
+          # Also store the bencher text output
+          cp output.txt "output-${{ github.sha }}.txt"
+          uvx --from huggingface_hub hf upload hf-internal-testing/tokenizers-bench \
+            output.txt baseline.txt --repo-type dataset
+          uvx --from huggingface_hub hf upload hf-internal-testing/tokenizers-bench \
+            "output-${{ github.sha }}.txt" "history/output-${{ github.sha }}.txt" --repo-type dataset
+
+      # Export criterion HTML report as artifact for easy inspection
+      - name: Upload criterion report
+        if: always() && hashFiles('tokenizers/target/criterion') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: criterion-report
+          path: tokenizers/target/criterion/**/report/
+          retention-days: 30
+
+      # Build comparison markdown from the bencher output
+      - name: Build comparison table
         if: hashFiles('tokenizers/output.txt') != ''
         id: compare
         run: |
-          # Try to download previous baseline
+          # Download previous bencher baseline for the markdown table
           uvx --from huggingface_hub hf download hf-internal-testing/tokenizers-bench \
-            baseline.txt --repo-type dataset --local-dir baseline_dir 2>/dev/null || true
+            baseline.txt --repo-type dataset --local-dir /tmp/prev_baseline 2>/dev/null || true
 
-          if [ ! -f baseline_dir/baseline.txt ]; then
-            echo "No previous baseline found — skipping comparison"
+          if [ ! -f /tmp/prev_baseline/baseline.txt ]; then
+            echo "No previous baseline found — skipping comparison table"
             echo "has_comparison=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
           echo "has_comparison=true" >> "$GITHUB_OUTPUT"
 
-          # Build comparison markdown
           {
-            echo "## Benchmark results"
+            echo "## Rust Benchmark results"
             echo ""
             echo "Commit: \`${{ github.sha }}\`"
             echo ""
             echo "| Benchmark | Baseline (ns/iter) | This run (ns/iter) | Δ |"
             echo "|-----------|-------------------:|-------------------:|--:|"
 
-            # Parse both files into associative lookup
             while IFS= read -r line; do
               name=$(echo "$line" | sed 's/^test \(.*\) \.\.\. bench:.*/\1/')
               ns=$(echo "$line" | sed 's/.*bench: *\([0-9,]*\) ns\/iter.*/\1/' | tr -d ',')
@@ -104,7 +155,7 @@ jobs:
               name=$(echo "$line" | sed 's/^test \(.*\) \.\.\. bench:.*/\1/')
               ns=$(echo "$line" | sed 's/.*bench: *\([0-9,]*\) ns\/iter.*/\1/' | tr -d ',')
               echo "$name $ns"
-            done < baseline_dir/baseline.txt | sort > /tmp/baseline.tsv
+            done < /tmp/prev_baseline/baseline.txt | sort > /tmp/baseline.tsv
 
             join /tmp/baseline.tsv /tmp/current.tsv | while read -r name base_ns cur_ns; do
               if [ "$base_ns" -gt 0 ] 2>/dev/null; then
@@ -114,7 +165,6 @@ jobs:
                 else
                   delta_str="${delta}%"
                 fi
-                # Format with commas for readability
                 base_fmt=$(printf "%'d" "$base_ns")
                 cur_fmt=$(printf "%'d" "$cur_ns")
                 echo "| $name | $base_fmt | $cur_fmt | $delta_str |"
@@ -124,21 +174,6 @@ jobs:
 
           cat comparison.md
 
-      # Only update baseline on push to main — never on workflow_dispatch (PR runs)
-      - name: Upload Rust baseline to HF Hub
-        if: github.event_name == 'push' && hashFiles('tokenizers/output.txt') != '' && env.HF_TOKEN != ''
-        continue-on-error: true
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        working-directory: tokenizers
-        run: |
-          cp output.txt "output-${{ github.sha }}.txt"
-          uvx --from huggingface_hub hf upload hf-internal-testing/tokenizers-bench \
-            output.txt baseline.txt --repo-type dataset
-          uvx --from huggingface_hub hf upload hf-internal-testing/tokenizers-bench \
-            "output-${{ github.sha }}.txt" "history/output-${{ github.sha }}.txt" --repo-type dataset
-
-      # Post comparison as PR comment when triggered via workflow_dispatch
       - name: Post Rust results to PR
         if: inputs.pr_number != '' && steps.compare.outputs.has_comparison == 'true'
         env:
@@ -146,7 +181,7 @@ jobs:
         working-directory: tokenizers
         run: |
           existing=$(gh api "repos/${{ github.repository }}/issues/${{ inputs.pr_number }}/comments" \
-            --jq '.[] | select(.body | startswith("## Benchmark results")) | .id' | head -1)
+            --jq '.[] | select(.body | startswith("## Rust Benchmark results")) | .id' | head -1)
 
           if [ -n "$existing" ]; then
             gh api "repos/${{ github.repository }}/issues/comments/$existing" \
@@ -161,10 +196,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          summary="Benchmarks completed successfully."
-          if [ -f tokenizers/comparison.md ]; then
-            summary=$(cat tokenizers/comparison.md)
-          fi
           gh api "repos/${{ github.repository }}/check-runs/${{ inputs.check_run_id }}" \
             -X PATCH \
             -f "status=completed" \
@@ -227,13 +258,21 @@ jobs:
             --benchmark-sort=name \
             -v
 
-      # Compare BEFORE uploading so we diff against the previous baseline
+      # Upload as artifact for easy download
+      - name: Upload Python benchmark results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-benchmark-results
+          path: bindings/python/bench_output.json
+          retention-days: 30
+
+      # Compare against saved baseline
       - name: Compare Python results with baseline
         id: py_compare
         working-directory: bindings/python
         run: |
           source .venv/bin/activate
-          # Download previous baseline
           uvx --from huggingface_hub hf download hf-internal-testing/tokenizers-bench \
             python-baseline.json --repo-type dataset --local-dir baseline_dir 2>/dev/null || true
 
@@ -246,7 +285,7 @@ jobs:
           echo "has_comparison=true" >> "$GITHUB_OUTPUT"
 
           python3 -c "
-          import json, sys
+          import json
 
           with open('baseline_dir/python-baseline.json') as f:
               baseline = {b['name']: b for b in json.load(f)['benchmarks']}
@@ -277,7 +316,7 @@ jobs:
               f.write(md)
           "
 
-      # Only update baseline on push to main — never on workflow_dispatch (PR runs)
+      # Upload baseline on push to main only
       - name: Upload Python baseline to HF Hub
         if: github.event_name == 'push' && env.HF_TOKEN != ''
         continue-on-error: true

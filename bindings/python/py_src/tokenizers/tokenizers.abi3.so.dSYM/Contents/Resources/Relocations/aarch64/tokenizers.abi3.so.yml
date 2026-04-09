@@ -1,0 +1,5 @@
+---
+triple:          'arm64-apple-darwin'
+binary-path:     '/Users/arthurzucker/Work/tokenizers/bindings/python/py_src/tokenizers/tokenizers.abi3.so'
+relocations:     []
+...
