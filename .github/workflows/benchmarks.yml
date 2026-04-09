@@ -179,5 +179,73 @@ jobs:
         working-directory: bindings/python
         run: |
           source .venv/bin/activate
+          cp bench_output.json "python-output-${{ github.sha }}.json"
           uvx --from huggingface_hub hf upload hf-internal-testing/tokenizers-bench \
             bench_output.json python-baseline.json --repo-type dataset
+          uvx --from huggingface_hub hf upload hf-internal-testing/tokenizers-bench \
+            "python-output-${{ github.sha }}.json" "history/python-output-${{ github.sha }}.json" --repo-type dataset
+
+      - name: Compare Python results with baseline
+        id: py_compare
+        working-directory: bindings/python
+        run: |
+          source .venv/bin/activate
+          # Download previous baseline
+          uvx --from huggingface_hub hf download hf-internal-testing/tokenizers-bench \
+            python-baseline.json --repo-type dataset --local-dir baseline_dir 2>/dev/null || true
+
+          if [ ! -f baseline_dir/python-baseline.json ]; then
+            echo "No previous Python baseline found — skipping comparison"
+            echo "has_comparison=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "has_comparison=true" >> "$GITHUB_OUTPUT"
+
+          python3 -c "
+          import json, sys
+
+          with open('baseline_dir/python-baseline.json') as f:
+              baseline = {b['name']: b for b in json.load(f)['benchmarks']}
+          with open('bench_output.json') as f:
+              current = {b['name']: b for b in json.load(f)['benchmarks']}
+
+          lines = []
+          lines.append('## Python Benchmark results')
+          lines.append('')
+          lines.append('Commit: \`${{ github.sha }}\`')
+          lines.append('')
+          lines.append('| Benchmark | Baseline (ms) | This run (ms) | Δ |')
+          lines.append('|-----------|-------------:|--------------:|--:|')
+
+          for name in sorted(current):
+              cur_ms = current[name]['stats']['mean'] * 1000
+              if name in baseline:
+                  base_ms = baseline[name]['stats']['mean'] * 1000
+                  delta = (cur_ms - base_ms) / base_ms * 100
+                  sign = '+' if delta > 0 else ''
+                  lines.append(f'| {name} | {base_ms:.1f} | {cur_ms:.1f} | {sign}{delta:.1f}% |')
+              else:
+                  lines.append(f'| {name} | — | {cur_ms:.1f} | new |')
+
+          md = '\n'.join(lines)
+          print(md)
+          with open('py_comparison.md', 'w') as f:
+              f.write(md)
+          "
+
+      - name: Post Python results to PR
+        if: inputs.pr_number != '' && steps.py_compare.outputs.has_comparison == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        working-directory: bindings/python
+        run: |
+          existing=$(gh api "repos/${{ github.repository }}/issues/${{ inputs.pr_number }}/comments" \
+            --jq '.[] | select(.body | startswith("## Python Benchmark results")) | .id' | head -1)
+
+          if [ -n "$existing" ]; then
+            gh api "repos/${{ github.repository }}/issues/comments/$existing" \
+              -X PATCH -F "body=@py_comparison.md"
+          else
+            gh pr comment "${{ inputs.pr_number }}" --body-file py_comparison.md
+          fi
