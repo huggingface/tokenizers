@@ -2,9 +2,10 @@ name: Benchmarks
 
 on:
   push:
-    branches: [main]
+    branches: [main, ci-benchmarks]  # TODO: remove ci-benchmarks before merge
     paths:
       - "tokenizers/**"
+      - "bindings/python/**"
       - ".github/workflows/benchmarks.yml"
   workflow_dispatch:
     inputs:
@@ -117,7 +118,7 @@ jobs:
           cat comparison.md
 
       # Post comparison as PR comment when triggered via workflow_dispatch
-      - name: Post results to PR
+      - name: Post Rust results to PR
         if: inputs.pr_number != '' && steps.compare.outputs.has_comparison == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -132,3 +133,51 @@ jobs:
           else
             gh pr comment "${{ inputs.pr_number }}" --body-file comparison.md
           fi
+
+  benchmark-python:
+    name: Run Python benchmarks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Download benchmark data
+        run: uvx --from huggingface_hub hf download hf-internal-testing/tokenizers-bench-data --repo-type dataset --local-dir tokenizers/data
+
+      - name: Install Python bindings + benchmark deps
+        working-directory: bindings/python
+        run: |
+          uv venv .venv
+          source .venv/bin/activate
+          uv pip install maturin pytest pytest-benchmark
+          maturin develop --release --manifest-path Cargo.toml
+          echo "$VIRTUAL_ENV/bin" >> "$GITHUB_PATH"
+
+      - name: Run Python benchmarks
+        working-directory: bindings/python
+        run: |
+          source .venv/bin/activate
+          python -m pytest tests/test_benchmarks.py \
+            --benchmark-json=bench_output.json \
+            --benchmark-columns=mean,stddev,rounds \
+            --benchmark-sort=name \
+            -v
+
+      - name: Upload Python baseline to HF Hub
+        if: env.HF_TOKEN != ''
+        continue-on-error: true
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        working-directory: bindings/python
+        run: |
+          source .venv/bin/activate
+          uvx --from huggingface_hub hf upload hf-internal-testing/tokenizers-bench \
+            bench_output.json python-baseline.json --repo-type dataset
