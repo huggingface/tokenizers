@@ -1,6 +1,7 @@
 use crate::pattern::Pattern;
 use crate::{Offsets, Result};
 use std::ops::{Bound, RangeBounds};
+#[cfg(feature = "unicode-normalization")]
 use unicode_normalization_alignments::UnicodeNormalization;
 
 use serde::{Deserialize, Serialize};
@@ -446,24 +447,28 @@ impl NormalizedString {
     }
 
     /// Applies NFD normalization
+    #[cfg(feature = "unicode-normalization")]
     pub fn nfd(&mut self) -> &mut Self {
         self.transform(self.get().to_owned().nfd(), 0);
         self
     }
 
     /// Applies NFKD normalization
+    #[cfg(feature = "unicode-normalization")]
     pub fn nfkd(&mut self) -> &mut Self {
         self.transform(self.get().to_owned().nfkd(), 0);
         self
     }
 
     /// Applies NFC normalization
+    #[cfg(feature = "unicode-normalization")]
     pub fn nfc(&mut self) -> &mut Self {
         self.transform(self.get().to_owned().nfc(), 0);
         self
     }
 
     /// Applies NFKC normalization
+    #[cfg(feature = "unicode-normalization")]
     pub fn nfkc(&mut self) -> &mut Self {
         self.transform(self.get().to_owned().nfkc(), 0);
         self

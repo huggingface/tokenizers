@@ -71,9 +71,9 @@ rayon = { version = "1.10", optional = true }
 rayon-cond = { version = "0.4", optional = true }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-unicode-normalization-alignments = "0.1"
+unicode-normalization-alignments = { version = "0.1", optional = true }
 unicode_categories = "0.1"
-unicode-segmentation = "1.11"
+unicode-segmentation = { version = "1.11", optional = true }
 indicatif = { version = "0.18", optional = true }
 log = "0.4"
 spm_precompiled = { version = "0.1.3", optional = true }
@@ -87,13 +87,14 @@ getrandom = { version = "0.3" }
 esaxx-rs = { version = "0.1.10", default-features = false, features = [], optional = true }
 foldhash = "0.2"
 dary_heap = { version = "0.3.6", features = ["serde"] }
-compact_str = { version = "0.9", features = ["serde"] }
+compact_str = { version = "0.9", features = ["serde"], optional = true }
 
 [features]
-default = ["progressbar", "onig", "esaxx_fast", "spm", "training", "parallel"]
+default = ["progressbar", "onig", "esaxx_fast", "spm", "training", "parallel", "unicode-normalization"]
+unicode-normalization = ["dep:unicode-normalization-alignments"]
 parallel = ["dep:rayon", "dep:rayon-cond"]
-training = ["dep:rand", "dep:esaxx-rs"]
-spm = ["dep:spm_precompiled"]
+training = ["dep:rand", "dep:esaxx-rs", "dep:compact_str"]
+spm = ["dep:spm_precompiled", "dep:unicode-segmentation"]
 esaxx_fast = ["dep:esaxx-rs", "esaxx-rs/cpp"]
 progressbar = ["indicatif"]
 http = ["hf-hub"]

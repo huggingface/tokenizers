@@ -1,45 +1,53 @@
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 use crate::utils::macro_rules_attribute;
 
-#[derive(Default, Copy, Clone, Debug)]
-#[macro_rules_attribute(impl_serde_type!)]
-pub struct NFD;
-impl Normalizer for NFD {
-    fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
-        normalized.nfd();
-        Ok(())
+#[cfg(feature = "unicode-normalization")]
+mod nf_normalizers {
+    use super::*;
+
+    #[derive(Default, Copy, Clone, Debug)]
+    #[macro_rules_attribute(impl_serde_type!)]
+    pub struct NFD;
+    impl Normalizer for NFD {
+        fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
+            normalized.nfd();
+            Ok(())
+        }
+    }
+
+    #[derive(Default, Copy, Clone, Debug)]
+    #[macro_rules_attribute(impl_serde_type!)]
+    pub struct NFKD;
+    impl Normalizer for NFKD {
+        fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
+            normalized.nfkd();
+            Ok(())
+        }
+    }
+
+    #[derive(Default, Copy, Clone, Debug)]
+    #[macro_rules_attribute(impl_serde_type!)]
+    pub struct NFC;
+    impl Normalizer for NFC {
+        fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
+            normalized.nfc();
+            Ok(())
+        }
+    }
+
+    #[derive(Default, Copy, Clone, Debug)]
+    #[macro_rules_attribute(impl_serde_type!)]
+    pub struct NFKC;
+    impl Normalizer for NFKC {
+        fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
+            normalized.nfkc();
+            Ok(())
+        }
     }
 }
 
-#[derive(Default, Copy, Clone, Debug)]
-#[macro_rules_attribute(impl_serde_type!)]
-pub struct NFKD;
-impl Normalizer for NFKD {
-    fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
-        normalized.nfkd();
-        Ok(())
-    }
-}
-
-#[derive(Default, Copy, Clone, Debug)]
-#[macro_rules_attribute(impl_serde_type!)]
-pub struct NFC;
-impl Normalizer for NFC {
-    fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
-        normalized.nfc();
-        Ok(())
-    }
-}
-
-#[derive(Default, Copy, Clone, Debug)]
-#[macro_rules_attribute(impl_serde_type!)]
-pub struct NFKC;
-impl Normalizer for NFKC {
-    fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
-        normalized.nfkc();
-        Ok(())
-    }
-}
+#[cfg(feature = "unicode-normalization")]
+pub use nf_normalizers::*;
 
 fn do_nmt(normalized: &mut NormalizedString) {
     // Ascii Control characters

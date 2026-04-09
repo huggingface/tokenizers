@@ -14,7 +14,9 @@ pub use crate::normalizers::precompiled::Precompiled;
 pub use crate::normalizers::prepend::Prepend;
 pub use crate::normalizers::replace::Replace;
 pub use crate::normalizers::strip::{Strip, StripAccents};
-pub use crate::normalizers::unicode::{Nmt, NFC, NFD, NFKC, NFKD};
+pub use crate::normalizers::unicode::Nmt;
+#[cfg(feature = "unicode-normalization")]
+pub use crate::normalizers::unicode::{NFC, NFD, NFKC, NFKD};
 pub use crate::normalizers::utils::{Lowercase, Sequence};
 use serde::{Deserialize, Deserializer, Serialize};
 
@@ -27,9 +29,13 @@ pub enum NormalizerWrapper {
     BertNormalizer(BertNormalizer),
     StripNormalizer(Strip),
     StripAccents(StripAccents),
+    #[cfg(feature = "unicode-normalization")]
     NFC(NFC),
+    #[cfg(feature = "unicode-normalization")]
     NFD(NFD),
+    #[cfg(feature = "unicode-normalization")]
     NFKC(NFKC),
+    #[cfg(feature = "unicode-normalization")]
     NFKD(NFKD),
     Sequence(Sequence),
     Lowercase(Lowercase),
@@ -84,9 +90,13 @@ impl<'de> Deserialize<'de> for NormalizerWrapper {
             BertNormalizer(BertNormalizer),
             StripNormalizer(Strip),
             StripAccents(StripAccents),
+            #[cfg(feature = "unicode-normalization")]
             NFC(NFC),
+            #[cfg(feature = "unicode-normalization")]
             NFD(NFD),
+            #[cfg(feature = "unicode-normalization")]
             NFKC(NFKC),
+            #[cfg(feature = "unicode-normalization")]
             NFKD(NFKD),
             Sequence(Sequence),
             Lowercase(Lowercase),
@@ -116,18 +126,30 @@ impl<'de> Deserialize<'de> for NormalizerWrapper {
                     EnumType::StripAccents => NormalizerWrapper::StripAccents(
                         serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                     ),
-                    EnumType::NFC => NormalizerWrapper::NFC(
-                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
-                    ),
-                    EnumType::NFD => NormalizerWrapper::NFD(
-                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
-                    ),
-                    EnumType::NFKC => NormalizerWrapper::NFKC(
-                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
-                    ),
-                    EnumType::NFKD => NormalizerWrapper::NFKD(
-                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
-                    ),
+                    EnumType::NFC => {
+                        #[cfg(feature = "unicode-normalization")]
+                        { NormalizerWrapper::NFC(serde_json::from_value(values).map_err(serde::de::Error::custom)?) }
+                        #[cfg(not(feature = "unicode-normalization"))]
+                        { return Err(serde::de::Error::custom("NFC normalizer requires the `unicode-normalization` feature")); }
+                    }
+                    EnumType::NFD => {
+                        #[cfg(feature = "unicode-normalization")]
+                        { NormalizerWrapper::NFD(serde_json::from_value(values).map_err(serde::de::Error::custom)?) }
+                        #[cfg(not(feature = "unicode-normalization"))]
+                        { return Err(serde::de::Error::custom("NFD normalizer requires the `unicode-normalization` feature")); }
+                    }
+                    EnumType::NFKC => {
+                        #[cfg(feature = "unicode-normalization")]
+                        { NormalizerWrapper::NFKC(serde_json::from_value(values).map_err(serde::de::Error::custom)?) }
+                        #[cfg(not(feature = "unicode-normalization"))]
+                        { return Err(serde::de::Error::custom("NFKC normalizer requires the `unicode-normalization` feature")); }
+                    }
+                    EnumType::NFKD => {
+                        #[cfg(feature = "unicode-normalization")]
+                        { NormalizerWrapper::NFKD(serde_json::from_value(values).map_err(serde::de::Error::custom)?) }
+                        #[cfg(not(feature = "unicode-normalization"))]
+                        { return Err(serde::de::Error::custom("NFKD normalizer requires the `unicode-normalization` feature")); }
+                    }
                     EnumType::Sequence => NormalizerWrapper::Sequence(
                         serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                     ),
@@ -177,9 +199,13 @@ impl<'de> Deserialize<'de> for NormalizerWrapper {
                         NormalizerWrapper::StripNormalizer(bpe)
                     }
                     NormalizerUntagged::StripAccents(bpe) => NormalizerWrapper::StripAccents(bpe),
+                    #[cfg(feature = "unicode-normalization")]
                     NormalizerUntagged::NFC(bpe) => NormalizerWrapper::NFC(bpe),
+                    #[cfg(feature = "unicode-normalization")]
                     NormalizerUntagged::NFD(bpe) => NormalizerWrapper::NFD(bpe),
+                    #[cfg(feature = "unicode-normalization")]
                     NormalizerUntagged::NFKC(bpe) => NormalizerWrapper::NFKC(bpe),
+                    #[cfg(feature = "unicode-normalization")]
                     NormalizerUntagged::NFKD(bpe) => NormalizerWrapper::NFKD(bpe),
                     NormalizerUntagged::Sequence(seq) => NormalizerWrapper::Sequence(seq),
                     NormalizerUntagged::Lowercase(bpe) => NormalizerWrapper::Lowercase(bpe),
@@ -199,9 +225,13 @@ impl Normalizer for NormalizerWrapper {
             Self::BertNormalizer(bn) => bn.normalize(normalized),
             Self::StripNormalizer(sn) => sn.normalize(normalized),
             Self::StripAccents(sn) => sn.normalize(normalized),
+            #[cfg(feature = "unicode-normalization")]
             Self::NFC(nfc) => nfc.normalize(normalized),
+            #[cfg(feature = "unicode-normalization")]
             Self::NFD(nfd) => nfd.normalize(normalized),
+            #[cfg(feature = "unicode-normalization")]
             Self::NFKC(nfkc) => nfkc.normalize(normalized),
+            #[cfg(feature = "unicode-normalization")]
             Self::NFKD(nfkd) => nfkd.normalize(normalized),
             Self::Sequence(sequence) => sequence.normalize(normalized),
             Self::Lowercase(lc) => lc.normalize(normalized),
@@ -216,9 +246,13 @@ impl Normalizer for NormalizerWrapper {
 }
 
 impl_enum_from!(BertNormalizer, NormalizerWrapper, BertNormalizer);
+#[cfg(feature = "unicode-normalization")]
 impl_enum_from!(NFKD, NormalizerWrapper, NFKD);
+#[cfg(feature = "unicode-normalization")]
 impl_enum_from!(NFKC, NormalizerWrapper, NFKC);
+#[cfg(feature = "unicode-normalization")]
 impl_enum_from!(NFC, NormalizerWrapper, NFC);
+#[cfg(feature = "unicode-normalization")]
 impl_enum_from!(NFD, NormalizerWrapper, NFD);
 impl_enum_from!(Strip, NormalizerWrapper, StripNormalizer);
 impl_enum_from!(StripAccents, NormalizerWrapper, StripAccents);
