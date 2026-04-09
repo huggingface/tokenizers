@@ -1,4 +1,4 @@
-use ahash::AHashMap;
+use crate::utils::{AHashMap, HashMapExt};
 use std::borrow::Borrow;
 use std::hash::Hash;
 use std::sync::RwLock;

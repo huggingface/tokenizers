@@ -8,7 +8,7 @@ use crate::tokenizer::{Model, Result, Token};
 use crate::utils::cache::{Cache, MAX_LENGTH};
 use std::collections::HashMap;
 
-use ahash::AHashMap;
+use crate::utils::{AHashMap, HashMapExt};
 use std::convert::TryInto;
 use std::fs::read_to_string;
 use std::path::{Path, PathBuf};

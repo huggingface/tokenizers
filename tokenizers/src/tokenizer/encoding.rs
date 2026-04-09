@@ -2,7 +2,7 @@ use crate::parallelism::*;
 use crate::tokenizer::{Offsets, Token};
 use crate::utils::padding::PaddingDirection;
 use crate::utils::truncation::TruncationDirection;
-use ahash::AHashMap;
+use crate::utils::{AHashMap, HashMapExt};
 use serde::{Deserialize, Serialize};
 use std::ops::Range;
 
@@ -890,7 +890,7 @@ mod tests {
             offsets: vec![(0, 6)],
             special_tokens_mask: vec![0],
             attention_mask: vec![1],
-            sequence_ranges: AHashMap::from([(0, 0..1)]),
+            sequence_ranges: IntoIterator::into_iter([(0, 0..1)]).collect(),
             ..Default::default()
         };
         let target_length = 2;
@@ -904,6 +904,6 @@ mod tests {
             pad_token,
             PaddingDirection::Left,
         );
-        assert_eq!(a.sequence_ranges, AHashMap::from([(0, 1..2)]));
+        assert_eq!(a.sequence_ranges, IntoIterator::into_iter([(0, 1..2)]).collect());
     }
 }

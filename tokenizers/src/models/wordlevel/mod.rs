@@ -1,6 +1,6 @@
 use super::OrderedVocabIter;
 use crate::tokenizer::{Model, Result, Token};
-use ahash::AHashMap;
+use crate::utils::{AHashMap, HashMapExt};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fs::File;

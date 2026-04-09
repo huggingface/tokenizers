@@ -2,7 +2,7 @@ use crate::models::unigram::{lattice::Lattice, model::Unigram};
 use crate::tokenizer::{AddedToken, Result, Trainer};
 use crate::utils::parallelism::*;
 use crate::utils::progress::{ProgressBar, ProgressStyle};
-use ahash::{AHashMap, AHashSet};
+use crate::utils::{AHashMap, AHashSet, HashMapExt, HashSetExt};
 use log::debug;
 use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;

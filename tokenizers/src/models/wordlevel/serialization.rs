@@ -1,5 +1,5 @@
 use super::{super::OrderedVocabIter, WordLevel, WordLevelBuilder};
-use ahash::AHashSet;
+use crate::utils::{AHashSet};
 use serde::{
     de::{MapAccess, Visitor},
     ser::SerializeStruct,

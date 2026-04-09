@@ -1,4 +1,6 @@
-use ahash::{AHashMap, AHashSet};
+#[cfg(test)]
+use crate::utils::HashMapExt;
+use crate::utils::{AHashMap, AHashSet};
 use std::sync::LazyLock;
 
 use crate::utils::SysRegex;

@@ -1,7 +1,7 @@
 use super::{
     normalizer::Range, Model, NormalizedString, Normalizer, Offsets, PreTokenizedString, Token,
 };
-use ahash::{AHashMap, AHashSet};
+use crate::utils::{AHashMap, AHashSet, HashMapExt, HashSetExt};
 use daachorse::{DoubleArrayAhoCorasick, DoubleArrayAhoCorasickBuilder, MatchKind};
 use regex::Regex;
 use serde::{ser::SerializeSeq, Deserialize, Serialize, Serializer};
@@ -769,11 +769,11 @@ mod tests {
         assert!(vocab.is_special_token("test"));
         assert_eq!(
             *vocab.get_added_tokens_decoder(),
-            AHashMap::from([
+            IntoIterator::into_iter([
                 (0, AddedToken::from("test", true)),
                 (2, AddedToken::from("added_token_1", true)),
                 (3, AddedToken::from("added_token_2", true)),
-            ])
+            ]).collect::<AHashMap<_, _>>()
         );
         assert!(vocab.added_tokens_map.contains_key("test"));
         assert!(vocab.added_tokens_map_r.contains_key(&0));

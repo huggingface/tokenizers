@@ -1,4 +1,4 @@
-use ahash::AHashMap;
+use crate::utils::{AHashMap, HashMapExt};
 use std::hash::Hash;
 
 #[derive(Default)]

@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use super::WordPiece;
 use crate::models::bpe::{BpeTrainer, BpeTrainerBuilder, BPE};
 use crate::tokenizer::{AddedToken, Result, Trainer};
-use ahash::AHashSet;
+use crate::utils::{AHashSet, HashSetExt};
 use serde::{Deserialize, Serialize};
 
 /// A `WordPieceTrainerBuilder` can be used to create a `WordPieceTrainer` with a custom

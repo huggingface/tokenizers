@@ -5,7 +5,7 @@ pub mod unigram;
 pub mod wordlevel;
 pub mod wordpiece;
 
-use ahash::AHashMap;
+use crate::utils::{AHashMap};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -320,7 +320,7 @@ mod tests {
     #[test]
     fn incomplete_ordered_vocab() {
         let vocab_r: AHashMap<u32, String> =
-            AHashMap::from([(0, "Hi".to_string()), (2, "There".to_string())]);
+            IntoIterator::into_iter([(0u32, "Hi".to_string()), (2, "There".to_string())]).collect();
 
         let ordered = OrderedVocabIter::new(&vocab_r);
 

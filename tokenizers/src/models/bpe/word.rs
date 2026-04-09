@@ -1,5 +1,5 @@
 use super::Pair;
-use ahash::AHashMap;
+use crate::utils::{AHashMap};
 use dary_heap::QuaternaryHeap;
 #[cfg(feature = "training")]
 use rand::{rng, Rng};

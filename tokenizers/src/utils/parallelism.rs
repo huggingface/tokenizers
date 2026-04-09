@@ -2,15 +2,9 @@
 //! This module defines helpers to allow optional Rayon usage.
 //!
 
-use rayon::iter::IterBridge;
-use rayon::prelude::*;
-use rayon_cond::CondIterator;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicU8;
 use std::sync::atomic::Ordering;
-
-// Re-export rayon current_num_threads
-pub use rayon::current_num_threads;
 
 pub const ENV_VARIABLE: &str = "TOKENIZERS_PARALLELISM";
 
@@ -61,189 +55,335 @@ pub fn set_parallelism(val: bool) {
     PARALLELISM.store(if val { 2 } else { 1 }, Ordering::SeqCst);
 }
 
-/// Allows to convert into an iterator that can be executed either parallelly or serially.
-///
-/// The choice is made according to the currently set `TOKENIZERS_PARALLELISM` environment variable.
-/// This variable can have one of the following values
-///   - False => "" (empty value), "false", "f", "off", "no", "n", "0"
-///   - True => Any other value
-///
-pub trait MaybeParallelIterator<P, S>
-where
-    P: ParallelIterator,
-    S: Iterator<Item = P::Item>,
-{
-    /// Convert ourself in a CondIterator, that will be executed either in parallel or serially,
-    /// based solely on the `TOKENIZERS_PARALLELISM` environment variable
-    fn into_maybe_par_iter(self) -> CondIterator<P, S>;
-    /// Convert ourself in a CondIterator, that will be executed either in parallel or serially,
-    /// based on both the `TOKENIZERS_PARALLELISM` environment variable and the provided bool.
-    /// Both must be true to run with parallelism activated.
-    fn into_maybe_par_iter_cond(self, cond: bool) -> CondIterator<P, S>;
+// Re-export rayon current_num_threads
+#[cfg(feature = "parallel")]
+pub use rayon::current_num_threads;
+
+#[cfg(not(feature = "parallel"))]
+pub fn current_num_threads() -> usize {
+    1
 }
 
-impl<P, S, I> MaybeParallelIterator<P, S> for I
-where
-    I: IntoParallelIterator<Iter = P, Item = P::Item> + IntoIterator<IntoIter = S, Item = S::Item>,
-    P: ParallelIterator,
-    S: Iterator<Item = P::Item>,
-{
-    fn into_maybe_par_iter(self) -> CondIterator<P, S> {
-        let parallelism = get_parallelism();
-        if parallelism {
-            USED_PARALLELISM.store(true, Ordering::SeqCst);
-        }
-        CondIterator::new(self, parallelism)
+// ---------------------------------------------------------------------------
+// Parallel implementation using rayon + rayon-cond
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "parallel")]
+mod parallel_impl {
+    use super::*;
+    use rayon::iter::IterBridge;
+    use rayon::prelude::*;
+    use rayon_cond::CondIterator;
+
+    /// Allows to convert into an iterator that can be executed either parallelly or serially.
+    pub trait MaybeParallelIterator<P, S>
+    where
+        P: ParallelIterator,
+        S: Iterator<Item = P::Item>,
+    {
+        fn into_maybe_par_iter(self) -> CondIterator<P, S>;
+        fn into_maybe_par_iter_cond(self, cond: bool) -> CondIterator<P, S>;
     }
 
-    fn into_maybe_par_iter_cond(self, cond: bool) -> CondIterator<P, S> {
-        if cond {
+    impl<P, S, I> MaybeParallelIterator<P, S> for I
+    where
+        I: IntoParallelIterator<Iter = P, Item = P::Item>
+            + IntoIterator<IntoIter = S, Item = S::Item>,
+        P: ParallelIterator,
+        S: Iterator<Item = P::Item>,
+    {
+        fn into_maybe_par_iter(self) -> CondIterator<P, S> {
+            let parallelism = get_parallelism();
+            if parallelism {
+                USED_PARALLELISM.store(true, Ordering::SeqCst);
+            }
+            CondIterator::new(self, parallelism)
+        }
+
+        fn into_maybe_par_iter_cond(self, cond: bool) -> CondIterator<P, S> {
+            if cond {
+                self.into_maybe_par_iter()
+            } else {
+                CondIterator::from_serial(self)
+            }
+        }
+    }
+
+    /// Shared reference version of MaybeParallelIterator
+    pub trait MaybeParallelRefIterator<'data, P, S>
+    where
+        P: ParallelIterator,
+        S: Iterator<Item = P::Item>,
+        P::Item: 'data,
+    {
+        fn maybe_par_iter(&'data self) -> CondIterator<P, S>;
+        fn maybe_par_iter_cond(&'data self, cond: bool) -> CondIterator<P, S>;
+    }
+
+    impl<'data, P, S, I: 'data + ?Sized> MaybeParallelRefIterator<'data, P, S> for I
+    where
+        &'data I: MaybeParallelIterator<P, S>,
+        P: ParallelIterator,
+        S: Iterator<Item = P::Item>,
+        P::Item: 'data,
+    {
+        fn maybe_par_iter(&'data self) -> CondIterator<P, S> {
             self.into_maybe_par_iter()
-        } else {
+        }
+
+        fn maybe_par_iter_cond(&'data self, cond: bool) -> CondIterator<P, S> {
+            self.into_maybe_par_iter_cond(cond)
+        }
+    }
+
+    /// Exclusive reference version of MaybeParallelIterator
+    pub trait MaybeParallelRefMutIterator<'data, P, S>
+    where
+        P: ParallelIterator,
+        S: Iterator<Item = P::Item>,
+        P::Item: 'data,
+    {
+        fn maybe_par_iter_mut(&'data mut self) -> CondIterator<P, S>;
+        fn maybe_par_iter_mut_cond(&'data mut self, cond: bool) -> CondIterator<P, S>;
+    }
+
+    impl<'data, P, S, I: 'data + ?Sized> MaybeParallelRefMutIterator<'data, P, S> for I
+    where
+        &'data mut I: MaybeParallelIterator<P, S>,
+        P: ParallelIterator,
+        S: Iterator<Item = P::Item>,
+        P::Item: 'data,
+    {
+        fn maybe_par_iter_mut(&'data mut self) -> CondIterator<P, S> {
+            self.into_maybe_par_iter()
+        }
+
+        fn maybe_par_iter_mut_cond(&'data mut self, cond: bool) -> CondIterator<P, S> {
+            self.into_maybe_par_iter_cond(cond)
+        }
+    }
+
+    /// Converts any serial iterator into a CondIterator via par_bridge.
+    pub trait MaybeParallelBridge<T, S>
+    where
+        S: Iterator<Item = T> + Send,
+        T: Send,
+    {
+        fn maybe_par_bridge(self) -> CondIterator<IterBridge<S>, S>;
+        fn maybe_par_bridge_cond(self, cond: bool) -> CondIterator<IterBridge<S>, S>;
+    }
+
+    impl<T, S> MaybeParallelBridge<T, S> for S
+    where
+        S: Iterator<Item = T> + Send,
+        T: Send,
+    {
+        fn maybe_par_bridge(self) -> CondIterator<IterBridge<S>, S> {
+            let iter = CondIterator::from_serial(self);
+
+            if get_parallelism() {
+                USED_PARALLELISM.store(true, Ordering::SeqCst);
+                CondIterator::from_parallel(iter.into_parallel().right().unwrap())
+            } else {
+                iter
+            }
+        }
+
+        fn maybe_par_bridge_cond(self, cond: bool) -> CondIterator<IterBridge<S>, S> {
+            if cond {
+                self.maybe_par_bridge()
+            } else {
+                CondIterator::from_serial(self)
+            }
+        }
+    }
+
+    /// Allows to convert into `chunks` that can be executed either parallelly or serially.
+    pub trait MaybeParallelSlice<'data, T>
+    where
+        T: Sync,
+    {
+        fn maybe_par_chunks(
+            &'_ self,
+            chunk_size: usize,
+        ) -> CondIterator<rayon::slice::Chunks<'_, T>, std::slice::Chunks<'_, T>>;
+        fn maybe_par_chunks_cond(
+            &'_ self,
+            cond: bool,
+            chunk_size: usize,
+        ) -> CondIterator<rayon::slice::Chunks<'_, T>, std::slice::Chunks<'_, T>>;
+    }
+
+    impl<T> MaybeParallelSlice<'_, T> for [T]
+    where
+        T: Sync,
+    {
+        fn maybe_par_chunks(
+            &'_ self,
+            chunk_size: usize,
+        ) -> CondIterator<rayon::slice::Chunks<'_, T>, std::slice::Chunks<'_, T>> {
+            let parallelism = get_parallelism();
+            if parallelism {
+                CondIterator::from_parallel(self.par_chunks(chunk_size))
+            } else {
+                CondIterator::from_serial(self.chunks(chunk_size))
+            }
+        }
+        fn maybe_par_chunks_cond(
+            &'_ self,
+            cond: bool,
+            chunk_size: usize,
+        ) -> CondIterator<rayon::slice::Chunks<'_, T>, std::slice::Chunks<'_, T>> {
+            if cond {
+                self.maybe_par_chunks(chunk_size)
+            } else {
+                CondIterator::from_serial(self.chunks(chunk_size))
+            }
+        }
+    }
+}
+
+#[cfg(feature = "parallel")]
+pub use parallel_impl::*;
+
+// ---------------------------------------------------------------------------
+// Serial-only fallback when rayon is not available
+// ---------------------------------------------------------------------------
+
+#[cfg(not(feature = "parallel"))]
+mod serial_impl {
+    /// A serial-only iterator wrapper (identity wrapper).
+    pub struct CondIterator<S> {
+        iter: S,
+    }
+
+    impl<S: Iterator> CondIterator<S> {
+        pub fn from_serial<I: IntoIterator<IntoIter = S>>(iter: I) -> Self {
+            CondIterator {
+                iter: iter.into_iter(),
+            }
+        }
+    }
+
+    impl<S: Iterator> Iterator for CondIterator<S> {
+        type Item = S::Item;
+
+        fn next(&mut self) -> Option<Self::Item> {
+            self.iter.next()
+        }
+
+        fn size_hint(&self) -> (usize, Option<usize>) {
+            self.iter.size_hint()
+        }
+    }
+
+    impl<S: Iterator> CondIterator<S>
+    where
+        S::Item: Send,
+        S: Send,
+    {
+        pub fn reduce<OP, ID>(self, identity: ID, op: OP) -> S::Item
+        where
+            OP: Fn(S::Item, S::Item) -> S::Item,
+            ID: Fn() -> S::Item,
+        {
+            self.iter.fold(identity(), |acc, item| op(acc, item))
+        }
+
+        pub fn for_each<OP>(self, op: OP)
+        where
+            OP: Fn(S::Item),
+        {
+            self.iter.for_each(op);
+        }
+    }
+
+    /// Converts into a serial CondIterator.
+    pub trait MaybeParallelIterator {
+        type Iter: Iterator;
+        fn into_maybe_par_iter(self) -> CondIterator<Self::Iter>;
+        fn into_maybe_par_iter_cond(self, cond: bool) -> CondIterator<Self::Iter>;
+    }
+
+    impl<I: IntoIterator> MaybeParallelIterator for I {
+        type Iter = I::IntoIter;
+        fn into_maybe_par_iter(self) -> CondIterator<Self::Iter> {
+            CondIterator::from_serial(self)
+        }
+        fn into_maybe_par_iter_cond(self, _cond: bool) -> CondIterator<Self::Iter> {
             CondIterator::from_serial(self)
         }
     }
-}
 
-/// Shared reference version of MaybeParallelIterator, works the same but returns an iterator
-/// over references, does not consume self
-pub trait MaybeParallelRefIterator<'data, P, S>
-where
-    P: ParallelIterator,
-    S: Iterator<Item = P::Item>,
-    P::Item: 'data,
-{
-    fn maybe_par_iter(&'data self) -> CondIterator<P, S>;
-    fn maybe_par_iter_cond(&'data self, cond: bool) -> CondIterator<P, S>;
-}
-
-impl<'data, P, S, I: 'data + ?Sized> MaybeParallelRefIterator<'data, P, S> for I
-where
-    &'data I: MaybeParallelIterator<P, S>,
-    P: ParallelIterator,
-    S: Iterator<Item = P::Item>,
-    P::Item: 'data,
-{
-    fn maybe_par_iter(&'data self) -> CondIterator<P, S> {
-        self.into_maybe_par_iter()
+    pub trait MaybeParallelRefIterator<'data> {
+        type Iter: Iterator;
+        fn maybe_par_iter(&'data self) -> CondIterator<Self::Iter>;
     }
 
-    fn maybe_par_iter_cond(&'data self, cond: bool) -> CondIterator<P, S> {
-        self.into_maybe_par_iter_cond(cond)
-    }
-}
-
-/// Exclusive reference version of MaybeParallelIterator, works the same but returns an iterator
-/// over mutable references, does not consume self
-pub trait MaybeParallelRefMutIterator<'data, P, S>
-where
-    P: ParallelIterator,
-    S: Iterator<Item = P::Item>,
-    P::Item: 'data,
-{
-    fn maybe_par_iter_mut(&'data mut self) -> CondIterator<P, S>;
-    fn maybe_par_iter_mut_cond(&'data mut self, cond: bool) -> CondIterator<P, S>;
-}
-
-impl<'data, P, S, I: 'data + ?Sized> MaybeParallelRefMutIterator<'data, P, S> for I
-where
-    &'data mut I: MaybeParallelIterator<P, S>,
-    P: ParallelIterator,
-    S: Iterator<Item = P::Item>,
-    P::Item: 'data,
-{
-    fn maybe_par_iter_mut(&'data mut self) -> CondIterator<P, S> {
-        self.into_maybe_par_iter()
-    }
-
-    fn maybe_par_iter_mut_cond(&'data mut self, cond: bool) -> CondIterator<P, S> {
-        self.into_maybe_par_iter_cond(cond)
-    }
-}
-
-/// Converts any serial iterator into a CondIterator, that can either run parallelly or serially.
-pub trait MaybeParallelBridge<T, S>
-where
-    S: Iterator<Item = T> + Send,
-    T: Send,
-{
-    fn maybe_par_bridge(self) -> CondIterator<IterBridge<S>, S>;
-    fn maybe_par_bridge_cond(self, cond: bool) -> CondIterator<IterBridge<S>, S>;
-}
-
-impl<T, S> MaybeParallelBridge<T, S> for S
-where
-    S: Iterator<Item = T> + Send,
-    T: Send,
-{
-    fn maybe_par_bridge(self) -> CondIterator<IterBridge<S>, S> {
-        let iter = CondIterator::from_serial(self);
-
-        if get_parallelism() {
-            USED_PARALLELISM.store(true, Ordering::SeqCst);
-            CondIterator::from_parallel(iter.into_parallel().right().unwrap())
-        } else {
-            iter
+    impl<'data, T: 'data> MaybeParallelRefIterator<'data> for [T] {
+        type Iter = std::slice::Iter<'data, T>;
+        fn maybe_par_iter(&'data self) -> CondIterator<Self::Iter> {
+            CondIterator::from_serial(self.iter())
         }
     }
 
-    fn maybe_par_bridge_cond(self, cond: bool) -> CondIterator<IterBridge<S>, S> {
-        if cond {
-            self.maybe_par_bridge()
-        } else {
-            CondIterator::from_serial(self)
+    impl<'data, T: 'data> MaybeParallelRefIterator<'data> for Vec<T> {
+        type Iter = std::slice::Iter<'data, T>;
+        fn maybe_par_iter(&'data self) -> CondIterator<Self::Iter> {
+            CondIterator::from_serial(self.iter())
         }
     }
-}
 
-/// Allows to convert into `chunks` that can be executed either parallelly or serially.
-pub trait MaybeParallelSlice<'data, T>
-where
-    T: Sync,
-{
-    /// Create a CondIterator, that will be executed either in parallel or serially,
-    /// based solely on the `TOKENIZERS_PARALLELISM` environment variable
-    fn maybe_par_chunks(
-        &'_ self,
-        chunk_size: usize,
-    ) -> CondIterator<rayon::slice::Chunks<'_, T>, std::slice::Chunks<'_, T>>;
-    /// Create a CondIterator, that will be executed either in parallel or serially,
-    /// based on both the `TOKENIZERS_PARALLELISM` environment variable and the provided bool.
-    /// Both must be true to run with parallelism activated.
-    fn maybe_par_chunks_cond(
-        &'_ self,
-        cond: bool,
-        chunk_size: usize,
-    ) -> CondIterator<rayon::slice::Chunks<'_, T>, std::slice::Chunks<'_, T>>;
-}
+    pub trait MaybeParallelRefMutIterator<'data> {
+        type Iter: Iterator;
+        fn maybe_par_iter_mut(&'data mut self) -> CondIterator<Self::Iter>;
+    }
 
-impl<T> MaybeParallelSlice<'_, T> for [T]
-where
-    T: Sync,
-{
-    fn maybe_par_chunks(
-        &'_ self,
-        chunk_size: usize,
-    ) -> CondIterator<rayon::slice::Chunks<'_, T>, std::slice::Chunks<'_, T>> {
-        let parallelism = get_parallelism();
-        if parallelism {
-            CondIterator::from_parallel(self.par_chunks(chunk_size))
-        } else {
-            CondIterator::from_serial(self.chunks(chunk_size))
+    impl<'data, T: 'data> MaybeParallelRefMutIterator<'data> for Vec<T> {
+        type Iter = std::slice::IterMut<'data, T>;
+        fn maybe_par_iter_mut(&'data mut self) -> CondIterator<Self::Iter> {
+            CondIterator::from_serial(self.iter_mut())
         }
     }
-    fn maybe_par_chunks_cond(
-        &'_ self,
-        cond: bool,
-        chunk_size: usize,
-    ) -> CondIterator<rayon::slice::Chunks<'_, T>, std::slice::Chunks<'_, T>> {
-        if cond {
-            self.maybe_par_chunks(chunk_size)
-        } else {
+
+    impl<'data, T: 'data> MaybeParallelRefMutIterator<'data> for [T] {
+        type Iter = std::slice::IterMut<'data, T>;
+        fn maybe_par_iter_mut(&'data mut self) -> CondIterator<Self::Iter> {
+            CondIterator::from_serial(self.iter_mut())
+        }
+    }
+
+    /// Serial-only bridge (identity).
+    pub trait MaybeParallelBridge: Iterator + Sized {
+        fn maybe_par_bridge(self) -> CondIterator<Self>;
+    }
+
+    impl<I: Iterator + Send> MaybeParallelBridge for I {
+        fn maybe_par_bridge(self) -> CondIterator<Self> {
+            CondIterator { iter: self }
+        }
+    }
+
+    /// Serial-only chunks.
+    pub trait MaybeParallelSlice<'data, T> {
+        fn maybe_par_chunks(
+            &'data self,
+            chunk_size: usize,
+        ) -> CondIterator<std::slice::Chunks<'data, T>>;
+    }
+
+    impl<'data, T> MaybeParallelSlice<'data, T> for [T] {
+        fn maybe_par_chunks(
+            &'data self,
+            chunk_size: usize,
+        ) -> CondIterator<std::slice::Chunks<'data, T>> {
             CondIterator::from_serial(self.chunks(chunk_size))
         }
     }
 }
+
+#[cfg(not(feature = "parallel"))]
+pub use serial_impl::*;
 
 #[cfg(test)]
 mod tests {

@@ -4,7 +4,7 @@ use super::trainer::BpeTrainer;
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::cache::{Cache, DEFAULT_CACHE_CAPACITY, MAX_LENGTH};
 use crate::utils::iter::ResultShunt;
-use ahash::AHashMap;
+use crate::utils::{AHashMap, HashMapExt};
 use serde_json::Value;
 use std::borrow::Cow;
 

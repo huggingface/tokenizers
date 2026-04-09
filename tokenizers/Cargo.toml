@@ -65,10 +65,10 @@ harness = false
 [dependencies]
 rand = { version = "0.9", optional = true }
 onig = { version = "6.5.1", default-features = false, optional = true }
-regex = "1.10"
-regex-syntax = "0.8"
-rayon = "1.10"
-rayon-cond = "0.4"
+regex = { version = "1.10", default-features = false, features = ["std", "perf", "unicode-perl"] }
+regex-syntax = { version = "0.8", default-features = false, features = ["std", "unicode-perl"] }
+rayon = { version = "1.10", optional = true }
+rayon-cond = { version = "0.4", optional = true }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 unicode-normalization-alignments = "0.1"
@@ -85,13 +85,13 @@ thiserror = "2"
 fancy-regex = { version = "0.17", optional = true }
 getrandom = { version = "0.3" }
 esaxx-rs = { version = "0.1.10", default-features = false, features = [], optional = true }
-monostate = "0.1.12"
-ahash = { version = "0.8.11", features = ["serde"] }
+foldhash = "0.2"
 dary_heap = { version = "0.3.6", features = ["serde"] }
 compact_str = { version = "0.9", features = ["serde"] }
 
 [features]
-default = ["progressbar", "onig", "esaxx_fast", "spm", "training"]
+default = ["progressbar", "onig", "esaxx_fast", "spm", "training", "parallel"]
+parallel = ["dep:rayon", "dep:rayon-cond"]
 training = ["dep:rand", "dep:esaxx-rs"]
 spm = ["dep:spm_precompiled"]
 esaxx_fast = ["dep:esaxx-rs", "esaxx-rs/cpp"]

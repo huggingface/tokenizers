@@ -57,7 +57,7 @@
 //! [`TemplateProcessing`]: struct.TemplateProcessing.html
 //!
 use crate::{Encoding, PostProcessor, Result};
-use ahash::{AHashMap, AHashSet};
+use crate::utils::{AHashMap, AHashSet, HashMapExt};
 use serde::{Deserialize, Serialize};
 use std::convert::{TryFrom, TryInto};
 use std::result::Result as StdResult;

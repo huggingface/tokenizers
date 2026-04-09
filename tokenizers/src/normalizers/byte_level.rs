@@ -1,7 +1,7 @@
 use crate::processors::byte_level::bytes_char;
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 use crate::utils::macro_rules_attribute;
-use ahash::{AHashMap, AHashSet};
+use crate::utils::{AHashMap, AHashSet};
 use std::sync::LazyLock;
 
 #[derive(Clone, Debug)]

@@ -23,9 +23,19 @@ pub mod truncation;
 // Re-export ProgressFormat for public API
 pub use progress::ProgressFormat;
 
-use ahash::AHashMap;
 use serde::{Serialize, Serializer};
 use std::collections::BTreeMap;
+
+/// Fast hash map using foldhash. Drop-in replacement for ahash::AHashMap.
+pub type AHashMap<K, V> = std::collections::HashMap<K, V, foldhash::fast::FixedState>;
+/// Fast hash set using foldhash. Drop-in replacement for ahash::AHashSet.
+pub type AHashSet<K> = std::collections::HashSet<K, foldhash::fast::FixedState>;
+
+// Re-export extension traits so AHashMap::new() and AHashSet::new() work.
+#[allow(unused_imports)]
+pub use foldhash::HashMapExt;
+#[allow(unused_imports)]
+pub use foldhash::HashSetExt;
 
 pub(crate) fn ordered_map<S, K, V>(
     value: &AHashMap<K, V>,

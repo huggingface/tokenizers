@@ -4,7 +4,7 @@ use super::{Pair, WithFirstLastIterator, Word, BPE};
 use crate::parallelism::*;
 use crate::tokenizer::{AddedToken, Result, Trainer};
 use crate::utils::progress::{ProgressBar, ProgressFormat, ProgressStyle};
-use ahash::{AHashMap, AHashSet};
+use crate::utils::{AHashMap, AHashSet, HashMapExt, HashSetExt};
 use compact_str::CompactString;
 use dary_heap::OctonaryHeap;
 use serde::{Deserialize, Serialize};
@@ -678,7 +678,7 @@ impl Trainer for BpeTrainer {
 #[cfg(test)]
 mod tests {
     use super::{BpeTrainer, Pair, BPE};
-    use ahash::AHashMap;
+    use crate::utils::{AHashMap, HashMapExt};
     use compact_str::CompactString;
 
     #[test]

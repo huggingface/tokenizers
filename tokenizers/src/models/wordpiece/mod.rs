@@ -3,7 +3,7 @@
 
 use crate::models::bpe::BPE;
 use crate::tokenizer::{Model, Result, Token};
-use ahash::AHashMap;
+use crate::utils::{AHashMap, HashMapExt};
 use std::collections::HashMap;
 use std::{
     borrow::Cow,

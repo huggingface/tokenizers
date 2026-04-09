@@ -1,7 +1,7 @@
 use super::WordLevel;
 use crate::utils::parallelism::*;
 use crate::{AddedToken, Result, Trainer};
-use ahash::AHashMap;
+use crate::utils::{AHashMap, HashMapExt};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 
