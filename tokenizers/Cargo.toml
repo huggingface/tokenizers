@@ -119,7 +119,4 @@ debug = true
 name = "encode_batch"
 required-features = ["http"]
 
-[[example]]
-name = "profile_added_vocab_deserialize"
-required-features = ["http"]
 
