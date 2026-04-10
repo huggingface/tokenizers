@@ -313,7 +313,7 @@ impl AddedVocabulary {
                 id
             };
 
-            if token.normalized && !self.normalized_cache.contains_key(&new_id) {
+            if token.normalized {
                 if let Some(n) = normalizer {
                     let mut s = NormalizedString::from(token.content.as_ref());
                     n.normalize(&mut s)?;
@@ -577,11 +577,6 @@ pub(super) struct AddedTokenWithId {
     #[serde(flatten)]
     /// The target AddedToken
     pub token: AddedToken,
-    /// The pre-computed normalized form of `token.content`, stored so that
-    /// deserialization can restore the normalized cache without re-running the
-    /// normalizer.  Omitted from JSON when absent (backward-compatible).
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub normalized_content: Option<String>,
 }
 
 impl Serialize for AddedVocabulary {
@@ -595,7 +590,6 @@ impl Serialize for AddedVocabulary {
             .map(|(id, token)| AddedTokenWithId {
                 id: *id,
                 token: token.clone(),
-                normalized_content: self.normalized_cache.get(id).cloned(),
             })
             .collect::<Vec<_>>();
         // We need to have these added tokens ordered by ascending ID
