@@ -889,6 +889,13 @@ impl PyWordLevel {
 ///     byte_fallback (:obj:`bool`, `optional`, defaults to :obj:`False`):
 ///         Whether to use SentencePiece byte fallback for characters not in the vocabulary.
 ///
+///     alpha (:obj:`float`, `optional`):
+///         A float between 0 and 1 that represents the smoothing parameter (temperature) to use.
+///
+///     nbest_size (:obj:`int`, `optional`):
+///         An integer greater than 0 that represents the maximum number of best paths to consider.
+///         If not set, it samples from the full lattice (i.e. all valid subword segmentations).
+///
 /// Example::
 ///
 ///     >>> from tokenizers.models import Unigram
@@ -903,24 +910,56 @@ pub struct PyUnigram {}
 
 #[pymethods]
 impl PyUnigram {
+    #[getter]
+    fn get_alpha(self_: PyRef<Self>) -> Option<f64> {
+        getter!(self_, Unigram, alpha)
+    }
+
+    #[setter]
+    fn set_alpha(self_: PyRef<Self>, alpha: Option<f64>) {
+        setter!(self_, Unigram, alpha, alpha);
+    }
+
+    #[getter]
+    fn get_nbest_size(self_: PyRef<Self>) -> Option<usize> {
+        getter!(self_, Unigram, nbest_size)
+    }
+
+    #[setter]
+    fn set_nbest_size(self_: PyRef<Self>, nbest_size: Option<usize>) {
+        setter!(self_, Unigram, nbest_size, nbest_size);
+    }
+
     #[new]
-    #[pyo3(signature = (vocab=None, unk_id=None, byte_fallback=None), text_signature = "(self, vocab=None, unk_id=None, byte_fallback=None)")]
+    #[pyo3(
+        signature = (vocab=None, unk_id=None, byte_fallback=None, alpha=None, nbest_size=None),
+        text_signature = "(self, vocab=None, unk_id=None, byte_fallback=None, alpha=None, nbest_size=None)"
+    )]
     fn new(
         vocab: Option<Vec<(String, f64)>>,
         unk_id: Option<usize>,
         byte_fallback: Option<bool>,
+        alpha: Option<f64>,
+        nbest_size: Option<usize>,
     ) -> PyResult<(Self, PyModel)> {
         match (vocab, unk_id, byte_fallback) {
             (Some(vocab), unk_id, byte_fallback) => {
-                let model =
-                    Unigram::from(vocab, unk_id, byte_fallback.unwrap_or(false)).map_err(|e| {
+                let mut model = Unigram::from(vocab, unk_id, byte_fallback.unwrap_or(false))
+                    .map_err(|e| {
                         exceptions::PyException::new_err(format!(
                             "Error while loading Unigram: {e}"
                         ))
                     })?;
+                model.alpha = alpha;
+                model.nbest_size = nbest_size;
                 Ok((PyUnigram {}, model.into()))
             }
-            (None, None, _) => Ok((PyUnigram {}, Unigram::default().into())),
+            (None, None, _) => {
+                let mut model = Unigram::default();
+                model.alpha = alpha;
+                model.nbest_size = nbest_size;
+                Ok((PyUnigram {}, model.into()))
+            }
             _ => Err(exceptions::PyValueError::new_err(
                 "`vocab` and `unk_id` must be both specified",
             )),
