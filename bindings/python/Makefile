@@ -23,8 +23,8 @@ PYO3_PATCH := \n[patch.crates-io]\npyo3 = { git = "https://github.com/PyO3/pyo3.
 # Format source code automatically
 style:
 	cp .cargo/config.toml .cargo/config.toml.bak
-	$(CARGO_ENV) cargo update
 	printf '$(PYO3_PATCH)' >> .cargo/config.toml
+	$(CARGO_ENV) cargo update
 	$(CARGO_ENV) cargo run --manifest-path ./tools/stub-gen/Cargo.toml; \
 	  status=$$?; cp .cargo/config.toml.bak .cargo/config.toml; rm -f .cargo/config.toml.bak; exit $$status
 	ruff check  $(check_dirs) --fix
