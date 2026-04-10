@@ -742,10 +742,15 @@ where
         type_id: u32,
         offsets_type: OffsetType,
     ) -> Result<Encoding> {
+        let fast = matches!(offsets_type, OffsetType::None);
         let encode = |is_pre_tokenized, subseq_idx, subseq| -> Result<Encoding> {
-            let normalized = self
-                .added_vocabulary
-                .extract_and_normalize(self.normalizer.as_ref(), subseq);
+            let normalized = if fast {
+                self.added_vocabulary
+                    .extract_and_normalize_fast(self.normalizer.as_ref(), subseq)
+            } else {
+                self.added_vocabulary
+                    .extract_and_normalize(self.normalizer.as_ref(), subseq)
+            };
             let pre_tokenized = self.do_pre_tokenize(normalized)?;
             let subseq_encoding = self.do_tokenize(
                 pre_tokenized,
