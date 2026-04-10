@@ -53,7 +53,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub type Offsets = (usize, usize);
 
 /// Takes care of pre-processing strings.
-pub trait Normalizer {
+pub trait Normalizer: Sync {
     fn normalize(&self, normalized: &mut NormalizedString) -> Result<()>;
 
     /// Normalize a plain string without tracking alignments.
@@ -561,10 +561,19 @@ where
         }
     }
 
-    /// Set the normalizer
-    pub fn with_normalizer(&mut self, normalizer: Option<impl Into<N>>) -> &mut Self {
+    /// Set the normalizer.
+    ///
+    /// # Performance note
+    ///
+    /// When added tokens with `normalized = true` are already present, this method
+    /// re-normalizes all of them and rebuilds the matching trie. For tokenizers with
+    /// many added tokens this may be slow. Prefer setting the normalizer before adding
+    /// tokens when constructing a tokenizer programmatically.
+    pub fn with_normalizer(&mut self, normalizer: Option<impl Into<N>>) -> Result<&mut Self> {
         self.normalizer = normalizer.map(|norm| norm.into());
-        self
+        self.added_vocabulary
+            .refresh_normalized_tokens(self.normalizer.as_ref())?;
+        Ok(self)
     }
     /// Get the normalizer
     pub fn get_normalizer(&self) -> Option<&N> {
@@ -1197,13 +1206,16 @@ where
 {
     /// Register the given tokens as special tokens. This is especially useful for removing
     /// these special tokens while decoding
-    pub fn add_special_tokens(&mut self, tokens: &[AddedToken]) -> usize {
+    pub fn add_special_tokens(
+        &mut self,
+        tokens: impl IntoIterator<Item = AddedToken>,
+    ) -> Result<usize> {
         self.added_vocabulary
             .add_special_tokens(tokens, &self.model, self.normalizer.as_ref())
     }
 
     /// Add the given tokens to the added vocabulary
-    pub fn add_tokens(&mut self, tokens: &[AddedToken]) -> usize {
+    pub fn add_tokens(&mut self, tokens: impl IntoIterator<Item = AddedToken>) -> Result<usize> {
         self.added_vocabulary
             .add_tokens(tokens, &self.model, self.normalizer.as_ref())
     }
@@ -1450,7 +1462,7 @@ where
                     pbar.finish();
                 }
                 let special_tokens = trainer.train(&mut self.model)?;
-                self.add_special_tokens(&special_tokens);
+                self.add_special_tokens(special_tokens)?;
 
                 Ok(())
             },
@@ -1503,7 +1515,7 @@ where
         }
 
         let special_tokens = trainer.train(&mut self.model)?;
-        self.add_special_tokens(&special_tokens);
+        self.add_special_tokens(special_tokens)?;
 
         Ok(self)
     }

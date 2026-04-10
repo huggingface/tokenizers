@@ -11,6 +11,7 @@ Requires: pytest-benchmark, tokenizers (built with maturin develop --release)
 
 import asyncio
 import concurrent.futures
+import os
 from pathlib import Path
 
 import pytest
@@ -26,7 +27,12 @@ from tokenizers.trainers import BpeTrainer
 # Fixtures
 # ---------------------------------------------------------------------------
 
-DATA_DIR = Path(__file__).resolve().parent.parent.parent.parent / "tokenizers" / "data"
+DATA_DIR = Path(
+    os.environ.get(
+        "TOKENIZERS_DATA_DIR",
+        Path(__file__).resolve().parent.parent.parent.parent / "tokenizers" / "data",
+    )
+)
 
 
 @pytest.fixture(scope="module")
