@@ -296,7 +296,6 @@ impl NormalizedString {
             alignments: self
                 .alignments
                 .get(normalized_range)?
-                .to_vec()
                 .iter()
                 .map(|(start, end)| (start - n_shift, end - n_shift))
                 .collect(),

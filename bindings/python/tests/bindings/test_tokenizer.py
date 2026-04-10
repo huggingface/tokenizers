@@ -155,6 +155,7 @@ class TestTokenizer:
         output = tokenizer.encode_batch(["my name is john", ("my name is john", "pair")])
         assert len(output) == 2
 
+    @pytest.mark.network
     def test_encode_formats(self, bert_files):
         tokenizer = BertWordPieceTokenizer(bert_files["vocab"])
 
@@ -286,6 +287,7 @@ class TestTokenizer:
         with pytest.raises(TypeError, match="InputSequence must be Union[List[str]"):
             tokenizer.encode(["My", "name", "is", "John"], "pair", is_pretokenized=True)
 
+    @pytest.mark.network
     def test_encode_add_special_tokens(self, roberta_files):
         tokenizer = Tokenizer(BPE(roberta_files["vocab"], roberta_files["merges"]))
         tokenizer.add_special_tokens(["<s>", "</s>"])
@@ -396,6 +398,7 @@ class TestTokenizer:
         stream_prefill = DecodeStream(token_ids[:-1])
         assert stream_prefill.step(tokenizer, token_ids[-1]) == last_chunk
 
+    @pytest.mark.network
     def test_decode_stream_fallback(self):
         tokenizer = Tokenizer.from_pretrained("gpt2")
         # tokenizer.decode([255]) fails because its a fallback
@@ -428,6 +431,7 @@ class TestTokenizer:
         out = stream.step(tokenizer, [109])
         assert out == "อั"
 
+    @pytest.mark.network
     def test_decode_skip_special_tokens(self):
         tokenizer = Tokenizer.from_pretrained("hf-internal-testing/Llama-3.1-8B-Instruct")
 
@@ -578,14 +582,15 @@ class TestTokenizer:
         multiprocessing_with_parallelism(tokenizer, True)
 
     def test_multithreaded_concurrency(self):
-        # Thread worker functions
+        # Create a single shared tokenizer instance (thread-safe)
+        shared_tokenizer = Tokenizer(BPE())
+
+        # Thread worker functions that use the SAME tokenizer instance
         def encode_batch(batch):
-            tokenizer = Tokenizer(BPE())
-            return tokenizer.encode_batch(batch)
+            return shared_tokenizer.encode_batch(batch)
 
         def encode_batch_fast(batch):
-            tokenizer = Tokenizer(BPE())
-            return tokenizer.encode_batch_fast(batch)
+            return shared_tokenizer.encode_batch_fast(batch)
 
         # Create some significant workload
         batches = [
@@ -594,7 +599,7 @@ class TestTokenizer:
             ["my name is ringo " * 50] * 20,
         ]
 
-        # Many encoding operations to run concurrently
+        # Many encoding operations to run concurrently using the same tokenizer
         tasks = [
             (encode_batch, batches[0]),
             (encode_batch_fast, batches[1]),
@@ -614,11 +619,13 @@ class TestTokenizer:
         assert len(results) == 30
         assert all(len(result) == 20 for result in results)
 
+    @pytest.mark.network
     def test_from_pretrained(self):
         tokenizer = Tokenizer.from_pretrained("bert-base-cased")
         output = tokenizer.encode("Hey there dear friend!", add_special_tokens=False)
         assert output.tokens == ["Hey", "there", "dear", "friend", "!"]
 
+    @pytest.mark.network
     def test_from_pretrained_revision(self):
         tokenizer = Tokenizer.from_pretrained("anthony/tokenizers-test")
         output = tokenizer.encode("Hey there dear friend!", add_special_tokens=False)
@@ -654,6 +661,7 @@ class TestTokenizer:
         assert output.ids == [1, 10, 2, 3, 4, 5, 10, 6, 7, 8, 9]
         assert output.tokens == ["A", " ", "sen", "te", "n", "ce", " ", "<0xF0>", "<0x9F>", "<0xA4>", "<0x97>"]
 
+    @pytest.mark.network
     def test_encode_special_tokens(self):
         tokenizer = Tokenizer.from_pretrained("t5-base")
         tokenizer.add_tokens(["<eot>"])
@@ -685,6 +693,7 @@ class TestTokenizer:
         output = tokenizer.encode("Hey there<end_of_text> dear<eot>friend!", add_special_tokens=False)
         assert output.tokens == ["▁Hey", "▁there", "<", "end", "_", "of_text>", "▁dear", "<eot>", "▁friend", "!"]
 
+    @pytest.mark.network
     def test_splitting(self):
         tokenizer = Tokenizer.from_pretrained("hf-internal-testing/llama-new-metaspace")
         tokenizer.pre_tokenizer.split = False
@@ -744,6 +753,33 @@ class TestTokenizer:
         output = tokenizer.decode([0, 1, 2, 3], skip_special_tokens=True)
         assert output == "name is john"
         assert tokenizer.get_added_tokens_decoder()[0] == AddedToken("my", special=True)
+
+    def test_weakref_support(self):
+        import weakref
+
+        tokenizer = Tokenizer(BPE())
+        weak_ref = weakref.ref(tokenizer)
+
+        assert weak_ref() is not None
+        assert weak_ref() is tokenizer
+
+        del tokenizer
+        assert weak_ref() is None
+
+    def test_weakref_with_multiple_references(self):
+        import weakref
+
+        tokenizer = Tokenizer(BPE())
+        weak_ref = weakref.ref(tokenizer)
+        another_ref = tokenizer
+
+        assert weak_ref() is not None
+
+        del tokenizer
+        assert weak_ref() is not None
+
+        del another_ref
+        assert weak_ref() is None
 
     def test_setting_to_none(self):
         tokenizer = Tokenizer(BPE())
@@ -870,6 +906,7 @@ class TestTokenizerRepr:
         )
 
 
+@pytest.mark.network
 class TestAsyncTokenizer:
     """Tests for async methods of the Tokenizer class."""
 

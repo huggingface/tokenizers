@@ -196,7 +196,7 @@ fn slice(
 /// Args:
 ///     sequence: str:
 ///         The string sequence used to initialize this NormalizedString
-#[pyclass(module = "tokenizers", name = "NormalizedString")]
+#[pyclass(module = "tokenizers", name = "NormalizedString", from_py_object)]
 #[derive(Clone)]
 pub struct PyNormalizedString {
     pub(crate) normalized: NormalizedString,
@@ -388,7 +388,7 @@ impl From<PyNormalizedString> for NormalizedString {
     }
 }
 
-#[pyclass(module = "tokenizers", name = "NormalizedStringRefMut")]
+#[pyclass(module = "tokenizers", name = "NormalizedStringRefMut", from_py_object)]
 #[derive(Clone)]
 pub struct PyNormalizedStringRefMut {
     inner: RefMutContainer<NormalizedString>,

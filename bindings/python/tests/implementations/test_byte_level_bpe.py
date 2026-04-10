@@ -1,9 +1,11 @@
+import pytest
 from tokenizers import ByteLevelBPETokenizer
 
 from ..utils import data_dir, multiprocessing_with_parallelism, roberta_files
 
 
 class TestByteLevelBPE:
+    @pytest.mark.network
     def test_basic_encode(self, roberta_files):
         tokenizer = ByteLevelBPETokenizer.from_file(roberta_files["vocab"], roberta_files["merges"])
         output = tokenizer.encode("The quick brown fox jumps over the lazy dog")
@@ -32,6 +34,7 @@ class TestByteLevelBPE:
             (39, 43),
         ]
 
+    @pytest.mark.network
     def test_add_prefix_space(self, roberta_files):
         tokenizer = ByteLevelBPETokenizer.from_file(
             roberta_files["vocab"], roberta_files["merges"], add_prefix_space=True
@@ -62,6 +65,7 @@ class TestByteLevelBPE:
             (39, 43),
         ]
 
+    @pytest.mark.network
     def test_lowerspace(self, roberta_files):
         tokenizer = ByteLevelBPETokenizer.from_file(
             roberta_files["vocab"],
@@ -84,6 +88,7 @@ class TestByteLevelBPE:
             "Ġdog",
         ]
 
+    @pytest.mark.network
     def test_multiprocessing_with_parallelism(self, roberta_files):
         tokenizer = ByteLevelBPETokenizer.from_file(roberta_files["vocab"], roberta_files["merges"])
         multiprocessing_with_parallelism(tokenizer, False)
