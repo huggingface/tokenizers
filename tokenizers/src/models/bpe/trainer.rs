@@ -1,6 +1,7 @@
 #![allow(clippy::map_entry)]
 
 use super::{Pair, WithFirstLastIterator, Word, BPE};
+use crate::utils::compact_vocab::CompactVocab;
 use crate::parallelism::*;
 use crate::tokenizer::{AddedToken, Result, Trainer};
 use crate::utils::progress::{ProgressBar, ProgressFormat, ProgressStyle};
@@ -612,11 +613,9 @@ impl BpeTrainer {
             // we have to look up the string in id_to_word because the key in word_to_id is a hash
             .map(|(_key, val)| (id_to_word[val as usize].to_string(), val))
             .collect();
-        model.vocab_r = model
-            .vocab
-            .iter()
-            .map(|(key, val)| (*val, key.to_owned()))
-            .collect();
+        model.vocab_r = CompactVocab::from_vocab(
+            model.vocab.iter().map(|(key, val)| (key.as_str(), *val)),
+        );
         model.merges = merges
             .into_iter()
             .enumerate()

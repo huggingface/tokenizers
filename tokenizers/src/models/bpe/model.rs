@@ -1,6 +1,7 @@
-use super::{super::OrderedVocabIter, trainer::BpeTrainer, Error, Pair, Word};
+use super::{trainer::BpeTrainer, Error, Pair, Word};
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::cache::{Cache, DEFAULT_CACHE_CAPACITY, MAX_LENGTH};
+use crate::utils::compact_vocab::CompactVocab;
 use crate::utils::iter::ResultShunt;
 use ahash::AHashMap;
 use serde_json::Value;
@@ -15,7 +16,6 @@ use std::{
 };
 
 pub type Vocab = AHashMap<String, u32>;
-type VocabR = AHashMap<u32, String>;
 pub type MergeMap = AHashMap<Pair, (u32, u32)>;
 pub type Merges = Vec<(String, String)>;
 
@@ -154,12 +154,9 @@ impl BpeBuilder {
             self.config.merges = m;
         }
 
-        let vocab_r = self
-            .config
-            .vocab
-            .iter()
-            .map(|(key, val)| (*val, key.to_owned()))
-            .collect();
+        let vocab_r = CompactVocab::from_vocab(
+            self.config.vocab.iter().map(|(key, val)| (key.as_str(), *val)),
+        );
         let cache = match self.config.cache_capacity {
             0 => None,
             capacity => Some(Cache::new(capacity)),
@@ -214,8 +211,8 @@ impl BpeBuilder {
 pub struct BPE {
     /// The vocabulary assigns a number to each token.
     pub(crate) vocab: Vocab,
-    /// Reversed vocabulary, to rebuild sentences.
-    pub(crate) vocab_r: VocabR,
+    /// Compact id→token store: all strings in one allocation, O(1) indexed lookup.
+    pub(crate) vocab_r: CompactVocab,
     /// Contains the mapping between Pairs and their (rank, new_id).
     pub(crate) merges: MergeMap,
     /// Contains the cache for optimizing the encoding step.
@@ -469,7 +466,10 @@ impl BPE {
     fn word_to_tokens<'a>(&'a self, word: &'a Word) -> impl Iterator<Item = Token> + 'a {
         word.get_chars_iter()
             .zip(word.get_offsets_iter())
-            .map(move |(id, offsets)| Token::new(id, self.vocab_r[&id].clone(), offsets))
+            .map(move |(id, offsets)| {
+                let s = self.vocab_r.get(id).expect("id missing from vocab_r").to_owned();
+                Token::new(id, s, offsets)
+            })
     }
 
     fn tokenize_with_cache(&self, sequence: &str) -> Result<Vec<Token>> {
@@ -525,7 +525,7 @@ impl Model for BPE {
     }
 
     fn id_to_token(&self, id: u32) -> Option<String> {
-        self.vocab_r.get(&id).cloned()
+        self.vocab_r.get(id).map(str::to_owned)
     }
 
     fn save(&self, folder: &Path, name: Option<&str>) -> Result<Vec<PathBuf>> {
@@ -539,8 +539,8 @@ impl Model for BPE {
             .iter()
             .collect();
         let mut vocab_file = File::create(&vocab_path)?;
-        let order_vocab_iter = OrderedVocabIter::new(&self.vocab_r);
-        let serialized = serde_json::to_string(&order_vocab_iter)?;
+        // CompactVocab serializes as the same {"token": id} JSON object.
+        let serialized = serde_json::to_string(&self.vocab_r)?;
         vocab_file.write_all(serialized.as_bytes())?;
 
         // Write merges.txt
@@ -564,7 +564,9 @@ impl Model for BPE {
             &merges
                 .into_iter()
                 .flat_map(|(pair, _)| {
-                    format!("{} {}\n", self.vocab_r[&pair.0], self.vocab_r[&pair.1]).into_bytes()
+                    let a = self.vocab_r.get(pair.0).expect("merge token missing from vocab");
+                    let b = self.vocab_r.get(pair.1).expect("merge token missing from vocab");
+                    format!("{a} {b}\n").into_bytes()
                 })
                 .collect::<Vec<_>>()[..],
         )?;
@@ -583,18 +585,14 @@ mod tests {
     use tempfile::NamedTempFile;
 
     #[test]
-    fn test_ordered_vocab_iter() {
-        let vocab_r: VocabR = [
-            (0, "a".into()),
-            (1, "b".into()),
-            (2, "c".into()),
-            (3, "ab".into()),
-        ]
-        .iter()
-        .cloned()
-        .collect();
-        let order_vocab_iter = OrderedVocabIter::new(&vocab_r);
-        let serialized = serde_json::to_string(&order_vocab_iter).unwrap();
+    fn test_compact_vocab_serialization() {
+        let vocab_r = CompactVocab::from_vocab([
+            ("a", 0u32),
+            ("b", 1),
+            ("c", 2),
+            ("ab", 3),
+        ]);
+        let serialized = serde_json::to_string(&vocab_r).unwrap();
         assert_eq!(serialized, "{\"a\":0,\"b\":1,\"c\":2,\"ab\":3}");
     }
 

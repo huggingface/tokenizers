@@ -1,4 +1,6 @@
 pub(crate) mod cache;
+pub mod compact_vocab;
+pub use compact_vocab::CompactVocab;
 #[cfg(feature = "http")]
 pub(crate) mod from_pretrained;
 

@@ -1,4 +1,4 @@
-use super::{super::OrderedVocabIter, convert_merges_to_hashmap, BpeBuilder, Pair, BPE};
+use super::{convert_merges_to_hashmap, BpeBuilder, Pair, BPE};
 use ahash::AHashMap;
 use serde::{
     de::{Error, MapAccess, Visitor},
@@ -32,11 +32,15 @@ impl Serialize for BPE {
         merges.sort_unstable_by_key(|k| *k.1);
         let merges = merges
             .into_iter()
-            .map(|(pair, _)| (self.vocab_r[&pair.0].clone(), self.vocab_r[&pair.1].clone()))
+            .map(|(pair, _)| {
+                let a = self.vocab_r.get(pair.0).expect("merge token missing").to_owned();
+                let b = self.vocab_r.get(pair.1).expect("merge token missing").to_owned();
+                (a, b)
+            })
             .collect::<Vec<_>>();
-        let ordered_vocab = OrderedVocabIter::new(&self.vocab_r);
 
-        model.serialize_field("vocab", &ordered_vocab)?;
+        // CompactVocab serializes as {"token": id} in ascending id order.
+        model.serialize_field("vocab", &self.vocab_r)?;
         model.serialize_field("merges", &merges)?;
 
         model.end()
