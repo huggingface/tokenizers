@@ -34,7 +34,7 @@ env:
 jobs:
   benchmark:
     name: Run Rust benchmarks
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-4-cores
     defaults:
       run:
         working-directory: tokenizers
@@ -120,59 +120,35 @@ jobs:
           path: tokenizers/target/criterion/**/report/
           retention-days: 30
 
-      # Build comparison markdown from the bencher output
-      - name: Build comparison table
+      # Build SVG comparison chart
+      - name: Build comparison chart
         if: hashFiles('tokenizers/output.txt') != ''
         id: compare
         run: |
-          # Download previous bencher baseline for the markdown table
           uvx --from huggingface_hub hf download hf-internal-testing/tokenizers-bench \
             baseline.txt --repo-type dataset --local-dir /tmp/prev_baseline 2>/dev/null || true
 
           if [ ! -f /tmp/prev_baseline/baseline.txt ]; then
-            echo "No previous baseline found — skipping comparison table"
+            echo "No previous baseline found — skipping comparison"
             echo "has_comparison=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
           echo "has_comparison=true" >> "$GITHUB_OUTPUT"
 
-          {
-            echo "## Rust Benchmark results"
-            echo ""
-            echo "Commit: \`${{ github.sha }}\`"
-            echo ""
-            echo "| Benchmark | Baseline (ns/iter) | This run (ns/iter) | Δ |"
-            echo "|-----------|-------------------:|-------------------:|--:|"
+          python3 ${{ github.workspace }}/.github/scripts/render_bench_svg.py \
+            --baseline /tmp/prev_baseline/baseline.txt \
+            --current output.txt \
+            --output rust_bench.svg \
+            --title "Rust Benchmarks — ${{ github.sha }}"
 
-            while IFS= read -r line; do
-              name=$(echo "$line" | sed 's/^test \(.*\) \.\.\. bench:.*/\1/')
-              ns=$(echo "$line" | sed 's/.*bench: *\([0-9,]*\) ns\/iter.*/\1/' | tr -d ',')
-              echo "$name $ns"
-            done < output.txt | sort > /tmp/current.tsv
-
-            while IFS= read -r line; do
-              name=$(echo "$line" | sed 's/^test \(.*\) \.\.\. bench:.*/\1/')
-              ns=$(echo "$line" | sed 's/.*bench: *\([0-9,]*\) ns\/iter.*/\1/' | tr -d ',')
-              echo "$name $ns"
-            done < /tmp/prev_baseline/baseline.txt | sort > /tmp/baseline.tsv
-
-            join /tmp/baseline.tsv /tmp/current.tsv | while read -r name base_ns cur_ns; do
-              if [ "$base_ns" -gt 0 ] 2>/dev/null; then
-                delta=$(( (cur_ns - base_ns) * 100 / base_ns ))
-                if [ "$delta" -gt 0 ]; then
-                  delta_str="+${delta}%"
-                else
-                  delta_str="${delta}%"
-                fi
-                base_fmt=$(printf "%'d" "$base_ns")
-                cur_fmt=$(printf "%'d" "$cur_ns")
-                echo "| $name | $base_fmt | $cur_fmt | $delta_str |"
-              fi
-            done
-          } > comparison.md
-
-          cat comparison.md
+      - name: Upload Rust SVG
+        if: steps.compare.outputs.has_comparison == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-bench-svg
+          path: tokenizers/rust_bench.svg
+          retention-days: 30
 
       - name: Post Rust results to PR
         if: inputs.pr_number != '' && steps.compare.outputs.has_comparison == 'true'
@@ -180,8 +156,31 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         working-directory: tokenizers
         run: |
+          # Upload SVG to the PR as an image via artifact URL
+          run_id=${{ github.run_id }}
+          body="## Rust Benchmark Results
+
+          ![Rust Benchmarks](https://github.com/${{ github.repository }}/actions/runs/${run_id}/artifacts)
+
+          <details><summary>Raw SVG</summary>
+
+          \`\`\`
+          $(cat rust_bench.svg)
+          \`\`\`
+
+          </details>"
+
+          # Use inline SVG in the comment (GitHub renders SVG in comments)
+          {
+            echo "## Rust Benchmark Results"
+            echo ""
+            echo "Commit: \`${{ github.sha }}\`"
+            echo ""
+            cat rust_bench.svg
+          } > comparison.md
+
           existing=$(gh api "repos/${{ github.repository }}/issues/${{ inputs.pr_number }}/comments" \
-            --jq '.[] | select(.body | startswith("## Rust Benchmark results")) | .id' | head -1)
+            --jq '.[] | select(.body | startswith("## Rust Benchmark Results")) | .id' | head -1)
 
           if [ -n "$existing" ]; then
             gh api "repos/${{ github.repository }}/issues/comments/$existing" \
@@ -223,7 +222,7 @@ jobs:
 
   benchmark-python:
     name: Run Python benchmarks
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-4-cores
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
@@ -284,37 +283,19 @@ jobs:
 
           echo "has_comparison=true" >> "$GITHUB_OUTPUT"
 
-          python3 -c "
-          import json
+          python3 ${{ github.workspace }}/.github/scripts/render_bench_svg.py \
+            --baseline-json baseline_dir/python-baseline.json \
+            --current-json bench_output.json \
+            --output python_bench.svg \
+            --title "Python Benchmarks — ${{ github.sha }}"
 
-          with open('baseline_dir/python-baseline.json') as f:
-              baseline = {b['name']: b for b in json.load(f)['benchmarks']}
-          with open('bench_output.json') as f:
-              current = {b['name']: b for b in json.load(f)['benchmarks']}
-
-          lines = []
-          lines.append('## Python Benchmark results')
-          lines.append('')
-          lines.append('Commit: \`${{ github.sha }}\`')
-          lines.append('')
-          lines.append('| Benchmark | Baseline (ms) | This run (ms) | Δ |')
-          lines.append('|-----------|-------------:|--------------:|--:|')
-
-          for name in sorted(current):
-              cur_ms = current[name]['stats']['mean'] * 1000
-              if name in baseline:
-                  base_ms = baseline[name]['stats']['mean'] * 1000
-                  delta = (cur_ms - base_ms) / base_ms * 100
-                  sign = '+' if delta > 0 else ''
-                  lines.append(f'| {name} | {base_ms:.1f} | {cur_ms:.1f} | {sign}{delta:.1f}% |')
-              else:
-                  lines.append(f'| {name} | — | {cur_ms:.1f} | new |')
-
-          md = '\n'.join(lines)
-          print(md)
-          with open('py_comparison.md', 'w') as f:
-              f.write(md)
-          "
+      - name: Upload Python SVG
+        if: steps.py_compare.outputs.has_comparison == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-bench-svg
+          path: bindings/python/python_bench.svg
+          retention-days: 30
 
       # Upload baseline on push to main only
       - name: Upload Python baseline to HF Hub
@@ -337,8 +318,16 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         working-directory: bindings/python
         run: |
+          {
+            echo "## Python Benchmark Results"
+            echo ""
+            echo "Commit: \`${{ github.sha }}\`"
+            echo ""
+            cat python_bench.svg
+          } > py_comparison.md
+
           existing=$(gh api "repos/${{ github.repository }}/issues/${{ inputs.pr_number }}/comments" \
-            --jq '.[] | select(.body | startswith("## Python Benchmark results")) | .id' | head -1)
+            --jq '.[] | select(.body | startswith("## Python Benchmark Results")) | .id' | head -1)
 
           if [ -n "$existing" ]; then
             gh api "repos/${{ github.repository }}/issues/comments/$existing" \
