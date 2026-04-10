@@ -1,5 +1,6 @@
 use super::{
-    normalizer::Range, Model, NormalizedString, Normalizer, Offsets, PreTokenizedString, Token,
+    normalizer::Range, Model, NormalizedString, Normalizer, Offsets, PreTokenizedString, Result,
+    Token,
 };
 use crate::utils::{AHashMap, AHashSet, HashMapExt, HashSetExt};
 use daachorse::{DoubleArrayAhoCorasick, DoubleArrayAhoCorasickBuilder, MatchKind};
@@ -14,7 +15,7 @@ use std::sync::LazyLock;
 ///   - Whether to include any whitespace on its left or right
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AddedToken {
-    /// The content of the added token
+    /// The content of the added token (original, as provided by the user)
     pub content: String,
     /// Whether this token must be a single word or can break words
     pub single_word: bool,
@@ -146,14 +147,15 @@ pub struct AddedVocabulary {
     /// and classic.
     added_tokens_map_r: AHashMap<u32, AddedToken>,
 
-    /// Contains only the classic AddedToken, in the specific order the user gave them.
-    added_tokens: Vec<AddedToken>,
-    /// Contains only the special AddedToken, in the specific order the user gave them.
-    special_tokens: Vec<AddedToken>,
-
     /// A Set, containing all the special token for easy access while decoding. This let's
     /// us remove them easily with an O(1) complexity.
     special_tokens_set: AHashSet<String>,
+
+    /// Cache of the normalizer output for tokens that have `normalized = true`.
+    /// Keyed by token ID. Not serialized — rebuilt by `add_tokens` and
+    /// `refresh_normalized_tokens` whenever the normalizer changes.
+    /// Kept separate from `AddedToken` so the token struct stays lean.
+    normalized_cache: AHashMap<u32, String>,
 
     /// A RegexSet containing all the non-normalized patterns used to split on AddedTokens
     split_trie: MatchingSet,
@@ -180,9 +182,8 @@ impl AddedVocabulary {
         Self {
             added_tokens_map: AHashMap::new(),
             added_tokens_map_r: AHashMap::new(),
-            added_tokens: vec![],
-            special_tokens: vec![],
             special_tokens_set: AHashSet::new(),
+            normalized_cache: AHashMap::new(),
             split_trie: None,
             split_normalized_trie: None,
             encode_special_tokens: false,
@@ -229,8 +230,19 @@ impl AddedVocabulary {
             .or_else(|| model.id_to_token(id))
     }
 
+    /// Return the string form of an added token used during **decoding**.
+    ///
+    /// For tokens that were normalized on the way *in* (e.g. byte-level encoding),
+    /// this returns the cached normalized form so that the configured `Decoder` can
+    /// invert the transformation correctly. For all other tokens, the original
+    /// `content` is returned.
     pub fn simple_id_to_token(&self, id: u32) -> Option<String> {
-        self.added_tokens_map_r.get(&id).map(|t| t.content.clone())
+        self.added_tokens_map_r.get(&id).map(|t| {
+            self.normalized_cache
+                .get(&id)
+                .cloned()
+                .unwrap_or_else(|| t.content.clone())
+        })
     }
 
     //
@@ -250,50 +262,47 @@ impl AddedVocabulary {
     /// Add some special tokens to the vocabulary
     pub fn add_special_tokens<N: Normalizer>(
         &mut self,
-        tokens: &[AddedToken],
+        tokens: impl IntoIterator<Item = AddedToken>,
         model: &impl Model,
         normalizer: Option<&N>,
-    ) -> usize {
+    ) -> Result<usize> {
         self.add_tokens(tokens, model, normalizer)
     }
 
     /// Add some tokens to the vocabulary
     pub fn add_tokens<N: Normalizer>(
         &mut self,
-        tokens: &[AddedToken],
+        tokens: impl IntoIterator<Item = AddedToken>,
         model: &impl Model,
         normalizer: Option<&N>,
-    ) -> usize {
-        // Handle special tokens (if any)
-        for token in tokens {
-            if token.special
-                && !token.content.is_empty()
-                && !self.special_tokens_set.contains(&token.content)
-            {
-                self.special_tokens.push(token.to_owned());
-                self.special_tokens_set.insert(token.content.clone());
-            }
-        }
-
+    ) -> Result<usize> {
         let mut ignored = 0;
+        let mut total = 0;
 
-        let mut existing: AHashSet<AddedToken> =
-            self.added_tokens_map_r.values().cloned().collect();
-        let mut next_id = self.added_tokens_map_r.keys().copied().max().map_or(
-            model.get_vocab_size() as u32,
-            |max| {
-                if max >= model.get_vocab_size() as u32 || model.get_vocab_size() == 0 {
-                    max + 1
-                } else {
-                    model.get_vocab_size() as u32
-                }
-            },
-        );
+        let mut next_id =
+            self.added_tokens_map_r
+                .keys()
+                .max()
+                .map_or(model.get_vocab_size() as u32, |max| {
+                    if *max >= model.get_vocab_size() as u32 || model.get_vocab_size() == 0 {
+                        max + 1
+                    } else {
+                        model.get_vocab_size() as u32
+                    }
+                });
 
         for token in tokens {
-            if token.content.is_empty() || existing.contains(token) {
+            total += 1;
+            if token.content.is_empty() {
                 ignored += 1;
                 continue;
+            }
+            // Fast path: skip if this content is already in the map with identical properties.
+            if let Some(id) = self.added_tokens_map.get(&token.content) {
+                if self.added_tokens_map_r.get(id) == Some(&token) {
+                    ignored += 1;
+                    continue;
+                }
             }
 
             let new_id = if let Some(new_id) = self.token_to_id(&token.content, model) {
@@ -304,111 +313,114 @@ impl AddedVocabulary {
                 id
             };
 
+            if token.normalized {
+                if let Some(n) = normalizer {
+                    let mut s = NormalizedString::from(token.content.as_ref());
+                    n.normalize(&mut s)?;
+                    let normed = s.get().to_string();
+                    if normed != token.content {
+                        self.normalized_cache.insert(new_id, normed);
+                    }
+                }
+            }
+
             *self
                 .added_tokens_map
                 .entry(token.content.clone())
                 .or_default() = new_id;
-            // Update the current revert operation
-            *self.added_tokens_map_r.entry(new_id).or_default() = token.clone();
-            // Make sure to remove previous entry (if the token gets a new id)
 
-            // Finally add the token to the classic set if special
-            if !self.special_tokens_set.contains(&token.content) {
-                self.added_tokens.push(token.clone());
+            let is_new_special = token.special
+                && !token.content.is_empty()
+                && !self.special_tokens_set.contains(&token.content);
+            if is_new_special {
+                self.special_tokens_set.insert(token.content.clone());
             }
-            existing.insert(token.clone());
+            self.added_tokens_map_r.insert(new_id, token);
         }
 
-        self.refresh_added_tokens(model, normalizer);
+        self.refresh_added_tokens()?;
 
         // Return the number of added tokens
-        tokens.len() - ignored
+        Ok(total - ignored)
+    }
+
+    /// Re-apply normalization to every added token that has `normalized = true`, then
+    /// rebuild the matching tries.
+    ///
+    /// This is called automatically by [`TokenizerImpl::with_normalizer`] when the
+    /// normalizer is replaced. For tokenizers with many added tokens the trie rebuild
+    /// can be slow; prefer setting the normalizer *before* calling `add_tokens` when
+    /// constructing a tokenizer programmatically. During deserialization this is never
+    /// triggered because the normalizer is set via the builder before tokens are added.
+    pub fn refresh_normalized_tokens<N: Normalizer>(
+        &mut self,
+        normalizer: Option<&N>,
+    ) -> Result<()> {
+        self.normalized_cache.clear();
+        for (id, token) in &self.added_tokens_map_r {
+            if token.normalized {
+                if let Some(n) = normalizer {
+                    let mut s = NormalizedString::from(token.content.as_ref());
+                    n.normalize(&mut s)?;
+                    let normed = s.get().to_string();
+                    if normed != token.content {
+                        self.normalized_cache.insert(*id, normed);
+                    }
+                }
+            }
+        }
+        self.refresh_added_tokens()
     }
 
     /// Reconstruct our internal RegexSet when new tokens are added to the vocabulary.
     /// # TODO @ArthurZucker we should probably make this async? rebuilding the regex takes a long time.
     /// We keep two different RegexSet, one that will take care of matching against the
     /// non-normalized string, and one matching against the normalized one.
-    fn refresh_added_tokens<N: Normalizer>(&mut self, model: &impl Model, normalizer: Option<&N>) {
-        type TupleTokenId<'a> = (&'a AddedToken, u32);
-        let (normalized, non_normalized): (Vec<TupleTokenId>, Vec<TupleTokenId>) = self
-            .special_tokens
-            .iter()
-            .chain(self.added_tokens.iter())
-            .map(|token| {
-                (
-                    token,
-                    self.token_to_id(&token.content, model)
-                        .expect("Missing additional token"),
-                )
-            })
-            .partition(|(token, _)| token.normalized);
+    fn refresh_added_tokens(&mut self) -> Result<()> {
+        // Build two lists: patterns for the normalized trie and for the non-normalized trie.
+        // For normalized tokens we use the cached normalized form when available, falling back
+        // to the original content (no normalizer set yet).  A for loop is used instead of an
+        // iterator + closure so the borrow checker can see that `added_tokens_map_r` and
+        // `normalized_cache` are disjoint fields, allowing both to be borrowed immutably while
+        // `split_trie` / `split_normalized_trie` are assigned afterwards.
+        let mut normalized_pairs: Vec<(&str, u32)> = Vec::new();
+        let mut non_normalized_pairs: Vec<(&str, u32)> = Vec::new();
+        for (id, token) in &self.added_tokens_map_r {
+            if token.normalized {
+                let pattern = self
+                    .normalized_cache
+                    .get(id)
+                    .map(String::as_str)
+                    .unwrap_or(token.content.as_str());
+                normalized_pairs.push((pattern, *id));
+            } else {
+                non_normalized_pairs.push((token.content.as_str(), *id));
+            }
+        }
 
-        let (tokens, ids): (Vec<&AddedToken>, Vec<u32>) = non_normalized.into_iter().unzip();
-        // Deduplicate patterns by content (keeping first occurrence) and filter empty strings
-        // to avoid DuplicatePattern / ZeroLengthPattern errors from daachorse.
-        let mut seen: AHashSet<&str> = AHashSet::new();
-        let (deduped_patterns, deduped_ids): (Vec<&str>, Vec<u32>) = tokens
-            .iter()
-            .map(|t| t.content.as_str())
-            .zip(ids.iter().copied())
-            .filter(|(content, _)| !content.is_empty() && seen.insert(content))
-            .unzip();
-        self.split_trie = if deduped_patterns.is_empty() {
+        self.split_trie = if non_normalized_pairs.is_empty() {
             None
         } else {
-            match DoubleArrayAhoCorasickBuilder::new()
-                .match_kind(MatchKind::LeftmostLongest)
-                .build_with_values(deduped_patterns.into_iter().zip(deduped_ids))
-            {
-                Ok(trie) => Some(trie),
-                Err(e) => panic!(
-                    "Failed to build trie when refreshing tokens: {}. \
-                     This is likely because the total size of all patterns exceeded the \
-                     double-array capacity (~4 GB). Consider reducing the number or size \
-                     of added tokens.",
-                    e
-                ),
-            }
+            Some(
+                DoubleArrayAhoCorasickBuilder::new()
+                    .match_kind(MatchKind::LeftmostLongest)
+                    .build_with_values(non_normalized_pairs)
+                    .map_err(|e| e.to_string())?,
+            )
         };
 
-        let (ntokens, nids): (Vec<&AddedToken>, Vec<u32>) = normalized.into_iter().unzip();
-        let patterns: Vec<_> = ntokens
-            .iter()
-            .map(|token| {
-                let mut content = NormalizedString::from(token.content.as_ref());
-                if let Some(n) = normalizer {
-                    n.normalize(&mut content).unwrap();
-                }
-                content
-            })
-            .collect();
-        // Deduplicate normalized patterns by their normalized form and filter empty strings
-        // (normalization can collapse a non-empty token to an empty string).
-        let mut seen_norm: AHashSet<&str> = AHashSet::new();
-        let (deduped_norm_patterns, deduped_nids): (Vec<&str>, Vec<u32>) = patterns
-            .iter()
-            .map(|content| content.get())
-            .zip(nids.iter().copied())
-            .filter(|(content, _)| !content.is_empty() && seen_norm.insert(content))
-            .unzip();
-        self.split_normalized_trie = if deduped_norm_patterns.is_empty() {
+        self.split_normalized_trie = if normalized_pairs.is_empty() {
             None
         } else {
-            match DoubleArrayAhoCorasickBuilder::new()
-                .match_kind(MatchKind::LeftmostLongest)
-                .build_with_values(deduped_norm_patterns.into_iter().zip(deduped_nids))
-            {
-                Ok(trie) => Some(trie),
-                Err(e) => panic!(
-                    "Failed to build trie when refreshing tokens (normalized): {}. \
-                     This is likely because the total size of all patterns exceeded the \
-                     double-array capacity (~4 GB). Consider reducing the number or size \
-                     of added tokens.",
-                    e
-                ),
-            }
+            Some(
+                DoubleArrayAhoCorasickBuilder::new()
+                    .match_kind(MatchKind::LeftmostLongest)
+                    .build_with_values(normalized_pairs)
+                    .map_err(|e| e.to_string())?,
+            )
         };
+
+        Ok(())
     }
 
     /// Find any AddedToken in the given sentence, using the provided MatchingSet.
@@ -568,7 +580,7 @@ pub(super) struct AddedTokenWithId {
 }
 
 impl Serialize for AddedVocabulary {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -694,11 +706,13 @@ mod tests {
 
         // Add tokens normally
         assert_eq!(
-            vocab.add_tokens(
-                &[AddedToken::from("added_token_1", false)],
-                &model,
-                normalizer
-            ),
+            vocab
+                .add_tokens(
+                    [AddedToken::from("added_token_1", false)],
+                    &model,
+                    normalizer
+                )
+                .unwrap(),
             1
         );
 
@@ -707,14 +721,16 @@ mod tests {
 
         // Does not add multiple time the same token
         assert_eq!(
-            vocab.add_tokens(
-                &[
-                    AddedToken::from("added_token_2", false),
-                    AddedToken::from("added_token_2", false)
-                ],
-                &model,
-                normalizer
-            ),
+            vocab
+                .add_tokens(
+                    [
+                        AddedToken::from("added_token_2", false),
+                        AddedToken::from("added_token_2", false)
+                    ],
+                    &model,
+                    normalizer
+                )
+                .unwrap(),
             1
         );
         assert_eq!(vocab.len(), 2);
@@ -722,7 +738,9 @@ mod tests {
         // Also adds tokens already covered by the model
         let added_token = AddedToken::from("test", false);
         assert_eq!(
-            vocab.add_tokens(std::slice::from_ref(&added_token), &model, normalizer),
+            vocab
+                .add_tokens([added_token.clone()], &model, normalizer)
+                .unwrap(),
             1
         );
         assert_eq!(vocab.len(), 3);
@@ -737,32 +755,38 @@ mod tests {
         let normalizer: Option<&NormalizerWrapper> = None;
         // Add tokens normally
         assert_eq!(
-            vocab.add_special_tokens(
-                &[AddedToken::from("added_token_1", true)],
-                &model,
-                normalizer
-            ),
+            vocab
+                .add_special_tokens(
+                    [AddedToken::from("added_token_1", true)],
+                    &model,
+                    normalizer
+                )
+                .unwrap(),
             1
         );
         assert_eq!(vocab.len(), 1);
 
         // Does not add multiple time the same token
         assert_eq!(
-            vocab.add_special_tokens(
-                &[
-                    AddedToken::from("added_token_2", true),
-                    AddedToken::from("added_token_2", true)
-                ],
-                &model,
-                normalizer
-            ),
+            vocab
+                .add_special_tokens(
+                    [
+                        AddedToken::from("added_token_2", true),
+                        AddedToken::from("added_token_2", true)
+                    ],
+                    &model,
+                    normalizer
+                )
+                .unwrap(),
             1
         );
         assert_eq!(vocab.len(), 2);
 
         // Can add tokens already covered by the model
         assert_eq!(
-            vocab.add_special_tokens(&[AddedToken::from("test", true)], &model, normalizer),
+            vocab
+                .add_special_tokens([AddedToken::from("test", true)], &model, normalizer)
+                .unwrap(),
             1
         );
         assert_eq!(vocab.len(), 3); // New token was added
@@ -779,20 +803,24 @@ mod tests {
         assert!(vocab.added_tokens_map.contains_key("test"));
         assert!(vocab.added_tokens_map_r.contains_key(&0));
 
-        vocab.add_tokens(
-            &[
-                AddedToken::from("tost", true),
-                AddedToken::from("another_two", false),
-            ],
-            &model,
-            normalizer,
-        );
+        vocab
+            .add_tokens(
+                [
+                    AddedToken::from("tost", true),
+                    AddedToken::from("another_two", false),
+                ],
+                &model,
+                normalizer,
+            )
+            .unwrap();
         assert_eq!(vocab.len(), 5); // New token was added
         assert_eq!(vocab.get_vocab()["another_two"], 4); // New token was added, but the index is not the length of the vocab
 
-        // Let's add an already added token again
+        // Let's add an already added token again, but change normalized
         assert_eq!(
-            vocab.add_special_tokens(&[AddedToken::from("another_two", true)], &model, normalizer),
+            vocab
+                .add_special_tokens([AddedToken::from("another_two", true)], &model, normalizer)
+                .unwrap(),
             1
         );
         assert_eq!(vocab.len(), 5); // Token was already there
@@ -814,22 +842,26 @@ mod tests {
         let mut vocab = AddedVocabulary::new();
         let normalizer: Option<&NormalizerWrapper> = None;
 
-        vocab.add_tokens(
-            &[
-                AddedToken::from("my", false),
-                AddedToken::from("name", false),
-            ],
-            &model,
-            normalizer,
-        );
-        vocab.add_special_tokens(
-            &[
-                AddedToken::from("[CLS]", true),
-                AddedToken::from("[SEP]", true),
-            ],
-            &model,
-            normalizer,
-        );
+        vocab
+            .add_tokens(
+                [
+                    AddedToken::from("my", false),
+                    AddedToken::from("name", false),
+                ],
+                &model,
+                normalizer,
+            )
+            .unwrap();
+        vocab
+            .add_special_tokens(
+                [
+                    AddedToken::from("[CLS]", true),
+                    AddedToken::from("[SEP]", true),
+                ],
+                &model,
+                normalizer,
+            )
+            .unwrap();
 
         let result = vocab.extract_and_normalize(normalizer, "[CLS] My name is Anthony [SEP]");
         assert_eq!(
@@ -861,23 +893,27 @@ mod tests {
         let normalizer = Lowercase;
         let mut vocab = AddedVocabulary::new();
 
-        vocab.add_tokens(
-            &[
-                AddedToken::from("my", false).lstrip(true).rstrip(true),
-                AddedToken::from("name", false),
-                AddedToken::from("ony", false).single_word(true),
-            ],
-            &model,
-            Some(&normalizer),
-        );
-        vocab.add_special_tokens(
-            &[
-                AddedToken::from("[CLS]", true),
-                AddedToken::from("[SEP]", true),
-            ],
-            &model,
-            Some(&normalizer),
-        );
+        vocab
+            .add_tokens(
+                [
+                    AddedToken::from("my", false).lstrip(true).rstrip(true),
+                    AddedToken::from("name", false),
+                    AddedToken::from("ony", false).single_word(true),
+                ],
+                &model,
+                Some(&normalizer),
+            )
+            .unwrap();
+        vocab
+            .add_special_tokens(
+                [
+                    AddedToken::from("[CLS]", true),
+                    AddedToken::from("[SEP]", true),
+                ],
+                &model,
+                Some(&normalizer),
+            )
+            .unwrap();
 
         let result =
             vocab.extract_and_normalize(Some(&normalizer), "[CLS] My name is Anthony [SEP]");
@@ -912,11 +948,13 @@ mod tests {
         let mut vocab = AddedVocabulary::new();
         let normalizer = Lowercase;
 
-        vocab.add_tokens(
-            &[AddedToken::from("<mask>", false).single_word(true)],
-            &model,
-            Some(&normalizer),
-        );
+        vocab
+            .add_tokens(
+                [AddedToken::from("<mask>", false).single_word(true)],
+                &model,
+                Some(&normalizer),
+            )
+            .unwrap();
         // Left, in the middle, non single world left, non single word right, end of sentence valid
         let result = vocab.extract_and_normalize(
             Some(&normalizer),
@@ -942,11 +980,13 @@ mod tests {
 
         assert_eq!(vocab.len(), 0);
 
-        vocab.add_tokens(
-            &[AddedToken::from("<mask>", false).single_word(true)],
-            &model,
-            Some(&normalizer),
-        );
+        vocab
+            .add_tokens(
+                [AddedToken::from("<mask>", false).single_word(true)],
+                &model,
+                Some(&normalizer),
+            )
+            .unwrap();
         let result = vocab.extract_and_normalize(Some(&normalizer), "<mask>, <mask>- ◌̰<mask>");
         assert_eq!(
             simplify_output(&result),
@@ -968,14 +1008,16 @@ mod tests {
         let mut vocab = AddedVocabulary::new();
         let normalizer = Lowercase;
 
-        vocab.add_tokens(
-            &[AddedToken::from("<mask>", false)
-                .lstrip(true)
-                .rstrip(true)
-                .single_word(true)],
-            &model,
-            Some(&normalizer),
-        );
+        vocab
+            .add_tokens(
+                [AddedToken::from("<mask>", false)
+                    .lstrip(true)
+                    .rstrip(true)
+                    .single_word(true)],
+                &model,
+                Some(&normalizer),
+            )
+            .unwrap();
         let result = vocab
             .extract_and_normalize(Some(&normalizer), "Hi <mask> there\t<mask>\t<mask>\u{2000}");
         assert_eq!(
@@ -1000,18 +1042,20 @@ mod tests {
         let mut vocab = AddedVocabulary::new();
         let normalizer = Lowercase;
 
-        vocab.add_tokens(
-            &[
-                AddedToken::from("<mask>", true)
-                    .lstrip(true)
-                    .rstrip(true)
-                    .single_word(true),
-                AddedToken::from("ask>", false),
-                AddedToken::from("<pad>", true),
-            ],
-            &model,
-            Some(&normalizer),
-        );
+        vocab
+            .add_tokens(
+                [
+                    AddedToken::from("<mask>", true)
+                        .lstrip(true)
+                        .rstrip(true)
+                        .single_word(true),
+                    AddedToken::from("ask>", false),
+                    AddedToken::from("<pad>", true),
+                ],
+                &model,
+                Some(&normalizer),
+            )
+            .unwrap();
         vocab.set_encode_special_tokens(true);
 
         let result = vocab.extract_and_normalize(
@@ -1056,6 +1100,72 @@ mod tests {
         );
     }
     #[test]
+    fn content_preserved_with_normalizer() {
+        // Verify that AddedToken.content always holds the original user-provided string,
+        // and that normalized_content holds the normalizer output separately.
+        let model = ModelMock::new(&[]);
+        let mut vocab = AddedVocabulary::new();
+        let normalizer = Lowercase;
+
+        vocab
+            .add_tokens(
+                [
+                    AddedToken::from("Hello", false),
+                    AddedToken::from("[CLS]", true),
+                ],
+                &model,
+                Some(&normalizer),
+            )
+            .unwrap();
+
+        let decoder = vocab.get_added_tokens_decoder();
+        // Original content is always preserved in the token struct regardless of normalization
+        assert!(decoder.values().any(|t| t.content == "Hello"));
+        assert!(decoder.values().any(|t| t.content == "[CLS]"));
+
+        // "hello" (lowercased) is in the normalized cache — verify via simple_id_to_token
+        let hello_id = vocab.added_tokens_map["Hello"];
+        let cls_id = vocab.added_tokens_map["[CLS]"];
+        // normalized=true → decode returns cached form "hello"
+        assert_eq!(vocab.simple_id_to_token(hello_id).unwrap(), "hello");
+        // normalized=false → decode returns original content "[CLS]"
+        assert_eq!(vocab.simple_id_to_token(cls_id).unwrap(), "[CLS]");
+    }
+
+    #[test]
+    fn refresh_normalized_tokens_on_normalizer_change() {
+        // Tokens added without a normalizer should get their normalized_content populated
+        // when the normalizer is set later via refresh_normalized_tokens.
+        let model = ModelMock::new(&[]);
+        let mut vocab = AddedVocabulary::new();
+        let normalizer = Lowercase;
+
+        // Add tokens with NO normalizer first
+        vocab
+            .add_tokens(
+                [AddedToken::from("Hello", false)],
+                &model,
+                None::<&NormalizerWrapper>,
+            )
+            .unwrap();
+
+        // Without a normalizer, simple_id_to_token returns the original content
+        let hello_id = vocab.added_tokens_map["Hello"];
+        assert_eq!(vocab.simple_id_to_token(hello_id).unwrap(), "Hello");
+
+        // Now attach a normalizer and refresh
+        vocab.refresh_normalized_tokens(Some(&normalizer)).unwrap();
+
+        // After refresh, simple_id_to_token returns the cached normalized form
+        assert_eq!(vocab.simple_id_to_token(hello_id).unwrap(), "hello");
+
+        // And the vocabulary should still match correctly (splits use normalized form)
+        let result = vocab.extract_and_normalize(Some(&normalizer), "Hello world");
+        let splits = simplify_output(&result);
+        assert_eq!(splits[0], ("hello", Some(vec![0])));
+    }
+
+    #[test]
     fn byte_level_normalizer() {
         // Is able to extract both normal and special tokens
         let model = ModelMock::new(&[]);
@@ -1063,11 +1173,13 @@ mod tests {
         let from = NormalizerWrapper::from(ByteLevelNormalizer::new());
         let normalizer: Option<&NormalizerWrapper> = Some(&from);
 
-        vocab.add_tokens(
-            &[AddedToken::from("my", false), AddedToken::from("今", false)],
-            &model,
-            normalizer,
-        );
+        vocab
+            .add_tokens(
+                [AddedToken::from("my", false), AddedToken::from("今", false)],
+                &model,
+                normalizer,
+            )
+            .unwrap();
         let result = vocab.extract_and_normalize(normalizer, "my今");
         assert_eq!(
             result
