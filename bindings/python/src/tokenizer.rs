@@ -1808,7 +1808,12 @@ impl PyTokenizer {
     #[setter]
     fn set_normalizer(&mut self, normalizer: Option<PyRef<PyNormalizer>>) -> PyResult<()> {
         let normalizer_option = normalizer.map(|norm| norm.clone());
-        ToPyResult(self.tokenizer.with_normalizer(normalizer_option).map(|_| ())).into()
+        ToPyResult(
+            self.tokenizer
+                .with_normalizer(normalizer_option)
+                .map(|_| ()),
+        )
+        .into()
     }
 
     /// The `optional` :class:`~tokenizers.pre_tokenizers.PreTokenizer` in use by the Tokenizer
