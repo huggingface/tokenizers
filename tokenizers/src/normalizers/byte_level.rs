@@ -10,11 +10,28 @@ pub struct ByteLevel;
 
 static BYTES_CHAR: LazyLock<AHashMap<u8, char>> = LazyLock::new(bytes_char);
 
-/// Pre-encoded UTF-8 lookup: for each input byte, the UTF-8 encoding of its
-/// byte-level char (1 or 2 bytes) + length.  Avoids HashMap lookup + per-char
-/// UTF-8 encoding in the hot `normalize_str` path.
+/// Pre-encoded UTF-8 lookup table for [`ByteLevel::normalize_str`].
+///
+/// The byte-level normalizer maps every input byte (0x00–0xFF) to a specific
+/// Unicode character.  For example:
+///
+/// | Input byte | Char    | Code point | UTF-8 bytes | Length |
+/// |------------|---------|------------|-------------|--------|
+/// | `0x6B` (k) | 'k'     | U+006B     | `[6B]`      | 1      |
+/// | `0x20` ( ) | 'Ġ'     | U+0120     | `[C4, A0]`  | 2      |
+/// | `0x0D` (CR)| 'č'     | U+010D     | `[C4, 8D]`  | 2      |
+///
+/// Without this table, each byte requires a `HashMap<u8, char>` lookup
+/// followed by `char::encode_utf8` to write it into the output `String`.
+///
+/// This table pre-computes the UTF-8 encoding once at startup, so the hot
+/// path is just `out.extend_from_slice(&entry.bytes[..entry.len])` — a
+/// direct memcpy with no hashing and no per-char encoding.
 struct Utf8Entry {
+    /// The UTF-8 encoding of the byte-level char (at most 2 bytes for this
+    /// particular mapping, since all chars are ≤ U+0122).
     bytes: [u8; 2],
+    /// Number of valid bytes in `bytes` (1 or 2).
     len: u8,
 }
 
