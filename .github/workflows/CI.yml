@@ -146,6 +146,11 @@ jobs:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --manifest-path bindings/python/Cargo.toml
           sccache: 'true'
+        env:
+          # abi3 extension modules resolve Python symbols at runtime;
+          # explicit --target triggers cross-compilation mode which
+          # doesn't pass this flag automatically on macOS.
+          RUSTFLAGS: "-C link-arg=-undefined -C link-arg=dynamic_lookup"
       - name: Upload wheels
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
