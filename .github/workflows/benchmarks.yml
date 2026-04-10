@@ -125,7 +125,7 @@ jobs:
         if: hashFiles('tokenizers/output.txt') != ''
         id: compare
         run: |
-          pip install cairosvg
+          uv pip install --system cairosvg
 
           uvx --from huggingface_hub hf download hf-internal-testing/tokenizers-bench \
             baseline.txt --repo-type dataset --local-dir /tmp/prev_baseline 2>/dev/null || true
@@ -283,7 +283,7 @@ jobs:
 
           echo "has_comparison=true" >> "$GITHUB_OUTPUT"
 
-          pip install cairosvg
+          uv pip install --system cairosvg
           python3 ${{ github.workspace }}/.github/scripts/render_bench_svg.py \
             --baseline-json baseline_dir/python-baseline.json \
             --current-json bench_output.json \
