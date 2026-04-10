@@ -56,12 +56,12 @@ HF_TEST_DATA = https://huggingface.co/datasets/hf-internal-testing/tokenizers-te
 
 $(DATA_DIR)/big.txt :
 	$(dir_guard)
-	wget $(HF_TEST_DATA)/big.txt -O $@
+	curl -sL $(HF_TEST_DATA)/big.txt -o $@
 
 $(DATA_DIR)/small.txt :
 	$(dir_guard)
-	wget $(HF_TEST_DATA)/small.txt -O $@
+	curl -sL $(HF_TEST_DATA)/small.txt -o $@
 
 $(DATA_DIR)/roberta.json :
 	$(dir_guard)
-	wget $(HF_TEST_DATA)/roberta.json -O $@
+	curl -sL $(HF_TEST_DATA)/roberta.json -o $@
