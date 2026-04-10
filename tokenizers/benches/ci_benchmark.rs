@@ -233,6 +233,24 @@ fn bench_serialization(c: &mut Criterion) {
         b.iter(|| black_box(serde_json::from_str::<Tokenizer>(&llama3_json).unwrap()))
     });
 
+    // Deserialize with 100k added tokens + NFKC normalizer
+    // This stresses the normalize path during add_tokens/refresh_added_tokens.
+    {
+        use tokenizers::normalizers::NFKC;
+        let mut tok = Tokenizer::from_file("data/roberta.json").unwrap();
+        let _ = tok.with_normalizer(Some(NFKC));
+        let tokens: Vec<_> = (0..100_000)
+            .map(|i| AddedToken::from(format!("tok{i}"), false))
+            .collect();
+        let _ = tok.add_tokens(tokens);
+        let path = std::env::temp_dir().join("bench_100k_nfkc.json");
+        tok.save(&path, false).unwrap();
+        group.bench_function("deserialize-100k-nfkc", |b| {
+            b.iter(|| black_box(Tokenizer::from_file(&path).unwrap()))
+        });
+        std::fs::remove_file(&path).ok();
+    }
+
     group.finish();
 }
 
