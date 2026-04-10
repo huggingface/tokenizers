@@ -28,10 +28,12 @@ jobs:
         id: pr
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+          REPOSITORY: ${{ github.repository }}
         run: |
-          pr_number=${{ github.event.issue.number }}
-          head_sha=$(gh api "repos/${{ github.repository }}/pulls/$pr_number" --jq '.head.sha')
-          head_ref=$(gh api "repos/${{ github.repository }}/pulls/$pr_number" --jq '.head.ref')
+          pr_number=$PR_NUMBER
+          head_sha=$(gh api "repos/$REPOSITORY/pulls/$pr_number" --jq '.head.sha')
+          head_ref=$(gh api "repos/$REPOSITORY/pulls/$pr_number" --jq '.head.ref')
           echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
           echo "head_sha=$head_sha" >> "$GITHUB_OUTPUT"
           echo "head_ref=$head_ref" >> "$GITHUB_OUTPUT"
@@ -40,8 +42,9 @@ jobs:
         id: check
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
         run: |
-          check_id=$(gh api "repos/${{ github.repository }}/check-runs" \
+          check_id=$(gh api "repos/$REPOSITORY/check-runs" \
             -X POST \
             -f "name=Benchmark Results" \
             -f "head_sha=${{ steps.pr.outputs.head_sha }}" \
@@ -54,9 +57,10 @@ jobs:
       - name: Dispatch benchmark workflow
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
         run: |
           gh workflow run benchmarks.yml \
-            --repo "${{ github.repository }}" \
+            --repo "$REPOSITORY" \
             --ref "${{ steps.pr.outputs.head_ref }}" \
             -f pr_number="${{ steps.pr.outputs.pr_number }}" \
             -f check_run_id="${{ steps.check.outputs.check_id }}" \
