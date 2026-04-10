@@ -10,6 +10,25 @@ pub struct ByteLevel;
 
 static BYTES_CHAR: LazyLock<AHashMap<u8, char>> = LazyLock::new(bytes_char);
 
+/// Pre-encoded UTF-8 lookup: for each input byte, the UTF-8 encoding of its
+/// byte-level char (1 or 2 bytes) + length.  Avoids HashMap lookup + per-char
+/// UTF-8 encoding in the hot `normalize_str` path.
+struct Utf8Entry {
+    bytes: [u8; 2],
+    len: u8,
+}
+
+static BYTES_CHAR_UTF8: LazyLock<[Utf8Entry; 256]> = LazyLock::new(|| {
+    let map = bytes_char();
+    std::array::from_fn(|i| {
+        let c = map[&(i as u8)];
+        let mut buf = [0u8; 2];
+        let s = c.encode_utf8(&mut buf);
+        let len = s.len() as u8;
+        Utf8Entry { bytes: buf, len }
+    })
+});
+
 impl Default for ByteLevel {
     fn default() -> Self {
         Self::new()
@@ -47,12 +66,16 @@ impl Normalizer for ByteLevel {
     }
 
     /// Fast path: map each byte to its byte-level char without alignment tracking.
+    /// Uses a pre-encoded UTF-8 lookup table — no HashMap, no per-char encoding.
     fn normalize_str(&self, s: &str) -> Result<String> {
-        let mut out = String::with_capacity(s.len() * 2);
-        for b in s.as_bytes() {
-            out.push(BYTES_CHAR[b]);
+        let table = &*BYTES_CHAR_UTF8;
+        let mut out = Vec::with_capacity(s.len() * 2);
+        for &b in s.as_bytes() {
+            let entry = &table[b as usize];
+            out.extend_from_slice(&entry.bytes[..entry.len as usize]);
         }
-        Ok(out)
+        // SAFETY: every entry in the table is valid UTF-8 (encoded from a char).
+        Ok(unsafe { String::from_utf8_unchecked(out) })
     }
 }
 
@@ -179,5 +202,16 @@ mod tests {
                 (55, 61)
             ]
         );
+    }
+
+    #[test]
+    fn normalize_str_matches_normalize() {
+        let bl = ByteLevel::new();
+        for input in &["Hello", "Hello 我今天能为你做什么", "", "abc\x00\x01\x7f"] {
+            let mut ns = NormalizedString::from(*input);
+            bl.normalize(&mut ns).unwrap();
+            let fast = bl.normalize_str(input).unwrap();
+            assert_eq!(ns.get(), fast, "mismatch for input: {input:?}");
+        }
     }
 }
