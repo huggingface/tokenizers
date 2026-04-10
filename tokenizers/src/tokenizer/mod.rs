@@ -55,6 +55,17 @@ pub type Offsets = (usize, usize);
 /// Takes care of pre-processing strings.
 pub trait Normalizer {
     fn normalize(&self, normalized: &mut NormalizedString) -> Result<()>;
+
+    /// Normalize a plain string, returning the result without tracking offsets.
+    ///
+    /// The default implementation allocates a full [`NormalizedString`] (with
+    /// alignment vectors).  Normalizers that can produce their output more
+    /// cheaply should override this to avoid the overhead.
+    fn normalize_str(&self, s: &str) -> Result<String> {
+        let mut n = NormalizedString::from(s);
+        self.normalize(&mut n)?;
+        Ok(n.get().to_owned())
+    }
 }
 
 /// The `PreTokenizer` is in charge of doing the pre-segmentation step. It splits the given string

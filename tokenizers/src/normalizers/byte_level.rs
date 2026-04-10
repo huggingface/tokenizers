@@ -45,6 +45,15 @@ impl Normalizer for ByteLevel {
         }
         Ok(())
     }
+
+    /// Fast path: map each byte to its byte-level char without alignment tracking.
+    fn normalize_str(&self, s: &str) -> Result<String> {
+        let mut out = String::with_capacity(s.len() * 2);
+        for b in s.as_bytes() {
+            out.push(BYTES_CHAR[b]);
+        }
+        Ok(out)
+    }
 }
 
 #[cfg(test)]
