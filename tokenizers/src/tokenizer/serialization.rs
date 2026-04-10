@@ -24,7 +24,7 @@ where
     where
         S: Serializer,
     {
-        let mut tokenizer = serializer.serialize_struct("Tokenizer", 9)?;
+        let mut tokenizer = serializer.serialize_struct("Tokenizer", 10)?;
 
         // Start by adding the current version
         tokenizer.serialize_field("version", SERIALIZATION_VERSION)?;
@@ -32,6 +32,9 @@ where
         // Params
         tokenizer.serialize_field("truncation", &self.truncation)?;
         tokenizer.serialize_field("padding", &self.padding)?;
+
+        // Role to token mapping
+        tokenizer.serialize_field("role_to_token", &self.role_to_token)?;
 
         // Added tokens
         tokenizer.serialize_field("added_tokens", &self.added_vocabulary)?;
@@ -65,6 +68,7 @@ where
                 "version",
                 "truncation",
                 "padding",
+                "role_to_token",
                 "added_tokens",
                 "normalizer",
                 "pre_tokenizer",
@@ -125,6 +129,9 @@ where
                 "padding" => {
                     builder = builder.with_padding(map.next_value()?);
                 }
+                "role_to_token" => {
+                    builder = builder.with_role_to_token(map.next_value()?);
+                }
                 "added_tokens" => {
                     tokens = map.next_value()?;
                 }
@@ -182,6 +189,7 @@ mod tests {
   "version": "1.0",
   "truncation": null,
   "padding": null,
+  "role_to_token": null,
   "added_tokens": [
     {
       "id": 0,
