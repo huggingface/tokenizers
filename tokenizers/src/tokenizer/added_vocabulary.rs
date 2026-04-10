@@ -712,11 +712,13 @@ mod tests {
 
         // Add tokens normally
         assert_eq!(
-            vocab.add_tokens(
-                [AddedToken::from("added_token_1", false)],
-                &model,
-                normalizer
-            ).unwrap(),
+            vocab
+                .add_tokens(
+                    [AddedToken::from("added_token_1", false)],
+                    &model,
+                    normalizer
+                )
+                .unwrap(),
             1
         );
 
@@ -725,14 +727,16 @@ mod tests {
 
         // Does not add multiple time the same token
         assert_eq!(
-            vocab.add_tokens(
-                [
-                    AddedToken::from("added_token_2", false),
-                    AddedToken::from("added_token_2", false)
-                ],
-                &model,
-                normalizer
-            ).unwrap(),
+            vocab
+                .add_tokens(
+                    [
+                        AddedToken::from("added_token_2", false),
+                        AddedToken::from("added_token_2", false)
+                    ],
+                    &model,
+                    normalizer
+                )
+                .unwrap(),
             1
         );
         assert_eq!(vocab.len(), 2);
@@ -740,7 +744,9 @@ mod tests {
         // Also adds tokens already covered by the model
         let added_token = AddedToken::from("test", false);
         assert_eq!(
-            vocab.add_tokens([added_token.clone()], &model, normalizer).unwrap(),
+            vocab
+                .add_tokens([added_token.clone()], &model, normalizer)
+                .unwrap(),
             1
         );
         assert_eq!(vocab.len(), 3);
@@ -755,32 +761,38 @@ mod tests {
         let normalizer: Option<&NormalizerWrapper> = None;
         // Add tokens normally
         assert_eq!(
-            vocab.add_special_tokens(
-                &[AddedToken::from("added_token_1", true)],
-                &model,
-                normalizer
-            ).unwrap(),
+            vocab
+                .add_special_tokens(
+                    &[AddedToken::from("added_token_1", true)],
+                    &model,
+                    normalizer
+                )
+                .unwrap(),
             1
         );
         assert_eq!(vocab.len(), 1);
 
         // Does not add multiple time the same token
         assert_eq!(
-            vocab.add_special_tokens(
-                &[
-                    AddedToken::from("added_token_2", true),
-                    AddedToken::from("added_token_2", true)
-                ],
-                &model,
-                normalizer
-            ).unwrap(),
+            vocab
+                .add_special_tokens(
+                    &[
+                        AddedToken::from("added_token_2", true),
+                        AddedToken::from("added_token_2", true)
+                    ],
+                    &model,
+                    normalizer
+                )
+                .unwrap(),
             1
         );
         assert_eq!(vocab.len(), 2);
 
         // Can add tokens already covered by the model
         assert_eq!(
-            vocab.add_special_tokens(&[AddedToken::from("test", true)], &model, normalizer).unwrap(),
+            vocab
+                .add_special_tokens(&[AddedToken::from("test", true)], &model, normalizer)
+                .unwrap(),
             1
         );
         assert_eq!(vocab.len(), 3); // New token was added
@@ -811,7 +823,9 @@ mod tests {
 
         // Let's add an already added token again, but change normalized
         assert_eq!(
-            vocab.add_special_tokens(&[AddedToken::from("another_two", true)], &model, normalizer).unwrap(),
+            vocab
+                .add_special_tokens(&[AddedToken::from("another_two", true)], &model, normalizer)
+                .unwrap(),
             1
         );
         assert_eq!(vocab.len(), 5); // Token was already there
@@ -884,23 +898,27 @@ mod tests {
         let normalizer = Lowercase;
         let mut vocab = AddedVocabulary::new();
 
-        vocab.add_tokens(
-            [
-                AddedToken::from("my", false).lstrip(true).rstrip(true),
-                AddedToken::from("name", false),
-                AddedToken::from("ony", false).single_word(true),
-            ],
-            &model,
-            Some(&normalizer),
-        ).unwrap();
-        vocab.add_special_tokens(
-            &[
-                AddedToken::from("[CLS]", true),
-                AddedToken::from("[SEP]", true),
-            ],
-            &model,
-            Some(&normalizer),
-        ).unwrap();
+        vocab
+            .add_tokens(
+                [
+                    AddedToken::from("my", false).lstrip(true).rstrip(true),
+                    AddedToken::from("name", false),
+                    AddedToken::from("ony", false).single_word(true),
+                ],
+                &model,
+                Some(&normalizer),
+            )
+            .unwrap();
+        vocab
+            .add_special_tokens(
+                &[
+                    AddedToken::from("[CLS]", true),
+                    AddedToken::from("[SEP]", true),
+                ],
+                &model,
+                Some(&normalizer),
+            )
+            .unwrap();
 
         let result =
             vocab.extract_and_normalize(Some(&normalizer), "[CLS] My name is Anthony [SEP]");
@@ -935,11 +953,13 @@ mod tests {
         let mut vocab = AddedVocabulary::new();
         let normalizer = Lowercase;
 
-        vocab.add_tokens(
-            [AddedToken::from("<mask>", false).single_word(true)],
-            &model,
-            Some(&normalizer),
-        ).unwrap();
+        vocab
+            .add_tokens(
+                [AddedToken::from("<mask>", false).single_word(true)],
+                &model,
+                Some(&normalizer),
+            )
+            .unwrap();
         // Left, in the middle, non single world left, non single word right, end of sentence valid
         let result = vocab.extract_and_normalize(
             Some(&normalizer),
@@ -965,11 +985,13 @@ mod tests {
 
         assert_eq!(vocab.len(), 0);
 
-        vocab.add_tokens(
-            [AddedToken::from("<mask>", false).single_word(true)],
-            &model,
-            Some(&normalizer),
-        ).unwrap();
+        vocab
+            .add_tokens(
+                [AddedToken::from("<mask>", false).single_word(true)],
+                &model,
+                Some(&normalizer),
+            )
+            .unwrap();
         let result = vocab.extract_and_normalize(Some(&normalizer), "<mask>, <mask>- ◌̰<mask>");
         assert_eq!(
             simplify_output(&result),
@@ -991,14 +1013,16 @@ mod tests {
         let mut vocab = AddedVocabulary::new();
         let normalizer = Lowercase;
 
-        vocab.add_tokens(
-            [AddedToken::from("<mask>", false)
-                .lstrip(true)
-                .rstrip(true)
-                .single_word(true)],
-            &model,
-            Some(&normalizer),
-        ).unwrap();
+        vocab
+            .add_tokens(
+                [AddedToken::from("<mask>", false)
+                    .lstrip(true)
+                    .rstrip(true)
+                    .single_word(true)],
+                &model,
+                Some(&normalizer),
+            )
+            .unwrap();
         let result = vocab
             .extract_and_normalize(Some(&normalizer), "Hi <mask> there\t<mask>\t<mask>\u{2000}");
         assert_eq!(
@@ -1023,18 +1047,20 @@ mod tests {
         let mut vocab = AddedVocabulary::new();
         let normalizer = Lowercase;
 
-        vocab.add_tokens(
-            [
-                AddedToken::from("<mask>", true)
-                    .lstrip(true)
-                    .rstrip(true)
-                    .single_word(true),
-                AddedToken::from("ask>", false),
-                AddedToken::from("<pad>", true),
-            ],
-            &model,
-            Some(&normalizer),
-        ).unwrap();
+        vocab
+            .add_tokens(
+                [
+                    AddedToken::from("<mask>", true)
+                        .lstrip(true)
+                        .rstrip(true)
+                        .single_word(true),
+                    AddedToken::from("ask>", false),
+                    AddedToken::from("<pad>", true),
+                ],
+                &model,
+                Some(&normalizer),
+            )
+            .unwrap();
         vocab.set_encode_special_tokens(true);
 
         let result = vocab.extract_and_normalize(
@@ -1086,14 +1112,16 @@ mod tests {
         let mut vocab = AddedVocabulary::new();
         let normalizer = Lowercase;
 
-        vocab.add_tokens(
-            [
-                AddedToken::from("Hello", false),
-                AddedToken::from("[CLS]", true),
-            ],
-            &model,
-            Some(&normalizer),
-        ).unwrap();
+        vocab
+            .add_tokens(
+                [
+                    AddedToken::from("Hello", false),
+                    AddedToken::from("[CLS]", true),
+                ],
+                &model,
+                Some(&normalizer),
+            )
+            .unwrap();
 
         let decoder = vocab.get_added_tokens_decoder();
         // Original content is always preserved in the token struct regardless of normalization
@@ -1118,11 +1146,13 @@ mod tests {
         let normalizer = Lowercase;
 
         // Add tokens with NO normalizer first
-        vocab.add_tokens(
-            [AddedToken::from("Hello", false)],
-            &model,
-            None::<&NormalizerWrapper>,
-        ).unwrap();
+        vocab
+            .add_tokens(
+                [AddedToken::from("Hello", false)],
+                &model,
+                None::<&NormalizerWrapper>,
+            )
+            .unwrap();
 
         // Without a normalizer, simple_id_to_token returns the original content
         let hello_id = vocab.added_tokens_map["Hello"];
@@ -1148,11 +1178,13 @@ mod tests {
         let from = NormalizerWrapper::from(ByteLevelNormalizer::new());
         let normalizer: Option<&NormalizerWrapper> = Some(&from);
 
-        vocab.add_tokens(
-            [AddedToken::from("my", false), AddedToken::from("今", false)],
-            &model,
-            normalizer,
-        ).unwrap();
+        vocab
+            .add_tokens(
+                [AddedToken::from("my", false), AddedToken::from("今", false)],
+                &model,
+                normalizer,
+            )
+            .unwrap();
         let result = vocab.extract_and_normalize(normalizer, "my今");
         assert_eq!(
             result

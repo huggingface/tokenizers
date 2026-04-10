@@ -159,7 +159,9 @@ fn split_on_added_tokens_bert() {
     let input = "Yesterday I saw a [MASK] far away";
 
     let mut tokenizer = get_bert();
-    tokenizer.add_special_tokens(&[AddedToken::from("[MASK]", true)]).unwrap();
+    tokenizer
+        .add_special_tokens(&[AddedToken::from("[MASK]", true)])
+        .unwrap();
     let output = tokenizer.encode(input, false).unwrap();
 
     assert_eq!(

@@ -559,10 +559,7 @@ where
     /// re-normalizes all of them and rebuilds the matching trie. For tokenizers with
     /// many added tokens this may be slow. Prefer setting the normalizer before adding
     /// tokens when constructing a tokenizer programmatically.
-    pub fn with_normalizer(
-        &mut self,
-        normalizer: Option<impl Into<N>>,
-    ) -> Result<&mut Self> {
+    pub fn with_normalizer(&mut self, normalizer: Option<impl Into<N>>) -> Result<&mut Self> {
         self.normalizer = normalizer.map(|norm| norm.into());
         self.added_vocabulary
             .refresh_normalized_tokens(self.normalizer.as_ref())?;

@@ -20,8 +20,12 @@ fn create_gpt2_tokenizer(bpe: BPE) -> Tokenizer {
     let mut tokenizer = Tokenizer::new(bpe);
     tokenizer.with_pre_tokenizer(Some(ByteLevel::default()));
     tokenizer.with_decoder(Some(ByteLevel::default()));
-    tokenizer.add_tokens([AddedToken::from("ing", false).single_word(false)]).unwrap();
-    tokenizer.add_special_tokens(&[AddedToken::from("[ENT]", true).single_word(true)]).unwrap();
+    tokenizer
+        .add_tokens([AddedToken::from("ing", false).single_word(false)])
+        .unwrap();
+    tokenizer
+        .add_special_tokens(&[AddedToken::from("[ENT]", true).single_word(true)])
+        .unwrap();
     tokenizer
 }
 

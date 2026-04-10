@@ -7,7 +7,9 @@ use tokenizers::{
 #[test]
 fn test_decoding_with_added_bpe() {
     let mut tokenizer = Tokenizer::from_file("data/llama-3-tokenizer.json").unwrap();
-    tokenizer.with_normalizer(Some(NormalizerWrapper::from(normalizers::ByteLevel::new()))).unwrap();
+    tokenizer
+        .with_normalizer(Some(NormalizerWrapper::from(normalizers::ByteLevel::new())))
+        .unwrap();
     tokenizer.with_pre_tokenizer(Some(PreTokenizerWrapper::Split(
         Split::new(
             SplitPattern::Regex(r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\\r\\n\\p{L}\\p{N}]?\\p{L}+|\\p{N}{1,3}| ?[^\\s\\p{L}\\p{N}]+[\\r\\n]*|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+".into()),
@@ -16,7 +18,9 @@ fn test_decoding_with_added_bpe() {
         )
         .unwrap(),
     )));
-    tokenizer.add_tokens([AddedToken::from("嗎", false).normalized(false)]).unwrap();
+    tokenizer
+        .add_tokens([AddedToken::from("嗎", false).normalized(false)])
+        .unwrap();
     let encoded = tokenizer
         .encode("Hey! how is this token: 嗎", false)
         .unwrap();
@@ -32,7 +36,9 @@ fn test_decoding_with_added_bpe() {
     let decoded = tokenizer.decode(encoded.get_ids(), false);
     assert_eq!(decoded.unwrap(), "Hey! how is this token: 嗎");
 
-    tokenizer.add_tokens([AddedToken::from("д", false).normalized(true)]).unwrap();
+    tokenizer
+        .add_tokens([AddedToken::from("д", false).normalized(true)])
+        .unwrap();
     let encoded = tokenizer
         .encode("Hey! how is this token: д", false)
         .unwrap();
