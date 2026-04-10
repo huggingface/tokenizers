@@ -2,13 +2,14 @@ use ahash::{AHashMap, AHashSet};
 use std::sync::LazyLock;
 
 use crate::utils::SysRegex;
-use serde::{Deserialize, Serialize};
+use serde::de::{self, MapAccess, Visitor};
+use serde::ser::SerializeStruct;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::tokenizer::{
     Decoder, Encoding, PostProcessor, PreTokenizedString, PreTokenizer, Result,
     SplitDelimiterBehavior,
 };
-use crate::utils::macro_rules_attribute;
 
 /// Converts bytes to unicode characters.
 /// See https://github.com/openai/gpt-2/blob/master/src/encoder.py#L9
@@ -48,11 +49,14 @@ static BYTES_CHAR: LazyLock<AHashMap<u8, char>> = LazyLock::new(bytes_char);
 static CHAR_BYTES: LazyLock<AHashMap<char, u8>> =
     LazyLock::new(|| bytes_char().into_iter().map(|(c, b)| (b, c)).collect());
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 /// Provides all the necessary steps to handle the BPE tokenization at the byte-level. Takes care
 /// of all the required processing steps to transform a UTF-8 string as needed before and after the
 /// BPE model does its job.
-#[macro_rules_attribute(impl_serde_type!)]
+///
+/// As a [`PreTokenizer`]: uses `add_prefix_space` and `use_regex`.
+/// As a [`Decoder`]: see [`ByteLevelDecoder`].
+/// As a [`PostProcessor`]: see [`ByteLevelPostProcessor`].
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct ByteLevel {
     /// Whether to add a leading space to the first word. This allows to treat the leading word
@@ -60,15 +64,176 @@ pub struct ByteLevel {
     pub add_prefix_space: bool,
     /// Whether the post processing step should trim offsets to avoid including whitespaces.
     pub trim_offsets: bool,
-
-    /// Whether to use the standard GPT2 regex for whitespace splitting
+    /// Whether to use the standard GPT2 regex for whitespace splitting.
     /// Set it to False if you want to use your own splitting.
-    #[serde(default = "default_true")]
     pub use_regex: bool,
 }
 
-fn default_true() -> bool {
-    true
+/// Serializes `ByteLevel` for the **pre-tokenizer** role.
+/// Only `add_prefix_space` and `use_regex` are relevant here; `trim_offsets` is omitted.
+impl Serialize for ByteLevel {
+    fn serialize<S: Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+        let mut state = serializer.serialize_struct("ByteLevel", 3)?;
+        state.serialize_field("type", "ByteLevel")?;
+        state.serialize_field("add_prefix_space", &self.add_prefix_space)?;
+        state.serialize_field("use_regex", &self.use_regex)?;
+        state.end()
+    }
+}
+
+/// Deserializes `ByteLevel` accepting all three fields (backward-compat).
+impl<'de> Deserialize<'de> for ByteLevel {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
+        struct ByteLevelVisitor;
+
+        impl<'de> Visitor<'de> for ByteLevelVisitor {
+            type Value = ByteLevel;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("struct ByteLevel")
+            }
+
+            fn visit_map<A: MapAccess<'de>>(
+                self,
+                mut map: A,
+            ) -> std::result::Result<ByteLevel, A::Error> {
+                let mut add_prefix_space = true;
+                let mut trim_offsets = true;
+                let mut use_regex = true;
+                let mut seen_type = false;
+
+                while let Some(key) = map.next_key::<String>()? {
+                    match key.as_str() {
+                        "add_prefix_space" => add_prefix_space = map.next_value()?,
+                        "trim_offsets" => trim_offsets = map.next_value()?,
+                        "use_regex" => use_regex = map.next_value()?,
+                        "type" => {
+                            let v: String = map.next_value()?;
+                            if v != "ByteLevel" {
+                                return Err(de::Error::custom(format!(
+                                    "expected type `ByteLevel`, got `{v}`"
+                                )));
+                            }
+                            seen_type = true;
+                        }
+                        _ => {
+                            map.next_value::<de::IgnoredAny>()?;
+                        }
+                    }
+                }
+                if !seen_type {
+                    return Err(de::Error::missing_field("type"));
+                }
+                Ok(ByteLevel {
+                    add_prefix_space,
+                    trim_offsets,
+                    use_regex,
+                })
+            }
+        }
+
+        deserializer.deserialize_map(ByteLevelVisitor)
+    }
+}
+
+/// `ByteLevel` in its **decoder** role. None of the byte-level flags affect decoding,
+/// so only `"type": "ByteLevel"` is serialized.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+pub struct ByteLevelDecoder(pub ByteLevel);
+
+impl std::ops::Deref for ByteLevelDecoder {
+    type Target = ByteLevel;
+    fn deref(&self) -> &ByteLevel {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for ByteLevelDecoder {
+    fn deref_mut(&mut self) -> &mut ByteLevel {
+        &mut self.0
+    }
+}
+
+impl From<ByteLevel> for ByteLevelDecoder {
+    fn from(bl: ByteLevel) -> Self {
+        Self(bl)
+    }
+}
+
+impl From<ByteLevelDecoder> for ByteLevel {
+    fn from(bld: ByteLevelDecoder) -> Self {
+        bld.0
+    }
+}
+
+impl Serialize for ByteLevelDecoder {
+    fn serialize<S: Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+        let mut state = serializer.serialize_struct("ByteLevel", 1)?;
+        state.serialize_field("type", "ByteLevel")?;
+        state.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for ByteLevelDecoder {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
+        ByteLevel::deserialize(deserializer).map(ByteLevelDecoder)
+    }
+}
+
+/// `ByteLevel` in its **post-processor** role. Only `add_prefix_space` and `trim_offsets`
+/// are relevant here; `use_regex` is omitted.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+pub struct ByteLevelPostProcessor(pub ByteLevel);
+
+impl std::ops::Deref for ByteLevelPostProcessor {
+    type Target = ByteLevel;
+    fn deref(&self) -> &ByteLevel {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for ByteLevelPostProcessor {
+    fn deref_mut(&mut self) -> &mut ByteLevel {
+        &mut self.0
+    }
+}
+
+impl ByteLevelPostProcessor {
+    pub fn new(add_prefix_space: bool, trim_offsets: bool) -> Self {
+        Self(ByteLevel {
+            add_prefix_space,
+            trim_offsets,
+            use_regex: true,
+        })
+    }
+}
+
+impl From<ByteLevel> for ByteLevelPostProcessor {
+    fn from(bl: ByteLevel) -> Self {
+        Self(bl)
+    }
+}
+
+impl From<ByteLevelPostProcessor> for ByteLevel {
+    fn from(blp: ByteLevelPostProcessor) -> Self {
+        blp.0
+    }
+}
+
+impl Serialize for ByteLevelPostProcessor {
+    fn serialize<S: Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+        let mut state = serializer.serialize_struct("ByteLevel", 3)?;
+        state.serialize_field("type", "ByteLevel")?;
+        state.serialize_field("add_prefix_space", &self.0.add_prefix_space)?;
+        state.serialize_field("trim_offsets", &self.0.trim_offsets)?;
+        state.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for ByteLevelPostProcessor {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
+        ByteLevel::deserialize(deserializer).map(ByteLevelPostProcessor)
+    }
 }
 
 impl Default for ByteLevel {
@@ -171,6 +336,12 @@ impl Decoder for ByteLevel {
     }
 }
 
+impl Decoder for ByteLevelDecoder {
+    fn decode_chain(&self, tokens: Vec<String>) -> Result<Vec<String>> {
+        self.0.decode_chain(tokens)
+    }
+}
+
 /// As a `PostProcessor`, `ByteLevel` is in charge of trimming the offsets if necessary.
 impl PostProcessor for ByteLevel {
     fn added_tokens(&self, _is_pair: bool) -> usize {
@@ -196,6 +367,20 @@ impl PostProcessor for ByteLevel {
         }
         Ok(encodings)
         //<dyn PostProcessor>::default_process(encodings, add_special_tokens)
+    }
+}
+
+impl PostProcessor for ByteLevelPostProcessor {
+    fn added_tokens(&self, is_pair: bool) -> usize {
+        self.0.added_tokens(is_pair)
+    }
+
+    fn process_encodings(
+        &self,
+        encodings: Vec<Encoding>,
+        add_special_tokens: bool,
+    ) -> Result<Vec<Encoding>> {
+        self.0.process_encodings(encodings, add_special_tokens)
     }
 }
 
@@ -566,6 +751,50 @@ mod tests {
                 .unwrap(),
             vec!["Hello there dear friend! [PA D]"]
         );
+    }
+
+    #[test]
+    fn serialization_pre_tokenizer() {
+        // ByteLevel as pre-tokenizer: only add_prefix_space and use_regex are serialized
+        let bl = ByteLevel::default();
+        assert_eq!(
+            serde_json::to_string(&bl).unwrap(),
+            r#"{"type":"ByteLevel","add_prefix_space":true,"use_regex":true}"#
+        );
+        let bl = ByteLevel::default().add_prefix_space(false);
+        assert_eq!(
+            serde_json::to_string(&bl).unwrap(),
+            r#"{"type":"ByteLevel","add_prefix_space":false,"use_regex":true}"#
+        );
+        // trim_offsets is intentionally absent (not used by pre-tokenizer)
+        assert!(!serde_json::to_string(&bl).unwrap().contains("trim_offsets"));
+    }
+
+    #[test]
+    fn serialization_decoder() {
+        // ByteLevelDecoder: only type is serialized — no flags affect decoding
+        let decoder = ByteLevelDecoder::default();
+        assert_eq!(
+            serde_json::to_string(&decoder).unwrap(),
+            r#"{"type":"ByteLevel"}"#
+        );
+    }
+
+    #[test]
+    fn serialization_post_processor() {
+        // ByteLevelPostProcessor: only add_prefix_space and trim_offsets are serialized
+        let proc = ByteLevelPostProcessor::default();
+        assert_eq!(
+            serde_json::to_string(&proc).unwrap(),
+            r#"{"type":"ByteLevel","add_prefix_space":true,"trim_offsets":true}"#
+        );
+        let proc = ByteLevelPostProcessor::new(true, false);
+        assert_eq!(
+            serde_json::to_string(&proc).unwrap(),
+            r#"{"type":"ByteLevel","add_prefix_space":true,"trim_offsets":false}"#
+        );
+        // use_regex is intentionally absent (not used by post-processor)
+        assert!(!serde_json::to_string(&proc).unwrap().contains("use_regex"));
     }
 
     #[test]

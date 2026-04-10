@@ -10,7 +10,7 @@ use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tk::decoders::bpe::BPEDecoder;
 use tk::decoders::byte_fallback::ByteFallback;
-use tk::decoders::byte_level::ByteLevel;
+use tk::decoders::byte_level::ByteLevelDecoder;
 use tk::decoders::ctc::CTC;
 use tk::decoders::fuse::Fuse;
 use tk::decoders::metaspace::{Metaspace, PrependScheme};
@@ -187,7 +187,7 @@ impl PyByteLevelDec {
     #[new]
     #[pyo3(signature = (**_kwargs), text_signature = "(self)")]
     fn new(_kwargs: Option<&Bound<'_, PyDict>>) -> (Self, PyDecoder) {
-        (PyByteLevelDec {}, ByteLevel::default().into())
+        (PyByteLevelDec {}, ByteLevelDecoder::default().into())
     }
 }
 

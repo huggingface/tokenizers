@@ -14,7 +14,7 @@ use serde::Deserializer;
 use serde::Serializer;
 use serde::{Deserialize, Serialize};
 use tk::processors::bert::BertProcessing;
-use tk::processors::byte_level::ByteLevel;
+use tk::processors::byte_level::{ByteLevel, ByteLevelPostProcessor};
 use tk::processors::roberta::RobertaProcessing;
 use tk::processors::template::{SpecialToken, Template};
 use tk::processors::PostProcessorWrapper;
@@ -538,7 +538,10 @@ impl PyByteLevel {
             byte_level = byte_level.use_regex(ur);
         }
 
-        (PyByteLevel {}, byte_level.into())
+        (
+            PyByteLevel {},
+            ByteLevelPostProcessor::from(byte_level).into(),
+        )
     }
 
     #[getter]

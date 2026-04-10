@@ -20,7 +20,7 @@ use crate::decoders::sequence::Sequence;
 use crate::decoders::strip::Strip;
 use crate::decoders::wordpiece::WordPiece;
 use crate::normalizers::replace::Replace;
-use crate::pre_tokenizers::byte_level::ByteLevel;
+use crate::pre_tokenizers::byte_level::ByteLevelDecoder;
 use crate::pre_tokenizers::metaspace::Metaspace;
 use crate::{Decoder, Result};
 
@@ -28,7 +28,7 @@ use crate::{Decoder, Result};
 #[serde(untagged)]
 pub enum DecoderWrapper {
     BPE(BPEDecoder),
-    ByteLevel(ByteLevel),
+    ByteLevel(ByteLevelDecoder),
     WordPiece(WordPiece),
     Metaspace(Metaspace),
     CTC(CTC),
@@ -76,7 +76,7 @@ impl<'de> Deserialize<'de> for DecoderWrapper {
         #[serde(untagged)]
         pub enum DecoderUntagged {
             BPE(BPEDecoder),
-            ByteLevel(ByteLevel),
+            ByteLevel(ByteLevelDecoder),
             WordPiece(WordPiece),
             Metaspace(Metaspace),
             CTC(CTC),
@@ -167,7 +167,7 @@ impl Decoder for DecoderWrapper {
 }
 
 impl_enum_from!(BPEDecoder, DecoderWrapper, BPE);
-impl_enum_from!(ByteLevel, DecoderWrapper, ByteLevel);
+impl_enum_from!(ByteLevelDecoder, DecoderWrapper, ByteLevel);
 impl_enum_from!(ByteFallback, DecoderWrapper, ByteFallback);
 impl_enum_from!(Fuse, DecoderWrapper, Fuse);
 impl_enum_from!(Strip, DecoderWrapper, Strip);

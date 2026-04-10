@@ -4,7 +4,7 @@ use ahash::AHashMap;
 use tokenizers::decoders::byte_fallback::ByteFallback;
 use tokenizers::models::bpe::{BpeTrainerBuilder, BPE};
 use tokenizers::normalizers::{Sequence, Strip, NFC};
-use tokenizers::pre_tokenizers::byte_level::ByteLevel;
+use tokenizers::pre_tokenizers::byte_level::{ByteLevel, ByteLevelDecoder, ByteLevelPostProcessor};
 use tokenizers::{AddedToken, TokenizerBuilder};
 use tokenizers::{DecoderWrapper, NormalizerWrapper, PostProcessorWrapper, PreTokenizerWrapper};
 use tokenizers::{Tokenizer, TokenizerImpl};
@@ -19,8 +19,8 @@ fn train_tokenizer() {
             NFC.into(),
         ])))
         .with_pre_tokenizer(Some(ByteLevel::default()))
-        .with_post_processor(Some(ByteLevel::default()))
-        .with_decoder(Some(ByteLevel::default()))
+        .with_post_processor(Some(ByteLevelPostProcessor::default()))
+        .with_decoder(Some(ByteLevelDecoder::default()))
         .build()
         .unwrap();
 
@@ -110,7 +110,7 @@ fn streaming_tokenizer() {
             NFC.into(),
         ])))
         .with_pre_tokenizer(Some(ByteLevel::default()))
-        .with_post_processor(Some(ByteLevel::default()))
+        .with_post_processor(Some(ByteLevelPostProcessor::default()))
         .with_decoder(Some(ByteFallback::default()))
         .build()
         .unwrap();

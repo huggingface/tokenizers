@@ -71,7 +71,8 @@ impl PostProcessor for Sequence {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::processors::{ByteLevel, PostProcessorWrapper};
+    use crate::pre_tokenizers::byte_level::ByteLevelPostProcessor;
+    use crate::processors::PostProcessorWrapper;
     use crate::tokenizer::{Encoding, PostProcessor};
     use ahash::AHashMap;
     use std::iter::FromIterator;
@@ -96,7 +97,7 @@ mod tests {
             AHashMap::new(),
         );
 
-        let bytelevel = ByteLevel::default().trim_offsets(true);
+        let bytelevel = ByteLevelPostProcessor::new(true, true);
         let sequence = Sequence::new(vec![PostProcessorWrapper::ByteLevel(bytelevel)]);
         let expected = Encoding::new(
             vec![0; 5],

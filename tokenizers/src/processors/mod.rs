@@ -8,7 +8,7 @@ pub use super::pre_tokenizers::byte_level;
 
 use serde::{Deserialize, Serialize};
 
-use crate::pre_tokenizers::byte_level::ByteLevel;
+use crate::pre_tokenizers::byte_level::ByteLevelPostProcessor;
 use crate::processors::bert::BertProcessing;
 use crate::processors::roberta::RobertaProcessing;
 use crate::processors::sequence::Sequence;
@@ -21,7 +21,7 @@ pub enum PostProcessorWrapper {
     // Roberta must be before Bert for deserialization (serde does not validate tags)
     Roberta(RobertaProcessing),
     Bert(BertProcessing),
-    ByteLevel(ByteLevel),
+    ByteLevel(ByteLevelPostProcessor),
     Template(TemplateProcessing),
     Sequence(Sequence),
 }
@@ -30,7 +30,7 @@ impl PostProcessor for PostProcessorWrapper {
     fn added_tokens(&self, is_pair: bool) -> usize {
         match self {
             Self::Bert(bert) => bert.added_tokens(is_pair),
-            Self::ByteLevel(bl) => bl.added_tokens(is_pair),
+            Self::ByteLevel(bl) => bl.0.added_tokens(is_pair),
             Self::Roberta(roberta) => roberta.added_tokens(is_pair),
             Self::Template(template) => template.added_tokens(is_pair),
             Self::Sequence(bl) => bl.added_tokens(is_pair),
@@ -44,7 +44,7 @@ impl PostProcessor for PostProcessorWrapper {
     ) -> Result<Vec<Encoding>> {
         match self {
             Self::Bert(bert) => bert.process_encodings(encodings, add_special_tokens),
-            Self::ByteLevel(bl) => bl.process_encodings(encodings, add_special_tokens),
+            Self::ByteLevel(bl) => bl.0.process_encodings(encodings, add_special_tokens),
             Self::Roberta(roberta) => roberta.process_encodings(encodings, add_special_tokens),
             Self::Template(template) => template.process_encodings(encodings, add_special_tokens),
             Self::Sequence(bl) => bl.process_encodings(encodings, add_special_tokens),
@@ -53,7 +53,7 @@ impl PostProcessor for PostProcessorWrapper {
 }
 
 impl_enum_from!(BertProcessing, PostProcessorWrapper, Bert);
-impl_enum_from!(ByteLevel, PostProcessorWrapper, ByteLevel);
+impl_enum_from!(ByteLevelPostProcessor, PostProcessorWrapper, ByteLevel);
 impl_enum_from!(RobertaProcessing, PostProcessorWrapper, Roberta);
 impl_enum_from!(TemplateProcessing, PostProcessorWrapper, Template);
 impl_enum_from!(Sequence, PostProcessorWrapper, Sequence);

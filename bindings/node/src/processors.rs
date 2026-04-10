@@ -71,10 +71,10 @@ pub fn roberta_processing(
 
 #[napi]
 pub fn byte_level_processing(trim_offsets: Option<bool>) -> Result<Processor> {
-  let mut byte_level = tk::processors::byte_level::ByteLevel::default();
+  let mut byte_level = tk::processors::byte_level::ByteLevelPostProcessor::default();
 
   if let Some(trim_offsets) = trim_offsets {
-    byte_level = byte_level.trim_offsets(trim_offsets);
+    byte_level.0 = byte_level.0.trim_offsets(trim_offsets);
   }
 
   Ok(Processor {
