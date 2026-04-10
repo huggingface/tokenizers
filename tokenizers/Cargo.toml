@@ -103,6 +103,7 @@ progressbar = ["indicatif"]
 http = ["hf-hub"]
 unstable_wasm = ["fancy-regex", "getrandom/wasm_js"]
 rustls-tls = ["hf-hub?/rustls-tls"]
+parity-aware-bpe = []
 
 [dev-dependencies]
 criterion = "0.6"
