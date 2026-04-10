@@ -7,6 +7,7 @@ use serde_json::Value;
 use std::borrow::Cow;
 
 use std::collections::HashMap;
+use std::str::from_utf8_unchecked;
 use std::{
     fs::File,
     io::prelude::*,
@@ -154,11 +155,17 @@ impl BpeBuilder {
             self.config.merges = m;
         }
 
+        let mut max_len = 0;
         let vocab_r = self
             .config
             .vocab
             .iter()
-            .map(|(key, val)| (*val, key.to_owned()))
+            .map(|(key, val)| {
+                if max_len < key.len() {
+                    max_len = key.len();
+                }
+                (*val, key.to_owned())
+            })
             .collect();
         let cache = match self.config.cache_capacity {
             0 => None,
@@ -171,6 +178,7 @@ impl BpeBuilder {
         } else {
             0
         };
+        let mut buffer: Vec<u8> = vec![0; max_len];
         let merge_map: MergeMap = self
             .config
             .merges
@@ -183,10 +191,15 @@ impl BpeBuilder {
                 let b_id = vocab
                     .get(&b)
                     .ok_or_else(|| Error::MergeTokenOutOfVocabulary(b.to_owned()))?;
-                let new_token = format!("{}{}", a, &b[prefix_len..]);
+                buffer[0..a.len()].copy_from_slice(a.as_bytes());
+                let b_len = b.len() - prefix_len;
+                let merge_len = a.len() + b_len;
+                buffer[a.len()..merge_len].copy_from_slice(&b.as_bytes()[prefix_len..]);
+                // SAFETY: buffer contains a concatenation of two valid UTF-8 strings, so it is itself valid UTF-8, even considering prefix_len
+                let new_token = unsafe { from_utf8_unchecked(&buffer[..merge_len]) };
                 let new_id = vocab
-                    .get(&new_token)
-                    .ok_or(Error::MergeTokenOutOfVocabulary(new_token))?;
+                    .get(new_token)
+                    .ok_or_else(|| Error::MergeTokenOutOfVocabulary(new_token.to_owned()))?;
                 Ok(((*a_id, *b_id), (i as u32, *new_id)))
             })
             .collect::<Result<MergeMap>>()?;
