@@ -550,6 +550,39 @@ impl AddedVocabulary {
 
         pretokenized
     }
+
+    /// Like [`extract_and_normalize`] but uses [`Normalizer::normalize_str`]
+    /// instead of [`Normalizer::normalize`], skipping alignment tracking.
+    ///
+    /// This is used by `encode_fast` where offsets are not needed. The
+    /// normalization step avoids building per-byte alignment vectors, which
+    /// saves O(n) allocations per split.
+    pub fn extract_and_normalize_fast<N: Normalizer>(
+        &self,
+        normalizer: Option<&N>,
+        sequence: &str,
+    ) -> PreTokenizedString {
+        let mut pretokenized: PreTokenizedString = sequence.into();
+
+        // 1. Extract non-normalized tokens from the raw string
+        pretokenized
+            .split(|_, sequence| Ok(self.split_with_indices(sequence, &self.split_trie)))
+            .expect("AddedVocabulary bad split");
+
+        // 2. Normalize remaining pieces via normalize_str (no alignment tracking)
+        //    and extract normalized tokens
+        pretokenized
+            .split(|_, mut sequence| {
+                if let Some(n) = normalizer {
+                    let normed = n.normalize_str(sequence.get())?;
+                    sequence.set_normalized(normed);
+                }
+                Ok(self.split_with_indices(sequence, &self.split_normalized_trie))
+            })
+            .expect("AddedVocabulary bad split");
+
+        pretokenized
+    }
 }
 
 impl Default for AddedVocabulary {
