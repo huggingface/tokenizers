@@ -1,5 +1,6 @@
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 use crate::utils::macro_rules_attribute;
+use unicode_normalization_alignments::UnicodeNormalization;
 
 #[derive(Default, Copy, Clone, Debug)]
 #[macro_rules_attribute(impl_serde_type!)]
@@ -8,6 +9,9 @@ impl Normalizer for NFD {
     fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
         normalized.nfd();
         Ok(())
+    }
+    fn normalize_str(&self, s: &str) -> Result<String> {
+        Ok(s.nfd().map(|(c, _)| c).collect())
     }
 }
 
@@ -19,6 +23,9 @@ impl Normalizer for NFKD {
         normalized.nfkd();
         Ok(())
     }
+    fn normalize_str(&self, s: &str) -> Result<String> {
+        Ok(s.nfkd().map(|(c, _)| c).collect())
+    }
 }
 
 #[derive(Default, Copy, Clone, Debug)]
@@ -29,6 +36,9 @@ impl Normalizer for NFC {
         normalized.nfc();
         Ok(())
     }
+    fn normalize_str(&self, s: &str) -> Result<String> {
+        Ok(s.nfc().map(|(c, _)| c).collect())
+    }
 }
 
 #[derive(Default, Copy, Clone, Debug)]
@@ -38,6 +48,9 @@ impl Normalizer for NFKC {
     fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
         normalized.nfkc();
         Ok(())
+    }
+    fn normalize_str(&self, s: &str) -> Result<String> {
+        Ok(s.nfkc().map(|(c, _)| c).collect())
     }
 }
 
@@ -79,6 +92,21 @@ impl Normalizer for Nmt {
     fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
         do_nmt(normalized);
         Ok(())
+    }
+    fn normalize_str(&self, s: &str) -> Result<String> {
+        Ok(s.chars()
+            .filter(|c| {
+                !matches!(
+                    *c as u32,
+                    0x0001..=0x0008 | 0x000B | 0x000E..=0x001F | 0x007F | 0x008F | 0x009F
+                )
+            })
+            .map(|c| match c as u32 {
+                0x0009 | 0x000A | 0x000C | 0x000D | 0x1680 | 0x200B..=0x200F | 0x2028
+                | 0x2029 | 0x2581 | 0xFEFF | 0xFFFD => ' ',
+                _ => c,
+            })
+            .collect())
     }
 }
 
