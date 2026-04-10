@@ -111,7 +111,7 @@ fn streaming_tokenizer() {
         ])))
         .with_pre_tokenizer(Some(ByteLevel::default()))
         .with_post_processor(Some(ByteLevel::default()))
-        .with_decoder(Some(ByteFallback::default()))
+        .with_decoder(Some(ByteFallback))
         .build()
         .unwrap();
     let mut decode_stream = tokenizer.decode_stream(false);

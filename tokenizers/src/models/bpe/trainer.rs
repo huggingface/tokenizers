@@ -608,9 +608,9 @@ impl BpeTrainer {
         // Transfer new vocab & options to model
         //model.vocab = word_to_id;
         model.vocab = word_to_id
-            .into_iter()
+            .into_values()
             // we have to look up the string in id_to_word because the key in word_to_id is a hash
-            .map(|(_key, val)| (id_to_word[val as usize].to_string(), val))
+            .map(|val| (id_to_word[val as usize].to_string(), val))
             .collect();
         model.vocab_r = model
             .vocab
@@ -678,7 +678,7 @@ impl Trainer for BpeTrainer {
 #[cfg(test)]
 mod tests {
     use super::{BpeTrainer, Pair, BPE};
-    use crate::utils::{AHashMap, HashMapExt};
+    use crate::utils::AHashMap;
     use compact_str::CompactString;
 
     #[test]
