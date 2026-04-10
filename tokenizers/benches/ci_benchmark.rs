@@ -272,22 +272,22 @@ fn bench_train(c: &mut Criterion) {
 
 criterion_group! {
     name = ci_bpe;
-    config = Criterion::default().sample_size(10);
+    config = Criterion::default().sample_size(15);
     targets = bench_bpe_gpt2
 }
 criterion_group! {
     name = ci_llama3;
-    config = Criterion::default().sample_size(10);
+    config = Criterion::default().sample_size(15);
     targets = bench_llama3
 }
 criterion_group! {
     name = ci_serial;
-    config = Criterion::default().sample_size(10);
+    config = Criterion::default().sample_size(15);
     targets = bench_serialization
 }
 criterion_group! {
     name = ci_train;
-    config = Criterion::default().sample_size(10);
+    config = Criterion::default().sample_size(15);
     targets = bench_train
 }
 
