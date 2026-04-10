@@ -262,11 +262,11 @@ impl AddedVocabulary {
     /// Add some special tokens to the vocabulary
     pub fn add_special_tokens<N: Normalizer>(
         &mut self,
-        tokens: &[AddedToken],
+        tokens: impl IntoIterator<Item = AddedToken>,
         model: &impl Model,
         normalizer: Option<&N>,
     ) -> Result<usize> {
-        self.add_tokens(tokens.iter().cloned(), model, normalizer)
+        self.add_tokens(tokens, model, normalizer)
     }
 
     /// Add some tokens to the vocabulary
@@ -757,7 +757,7 @@ mod tests {
         assert_eq!(
             vocab
                 .add_special_tokens(
-                    &[AddedToken::from("added_token_1", true)],
+                    [AddedToken::from("added_token_1", true)],
                     &model,
                     normalizer
                 )
@@ -770,7 +770,7 @@ mod tests {
         assert_eq!(
             vocab
                 .add_special_tokens(
-                    &[
+                    [
                         AddedToken::from("added_token_2", true),
                         AddedToken::from("added_token_2", true)
                     ],
@@ -785,7 +785,7 @@ mod tests {
         // Can add tokens already covered by the model
         assert_eq!(
             vocab
-                .add_special_tokens(&[AddedToken::from("test", true)], &model, normalizer)
+                .add_special_tokens([AddedToken::from("test", true)], &model, normalizer)
                 .unwrap(),
             1
         );
@@ -818,7 +818,7 @@ mod tests {
         // Let's add an already added token again, but change normalized
         assert_eq!(
             vocab
-                .add_special_tokens(&[AddedToken::from("another_two", true)], &model, normalizer)
+                .add_special_tokens([AddedToken::from("another_two", true)], &model, normalizer)
                 .unwrap(),
             1
         );
@@ -853,7 +853,7 @@ mod tests {
             .unwrap();
         vocab
             .add_special_tokens(
-                &[
+                [
                     AddedToken::from("[CLS]", true),
                     AddedToken::from("[SEP]", true),
                 ],
@@ -905,7 +905,7 @@ mod tests {
             .unwrap();
         vocab
             .add_special_tokens(
-                &[
+                [
                     AddedToken::from("[CLS]", true),
                     AddedToken::from("[SEP]", true),
                 ],

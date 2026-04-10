@@ -9,7 +9,7 @@ fn add_tokens() {
 
     assert_eq!(
         tokenizer
-            .add_special_tokens(&[
+            .add_special_tokens([
                 AddedToken::from("<cls>", true),
                 AddedToken::from("<sep>", true)
             ])
@@ -36,7 +36,7 @@ fn add_tokens() {
 fn lstrip_tokens() {
     let mut tokenizer = get_byte_level(true, false);
     tokenizer
-        .add_special_tokens(&[AddedToken::from("<mask>", true).lstrip(true)])
+        .add_special_tokens([AddedToken::from("<mask>", true).lstrip(true)])
         .unwrap();
 
     let input = "I saw a <mask> 😺";
@@ -56,7 +56,7 @@ fn lstrip_tokens() {
 fn rstrip_tokens() {
     let mut tokenizer = get_byte_level(false, false);
     tokenizer
-        .add_special_tokens(&[AddedToken::from("<mask>", true).rstrip(true)])
+        .add_special_tokens([AddedToken::from("<mask>", true).rstrip(true)])
         .unwrap();
 
     let input = "I saw a <mask> 😺";
@@ -71,7 +71,7 @@ fn rstrip_tokens() {
     // to the next token
     let mut tokenizer = get_byte_level(true, false);
     tokenizer
-        .add_special_tokens(&[AddedToken::from("<mask>", true).rstrip(true)])
+        .add_special_tokens([AddedToken::from("<mask>", true).rstrip(true)])
         .unwrap();
 
     let input = "I saw a <mask> 😺";
@@ -88,7 +88,7 @@ fn single_word_tokens() {
     // If `single_word = true` it shouldn't split `dancing`
     let mut tokenizer = get_byte_level(false, false);
     tokenizer
-        .add_special_tokens(&[AddedToken::from("ing", true).single_word(true)])
+        .add_special_tokens([AddedToken::from("ing", true).single_word(true)])
         .unwrap();
 
     let input = "I like dancing";
@@ -99,7 +99,7 @@ fn single_word_tokens() {
     // If `single_word = false` it should split `dancing`
     let mut tokenizer = get_byte_level(false, false);
     tokenizer
-        .add_special_tokens(&[AddedToken::from("ing", true).single_word(false)])
+        .add_special_tokens([AddedToken::from("ing", true).single_word(false)])
         .unwrap();
 
     let input = "I like dancing";
@@ -113,13 +113,13 @@ fn overlapping_tokens() {
     let mut tokenizer = get_byte_level(false, false);
 
     tokenizer
-        .add_special_tokens(&[AddedToken::from("danc", true)])
+        .add_special_tokens([AddedToken::from("danc", true)])
         .unwrap();
     tokenizer
-        .add_special_tokens(&[AddedToken::from("nci", true)])
+        .add_special_tokens([AddedToken::from("nci", true)])
         .unwrap();
     tokenizer
-        .add_special_tokens(&[AddedToken::from("ing", true)])
+        .add_special_tokens([AddedToken::from("ing", true)])
         .unwrap();
 
     let input = "I like dancing";
@@ -130,16 +130,16 @@ fn overlapping_tokens() {
     let mut tokenizer = get_byte_level(false, false);
 
     tokenizer
-        .add_special_tokens(&[AddedToken::from("nci", true)])
+        .add_special_tokens([AddedToken::from("nci", true)])
         .unwrap();
     tokenizer
-        .add_special_tokens(&[AddedToken::from("danc", true)])
+        .add_special_tokens([AddedToken::from("danc", true)])
         .unwrap();
     tokenizer
-        .add_special_tokens(&[AddedToken::from("ing", true)])
+        .add_special_tokens([AddedToken::from("ing", true)])
         .unwrap();
     tokenizer
-        .add_special_tokens(&[AddedToken::from("ike", true)])
+        .add_special_tokens([AddedToken::from("ike", true)])
         .unwrap();
 
     let output = tokenizer.encode(input, false).unwrap();

@@ -380,7 +380,7 @@ impl Tokenizer {
       .tokenizer
       .write()
       .unwrap()
-      .add_special_tokens(&tokens)
+      .add_special_tokens(tokens)
       .map(|_| ())
       .map_err(|e| Error::from_reason(format!("{e}")))
   }

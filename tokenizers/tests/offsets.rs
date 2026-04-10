@@ -160,7 +160,7 @@ fn split_on_added_tokens_bert() {
 
     let mut tokenizer = get_bert();
     tokenizer
-        .add_special_tokens(&[AddedToken::from("[MASK]", true)])
+        .add_special_tokens([AddedToken::from("[MASK]", true)])
         .unwrap();
     let output = tokenizer.encode(input, false).unwrap();
 

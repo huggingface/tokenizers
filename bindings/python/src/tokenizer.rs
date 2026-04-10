@@ -1645,7 +1645,7 @@ impl PyTokenizer {
             })
             .collect::<PyResult<Vec<_>>>()?;
 
-        ToPyResult(self.tokenizer.add_special_tokens(&tokens)).into()
+        ToPyResult(self.tokenizer.add_special_tokens(tokens)).into()
     }
 
     /// Train the Tokenizer using the given files.

@@ -1191,7 +1191,10 @@ where
 {
     /// Register the given tokens as special tokens. This is especially useful for removing
     /// these special tokens while decoding
-    pub fn add_special_tokens(&mut self, tokens: &[AddedToken]) -> Result<usize> {
+    pub fn add_special_tokens(
+        &mut self,
+        tokens: impl IntoIterator<Item = AddedToken>,
+    ) -> Result<usize> {
         self.added_vocabulary
             .add_special_tokens(tokens, &self.model, self.normalizer.as_ref())
     }
@@ -1444,7 +1447,7 @@ where
                     pbar.finish();
                 }
                 let special_tokens = trainer.train(&mut self.model)?;
-                self.add_special_tokens(&special_tokens)?;
+                self.add_special_tokens(special_tokens)?;
 
                 Ok(())
             },
@@ -1497,7 +1500,7 @@ where
         }
 
         let special_tokens = trainer.train(&mut self.model)?;
-        self.add_special_tokens(&special_tokens)?;
+        self.add_special_tokens(special_tokens)?;
 
         Ok(self)
     }

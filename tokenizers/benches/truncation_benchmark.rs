@@ -21,7 +21,7 @@ fn create_gpt2_tokenizer() -> Tokenizer {
         .add_tokens([AddedToken::from("ing", false).single_word(false)])
         .unwrap();
     tokenizer
-        .add_special_tokens(&[AddedToken::from("[ENT]", true).single_word(true)])
+        .add_special_tokens([AddedToken::from("[ENT]", true).single_word(true)])
         .unwrap();
     tokenizer
 }
