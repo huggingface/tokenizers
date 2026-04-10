@@ -142,6 +142,20 @@ jobs:
       - run: twine check --strict dist/*
         working-directory: ./bindings/python
 
+      - name: Report wheel sizes
+        working-directory: ./bindings/python
+        run: |
+          echo "## 🐍 Python Wheel Size — ${{ matrix.os }} ${{ matrix.target }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Wheel | Size |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          for f in dist/*.whl; do
+            SIZE=$(du -h "$f" | cut -f1)
+            NAME=$(basename "$f")
+            echo "| \`${NAME}\` | ${SIZE} |" >> $GITHUB_STEP_SUMMARY
+          done
+          echo "" >> $GITHUB_STEP_SUMMARY
+
       - uses: actions/upload-artifact@v4
         with:
           name: pypi_files-${{ matrix.os }}-${{ matrix.target }}-${{ matrix.manylinux }}
@@ -182,6 +196,28 @@ jobs:
         with:
           path: ./bindings/python/dist
           merge-multiple: true
+
+      - name: Wheel size summary
+        working-directory: ./bindings/python
+        run: |
+          echo "## 📦 All Python Wheel Sizes" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Wheel | Size |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          TOTAL=0
+          for f in dist/*.whl; do
+            BYTES=$(stat --format=%s "$f" 2>/dev/null || stat -f%z "$f")
+            SIZE=$(du -h "$f" | cut -f1)
+            NAME=$(basename "$f")
+            echo "| \`${NAME}\` | ${SIZE} |" >> $GITHUB_STEP_SUMMARY
+            TOTAL=$((TOTAL + BYTES))
+          done
+          echo "" >> $GITHUB_STEP_SUMMARY
+          TOTAL_MB=$(echo "scale=2; $TOTAL / 1048576" | bc)
+          WHL_COUNT=$(ls dist/*.whl 2>/dev/null | wc -l | tr -d ' ')
+          echo "**Total**: ${WHL_COUNT} wheels, ${TOTAL_MB} MB" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
           # Temporary deactivation while testing abi3 CI
           # - name: Upload to PyPi
           #   working-directory: ./bindings/python

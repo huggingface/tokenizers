@@ -773,7 +773,8 @@ mod tests {
                 (0, AddedToken::from("test", true)),
                 (2, AddedToken::from("added_token_1", true)),
                 (3, AddedToken::from("added_token_2", true)),
-            ]).collect::<AHashMap<_, _>>()
+            ])
+            .collect::<AHashMap<_, _>>()
         );
         assert!(vocab.added_tokens_map.contains_key("test"));
         assert!(vocab.added_tokens_map_r.contains_key(&0));

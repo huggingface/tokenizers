@@ -1,6 +1,6 @@
-use super::{super::OrderedVocabIter, Error, Pair, Word};
 #[cfg(feature = "training")]
 use super::trainer::BpeTrainer;
+use super::{super::OrderedVocabIter, Error, Pair, Word};
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::cache::{Cache, DEFAULT_CACHE_CAPACITY, MAX_LENGTH};
 use crate::utils::iter::ResultShunt;

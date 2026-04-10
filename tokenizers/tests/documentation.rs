@@ -1,10 +1,10 @@
 use std::iter::FromIterator;
 
-use tokenizers::utils::AHashMap;
 use tokenizers::decoders::byte_fallback::ByteFallback;
 use tokenizers::models::bpe::{BpeTrainerBuilder, BPE};
 use tokenizers::normalizers::{Sequence, Strip, NFC};
 use tokenizers::pre_tokenizers::byte_level::ByteLevel;
+use tokenizers::utils::AHashMap;
 use tokenizers::{AddedToken, TokenizerBuilder};
 use tokenizers::{DecoderWrapper, NormalizerWrapper, PostProcessorWrapper, PreTokenizerWrapper};
 use tokenizers::{Tokenizer, TokenizerImpl};

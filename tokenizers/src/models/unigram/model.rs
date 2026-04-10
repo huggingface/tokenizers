@@ -1,9 +1,9 @@
+#[cfg(feature = "training")]
+use super::trainer::UnigramTrainer;
 use super::{
     lattice::Lattice,
     trie::{Trie, TrieBuilder},
 };
-#[cfg(feature = "training")]
-use super::trainer::UnigramTrainer;
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::cache::{Cache, MAX_LENGTH};
 use std::collections::HashMap;

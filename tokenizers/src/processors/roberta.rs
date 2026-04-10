@@ -1,6 +1,6 @@
 use crate::processors::byte_level::process_offsets;
 use crate::tokenizer::{Encoding, PostProcessor, Result};
-use crate::utils::{AHashMap};
+use crate::utils::AHashMap;
 use serde::{Deserialize, Serialize};
 use std::iter::FromIterator;
 

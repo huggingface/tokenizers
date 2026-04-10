@@ -1,7 +1,7 @@
 use super::WordLevel;
 use crate::utils::parallelism::*;
-use crate::{AddedToken, Result, Trainer};
 use crate::utils::{AHashMap, HashMapExt};
+use crate::{AddedToken, Result, Trainer};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 
@@ -64,7 +64,10 @@ impl WordLevelTrainerBuilder {
             min_frequency: self.min_frequency.unwrap_or(default.min_frequency),
             vocab_size: self.vocab_size.unwrap_or(default.vocab_size),
             show_progress: self.show_progress.unwrap_or(default.show_progress),
-            special_tokens: self.special_tokens.clone().unwrap_or(default.special_tokens),
+            special_tokens: self
+                .special_tokens
+                .clone()
+                .unwrap_or(default.special_tokens),
             words: AHashMap::new(),
         })
     }

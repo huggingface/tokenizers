@@ -904,6 +904,9 @@ mod tests {
             pad_token,
             PaddingDirection::Left,
         );
-        assert_eq!(a.sequence_ranges, IntoIterator::into_iter([(0, 1..2)]).collect());
+        assert_eq!(
+            a.sequence_ranges,
+            IntoIterator::into_iter([(0, 1..2)]).collect()
+        );
     }
 }

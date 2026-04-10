@@ -5,15 +5,15 @@ pub mod unigram;
 pub mod wordlevel;
 pub mod wordpiece;
 
-use crate::utils::{AHashMap};
+use crate::utils::AHashMap;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::models::bpe::BPE;
 #[cfg(feature = "training")]
 use crate::models::bpe::BpeTrainer;
+use crate::models::bpe::BPE;
 use crate::models::unigram::Unigram;
 #[cfg(feature = "training")]
 use crate::models::unigram::UnigramTrainer;
@@ -23,9 +23,9 @@ use crate::models::wordlevel::WordLevelTrainer;
 use crate::models::wordpiece::WordPiece;
 #[cfg(feature = "training")]
 use crate::models::wordpiece::WordPieceTrainer;
-use crate::{Model, Result, Token};
 #[cfg(feature = "training")]
 use crate::{AddedToken, Trainer};
+use crate::{Model, Result, Token};
 
 /// Wraps a vocab mapping (ID -> token) to a struct that will be serialized in order
 /// of token ID, smallest to largest.

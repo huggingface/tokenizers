@@ -9,15 +9,15 @@
 //!   - [`PostProcessor`](trait.PostProcessor.html): Takes care of the processing after tokenization (like truncating, padding,
 //!     ...).
 
-use crate::utils::{AHashMap};
+use crate::utils::AHashMap;
+#[cfg(feature = "training")]
+use std::io::BufReader;
 use std::{
     fs::{read_to_string, File},
     io::prelude::*,
     ops::{Deref, DerefMut},
     path::{Path, PathBuf},
 };
-#[cfg(feature = "training")]
-use std::io::BufReader;
 
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -1613,7 +1613,7 @@ mod tests {
     use super::*;
     use crate::models::wordlevel::WordLevelBuilder;
     use crate::pre_tokenizers::whitespace::WhitespaceSplit;
-    use crate::utils::{AHashMap};
+    use crate::utils::AHashMap;
 
     /// Build a tokenizer with a known vocabulary: "a"=0, "b"=1, ... "j"=9, "<unk>"=10
     /// Uses WhitespaceSplit so each space-separated word maps to one token.

@@ -128,27 +128,59 @@ impl<'de> Deserialize<'de> for NormalizerWrapper {
                     ),
                     EnumType::NFC => {
                         #[cfg(feature = "unicode-normalization")]
-                        { NormalizerWrapper::NFC(serde_json::from_value(values).map_err(serde::de::Error::custom)?) }
+                        {
+                            NormalizerWrapper::NFC(
+                                serde_json::from_value(values).map_err(serde::de::Error::custom)?,
+                            )
+                        }
                         #[cfg(not(feature = "unicode-normalization"))]
-                        { return Err(serde::de::Error::custom("NFC normalizer requires the `unicode-normalization` feature")); }
+                        {
+                            return Err(serde::de::Error::custom(
+                                "NFC normalizer requires the `unicode-normalization` feature",
+                            ));
+                        }
                     }
                     EnumType::NFD => {
                         #[cfg(feature = "unicode-normalization")]
-                        { NormalizerWrapper::NFD(serde_json::from_value(values).map_err(serde::de::Error::custom)?) }
+                        {
+                            NormalizerWrapper::NFD(
+                                serde_json::from_value(values).map_err(serde::de::Error::custom)?,
+                            )
+                        }
                         #[cfg(not(feature = "unicode-normalization"))]
-                        { return Err(serde::de::Error::custom("NFD normalizer requires the `unicode-normalization` feature")); }
+                        {
+                            return Err(serde::de::Error::custom(
+                                "NFD normalizer requires the `unicode-normalization` feature",
+                            ));
+                        }
                     }
                     EnumType::NFKC => {
                         #[cfg(feature = "unicode-normalization")]
-                        { NormalizerWrapper::NFKC(serde_json::from_value(values).map_err(serde::de::Error::custom)?) }
+                        {
+                            NormalizerWrapper::NFKC(
+                                serde_json::from_value(values).map_err(serde::de::Error::custom)?,
+                            )
+                        }
                         #[cfg(not(feature = "unicode-normalization"))]
-                        { return Err(serde::de::Error::custom("NFKC normalizer requires the `unicode-normalization` feature")); }
+                        {
+                            return Err(serde::de::Error::custom(
+                                "NFKC normalizer requires the `unicode-normalization` feature",
+                            ));
+                        }
                     }
                     EnumType::NFKD => {
                         #[cfg(feature = "unicode-normalization")]
-                        { NormalizerWrapper::NFKD(serde_json::from_value(values).map_err(serde::de::Error::custom)?) }
+                        {
+                            NormalizerWrapper::NFKD(
+                                serde_json::from_value(values).map_err(serde::de::Error::custom)?,
+                            )
+                        }
                         #[cfg(not(feature = "unicode-normalization"))]
-                        { return Err(serde::de::Error::custom("NFKD normalizer requires the `unicode-normalization` feature")); }
+                        {
+                            return Err(serde::de::Error::custom(
+                                "NFKD normalizer requires the `unicode-normalization` feature",
+                            ));
+                        }
                     }
                     EnumType::Sequence => NormalizerWrapper::Sequence(
                         serde_json::from_value(values).map_err(serde::de::Error::custom)?,

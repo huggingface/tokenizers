@@ -1,5 +1,5 @@
 use crate::tokenizer::{Encoding, PostProcessor, Result};
-use crate::utils::{AHashMap};
+use crate::utils::AHashMap;
 use serde::{Deserialize, Serialize};
 use std::iter::FromIterator;
 

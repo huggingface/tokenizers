@@ -134,7 +134,10 @@ impl UnigramTrainerBuilder {
             vocab_size: self.vocab_size.unwrap_or(default.vocab_size),
             n_sub_iterations: self.n_sub_iterations.unwrap_or(default.n_sub_iterations),
             shrinking_factor: self.shrinking_factor.unwrap_or(default.shrinking_factor),
-            special_tokens: self.special_tokens.clone().unwrap_or(default.special_tokens),
+            special_tokens: self
+                .special_tokens
+                .clone()
+                .unwrap_or(default.special_tokens),
             initial_alphabet: self
                 .initial_alphabet
                 .clone()

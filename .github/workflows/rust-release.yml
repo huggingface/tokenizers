@@ -24,6 +24,51 @@ jobs:
           path: ~/.cargo/registry
           key: ubuntu-latest-cargo-registry-${{ hashFiles('**/Cargo.toml') }}
 
+      - name: Measure crate size
+        working-directory: ./tokenizers
+        run: |
+          echo "## 📦 Crate Size Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Packed crate size (what gets uploaded to crates.io)
+          cargo package --list --allow-dirty > /tmp/crate_files.txt
+          CRATE_FILE_COUNT=$(wc -l < /tmp/crate_files.txt | tr -d ' ')
+          PACKED_SIZE=$(cargo package --allow-dirty 2>&1 | grep -oP 'Packaged \d+ files?, \K[\d.]+ \w+' || echo "unknown")
+          echo "### Packed crate (crates.io)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Size**: ${PACKED_SIZE}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Files**: ${CRATE_FILE_COUNT}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Compiled size for various feature combinations
+          echo "### Compiled library size (release, LTO)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Feature set | .rlib size |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+
+          for FEATURES in \
+            "--no-default-features" \
+            "--no-default-features --features training" \
+            "--no-default-features --features spm" \
+            "--no-default-features --features parallel" \
+            "--features default" \
+          ; do
+            cargo build --release $FEATURES 2>/dev/null
+            RLIB=$(find target/release/deps -name 'libtokenizers-*.rlib' -newer /tmp/crate_files.txt | head -1)
+            if [ -n "$RLIB" ]; then
+              SIZE=$(du -h "$RLIB" | cut -f1)
+            else
+              # fallback: find any matching rlib
+              RLIB=$(find target/release/deps -name 'libtokenizers-*.rlib' | head -1)
+              SIZE=$(du -h "$RLIB" 2>/dev/null | cut -f1 || echo "N/A")
+            fi
+            LABEL=$(echo "$FEATURES" | sed 's/--no-default-features/no-default/' | sed 's/--features /+/g' | sed 's/  */ /g')
+            echo "| \`${LABEL}\` | ${SIZE} |" >> $GITHUB_STEP_SUMMARY
+            # Touch marker so next iteration can detect newer files
+            touch /tmp/crate_files.txt
+          done
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+
       - name: Publish package rust
         working-directory: ./tokenizers
         if: ${{ !contains(github.ref, 'rc') }}
