@@ -305,3 +305,101 @@ class TestUnigram:
         tokenizer.save(tokenizer_json)
 
         tokenizer.from_file(tokenizer_json)
+
+
+@pytest.mark.skipif(
+    getattr(trainers, "ParityBpeTrainer", None) is None,
+    reason="built without the `parity-aware-bpe` feature",
+)
+class TestParityBpeTrainer:
+    # Two small synthetic "languages" that share most of the alphabet but have
+    # some language-specific character sequences, enough for a few merges to be
+    # computable at small num_merges.
+    LANG_EN = [
+        "hello world",
+        "the quick brown fox jumps over the lazy dog",
+        "hello there my friend how are you",
+        "the cat sat on the mat and the dog barked",
+        "hello world hello world",
+    ]
+    LANG_ES = [
+        "hola mundo",
+        "el rápido zorro marrón salta sobre el perro perezoso",
+        "hola amigo cómo estás",
+        "el gato se sentó sobre el tapete y el perro ladró",
+        "hola mundo hola mundo",
+    ]
+
+    def _make_tokenizer(self):
+        tok = Tokenizer(models.BPE())
+        tok.pre_tokenizer = pre_tokenizers.Whitespace()
+        return tok
+
+    def test_instantiate_defaults(self):
+        trainer = trainers.ParityBpeTrainer()
+        assert trainer.num_merges == 32000
+        assert trainer.variant == "base"
+        assert trainer.min_frequency == 0
+        assert trainer.global_merges == 0
+        assert trainer.window_size == 100
+        assert trainer.alpha == 2.0
+        assert trainer.total_symbols == False
+
+    def test_instantiate_variants(self):
+        base = trainers.ParityBpeTrainer(variant="base")
+        assert base.variant == "base"
+        window = trainers.ParityBpeTrainer(variant="window", window_size=50, alpha=1.5)
+        assert window.variant == "window"
+        assert window.window_size == 50
+        assert window.alpha == 1.5
+
+    def test_train_from_iterator(self):
+        tokenizer = self._make_tokenizer()
+        trainer = trainers.ParityBpeTrainer(num_merges=50, variant="base", show_progress=False)
+        trainer.train_from_iterator(
+            tokenizer,
+            train_iterators=[self.LANG_EN, self.LANG_ES],
+        )
+        assert tokenizer.get_vocab_size() > 0
+        encoded = tokenizer.encode("hello world hola mundo")
+        assert len(encoded.tokens) > 0
+
+    def test_train_from_iterator_with_dev(self):
+        tokenizer = self._make_tokenizer()
+        trainer = trainers.ParityBpeTrainer(num_merges=50, variant="base", show_progress=False)
+        # Use the same sequences as dev data just to exercise the path; real
+        # training would use held-out data.
+        trainer.train_from_iterator(
+            tokenizer,
+            train_iterators=[self.LANG_EN, self.LANG_ES],
+            dev_iterators=[self.LANG_EN, self.LANG_ES],
+        )
+        assert tokenizer.get_vocab_size() > 0
+
+    def test_train_from_iterator_with_ratio(self):
+        tokenizer = self._make_tokenizer()
+        trainer = trainers.ParityBpeTrainer(num_merges=50, variant="base", show_progress=False)
+        trainer.train_from_iterator(
+            tokenizer,
+            train_iterators=[self.LANG_EN, self.LANG_ES],
+            ratio=[1.0, 1.0],
+        )
+        assert tokenizer.get_vocab_size() > 0
+
+    def test_can_pickle(self):
+        original = trainers.ParityBpeTrainer(num_merges=123, variant="window", window_size=42)
+        restored = pickle.loads(pickle.dumps(original))
+        assert isinstance(restored, trainers.ParityBpeTrainer)
+        assert restored.num_merges == 123
+        assert restored.variant == "window"
+        assert restored.window_size == 42
+
+    def test_train_iterators_dev_iterators_length_mismatch(self):
+        tokenizer = self._make_tokenizer()
+        trainer = trainers.ParityBpeTrainer(num_merges=10, show_progress=False)
+        with pytest.raises(ValueError):
+            trainer.train_from_iterator(
+                tokenizer,
+                train_iterators=[self.LANG_EN, self.LANG_ES],
+                dev_iterators=[self.LANG_EN],  # length mismatch
+            )
