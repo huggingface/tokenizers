@@ -186,7 +186,7 @@ def main():
     parser.add_argument("--current", help="Current bencher text file")
     parser.add_argument("--baseline-json", help="Baseline pytest-benchmark JSON")
     parser.add_argument("--current-json", help="Current pytest-benchmark JSON")
-    parser.add_argument("--output", required=True, help="Output SVG path")
+    parser.add_argument("--output", required=True, help="Output path (.svg or .png)")
     parser.add_argument("--title", default="Benchmark Comparison", help="Chart title")
     args = parser.parse_args()
 
@@ -201,8 +201,15 @@ def main():
         sys.exit(1)
 
     svg = render_svg(baseline, current, title=args.title)
-    Path(args.output).write_text(svg)
-    print(f"Wrote {args.output} ({len(baseline)} baseline, {len(current)} current benchmarks)")
+
+    output = Path(args.output)
+    if output.suffix == ".png":
+        import cairosvg
+        cairosvg.svg2png(bytestring=svg.encode(), write_to=str(output), scale=2)
+    else:
+        output.write_text(svg)
+
+    print(f"Wrote {output} ({len(baseline)} baseline, {len(current)} current benchmarks)")
 
 
 if __name__ == "__main__":

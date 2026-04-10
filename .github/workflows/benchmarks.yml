@@ -120,11 +120,13 @@ jobs:
           path: tokenizers/target/criterion/**/report/
           retention-days: 30
 
-      # Build SVG comparison chart
+      # Build PNG comparison chart and upload to HF Hub for embedding
       - name: Build comparison chart
         if: hashFiles('tokenizers/output.txt') != ''
         id: compare
         run: |
+          pip install cairosvg
+
           uvx --from huggingface_hub hf download hf-internal-testing/tokenizers-bench \
             baseline.txt --repo-type dataset --local-dir /tmp/prev_baseline 2>/dev/null || true
 
@@ -139,15 +141,25 @@ jobs:
           python3 ${{ github.workspace }}/.github/scripts/render_bench_svg.py \
             --baseline /tmp/prev_baseline/baseline.txt \
             --current output.txt \
-            --output rust_bench.svg \
+            --output rust_bench.png \
             --title "Rust Benchmarks — ${{ github.sha }}"
 
-      - name: Upload Rust SVG
+      - name: Upload chart to HF Hub
+        if: steps.compare.outputs.has_comparison == 'true' && env.HF_TOKEN != ''
+        continue-on-error: true
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        working-directory: tokenizers
+        run: |
+          uvx --from huggingface_hub hf upload hf-internal-testing/tokenizers-bench \
+            rust_bench.png "charts/rust-${{ github.sha }}.png" --repo-type dataset
+
+      - name: Upload chart artifact
         if: steps.compare.outputs.has_comparison == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: rust-bench-svg
-          path: tokenizers/rust_bench.svg
+          name: rust-bench-chart
+          path: tokenizers/rust_bench.png
           retention-days: 30
 
       - name: Post Rust results to PR
@@ -156,27 +168,14 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         working-directory: tokenizers
         run: |
-          # Upload SVG to the PR as an image via artifact URL
-          run_id=${{ github.run_id }}
-          body="## Rust Benchmark Results
+          img_url="https://huggingface.co/datasets/hf-internal-testing/tokenizers-bench/resolve/main/charts/rust-${{ github.sha }}.png"
 
-          ![Rust Benchmarks](https://github.com/${{ github.repository }}/actions/runs/${run_id}/artifacts)
-
-          <details><summary>Raw SVG</summary>
-
-          \`\`\`
-          $(cat rust_bench.svg)
-          \`\`\`
-
-          </details>"
-
-          # Use inline SVG in the comment (GitHub renders SVG in comments)
           {
             echo "## Rust Benchmark Results"
             echo ""
             echo "Commit: \`${{ github.sha }}\`"
             echo ""
-            cat rust_bench.svg
+            echo "![Rust Benchmarks]($img_url)"
           } > comparison.md
 
           existing=$(gh api "repos/${{ github.repository }}/issues/${{ inputs.pr_number }}/comments" \
@@ -283,19 +282,31 @@ jobs:
 
           echo "has_comparison=true" >> "$GITHUB_OUTPUT"
 
+          pip install cairosvg
           python3 ${{ github.workspace }}/.github/scripts/render_bench_svg.py \
             --baseline-json baseline_dir/python-baseline.json \
             --current-json bench_output.json \
-            --output python_bench.svg \
+            --output python_bench.png \
             --title "Python Benchmarks — ${{ github.sha }}"
 
-      - name: Upload Python SVG
+      - name: Upload Python chart to HF Hub
+        if: steps.py_compare.outputs.has_comparison == 'true' && env.HF_TOKEN != ''
+        continue-on-error: true
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        working-directory: bindings/python
+        run: |
+          source .venv/bin/activate
+          uvx --from huggingface_hub hf upload hf-internal-testing/tokenizers-bench \
+            python_bench.png "charts/python-${{ github.sha }}.png" --repo-type dataset
+
+      - name: Upload chart artifact
         if: steps.py_compare.outputs.has_comparison == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: python-bench-svg
-          path: bindings/python/python_bench.svg
-          retention-days: 14
+          name: python-bench-chart
+          path: bindings/python/python_bench.png
+          retention-days: 30
 
       # Upload baseline on push to main only
       - name: Upload Python baseline to HF Hub
@@ -318,12 +329,14 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         working-directory: bindings/python
         run: |
+          img_url="https://huggingface.co/datasets/hf-internal-testing/tokenizers-bench/resolve/main/charts/python-${{ github.sha }}.png"
+
           {
             echo "## Python Benchmark Results"
             echo ""
             echo "Commit: \`${{ github.sha }}\`"
             echo ""
-            cat python_bench.svg
+            echo "![Python Benchmarks]($img_url)"
           } > py_comparison.md
 
           existing=$(gh api "repos/${{ github.repository }}/issues/${{ inputs.pr_number }}/comments" \
