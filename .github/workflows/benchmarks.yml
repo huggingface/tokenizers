@@ -252,6 +252,7 @@ jobs:
           source .venv/bin/activate
           python -m pytest tests/test_benchmarks.py \
             --benchmark-json=bench_output.json \
+            --benchmark-min-rounds=15 \
             --benchmark-columns=mean,stddev,rounds \
             --benchmark-sort=name \
             -v
