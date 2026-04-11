@@ -708,57 +708,6 @@ impl ParityBpeTrainer {
         }
     }
 
-    /// Find the best pair for a language using linear scan with string-based
-    /// tie-breaking to match Python's `max(stats, key=lambda x: (stats[x][lang], x))`.
-    fn find_best_pair_linear(
-        &self,
-        pair_counts: &AHashMap<Pair, i64>,
-        id_to_word: &[CompactString],
-    ) -> Option<(Pair, u64)> {
-        let mut best_pair: Option<Pair> = None;
-        let mut best_count: i64 = 0;
-        let mut best_key: (CompactString, CompactString) =
-            (CompactString::default(), CompactString::default());
-
-        for (&pair, &count) in pair_counts {
-            if count <= 0 {
-                continue;
-            }
-            let str_a = &id_to_word[pair.0 as usize];
-            let str_b = &id_to_word[pair.1 as usize];
-
-            if count > best_count
-                || (count == best_count && (str_a, str_b) > (&best_key.0, &best_key.1))
-            {
-                best_count = count;
-                best_pair = Some(pair);
-                best_key = (str_a.clone(), str_b.clone());
-            }
-        }
-
-        best_pair.map(|p| (p, best_count as u64))
-    }
-
-    /// Find the best pair in global mode (summing counts across all languages)
-    /// with string-based tie-breaking.
-    fn find_best_pair_global_linear(
-        &self,
-        per_lang_pair_counts: &[AHashMap<Pair, i64>],
-        id_to_word: &[CompactString],
-    ) -> Option<(Pair, u64)> {
-        // Collect all pairs and sum their counts
-        let mut total_counts: AHashMap<Pair, i64> = AHashMap::new();
-        for lang_counts in per_lang_pair_counts {
-            for (&pair, &count) in lang_counts {
-                if count > 0 {
-                    *total_counts.entry(pair).or_default() += count;
-                }
-            }
-        }
-
-        self.find_best_pair_linear(&total_counts, id_to_word)
-    }
-
     /// Apply a merge to the dev vocabulary.
     /// Returns the per-language length change (positive = words got shorter).
     fn replace_pair_dev(
@@ -919,6 +868,50 @@ impl ParityBpeTrainer {
             per_lang_queues.push(queue);
         }
 
+        // 4c. Build global pair counts + heap for the hybrid global phase.
+        //
+        // Only populated when `global_merges > 0`. The global phase selects
+        // merges on pair counts summed across all languages, and without a
+        // maintained heap this would require rescanning every language's
+        // pair_counts map (hundreds of millions of entries at full scale)
+        // every single merge — quadratic in corpus size × global_merges.
+        //
+        // Instead we maintain a summed `global_pair_counts` map and a
+        // parallel `global_queue` heap, updated incrementally whenever the
+        // underlying per-language counts shift due to a merge. Pop is then
+        // O(log n) with lazy deletion, matching the per-language heap cost.
+        let want_global = self.global_merges > 0;
+        let mut global_pair_counts: AHashMap<Pair, i64> = AHashMap::new();
+        let mut global_queue: OctonaryHeap<PairMerge> = OctonaryHeap::new();
+        if want_global {
+            for lang_counts in &per_lang_pair_counts {
+                for (&pair, &count) in lang_counts {
+                    if count > 0 {
+                        *global_pair_counts.entry(pair).or_default() += count;
+                    }
+                }
+            }
+            global_queue = OctonaryHeap::with_capacity(global_pair_counts.len());
+            for (&pair, &count) in &global_pair_counts {
+                if count > 0 {
+                    global_queue.push(PairMerge {
+                        pair,
+                        count: count as u64,
+                        str_key: (
+                            id_to_word[pair.0 as usize].clone(),
+                            id_to_word[pair.1 as usize].clone(),
+                        ),
+                    });
+                }
+            }
+            info!(
+                "Global hybrid mode: initialized global pair heap with {} pairs \
+                 (first {} merges will use global mode)",
+                global_pair_counts.len(),
+                self.global_merges
+            );
+        }
+
         // 5. Build dev vocab and compute initial lengths
         let has_dev = !self.dev_language_words.is_empty();
         let has_ratio = self.ratio.is_some();
@@ -1049,6 +1042,13 @@ impl ParityBpeTrainer {
         let mut exhausted: AHashSet<usize> = AHashSet::new();
         let mut merge_count = 0;
 
+        // Scratch buffer reused across merges: collects the union of pairs
+        // whose per-language counts changed in this step, so we can update
+        // `global_pair_counts` / `global_queue` without rescanning all langs.
+        // Allocated once; cleared each iteration to avoid repeated alloc.
+        let mut global_changed_pairs: AHashSet<Pair> =
+            if want_global { AHashSet::with_capacity(256) } else { AHashSet::new() };
+
         while merge_count < num_merges {
             // Check if all languages are exhausted
             if exhausted.len() >= num_langs {
@@ -1141,7 +1141,7 @@ impl ParityBpeTrainer {
 
             // Find the best pair
             let best_pair = if lang_idx == usize::MAX {
-                self.find_best_pair_global_linear(&per_lang_pair_counts, &id_to_word)
+                Self::pop_best_pair(&mut global_queue, &global_pair_counts)
             } else {
                 Self::pop_best_pair(
                     &mut per_lang_queues[lang_idx],
@@ -1188,6 +1188,10 @@ impl ParityBpeTrainer {
             }
             merges.push((best_pair, new_token_id));
 
+            if want_global {
+                global_changed_pairs.clear();
+            }
+
             // Apply merge to ALL languages' training words and update pair counts
             for lang in 0..num_langs {
                 let (train_length_change, changed_pairs) = self.apply_merge_to_language(
@@ -1201,14 +1205,14 @@ impl ParityBpeTrainer {
                 );
 
                 // Push changed pairs into this language's heap
-                for changed_pair in changed_pairs {
+                for changed_pair in &changed_pairs {
                     let count = per_lang_pair_counts[lang]
-                        .get(&changed_pair)
+                        .get(changed_pair)
                         .copied()
                         .unwrap_or(0);
                     if count > 0 {
                         per_lang_queues[lang].push(PairMerge {
-                            pair: changed_pair,
+                            pair: *changed_pair,
                             count: count as u64,
                             str_key: (
                                 id_to_word[changed_pair.0 as usize].clone(),
@@ -1218,12 +1222,53 @@ impl ParityBpeTrainer {
                     }
                 }
 
+                if want_global {
+                    // Union across languages: any pair that changed anywhere
+                    // needs its global sum recomputed.
+                    for cp in &changed_pairs {
+                        global_changed_pairs.insert(*cp);
+                    }
+                }
+
                 if has_ratio {
                     // Ratio mode: update lengths from training data changes
                     lengths_f64[lang] -= train_length_change as f64;
                 } else if !has_dev {
                     // No dev data and no ratio: update lengths from training data
                     lengths[lang] -= train_length_change;
+                }
+            }
+
+            if want_global {
+                // The best pair itself was consumed — zero it out even if
+                // apply_merge_to_language didn't flag it as changed (it
+                // already set per_lang_pair_counts[lang][best_pair] = 0).
+                global_changed_pairs.insert(best_pair);
+
+                // Recompute global count for each changed pair as the sum
+                // over per-language maps, and push updated entries onto the
+                // global heap. Pop uses lazy deletion to ignore stale ones.
+                for pair in global_changed_pairs.iter().copied() {
+                    let mut total: i64 = 0;
+                    for lang_counts in &per_lang_pair_counts {
+                        if let Some(&c) = lang_counts.get(&pair) {
+                            total += c;
+                        }
+                    }
+                    if total < 0 {
+                        total = 0;
+                    }
+                    global_pair_counts.insert(pair, total);
+                    if total > 0 {
+                        global_queue.push(PairMerge {
+                            pair,
+                            count: total as u64,
+                            str_key: (
+                                id_to_word[pair.0 as usize].clone(),
+                                id_to_word[pair.1 as usize].clone(),
+                            ),
+                        });
+                    }
                 }
             }
 
@@ -1590,6 +1635,68 @@ mod tests {
             merge_strings,
             vec!["a b", "c d"],
             "without global merges, lang 0 picks 'a b' first"
+        );
+    }
+
+    #[test]
+    fn test_parity_global_merges_many_merges_on_realistic_data() {
+        // Stress test: many global merges on a corpus with enough pair variety
+        // that the incremental-update logic is meaningfully exercised. Verifies
+        // that after the global-merge heap fix, a multi-merge run still produces
+        // the expected merges in the right order (highest global sum first,
+        // alphabetic tie-break) and that per-language accounting remains
+        // consistent when merges are driven by the global heap.
+        //
+        // Setup (two languages sharing some pairs, differing in others):
+        //   lang 0: "abab" x10, "xyxy" x5
+        //   lang 1: "abab" x5,  "xyxy" x10
+        //
+        // Global counts after initial char split (per (pair, lang0, lang1, total)):
+        //   (a,b): 20, 10 → 30   <- tie with (x,y), "xy" wins alphabetically
+        //   (b,a): 10,  5 → 15
+        //   (x,y): 10, 20 → 30   <- tied with (a,b); alphabetic tie-break picks this
+        //   (y,x):  5, 10 → 15
+        // First global merge should be "x y" (alphabetic tie-break).
+        // After that: (x,y) removed, (a,b) still 30 → "a b".
+        let lang0: AHashMap<CompactString, u64> = [("abab".into(), 10u64), ("xyxy".into(), 5)]
+            .iter()
+            .cloned()
+            .collect();
+        let lang1: AHashMap<CompactString, u64> = [("abab".into(), 5u64), ("xyxy".into(), 10)]
+            .iter()
+            .cloned()
+            .collect();
+
+        // Run with global_merges=4 — forces the first four merges through the
+        // global heap path, then the rest (if any) fall back to per-language.
+        let mut trainer = ParityBpeTrainer::builder()
+            .show_progress(false)
+            .min_frequency(1)
+            .num_merges(4)
+            .global_merges(4)
+            .variant(ParityVariant::Base)
+            .build();
+        trainer.feed_language(0, lang0.clone());
+        trainer.feed_language(1, lang1.clone());
+        let mut model = BPE::default();
+        let (_special, merges) = trainer.do_train(&mut model).unwrap();
+
+        // First two merges: tied global counts (30 each for ab and xy),
+        // alphabetic tie-break picks "x y" before "a b".
+        assert_eq!(
+            &merges[0..2],
+            &["x y", "a b"],
+            "global heap should pick ties in alphabetic order"
+        );
+        // Remaining merges: (b,a) and (y,x) at 15 each, (a,bab) and (x,yxy)
+        // also possible after first-round merges. The exact order beyond the
+        // first two depends on post-merge pair updates, but the run should
+        // complete all 4 requested merges without panicking and the final
+        // vocab must contain the double tokens.
+        assert_eq!(merges.len(), 4, "all 4 global merges should complete");
+        assert!(
+            model.vocab.contains_key("ab") && model.vocab.contains_key("xy"),
+            "final vocab should contain both first-round merges"
         );
     }
 
