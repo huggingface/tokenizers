@@ -120,25 +120,20 @@ impl<'de> Deserialize<'de> for ModelWrapper {
         Ok(match helper {
             ModelHelper::Tagged(model) => match model.variant {
                 EnumType::BPE => ModelWrapper::BPE(
-                    crate::utils::from_value_via_str(model.rest)
-                        .map_err(serde::de::Error::custom)?,
+                    serde_json::from_value(model.rest).map_err(serde::de::Error::custom)?,
                 ),
                 EnumType::WordPiece => ModelWrapper::WordPiece(
-                    crate::utils::from_value_via_str(model.rest)
-                        .map_err(serde::de::Error::custom)?,
+                    serde_json::from_value(model.rest).map_err(serde::de::Error::custom)?,
                 ),
                 EnumType::WordLevel => ModelWrapper::WordLevel(
-                    crate::utils::from_value_via_str(model.rest)
-                        .map_err(serde::de::Error::custom)?,
+                    serde_json::from_value(model.rest).map_err(serde::de::Error::custom)?,
                 ),
                 EnumType::Unigram => ModelWrapper::Unigram(
-                    crate::utils::from_value_via_str(model.rest)
-                        .map_err(serde::de::Error::custom)?,
+                    serde_json::from_value(model.rest).map_err(serde::de::Error::custom)?,
                 ),
             },
             ModelHelper::Legacy(value) => {
-                let untagged =
-                    crate::utils::from_value_via_str(value).map_err(serde::de::Error::custom)?;
+                let untagged = serde_json::from_value(value).map_err(serde::de::Error::custom)?;
                 match untagged {
                     ModelUntagged::BPE(bpe) => ModelWrapper::BPE(bpe),
                     ModelUntagged::WordPiece(bpe) => ModelWrapper::WordPiece(bpe),
@@ -373,11 +368,7 @@ mod tests {
         let reconstructed: std::result::Result<ModelWrapper, serde_json::Error> =
             serde_json::from_str(invalid);
         match reconstructed {
-            Err(err) => assert!(
-                err.to_string()
-                    .starts_with("Merges text file invalid at line 1"),
-                "Unexpected error: {}", err
-            ),
+            Err(err) => assert_eq!(err.to_string(), "Merges text file invalid at line 1"),
             _ => panic!("Expected an error here"),
         }
     }

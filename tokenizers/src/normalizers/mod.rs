@@ -110,7 +110,7 @@ impl<'de> Deserialize<'de> for NormalizerWrapper {
         Ok(match helper {
             NormalizerHelper::Tagged(model) => {
                 let mut values: serde_json::Map<String, serde_json::Value> =
-                    crate::utils::from_value_via_str(model.rest).expect("Parsed values");
+                    serde_json::from_value(model.rest).expect("Parsed values");
                 values.insert(
                     "type".to_string(),
                     serde_json::to_value(&model.variant).expect("Reinsert"),
@@ -118,23 +118,19 @@ impl<'de> Deserialize<'de> for NormalizerWrapper {
                 let values = serde_json::Value::Object(values);
                 match model.variant {
                     EnumType::Bert => NormalizerWrapper::BertNormalizer(
-                        crate::utils::from_value_via_str(values)
-                            .map_err(serde::de::Error::custom)?,
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                     ),
                     EnumType::Strip => NormalizerWrapper::StripNormalizer(
-                        crate::utils::from_value_via_str(values)
-                            .map_err(serde::de::Error::custom)?,
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                     ),
                     EnumType::StripAccents => NormalizerWrapper::StripAccents(
-                        crate::utils::from_value_via_str(values)
-                            .map_err(serde::de::Error::custom)?,
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                     ),
                     EnumType::NFC => {
                         #[cfg(feature = "unicode-normalization")]
                         {
                             NormalizerWrapper::NFC(
-                                crate::utils::from_value_via_str(values)
-                                    .map_err(serde::de::Error::custom)?,
+                                serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                             )
                         }
                         #[cfg(not(feature = "unicode-normalization"))]
@@ -148,8 +144,7 @@ impl<'de> Deserialize<'de> for NormalizerWrapper {
                         #[cfg(feature = "unicode-normalization")]
                         {
                             NormalizerWrapper::NFD(
-                                crate::utils::from_value_via_str(values)
-                                    .map_err(serde::de::Error::custom)?,
+                                serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                             )
                         }
                         #[cfg(not(feature = "unicode-normalization"))]
@@ -163,8 +158,7 @@ impl<'de> Deserialize<'de> for NormalizerWrapper {
                         #[cfg(feature = "unicode-normalization")]
                         {
                             NormalizerWrapper::NFKC(
-                                crate::utils::from_value_via_str(values)
-                                    .map_err(serde::de::Error::custom)?,
+                                serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                             )
                         }
                         #[cfg(not(feature = "unicode-normalization"))]
@@ -178,8 +172,7 @@ impl<'de> Deserialize<'de> for NormalizerWrapper {
                         #[cfg(feature = "unicode-normalization")]
                         {
                             NormalizerWrapper::NFKD(
-                                crate::utils::from_value_via_str(values)
-                                    .map_err(serde::de::Error::custom)?,
+                                serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                             )
                         }
                         #[cfg(not(feature = "unicode-normalization"))]
@@ -190,16 +183,13 @@ impl<'de> Deserialize<'de> for NormalizerWrapper {
                         }
                     }
                     EnumType::Sequence => NormalizerWrapper::Sequence(
-                        crate::utils::from_value_via_str(values)
-                            .map_err(serde::de::Error::custom)?,
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                     ),
                     EnumType::Lowercase => NormalizerWrapper::Lowercase(
-                        crate::utils::from_value_via_str(values)
-                            .map_err(serde::de::Error::custom)?,
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                     ),
                     EnumType::Nmt => NormalizerWrapper::Nmt(
-                        crate::utils::from_value_via_str(values)
-                            .map_err(serde::de::Error::custom)?,
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                     ),
                     EnumType::Precompiled => {
                         #[cfg(feature = "spm")]
@@ -220,23 +210,19 @@ impl<'de> Deserialize<'de> for NormalizerWrapper {
                         }
                     }
                     EnumType::Replace => NormalizerWrapper::Replace(
-                        crate::utils::from_value_via_str(values)
-                            .map_err(serde::de::Error::custom)?,
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                     ),
                     EnumType::Prepend => NormalizerWrapper::Prepend(
-                        crate::utils::from_value_via_str(values)
-                            .map_err(serde::de::Error::custom)?,
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                     ),
                     EnumType::ByteLevel => NormalizerWrapper::ByteLevel(
-                        crate::utils::from_value_via_str(values)
-                            .map_err(serde::de::Error::custom)?,
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                     ),
                 }
             }
 
             NormalizerHelper::Legacy(value) => {
-                let untagged =
-                    crate::utils::from_value_via_str(value).map_err(serde::de::Error::custom)?;
+                let untagged = serde_json::from_value(value).map_err(serde::de::Error::custom)?;
                 match untagged {
                     NormalizerUntagged::BertNormalizer(bpe) => {
                         NormalizerWrapper::BertNormalizer(bpe)
@@ -326,11 +312,9 @@ mod tests {
         let json = r#"{"trim_offsets":true, "add_prefix_space":true}"#;
         let reconstructed = serde_json::from_str::<NormalizerWrapper>(json);
         match reconstructed {
-            Err(err) => assert!(
-                err.to_string().starts_with(
-                    "data did not match any variant of untagged enum NormalizerUntagged"
-                ),
-                "Unexpected error: {}", err
+            Err(err) => assert_eq!(
+                err.to_string(),
+                "data did not match any variant of untagged enum NormalizerUntagged"
             ),
             _ => panic!("Expected an error here"),
         }
@@ -350,11 +334,9 @@ mod tests {
         let json = r#"{"type":"Sequence","normalizers":[{}]}"#;
         let parse = serde_json::from_str::<NormalizerWrapper>(json);
         match parse {
-            Err(err) => assert!(
-                format!("{err}").starts_with(
-                    "data did not match any variant of untagged enum NormalizerUntagged"
-                ),
-                "Unexpected error: {}", err
+            Err(err) => assert_eq!(
+                format!("{err}"),
+                "data did not match any variant of untagged enum NormalizerUntagged"
             ),
             _ => panic!("Expected error"),
         }
@@ -362,11 +344,9 @@ mod tests {
         let json = r#"{"replacement":"▁","prepend_scheme":"always"}"#;
         let parse = serde_json::from_str::<NormalizerWrapper>(json);
         match parse {
-            Err(err) => assert!(
-                format!("{err}").starts_with(
-                    "data did not match any variant of untagged enum NormalizerUntagged"
-                ),
-                "Unexpected error: {}", err
+            Err(err) => assert_eq!(
+                format!("{err}"),
+                "data did not match any variant of untagged enum NormalizerUntagged"
             ),
             _ => panic!("Expected error"),
         }
@@ -374,10 +354,7 @@ mod tests {
         let json = r#"{"type":"Sequence","prepend_scheme":"always"}"#;
         let parse = serde_json::from_str::<NormalizerWrapper>(json);
         match parse {
-            Err(err) => assert!(
-                format!("{err}").starts_with("missing field `normalizers`"),
-                "Unexpected error: {}", err
-            ),
+            Err(err) => assert_eq!(format!("{err}"), "missing field `normalizers`"),
             _ => panic!("Expected error"),
         }
     }
