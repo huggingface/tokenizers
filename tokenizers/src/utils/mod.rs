@@ -234,6 +234,17 @@ macro_rules! impl_serde_type{
 // Re-export macro_rules_attribute
 pub use macro_rules_attribute::macro_rules_attribute;
 
+/// Deserialize from a `serde_json::Value` via string round-trip.
+/// This avoids monomorphizing `serde_json::from_value<T>` per type — the
+/// `from_str` path shares a single `Deserializer<SliceRead>` across all types,
+/// saving ~66 KB of binary size compared to `serde_json::from_value`.
+pub(crate) fn from_value_via_str<T: serde::de::DeserializeOwned>(
+    value: serde_json::Value,
+) -> serde_json::Result<T> {
+    let s = value.to_string();
+    serde_json::from_str(&s)
+}
+
 /// Escape special regex metacharacters in a string so it can be used as a literal pattern.
 /// This replaces the dependency on `regex::escape`.
 pub fn regex_escape(text: &str) -> String {

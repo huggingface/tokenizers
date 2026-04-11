@@ -118,7 +118,8 @@ impl<'de> Deserialize<'de> for PreTokenizerWrapper {
         Ok(match helper {
             PreTokenizerHelper::Tagged(pretok) => {
                 let mut values: serde_json::Map<String, serde_json::Value> =
-                    serde_json::from_value(pretok.rest).map_err(serde::de::Error::custom)?;
+                    crate::utils::from_value_via_str(pretok.rest)
+                        .map_err(serde::de::Error::custom)?;
                 values.insert(
                     "type".to_string(),
                     serde_json::to_value(&pretok.variant).map_err(serde::de::Error::custom)?,
@@ -126,46 +127,59 @@ impl<'de> Deserialize<'de> for PreTokenizerWrapper {
                 let values = serde_json::Value::Object(values);
                 match pretok.variant {
                     EnumType::BertPreTokenizer => PreTokenizerWrapper::BertPreTokenizer(
-                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
+                        crate::utils::from_value_via_str(values)
+                            .map_err(serde::de::Error::custom)?,
                     ),
                     EnumType::ByteLevel => PreTokenizerWrapper::ByteLevel(
-                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
+                        crate::utils::from_value_via_str(values)
+                            .map_err(serde::de::Error::custom)?,
                     ),
                     EnumType::Delimiter => PreTokenizerWrapper::Delimiter(
-                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
+                        crate::utils::from_value_via_str(values)
+                            .map_err(serde::de::Error::custom)?,
                     ),
                     EnumType::Metaspace => PreTokenizerWrapper::Metaspace(
-                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
+                        crate::utils::from_value_via_str(values)
+                            .map_err(serde::de::Error::custom)?,
                     ),
                     EnumType::Whitespace => PreTokenizerWrapper::Whitespace(
-                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
+                        crate::utils::from_value_via_str(values)
+                            .map_err(serde::de::Error::custom)?,
                     ),
                     EnumType::Sequence => PreTokenizerWrapper::Sequence(
-                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
+                        crate::utils::from_value_via_str(values)
+                            .map_err(serde::de::Error::custom)?,
                     ),
                     EnumType::Split => PreTokenizerWrapper::Split(
-                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
+                        crate::utils::from_value_via_str(values)
+                            .map_err(serde::de::Error::custom)?,
                     ),
                     EnumType::Punctuation => PreTokenizerWrapper::Punctuation(
-                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
+                        crate::utils::from_value_via_str(values)
+                            .map_err(serde::de::Error::custom)?,
                     ),
                     EnumType::WhitespaceSplit => PreTokenizerWrapper::WhitespaceSplit(
-                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
+                        crate::utils::from_value_via_str(values)
+                            .map_err(serde::de::Error::custom)?,
                     ),
                     EnumType::Digits => PreTokenizerWrapper::Digits(
-                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
+                        crate::utils::from_value_via_str(values)
+                            .map_err(serde::de::Error::custom)?,
                     ),
                     EnumType::UnicodeScripts => PreTokenizerWrapper::UnicodeScripts(
-                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
+                        crate::utils::from_value_via_str(values)
+                            .map_err(serde::de::Error::custom)?,
                     ),
                     EnumType::FixedLength => PreTokenizerWrapper::FixedLength(
-                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
+                        crate::utils::from_value_via_str(values)
+                            .map_err(serde::de::Error::custom)?,
                     ),
                 }
             }
 
             PreTokenizerHelper::Legacy(value) => {
-                let untagged = serde_json::from_value(value).map_err(serde::de::Error::custom)?;
+                let untagged =
+                    crate::utils::from_value_via_str(value).map_err(serde::de::Error::custom)?;
                 match untagged {
                     PreTokenizerUntagged::BertPreTokenizer(bert) => {
                         PreTokenizerWrapper::BertPreTokenizer(bert)
@@ -316,7 +330,10 @@ mod tests {
         let json = r#"{"type":"Metaspace", "add_prefix_space":true }"#;
         let reconstructed = serde_json::from_str::<PreTokenizerWrapper>(json);
         match reconstructed {
-            Err(err) => assert_eq!(err.to_string(), "missing field `replacement`"),
+            Err(err) => assert!(
+                err.to_string().starts_with("missing field `replacement`"),
+                "Unexpected error: {}", err
+            ),
             _ => panic!("Expected an error here"),
         }
         let json = r#"{"behavior":"default_split"}"#;
