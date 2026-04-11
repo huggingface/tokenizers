@@ -101,6 +101,7 @@ spm = ["dep:spm_precompiled", "dep:unicode-segmentation"]
 esaxx_fast = ["dep:esaxx-rs", "esaxx-rs/cpp"]
 progressbar = ["indicatif"]
 http = ["hf-hub"]
+inference = ["onig", "unicode-normalization", "spm"]
 unstable_wasm = ["fancy-regex", "getrandom/wasm_js"]
 rustls-tls = ["hf-hub?/rustls-tls"]
 
@@ -115,11 +116,13 @@ tracing-subscriber = "0.3.18"
 lto = "fat"
 
 # Use this profile for minimal binary size (e.g. on-device deployment).
-# Build with: cargo build --profile release-small
+# Pair with the `inference` feature for all inference capabilities without training/parallel:
+#   cargo build --profile release-small --no-default-features --features inference
 # For even smaller builds (nightly only):
 #   RUSTFLAGS="-Zlocation-detail=none -Zfmt-debug=none" cargo +nightly build \
 #     -Z build-std=std,panic_abort -Z build-std-features="optimize_for_size" \
-#     --target <your-target-triple> --profile release-small
+#     --target <your-target-triple> --profile release-small \
+#     --no-default-features --features inference
 [profile.release-small]
 inherits = "release"
 opt-level = "s"
