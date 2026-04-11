@@ -2,11 +2,10 @@ use super::{
     normalizer::Range, Model, NormalizedString, Normalizer, Offsets, PreTokenizedString, Result,
     Token,
 };
+use crate::utils::is_word_char;
 use crate::utils::{AHashMap, AHashSet, HashMapExt, HashSetExt};
 use daachorse::{DoubleArrayAhoCorasick, DoubleArrayAhoCorasickBuilder, MatchKind};
-use regex::Regex;
 use serde::{ser::SerializeSeq, Deserialize, Serialize, Serializer};
-use std::sync::LazyLock;
 
 /// Represent a token added by the user on top of the existing Model vocabulary.
 /// AddedToken can be configured to specify the behavior they should have in various situations
@@ -96,32 +95,27 @@ impl std::hash::Hash for AddedToken {
 
 type MatchingSet = Option<DoubleArrayAhoCorasick<u32>>;
 
-static STARTS_WITH_WORD: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\w").unwrap());
-static ENDS_WITH_WORD: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\w$").unwrap());
-static RIGHTMOST_SPACE_AT_START: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*").unwrap());
-static LEFTMOST_SPACE_AT_END: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s*$").unwrap());
-
 fn ends_with_word(sentence: &str) -> bool {
-    ENDS_WITH_WORD.is_match(sentence)
+    sentence.chars().next_back().is_some_and(is_word_char)
 }
 
 fn starts_with_word(sentence: &str) -> bool {
-    STARTS_WITH_WORD.is_match(sentence)
+    sentence.chars().next().is_some_and(is_word_char)
 }
 
 fn space_leftmost_at_end(sentence: &str) -> usize {
-    if let Some(match_) = LEFTMOST_SPACE_AT_END.find(sentence) {
-        match_.start()
-    } else {
-        sentence.len()
-    }
+    sentence
+        .char_indices()
+        .rev()
+        .find(|(_, c)| !c.is_whitespace())
+        .map_or(0, |(i, c)| i + c.len_utf8())
 }
+
 fn space_rightmost_at_start(sentence: &str) -> usize {
-    if let Some(match_) = RIGHTMOST_SPACE_AT_START.find(sentence) {
-        match_.end()
-    } else {
-        0
-    }
+    sentence
+        .char_indices()
+        .find(|(_, c)| !c.is_whitespace())
+        .map_or(sentence.len(), |(i, _)| i)
 }
 ///
 /// A vocabulary built on top of the Model

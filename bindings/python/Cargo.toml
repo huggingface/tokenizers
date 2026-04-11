@@ -33,3 +33,7 @@ pyo3 = { version = "0.28", features = ["auto-initialize", "experimental-inspect"
 [features]
 default = ["ext-module"]
 ext-module = ["pyo3/extension-module"]
+
+[profile.release]
+strip = true
+lto = "fat"

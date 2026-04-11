@@ -1027,7 +1027,6 @@ impl From<&str> for NormalizedString {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use regex::Regex;
     use unicode_categories::UnicodeCategories;
 
     #[test]
@@ -1487,9 +1486,9 @@ mod tests {
         s.replace("aaa", "b").unwrap();
         assert_eq!(s.get(), "bab");
 
-        // Regex
+        // Regex (via SysRegex)
         let mut s = NormalizedString::from(" Hello   friend ");
-        let re = Regex::new(r"\s+").unwrap();
+        let re = crate::utils::SysRegex::new(r"\s+").unwrap();
         s.replace(&re, "_").unwrap();
         assert_eq!(s.get(), "_Hello_friend_");
     }

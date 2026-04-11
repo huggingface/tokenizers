@@ -1,11 +1,10 @@
 use std::sync::LazyLock;
 
-use regex::Regex;
-
 use crate::tokenizer::{
     pattern::Invert, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior,
 };
 use crate::utils::macro_rules_attribute;
+use crate::utils::SysRegex;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[macro_rules_attribute(impl_serde_type!)]
@@ -19,8 +18,8 @@ impl Default for Whitespace {
 
 impl PreTokenizer for Whitespace {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
-        static RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\w+|[^\w\s]+").unwrap());
-        let re_ref: &Regex = &RE;
+        static RE: LazyLock<SysRegex> = LazyLock::new(|| SysRegex::new(r"\w+|[^\w\s]+").unwrap());
+        let re_ref: &SysRegex = &RE;
 
         pretokenized.split(|_, normalized| {
             normalized.split(Invert(re_ref), SplitDelimiterBehavior::Removed)

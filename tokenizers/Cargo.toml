@@ -69,8 +69,7 @@ harness = false
 [dependencies]
 rand = { version = "0.9", optional = true }
 onig = { version = "6.5.1", default-features = false, optional = true }
-regex = { version = "1.10", default-features = false, features = ["std", "perf", "unicode-perl"] }
-regex-syntax = { version = "0.8", default-features = false, features = ["std", "unicode-perl"] }
+regex = { version = "1.10", default-features = false, features = ["std", "perf", "unicode-perl"], optional = true }
 rayon = { version = "1.10", optional = true }
 rayon-cond = { version = "0.4", optional = true }
 serde = { version = "1.0", features = ["derive"] }
@@ -90,11 +89,11 @@ fancy-regex = { version = "0.17", optional = true }
 getrandom = { version = "0.3" }
 esaxx-rs = { version = "0.1.10", default-features = false, features = [], optional = true }
 foldhash = "0.2"
-dary_heap = { version = "0.3.6", features = ["serde"] }
+dary_heap = "0.3.6"
 compact_str = { version = "0.9", features = ["serde"], optional = true }
 
 [features]
-default = ["progressbar", "onig", "esaxx_fast", "spm", "training", "parallel", "unicode-normalization"]
+default = ["progressbar", "onig", "esaxx_fast", "spm", "training", "parallel", "unicode-normalization", "regex"]
 unicode-normalization = ["dep:unicode-normalization-alignments"]
 parallel = ["dep:rayon", "dep:rayon-cond"]
 training = ["dep:rand", "dep:esaxx-rs", "dep:compact_str"]
@@ -114,6 +113,19 @@ tracing-subscriber = "0.3.18"
 
 [profile.release]
 lto = "fat"
+
+# Use this profile for minimal binary size (e.g. on-device deployment).
+# Build with: cargo build --profile release-small
+# For even smaller builds (nightly only):
+#   RUSTFLAGS="-Zlocation-detail=none -Zfmt-debug=none" cargo +nightly build \
+#     -Z build-std=std,panic_abort -Z build-std-features="optimize_for_size" \
+#     --target <your-target-triple> --profile release-small
+[profile.release-small]
+inherits = "release"
+opt-level = "s"
+strip = true
+panic = "abort"
+codegen-units = 1
 
 [profile.profiling]
 inherits = "release"

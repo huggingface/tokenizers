@@ -67,7 +67,7 @@ impl Replace {
     pub fn new<I: Into<ReplacePattern>, C: Into<String>>(pattern: I, content: C) -> Result<Self> {
         let pattern: ReplacePattern = pattern.into();
         let regex = match &pattern {
-            ReplacePattern::String(s) => SysRegex::new(&regex::escape(s))?,
+            ReplacePattern::String(s) => SysRegex::new(&crate::utils::regex_escape(s))?,
             ReplacePattern::Regex(r) => SysRegex::new(r)?,
         };
 

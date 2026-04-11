@@ -233,3 +233,28 @@ macro_rules! impl_serde_type{
 
 // Re-export macro_rules_attribute
 pub use macro_rules_attribute::macro_rules_attribute;
+
+/// Escape special regex metacharacters in a string so it can be used as a literal pattern.
+/// This replaces the dependency on `regex::escape`.
+pub fn regex_escape(text: &str) -> String {
+    let mut escaped = String::with_capacity(text.len() + 4);
+    for c in text.chars() {
+        match c {
+            '\\' | '.' | '+' | '*' | '?' | '(' | ')' | '|' | '[' | ']' | '{' | '}' | '^' | '$'
+            | '#' | '&' | '-' | '~' => {
+                escaped.push('\\');
+                escaped.push(c);
+            }
+            _ => escaped.push(c),
+        }
+    }
+    escaped
+}
+
+/// Check if a character is a "word" character (equivalent to `\w` in Unicode-aware regex).
+/// Matches `[a-zA-Z0-9_]`, Unicode alphabetic/numeric characters, and Unicode combining marks
+/// (category M), matching Perl/PCRE `\w` with Unicode enabled.
+pub(crate) fn is_word_char(c: char) -> bool {
+    use unicode_categories::UnicodeCategories;
+    c == '_' || c.is_alphanumeric() || c.is_mark()
+}
