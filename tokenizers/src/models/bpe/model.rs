@@ -5,6 +5,7 @@ use crate::utils::iter::ResultShunt;
 use ahash::AHashMap;
 use serde_json::Value;
 use std::borrow::Cow;
+use std::cell::RefCell;
 
 use std::collections::HashMap;
 use std::{
@@ -13,6 +14,10 @@ use std::{
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
 };
+
+thread_local! {
+    static TL_WORD: RefCell<Word> = RefCell::new(Word::with_capacity(MAX_LENGTH));
+}
 
 pub type Vocab = AHashMap<String, u32>;
 type VocabR = AHashMap<u32, String>;
@@ -481,20 +486,23 @@ impl BPE {
                 )]);
             }
         }
-        if let Some(ref cache) = self.cache {
-            let mut word = Word::new();
-            if cache.get_into(sequence, &mut word) {
-                return Ok(self.word_to_tokens(&word).collect());
+        TL_WORD.with(|w| {
+            let mut word = w.borrow_mut();
+            word.clear();
+            if let Some(ref cache) = self.cache {
+                if cache.get_into(sequence, &mut word) {
+                    return Ok(self.word_to_tokens(&word).collect());
+                }
             }
-        }
-        let word = self.merge_word(sequence)?;
-        let ret = self.word_to_tokens(&word).collect();
-        if let Some(ref cache) = self.cache {
-            if sequence.len() < MAX_LENGTH {
-                cache.set(sequence.to_owned(), word);
+            let word = self.merge_word(sequence)?;
+            let ret = self.word_to_tokens(&word).collect();
+            if let Some(ref cache) = self.cache {
+                if sequence.len() < MAX_LENGTH {
+                    cache.set(sequence.to_owned(), word);
+                }
             }
-        }
-        Ok(ret)
+            Ok(ret)
+        })
     }
 }
 
