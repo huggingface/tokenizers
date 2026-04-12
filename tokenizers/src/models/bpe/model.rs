@@ -16,7 +16,7 @@ use std::{
 };
 
 thread_local! {
-    static TL_WORD: RefCell<Word> = RefCell::new(Word::with_capacity(MAX_LENGTH));
+    static TL_WORD: RefCell<Word> = RefCell::new(Word::with_capacity(64));
 }
 
 pub type Vocab = AHashMap<String, u32>;
