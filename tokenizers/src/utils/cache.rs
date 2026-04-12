@@ -112,8 +112,8 @@ impl<K: Eq + Hash + Clone, V: ExtendFromRef> ShardedMap<K, V> {
 /// suited to the small keys used in tokenization caches.
 pub(crate) struct Cache<K, V>
 where
-    K: Eq + Hash + Clone + 'static,
-    V: ExtendFromRef + 'static,
+    K: Eq + Hash + Clone,
+    V: ExtendFromRef,
 {
     map: ShardedMap<K, V>,
     pub capacity: usize,
@@ -121,8 +121,8 @@ where
 
 impl<K, V> std::fmt::Debug for Cache<K, V>
 where
-    K: Eq + Hash + Clone + 'static,
-    V: ExtendFromRef + 'static,
+    K: Eq + Hash + Clone,
+    V: ExtendFromRef,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Cache")
@@ -133,8 +133,8 @@ where
 
 impl<K, V> PartialEq for Cache<K, V>
 where
-    K: Eq + Hash + Clone + 'static,
-    V: ExtendFromRef + 'static,
+    K: Eq + Hash + Clone,
+    V: ExtendFromRef,
 {
     fn eq(&self, _other: &Cache<K, V>) -> bool {
         true
@@ -143,8 +143,8 @@ where
 
 impl<K, V> Default for Cache<K, V>
 where
-    K: Eq + Hash + Clone + 'static,
-    V: ExtendFromRef + 'static,
+    K: Eq + Hash + Clone,
+    V: ExtendFromRef,
 {
     fn default() -> Self {
         Self::new(DEFAULT_CACHE_CAPACITY)
@@ -153,8 +153,8 @@ where
 
 impl<K, V> Cache<K, V>
 where
-    K: Eq + Hash + Clone + 'static,
-    V: ExtendFromRef + 'static,
+    K: Eq + Hash + Clone,
+    V: ExtendFromRef,
 {
     /// Create new `Cache` with the given capacity.
     pub(crate) fn new(capacity: usize) -> Self {
