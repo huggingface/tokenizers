@@ -10,7 +10,7 @@ fn main() {
     let tokens: Vec<_> = (0..120_000)
         .map(|i| AddedToken::from(format!("[SPECIAL_{i}]"), i % 2 == 0))
         .collect();
-    tokenizer.add_tokens(&tokens);
+    let _ = tokenizer.add_tokens(tokens);
     tokenizer.save("_tok.json", true).unwrap();
     println!("Save took {:?}", start.elapsed());
     let start = std::time::Instant::now();
