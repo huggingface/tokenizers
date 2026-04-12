@@ -45,10 +45,12 @@ impl MergeMap {
     }
 
     #[inline]
+    /// Get `(rank, new_id)` for a given `Pair` in the map. 
     pub fn get(&self, pair: &Pair) -> Option<&(u32, u32)> {
         self.inner.get(&pack_pair(pair))
     }
 
+    /// Insert `(rank, new_id)` for a given `Pair` in the map.
     pub fn insert(&mut self, pair: Pair, value: (u32, u32)) -> Option<(u32, u32)> {
         self.inner.insert(pack_pair(&pair), value)
     }

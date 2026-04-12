@@ -9,7 +9,7 @@ pub static DEFAULT_CACHE_CAPACITY: usize = 10_000;
 /// Strings that are too long have minimal chances to cache hit anyway
 pub static MAX_LENGTH: usize = 256;
 
-/// Number of shards in the shared cache.
+/// Number of shards in the sharded cache.
 const SHARED_CACHE_SHARDS: usize = 64;
 
 #[inline]
