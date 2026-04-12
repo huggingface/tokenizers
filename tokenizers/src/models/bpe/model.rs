@@ -481,8 +481,11 @@ impl BPE {
                 )]);
             }
         }
-        if let Some(ref hit) = self.cache.as_ref().and_then(|c| c.get(sequence)) {
-            return Ok(self.word_to_tokens(hit).collect());
+        if let Some(ref cache) = self.cache {
+            let mut word = Word::new();
+            if cache.get_into(sequence, &mut word) {
+                return Ok(self.word_to_tokens(&word).collect());
+            }
         }
         let word = self.merge_word(sequence)?;
         let ret = self.word_to_tokens(&word).collect();

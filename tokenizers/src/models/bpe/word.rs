@@ -1,4 +1,5 @@
 use super::{MergeMap, Pair};
+use crate::utils::cache::ExtendFromRef;
 use dary_heap::QuaternaryHeap;
 use rand::{rng, Rng};
 use std::cell::RefCell;
@@ -62,6 +63,13 @@ impl Symbol {
 pub(super) struct Word {
     symbols: Vec<Symbol>,
 }
+
+impl ExtendFromRef for Word {
+    fn extend_from_ref(&mut self, other: &Self) {
+        self.symbols.extend_from_slice(&other.symbols);
+    }
+}
+
 impl std::fmt::Debug for Word {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
         fmt.debug_struct("Word")

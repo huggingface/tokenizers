@@ -12,6 +12,18 @@ pub static MAX_LENGTH: usize = 256;
 /// Number of shards in the sharded cache.
 const SHARED_CACHE_SHARDS: usize = 64;
 
+/// Trait for copying data from a reference into a mutable buffer.
+/// Used by the cache to avoid cloning on cache hits.
+pub trait ExtendFromRef {
+    fn extend_from_ref(&mut self, other: &Self);
+}
+
+impl<T: Clone> ExtendFromRef for Vec<T> {
+    fn extend_from_ref(&mut self, other: &Self) {
+        self.extend_from_slice(other);
+    }
+}
+
 #[inline]
 fn fx_hash<K: Hash + ?Sized>(key: &K) -> u64 {
     let mut h = rustc_hash::FxHasher::default();
@@ -24,7 +36,7 @@ struct ShardedMap<K, V> {
     per_shard_capacity: usize,
 }
 
-impl<K: Eq + Hash + Clone, V: Clone> ShardedMap<K, V> {
+impl<K: Eq + Hash + Clone, V: ExtendFromRef> ShardedMap<K, V> {
     fn new(total_capacity: usize) -> Self {
         let per_shard = total_capacity.div_ceil(SHARED_CACHE_SHARDS).max(1);
         let shards = (0..SHARED_CACHE_SHARDS)
@@ -47,7 +59,7 @@ impl<K: Eq + Hash + Clone, V: Clone> ShardedMap<K, V> {
         (h >> 48) as usize % SHARED_CACHE_SHARDS
     }
 
-    fn get<Q>(&self, key: &Q) -> Option<V>
+    fn get_into<Q>(&self, key: &Q, out: &mut V) -> bool
     where
         K: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
@@ -55,10 +67,12 @@ impl<K: Eq + Hash + Clone, V: Clone> ShardedMap<K, V> {
         let idx = Self::shard_for(key);
         let shard = &self.shards[idx];
         if let Ok(guard) = shard.try_read() {
-            guard.get(key).cloned()
-        } else {
-            None
+            if let Some(value) = guard.get(key) {
+                out.extend_from_ref(value);
+                return true;
+            }
         }
+        false
     }
 
     fn set(&self, key: K, value: V) {
@@ -99,7 +113,7 @@ impl<K: Eq + Hash + Clone, V: Clone> ShardedMap<K, V> {
 pub(crate) struct Cache<K, V>
 where
     K: Eq + Hash + Clone + 'static,
-    V: Clone + 'static,
+    V: ExtendFromRef + 'static,
 {
     map: ShardedMap<K, V>,
     pub capacity: usize,
@@ -108,7 +122,7 @@ where
 impl<K, V> std::fmt::Debug for Cache<K, V>
 where
     K: Eq + Hash + Clone + 'static,
-    V: Clone + 'static,
+    V: ExtendFromRef + 'static,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Cache")
@@ -120,7 +134,7 @@ where
 impl<K, V> PartialEq for Cache<K, V>
 where
     K: Eq + Hash + Clone + 'static,
-    V: Clone + 'static,
+    V: ExtendFromRef + 'static,
 {
     fn eq(&self, _other: &Cache<K, V>) -> bool {
         true
@@ -130,7 +144,7 @@ where
 impl<K, V> Default for Cache<K, V>
 where
     K: Eq + Hash + Clone + 'static,
-    V: Clone + 'static,
+    V: ExtendFromRef + 'static,
 {
     fn default() -> Self {
         Self::new(DEFAULT_CACHE_CAPACITY)
@@ -140,7 +154,7 @@ where
 impl<K, V> Cache<K, V>
 where
     K: Eq + Hash + Clone + 'static,
-    V: Clone + 'static,
+    V: ExtendFromRef + 'static,
 {
     /// Create new `Cache` with the given capacity.
     pub(crate) fn new(capacity: usize) -> Self {
@@ -160,32 +174,14 @@ where
         self.map.clear();
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn get_values<'a, I, Q>(&self, keys_iter: I) -> Option<Vec<Option<V>>>
-    where
-        I: Iterator<Item = &'a Q>,
-        K: Borrow<Q>,
-        Q: Hash + Eq + ?Sized + 'a,
-    {
-        Some(keys_iter.map(|k| self.get(k)).collect())
-    }
-
-    pub(crate) fn get<Q>(&self, key: &Q) -> Option<V>
+    /// Get a value from the cache, extending the output buffer.
+    /// Returns true if the key was found, false otherwise.
+    pub(crate) fn get_into<Q>(&self, key: &Q, out: &mut V) -> bool
     where
         K: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
     {
-        self.map.get(key)
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn set_values<I>(&self, entries: I)
-    where
-        I: IntoIterator<Item = (K, V)>,
-    {
-        for (k, v) in entries {
-            self.map.set(k, v);
-        }
+        self.map.get_into(key, out)
     }
 
     pub(crate) fn set(&self, key: K, value: V) {
