@@ -143,13 +143,24 @@ jobs:
         run: |
           echo "## 🐍 Python Wheel Size — ${{ matrix.os }} ${{ matrix.target }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Wheel | Size |" >> $GITHUB_STEP_SUMMARY
-          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "Wheel (.whl) = compressed archive downloaded from PyPI." >> $GITHUB_STEP_SUMMARY
+          echo "Installed .so/.pyd = actual shared library loaded at runtime." >> $GITHUB_STEP_SUMMARY
+          echo "The installed size is what matters for on-device deployment." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Wheel | Wheel size | Installed .so/.pyd |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|---|" >> $GITHUB_STEP_SUMMARY
+          EXTRACT_DIR=$(mktemp -d)
           for f in dist/*.whl; do
-            SIZE=$(du -h "$f" | cut -f1)
+            WHL_SIZE=$(du -h "$f" | cut -f1)
             NAME=$(basename "$f")
-            echo "| \`${NAME}\` | ${SIZE} |" >> $GITHUB_STEP_SUMMARY
+            rm -rf "$EXTRACT_DIR"/*
+            (cd "$EXTRACT_DIR" && unzip -q "$(realpath -- "$OLDPWD/$f" 2>/dev/null || echo "$OLDPWD/$f")" 2>/dev/null) \
+              || unzip -q -o "$f" -d "$EXTRACT_DIR" 2>/dev/null || true
+            SO_SIZE=$(find "$EXTRACT_DIR" \( -name '*.so' -o -name '*.pyd' -o -name '*.dylib' \) -exec du -h {} \; | head -1 | cut -f1)
+            [ -z "$SO_SIZE" ] && SO_SIZE="n/a"
+            echo "| \`${NAME}\` | ${WHL_SIZE} | ${SO_SIZE} |" >> $GITHUB_STEP_SUMMARY
           done
+          rm -rf "$EXTRACT_DIR"
           echo "" >> $GITHUB_STEP_SUMMARY
 
       - uses: actions/upload-artifact@v4
@@ -200,20 +211,34 @@ jobs:
         run: |
           echo "## 📦 All Python Wheel Sizes" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Wheel | Size |" >> $GITHUB_STEP_SUMMARY
-          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
-          TOTAL=0
+          echo "| Wheel | Wheel size | Installed .so/.pyd |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|---|" >> $GITHUB_STEP_SUMMARY
+          TOTAL_WHL=0
+          TOTAL_SO=0
+          EXTRACT_DIR=$(mktemp -d)
           for f in dist/*.whl; do
-            BYTES=$(stat --format=%s "$f" 2>/dev/null || stat -f%z "$f")
-            SIZE=$(du -h "$f" | cut -f1)
+            WHL_BYTES=$(stat --format=%s "$f" 2>/dev/null || stat -f%z "$f")
+            WHL_SIZE=$(du -h "$f" | cut -f1)
             NAME=$(basename "$f")
-            echo "| \`${NAME}\` | ${SIZE} |" >> $GITHUB_STEP_SUMMARY
-            TOTAL=$((TOTAL + BYTES))
+            rm -rf "$EXTRACT_DIR"/*
+            unzip -q -o "$f" -d "$EXTRACT_DIR" 2>/dev/null || true
+            SO_FILE=$(find "$EXTRACT_DIR" \( -name '*.so' -o -name '*.pyd' -o -name '*.dylib' \) | head -1)
+            if [ -n "$SO_FILE" ]; then
+              SO_BYTES=$(stat --format=%s "$SO_FILE" 2>/dev/null || stat -f%z "$SO_FILE")
+              SO_SIZE=$(du -h "$SO_FILE" | cut -f1)
+              TOTAL_SO=$((TOTAL_SO + SO_BYTES))
+            else
+              SO_SIZE="n/a"
+            fi
+            echo "| \`${NAME}\` | ${WHL_SIZE} | ${SO_SIZE} |" >> $GITHUB_STEP_SUMMARY
+            TOTAL_WHL=$((TOTAL_WHL + WHL_BYTES))
           done
+          rm -rf "$EXTRACT_DIR"
           echo "" >> $GITHUB_STEP_SUMMARY
-          TOTAL_MB=$(echo "scale=2; $TOTAL / 1048576" | bc)
+          TOTAL_WHL_MB=$(echo "scale=2; $TOTAL_WHL / 1048576" | bc)
+          TOTAL_SO_MB=$(echo "scale=2; $TOTAL_SO / 1048576" | bc)
           WHL_COUNT=$(ls dist/*.whl 2>/dev/null | wc -l | tr -d ' ')
-          echo "**Total**: ${WHL_COUNT} wheels, ${TOTAL_MB} MB" >> $GITHUB_STEP_SUMMARY
+          echo "**Total**: ${WHL_COUNT} wheels | wheel: ${TOTAL_WHL_MB} MB | installed: ${TOTAL_SO_MB} MB" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
           # Temporary deactivation while testing abi3 CI
