@@ -1,8 +1,14 @@
-use super::Pair;
-use ahash::AHashMap;
+use super::{MergeMap, Pair};
+use crate::utils::cache::ExtendFromRef;
 use dary_heap::QuaternaryHeap;
 use rand::{rng, Rng};
+use std::cell::RefCell;
 use std::cmp::Ordering;
+
+thread_local! {
+    static TL_MERGE_HEAP: RefCell<QuaternaryHeap<Merge>> = RefCell::new(QuaternaryHeap::new());
+    static TL_MERGE_SKIP: RefCell<Vec<Merge>> = const { RefCell::new(Vec::new()) };
+}
 
 #[derive(Debug, Eq)]
 struct Merge {
@@ -57,6 +63,13 @@ impl Symbol {
 pub(super) struct Word {
     symbols: Vec<Symbol>,
 }
+
+impl ExtendFromRef for Word {
+    fn extend_from_ref(&mut self, other: &Self) {
+        self.symbols.extend_from_slice(&other.symbols);
+    }
+}
+
 impl std::fmt::Debug for Word {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
         fmt.debug_struct("Word")
@@ -83,6 +96,10 @@ impl Word {
         Self {
             symbols: Vec::with_capacity(capacity),
         }
+    }
+
+    pub(super) fn clear(&mut self) {
+        self.symbols.clear();
     }
 
     pub(super) fn add(&mut self, c: u32, byte_len: usize) {
@@ -159,91 +176,97 @@ impl Word {
         changes
     }
 
-    pub(super) fn merge_all(&mut self, merges: &AHashMap<Pair, (u32, u32)>, dropout: Option<f32>) {
-        let mut queue = QuaternaryHeap::with_capacity(self.symbols.len());
-        let mut skip = Vec::with_capacity(queue.len());
+    pub(super) fn merge_all(&mut self, merges: &MergeMap, dropout: Option<f32>) {
+        TL_MERGE_HEAP.with(|heap_cell| {
+            TL_MERGE_SKIP.with(|skip_cell| {
+                let mut queue = heap_cell.borrow_mut();
+                let mut skip = skip_cell.borrow_mut();
+                queue.clear();
+                skip.clear();
 
-        queue.extend(
-            self.symbols
-                .windows(2)
-                .enumerate()
-                .filter_map(|(index, window)| {
-                    let pair = (window[0].c, window[1].c);
-                    merges.get(&pair).map(|m| Merge {
-                        pos: index,
-                        rank: m.0,
-                        new_id: m.1,
-                    })
-                }),
-        );
+                queue.extend(
+                    self.symbols
+                        .windows(2)
+                        .enumerate()
+                        .filter_map(|(index, window)| {
+                            let pair = (window[0].c, window[1].c);
+                            merges.get(&pair).map(|m| Merge {
+                                pos: index,
+                                rank: m.0,
+                                new_id: m.1,
+                            })
+                        }),
+                );
 
-        while let Some(top) = queue.pop() {
-            if dropout.map(|d| rng().random::<f32>() < d).unwrap_or(false) {
-                skip.push(top);
-            } else {
-                // Re-insert the skipped elements
-                queue.extend(skip.drain(..));
+                while let Some(top) = queue.pop() {
+                    if dropout.map(|d| rng().random::<f32>() < d).unwrap_or(false) {
+                        skip.push(top);
+                    } else {
+                        // Re-insert the skipped elements
+                        queue.extend(skip.drain(..));
 
-                if self.symbols[top.pos].len == 0 {
-                    continue;
-                }
-                // Do nothing if we are the last symbol
-                if self.symbols[top.pos].next == -1 {
-                    continue;
-                }
+                        if self.symbols[top.pos].len == 0 {
+                            continue;
+                        }
+                        // Do nothing if we are the last symbol
+                        if self.symbols[top.pos].next == -1 {
+                            continue;
+                        }
 
-                let next_pos = self.symbols[top.pos].next as usize;
-                let right = self.symbols[next_pos];
+                        let next_pos = self.symbols[top.pos].next as usize;
+                        let right = self.symbols[next_pos];
 
-                // Make sure we are not processing an expired queue entry
-                let target_new_pair = (self.symbols[top.pos].c, right.c);
-                if merges
-                    .get(&target_new_pair)
-                    .is_none_or(|(_, new_id)| *new_id != top.new_id)
-                {
-                    continue;
-                }
+                        // Make sure we are not processing an expired queue entry
+                        let target_new_pair = (self.symbols[top.pos].c, right.c);
+                        if merges
+                            .get(&target_new_pair)
+                            .is_none_or(|(_, new_id)| *new_id != top.new_id)
+                        {
+                            continue;
+                        }
 
-                // Otherwise, let's merge
-                self.symbols[top.pos].merge_with(&right, top.new_id);
-                // Tag the right part as removed
-                self.symbols[next_pos].len = 0;
+                        // Otherwise, let's merge
+                        self.symbols[top.pos].merge_with(&right, top.new_id);
+                        // Tag the right part as removed
+                        self.symbols[next_pos].len = 0;
 
-                // Update `prev` on the new `next` to the current pos
-                if right.next > -1 && (right.next as usize) < self.symbols.len() {
-                    self.symbols[right.next as usize].prev = top.pos as isize;
-                }
+                        // Update `prev` on the new `next` to the current pos
+                        if right.next > -1 && (right.next as usize) < self.symbols.len() {
+                            self.symbols[right.next as usize].prev = top.pos as isize;
+                        }
 
-                // Insert the new pair formed with the previous symbol
-                let current = &self.symbols[top.pos];
-                if current.prev >= 0 {
-                    let prev = current.prev as usize;
-                    let prev_symbol = self.symbols[prev];
-                    let new_pair = (prev_symbol.c, current.c);
-                    if let Some((rank, new_id)) = merges.get(&new_pair) {
-                        queue.push(Merge {
-                            pos: current.prev as usize,
-                            rank: *rank,
-                            new_id: *new_id,
-                        });
+                        // Insert the new pair formed with the previous symbol
+                        let current = &self.symbols[top.pos];
+                        if current.prev >= 0 {
+                            let prev = current.prev as usize;
+                            let prev_symbol = self.symbols[prev];
+                            let new_pair = (prev_symbol.c, current.c);
+                            if let Some((rank, new_id)) = merges.get(&new_pair) {
+                                queue.push(Merge {
+                                    pos: current.prev as usize,
+                                    rank: *rank,
+                                    new_id: *new_id,
+                                });
+                            }
+                        }
+
+                        // Insert the new pair formed with the next symbol
+                        let next = current.next as usize;
+                        if next < self.symbols.len() {
+                            let next_symbol = self.symbols[next];
+                            let new_pair = (current.c, next_symbol.c);
+                            if let Some((rank, new_id)) = merges.get(&new_pair) {
+                                queue.push(Merge {
+                                    pos: top.pos,
+                                    rank: *rank,
+                                    new_id: *new_id,
+                                });
+                            }
+                        }
                     }
                 }
-
-                // Insert the new pair formed with the next symbol
-                let next = current.next as usize;
-                if next < self.symbols.len() {
-                    let next_symbol = self.symbols[next];
-                    let new_pair = (current.c, next_symbol.c);
-                    if let Some((rank, new_id)) = merges.get(&new_pair) {
-                        queue.push(Merge {
-                            pos: top.pos,
-                            rank: *rank,
-                            new_id: *new_id,
-                        });
-                    }
-                }
-            }
-        }
+            });
+        });
 
         // Filter out the removed symbols
         self.symbols.retain(|s| s.len != 0);

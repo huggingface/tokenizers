@@ -677,7 +677,8 @@ impl Trainer for BpeTrainer {
 
 #[cfg(test)]
 mod tests {
-    use super::{BpeTrainer, Pair, BPE};
+    use super::{BpeTrainer, BPE};
+    use crate::models::bpe::MergeMap;
     use ahash::AHashMap;
     use compact_str::CompactString;
 
@@ -744,7 +745,7 @@ mod tests {
         // where 'rank' determines the order in which this merge will be applied during
         // tokenization, and 'id' is the vocab id of the symbol resulting from merging
         // the pair of symbols in the corresponding key.
-        let expected_merges: AHashMap<Pair, (u32, u32)> = [
+        let expected_merges: MergeMap = [
             ((17, 11), (0, 22)), // 'r' + 'e'  -> 're'
             ((8, 22), (1, 23)),  // 'a' + 're' -> 'are'
             ((13, 18), (2, 24)), // 'i' + 's'  -> 'is'

@@ -1,6 +1,6 @@
-use ahash::AHashMap;
+use rustc_hash::FxHashMap;
 use std::borrow::Borrow;
-use std::hash::Hash;
+use std::hash::{Hash, Hasher};
 use std::sync::RwLock;
 
 /// The default capacity for a `BPE`'s internal cache.
@@ -9,25 +9,132 @@ pub static DEFAULT_CACHE_CAPACITY: usize = 10_000;
 /// Strings that are too long have minimal chances to cache hit anyway
 pub static MAX_LENGTH: usize = 256;
 
-/// Provides a simple multithread cache to speed up BPE tokenization that will try to read values
-/// concurrently but won't block if another thread is writing.
-/// The goal is clearly not the accuracy of the content, both get and set
-/// are not guaranteed to actually get or set.
-#[derive(Debug)]
+/// Number of shards in the sharded cache.
+const SHARED_CACHE_SHARDS: usize = 64;
+
+/// Trait for copying data from a reference into a mutable buffer.
+/// Used by the cache to avoid cloning on cache hits.
+pub trait ExtendFromRef {
+    fn extend_from_ref(&mut self, other: &Self);
+}
+
+impl<T: Clone> ExtendFromRef for Vec<T> {
+    fn extend_from_ref(&mut self, other: &Self) {
+        self.extend_from_slice(other);
+    }
+}
+
+#[inline]
+fn fx_hash<K: Hash + ?Sized>(key: &K) -> u64 {
+    let mut h = rustc_hash::FxHasher::default();
+    key.hash(&mut h);
+    h.finish()
+}
+
+struct ShardedMap<K, V> {
+    shards: Vec<RwLock<FxHashMap<K, V>>>,
+    per_shard_capacity: usize,
+}
+
+impl<K: Eq + Hash + Clone, V: ExtendFromRef> ShardedMap<K, V> {
+    fn new(total_capacity: usize) -> Self {
+        let per_shard = total_capacity.div_ceil(SHARED_CACHE_SHARDS).max(1);
+        let shards = (0..SHARED_CACHE_SHARDS)
+            .map(|_| {
+                RwLock::new(FxHashMap::with_capacity_and_hasher(
+                    per_shard,
+                    Default::default(),
+                ))
+            })
+            .collect();
+        ShardedMap {
+            shards,
+            per_shard_capacity: per_shard,
+        }
+    }
+
+    #[inline]
+    fn shard_for<Q: Hash + ?Sized>(key: &Q) -> usize {
+        let h = fx_hash(key);
+        (h >> 48) as usize % SHARED_CACHE_SHARDS
+    }
+
+    fn get_into<Q>(&self, key: &Q, out: &mut V) -> bool
+    where
+        K: Borrow<Q>,
+        Q: Hash + Eq + ?Sized,
+    {
+        let idx = Self::shard_for(key);
+        let shard = &self.shards[idx];
+        if let Ok(guard) = shard.try_read() {
+            if let Some(value) = guard.get(key) {
+                out.extend_from_ref(value);
+                return true;
+            }
+        }
+        false
+    }
+
+    fn set(&self, key: K, value: V) {
+        let idx = Self::shard_for(&key);
+        let shard = &self.shards[idx];
+        if let Ok(guard) = shard.try_read() {
+            if guard.len() >= self.per_shard_capacity {
+                return;
+            }
+        } else {
+            return;
+        }
+        if let Ok(mut guard) = shard.try_write() {
+            if guard.len() < self.per_shard_capacity {
+                guard.insert(key, value);
+            }
+        }
+    }
+
+    fn clear(&self) {
+        for shard in &self.shards {
+            if let Ok(mut guard) = shard.write() {
+                guard.clear();
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Public Cache
+// ---------------------------------------------------------------------------
+
+/// Sharded cache for fast concurrent tokenization lookups.
+///
+/// Uses 64 shards with per-shard `RwLock<FxHashMap>` to minimize lock
+/// contention across threads. FxHash provides fast, non-cryptographic hashing
+/// suited to the small keys used in tokenization caches.
 pub(crate) struct Cache<K, V>
 where
     K: Eq + Hash + Clone,
-    V: Clone,
+    V: ExtendFromRef,
 {
-    map: RwLock<AHashMap<K, V>>,
+    map: ShardedMap<K, V>,
     pub capacity: usize,
 }
 
-// We dont really care about Cache comparison, so let's make them always equal
+impl<K, V> std::fmt::Debug for Cache<K, V>
+where
+    K: Eq + Hash + Clone,
+    V: ExtendFromRef,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Cache")
+            .field("capacity", &self.capacity)
+            .finish()
+    }
+}
+
 impl<K, V> PartialEq for Cache<K, V>
 where
     K: Eq + Hash + Clone,
-    V: Clone,
+    V: ExtendFromRef,
 {
     fn eq(&self, _other: &Cache<K, V>) -> bool {
         true
@@ -37,7 +144,7 @@ where
 impl<K, V> Default for Cache<K, V>
 where
     K: Eq + Hash + Clone,
-    V: Clone,
+    V: ExtendFromRef,
 {
     fn default() -> Self {
         Self::new(DEFAULT_CACHE_CAPACITY)
@@ -47,12 +154,14 @@ where
 impl<K, V> Cache<K, V>
 where
     K: Eq + Hash + Clone,
-    V: Clone,
+    V: ExtendFromRef,
 {
     /// Create new `Cache` with the given capacity.
     pub(crate) fn new(capacity: usize) -> Self {
-        let map = RwLock::new(AHashMap::with_capacity(capacity));
-        Cache { map, capacity }
+        Cache {
+            map: ShardedMap::new(capacity),
+            capacity,
+        }
     }
 
     /// Create a fresh `Cache` with the same configuration.
@@ -62,67 +171,25 @@ where
 
     /// Clear the cache.
     pub(crate) fn clear(&self) {
-        self.map.write().unwrap().clear();
+        self.map.clear();
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn get_values<'a, I, Q>(&self, keys_iter: I) -> Option<Vec<Option<V>>>
-    where
-        I: Iterator<Item = &'a Q>,
-        K: Borrow<Q>,
-        Q: Hash + Eq + ?Sized + 'a,
-    {
-        if let Ok(ref mut cache) = self.map.try_read() {
-            Some(keys_iter.map(|k| cache.get(k).cloned()).collect())
-        } else {
-            None
-        }
-    }
-
-    pub(crate) fn get<Q>(&self, key: &Q) -> Option<V>
+    /// Get a value from the cache, extending the output buffer.
+    /// Returns true if the key was found, false otherwise.
+    pub(crate) fn get_into<Q>(&self, key: &Q, out: &mut V) -> bool
     where
         K: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
     {
-        if let Ok(ref mut cache) = self.map.try_read() {
-            cache.get(key).cloned()
-        } else {
-            None
-        }
-    }
-
-    pub(crate) fn set_values<I>(&self, entries: I)
-    where
-        I: IntoIterator<Item = (K, V)>,
-    {
-        // Before trying to acquire a write lock, we check if we are already at
-        // capacity with a read handler.
-        if let Ok(cache) = self.map.try_read() {
-            if cache.len() >= self.capacity {
-                // At capacity, so do nothing.
-                return;
-            }
-        } else {
-            // If we couldn't acquire a read handle then we probably won't be able to acquire
-            // a write handle one quadrillionth of a second later.
-            return;
-        }
-
-        // Not at capacity, so try acquiring a write handle.
-        if let Ok(mut cache) = self.map.try_write() {
-            let free = self.capacity - cache.len();
-            cache.extend(entries.into_iter().take(free));
-        }
+        self.map.get_into(key, out)
     }
 
     pub(crate) fn set(&self, key: K, value: V) {
-        self.set_values(std::iter::once((key, value)))
+        self.map.set(key, value);
     }
 
     pub(crate) fn resize(&mut self, capacity: usize) {
         self.capacity = capacity;
-        if let Ok(mut cache) = self.map.try_write() {
-            cache.shrink_to(capacity);
-        }
+        self.map = ShardedMap::new(capacity);
     }
 }

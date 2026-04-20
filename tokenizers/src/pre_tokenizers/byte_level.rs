@@ -48,6 +48,17 @@ static BYTES_CHAR: LazyLock<AHashMap<u8, char>> = LazyLock::new(bytes_char);
 static CHAR_BYTES: LazyLock<AHashMap<char, u8>> =
     LazyLock::new(|| bytes_char().into_iter().map(|(c, b)| (b, c)).collect());
 
+/// Flat lookup table: byte value → unicode char. Eliminates HashMap lookup
+/// in the byte-level encoding hot path.
+static BYTE_TO_CHAR: LazyLock<[char; 256]> = LazyLock::new(|| {
+    let map = bytes_char();
+    let mut table = ['\0'; 256];
+    for (b, c) in &map {
+        table[*b as usize] = *c;
+    }
+    table
+});
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 /// Provides all the necessary steps to handle the BPE tokenization at the byte-level. Takes care
 /// of all the required processing steps to transform a UTF-8 string as needed before and after the
@@ -131,15 +142,15 @@ impl PreTokenizer for ByteLevel {
         })?;
         pretokenized.normalize(|normalized| {
             let s = normalized.get();
+            let table = &*BYTE_TO_CHAR;
             let mut transformations: Vec<(char, isize)> = Vec::with_capacity(s.len());
             for (i, cur_char) in s.char_indices() {
                 let size = cur_char.len_utf8();
-                transformations.extend(
-                    s.as_bytes()[i..i + size]
-                        .iter()
-                        .enumerate()
-                        .map(|(i, b)| (BYTES_CHAR[b], isize::from(i > 0))),
-                );
+                let bytes = &s.as_bytes()[i..i + size];
+                transformations.push((table[bytes[0] as usize], 0));
+                for &b in &bytes[1..] {
+                    transformations.push((table[b as usize], 1));
+                }
             }
             normalized.transform(transformations, 0);
             Ok(())

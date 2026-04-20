@@ -1,10 +1,11 @@
-use super::{super::OrderedVocabIter, trainer::BpeTrainer, Error, Pair, Word};
+use super::{super::OrderedVocabIter, trainer::BpeTrainer, Error, MergeMap, Pair, Word};
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::cache::{Cache, DEFAULT_CACHE_CAPACITY, MAX_LENGTH};
 use crate::utils::iter::ResultShunt;
 use ahash::AHashMap;
 use serde_json::Value;
 use std::borrow::Cow;
+use std::cell::RefCell;
 
 use std::collections::HashMap;
 use std::str::from_utf8_unchecked;
@@ -15,9 +16,12 @@ use std::{
     path::{Path, PathBuf},
 };
 
+thread_local! {
+    static TL_WORD: RefCell<Word> = RefCell::new(Word::with_capacity(64));
+}
+
 pub type Vocab = AHashMap<String, u32>;
 type VocabR = AHashMap<u32, String>;
-pub type MergeMap = AHashMap<Pair, (u32, u32)>;
 pub type Merges = Vec<(String, String)>;
 
 struct Config {
@@ -495,17 +499,23 @@ impl BPE {
                 )]);
             }
         }
-        if let Some(ref hit) = self.cache.as_ref().and_then(|c| c.get(sequence)) {
-            return Ok(self.word_to_tokens(hit).collect());
-        }
-        let word = self.merge_word(sequence)?;
-        let ret = self.word_to_tokens(&word).collect();
-        if let Some(ref cache) = self.cache {
-            if sequence.len() < MAX_LENGTH {
-                cache.set(sequence.to_owned(), word);
+        TL_WORD.with(|w| {
+            let mut word = w.borrow_mut();
+            word.clear();
+            if let Some(ref cache) = self.cache {
+                if cache.get_into(sequence, &mut word) {
+                    return Ok(self.word_to_tokens(&word).collect());
+                }
             }
-        }
-        Ok(ret)
+            let word = self.merge_word(sequence)?;
+            let ret = self.word_to_tokens(&word).collect();
+            if let Some(ref cache) = self.cache {
+                if sequence.len() < MAX_LENGTH {
+                    cache.set(sequence.to_owned(), word);
+                }
+            }
+            Ok(ret)
+        })
     }
 }
 
@@ -566,12 +576,12 @@ impl Model for BPE {
             .iter()
             .collect();
         let mut merges_file = File::create(&merges_path)?;
-        let mut merges: Vec<(&Pair, &u32)> = self
+        let mut merges: Vec<(Pair, u32)> = self
             .merges
             .iter()
-            .map(|(pair, (rank, _))| (pair, rank))
+            .map(|(pair, (rank, _))| (pair, *rank))
             .collect();
-        merges.sort_unstable_by_key(|k| *k.1);
+        merges.sort_unstable_by_key(|k| k.1);
         merges_file.write_all(b"#version: 0.2\n")?;
         merges_file.write_all(
             &merges

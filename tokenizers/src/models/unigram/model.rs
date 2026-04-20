@@ -233,19 +233,19 @@ impl Unigram {
             return Ok(vec![]);
         }
         if self.alpha.is_none() || self.alpha == Some(0.0) {
-            if let Some(result) = self.cache.get(sentence) {
-                Ok(result.to_vec())
-            } else {
-                let result = if self.is_optimized {
-                    self.encode_optimized(sentence)?
-                } else {
-                    self.encode_unoptimized(sentence)?
-                };
-                if sentence.len() < MAX_LENGTH {
-                    self.cache.set(sentence.to_owned(), result.clone());
-                }
-                Ok(result)
+            let mut result = Vec::new();
+            if self.cache.get_into(sentence, &mut result) {
+                return Ok(result);
             }
+            let result = if self.is_optimized {
+                self.encode_optimized(sentence)?
+            } else {
+                self.encode_unoptimized(sentence)?
+            };
+            if sentence.len() < MAX_LENGTH {
+                self.cache.set(sentence.to_owned(), result.clone());
+            }
+            Ok(result)
         } else {
             let result = self.encode_unoptimized(sentence)?;
             Ok(result)
