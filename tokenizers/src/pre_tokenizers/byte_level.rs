@@ -1,9 +1,16 @@
 use ahash::{AHashMap, AHashSet};
 use std::sync::LazyLock;
 
+#[cfg(not(feature = "logos-pretok"))]
 use crate::utils::SysRegex;
+#[cfg(feature = "logos-pretok")]
+use logos::Logos;
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "logos-pretok")]
+use crate::tokenizer::pattern::Pattern;
+#[cfg(feature = "logos-pretok")]
+use crate::tokenizer::Offsets;
 use crate::tokenizer::{
     Decoder, Encoding, PostProcessor, PreTokenizedString, PreTokenizer, Result,
     SplitDelimiterBehavior,
@@ -40,10 +47,115 @@ pub(crate) fn bytes_char() -> AHashMap<u8, char> {
 
 /// Regex that matches exactly one token.
 /// See https://github.com/openai/gpt-2/blob/master/src/encoder.py#L98
+#[cfg(not(feature = "logos-pretok"))]
 static RE: LazyLock<SysRegex> = LazyLock::new(|| {
     SysRegex::new(r"'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+")
         .unwrap()
 });
+
+/// Compile-time FSM equivalent of the GPT-2 split regex above. Variants are
+/// declared in the same priority order as the regex alternation (logos uses
+/// source order as tiebreaker + longest-match).
+///
+/// Note: logos cannot express `\s+(?!\S)` directly (no lookahead). Instead
+/// we match the full `\s+` greedily and then replay the lookahead semantics
+/// as a post-processing pass in `LogosByteLevel::find_matches` below. The
+/// effect of `\s+(?!\S)` in the original pattern is: when a whitespace run
+/// of length ≥ 2 is followed by a non-whitespace char, the match backtracks
+/// by one char so the trailing space is left as a ` ?` prefix for the next
+/// Letter/Number/Other token. That backtracking is what we emulate.
+#[cfg(feature = "logos-pretok")]
+#[derive(Logos, Debug, Clone, Copy, PartialEq, Eq)]
+enum BlTok {
+    #[token("'s")]
+    #[token("'t")]
+    #[token("'re")]
+    #[token("'ve")]
+    #[token("'m")]
+    #[token("'ll")]
+    #[token("'d")]
+    Contraction,
+
+    #[regex(r" ?\p{L}+")]
+    Letters,
+
+    #[regex(r" ?\p{N}+")]
+    Numbers,
+
+    #[regex(r" ?[^\s\p{L}\p{N}]+")]
+    Other,
+
+    #[regex(r"\s+")]
+    Whitespace,
+}
+
+#[cfg(feature = "logos-pretok")]
+struct LogosByteLevel;
+
+#[cfg(feature = "logos-pretok")]
+impl Pattern for &LogosByteLevel {
+    fn find_matches(&self, inside: &str) -> Result<Vec<(Offsets, bool)>> {
+        if inside.is_empty() {
+            return Ok(vec![((0, 0), false)]);
+        }
+        let mut tokens: Vec<(Option<BlTok>, usize, usize)> = Vec::with_capacity(inside.len());
+        let mut lex = BlTok::lexer(inside);
+        while let Some(result) = lex.next() {
+            let span = lex.span();
+            tokens.push((result.ok(), span.start, span.end));
+        }
+
+        // Replay `\s+(?!\S)` lookahead: for each Whitespace span of char
+        // length ≥ 2 directly followed by a non-whitespace token, shrink
+        // the ws span by one char from the right and grow the next span by
+        // one char on the left. Mirrors onig's backtrack behavior exactly.
+        for i in 0..tokens.len().saturating_sub(1) {
+            let is_ws = matches!(tokens[i].0, Some(BlTok::Whitespace));
+            let next_is_content = matches!(
+                tokens[i + 1].0,
+                Some(BlTok::Contraction)
+                    | Some(BlTok::Letters)
+                    | Some(BlTok::Numbers)
+                    | Some(BlTok::Other)
+            );
+            if !(is_ws && next_is_content) {
+                continue;
+            }
+            let (start, end) = (tokens[i].1, tokens[i].2);
+            let ws_slice = &inside[start..end];
+            if ws_slice.chars().count() < 2 {
+                continue;
+            }
+            // Byte offset of the final char inside the ws span
+            let last_char_off = ws_slice
+                .char_indices()
+                .last()
+                .map(|(b, _)| b)
+                .unwrap_or(0);
+            let boundary = start + last_char_off;
+            tokens[i].2 = boundary;
+            tokens[i + 1].1 = boundary;
+        }
+
+        let mut prev = 0;
+        let mut splits = Vec::with_capacity(tokens.len());
+        for (_variant, start, end) in tokens {
+            if start == end {
+                continue;
+            }
+            if prev != start {
+                splits.push(((prev, start), false));
+            }
+            splits.push(((start, end), true));
+            prev = end;
+        }
+        if prev != inside.len() {
+            splits.push(((prev, inside.len()), false));
+        }
+        Ok(splits)
+    }
+}
+
 static BYTES_CHAR: LazyLock<AHashMap<u8, char>> = LazyLock::new(bytes_char);
 static CHAR_BYTES: LazyLock<AHashMap<char, u8>> =
     LazyLock::new(|| bytes_char().into_iter().map(|(c, b)| (b, c)).collect());
@@ -118,13 +230,23 @@ impl ByteLevel {
 // TODO: Give the ability to modify this regex
 impl PreTokenizer for ByteLevel {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
+        #[cfg(not(feature = "logos-pretok"))]
         let re_ref: &SysRegex = &RE;
+        #[cfg(feature = "logos-pretok")]
+        let logos_pat = LogosByteLevel;
         pretokenized.split(|_, mut normalized| {
             if self.add_prefix_space && !normalized.get().starts_with(' ') {
                 normalized.prepend(" ");
             }
             if self.use_regex {
-                normalized.split(re_ref, SplitDelimiterBehavior::Isolated)
+                #[cfg(feature = "logos-pretok")]
+                {
+                    normalized.split(&logos_pat, SplitDelimiterBehavior::Isolated)
+                }
+                #[cfg(not(feature = "logos-pretok"))]
+                {
+                    normalized.split(re_ref, SplitDelimiterBehavior::Isolated)
+                }
             } else {
                 Ok(vec![normalized])
             }
