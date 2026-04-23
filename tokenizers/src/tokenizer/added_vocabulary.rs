@@ -315,9 +315,7 @@ impl AddedVocabulary {
 
             if token.normalized {
                 if let Some(n) = normalizer {
-                    let mut s = NormalizedString::from(token.content.as_ref());
-                    n.normalize(&mut s)?;
-                    let normed = s.get().to_string();
+                    let normed = n.normalize_str(&token.content)?;
                     if normed != token.content {
                         self.normalized_cache.insert(new_id, normed);
                     }
@@ -360,9 +358,7 @@ impl AddedVocabulary {
         for (id, token) in &self.added_tokens_map_r {
             if token.normalized {
                 if let Some(n) = normalizer {
-                    let mut s = NormalizedString::from(token.content.as_ref());
-                    n.normalize(&mut s)?;
-                    let normed = s.get().to_string();
+                    let normed = n.normalize_str(&token.content)?;
                     if normed != token.content {
                         self.normalized_cache.insert(*id, normed);
                     }
