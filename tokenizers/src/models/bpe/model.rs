@@ -1,13 +1,16 @@
 use super::{super::OrderedVocabIter, trainer::BpeTrainer, Error, Pair, Word};
 use crate::tokenizer::{Model, Result, Token};
-use crate::utils::cache::{Cache, DEFAULT_CACHE_CAPACITY, MAX_LENGTH};
+use crate::utils::cache::{DEFAULT_CACHE_CAPACITY, MAX_LENGTH};
 use crate::utils::iter::ResultShunt;
 use crate::utils::merge_table::MergeTable;
 use ahash::AHashMap;
 use serde_json::Value;
 use std::borrow::Cow;
+use std::cell::RefCell;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use std::collections::HashMap;
+use std::str::from_utf8_unchecked;
 use std::{
     fs::File,
     io::prelude::*,
@@ -18,6 +21,74 @@ use std::{
 pub type Vocab = AHashMap<String, u32>;
 type VocabR = AHashMap<u32, String>;
 pub type MergeMap = MergeTable;
+
+/// Process-wide monotonic counter used to assign a unique generation id
+/// to every `BpeCache`, so per-instance thread-local caches never collide.
+static NEXT_CACHE_ID: AtomicU64 = AtomicU64::new(0);
+
+/// Per-BPE cache descriptor.
+///
+/// BPE no longer keeps a shared `RwLock<AHashMap>` cache: the encode hot
+/// path reads and writes only the thread-local `BPE_LOCAL_CACHE` below,
+/// keyed by `(BpeCache::id, sequence)`.  This struct only carries the
+/// per-instance generation id and capacity so existing `clear_cache()`
+/// and `resize_cache()` APIs keep their meaning: `clear()` bumps the id,
+/// invalidating every thread's entries for this BPE in one shot.
+#[derive(Debug)]
+pub(crate) struct BpeCache {
+    id: AtomicU64,
+    pub capacity: usize,
+}
+
+// Matches the previous `Cache` impl: we never compare caches by value.
+impl PartialEq for BpeCache {
+    fn eq(&self, _other: &Self) -> bool {
+        true
+    }
+}
+
+impl BpeCache {
+    pub(crate) fn new(capacity: usize) -> Self {
+        Self {
+            id: AtomicU64::new(NEXT_CACHE_ID.fetch_add(1, Ordering::Relaxed)),
+            capacity,
+        }
+    }
+
+    /// Return a fresh `BpeCache` with the same capacity but a new id,
+    /// used by `impl Clone for BPE`.
+    pub(crate) fn fresh(&self) -> Self {
+        Self::new(self.capacity)
+    }
+
+    /// Current generation id.  Bumped on `clear()`.
+    pub(crate) fn id(&self) -> u64 {
+        self.id.load(Ordering::Relaxed)
+    }
+
+    /// Invalidate every thread's thread-local entries for this BPE by
+    /// advancing the generation id; the next lookup re-computes.
+    pub(crate) fn clear(&self) {
+        self.id.store(
+            NEXT_CACHE_ID.fetch_add(1, Ordering::Relaxed),
+            Ordering::Relaxed,
+        );
+    }
+
+    pub(crate) fn resize(&mut self, capacity: usize) {
+        self.capacity = capacity;
+    }
+}
+
+thread_local! {
+    /// Per-thread BPE tokenization cache.  This is the only BPE cache
+    /// on the hot path: there is no shared global map, so lookups and
+    /// inserts need no atomic synchronization at all.  The outer map is
+    /// keyed by `BpeCache::id` so multiple `BPE` instances sharing the
+    /// same rayon worker thread never see each other's entries.
+    static BPE_LOCAL_CACHE: RefCell<AHashMap<u64, AHashMap<String, Word>>> =
+        RefCell::new(AHashMap::new());
+}
 pub type Merges = Vec<(String, String)>;
 
 struct Config {
@@ -155,15 +226,21 @@ impl BpeBuilder {
             self.config.merges = m;
         }
 
+        let mut max_len = 0;
         let vocab_r = self
             .config
             .vocab
             .iter()
-            .map(|(key, val)| (*val, key.to_owned()))
+            .map(|(key, val)| {
+                if max_len < key.len() {
+                    max_len = key.len();
+                }
+                (*val, key.to_owned())
+            })
             .collect();
         let cache = match self.config.cache_capacity {
             0 => None,
-            capacity => Some(Cache::new(capacity)),
+            capacity => Some(BpeCache::new(capacity)),
         };
 
         let vocab = self.config.vocab;
@@ -184,10 +261,15 @@ impl BpeBuilder {
                 let b_id = vocab
                     .get(&b)
                     .ok_or_else(|| Error::MergeTokenOutOfVocabulary(b.to_owned()))?;
-                let new_token = format!("{}{}", a, &b[prefix_len..]);
+                buffer[0..a.len()].copy_from_slice(a.as_bytes());
+                let b_len = b.len() - prefix_len;
+                let merge_len = a.len() + b_len;
+                buffer[a.len()..merge_len].copy_from_slice(&b.as_bytes()[prefix_len..]);
+                // SAFETY: buffer contains a concatenation of two valid UTF-8 strings, so it is itself valid UTF-8, even considering prefix_len
+                let new_token = unsafe { from_utf8_unchecked(&buffer[..merge_len]) };
                 let new_id = vocab
-                    .get(&new_token)
-                    .ok_or(Error::MergeTokenOutOfVocabulary(new_token))?;
+                    .get(new_token)
+                    .ok_or_else(|| Error::MergeTokenOutOfVocabulary(new_token.to_owned()))?;
                 Ok(((*a_id, *b_id), (i as u32, *new_id)))
             })
             .collect::<Result<Vec<_>>>()?;
@@ -221,7 +303,7 @@ pub struct BPE {
     /// Contains the mapping between Pairs and their (rank, new_id).
     pub(crate) merges: MergeMap,
     /// Contains the cache for optimizing the encoding step.
-    cache: Option<Cache<String, Word>>,
+    cache: Option<BpeCache>,
     /// Dropout probability for merges. 0.0 = no dropout is the default. At 1.0, tokenization will
     /// perform no merges, so the result will just be characters.
     pub dropout: Option<f32>,
@@ -263,7 +345,7 @@ impl Default for BPE {
 }
 
 impl Clone for BPE {
-    // `Clone` can't be derive because it's not implemented for `Cache`.
+    // `Clone` can't be derive because it's not implemented for `BpeCache`.
     // To keep things simple when we clone, the new BPE will start with a fresh cache.
     fn clone(&self) -> Self {
         let fresh_cache = self.cache.as_ref().map(|cache| cache.fresh());
@@ -484,17 +566,25 @@ impl BPE {
                 )]);
             }
         }
-        if let Some(ref hit) = self.cache.as_ref().and_then(|c| c.get(sequence)) {
-            return Ok(self.word_to_tokens(hit).collect());
-        }
-        let word = self.merge_word(sequence)?;
-        let ret = self.word_to_tokens(&word).collect();
-        if let Some(ref cache) = self.cache {
-            if sequence.len() < MAX_LENGTH {
-                cache.set(sequence.to_owned(), word);
+        let Some(cache) = self.cache.as_ref() else {
+            // Cache disabled (capacity 0): fall back to the uncached path.
+            let word = self.merge_word(sequence)?;
+            return Ok(self.word_to_tokens(&word).collect());
+        };
+        let cache_id = cache.id();
+        BPE_LOCAL_CACHE.with(|cell| {
+            let mut by_bpe = cell.borrow_mut();
+            let local = by_bpe.entry(cache_id).or_default();
+            if let Some(hit) = local.get(sequence) {
+                return Ok(self.word_to_tokens(hit).collect());
             }
-        }
-        Ok(ret)
+            let word = self.merge_word(sequence)?;
+            let ret: Vec<Token> = self.word_to_tokens(&word).collect();
+            if sequence.len() < MAX_LENGTH && local.len() < cache.capacity {
+                local.insert(sequence.to_owned(), word);
+            }
+            Ok(ret)
+        })
     }
 }
 
@@ -583,6 +673,77 @@ impl Model for BPE {
 mod tests {
     use super::*;
     use tempfile::NamedTempFile;
+
+    #[test]
+    fn test_cache_is_per_bpe_instance() {
+        // Two BPE instances with different merges must tokenize the same
+        // input differently even when they share a thread, i.e. the BPE
+        // thread-local cache must not leak entries across instances.
+        let vocab_a: Vocab = [
+            ("h", 0u32),
+            ("e", 1),
+            ("l", 2),
+            ("o", 3),
+            ("he", 4),
+            ("hel", 5),
+            ("hell", 6),
+            ("hello", 7),
+        ]
+        .iter()
+        .map(|(s, i)| ((*s).into(), *i))
+        .collect();
+        let merges_a: Merges = vec![
+            ("h".into(), "e".into()),
+            ("he".into(), "l".into()),
+            ("hel".into(), "l".into()),
+            ("hell".into(), "o".into()),
+        ];
+        let bpe_a = BpeBuilder::default()
+            .vocab_and_merges(vocab_a, merges_a)
+            .build()
+            .unwrap();
+
+        let vocab_b: Vocab = [("h", 0u32), ("e", 1), ("l", 2), ("o", 3)]
+            .iter()
+            .map(|(s, i)| ((*s).into(), *i))
+            .collect();
+        let bpe_b = BpeBuilder::default()
+            .vocab_and_merges(vocab_b, vec![])
+            .build()
+            .unwrap();
+
+        // Interleave the two models so any cross-instance cache pollution
+        // is visible on the second lookup.
+        let ids_a: Vec<u32> = bpe_a
+            .tokenize("hello")
+            .unwrap()
+            .iter()
+            .map(|t| t.id)
+            .collect();
+        let ids_b: Vec<u32> = bpe_b
+            .tokenize("hello")
+            .unwrap()
+            .iter()
+            .map(|t| t.id)
+            .collect();
+        let ids_a2: Vec<u32> = bpe_a
+            .tokenize("hello")
+            .unwrap()
+            .iter()
+            .map(|t| t.id)
+            .collect();
+        let ids_b2: Vec<u32> = bpe_b
+            .tokenize("hello")
+            .unwrap()
+            .iter()
+            .map(|t| t.id)
+            .collect();
+
+        assert_eq!(ids_a, vec![7u32], "bpe_a must merge to [hello]");
+        assert_eq!(ids_b, vec![0u32, 1, 2, 2, 3], "bpe_b has no merges");
+        assert_eq!(ids_a2, ids_a, "bpe_a second call must match first");
+        assert_eq!(ids_b2, ids_b, "bpe_b second call must match first");
+    }
 
     #[test]
     fn test_ordered_vocab_iter() {

@@ -63,8 +63,12 @@ fn create_gpt2_tokenizer(bpe: BPE) -> Tokenizer {
     let mut tokenizer = Tokenizer::new(bpe);
     tokenizer.with_pre_tokenizer(Some(ByteLevel::default()));
     tokenizer.with_decoder(Some(ByteLevel::default()));
-    tokenizer.add_tokens(&[AddedToken::from("ing", false).single_word(false)]);
-    tokenizer.add_special_tokens(&[AddedToken::from("[ENT]", true).single_word(true)]);
+    tokenizer
+        .add_tokens([AddedToken::from("ing", false).single_word(false)])
+        .unwrap();
+    tokenizer
+        .add_special_tokens([AddedToken::from("[ENT]", true).single_word(true)])
+        .unwrap();
     tokenizer
 }
 
@@ -268,22 +272,22 @@ fn bench_train(c: &mut Criterion) {
 
 criterion_group! {
     name = ci_bpe;
-    config = Criterion::default().sample_size(10);
+    config = Criterion::default().sample_size(15);
     targets = bench_bpe_gpt2
 }
 criterion_group! {
     name = ci_llama3;
-    config = Criterion::default().sample_size(10);
+    config = Criterion::default().sample_size(15);
     targets = bench_llama3
 }
 criterion_group! {
     name = ci_serial;
-    config = Criterion::default().sample_size(10);
+    config = Criterion::default().sample_size(15);
     targets = bench_serialization
 }
 criterion_group! {
     name = ci_train;
-    config = Criterion::default().sample_size(10);
+    config = Criterion::default().sample_size(15);
     targets = bench_train
 }
 
