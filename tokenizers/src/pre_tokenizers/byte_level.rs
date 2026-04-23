@@ -89,8 +89,11 @@ enum BlTok {
     Whitespace,
 }
 
+/// Hidden re-export so equivalence tests can drive the logos `Pattern` impl
+/// directly side-by-side with the legacy `SysRegex` one. Not a stable API.
 #[cfg(feature = "logos-pretok")]
-struct LogosByteLevel;
+#[doc(hidden)]
+pub struct LogosByteLevel;
 
 #[cfg(feature = "logos-pretok")]
 impl Pattern for &LogosByteLevel {
@@ -106,35 +109,76 @@ impl Pattern for &LogosByteLevel {
         }
 
         // Replay `\s+(?!\S)` lookahead: for each Whitespace span of char
-        // length ≥ 2 directly followed by a non-whitespace token, shrink
-        // the ws span by one char from the right and grow the next span by
-        // one char on the left. Mirrors onig's backtrack behavior exactly.
-        for i in 0..tokens.len().saturating_sub(1) {
-            let is_ws = matches!(tokens[i].0, Some(BlTok::Whitespace));
-            let next_is_content = matches!(
-                tokens[i + 1].0,
-                Some(BlTok::Contraction)
-                    | Some(BlTok::Letters)
-                    | Some(BlTok::Numbers)
-                    | Some(BlTok::Other)
-            );
-            if !(is_ws && next_is_content) {
+        // length ≥ 2 directly followed by a content token, shrink the ws
+        // span by one char and give that char to the next span as a
+        // leading-space prefix. Mirrors onig's backtrack exactly.
+        //
+        // Contractions are a special case. Logos (longest-match) picks a
+        // 2–3 char contraction literal (e.g. `'t`) over the shorter
+        // ` ?[^\s\p{L}\p{N}]+` match (just `'`). Legacy (leftmost-first)
+        // does the opposite: after backtracking the ws, its `Other`
+        // alternative sits earlier in the alternation and consumes ` '`
+        // as a 2-char span, leaving the remaining `tis` to be matched by
+        // `\p{L}+`. To mirror this we split the contraction into
+        // `Other(')` + `Letters(rest)`, extend Other backward to claim
+        // the freed ws char, and merge `Letters(rest)` with a following
+        // Letters span if contiguous and not starting with whitespace.
+        let mut i = 0;
+        while i < tokens.len().saturating_sub(1) {
+            if !matches!(tokens[i].0, Some(BlTok::Whitespace)) {
+                i += 1;
                 continue;
             }
             let (start, end) = (tokens[i].1, tokens[i].2);
             let ws_slice = &inside[start..end];
             if ws_slice.chars().count() < 2 {
+                i += 1;
                 continue;
             }
-            // Byte offset of the final char inside the ws span
             let last_char_off = ws_slice
                 .char_indices()
                 .last()
                 .map(|(b, _)| b)
                 .unwrap_or(0);
-            let boundary = start + last_char_off;
-            tokens[i].2 = boundary;
-            tokens[i + 1].1 = boundary;
+            let new_ws_end = start + last_char_off;
+
+            match tokens[i + 1].0 {
+                Some(BlTok::Letters) | Some(BlTok::Numbers) | Some(BlTok::Other) => {
+                    tokens[i].2 = new_ws_end;
+                    tokens[i + 1].1 = new_ws_end;
+                    i += 1;
+                }
+                Some(BlTok::Contraction) => {
+                    let (_, cstart, cend) = tokens[i + 1];
+                    // `'` is ASCII → 1 byte
+                    let quote_end = cstart + 1;
+                    tokens[i].2 = new_ws_end;
+                    tokens[i + 1] = (Some(BlTok::Other), new_ws_end, quote_end);
+
+                    let letters_seg = (Some(BlTok::Letters), quote_end, cend);
+                    let mut merged = false;
+                    if let Some(next_next) = tokens.get(i + 2) {
+                        if matches!(next_next.0, Some(BlTok::Letters)) && next_next.1 == cend {
+                            let first_is_ws = inside[next_next.1..next_next.2]
+                                .chars()
+                                .next()
+                                .map(|c| c.is_whitespace())
+                                .unwrap_or(false);
+                            if !first_is_ws {
+                                tokens[i + 2].1 = quote_end;
+                                merged = true;
+                            }
+                        }
+                    }
+                    if !merged && letters_seg.1 < letters_seg.2 {
+                        tokens.insert(i + 2, letters_seg);
+                    }
+                    i += 2;
+                }
+                _ => {
+                    i += 1;
+                }
+            }
         }
 
         let mut prev = 0;
