@@ -142,7 +142,7 @@ jobs:
           path: ./bindings/node/artifacts
       - name: Combine into universal binary
         working-directory: ./bindings/node
-        run: npx napi universal --name ${{ env.APP_NAME }}
+        run: npx napi universal --dir ./artifacts
       - name: Upload universal artifact
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f  # v7
         with:
