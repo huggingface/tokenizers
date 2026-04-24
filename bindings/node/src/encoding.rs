@@ -235,7 +235,7 @@ impl JsEncoding {
   }
 
   #[napi(ts_return_type = "[number, number] | null | undefined")]
-  pub fn word_to_tokens(&self, word: u32, seq_id: Option<u32>) -> Result<Option<Vec<u32>>> {
+  pub fn word_to_tokens(&self, word: u32, seq_id: Option<u32>) -> Result<Option<(u32, u32)>> {
     let seq_id = seq_id.unwrap_or(0);
 
     Ok(
@@ -244,11 +244,11 @@ impl JsEncoding {
         .as_ref()
         .expect("Uninitialized Encoding")
         .word_to_tokens(word, seq_id as usize)
-        .map(|(a, b)| vec![a as u32, b as u32]),
+        .map(|(a, b)| (a as u32, b as u32)),
     )
   }
   #[napi(ts_return_type = "[number, number] | null | undefined")]
-  pub fn word_to_chars(&self, word: u32, seq_id: Option<u32>) -> Result<Option<Vec<u32>>> {
+  pub fn word_to_chars(&self, word: u32, seq_id: Option<u32>) -> Result<Option<(u32, u32)>> {
     let seq_id = seq_id.unwrap_or(0);
 
     Ok(
@@ -257,19 +257,19 @@ impl JsEncoding {
         .as_ref()
         .expect("Uninitialized Encoding")
         .word_to_chars(word, seq_id as usize)
-        .map(|(a, b)| vec![a as u32, b as u32]),
+        .map(|(a, b)| (a as u32, b as u32)),
     )
   }
 
   #[napi(ts_return_type = "[number, number] | null | undefined")]
-  pub fn token_to_chars(&self, token: u32) -> Result<Option<Vec<u32>>> {
+  pub fn token_to_chars(&self, token: u32) -> Result<Option<(u32, u32)>> {
     Ok(
       self
         .encoding
         .as_ref()
         .expect("Uninitialized Encoding")
         .token_to_chars(token as usize)
-        .map(|(_, (start, stop))| vec![start as u32, stop as u32]),
+        .map(|(_, (start, stop))| (start as u32, stop as u32)),
     )
   }
 
