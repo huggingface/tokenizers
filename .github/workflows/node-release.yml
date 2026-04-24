@@ -62,9 +62,6 @@ jobs:
           - host: ubuntu-latest
             target: armv7-linux-androideabi
             build: yarn build --target armv7-linux-androideabi
-          - host: ubuntu-latest
-            target: x86_64-unknown-freebsd
-            build: yarn build --target x86_64-unknown-freebsd --zig
     name: build - ${{ matrix.settings.target }}
     runs-on: ${{ matrix.settings.host }}
     steps:
