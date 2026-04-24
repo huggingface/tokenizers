@@ -122,7 +122,7 @@ jobs:
       - run: pip install -U twine
 
       - name: build wheels
-        uses: PyO3/maturin-action@v1
+        uses: PyO3/maturin-action@3e2bdf6ba6453a61e649744019b8a2d906c7eb38  # v1.51.0
         with:
           target: ${{ matrix.target }}
           working-directory: ./bindings/python
