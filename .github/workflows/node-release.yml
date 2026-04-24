@@ -10,7 +10,7 @@ permissions:
 on:
   push:
     tags:
-      - node-v*
+      - v*
 
 jobs:
   build:
