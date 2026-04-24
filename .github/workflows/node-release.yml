@@ -54,9 +54,6 @@ jobs:
             target: aarch64-unknown-linux-musl
             build: yarn build --target aarch64-unknown-linux-musl --zig
           - host: ubuntu-latest
-            target: armv7-unknown-linux-gnueabihf
-            build: yarn build --target armv7-unknown-linux-gnueabihf --zig
-          - host: ubuntu-latest
             target: aarch64-linux-android
             build: yarn build --target aarch64-linux-android
           - host: ubuntu-latest
