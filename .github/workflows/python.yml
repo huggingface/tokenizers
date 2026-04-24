@@ -64,30 +64,21 @@ jobs:
           toolchain: stable
           components: rustfmt, clippy
 
-      - name: Install audit
-        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505  # v1
+      - name: Cache cargo registry / git / target
+        uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc  # v2.9.1
         with:
-          command: install
-          args: cargo-audit
+          workspaces: bindings/python
+
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@74e87cbfa15a59692b158178d8905a61bf6fca95  # v2.75.20
+        with:
+          tool: cargo-audit
 
       - name: Install Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
         with:
           python-version: ${{ matrix.python }}
           architecture: "x64"
-
-
-      - name: Cache Cargo Registry
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
-        with:
-          path: ~/.cargo/registry
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-
-          # - name: Cache Cargo Build Target
-          #   uses: actions/cache@v1
-          #   with:
-          #     path: ./bindings/python/target
-          #     key: ${{ runner.os }}-cargo-python-build-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Lint with RustFmt
         uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505  # v1
@@ -101,9 +92,6 @@ jobs:
         with:
           command: clippy
           args: --manifest-path ./bindings/python/Cargo.toml --all-targets --all-features -- -D warnings
-
-      - name: Install cargo-audit
-        run: cargo install cargo-audit
 
       - name: Run Audit
         uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505  # v1
