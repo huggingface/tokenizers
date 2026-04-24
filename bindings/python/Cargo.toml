@@ -32,5 +32,6 @@ tempfile = "3.10"
 pyo3 = { version = "0.28", features = ["auto-initialize", "experimental-inspect"] }
 
 [features]
-default = ["ext-module"]
+default = ["ext-module", "parity-aware-bpe"]
 ext-module = ["pyo3/extension-module"]
+parity-aware-bpe = ["tokenizers/parity-aware-bpe"]
