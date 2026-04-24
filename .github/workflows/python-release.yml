@@ -34,23 +34,19 @@ jobs:
             platform: linux
           - os: windows
             ls: dir
-            interpreter: 3.14 3.14t
+            interpreter: "3.14"
           - os: windows
             ls: dir
             target: x86_64
             python-architecture: x64
-            python-install: |
-                3.14
-                3.14t
-            interpreter: 3.14 3.14t
+            python-install: "3.14"
+            interpreter: "3.14"
           - os: windows
             ls: dir
             target: i686
             python-architecture: x86
-            python-install: | 
-                3.14
-                3.14t
-            interpreter: 3.14 3.14t
+            python-install: "3.14"
+            interpreter: "3.14"
           - os: windows-11-arm
             ls: dir
             target: aarch64
@@ -63,7 +59,7 @@ jobs:
               #   interpreter: 3.11 3.12
           - os: macos
             target: aarch64
-            interpreter: 3.14 3.14t
+            interpreter: "3.14"
           - os: ubuntu
             platform: linux
             target: i686
@@ -74,7 +70,7 @@ jobs:
           - os: ubuntu
             platform: linux
             target: armv7
-            interpreter: 3.14 3.14t
+            interpreter: "3.14"
           # musllinux
           - os: ubuntu
             platform: linux
@@ -87,11 +83,11 @@ jobs:
           - os: ubuntu
             platform: linux
             target: ppc64le
-            interpreter: 3.14 3.14t
+            interpreter: "3.14"
           - os: ubuntu
             platform: linux
             target: s390x
-            interpreter: 3.14 3.14t
+            interpreter: "3.14"
         exclude:
           - os: windows
             target: aarch64
@@ -126,7 +122,7 @@ jobs:
           working-directory: ./bindings/python
           manylinux: ${{ matrix.manylinux || 'auto' }}
           container: ${{ matrix.container }}
-          args: --release --out dist --interpreter ${{ matrix.interpreter || '3.14 3.14t' }} ${{ matrix.extra-build-args }}
+          args: --release --out dist --interpreter ${{ matrix.interpreter || '3.14' }} ${{ matrix.extra-build-args }}
           rust-toolchain: stable
           sccache: false
           docker-options: -e CI
