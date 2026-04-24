@@ -41,6 +41,7 @@ jobs:
           tool: cargo-readme
 
       - name: Install cargo-audit
+        if: matrix.os == 'ubuntu-latest'
         uses: taiki-e/install-action@74e87cbfa15a59692b158178d8905a61bf6fca95  # v2.75.20
         with:
           tool: cargo-audit
@@ -51,19 +52,23 @@ jobs:
           command: build
           args: --all-targets --verbose --manifest-path ./tokenizers/Cargo.toml
 
+      # RustFmt / Clippy results are OS-invariant — run on the canonical OS.
       - name: Lint with RustFmt
+        if: matrix.os == 'ubuntu-latest'
         uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505  # v1
         with:
           command: fmt
           args: --manifest-path ./tokenizers/Cargo.toml -- --check
 
       - name: Lint Benchmarks with RustFmt
+        if: matrix.os == 'ubuntu-latest'
         uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505  # v1
         with:
           command: fmt
           args: --manifest-path ./tokenizers/Cargo.toml -- ./tokenizers/benches/bpe_benchmark.rs --check
 
       - name: Lint with Clippy
+        if: matrix.os == 'ubuntu-latest'
         uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505  # v1
         with:
           command: clippy
@@ -91,6 +96,7 @@ jobs:
           args: --verbose --manifest-path ./tokenizers/Cargo.toml --doc
 
       - name: Run Audit
+        if: matrix.os == 'ubuntu-latest'
         uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505  # v1
         with:
           command: audit

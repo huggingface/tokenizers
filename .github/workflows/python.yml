@@ -80,7 +80,10 @@ jobs:
           python-version: ${{ matrix.python }}
           architecture: "x64"
 
+      # RustFmt / Clippy / Audit / Python style are matrix-invariant —
+      # only run them on a single canonical combo (ubuntu + 3.14).
       - name: Lint with RustFmt
+        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.14'
         uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505  # v1
         with:
           toolchain: stable
@@ -88,12 +91,14 @@ jobs:
           args: --manifest-path ./bindings/python/Cargo.toml -- --check
 
       - name: Lint with Clippy
+        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.14'
         uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505  # v1
         with:
           command: clippy
           args: --manifest-path ./bindings/python/Cargo.toml --all-targets --all-features -- -D warnings
 
       - name: Run Audit
+        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.14'
         uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505  # v1
         with:
           command: audit
@@ -116,6 +121,7 @@ jobs:
           make test
 
       - name: Check style
+        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.14'
         working-directory: ./bindings/python
         run: |
           source .env/bin/activate
