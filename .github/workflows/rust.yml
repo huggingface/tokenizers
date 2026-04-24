@@ -29,6 +29,11 @@ jobs:
       - if: matrix.os == 'ubuntu-latest'
         run: sudo chown -R $(whoami):$(id -ng) ~/.cargo/
 
+      - name: Cache cargo registry / git / target
+        uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc  # v2.9.1
+        with:
+          workspaces: tokenizers
+
       - name: Install cargo-readme for Ubuntu
         if: matrix.os == 'ubuntu-latest'
         uses: taiki-e/install-action@74e87cbfa15a59692b158178d8905a61bf6fca95  # v2.75.20
