@@ -992,7 +992,7 @@ impl PyUnigram {
 }
 
 /// Models Module
-#[pymodule(gil_used = false)]
+#[pymodule]
 pub mod models {
     #[pymodule_export]
     pub use super::PyBPE;

@@ -105,8 +105,12 @@ jobs:
           python -m venv .env
           source .env/bin/activate
           pip install -U pip
-          pip install pytest requests setuptools_rust numpy pyarrow datasets ty
-          pip install -e .[dev]
+          pip install pytest pytest-asyncio requests setuptools_rust numpy pyarrow datasets ruff ty maturin
+          # Use `maturin develop` instead of `pip install -e` so maturin can
+          # auto-drop the abi3 feature on free-threaded Python (3.14t); pip's
+          # PEP 660 path otherwise produces an abi3 .so that fails to init
+          # under free-threading.
+          maturin develop --release
 
 
       - name: Run tests
