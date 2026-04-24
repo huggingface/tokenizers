@@ -55,10 +55,8 @@ jobs:
             ls: dir
             target: aarch64
             python-architecture: arm64
-            python-install: |
-              3.14
-              3.14t
-            interpreter: 3.14 3.14t
+            python-install: "3.14"
+            interpreter: "3.14"
               # - os: windows
               #   ls: dir
               #   target: aarch64
