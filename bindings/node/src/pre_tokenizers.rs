@@ -73,7 +73,7 @@ impl tk::PreTokenizer for PreTokenizer {
 #[napi]
 impl PreTokenizer {
   #[napi(ts_return_type = "[string, [number, number]][]")]
-  pub fn pre_tokenize_string(&self, sequence: String, env: Env) -> Result<Vec<Array>> {
+  pub fn pre_tokenize_string(&self, sequence: String) -> Result<Vec<(String, Vec<u32>)>> {
     use tk::PreTokenizer;
 
     let mut pretokenized = PreTokenizedString::from(sequence);
@@ -82,19 +82,13 @@ impl PreTokenizer {
       .pre_tokenize(&mut pretokenized)
       .map_err(|e| Error::from_reason(format!("{e}")))?;
 
-    pretokenized
-      .get_splits(tk::OffsetReferential::Original, tk::OffsetType::Char)
-      .into_iter()
-      .map(|(s, (start, end), _)| -> Result<Array> {
-        let mut arr = env.create_array(2)?;
-        let mut offset = env.create_array(2)?;
-        offset.set(0, env.create_uint32(start as u32)?)?;
-        offset.set(1, env.create_uint32(end as u32)?)?;
-        arr.set(0, env.create_string(s)?)?;
-        arr.set(1, offset)?;
-        Ok(arr)
-      })
-      .collect::<Result<Vec<_>>>()
+    Ok(
+      pretokenized
+        .get_splits(tk::OffsetReferential::Original, tk::OffsetType::Char)
+        .into_iter()
+        .map(|(s, (start, end), _)| (s.to_owned(), vec![start as u32, end as u32]))
+        .collect(),
+    )
   }
 }
 
