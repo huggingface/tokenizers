@@ -128,6 +128,7 @@ jobs:
           container: ${{ matrix.container }}
           args: --release --out dist --interpreter ${{ matrix.interpreter || '3.14 3.14t' }} ${{ matrix.extra-build-args }}
           rust-toolchain: stable
+          sccache: false
           docker-options: -e CI
 
       - run: ${{ matrix.ls || 'ls -lh' }} dist/
