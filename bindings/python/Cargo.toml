@@ -34,3 +34,4 @@ pyo3 = { version = "0.28", features = ["auto-initialize", "experimental-inspect"
 [features]
 default = ["ext-module"]
 ext-module = ["pyo3/extension-module"]
+pcre2 = ["tokenizers/pcre2"]
