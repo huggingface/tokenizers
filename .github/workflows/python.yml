@@ -124,6 +124,10 @@ jobs:
           make test
 
       - name: Check style
+        # `ty check` builds its own cdylib for introspection using the
+        # package's abi3 feature, which doesn't load under free-threaded
+        # Python. Run style checks on the regular interpreter only.
+        if: matrix.python != '3.14t'
         working-directory: ./bindings/python
         run: |
           source .env/bin/activate
