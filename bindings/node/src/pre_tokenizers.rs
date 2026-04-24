@@ -73,7 +73,7 @@ impl tk::PreTokenizer for PreTokenizer {
 #[napi]
 impl PreTokenizer {
   #[napi(ts_return_type = "[string, [number, number]][]")]
-  pub fn pre_tokenize_string(&self, sequence: String) -> Result<Vec<(String, Vec<u32>)>> {
+  pub fn pre_tokenize_string(&self, sequence: String) -> Result<Vec<(String, (u32, u32))>> {
     use tk::PreTokenizer;
 
     let mut pretokenized = PreTokenizedString::from(sequence);
@@ -86,7 +86,7 @@ impl PreTokenizer {
       pretokenized
         .get_splits(tk::OffsetReferential::Original, tk::OffsetType::Char)
         .into_iter()
-        .map(|(s, (start, end), _)| (s.to_owned(), vec![start as u32, end as u32]))
+        .map(|(s, (start, end), _)| (s.to_owned(), (start as u32, end as u32)))
         .collect(),
     )
   }
