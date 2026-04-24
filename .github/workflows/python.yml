@@ -106,11 +106,15 @@ jobs:
           source .env/bin/activate
           pip install -U pip
           pip install pytest pytest-asyncio requests setuptools_rust numpy pyarrow datasets ruff ty maturin
-          # Use `maturin develop` instead of `pip install -e` so maturin can
-          # auto-drop the abi3 feature on free-threaded Python (3.14t); pip's
-          # PEP 660 path otherwise produces an abi3 .so that fails to init
-          # under free-threading.
-          maturin develop --release
+          # Build extension via maturin. On free-threaded Python (3.14t) the
+          # abi3/limited API is not available, and maturin only retags the
+          # wheel without dropping the abi3 cargo feature — so we disable it
+          # explicitly here.
+          if python -c 'import sys; sys.exit(0 if sys._is_gil_enabled() else 1)' 2>/dev/null; then
+            maturin develop --release
+          else
+            maturin develop --release --no-default-features --features ext-module
+          fi
 
 
       - name: Run tests
