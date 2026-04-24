@@ -98,8 +98,11 @@ jobs:
           # stable-ABI extensions) and produce cp314t-tagged wheels. The
           # `flavor: ft` discriminator forces include: to create new matrix
           # cells instead of merging with the abi3 entries above.
-          # Limited to mainstream platforms; niche targets (i686, armv7,
-          # ppc64le, s390x, windows-aarch64) stick to 3.14-only for now.
+          #
+          # Shipping attempts for every target we build abi3 for — if a
+          # given target doesn't have a 3.14t interpreter available, the
+          # maturin-action run will fail loudly and we drop the row in a
+          # follow-up.
           - os: ubuntu
             platform: linux
             target: x86_64
@@ -110,6 +113,34 @@ jobs:
           - os: ubuntu
             platform: linux
             target: aarch64
+            manylinux: auto
+            flavor: ft
+            interpreter: "3.14t"
+            extra-build-args: --no-default-features --features pyo3/extension-module
+          - os: ubuntu
+            platform: linux
+            target: i686
+            manylinux: auto
+            flavor: ft
+            interpreter: "3.14t"
+            extra-build-args: --no-default-features --features pyo3/extension-module
+          - os: ubuntu
+            platform: linux
+            target: armv7
+            manylinux: auto
+            flavor: ft
+            interpreter: "3.14t"
+            extra-build-args: --no-default-features --features pyo3/extension-module
+          - os: ubuntu
+            platform: linux
+            target: ppc64le
+            manylinux: auto
+            flavor: ft
+            interpreter: "3.14t"
+            extra-build-args: --no-default-features --features pyo3/extension-module
+          - os: ubuntu
+            platform: linux
+            target: s390x
             manylinux: auto
             flavor: ft
             interpreter: "3.14t"
@@ -145,6 +176,24 @@ jobs:
             manylinux: auto
             ls: dir
             python-architecture: x64
+            python-install: "3.14t"
+            flavor: ft
+            interpreter: "3.14t"
+            extra-build-args: --no-default-features --features pyo3/extension-module
+          - os: windows
+            target: i686
+            manylinux: auto
+            ls: dir
+            python-architecture: x86
+            python-install: "3.14t"
+            flavor: ft
+            interpreter: "3.14t"
+            extra-build-args: --no-default-features --features pyo3/extension-module
+          - os: windows-11-arm
+            target: aarch64
+            manylinux: auto
+            ls: dir
+            python-architecture: arm64
             python-install: "3.14t"
             flavor: ft
             interpreter: "3.14t"
