@@ -64,11 +64,10 @@ jobs:
           toolchain: stable
           components: rustfmt, clippy
 
-      - name: Install audit
-        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505  # v1
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@74e87cbfa15a59692b158178d8905a61bf6fca95  # v2.75.20
         with:
-          command: install
-          args: cargo-audit
+          tool: cargo-audit
 
       - name: Install Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
@@ -101,9 +100,6 @@ jobs:
         with:
           command: clippy
           args: --manifest-path ./bindings/python/Cargo.toml --all-targets --all-features -- -D warnings
-
-      - name: Install cargo-audit
-        run: cargo install cargo-audit
 
       - name: Run Audit
         uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505  # v1
