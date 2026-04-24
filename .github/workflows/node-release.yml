@@ -54,6 +54,9 @@ jobs:
             target: aarch64-unknown-linux-musl
             build: yarn build --target aarch64-unknown-linux-musl --zig
           - host: ubuntu-latest
+            target: armv7-unknown-linux-gnueabihf
+            build: yarn build --target armv7-unknown-linux-gnueabihf --zig
+          - host: ubuntu-latest
             target: aarch64-linux-android
             build: yarn build --target aarch64-linux-android
           - host: ubuntu-latest
@@ -87,6 +90,16 @@ jobs:
       - name: Setup zig
         if: ${{ !matrix.settings.docker && contains(matrix.settings.build, '--zig') }}
         uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29  # v2.2.1
+        with:
+          # Pin — without a version the action installs zig master (nightly)
+          # whose `zig env` output has drifted and broken the parsers in both
+          # napi-rs/cli v2 and cargo-zigbuild. 0.13.0 is what napi-rs's own
+          # release templates pin to.
+          version: 0.13.0
+
+      - name: Verify zig
+        if: ${{ !matrix.settings.docker && contains(matrix.settings.build, '--zig') }}
+        run: zig version && which zig
 
       - name: Build native (host)
         if: ${{ !matrix.settings.docker }}

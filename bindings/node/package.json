@@ -28,6 +28,7 @@
       "aarch64-unknown-linux-musl",
       "aarch64-pc-windows-msvc",
       "aarch64-linux-android",
+      "armv7-unknown-linux-gnueabihf",
       "i686-pc-windows-msvc",
       "armv7-linux-androideabi",
       "universal-apple-darwin"
