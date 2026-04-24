@@ -700,7 +700,7 @@ impl Decoder for PyDecoderWrapper {
 }
 
 /// Decoders Module
-#[pymodule]
+#[pymodule(gil_used = false)]
 pub mod decoders {
     #[pymodule_export]
     pub use super::PyBPEDecoder;
