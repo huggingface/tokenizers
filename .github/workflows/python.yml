@@ -22,28 +22,18 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
       - name: Install Rust
-        uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af  # v1
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
         with:
-          toolchain: stable-i686-pc-windows-msvc
-          override: true
-
-      - name: Override toolchain
-        shell: bash
-        working-directory: ./bindings/python
-        run: echo "stable-i686-pc-windows-msvc" > rust-toolchain
-
+          targets: i686-pc-windows-msvc
 
       - name: Install Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
         with:
           python-version: ${{ matrix.python }}
           architecture: x86
 
       - name: Build
-        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505  # v1
-        with:
-          command: build
-          args: --manifest-path ./bindings/python/Cargo.toml
+        run: cargo build --target i686-pc-windows-msvc --manifest-path ./bindings/python/Cargo.toml
 
 
   build_and_test:
@@ -59,9 +49,8 @@ jobs:
         
 
       - name: Install Rust
-        uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af  # v1
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
         with:
-          toolchain: stable
           components: rustfmt, clippy
 
       - name: Cache cargo registry / git / target
@@ -75,7 +64,7 @@ jobs:
           tool: cargo-audit
 
       - name: Install Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
         with:
           python-version: ${{ matrix.python }}
           architecture: "x64"
@@ -84,25 +73,15 @@ jobs:
       # only run them on a single canonical combo (ubuntu + 3.14).
       - name: Lint with RustFmt
         if: matrix.os == 'ubuntu-latest' && matrix.python == '3.14'
-        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505  # v1
-        with:
-          toolchain: stable
-          command: fmt
-          args: --manifest-path ./bindings/python/Cargo.toml -- --check
+        run: cargo fmt --manifest-path ./bindings/python/Cargo.toml -- --check
 
       - name: Lint with Clippy
         if: matrix.os == 'ubuntu-latest' && matrix.python == '3.14'
-        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505  # v1
-        with:
-          command: clippy
-          args: --manifest-path ./bindings/python/Cargo.toml --all-targets --all-features -- -D warnings
+        run: cargo clippy --manifest-path ./bindings/python/Cargo.toml --all-targets --all-features -- -D warnings
 
       - name: Run Audit
         if: matrix.os == 'ubuntu-latest' && matrix.python == '3.14'
-        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505  # v1
-        with:
-          command: audit
-          args: -D warnings -f ./bindings/python/Cargo.lock  --ignore RUSTSEC-2024-0436 --ignore RUSTSEC-2025-0014 --ignore RUSTSEC-2025-0119 --ignore RUSTSEC-2024-0436
+        run: cargo audit -D warnings -f ./bindings/python/Cargo.lock --ignore RUSTSEC-2024-0436 --ignore RUSTSEC-2025-0014 --ignore RUSTSEC-2025-0119
 
       - name: Install
         working-directory: ./bindings/python
@@ -126,7 +105,15 @@ jobs:
         working-directory: ./bindings/python
         run: |
           source .env/bin/activate
-          make test
+          # `make test` also runs `cargo test --no-default-features` which
+          # links libpython via pyo3's `auto-initialize`. On free-threaded
+          # Python macOS runners the 3.14t libpython isn't shipped in the
+          # framework path, so skip the cargo half there.
+          if python -c 'import sys; sys.exit(0 if sys._is_gil_enabled() else 1)' 2>/dev/null; then
+            make test
+          else
+            make test-py
+          fi
 
       - name: Check style
         if: matrix.os == 'ubuntu-latest' && matrix.python == '3.14'
