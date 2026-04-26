@@ -12,6 +12,18 @@
 pub fn ascii_lower(buf: &mut [u8]) {
     #[cfg(target_arch = "x86_64")]
     {
+        // Only enable the AVX-512 path on CPUs where the AVX-512 license-mode
+        // downclock is negligible. `avx512fp16` is used as a proxy: it is
+        // present on Intel Sapphire Rapids+ and on AMD Zen 4/Zen 5, and is
+        // absent on Skylake-X / Cascade Lake / Cooper Lake / Ice Lake-SP /
+        // Rocket Lake — i.e. exactly the generations where 512-bit ops trigger
+        // significant frequency throttling.
+        if std::is_x86_feature_detected!("avx512f")
+            && std::is_x86_feature_detected!("avx512bw")
+            && std::is_x86_feature_detected!("avx512fp16")
+        {
+            unsafe { return ascii_lower_avx512(buf) };
+        }
         if std::is_x86_feature_detected!("avx2") {
             unsafe { return ascii_lower_avx2(buf) };
         }
@@ -36,6 +48,35 @@ fn ascii_lower_scalar(buf: &mut [u8]) {
             *b |= 0x20;
         }
     }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f,avx512bw")]
+unsafe fn ascii_lower_avx512(buf: &mut [u8]) {
+    use std::arch::x86_64::*;
+
+    let a_minus_1 = _mm512_set1_epi8(b'A' as i8 - 1);
+    let z_plus_1 = _mm512_set1_epi8(b'Z' as i8 + 1);
+    let case_bit = _mm512_set1_epi8(0x20);
+
+    let len = buf.len();
+    let mut i = 0;
+    while i + 64 <= len {
+        let p = buf.as_mut_ptr().add(i) as *mut __m512i;
+        let v = _mm512_loadu_si512(p as *const __m512i);
+        // `__mmask64` is `u64` in Rust; the two range checks AND together as a
+        // plain bitwise op. Signed compares are correct here for the same
+        // reason as the SSE2/AVX2 paths: ASCII bytes are < 0x80.
+        let gt_a = _mm512_cmpgt_epi8_mask(v, a_minus_1);
+        let lt_z = _mm512_cmpgt_epi8_mask(z_plus_1, v);
+        let mask = gt_a & lt_z;
+        let mask_vec = _mm512_movm_epi8(mask);
+        let flip = _mm512_and_si512(mask_vec, case_bit);
+        let out = _mm512_xor_si512(v, flip);
+        _mm512_storeu_si512(p, out);
+        i += 64;
+    }
+    ascii_lower_scalar(&mut buf[i..]);
 }
 
 #[cfg(target_arch = "x86_64")]
