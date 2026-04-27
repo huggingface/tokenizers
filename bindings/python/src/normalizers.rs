@@ -176,9 +176,7 @@ impl PyNormalizer {
     ///     :obj:`str`: A string after normalization
     #[pyo3(text_signature = "(self, sequence)")]
     fn normalize_str(&self, sequence: &str) -> PyResult<String> {
-        let mut normalized = NormalizedString::from(sequence);
-        ToPyResult(self.normalizer.normalize(&mut normalized)).into_py()?;
-        Ok(normalized.get().to_owned())
+        ToPyResult(self.normalizer.normalize_str(sequence)).into()
     }
 
     fn __repr__(&self) -> PyResult<String> {

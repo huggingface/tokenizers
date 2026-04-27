@@ -10,6 +10,42 @@ pub struct ByteLevel;
 
 static BYTES_CHAR: LazyLock<AHashMap<u8, char>> = LazyLock::new(bytes_char);
 
+/// Pre-encoded UTF-8 lookup table for [`ByteLevel::normalize_str`].
+///
+/// The byte-level normalizer maps every input byte (0x00–0xFF) to a specific
+/// Unicode character.  For example:
+///
+/// | Input byte | Char    | Code point | UTF-8 bytes | Length |
+/// |------------|---------|------------|-------------|--------|
+/// | `0x6B` (k) | 'k'     | U+006B     | `[6B]`      | 1      |
+/// | `0x20` ( ) | 'Ġ'     | U+0120     | `[C4, A0]`  | 2      |
+/// | `0x0D` (CR)| 'č'     | U+010D     | `[C4, 8D]`  | 2      |
+///
+/// Without this table, each byte requires a `HashMap<u8, char>` lookup
+/// followed by `char::encode_utf8` to write it into the output `String`.
+///
+/// This table pre-computes the UTF-8 encoding once at startup, so the hot
+/// path is just `out.extend_from_slice(&entry.bytes[..entry.len])` — a
+/// direct memcpy with no hashing and no per-char encoding.
+struct Utf8Entry {
+    /// The UTF-8 encoding of the byte-level char (at most 2 bytes for this
+    /// particular mapping, since all chars are ≤ U+0122).
+    bytes: [u8; 2],
+    /// Number of valid bytes in `bytes` (1 or 2).
+    len: u8,
+}
+
+static BYTES_CHAR_UTF8: LazyLock<[Utf8Entry; 256]> = LazyLock::new(|| {
+    let map = bytes_char();
+    std::array::from_fn(|i| {
+        let c = map[&(i as u8)];
+        let mut buf = [0u8; 2];
+        let s = c.encode_utf8(&mut buf);
+        let len = s.len() as u8;
+        Utf8Entry { bytes: buf, len }
+    })
+});
+
 impl Default for ByteLevel {
     fn default() -> Self {
         Self::new()
@@ -44,6 +80,19 @@ impl Normalizer for ByteLevel {
             normalized.transform(transformations, 0);
         }
         Ok(())
+    }
+
+    /// Fast path: map each byte to its byte-level char without alignment tracking.
+    /// Uses a pre-encoded UTF-8 lookup table — no HashMap, no per-char encoding.
+    fn normalize_str(&self, s: &str) -> Result<String> {
+        let table = &*BYTES_CHAR_UTF8;
+        let mut out = Vec::with_capacity(s.len() * 2);
+        for &b in s.as_bytes() {
+            let entry = &table[b as usize];
+            out.extend_from_slice(&entry.bytes[..entry.len as usize]);
+        }
+        // SAFETY: every entry in the table is valid UTF-8 (encoded from a char).
+        Ok(unsafe { String::from_utf8_unchecked(out) })
     }
 }
 
@@ -170,5 +219,16 @@ mod tests {
                 (55, 61)
             ]
         );
+    }
+
+    #[test]
+    fn normalize_str_matches_normalize() {
+        let bl = ByteLevel::new();
+        for input in &["Hello", "Hello 我今天能为你做什么", "", "abc\x00\x01\x7f"] {
+            let mut ns = NormalizedString::from(*input);
+            bl.normalize(&mut ns).unwrap();
+            let fast = bl.normalize_str(input).unwrap();
+            assert_eq!(ns.get(), fast, "mismatch for input: {input:?}");
+        }
     }
 }

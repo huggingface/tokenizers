@@ -315,9 +315,7 @@ impl AddedVocabulary {
 
             if token.normalized {
                 if let Some(n) = normalizer {
-                    let mut s = NormalizedString::from(token.content.as_ref());
-                    n.normalize(&mut s)?;
-                    let normed = s.get().to_string();
+                    let normed = n.normalize_str(&token.content)?;
                     if normed != token.content {
                         self.normalized_cache.insert(new_id, normed);
                     }
@@ -360,9 +358,7 @@ impl AddedVocabulary {
         for (id, token) in &self.added_tokens_map_r {
             if token.normalized {
                 if let Some(n) = normalizer {
-                    let mut s = NormalizedString::from(token.content.as_ref());
-                    n.normalize(&mut s)?;
-                    let normed = s.get().to_string();
+                    let normed = n.normalize_str(&token.content)?;
                     if normed != token.content {
                         self.normalized_cache.insert(*id, normed);
                     }
@@ -559,6 +555,39 @@ impl AddedVocabulary {
         // "I read a book</s>Hey" -> ["▁I read a book", "<","/","s",">", "Hey"]
 
         // "I read a " "[DAY]", "book monday" -> "i read a " "[day]", "book monday"
+
+        pretokenized
+    }
+
+    /// Like [`extract_and_normalize`] but uses [`Normalizer::normalize_str`]
+    /// instead of [`Normalizer::normalize`], skipping alignment tracking.
+    ///
+    /// This is used by `encode_fast` where offsets are not needed. The
+    /// normalization step avoids building per-byte alignment vectors, which
+    /// saves O(n) allocations per split.
+    pub fn extract_and_normalize_fast<N: Normalizer>(
+        &self,
+        normalizer: Option<&N>,
+        sequence: &str,
+    ) -> PreTokenizedString {
+        let mut pretokenized: PreTokenizedString = sequence.into();
+
+        // 1. Extract non-normalized tokens from the raw string
+        pretokenized
+            .split(|_, sequence| Ok(self.split_with_indices(sequence, &self.split_trie)))
+            .expect("AddedVocabulary bad split");
+
+        // 2. Normalize remaining pieces via normalize_str (no alignment tracking)
+        //    and extract normalized tokens
+        pretokenized
+            .split(|_, mut sequence| {
+                if let Some(n) = normalizer {
+                    let normed = n.normalize_str(sequence.get())?;
+                    sequence.set_normalized(normed);
+                }
+                Ok(self.split_with_indices(sequence, &self.split_normalized_trie))
+            })
+            .expect("AddedVocabulary bad split");
 
         pretokenized
     }
