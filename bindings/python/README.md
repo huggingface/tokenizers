@@ -74,16 +74,11 @@ pip install -e .
 `tokenizers` does **not** force the GIL back on — multi-threaded code stays
 GIL-free.
 
-To make that safe, the 3.14t wheels are **frozen-after-construct**: every
-component setter (`tokenizer.post_processor = …`, `tokenizer.model = …`,
-`bpe_trainer.vocab_size = …`, etc.) is compiled out and assignment raises:
-
-```pycon
->>> tok.post_processor = processors.ByteLevel()
-AttributeError: attribute 'post_processor' of 'tokenizers.Tokenizer' objects is not writable
-```
-
-Configure each component **at construction time** instead:
+The full mutable API works on 3.14t — the same as on regular CPython.
+Setters are thread-safe: the inner tokenizer state is wrapped in a
+`std::sync::RwLock`, so concurrent `tokenizer.X = …` from multiple threads
+serialize correctly and concurrent encode operations take a read guard
+that blocks writers only briefly.
 
 ```python
 from tokenizers import Tokenizer
@@ -92,23 +87,20 @@ from tokenizers.pre_tokenizers import Whitespace
 from tokenizers.processors import ByteLevel
 
 tok = Tokenizer(BPE())
-tok.pre_tokenizer = Whitespace()      # ❌ raises on 3.14t
-# Instead, build the full pipeline before you reach the immutable surface,
-# or load it pre-configured from a file:
-tok = Tokenizer.from_file("path/to/tokenizer.json")
+tok.pre_tokenizer = Whitespace()                 # ✅ thread-safe on 3.14t
+tok.post_processor = ByteLevel(trim_offsets=True)
 ```
 
-`Tokenizer.from_file` / `from_pretrained` / `from_str` work normally on 3.14t —
-deserialization isn't a setter, it constructs a fresh tokenizer.
+**Caveat — compound mutations are not atomic.** Statements like
+`tokenizer.post_processor.special_tokens = X` evaluate in two steps from
+Python's point of view (read attribute → set attribute on the result). If
+another thread swaps `tokenizer.post_processor` between those steps, the
+mutation lands on an orphaned component. This is the same class of race
+as `dict[k] = v` interleaved with `dict.clear()` — coordinate with a Python
+lock if you need the compound to be atomic.
 
-The regular CPython 3.14 (and earlier) wheels are unaffected: setters work
-exactly as before.
-
-> **Why the asymmetry?** Tokenizer components carry inner `RwLock`-guarded
-> state. Under the GIL, mutation through setters is implicitly serialized.
-> Under free-threaded Python it isn't, so we drop the mutation surface to
-> avoid silent races. A future release may unfreeze individual setters once
-> their thread-safety has been audited.
+For the full thread-safety analysis, see
+[`docs/free-threading-audit.md`](./docs/free-threading-audit.md).
 
 ### Load a pretrained tokenizer from the Hub
 

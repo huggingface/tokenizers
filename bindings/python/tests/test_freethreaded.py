@@ -39,19 +39,6 @@ def _make_tokenizer() -> Tokenizer:
     return tok
 
 
-_FT = _is_free_threaded()
-_FT_TOKENIZER_BORROW_KNOWN_BROKEN = pytest.mark.xfail(
-    _FT,
-    strict=True,
-    reason=(
-        "Audit §2: PyTokenizer's top-level setters take `&mut self`. Under "
-        "free-threaded Python two threads race PyO3's per-pyclass borrow "
-        "check, raising `RuntimeError: Already borrowed`. Fix scoped for "
-        "0.23.2 — see docs/free-threading-audit.md."
-    ),
-)
-
-
 class TestEncodeUnderConcurrentSetters:
     """N encoders + M setters racing on the same Tokenizer.
 
@@ -59,7 +46,6 @@ class TestEncodeUnderConcurrentSetters:
     §6 (encode read guard).
     """
 
-    @_FT_TOKENIZER_BORROW_KNOWN_BROKEN
     def test_encode_while_swapping_post_processor(self):
         tok = _make_tokenizer()
         stop = threading.Event()
@@ -125,7 +111,6 @@ class TestEncodeUnderConcurrentSetters:
         # raise here.
         _ = trainer.vocab_size
 
-    @_FT_TOKENIZER_BORROW_KNOWN_BROKEN
     def test_concurrent_setters_no_lock_poisoning(self):
         """Audit §1: concurrent setters serialize through RwLock.
 

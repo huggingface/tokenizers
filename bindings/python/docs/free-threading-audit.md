@@ -47,46 +47,23 @@ trainer mutation test in `tests/test_freethreaded.py`.
 
 ### 2. Top-level component swap (e.g. `tokenizer.post_processor = X`)
 
-Path: setter on `PyTokenizer` (declared `fn set_post_processor(&mut self, …)`)
-→ replaces the inner field of the `PyTokenizer` PyClass.
+Path: setter on `PyTokenizer` → replaces the wrapped `Tokenizer`'s
+relevant component.
 
-**Verdict: UNSAFE on 3.14t. Fix required for 0.23.2.**
+**Verdict: SAFE.** `PyTokenizer` now wraps the inner tokenizer in a
+`std::sync::RwLock<Tokenizer>`. Every method that mutates the
+tokenizer takes `&self` and acquires the write guard; readers acquire
+the read guard. Concurrent setters serialize through `RwLock` instead
+of racing PyO3's per-pyclass borrow check.
 
-`PyTokenizer` is defined as:
-
-```rust
-#[pyclass(...)]
-pub struct PyTokenizer {
-    pub(crate) tokenizer: Tokenizer,
-}
-```
-
-with no inner lock around `tokenizer`. Setters take `&mut self`, which
-under the GIL is fine because PyO3 ensures non-overlapping borrows.
-Under free-threaded Python, two threads can race the borrow check on
-the same `PyTokenizer` instance and the second one panics with:
-
-```
-RuntimeError: Already borrowed
-```
-
-Reproduced by `test_encode_while_swapping_post_processor` and
+Confirmed by `test_encode_while_swapping_post_processor` and
 `test_concurrent_setters_no_lock_poisoning` in
-`tests/test_freethreaded.py` (currently `xfail` on 3.14t).
+`tests/test_freethreaded.py`.
 
-**Fix sketch for 0.23.2**:
-
-1. Wrap the inner field: `tokenizer: parking_lot::RwLock<Tokenizer>`
-   (or `std::sync::RwLock<Tokenizer>` — `parking_lot` is preferred
-   for write-fairness without poisoning headaches).
-2. Convert every `&mut self` setter on `PyTokenizer` to `&self` and
-   acquire the inner write guard.
-3. Convert every `&self` getter that returns by-value to also take
-   the read guard for the duration of the snapshot copy.
-4. Re-run the stress test; the two `xfail` cases must flip to pass.
-
-This is mechanical — no design changes to the underlying tokenizer.
-Estimated scope: ~30 setter/getter signatures in `tokenizer.rs`.
+**Historical note**: 0.23.0 shipped with `&mut self` setters and a
+freeze (every setter cfg-gated out under `Py_GIL_DISABLED`). That
+worked but cost users the ability to mutate tokenizers post-construct
+on 3.14t. 0.23.2's `RwLock<Tokenizer>` rewrite removed the freeze.
 
 ### 3. Compound mutation (e.g. `tokenizer.post_processor.special_tokens = X`)
 

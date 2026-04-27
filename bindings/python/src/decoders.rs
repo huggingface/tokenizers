@@ -847,7 +847,7 @@ impl PyDecodeStream {
             StreamInput::Ids(ids) => ids,
         };
         ToPyResult(tk::tokenizer::step_decode_stream(
-            &tokenizer.tokenizer,
+            &tokenizer.tokenizer.read().unwrap(),
             id,
             self.skip_special_tokens,
             &mut self.ids,
