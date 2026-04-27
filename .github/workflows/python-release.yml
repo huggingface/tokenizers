@@ -19,7 +19,7 @@ jobs:
         working-directory: ./bindings/python
 
   build:
-    name: build on ${{ matrix.platform || matrix.os }} (${{ matrix.target }} - ${{ matrix.manylinux || 'auto' }})
+    name: build on ${{ matrix.platform || matrix.os }} (${{ matrix.target }} - ${{ matrix.manylinux || 'auto' }} - ${{ matrix.flavor == 'ft' && '3.14t' || matrix.interpreter || '3.14' }})
     # only run on push to main and on release
     needs: [lock_exists]
     if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' || contains(github.event.pull_request.labels.*.name, 'Full Build')
@@ -29,43 +29,46 @@ jobs:
         os: [ubuntu, macos, windows]
         target: [x86_64, aarch64]
         manylinux: [auto]
+        # `flavor` discriminates regular abi3 wheels from free-threaded
+        # (3.14t, non-abi3) wheels so the include: entries below for
+        # 3.14t create new matrix cells instead of merging with the abi3
+        # combos.
+        flavor: [abi3]
         include:
           - os: ubuntu
             platform: linux
           - os: windows
             ls: dir
-            interpreter: 3.14 3.14t
+            interpreter: "3.14"
           - os: windows
             ls: dir
             target: x86_64
             python-architecture: x64
-            python-install: |
-                3.14
-                3.14t
-            interpreter: 3.14 3.14t
+            python-install: "3.14"
+            interpreter: "3.14"
           - os: windows
             ls: dir
             target: i686
             python-architecture: x86
-            python-install: | 
-                3.14
-                3.14t
-            interpreter: 3.14 3.14t
+            python-install: "3.14"
+            interpreter: "3.14"
           - os: windows-11-arm
             ls: dir
             target: aarch64
             python-architecture: arm64
-            python-install: |
-              3.14
-              3.14t
-            interpreter: 3.14 3.14t
+            # 3.14t arm64-freethreaded is currently broken upstream:
+            # actions/python-versions ships a 0-byte python.exe so pip
+            # install fails with `ModuleNotFoundError: encodings`. Drop
+            # 3.14t here until the upstream package is fixed.
+            python-install: "3.14"
+            interpreter: "3.14"
               # - os: windows
               #   ls: dir
               #   target: aarch64
               #   interpreter: 3.11 3.12
           - os: macos
             target: aarch64
-            interpreter: 3.14 3.14t
+            interpreter: "3.14"
           - os: ubuntu
             platform: linux
             target: i686
@@ -76,7 +79,7 @@ jobs:
           - os: ubuntu
             platform: linux
             target: armv7
-            interpreter: 3.14 3.14t
+            interpreter: "3.14"
           # musllinux
           - os: ubuntu
             platform: linux
@@ -89,11 +92,28 @@ jobs:
           - os: ubuntu
             platform: linux
             target: ppc64le
-            interpreter: 3.14 3.14t
+            interpreter: "3.14"
           - os: ubuntu
             platform: linux
             target: s390x
-            interpreter: 3.14 3.14t
+            interpreter: "3.14"
+
+          # --- Free-threaded Python 3.14t wheels -------------------------
+          # `flavor: ft` switches the build to non-abi3 (`--no-default-features
+          # --features ext-module`) and `--interpreter 3.14t`, derived from
+          # `flavor` in the maturin invocation below. linux container builds
+          # (manylinux/musllinux) get 3.14t from the docker image, so
+          # `python-install` is unset for those; macOS/windows host builds
+          # need it set explicitly so setup-python actually installs 3.14t.
+          # windows-11-arm 3.14t is intentionally absent — see the abi3
+          # windows-11-arm entry above (upstream-broken package).
+          - { os: ubuntu, platform: linux, target: x86_64,  manylinux: auto,           flavor: ft }
+          - { os: ubuntu, platform: linux, target: aarch64, manylinux: auto,           flavor: ft }
+          - { os: ubuntu, platform: linux, target: x86_64,  manylinux: musllinux_1_1,  flavor: ft }
+          - { os: ubuntu, platform: linux, target: aarch64, manylinux: musllinux_1_1,  flavor: ft }
+          - { os: macos,                   target: x86_64,  manylinux: auto,           flavor: ft, python-install: "3.14t" }
+          - { os: macos,                   target: aarch64, manylinux: auto,           flavor: ft, python-install: "3.14t" }
+          - { os: windows, ls: dir, target: x86_64, manylinux: auto, python-architecture: x64, python-install: "3.14t", flavor: ft }
         exclude:
           - os: windows
             target: aarch64
@@ -128,7 +148,13 @@ jobs:
           working-directory: ./bindings/python
           manylinux: ${{ matrix.manylinux || 'auto' }}
           container: ${{ matrix.container }}
-          args: --release --out dist --interpreter ${{ matrix.interpreter || '3.14 3.14t' }} ${{ matrix.extra-build-args }}
+          # `flavor=ft` builds drop the abi3 cargo feature so the resulting
+          # wheel is non-abi3 (free-threaded Python can't load limited-API
+          # extensions). `flavor=abi3` builds use defaults.
+          args: >-
+            --release --out dist
+            --interpreter ${{ matrix.flavor == 'ft' && '3.14t' || matrix.interpreter || '3.14' }}
+            ${{ matrix.flavor == 'ft' && '--no-default-features --features ext-module' || '' }}
           rust-toolchain: stable
           sccache: false
           docker-options: -e CI
@@ -141,7 +167,7 @@ jobs:
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
-          name: pypi_files-${{ matrix.os }}-${{ matrix.target }}-${{ matrix.manylinux }}
+          name: pypi_files-${{ matrix.os }}-${{ matrix.target }}-${{ matrix.manylinux }}-${{ matrix.flavor || 'abi3' }}
           path: ./bindings/python/dist
   build-sdist:
     name: build sdist
