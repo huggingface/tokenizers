@@ -1,3 +1,15 @@
+"""Tokenizers — fast, batteries-included tokenization library.
+
+Free-threaded Python (3.14t) note:
+    Wheels built against free-threaded CPython declare ``Py_MOD_GIL_NOT_USED``
+    and disable every component setter to keep that promise safe. Assigning
+    to ``tokenizer.post_processor``, ``tokenizer.model``, ``bpe_trainer.vocab_size``,
+    etc. raises ``AttributeError`` on 3.14t. Configure components at
+    construction time, or load a pre-built tokenizer with
+    :meth:`Tokenizer.from_file` / :meth:`Tokenizer.from_pretrained` /
+    :meth:`Tokenizer.from_str`. The regular (GIL) CPython wheels are unchanged.
+"""
+
 from enum import Enum
 from typing import List, Tuple, Union
 

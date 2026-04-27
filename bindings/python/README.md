@@ -67,6 +67,49 @@ source .env/bin/activate
 pip install -e .
 ```
 
+### Free-threaded Python (3.14t)
+
+`tokenizers` ships dedicated wheels for the [free-threaded build of CPython](https://docs.python.org/3.14/howto/free-threading-python.html)
+(`python3.14t`). These wheels declare `Py_MOD_GIL_NOT_USED`, so importing
+`tokenizers` does **not** force the GIL back on — multi-threaded code stays
+GIL-free.
+
+To make that safe, the 3.14t wheels are **frozen-after-construct**: every
+component setter (`tokenizer.post_processor = …`, `tokenizer.model = …`,
+`bpe_trainer.vocab_size = …`, etc.) is compiled out and assignment raises:
+
+```pycon
+>>> tok.post_processor = processors.ByteLevel()
+AttributeError: attribute 'post_processor' of 'tokenizers.Tokenizer' objects is not writable
+```
+
+Configure each component **at construction time** instead:
+
+```python
+from tokenizers import Tokenizer
+from tokenizers.models import BPE
+from tokenizers.pre_tokenizers import Whitespace
+from tokenizers.processors import ByteLevel
+
+tok = Tokenizer(BPE())
+tok.pre_tokenizer = Whitespace()      # ❌ raises on 3.14t
+# Instead, build the full pipeline before you reach the immutable surface,
+# or load it pre-configured from a file:
+tok = Tokenizer.from_file("path/to/tokenizer.json")
+```
+
+`Tokenizer.from_file` / `from_pretrained` / `from_str` work normally on 3.14t —
+deserialization isn't a setter, it constructs a fresh tokenizer.
+
+The regular CPython 3.14 (and earlier) wheels are unaffected: setters work
+exactly as before.
+
+> **Why the asymmetry?** Tokenizer components carry inner `RwLock`-guarded
+> state. Under the GIL, mutation through setters is implicitly serialized.
+> Under free-threaded Python it isn't, so we drop the mutation surface to
+> avoid silent races. A future release may unfreeze individual setters once
+> their thread-safety has been audited.
+
 ### Load a pretrained tokenizer from the Hub
 
 ```python
