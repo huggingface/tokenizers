@@ -588,10 +588,12 @@ mod tests {
             "!",
             "?world!",
             "abc123XYZ_+-=*/<>",
-            "a", // 1-byte boundary
+            "a",                                                    // 1-byte boundary
             "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ", // > 32 bytes to cross any auto-vectorized chunk boundary
         ];
-        let bytelevel = ByteLevel::default().add_prefix_space(false).use_regex(false);
+        let bytelevel = ByteLevel::default()
+            .add_prefix_space(false)
+            .use_regex(false);
         for s in inputs {
             let mut pretok = PreTokenizedString::from(s);
             bytelevel.pre_tokenize(&mut pretok).unwrap();
@@ -613,7 +615,9 @@ mod tests {
         // Tokens containing a byte outside `0x21..=0x7E` (here a leading space)
         // must still hit the slow path and get the GPT-2 byte→char mapping
         // (' ' -> 'Ġ', i.e. U+0120).
-        let bytelevel = ByteLevel::default().add_prefix_space(false).use_regex(false);
+        let bytelevel = ByteLevel::default()
+            .add_prefix_space(false)
+            .use_regex(false);
         let mut pretok = PreTokenizedString::from(" hi");
         bytelevel.pre_tokenize(&mut pretok).unwrap();
         let normalized: Vec<_> = pretok
