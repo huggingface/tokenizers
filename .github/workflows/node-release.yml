@@ -195,6 +195,15 @@ jobs:
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8
         with:
           path: ./bindings/node/artifacts
+      - name: Create missing npm/<triple> dirs
+        # `yarn artifacts` (napi artifacts) writes each `.node` file into
+        # `npm/<triple>/`. Some triples (e.g. darwin-universal) have no
+        # checked-in template dir, so without this step the artifacts
+        # command fails with ENOENT. `create-npm-dirs` populates anything
+        # missing from `napi.targets` in package.json.
+        working-directory: ./bindings/node
+        run: npx napi create-npm-dirs
+
       - name: Move artifacts
         working-directory: ./bindings/node
         run: yarn artifacts
