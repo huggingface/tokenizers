@@ -105,17 +105,39 @@ jobs:
           python -m venv .env
           source .env/bin/activate
           pip install -U pip
-          pip install pytest requests setuptools_rust numpy pyarrow datasets ty
-          pip install -e .[dev]
+          pip install pytest pytest-asyncio requests setuptools_rust numpy pyarrow datasets ruff ty maturin
+          # Build via maturin so we can drop the abi3 cargo feature on
+          # free-threaded Python (3.14t can't load abi3 extensions).
+          # `pip install -e .` would build through maturin's PEP 660 path
+          # which keeps abi3 enabled regardless of the interpreter.
+          if python -c 'import sys; sys.exit(0 if sys._is_gil_enabled() else 1)' 2>/dev/null; then
+            maturin develop --release
+          else
+            maturin develop --release --no-default-features --features ext-module
+          fi
 
 
       - name: Run tests
         working-directory: ./bindings/python
         run: |
           source .env/bin/activate
-          make test
+          # `make test` also runs `cargo test --no-default-features` which
+          # links libpython via pyo3's `auto-initialize`. On free-threaded
+          # Python the macOS runner doesn't ship libpython3.14t in the
+          # framework path, so on 3.14t we run only the python half.
+          if python -c 'import sys; sys.exit(0 if sys._is_gil_enabled() else 1)' 2>/dev/null; then
+            make test
+          else
+            make test-py
+          fi
 
       - name: Check style
+        # `make check-style` runs the stub-gen tool, which always builds
+        # the cdylib with the default cargo features (abi3 on) and then
+        # imports it for introspection. abi3 extensions can't load under
+        # free-threaded Python, so the import fails on 3.14t. Style checks
+        # are matrix-invariant anyway — gate to a single canonical combo.
+        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.14'
         working-directory: ./bindings/python
         run: |
           source .env/bin/activate
