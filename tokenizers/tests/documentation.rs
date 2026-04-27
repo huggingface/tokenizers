@@ -1,10 +1,10 @@
 use std::iter::FromIterator;
 
-use ahash::AHashMap;
 use tokenizers::decoders::byte_fallback::ByteFallback;
 use tokenizers::models::bpe::{BpeTrainerBuilder, BPE};
 use tokenizers::normalizers::{Sequence, Strip, NFC};
 use tokenizers::pre_tokenizers::byte_level::ByteLevel;
+use tokenizers::utils::AHashMap;
 use tokenizers::{AddedToken, TokenizerBuilder};
 use tokenizers::{DecoderWrapper, NormalizerWrapper, PostProcessorWrapper, PreTokenizerWrapper};
 use tokenizers::{Tokenizer, TokenizerImpl};
@@ -111,7 +111,7 @@ fn streaming_tokenizer() {
         ])))
         .with_pre_tokenizer(Some(ByteLevel::default()))
         .with_post_processor(Some(ByteLevel::default()))
-        .with_decoder(Some(ByteFallback::default()))
+        .with_decoder(Some(ByteFallback))
         .build()
         .unwrap();
     let mut decode_stream = tokenizer.decode_stream(false);

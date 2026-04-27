@@ -1,33 +1,75 @@
 use super::WordLevel;
 use crate::utils::parallelism::*;
+use crate::utils::{AHashMap, HashMapExt};
 use crate::{AddedToken, Result, Trainer};
-use ahash::AHashMap;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 
 #[non_exhaustive]
-#[derive(Debug, Clone, Builder, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WordLevelTrainer {
     /// The minimum frequency a word must have to be part of the vocabulary
-    #[builder(default = "0")]
     pub min_frequency: u64,
     /// The target vocabulary size
-    #[builder(default = "30_000")]
     pub vocab_size: usize,
     /// Whether to show progress while training
-    #[builder(default = "true")]
     pub show_progress: bool,
     /// A list of special tokens that the model should know of
-    #[builder(default)]
     pub special_tokens: Vec<AddedToken>,
 
-    #[builder(default, private)]
     words: AHashMap<String, u64>,
 }
 
 impl Default for WordLevelTrainer {
     fn default() -> Self {
-        Self::builder().build().unwrap()
+        Self {
+            min_frequency: 0,
+            vocab_size: 30_000,
+            show_progress: true,
+            special_tokens: vec![],
+            words: AHashMap::new(),
+        }
+    }
+}
+
+/// Builder for `WordLevelTrainer`.
+#[derive(Debug, Clone, Default)]
+pub struct WordLevelTrainerBuilder {
+    min_frequency: Option<u64>,
+    vocab_size: Option<usize>,
+    show_progress: Option<bool>,
+    special_tokens: Option<Vec<AddedToken>>,
+}
+
+impl WordLevelTrainerBuilder {
+    pub fn min_frequency(&mut self, min_frequency: u64) -> &mut Self {
+        self.min_frequency = Some(min_frequency);
+        self
+    }
+    pub fn vocab_size(&mut self, vocab_size: usize) -> &mut Self {
+        self.vocab_size = Some(vocab_size);
+        self
+    }
+    pub fn show_progress(&mut self, show_progress: bool) -> &mut Self {
+        self.show_progress = Some(show_progress);
+        self
+    }
+    pub fn special_tokens(&mut self, special_tokens: Vec<AddedToken>) -> &mut Self {
+        self.special_tokens = Some(special_tokens);
+        self
+    }
+    pub fn build(&self) -> Result<WordLevelTrainer> {
+        let default = WordLevelTrainer::default();
+        Ok(WordLevelTrainer {
+            min_frequency: self.min_frequency.unwrap_or(default.min_frequency),
+            vocab_size: self.vocab_size.unwrap_or(default.vocab_size),
+            show_progress: self.show_progress.unwrap_or(default.show_progress),
+            special_tokens: self
+                .special_tokens
+                .clone()
+                .unwrap_or(default.special_tokens),
+            words: AHashMap::new(),
+        })
     }
 }
 

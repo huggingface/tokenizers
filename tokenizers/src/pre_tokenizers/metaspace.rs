@@ -174,8 +174,6 @@ impl Decoder for Metaspace {
 
 #[cfg(test)]
 mod tests {
-    use regex::Regex;
-
     use super::*;
     use crate::{OffsetReferential, OffsetType};
 
@@ -278,7 +276,7 @@ mod tests {
 
         let pretok = Metaspace::new('▁', PrependScheme::First, false);
         let mut pretokenized = PreTokenizedString::from("Hey my friend <s>how▁are you");
-        let re_ref = Regex::new(r"(<s>)").unwrap();
+        let re_ref = crate::utils::SysRegex::new(r"(<s>)").unwrap();
         pretokenized
             .split(|_, sequence| sequence.split(&re_ref, SplitDelimiterBehavior::Isolated))
             .expect("Bad split");

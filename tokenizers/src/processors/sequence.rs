@@ -73,7 +73,7 @@ mod tests {
     use super::*;
     use crate::processors::{ByteLevel, PostProcessorWrapper};
     use crate::tokenizer::{Encoding, PostProcessor};
-    use ahash::AHashMap;
+    use crate::utils::{AHashMap, HashMapExt};
     use std::iter::FromIterator;
 
     #[test]

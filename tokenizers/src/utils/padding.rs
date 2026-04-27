@@ -84,7 +84,7 @@ pub fn pad_encodings(encodings: &mut [Encoding], params: &PaddingParams) -> Resu
 mod tests {
     use super::*;
     use crate::tokenizer::Encoding;
-    use ahash::AHashMap;
+    use crate::utils::{AHashMap, HashMapExt};
 
     #[test]
     fn pad_to_multiple() {

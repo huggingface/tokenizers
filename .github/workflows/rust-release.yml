@@ -24,6 +24,85 @@ jobs:
           path: ~/.cargo/registry
           key: ubuntu-latest-cargo-registry-${{ hashFiles('**/Cargo.toml') }}
 
+      - name: Measure crate size
+        working-directory: ./tokenizers
+        run: |
+          echo "## 📦 Crate Size Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Packed crate size (what gets uploaded to crates.io)
+          cargo package --list --allow-dirty > /tmp/crate_files.txt
+          CRATE_FILE_COUNT=$(wc -l < /tmp/crate_files.txt | tr -d ' ')
+          PACKED_SIZE=$(cargo package --allow-dirty 2>&1 | grep -oP 'Packaged \d+ files?, \K[\d.]+ \w+' || echo "unknown")
+          echo "### Packed crate (crates.io)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Size**: ${PACKED_SIZE}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Files**: ${CRATE_FILE_COUNT}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Linked shared library size for various feature combinations.
+          # This is the actual on-device size — what ships to users — NOT the
+          # .rlib, which contains unused code the final linker strips.
+          # We build a minimal cdylib that uses the Tokenizer API and measure it.
+          TEST_DIR=$(mktemp -d)
+          TOK_PATH="$(pwd)"
+          mkdir -p "$TEST_DIR/src"
+          cat > "$TEST_DIR/src/lib.rs" << 'RS'
+          use tokenizers::Tokenizer;
+          #[no_mangle]
+          pub extern "C" fn tokenize(path: *const u8, len: usize, input: *const u8, input_len: usize) -> usize {
+              let path = unsafe { std::str::from_utf8_unchecked(std::slice::from_raw_parts(path, len)) };
+              let input = unsafe { std::str::from_utf8_unchecked(std::slice::from_raw_parts(input, input_len)) };
+              let tok = Tokenizer::from_file(path).unwrap();
+              tok.encode(input, false).unwrap().get_ids().len()
+          }
+          RS
+
+          measure() {
+            local LABEL="$1"
+            local FEATURES="$2"
+            cat > "$TEST_DIR/Cargo.toml" << TOML
+          [package]
+          name = "size-test"
+          version = "0.1.0"
+          edition = "2021"
+          [lib]
+          crate-type = ["cdylib"]
+          [dependencies]
+          tokenizers = { path = "$TOK_PATH", ${FEATURES} }
+          [profile.release]
+          lto = "fat"
+          opt-level = "s"
+          strip = true
+          codegen-units = 1
+          panic = "abort"
+          TOML
+            (cd "$TEST_DIR" && cargo build --release >/dev/null 2>&1)
+            local LIB=$(find "$TEST_DIR/target/release" -maxdepth 1 \( -name '*.so' -o -name '*.dylib' -o -name '*.dll' \) | head -1)
+            if [ -n "$LIB" ]; then
+              local BYTES=$(stat --format=%s "$LIB" 2>/dev/null || stat -f%z "$LIB")
+              local KB=$((BYTES / 1024))
+              echo "| ${LABEL} | ${KB} KB |" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "| ${LABEL} | build failed |" >> $GITHUB_STEP_SUMMARY
+            fi
+          }
+
+          echo "### Linked shared library size (stripped cdylib, LTO fat, opt-level=s, panic=abort)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "This is the actual on-device size — what ships to end users." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Feature set | Size |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+
+          measure "default (all features)" ''
+          measure "inference (onig + unicode-norm + spm)" 'default-features = false, features = ["inference"]'
+          measure "minimal onig-only" 'default-features = false, features = ["onig"]'
+          measure "no-default + training" 'default-features = false, features = ["onig", "training"]'
+          measure "no-default + parallel" 'default-features = false, features = ["onig", "parallel"]'
+
+          rm -rf "$TEST_DIR"
+          echo "" >> $GITHUB_STEP_SUMMARY
+
       - name: Publish package rust
         working-directory: ./tokenizers
         if: ${{ !contains(github.ref, 'rc') }}

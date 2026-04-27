@@ -1,23 +1,23 @@
 use crate::tokenizer::{Decoder, Result};
-use monostate::MustBe;
-use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Serialize, Deserialize, Default)]
-/// Fuse simply fuses all tokens into one big string.
-/// It's usually the last decoding step anyway, but this
-/// decoder exists incase some decoders need to happen after that
-/// step
-#[non_exhaustive]
-pub struct Fuse {
-    #[serde(rename = "type")]
-    type_: MustBe!("Fuse"),
+impl_serde_type! {
+    #[derive(Clone, Debug)]
+    /// Fuse simply fuses all tokens into one big string.
+    /// It's usually the last decoding step anyway, but this
+    /// decoder exists incase some decoders need to happen after that
+    /// step
+    pub struct Fuse;
+}
+
+impl Default for Fuse {
+    fn default() -> Self {
+        Fuse
+    }
 }
 
 impl Fuse {
     pub fn new() -> Self {
-        Self {
-            type_: MustBe!("Fuse"),
-        }
+        Fuse
     }
 }
 

@@ -165,7 +165,7 @@ pub fn truncate_encodings(
 mod tests {
     use super::*;
     use crate::tokenizer::Encoding;
-    use ahash::AHashMap;
+    use crate::utils::{AHashMap, HashMapExt};
 
     fn get_empty() -> Encoding {
         Encoding::new(

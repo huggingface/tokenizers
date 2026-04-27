@@ -23,9 +23,19 @@ pub mod truncation;
 // Re-export ProgressFormat for public API
 pub use progress::ProgressFormat;
 
-use ahash::AHashMap;
 use serde::{Serialize, Serializer};
 use std::collections::BTreeMap;
+
+/// Fast hash map using foldhash. Drop-in replacement for ahash::AHashMap.
+pub type AHashMap<K, V> = std::collections::HashMap<K, V, foldhash::fast::FixedState>;
+/// Fast hash set using foldhash. Drop-in replacement for ahash::AHashSet.
+pub type AHashSet<K> = std::collections::HashSet<K, foldhash::fast::FixedState>;
+
+// Re-export extension traits so AHashMap::new() and AHashSet::new() work.
+#[allow(unused_imports)]
+pub use foldhash::HashMapExt;
+#[allow(unused_imports)]
+pub use foldhash::HashSetExt;
 
 pub(crate) fn ordered_map<S, K, V>(
     value: &AHashMap<K, V>,
@@ -223,3 +233,28 @@ macro_rules! impl_serde_type{
 
 // Re-export macro_rules_attribute
 pub use macro_rules_attribute::macro_rules_attribute;
+
+/// Escape special regex metacharacters in a string so it can be used as a literal pattern.
+/// This replaces the dependency on `regex::escape`.
+pub fn regex_escape(text: &str) -> String {
+    let mut escaped = String::with_capacity(text.len() + 4);
+    for c in text.chars() {
+        match c {
+            '\\' | '.' | '+' | '*' | '?' | '(' | ')' | '|' | '[' | ']' | '{' | '}' | '^' | '$'
+            | '#' | '&' | '-' | '~' => {
+                escaped.push('\\');
+                escaped.push(c);
+            }
+            _ => escaped.push(c),
+        }
+    }
+    escaped
+}
+
+/// Check if a character is a "word" character (equivalent to `\w` in Unicode-aware regex).
+/// Matches `[a-zA-Z0-9_]`, Unicode alphabetic/numeric characters, and Unicode combining marks
+/// (category M), matching Perl/PCRE `\w` with Unicode enabled.
+pub(crate) fn is_word_char(c: char) -> bool {
+    use unicode_categories::UnicodeCategories;
+    c == '_' || c.is_alphanumeric() || c.is_mark()
+}

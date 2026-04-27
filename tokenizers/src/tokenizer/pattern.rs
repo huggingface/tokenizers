@@ -1,6 +1,5 @@
 use crate::utils::SysRegex;
 use crate::{Offsets, Result};
-use regex::Regex;
 
 /// Pattern used to split a NormalizedString
 pub trait Pattern {
@@ -26,8 +25,23 @@ impl Pattern for &str {
             return Ok(vec![((0, inside.chars().count()), false)]);
         }
 
-        let re = Regex::new(&regex::escape(self))?;
-        (&re).find_matches(inside)
+        if inside.is_empty() {
+            return Ok(vec![((0, 0), false)]);
+        }
+
+        let mut prev = 0;
+        let mut splits = Vec::with_capacity(inside.len());
+        for (start, part) in inside.match_indices(self) {
+            if prev != start {
+                splits.push(((prev, start), false));
+            }
+            splits.push(((start, start + part.len()), true));
+            prev = start + part.len();
+        }
+        if prev != inside.len() {
+            splits.push(((prev, inside.len()), false));
+        }
+        Ok(splits)
     }
 }
 
@@ -38,7 +52,8 @@ impl Pattern for &String {
     }
 }
 
-impl Pattern for &Regex {
+#[cfg(feature = "regex")]
+impl Pattern for &regex::Regex {
     fn find_matches(&self, inside: &str) -> Result<Vec<(Offsets, bool)>> {
         if inside.is_empty() {
             return Ok(vec![((0, 0), false)]);
@@ -140,7 +155,6 @@ impl<P: Pattern> Pattern for Invert<P> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use regex::Regex;
 
     macro_rules! do_test {
         ($inside: expr, $pattern: expr => @ERROR) => {
@@ -191,8 +205,10 @@ mod tests {
         do_test!("aaa", is_b => vec![((0, 3), false)]);
     }
 
+    #[cfg(feature = "regex")]
     #[test]
     fn regex() {
+        use regex::Regex;
         let is_whitespace = Regex::new(r"\s+").unwrap();
         do_test!("a   b", &is_whitespace => vec![((0, 1), false), ((1, 4), true), ((4, 5), false)]);
         do_test!("   a   b   ", &is_whitespace =>

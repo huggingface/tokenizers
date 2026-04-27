@@ -1,7 +1,14 @@
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 use crate::utils::macro_rules_attribute;
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "unicode-normalization")]
 use unicode_normalization_alignments::char::is_combining_mark;
+
+#[cfg(not(feature = "unicode-normalization"))]
+fn is_combining_mark(_c: char) -> bool {
+    // Without unicode-normalization feature, accent stripping is a no-op.
+    false
+}
 
 #[derive(Copy, Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "type")]

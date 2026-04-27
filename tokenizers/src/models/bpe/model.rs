@@ -1,8 +1,10 @@
-use super::{super::OrderedVocabIter, trainer::BpeTrainer, Error, Pair, Word};
+#[cfg(feature = "training")]
+use super::trainer::BpeTrainer;
+use super::{super::OrderedVocabIter, Error, Pair, Word};
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::cache::{DEFAULT_CACHE_CAPACITY, MAX_LENGTH};
 use crate::utils::iter::ResultShunt;
-use ahash::AHashMap;
+use crate::utils::{AHashMap, HashMapExt};
 use serde_json::Value;
 use std::borrow::Cow;
 use std::cell::RefCell;
@@ -588,6 +590,7 @@ impl BPE {
 }
 
 impl Model for BPE {
+    #[cfg(feature = "training")]
     type Trainer = BpeTrainer;
 
     fn get_vocab(&self) -> HashMap<String, u32> {
@@ -663,6 +666,7 @@ impl Model for BPE {
         Ok(vec![vocab_path, merges_path])
     }
 
+    #[cfg(feature = "training")]
     fn get_trainer(&self) -> BpeTrainer {
         BpeTrainer::default()
     }

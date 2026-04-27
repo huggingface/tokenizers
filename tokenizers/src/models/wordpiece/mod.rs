@@ -3,7 +3,7 @@
 
 use crate::models::bpe::BPE;
 use crate::tokenizer::{Model, Result, Token};
-use ahash::AHashMap;
+use crate::utils::{AHashMap, HashMapExt};
 use std::collections::HashMap;
 use std::{
     borrow::Cow,
@@ -14,7 +14,9 @@ use std::{
 };
 
 mod serialization;
+#[cfg(feature = "training")]
 mod trainer;
+#[cfg(feature = "training")]
 pub use trainer::*;
 
 #[derive(thiserror::Error, Debug)]
@@ -211,6 +213,7 @@ impl WordPiece {
 }
 
 impl Model for WordPiece {
+    #[cfg(feature = "training")]
     type Trainer = WordPieceTrainer;
 
     fn get_vocab(&self) -> HashMap<String, u32> {
@@ -313,6 +316,7 @@ impl Model for WordPiece {
         Ok(vec![vocab_path])
     }
 
+    #[cfg(feature = "training")]
     fn get_trainer(&self) -> Self::Trainer {
         WordPieceTrainer::builder().build()
     }

@@ -1,13 +1,14 @@
+#[cfg(feature = "training")]
+use super::trainer::UnigramTrainer;
 use super::{
     lattice::Lattice,
-    trainer::UnigramTrainer,
     trie::{Trie, TrieBuilder},
 };
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::cache::{Cache, MAX_LENGTH};
 use std::collections::HashMap;
 
-use ahash::AHashMap;
+use crate::utils::{AHashMap, HashMapExt};
 use std::convert::TryInto;
 use std::fs::read_to_string;
 use std::path::{Path, PathBuf};
@@ -346,10 +347,19 @@ impl Unigram {
     fn encode_unoptimized(&self, sentence: &str) -> Result<Vec<String>> {
         let mut lattice = Lattice::from(sentence, self.bos_id, self.eos_id);
         self.populate_nodes(&mut lattice);
-        let path = match (self.nbest_size, self.alpha) {
-            (Some(n), Some(alpha)) if n > 0 => lattice.sample_nbest(n, alpha),
-            (_, Some(alpha)) => lattice.sample(alpha),
-            _ => lattice.viterbi(),
+        let path = {
+            #[cfg(feature = "training")]
+            {
+                match (self.nbest_size, self.alpha) {
+                    (Some(n), Some(alpha)) if n > 0 => lattice.sample_nbest(n, alpha),
+                    (_, Some(alpha)) => lattice.sample(alpha),
+                    _ => lattice.viterbi(),
+                }
+            }
+            #[cfg(not(feature = "training"))]
+            {
+                lattice.viterbi()
+            }
         };
         if self.fuse_unk {
             let mut results = vec![];
@@ -430,6 +440,7 @@ impl<'a> Iterator for UnigramIterator<'a> {
 }
 
 impl Model for Unigram {
+    #[cfg(feature = "training")]
     type Trainer = UnigramTrainer;
 
     fn get_vocab(&self) -> HashMap<String, u32> {
@@ -497,6 +508,7 @@ impl Model for Unigram {
         Ok(vec![fullpath])
     }
 
+    #[cfg(feature = "training")]
     fn get_trainer(&self) -> Self::Trainer {
         UnigramTrainer::default()
     }

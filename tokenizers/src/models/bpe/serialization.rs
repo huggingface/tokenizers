@@ -1,5 +1,5 @@
 use super::{super::OrderedVocabIter, convert_merges_to_hashmap, BpeBuilder, Pair, BPE};
-use ahash::AHashMap;
+use crate::utils::AHashMap;
 use serde::{
     de::{Error, MapAccess, Visitor},
     ser::SerializeStruct,

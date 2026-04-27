@@ -108,7 +108,12 @@ impl BertNormalizer {
     }
 
     fn do_strip_accents(&self, normalized: &mut NormalizedString) {
+        #[cfg(feature = "unicode-normalization")]
         normalized.nfd().filter(|c| !c.is_mark_nonspacing());
+        #[cfg(not(feature = "unicode-normalization"))]
+        {
+            let _ = normalized;
+        }
     }
 
     fn do_lowercase(&self, normalized: &mut NormalizedString) {

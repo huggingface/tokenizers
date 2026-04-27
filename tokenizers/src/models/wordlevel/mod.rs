@@ -1,6 +1,6 @@
 use super::OrderedVocabIter;
 use crate::tokenizer::{Model, Result, Token};
-use ahash::AHashMap;
+use crate::utils::{AHashMap, HashMapExt};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fs::File;
@@ -8,9 +8,11 @@ use std::io::{BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 
 mod serialization;
+#[cfg(feature = "training")]
 mod trainer;
 
 // Re-export
+#[cfg(feature = "training")]
 pub use trainer::*;
 
 type Vocab = AHashMap<String, u32>;
@@ -157,6 +159,7 @@ impl Default for WordLevel {
 }
 
 impl Model for WordLevel {
+    #[cfg(feature = "training")]
     type Trainer = WordLevelTrainer;
 
     fn tokenize(&self, token: &str) -> Result<Vec<Token>> {
@@ -211,6 +214,7 @@ impl Model for WordLevel {
         Ok(vec![vocab_path])
     }
 
+    #[cfg(feature = "training")]
     fn get_trainer(&self) -> Self::Trainer {
         WordLevelTrainer::default()
     }

@@ -1,6 +1,7 @@
 use crate::pattern::Pattern;
 use crate::{Offsets, Result};
 use std::ops::{Bound, RangeBounds};
+#[cfg(feature = "unicode-normalization")]
 use unicode_normalization_alignments::UnicodeNormalization;
 
 use serde::{Deserialize, Serialize};
@@ -446,24 +447,28 @@ impl NormalizedString {
     }
 
     /// Applies NFD normalization
+    #[cfg(feature = "unicode-normalization")]
     pub fn nfd(&mut self) -> &mut Self {
         self.transform(self.get().to_owned().nfd(), 0);
         self
     }
 
     /// Applies NFKD normalization
+    #[cfg(feature = "unicode-normalization")]
     pub fn nfkd(&mut self) -> &mut Self {
         self.transform(self.get().to_owned().nfkd(), 0);
         self
     }
 
     /// Applies NFC normalization
+    #[cfg(feature = "unicode-normalization")]
     pub fn nfc(&mut self) -> &mut Self {
         self.transform(self.get().to_owned().nfc(), 0);
         self
     }
 
     /// Applies NFKC normalization
+    #[cfg(feature = "unicode-normalization")]
     pub fn nfkc(&mut self) -> &mut Self {
         self.transform(self.get().to_owned().nfkc(), 0);
         self
@@ -1022,7 +1027,6 @@ impl From<&str> for NormalizedString {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use regex::Regex;
     use unicode_categories::UnicodeCategories;
 
     #[test]
@@ -1482,9 +1486,9 @@ mod tests {
         s.replace("aaa", "b").unwrap();
         assert_eq!(s.get(), "bab");
 
-        // Regex
+        // Regex (via SysRegex)
         let mut s = NormalizedString::from(" Hello   friend ");
-        let re = Regex::new(r"\s+").unwrap();
+        let re = crate::utils::SysRegex::new(r"\s+").unwrap();
         s.replace(&re, "_").unwrap();
         assert_eq!(s.get(), "_Hello_friend_");
     }

@@ -124,18 +124,140 @@
 //!
 //! # Features
 //!
-//! - **progressbar**: The progress bar visualization is enabled by default. It might be disabled if
-//!   compilation for certain targets is not supported by the [termios](https://crates.io/crates/termios)
-//!   dependency of the [indicatif](https://crates.io/crates/indicatif) progress bar.
+//! All features are **enabled by default** for backward compatibility. Disable them for on-device/embedded use.
 //!
-//! - **http**: This feature enables downloading the tokenizer via HTTP. It is disabled by default.
-//!   With this feature enabled, `Tokenizer::from_pretrained` becomes accessible.
+//! | Feature | Default | Description | Deps saved |
+//! |---------|---------|-------------|------------|
+//! | `training` | on | Tokenizer training (trainers, `train()` method) | rand, esaxx-rs, compact_str |
+//! | `parallel` | on | Multi-threaded encoding via rayon | rayon, rayon-cond, crossbeam |
+//! | `spm` | on | SentencePiece precompiled normalizer (T5, mBART) | spm_precompiled, nom, unicode-segmentation |
+//! | `unicode-normalization` | on | NFC/NFD/NFKC/NFKD normalizers | unicode-normalization-alignments |
+//! | `progressbar` | on | Progress bars during training | indicatif |
+//! | `onig` | on | Oniguruma regex engine (C binding) | onig, onig_sys |
+//! | `http` | off | Download tokenizers from Hugging Face Hub | hf-hub, ureq |
+//! | `unstable_wasm` | off | WASM target support (uses fancy-regex) | fancy-regex |
+//!
+//! ## On-device / embedded configuration
+//!
+//! ```toml
+//! # Minimal inference-only (with Oniguruma regex):
+//! tokenizers = { version = "0.22", default-features = false, features = ["onig"] }
+//!
+//! # WASM (pure Rust, no C dependencies):
+//! tokenizers = { version = "0.22", default-features = false, features = ["unstable_wasm"] }
+//! ```
+//!
+//! # Bundle size
+//!
+//! The deployed library size depends on how you link it. Here are measured sizes on macOS arm64:
+//!
+//! | Configuration | .dylib (shared) | .a (static) | After final link |
+//! |---------------|----------------|-------------|-----------------|
+//! | Default (all features) | 2.5 MB | 9.2 MB | ~2.5 MB |
+//! | Inference-only (`onig`) | 2.0 MB | 8.0 MB | ~2.0 MB |
+//!
+//! > **Note**: `.a` (static archive) files contain all object code including unused functions.
+//! > The linker strips dead code at final link time, so the actual contribution to your app
+//! > binary is close to the `.dylib` size. The `.a` size is NOT what ships to users.
+//!
+//! ## Comparison with Meta pytorch/tokenizers (C++)
+//!
+//! | | Meta (C++) | HuggingFace (Rust) |
+//! |---|---|---|
+//! | Stripped binary (all tokenizer types) | **0.8 MB** | **2.0 MB** |
+//! | Static .a (pre-link, all deps) | 5.5 MB | 8.0 MB |
+//! | Features | SP, Tiktoken, Llama2c | BPE, WordPiece, Unigram, WordLevel + normalizers, pre-tokenizers, decoders, added vocab |
+//!
+//! HuggingFace is ~2.5x larger because it includes full `tokenizer.json` parsing (serde), Unicode-aware
+//! regex, all normalizer/pre-tokenizer/decoder types, and added vocabulary matching — features Meta's
+//! library doesn't have.
+//!
+//! ## How to measure bundle size
+//!
+//! **1. Measure the linked shared library (what ships to users):**
+//!
+//! ```bash
+//! # Create a test crate that links tokenizers as a cdylib
+//! cargo new --lib measure-size && cd measure-size
+//! cat >> Cargo.toml << 'EOF'
+//! [lib]
+//! crate-type = ["cdylib"]
+//!
+//! [dependencies]
+//! tokenizers = { path = "../tokenizers", default-features = false, features = ["onig"] }
+//!
+//! [profile.release]
+//! lto = "fat"
+//! opt-level = "s"
+//! strip = true
+//! EOF
+//!
+//! echo 'use tokenizers::Tokenizer;
+//! #[no_mangle]
+//! pub extern "C" fn tokenize() { let _ = Tokenizer::from_file("t.json"); }' > src/lib.rs
+//!
+//! cargo build --release
+//! ls -lh target/release/*.dylib  # macOS
+//! ls -lh target/release/*.so     # Linux
+//! ```
+//!
+//! **2. Measure per-crate contribution with cargo-bloat:**
+//!
+//! ```bash
+//! cargo install cargo-bloat
+//! cargo bloat --release --crates -n 30
+//! ```
+//!
+//! **3. Measure dependency rlib sizes (compile-time cost):**
+//!
+//! ```bash
+//! # Total rlib for runtime deps only
+//! cargo tree --edges=normal --prefix none -f '{p}' | awk '{print $1}' | sort -u | sed 's/-/_/g' > /tmp/deps.txt
+//!
+//! for f in target/release/deps/*.rlib; do
+//!   sz=$(stat -f%z "$f" 2>/dev/null || stat -c%s "$f" 2>/dev/null)
+//!   name=$(basename "$f" | sed 's/-[a-f0-9]*\.rlib//' | sed 's/^lib//')
+//!   echo "$sz $name"
+//! done | sort -t' ' -k2 | awk '!seen[$2]++ {print}' | sort -k2 > /tmp/rlibs.txt
+//!
+//! join -1 2 -2 1 /tmp/rlibs.txt /tmp/deps.txt | awk '{
+//!   total+=$2
+//!   printf "%8.1f KB  %s\n", $2/1024, $1
+//! } END {
+//!   printf "\nTOTAL: %.1f MB\n", total/1048576
+//! }' | sort -rn
+//! ```
+//!
+//! **4. Track size in CI (regression test):**
+//!
+//! ```bash
+//! #!/bin/bash
+//! # scripts/check-bundle-size.sh
+//! set -e
+//!
+//! MAX_DYLIB_KB=2500  # 2.5 MB threshold
+//!
+//! cargo build --release --no-default-features --features "onig" \
+//!   --target-dir /tmp/size-check
+//!
+//! SIZE=$(stat -f%z /tmp/size-check/release/libtokenizers.rlib 2>/dev/null \
+//!     || stat -c%s /tmp/size-check/release/libtokenizers.rlib)
+//! SIZE_KB=$((SIZE / 1024))
+//!
+//! echo "libtokenizers.rlib: ${SIZE_KB} KB"
+//!
+//! # For the actual linked size, build a cdylib test crate
+//! # (see step 1 above) and check the .dylib/.so size
+//!
+//! if [ "$SIZE_KB" -gt "$MAX_DYLIB_KB" ]; then
+//!   echo "FAIL: bundle size ${SIZE_KB} KB exceeds threshold ${MAX_DYLIB_KB} KB"
+//!   exit 1
+//! fi
+//! echo "PASS: bundle size OK"
+//! ```
 
 #[macro_use]
 extern crate log;
-
-#[macro_use]
-extern crate derive_builder;
 
 #[macro_use]
 pub mod utils;

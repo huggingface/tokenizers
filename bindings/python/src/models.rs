@@ -4,7 +4,6 @@ use std::sync::{Arc, RwLock};
 
 use crate::token::PyToken;
 use crate::trainers::PyTrainer;
-use ahash::AHashMap;
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
@@ -14,6 +13,7 @@ use tk::models::unigram::Unigram;
 use tk::models::wordlevel::WordLevel;
 use tk::models::wordpiece::{WordPiece, WordPieceBuilder};
 use tk::models::ModelWrapper;
+use tk::utils::AHashMap;
 use tk::{Model, Token};
 use tokenizers as tk;
 
