@@ -55,10 +55,12 @@ jobs:
             ls: dir
             target: aarch64
             python-architecture: arm64
-            python-install: |
-              3.14
-              3.14t
-            interpreter: 3.14 3.14t
+            # 3.14t arm64-freethreaded is currently broken upstream:
+            # actions/python-versions ships a 0-byte python.exe so pip
+            # install fails with `ModuleNotFoundError: encodings`. Drop
+            # 3.14t here until the upstream package is fixed.
+            python-install: "3.14"
+            interpreter: "3.14"
               # - os: windows
               #   ls: dir
               #   target: aarch64
