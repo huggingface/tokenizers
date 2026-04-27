@@ -2,17 +2,24 @@ pub(crate) mod cache;
 #[cfg(feature = "http")]
 pub(crate) mod from_pretrained;
 
-#[cfg(all(feature = "fancy-regex", not(feature = "onig")))]
-mod fancy;
-#[cfg(all(feature = "fancy-regex", not(feature = "onig")))]
-pub use fancy::SysRegex;
-#[cfg(feature = "onig")]
+// Regex backend priority: pcre2 (JIT) > onig > fancy-regex
+#[cfg(feature = "pcre2")]
+mod pcre2_backend;
+#[cfg(feature = "pcre2")]
+pub use pcre2_backend::SysRegex;
+
+#[cfg(all(feature = "onig", not(feature = "pcre2")))]
 mod onig;
-#[cfg(feature = "onig")]
+#[cfg(all(feature = "onig", not(feature = "pcre2")))]
 pub use crate::utils::onig::SysRegex;
 
-#[cfg(not(any(feature = "onig", feature = "fancy-regex")))]
-compile_error!("One of the `onig`, or `fancy-regex` features must be enabled");
+#[cfg(all(feature = "fancy-regex", not(feature = "onig"), not(feature = "pcre2")))]
+mod fancy;
+#[cfg(all(feature = "fancy-regex", not(feature = "onig"), not(feature = "pcre2")))]
+pub use fancy::SysRegex;
+
+#[cfg(not(any(feature = "onig", feature = "fancy-regex", feature = "pcre2")))]
+compile_error!("One of the `pcre2`, `onig`, or `fancy-regex` features must be enabled");
 
 pub mod iter;
 pub mod padding;
