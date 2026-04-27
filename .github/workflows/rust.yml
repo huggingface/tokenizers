@@ -39,7 +39,6 @@ jobs:
           tool: cargo-readme
 
       - name: Install cargo-audit
-        if: matrix.os == 'ubuntu-latest'
         uses: taiki-e/install-action@74e87cbfa15a59692b158178d8905a61bf6fca95  # v2.75.20
         with:
           tool: cargo-audit
@@ -47,7 +46,9 @@ jobs:
       - name: Build
         run: cargo build --all-targets --verbose --manifest-path ./tokenizers/Cargo.toml
 
-      # RustFmt / Clippy results are OS-invariant — run on the canonical OS.
+      # RustFmt is OS-invariant — gate to the canonical OS.
+      # Clippy and Audit run on every matrix cell so platform-specific
+      # cfg gates and target-specific lints get coverage.
       - name: Lint with RustFmt
         if: matrix.os == 'ubuntu-latest'
         run: cargo fmt --manifest-path ./tokenizers/Cargo.toml -- --check
@@ -57,7 +58,6 @@ jobs:
         run: cargo fmt --manifest-path ./tokenizers/Cargo.toml -- ./tokenizers/benches/bpe_benchmark.rs --check
 
       - name: Lint with Clippy
-        if: matrix.os == 'ubuntu-latest'
         run: cargo clippy --manifest-path ./tokenizers/Cargo.toml --all-targets --all-features -- -D warnings
 
       - name: Run Tests
@@ -76,7 +76,6 @@ jobs:
         run: cargo test --verbose --manifest-path ./tokenizers/Cargo.toml --doc
 
       - name: Run Audit
-        if: matrix.os == 'ubuntu-latest'
         run: cargo audit -D warnings -f ./tokenizers/Cargo.lock --ignore RUSTSEC-2024-0436 --ignore RUSTSEC-2025-0014 --ignore RUSTSEC-2025-0119
 
       # Verify that Readme.md is up to date.

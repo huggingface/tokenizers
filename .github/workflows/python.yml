@@ -69,18 +69,17 @@ jobs:
           python-version: ${{ matrix.python }}
           architecture: "x64"
 
-      # RustFmt / Clippy / Audit / Python style are matrix-invariant —
-      # only run them on a single canonical combo (ubuntu + 3.14).
+      # RustFmt is gated to a canonical combo (formatting is OS-invariant);
+      # Clippy and Audit run on every matrix cell so platform-specific
+      # cfg gates and target-specific lints get coverage.
       - name: Lint with RustFmt
         if: matrix.os == 'ubuntu-latest' && matrix.python == '3.14'
         run: cargo fmt --manifest-path ./bindings/python/Cargo.toml -- --check
 
       - name: Lint with Clippy
-        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.14'
         run: cargo clippy --manifest-path ./bindings/python/Cargo.toml --all-targets --all-features -- -D warnings
 
       - name: Run Audit
-        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.14'
         run: cargo audit -D warnings -f ./bindings/python/Cargo.lock --ignore RUSTSEC-2024-0436 --ignore RUSTSEC-2025-0014 --ignore RUSTSEC-2025-0119
 
       - name: Install
