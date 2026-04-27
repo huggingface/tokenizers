@@ -132,6 +132,12 @@ jobs:
           fi
 
       - name: Check style
+        # `make check-style` runs the stub-gen tool, which always builds
+        # the cdylib with the default cargo features (abi3 on) and then
+        # imports it for introspection. abi3 extensions can't load under
+        # free-threaded Python, so the import fails on 3.14t. Style checks
+        # are matrix-invariant anyway — gate to a single canonical combo.
+        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.14'
         working-directory: ./bindings/python
         run: |
           source .env/bin/activate
