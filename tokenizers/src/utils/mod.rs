@@ -1,3 +1,4 @@
+pub(crate) mod batch;
 pub(crate) mod cache;
 #[cfg(feature = "http")]
 pub(crate) mod from_pretrained;
