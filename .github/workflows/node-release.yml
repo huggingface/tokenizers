@@ -155,7 +155,14 @@ jobs:
           path: ./bindings/node/artifacts
       - name: Combine into universal binary
         working-directory: ./bindings/node
-        run: npx napi universal --dir ./artifacts
+        # napi-rs/cli v3 renamed `napi universal` -> `napi universalize`
+        # and dropped `--dir`; it now expects the npm/<triple>/ layout
+        # populated by `napi artifacts`. Cheaper to lipo directly — that's
+        # exactly what the wrapper does internally.
+        run: |
+          lipo -create -output ${{ env.APP_NAME }}.darwin-universal.node \
+            artifacts/${{ env.APP_NAME }}.darwin-x64.node \
+            artifacts/${{ env.APP_NAME }}.darwin-arm64.node
       - name: Upload universal artifact
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f  # v7
         with:
