@@ -46,16 +46,16 @@ jobs:
               strip *.node
           - host: ubuntu-latest
             target: x86_64-unknown-linux-musl
-            build: yarn build --target x86_64-unknown-linux-musl --zig
+            build: yarn build --target x86_64-unknown-linux-musl --cross-compile
           - host: ubuntu-latest
             target: aarch64-unknown-linux-gnu
-            build: yarn build --target aarch64-unknown-linux-gnu --zig
+            build: yarn build --target aarch64-unknown-linux-gnu --cross-compile
           - host: ubuntu-latest
             target: aarch64-unknown-linux-musl
-            build: yarn build --target aarch64-unknown-linux-musl --zig
+            build: yarn build --target aarch64-unknown-linux-musl --cross-compile
           - host: ubuntu-latest
             target: armv7-unknown-linux-gnueabihf
-            build: yarn build --target armv7-unknown-linux-gnueabihf --zig
+            build: yarn build --target armv7-unknown-linux-gnueabihf --cross-compile
           - host: ubuntu-latest
             target: aarch64-linux-android
             build: yarn build --target aarch64-linux-android
@@ -88,7 +88,7 @@ jobs:
         run: yarn install --immutable
 
       - name: Setup zig
-        if: ${{ !matrix.settings.docker && contains(matrix.settings.build, '--zig') }}
+        if: ${{ !matrix.settings.docker && contains(matrix.settings.build, '--cross-compile') }}
         uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29  # v2.2.1
         with:
           # Pin — without a version the action installs zig master (nightly)
@@ -98,7 +98,7 @@ jobs:
           version: 0.16.0
 
       - name: Verify zig
-        if: ${{ !matrix.settings.docker && contains(matrix.settings.build, '--zig') }}
+        if: ${{ !matrix.settings.docker && contains(matrix.settings.build, '--cross-compile') }}
         run: zig version && which zig
 
       - name: Build native (host)
@@ -155,7 +155,14 @@ jobs:
           path: ./bindings/node/artifacts
       - name: Combine into universal binary
         working-directory: ./bindings/node
-        run: npx napi universal --dir ./artifacts
+        # napi-rs/cli v3 renamed `napi universal` -> `napi universalize`
+        # and dropped `--dir`; it now expects the npm/<triple>/ layout
+        # populated by `napi artifacts`. Cheaper to lipo directly — that's
+        # exactly what the wrapper does internally.
+        run: |
+          lipo -create -output ${{ env.APP_NAME }}.darwin-universal.node \
+            artifacts/${{ env.APP_NAME }}.darwin-x64.node \
+            artifacts/${{ env.APP_NAME }}.darwin-arm64.node
       - name: Upload universal artifact
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f  # v7
         with:
@@ -164,8 +171,16 @@ jobs:
           if-no-files-found: error
 
   publish:
+    # Skip the npm publish step on rc tags — `napi prepublish` would try
+    # to create a GitHub release and call `npm publish` for each
+    # per-platform sub-package, both of which need stable-version /
+    # write-permission setup we only want on real releases. rc tags still
+    # exercise the build + universal-macOS jobs (so the matrix is tested
+    # end-to-end), they just don't push to the registry.
+    if: ${{ !contains(github.ref, 'rc') }}
     permissions:
-      contents: read
+      # `napi prepublish` creates a GitHub Release; needs contents=write.
+      contents: write
       id-token: write
     name: Publish
     runs-on: ubuntu-latest
@@ -188,6 +203,15 @@ jobs:
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8
         with:
           path: ./bindings/node/artifacts
+      - name: Create missing npm/<triple> dirs
+        # `yarn artifacts` (napi artifacts) writes each `.node` file into
+        # `npm/<triple>/`. Some triples (e.g. darwin-universal) have no
+        # checked-in template dir, so without this step the artifacts
+        # command fails with ENOENT. `create-npm-dirs` populates anything
+        # missing from `napi.targets` in package.json.
+        working-directory: ./bindings/node
+        run: npx napi create-npm-dirs
+
       - name: Move artifacts
         working-directory: ./bindings/node
         run: yarn artifacts
