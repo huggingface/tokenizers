@@ -159,6 +159,5 @@ class TestFreeThreadedSpecific:
         import tokenizers  # noqa: F401  (re-import is a no-op)
 
         assert sys._is_gil_enabled() is False, (
-            "tokenizers re-enabled the GIL on free-threaded Python — wheel "
-            "was built without gil_used=false"
+            "tokenizers re-enabled the GIL on free-threaded Python — wheel was built without gil_used=false"
         )
