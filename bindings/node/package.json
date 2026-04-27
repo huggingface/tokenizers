@@ -18,6 +18,7 @@
   ],
   "napi": {
     "binaryName": "tokenizers",
+    "packageName": "@huggingface/tokenizers",
     "targets": [
       "x86_64-apple-darwin",
       "x86_64-pc-windows-msvc",
