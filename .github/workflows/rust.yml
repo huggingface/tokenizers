@@ -75,7 +75,14 @@ jobs:
         working-directory: ./tokenizers
         run: make test
 
-      # Skip integration tests for now on Windows
+      - name: Download xnli test dataset on Windows for whitespace equivalence test
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        working-directory: ./tokenizers
+        run: |
+          mkdir -p data
+          curl -L https://huggingface.co/datasets/hf-internal-testing/tokenizers-test-data/resolve/main/xnli.txt -o data/xnli.txt
+
       - name: Run lib Tests on Windows
         if: matrix.os == 'windows-latest'
         uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505  # v1

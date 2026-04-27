@@ -6,7 +6,7 @@ dir_guard=@mkdir -p $(@D)
 
 SHARED_RESOURCES = $(DATA_DIR)/gpt2-vocab.json $(DATA_DIR)/gpt2-merges.txt $(DATA_DIR)/bert-base-uncased-vocab.txt $(DATA_DIR)/big.txt $(DATA_DIR)/small.txt $(DATA_DIR)/albert-base-v1-tokenizer.json  $(DATA_DIR)/llama-3-tokenizer.json
 BENCHMARK_RESOURCES = $(SHARED_RESOURCES)
-TESTS_RESOURCES = $(SHARED_RESOURCES) $(DATA_DIR)/unigram.json $(DATA_DIR)/unigram_wagahaiwa_nekodearu.txt $(DATA_DIR)/roberta.json $(DATA_DIR)/tokenizer-wiki.json $(DATA_DIR)/bert-wiki.json
+TESTS_RESOURCES = $(SHARED_RESOURCES) $(DATA_DIR)/unigram.json $(DATA_DIR)/unigram_wagahaiwa_nekodearu.txt $(DATA_DIR)/roberta.json $(DATA_DIR)/tokenizer-wiki.json $(DATA_DIR)/bert-wiki.json $(DATA_DIR)/xnli.txt
 
 .PHONY : build
 build :
@@ -94,3 +94,7 @@ $(DATA_DIR)/bert-wiki.json :
 $(DATA_DIR)/llama-3-tokenizer.json :
 	$(dir_guard)
 	wget $(HF_TEST_DATA)/llama-3-tokenizer.json -O $@
+
+$(DATA_DIR)/xnli.txt :
+	$(dir_guard)
+	wget $(HF_TEST_DATA)/xnli.txt -O $@
