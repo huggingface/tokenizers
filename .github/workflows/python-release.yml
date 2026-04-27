@@ -99,62 +99,19 @@ jobs:
             interpreter: "3.14"
 
           # --- Free-threaded Python 3.14t wheels -------------------------
-          # Build without the abi3 cargo feature; 3.14t can't load
-          # stable-ABI extensions. The `flavor: ft` discriminator forces
-          # include: to create new matrix cells instead of merging with
-          # the abi3 entries above.
-          # windows-11-arm 3.14t is intentionally absent — actions/python-
-          # versions ships a broken 3.14t arm64 package (see comment on
-          # the abi3 windows-11-arm entry above).
-          - os: ubuntu
-            platform: linux
-            target: x86_64
-            manylinux: auto
-            flavor: ft
-            interpreter: "3.14t"
-            extra-build-args: --no-default-features --features pyo3/extension-module
-          - os: ubuntu
-            platform: linux
-            target: aarch64
-            manylinux: auto
-            flavor: ft
-            interpreter: "3.14t"
-            extra-build-args: --no-default-features --features pyo3/extension-module
-          - os: ubuntu
-            platform: linux
-            target: x86_64
-            manylinux: musllinux_1_1
-            flavor: ft
-            interpreter: "3.14t"
-            extra-build-args: --no-default-features --features pyo3/extension-module
-          - os: ubuntu
-            platform: linux
-            target: aarch64
-            manylinux: musllinux_1_1
-            flavor: ft
-            interpreter: "3.14t"
-            extra-build-args: --no-default-features --features pyo3/extension-module
-          - os: macos
-            target: x86_64
-            manylinux: auto
-            flavor: ft
-            interpreter: "3.14t"
-            extra-build-args: --no-default-features --features pyo3/extension-module
-          - os: macos
-            target: aarch64
-            manylinux: auto
-            flavor: ft
-            interpreter: "3.14t"
-            extra-build-args: --no-default-features --features pyo3/extension-module
-          - os: windows
-            target: x86_64
-            manylinux: auto
-            ls: dir
-            python-architecture: x64
-            python-install: "3.14t"
-            flavor: ft
-            interpreter: "3.14t"
-            extra-build-args: --no-default-features --features pyo3/extension-module
+          # The `flavor: ft` field is the only thing that varies — the
+          # 3.14t-specific `interpreter` and `--no-default-features
+          # --features pyo3/extension-module` (drop abi3, since 3.14t
+          # can't load limited-API extensions) are derived from `flavor`
+          # in the maturin invocation below. windows-11-arm 3.14t is
+          # intentionally absent — see the abi3 windows-11-arm entry.
+          - { os: ubuntu, platform: linux, target: x86_64,  manylinux: auto,           flavor: ft }
+          - { os: ubuntu, platform: linux, target: aarch64, manylinux: auto,           flavor: ft }
+          - { os: ubuntu, platform: linux, target: x86_64,  manylinux: musllinux_1_1,  flavor: ft }
+          - { os: ubuntu, platform: linux, target: aarch64, manylinux: musllinux_1_1,  flavor: ft }
+          - { os: macos,                   target: x86_64,  manylinux: auto,           flavor: ft }
+          - { os: macos,                   target: aarch64, manylinux: auto,           flavor: ft }
+          - { os: windows, ls: dir, target: x86_64, manylinux: auto, python-architecture: x64, python-install: "3.14t", flavor: ft }
         exclude:
           - os: windows
             target: aarch64
@@ -189,7 +146,13 @@ jobs:
           working-directory: ./bindings/python
           manylinux: ${{ matrix.manylinux || 'auto' }}
           container: ${{ matrix.container }}
-          args: --release --out dist --interpreter ${{ matrix.interpreter || '3.14' }} ${{ matrix.extra-build-args }}
+          # `flavor=ft` builds drop the abi3 cargo feature so the resulting
+          # wheel is non-abi3 (free-threaded Python can't load limited-API
+          # extensions). `flavor=abi3` builds use defaults.
+          args: >-
+            --release --out dist
+            --interpreter ${{ matrix.flavor == 'ft' && '3.14t' || matrix.interpreter || '3.14' }}
+            ${{ matrix.flavor == 'ft' && '--no-default-features --features pyo3/extension-module' || '' }}
           rust-toolchain: stable
           sccache: false
           docker-options: -e CI
