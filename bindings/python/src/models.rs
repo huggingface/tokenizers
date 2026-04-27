@@ -992,7 +992,8 @@ impl PyUnigram {
 }
 
 /// Models Module
-#[pymodule]
+#[cfg_attr(Py_GIL_DISABLED, pymodule(gil_used = false))]
+#[cfg_attr(not(Py_GIL_DISABLED), pymodule)]
 pub mod models {
     #[pymodule_export]
     pub use super::PyBPE;

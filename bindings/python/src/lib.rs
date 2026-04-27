@@ -47,7 +47,8 @@ extern "C" fn child_after_fork() {
 }
 
 /// Tokenizers Module
-#[pymodule]
+#[cfg_attr(Py_GIL_DISABLED, pymodule(gil_used = false))]
+#[cfg_attr(not(Py_GIL_DISABLED), pymodule)]
 pub mod tokenizers {
     use super::*;
 

@@ -1,3 +1,14 @@
+"""Tokenizers — fast, batteries-included tokenization library.
+
+Free-threaded Python (3.14t) note:
+    Wheels built against free-threaded CPython declare ``Py_MOD_GIL_NOT_USED``
+    and use ``RwLock``-guarded interior mutability so component setters are
+    safe to call from multiple threads. Compound mutations
+    (``tokenizer.post_processor.special_tokens = …``) are still not atomic —
+    use a Python lock if you need the read-then-write to be serialized.
+    See ``docs/free-threading-audit.md`` for the full analysis.
+"""
+
 from enum import Enum
 from typing import List, Tuple, Union
 

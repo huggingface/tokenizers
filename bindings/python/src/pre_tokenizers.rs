@@ -1033,7 +1033,8 @@ impl PreTokenizer for PyPreTokenizerWrapper {
 }
 
 /// PreTokenizers Module
-#[pymodule]
+#[cfg_attr(Py_GIL_DISABLED, pymodule(gil_used = false))]
+#[cfg_attr(not(Py_GIL_DISABLED), pymodule)]
 pub mod pre_tokenizers {
     #[pymodule_export]
     pub use super::PyBertPreTokenizer;
