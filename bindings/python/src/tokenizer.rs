@@ -187,6 +187,7 @@ impl PyAddedToken {
     }
 
     /// Set the content of this :obj:`AddedToken`
+    #[cfg(not(Py_GIL_DISABLED))]
     #[setter]
     fn set_content(&mut self, content: String) {
         self.content = content;
@@ -222,6 +223,7 @@ impl PyAddedToken {
     }
 
     /// Set the value of the :obj:`special` option
+    #[cfg(not(Py_GIL_DISABLED))]
     #[setter]
     fn set_special(&mut self, special: bool) {
         self.special = special;
@@ -1567,6 +1569,7 @@ impl PyTokenizer {
     ///     value (:obj:`bool`):
     ///         Whether to use the special tokens or not
     ///
+    #[cfg(not(Py_GIL_DISABLED))]
     #[setter]
     fn set_encode_special_tokens(&mut self, value: bool) {
         self.tokenizer.set_encode_special_tokens(value);
@@ -1789,6 +1792,7 @@ impl PyTokenizer {
     }
 
     /// Set the :class:`~tokenizers.models.Model`
+    #[cfg(not(Py_GIL_DISABLED))]
     #[setter]
     fn set_model(&mut self, model: PyRef<PyModel>) {
         self.tokenizer.with_model(model.clone());
@@ -1805,6 +1809,7 @@ impl PyTokenizer {
     }
 
     /// Set the :class:`~tokenizers.normalizers.Normalizer`
+    #[cfg(not(Py_GIL_DISABLED))]
     #[setter]
     fn set_normalizer(&mut self, normalizer: Option<PyRef<PyNormalizer>>) -> PyResult<()> {
         let normalizer_option = normalizer.map(|norm| norm.clone());
@@ -1827,6 +1832,7 @@ impl PyTokenizer {
     }
 
     /// Set the :class:`~tokenizers.normalizers.Normalizer`
+    #[cfg(not(Py_GIL_DISABLED))]
     #[setter]
     fn set_pre_tokenizer(&mut self, pretok: Option<PyRef<PyPreTokenizer>>) {
         self.tokenizer
@@ -1844,6 +1850,7 @@ impl PyTokenizer {
     }
 
     /// Set the :class:`~tokenizers.processors.PostProcessor`
+    #[cfg(not(Py_GIL_DISABLED))]
     #[setter]
     fn set_post_processor(&mut self, processor: Option<PyRef<PyPostProcessor>>) {
         self.tokenizer
@@ -1861,6 +1868,7 @@ impl PyTokenizer {
     }
 
     /// Set the :class:`~tokenizers.decoders.Decoder`
+    #[cfg(not(Py_GIL_DISABLED))]
     #[setter]
     fn set_decoder(&mut self, decoder: Option<PyRef<PyDecoder>>) {
         self.tokenizer.with_decoder(decoder.map(|d| d.clone()));

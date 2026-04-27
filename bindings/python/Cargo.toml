@@ -27,6 +27,9 @@ pyo3-ffi = { version = "0.28" }
 [dependencies.tokenizers]
 path = "../../tokenizers"
 
+[build-dependencies]
+pyo3-build-config = "0.28"
+
 [dev-dependencies]
 tempfile = "3.10"
 pyo3 = { version = "0.28", features = ["auto-initialize", "experimental-inspect"] }

@@ -252,6 +252,8 @@ impl PyWordPieceDec {
         getter!(self_, WordPiece, prefix.clone())
     }
 
+    #[cfg(not(Py_GIL_DISABLED))]
+
     #[setter]
     fn set_prefix(self_: PyRef<Self>, prefix: String) {
         setter!(self_, WordPiece, prefix, prefix);
@@ -261,6 +263,8 @@ impl PyWordPieceDec {
     fn get_cleanup(self_: PyRef<Self>) -> bool {
         getter!(self_, WordPiece, cleanup)
     }
+
+    #[cfg(not(Py_GIL_DISABLED))]
 
     #[setter]
     fn set_cleanup(self_: PyRef<Self>, cleanup: bool) {
@@ -359,6 +363,8 @@ impl PyStrip {
         getter!(self_, Strip, start)
     }
 
+    #[cfg(not(Py_GIL_DISABLED))]
+
     #[setter]
     fn set_start(self_: PyRef<Self>, start: usize) {
         setter!(self_, Strip, start, start)
@@ -369,6 +375,8 @@ impl PyStrip {
         getter!(self_, Strip, stop)
     }
 
+    #[cfg(not(Py_GIL_DISABLED))]
+
     #[setter]
     fn set_stop(self_: PyRef<Self>, stop: usize) {
         setter!(self_, Strip, stop, stop)
@@ -378,6 +386,8 @@ impl PyStrip {
     fn get_content(self_: PyRef<Self>) -> char {
         getter!(self_, Strip, content)
     }
+
+    #[cfg(not(Py_GIL_DISABLED))]
 
     #[setter]
     fn set_content(self_: PyRef<Self>, content: char) {
@@ -423,6 +433,8 @@ impl PyMetaspaceDec {
         getter!(self_, Metaspace, get_replacement().to_string())
     }
 
+    #[cfg(not(Py_GIL_DISABLED))]
+
     #[setter]
     fn set_replacement(self_: PyRef<Self>, replacement: char) {
         setter!(self_, Metaspace, @set_replacement, replacement);
@@ -432,6 +444,8 @@ impl PyMetaspaceDec {
     fn get_split(self_: PyRef<Self>) -> bool {
         getter!(self_, Metaspace, get_split())
     }
+
+    #[cfg(not(Py_GIL_DISABLED))]
 
     #[setter]
     fn set_split(self_: PyRef<Self>, split: bool) {
@@ -449,6 +463,8 @@ impl PyMetaspaceDec {
         }
         .to_string()
     }
+
+    #[cfg(not(Py_GIL_DISABLED))]
 
     #[setter]
     fn set_prepend_scheme(self_: PyRef<Self>, prepend_scheme: String) -> PyResult<()> {
@@ -491,6 +507,8 @@ impl PyBPEDecoder {
         getter!(self_, BPE, suffix.clone())
     }
 
+    #[cfg(not(Py_GIL_DISABLED))]
+
     #[setter]
     fn set_suffix(self_: PyRef<Self>, suffix: String) {
         setter!(self_, BPE, suffix, suffix);
@@ -530,6 +548,8 @@ impl PyCTCDecoder {
         getter!(self_, CTC, pad_token.clone())
     }
 
+    #[cfg(not(Py_GIL_DISABLED))]
+
     #[setter]
     fn set_pad_token(self_: PyRef<Self>, pad_token: String) {
         setter!(self_, CTC, pad_token, pad_token);
@@ -540,6 +560,8 @@ impl PyCTCDecoder {
         getter!(self_, CTC, word_delimiter_token.clone())
     }
 
+    #[cfg(not(Py_GIL_DISABLED))]
+
     #[setter]
     fn set_word_delimiter_token(self_: PyRef<Self>, word_delimiter_token: String) {
         setter!(self_, CTC, word_delimiter_token, word_delimiter_token);
@@ -549,6 +571,8 @@ impl PyCTCDecoder {
     fn get_cleanup(self_: PyRef<Self>) -> bool {
         getter!(self_, CTC, cleanup)
     }
+
+    #[cfg(not(Py_GIL_DISABLED))]
 
     #[setter]
     fn set_cleanup(self_: PyRef<Self>, cleanup: bool) {
@@ -700,7 +724,8 @@ impl Decoder for PyDecoderWrapper {
 }
 
 /// Decoders Module
-#[pymodule]
+#[cfg_attr(Py_GIL_DISABLED, pymodule(gil_used = false))]
+#[cfg_attr(not(Py_GIL_DISABLED), pymodule)]
 pub mod decoders {
     #[pymodule_export]
     pub use super::PyBPEDecoder;

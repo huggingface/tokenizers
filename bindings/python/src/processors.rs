@@ -352,6 +352,8 @@ impl PyBertProcessing {
         )
     }
 
+    #[cfg(not(Py_GIL_DISABLED))]
+
     #[setter]
     fn set_sep(self_: PyRef<Self>, sep: Bound<'_, PyTuple>) -> PyResult<()> {
         let sep = sep.extract()?;
@@ -368,6 +370,8 @@ impl PyBertProcessing {
             Vec::<Py<PyAny>>::from([tok.into_py_any(py)?, id.into_py_any(py)?]),
         )
     }
+
+    #[cfg(not(Py_GIL_DISABLED))]
 
     #[setter]
     fn set_cls(self_: PyRef<Self>, cls: Bound<'_, PyTuple>) -> PyResult<()> {
@@ -444,6 +448,8 @@ impl PyRobertaProcessing {
         )
     }
 
+    #[cfg(not(Py_GIL_DISABLED))]
+
     #[setter]
     fn set_sep(self_: PyRef<Self>, sep: Bound<'_, PyTuple>) -> PyResult<()> {
         let sep = sep.extract()?;
@@ -461,6 +467,8 @@ impl PyRobertaProcessing {
         )
     }
 
+    #[cfg(not(Py_GIL_DISABLED))]
+
     #[setter]
     fn set_cls(self_: PyRef<Self>, cls: Bound<'_, PyTuple>) -> PyResult<()> {
         let cls = cls.extract()?;
@@ -473,6 +481,8 @@ impl PyRobertaProcessing {
         getter!(self_, Roberta, trim_offsets)
     }
 
+    #[cfg(not(Py_GIL_DISABLED))]
+
     #[setter]
     fn set_trim_offsets(self_: PyRef<Self>, trim_offsets: bool) {
         setter!(self_, Roberta, trim_offsets, trim_offsets)
@@ -482,6 +492,8 @@ impl PyRobertaProcessing {
     fn get_add_prefix_space(self_: PyRef<Self>) -> bool {
         getter!(self_, Roberta, add_prefix_space)
     }
+
+    #[cfg(not(Py_GIL_DISABLED))]
 
     #[setter]
     fn set_add_prefix_space(self_: PyRef<Self>, add_prefix_space: bool) {
@@ -546,6 +558,8 @@ impl PyByteLevel {
         getter!(self_, ByteLevel, add_prefix_space)
     }
 
+    #[cfg(not(Py_GIL_DISABLED))]
+
     #[setter]
     fn set_add_prefix_space(self_: PyRef<Self>, add_prefix_space: bool) {
         setter!(self_, ByteLevel, add_prefix_space, add_prefix_space)
@@ -556,6 +570,8 @@ impl PyByteLevel {
         getter!(self_, ByteLevel, trim_offsets)
     }
 
+    #[cfg(not(Py_GIL_DISABLED))]
+
     #[setter]
     fn set_trim_offsets(self_: PyRef<Self>, trim_offsets: bool) {
         setter!(self_, ByteLevel, trim_offsets, trim_offsets)
@@ -565,6 +581,8 @@ impl PyByteLevel {
     fn get_use_regex(self_: PyRef<Self>) -> bool {
         getter!(self_, ByteLevel, use_regex)
     }
+
+    #[cfg(not(Py_GIL_DISABLED))]
 
     #[setter]
     fn set_use_regex(self_: PyRef<Self>, use_regex: bool) {
@@ -744,6 +762,8 @@ impl PyTemplateProcessing {
         getter!(self_, Template, get_single())
     }
 
+    #[cfg(not(Py_GIL_DISABLED))]
+
     #[setter]
     fn set_single(self_: PyRef<Self>, single: PyTemplate) -> PyResult<()> {
         let template: Template = Template::from(single);
@@ -851,7 +871,8 @@ impl PySequence {
 }
 
 /// Processors Module
-#[pymodule]
+#[cfg_attr(Py_GIL_DISABLED, pymodule(gil_used = false))]
+#[cfg_attr(not(Py_GIL_DISABLED), pymodule)]
 pub mod processors {
     #[pymodule_export]
     pub use super::PyBertProcessing;

@@ -271,6 +271,8 @@ impl PyByteLevel {
         getter!(self_, ByteLevel, add_prefix_space)
     }
 
+    #[cfg(not(Py_GIL_DISABLED))]
+
     #[setter]
     fn set_add_prefix_space(self_: PyRef<Self>, add_prefix_space: bool) {
         setter!(self_, ByteLevel, add_prefix_space, add_prefix_space);
@@ -281,6 +283,8 @@ impl PyByteLevel {
         getter!(self_, ByteLevel, use_regex)
     }
 
+    #[cfg(not(Py_GIL_DISABLED))]
+
     #[setter]
     fn set_use_regex(self_: PyRef<Self>, use_regex: bool) {
         setter!(self_, ByteLevel, use_regex, use_regex);
@@ -290,6 +294,8 @@ impl PyByteLevel {
     fn get_trim_offsets(self_: PyRef<Self>) -> bool {
         getter!(self_, ByteLevel, trim_offsets)
     }
+
+    #[cfg(not(Py_GIL_DISABLED))]
 
     #[setter]
     fn set_trim_offsets(self_: PyRef<Self>, trim_offsets: bool) {
@@ -440,6 +446,8 @@ impl PySplit {
         Err(PyException::new_err("Cannot get pattern"))
     }
 
+    #[cfg(not(Py_GIL_DISABLED))]
+
     #[setter]
     fn set_pattern(_self: PyRef<Self>, _pattern: PyPattern) -> PyResult<()> {
         Err(PyException::new_err(
@@ -451,6 +459,8 @@ impl PySplit {
     fn get_behavior(self_: PyRef<Self>) -> String {
         getter!(self_, Split, behavior).to_string().to_lowercase()
     }
+
+    #[cfg(not(Py_GIL_DISABLED))]
 
     #[setter]
     fn set_behavior(self_: PyRef<Self>, behavior: String) -> PyResult<()> {
@@ -475,6 +485,8 @@ impl PySplit {
     fn get_invert(self_: PyRef<Self>) -> bool {
         getter!(self_, Split, invert)
     }
+
+    #[cfg(not(Py_GIL_DISABLED))]
 
     #[setter]
     fn set_invert(self_: PyRef<Self>, invert: bool) {
@@ -505,6 +517,8 @@ impl PyCharDelimiterSplit {
     fn get_delimiter(self_: PyRef<Self>) -> String {
         getter!(self_, Delimiter, delimiter.to_string())
     }
+
+    #[cfg(not(Py_GIL_DISABLED))]
 
     #[setter]
     fn set_delimiter(self_: PyRef<Self>, delimiter: char) {
@@ -580,6 +594,8 @@ impl PyPunctuation {
             .to_string()
             .to_lowercase()
     }
+
+    #[cfg(not(Py_GIL_DISABLED))]
 
     #[setter]
     fn set_behavior(self_: PyRef<Self>, behavior: String) -> PyResult<()> {
@@ -736,6 +752,8 @@ impl PyMetaspace {
         getter!(self_, Metaspace, get_replacement().to_string())
     }
 
+    #[cfg(not(Py_GIL_DISABLED))]
+
     #[setter]
     fn set_replacement(self_: PyRef<Self>, replacement: char) {
         setter!(self_, Metaspace, @set_replacement, replacement);
@@ -745,6 +763,8 @@ impl PyMetaspace {
     fn get_split(self_: PyRef<Self>) -> bool {
         getter!(self_, Metaspace, get_split())
     }
+
+    #[cfg(not(Py_GIL_DISABLED))]
 
     #[setter]
     fn set_split(self_: PyRef<Self>, split: bool) {
@@ -756,6 +776,8 @@ impl PyMetaspace {
         // Assuming Metaspace has a method to get the prepend_scheme as a string
         getter!(self_, Metaspace, get_prepend_scheme()).to_string()
     }
+
+    #[cfg(not(Py_GIL_DISABLED))]
 
     #[setter]
     fn set_prepend_scheme(self_: PyRef<Self>, prepend_scheme: String) -> PyResult<()> {
@@ -798,6 +820,8 @@ impl PyDigits {
         getter!(self_, Digits, individual_digits)
     }
 
+    #[cfg(not(Py_GIL_DISABLED))]
+
     #[setter]
     fn set_individual_digits(self_: PyRef<Self>, individual_digits: bool) {
         setter!(self_, Digits, individual_digits, individual_digits);
@@ -835,6 +859,8 @@ impl PyFixedLength {
     fn get_length(self_: PyRef<Self>) -> usize {
         getter!(self_, FixedLength, length)
     }
+
+    #[cfg(not(Py_GIL_DISABLED))]
 
     #[setter]
     fn set_length(self_: PyRef<Self>, length: usize) {
@@ -1033,7 +1059,8 @@ impl PreTokenizer for PyPreTokenizerWrapper {
 }
 
 /// PreTokenizers Module
-#[pymodule]
+#[cfg_attr(Py_GIL_DISABLED, pymodule(gil_used = false))]
+#[cfg_attr(not(Py_GIL_DISABLED), pymodule)]
 pub mod pre_tokenizers {
     #[pymodule_export]
     pub use super::PyBertPreTokenizer;

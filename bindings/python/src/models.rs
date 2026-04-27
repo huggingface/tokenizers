@@ -357,6 +357,8 @@ impl PyBPE {
         getter!(self_, BPE, dropout)
     }
 
+    #[cfg(not(Py_GIL_DISABLED))]
+
     #[setter]
     fn set_dropout(self_: PyRef<Self>, dropout: Option<f32>) {
         setter!(self_, BPE, dropout, dropout);
@@ -367,6 +369,8 @@ impl PyBPE {
         getter!(self_, BPE, unk_token.clone())
     }
 
+    #[cfg(not(Py_GIL_DISABLED))]
+
     #[setter]
     fn set_unk_token(self_: PyRef<Self>, unk_token: Option<String>) {
         setter!(self_, BPE, unk_token, unk_token);
@@ -376,6 +380,8 @@ impl PyBPE {
     fn get_continuing_subword_prefix(self_: PyRef<Self>) -> Option<String> {
         getter!(self_, BPE, continuing_subword_prefix.clone())
     }
+
+    #[cfg(not(Py_GIL_DISABLED))]
 
     #[setter]
     fn set_continuing_subword_prefix(
@@ -395,6 +401,8 @@ impl PyBPE {
         getter!(self_, BPE, end_of_word_suffix.clone())
     }
 
+    #[cfg(not(Py_GIL_DISABLED))]
+
     #[setter]
     fn set_end_of_word_suffix(self_: PyRef<Self>, end_of_word_suffix: Option<String>) {
         setter!(self_, BPE, end_of_word_suffix, end_of_word_suffix);
@@ -404,6 +412,8 @@ impl PyBPE {
     fn get_fuse_unk(self_: PyRef<Self>) -> bool {
         getter!(self_, BPE, fuse_unk)
     }
+
+    #[cfg(not(Py_GIL_DISABLED))]
 
     #[setter]
     fn set_fuse_unk(self_: PyRef<Self>, fuse_unk: bool) {
@@ -415,6 +425,8 @@ impl PyBPE {
         getter!(self_, BPE, byte_fallback)
     }
 
+    #[cfg(not(Py_GIL_DISABLED))]
+
     #[setter]
     fn set_byte_fallback(self_: PyRef<Self>, byte_fallback: bool) {
         setter!(self_, BPE, byte_fallback, byte_fallback);
@@ -423,6 +435,8 @@ impl PyBPE {
     fn get_ignore_merges(self_: PyRef<Self>) -> bool {
         getter!(self_, BPE, ignore_merges)
     }
+
+    #[cfg(not(Py_GIL_DISABLED))]
 
     #[setter]
     fn set_ignore_merges(self_: PyRef<Self>, ignore_merges: bool) {
@@ -626,6 +640,8 @@ impl PyWordPiece {
         getter!(self_, WordPiece, unk_token.clone())
     }
 
+    #[cfg(not(Py_GIL_DISABLED))]
+
     #[setter]
     fn set_unk_token(self_: PyRef<Self>, unk_token: String) {
         setter!(self_, WordPiece, unk_token, unk_token);
@@ -635,6 +651,8 @@ impl PyWordPiece {
     fn get_continuing_subword_prefix(self_: PyRef<Self>) -> String {
         getter!(self_, WordPiece, continuing_subword_prefix.clone())
     }
+
+    #[cfg(not(Py_GIL_DISABLED))]
 
     #[setter]
     fn set_continuing_subword_prefix(self_: PyRef<Self>, continuing_subword_prefix: String) {
@@ -650,6 +668,8 @@ impl PyWordPiece {
     fn get_max_input_chars_per_word(self_: PyRef<Self>) -> usize {
         getter!(self_, WordPiece, max_input_chars_per_word)
     }
+
+    #[cfg(not(Py_GIL_DISABLED))]
 
     #[setter]
     fn set_max_input_chars_per_word(self_: PyRef<Self>, max: usize) {
@@ -771,6 +791,8 @@ impl PyWordLevel {
     fn get_unk_token(self_: PyRef<Self>) -> String {
         getter!(self_, WordLevel, unk_token.clone())
     }
+
+    #[cfg(not(Py_GIL_DISABLED))]
 
     #[setter]
     fn set_unk_token(self_: PyRef<Self>, unk_token: String) {
@@ -915,6 +937,8 @@ impl PyUnigram {
         getter!(self_, Unigram, alpha)
     }
 
+    #[cfg(not(Py_GIL_DISABLED))]
+
     #[setter]
     fn set_alpha(self_: PyRef<Self>, alpha: Option<f64>) {
         setter!(self_, Unigram, alpha, alpha);
@@ -924,6 +948,8 @@ impl PyUnigram {
     fn get_nbest_size(self_: PyRef<Self>) -> Option<usize> {
         getter!(self_, Unigram, nbest_size)
     }
+
+    #[cfg(not(Py_GIL_DISABLED))]
 
     #[setter]
     fn set_nbest_size(self_: PyRef<Self>, nbest_size: Option<usize>) {
@@ -992,7 +1018,8 @@ impl PyUnigram {
 }
 
 /// Models Module
-#[pymodule]
+#[cfg_attr(Py_GIL_DISABLED, pymodule(gil_used = false))]
+#[cfg_attr(not(Py_GIL_DISABLED), pymodule)]
 pub mod models {
     #[pymodule_export]
     pub use super::PyBPE;
