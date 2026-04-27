@@ -260,8 +260,6 @@ impl PyBertNormalizer {
         getter!(self_, BertNormalizer, clean_text)
     }
 
-    #[cfg(not(Py_GIL_DISABLED))]
-
     #[setter]
     fn set_clean_text(self_: PyRef<Self>, clean_text: bool) {
         setter!(self_, BertNormalizer, clean_text, clean_text);
@@ -271,8 +269,6 @@ impl PyBertNormalizer {
     fn get_handle_chinese_chars(self_: PyRef<Self>) -> bool {
         getter!(self_, BertNormalizer, handle_chinese_chars)
     }
-
-    #[cfg(not(Py_GIL_DISABLED))]
 
     #[setter]
     fn set_handle_chinese_chars(self_: PyRef<Self>, handle_chinese_chars: bool) {
@@ -289,8 +285,6 @@ impl PyBertNormalizer {
         getter!(self_, BertNormalizer, strip_accents)
     }
 
-    #[cfg(not(Py_GIL_DISABLED))]
-
     #[setter]
     fn set_strip_accents(self_: PyRef<Self>, strip_accents: Option<bool>) {
         setter!(self_, BertNormalizer, strip_accents, strip_accents);
@@ -300,8 +294,6 @@ impl PyBertNormalizer {
     fn get_lowercase(self_: PyRef<Self>) -> bool {
         getter!(self_, BertNormalizer, lowercase)
     }
-
-    #[cfg(not(Py_GIL_DISABLED))]
 
     #[setter]
     fn set_lowercase(self_: PyRef<Self>, lowercase: bool) {
@@ -571,8 +563,6 @@ impl PyStrip {
         getter!(self_, StripNormalizer, strip_left)
     }
 
-    #[cfg(not(Py_GIL_DISABLED))]
-
     #[setter]
     fn set_left(self_: PyRef<Self>, left: bool) {
         setter!(self_, StripNormalizer, strip_left, left)
@@ -582,8 +572,6 @@ impl PyStrip {
     fn get_right(self_: PyRef<Self>) -> bool {
         getter!(self_, StripNormalizer, strip_right)
     }
-
-    #[cfg(not(Py_GIL_DISABLED))]
 
     #[setter]
     fn set_right(self_: PyRef<Self>, right: bool) {
@@ -623,8 +611,6 @@ impl PyPrepend {
     fn get_prepend(self_: PyRef<Self>) -> String {
         getter!(self_, Prepend, prepend)
     }
-
-    #[cfg(not(Py_GIL_DISABLED))]
 
     #[setter]
     fn set_prepend(self_: PyRef<Self>, prepend: String) {
@@ -793,8 +779,6 @@ impl PyReplace {
         Err(PyException::new_err("Cannot get pattern"))
     }
 
-    #[cfg(not(Py_GIL_DISABLED))]
-
     #[setter]
     fn set_pattern(_self: PyRef<Self>, _pattern: PyPattern) -> PyResult<()> {
         Err(PyException::new_err(
@@ -806,8 +790,6 @@ impl PyReplace {
     fn get_content(self_: PyRef<Self>) -> String {
         getter!(self_, Replace, content)
     }
-
-    #[cfg(not(Py_GIL_DISABLED))]
 
     #[setter]
     fn set_content(self_: PyRef<Self>, content: String) {

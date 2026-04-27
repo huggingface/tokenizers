@@ -202,8 +202,6 @@ impl PyBpeTrainer {
         getter!(self_, BpeTrainer, vocab_size)
     }
 
-    #[cfg(not(Py_GIL_DISABLED))]
-
     #[setter]
     fn set_vocab_size(self_: PyRef<Self>, vocab_size: usize) {
         setter!(self_, BpeTrainer, vocab_size, vocab_size);
@@ -214,8 +212,6 @@ impl PyBpeTrainer {
         getter!(self_, BpeTrainer, min_frequency)
     }
 
-    #[cfg(not(Py_GIL_DISABLED))]
-
     #[setter]
     fn set_min_frequency(self_: PyRef<Self>, freq: u64) {
         setter!(self_, BpeTrainer, min_frequency, freq);
@@ -225,8 +221,6 @@ impl PyBpeTrainer {
     fn get_show_progress(self_: PyRef<Self>) -> bool {
         getter!(self_, BpeTrainer, show_progress)
     }
-
-    #[cfg(not(Py_GIL_DISABLED))]
 
     #[setter]
     fn set_show_progress(self_: PyRef<Self>, show_progress: bool) {
@@ -245,7 +239,6 @@ impl PyBpeTrainer {
     }
 
     /// Set the progress output format ("indicatif", "json", or "silent")
-    #[cfg(not(Py_GIL_DISABLED))]
     #[setter]
     fn set_progress_format(self_: PyRef<Self>, format: &str) {
         let fmt = match format {
@@ -279,8 +272,6 @@ impl PyBpeTrainer {
         )
     }
 
-    #[cfg(not(Py_GIL_DISABLED))]
-
     #[setter]
     fn set_special_tokens(self_: PyRef<Self>, special_tokens: &Bound<'_, PyList>) -> PyResult<()> {
         setter!(
@@ -311,8 +302,6 @@ impl PyBpeTrainer {
         getter!(self_, BpeTrainer, limit_alphabet)
     }
 
-    #[cfg(not(Py_GIL_DISABLED))]
-
     #[setter]
     fn set_limit_alphabet(self_: PyRef<Self>, limit: Option<usize>) {
         setter!(self_, BpeTrainer, limit_alphabet, limit);
@@ -322,8 +311,6 @@ impl PyBpeTrainer {
     fn get_max_token_length(self_: PyRef<Self>) -> Option<usize> {
         getter!(self_, BpeTrainer, max_token_length)
     }
-
-    #[cfg(not(Py_GIL_DISABLED))]
 
     #[setter]
     fn set_max_token_length(self_: PyRef<Self>, limit: Option<usize>) {
@@ -338,8 +325,6 @@ impl PyBpeTrainer {
             initial_alphabet.iter().map(|c| c.to_string()).collect()
         )
     }
-
-    #[cfg(not(Py_GIL_DISABLED))]
 
     #[setter]
     fn set_initial_alphabet(self_: PyRef<Self>, alphabet: Vec<char>) {
@@ -356,8 +341,6 @@ impl PyBpeTrainer {
         getter!(self_, BpeTrainer, continuing_subword_prefix.clone())
     }
 
-    #[cfg(not(Py_GIL_DISABLED))]
-
     #[setter]
     fn set_continuing_subword_prefix(self_: PyRef<Self>, prefix: Option<String>) {
         setter!(self_, BpeTrainer, continuing_subword_prefix, prefix);
@@ -367,8 +350,6 @@ impl PyBpeTrainer {
     fn get_end_of_word_suffix(self_: PyRef<Self>) -> Option<String> {
         getter!(self_, BpeTrainer, end_of_word_suffix.clone())
     }
-
-    #[cfg(not(Py_GIL_DISABLED))]
 
     #[setter]
     fn set_end_of_word_suffix(self_: PyRef<Self>, suffix: Option<String>) {
@@ -492,8 +473,6 @@ impl PyWordPieceTrainer {
         getter!(self_, WordPieceTrainer, vocab_size())
     }
 
-    #[cfg(not(Py_GIL_DISABLED))]
-
     #[setter]
     fn set_vocab_size(self_: PyRef<Self>, vocab_size: usize) {
         setter!(self_, WordPieceTrainer, @set_vocab_size, vocab_size);
@@ -504,8 +483,6 @@ impl PyWordPieceTrainer {
         getter!(self_, WordPieceTrainer, min_frequency())
     }
 
-    #[cfg(not(Py_GIL_DISABLED))]
-
     #[setter]
     fn set_min_frequency(self_: PyRef<Self>, freq: u64) {
         setter!(self_, WordPieceTrainer, @set_min_frequency, freq);
@@ -515,8 +492,6 @@ impl PyWordPieceTrainer {
     fn get_show_progress(self_: PyRef<Self>) -> bool {
         getter!(self_, WordPieceTrainer, show_progress())
     }
-
-    #[cfg(not(Py_GIL_DISABLED))]
 
     #[setter]
     fn set_show_progress(self_: PyRef<Self>, show_progress: bool) {
@@ -534,8 +509,6 @@ impl PyWordPieceTrainer {
                 .collect()
         )
     }
-
-    #[cfg(not(Py_GIL_DISABLED))]
 
     #[setter]
     fn set_special_tokens(self_: PyRef<Self>, special_tokens: &Bound<'_, PyList>) -> PyResult<()> {
@@ -567,8 +540,6 @@ impl PyWordPieceTrainer {
         getter!(self_, WordPieceTrainer, limit_alphabet())
     }
 
-    #[cfg(not(Py_GIL_DISABLED))]
-
     #[setter]
     fn set_limit_alphabet(self_: PyRef<Self>, limit: Option<usize>) {
         setter!(self_, WordPieceTrainer, @set_limit_alphabet, limit);
@@ -582,8 +553,6 @@ impl PyWordPieceTrainer {
             initial_alphabet().iter().map(|c| c.to_string()).collect()
         )
     }
-
-    #[cfg(not(Py_GIL_DISABLED))]
 
     #[setter]
     fn set_initial_alphabet(self_: PyRef<Self>, alphabet: Vec<char>) {
@@ -600,8 +569,6 @@ impl PyWordPieceTrainer {
         getter!(self_, WordPieceTrainer, continuing_subword_prefix().clone())
     }
 
-    #[cfg(not(Py_GIL_DISABLED))]
-
     #[setter]
     fn set_continuing_subword_prefix(self_: PyRef<Self>, prefix: Option<String>) {
         setter!(self_, WordPieceTrainer, @set_continuing_subword_prefix, prefix);
@@ -611,8 +578,6 @@ impl PyWordPieceTrainer {
     fn get_end_of_word_suffix(self_: PyRef<Self>) -> Option<String> {
         getter!(self_, WordPieceTrainer, end_of_word_suffix().clone())
     }
-
-    #[cfg(not(Py_GIL_DISABLED))]
 
     #[setter]
     fn set_end_of_word_suffix(self_: PyRef<Self>, suffix: Option<String>) {
@@ -713,8 +678,6 @@ impl PyWordLevelTrainer {
         getter!(self_, WordLevelTrainer, vocab_size)
     }
 
-    #[cfg(not(Py_GIL_DISABLED))]
-
     #[setter]
     fn set_vocab_size(self_: PyRef<Self>, vocab_size: usize) {
         setter!(self_, WordLevelTrainer, vocab_size, vocab_size);
@@ -725,8 +688,6 @@ impl PyWordLevelTrainer {
         getter!(self_, WordLevelTrainer, min_frequency)
     }
 
-    #[cfg(not(Py_GIL_DISABLED))]
-
     #[setter]
     fn set_min_frequency(self_: PyRef<Self>, freq: u64) {
         setter!(self_, WordLevelTrainer, min_frequency, freq);
@@ -736,8 +697,6 @@ impl PyWordLevelTrainer {
     fn get_show_progress(self_: PyRef<Self>) -> bool {
         getter!(self_, WordLevelTrainer, show_progress)
     }
-
-    #[cfg(not(Py_GIL_DISABLED))]
 
     #[setter]
     fn set_show_progress(self_: PyRef<Self>, show_progress: bool) {
@@ -755,8 +714,6 @@ impl PyWordLevelTrainer {
                 .collect()
         )
     }
-
-    #[cfg(not(Py_GIL_DISABLED))]
 
     #[setter]
     fn set_special_tokens(self_: PyRef<Self>, special_tokens: &Bound<'_, PyList>) -> PyResult<()> {
@@ -893,8 +850,6 @@ impl PyUnigramTrainer {
         getter!(self_, UnigramTrainer, vocab_size)
     }
 
-    #[cfg(not(Py_GIL_DISABLED))]
-
     #[setter]
     fn set_vocab_size(self_: PyRef<Self>, vocab_size: u32) {
         setter!(self_, UnigramTrainer, vocab_size, vocab_size);
@@ -904,8 +859,6 @@ impl PyUnigramTrainer {
     fn get_show_progress(self_: PyRef<Self>) -> bool {
         getter!(self_, UnigramTrainer, show_progress)
     }
-
-    #[cfg(not(Py_GIL_DISABLED))]
 
     #[setter]
     fn set_show_progress(self_: PyRef<Self>, show_progress: bool) {
@@ -923,8 +876,6 @@ impl PyUnigramTrainer {
                 .collect()
         )
     }
-
-    #[cfg(not(Py_GIL_DISABLED))]
 
     #[setter]
     fn set_special_tokens(self_: PyRef<Self>, special_tokens: &Bound<'_, PyList>) -> PyResult<()> {
@@ -959,8 +910,6 @@ impl PyUnigramTrainer {
             initial_alphabet.iter().map(|c| c.to_string()).collect()
         )
     }
-
-    #[cfg(not(Py_GIL_DISABLED))]
 
     #[setter]
     fn set_initial_alphabet(self_: PyRef<Self>, alphabet: Vec<char>) {
