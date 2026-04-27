@@ -95,7 +95,7 @@ jobs:
           # whose `zig env` output has drifted and broken the parsers in both
           # napi-rs/cli v2 and cargo-zigbuild. 0.13.0 is what napi-rs's own
           # release templates pin to.
-          version: 0.13.0
+          version: 0.16.0
 
       - name: Verify zig
         if: ${{ !matrix.settings.docker && contains(matrix.settings.build, '--zig') }}
