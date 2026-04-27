@@ -19,11 +19,9 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
       - name: Install Rust Stable
-        uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af  # v1
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
         with:
-          toolchain: stable
           components: rustfmt, clippy
-          override: true
 
       # Necessary for now for the cargo cache: https://github.com/actions/cache/issues/133#issuecomment-599102035
       - if: matrix.os == 'ubuntu-latest'
@@ -46,28 +44,21 @@ jobs:
           tool: cargo-audit
 
       - name: Build
-        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505  # v1
-        with:
-          command: build
-          args: --all-targets --verbose --manifest-path ./tokenizers/Cargo.toml
+        run: cargo build --all-targets --verbose --manifest-path ./tokenizers/Cargo.toml
 
+      # RustFmt is OS-invariant — gate to the canonical OS.
+      # Clippy and Audit run on every matrix cell so platform-specific
+      # cfg gates and target-specific lints get coverage.
       - name: Lint with RustFmt
-        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505  # v1
-        with:
-          command: fmt
-          args: --manifest-path ./tokenizers/Cargo.toml -- --check
+        if: matrix.os == 'ubuntu-latest'
+        run: cargo fmt --manifest-path ./tokenizers/Cargo.toml -- --check
 
       - name: Lint Benchmarks with RustFmt
-        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505  # v1
-        with:
-          command: fmt
-          args: --manifest-path ./tokenizers/Cargo.toml -- ./tokenizers/benches/bpe_benchmark.rs --check
+        if: matrix.os == 'ubuntu-latest'
+        run: cargo fmt --manifest-path ./tokenizers/Cargo.toml -- ./tokenizers/benches/bpe_benchmark.rs --check
 
       - name: Lint with Clippy
-        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505  # v1
-        with:
-          command: clippy
-          args: --manifest-path ./tokenizers/Cargo.toml --all-targets --all-features -- -D warnings
+        run: cargo clippy --manifest-path ./tokenizers/Cargo.toml --all-targets --all-features -- -D warnings
 
       - name: Run Tests
         if: matrix.os != 'windows-latest'
@@ -78,23 +69,14 @@ jobs:
       # Skip integration tests for now on Windows
       - name: Run lib Tests on Windows
         if: matrix.os == 'windows-latest'
-        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505  # v1
-        with:
-          command: test
-          args: --verbose --manifest-path ./tokenizers/Cargo.toml --lib
+        run: cargo test --verbose --manifest-path ./tokenizers/Cargo.toml --lib
 
       - name: Run doc Tests on Windows
         if: matrix.os == 'windows-latest'
-        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505  # v1
-        with:
-          command: test
-          args: --verbose --manifest-path ./tokenizers/Cargo.toml --doc
+        run: cargo test --verbose --manifest-path ./tokenizers/Cargo.toml --doc
 
       - name: Run Audit
-        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505  # v1
-        with:
-          command: audit
-          args: -D warnings -f ./tokenizers/Cargo.lock --ignore RUSTSEC-2024-0436 --ignore RUSTSEC-2025-0014 --ignore RUSTSEC-2025-0119
+        run: cargo audit -D warnings -f ./tokenizers/Cargo.lock --ignore RUSTSEC-2024-0436 --ignore RUSTSEC-2025-0014 --ignore RUSTSEC-2025-0119
 
       # Verify that Readme.md is up to date.
       - name: Make sure, Readme generated from lib.rs matches actual Readme

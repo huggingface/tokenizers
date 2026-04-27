@@ -62,9 +62,6 @@ jobs:
           - host: ubuntu-latest
             target: armv7-linux-androideabi
             build: yarn build --target armv7-linux-androideabi
-          - host: ubuntu-latest
-            target: x86_64-unknown-freebsd
-            build: yarn build --target x86_64-unknown-freebsd --zig
     name: build - ${{ matrix.settings.target }}
     runs-on: ${{ matrix.settings.host }}
     steps:
@@ -92,7 +89,17 @@ jobs:
 
       - name: Setup zig
         if: ${{ !matrix.settings.docker && contains(matrix.settings.build, '--zig') }}
-        uses: goto-bus-stop/setup-zig@abea47f85e598557f500fa1fd2ab7464fcb39406  # v2.2.1
+        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29  # v2.2.1
+        with:
+          # Pin — without a version the action installs zig master (nightly)
+          # whose `zig env` output has drifted and broken the parsers in both
+          # napi-rs/cli v2 and cargo-zigbuild. 0.13.0 is what napi-rs's own
+          # release templates pin to.
+          version: 0.16.0
+
+      - name: Verify zig
+        if: ${{ !matrix.settings.docker && contains(matrix.settings.build, '--zig') }}
+        run: zig version && which zig
 
       - name: Build native (host)
         if: ${{ !matrix.settings.docker }}
@@ -109,6 +116,7 @@ jobs:
             -v ${{ github.workspace }}:/build
             -w /build/bindings/node
           run: |
+            rustup update stable && rustup default stable
             corepack enable
             yarn install --immutable
             ${{ matrix.settings.build }}
@@ -147,7 +155,7 @@ jobs:
           path: ./bindings/node/artifacts
       - name: Combine into universal binary
         working-directory: ./bindings/node
-        run: npx napi universal --name ${{ env.APP_NAME }}
+        run: npx napi universal --dir ./artifacts
       - name: Upload universal artifact
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f  # v7
         with:
