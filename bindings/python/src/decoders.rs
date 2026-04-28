@@ -700,7 +700,7 @@ impl Decoder for PyDecoderWrapper {
 }
 
 /// Decoders Module
-#[pymodule]
+#[pymodule(gil_used = false)]
 pub mod decoders {
     #[pymodule_export]
     pub use super::PyBPEDecoder;
@@ -845,8 +845,9 @@ impl PyDecodeStream {
             StreamInput::Id(id) => vec![id],
             StreamInput::Ids(ids) => ids,
         };
+        let tokenizer_guard = tokenizer.read_inner()?;
         ToPyResult(tk::tokenizer::step_decode_stream(
-            &tokenizer.tokenizer,
+            &tokenizer_guard,
             id,
             self.skip_special_tokens,
             &mut self.ids,
