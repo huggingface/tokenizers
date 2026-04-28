@@ -47,11 +47,20 @@ check-style:
 
 TESTS_RESOURCES = $(DATA_DIR)/small.txt $(DATA_DIR)/roberta.json
 
-# Launch the test suite
-test: $(TESTS_RESOURCES)
+# Launch the Python test suite
+test-py: $(TESTS_RESOURCES)
 	$(PIP) install pytest pytest-asyncio requests setuptools_rust numpy pyarrow datasets
 	python -m pytest -s -v tests
+
+# Launch the Rust test suite
+# (cargo test --no-default-features uses pyo3's `auto-initialize` which
+# links libpython; this doesn't work on free-threaded Python on macOS
+# runners where libpython3.14t isn't installed in the framework path.)
+test-rs:
 	$(CARGO_ENV) cargo test --no-default-features
+
+# Full test suite
+test: test-py test-rs
 
 HF_TEST_DATA = https://huggingface.co/datasets/hf-internal-testing/tokenizers-test-data/resolve/main
 
