@@ -67,6 +67,41 @@ source .env/bin/activate
 pip install -e .
 ```
 
+### Free-threaded Python (3.14t)
+
+`tokenizers` ships dedicated wheels for the [free-threaded build of CPython](https://docs.python.org/3.14/howto/free-threading-python.html)
+(`python3.14t`). These wheels declare `Py_MOD_GIL_NOT_USED`, so importing
+`tokenizers` does **not** force the GIL back on — multi-threaded code stays
+GIL-free.
+
+The full mutable API works on 3.14t — the same as on regular CPython.
+Setters are thread-safe: the inner tokenizer state is wrapped in a
+`std::sync::RwLock`, so concurrent `tokenizer.X = …` from multiple threads
+serialize correctly and concurrent encode operations take a read guard
+that blocks writers only briefly.
+
+```python
+from tokenizers import Tokenizer
+from tokenizers.models import BPE
+from tokenizers.pre_tokenizers import Whitespace
+from tokenizers.processors import ByteLevel
+
+tok = Tokenizer(BPE())
+tok.pre_tokenizer = Whitespace()                 # ✅ thread-safe on 3.14t
+tok.post_processor = ByteLevel(trim_offsets=True)
+```
+
+**Caveat — compound mutations are not atomic.** Statements like
+`tokenizer.post_processor.special_tokens = X` evaluate in two steps from
+Python's point of view (read attribute → set attribute on the result). If
+another thread swaps `tokenizer.post_processor` between those steps, the
+mutation lands on an orphaned component. This is the same class of race
+as `dict[k] = v` interleaved with `dict.clear()` — coordinate with a Python
+lock if you need the compound to be atomic.
+
+For the full thread-safety analysis, see
+[`docs/free-threading-audit.md`](./docs/free-threading-audit.md).
+
 ### Load a pretrained tokenizer from the Hub
 
 ```python
