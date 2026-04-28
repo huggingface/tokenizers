@@ -85,7 +85,7 @@ unsafe fn ascii_lower_avx2(buf: &mut [u8]) {
     use std::arch::x86_64::*;
 
     let a_minus_1 = _mm256_set1_epi8(b'A' as i8 - 1); // 0x40
-    let z_plus_1 = _mm256_set1_epi8(b'Z' as i8 + 1);  // 0x5B
+    let z_plus_1 = _mm256_set1_epi8(b'Z' as i8 + 1); // 0x5B
     let case_bit = _mm256_set1_epi8(0x20);
 
     let len = buf.len();
@@ -95,8 +95,8 @@ unsafe fn ascii_lower_avx2(buf: &mut [u8]) {
         let v = _mm256_loadu_si256(p as *const __m256i);
         // Signed compares are correct here because all uppercase ASCII bytes
         // are < 0x80; bytes >= 0x80 appear negative and are excluded from the mask.
-        let gt_a = _mm256_cmpgt_epi8(v, a_minus_1);     // v > 0x40
-        let lt_z = _mm256_cmpgt_epi8(z_plus_1, v);      // 0x5B > v
+        let gt_a = _mm256_cmpgt_epi8(v, a_minus_1); // v > 0x40
+        let lt_z = _mm256_cmpgt_epi8(z_plus_1, v); // 0x5B > v
         let mask = _mm256_and_si256(gt_a, lt_z);
         let flip = _mm256_and_si256(mask, case_bit);
         let out = _mm256_xor_si256(v, flip);
@@ -147,7 +147,7 @@ unsafe fn ascii_lower_neon(buf: &mut [u8]) {
         let v = vld1q_u8(p);
         // Unsigned compares on aarch64 — directly available.
         let gt_a = vcgtq_u8(v, a_minus_1); // v > A-1 → v >= A
-        let lt_z = vcltq_u8(v, z_plus_1);  // v < Z+1 → v <= Z
+        let lt_z = vcltq_u8(v, z_plus_1); // v < Z+1 → v <= Z
         let mask = vandq_u8(gt_a, lt_z);
         let flip = vandq_u8(mask, case_bit);
         let out = veorq_u8(v, flip);
@@ -192,7 +192,9 @@ mod tests {
 
     #[test]
     fn matches_scalar_at_critical_lengths() {
-        for len in [0, 1, 7, 15, 16, 17, 31, 32, 33, 47, 48, 63, 64, 65, 128, 129] {
+        for len in [
+            0, 1, 7, 15, 16, 17, 31, 32, 33, 47, 48, 63, 64, 65, 128, 129,
+        ] {
             let mut data: Vec<u8> = (0..len as u8).map(|i| b'A' + (i % 26)).collect();
             let expected = scalar_reference(&data);
             ascii_lower(&mut data);
