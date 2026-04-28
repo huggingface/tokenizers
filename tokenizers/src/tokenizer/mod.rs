@@ -11,10 +11,12 @@
 
 use ahash::AHashMap;
 use std::{
+    cell::UnsafeCell,
     fs::{read_to_string, File},
     io::{prelude::*, BufReader},
     ops::{Deref, DerefMut},
     path::{Path, PathBuf},
+    sync::atomic::{AtomicUsize, Ordering},
 };
 
 use serde::de::DeserializeOwned;
@@ -51,6 +53,62 @@ pub use pre_tokenizer::*;
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
 pub type Result<T> = std::result::Result<T, Error>;
 pub type Offsets = (usize, usize);
+
+const WINDOWS_PER_THREAD: usize = 4;
+const MAX_BATCH_WINDOW_SIZE: usize = 8;
+
+// Batch encode uses a scoped work queue instead of rayon's parallel iterator
+// plumbing.  A single cache-line-padded counter hands out contiguous windows,
+// which removes the mutex-backed per-item wakeups that show up as expensive
+// LSE atomics on aarch64.
+#[repr(C, align(64))]
+struct CachePadded<T>(T);
+
+struct BatchSlot<I, O> {
+    input: UnsafeCell<Option<I>>,
+    output: UnsafeCell<Option<O>>,
+}
+
+// SAFETY: the batch scheduler assigns each slot index to only one worker.
+unsafe impl<I: Send, O: Send> Sync for BatchSlot<I, O> {}
+
+impl<I, O> BatchSlot<I, O> {
+    fn new(input: I) -> Self {
+        Self {
+            input: UnsafeCell::new(Some(input)),
+            output: UnsafeCell::new(None),
+        }
+    }
+
+    fn take_input(&self) -> I {
+        // SAFETY: fetch_add gives each slot index to exactly one worker.
+        unsafe {
+            (*self.input.get())
+                .take()
+                .expect("batch input already taken")
+        }
+    }
+
+    fn set_output(&self, output: O) {
+        // SAFETY: fetch_add gives each slot index to exactly one worker.
+        unsafe {
+            *self.output.get() = Some(output);
+        }
+    }
+
+    fn into_output(self) -> O {
+        self.output
+            .into_inner()
+            .expect("batch output was never written")
+    }
+}
+
+fn batch_window_size(total: usize, num_threads: usize) -> usize {
+    let target_windows = num_threads.saturating_mul(WINDOWS_PER_THREAD).max(1);
+    total
+        .div_ceil(target_windows)
+        .clamp(1, MAX_BATCH_WINDOW_SIZE)
+}
 
 /// Takes care of pre-processing strings.
 pub trait Normalizer: Sync {
@@ -1309,10 +1367,8 @@ where
     where
         E: Into<EncodeInput<'s>> + Send,
     {
-        let mut encodings = inputs
-            .into_maybe_par_iter()
-            .map(|input| self.encode(input, add_special_tokens))
-            .collect::<Result<Vec<Encoding>>>()?;
+        let mut encodings =
+            self.run_batch(inputs, |this, input| this.encode(input, add_special_tokens))?;
 
         if let Some(params) = &self.padding {
             // We do the padding here to make sure we handle the batch padding
@@ -1332,10 +1388,9 @@ where
     where
         E: Into<EncodeInput<'s>> + Send,
     {
-        let mut encodings = inputs
-            .into_maybe_par_iter()
-            .map(|input| self.encode_char_offsets(input, add_special_tokens))
-            .collect::<Result<Vec<Encoding>>>()?;
+        let mut encodings = self.run_batch(inputs, |this, input| {
+            this.encode_char_offsets(input, add_special_tokens)
+        })?;
 
         if let Some(params) = &self.padding {
             // We do the padding here to make sure we handle the batch padding
@@ -1354,10 +1409,9 @@ where
     where
         E: Into<EncodeInput<'s>> + Send,
     {
-        let mut encodings = inputs
-            .into_maybe_par_iter()
-            .map(|input| self.encode_fast(input, add_special_tokens))
-            .collect::<Result<Vec<Encoding>>>()?;
+        let mut encodings = self.run_batch(inputs, |this, input| {
+            this.encode_fast(input, add_special_tokens)
+        })?;
 
         if let Some(params) = &self.padding {
             // We do the padding here to make sure we handle the batch padding
@@ -1365,6 +1419,64 @@ where
         }
 
         Ok(encodings)
+    }
+
+    fn run_batch<'s, E, F>(&self, inputs: Vec<E>, encode_fn: F) -> Result<Vec<Encoding>>
+    where
+        E: Into<EncodeInput<'s>> + Send,
+        F: Fn(&Self, EncodeInput<'s>) -> Result<Encoding> + Sync,
+    {
+        let n = inputs.len();
+        let parallelism = get_parallelism_with_use();
+        if n == 0 {
+            return Ok(vec![]);
+        }
+
+        let num_threads = if parallelism {
+            current_num_threads().min(n)
+        } else {
+            1
+        };
+
+        if num_threads == 1 {
+            return inputs
+                .into_iter()
+                .map(|input| encode_fn(self, input.into()))
+                .collect();
+        }
+
+        let slots: Vec<BatchSlot<EncodeInput<'s>, Result<Encoding>>> = inputs
+            .into_iter()
+            .map(|input| BatchSlot::new(input.into()))
+            .collect();
+        let next = CachePadded(AtomicUsize::new(0));
+        let window_size = batch_window_size(n, num_threads);
+
+        rayon::scope(|scope| {
+            for _ in 0..num_threads {
+                scope.spawn(|_| loop {
+                    // Each claimed window is processed by one producer core.
+                    // The contiguous writes then reach shared L3 as completed
+                    // runs, so consumer threads do not alternate ownership of
+                    // the same L1 cache line and cause ping-pong traffic.
+                    // Relaxed ordering is enough because the counter only
+                    // assigns non-overlapping windows; scope join provides
+                    // completion before outputs are collected.
+                    let start = next.0.fetch_add(window_size, Ordering::Relaxed);
+                    if start >= n {
+                        return;
+                    }
+
+                    let end = (start + window_size).min(n);
+                    for slot in &slots[start..end] {
+                        let input = slot.take_input();
+                        slot.set_output(encode_fn(self, input));
+                    }
+                });
+            }
+        });
+
+        slots.into_iter().map(BatchSlot::into_output).collect()
     }
 
     /// Decode all sentences in parallel
@@ -1785,5 +1897,72 @@ mod tests {
             full_b.get_ids(),
             "OnlyFirst should not truncate the second sequence"
         );
+    }
+
+    #[test]
+    fn batch_window_size_keeps_multiple_windows_per_thread() {
+        assert_eq!(batch_window_size(20, 1), 5);
+        assert_eq!(batch_window_size(100, 16), 2);
+        assert_eq!(batch_window_size(10000, 4), 8);
+    }
+
+    #[test]
+    fn encode_batch_variants_keep_order_in_parallel() {
+        let tokenizer = test_tokenizer();
+        let inputs = vec!["a", "b", "c", "d", "e", "f", "g", "h"];
+        let expected_ids: Vec<Vec<u32>> = (0..inputs.len()).map(|i| vec![i as u32]).collect();
+
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(4)
+            .build()
+            .unwrap()
+            .install(|| {
+                set_parallelism(true);
+
+                let batch_ids: Vec<Vec<u32>> = tokenizer
+                    .encode_batch(inputs.clone(), false)
+                    .unwrap()
+                    .into_iter()
+                    .map(|encoding| encoding.get_ids().to_vec())
+                    .collect();
+                assert_eq!(batch_ids, expected_ids);
+
+                let char_offset_ids: Vec<Vec<u32>> = tokenizer
+                    .encode_batch_char_offsets(inputs.clone(), false)
+                    .unwrap()
+                    .into_iter()
+                    .map(|encoding| encoding.get_ids().to_vec())
+                    .collect();
+                assert_eq!(char_offset_ids, expected_ids);
+
+                let fast_ids: Vec<Vec<u32>> = tokenizer
+                    .encode_batch_fast(inputs.clone(), false)
+                    .unwrap()
+                    .into_iter()
+                    .map(|encoding| encoding.get_ids().to_vec())
+                    .collect();
+                assert_eq!(fast_ids, expected_ids);
+            });
+    }
+
+    #[test]
+    fn encode_batch_propagates_parallel_errors() {
+        let vocab: AHashMap<String, u32> = std::iter::once(("a".to_string(), 0)).collect();
+        let model = WordLevelBuilder::new().vocab(vocab).build().unwrap();
+        let mut tokenizer = Tokenizer::new(model);
+        tokenizer.with_pre_tokenizer(Some(WhitespaceSplit));
+
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(4)
+            .build()
+            .unwrap()
+            .install(|| {
+                set_parallelism(true);
+                let err = tokenizer
+                    .encode_batch(vec!["a", "missing"], false)
+                    .unwrap_err()
+                    .to_string();
+                assert!(err.contains("Missing [UNK] token"));
+            });
     }
 }
