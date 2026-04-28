@@ -5,6 +5,8 @@ pub mod fuse;
 pub mod sequence;
 pub mod strip;
 pub mod wordpiece;
+pub mod cyrillic;
+
 
 // Re-export these as decoders
 pub use super::pre_tokenizers::byte_level;
