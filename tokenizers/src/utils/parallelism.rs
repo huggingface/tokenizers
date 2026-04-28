@@ -56,6 +56,14 @@ pub fn get_parallelism() -> bool {
     }
 }
 
+pub(crate) fn get_parallelism_with_use() -> bool {
+    let parallelism = get_parallelism();
+    if parallelism {
+        USED_PARALLELISM.store(true, Ordering::SeqCst);
+    }
+    parallelism
+}
+
 /// Set the value for `TOKENIZERS_PARALLELISM` for the current process
 pub fn set_parallelism(val: bool) {
     PARALLELISM.store(if val { 2 } else { 1 }, Ordering::SeqCst);
@@ -89,10 +97,7 @@ where
     S: Iterator<Item = P::Item>,
 {
     fn into_maybe_par_iter(self) -> CondIterator<P, S> {
-        let parallelism = get_parallelism();
-        if parallelism {
-            USED_PARALLELISM.store(true, Ordering::SeqCst);
-        }
+        let parallelism = get_parallelism_with_use();
         CondIterator::new(self, parallelism)
     }
 
@@ -179,8 +184,7 @@ where
     fn maybe_par_bridge(self) -> CondIterator<IterBridge<S>, S> {
         let iter = CondIterator::from_serial(self);
 
-        if get_parallelism() {
-            USED_PARALLELISM.store(true, Ordering::SeqCst);
+        if get_parallelism_with_use() {
             CondIterator::from_parallel(iter.into_parallel().right().unwrap())
         } else {
             iter
@@ -265,6 +269,13 @@ mod tests {
         );
         assert_eq!(v.maybe_par_iter().sum::<u32>(), 42);
         assert_eq!(v.into_maybe_par_iter().sum::<u32>(), 42);
+    }
+
+    #[test]
+    fn test_get_parallelism_marks_parallelism_used() {
+        set_parallelism(true);
+        assert!(get_parallelism_with_use());
+        assert!(has_parallelism_been_used());
     }
 
     #[test]
