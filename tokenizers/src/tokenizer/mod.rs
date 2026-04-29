@@ -55,6 +55,16 @@ pub type Offsets = (usize, usize);
 /// Takes care of pre-processing strings.
 pub trait Normalizer: Sync {
     fn normalize(&self, normalized: &mut NormalizedString) -> Result<()>;
+
+    /// Normalize a plain string without tracking alignments.
+    ///
+    /// The default allocates a full [`NormalizedString`].  Normalizers that can
+    /// produce their output more cheaply should override this.
+    fn normalize_str(&self, s: &str) -> Result<String> {
+        let mut n = NormalizedString::from(s);
+        self.normalize(&mut n)?;
+        Ok(n.get().to_owned())
+    }
 }
 
 /// The `PreTokenizer` is in charge of doing the pre-segmentation step. It splits the given string
@@ -731,10 +741,15 @@ where
         type_id: u32,
         offsets_type: OffsetType,
     ) -> Result<Encoding> {
+        let fast = matches!(offsets_type, OffsetType::None);
         let encode = |is_pre_tokenized, subseq_idx, subseq| -> Result<Encoding> {
-            let normalized = self
-                .added_vocabulary
-                .extract_and_normalize(self.normalizer.as_ref(), subseq);
+            let normalized = if fast {
+                self.added_vocabulary
+                    .extract_and_normalize_fast(self.normalizer.as_ref(), subseq)
+            } else {
+                self.added_vocabulary
+                    .extract_and_normalize(self.normalizer.as_ref(), subseq)
+            };
             let pre_tokenized = self.do_pre_tokenize(normalized)?;
             let subseq_encoding = self.do_tokenize(
                 pre_tokenized,

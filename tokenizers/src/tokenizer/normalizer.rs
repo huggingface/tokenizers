@@ -136,6 +136,18 @@ impl NormalizedString {
         &self.normalized
     }
 
+    /// Replace the normalized content without tracking alignments.
+    ///
+    /// This is significantly cheaper than going through `transform()` since it
+    /// skips the per-byte alignment bookkeeping.  Use this when offset tracking
+    /// is not needed (e.g. `encode_fast`).
+    pub fn set_normalized(&mut self, new: String) {
+        // Build trivial 1:1 alignments so that slice() still works for
+        // splitting, but no real offset mapping is preserved.
+        self.alignments = new.as_bytes().iter().enumerate().map(|(i, _)| (i, i + 1)).collect();
+        self.normalized = new;
+    }
+
     /// Return the original string
     pub fn get_original(&self) -> &str {
         &self.original
