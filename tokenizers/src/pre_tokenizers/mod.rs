@@ -3,6 +3,8 @@ pub mod byte_level;
 pub mod delimiter;
 pub mod digits;
 pub mod fixed_length;
+#[cfg(feature = "logos-pretok")]
+pub mod logos_tiktoken;
 pub mod metaspace;
 pub mod punctuation;
 pub mod sequence;
