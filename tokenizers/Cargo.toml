@@ -102,7 +102,6 @@ esaxx_fast = ["esaxx-rs/cpp"]
 progressbar = ["indicatif"]
 http = ["hf-hub"]
 unstable_wasm = ["fancy-regex", "getrandom/wasm_js"]
-rustls-tls = []
 
 [dev-dependencies]
 criterion = "0.6"
