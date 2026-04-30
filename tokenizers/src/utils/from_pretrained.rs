@@ -72,10 +72,9 @@ pub fn from_pretrained<S: AsRef<str>>(
     }
     let client = builder.build_sync()?;
 
-    let (owner, name) = match identifier.split_once('/') {
-        Some((owner, name)) => (owner.to_string(), name.to_string()),
-        None => (String::new(), identifier),
-    };
+    let (owner, name) = identifier.split_once('/').ok_or_else(|| {
+        format!("Model \"{identifier}\" is not a valid repo id, expected format \"owner/name\"")
+    })?;
 
     let path = client
         .model(owner, name)
