@@ -28,6 +28,9 @@ exclude = [
 [package.metadata.docs.rs]
 all-features = true
 
+[package.metadata.cargo-semver-checks.lints]
+feature_missing = "allow"
+
 [lib]
 name = "tokenizers"
 path = "src/lib.rs"
