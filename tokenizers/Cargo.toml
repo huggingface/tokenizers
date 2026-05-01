@@ -28,9 +28,6 @@ exclude = [
 [package.metadata.docs.rs]
 all-features = true
 
-[package.metadata.cargo-semver-checks.lints]
-feature_missing = "allow"
-
 [lib]
 name = "tokenizers"
 path = "src/lib.rs"
@@ -105,6 +102,9 @@ esaxx_fast = ["esaxx-rs/cpp"]
 progressbar = ["indicatif"]
 http = ["hf-hub"]
 unstable_wasm = ["fancy-regex", "getrandom/wasm_js"]
+# Kept as a no-op for downstream compatibility; hf-hub 1.0 no longer exposes a
+# TLS-backend toggle (reqwest's default TLS is used).
+rustls-tls = []
 
 [dev-dependencies]
 criterion = "0.6"
