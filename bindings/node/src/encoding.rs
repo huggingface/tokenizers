@@ -235,57 +235,42 @@ impl JsEncoding {
   }
 
   #[napi(ts_return_type = "[number, number] | null | undefined")]
-  pub fn word_to_tokens(&self, env: Env, word: u32, seq_id: Option<u32>) -> Result<Option<Array>> {
+  pub fn word_to_tokens(&self, word: u32, seq_id: Option<u32>) -> Result<Option<(u32, u32)>> {
     let seq_id = seq_id.unwrap_or(0);
 
-    if let Some((a, b)) = self
-      .encoding
-      .as_ref()
-      .expect("Uninitialized Encoding")
-      .word_to_tokens(word, seq_id as usize)
-    {
-      let mut arr = env.create_array(2)?;
-      arr.set(0, env.create_uint32(a as u32)?)?;
-      arr.set(1, env.create_uint32(b as u32)?)?;
-      Ok(Some(arr))
-    } else {
-      Ok(None)
-    }
+    Ok(
+      self
+        .encoding
+        .as_ref()
+        .expect("Uninitialized Encoding")
+        .word_to_tokens(word, seq_id as usize)
+        .map(|(a, b)| (a as u32, b as u32)),
+    )
   }
   #[napi(ts_return_type = "[number, number] | null | undefined")]
-  pub fn word_to_chars(&self, env: Env, word: u32, seq_id: Option<u32>) -> Result<Option<Array>> {
+  pub fn word_to_chars(&self, word: u32, seq_id: Option<u32>) -> Result<Option<(u32, u32)>> {
     let seq_id = seq_id.unwrap_or(0);
 
-    if let Some((a, b)) = self
-      .encoding
-      .as_ref()
-      .expect("Uninitialized Encoding")
-      .word_to_chars(word, seq_id as usize)
-    {
-      let mut arr = env.create_array(2)?;
-      arr.set(0, env.create_uint32(a as u32)?)?;
-      arr.set(1, env.create_uint32(b as u32)?)?;
-      Ok(Some(arr))
-    } else {
-      Ok(None)
-    }
+    Ok(
+      self
+        .encoding
+        .as_ref()
+        .expect("Uninitialized Encoding")
+        .word_to_chars(word, seq_id as usize)
+        .map(|(a, b)| (a as u32, b as u32)),
+    )
   }
 
-  #[napi(ts_return_type = "[number, [number, number]] | null | undefined")]
-  pub fn token_to_chars(&self, env: Env, token: u32) -> Result<Option<Array>> {
-    if let Some((_, (start, stop))) = self
-      .encoding
-      .as_ref()
-      .expect("Uninitialized Encoding")
-      .token_to_chars(token as usize)
-    {
-      let mut offsets = env.create_array(2)?;
-      offsets.set(0, env.create_uint32(start as u32)?)?;
-      offsets.set(1, env.create_uint32(stop as u32)?)?;
-      Ok(Some(offsets))
-    } else {
-      Ok(None)
-    }
+  #[napi(ts_return_type = "[number, number] | null | undefined")]
+  pub fn token_to_chars(&self, token: u32) -> Result<Option<(u32, u32)>> {
+    Ok(
+      self
+        .encoding
+        .as_ref()
+        .expect("Uninitialized Encoding")
+        .token_to_chars(token as usize)
+        .map(|(_, (start, stop))| (start as u32, stop as u32)),
+    )
   }
 
   #[napi]

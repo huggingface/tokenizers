@@ -47,7 +47,7 @@ extern "C" fn child_after_fork() {
 }
 
 /// Tokenizers Module
-#[pymodule]
+#[pymodule(gil_used = false)]
 pub mod tokenizers {
     use super::*;
 

@@ -17,22 +17,22 @@
     "index.js"
   ],
   "napi": {
-    "name": "tokenizers",
-    "triples": {
-      "defaults": true,
-      "additional": [
-        "x86_64-unknown-linux-musl",
-        "aarch64-unknown-linux-gnu",
-        "i686-pc-windows-msvc",
-        "armv7-unknown-linux-gnueabihf",
-        "aarch64-apple-darwin",
-        "aarch64-linux-android",
-        "x86_64-unknown-freebsd",
-        "aarch64-unknown-linux-musl",
-        "aarch64-pc-windows-msvc",
-        "armv7-linux-androideabi"
-      ]
-    }
+    "binaryName": "tokenizers",
+    "targets": [
+      "x86_64-apple-darwin",
+      "x86_64-pc-windows-msvc",
+      "x86_64-unknown-linux-gnu",
+      "x86_64-unknown-linux-musl",
+      "aarch64-apple-darwin",
+      "aarch64-unknown-linux-gnu",
+      "aarch64-unknown-linux-musl",
+      "aarch64-pc-windows-msvc",
+      "aarch64-linux-android",
+      "armv7-unknown-linux-gnueabihf",
+      "i686-pc-windows-msvc",
+      "armv7-linux-androideabi",
+      "universal-apple-darwin"
+    ]
   },
   "engines": {
     "node": ">= 10"
@@ -44,8 +44,8 @@
   "scripts": {
     "artifacts": "napi artifacts",
     "bench": "node -r @swc-node/register benchmark/bench.ts",
-    "build": "napi build --platform --release --pipe \"prettier -w\"",
-    "build:debug": "napi build --platform --pipe \"prettier -w\"",
+    "build": "napi build --platform --release",
+    "build:debug": "napi build --platform",
     "format": "run-p format:prettier format:rs format:toml",
     "format:prettier": "prettier . -w",
     "format:toml": "taplo format",
@@ -56,7 +56,7 @@
     "version": "napi version"
   },
   "devDependencies": {
-    "@napi-rs/cli": "^2.14.6",
+    "@napi-rs/cli": "^3.6.2",
     "@swc-node/register": "^1.5.5",
     "@swc/core": "^1.3.32",
     "@taplo/cli": "^0.5.2",

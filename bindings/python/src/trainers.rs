@@ -984,7 +984,7 @@ impl PyUnigramTrainer {
 }
 
 /// Trainers Module
-#[pymodule]
+#[pymodule(gil_used = false)]
 pub mod trainers {
     #[pymodule_export]
     pub use super::PyBpeTrainer;

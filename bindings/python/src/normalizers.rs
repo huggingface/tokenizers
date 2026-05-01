@@ -962,7 +962,7 @@ impl Normalizer for PyNormalizerWrapper {
 }
 
 /// Normalizers Module
-#[pymodule]
+#[pymodule(gil_used = false)]
 pub mod normalizers {
     #[pymodule_export]
     pub use super::PyBertNormalizer;
