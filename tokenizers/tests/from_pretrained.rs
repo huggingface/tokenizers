@@ -3,7 +3,7 @@ use tokenizers::{FromPretrainedParameters, Result, Tokenizer};
 
 #[test]
 fn test_from_pretrained() -> Result<()> {
-    let tokenizer = Tokenizer::from_pretrained("bert-base-cased", None)?;
+    let tokenizer = Tokenizer::from_pretrained("google-bert/bert-base-cased", None)?;
     let encoding = tokenizer.encode("Hey there dear friend!", false)?;
     assert_eq!(
         encoding.get_tokens(),
@@ -46,7 +46,7 @@ fn test_from_pretrained_invalid_model() {
 #[test]
 fn test_from_pretrained_invalid_revision() {
     let tokenizer = Tokenizer::from_pretrained(
-        "bert-base-cased",
+        "google-bert/bert-base-cased",
         Some(FromPretrainedParameters {
             revision: "gpt?".to_string(),
             ..Default::default()
