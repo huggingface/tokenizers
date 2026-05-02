@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Added `encode_byte_offsets()` method for single sequence encoding with byte-level offsets
+- Added `encode_batch_byte_offsets()` method for batch encoding with byte-level offsets
+- These methods enable byte-level offset computation useful for cross-tokenizer alignment
+
 ## [0.13.2] 
 
 - [#1096] Python 3.11 support
@@ -510,3 +518,4 @@ delimiter (Works like `.split(delimiter)`)
 [#134]: https://github.com/huggingface/tokenizers/issues/134
 [#131]: https://github.com/huggingface/tokenizers/issues/131
 [#99]: https://github.com/huggingface/tokenizers/pull/99
+[#XXXX]: https://github.com/huggingface/tokenizers/pull/XXXX
