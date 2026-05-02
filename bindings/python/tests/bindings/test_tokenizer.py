@@ -212,6 +212,20 @@ class TestTokenizer:
         output = tokenizer.encode_byte_offsets(["my", "name", "is", "john"], is_pretokenized=True)
         assert output.tokens == ["my", "name", "is", "john"]
 
+        # Offsets index into UTF-8 bytes, not chars — this is the contract that
+        # differs from encode(), and what makes byte offsets usable for
+        # cross-tokenizer alignment when BPE splits multi-byte characters.
+        mb_tokenizer = Tokenizer(BPE())
+        mb_tokenizer.add_tokens(["café"])
+        text = "café"  # 4 chars, 5 UTF-8 bytes (é = 0xC3 0xA9)
+        byte_out = mb_tokenizer.encode_byte_offsets(text)
+        char_out = mb_tokenizer.encode(text)
+        assert byte_out.tokens == char_out.tokens == ["café"]
+        assert byte_out.offsets[0] == (0, 5)
+        assert char_out.offsets[0] == (0, 4)
+        s, e = byte_out.offsets[0]
+        assert text.encode("utf-8")[s:e].decode("utf-8") == "café"
+
     def test_encode_batch_byte_offsets(self):
         tokenizer = Tokenizer(BPE())
         tokenizer.add_tokens(["my", "name", "is", "john", "pair"])
