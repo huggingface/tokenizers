@@ -240,9 +240,7 @@ class TestTokenizer:
         assert type(output[1].offsets) == list
 
         # Can encode batch with both single sequence and pairs
-        output = tokenizer.encode_batch_byte_offsets(
-            ["my name is john", ("my name is john", "pair")]
-        )
+        output = tokenizer.encode_batch_byte_offsets(["my name is john", ("my name is john", "pair")])
         assert len(output) == 2
 
     @pytest.mark.network
