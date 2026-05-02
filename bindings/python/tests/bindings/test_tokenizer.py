@@ -193,6 +193,44 @@ class TestTokenizer:
         output = tokenizer.encode_batch(["my name is john", ("my name is john", "pair")])
         assert len(output) == 2
 
+    def test_encode_byte_offsets(self):
+        tokenizer = Tokenizer(BPE())
+        tokenizer.add_tokens(["my", "name", "is", "john", "pair"])
+
+        # Can encode single sequence with byte offsets
+        output = tokenizer.encode_byte_offsets("my name is john")
+        assert output.tokens == ["my", "name", "is", "john"]
+        # Byte offsets should be returned
+        assert type(output.offsets) == list
+        assert len(output.offsets) == len(output.ids)
+
+        # Can encode a pair of sequences with byte offsets
+        output = tokenizer.encode_byte_offsets("my name is john", "pair")
+        assert output.tokens == ["my", "name", "is", "john", "pair"]
+
+        # Can encode a single pre-tokenized sequence with byte offsets
+        output = tokenizer.encode_byte_offsets(["my", "name", "is", "john"], is_pretokenized=True)
+        assert output.tokens == ["my", "name", "is", "john"]
+
+    def test_encode_batch_byte_offsets(self):
+        tokenizer = Tokenizer(BPE())
+        tokenizer.add_tokens(["my", "name", "is", "john", "pair"])
+
+        # Can encode batch with byte offsets
+        output = tokenizer.encode_batch_byte_offsets(["my name is john", "pair"])
+        assert len(output) == 2
+        assert output[0].tokens == ["my", "name", "is", "john"]
+        assert output[1].tokens == ["pair"]
+        # Verify offsets are returned
+        assert type(output[0].offsets) == list
+        assert type(output[1].offsets) == list
+
+        # Can encode batch with both single sequence and pairs
+        output = tokenizer.encode_batch_byte_offsets(
+            ["my name is john", ("my name is john", "pair")]
+        )
+        assert len(output) == 2
+
     @pytest.mark.network
     def test_encode_formats(self, bert_files):
         tokenizer = BertWordPieceTokenizer(bert_files["vocab"])

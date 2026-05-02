@@ -1213,6 +1213,74 @@ impl PyTokenizer {
         .into()
     }
 
+    /// Encode the given sequence and pair, using byte-level offsets.
+    ///
+    /// This method can process raw text sequences as well as already pre-tokenized sequences.
+    ///
+    /// Example:
+    ///     Here are some examples of the inputs that are accepted::
+    ///
+    ///         encode_byte_offsets("A single sequence")`
+    ///         encode_byte_offsets("A sequence", "And its pair")`
+    ///
+    /// Args:
+    ///     sequence (:obj:`~tokenizers.InputSequence`):
+    ///         The main input sequence we want to encode. This sequence can be either raw
+    ///         text or pre-tokenized, according to the ``is_pretokenized`` argument:
+    ///
+    ///         - If ``is_pretokenized=False``: :class:`~tokenizers.TextInputSequence`
+    ///         - If ``is_pretokenized=True``: :class:`~tokenizers.PreTokenizedInputSequence`
+    ///
+    ///     pair (:obj:`~tokenizers.InputSequence`, `optional`):
+    ///         An optional input sequence. The expected format is the same that for ``sequence``.
+    ///
+    ///     is_pretokenized (:obj:`bool`, defaults to :obj:`False`):
+    ///         Whether the input is already pre-tokenized
+    ///
+    ///     add_special_tokens (:obj:`bool`, defaults to :obj:`True`):
+    ///         Whether to add the special tokens
+    ///
+    /// Returns:
+    ///     :class:`~tokenizers.Encoding`: The encoded result with byte-level offsets
+    ///
+    #[pyo3(signature = (sequence, pair = None, is_pretokenized = false, add_special_tokens = true) -> "Encoding")]
+    #[pyo3(
+        text_signature = "(self, sequence, pair=None, is_pretokenized=False, add_special_tokens=True)"
+    )]
+    fn encode_byte_offsets(
+        &self,
+        sequence: &Bound<'_, PyAny>,
+        pair: Option<&Bound<'_, PyAny>>,
+        is_pretokenized: bool,
+        add_special_tokens: bool,
+    ) -> PyResult<PyEncoding> {
+        let sequence: tk::InputSequence = if is_pretokenized {
+            sequence.extract::<PreTokenizedInputSequence>()?.into()
+        } else {
+            sequence.extract::<TextInputSequence>()?.into()
+        };
+        let input = match pair {
+            Some(pair) => {
+                let pair: tk::InputSequence = if is_pretokenized {
+                    pair.extract::<PreTokenizedInputSequence>()?.into()
+                } else {
+                    pair.extract::<TextInputSequence>()?.into()
+                };
+                tk::EncodeInput::Dual(sequence, pair)
+            }
+            None => tk::EncodeInput::Single(sequence),
+        };
+
+        ToPyResult(
+            self.tokenizer
+                .read()
+                .unwrap()
+                .encode(input, add_special_tokens)
+                .map(|e| e.into()),
+        )
+        .into()
+    }
+
     /// Asynchronously encode the given input with character offsets.
     ///
     /// This is an async version of encode that can be awaited in async Python code.
@@ -1331,6 +1399,66 @@ impl PyTokenizer {
                     .read()
                     .unwrap()
                     .encode_batch_char_offsets(items, add_special_tokens)
+                    .map(|encodings| encodings.into_iter().map(|e| e.into()).collect()),
+            )
+            .into()
+        })
+    }
+
+    /// Encode the given batch of inputs, using byte-level offsets.
+    ///
+    /// This method accept both raw text sequences as well as already pre-tokenized sequences.
+    ///
+    /// Example:
+    ///     Here are some examples of the inputs that are accepted::
+    ///
+    ///         encode_batch_byte_offsets([
+    ///             "A single sequence",
+    ///             ("A tuple with a sequence", "And its pair"),
+    ///         ])
+    ///
+    /// Args:
+    ///     input (A :obj:`List`/:obj:`Tuple` of :obj:`~tokenizers.EncodeInput`):
+    ///         A list of single sequences or pair sequences to encode. Each sequence
+    ///         can be either raw text or pre-tokenized, according to the ``is_pretokenized``
+    ///         argument:
+    ///
+    ///         - If ``is_pretokenized=False``: :class:`~tokenizers.TextEncodeInput`
+    ///         - If ``is_pretokenized=True``: :class:`~tokenizers.PreTokenizedEncodeInput`
+    ///
+    ///     is_pretokenized (:obj:`bool`, defaults to :obj:`False`):
+    ///         Whether the input is already pre-tokenized
+    ///
+    ///     add_special_tokens (:obj:`bool`, defaults to :obj:`True`):
+    ///         Whether to add the special tokens
+    ///
+    /// Returns:
+    ///     A :obj:`List` of :class:`~tokenizers.Encoding`: The encoded batch with byte-level offsets
+    ///
+    #[pyo3(signature = (input, is_pretokenized = false, add_special_tokens = true) -> "list[Encoding]")]
+    #[pyo3(text_signature = "(self, input, is_pretokenized=False, add_special_tokens=True)")]
+    fn encode_batch_byte_offsets(
+        &self,
+        py: Python<'_>,
+        input: Vec<Bound<'_, PyAny>>,
+        is_pretokenized: bool,
+        add_special_tokens: bool,
+    ) -> PyResult<Vec<PyEncoding>> {
+        let mut items = Vec::<tk::EncodeInput>::with_capacity(input.len());
+        for item in &input {
+            let item: tk::EncodeInput = if is_pretokenized {
+                item.extract::<PreTokenizedEncodeInput>()?.into()
+            } else {
+                item.extract::<TextEncodeInput>()?.into()
+            };
+            items.push(item);
+        }
+        py.detach(|| {
+            ToPyResult(
+                self.tokenizer
+                    .read()
+                    .unwrap()
+                    .encode_batch(items, add_special_tokens)
                     .map(|encodings| encodings.into_iter().map(|e| e.into()).collect()),
             )
             .into()

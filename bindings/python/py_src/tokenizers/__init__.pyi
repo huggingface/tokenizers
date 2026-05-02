@@ -1001,6 +1001,107 @@ class Tokenizer:
         Returns:
             A :obj:`List` of :class:`~tokenizers.Encoding`: The encoded batch
         """
+    def encode_byte_offsets(
+        self, /, sequence: Any, pair: Any | None = None, is_pretokenized: bool = False, add_special_tokens: bool = True
+    ) -> "Encoding":
+        """
+        Encode the given sequence and pair, using byte-level offsets.
+
+        Example:
+            Here are some examples of the inputs that are accepted::
+
+                encode_byte_offsets("A single sequence")`
+                encode_byte_offsets("A sequence", "And its pair")`
+
+        Args:
+            sequence (:obj:`~tokenizers.InputSequence`):
+                The main input sequence we want to encode. This sequence can be either raw
+                text or pre-tokenized, according to the ``is_pretokenized`` argument:
+
+                - If ``is_pretokenized=False``: :class:`~tokenizers.TextInputSequence`
+                - If ``is_pretokenized=True``: :class:`~tokenizers.PreTokenizedInputSequence`
+
+            pair (:obj:`~tokenizers.InputSequence`, `optional`):
+                An optional input sequence. The expected format is the same that for ``sequence``.
+
+            is_pretokenized (:obj:`bool`, defaults to :obj:`False`):
+                Whether the input is already pre-tokenized
+
+            add_special_tokens (:obj:`bool`, defaults to :obj:`True`):
+                Whether to add the special tokens
+
+        Returns:
+            :class:`~tokenizers.Encoding`: The encoded result with byte-level offsets
+        """
+    def encode_batch(
+        self, /, input: Sequence[Any], is_pretokenized: bool = False, add_special_tokens: bool = True
+    ) -> "list[Encoding]":
+        """
+        Encode the given batch of inputs. This method accept both raw text sequences
+        as well as already pre-tokenized sequences. The reason we use `PySequence` is
+        because it allows type checking with zero-cost (according to PyO3) as we don't
+        have to convert to check.
+
+        Example:
+            Here are some examples of the inputs that are accepted::
+
+                encode_batch([
+                    "A single sequence",
+                    ("A tuple with a sequence", "And its pair"),
+                    [ "A", "pre", "tokenized", "sequence" ],
+                    ([ "A", "pre", "tokenized", "sequence" ], "And its pair")
+                ])
+
+        Args:
+            input (A :obj:`List`/:obj:`Tuple` of :obj:`~tokenizers.EncodeInput`):
+                A list of single sequences or pair sequences to encode. Each sequence
+                can be either raw text or pre-tokenized, according to the ``is_pretokenized``
+                argument:
+
+                - If ``is_pretokenized=False``: :class:`~tokenizers.TextEncodeInput`
+                - If ``is_pretokenized=True``: :class:`~tokenizers.PreTokenizedEncodeInput`
+
+            is_pretokenized (:obj:`bool`, defaults to :obj:`False`):
+                Whether the input is already pre-tokenized
+
+            add_special_tokens (:obj:`bool`, defaults to :obj:`True`):
+                Whether to add the special tokens
+
+        Returns:
+            A :obj:`List` of :class:`~tokenizers.Encoding`: The encoded batch
+        """
+    def encode_batch_byte_offsets(
+        self, /, input: Sequence[Any], is_pretokenized: bool = False, add_special_tokens: bool = True
+    ) -> "list[Encoding]":
+        """
+        Encode the given batch of inputs, using byte-level offsets.
+
+        Example:
+            Here are some examples of the inputs that are accepted::
+
+                encode_batch_byte_offsets([
+                    "A single sequence",
+                    ("A tuple with a sequence", "And its pair"),
+                ])
+
+        Args:
+            input (A :obj:`List`/:obj:`Tuple` of :obj:`~tokenizers.EncodeInput`):
+                A list of single sequences or pair sequences to encode. Each sequence
+                can be either raw text or pre-tokenized, according to the ``is_pretokenized``
+                argument:
+
+                - If ``is_pretokenized=False``: :class:`~tokenizers.TextEncodeInput`
+                - If ``is_pretokenized=True``: :class:`~tokenizers.PreTokenizedEncodeInput`
+
+            is_pretokenized (:obj:`bool`, defaults to :obj:`False`):
+                Whether the input is already pre-tokenized
+
+            add_special_tokens (:obj:`bool`, defaults to :obj:`True`):
+                Whether to add the special tokens
+
+        Returns:
+            A :obj:`List` of :class:`~tokenizers.Encoding`: The encoded batch with byte-level offsets
+        """
     def encode_batch_fast(
         self, /, input: Sequence[Any], is_pretokenized: bool = False, add_special_tokens: bool = True
     ) -> "list[Encoding]":
