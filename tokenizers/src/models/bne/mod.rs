@@ -1,7 +1,7 @@
 //! [Byte n-gram Encoding]
-use std::{iter, mem};
 use std::cmp::Ordering;
 use std::fmt;
+use std::{iter, mem};
 
 mod model;
 mod serialization;
@@ -20,7 +20,7 @@ impl PartialEq for Ngram {
         }
         for i in 0..self.ids.len() {
             if self.ids[i] != other.ids[i] {
-                return false
+                return false;
             }
         }
         true
@@ -36,7 +36,9 @@ impl Ord for Ngram {
         if self.ids.len() != other.ids.len() {
             self.ids.len().cmp(&other.ids.len())
         } else {
-            self.ids.iter().zip(other.ids.clone())
+            self.ids
+                .iter()
+                .zip(other.ids.clone())
                 .map(|(x, y)| x.cmp(&y))
                 .find(|&o| o != Ordering::Equal)
                 .unwrap_or(Ordering::Equal)
@@ -47,7 +49,16 @@ impl Ord for Ngram {
 impl fmt::Display for Ngram {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let ngram = self.clone();
-        write!(f, "Ngram: ids[{}]", ngram.ids.iter().map(|id| id.to_string()).collect::<Vec<String>>().join(", "))
+        write!(
+            f,
+            "Ngram: ids[{}]",
+            ngram
+                .ids
+                .iter()
+                .map(|id| id.to_string())
+                .collect::<Vec<String>>()
+                .join(", ")
+        )
     }
 }
 /// Errors that can be encountered while using or constructing a `BNE` model.
