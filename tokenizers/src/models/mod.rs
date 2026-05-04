@@ -1,7 +1,7 @@
 //! Popular tokenizer models.
 
-pub mod bpe;
 pub mod bne;
+pub mod bpe;
 pub mod unigram;
 pub mod wordlevel;
 pub mod wordpiece;
@@ -12,8 +12,8 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::models::bpe::{BpeTrainer, BPE};
 use crate::models::bne::{BneTrainer, BNE};
+use crate::models::bpe::{BpeTrainer, BPE};
 use crate::models::unigram::{Unigram, UnigramTrainer};
 use crate::models::wordlevel::{WordLevel, WordLevelTrainer};
 use crate::models::wordpiece::{WordPiece, WordPieceTrainer};
