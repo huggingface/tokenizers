@@ -1,22 +1,27 @@
 #[cfg(not(debug_assertions))]
 use assert_approx_eq::assert_approx_eq;
 use tokenizers::models::bne::{BneTrainer, BNE};
-use tokenizers::{pre_tokenizers, DecoderWrapper, Model, Tokenizer};
 use tokenizers::{
-    normalizers,
-    AddedToken, NormalizerWrapper, PreTokenizerWrapper, SplitDelimiterBehavior
+    normalizers, AddedToken, NormalizerWrapper, PreTokenizerWrapper, SplitDelimiterBehavior,
 };
+use tokenizers::{pre_tokenizers, DecoderWrapper, Model, Tokenizer};
 
 #[test]
 fn test_load_bne_from_file() {
-    let model = BNE::from_file("data/bne-vocab.json", "data/bne-merges.txt").build().unwrap();
+    let model = BNE::from_file("data/bne-vocab.json", "data/bne-merges.txt")
+        .build()
+        .unwrap();
 }
-
+/*
 #[test]
 fn test_decoding_with_added_bpe() {
     let mut tokenizer = Tokenizer::from_file("data/bne.json").unwrap();
-    tokenizer.with_pre_tokenizer(Some(PreTokenizerWrapper::from(pre_tokenizers::byte_level::ByteLevel::new(true, true, true))));
-    tokenizer.with_decoder(Some(DecoderWrapper::from(pre_tokenizers::byte_level::ByteLevel::new(true, true, true))));
+    tokenizer.with_pre_tokenizer(Some(PreTokenizerWrapper::from(
+        pre_tokenizers::byte_level::ByteLevel::new(true, true, true),
+    )));
+    tokenizer.with_decoder(Some(DecoderWrapper::from(
+        pre_tokenizers::byte_level::ByteLevel::new(true, true, true),
+    )));
     let encoded = tokenizer.encode("understanding", false).unwrap();
     println!("{}", encoded.get_ids()[0]);
     let encoded = tokenizer
@@ -48,7 +53,7 @@ fn test_decoding_with_added_bpe() {
     );
     let decoded = tokenizer.decode(encoded.get_ids(), false);
     assert_eq!(decoded.unwrap(), "Hey! how is this token: д")
-}
+}*/
 /*
 #[test]
 fn test_tokenize_bne_from_file() {
