@@ -1,4 +1,4 @@
-use super::{super::OrderedVocabIter, trainer::BneTrainer, Error, Word, Ngram};
+use super::{super::OrderedVocabIter, trainer::BneTrainer, Error, Ngram, Word};
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::cache::{Cache, DEFAULT_CACHE_CAPACITY, MAX_LENGTH};
 use crate::utils::iter::ResultShunt;
@@ -175,7 +175,11 @@ impl BneBuilder {
             .map(|(i, vec)| -> Result<(Ngram, (u32, u32))> {
                 let mut ids: Vec<u32> = Vec::with_capacity(vec.len());
                 for s in vec.iter() {
-                    ids.push(*vocab.get(s).ok_or_else(|| Error::MergeTokenOutOfVocabulary(s.to_owned()))?);
+                    ids.push(
+                        *vocab
+                            .get(s)
+                            .ok_or_else(|| Error::MergeTokenOutOfVocabulary(s.to_owned()))?,
+                    );
                 }
                 // remove continuing subword prefix
                 let mut token_vec = vec.clone();
@@ -189,7 +193,7 @@ impl BneBuilder {
                 let new_id = vocab
                     .get(&new_token)
                     .ok_or(Error::MergeTokenOutOfVocabulary(new_token))?;
-                Ok((Ngram {ids: ids}, (i as u32, *new_id)))
+                Ok((Ngram { ids: ids }, (i as u32, *new_id)))
             })
             .collect::<Result<MergeMap>>()?;
 
@@ -289,9 +293,15 @@ pub(crate) fn convert_merges_to_hashmap<I: Iterator<Item = String>>(
 ) -> Result<Merges> {
     let mut merges = vec![];
 
-    let lines = iter.filter(|l| !l.starts_with("#version"));
-    for (_, line) in lines.enumerate() {
-        let parts = line.split(' ').collect::<Vec<_>>().into_iter().map(|e| std::string::String::from(e)).collect();
+    let lines = iter.enumerate().filter(|(_, l)| !l.starts_with("#version"));
+    for (line_number, line) in lines {
+        let parts: Vec<_> = line
+            .split_whitespace()
+            .map(std::string::String::from)
+            .collect();
+        if parts.len() < 2 {
+            return Err(Error::BadMerges(line_number).into());
+        }
         merges.push(parts);
     }
 
@@ -564,7 +574,16 @@ impl Model for BNE {
             &merges
                 .into_iter()
                 .flat_map(|(ngram, _)| {
-                    format!("{}\n", ngram.ids.iter().map(|id| self.vocab_r[&id].clone()).collect::<Vec<String>>().join(" ")).into_bytes()
+                    format!(
+                        "{}\n",
+                        ngram
+                            .ids
+                            .iter()
+                            .map(|id| self.vocab_r[&id].clone())
+                            .collect::<Vec<String>>()
+                            .join(" ")
+                    )
+                    .into_bytes()
                 })
                 .collect::<Vec<_>>()[..],
         )?;
@@ -576,7 +595,6 @@ impl Model for BNE {
         BneTrainer::default()
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -757,7 +775,12 @@ mod tests {
         .cloned()
         .collect();
         let merges: Merges = vec![
-            vec!["a".to_string(), "t".to_string(), "e".to_string(), "d".to_string()],
+            vec![
+                "a".to_string(),
+                "t".to_string(),
+                "e".to_string(),
+                "d".to_string(),
+            ],
             vec!["u".to_string(), "n".to_string()],
             vec!["r".to_string(), "e".to_string(), "l".to_string()],
             vec!["un".to_string(), "rel".to_string(), "ated".to_string()],
@@ -818,7 +841,10 @@ mod tests {
         let bne = builder.build().unwrap();
 
         // Check merges.
-        assert_eq!(bne.merges.get(&Ngram{ids: vec![0, 1]}).unwrap(), &(0u32, 3u32));
+        assert_eq!(
+            bne.merges.get(&Ngram { ids: vec![0, 1] }).unwrap(),
+            &(0u32, 3u32)
+        );
 
         // Check vocab.
         assert_eq!(bne.vocab.get("a").unwrap(), &0u32);
