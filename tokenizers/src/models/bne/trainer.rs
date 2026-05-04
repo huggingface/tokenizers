@@ -1,6 +1,6 @@
 #![allow(clippy::map_entry)]
 
-use super::{WithFirstLastIterator, Word, BNE, Ngram};
+use super::{Ngram, WithFirstLastIterator, Word, BNE};
 use crate::parallelism::*;
 use crate::tokenizer::{AddedToken, Result, Trainer};
 use crate::utils::progress::{ProgressBar, ProgressStyle};
@@ -9,7 +9,7 @@ use compact_str::CompactString;
 use dary_heap::OctonaryHeap;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
-use std::collections::{HashSet};
+use std::collections::HashSet;
 
 // added length to the merge struct
 // TODO: Test merge struct in simple program
@@ -34,8 +34,8 @@ impl PartialOrd for Merge {
 // Order Merges by count times length
 impl Ord for Merge {
     fn cmp(&self, other: &Self) -> Ordering {
-        if self.count * (self.length-1) != other.count * (other.length-1){
-            (self.count * (self.length-1)).cmp(&(other.count * (other.length-1)))
+        if self.count * (self.length - 1) != other.count * (other.length - 1) {
+            (self.count * (self.length - 1)).cmp(&(other.count * (other.length - 1)))
         } else {
             // Here we want ascending order
             other.ngram.cmp(&self.ngram)
@@ -302,7 +302,12 @@ impl BneTrainer {
     }
 
     /// Compute the initial alphabet and limit it if relevant
-    fn compute_alphabet(&self, wc: &AHashMap<CompactString, u64>, w2id: &mut AHashMap<CompactString, u32>, id2w: &mut Vec<CompactString>,) {
+    fn compute_alphabet(
+        &self,
+        wc: &AHashMap<CompactString, u64>,
+        w2id: &mut AHashMap<CompactString, u32>,
+        id2w: &mut Vec<CompactString>,
+    ) {
         // Compute the alphabet from seen words
         let mut alphabet: AHashMap<char, usize> = AHashMap::new();
         for (word, count) in wc {
@@ -327,7 +332,9 @@ impl BneTrainer {
         // Compute the number of chars to remove from the alphabet
         // If `limit_alphabet < initial_alphabet.len()`, some of these initial characters
         // will be removed
-        let to_remove = self.limit_alphabet.map(|limit| {
+        let to_remove = self
+            .limit_alphabet
+            .map(|limit| {
                 if alphabet.len() > limit {
                     alphabet.len() - limit
                 } else {
@@ -363,13 +370,13 @@ impl BneTrainer {
     /// Tokenize words and add subwords to the vocabulary when relevant
     fn tokenize_words(
         &self,
-        wc: &AHashMap<CompactString, u64>,                                         // wordcount
-        w2id: &mut AHashMap<CompactString, u32>,                                    // word -> id
-        id2w: &mut Vec<CompactString>,                                             // id -> word
-        p: &Option<ProgressBar>,                                            // progressBar
+        wc: &AHashMap<CompactString, u64>,       // wordcount
+        w2id: &mut AHashMap<CompactString, u32>, // word -> id
+        id2w: &mut Vec<CompactString>,           // id -> word
+        p: &Option<ProgressBar>,                 // progressBar
     ) -> (Vec<Word>, Vec<u64>) {
-        let mut words: Vec<Word> = Vec::with_capacity(wc.len());            // wordsvector
-        let mut counts: Vec<u64> = Vec::with_capacity(wc.len());            // countsvector
+        let mut words: Vec<Word> = Vec::with_capacity(wc.len()); // wordsvector
+        let mut counts: Vec<u64> = Vec::with_capacity(wc.len()); // countsvector
 
         for (word, count) in wc {
             let mut current_word = Word::new();
@@ -429,18 +436,28 @@ impl BneTrainer {
                 // Struct mapping, with built in comparator
                 let mut ngram_counts: AHashMap<Ngram, i32> = AHashMap::new();
                 let mut where_to_update: AHashMap<Ngram, AHashSet<usize>> = AHashMap::new();
-                
+
                 // change windowsize depending on word size
-                let max_ngram_len_tmp = if self.max_token_length.unwrap_or(usize::MAX) < word.get_chars().len() {self.max_token_length.unwrap_or(usize::MAX)} else {word.get_chars().len()};
-                let max_ngram_len = if self.max_ngram_length.unwrap_or(usize::MAX) < max_ngram_len_tmp {self.max_ngram_length.unwrap_or(usize::MAX)} else {max_ngram_len_tmp};
+                let max_ngram_len_tmp =
+                    if self.max_token_length.unwrap_or(usize::MAX) < word.get_chars().len() {
+                        self.max_token_length.unwrap_or(usize::MAX)
+                    } else {
+                        word.get_chars().len()
+                    };
+                let max_ngram_len =
+                    if self.max_ngram_length.unwrap_or(usize::MAX) < max_ngram_len_tmp {
+                        self.max_ngram_length.unwrap_or(usize::MAX)
+                    } else {
+                        max_ngram_len_tmp
+                    };
                 for ngram_len in 2..max_ngram_len + 1 {
-                    let mut last_ngram = Ngram{ids: vec![]};
+                    let mut last_ngram = Ngram { ids: vec![] };
                     let mut same_ngrams = 0;
                     for window in word.get_chars().windows(ngram_len) {
                         // TODO: continue if exceeding max ngram length, expose function in word
                         // Check if there are any characters with len > 1 at this point..
 
-                        let cur_ngram= Ngram {
+                        let cur_ngram = Ngram {
                             ids: Vec::from(window),
                         };
 
@@ -449,7 +466,7 @@ impl BneTrainer {
                             same_ngrams += 1;
                             continue;
                         }
-                        
+
                         //  Update Skipping counter and current ngram
                         last_ngram = cur_ngram.clone();
                         same_ngrams = 0;
@@ -463,8 +480,14 @@ impl BneTrainer {
                         let count = counts[i];
                         where_to_update
                             .entry(cur_ngram.clone())
-                            .and_modify(|h| {h.insert(i);})
-                            .or_insert_with(|| {let mut h = AHashSet::new();h.insert(i);h});
+                            .and_modify(|h| {
+                                h.insert(i);
+                            })
+                            .or_insert_with(|| {
+                                let mut h = AHashSet::new();
+                                h.insert(i);
+                                h
+                            });
 
                         *ngram_counts.get_mut(&cur_ngram).unwrap() += count as i32;
                     }
@@ -546,7 +569,7 @@ impl BneTrainer {
         //
         self.update_progress(&progress, words.len(), "Count Ngrams");
         let (mut ngram_counts, mut where_to_update) = self.count_ngrams(&words, &counts, &progress);
-        
+
         /*
         println!("counted ngrams");
         println!("ngram_counts map:");
@@ -597,10 +620,9 @@ impl BneTrainer {
                 queue.push(top);
                 continue;
             } else {
-                
             }
             // Stop if top count scaled is too small (does not exceed min scale frequency)
-            if top.count < 1 || self.min_scale_frequency > top.count * (top.length-1) {
+            if top.count < 1 || self.min_scale_frequency > top.count * (top.length - 1) {
                 break;
             }
 
@@ -610,7 +632,12 @@ impl BneTrainer {
             }
 
             // Build a new token
-            let mut token_vec: Vec<CompactString> = top.ngram.ids.iter().map(|id| id_to_word[*id as usize].clone()).collect();
+            let mut token_vec: Vec<CompactString> = top
+                .ngram
+                .ids
+                .iter()
+                .map(|id| id_to_word[*id as usize].clone())
+                .collect();
             // println!("top: ngram: {}, count: {}, length: {}", top.ngram.clone(), top.count, top.length);
             //println!("Valid top: ngram: {:?}", token_vec);
 
@@ -670,7 +697,12 @@ impl BneTrainer {
                         let word = word_start.0.add(i);
                         // let word: &mut Word = &mut (*word);
                         (*word)
-                            .merge(top.ngram.clone().ids, new_token_id, max_token_length, max_ngram_length)
+                            .merge(
+                                top.ngram.clone().ids,
+                                new_token_id,
+                                max_token_length,
+                                max_ngram_length,
+                            )
                             .into_iter()
                             .map(|c| (c, i))
                             .collect::<Vec<_>>()
@@ -723,7 +755,7 @@ impl BneTrainer {
 
         // Transfer new vocab & options to model
         model.vocab = word_to_id
-        .into_iter()
+            .into_iter()
             // we have to look up the string in id_to_word because the key in word_to_id is a hash
             .map(|(_key, val)| (id_to_word[val as usize].to_string(), val))
             .collect();
@@ -770,7 +802,9 @@ impl Trainer for BneTrainer {
                 let words = process(sequence.as_ref())?;
                 let mut map = AHashMap::new();
                 for word in words {
-                    map.entry(CompactString::from(word)).and_modify(|c| *c += 1).or_insert(1);
+                    map.entry(CompactString::from(word))
+                        .and_modify(|c| *c += 1)
+                        .or_insert(1);
                 }
                 Ok(map)
             })
@@ -790,10 +824,9 @@ impl Trainer for BneTrainer {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
-    use super::{BneTrainer, Ngram, BNE, Word};
+    use super::{BneTrainer, Ngram, Word, BNE};
     use ahash::AHashMap;
     use compact_str::CompactString;
     use std::collections::HashMap;
@@ -815,31 +848,58 @@ mod tests {
 
         // Expected Ngram counts
         let ngram_counts: AHashMap<Ngram, i32> = [
-            (Ngram{ids: vec![0,1]}, 1), // ba
-            (Ngram{ids: vec![0,1,1]}, 1), // baa
-            (Ngram{ids: vec![0,1,1,1]}, 1), // baaa
-            (Ngram{ids: vec![0,1,1,1,1]}, 1), // baaaa
-            (Ngram{ids: vec![0,1,1,1,1,0]}, 1), // baaaab
-            (Ngram{ids: vec![1,1]}, 2), // aa
-            (Ngram{ids: vec![1,1,1]}, 1), // aaa
-            (Ngram{ids: vec![1,1,1,1]}, 1), // aaaa
-            (Ngram{ids: vec![1,0]}, 1), // ab
-            (Ngram{ids: vec![1,1,0]}, 1), // aab
-            (Ngram{ids: vec![1,1,1,0]}, 1), // aaab
-            (Ngram{ids: vec![1,1,1,1,0]}, 1), // aaaab
+            (Ngram { ids: vec![0, 1] }, 1),    // ba
+            (Ngram { ids: vec![0, 1, 1] }, 1), // baa
+            (
+                Ngram {
+                    ids: vec![0, 1, 1, 1],
+                },
+                1,
+            ), // baaa
+            (
+                Ngram {
+                    ids: vec![0, 1, 1, 1, 1],
+                },
+                1,
+            ), // baaaa
+            (
+                Ngram {
+                    ids: vec![0, 1, 1, 1, 1, 0],
+                },
+                1,
+            ), // baaaab
+            (Ngram { ids: vec![1, 1] }, 2),    // aa
+            (Ngram { ids: vec![1, 1, 1] }, 1), // aaa
+            (
+                Ngram {
+                    ids: vec![1, 1, 1, 1],
+                },
+                1,
+            ), // aaaa
+            (Ngram { ids: vec![1, 0] }, 1),    // ab
+            (Ngram { ids: vec![1, 1, 0] }, 1), // aab
+            (
+                Ngram {
+                    ids: vec![1, 1, 1, 0],
+                },
+                1,
+            ), // aaab
+            (
+                Ngram {
+                    ids: vec![1, 1, 1, 1, 0],
+                },
+                1,
+            ), // aaaab
         ]
         .iter()
         .cloned()
         .collect();
 
         // Count Ngrams
-        let trainer = BneTrainer::builder()
-            .show_progress(false)
-            .build();
+        let trainer = BneTrainer::builder().show_progress(false).build();
         let (calc_ngram_counts, _) = trainer.count_ngrams(&words, &counts, &None);
-        
-        assert_eq!(ngram_counts, calc_ngram_counts)
 
+        assert_eq!(ngram_counts, calc_ngram_counts)
     }
 
     #[test]
@@ -905,8 +965,13 @@ mod tests {
         // tokenization, and 'id' is the vocab id of the symbol resulting from merging
         // the ngram of symbols in the corresponding key.
         let expected_merges: AHashMap<Ngram, (u32, u32)> = [
-            (Ngram {ids: vec![8, 17, 11]}, (0, 22)), // 'a' + 'r' + 'e'  -> 'are'
-            (Ngram {ids: vec![13, 18]}, (1, 23)), // 'i' + 's'  -> 'is'
+            (
+                Ngram {
+                    ids: vec![8, 17, 11],
+                },
+                (0, 22),
+            ), // 'a' + 'r' + 'e'  -> 'are'
+            (Ngram { ids: vec![13, 18] }, (1, 23)), // 'i' + 's'  -> 'is'
         ]
         .iter()
         .cloned()
@@ -956,10 +1021,10 @@ mod tests {
         // tokenization, and 'id' is the vocab id of the symbol resulting from merging
         // the ngram of symbols in the corresponding key.
         let expected_merges: AHashMap<Ngram, (u32, u32)> = [
-            (Ngram {ids: vec![2, 3]}, (0, 6)),
-            (Ngram {ids: vec![1, 6, 4]}, (1, 7)),
-            (Ngram {ids: vec![0, 7]}, (2, 8)),
-            (Ngram {ids: vec![7, 5]}, (3, 9)),
+            (Ngram { ids: vec![2, 3] }, (0, 6)),
+            (Ngram { ids: vec![1, 6, 4] }, (1, 7)),
+            (Ngram { ids: vec![0, 7] }, (2, 8)),
+            (Ngram { ids: vec![7, 5] }, (3, 9)),
         ]
         .iter()
         .cloned()
@@ -967,7 +1032,6 @@ mod tests {
         assert_eq!(model.merges, expected_merges);
     }
 
-    
     #[test]
     fn bne_test_max_token_length_16() {
         /* bpe_test_max_token_length series of tests test the max_token_length flag of BneTrainer
@@ -1010,7 +1074,7 @@ mod tests {
             )
         }
     }
-    
+
     #[test]
     fn bne_test_max_token_length_direct_assert() {
         /* more direct version of bpe_test_max_token_length test
@@ -1080,5 +1144,4 @@ mod tests {
         .collect();
         assert_eq!(trained_vocab, expected_vocab)
     }
-    
 }
