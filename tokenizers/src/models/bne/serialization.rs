@@ -32,7 +32,13 @@ impl Serialize for BNE {
         merges.sort_unstable_by_key(|k| *k.1);
         let merges = merges
             .into_iter()
-            .map(|(ngram, _)| ngram.ids.iter().map(|id| self.vocab_r[&id].clone()).collect::<Vec<String>>())
+            .map(|(ngram, _)| {
+                ngram
+                    .ids
+                    .iter()
+                    .map(|id| self.vocab_r[&id].clone())
+                    .collect::<Vec<String>>()
+            })
             .collect::<Vec<_>>();
         let ordered_vocab = OrderedVocabIter::new(&self.vocab_r);
 
@@ -154,7 +160,6 @@ impl<'de> Visitor<'de> for BNEVisitor {
         }
     }
 }
-
 
 #[cfg(test)]
 mod test {
