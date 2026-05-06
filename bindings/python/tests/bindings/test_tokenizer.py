@@ -243,6 +243,14 @@ class TestTokenizer:
         output = tokenizer.encode_batch_byte_offsets(["my name is john", ("my name is john", "pair")])
         assert len(output) == 2
 
+        # Batch offsets index into UTF-8 bytes, not chars (mirrors test_encode_byte_offsets).
+        mb_tokenizer = Tokenizer(BPE())
+        mb_tokenizer.add_tokens(["café"])
+        byte_batch = mb_tokenizer.encode_batch_byte_offsets(["café"])
+        char_batch = mb_tokenizer.encode_batch(["café"])
+        assert byte_batch[0].offsets[0] == (0, 5)
+        assert char_batch[0].offsets[0] == (0, 4)
+
     @pytest.mark.network
     def test_encode_formats(self, bert_files):
         tokenizer = BertWordPieceTokenizer(bert_files["vocab"])

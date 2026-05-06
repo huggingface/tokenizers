@@ -1220,8 +1220,8 @@ impl PyTokenizer {
     /// Example:
     ///     Here are some examples of the inputs that are accepted::
     ///
-    ///         encode_byte_offsets("A single sequence")`
-    ///         encode_byte_offsets("A sequence", "And its pair")`
+    ///         encode_byte_offsets("A single sequence")
+    ///         encode_byte_offsets("A sequence", "And its pair")
     ///
     /// Args:
     ///     sequence (:obj:`~tokenizers.InputSequence`):
