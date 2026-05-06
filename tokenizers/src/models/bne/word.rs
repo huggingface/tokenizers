@@ -521,15 +521,29 @@ impl Word {
                     first_symbol_index += 1
                 }
                 // Insert Ngrams formed from new symbol
-                while first_symbol_index <= top.pos {
+                let mut first_symbol_steps = 0;
+                while first_symbol_index <= top.pos && first_symbol_steps < self.symbols.len() {
+                    first_symbol_steps += 1;
+
                     let mut last_symbol_index = top.pos;
+                    let mut last_symbol_steps = 0;
                     loop {
+                        last_symbol_steps += 1;
+                        if last_symbol_steps > self.symbols.len() {
+                            break;
+                        }
+
                         // construct a vector of all the ids up to top.pos excluding it
                         let mut ids: Vec<u32> = Vec::new();
                         let mut id_to_insert = first_symbol_index;
-                        while id_to_insert <= last_symbol_index {
+                        let mut id_steps = 0;
+                        while id_to_insert <= last_symbol_index && id_steps < self.symbols.len() {
+                            id_steps += 1;
                             ids.push(self.symbols[id_to_insert].c);
                             id_to_insert = self.symbols[id_to_insert].next as usize;
+                        }
+                        if id_steps == self.symbols.len() && id_to_insert <= last_symbol_index {
+                            break;
                         }
 
                         let length = ids.len();
@@ -550,9 +564,20 @@ impl Word {
                         if self.symbols[last_symbol_index].next == -1 {
                             break;
                         }
-                        last_symbol_index = self.symbols[last_symbol_index].next as usize;
+                        let next_last_symbol_index = self.symbols[last_symbol_index].next as usize;
+                        if next_last_symbol_index >= self.symbols.len() {
+                            break;
+                        }
+                        last_symbol_index = next_last_symbol_index;
                     }
-                    first_symbol_index = self.symbols[first_symbol_index].next as usize;
+                    if self.symbols[first_symbol_index].next == -1 {
+                        break;
+                    }
+                    let next_first_symbol_index = self.symbols[first_symbol_index].next as usize;
+                    if next_first_symbol_index >= self.symbols.len() {
+                        break;
+                    }
+                    first_symbol_index = next_first_symbol_index;
                 }
             }
         }
@@ -1372,6 +1397,23 @@ mod tests {
         word.merge_all(&merges, None);
 
         assert_eq!(word.get_chars(), &[2u32]);
+    }
+
+    #[test]
+    fn test_merge_all_handles_cyclic_next_links() {
+        let mut word = Word::new();
+        word.add(9, 1);
+        word.add(8, 1);
+        word.add(0, 1);
+        word.add(1, 1);
+        word.symbols[0].next = 0;
+
+        let mut merges: AHashMap<Ngram, (u32, u32)> = AHashMap::new();
+        merges.insert(Ngram { ids: vec![0, 1] }, (0, 2));
+
+        word.merge_all(&merges, None);
+
+        assert!(word.get_chars().contains(&2));
     }
 
     #[test]
