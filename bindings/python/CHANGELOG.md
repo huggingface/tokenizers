@@ -6,8 +6,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-
 - [#2049] Added `encode_byte_offsets()` and `encode_batch_byte_offsets()` methods returning byte-level offsets, enabling cross-tokenizer alignment without repeated `decode()` calls
 
 ## [0.13.2] 
