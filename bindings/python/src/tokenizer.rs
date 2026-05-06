@@ -1407,7 +1407,7 @@ impl PyTokenizer {
 
     /// Encode the given batch of inputs, using byte-level offsets.
     ///
-    /// This method accept both raw text sequences as well as already pre-tokenized sequences.
+    /// This method accepts both raw text sequences as well as already pre-tokenized sequences.
     ///
     /// Example:
     ///     Here are some examples of the inputs that are accepted::
