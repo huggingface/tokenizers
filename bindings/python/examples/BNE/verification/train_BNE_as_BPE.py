@@ -22,4 +22,4 @@ def batch_iterator():
         yield batch["text"]
 
 tokenizer.train_from_iterator(batch_iterator(), trainer, length=len(dataset))
-tokenizer.save(f"data/BNE_as_BPE.json")
+tokenizer.save("data/BNE_as_BPE.json")
