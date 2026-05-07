@@ -102,6 +102,9 @@ esaxx_fast = ["esaxx-rs/cpp"]
 progressbar = ["indicatif"]
 http = ["hf-hub"]
 unstable_wasm = ["fancy-regex", "getrandom/wasm_js"]
+# No-op: kept for downstream compatibility. hf-hub's rustls-tls is enabled
+# unconditionally via the hf-hub dependency's features above.
+rustls-tls = []
 
 [dev-dependencies]
 criterion = "0.6"
