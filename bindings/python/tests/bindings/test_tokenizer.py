@@ -193,63 +193,74 @@ class TestTokenizer:
         output = tokenizer.encode_batch(["my name is john", ("my name is john", "pair")])
         assert len(output) == 2
 
+    def _byte_level_bpe(self):
+        """Build a ByteLevel BPE whose vocab is just the 256 byte-level
+        characters (no merges). Every input byte becomes its own token, so
+        multi-byte characters get split across multiple tokens — exactly the
+        scenario where byte vs char offsets diverge."""
+        from tokenizers.trainers import BpeTrainer
+
+        tokenizer = Tokenizer(BPE())
+        tokenizer.pre_tokenizer = ByteLevel(add_prefix_space=False)
+        tokenizer.train_from_iterator(
+            [""], trainer=BpeTrainer(vocab_size=256, initial_alphabet=ByteLevel.alphabet())
+        )
+        return tokenizer
+
     def test_encode_byte_offsets(self):
         tokenizer = Tokenizer(BPE())
         tokenizer.add_tokens(["my", "name", "is", "john", "pair"])
 
-        # Can encode single sequence with byte offsets
+        # Same I/O contract as encode(): single, pair, and pre-tokenized inputs.
         output = tokenizer.encode_byte_offsets("my name is john")
         assert output.tokens == ["my", "name", "is", "john"]
-        # Byte offsets should be returned
-        assert type(output.offsets) == list
         assert len(output.offsets) == len(output.ids)
 
-        # Can encode a pair of sequences with byte offsets
         output = tokenizer.encode_byte_offsets("my name is john", "pair")
         assert output.tokens == ["my", "name", "is", "john", "pair"]
 
-        # Can encode a single pre-tokenized sequence with byte offsets
         output = tokenizer.encode_byte_offsets(["my", "name", "is", "john"], is_pretokenized=True)
         assert output.tokens == ["my", "name", "is", "john"]
 
-        # Offsets index into UTF-8 bytes, not chars — this is the contract that
-        # differs from encode(), and what makes byte offsets usable for
-        # cross-tokenizer alignment when BPE splits multi-byte characters.
-        mb_tokenizer = Tokenizer(BPE())
-        mb_tokenizer.add_tokens(["café"])
-        text = "café"  # 4 chars, 5 UTF-8 bytes (é = 0xC3 0xA9)
-        byte_out = mb_tokenizer.encode_byte_offsets(text)
-        char_out = mb_tokenizer.encode(text)
-        assert byte_out.tokens == char_out.tokens == ["café"]
-        assert byte_out.offsets[0] == (0, 5)
-        assert char_out.offsets[0] == (0, 4)
-        s, e = byte_out.offsets[0]
-        assert text.encode("utf-8")[s:e].decode("utf-8") == "café"
+        # The actual byte-vs-char-offset contract: use a real ByteLevel BPE that
+        # splits "café" (4 chars, 5 UTF-8 bytes — é = 0xC3 0xA9) into 5 byte-level
+        # tokens. The last two tokens both originate from the single character é,
+        # so their source-string spans differ between the two offset modes:
+        #
+        #   char offsets: (3, 4) — codepoint span of é (one char)
+        #   byte offsets: (3, 5) — UTF-8 byte span of é (two bytes)
+        #
+        # This is the property cross-tokenizer alignment relies on: cumulative
+        # byte offsets line up across tokenizers that disagree on multi-byte
+        # boundaries, while cumulative char offsets do not.
+        tokenizer = self._byte_level_bpe()
+        text = "café"
+        char_out = tokenizer.encode(text)
+        byte_out = tokenizer.encode_byte_offsets(text)
+        assert len(byte_out.ids) == 5
+        assert char_out.offsets == [(0, 1), (1, 2), (2, 3), (3, 4), (3, 4)]
+        assert byte_out.offsets == [(0, 1), (1, 2), (2, 3), (3, 5), (3, 5)]
+        # The trailing byte offset (5) matches the UTF-8 byte length of "café".
+        assert byte_out.offsets[-1][1] == len(text.encode("utf-8"))
 
     def test_encode_batch_byte_offsets(self):
         tokenizer = Tokenizer(BPE())
         tokenizer.add_tokens(["my", "name", "is", "john", "pair"])
 
-        # Can encode batch with byte offsets
+        # Same I/O contract as encode_batch(): list of single + pair sequences.
         output = tokenizer.encode_batch_byte_offsets(["my name is john", "pair"])
-        assert len(output) == 2
-        assert output[0].tokens == ["my", "name", "is", "john"]
-        assert output[1].tokens == ["pair"]
-        # Verify offsets are returned
-        assert type(output[0].offsets) == list
-        assert type(output[1].offsets) == list
+        assert [enc.tokens for enc in output] == [["my", "name", "is", "john"], ["pair"]]
 
-        # Can encode batch with both single sequence and pairs
         output = tokenizer.encode_batch_byte_offsets(["my name is john", ("my name is john", "pair")])
         assert len(output) == 2
 
-        # Batch offsets index into UTF-8 bytes, not chars (mirrors test_encode_byte_offsets).
-        mb_tokenizer = Tokenizer(BPE())
-        mb_tokenizer.add_tokens(["café"])
-        byte_batch = mb_tokenizer.encode_batch_byte_offsets(["café"])
-        char_batch = mb_tokenizer.encode_batch(["café"])
-        assert byte_batch[0].offsets[0] == (0, 5)
-        assert char_batch[0].offsets[0] == (0, 4)
+        # Same byte-vs-char distinction as test_encode_byte_offsets, exercised
+        # through the batch entry point on a real ByteLevel BPE.
+        tokenizer = self._byte_level_bpe()
+        char_batch = tokenizer.encode_batch(["café"])
+        byte_batch = tokenizer.encode_batch_byte_offsets(["café"])
+        assert char_batch[0].offsets == [(0, 1), (1, 2), (2, 3), (3, 4), (3, 4)]
+        assert byte_batch[0].offsets == [(0, 1), (1, 2), (2, 3), (3, 5), (3, 5)]
 
     @pytest.mark.network
     def test_encode_formats(self, bert_files):

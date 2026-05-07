@@ -646,6 +646,46 @@ impl PyTokenizer {
         Ok(out)
     }
 
+    // Borrow-based input extraction shared by `encode` (char offsets) and
+    // `encode_byte_offsets` (byte offsets). Avoids the String clone the
+    // owned/'static helpers above need for the async path.
+    fn extract_borrowed_encode_input<'py>(
+        sequence: &Bound<'py, PyAny>,
+        pair: Option<&Bound<'py, PyAny>>,
+        is_pretokenized: bool,
+    ) -> PyResult<tk::EncodeInput<'py>> {
+        let to_input_seq = |ob: &Bound<'py, PyAny>| -> PyResult<tk::InputSequence<'py>> {
+            if is_pretokenized {
+                Ok(ob.extract::<PreTokenizedInputSequence>()?.into())
+            } else {
+                Ok(ob.extract::<TextInputSequence>()?.into())
+            }
+        };
+        let sequence = to_input_seq(sequence)?;
+        Ok(match pair {
+            Some(pair) => tk::EncodeInput::Dual(sequence, to_input_seq(pair)?),
+            None => tk::EncodeInput::Single(sequence),
+        })
+    }
+
+    // Borrow-based batch input extraction. Same purpose as the single-item
+    // helper above, for `encode_batch` and `encode_batch_byte_offsets`.
+    fn extract_borrowed_encode_inputs<'py>(
+        items: &[Bound<'py, PyAny>],
+        is_pretokenized: bool,
+    ) -> PyResult<Vec<tk::EncodeInput<'py>>> {
+        items
+            .iter()
+            .map(|item| {
+                if is_pretokenized {
+                    Ok(item.extract::<PreTokenizedEncodeInput>()?.into())
+                } else {
+                    Ok(item.extract::<TextEncodeInput>()?.into())
+                }
+            })
+            .collect()
+    }
+
     // Helper method to build a single owned encode input
     fn build_single_owned_encode_input(
         sequence: &Bound<'_, PyAny>,
@@ -1186,23 +1226,7 @@ impl PyTokenizer {
         is_pretokenized: bool,
         add_special_tokens: bool,
     ) -> PyResult<PyEncoding> {
-        let sequence: tk::InputSequence = if is_pretokenized {
-            sequence.extract::<PreTokenizedInputSequence>()?.into()
-        } else {
-            sequence.extract::<TextInputSequence>()?.into()
-        };
-        let input = match pair {
-            Some(pair) => {
-                let pair: tk::InputSequence = if is_pretokenized {
-                    pair.extract::<PreTokenizedInputSequence>()?.into()
-                } else {
-                    pair.extract::<TextInputSequence>()?.into()
-                };
-                tk::EncodeInput::Dual(sequence, pair)
-            }
-            None => tk::EncodeInput::Single(sequence),
-        };
-
+        let input = Self::extract_borrowed_encode_input(sequence, pair, is_pretokenized)?;
         ToPyResult(
             self.tokenizer
                 .read()
@@ -1213,15 +1237,33 @@ impl PyTokenizer {
         .into()
     }
 
-    /// Encode the given sequence and pair, using byte-level offsets.
+    /// Encode the given sequence and pair, returning UTF-8 byte offsets.
     ///
-    /// This method can process raw text sequences as well as already pre-tokenized sequences.
+    /// Identical to :meth:`encode` except that each token's offsets are byte indices
+    /// into the input string (rather than character/codepoint indices). This matters
+    /// whenever a token's content includes multi-byte UTF-8 characters: byte offsets
+    /// give consecutive non-overlapping ranges suitable for cross-tokenizer alignment,
+    /// while character offsets collapse split bytes onto the same character index.
     ///
     /// Example:
-    ///     Here are some examples of the inputs that are accepted::
+    ///     For an input ``"café"`` (4 chars, 5 UTF-8 bytes — ``é`` = ``0xC3 0xA9``)
+    ///     tokenized as a single token, the offsets returned by the two methods
+    ///     differ::
     ///
-    ///         encode_byte_offsets("A single sequence")
-    ///         encode_byte_offsets("A sequence", "And its pair")
+    ///         >>> tokenizer.encode("café").offsets
+    ///         [(0, 4)]
+    ///         >>> tokenizer.encode_byte_offsets("café").offsets
+    ///         [(0, 5)]
+    ///
+    ///     With a byte-level tokenizer that splits ``café`` into 5 byte-level
+    ///     tokens, the last two tokens originate from the single character ``é``
+    ///     so their source span differs between the two modes — char offsets
+    ///     report the 1-codepoint span, byte offsets report the 2-byte span::
+    ///
+    ///         >>> tokenizer.encode("café").offsets
+    ///         [(0, 1), (1, 2), (2, 3), (3, 4), (3, 4)]
+    ///         >>> tokenizer.encode_byte_offsets("café").offsets
+    ///         [(0, 1), (1, 2), (2, 3), (3, 5), (3, 5)]
     ///
     /// Args:
     ///     sequence (:obj:`~tokenizers.InputSequence`):
@@ -1254,23 +1296,10 @@ impl PyTokenizer {
         is_pretokenized: bool,
         add_special_tokens: bool,
     ) -> PyResult<PyEncoding> {
-        let sequence: tk::InputSequence = if is_pretokenized {
-            sequence.extract::<PreTokenizedInputSequence>()?.into()
-        } else {
-            sequence.extract::<TextInputSequence>()?.into()
-        };
-        let input = match pair {
-            Some(pair) => {
-                let pair: tk::InputSequence = if is_pretokenized {
-                    pair.extract::<PreTokenizedInputSequence>()?.into()
-                } else {
-                    pair.extract::<TextInputSequence>()?.into()
-                };
-                tk::EncodeInput::Dual(sequence, pair)
-            }
-            None => tk::EncodeInput::Single(sequence),
-        };
-
+        let input = Self::extract_borrowed_encode_input(sequence, pair, is_pretokenized)?;
+        // The only behavioral difference from `encode` above: this calls
+        // `Tokenizer::encode` (byte offsets) where `encode` calls
+        // `Tokenizer::encode_char_offsets` (character offsets).
         ToPyResult(
             self.tokenizer
                 .read()
@@ -1384,15 +1413,7 @@ impl PyTokenizer {
         is_pretokenized: bool,
         add_special_tokens: bool,
     ) -> PyResult<Vec<PyEncoding>> {
-        let mut items = Vec::<tk::EncodeInput>::with_capacity(input.len());
-        for item in &input {
-            let item: tk::EncodeInput = if is_pretokenized {
-                item.extract::<PreTokenizedEncodeInput>()?.into()
-            } else {
-                item.extract::<TextEncodeInput>()?.into()
-            };
-            items.push(item);
-        }
+        let items = Self::extract_borrowed_encode_inputs(&input, is_pretokenized)?;
         py.detach(|| {
             ToPyResult(
                 self.tokenizer
@@ -1405,9 +1426,12 @@ impl PyTokenizer {
         })
     }
 
-    /// Encode the given batch of inputs, using byte-level offsets.
+    /// Encode the given batch of inputs, returning UTF-8 byte offsets.
     ///
-    /// This method accepts both raw text sequences as well as already pre-tokenized sequences.
+    /// Identical to :meth:`encode_batch` except that each token's offsets are byte
+    /// indices into the input string (rather than character/codepoint indices). See
+    /// :meth:`encode_byte_offsets` for the byte-vs-character offset semantics on a
+    /// concrete ``café`` example.
     ///
     /// Example:
     ///     Here are some examples of the inputs that are accepted::
@@ -1444,15 +1468,10 @@ impl PyTokenizer {
         is_pretokenized: bool,
         add_special_tokens: bool,
     ) -> PyResult<Vec<PyEncoding>> {
-        let mut items = Vec::<tk::EncodeInput>::with_capacity(input.len());
-        for item in &input {
-            let item: tk::EncodeInput = if is_pretokenized {
-                item.extract::<PreTokenizedEncodeInput>()?.into()
-            } else {
-                item.extract::<TextEncodeInput>()?.into()
-            };
-            items.push(item);
-        }
+        let items = Self::extract_borrowed_encode_inputs(&input, is_pretokenized)?;
+        // The only behavioral difference from `encode_batch` above: this calls
+        // `Tokenizer::encode_batch` (byte offsets) where `encode_batch` calls
+        // `Tokenizer::encode_batch_char_offsets` (character offsets).
         py.detach(|| {
             ToPyResult(
                 self.tokenizer

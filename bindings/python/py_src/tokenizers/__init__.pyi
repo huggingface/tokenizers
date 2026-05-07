@@ -1005,13 +1005,33 @@ class Tokenizer:
         self, /, sequence: Any, pair: Any | None = None, is_pretokenized: bool = False, add_special_tokens: bool = True
     ) -> "Encoding":
         """
-        Encode the given sequence and pair, using byte-level offsets.
+        Encode the given sequence and pair, returning UTF-8 byte offsets.
+
+        Identical to :meth:`encode` except that each token's offsets are byte indices
+        into the input string (rather than character/codepoint indices). This matters
+        whenever a token's content includes multi-byte UTF-8 characters: byte offsets
+        give consecutive non-overlapping ranges suitable for cross-tokenizer alignment,
+        while character offsets collapse split bytes onto the same character index.
 
         Example:
-            Here are some examples of the inputs that are accepted::
+            For an input ``"café"`` (4 chars, 5 UTF-8 bytes — ``é`` = ``0xC3 0xA9``)
+            tokenized as a single token, the offsets returned by the two methods
+            differ::
 
-                encode_byte_offsets("A single sequence")
-                encode_byte_offsets("A sequence", "And its pair")
+                >>> tokenizer.encode("café").offsets
+                [(0, 4)]
+                >>> tokenizer.encode_byte_offsets("café").offsets
+                [(0, 5)]
+
+            With a byte-level tokenizer that splits ``café`` into 5 byte-level
+            tokens, the last two tokens originate from the single character ``é``
+            so their source span differs between the two modes — char offsets
+            report the 1-codepoint span, byte offsets report the 2-byte span::
+
+                >>> tokenizer.encode("café").offsets
+                [(0, 1), (1, 2), (2, 3), (3, 4), (3, 4)]
+                >>> tokenizer.encode_byte_offsets("café").offsets
+                [(0, 1), (1, 2), (2, 3), (3, 5), (3, 5)]
 
         Args:
             sequence (:obj:`~tokenizers.InputSequence`):
@@ -1037,7 +1057,12 @@ class Tokenizer:
         self, /, input: Sequence[Any], is_pretokenized: bool = False, add_special_tokens: bool = True
     ) -> "list[Encoding]":
         """
-        Encode the given batch of inputs, using byte-level offsets.
+        Encode the given batch of inputs, returning UTF-8 byte offsets.
+
+        Identical to :meth:`encode_batch` except that each token's offsets are byte
+        indices into the input string (rather than character/codepoint indices). See
+        :meth:`encode_byte_offsets` for the byte-vs-character offset semantics on a
+        concrete ``café`` example.
 
         Example:
             Here are some examples of the inputs that are accepted::
