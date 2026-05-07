@@ -202,9 +202,7 @@ class TestTokenizer:
 
         tokenizer = Tokenizer(BPE())
         tokenizer.pre_tokenizer = ByteLevel(add_prefix_space=False)
-        tokenizer.train_from_iterator(
-            [""], trainer=BpeTrainer(vocab_size=256, initial_alphabet=ByteLevel.alphabet())
-        )
+        tokenizer.train_from_iterator([""], trainer=BpeTrainer(vocab_size=256, initial_alphabet=ByteLevel.alphabet()))
         return tokenizer
 
     def test_encode_byte_offsets(self):
