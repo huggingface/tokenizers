@@ -13,7 +13,7 @@ crate-type = ["cdylib"]
 napi        = "3"
 napi-derive = "3"
 serde       = { version = "1.0.163", features = ["derive"] }
-tokenizers  = { path = "../../tokenizers/" }
+tokenizers  = { path = "../../tokenizers" }
 ahash = { version = "0.8.11", features = ["serde"] }
 
 [build-dependencies]

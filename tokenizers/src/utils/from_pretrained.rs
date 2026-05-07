@@ -1,5 +1,5 @@
 use crate::Result;
-use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
+use hf_hub::HFClient;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -57,12 +57,30 @@ pub fn from_pretrained<S: AsRef<str>>(
         .into());
     }
 
-    let mut builder = ApiBuilder::from_env();
+    let mut builder = HFClient::builder();
     if let Some(token) = params.token {
-        builder = builder.with_token(Some(token));
+        builder = builder.token(token);
     }
-    let api = builder.build()?;
-    let repo = Repo::with_revision(identifier, RepoType::Model, params.revision);
-    let api = api.repo(repo);
-    Ok(api.get("tokenizer.json")?)
+    if !params.user_agent.is_empty() {
+        let user_agent = params
+            .user_agent
+            .iter()
+            .map(|(k, v)| format!("{k}/{v}"))
+            .collect::<Vec<_>>()
+            .join("; ");
+        builder = builder.user_agent(user_agent);
+    }
+    let client = builder.build_sync()?;
+
+    let (owner, name) = identifier.split_once('/').ok_or_else(|| {
+        format!("Model \"{identifier}\" is not a valid repo id, expected format \"owner/name\"")
+    })?;
+
+    let path = client
+        .model(owner, name)
+        .download_file()
+        .filename("tokenizer.json")
+        .revision(params.revision)
+        .send()?;
+    Ok(path)
 }
