@@ -595,9 +595,16 @@ impl Serialize for AddedVocabulary {
         // We need to have these added tokens ordered by ascending ID
         added_tokens.sort_unstable_by_key(|o| o.id);
 
+        // Serialize each AddedToken as a compact, single-line JSON object. The outer array
+        // still respects the serializer's pretty/compact mode, so pretty output remains
+        // diff-friendly (one token per line) without the per-field indentation that bloats
+        // tokenizer.json files.
         let mut vocabulary = serializer.serialize_seq(Some(added_tokens.len()))?;
-        for token in added_tokens {
-            vocabulary.serialize_element(&token)?;
+        for token in &added_tokens {
+            let compact = serde_json::to_string(token).map_err(serde::ser::Error::custom)?;
+            let raw = serde_json::value::RawValue::from_string(compact)
+                .map_err(serde::ser::Error::custom)?;
+            vocabulary.serialize_element(&raw)?;
         }
 
         vocabulary.end()
