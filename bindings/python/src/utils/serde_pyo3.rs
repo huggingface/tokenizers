@@ -2,6 +2,13 @@ use serde::de::value::Error;
 use serde::{ser, Serialize};
 type Result<T> = ::std::result::Result<T, Error>;
 
+/// Magic name serde_json's `RawValue` uses to smuggle pre-serialized JSON through a
+/// `Serializer`. The core tokenizers crate uses `RawValue` to keep vocab/merges/added_tokens
+/// on a single line in tokenizer.json; when our custom Python-repr serializer encounters
+/// the same protocol it must unwrap the inner JSON and render it normally, otherwise the
+/// repr leaks `$serde_json::private::RawValue(...)` markers.
+const RAW_VALUE_TOKEN: &str = "$serde_json::private::RawValue";
+
 pub struct Serializer {
     // This string starts empty and JSON is appended as values are serialized.
     output: String,
@@ -13,6 +20,13 @@ pub struct Serializer {
     /// Maximum string representation
     /// Useful to ellipsis precompiled_charmap
     max_string: usize,
+    /// Set while we are inside a `serde_json::value::RawValue` struct: the next
+    /// `SerializeStruct::serialize_field` should treat its payload as raw JSON, parse it,
+    /// and recurse so the inner shape renders as Python repr instead of the raw token.
+    in_raw_value: bool,
+    /// Number of `SerializeStruct::end` calls that should suppress their closing paren
+    /// because they correspond to RawValue structs we already consumed.
+    raw_value_pending_ends: usize,
 }
 
 // By convention, the public API of a Serde serializer is one or more `to_abc`
@@ -34,6 +48,8 @@ where
         max_elements,
         num_elements: vec![0; max_depth],
         max_string,
+        in_raw_value: false,
+        raw_value_pending_ends: 0,
     };
     value.serialize(&mut serializer)?;
     Ok(serializer.output)
@@ -52,6 +68,8 @@ where
         max_elements: 100,
         num_elements: vec![0; max_depth],
         max_string,
+        in_raw_value: false,
+        raw_value_pending_ends: 0,
     };
     value.serialize(&mut serializer)?;
     Ok(serializer.output)
@@ -317,6 +335,14 @@ impl ser::Serializer for &mut Serializer {
     // Deserialize implementation is required to know what the keys are without
     // looking at the serialized data.
     fn serialize_struct(self, name: &'static str, _len: usize) -> Result<Self::SerializeStruct> {
+        // serde_json's `RawValue` smuggles pre-serialized JSON through a fake struct with
+        // this magic name. Don't emit the marker — set a flag so the upcoming field is
+        // parsed back into a `serde_json::Value` and rendered through Self normally.
+        if name == RAW_VALUE_TOKEN {
+            self.in_raw_value = true;
+            self.raw_value_pending_ends += 1;
+            return Ok(self);
+        }
         // self.serialize_map(Some(len))
         // name.serialize(&mut *self)?;
         if let Some(stripped) = name.strip_suffix("Helper") {
@@ -567,6 +593,19 @@ impl ser::SerializeStruct for &mut Serializer {
     where
         T: ?Sized + Serialize,
     {
+        if self.in_raw_value && key == RAW_VALUE_TOKEN {
+            // Inside a serde_json::value::RawValue: the payload is a `&str` carrying raw
+            // JSON. Pull the str out via serde_json::to_value, parse it back into a Value,
+            // then recurse so the inner shape renders through Self in the normal way.
+            self.in_raw_value = false;
+            let v = serde_json::to_value(value).map_err(|e| ser::Error::custom(e.to_string()))?;
+            let raw_json = v
+                .as_str()
+                .ok_or_else(|| ser::Error::custom("RawValue payload was not a string"))?;
+            let parsed: serde_json::Value =
+                serde_json::from_str(raw_json).map_err(|e| ser::Error::custom(e.to_string()))?;
+            return parsed.serialize(&mut **self);
+        }
         if !self.output.ends_with('(') {
             self.output += ", ";
         }
@@ -581,6 +620,12 @@ impl ser::SerializeStruct for &mut Serializer {
     }
 
     fn end(self) -> Result<()> {
+        if self.raw_value_pending_ends > 0 {
+            // This `end()` closes a RawValue struct whose body we already rendered above;
+            // skip the closing paren and the level decrement we never applied.
+            self.raw_value_pending_ends -= 1;
+            return Ok(());
+        }
         self.num_elements[self.level] = 0;
         self.level = self.level.saturating_sub(1);
         self.output += ")";
@@ -622,6 +667,38 @@ fn test_basic() {
     assert_eq!(to_string(&true).unwrap(), "True");
     assert_eq!(to_string(&Some(1)).unwrap(), "1");
     assert_eq!(to_string(&None::<usize>).unwrap(), "None");
+}
+
+#[test]
+fn test_raw_value_unwraps_to_python_repr() {
+    use serde_json::value::RawValue;
+
+    #[derive(Serialize)]
+    struct Outer<'a> {
+        inline: &'a RawValue,
+    }
+
+    // RawValue contents must be rendered through Self (Python-style), not as the
+    // `$serde_json::private::RawValue(...)` marker that serde_json's protocol leaks.
+    let empty_arr = RawValue::from_string("[]".to_string()).unwrap();
+    let empty_obj = RawValue::from_string("{}".to_string()).unwrap();
+    let nested = RawValue::from_string(
+        r#"[{"id":0,"content":"x","flag":true,"score":1.5,"none":null}]"#.to_string(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        to_string(&Outer { inline: &empty_arr }).unwrap(),
+        "Outer(inline=[])"
+    );
+    assert_eq!(
+        to_string(&Outer { inline: &empty_obj }).unwrap(),
+        "Outer(inline={})"
+    );
+    assert_eq!(
+        to_string(&Outer { inline: &nested }).unwrap(),
+        r#"Outer(inline=[{"id":0, "content":"x", "flag":True, "score":1.5, "none":None}])"#
+    );
 }
 
 #[test]
