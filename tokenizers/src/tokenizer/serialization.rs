@@ -282,6 +282,77 @@ mod tests {
         assert_eq!(tok_str, tok_json_in);
     }
 
+    /// Backward compatibility: pre-compaction tokenizer.json files used multi-line vocab,
+    /// multi-line added_tokens, and the legacy `"a b"` merges representation. They must
+    /// still deserialize and round-trip through the new compact serializer.
+    #[test]
+    fn test_legacy_pretty_format_is_still_deserializable() {
+        let legacy = r#"{
+  "version": "1.0",
+  "truncation": null,
+  "padding": null,
+  "added_tokens": [
+    {
+      "id": 0,
+      "content": "<unk>",
+      "single_word": false,
+      "lstrip": false,
+      "rstrip": false,
+      "normalized": false,
+      "special": true
+    },
+    {
+      "id": 1,
+      "content": "<s>",
+      "single_word": false,
+      "lstrip": false,
+      "rstrip": false,
+      "normalized": false,
+      "special": true
+    }
+  ],
+  "normalizer": null,
+  "pre_tokenizer": null,
+  "post_processor": null,
+  "decoder": null,
+  "model": {
+    "type": "BPE",
+    "dropout": null,
+    "unk_token": "<unk>",
+    "continuing_subword_prefix": null,
+    "end_of_word_suffix": null,
+    "fuse_unk": false,
+    "byte_fallback": false,
+    "ignore_merges": false,
+    "vocab": {
+      "<unk>": 0,
+      "<s>": 1,
+      "a": 2,
+      "b": 3,
+      "c": 4,
+      "ab": 5,
+      "bc": 6
+    },
+    "merges": [
+      "a b",
+      "b c"
+    ]
+  }
+}"#;
+        let tokenizer = Tokenizer::from_str(legacy).unwrap();
+
+        // Compact re-serialization should be strictly smaller than the legacy pretty form.
+        let compact = serde_json::to_string_pretty(&tokenizer).unwrap();
+        assert!(compact.len() < legacy.len());
+
+        // And re-parsing the compact form must reproduce the same Tokenizer.
+        let reparsed = Tokenizer::from_str(&compact).unwrap();
+        assert_eq!(
+            serde_json::to_string(&tokenizer).unwrap(),
+            serde_json::to_string(&reparsed).unwrap(),
+        );
+    }
+
     #[cfg(feature = "http")]
     #[test]
     fn test_from_pretrained() {
