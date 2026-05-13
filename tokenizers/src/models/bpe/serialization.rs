@@ -6,9 +6,9 @@ use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
 };
 
-/// Wraps the BPE merges so that each `[left, right]` pair is emitted on a single line even
-/// when the outer serializer is pretty. The outer array still respects the pretty flag, so
-/// pretty output stays diff-friendly (one merge per line).
+/// Wraps the BPE merges so the entire array is emitted as a single compact line even when
+/// the outer serializer is pretty. Avoids the multi-line per-pair indentation that bloats
+/// tokenizer.json files.
 struct CompactMerges<'a> {
     merges: &'a [(String, String)],
 }
@@ -18,15 +18,10 @@ impl Serialize for CompactMerges<'_> {
     where
         S: Serializer,
     {
-        use serde::ser::SerializeSeq;
-        let mut seq = serializer.serialize_seq(Some(self.merges.len()))?;
-        for pair in self.merges {
-            let compact = serde_json::to_string(pair).map_err(serde::ser::Error::custom)?;
-            let raw = serde_json::value::RawValue::from_string(compact)
-                .map_err(serde::ser::Error::custom)?;
-            seq.serialize_element(&raw)?;
-        }
-        seq.end()
+        let compact = serde_json::to_string(self.merges).map_err(serde::ser::Error::custom)?;
+        let raw =
+            serde_json::value::RawValue::from_string(compact).map_err(serde::ser::Error::custom)?;
+        raw.serialize(serializer)
     }
 }
 

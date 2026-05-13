@@ -45,8 +45,7 @@ impl Serialize for OrderedVocabIter<'_> {
                         buf.push(',');
                     }
                     first = false;
-                    let key =
-                        serde_json::to_string(token).map_err(serde::ser::Error::custom)?;
+                    let key = serde_json::to_string(token).map_err(serde::ser::Error::custom)?;
                     buf.push_str(&key);
                     buf.push(':');
                     buf.push_str(&i.to_string());
@@ -63,8 +62,8 @@ impl Serialize for OrderedVocabIter<'_> {
 
         // Emit the vocab as a pre-serialized compact JSON value so that pretty-printers
         // do not expand it across thousands of lines.
-        let raw = serde_json::value::RawValue::from_string(buf)
-            .map_err(serde::ser::Error::custom)?;
+        let raw =
+            serde_json::value::RawValue::from_string(buf).map_err(serde::ser::Error::custom)?;
         raw.serialize(serializer)
     }
 }
