@@ -6,6 +6,30 @@ use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
 };
 
+/// Wraps the BPE merges so that each `[left, right]` pair is emitted on a single line even
+/// when the outer serializer is pretty. The outer array still respects the pretty flag, so
+/// pretty output stays diff-friendly (one merge per line).
+struct CompactMerges<'a> {
+    merges: &'a [(String, String)],
+}
+
+impl Serialize for CompactMerges<'_> {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        use serde::ser::SerializeSeq;
+        let mut seq = serializer.serialize_seq(Some(self.merges.len()))?;
+        for pair in self.merges {
+            let compact = serde_json::to_string(pair).map_err(serde::ser::Error::custom)?;
+            let raw = serde_json::value::RawValue::from_string(compact)
+                .map_err(serde::ser::Error::custom)?;
+            seq.serialize_element(&raw)?;
+        }
+        seq.end()
+    }
+}
+
 impl Serialize for BPE {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -35,9 +59,10 @@ impl Serialize for BPE {
             .map(|(pair, _)| (self.vocab_r[&pair.0].clone(), self.vocab_r[&pair.1].clone()))
             .collect::<Vec<_>>();
         let ordered_vocab = OrderedVocabIter::new(&self.vocab_r);
+        let compact_merges = CompactMerges { merges: &merges };
 
         model.serialize_field("vocab", &ordered_vocab)?;
-        model.serialize_field("merges", &merges)?;
+        model.serialize_field("merges", &compact_merges)?;
 
         model.end()
     }

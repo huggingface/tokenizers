@@ -258,6 +258,40 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_pretty_bpe_vocab_and_merges_are_compact() {
+        // BPE model with non-empty vocab + merges: each vocab map and each merge pair
+        // should be emitted on a single line under pretty output.
+        let tok_json_in = r#"{
+  "version": "1.0",
+  "truncation": null,
+  "padding": null,
+  "added_tokens": [],
+  "normalizer": null,
+  "pre_tokenizer": null,
+  "post_processor": null,
+  "decoder": null,
+  "model": {
+    "type": "BPE",
+    "dropout": null,
+    "unk_token": "<unk>",
+    "continuing_subword_prefix": null,
+    "end_of_word_suffix": null,
+    "fuse_unk": false,
+    "byte_fallback": false,
+    "ignore_merges": false,
+    "vocab": {"<unk>":0,"a":1,"b":2,"c":3,"ab":4,"bc":5},
+    "merges": [
+      ["a","b"],
+      ["b","c"]
+    ]
+  }
+}"#;
+        let tokenizer = Tokenizer::from_str(tok_json_in).unwrap();
+        let tok_str = serde_json::to_string_pretty(&tokenizer).unwrap();
+        assert_eq!(tok_str, tok_json_in);
+    }
+
     #[cfg(feature = "http")]
     #[test]
     fn test_from_pretrained() {
