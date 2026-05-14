@@ -1299,8 +1299,8 @@ impl PyParityBpeTrainer {
         // the concrete `PyNormalizer` / `PyPreTokenizer` types (not `dyn`) so
         // that the closure below stays `Sync` — `feed_language_from_iter`
         // parallelizes via `maybe_par_bridge` and requires a `Sync` closure.
-        let normalizer = tokenizer.tokenizer.get_normalizer().cloned();
-        let pre_tokenizer = tokenizer.tokenizer.get_pre_tokenizer().cloned();
+        let normalizer = tokenizer.read_inner()?.get_normalizer().cloned();
+        let pre_tokenizer = tokenizer.read_inner()?.get_pre_tokenizer().cloned();
         let norm_ref = normalizer.as_ref();
         let pretok_ref = pre_tokenizer.as_ref();
         let process = |text: &str| -> tk::tokenizer::Result<Vec<String>> {
@@ -1357,7 +1357,7 @@ impl PyParityBpeTrainer {
                 map_tk_err(trainer.feed_language_from_iter(
                     lang_idx,
                     strings.into_iter(),
-                    &process,
+                    process,
                 ))?;
             }
             if let Some(dev_data) = dev_data {
@@ -1365,7 +1365,7 @@ impl PyParityBpeTrainer {
                     map_tk_err(trainer.feed_dev_language_from_iter(
                         lang_idx,
                         strings.into_iter(),
-                        &process,
+                        process,
                     ))?;
                 }
             }
@@ -1376,16 +1376,11 @@ impl PyParityBpeTrainer {
             })?;
 
             let py_model: PyModel = model.into();
-            tokenizer.tokenizer.with_model(py_model);
-            tokenizer
-                .tokenizer
-                .add_special_tokens(special_tokens)
-                .map_err(|e| {
-                    exceptions::PyRuntimeError::new_err(format!(
-                        "Failed to add special tokens: {}",
-                        e
-                    ))
-                })?;
+            let mut tok_guard = tokenizer.write_inner()?;
+            tok_guard.with_model(py_model);
+            tok_guard.add_special_tokens(special_tokens).map_err(|e| {
+                exceptions::PyRuntimeError::new_err(format!("Failed to add special tokens: {}", e))
+            })?;
             Ok(())
         })?;
 

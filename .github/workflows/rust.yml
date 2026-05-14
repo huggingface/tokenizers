@@ -31,6 +31,12 @@ jobs:
         uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc  # v2.9.1
         with:
           workspaces: tokenizers
+          # Skip caching ~/.cargo/bin — earlier runs left a stale
+          # rustup-init binary masquerading as `cargo`, breaking the
+          # build step on macOS. The cargo toolchain is reinstalled by
+          # dtolnay/rust-toolchain each run anyway, so caching it adds
+          # risk without speedup.
+          cache-bin: false
 
       - name: Install cargo-readme for Ubuntu
         if: matrix.os == 'ubuntu-latest'
