@@ -36,24 +36,35 @@ impl Serialize for OrderedVocabIter<'_> {
     {
         // There could be holes so max + 1 is more correct than vocab_r.len()
         let mut holes = vec![];
-        let result = if let Some(max) = self.vocab_r.keys().max() {
-            let iter = (0..*max + 1).filter_map(|i| {
+        let mut buf = String::from("{");
+        if let Some(max) = self.vocab_r.keys().max() {
+            let mut first = true;
+            for i in 0..*max + 1 {
                 if let Some(token) = self.vocab_r.get(&i) {
-                    Some((token, i))
+                    if !first {
+                        buf.push(',');
+                    }
+                    first = false;
+                    let key = serde_json::to_string(token).map_err(serde::ser::Error::custom)?;
+                    buf.push_str(&key);
+                    buf.push(':');
+                    buf.push_str(&i.to_string());
                 } else {
                     holes.push(i);
-                    None
                 }
-            });
-            serializer.collect_map(iter)
-        } else {
-            serializer.collect_map(std::iter::empty::<(&str, u32)>())
-        };
+            }
+        }
+        buf.push('}');
 
         if !holes.is_empty() {
             warn!("The OrderedVocab you are attempting to serialize contains holes for indices {holes:?}, your vocabulary could be corrupted!");
         }
-        result
+
+        // Emit the vocab as a pre-serialized compact JSON value so that pretty-printers
+        // do not expand it across thousands of lines.
+        let raw =
+            serde_json::value::RawValue::from_string(buf).map_err(serde::ser::Error::custom)?;
+        raw.serialize(serializer)
     }
 }
 

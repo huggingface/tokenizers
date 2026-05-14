@@ -6,6 +6,25 @@ use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
 };
 
+/// Wraps the BPE merges so the entire array is emitted as a single compact line even when
+/// the outer serializer is pretty. Avoids the multi-line per-pair indentation that bloats
+/// tokenizer.json files.
+struct CompactMerges<'a> {
+    merges: &'a [(String, String)],
+}
+
+impl Serialize for CompactMerges<'_> {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let compact = serde_json::to_string(self.merges).map_err(serde::ser::Error::custom)?;
+        let raw =
+            serde_json::value::RawValue::from_string(compact).map_err(serde::ser::Error::custom)?;
+        raw.serialize(serializer)
+    }
+}
+
 impl Serialize for BPE {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -35,9 +54,10 @@ impl Serialize for BPE {
             .map(|(pair, _)| (self.vocab_r[&pair.0].clone(), self.vocab_r[&pair.1].clone()))
             .collect::<Vec<_>>();
         let ordered_vocab = OrderedVocabIter::new(&self.vocab_r);
+        let compact_merges = CompactMerges { merges: &merges };
 
         model.serialize_field("vocab", &ordered_vocab)?;
-        model.serialize_field("merges", &merges)?;
+        model.serialize_field("merges", &compact_merges)?;
 
         model.end()
     }

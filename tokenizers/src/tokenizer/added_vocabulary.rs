@@ -5,7 +5,7 @@ use super::{
 use ahash::{AHashMap, AHashSet};
 use daachorse::{DoubleArrayAhoCorasick, DoubleArrayAhoCorasickBuilder, MatchKind};
 use regex::Regex;
-use serde::{ser::SerializeSeq, Deserialize, Serialize, Serializer};
+use serde::{Deserialize, Serialize, Serializer};
 use std::sync::LazyLock;
 
 /// Represent a token added by the user on top of the existing Model vocabulary.
@@ -595,12 +595,11 @@ impl Serialize for AddedVocabulary {
         // We need to have these added tokens ordered by ascending ID
         added_tokens.sort_unstable_by_key(|o| o.id);
 
-        let mut vocabulary = serializer.serialize_seq(Some(added_tokens.len()))?;
-        for token in added_tokens {
-            vocabulary.serialize_element(&token)?;
-        }
-
-        vocabulary.end()
+        // Serialize the whole array compactly so pretty output keeps it on a single line.
+        let compact = serde_json::to_string(&added_tokens).map_err(serde::ser::Error::custom)?;
+        let raw =
+            serde_json::value::RawValue::from_string(compact).map_err(serde::ser::Error::custom)?;
+        raw.serialize(serializer)
     }
 }
 

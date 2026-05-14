@@ -177,7 +177,9 @@ mod tests {
 
     #[test]
     fn test_deserialization_serialization_invariant() {
-        let tok_json = r#"{
+        // Pretty output keeps the top-level structure indented but emits each added_token
+        // and the vocab map on a single line each (see OrderedVocabIter + AddedVocabulary).
+        let tok_json_in = r#"{
   "version": "1.0",
   "truncation": null,
   "padding": null,
@@ -222,11 +224,133 @@ mod tests {
     "vocab": {}
   }
 }"#;
-        let tokenizer = Tokenizer::from_str(tok_json).unwrap();
+        let tok_json_out = r#"{
+  "version": "1.0",
+  "truncation": null,
+  "padding": null,
+  "added_tokens": [{"id":0,"content":"[SPECIAL_0]","single_word":false,"lstrip":false,"rstrip":false,"normalized":false,"special":true},{"id":1,"content":"[SPECIAL_1]","single_word":false,"lstrip":false,"rstrip":false,"normalized":true,"special":false},{"id":2,"content":"[SPECIAL_2]","single_word":false,"lstrip":false,"rstrip":false,"normalized":false,"special":true}],
+  "normalizer": null,
+  "pre_tokenizer": null,
+  "post_processor": null,
+  "decoder": null,
+  "model": {
+    "type": "WordPiece",
+    "unk_token": "[UNK]",
+    "continuing_subword_prefix": "",
+    "max_input_chars_per_word": 100,
+    "vocab": {}
+  }
+}"#;
+        let tokenizer = Tokenizer::from_str(tok_json_in).unwrap();
 
         let tok_str = serde_json::to_string_pretty(&tokenizer).unwrap();
-        // It should be exactly the same as above
-        assert_eq!(tok_str, tok_json);
+        assert_eq!(tok_str, tok_json_out);
+
+        // The compact form should round-trip into an identical Tokenizer.
+        let reparsed = Tokenizer::from_str(&tok_str).unwrap();
+        assert_eq!(serde_json::to_string_pretty(&reparsed).unwrap(), tok_str,);
+    }
+
+    #[test]
+    fn test_pretty_bpe_vocab_and_merges_are_compact() {
+        // BPE model with non-empty vocab + merges: vocab map and merges array
+        // are emitted as single compact lines under pretty output.
+        let tok_json_in = r#"{
+  "version": "1.0",
+  "truncation": null,
+  "padding": null,
+  "added_tokens": [],
+  "normalizer": null,
+  "pre_tokenizer": null,
+  "post_processor": null,
+  "decoder": null,
+  "model": {
+    "type": "BPE",
+    "dropout": null,
+    "unk_token": "<unk>",
+    "continuing_subword_prefix": null,
+    "end_of_word_suffix": null,
+    "fuse_unk": false,
+    "byte_fallback": false,
+    "ignore_merges": false,
+    "vocab": {"<unk>":0,"a":1,"b":2,"c":3,"ab":4,"bc":5},
+    "merges": [["a","b"],["b","c"]]
+  }
+}"#;
+        let tokenizer = Tokenizer::from_str(tok_json_in).unwrap();
+        let tok_str = serde_json::to_string_pretty(&tokenizer).unwrap();
+        assert_eq!(tok_str, tok_json_in);
+    }
+
+    /// Backward compatibility: pre-compaction tokenizer.json files used multi-line vocab,
+    /// multi-line added_tokens, and the legacy `"a b"` merges representation. They must
+    /// still deserialize and round-trip through the new compact serializer.
+    #[test]
+    fn test_legacy_pretty_format_is_still_deserializable() {
+        let legacy = r#"{
+  "version": "1.0",
+  "truncation": null,
+  "padding": null,
+  "added_tokens": [
+    {
+      "id": 0,
+      "content": "<unk>",
+      "single_word": false,
+      "lstrip": false,
+      "rstrip": false,
+      "normalized": false,
+      "special": true
+    },
+    {
+      "id": 1,
+      "content": "<s>",
+      "single_word": false,
+      "lstrip": false,
+      "rstrip": false,
+      "normalized": false,
+      "special": true
+    }
+  ],
+  "normalizer": null,
+  "pre_tokenizer": null,
+  "post_processor": null,
+  "decoder": null,
+  "model": {
+    "type": "BPE",
+    "dropout": null,
+    "unk_token": "<unk>",
+    "continuing_subword_prefix": null,
+    "end_of_word_suffix": null,
+    "fuse_unk": false,
+    "byte_fallback": false,
+    "ignore_merges": false,
+    "vocab": {
+      "<unk>": 0,
+      "<s>": 1,
+      "a": 2,
+      "b": 3,
+      "c": 4,
+      "ab": 5,
+      "bc": 6
+    },
+    "merges": [
+      "a b",
+      "b c"
+    ]
+  }
+}"#;
+        let tokenizer = Tokenizer::from_str(legacy).unwrap();
+
+        // Compact re-serialization should be strictly smaller than the legacy pretty form.
+        let compact = serde_json::to_string_pretty(&tokenizer).unwrap();
+        assert!(compact.len() < legacy.len());
+
+        // And re-parsing the compact form must reproduce the same Tokenizer.
+        let reparsed = Tokenizer::from_str(&compact).unwrap();
+        assert_eq!(
+            serde_json::to_string(&tokenizer).unwrap(),
+            serde_json::to_string(&reparsed).unwrap(),
+        );
     }
 
     #[cfg(feature = "http")]

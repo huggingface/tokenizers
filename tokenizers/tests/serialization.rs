@@ -1,6 +1,7 @@
 mod common;
 
 use common::*;
+use std::str::FromStr;
 use tokenizers::decoders::byte_level::ByteLevel;
 use tokenizers::decoders::DecoderWrapper;
 use tokenizers::models::bpe::BPE;
@@ -247,4 +248,30 @@ fn bpe_with_dropout_serde() {
 #[test]
 fn test_deserialize_long_file() {
     let _tokenizer = Tokenizer::from_file("data/albert-base-v1-tokenizer.json").unwrap();
+}
+
+/// Backward compatibility: the DeepSeek-V4-Flash-Base tokenizer.json was published in the
+/// old pretty-printed layout, including the legacy `"a b"` merges representation. Loading
+/// it must succeed, round-trip through our (now-compact) serializer, and re-load to the
+/// same `Tokenizer`. The compact re-serialization must also be strictly smaller than the
+/// original file — that's the whole point of the change.
+#[test]
+fn test_deserialize_deepseek_v4_flash_base_backward_compat() {
+    let path = "data/deepseek-v4-flash-base-tokenizer.json";
+    let original = std::fs::read_to_string(path).unwrap();
+    let tokenizer = Tokenizer::from_file(path).unwrap();
+
+    let pretty = serde_json::to_string_pretty(&tokenizer).unwrap();
+    assert!(
+        pretty.len() < original.len(),
+        "compact pretty output ({} bytes) should be smaller than the legacy pretty file ({} bytes)",
+        pretty.len(),
+        original.len(),
+    );
+
+    let reparsed = Tokenizer::from_str(&pretty).unwrap();
+    assert_eq!(
+        serde_json::to_string(&tokenizer).unwrap(),
+        serde_json::to_string(&reparsed).unwrap(),
+    );
 }
