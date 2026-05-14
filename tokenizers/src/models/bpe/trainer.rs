@@ -581,7 +581,7 @@ impl BpeTrainer {
 
             // Introduce new formed pairs
             for ((pair, change), iw) in changes {
-                let count = change * counts[iw] as i64;
+                let count = change as i64 * counts[iw] as i64;
                 *pair_counts.entry(pair).or_default() += count;
                 if change > 0 {
                     where_to_update.entry(pair).or_default().insert(iw);
