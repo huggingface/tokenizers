@@ -1046,8 +1046,11 @@ impl ParityBpeTrainer {
         // whose per-language counts changed in this step, so we can update
         // `global_pair_counts` / `global_queue` without rescanning all langs.
         // Allocated once; cleared each iteration to avoid repeated alloc.
-        let mut global_changed_pairs: AHashSet<Pair> =
-            if want_global { AHashSet::with_capacity(256) } else { AHashSet::new() };
+        let mut global_changed_pairs: AHashSet<Pair> = if want_global {
+            AHashSet::with_capacity(256)
+        } else {
+            AHashSet::new()
+        };
 
         while merge_count < num_merges {
             // Check if all languages are exhausted
@@ -1681,23 +1684,30 @@ mod tests {
         let mut model = BPE::default();
         let (_special, merges) = trainer.do_train(&mut model).unwrap();
 
-        // First two merges: tied global counts (30 each for ab and xy),
-        // alphabetic tie-break picks "x y" before "a b".
+        // The setup is fully deterministic, so assert the entire merge
+        // sequence — the incremental global-heap update is exactly the
+        // logic under test, so it must be pinned past the first two merges.
+        //
+        // Global sums drive selection; ties broken by larger str_key
+        // (max(count, pair) — matches the Python reference):
+        //   1. (a,b)=30 vs (x,y)=30 → "x y"  ("x">"a")           → token "xy"
+        //   2. (a,b)=30 (now max)            → "a b"             → token "ab"
+        //   3. (ab,ab)=15 vs (xy,xy)=15 → "xy xy" ("xy">"ab")    → token "xyxy"
+        //   4. (ab,ab)=15 (now max)          → "ab ab"           → token "abab"
         assert_eq!(
-            &merges[0..2],
-            &["x y", "a b"],
-            "global heap should pick ties in alphabetic order"
+            merges,
+            &["x y", "a b", "xy xy", "ab ab"],
+            "global heap must drive the full deterministic merge sequence \
+             (count desc, str_key desc tie-break) across incremental updates"
         );
-        // Remaining merges: (b,a) and (y,x) at 15 each, (a,bab) and (x,yxy)
-        // also possible after first-round merges. The exact order beyond the
-        // first two depends on post-merge pair updates, but the run should
-        // complete all 4 requested merges without panicking and the final
-        // vocab must contain the double tokens.
-        assert_eq!(merges.len(), 4, "all 4 global merges should complete");
-        assert!(
-            model.vocab.contains_key("ab") && model.vocab.contains_key("xy"),
-            "final vocab should contain both first-round merges"
-        );
+        // Sanity-check the resulting vocabulary contains every merged token.
+        for tok in ["xy", "ab", "xyxy", "abab"] {
+            assert!(
+                model.vocab.contains_key(tok),
+                "final vocab should contain merged token {:?}",
+                tok
+            );
+        }
     }
 
     #[test]
