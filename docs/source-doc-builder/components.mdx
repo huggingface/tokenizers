@@ -128,6 +128,14 @@ they are the only mandatory component of a Tokenizer.
 | WordPiece | This is a subword tokenization algorithm quite similar to BPE, used mainly by Google in models like BERT. It uses a greedy algorithm, that tries to build long words first, splitting in multiple tokens when entire words don’t exist in the vocabulary. This is different from BPE that starts from characters, building bigger tokens as possible. It uses the famous `##` prefix to identify tokens that are part of a word (ie not starting a word).  |
 | Unigram | Unigram is also a subword tokenization algorithm, and works by trying to identify the best set of subword tokens to maximize the probability for a given sentence. This is different from BPE in the way that this is not deterministic based on a set of rules applied sequentially. Instead Unigram will be able to compute multiple ways of tokenizing, while choosing the most probable one. |
 
+<Tip warning={true}>
+
+`Tokenizer.train_new_from_iterator()` always uses the BPE trainer internally,
+even when the underlying model is WordPiece. To train a true WordPiece
+tokenizer, use `WordPieceTrainer` with `tokenizer.train(...)` directly.
+
+</Tip>
+
 ## Post-Processors
 
 After the whole pipeline, we sometimes want to insert some special

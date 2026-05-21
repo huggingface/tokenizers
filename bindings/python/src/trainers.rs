@@ -425,6 +425,12 @@ impl PyBpeTrainer {
 
 /// Trainer capable of training a WordPiece model
 ///
+/// Note:
+///     ``Tokenizer.train_new_from_iterator()`` always uses the BPE trainer
+///     internally, even when the underlying model is WordPiece. To train a
+///     true WordPiece tokenizer, use ``WordPieceTrainer`` with
+///     ``tokenizer.train(...)`` directly, as shown in the example below.
+///
 /// Args:
 ///     vocab_size (:obj:`int`, `optional`):
 ///         The size of the final vocabulary, including all tokens and alphabet.
