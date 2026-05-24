@@ -397,8 +397,9 @@ impl UnigramTrainer {
                 // After removing the sentencepiece[i], its frequency freq[i] is
                 // re-assigned to alternatives.
                 // new_sum = current_sum - freq[i] + freq[i] * alternatives[i].size()
-                //         = current_sum + freq[i] * (alternatives[i] - 1)
-
+                //         = current_sum + freq[i] * (alternatives[i].size() - 1)
+                // Per-piece alternatives[id], not the total piece count; mirrors SentencePiece
+                // src/unigram_model_trainer.cc, Trainer::PruneSentencePieces.
                 let logsum_alt = (sum + freq[id] * (alternatives[id].len() - 1) as f64).ln();
 
                 // The frequencies of alternatives are increased by freq[i].
@@ -818,6 +819,11 @@ mod tests {
         // to replace (its parts never occur alone), so SentencePiece keeps it;
         // "pq" is cheap (its parts are frequent). Scoring the loss with the total
         // piece count instead of alternatives[id].len() over-credits "pq".
+        //
+        // <UNK> and the six single chars are always kept (no alternative
+        // segmentation); m/n are padding so that pruning leaves exactly one slot
+        // for the pq-vs-xy contest. The loss ranking decides the survivor: the
+        // fix keeps "xy"; the old `alternatives.len()` line keeps "pq".
         let trainer = UnigramTrainerBuilder::default()
             .show_progress(false)
             .vocab_size(1)
