@@ -458,7 +458,12 @@ impl Tokenizer {
 
   #[napi]
   pub fn get_vocab_size(&self, with_added_tokens: Option<bool>) -> u32 {
-    self.get_vocab(with_added_tokens).len() as u32
+    let with_added_tokens = with_added_tokens.unwrap_or(true);
+    self
+      .tokenizer
+      .read()
+      .unwrap()
+      .get_vocab_size(with_added_tokens) as u32
   }
 
   #[napi]

@@ -693,12 +693,16 @@ where
 
     /// Get the size of the vocabulary
     pub fn get_vocab_size(&self, with_added_tokens: bool) -> usize {
-        // TODO ArthurZ THIS IS WRONG! We need to measure the length of the `set` because
-        // now some tokens can be both in the added_tokens_encoder and in the vocab
+        let base = self.model.get_vocab_size();
         if with_added_tokens {
-            self.get_vocab(true).len()
+            let added = self.added_vocabulary.get_vocab();
+            let overlapping = added
+                .keys()
+                .filter(|t| self.model.token_to_id(t).is_some())
+                .count();
+            base + added.len() - overlapping
         } else {
-            self.model.get_vocab_size()
+            base
         }
     }
 
@@ -1785,5 +1789,26 @@ mod tests {
             full_b.get_ids(),
             "OnlyFirst should not truncate the second sequence"
         );
+    }
+
+    #[test]
+    fn get_vocab_size_with_overlapping_added_tokens() {
+        // test_tokenizer() builds a WordLevel model with "a"-"j" + "<unk>" = 11 tokens
+        let mut tok = test_tokenizer();
+
+        assert_eq!(tok.get_vocab_size(false), 11);
+        assert_eq!(tok.get_vocab_size(true), 11);
+
+        // Add "a" as a special token — it already exists in the model vocab (overlap)
+        tok.add_special_tokens([AddedToken::from("a", true)])
+            .unwrap();
+        assert_eq!(tok.get_vocab_size(false), 11);
+        assert_eq!(tok.get_vocab_size(true), 11); // must not double-count
+
+        // Add a genuinely new token
+        tok.add_tokens([AddedToken::from("new_token", false)])
+            .unwrap();
+        assert_eq!(tok.get_vocab_size(false), 11);
+        assert_eq!(tok.get_vocab_size(true), 12);
     }
 }
