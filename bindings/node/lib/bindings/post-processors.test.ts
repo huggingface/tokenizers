@@ -9,7 +9,7 @@ describe('bertProcessing', () => {
   })
 
   it('throws if only one argument is provided', () => {
-    expect(() => (bertProcessing as any)(['sep', 1])).toThrow('Given napi value is not an array')
+    expect(() => (bertProcessing as any)(['sep', 1])).toThrow('Failed to get Array length')
   })
 
   it('throws if arguments are malformed', () => {
