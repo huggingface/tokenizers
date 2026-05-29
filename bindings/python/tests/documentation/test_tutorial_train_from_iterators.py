@@ -34,7 +34,9 @@ class TestTrainFromIterators:
         # START load_dataset
         import datasets  # type: ignore[import-not-found]
 
-        dataset = datasets.load_dataset("wikitext", "wikitext-103-raw-v1", split="train+test+validation")
+        dataset = datasets.load_dataset(
+            "Salesforce/wikitext", "wikitext-103-raw-v1", split="train+test+validation"
+        )
         # END load_dataset
 
     @pytest.fixture(scope="class")
@@ -68,7 +70,7 @@ class TestTrainFromIterators:
 
         # In order to keep tests fast, we only use the first 100 examples
         os.environ["TOKENIZERS_PARALLELISM"] = "true"
-        dataset = datasets.load_dataset("wikitext", "wikitext-103-raw-v1", split="train[0:100]")
+        dataset = datasets.load_dataset("Salesforce/wikitext", "wikitext-103-raw-v1", split="train[0:100]")
 
         # START def_batch_iterator
         def batch_iterator(batch_size=1000):
