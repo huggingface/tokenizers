@@ -350,7 +350,22 @@ mod tests {
         let reconstructed: std::result::Result<ModelWrapper, serde_json::Error> =
             serde_json::from_str(invalid);
         match reconstructed {
-            Err(err) => assert_eq!(err.to_string(), "Merges text file invalid at line 1"),
+            // The legacy v1 string-merge format previously surfaced a
+            // cryptic `Merges text file invalid at line 1` for any
+            // multi-space line. After the fix the deserialiser tries to
+            // disambiguate the line against the vocabulary, and only
+            // errors when neither zero nor exactly one candidate split
+            // satisfies the `(a, b, a ++ b)` vocab triple. The vocab
+            // here is `{<unk>, a, b, ab}` and the line is `"a b c"`,
+            // which has no resolvable split.
+            Err(err) => {
+                let msg = err.to_string();
+                assert!(
+                    msg.contains("could not be resolved against the vocabulary"),
+                    "unexpected error: {}",
+                    msg
+                );
+            }
             _ => panic!("Expected an error here"),
         }
     }

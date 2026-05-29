@@ -6,6 +6,126 @@ use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
 };
 
+/// Resolve a single legacy `merges: ["tok_a tok_b", ...]` entry against the
+/// vocabulary.
+///
+/// The legacy v1 format uses a single ASCII space as the separator between
+/// the two tokens of a merge. This is unambiguous as long as neither side
+/// contains a space, but if the vocabulary holds tokens with internal
+/// spaces (which the v2 array format `[["tok_a", "tok_b"]]` does support),
+/// the line is no longer parsable by a naive `split(' ')`.
+///
+/// This helper recovers a unique `(a, b)` split by checking every possible
+/// space-delimited cut and keeping the one for which `a`, `b`, and
+/// `a ++ b` are all present in the vocabulary. The common case where the
+/// line contains exactly one space is handled by the fast path.
+///
+/// Returns `Ok(Some((a, b)))` on a successful disambiguation,
+/// `Ok(None)` if no candidate split resolved (caller surfaces the original
+/// error), and `Err(line)` if more than one candidate split resolved
+/// against the vocabulary (genuine ambiguity).
+fn disambiguate_legacy_merge(
+    line: &str,
+    vocab: &AHashMap<String, u32>,
+) -> Result<Option<(String, String)>, String> {
+    let space_positions: Vec<usize> = line
+        .char_indices()
+        .filter_map(|(i, c)| if c == ' ' { Some(i) } else { None })
+        .collect();
+    if space_positions.len() <= 1 {
+        // Single-space (or no-space) lines are handled by the existing
+        // fast path; nothing to disambiguate here.
+        return Ok(None);
+    }
+
+    let mut found: Option<(String, String)> = None;
+    for cut in space_positions {
+        let a = &line[..cut];
+        let b = &line[cut + 1..];
+        if !vocab.contains_key(a) {
+            continue;
+        }
+        if !vocab.contains_key(b) {
+            continue;
+        }
+        let mut merged = String::with_capacity(a.len() + b.len());
+        merged.push_str(a);
+        merged.push_str(b);
+        if !vocab.contains_key(&merged) {
+            continue;
+        }
+        if found.is_some() {
+            return Err(line.to_string());
+        }
+        found = Some((a.to_string(), b.to_string()));
+    }
+    Ok(found)
+}
+
+/// Convert a legacy `merges: ["..."]` array, disambiguating any entries
+/// whose tokens contain internal spaces by consulting the vocabulary.
+///
+/// Single-space lines, the overwhelmingly common case, are forwarded to
+/// `convert_merges_to_hashmap` unchanged. Multi-space lines are resolved
+/// against the vocabulary; if exactly one split position satisfies
+/// `vocab.contains_key(a) && vocab.contains_key(b) && vocab.contains_key(a ++ b)`,
+/// that split wins. Zero or multiple matches surface explicit errors.
+fn legacy_merges_to_tuples(
+    merges: Vec<String>,
+    vocab: &AHashMap<String, u32>,
+) -> Result<Vec<(String, String)>, String> {
+    let mut out: Vec<(String, String)> = Vec::with_capacity(merges.len());
+    let mut needs_fallback: Vec<String> = Vec::with_capacity(merges.len());
+    let mut resolved_flags: Vec<Option<(String, String)>> = Vec::with_capacity(merges.len());
+
+    for (rank, line) in merges.iter().enumerate() {
+        match disambiguate_legacy_merge(line, vocab) {
+            Ok(Some(pair)) => resolved_flags.push(Some(pair)),
+            Ok(None) => {
+                // Either the line has 0 or 1 spaces (fast path takes it),
+                // or none of the multi-space candidate splits resolved
+                // against the vocabulary.
+                let space_count = line.chars().filter(|c| *c == ' ').count();
+                if space_count > 1 {
+                    return Err(format!(
+                        "Legacy v1 merge entry at rank {rank} `{line}` could not be \
+                         resolved against the vocabulary; the line contains multiple \
+                         spaces and no candidate split satisfies the vocab triple \
+                         `(a, b, a ++ b)`. Re-serialise the tokenizer as v2 array merges."
+                    ));
+                }
+                resolved_flags.push(None);
+                needs_fallback.push(line.clone());
+            }
+            Err(ambiguous) => {
+                return Err(format!(
+                    "Legacy v1 merge entry at rank {rank} `{ambiguous}` is ambiguous \
+                     against the vocabulary; more than one candidate split satisfies \
+                     the vocab triple `(a, b, a ++ b)`. Re-serialise the tokenizer \
+                     as v2 array merges to disambiguate."
+                ));
+            }
+        }
+    }
+
+    let fallback = convert_merges_to_hashmap(needs_fallback.into_iter(), vocab)
+        .map_err(|e| e.to_string())?;
+    let mut fallback_iter = fallback.into_iter();
+    for r in resolved_flags {
+        match r {
+            Some(pair) => out.push(pair),
+            None => {
+                if let Some(pair) = fallback_iter.next() {
+                    out.push(pair);
+                } else {
+                    return Err("internal error: fallback exhausted".to_string());
+                }
+            }
+        }
+    }
+    Ok(out)
+}
+
 impl Serialize for BPE {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -144,7 +264,7 @@ impl<'de> Visitor<'de> for BPEVisitor {
             let merges = match merges {
                 MergeType::Tuple(merges) => merges,
                 MergeType::Legacy(merges) => {
-                    convert_merges_to_hashmap(merges.into_iter(), &vocab).map_err(Error::custom)?
+                    legacy_merges_to_tuples(merges, &vocab).map_err(Error::custom)?
                 }
             };
             builder = builder.vocab_and_merges(vocab, merges);
@@ -213,6 +333,91 @@ mod test {
         );
         let reconstructed = serde_json::from_str(&data).unwrap();
         assert_eq!(bpe, reconstructed);
+    }
+
+    #[test]
+    fn test_legacy_v1_merges_with_space_in_token_round_trip() {
+        // The v2 array form `[["a","b c d"]]` and the v1 legacy form
+        // `["a b c d"]` describe the same merge once disambiguated against
+        // the vocabulary. Previously the v1 form failed with
+        // `Merges text file invalid at line 1` because the parser used
+        // a strict `split(' ')` with `parts.len() != 2`; the v2 form
+        // worked. After the fix the two forms round-trip to the same BPE.
+        let vocab: Vocab = [
+            ("<unk>".into(), 0),
+            ("a".into(), 1),
+            ("b c d".into(), 2),
+            ("ab c d".into(), 3),
+        ]
+        .iter()
+        .cloned()
+        .collect();
+        let v2 = r#"{"type":"BPE","dropout":null,"unk_token":"<unk>","continuing_subword_prefix":null,"end_of_word_suffix":null,"fuse_unk":false,"byte_fallback":false,"ignore_merges":true,"vocab":{"<unk>":0,"a":1,"b c d":2,"ab c d":3},"merges":[["a","b c d"]]}"#;
+        let v1 = r#"{"type":"BPE","dropout":null,"unk_token":"<unk>","continuing_subword_prefix":null,"end_of_word_suffix":null,"fuse_unk":false,"byte_fallback":false,"ignore_merges":true,"vocab":{"<unk>":0,"a":1,"b c d":2,"ab c d":3},"merges":["a b c d"]}"#;
+
+        let bpe_v2: BPE = serde_json::from_str(v2).unwrap();
+        let bpe_v1: BPE = serde_json::from_str(v1).unwrap();
+        assert_eq!(bpe_v1, bpe_v2);
+
+        // Sanity: the resolved merge is `(a, "b c d")`, mapping to the
+        // vocab id of `"ab c d"`.
+        assert_eq!(bpe_v1.merges.get(&(1, 2)).copied(), Some((0u32, 3u32)));
+        let _ = vocab;
+    }
+
+    #[test]
+    fn test_legacy_v1_merges_single_space_fast_path_unchanged() {
+        // The single-space fast path must be byte-for-byte identical to
+        // the previous behaviour for tokenizers whose vocabulary holds
+        // no space-containing tokens.
+        let vocab: Vocab = [
+            ("<unk>".into(), 0),
+            ("a".into(), 1),
+            ("b".into(), 2),
+            ("ab".into(), 3),
+        ]
+        .iter()
+        .cloned()
+        .collect();
+        let legacy = r#"{"type":"BPE","dropout":null,"unk_token":"<unk>","continuing_subword_prefix":null,"end_of_word_suffix":null,"fuse_unk":false,"byte_fallback":false,"ignore_merges":true,"vocab":{"<unk>":0,"a":1,"b":2,"ab":3},"merges":["a b"]}"#;
+        let bpe: BPE = serde_json::from_str(legacy).unwrap();
+        assert_eq!(bpe.merges.get(&(1, 2)).copied(), Some((0u32, 3u32)));
+        let _ = vocab;
+    }
+
+    #[test]
+    fn test_legacy_v1_merges_unresolvable_multi_space_errors_clearly() {
+        // A multi-space legacy line where no candidate split produces a
+        // `(a, b, a ++ b)` triple in the vocabulary must surface the new,
+        // explicit error rather than the prior cryptic
+        // `Merges text file invalid at line 1`.
+        let unresolvable = r#"{"type":"BPE","dropout":null,"unk_token":"<unk>","continuing_subword_prefix":null,"end_of_word_suffix":null,"fuse_unk":false,"byte_fallback":false,"ignore_merges":true,"vocab":{"<unk>":0,"a":1,"b c d":2},"merges":["a b c d"]}"#;
+        let err = serde_json::from_str::<BPE>(unresolvable).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("could not be resolved against the vocabulary"),
+            "unexpected error message: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn test_legacy_v1_merges_ambiguous_multi_space_errors_clearly() {
+        // Two different splits both produce a valid `(a, b, a ++ b)`
+        // triple. The fix must refuse rather than silently picking one.
+        // Vocab carries both `a b` + `c` + `a bc` and `a` + `b c` + `ab c`.
+        // For the line `a b c`, the candidate splits are:
+        //   (a, "b c")    : a in vocab, "b c" in vocab, "ab c" in vocab -> OK
+        //   ("a b", c)    : "a b" in vocab, c in vocab, "a bc" in vocab -> OK
+        // The fix must surface the ambiguity rather than picking one.
+        let ambiguous = r#"{"type":"BPE","dropout":null,"unk_token":"<unk>","continuing_subword_prefix":null,"end_of_word_suffix":null,"fuse_unk":false,"byte_fallback":false,"ignore_merges":true,"vocab":{"<unk>":0,"a":1,"b c":2,"ab c":3,"a b":4,"c":5,"a bc":6},"merges":["a b c"]}"#;
+        let err = serde_json::from_str::<BPE>(ambiguous).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("ambiguous against the vocabulary"),
+            "unexpected error message: {}",
+            msg
+        );
     }
 
     #[test]
