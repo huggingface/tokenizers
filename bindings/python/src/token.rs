@@ -1,7 +1,7 @@
 use pyo3::prelude::*;
 use tk::Token;
 
-#[pyclass(module = "tokenizers", name = "Token")]
+#[pyclass(module = "tokenizers", name = "Token", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct PyToken {
     token: Token,
@@ -19,8 +19,12 @@ impl From<PyToken> for Token {
 
 #[pymethods]
 impl PyToken {
+    /// Create a token from id, string value and byte offsets
     #[new]
-    #[pyo3(text_signature = None)]
+    #[pyo3(
+        signature = (id, value, offsets),
+        text_signature = "(self, id, value, offsets)"
+    )]
     fn new(id: u32, value: String, offsets: (usize, usize)) -> PyToken {
         Token::new(id, value, offsets).into()
     }

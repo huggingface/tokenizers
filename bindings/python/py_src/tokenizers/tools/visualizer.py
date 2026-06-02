@@ -1,3 +1,4 @@
+import html
 import itertools
 import os
 import re
@@ -5,7 +6,6 @@ from string import Template
 from typing import Any, Callable, Dict, List, NamedTuple, Optional, Tuple
 
 from tokenizers import Encoding, Tokenizer
-
 
 dirname = os.path.dirname(__file__)
 css_filename = os.path.join(dirname, "visualizer-styles.css")
@@ -16,7 +16,7 @@ with open(css_filename) as f:
 class Annotation:
     start: int
     end: int
-    label: int
+    label: str
 
     def __init__(self, start: int, end: int, label: str):
         self.start = start
@@ -91,15 +91,17 @@ class EncodingVisualizer:
     ):
         if default_to_notebook:
             try:
-                from IPython.core.display import HTML, display
+                from IPython.display import HTML, display  # type: ignore[attr-defined]
             except ImportError:
-                raise Exception(
-                    """We couldn't import IPython utils for html display.
-                        Are you running in a notebook?
-                        You can also pass `default_to_notebook=False` to get back raw HTML
-                    """
-                )
-
+                try:
+                    from IPython.core.display import HTML, display  # type: ignore[attr-defined]
+                except ImportError:
+                    msg = (
+                        "We couldn't import IPython utils for html display.\n"
+                        "Are you running in a notebook?\n"
+                        "You can also pass `default_to_notebook=False` to get back raw HTML.\n"
+                    )
+                    raise ImportError(msg) from None
         self.tokenizer = tokenizer
         self.default_to_notebook = default_to_notebook
         self.annotation_coverter = annotation_converter
@@ -108,7 +110,7 @@ class EncodingVisualizer:
     def __call__(
         self,
         text: str,
-        annotations: AnnotationList = [],
+        annotations: Optional[List[Any]] = None,
         default_to_notebook: Optional[bool] = None,
     ) -> Optional[str]:
         """
@@ -135,12 +137,19 @@ class EncodingVisualizer:
             final_default_to_notebook = default_to_notebook
         if final_default_to_notebook:
             try:
-                from IPython.core.display import HTML, display
+                from IPython.display import HTML, display  # type: ignore[attr-defined]
             except ImportError:
-                raise Exception(
-                    """We couldn't import IPython utils for html display.
-                    Are you running in a notebook?"""
-                )
+                try:
+                    from IPython.core.display import HTML, display  # type: ignore[attr-defined]
+                except ImportError:
+                    msg = (
+                        "We couldn't import IPython utils for html display.\n"
+                        "Are you running in a notebook?\n"
+                        "You can also pass `default_to_notebook=False` to get back raw HTML.\n"
+                    )
+                    raise ImportError(msg) from None
+        if annotations is None:
+            annotations = []
         if self.annotation_coverter is not None:
             annotations = list(map(self.annotation_coverter, annotations))
         encoding = self.tokenizer.encode(text)
@@ -213,6 +222,8 @@ class EncodingVisualizer:
             return f'<span class="special-token" data-stoken={stoken}></span>'
         # We're not in a special token so this group has a start and end.
         last = consecutive_chars_list[-1]
+        assert first.char_ix is not None
+        assert last.char_ix is not None
         start = first.char_ix
         end = last.char_ix + 1
         span_text = text[start:end]
@@ -245,6 +256,7 @@ class EncodingVisualizer:
         data = ""
         for key, val in data_items.items():
             data += f' data-{key}="{val}"'
+        span_text = html.escape(span_text)
         return f"<span {css} {data} >{span_text}</span>"
 
     @staticmethod
@@ -310,6 +322,11 @@ class EncodingVisualizer:
                 encoding=encoding,
             )
         )
+
+        # Close any remaining open annotation span
+        if cur_anno_ix is not None:
+            spans.append("</span>")
+
         res = HTMLBody(spans)  # Send the list of spans to the body of our html
         return res
 

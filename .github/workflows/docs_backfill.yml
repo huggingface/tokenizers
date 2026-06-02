@@ -1,0 +1,40 @@
+name: Backfill documentation
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+    inputs:
+      versions:
+        description: 'JSON array of tags (e.g. ["v0.21.4","v0.22.2"])'
+        required: true
+        type: string
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        version: ${{ fromJson(github.event.inputs.versions) }}
+    uses: huggingface/doc-builder/.github/workflows/build_main_documentation.yml@main
+    with:
+      commit_sha: ${{ matrix.version }}
+      package: tokenizers
+      path_to_docs: tokenizers/docs/source-doc-builder/
+      package_path: tokenizers/bindings/python/
+      version_tag_suffix: bindings/python/py_src/
+      install_rust: true
+      pre_command: |
+        VERSION="${{ matrix.version }}" yq -i '. += [{"version": strenv(VERSION)}]' build_dir/tokenizers/_versions.yml
+        cd tokenizers
+        git fetch --tags --force
+        git checkout "refs/tags/${{ matrix.version }}"
+        cd bindings/python
+        source ../../../.venv/bin/activate
+        curl --silent --show-error --retry 5 https://bootstrap.pypa.io/get-pip.py | python
+        python -m pip install maturin
+        RUSTFLAGS="--cap-lints=warn" python -m pip install -e .[dev]
+    secrets:
+      hf_token: ${{ secrets.HF_DOC_BUILD_PUSH }}

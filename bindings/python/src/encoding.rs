@@ -8,6 +8,24 @@ use tokenizers as tk;
 use crate::error::{deprecation_warning, PyError};
 
 /// The :class:`~tokenizers.Encoding` represents the output of a :class:`~tokenizers.Tokenizer`.
+///
+/// It holds all the information about the tokenized input, including the token IDs,
+/// token strings, attention masks, offsets, and more. This is the main data structure
+/// returned by :meth:`~tokenizers.Tokenizer.encode` and
+/// :meth:`~tokenizers.Tokenizer.encode_batch`.
+///
+/// Example::
+///
+///     >>> from tokenizers import Tokenizer
+///     >>> tokenizer = Tokenizer.from_pretrained("bert-base-uncased")
+///     >>> encoding = tokenizer.encode("Hello, world!")
+///     >>> encoding.ids
+///     [101, 7592, 1010, 2088, 999, 102]
+///     >>> encoding.tokens
+///     ['[CLS]', 'hello', ',', 'world', '!', '[SEP]']
+///     >>> encoding.offsets
+///     [(0, 0), (0, 5), (5, 6), (7, 12), (12, 13), (0, 0)]
+///
 #[pyclass(dict, module = "tokenizers", name = "Encoding")]
 #[repr(transparent)]
 pub struct PyEncoding {
@@ -23,14 +41,14 @@ impl From<tk::tokenizer::Encoding> for PyEncoding {
 #[pymethods]
 impl PyEncoding {
     #[new]
-    #[pyo3(text_signature = None)]
+    #[pyo3(signature = (), text_signature = "(self)")]
     fn new() -> Self {
         Self {
             encoding: tk::tokenizer::Encoding::default(),
         }
     }
 
-    fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+    fn __getstate__(&self, py: Python) -> PyResult<Py<PyAny>> {
         let data = serde_json::to_string(&self.encoding).map_err(|e| {
             exceptions::PyException::new_err(format!(
                 "Error while attempting to pickle Encoding: {e}"
@@ -39,7 +57,7 @@ impl PyEncoding {
         Ok(PyBytes::new(py, data.as_bytes()).into())
     }
 
-    fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
+    fn __setstate__(&mut self, py: Python, state: Py<PyAny>) -> PyResult<()> {
         match state.extract::<&[u8]>(py) {
             Ok(s) => {
                 self.encoding = serde_json::from_slice(s).map_err(|e| {
@@ -49,7 +67,7 @@ impl PyEncoding {
                 })?;
                 Ok(())
             }
-            Err(e) => Err(e),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -77,7 +95,7 @@ impl PyEncoding {
     /// Returns:
     ///     :class:`~tokenizers.Encoding`: The resulting Encoding
     #[staticmethod]
-    #[pyo3(signature = (encodings, growing_offsets = true))]
+    #[pyo3(signature = (encodings, growing_offsets = true) -> "Encoding")]
     #[pyo3(text_signature = "(encodings, growing_offsets=True)")]
     fn merge(encodings: Vec<PyRef<PyEncoding>>, growing_offsets: bool) -> PyEncoding {
         tk::tokenizer::Encoding::merge(
@@ -385,7 +403,7 @@ impl PyEncoding {
     ///
     ///     pad_token (:obj:`str`, defaults to `[PAD]`):
     ///         The pad token to use
-    #[pyo3(signature = (length, **kwargs))]
+    #[pyo3(signature = (length, **kwargs) -> "None")]
     #[pyo3(
         text_signature = "(self, length, direction='right', pad_id=0, pad_type_id=0, pad_token='[PAD]')"
     )]
@@ -437,7 +455,7 @@ impl PyEncoding {
     ///
     ///     direction (:obj:`str`, defaults to :obj:`right`):
     ///         Truncate direction
-    #[pyo3(signature = (max_length, stride = 0, direction = "right"))]
+    #[pyo3(signature = (max_length, stride = 0, direction = "right") -> "None")]
     #[pyo3(text_signature = "(self, max_length, stride=0, direction='right')")]
     fn truncate(&mut self, max_length: usize, stride: usize, direction: &str) -> PyResult<()> {
         let tdir = match direction {

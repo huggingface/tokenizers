@@ -1,14 +1,16 @@
 import pickle
+import copy
 import concurrent.futures
 import pytest
 import numpy as np
 import asyncio
-from tokenizers import AddedToken, Encoding, Tokenizer
+from tokenizers import AddedToken, Encoding, Tokenizer, decoders
 from tokenizers.implementations import BertWordPieceTokenizer
 from tokenizers.models import BPE, Model, Unigram
 from tokenizers.pre_tokenizers import ByteLevel, Metaspace
 from tokenizers.processors import RobertaProcessing, TemplateProcessing
 from tokenizers.normalizers import Strip, Lowercase, Sequence
+from tokenizers.normalizers import ByteLevel as NormalizerByteLevel
 from tokenizers.decoders import ByteFallback, DecodeStream, Metaspace as DecoderMetaspace
 import time
 
@@ -109,6 +111,43 @@ class TestTokenizer:
         assert tokens[0].normalized == True
         assert tokens[1].normalized == False
 
+    def test_add_tokens_with_normalizer(self):
+        tokenizer = Tokenizer(BPE())
+        tokenizer.normalizer = NormalizerByteLevel()
+        tokenizer.decoder = decoders.ByteLevel()
+
+        new_tokens = [AddedToken("Začnimo", normalized=False, special=True), AddedToken("kuća"), AddedToken("međa")]
+        tokenizer.add_tokens(new_tokens)
+        enc = tokenizer.encode(new_tokens[0].content + new_tokens[1].content + " " + new_tokens[2].content)
+        assert tokenizer.decode(enc.ids, False) == "Za\rnimokućameđa"
+
+        # Original content must be preserved in the decoder map regardless of normalization
+        decoder_map = tokenizer.get_added_tokens_decoder()
+        assert decoder_map[enc.ids[0]].content == "Začnimo"
+        assert decoder_map[enc.ids[1]].content == "kuća"
+        assert decoder_map[enc.ids[2]].content == "međa"
+
+    def test_normalizer_change_refreshes_added_tokens(self):
+        """Changing tokenizer.normalizer must re-normalize added tokens and rebuild the trie."""
+        tokenizer = Tokenizer(BPE())
+        tokenizer.decoder = decoders.ByteLevel()
+
+        # Add tokens *before* setting the normalizer — they should be re-processed
+        new_tokens = [AddedToken("kuća"), AddedToken("međa")]
+        tokenizer.add_tokens(new_tokens)
+
+        # Now set the normalizer: refresh must happen automatically
+        tokenizer.normalizer = NormalizerByteLevel()
+
+        enc = tokenizer.encode("kuća međa")
+        # Both tokens must be found and decode back to their original form
+        assert tokenizer.decode(enc.ids, False) == "kućameđa"
+
+        # Unsetting the normalizer must also refresh (no normalization applied to the added token)
+        tokenizer.normalizer = None
+        enc2 = tokenizer.encode("kuća međa")
+        assert tokenizer.decode(enc2.ids, False) == "ku\x07ame\x11a"
+
     def test_add_special_tokens(self):
         tokenizer = Tokenizer(BPE())
 
@@ -154,9 +193,9 @@ class TestTokenizer:
         output = tokenizer.encode_batch(["my name is john", ("my name is john", "pair")])
         assert len(output) == 2
 
+    @pytest.mark.network
     def test_encode_formats(self, bert_files):
-        with pytest.deprecated_call():
-            tokenizer = BertWordPieceTokenizer(bert_files["vocab"])
+        tokenizer = BertWordPieceTokenizer(bert_files["vocab"])
 
         # Encode
         output = tokenizer.encode("my name is john")
@@ -273,9 +312,9 @@ class TestTokenizer:
 
         # Mal formed
         with pytest.raises(TypeError, match="TextInputSequence must be str"):
-            tokenizer.encode([["my", "name"]])
+            tokenizer.encode([["my", "name"]])  # type: ignore[arg-type]
         with pytest.raises(TypeError, match="TextInputSequence must be str"):
-            tokenizer.encode("My name is john", [["pair"]])
+            tokenizer.encode("My name is john", [["pair"]])  # type: ignore[arg-type]
         with pytest.raises(TypeError, match="TextInputSequence must be str"):
             tokenizer.encode("my name is john", ["pair"])
 
@@ -286,9 +325,9 @@ class TestTokenizer:
         with pytest.raises(TypeError, match="InputSequence must be Union[List[str]"):
             tokenizer.encode(["My", "name", "is", "John"], "pair", is_pretokenized=True)
 
+    @pytest.mark.network
     def test_encode_add_special_tokens(self, roberta_files):
-        with pytest.deprecated_call():
-            tokenizer = Tokenizer(BPE(roberta_files["vocab"], roberta_files["merges"]))
+        tokenizer = Tokenizer(BPE(roberta_files["vocab"], roberta_files["merges"]))
         tokenizer.add_special_tokens(["<s>", "</s>"])
 
         tokenizer.pre_tokenizer = ByteLevel(add_prefix_space=True)
@@ -376,6 +415,28 @@ class TestTokenizer:
         stream = DecodeStream(ids=[0, 1, 2])
         assert stream.step(tokenizer, 3) == " john"
 
+    def test_decode_stream_copy_and_prefix_ids(self):
+        tokenizer = Tokenizer(BPE())
+        tokenizer.add_tokens(["my", "name", "is", "john"])
+        token_ids = [0, 1, 2, 3]
+
+        stream = DecodeStream(skip_special_tokens=False)
+        assert stream.step(tokenizer, token_ids[0]) == "my"
+        assert stream.step(tokenizer, token_ids[1]) == " name"
+        stream_copy = copy.copy(stream)
+        assert stream.step(tokenizer, token_ids[2]) == " is"
+        assert stream_copy.step(tokenizer, token_ids[2]) == " is"
+        assert stream.step(tokenizer, token_ids[3]) == " john"
+        assert stream_copy.step(tokenizer, token_ids[3]) == " john"
+
+        stream_steps = DecodeStream([])
+        last_chunk = None
+        for tid in token_ids:
+            last_chunk = stream_steps.step(tokenizer, tid)
+        stream_prefill = DecodeStream(token_ids[:-1])
+        assert stream_prefill.step(tokenizer, token_ids[-1]) == last_chunk
+
+    @pytest.mark.network
     def test_decode_stream_fallback(self):
         tokenizer = Tokenizer.from_pretrained("gpt2")
         # tokenizer.decode([255]) fails because its a fallback
@@ -408,6 +469,7 @@ class TestTokenizer:
         out = stream.step(tokenizer, [109])
         assert out == "อั"
 
+    @pytest.mark.network
     def test_decode_skip_special_tokens(self):
         tokenizer = Tokenizer.from_pretrained("hf-internal-testing/Llama-3.1-8B-Instruct")
 
@@ -557,11 +619,51 @@ class TestTokenizer:
         multiprocessing_with_parallelism(tokenizer, False)
         multiprocessing_with_parallelism(tokenizer, True)
 
+    def test_multithreaded_concurrency(self):
+        # Create a single shared tokenizer instance (thread-safe)
+        shared_tokenizer = Tokenizer(BPE())
+
+        # Thread worker functions that use the SAME tokenizer instance
+        def encode_batch(batch):
+            return shared_tokenizer.encode_batch(batch)
+
+        def encode_batch_fast(batch):
+            return shared_tokenizer.encode_batch_fast(batch)
+
+        # Create some significant workload
+        batches = [
+            ["my name is john " * 50] * 20,
+            ["my name is paul " * 50] * 20,
+            ["my name is ringo " * 50] * 20,
+        ]
+
+        # Many encoding operations to run concurrently using the same tokenizer
+        tasks = [
+            (encode_batch, batches[0]),
+            (encode_batch_fast, batches[1]),
+            (encode_batch, batches[2]),
+        ] * 10
+
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
+
+        futures = []
+        for function, argument in tasks:
+            futures.append(executor.submit(function, argument))
+
+        # All tasks should complete successfully
+        results = [f.result() for f in futures]
+
+        # Verify results
+        assert len(results) == 30
+        assert all(len(result) == 20 for result in results)
+
+    @pytest.mark.network
     def test_from_pretrained(self):
         tokenizer = Tokenizer.from_pretrained("bert-base-cased")
         output = tokenizer.encode("Hey there dear friend!", add_special_tokens=False)
         assert output.tokens == ["Hey", "there", "dear", "friend", "!"]
 
+    @pytest.mark.network
     def test_from_pretrained_revision(self):
         tokenizer = Tokenizer.from_pretrained("anthony/tokenizers-test")
         output = tokenizer.encode("Hey there dear friend!", add_special_tokens=False)
@@ -597,6 +699,7 @@ class TestTokenizer:
         assert output.ids == [1, 10, 2, 3, 4, 5, 10, 6, 7, 8, 9]
         assert output.tokens == ["A", " ", "sen", "te", "n", "ce", " ", "<0xF0>", "<0x9F>", "<0xA4>", "<0x97>"]
 
+    @pytest.mark.network
     def test_encode_special_tokens(self):
         tokenizer = Tokenizer.from_pretrained("t5-base")
         tokenizer.add_tokens(["<eot>"])
@@ -628,6 +731,7 @@ class TestTokenizer:
         output = tokenizer.encode("Hey there<end_of_text> dear<eot>friend!", add_special_tokens=False)
         assert output.tokens == ["▁Hey", "▁there", "<", "end", "_", "of_text>", "▁dear", "<eot>", "▁friend", "!"]
 
+    @pytest.mark.network
     def test_splitting(self):
         tokenizer = Tokenizer.from_pretrained("hf-internal-testing/llama-new-metaspace")
         tokenizer.pre_tokenizer.split = False
@@ -688,6 +792,33 @@ class TestTokenizer:
         assert output == "name is john"
         assert tokenizer.get_added_tokens_decoder()[0] == AddedToken("my", special=True)
 
+    def test_weakref_support(self):
+        import weakref
+
+        tokenizer = Tokenizer(BPE())
+        weak_ref = weakref.ref(tokenizer)
+
+        assert weak_ref() is not None
+        assert weak_ref() is tokenizer
+
+        del tokenizer
+        assert weak_ref() is None
+
+    def test_weakref_with_multiple_references(self):
+        import weakref
+
+        tokenizer = Tokenizer(BPE())
+        weak_ref = weakref.ref(tokenizer)
+        another_ref = tokenizer
+
+        assert weak_ref() is not None
+
+        del tokenizer
+        assert weak_ref() is not None
+
+        del another_ref
+        assert weak_ref() is None
+
     def test_setting_to_none(self):
         tokenizer = Tokenizer(BPE())
         tokenizer.normalizer = Strip()
@@ -724,6 +855,7 @@ class TestTokenizerRepr:
         )
 
 
+@pytest.mark.network
 class TestAsyncTokenizer:
     """Tests for async methods of the Tokenizer class."""
 

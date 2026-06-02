@@ -2,7 +2,7 @@
 import gzip
 import os
 
-import datasets
+import datasets  # type: ignore[import-not-found]
 import pytest
 
 from ..utils import data_dir, train_files
@@ -32,7 +32,7 @@ class TestTrainFromIterators:
     @staticmethod
     def load_dummy_dataset():
         # START load_dataset
-        import datasets
+        import datasets  # type: ignore[import-not-found]
 
         dataset = datasets.load_dataset("wikitext", "wikitext-103-raw-v1", split="train+test+validation")
         # END load_dataset
@@ -62,6 +62,7 @@ class TestTrainFromIterators:
         tokenizer.train_from_iterator(data, trainer=trainer)
         # END train_basic
 
+    @pytest.mark.network
     def test_datasets(self):
         tokenizer, trainer = self.get_tokenizer_trainer()
 
@@ -82,6 +83,7 @@ class TestTrainFromIterators:
         tokenizer.train_from_iterator(batch_iterator(), trainer=trainer, length=len(dataset))
         # END train_datasets
 
+    @pytest.mark.network
     def test_gzip(self, setup_gzip_files):
         tokenizer, trainer = self.get_tokenizer_trainer()
 

@@ -1,3 +1,4 @@
+#![cfg_attr(docsrs, feature(doc_cfg))]
 #![warn(clippy::all)]
 #![allow(clippy::upper_case_acronyms)]
 #![doc(html_favicon_url = "https://huggingface.co/favicon.ico")]
@@ -150,6 +151,9 @@ pub use tokenizer::*;
 
 // Re-export also parallelism utils
 pub use utils::parallelism;
+
+// Re-export ProgressFormat for trainer configuration
+pub use utils::ProgressFormat;
 
 // Re-export for from_pretrained
 #[cfg(feature = "http")]

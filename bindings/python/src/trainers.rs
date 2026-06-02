@@ -7,6 +7,7 @@ use pyo3::prelude::*;
 use pyo3::types::*;
 use serde::{Deserialize, Serialize};
 use tk::models::TrainerWrapper;
+use tk::utils::ProgressFormat;
 use tk::Trainer;
 use tokenizers as tk;
 
@@ -14,7 +15,12 @@ use tokenizers as tk;
 ///
 /// This class is not supposed to be instantiated directly. Instead, any implementation of a
 /// Trainer will return an instance of this class when instantiated.
-#[pyclass(module = "tokenizers.trainers", name = "Trainer", subclass)]
+#[pyclass(
+    module = "tokenizers.trainers",
+    name = "Trainer",
+    subclass,
+    from_py_object
+)]
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(transparent)]
 pub struct PyTrainer {
@@ -26,35 +32,26 @@ impl PyTrainer {
     pub(crate) fn new(trainer: Arc<RwLock<TrainerWrapper>>) -> Self {
         PyTrainer { trainer }
     }
-    pub(crate) fn get_as_subtype(&self, py: Python<'_>) -> PyResult<PyObject> {
+    pub(crate) fn get_as_subtype(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let base = self.clone();
         Ok(match *self.trainer.as_ref().read().unwrap() {
-            TrainerWrapper::BpeTrainer(_) => Py::new(py, (PyBpeTrainer {}, base))?
-                .into_pyobject(py)?
-                .into_any()
-                .into(),
-            TrainerWrapper::BneTrainer(_) => Py::new(py, (PyBneTrainer {}, base))?
-                .into_pyobject(py)?
-                .into_any()
-                .into(),
-            TrainerWrapper::WordPieceTrainer(_) => Py::new(py, (PyWordPieceTrainer {}, base))?
-                .into_pyobject(py)?
-                .into_any()
-                .into(),
-            TrainerWrapper::WordLevelTrainer(_) => Py::new(py, (PyWordLevelTrainer {}, base))?
-                .into_pyobject(py)?
-                .into_any()
-                .into(),
-            TrainerWrapper::UnigramTrainer(_) => Py::new(py, (PyUnigramTrainer {}, base))?
-                .into_pyobject(py)?
-                .into_any()
-                .into(),
+            TrainerWrapper::BpeTrainer(_) => Py::new(py, (PyBpeTrainer {}, base))?.into_any(),
+            TrainerWrapper::BneTrainer(_) => Py::new(py, (PyBneTrainer {}, base))?.into_any(),
+            TrainerWrapper::WordPieceTrainer(_) => {
+                Py::new(py, (PyWordPieceTrainer {}, base))?.into_any()
+            }
+            TrainerWrapper::WordLevelTrainer(_) => {
+                Py::new(py, (PyWordLevelTrainer {}, base))?.into_any()
+            }
+            TrainerWrapper::UnigramTrainer(_) => {
+                Py::new(py, (PyUnigramTrainer {}, base))?.into_any()
+            }
         })
     }
 }
 #[pymethods]
 impl PyTrainer {
-    fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+    fn __getstate__(&self, py: Python) -> PyResult<Py<PyAny>> {
         let data = serde_json::to_string(&self.trainer).map_err(|e| {
             exceptions::PyException::new_err(format!(
                 "Error while attempting to pickle PyTrainer: {e}"
@@ -63,7 +60,7 @@ impl PyTrainer {
         Ok(PyBytes::new(py, data.as_bytes()).into())
     }
 
-    fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
+    fn __setstate__(&mut self, py: Python, state: Py<PyAny>) -> PyResult<()> {
         match state.extract::<&[u8]>(py) {
             Ok(s) => {
                 let unpickled = serde_json::from_slice(s).map_err(|e| {
@@ -74,7 +71,7 @@ impl PyTrainer {
                 self.trainer = unpickled;
                 Ok(())
             }
-            Err(e) => Err(e),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -185,6 +182,18 @@ macro_rules! setter {
 ///         This can help with reducing polluting your vocabulary with
 ///         highly repetitive tokens like `======` for wikipedia
 ///
+/// Example::
+///
+///     >>> from tokenizers.models import BPE
+///     >>> from tokenizers.trainers import BpeTrainer
+///     >>> trainer = BpeTrainer(
+///     ...     vocab_size=30000,
+///     ...     special_tokens=["<unk>", "<s>", "</s>"],
+///     ...     min_frequency=2,
+///     ... )
+///     >>> tokenizer = Tokenizer(BPE())
+///     >>> tokenizer.train(["path/to/corpus.txt"], trainer)
+///
 #[pyclass(extends=PyTrainer, module = "tokenizers.trainers", name = "BpeTrainer")]
 pub struct PyBpeTrainer {}
 #[pymethods]
@@ -217,6 +226,39 @@ impl PyBpeTrainer {
     #[setter]
     fn set_show_progress(self_: PyRef<Self>, show_progress: bool) {
         setter!(self_, BpeTrainer, show_progress, show_progress);
+    }
+
+    /// Get the progress output format ("indicatif", "json", or "silent")
+    #[getter]
+    fn get_progress_format(self_: PyRef<Self>) -> String {
+        let format = getter!(self_, BpeTrainer, progress_format);
+        match format {
+            ProgressFormat::Indicatif => "indicatif".to_string(),
+            ProgressFormat::JsonLines => "json".to_string(),
+            ProgressFormat::Silent => "silent".to_string(),
+        }
+    }
+
+    /// Set the progress output format ("indicatif", "json", or "silent")
+    #[setter]
+    fn set_progress_format(self_: PyRef<Self>, format: &str) {
+        let fmt = match format {
+            "json" => ProgressFormat::JsonLines,
+            "silent" => ProgressFormat::Silent,
+            _ => ProgressFormat::Indicatif,
+        };
+        setter!(self_, BpeTrainer, progress_format, fmt);
+    }
+
+    /// Get the number of unique words after feeding the corpus
+    #[pyo3(name = "get_word_count")]
+    fn get_word_count(self_: PyRef<Self>) -> usize {
+        let super_ = self_.as_ref();
+        if let TrainerWrapper::BpeTrainer(ref trainer) = *super_.trainer.read().unwrap() {
+            trainer.get_word_count()
+        } else {
+            0
+        }
     }
 
     #[getter]
@@ -318,7 +360,7 @@ impl PyBpeTrainer {
     #[new]
     #[pyo3(
         signature = (**kwargs),
-        text_signature = "(self, vocab_size=30000, min_frequency=0, show_progress=True, special_tokens=[], limit_alphabet=None, initial_alphabet=[], continuing_subword_prefix=None, end_of_word_suffix=None, max_token_length=None, words={})"
+        text_signature = "(self, vocab_size=30000, min_frequency=0, show_progress=True, progress_format=\"indicatif\", special_tokens=[], limit_alphabet=None, initial_alphabet=[], continuing_subword_prefix=None, end_of_word_suffix=None, max_token_length=None, words={})"
     )]
     pub fn new(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<(Self, PyTrainer)> {
         let mut builder = tk::models::bpe::BpeTrainer::builder();
@@ -329,9 +371,18 @@ impl PyBpeTrainer {
                     "vocab_size" => builder = builder.vocab_size(val.extract()?),
                     "min_frequency" => builder = builder.min_frequency(val.extract()?),
                     "show_progress" => builder = builder.show_progress(val.extract()?),
+                    "progress_format" => {
+                        let fmt: String = val.extract()?;
+                        let format = match fmt.as_str() {
+                            "json" => ProgressFormat::JsonLines,
+                            "silent" => ProgressFormat::Silent,
+                            _ => ProgressFormat::Indicatif,
+                        };
+                        builder = builder.progress_format(format);
+                    }
                     "special_tokens" => {
                         builder = builder.special_tokens(
-                            val.downcast::<PyList>()?
+                            val.cast::<PyList>()?
                                 .into_iter()
                                 .map(|token| {
                                     if let Ok(content) = token.extract::<String>() {
@@ -577,7 +628,7 @@ impl PyBneTrainer {
                     "show_progress" => builder = builder.show_progress(val.extract()?),
                     "special_tokens" => {
                         builder = builder.special_tokens(
-                            val.downcast::<PyList>()?
+                            val.cast::<PyList>()?
                                 .into_iter()
                                 .map(|token| {
                                     if let Ok(content) = token.extract::<String>() {
@@ -649,6 +700,18 @@ impl PyBneTrainer {
 ///
 ///     end_of_word_suffix (:obj:`str`, `optional`):
 ///         A suffix to be used for every subword that is a end-of-word.
+///
+/// Example::
+///
+///     >>> from tokenizers.models import WordPiece
+///     >>> from tokenizers.trainers import WordPieceTrainer
+///     >>> trainer = WordPieceTrainer(
+///     ...     vocab_size=30000,
+///     ...     special_tokens=["[UNK]", "[CLS]", "[SEP]", "[PAD]", "[MASK]"],
+///     ... )
+///     >>> tokenizer = Tokenizer(WordPiece(unk_token="[UNK]"))
+///     >>> tokenizer.train(["path/to/corpus.txt"], trainer)
+///
 #[pyclass(extends=PyTrainer, module = "tokenizers.trainers", name = "WordPieceTrainer")]
 pub struct PyWordPieceTrainer {}
 #[pymethods]
@@ -785,7 +848,7 @@ impl PyWordPieceTrainer {
                     "show_progress" => builder = builder.show_progress(val.extract()?),
                     "special_tokens" => {
                         builder = builder.special_tokens(
-                            val.downcast::<PyList>()?
+                            val.cast::<PyList>()?
                                 .into_iter()
                                 .map(|token| {
                                     if let Ok(content) = token.extract::<String>() {
@@ -827,7 +890,7 @@ impl PyWordPieceTrainer {
     }
 }
 
-/// Trainer capable of training a WorldLevel model
+/// Trainer capable of training a WordLevel model
 ///
 /// Args:
 ///     vocab_size (:obj:`int`, `optional`):
@@ -841,6 +904,19 @@ impl PyWordPieceTrainer {
 ///
 ///     special_tokens (:obj:`List[Union[str, AddedToken]]`):
 ///         A list of special tokens the model should know of.
+///
+/// Example::
+///
+///     >>> from tokenizers.models import WordLevel
+///     >>> from tokenizers.trainers import WordLevelTrainer
+///     >>> trainer = WordLevelTrainer(
+///     ...     vocab_size=10000,
+///     ...     special_tokens=["<unk>"],
+///     ...     min_frequency=1,
+///     ... )
+///     >>> tokenizer = Tokenizer(WordLevel(unk_token="<unk>"))
+///     >>> tokenizer.train(["path/to/corpus.txt"], trainer)
+///
 #[pyclass(extends=PyTrainer, module = "tokenizers.trainers", name = "WordLevelTrainer")]
 pub struct PyWordLevelTrainer {}
 #[pymethods]
@@ -935,7 +1011,7 @@ impl PyWordLevelTrainer {
                     }
                     "special_tokens" => {
                         builder.special_tokens(
-                            val.downcast::<PyList>()?
+                            val.cast::<PyList>()?
                                 .into_iter()
                                 .map(|token| {
                                     if let Ok(content) = token.extract::<String>() {
@@ -1000,6 +1076,19 @@ impl PyWordLevelTrainer {
 ///     n_sub_iterations (:obj:`int`):
 ///         The number of iterations of the EM algorithm to perform before
 ///         pruning the vocabulary.
+///
+/// Example::
+///
+///     >>> from tokenizers.models import Unigram
+///     >>> from tokenizers.trainers import UnigramTrainer
+///     >>> trainer = UnigramTrainer(
+///     ...     vocab_size=8000,
+///     ...     special_tokens=["<unk>", "<s>", "</s>"],
+///     ...     unk_token="<unk>",
+///     ... )
+///     >>> tokenizer = Tokenizer(Unigram())
+///     >>> tokenizer.train(["path/to/corpus.txt"], trainer)
+///
 #[pyclass(extends=PyTrainer, module = "tokenizers.trainers", name = "UnigramTrainer")]
 pub struct PyUnigramTrainer {}
 #[pymethods]
@@ -1108,7 +1197,7 @@ impl PyUnigramTrainer {
                         )
                     }
                     "special_tokens" => builder.special_tokens(
-                        val.downcast::<PyList>()?
+                        val.cast::<PyList>()?
                             .into_iter()
                             .map(|token| {
                                 if let Ok(content) = token.extract::<String>() {
@@ -1143,15 +1232,20 @@ impl PyUnigramTrainer {
 }
 
 /// Trainers Module
-#[pymodule]
-pub fn trainers(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<PyTrainer>()?;
-    m.add_class::<PyBpeTrainer>()?;
-    m.add_class::<PyBneTrainer>()?;
-    m.add_class::<PyWordPieceTrainer>()?;
-    m.add_class::<PyWordLevelTrainer>()?;
-    m.add_class::<PyUnigramTrainer>()?;
-    Ok(())
+#[pymodule(gil_used = false)]
+pub mod trainers {
+    #[pymodule_export]
+    pub use super::PyBpeTrainer;
+    #[pymodule_export]
+    pub use super::PyBneTrainer;
+    #[pymodule_export]
+    pub use super::PyTrainer;
+    #[pymodule_export]
+    pub use super::PyUnigramTrainer;
+    #[pymodule_export]
+    pub use super::PyWordLevelTrainer;
+    #[pymodule_export]
+    pub use super::PyWordPieceTrainer;
 }
 
 #[cfg(test)]
@@ -1161,7 +1255,7 @@ mod tests {
 
     #[test]
     fn get_subtype() {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let py_trainer = PyTrainer::new(Arc::new(RwLock::new(BpeTrainer::default().into())));
             let py_bpe = py_trainer.get_as_subtype(py).unwrap();
             assert_eq!("BpeTrainer", py_bpe.bind(py).get_type().qualname().unwrap());

@@ -1,4 +1,4 @@
-import transformers
+import transformers  # type: ignore[import]
 from tokenizers.implementations import SentencePieceUnigramTokenizer, BaseTokenizer
 from tokenizers.processors import TemplateProcessing
 from tokenizers.models import Unigram, BPE
@@ -28,8 +28,8 @@ import argparse
 
 sys.path.append(".")
 
-from spm_parity_check import check_details
-from sentencepiece_extractor import SentencePieceExtractor
+from spm_parity_check import check_details  # type: ignore[import]
+from sentencepiece_extractor import SentencePieceExtractor  # type: ignore[import]
 
 
 def check_number_comma(piece: str) -> bool:
@@ -42,7 +42,7 @@ def get_proto(filename: str):
 
         sys.path.append(".")
 
-        import sentencepiece_model_pb2 as model
+        import sentencepiece_model_pb2 as model  # type: ignore[import]
     except Exception:
         raise Exception(
             "You don't seem to have the required protobuf file, in order to use this function you need to run `pip install protobuf` and `wget https://raw.githubusercontent.com/google/sentencepiece/master/python/sentencepiece_model_pb2.py` for us to be able to read the intrinsics of your spm_file. `pip install sentencepiece` is not required."
@@ -137,8 +137,8 @@ class AlbertConverter(SpmConverter):
 
     def post_processor(self, tokenizer):
         return TemplateProcessing(
-            seq_a=["[CLS]", "$0", "[SEP]"],
-            seq_b=["$1", "[SEP]"],
+            single=["[CLS]", "$0", "[SEP]"],
+            pair=["$1", "[SEP]"],
             special_tokens=[
                 ("[CLS]", tokenizer.get_vocab()["[CLS]"]),
                 ("[SEP]", tokenizer.get_vocab()["[SEP]"]),
@@ -163,8 +163,8 @@ class CamembertConverter(SpmConverter):
 
     def post_processor(self, tokenizer):
         return TemplateProcessing(
-            seq_a=["<s>", "$0", "</s>"],
-            seq_b=["$1", "</s>"],
+            single=["<s>", "$0", "</s>"],
+            pair=["$1", "</s>"],
             special_tokens=[
                 ("<s>", tokenizer.get_vocab()["<s>"]),
                 ("</s>", tokenizer.get_vocab()["</s>"]),
@@ -215,8 +215,8 @@ class MBartConverter(SpmConverter):
 
     def post_processor(self, tokenizer):
         return TemplateProcessing(
-            seq_a=["$0", "</s>", "en_XX"],
-            seq_b=["$1", "</s>"],
+            single=["$0", "</s>", "en_XX"],
+            pair=["$1", "</s>"],
             special_tokens=[
                 ("en_XX", tokenizer.get_vocab()["en_XX"]),
                 ("</s>", tokenizer.get_vocab()["</s>"]),
@@ -241,8 +241,8 @@ class XLMRobertaConverter(SpmConverter):
 
     def post_processor(self, tokenizer):
         return TemplateProcessing(
-            seq_a=["<s>", "$0", "</s>"],
-            seq_b=["$1", "</s>"],
+            single=["<s>", "$0", "</s>"],
+            pair=["$1", "</s>"],
             special_tokens=[
                 ("<s>", tokenizer.get_vocab()["<s>"]),
                 ("</s>", tokenizer.get_vocab()["</s>"]),
@@ -272,8 +272,8 @@ class XLNetConverter(SpmConverter):
 
     def post_processor(self, tokenizer):
         return TemplateProcessing(
-            seq_a=["$0", "<sep>", "<cls>"],
-            seq_b=["$1", "<sep>"],
+            single=["$0", "<sep>", "<cls>"],
+            pair=["$1", "<sep>"],
             special_tokens=[
                 ("<sep>", tokenizer.get_vocab()["<sep>"]),
                 ("<cls>", tokenizer.get_vocab()["<cls>"]),
@@ -303,8 +303,8 @@ class PegasusConverter(SpmConverter):
     def post_processor(self, tokenizer):
         eos = self.original_tokenizer.eos_token
         return TemplateProcessing(
-            seq_a=["$0", eos],
-            seq_b=["$1", eos],
+            single=["$0", eos],
+            pair=["$1", eos],
             special_tokens=[(eos, tokenizer.get_vocab()[eos])],
         )
 
@@ -312,8 +312,8 @@ class PegasusConverter(SpmConverter):
 class T5Converter(SpmConverter):
     def post_processor(self, tokenizer):
         return TemplateProcessing(
-            seq_a=["$0", "</s>"],
-            seq_b=["$1", "</s>"],
+            single=["$0", "</s>"],
+            pair=["$1", "</s>"],
             special_tokens=[("</s>", tokenizer.get_vocab()["</s>"])],
         )
 
@@ -407,7 +407,7 @@ def main():
     status_len = 6
     speedup_len = 8
     print(f"|{'Model':^{model_len}}|{'Status':^{status_len}}|{'Speedup':^{speedup_len}}|")
-    print(f"|{'-'*model_len}|{'-'*status_len}|{'-'*speedup_len}|")
+    print(f"|{'-' * model_len}|{'-' * status_len}|{'-' * speedup_len}|")
     for pretrained in args.models:
         status, speedup = check(pretrained, args.filename)
         print(f"|{pretrained:<{model_len}}|{status:^{status_len}}|{speedup:^{speedup_len - 1}.2f}x|")

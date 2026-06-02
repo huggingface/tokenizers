@@ -35,7 +35,9 @@ fn create_bert_tokenizer(wp: WordPiece) -> BertTokenizer {
     let cls_id = *wp.get_vocab().get("[CLS]").unwrap();
     let mut tokenizer = TokenizerImpl::new(wp);
     tokenizer.with_pre_tokenizer(Some(BertPreTokenizer));
-    tokenizer.with_normalizer(Some(BertNormalizer::default()));
+    tokenizer
+        .with_normalizer(Some(BertNormalizer::default()))
+        .unwrap();
     tokenizer.with_decoder(Some(decoders::wordpiece::WordPiece::default()));
     tokenizer.with_post_processor(Some(BertProcessing::new(
         ("[SEP]".to_string(), sep_id),

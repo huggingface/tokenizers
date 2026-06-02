@@ -7,6 +7,7 @@ import requests
 
 
 DATA_PATH = os.path.join("tests", "data")
+HF_TEST_DATA = "https://huggingface.co/datasets/hf-internal-testing/tokenizers-test-data/resolve/main"
 
 
 def download(url, with_filename=None):
@@ -32,36 +33,30 @@ def data_dir():
 @pytest.fixture(scope="session")
 def roberta_files(data_dir):
     return {
-        "vocab": download("https://s3.amazonaws.com/models.huggingface.co/bert/roberta-base-vocab.json"),
-        "merges": download("https://s3.amazonaws.com/models.huggingface.co/bert/roberta-base-merges.txt"),
+        "vocab": download(f"{HF_TEST_DATA}/roberta-base-vocab.json"),
+        "merges": download(f"{HF_TEST_DATA}/roberta-base-merges.txt"),
     }
 
 
 @pytest.fixture(scope="session")
 def bert_files(data_dir):
     return {
-        "vocab": download("https://s3.amazonaws.com/models.huggingface.co/bert/bert-base-uncased-vocab.txt"),
+        "vocab": download(f"{HF_TEST_DATA}/bert-base-uncased-vocab.txt"),
     }
 
 
 @pytest.fixture(scope="session")
 def openai_files(data_dir):
     return {
-        "vocab": download("https://s3.amazonaws.com/models.huggingface.co/bert/openai-gpt-vocab.json"),
-        "merges": download("https://s3.amazonaws.com/models.huggingface.co/bert/openai-gpt-merges.txt"),
+        "vocab": download(f"{HF_TEST_DATA}/openai-gpt-vocab.json"),
+        "merges": download(f"{HF_TEST_DATA}/openai-gpt-merges.txt"),
     }
 
 
 @pytest.fixture(scope="session")
 def train_files(data_dir):
-    big = download("https://norvig.com/big.txt")
-    small = os.path.join(DATA_PATH, "small.txt")
-    with open(small, "w") as f:
-        with open(big, "r") as g:
-            for i, line in enumerate(g):
-                f.write(line)
-                if i > 100:
-                    break
+    big = download(f"{HF_TEST_DATA}/big.txt")
+    small = download(f"{HF_TEST_DATA}/small.txt")
     return {
         "small": small,
         "big": big,
@@ -70,23 +65,17 @@ def train_files(data_dir):
 
 @pytest.fixture(scope="session")
 def albert_base(data_dir):
-    return download("https://s3.amazonaws.com/models.huggingface.co/bert/albert-base-v1-tokenizer.json")
+    return download(f"{HF_TEST_DATA}/albert-base-v1-tokenizer.json")
 
 
 @pytest.fixture(scope="session")
 def doc_wiki_tokenizer(data_dir):
-    return download(
-        "https://s3.amazonaws.com/models.huggingface.co/bert/anthony/doc-quicktour/tokenizer.json",
-        "tokenizer-wiki.json",
-    )
+    return download(f"{HF_TEST_DATA}/tokenizer-wiki.json")
 
 
 @pytest.fixture(scope="session")
 def doc_pipeline_bert_tokenizer(data_dir):
-    return download(
-        "https://s3.amazonaws.com/models.huggingface.co/bert/anthony/doc-pipeline/tokenizer.json",
-        "bert-wiki.json",
-    )
+    return download(f"{HF_TEST_DATA}/bert-wiki.json")
 
 
 # On MacOS Python 3.8+ the default was modified to `spawn`, we need `fork` in tests.

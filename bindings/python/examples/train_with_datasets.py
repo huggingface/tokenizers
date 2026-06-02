@@ -15,9 +15,9 @@ dataset = datasets.load_dataset("wikitext", "wikitext-103-raw-v1", split="train"
 # Build an iterator over this dataset
 def batch_iterator():
     batch_size = 1000
-    for batch in dataset.iter(batch_size=batch_size):
+    for batch in dataset.iter(batch_size=batch_size):  # type: ignore[attr-defined]
         yield batch["text"]
 
 
 # And finally train
-bpe_tokenizer.train_from_iterator(batch_iterator(), length=len(dataset))
+bpe_tokenizer.train_from_iterator(batch_iterator(), length=len(dataset))  # type: ignore[arg-type]
