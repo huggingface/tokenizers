@@ -34,9 +34,7 @@ class TestTrainFromIterators:
         # START load_dataset
         import datasets  # type: ignore[import-not-found]
 
-        dataset = datasets.load_dataset(
-            "Salesforce/wikitext", "wikitext-103-raw-v1", split="train+test+validation"
-        )
+        dataset = datasets.load_dataset("Salesforce/wikitext", "wikitext-103-raw-v1", split="train+test+validation")
         # END load_dataset
 
     @pytest.fixture(scope="class")
