@@ -45,45 +45,52 @@ all-checks : lint test doc
 bench : $(BENCHMARK_RESOURCES)
 	cargo bench -- --verbose
 
-$(DATA_DIR)/gpt2-% :
-	$(dir_guard)
-	wget https://s3.amazonaws.com/models.huggingface.co/bert/gpt2-$* -O $@
+HF_TEST_DATA = https://huggingface.co/datasets/hf-internal-testing/tokenizers-test-data/resolve/main
 
-$(DATA_DIR)/bert-% :
+$(DATA_DIR)/gpt2-vocab.json :
 	$(dir_guard)
-	wget https://s3.amazonaws.com/models.huggingface.co/bert/bert-$* -O $@
+	wget $(HF_TEST_DATA)/gpt2-vocab.json -O $@
 
-$(DATA_DIR)/unigram% :
+$(DATA_DIR)/gpt2-merges.txt :
 	$(dir_guard)
-	wget https://huggingface.co/Narsil/small/raw/main/unigram$* -O $@
+	wget $(HF_TEST_DATA)/gpt2-merges.txt -O $@
+
+$(DATA_DIR)/bert-base-uncased-vocab.txt :
+	$(dir_guard)
+	wget $(HF_TEST_DATA)/bert-base-uncased-vocab.txt -O $@
+
+$(DATA_DIR)/unigram.json :
+	$(dir_guard)
+	wget $(HF_TEST_DATA)/unigram.json -O $@
+
+$(DATA_DIR)/unigram_wagahaiwa_nekodearu.txt :
+	$(dir_guard)
+	wget $(HF_TEST_DATA)/unigram_wagahaiwa_nekodearu.txt -O $@
 
 $(DATA_DIR)/albert-base-v1-tokenizer.json :
 	$(dir_guard)
-	wget https://s3.amazonaws.com/models.huggingface.co/bert/albert-base-v1-tokenizer.json -O $@
-
-$(DATA_DIR)/tokenizer-llama3.json :
-	$(dir_guard)
-	wget https://huggingface.co/Narsil/llama-tokenizer/resolve/main/tokenizer.json -O $@
+	wget $(HF_TEST_DATA)/albert-base-v1-tokenizer.json -O $@
 
 $(DATA_DIR)/big.txt :
 	$(dir_guard)
-	wget https://norvig.com/big.txt -O $@
+	wget $(HF_TEST_DATA)/big.txt -O $@
 
-$(DATA_DIR)/small.txt : $(DATA_DIR)/big.txt
-	head -100 $(DATA_DIR)/big.txt > $@
+$(DATA_DIR)/small.txt :
+	$(dir_guard)
+	wget $(HF_TEST_DATA)/small.txt -O $@
 
 $(DATA_DIR)/roberta.json :
 	$(dir_guard)
-	wget https://huggingface.co/Narsil/small/raw/main/roberta.json -O $@
+	wget $(HF_TEST_DATA)/roberta.json -O $@
 
 $(DATA_DIR)/tokenizer-wiki.json :
 	$(dir_guard)
-	wget https://s3.amazonaws.com/models.huggingface.co/bert/anthony/doc-quicktour/tokenizer.json -O $@
+	wget $(HF_TEST_DATA)/tokenizer-wiki.json -O $@
 
 $(DATA_DIR)/bert-wiki.json :
 	$(dir_guard)
-	wget https://s3.amazonaws.com/models.huggingface.co/bert/anthony/doc-pipeline/tokenizer.json -O $@
+	wget $(HF_TEST_DATA)/bert-wiki.json -O $@
 
 $(DATA_DIR)/llama-3-tokenizer.json :
 	$(dir_guard)
-	wget https://huggingface.co/hf-internal-testing/llama3-tokenizer/resolve/main/tokenizer.json -O $@
+	wget $(HF_TEST_DATA)/llama-3-tokenizer.json -O $@

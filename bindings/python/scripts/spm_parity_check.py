@@ -5,6 +5,7 @@ from collections import Counter
 import json
 import os
 import datetime
+from typing import Any, cast
 
 try:
     from termcolor import colored
@@ -206,7 +207,7 @@ def check_details(line, spm_ids, tok_ids, sp, tok):
 
 
 def check_encode(args):
-    sp = spm.SentencePieceProcessor()
+    sp = cast(Any, spm.SentencePieceProcessor())
     sp.Load(args.model_file)
 
     if args.from_spm:
@@ -250,13 +251,13 @@ def check_encode(args):
             else:
                 perfect += 1
 
-            assert (
-                ids == encoded.ids
-            ), f"line {i}: {line} : \n\n{ids}\n{encoded.ids}\n{list(zip(encoded.ids, encoded.tokens))}"
+            assert ids == encoded.ids, (
+                f"line {i}: {line} : \n\n{ids}\n{encoded.ids}\n{list(zip(encoded.ids, encoded.tokens))}"
+            )
 
     print(f"({perfect} / {imperfect} / {wrong} ----- {perfect + imperfect + wrong})")
     total = perfect + imperfect + wrong
-    print(f"Accuracy {perfect * 100 / total:.2f} Slowdown : {tok_total_time/ spm_total_time:.2f}")
+    print(f"Accuracy {perfect * 100 / total:.2f} Slowdown : {tok_total_time / spm_total_time:.2f}")
 
 
 if __name__ == "__main__":

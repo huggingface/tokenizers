@@ -150,7 +150,7 @@ class SentencePieceUnigramTokenizer(BaseTokenizer):
 
             sys.path.append(".")
 
-            import sentencepiece_model_pb2 as model
+            import sentencepiece_model_pb2 as model  # type: ignore[import]
         except Exception:
             raise Exception(
                 "You don't seem to have the required protobuf file, in order to use this function you need to run `pip install protobuf` and `wget https://raw.githubusercontent.com/google/sentencepiece/master/python/src/sentencepiece/sentencepiece_model_pb2.py` for us to be able to read the intrinsics of your spm_file. `pip install sentencepiece` is not required."
@@ -191,6 +191,6 @@ class SentencePieceUnigramTokenizer(BaseTokenizer):
             "model": "SentencePieceUnigram",
         }
 
-        obj = BaseTokenizer.__new__(SentencePieceUnigramTokenizer, tokenizer, parameters)
+        obj = BaseTokenizer.__new__(SentencePieceUnigramTokenizer, tokenizer, parameters)  # type: ignore[arg-type]
         BaseTokenizer.__init__(obj, tokenizer, parameters)
         return obj

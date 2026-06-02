@@ -324,7 +324,7 @@ fn pipeline() -> tokenizers::Result<()> {
     // END pipeline_test_normalizer
     assert_eq!(normalized.get(), "Hello how are u?");
     // START pipeline_replace_normalizer
-    tokenizer.with_normalizer(Some(normalizer));
+    tokenizer.with_normalizer(Some(normalizer)).unwrap();
     // END pipeline_replace_normalizer
     // START pipeline_setup_pre_tokenizer
     use tokenizers::pre_tokenizers::whitespace::Whitespace;
@@ -438,11 +438,13 @@ fn train_pipeline_bert() -> tokenizers::Result<()> {
     use tokenizers::normalizers::utils::Sequence as NormalizerSequence;
     use tokenizers::normalizers::{strip::StripAccents, unicode::NFD, utils::Lowercase};
 
-    bert_tokenizer.with_normalizer(Some(NormalizerSequence::new(vec![
-        NFD.into(),
-        Lowercase.into(),
-        StripAccents.into(),
-    ])));
+    bert_tokenizer
+        .with_normalizer(Some(NormalizerSequence::new(vec![
+            NFD.into(),
+            Lowercase.into(),
+            StripAccents.into(),
+        ])))
+        .unwrap();
     // END bert_setup_normalizer
     // START bert_setup_pre_tokenizer
     use tokenizers::pre_tokenizers::whitespace::Whitespace;

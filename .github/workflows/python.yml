@@ -16,34 +16,27 @@ jobs:
     runs-on: windows-latest
     strategy:
       matrix:
-        python: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+        # The cdylib is built with `abi3-py310`, so a single binary covers
+        # 3.10–3.14. Free-threaded 3.14t is the only interpreter that needs
+        # its own build (no abi3 / limited API).
+        python: ["3.14", "3.14t"]
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
       - name: Install Rust
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
         with:
-          toolchain: stable-i686-pc-windows-msvc
-          override: true
-
-      - name: Override toolchain
-        shell: bash
-        working-directory: ./bindings/python
-        run: echo "stable-i686-pc-windows-msvc" > rust-toolchain
-
+          targets: i686-pc-windows-msvc
 
       - name: Install Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
         with:
           python-version: ${{ matrix.python }}
           architecture: x86
 
       - name: Build
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --manifest-path ./bindings/python/Cargo.toml
+        run: cargo build --target i686-pc-windows-msvc --manifest-path ./bindings/python/Cargo.toml
 
 
   build_and_test:
@@ -52,63 +45,45 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
+        python: ["3.14", "3.14t"]
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         
 
       - name: Install Rust
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
         with:
-          toolchain: stable
           components: rustfmt, clippy
 
-      - name: Install audit
-        uses: actions-rs/cargo@v1
+      - name: Cache cargo registry / git / target
+        uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc  # v2.9.1
         with:
-          command: install
-          args: cargo-audit
-
-      - name: Install Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: 3.13
-          architecture: "x64"
-
-
-      - name: Cache Cargo Registry
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/registry
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-
-          # - name: Cache Cargo Build Target
-          #   uses: actions/cache@v1
-          #   with:
-          #     path: ./bindings/python/target
-          #     key: ${{ runner.os }}-cargo-python-build-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Lint with RustFmt
-        uses: actions-rs/cargo@v1
-        with:
-          toolchain: stable
-          command: fmt
-          args: --manifest-path ./bindings/python/Cargo.toml -- --check
-
-      - name: Lint with Clippy
-        uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-          args: --manifest-path ./bindings/python/Cargo.toml --all-targets --all-features -- -D warnings
+          workspaces: bindings/python
 
       - name: Install cargo-audit
-        run: cargo install cargo-audit
+        uses: taiki-e/install-action@74e87cbfa15a59692b158178d8905a61bf6fca95  # v2.75.20
+        with:
+          tool: cargo-audit
+
+      - name: Install Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+        with:
+          python-version: ${{ matrix.python }}
+          architecture: "x64"
+
+      # RustFmt is gated to a canonical combo (formatting is OS-invariant);
+      # Clippy and Audit run on every matrix cell so platform-specific
+      # cfg gates and target-specific lints get coverage.
+      - name: Lint with RustFmt
+        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.14'
+        run: cargo fmt --manifest-path ./bindings/python/Cargo.toml -- --check
+
+      - name: Lint with Clippy
+        run: cargo clippy --manifest-path ./bindings/python/Cargo.toml --all-targets --all-features -- -D warnings
 
       - name: Run Audit
-        uses: actions-rs/cargo@v1
-        with:
-          command: audit
-          args: -D warnings -f ./bindings/python/Cargo.lock  --ignore RUSTSEC-2024-0436 --ignore RUSTSEC-2025-0014
+        run: cargo audit -D warnings -f ./bindings/python/Cargo.lock --ignore RUSTSEC-2024-0436 --ignore RUSTSEC-2025-0014 --ignore RUSTSEC-2025-0119
 
       - name: Install
         working-directory: ./bindings/python
@@ -116,17 +91,40 @@ jobs:
           python -m venv .env
           source .env/bin/activate
           pip install -U pip
-          pip install pytest requests setuptools_rust numpy pyarrow datasets
-          pip install -e .[dev]
+          pip install pytest pytest-asyncio requests setuptools_rust numpy pyarrow datasets ruff ty maturin
+          # Build via maturin so we can drop the abi3 cargo feature on
+          # free-threaded Python (3.14t can't load abi3 extensions).
+          # `pip install -e .` would build through maturin's PEP 660 path
+          # which keeps abi3 enabled regardless of the interpreter.
+          if python -c 'import sys; sys.exit(0 if sys._is_gil_enabled() else 1)' 2>/dev/null; then
+            maturin develop --release
+          else
+            maturin develop --release --no-default-features --features ext-module
+          fi
 
-      - name: Check style
-        working-directory: ./bindings/python
-        run: |
-          source .env/bin/activate
-          make check-style
 
       - name: Run tests
         working-directory: ./bindings/python
         run: |
           source .env/bin/activate
-          make test
+          # `make test` also runs `cargo test --no-default-features` which
+          # links libpython via pyo3's `auto-initialize`. On free-threaded
+          # Python the macOS runner doesn't ship libpython3.14t in the
+          # framework path, so on 3.14t we run only the python half.
+          if python -c 'import sys; sys.exit(0 if sys._is_gil_enabled() else 1)' 2>/dev/null; then
+            make test
+          else
+            make test-py
+          fi
+
+      - name: Check style
+        # `make check-style` runs the stub-gen tool, which always builds
+        # the cdylib with the default cargo features (abi3 on) and then
+        # imports it for introspection. abi3 extensions can't load under
+        # free-threaded Python, so the import fails on 3.14t. Style checks
+        # are matrix-invariant anyway — gate to a single canonical combo.
+        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.14'
+        working-directory: ./bindings/python
+        run: |
+          source .env/bin/activate
+          make check-style

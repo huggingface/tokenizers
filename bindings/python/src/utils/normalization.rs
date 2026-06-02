@@ -28,9 +28,7 @@ impl Pattern for PyPattern {
                     s.find_matches(inside)
                 }
             }
-            PyPattern::Regex(r) => {
-                Python::with_gil(|py| (&r.borrow(py).inner).find_matches(inside))
-            }
+            PyPattern::Regex(r) => Python::attach(|py| (&r.borrow(py).inner).find_matches(inside)),
         }
     }
 }
@@ -39,7 +37,7 @@ impl From<PyPattern> for tk::normalizers::replace::ReplacePattern {
     fn from(pattern: PyPattern) -> Self {
         match pattern {
             PyPattern::Str(s) => Self::String(s.to_owned()),
-            PyPattern::Regex(r) => Python::with_gil(|py| Self::Regex(r.borrow(py).pattern.clone())),
+            PyPattern::Regex(r) => Python::attach(|py| Self::Regex(r.borrow(py).pattern.clone())),
         }
     }
 }
@@ -48,7 +46,7 @@ impl From<PyPattern> for tk::pre_tokenizers::split::SplitPattern {
     fn from(pattern: PyPattern) -> Self {
         match pattern {
             PyPattern::Str(s) => Self::String(s.to_owned()),
-            PyPattern::Regex(r) => Python::with_gil(|py| Self::Regex(r.borrow(py).pattern.clone())),
+            PyPattern::Regex(r) => Python::attach(|py| Self::Regex(r.borrow(py).pattern.clone())),
         }
     }
 }
@@ -92,8 +90,10 @@ impl PyRange<'_> {
 #[derive(Clone)]
 pub struct PySplitDelimiterBehavior(pub SplitDelimiterBehavior);
 
-impl FromPyObject<'_> for PySplitDelimiterBehavior {
-    fn extract_bound(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for PySplitDelimiterBehavior {
+    type Error = PyErr;
+
+    fn extract(obj: Borrowed<'a, 'py, PyAny>) -> Result<Self, Self::Error> {
         let s = obj.extract::<String>()?;
 
         Ok(Self(match s.as_ref() {
@@ -196,7 +196,7 @@ fn slice(
 /// Args:
 ///     sequence: str:
 ///         The string sequence used to initialize this NormalizedString
-#[pyclass(module = "tokenizers", name = "NormalizedString")]
+#[pyclass(module = "tokenizers", name = "NormalizedString", from_py_object)]
 #[derive(Clone)]
 pub struct PyNormalizedString {
     pub(crate) normalized: NormalizedString,
@@ -205,9 +205,9 @@ pub struct PyNormalizedString {
 #[pymethods]
 impl PyNormalizedString {
     #[new]
-    #[pyo3(text_signature = None)]
-    fn new(s: &str) -> Self {
-        NormalizedString::from(s).into()
+    #[pyo3(signature = (sequence), text_signature = "(self, sequence)")]
+    fn new(sequence: &str) -> Self {
+        NormalizedString::from(sequence).into()
     }
 
     /// The normalized part of the string
@@ -388,7 +388,7 @@ impl From<PyNormalizedString> for NormalizedString {
     }
 }
 
-#[pyclass(module = "tokenizers", name = "NormalizedStringRefMut")]
+#[pyclass(module = "tokenizers", name = "NormalizedStringRefMut", from_py_object)]
 #[derive(Clone)]
 pub struct PyNormalizedStringRefMut {
     inner: RefMutContainer<NormalizedString>,

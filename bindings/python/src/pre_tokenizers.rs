@@ -34,7 +34,8 @@ use super::utils::*;
     dict,
     module = "tokenizers.pre_tokenizers",
     name = "PreTokenizer",
-    subclass
+    subclass,
+    from_py_object
 )]
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -48,13 +49,11 @@ impl PyPreTokenizer {
         PyPreTokenizer { pretok }
     }
 
-    pub(crate) fn get_as_subtype(&self, py: Python<'_>) -> PyResult<PyObject> {
+    pub(crate) fn get_as_subtype(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let base = self.clone();
         Ok(match self.pretok {
             PyPreTokenizerTypeWrapper::Sequence(_) => Py::new(py, (PySequence {}, base))?
-                .into_pyobject(py)?
-                .into_any()
-                .into(),
+                .into_any(),
             PyPreTokenizerTypeWrapper::Single(ref inner) => {
                 match &*inner
                     .as_ref()
@@ -66,64 +65,40 @@ impl PyPreTokenizer {
                     }
                     PyPreTokenizerWrapper::Wrapped(inner) => match inner {
                         PreTokenizerWrapper::Whitespace(_) => Py::new(py, (PyWhitespace {}, base))?
-                            .into_pyobject(py)?
-                            .into_any()
-                            .into(),
+                            .into_any(),
                         PreTokenizerWrapper::Split(_) => Py::new(py, (PySplit {}, base))?
-                            .into_pyobject(py)?
-                            .into_any()
-                            .into(),
+                            .into_any(),
                         PreTokenizerWrapper::Punctuation(_) => {
                             Py::new(py, (PyPunctuation {}, base))?
-                                .into_pyobject(py)?
                                 .into_any()
-                                .into()
                         }
                         PreTokenizerWrapper::Sequence(_) => Py::new(py, (PySequence {}, base))?
-                            .into_pyobject(py)?
-                            .into_any()
-                            .into(),
+                            .into_any(),
                         PreTokenizerWrapper::Metaspace(_) => Py::new(py, (PyMetaspace {}, base))?
-                            .into_pyobject(py)?
-                            .into_any()
-                            .into(),
+                            .into_any(),
                         PreTokenizerWrapper::Delimiter(_) => {
                             Py::new(py, (PyCharDelimiterSplit {}, base))?
-                                .into_pyobject(py)?
                                 .into_any()
-                                .into()
                         }
                         PreTokenizerWrapper::WhitespaceSplit(_) => {
                             Py::new(py, (PyWhitespaceSplit {}, base))?
-                                .into_pyobject(py)?
                                 .into_any()
-                                .into()
                         }
                         PreTokenizerWrapper::ByteLevel(_) => Py::new(py, (PyByteLevel {}, base))?
-                            .into_pyobject(py)?
-                            .into_any()
-                            .into(),
+                            .into_any(),
                         PreTokenizerWrapper::BertPreTokenizer(_) => {
                             Py::new(py, (PyBertPreTokenizer {}, base))?
-                                .into_pyobject(py)?
                                 .into_any()
-                                .into()
                         }
                         PreTokenizerWrapper::Digits(_) => Py::new(py, (PyDigits {}, base))?
-                            .into_pyobject(py)?
-                            .into_any()
-                            .into(),
+                            .into_any(),
                         PreTokenizerWrapper::UnicodeScripts(_) => {
                             Py::new(py, (PyUnicodeScripts {}, base))?
-                                .into_pyobject(py)?
                                 .into_any()
-                                .into()
                         }
                         PreTokenizerWrapper::FixedLength(_) => {
                             Py::new(py, (PyFixedLength {}, base))?
-                                .into_pyobject(py)?
                                 .into_any()
-                                .into()
                         }
                     },
                 }
@@ -141,13 +116,14 @@ impl PreTokenizer for PyPreTokenizer {
 #[pymethods]
 impl PyPreTokenizer {
     #[staticmethod]
-    fn custom(pretok: PyObject) -> Self {
+    #[pyo3(text_signature = "(pretok)")]
+    fn custom(pretok: Py<PyAny>) -> Self {
         PyPreTokenizer {
             pretok: PyPreTokenizerWrapper::Custom(CustomPreTokenizer::new(pretok)).into(),
         }
     }
 
-    fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+    fn __getstate__(&self, py: Python) -> PyResult<Py<PyAny>> {
         let data = serde_json::to_string(&self.pretok).map_err(|e| {
             exceptions::PyException::new_err(format!(
                 "Error while attempting to pickle PreTokenizer: {e}"
@@ -156,7 +132,7 @@ impl PyPreTokenizer {
         Ok(PyBytes::new(py, data.as_bytes()).into())
     }
 
-    fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
+    fn __setstate__(&mut self, py: Python, state: Py<PyAny>) -> PyResult<()> {
         match state.extract::<&[u8]>(py) {
             Ok(s) => {
                 let unpickled = serde_json::from_slice(s).map_err(|e| {
@@ -167,7 +143,7 @@ impl PyPreTokenizer {
                 self.pretok = unpickled;
                 Ok(())
             }
-            Err(e) => Err(e),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -278,6 +254,14 @@ macro_rules! setter {
 ///     use_regex (:obj:`bool`, `optional`, defaults to :obj:`True`):
 ///         Set this to :obj:`False` to prevent this `pre_tokenizer` from using
 ///         the GPT2 specific regexp for spliting on whitespace.
+///
+/// Example::
+///
+///     >>> from tokenizers.pre_tokenizers import ByteLevel
+///     >>> pre_tokenizer = ByteLevel()
+///     >>> pre_tokenizer.pre_tokenize_str("Hello my friend, how is it going?")
+///     [('ĠHello', (0, 5)), ('Ġmy', (5, 8)), ('Ġfriend,', (8, 15)), ('Ġhow', (15, 19)), ('Ġis', (19, 22)), ('Ġit', (22, 25)), ('Ġgoing?', (25, 32))]
+///
 #[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name = "ByteLevel")]
 pub struct PyByteLevel {}
 #[pymethods]
@@ -313,9 +297,13 @@ impl PyByteLevel {
     }
 
     #[new]
-    #[pyo3(signature = (add_prefix_space = true, use_regex = true, **_kwargs), text_signature = "(self, add_prefix_space=True, use_regex=True)")]
+    #[pyo3(
+        signature = (add_prefix_space = true, trim_offsets = true, use_regex = true, **_kwargs),
+        text_signature = "(self, add_prefix_space=True, trim_offsets=True, use_regex=True)"
+    )]
     fn new(
         add_prefix_space: bool,
+        trim_offsets: bool,
         use_regex: bool,
         _kwargs: Option<&Bound<'_, PyDict>>,
     ) -> (Self, PyPreTokenizer) {
@@ -323,6 +311,7 @@ impl PyByteLevel {
             PyByteLevel {},
             ByteLevel::default()
                 .add_prefix_space(add_prefix_space)
+                .trim_offsets(trim_offsets)
                 .use_regex(use_regex)
                 .into(),
         )
@@ -346,34 +335,17 @@ impl PyByteLevel {
     }
 }
 
-/// This pre-tokenizer splits on word boundaries according to the `\w+|[^\w\s]+`
+/// This pre-tokenizer splits on word boundaries according to the ``\w+|[^\w\s]+``
 /// regex pattern. It splits on word characters or characters that aren't words or
 /// whitespaces (punctuation such as hyphens, apostrophes, commas, etc.).
 ///
-/// Example:
-///     Use the `Whitespace` function as shown below::
+/// Example::
 ///
-///         ```python
-///         from tokenizers.pre_tokenizers import Whitespace
+///     >>> from tokenizers.pre_tokenizers import Whitespace
+///     >>> pre_tokenizer = Whitespace()
+///     >>> pre_tokenizer.pre_tokenize_str("Hello, world! Let's tokenize.")
+///     [('Hello', (0, 5)), (',', (5, 6)), ('world', (7, 12)), ('!', (12, 13)), ('Let', (14, 17)), ("'", (17, 18)), ('s', (18, 19)), ('tokenize', (20, 28)), ('.', (28, 29))]
 ///
-///         pre_tokenizer = Whitespace()
-///         text = "Hello, world! Let's try the Whitespace pre-tokenizer."
-///         pre_tokenizer.pre_tokenize_str(text)
-///         [('Hello', (0, 5)),
-///          (',', (5, 6)),
-///          ('world', (7, 12)),
-///          ('!', (12, 13)),
-///          ('Let', (14, 17)),
-///          ("'", (17, 18)),
-///          ('s', (18, 19)),
-///          ('try', (20, 23)),
-///          ('the', (24, 27)),
-///          ('Whitespace', (28, 38)),
-///          ('pre', (39, 42)),
-///          ('-', (42, 43)),
-///          ('tokenizer', (43, 52)),
-///          ('.', (52, 53))]
-///         ```
 #[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name = "Whitespace")]
 pub struct PyWhitespace {}
 #[pymethods]
@@ -385,7 +357,17 @@ impl PyWhitespace {
     }
 }
 
-/// This pre-tokenizer simply splits on the whitespace. Works like `.split()`
+/// This pre-tokenizer simply splits on whitespace. Works like :meth:`str.split` with no
+/// arguments — it splits on any whitespace and discards the whitespace tokens. Unlike
+/// :class:`~tokenizers.pre_tokenizers.Whitespace`, it does not split on punctuation.
+///
+/// Example::
+///
+///     >>> from tokenizers.pre_tokenizers import WhitespaceSplit
+///     >>> pre_tokenizer = WhitespaceSplit()
+///     >>> pre_tokenizer.pre_tokenize_str("Hello, world! How are you?")
+///     [('Hello,', (0, 6)), ('world!', (7, 13)), ('How', (14, 17)), ('are', (18, 21)), ('you?', (22, 26))]
+///
 #[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name = "WhitespaceSplit")]
 pub struct PyWhitespaceSplit {}
 #[pymethods]
@@ -417,6 +399,19 @@ impl PyWhitespaceSplit {
 ///
 ///     invert (:obj:`bool`, `optional`, defaults to :obj:`False`):
 ///         Whether to invert the pattern.
+///
+/// Example::
+///
+///     >>> from tokenizers import Regex
+///     >>> from tokenizers.pre_tokenizers import Split
+///     >>> # Split on commas, removing them
+///     >>> pre_tokenizer = Split(",", behavior="removed")
+///     >>> pre_tokenizer.pre_tokenize_str("one,two,three")
+///     [('one', (0, 3)), ('two', (4, 7)), ('three', (8, 13))]
+///     >>> # Split using a regex, keeping the delimiter isolated
+///     >>> Split(Regex(r"\s+"), behavior="isolated").pre_tokenize_str("hello   world")
+///     [('hello', (0, 5)), ('   ', (5, 8)), ('world', (8, 13))]
+///
 #[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name = "Split")]
 pub struct PySplit {}
 #[pymethods]
@@ -487,11 +482,21 @@ impl PySplit {
     }
 }
 
-/// This pre-tokenizer simply splits on the provided char. Works like `.split(delimiter)`
+/// This pre-tokenizer simply splits on the provided char. Works like :meth:`str.split`
+/// with a single-character delimiter.
 ///
 /// Args:
-///     delimiter: str:
-///         The delimiter char that will be used to split input
+///     delimiter (:obj:`str`):
+///         The single character that will be used to split the input. The delimiter
+///         is removed from the output.
+///
+/// Example::
+///
+///     >>> from tokenizers.pre_tokenizers import CharDelimiterSplit
+///     >>> pre_tokenizer = CharDelimiterSplit("x")
+///     >>> pre_tokenizer.pre_tokenize_str("helloxthere")
+///     [('hello', (0, 5)), ('there', (6, 11))]
+///
 #[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name = "CharDelimiterSplit")]
 pub struct PyCharDelimiterSplit {}
 #[pymethods]
@@ -507,7 +512,7 @@ impl PyCharDelimiterSplit {
     }
 
     #[new]
-    #[pyo3(text_signature = None)]
+    #[pyo3(signature = (delimiter), text_signature = "(self, delimiter)")]
     pub fn new(delimiter: char) -> PyResult<(Self, PyPreTokenizer)> {
         Ok((
             PyCharDelimiterSplit {},
@@ -522,8 +527,17 @@ impl PyCharDelimiterSplit {
 
 /// BertPreTokenizer
 ///
-/// This pre-tokenizer splits tokens on spaces, and also on punctuation.
-/// Each occurrence of a punctuation character will be treated separately.
+/// This pre-tokenizer splits tokens on whitespace and punctuation. Each occurrence of
+/// a punctuation character will be treated as a separate token. This is the pre-tokenizer
+/// used by the original BERT model.
+///
+/// Example::
+///
+///     >>> from tokenizers.pre_tokenizers import BertPreTokenizer
+///     >>> pre_tokenizer = BertPreTokenizer()
+///     >>> pre_tokenizer.pre_tokenize_str("Hello, I'm a single sentence!")
+///     [('Hello', (0, 5)), (',', (5, 6)), ('I', (7, 8)), ("'", (8, 9)), ('m', (9, 10)), ('a', (11, 12)), ('single', (13, 19)), ('sentence', (20, 28)), ('!', (28, 29))]
+///
 #[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name = "BertPreTokenizer")]
 pub struct PyBertPreTokenizer {}
 #[pymethods]
@@ -542,6 +556,14 @@ impl PyBertPreTokenizer {
 ///         The behavior to use when splitting.
 ///         Choices: "removed", "isolated" (default), "merged_with_previous", "merged_with_next",
 ///         "contiguous"
+///
+/// Example::
+///
+///     >>> from tokenizers.pre_tokenizers import Punctuation
+///     >>> pre_tokenizer = Punctuation()
+///     >>> pre_tokenizer.pre_tokenize_str("Hello, how are you?")
+///     [('Hello', (0, 5)), (',', (5, 6)), ('how', (7, 10)), ('are', (11, 14)), ('you', (15, 18)), ('?', (18, 19))]
+///
 #[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name = "Punctuation")]
 pub struct PyPunctuation {}
 #[pymethods]
@@ -579,7 +601,22 @@ impl PyPunctuation {
     }
 }
 
-/// This pre-tokenizer composes other pre_tokenizers and applies them in sequence
+/// This pre-tokenizer composes other pre-tokenizers and applies them in sequence.
+/// Each pre-tokenizer in the list is applied to the output of the previous one,
+/// allowing complex tokenization strategies to be built by chaining simpler components.
+///
+/// Args:
+///     pretokenizers (:obj:`List[PreTokenizer]`):
+///         A list of :class:`~tokenizers.pre_tokenizers.PreTokenizer` to be applied
+///         in sequence.
+///
+/// Example::
+///
+///     >>> from tokenizers.pre_tokenizers import Punctuation, Whitespace, Sequence
+///     >>> pre_tokenizer = Sequence([Whitespace(), Punctuation()])
+///     >>> pre_tokenizer.pre_tokenize_str("Hello, world!")
+///     [('Hello', (0, 5)), (',', (5, 6)), ('world', (7, 12)), ('!', (12, 13))]
+///
 #[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name = "Sequence")]
 pub struct PySequence {}
 #[pymethods]
@@ -683,6 +720,13 @@ pub(crate) fn from_string(string: String) -> Result<PrependScheme, PyErr> {
 ///         Choices: "always", "never", "first". First means the space is only added on the first
 ///         token (relevant when special tokens are used or other pre_tokenizer are used).
 ///
+/// Example::
+///
+///     >>> from tokenizers.pre_tokenizers import Metaspace
+///     >>> pre_tokenizer = Metaspace()
+///     >>> pre_tokenizer.pre_tokenize_str("Hello my friend")
+///     [('▁Hello', (0, 5)), ('▁my', (6, 8)), ('▁friend', (9, 15))]
+///
 #[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name = "Metaspace")]
 pub struct PyMetaspace {}
 #[pymethods]
@@ -775,6 +819,14 @@ impl PyDigits {
 ///
 ///         Strings are split on the character level rather than the byte level to avoid
 ///         splitting unicode characters consisting of multiple bytes.
+///
+/// Example::
+///
+///     >>> from tokenizers.pre_tokenizers import FixedLength
+///     >>> pre_tokenizer = FixedLength(length=3)
+///     >>> pre_tokenizer.pre_tokenize_str("Hello")
+///     [('Hel', (0, 3)), ('lo', (3, 5))]
+///
 #[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name = "FixedLength")]
 pub struct PyFixedLength {}
 #[pymethods]
@@ -796,10 +848,18 @@ impl PyFixedLength {
     }
 }
 
-/// This pre-tokenizer splits on characters that belong to different language family
-/// It roughly follows https://github.com/google/sentencepiece/blob/master/data/Scripts.txt
-/// Actually Hiragana and Katakana are fused with Han, and 0x30FC is Han too.
-/// This mimicks SentencePiece Unigram implementation.
+/// This pre-tokenizer splits on characters that belong to different language families.
+/// It roughly follows the SentencePiece script boundaries, with Hiragana and Katakana
+/// fused into the Han script category. This mimics the SentencePiece Unigram
+/// implementation and is useful for multilingual models that need to handle CJK text.
+///
+/// Example::
+///
+///     >>> from tokenizers.pre_tokenizers import UnicodeScripts
+///     >>> pre_tokenizer = UnicodeScripts()
+///     >>> pre_tokenizer.pre_tokenize_str("どこ Where")
+///     [('どこ', (0, 2)), ('Where', (3, 8))]
+///
 #[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name = "UnicodeScripts")]
 pub struct PyUnicodeScripts {}
 #[pymethods]
@@ -813,18 +873,18 @@ impl PyUnicodeScripts {
 
 #[derive(Clone)]
 pub(crate) struct CustomPreTokenizer {
-    inner: PyObject,
+    inner: Py<PyAny>,
 }
 
 impl CustomPreTokenizer {
-    pub fn new(inner: PyObject) -> Self {
+    pub fn new(inner: Py<PyAny>) -> Self {
         Self { inner }
     }
 }
 
 impl tk::tokenizer::PreTokenizer for CustomPreTokenizer {
     fn pre_tokenize(&self, sentence: &mut PreTokenizedString) -> tk::Result<()> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let pretok = PyPreTokenizedStringRefMut::new(sentence);
             let py_pretok = self.inner.bind(py);
             py_pretok.call_method("pre_tokenize", (pretok.get().clone(),), None)?;
@@ -973,22 +1033,34 @@ impl PreTokenizer for PyPreTokenizerWrapper {
 }
 
 /// PreTokenizers Module
-#[pymodule]
-pub fn pre_tokenizers(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<PyPreTokenizer>()?;
-    m.add_class::<PyByteLevel>()?;
-    m.add_class::<PyWhitespace>()?;
-    m.add_class::<PyWhitespaceSplit>()?;
-    m.add_class::<PySplit>()?;
-    m.add_class::<PyBertPreTokenizer>()?;
-    m.add_class::<PyMetaspace>()?;
-    m.add_class::<PyCharDelimiterSplit>()?;
-    m.add_class::<PyPunctuation>()?;
-    m.add_class::<PySequence>()?;
-    m.add_class::<PyDigits>()?;
-    m.add_class::<PyUnicodeScripts>()?;
-    m.add_class::<PyFixedLength>()?;
-    Ok(())
+#[pymodule(gil_used = false)]
+pub mod pre_tokenizers {
+    #[pymodule_export]
+    pub use super::PyBertPreTokenizer;
+    #[pymodule_export]
+    pub use super::PyByteLevel;
+    #[pymodule_export]
+    pub use super::PyCharDelimiterSplit;
+    #[pymodule_export]
+    pub use super::PyDigits;
+    #[pymodule_export]
+    pub use super::PyFixedLength;
+    #[pymodule_export]
+    pub use super::PyMetaspace;
+    #[pymodule_export]
+    pub use super::PyPreTokenizer;
+    #[pymodule_export]
+    pub use super::PyPunctuation;
+    #[pymodule_export]
+    pub use super::PySequence;
+    #[pymodule_export]
+    pub use super::PySplit;
+    #[pymodule_export]
+    pub use super::PyUnicodeScripts;
+    #[pymodule_export]
+    pub use super::PyWhitespace;
+    #[pymodule_export]
+    pub use super::PyWhitespaceSplit;
 }
 
 #[cfg(test)]
@@ -1004,7 +1076,7 @@ mod test {
 
     #[test]
     fn get_subtype() {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let py_norm = PyPreTokenizer::new(Whitespace {}.into());
             let py_wsp = py_norm.get_as_subtype(py).unwrap();
             assert_eq!("Whitespace", py_wsp.bind(py).get_type().qualname().unwrap());
@@ -1041,15 +1113,9 @@ mod test {
         let py_ser = serde_json::to_string(&py_seq).unwrap();
         assert_eq!(py_wrapper_ser, py_ser);
 
-        let obj = Python::with_gil(|py| {
+        let obj = Python::attach(|py| {
             let py_wsp = PyPreTokenizer::new(Whitespace {}.into());
-            let obj: PyObject = Py::new(py, py_wsp)
-                .unwrap()
-                .into_pyobject(py)
-                .unwrap()
-                .into_any()
-                .into();
-            obj
+            Py::new(py, py_wsp).unwrap().into_any()
         });
         let py_seq: PyPreTokenizerWrapper =
             PyPreTokenizerWrapper::Custom(CustomPreTokenizer::new(obj));

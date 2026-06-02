@@ -67,6 +67,41 @@ source .env/bin/activate
 pip install -e .
 ```
 
+### Free-threaded Python (3.14t)
+
+`tokenizers` ships dedicated wheels for the [free-threaded build of CPython](https://docs.python.org/3.14/howto/free-threading-python.html)
+(`python3.14t`). These wheels declare `Py_MOD_GIL_NOT_USED`, so importing
+`tokenizers` does **not** force the GIL back on — multi-threaded code stays
+GIL-free.
+
+The full mutable API works on 3.14t — the same as on regular CPython.
+Setters are thread-safe: the inner tokenizer state is wrapped in a
+`std::sync::RwLock`, so concurrent `tokenizer.X = …` from multiple threads
+serialize correctly and concurrent encode operations take a read guard
+that blocks writers only briefly.
+
+```python
+from tokenizers import Tokenizer
+from tokenizers.models import BPE
+from tokenizers.pre_tokenizers import Whitespace
+from tokenizers.processors import ByteLevel
+
+tok = Tokenizer(BPE())
+tok.pre_tokenizer = Whitespace()                 # ✅ thread-safe on 3.14t
+tok.post_processor = ByteLevel(trim_offsets=True)
+```
+
+**Caveat — compound mutations are not atomic.** Statements like
+`tokenizer.post_processor.special_tokens = X` evaluate in two steps from
+Python's point of view (read attribute → set attribute on the result). If
+another thread swaps `tokenizer.post_processor` between those steps, the
+mutation lands on an orphaned component. This is the same class of race
+as `dict[k] = v` interleaved with `dict.clear()` — coordinate with a Python
+lock if you need the compound to be atomic.
+
+For the full thread-safety analysis, see
+[`docs/free-threading-audit.md`](./docs/free-threading-audit.md).
+
 ### Load a pretrained tokenizer from the Hub
 
 ```python
@@ -167,4 +202,51 @@ from tokenizers import Tokenizer
 tokenizer = Tokenizer.from_file("byte-level-bpe.tokenizer.json")
 
 encoded = tokenizer.encode("I can feel the magic, can you?")
+```
+
+### Typing support and stub generation
+
+The compiled PyO3 extension does not expose type annotations, so editors and type checkers would otherwise see most objects as `Any`. To provide full typing support, we use a two-step stub generation process:
+
+1. **Rust introspection** (`tools/stub-gen/`): Uses `pyo3-introspection` to analyze the compiled extension and generate `.pyi` stub files
+2. **Python enrichment** (`stub.py`): Adds docstrings from the runtime module and generates forwarding `__init__.py` shims
+
+#### Running stub generation
+
+The easiest way to regenerate stubs is via `make style`:
+
+```bash
+cd bindings/python
+make style
+```
+
+This will:
+1. Build the extension with `maturin develop --release`
+2. Run introspection to generate `.pyi` files
+3. Enrich stubs with docstrings via `stub.py`
+4. Format with `ruff`
+
+#### Running manually
+
+To run the stub generator directly:
+
+```bash
+cd bindings/python
+cargo run --manifest-path tools/stub-gen/Cargo.toml
+python stub.py
+```
+
+The stub generator automatically:
+- Builds the extension using maturin
+- Copies the built `.so` to the project root for introspection
+- Detects and sets `PYTHONHOME` for embedded Python (handles uv/venv environments)
+- Generates stubs to `py_src/tokenizers/`
+
+#### Troubleshooting
+
+If you encounter Python initialization errors, you can manually set `PYTHONHOME`:
+
+```bash
+export PYTHONHOME=$(python3 -c 'import sys; print(sys.base_prefix)')
+cargo run --manifest-path tools/stub-gen/Cargo.toml
 ```
