@@ -9,7 +9,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::try_init().ok();
 
     let manifest_dir = find_manifest_dir()?;
-    let cdylib = manifest_dir.join("tokenizers.abi3.so");
+    let cdylib = manifest_dir.join(format!(
+        "py_src/tokenizers/tokenizers.abi3.{}",
+        std::env::consts::DLL_EXTENSION
+    ));
     let out_dir = manifest_dir.join("py_src/tokenizers");
     println!("Using manifest directory: {}", manifest_dir.display());
     println!("Using cdylib: {}", cdylib.display());
@@ -237,10 +240,78 @@ fn assert_introspection_has_docstrings(module: &Module) {
 
 fn build_extension(manifest_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
     println!("Building and installing extension (release)...");
-    match Command::new("maturin").current_dir(manifest_dir).args(["develop", "--release"]).status() {
-        Ok(_) => {}
-        Err(e) => { eprintln!("Hint: Failed to run `maturin develop`: {:?}. Is maturin even installed? ;)", e) }
-    } ;
+    remove_shadowing_top_level_cdylib(manifest_dir)?;
+    remove_empty_cdylibs(manifest_dir)?;
+    clean_extension_crate(manifest_dir)?;
+
+    let status = Command::new("maturin")
+        .current_dir(manifest_dir)
+        .args(["develop", "--release"])
+        .status()
+        .map_err(|e| {
+            format!(
+                "Failed to run `maturin develop --release`: {e}. \
+                 Is maturin installed and available on PATH?"
+            )
+        })?;
+
+    if !status.success() {
+        return Err(format!("`maturin develop --release` failed with {status}").into());
+    }
+
+    Ok(())
+}
+
+fn clean_extension_crate(manifest_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let status = Command::new("cargo")
+        .current_dir(manifest_dir)
+        .args(["clean", "-p", "tokenizers-python"])
+        .status()
+        .map_err(|e| format!("Failed to run `cargo clean -p tokenizers-python`: {e}"))?;
+
+    if !status.success() {
+        return Err(format!("`cargo clean -p tokenizers-python` failed with {status}").into());
+    }
+
+    Ok(())
+}
+
+fn remove_shadowing_top_level_cdylib(
+    manifest_dir: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let candidate = manifest_dir.join(format!(
+        "tokenizers.abi3.{}",
+        std::env::consts::DLL_EXTENSION
+    ));
+
+    if candidate.is_file() {
+        println!("Removing top-level cdylib that shadows the package: {}", candidate.display());
+        std::fs::remove_file(candidate)?;
+    }
+
+    Ok(())
+}
+
+fn remove_empty_cdylibs(manifest_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let lib_name = format!(
+        "{}tokenizers.{}",
+        std::env::consts::DLL_PREFIX,
+        std::env::consts::DLL_EXTENSION
+    );
+    let package_cdylib = format!("tokenizers.abi3.{}", std::env::consts::DLL_EXTENSION);
+    let candidates = [
+        manifest_dir.join("py_src/tokenizers").join(&package_cdylib),
+        manifest_dir.join("target/maturin").join(&lib_name),
+        manifest_dir.join("target/release").join(&lib_name),
+        manifest_dir.join("target/release/deps").join(&lib_name),
+    ];
+
+    for candidate in candidates {
+        if candidate.is_file() && candidate.metadata()?.len() == 0 {
+            println!("Removing empty cdylib artifact: {}", candidate.display());
+            std::fs::remove_file(candidate)?;
+        }
+    }
 
     Ok(())
 }
@@ -258,6 +329,9 @@ fn refresh_cdylib(manifest_dir: &Path, cdylib: &Path) -> Result<(), Box<dyn std:
             built_cdylib.display()
         )
         .into());
+    }
+    if built_cdylib.metadata()?.len() == 0 {
+        return Err(format!("Built cdylib at {} is empty.", built_cdylib.display()).into());
     }
 
     println!(

@@ -4,6 +4,11 @@ DATA_DIR = data
 
 dir_guard=@mkdir -p $(@D)
 check_dirs := examples py_src/tokenizers tests
+VENV_BIN := $(abspath .venv/bin)
+
+ifneq ($(wildcard $(VENV_BIN)/.),)
+  export PATH := $(VENV_BIN):$(PATH)
+endif
 
 # Detect uv and set env vars to work around broken dylib install names
 # in python-build-standalone distributions.

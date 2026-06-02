@@ -14,6 +14,190 @@ class Trainer:
         """ """
         pass
 
+class BneTrainer(Trainer):
+    """
+    Trainer capable of training a BNE model
+
+    Args:
+        vocab_size (:obj:`int`, `optional`):
+            The size of the final vocabulary, including all tokens and alphabet.
+
+        min_frequency (:obj:`int`, `optional`):
+            The minimum frequency an Ngram should have in order to be merged.
+            This does not guarantee a termination criterion for training.
+
+        min_scale_frequency (:obj:`int`, `optional`):
+            The minimum scaled frequency an Ngram should have in order to be merged.
+            This guarantees a termination criterion for training.
+
+        show_progress (:obj:`bool`, `optional`):
+            Whether to show progress bars while training.
+
+        special_tokens (:obj:`List[Union[str, AddedToken]]`, `optional`):
+            A list of special tokens the model should know of.
+
+        limit_alphabet (:obj:`int`, `optional`):
+            The maximum different characters to keep in the alphabet.
+
+        initial_alphabet (:obj:`List[str]`, `optional`):
+            A list of characters to include in the initial alphabet, even
+            if not seen in the training dataset.
+            If the strings contain more than one character, only the first one
+            is kept.
+
+        continuing_subword_prefix (:obj:`str`, `optional`):
+            A prefix to be used for every subword that is not a beginning-of-word.
+
+        end_of_word_suffix (:obj:`str`, `optional`):
+            A suffix to be used for every subword that is a end-of-word.
+
+        max_token_length (:obj:`int`, `optional`):
+            Prevents creating tokens longer than the specified size.
+            This can help with reducing polluting your vocabulary with
+            highly repetitive tokens like `======` for wikipedia
+
+        max_ngram_length (:obj:`int`, `optional`):
+            The maximum length of the Ngrams to consider during training. Setting this to
+            a value smaller than the longest word in your training data will result in at
+            least two merges necessary to create a token encompasing that entire word.
+
+    """
+
+    def __init__(
+        self,
+        vocab_size=30000,
+        min_frequency=0,
+        min_scale_frequency=0,
+        show_progress=True,
+        special_tokens=[],
+        limit_alphabet=None,
+        initial_alphabet=[],
+        continuing_subword_prefix=None,
+        end_of_word_suffix=None,
+        max_token_length=None,
+        max_ngram_length=None,
+        words={},
+    ):
+        pass
+
+    def __getstate__(self):
+        """ """
+        pass
+
+    def __setstate__(self, state):
+        """ """
+        pass
+
+    @property
+    def continuing_subword_prefix(self):
+        """ """
+        pass
+
+    @continuing_subword_prefix.setter
+    def continuing_subword_prefix(self, value):
+        """ """
+        pass
+
+    @property
+    def end_of_word_suffix(self):
+        """ """
+        pass
+
+    @end_of_word_suffix.setter
+    def end_of_word_suffix(self, value):
+        """ """
+        pass
+
+    @property
+    def initial_alphabet(self):
+        """ """
+        pass
+
+    @initial_alphabet.setter
+    def initial_alphabet(self, value):
+        """ """
+        pass
+
+    @property
+    def limit_alphabet(self):
+        """ """
+        pass
+
+    @limit_alphabet.setter
+    def limit_alphabet(self, value):
+        """ """
+        pass
+
+    @property
+    def max_token_length(self):
+        """ """
+        pass
+
+    @max_token_length.setter
+    def max_token_length(self, value):
+        """ """
+        pass
+
+    @property
+    def max_ngram_length(self):
+        """ """
+        pass
+
+    @max_ngram_length.setter
+    def max_ngram_length(self, value):
+        """ """
+        pass
+
+    @property
+    def min_frequency(self):
+        """ """
+        pass
+
+    @min_frequency.setter
+    def min_frequency(self, value):
+        """ """
+        pass
+
+    @property
+    def min_scale_frequency(self):
+        """ """
+        pass
+
+    @min_scale_frequency.setter
+    def min_scale_frequency(self, value):
+        """ """
+        pass
+
+    @property
+    def show_progress(self):
+        """ """
+        pass
+
+    @show_progress.setter
+    def show_progress(self, value):
+        """ """
+        pass
+
+    @property
+    def special_tokens(self):
+        """ """
+        pass
+
+    @special_tokens.setter
+    def special_tokens(self, value):
+        """ """
+        pass
+
+    @property
+    def vocab_size(self):
+        """ """
+        pass
+
+    @vocab_size.setter
+    def vocab_size(self, value):
+        """ """
+        pass
+
 class BpeTrainer(Trainer):
     """
     Trainer capable of training a BPE model

@@ -1,5 +1,6 @@
 //! Popular tokenizer models.
 
+pub mod bne;
 pub mod bpe;
 pub mod unigram;
 pub mod wordlevel;
@@ -11,6 +12,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+use crate::models::bne::{BneTrainer, BNE};
 use crate::models::bpe::{BpeTrainer, BPE};
 use crate::models::unigram::{Unigram, UnigramTrainer};
 use crate::models::wordlevel::{WordLevel, WordLevelTrainer};
@@ -61,6 +63,7 @@ impl Serialize for OrderedVocabIter<'_> {
 #[serde(untagged)]
 pub enum ModelWrapper {
     BPE(BPE),
+    BNE(BNE),
     // WordPiece must stay before WordLevel here for deserialization (for retrocompatibility
     // with the versions not including the "type"), since WordLevel is a subset of WordPiece
     WordPiece(WordPiece),
@@ -83,6 +86,7 @@ impl<'de> Deserialize<'de> for ModelWrapper {
         #[derive(Deserialize)]
         pub enum EnumType {
             BPE,
+            BNE,
             WordPiece,
             WordLevel,
             Unigram,
@@ -99,6 +103,7 @@ impl<'de> Deserialize<'de> for ModelWrapper {
         #[serde(untagged)]
         pub enum ModelUntagged {
             BPE(BPE),
+            BNE(BNE),
             // WordPiece must stay before WordLevel here for deserialization (for retrocompatibility
             // with the versions not including the "type"), since WordLevel is a subset of WordPiece
             WordPiece(WordPiece),
@@ -110,6 +115,9 @@ impl<'de> Deserialize<'de> for ModelWrapper {
         Ok(match helper {
             ModelHelper::Tagged(model) => match model.variant {
                 EnumType::BPE => ModelWrapper::BPE(
+                    serde_json::from_value(model.rest).map_err(serde::de::Error::custom)?,
+                ),
+                EnumType::BNE => ModelWrapper::BNE(
                     serde_json::from_value(model.rest).map_err(serde::de::Error::custom)?,
                 ),
                 EnumType::WordPiece => ModelWrapper::WordPiece(
@@ -126,6 +134,7 @@ impl<'de> Deserialize<'de> for ModelWrapper {
                 let untagged = serde_json::from_value(value).map_err(serde::de::Error::custom)?;
                 match untagged {
                     ModelUntagged::BPE(bpe) => ModelWrapper::BPE(bpe),
+                    ModelUntagged::BNE(bpe) => ModelWrapper::BNE(bpe),
                     ModelUntagged::WordPiece(bpe) => ModelWrapper::WordPiece(bpe),
                     ModelUntagged::WordLevel(bpe) => ModelWrapper::WordLevel(bpe),
                     ModelUntagged::Unigram(bpe) => ModelWrapper::Unigram(bpe),
@@ -138,6 +147,7 @@ impl<'de> Deserialize<'de> for ModelWrapper {
 impl_enum_from!(WordLevel, ModelWrapper, WordLevel);
 impl_enum_from!(WordPiece, ModelWrapper, WordPiece);
 impl_enum_from!(BPE, ModelWrapper, BPE);
+impl_enum_from!(BNE, ModelWrapper, BNE);
 impl_enum_from!(Unigram, ModelWrapper, Unigram);
 
 impl Model for ModelWrapper {
@@ -148,6 +158,7 @@ impl Model for ModelWrapper {
             Self::WordLevel(t) => t.tokenize(tokens),
             Self::WordPiece(t) => t.tokenize(tokens),
             Self::BPE(t) => t.tokenize(tokens),
+            Self::BNE(t) => t.tokenize(tokens),
             Self::Unigram(t) => t.tokenize(tokens),
         }
     }
@@ -157,6 +168,7 @@ impl Model for ModelWrapper {
             Self::WordLevel(t) => t.token_to_id(token),
             Self::WordPiece(t) => t.token_to_id(token),
             Self::BPE(t) => t.token_to_id(token),
+            Self::BNE(t) => t.token_to_id(token),
             Self::Unigram(t) => t.token_to_id(token),
         }
     }
@@ -166,6 +178,7 @@ impl Model for ModelWrapper {
             Self::WordLevel(t) => t.id_to_token(id),
             Self::WordPiece(t) => t.id_to_token(id),
             Self::BPE(t) => t.id_to_token(id),
+            Self::BNE(t) => t.id_to_token(id),
             Self::Unigram(t) => t.id_to_token(id),
         }
     }
@@ -175,6 +188,7 @@ impl Model for ModelWrapper {
             Self::WordLevel(t) => t.get_vocab(),
             Self::WordPiece(t) => t.get_vocab(),
             Self::BPE(t) => t.get_vocab(),
+            Self::BNE(t) => t.get_vocab(),
             Self::Unigram(t) => t.get_vocab(),
         }
     }
@@ -184,6 +198,7 @@ impl Model for ModelWrapper {
             Self::WordLevel(t) => t.get_vocab_size(),
             Self::WordPiece(t) => t.get_vocab_size(),
             Self::BPE(t) => t.get_vocab_size(),
+            Self::BNE(t) => t.get_vocab_size(),
             Self::Unigram(t) => t.get_vocab_size(),
         }
     }
@@ -193,6 +208,7 @@ impl Model for ModelWrapper {
             Self::WordLevel(t) => t.save(folder, name),
             Self::WordPiece(t) => t.save(folder, name),
             Self::BPE(t) => t.save(folder, name),
+            Self::BNE(t) => t.save(folder, name),
             Self::Unigram(t) => t.save(folder, name),
         }
     }
@@ -202,6 +218,7 @@ impl Model for ModelWrapper {
             Self::WordLevel(t) => t.get_trainer().into(),
             Self::WordPiece(t) => t.get_trainer().into(),
             Self::BPE(t) => t.get_trainer().into(),
+            Self::BNE(t) => t.get_trainer().into(),
             Self::Unigram(t) => t.get_trainer().into(),
         }
     }
@@ -212,6 +229,7 @@ impl ModelWrapper {
         match self {
             Self::Unigram(model) => model.clear_cache(),
             Self::BPE(model) => model.clear_cache(),
+            Self::BNE(model) => model.clear_cache(),
             _ => (),
         }
     }
@@ -219,6 +237,7 @@ impl ModelWrapper {
         match self {
             Self::Unigram(model) => model.resize_cache(capacity),
             Self::BPE(model) => model.resize_cache(capacity),
+            Self::BNE(model) => model.resize_cache(capacity),
             _ => (),
         }
     }
@@ -227,6 +246,7 @@ impl ModelWrapper {
 #[derive(Clone, Serialize, Deserialize)]
 pub enum TrainerWrapper {
     BpeTrainer(BpeTrainer),
+    BneTrainer(BneTrainer),
     WordPieceTrainer(WordPieceTrainer),
     WordLevelTrainer(WordLevelTrainer),
     UnigramTrainer(UnigramTrainer),
@@ -238,6 +258,7 @@ impl Trainer for TrainerWrapper {
     fn should_show_progress(&self) -> bool {
         match self {
             Self::BpeTrainer(bpe) => bpe.should_show_progress(),
+            Self::BneTrainer(bne) => bne.should_show_progress(),
             Self::WordPieceTrainer(wpt) => wpt.should_show_progress(),
             Self::WordLevelTrainer(wpt) => wpt.should_show_progress(),
             Self::UnigramTrainer(wpt) => wpt.should_show_progress(),
@@ -249,6 +270,10 @@ impl Trainer for TrainerWrapper {
             Self::BpeTrainer(t) => match model {
                 ModelWrapper::BPE(bpe) => t.train(bpe),
                 _ => Err("BpeTrainer can only train a BPE".into()),
+            },
+            Self::BneTrainer(t) => match model {
+                ModelWrapper::BNE(bne) => t.train(bne),
+                _ => Err("BneTrainer can only train a BNE".into()),
             },
             Self::WordPieceTrainer(t) => match model {
                 ModelWrapper::WordPiece(wp) => t.train(wp),
@@ -273,6 +298,7 @@ impl Trainer for TrainerWrapper {
     {
         match self {
             Self::BpeTrainer(bpe) => bpe.feed(iterator, process),
+            Self::BneTrainer(bne) => bne.feed(iterator, process),
             Self::WordPieceTrainer(wpt) => wpt.feed(iterator, process),
             Self::WordLevelTrainer(wpt) => wpt.feed(iterator, process),
             Self::UnigramTrainer(wpt) => wpt.feed(iterator, process),
@@ -281,6 +307,7 @@ impl Trainer for TrainerWrapper {
 }
 
 impl_enum_from!(BpeTrainer, TrainerWrapper, BpeTrainer);
+impl_enum_from!(BneTrainer, TrainerWrapper, BneTrainer);
 impl_enum_from!(WordPieceTrainer, TrainerWrapper, WordPieceTrainer);
 impl_enum_from!(UnigramTrainer, TrainerWrapper, UnigramTrainer);
 impl_enum_from!(WordLevelTrainer, TrainerWrapper, WordLevelTrainer);

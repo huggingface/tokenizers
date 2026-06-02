@@ -7,6 +7,132 @@ from tokenizers import Token
 from typing import Any, final
 
 @final
+class BNE(Model):
+    """
+    An implementation of the BNE (Byte-Ngram Encoding) algorithm
+
+    Args:
+        vocab (:obj:`Dict[str, int]`, `optional`):
+            A dictionary of string keys and their ids :obj:`{"am": 0,...}`
+
+        merges (:obj:`List[List[str]]`, `optional`):
+            A list of ngrams of tokens (:obj:`List[str]`) :obj:`[["a", "b", "c"],...]`
+
+        cache_capacity (:obj:`int`, `optional`):
+            The number of words that the BNE cache can contain. The cache allows
+            to speed-up the process by keeping the result of the merge operations
+            for a number of words.
+
+        dropout (:obj:`float`, `optional`):
+            A float between 0 and 1 that represents the BNE dropout to use.
+
+        unk_token (:obj:`str`, `optional`):
+            The unknown token to be used by the model.
+
+        continuing_subword_prefix (:obj:`str`, `optional`):
+            The prefix to attach to subword units that don't represent a beginning of word.
+
+        end_of_word_suffix (:obj:`str`, `optional`):
+            The suffix to attach to subword units that represent an end of word.
+
+        fuse_unk (:obj:`bool`, `optional`):
+            Whether to fuse any subsequent unknown tokens into a single one
+
+        byte_fallback (:obj:`bool`, `optional`):
+            Whether to use spm byte-fallback trick (defaults to False)
+
+        ignore_merges (:obj:`bool`, `optional`):
+            Whether or not to match tokens with the vocab before using merges.
+    """
+    def __new__(
+        cls,
+        /,
+        vocab: dict[str, int] | str | None = None,
+        merges: Sequence[Sequence[str]] | str | None = None,
+        **kwargs,
+    ) -> BNE: ...
+    def _clear_cache(self, /) -> None:
+        """
+        Clears the internal cache
+        """
+    def _resize_cache(self, /, capacity: int) -> None:
+        """
+        Resize the internal cache
+        """
+    @property
+    def byte_fallback(self, /) -> bool: ...
+    @byte_fallback.setter
+    def byte_fallback(self, /, byte_fallback: bool) -> None: ...
+    @property
+    def continuing_subword_prefix(self, /) -> str | None: ...
+    @continuing_subword_prefix.setter
+    def continuing_subword_prefix(self, /, continuing_subword_prefix: str | None) -> None: ...
+    @property
+    def dropout(self, /) -> float | None: ...
+    @dropout.setter
+    def dropout(self, /, dropout: float | None) -> None: ...
+    @property
+    def end_of_word_suffix(self, /) -> str | None: ...
+    @end_of_word_suffix.setter
+    def end_of_word_suffix(self, /, end_of_word_suffix: str | None) -> None: ...
+    @classmethod
+    def from_file(cls, /, vocab: str, merges: str, **kwargs) -> BNE:
+        """
+        Instantiate a BNE model from the given files.
+
+        This method is roughly equivalent to doing::
+
+           vocab, merges = BNE.read_file(vocab_filename, merges_filename)
+           bne = BNE(vocab, merges)
+
+        If you don't need to keep the :obj:`vocab, merges` values lying around,
+        this method is more optimized than manually calling
+        :meth:`~tokenizers.models.BNE.read_file` to initialize a :class:`~tokenizers.models.BNE`
+
+        Args:
+            vocab (:obj:`str`):
+                The path to a :obj:`vocab.json` file
+
+            merges (:obj:`str`):
+                The path to a :obj:`merges.txt` file
+
+        Returns:
+            :class:`~tokenizers.models.BNE`: An instance of BNE loaded from these files
+        """
+    @property
+    def fuse_unk(self, /) -> bool: ...
+    @fuse_unk.setter
+    def fuse_unk(self, /, fuse_unk: bool) -> None: ...
+    @property
+    def ignore_merges(self, /) -> bool: ...
+    @ignore_merges.setter
+    def ignore_merges(self, /, ignore_merges: bool) -> None: ...
+    @staticmethod
+    def read_file(vocab: str, merges: str) -> tuple[dict[str, int], list[list[str]]]:
+        """
+        Read a :obj:`vocab.json` and a :obj:`merges.txt` files
+
+        This method provides a way to read and parse the content of these files,
+        returning the relevant data structures. If you want to instantiate some BNE models
+        from memory, this method gives you the expected input from the standard files.
+
+        Args:
+            vocab (:obj:`str`):
+                The path to a :obj:`vocab.json` file
+
+            merges (:obj:`str`):
+                The path to a :obj:`merges.txt` file
+
+        Returns:
+            A :obj:`Tuple` with the vocab and the merges:
+                The vocabulary and merges loaded into memory
+        """
+    @property
+    def unk_token(self, /) -> str | None: ...
+    @unk_token.setter
+    def unk_token(self, /, unk_token: str | None) -> None: ...
+
+@final
 class BPE(Model):
     """
     An implementation of the BPE (Byte-Pair Encoding) algorithm

@@ -36,6 +36,7 @@ impl PyTrainer {
         let base = self.clone();
         Ok(match *self.trainer.as_ref().read().unwrap() {
             TrainerWrapper::BpeTrainer(_) => Py::new(py, (PyBpeTrainer {}, base))?.into_any(),
+            TrainerWrapper::BneTrainer(_) => Py::new(py, (PyBneTrainer {}, base))?.into_any(),
             TrainerWrapper::WordPieceTrainer(_) => {
                 Py::new(py, (PyWordPieceTrainer {}, base))?.into_any()
             }
@@ -420,6 +421,253 @@ impl PyBpeTrainer {
             }
         }
         Ok((PyBpeTrainer {}, builder.build().into()))
+    }
+}
+
+/// Trainer capable of training a BNE model
+///
+/// Args:
+///     vocab_size (:obj:`int`, `optional`):
+///         The size of the final vocabulary, including all tokens and alphabet.
+///
+///     min_frequency (:obj:`int`, `optional`):
+///         The minimum frequency an Ngram should have in order to be merged.
+///         This does not guarantee a termination criterion for training.
+/// 
+///     min_scale_frequency (:obj:`int`, `optional`):
+///         The minimum scaled frequency an Ngram should have in order to be merged.
+///         This guarantees a termination criterion for training.
+///
+///     show_progress (:obj:`bool`, `optional`):
+///         Whether to show progress bars while training.
+///
+///     special_tokens (:obj:`List[Union[str, AddedToken]]`, `optional`):
+///         A list of special tokens the model should know of.
+///
+///     limit_alphabet (:obj:`int`, `optional`):
+///         The maximum different characters to keep in the alphabet.
+///
+///     initial_alphabet (:obj:`List[str]`, `optional`):
+///         A list of characters to include in the initial alphabet, even
+///         if not seen in the training dataset.
+///         If the strings contain more than one character, only the first one
+///         is kept.
+///
+///     continuing_subword_prefix (:obj:`str`, `optional`):
+///         A prefix to be used for every subword that is not a beginning-of-word.
+///
+///     end_of_word_suffix (:obj:`str`, `optional`):
+///         A suffix to be used for every subword that is a end-of-word.
+///
+///     max_token_length (:obj:`int`, `optional`):
+///         Prevents creating tokens longer than the specified size.
+///         This can help with reducing polluting your vocabulary with
+///         highly repetitive tokens like `======` for wikipedia
+///
+#[pyclass(extends=PyTrainer, module = "tokenizers.trainers", name = "BneTrainer")]
+pub struct PyBneTrainer {}
+#[pymethods]
+impl PyBneTrainer {
+    #[getter]
+    fn get_vocab_size(self_: PyRef<Self>) -> usize {
+        getter!(self_, BneTrainer, vocab_size)
+    }
+
+    #[setter]
+    fn set_vocab_size(self_: PyRef<Self>, vocab_size: usize) {
+        setter!(self_, BneTrainer, vocab_size, vocab_size);
+    }
+
+    #[getter]
+    fn get_min_frequency(self_: PyRef<Self>) -> u64 {
+        getter!(self_, BneTrainer, min_frequency)
+    }
+
+    #[setter]
+    fn set_min_frequency(self_: PyRef<Self>, freq: u64) {
+        setter!(self_, BneTrainer, min_frequency, freq);
+    }
+
+    #[getter]
+    fn get_min_scale_frequency(self_: PyRef<Self>) -> u64 {
+        getter!(self_, BneTrainer, min_scale_frequency)
+    }
+
+    #[setter]
+    fn set_min_scale_frequency(self_: PyRef<Self>, freq: u64) {
+        setter!(self_, BneTrainer, min_scale_frequency, freq);
+    }
+
+    #[getter]
+    fn get_show_progress(self_: PyRef<Self>) -> bool {
+        getter!(self_, BneTrainer, show_progress)
+    }
+
+    #[setter]
+    fn set_show_progress(self_: PyRef<Self>, show_progress: bool) {
+        setter!(self_, BneTrainer, show_progress, show_progress);
+    }
+
+    #[getter]
+    fn get_special_tokens(self_: PyRef<Self>) -> Vec<PyAddedToken> {
+        getter!(
+            self_,
+            BneTrainer,
+            special_tokens
+                .iter()
+                .map(|tok| tok.clone().into())
+                .collect()
+        )
+    }
+
+    #[setter]
+    fn set_special_tokens(self_: PyRef<Self>, special_tokens: &Bound<'_, PyList>) -> PyResult<()> {
+        setter!(
+            self_,
+            BneTrainer,
+            special_tokens,
+            special_tokens
+                .into_iter()
+                .map(|token| {
+                    if let Ok(content) = token.extract::<String>() {
+                        Ok(tk::tokenizer::AddedToken::from(content, true))
+                    } else if let Ok(mut token) = token.extract::<PyRefMut<PyAddedToken>>() {
+                        token.special = true;
+                        Ok(token.get_token())
+                    } else {
+                        Err(exceptions::PyTypeError::new_err(
+                            "Special tokens must be a List[Union[str, AddedToken]]",
+                        ))
+                    }
+                })
+                .collect::<PyResult<Vec<_>>>()?
+        );
+        Ok(())
+    }
+
+    #[getter]
+    fn get_limit_alphabet(self_: PyRef<Self>) -> Option<usize> {
+        getter!(self_, BneTrainer, limit_alphabet)
+    }
+
+    #[setter]
+    fn set_limit_alphabet(self_: PyRef<Self>, limit: Option<usize>) {
+        setter!(self_, BneTrainer, limit_alphabet, limit);
+    }
+
+    #[getter]
+    fn get_max_token_length(self_: PyRef<Self>) -> Option<usize> {
+        getter!(self_, BneTrainer, max_token_length)
+    }
+
+    #[setter]
+    fn set_max_token_length(self_: PyRef<Self>, limit: Option<usize>) {
+        setter!(self_, BneTrainer, max_token_length, limit);
+    }
+
+    #[getter]
+    fn get_max_ngram_length(self_: PyRef<Self>) -> Option<usize> {
+        getter!(self_, BneTrainer, max_ngram_length)
+    }
+
+    #[setter]
+    fn set_max_ngram_length(self_: PyRef<Self>, limit: Option<usize>) {
+        setter!(self_, BneTrainer, max_ngram_length, limit);
+    }
+
+    #[getter]
+    fn get_initial_alphabet(self_: PyRef<Self>) -> Vec<String> {
+        getter!(
+            self_,
+            BneTrainer,
+            initial_alphabet.iter().map(|c| c.to_string()).collect()
+        )
+    }
+
+    #[setter]
+    fn set_initial_alphabet(self_: PyRef<Self>, alphabet: Vec<char>) {
+        setter!(
+            self_,
+            BneTrainer,
+            initial_alphabet,
+            alphabet.into_iter().collect()
+        );
+    }
+
+    #[getter]
+    fn get_continuing_subword_prefix(self_: PyRef<Self>) -> Option<String> {
+        getter!(self_, BneTrainer, continuing_subword_prefix.clone())
+    }
+
+    #[setter]
+    fn set_continuing_subword_prefix(self_: PyRef<Self>, prefix: Option<String>) {
+        setter!(self_, BneTrainer, continuing_subword_prefix, prefix);
+    }
+
+    #[getter]
+    fn get_end_of_word_suffix(self_: PyRef<Self>) -> Option<String> {
+        getter!(self_, BneTrainer, end_of_word_suffix.clone())
+    }
+
+    #[setter]
+    fn set_end_of_word_suffix(self_: PyRef<Self>, suffix: Option<String>) {
+        setter!(self_, BneTrainer, end_of_word_suffix, suffix);
+    }
+
+    #[new]
+    #[pyo3(signature = (**kwargs), text_signature = None)]
+    pub fn new(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<(Self, PyTrainer)> {
+        let mut builder = tk::models::bne::BneTrainer::builder();
+        if let Some(kwargs) = kwargs {
+            for (key, val) in kwargs {
+                let key: String = key.extract()?;
+                match key.as_ref() {
+                    "vocab_size" => builder = builder.vocab_size(val.extract()?),
+                    "min_frequency" => builder = builder.min_frequency(val.extract()?),
+                    "min_scale_frequency" => builder = builder.min_scale_frequency(val.extract()?),
+                    "show_progress" => builder = builder.show_progress(val.extract()?),
+                    "special_tokens" => {
+                        builder = builder.special_tokens(
+                            val.cast::<PyList>()?
+                                .into_iter()
+                                .map(|token| {
+                                    if let Ok(content) = token.extract::<String>() {
+                                        Ok(PyAddedToken::from(content, Some(true)).get_token())
+                                    } else if let Ok(mut token) =
+                                        token.extract::<PyRefMut<PyAddedToken>>()
+                                    {
+                                        token.special = true;
+                                        Ok(token.get_token())
+                                    } else {
+                                        Err(exceptions::PyTypeError::new_err(
+                                            "special_tokens must be a List[Union[str, AddedToken]]",
+                                        ))
+                                    }
+                                })
+                                .collect::<PyResult<Vec<_>>>()?,
+                        );
+                    }
+                    "limit_alphabet" => builder = builder.limit_alphabet(val.extract()?),
+                    "max_token_length" => builder = builder.max_token_length(val.extract()?),
+                    "max_ngram_length" => builder = builder.max_ngram_length(val.extract()?),
+                    "initial_alphabet" => {
+                        let alphabet: Vec<String> = val.extract()?;
+                        builder = builder.initial_alphabet(
+                            alphabet
+                                .into_iter()
+                                .filter_map(|s| s.chars().next())
+                                .collect(),
+                        );
+                    }
+                    "continuing_subword_prefix" => {
+                        builder = builder.continuing_subword_prefix(val.extract()?)
+                    }
+                    "end_of_word_suffix" => builder = builder.end_of_word_suffix(val.extract()?),
+                    _ => println!("Ignored unknown kwargs option {}", key),
+                };
+            }
+        }
+        Ok((PyBneTrainer {}, builder.build().into()))
     }
 }
 
@@ -988,6 +1236,8 @@ impl PyUnigramTrainer {
 pub mod trainers {
     #[pymodule_export]
     pub use super::PyBpeTrainer;
+    #[pymodule_export]
+    pub use super::PyBneTrainer;
     #[pymodule_export]
     pub use super::PyTrainer;
     #[pymodule_export]

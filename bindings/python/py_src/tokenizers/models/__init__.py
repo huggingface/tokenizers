@@ -2,8 +2,9 @@
 
 from .. import models
 
-BPE = models.BPE
 Model = models.Model
+BNE = models.BNE
+BPE = models.BPE
 Unigram = models.Unigram
 WordLevel = models.WordLevel
 WordPiece = models.WordPiece

@@ -9,7 +9,8 @@ use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
 use serde::{Deserialize, Serialize};
-use tk::models::bpe::{BpeBuilder, Merges, BPE};
+use tk::models::bpe::{BpeBuilder, Merges as MergesBPE, BPE};
+use tk::models::bne::{BneBuilder, Merges as MergesBNE, BNE};
 use tk::models::unigram::Unigram;
 use tk::models::wordlevel::WordLevel;
 use tk::models::wordpiece::{WordPiece, WordPieceBuilder};
@@ -37,6 +38,7 @@ impl PyModel {
         let base = self.clone();
         Ok(match *self.model.as_ref().read().unwrap() {
             ModelWrapper::BPE(_) => Py::new(py, (PyBPE {}, base))?.into_any(),
+            ModelWrapper::BNE(_) => Py::new(py, (PyBNE {}, base))?.into_any(),
             ModelWrapper::WordPiece(_) => Py::new(py, (PyWordPiece {}, base))?.into_any(),
             ModelWrapper::WordLevel(_) => Py::new(py, (PyWordLevel {}, base))?.into_any(),
             ModelWrapper::Unigram(_) => Py::new(py, (PyUnigram {}, base))?.into_any(),
@@ -339,14 +341,14 @@ macro_rules! setter {
 }
 
 #[derive(FromPyObject)]
-enum PyVocab {
+enum PyVocabBPE {
     Vocab(HashMap<String, u32>),
     Filename(String),
 }
 
 #[derive(FromPyObject)]
-enum PyMerges {
-    Merges(Merges),
+enum PyMergesBPE {
+    Merges(MergesBPE),
     Filename(String),
 }
 
@@ -434,8 +436,8 @@ impl PyBPE {
         text_signature = "(self, vocab=None, merges=None, cache_capacity=None, dropout=None, unk_token=None, continuing_subword_prefix=None, end_of_word_suffix=None, fuse_unk=None, byte_fallback=False, ignore_merges=False)")]
     fn new(
         _py: Python<'_>,
-        vocab: Option<PyVocab>,
-        merges: Option<PyMerges>,
+        vocab: Option<PyVocabBPE>,
+        merges: Option<PyMergesBPE>,
         kwargs: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<(Self, PyModel)> {
         if (vocab.is_some() && merges.is_none()) || (vocab.is_none() && merges.is_some()) {
@@ -447,11 +449,11 @@ impl PyBPE {
         let mut builder = BPE::builder();
         if let (Some(vocab), Some(merges)) = (vocab, merges) {
             match (vocab, merges) {
-                (PyVocab::Vocab(vocab), PyMerges::Merges(merges)) => {
+                (PyVocabBPE::Vocab(vocab), PyMergesBPE::Merges(merges)) => {
                     let vocab: AHashMap<_, _> = vocab.into_iter().collect();
                     builder = builder.vocab_and_merges(vocab, merges);
                 }
-                (PyVocab::Filename(vocab_filename), PyMerges::Filename(merges_filename)) => {
+                (PyVocabBPE::Filename(vocab_filename), PyMergesBPE::Filename(merges_filename)) => {
                     builder =
                         builder.files(vocab_filename.to_string(), merges_filename.to_string());
                 }
@@ -484,7 +486,7 @@ impl PyBPE {
     ///         The vocabulary and merges loaded into memory
     #[staticmethod]
     #[pyo3(text_signature = "(vocab, merges)")]
-    fn read_file(vocab: &str, merges: &str) -> PyResult<(HashMap<String, u32>, Merges)> {
+    fn read_file(vocab: &str, merges: &str) -> PyResult<(HashMap<String, u32>, MergesBPE)> {
         let (vocab, merges) = BPE::read_file(vocab, merges).map_err(|e| {
             exceptions::PyException::new_err(format!(
                 "Error while reading vocab & merges files: {e}"
@@ -532,8 +534,8 @@ impl PyBPE {
             py,
             PyBPE::new(
                 py,
-                Some(PyVocab::Vocab(vocab)),
-                Some(PyMerges::Merges(merges)),
+                Some(PyVocabBPE::Vocab(vocab)),
+                Some(PyMergesBPE::Merges(merges)),
                 kwargs,
             )?,
         )
@@ -558,6 +560,332 @@ impl PyBPE {
         let super_ = self_.as_ref();
         let mut model = super_.model.write().map_err(|e| {
             exceptions::PyException::new_err(format!("Error while resizing BPE cache: {e}"))
+        })?;
+        model.resize_cache(capacity);
+        Ok(())
+    }
+}
+
+/// An implementation of the BNE (Byte-Ngram Encoding) algorithm
+///
+/// Args:
+///     vocab (:obj:`Dict[str, int]`, `optional`):
+///         A dictionary of string keys and their ids :obj:`{"am": 0,...}`
+///
+///     merges (:obj:`List[List[str]]`, `optional`):
+///         A list of ngrams of tokens (:obj:`List[str]`) :obj:`[["a", "b", "c"],...]`
+///
+///     cache_capacity (:obj:`int`, `optional`):
+///         The number of words that the BNE cache can contain. The cache allows
+///         to speed-up the process by keeping the result of the merge operations
+///         for a number of words.
+///
+///     dropout (:obj:`float`, `optional`):
+///         A float between 0 and 1 that represents the BNE dropout to use.
+///
+///     unk_token (:obj:`str`, `optional`):
+///         The unknown token to be used by the model.
+///
+///     continuing_subword_prefix (:obj:`str`, `optional`):
+///         The prefix to attach to subword units that don't represent a beginning of word.
+///
+///     end_of_word_suffix (:obj:`str`, `optional`):
+///         The suffix to attach to subword units that represent an end of word.
+///
+///     fuse_unk (:obj:`bool`, `optional`):
+///         Whether to fuse any subsequent unknown tokens into a single one
+///
+///     byte_fallback (:obj:`bool`, `optional`):
+///         Whether to use spm byte-fallback trick (defaults to False)
+///
+///     ignore_merges (:obj:`bool`, `optional`):
+///         Whether or not to match tokens with the vocab before using merges.
+#[pyclass(extends=PyModel, module = "tokenizers.models", name = "BNE")]
+pub struct PyBNE {}
+
+impl PyBNE {
+    fn with_builder(
+        mut builder: BneBuilder,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<(Self, PyModel)> {
+        if let Some(kwargs) = kwargs {
+            for (key, value) in kwargs {
+                let key: String = key.extract()?;
+                match key.as_ref() {
+                    "cache_capacity" => builder = builder.cache_capacity(value.extract()?),
+                    "dropout" => {
+                        if let Some(dropout) = value.extract()? {
+                            builder = builder.dropout(dropout);
+                        }
+                    }
+                    "unk_token" => {
+                        if let Some(unk) = value.extract()? {
+                            builder = builder.unk_token(unk);
+                        }
+                    }
+                    "continuing_subword_prefix" => {
+                        builder = builder.continuing_subword_prefix(value.extract()?)
+                    }
+                    "end_of_word_suffix" => builder = builder.end_of_word_suffix(value.extract()?),
+                    "fuse_unk" => builder = builder.fuse_unk(value.extract()?),
+                    "byte_fallback" => builder = builder.byte_fallback(value.extract()?),
+                    "ignore_merges" => builder = builder.ignore_merges(value.extract()?),
+                    _ => println!("Ignored unknown kwarg option {}", key),
+                };
+            }
+        }
+
+        match builder.build() {
+            Err(e) => Err(exceptions::PyException::new_err(format!(
+                "Error while initializing BNE: {}",
+                e
+            ))),
+            Ok(bne) => Ok((PyBNE {}, bne.into())),
+        }
+    }
+}
+
+macro_rules! getter {
+    ($self: ident, $variant: ident, $($name: tt)+) => {{
+        let super_ = $self.as_ref();
+        let model = super_.model.read().unwrap();
+        if let ModelWrapper::$variant(ref mo) = *model {
+            mo.$($name)+
+        } else {
+            unreachable!()
+        }
+    }};
+}
+
+macro_rules! setter {
+    ($self: ident, $variant: ident, $name: ident, $value: expr) => {{
+        let super_ = $self.as_ref();
+        let mut model = super_.model.write().unwrap();
+        if let ModelWrapper::$variant(ref mut mo) = *model {
+            mo.$name = $value;
+        }
+    }};
+}
+
+#[derive(FromPyObject)]
+enum PyVocabBNE {
+    Vocab(HashMap<String, u32>),
+    Filename(String),
+}
+#[derive(FromPyObject)]
+enum PyMergesBNE {
+    Merges(MergesBNE),
+    Filename(String),
+}
+
+#[pymethods]
+impl PyBNE {
+    #[getter]
+    fn get_dropout(self_: PyRef<Self>) -> Option<f32> {
+        getter!(self_, BNE, dropout)
+    }
+
+    #[setter]
+    fn set_dropout(self_: PyRef<Self>, dropout: Option<f32>) {
+        setter!(self_, BNE, dropout, dropout);
+    }
+
+    #[getter]
+    fn get_unk_token(self_: PyRef<Self>) -> Option<String> {
+        getter!(self_, BNE, unk_token.clone())
+    }
+
+    #[setter]
+    fn set_unk_token(self_: PyRef<Self>, unk_token: Option<String>) {
+        setter!(self_, BNE, unk_token, unk_token);
+    }
+
+    #[getter]
+    fn get_continuing_subword_prefix(self_: PyRef<Self>) -> Option<String> {
+        getter!(self_, BNE, continuing_subword_prefix.clone())
+    }
+
+    #[setter]
+    fn set_continuing_subword_prefix(
+        self_: PyRef<Self>,
+        continuing_subword_prefix: Option<String>,
+    ) {
+        setter!(
+            self_,
+            BNE,
+            continuing_subword_prefix,
+            continuing_subword_prefix
+        );
+    }
+
+    #[getter]
+    fn get_end_of_word_suffix(self_: PyRef<Self>) -> Option<String> {
+        getter!(self_, BNE, end_of_word_suffix.clone())
+    }
+
+    #[setter]
+    fn set_end_of_word_suffix(self_: PyRef<Self>, end_of_word_suffix: Option<String>) {
+        setter!(self_, BNE, end_of_word_suffix, end_of_word_suffix);
+    }
+
+    #[getter]
+    fn get_fuse_unk(self_: PyRef<Self>) -> bool {
+        getter!(self_, BNE, fuse_unk)
+    }
+
+    #[setter]
+    fn set_fuse_unk(self_: PyRef<Self>, fuse_unk: bool) {
+        setter!(self_, BNE, fuse_unk, fuse_unk);
+    }
+
+    #[getter]
+    fn get_byte_fallback(self_: PyRef<Self>) -> bool {
+        getter!(self_, BNE, byte_fallback)
+    }
+
+    #[setter]
+    fn set_byte_fallback(self_: PyRef<Self>, byte_fallback: bool) {
+        setter!(self_, BNE, byte_fallback, byte_fallback);
+    }
+    #[getter]
+    fn get_ignore_merges(self_: PyRef<Self>) -> bool {
+        getter!(self_, BNE, ignore_merges)
+    }
+
+    #[setter]
+    fn set_ignore_merges(self_: PyRef<Self>, ignore_merges: bool) {
+        setter!(self_, BNE, ignore_merges, ignore_merges);
+    }
+    #[new]
+    #[pyo3(
+        signature = (vocab=None, merges=None, **kwargs),
+        text_signature = "(self, vocab=None, merges=None, cache_capacity=None, dropout=None, unk_token=None, continuing_subword_prefix=None, end_of_word_suffix=None, fuse_unk=None, byte_fallback=False, ignore_merges=False)")]
+    fn new(
+        _py: Python<'_>,
+        vocab: Option<PyVocabBNE>,
+        merges: Option<PyMergesBNE>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<(Self, PyModel)> {
+        if (vocab.is_some() && merges.is_none()) || (vocab.is_none() && merges.is_some()) {
+            return Err(exceptions::PyValueError::new_err(
+                "`vocab` and `merges` must be both specified",
+            ));
+        }
+
+        let mut builder = BNE::builder();
+        if let (Some(vocab), Some(merges)) = (vocab, merges) {
+            match (vocab, merges) {
+                (PyVocabBNE::Vocab(vocab), PyMergesBNE::Merges(merges)) => {
+                    let vocab: AHashMap<_, _> = vocab.into_iter().collect();
+                    builder = builder.vocab_and_merges(vocab, merges);
+                }
+                (PyVocabBNE::Filename(vocab_filename), PyMergesBNE::Filename(merges_filename)) => {
+                    builder =
+                        builder.files(vocab_filename.to_string(), merges_filename.to_string());
+                }
+                _ => {
+                    return Err(exceptions::PyValueError::new_err(
+                        "`vocab` and `merges` must be both be from memory or both filenames",
+                    ));
+                }
+            }
+        }
+
+        PyBNE::with_builder(builder, kwargs)
+    }
+
+    /// Read a :obj:`vocab.json` and a :obj:`merges.txt` files
+    ///
+    /// This method provides a way to read and parse the content of these files,
+    /// returning the relevant data structures. If you want to instantiate some BNE models
+    /// from memory, this method gives you the expected input from the standard files.
+    ///
+    /// Args:
+    ///     vocab (:obj:`str`):
+    ///         The path to a :obj:`vocab.json` file
+    ///
+    ///     merges (:obj:`str`):
+    ///         The path to a :obj:`merges.txt` file
+    ///
+    /// Returns:
+    ///     A :obj:`Tuple` with the vocab and the merges:
+    ///         The vocabulary and merges loaded into memory
+    #[staticmethod]
+    #[pyo3(text_signature = "(vocab, merges)")]
+    fn read_file(vocab: &str, merges: &str) -> PyResult<(HashMap<String, u32>, MergesBNE)> {
+        let (vocab, merges) = BNE::read_file(vocab, merges).map_err(|e| {
+            exceptions::PyException::new_err(format!(
+                "Error while reading vocab & merges files: {e}"
+            ))
+        })?;
+        let vocab = vocab.into_iter().collect();
+        Ok((vocab, merges))
+    }
+
+    /// Instantiate a BNE model from the given files.
+    ///
+    /// This method is roughly equivalent to doing::
+    ///
+    ///    vocab, merges = BNE.read_file(vocab_filename, merges_filename)
+    ///    bne = BNE(vocab, merges)
+    ///
+    /// If you don't need to keep the :obj:`vocab, merges` values lying around,
+    /// this method is more optimized than manually calling
+    /// :meth:`~tokenizers.models.BNE.read_file` to initialize a :class:`~tokenizers.models.BNE`
+    ///
+    /// Args:
+    ///     vocab (:obj:`str`):
+    ///         The path to a :obj:`vocab.json` file
+    ///
+    ///     merges (:obj:`str`):
+    ///         The path to a :obj:`merges.txt` file
+    ///
+    /// Returns:
+    ///     :class:`~tokenizers.models.BNE`: An instance of BNE loaded from these files
+    #[classmethod]
+    #[pyo3(signature = (vocab, merges, **kwargs))]
+    #[pyo3(text_signature = "(cls, vocab, merge, **kwargs)")]
+    fn from_file(
+        _cls: &Bound<'_, PyType>,
+        py: Python,
+        vocab: &str,
+        merges: &str,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Py<Self>> {
+        let (vocab, merges) = BNE::read_file(vocab, merges).map_err(|e| {
+            exceptions::PyException::new_err(format!("Error while reading BNE files: {e}"))
+        })?;
+        let vocab = vocab.into_iter().collect();
+        Py::new(
+            py,
+            PyBNE::new(
+                py,
+                Some(PyVocabBNE::Vocab(vocab)),
+                Some(PyMergesBNE::Merges(merges)),
+                kwargs,
+            )?,
+        )
+    }
+
+    /// Clears the internal cache
+    #[pyo3(signature = ())]
+    #[pyo3(text_signature = "(self)")]
+    fn _clear_cache(self_: PyRef<Self>) -> PyResult<()> {
+        let super_ = self_.as_ref();
+        let mut model = super_.model.write().map_err(|e| {
+            exceptions::PyException::new_err(format!("Error while clearing BNE cache: {}", e))
+        })?;
+        model.clear_cache();
+        Ok(())
+    }
+
+    /// Resize the internal cache
+    #[pyo3(signature = (capacity))]
+    #[pyo3(text_signature = "(self, capacity)")]
+    fn _resize_cache(self_: PyRef<Self>, capacity: usize) -> PyResult<()> {
+        let super_ = self_.as_ref();
+        let mut model = super_.model.write().map_err(|e| {
+            exceptions::PyException::new_err(format!("Error while resizing BNE cache: {}", e))
         })?;
         model.resize_cache(capacity);
         Ok(())
@@ -663,18 +991,18 @@ impl PyWordPiece {
     )]
     fn new(
         _py: Python<'_>,
-        vocab: Option<PyVocab>,
+        vocab: Option<PyVocabBPE>,
         kwargs: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<(Self, PyModel)> {
         let mut builder = WordPiece::builder();
 
         if let Some(vocab) = vocab {
             match vocab {
-                PyVocab::Vocab(vocab) => {
+                PyVocabBPE::Vocab(vocab) => {
                     let vocab: AHashMap<_, _> = vocab.into_iter().collect();
                     builder = builder.vocab(vocab);
                 }
-                PyVocab::Filename(vocab_filename) => {
+                PyVocabBPE::Filename(vocab_filename) => {
                     builder = builder.files(vocab_filename.to_string());
                 }
             }
@@ -737,7 +1065,7 @@ impl PyWordPiece {
         let vocab = vocab.into_iter().collect();
         Py::new(
             py,
-            PyWordPiece::new(py, Some(PyVocab::Vocab(vocab)), kwargs)?,
+            PyWordPiece::new(py, Some(PyVocabBPE::Vocab(vocab)), kwargs)?,
         )
     }
 }
@@ -784,18 +1112,18 @@ impl PyWordLevel {
     )]
     fn new(
         _py: Python<'_>,
-        vocab: Option<PyVocab>,
+        vocab: Option<PyVocabBPE>,
         unk_token: Option<String>,
     ) -> PyResult<(Self, PyModel)> {
         let mut builder = WordLevel::builder();
 
         if let Some(vocab) = vocab {
             match vocab {
-                PyVocab::Vocab(vocab) => {
+                PyVocabBPE::Vocab(vocab) => {
                     let vocab = vocab.into_iter().collect();
                     builder = builder.vocab(vocab);
                 }
-                PyVocab::Filename(vocab_filename) => {
+                PyVocabBPE::Filename(vocab_filename) => {
                     builder = builder.files(vocab_filename.to_string());
                 }
             };
@@ -867,7 +1195,7 @@ impl PyWordLevel {
         let vocab = vocab.into_iter().collect();
         Py::new(
             py,
-            PyWordLevel::new(py, Some(PyVocab::Vocab(vocab)), unk_token)?,
+            PyWordLevel::new(py, Some(PyVocabBPE::Vocab(vocab)), unk_token)?,
         )
     }
 }
@@ -996,6 +1324,8 @@ impl PyUnigram {
 pub mod models {
     #[pymodule_export]
     pub use super::PyBPE;
+    #[pymodule_export]
+    pub use super::PyBNE;
     #[pymodule_export]
     pub use super::PyModel;
     #[pymodule_export]
