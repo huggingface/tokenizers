@@ -34,7 +34,11 @@ env:
 jobs:
   benchmark:
     name: Run Rust benchmarks
-    runs-on: ubuntu-latest
+    # Pinned to a larger, dedicated GitHub-hosted runner for stable timings.
+    # The shared `ubuntu-latest` (2 vCPU) produces noisy, non-comparable baselines.
+    # NOTE: `ubuntu-latest-8-cores` must be provisioned in the org's
+    # Settings → Actions → Runners. Adjust the label if yours differs.
+    runs-on: ubuntu-latest-8-cores
     defaults:
       run:
         working-directory: tokenizers
@@ -219,7 +223,8 @@ jobs:
 
   benchmark-python:
     name: Run Python benchmarks
-    runs-on: ubuntu-latest
+    # Same dedicated runner as the Rust job — keeps Python baselines comparable.
+    runs-on: ubuntu-latest-8-cores
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
