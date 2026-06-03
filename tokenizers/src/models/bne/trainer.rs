@@ -619,8 +619,8 @@ impl BneTrainer {
                 //println!("Invalid top: ngram: {:?}", token_vec);
                 queue.push(top);
                 continue;
-            } else {
             }
+            
             // Stop if top count scaled is too small (does not exceed min scale frequency)
             if top.count < 1 || self.min_scale_frequency > top.count * (top.length - 1) {
                 break;

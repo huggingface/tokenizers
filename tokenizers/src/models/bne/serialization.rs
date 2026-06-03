@@ -36,7 +36,7 @@ impl Serialize for BNE {
                 ngram
                     .ids
                     .iter()
-                    .map(|id| self.vocab_r[&id].clone())
+                    .map(|id| self.vocab_r[id].clone())
                     .collect::<Vec<String>>()
             })
             .collect::<Vec<_>>();

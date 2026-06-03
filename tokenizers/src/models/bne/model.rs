@@ -183,9 +183,8 @@ impl BneBuilder {
                 }
                 // remove continuing subword prefix
                 let mut token_vec = vec.clone();
-                for i in 1..token_vec.len() {
-                    let part_b = token_vec[i].clone();
-                    token_vec[i] = part_b[prefix_len..].to_string();
+                for part_b in token_vec.iter_mut().skip(1) {
+                    *part_b = part_b[prefix_len..].to_string();
                 }
                 // create new token
                 let new_token = token_vec.join("");
@@ -193,7 +192,7 @@ impl BneBuilder {
                 let new_id = vocab
                     .get(&new_token)
                     .ok_or(Error::MergeTokenOutOfVocabulary(new_token))?;
-                Ok((Ngram { ids: ids }, (i as u32, *new_id)))
+                Ok((Ngram { ids }, (i as u32, *new_id)))
             })
             .collect::<Result<MergeMap>>()?;
 
@@ -579,7 +578,7 @@ impl Model for BNE {
                         ngram
                             .ids
                             .iter()
-                            .map(|id| self.vocab_r[&id].clone())
+                            .map(|id| self.vocab_r[id].clone())
                             .collect::<Vec<String>>()
                             .join(" ")
                     )

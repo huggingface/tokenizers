@@ -3,7 +3,6 @@ use ahash::AHashMap;
 use dary_heap::QuaternaryHeap;
 use rand::{rng, Rng};
 use std::cmp::Ordering;
-use std::usize;
 
 #[derive(Debug, Eq)]
 struct Merge {
@@ -142,8 +141,8 @@ impl Word {
             let mut length: usize = 0;
 
             if matching {
-                for j in 0..c.len() {
-                    matching &= c[j] == self.symbols[i + j].c;
+                for (j, &c_j) in c.iter().enumerate() {
+                    matching &= c_j == self.symbols[i + j].c;
                     length += self.symbols[i + j].len;
                 }
             }
@@ -173,28 +172,26 @@ impl Word {
                             .fold(0, |acc, sym| acc + sym.len);
                         if ngram_length <= max_length
                             && end_index + 1 - start_index <= max_ngram_length
-                        {
-                            if start_index != i || end_index - start_index + 1 != c.len() {
-                                // reuse ngrams
-                                let ngram = Ngram {
-                                    ids: self.symbols[start_index..end_index + 1]
-                                        .iter()
-                                        .map(|elem| elem.c)
-                                        .collect(),
-                                };
-                                let pos = changes_ngrams.iter().position(|n| *n == ngram);
-                                if pos.is_some() {
-                                    changes_vals[pos.unwrap()] += -1
-                                } else {
-                                    changes_ngrams.push(ngram);
-                                    changes_vals.push(-1);
-                                }
-                                /*changes.push(
-                                    (Ngram {
-                                        ids:self.symbols[start_index..end_index+1].iter().map(|elem| elem.c).collect()
-                                    }, -1)
-                                );*/
+                            && (start_index != i || end_index - start_index + 1 != c.len()) {
+                            // reuse ngrams
+                            let ngram = Ngram {
+                                ids: self.symbols[start_index..end_index + 1]
+                                    .iter()
+                                    .map(|elem| elem.c)
+                                    .collect(),
+                            };
+                            let pos = changes_ngrams.iter().position(|n| *n == ngram);
+                            if let Some(pos_unwrap) = pos {
+                                changes_vals[pos_unwrap] += -1
+                            } else {
+                                changes_ngrams.push(ngram);
+                                changes_vals.push(-1);
                             }
+                            /*changes.push(
+                                (Ngram {
+                                    ids:self.symbols[start_index..end_index+1].iter().map(|elem| elem.c).collect()
+                                }, -1)
+                            );*/
                         }
                     }
                 }
@@ -223,8 +220,8 @@ impl Word {
                                     .collect(),
                             };
                             let pos = changes_ngrams.iter().position(|n| *n == ngram);
-                            if pos.is_some() {
-                                changes_vals[pos.unwrap()] += 1
+                            if let Some(pos_unwrap) = pos {
+                                changes_vals[pos_unwrap] += 1
                             } else {
                                 changes_ngrams.push(ngram);
                                 changes_vals.push(1);
@@ -243,7 +240,7 @@ impl Word {
         }
         changes_ngrams
             .into_iter()
-            .zip(changes_vals.into_iter())
+            .zip(changes_vals)
             .filter(|(_, val)| *val != 0)
             .collect()
         //changes
@@ -306,8 +303,8 @@ impl Word {
 
                 // Update Ngram Counts
                 let pos = changes_ngrams.iter().position(|n| *n == ngram);
-                if pos.is_some() {
-                    changes_vals[pos.unwrap()] += -1
+                if let Some(pos_unwrap) = pos {
+                    changes_vals[pos_unwrap] += -1
                 } else {
                     changes_ngrams.push(ngram);
                     changes_vals.push(-1);
@@ -326,8 +323,8 @@ impl Word {
             let mut length: usize = 0;
 
             if matching {
-                for j in 0..c.len() {
-                    matching &= c[j] == self.symbols[i + j].c;
+                for (j, &c_j) in c.iter().enumerate() {
+                    matching &= c_j == self.symbols[i + j].c;
                     length += self.symbols[i + j].len;
                 }
             }
@@ -387,8 +384,8 @@ impl Word {
 
                 // Update Ngram Counts
                 let pos = changes_ngrams.iter().position(|n| *n == ngram);
-                if pos.is_some() {
-                    changes_vals[pos.unwrap()] += 1
+                if let Some(pos_unwrap) = pos {
+                    changes_vals[pos_unwrap] += 1
                 } else {
                     changes_ngrams.push(ngram);
                     changes_vals.push(1);
@@ -397,7 +394,7 @@ impl Word {
         }
         changes_ngrams
             .into_iter()
-            .zip(changes_vals.into_iter())
+            .zip(changes_vals)
             .filter(|(_, val)| *val != 0)
             .collect()
         //changes
@@ -547,7 +544,7 @@ impl Word {
                         }
 
                         let length = ids.len();
-                        let new_ngram = Ngram { ids: ids };
+                        let new_ngram = Ngram { ids };
 
                         if length >= 2 {
                             if let Some((rank, new_id)) = merges.get(&new_ngram) {
