@@ -407,6 +407,12 @@ impl Word {
         if self.symbols.len() < 2 {
             return;
         }
+        let max_ngram_length: usize;
+        if self.symbols.len() > 200 {
+            max_ngram_length = 50
+        } else {
+            max_ngram_length = self.symbols.len()
+        }
 
         let mut queue =
             QuaternaryHeap::with_capacity(self.symbols.len() * (self.symbols.len() - 1) / 2);
