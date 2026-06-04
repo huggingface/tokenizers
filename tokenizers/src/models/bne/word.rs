@@ -413,7 +413,7 @@ impl Word {
         let mut skip = Vec::with_capacity(queue.len());
 
         // extend queue with all ngram sizes
-        for i in 2..self.symbols.len() + 1 {
+        for i in 2..=max_ngram_length {
             queue.extend(
                 self.symbols
                     .windows(i)
