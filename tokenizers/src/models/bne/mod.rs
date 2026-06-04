@@ -9,6 +9,7 @@ pub mod trainer;
 mod word;
 
 //TODO: Change to n-gram (maybe, pair of start + length)
+#[allow(clippy::derived_hash_with_manual_eq)]
 #[derive(Debug, Eq, Hash, Clone)]
 pub struct Ngram {
     ids: Vec<u32>,

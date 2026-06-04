@@ -172,7 +172,8 @@ impl Word {
                             .fold(0, |acc, sym| acc + sym.len);
                         if ngram_length <= max_length
                             && end_index + 1 - start_index <= max_ngram_length
-                            && (start_index != i || end_index - start_index + 1 != c.len()) {
+                            && (start_index != i || end_index - start_index + 1 != c.len())
+                        {
                             // reuse ngrams
                             let ngram = Ngram {
                                 ids: self.symbols[start_index..end_index + 1]

@@ -620,7 +620,7 @@ impl BneTrainer {
                 queue.push(top);
                 continue;
             }
-            
+
             // Stop if top count scaled is too small (does not exceed min scale frequency)
             if top.count < 1 || self.min_scale_frequency > top.count * (top.length - 1) {
                 break;
@@ -644,11 +644,11 @@ impl BneTrainer {
             // Build new token
             // Remove continuing subword prefix from characters/tokens when stored as new token
             if let Some(prefix) = &self.continuing_subword_prefix {
-                for i in 1..token_vec.len() {
-                    let part_b = token_vec[i].clone();
+                for entry in token_vec.iter_mut().skip(1) {
+                    let part_b = entry.clone();
                     if part_b.starts_with(prefix) {
                         let prefix_byte_len = prefix.chars().map(|c| c.len_utf8()).sum();
-                        token_vec[i] = CompactString::from(&part_b[prefix_byte_len..].to_string());
+                        *entry = CompactString::from(&part_b[prefix_byte_len..].to_string());
                     }
                 }
             }
