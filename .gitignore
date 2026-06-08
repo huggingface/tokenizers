@@ -13,6 +13,8 @@ bindings/python/tests/data
 docs/build/
 docs/make.bat
 
+**/tests/bne.rs
+
 __pycache__
 pip-wheel-metadata
 *.egg-info

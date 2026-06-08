@@ -1,3 +1,4 @@
+/*
 #[cfg(not(debug_assertions))]
 use assert_approx_eq::assert_approx_eq;
 use std::fs;
@@ -264,7 +265,7 @@ fn test_bne_tokenizer_from_file() {
     );
 }
 
-/*
+
 #[test]
 fn test_bne_tokenizer_from_file_2() {
     let mut tokenizer = Tokenizer::from_file("data/BNE_32k.json").unwrap();

@@ -9,8 +9,8 @@ use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
 use serde::{Deserialize, Serialize};
-use tk::models::bpe::{BpeBuilder, Merges as MergesBPE, BPE};
 use tk::models::bne::{BneBuilder, Merges as MergesBNE, BNE};
+use tk::models::bpe::{BpeBuilder, Merges as MergesBPE, BPE};
 use tk::models::unigram::Unigram;
 use tk::models::wordlevel::WordLevel;
 use tk::models::wordpiece::{WordPiece, WordPieceBuilder};
@@ -1323,9 +1323,9 @@ impl PyUnigram {
 #[pymodule(gil_used = false)]
 pub mod models {
     #[pymodule_export]
-    pub use super::PyBPE;
-    #[pymodule_export]
     pub use super::PyBNE;
+    #[pymodule_export]
+    pub use super::PyBPE;
     #[pymodule_export]
     pub use super::PyModel;
     #[pymodule_export]

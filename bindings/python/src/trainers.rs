@@ -433,7 +433,7 @@ impl PyBpeTrainer {
 ///     min_frequency (:obj:`int`, `optional`):
 ///         The minimum frequency an Ngram should have in order to be merged.
 ///         This does not guarantee a termination criterion for training.
-/// 
+///
 ///     min_scale_frequency (:obj:`int`, `optional`):
 ///         The minimum scaled frequency an Ngram should have in order to be merged.
 ///         This guarantees a termination criterion for training.
@@ -1235,9 +1235,9 @@ impl PyUnigramTrainer {
 #[pymodule(gil_used = false)]
 pub mod trainers {
     #[pymodule_export]
-    pub use super::PyBpeTrainer;
-    #[pymodule_export]
     pub use super::PyBneTrainer;
+    #[pymodule_export]
+    pub use super::PyBpeTrainer;
     #[pymodule_export]
     pub use super::PyTrainer;
     #[pymodule_export]
