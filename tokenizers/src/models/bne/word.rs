@@ -2,7 +2,7 @@ use super::Ngram;
 use ahash::AHashMap;
 use dary_heap::QuaternaryHeap;
 use rand::{rng, Rng};
-use std::cmp::Ordering;
+use std::cmp::{min, Ordering};
 
 #[derive(Debug, Eq)]
 struct Merge {
@@ -407,12 +407,11 @@ impl Word {
         if self.symbols.len() < 2 {
             return;
         }
-        let max_ngram_length: usize;
-        if self.symbols.len() > 200 {
-            max_ngram_length = 50
+        let max_ngram_length = if self.symbols.len() > 200 {
+            50
         } else {
-            max_ngram_length = self.symbols.len()
-        }
+            self.symbols.len()
+        };
 
         let mut queue =
             QuaternaryHeap::with_capacity(self.symbols.len() * (self.symbols.len() - 1) / 2);
@@ -526,7 +525,9 @@ impl Word {
                 }
                 // Insert Ngrams formed from new symbol
                 let mut first_symbol_steps = 0;
-                while first_symbol_index <= top.pos && first_symbol_steps < self.symbols.len() {
+                while first_symbol_index <= top.pos
+                    && first_symbol_steps < min(self.symbols.len(), max_ngram_length)
+                {
                     first_symbol_steps += 1;
 
                     let mut last_symbol_index = top.pos;
