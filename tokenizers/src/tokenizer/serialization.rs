@@ -150,22 +150,21 @@ where
             .build()
             .map_err(|e| V::Error::custom(e.to_string()))?;
 
-        // We take care of deserializing the added_tokens (instead of `AddedVocabulary` directly
-        // because it let us check that associated IDs are still good, and warn the user otherwise
-        for token in &tokens {
-            // Warn the user if the id is different than expected
-            let received_id = tokenizer.token_to_id(&token.token.content);
-            if let Some(rid) = received_id {
-                if rid != token.id {
+        // Single-pass: warn on ID mismatches, then add all tokens.
+        // `add_tokens` computes normalization internally for tokens with `normalized = true`.
+        for t in &tokens {
+            if let Some(rid) = tokenizer.token_to_id(&t.token.content) {
+                if rid != t.id {
                     warn!(
                         "Warning: Token '{}' was expected to have ID '{}' but was given ID '{}'",
-                        token.token.content, token.id, rid
+                        t.token.content, t.id, rid
                     );
                 }
             }
         }
-        let added_tokens: Vec<_> = tokens.into_iter().map(|token| token.token).collect();
-        tokenizer.add_tokens(&added_tokens[..]);
+        tokenizer
+            .add_tokens(tokens.into_iter().map(|t| t.token))
+            .map_err(|e| V::Error::custom(e.to_string()))?;
 
         Ok(tokenizer)
     }

@@ -4,12 +4,13 @@ import concurrent.futures
 import pytest
 import numpy as np
 import asyncio
-from tokenizers import AddedToken, Encoding, Tokenizer
+from tokenizers import AddedToken, Encoding, Tokenizer, decoders
 from tokenizers.implementations import BertWordPieceTokenizer
 from tokenizers.models import BPE, Model, Unigram
 from tokenizers.pre_tokenizers import ByteLevel, Metaspace
 from tokenizers.processors import RobertaProcessing, TemplateProcessing
 from tokenizers.normalizers import Strip, Lowercase, Sequence
+from tokenizers.normalizers import ByteLevel as NormalizerByteLevel
 from tokenizers.decoders import ByteFallback, DecodeStream, Metaspace as DecoderMetaspace
 import time
 
@@ -109,6 +110,43 @@ class TestTokenizer:
         assert added == 2
         assert tokens[0].normalized == True
         assert tokens[1].normalized == False
+
+    def test_add_tokens_with_normalizer(self):
+        tokenizer = Tokenizer(BPE())
+        tokenizer.normalizer = NormalizerByteLevel()
+        tokenizer.decoder = decoders.ByteLevel()
+
+        new_tokens = [AddedToken("Začnimo", normalized=False, special=True), AddedToken("kuća"), AddedToken("međa")]
+        tokenizer.add_tokens(new_tokens)
+        enc = tokenizer.encode(new_tokens[0].content + new_tokens[1].content + " " + new_tokens[2].content)
+        assert tokenizer.decode(enc.ids, False) == "Za\rnimokućameđa"
+
+        # Original content must be preserved in the decoder map regardless of normalization
+        decoder_map = tokenizer.get_added_tokens_decoder()
+        assert decoder_map[enc.ids[0]].content == "Začnimo"
+        assert decoder_map[enc.ids[1]].content == "kuća"
+        assert decoder_map[enc.ids[2]].content == "međa"
+
+    def test_normalizer_change_refreshes_added_tokens(self):
+        """Changing tokenizer.normalizer must re-normalize added tokens and rebuild the trie."""
+        tokenizer = Tokenizer(BPE())
+        tokenizer.decoder = decoders.ByteLevel()
+
+        # Add tokens *before* setting the normalizer — they should be re-processed
+        new_tokens = [AddedToken("kuća"), AddedToken("međa")]
+        tokenizer.add_tokens(new_tokens)
+
+        # Now set the normalizer: refresh must happen automatically
+        tokenizer.normalizer = NormalizerByteLevel()
+
+        enc = tokenizer.encode("kuća međa")
+        # Both tokens must be found and decode back to their original form
+        assert tokenizer.decode(enc.ids, False) == "kućameđa"
+
+        # Unsetting the normalizer must also refresh (no normalization applied to the added token)
+        tokenizer.normalizer = None
+        enc2 = tokenizer.encode("kuća međa")
+        assert tokenizer.decode(enc2.ids, False) == "ku\x07ame\x11a"
 
     def test_add_special_tokens(self):
         tokenizer = Tokenizer(BPE())

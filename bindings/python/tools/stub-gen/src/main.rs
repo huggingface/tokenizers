@@ -1,5 +1,6 @@
 use pyo3::prelude::*;
 use pyo3::types::PyList;
+use pyo3_introspection::model::{Class, Module};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -140,6 +141,16 @@ fn generate_stubs(cdylib: &Path, out_dir: &Path) -> Result<(), Box<dyn std::erro
         let main_module_name = "tokenizers";
         let python_module = pyo3_introspection::introspect_cdylib(&cdylib, main_module_name)
             .unwrap_or_else(|_| panic!("Failed introspection of {}", main_module_name));
+
+        // Sanity check: if docstrings are missing the patched pyo3 in
+        // .cargo/config.toml didn't actually apply to the cdylib build (most
+        // common cause: the rev pinned in tools/stub-gen/Cargo.toml and the
+        // version requirement in bindings/python/Cargo.toml have drifted, so
+        // cargo silently ignores `[patch.crates-io]`). Check that at least
+        // one well-known class still carries its docstring before writing
+        // out otherwise-empty stubs.
+        assert_introspection_has_docstrings(&python_module);
+
         let type_stubs = pyo3_introspection::module_stub_files(&python_module);
 
         for (rel_path, contents) in type_stubs {
@@ -156,6 +167,72 @@ fn generate_stubs(cdylib: &Path, out_dir: &Path) -> Result<(), Box<dyn std::erro
     })?;
 
     Ok(())
+}
+
+/// Walk the introspected module tree and count classes, functions, and
+/// attributes that carry a docstring. Returns `(with_docstring, total)`.
+fn count_docstrings(module: &Module) -> (usize, usize) {
+    let (mut with_doc, mut total) = (0, 0);
+    for f in &module.functions {
+        total += 1;
+        if f.docstring.is_some() {
+            with_doc += 1;
+        }
+    }
+    for a in &module.attributes {
+        total += 1;
+        if a.docstring.is_some() {
+            with_doc += 1;
+        }
+    }
+    fn walk_class(c: &Class, with_doc: &mut usize, total: &mut usize) {
+        *total += 1;
+        if c.docstring.is_some() {
+            *with_doc += 1;
+        }
+        for m in &c.methods {
+            *total += 1;
+            if m.docstring.is_some() {
+                *with_doc += 1;
+            }
+        }
+        for inner in &c.inner_classes {
+            walk_class(inner, with_doc, total);
+        }
+    }
+    for c in &module.classes {
+        walk_class(c, &mut with_doc, &mut total);
+    }
+    for sub in &module.modules {
+        let (sw, st) = count_docstrings(sub);
+        with_doc += sw;
+        total += st;
+    }
+    (with_doc, total)
+}
+
+/// Abort if the introspected module tree is missing docstrings — usually
+/// caused by `[patch.crates-io]` in `.cargo/config.toml` not actually
+/// applying to the cdylib build. Better to fail loudly here than silently
+/// strip every docstring from the published stubs.
+fn assert_introspection_has_docstrings(module: &Module) {
+    let (with_doc, total) = count_docstrings(module);
+    println!(
+        "Docstring coverage: {}/{} items carry a docstring",
+        with_doc, total
+    );
+    assert!(
+        with_doc > 0,
+        "stub-gen produced 0/{} docstrings — pyo3-introspection is reading \
+         the cdylib but every docstring slot is empty. Most likely the \
+         `[patch.crates-io]` in `.cargo/config.toml` (injected by `make \
+         style`) did not actually apply: the rev pinned in \
+         tools/stub-gen/Cargo.toml must match the version requirement in \
+         bindings/python/Cargo.toml. Check `cargo build` output for \
+         `warning: patch \\`pyo3 vX.Y.Z\\` was not used in the crate graph` \
+         and align the versions before re-running.",
+        total,
+    );
 }
 
 fn build_extension(manifest_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {

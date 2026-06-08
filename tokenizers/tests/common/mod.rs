@@ -46,6 +46,7 @@ pub fn get_bert() -> Tokenizer {
     let cls = tokenizer.get_model().token_to_id("[CLS]").unwrap();
     tokenizer
         .with_normalizer(Some(BertNormalizer::default()))
+        .unwrap()
         .with_pre_tokenizer(Some(BertPreTokenizer))
         .with_decoder(Some(WordPieceDecoder::default()))
         .with_post_processor(Some(BertProcessing::new(

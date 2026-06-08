@@ -15,10 +15,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
         with:
           components: rustfmt, clippy
 
@@ -26,13 +26,13 @@ jobs:
       - run: sudo chown -R $(whoami):$(id -ng) ~/.cargo/
 
       - name: Cache Cargo Registry
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
         with:
           path: ~/.cargo/registry
           key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Install Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
         with:
           node-version: latest
       - name: Install dependencies
@@ -44,13 +44,13 @@ jobs:
         run: yarn build
 
       - name: Lint Rust formatting
-        uses: actions-rs/cargo@v1
+        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505  # v1
         with:
           command: fmt
           args: --manifest-path ./bindings/node/Cargo.toml -- --check
 
       - name: Lint Rust with Clippy
-        uses: actions-rs/cargo@v1
+        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505  # v1
         with:
           command: clippy
           args: --manifest-path ./bindings/node/Cargo.toml --all-targets --all-features -- -D warnings
