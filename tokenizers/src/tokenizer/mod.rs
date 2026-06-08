@@ -15,6 +15,11 @@ use std::{
     io::{prelude::*, BufReader},
     ops::{Deref, DerefMut},
     path::{Path, PathBuf},
+    sync::{
+        atomic::{AtomicU64, Ordering as AtomicOrdering},
+        Mutex,
+    },
+    time::{Duration, Instant},
 };
 
 use serde::de::DeserializeOwned;
@@ -1399,6 +1404,13 @@ where
         }
 
         let max_read = 1_000_000;
+        let progress_log_interval = std::env::var("TOKENIZERS_PROGRESS_LOG_INTERVAL_SECONDS")
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+            .map(Duration::from_secs);
+        let progress_bytes = AtomicU64::new(0);
+        let progress_start = Instant::now();
+        let last_progress_log = Mutex::new(Instant::now());
 
         ResultShunt::process(
             files.into_iter().flat_map(|filename| {
@@ -1432,6 +1444,48 @@ where
                     sequences.inspect(|s| {
                         if let Some(progress) = &progress {
                             progress.inc(s.len() as u64)
+                        }
+                        if let Some(interval) = progress_log_interval {
+                            let processed =
+                                progress_bytes.fetch_add(s.len() as u64, AtomicOrdering::Relaxed)
+                                    + s.len() as u64;
+                            if let Ok(mut last_log) = last_progress_log.lock() {
+                                let now = Instant::now();
+                                if now.duration_since(*last_log) >= interval {
+                                    let elapsed = progress_start.elapsed().as_secs_f64();
+                                    let mb_per_sec = if elapsed > 0.0 {
+                                        processed as f64 / 1_000_000.0 / elapsed
+                                    } else {
+                                        0.0
+                                    };
+                                    let pct = if len > 0 {
+                                        processed as f64 * 100.0 / len as f64
+                                    } else {
+                                        100.0
+                                    };
+                                    let remaining = len.saturating_sub(processed);
+                                    let eta_seconds = if mb_per_sec > 0.0 {
+                                        remaining as f64 / 1_000_000.0 / mb_per_sec
+                                    } else {
+                                        f64::INFINITY
+                                    };
+                                    let eta_text = if eta_seconds.is_finite() {
+                                        format!("{:.1}", eta_seconds)
+                                    } else {
+                                        "unknown".to_string()
+                                    };
+                                    eprintln!(
+                                        "[tokenizers progress] preprocess_files bytes_done={} bytes_total={} pct={:.2} mb_per_s={:.2} eta_s={} elapsed_s={:.1}",
+                                        processed,
+                                        len,
+                                        pct,
+                                        mb_per_sec,
+                                        eta_text,
+                                        elapsed,
+                                    );
+                                    *last_log = now;
+                                }
+                            }
                         }
                     }),
                     |seq| {
