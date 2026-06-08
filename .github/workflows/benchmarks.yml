@@ -34,11 +34,12 @@ env:
 jobs:
   benchmark:
     name: Run Rust benchmarks
-    # Pinned to a larger, dedicated GitHub-hosted runner for stable timings.
+    # Pinned to a larger, dedicated runner for stable timings.
     # The shared `ubuntu-latest` (2 vCPU) produces noisy, non-comparable baselines.
-    # NOTE: `ubuntu-latest-8-cores` must be provisioned in the org's
-    # Settings → Actions → Runners. Adjust the label if yours differs.
-    runs-on: ubuntu-latest-8-cores
+    # Targets the org's self-hosted runner group (8+ vCPU AWS runners) by group
+    # name rather than a label — the individual runners are ephemeral/autoscaled.
+    runs-on:
+      group: aws-general-8-plus
     defaults:
       run:
         working-directory: tokenizers
@@ -223,8 +224,9 @@ jobs:
 
   benchmark-python:
     name: Run Python benchmarks
-    # Same dedicated runner as the Rust job — keeps Python baselines comparable.
-    runs-on: ubuntu-latest-8-cores
+    # Same dedicated runner group as the Rust job — keeps Python baselines comparable.
+    runs-on:
+      group: aws-general-8-plus
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
