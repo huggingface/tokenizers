@@ -23,7 +23,7 @@ use crate::pre_tokenizers::sequence::Sequence;
 use crate::pre_tokenizers::split::Split;
 use crate::pre_tokenizers::unicode_scripts::UnicodeScripts;
 use crate::pre_tokenizers::whitespace::{Whitespace, WhitespaceSplit};
-use crate::{PreTokenizedString, PreTokenizer};
+use crate::{FastPreTokenizedString, PreTokenizedString, PreTokenizer};
 
 #[derive(Serialize, Clone, Debug, PartialEq)]
 #[serde(untagged)]
@@ -57,6 +57,40 @@ impl PreTokenizer for PreTokenizerWrapper {
             Self::Digits(wspt) => wspt.pre_tokenize(normalized),
             Self::UnicodeScripts(us) => us.pre_tokenize(normalized),
             Self::FixedLength(fl) => fl.pre_tokenize(normalized),
+        }
+    }
+
+    fn supports_pre_tokenize_fast(&self) -> bool {
+        match self {
+            Self::BertPreTokenizer(bpt) => bpt.supports_pre_tokenize_fast(),
+            Self::ByteLevel(bpt) => bpt.supports_pre_tokenize_fast(),
+            Self::Delimiter(dpt) => dpt.supports_pre_tokenize_fast(),
+            Self::Metaspace(mspt) => mspt.supports_pre_tokenize_fast(),
+            Self::Whitespace(wspt) => wspt.supports_pre_tokenize_fast(),
+            Self::Punctuation(tok) => tok.supports_pre_tokenize_fast(),
+            Self::Sequence(tok) => tok.supports_pre_tokenize_fast(),
+            Self::Split(tok) => tok.supports_pre_tokenize_fast(),
+            Self::WhitespaceSplit(wspt) => wspt.supports_pre_tokenize_fast(),
+            Self::Digits(wspt) => wspt.supports_pre_tokenize_fast(),
+            Self::UnicodeScripts(us) => us.supports_pre_tokenize_fast(),
+            Self::FixedLength(fl) => fl.supports_pre_tokenize_fast(),
+        }
+    }
+
+    fn pre_tokenize_fast(&self, pretokenized: &mut FastPreTokenizedString) -> crate::Result<()> {
+        match self {
+            Self::BertPreTokenizer(bpt) => bpt.pre_tokenize_fast(pretokenized),
+            Self::ByteLevel(bpt) => bpt.pre_tokenize_fast(pretokenized),
+            Self::Delimiter(dpt) => dpt.pre_tokenize_fast(pretokenized),
+            Self::Metaspace(mspt) => mspt.pre_tokenize_fast(pretokenized),
+            Self::Whitespace(wspt) => wspt.pre_tokenize_fast(pretokenized),
+            Self::Punctuation(tok) => tok.pre_tokenize_fast(pretokenized),
+            Self::Sequence(tok) => tok.pre_tokenize_fast(pretokenized),
+            Self::Split(tok) => tok.pre_tokenize_fast(pretokenized),
+            Self::WhitespaceSplit(wspt) => wspt.pre_tokenize_fast(pretokenized),
+            Self::Digits(wspt) => wspt.pre_tokenize_fast(pretokenized),
+            Self::UnicodeScripts(us) => us.pre_tokenize_fast(pretokenized),
+            Self::FixedLength(fl) => fl.pre_tokenize_fast(pretokenized),
         }
     }
 }

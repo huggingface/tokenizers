@@ -1,5 +1,5 @@
 use crate::pre_tokenizers::PreTokenizerWrapper;
-use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result};
+use crate::tokenizer::{FastPreTokenizedString, PreTokenizedString, PreTokenizer, Result};
 use crate::utils::macro_rules_attribute;
 use serde::{Deserialize, Serialize};
 
@@ -40,6 +40,19 @@ impl PreTokenizer for Sequence {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
         for pretokenizer in &self.pretokenizers {
             pretokenizer.pre_tokenize(pretokenized)?;
+        }
+        Ok(())
+    }
+
+    fn supports_pre_tokenize_fast(&self) -> bool {
+        self.pretokenizers
+            .iter()
+            .all(|pretokenizer| pretokenizer.supports_pre_tokenize_fast())
+    }
+
+    fn pre_tokenize_fast(&self, pretokenized: &mut FastPreTokenizedString) -> Result<()> {
+        for pretokenizer in &self.pretokenizers {
+            pretokenizer.pre_tokenize_fast(pretokenized)?;
         }
         Ok(())
     }

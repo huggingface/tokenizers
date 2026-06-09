@@ -2,6 +2,7 @@ use crate::{
     normalizer::Range, Encoding, NormalizedString, OffsetReferential, Offsets, Result, Token,
     TruncationDirection,
 };
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 /// Various possible types of offsets
@@ -42,6 +43,73 @@ impl From<(NormalizedString, Option<Vec<Token>>)> for Split {
             normalized: f.0,
             tokens: f.1,
         }
+    }
+}
+
+/// Offset-free pre-tokenization state, used by `encode_fast` with
+/// pre-tokenizers that support it (see `PreTokenizer::pre_tokenize_fast`).
+///
+/// Pre-tokens are byte ranges into a single shared buffer: no
+/// `NormalizedString`, no alignment bookkeeping. Pre-tokenizers either
+/// re-slice the existing buffer (`refine`) or rewrite it (`set`).
+pub struct FastPreTokenizedString<'s> {
+    buffer: Cow<'s, str>,
+    splits: Vec<std::ops::Range<usize>>,
+}
+
+impl<'s> FastPreTokenizedString<'s> {
+    // we do want a single-element Vec containing the whole-buffer range
+    #[allow(clippy::single_range_in_vec_init)]
+    pub fn new(s: &'s str) -> Self {
+        Self {
+            buffer: Cow::Borrowed(s),
+            splits: vec![0..s.len()],
+        }
+    }
+
+    /// The current pre-tokens, as slices of the shared buffer.
+    pub fn pieces(&self) -> impl Iterator<Item = &str> {
+        self.splits
+            .iter()
+            .map(move |range| &self.buffer[range.clone()])
+    }
+
+    pub fn num_pieces(&self) -> usize {
+        self.splits.len()
+    }
+
+    pub fn buffer_len(&self) -> usize {
+        self.buffer.len()
+    }
+
+    /// Re-slice every piece in place, leaving the buffer untouched.
+    ///
+    /// `split_fn` receives each piece and appends sub-ranges *relative to
+    /// that piece* into the provided `Vec`. Empty sub-ranges are discarded.
+    pub fn refine<F>(&mut self, mut split_fn: F) -> Result<()>
+    where
+        F: FnMut(&str, &mut Vec<std::ops::Range<usize>>) -> Result<()>,
+    {
+        let mut new_splits = Vec::with_capacity(self.splits.len());
+        let mut sub = Vec::new();
+        for range in &self.splits {
+            sub.clear();
+            split_fn(&self.buffer[range.clone()], &mut sub)?;
+            new_splits.extend(
+                sub.drain(..)
+                    .filter(|r| !r.is_empty())
+                    .map(|r| range.start + r.start..range.start + r.end),
+            );
+        }
+        self.splits = new_splits;
+        Ok(())
+    }
+
+    /// Replace the buffer and pieces wholesale, for pre-tokenizers that
+    /// transform the content itself.
+    pub fn set(&mut self, buffer: String, splits: Vec<std::ops::Range<usize>>) {
+        self.buffer = Cow::Owned(buffer);
+        self.splits = splits;
     }
 }
 
@@ -260,6 +328,14 @@ impl PreTokenizedString {
                 })
                 .collect())
         }
+    }
+
+    /// The splits' normalized text along with any pre-attached tokens
+    /// (added tokens), without any offset information.
+    pub(crate) fn splits_with_tokens(&self) -> impl Iterator<Item = (&str, Option<&[Token]>)> {
+        self.splits
+            .iter()
+            .map(|split| (split.normalized.get(), split.tokens.as_deref()))
     }
 
     /// Returns a list of splits, each of them being a slice of the normalized

@@ -1,8 +1,11 @@
 use crate::utils::SysRegex;
 use serde::{Deserialize, Deserializer, Serialize};
 
+use crate::tokenizer::normalizer::apply_split_delimiter_behavior;
+use crate::tokenizer::pattern::Pattern;
 use crate::tokenizer::{
-    pattern::Invert, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior,
+    pattern::Invert, FastPreTokenizedString, PreTokenizedString, PreTokenizer, Result,
+    SplitDelimiterBehavior,
 };
 
 /// Represents the different patterns that `Split` can use
@@ -100,6 +103,26 @@ impl PreTokenizer for Split {
         } else {
             pretokenized.split(|_, normalized| normalized.split(&self.regex, self.behavior))
         }
+    }
+
+    fn supports_pre_tokenize_fast(&self) -> bool {
+        true
+    }
+
+    fn pre_tokenize_fast(&self, pretokenized: &mut FastPreTokenizedString) -> Result<()> {
+        pretokenized.refine(|piece, out| {
+            let matches = if self.invert {
+                Invert(&self.regex).find_matches(piece)?
+            } else {
+                (&self.regex).find_matches(piece)?
+            };
+            out.extend(
+                apply_split_delimiter_behavior(matches, self.behavior)
+                    .into_iter()
+                    .filter_map(|((start, end), remove)| (!remove).then_some(start..end)),
+            );
+            Ok(())
+        })
     }
 }
 

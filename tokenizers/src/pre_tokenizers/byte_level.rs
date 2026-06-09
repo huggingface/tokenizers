@@ -4,9 +4,10 @@ use std::sync::LazyLock;
 use crate::utils::SysRegex;
 use serde::{Deserialize, Serialize};
 
+use crate::tokenizer::pattern::Pattern;
 use crate::tokenizer::{
-    Decoder, Encoding, PostProcessor, PreTokenizedString, PreTokenizer, Result,
-    SplitDelimiterBehavior,
+    Decoder, Encoding, FastPreTokenizedString, PostProcessor, PreTokenizedString, PreTokenizer,
+    Result, SplitDelimiterBehavior,
 };
 use crate::utils::macro_rules_attribute;
 
@@ -47,6 +48,20 @@ static RE: LazyLock<SysRegex> = LazyLock::new(|| {
 static BYTES_CHAR: LazyLock<AHashMap<u8, char>> = LazyLock::new(bytes_char);
 static CHAR_BYTES: LazyLock<AHashMap<char, u8>> =
     LazyLock::new(|| bytes_char().into_iter().map(|(c, b)| (b, c)).collect());
+static BYTES_CHAR_TABLE: LazyLock<[char; 256]> = LazyLock::new(|| {
+    let mut table = ['\0'; 256];
+    for (b, c) in bytes_char() {
+        table[b as usize] = c;
+    }
+    table
+});
+
+fn remap_bytes_into(piece: &str, out: &mut String) {
+    let table = &*BYTES_CHAR_TABLE;
+    for b in piece.bytes() {
+        out.push(table[b as usize]);
+    }
+}
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 /// Provides all the necessary steps to handle the BPE tokenization at the byte-level. Takes care
@@ -144,6 +159,48 @@ impl PreTokenizer for ByteLevel {
             normalized.transform(transformations, 0);
             Ok(())
         })
+    }
+
+    fn supports_pre_tokenize_fast(&self) -> bool {
+        true
+    }
+
+    fn pre_tokenize_fast(&self, pretokenized: &mut FastPreTokenizedString) -> Result<()> {
+        // Every remapped byte is 1 or 2 bytes of UTF-8, plus up to 2 bytes
+        // per piece for the prepended space.
+        let mut new_buf =
+            String::with_capacity(pretokenized.buffer_len() * 2 + pretokenized.num_pieces() * 2);
+        let mut new_splits = Vec::with_capacity(pretokenized.num_pieces());
+        let mut prepended = String::new();
+        for piece in pretokenized.pieces() {
+            let piece = if self.add_prefix_space && !piece.starts_with(' ') {
+                prepended.clear();
+                prepended.push(' ');
+                prepended.push_str(piece);
+                &prepended
+            } else {
+                piece
+            };
+            if self.use_regex {
+                // `Isolated` behavior: both matches and gaps become pieces
+                for ((start, end), _) in (&*RE).find_matches(piece)? {
+                    if start == end {
+                        continue;
+                    }
+                    let from = new_buf.len();
+                    remap_bytes_into(&piece[start..end], &mut new_buf);
+                    new_splits.push(from..new_buf.len());
+                }
+            } else {
+                let from = new_buf.len();
+                remap_bytes_into(piece, &mut new_buf);
+                if new_buf.len() > from {
+                    new_splits.push(from..new_buf.len());
+                }
+            }
+        }
+        pretokenized.set(new_buf, new_splits);
+        Ok(())
     }
 }
 

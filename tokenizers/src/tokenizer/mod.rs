@@ -64,6 +64,21 @@ pub trait Normalizer: Sync {
 /// the original string.
 pub trait PreTokenizer {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()>;
+
+    /// Whether `pre_tokenize_fast` is implemented. `encode_fast` only takes
+    /// the offset-free fast path when the whole pre-tokenizer chain returns
+    /// `true`; everything else falls back to `pre_tokenize`.
+    fn supports_pre_tokenize_fast(&self) -> bool {
+        false
+    }
+
+    /// Offset-free pre-tokenization, used by `encode_fast` which discards
+    /// offsets and word ids: implementations only have to produce the same
+    /// pre-token *strings* as `pre_tokenize`, with none of the alignment
+    /// bookkeeping. Only called when `supports_pre_tokenize_fast` is `true`.
+    fn pre_tokenize_fast(&self, _pretokenized: &mut FastPreTokenizedString) -> Result<()> {
+        Err("pre_tokenize_fast is not implemented for this PreTokenizer".into())
+    }
 }
 
 /// Represents a model used during Tokenization (like BPE or Word or Unigram).
@@ -85,6 +100,16 @@ pub trait Model {
     fn save(&self, folder: &Path, prefix: Option<&str>) -> Result<Vec<PathBuf>>;
     /// Get an instance of a Trainer capable of training this Model
     fn get_trainer(&self) -> <Self as Model>::Trainer;
+
+    /// Tokenize the given sequence, appending only the token ids.
+    ///
+    /// `encode_fast` uses this entry point since it discards everything but
+    /// the ids. The default tokenizes and drops the rest; models can
+    /// override it to skip building per-token values and offsets entirely.
+    fn tokenize_ids_into(&self, sequence: &str, ids: &mut Vec<u32>) -> Result<()> {
+        ids.extend(self.tokenize(sequence)?.into_iter().map(|token| token.id));
+        Ok(())
+    }
 
     /// Tokenize every pre-token within a `PreTokenizedString` in one call.
     ///
@@ -769,6 +794,17 @@ where
             let normalized = self
                 .added_vocabulary
                 .extract_and_normalize(self.normalizer.as_ref(), subseq);
+
+            if offsets_type == OffsetType::None
+                && self.truncation.is_none()
+                && self
+                    .pre_tokenizer
+                    .as_ref()
+                    .is_none_or(|pretok| pretok.supports_pre_tokenize_fast())
+            {
+                return self.encode_ids_only(normalized);
+            }
+
             let pre_tokenized = self.do_pre_tokenize(normalized)?;
             let subseq_encoding = self.do_tokenize(
                 pre_tokenized,
@@ -802,6 +838,43 @@ where
                 .collect(),
             InputSequence::Raw(seq) => encode(false, 0, seq.as_ref()),
         }
+    }
+
+    /// Offset-free encoding: skips the `PreTokenizedString`/`NormalizedString`
+    /// alignment machinery entirely and only collects token ids. The returned
+    /// `Encoding` has the exact shape `into_encoding` produces for
+    /// `OffsetType::None`: zeroed offsets/type_ids, empty tokens, no words.
+    fn encode_ids_only(&self, pretokenized: PreTokenizedString) -> Result<Encoding> {
+        let estimate = pretokenized
+            .splits_with_tokens()
+            .map(|(piece, _)| piece.len() / 3)
+            .sum();
+        let mut ids = Vec::with_capacity(estimate);
+        for (piece, tokens) in pretokenized.splits_with_tokens() {
+            if let Some(tokens) = tokens {
+                ids.extend(tokens.iter().map(|token| token.id));
+            } else if let Some(ref pretok) = self.pre_tokenizer {
+                let mut fast = FastPreTokenizedString::new(piece);
+                pretok.pre_tokenize_fast(&mut fast)?;
+                for pre_token in fast.pieces() {
+                    self.model.tokenize_ids_into(pre_token, &mut ids)?;
+                }
+            } else {
+                self.model.tokenize_ids_into(piece, &mut ids)?;
+            }
+        }
+        let len = ids.len();
+        Ok(Encoding::new(
+            ids,
+            vec![0; len],
+            vec![String::new(); len],
+            vec![None; len],
+            vec![(0, 0); len],
+            vec![0; len],
+            vec![1; len],
+            vec![],
+            Default::default(),
+        ))
     }
 
     /// Encode the given input. This method accepts both single sequences, as well as pair

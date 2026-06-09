@@ -611,6 +611,41 @@ impl Model for BPE {
         }
     }
 
+    fn tokenize_ids_into(&self, sequence: &str, ids: &mut Vec<u32>) -> Result<()> {
+        if sequence.is_empty() {
+            return Ok(());
+        }
+        if self.dropout.is_some() && self.dropout != Some(0.0) {
+            ids.extend(self.merge_word(sequence)?.get_chars_iter());
+            return Ok(());
+        }
+        if self.ignore_merges {
+            if let Some(id) = self.vocab.get(sequence) {
+                ids.push(*id);
+                return Ok(());
+            }
+        }
+        let Some(cache) = self.cache.as_ref() else {
+            ids.extend(self.merge_word(sequence)?.get_chars_iter());
+            return Ok(());
+        };
+        let cache_id = cache.id();
+        BPE_LOCAL_CACHE.with(|cell| {
+            let mut by_bpe = cell.borrow_mut();
+            let local = by_bpe.entry(cache_id).or_default();
+            if let Some(hit) = local.get(sequence) {
+                ids.extend(hit.get_chars_iter());
+                return Ok(());
+            }
+            let word = self.merge_word(sequence)?;
+            ids.extend(word.get_chars_iter());
+            if sequence.len() < MAX_LENGTH && local.len() < cache.capacity {
+                local.insert(sequence.to_owned(), word);
+            }
+            Ok(())
+        })
+    }
+
     fn token_to_id(&self, token: &str) -> Option<u32> {
         self.vocab.get(token).copied()
     }

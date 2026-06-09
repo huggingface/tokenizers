@@ -93,6 +93,80 @@ impl std::fmt::Display for SplitDelimiterBehavior {
     }
 }
 
+/// Process pattern matches according to the selected behavior, returning
+/// `Vec<(Offsets, should_remove)>`.
+pub(crate) fn apply_split_delimiter_behavior(
+    matches: Vec<(Offsets, bool)>,
+    behavior: SplitDelimiterBehavior,
+) -> Vec<(Offsets, bool)> {
+    use SplitDelimiterBehavior::*;
+    match behavior {
+        Isolated => matches
+            .into_iter()
+            .map(|(offsets, _)| (offsets, false))
+            .collect(),
+        Removed => matches,
+        Contiguous => {
+            let mut previous_match = false;
+            matches
+                .into_iter()
+                .fold(vec![], |mut acc, (offsets, is_match)| {
+                    if is_match == previous_match {
+                        if let Some(((_, end), _)) = acc.last_mut() {
+                            *end = offsets.1;
+                        } else {
+                            acc.push((offsets, false));
+                        }
+                    } else {
+                        acc.push((offsets, false));
+                    }
+                    previous_match = is_match;
+                    acc
+                })
+        }
+        MergedWithPrevious => {
+            let mut previous_match = false;
+            matches
+                .into_iter()
+                .fold(vec![], |mut acc, (offsets, is_match)| {
+                    if is_match && !previous_match {
+                        if let Some(((_, end), _)) = acc.last_mut() {
+                            *end = offsets.1;
+                        } else {
+                            acc.push((offsets, false));
+                        }
+                    } else {
+                        acc.push((offsets, false));
+                    }
+                    previous_match = is_match;
+                    acc
+                })
+        }
+        MergedWithNext => {
+            let mut previous_match = false;
+            let mut matches =
+                matches
+                    .into_iter()
+                    .rev()
+                    .fold(vec![], |mut acc, (offsets, is_match)| {
+                        if is_match && !previous_match {
+                            if let Some(((start, _), _)) = acc.last_mut() {
+                                *start = offsets.0;
+                            } else {
+                                acc.push((offsets, false));
+                            }
+                        } else {
+                            acc.push((offsets, false));
+                        }
+                        previous_match = is_match;
+                        acc
+                    });
+            matches.reverse();
+            matches
+        }
+    }
+}
+
 /// A `NormalizedString` takes care of processing an "original" string to modify
 /// it and obtain a "normalized" string. It keeps both version of the string,
 /// alignments information between both and provides an interface to retrieve
@@ -697,74 +771,7 @@ impl NormalizedString {
         behavior: SplitDelimiterBehavior,
     ) -> Result<Vec<NormalizedString>> {
         let matches = pattern.find_matches(&self.normalized)?;
-
-        // Process the matches according to the selected behavior: Vec<(Offsets, should_remove)>
-        use SplitDelimiterBehavior::*;
-        let splits = match behavior {
-            Isolated => matches
-                .into_iter()
-                .map(|(offsets, _)| (offsets, false))
-                .collect(),
-            Removed => matches,
-            Contiguous => {
-                let mut previous_match = false;
-                matches
-                    .into_iter()
-                    .fold(vec![], |mut acc, (offsets, is_match)| {
-                        if is_match == previous_match {
-                            if let Some(((_, end), _)) = acc.last_mut() {
-                                *end = offsets.1;
-                            } else {
-                                acc.push((offsets, false));
-                            }
-                        } else {
-                            acc.push((offsets, false));
-                        }
-                        previous_match = is_match;
-                        acc
-                    })
-            }
-            MergedWithPrevious => {
-                let mut previous_match = false;
-                matches
-                    .into_iter()
-                    .fold(vec![], |mut acc, (offsets, is_match)| {
-                        if is_match && !previous_match {
-                            if let Some(((_, end), _)) = acc.last_mut() {
-                                *end = offsets.1;
-                            } else {
-                                acc.push((offsets, false));
-                            }
-                        } else {
-                            acc.push((offsets, false));
-                        }
-                        previous_match = is_match;
-                        acc
-                    })
-            }
-            MergedWithNext => {
-                let mut previous_match = false;
-                let mut matches =
-                    matches
-                        .into_iter()
-                        .rev()
-                        .fold(vec![], |mut acc, (offsets, is_match)| {
-                            if is_match && !previous_match {
-                                if let Some(((start, _), _)) = acc.last_mut() {
-                                    *start = offsets.0;
-                                } else {
-                                    acc.push((offsets, false));
-                                }
-                            } else {
-                                acc.push((offsets, false));
-                            }
-                            previous_match = is_match;
-                            acc
-                        });
-                matches.reverse();
-                matches
-            }
-        };
+        let splits = apply_split_delimiter_behavior(matches, behavior);
 
         // Then we split according to the computed splits
         Ok(splits
