@@ -1,6 +1,8 @@
 use crate::utils::SysRegex;
 use serde::{Deserialize, Deserializer, Serialize};
 
+#[cfg(feature = "logos-pretok")]
+use crate::pre_tokenizers::logos_tiktoken::{LogosCl100k, CL100K_PATTERN};
 use crate::tokenizer::{
     pattern::Invert, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior,
 };
@@ -32,6 +34,18 @@ pub struct Split {
     pub regex: SysRegex,
     pub behavior: SplitDelimiterBehavior,
     pub invert: bool,
+    /// Set at construction time when `pattern` matches a known-static
+    /// regex we have a logos FSM for. Fast path in `pre_tokenize` when
+    /// this is true. Serde-skipped because it's derived.
+    #[cfg(feature = "logos-pretok")]
+    #[serde(skip)]
+    pub(crate) logos_path: Option<KnownLogosPattern>,
+}
+
+#[cfg(feature = "logos-pretok")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum KnownLogosPattern {
+    Cl100k,
 }
 
 impl<'de> Deserialize<'de> for Split {
@@ -84,17 +98,35 @@ impl Split {
             SplitPattern::Regex(r) => SysRegex::new(r)?,
         };
 
+        #[cfg(feature = "logos-pretok")]
+        let logos_path = match &pattern {
+            SplitPattern::Regex(r) if r == CL100K_PATTERN => Some(KnownLogosPattern::Cl100k),
+            _ => None,
+        };
+
         Ok(Self {
             pattern,
             regex,
             behavior,
             invert,
+            #[cfg(feature = "logos-pretok")]
+            logos_path,
         })
     }
 }
 
 impl PreTokenizer for Split {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
+        #[cfg(feature = "logos-pretok")]
+        {
+            if !self.invert {
+                if let Some(KnownLogosPattern::Cl100k) = self.logos_path {
+                    let pat = &LogosCl100k;
+                    return pretokenized
+                        .split(|_, normalized| normalized.split(pat, self.behavior));
+                }
+            }
+        }
         if self.invert {
             pretokenized.split(|_, normalized| normalized.split(Invert(&self.regex), self.behavior))
         } else {
