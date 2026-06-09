@@ -24,12 +24,12 @@ impl Serialize for BPE {
         model.serialize_field("ignore_merges", &self.ignore_merges)?;
 
         // Then the large ones
-        let mut merges: Vec<(&Pair, &u32)> = self
+        let mut merges: Vec<(Pair, u32)> = self
             .merges
             .iter()
-            .map(|(pair, (rank, _))| (pair, rank))
+            .map(|(pair, rank, _)| (pair, rank))
             .collect();
-        merges.sort_unstable_by_key(|k| *k.1);
+        merges.sort_unstable_by_key(|k| k.1);
         let merges = merges
             .into_iter()
             .map(|(pair, _)| (self.vocab_r[&pair.0].clone(), self.vocab_r[&pair.1].clone()))
