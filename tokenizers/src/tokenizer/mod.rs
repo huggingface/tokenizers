@@ -85,6 +85,36 @@ pub trait Model {
     fn save(&self, folder: &Path, prefix: Option<&str>) -> Result<Vec<PathBuf>>;
     /// Get an instance of a Trainer capable of training this Model
     fn get_trainer(&self) -> <Self as Model>::Trainer;
+
+    /// Tokenize every pre-token within a `PreTokenizedString` in one call.
+    ///
+    /// When `truncation` is `Some((max_tokens, direction))`, the
+    /// `tokenize_with_limit` early-exit path is taken; otherwise every
+    /// pre-token is tokenized.
+    ///
+    /// The default calls `self.tokenize()` per pre-token, which is correct
+    /// for self-contained `Model` implementations.  Implementations that
+    /// wrap their inner model behind a lock (e.g. the `PyModel` and Node
+    /// `Model` bindings, both `Arc<RwLock<_>>`) can override this to
+    /// acquire the lock once for the whole sequence of pre-tokens; that
+    /// removes ~one atomic load/store pair per pre-token from the hot path
+    /// (~1 500 pre-tokens per ~10 KB document).  Both the truncated and
+    /// non-truncated paths benefit from the override because they share
+    /// this entry point.
+    fn tokenize_in_pretokenized(
+        &self,
+        pretokenized: &mut PreTokenizedString,
+        truncation: Option<(usize, TruncationDirection)>,
+    ) -> Result<()> {
+        match truncation {
+            Some((max_tokens, direction)) => pretokenized.tokenize_with_limit(
+                |normalized| self.tokenize(normalized.get()),
+                max_tokens,
+                direction,
+            ),
+            None => pretokenized.tokenize(|normalized| self.tokenize(normalized.get())),
+        }
+    }
 }
 
 /// A `PostProcessor` has the responsibility to post process an encoded output of the `Tokenizer`.
@@ -1153,20 +1183,19 @@ where
         offsets_type: OffsetType,
     ) -> Result<Encoding> {
         let mut pretokenized: PreTokenizedString = pretokenized.into();
-        match self.truncation.as_ref() {
+        let truncation = match self.truncation.as_ref() {
             Some(TruncationParams {
                 direction,
                 max_length,
                 strategy,
                 ..
-            }) if *strategy != TruncationStrategy::OnlySecond || type_id != 0 => pretokenized
-                .tokenize_with_limit(
-                    |normalized| self.model.tokenize(normalized.get()),
-                    *max_length,
-                    *direction,
-                )?,
-            _ => pretokenized.tokenize(|normalized| self.model.tokenize(normalized.get()))?,
-        }
+            }) if *strategy != TruncationStrategy::OnlySecond || type_id != 0 => {
+                Some((*max_length, *direction))
+            }
+            _ => None,
+        };
+        self.model
+            .tokenize_in_pretokenized(&mut pretokenized, truncation)?;
         pretokenized.into_encoding(word_idx, type_id, offsets_type)
     }
 }
