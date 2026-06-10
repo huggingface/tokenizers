@@ -20,7 +20,7 @@ use tk::pre_tokenizers::unicode_scripts::UnicodeScripts;
 use tk::pre_tokenizers::whitespace::{Whitespace, WhitespaceSplit};
 use tk::pre_tokenizers::PreTokenizerWrapper;
 use tk::tokenizer::Offsets;
-use tk::{PreTokenizedString, PreTokenizer};
+use tk::{FastPreTokenizedString, PreTokenizedString, PreTokenizer};
 use tokenizers as tk;
 
 use super::error::ToPyResult;
@@ -110,6 +110,14 @@ impl PyPreTokenizer {
 impl PreTokenizer for PyPreTokenizer {
     fn pre_tokenize(&self, normalized: &mut PreTokenizedString) -> tk::Result<()> {
         self.pretok.pre_tokenize(normalized)
+    }
+
+    fn supports_pre_tokenize_fast(&self) -> bool {
+        self.pretok.supports_pre_tokenize_fast()
+    }
+
+    fn pre_tokenize_fast(&self, pretokenized: &mut FastPreTokenizedString) -> tk::Result<()> {
+        self.pretok.pre_tokenize_fast(pretokenized)
     }
 }
 
@@ -1021,6 +1029,34 @@ impl PreTokenizer for PyPreTokenizerTypeWrapper {
             }),
         }
     }
+
+    fn supports_pre_tokenize_fast(&self) -> bool {
+        match self {
+            PyPreTokenizerTypeWrapper::Single(inner) => inner
+                .read()
+                .map(|n| n.supports_pre_tokenize_fast())
+                .unwrap_or(false),
+            PyPreTokenizerTypeWrapper::Sequence(inner) => inner.iter().all(|n| {
+                n.read()
+                    .map(|n| n.supports_pre_tokenize_fast())
+                    .unwrap_or(false)
+            }),
+        }
+    }
+
+    fn pre_tokenize_fast(&self, pretok: &mut FastPreTokenizedString) -> tk::Result<()> {
+        match self {
+            PyPreTokenizerTypeWrapper::Single(inner) => inner
+                .read()
+                .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPreTokenizer"))?
+                .pre_tokenize_fast(pretok),
+            PyPreTokenizerTypeWrapper::Sequence(inner) => inner.iter().try_for_each(|n| {
+                n.read()
+                    .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPreTokenizer"))?
+                    .pre_tokenize_fast(pretok)
+            }),
+        }
+    }
 }
 
 impl PreTokenizer for PyPreTokenizerWrapper {
@@ -1028,6 +1064,21 @@ impl PreTokenizer for PyPreTokenizerWrapper {
         match self {
             PyPreTokenizerWrapper::Wrapped(inner) => inner.pre_tokenize(pretok),
             PyPreTokenizerWrapper::Custom(inner) => inner.pre_tokenize(pretok),
+        }
+    }
+
+    fn supports_pre_tokenize_fast(&self) -> bool {
+        match self {
+            PyPreTokenizerWrapper::Wrapped(inner) => inner.supports_pre_tokenize_fast(),
+            // Custom Python pre-tokenizers only implement `pre_tokenize`
+            PyPreTokenizerWrapper::Custom(_) => false,
+        }
+    }
+
+    fn pre_tokenize_fast(&self, pretok: &mut FastPreTokenizedString) -> tk::Result<()> {
+        match self {
+            PyPreTokenizerWrapper::Wrapped(inner) => inner.pre_tokenize_fast(pretok),
+            PyPreTokenizerWrapper::Custom(inner) => inner.pre_tokenize_fast(pretok),
         }
     }
 }

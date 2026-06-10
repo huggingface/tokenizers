@@ -555,6 +555,29 @@ impl BPE {
             .map(move |(id, offsets)| Token::new(id, self.vocab_r[&id].clone(), offsets))
     }
 
+    /// Merge `sequence` into a `Word` (through the thread-local cache when
+    /// enabled, applying the insertion policy) and project the result.
+    fn with_cached_word<R>(&self, sequence: &str, project: impl FnOnce(&Word) -> R) -> Result<R> {
+        let Some(cache) = self.cache.as_ref() else {
+            // Cache disabled (capacity 0): fall back to the uncached path.
+            return Ok(project(&self.merge_word(sequence)?));
+        };
+        let cache_id = cache.id();
+        BPE_LOCAL_CACHE.with(|cell| {
+            let mut by_bpe = cell.borrow_mut();
+            let local = by_bpe.entry(cache_id).or_default();
+            if let Some(hit) = local.get(sequence) {
+                return Ok(project(hit));
+            }
+            let word = self.merge_word(sequence)?;
+            let ret = project(&word);
+            if sequence.len() < MAX_LENGTH && local.len() < cache.capacity {
+                local.insert(sequence.to_owned(), word);
+            }
+            Ok(ret)
+        })
+    }
+
     fn tokenize_with_cache(&self, sequence: &str) -> Result<Vec<Token>> {
         if self.ignore_merges {
             if let Some(id) = self.vocab.get(sequence) {
@@ -565,25 +588,7 @@ impl BPE {
                 )]);
             }
         }
-        let Some(cache) = self.cache.as_ref() else {
-            // Cache disabled (capacity 0): fall back to the uncached path.
-            let word = self.merge_word(sequence)?;
-            return Ok(self.word_to_tokens(&word).collect());
-        };
-        let cache_id = cache.id();
-        BPE_LOCAL_CACHE.with(|cell| {
-            let mut by_bpe = cell.borrow_mut();
-            let local = by_bpe.entry(cache_id).or_default();
-            if let Some(hit) = local.get(sequence) {
-                return Ok(self.word_to_tokens(hit).collect());
-            }
-            let word = self.merge_word(sequence)?;
-            let ret: Vec<Token> = self.word_to_tokens(&word).collect();
-            if sequence.len() < MAX_LENGTH && local.len() < cache.capacity {
-                local.insert(sequence.to_owned(), word);
-            }
-            Ok(ret)
-        })
+        self.with_cached_word(sequence, |word| self.word_to_tokens(word).collect())
     }
 }
 
@@ -625,25 +630,7 @@ impl Model for BPE {
                 return Ok(());
             }
         }
-        let Some(cache) = self.cache.as_ref() else {
-            ids.extend(self.merge_word(sequence)?.get_chars_iter());
-            return Ok(());
-        };
-        let cache_id = cache.id();
-        BPE_LOCAL_CACHE.with(|cell| {
-            let mut by_bpe = cell.borrow_mut();
-            let local = by_bpe.entry(cache_id).or_default();
-            if let Some(hit) = local.get(sequence) {
-                ids.extend(hit.get_chars_iter());
-                return Ok(());
-            }
-            let word = self.merge_word(sequence)?;
-            ids.extend(word.get_chars_iter());
-            if sequence.len() < MAX_LENGTH && local.len() < cache.capacity {
-                local.insert(sequence.to_owned(), word);
-            }
-            Ok(())
-        })
+        self.with_cached_word(sequence, |word| ids.extend(word.get_chars_iter()))
     }
 
     fn token_to_id(&self, token: &str) -> Option<u32> {

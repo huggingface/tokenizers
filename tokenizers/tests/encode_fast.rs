@@ -179,6 +179,18 @@ fn pair_and_pre_tokenized_inputs() {
 }
 
 #[test]
+fn normalizer_empties_piece() {
+    let mut tokenizer = Tokenizer::new(get_byte_level_bpe());
+    tokenizer
+        .with_normalizer(Some(tokenizers::normalizers::Strip::new(true, true)))
+        .unwrap();
+    tokenizer.with_pre_tokenizer(Some(ByteLevel::default()));
+    for input in [" ", "   ", "\n", " x ", "x"] {
+        assert_fast_matches_slow(&tokenizer, input);
+    }
+}
+
+#[test]
 fn unknown_bytes_bpe() {
     let tokenizer = Tokenizer::new(BPE::default());
     let fast = tokenizer.encode_fast("anything", false).unwrap();

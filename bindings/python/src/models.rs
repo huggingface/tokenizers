@@ -52,6 +52,10 @@ impl Model for PyModel {
         self.model.read().unwrap().tokenize(tokens)
     }
 
+    fn tokenize_ids_into(&self, sequence: &str, ids: &mut Vec<u32>) -> tk::Result<()> {
+        self.model.read().unwrap().tokenize_ids_into(sequence, ids)
+    }
+
     /// See [`Model::tokenize_in_pretokenized`] for the lock-once rationale.
     fn tokenize_in_pretokenized(
         &self,

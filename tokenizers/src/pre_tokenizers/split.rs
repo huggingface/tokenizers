@@ -110,6 +110,25 @@ impl PreTokenizer for Split {
     }
 
     fn pre_tokenize_fast(&self, pretokenized: &mut FastPreTokenizedString) -> Result<()> {
+        if !self.invert && self.behavior == SplitDelimiterBehavior::Isolated {
+            // Hot path for GPT-2/Llama-3 style configs: every match and gap
+            // becomes a piece, so ranges can be streamed straight off the
+            // regex instead of materializing the full match list.
+            return pretokenized.refine(|piece, out| {
+                let mut prev = 0;
+                for (start, end) in self.regex.find_iter(piece) {
+                    if prev != start {
+                        out.push(prev..start);
+                    }
+                    out.push(start..end);
+                    prev = end;
+                }
+                if prev != piece.len() {
+                    out.push(prev..piece.len());
+                }
+                Ok(())
+            });
+        }
         pretokenized.refine(|piece, out| {
             let matches = if self.invert {
                 Invert(&self.regex).find_matches(piece)?

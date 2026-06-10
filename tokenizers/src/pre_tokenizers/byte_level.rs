@@ -4,7 +4,6 @@ use std::sync::LazyLock;
 use crate::utils::SysRegex;
 use serde::{Deserialize, Serialize};
 
-use crate::tokenizer::pattern::Pattern;
 use crate::tokenizer::{
     Decoder, Encoding, FastPreTokenizedString, PostProcessor, PreTokenizedString, PreTokenizer,
     Result, SplitDelimiterBehavior,
@@ -182,15 +181,23 @@ impl PreTokenizer for ByteLevel {
                 piece
             };
             if self.use_regex {
-                // `Isolated` behavior: both matches and gaps become pieces
-                for ((start, end), _) in (&*RE).find_matches(piece)? {
+                // `Isolated` behavior: both matches and gaps become pieces,
+                // streamed straight off the regex
+                let mut remap_piece = |start: usize, end: usize| {
                     if start == end {
-                        continue;
+                        return;
                     }
                     let from = new_buf.len();
                     remap_bytes_into(&piece[start..end], &mut new_buf);
                     new_splits.push(from..new_buf.len());
+                };
+                let mut prev = 0;
+                for (start, end) in RE.find_iter(piece) {
+                    remap_piece(prev, start);
+                    remap_piece(start, end);
+                    prev = end;
                 }
+                remap_piece(prev, piece.len());
             } else {
                 let from = new_buf.len();
                 remap_bytes_into(piece, &mut new_buf);

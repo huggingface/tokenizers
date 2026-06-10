@@ -63,7 +63,13 @@ impl<'s> FastPreTokenizedString<'s> {
     pub fn new(s: &'s str) -> Self {
         Self {
             buffer: Cow::Borrowed(s),
-            splits: vec![0..s.len()],
+            // empty pieces don't exist (`PreTokenizedString::split` filters
+            // them out), so an empty input starts with no pieces at all
+            splits: if s.is_empty() {
+                vec![]
+            } else {
+                vec![0..s.len()]
+            },
         }
     }
 
@@ -107,6 +113,9 @@ impl<'s> FastPreTokenizedString<'s> {
 
     /// Replace the buffer and pieces wholesale, for pre-tokenizers that
     /// transform the content itself.
+    ///
+    /// Invariants (unchecked): every range must be non-empty, lie within
+    /// `buffer`, and start/end on UTF-8 character boundaries.
     pub fn set(&mut self, buffer: String, splits: Vec<std::ops::Range<usize>>) {
         self.buffer = Cow::Owned(buffer);
         self.splits = splits;
