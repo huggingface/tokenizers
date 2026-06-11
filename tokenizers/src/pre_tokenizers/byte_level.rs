@@ -243,6 +243,31 @@ mod tests {
     use std::iter::FromIterator;
 
     #[test]
+    fn pre_tokenization_unaligned_matches_aligned() {
+        use crate::NormalizedString;
+        for bytelevel in [
+            ByteLevel::default().add_prefix_space(false),
+            ByteLevel::default().add_prefix_space(true),
+        ] {
+            let input = "Hello my friend, how is your day going? voilà ça été 😀";
+            let mut aligned: PreTokenizedString = input.into();
+            let mut unaligned: PreTokenizedString =
+                NormalizedString::unaligned(input.to_string()).into();
+            bytelevel.pre_tokenize(&mut aligned).unwrap();
+            bytelevel.pre_tokenize(&mut unaligned).unwrap();
+
+            let texts = |p: &PreTokenizedString| {
+                p.get_splits(OffsetReferential::Normalized, OffsetType::None)
+                    .into_iter()
+                    .map(|(s, _, _)| s.to_string())
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(texts(&aligned), texts(&unaligned));
+            assert!(unaligned.splits_are_unaligned());
+        }
+    }
+
+    #[test]
     fn pre_tokenization() {
         let bytelevel = ByteLevel::default().add_prefix_space(false);
         let mut pretokenized: PreTokenizedString = "Hello my friend, how is your day going?".into();
