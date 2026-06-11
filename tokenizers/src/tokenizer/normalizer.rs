@@ -2481,6 +2481,45 @@ mod tests {
     }
 
     #[test]
+    fn unaligned_emptied_then_extended_keeps_working() {
+        // An unaligned string whose content is removed re-enters aligned mode
+        // (the sentinel can't distinguish the two on empty strings); both
+        // modes behave identically there, so operations keep working.
+        let mut n = NormalizedString::unaligned("hello".to_string());
+        n.clear();
+        assert_eq!(n.get(), "");
+        assert!(!n.is_unaligned());
+
+        n.append("x");
+        assert_eq!(n.get(), "x");
+
+        // prepend on an emptied string is a no-op — same as on aligned
+        let mut emptied = NormalizedString::unaligned("   ".to_string());
+        emptied.replace(' ', "").unwrap();
+        assert_eq!(emptied.get(), "");
+        emptied.prepend("y");
+        let mut aligned_empty = NormalizedString::from("");
+        aligned_empty.prepend("y");
+        assert_eq!(emptied.get(), aligned_empty.get());
+    }
+
+    #[test]
+    fn unaligned_transform_range_bounded_original_is_noop() {
+        // Bounded original ranges are unmappable without alignments: no-op,
+        // mirroring the aligned path's behavior for unmappable ranges.
+        let mut n = NormalizedString::unaligned("Hello".to_string());
+        n.transform_range(Range::Original(0..2), vec![('X', 0)], 0);
+        assert_eq!(n.get(), "Hello");
+        assert!(n.is_unaligned());
+
+        // Unbounded original means "everything" (the `transform()` case)
+        let mut n = NormalizedString::unaligned("ab".to_string());
+        n.transform_range(Range::Original(..), vec![('X', 0), ('Y', 0)], 0);
+        assert_eq!(n.get(), "XY");
+        assert!(n.is_unaligned());
+    }
+
+    #[test]
     fn unaligned_split() {
         let aligned = NormalizedString::from("the-final--countdown");
         let unaligned = NormalizedString::unaligned("the-final--countdown".to_string());

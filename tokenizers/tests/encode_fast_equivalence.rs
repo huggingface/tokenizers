@@ -109,17 +109,8 @@ fn albert_metaspace() {
     check_tokenizer(&tokenizer, &test_inputs());
 }
 
-/// Metaspace(First) prepends only to the piece at original position 0 — the
-/// one consumer of original-referential offsets on the fast path. The vocab
-/// distinguishes prepended from bare tokens so any divergence shows in ids.
-///
-/// Known limitation, pre-dating the unaligned mode: a normalizer that strips
-/// leading content from the sequence start (e.g. `Strip`) makes encode_fast
-/// prepend where encode does not. No such normalizer is used here.
-#[test]
-fn metaspace_first_prepend_scheme() {
+fn metaspace_first_tokenizer(normalizer: tokenizers::NormalizerWrapper) -> Tokenizer {
     use tokenizers::models::wordlevel::WordLevel;
-    use tokenizers::normalizers::utils::Lowercase;
     use tokenizers::pre_tokenizers::metaspace::{Metaspace, PrependScheme};
 
     let vocab: ahash::AHashMap<String, u32> = [
@@ -137,8 +128,24 @@ fn metaspace_first_prepend_scheme() {
         .unwrap();
 
     let mut tokenizer = Tokenizer::new(model);
-    let _ = tokenizer.with_normalizer(Some(Lowercase));
+    let _ = tokenizer.with_normalizer(Some(normalizer));
     let _ = tokenizer.with_pre_tokenizer(Some(Metaspace::new('▁', PrependScheme::First, true)));
+    tokenizer
+}
+
+/// Metaspace(First) prepends only to the piece at original position 0 — the
+/// one consumer of original-referential offsets on the fast path. The vocab
+/// distinguishes prepended from bare tokens so any divergence shows in ids.
+///
+/// Known limitation, pre-dating the unaligned mode: a normalizer that strips
+/// leading content from the sequence start makes encode_fast prepend where
+/// encode does not — pinned by `metaspace_first_leading_strip_known_divergence`
+/// below. No such normalizer is used here.
+#[test]
+fn metaspace_first_prepend_scheme() {
+    use tokenizers::normalizers::utils::Lowercase;
+
+    let mut tokenizer = metaspace_first_tokenizer(Lowercase.into());
     tokenizer
         .add_special_tokens(vec![AddedToken::from("<mask>", true)])
         .unwrap();
@@ -160,4 +167,28 @@ fn metaspace_first_prepend_scheme() {
             assert!(!slow.get_ids()[1..].contains(&0));
         }
     }
+}
+
+/// Canary for the KNOWN encode/encode_fast divergence: without alignments the
+/// fast path cannot know a normalizer stripped leading content, so the first
+/// piece keeps original_shift 0 and Metaspace(First) prepends where encode
+/// does not. Introduced with `normalize_str` (the trivial-alignments
+/// `set_normalized`), kept by the unaligned mode.
+///
+/// If this test starts failing because both sides agree, the limitation got
+/// fixed: delete this test and the caveats referencing it (slice() comment in
+/// normalizer.rs, doc of metaspace_first_prepend_scheme above).
+#[test]
+fn metaspace_first_leading_strip_known_divergence() {
+    use tokenizers::normalizers::Strip;
+
+    let tokenizer = metaspace_first_tokenizer(Strip::new(true, true).into());
+
+    let slow = tokenizer.encode("  hello world", false).unwrap();
+    let fast = tokenizer.encode_fast("  hello world", false).unwrap();
+
+    // encode: stripped first piece maps to original position 2 → no prepend
+    assert_eq!(slow.get_ids(), [1, 2], "hello, ▁world");
+    // encode_fast: position information lost → prepend
+    assert_eq!(fast.get_ids(), [0, 2], "▁hello, ▁world");
 }
