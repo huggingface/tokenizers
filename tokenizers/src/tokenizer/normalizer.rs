@@ -155,12 +155,6 @@ impl NormalizedString {
     /// alignment tracking". This is what `encode_fast` runs on: same text
     /// operations, no offsets, no per-byte bookkeeping. (Empty strings count
     /// as aligned; both modes behave the same on them.)
-    ///
-    /// One exception: `slice()` still updates `original_shift`, because
-    /// Metaspace(First) needs to know whether a piece is the first one
-    /// (`offsets_original().0 == 0`). That answer is wrong when a normalizer
-    /// removed characters at the start of the input — known quirk, see the
-    /// `metaspace_first_leading_strip_known_divergence` test.
     pub(crate) fn is_unaligned(&self) -> bool {
         self.alignments.is_empty() && !self.normalized.is_empty()
     }
@@ -311,7 +305,7 @@ impl NormalizedString {
     {
         let full_range = self.validate_range(range)?;
 
-        // encode_fast path: copy the text, keep the shift for Metaspace(First)
+        // encode_fast path: copy the text
         if self.is_unaligned() {
             return match full_range {
                 Range::Original(_) => None,
@@ -2411,7 +2405,7 @@ mod tests {
         assert!(slice.is_unaligned());
         assert_eq!(slice.get(), "world");
         assert!(slice.alignments.is_empty());
-        // the shift keeps tracking positions, for Metaspace(First)
+        // slices keep best-effort position info in original_shift
         assert_eq!(
             n.slice(Range::Normalized(0..5))
                 .unwrap()

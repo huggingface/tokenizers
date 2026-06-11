@@ -133,9 +133,8 @@ fn metaspace_first_tokenizer(normalizer: tokenizers::NormalizerWrapper) -> Token
     tokenizer
 }
 
-/// Metaspace(First) prepends "▁" only to the first piece — the only thing on
-/// the fast path that reads original offsets. The vocab has both "▁hello"
-/// and "hello", so a wrong prepend changes the ids.
+/// Metaspace(First) prepends "▁" only to the first split. The vocab has both
+/// "▁hello" and "hello", so a wrong prepend changes the ids.
 #[test]
 fn metaspace_first_prepend_scheme() {
     use tokenizers::normalizers::utils::Lowercase;
@@ -164,14 +163,11 @@ fn metaspace_first_prepend_scheme() {
     }
 }
 
-/// Pins a KNOWN difference between encode and encode_fast: without
-/// alignments, the fast path can't see that Strip removed the leading
-/// spaces, so Metaspace(First) prepends "▁" — encode does not. Pre-existing
-/// quirk (came in with `normalize_str`), not introduced by the unaligned
-/// mode. If both sides ever agree, the limitation got fixed: delete this
-/// test and the doc on `NormalizedString::is_unaligned` pointing at it.
+/// A normalizer that removes leading characters (Strip) must not make
+/// encode and encode_fast disagree. Metaspace(First) decides "first piece"
+/// by split index, so both paths prepend "▁" here.
 #[test]
-fn metaspace_first_leading_strip_known_divergence() {
+fn metaspace_first_with_leading_strip() {
     use tokenizers::normalizers::Strip;
 
     let tokenizer = metaspace_first_tokenizer(Strip::new(true, true).into());
@@ -179,8 +175,6 @@ fn metaspace_first_leading_strip_known_divergence() {
     let slow = tokenizer.encode("  hello world", false).unwrap();
     let fast = tokenizer.encode_fast("  hello world", false).unwrap();
 
-    // encode: stripped first piece maps to original position 2 → no prepend
-    assert_eq!(slow.get_ids(), [1, 2], "hello, ▁world");
-    // encode_fast: position information lost → prepend
-    assert_eq!(fast.get_ids(), [0, 2], "▁hello, ▁world");
+    assert_eq!(slow.get_ids(), [0, 2], "▁hello, ▁world");
+    assert_eq!(slow.get_ids(), fast.get_ids());
 }
