@@ -563,15 +563,12 @@ impl AddedVocabulary {
         pretokenized
     }
 
-    /// Like [`extract_and_normalize`] but skips alignment tracking: the
-    /// pipeline runs on unaligned `NormalizedString`s — no original clone and
-    /// no per-byte alignment vector at construction, when splitting, or in any
-    /// downstream pre-tokenizer transform. Normalization goes through
-    /// [`Normalizer::normalize_str`]; normalizers still on its default
-    /// implementation allocate one transient aligned `NormalizedString`
-    /// internally until they get a dedicated override.
+    /// Like [`extract_and_normalize`], but the whole pipeline runs on
+    /// unaligned `NormalizedString`s — no alignment tracking anywhere
+    /// (see [`NormalizedString::is_unaligned`]). Used by `encode_fast`.
     ///
-    /// This is used by `encode_fast` where offsets are not needed.
+    /// Normalizers without a [`Normalizer::normalize_str`] override still
+    /// allocate one temporary aligned string internally.
     pub fn extract_and_normalize_fast<N: Normalizer>(
         &self,
         normalizer: Option<&N>,

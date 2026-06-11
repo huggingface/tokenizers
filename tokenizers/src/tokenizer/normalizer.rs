@@ -136,9 +136,8 @@ impl NormalizedString {
         &self.normalized
     }
 
-    /// Create a `NormalizedString` that doesn't track alignments with an
-    /// original string: no string clone, no per-byte alignment vector.
-    /// For pipelines that never need offsets (`encode_fast`).
+    /// Build a `NormalizedString` that doesn't track alignments.
+    /// See [`Self::is_unaligned`].
     pub(crate) fn unaligned(normalized: String) -> Self {
         Self {
             original: String::new(),
@@ -148,22 +147,26 @@ impl NormalizedString {
         }
     }
 
-    /// Whether this string skips alignment tracking. Transforms and slices
-    /// preserve unalignedness; offsets in the original referential are
-    /// unavailable. `original_shift` still tracks slice positions (in
-    /// normalized coordinates) so that `offsets_original().0 == 0` keeps
-    /// meaning "first piece" — see Metaspace's `PrependScheme::First`.
+    /// Whether this string skips alignment tracking.
     ///
-    /// Empty strings report aligned: both modes behave identically on them
-    /// (all offsets degenerate to `0..0`), at worst re-entering aligned mode
-    /// with a tiny alignment vector if content is later appended.
+    /// The trick: an aligned string always has one alignment entry per byte
+    /// of `normalized`, so "alignments empty but normalized not empty" is
+    /// normally impossible. We use that impossible state to mean "no
+    /// alignment tracking". This is what `encode_fast` runs on: same text
+    /// operations, no offsets, no per-byte bookkeeping. (Empty strings count
+    /// as aligned; both modes behave the same on them.)
+    ///
+    /// One exception: `slice()` still updates `original_shift`, because
+    /// Metaspace(First) needs to know whether a piece is the first one
+    /// (`offsets_original().0 == 0`). That answer is wrong when a normalizer
+    /// removed characters at the start of the input — known quirk, see the
+    /// `metaspace_first_leading_strip_known_divergence` test.
     pub(crate) fn is_unaligned(&self) -> bool {
         self.alignments.is_empty() && !self.normalized.is_empty()
     }
 
-    /// Replace the normalized content without tracking alignments, switching
-    /// this string into unaligned mode (see [`is_unaligned`]): offsets against
-    /// the original string are no longer available.
+    /// Replace the normalized content and stop tracking alignments.
+    /// See [`Self::is_unaligned`].
     pub fn set_normalized(&mut self, new: String) {
         self.normalized = new;
         self.alignments.clear();
@@ -308,15 +311,10 @@ impl NormalizedString {
     {
         let full_range = self.validate_range(range)?;
 
+        // encode_fast path: copy the text, keep the shift for Metaspace(First)
         if self.is_unaligned() {
             return match full_range {
                 Range::Original(_) => None,
-                // The shift accumulates normalized positions, not original
-                // ones: exact enough for the only consumer (`offsets_original`
-                // as a first-piece predicate), except when a normalizer
-                // removed leading content from the sequence start — a known
-                // encode_fast divergence for Metaspace(First) pipelines,
-                // pre-dating this mode (introduced with `normalize_str`).
                 Range::Normalized(r) => Some(Self {
                     original: String::new(),
                     normalized: self.normalized[r.clone()].to_owned(),
@@ -370,13 +368,12 @@ impl NormalizedString {
         T: RangeBounds<usize> + Clone,
         I: IntoIterator<Item = (char, isize)>,
     {
+        // encode_fast path: just rewrite the text
         if self.is_unaligned() {
             let n_range = match &range {
                 Range::Normalized(_) => range.clone().into_full_range(self.len()),
-                // The only original range that maps onto an unaligned string is
-                // the unbounded one (e.g. `transform()`), meaning "everything".
-                // Bounded original ranges are unmappable, like unmappable
-                // ranges on the aligned path: no-op.
+                // an original range can't be mapped without alignments → no-op,
+                // except `..` which simply means "everything" (what transform() sends)
                 Range::Original(r) => match (r.start_bound(), r.end_bound()) {
                     (Bound::Unbounded, Bound::Unbounded) => 0..self.len(),
                     _ => return,
@@ -636,6 +633,7 @@ impl NormalizedString {
 
     /// Replace anything that matches the pattern with the given content.
     pub fn replace<P: Pattern>(&mut self, pattern: P, content: &str) -> Result<()> {
+        // encode_fast path: just rewrite the text
         if self.is_unaligned() {
             let mut new_normalized = String::with_capacity(self.normalized.len());
             let mut last_end = 0;
@@ -2413,8 +2411,7 @@ mod tests {
         assert!(slice.is_unaligned());
         assert_eq!(slice.get(), "world");
         assert!(slice.alignments.is_empty());
-        // original_shift tracks the position so `offsets_original().0 == 0`
-        // remains a valid "is this the first piece" predicate (Metaspace First)
+        // the shift keeps tracking positions, for Metaspace(First)
         assert_eq!(
             n.slice(Range::Normalized(0..5))
                 .unwrap()
@@ -2482,9 +2479,8 @@ mod tests {
 
     #[test]
     fn unaligned_emptied_then_extended_keeps_working() {
-        // An unaligned string whose content is removed re-enters aligned mode
-        // (the sentinel can't distinguish the two on empty strings); both
-        // modes behave identically there, so operations keep working.
+        // an emptied unaligned string counts as aligned again — fine, both
+        // modes do the same thing on empty strings
         let mut n = NormalizedString::unaligned("hello".to_string());
         n.clear();
         assert_eq!(n.get(), "");
@@ -2505,8 +2501,7 @@ mod tests {
 
     #[test]
     fn unaligned_transform_range_bounded_original_is_noop() {
-        // Bounded original ranges are unmappable without alignments: no-op,
-        // mirroring the aligned path's behavior for unmappable ranges.
+        // bounded original ranges can't be mapped → no-op
         let mut n = NormalizedString::unaligned("Hello".to_string());
         n.transform_range(Range::Original(0..2), vec![('X', 0)], 0);
         assert_eq!(n.get(), "Hello");

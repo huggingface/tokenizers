@@ -1,6 +1,6 @@
-//! encode_fast must produce the same ids/type_ids/special-tokens-mask as encode,
-//! across real tokenizer pipelines. Offsets, token strings and word ids are
-//! explicitly out of contract for encode_fast.
+//! encode_fast must produce the same ids, type_ids and masks as encode,
+//! across real tokenizer pipelines. encode_fast does not promise offsets,
+//! token strings or word ids — those are not compared here.
 
 use tokenizers::tokenizer::EncodeInput;
 use tokenizers::{AddedToken, Tokenizer};
@@ -133,14 +133,9 @@ fn metaspace_first_tokenizer(normalizer: tokenizers::NormalizerWrapper) -> Token
     tokenizer
 }
 
-/// Metaspace(First) prepends only to the piece at original position 0 — the
-/// one consumer of original-referential offsets on the fast path. The vocab
-/// distinguishes prepended from bare tokens so any divergence shows in ids.
-///
-/// Known limitation, pre-dating the unaligned mode: a normalizer that strips
-/// leading content from the sequence start makes encode_fast prepend where
-/// encode does not — pinned by `metaspace_first_leading_strip_known_divergence`
-/// below. No such normalizer is used here.
+/// Metaspace(First) prepends "▁" only to the first piece — the only thing on
+/// the fast path that reads original offsets. The vocab has both "▁hello"
+/// and "hello", so a wrong prepend changes the ids.
 #[test]
 fn metaspace_first_prepend_scheme() {
     use tokenizers::normalizers::utils::Lowercase;
@@ -169,15 +164,12 @@ fn metaspace_first_prepend_scheme() {
     }
 }
 
-/// Canary for the KNOWN encode/encode_fast divergence: without alignments the
-/// fast path cannot know a normalizer stripped leading content, so the first
-/// piece keeps original_shift 0 and Metaspace(First) prepends where encode
-/// does not. Introduced with `normalize_str` (the trivial-alignments
-/// `set_normalized`), kept by the unaligned mode.
-///
-/// If this test starts failing because both sides agree, the limitation got
-/// fixed: delete this test and the caveats referencing it (slice() comment in
-/// normalizer.rs, doc of metaspace_first_prepend_scheme above).
+/// Pins a KNOWN difference between encode and encode_fast: without
+/// alignments, the fast path can't see that Strip removed the leading
+/// spaces, so Metaspace(First) prepends "▁" — encode does not. Pre-existing
+/// quirk (came in with `normalize_str`), not introduced by the unaligned
+/// mode. If both sides ever agree, the limitation got fixed: delete this
+/// test and the doc on `NormalizedString::is_unaligned` pointing at it.
 #[test]
 fn metaspace_first_leading_strip_known_divergence() {
     use tokenizers::normalizers::Strip;
