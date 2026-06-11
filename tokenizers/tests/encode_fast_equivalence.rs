@@ -109,6 +109,71 @@ fn albert_metaspace() {
     check_tokenizer(&tokenizer, &test_inputs());
 }
 
+/// Every other pre-tokenizer, swapped into the bert-wiki WordPiece pipeline.
+#[test]
+fn pre_tokenizer_sweep() {
+    use tokenizers::pre_tokenizers::bert::BertPreTokenizer;
+    use tokenizers::pre_tokenizers::delimiter::CharDelimiterSplit;
+    use tokenizers::pre_tokenizers::digits::Digits;
+    use tokenizers::pre_tokenizers::fixed_length::FixedLength;
+    use tokenizers::pre_tokenizers::punctuation::Punctuation;
+    use tokenizers::pre_tokenizers::sequence::Sequence;
+    use tokenizers::pre_tokenizers::split::{Split, SplitPattern};
+    use tokenizers::pre_tokenizers::unicode_scripts::UnicodeScripts;
+    use tokenizers::pre_tokenizers::whitespace::{Whitespace, WhitespaceSplit};
+    use tokenizers::pre_tokenizers::PreTokenizerWrapper;
+    use tokenizers::SplitDelimiterBehavior::*;
+
+    let pre_tokenizers: Vec<(&str, PreTokenizerWrapper)> = vec![
+        ("bert", BertPreTokenizer.into()),
+        ("whitespace", Whitespace.into()),
+        ("whitespace_split", WhitespaceSplit.into()),
+        ("punctuation_isolated", Punctuation::new(Isolated).into()),
+        ("punctuation_removed", Punctuation::new(Removed).into()),
+        (
+            "punctuation_merged_prev",
+            Punctuation::new(MergedWithPrevious).into(),
+        ),
+        (
+            "punctuation_merged_next",
+            Punctuation::new(MergedWithNext).into(),
+        ),
+        (
+            "punctuation_contiguous",
+            Punctuation::new(Contiguous).into(),
+        ),
+        ("digits_grouped", Digits::new(false).into()),
+        ("digits_individual", Digits::new(true).into()),
+        ("char_delimiter", CharDelimiterSplit::new(' ').into()),
+        ("fixed_length", FixedLength::new(4).into()),
+        ("unicode_scripts", UnicodeScripts::new().into()),
+        (
+            "split_regex",
+            Split::new(SplitPattern::Regex(r"\w+|[^\w\s]+".into()), Isolated, false)
+                .unwrap()
+                .into(),
+        ),
+        (
+            "split_invert",
+            Split::new(SplitPattern::Regex(r"\s+".into()), Removed, true)
+                .unwrap()
+                .into(),
+        ),
+        (
+            "sequence_whitespace_digits",
+            Sequence::new(vec![Whitespace.into(), Digits::new(true).into()]).into(),
+        ),
+    ];
+
+    let inputs = test_inputs();
+    for (name, pre_tokenizer) in pre_tokenizers {
+        eprintln!("pre_tokenizer: {name}");
+        let mut tokenizer = Tokenizer::from_file("data/bert-wiki.json").unwrap();
+        let _ = tokenizer.with_pre_tokenizer(Some(pre_tokenizer));
+        check_tokenizer(&tokenizer, &inputs);
+    }
+}
+
 fn metaspace_first_tokenizer(normalizer: tokenizers::NormalizerWrapper) -> Tokenizer {
     use tokenizers::models::wordlevel::WordLevel;
     use tokenizers::pre_tokenizers::metaspace::{Metaspace, PrependScheme};
