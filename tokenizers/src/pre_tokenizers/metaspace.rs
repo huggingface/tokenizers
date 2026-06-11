@@ -121,7 +121,7 @@ impl Default for Metaspace {
 
 impl PreTokenizer for Metaspace {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
-        pretokenized.split(|_, mut normalized| {
+        pretokenized.split(|split_idx, mut normalized| {
             normalized.replace(' ', &self.str_rep)?;
             match self.prepend_scheme {
                 PrependScheme::Always => {
@@ -130,9 +130,7 @@ impl PreTokenizer for Metaspace {
                     }
                 }
                 PrependScheme::First => {
-                    if !normalized.get().starts_with(self.replacement)
-                        && normalized.offsets_original().0 == 0
-                    {
+                    if !normalized.get().starts_with(self.replacement) && split_idx == 0 {
                         normalized.prepend(&self.str_rep);
                     }
                 }

@@ -136,16 +136,34 @@ impl NormalizedString {
         &self.normalized
     }
 
-    /// Replace the normalized content without tracking alignments.
+    /// Build a `NormalizedString` that doesn't track alignments.
+    /// See [`Self::is_unaligned`].
+    pub(crate) fn unaligned(normalized: String) -> Self {
+        Self {
+            original: String::new(),
+            normalized,
+            alignments: Vec::new(),
+            original_shift: 0,
+        }
+    }
+
+    /// Whether this string skips alignment tracking.
     ///
-    /// This is significantly cheaper than going through `transform()` since it
-    /// skips the per-byte alignment bookkeeping.  Use this when offset tracking
-    /// is not needed (e.g. `encode_fast`).
+    /// The trick: an aligned string always has one alignment entry per byte
+    /// of `normalized`, so "alignments empty but normalized not empty" is
+    /// normally impossible. We use that impossible state to mean "no
+    /// alignment tracking". This is what `encode_fast` runs on: same text
+    /// operations, no offsets, no per-byte bookkeeping. (Empty strings count
+    /// as aligned; both modes behave the same on them.)
+    pub(crate) fn is_unaligned(&self) -> bool {
+        self.alignments.is_empty() && !self.normalized.is_empty()
+    }
+
+    /// Replace the normalized content and stop tracking alignments.
+    /// See [`Self::is_unaligned`].
     pub fn set_normalized(&mut self, new: String) {
-        // Build trivial 1:1 alignments so that slice() still works for
-        // splitting, but no real offset mapping is preserved.
-        self.alignments = new.as_bytes().iter().enumerate().map(|(i, _)| (i, i + 1)).collect();
         self.normalized = new;
+        self.alignments.clear();
     }
 
     /// Return the original string
@@ -286,6 +304,19 @@ impl NormalizedString {
         T: RangeBounds<usize> + Clone,
     {
         let full_range = self.validate_range(range)?;
+
+        // encode_fast path: copy the text
+        if self.is_unaligned() {
+            return match full_range {
+                Range::Original(_) => None,
+                Range::Normalized(r) => Some(Self {
+                    original: String::new(),
+                    normalized: self.normalized[r.clone()].to_owned(),
+                    alignments: Vec::new(),
+                    original_shift: self.original_shift + r.start,
+                }),
+            };
+        }
         let (normalized_range, original_range) = match full_range {
             Range::Original(_) => (
                 self.convert_offsets(full_range.clone())?,
@@ -331,6 +362,22 @@ impl NormalizedString {
         T: RangeBounds<usize> + Clone,
         I: IntoIterator<Item = (char, isize)>,
     {
+        // encode_fast path: just rewrite the text
+        if self.is_unaligned() {
+            let n_range = match &range {
+                Range::Normalized(_) => range.clone().into_full_range(self.len()),
+                // an original range can't be mapped without alignments → no-op,
+                // except `..` which simply means "everything" (what transform() sends)
+                Range::Original(r) => match (r.start_bound(), r.end_bound()) {
+                    (Bound::Unbounded, Bound::Unbounded) => 0..self.len(),
+                    _ => return,
+                },
+            };
+            let normalized: String = dest.into_iter().map(|(c, _)| c).collect();
+            self.normalized.replace_range(n_range, &normalized);
+            return;
+        }
+
         let n_range = match range {
             Range::Normalized(_) => range.into_full_range(self.len()),
             Range::Original(_) => match self.convert_offsets(range) {
@@ -580,6 +627,22 @@ impl NormalizedString {
 
     /// Replace anything that matches the pattern with the given content.
     pub fn replace<P: Pattern>(&mut self, pattern: P, content: &str) -> Result<()> {
+        // encode_fast path: just rewrite the text
+        if self.is_unaligned() {
+            let mut new_normalized = String::with_capacity(self.normalized.len());
+            let mut last_end = 0;
+            for ((start, end), is_match) in pattern.find_matches(&self.normalized)? {
+                if is_match {
+                    new_normalized.push_str(&self.normalized[last_end..start]);
+                    new_normalized.push_str(content);
+                    last_end = end;
+                }
+            }
+            new_normalized.push_str(&self.normalized[last_end..]);
+            self.normalized = new_normalized;
+            return Ok(());
+        }
+
         let mut new_normalized = String::with_capacity(self.normalized.len()); // Initially allocate for the input size
         let mut new_alignments: Vec<(usize, usize)> = Vec::with_capacity(self.alignments.len());
         let mut last_end = 0; // Keep track of the last end position
@@ -2319,5 +2382,165 @@ mod tests {
         assert_eq!(n.get_range_original(Range::Normalized(0..6)), Some(""));
 
         assert_eq!(n.get_range(Range::Normalized(0..6)), Some(" World"));
+    }
+
+    #[test]
+    fn unaligned_construction() {
+        let n = NormalizedString::unaligned("Hello".to_string());
+        assert!(n.is_unaligned());
+        assert_eq!(n.get(), "Hello");
+        assert!(n.alignments.is_empty());
+        assert!(n.original.is_empty());
+
+        // Aligned strings are not unaligned, empty strings neither
+        assert!(!NormalizedString::from("Hello").is_unaligned());
+        assert!(!NormalizedString::from("").is_unaligned());
+    }
+
+    #[test]
+    fn unaligned_slice() {
+        let n = NormalizedString::unaligned("Hello world".to_string());
+
+        let slice = n.slice(Range::Normalized(6..11)).unwrap();
+        assert!(slice.is_unaligned());
+        assert_eq!(slice.get(), "world");
+        assert!(slice.alignments.is_empty());
+        // slices keep best-effort position info in original_shift
+        assert_eq!(
+            n.slice(Range::Normalized(0..5))
+                .unwrap()
+                .offsets_original()
+                .0,
+            0
+        );
+        assert_ne!(slice.offsets_original().0, 0);
+
+        // Nested slices keep accumulating
+        let nested = slice.slice(Range::Normalized(1..5)).unwrap();
+        assert!(nested.is_unaligned());
+        assert_eq!(nested.get(), "orld");
+        assert_ne!(nested.offsets_original().0, 0);
+
+        // No mapping to original coordinates exists
+        assert!(n.slice(Range::Original(0..5)).is_none());
+    }
+
+    #[test]
+    fn unaligned_transform_matches_aligned() {
+        let s = "Hello friend";
+        let mut aligned = NormalizedString::from(s);
+        let mut unaligned = NormalizedString::unaligned(s.to_string());
+
+        // ByteLevel-style transform: replace chars 1:1, with one multi-byte char
+        let transformations: Vec<(char, isize)> = s
+            .chars()
+            .map(|c| if c == ' ' { ('Ġ', 0) } else { (c, 0) })
+            .collect();
+        aligned.transform(transformations.clone(), 0);
+        unaligned.transform(transformations, 0);
+
+        assert_eq!(aligned.get(), unaligned.get());
+        assert_eq!(unaligned.get(), "HelloĠfriend");
+        assert!(unaligned.is_unaligned());
+        assert!(unaligned.alignments.is_empty());
+    }
+
+    #[test]
+    fn unaligned_prepend_append() {
+        let mut aligned = NormalizedString::from("there");
+        let mut unaligned = NormalizedString::unaligned("there".to_string());
+
+        aligned.prepend(" ").append("!");
+        unaligned.prepend(" ").append("!");
+
+        assert_eq!(aligned.get(), unaligned.get());
+        assert_eq!(unaligned.get(), " there!");
+        assert!(unaligned.is_unaligned());
+    }
+
+    #[test]
+    fn unaligned_replace() {
+        let mut aligned = NormalizedString::from("Hey friend!     How are you?");
+        let mut unaligned = NormalizedString::unaligned("Hey friend!     How are you?".to_string());
+
+        aligned.replace(' ', "▁").unwrap();
+        unaligned.replace(' ', "▁").unwrap();
+
+        assert_eq!(aligned.get(), unaligned.get());
+        assert!(unaligned.is_unaligned());
+        assert!(unaligned.alignments.is_empty());
+    }
+
+    #[test]
+    fn unaligned_emptied_then_extended_keeps_working() {
+        // an emptied unaligned string counts as aligned again — fine, both
+        // modes do the same thing on empty strings
+        let mut n = NormalizedString::unaligned("hello".to_string());
+        n.clear();
+        assert_eq!(n.get(), "");
+        assert!(!n.is_unaligned());
+
+        n.append("x");
+        assert_eq!(n.get(), "x");
+
+        // prepend on an emptied string is a no-op — same as on aligned
+        let mut emptied = NormalizedString::unaligned("   ".to_string());
+        emptied.replace(' ', "").unwrap();
+        assert_eq!(emptied.get(), "");
+        emptied.prepend("y");
+        let mut aligned_empty = NormalizedString::from("");
+        aligned_empty.prepend("y");
+        assert_eq!(emptied.get(), aligned_empty.get());
+    }
+
+    #[test]
+    fn unaligned_transform_range_bounded_original_is_noop() {
+        // bounded original ranges can't be mapped → no-op
+        let mut n = NormalizedString::unaligned("Hello".to_string());
+        n.transform_range(Range::Original(0..2), vec![('X', 0)], 0);
+        assert_eq!(n.get(), "Hello");
+        assert!(n.is_unaligned());
+
+        // Unbounded original means "everything" (the `transform()` case)
+        let mut n = NormalizedString::unaligned("ab".to_string());
+        n.transform_range(Range::Original(..), vec![('X', 0), ('Y', 0)], 0);
+        assert_eq!(n.get(), "XY");
+        assert!(n.is_unaligned());
+    }
+
+    #[test]
+    fn unaligned_split() {
+        let aligned = NormalizedString::from("the-final--countdown");
+        let unaligned = NormalizedString::unaligned("the-final--countdown".to_string());
+
+        for behavior in [
+            SplitDelimiterBehavior::Removed,
+            SplitDelimiterBehavior::Isolated,
+            SplitDelimiterBehavior::MergedWithPrevious,
+            SplitDelimiterBehavior::MergedWithNext,
+            SplitDelimiterBehavior::Contiguous,
+        ] {
+            let aligned_texts: Vec<String> = aligned
+                .split('-', behavior)
+                .unwrap()
+                .iter()
+                .map(|n| n.get().to_string())
+                .collect();
+            let pieces = unaligned.split('-', behavior).unwrap();
+            let unaligned_texts: Vec<String> = pieces.iter().map(|n| n.get().to_string()).collect();
+            assert_eq!(aligned_texts, unaligned_texts, "behavior {behavior:?}");
+            assert!(pieces.iter().all(|p| p.is_unaligned()));
+            // Only the first piece can claim original position 0
+            assert!(pieces[1..].iter().all(|p| p.offsets_original().0 != 0));
+        }
+    }
+
+    #[test]
+    fn set_normalized_enters_unaligned_mode() {
+        let mut n = NormalizedString::from("HELLO");
+        n.set_normalized("hello".to_string());
+        assert!(n.is_unaligned());
+        assert!(n.alignments.is_empty());
+        assert_eq!(n.get(), "hello");
     }
 }

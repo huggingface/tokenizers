@@ -262,6 +262,13 @@ impl PreTokenizedString {
         }
     }
 
+    #[cfg(test)]
+    pub(crate) fn splits_are_unaligned(&self) -> bool {
+        self.splits
+            .iter()
+            .all(|s| s.normalized.is_unaligned() || s.normalized.is_empty())
+    }
+
     /// Returns a list of splits, each of them being a slice of the normalized
     /// string, the associated offsets either in original or normalized
     /// referential, as well as the potention tokens

@@ -563,18 +563,19 @@ impl AddedVocabulary {
         pretokenized
     }
 
-    /// Like [`extract_and_normalize`] but uses [`Normalizer::normalize_str`]
-    /// instead of [`Normalizer::normalize`], skipping alignment tracking.
+    /// Like [`extract_and_normalize`], but the whole pipeline runs on
+    /// unaligned `NormalizedString`s — no alignment tracking anywhere
+    /// (see [`NormalizedString::is_unaligned`]). Used by `encode_fast`.
     ///
-    /// This is used by `encode_fast` where offsets are not needed. The
-    /// normalization step avoids building per-byte alignment vectors, which
-    /// saves O(n) allocations per split.
+    /// Normalizers without a [`Normalizer::normalize_str`] override still
+    /// allocate one temporary aligned string internally.
     pub fn extract_and_normalize_fast<N: Normalizer>(
         &self,
         normalizer: Option<&N>,
         sequence: &str,
     ) -> PreTokenizedString {
-        let mut pretokenized: PreTokenizedString = sequence.into();
+        let mut pretokenized: PreTokenizedString =
+            NormalizedString::unaligned(sequence.to_string()).into();
 
         // 1. Extract non-normalized tokens from the raw string
         pretokenized
@@ -1226,5 +1227,33 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![("my", Some(vec![0])), ("ä»Ĭ", Some(vec![1])),]
         );
+    }
+
+    #[test]
+    fn extract_and_normalize_fast_is_unaligned_and_text_equivalent() {
+        let model = ModelMock::new(&[("hey", 0), ("friend", 1)]);
+        let normalizer = Lowercase;
+        let mut vocab = AddedVocabulary::new();
+        vocab
+            .add_tokens(
+                vec![
+                    AddedToken::from("<mask>", false).lstrip(true).rstrip(true),
+                    AddedToken::from("yesterday", false).normalized(true),
+                ],
+                &model,
+                Some(&normalizer),
+            )
+            .unwrap();
+
+        let input = "Hey <mask> friend, I saw You YESTERDAY <mask>!";
+        let slow = vocab.extract_and_normalize(Some(&normalizer), input);
+        let fast = vocab.extract_and_normalize_fast(Some(&normalizer), input);
+
+        assert_eq!(simplify_output(&slow), simplify_output(&fast));
+        assert!(fast
+            .get_splits(OffsetReferential::Normalized, OffsetType::None)
+            .iter()
+            .all(|(s, _, _)| !s.is_empty()));
+        assert!(fast.splits_are_unaligned());
     }
 }
