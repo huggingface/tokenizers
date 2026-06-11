@@ -150,8 +150,13 @@ impl NormalizedString {
 
     /// Whether this string skips alignment tracking. Transforms and slices
     /// preserve unalignedness; offsets in the original referential are
-    /// unavailable. `original_shift` still tracks slice positions so that
-    /// `offsets_original().0 == 0` keeps meaning "first piece".
+    /// unavailable. `original_shift` still tracks slice positions (in
+    /// normalized coordinates) so that `offsets_original().0 == 0` keeps
+    /// meaning "first piece" — see Metaspace's `PrependScheme::First`.
+    ///
+    /// Empty strings report aligned: both modes behave identically on them
+    /// (all offsets degenerate to `0..0`), at worst re-entering aligned mode
+    /// with a tiny alignment vector if content is later appended.
     pub(crate) fn is_unaligned(&self) -> bool {
         self.alignments.is_empty() && !self.normalized.is_empty()
     }
@@ -306,6 +311,12 @@ impl NormalizedString {
         if self.is_unaligned() {
             return match full_range {
                 Range::Original(_) => None,
+                // The shift accumulates normalized positions, not original
+                // ones: exact enough for the only consumer (`offsets_original`
+                // as a first-piece predicate), except when a normalizer
+                // removed leading content from the sequence start — a known
+                // encode_fast divergence for Metaspace(First) pipelines,
+                // pre-dating this mode (introduced with `normalize_str`).
                 Range::Normalized(r) => Some(Self {
                     original: String::new(),
                     normalized: self.normalized[r.clone()].to_owned(),

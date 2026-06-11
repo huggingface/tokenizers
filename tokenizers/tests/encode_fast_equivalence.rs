@@ -108,3 +108,56 @@ fn albert_metaspace() {
     let tokenizer = Tokenizer::from_file("data/albert-base-v1-tokenizer.json").unwrap();
     check_tokenizer(&tokenizer, &test_inputs());
 }
+
+/// Metaspace(First) prepends only to the piece at original position 0 — the
+/// one consumer of original-referential offsets on the fast path. The vocab
+/// distinguishes prepended from bare tokens so any divergence shows in ids.
+///
+/// Known limitation, pre-dating the unaligned mode: a normalizer that strips
+/// leading content from the sequence start (e.g. `Strip`) makes encode_fast
+/// prepend where encode does not. No such normalizer is used here.
+#[test]
+fn metaspace_first_prepend_scheme() {
+    use tokenizers::models::wordlevel::WordLevel;
+    use tokenizers::normalizers::utils::Lowercase;
+    use tokenizers::pre_tokenizers::metaspace::{Metaspace, PrependScheme};
+
+    let vocab: ahash::AHashMap<String, u32> = [
+        "▁hello", "hello", "▁world", "world", "▁how", "how", "▁are", "are", "▁you", "you",
+        "<mask>", "<unk>", "▁",
+    ]
+    .iter()
+    .enumerate()
+    .map(|(i, s)| (s.to_string(), i as u32))
+    .collect();
+    let model = WordLevel::builder()
+        .vocab(vocab)
+        .unk_token("<unk>".into())
+        .build()
+        .unwrap();
+
+    let mut tokenizer = Tokenizer::new(model);
+    let _ = tokenizer.with_normalizer(Some(Lowercase));
+    let _ = tokenizer.with_pre_tokenizer(Some(Metaspace::new('▁', PrependScheme::First, true)));
+    tokenizer
+        .add_special_tokens(vec![AddedToken::from("<mask>", true)])
+        .unwrap();
+
+    for input in [
+        "Hello world how are you",
+        "<mask> hello world",
+        "hello <mask> world",
+        " hello world",
+        "hello",
+        "<mask>",
+    ] {
+        let slow = tokenizer.encode(input, false).unwrap();
+        let fast = tokenizer.encode_fast(input, false).unwrap();
+        assert_eq!(slow.get_ids(), fast.get_ids(), "ids differ on {input:?}");
+        // The prepended form must actually occur, or this test proves nothing
+        if input == "Hello world how are you" {
+            assert_eq!(slow.get_ids()[0], 0, "expected ▁hello first");
+            assert!(!slow.get_ids()[1..].contains(&0));
+        }
+    }
+}
