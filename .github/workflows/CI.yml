@@ -23,28 +23,41 @@ jobs:
     runs-on: ${{ matrix.platform.runner }}
     strategy:
       matrix:
+        # `manylinux` selects the build image per target.  x86_64 and
+        # aarch64 use manylinux_2_28 (gcc 12, glibc 2.28) because mimalloc
+        # requires a C11 <stdatomic.h>-capable compiler, which the default
+        # manylinux2014 cross-gcc (4.8.5) lacks.  The other targets keep
+        # `auto` (manylinux2014): manylinux_2_28 has no image for them and
+        # they do not build mimalloc anyway.
         platform:
           - runner: ubuntu-latest
             arch: x86_64
             target: x86_64-unknown-linux-gnu
+            manylinux: '2_28'
           - runner: ubuntu-latest
             arch: x86
             target: i686-unknown-linux-gnu
+            manylinux: auto
           - runner: ubuntu-latest
             arch: aarch64
             target: aarch64-unknown-linux-gnu
+            manylinux: '2_28'
           - runner: ubuntu-latest
             arch: armv7
             target: armv7-unknown-linux-gnueabihf
+            manylinux: auto
           - runner: ubuntu-latest
             arch: s390x
             target: s390x-unknown-linux-gnu
+            manylinux: auto
           - runner: ubuntu-latest
             arch: ppc64le
             target: powerpc64le-unknown-linux-gnu
+            manylinux: auto
           - runner: ubuntu-latest
             arch: riscv64
             target: riscv64gc-unknown-linux-gnu
+            manylinux: auto
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
@@ -56,7 +69,7 @@ jobs:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --manifest-path bindings/python/Cargo.toml
           sccache: 'true'
-          manylinux: auto
+          manylinux: ${{ matrix.platform.manylinux }}
       - name: Upload wheels
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:

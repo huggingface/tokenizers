@@ -1,6 +1,26 @@
 #[macro_use]
 extern crate criterion;
 
+// Use mimalloc as the global allocator for this benchmark binary so
+// numbers reflect what the production cdylib bindings (Python / Node)
+// ship with.  Setting `#[global_allocator]` here applies only to this
+// bench binary, not to the `tokenizers` library crate, so downstream
+// Rust consumers of the library are not affected.
+//
+// The same cfg expression as the target-conditional dev-dependency in
+// `Cargo.toml`.  On targets where mimalloc has not been tested, the
+// bench falls back to the system allocator.
+#[cfg(any(
+    all(
+        target_os = "linux",
+        any(target_arch = "x86_64", target_arch = "aarch64"),
+        target_env = "gnu"
+    ),
+    all(target_os = "macos", target_arch = "aarch64"),
+))]
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 mod common;
 
 use criterion::{Criterion, Throughput};
