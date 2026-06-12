@@ -27,6 +27,50 @@ use ahash::AHashMap;
 use serde::{Serialize, Serializer};
 use std::collections::BTreeMap;
 
+/// Detects nested quantifiers in a regex pattern that can cause catastrophic
+/// backtracking in Oniguruma (ReDoS, CWE-1333).  Examples: `(a+)+`, `(a*)*`.
+///
+/// The check is best-effort: patterns with Oniguruma-specific syntax that
+/// `regex-syntax` cannot parse are silently accepted.
+pub fn check_redos_risk(pattern: &str) -> std::result::Result<(), String> {
+    use regex_syntax::ast::{parse::Parser, Ast};
+
+    fn contains_quantifier(ast: &Ast) -> bool {
+        match ast {
+            Ast::Repetition(_) => true,
+            Ast::Group(g) => contains_quantifier(&g.ast),
+            Ast::Concat(c) => c.asts.iter().any(contains_quantifier),
+            Ast::Alternation(a) => a.asts.iter().any(contains_quantifier),
+            _ => false,
+        }
+    }
+
+    fn has_nested_quantifier(ast: &Ast) -> bool {
+        match ast {
+            // A repetition whose inner expression also contains a repetition.
+            Ast::Repetition(rep) => contains_quantifier(&rep.ast) || has_nested_quantifier(&rep.ast),
+            Ast::Group(g) => has_nested_quantifier(&g.ast),
+            Ast::Concat(c) => c.asts.iter().any(has_nested_quantifier),
+            Ast::Alternation(a) => a.asts.iter().any(has_nested_quantifier),
+            _ => false,
+        }
+    }
+
+    match Parser::new().parse(pattern) {
+        Ok(ast) => {
+            if has_nested_quantifier(&ast) {
+                return Err(format!(
+                    "Regex '{pattern}' contains nested quantifiers that may cause \
+                     catastrophic backtracking (ReDoS, CWE-1333). \
+                     Avoid patterns such as `(a+)+` or `(a*)*`."
+                ));
+            }
+            Ok(())
+        }
+        Err(_) => Ok(()), // Oniguruma-specific syntax; regex-syntax can't parse it
+    }
+}
+
 pub(crate) fn ordered_map<S, K, V>(
     value: &AHashMap<K, V>,
     serializer: S,
