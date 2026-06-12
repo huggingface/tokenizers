@@ -556,6 +556,13 @@ impl TemplateProcessing {
                         let encoding = &mut encodings[i];
                         encoding.set_type_ids(vec![*type_id; encoding.len()]);
                         encoding.set_sequence_id(i);
+                        encoding
+                            .get_overflowing_mut()
+                            .iter_mut()
+                            .for_each(|overflow| {
+                                overflow.set_type_ids(vec![*type_id; overflow.len()]);
+                                overflow.set_sequence_id(i);
+                            });
                         Some(encoding.clone())
                     }
                     Piece::SpecialToken { id, type_id } => {
@@ -1048,7 +1055,7 @@ mod tests {
                         vec![1, 1, 1, 1, 1, 1],
                         vec![Encoding::new(
                             vec![1, 13, 0, 17, 0],
-                            vec![0, 0, 0, 0, 1],
+                            vec![0, 0, 0, 1, 1],
                             vec![
                                 "[CLS]".into(),
                                 "you".into(),
@@ -1067,7 +1074,7 @@ mod tests {
                     ),
                     Encoding::new(
                         vec![1, 13, 0, 17, 0],
-                        vec![0, 0, 0, 0, 1],
+                        vec![0, 0, 0, 1, 1],
                         vec![
                             "[CLS]".into(),
                             "you".into(),
@@ -1084,7 +1091,7 @@ mod tests {
                     ),
                     Encoding::new(
                         vec![1, 12, 14, 0, 17, 0],
-                        vec![0, 0, 0, 0, 0, 1],
+                        vec![0, 0, 0, 0, 1, 1],
                         vec![
                             "[CLS]".into(),
                             "Hello".into(),
@@ -1099,7 +1106,7 @@ mod tests {
                         vec![1, 1, 1, 1, 1, 1],
                         vec![Encoding::new(
                             vec![1, 13, 0, 17, 0],
-                            vec![0, 0, 0, 0, 1],
+                            vec![0, 0, 0, 1, 1],
                             vec![
                                 "[CLS]".into(),
                                 "you".into(),
@@ -1126,6 +1133,70 @@ mod tests {
         assert_eq!(pair_encoding.token_to_sequence(5), Some(1));
         assert_eq!(pair_encoding.token_to_sequence(6), None);
     }
+    #[test]
+    fn template_processing_overflow_type_ids() {
+        // Regression test for huggingface/tokenizers#1908.
+        // Verifies that when a `Piece::Sequence` declares a non-zero `type_id`,
+        // every overflowing encoding inherits the same `type_id` and `sequence_id`
+        // as the main encoding (truncation can split off overflows before the
+        // post-processor runs, and they used to keep stale type_ids).
+        use crate::Token;
+
+        let processor = TemplateProcessing::builder()
+            .try_single("[CLS]:0 $A:0 [SEP]:0")
+            .unwrap()
+            .try_pair("[CLS]:0 $A:0 [SEP]:0 $B:1 [SEP]:1")
+            .unwrap()
+            .special_tokens(vec![("[CLS]", 1), ("[SEP]", 0)])
+            .build()
+            .unwrap();
+
+        // Sequence A: one main token + two overflows (simulating truncation).
+        let mut encoding_a =
+            Encoding::from_tokens(vec![Token::new(10, "hello".into(), (0, 5))], 0);
+        let overflow_a1 =
+            Encoding::from_tokens(vec![Token::new(11, "world".into(), (6, 11))], 0);
+        let overflow_a2 =
+            Encoding::from_tokens(vec![Token::new(12, "again".into(), (12, 17))], 0);
+        encoding_a.set_overflowing(vec![overflow_a1, overflow_a2]);
+
+        // Sequence B: one main token + one overflow. The original `type_ids`
+        // here are 0 (set by `Encoding::from_tokens`); the template should
+        // promote both the main and the overflow to type_id=1.
+        let mut encoding_b =
+            Encoding::from_tokens(vec![Token::new(20, "foo".into(), (0, 3))], 0);
+        let overflow_b =
+            Encoding::from_tokens(vec![Token::new(21, "bar".into(), (4, 7))], 0);
+        encoding_b.set_overflowing(vec![overflow_b]);
+
+        let result = processor
+            .process(encoding_a, Some(encoding_b), true)
+            .unwrap();
+
+        // Main: [CLS]:0 hello:0 [SEP]:0 foo:1 [SEP]:1
+        assert_eq!(result.get_type_ids(), &[0, 0, 0, 1, 1]);
+
+        // Each overflow must have the correct type_ids: the sequence A part
+        // stays at 0 and the sequence B part is promoted to 1.
+        for overflow in result.get_overflowing() {
+            let type_ids = overflow.get_type_ids();
+            let tokens = overflow.get_tokens();
+            for (tid, tok) in type_ids.iter().zip(tokens.iter()) {
+                match tok.as_str() {
+                    "foo" | "bar" => assert_eq!(
+                        *tid, 1,
+                        "overflow token {tok:?} (sequence B) should have type_id=1, got {tid}"
+                    ),
+                    "hello" | "world" | "again" => assert_eq!(
+                        *tid, 0,
+                        "overflow token {tok:?} (sequence A) should have type_id=0, got {tid}"
+                    ),
+                    _ => {}
+                }
+            }
+        }
+    }
+
     #[test]
     fn pair_must_use_both_sequences() {
         let processor = TemplateProcessing::builder()
