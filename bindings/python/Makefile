@@ -63,15 +63,18 @@ test-rs:
 test: test-py test-rs
 
 HF_TEST_DATA = https://huggingface.co/datasets/hf-internal-testing/tokenizers-test-data/resolve/main
+# Authenticated Hub requests get much higher rate limits than anonymous ones.
+# `@` keeps make from echoing the recipe, so the auth header never hits stdout.
+CURL = @echo "Downloading $@" && curl -sL --retry 3 $(if $(HF_TOKEN),-H "Authorization: Bearer $(HF_TOKEN)")
 
 $(DATA_DIR)/big.txt :
 	$(dir_guard)
-	curl -sL $(HF_TEST_DATA)/big.txt -o $@
+	$(CURL) $(HF_TEST_DATA)/big.txt -o $@
 
 $(DATA_DIR)/small.txt :
 	$(dir_guard)
-	curl -sL $(HF_TEST_DATA)/small.txt -o $@
+	$(CURL) $(HF_TEST_DATA)/small.txt -o $@
 
 $(DATA_DIR)/roberta.json :
 	$(dir_guard)
-	curl -sL $(HF_TEST_DATA)/roberta.json -o $@
+	$(CURL) $(HF_TEST_DATA)/roberta.json -o $@

@@ -46,51 +46,54 @@ bench : $(BENCHMARK_RESOURCES)
 	cargo bench -- --verbose
 
 HF_TEST_DATA = https://huggingface.co/datasets/hf-internal-testing/tokenizers-test-data/resolve/main
+# Authenticated Hub requests get much higher rate limits than anonymous ones.
+# `@` keeps make from echoing the recipe, so the auth header never hits stdout.
+WGET = @echo "Downloading $@" && wget --tries=3 --retry-on-http-error=429,500,502,503 $(if $(HF_TOKEN),--header "Authorization: Bearer $(HF_TOKEN)")
 
 $(DATA_DIR)/gpt2-vocab.json :
 	$(dir_guard)
-	wget $(HF_TEST_DATA)/gpt2-vocab.json -O $@
+	$(WGET) $(HF_TEST_DATA)/gpt2-vocab.json -O $@
 
 $(DATA_DIR)/gpt2-merges.txt :
 	$(dir_guard)
-	wget $(HF_TEST_DATA)/gpt2-merges.txt -O $@
+	$(WGET) $(HF_TEST_DATA)/gpt2-merges.txt -O $@
 
 $(DATA_DIR)/bert-base-uncased-vocab.txt :
 	$(dir_guard)
-	wget $(HF_TEST_DATA)/bert-base-uncased-vocab.txt -O $@
+	$(WGET) $(HF_TEST_DATA)/bert-base-uncased-vocab.txt -O $@
 
 $(DATA_DIR)/unigram.json :
 	$(dir_guard)
-	wget $(HF_TEST_DATA)/unigram.json -O $@
+	$(WGET) $(HF_TEST_DATA)/unigram.json -O $@
 
 $(DATA_DIR)/unigram_wagahaiwa_nekodearu.txt :
 	$(dir_guard)
-	wget $(HF_TEST_DATA)/unigram_wagahaiwa_nekodearu.txt -O $@
+	$(WGET) $(HF_TEST_DATA)/unigram_wagahaiwa_nekodearu.txt -O $@
 
 $(DATA_DIR)/albert-base-v1-tokenizer.json :
 	$(dir_guard)
-	wget $(HF_TEST_DATA)/albert-base-v1-tokenizer.json -O $@
+	$(WGET) $(HF_TEST_DATA)/albert-base-v1-tokenizer.json -O $@
 
 $(DATA_DIR)/big.txt :
 	$(dir_guard)
-	wget $(HF_TEST_DATA)/big.txt -O $@
+	$(WGET) $(HF_TEST_DATA)/big.txt -O $@
 
 $(DATA_DIR)/small.txt :
 	$(dir_guard)
-	wget $(HF_TEST_DATA)/small.txt -O $@
+	$(WGET) $(HF_TEST_DATA)/small.txt -O $@
 
 $(DATA_DIR)/roberta.json :
 	$(dir_guard)
-	wget $(HF_TEST_DATA)/roberta.json -O $@
+	$(WGET) $(HF_TEST_DATA)/roberta.json -O $@
 
 $(DATA_DIR)/tokenizer-wiki.json :
 	$(dir_guard)
-	wget $(HF_TEST_DATA)/tokenizer-wiki.json -O $@
+	$(WGET) $(HF_TEST_DATA)/tokenizer-wiki.json -O $@
 
 $(DATA_DIR)/bert-wiki.json :
 	$(dir_guard)
-	wget $(HF_TEST_DATA)/bert-wiki.json -O $@
+	$(WGET) $(HF_TEST_DATA)/bert-wiki.json -O $@
 
 $(DATA_DIR)/llama-3-tokenizer.json :
 	$(dir_guard)
-	wget $(HF_TEST_DATA)/llama-3-tokenizer.json -O $@
+	$(WGET) $(HF_TEST_DATA)/llama-3-tokenizer.json -O $@
