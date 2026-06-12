@@ -120,7 +120,7 @@ pub fn decode(c: &mut Criterion) {
         ));
         group.bench_function("decode_stream, short lines", |bencher| {
             bencher.iter_custom(|num_iterations| {
-                iter_bench_decode_stream(num_iterations, &tokenizer, &stream_lines)
+                iter_bench_decode_stream(num_iterations, &tokenizer, stream_lines)
             })
         });
         // Throughput expressed in tokens / sec
@@ -129,7 +129,7 @@ pub fn decode(c: &mut Criterion) {
         ));
         group.bench_function("decode_stream, long lines", |bencher| {
             bencher.iter_custom(|num_iterations| {
-                iter_bench_decode_stream(num_iterations, &tokenizer, &stream_fused)
+                iter_bench_decode_stream(num_iterations, &tokenizer, stream_fused)
             })
         });
     }
