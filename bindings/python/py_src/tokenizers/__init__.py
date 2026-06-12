@@ -18,7 +18,7 @@ Offsets = Tuple[int, int]
 TextInputSequence = str
 """A :obj:`str` that represents an input sequence """
 
-PreTokenizedInputSequence = Union[List[str], Tuple[str]]
+PreTokenizedInputSequence = Union[List[str], Tuple[str, ...]]
 """A pre-tokenized input sequence. Can be one of:
 
     - A :obj:`List` of :obj:`str`
