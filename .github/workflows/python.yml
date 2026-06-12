@@ -123,7 +123,7 @@ jobs:
 
 
   audit:
-    name: Audit dependencies for vulnerabilities
+    name: Audit dependencies
     # Runs independently of the build/test matrix so an advisory database hit
     # (which is OS- and interpreter-invariant) doesn't fail the build.
     runs-on: ubuntu-latest
