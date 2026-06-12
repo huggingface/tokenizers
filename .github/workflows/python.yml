@@ -83,7 +83,10 @@ jobs:
         run: cargo clippy --manifest-path ./bindings/python/Cargo.toml --all-targets --all-features -- -D warnings
 
       - name: Run Audit
-        run: cargo audit -D warnings -f ./bindings/python/Cargo.lock --ignore RUSTSEC-2024-0436 --ignore RUSTSEC-2025-0014 --ignore RUSTSEC-2025-0119
+        # RUSTSEC-2026-0176 / -0177: fixed in pyo3 0.29.0, but rust-numpy has no
+        # 0.29-compatible release yet, so we're stuck on pyo3 0.28.2. Drop these
+        # ignores once numpy ships a pyo3 0.29 bump.
+        run: cargo audit -D warnings -f ./bindings/python/Cargo.lock --ignore RUSTSEC-2024-0436 --ignore RUSTSEC-2025-0014 --ignore RUSTSEC-2025-0119 --ignore RUSTSEC-2026-0176 --ignore RUSTSEC-2026-0177
 
       - name: Install
         working-directory: ./bindings/python
