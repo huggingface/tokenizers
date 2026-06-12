@@ -13,9 +13,12 @@ HF_TEST_DATA = "https://huggingface.co/datasets/hf-internal-testing/tokenizers-t
 def download(url, with_filename=None):
     filename = with_filename if with_filename is not None else url.rsplit("/")[-1]
     filepath = os.path.join(DATA_PATH, filename)
+    # Authenticated Hub requests get much higher rate limits than anonymous ones.
+    token = os.environ.get("HF_TOKEN")
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
     if not os.path.exists(filepath):
         with open(filepath, "wb") as f:
-            response = requests.get(url, stream=True)
+            response = requests.get(url, stream=True, headers=headers)
             response.raise_for_status()
             for chunk in response.iter_content(1024):
                 f.write(chunk)

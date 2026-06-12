@@ -5,6 +5,9 @@ DATA_DIR = data
 dir_guard=@mkdir -p $(@D)
 
 HF_DATA = https://huggingface.co/datasets/hf-internal-testing/tokenizers-test-data/resolve/main
+# Authenticated Hub requests get much higher rate limits than anonymous ones.
+# `@` keeps make from echoing the recipe, so the auth header never hits stdout.
+CURL = @echo "Downloading $@" && curl -sL --retry 3 $(if $(HF_TOKEN),-H "Authorization: Bearer $(HF_TOKEN)")
 
 # Format source code automatically
 style:
@@ -22,19 +25,19 @@ test: $(TESTS_RESOURCES)
 
 $(DATA_DIR)/big.txt :
 	$(dir_guard)
-	curl -sL $(HF_DATA)/big.txt -o $@
+	$(CURL) $(HF_DATA)/big.txt -o $@
 
 $(DATA_DIR)/small.txt : $(DATA_DIR)/big.txt
 	head -100 $(DATA_DIR)/big.txt > $@
 
 $(DATA_DIR)/roberta.json :
 	$(dir_guard)
-	curl -sL $(HF_DATA)/roberta.json -o $@
+	$(CURL) $(HF_DATA)/roberta.json -o $@
 
 $(DATA_DIR)/tokenizer-wiki.json :
 	$(dir_guard)
-	curl -sL $(HF_DATA)/tokenizer-wiki.json -o $@
+	$(CURL) $(HF_DATA)/tokenizer-wiki.json -o $@
 
 $(DATA_DIR)/bert-wiki.json :
 	$(dir_guard)
-	curl -sL $(HF_DATA)/bert-wiki.json -o $@
+	$(CURL) $(HF_DATA)/bert-wiki.json -o $@

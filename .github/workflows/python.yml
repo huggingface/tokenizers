@@ -95,8 +95,23 @@ jobs:
           fi
 
 
+      # Test fixtures are immutable — cache them (plus the huggingface_hub /
+      # datasets cache used by the test suite at runtime) so CI doesn't
+      # re-download from the Hub (and get rate-limited) on every run.
+      - name: Cache HF test data
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
+        with:
+          path: |
+            bindings/python/data
+            bindings/python/tests/data
+            ~/.cache/huggingface
+          key: hf-test-data-${{ runner.os }}-${{ hashFiles('bindings/python/Makefile', 'bindings/python/tests/utils.py') }}
+          restore-keys: hf-test-data-${{ runner.os }}-
+
       - name: Run tests
         working-directory: ./bindings/python
+        env:
+          HF_TOKEN: ${{ secrets.HF_HUB_READ_TOKEN }}
         run: |
           source .env/bin/activate
           # `make test` also runs `cargo test --no-default-features` which
