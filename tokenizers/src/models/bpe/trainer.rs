@@ -7,6 +7,7 @@ use crate::utils::progress::{ProgressBar, ProgressFormat, ProgressStyle};
 use ahash::{AHashMap, AHashSet};
 use compact_str::CompactString;
 use dary_heap::OctonaryHeap;
+use log::warn;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::HashSet;
@@ -139,6 +140,8 @@ impl BpeTrainerBuilder {
     }
 
     /// Set the continuing_subword_prefix
+    ///
+    /// If not set on the trainer, the value already set on the trained model is used.
     #[must_use]
     pub fn continuing_subword_prefix(mut self, prefix: String) -> Self {
         self.config.continuing_subword_prefix = Some(prefix);
@@ -146,6 +149,8 @@ impl BpeTrainerBuilder {
     }
 
     /// Set the end_of_word_suffix
+    ///
+    /// If not set on the trainer, the value already set on the trained model is used.
     #[must_use]
     pub fn end_of_word_suffix(mut self, suffix: String) -> Self {
         self.config.end_of_word_suffix = Some(suffix);
@@ -210,9 +215,11 @@ pub struct BpeTrainer {
     /// The initial alphabet we want absolutely to include. This allows to cover
     /// some characters that are not necessarily in the training set
     pub initial_alphabet: AHashSet<char>,
-    /// An optional prefix to use on any subword that exist only behind another one
+    /// An optional prefix to use on any subword that exist only behind another one.
+    /// If `None`, the value already set on the trained model is used.
     pub continuing_subword_prefix: Option<String>,
-    /// An optional suffix to characterize and end-of-word subword
+    /// An optional suffix to characterize and end-of-word subword.
+    /// If `None`, the value already set on the trained model is used.
     pub end_of_word_suffix: Option<String>,
     /// An optional parameter to limit the max length of any single token
     pub max_token_length: Option<usize>,
@@ -367,6 +374,8 @@ impl BpeTrainer {
         w2id: &mut AHashMap<CompactString, u32>,
         id2w: &mut Vec<CompactString>,
         p: &Option<ProgressBar>,
+        continuing_subword_prefix: Option<&str>,
+        end_of_word_suffix: Option<&str>,
     ) -> (Vec<Word>, Vec<u64>) {
         let mut words: Vec<Word> = Vec::with_capacity(wc.len());
         let mut counts: Vec<u64> = Vec::with_capacity(wc.len());
@@ -382,13 +391,13 @@ impl BpeTrainer {
 
                     // Add the `continuing_subword_prefix` if relevant
                     if !is_first {
-                        if let Some(prefix) = &self.continuing_subword_prefix {
+                        if let Some(prefix) = continuing_subword_prefix {
                             s.insert_str(0, prefix);
                         }
                     }
                     // Add the `end_of_word_suffix` if relevant
                     if is_last {
-                        if let Some(suffix) = &self.end_of_word_suffix {
+                        if let Some(suffix) = end_of_word_suffix {
                             s.push_str(suffix);
                         }
                     }
@@ -462,6 +471,38 @@ impl BpeTrainer {
         let mut id_to_word: Vec<CompactString> = Vec::with_capacity(self.vocab_size);
         let max_token_length: usize = self.max_token_length.unwrap_or(usize::MAX);
 
+        // The trainer's `continuing_subword_prefix` and `end_of_word_suffix` take precedence,
+        // but when they are not set on the trainer we inherit the values already set on the
+        // model (e.g. with `BPE::builder().end_of_word_suffix(..)`) instead of silently
+        // ignoring and erasing them.
+        // See https://github.com/huggingface/tokenizers/issues/1793
+        if self.continuing_subword_prefix.is_some()
+            && model.continuing_subword_prefix.is_some()
+            && self.continuing_subword_prefix != model.continuing_subword_prefix
+        {
+            warn!(
+                "Overriding the model's `continuing_subword_prefix` ({:?}) with the trainer's ({:?})",
+                model.continuing_subword_prefix, self.continuing_subword_prefix
+            );
+        }
+        if self.end_of_word_suffix.is_some()
+            && model.end_of_word_suffix.is_some()
+            && self.end_of_word_suffix != model.end_of_word_suffix
+        {
+            warn!(
+                "Overriding the model's `end_of_word_suffix` ({:?}) with the trainer's ({:?})",
+                model.end_of_word_suffix, self.end_of_word_suffix
+            );
+        }
+        let continuing_subword_prefix = self
+            .continuing_subword_prefix
+            .clone()
+            .or_else(|| model.continuing_subword_prefix.clone());
+        let end_of_word_suffix = self
+            .end_of_word_suffix
+            .clone()
+            .or_else(|| model.end_of_word_suffix.clone());
+
         let progress = self.setup_progress();
 
         //
@@ -478,8 +519,14 @@ impl BpeTrainer {
         // 3. Tokenize words
         //
         self.update_progress(&progress, word_counts.len(), "Tokenize words");
-        let (mut words, counts) =
-            self.tokenize_words(word_counts, &mut word_to_id, &mut id_to_word, &progress);
+        let (mut words, counts) = self.tokenize_words(
+            word_counts,
+            &mut word_to_id,
+            &mut id_to_word,
+            &progress,
+            continuing_subword_prefix.as_deref(),
+            end_of_word_suffix.as_deref(),
+        );
         self.finalize_progress(&progress, words.len(), "Tokenize words");
 
         //
@@ -530,7 +577,7 @@ impl BpeTrainer {
             let mut part_b = id_to_word[top.pair.1 as usize].as_str();
 
             // Build new token
-            if let Some(prefix) = &self.continuing_subword_prefix {
+            if let Some(prefix) = continuing_subword_prefix.as_deref() {
                 if let Some(rest) = part_b.strip_prefix(prefix) {
                     part_b = rest;
                 }
@@ -623,8 +670,8 @@ impl BpeTrainer {
             .map(|(i, (pair, new_token_id))| (pair, (i as u32, new_token_id)))
             .collect();
 
-        model.continuing_subword_prefix = self.continuing_subword_prefix.clone();
-        model.end_of_word_suffix = self.end_of_word_suffix.clone();
+        model.continuing_subword_prefix = continuing_subword_prefix;
+        model.end_of_word_suffix = end_of_word_suffix;
 
         Ok(self.special_tokens.clone())
     }
@@ -754,6 +801,47 @@ mod tests {
         .collect();
         assert_eq!(model.merges, expected_merges);
     }
+
+    #[test]
+    fn test_trainer_inherits_model_prefix_and_suffix() {
+        // https://github.com/huggingface/tokenizers/issues/1793
+        // A `continuing_subword_prefix` or `end_of_word_suffix` set on the BPE model (and not
+        // on the trainer) must be used during training instead of being ignored and then erased.
+        let word_counts: AHashMap<CompactString, u64> = [("roses".into(), 3), ("red".into(), 5)]
+            .iter()
+            .cloned()
+            .collect();
+
+        let trainer = BpeTrainer::builder().show_progress(false).build();
+        let mut model = BPE::builder()
+            .continuing_subword_prefix("##".into())
+            .end_of_word_suffix("</w>".into())
+            .build()
+            .unwrap();
+        trainer.do_train(&word_counts, &mut model).unwrap();
+
+        // The model's settings survive training
+        assert_eq!(model.continuing_subword_prefix, Some("##".into()));
+        assert_eq!(model.end_of_word_suffix, Some("</w>".into()));
+        // ... and were actually applied to the trained vocabulary
+        assert!(model.vocab.keys().any(|t| t.ends_with("</w>")));
+        assert!(model.vocab.keys().any(|t| t.starts_with("##")));
+
+        // An explicit trainer setting still takes precedence over the model's
+        let trainer = BpeTrainer::builder()
+            .show_progress(false)
+            .end_of_word_suffix("$".into())
+            .build();
+        let mut model = BPE::builder()
+            .end_of_word_suffix("</w>".into())
+            .build()
+            .unwrap();
+        trainer.do_train(&word_counts, &mut model).unwrap();
+        assert_eq!(model.end_of_word_suffix, Some("$".into()));
+        assert!(model.vocab.keys().any(|t| t.ends_with('$')));
+        assert!(!model.vocab.keys().any(|t| t.ends_with("</w>")));
+    }
+
     #[test]
     fn bpe_test_max_token_length_16() {
         /* bpe_test_max_token_length series of tests test the max_token_length flag of bpetrainer
