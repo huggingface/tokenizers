@@ -416,7 +416,7 @@ impl BpeTrainer {
         words: &[Word],
         counts: &[u64],
         p: &Option<ProgressBar>,
-    ) -> (AHashMap<Pair, i32>, AHashMap<Pair, AHashSet<usize>>) {
+    ) -> (AHashMap<Pair, i64>, AHashMap<Pair, AHashSet<usize>>) {
         words
             .maybe_par_iter()
             .enumerate()
@@ -429,7 +429,7 @@ impl BpeTrainer {
 
                     // Initialize pair_counts and where_to_update for this pair if we just saw it
                     // Then update counts
-                    *pair_counts.entry(cur_pair).or_default() += counts[i] as i32;
+                    *pair_counts.entry(cur_pair).or_default() += counts[i] as i64;
                     where_to_update.entry(cur_pair).or_default().insert(i);
                 }
 
@@ -581,7 +581,7 @@ impl BpeTrainer {
 
             // Introduce new formed pairs
             for ((pair, change), iw) in changes {
-                let count = change * counts[iw] as i32;
+                let count = change as i64 * counts[iw] as i64;
                 *pair_counts.entry(pair).or_default() += count;
                 if change > 0 {
                     where_to_update.entry(pair).or_default().insert(iw);
@@ -680,6 +680,39 @@ mod tests {
     use super::{BpeTrainer, Pair, BPE};
     use ahash::AHashMap;
     use compact_str::CompactString;
+
+    #[test]
+    fn pair_counts_do_not_overflow_i32() {
+        // Word counts can exceed i32::MAX; before the pair-count accumulator was
+        // widened to i64, `counts[i] as i32` wrapped negative and corrupted merge
+        // ordering, so the most frequent pair was not merged first (#2058).
+        let big = (i32::MAX as u64) + 10;
+        let word_counts: AHashMap<CompactString, u64> = [("ab".into(), big), ("ac".into(), 1)]
+            .iter()
+            .cloned()
+            .collect();
+        let trainer = BpeTrainer::builder()
+            .show_progress(false)
+            .min_frequency(0)
+            .vocab_size(5)
+            .build();
+        let mut model = BPE::default();
+        trainer.do_train(&word_counts, &mut model).unwrap();
+        // ("a", "b") occurs `big` times and must be the first learned merge (rank 0).
+        let id_to_tok: AHashMap<u32, String> =
+            model.get_vocab().into_iter().map(|(t, i)| (i, t)).collect();
+        let first = model
+            .merges
+            .iter()
+            .find(|(_, (rank, _))| *rank == 0)
+            .map(|((a, b), _)| (id_to_tok[a].clone(), id_to_tok[b].clone()))
+            .expect("at least one merge must be learned");
+        assert_eq!(
+            (first.0.as_str(), first.1.as_str()),
+            ("a", "b"),
+            "most frequent pair must merge first"
+        );
+    }
 
     #[test]
     fn test_train() {
