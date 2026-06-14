@@ -46,6 +46,14 @@ impl Normalizer for Sequence {
         }
         Ok(())
     }
+
+    fn normalize_str(&self, s: &str) -> Result<String> {
+        let mut result = s.to_owned();
+        for normalizer in &self.normalizers {
+            result = normalizer.normalize_str(&result)?;
+        }
+        Ok(result)
+    }
 }
 
 /// Lowercases the input
@@ -56,5 +64,9 @@ impl Normalizer for Lowercase {
     fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
         normalized.lowercase();
         Ok(())
+    }
+
+    fn normalize_str(&self, s: &str) -> Result<String> {
+        Ok(s.to_lowercase())
     }
 }

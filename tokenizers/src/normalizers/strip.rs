@@ -38,6 +38,11 @@ impl Normalizer for Strip {
 
         Ok(())
     }
+    fn normalize_str(&self, s: &str) -> Result<String> {
+        let s = if self.strip_left { s.trim_start() } else { s };
+        let s = if self.strip_right { s.trim_end() } else { s };
+        Ok(s.to_owned())
+    }
 }
 
 // This normalizer removes combining marks from a normalized string
@@ -52,6 +57,9 @@ impl Normalizer for StripAccents {
     fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
         normalized.filter(|c| !is_combining_mark(c));
         Ok(())
+    }
+    fn normalize_str(&self, s: &str) -> Result<String> {
+        Ok(s.chars().filter(|c| !is_combining_mark(*c)).collect())
     }
 }
 

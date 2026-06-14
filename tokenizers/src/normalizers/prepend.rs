@@ -21,6 +21,13 @@ impl Normalizer for Prepend {
         }
         Ok(())
     }
+    fn normalize_str(&self, s: &str) -> Result<String> {
+        if s.is_empty() {
+            Ok(String::new())
+        } else {
+            Ok(format!("{}{s}", self.prepend))
+        }
+    }
 }
 
 #[cfg(test)]
