@@ -1,0 +1,10 @@
+[package]
+name = "tokenizers"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tk-train = { path = "../tk-train", optional = true }
+
+[features]
+train = ["tk-train"]
