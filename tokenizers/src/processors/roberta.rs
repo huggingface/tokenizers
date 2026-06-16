@@ -79,9 +79,14 @@ impl PostProcessor for RobertaProcessing {
         }
 
         // Roberta is weird, and every encoding is type_id=0.
-        encodings
-            .iter_mut()
-            .for_each(|encoding| encoding.set_type_ids(vec![0; encoding.len()]));
+        // Roberta is weird, and every encoding is type_id=0.
+        encodings.iter_mut().for_each(|encoding| {
+            encoding.set_type_ids(vec![0; encoding.len()]);
+            encoding
+                .get_overflowing_mut()
+                .iter_mut()
+                .for_each(|overflow| overflow.set_type_ids(vec![0; overflow.len()]));
+        });
 
         if !add_special_tokens {
             return Ok(encodings);

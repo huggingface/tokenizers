@@ -141,6 +141,10 @@ pub trait PostProcessor {
                 .iter_mut()
                 .for_each(|encoding| encoding.set_sequence_id(i));
             encoding.set_type_ids(vec![i as u32; encoding.len()]);
+            encoding
+                .get_overflowing_mut()
+                .iter_mut()
+                .for_each(|overflow| overflow.set_type_ids(vec![i as u32; overflow.len()]));
         });
 
         let encodings = self.process_encodings(encodings, add_special_tokens)?;
