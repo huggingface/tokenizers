@@ -361,7 +361,7 @@ impl PyBpeTrainer {
         signature = (**kwargs),
         text_signature = "(self, vocab_size=30000, min_frequency=0, show_progress=True, progress_format=\"indicatif\", special_tokens=[], limit_alphabet=None, initial_alphabet=[], continuing_subword_prefix=None, end_of_word_suffix=None, max_token_length=None, words={})"
     )]
-    pub fn new(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<(Self, PyTrainer)> {
+    pub fn new(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyClassInitializer<Self>> {
         let mut builder = tk::models::bpe::BpeTrainer::builder();
         if let Some(kwargs) = kwargs {
             for (key, val) in kwargs {
@@ -419,7 +419,10 @@ impl PyBpeTrainer {
                 };
             }
         }
-        Ok((PyBpeTrainer {}, builder.build().into()))
+        Ok(
+            PyClassInitializer::<PyTrainer>::from(PyTrainer::from(builder.build()))
+                .add_subclass(PyBpeTrainer {}),
+        )
     }
 }
 
@@ -589,7 +592,7 @@ impl PyWordPieceTrainer {
         signature = (** kwargs),
         text_signature = "(self, vocab_size=30000, min_frequency=0, show_progress=True, special_tokens=[], limit_alphabet=None, initial_alphabet=[], continuing_subword_prefix=\"##\", end_of_word_suffix=None)"
     )]
-    pub fn new(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<(Self, PyTrainer)> {
+    pub fn new(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyClassInitializer<Self>> {
         let mut builder = tk::models::wordpiece::WordPieceTrainer::builder();
         if let Some(kwargs) = kwargs {
             for (key, val) in kwargs {
@@ -638,7 +641,10 @@ impl PyWordPieceTrainer {
             }
         }
 
-        Ok((PyWordPieceTrainer {}, builder.build().into()))
+        Ok(
+            PyClassInitializer::<PyTrainer>::from(PyTrainer::from(builder.build()))
+                .add_subclass(PyWordPieceTrainer {}),
+        )
     }
 }
 
@@ -745,7 +751,7 @@ impl PyWordLevelTrainer {
         signature = (**kwargs),
         text_signature = "(self, vocab_size=30000, min_frequency=0, show_progress=True, special_tokens=[])"
     )]
-    pub fn new(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<(Self, PyTrainer)> {
+    pub fn new(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyClassInitializer<Self>> {
         let mut builder = tk::models::wordlevel::WordLevelTrainer::builder();
 
         if let Some(kwargs) = kwargs {
@@ -787,13 +793,12 @@ impl PyWordLevelTrainer {
             }
         }
 
-        Ok((
-            PyWordLevelTrainer {},
+        Ok(PyClassInitializer::<PyTrainer>::from(PyTrainer::from(
             builder
                 .build()
-                .expect("WordLevelTrainerBuilder cannot fail")
-                .into(),
+                .expect("WordLevelTrainerBuilder cannot fail"),
         ))
+        .add_subclass(PyWordLevelTrainer {}))
     }
 }
 
@@ -926,7 +931,7 @@ impl PyUnigramTrainer {
         signature = (**kwargs),
         text_signature = "(self, vocab_size=8000, show_progress=True, special_tokens=[], initial_alphabet=[], shrinking_factor=0.75, unk_token=None, max_piece_length=16, n_sub_iterations=2)"
     )]
-    pub fn new(kwargs: Option<Bound<'_, PyDict>>) -> PyResult<(Self, PyTrainer)> {
+    pub fn new(kwargs: Option<Bound<'_, PyDict>>) -> PyResult<PyClassInitializer<Self>> {
         let mut builder = tk::models::unigram::UnigramTrainer::builder();
         if let Some(kwargs) = kwargs {
             for (key, val) in kwargs {
@@ -979,7 +984,10 @@ impl PyUnigramTrainer {
             builder.build().map_err(|e| {
                 exceptions::PyException::new_err(format!("Cannot build UnigramTrainer: {e}"))
             })?;
-        Ok((PyUnigramTrainer {}, trainer.into()))
+        Ok(
+            PyClassInitializer::<PyTrainer>::from(PyTrainer::from(trainer))
+                .add_subclass(PyUnigramTrainer {}),
+        )
     }
 }
 
