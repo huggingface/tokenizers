@@ -6,6 +6,7 @@ use std::borrow::Cow;
 use error::Result;
 
 use crate::normalize::unicode::{NFCNormalizer, NFDNormalizer, NFKCNormalizer, NFKDNormalizer};
+
 pub trait Normalizer: Send + Sync {
     fn normalize<'a>(&mut self, string: Cow<'a, str>) -> error::Result<Cow<'a, str>>;
 }
@@ -36,15 +37,12 @@ impl Normalizer for NormalizePlan {
                     string = member.normalize(string)?;
                 }
                 Ok(string)
-            },
+            }
             // No normalization: pass the string as-is
             NormalizePlan::None => Ok(string),
-
         }
     }
 }
-
-
 
 #[derive(Debug)]
 pub struct LowercaseNormalizer {}
