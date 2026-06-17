@@ -17,14 +17,14 @@ pub trait PreTokenizer: Send + Sync {
     fn pre_tokenize<'a>(&mut self, string: &'a str) -> Result<PreTokenSplits<'a>>;
 }
 
-pub enum PreTokenizerPlan {
+pub enum PreTokenizePlan {
     SplitWhitespace(SplitWhitespacePreTokenizer),
 }
 
-impl PreTokenizer for PreTokenizerPlan {
+impl PreTokenizer for PreTokenizePlan {
 	fn pre_tokenize<'a>(&mut self, string: &'a str) -> Result<PreTokenSplits<'a>> {
 		match self {
-			PreTokenizerPlan::SplitWhitespace(pre_tokenizer) => pre_tokenizer.pre_tokenize(string)
+			PreTokenizePlan::SplitWhitespace(pre_tokenizer) => pre_tokenizer.pre_tokenize(string)
 		}
 	}
 }
