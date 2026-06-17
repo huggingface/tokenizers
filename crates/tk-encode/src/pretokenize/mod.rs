@@ -2,6 +2,8 @@ mod error;
 
 use error::Result;
 
+pub use error::PreTokenizerError;
+
 pub struct PreTokenSplits<'a> {
     string: &'a str,
     splits: Vec<(usize, usize)>,
@@ -10,6 +12,42 @@ pub struct PreTokenSplits<'a> {
 impl<'a> PreTokenSplits<'a> {
 	pub fn from(string: &'a str, splits: Vec<(usize, usize)>) -> Self {
 		Self { string, splits }
+	}
+
+	pub fn get_bytes(&self, index: usize) -> Option<&[u8]> {
+		self.splits.get(index).map(|(start, end)| &self.string.as_bytes()[*start..*end])
+	}
+
+	pub fn iter(&'a self) -> PreTokenIterator<'a> {
+		PreTokenIterator::new(self)
+	}
+
+	pub fn len(&self) -> usize {
+		self.splits.len()
+	}
+}
+
+pub struct PreTokenIterator<'a> {
+	splits: &'a PreTokenSplits<'a>,
+	index: usize
+}
+
+impl<'a> PreTokenIterator<'a> {
+	fn new(splits: &'a PreTokenSplits) -> Self {
+		Self {
+			splits,
+			index: 0
+		}
+	}
+}
+
+impl<'a> Iterator for PreTokenIterator<'a> {
+	type Item = &'a [u8];
+
+	fn next(&mut self) -> Option<Self::Item> {
+		let next_item = self.splits.get_bytes(self.index);
+		self.index += 1;
+		next_item
 	}
 }
 

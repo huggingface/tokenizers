@@ -1,17 +1,53 @@
 mod normalize;
 mod pretokenize;
 
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
+use normalize::NormalizerError;
+use pretokenize::PreTokenizerError;
+use thiserror::Error;
+use std::{borrow::Cow, result};
+
+use crate::{normalize::{NormalizePlan, Normalizer}, pretokenize::{PreTokenizePlan, PreTokenizer}};
+
+#[derive(Debug, Error)]
+enum TokenizerError {
+    #[error("Normalizer error")]
+    NormalizerError(#[from] NormalizerError),
+    #[error("PreTokenizer error")]
+    PreTokenizerError(#[from] PreTokenizerError),
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+type Result<T> = result::Result<T, TokenizerError>;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
+pub struct Tokenizer {
+    normalizer: NormalizePlan,
+    pre_tokenizer: PreTokenizePlan,
+    model: TokenizerModel,
+    // post_process: PostProcessPlan
+}
+
+#[derive(Debug)]
+pub struct TokenizerModel {
+
+}
+
+impl TokenizerModel {
+    pub fn tokenize(&self, _pre_token: &[u8]) -> Vec<Token> {
+        unimplemented!("not implemented")
+    }
+}
+
+pub struct Token {
+    id: u32
+}
+
+impl Tokenizer {
+    pub fn encode(&mut self, input: &str) -> Result<Vec<Token>> {
+        let normalized = self.normalizer.normalize(Cow::from(input))?;
+        let pre_tokenized = self.pre_tokenizer.pre_tokenize(&normalized)?;
+        let mut tokens = Vec::with_capacity(pre_tokenized.len());
+        for pre_token in pre_tokenized.iter() {
+            tokens.extend(self.model.tokenize(pre_token));
+        }
+        Ok(tokens)
     }
 }

@@ -4,6 +4,7 @@ mod unicode;
 use std::borrow::Cow;
 
 use error::Result;
+pub use error::NormalizerError;
 
 use crate::normalize::unicode::{NFCNormalizer, NFDNormalizer, NFKCNormalizer, NFKDNormalizer};
 
