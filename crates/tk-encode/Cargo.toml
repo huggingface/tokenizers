@@ -4,4 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+thiserror = "2.0.18"
 tk-core = { path = "../tk-core" }
+unicode-normalization = "0.1.25"

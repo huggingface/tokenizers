@@ -1,4 +1,8 @@
 use thiserror::Error;
 
 #[derive(Debug, Error)]
-pub enum TokenizerError {}
+pub enum TokenizerError {
+	#[error("normalization error")]
+	NormalizerError
+}
+
