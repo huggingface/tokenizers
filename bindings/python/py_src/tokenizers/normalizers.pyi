@@ -2,8 +2,8 @@
 Normalizers Module
 """
 
+from . import NormalizedString, Regex
 from collections.abc import Sequence as Sequence2
-from tokenizers import NormalizedString, Regex
 from typing import Any, final
 
 @final

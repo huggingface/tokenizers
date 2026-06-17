@@ -2,9 +2,9 @@
 Decoders Module
 """
 
+from . import Regex, Tokenizer
 from _typeshed import Incomplete
 from collections.abc import Sequence as Sequence2
-from tokenizers import Regex, Tokenizer
 from typing import Any, final
 
 @final

@@ -2,8 +2,8 @@
 PreTokenizers Module
 """
 
+from . import PreTokenizedString, Regex
 from _typeshed import Incomplete
-from tokenizers import PreTokenizedString, Regex
 from typing import Any, final
 
 @final

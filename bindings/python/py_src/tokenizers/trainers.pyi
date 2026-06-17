@@ -2,8 +2,8 @@
 Trainers Module
 """
 
+from . import AddedToken
 from collections.abc import Sequence
-from tokenizers import AddedToken
 from typing import Any, final
 
 @final

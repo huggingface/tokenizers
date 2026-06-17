@@ -2,9 +2,9 @@
 Processors Module
 """
 
+from . import Encoding
 from _typeshed import Incomplete
 from collections.abc import Sequence as Sequence2
-from tokenizers import Encoding
 from typing import Any, final
 
 @final

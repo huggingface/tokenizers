@@ -2,8 +2,8 @@
 Models Module
 """
 
+from . import Token
 from collections.abc import Sequence
-from tokenizers import Token
 from typing import Any, final
 
 @final

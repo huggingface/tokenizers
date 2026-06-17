@@ -2,14 +2,14 @@
 Tokenizers Module
 """
 
+from .decoders import Decoder
+from .models import Model
+from .normalizers import Normalizer
+from .pre_tokenizers import PreTokenizer
+from .processors import PostProcessor
+from .trainers import Trainer
 from _typeshed import Incomplete
 from collections.abc import Sequence
-from tokenizers.decoders import Decoder
-from tokenizers.models import Model
-from tokenizers.normalizers import Normalizer
-from tokenizers.pre_tokenizers import PreTokenizer
-from tokenizers.processors import PostProcessor
-from tokenizers.trainers import Trainer
 from typing import Any, Final, final
 
 __version__: Final[str]
