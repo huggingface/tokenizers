@@ -2,10 +2,12 @@
 Decoders Module
 """
 
-from . import Regex, Tokenizer
-from _typeshed import Incomplete
 from collections.abc import Sequence as Sequence2
 from typing import Any, final
+
+from _typeshed import Incomplete
+
+from tokenizers import Regex, Tokenizer
 
 @final
 class BPEDecoder(Decoder):

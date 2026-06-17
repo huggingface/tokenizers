@@ -2,9 +2,10 @@
 Trainers Module
 """
 
-from . import AddedToken
 from collections.abc import Sequence
 from typing import Any, final
+
+from tokenizers import AddedToken
 
 @final
 class BpeTrainer(Trainer):

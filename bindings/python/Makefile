@@ -4,6 +4,9 @@ DATA_DIR = data
 
 dir_guard=@mkdir -p $(@D)
 check_dirs := examples py_src/tokenizers tests
+check_stubs := py_src/tokenizers/__init__.pyi py_src/tokenizers/decoders.pyi py_src/tokenizers/models.pyi \
+  py_src/tokenizers/normalizers.pyi py_src/tokenizers/pre_tokenizers.pyi py_src/tokenizers/processors.pyi \
+  py_src/tokenizers/trainers.pyi
 
 # Detect uv and set env vars to work around broken dylib install names
 # in python-build-standalone distributions.
@@ -21,6 +24,7 @@ endif
 # Format source code automatically
 style:
 	$(CARGO_ENV) cargo run --manifest-path ./tools/stub-gen/Cargo.toml
+	ruff check  $(check_stubs) --select I --fix
 	ruff check  $(check_dirs) --fix
 	ruff format $(check_dirs)
 	ty check py_src --exclude py_src/tokenizers/implementations --exclude py_src/tokenizers/tools/visualizer.py
@@ -30,6 +34,7 @@ style:
 # Check the source code is formatted correctly
 check-style:
 	$(CARGO_ENV) cargo run --manifest-path ./tools/stub-gen/Cargo.toml
+	ruff check $(check_stubs) --select I --fix
 	ruff check $(check_dirs)
 	ruff format py_src/tokenizers/*.pyi
 	ruff format --check $(check_dirs)

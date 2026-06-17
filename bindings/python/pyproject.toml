@@ -68,4 +68,3 @@ lint.ignore = [
 [tool.ty.rules]
 invalid-method-override = "ignore"
 invalid-type-form = "ignore"
-unresolved-import = "ignore"

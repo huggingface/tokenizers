@@ -2,9 +2,10 @@
 Models Module
 """
 
-from . import Token
 from collections.abc import Sequence
 from typing import Any, final
+
+from tokenizers import Token
 
 @final
 class BPE(Model):

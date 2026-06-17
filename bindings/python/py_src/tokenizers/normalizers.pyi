@@ -2,9 +2,10 @@
 Normalizers Module
 """
 
-from . import NormalizedString, Regex
 from collections.abc import Sequence as Sequence2
 from typing import Any, final
+
+from tokenizers import NormalizedString, Regex
 
 @final
 class BertNormalizer(Normalizer):
