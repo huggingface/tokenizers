@@ -331,11 +331,11 @@ pub struct PyBertProcessing {}
 impl PyBertProcessing {
     #[new]
     #[pyo3(text_signature = "(self, sep, cls_token: str| int)")]
-    fn new(sep: (String, u32), cls_token: (String, u32)) -> (Self, PyPostProcessor) {
-        (
-            PyBertProcessing {},
-            BertProcessing::new(sep, cls_token).into(),
-        )
+    fn new(sep: (String, u32), cls_token: (String, u32)) -> PyClassInitializer<Self> {
+        PyClassInitializer::<PyPostProcessor>::from(PyPostProcessor::from(BertProcessing::new(
+            sep, cls_token,
+        )))
+        .add_subclass(PyBertProcessing {})
     }
 
     fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyTuple>> {
@@ -423,11 +423,12 @@ impl PyRobertaProcessing {
         cls_token: (String, u32),
         trim_offsets: bool,
         add_prefix_space: bool,
-    ) -> (Self, PyPostProcessor) {
+    ) -> PyClassInitializer<Self> {
         let proc = RobertaProcessing::new(sep, cls_token)
             .trim_offsets(trim_offsets)
             .add_prefix_space(add_prefix_space);
-        (PyRobertaProcessing {}, proc.into())
+        PyClassInitializer::<PyPostProcessor>::from(PyPostProcessor::from(proc))
+            .add_subclass(PyRobertaProcessing {})
     }
 
     fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyTuple>> {
@@ -523,7 +524,7 @@ impl PyByteLevel {
         trim_offsets: Option<bool>,
         use_regex: Option<bool>,
         _kwargs: Option<&Bound<'_, PyDict>>,
-    ) -> (Self, PyPostProcessor) {
+    ) -> PyClassInitializer<Self> {
         let mut byte_level = ByteLevel::default();
 
         if let Some(aps) = add_prefix_space {
@@ -538,7 +539,8 @@ impl PyByteLevel {
             byte_level = byte_level.use_regex(ur);
         }
 
-        (PyByteLevel {}, byte_level.into())
+        PyClassInitializer::<PyPostProcessor>::from(PyPostProcessor::from(byte_level))
+            .add_subclass(PyByteLevel {})
     }
 
     #[getter]
@@ -720,7 +722,7 @@ impl PyTemplateProcessing {
         single: Option<PyTemplate>,
         pair: Option<PyTemplate>,
         special_tokens: Option<Vec<PySpecialToken>>,
-    ) -> PyResult<(Self, PyPostProcessor)> {
+    ) -> PyResult<PyClassInitializer<Self>> {
         let mut builder = tk::processors::template::TemplateProcessing::builder();
 
         if let Some(seq) = single {
@@ -736,7 +738,10 @@ impl PyTemplateProcessing {
             .build()
             .map_err(|e| exceptions::PyValueError::new_err(e.to_string()))?;
 
-        Ok((PyTemplateProcessing {}, processor.into()))
+        Ok(
+            PyClassInitializer::<PyPostProcessor>::from(PyPostProcessor::from(processor))
+                .add_subclass(PyTemplateProcessing {}),
+        )
     }
 
     #[getter]
@@ -780,7 +785,7 @@ pub struct PySequence {}
 impl PySequence {
     #[new]
     #[pyo3(signature = (processors_py), text_signature = "(self, processors)")]
-    fn new(processors_py: &Bound<'_, PyList>) -> PyResult<(Self, PyPostProcessor)> {
+    fn new(processors_py: &Bound<'_, PyList>) -> PyResult<PyClassInitializer<Self>> {
         let mut processors = Vec::with_capacity(processors_py.len());
         for n in processors_py.iter() {
             let processor: PyRef<PyPostProcessor> = n.extract()?;
@@ -791,10 +796,12 @@ impl PySequence {
                 PyPostProcessorTypeWrapper::Single(inner) => processors.push(inner.clone()),
             }
         }
-        Ok((
-            PySequence {},
-            PyPostProcessor::new(PyPostProcessorTypeWrapper::Sequence(processors)),
-        ))
+        Ok(
+            PyClassInitializer::<PyPostProcessor>::from(PyPostProcessor::new(
+                PyPostProcessorTypeWrapper::Sequence(processors),
+            ))
+            .add_subclass(PySequence {}),
+        )
     }
 
     fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyTuple>> {

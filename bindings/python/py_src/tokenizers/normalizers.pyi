@@ -3,8 +3,9 @@ Normalizers Module
 """
 
 from collections.abc import Sequence as Sequence2
-from tokenizers import NormalizedString, Regex
 from typing import Any, final
+
+from tokenizers import NormalizedString, Regex
 
 @final
 class BertNormalizer(Normalizer):
