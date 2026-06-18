@@ -4,6 +4,7 @@
 //! Covers the key performance surfaces in a single binary:
 //!   - BPE GPT-2 encode (single, batch, cached, uncached)
 //!   - Llama-3 encode (single, batch, fast, concurrent)
+//!   - Decode (ByteLevel single/batch/stream, sentencepiece chain, WordPiece)
 //!   - Serialization round-trip (load + save)
 //!   - BPE training (small corpus)
 //!
@@ -19,13 +20,23 @@ extern crate criterion;
 
 mod common;
 
-use common::{iter_bench_encode, iter_bench_encode_batch, iter_bench_train};
-use criterion::{Criterion, Throughput};
+use common::{
+    iter_bench_decode, iter_bench_decode_batch, iter_bench_decode_stream, iter_bench_encode,
+    iter_bench_encode_batch, iter_bench_train,
+};
+use criterion::{Criterion, SamplingMode, Throughput};
 use std::hint::black_box;
 use std::ops::Deref;
 use std::sync::Arc;
+use tokenizers::decoders::byte_fallback::ByteFallback;
+use tokenizers::decoders::fuse::Fuse;
+use tokenizers::decoders::sequence::Sequence;
+use tokenizers::decoders::wordpiece::WordPiece as WordPieceDecoder;
 use tokenizers::models::bpe::{BpeTrainerBuilder, BPE};
+use tokenizers::models::wordpiece::WordPiece;
 use tokenizers::models::TrainerWrapper;
+use tokenizers::normalizers::{BertNormalizer, Replace};
+use tokenizers::pre_tokenizers::bert::BertPreTokenizer;
 use tokenizers::pre_tokenizers::byte_level::ByteLevel;
 use tokenizers::pre_tokenizers::whitespace::Whitespace;
 use tokenizers::tokenizer::{AddedToken, EncodeInput};
@@ -185,6 +196,106 @@ fn bench_llama3(c: &mut Criterion) {
 }
 
 // ---------------------------------------------------------------------------
+// Decode (ids -> text)
+// ---------------------------------------------------------------------------
+
+/// Token budget for the streaming bench: per-token cost is uniform across
+/// sequence length, so a corpus prefix measures the same thing faster.
+const STREAM_TOKEN_BUDGET: usize = 300_000;
+
+fn encode_lines(tokenizer: &Tokenizer, data: &str) -> Vec<Vec<u32>> {
+    data.lines()
+        .map(|line| {
+            tokenizer
+                .encode_fast(line, false)
+                .unwrap()
+                .get_ids()
+                .to_vec()
+        })
+        .collect()
+}
+
+fn decoded_bytes(tokenizer: &Tokenizer, lines: &[Vec<u32>]) -> u64 {
+    lines
+        .iter()
+        .map(|ids| tokenizer.decode(ids, false).unwrap().len() as u64)
+        .sum()
+}
+
+fn bench_decode(c: &mut Criterion) {
+    let data = std::fs::read_to_string("data/big.txt").unwrap();
+
+    let mut group = c.benchmark_group("decode");
+    group.sampling_mode(SamplingMode::Flat);
+
+    let llama3 = Tokenizer::from_file("data/llama-3-tokenizer.json").unwrap();
+    let lines = encode_lines(&llama3, &data);
+    let batches: Vec<Vec<&[u32]>> = lines
+        .chunks(BATCH_SIZE)
+        .map(|chunk| chunk.iter().map(Vec::as_slice).collect())
+        .collect();
+
+    group.throughput(Throughput::Bytes(decoded_bytes(&llama3, &lines)));
+    group.bench_function("llama3", |b| {
+        b.iter_custom(|iters| iter_bench_decode(iters, &llama3, &lines))
+    });
+    group.bench_function("llama3-batch", |b| {
+        b.iter_custom(|iters| iter_bench_decode_batch(iters, &llama3, &batches))
+    });
+
+    // Streaming: the per-generated-token serving path (window re-decode)
+    let fused: Vec<Vec<u32>> = lines
+        .chunks(BATCH_SIZE)
+        .map(|chunk| chunk.concat())
+        .collect();
+    let mut total = 0;
+    let end = fused
+        .iter()
+        .position(|seq| {
+            total += seq.len();
+            total > STREAM_TOKEN_BUDGET
+        })
+        .unwrap_or(fused.len());
+    let stream_input = &fused[..end];
+    group.throughput(Throughput::Elements(
+        stream_input.iter().map(|seq| seq.len()).sum::<usize>() as u64,
+    ));
+    group.bench_function("llama3-stream", |b| {
+        b.iter_custom(|iters| iter_bench_decode_stream(iters, &llama3, stream_input))
+    });
+
+    let mut sp_chain = Tokenizer::from_file("data/albert-base-v1-tokenizer.json").unwrap();
+    sp_chain.with_decoder(Some(Sequence::new(vec![
+        Replace::new("▁", " ").unwrap().into(),
+        ByteFallback::new().into(),
+        Fuse::new().into(),
+    ])));
+    let lines = encode_lines(&sp_chain, &data);
+    group.throughput(Throughput::Bytes(decoded_bytes(&sp_chain, &lines)));
+    group.bench_function("sp-chain", |b| {
+        b.iter_custom(|iters| iter_bench_decode(iters, &sp_chain, &lines))
+    });
+
+    let mut wordpiece = Tokenizer::new(
+        WordPiece::from_file("data/bert-base-uncased-vocab.txt")
+            .build()
+            .unwrap(),
+    );
+    wordpiece
+        .with_normalizer(Some(BertNormalizer::default()))
+        .unwrap();
+    wordpiece.with_pre_tokenizer(Some(BertPreTokenizer));
+    wordpiece.with_decoder(Some(WordPieceDecoder::default()));
+    let lines = encode_lines(&wordpiece, &data);
+    group.throughput(Throughput::Bytes(decoded_bytes(&wordpiece, &lines)));
+    group.bench_function("wordpiece", |b| {
+        b.iter_custom(|iters| iter_bench_decode(iters, &wordpiece, &lines))
+    });
+
+    group.finish();
+}
+
+// ---------------------------------------------------------------------------
 // Serialization round-trip
 // ---------------------------------------------------------------------------
 
@@ -281,6 +392,11 @@ criterion_group! {
     targets = bench_llama3
 }
 criterion_group! {
+    name = ci_decode;
+    config = Criterion::default().sample_size(15);
+    targets = bench_decode
+}
+criterion_group! {
     name = ci_serial;
     config = Criterion::default().sample_size(15);
     targets = bench_serialization
@@ -291,4 +407,4 @@ criterion_group! {
     targets = bench_train
 }
 
-criterion_main!(ci_bpe, ci_llama3, ci_serial, ci_train);
+criterion_main!(ci_bpe, ci_llama3, ci_decode, ci_serial, ci_train);
