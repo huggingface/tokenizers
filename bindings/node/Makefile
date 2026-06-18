@@ -4,10 +4,11 @@ DATA_DIR = data
 
 dir_guard=@mkdir -p $(@D)
 
-HF_DATA = https://huggingface.co/datasets/hf-internal-testing/tokenizers-test-data/resolve/main
-# Authenticated Hub requests get much higher rate limits than anonymous ones.
-# `@` keeps make from echoing the recipe, so the auth header never hits stdout.
-CURL = @echo "Downloading $@" && curl -sL --retry 3 $(if $(HF_TOKEN),-H "Authorization: Bearer $(HF_TOKEN)")
+HF_TEST_REPO = hf-internal-testing/tokenizers-test-data
+# Fetch fixtures through the huggingface_hub CLI: it handles auth (HF_TOKEN),
+# retry/backoff on rate limits, and caching for us. CI overrides HF with
+# `uvx --from huggingface_hub hf` to avoid a separate install step.
+HF ?= hf
 
 # Format source code automatically
 style:
@@ -23,21 +24,10 @@ TESTS_RESOURCES = $(DATA_DIR)/small.txt $(DATA_DIR)/roberta.json $(DATA_DIR)/tok
 test: $(TESTS_RESOURCES)
 	npm run test
 
-$(DATA_DIR)/big.txt :
-	$(dir_guard)
-	$(CURL) $(HF_DATA)/big.txt -o $@
-
+# small.txt is derived locally; everything else is fetched from the Hub by name.
 $(DATA_DIR)/small.txt : $(DATA_DIR)/big.txt
 	head -100 $(DATA_DIR)/big.txt > $@
 
-$(DATA_DIR)/roberta.json :
+$(DATA_DIR)/% :
 	$(dir_guard)
-	$(CURL) $(HF_DATA)/roberta.json -o $@
-
-$(DATA_DIR)/tokenizer-wiki.json :
-	$(dir_guard)
-	$(CURL) $(HF_DATA)/tokenizer-wiki.json -o $@
-
-$(DATA_DIR)/bert-wiki.json :
-	$(dir_guard)
-	$(CURL) $(HF_DATA)/bert-wiki.json -o $@
+	$(HF) download $(HF_TEST_REPO) $* --repo-type dataset --local-dir $(DATA_DIR)

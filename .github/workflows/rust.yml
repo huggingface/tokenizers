@@ -70,13 +70,19 @@ jobs:
           key: hf-test-data-${{ hashFiles('tokenizers/Makefile') }}
           restore-keys: hf-test-data-
 
+      # Provides `uvx`, used to run the huggingface_hub CLI that downloads
+      # test fixtures (see the Makefile) without a separate install step.
+      - name: Install uv
+        if: matrix.os != 'windows-latest'
+        uses: astral-sh/setup-uv@v6
+
       - name: Run Tests
         if: matrix.os != 'windows-latest'
         shell: bash
         working-directory: ./tokenizers
         env:
           HF_TOKEN: ${{ secrets.HF_HUB_READ_TOKEN }}
-        run: make test
+        run: make test HF="uvx --from huggingface_hub hf"
 
       # Skip integration tests for now on Windows
       - name: Run lib Tests on Windows

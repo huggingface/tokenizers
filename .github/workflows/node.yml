@@ -68,8 +68,13 @@ jobs:
           key: hf-test-data-node-${{ hashFiles('bindings/node/Makefile') }}
           restore-keys: hf-test-data-node-
 
+      # Provides `uvx`, used to run the huggingface_hub CLI that downloads
+      # test fixtures (see the Makefile) without a separate install step.
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
       - name: Run JS tests
         working-directory: ./bindings/node
         env:
           HF_TOKEN: ${{ secrets.HF_HUB_READ_TOKEN }}
-        run: make test
+        run: make test HF="uvx --from huggingface_hub hf"
