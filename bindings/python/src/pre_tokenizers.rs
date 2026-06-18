@@ -306,15 +306,14 @@ impl PyByteLevel {
         trim_offsets: bool,
         use_regex: bool,
         _kwargs: Option<&Bound<'_, PyDict>>,
-    ) -> (Self, PyPreTokenizer) {
-        (
-            PyByteLevel {},
+    ) -> PyClassInitializer<Self> {
+        PyClassInitializer::<PyPreTokenizer>::from(PyPreTokenizer::from(
             ByteLevel::default()
                 .add_prefix_space(add_prefix_space)
                 .trim_offsets(trim_offsets)
-                .use_regex(use_regex)
-                .into(),
-        )
+                .use_regex(use_regex),
+        ))
+        .add_subclass(PyByteLevel {})
     }
 
     /// Returns the alphabet used by this PreTokenizer.
@@ -352,8 +351,9 @@ pub struct PyWhitespace {}
 impl PyWhitespace {
     #[new]
     #[pyo3(text_signature = "(self)")]
-    fn new() -> (Self, PyPreTokenizer) {
-        (PyWhitespace {}, Whitespace {}.into())
+    fn new() -> PyClassInitializer<Self> {
+        PyClassInitializer::<PyPreTokenizer>::from(PyPreTokenizer::from(Whitespace {}))
+            .add_subclass(PyWhitespace {})
     }
 }
 
@@ -374,8 +374,9 @@ pub struct PyWhitespaceSplit {}
 impl PyWhitespaceSplit {
     #[new]
     #[pyo3(text_signature = "(self)")]
-    fn new() -> (Self, PyPreTokenizer) {
-        (PyWhitespaceSplit {}, WhitespaceSplit.into())
+    fn new() -> PyClassInitializer<Self> {
+        PyClassInitializer::<PyPreTokenizer>::from(PyPreTokenizer::from(WhitespaceSplit))
+            .add_subclass(PyWhitespaceSplit {})
     }
 }
 
@@ -422,13 +423,13 @@ impl PySplit {
         pattern: PyPattern,
         behavior: PySplitDelimiterBehavior,
         invert: bool,
-    ) -> PyResult<(Self, PyPreTokenizer)> {
-        Ok((
-            PySplit {},
-            ToPyResult(Split::new(pattern, behavior.into(), invert))
-                .into_py()?
-                .into(),
-        ))
+    ) -> PyResult<PyClassInitializer<Self>> {
+        Ok(
+            PyClassInitializer::<PyPreTokenizer>::from(PyPreTokenizer::from(
+                ToPyResult(Split::new(pattern, behavior.into(), invert)).into_py()?,
+            ))
+            .add_subclass(PySplit {}),
+        )
     }
 
     fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyTuple>> {
@@ -513,11 +514,13 @@ impl PyCharDelimiterSplit {
 
     #[new]
     #[pyo3(signature = (delimiter), text_signature = "(self, delimiter)")]
-    pub fn new(delimiter: char) -> PyResult<(Self, PyPreTokenizer)> {
-        Ok((
-            PyCharDelimiterSplit {},
-            CharDelimiterSplit::new(delimiter).into(),
-        ))
+    pub fn new(delimiter: char) -> PyResult<PyClassInitializer<Self>> {
+        Ok(
+            PyClassInitializer::<PyPreTokenizer>::from(PyPreTokenizer::from(
+                CharDelimiterSplit::new(delimiter),
+            ))
+            .add_subclass(PyCharDelimiterSplit {}),
+        )
     }
 
     fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyTuple>> {
@@ -544,8 +547,9 @@ pub struct PyBertPreTokenizer {}
 impl PyBertPreTokenizer {
     #[new]
     #[pyo3(text_signature = "(self)")]
-    fn new() -> (Self, PyPreTokenizer) {
-        (PyBertPreTokenizer {}, BertPreTokenizer.into())
+    fn new() -> PyClassInitializer<Self> {
+        PyClassInitializer::<PyPreTokenizer>::from(PyPreTokenizer::from(BertPreTokenizer))
+            .add_subclass(PyBertPreTokenizer {})
     }
 }
 
@@ -570,8 +574,11 @@ pub struct PyPunctuation {}
 impl PyPunctuation {
     #[new]
     #[pyo3( signature = (behavior = PySplitDelimiterBehavior(SplitDelimiterBehavior::Isolated)), text_signature = "(self, behavior=\"isolated\")")]
-    fn new(behavior: PySplitDelimiterBehavior) -> (Self, PyPreTokenizer) {
-        (PyPunctuation {}, Punctuation::new(behavior.into()).into())
+    fn new(behavior: PySplitDelimiterBehavior) -> PyClassInitializer<Self> {
+        PyClassInitializer::<PyPreTokenizer>::from(PyPreTokenizer::from(Punctuation::new(
+            behavior.into(),
+        )))
+        .add_subclass(PyPunctuation {})
     }
 
     #[getter]
@@ -623,7 +630,7 @@ pub struct PySequence {}
 impl PySequence {
     #[new]
     #[pyo3(text_signature = "(self, pretokenizers)")]
-    fn new(pre_tokenizers: &Bound<'_, PyList>) -> PyResult<(Self, PyPreTokenizer)> {
+    fn new(pre_tokenizers: &Bound<'_, PyList>) -> PyResult<PyClassInitializer<Self>> {
         let mut sequence = Vec::with_capacity(pre_tokenizers.len());
         for n in pre_tokenizers.iter() {
             let pretokenizer: PyRef<PyPreTokenizer> = n.extract()?;
@@ -634,10 +641,12 @@ impl PySequence {
                 PyPreTokenizerTypeWrapper::Single(inner) => sequence.push(inner.clone()),
             }
         }
-        Ok((
-            PySequence {},
-            PyPreTokenizer::new(PyPreTokenizerTypeWrapper::Sequence(sequence)),
-        ))
+        Ok(
+            PyClassInitializer::<PyPreTokenizer>::from(PyPreTokenizer::new(
+                PyPreTokenizerTypeWrapper::Sequence(sequence),
+            ))
+            .add_subclass(PySequence {}),
+        )
     }
 
     fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyTuple>> {
@@ -770,11 +779,14 @@ impl PyMetaspace {
         replacement: char,
         prepend_scheme: String,
         split: bool,
-    ) -> PyResult<(Self, PyPreTokenizer)> {
+    ) -> PyResult<PyClassInitializer<Self>> {
         // Create a new Metaspace instance
         let prepend_scheme = from_string(prepend_scheme)?;
         let new_instance: Metaspace = Metaspace::new(replacement, prepend_scheme, split);
-        Ok((PyMetaspace {}, new_instance.into()))
+        Ok(
+            PyClassInitializer::<PyPreTokenizer>::from(PyPreTokenizer::from(new_instance))
+                .add_subclass(PyMetaspace {}),
+        )
     }
 }
 
@@ -805,8 +817,11 @@ impl PyDigits {
 
     #[new]
     #[pyo3(signature = (individual_digits = false), text_signature = "(self, individual_digits=False)")]
-    fn new(individual_digits: bool) -> (Self, PyPreTokenizer) {
-        (PyDigits {}, Digits::new(individual_digits).into())
+    fn new(individual_digits: bool) -> PyClassInitializer<Self> {
+        PyClassInitializer::<PyPreTokenizer>::from(PyPreTokenizer::from(Digits::new(
+            individual_digits,
+        )))
+        .add_subclass(PyDigits {})
     }
 }
 
@@ -843,8 +858,9 @@ impl PyFixedLength {
 
     #[new]
     #[pyo3(signature = (length = 5), text_signature = "(self, length=5)")]
-    fn new(length: usize) -> (Self, PyPreTokenizer) {
-        (PyFixedLength {}, FixedLength::new(length).into())
+    fn new(length: usize) -> PyClassInitializer<Self> {
+        PyClassInitializer::<PyPreTokenizer>::from(PyPreTokenizer::from(FixedLength::new(length)))
+            .add_subclass(PyFixedLength {})
     }
 }
 
@@ -866,8 +882,9 @@ pub struct PyUnicodeScripts {}
 impl PyUnicodeScripts {
     #[new]
     #[pyo3(text_signature = "(self)")]
-    fn new() -> (Self, PyPreTokenizer) {
-        (PyUnicodeScripts {}, UnicodeScripts::new().into())
+    fn new() -> PyClassInitializer<Self> {
+        PyClassInitializer::<PyPreTokenizer>::from(PyPreTokenizer::from(UnicodeScripts::new()))
+            .add_subclass(PyUnicodeScripts {})
     }
 }
 

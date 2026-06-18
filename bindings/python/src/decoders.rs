@@ -186,8 +186,9 @@ pub struct PyByteLevelDec {}
 impl PyByteLevelDec {
     #[new]
     #[pyo3(signature = (**_kwargs), text_signature = "(self)")]
-    fn new(_kwargs: Option<&Bound<'_, PyDict>>) -> (Self, PyDecoder) {
-        (PyByteLevelDec {}, ByteLevel::default().into())
+    fn new(_kwargs: Option<&Bound<'_, PyDict>>) -> PyClassInitializer<Self> {
+        PyClassInitializer::<PyDecoder>::from(PyDecoder::from(ByteLevel::default()))
+            .add_subclass(PyByteLevelDec {})
     }
 }
 
@@ -218,11 +219,11 @@ pub struct PyReplaceDec {}
 impl PyReplaceDec {
     #[new]
     #[pyo3(text_signature = "(self, pattern, content)")]
-    fn new(pattern: PyPattern, content: String) -> PyResult<(Self, PyDecoder)> {
-        Ok((
-            PyReplaceDec {},
-            ToPyResult(Replace::new(pattern, content)).into_py()?.into(),
+    fn new(pattern: PyPattern, content: String) -> PyResult<PyClassInitializer<Self>> {
+        Ok(PyClassInitializer::<PyDecoder>::from(PyDecoder::from(
+            ToPyResult(Replace::new(pattern, content)).into_py()?,
         ))
+        .add_subclass(PyReplaceDec {}))
     }
 }
 
@@ -269,8 +270,9 @@ impl PyWordPieceDec {
 
     #[new]
     #[pyo3(signature = (prefix = String::from("##"), cleanup = true), text_signature = "(self, prefix=\"##\", cleanup=True)")]
-    fn new(prefix: String, cleanup: bool) -> (Self, PyDecoder) {
-        (PyWordPieceDec {}, WordPiece::new(prefix, cleanup).into())
+    fn new(prefix: String, cleanup: bool) -> PyClassInitializer<Self> {
+        PyClassInitializer::<PyDecoder>::from(PyDecoder::from(WordPiece::new(prefix, cleanup)))
+            .add_subclass(PyWordPieceDec {})
     }
 }
 
@@ -296,8 +298,9 @@ pub struct PyByteFallbackDec {}
 impl PyByteFallbackDec {
     #[new]
     #[pyo3(signature = (), text_signature = "(self)")]
-    fn new() -> (Self, PyDecoder) {
-        (PyByteFallbackDec {}, ByteFallback::new().into())
+    fn new() -> PyClassInitializer<Self> {
+        PyClassInitializer::<PyDecoder>::from(PyDecoder::from(ByteFallback::new()))
+            .add_subclass(PyByteFallbackDec {})
     }
 }
 
@@ -320,8 +323,9 @@ pub struct PyFuseDec {}
 impl PyFuseDec {
     #[new]
     #[pyo3(signature = (), text_signature = "(self)")]
-    fn new() -> (Self, PyDecoder) {
-        (PyFuseDec {}, Fuse::new().into())
+    fn new() -> PyClassInitializer<Self> {
+        PyClassInitializer::<PyDecoder>::from(PyDecoder::from(Fuse::new()))
+            .add_subclass(PyFuseDec {})
     }
 }
 
@@ -389,8 +393,9 @@ impl PyStrip {
         signature = (content=' ', left=0, right=0),
         text_signature = "(self, content=' ', left=0, right=0)"
     )]
-    fn new(content: char, left: usize, right: usize) -> (Self, PyDecoder) {
-        (PyStrip {}, Strip::new(content, left, right).into())
+    fn new(content: char, left: usize, right: usize) -> PyClassInitializer<Self> {
+        PyClassInitializer::<PyDecoder>::from(PyDecoder::from(Strip::new(content, left, right)))
+            .add_subclass(PyStrip {})
     }
 }
 
@@ -459,12 +464,20 @@ impl PyMetaspaceDec {
 
     #[new]
     #[pyo3(signature = (replacement = '▁', prepend_scheme = String::from("always"), split = true), text_signature = "(self, replacement = \"▁\",  prepend_scheme = \"always\", split = True)")]
-    fn new(replacement: char, prepend_scheme: String, split: bool) -> PyResult<(Self, PyDecoder)> {
+    fn new(
+        replacement: char,
+        prepend_scheme: String,
+        split: bool,
+    ) -> PyResult<PyClassInitializer<Self>> {
         let prepend_scheme = from_string(prepend_scheme)?;
-        Ok((
-            PyMetaspaceDec {},
-            Metaspace::new(replacement, prepend_scheme, split).into(),
-        ))
+        Ok(
+            PyClassInitializer::<PyDecoder>::from(PyDecoder::from(Metaspace::new(
+                replacement,
+                prepend_scheme,
+                split,
+            )))
+            .add_subclass(PyMetaspaceDec {}),
+        )
     }
 }
 
@@ -498,8 +511,9 @@ impl PyBPEDecoder {
 
     #[new]
     #[pyo3(signature = (suffix = String::from("</w>")), text_signature = "(self, suffix=\"</w>\")")]
-    fn new(suffix: String) -> (Self, PyDecoder) {
-        (PyBPEDecoder {}, BPEDecoder::new(suffix).into())
+    fn new(suffix: String) -> PyClassInitializer<Self> {
+        PyClassInitializer::<PyDecoder>::from(PyDecoder::from(BPEDecoder::new(suffix)))
+            .add_subclass(PyBPEDecoder {})
     }
 }
 
@@ -562,11 +576,17 @@ impl PyCTCDecoder {
         cleanup = true
     ),
         text_signature = "(self, pad_token=\"<pad>\", word_delimiter_token=\"|\", cleanup=True)")]
-    fn new(pad_token: String, word_delimiter_token: String, cleanup: bool) -> (Self, PyDecoder) {
-        (
-            PyCTCDecoder {},
-            CTC::new(pad_token, word_delimiter_token, cleanup).into(),
-        )
+    fn new(
+        pad_token: String,
+        word_delimiter_token: String,
+        cleanup: bool,
+    ) -> PyClassInitializer<Self> {
+        PyClassInitializer::<PyDecoder>::from(PyDecoder::from(CTC::new(
+            pad_token,
+            word_delimiter_token,
+            cleanup,
+        )))
+        .add_subclass(PyCTCDecoder {})
     }
 }
 
@@ -593,7 +613,7 @@ pub struct PySequenceDecoder {}
 impl PySequenceDecoder {
     #[new]
     #[pyo3(signature = (decoders_py), text_signature = "(self, decoders)")]
-    fn new(decoders_py: &Bound<'_, PyList>) -> PyResult<(Self, PyDecoder)> {
+    fn new(decoders_py: &Bound<'_, PyList>) -> PyResult<PyClassInitializer<Self>> {
         let mut decoders: Vec<DecoderWrapper> = Vec::with_capacity(decoders_py.len());
         for decoder_py in decoders_py.iter() {
             let decoder: PyRef<PyDecoder> = decoder_py.extract()?;
@@ -603,7 +623,10 @@ impl PySequenceDecoder {
             };
             decoders.push(decoder.read().unwrap().clone());
         }
-        Ok((PySequenceDecoder {}, Sequence::new(decoders).into()))
+        Ok(
+            PyClassInitializer::<PyDecoder>::from(PyDecoder::from(Sequence::new(decoders)))
+                .add_subclass(PySequenceDecoder {}),
+        )
     }
 
     fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyTuple>> {

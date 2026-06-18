@@ -4,6 +4,7 @@ DATA_DIR = data
 
 dir_guard=@mkdir -p $(@D)
 check_dirs := examples py_src/tokenizers tests
+check_stubs := $(filter-out py_src/tokenizers/tokenizers.pyi,$(wildcard py_src/tokenizers/*.pyi py_src/tokenizers/*/*.pyi))
 
 # Detect uv and set env vars to work around broken dylib install names
 # in python-build-standalone distributions.
@@ -18,15 +19,10 @@ else
   CARGO_ENV :=
 endif
 
-PYO3_PATCH := \n[patch.crates-io]\npyo3 = { git = "https://github.com/PyO3/pyo3.git", rev = "2ba9cda59a8b2fb07ad9b2b7f20d82e96d7ab0d2" }\npyo3-ffi = { git = "https://github.com/PyO3/pyo3.git", rev = "2ba9cda59a8b2fb07ad9b2b7f20d82e96d7ab0d2" }\n
-
 # Format source code automatically
 style:
-	cp .cargo/config.toml .cargo/config.toml.bak
-	printf '$(PYO3_PATCH)' >> .cargo/config.toml
-	$(CARGO_ENV) cargo update
-	$(CARGO_ENV) cargo run --manifest-path ./tools/stub-gen/Cargo.toml; \
-	  status=$$?; cp .cargo/config.toml.bak .cargo/config.toml; rm -f .cargo/config.toml.bak; exit $$status
+	$(CARGO_ENV) cargo run --manifest-path ./tools/stub-gen/Cargo.toml
+	ruff check  $(check_stubs) --select I --fix
 	ruff check  $(check_dirs) --fix
 	ruff format $(check_dirs)
 	ty check py_src --exclude py_src/tokenizers/implementations --exclude py_src/tokenizers/tools/visualizer.py
@@ -35,10 +31,8 @@ style:
 
 # Check the source code is formatted correctly
 check-style:
-	cp .cargo/config.toml .cargo/config.toml.bak
-	printf '$(PYO3_PATCH)' >> .cargo/config.toml
-	$(CARGO_ENV) cargo run --manifest-path ./tools/stub-gen/Cargo.toml; \
-	  status=$$?; cp .cargo/config.toml.bak .cargo/config.toml; rm -f .cargo/config.toml.bak; exit $$status
+	$(CARGO_ENV) cargo run --manifest-path ./tools/stub-gen/Cargo.toml
+	ruff check $(check_stubs) --select I --fix
 	ruff check $(check_dirs)
 	ruff format py_src/tokenizers/*.pyi
 	ruff format --check $(check_dirs)

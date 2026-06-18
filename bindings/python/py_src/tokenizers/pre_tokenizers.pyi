@@ -2,9 +2,11 @@
 PreTokenizers Module
 """
 
-from _typeshed import Incomplete
-from tokenizers import PreTokenizedString, Regex
 from typing import Any, final
+
+from _typeshed import Incomplete
+
+from tokenizers import PreTokenizedString, Regex
 
 @final
 class BertPreTokenizer(PreTokenizer):
