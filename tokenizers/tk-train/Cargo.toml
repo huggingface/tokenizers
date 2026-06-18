@@ -1,0 +1,47 @@
+[package]
+name = "tk-train"
+version = "0.23.2-dev.0"
+edition = "2018"
+authors = [
+  "Anthony MOI <m.anthony.moi@gmail.com>",
+  "Nicolas Patry <patry.nicolas@protonmail.com>",
+  "Arthur Zucker <arthur@huggingface.co",
+  "Luc Georges <luc@huggingface.co",
+]
+homepage = "https://github.com/huggingface/tokenizers"
+repository = "https://github.com/huggingface/tokenizers"
+documentation = "https://docs.rs/tokenizers/"
+license = "Apache-2.0"
+keywords = ["tokenizer", "NLP", "huggingface", "BPE", "WordPiece"]
+description = """
+Training half of the 🤗 Tokenizers library: the `Trainer` trait, every
+`*Trainer`, and the training extension over `tk-encode`'s `Tokenizer`.
+"""
+
+[lib]
+name = "tk_train"
+path = "src/lib.rs"
+
+[dependencies]
+tk-encode = { path = "../tk-encode", default-features = false }
+rayon = "1.10"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+ahash = { version = "0.8.11", features = ["serde"] }
+compact_str = { version = "0.9", features = ["serde"] }
+dary_heap = { version = "0.3.6", features = ["serde"] }
+derive_builder = "0.20"
+log = "0.4"
+itertools = "0.14"
+thiserror = "2"
+esaxx-rs = { version = "0.1.10", default-features = false, features = [] }
+indicatif = { version = "0.18", optional = true }
+
+[features]
+default = ["progressbar", "esaxx_fast"]
+esaxx_fast = ["esaxx-rs/cpp"]
+progressbar = ["indicatif", "tk-encode/progressbar"]
+
+[dev-dependencies]
+tempfile = "3.10"
+assert_approx_eq = "1.1"
