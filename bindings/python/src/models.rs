@@ -15,7 +15,7 @@ use tk::models::wordlevel::WordLevel;
 use tk::models::wordpiece::{WordPiece, WordPieceBuilder};
 use tk::models::ModelWrapper;
 use tk::tokenizer::PreTokenizedString;
-use tk::{Model, Token};
+use tk::{Model, Token, Trainable};
 use tokenizers as tk;
 
 use super::error::{deprecation_warning, ToPyResult};
@@ -46,8 +46,6 @@ impl PyModel {
 }
 
 impl Model for PyModel {
-    type Trainer = PyTrainer;
-
     fn tokenize(&self, tokens: &str) -> tk::Result<Vec<Token>> {
         self.model.read().unwrap().tokenize(tokens)
     }
@@ -88,6 +86,10 @@ impl Model for PyModel {
     fn save(&self, folder: &Path, name: Option<&str>) -> tk::Result<Vec<PathBuf>> {
         self.model.read().unwrap().save(folder, name)
     }
+}
+
+impl Trainable for PyModel {
+    type Trainer = PyTrainer;
 
     fn get_trainer(&self) -> Self::Trainer {
         self.model.read().unwrap().get_trainer().into()

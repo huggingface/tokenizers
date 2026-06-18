@@ -7,7 +7,7 @@ use crate::processors::Processor;
 use crate::tasks::tokenizer::{DecodeBatchTask, DecodeTask, EncodeBatchTask, EncodeTask};
 use crate::trainers::Trainer;
 use std::collections::HashMap;
-use tokenizers::Model as ModelTrait;
+use tokenizers::{TokenizerTrainExt, Trainable};
 
 use napi::bindgen_prelude::*;
 use napi_derive::napi;

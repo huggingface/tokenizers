@@ -12,10 +12,11 @@ use pyo3::IntoPyObject;
 use pyo3::{exceptions, IntoPyObjectExt};
 use tk::models::bpe::BPE;
 use tk::tokenizer::{
-    Model, PaddingDirection, PaddingParams, PaddingStrategy, PostProcessor, TokenizerImpl,
+    PaddingDirection, PaddingParams, PaddingStrategy, PostProcessor, TokenizerImpl,
     TruncationDirection, TruncationParams, TruncationStrategy,
 };
 use tk::utils::iter::ResultShunt;
+use tk::{TokenizerTrainExt, Trainable};
 use tokenizers as tk;
 
 use super::decoders::PyDecoder;

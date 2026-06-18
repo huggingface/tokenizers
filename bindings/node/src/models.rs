@@ -81,8 +81,6 @@ impl Bpe {
 }
 
 impl tk::Model for Model {
-  type Trainer = Trainer;
-
   fn tokenize(&self, sequence: &str) -> tk::Result<Vec<tk::Token>> {
     self
       .model
@@ -148,6 +146,10 @@ impl tk::Model for Model {
       .unwrap()
       .save(folder, name)
   }
+}
+
+impl tk::Trainable for Model {
+  type Trainer = Trainer;
 
   fn get_trainer(&self) -> Self::Trainer {
     self
