@@ -441,7 +441,7 @@ impl AddedVocabulary {
                 return vec![(None, (0, sentence.len()))];
             }
         };
-        for mat in trie.leftmost_find_iter(sentence) {
+        for mat in trie.leftmost_find_iter(sentence.as_bytes()) {
             let mut start = mat.start();
             let mut stop = mat.end();
             let id = mat.value();
@@ -492,15 +492,15 @@ impl AddedVocabulary {
     /// Split the input sentence to extract anything we found from the `MatchingSet`, as well as
     /// the list of corresponding IDs
     /// The list of IDs have the exact same number of elements than the Iterator.
-    fn split_with_indices(
+    fn split_with_indices<'input>(
         &self,
-        sentence: NormalizedString,
+        sentence: NormalizedString<'input>,
         split_re: &MatchingSet,
-    ) -> Vec<(NormalizedString, Option<Vec<Token>>)> {
+    ) -> Vec<(NormalizedString<'input>, Option<Vec<Token>>)> {
         self.find_matches(sentence.get(), split_re)
             .into_iter()
             .map(|(id, byte_offsets)| {
-                let slice = sentence
+                let slice: NormalizedString<'input> = sentence
                     .slice(Range::Normalized(byte_offsets.0..byte_offsets.1))
                     .expect("AddedVocabulary bad split");
                 if let Some(id) = id {
@@ -520,12 +520,12 @@ impl AddedVocabulary {
     /// non-normalized one. For example, when we expect to extract the token `yesterday` in the
     /// input sentence `I read a book Yesterday`, if the normalizer is supposed to lowercase
     /// everything, we expect a match.
-    pub fn extract_and_normalize<N: Normalizer>(
+    pub fn extract_and_normalize<'input, N: Normalizer>(
         &self,
         normalizer: Option<&N>,
-        sequence: &str,
-    ) -> PreTokenizedString {
-        let mut pretokenized: PreTokenizedString = sequence.into();
+        sequence: &'input str,
+    ) -> PreTokenizedString<'input> {
+        let mut pretokenized: PreTokenizedString<'input> = sequence.into();
 
         // 1. We extract all the non-normalized tokens from the non-normalized string
         pretokenized
@@ -638,7 +638,9 @@ mod tests {
         }
     }
 
-    fn simplify_output(result: &'_ PreTokenizedString) -> Vec<(&'_ str, Option<Vec<u32>>)> {
+    fn simplify_output<'input, 'a>(
+        result: &'a PreTokenizedString<'input>,
+    ) -> Vec<(&'a str, Option<Vec<u32>>)> {
         result
             .get_splits(OffsetReferential::Original, OffsetType::Byte)
             .into_iter()
@@ -935,7 +937,7 @@ mod tests {
     #[test]
     fn empty_matches() {
         let vocab = AddedVocabulary::new();
-        let matches = vocab.find_matches("", &vocab.split_trie);
+        let matches = vocab.find_matches("".into(), &vocab.split_trie);
         assert_eq!(matches, vec![(None, (0, 0))]);
     }
 

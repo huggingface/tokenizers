@@ -18,17 +18,17 @@ pub enum OffsetType {
 /// in the original string. These offsets are in the `original` referential.
 /// It also contains any `Token` associated to the current split
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Split {
+pub struct Split<'input> {
     /// The underlying `NormalizedString`. Each SubString is represented by a `NormalizedString`
     /// and in the end we might be carrying a lot of SubString representing various parts of the
     /// original input string.
-    normalized: NormalizedString,
+    normalized: NormalizedString<'input>,
     /// Optional Tokens associated to this Split
     tokens: Option<Vec<Token>>,
 }
 
-impl From<NormalizedString> for Split {
-    fn from(n: NormalizedString) -> Self {
+impl<'input> From<NormalizedString<'input>> for Split<'input> {
+    fn from(n: NormalizedString<'input>) -> Self {
         Self {
             normalized: n,
             tokens: None,
@@ -36,8 +36,8 @@ impl From<NormalizedString> for Split {
     }
 }
 
-impl From<(NormalizedString, Option<Vec<Token>>)> for Split {
-    fn from(f: (NormalizedString, Option<Vec<Token>>)) -> Self {
+impl<'input> From<(NormalizedString<'input>, Option<Vec<Token>>)> for Split<'input> {
+    fn from(f: (NormalizedString<'input>, Option<Vec<Token>>)) -> Self {
         Self {
             normalized: f.0,
             tokens: f.1,
@@ -52,12 +52,12 @@ impl From<(NormalizedString, Option<Vec<Token>>)> for Split {
 /// to build an `Encoding` with all the relevant offsets and word ids, relative to the
 /// original string.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PreTokenizedString {
-    original: String,
-    splits: Vec<Split>,
+pub struct PreTokenizedString<'input> {
+    original: &'input str,
+    splits: Vec<Split<'input>>,
 }
 
-impl PreTokenizedString {
+impl<'input> PreTokenizedString<'input> {
     /// Split the `PreTokenizedString` by providing a `split_fn` in charge of splitting
     /// each substring (`NormalizedString`) into multiple parts.
     ///
@@ -72,9 +72,9 @@ impl PreTokenizedString {
     /// > "splits" of the original string.
     pub fn split<F, U, R>(&mut self, mut split_fn: F) -> Result<()>
     where
-        F: FnMut(usize, NormalizedString) -> Result<U>,
+        F: FnMut(usize, NormalizedString<'input>) -> Result<U>,
         U: IntoIterator<Item = R>,
-        R: Into<Split>,
+        R: Into<Split<'input>>,
     {
         // new_splits is at least as big as self.splits
         let mut new_splits = Vec::with_capacity(self.splits.len());
@@ -300,10 +300,10 @@ impl PreTokenizedString {
     }
 }
 
-impl From<NormalizedString> for PreTokenizedString {
-    fn from(s: NormalizedString) -> Self {
+impl<'input> From<NormalizedString<'input>> for PreTokenizedString<'input> {
+    fn from(s: NormalizedString<'input>) -> Self {
         Self {
-            original: s.get_original().to_owned(),
+            original: s.get_original(),
             splits: vec![Split {
                 normalized: s,
                 tokens: None,
@@ -312,19 +312,13 @@ impl From<NormalizedString> for PreTokenizedString {
     }
 }
 
-impl From<&str> for PreTokenizedString {
-    fn from(s: &str) -> Self {
+impl<'input> From<&'input str> for PreTokenizedString<'input> {
+    fn from(s: &'input str) -> Self {
         let normalized: NormalizedString = s.into();
         normalized.into()
     }
 }
 
-impl From<String> for PreTokenizedString {
-    fn from(s: String) -> Self {
-        let normalized: NormalizedString = s.into();
-        normalized.into()
-    }
-}
 
 struct BytesToCharOffsetConverter {
     map: HashMap<usize, usize>,

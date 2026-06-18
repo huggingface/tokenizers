@@ -84,13 +84,15 @@ impl Normalizer for Nmt {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::borrow::Cow;
+
+use super::*;
 
     #[test]
     fn test_nfkc() {
-        let original = "\u{fb01}".to_string();
-        let normalized = "fi".to_string();
-        let mut n = NormalizedString::from(original.clone());
+        let original = "\u{fb01}";
+        let normalized = Cow::from("fi");
+        let mut n = NormalizedString::from(original);
         NFKC.normalize(&mut n).unwrap();
 
         assert_eq!(

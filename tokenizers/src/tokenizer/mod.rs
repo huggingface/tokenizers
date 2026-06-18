@@ -557,7 +557,7 @@ pub struct TokenizerImpl<M, N, PT, PP, D> {
     padding: Option<PaddingParams>,
 }
 
-impl<M, N, PT, PP, D> TokenizerImpl<M, N, PT, PP, D>
+impl<'input, M, N, PT, PP, D> TokenizerImpl<M, N, PT, PP, D>
 where
     M: Model,
     N: Normalizer,
@@ -761,7 +761,7 @@ where
     /// Encode a single sequence
     fn encode_single_sequence(
         &self,
-        sequence: InputSequence,
+        sequence: InputSequence<'input>,
         type_id: u32,
         offsets_type: OffsetType,
     ) -> Result<Encoding> {
@@ -1169,13 +1169,13 @@ where
         Ok(None)
     }
 }
-impl<M, N, PT, PP, D> TokenizerImpl<M, N, PT, PP, D>
+impl<'input, M, N, PT, PP, D> TokenizerImpl<M, N, PT, PP, D>
 where
     M: Model,
 {
     /// Tokenization logic, makes the bridge between the pre-tokenization phase and the real
     /// tokenization phase, and converting offsets back to the original referential.
-    fn do_tokenize<P: Into<PreTokenizedString>>(
+    fn do_tokenize<P: Into<PreTokenizedString<'input>>>(
         &self,
         pretokenized: P,
         type_id: u32,
@@ -1201,12 +1201,12 @@ where
 }
 
 #[allow(dead_code)]
-impl<M, N, PT, PP, D> TokenizerImpl<M, N, PT, PP, D>
+impl<'input, M, N, PT, PP, D> TokenizerImpl<M, N, PT, PP, D>
 where
     N: Normalizer,
 {
     /// Normalization logic, go through all normalizers
-    fn do_normalize<V: Into<NormalizedString>>(&self, normalized: V) -> Result<NormalizedString> {
+    fn do_normalize<V: Into<NormalizedString<'input>>>(&self, normalized: V) -> Result<NormalizedString<'input>> {
         let mut normalized: NormalizedString = normalized.into();
 
         if let Some(ref normalizer) = self.normalizer {
@@ -1239,15 +1239,15 @@ where
     }
 }
 
-impl<M, N, PT, PP, D> TokenizerImpl<M, N, PT, PP, D>
+impl<'input, M, N, PT, PP, D> TokenizerImpl<M, N, PT, PP, D>
 where
     PT: PreTokenizer,
 {
     /// PreTokenization logic, handling the case where there is no PreTokenizer set
-    fn do_pre_tokenize<P: Into<PreTokenizedString>>(
+    fn do_pre_tokenize<P: Into<PreTokenizedString<'input>>>(
         &self,
         pretokenized: P,
-    ) -> Result<PreTokenizedString> {
+    ) -> Result<PreTokenizedString<'input>> {
         let mut pretokenized: PreTokenizedString = pretokenized.into();
         if let Some(ref pretok) = self.pre_tokenizer {
             pretok.pre_tokenize(&mut pretokenized)?;

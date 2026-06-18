@@ -64,8 +64,8 @@ mod tests {
         assert_eq!(
             n,
             NormalizedString::new(
-                original.to_string(),
-                normalized.to_string(),
+                original,
+                normalized.into(),
                 vec![
                     (0, 1),
                     (1, 2),

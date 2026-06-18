@@ -1,5 +1,6 @@
 use crate::pattern::Pattern;
 use crate::{Offsets, Result};
+use std::borrow::Cow;
 use std::ops::{Bound, RangeBounds};
 use unicode_normalization_alignments::UnicodeNormalization;
 
@@ -102,11 +103,11 @@ impl std::fmt::Display for SplitDelimiterBehavior {
 /// offsets from the normalized one, and the other way around too. It is also
 /// possible to convert offsets from one referential to the other one easily.
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
-pub struct NormalizedString {
+pub struct NormalizedString<'input> {
     /// The original version of the string, before any modification
-    original: String,
+    original: &'input str,
     /// The normalized version of the string, after all modifications
-    normalized: String,
+    normalized: Cow<'input, str>,
     /// Mapping from normalized string to original one: (start, end) for each
     /// byte of the normalized string
     alignments: Vec<(usize, usize)>,
@@ -116,11 +117,11 @@ pub struct NormalizedString {
     original_shift: usize,
 }
 
-impl NormalizedString {
+impl<'input> NormalizedString<'input> {
     #[cfg(test)]
     pub(crate) fn new(
-        original: String,
-        normalized: String,
+        original:  &'input str,
+        normalized: Cow<'input, str>,
         alignments: Vec<(usize, usize)>,
         original_shift: usize,
     ) -> Self {
@@ -136,9 +137,13 @@ impl NormalizedString {
         &self.normalized
     }
 
+    pub fn take(self) -> Cow<'input, str> {
+        self.normalized
+    }
+
     /// Return the original string
-    pub fn get_original(&self) -> &str {
-        &self.original
+    pub fn get_original(&self) -> &'input str {
+        self.original
     }
 
     /// Return the original offsets
@@ -269,7 +274,7 @@ impl NormalizedString {
 
     /// Return a slice of the current NormalizedString
     /// If the range is not on char boundaries, return None
-    pub fn slice<T>(&self, range: Range<T>) -> Option<NormalizedString>
+    pub fn slice<T>(&self, range: Range<T>) -> Option<NormalizedString<'input>>
     where
         T: RangeBounds<usize> + Clone,
     {
@@ -277,22 +282,24 @@ impl NormalizedString {
         let (normalized_range, original_range) = match full_range {
             Range::Original(_) => (
                 self.convert_offsets(full_range.clone())?,
-                full_range.clone().unwrap(),
+                full_range.unwrap(),
             ),
-            Range::Normalized(_) => (
-                full_range.clone().unwrap(),
-                self.convert_offsets(full_range.clone())?,
-            ),
+            Range::Normalized(_) => (full_range.clone().unwrap(), self.convert_offsets(full_range)?),
         };
 
         let n_shift = original_range.start;
 
+        // `original` always borrows from the `'input`-lived original string, and `normalized`
+        // reborrows the same `'input` data when untouched (zero-copy), only copying once a
+        // normalizer has actually rewritten the text into an owned buffer.
+        let normalized: Cow<'input, str> = match &self.normalized {
+            Cow::Borrowed(s) => Cow::Borrowed(s.get(normalized_range.clone()).unwrap_or_default()),
+            Cow::Owned(s) => Cow::Owned(s.get(normalized_range.clone()).unwrap_or_default().to_owned()),
+        };
+
         Some(Self {
-            original: self
-                .get_range_original(full_range.clone())
-                .unwrap_or_default()
-                .into(),
-            normalized: self.get_range(full_range).unwrap_or_default().into(),
+            original: self.original.get(original_range.clone()).unwrap_or_default(),
+            normalized,
             alignments: self
                 .alignments
                 .get(normalized_range)?
@@ -422,6 +429,7 @@ impl NormalizedString {
                 // Safety: This is safe as long as we do not splice across a
                 // UTF-8 character, and we only add UTF-8 text. `normalized` is a String
                 // so the latter is trivially true, and we assert for the former above.
+                .to_mut()
                 .as_mut_vec()
                 .splice(n_range, normalized.bytes());
         }
@@ -668,7 +676,7 @@ impl NormalizedString {
         new_normalized.push_str(&self.normalized[last_end..]);
         new_alignments.extend(&self.alignments[last_end..]);
 
-        self.normalized = new_normalized;
+        self.normalized = Cow::Owned(new_normalized);
         self.alignments = new_alignments;
         Ok(())
     }
@@ -695,7 +703,7 @@ impl NormalizedString {
         &self,
         pattern: P,
         behavior: SplitDelimiterBehavior,
-    ) -> Result<Vec<NormalizedString>> {
+    ) -> Result<Vec<NormalizedString<'input>>> {
         let matches = pattern.find_matches(&self.normalized)?;
 
         // Process the matches according to the selected behavior: Vec<(Offsets, should_remove)>
@@ -995,8 +1003,8 @@ pub fn char_to_bytes(s: &str, range: std::ops::Range<usize>) -> Option<std::ops:
     Some(start?..end?)
 }
 
-impl From<String> for NormalizedString {
-    fn from(s: String) -> Self {
+impl<'input> From<&'input str> for NormalizedString<'input> {
+    fn from(s: &'input str) -> Self {
         let alignments = s
             .char_indices()
             .flat_map(|(b, c)| {
@@ -1005,17 +1013,11 @@ impl From<String> for NormalizedString {
             })
             .collect::<Vec<_>>();
         Self {
-            original: s.clone(),
-            normalized: s,
+            original: s,
+            normalized: Cow::from(s),
             alignments,
             original_shift: 0,
         }
-    }
-}
-
-impl From<&str> for NormalizedString {
-    fn from(s: &str) -> Self {
-        Self::from(s.to_owned())
     }
 }
 
