@@ -65,6 +65,11 @@ pub struct ByteLevel {
     /// Set it to False if you want to use your own splitting.
     #[serde(default = "default_true")]
     pub use_regex: bool,
+
+    #[cfg(feature = "byte_level_fast")]
+    #[serde(skip)]
+    /// Whether to skip the byte mapping step
+    pub(crate) skip_byte_mapping: bool,
 }
 
 fn default_true() -> bool {
@@ -77,6 +82,8 @@ impl Default for ByteLevel {
             add_prefix_space: true,
             trim_offsets: true,
             use_regex: true,
+            #[cfg(feature = "byte_level_fast")]
+            skip_byte_mapping: false,
         }
     }
 }
@@ -87,6 +94,8 @@ impl ByteLevel {
             add_prefix_space,
             trim_offsets,
             use_regex,
+            #[cfg(feature = "byte_level_fast")]
+            skip_byte_mapping: false,
         }
     }
 
@@ -111,6 +120,11 @@ impl ByteLevel {
         self.use_regex = v;
         self
     }
+
+    #[cfg(feature = "byte_level_fast")]
+    pub(crate) fn set_skip_byte_mapping(&mut self, skip: bool) {
+        self.skip_byte_mapping = skip;
+    }
 }
 
 /// As a `PreTokenizer`, `ByteLevel` is in charge of transforming all the unicode characters into
@@ -129,6 +143,11 @@ impl PreTokenizer for ByteLevel {
                 Ok(vec![normalized])
             }
         })?;
+        #[cfg(feature = "byte_level_fast")]
+        if self.skip_byte_mapping {
+            // Skip the BYTES_CHAR mapping step
+            return Ok(());
+        }
         pretokenized.normalize(|normalized| {
             let s = normalized.get();
             let mut transformations: Vec<(char, isize)> = Vec::with_capacity(s.len());

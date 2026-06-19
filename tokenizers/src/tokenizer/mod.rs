@@ -467,11 +467,27 @@ impl Tokenizer {
     }
     pub fn from_file<P: AsRef<Path>>(file: P) -> Result<Self> {
         let content = read_to_string(file)?;
-        let tokenizer = serde_json::from_str(&content)?;
+        let tokenizer: Tokenizer = serde_json::from_str(&content)?;
+        #[cfg(feature = "byte_level_fast")]
+        let tokenizer = {
+            // Yes, this is useless, but we have to do this, otherwise
+            // we get a "unused mut" warning when the feature flag is turned off
+            let mut t = tokenizer;
+            t.refresh_byte_level_fast();
+            t
+        };
         Ok(tokenizer)
     }
     pub fn from_bytes<P: AsRef<[u8]>>(bytes: P) -> Result<Self> {
-        let tokenizer = serde_json::from_slice(bytes.as_ref())?;
+        let tokenizer: Tokenizer = serde_json::from_slice(bytes.as_ref())?;
+        #[cfg(feature = "byte_level_fast")]
+        let tokenizer = {
+            // Yes, this is useless, but we have to do this, otherwise
+            // we get a "unused mut" warning when the feature flag is turned off
+            let mut t = tokenizer;
+            t.refresh_byte_level_fast();
+            t
+        };
         Ok(tokenizer)
     }
     #[cfg(feature = "http")]
@@ -489,7 +505,101 @@ impl std::str::FromStr for Tokenizer {
     type Err = Box<dyn std::error::Error + Send + Sync>;
 
     fn from_str(s: &str) -> Result<Self> {
-        Ok(serde_json::from_str(s)?)
+        let tokenizer: Tokenizer = serde_json::from_str(s)?;
+        #[cfg(feature = "byte_level_fast")]
+        let tokenizer = {
+            let mut t = tokenizer;
+            t.refresh_byte_level_fast();
+            t
+        };
+        Ok(tokenizer)
+    }
+}
+
+#[cfg(feature = "byte_level_fast")]
+// Override the with_... setters to refresh the byte_level_fast flag
+impl Tokenizer {
+    fn refresh_byte_level_fast(&mut self) {
+        let model_is_valid_bpe =
+            matches!(&self.0.model, ModelWrapper::BPE(b) if b.byte_vocab.is_some());
+        let pretokenizer_has_byte_level = self
+            .0
+            .get_pre_tokenizer()
+            .map(pre_tokenizer_has_byte_level)
+            .unwrap_or(false);
+        let normalizer_is_noop = normalizer_is_noop(self.0.get_normalizer());
+        let enabled = model_is_valid_bpe && pretokenizer_has_byte_level && normalizer_is_noop;
+
+        if let ModelWrapper::BPE(b) = &mut self.0.model {
+            b.set_byte_level_fast(enabled);
+        }
+        if let Some(pt) = self.0.pre_tokenizer.as_mut() {
+            set_pretokenizer_skip_byte_mapping(pt, enabled);
+        }
+    }
+
+    pub fn byte_level_fast_enabled(&self) -> bool {
+        matches!(&self.0.model, ModelWrapper::BPE(b) if b.byte_level_fast_path)
+    }
+
+    pub fn with_pre_tokenizer(&mut self, pt: Option<impl Into<PreTokenizerWrapper>>) -> &mut Self {
+        self.0.with_pre_tokenizer(pt);
+        self.refresh_byte_level_fast();
+        self
+    }
+
+    pub fn with_normalizer(
+        &mut self,
+        n: Option<impl Into<NormalizerWrapper>>,
+    ) -> Result<&mut Self> {
+        self.0.with_normalizer(n)?;
+        self.refresh_byte_level_fast();
+        Ok(self)
+    }
+
+    pub fn with_model(&mut self, m: impl Into<ModelWrapper>) -> &mut Self {
+        self.0.with_model(m);
+        self.refresh_byte_level_fast();
+        self
+    }
+
+    pub fn with_decoder(&mut self, decoder: Option<impl Into<DecoderWrapper>>) -> &mut Self {
+        self.0.with_decoder(decoder);
+        self.refresh_byte_level_fast();
+        self
+    }
+}
+
+#[cfg(feature = "byte_level_fast")]
+/// Whether this PreTokenizer sequence has a ByteLevel step
+fn pre_tokenizer_has_byte_level(pretokenizer: &PreTokenizerWrapper) -> bool {
+    match pretokenizer {
+        PreTokenizerWrapper::ByteLevel(_) => true,
+        PreTokenizerWrapper::Sequence(seq) => seq.as_ref().iter().any(pre_tokenizer_has_byte_level),
+        _ => false,
+    }
+}
+
+#[cfg(feature = "byte_level_fast")]
+fn set_pretokenizer_skip_byte_mapping(pretokenizer: &mut PreTokenizerWrapper, skip: bool) {
+    match pretokenizer {
+        PreTokenizerWrapper::ByteLevel(byte_level) => byte_level.set_skip_byte_mapping(skip),
+        PreTokenizerWrapper::Sequence(seq) => seq
+            .as_mut()
+            .iter_mut()
+            .for_each(|pretok| set_pretokenizer_skip_byte_mapping(pretok, skip)),
+        _ => {}
+    }
+}
+
+#[cfg(feature = "byte_level_fast")]
+fn normalizer_is_noop(n: Option<&NormalizerWrapper>) -> bool {
+    match n {
+        None => true,
+        Some(NormalizerWrapper::Sequence(s)) => {
+            s.as_ref().iter().all(|x| normalizer_is_noop(Some(x)))
+        }
+        _ => false,
     }
 }
 

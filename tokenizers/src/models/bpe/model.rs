@@ -635,7 +635,7 @@ impl BPE {
     }
 
     #[cfg(feature = "byte_level_fast")]
-    fn set_byte_level_fast(&mut self, on: bool) {
+    pub(crate) fn set_byte_level_fast(&mut self, on: bool) {
         debug_assert!(
             !on || self.byte_vocab.is_some(),
             "byte_vocab must be Some to enable the fast path"
