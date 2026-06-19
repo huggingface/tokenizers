@@ -47,7 +47,7 @@ fn empty_sequence_normalizer_counts_as_noop() {
 fn disabled_when_pretokenizer_swapped_out() {
     let mut tok = load("gpt2-slim.json");
     assert!(tok.byte_level_fast_enabled());
-    tok.with_pre_tokenizer(Some(Whitespace::default())); // auto-refresh
+    tok.with_pre_tokenizer(Some(Whitespace)); // auto-refresh
     assert!(!tok.byte_level_fast_enabled());
 }
 
