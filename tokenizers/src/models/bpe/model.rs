@@ -627,8 +627,28 @@ impl BPE {
     }
 
     #[cfg(feature = "byte_level_fast")]
-    pub(crate) fn tokenize_bytes(&self, bytes: &[u8]) -> Result<Vec<Token>> {
-        Ok(vec![])
+    fn tokenize_bytes(&self, bytes: &[u8]) -> Result<Vec<Token>> {
+        assert!(self.byte_vocab.as_ref().is_some(), "caller must guarantee byte_vocab is Some");
+        if bytes.is_empty() {
+            return Ok(vec![]);
+        }
+        // TODO: redirect to cache optimized version
+        let mut word = self.make_word_from_bytes(bytes)?;
+        word.merge_all(&self.merges, self.dropout);
+        Ok(self.word_to_tokens(&word).collect())
+    }
+
+    #[cfg(feature = "byte_level_fast")]
+    fn make_word_from_bytes(&self, bytes: &[u8]) -> Result<Word> {
+        let byte_vocab = self
+            .byte_vocab
+            .as_ref()
+            .expect("caller must guarantee byte_vocab is Some");
+        let mut word = Word::with_capacity(bytes.len());
+        for byte in bytes.iter().copied() {
+            word.add(byte_vocab[byte as usize], 1);
+        }
+        Ok(word)
     }
 }
 
