@@ -88,6 +88,12 @@ thread_local! {
     static BPE_LOCAL_CACHE: RefCell<AHashMap<u64, AHashMap<String, Word>>> =
         RefCell::new(AHashMap::new());
 }
+
+#[cfg(feature = "byte_level_fast")]
+thread_local! {
+    static BPE_LOCAL_BYTE_CACHE: RefCell<AHashMap<u64, AHashMap<Vec<u8>, Word>>> = RefCell::new(AHashMap::new());
+}
+
 pub type Merges = Vec<(String, String)>;
 
 struct Config {
@@ -652,10 +658,13 @@ impl BPE {
         if bytes.is_empty() {
             return Ok(vec![]);
         }
-        // TODO: redirect to cache optimized version
-        let mut word = self.make_word_from_bytes(bytes)?;
-        word.merge_all(&self.merges, self.dropout);
-        Ok(self.word_to_tokens(&word).collect())
+        if self.dropout.is_none() || self.dropout == Some(0.0) {
+            self.tokenize_bytes_with_cache(bytes)
+        } else {
+            let mut word = self.make_word_from_bytes(bytes)?;
+            word.merge_all(&self.merges, self.dropout);
+            Ok(self.word_to_tokens(&word).collect())
+        }
     }
 
     #[cfg(feature = "byte_level_fast")]
@@ -669,6 +678,39 @@ impl BPE {
             word.add(byte_vocab[byte as usize], 1);
         }
         Ok(word)
+    }
+
+    #[cfg(feature = "byte_level_fast")]
+    fn tokenize_bytes_with_cache(&self, bytes: &[u8]) -> Result<Vec<Token>> {
+        if self.ignore_merges {
+            // if let Some(id) = self.vocab_bytes.get(bytes) {
+            //     return Ok(vec![Token::new(
+            //         *id,
+            //         String::from_utf8_lossy(bytes).into(),
+            //         (0, bytes.len()),
+            //     )]);
+            // }
+        }
+        let Some(cache) = self.cache.as_ref() else {
+            let mut word = self.make_word_from_bytes(bytes)?;
+            word.merge_all(&self.merges, self.dropout);
+            return Ok(self.word_to_tokens(&word).collect());
+        };
+        let cache_id = cache.id();
+        BPE_LOCAL_BYTE_CACHE.with(|cell| {
+            let mut by_bpe = cell.borrow_mut();
+            let local = by_bpe.entry(cache_id).or_default();
+            if let Some(hit) = local.get(bytes) {
+                return Ok(self.word_to_tokens(hit).collect());
+            }
+            let mut word = self.make_word_from_bytes(bytes)?;
+            word.merge_all(&self.merges, self.dropout);
+            let ret: Vec<Token> = self.word_to_tokens(&word).collect();
+            if bytes.len() < MAX_LENGTH && local.len() < cache.capacity {
+                local.insert(bytes.to_owned(), word);
+            }
+            Ok(ret)
+        })
     }
 }
 
