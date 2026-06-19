@@ -320,6 +320,8 @@ impl BpeBuilder {
 
             #[cfg(feature = "byte_level_fast")]
             byte_vocab: self.config.byte_vocab,
+            #[cfg(feature = "byte_level_fast")]
+            byte_level_fast_path: false,
         })
     }
 }
@@ -337,6 +339,10 @@ pub struct BPE {
     #[cfg(feature = "byte_level_fast")]
     /// Maps each byte value from 0 to 255 to its token id in the vocabulary
     pub(crate) byte_vocab: Option<Box<[u32; 256]>>,
+
+    #[cfg(feature = "byte_level_fast")]
+    /// Whether the byte-level fast-path is available (must be set by the owning Tokenizer)
+    pub(crate) byte_level_fast_path: bool,
 
     /// Contains the cache for optimizing the encoding step.
     cache: Option<BpeCache>,
@@ -400,6 +406,8 @@ impl Clone for BPE {
 
             #[cfg(feature = "byte_level_fast")]
             byte_vocab: self.byte_vocab.clone(),
+            #[cfg(feature = "byte_level_fast")]
+            byte_level_fast_path: self.byte_level_fast_path,
         }
     }
 }
@@ -627,8 +635,20 @@ impl BPE {
     }
 
     #[cfg(feature = "byte_level_fast")]
+    fn set_byte_level_fast(&mut self, on: bool) {
+        debug_assert!(
+            !on || self.byte_vocab.is_some(),
+            "byte_vocab must be Some to enable the fast path"
+        );
+        self.byte_level_fast_path = on;
+    }
+
+    #[cfg(feature = "byte_level_fast")]
     fn tokenize_bytes(&self, bytes: &[u8]) -> Result<Vec<Token>> {
-        assert!(self.byte_vocab.as_ref().is_some(), "caller must guarantee byte_vocab is Some");
+        debug_assert!(
+            self.byte_vocab.as_ref().is_some(),
+            "dispatch asserts byte_vocab is Some and byte_level_fast_path is on"
+        );
         if bytes.is_empty() {
             return Ok(vec![]);
         }
@@ -664,6 +684,13 @@ impl Model for BPE {
     }
 
     fn tokenize(&self, sequence: &str) -> Result<Vec<Token>> {
+        #[cfg(feature = "byte_level_fast")]
+        {
+            if self.byte_level_fast_path && self.byte_vocab.is_some() {
+                return self.tokenize_bytes(sequence.as_bytes());
+            }
+        }
+
         if sequence.is_empty() {
             return Ok(vec![]);
         }
