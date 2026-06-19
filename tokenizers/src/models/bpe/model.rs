@@ -102,6 +102,8 @@ struct Config {
     fuse_unk: bool,
     byte_fallback: bool,
     ignore_merges: bool,
+    #[cfg(feature = "byte_level_fast")]
+    byte_vocab: Option<Box<[u32; 256]>>,
 }
 
 /// A `BpeBuilder` can be used to create a `BPE` model with a custom configuration.
@@ -124,6 +126,8 @@ impl Default for BpeBuilder {
                 fuse_unk: false,
                 byte_fallback: false,
                 ignore_merges: false,
+                #[cfg(feature = "byte_level_fast")]
+                byte_vocab: None,
             },
         }
     }
@@ -243,6 +247,31 @@ impl BpeBuilder {
         };
 
         let vocab = self.config.vocab;
+
+        #[cfg(feature = "byte_level_fast")]
+        {
+            self.config.byte_vocab = {
+                // Build the byte-level vocab from vocab
+                use crate::decoders::byte_level::bytes_char;
+                let mut table = [0u32; 256];
+                let mut vocab_has_all_bytes = true;
+
+                for (byte, character) in bytes_char() {
+                    if let Some(token_id) = vocab.get(&character.to_string()) {
+                        table[byte as usize] = *token_id;
+                    } else {
+                        vocab_has_all_bytes = false;
+                        break;
+                    }
+                }
+                if vocab_has_all_bytes {
+                    Some(Box::new(table))
+                } else {
+                    None
+                }
+            };
+        };
+
         let prefix_len = if let Some(prefix) = &self.config.continuing_subword_prefix {
             prefix.len()
         } else {
@@ -288,6 +317,9 @@ impl BpeBuilder {
             fuse_unk: self.config.fuse_unk,
             byte_fallback: self.config.byte_fallback,
             ignore_merges: self.config.ignore_merges,
+
+            #[cfg(feature = "byte_level_fast")]
+            byte_vocab: self.config.byte_vocab,
         })
     }
 }
@@ -301,6 +333,11 @@ pub struct BPE {
     pub(crate) vocab_r: VocabR,
     /// Contains the mapping between Pairs and their (rank, new_id).
     pub(crate) merges: MergeMap,
+
+    #[cfg(feature = "byte_level_fast")]
+    /// Maps each byte value from 0 to 255 to its token id in the vocabulary
+    pub(crate) byte_vocab: Option<Box<[u32; 256]>>,
+
     /// Contains the cache for optimizing the encoding step.
     cache: Option<BpeCache>,
     /// Dropout probability for merges. 0.0 = no dropout is the default. At 1.0, tokenization will
@@ -360,6 +397,9 @@ impl Clone for BPE {
             fuse_unk: self.fuse_unk,
             byte_fallback: self.byte_fallback,
             ignore_merges: self.ignore_merges,
+
+            #[cfg(feature = "byte_level_fast")]
+            byte_vocab: self.byte_vocab.clone(),
         }
     }
 }
@@ -1167,5 +1207,55 @@ mod tests {
                 }
             ]
         )
+    }
+
+    #[cfg(feature = "byte_level_fast")]
+    mod byte_level_fast {
+        use super::*;
+        use crate::pre_tokenizers::byte_level::bytes_char;
+
+        fn byte_level_vocab() -> Vocab {
+            bytes_char()
+                .into_iter()
+                .map(|(byte, character)| (character.to_string(), (255 - byte) as u32))
+                .collect()
+        }
+
+        #[test]
+        fn test_byte_vocab_built_when_vocab_has_all_bytes() {
+            let bpe = BpeBuilder::default()
+                .vocab_and_merges(byte_level_vocab(), vec![])
+                .build()
+                .unwrap();
+            let table = bpe
+                .byte_vocab
+                .as_ref()
+                .expect("a complete byte-level vocab must produce.a byte_vocab table");
+
+            for byte in 0..=255u8 {
+                assert_eq!(
+                    table[byte as usize],
+                    (255 - byte) as u32,
+                    "byte 0x{byte:02X} must map to the id of its BYTES_CHAR token"
+                );
+            }
+        }
+
+        #[test]
+        fn test_byte_vocab_is_none_when_vocab_miss_bytes() {
+            let mut vocab = byte_level_vocab();
+            // Remove the space ' ' from the vocab
+            vocab.remove(&bytes_char()[&b' '].to_string());
+
+            let bpe = BpeBuilder::default()
+                .vocab_and_merges(vocab, vec![])
+                .build()
+                .unwrap();
+
+            assert!(
+                bpe.byte_vocab.is_none(),
+                "incomplete byte-level vocab disables the fast path"
+            );
+        }
     }
 }
