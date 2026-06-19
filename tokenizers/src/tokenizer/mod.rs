@@ -437,6 +437,11 @@ where
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+// Route deserialization through `From<TokenizerImpl<..>>`
+// Needed so post-deserialize initialization (refresh_byte_level_fast) runs whatever the instantiation method is
+#[serde(
+    from = "TokenizerImpl<ModelWrapper, NormalizerWrapper, PreTokenizerWrapper, PostProcessorWrapper, DecoderWrapper>"
+)]
 pub struct Tokenizer(
     TokenizerImpl<
         ModelWrapper,
@@ -467,28 +472,10 @@ impl Tokenizer {
     }
     pub fn from_file<P: AsRef<Path>>(file: P) -> Result<Self> {
         let content = read_to_string(file)?;
-        let tokenizer: Tokenizer = serde_json::from_str(&content)?;
-        #[cfg(feature = "byte_level_fast")]
-        let tokenizer = {
-            // Yes, this is useless, but we have to do this, otherwise
-            // we get a "unused mut" warning when the feature flag is turned off
-            let mut t = tokenizer;
-            t.refresh_byte_level_fast();
-            t
-        };
-        Ok(tokenizer)
+        Ok(serde_json::from_str(&content)?)
     }
     pub fn from_bytes<P: AsRef<[u8]>>(bytes: P) -> Result<Self> {
-        let tokenizer: Tokenizer = serde_json::from_slice(bytes.as_ref())?;
-        #[cfg(feature = "byte_level_fast")]
-        let tokenizer = {
-            // Yes, this is useless, but we have to do this, otherwise
-            // we get a "unused mut" warning when the feature flag is turned off
-            let mut t = tokenizer;
-            t.refresh_byte_level_fast();
-            t
-        };
-        Ok(tokenizer)
+        Ok(serde_json::from_slice(bytes.as_ref())?)
     }
     #[cfg(feature = "http")]
     #[cfg_attr(docsrs, doc(cfg(feature = "http")))]
@@ -505,14 +492,7 @@ impl std::str::FromStr for Tokenizer {
     type Err = Box<dyn std::error::Error + Send + Sync>;
 
     fn from_str(s: &str) -> Result<Self> {
-        let tokenizer: Tokenizer = serde_json::from_str(s)?;
-        #[cfg(feature = "byte_level_fast")]
-        let tokenizer = {
-            let mut t = tokenizer;
-            t.refresh_byte_level_fast();
-            t
-        };
-        Ok(tokenizer)
+        Ok(serde_json::from_str(s)?)
     }
 }
 
@@ -540,6 +520,19 @@ impl Tokenizer {
 
     pub fn byte_level_fast_enabled(&self) -> bool {
         matches!(&self.0.model, ModelWrapper::BPE(b) if b.byte_level_fast_path)
+    }
+
+    /// Force the byte-level fast path on/off on an already-eligible tokenizer,
+    /// bypassing the eligibility recompute.
+    /// Test-only: used to compare the fast and slow paths on the same tokenizer in equivalence tests.
+    #[cfg(test)]
+    pub(crate) fn set_byte_level_fast(&mut self, enabled: bool) {
+        if let ModelWrapper::BPE(b) = &mut self.0.model {
+            b.set_byte_level_fast(enabled);
+        }
+        if let Some(pt) = self.0.pre_tokenizer.as_mut() {
+            set_pretokenizer_skip_byte_mapping(pt, enabled);
+        }
     }
 
     pub fn with_pre_tokenizer(&mut self, pt: Option<impl Into<PreTokenizerWrapper>>) -> &mut Self {
@@ -612,7 +605,7 @@ where
     D: Into<DecoderWrapper>,
 {
     fn from(t: TokenizerImpl<M, N, PT, PP, D>) -> Self {
-        Self(TokenizerImpl {
+        let tokenizer = Self(TokenizerImpl {
             model: t.model.into(),
             normalizer: t.normalizer.map(Into::into),
             pre_tokenizer: t.pre_tokenizer.map(Into::into),
@@ -621,7 +614,14 @@ where
             added_vocabulary: t.added_vocabulary,
             padding: t.padding,
             truncation: t.truncation,
-        })
+        });
+        #[cfg(feature = "byte_level_fast")]
+        let tokenizer = {
+            let mut tokenizer = tokenizer;
+            tokenizer.refresh_byte_level_fast();
+            tokenizer
+        };
+        tokenizer
     }
 }
 
@@ -1949,5 +1949,102 @@ mod tests {
             .unwrap();
         assert_eq!(tok.get_vocab_size(false), 11);
         assert_eq!(tok.get_vocab_size(true), 12);
+    }
+}
+
+#[cfg(all(test, feature = "byte_level_fast"))]
+mod byte_level_fast_equivalence {
+    use super::Tokenizer;
+
+    const CORPUS: &[&str] = &[
+        "",
+        " ",
+        "Hello world",
+        "The quick brown fox jumps over the lazy dog.",
+        "   leading and trailing   ",
+        "café naïve Ωμέγα",
+        "日本語のテキストをトークン化する",
+        "emoji 👍🇫🇷👨\u{200d}👩\u{200d}👧 mixed",
+        "tabs\tand\nnewlines\n\n",
+        "numbers 1234567890 and symbols !@#$%^&*()",
+        "internationalization tokenization preprocessing",
+        "Mr. O'Brien's well-thought-out, multi-part résumé.",
+        // Single vocab entries in the ignore_merges fixtures whose greedy-merge
+        // segmentation differs from the whole token, so the slow path's
+        // ignore_merges shortcut diverges from the fast path: "ato" (llama-3),
+        // "conf" (glm-5.2), "rg" (gpt-oss). Harmless on ignore_merges=false.
+        "ato",
+        "conf",
+        "rg",
+    ];
+
+    fn load(f: &str) -> Tokenizer {
+        Tokenizer::from_file(format!("data/{f}")).unwrap()
+    }
+
+    /// Compare the fast path (forced on) against the slow path (forced off) on
+    /// the same tokenizer: `encode` ids+offsets and `encode_fast` ids.
+    fn assert_fast_matches_slow(config_file: &str) {
+        let mut tok = load(config_file);
+        assert!(
+            tok.byte_level_fast_enabled(),
+            "{} must be eligible for the fast path",
+            config_file
+        );
+        for &text in CORPUS {
+            tok.set_byte_level_fast(true);
+            let fast = tok.encode(text, false).unwrap();
+            let fast_ids = fast.get_ids().to_vec();
+            let fast_offsets = fast.get_offsets().to_vec();
+            let fast_no_offsets = tok.encode_fast(text, false).unwrap().get_ids().to_vec();
+
+            tok.set_byte_level_fast(false);
+            let slow = tok.encode(text, false).unwrap();
+            let slow_ids = slow.get_ids().to_vec();
+            let slow_offsets = slow.get_offsets().to_vec();
+            let slow_no_offsets = tok.encode_fast(text, false).unwrap().get_ids().to_vec();
+
+            assert_eq!(
+                fast_ids, slow_ids,
+                "encode ids differ — {} on {:?}",
+                config_file, text
+            );
+            assert_eq!(
+                fast_offsets, slow_offsets,
+                "encode offsets differ — {} on {:?}",
+                config_file, text
+            );
+            assert_eq!(
+                fast_no_offsets, slow_no_offsets,
+                "encode_fast ids differ — {} on {:?}",
+                config_file, text
+            );
+        }
+    }
+
+    /// ignore_merges = false: fast path must be fully equivalent to the slow path.
+    #[test]
+    fn encode_matches_slow_path() {
+        for config_file in [
+            "gpt2-slim.json",
+            "roberta-slim.json",
+            "deepseek-v4-slim.json",
+        ] {
+            assert_fast_matches_slow(config_file);
+        }
+    }
+
+    /// ignore_merges = true: the fast path does not yet implement the whole-token
+    /// shortcut (`tokenize_with_cache` short-circuits a pre-token that is itself a
+    /// vocab entry, skipping merges). EXPECTED TO FAIL until that path ships.
+    #[test]
+    fn encode_matches_slow_path_with_ignore_merges() {
+        for config_file in [
+            "llama-3-slim.json",
+            "glm-5.2-slim.json",
+            "gpt-oss-slim.json",
+        ] {
+            assert_fast_matches_slow(config_file);
+        }
     }
 }
