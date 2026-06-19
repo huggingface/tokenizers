@@ -109,6 +109,8 @@ progressbar = ["indicatif"]
 http = ["hf-hub"]
 unstable_wasm = ["fancy-regex", "getrandom/wasm_js"]
 rustls-tls = ["hf-hub?/rustls-tls"]
+# Feature flag for the ByteLevel BPE fast-path
+byte_level_fast = []
 
 [dev-dependencies]
 criterion = "0.6"
