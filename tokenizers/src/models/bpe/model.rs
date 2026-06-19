@@ -625,6 +625,11 @@ impl BPE {
             Ok(ret)
         })
     }
+
+    #[cfg(feature = "byte_level_fast")]
+    pub(crate) fn tokenize_bytes(&self, bytes: &[u8]) -> Result<Vec<Token>> {
+        Ok(vec![])
+    }
 }
 
 impl Model for BPE {
@@ -1214,48 +1219,217 @@ mod tests {
         use super::*;
         use crate::pre_tokenizers::byte_level::bytes_char;
 
-        fn byte_level_vocab() -> Vocab {
-            bytes_char()
-                .into_iter()
-                .map(|(byte, character)| (character.to_string(), (255 - byte) as u32))
-                .collect()
-        }
+        mod builder {
+            use super::*;
 
-        #[test]
-        fn test_byte_vocab_built_when_vocab_has_all_bytes() {
-            let bpe = BpeBuilder::default()
-                .vocab_and_merges(byte_level_vocab(), vec![])
-                .build()
-                .unwrap();
-            let table = bpe
-                .byte_vocab
-                .as_ref()
-                .expect("a complete byte-level vocab must produce.a byte_vocab table");
+            fn byte_level_vocab() -> Vocab {
+                bytes_char()
+                    .into_iter()
+                    .map(|(byte, character)| (character.to_string(), (255 - byte) as u32))
+                    .collect()
+            }
 
-            for byte in 0..=255u8 {
-                assert_eq!(
-                    table[byte as usize],
-                    (255 - byte) as u32,
-                    "byte 0x{byte:02X} must map to the id of its BYTES_CHAR token"
+            #[test]
+            fn test_byte_vocab_built_when_vocab_has_all_bytes() {
+                let bpe = BpeBuilder::default()
+                    .vocab_and_merges(byte_level_vocab(), vec![])
+                    .build()
+                    .unwrap();
+                let table = bpe
+                    .byte_vocab
+                    .as_ref()
+                    .expect("a complete byte-level vocab must produce.a byte_vocab table");
+
+                for byte in 0..=255u8 {
+                    assert_eq!(
+                        table[byte as usize],
+                        (255 - byte) as u32,
+                        "byte 0x{byte:02X} must map to the id of its BYTES_CHAR token"
+                    );
+                }
+            }
+
+            #[test]
+            fn test_byte_vocab_is_none_when_vocab_miss_bytes() {
+                let mut vocab = byte_level_vocab();
+                // Remove the space ' ' from the vocab
+                vocab.remove(&bytes_char()[&b' '].to_string());
+
+                let bpe = BpeBuilder::default()
+                    .vocab_and_merges(vocab, vec![])
+                    .build()
+                    .unwrap();
+
+                assert!(
+                    bpe.byte_vocab.is_none(),
+                    "incomplete byte-level vocab disables the fast path"
                 );
             }
         }
 
-        #[test]
-        fn test_byte_vocab_is_none_when_vocab_miss_bytes() {
-            let mut vocab = byte_level_vocab();
-            // Remove the space ' ' from the vocab
-            vocab.remove(&bytes_char()[&b' '].to_string());
+        mod tokenize_bytes {
+            use super::*;
 
-            let bpe = BpeBuilder::default()
-                .vocab_and_merges(vocab, vec![])
-                .build()
-                .unwrap();
+            const MISSING_FIXTURES: &str =
+                "test fixtures not found — run `make test` to download them";
 
-            assert!(
-                bpe.byte_vocab.is_none(),
-                "incomplete byte-level vocab disables the fast path"
-            );
+            fn gpt2_bpe() -> BPE {
+                BPE::from_file("data/gpt2-vocab.json", "data/gpt2-merges.txt")
+                    .build()
+                    .expect(MISSING_FIXTURES)
+            }
+
+            fn read_fixture(path: &str) -> String {
+                std::fs::read_to_string(path).expect(MISSING_FIXTURES)
+            }
+
+            fn bytes_to_byte_level_string(raw: &[u8]) -> String {
+                use crate::decoders::byte_level::bytes_char;
+                let map = bytes_char();
+                raw.iter().map(|byte| map[byte]).collect()
+            }
+
+            /// The step-2 invariant: tokenizing raw bytes yields the same token
+            /// ids as tokenizing the ByteLevel-mapped string the slow path sees.
+            /// Offsets differ by design (raw-byte space vs mapped-char space),
+            /// so we compare ids only — offsets get their own invariant below.
+            fn assert_same_ids(bpe: &BPE, raw: &[u8]) {
+                let ids = |tokens: Vec<Token>| -> Vec<u32> {
+                    tokens.into_iter().map(|token| token.id).collect()
+                };
+                let from_string = ids(bpe.tokenize(&bytes_to_byte_level_string(raw)).unwrap());
+                let from_bytes = ids(bpe.tokenize_bytes(raw).unwrap());
+                assert_eq!(
+                    from_string, from_bytes,
+                    "token ids diverge for raw bytes {raw:?}"
+                );
+            }
+
+            #[test]
+            fn test_equivalent_on_big_txt() {
+                let bpe = gpt2_bpe();
+                for line in read_fixture("data/big.txt").lines() {
+                    assert_same_ids(&bpe, line.as_bytes());
+                }
+            }
+
+            #[test]
+            fn test_equivalent_on_non_latin() {
+                let bpe = gpt2_bpe();
+                for line in read_fixture("data/unigram_wagahaiwa_nekodearu.txt").lines() {
+                    assert_same_ids(&bpe, line.as_bytes());
+                }
+            }
+
+            #[test]
+            fn test_equivalent_on_empty_and_whitespace() {
+                let bpe = gpt2_bpe();
+                for raw in [
+                    "", " ", "  ", "   ", " a", "a ", "\n", "\t", "a\nb", " \t \n ",
+                ] {
+                    assert_same_ids(&bpe, raw.as_bytes());
+                }
+            }
+
+            #[test]
+            fn test_equivalent_on_every_single_byte() {
+                let bpe = gpt2_bpe();
+                for byte in 0..=255u8 {
+                    assert_same_ids(&bpe, &[byte]);
+                }
+            }
+
+            #[test]
+            fn test_equivalent_on_byte_pairs_and_triples() {
+                let bpe = gpt2_bpe();
+                assert_same_ids(&bpe, b"ab");
+                assert_same_ids(&bpe, b" the");
+                assert_same_ids(&bpe, &[0x20, b't', b'h', b'e']);
+                assert_same_ids(&bpe, &[0x00, 0x01, 0x02]);
+                assert_same_ids(&bpe, &[0xff, 0xfe]);
+            }
+
+            #[test]
+            fn test_equivalent_on_multibyte_unicode() {
+                let bpe = gpt2_bpe();
+                // Accents, Greek, CJK, a single emoji, a flag (two regional
+                // indicators), a ZWJ family, and a mixed string — all force the
+                // high bytes 0x80–0xFF through the byte path.
+                for raw in [
+                    "café",
+                    "naïve",
+                    "Ωμέγα",
+                    "日本語",
+                    "👍",
+                    "🇫🇷",
+                    "👨‍👩‍👧",
+                    "a日b👍c",
+                ] {
+                    assert_same_ids(&bpe, raw.as_bytes());
+                }
+            }
+
+            #[test]
+            fn test_equivalent_on_deep_merges() {
+                let bpe = gpt2_bpe();
+                for raw in [
+                    "a".repeat(64),
+                    "the the the the the".to_string(),
+                    format!(" {}", "ab".repeat(32)),
+                ] {
+                    assert_same_ids(&bpe, raw.as_bytes());
+                }
+            }
+
+            #[test]
+            fn test_equivalent_when_cache_is_warm() {
+                let bpe = gpt2_bpe();
+                // First call populates the cache, second hits it; both must agree.
+                for _ in 0..2 {
+                    assert_same_ids(&bpe, b"the quick brown fox");
+                }
+            }
+
+            #[test]
+            fn test_equivalent_when_ignore_merges_is_set() {
+                use crate::decoders::byte_level::bytes_char;
+                // A complete byte-level base vocab (all 256 mapped chars, id = byte),
+                // so `byte_vocab` is built and the fast path is active.
+                let mut vocab: Vocab = bytes_char()
+                    .into_iter()
+                    .map(|(byte, character)| (character.to_string(), byte as u32))
+                    .collect();
+                // '.' and ':' are printable, so they map to themselves. Add the
+                // pair ".:" and the whole sequence ".:.:" as their own tokens.
+                vocab.insert(".:".to_string(), 256);
+                vocab.insert(".:.:".to_string(), 257);
+
+                // Merge "." + ":" -> ".:", but nothing merges ".:" + ".:". So the
+                // merge-based tokenization of ".:.:" is [".:", ".:"], while the
+                // `ignore_merges` shortcut returns the whole token ".:.:".
+                let bpe = BpeBuilder::default()
+                    .vocab_and_merges(vocab, vec![(".".to_string(), ":".to_string())])
+                    .ignore_merges(true)
+                    .build()
+                    .unwrap();
+
+                assert_same_ids(&bpe, b".:.:");
+            }
+
+            #[test]
+            fn test_fast_path_offsets_tile_the_input() {
+                // Make sure the offsets tile the input
+                let bpe = gpt2_bpe();
+                for raw in ["", "hello", " a b c", "café 日本 👍", "the the the"] {
+                    let tokens = bpe.tokenize_bytes(raw.as_bytes()).unwrap();
+                    let mut cursor = 0;
+                    for token in &tokens {
+                        assert_eq!(token.offsets.0, cursor, "gap/overlap in {raw:?}");
+                        cursor = token.offsets.1;
+                    }
+                    assert_eq!(cursor, raw.len(), "offsets must cover all of {raw:?}");
+                }
+            }
         }
     }
 }
