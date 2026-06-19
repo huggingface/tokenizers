@@ -6,7 +6,9 @@ dir_guard=@mkdir -p $(@D)
 
 SHARED_RESOURCES = $(DATA_DIR)/gpt2-vocab.json $(DATA_DIR)/gpt2-merges.txt $(DATA_DIR)/bert-base-uncased-vocab.txt $(DATA_DIR)/big.txt $(DATA_DIR)/small.txt $(DATA_DIR)/albert-base-v1-tokenizer.json  $(DATA_DIR)/llama-3-tokenizer.json
 BENCHMARK_RESOURCES = $(SHARED_RESOURCES)
-TESTS_RESOURCES = $(SHARED_RESOURCES) $(DATA_DIR)/unigram.json $(DATA_DIR)/unigram_wagahaiwa_nekodearu.txt $(DATA_DIR)/roberta.json $(DATA_DIR)/tokenizer-wiki.json $(DATA_DIR)/bert-wiki.json
+# Slim, full-pipeline tokenizers used by the `byte_level_fast` feature tests.
+BYTE_LEVEL_FAST_RESOURCES = $(addprefix $(DATA_DIR)/, gpt2-slim.json roberta-slim.json deepseek-v4-slim.json glm-5.2-slim.json gpt-oss-slim.json llama-3-slim.json gemma-4-slim.json bert-wiki-slim.json)
+TESTS_RESOURCES = $(SHARED_RESOURCES) $(DATA_DIR)/unigram.json $(DATA_DIR)/unigram_wagahaiwa_nekodearu.txt $(DATA_DIR)/roberta.json $(DATA_DIR)/tokenizer-wiki.json $(DATA_DIR)/bert-wiki.json $(BYTE_LEVEL_FAST_RESOURCES)
 
 .PHONY : build
 build :
@@ -94,3 +96,7 @@ $(DATA_DIR)/bert-wiki.json :
 $(DATA_DIR)/llama-3-tokenizer.json :
 	$(dir_guard)
 	wget $(HF_TEST_DATA)/llama-3-tokenizer.json -O $@
+
+$(BYTE_LEVEL_FAST_RESOURCES) :
+	$(dir_guard)
+	wget $(HF_TEST_DATA)/$(@F) -O $@
