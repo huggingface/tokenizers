@@ -307,7 +307,7 @@ impl AddedVocabulary {
                     }
                 });
 
-        let mut byte_set = HashMap::new();
+        let mut byte_set = Vec::new();
         for token in tokens {
             total += 1;
             if token.content.is_empty() {
@@ -333,15 +333,12 @@ impl AddedVocabulary {
             };
             let mut prefix = [0, 0, 0, 0];
             prefix.copy_from_slice(&token_bytes[..prefix_len]);
-            byte_set.insert(
+            byte_set.push(Bucket {
                 prefix,
-                Bucket {
-                    prefix,
-                    prefix_len: prefix_len as u8,
-                    start: 0,
-                    end: 0,
-                },
-            );
+                prefix_len: prefix_len as u8,
+                start: 0,
+                end: 0,
+            });
             // TODO: we need this one to be sorted on token lenght!
             self.prefix_vecs
                 .entry(prefix)
@@ -385,7 +382,7 @@ impl AddedVocabulary {
             vec.sort_unstable_by_key(|s| std::cmp::Reverse(s.len()));
         }
         self.num_buckets = byte_set.len();
-        self.buckets = byte_set.into_values().collect();
+        self.buckets = byte_set.into_boxed_slice();
         self.refresh_added_tokens()?;
 
         // Return the number of added tokens
