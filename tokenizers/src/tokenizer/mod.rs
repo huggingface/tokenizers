@@ -2145,7 +2145,12 @@ mod byte_level_bypass_equivalence {
         tok.train_from_files(&mut trainer, vec!["data/small.txt".to_string()])
             .unwrap();
 
-        for text in ["hello world", "The quick brown fox", "café 日本 👍", " a b c"] {
+        for text in [
+            "hello world",
+            "The quick brown fox",
+            "café 日本 👍",
+            " a b c",
+        ] {
             let left = tok.encode(text, false).unwrap().get_ids().to_vec();
             tok.set_byte_level_bypass(false);
             let slow = tok.encode(text, false).unwrap().get_ids().to_vec();
