@@ -76,5 +76,5 @@ jobs:
       - name: Run JS tests
         working-directory: ./bindings/node
         env:
-          HF_TOKEN: ${{ secrets.HF_HUB_READ_TOKEN }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: make test HF="uvx --from huggingface_hub hf"

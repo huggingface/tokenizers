@@ -111,7 +111,7 @@ jobs:
       - name: Run tests
         working-directory: ./bindings/python
         env:
-          HF_TOKEN: ${{ secrets.HF_HUB_READ_TOKEN }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           source .env/bin/activate
           # `make test` also runs `cargo test --no-default-features` which
