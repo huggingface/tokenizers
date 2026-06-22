@@ -27,6 +27,15 @@ pub fn has_parallelism_been_used() -> bool {
     USED_PARALLELISM.load(Ordering::SeqCst)
 }
 
+/// Record that a parallel iterator has been used.
+///
+/// `into_maybe_par_iter` sets this automatically; code paths that drive
+/// rayon directly (e.g. `with_min_len`) must call this so the Python
+/// `pthread_atfork` hook can disable parallelism in forked children.
+pub fn set_parallelism_used() {
+    USED_PARALLELISM.store(true, Ordering::SeqCst);
+}
+
 /// Get internally set parallelism
 fn get_override_parallelism() -> Option<bool> {
     match PARALLELISM.load(Ordering::SeqCst) {
