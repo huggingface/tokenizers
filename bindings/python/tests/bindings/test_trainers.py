@@ -8,6 +8,7 @@ from tokenizers import (
     AddedToken,
     SentencePieceUnigramTokenizer,
     Tokenizer,
+    decoders,
     models,
     normalizers,
     pre_tokenizers,
@@ -59,6 +60,27 @@ class TestBpeTrainer:
         assert trainer.continuing_subword_prefix == None
         trainer.end_of_word_suffix = None
         assert trainer.continuing_subword_prefix == None
+
+    def test_inherits_model_prefix_and_suffix(self):
+        # https://github.com/huggingface/tokenizers/issues/1793
+        tokenizer = Tokenizer(models.BPE(end_of_word_suffix="</w>"))
+        tokenizer.pre_tokenizer = pre_tokenizers.Whitespace()
+        trainer = trainers.BpeTrainer(vocab_size=100, show_progress=False)
+        tokenizer.train_from_iterator(["Wel come to the 🤗 Tok en izers libr ary."], trainer)
+
+        output = tokenizer.encode("Welcome to the 🤗 Tokenizers library.")
+        assert "come</w>" in output.tokens
+        assert tokenizer.model.end_of_word_suffix == "</w>"
+        tokenizer.decoder = decoders.BPEDecoder(suffix="</w>")
+        # The "." is pre-tokenized as its own word, hence the space before it
+        assert tokenizer.decode(output.ids) == "Welcome to the 🤗 Tokenizers library ."
+
+        # An explicit trainer setting still takes precedence over the model's
+        tokenizer = Tokenizer(models.BPE(end_of_word_suffix="</w>"))
+        tokenizer.pre_tokenizer = pre_tokenizers.Whitespace()
+        trainer = trainers.BpeTrainer(vocab_size=100, show_progress=False, end_of_word_suffix="$")
+        tokenizer.train_from_iterator(["Wel come to the 🤗 Tok en izers libr ary."], trainer)
+        assert tokenizer.model.end_of_word_suffix == "$"
 
     def test_can_pickle(self):
         assert (
