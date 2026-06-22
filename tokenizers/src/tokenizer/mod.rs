@@ -437,8 +437,6 @@ where
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-// Route deserialization through `From<TokenizerImpl<..>>`
-// Needed so post-deserialize initialization (refresh_byte_level_fast) runs whatever the instantiation method is
 #[serde(
     from = "TokenizerImpl<ModelWrapper, NormalizerWrapper, PreTokenizerWrapper, PostProcessorWrapper, DecoderWrapper>"
 )]
@@ -498,9 +496,18 @@ impl std::str::FromStr for Tokenizer {
 
 // Override the with_... setters to refresh the byte_level_fast flag
 impl Tokenizer {
+    fn apply_byte_level_bypass(&mut self, enabled: bool) {
+        if let ModelWrapper::BPE(bpe) = &mut self.0.model {
+            bpe.set_byte_level_fast(enabled);
+        }
+        if let Some(pretok) = self.0.pre_tokenizer.as_mut() {
+            set_pretokenizer_skip_byte_mapping(pretok, enabled);
+        }
+    }
+
     fn refresh_byte_level_fast(&mut self) {
         let model_is_valid_bpe =
-            matches!(&self.0.model, ModelWrapper::BPE(b) if b.single_byte_tokens.is_some());
+            matches!(&self.0.model, ModelWrapper::BPE(b) if b.byte_level_bypass.is_some());
         let pretokenizer_has_byte_level = self
             .0
             .get_pre_tokenizer()
@@ -509,29 +516,17 @@ impl Tokenizer {
         let normalizer_is_noop = normalizer_is_noop(self.0.get_normalizer());
         let enabled = model_is_valid_bpe && pretokenizer_has_byte_level && normalizer_is_noop;
 
-        if let ModelWrapper::BPE(b) = &mut self.0.model {
-            b.set_byte_level_fast(enabled);
-        }
-        if let Some(pt) = self.0.pre_tokenizer.as_mut() {
-            set_pretokenizer_skip_byte_mapping(pt, enabled);
-        }
+        self.apply_byte_level_bypass(enabled);
     }
 
     pub fn byte_level_fast_enabled(&self) -> bool {
-        matches!(&self.0.model, ModelWrapper::BPE(b) if b.byte_level_fast_path)
+        matches!(&self.0.model, ModelWrapper::BPE(b) if b.byte_level_bypass.as_ref().is_some_and(|bypass| bypass.active))
     }
 
-    /// Force the byte-level fast path on/off on an already-eligible tokenizer,
-    /// bypassing the eligibility recompute.
     /// Test-only: used to compare the fast and slow paths on the same tokenizer in equivalence tests.
     #[cfg(test)]
     pub(crate) fn set_byte_level_fast(&mut self, enabled: bool) {
-        if let ModelWrapper::BPE(b) = &mut self.0.model {
-            b.set_byte_level_fast(enabled);
-        }
-        if let Some(pt) = self.0.pre_tokenizer.as_mut() {
-            set_pretokenizer_skip_byte_mapping(pt, enabled);
-        }
+        self.apply_byte_level_bypass(enabled);
     }
 
     pub fn with_pre_tokenizer(&mut self, pt: Option<impl Into<PreTokenizerWrapper>>) -> &mut Self {
@@ -562,7 +557,6 @@ impl Tokenizer {
     }
 }
 
-/// Whether this PreTokenizer sequence has a ByteLevel step
 fn pre_tokenizer_has_byte_level(pretokenizer: &PreTokenizerWrapper) -> bool {
     match pretokenizer {
         PreTokenizerWrapper::ByteLevel(_) => true,
@@ -1961,9 +1955,8 @@ mod byte_level_fast_equivalence {
         "internationalization tokenization preprocessing",
         "Mr. O'Brien's well-thought-out, multi-part résumé.",
         // Single vocab entries in the ignore_merges fixtures whose greedy-merge
-        // segmentation differs from the whole token, so the slow path's
-        // ignore_merges shortcut diverges from the fast path: "ato" (llama-3),
-        // "conf" (glm-5.2), "rg" (gpt-oss). Harmless on ignore_merges=false.
+        // segmentation differs from the whole token:
+        // "ato" (llama-3), "conf" (glm-5.2), "rg" (gpt-oss).
         "ato",
         "conf",
         "rg",
@@ -2013,7 +2006,6 @@ mod byte_level_fast_equivalence {
         }
     }
 
-    /// ignore_merges = false: fast path must be fully equivalent to the slow path.
     #[test]
     fn encode_matches_slow_path() {
         for config_file in [
@@ -2025,9 +2017,6 @@ mod byte_level_fast_equivalence {
         }
     }
 
-    /// ignore_merges = true: the fast path does not yet implement the whole-token
-    /// shortcut (`tokenize_with_cache` short-circuits a pre-token that is itself a
-    /// vocab entry, skipping merges). EXPECTED TO FAIL until that path ships.
     #[test]
     fn encode_matches_slow_path_with_ignore_merges() {
         for config_file in [

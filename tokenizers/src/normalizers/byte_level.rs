@@ -1,4 +1,4 @@
-use crate::decoders::byte_level::BYTES_CHAR;
+use crate::pre_tokenizers::byte_level::BYTES_CHAR;
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 use crate::utils::macro_rules_attribute;
 use ahash::AHashSet;
