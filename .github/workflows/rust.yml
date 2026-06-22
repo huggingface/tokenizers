@@ -60,11 +60,29 @@ jobs:
       - name: Lint with Clippy
         run: cargo clippy --manifest-path ./tokenizers/Cargo.toml --all-targets --all-features -- -D warnings
 
+      # Test fixtures are immutable — cache them so CI doesn't re-download
+      # from the Hub (and get rate-limited) on every run.
+      - name: Cache HF test data
+        if: matrix.os != 'windows-latest'
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
+        with:
+          path: tokenizers/data
+          key: hf-test-data-${{ hashFiles('tokenizers/Makefile') }}
+          restore-keys: hf-test-data-
+
+      # Provides `uvx`, used to run the huggingface_hub CLI that downloads
+      # test fixtures (see the Makefile) without a separate install step.
+      - name: Install uv
+        if: matrix.os != 'windows-latest'
+        uses: astral-sh/setup-uv@v6
+
       - name: Run Tests
         if: matrix.os != 'windows-latest'
         shell: bash
         working-directory: ./tokenizers
-        run: make test
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: make test HF="uvx --from huggingface_hub hf"
 
       # Skip integration tests for now on Windows
       - name: Run lib Tests on Windows

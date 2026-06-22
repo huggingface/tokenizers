@@ -59,6 +59,22 @@ jobs:
         working-directory: ./bindings/node
         run: yarn lint
 
+      # Test fixtures are immutable — cache them so CI doesn't re-download
+      # from the Hub (and get rate-limited) on every run.
+      - name: Cache HF test data
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
+        with:
+          path: bindings/node/data
+          key: hf-test-data-node-${{ hashFiles('bindings/node/Makefile') }}
+          restore-keys: hf-test-data-node-
+
+      # Provides `uvx`, used to run the huggingface_hub CLI that downloads
+      # test fixtures (see the Makefile) without a separate install step.
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
       - name: Run JS tests
         working-directory: ./bindings/node
-        run: make test
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: make test HF="uvx --from huggingface_hub hf"
