@@ -1,5 +1,5 @@
 use super::{super::OrderedVocabIter, trainer::BpeTrainer, Error, Pair, Word};
-use crate::decoders::byte_level::bytes_char;
+use crate::decoders::byte_level::BYTES_CHAR;
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::cache::{DEFAULT_CACHE_CAPACITY, MAX_LENGTH};
 use crate::utils::iter::ResultShunt;
@@ -254,13 +254,12 @@ impl BpeBuilder {
 
         self.config.single_byte_tokens = {
             // Build the byte-level vocab from vocab
-            use crate::decoders::byte_level::bytes_char;
             let mut table = [0u32; 256];
             let mut vocab_has_all_bytes = true;
 
-            for (byte, character) in bytes_char() {
+            for (byte, character) in BYTES_CHAR.iter() {
                 if let Some(token_id) = vocab.get(&character.to_string()) {
-                    table[byte as usize] = *token_id;
+                    table[*byte as usize] = *token_id;
                 } else {
                     vocab_has_all_bytes = false;
                     break;
@@ -673,10 +672,8 @@ impl BPE {
             // It's a bit inefficient (bunch of array lookups + alloc per pretoken)
             // There are alternatives, for example converting the vocab from "vocabulary space" to ordinary UTF-8 bytes on load
             // which would allow us to drop the duplicated cache static (BPE_LOCAL_CACHE_BYTES)
-            let bytes2char = bytes_char();
-            let mapped_string: Option<String> =
-                bytes.iter().map(|byte| bytes2char.get(byte)).collect();
-            if let Some(id) = self.vocab.get(&mapped_string.unwrap_or("".to_string())) {
+            let mapped_string: String = bytes.iter().map(|byte| BYTES_CHAR[byte]).collect();
+            if let Some(id) = self.vocab.get(&mapped_string) {
                 return Ok(vec![Token::new(
                     *id,
                     String::from_utf8_lossy(bytes).into(),
@@ -1297,14 +1294,13 @@ mod tests {
 
     mod byte_level_fast {
         use super::*;
-        use crate::pre_tokenizers::byte_level::bytes_char;
 
         mod builder {
             use super::*;
 
             fn byte_level_vocab() -> Vocab {
-                bytes_char()
-                    .into_iter()
+                BYTES_CHAR
+                    .iter()
                     .map(|(byte, character)| (character.to_string(), (255 - byte) as u32))
                     .collect()
             }
@@ -1333,7 +1329,7 @@ mod tests {
             fn test_single_byte_tokens_is_none_when_vocab_miss_bytes() {
                 let mut vocab = byte_level_vocab();
                 // Remove the space ' ' from the vocab
-                vocab.remove(&bytes_char()[&b' '].to_string());
+                vocab.remove(&BYTES_CHAR[&b' '].to_string());
 
                 let bpe = BpeBuilder::default()
                     .vocab_and_merges(vocab, vec![])
@@ -1364,9 +1360,7 @@ mod tests {
             }
 
             fn bytes_to_byte_level_string(raw: &[u8]) -> String {
-                use crate::decoders::byte_level::bytes_char;
-                let map = bytes_char();
-                raw.iter().map(|byte| map[byte]).collect()
+                raw.iter().map(|byte| BYTES_CHAR[byte]).collect()
             }
 
             /// The step-2 invariant: tokenizing raw bytes yields the same token
