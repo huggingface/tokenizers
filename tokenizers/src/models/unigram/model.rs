@@ -107,7 +107,14 @@ impl Unigram {
         byte_fallback: bool,
     ) -> Result<Self> {
         let n = vocab.len();
-        let mut token_to_ids: TokenMap = AHashMap::new();
+        // Pre-size the map: we already know exactly how many entries
+        // are coming. Without this hint, AHashMap::new() starts at 0
+        // capacity and grows by doubling, triggering ~log2(n) rehashes
+        // that each allocate a fresh table and copy every existing
+        // entry. For a 500k-vocab tokenizer (e.g. multilingual models)
+        // this churn dominates loader memory — measured at tens of MB
+        // of redundant transient allocations.
+        let mut token_to_ids: TokenMap = AHashMap::with_capacity(n);
         let mut builder = TrieBuilder::default();
 
         if let Some(unk_id) = unk_id {
