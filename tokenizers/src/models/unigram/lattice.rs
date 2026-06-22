@@ -593,14 +593,77 @@ mod tests {
     #[test]
     fn test_viterbi() {
         let mut lattice = Lattice::from("ABC", 1, 2);
+
+        // Empty lattice → no path
         assert_eq!(lattice.viterbi(), vec![]);
-        // Still incomplete
-        lattice.insert(0, 1, 0.0, 3);
+
+        // Partially covered lattice → still no path
+        lattice.insert(0, 1, 0.0, 3); // A
         assert_eq!(lattice.viterbi(), vec![]);
-        lattice.insert(1, 1, 0.0, 4);
-        lattice.insert(2, 1, 0.0, 5);
-        // XXX: In sentence piece this is not tested, still incomplete ?
-        assert_eq!(lattice.viterbi().len(), 3);
+
+        // Fully covered: A(id=3) B(id=4) C(id=5)
+        lattice.insert(1, 1, 0.0, 4); // B
+        lattice.insert(2, 1, 0.0, 5); // C
+        let path = lattice.viterbi();
+        assert_eq!(path.len(), 3);
+
+        let ids: Vec<usize> = path.iter().map(|n| n.borrow().id).collect();
+        assert_eq!(ids, vec![3, 4, 5]);
+        assert_eq!(lattice.tokens(), ["A", "B", "C"]);
+
+        // Score-based selection: insert AB(id=6) with higher score than A+B
+        lattice.insert(0, 2, 5.0, 6); // AB with score 5.0 > A(0.0)+B(0.0)
+        let path = lattice.viterbi();
+        let ids: Vec<usize> = path.iter().map(|n| n.borrow().id).collect();
+        assert_eq!(ids, vec![6, 5]); // AB, C
+        assert_eq!(lattice.tokens(), ["AB", "C"]);
+    }
+
+    #[test]
+    fn test_viterbi_multibyte() {
+        // "テスト" = 3 chars, each 3 bytes = 9 bytes total
+        let mut lattice = Lattice::from("テスト", 1, 2);
+
+        lattice.insert(0, 3, 0.0, 3); // テ (3 bytes)
+        lattice.insert(3, 3, 0.0, 4); // ス (3 bytes)
+        lattice.insert(6, 3, 0.0, 5); // ト (3 bytes)
+
+        let path = lattice.viterbi();
+        assert_eq!(path.len(), 3);
+        assert_eq!(lattice.tokens(), ["テ", "ス", "ト"]);
+
+        // Multi-char token spanning two characters
+        lattice.insert(0, 6, 3.0, 6); // テス (6 bytes, higher score)
+        assert_eq!(lattice.tokens(), ["テス", "ト"]);
+    }
+
+    #[test]
+    fn test_viterbi_empty() {
+        let mut lattice = Lattice::from("", 1, 2);
+        assert_eq!(lattice.viterbi(), vec![]);
+    }
+
+    #[test]
+    fn test_sample_smoke() {
+        // Empty string → sample returns empty
+        let lattice = Lattice::from("", 1, 2);
+        assert!(lattice.sample(1.0).is_empty());
+
+        // Build a fully covered lattice with multiple paths
+        let mut lattice = Lattice::from("ABC", 1, 2);
+        lattice.insert(0, 1, 0.0, 3); // A
+        lattice.insert(1, 1, 0.0, 4); // B
+        lattice.insert(2, 1, 0.0, 5); // C
+        lattice.insert(0, 2, 2.0, 6); // AB
+        lattice.insert(1, 2, 5.0, 7); // BC
+        lattice.insert(0, 3, 10.0, 8); // ABC
+
+        // Sample multiple times — every sample must cover the full input
+        for _ in 0..20 {
+            let result = lattice.sample_token(1.0);
+            let joined: String = result.concat();
+            assert_eq!(joined, "ABC", "sampled tokens must cover full input");
+        }
     }
 
     #[test]
