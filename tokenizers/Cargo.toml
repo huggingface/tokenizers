@@ -38,6 +38,10 @@ name = "bpe_benchmark"
 harness = false
 
 [[bench]]
+name = "bytelevel_normalizer_benchmark"
+harness = false
+
+[[bench]]
 name = "bert_benchmark"
 harness = false
 
