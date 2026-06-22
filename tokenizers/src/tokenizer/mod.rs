@@ -496,12 +496,11 @@ impl std::str::FromStr for Tokenizer {
     }
 }
 
-#[cfg(feature = "byte_level_fast")]
 // Override the with_... setters to refresh the byte_level_fast flag
 impl Tokenizer {
     fn refresh_byte_level_fast(&mut self) {
         let model_is_valid_bpe =
-            matches!(&self.0.model, ModelWrapper::BPE(b) if b.byte_vocab.is_some());
+            matches!(&self.0.model, ModelWrapper::BPE(b) if b.single_byte_tokens.is_some());
         let pretokenizer_has_byte_level = self
             .0
             .get_pre_tokenizer()
@@ -563,7 +562,6 @@ impl Tokenizer {
     }
 }
 
-#[cfg(feature = "byte_level_fast")]
 /// Whether this PreTokenizer sequence has a ByteLevel step
 fn pre_tokenizer_has_byte_level(pretokenizer: &PreTokenizerWrapper) -> bool {
     match pretokenizer {
@@ -573,7 +571,6 @@ fn pre_tokenizer_has_byte_level(pretokenizer: &PreTokenizerWrapper) -> bool {
     }
 }
 
-#[cfg(feature = "byte_level_fast")]
 fn set_pretokenizer_skip_byte_mapping(pretokenizer: &mut PreTokenizerWrapper, skip: bool) {
     match pretokenizer {
         PreTokenizerWrapper::ByteLevel(byte_level) => byte_level.set_skip_byte_mapping(skip),
@@ -585,7 +582,6 @@ fn set_pretokenizer_skip_byte_mapping(pretokenizer: &mut PreTokenizerWrapper, sk
     }
 }
 
-#[cfg(feature = "byte_level_fast")]
 fn normalizer_is_noop(n: Option<&NormalizerWrapper>) -> bool {
     match n {
         None => true,
@@ -605,7 +601,7 @@ where
     D: Into<DecoderWrapper>,
 {
     fn from(t: TokenizerImpl<M, N, PT, PP, D>) -> Self {
-        let tokenizer = Self(TokenizerImpl {
+        let mut tokenizer = Self(TokenizerImpl {
             model: t.model.into(),
             normalizer: t.normalizer.map(Into::into),
             pre_tokenizer: t.pre_tokenizer.map(Into::into),
@@ -615,12 +611,7 @@ where
             padding: t.padding,
             truncation: t.truncation,
         });
-        #[cfg(feature = "byte_level_fast")]
-        let tokenizer = {
-            let mut tokenizer = tokenizer;
-            tokenizer.refresh_byte_level_fast();
-            tokenizer
-        };
+        tokenizer.refresh_byte_level_fast();
         tokenizer
     }
 }
@@ -1952,7 +1943,7 @@ mod tests {
     }
 }
 
-#[cfg(all(test, feature = "byte_level_fast"))]
+#[cfg(test)]
 mod byte_level_fast_equivalence {
     use super::Tokenizer;
 

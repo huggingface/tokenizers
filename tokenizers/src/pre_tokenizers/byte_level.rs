@@ -66,7 +66,6 @@ pub struct ByteLevel {
     #[serde(default = "default_true")]
     pub use_regex: bool,
 
-    #[cfg(feature = "byte_level_fast")]
     #[serde(skip)]
     /// Whether to skip the byte mapping step
     pub(crate) skip_byte_mapping: bool,
@@ -82,7 +81,7 @@ impl Default for ByteLevel {
             add_prefix_space: true,
             trim_offsets: true,
             use_regex: true,
-            #[cfg(feature = "byte_level_fast")]
+
             skip_byte_mapping: false,
         }
     }
@@ -94,7 +93,7 @@ impl ByteLevel {
             add_prefix_space,
             trim_offsets,
             use_regex,
-            #[cfg(feature = "byte_level_fast")]
+
             skip_byte_mapping: false,
         }
     }
@@ -121,7 +120,6 @@ impl ByteLevel {
         self
     }
 
-    #[cfg(feature = "byte_level_fast")]
     pub(crate) fn set_skip_byte_mapping(&mut self, skip: bool) {
         self.skip_byte_mapping = skip;
     }
@@ -143,7 +141,7 @@ impl PreTokenizer for ByteLevel {
                 Ok(vec![normalized])
             }
         })?;
-        #[cfg(feature = "byte_level_fast")]
+
         if self.skip_byte_mapping {
             // Skip the BYTES_CHAR mapping step
             return Ok(());

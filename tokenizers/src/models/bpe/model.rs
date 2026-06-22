@@ -87,11 +87,10 @@ thread_local! {
     /// same rayon worker thread never see each other's entries.
     static BPE_LOCAL_CACHE: RefCell<AHashMap<u64, AHashMap<String, Word>>> =
         RefCell::new(AHashMap::new());
-}
 
-#[cfg(feature = "byte_level_fast")]
-thread_local! {
-    static BPE_LOCAL_BYTE_CACHE: RefCell<AHashMap<u64, AHashMap<Vec<u8>, Word>>> = RefCell::new(AHashMap::new());
+    static BPE_LOCAL_BYTE_CACHE: RefCell<AHashMap<u64, AHashMap<Vec<u8>, Word>>> =
+        RefCell::new(AHashMap::new());
+
 }
 
 pub type Merges = Vec<(String, String)>;
@@ -108,8 +107,7 @@ struct Config {
     fuse_unk: bool,
     byte_fallback: bool,
     ignore_merges: bool,
-    #[cfg(feature = "byte_level_fast")]
-    byte_vocab: Option<Box<[u32; 256]>>,
+    single_byte_tokens: Option<Box<[u32; 256]>>,
 }
 
 /// A `BpeBuilder` can be used to create a `BPE` model with a custom configuration.
@@ -132,8 +130,7 @@ impl Default for BpeBuilder {
                 fuse_unk: false,
                 byte_fallback: false,
                 ignore_merges: false,
-                #[cfg(feature = "byte_level_fast")]
-                byte_vocab: None,
+                single_byte_tokens: None,
             },
         }
     }
@@ -254,28 +251,25 @@ impl BpeBuilder {
 
         let vocab = self.config.vocab;
 
-        #[cfg(feature = "byte_level_fast")]
-        {
-            self.config.byte_vocab = {
-                // Build the byte-level vocab from vocab
-                use crate::decoders::byte_level::bytes_char;
-                let mut table = [0u32; 256];
-                let mut vocab_has_all_bytes = true;
+        self.config.single_byte_tokens = {
+            // Build the byte-level vocab from vocab
+            use crate::decoders::byte_level::bytes_char;
+            let mut table = [0u32; 256];
+            let mut vocab_has_all_bytes = true;
 
-                for (byte, character) in bytes_char() {
-                    if let Some(token_id) = vocab.get(&character.to_string()) {
-                        table[byte as usize] = *token_id;
-                    } else {
-                        vocab_has_all_bytes = false;
-                        break;
-                    }
-                }
-                if vocab_has_all_bytes {
-                    Some(Box::new(table))
+            for (byte, character) in bytes_char() {
+                if let Some(token_id) = vocab.get(&character.to_string()) {
+                    table[byte as usize] = *token_id;
                 } else {
-                    None
+                    vocab_has_all_bytes = false;
+                    break;
                 }
-            };
+            }
+            if vocab_has_all_bytes {
+                Some(Box::new(table))
+            } else {
+                None
+            }
         };
 
         let prefix_len = if let Some(prefix) = &self.config.continuing_subword_prefix {
@@ -323,10 +317,7 @@ impl BpeBuilder {
             fuse_unk: self.config.fuse_unk,
             byte_fallback: self.config.byte_fallback,
             ignore_merges: self.config.ignore_merges,
-
-            #[cfg(feature = "byte_level_fast")]
-            byte_vocab: self.config.byte_vocab,
-            #[cfg(feature = "byte_level_fast")]
+            single_byte_tokens: self.config.single_byte_tokens,
             byte_level_fast_path: false,
         })
     }
@@ -342,11 +333,9 @@ pub struct BPE {
     /// Contains the mapping between Pairs and their (rank, new_id).
     pub(crate) merges: MergeMap,
 
-    #[cfg(feature = "byte_level_fast")]
     /// Maps each byte value from 0 to 255 to its token id in the vocabulary
-    pub(crate) byte_vocab: Option<Box<[u32; 256]>>,
+    pub(crate) single_byte_tokens: Option<Box<[u32; 256]>>,
 
-    #[cfg(feature = "byte_level_fast")]
     /// Whether the byte-level fast-path is available (must be set by the owning Tokenizer)
     pub(crate) byte_level_fast_path: bool,
 
@@ -410,9 +399,8 @@ impl Clone for BPE {
             byte_fallback: self.byte_fallback,
             ignore_merges: self.ignore_merges,
 
-            #[cfg(feature = "byte_level_fast")]
-            byte_vocab: self.byte_vocab.clone(),
-            #[cfg(feature = "byte_level_fast")]
+            single_byte_tokens: self.single_byte_tokens.clone(),
+
             byte_level_fast_path: self.byte_level_fast_path,
         }
     }
@@ -640,20 +628,18 @@ impl BPE {
         })
     }
 
-    #[cfg(feature = "byte_level_fast")]
     pub(crate) fn set_byte_level_fast(&mut self, on: bool) {
         debug_assert!(
-            !on || self.byte_vocab.is_some(),
-            "byte_vocab must be Some to enable the fast path"
+            !on || self.single_byte_tokens.is_some(),
+            "single_byte_tokens must be Some to enable the fast path"
         );
         self.byte_level_fast_path = on;
     }
 
-    #[cfg(feature = "byte_level_fast")]
     fn tokenize_bytes(&self, bytes: &[u8]) -> Result<Vec<Token>> {
         debug_assert!(
-            self.byte_vocab.as_ref().is_some(),
-            "dispatch asserts byte_vocab is Some and byte_level_fast_path is on"
+            self.single_byte_tokens.as_ref().is_some(),
+            "dispatch asserts single_byte_tokens is Some and byte_level_fast_path is on"
         );
         if bytes.is_empty() {
             return Ok(vec![]);
@@ -667,20 +653,18 @@ impl BPE {
         }
     }
 
-    #[cfg(feature = "byte_level_fast")]
     fn make_word_from_bytes(&self, bytes: &[u8]) -> Result<Word> {
-        let byte_vocab = self
-            .byte_vocab
+        let single_byte_tokens = self
+            .single_byte_tokens
             .as_ref()
-            .expect("caller must guarantee byte_vocab is Some");
+            .expect("caller must guarantee single_byte_tokens is Some");
         let mut word = Word::with_capacity(bytes.len());
         for byte in bytes.iter().copied() {
-            word.add(byte_vocab[byte as usize], 1);
+            word.add(single_byte_tokens[byte as usize], 1);
         }
         Ok(word)
     }
 
-    #[cfg(feature = "byte_level_fast")]
     fn tokenize_bytes_with_cache(&self, bytes: &[u8]) -> Result<Vec<Token>> {
         if self.ignore_merges {
             // if let Some(id) = self.vocab_bytes.get(bytes) {
@@ -726,9 +710,8 @@ impl Model for BPE {
     }
 
     fn tokenize(&self, sequence: &str) -> Result<Vec<Token>> {
-        #[cfg(feature = "byte_level_fast")]
         {
-            if self.byte_level_fast_path && self.byte_vocab.is_some() {
+            if self.byte_level_fast_path && self.single_byte_tokens.is_some() {
                 return self.tokenize_bytes(sequence.as_bytes());
             }
         }
@@ -1303,7 +1286,6 @@ mod tests {
         )
     }
 
-    #[cfg(feature = "byte_level_fast")]
     mod byte_level_fast {
         use super::*;
         use crate::pre_tokenizers::byte_level::bytes_char;
@@ -1319,15 +1301,15 @@ mod tests {
             }
 
             #[test]
-            fn test_byte_vocab_built_when_vocab_has_all_bytes() {
+            fn test_single_byte_tokens_built_when_vocab_has_all_bytes() {
                 let bpe = BpeBuilder::default()
                     .vocab_and_merges(byte_level_vocab(), vec![])
                     .build()
                     .unwrap();
                 let table = bpe
-                    .byte_vocab
+                    .single_byte_tokens
                     .as_ref()
-                    .expect("a complete byte-level vocab must produce.a byte_vocab table");
+                    .expect("a complete byte-level vocab must produce a single_byte_tokens table");
 
                 for byte in 0..=255u8 {
                     assert_eq!(
@@ -1339,7 +1321,7 @@ mod tests {
             }
 
             #[test]
-            fn test_byte_vocab_is_none_when_vocab_miss_bytes() {
+            fn test_single_byte_tokens_is_none_when_vocab_miss_bytes() {
                 let mut vocab = byte_level_vocab();
                 // Remove the space ' ' from the vocab
                 vocab.remove(&bytes_char()[&b' '].to_string());
@@ -1350,7 +1332,7 @@ mod tests {
                     .unwrap();
 
                 assert!(
-                    bpe.byte_vocab.is_none(),
+                    bpe.single_byte_tokens.is_none(),
                     "incomplete byte-level vocab disables the fast path"
                 );
             }
@@ -1483,7 +1465,7 @@ mod tests {
             fn test_equivalent_when_ignore_merges_is_set() {
                 use crate::decoders::byte_level::bytes_char;
                 // A complete byte-level base vocab (all 256 mapped chars, id = byte),
-                // so `byte_vocab` is built and the fast path is active.
+                // so `single_byte_tokens` is built and the fast path is active.
                 let mut vocab: Vocab = bytes_char()
                     .into_iter()
                     .map(|(byte, character)| (character.to_string(), byte as u32))

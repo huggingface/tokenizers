@@ -1,4 +1,3 @@
-#![cfg(feature = "byte_level_fast")]
 use tokenizers::normalizers::NFC;
 use tokenizers::pre_tokenizers::whitespace::Whitespace;
 use tokenizers::Tokenizer;

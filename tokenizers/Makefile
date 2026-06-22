@@ -31,7 +31,6 @@ lint :
 .PHONY : test
 test : $(TESTS_RESOURCES)
 	cargo test
-	cargo test --features byte_level_fast
 
 .PHONY : doc
 doc :
