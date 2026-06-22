@@ -416,7 +416,7 @@ impl BpeTrainer {
         words: &[Word],
         counts: &[u64],
         p: &Option<ProgressBar>,
-    ) -> (AHashMap<Pair, i32>, AHashMap<Pair, AHashSet<usize>>) {
+    ) -> (AHashMap<Pair, i64>, AHashMap<Pair, AHashSet<usize>>) {
         words
             .maybe_par_iter()
             .enumerate()
@@ -429,7 +429,7 @@ impl BpeTrainer {
 
                     // Initialize pair_counts and where_to_update for this pair if we just saw it
                     // Then update counts
-                    *pair_counts.entry(cur_pair).or_default() += counts[i] as i32;
+                    *pair_counts.entry(cur_pair).or_default() += counts[i] as i64;
                     where_to_update.entry(cur_pair).or_default().insert(i);
                 }
 
@@ -581,7 +581,7 @@ impl BpeTrainer {
 
             // Introduce new formed pairs
             for ((pair, change), iw) in changes {
-                let count = change * counts[iw] as i32;
+                let count = change as i64 * counts[iw] as i64;
                 *pair_counts.entry(pair).or_default() += count;
                 if change > 0 {
                     where_to_update.entry(pair).or_default().insert(iw);
