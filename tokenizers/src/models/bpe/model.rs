@@ -1424,6 +1424,8 @@ mod tests {
             }
         }
 
+        // Exclude on windows (depends on test fixtures the CI does not download)
+        #[cfg(not(target_os = "windows"))]
         mod tokenize_bytes {
             use super::*;
 

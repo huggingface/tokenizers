@@ -1961,7 +1961,9 @@ mod tests {
     }
 }
 
+// Exclude on windows (depends on test fixtures the CI does not download)
 #[cfg(test)]
+#[cfg(not(target_os = "windows"))]
 mod byte_level_bypass_equivalence {
     use super::{AddedToken, Model, Tokenizer};
 
