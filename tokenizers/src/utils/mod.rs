@@ -1,4 +1,6 @@
 pub(crate) mod cache;
+pub mod merge_table;
+pub use merge_table::MergeTable;
 #[cfg(feature = "http")]
 pub(crate) mod from_pretrained;
 

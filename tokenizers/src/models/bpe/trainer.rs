@@ -1,6 +1,7 @@
 #![allow(clippy::map_entry)]
 
 use super::{Pair, WithFirstLastIterator, Word, BPE};
+use crate::utils::merge_table::MergeTable;
 use crate::parallelism::*;
 use crate::tokenizer::{AddedToken, Result, Trainer};
 use crate::utils::progress::{ProgressBar, ProgressFormat, ProgressStyle};
@@ -617,11 +618,12 @@ impl BpeTrainer {
             .iter()
             .map(|(key, val)| (*val, key.to_owned()))
             .collect();
-        model.merges = merges
-            .into_iter()
-            .enumerate()
-            .map(|(i, (pair, new_token_id))| (pair, (i as u32, new_token_id)))
-            .collect();
+        model.merges = MergeTable::from_iter(
+            merges
+                .into_iter()
+                .enumerate()
+                .map(|(i, (pair, new_token_id))| (pair, (i as u32, new_token_id))),
+        );
 
         model.continuing_subword_prefix = self.continuing_subword_prefix.clone();
         model.end_of_word_suffix = self.end_of_word_suffix.clone();
@@ -677,8 +679,9 @@ impl Trainer for BpeTrainer {
 
 #[cfg(test)]
 mod tests {
-    use super::{BpeTrainer, Pair, BPE};
+    use super::{BpeTrainer, BPE};
     use ahash::AHashMap;
+    use crate::utils::merge_table::MergeTable;
     use compact_str::CompactString;
 
     #[test]
@@ -744,14 +747,11 @@ mod tests {
         // where 'rank' determines the order in which this merge will be applied during
         // tokenization, and 'id' is the vocab id of the symbol resulting from merging
         // the pair of symbols in the corresponding key.
-        let expected_merges: AHashMap<Pair, (u32, u32)> = [
+        let expected_merges = MergeTable::from_iter([
             ((17, 11), (0, 22)), // 'r' + 'e'  -> 're'
             ((8, 22), (1, 23)),  // 'a' + 're' -> 'are'
             ((13, 18), (2, 24)), // 'i' + 's'  -> 'is'
-        ]
-        .iter()
-        .cloned()
-        .collect();
+        ]);
         assert_eq!(model.merges, expected_merges);
     }
     #[test]
