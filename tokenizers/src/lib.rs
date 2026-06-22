@@ -130,6 +130,10 @@
 //!
 //! - **http**: This feature enables downloading the tokenizer via HTTP. It is disabled by default.
 //!   With this feature enabled, `Tokenizer::from_pretrained` becomes accessible.
+//!
+//! - **pcre2**: Use PCRE2 as the regex backend instead of the default Oniguruma. PCRE2 with JIT
+//!   can offer up to 16% faster encoding for models using BPE or Llama3 tokenizer.
+//!
 
 #[macro_use]
 extern crate log;
