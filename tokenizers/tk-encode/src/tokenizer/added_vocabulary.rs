@@ -175,6 +175,7 @@ pub struct AddedVocabulary {
     ///  - the actual buckets. We could use small vec here. Chose to impl it.
     ///  Basically inlined if there are less than 16 buckets, else we use a heap allocated vec.
     buckets: Vec<Buckets>,
+    prefix_vecs: AHashMap<[u8; 4], Vec<String>>,
     num_buckets: usize,
 }
 
@@ -202,6 +203,7 @@ impl AddedVocabulary {
             first_byte_to_bucket: [0; 256],
             buckets: Vec::new(),
             num_buckets: 0,
+            prefix_vecs: AHashMap::new(),
         }
     }
     /// Size of the additional vocabulary
@@ -341,6 +343,10 @@ impl AddedVocabulary {
                     end: 0,
                 },
             );
+            self.prefix_vecs
+                .entry(prefix)
+                .or_insert_with(Vec::new)
+                .push(token.content.clone());
 
             let new_id = if let Some(new_id) = self.token_to_id(&token.content, model) {
                 new_id
