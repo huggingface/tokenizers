@@ -200,6 +200,25 @@ impl Normalizer for NormalizerWrapper {
             Self::ByteLevel(lc) => lc.normalize(normalized),
         }
     }
+
+    fn normalize_str(&self, s: &str) -> crate::Result<String> {
+        match self {
+            Self::BertNormalizer(bn) => bn.normalize_str(s),
+            Self::StripNormalizer(sn) => sn.normalize_str(s),
+            Self::StripAccents(sn) => sn.normalize_str(s),
+            Self::NFC(nfc) => nfc.normalize_str(s),
+            Self::NFD(nfd) => nfd.normalize_str(s),
+            Self::NFKC(nfkc) => nfkc.normalize_str(s),
+            Self::NFKD(nfkd) => nfkd.normalize_str(s),
+            Self::Sequence(sequence) => sequence.normalize_str(s),
+            Self::Lowercase(lc) => lc.normalize_str(s),
+            Self::Nmt(lc) => lc.normalize_str(s),
+            Self::Precompiled(lc) => lc.normalize_str(s),
+            Self::Replace(lc) => lc.normalize_str(s),
+            Self::Prepend(lc) => lc.normalize_str(s),
+            Self::ByteLevel(lc) => lc.normalize_str(s),
+        }
+    }
 }
 
 impl_enum_from!(BertNormalizer, NormalizerWrapper, BertNormalizer);
