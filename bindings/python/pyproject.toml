@@ -50,6 +50,11 @@ features = ["pyo3/extension-module", "abi3"]
 [tool.ruff]
 line-length = 119
 target-version = "py311"
+lint.extend-select = [
+  "ASYNC",
+  "C4",
+  "PERF",
+]
 lint.ignore = [
   # a == None in tests vs is None.
   "E711",

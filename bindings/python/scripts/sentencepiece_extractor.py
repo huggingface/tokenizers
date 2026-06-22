@@ -138,7 +138,7 @@ if __name__ == "__main__":
 
                 # Save content
                 dump(vocab, vocab_f)
-                merges_f.writelines(map(lambda x: f"{x[0]} {x[1]}{linesep}", merges))
+                merges_f.writelines((f"{x[0]} {x[1]}{linesep}" for x in merges))
     finally:
         # If model was downloaded from internet we need to cleanup the tmp folder.
         if hasattr(args, "remote_model") and exists(args.model):

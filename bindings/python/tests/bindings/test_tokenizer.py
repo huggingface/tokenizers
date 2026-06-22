@@ -380,7 +380,7 @@ class TestTokenizer:
 
         # Can pad to the longest in a batch
         output = tokenizer.encode_batch(["my name", "my name is john"])
-        assert all([len(encoding) == 4 for encoding in output])
+        assert all(len(encoding) == 4 for encoding in output)
 
         # Can pad to the specified length otherwise
         tokenizer.enable_padding(length=4)
@@ -1082,7 +1082,7 @@ class TestAsyncTokenizer:
                 # Measure sync performance with pre-initialized executor
                 # Warm up
                 await asyncio.gather(*[encode_sync_with_executor(i) for i in range(10)])
-                time.sleep(0.03)
+                await asyncio.sleep(0.03)
                 # Actual measurement
                 start = time.perf_counter()
                 await asyncio.gather(*[encode_sync_with_executor(i) for i in range(n_tasks)])
@@ -1093,7 +1093,7 @@ class TestAsyncTokenizer:
                 await asyncio.gather(*[encode_async(i) for i in range(10)])
 
                 # Actual measurement
-                time.sleep(0.03)
+                await asyncio.sleep(0.03)
                 start = time.perf_counter()
                 await asyncio.gather(*[encode_async(i) for i in range(n_tasks)])
                 async_time = time.perf_counter() - start

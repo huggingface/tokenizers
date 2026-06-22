@@ -29,7 +29,7 @@ def benchmark_batch(model: str, documents: list[str], num_threads: int, document
     os.environ["RAYON_NUM_THREADS"] = str(num_threads)
     num_bytes = sum(map(len, map(str.encode, documents)))
     readable_size, unit = format_byte_size(num_bytes)
-    print(f"==============")
+    print("==============")
     print(
         f"num_threads: {num_threads}, data size: {readable_size}, documents: {len(documents)} Avg Length: {document_length:.0f}"
     )
