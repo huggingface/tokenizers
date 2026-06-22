@@ -2058,4 +2058,98 @@ mod byte_level_bypass_equivalence {
             assert_fast_matches_slow(config_file);
         }
     }
+
+    #[test]
+    fn encode_batch_matches_slow_path() {
+        // A large batch drives the rayon path, exercising the per-thread byte cache.
+        let mut tok = load("gpt2-slim.json");
+        let batch: Vec<&str> = CORPUS.iter().cloned().cycle().take(512).collect();
+
+        tok.set_byte_level_bypass(true);
+        let fast = tok.encode_batch(batch.clone(), false).unwrap();
+        tok.set_byte_level_bypass(false);
+        let slow = tok.encode_batch(batch, false).unwrap();
+
+        for (i, (f, s)) in fast.iter().zip(&slow).enumerate() {
+            assert_eq!(f.get_ids(), s.get_ids(), "batch ids differ at {i}");
+            assert_eq!(
+                f.get_offsets(),
+                s.get_offsets(),
+                "batch offsets differ at {i}"
+            );
+        }
+    }
+
+    #[test]
+    fn encode_with_added_tokens_matches_slow_path() {
+        let mut tok = load("gpt2-slim.json");
+        tok.add_special_tokens([AddedToken::from("<|endoftext|>", true)])
+            .unwrap();
+        tok.add_tokens([AddedToken::from("[CUSTOM]", false)])
+            .unwrap();
+
+        let corpus = [
+            "<|endoftext|>hello world<|endoftext|>",
+            "before [CUSTOM] after",
+            "[CUSTOM]<|endoftext|> 日本 👍 [CUSTOM]",
+            "no special tokens here",
+        ];
+        for text in corpus {
+            tok.set_byte_level_bypass(true);
+            let fast = tok.encode(text, true).unwrap();
+            tok.set_byte_level_bypass(false);
+            let slow = tok.encode(text, true).unwrap();
+
+            assert_eq!(fast.get_ids(), slow.get_ids(), "ids differ on {text:?}");
+            assert_eq!(
+                fast.get_offsets(),
+                slow.get_offsets(),
+                "offsets differ on {text:?}"
+            );
+            assert_eq!(
+                fast.get_tokens(),
+                slow.get_tokens(),
+                "tokens differ on {text:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn encode_matches_slow_path_on_big_corpus() {
+        let mut tok = load("gpt2-slim.json");
+        assert!(tok.byte_level_bypass_enabled());
+        let text = std::fs::read_to_string("data/big.txt").unwrap();
+        let lines: Vec<&str> = text.lines().filter(|l| !l.is_empty()).collect();
+
+        tok.set_byte_level_bypass(true);
+        let fast = tok.encode_batch(lines.clone(), false).unwrap();
+        tok.set_byte_level_bypass(false);
+        let slow = tok.encode_batch(lines.clone(), false).unwrap();
+
+        for (line, (f, s)) in lines.iter().zip(fast.iter().zip(&slow)) {
+            assert_eq!(f.get_ids(), s.get_ids(), "ids differ on {line:?}");
+            assert_eq!(
+                f.get_offsets(),
+                s.get_offsets(),
+                "offsets differ on {line:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn encode_after_training_matches_slow_path() {
+        let mut tok = load("gpt2-slim.json");
+        assert!(tok.byte_level_bypass_enabled());
+
+        let mut trainer = tok.get_model().get_trainer();
+        tok.train_from_files(&mut trainer, vec!["data/small.txt".to_string()])
+            .unwrap();
+
+        for text in ["hello world", "The quick brown fox", "café 日本 👍", " a b c"] {
+            let left = tok.encode(text, false).unwrap().get_ids().to_vec();
+            tok.set_byte_level_bypass(false);
+            let slow = tok.encode(text, false).unwrap().get_ids().to_vec();
+            assert_eq!(left, slow, "post-train encode diverges on {text:?}");
+        }
+    }
 }
