@@ -1336,6 +1336,38 @@ mod tests {
                     "incomplete byte-level vocab disables the fast path"
                 );
             }
+
+            #[test]
+            fn test_byte_level_bypass_is_none_with_continuing_subword_prefix() {
+                // The fast path builds words straight from raw bytes and never
+                // applies `continuing_subword_prefix`, so a vocab that needs it
+                // must NOT be eligible for the bypass.
+                let bpe = BpeBuilder::default()
+                    .vocab_and_merges(byte_level_vocab(), vec![])
+                    .continuing_subword_prefix("##".to_string())
+                    .build()
+                    .unwrap();
+
+                assert!(
+                    bpe.byte_level_bypass.is_none(),
+                    "continuing_subword_prefix must disable the fast path"
+                );
+            }
+
+            #[test]
+            fn test_byte_level_bypass_is_none_with_end_of_word_suffix() {
+                // Same reasoning: the fast path never applies `end_of_word_suffix`.
+                let bpe = BpeBuilder::default()
+                    .vocab_and_merges(byte_level_vocab(), vec![])
+                    .end_of_word_suffix("</w>".to_string())
+                    .build()
+                    .unwrap();
+
+                assert!(
+                    bpe.byte_level_bypass.is_none(),
+                    "end_of_word_suffix must disable the fast path"
+                );
+            }
         }
 
         mod tokenize_bytes {
