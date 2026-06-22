@@ -265,7 +265,10 @@ impl BpeBuilder {
                     break;
                 }
             }
-            if vocab_has_all_bytes {
+            let eligible = vocab_has_all_bytes
+                && self.config.continuing_subword_prefix.is_none()
+                && self.config.end_of_word_suffix.is_none();
+            if eligible {
                 Some(ByteLevelBypass {
                     active: false,
                     byte_to_token_id: Box::new(table),
