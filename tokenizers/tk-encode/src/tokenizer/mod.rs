@@ -23,6 +23,7 @@ use serde::{Deserialize, Serialize};
 use crate::utils::parallelism::*;
 
 mod added_vocabulary;
+pub mod buckets;
 mod encoding;
 pub mod normalizer;
 pub mod pattern;
@@ -112,6 +113,8 @@ pub trait Model {
     }
 }
 
+/// TODO: this behaves kinda like a chat template but it happens after the chate template.
+/// so these days in general its kinda ignored.
 /// A `PostProcessor` has the responsibility to post process an encoded output of the `Tokenizer`.
 /// It adds any special tokens that a language model would require.
 pub trait PostProcessor {
@@ -260,6 +263,8 @@ impl<'s> From<&'s [Cow<'s, str>]> for InputSequence<'s> {
     }
 }
 
+/// TODO: appart from post processing these with the post processor there is almost
+/// no reason to discriminate this vs a normal encoding.
 #[derive(Debug, Clone)]
 pub enum EncodeInput<'s> {
     Single(InputSequence<'s>),
@@ -286,6 +291,7 @@ where
 #[error("{0}")]
 pub struct BuilderError(String);
 
+/// TODO: scratch builder can be added here probably.
 /// Builder for Tokenizer structs.
 ///
 /// `build()` fails if the `model` is missing.

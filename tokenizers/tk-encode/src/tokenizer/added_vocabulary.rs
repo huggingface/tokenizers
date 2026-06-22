@@ -2,11 +2,13 @@ use super::{
     normalizer::Range, Model, NormalizedString, Normalizer, Offsets, PreTokenizedString, Result,
     Token,
 };
+use crate::buckets::Bucket;
+use crate::buckets::Buckets;
 use ahash::{AHashMap, AHashSet};
 use daachorse::{DoubleArrayAhoCorasick, DoubleArrayAhoCorasickBuilder, MatchKind};
 use regex::Regex;
 use serde::{ser::SerializeSeq, Deserialize, Serialize, Serializer};
-use std::sync::LazyLock;
+use std::{collections::HashMap, sync::LazyLock};
 
 /// Represent a token added by the user on top of the existing Model vocabulary.
 /// AddedToken can be configured to specify the behavior they should have in various situations
@@ -164,6 +166,16 @@ pub struct AddedVocabulary {
 
     /// Whether or not special tokens should be splitted when encoding. This is equivalent to ignoring them
     encode_special_tokens: bool,
+
+    /// New fast path for normalize and extra needs:
+    ///  - multi-bucket first bytes. If its len is 1, we use memchr
+    ///  otherwise we just check each car on that table lookup. Its a 1KB table.
+    ///  We use u8 because this ends up beaing 4 lines of cache, in the function's stack
+    first_byte_to_bucket: [u8; 256],
+    ///  - the actual buckets. We could use small vec here. Chose to impl it.
+    ///  Basically inlined if there are less than 16 buckets, else we use a heap allocated vec.
+    buckets: Vec<Buckets>,
+    num_buckets: usize,
 }
 
 impl std::fmt::Debug for AddedVocabulary {
@@ -187,6 +199,9 @@ impl AddedVocabulary {
             split_trie: None,
             split_normalized_trie: None,
             encode_special_tokens: false,
+            first_byte_to_bucket: [0; 256],
+            buckets: Vec::new(),
+            num_buckets: 0,
         }
     }
     /// Size of the additional vocabulary
@@ -291,6 +306,7 @@ impl AddedVocabulary {
                     }
                 });
 
+        let mut byte_set = HashMap::new();
         for token in tokens {
             total += 1;
             if token.content.is_empty() {
@@ -304,6 +320,27 @@ impl AddedVocabulary {
                     continue;
                 }
             }
+
+            // We count the first bytes and store the actual lenght of the char
+            let token_bytes = token.content.as_bytes();
+            let prefix_len = match &token_bytes[0] {
+                0x00..=0x7F => 1,
+                0xC2..=0xDF => 2,
+                0xE0..=0xEF => 3,
+                0xF0..=0xF4 => 4,
+                _ => return Err(format!("Invalid UTF-8 first byte in token ").into()),
+            };
+            let mut prefix = [0, 0, 0, 0];
+            prefix.copy_from_slice(&token_bytes[..prefix_len]);
+            byte_set.insert(
+                prefix,
+                Bucket {
+                    prefix,
+                    prefix_len: prefix_len as u8,
+                    start: 0,
+                    end: 0,
+                },
+            );
 
             let new_id = if let Some(new_id) = self.token_to_id(&token.content, model) {
                 new_id
@@ -337,7 +374,6 @@ impl AddedVocabulary {
             }
             self.added_tokens_map_r.insert(new_id, token);
         }
-
         self.refresh_added_tokens()?;
 
         // Return the number of added tokens
@@ -514,13 +550,24 @@ impl AddedVocabulary {
             .collect()
     }
 
+    /// The first improvement we are working on is on replacing the heavy regex
+    /// with IREE's fast string / normalization algo.
+    pub fn extract_and_normalize<N: Normalizer>(
+        &self,
+        normalizer: Option<&N>,
+        sequence: &str,
+    ) -> PreTokenizedString {
+        // 1. if the machinery does not exist, we build it:
+
+        return sequence.into();
+    }
     /// Extract the additional vocabulary from the given sentence, normalizing it along the way.
     ///
     /// Some tokens should match against their normalized representation, as well as the
     /// non-normalized one. For example, when we expect to extract the token `yesterday` in the
     /// input sentence `I read a book Yesterday`, if the normalizer is supposed to lowercase
     /// everything, we expect a match.
-    pub fn extract_and_normalize<N: Normalizer>(
+    pub fn extract_and_normalize_old<N: Normalizer>(
         &self,
         normalizer: Option<&N>,
         sequence: &str,
