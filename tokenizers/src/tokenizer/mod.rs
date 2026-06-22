@@ -555,6 +555,30 @@ impl Tokenizer {
         self.refresh_byte_level_bypass();
         self
     }
+
+    pub fn train<T, I, S>(&mut self, trainer: &mut T, sequences: I) -> Result<&mut Self>
+    where
+        T: Trainer<Model = ModelWrapper> + Sync,
+        I: Iterator<Item = S> + Send,
+        S: AsRef<str> + Send,
+    {
+        // Train on the canonical (byte-mapped) pipeline, then re-sync the flags
+        // to the freshly-trained model.
+        self.apply_byte_level_bypass(false);
+        self.0.train(trainer, sequences)?;
+        self.refresh_byte_level_bypass();
+        Ok(self)
+    }
+
+    pub fn train_from_files<T>(&mut self, trainer: &mut T, files: Vec<String>) -> Result<&mut Self>
+    where
+        T: Trainer<Model = ModelWrapper> + Sync,
+    {
+        self.apply_byte_level_bypass(false);
+        self.0.train_from_files(trainer, files)?;
+        self.refresh_byte_level_bypass();
+        Ok(self)
+    }
 }
 
 fn pre_tokenizer_has_byte_level(pretokenizer: &PreTokenizerWrapper) -> bool {

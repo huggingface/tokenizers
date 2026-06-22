@@ -244,40 +244,16 @@ impl BpeBuilder {
             dropout: _,
             ignore_merges: _,
             files: _,
-            vocab: _,
+            vocab,
             merges: _,
             cache_capacity: _,
             byte_level_bypass: _,
         } = &self.config;
-        // An empty prefix/suffix (the common serialized form, `""`) is inert in
-        // `merge_word`, so only a *non-empty* one disqualifies the fast path.
-        let has_prefix = continuing_subword_prefix
-            .as_deref()
-            .is_some_and(|p| !p.is_empty());
-        let has_suffix = end_of_word_suffix.as_deref().is_some_and(|s| !s.is_empty());
-        if has_prefix || has_suffix {
-            return None;
-        }
-        // Build the byte-level vocab from vocab
-        let mut table = [0u32; 256];
-        let mut vocab_has_all_bytes = true;
-
-        for (byte, character) in BYTES_CHAR.iter() {
-            if let Some(token_id) = self.config.vocab.get(&character.to_string()) {
-                table[*byte as usize] = *token_id;
-            } else {
-                vocab_has_all_bytes = false;
-                break;
-            }
-        }
-        if vocab_has_all_bytes {
-            Some(ByteLevelBypass {
-                active: false,
-                byte_to_token_id: Box::new(table),
-            })
-        } else {
-            None
-        }
+        compute_byte_level_bypass(
+            vocab,
+            continuing_subword_prefix.as_deref(),
+            end_of_word_suffix.as_deref(),
+        )
     }
 
     /// Returns a `BPE` model that uses the `BpeBuilder`'s configuration.
@@ -372,6 +348,31 @@ pub(crate) struct ByteLevelBypass {
     /// Lookup table to match each raw byte (from 0 to 255u8) to its token id
     /// in the vocabulary
     pub(crate) byte_to_token_id: Box<[u32; 256]>,
+}
+
+/// Single source of truth for byte-level fast-path eligibility, derived from the
+/// three things it depends on. Any path that rewrites `vocab`/prefix/suffix
+/// (builder, trainer) must re-run this so the bypass never goes stale.
+pub(crate) fn compute_byte_level_bypass(
+    vocab: &Vocab,
+    continuing_subword_prefix: Option<&str>,
+    end_of_word_suffix: Option<&str>,
+) -> Option<ByteLevelBypass> {
+    // An empty prefix/suffix (the common serialized form, `""`) is inert in
+    // `merge_word`; only a non-empty one disqualifies the fast path.
+    if continuing_subword_prefix.is_some_and(|p| !p.is_empty())
+        || end_of_word_suffix.is_some_and(|s| !s.is_empty())
+    {
+        return None;
+    }
+    let mut table = [0u32; 256];
+    for (byte, character) in BYTES_CHAR.iter() {
+        table[*byte as usize] = *vocab.get(&character.to_string())?;
+    }
+    Some(ByteLevelBypass {
+        active: false,
+        byte_to_token_id: Box::new(table),
+    })
 }
 
 /// A [Byte Pair Encoding](https://www.aclweb.org/anthology/P16-1162/) model.
@@ -1455,7 +1456,7 @@ mod tests {
                 let from_bytes = ids(bpe
                     .tokenize_bytes(
                         raw,
-                        &bpe.byte_level_bypass
+                        bpe.byte_level_bypass
                             .as_ref()
                             .map(|bypass| &bypass.byte_to_token_id)
                             .unwrap(),
@@ -1609,7 +1610,7 @@ mod tests {
                 let from_bytes = values(
                     bpe.tokenize_bytes(
                         b" the",
-                        &bpe.byte_level_bypass
+                        bpe.byte_level_bypass
                             .as_ref()
                             .map(|bypass| &bypass.byte_to_token_id)
                             .unwrap(),

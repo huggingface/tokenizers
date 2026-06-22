@@ -1,5 +1,6 @@
 #![allow(clippy::map_entry)]
 
+use super::model::compute_byte_level_bypass;
 use super::{Pair, WithFirstLastIterator, Word, BPE};
 use crate::parallelism::*;
 use crate::tokenizer::{AddedToken, Result, Trainer};
@@ -625,6 +626,11 @@ impl BpeTrainer {
 
         model.continuing_subword_prefix = self.continuing_subword_prefix.clone();
         model.end_of_word_suffix = self.end_of_word_suffix.clone();
+        model.byte_level_bypass = compute_byte_level_bypass(
+            &model.vocab,
+            model.continuing_subword_prefix.as_deref(),
+            model.end_of_word_suffix.as_deref(),
+        );
 
         Ok(self.special_tokens.clone())
     }
