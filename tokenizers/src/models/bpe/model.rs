@@ -1405,6 +1405,22 @@ mod tests {
                     "end_of_word_suffix must disable the fast path"
                 );
             }
+
+            #[test]
+            fn test_byte_level_bypass_eligible_with_empty_prefix_and_suffix() {
+                // Real models serialize these as "" (not null); empty is inert.
+                let bpe = BpeBuilder::default()
+                    .vocab_and_merges(byte_level_vocab(), vec![])
+                    .continuing_subword_prefix(String::new())
+                    .end_of_word_suffix(String::new())
+                    .build()
+                    .unwrap();
+
+                assert!(
+                    bpe.byte_level_bypass.is_some(),
+                    "empty prefix/suffix must stay eligible"
+                );
+            }
         }
 
         mod tokenize_bytes {
@@ -1608,6 +1624,45 @@ mod tests {
             }
 
             #[test]
+            fn test_equivalent_when_unk_and_byte_fallback_are_set() {
+                use crate::pre_tokenizers::byte_level::BYTES_CHAR;
+                let mut vocab: Vocab = BYTES_CHAR
+                    .iter()
+                    .map(|(byte, character)| (character.to_string(), *byte as u32))
+                    .collect();
+                vocab.insert("<unk>".to_string(), 256);
+                vocab.insert("th".to_string(), 257);
+                vocab.insert("the".to_string(), 258);
+
+                let bpe = BpeBuilder::default()
+                    .vocab_and_merges(
+                        vocab,
+                        vec![
+                            ("t".to_string(), "h".to_string()),
+                            ("th".to_string(), "e".to_string()),
+                        ],
+                    )
+                    .unk_token("<unk>".to_string())
+                    .fuse_unk(true)
+                    .byte_fallback(true)
+                    .build()
+                    .unwrap();
+
+                assert!(
+                    bpe.byte_level_bypass.is_some(),
+                    "unk/fuse_unk/byte_fallback must not disable the bypass"
+                );
+                for raw in [
+                    b"the".as_slice(),
+                    b" the the the",
+                    &[0xff, 0xfe, 0x00],
+                    "café 日本 👍".as_bytes(),
+                ] {
+                    assert_same_ids(&bpe, raw);
+                }
+            }
+
+            #[test]
             fn test_fast_path_offsets_tile_the_input() {
                 // Make sure the offsets tile the input
                 let bpe = gpt2_bpe();
@@ -1626,6 +1681,18 @@ mod tests {
                         cursor = token.offsets.1;
                     }
                     assert_eq!(cursor, raw.len(), "offsets must cover all of {raw:?}");
+                }
+            }
+
+            #[test]
+            fn test_equivalent_with_zero_dropout() {
+                // dropout == 0.0 must take the cached path, identical to None.
+                let bpe = BPE::from_file("data/gpt2-vocab.json", "data/gpt2-merges.txt")
+                    .dropout(0.0)
+                    .build()
+                    .expect(MISSING_FIXTURES);
+                for raw in ["the quick brown fox", "café 日本 👍", " a b c", ""] {
+                    assert_same_ids(&bpe, raw.as_bytes());
                 }
             }
         }

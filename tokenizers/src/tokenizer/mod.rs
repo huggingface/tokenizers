@@ -1939,7 +1939,7 @@ mod tests {
 
 #[cfg(test)]
 mod byte_level_bypass_equivalence {
-    use super::Tokenizer;
+    use super::{AddedToken, Model, Tokenizer};
 
     const CORPUS: &[&str] = &[
         "",
@@ -1967,7 +1967,7 @@ mod byte_level_bypass_equivalence {
     }
 
     /// Compare the fast path (forced on) against the slow path (forced off) on
-    /// the same tokenizer: `encode` ids+offsets and `encode_fast` ids.
+    /// the same tokenizer: `encode` ids+offsets+tokens and `encode_fast` ids.
     fn assert_fast_matches_slow(config_file: &str) {
         let mut tok = load(config_file);
         assert!(
@@ -1980,12 +1980,14 @@ mod byte_level_bypass_equivalence {
             let fast = tok.encode(text, false).unwrap();
             let fast_ids = fast.get_ids().to_vec();
             let fast_offsets = fast.get_offsets().to_vec();
+            let fast_tokens = fast.get_tokens().to_vec();
             let fast_no_offsets = tok.encode_fast(text, false).unwrap().get_ids().to_vec();
 
             tok.set_byte_level_bypass(false);
             let slow = tok.encode(text, false).unwrap();
             let slow_ids = slow.get_ids().to_vec();
             let slow_offsets = slow.get_offsets().to_vec();
+            let slow_tokens = slow.get_tokens().to_vec();
             let slow_no_offsets = tok.encode_fast(text, false).unwrap().get_ids().to_vec();
 
             assert_eq!(
@@ -1996,6 +1998,11 @@ mod byte_level_bypass_equivalence {
             assert_eq!(
                 fast_offsets, slow_offsets,
                 "encode offsets differ — {} on {:?}",
+                config_file, text
+            );
+            assert_eq!(
+                fast_tokens, slow_tokens,
+                "encode tokens differ — {} on {:?}",
                 config_file, text
             );
             assert_eq!(

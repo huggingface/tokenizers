@@ -865,4 +865,125 @@ mod tests {
         .collect();
         assert_eq!(trained_vocab, expected_vocab)
     }
+
+    mod byte_level_bypass {
+        use super::*;
+        use crate::models::bpe::{BpeBuilder, Vocab};
+        use crate::pre_tokenizers::byte_level::BYTES_CHAR;
+        use std::collections::HashSet;
+
+        fn full_byte_level_model() -> BPE {
+            let vocab: Vocab = BYTES_CHAR
+                .iter()
+                .map(|(byte, character)| (character.to_string(), *byte as u32))
+                .collect();
+            let model = BpeBuilder::default()
+                .vocab_and_merges(vocab, vec![])
+                .build()
+                .unwrap();
+            assert!(
+                model.byte_level_bypass.is_some(),
+                "precondition: model starts eligible"
+            );
+            model
+        }
+
+        fn counts() -> AHashMap<CompactString, u64> {
+            let mut counts = AHashMap::new();
+            counts.insert("hello world".into(), 5);
+            counts
+        }
+
+        #[test]
+        fn test_train_keeps_byte_level_bypass_consistent_with_vocab() {
+            let mut model = full_byte_level_model();
+            BpeTrainer::builder()
+                .show_progress(false)
+                .min_frequency(0)
+                .build()
+                .do_train(&counts(), &mut model)
+                .unwrap();
+
+            if let Some(bypass) = &model.byte_level_bypass {
+                for (byte, character) in BYTES_CHAR.iter() {
+                    assert_eq!(
+                        Some(&bypass.byte_to_token_id[*byte as usize]),
+                        model.vocab.get(&character.to_string()),
+                        "byte 0x{byte:02X} points to a stale id after training"
+                    );
+                }
+            }
+        }
+
+        #[test]
+        fn test_train_with_continuing_subword_prefix_disables_byte_level_bypass() {
+            let mut model = full_byte_level_model();
+            BpeTrainer::builder()
+                .show_progress(false)
+                .min_frequency(0)
+                .continuing_subword_prefix("##".to_string())
+                .build()
+                .do_train(&counts(), &mut model)
+                .unwrap();
+
+            assert_eq!(model.continuing_subword_prefix.as_deref(), Some("##"));
+            assert!(
+                model.byte_level_bypass.is_none(),
+                "a continuing_subword_prefix set by training must disable the bypass"
+            );
+        }
+
+        #[test]
+        fn test_train_with_end_of_word_suffix_disables_byte_level_bypass() {
+            let mut model = full_byte_level_model();
+            BpeTrainer::builder()
+                .show_progress(false)
+                .min_frequency(0)
+                .end_of_word_suffix("</w>".to_string())
+                .build()
+                .do_train(&counts(), &mut model)
+                .unwrap();
+
+            assert_eq!(model.end_of_word_suffix.as_deref(), Some("</w>"));
+            assert!(
+                model.byte_level_bypass.is_none(),
+                "an end_of_word_suffix set by training must disable the bypass"
+            );
+        }
+
+        #[test]
+        fn test_train_into_byte_complete_vocab_enables_byte_level_bypass() {
+            // Start ineligible (empty vocab), train into a byte-complete vocab by
+            // forcing every byte-level char into the alphabet.
+            let mut model = BPE::default();
+            assert!(model.byte_level_bypass.is_none());
+
+            let alphabet: HashSet<char> = BYTES_CHAR.values().copied().collect();
+            BpeTrainer::builder()
+                .show_progress(false)
+                .min_frequency(0)
+                .initial_alphabet(alphabet)
+                .build()
+                .do_train(&counts(), &mut model)
+                .unwrap();
+
+            for (_, character) in BYTES_CHAR.iter() {
+                assert!(
+                    model.vocab.contains_key(&character.to_string()),
+                    "precondition: trained vocab must be byte-complete"
+                );
+            }
+            let bypass = model
+                .byte_level_bypass
+                .as_ref()
+                .expect("training a byte-complete vocab must enable the bypass");
+            for (byte, character) in BYTES_CHAR.iter() {
+                assert_eq!(
+                    Some(&bypass.byte_to_token_id[*byte as usize]),
+                    model.vocab.get(&character.to_string()),
+                    "byte 0x{byte:02X} maps to the wrong id"
+                );
+            }
+        }
+    }
 }
