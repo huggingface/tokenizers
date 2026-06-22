@@ -16,6 +16,22 @@ serde       = { version = "1.0.163", features = ["derive"] }
 tokenizers  = { path = "../../tokenizers/" }
 ahash = { version = "0.8.11", features = ["serde"] }
 
+[features]
+default = ["mimalloc"]
+# Use mimalloc as the global allocator inside this cdylib.  Cuts per-call
+# malloc/free traffic.  The dependency is declared only on targets where
+# mimalloc has been tested (see target-conditional [dependencies] below),
+# so on other targets enabling this feature is a no-op and the system
+# allocator is used.  Disable with `--no-default-features` to opt out
+# even on supported targets.
+mimalloc = ["dep:mimalloc"]
+
+# mimalloc is restricted to targets where it has been tested.  Other
+# targets fall back to the system allocator until community testing
+# adds them.
+[target.'cfg(any(all(target_os = "linux", any(target_arch = "x86_64", target_arch = "aarch64"), target_env = "gnu"), all(target_os = "macos", target_arch = "aarch64")))'.dependencies]
+mimalloc = { version = "0.1", optional = true }
+
 [build-dependencies]
 napi-build = "2"
 

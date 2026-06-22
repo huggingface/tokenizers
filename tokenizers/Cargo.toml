@@ -117,6 +117,14 @@ assert_approx_eq = "1.1"
 tracing = "0.1"
 tracing-subscriber = "0.3.18"
 
+# Used only by the in-crate benches so they measure the same allocator
+# the production cdylib bindings ship with.  Target-conditional to
+# match the binding crates: on platforms where mimalloc has not been
+# tested, the bench falls back to the system allocator.  Does not
+# propagate to library consumers (dev-dependencies are crate-local).
+[target.'cfg(any(all(target_os = "linux", any(target_arch = "x86_64", target_arch = "aarch64"), target_env = "gnu"), all(target_os = "macos", target_arch = "aarch64")))'.dev-dependencies]
+mimalloc = "0.1"
+
 [profile.release]
 lto = "fat"
 
