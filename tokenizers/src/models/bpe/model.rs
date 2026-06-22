@@ -217,6 +217,69 @@ impl BpeBuilder {
         self
     }
 
+    /// Decide whether this config is eligible for the byte-level projection bypass
+    ///
+    /// When enabled, it skips the projection into the "vocabulary space" (see BYTE_CHARS)
+    /// and feeds the raw bytes' token ids into the merge loop, bypassing both the byte→char
+    /// string mapping AND the prefix/suffix/unk handling that `merge_word` performs.
+    ///
+    /// So it is only correct when *every* config option is compatible.
+    ///
+    /// Returns None if the config is not compatible with the bypass: defaults to the
+    /// "slow" path, which is always correct
+    fn byte_level_bypass(&self) -> Option<ByteLevelBypass> {
+        // config destructured exhaustively on purpose, so adding a new field
+        // throws a compile error until classified
+        let Config {
+            // Unsupported by the fast path — gate on these.
+            continuing_subword_prefix,
+            end_of_word_suffix,
+
+            // If the vocab has all single bytes mapped to a token, these have no effect
+            unk_token: _,
+            fuse_unk: _,
+            byte_fallback: _,
+
+            // Other options
+            dropout: _,
+            ignore_merges: _,
+            files: _,
+            vocab: _,
+            merges: _,
+            cache_capacity: _,
+            byte_level_bypass: _,
+        } = &self.config;
+        // An empty prefix/suffix (the common serialized form, `""`) is inert in
+        // `merge_word`, so only a *non-empty* one disqualifies the fast path.
+        let has_prefix = continuing_subword_prefix
+            .as_deref()
+            .is_some_and(|p| !p.is_empty());
+        let has_suffix = end_of_word_suffix.as_deref().is_some_and(|s| !s.is_empty());
+        if has_prefix || has_suffix {
+            return None;
+        }
+        // Build the byte-level vocab from vocab
+        let mut table = [0u32; 256];
+        let mut vocab_has_all_bytes = true;
+
+        for (byte, character) in BYTES_CHAR.iter() {
+            if let Some(token_id) = self.config.vocab.get(&character.to_string()) {
+                table[*byte as usize] = *token_id;
+            } else {
+                vocab_has_all_bytes = false;
+                break;
+            }
+        }
+        if vocab_has_all_bytes {
+            Some(ByteLevelBypass {
+                active: false,
+                byte_to_token_id: Box::new(table),
+            })
+        } else {
+            None
+        }
+    }
+
     /// Returns a `BPE` model that uses the `BpeBuilder`'s configuration.
     pub fn build(mut self) -> Result<BPE> {
         // Validate dropout.
@@ -227,11 +290,12 @@ impl BpeBuilder {
         }
 
         // Read files if necessary
-        if let Some((vocab, merges)) = self.config.files {
+        if let Some((vocab, merges)) = self.config.files.take() {
             let (v, m) = BPE::read_file(&vocab, &merges)?;
             self.config.vocab = v;
             self.config.merges = m;
         }
+        self.config.byte_level_bypass = self.byte_level_bypass();
 
         let mut max_len = 0;
         let vocab_r = self
@@ -251,32 +315,6 @@ impl BpeBuilder {
         };
 
         let vocab = self.config.vocab;
-
-        self.config.byte_level_bypass = {
-            // Build the byte-level vocab from vocab
-            let mut table = [0u32; 256];
-            let mut vocab_has_all_bytes = true;
-
-            for (byte, character) in BYTES_CHAR.iter() {
-                if let Some(token_id) = vocab.get(&character.to_string()) {
-                    table[*byte as usize] = *token_id;
-                } else {
-                    vocab_has_all_bytes = false;
-                    break;
-                }
-            }
-            let eligible = vocab_has_all_bytes
-                && self.config.continuing_subword_prefix.is_none()
-                && self.config.end_of_word_suffix.is_none();
-            if eligible {
-                Some(ByteLevelBypass {
-                    active: false,
-                    byte_to_token_id: Box::new(table),
-                })
-            } else {
-                None
-            }
-        };
 
         let prefix_len = if let Some(prefix) = &self.config.continuing_subword_prefix {
             prefix.len()
@@ -674,11 +712,7 @@ impl BPE {
             // which would allow us to drop the duplicated cache static (BPE_LOCAL_CACHE_BYTES)
             let mapped_string: String = bytes.iter().map(|byte| BYTES_CHAR[byte]).collect();
             if let Some(id) = self.vocab.get(&mapped_string) {
-                return Ok(vec![Token::new(
-                    *id,
-                    mapped_string,
-                    (0, bytes.len()),
-                )]);
+                return Ok(vec![Token::new(*id, mapped_string, (0, bytes.len()))]);
             }
         }
         let Some(cache) = self.cache.as_ref() else {
