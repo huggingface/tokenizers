@@ -1494,6 +1494,51 @@ mod tests {
             }
 
             #[test]
+            fn test_ignore_merges_fast_path_preserves_byte_level_token_value() {
+                use crate::pre_tokenizers::byte_level::BYTES_CHAR;
+                // Complete byte-level base vocab (all 256 mapped chars, id = byte).
+                let mut vocab: Vocab = BYTES_CHAR
+                    .iter()
+                    .map(|(byte, character)| (character.to_string(), *byte as u32))
+                    .collect();
+                // Add " the" as a single token. In byte-level space the leading
+                // space maps to 'Ġ', so the token's mapped form is "Ġthe" — i.e.
+                // the vocab string differs from the raw bytes.
+                let mapped = bytes_to_byte_level_string(b" the");
+                vocab.insert(mapped.clone(), 256);
+
+                let bpe = BpeBuilder::default()
+                    .vocab_and_merges(vocab, vec![])
+                    .ignore_merges(true)
+                    .build()
+                    .unwrap();
+
+                let values = |tokens: Vec<Token>| -> Vec<String> {
+                    tokens.into_iter().map(|token| token.value).collect()
+                };
+                // Slow path sees the mapped string and hits the ignore_merges
+                // shortcut, emitting value "Ġthe".
+                let from_string = values(bpe.tokenize(&mapped).unwrap());
+                // Fast path takes raw bytes; its token value must match the slow
+                // path's byte-level-mapped value, not the raw decoded bytes.
+                let from_bytes = values(
+                    bpe.tokenize_bytes(
+                        b" the",
+                        &bpe.byte_level_bypass
+                            .as_ref()
+                            .map(|bypass| &bypass.byte_to_token_id)
+                            .unwrap(),
+                    )
+                    .unwrap(),
+                );
+
+                assert_eq!(
+                    from_string, from_bytes,
+                    "ignore_merges fast path must emit the byte-level-mapped token value"
+                );
+            }
+
+            #[test]
             fn test_fast_path_offsets_tile_the_input() {
                 // Make sure the offsets tile the input
                 let bpe = gpt2_bpe();
