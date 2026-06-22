@@ -343,6 +343,7 @@ impl AddedVocabulary {
                     end: 0,
                 },
             );
+            // TODO: we need this one to be sorted on token lenght!
             self.prefix_vecs
                 .entry(prefix)
                 .or_insert_with(Vec::new)
@@ -380,6 +381,10 @@ impl AddedVocabulary {
             }
             self.added_tokens_map_r.insert(new_id, token);
         }
+        for vec in self.prefix_vecs.values_mut() {
+            vec.sort_unstable_by_key(|s| std::cmp::Reverse(s.len()));
+        }
+
         self.refresh_added_tokens()?;
 
         // Return the number of added tokens
