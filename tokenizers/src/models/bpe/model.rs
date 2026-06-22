@@ -674,9 +674,8 @@ impl BPE {
             // There are alternatives, for example converting the vocab from "vocabulary space" to ordinary UTF-8 bytes on load
             // which would allow us to drop the duplicated cache static (BPE_LOCAL_CACHE_BYTES)
             let bytes2char = bytes_char();
-            let mapped_string: Option<String> = bytes.iter().map(|byte| {
-                bytes2char.get(byte)
-            }).collect();
+            let mapped_string: Option<String> =
+                bytes.iter().map(|byte| bytes2char.get(byte)).collect();
             if let Some(id) = self.vocab.get(&mapped_string.unwrap_or("".to_string())) {
                 return Ok(vec![Token::new(
                     *id,
