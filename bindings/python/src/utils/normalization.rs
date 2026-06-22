@@ -28,7 +28,7 @@ impl Pattern for PyPattern {
                     s.find_matches(inside)
                 }
             }
-            PyPattern::Regex(r) => Python::attach(|py| (&r.borrow(py).inner).find_matches(inside)),
+            PyPattern::Regex(r) => Python::attach(|py| r.borrow(py).inner.find_matches(inside)),
         }
     }
 }

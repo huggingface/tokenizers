@@ -18,6 +18,30 @@ impl SysRegex {
             regex: Regex::new(regex_str)?,
         })
     }
+
+    pub fn find_matches(
+        &self,
+        inside: &str,
+    ) -> Result<Vec<(Offsets, bool)>, Box<dyn Error + Send + Sync + 'static>> {
+        if inside.is_empty() {
+            return Ok(vec![((0, 0), false)]);
+        }
+
+        let mut prev = 0;
+        let mut splits = Vec::with_capacity(inside.len());
+        for matched in self.regex.find_iter(inside) {
+            let matched = matched?;
+            if prev != matched.start() {
+                splits.push(((prev, matched.start()), false));
+            }
+            splits.push(((matched.start(), matched.end()), true));
+            prev = matched.end();
+        }
+        if prev != inside.len() {
+            splits.push(((prev, inside.len()), false));
+        }
+        Ok(splits)
+    }
 }
 
 pub struct Matches<'r, 't>(fancy_regex::Matches<'r, 't>);
