@@ -43,7 +43,7 @@ TESTS_RESOURCES = $(DATA_DIR)/small.txt $(DATA_DIR)/roberta.json
 
 # Launch the Python test suite
 test-py: $(TESTS_RESOURCES)
-	$(PIP) install pytest pytest-asyncio requests setuptools_rust numpy pyarrow datasets
+	$(PIP) install pytest pytest-asyncio huggingface_hub setuptools_rust numpy pyarrow datasets
 	python -m pytest -s -v tests
 
 # Launch the Rust test suite
@@ -56,16 +56,12 @@ test-rs:
 # Full test suite
 test: test-py test-rs
 
-HF_TEST_DATA = https://huggingface.co/datasets/hf-internal-testing/tokenizers-test-data/resolve/main
+HF_TEST_REPO = hf-internal-testing/tokenizers-test-data
+# Fetch fixtures through the huggingface_hub CLI: it handles auth (HF_TOKEN),
+# retry/backoff on rate limits, and caching for us. CI overrides HF with
+# `uvx --from huggingface_hub hf` to avoid a separate install step.
+HF ?= hf
 
-$(DATA_DIR)/big.txt :
+$(DATA_DIR)/% :
 	$(dir_guard)
-	curl -sL $(HF_TEST_DATA)/big.txt -o $@
-
-$(DATA_DIR)/small.txt :
-	$(dir_guard)
-	curl -sL $(HF_TEST_DATA)/small.txt -o $@
-
-$(DATA_DIR)/roberta.json :
-	$(dir_guard)
-	curl -sL $(HF_TEST_DATA)/roberta.json -o $@
+	$(HF) download $(HF_TEST_REPO) $* --repo-type dataset --local-dir $(DATA_DIR)
