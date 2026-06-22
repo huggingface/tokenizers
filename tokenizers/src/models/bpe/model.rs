@@ -261,9 +261,20 @@ impl BpeBuilder {
                 let b_id = vocab
                     .get(&b)
                     .ok_or_else(|| Error::MergeTokenOutOfVocabulary(b.to_owned()))?;
-                buffer[0..a.len()].copy_from_slice(a.as_bytes());
-                let b_len = b.len() - prefix_len;
+                let b_len = b.len().checked_sub(prefix_len).ok_or_else(|| {
+                    // Shorter than the continuing subword prefix, so the rule cannot be valid.
+                    Error::MergeTokenOutOfVocabulary(b.to_owned())
+                })?;
                 let merge_len = a.len() + b_len;
+                if merge_len > buffer.len() {
+                    // Longer than every vocabulary key, so the merged token cannot be in the
+                    // vocabulary. Report it instead of overrunning the scratch buffer.
+                    let mut merged = String::with_capacity(merge_len);
+                    merged.push_str(&a);
+                    merged.push_str(&b[prefix_len..]);
+                    return Err(Error::MergeTokenOutOfVocabulary(merged).into());
+                }
+                buffer[0..a.len()].copy_from_slice(a.as_bytes());
                 buffer[a.len()..merge_len].copy_from_slice(&b.as_bytes()[prefix_len..]);
                 // SAFETY: buffer contains a concatenation of two valid UTF-8 strings, so it is itself valid UTF-8, even considering prefix_len
                 let new_token = unsafe { from_utf8_unchecked(&buffer[..merge_len]) };
@@ -758,6 +769,37 @@ mod tests {
         let order_vocab_iter = OrderedVocabIter::new(&vocab_r);
         let serialized = serde_json::to_string(&order_vocab_iter).unwrap();
         assert_eq!(serialized, "{\"a\":0,\"b\":1,\"c\":2,\"ab\":3}");
+    }
+
+    #[test]
+    fn test_merge_longer_than_any_vocab_key_is_an_error() {
+        // A merge whose concatenation is longer than every vocabulary key cannot
+        // resolve to a vocab id; it must error instead of panicking on the
+        // scratch buffer sized to the longest key.
+        let vocab: Vocab = [("ab".into(), 0), ("b".into(), 1)]
+            .iter()
+            .cloned()
+            .collect();
+        let result = BpeBuilder::default()
+            .vocab_and_merges(vocab, vec![("ab".into(), "b".into())])
+            .build();
+        match result {
+            Err(e) => assert!(e.to_string().contains("abb"), "{e}"),
+            Ok(_) => panic!("expected MergeTokenOutOfVocabulary"),
+        }
+    }
+
+    #[test]
+    fn test_merge_shorter_than_continuing_subword_prefix_is_an_error() {
+        let vocab: Vocab = [("##aa".into(), 0), ("b".into(), 1)]
+            .iter()
+            .cloned()
+            .collect();
+        let result = BpeBuilder::default()
+            .vocab_and_merges(vocab, vec![("##aa".into(), "b".into())])
+            .continuing_subword_prefix("##".to_string())
+            .build();
+        assert!(result.is_err(), "expected an error, not an underflow panic");
     }
 
     #[test]
