@@ -14,6 +14,10 @@ from tokenizers.pre_tokenizers import PreTokenizer
 from tokenizers.processors import PostProcessor
 from tokenizers.trainers import Trainer
 
+TextInputSequence = str
+PreTokenizedInputSequence = list[str] | tuple[str, ...]
+InputSequence = TextInputSequence | PreTokenizedInputSequence
+
 __version__: Final[str]
 
 @final
@@ -739,7 +743,7 @@ class Tokenizer:
             :obj:`List[str]`: A list of decoded strings
         """
     def async_encode(
-        self, /, sequence: Any, pair: Any | None = None, is_pretokenized: bool = False, add_special_tokens: bool = True
+        self, /, sequence: InputSequence, pair: InputSequence | None = None, is_pretokenized: bool = False, add_special_tokens: bool = True
     ) -> Any:
         """
         Asynchronously encode the given input with character offsets.
@@ -929,7 +933,7 @@ class Tokenizer:
                 Truncate direction
         """
     def encode(
-        self, /, sequence: Any, pair: Any | None = None, is_pretokenized: bool = False, add_special_tokens: bool = True
+        self, /, sequence: InputSequence, pair: InputSequence | None = None, is_pretokenized: bool = False, add_special_tokens: bool = True
     ) -> "Encoding":
         """
         Encode the given sequence and pair. This method can process raw text sequences
