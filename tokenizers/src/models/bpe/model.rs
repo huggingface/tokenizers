@@ -673,7 +673,7 @@ impl BPE {
             if let Some(id) = self.vocab.get(&mapped_string) {
                 return Ok(vec![Token::new(
                     *id,
-                    String::from_utf8_lossy(bytes).into(),
+                    mapped_string,
                     (0, bytes.len()),
                 )]);
             }
