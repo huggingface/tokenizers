@@ -494,18 +494,18 @@ impl std::str::FromStr for Tokenizer {
     }
 }
 
-// Override the with_... setters to refresh the byte_level_fast flag
+// Override the with_... setters to refresh the byte_level_bypass flag
 impl Tokenizer {
     fn apply_byte_level_bypass(&mut self, enabled: bool) {
         if let ModelWrapper::BPE(bpe) = &mut self.0.model {
-            bpe.set_byte_level_fast(enabled);
+            bpe.set_byte_level_bypass(enabled);
         }
         if let Some(pretok) = self.0.pre_tokenizer.as_mut() {
             set_pretokenizer_skip_byte_mapping(pretok, enabled);
         }
     }
 
-    fn refresh_byte_level_fast(&mut self) {
+    fn refresh_byte_level_bypass(&mut self) {
         let model_is_valid_bpe =
             matches!(&self.0.model, ModelWrapper::BPE(b) if b.byte_level_bypass.is_some());
         let pretokenizer_has_byte_level = self
@@ -519,19 +519,19 @@ impl Tokenizer {
         self.apply_byte_level_bypass(enabled);
     }
 
-    pub fn byte_level_fast_enabled(&self) -> bool {
+    pub fn byte_level_bypass_enabled(&self) -> bool {
         matches!(&self.0.model, ModelWrapper::BPE(b) if b.byte_level_bypass.as_ref().is_some_and(|bypass| bypass.active))
     }
 
-    /// Test-only: used to compare the fast and slow paths on the same tokenizer in equivalence tests.
+    /// Test-only: used to compare the bypass and slow paths on the same tokenizer in equivalence tests.
     #[cfg(test)]
-    pub(crate) fn set_byte_level_fast(&mut self, enabled: bool) {
+    pub(crate) fn set_byte_level_bypass(&mut self, enabled: bool) {
         self.apply_byte_level_bypass(enabled);
     }
 
     pub fn with_pre_tokenizer(&mut self, pt: Option<impl Into<PreTokenizerWrapper>>) -> &mut Self {
         self.0.with_pre_tokenizer(pt);
-        self.refresh_byte_level_fast();
+        self.refresh_byte_level_bypass();
         self
     }
 
@@ -540,19 +540,19 @@ impl Tokenizer {
         n: Option<impl Into<NormalizerWrapper>>,
     ) -> Result<&mut Self> {
         self.0.with_normalizer(n)?;
-        self.refresh_byte_level_fast();
+        self.refresh_byte_level_bypass();
         Ok(self)
     }
 
     pub fn with_model(&mut self, m: impl Into<ModelWrapper>) -> &mut Self {
         self.0.with_model(m);
-        self.refresh_byte_level_fast();
+        self.refresh_byte_level_bypass();
         self
     }
 
     pub fn with_decoder(&mut self, decoder: Option<impl Into<DecoderWrapper>>) -> &mut Self {
         self.0.with_decoder(decoder);
-        self.refresh_byte_level_fast();
+        self.refresh_byte_level_bypass();
         self
     }
 }
@@ -605,7 +605,7 @@ where
             padding: t.padding,
             truncation: t.truncation,
         });
-        tokenizer.refresh_byte_level_fast();
+        tokenizer.refresh_byte_level_bypass();
         tokenizer
     }
 }
@@ -1938,7 +1938,7 @@ mod tests {
 }
 
 #[cfg(test)]
-mod byte_level_fast_equivalence {
+mod byte_level_bypass_equivalence {
     use super::Tokenizer;
 
     const CORPUS: &[&str] = &[
@@ -1971,18 +1971,18 @@ mod byte_level_fast_equivalence {
     fn assert_fast_matches_slow(config_file: &str) {
         let mut tok = load(config_file);
         assert!(
-            tok.byte_level_fast_enabled(),
-            "{} must be eligible for the fast path",
+            tok.byte_level_bypass_enabled(),
+            "{} must be eligible for the bypass path",
             config_file
         );
         for &text in CORPUS {
-            tok.set_byte_level_fast(true);
+            tok.set_byte_level_bypass(true);
             let fast = tok.encode(text, false).unwrap();
             let fast_ids = fast.get_ids().to_vec();
             let fast_offsets = fast.get_offsets().to_vec();
             let fast_no_offsets = tok.encode_fast(text, false).unwrap().get_ids().to_vec();
 
-            tok.set_byte_level_fast(false);
+            tok.set_byte_level_bypass(false);
             let slow = tok.encode(text, false).unwrap();
             let slow_ids = slow.get_ids().to_vec();
             let slow_offsets = slow.get_offsets().to_vec();

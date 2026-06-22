@@ -631,28 +631,28 @@ impl BPE {
         })
     }
 
-    pub(crate) fn set_byte_level_fast(&mut self, active: bool) {
+    pub(crate) fn set_byte_level_bypass(&mut self, active: bool) {
         if let Some(bypass) = self.byte_level_bypass.as_mut() {
             bypass.active = active;
         }
     }
 
-    fn tokenize_bytes(&self, bytes: &[u8], byte_to_token: &[u32; 256]) -> Result<Vec<Token>> {
+    fn tokenize_bytes(&self, bytes: &[u8], byte_to_token_id: &[u32; 256]) -> Result<Vec<Token>> {
         if bytes.is_empty() {
             return Ok(vec![]);
         }
         if self.dropout.is_none() || self.dropout == Some(0.0) {
-            self.tokenize_bytes_with_cache(bytes, byte_to_token)
+            self.tokenize_bytes_with_cache(bytes, byte_to_token_id)
         } else {
-            let word = self.merge_word_from_bytes(bytes, byte_to_token);
+            let word = self.merge_word_from_bytes(bytes, byte_to_token_id);
             Ok(self.word_to_tokens(&word).collect())
         }
     }
 
-    fn merge_word_from_bytes(&self, bytes: &[u8], byte_to_token: &[u32; 256]) -> Word {
+    fn merge_word_from_bytes(&self, bytes: &[u8], byte_to_token_id: &[u32; 256]) -> Word {
         let mut word = Word::with_capacity(bytes.len());
         for byte in bytes.iter().copied() {
-            word.add(byte_to_token[byte as usize], 1);
+            word.add(byte_to_token_id[byte as usize], 1);
         }
         word.merge_all(&self.merges, self.dropout);
         word
@@ -661,7 +661,7 @@ impl BPE {
     fn tokenize_bytes_with_cache(
         &self,
         bytes: &[u8],
-        byte_to_token: &[u32; 256],
+        byte_to_token_id: &[u32; 256],
     ) -> Result<Vec<Token>> {
         if self.ignore_merges {
             // Note: we do 1 byte-level "projection" once per pre-token
@@ -679,7 +679,7 @@ impl BPE {
             }
         }
         let Some(cache) = self.cache.as_ref() else {
-            let word = self.merge_word_from_bytes(bytes, byte_to_token);
+            let word = self.merge_word_from_bytes(bytes, byte_to_token_id);
             return Ok(self.word_to_tokens(&word).collect());
         };
         let cache_id = cache.id();
@@ -689,7 +689,7 @@ impl BPE {
             if let Some(hit) = local.get(bytes) {
                 return Ok(self.word_to_tokens(hit).collect());
             }
-            let word = self.merge_word_from_bytes(bytes, byte_to_token);
+            let word = self.merge_word_from_bytes(bytes, byte_to_token_id);
             let ret: Vec<Token> = self.word_to_tokens(&word).collect();
             if bytes.len() < MAX_LENGTH && local.len() < cache.capacity {
                 local.insert(bytes.to_owned(), word);
@@ -1286,7 +1286,7 @@ mod tests {
         )
     }
 
-    mod byte_level_fast {
+    mod byte_level_bypass {
         use super::*;
 
         mod builder {
@@ -1300,7 +1300,7 @@ mod tests {
             }
 
             #[test]
-            fn test_single_byte_tokens_built_when_vocab_has_all_bytes() {
+            fn test_byte_level_bypass_built_when_vocab_has_all_bytes() {
                 let bpe = BpeBuilder::default()
                     .vocab_and_merges(byte_level_vocab(), vec![])
                     .build()
@@ -1309,7 +1309,7 @@ mod tests {
                     .byte_level_bypass
                     .as_ref()
                     .map(|bypass| &bypass.byte_to_token_id)
-                    .expect("a complete byte-level vocab must produce a single_byte_tokens table");
+                    .expect("a complete byte-level vocab must produce a byte_to_token_id table");
 
                 for byte in 0..=255u8 {
                     assert_eq!(
@@ -1321,7 +1321,7 @@ mod tests {
             }
 
             #[test]
-            fn test_single_byte_tokens_is_none_when_vocab_miss_bytes() {
+            fn test_byte_level_bypass_is_none_when_vocab_misses_bytes() {
                 let mut vocab = byte_level_vocab();
                 // Remove the space ' ' from the vocab
                 vocab.remove(&BYTES_CHAR[&b' '].to_string());
@@ -1469,12 +1469,12 @@ mod tests {
 
             #[test]
             fn test_equivalent_when_ignore_merges_is_set() {
-                use crate::pre_tokenizers::byte_level::bytes_char;
+                use crate::pre_tokenizers::byte_level::BYTES_CHAR;
                 // A complete byte-level base vocab (all 256 mapped chars, id = byte),
-                // so `single_byte_tokens` is built and the fast path is active.
-                let mut vocab: Vocab = bytes_char()
-                    .into_iter()
-                    .map(|(byte, character)| (character.to_string(), byte as u32))
+                // so `byte_level_bypass` is built and active.
+                let mut vocab: Vocab = BYTES_CHAR
+                    .iter()
+                    .map(|(byte, character)| (character.to_string(), *byte as u32))
                     .collect();
                 // '.' and ':' are printable, so they map to themselves. Add the
                 // pair ".:" and the whole sequence ".:.:" as their own tokens.

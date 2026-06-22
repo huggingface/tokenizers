@@ -18,8 +18,8 @@ fn enabled_for_byte_level_models() {
         "gpt-oss-slim.json",
     ] {
         assert!(
-            load(config_file).byte_level_fast_enabled(),
-            "{} must enable the fast path",
+            load(config_file).byte_level_bypass_enabled(),
+            "{} must enable the bypass path",
             config_file
         );
     }
@@ -29,8 +29,8 @@ fn enabled_for_byte_level_models() {
 fn disabled_for_non_byte_level_models() {
     for config_file in ["gemma-4-slim.json", "bert-wiki-slim.json"] {
         assert!(
-            !load(config_file).byte_level_fast_enabled(),
-            "{} must NOT enable the fast path",
+            !load(config_file).byte_level_bypass_enabled(),
+            "{} must NOT enable the bypass path",
             config_file
         );
     }
@@ -39,21 +39,21 @@ fn disabled_for_non_byte_level_models() {
 #[test]
 fn empty_sequence_normalizer_counts_as_noop() {
     // deepseek's normalizer is Sequence[] — must not disqualify
-    assert!(load("deepseek-v4-slim.json").byte_level_fast_enabled());
+    assert!(load("deepseek-v4-slim.json").byte_level_bypass_enabled());
 }
 
 #[test]
 fn disabled_when_pretokenizer_swapped_out() {
     let mut tok = load("gpt2-slim.json");
-    assert!(tok.byte_level_fast_enabled());
+    assert!(tok.byte_level_bypass_enabled());
     tok.with_pre_tokenizer(Some(Whitespace)); // auto-refresh
-    assert!(!tok.byte_level_fast_enabled());
+    assert!(!tok.byte_level_bypass_enabled());
 }
 
 #[test]
 fn disabled_when_real_normalizer_added() {
     let mut tok = load("deepseek-v4-slim.json");
-    assert!(tok.byte_level_fast_enabled());
+    assert!(tok.byte_level_bypass_enabled());
     tok.with_normalizer(Some(NFC)).unwrap(); // auto-refresh
-    assert!(!tok.byte_level_fast_enabled());
+    assert!(!tok.byte_level_bypass_enabled());
 }
