@@ -9,7 +9,6 @@ use std::cell::RefCell;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use std::collections::HashMap;
-use std::str::from_utf8_unchecked;
 use std::{
     fs::File,
     io::prelude::*,
@@ -243,11 +242,7 @@ impl BpeBuilder {
         };
 
         let vocab = self.config.vocab;
-        let prefix_len = if let Some(prefix) = &self.config.continuing_subword_prefix {
-            prefix.len()
-        } else {
-            0
-        };
+        let continuing_subword_prefix = self.config.continuing_subword_prefix.as_deref();
         let mut buffer: Vec<u8> = vec![0; max_len];
         let merge_map: MergeMap = self
             .config
@@ -262,11 +257,17 @@ impl BpeBuilder {
                     .get(&b)
                     .ok_or_else(|| Error::MergeTokenOutOfVocabulary(b.to_owned()))?;
                 buffer[0..a.len()].copy_from_slice(a.as_bytes());
-                let b_len = b.len() - prefix_len;
+                let b_suffix = if let Some(prefix) = continuing_subword_prefix {
+                    b.strip_prefix(prefix)
+                        .ok_or_else(|| Error::MergeTokenOutOfVocabulary(b.to_owned()))?
+                } else {
+                    b.as_str()
+                };
+                let b_len = b_suffix.len();
                 let merge_len = a.len() + b_len;
-                buffer[a.len()..merge_len].copy_from_slice(&b.as_bytes()[prefix_len..]);
-                // SAFETY: buffer contains a concatenation of two valid UTF-8 strings, so it is itself valid UTF-8, even considering prefix_len
-                let new_token = unsafe { from_utf8_unchecked(&buffer[..merge_len]) };
+                buffer[a.len()..merge_len].copy_from_slice(b_suffix.as_bytes());
+                let new_token = std::str::from_utf8(&buffer[..merge_len])
+                    .map_err(|_| Error::MergeTokenOutOfVocabulary(b.to_owned()))?;
                 let new_id = vocab
                     .get(new_token)
                     .ok_or_else(|| Error::MergeTokenOutOfVocabulary(new_token.to_owned()))?;
@@ -975,6 +976,28 @@ mod tests {
                 offsets: (0, 3)
             }]
         );
+    }
+
+    #[test]
+    fn test_bpe_rejects_merge_without_configured_prefix() {
+        let vocab: Vocab = vec![("a".to_string(), 0), ("é".to_string(), 1)]
+            .into_iter()
+            .collect();
+        let merges = vec![("a".to_string(), "é".to_string())];
+
+        match BPE::builder()
+            .vocab_and_merges(vocab, merges)
+            .continuing_subword_prefix("x".to_string())
+            .build()
+        {
+            Ok(_) => unreachable!(),
+            Err(err) => match err.downcast_ref::<Error>() {
+                Some(Error::MergeTokenOutOfVocabulary(token)) => {
+                    assert_eq!(token, "é")
+                }
+                _ => unreachable!(),
+            },
+        }
     }
 
     #[test]
