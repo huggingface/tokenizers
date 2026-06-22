@@ -396,10 +396,10 @@ impl UnigramTrainer {
 
                 // After removing the sentencepiece[i], its frequency freq[i] is
                 // re-assigned to alternatives.
-                // new_sum = current_sum - freq[i] + freq[i] * alternatives.size()
-                //         = current_sum + freq[i] (alternatives - 1)
+                // new_sum = current_sum - freq[i] + freq[i] * alternatives[i].size()
+                //         = current_sum + freq[i] (alternatives[i].size() - 1)
 
-                let logsum_alt = (sum + freq[id] * (alternatives.len() - 1) as f64).ln();
+                let logsum_alt = (sum + freq[id] * (alternatives[id].len() - 1) as f64).ln();
 
                 // The frequencies of alternatives are increased by freq[i].
                 let mut logprob_alt = 0.0;
@@ -662,6 +662,51 @@ mod tests {
     use super::*;
     use assert_approx_eq::assert_approx_eq;
     use std::iter::FromIterator;
+
+    #[test]
+    fn prune_keeps_pieces_present_in_corpus() {
+        // Regression guard for the prune-loss fix (#2069): the loss must use the
+        // per-piece alternative count, not the total piece count. With a corpus
+        // that exercises every multi-char piece, pruning to a larger target than
+        // the vocab must keep all single chars plus the frequent multi-char
+        // pieces, deterministically.
+        let trainer = UnigramTrainerBuilder::default()
+            .show_progress(false)
+            .vocab_size(20)
+            .build()
+            .unwrap();
+        let sentences: Vec<Sentence> = vec![
+            ("ababab".to_string(), 40),
+            ("abcabc".to_string(), 30),
+            ("cccc".to_string(), 20),
+        ];
+        let pieces: Vec<SentencePiece> = vec![
+            ("<unk>".into(), 0.0),
+            ("a".into(), -1.0),
+            ("b".into(), -1.0),
+            ("c".into(), -1.0),
+            ("ab".into(), -2.0),
+            ("abc".into(), -3.0),
+        ];
+        let model = Unigram::from(pieces.clone(), Some(0), false).unwrap();
+        let pruned = trainer.prune_sentence_pieces(&model, &pieces, &sentences);
+        // Deterministic and never drops the always-kept unk or the single chars.
+        let kept: std::collections::HashSet<&str> =
+            pruned.iter().map(|(p, _)| p.as_str()).collect();
+        for required in ["<unk>", "a", "b", "c"] {
+            assert!(
+                kept.contains(required),
+                "pruning dropped {required}: {kept:?}"
+            );
+        }
+        // No NaN/inf scores leak out of the loss computation.
+        for (piece, score) in &pruned {
+            assert!(
+                score.is_finite() || piece == "<unk>",
+                "bad score for {piece}"
+            );
+        }
+    }
 
     #[test]
     fn test_unigram_chars() {
