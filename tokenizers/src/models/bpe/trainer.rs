@@ -416,7 +416,7 @@ impl BpeTrainer {
         words: &[Word],
         counts: &[u64],
         p: &Option<ProgressBar>,
-    ) -> (AHashMap<Pair, i32>, AHashMap<Pair, AHashSet<usize>>) {
+    ) -> (AHashMap<Pair, i64>, AHashMap<Pair, AHashSet<usize>>) {
         words
             .maybe_par_iter()
             .enumerate()
@@ -429,7 +429,7 @@ impl BpeTrainer {
 
                     // Initialize pair_counts and where_to_update for this pair if we just saw it
                     // Then update counts
-                    *pair_counts.entry(cur_pair).or_default() += counts[i] as i32;
+                    *pair_counts.entry(cur_pair).or_default() += counts[i] as i64;
                     where_to_update.entry(cur_pair).or_default().insert(i);
                 }
 
@@ -581,7 +581,7 @@ impl BpeTrainer {
 
             // Introduce new formed pairs
             for ((pair, change), iw) in changes {
-                let count = change * counts[iw] as i32;
+                let count = change as i64 * counts[iw] as i64;
                 *pair_counts.entry(pair).or_default() += count;
                 if change > 0 {
                     where_to_update.entry(pair).or_default().insert(iw);
@@ -864,5 +864,35 @@ mod tests {
         .map(|(k, v)| (k.to_string(), v))
         .collect();
         assert_eq!(trained_vocab, expected_vocab)
+    }
+
+    #[test]
+    fn bpe_test_pair_count_no_i32_overflow() {
+        // Regression test for https://github.com/huggingface/tokenizers/issues/2058
+        // Pair counts must be accumulated as i64. A pair whose total frequency
+        // exceeds i32::MAX (2_147_483_647) used to wrap to a negative i32, failing
+        // the `count > 0` guard and silently dropping the high-frequency pair from
+        // the merges.
+        //
+        // Word frequencies are u64, so a single word whose count exceeds i32::MAX
+        // exercises the exact overflow without needing a multi-billion-token corpus.
+        let word_counts: AHashMap<CompactString, u64> =
+            [(CompactString::from("aa"), 3_000_000_000_u64)]
+                .iter()
+                .cloned()
+                .collect();
+        let trainer = BpeTrainer::builder()
+            .show_progress(false)
+            .min_frequency(0)
+            .build();
+        let mut model = BPE::default();
+        trainer.do_train(&word_counts, &mut model).unwrap();
+
+        // The ('a', 'a') pair occurs 3_000_000_000 times, well above i32::MAX,
+        // so it must still be merged into "aa".
+        assert!(
+            model.get_vocab().contains_key("aa"),
+            "high-frequency pair ('a','a') was dropped due to i32 overflow"
+        );
     }
 }
