@@ -1,4 +1,5 @@
 use super::{super::OrderedVocabIter, trainer::BpeTrainer, Error, Pair, Word};
+use crate::decoders::byte_level::bytes_char;
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::cache::{DEFAULT_CACHE_CAPACITY, MAX_LENGTH};
 use crate::utils::iter::ResultShunt;
@@ -88,7 +89,7 @@ thread_local! {
     static BPE_LOCAL_CACHE: RefCell<AHashMap<u64, AHashMap<String, Word>>> =
         RefCell::new(AHashMap::new());
 
-    static BPE_LOCAL_BYTE_CACHE: RefCell<AHashMap<u64, AHashMap<Vec<u8>, Word>>> =
+    static BPE_LOCAL_CACHE_BYTES: RefCell<AHashMap<u64, AHashMap<Vec<u8>, Word>>> =
         RefCell::new(AHashMap::new());
 
 }
@@ -667,13 +668,22 @@ impl BPE {
 
     fn tokenize_bytes_with_cache(&self, bytes: &[u8]) -> Result<Vec<Token>> {
         if self.ignore_merges {
-            // if let Some(id) = self.vocab_bytes.get(bytes) {
-            //     return Ok(vec![Token::new(
-            //         *id,
-            //         String::from_utf8_lossy(bytes).into(),
-            //         (0, bytes.len()),
-            //     )]);
-            // }
+            // Note: we do 1 byte-level "projection" once per pre-token
+            // ie, we project the bytes into the "vocabulary space" to be able to reuse self.vocab without much changes
+            // It's a bit inefficient (bunch of array lookups + alloc per pretoken)
+            // There are alternatives, for example converting the vocab from "vocabulary space" to ordinary UTF-8 bytes on load
+            // which would allow us to drop the duplicated cache static (BPE_LOCAL_CACHE_BYTES)
+            let bytes2char = bytes_char();
+            let mapped_string: Option<String> = bytes.iter().map(|byte| {
+                bytes2char.get(byte)
+            }).collect();
+            if let Some(id) = self.vocab.get(&mapped_string.unwrap_or("".to_string())) {
+                return Ok(vec![Token::new(
+                    *id,
+                    String::from_utf8_lossy(bytes).into(),
+                    (0, bytes.len()),
+                )]);
+            }
         }
         let Some(cache) = self.cache.as_ref() else {
             let mut word = self.make_word_from_bytes(bytes)?;
@@ -681,7 +691,7 @@ impl BPE {
             return Ok(self.word_to_tokens(&word).collect());
         };
         let cache_id = cache.id();
-        BPE_LOCAL_BYTE_CACHE.with(|cell| {
+        BPE_LOCAL_CACHE_BYTES.with(|cell| {
             let mut by_bpe = cell.borrow_mut();
             let local = by_bpe.entry(cache_id).or_default();
             if let Some(hit) = local.get(bytes) {
