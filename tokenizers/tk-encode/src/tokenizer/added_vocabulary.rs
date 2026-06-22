@@ -3,7 +3,6 @@ use super::{
     Token,
 };
 use crate::buckets::Bucket;
-use crate::buckets::Buckets;
 use ahash::{AHashMap, AHashSet};
 use daachorse::{DoubleArrayAhoCorasick, DoubleArrayAhoCorasickBuilder, MatchKind};
 use regex::Regex;
@@ -174,7 +173,7 @@ pub struct AddedVocabulary {
     first_byte_to_bucket: [u8; 256],
     ///  - the actual buckets. We could use small vec here. Chose to impl it.
     ///  Basically inlined if there are less than 16 buckets, else we use a heap allocated vec.
-    buckets: Buckets,
+    buckets: Box<[Bucket]>,
     prefix_vecs: AHashMap<[u8; 4], Vec<String>>,
     num_buckets: usize,
 }
@@ -201,7 +200,7 @@ impl AddedVocabulary {
             split_normalized_trie: None,
             encode_special_tokens: false,
             first_byte_to_bucket: [0; 256],
-            buckets: Buckets::Heap(Vec::new()),
+            buckets: Box::new([]),
             num_buckets: 0,
             prefix_vecs: AHashMap::new(),
         }
@@ -386,17 +385,7 @@ impl AddedVocabulary {
             vec.sort_unstable_by_key(|s| std::cmp::Reverse(s.len()));
         }
         self.num_buckets = byte_set.len();
-        // Now we set self.buckets with BUCKETS entries
-        if self.num_buckets < 4 {
-            let mut buf = [Bucket::default(); 4];
-            buf.copy_from_slice(&byte_set.into_values().collect::<Vec<_>>());
-            self.buckets = Buckets::Inline {
-                buf,
-                len: self.num_buckets as u8,
-            };
-        } else {
-            self.buckets = Buckets::Heap(byte_set.into_values().collect());
-        }
+        self.buckets = byte_set.into_values().collect();
         self.refresh_added_tokens()?;
 
         // Return the number of added tokens
