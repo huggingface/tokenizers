@@ -174,7 +174,7 @@ pub struct AddedVocabulary {
     first_byte_to_bucket: [u8; 256],
     ///  - the actual buckets. We could use small vec here. Chose to impl it.
     ///  Basically inlined if there are less than 16 buckets, else we use a heap allocated vec.
-    buckets: Vec<Buckets>,
+    buckets: Buckets,
     prefix_vecs: AHashMap<[u8; 4], Vec<String>>,
     num_buckets: usize,
 }
@@ -201,7 +201,7 @@ impl AddedVocabulary {
             split_normalized_trie: None,
             encode_special_tokens: false,
             first_byte_to_bucket: [0; 256],
-            buckets: Vec::new(),
+            buckets: Buckets::Heap(Vec::new()),
             num_buckets: 0,
             prefix_vecs: AHashMap::new(),
         }
@@ -381,10 +381,22 @@ impl AddedVocabulary {
             }
             self.added_tokens_map_r.insert(new_id, token);
         }
+        // We will do longest token match on the first token
         for vec in self.prefix_vecs.values_mut() {
             vec.sort_unstable_by_key(|s| std::cmp::Reverse(s.len()));
         }
-
+        self.num_buckets = byte_set.len();
+        // Now we set self.buckets with BUCKETS entries
+        if self.num_buckets < 4 {
+            let mut buf = [Bucket::default(); 4];
+            buf.copy_from_slice(&byte_set.into_values().collect::<Vec<_>>());
+            self.buckets = Buckets::Inline {
+                buf,
+                len: self.num_buckets as u8,
+            };
+        } else {
+            self.buckets = Buckets::Heap(byte_set.into_values().collect());
+        }
         self.refresh_added_tokens()?;
 
         // Return the number of added tokens
@@ -569,7 +581,9 @@ impl AddedVocabulary {
         sequence: &str,
     ) -> PreTokenizedString {
         // 1. if the machinery does not exist, we build it:
-
+        // if self.num_buckets == 1 {
+        //
+        // }
         return sequence.into();
     }
     /// Extract the additional vocabulary from the given sentence, normalizing it along the way.

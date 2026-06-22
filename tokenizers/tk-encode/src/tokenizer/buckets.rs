@@ -1,4 +1,4 @@
-#[derive(Clone, Hash)]
+#[derive(Clone, Hash, Default, Copy)]
 pub struct Bucket {
     pub prefix: [u8; 4],
     pub prefix_len: u8,
