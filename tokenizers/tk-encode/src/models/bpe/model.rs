@@ -1,5 +1,6 @@
 use super::{super::OrderedVocabIter, Error, Pair, Word};
 use crate::tokenizer::{Model, Result, Token};
+use crate::utils::byte_level::BYTES_CHAR_LOOKUP;
 use crate::utils::cache::{DEFAULT_CACHE_CAPACITY, MAX_LENGTH};
 use crate::utils::iter::ResultShunt;
 use ahash::AHashMap;
@@ -87,6 +88,12 @@ thread_local! {
     /// same rayon worker thread never see each other's entries.
     static BPE_LOCAL_CACHE: RefCell<AHashMap<u64, AHashMap<String, Word>>> =
         RefCell::new(AHashMap::new());
+
+    /// Byte-space sibling of `BPE_LOCAL_CACHE`
+    /// Keyed by raw bytes instead of the byte-level-mapped string. Used by the byte-level bypass path.
+    /// Storing the vocab in byte space at load time allow merging the 2 statics.
+    static BPE_LOCAL_CACHE_BYTES: RefCell<AHashMap<u64, AHashMap<Vec<u8>, Word>>> =
+        RefCell::new(AHashMap::new());
 }
 pub type Merges = Vec<(String, String)>;
 
@@ -102,6 +109,7 @@ struct Config {
     fuse_unk: bool,
     byte_fallback: bool,
     ignore_merges: bool,
+    byte_level_bypass: Option<ByteLevelBypass>,
 }
 
 /// A `BpeBuilder` can be used to create a `BPE` model with a custom configuration.
@@ -124,6 +132,7 @@ impl Default for BpeBuilder {
                 fuse_unk: false,
                 byte_fallback: false,
                 ignore_merges: false,
+                byte_level_bypass: None,
             },
         }
     }
@@ -209,6 +218,44 @@ impl BpeBuilder {
         self
     }
 
+    /// Decide whether this config is eligible for the byte-level projection bypass.
+    ///
+    /// When eligible, encoding skips the projection into byte-level "vocabulary space"
+    /// (see `BYTES_CHAR_LOOKUP`) and feeds raw bytes' token-id straight into Word
+    /// bypassing both the byte→char string mapping AND the prefix/suffix/unk handling that
+    /// `merge_word` performs. Only correct when *every* config option is compatible.
+    ///
+    /// Returns `None` when not eligible: encoding then defaults to the slow path, which is
+    /// always correct.
+    fn byte_level_bypass(&self) -> Option<ByteLevelBypass> {
+        // Destructured exhaustively on purpose: adding a Config field is a compile error
+        // until it is classified here.
+        let Config {
+            // Unsupported by the fast path — gate on these.
+            continuing_subword_prefix,
+            end_of_word_suffix,
+
+            // If the vocab maps all 256 single bytes, these have no effect.
+            unk_token: _,
+            fuse_unk: _,
+            byte_fallback: _,
+
+            // Irrelevant to eligibility.
+            dropout: _,
+            ignore_merges: _,
+            files: _,
+            vocab,
+            merges: _,
+            cache_capacity: _,
+            byte_level_bypass: _,
+        } = &self.config;
+        compute_byte_level_bypass(
+            vocab,
+            continuing_subword_prefix.as_deref(),
+            end_of_word_suffix.as_deref(),
+        )
+    }
+
     /// Returns a `BPE` model that uses the `BpeBuilder`'s configuration.
     pub fn build(mut self) -> Result<BPE> {
         // Validate dropout.
@@ -219,11 +266,12 @@ impl BpeBuilder {
         }
 
         // Read files if necessary
-        if let Some((vocab, merges)) = self.config.files {
+        if let Some((vocab, merges)) = self.config.files.take() {
             let (v, m) = BPE::read_file(&vocab, &merges)?;
             self.config.vocab = v;
             self.config.merges = m;
         }
+        self.config.byte_level_bypass = self.byte_level_bypass();
 
         let mut max_len = 0;
         let vocab_r = self
@@ -288,8 +336,42 @@ impl BpeBuilder {
             fuse_unk: self.config.fuse_unk,
             byte_fallback: self.config.byte_fallback,
             ignore_merges: self.config.ignore_merges,
+            byte_level_bypass: self.config.byte_level_bypass,
         })
     }
+}
+
+#[derive(PartialEq, Clone)]
+pub(crate) struct ByteLevelBypass {
+    /// Runtime toggle.
+    /// Eligibility is intrinsic to the model and computed eagerly, but the fast path stays disabled
+    /// until the `Tokenizer` confirms the surrounding pipeline (normalizer, pretokenizer, etc)
+    /// is a no-op byte-level pipeline.
+    pub(crate) active: bool,
+    /// Maps each raw byte (0..=255) to its token id in the vocabulary.
+    pub(crate) byte_to_token_id: Box<[u32; 256]>,
+}
+
+/// Single source of truth for byte-level fast-path eligibility.
+/// Any path that rewrites `vocab`/prefix/suffix (builder, trainer) MUST re-run this so the bypass never goes stale.
+pub(crate) fn compute_byte_level_bypass(
+    vocab: &Vocab,
+    continuing_subword_prefix: Option<&str>,
+    end_of_word_suffix: Option<&str>,
+) -> Option<ByteLevelBypass> {
+    if continuing_subword_prefix.is_some_and(|p| !p.is_empty())
+        || end_of_word_suffix.is_some_and(|s| !s.is_empty())
+    {
+        return None;
+    }
+    let mut table = [0u32; 256];
+    for byte in 0..=255u8 {
+        table[byte as usize] = *vocab.get(&BYTES_CHAR_LOOKUP[byte as usize].to_string())?;
+    }
+    Some(ByteLevelBypass {
+        active: false,
+        byte_to_token_id: Box::new(table),
+    })
 }
 
 /// A [Byte Pair Encoding](https://www.aclweb.org/anthology/P16-1162/) model.
@@ -319,6 +401,10 @@ pub struct BPE {
     pub byte_fallback: bool,
     /// Whether or not to direct output words if they are part of the vocab.
     pub ignore_merges: bool,
+
+    /// If Some, the model is eligible to the "byte-level bypass" that skips byte-level projection
+    /// Eligibility is computed in [`compute_byte_level_bypass`]
+    pub(crate) byte_level_bypass: Option<ByteLevelBypass>,
 }
 
 impl std::fmt::Debug for BPE {
@@ -352,6 +438,7 @@ impl Clone for BPE {
             vocab: self.vocab.clone(),
             vocab_r: self.vocab_r.clone(),
             merges: self.merges.clone(),
+            byte_level_bypass: self.byte_level_bypass.clone(),
             cache: fresh_cache,
             dropout: self.dropout,
             unk_token: self.unk_token.clone(),
@@ -585,6 +672,64 @@ impl BPE {
             Ok(ret)
         })
     }
+
+    fn tokenize_bytes(&self, bytes: &[u8], byte_to_token_id: &[u32; 256]) -> Result<Vec<Token>> {
+        if bytes.is_empty() {
+            return Ok(vec![]);
+        }
+        if self.dropout.is_none() || self.dropout == Some(0.0) {
+            self.tokenize_bytes_with_cache(bytes, byte_to_token_id)
+        } else {
+            let word = self.merge_word_from_bytes(bytes, byte_to_token_id);
+            Ok(self.word_to_tokens(&word).collect())
+        }
+    }
+
+    fn merge_word_from_bytes(&self, bytes: &[u8], byte_to_token_id: &[u32; 256]) -> Word {
+        let mut word = Word::with_capacity(bytes.len());
+        for byte in bytes.iter().copied() {
+            word.add(byte_to_token_id[byte as usize], 1);
+        }
+        word.merge_all(&self.merges, self.dropout);
+        word
+    }
+
+    fn tokenize_bytes_with_cache(
+        &self,
+        bytes: &[u8],
+        byte_to_token_id: &[u32; 256],
+    ) -> Result<Vec<Token>> {
+        if self.ignore_merges {
+            // One byte-level projection per pre-token: project the raw bytes back into
+            // "vocabulary space" so we can reuse `self.vocab` unchanged. Storing the vocab in
+            // byte space at load time would drop this alloc and the duplicate byte cache.
+            let mapped_string: String = bytes
+                .iter()
+                .map(|byte| BYTES_CHAR_LOOKUP[*byte as usize])
+                .collect();
+            if let Some(id) = self.vocab.get(&mapped_string) {
+                return Ok(vec![Token::new(*id, mapped_string, (0, bytes.len()))]);
+            }
+        }
+        let Some(cache) = self.cache.as_ref() else {
+            let word = self.merge_word_from_bytes(bytes, byte_to_token_id);
+            return Ok(self.word_to_tokens(&word).collect());
+        };
+        let cache_id = cache.id();
+        BPE_LOCAL_CACHE_BYTES.with(|cell| {
+            let mut by_bpe = cell.borrow_mut();
+            let local = by_bpe.entry(cache_id).or_default();
+            if let Some(hit) = local.get(bytes) {
+                return Ok(self.word_to_tokens(hit).collect());
+            }
+            let word = self.merge_word_from_bytes(bytes, byte_to_token_id);
+            let ret: Vec<Token> = self.word_to_tokens(&word).collect();
+            if bytes.len() < MAX_LENGTH && local.len() < cache.capacity {
+                local.insert(bytes.to_owned(), word);
+            }
+            Ok(ret)
+        })
+    }
 }
 
 impl Model for BPE {
@@ -599,6 +744,11 @@ impl Model for BPE {
     fn tokenize(&self, sequence: &str) -> Result<Vec<Token>> {
         if sequence.is_empty() {
             return Ok(vec![]);
+        }
+        if let Some(bypass) = &self.byte_level_bypass {
+            if bypass.active {
+                return self.tokenize_bytes(sequence.as_bytes(), &bypass.byte_to_token_id);
+            }
         }
 
         if self.dropout.is_none() || self.dropout == Some(0.0) {
@@ -1161,5 +1311,379 @@ mod tests {
                 }
             ]
         )
+    }
+
+    mod byte_level_bypass {
+        use super::*;
+
+        mod builder {
+            use super::*;
+            use crate::utils::byte_level::BYTES_CHAR_LOOKUP;
+
+            fn byte_level_vocab() -> Vocab {
+                (0..=255u8)
+                    .map(|byte| {
+                        (
+                            BYTES_CHAR_LOOKUP[byte as usize].to_string(),
+                            (255 - byte) as u32,
+                        )
+                    })
+                    .collect()
+            }
+
+            #[test]
+            fn test_byte_level_bypass_built_when_vocab_has_all_bytes() {
+                let bpe = BpeBuilder::default()
+                    .vocab_and_merges(byte_level_vocab(), vec![])
+                    .build()
+                    .unwrap();
+                let table = bpe
+                    .byte_level_bypass
+                    .as_ref()
+                    .map(|bypass| &bypass.byte_to_token_id)
+                    .expect("a complete byte-level vocab must produce a byte_to_token_id table");
+
+                for byte in 0..=255u8 {
+                    assert_eq!(
+                        table[byte as usize],
+                        (255 - byte) as u32,
+                        "byte 0x{byte:02X} must map to the id of its byte-level token"
+                    );
+                }
+            }
+
+            #[test]
+            fn test_byte_level_bypass_is_none_when_vocab_misses_bytes() {
+                let mut vocab = byte_level_vocab();
+                // Remove the space ' ' from the vocab
+                vocab.remove(&BYTES_CHAR_LOOKUP[b' ' as usize].to_string());
+
+                let bpe = BpeBuilder::default()
+                    .vocab_and_merges(vocab, vec![])
+                    .build()
+                    .unwrap();
+
+                assert!(
+                    bpe.byte_level_bypass.is_none(),
+                    "incomplete byte-level vocab disables the fast path"
+                );
+            }
+
+            #[test]
+            fn test_byte_level_bypass_is_none_with_continuing_subword_prefix() {
+                // The fast path builds words straight from raw bytes and never applies
+                // `continuing_subword_prefix`, so a vocab that needs it must NOT be eligible.
+                let bpe = BpeBuilder::default()
+                    .vocab_and_merges(byte_level_vocab(), vec![])
+                    .continuing_subword_prefix("##".to_string())
+                    .build()
+                    .unwrap();
+
+                assert!(
+                    bpe.byte_level_bypass.is_none(),
+                    "continuing_subword_prefix must disable the fast path"
+                );
+            }
+
+            #[test]
+            fn test_byte_level_bypass_is_none_with_end_of_word_suffix() {
+                let bpe = BpeBuilder::default()
+                    .vocab_and_merges(byte_level_vocab(), vec![])
+                    .end_of_word_suffix("</w>".to_string())
+                    .build()
+                    .unwrap();
+
+                assert!(
+                    bpe.byte_level_bypass.is_none(),
+                    "end_of_word_suffix must disable the fast path"
+                );
+            }
+
+            #[test]
+            fn test_byte_level_bypass_eligible_with_empty_prefix_and_suffix() {
+                // Real models serialize these as "" (not null); empty is inert.
+                let bpe = BpeBuilder::default()
+                    .vocab_and_merges(byte_level_vocab(), vec![])
+                    .continuing_subword_prefix(String::new())
+                    .end_of_word_suffix(String::new())
+                    .build()
+                    .unwrap();
+
+                assert!(
+                    bpe.byte_level_bypass.is_some(),
+                    "empty prefix/suffix must stay eligible"
+                );
+            }
+        }
+
+        // Exclude on windows (depends on test fixtures the CI does not download)
+        #[cfg(not(target_os = "windows"))]
+        mod tokenize_bytes {
+            use super::*;
+            use crate::utils::byte_level::BYTES_CHAR_LOOKUP;
+
+            const MISSING_FIXTURES: &str =
+                "test fixtures not found — run `make test` to download them";
+
+            fn gpt2_bpe() -> BPE {
+                BPE::from_file("../data/gpt2-vocab.json", "../data/gpt2-merges.txt")
+                    .build()
+                    .expect(MISSING_FIXTURES)
+            }
+
+            fn read_fixture(path: &str) -> String {
+                std::fs::read_to_string(path).expect(MISSING_FIXTURES)
+            }
+
+            fn bytes_to_byte_level_string(raw: &[u8]) -> String {
+                raw.iter()
+                    .map(|byte| BYTES_CHAR_LOOKUP[*byte as usize])
+                    .collect()
+            }
+
+            /// The step-2 invariant: tokenizing raw bytes yields the same token ids as
+            /// tokenizing the ByteLevel-mapped string the slow path sees. Offsets differ by
+            /// design (raw-byte space vs mapped-char space), so we compare ids only — offsets
+            /// get their own invariant below.
+            fn assert_same_ids(bpe: &BPE, raw: &[u8]) {
+                let ids =
+                    |tokens: Vec<Token>| -> Vec<u32> { tokens.into_iter().map(|t| t.id).collect() };
+                let from_string = ids(bpe.tokenize(&bytes_to_byte_level_string(raw)).unwrap());
+                let from_bytes = ids(bpe
+                    .tokenize_bytes(
+                        raw,
+                        bpe.byte_level_bypass
+                            .as_ref()
+                            .map(|bypass| &bypass.byte_to_token_id)
+                            .unwrap(),
+                    )
+                    .unwrap());
+                assert_eq!(
+                    from_string, from_bytes,
+                    "token ids diverge for raw bytes {raw:?}"
+                );
+            }
+
+            #[test]
+            fn test_equivalent_on_big_txt() {
+                let bpe = gpt2_bpe();
+                for line in read_fixture("../data/big.txt").lines() {
+                    assert_same_ids(&bpe, line.as_bytes());
+                }
+            }
+
+            #[test]
+            fn test_equivalent_on_non_latin() {
+                let bpe = gpt2_bpe();
+                for line in read_fixture("../data/unigram_wagahaiwa_nekodearu.txt").lines() {
+                    assert_same_ids(&bpe, line.as_bytes());
+                }
+            }
+
+            #[test]
+            fn test_equivalent_on_empty_and_whitespace() {
+                let bpe = gpt2_bpe();
+                for raw in [
+                    "", " ", "  ", "   ", " a", "a ", "\n", "\t", "a\nb", " \t \n ",
+                ] {
+                    assert_same_ids(&bpe, raw.as_bytes());
+                }
+            }
+
+            #[test]
+            fn test_equivalent_on_every_single_byte() {
+                let bpe = gpt2_bpe();
+                for byte in 0..=255u8 {
+                    assert_same_ids(&bpe, &[byte]);
+                }
+            }
+
+            #[test]
+            fn test_equivalent_on_byte_pairs_and_triples() {
+                let bpe = gpt2_bpe();
+                assert_same_ids(&bpe, b"ab");
+                assert_same_ids(&bpe, b" the");
+                assert_same_ids(&bpe, &[0x20, b't', b'h', b'e']);
+                assert_same_ids(&bpe, &[0x00, 0x01, 0x02]);
+                assert_same_ids(&bpe, &[0xff, 0xfe]);
+            }
+
+            #[test]
+            fn test_equivalent_on_multibyte_unicode() {
+                let bpe = gpt2_bpe();
+                // Accents, Greek, CJK, an emoji, a flag, a ZWJ family, and a mixed string —
+                // all force the high bytes 0x80–0xFF through the byte path.
+                for raw in [
+                    "café",
+                    "naïve",
+                    "Ωμέγα",
+                    "日本語",
+                    "👍",
+                    "🇫🇷",
+                    "👨‍👩‍👧",
+                    "a日b👍c",
+                ] {
+                    assert_same_ids(&bpe, raw.as_bytes());
+                }
+            }
+
+            #[test]
+            fn test_equivalent_on_deep_merges() {
+                let bpe = gpt2_bpe();
+                for raw in [
+                    "a".repeat(64),
+                    "the the the the the".to_string(),
+                    format!(" {}", "ab".repeat(32)),
+                ] {
+                    assert_same_ids(&bpe, raw.as_bytes());
+                }
+            }
+
+            #[test]
+            fn test_equivalent_when_cache_is_warm() {
+                let bpe = gpt2_bpe();
+                // First call populates the cache, second hits it; both must agree.
+                for _ in 0..2 {
+                    assert_same_ids(&bpe, b"the quick brown fox");
+                }
+            }
+
+            #[test]
+            fn test_equivalent_when_ignore_merges_is_set() {
+                // A complete byte-level base vocab (all 256 mapped chars, id = byte), so
+                // `byte_level_bypass` is built.
+                let mut vocab: Vocab = (0..=255u8)
+                    .map(|byte| (BYTES_CHAR_LOOKUP[byte as usize].to_string(), byte as u32))
+                    .collect();
+                // '.' and ':' are printable, so they map to themselves. Add the pair ".:" and
+                // the whole sequence ".:.:" as their own tokens.
+                vocab.insert(".:".to_string(), 256);
+                vocab.insert(".:.:".to_string(), 257);
+
+                // Merge "." + ":" -> ".:", but nothing merges ".:" + ".:". So the merge-based
+                // tokenization of ".:.:" is [".:", ".:"], while the `ignore_merges` shortcut
+                // returns the whole token ".:.:".
+                let bpe = BpeBuilder::default()
+                    .vocab_and_merges(vocab, vec![(".".to_string(), ":".to_string())])
+                    .ignore_merges(true)
+                    .build()
+                    .unwrap();
+
+                assert_same_ids(&bpe, b".:.:");
+            }
+
+            #[test]
+            fn test_ignore_merges_fast_path_preserves_byte_level_token_value() {
+                // Complete byte-level base vocab (all 256 mapped chars, id = byte).
+                let mut vocab: Vocab = (0..=255u8)
+                    .map(|byte| (BYTES_CHAR_LOOKUP[byte as usize].to_string(), byte as u32))
+                    .collect();
+                // Add " the" as a single token. In byte-level space the leading space maps to
+                // 'Ġ', so the token's mapped form is "Ġthe" — i.e. the vocab string differs
+                // from the raw bytes.
+                let mapped = bytes_to_byte_level_string(b" the");
+                vocab.insert(mapped.clone(), 256);
+
+                let bpe = BpeBuilder::default()
+                    .vocab_and_merges(vocab, vec![])
+                    .ignore_merges(true)
+                    .build()
+                    .unwrap();
+
+                let values = |tokens: Vec<Token>| -> Vec<String> {
+                    tokens.into_iter().map(|t| t.value).collect()
+                };
+                // Slow path sees the mapped string and hits the ignore_merges shortcut,
+                // emitting value "Ġthe".
+                let from_string = values(bpe.tokenize(&mapped).unwrap());
+                // Fast path takes raw bytes; its token value must match the slow path's
+                // byte-level-mapped value, not the raw decoded bytes.
+                let from_bytes = values(
+                    bpe.tokenize_bytes(
+                        b" the",
+                        bpe.byte_level_bypass
+                            .as_ref()
+                            .map(|bypass| &bypass.byte_to_token_id)
+                            .unwrap(),
+                    )
+                    .unwrap(),
+                );
+
+                assert_eq!(
+                    from_string, from_bytes,
+                    "ignore_merges fast path must emit the byte-level-mapped token value"
+                );
+            }
+
+            #[test]
+            fn test_equivalent_when_unk_and_byte_fallback_are_set() {
+                let mut vocab: Vocab = (0..=255u8)
+                    .map(|byte| (BYTES_CHAR_LOOKUP[byte as usize].to_string(), byte as u32))
+                    .collect();
+                vocab.insert("<unk>".to_string(), 256);
+                vocab.insert("th".to_string(), 257);
+                vocab.insert("the".to_string(), 258);
+
+                let bpe = BpeBuilder::default()
+                    .vocab_and_merges(
+                        vocab,
+                        vec![
+                            ("t".to_string(), "h".to_string()),
+                            ("th".to_string(), "e".to_string()),
+                        ],
+                    )
+                    .unk_token("<unk>".to_string())
+                    .fuse_unk(true)
+                    .byte_fallback(true)
+                    .build()
+                    .unwrap();
+
+                assert!(
+                    bpe.byte_level_bypass.is_some(),
+                    "unk/fuse_unk/byte_fallback must not disable the bypass"
+                );
+                for raw in [
+                    b"the".as_slice(),
+                    b" the the the",
+                    &[0xff, 0xfe, 0x00],
+                    "café 日本 👍".as_bytes(),
+                ] {
+                    assert_same_ids(&bpe, raw);
+                }
+            }
+
+            #[test]
+            fn test_fast_path_offsets_tile_the_input() {
+                let bpe = gpt2_bpe();
+                let byte_to_token_id = bpe
+                    .byte_level_bypass
+                    .as_ref()
+                    .map(|bypass| &bypass.byte_to_token_id)
+                    .unwrap();
+                for raw in ["", "hello", " a b c", "café 日本 👍", "the the the"] {
+                    let tokens = bpe
+                        .tokenize_bytes(raw.as_bytes(), byte_to_token_id)
+                        .unwrap();
+                    let mut cursor = 0;
+                    for token in &tokens {
+                        assert_eq!(token.offsets.0, cursor, "gap/overlap in {raw:?}");
+                        cursor = token.offsets.1;
+                    }
+                    assert_eq!(cursor, raw.len(), "offsets must cover all of {raw:?}");
+                }
+            }
+
+            #[test]
+            fn test_equivalent_with_zero_dropout() {
+                // dropout == 0.0 must take the cached path, identical to None.
+                let bpe = BPE::from_file("../data/gpt2-vocab.json", "../data/gpt2-merges.txt")
+                    .dropout(0.0)
+                    .build()
+                    .expect(MISSING_FIXTURES);
+                for raw in ["the quick brown fox", "café 日本 👍", " a b c", ""] {
+                    assert_same_ids(&bpe, raw.as_bytes());
+                }
+            }
+        }
     }
 }
