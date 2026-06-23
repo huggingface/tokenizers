@@ -1,14 +1,11 @@
-use crate::processors::byte_level::bytes_char;
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
+use crate::utils::byte_level::BYTES_CHAR_LOOKUP;
 use crate::utils::macro_rules_attribute;
-use ahash::{AHashMap, AHashSet};
-use std::sync::LazyLock;
+use ahash::AHashSet;
 
 #[derive(Clone, Debug)]
 #[macro_rules_attribute(impl_serde_type!)]
 pub struct ByteLevel;
-
-static BYTES_CHAR: LazyLock<AHashMap<u8, char>> = LazyLock::new(bytes_char);
 
 impl Default for ByteLevel {
     fn default() -> Self {
@@ -22,7 +19,7 @@ impl ByteLevel {
     }
 
     pub fn alphabet() -> AHashSet<char> {
-        BYTES_CHAR.values().copied().collect()
+        BYTES_CHAR_LOOKUP.iter().copied().collect()
     }
 }
 
@@ -38,7 +35,7 @@ impl Normalizer for ByteLevel {
                     s.as_bytes()[i..i + size]
                         .iter()
                         .enumerate()
-                        .map(|(i, b)| (BYTES_CHAR[b], isize::from(i > 0))),
+                        .map(|(i, b)| (BYTES_CHAR_LOOKUP[*b as usize], isize::from(i > 0))),
                 );
             }
             normalized.transform(transformations, 0);
