@@ -24,6 +24,32 @@ pub static CHAR_BYTES_LOOKUP: LazyLock<AHashMap<char, u8>> = LazyLock::new(|| {
         .collect()
 });
 
+/// Expands a UTF-8 string into its GPT-2 byte-level character sequence, paired with the
+/// alignment deltas expected by [`NormalizedString::transform`].
+///
+/// Each byte of `input` becomes one [`BYTES_CHAR_LOOKUP`] character, so a multi-byte
+/// codepoint explodes into several byte-level chars. The accompanying `isize` is the
+/// alignment `change`: `0` for the first byte of a source char (it replaces that char) and
+/// `1` for every following byte (each is a new char mapped back onto the same source char),
+/// keeping offset tracking correct through the expansion.
+///
+/// The result feeds straight into `normalized.transform(byte_level_transform(s), 0)`.
+///
+/// [`NormalizedString::transform`]: crate::tokenizer::NormalizedString::transform
+pub(crate) fn byte_level_transform(input: &str) -> Vec<(char, isize)> {
+    let mut transformations: Vec<(char, isize)> = vec![];
+    for (index, character) in input.char_indices() {
+        let char_size = character.len_utf8();
+        transformations.extend(
+            input.as_bytes()[index..index + char_size]
+                .iter()
+                .enumerate()
+                .map(|(i, b)| (BYTES_CHAR_LOOKUP[*b as usize], isize::from(i > 0))),
+        );
+    }
+    transformations
+}
+
 fn make_byte_char_lookup() -> [char; 256] {
     let mut lookup: [char; 256] = ['\0'; 256];
 

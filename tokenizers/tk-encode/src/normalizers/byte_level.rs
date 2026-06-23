@@ -1,5 +1,5 @@
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
-use crate::utils::byte_level::BYTES_CHAR_LOOKUP;
+use crate::utils::byte_level::{byte_level_transform, BYTES_CHAR_LOOKUP};
 use crate::utils::macro_rules_attribute;
 use ahash::AHashSet;
 
@@ -28,17 +28,7 @@ impl Normalizer for ByteLevel {
     fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
         if !normalized.is_empty() {
             let s = normalized.get();
-            let mut transformations: Vec<(char, isize)> = Vec::with_capacity(s.len());
-            for (i, cur_char) in s.char_indices() {
-                let size = cur_char.len_utf8();
-                transformations.extend(
-                    s.as_bytes()[i..i + size]
-                        .iter()
-                        .enumerate()
-                        .map(|(i, b)| (BYTES_CHAR_LOOKUP[*b as usize], isize::from(i > 0))),
-                );
-            }
-            normalized.transform(transformations, 0);
+            normalized.transform(byte_level_transform(s), 0);
         }
         Ok(())
     }
