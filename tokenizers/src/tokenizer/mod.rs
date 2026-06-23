@@ -524,7 +524,8 @@ impl Tokenizer {
     }
 
     /// Test-only: used to compare the bypass and slow paths on the same tokenizer in equivalence tests.
-    #[cfg(test)]
+    /// Dead-code on windows (because equivalence tests are not run there)
+    #[cfg(all(test, not(target_os = "windows")))]
     pub(crate) fn set_byte_level_bypass(&mut self, enabled: bool) {
         self.apply_byte_level_bypass(enabled);
     }
