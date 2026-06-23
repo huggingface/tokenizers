@@ -47,6 +47,24 @@ pub enum ParityVariant {
     Window,
 }
 
+/// Per-language length bookkeeping produced before the merge loop by
+/// [`ParityBpeTrainer::init_lengths`].
+struct LengthState {
+    /// Dev-set vocabulary: token-id sequence -> per-language frequency. Used
+    /// to recompute lengths after each merge in dev mode. Empty in ratio mode
+    /// and in the training-data fallback.
+    dev_vocab: AHashMap<Vec<u32>, Vec<i64>>,
+    /// Current per-language total token length (from the dev set, or the
+    /// training data when no dev set is supplied). Drives Base/Window
+    /// selection when not in ratio mode.
+    lengths: Vec<i64>,
+    /// Ratio mode only: initial per-language training lengths, the baseline
+    /// for the compression-rate computation.
+    initial_lengths_f64: Vec<f64>,
+    /// Ratio mode only: current per-language training lengths as `f64`.
+    lengths_f64: Vec<f64>,
+}
+
 /// Configuration for the parity-aware BPE trainer.
 struct ParityConfig {
     min_frequency: u64,
@@ -244,9 +262,30 @@ impl ParityBpeTrainerBuilder {
 /// which language to optimize at each merge step, ensuring cross-lingual
 /// fairness in tokenization.
 ///
-/// Language selection is driven by dev set token lengths (matching the
-/// Python reference implementation exactly). The language with the longest
-/// total dev-set token length is selected for the next merge.
+/// # Reference
+///
+/// Implements parity-aware BPE as introduced by Negar Foroutan, Clara
+/// Meister, Debjit Paul, Joel Niklaus, Sina Ahmadi, Antoine Bosselut, and
+/// Rico Sennrich, "Parity-Aware Byte-Pair Encoding: Improving Cross-lingual
+/// Fairness in Tokenization", ACL 2026 (<https://arxiv.org/abs/2508.04796>).
+///
+/// ```bibtex
+/// @inproceedings{foroutan-etal-2026-parity,
+///     title = {Parity-Aware Byte-Pair Encoding: Improving Cross-lingual Fairness in Tokenization},
+///     author = {Foroutan, Negar and Meister, Clara and Paul, Debjit and Niklaus, Joel and Ahmadi, Sina and Bosselut, Antoine and Sennrich, Rico},
+///     booktitle = {Proceedings of the 64th Annual Meeting of the Association for Computational Linguistics},
+///     year = {2026},
+///     url = {https://arxiv.org/abs/2508.04796},
+/// }
+/// ```
+///
+/// At each merge step the trainer selects one language to optimize, matching
+/// the Python reference implementation exactly. The score is the language's
+/// total token length (from the dev set when one is fed, otherwise the
+/// training data), or, when per-language `ratio`s are given, the
+/// ratio-adjusted compression rate. The `Base` variant takes the extreme
+/// language directly; the `Window` variant routes the choice through a
+/// moving window to keep any one language from monopolizing merges.
 ///
 /// Key optimizations over the Python implementation:
 /// - **Linked-list Word representation** for O(1) merge operations
@@ -753,15 +792,10 @@ impl ParityBpeTrainer {
         length_change
     }
 
-    /// Main training method. Returns (special_tokens, ordered_merge_strings).
-    /// Each merge string is "token_a token_b" matching the Python output format.
-    #[allow(clippy::map_entry)]
-    pub fn do_train(&self, model: &mut BPE) -> Result<(Vec<AddedToken>, Vec<String>)> {
-        let num_langs = self.language_words.len();
-        if num_langs == 0 {
-            return Err("No language data has been fed".into());
-        }
-
+    /// Validate the per-language configuration against the number of fed
+    /// languages: ratio length and values, dev-language length, and the
+    /// window-variant parameters.
+    fn validate_train_config(&self, num_langs: usize) -> Result<()> {
         if let Some(ref ratio) = self.ratio {
             if ratio.len() != num_langs {
                 return Err(format!(
@@ -808,6 +842,346 @@ impl ParityBpeTrainer {
                 }
             }
         }
+
+        Ok(())
+    }
+
+    /// Build the summed `global_pair_counts` map and the parallel
+    /// `global_queue` heap for the hybrid global phase.
+    ///
+    /// The global phase selects merges on pair counts summed across all
+    /// languages. Without a maintained heap this would require rescanning
+    /// every language's `pair_counts` map (hundreds of millions of entries at
+    /// full scale) every single merge — quadratic in corpus size ×
+    /// `global_merges`. Instead the summed map and heap are built once here
+    /// and updated incrementally by [`update_global_after_merge`] as the
+    /// per-language counts shift.
+    fn build_global_heap(
+        &self,
+        per_lang_pair_counts: &[AHashMap<Pair, i64>],
+        id_to_word: &[CompactString],
+    ) -> (AHashMap<Pair, i64>, OctonaryHeap<PairMerge>) {
+        let mut global_pair_counts: AHashMap<Pair, i64> = AHashMap::new();
+        for lang_counts in per_lang_pair_counts {
+            for (&pair, &count) in lang_counts {
+                if count > 0 {
+                    *global_pair_counts.entry(pair).or_default() += count;
+                }
+            }
+        }
+        let mut global_queue = OctonaryHeap::with_capacity(global_pair_counts.len());
+        for (&pair, &count) in &global_pair_counts {
+            if count > 0 {
+                global_queue.push(PairMerge {
+                    pair,
+                    count: count as u64,
+                    str_key: (
+                        id_to_word[pair.0 as usize].clone(),
+                        id_to_word[pair.1 as usize].clone(),
+                    ),
+                });
+            }
+        }
+        info!(
+            "Global hybrid mode: initialized global pair heap with {} pairs \
+             (first {} merges will use global mode)",
+            global_pair_counts.len(),
+            self.global_merges
+        );
+        (global_pair_counts, global_queue)
+    }
+
+    /// Compute the initial per-language lengths (and, in dev mode, the dev
+    /// vocabulary) that drive language selection.
+    ///
+    /// Three mutually exclusive modes:
+    /// - ratio mode (`ratio` set): initial and current lengths come from the
+    ///   training data, as `f64`, and feed the compression-rate computation.
+    /// - dev mode (dev data fed, no ratio): dev words are tokenized into the
+    ///   same token IDs as training (applying `continuing_subword_prefix` /
+    ///   `end_of_word_suffix`), and lengths are summed over the dev vocab.
+    /// - fallback (neither): lengths come from the training data.
+    fn init_lengths(
+        &self,
+        num_langs: usize,
+        per_lang_words: &[Vec<Word>],
+        per_lang_counts: &[Vec<u64>],
+        word_to_id: &AHashMap<CompactString, u32>,
+    ) -> LengthState {
+        let has_dev = !self.dev_language_words.is_empty();
+        let has_ratio = self.ratio.is_some();
+
+        let mut dev_vocab: AHashMap<Vec<u32>, Vec<i64>> = AHashMap::new();
+        let mut lengths: Vec<i64> = vec![0i64; num_langs];
+        let mut initial_lengths_f64: Vec<f64> = Vec::new();
+        let mut lengths_f64: Vec<f64> = Vec::new();
+
+        if has_ratio {
+            // Ratio mode: compute initial lengths from training data
+            for lang in 0..num_langs {
+                let total: f64 = per_lang_words[lang]
+                    .iter()
+                    .zip(per_lang_counts[lang].iter())
+                    .map(|(word, &count)| word.get_chars().len() as f64 * count as f64)
+                    .sum();
+                initial_lengths_f64.push(total);
+                lengths_f64.push(total);
+            }
+            info!(
+                "Ratio mode: initial lengths: {:?}, ratios: {:?}",
+                initial_lengths_f64,
+                self.ratio.as_ref().unwrap()
+            );
+        } else if has_dev {
+            // Tokenize dev words into char ID sequences, applying the same
+            // continuing_subword_prefix / end_of_word_suffix as tokenize_words()
+            // so that dev vocab tracks the same token IDs used during training.
+            for (lang_idx, dev_wc) in self.dev_language_words.iter().enumerate() {
+                for (word_str, &count) in dev_wc {
+                    let mut char_ids = Vec::new();
+                    let mut valid = true;
+                    for (is_first, is_last, c) in word_str.chars().with_first_and_last() {
+                        let bare = CompactString::from(c.to_string());
+                        if word_to_id.contains_key(&bare) {
+                            let mut s = c.to_string();
+                            if !is_first {
+                                if let Some(prefix) = &self.continuing_subword_prefix {
+                                    s.insert_str(0, prefix);
+                                }
+                            }
+                            if is_last {
+                                if let Some(suffix) = &self.end_of_word_suffix {
+                                    s.push_str(suffix);
+                                }
+                            }
+                            let key = CompactString::from(&s);
+                            if let Some(&id) = word_to_id.get(&key) {
+                                char_ids.push(id);
+                            } else {
+                                valid = false;
+                                break;
+                            }
+                        } else {
+                            valid = false;
+                            break;
+                        }
+                    }
+                    if valid && !char_ids.is_empty() {
+                        let entry = dev_vocab
+                            .entry(char_ids)
+                            .or_insert_with(|| vec![0i64; num_langs]);
+                        entry[lang_idx] += count as i64;
+                    }
+                }
+            }
+
+            // Compute initial lengths from dev vocab: sum(word_len * freq) per language
+            for (word, freqs) in &dev_vocab {
+                for lang in 0..num_langs {
+                    lengths[lang] += word.len() as i64 * freqs[lang];
+                }
+            }
+            info!(
+                "Dev vocab: {} unique words, initial lengths: {:?}",
+                dev_vocab.len(),
+                lengths
+            );
+        } else {
+            // Fall back to training data lengths
+            for lang in 0..num_langs {
+                let total: i64 = per_lang_words[lang]
+                    .iter()
+                    .zip(per_lang_counts[lang].iter())
+                    .map(|(word, &count)| word.get_chars().len() as i64 * count as i64)
+                    .sum();
+                lengths[lang] = total;
+            }
+        }
+
+        LengthState {
+            dev_vocab,
+            lengths,
+            initial_lengths_f64,
+            lengths_f64,
+        }
+    }
+
+    /// Resolve the number of merge operations to perform.
+    ///
+    /// When `total_symbols` is false this is simply `num_merges`. When it is
+    /// true, `num_merges` is the TOTAL target vocabulary size, counting the
+    /// special tokens, alphabet, affix-variant chars and merges together, so
+    /// the merge count is `target - base_symbols`, where `base_symbols` is the
+    /// number of symbols already placed (specials, alphabet, and any
+    /// prefix/suffix char variants created during tokenization). The final
+    /// vocabulary then equals the target.
+    ///
+    /// A previous version subtracted the count of distinct word-internal plus
+    /// word-final characters. With no end-of-word suffix each character is a
+    /// single token, so characters appearing in both positions were subtracted
+    /// twice and the special tokens were ignored, leaving the final vocabulary
+    /// short of the target.
+    fn resolve_merge_count(&self, base_symbols: usize) -> usize {
+        if self.total_symbols {
+            let merge_target = self.num_merges.saturating_sub(base_symbols);
+            info!(
+                "total_symbols: target vocab {}, base symbols (specials+alphabet) {}, \
+                 merge operations {}",
+                self.num_merges, base_symbols, merge_target
+            );
+            merge_target
+        } else {
+            self.num_merges
+        }
+    }
+
+    /// Select which language to optimize for the next merge.
+    ///
+    /// Returns `usize::MAX` while still in the global phase (`merge_count <
+    /// global_merges`). Otherwise picks per `variant`: Base takes the extreme
+    /// language directly; Window routes through the moving-window mechanism and
+    /// records the choice in `selected_indices`. Exhausted languages are
+    /// skipped. In ratio mode the score is the adjusted compression rate
+    /// (`(initial / current) / ratio`); otherwise it is the current length.
+    #[allow(clippy::too_many_arguments)]
+    fn select_next_language(
+        &self,
+        merge_count: usize,
+        has_ratio: bool,
+        initial_lengths_f64: &[f64],
+        lengths_f64: &[f64],
+        lengths: &[i64],
+        exhausted: &AHashSet<usize>,
+        selection_threshold: f64,
+        selected_indices: &mut VecDeque<usize>,
+    ) -> usize {
+        if merge_count < self.global_merges {
+            return usize::MAX; // signals "use global"
+        }
+
+        if has_ratio {
+            let ratio_vec = self.ratio.as_ref().unwrap();
+            // compression_rates = initial_lengths / lengths
+            // adjusted = compression_rates / ratio
+            let adjusted: Vec<f64> = initial_lengths_f64
+                .iter()
+                .zip(lengths_f64.iter())
+                .zip(ratio_vec.iter())
+                .map(|((&init, &cur), &r)| (init / cur) / r)
+                .collect();
+
+            match self.variant {
+                ParityVariant::Base => {
+                    // min(enumerate(adjusted)) — pick language with least adjusted compression
+                    // Skip exhausted languages
+                    let mut best_idx = 0;
+                    let mut best_val = f64::INFINITY;
+                    for (idx, &val) in adjusted.iter().enumerate() {
+                        if !exhausted.contains(&idx) && val < best_val {
+                            best_val = val;
+                            best_idx = idx;
+                        }
+                    }
+                    best_idx
+                }
+                ParityVariant::Window => {
+                    // Python: select_language_index(-adjusted_compression_rates, ...)
+                    let mut neg_adjusted: Vec<f64> = adjusted.iter().map(|&v| -v).collect();
+                    for &ex in exhausted {
+                        neg_adjusted[ex] = f64::NEG_INFINITY;
+                    }
+                    let idx = self.select_language_window_f64(
+                        &neg_adjusted,
+                        selected_indices,
+                        selection_threshold,
+                    );
+                    selected_indices.push_back(idx);
+                    if selected_indices.len() > self.window_size {
+                        selected_indices.pop_front();
+                    }
+                    idx
+                }
+            }
+        } else {
+            match self.variant {
+                ParityVariant::Base => {
+                    // Pick language with longest total token length.
+                    // Skip exhausted languages.
+                    let mut best_idx = 0;
+                    let mut best_val = i64::MIN;
+                    for (idx, &val) in lengths.iter().enumerate() {
+                        if !exhausted.contains(&idx) && val > best_val {
+                            best_val = val;
+                            best_idx = idx;
+                        }
+                    }
+                    best_idx
+                }
+                ParityVariant::Window => {
+                    let mut effective_lengths = lengths.to_vec();
+                    for &ex in exhausted {
+                        effective_lengths[ex] = i64::MIN;
+                    }
+                    let idx = self.select_language_window(
+                        &effective_lengths,
+                        selected_indices,
+                        selection_threshold,
+                    );
+                    selected_indices.push_back(idx);
+                    if selected_indices.len() > self.window_size {
+                        selected_indices.pop_front();
+                    }
+                    idx
+                }
+            }
+        }
+    }
+
+    /// Recompute the global pair counts for every pair whose per-language
+    /// count changed this merge, and push the updated entries onto the global
+    /// heap. The heap uses lazy deletion, so stale entries are ignored on pop.
+    fn update_global_after_merge(
+        &self,
+        changed_pairs: &AHashSet<Pair>,
+        per_lang_pair_counts: &[AHashMap<Pair, i64>],
+        id_to_word: &[CompactString],
+        global_pair_counts: &mut AHashMap<Pair, i64>,
+        global_queue: &mut OctonaryHeap<PairMerge>,
+    ) {
+        for pair in changed_pairs.iter().copied() {
+            let mut total: i64 = 0;
+            for lang_counts in per_lang_pair_counts {
+                if let Some(&c) = lang_counts.get(&pair) {
+                    total += c;
+                }
+            }
+            if total < 0 {
+                total = 0;
+            }
+            global_pair_counts.insert(pair, total);
+            if total > 0 {
+                global_queue.push(PairMerge {
+                    pair,
+                    count: total as u64,
+                    str_key: (
+                        id_to_word[pair.0 as usize].clone(),
+                        id_to_word[pair.1 as usize].clone(),
+                    ),
+                });
+            }
+        }
+    }
+
+    /// Main training method. Returns (special_tokens, ordered_merge_strings).
+    /// Each merge string is "token_a token_b" matching the Python output format.
+    #[allow(clippy::map_entry)]
+    pub fn do_train(&self, model: &mut BPE) -> Result<(Vec<AddedToken>, Vec<String>)> {
+        let num_langs = self.language_words.len();
+        if num_langs == 0 {
+            return Err("No language data has been fed".into());
+        }
+
+        self.validate_train_config(num_langs)?;
 
         let max_token_length: usize = self.max_token_length.unwrap_or(usize::MAX);
         let progress = self.setup_progress();
@@ -869,174 +1243,31 @@ impl ParityBpeTrainer {
         }
 
         // 4c. Build global pair counts + heap for the hybrid global phase.
-        //
-        // Only populated when `global_merges > 0`. The global phase selects
-        // merges on pair counts summed across all languages, and without a
-        // maintained heap this would require rescanning every language's
-        // pair_counts map (hundreds of millions of entries at full scale)
-        // every single merge — quadratic in corpus size × global_merges.
-        //
-        // Instead we maintain a summed `global_pair_counts` map and a
-        // parallel `global_queue` heap, updated incrementally whenever the
-        // underlying per-language counts shift due to a merge. Pop is then
-        // O(log n) with lazy deletion, matching the per-language heap cost.
+        // Only needed when `global_merges > 0`; see `build_global_heap`.
         let want_global = self.global_merges > 0;
-        let mut global_pair_counts: AHashMap<Pair, i64> = AHashMap::new();
-        let mut global_queue: OctonaryHeap<PairMerge> = OctonaryHeap::new();
-        if want_global {
-            for lang_counts in &per_lang_pair_counts {
-                for (&pair, &count) in lang_counts {
-                    if count > 0 {
-                        *global_pair_counts.entry(pair).or_default() += count;
-                    }
-                }
-            }
-            global_queue = OctonaryHeap::with_capacity(global_pair_counts.len());
-            for (&pair, &count) in &global_pair_counts {
-                if count > 0 {
-                    global_queue.push(PairMerge {
-                        pair,
-                        count: count as u64,
-                        str_key: (
-                            id_to_word[pair.0 as usize].clone(),
-                            id_to_word[pair.1 as usize].clone(),
-                        ),
-                    });
-                }
-            }
-            info!(
-                "Global hybrid mode: initialized global pair heap with {} pairs \
-                 (first {} merges will use global mode)",
-                global_pair_counts.len(),
-                self.global_merges
-            );
-        }
+        let (mut global_pair_counts, mut global_queue) = if want_global {
+            self.build_global_heap(&per_lang_pair_counts, &id_to_word)
+        } else {
+            (AHashMap::new(), OctonaryHeap::new())
+        };
 
-        // 5. Build dev vocab and compute initial lengths
+        // 5. Build dev vocab and compute initial per-language lengths.
         let has_dev = !self.dev_language_words.is_empty();
         let has_ratio = self.ratio.is_some();
         let parity_num_langs = num_langs;
-
-        let mut dev_vocab: AHashMap<Vec<u32>, Vec<i64>> = AHashMap::new();
-        let mut lengths: Vec<i64> = vec![0i64; parity_num_langs];
-
-        // For ratio mode: track initial and current lengths as f64
-        let mut initial_lengths_f64: Vec<f64> = Vec::new();
-        let mut lengths_f64: Vec<f64> = Vec::new();
-
-        if has_ratio {
-            // Ratio mode: compute initial lengths from training data
-            for lang in 0..num_langs {
-                let total: f64 = per_lang_words[lang]
-                    .iter()
-                    .zip(per_lang_counts[lang].iter())
-                    .map(|(word, &count)| word.get_chars().len() as f64 * count as f64)
-                    .sum();
-                initial_lengths_f64.push(total);
-                lengths_f64.push(total);
-            }
-            info!(
-                "Ratio mode: initial lengths: {:?}, ratios: {:?}",
-                initial_lengths_f64,
-                self.ratio.as_ref().unwrap()
-            );
-        } else if has_dev {
-            // Tokenize dev words into char ID sequences, applying the same
-            // continuing_subword_prefix / end_of_word_suffix as tokenize_words()
-            // so that dev vocab tracks the same token IDs used during training.
-            for (lang_idx, dev_wc) in self.dev_language_words.iter().enumerate() {
-                for (word_str, &count) in dev_wc {
-                    let mut char_ids = Vec::new();
-                    let mut valid = true;
-                    for (is_first, is_last, c) in word_str.chars().with_first_and_last() {
-                        let bare = CompactString::from(c.to_string());
-                        if word_to_id.contains_key(&bare) {
-                            let mut s = c.to_string();
-                            if !is_first {
-                                if let Some(prefix) = &self.continuing_subword_prefix {
-                                    s.insert_str(0, prefix);
-                                }
-                            }
-                            if is_last {
-                                if let Some(suffix) = &self.end_of_word_suffix {
-                                    s.push_str(suffix);
-                                }
-                            }
-                            let key = CompactString::from(&s);
-                            if let Some(&id) = word_to_id.get(&key) {
-                                char_ids.push(id);
-                            } else {
-                                valid = false;
-                                break;
-                            }
-                        } else {
-                            valid = false;
-                            break;
-                        }
-                    }
-                    if valid && !char_ids.is_empty() {
-                        let entry = dev_vocab
-                            .entry(char_ids)
-                            .or_insert_with(|| vec![0i64; parity_num_langs]);
-                        entry[lang_idx] += count as i64;
-                    }
-                }
-            }
-
-            // Compute initial lengths from dev vocab: sum(word_len * freq) per language
-            for (word, freqs) in &dev_vocab {
-                for lang in 0..parity_num_langs {
-                    lengths[lang] += word.len() as i64 * freqs[lang];
-                }
-            }
-            info!(
-                "Dev vocab: {} unique words, initial lengths: {:?}",
-                dev_vocab.len(),
-                lengths
-            );
-        } else {
-            // Fall back to training data lengths
-            for lang in 0..num_langs {
-                let total: i64 = per_lang_words[lang]
-                    .iter()
-                    .zip(per_lang_counts[lang].iter())
-                    .map(|(word, &count)| word.get_chars().len() as i64 * count as i64)
-                    .sum();
-                lengths[lang] = total;
-            }
-        }
+        let LengthState {
+            mut dev_vocab,
+            mut lengths,
+            initial_lengths_f64,
+            mut lengths_f64,
+        } = self.init_lengths(num_langs, &per_lang_words, &per_lang_counts, &word_to_id);
 
         // Moving-window state
         let selection_threshold = self.alpha / parity_num_langs as f64;
         let mut selected_indices: VecDeque<usize> = VecDeque::with_capacity(self.window_size);
 
-        // 6. total_symbols: interpret `num_merges` as the TOTAL target vocabulary
-        // size (special tokens + alphabet + any affix-variant chars + merges) and
-        // derive the merge-operation count as target - base symbols already
-        // placed. At this point `id_to_word` holds exactly those base symbols
-        // (specials from step 1, the alphabet from step 2, plus any
-        // prefix/suffix char variants created while tokenizing in step 3), so the
-        // final vocab size comes out equal to `num_merges`.
-        //
-        // The previous implementation subtracted |word-internal chars| +
-        // |word-final chars|. With no end-of-word suffix each character is a
-        // single vocab token, so characters occurring in both a word-internal and
-        // a word-final position were subtracted twice; the special tokens were
-        // also ignored. The final vocab therefore fell short of the target by
-        // (chars in both positions) - (number of special tokens) -- 55 for the
-        // 131072-target, 124-special, byte-level production runs. See
-        // KNOWN_ISSUES.md #1.
-        let mut num_merges = self.num_merges;
-        if self.total_symbols {
-            let base_symbols = id_to_word.len();
-            let merge_target = self.num_merges.saturating_sub(base_symbols);
-            info!(
-                "total_symbols: target vocab {}, base symbols (specials+alphabet) {}, \
-                 merge operations {}",
-                self.num_merges, base_symbols, merge_target
-            );
-            num_merges = merge_target;
-        }
+        // 6. Resolve the number of merge operations (see `resolve_merge_count`).
+        let num_merges = self.resolve_merge_count(id_to_word.len());
 
         self.update_progress(&progress, num_merges, "Compute merges");
         let mut merges: Vec<(Pair, u32)> = vec![];
@@ -1064,84 +1295,16 @@ impl ParityBpeTrainer {
             }
 
             // Select which language to optimize
-            let lang_idx = if merge_count < self.global_merges {
-                usize::MAX // signals "use global"
-            } else if has_ratio {
-                let ratio_vec = self.ratio.as_ref().unwrap();
-                // compression_rates = initial_lengths / lengths
-                // adjusted = compression_rates / ratio
-                let adjusted: Vec<f64> = initial_lengths_f64
-                    .iter()
-                    .zip(lengths_f64.iter())
-                    .zip(ratio_vec.iter())
-                    .map(|((&init, &cur), &r)| (init / cur) / r)
-                    .collect();
-
-                match self.variant {
-                    ParityVariant::Base => {
-                        // min(enumerate(adjusted)) — pick language with least adjusted compression
-                        // Skip exhausted languages
-                        let mut best_idx = 0;
-                        let mut best_val = f64::INFINITY;
-                        for (idx, &val) in adjusted.iter().enumerate() {
-                            if !exhausted.contains(&idx) && val < best_val {
-                                best_val = val;
-                                best_idx = idx;
-                            }
-                        }
-                        best_idx
-                    }
-                    ParityVariant::Window => {
-                        // Python: select_language_index(-adjusted_compression_rates, ...)
-                        let mut neg_adjusted: Vec<f64> = adjusted.iter().map(|&v| -v).collect();
-                        for &ex in &exhausted {
-                            neg_adjusted[ex] = f64::NEG_INFINITY;
-                        }
-                        let idx = self.select_language_window_f64(
-                            &neg_adjusted,
-                            &selected_indices,
-                            selection_threshold,
-                        );
-                        selected_indices.push_back(idx);
-                        if selected_indices.len() > self.window_size {
-                            selected_indices.pop_front();
-                        }
-                        idx
-                    }
-                }
-            } else {
-                match self.variant {
-                    ParityVariant::Base => {
-                        // Pick language with longest total token length.
-                        // Skip exhausted languages.
-                        let mut best_idx = 0;
-                        let mut best_val = i64::MIN;
-                        for (idx, &val) in lengths.iter().enumerate() {
-                            if !exhausted.contains(&idx) && val > best_val {
-                                best_val = val;
-                                best_idx = idx;
-                            }
-                        }
-                        best_idx
-                    }
-                    ParityVariant::Window => {
-                        let mut effective_lengths = lengths.clone();
-                        for &ex in &exhausted {
-                            effective_lengths[ex] = i64::MIN;
-                        }
-                        let idx = self.select_language_window(
-                            &effective_lengths,
-                            &selected_indices,
-                            selection_threshold,
-                        );
-                        selected_indices.push_back(idx);
-                        if selected_indices.len() > self.window_size {
-                            selected_indices.pop_front();
-                        }
-                        idx
-                    }
-                }
-            };
+            let lang_idx = self.select_next_language(
+                merge_count,
+                has_ratio,
+                &initial_lengths_f64,
+                &lengths_f64,
+                &lengths,
+                &exhausted,
+                selection_threshold,
+                &mut selected_indices,
+            );
 
             // Find the best pair
             let best_pair = if lang_idx == usize::MAX {
@@ -1248,32 +1411,13 @@ impl ParityBpeTrainer {
                 // apply_merge_to_language didn't flag it as changed (it
                 // already set per_lang_pair_counts[lang][best_pair] = 0).
                 global_changed_pairs.insert(best_pair);
-
-                // Recompute global count for each changed pair as the sum
-                // over per-language maps, and push updated entries onto the
-                // global heap. Pop uses lazy deletion to ignore stale ones.
-                for pair in global_changed_pairs.iter().copied() {
-                    let mut total: i64 = 0;
-                    for lang_counts in &per_lang_pair_counts {
-                        if let Some(&c) = lang_counts.get(&pair) {
-                            total += c;
-                        }
-                    }
-                    if total < 0 {
-                        total = 0;
-                    }
-                    global_pair_counts.insert(pair, total);
-                    if total > 0 {
-                        global_queue.push(PairMerge {
-                            pair,
-                            count: total as u64,
-                            str_key: (
-                                id_to_word[pair.0 as usize].clone(),
-                                id_to_word[pair.1 as usize].clone(),
-                            ),
-                        });
-                    }
-                }
+                self.update_global_after_merge(
+                    &global_changed_pairs,
+                    &per_lang_pair_counts,
+                    &id_to_word,
+                    &mut global_pair_counts,
+                    &mut global_queue,
+                );
             }
 
             // Apply merge to dev vocab and update lengths (only when using dev set, not ratio)

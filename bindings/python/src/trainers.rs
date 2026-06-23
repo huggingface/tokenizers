@@ -183,6 +183,18 @@ macro_rules! setter {
 ///         This can help with reducing polluting your vocabulary with
 ///         highly repetitive tokens like `======` for wikipedia
 ///
+/// Example::
+///
+///     >>> from tokenizers.models import BPE
+///     >>> from tokenizers.trainers import BpeTrainer
+///     >>> trainer = BpeTrainer(
+///     ...     vocab_size=30000,
+///     ...     special_tokens=["<unk>", "<s>", "</s>"],
+///     ...     min_frequency=2,
+///     ... )
+///     >>> tokenizer = Tokenizer(BPE())
+///     >>> tokenizer.train(["path/to/corpus.txt"], trainer)
+///
 #[pyclass(extends=PyTrainer, module = "tokenizers.trainers", name = "BpeTrainer")]
 pub struct PyBpeTrainer {}
 #[pymethods]
@@ -445,6 +457,18 @@ impl PyBpeTrainer {
 ///
 ///     end_of_word_suffix (:obj:`str`, `optional`):
 ///         A suffix to be used for every subword that is a end-of-word.
+///
+/// Example::
+///
+///     >>> from tokenizers.models import WordPiece
+///     >>> from tokenizers.trainers import WordPieceTrainer
+///     >>> trainer = WordPieceTrainer(
+///     ...     vocab_size=30000,
+///     ...     special_tokens=["[UNK]", "[CLS]", "[SEP]", "[PAD]", "[MASK]"],
+///     ... )
+///     >>> tokenizer = Tokenizer(WordPiece(unk_token="[UNK]"))
+///     >>> tokenizer.train(["path/to/corpus.txt"], trainer)
+///
 #[pyclass(extends=PyTrainer, module = "tokenizers.trainers", name = "WordPieceTrainer")]
 pub struct PyWordPieceTrainer {}
 #[pymethods]
@@ -626,7 +650,7 @@ impl PyWordPieceTrainer {
     }
 }
 
-/// Trainer capable of training a WorldLevel model
+/// Trainer capable of training a WordLevel model
 ///
 /// Args:
 ///     vocab_size (:obj:`int`, `optional`):
@@ -640,6 +664,19 @@ impl PyWordPieceTrainer {
 ///
 ///     special_tokens (:obj:`List[Union[str, AddedToken]]`):
 ///         A list of special tokens the model should know of.
+///
+/// Example::
+///
+///     >>> from tokenizers.models import WordLevel
+///     >>> from tokenizers.trainers import WordLevelTrainer
+///     >>> trainer = WordLevelTrainer(
+///     ...     vocab_size=10000,
+///     ...     special_tokens=["<unk>"],
+///     ...     min_frequency=1,
+///     ... )
+///     >>> tokenizer = Tokenizer(WordLevel(unk_token="<unk>"))
+///     >>> tokenizer.train(["path/to/corpus.txt"], trainer)
+///
 #[pyclass(extends=PyTrainer, module = "tokenizers.trainers", name = "WordLevelTrainer")]
 pub struct PyWordLevelTrainer {}
 #[pymethods]
@@ -798,6 +835,19 @@ impl PyWordLevelTrainer {
 ///     n_sub_iterations (:obj:`int`):
 ///         The number of iterations of the EM algorithm to perform before
 ///         pruning the vocabulary.
+///
+/// Example::
+///
+///     >>> from tokenizers.models import Unigram
+///     >>> from tokenizers.trainers import UnigramTrainer
+///     >>> trainer = UnigramTrainer(
+///     ...     vocab_size=8000,
+///     ...     special_tokens=["<unk>", "<s>", "</s>"],
+///     ...     unk_token="<unk>",
+///     ... )
+///     >>> tokenizer = Tokenizer(Unigram())
+///     >>> tokenizer.train(["path/to/corpus.txt"], trainer)
+///
 #[pyclass(extends=PyTrainer, module = "tokenizers.trainers", name = "UnigramTrainer")]
 pub struct PyUnigramTrainer {}
 #[pymethods]
@@ -1056,7 +1106,7 @@ where
 #[pyclass(module = "tokenizers.trainers", name = "ParityBpeTrainer")]
 pub struct PyParityBpeTrainer {
     num_merges: usize,
-    variant: String,
+    variant: tk::models::bpe::ParityVariant,
     min_frequency: u64,
     ratio: Option<Vec<f64>>,
     global_merges: usize,
@@ -1077,7 +1127,7 @@ impl Default for PyParityBpeTrainer {
     fn default() -> Self {
         Self {
             num_merges: 32000,
-            variant: "base".to_string(),
+            variant: tk::models::bpe::ParityVariant::Base,
             min_frequency: 0,
             ratio: None,
             global_merges: 0,
@@ -1097,6 +1147,31 @@ impl Default for PyParityBpeTrainer {
 
 #[cfg(feature = "parity-aware-bpe")]
 impl PyParityBpeTrainer {
+    /// Parse the Python-facing variant string into the Rust `ParityVariant`
+    /// enum, erroring on anything other than `"base"` / `"window"`.
+    fn parse_variant(variant: &str) -> PyResult<tk::models::bpe::ParityVariant> {
+        use tk::models::bpe::ParityVariant;
+        match variant {
+            "base" => Ok(ParityVariant::Base),
+            "window" => Ok(ParityVariant::Window),
+            _ => Err(exceptions::PyValueError::new_err(format!(
+                "Unknown variant '{}'. Use 'base' or 'window'.",
+                variant
+            ))),
+        }
+    }
+
+    /// Inverse of [`parse_variant`](Self::parse_variant): the Python-facing
+    /// string for a `ParityVariant`, used by the getter, `__repr__` and
+    /// pickling so the public API stays string-based.
+    fn variant_str(variant: tk::models::bpe::ParityVariant) -> &'static str {
+        use tk::models::bpe::ParityVariant;
+        match variant {
+            ParityVariant::Base => "base",
+            ParityVariant::Window => "window",
+        }
+    }
+
     /// Build a Rust `ParityBpeTrainerBuilder` from the current Python-side settings.
     fn make_builder(
         &self,
@@ -1171,15 +1246,7 @@ impl PyParityBpeTrainer {
         end_of_word_suffix: Option<String>,
         max_token_length: Option<usize>,
     ) -> PyResult<Self> {
-        match variant {
-            "base" | "window" => {}
-            _ => {
-                return Err(exceptions::PyValueError::new_err(format!(
-                    "Unknown variant '{}'. Use 'base' or 'window'.",
-                    variant
-                )))
-            }
-        }
+        let variant = Self::parse_variant(variant)?;
 
         let parsed_special_tokens = if let Some(tokens) = special_tokens {
             tokens
@@ -1203,7 +1270,7 @@ impl PyParityBpeTrainer {
 
         Ok(PyParityBpeTrainer {
             num_merges,
-            variant: variant.to_string(),
+            variant,
             min_frequency,
             ratio,
             global_merges,
@@ -1257,13 +1324,9 @@ impl PyParityBpeTrainer {
         ratio: Option<Vec<f64>>,
     ) -> PyResult<()> {
         use crate::utils::PyBufferedIterator;
-        use tk::models::bpe::{ParityVariant, BPE};
+        use tk::models::bpe::BPE;
 
-        let parity_variant = match self.variant.as_str() {
-            "base" => ParityVariant::Base,
-            "window" => ParityVariant::Window,
-            _ => unreachable!(),
-        };
+        let parity_variant = self.variant;
 
         if train_iterators.is_empty() {
             return Err(exceptions::PyValueError::new_err(
@@ -1398,8 +1461,8 @@ impl PyParityBpeTrainer {
     }
 
     #[getter]
-    fn get_variant(&self) -> &str {
-        &self.variant
+    fn get_variant(&self) -> &'static str {
+        Self::variant_str(self.variant)
     }
 
     #[getter]
@@ -1548,7 +1611,7 @@ impl PyParityBpeTrainer {
             "ParityBpeTrainer(num_merges={}, variant=\"{}\", min_frequency={}, \
              global_merges={}, window_size={}, alpha={}, total_symbols={})",
             self.num_merges,
-            self.variant,
+            Self::variant_str(self.variant),
             self.min_frequency,
             self.global_merges,
             self.window_size,
@@ -1564,7 +1627,7 @@ impl PyParityBpeTrainer {
     fn __getstate__(&self, py: Python) -> PyResult<Py<PyAny>> {
         let dict = PyDict::new(py);
         dict.set_item("num_merges", self.num_merges)?;
-        dict.set_item("variant", &self.variant)?;
+        dict.set_item("variant", Self::variant_str(self.variant))?;
         dict.set_item("min_frequency", self.min_frequency)?;
         dict.set_item("global_merges", self.global_merges)?;
         dict.set_item("window_size", self.window_size)?;
@@ -1600,10 +1663,11 @@ impl PyParityBpeTrainer {
             .get_item("num_merges")?
             .ok_or_else(|| exceptions::PyKeyError::new_err("num_merges"))?
             .extract()?;
-        self.variant = dict
+        let variant_str: String = dict
             .get_item("variant")?
             .ok_or_else(|| exceptions::PyKeyError::new_err("variant"))?
             .extract()?;
+        self.variant = Self::parse_variant(&variant_str)?;
         self.min_frequency = dict
             .get_item("min_frequency")?
             .ok_or_else(|| exceptions::PyKeyError::new_err("min_frequency"))?
