@@ -2,7 +2,7 @@ use super::{
     normalizer::Range, Model, NormalizedString, Normalizer, Offsets, PreTokenizedString, Result,
     Token,
 };
-use crate::buckets::Bucket;
+use crate::types::{AddedTokenFlags, Bucket, TokenId, TokenMetadata};
 use ahash::{AHashMap, AHashSet};
 use daachorse::{DoubleArrayAhoCorasick, DoubleArrayAhoCorasickBuilder, MatchKind};
 use regex::Regex;
@@ -141,97 +141,92 @@ fn space_rightmost_at_start(sentence: &str) -> usize {
 ///
 #[derive(Clone)]
 pub struct AddedVocabulary {
-    /// Contains the mapping from String (token content) to ID. This map contains both special
-    /// tokens and classic added tokens that were added to the this vocabulary.
-    added_tokens_map: AHashMap<String, u32>,
-    /// Contains the mapping from ID to AddedToken for all the added tokens, both special
-    /// and classic.
-    added_tokens_map_r: AHashMap<u32, AddedToken>,
-
-    /// A Set, containing all the special token for easy access while decoding. This let's
-    /// us remove them easily with an O(1) complexity.
-    special_tokens_set: AHashSet<String>,
-
-    /// Cache of the normalizer output for tokens that have `normalized = true`.
-    /// Keyed by token ID. Not serialized — rebuilt by `add_tokens` and
-    /// `refresh_normalized_tokens` whenever the normalizer changes.
-    /// Kept separate from `AddedToken` so the token struct stays lean.
-    normalized_cache: AHashMap<u32, String>,
-
-    /// A RegexSet containing all the non-normalized patterns used to split on AddedTokens
-    split_trie: MatchingSet,
-    /// A RegexSet containing all the normalized patterns used to split on AddedTokens
-    split_normalized_trie: MatchingSet,
-
-    /// Whether or not special tokens should be splitted when encoding. This is equivalent to ignoring them
     encode_special_tokens: bool,
-
     /// New fast path for normalize and extra needs:
     ///  - multi-bucket first bytes. If its len is 1, we use memchr
     ///  otherwise we just check each car on that table lookup. Its a 1KB table.
     ///  We use u8 because this ends up beaing 4 lines of cache, in the function's stack
-    first_byte_to_bucket: [u8; 256],
+    first_byte_to_bucket_id: [u8; 256],
     ///  - the actual buckets. We could use small vec here. Chose to impl it.
     ///  Basically inlined if there are less than 16 buckets, else we use a heap allocated vec.
     buckets: Box<[Bucket]>,
-    prefix_vecs: AHashMap<[u8; 4], Vec<String>>,
-    num_buckets: usize,
-}
-
-impl std::fmt::Debug for AddedVocabulary {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("AddedVocabulary")
-            .field("added_tokens_map", &self.added_tokens_map)
-            .field("added_tokens_map_r", &self.added_tokens_map_r)
-            .field("special_tokens_set", &self.special_tokens_set)
-            .field("encode_special_tokens", &self.encode_special_tokens)
-            .finish_non_exhaustive()
-    }
+    /// The actual bytes of the tokens in a single buffer
+    token_data: Box<[u8]>,
+    /// The metadata of each tokens
+    token_metadata: Box<[TokenMetadata]>,
+    /// The ids
+    token_ids: Box<[TokenId]>,
+    // token to ids
+    id_to_tokens: Box<[u32]>,
+    token_to_id: AHashMap<str, u32>,
 }
 
 impl AddedVocabulary {
     pub fn new() -> Self {
         Self {
-            added_tokens_map: AHashMap::new(),
-            added_tokens_map_r: AHashMap::new(),
-            special_tokens_set: AHashSet::new(),
-            normalized_cache: AHashMap::new(),
-            split_trie: None,
-            split_normalized_trie: None,
-            encode_special_tokens: false,
-            first_byte_to_bucket: [0; 256],
+            encode_special_tokens: true,
+            first_byte_to_bucket_id: [0; 256],
             buckets: Box::new([]),
-            num_buckets: 0,
-            prefix_vecs: AHashMap::new(),
+            token_data: Box::new([]),
+            token_metadata: Box::new([]),
+            token_ids: Box::new([]),
+            id_to_tokens: Box::new([]),
+            token_to_id: AHashMap::new(),
         }
     }
     /// Size of the additional vocabulary
     #[allow(dead_code)] // Suppress the "method is never used" warning
     pub fn len(&self) -> usize {
-        self.added_tokens_map.len()
+        self.token_ids.len()
     }
 
     /// Whether or not this vocabulary is empty
     pub fn is_empty(&self) -> bool {
-        self.added_tokens_map.is_empty()
+        self.token_ids.is_empty()
     }
 
     /// Get the additional vocabulary
     pub fn get_vocab(&self) -> &AHashMap<String, u32> {
-        &self.added_tokens_map
+        &self
+            .token_metadata
+            .iter()
+            .map(|m| {
+                let token = &self.token_data
+                    [m.data_offset as usize..(m.data_offset + m.len as u32) as usize];
+                let id = self.token_ids[m.id.0 as usize].0;
+                (String::from_utf8_lossy(token).to_string(), id)
+            })
+            .collect::<AHashMap<String, u32>>()
     }
 
     /// Get the additional vocabulary with the AddedTokens
+    /// TODO: this will be slowe because we rebuild the added tokens
     pub fn get_added_tokens_decoder(&self) -> &AHashMap<u32, AddedToken> {
-        &self.added_tokens_map_r
+        &self
+            .token_metadata
+            .iter()
+            .map(|m| {
+                let token = &self.token_data
+                    [m.data_offset as usize..(m.data_offset + m.len as u32) as usize];
+                let id = self.token_ids[m.id.0 as usize].0;
+                (
+                    id,
+                    AddedToken {
+                        content: String::from_utf8_lossy(token).to_string(),
+                        single_word: m.flags.single_word,
+                        lstrip: m.flags.lstrip,
+                        rstrip: m.flags.rstrip,
+                        normalized: m.flags.normalized,
+                        special: m.flags.special,
+                    }, // TODO: implem from / to
+                )
+            })
+            .collect::<AHashMap<u32, AddedToken>>()
     }
 
     /// Get the id matching one of our token if it exists
     pub fn token_to_id(&self, token: &str, model: &impl Model) -> Option<u32> {
-        self.added_tokens_map
-            .get(token)
-            .copied()
-            .or_else(|| model.token_to_id(token))
+        Some(0)
     }
 
     /// Get the token matching the given id if it exists
@@ -240,10 +235,8 @@ impl AddedVocabulary {
         note = "please use `added_vocabulary.simple_id_to_token(id).or_else(|| model.id_to_token(id)` instead"
     )]
     pub fn id_to_token(&self, id: u32, model: &impl Model) -> Option<String> {
-        self.added_tokens_map_r
-            .get(&id)
-            .map(|t| t.content.clone())
-            .or_else(|| model.id_to_token(id))
+        let meta = self.token_metadata[self.id_to_tokens[id as usize] as usize];
+        String::from_utf8_lossy(self.token_data[meta.data_offset..meta.data_offset + meta.len])
     }
 
     /// Return the string form of an added token used during **decoding**.
@@ -253,12 +246,7 @@ impl AddedVocabulary {
     /// invert the transformation correctly. For all other tokens, the original
     /// `content` is returned.
     pub fn simple_id_to_token(&self, id: u32) -> Option<String> {
-        self.added_tokens_map_r.get(&id).map(|t| {
-            self.normalized_cache
-                .get(&id)
-                .cloned()
-                .unwrap_or_else(|| t.content.clone())
-        })
+        Some(String::new());
     }
 
     //
@@ -272,7 +260,7 @@ impl AddedVocabulary {
 
     /// Check if a token is a special token
     pub fn is_special_token(&self, token: &str) -> bool {
-        self.special_tokens_set.contains(token)
+        self.token_metadata[self.token_to_id.get(token)]
     }
 
     /// Add some special tokens to the vocabulary
@@ -567,9 +555,9 @@ impl AddedVocabulary {
         sequence: &str,
     ) -> PreTokenizedString {
         // 1. if the machinery does not exist, we build it:
-        // if self.num_buckets == 1 {
-        //
-        // }
+        if self.num_buckets == 1 {
+            let next_match = None;
+        }
         return sequence.into();
     }
     /// Extract the additional vocabulary from the given sentence, normalizing it along the way.

@@ -23,12 +23,12 @@ use serde::{Deserialize, Serialize};
 use crate::utils::parallelism::*;
 
 mod added_vocabulary;
-pub mod buckets;
 mod encoding;
 pub mod normalizer;
 pub mod pattern;
 pub mod pre_tokenizer;
 mod serialization;
+pub mod types;
 
 // Re-export wrappers
 pub use crate::decoders::DecoderWrapper;
