@@ -25,3 +25,4 @@ pub struct TokenMetadata {
     pub id: TokenId,
     pub flags: AddedTokenFlags,
 }
+impl From<AddedToken> for AddedTokenFlags {}

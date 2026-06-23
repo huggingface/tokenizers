@@ -88,6 +88,19 @@ impl Default for AddedToken {
         }
     }
 }
+
+impl From<AddedToken> for AddedTokenFlags {
+    fn from(token: AddedToken) -> AddedTokenFlags {
+        AddedTokenFlags {
+            special: token.special,
+            normalized: token.normalized,
+            single_word: token.single_word,
+            lstrip: token.lstrip,
+            rstrip: token.rstrip,
+        }
+    }
+}
+
 // AddedTokens can be updated if value changed
 impl std::hash::Hash for AddedToken {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
@@ -225,18 +238,8 @@ impl AddedVocabulary {
     }
 
     /// Get the id matching one of our token if it exists
-    pub fn token_to_id(&self, token: &str, model: &impl Model) -> Option<u32> {
+    pub fn token_to_id(&self, token: &str, model: &Model) -> Option<u32> {
         Some(0)
-    }
-
-    /// Get the token matching the given id if it exists
-    #[deprecated(
-        since = "0.19.0",
-        note = "please use `added_vocabulary.simple_id_to_token(id).or_else(|| model.id_to_token(id)` instead"
-    )]
-    pub fn id_to_token(&self, id: u32, model: &impl Model) -> Option<String> {
-        let meta = self.token_metadata[self.id_to_tokens[id as usize] as usize];
-        String::from_utf8_lossy(self.token_data[meta.data_offset..meta.data_offset + meta.len])
     }
 
     /// Return the string form of an added token used during **decoding**.
@@ -260,7 +263,7 @@ impl AddedVocabulary {
 
     /// Check if a token is a special token
     pub fn is_special_token(&self, token: &str) -> bool {
-        self.token_metadata[self.token_to_id.get(token)]
+        self.token_metadata[0]
     }
 
     /// Add some special tokens to the vocabulary
@@ -283,18 +286,7 @@ impl AddedVocabulary {
         let mut ignored = 0;
         let mut total = 0;
 
-        let mut next_id =
-            self.added_tokens_map_r
-                .keys()
-                .max()
-                .map_or(model.get_vocab_size() as u32, |max| {
-                    if *max >= model.get_vocab_size() as u32 || model.get_vocab_size() == 0 {
-                        max + 1
-                    } else {
-                        model.get_vocab_size() as u32
-                    }
-                });
-
+        let mut next_id = self.token_ids.len();
         let mut byte_set = Vec::new();
         for token in tokens {
             total += 1;
@@ -303,10 +295,13 @@ impl AddedVocabulary {
                 continue;
             }
             // Fast path: skip if this content is already in the map with identical properties.
-            if let Some(id) = self.added_tokens_map.get(&token.content) {
-                if self.added_tokens_map_r.get(id) == Some(&token) {
+            if let Some(id) = self.token_to_id(&token.content, model) {
+                let flags = AddedTokenFlags::from(&token);
+                if self.token_metadata[id] == Some(flags) {
                     ignored += 1;
                     continue;
+                } else {
+                    *self.token_metadata[id] = flags
                 }
             }
 
@@ -319,7 +314,8 @@ impl AddedVocabulary {
                 0xF0..=0xF4 => 4,
                 _ => return Err(format!("Invalid UTF-8 first byte in token ").into()),
             };
-            let mut prefix = [0, 0, 0, 0];
+
+            let mut prefix = [0; 4];
             prefix.copy_from_slice(&token_bytes[..prefix_len]);
             byte_set.push(Bucket {
                 prefix,
@@ -327,11 +323,6 @@ impl AddedVocabulary {
                 start: 0,
                 end: 0,
             });
-            // TODO: we need this one to be sorted on token lenght!
-            self.prefix_vecs
-                .entry(prefix)
-                .or_insert_with(Vec::new)
-                .push(token.content.clone());
 
             let new_id = if let Some(new_id) = self.token_to_id(&token.content, model) {
                 new_id
@@ -346,30 +337,11 @@ impl AddedVocabulary {
                     let mut s = NormalizedString::from(token.content.as_ref());
                     n.normalize(&mut s)?;
                     let normed = s.get().to_string();
-                    if normed != token.content {
-                        self.normalized_cache.insert(new_id, normed);
-                    }
+                    // TODO: just init the normalized struct here
+                    if normed != token.content {}
                 }
             }
-
-            *self
-                .added_tokens_map
-                .entry(token.content.clone())
-                .or_default() = new_id;
-
-            let is_new_special = token.special
-                && !token.content.is_empty()
-                && !self.special_tokens_set.contains(&token.content);
-            if is_new_special {
-                self.special_tokens_set.insert(token.content.clone());
-            }
-            self.added_tokens_map_r.insert(new_id, token);
         }
-        // We will do longest token match on the first token
-        for vec in self.prefix_vecs.values_mut() {
-            vec.sort_unstable_by_key(|s| std::cmp::Reverse(s.len()));
-        }
-        self.num_buckets = byte_set.len();
         self.buckets = byte_set.into_boxed_slice();
         self.refresh_added_tokens()?;
 
@@ -389,19 +361,6 @@ impl AddedVocabulary {
         &mut self,
         normalizer: Option<&N>,
     ) -> Result<()> {
-        self.normalized_cache.clear();
-        for (id, token) in &self.added_tokens_map_r {
-            if token.normalized {
-                if let Some(n) = normalizer {
-                    let mut s = NormalizedString::from(token.content.as_ref());
-                    n.normalize(&mut s)?;
-                    let normed = s.get().to_string();
-                    if normed != token.content {
-                        self.normalized_cache.insert(*id, normed);
-                    }
-                }
-            }
-        }
         self.refresh_added_tokens()
     }
 
@@ -416,42 +375,6 @@ impl AddedVocabulary {
         // iterator + closure so the borrow checker can see that `added_tokens_map_r` and
         // `normalized_cache` are disjoint fields, allowing both to be borrowed immutably while
         // `split_trie` / `split_normalized_trie` are assigned afterwards.
-        let mut normalized_pairs: Vec<(&str, u32)> = Vec::new();
-        let mut non_normalized_pairs: Vec<(&str, u32)> = Vec::new();
-        for (id, token) in &self.added_tokens_map_r {
-            if token.normalized {
-                let pattern = self
-                    .normalized_cache
-                    .get(id)
-                    .map(String::as_str)
-                    .unwrap_or(token.content.as_str());
-                normalized_pairs.push((pattern, *id));
-            } else {
-                non_normalized_pairs.push((token.content.as_str(), *id));
-            }
-        }
-
-        self.split_trie = if non_normalized_pairs.is_empty() {
-            None
-        } else {
-            Some(
-                DoubleArrayAhoCorasickBuilder::new()
-                    .match_kind(MatchKind::LeftmostLongest)
-                    .build_with_values(non_normalized_pairs)
-                    .map_err(|e| e.to_string())?,
-            )
-        };
-
-        self.split_normalized_trie = if normalized_pairs.is_empty() {
-            None
-        } else {
-            Some(
-                DoubleArrayAhoCorasickBuilder::new()
-                    .match_kind(MatchKind::LeftmostLongest)
-                    .build_with_values(normalized_pairs)
-                    .map_err(|e| e.to_string())?,
-            )
-        };
 
         Ok(())
     }
