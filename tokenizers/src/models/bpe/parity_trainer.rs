@@ -5,7 +5,7 @@ use crate::utils::progress::{ProgressBar, ProgressStyle};
 use ahash::{AHashMap, AHashSet};
 use compact_str::CompactString;
 use dary_heap::OctonaryHeap;
-use log::{debug, info, warn};
+use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::{HashSet, VecDeque};
@@ -1010,31 +1010,32 @@ impl ParityBpeTrainer {
         let selection_threshold = self.alpha / parity_num_langs as f64;
         let mut selected_indices: VecDeque<usize> = VecDeque::with_capacity(self.window_size);
 
-        // 6. Handle --total-symbols: subtract unique char count from num_merges
+        // 6. total_symbols: interpret `num_merges` as the TOTAL target vocabulary
+        // size (special tokens + alphabet + any affix-variant chars + merges) and
+        // derive the merge-operation count as target - base symbols already
+        // placed. At this point `id_to_word` holds exactly those base symbols
+        // (specials from step 1, the alphabet from step 2, plus any
+        // prefix/suffix char variants created while tokenizing in step 3), so the
+        // final vocab size comes out equal to `num_merges`.
+        //
+        // The previous implementation subtracted |word-internal chars| +
+        // |word-final chars|. With no end-of-word suffix each character is a
+        // single vocab token, so characters occurring in both a word-internal and
+        // a word-final position were subtracted twice; the special tokens were
+        // also ignored. The final vocab therefore fell short of the target by
+        // (chars in both positions) - (number of special tokens) -- 55 for the
+        // 131072-target, 124-special, byte-level production runs. See
+        // KNOWN_ISSUES.md #1.
         let mut num_merges = self.num_merges;
-
         if self.total_symbols {
-            let mut internal_chars: AHashSet<char> = AHashSet::new();
-            let mut final_chars: AHashSet<char> = AHashSet::new();
-            for lang_wc in &self.language_words {
-                for (word, _) in lang_wc {
-                    let chars: Vec<char> = word.chars().collect();
-                    if !chars.is_empty() {
-                        for &c in &chars[..chars.len() - 1] {
-                            internal_chars.insert(c);
-                        }
-                        final_chars.insert(*chars.last().unwrap());
-                    }
-                }
-            }
-            let reduction = internal_chars.len() + final_chars.len();
-            debug!(
-                "Number of word-internal characters: {}",
-                internal_chars.len()
+            let base_symbols = id_to_word.len();
+            let merge_target = self.num_merges.saturating_sub(base_symbols);
+            info!(
+                "total_symbols: target vocab {}, base symbols (specials+alphabet) {}, \
+                 merge operations {}",
+                self.num_merges, base_symbols, merge_target
             );
-            debug!("Number of word-final characters: {}", final_chars.len());
-            info!("Reducing number of merge operations by {}", reduction);
-            num_merges = num_merges.saturating_sub(reduction);
+            num_merges = merge_target;
         }
 
         self.update_progress(&progress, num_merges, "Compute merges");
@@ -1446,6 +1447,87 @@ mod tests {
         assert!(
             model.vocab.contains_key("ccdd"),
             "final token 'ccdd' should be in vocab"
+        );
+    }
+
+    #[test]
+    fn test_total_symbols_targets_full_vocab_size() {
+        // total_symbols=true reinterprets `num_merges` as the TOTAL target vocab
+        // size (special tokens + alphabet + merges), not a raw merge count.
+        // Invariant: a total_symbols=true run with target (reference_vocab +
+        // n_specials) yields exactly that many tokens and the same number of
+        // merges as a reference run with total_symbols=false and num_merges = M.
+        // Holds regardless of how many merges the data can supply, since both
+        // runs share the same data and selection.
+        fn data() -> (AHashMap<CompactString, u64>, AHashMap<CompactString, u64>) {
+            let lang0: AHashMap<CompactString, u64> = [
+                ("aabb".into(), 10u64),
+                ("abab".into(), 7u64),
+                ("baba".into(), 5u64),
+            ]
+            .iter()
+            .cloned()
+            .collect();
+            let lang1: AHashMap<CompactString, u64> = [
+                ("ccdd".into(), 10u64),
+                ("cdcd".into(), 7u64),
+                ("dcdc".into(), 5u64),
+            ]
+            .iter()
+            .cloned()
+            .collect();
+            (lang0, lang1)
+        }
+
+        const M: usize = 4;
+        const N_SPECIALS: usize = 3;
+
+        // Reference: plain merge count, no specials, no total_symbols.
+        let (l0, l1) = data();
+        let mut t_ref = ParityBpeTrainer::builder()
+            .show_progress(false)
+            .min_frequency(1)
+            .num_merges(M)
+            .variant(ParityVariant::Base)
+            .build();
+        t_ref.feed_language(0, l0);
+        t_ref.feed_language(1, l1);
+        let mut m_ref = BPE::default();
+        let (_s, ref_merges) = t_ref.do_train(&mut m_ref).unwrap();
+        let ref_vocab = m_ref.vocab.len();
+
+        // total_symbols run: target = ref_vocab + N_SPECIALS, with that many
+        // special tokens added. Final vocab must equal the target exactly.
+        let specials: Vec<AddedToken> = (0..N_SPECIALS)
+            .map(|i| AddedToken::from(format!("<sp{i}>"), true))
+            .collect();
+        let target = ref_vocab + N_SPECIALS;
+
+        let (l0, l1) = data();
+        let mut t_ts = ParityBpeTrainer::builder()
+            .show_progress(false)
+            .min_frequency(1)
+            .num_merges(target)
+            .total_symbols(true)
+            .special_tokens(specials)
+            .variant(ParityVariant::Base)
+            .build();
+        t_ts.feed_language(0, l0);
+        t_ts.feed_language(1, l1);
+        let mut m_ts = BPE::default();
+        let (_s2, ts_merges) = t_ts.do_train(&mut m_ts).unwrap();
+
+        assert_eq!(
+            m_ts.vocab.len(),
+            target,
+            "total_symbols=true should make final vocab == target {target}, got {}",
+            m_ts.vocab.len()
+        );
+        assert_eq!(
+            ts_merges.len(),
+            ref_merges.len(),
+            "total_symbols should subtract the base symbols, leaving the same \
+             merge count as the reference run"
         );
     }
 
