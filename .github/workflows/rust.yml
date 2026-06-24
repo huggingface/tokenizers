@@ -107,9 +107,7 @@ jobs:
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
 
       - name: Install cargo-readme
-        uses: taiki-e/install-action@74e87cbfa15a59692b158178d8905a61bf6fca95  # v2.75.20
-        with:
-          tool: cargo-readme
+        run: cargo install cargo-readme
 
       - name: Make sure every README matches its lib.rs
         shell: bash
@@ -132,9 +130,7 @@ jobs:
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
 
       - name: Install cargo-audit
-        uses: taiki-e/install-action@74e87cbfa15a59692b158178d8905a61bf6fca95  # v2.75.20
-        with:
-          tool: cargo-audit
+        run: cargo install cargo-audit
 
       # Cargo.lock is gitignored, so generate it before auditing.
       - name: Generate Cargo.lock
