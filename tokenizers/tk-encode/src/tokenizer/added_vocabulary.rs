@@ -89,8 +89,8 @@ impl Default for AddedToken {
     }
 }
 
-impl From<AddedToken> for AddedTokenFlags {
-    fn from(token: AddedToken) -> AddedTokenFlags {
+impl From<&AddedToken> for AddedTokenFlags {
+    fn from(token: &AddedToken) -> AddedTokenFlags {
         AddedTokenFlags {
             special: token.special,
             normalized: token.normalized,
@@ -171,7 +171,7 @@ pub struct AddedVocabulary {
     token_ids: Box<[TokenId]>,
     // token to ids
     id_to_tokens: Box<[u32]>,
-    token_to_id: AHashMap<str, u32>,
+    token_to_id: AHashMap<String, u32>,
 }
 
 impl AddedVocabulary {
@@ -238,7 +238,7 @@ impl AddedVocabulary {
     }
 
     /// Get the id matching one of our token if it exists
-    pub fn token_to_id(&self, token: &str, model: &Model) -> Option<u32> {
+    pub fn token_to_id(&self, token: &str, model: &dyn Model) -> Option<u32> {
         Some(0)
     }
 
@@ -249,7 +249,7 @@ impl AddedVocabulary {
     /// invert the transformation correctly. For all other tokens, the original
     /// `content` is returned.
     pub fn simple_id_to_token(&self, id: u32) -> Option<String> {
-        Some(String::new());
+        Some(String::new())
     }
 
     //
@@ -263,7 +263,7 @@ impl AddedVocabulary {
 
     /// Check if a token is a special token
     pub fn is_special_token(&self, token: &str) -> bool {
-        self.token_metadata[0]
+        self.token_metadata[0].flags.special
     }
 
     /// Add some special tokens to the vocabulary
@@ -296,12 +296,13 @@ impl AddedVocabulary {
             }
             // Fast path: skip if this content is already in the map with identical properties.
             if let Some(id) = self.token_to_id(&token.content, model) {
+                let id = id as usize;
                 let flags = AddedTokenFlags::from(&token);
-                if self.token_metadata[id] == Some(flags) {
+                if self.token_metadata[id].flags == flags {
                     ignored += 1;
                     continue;
                 } else {
-                    *self.token_metadata[id] = flags
+                    self.token_metadata[id].flags = flags
                 }
             }
 
@@ -325,7 +326,7 @@ impl AddedVocabulary {
             });
 
             let new_id = if let Some(new_id) = self.token_to_id(&token.content, model) {
-                new_id
+                new_id as usize
             } else {
                 let id = next_id;
                 next_id += 1;
@@ -397,52 +398,53 @@ impl AddedVocabulary {
                 return vec![(None, (0, sentence.len()))];
             }
         };
-        for mat in trie.leftmost_find_iter(sentence) {
-            let mut start = mat.start();
-            let mut stop = mat.end();
-            let id = mat.value();
-            let added_token = &self.added_tokens_map_r.get(&id).unwrap();
-
-            if self.encode_special_tokens && self.special_tokens_set.contains(&added_token.content)
-            {
-                continue;
-            }
-
-            if added_token.single_word {
-                let start_space = start == 0 || !ends_with_word(&sentence[..start]);
-                let stop_space = stop == sentence.len() || !starts_with_word(&sentence[stop..]);
-
-                if !stop_space || !start_space {
-                    // Discard not single word
-                    continue;
-                }
-            }
-            if added_token.lstrip {
-                // This will be strictly inferior to start and in correct sentence offset
-                let newstart = space_leftmost_at_end(&sentence[..start]);
-
-                // The previous match could have already matched those spaces
-                // Ignore them if it's already matched
-                start = std::cmp::max(newstart, start_offset);
-            }
-            if added_token.rstrip {
-                // This will starting a the stop+1 character, so we need
-                // to add the previous stop value
-                stop += space_rightmost_at_start(&sentence[stop..])
-            }
-            if start_offset < start {
-                splits.push((None, (start_offset, start)));
-            }
-            splits.push((Some(id), (start, stop)));
-            start_offset = stop;
-        }
-
-        let total_byte_len = sentence.len();
-        if start_offset != total_byte_len {
-            splits.push((None, (start_offset, total_byte_len)));
-        }
-
-        splits
+        return Vec::new();
+        // for mat in trie.leftmost_find_iter(sentence) {
+        //     let mut start = mat.start();
+        //     let mut stop = mat.end();
+        //     let id = mat.value();
+        //     let added_token = &self.added_tokens_map_r.get(&id).unwrap();
+        //
+        //     if self.encode_special_tokens && self.special_tokens_set.contains(&added_token.content)
+        //     {
+        //         continue;
+        //     }
+        //
+        //     if added_token.single_word {
+        //         let start_space = start == 0 || !ends_with_word(&sentence[..start]);
+        //         let stop_space = stop == sentence.len() || !starts_with_word(&sentence[stop..]);
+        //
+        //         if !stop_space || !start_space {
+        //             // Discard not single word
+        //             continue;
+        //         }
+        //     }
+        //     if added_token.lstrip {
+        //         // This will be strictly inferior to start and in correct sentence offset
+        //         let newstart = space_leftmost_at_end(&sentence[..start]);
+        //
+        //         // The previous match could have already matched those spaces
+        //         // Ignore them if it's already matched
+        //         start = std::cmp::max(newstart, start_offset);
+        //     }
+        //     if added_token.rstrip {
+        //         // This will starting a the stop+1 character, so we need
+        //         // to add the previous stop value
+        //         stop += space_rightmost_at_start(&sentence[stop..])
+        //     }
+        //     if start_offset < start {
+        //         splits.push((None, (start_offset, start)));
+        //     }
+        //     splits.push((Some(id), (start, stop)));
+        //     start_offset = stop;
+        // }
+        //
+        // let total_byte_len = sentence.len();
+        // if start_offset != total_byte_len {
+        //     splits.push((None, (start_offset, total_byte_len)));
+        // }
+        //
+        // splits
     }
 
     /// Split the input sentence to extract anything we found from the `MatchingSet`, as well as
@@ -478,7 +480,7 @@ impl AddedVocabulary {
         sequence: &str,
     ) -> PreTokenizedString {
         // 1. if the machinery does not exist, we build it:
-        if self.num_buckets == 1 {
+        if self.token_metadata.len() == 1 {
             let next_match = None;
         }
         return sequence.into();
@@ -489,48 +491,48 @@ impl AddedVocabulary {
     /// non-normalized one. For example, when we expect to extract the token `yesterday` in the
     /// input sentence `I read a book Yesterday`, if the normalizer is supposed to lowercase
     /// everything, we expect a match.
-    pub fn extract_and_normalize_old<N: Normalizer>(
-        &self,
-        normalizer: Option<&N>,
-        sequence: &str,
-    ) -> PreTokenizedString {
-        let mut pretokenized: PreTokenizedString = sequence.into();
-
-        // 1. We extract all the non-normalized tokens from the non-normalized string
-        pretokenized
-            .split(|_, sequence| Ok(self.split_with_indices(sequence, &self.split_trie)))
-            .expect("AddedVocabulary bad split");
-
-        // <s> normalized = False
-        // "I read a book   <s>Hey" -> "I read a book", "   <s>", "Hey"
-
-        // </s> normalized = True -> "▁</s>"
-        // "I read a book</s>Hey" -> "I read a book</s>Hey"
-
-        // Day normalized = True -> "Day"
-        // "I read a book monday" -> "I read a book monday"
-
-        // [DAY] normalized = False -> "Day"
-        // "I read a [DAY] monday" -> "I read a " "[DAY]", "book monday"
-        //                                         320055
-        // 2. Then extract the normalized tokens from the normalized pieces of the string
-        pretokenized
-            .split(|_, mut sequence| {
-                normalizer.map(|n| n.normalize(&mut sequence));
-                Ok(self.split_with_indices(sequence, &self.split_normalized_trie))
-            })
-            .expect("AddedVocabulary bad split");
-
-        // ["I read a book", "   <s>", "Hey"] -> ["▁I read a book", "▁   <s>", "▁Hey"]
-        // ["▁I read a book", "▁   <s>", "▁Hey"] -> [.., "▁   ", "<s>", "▁Hey"]
-
-        // </s> normalized = True -> "▁</s>"
-        // "I read a book</s>Hey" -> ["▁I read a book", "<","/","s",">", "Hey"]
-
-        // "I read a " "[DAY]", "book monday" -> "i read a " "[day]", "book monday"
-
-        pretokenized
-    }
+    // pub fn extract_and_normalize_old<N: Normalizer>(
+    //     &self,
+    //     normalizer: Option<&N>,
+    //     sequence: &str,
+    // ) -> PreTokenizedString {
+    //     let mut pretokenized: PreTokenizedString = sequence.into();
+    //
+    //     // 1. We extract all the non-normalized tokens from the non-normalized string
+    //     pretokenized
+    //         .split(|_, sequence| Ok(self.split_with_indices(sequence, &self.split_trie)))
+    //         .expect("AddedVocabulary bad split");
+    //
+    //     // <s> normalized = False
+    //     // "I read a book   <s>Hey" -> "I read a book", "   <s>", "Hey"
+    //
+    //     // </s> normalized = True -> "▁</s>"
+    //     // "I read a book</s>Hey" -> "I read a book</s>Hey"
+    //
+    //     // Day normalized = True -> "Day"
+    //     // "I read a book monday" -> "I read a book monday"
+    //
+    //     // [DAY] normalized = False -> "Day"
+    //     // "I read a [DAY] monday" -> "I read a " "[DAY]", "book monday"
+    //     //                                         320055
+    //     // 2. Then extract the normalized tokens from the normalized pieces of the string
+    //     pretokenized
+    //         .split(|_, mut sequence| {
+    //             normalizer.map(|n| n.normalize(&mut sequence));
+    //             Ok(self.split_with_indices(sequence, &self.split_normalized_trie))
+    //         })
+    //         .expect("AddedVocabulary bad split");
+    //
+    //     // ["I read a book", "   <s>", "Hey"] -> ["▁I read a book", "▁   <s>", "▁Hey"]
+    //     // ["▁I read a book", "▁   <s>", "▁Hey"] -> [.., "▁   ", "<s>", "▁Hey"]
+    //
+    //     // </s> normalized = True -> "▁</s>"
+    //     // "I read a book</s>Hey" -> ["▁I read a book", "<","/","s",">", "Hey"]
+    //
+    //     // "I read a " "[DAY]", "book monday" -> "i read a " "[day]", "book monday"
+    //
+    //     pretokenized
+    // }
 }
 
 impl Default for AddedVocabulary {

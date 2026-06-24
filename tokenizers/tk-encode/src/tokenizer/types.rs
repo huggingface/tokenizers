@@ -6,7 +6,7 @@ pub struct Bucket {
     pub end: u32,
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct AddedTokenFlags {
     pub special: bool,
     pub normalized: bool,
@@ -18,11 +18,10 @@ pub struct AddedTokenFlags {
 #[derive(Clone)]
 pub struct TokenId(pub u32);
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct TokenMetadata {
     pub data_offset: u32,
     pub len: u8,
     pub id: TokenId,
     pub flags: AddedTokenFlags,
 }
-impl From<AddedToken> for AddedTokenFlags {}
