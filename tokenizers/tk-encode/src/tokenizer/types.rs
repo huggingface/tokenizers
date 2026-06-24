@@ -1,4 +1,4 @@
-#[derive(Clone, Hash, Default, Copy)]
+#[derive(Clone, Hash, Default, Copy, Debug)]
 pub struct Bucket {
     pub prefix: [u8; 4],
     pub prefix_len: u8,
@@ -6,7 +6,7 @@ pub struct Bucket {
     pub end: u32,
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct AddedTokenFlags {
     pub special: bool,
     pub normalized: bool,
@@ -15,10 +15,10 @@ pub struct AddedTokenFlags {
     pub rstrip: bool,
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct TokenId(pub u32);
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct TokenMetadata {
     pub data_offset: u32,
     pub len: u8,
