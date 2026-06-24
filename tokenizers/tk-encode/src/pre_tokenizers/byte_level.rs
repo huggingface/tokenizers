@@ -35,6 +35,12 @@ pub struct ByteLevel {
     /// Set it to False if you want to use your own splitting.
     #[serde(default = "default_true")]
     pub use_regex: bool,
+
+    /// Runtime-only: when the byte-level bypass is active the model consumes raw bytes
+    /// directly, so this pre-tokenizer must skip the byte→char mapping step. Never
+    /// serialized; set by `Tokenizer` when it (de)activates the bypass.
+    #[serde(skip)]
+    pub(crate) skip_byte_mapping: bool,
 }
 
 fn default_true() -> bool {
@@ -47,6 +53,7 @@ impl Default for ByteLevel {
             add_prefix_space: true,
             trim_offsets: true,
             use_regex: true,
+            skip_byte_mapping: false,
         }
     }
 }
@@ -57,6 +64,7 @@ impl ByteLevel {
             add_prefix_space,
             trim_offsets,
             use_regex,
+            skip_byte_mapping: false,
         }
     }
 
@@ -81,13 +89,8 @@ impl ByteLevel {
         self.use_regex = v;
         self
     }
-}
 
-/// As a `PreTokenizer`, `ByteLevel` is in charge of transforming all the unicode characters into
-/// their byte-level counterpart. It also splits the input according to the configured regex.
-// TODO: Give the ability to modify this regex
-impl PreTokenizer for ByteLevel {
-    fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
+    fn split_then_map(&self, pretokenized: &mut PreTokenizedString, map: bool) -> Result<()> {
         let re_ref: &SysRegex = &RE;
         pretokenized.split(|_, mut normalized| {
             if self.add_prefix_space && !normalized.get().starts_with(' ') {
@@ -99,11 +102,32 @@ impl PreTokenizer for ByteLevel {
                 Ok(vec![normalized])
             }
         })?;
+        if !map {
+            return Ok(());
+        }
         pretokenized.normalize(|normalized| {
             let s = normalized.get();
             normalized.transform(byte_level_transform(s), 0);
             Ok(())
         })
+    }
+}
+
+/// As a `PreTokenizer`, `ByteLevel` is in charge of transforming all the unicode characters into
+/// their byte-level counterpart. It also splits the input according to the configured regex.
+// TODO: Give the ability to modify this regex
+impl PreTokenizer for ByteLevel {
+    fn pre_tokenize(&self, p: &mut PreTokenizedString) -> Result<()> {
+        self.split_then_map(p, !self.skip_byte_mapping)
+    }
+    fn pre_tokenize_for_training(&self, p: &mut PreTokenizedString) -> Result<()> {
+        self.split_then_map(p, true)
+    }
+    fn has_byte_level(&self) -> bool {
+        true
+    }
+    fn set_skip_byte_mapping(&mut self, skip: bool) {
+        self.skip_byte_mapping = skip;
     }
 }
 

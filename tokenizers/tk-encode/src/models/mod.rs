@@ -194,6 +194,23 @@ impl Model for ModelWrapper {
             Self::Unigram(t) => t.save(folder, name),
         }
     }
+
+    fn refresh_byte_level_bypass(&mut self) {
+        if let Self::BPE(m) = self {
+            m.refresh_byte_level_bypass();
+        }
+    }
+    fn byte_level_bypass_eligible(&self) -> bool {
+        matches!(self, Self::BPE(m) if m.byte_level_bypass_eligible())
+    }
+    fn set_byte_level_bypass_active(&mut self, on: bool) {
+        if let Self::BPE(m) = self {
+            m.set_byte_level_bypass_active(on);
+        }
+    }
+    fn byte_level_bypass_active(&self) -> bool {
+        matches!(self, Self::BPE(m) if m.byte_level_bypass_active())
+    }
 }
 
 impl ModelWrapper {

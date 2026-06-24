@@ -37,6 +37,20 @@ impl IntoIterator for Sequence {
 }
 
 impl PreTokenizer for Sequence {
+     fn has_byte_level(&self) -> bool {
+        self.pretokenizers.iter().any(|p| p.has_byte_level())
+    }
+    fn set_skip_byte_mapping(&mut self, skip: bool) {
+        for p in &mut self.pretokenizers {
+            p.set_skip_byte_mapping(skip);
+        }
+    }
+    fn pre_tokenize_for_training(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
+        for p in &self.pretokenizers {
+            p.pre_tokenize_for_training(pretokenized)?;
+        }
+        Ok(())
+    }
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
         for pretokenizer in &self.pretokenizers {
             pretokenizer.pre_tokenize(pretokenized)?;

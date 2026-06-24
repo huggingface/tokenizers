@@ -200,6 +200,10 @@ impl Normalizer for NormalizerWrapper {
             Self::ByteLevel(lc) => lc.normalize(normalized),
         }
     }
+
+     fn is_noop(&self) -> bool {
+        matches!(self, Self::Sequence(s) if s.is_noop())
+    }
 }
 
 impl_enum_from!(BertNormalizer, NormalizerWrapper, BertNormalizer);

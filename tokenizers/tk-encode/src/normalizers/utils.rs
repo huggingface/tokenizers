@@ -40,6 +40,10 @@ impl IntoIterator for Sequence {
 }
 
 impl Normalizer for Sequence {
+    fn is_noop(&self) -> bool {
+        self.as_ref().iter().all(|normalizer| normalizer.is_noop())
+    }
+
     fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
         for normalizer in &self.normalizers {
             normalizer.normalize(normalized)?;

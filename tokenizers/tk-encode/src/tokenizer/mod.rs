@@ -53,6 +53,11 @@ pub type Offsets = (usize, usize);
 /// Takes care of pre-processing strings.
 pub trait Normalizer: Sync {
     fn normalize(&self, normalized: &mut NormalizedString) -> Result<()>;
+
+    /// Whether the normalizer is a no-op for byte-level bypass eligibility
+    fn is_noop(&self) -> bool {
+        false
+    }
 }
 
 /// The `PreTokenizer` is in charge of doing the pre-segmentation step. It splits the given string
@@ -62,6 +67,15 @@ pub trait Normalizer: Sync {
 /// the original string.
 pub trait PreTokenizer {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()>;
+
+    fn pre_tokenize_for_training(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
+        self.pre_tokenize(pretokenized)
+    }
+
+    fn has_byte_level(&self) -> bool {
+        false
+    }
+    fn set_skip_byte_mapping(&mut self, _skip: bool) {}
 }
 
 /// Represents a model used during Tokenization (like BPE or Word or Unigram).
@@ -109,6 +123,15 @@ pub trait Model {
             ),
             None => pretokenized.tokenize(|normalized| self.tokenize(normalized.get())),
         }
+    }
+
+    fn refresh_byte_level_bypass(&mut self) {}
+    fn byte_level_bypass_eligible(&self) -> bool {
+        false
+    }
+    fn set_byte_level_bypass_active(&mut self, _active: bool) {}
+    fn byte_level_bypass_active(&self) -> bool {
+        false
     }
 }
 
@@ -414,6 +437,9 @@ where
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(
+    from = "TokenizerImpl<ModelWrapper, NormalizerWrapper, PreTokenizerWrapper, PostProcessorWrapper, DecoderWrapper>"
+)]
 pub struct Tokenizer(
     TokenizerImpl<
         ModelWrapper,
@@ -479,7 +505,7 @@ where
     D: Into<DecoderWrapper>,
 {
     fn from(t: TokenizerImpl<M, N, PT, PP, D>) -> Self {
-        Self(TokenizerImpl {
+        let mut tokenizer = Self(TokenizerImpl {
             model: t.model.into(),
             normalizer: t.normalizer.map(Into::into),
             pre_tokenizer: t.pre_tokenizer.map(Into::into),
@@ -488,7 +514,10 @@ where
             added_vocabulary: t.added_vocabulary,
             padding: t.padding,
             truncation: t.truncation,
-        })
+        });
+        // Activates the bypass on deserialize (the common `from_file` path).
+        tokenizer.refresh_byte_level_bypass();
+        tokenizer
     }
 }
 
@@ -534,6 +563,57 @@ pub struct TokenizerImpl<M, N, PT, PP, D> {
     padding: Option<PaddingParams>,
 }
 
+pub struct ModelGuard<'a, M, N, PT, PP, D>
+where
+    M: Model,
+    N: Normalizer,
+    PT: PreTokenizer,
+    PP: PostProcessor,
+    D: Decoder,
+{
+    tokenizer: &'a mut TokenizerImpl<M, N, PT, PP, D>,
+}
+
+impl<'a, M, N, PT, PP, D> std::ops::Deref for ModelGuard<'a, M, N, PT, PP, D>
+where
+    M: Model,
+    N: Normalizer,
+    PT: PreTokenizer,
+    PP: PostProcessor,
+    D: Decoder,
+{
+    type Target = M;
+    fn deref(&self) -> &M {
+        &self.tokenizer.model
+    }
+}
+
+impl<'a, M, N, PT, PP, D> std::ops::DerefMut for ModelGuard<'a, M, N, PT, PP, D>
+where
+    M: Model,
+    N: Normalizer,
+    PT: PreTokenizer,
+    PP: PostProcessor,
+    D: Decoder,
+{
+    fn deref_mut(&mut self) -> &mut M {
+        &mut self.tokenizer.model
+    }
+}
+
+impl<'a, M, N, PT, PP, D> Drop for ModelGuard<'a, M, N, PT, PP, D>
+where
+    M: Model,
+    N: Normalizer,
+    PT: PreTokenizer,
+    PP: PostProcessor,
+    D: Decoder,
+{
+    fn drop(&mut self) {
+        self.tokenizer.refresh_byte_level_bypass();
+    }
+}
+
 impl<M, N, PT, PP, D> TokenizerImpl<M, N, PT, PP, D>
 where
     M: Model,
@@ -570,6 +650,7 @@ where
         self.normalizer = normalizer.map(|norm| norm.into());
         self.added_vocabulary
             .refresh_normalized_tokens(self.normalizer.as_ref())?;
+        self.refresh_byte_level_bypass();
         Ok(self)
     }
     /// Get the normalizer
@@ -580,6 +661,7 @@ where
     /// Set the pre tokenizer
     pub fn with_pre_tokenizer(&mut self, pre_tokenizer: Option<impl Into<PT>>) -> &mut Self {
         self.pre_tokenizer = pre_tokenizer.map(|tok| tok.into());
+        self.refresh_byte_level_bypass();
         self
     }
 
@@ -602,6 +684,7 @@ where
     /// Set the decoder
     pub fn with_decoder(&mut self, decoder: Option<impl Into<D>>) -> &mut Self {
         self.decoder = decoder.map(|dec| dec.into());
+        self.refresh_byte_level_bypass();
         self
     }
 
@@ -613,6 +696,7 @@ where
     /// Set the model
     pub fn with_model(&mut self, model: impl Into<M>) -> &mut Self {
         self.model = model.into();
+        self.refresh_byte_level_bypass();
         self
     }
 
@@ -624,8 +708,33 @@ where
     /// Get a mutable reference to the model. Mainly used by the training
     /// extension in the `tk-train` crate so a `Trainer` can write the trained
     /// vocabulary/merges back into the model.
-    pub fn get_model_mut(&mut self) -> &mut M {
-        &mut self.model
+    pub fn get_model_mut(&mut self) -> ModelGuard<'_, M, N, PT, PP, D> {
+        ModelGuard { tokenizer: self }
+    }
+
+    fn apply_byte_level_bypass(&mut self, on: bool) {
+        let on = on && self.model.byte_level_bypass_eligible();
+        self.model.set_byte_level_bypass_active(on);
+        if let Some(pt) = self.pre_tokenizer.as_mut() {
+            pt.set_skip_byte_mapping(on);
+        }
+    }
+    pub fn refresh_byte_level_bypass(&mut self) {
+        self.model.refresh_byte_level_bypass();
+        let pipeline_ok = self
+            .pre_tokenizer
+            .as_ref()
+            .is_some_and(|p| p.has_byte_level())
+            && self.normalizer.as_ref().is_none_or(|n| n.is_noop());
+        self.apply_byte_level_bypass(pipeline_ok);
+    }
+
+    pub fn byte_level_bypass_enabled(&self) -> bool {
+        self.model.byte_level_bypass_active()
+    }
+
+    pub fn set_byte_level_bypass(&mut self, on: bool) {
+        self.apply_byte_level_bypass(on);
     }
 
     /// Set the added vocabulary.
@@ -1256,8 +1365,11 @@ where
         let normalized = self
             .added_vocabulary
             .extract_and_normalize(self.normalizer.as_ref(), sequence);
-        let pre_tokenized = self.do_pre_tokenize(normalized)?;
-        Ok(pre_tokenized
+        let mut pretokenized: PreTokenizedString = normalized;
+        if let Some(pretok) = &self.pre_tokenizer {
+            pretok.pre_tokenize_for_training(&mut pretokenized)?;
+        }
+        Ok(pretokenized
             .get_splits(OffsetReferential::Original, OffsetType::Byte)
             .into_iter()
             .map(|(s, _, _)| s.to_owned())

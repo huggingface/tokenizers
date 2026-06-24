@@ -96,7 +96,7 @@ where
                 if let Some(pbar) = progress {
                     pbar.finish();
                 }
-                let special_tokens = trainer.train(self.get_model_mut())?;
+                let special_tokens = trainer.train(&mut self.get_model_mut())?;
                 self.add_special_tokens(special_tokens)?;
 
                 Ok(())
@@ -138,7 +138,7 @@ where
             pbar.finish();
         }
 
-        let special_tokens = trainer.train(self.get_model_mut())?;
+        let special_tokens = trainer.train(&mut self.get_model_mut())?;
         self.add_special_tokens(special_tokens)?;
 
         Ok(self)

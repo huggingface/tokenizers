@@ -810,6 +810,25 @@ impl Model for BPE {
 
         Ok(vec![vocab_path, merges_path])
     }
+
+    fn refresh_byte_level_bypass(&mut self) {
+        self.byte_level_bypass = compute_byte_level_bypass(
+            &self.vocab,
+            self.continuing_subword_prefix.as_deref(),
+            self.end_of_word_suffix.as_deref(),
+        );
+    }
+    fn byte_level_bypass_eligible(&self) -> bool {
+        self.byte_level_bypass.is_some()
+    }
+    fn set_byte_level_bypass_active(&mut self, on: bool) {
+        if let Some(b) = self.byte_level_bypass.as_mut() {
+            b.active = on;
+        }
+    }
+    fn byte_level_bypass_active(&self) -> bool {
+        self.byte_level_bypass.as_ref().is_some_and(|b| b.active)
+    }
 }
 
 #[cfg(test)]
@@ -1412,6 +1431,69 @@ mod tests {
                 assert!(
                     bpe.byte_level_bypass.is_some(),
                     "empty prefix/suffix must stay eligible"
+                );
+            }
+        }
+
+        // `refresh_byte_level_bypass` re-derives eligibility after an in-place vocab/prefix
+        // mutation (the path training takes), so the cached table can never go stale.
+        mod refresh {
+            use super::*;
+            use crate::utils::byte_level::BYTES_CHAR_LOOKUP;
+
+            fn byte_complete_vocab() -> Vocab {
+                (0..=255u8)
+                    .map(|byte| (BYTES_CHAR_LOOKUP[byte as usize].to_string(), byte as u32))
+                    .collect()
+            }
+
+            #[test]
+            fn refresh_disables_when_vocab_loses_a_byte() {
+                let mut bpe = BpeBuilder::default()
+                    .vocab_and_merges(byte_complete_vocab(), vec![])
+                    .build()
+                    .unwrap();
+                assert!(bpe.byte_level_bypass.is_some());
+                bpe.vocab
+                    .remove(&BYTES_CHAR_LOOKUP[b' ' as usize].to_string());
+                bpe.refresh_byte_level_bypass();
+                assert!(
+                    bpe.byte_level_bypass.is_none(),
+                    "refresh must drop eligibility when a byte leaves the vocab"
+                );
+            }
+
+            #[test]
+            fn refresh_enables_when_vocab_becomes_byte_complete() {
+                let space = BYTES_CHAR_LOOKUP[b' ' as usize].to_string();
+                let mut vocab = byte_complete_vocab();
+                vocab.remove(&space);
+                let mut bpe = BpeBuilder::default()
+                    .vocab_and_merges(vocab, vec![])
+                    .build()
+                    .unwrap();
+                assert!(bpe.byte_level_bypass.is_none());
+                bpe.vocab.insert(space, b' ' as u32);
+                bpe.refresh_byte_level_bypass();
+                let bypass = bpe
+                    .byte_level_bypass
+                    .as_ref()
+                    .expect("refresh must enable once the vocab is byte-complete");
+                assert_eq!(bypass.byte_to_token_id[b' ' as usize], b' ' as u32);
+            }
+
+            #[test]
+            fn refresh_disables_with_continuing_subword_prefix() {
+                let mut bpe = BpeBuilder::default()
+                    .vocab_and_merges(byte_complete_vocab(), vec![])
+                    .build()
+                    .unwrap();
+                assert!(bpe.byte_level_bypass.is_some());
+                bpe.continuing_subword_prefix = Some("##".to_string());
+                bpe.refresh_byte_level_bypass();
+                assert!(
+                    bpe.byte_level_bypass.is_none(),
+                    "a continuing_subword_prefix added after build must disable the bypass"
                 );
             }
         }

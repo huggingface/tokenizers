@@ -59,6 +59,28 @@ impl PreTokenizer for PreTokenizerWrapper {
             Self::FixedLength(fl) => fl.pre_tokenize(normalized),
         }
     }
+
+    fn has_byte_level(&self) -> bool {
+        match self {
+            Self::ByteLevel(_) => true,
+            Self::Sequence(s) => s.has_byte_level(),
+            _ => false,
+        }
+    }
+    fn set_skip_byte_mapping(&mut self, skip: bool) {
+        match self {
+            Self::ByteLevel(p) => p.set_skip_byte_mapping(skip),
+            Self::Sequence(s) => s.set_skip_byte_mapping(skip),
+            _ => {}
+        }
+    }
+    fn pre_tokenize_for_training(&self, p: &mut PreTokenizedString) -> crate::Result<()> {
+        match self {
+            Self::ByteLevel(b) => b.pre_tokenize_for_training(p),
+            Self::Sequence(s) => s.pre_tokenize_for_training(p),
+            _ => self.pre_tokenize(p),
+        }
+    }
 }
 
 impl<'de> Deserialize<'de> for PreTokenizerWrapper {
