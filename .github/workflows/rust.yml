@@ -6,9 +6,6 @@ on:
       - main
   pull_request:
 
-env:
-  MANIFEST: ./tokenizers/Cargo.toml
-
 jobs:
   build_and_test:
     name: Build & test
@@ -19,37 +16,34 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macOS-latest]
+    defaults:
+      run:
+        working-directory: tokenizers
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
       - name: Install Rust Stable
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
 
-      # Necessary for now for the cargo cache: https://github.com/actions/cache/issues/133#issuecomment-599102035
-      - if: matrix.os == 'ubuntu-latest'
-        run: sudo chown -R $(whoami):$(id -ng) ~/.cargo/
-
       - name: Cache cargo registry / git / target
         uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc  # v2.9.1
         with:
           workspaces: tokenizers
-          shared-key: rust-build
 
       - name: Build
-        run: cargo build --workspace --all-targets --verbose --manifest-path ${{ env.MANIFEST }}
+        run: cargo build --workspace --all-targets --verbose
 
       - name: Run tests
         if: matrix.os != 'windows-latest'
         shell: bash
-        working-directory: ./tokenizers
         run: make test
 
       # Windows skips the integration tests (and their fixture downloads); run lib + doc tests instead.
       - name: Run lib & doc tests on Windows
         if: matrix.os == 'windows-latest'
         run: |
-          cargo test --workspace --verbose --manifest-path ${{ env.MANIFEST }} --lib
-          cargo test --workspace --verbose --manifest-path ${{ env.MANIFEST }} --doc
+          cargo test --workspace --verbose --lib
+          cargo test --workspace --verbose --doc
 
   # Matrixed so platform-specific cfg gates and target-specific lints get coverage.
   clippy:
@@ -59,6 +53,9 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macOS-latest]
+    defaults:
+      run:
+        working-directory: tokenizers
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
@@ -67,21 +64,20 @@ jobs:
         with:
           components: clippy
 
-      - if: matrix.os == 'ubuntu-latest'
-        run: sudo chown -R $(whoami):$(id -ng) ~/.cargo/
-
       - name: Cache cargo registry / git / target
         uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc  # v2.9.1
         with:
           workspaces: tokenizers
-          shared-key: rust-build
 
       - name: Lint with Clippy
-        run: cargo clippy --workspace --manifest-path ${{ env.MANIFEST }} --all-targets --all-features -- -D warnings
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
   format:
     name: Format
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tokenizers
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
@@ -91,15 +87,17 @@ jobs:
           components: rustfmt
 
       - name: Lint with RustFmt
-        run: cargo fmt --all --manifest-path ${{ env.MANIFEST }} -- --check
+        run: cargo fmt --all -- --check
 
-      # Benches aren't a workspace target, so --all above doesn't cover them.
       - name: Lint Benchmarks with RustFmt
-        run: cargo fmt --manifest-path ${{ env.MANIFEST }} -- ./tokenizers/benches/bpe_benchmark.rs --check
+        run: cargo fmt -- benches/bpe_benchmark.rs --check
 
   readme:
     name: READMEs up to date
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tokenizers
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
@@ -111,7 +109,6 @@ jobs:
 
       - name: Make sure every README matches its lib.rs
         shell: bash
-        working-directory: ./tokenizers
         run: |
           for crate in . tk-encode tk-train; do
             echo "::group::cargo readme check for ${crate}"
@@ -123,6 +120,9 @@ jobs:
   audit:
     name: Audit dependencies
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tokenizers
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
@@ -132,20 +132,23 @@ jobs:
       - name: Install cargo-audit
         run: cargo install cargo-audit
 
-      # Cargo.lock is gitignored, so generate it before auditing.
-      - name: Generate Cargo.lock
-        run: cargo generate-lockfile --manifest-path ${{ env.MANIFEST }}
-
       - name: Run Audit
-        run: cargo audit -D warnings -f ./tokenizers/Cargo.lock --ignore RUSTSEC-2024-0436 --ignore RUSTSEC-2025-0014 --ignore RUSTSEC-2025-0119
+        run: cargo audit -D warnings --ignore RUSTSEC-2024-0436 --ignore RUSTSEC-2025-0014 --ignore RUSTSEC-2025-0119
 
   semver:
     name: Semver checks
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tokenizers
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
+      - name: Install Rust Stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
+
+      - name: Install cargo-semver-checks
+        run: cargo install cargo-semver-checks
+
       - name: Check semver
-        uses: obi1kenobi/cargo-semver-checks-action@5b298c9520f7096a4683c0bd981a7ac5a7e249ae  # v2
-        with:
-          manifest-path: ${{ env.MANIFEST }}
+        run: cargo semver-checks --package tokenizers

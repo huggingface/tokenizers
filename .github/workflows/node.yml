@@ -13,6 +13,9 @@ jobs:
   build_and_test:
     name: Check everything builds & tests
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: bindings/node
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
@@ -24,7 +27,6 @@ jobs:
         uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc  # v2.9.1
         with:
           workspaces: bindings/node
-          shared-key: node
 
       - name: Install Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
@@ -32,20 +34,20 @@ jobs:
           node-version: latest
 
       - name: Install dependencies
-        working-directory: ./bindings/node
         run: yarn install
 
       - name: Build all
-        working-directory: ./bindings/node
         run: yarn build
 
       - name: Run JS tests
-        working-directory: ./bindings/node
         run: make test
 
   quality:
     name: Lint & format
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: bindings/node
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
@@ -59,13 +61,12 @@ jobs:
         uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc  # v2.9.1
         with:
           workspaces: bindings/node
-          shared-key: node
 
       - name: Lint with RustFmt
-        run: cargo fmt --manifest-path ./bindings/node/Cargo.toml -- --check
+        run: cargo fmt -- --check
 
       - name: Lint with Clippy
-        run: cargo clippy --manifest-path ./bindings/node/Cargo.toml --all-targets --all-features -- -D warnings
+        run: cargo clippy --all-targets --all-features -- -D warnings
 
       - name: Install Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
@@ -73,16 +74,17 @@ jobs:
           node-version: latest
 
       - name: Install dependencies
-        working-directory: ./bindings/node
         run: yarn install
 
       - name: Lint TS
-        working-directory: ./bindings/node
         run: yarn lint
 
   audit:
     name: Audit dependencies
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: bindings/node
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
@@ -93,9 +95,5 @@ jobs:
       - name: Install cargo-audit
         run: cargo install cargo-audit
 
-      # Cargo.lock is gitignored, so generate it before auditing.
-      - name: Generate Cargo.lock
-        run: cargo generate-lockfile --manifest-path ./bindings/node/Cargo.toml
-
       - name: Run Audit
-        run: cargo audit -D warnings -f ./bindings/node/Cargo.lock --ignore RUSTSEC-2024-0436 --ignore RUSTSEC-2025-0014 --ignore RUSTSEC-2025-0119
+        run: cargo audit -D warnings --ignore RUSTSEC-2024-0436 --ignore RUSTSEC-2025-0014 --ignore RUSTSEC-2025-0119
