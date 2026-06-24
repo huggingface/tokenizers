@@ -110,4 +110,4 @@ pub mod models {
 // Training surface — only with the `train` feature.
 // ---------------------------------------------------------------------------
 #[cfg(feature = "train")]
-pub use tk_train::{Trainable, Trainer, TokenizerTrainExt, TrainerWrapper};
+pub use tk_train::{TokenizerTrainExt, Trainable, Trainer, TrainerWrapper};
