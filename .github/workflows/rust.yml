@@ -150,6 +150,10 @@ jobs:
         with:
           tool: cargo-audit
 
+      # Cargo.lock is gitignored, so generate it (dependency resolution only, no compilation)
+      - name: Generate Cargo.lock
+        run: cargo generate-lockfile --manifest-path ./tokenizers/Cargo.toml
+
       - name: Run Audit
         run: cargo audit -D warnings -f ./tokenizers/Cargo.lock --ignore RUSTSEC-2024-0436 --ignore RUSTSEC-2025-0014 --ignore RUSTSEC-2025-0119
 
