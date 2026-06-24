@@ -11,8 +11,44 @@ on:
 
 jobs:
   build_and_test:
-    name: Check everything builds
+    name: Check everything builds & tests
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: bindings/node
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
+
+      - name: Cache cargo registry / git / target
+        uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc  # v2.9.1
+        with:
+          workspaces: bindings/node
+          shared-key: node
+
+      - name: Install Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
+        with:
+          node-version: latest
+
+      - name: Install dependencies
+        run: yarn install
+
+      - name: Build all
+        run: yarn build
+
+      - name: Run JS tests
+        run: make test
+
+  quality:
+    name: Lint & format
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: bindings/node
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
@@ -22,43 +58,50 @@ jobs:
         with:
           components: rustfmt, clippy
 
-      # Necessary for now for the cargo cache: https://github.com/actions/cache/issues/133#issuecomment-599102035
-      - run: sudo chown -R $(whoami):$(id -ng) ~/.cargo/
-
-      - name: Cache Cargo Registry
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
+      - name: Cache cargo registry / git / target
+        uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc  # v2.9.1
         with:
-          path: ~/.cargo/registry
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          workspaces: bindings/node
+          shared-key: node
+
+      - name: Lint with RustFmt
+        run: cargo fmt -- --check
+
+      - name: Lint with Clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
 
       - name: Install Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
         with:
           node-version: latest
+
       - name: Install dependencies
-        working-directory: ./bindings/node
         run: yarn install
 
-      - name: Build all
-        working-directory: ./bindings/node
-        run: yarn build
-
-      - name: Lint Rust formatting
-        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505  # v1
-        with:
-          command: fmt
-          args: --manifest-path ./bindings/node/Cargo.toml -- --check
-
-      - name: Lint Rust with Clippy
-        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505  # v1
-        with:
-          command: clippy
-          args: --manifest-path ./bindings/node/Cargo.toml --all-targets --all-features -- -D warnings
-
       - name: Lint TS
-        working-directory: ./bindings/node
         run: yarn lint
 
-      - name: Run JS tests
-        working-directory: ./bindings/node
-        run: make test
+  audit:
+    name: Audit dependencies
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: bindings/node
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
+
+      - name: Cache cargo registry / git / target
+        uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc  # v2.9.1
+        with:
+          workspaces: bindings/node
+          shared-key: cargo-audit
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
+
+      - name: Run Audit
+        run: cargo audit -D warnings --ignore RUSTSEC-2024-0436 --ignore RUSTSEC-2025-0014 --ignore RUSTSEC-2025-0119

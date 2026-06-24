@@ -1,12 +1,12 @@
 use std::collections::HashSet;
 
-use tk_encode::models::wordpiece::WordPiece;
 use crate::trainers::bpe::{BpeTrainer, BpeTrainerBuilder};
-use tk_encode::models::bpe::BPE;
 use crate::Trainer;
-use tk_encode::{AddedToken, Result};
 use ahash::AHashSet;
 use serde::{Deserialize, Serialize};
+use tk_encode::models::bpe::BPE;
+use tk_encode::models::wordpiece::WordPiece;
+use tk_encode::{AddedToken, Result};
 
 /// A `WordPieceTrainerBuilder` can be used to create a `WordPieceTrainer` with a custom
 /// configuration.
