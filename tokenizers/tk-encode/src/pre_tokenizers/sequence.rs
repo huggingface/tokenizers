@@ -37,7 +37,7 @@ impl IntoIterator for Sequence {
 }
 
 impl PreTokenizer for Sequence {
-     fn has_byte_level(&self) -> bool {
+    fn has_byte_level(&self) -> bool {
         self.pretokenizers.iter().any(|p| p.has_byte_level())
     }
     fn set_skip_byte_mapping(&mut self, skip: bool) {

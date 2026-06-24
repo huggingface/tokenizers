@@ -201,7 +201,7 @@ impl Normalizer for NormalizerWrapper {
         }
     }
 
-     fn is_noop(&self) -> bool {
+    fn is_noop(&self) -> bool {
         matches!(self, Self::Sequence(s) if s.is_noop())
     }
 }
