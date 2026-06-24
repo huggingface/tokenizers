@@ -7,13 +7,9 @@ on:
   pull_request:
 
 env:
-  # Single source of truth for the workspace manifest so every job stays in sync.
   MANIFEST: ./tokenizers/Cargo.toml
 
 jobs:
-  # The only job that actually exercises the build & the test suite across
-  # platforms. Everything else (lint, format, readme, audit, semver) lives in
-  # its own job below so a failure there is independent and easy to spot.
   build_and_test:
     name: Build & test
     runs-on: ${{ matrix.os }}
@@ -42,25 +38,20 @@ jobs:
       - name: Build
         run: cargo build --workspace --all-targets --verbose --manifest-path ${{ env.MANIFEST }}
 
-      # `make test` downloads the shared test fixtures (gpt2/bert/llama-3/unigram)
-      # then runs `cargo test --workspace` — covering the umbrella crate's
-      # integration tests plus the tk-encode and tk-train unit tests.
       - name: Run tests
         if: matrix.os != 'windows-latest'
         shell: bash
         working-directory: ./tokenizers
         run: make test
 
-      # Skip the integration tests (and their fixture downloads) on Windows;
-      # run the lib + doc tests for every workspace member instead.
+      # Windows skips the integration tests (and their fixture downloads); run lib + doc tests instead.
       - name: Run lib & doc tests on Windows
         if: matrix.os == 'windows-latest'
         run: |
           cargo test --workspace --verbose --manifest-path ${{ env.MANIFEST }} --lib
           cargo test --workspace --verbose --manifest-path ${{ env.MANIFEST }} --doc
 
-  # Clippy runs on every OS so platform-specific cfg gates and target-specific
-  # lints get coverage, but independently of the build/test job.
+  # Matrixed so platform-specific cfg gates and target-specific lints get coverage.
   clippy:
     name: Clippy
     runs-on: ${{ matrix.os }}
@@ -85,11 +76,9 @@ jobs:
           workspaces: tokenizers
           shared-key: rust-build
 
-      # `--workspace` lints every member crate (tokenizers, tk-encode, tk-train).
       - name: Lint with Clippy
         run: cargo clippy --workspace --manifest-path ${{ env.MANIFEST }} --all-targets --all-features -- -D warnings
 
-  # Formatting is OS-invariant, so a single canonical runner is enough.
   format:
     name: Format
     runs-on: ubuntu-latest
@@ -101,15 +90,13 @@ jobs:
         with:
           components: rustfmt
 
-      # `--all` formats every member crate; benches aren't a workspace target
-      # so they're checked explicitly.
       - name: Lint with RustFmt
         run: cargo fmt --all --manifest-path ${{ env.MANIFEST }} -- --check
 
+      # Benches aren't a workspace target, so --all above doesn't cover them.
       - name: Lint Benchmarks with RustFmt
         run: cargo fmt --manifest-path ${{ env.MANIFEST }} -- ./tokenizers/benches/bpe_benchmark.rs --check
 
-  # Verify the README of every crate is up to date with its lib.rs.
   readme:
     name: READMEs up to date
     runs-on: ubuntu-latest
@@ -135,7 +122,6 @@ jobs:
             echo "::endgroup::"
           done
 
-  # Advisory-DB audit is OS- and toolchain-invariant, so it runs once on its own.
   audit:
     name: Audit dependencies
     runs-on: ubuntu-latest
@@ -150,9 +136,9 @@ jobs:
         with:
           tool: cargo-audit
 
-      # Cargo.lock is gitignored, so generate it (dependency resolution only, no compilation)
+      # Cargo.lock is gitignored, so generate it before auditing.
       - name: Generate Cargo.lock
-        run: cargo generate-lockfile --manifest-path ./tokenizers/Cargo.toml
+        run: cargo generate-lockfile --manifest-path ${{ env.MANIFEST }}
 
       - name: Run Audit
         run: cargo audit -D warnings -f ./tokenizers/Cargo.lock --ignore RUSTSEC-2024-0436 --ignore RUSTSEC-2025-0014 --ignore RUSTSEC-2025-0119

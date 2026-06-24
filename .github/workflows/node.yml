@@ -10,8 +10,6 @@ on:
       - bindings/python/**
 
 jobs:
-  # Builds the native binding and runs the JS + TS test/lint suite, which all
-  # need the compiled addon and the node toolchain.
   build_and_test:
     name: Build & test
     runs-on: ubuntu-latest
@@ -51,7 +49,6 @@ jobs:
         working-directory: ./bindings/node
         run: make test
 
-  # Rust quality checks for the binding crate, independent of the JS build.
   rust_quality:
     name: Rust lint & format
     runs-on: ubuntu-latest
@@ -92,7 +89,7 @@ jobs:
         with:
           tool: cargo-audit
 
-      # Cargo.lock is gitignored, so generate it (dependency resolution only, no compilation)
+      # Cargo.lock is gitignored, so generate it before auditing.
       - name: Generate Cargo.lock
         run: cargo generate-lockfile --manifest-path ./bindings/node/Cargo.toml
 
