@@ -78,12 +78,18 @@ jobs:
       - name: Run Audit
         run: cargo audit -D warnings -f ./tokenizers/Cargo.lock --ignore RUSTSEC-2024-0436 --ignore RUSTSEC-2025-0014 --ignore RUSTSEC-2025-0119
 
-      # Verify that Readme.md is up to date.
+      # Verify that the README of every crate is up to date with its lib.rs.
       - name: Make sure, Readme generated from lib.rs matches actual Readme
         if: matrix.os == 'ubuntu-latest'
         shell: bash
         working-directory: ./tokenizers
-        run: cargo readme > must_match_readme.md && diff must_match_readme.md README.md
+        run: |
+          for crate in . tk-encode tk-train; do
+            echo "::group::cargo readme check for ${crate}"
+            cargo readme --project-root "${crate}" > "${crate}/must_match_readme.md"
+            diff "${crate}/must_match_readme.md" "${crate}/README.md"
+            echo "::endgroup::"
+          done
 
       - name: Check semver
         if: matrix.os == 'ubuntu-latest'
