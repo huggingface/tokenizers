@@ -71,7 +71,7 @@ jobs:
           python -m venv .env
           source .env/bin/activate
           pip install -U pip
-          pip install pytest pytest-asyncio requests setuptools_rust numpy pyarrow datasets ruff ty maturin
+          pip install pytest pytest-asyncio huggingface_hub setuptools_rust numpy pyarrow datasets ruff ty maturin
           # Build via maturin so we can drop the abi3 cargo feature on
           # free-threaded Python (3.14t can't load abi3 extensions).
           # `pip install -e .` would build through maturin's PEP 660 path
@@ -82,8 +82,24 @@ jobs:
             maturin develop --release --no-default-features --features ext-module
           fi
 
+
+      # Test fixtures are immutable — cache them (plus the huggingface_hub /
+      # datasets cache used by the test suite at runtime) so CI doesn't
+      # re-download from the Hub (and get rate-limited) on every run.
+      - name: Cache HF test data
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
+        with:
+          path: |
+            bindings/python/data
+            bindings/python/tests/data
+            ~/.cache/huggingface
+          key: hf-test-data-${{ runner.os }}-${{ hashFiles('bindings/python/Makefile', 'bindings/python/tests/utils.py') }}
+          restore-keys: hf-test-data-${{ runner.os }}-
+
       - name: Run tests
         working-directory: ./bindings/python
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           source .env/bin/activate
           # `make test` also runs `cargo test --no-default-features` which
