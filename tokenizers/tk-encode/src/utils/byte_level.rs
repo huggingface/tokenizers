@@ -19,7 +19,6 @@ pub static BYTES_CHAR_LOOKUP: LazyLock<[char; 256]> = LazyLock::new(make_byte_ch
 /// a bijection over all 256 bytes, this map has exactly 256 entries with no collisions.
 pub static CHAR_BYTES_LOOKUP: LazyLock<AHashMap<char, u8>> = LazyLock::new(|| {
     (0..=255u8)
-        .into_iter()
         .map(|byte| (BYTES_CHAR_LOOKUP[byte as usize], byte))
         .collect()
 });
