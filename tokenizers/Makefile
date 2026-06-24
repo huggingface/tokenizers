@@ -10,29 +10,29 @@ TESTS_RESOURCES = $(SHARED_RESOURCES) $(DATA_DIR)/unigram.json $(DATA_DIR)/unigr
 
 .PHONY : build
 build :
-	cargo build --all-targets
+	cargo build --workspace --all-targets
 
 .PHONY : release
 release :
-	cargo build --release
+	cargo build --workspace --release
 
 .PHONY : format
 format :
-	cargo fmt --
+	cargo fmt --all --
 
 .PHONY : lint
 lint :
-	cargo fmt -- --check
+	cargo fmt --all -- --check
 	cargo fmt -- $(BENCHMARK_DIR)/*.rs --check
-	cargo clippy --all-targets --all-features -- -D warnings
+	cargo clippy --workspace --all-targets --all-features -- -D warnings
 
 .PHONY : test
 test : $(TESTS_RESOURCES)
-	cargo test
+	cargo test --workspace
 
 .PHONY : doc
 doc :
-	cargo doc
+	cargo doc --workspace
 
 .PHONY : publish
 publish :

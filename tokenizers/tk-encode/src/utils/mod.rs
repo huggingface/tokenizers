@@ -14,6 +14,7 @@ pub use crate::utils::onig::SysRegex;
 #[cfg(not(any(feature = "onig", feature = "fancy-regex")))]
 compile_error!("One of the `onig`, or `fancy-regex` features must be enabled");
 
+pub mod byte_level;
 pub mod iter;
 pub mod padding;
 pub mod parallelism;
