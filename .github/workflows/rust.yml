@@ -44,21 +44,21 @@ jobs:
           tool: cargo-audit
 
       - name: Build
-        run: cargo build --all-targets --verbose --manifest-path ./tokenizers/Cargo.toml
+        run: cargo build --workspace --all-targets --verbose --manifest-path ./tokenizers/Cargo.toml
 
       # RustFmt is OS-invariant — gate to the canonical OS.
       # Clippy and Audit run on every matrix cell so platform-specific
       # cfg gates and target-specific lints get coverage.
       - name: Lint with RustFmt
         if: matrix.os == 'ubuntu-latest'
-        run: cargo fmt --manifest-path ./tokenizers/Cargo.toml -- --check
+        run: cargo fmt --all --manifest-path ./tokenizers/Cargo.toml -- --check
 
       - name: Lint Benchmarks with RustFmt
         if: matrix.os == 'ubuntu-latest'
         run: cargo fmt --manifest-path ./tokenizers/Cargo.toml -- ./tokenizers/benches/bpe_benchmark.rs --check
 
       - name: Lint with Clippy
-        run: cargo clippy --manifest-path ./tokenizers/Cargo.toml --all-targets --all-features -- -D warnings
+        run: cargo clippy --workspace --manifest-path ./tokenizers/Cargo.toml --all-targets --all-features -- -D warnings
 
       - name: Run Tests
         if: matrix.os != 'windows-latest'
@@ -69,11 +69,11 @@ jobs:
       # Skip integration tests for now on Windows
       - name: Run lib Tests on Windows
         if: matrix.os == 'windows-latest'
-        run: cargo test --verbose --manifest-path ./tokenizers/Cargo.toml --lib
+        run: cargo test --workspace --verbose --manifest-path ./tokenizers/Cargo.toml --lib
 
       - name: Run doc Tests on Windows
         if: matrix.os == 'windows-latest'
-        run: cargo test --verbose --manifest-path ./tokenizers/Cargo.toml --doc
+        run: cargo test --workspace --verbose --manifest-path ./tokenizers/Cargo.toml --doc
 
       - name: Run Audit
         run: cargo audit -D warnings -f ./tokenizers/Cargo.lock --ignore RUSTSEC-2024-0436 --ignore RUSTSEC-2025-0014 --ignore RUSTSEC-2025-0119
