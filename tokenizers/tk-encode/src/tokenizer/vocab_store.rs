@@ -157,6 +157,13 @@ impl VocabStore {
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
+
+    pub fn get_vocab(&self) -> Vec<(String, u32)> {
+        self.entries
+            .into_iter()
+            .map(|m| (self.id_to_token(m.id)?, m.id))
+            .collect()
+    }
 }
 
 #[cfg(test)]
@@ -213,3 +220,4 @@ mod tests {
         assert_eq!(vocab.id_to_token(50), None);
     }
 }
+

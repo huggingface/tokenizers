@@ -164,15 +164,8 @@ pub struct AddedVocabulary {
     ///  - the actual buckets. We could use small vec here. Chose to impl it.
     ///  Basically inlined if there are less than 16 buckets, else we use a heap allocated vec.
     buckets: Box<[Bucket]>,
-    /// The actual bytes of the tokens in a single buffer
-    token_data: Box<[u8]>,
     /// The metadata of each tokens
     token_metadata: Box<[TokenMetadata]>,
-    /// Contains all ids
-    token_ids: Box<[TokenId]>,
-    /// might be used to map index to token id. This is because neither of the above are sorted by
-    /// token id
-    id_to_tokens: Box<[u32]>,
     inner: VocabStore,
 }
 
@@ -182,50 +175,40 @@ impl AddedVocabulary {
             encode_special_tokens: true,
             first_byte_to_bucket_id: [0; 256],
             buckets: Box::new([]),
-            token_data: Box::new([]),
             token_metadata: Box::new([]),
-            token_ids: Box::new([]),
-            id_to_tokens: Box::new([]),
             inner: VocabStore::build(vec![("".as_bytes().to_vec(), 0)].to_vec()),
         }
     }
     /// Size of the additional vocabulary
     #[allow(dead_code)] // Suppress the "method is never used" warning
     pub fn len(&self) -> usize {
-        self.token_ids.len()
+        self.inner.len()
     }
 
     /// Whether or not this vocabulary is empty
     pub fn is_empty(&self) -> bool {
-        self.token_ids.is_empty()
+        self.inner.is_empty()
     }
 
     /// Get the additional vocabulary
     pub fn get_vocab(&self) -> AHashMap<String, u32> {
-        self.token_metadata
-            .iter()
-            .map(|m| {
-                let token = &self.token_data
-                    [m.data_offset as usize..(m.data_offset + m.len as u32) as usize];
-                let id = self.token_ids[m.id.0 as usize].0;
-                (String::from_utf8_lossy(token).to_string(), id)
-            })
+        self.inner
+            .get_vocab()
+            .into_iter()
             .collect::<AHashMap<String, u32>>()
     }
 
     /// Get the additional vocabulary with the AddedTokens
     /// TODO: this will be slowe because we rebuild the added tokens
     pub fn get_added_tokens_decoder(&self) -> AHashMap<u32, AddedToken> {
-        self.token_metadata
-            .iter()
-            .map(|m| {
-                let token = &self.token_data
-                    [m.data_offset as usize..(m.data_offset + m.len as u32) as usize];
-                let id = self.token_ids[m.id.0 as usize].0;
+        self.get_vocab()
+            .into_iter()
+            .map(|(token, id)| {
+                let m = self.token_metadata[id as usize];
                 (
                     id,
                     AddedToken {
-                        content: String::from_utf8_lossy(token).to_string(),
+                        content: token,
                         single_word: m.flags.single_word,
                         lstrip: m.flags.lstrip,
                         rstrip: m.flags.rstrip,
@@ -286,7 +269,7 @@ impl AddedVocabulary {
         let mut ignored = 0;
         let mut total = 0;
 
-        let mut next_id = self.token_ids.len();
+        let mut next_id = self.inner.len();
         let mut byte_set = Vec::new(); //self.buckets.into_vec();
                                        // consume self, this is not thread safe? only 1 should run it
                                        // let mut new_token_ids = self.token_ids.into_vec();
