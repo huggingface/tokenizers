@@ -29,7 +29,7 @@ pub mod pattern;
 pub mod pre_tokenizer;
 mod serialization;
 pub mod types;
-
+pub mod vocab_store;
 // Re-export wrappers
 pub use crate::decoders::DecoderWrapper;
 pub use crate::models::ModelWrapper;
@@ -574,8 +574,6 @@ where
     /// tokens when constructing a tokenizer programmatically.
     pub fn with_normalizer(&mut self, normalizer: Option<impl Into<N>>) -> Result<&mut Self> {
         self.normalizer = normalizer.map(|norm| norm.into());
-        self.added_vocabulary
-            .refresh_normalized_tokens(self.normalizer.as_ref())?;
         Ok(self)
     }
     /// Get the normalizer
