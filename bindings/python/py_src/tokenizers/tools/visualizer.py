@@ -104,7 +104,7 @@ class EncodingVisualizer:
                     raise ImportError(msg) from None
         self.tokenizer = tokenizer
         self.default_to_notebook = default_to_notebook
-        self.annotation_coverter = annotation_converter
+        self.annotation_converter = annotation_converter
         pass
 
     def __call__(
@@ -150,8 +150,8 @@ class EncodingVisualizer:
                     raise ImportError(msg) from None
         if annotations is None:
             annotations = []
-        if self.annotation_coverter is not None:
-            annotations = list(map(self.annotation_coverter, annotations))
+        if self.annotation_converter is not None:
+            annotations = list(map(self.annotation_converter, annotations))
         encoding = self.tokenizer.encode(text)
         html = EncodingVisualizer.__make_html(text, encoding, annotations)
         if final_default_to_notebook:
