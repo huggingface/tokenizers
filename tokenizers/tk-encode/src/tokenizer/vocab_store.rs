@@ -82,5 +82,6 @@ mod tests {
     fn test_vocab_score() {
         let vocab = VocabStore::build(vec![("Hel".to_string().as_bytes().into(), 0)]);
         assert!(vocab.token_to_id("Hel") == Some(0));
+        assert!(vocab.token_to_id("lo"), None)
     }
 }
