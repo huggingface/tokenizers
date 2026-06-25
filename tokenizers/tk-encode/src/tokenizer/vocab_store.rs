@@ -1,66 +1,114 @@
+use std::collections::HashSet;
+
+use ahash::RandomState;
+use ptr_hash::bucket_fn::Linear;
 use ptr_hash::{PtrHash, PtrHashParams};
-#[derive(Clone, Copy)]
+
+type Mphf = PtrHash<u64, Linear>;
+
+// Fixed seeds so a given vocab always hashes identically (the hasher is also stored on the struct,
+// so build and query are guaranteed consistent regardless).
+const SEEDS: [u64; 4] = [
+    0x243F_6A88_85A3_08D3,
+    0x1319_8A2E_0370_7344,
+    0xA409_3822_299F_31D0,
+    0x082E_FA98_EC4E_6C89,
+];
+
+#[derive(Clone, Copy, Debug)]
 struct Entry {
     start: u32,
     len: u16,
     id: u32,
 }
 
-struct VocabStore {
-    mphf: PtrHash<Vec<u8>>,
+pub struct VocabStore {
+    mphf: Mphf,
+    hasher: RandomState,
+    /// All token bytes, concatenated. Ordered by MPHF slot.
     bytes: Box<[u8]>,
+    /// `entries[slot]` -> (offset into `bytes`, length, id). Ordered by MPHF slot.
     entries: Box<[Entry]>,
+    /// `id_to_slot[id]` -> MPHF slot, or `u32::MAX` for ids absent from the vocab.
+    id_to_slot: Box<[u32]>,
 }
 
 impl VocabStore {
-    // we build with vec of u8 (bytes)
-    fn build(tokens: Vec<(Vec<u8>, u32)>) -> Self {
-        let keys: Vec<Vec<u8>> = tokens.iter().map(|(s, _)| s.clone()).collect();
+    pub fn build(tokens: Vec<(Vec<u8>, u32)>) -> Self {
+        let n = tokens.len();
+        assert!(n > 0, "vocab must be non-empty");
 
-        let mphf: PtrHash<Vec<u8>> = PtrHash::new(&keys, PtrHashParams::default());
-        let mut bytes = Vec::new();
+        let hasher = RandomState::with_seeds(SEEDS[0], SEEDS[1], SEEDS[2], SEEDS[3]);
+
+        // 1. Pre-hash token bytes -> u64 keys using near perfect hash func
+        let keys: Vec<u64> = tokens
+            .iter()
+            .map(|(s, _)| hasher.hash_one(s.as_slice()))
+            .collect();
+
+        // 2. A minimal perfect hash needs distinct keys. Collisions are astronomically unlikely
+        //    (~n^2/2^65); if one ever fires, switch the key type to u128. The byte check below makes
+        //    a collision a correct miss at query time, but it would drop a token at build, so guard.
+        {
+            let mut seen = HashSet::with_capacity(n);
+            for k in &keys {
+                assert!(
+                    seen.insert(*k),
+                    "64-bit hash collision in vocab; rebuild with u128 keys"
+                );
+            }
+        }
+
+        // 3. Build the MPHF. `single_part = true` to use the faster `index_single_part` query path.
+        let mut params = PtrHashParams::default_fast();
+        params.single_part = true;
+        let mphf = Mphf::new(&keys, params);
+
+        // 4. Place each token at its MPHF slot; build the slab and the id->slot reverse table.
+        let total: usize = tokens.iter().map(|(s, _)| s.len()).sum();
+        let max_id = tokens.iter().map(|(_, id)| *id).max().unwrap();
+        let mut bytes = Vec::with_capacity(total);
         let mut entries = vec![
             Entry {
                 start: 0,
                 len: 0,
-                id: 0,
+                id: 0
             };
-            keys.len()
+            n
         ];
-
-        for (s, id) in tokens {
-            let slot = mphf.index(&s);
-
-            let start = bytes.len() as u32;
-            let len = s.len() as u16;
-
-            bytes.extend_from_slice(&s);
-
-            entries[slot] = Entry { start, len, id };
+        let mut id_to_slot = vec![u32::MAX; max_id as usize + 1];
+        for (s, id) in &tokens {
+            assert!(
+                s.len() <= u16::MAX as usize,
+                "token longer than 65535 bytes"
+            );
+            let slot = mphf.index_single_part(&hasher.hash_one(s.as_slice()));
+            entries[slot] = Entry {
+                start: bytes.len() as u32,
+                len: s.len() as u16,
+                id: *id,
+            };
+            id_to_slot[*id as usize] = slot as u32;
+            bytes.extend_from_slice(s);
         }
+
         Self {
             mphf,
+            hasher,
             bytes: bytes.into_boxed_slice(),
             entries: entries.into_boxed_slice(),
+            id_to_slot: id_to_slot.into_boxed_slice(),
         }
     }
 
     #[inline]
-    fn get_bytes(&self, q: &[u8]) -> Option<u32> {
-        // This part depends on whether ptr_hash accepts borrowed &[u8]
-        // for a PtrHash<Vec<u8>>. If not, see note below.
-        let slot = self.mphf.index(&q.to_vec());
-
+    pub fn get_bytes(&self, q: &[u8]) -> Option<u32> {
+        let slot = self.mphf.index_single_part(&self.hasher.hash_one(q));
         let e = self.entries[slot];
-
-        if e.len as usize != q.len() {
-            return None;
-        }
-
-        let start = e.start as usize;
-        let end = start + e.len as usize;
-
-        if &self.bytes[start..end] == q {
+        let (start, len) = (e.start as usize, e.len as usize);
+        // Byte equality: confirms `q` really is the token at this slot (perfect hashing only
+        // guarantees a valid slot for in-vocab keys; this rejects collisions and OOV queries).
+        if len == q.len() && self.bytes[start..start + len] == *q {
             Some(e.id)
         } else {
             None
@@ -68,40 +116,89 @@ impl VocabStore {
     }
 
     #[inline]
-    fn token_to_id(&self, s: &str) -> Option<u32> {
+    pub fn token_to_id(&self, s: &str) -> Option<u32> {
         self.get_bytes(s.as_bytes())
     }
 
+    /// `id -> token bytes`, borrowing from the slab (no allocation).
     #[inline]
-    fn id_to_token_bytes(&self, i: u32) -> Option<&[u8]> {
-        if i as usize > self.entries.len() {
-            // TODO account for potential holes
-            return None;
+    pub fn id_to_token_bytes(&self, id: u32) -> Option<&[u8]> {
+        let slot = *self.id_to_slot.get(id as usize)?;
+        if slot == u32::MAX {
+            return None; // id is within range but absent from the vocab
         }
-        let entry = self.entries[i as usize];
-        let start = entry.start as usize;
-        let end = start.checked_add(entry.len as usize)?;
-        self.bytes.get(start..end)
+        let e = self.entries[slot as usize];
+        let start = e.start as usize;
+        self.bytes.get(start..start + e.len as usize)
     }
 
     #[inline]
-    fn id_to_token(&self, i: u32) -> Option<String> {
-        let bytes = self.id_to_token_bytes(i)?;
-        Some(String::from_utf8_lossy(bytes).into_owned())
+    pub fn id_to_token(&self, id: u32) -> Option<String> {
+        self.id_to_token_bytes(id)
+            .map(|b| String::from_utf8_lossy(b).into_owned())
+    }
+
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::vocab_store::VocabStore;
-    #[test]
-    fn test_vocab_score() {
-        let vocab = VocabStore::build(vec![("Hel".to_string().as_bytes().into(), 0)]);
-        assert!(vocab.token_to_id("Hel") == Some(0));
-        assert!(vocab.token_to_id("lo") == None);
 
-        assert!(vocab.id_to_token(0) == Some("Hel".to_string()));
-        assert!(vocab.id_to_token(1000) == None);
+    #[test]
+    fn single_token() {
+        let vocab = VocabStore::build(vec![(b"Hel".to_vec(), 0)]);
+        assert_eq!(vocab.token_to_id("Hel"), Some(0));
+        assert_eq!(vocab.token_to_id("lo"), None);
+        assert_eq!(vocab.id_to_token(0), Some("Hel".to_string()));
+        assert_eq!(vocab.id_to_token(1000), None);
+    }
+
+    #[test]
+    fn many_tokens_roundtrip() {
+        let toks: Vec<(Vec<u8>, u32)> = [
+            "the", "quick", "brown", "fox", "jumps", "over", "lazy", "dog", "Ġthe", "▁hello", "\n",
+            "12345",
+        ]
+        .iter()
+        .enumerate()
+        .map(|(i, s)| (s.as_bytes().to_vec(), i as u32))
+        .collect();
+        let n = toks.len();
+        let vocab = VocabStore::build(toks.clone());
+
+        for (s, id) in &toks {
+            assert_eq!(vocab.get_bytes(s), Some(*id), "fwd {s:?}");
+            assert_eq!(vocab.id_to_token_bytes(*id), Some(s.as_slice()), "rev {id}");
+        }
+        for q in ["", "zzz", "th", "theX", "fo", "doggo"] {
+            assert_eq!(vocab.token_to_id(q), None, "oov {q:?}");
+        }
+        assert_eq!(vocab.id_to_token(n as u32), None);
+        assert_eq!(vocab.len(), n);
+    }
+
+    #[test]
+    fn sparse_ids_with_gaps() {
+        let vocab = VocabStore::build(vec![
+            (b"a".to_vec(), 0),
+            (b"bb".to_vec(), 5),
+            (b"ccc".to_vec(), 100),
+        ]);
+        assert_eq!(vocab.token_to_id("a"), Some(0));
+        assert_eq!(vocab.token_to_id("bb"), Some(5));
+        assert_eq!(vocab.token_to_id("ccc"), Some(100));
+        assert_eq!(vocab.id_to_token(0), Some("a".to_string()));
+        assert_eq!(vocab.id_to_token(5), Some("bb".to_string()));
+        assert_eq!(vocab.id_to_token(100), Some("ccc".to_string()));
+        assert_eq!(vocab.id_to_token(1), None);
+        assert_eq!(vocab.id_to_token(50), None);
     }
 }
+
