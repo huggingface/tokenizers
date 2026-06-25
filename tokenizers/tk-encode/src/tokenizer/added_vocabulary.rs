@@ -153,7 +153,7 @@ fn space_rightmost_at_start(sentence: &str) -> usize {
 /// exist as required.
 ///
 #[derive(Clone, Debug)]
-pub struct AddedVocabulary {
+pub struct AddedVocabulary<const T: usize, const B: usize> {
     encode_special_tokens: bool,
     /// New fast path for normalize and extra needs:
     ///  - multi-bucket first bytes. If its len is 1, we use memchr
@@ -162,15 +162,16 @@ pub struct AddedVocabulary {
     first_byte_to_bucket_id: [u8; 256],
     ///  - the actual buckets. We could use small vec here. Chose to impl it.
     ///  Basically inlined if there are less than 16 buckets, else we use a heap allocated vec.
-    buckets: Box<[Bucket]>,
+    buckets: [Bucket; B],
     /// The actual bytes of the tokens in a single buffer
-    token_data: Box<[u8]>,
+    token_data: [u8; T],
     /// The metadata of each tokens
-    token_metadata: Box<[TokenMetadata]>,
-    /// The ids
-    token_ids: Box<[TokenId]>,
-    id_to_tokens: Box<[u32]>,
-    token_to_id: AHashMap<String, u32>,
+    token_metadata: [TokenMetadata; T],
+    /// Contains all ids
+    token_ids: [TokenId; T],
+    /// might be used to map index to token id. This is because neither of the above are sorted by
+    /// token id
+    id_to_tokens: [u32; T],
 }
 
 impl AddedVocabulary {
@@ -178,12 +179,11 @@ impl AddedVocabulary {
         Self {
             encode_special_tokens: true,
             first_byte_to_bucket_id: [0; 256],
-            buckets: Box::new([]),
-            token_data: Box::new([]),
-            token_metadata: Box::new([]),
-            token_ids: Box::new([]),
-            id_to_tokens: Box::new([]),
-            token_to_id: AHashMap::new(),
+            buckets: [],
+            token_data: [],
+            token_metadata: [],
+            token_ids: [],
+            id_to_tokens: [],
         }
     }
     /// Size of the additional vocabulary
@@ -285,6 +285,7 @@ impl AddedVocabulary {
 
         let mut next_id = self.token_ids.len();
         let mut byte_set = Vec::new();
+        // consume self, this is not thread safe? only 1 should run it
         let mut new_token_ids = Vec::new();
         let mut new_token_metdata = Vec::new();
         let mut new_token_data = Vec::new();
