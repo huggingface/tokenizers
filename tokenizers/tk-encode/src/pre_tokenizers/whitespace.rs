@@ -2,6 +2,7 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
+use crate::pipeline;
 use crate::tokenizer::{
     pattern::Invert, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior,
 };
@@ -40,10 +41,85 @@ impl PreTokenizer for WhitespaceSplit {
     }
 }
 
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum CharType {
+    Whitespace,
+    Word,
+    Symbol,
+}
+
+fn classify(ch: char) -> CharType {
+    if ch.is_whitespace() {
+        CharType::Whitespace
+    } else if is_word_char(ch) {
+        CharType::Word
+    } else {
+        CharType::Symbol
+    }
+}
+
+/// Matches the same characters as the `\w` regex class (Unicode-aware).
+/// This is: Alphabetic + Nd (decimal digit) + Pc (connector punctuation) +
+/// M (marks) + Join_Control — NOT Nl/No (which Rust's is_alphanumeric includes).
+fn is_word_char(ch: char) -> bool {
+    use unicode_categories::UnicodeCategories;
+
+    ch.is_alphabetic()
+        || ch.is_number_decimal_digit()
+        || ch.is_punctuation_connector()
+        || ch.is_mark()
+        || ch == '\u{200c}' // Zero-Width Non-Joiner
+        || ch == '\u{200d}' // Zero-Width Joiner
+}
+
+impl pipeline::PreTokenizer for Whitespace {
+    fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Split>) -> Result<()> {
+        let mut span_start = 0;
+        let mut prev_type: Option<CharType> = None;
+
+        for (i, ch) in text.char_indices() {
+            let ct = classify(ch);
+
+            if let Some(pt) = prev_type {
+                if pt != ct {
+                    if pt != CharType::Whitespace {
+                        out.push(pipeline::Split {
+                            range: span_start..i,
+                        });
+                    }
+                    span_start = i;
+                }
+            }
+            prev_type = Some(ct);
+        }
+
+        // Emit the final span
+        if let Some(pt) = prev_type {
+            if pt != CharType::Whitespace {
+                out.push(pipeline::Split {
+                    range: span_start..text.len(),
+                });
+            }
+        }
+
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{OffsetReferential, OffsetType, PreTokenizer};
+    use crate::{OffsetReferential, OffsetType, PreTokenizedString, PreTokenizer};
+
+    fn pretokenize(text: &str) -> Vec<(&str, (usize, usize))> {
+        let pretok = Whitespace;
+        let mut splits = Vec::new();
+        crate::pipeline::PreTokenizer::pre_tokenize(&pretok, text, &mut splits).unwrap();
+        splits
+            .iter()
+            .map(|s| (&text[s.range.clone()], (s.range.start, s.range.end)))
+            .collect()
+    }
 
     #[test]
     fn basic() {
@@ -64,18 +140,8 @@ mod tests {
             ),
             ("\n", vec![]),
         ];
-        let pretok = Whitespace {};
         for (s, res) in tests {
-            let mut pretokenized = PreTokenizedString::from(s);
-            pretok.pre_tokenize(&mut pretokenized).unwrap();
-            assert_eq!(
-                pretokenized
-                    .get_splits(OffsetReferential::Original, OffsetType::Byte)
-                    .into_iter()
-                    .map(|(s, o, _)| (s, o))
-                    .collect::<Vec<_>>(),
-                res
-            );
+            assert_eq!(pretokenize(s), res, "input: {s:?}");
         }
     }
 
@@ -102,4 +168,55 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn edge_cases() {
+        // word / symbol / whitespace transitions; whitespace dropped, runs kept whole
+        let edge_cases = vec![
+            ("", vec![]),
+            (" ", vec![]),
+            ("  ", vec![]),
+            ("a", vec![("a", (0, 1))]),
+            ("!", vec![("!", (0, 1))]),
+            ("a!", vec![("a", (0, 1)), ("!", (1, 2))]),
+            ("!a", vec![("!", (0, 1)), ("a", (1, 2))]),
+            ("a b", vec![("a", (0, 1)), ("b", (2, 3))]),
+            ("a  b", vec![("a", (0, 1)), ("b", (3, 4))]),
+            ("a\tb", vec![("a", (0, 1)), ("b", (2, 3))]),
+            ("a\nb", vec![("a", (0, 1)), ("b", (2, 3))]),
+            ("a\r\nb", vec![("a", (0, 1)), ("b", (3, 4))]),
+        ];
+
+        for (input, expected) in edge_cases {
+            assert_eq!(pretokenize(input), expected, "input: {input:?}");
+        }
+    }
+
+    #[test]
+    fn multibyte_offsets() {
+        // offsets are byte offsets into the input; classification is Unicode-aware.
+        // é is 2 bytes, so "café" = 0..5 and "résumé" = 6..14.
+        assert_eq!(
+            pretokenize("café résumé"),
+            vec![("café", (0, 5)), ("résumé", (6, 14))],
+        );
+        // CJK ideographs are alphabetic (word chars): one run, no inner split.
+        assert_eq!(
+            pretokenize("中文 text"),
+            vec![("中文", (0, 6)), ("text", (7, 11))],
+        );
+        // '_' is connector punctuation (a word char) -> a single word token.
+        assert_eq!(pretokenize("hello_world"), vec![("hello_world", (0, 11))]);
+        // word and symbol runs are each kept whole; only the boundary splits.
+        assert_eq!(
+            pretokenize("ab!!cd"),
+            vec![("ab", (0, 2)), ("!!", (2, 4)), ("cd", (4, 6))],
+        );
+    }
+
+    // TODO: add xnli test:
+    // - either as an integration test
+    // - either as a unit test that triggers only if the xnli file is present in the data/ dir
+    // #[test]
+    // fn xnli() {}
 }
