@@ -38,7 +38,6 @@ impl VocabStore {
 
             entries[slot] = Entry { start, len, id };
         }
-
         Self {
             mphf,
             bytes: bytes.into_boxed_slice(),
@@ -74,14 +73,21 @@ impl VocabStore {
     }
 
     #[inline]
-    fn id_to_token(&self, i: u32) -> Option<String> {
+    fn id_to_token_bytes(&self, i: u32) -> Option<&[u8]> {
+        if i as usize > self.entries.len() {
+            // TODO account for potential holes
+            return None;
+        }
         let entry = self.entries[i as usize];
-        Some(
-            String::from_utf8_lossy(
-                &self.bytes[entry.start as usize..(entry.start + entry.len as u32) as usize],
-            )
-            .into_owned(),
-        )
+        let start = entry.start as usize;
+        let end = start.checked_add(entry.len as usize)?;
+        self.bytes.get(start..end)
+    }
+
+    #[inline]
+    fn id_to_token(&self, i: u32) -> Option<String> {
+        let bytes = self.id_to_token_bytes(i)?;
+        Some(String::from_utf8_lossy(bytes).into_owned())
     }
 }
 
@@ -95,7 +101,7 @@ mod tests {
         assert!(vocab.token_to_id("Hel") == Some(0));
         assert!(vocab.token_to_id("lo") == None);
 
-        assert!(vocab.id_to_token(0) == Some("Hey".to_string()));
+        assert!(vocab.id_to_token(0) == Some("Hel".to_string()));
         assert!(vocab.id_to_token(1000) == None);
     }
 }
