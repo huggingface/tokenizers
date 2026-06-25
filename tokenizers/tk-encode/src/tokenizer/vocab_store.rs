@@ -76,9 +76,12 @@ impl VocabStore {
     #[inline]
     fn id_to_token(&self, i: u32) -> Option<String> {
         let entry = self.entries[i as usize];
-        Some(String::from_utf8_lossy(
-            self.bytes[entry.start..entry.start + entry.len],
-        ))
+        Some(
+            String::from_utf8_lossy(
+                &self.bytes[entry.start as usize..(entry.start + entry.len as u32) as usize],
+            )
+            .into_owned(),
+        )
     }
 }
 
@@ -90,9 +93,9 @@ mod tests {
     fn test_vocab_score() {
         let vocab = VocabStore::build(vec![("Hel".to_string().as_bytes().into(), 0)]);
         assert!(vocab.token_to_id("Hel") == Some(0));
-        assert!(vocab.token_to_id("lo"), None);
+        assert!(vocab.token_to_id("lo") == None);
 
-        assert!(vocab.id_to_token(0), 0);
-        assert!(vocab.id_to_token(1000), None);
+        assert!(vocab.id_to_token(0) == Some("Hey".to_string()));
+        assert!(vocab.id_to_token(1000) == None);
     }
 }
