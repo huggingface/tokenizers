@@ -4,6 +4,7 @@ use std::{iter, mem};
 mod model;
 mod serialization;
 pub mod word;
+mod backtrack;
 
 pub type Pair = (u32, u32);
 

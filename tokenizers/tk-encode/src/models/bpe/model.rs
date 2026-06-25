@@ -1,4 +1,4 @@
-use super::{super::OrderedVocabIter, Error, Pair, Word};
+use super::{super::OrderedVocabIter, backtrack::BacktrackingEngine, Error, Pair, Word};
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::cache::{DEFAULT_CACHE_CAPACITY, MAX_LENGTH};
 use crate::utils::iter::ResultShunt;
@@ -288,6 +288,8 @@ impl BpeBuilder {
             fuse_unk: self.config.fuse_unk,
             byte_fallback: self.config.byte_fallback,
             ignore_merges: self.config.ignore_merges,
+            backtracking_enabled: false,
+            backtracking_engine: None,
         })
     }
 }
@@ -319,6 +321,11 @@ pub struct BPE {
     pub byte_fallback: bool,
     /// Whether or not to direct output words if they are part of the vocab.
     pub ignore_merges: bool,
+
+    /// Whether the backtracking algorithm is used (vs naive iterative merges)
+    backtracking_enabled: bool,
+    /// Holds state required to run the backtracking algorithm
+    backtracking_engine: Option<BacktrackingEngine>,
 }
 
 impl std::fmt::Debug for BPE {
@@ -333,6 +340,7 @@ impl std::fmt::Debug for BPE {
             .field("vocab", &self.vocab.len())
             .field("merges", &self.merges.len())
             .field("ignore_merges", &self.ignore_merges)
+            .field("backtracking_enabled", &self.backtracking_enabled)
             .finish()
     }
 }
@@ -360,6 +368,8 @@ impl Clone for BPE {
             fuse_unk: self.fuse_unk,
             byte_fallback: self.byte_fallback,
             ignore_merges: self.ignore_merges,
+            backtracking_enabled: self.backtracking_enabled,
+            backtracking_engine: self.backtracking_engine.clone(),
         }
     }
 }
@@ -567,7 +577,11 @@ impl BPE {
         }
         let Some(cache) = self.cache.as_ref() else {
             // Cache disabled (capacity 0): fall back to the uncached path.
-            let word = self.merge_word(sequence)?;
+            let word = if self.backtracking() {
+                self.tokenize_backtracking(sequence)?
+            } else {
+                self.merge_word(sequence)?
+            };
             return Ok(self.word_to_tokens(&word).collect());
         };
         let cache_id = cache.id();
@@ -577,13 +591,60 @@ impl BPE {
             if let Some(hit) = local.get(sequence) {
                 return Ok(self.word_to_tokens(hit).collect());
             }
-            let word = self.merge_word(sequence)?;
+            let word = if self.backtracking() {
+                self.tokenize_backtracking(sequence)?
+            } else {
+                self.merge_word(sequence)?
+            };
             let ret: Vec<Token> = self.word_to_tokens(&word).collect();
             if sequence.len() < MAX_LENGTH && local.len() < cache.capacity {
                 local.insert(sequence.to_owned(), word);
             }
             Ok(ret)
         })
+    }
+}
+
+// Backtracking
+impl BPE {
+    pub(crate) fn backtracking(&self) -> bool {
+        self.backtracking_engine.is_some() && self.backtracking_enabled
+    }
+
+    #[allow(unused)]
+    pub(crate) fn set_backtracking(&mut self, active: bool) {
+        self.backtracking_enabled = active;
+        if active && self.backtracking_engine.is_none() {
+            self.backtracking_engine = Some(BacktrackingEngine::new(
+                &self.vocab,
+                &self.vocab_r,
+                &self.merges,
+            ));
+        }
+    }
+
+    fn tokenize_backtracking(&self, sequence: &str) -> Result<Word> {
+        if !self.backtracking_enabled {
+            // TODO: error type
+            panic!("Backtracking not enabled");
+        }
+        let engine = self
+            .backtracking_engine
+            .as_ref()
+            .expect("BacktrackingEngine not initialized");
+
+        let sequence_bytes = sequence.as_bytes();
+        let sequence_bye_length = sequence_bytes.len();
+
+        let mut word = Word::with_capacity(sequence_bye_length);
+
+        // Step 1: build the array of last token candidates
+        let token_suffixes = engine.build_token_suffix_array(sequence_bytes);
+
+        // Step 2: iterate in reverse to construct the word
+        engine.backtrack_token_suffix_array(token_suffixes, &mut word);
+
+        Ok(word)
     }
 }
 
@@ -604,7 +665,11 @@ impl Model for BPE {
         if self.dropout.is_none() || self.dropout == Some(0.0) {
             self.tokenize_with_cache(sequence)
         } else {
-            let word = self.merge_word(sequence)?;
+            let word = if self.backtracking() {
+                self.tokenize_backtracking(sequence)?
+            } else {
+                self.merge_word(sequence)?
+            };
             Ok(self.word_to_tokens(&word).collect())
         }
     }
@@ -1161,5 +1226,241 @@ mod tests {
                 }
             ]
         )
+    }
+
+    /// Differential oracle for the backtracking encoder.
+    ///
+    /// Tokenize each input with the naive merge algorithm, then with the
+    /// backtracking algorithm, and assert both produce identical tokens. The
+    /// naive path is independently pinned by the tests above, so a correct
+    /// backtracking encoder must reproduce its output exactly. The cache is
+    /// cleared when switching variants, otherwise a word cached by one variant
+    /// would be served to the other and the comparison would be vacuous.
+    fn assert_backtracking_matches_naive(mut bpe: BPE, inputs: &[&str]) {
+        bpe.set_backtracking(false);
+        bpe.clear_cache();
+        let oracle: Vec<Vec<Token>> = inputs.iter().map(|i| bpe.tokenize(i).unwrap()).collect();
+
+        bpe.set_backtracking(true);
+        bpe.clear_cache();
+        for (input, expected) in inputs.iter().zip(&oracle) {
+            let got = bpe.tokenize(input).unwrap();
+            assert_eq!(
+                &got, expected,
+                "backtracking disagrees with naive on {input:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn backtracking_rejects_greedy_boundary() {
+        // merges (a,b) then (b,c): a greedy longest-match from the right would
+        // grab "bc", but BPE applies the higher-priority (a,b) merge first, so
+        // the canonical output is [ab, c]. The pair-validity check is what lets
+        // backtracking reject the "a|bc" boundary.
+        let vocab: Vocab = [("a", 0u32), ("b", 1), ("c", 2), ("ab", 3), ("bc", 4)]
+            .iter()
+            .map(|(s, i)| ((*s).into(), *i))
+            .collect();
+        let merges: Merges = vec![("a".into(), "b".into()), ("b".into(), "c".into())];
+        let bpe = BPE::new(vocab, merges);
+
+        assert_eq!(
+            bpe.tokenize("abc").unwrap(),
+            vec![
+                Token::new(3u32, "ab".into(), (0, 2)),
+                Token::new(2u32, "c".into(), (2, 3)),
+            ],
+            "naive BPE must merge (a,b) before (b,c)"
+        );
+
+        assert_backtracking_matches_naive(bpe, &["abc", "ab", "bc", "abcabc"]);
+    }
+
+    #[test]
+    fn backtracking_matches_naive_unrelated() {
+        let vocab: Vocab = [
+            ("u", 0u32),
+            ("n", 1),
+            ("r", 2),
+            ("e", 3),
+            ("l", 4),
+            ("a", 5),
+            ("t", 6),
+            ("d", 7),
+            ("re", 8),
+            ("at", 9),
+            ("ed", 10),
+            ("un", 11),
+            ("ated", 12),
+            ("rel", 13),
+            ("related", 14),
+            ("unrelated", 15),
+        ]
+        .iter()
+        .map(|(s, i)| ((*s).into(), *i))
+        .collect();
+        let merges: Merges = vec![
+            ("r".into(), "e".into()),
+            ("a".into(), "t".into()),
+            ("e".into(), "d".into()),
+            ("u".into(), "n".into()),
+            ("at".into(), "ed".into()),
+            ("re".into(), "l".into()),
+            ("rel".into(), "ated".into()),
+            ("un".into(), "related".into()),
+        ];
+        let bpe = BPE::new(vocab, merges);
+        assert_backtracking_matches_naive(bpe, &["unrelated", "related", "ated", "un", "red"]);
+    }
+
+    #[test]
+    fn backtracking_matches_naive_hello() {
+        let vocab: Vocab = [
+            ("h", 0u32),
+            ("e", 1),
+            ("l", 2),
+            ("o", 3),
+            ("he", 4),
+            ("hel", 5),
+            ("hell", 6),
+            ("hello", 7),
+        ]
+        .iter()
+        .map(|(s, i)| ((*s).into(), *i))
+        .collect();
+        let merges: Merges = vec![
+            ("h".into(), "e".into()),
+            ("he".into(), "l".into()),
+            ("hel".into(), "l".into()),
+            ("hell".into(), "o".into()),
+        ];
+        let bpe = BPE::new(vocab, merges);
+        assert_backtracking_matches_naive(bpe, &["hello", "hell", "hel", "he", "lo"]);
+    }
+
+    #[test]
+    fn backtracking_matches_naive_ignore_merges_off() {
+        let vocab: Vocab = [
+            (".:.:", 0u32),
+            ("Ġbelirtilen", 1),
+            (".", 2),
+            (":", 3),
+            ("bel", 4),
+            ("irtilen", 5),
+            ("Ġ", 6),
+            (".:", 7),
+            ("belirtilen", 8),
+            (".:.", 9),
+            ("be", 10),
+            ("l", 11),
+            ("ir", 12),
+            ("ti", 13),
+            ("en", 14),
+            ("irtil", 15),
+            ("irti", 16),
+            ("i", 17),
+            ("r", 18),
+            ("t", 19),
+            ("b", 20),
+            ("e", 21),
+            ("n", 22),
+        ]
+        .iter()
+        .map(|(s, i)| ((*s).into(), *i))
+        .collect();
+        let merges: Merges = vec![
+            (".".into(), ":".into()),
+            ("b".into(), "e".into()),
+            ("be".into(), "l".into()),
+            ("i".into(), "r".into()),
+            ("t".into(), "i".into()),
+            ("ir".into(), "ti".into()),
+            ("e".into(), "n".into()),
+            ("irti".into(), "l".into()),
+        ];
+        let bpe = BpeBuilder::default()
+            .vocab_and_merges(vocab, merges)
+            .ignore_merges(false)
+            .build()
+            .unwrap();
+        assert_backtracking_matches_naive(bpe, &[".:.:", "Ġbelirtilen"]);
+    }
+
+    #[test]
+    fn backtracking_matches_naive_no_merges() {
+        // Mirrors the bpe_b half of `test_cache_is_per_bpe_instance`: an empty
+        // merge table, so every output token is an atom.
+        let vocab: Vocab = [("h", 0u32), ("e", 1), ("l", 2), ("o", 3)]
+            .iter()
+            .map(|(s, i)| ((*s).into(), *i))
+            .collect();
+        let bpe = BPE::new(vocab, vec![]);
+        assert_backtracking_matches_naive(bpe, &["hello", "he", "o", "lo"]);
+    }
+
+    #[test]
+    fn backtracking_matches_naive_unk_not_fused() {
+        // Mirrors `test_unk_not_fused`.
+        let vocab: Vocab = [("<unk>", 0u32), ("a", 1), ("b", 2)]
+            .iter()
+            .map(|(s, i)| ((*s).into(), *i))
+            .collect();
+        let bpe = BpeBuilder::default()
+            .vocab_and_merges(vocab, vec![])
+            .unk_token("<unk>".to_string())
+            .build()
+            .unwrap();
+        assert_backtracking_matches_naive(bpe, &["c", "cc", "accb"]);
+    }
+
+    #[test]
+    fn backtracking_matches_naive_unk_fused() {
+        // Mirrors `test_unk_get_fused`.
+        let vocab: Vocab = [("<unk>", 0u32), ("a", 1), ("b", 2)]
+            .iter()
+            .map(|(s, i)| ((*s).into(), *i))
+            .collect();
+        let bpe = BpeBuilder::default()
+            .vocab_and_merges(vocab, vec![])
+            .unk_token("<unk>".to_string())
+            .fuse_unk(true)
+            .build()
+            .unwrap();
+        assert_backtracking_matches_naive(bpe, &["c", "cc", "accb"]);
+    }
+
+    #[test]
+    fn backtracking_matches_naive_continuing_subword_prefix() {
+        // Mirrors `test_bpe_with_continuing_subword_prefix`.
+        let vocab: Vocab = [("a", 0u32), ("##b", 1), ("##c", 2), ("ab", 3), ("abc", 4)]
+            .iter()
+            .map(|(s, i)| ((*s).into(), *i))
+            .collect();
+        let merges: Merges = vec![("a".into(), "##b".into()), ("ab".into(), "##c".into())];
+        let bpe = BpeBuilder::default()
+            .vocab_and_merges(vocab, merges)
+            .unk_token("[UNK]".to_string())
+            .continuing_subword_prefix("##".to_string())
+            .build()
+            .unwrap();
+        assert_backtracking_matches_naive(bpe, &["ab", "abc"]);
+    }
+
+    #[test]
+    fn backtracking_matches_naive_byte_fallback() {
+        // Mirrors `test_bpe_byte_fallback` and `test_bpe_byte_fallback_newline`.
+        // 0x61 == 'a', 0x0A == '\n'; 'c' (0x63) has no token and falls to <unk>.
+        let vocab: Vocab = [("<unk>", 0u32), ("<0x61>", 1), ("<0x0A>", 2)]
+            .iter()
+            .map(|(s, i)| ((*s).into(), *i))
+            .collect();
+        let bpe = BpeBuilder::default()
+            .vocab_and_merges(vocab, vec![])
+            .unk_token("<unk>".to_string())
+            .byte_fallback(true)
+            .build()
+            .unwrap();
+        assert_backtracking_matches_naive(bpe, &["a", "\n", "c"]);
     }
 }
