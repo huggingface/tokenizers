@@ -237,7 +237,7 @@ impl AddedVocabulary {
 
     /// Get the id matching one of our token if it exists
     pub fn token_to_id(&self, token: &str, model: &dyn Model) -> Option<u32> {
-        Some(0)
+        None
     }
 
     /// Return the string form of an added token used during **decoding**.
@@ -315,7 +315,7 @@ impl AddedVocabulary {
             };
 
             let mut prefix = [0; 4];
-            prefix.copy_from_slice(&token_bytes[..prefix_len]);
+            prefix[..prefix_len].copy_from_slice(&token_bytes[..prefix_len]);
             byte_set.push(Bucket {
                 prefix,
                 prefix_len: prefix_len as u8,
