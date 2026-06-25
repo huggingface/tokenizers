@@ -169,7 +169,6 @@ pub struct AddedVocabulary {
     token_metadata: Box<[TokenMetadata]>,
     /// The ids
     token_ids: Box<[TokenId]>,
-    // token to ids
     id_to_tokens: Box<[u32]>,
     token_to_id: AHashMap<String, u32>,
 }
@@ -286,6 +285,10 @@ impl AddedVocabulary {
 
         let mut next_id = self.token_ids.len();
         let mut byte_set = Vec::new();
+        let mut new_token_ids = Vec::new();
+        let mut new_token_metdata = Vec::new();
+        let mut new_token_data = Vec::new();
+
         for token in tokens {
             total += 1;
             if token.content.is_empty() {
@@ -301,8 +304,17 @@ impl AddedVocabulary {
                     continue;
                 } else {
                     self.token_metadata[id].flags = flags
+                    // TODO: if normalized flag changes, lots of stuff to update
                 }
             }
+
+            let new_id = if let Some(new_id) = self.token_to_id(&token.content, model) {
+                new_id as usize
+            } else {
+                let id = next_id;
+                next_id += 1;
+                id
+            };
 
             // We count the first bytes and store the actual lenght of the char
             let token_bytes = token.content.as_bytes();
@@ -323,14 +335,6 @@ impl AddedVocabulary {
                 end: 0,
             });
 
-            let new_id = if let Some(new_id) = self.token_to_id(&token.content, model) {
-                new_id as usize
-            } else {
-                let id = next_id;
-                next_id += 1;
-                id
-            };
-
             if token.normalized {
                 if let Some(n) = normalizer {
                     let mut s = NormalizedString::from(token.content.as_ref());
@@ -342,40 +346,9 @@ impl AddedVocabulary {
             }
         }
         self.buckets = byte_set.into_boxed_slice();
-        self.refresh_added_tokens()?;
 
         // Return the number of added tokens
         Ok(total - ignored)
-    }
-
-    /// Re-apply normalization to every added token that has `normalized = true`, then
-    /// rebuild the matching tries.
-    ///
-    /// This is called automatically by [`TokenizerImpl::with_normalizer`] when the
-    /// normalizer is replaced. For tokenizers with many added tokens the trie rebuild
-    /// can be slow; prefer setting the normalizer *before* calling `add_tokens` when
-    /// constructing a tokenizer programmatically. During deserialization this is never
-    /// triggered because the normalizer is set via the builder before tokens are added.
-    pub fn refresh_normalized_tokens<N: Normalizer>(
-        &mut self,
-        normalizer: Option<&N>,
-    ) -> Result<()> {
-        self.refresh_added_tokens()
-    }
-
-    /// Reconstruct our internal RegexSet when new tokens are added to the vocabulary.
-    /// # TODO @ArthurZucker we should probably make this async? rebuilding the regex takes a long time.
-    /// We keep two different RegexSet, one that will take care of matching against the
-    /// non-normalized string, and one matching against the normalized one.
-    fn refresh_added_tokens(&mut self) -> Result<()> {
-        // Build two lists: patterns for the normalized trie and for the non-normalized trie.
-        // For normalized tokens we use the cached normalized form when available, falling back
-        // to the original content (no normalizer set yet).  A for loop is used instead of an
-        // iterator + closure so the borrow checker can see that `added_tokens_map_r` and
-        // `normalized_cache` are disjoint fields, allowing both to be borrowed immutably while
-        // `split_trie` / `split_normalized_trie` are assigned afterwards.
-
-        Ok(())
     }
 
     /// Find any AddedToken in the given sentence, using the provided MatchingSet.
