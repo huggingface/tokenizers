@@ -3,6 +3,7 @@ use super::{
     Token,
 };
 use crate::types::{AddedTokenFlags, Bucket, TokenId, TokenMetadata};
+use crate::vocab_store::VocabStore;
 use ahash::{AHashMap, AHashSet};
 use daachorse::{DoubleArrayAhoCorasick, DoubleArrayAhoCorasickBuilder, MatchKind};
 use regex::Regex;
@@ -172,6 +173,7 @@ pub struct AddedVocabulary {
     /// might be used to map index to token id. This is because neither of the above are sorted by
     /// token id
     id_to_tokens: Box<[u32]>,
+    inner: VocabStore,
 }
 
 impl AddedVocabulary {
@@ -184,6 +186,7 @@ impl AddedVocabulary {
             token_metadata: Box::new([]),
             token_ids: Box::new([]),
             id_to_tokens: Box::new([]),
+            inner: VocabStore::build(vec![("".as_bytes().to_vec(), 0)].to_vec()),
         }
     }
     /// Size of the additional vocabulary

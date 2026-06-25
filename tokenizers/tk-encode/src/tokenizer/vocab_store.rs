@@ -3,6 +3,9 @@ use std::collections::HashSet;
 use ahash::RandomState;
 use ptr_hash::bucket_fn::Linear;
 use ptr_hash::{PtrHash, PtrHashParams};
+use std::fmt;
+
+use crate::models::bpe::Vocab;
 
 type Mphf = PtrHash<u64, Linear>;
 
@@ -22,6 +25,7 @@ struct Entry {
     id: u32,
 }
 
+#[derive(Clone)]
 pub struct VocabStore {
     mphf: Mphf,
     hasher: RandomState,
@@ -33,10 +37,18 @@ pub struct VocabStore {
     id_to_slot: Box<[u32]>,
 }
 
+impl fmt::Debug for VocabStore {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("VocabStore")
+            .field("bytes", &self.bytes)
+            .field("id_to_slot", &self.id_to_slot)
+            .field("entries", &self.entries)
+            .finish()
+    }
+}
 impl VocabStore {
     pub fn build(tokens: Vec<(Vec<u8>, u32)>) -> Self {
         let n = tokens.len();
-        assert!(n > 0, "vocab must be non-empty");
 
         let hasher = RandomState::with_seeds(SEEDS[0], SEEDS[1], SEEDS[2], SEEDS[3]);
 
@@ -201,4 +213,3 @@ mod tests {
         assert_eq!(vocab.id_to_token(50), None);
     }
 }
-
