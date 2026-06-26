@@ -204,7 +204,7 @@ impl AddedVocabulary {
         self.get_vocab()
             .into_iter()
             .map(|(token, id)| {
-                let m = self.token_metadata[id as usize];
+                let m = &self.token_metadata[id as usize];
                 (
                     id,
                     AddedToken {

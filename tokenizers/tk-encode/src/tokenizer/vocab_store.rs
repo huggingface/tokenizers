@@ -178,12 +178,7 @@ impl VocabStore {
     pub fn get_vocab(&self) -> Vec<(String, u32)> {
         self.entries
             .into_iter()
-            .map(|m| {
-                if let Some(token) = self.id_to_token(m.id) {
-                    (token, m.id)
-                } else {
-                }
-            })
+            .filter_map(|m| self.id_to_token(m.id).map(|token| (token, m.id)))
             .collect()
     }
 
@@ -197,9 +192,10 @@ impl VocabStore {
             let e = self.entries[i as usize];
             let slice = &self.bytes[e.start as usize..(e.start + e.len as u32) as usize];
             if bytes.starts_with(slice) {
-                return &e.id;
+                return Some(e.id);
             }
         }
+        None
     }
 }
 
@@ -267,4 +263,3 @@ mod tests {
         assert!(vocab.match_bytes("snot the best".as_bytes(), 0, 2) == None);
     }
 }
-
