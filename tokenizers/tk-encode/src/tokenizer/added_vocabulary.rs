@@ -2,6 +2,7 @@ use super::{
     normalizer::Range, Model, NormalizedString, Normalizer, Offsets, PreTokenizedString, Result,
     Token,
 };
+use std::fmt;
 use crate::types::{AddedTokenFlags, Bucket};
 use crate::vocab_store::VocabStore;
 use ahash::{AHashMap, AHashSet};
@@ -153,13 +154,12 @@ fn space_rightmost_at_start(sentence: &str) -> usize {
 /// were to add new tokens after this training process, we couldn't make sure the merges pairs
 /// exist as required.
 ///
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct AddedVocabulary {
     encode_special_tokens: bool,
     /// New fast path for normalize and extra needs:
     ///  - multi-bucket first bytes. If its len is 1, we use memchr
     ///  otherwise we just check each car on that table lookup. Its a 1KB table.
-    ///  We use u8 because this ends up beaing 4 lines of cache, in the function's stack
     first_byte_to_bucket_id: [u8; 256],
     ///  - the actual buckets. We could use small vec here. Chose to impl it.
     ///  Buckets give pointers to the inner vocab store.
@@ -168,7 +168,15 @@ pub struct AddedVocabulary {
     token_metadata: Box<[AddedTokenFlags]>, // indexed using id_to_slot?
     inner: VocabStore,
 }
-
+impl fmt::Debug for AddedVocabulary {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("AddedVocabulary")
+            .field("inner_vocab", &self.inner)
+            .field("buckets", &self.buckets)
+            .field("reconstructed_added_vocab", &self.get_added_tokens_decoder())
+            .finish()
+    }
+}
 impl AddedVocabulary {
     pub fn new() -> Self {
         Self {
@@ -324,7 +332,6 @@ impl AddedVocabulary {
                     start: 0,
                     end: 1,
                 });
-                println!("{:?}", byte_set);
                 self.first_byte_to_bucket_id[token_bytes[0] as usize] = byte_set.len() as u8 -1;
             }
             // dummy bucket for now, next time its seens will just update end.
@@ -341,7 +348,6 @@ impl AddedVocabulary {
         }
         // TODO: we have
         let mut zipped:Vec<_> = all_tokens.into_iter().zip(all_metadata).collect();
-        println!("zipped {:?}", zipped.clone());
         zipped.sort_unstable_by_key(|((s, _id), other)| {
             (
                 byte_set[self.first_byte_to_bucket_id[s[0] as usize] as usize].prefix,
@@ -364,7 +370,6 @@ impl AddedVocabulary {
         }
         self.buckets = byte_set.into();
         // TODO: normalized_inner needed as well!
-
         // Return the number of added tokens
         Ok(total - ignored)
     }

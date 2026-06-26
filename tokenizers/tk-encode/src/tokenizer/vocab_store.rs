@@ -50,7 +50,7 @@ pub struct VocabStore {
     bytes: Box<[u8]>,
     /// `entries[slot]` -> (offset into `bytes`, length, id). Ordered by MPHF slot.
     entries: Box<[Entry]>,
-    /// `id_to_slot[id]` -> MPHF slot, or `u32::MAX` for ids absent from the vocab.
+    /// `id_to_slot[id]` -> index into entries as the entries are not really sorted.
     id_to_slot: Box<[u32]>,
 }
 
