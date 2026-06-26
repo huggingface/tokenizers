@@ -337,7 +337,7 @@ impl AddedVocabulary {
                     if normed != token.content {}
                 }
             }
-            all_tokens.push((token_bytes.to_vec(), next_id as u32));
+            all_tokens.push((token_bytes.to_vec(), new_id as u32));
         }
         // TODO: we have
         let mut zipped:Vec<_> = all_tokens.into_iter().zip(all_metadata).collect();
