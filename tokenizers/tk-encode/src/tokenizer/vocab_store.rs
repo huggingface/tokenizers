@@ -177,7 +177,7 @@ impl VocabStore {
 
     pub fn get_vocab(&self) -> Vec<(String, u32)> {
         self.entries
-            .into_iter()
+            .iter()
             .filter_map(|m| self.id_to_token(m.id).map(|token| (token, m.id)))
             .collect()
     }
@@ -261,5 +261,5 @@ mod tests {
         ]);
         assert!(vocab.match_bytes("cccisnot the best".as_bytes(), 0, 2) == Some(0));
         assert!(vocab.match_bytes("snot the best".as_bytes(), 0, 2) == None);
-    }
+    } // TODO: support left right strip, single word
 }
