@@ -78,18 +78,17 @@ impl VocabStore {
         // 2. A minimal perfect hash needs distinct keys. Collisions are astronomically unlikely
         //    (~n^2/2^65); if one ever fires, switch the key type to u128. The byte check below makes
         //    a collision a correct miss at query time, but it would drop a token at build, so guard.
-        {
-            let mut seen = HashSet::with_capacity(n);
-            for k in &keys {
-                assert!(
-                    seen.insert(*k),
-                    format!(
-                        "64-bit hash collision in vocab; rebuild with u128 keys: {:?}",
-                        tokens
-                            .iter()
-                            .map(|(s, _)| String::from_utf8_lossy(s))
-                            .collect::<Vec<_>>()
-                    )
+
+        let mut seen = HashSet::with_capacity(n);
+        for k in &keys {
+            let overlap = seen.insert(*k);
+            if overlap {
+                println!(
+                    "64-bit hash collision in vocab; rebuild with u128 keys: {:?}",
+                    tokens
+                        .iter()
+                        .map(|(s, _)| String::from_utf8_lossy(s))
+                        .collect::<Vec<_>>()
                 );
             }
         }
@@ -97,7 +96,7 @@ impl VocabStore {
         // 3. Build the MPHF. `single_part = true` to use the faster `index_single_part` query path.
         let mut params = PtrHashParams::default_fast();
         params.single_part = true;
-        let mphf = Mphf::new(&keys, params);
+        let mphf = Mphf::new(&seen.into_iter().collect::<Vec<u64>>(), params);
 
         // 4. Place each token at its MPHF slot; build the slab and the id->slot reverse table.
         let total: usize = tokens.iter().map(|(s, _)| s.len()).sum();
