@@ -339,6 +339,9 @@ impl AddedVocabulary {
                 std::cmp::Reverse(s.len()),
             )
         });
+        // at this point all tokens should look like: ["<|1|>", "<||>", "[ooo]", "[i]"]. First same
+        //                                           b: <|     b:<|    b:[      b:[     the buckets    #[rustfmt::skip]
+        // prefix then just longest
         self.inner = VocabStore::build(all_tokens);
         // TODO: normalized_inner needed as well!
 
