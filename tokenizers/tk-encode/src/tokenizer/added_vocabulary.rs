@@ -271,11 +271,7 @@ impl AddedVocabulary {
 
         let mut next_id = self.inner.len();
         let mut byte_set = Vec::new(); //self.buckets.into_vec();
-                                       // consume self, this is not thread safe? only 1 should run it
-                                       // let mut new_token_ids = self.token_ids.into_vec();
-                                       // let mut new_token_metdata = self.token_metadata.into_vec();
-                                       // let mut new_token_data = self.token_data.into_vec();
-                                       //
+        let mut all_tokens = Vec::from(self.inner.get_vocab_bytes());
         for token in tokens {
             total += 1;
             if token.content.is_empty() {
@@ -331,7 +327,10 @@ impl AddedVocabulary {
                     if normed != token.content {}
                 }
             }
+            all_tokens.push((token.content.to_bytes(), next_id));
         }
+        self.inner = VocabStore::build(all_tokens);
+        // TODO: normalized_inner needed as well!
 
         // Return the number of added tokens
         Ok(total - ignored)

@@ -182,6 +182,14 @@ impl VocabStore {
             .collect()
     }
 
+    /// convenient when we want to re-build a vocab
+    pub fn get_vocab_bytes(&self) -> Vec<(Vec<u8>, u32)> {
+        self.entries
+            .iter()
+            .filter_map(|m| self.id_to_token_bytes(m.id).map(|token| (token, m.id)))
+            .collect()
+    }
+
     /// start and end are index into `self.entry`.
     #[inline]
     pub fn match_bytes(&self, bytes: &[u8], start: u32, end: u32) -> Option<u32> {
