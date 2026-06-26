@@ -222,7 +222,7 @@ impl AddedVocabulary {
 
     /// Get the id matching one of our token if it exists
     pub fn token_to_id(&self, token: &str, model: &dyn Model) -> Option<u32> {
-        None
+        self.inner.token_to_id(token)
     }
 
     /// Return the string form of an added token used during **decoding**.

@@ -141,7 +141,11 @@ impl VocabStore {
     }
     #[inline]
     pub fn get_bytes(&self, q: &[u8]) -> Option<u32> {
+        if self.entries.len() == 0{
+            return None;
+        }
         let slot = self.mphf.index_single_part(&self.hasher.hash_one(q));
+
         let e = self.entries[slot];
         let (start, len) = (e.start as usize, e.len as usize);
         // Byte equality: confirms `q` really is the token at this slot (perfect hashing only
