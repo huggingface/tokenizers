@@ -14,14 +14,3 @@ pub struct AddedTokenFlags {
     pub lstrip: bool,
     pub rstrip: bool,
 }
-
-#[derive(Clone, PartialEq, Debug)]
-pub struct TokenId(pub u32);
-
-#[derive(Clone, PartialEq, Debug)]
-pub struct TokenMetadata {
-    pub data_offset: u32,
-    pub len: u8,
-    pub id: TokenId,
-    pub flags: AddedTokenFlags,
-}

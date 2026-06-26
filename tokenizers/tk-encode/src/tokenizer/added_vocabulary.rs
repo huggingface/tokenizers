@@ -165,7 +165,7 @@ pub struct AddedVocabulary {
     ///  Buckets give pointers to the inner vocab store.
     buckets: Box<[Bucket]>,
     /// The metadata of each tokens
-    token_metadata: Box<[TokenMetadata]>,
+    token_metadata: Box<[AddedTokenFlags]>, // indexed using id_to_slot?
     inner: VocabStore,
 }
 
@@ -209,11 +209,11 @@ impl AddedVocabulary {
                     id,
                     AddedToken {
                         content: token,
-                        single_word: m.flags.single_word,
-                        lstrip: m.flags.lstrip,
-                        rstrip: m.flags.rstrip,
-                        normalized: m.flags.normalized,
-                        special: m.flags.special,
+                        single_word: m.single_word,
+                        lstrip: m.lstrip,
+                        rstrip: m.rstrip,
+                        normalized: m.normalized,
+                        special: m.special,
                     }, // TODO: implem from / to
                 )
             })
@@ -246,7 +246,7 @@ impl AddedVocabulary {
 
     /// Check if a token is a special token
     pub fn is_special_token(&self, token: &str) -> bool {
-        self.token_metadata[0].flags.special
+        self.token_metadata[0].special
     }
 
     /// Add some special tokens to the vocabulary
@@ -272,21 +272,23 @@ impl AddedVocabulary {
         let mut next_id = self.inner.len();
         let mut byte_set = Vec::from(self.buckets.to_vec());
         let mut all_tokens = Vec::from(self.inner.get_vocab_bytes());
+        let mut all_metadata = Vec::from(self.token_metadata.to_vec());
+
         for token in tokens {
             total += 1;
             if token.content.is_empty() {
                 ignored += 1;
                 continue;
             }
+            let flags = AddedTokenFlags::from(&token);
             // Fast path: skip if this content is already in the map with identical properties.
             if let Some(id) = self.token_to_id(&token.content, model) {
                 let id = id as usize;
-                let flags = AddedTokenFlags::from(&token);
-                if self.token_metadata[id].flags == flags {
+                if self.token_metadata[id] == flags {
                     ignored += 1;
                     continue;
                 } else {
-                    self.token_metadata[id].flags = flags
+                    self.token_metadata[id] = flags
                 }
             }
 
@@ -333,6 +335,7 @@ impl AddedVocabulary {
                 }
             }
             all_tokens.push((token.content.into_bytes(), next_id as u32));
+            all_metadata.push(flags)
         }
         // TODO: we have
         all_tokens.sort_unstable_by_key(|(s, _id)| {
@@ -344,6 +347,10 @@ impl AddedVocabulary {
         // at this point all tokens should look like: ["<|1|>", "<||>", "[ooo]", "[i]"]. First same
         //                                           b: <|     b:<|    b:[      b:[     the buckets    #[rustfmt::skip]
         // prefix then just longest
+        //
+        // TODO: now token_meta data needs to be sorted the same way?
+        all_metadata.sort_unstable_by_key(|t| {});
+
         self.inner = VocabStore::build(all_tokens);
         let mut idx = 0;
         for b in &mut byte_set {
