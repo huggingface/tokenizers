@@ -82,7 +82,7 @@ impl VocabStore {
         let mut seen = HashSet::with_capacity(n);
         for k in &keys {
             let overlap = seen.insert(*k);
-            if overlap {
+            if !overlap {
                 println!(
                     "Either 2 keys are the same or 64-bit hash collision in vocab; rebuild with u128 keys: {:?}",
                     tokens

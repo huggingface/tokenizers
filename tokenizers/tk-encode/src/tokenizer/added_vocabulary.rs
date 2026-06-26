@@ -417,13 +417,17 @@ impl AddedVocabulary {
                 .position(|&byte| self.first_byte_to_bucket_id[byte as usize] != u8::MAX)
             {
                 let byte = current_seq[next_index as usize] as usize;
+                let buck = self.buckets[self.first_byte_to_bucket_id[byte] as usize];
                 let end = self.inner.match_bytes(
                     &current_seq[next_index as usize..],
-                    0,
-                    self.buckets[self.first_byte_to_bucket_id[byte] as usize].end,
+                    buck.start,
+                    buck.end,
                 );
                 splits.push((start, next_index));
                 if let Some(e) = end {
+                    if e == 0 {
+                        break;
+                    }
                     splits.push((next_index, e as usize));
                     start = e as usize;
                     current_seq = &current_seq[e as usize..];
