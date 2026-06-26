@@ -311,16 +311,18 @@ impl AddedVocabulary {
             if self.first_byte_to_bucket_id[token_bytes[0] as usize] != u8::MAX {
                 // bucket already exists :)
                 self.buckets[token_bytes[0] as usize].end += 1;
+            } else {
+                let mut prefix = [0; 4];
+                prefix[..prefix_len].copy_from_slice(&token_bytes[..prefix_len]);
+                byte_set.push(Bucket {
+                    prefix,
+                    prefix_len: prefix_len as u8,
+                    start: 0,
+                    end: 1,
+                });
+                self.first_byte_to_bucket_id[token_bytes[0] as usize] = byte_set.len() as u8;
             }
-            let mut prefix = [0; 4];
-            prefix[..prefix_len].copy_from_slice(&token_bytes[..prefix_len]);
-            byte_set.push(Bucket {
-                prefix,
-                prefix_len: prefix_len as u8,
-                start: 0,
-                end: 0,
-            });
-
+            // dummy bucket for now, next time its seens will just update end.
             if token.normalized {
                 if let Some(n) = normalizer {
                     let mut s = NormalizedString::from(token.content.as_ref());
@@ -343,6 +345,14 @@ impl AddedVocabulary {
         //                                           b: <|     b:<|    b:[      b:[     the buckets    #[rustfmt::skip]
         // prefix then just longest
         self.inner = VocabStore::build(all_tokens);
+        let mut idx = 0;
+        for b in &mut byte_set {
+            let elem = b.end - b.start;
+            b.start = idx;
+            b.end = idx + elem;
+            idx = b.end;
+        }
+        self.buckets = byte_set.into();
         // TODO: normalized_inner needed as well!
 
         // Return the number of added tokens
