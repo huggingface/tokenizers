@@ -374,6 +374,8 @@ impl AddedVocabulary {
         self.buckets = byte_set.into();
         // TODO: normalized_inner needed as well!
         // Return the number of added tokens
+
+        println!("TOTAL TOKENS: {:?},{ignored}", total);
         println!("Final self: {:?}", self);
         Ok(total - ignored)
     }
@@ -615,6 +617,7 @@ mod tests {
                 .unwrap(),
             1
         );
+        println!("{:?}", vocab);
         assert_eq!(vocab.len(), 1);
 
         // Does not add multiple time the same token

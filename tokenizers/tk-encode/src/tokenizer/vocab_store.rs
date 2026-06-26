@@ -84,7 +84,7 @@ impl VocabStore {
             let overlap = seen.insert(*k);
             if overlap {
                 println!(
-                    "64-bit hash collision in vocab; rebuild with u128 keys: {:?}",
+                    "Either 2 keys are the same or 64-bit hash collision in vocab; rebuild with u128 keys: {:?}",
                     tokens
                         .iter()
                         .map(|(s, _)| String::from_utf8_lossy(s))
