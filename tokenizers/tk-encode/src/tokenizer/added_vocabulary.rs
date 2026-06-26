@@ -162,7 +162,7 @@ pub struct AddedVocabulary {
     ///  We use u8 because this ends up beaing 4 lines of cache, in the function's stack
     first_byte_to_bucket_id: [u8; 256],
     ///  - the actual buckets. We could use small vec here. Chose to impl it.
-    ///  Basically inlined if there are less than 16 buckets, else we use a heap allocated vec.
+    ///  Buckets give pointers to the inner vocab store.
     buckets: Box<[Bucket]>,
     /// The metadata of each tokens
     token_metadata: Box<[TokenMetadata]>,

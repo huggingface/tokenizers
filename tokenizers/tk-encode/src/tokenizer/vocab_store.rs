@@ -25,6 +25,23 @@ struct Entry {
     id: u32,
 }
 
+/// The VocabStore optimizes for space and speed. We don't use a HashMap to prevent duplicating the
+/// keys. Instead, we just use an `id_to_slot` and `entries` table. When you query bytes, you hash
+/// on the fly and get an `index` into the `entries` table. When you query an `id`, you fetch in
+/// the `id_to_slot` the same index.
+///
+/// Entries store start, len and the actual `id` of the token.
+/// Example:
+///
+/// ```
+/// use tk-encode::tokenizer::vocab_store::VocabStore;
+/// let vocab = VocabStore::build(vec![
+///     (b"a".to_vec(), 0),
+///     (b"bb".to_vec(), 5),
+///     (b"ccc".to_vec(), 100),
+/// ]);
+/// vocab.token_to_id("a".to_string());
+/// vocab.id_to_token(100);
 #[derive(Clone)]
 pub struct VocabStore {
     mphf: Mphf,
@@ -161,8 +178,28 @@ impl VocabStore {
     pub fn get_vocab(&self) -> Vec<(String, u32)> {
         self.entries
             .into_iter()
-            .map(|m| (self.id_to_token(m.id)?, m.id))
+            .map(|m| {
+                if let Some(token) = self.id_to_token(m.id) {
+                    (token, m.id)
+                } else {
+                }
+            })
             .collect()
+    }
+
+    /// start and end are index into `self.entry`.
+    #[inline]
+    pub fn match_bytes(&self, bytes: &[u8], start: u32, end: u32) -> Option<u32> {
+        let mut i = 0;
+        assert!(start < self.entries.len() as u32);
+        for i in self.entries[start as usize].start..self.entries[end as usize].start {
+            // we take each entry from byte_offset to end, compare with memcp
+            let e = self.entries[i as usize];
+            let slice = &self.bytes[e.start as usize..(e.start + e.len as u32) as usize];
+            if bytes.starts_with(slice) {
+                return &e.id;
+            }
+        }
     }
 }
 
@@ -218,6 +255,16 @@ mod tests {
         assert_eq!(vocab.id_to_token(100), Some("ccc".to_string()));
         assert_eq!(vocab.id_to_token(1), None);
         assert_eq!(vocab.id_to_token(50), None);
+    }
+    #[test]
+    fn test_match_bytes() {
+        let vocab = VocabStore::build(vec![
+            (b"ccci".to_vec(), 0),
+            (b"cc".to_vec(), 5),
+            (b"isn".to_vec(), 100),
+        ]);
+        assert!(vocab.match_bytes("cccisnot the best".as_bytes(), 0, 2) == Some(0));
+        assert!(vocab.match_bytes("snot the best".as_bytes(), 0, 2) == None);
     }
 }
 
