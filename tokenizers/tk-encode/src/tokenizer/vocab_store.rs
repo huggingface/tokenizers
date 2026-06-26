@@ -83,7 +83,13 @@ impl VocabStore {
             for k in &keys {
                 assert!(
                     seen.insert(*k),
-                    "64-bit hash collision in vocab; rebuild with u128 keys"
+                    format!(
+                        "64-bit hash collision in vocab; rebuild with u128 keys: {:?}",
+                        tokens
+                            .iter()
+                            .map(|(s, _)| String::from_utf8_lossy(s))
+                            .collect::<Vec<_>>()
+                    )
                 );
             }
         }
@@ -141,7 +147,7 @@ impl VocabStore {
     }
     #[inline]
     pub fn get_bytes(&self, q: &[u8]) -> Option<u32> {
-        if self.entries.len() == 0{
+        if self.entries.len() == 0 {
             return None;
         }
         let slot = self.mphf.index_single_part(&self.hasher.hash_one(q));
@@ -199,7 +205,10 @@ impl VocabStore {
     pub fn get_vocab_bytes(&self) -> Vec<(Vec<u8>, u32)> {
         self.entries
             .iter()
-            .filter_map(|m| self.id_to_token_bytes(m.id).map(|token| (token.to_vec(), m.id)))
+            .filter_map(|m| {
+                self.id_to_token_bytes(m.id)
+                    .map(|token| (token.to_vec(), m.id))
+            })
             .collect()
     }
 
