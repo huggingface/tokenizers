@@ -2,15 +2,15 @@ use super::{
     normalizer::Range, Model, NormalizedString, Normalizer, Offsets, PreTokenizedString, Result,
     Token,
 };
-use std::fmt;
 use crate::types::{AddedTokenFlags, Bucket};
 use crate::vocab_store::VocabStore;
 use ahash::{AHashMap, AHashSet};
 use daachorse::{DoubleArrayAhoCorasick, DoubleArrayAhoCorasickBuilder, MatchKind};
+use memchr::memchr;
 use regex::Regex;
 use serde::{ser::SerializeSeq, Deserialize, Serialize, Serializer};
+use std::fmt;
 use std::{collections::HashMap, sync::LazyLock};
-
 /// Represent a token added by the user on top of the existing Model vocabulary.
 /// AddedToken can be configured to specify the behavior they should have in various situations
 /// like:
@@ -173,7 +173,10 @@ impl fmt::Debug for AddedVocabulary {
         f.debug_struct("AddedVocabulary")
             .field("inner_vocab", &self.inner)
             .field("buckets", &self.buckets)
-            .field("reconstructed_added_vocab", &self.get_added_tokens_decoder())
+            .field(
+                "reconstructed_added_vocab",
+                &self.get_added_tokens_decoder(),
+            )
             .finish()
     }
 }
@@ -332,7 +335,7 @@ impl AddedVocabulary {
                     start: 0,
                     end: 1,
                 });
-                self.first_byte_to_bucket_id[token_bytes[0] as usize] = byte_set.len() as u8 -1;
+                self.first_byte_to_bucket_id[token_bytes[0] as usize] = byte_set.len() as u8 - 1;
             }
             // dummy bucket for now, next time its seens will just update end.
             if token.normalized {
@@ -347,14 +350,14 @@ impl AddedVocabulary {
             all_tokens.push((token_bytes.to_vec(), new_id as u32));
         }
         // TODO: we have
-        let mut zipped:Vec<_> = all_tokens.into_iter().zip(all_metadata).collect();
+        let mut zipped: Vec<_> = all_tokens.into_iter().zip(all_metadata).collect();
         zipped.sort_unstable_by_key(|((s, _id), other)| {
             (
                 byte_set[self.first_byte_to_bucket_id[s[0] as usize] as usize].prefix,
                 std::cmp::Reverse(s.len()),
             )
         });
-        let (all_tokens, all_metadata) : (Vec<_>, Vec<_>)= zipped.into_iter().unzip();
+        let (all_tokens, all_metadata): (Vec<_>, Vec<_>) = zipped.into_iter().unzip();
         // at this point all tokens should look like: ["<|1|>", "<||>", "[ooo]", "[i]"]. First same
         //                                           b: <|     b:<|    b:[      b:[     the buckets    #[rustfmt::skip]
         // prefix then just longest
@@ -371,99 +374,8 @@ impl AddedVocabulary {
         self.buckets = byte_set.into();
         // TODO: normalized_inner needed as well!
         // Return the number of added tokens
+        println!("Final self: {:?}", self);
         Ok(total - ignored)
-    }
-
-    /// Find any AddedToken in the given sentence, using the provided MatchingSet.
-    /// This method returns a list "splits", each of them being a pair of Offsets
-    /// and an optional ID if it is an AddedToken.
-    /// The list of splits cover the entire input string.
-    fn find_matches(&self, sentence: &str, split_re: &MatchingSet) -> Vec<(Option<u32>, Offsets)> {
-        // if sentence.is_empty() {
-        //     return vec![(None, (0, 0))];
-        // }
-        //
-        // let mut start_offset = 0;
-        // let mut splits = vec![];
-        //
-        // let trie = match split_re {
-        //     Some(t) => t,
-        //     None => {
-        //         return vec![(None, (0, sentence.len()))];
-        //     }
-        // };
-        return Vec::new();
-        // for mat in trie.leftmost_find_iter(sentence) {
-        //     let mut start = mat.start();
-        //     let mut stop = mat.end();
-        //     let id = mat.value();
-        //     let added_token = &self.added_tokens_map_r.get(&id).unwrap();
-        //
-        //     if self.encode_special_tokens && self.special_tokens_set.contains(&added_token.content)
-        //     {
-        //         continue;
-        //     }
-        //
-        //     if added_token.single_word {
-        //         let start_space = start == 0 || !ends_with_word(&sentence[..start]);
-        //         let stop_space = stop == sentence.len() || !starts_with_word(&sentence[stop..]);
-        //
-        //         if !stop_space || !start_space {
-        //             // Discard not single word
-        //             continue;
-        //         }
-        //     }
-        //     if added_token.lstrip {
-        //         // This will be strictly inferior to start and in correct sentence offset
-        //         let newstart = space_leftmost_at_end(&sentence[..start]);
-        //
-        //         // The previous match could have already matched those spaces
-        //         // Ignore them if it's already matched
-        //         start = std::cmp::max(newstart, start_offset);
-        //     }
-        //     if added_token.rstrip {
-        //         // This will starting a the stop+1 character, so we need
-        //         // to add the previous stop value
-        //         stop += space_rightmost_at_start(&sentence[stop..])
-        //     }
-        //     if start_offset < start {
-        //         splits.push((None, (start_offset, start)));
-        //     }
-        //     splits.push((Some(id), (start, stop)));
-        //     start_offset = stop;
-        // }
-        //
-        // let total_byte_len = sentence.len();
-        // if start_offset != total_byte_len {
-        //     splits.push((None, (start_offset, total_byte_len)));
-        // }
-        //
-        // splits
-    }
-
-    /// Split the input sentence to extract anything we found from the `MatchingSet`, as well as
-    /// the list of corresponding IDs
-    /// The list of IDs have the exact same number of elements than the Iterator.
-    fn split_with_indices(
-        &self,
-        sentence: NormalizedString,
-        split_re: &MatchingSet,
-    ) -> Vec<(NormalizedString, Option<Vec<Token>>)> {
-        self.find_matches(sentence.get(), split_re)
-            .into_iter()
-            .map(|(id, byte_offsets)| {
-                let slice = sentence
-                    .slice(Range::Normalized(byte_offsets.0..byte_offsets.1))
-                    .expect("AddedVocabulary bad split");
-                if let Some(id) = id {
-                    let value = slice.get().to_owned();
-                    let len = value.len();
-                    (slice, Some(vec![Token::new(id, value, (0, len))]))
-                } else {
-                    (slice, None)
-                }
-            })
-            .collect()
     }
 
     /// The first improvement we are working on is on replacing the heavy regex
@@ -474,60 +386,33 @@ impl AddedVocabulary {
         sequence: &str,
     ) -> PreTokenizedString {
         // 1. if the machinery does not exist, we build it:
-        if self.token_metadata.len() == 1 {
-            let next_match: Option<u8> = None;
+        let mut splits = Vec::new();
+        if self.buckets.len() == 1 {
+            /// memchr with 1, 2 or 3 bytes
+            let mut start = 0;
+            let mut current_seq = sequence.as_bytes();
+            while let Some(next_index) = memchr(self.buckets[0].prefix[0], current_seq) {
+                let end = self.inner.match_bytes(
+                    &current_seq[next_index as usize..],
+                    0,
+                    self.buckets[0].end,
+                );
+                splits.push((start, next_index));
+                if let Some(e) = end {
+                    splits.push((next_index, e as usize));
+                    start = e as usize;
+                    current_seq = &current_seq[e as usize..];
+                } else {
+                    break;
+                }
+            }
+        } else {
+            /// else we use self.first_byte_to_bucket_id
+            todo!()
         }
+
         return sequence.into();
     }
-    /// Extract the additional vocabulary from the given sentence, normalizing it along the way.
-    ///
-    /// Some tokens should match against their normalized representation, as well as the
-    /// non-normalized one. For example, when we expect to extract the token `yesterday` in the
-    /// input sentence `I read a book Yesterday`, if the normalizer is supposed to lowercase
-    /// everything, we expect a match.
-    pub fn skip() {}
-    // pub fn extract_and_normalize_old<N: Normalizer>(
-    //     &self,
-    //     normalizer: Option<&N>,
-    //     sequence: &str,
-    // ) -> PreTokenizedString {
-    //     let mut pretokenized: PreTokenizedString = sequence.into();
-    //
-    //     // 1. We extract all the non-normalized tokens from the non-normalized string
-    //     pretokenized
-    //         .split(|_, sequence| Ok(self.split_with_indices(sequence, &self.split_trie)))
-    //         .expect("AddedVocabulary bad split");
-    //
-    //     // <s> normalized = False
-    //     // "I read a book   <s>Hey" -> "I read a book", "   <s>", "Hey"
-    //
-    //     // </s> normalized = True -> "▁</s>"
-    //     // "I read a book</s>Hey" -> "I read a book</s>Hey"
-    //
-    //     // Day normalized = True -> "Day"
-    //     // "I read a book monday" -> "I read a book monday"
-    //
-    //     // [DAY] normalized = False -> "Day"
-    //     // "I read a [DAY] monday" -> "I read a " "[DAY]", "book monday"
-    //     //                                         320055
-    //     // 2. Then extract the normalized tokens from the normalized pieces of the string
-    //     pretokenized
-    //         .split(|_, mut sequence| {
-    //             normalizer.map(|n| n.normalize(&mut sequence));
-    //             Ok(self.split_with_indices(sequence, &self.split_normalized_trie))
-    //         })
-    //         .expect("AddedVocabulary bad split");
-    //
-    //     // ["I read a book", "   <s>", "Hey"] -> ["▁I read a book", "▁   <s>", "▁Hey"]
-    //     // ["▁I read a book", "▁   <s>", "▁Hey"] -> [.., "▁   ", "<s>", "▁Hey"]
-    //
-    //     // </s> normalized = True -> "▁</s>"
-    //     // "I read a book</s>Hey" -> ["▁I read a book", "<","/","s",">", "Hey"]
-    //
-    //     // "I read a " "[DAY]", "book monday" -> "i read a " "[day]", "book monday"
-    //
-    //     pretokenized
-    // }
 }
 
 impl Default for AddedVocabulary {

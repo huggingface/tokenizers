@@ -57,6 +57,7 @@ ahash = { version = "0.8.11", features = ["serde"] }
 dary_heap = { version = "0.3.6", features = ["serde"] }
 compact_str = { version = "0.9", features = ["serde"] }
 ptr_hash = { version = "1.1.0" }
+memchr = "2.8.2"
 
 [features]
 default = ["progressbar", "onig"]
