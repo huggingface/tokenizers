@@ -270,7 +270,7 @@ impl AddedVocabulary {
         let mut total = 0;
 
         let mut next_id = self.inner.len();
-        let mut byte_set = Vec::new(); //self.buckets.into_vec();
+        let mut byte_set = Vec::from(self.buckets.to_vec());
         let mut all_tokens = Vec::from(self.inner.get_vocab_bytes());
         for token in tokens {
             total += 1;
@@ -287,11 +287,11 @@ impl AddedVocabulary {
                     continue;
                 } else {
                     self.token_metadata[id].flags = flags
-                    // TODO: if normalized flag changes, lots of stuff to update
                 }
             }
 
             let new_id = if let Some(new_id) = self.token_to_id(&token.content, model) {
+                // its not new here, but we need to update the token flags
                 new_id as usize
             } else {
                 let id = next_id;
@@ -308,7 +308,10 @@ impl AddedVocabulary {
                 0xF0..=0xF4 => 4,
                 _ => return Err(format!("Invalid UTF-8 first byte in token ").into()),
             };
-
+            if self.first_byte_to_bucket_id[token_bytes[0] as usize] != u8::MAX {
+                // bucket already exists :)
+                self.buckets[token_bytes[0] as usize].end += 1;
+            }
             let mut prefix = [0; 4];
             prefix[..prefix_len].copy_from_slice(&token_bytes[..prefix_len]);
             byte_set.push(Bucket {
@@ -329,6 +332,13 @@ impl AddedVocabulary {
             }
             all_tokens.push((token.content.into_bytes(), next_id as u32));
         }
+        // TODO: we have
+        all_tokens.sort_unstable_by_key(|(s, _id)| {
+            (
+                self.buckets[self.first_byte_to_bucket_id[s[0] as usize] as usize].prefix,
+                std::cmp::Reverse(s.len()),
+            )
+        });
         self.inner = VocabStore::build(all_tokens);
         // TODO: normalized_inner needed as well!
 
