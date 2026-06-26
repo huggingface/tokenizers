@@ -408,10 +408,31 @@ impl AddedVocabulary {
             }
         } else {
             /// else we use self.first_byte_to_bucket_id
-            todo!()
+            let mut start = 0;
+            let mut current_seq = sequence.as_bytes();
+            while let Some(next_index) = current_seq
+                .iter()
+                .position(|&byte| self.first_byte_to_bucket_id[byte as usize] != u8::MAX)
+            {
+                let byte = current_seq[next_index as usize] as usize;
+                let end = self.inner.match_bytes(
+                    &current_seq[next_index as usize..],
+                    0,
+                    self.buckets[self.first_byte_to_bucket_id[byte] as usize].end,
+                );
+                splits.push((start, next_index));
+                if let Some(e) = end {
+                    splits.push((next_index, e as usize));
+                    start = e as usize;
+                    current_seq = &current_seq[e as usize..];
+                } else {
+                    break;
+                }
+            }
         }
-
-        return sequence.into();
+        println!("Found splits: {:?}", splits);
+        let pre = PreTokenizedString::from(sequence);
+        return pre.into();
     }
 }
 
