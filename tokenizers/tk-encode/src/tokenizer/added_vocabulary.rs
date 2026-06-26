@@ -173,7 +173,7 @@ impl AddedVocabulary {
     pub fn new() -> Self {
         Self {
             encode_special_tokens: true,
-            first_byte_to_bucket_id: [0; 256],
+            first_byte_to_bucket_id: [u8::MAX; 256],
             buckets: Box::new([]),
             token_metadata: Box::new([]),
             inner: VocabStore::build(vec![("".as_bytes().to_vec(), 0)].to_vec()),
@@ -314,7 +314,8 @@ impl AddedVocabulary {
             };
             if self.first_byte_to_bucket_id[token_bytes[0] as usize] != u8::MAX {
                 // bucket already exists :)
-                self.buckets[token_bytes[0] as usize].end += 1;
+                println!("self buckest {:?}, {:?}, self.first_byte_to_bucket_id: {:?}", self.buckets, token_bytes[0] as usize, self.first_byte_to_bucket_id);
+                byte_set[self.first_byte_to_bucket_id[token_bytes[0] as usize] as uzise].end += 1;
             } else {
                 let mut prefix = [0; 4];
                 prefix[..prefix_len].copy_from_slice(&token_bytes[..prefix_len]);
@@ -324,7 +325,9 @@ impl AddedVocabulary {
                     start: 0,
                     end: 1,
                 });
-                self.first_byte_to_bucket_id[token_bytes[0] as usize] = byte_set.len() as u8;
+                println!("Adding !");
+                println!("{:?}", byte_set);
+                self.first_byte_to_bucket_id[token_bytes[0] as usize] = byte_set.len() as u8 -1;
             }
             // dummy bucket for now, next time its seens will just update end.
             if token.normalized {
