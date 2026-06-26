@@ -2,7 +2,7 @@ use super::{
     normalizer::Range, Model, NormalizedString, Normalizer, Offsets, PreTokenizedString, Result,
     Token,
 };
-use crate::types::{AddedTokenFlags, Bucket, TokenId, TokenMetadata};
+use crate::types::{AddedTokenFlags, Bucket};
 use crate::vocab_store::VocabStore;
 use ahash::{AHashMap, AHashSet};
 use daachorse::{DoubleArrayAhoCorasick, DoubleArrayAhoCorasickBuilder, MatchKind};
@@ -284,12 +284,14 @@ impl AddedVocabulary {
             // Fast path: skip if this content is already in the map with identical properties.
             if let Some(id) = self.token_to_id(&token.content, model) {
                 let id = id as usize;
-                if self.token_metadata[id] == flags {
+                if all_metadata[id] == flags {
                     ignored += 1;
                     continue;
                 } else {
-                    self.token_metadata[id] = flags
+                    all_metadata[id] = flags
                 }
+            } else {
+                all_metadata.push(flags)
             }
 
             let new_id = if let Some(new_id) = self.token_to_id(&token.content, model) {
@@ -335,21 +337,20 @@ impl AddedVocabulary {
                 }
             }
             all_tokens.push((token.content.into_bytes(), next_id as u32));
-            all_metadata.push(flags)
         }
         // TODO: we have
-        all_tokens.sort_unstable_by_key(|(s, _id)| {
+        let mut zipped:Vec<_> = all_tokens.into_iter().zip(all_metadata).collect();
+        zipped.sort_unstable_by_key(|((s, _id), other)| {
             (
                 self.buckets[self.first_byte_to_bucket_id[s[0] as usize] as usize].prefix,
                 std::cmp::Reverse(s.len()),
             )
         });
+        let (all_tokens, all_metadata) : (Vec<_>, Vec<_>)= zipped.into_iter().unzip();
         // at this point all tokens should look like: ["<|1|>", "<||>", "[ooo]", "[i]"]. First same
         //                                           b: <|     b:<|    b:[      b:[     the buckets    #[rustfmt::skip]
         // prefix then just longest
         //
-        // TODO: now token_meta data needs to be sorted the same way?
-        all_metadata.sort_unstable_by_key(|t| {});
 
         self.inner = VocabStore::build(all_tokens);
         let mut idx = 0;
