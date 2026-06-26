@@ -176,7 +176,7 @@ impl AddedVocabulary {
             first_byte_to_bucket_id: [u8::MAX; 256],
             buckets: Box::new([]),
             token_metadata: Box::new([]),
-            inner: VocabStore::build(vec![("".as_bytes().to_vec(), 0)].to_vec()),
+            inner: VocabStore::new(),
         }
     }
     /// Size of the additional vocabulary
@@ -314,8 +314,7 @@ impl AddedVocabulary {
             };
             if self.first_byte_to_bucket_id[token_bytes[0] as usize] != u8::MAX {
                 // bucket already exists :)
-                println!("self buckest {:?}, {:?}, self.first_byte_to_bucket_id: {:?}", self.buckets, token_bytes[0] as usize, self.first_byte_to_bucket_id);
-                byte_set[self.first_byte_to_bucket_id[token_bytes[0] as usize] as uzise].end += 1;
+                byte_set[self.first_byte_to_bucket_id[token_bytes[0] as usize] as usize].end += 1;
             } else {
                 let mut prefix = [0; 4];
                 prefix[..prefix_len].copy_from_slice(&token_bytes[..prefix_len]);
@@ -325,7 +324,6 @@ impl AddedVocabulary {
                     start: 0,
                     end: 1,
                 });
-                println!("Adding !");
                 println!("{:?}", byte_set);
                 self.first_byte_to_bucket_id[token_bytes[0] as usize] = byte_set.len() as u8 -1;
             }
@@ -339,13 +337,14 @@ impl AddedVocabulary {
                     if normed != token.content {}
                 }
             }
-            all_tokens.push((token.content.into_bytes(), next_id as u32));
+            all_tokens.push((token_bytes.to_vec(), next_id as u32));
         }
         // TODO: we have
         let mut zipped:Vec<_> = all_tokens.into_iter().zip(all_metadata).collect();
+        println!("zipped {:?}", zipped.clone());
         zipped.sort_unstable_by_key(|((s, _id), other)| {
             (
-                self.buckets[self.first_byte_to_bucket_id[s[0] as usize] as usize].prefix,
+                byte_set[self.first_byte_to_bucket_id[s[0] as usize] as usize].prefix,
                 std::cmp::Reverse(s.len()),
             )
         });

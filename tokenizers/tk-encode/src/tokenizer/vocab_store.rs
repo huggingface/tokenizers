@@ -129,7 +129,16 @@ impl VocabStore {
             id_to_slot: id_to_slot.into_boxed_slice(),
         }
     }
-
+    pub fn new() -> Self {
+        let empty: [u64; 0] = [];
+        Self {
+            mphf: PtrHash::<u64, Linear>::new(&empty, PtrHashParams::default_fast()),
+            hasher: RandomState::new(),
+            bytes: Box::new([]),
+            entries: Box::new([]),
+            id_to_slot: Box::new([]),
+        }
+    }
     #[inline]
     pub fn get_bytes(&self, q: &[u8]) -> Option<u32> {
         let slot = self.mphf.index_single_part(&self.hasher.hash_one(q));
