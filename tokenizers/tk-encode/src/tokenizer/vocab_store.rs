@@ -187,7 +187,7 @@ impl VocabStore {
     pub fn match_bytes(&self, bytes: &[u8], start: u32, end: u32) -> Option<u32> {
         let mut i = 0;
         assert!(start < self.entries.len() as u32);
-        for i in self.entries[start as usize].start..self.entries[end as usize].start {
+        for i in self.entries[start as usize].start..self.entries[end as usize].start - 1 {
             // we take each entry from byte_offset to end, compare with memcp
             let e = self.entries[i as usize];
             let slice = &self.bytes[e.start as usize..(e.start + e.len as u32) as usize];
