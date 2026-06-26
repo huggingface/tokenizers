@@ -186,7 +186,7 @@ impl VocabStore {
     pub fn get_vocab_bytes(&self) -> Vec<(Vec<u8>, u32)> {
         self.entries
             .iter()
-            .filter_map(|m| self.id_to_token_bytes(m.id).map(|token| (token, m.id)))
+            .filter_map(|m| self.id_to_token_bytes(m.id).map(|token| (token.to_vec(), m.id)))
             .collect()
     }
 

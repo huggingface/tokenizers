@@ -327,7 +327,7 @@ impl AddedVocabulary {
                     if normed != token.content {}
                 }
             }
-            all_tokens.push((token.content.to_bytes(), next_id));
+            all_tokens.push((token.content.into_bytes(), next_id as u32));
         }
         self.inner = VocabStore::build(all_tokens);
         // TODO: normalized_inner needed as well!
