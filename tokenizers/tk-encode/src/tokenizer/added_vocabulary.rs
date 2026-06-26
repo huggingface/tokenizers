@@ -351,7 +351,7 @@ impl AddedVocabulary {
         //                                           b: <|     b:<|    b:[      b:[     the buckets    #[rustfmt::skip]
         // prefix then just longest
         //
-
+        self.token_metadata = all_metadata.into();
         self.inner = VocabStore::build(all_tokens);
         let mut idx = 0;
         for b in &mut byte_set {
