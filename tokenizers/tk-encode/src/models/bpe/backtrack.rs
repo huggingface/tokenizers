@@ -102,6 +102,17 @@ impl BacktrackingEngine {
         token_suffixes: Vec<CanonicalTokenId>,
         word: &mut Word,
     ) {
+        let mut reversed_tokens = vec![];
+        let mut idx = token_suffixes.len();
+        while idx > 0 {
+            let canonical_token = token_suffixes[idx];
+            let hf_token = self.canonical_to_hf[canonical_token.0 as usize];
+            reversed_tokens.push((hf_token.token_id, hf_token.byte_len));
+            idx -= hf_token.byte_len;
+        }
+        for (token_id, byte_length) in reversed_tokens.into_iter().rev() {
+            word.add(token_id, byte_length);
+        }
     }
 
     fn is_valid_token_pair(&self, left: CanonicalTokenId, right: CanonicalTokenId) -> bool {
