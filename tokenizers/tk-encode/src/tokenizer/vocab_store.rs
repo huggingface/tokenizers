@@ -48,7 +48,7 @@ pub struct VocabStore {
     bytes: Box<[u8]>,
     /// `entries[slot]` -> (offset into `bytes`, length, id). Ordered by MPHF slot.
     entries: Box<[Entry]>,
-    /// `id_to_slot[id]` -> index into entries as the entries are not really sorted.
+    /// `id_to_slot[token_id] -> entry_idx` -> index into entries as the entries are not really sorted.
     id_to_slot: Box<[u32]>,
 }
 
@@ -222,20 +222,19 @@ impl VocabStore {
             .collect()
     }
 
-    /// start and end are index into `self.entry`.
+    /// `start` and `end` are indices into `self.entries`. Scans that range for tokens that are a
+    /// prefix of `bytes` and returns the longest one as `(id, byte_len)`, or `None` if none match.
     #[inline]
-    pub fn match_bytes(&self, bytes: &[u8], start: u32, end: u32) -> Option<u32> {
-        let mut i = 0;
-        assert!(start < self.entries.len() as u32);
-        for i in self.entries[start as usize].start..self.entries[end as usize].start - 1 {
-            // we take each entry from byte_offset to end, compare with memcp
+    pub fn match_bytes(&self, bytes: &[u8], start: u32, end: u32) -> Option<(u32, u32)> {
+        let mut best: Option<(u32, u32)> = None;
+        for i in start..end {
             let e = self.entries[i as usize];
-            let slice = &self.bytes[e.start as usize..(e.start + e.len as u32) as usize];
-            if bytes.starts_with(slice) {
-                return Some(e.id);
+            let slice = &self.bytes[e.start as usize..e.start as usize + e.len as usize];
+            if bytes.starts_with(slice) && best.is_none_or(|(_, len)| e.len as u32 > len) {
+                best = Some((e.id, e.len as u32));
             }
         }
-        None
+        best
     }
 }
 
@@ -299,7 +298,11 @@ mod tests {
             (b"cc".to_vec(), 5),
             (b"isn".to_vec(), 100),
         ]);
-        assert!(vocab.match_bytes("cccisnot the best".as_bytes(), 0, 2) == Some(0));
-        assert!(vocab.match_bytes("snot the best".as_bytes(), 0, 2) == None);
+        // Scan all entries: longest prefix wins ("ccci" over "cc"), returns (id, byte_len).
+        assert_eq!(
+            vocab.match_bytes("cccisnot the best".as_bytes(), 0, 3),
+            Some((0, 4))
+        );
+        assert_eq!(vocab.match_bytes("snot the best".as_bytes(), 0, 3), None);
     } // TODO: support left right strip, single word
 }
