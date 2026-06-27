@@ -437,8 +437,17 @@ impl AddedVocabulary {
             }
         }
         println!("Found splits: {:?}", splits);
-        let pre = PreTokenizedString::from(sequence);
-        return pre.into();
+        let mut pre = PreTokenizedString::from(sequence);
+        pre.split(|_, normalized| {
+            Ok(splits
+                .iter()
+                .filter_map(|&(start, end)| {
+                    normalized.slice(Range::Normalized(start as usize..end as usize))
+                })
+                .collect::<Vec<_>>())
+        })
+        .unwrap();
+        return pre;
     }
 }
 
