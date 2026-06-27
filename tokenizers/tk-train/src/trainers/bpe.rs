@@ -1,6 +1,7 @@
 #![allow(clippy::map_entry)]
 
 use tk_encode::models::bpe::{Pair, WithFirstLastIterator, Word, BPE};
+use tk_encode::vocab_store::VocabStore;
 use tk_encode::parallelism::*;
 use crate::Trainer;
 use tk_encode::{AddedToken, Result};
@@ -608,17 +609,13 @@ impl BpeTrainer {
         self.finalize_progress(&progress, merges.len(), "Compute merges");
 
         // Transfer new vocab & options to model
-        //model.vocab = word_to_id;
-        model.vocab = word_to_id
-            .into_iter()
-            // we have to look up the string in id_to_word because the key in word_to_id is a hash
-            .map(|(_key, val)| (id_to_word[val as usize].to_string(), val))
-            .collect();
-        model.vocab_r = model
-            .vocab
-            .iter()
-            .map(|(key, val)| (*val, key.to_owned()))
-            .collect();
+        model.vocab = VocabStore::build(
+            word_to_id
+                .into_iter()
+                // we have to look up the string in id_to_word because the key in word_to_id is a hash
+                .map(|(_key, val)| (id_to_word[val as usize].to_string().into_bytes(), val))
+                .collect(),
+        );
         model.merges = merges
             .into_iter()
             .enumerate()
@@ -741,7 +738,8 @@ mod tests {
         .iter()
         .cloned()
         .collect();
-        assert_eq!(model.vocab, expected_vocab);
+        let trained_vocab: AHashMap<String, u32> = model.get_vocab().into_iter().collect();
+        assert_eq!(trained_vocab, expected_vocab);
 
         // The keys in `merges` are pairs of symbols, the values are tuples of (rank, id),
         // where 'rank' determines the order in which this merge will be applied during

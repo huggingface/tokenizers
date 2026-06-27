@@ -4,19 +4,18 @@ use super::{
 };
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::cache::{Cache, MAX_LENGTH};
+use crate::vocab_store::VocabStore;
 use std::collections::HashMap;
 
-use ahash::AHashMap;
 use std::convert::TryInto;
 use std::fs::read_to_string;
 use std::path::{Path, PathBuf};
 
-type TokenMap = AHashMap<String, u32>;
 type Vocab = Vec<(String, f64)>;
 
 /// A `Unigram` model to encode sentences.
 pub struct Unigram {
-    token_to_ids: TokenMap,
+    token_to_ids: VocabStore,
     pub(crate) vocab: Vocab,
     cache: Cache<String, Vec<String>>,
     trie: Trie<u8>,
@@ -106,7 +105,7 @@ impl Unigram {
         byte_fallback: bool,
     ) -> Result<Self> {
         let n = vocab.len();
-        let mut token_to_ids: TokenMap = AHashMap::new();
+        let mut pairs: Vec<(Vec<u8>, u32)> = Vec::with_capacity(n);
         let mut builder = TrieBuilder::default();
 
         if let Some(unk_id) = unk_id {
@@ -122,12 +121,17 @@ impl Unigram {
 
         let mut min_score = f64::INFINITY;
         for (id, (token, score)) in vocab.iter().enumerate() {
-            token_to_ids.insert(token.to_string(), id as u32);
+            pairs.push((token.as_bytes().to_vec(), id as u32));
             builder.push(token.as_bytes());
             if score < &min_score {
                 min_score = *score;
             }
         }
+        let token_to_ids = if pairs.is_empty() {
+            VocabStore::new()
+        } else {
+            VocabStore::build(pairs)
+        };
         let trie = builder.build();
         let fuse_unk = true;
         let is_optimized = true;
@@ -187,7 +191,7 @@ impl Unigram {
             {
                 let n = bytes.len();
                 let tok = String::from_utf8(bytes).unwrap();
-                let id = *self.token_to_ids.get(&tok).unwrap();
+                let id = self.token_to_ids.token_to_id(&tok).unwrap();
 
                 let item = &self.vocab[id as usize];
                 assert_eq!(item.0, tok);
@@ -289,15 +293,15 @@ impl Unigram {
                 let token: String = String::from_utf8(tok_bytes).unwrap();
                 let target_node = &mut best_path_ends_at[key_pos];
                 let length = key_pos - starts_at;
-                let id = self.token_to_ids.get(&token).unwrap();
-                let score = self.vocab.get(*id as usize).unwrap().1;
+                let id = self.token_to_ids.token_to_id(&token).unwrap();
+                let score = self.vocab.get(id as usize).unwrap().1;
                 let candidate_best_path_score = score + best_path_score_till_here;
                 if target_node.starts_at.is_none()
                     || candidate_best_path_score > target_node.best_path_score
                 {
                     target_node.best_path_score = candidate_best_path_score;
                     target_node.starts_at = Some(starts_at);
-                    target_node.id = *id as usize;
+                    target_node.id = id as usize;
                 }
                 if !has_single_node && length == mblen {
                     has_single_node = true;
@@ -430,7 +434,7 @@ impl<'a> Iterator for UnigramIterator<'a> {
 
 impl Model for Unigram {
     fn get_vocab(&self) -> HashMap<String, u32> {
-        self.token_to_ids.clone().into_iter().collect()
+        self.token_to_ids.get_vocab().into_iter().collect()
     }
 
     fn get_vocab_size(&self) -> usize {
@@ -444,16 +448,16 @@ impl Model for Unigram {
         for string in str_tokens {
             let len = string.len();
             let offsets = (offset, offset + len);
-            let id: u32 = match self.token_to_ids.get(&string) {
-                Some(id) => *id,
+            let id: u32 = match self.token_to_ids.token_to_id(&string) {
+                Some(id) => id,
                 None => {
                     if self.byte_fallback {
                         let byte_tokens: Option<Vec<_>> = string
                             .bytes()
                             .map(|byte| -> Option<Token> {
                                 let byte_string = format!("<0x{byte:02X}>");
-                                let id = self.token_to_ids.get(&byte_string);
-                                id.map(|id| Token::new(*id, byte_string, (offset, offset + len)))
+                                let id = self.token_to_ids.token_to_id(&byte_string);
+                                id.map(|id| Token::new(id, byte_string, (offset, offset + len)))
                             })
                             .collect();
                         if let Some(byte_tokens) = byte_tokens {
@@ -474,7 +478,7 @@ impl Model for Unigram {
     }
 
     fn token_to_id(&self, token: &str) -> Option<u32> {
-        self.token_to_ids.get(token).copied()
+        self.token_to_ids.token_to_id(token)
     }
 
     fn id_to_token(&self, id: u32) -> Option<String> {

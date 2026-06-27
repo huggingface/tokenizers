@@ -1,5 +1,6 @@
 use super::{super::OrderedVocabIter, Error, Pair, Word};
 use crate::tokenizer::{Model, Result, Token};
+use crate::vocab_store::VocabStore;
 use crate::utils::cache::{DEFAULT_CACHE_CAPACITY, MAX_LENGTH};
 use crate::utils::iter::ResultShunt;
 use ahash::AHashMap;
@@ -226,17 +227,11 @@ impl BpeBuilder {
         }
 
         let mut max_len = 0;
-        let vocab_r = self
-            .config
-            .vocab
-            .iter()
-            .map(|(key, val)| {
-                if max_len < key.len() {
-                    max_len = key.len();
-                }
-                (*val, key.to_owned())
-            })
-            .collect();
+        for key in self.config.vocab.keys() {
+            if max_len < key.len() {
+                max_len = key.len();
+            }
+        }
         let cache = match self.config.cache_capacity {
             0 => None,
             capacity => Some(BpeCache::new(capacity)),
@@ -276,9 +271,14 @@ impl BpeBuilder {
 
         // merges.insert(pair, (rank as u32, *new_id));
 
+        let vocab = if vocab.is_empty() {
+            VocabStore::new()
+        } else {
+            VocabStore::build(vocab.into_iter().map(|(k, v)| (k.into_bytes(), v)).collect())
+        };
+
         Ok(BPE {
             vocab,
-            vocab_r,
             merges: merge_map,
             cache,
             dropout: self.config.dropout,
@@ -295,10 +295,8 @@ impl BpeBuilder {
 /// A [Byte Pair Encoding](https://www.aclweb.org/anthology/P16-1162/) model.
 #[derive(PartialEq)]
 pub struct BPE {
-    /// The vocabulary assigns a number to each token.
-    pub vocab: Vocab,
-    /// Reversed vocabulary, to rebuild sentences.
-    pub vocab_r: VocabR,
+    /// The vocabulary, mapping tokens <-> ids both ways.
+    pub vocab: VocabStore,
     /// Contains the mapping between Pairs and their (rank, new_id).
     pub merges: MergeMap,
     /// Contains the cache for optimizing the encoding step.
@@ -350,7 +348,6 @@ impl Clone for BPE {
         let fresh_cache = self.cache.as_ref().map(|cache| cache.fresh());
         Self {
             vocab: self.vocab.clone(),
-            vocab_r: self.vocab_r.clone(),
             merges: self.merges.clone(),
             cache: fresh_cache,
             dropout: self.dropout,
@@ -451,7 +448,7 @@ impl BPE {
     }
 
     pub fn get_vocab(&self) -> HashMap<String, u32> {
-        self.vocab.clone().into_iter().collect()
+        self.vocab.get_vocab().into_iter().collect()
     }
 
     pub fn get_unk_token(&self) -> &Option<String> {
@@ -491,25 +488,25 @@ impl BPE {
                 }
             }
 
-            if let Some(id) = self.vocab.get(s.as_ref()) {
+            if let Some(id) = self.vocab.token_to_id(s.as_ref()) {
                 if let Some((unk_id, unk_len)) = unk {
                     word.add(unk_id, unk_len);
                     unk = None;
                 }
-                word.add(*id, byte_len);
+                word.add(id, byte_len);
             } else {
                 if self.byte_fallback {
                     let tokens: Option<Vec<_>> = s
                         .bytes()
-                        .map(|b| -> Option<&u32> {
+                        .map(|b| -> Option<u32> {
                             let code = format!("<{b:#04X}>");
 
-                            self.vocab.get(&code)
+                            self.vocab.token_to_id(&code)
                         })
                         .collect();
                     if let Some(tokens) = tokens {
                         for t in tokens {
-                            word.add(*t, 1);
+                            word.add(t, 1);
                         }
                         continue;
                     }
@@ -524,14 +521,14 @@ impl BPE {
                             // Do not fuse unk, add the previous one
                             word.add(unk_id, unk_len);
                             Some((
-                                *self.vocab.get(unk_token).ok_or_else(|| {
+                                self.vocab.token_to_id(unk_token).ok_or_else(|| {
                                     Error::UnkTokenOutOfVocabulary(unk_token.to_owned())
                                 })?,
                                 byte_len,
                             ))
                         }
                         _ => Some((
-                            *self.vocab.get(unk_token).ok_or_else(|| {
+                            self.vocab.token_to_id(unk_token).ok_or_else(|| {
                                 Error::UnkTokenOutOfVocabulary(unk_token.to_owned())
                             })?,
                             byte_len,
@@ -552,14 +549,16 @@ impl BPE {
     fn word_to_tokens<'a>(&'a self, word: &'a Word) -> impl Iterator<Item = Token> + 'a {
         word.get_chars_iter()
             .zip(word.get_offsets_iter())
-            .map(move |(id, offsets)| Token::new(id, self.vocab_r[&id].clone(), offsets))
+            .map(move |(id, offsets)| {
+                Token::new(id, self.vocab.id_to_token(id).unwrap_or_default(), offsets)
+            })
     }
 
     fn tokenize_with_cache(&self, sequence: &str) -> Result<Vec<Token>> {
         if self.ignore_merges {
-            if let Some(id) = self.vocab.get(sequence) {
+            if let Some(id) = self.vocab.token_to_id(sequence) {
                 return Ok(vec![Token::new(
-                    *id,
+                    id,
                     sequence.to_string(),
                     (0, sequence.len()),
                 )]);
@@ -589,7 +588,7 @@ impl BPE {
 
 impl Model for BPE {
     fn get_vocab(&self) -> HashMap<String, u32> {
-        self.vocab.clone().into_iter().collect()
+        self.vocab.get_vocab().into_iter().collect()
     }
 
     fn get_vocab_size(&self) -> usize {
@@ -610,14 +609,20 @@ impl Model for BPE {
     }
 
     fn token_to_id(&self, token: &str) -> Option<u32> {
-        self.vocab.get(token).copied()
+        self.vocab.token_to_id(token)
     }
 
     fn id_to_token(&self, id: u32) -> Option<String> {
-        self.vocab_r.get(&id).cloned()
+        self.vocab.id_to_token(id)
     }
 
     fn save(&self, folder: &Path, name: Option<&str>) -> Result<Vec<PathBuf>> {
+        let vocab_r: VocabR = self
+            .vocab
+            .get_vocab()
+            .into_iter()
+            .map(|(s, id)| (id, s))
+            .collect();
         let vocab_file_name = match name {
             Some(name) => format!("{name}-vocab.json"),
             None => "vocab.json".to_string(),
@@ -628,7 +633,7 @@ impl Model for BPE {
             .iter()
             .collect();
         let mut vocab_file = File::create(&vocab_path)?;
-        let order_vocab_iter = OrderedVocabIter::new(&self.vocab_r);
+        let order_vocab_iter = OrderedVocabIter::new(&vocab_r);
         let serialized = serde_json::to_string(&order_vocab_iter)?;
         vocab_file.write_all(serialized.as_bytes())?;
 
@@ -653,7 +658,7 @@ impl Model for BPE {
             &merges
                 .into_iter()
                 .flat_map(|(pair, _)| {
-                    format!("{} {}\n", self.vocab_r[&pair.0], self.vocab_r[&pair.1]).into_bytes()
+                    format!("{} {}\n", vocab_r[&pair.0], vocab_r[&pair.1]).into_bytes()
                 })
                 .collect::<Vec<_>>()[..],
         )?;
@@ -913,10 +918,10 @@ mod tests {
         assert_eq!(bpe.merges.get(&(0, 1)).unwrap(), &(0u32, 3u32));
 
         // Check vocab.
-        assert_eq!(bpe.vocab.get("a").unwrap(), &0u32);
-        assert_eq!(bpe.vocab.get("b").unwrap(), &1u32);
-        assert_eq!(bpe.vocab.get("c").unwrap(), &2u32);
-        assert_eq!(bpe.vocab.get("ab").unwrap(), &3u32);
+        assert_eq!(bpe.vocab.token_to_id("a").unwrap(), 0u32);
+        assert_eq!(bpe.vocab.token_to_id("b").unwrap(), 1u32);
+        assert_eq!(bpe.vocab.token_to_id("c").unwrap(), 2u32);
+        assert_eq!(bpe.vocab.token_to_id("ab").unwrap(), 3u32);
     }
 
     #[test]

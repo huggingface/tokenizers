@@ -5,8 +5,6 @@ use ptr_hash::bucket_fn::Linear;
 use ptr_hash::{PtrHash, PtrHashParams};
 use std::fmt;
 
-use crate::models::bpe::Vocab;
-
 type Mphf = PtrHash<u64, Linear>;
 
 // Fixed seeds so a given vocab always hashes identically (the hasher is also stored on the struct,
@@ -63,6 +61,19 @@ impl fmt::Debug for VocabStore {
             .finish()
     }
 }
+impl PartialEq for VocabStore {
+    // ponytail: O(n log n) set compare, only used in equality/serde round-trip checks
+    fn eq(&self, other: &Self) -> bool {
+        if self.len() != other.len() {
+            return false;
+        }
+        let (mut a, mut b) = (self.get_vocab_bytes(), other.get_vocab_bytes());
+        a.sort();
+        b.sort();
+        a == b
+    }
+}
+
 impl VocabStore {
     pub fn build(tokens: Vec<(Vec<u8>, u32)>) -> Self {
         let n = tokens.len();
