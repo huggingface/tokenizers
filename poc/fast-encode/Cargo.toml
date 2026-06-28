@@ -1,0 +1,21 @@
+[package]
+name = "fast-encode"
+version = "0.1.0"
+edition = "2021"
+description = "POC: NEON-DFA pre-tokenizer + MPHF VocabStore + allocation-free hybrid merge + thread-local pretoken cache + multi-turn prefix cache. Inference-only byte-level BPE encode."
+
+[dependencies]
+onig = { version = "6.5.1", default-features = false } # regex fallback for the DFA's edge cases
+ahash = "0.8"        # fast hashing for the in-memory maps
+ptr_hash = "1.1.0"   # minimal perfect hash for the VocabStore (bytes -> id)
+memchr = "2"         # SIMD byte scan
+serde_json = "1"     # tokenizer.json load
+pcre2 = "0.2"        # only in the splitter shootout bench (NEON-DFA vs pcre2-JIT vs onig)
+rayon = "1"          # parallel scaling bench
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+
+[workspace]
