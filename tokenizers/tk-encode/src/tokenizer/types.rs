@@ -17,7 +17,7 @@ pub struct AddedTokenFlags {
 pub struct Bucket {
     // longest common prefix of the bucket
     pub prefix: Box<[u8]>,
-    pub next_byte_to_length_id: [u8; 256],
+    pub next_byte_to_length_id: [u16; 256], // post-prefix byte -> sub-list index; 0xFFFF = none
     pub length_list: Box<[Box<[u16]>]>,
 }
 
@@ -165,19 +165,26 @@ impl Buckets {
         if !bytes.starts_with(&self.buckets[bucket_id as usize].prefix) {
             return None;
         }
-        // 2. next byte after prefix
-        let length_id =
-            &self.buckets[bucket_id as usize].next_byte_to_length_id[bytes[1] as usize]();
-        if length_id == 0xFF {
+        // 2. byte AFTER the common prefix -> which length sub-list (0xFFFF = none)
+        let bucket = &self.buckets[bucket_id as usize];
+        let disc = match bytes.get(bucket.prefix.len()) {
+            Some(&b) => b,
+            None => return None, // input ends at the prefix (a token == prefix would need an `exact` flag)
+        };
+        let length_id = bucket.next_byte_to_length_id[disc as usize];
+        if length_id == 0xFFFF {
             return None;
         }
-        // 3. find the actual token
-        for len in self.buckets[bucket_id as usize].length_list[length_id] {
-            if let Some(token) = self.inner.get_bytes(bytes[..len]) {
-                return token;
+        // 3. probe each candidate length, longest-first (first hit = longest match)
+        for &len in bucket.length_list[length_id as usize].iter() {
+            let len = len as usize;
+            if len <= bytes.len() {
+                if let Some(id) = self.inner.get_bytes(&bytes[..len]) {
+                    return Some(id);
+                }
             }
         }
-        return None;
+        None
     }
     pub fn match_bytes(&self, bytes: &[u8]) -> Option<(u32, u32)> {
         let mut best: Option<(u32, u32)> = None;
