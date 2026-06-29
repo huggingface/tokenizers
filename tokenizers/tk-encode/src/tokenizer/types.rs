@@ -186,8 +186,9 @@ impl Buckets {
         }
         None
     }
-    pub fn match_bytes(&self, bytes: &[u8]) -> Option<(u32, u32)> {
-        let mut best: Option<(u32, u32)> = None;
+    /// returns token_id, match_position, match_len
+    pub fn match_bytes(&self, bytes: &[u8]) -> Option<(u32, u32, u32)> {
+        let mut best: Option<(u32, u32, u32)> = None;
         let search = 0;
         // return the end of match index and the id of the match token if any.
         // 1. quick scan of the bytes with fast rejection
@@ -224,6 +225,7 @@ impl Buckets {
                 None => return best,
             },
         };
-        self.longest_first_match(&bytes[cutoff..], bucket)
+        let (token_id, len) = self.longest_first_match(&bytes[cutoff..], bucket);
+        (token_id, cutoff, len)
     }
 }

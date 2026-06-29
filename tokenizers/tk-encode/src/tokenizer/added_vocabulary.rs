@@ -373,10 +373,7 @@ impl AddedVocabulary {
         self.buckets = byte_set.into();
         // TODO: normalized_inner needed as well!
         // Return the number of added tokens
-
-        println!("TOTAL TOKENS: {:?},{ignored}", total);
-        println!("Final self: {:?}", self);
-        Ok(total - ignored)
+       Ok(total - ignored)
     }
 
     /// The first improvement we are working on is on replacing the heavy regex
@@ -392,30 +389,10 @@ impl AddedVocabulary {
         let mut search = 0;
         while search < bytes.len() {
             // Find the next candidate start and the bucket whose entries we should scan.
-            let (match_start, bucket) = if self.buckets.len() == 1 {
-                match memchr(self.buckets[0].prefix[0], &bytes[search..]) {
-                    Some(rel) => (search + rel, &self.buckets[0]),
-                    None => break,
-                }
-            } else {
-                match bytes[search..]
-                    .iter()
-                    .position(|&b| self.first_byte_to_bucket_id[b as usize] != u8::MAX)
-                {
-                    Some(rel) => {
-                        let s = search + rel;
-                        let b = bytes[s] as usize;
-                        (s, &self.buckets[self.first_byte_to_bucket_id[b] as usize])
-                    }
-                    None => break,
-                }
-            };
-
-            match self
-                .inner
-                .match_bytes(&bytes[match_start..], bucket.start, bucket.end)
+            match self.vocab
+                .match_bytes(&bytes[search..])
             {
-                Some((id, match_len)) if match_len > 0 => {
+                Some((id, match_start, match_len)) if match_len > 0 => {
                     if match_start > emit {
                         splits.push((emit, match_start, None));
                     }
@@ -425,13 +402,12 @@ impl AddedVocabulary {
                     search = match_end;
                 }
                 // Prefix byte present but no token actually matches: skip just this byte.
-                _ => search = match_start + 1,
+                _ => break,
             }
         }
         if emit < bytes.len() {
             splits.push((emit, bytes.len(), None));
         }
-        println!("Found splits: {:?}", splits);
         let mut pre = PreTokenizedString::from(sequence);
         pre.split(|_, normalized| {
             Ok(splits
