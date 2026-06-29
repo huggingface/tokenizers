@@ -668,8 +668,7 @@ impl BPE {
                 continue;
             }
             if let Some(start) = run_start.take() {
-                let suffixes = engine.build_token_suffix_array(&bytes[start..i]);
-                engine.backtrack_token_suffix_array(suffixes, &mut word);
+                engine.encode_run(&bytes[start..i], &mut word);
             }
             if let Some(unk_token) = &self.unk_token {
                 let unk_id = *self
@@ -689,8 +688,7 @@ impl BPE {
         }
 
         if let Some(start) = run_start.take() {
-            let suffixes = engine.build_token_suffix_array(&bytes[start..]);
-            engine.backtrack_token_suffix_array(suffixes, &mut word);
+            engine.encode_run(&bytes[start..], &mut word);
         }
         if let Some((id, len)) = unk {
             word.add(id, len);

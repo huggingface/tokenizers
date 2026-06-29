@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::hash::Hash;
 
 use ahash::AHashMap;
@@ -25,15 +26,13 @@ struct HfToken(u32);
 
 #[derive(PartialEq, Clone)]
 pub(crate) struct BacktrackingEngine {
-    /// Bytes of all tokens, contiguous
-    token_bytes: Vec<u8>,
-    /// An array giving the index of the first byte of the Canonical Token ID (u32) in [`self.token_bytes`]
-    /// Can derive the token's length easily
-    canonical_token_starts: Vec<usize>,
-    /// maps the hash of the token bytes to its Canonical Token ID
-    bytes_hash_to_canonical: AHashMap<u32, CanonicalTokenId>,
-    /// Perfect hash constant, guaranteed collision-free in u32
-    hash_factor: u64,
+    /// Byte length of each canonical token, indexed by Canonical Token ID. This is all the
+    /// backtrack step needs to walk back through the suffix array (`idx -= len`); the token
+    /// bytes themselves are no longer stored since `get_merged` is structure-based.
+    token_byte_lengths: Vec<u32>,
+    /// Maps an adjacent (left, right) canonical token pair to the token they merge into — i.e.
+    /// the merge rules in canonical-id space. Absent key = the pair does not merge.
+    pair_lookup: AHashMap<(CanonicalTokenId, CanonicalTokenId), CanonicalTokenId>,
 
     /// Maps Canonical token ID -> HF token ID
     canonical_to_hf: Vec<HfToken>,
@@ -49,6 +48,24 @@ pub(crate) struct BacktrackingEngine {
 pub enum PeelDirection {
     Left,
     Right,
+}
+
+/// Per-thread reusable scratch buffers for [`BacktrackingEngine::encode_run`], so encoding a
+/// word allocates nothing on the hot path after warmup. Thread-local because `encode` runs on
+/// `&self` (often across rayon workers); each thread gets its own.
+#[derive(Default)]
+struct Scratch {
+    /// `last_token[p - 1]` = token ending at byte position `p`. Guarded by `reachable`, so
+    /// stale entries from a previous word are never read — no need to clear it.
+    last_token: Vec<CanonicalTokenId>,
+    /// `reachable[p]` = whether a valid tokenization reaches byte position `p`. Reset per word.
+    reachable: Vec<bool>,
+    /// Tokens collected while backtracking from the end, in reverse order.
+    reversed: Vec<(HfToken, usize)>,
+}
+
+thread_local! {
+    static SCRATCH: RefCell<Scratch> = RefCell::new(Scratch::default());
 }
 
 impl BacktrackingEngine {
@@ -79,45 +96,39 @@ impl BacktrackingEngine {
             merge_predecessors.push((*left_predecessor, *right_predecessor));
         }
 
-        // Phase 2: find a multiplier that hashes every token to a distinct u32.
-        let hash_factor = Self::find_hash_factor(canonicalized.iter().map(|(b, _)| b.as_slice()));
-
-        // Phase 3: build the perfect-hash map (token bytes -> canonical id).
-        let mut bytes_hash_to_canonical = AHashMap::with_capacity(canonicalized.len());
-        for (index, (bytes, _)) in canonicalized.iter().enumerate() {
-            bytes_hash_to_canonical
-                .insert(Self::hash_bytes(bytes, hash_factor), CanonicalTokenId(index as u32));
+        // Phase 2: HF token id -> canonical id. Only needed to resolve merge predecessors
+        // during construction, so it's a local map, not a stored field.
+        let mut hf_to_canonical: AHashMap<u32, CanonicalTokenId> =
+            AHashMap::with_capacity(canonicalized.len());
+        for (index, (_, hf)) in canonicalized.iter().enumerate() {
+            hf_to_canonical.insert(hf.0, CanonicalTokenId(index as u32));
         }
-
-        // Phase 4: split table. Atoms point to themselves; merges to their two predecessors.
-        let canonical_of = |token_id: u32| {
-            let bytes = vocab_r
-                .get(&token_id)
-                .expect("Predecessor token not in vocabulary")
-                .as_bytes();
-            *bytes_hash_to_canonical
-                .get(&Self::hash_bytes(bytes, hash_factor))
-                .expect("Invalid merges: predecessor is not a token at this point")
+        let canonical_of = |hf_id: u32| {
+            *hf_to_canonical
+                .get(&hf_id)
+                .expect("Invalid merges: predecessor is not a token")
         };
+
+        // Phase 3: split table (atoms point to themselves; merges to their predecessors) and
+        // pair_lookup ((left, right) -> merged) in one pass over the merges.
         let mut split_table: Vec<(CanonicalTokenId, CanonicalTokenId)> =
             Vec::with_capacity(canonicalized.len());
         for index in 0..atom_count {
             let id = CanonicalTokenId(index as u32);
             split_table.push((id, id));
         }
-        for (left_id, right_id) in merge_predecessors {
-            split_table.push((canonical_of(left_id), canonical_of(right_id)));
+        let mut pair_lookup: AHashMap<(CanonicalTokenId, CanonicalTokenId), CanonicalTokenId> =
+            AHashMap::with_capacity(merge_predecessors.len());
+        for (merge_index, (left_id, right_id)) in merge_predecessors.into_iter().enumerate() {
+            let pair = (canonical_of(left_id), canonical_of(right_id));
+            let merged = CanonicalTokenId((atom_count + merge_index) as u32);
+            split_table.push(pair);
+            pair_lookup.insert(pair, merged);
         }
 
         let (patterns, canonical_to_hf): (Vec<_>, _) = canonicalized.into_iter().unzip();
 
-        let mut token_bytes: Vec<u8> = vec![];
-        let mut canonical_token_starts = Vec::with_capacity(vocab.len());
-
-        for pattern in patterns.iter() {
-            canonical_token_starts.push(token_bytes.len());
-            token_bytes.extend_from_slice(pattern);
-        }
+        let token_byte_lengths: Vec<u32> = patterns.iter().map(|p| p.len() as u32).collect();
 
         let pattern_matcher = DoubleArrayAhoCorasickBuilder::new()
             .match_kind(daachorse::MatchKind::Standard)
@@ -127,10 +138,8 @@ impl BacktrackingEngine {
         Self {
             pattern_matcher,
             canonical_to_hf,
-            token_bytes,
-            bytes_hash_to_canonical,
-            canonical_token_starts,
-            hash_factor,
+            token_byte_lengths,
+            pair_lookup,
             split_table,
         }
     }
@@ -138,17 +147,14 @@ impl BacktrackingEngine {
     /// Per-component heap footprint of the engine. `capacity`-based for the owned containers;
     /// exact for the Aho-Corasick automaton via daachorse's `heap_bytes`.
     pub(crate) fn memory_breakdown(&self) -> Vec<(&'static str, usize)> {
-        let slot = std::mem::size_of::<u32>() + std::mem::size_of::<CanonicalTokenId>();
+        let pair_slot = std::mem::size_of::<(CanonicalTokenId, CanonicalTokenId)>()
+            + std::mem::size_of::<CanonicalTokenId>();
         vec![
-            ("token_bytes", self.token_bytes.capacity()),
             (
-                "canonical_token_starts",
-                self.canonical_token_starts.capacity() * std::mem::size_of::<usize>(),
+                "token_byte_lengths",
+                self.token_byte_lengths.capacity() * std::mem::size_of::<u32>(),
             ),
-            (
-                "bytes_hash_to_canonical",
-                self.bytes_hash_to_canonical.capacity() * slot,
-            ),
+            ("pair_lookup", self.pair_lookup.capacity() * pair_slot),
             (
                 "split_table",
                 self.split_table.capacity()
@@ -162,53 +168,59 @@ impl BacktrackingEngine {
         ]
     }
 
-    pub(crate) fn build_token_suffix_array(&self, sequence_bytes: &[u8]) -> Vec<CanonicalTokenId> {
+    /// Encodes one coverable byte run into `word`. Builds the byte-position-indexed suffix
+    /// array, then backtracks from the end — all in per-thread reusable scratch, so after
+    /// warmup the hot path allocates nothing (only `word.add`, whose buffer is pre-sized).
+    ///
+    /// `last_token[p - 1]` is the token ending at byte position `p` in the unique valid
+    /// tokenization of `sequence_bytes[..p]`. Indexing by byte position (not push count) lets
+    /// multi-byte atoms — e.g. "Ġ" spans two bytes — not stall the scan at a position where no
+    /// token ends. `reachable[p]` marks positions an encoding can reach.
+    pub(crate) fn encode_run(&self, sequence_bytes: &[u8], word: &mut Word) {
         let n = sequence_bytes.len();
-        // `last_token[p - 1]` is the token ending at byte position `p` in the unique valid
-        // tokenization of `sequence_bytes[..p]`. Indexed by byte position (not push count) so
-        // that multi-byte atoms — e.g. "Ġ" spans two bytes — don't stall the scan at a byte
-        // position where no token ends. `reachable[p]` marks positions an encoding can reach.
-        let mut last_token = vec![CanonicalTokenId(0); n];
-        let mut reachable = vec![false; n + 1];
-        reachable[0] = true;
+        SCRATCH.with(|cell| {
+            let mut guard = cell.borrow_mut();
+            let scratch = &mut *guard;
 
-        for matched_pattern in self.pattern_matcher.find_overlapping_iter(sequence_bytes) {
-            let start = matched_pattern.start();
-            let end = matched_pattern.end();
-            // Skip if the prefix before this match isn't reachable, or we already recorded the
-            // token ending here (first valid match wins — greedy BPE's output is unique).
-            if !reachable[start] || reachable[end] {
-                continue;
+            // `last_token` is guarded by `reachable`, so stale entries need not be cleared;
+            // `reachable` must be reset to all-false (except position 0).
+            scratch.last_token.resize(n, CanonicalTokenId(0));
+            scratch.reachable.clear();
+            scratch.reachable.resize(n + 1, false);
+            scratch.reachable[0] = true;
+
+            for matched_pattern in self.pattern_matcher.find_overlapping_iter(sequence_bytes) {
+                let start = matched_pattern.start();
+                let end = matched_pattern.end();
+                // Skip if the prefix before this match isn't reachable, or we already recorded
+                // the token ending here (first valid match wins — greedy BPE's output is unique).
+                if !scratch.reachable[start] || scratch.reachable[end] {
+                    continue;
+                }
+                let canonical_token_id = matched_pattern.value();
+                if start == 0
+                    || self.is_valid_token_pair(scratch.last_token[start - 1], canonical_token_id)
+                {
+                    scratch.last_token[end - 1] = canonical_token_id;
+                    scratch.reachable[end] = true;
+                }
             }
-            let canonical_token_id = matched_pattern.value();
-            if start == 0 || self.is_valid_token_pair(last_token[start - 1], canonical_token_id) {
-                last_token[end - 1] = canonical_token_id;
-                reachable[end] = true;
+
+            scratch.reversed.clear();
+            let mut idx = n;
+            while idx > 0 {
+                let canonical_token = scratch.last_token[idx - 1];
+                let token_length = self
+                    .get_token_byte_length(canonical_token)
+                    .expect("Defined by construction");
+                let hf_token = self.canonical_to_hf[canonical_token.0 as usize];
+                scratch.reversed.push((hf_token, token_length));
+                idx -= token_length;
             }
-        }
-
-        last_token
-    }
-
-    pub(crate) fn backtrack_token_suffix_array(
-        &self,
-        token_suffixes: Vec<CanonicalTokenId>,
-        word: &mut Word,
-    ) {
-        let mut reversed_tokens = vec![];
-        let mut idx = token_suffixes.len();
-        while idx > 0 {
-            let canonical_token = token_suffixes[idx - 1];
-            let token_length = self
-                .get_token_byte_length(canonical_token)
-                .expect("Defined by construction");
-            let hf_token = self.canonical_to_hf[canonical_token.0 as usize];
-            reversed_tokens.push((hf_token, token_length));
-            idx -= token_length;
-        }
-        for (token, byte_length) in reversed_tokens.into_iter().rev() {
-            word.add(token.0, byte_length);
-        }
+            for &(token, byte_length) in scratch.reversed.iter().rev() {
+                word.add(token.0, byte_length);
+            }
+        });
     }
 
     fn peel(&self, token: CanonicalTokenId, direction: PeelDirection) -> Option<CanonicalTokenId> {
@@ -224,86 +236,26 @@ impl BacktrackingEngine {
     }
 
     fn get_token_byte_length(&self, token: CanonicalTokenId) -> Option<usize> {
-        let index = token.0 as usize;
-        let start = self.canonical_token_starts.get(index).copied()?;
-        let end = self
-            .canonical_token_starts
-            .get(index + 1)
-            .copied()
-            .unwrap_or_else(|| self.token_bytes.len());
-        Some(end - start)
+        self.token_byte_lengths
+            .get(token.0 as usize)
+            .map(|&len| len as usize)
     }
 
-    fn get_token_bytes(&self, token: CanonicalTokenId) -> Option<&[u8]> {
-        let index = token.0 as usize;
-        let start = self.canonical_token_starts.get(index).copied()?;
-        let end = self
-            .canonical_token_starts
-            .get(index + 1)
-            .copied()
-            .unwrap_or_else(|| self.token_bytes.len());
-        Some(&self.token_bytes[start..end])
-    }
-
-    fn hash_bytes<'a, T: IntoIterator<Item = &'a u8>>(range: T, hash_factor: u64) -> u32 {
-        let mut hash = 0u64;
-        for &byte in range {
-            hash = hash.wrapping_add(byte as u64).wrapping_mul(hash_factor);
-        }
-        (hash >> 32) as u32
-    }
-
-    /// Searches for a multiplier that hashes every token to a distinct u32, i.e. a perfect
-    /// hash over the vocabulary. The candidate stream is deterministic (splitmix64) so builds
-    /// are reproducible, and each candidate is forced odd so the multiplicative hash stays a
-    /// bijection mod 2^64 (otherwise short tokens collapse to the same high bits).
-    fn find_hash_factor<'a>(tokens: impl Iterator<Item = &'a [u8]> + Clone) -> u64 {
-        let mut state: u64 = 0x9E37_79B9_7F4A_7C15;
-        loop {
-            state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
-            let mut z = state;
-            z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-            z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
-            let factor = (z ^ (z >> 31)) | 1;
-
-            let mut hashes: Vec<u32> =
-                tokens.clone().map(|t| Self::hash_bytes(t, factor)).collect();
-            hashes.sort_unstable();
-            if hashes.windows(2).all(|w| w[0] != w[1]) {
-                return factor;
-            }
-        }
-    }
-
+    /// Whether `left` and `right` merge into a single token, and which — a direct lookup of the
+    /// merge rules in canonical-id space (no byte hashing).
     fn get_merged(
         &self,
         left: CanonicalTokenId,
         right: CanonicalTokenId,
     ) -> Option<CanonicalTokenId> {
-        let left_range = self.get_token_bytes(left).expect("Invalid left token");
-        let right_range = self.get_token_bytes(right).expect("Invalid right token");
-        // Hash over both slices in sequence instead of allocating a concatenation — same bytes,
-        // same hash.
-        let hash = Self::hash_bytes(left_range.iter().chain(right_range.iter()), self.hash_factor);
-        let candidate_id = *self.bytes_hash_to_canonical.get(&hash)?;
-        if let Some(candidate) = self.get_token_bytes(candidate_id) {
-            // Check the candidate token's bytes match the concatenation of its left and right constituent
-            if candidate.len() == left_range.len() + right_range.len()
-                && &candidate[..left_range.len()] == left_range
-                && &candidate[left_range.len()..] == right_range
-            {
-                return Some(candidate_id);
-            }
-        }
-        None
+        self.pair_lookup.get(&(left, right)).copied()
     }
 
-    /// Renders a canonical token as `id:"bytes"` for trace output. Only used when
-    /// [`TRACE_SEAM`] is on.
+    /// Renders a canonical token as `id(lenN)` for trace output. Only used when [`TRACE_SEAM`]
+    /// is on (token bytes are no longer stored, so the trace shows id + byte length).
     #[allow(dead_code)]
     fn dbg_tok(&self, token: CanonicalTokenId) -> String {
-        let bytes = self.get_token_bytes(token).unwrap_or(b"");
-        format!("{}:{:?}", token.0, String::from_utf8_lossy(bytes))
+        format!("{}(len{})", token.0, self.get_token_byte_length(token).unwrap_or(0))
     }
 
     fn is_valid_token_pair(

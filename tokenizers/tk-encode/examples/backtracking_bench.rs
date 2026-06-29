@@ -175,9 +175,7 @@ fn main() {
     // --- Report: initialization ---
     println!("\n== Initialization ==");
     println!("  classic BPE build:        {classic_build:>8.2?}   (load + parse vocab/merges)");
-    println!(
-        "  backtracking engine init: {init_time:>8.2?}   (find_hash_factor + Aho-Corasick + tables)"
-    );
+    println!("  backtracking engine init: {init_time:>8.2?}   (Aho-Corasick + split/pair tables)");
 
     // --- Report: memory ---
     println!("\n== Memory (net live heap) ==");
