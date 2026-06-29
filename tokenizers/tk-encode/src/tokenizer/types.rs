@@ -166,9 +166,9 @@ impl Buckets {
             return None;
         }
         // 2. next byte after prefix
-        if let lengt_id =
-            &self.buckets[bucket_id as usize].next_byte_to_length_id[bytes[1] as usize]() == 0xFFF
-        {
+        let length_id =
+            &self.buckets[bucket_id as usize].next_byte_to_length_id[bytes[1] as usize]();
+        if length_id == 0xFF {
             return None;
         }
         // 3. find the actual token
