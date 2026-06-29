@@ -577,7 +577,11 @@ impl BPE {
         }
         let Some(cache) = self.cache.as_ref() else {
             // Cache disabled (capacity 0): fall back to the uncached path.
-            let word = if self.backtracking() {
+            let word = if !self.byte_fallback
+                && !self.continuing_subword_prefix.is_some()
+                && !self.end_of_word_suffix.is_some()
+                && self.backtracking()
+            {
                 self.tokenize_backtracking(sequence)?
             } else {
                 self.merge_word(sequence)?
@@ -591,7 +595,11 @@ impl BPE {
             if let Some(hit) = local.get(sequence) {
                 return Ok(self.word_to_tokens(hit).collect());
             }
-            let word = if self.backtracking() {
+            let word = if !self.byte_fallback
+                && !self.continuing_subword_prefix.is_some()
+                && !self.end_of_word_suffix.is_some()
+                && self.backtracking()
+            {
                 self.tokenize_backtracking(sequence)?
             } else {
                 self.merge_word(sequence)?
@@ -607,12 +615,27 @@ impl BPE {
 
 // Backtracking
 impl BPE {
-    pub(crate) fn backtracking(&self) -> bool {
+    pub fn backtracking(&self) -> bool {
         self.backtracking_engine.is_some() && self.backtracking_enabled
     }
 
-    #[allow(unused)]
-    pub(crate) fn set_backtracking(&mut self, active: bool) {
+    /// Heap footprint of the backtracking engine's data structures, broken down by component
+    /// (`None` when the engine isn't built). Sizes are `capacity`-based estimates except the
+    /// Aho-Corasick automaton, which reports its exact `heap_bytes()`.
+    pub fn backtracking_memory_breakdown(&self) -> Option<Vec<(&'static str, usize)>> {
+        self.backtracking_engine
+            .as_ref()
+            .map(|engine| engine.memory_breakdown())
+    }
+
+    pub fn set_backtracking(&mut self, active: bool) {
+        if self.byte_fallback
+            || self.continuing_subword_prefix.is_some()
+            || self.end_of_word_suffix.is_some()
+        {
+            // Disable backtracking in these configs
+            return;
+        }
         self.backtracking_enabled = active;
         if active && self.backtracking_engine.is_none() {
             self.backtracking_engine = Some(BacktrackingEngine::new(
@@ -624,26 +647,54 @@ impl BPE {
     }
 
     fn tokenize_backtracking(&self, sequence: &str) -> Result<Word> {
-        if !self.backtracking_enabled {
-            // TODO: error type
-            panic!("Backtracking not enabled");
-        }
         let engine = self
             .backtracking_engine
             .as_ref()
-            .expect("BacktrackingEngine not initialized");
+            .expect("Backtracking engine not initialized");
 
-        let sequence_bytes = sequence.as_bytes();
-        let sequence_bye_length = sequence_bytes.len();
+        let bytes = sequence.as_bytes();
+        let mut word = Word::with_capacity(bytes.len());
+        let mut unk: Option<(u32, usize)> = None;
+        let mut run_start: Option<usize> = None;
 
-        let mut word = Word::with_capacity(sequence_bye_length);
+        for (i, c) in sequence.char_indices() {
+            if self.vocab.contains_key(&sequence[i..i + c.len_utf8()]) {
+                if run_start.is_none() {
+                    if let Some((id, len)) = unk.take() {
+                        word.add(id, len); // flush pending unk before a run resumes
+                    }
+                    run_start = Some(i);
+                }
+                continue;
+            }
+            if let Some(start) = run_start.take() {
+                let suffixes = engine.build_token_suffix_array(&bytes[start..i]);
+                engine.backtrack_token_suffix_array(suffixes, &mut word);
+            }
+            if let Some(unk_token) = &self.unk_token {
+                let unk_id = *self
+                    .vocab
+                    .get(unk_token)
+                    .ok_or_else(|| Error::UnkTokenOutOfVocabulary(unk_token.to_owned()))?;
+                let byte_len = c.len_utf8();
+                unk = match (unk, self.fuse_unk) {
+                    (Some((id, len)), true) => Some((id, len + byte_len)),
+                    (Some((id, len)), false) => {
+                        word.add(id, len);
+                        Some((unk_id, byte_len))
+                    }
+                    _ => Some((unk_id, byte_len)),
+                };
+            }
+        }
 
-        // Step 1: build the array of last token candidates
-        let token_suffixes = engine.build_token_suffix_array(sequence_bytes);
-
-        // Step 2: iterate in reverse to construct the word
-        engine.backtrack_token_suffix_array(token_suffixes, &mut word);
-
+        if let Some(start) = run_start.take() {
+            let suffixes = engine.build_token_suffix_array(&bytes[start..]);
+            engine.backtrack_token_suffix_array(suffixes, &mut word);
+        }
+        if let Some((id, len)) = unk {
+            word.add(id, len);
+        }
         Ok(word)
     }
 }
@@ -1275,6 +1326,43 @@ mod tests {
         );
 
         assert_backtracking_matches_naive(bpe, &["abc", "ab", "bc", "abcabc"]);
+    }
+
+    #[test]
+    fn backtracking_matches_naive_repeated_chars() {
+        // Minimal repro of the GPT-2 failure on "Ġ*****": greedy splits a run of repeated
+        // chars as [a+4b][b], but the seam check wrongly accepts [a+b][4b]. Here 'a' stands
+        // in for "Ġ" and 'b' for "*"; the merge order mirrors GPT-2's relative ranks
+        // (* * < Ġ * < ** ** < Ġ ****).
+        let vocab: Vocab = [
+            ("a", 0u32),
+            ("b", 1),
+            ("bb", 2),
+            ("ab", 3),
+            ("bbbb", 4),
+            ("abbbb", 5),
+        ]
+        .iter()
+        .map(|(s, i)| ((*s).into(), *i))
+        .collect();
+        let merges: Merges = vec![
+            ("b".into(), "b".into()),    // -> bb
+            ("a".into(), "b".into()),    // -> ab
+            ("bb".into(), "bb".into()),  // -> bbbb
+            ("a".into(), "bbbb".into()), // -> abbbb
+        ];
+        let bpe = BPE::new(vocab, merges);
+
+        assert_eq!(
+            bpe.tokenize("abbbbb").unwrap(),
+            vec![
+                Token::new(5u32, "abbbb".into(), (0, 5)),
+                Token::new(1u32, "b".into(), (5, 6)),
+            ],
+            "naive BPE splits the run as [abbbb][b]"
+        );
+
+        assert_backtracking_matches_naive(bpe, &["abbbbb"]);
     }
 
     #[test]
