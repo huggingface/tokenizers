@@ -231,7 +231,7 @@ impl AddedVocabulary {
 
     /// Get the id matching one of our token if it exists
     pub fn token_to_id(&self, token: &str, model: &dyn Model) -> Option<u32> {
-        self.inner.token_to_id(token)
+        self.vocab.token_to_id(token)
     }
 
     /// Return the string form of an added token used during **decoding**.
@@ -279,8 +279,9 @@ impl AddedVocabulary {
         let mut total = 0;
 
         let mut next_id = self.vocab.len();
-        let mut byte_set = Vec::from(self.buckets.to_vec());
-        let mut all_tokens = Vec::from(self.inner.get_vocab_bytes());
+        let mut first_byte_to_bucket_id: [u8; 256] = [0xFF; 256];
+        let mut byte_set = Vec::from(self.vocab.get_buckets().to_vec());
+        let mut all_tokens = self.vocab.get_vocab_bytes();
         let mut all_metadata = Vec::from(self.token_metadata.to_vec());
 
         for token in tokens {
@@ -314,27 +315,7 @@ impl AddedVocabulary {
 
             // We count the first bytes and store the actual lenght of the char
             let token_bytes = token.content.as_bytes();
-            let prefix_len = match &token_bytes[0] {
-                0x00..=0x7F => 1,
-                0xC2..=0xDF => 2,
-                0xE0..=0xEF => 3,
-                0xF0..=0xF4 => 4,
-                _ => return Err(format!("Invalid UTF-8 first byte in token ").into()),
-            };
-            if first_byte_to_bucket_id[token_bytes[0] as usize] != u8::MAX {
-                // bucket already exists :)
-                byte_set[first_byte_to_bucket_id[token_bytes[0] as usize] as usize].end += 1;
-            } else {
-                let mut prefix = [0; 4];
-                prefix[..prefix_len].copy_from_slice(&token_bytes[..prefix_len]);
-                byte_set.push(Bucket {
-                    prefix,
-                    prefix_len: prefix_len as u8,
-                    start: 0,
-                    end: 1,
-                });
-                self.first_byte_to_bucket_id[token_bytes[0] as usize] = byte_set.len() as u8 - 1;
-            }
+
             // dummy bucket for now, next time its seens will just update end.
             if token.normalized {
                 if let Some(n) = normalizer {
@@ -349,11 +330,12 @@ impl AddedVocabulary {
         }
         // TODO: we have
         let mut zipped: Vec<_> = all_tokens.into_iter().zip(all_metadata).collect();
-        zipped.sort_unstable_by_key(|((s, _id), other)| {
-            (
-                byte_set[self.first_byte_to_bucket_id[s[0] as usize] as usize].prefix,
-                std::cmp::Reverse(s.len()),
-            )
+        // group by bucket prefix, then longest token first (so longest-match probing works).
+        // sort_unstable_by (not _by_key): prefix is Box<[u8]>, not Copy, so we compare by ref.
+        zipped.sort_unstable_by(|((a, _), _), ((b, _), _)| {
+            let pa = &byte_set[first_byte_to_bucket_id[a[0] as usize] as usize].prefix;
+            let pb = &byte_set[first_byte_to_bucket_id[b[0] as usize] as usize].prefix;
+            pa.cmp(pb).then_with(|| b.len().cmp(&a.len()))
         });
         let (all_tokens, all_metadata): (Vec<_>, Vec<_>) = zipped.into_iter().unzip();
         // at this point all tokens should look like: ["<|1|>", "<||>", "[ooo]", "[i]"]. First same
@@ -361,15 +343,7 @@ impl AddedVocabulary {
         // prefix then just longest
         //
         self.token_metadata = all_metadata.into();
-        self.inner = VocabStore::build(all_tokens);
-        let mut idx = 0;
-        for b in &mut byte_set {
-            let elem = b.end - b.start;
-            b.start = idx;
-            b.end = idx + elem;
-            idx = b.end;
-        }
-        self.buckets = byte_set.into();
+        self.vocab = Buckets::build(all_tokens, first_byte_to_bucket_id, byte_set.into());
         // TODO: normalized_inner needed as well!
         // Return the number of added tokens
         Ok(total - ignored)
@@ -388,10 +362,12 @@ impl AddedVocabulary {
             // Find the next candidate start and the bucket whose entries we should scan.
             match self.vocab.match_bytes(&bytes[search..]) {
                 Some((id, match_start, match_len)) if match_len > 0 => {
+                    // match_bytes positions are relative to the slice we passed (&bytes[search..])
+                    let match_start = search + match_start as usize;
+                    let match_end = match_start + match_len as usize;
                     if match_start > emit {
                         splits.push((emit, match_start, None));
                     }
-                    let match_end = match_start + match_len as usize;
                     splits.push((match_start, match_end, Some(id)));
                     emit = match_end;
                     search = match_end;

@@ -36,7 +36,19 @@ pub struct Buckets {
 }
 
 impl Buckets {
-    pub fn new(
+    /// Empty matcher (no added tokens yet).
+    pub fn new() -> Self {
+        Self {
+            first_byte_to_bucket_id: [0xFF; 256], // 0xFF = no bucket for this first byte
+            lo16: [0; 16],
+            hi16: [0; 16],
+            can_use_nibbling: true,
+            buckets: Box::default(),
+            inner: VocabStore::new(),
+        }
+    }
+    /// Build the matcher from sorted `tokens`, the first-byte->bucket table, and the buckets.
+    pub fn build(
         tokens: Vec<(Vec<u8>, u32)>,
         first_byte_to_bucket_id: [u8; 256],
         buckets: Box<[Bucket]>,
@@ -247,5 +259,36 @@ impl Buckets {
 
     pub fn len(&self) -> usize {
         self.inner.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+    /// The bucket metadata (prefix / disc table / length lists), one entry per first-byte group.
+    pub fn get_buckets(&self) -> &[Bucket] {
+        &self.buckets
+    }
+    /// first byte -> bucket index (0xFF = none). The builder reads this to extend buckets.
+    pub fn first_byte_to_bucket_id(&self) -> &[u8; 256] {
+        &self.first_byte_to_bucket_id
+    }
+    /// All added-token byte strings + ids (e.g. to rebuild the vocab when adding tokens).
+    pub fn get_vocab_bytes(&self) -> Vec<(Vec<u8>, u32)> {
+        self.inner.get_vocab_bytes()
+    }
+    /// All added-token strings + ids.
+    pub fn get_vocab(&self) -> Vec<(String, u32)> {
+        self.inner.get_vocab()
+    }
+    pub fn token_to_id(&self, token: &str) -> Option<u32> {
+        self.inner.token_to_id(token)
+    }
+    pub fn id_to_token(&self, id: u32) -> Option<String> {
+        self.inner.id_to_token(id)
+    }
+}
+
+impl Default for Buckets {
+    fn default() -> Self {
+        Self::new()
     }
 }
