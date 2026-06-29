@@ -2,7 +2,7 @@ use super::{
     normalizer::Range, Model, NormalizedString, Normalizer, Offsets, PreTokenizedString, Result,
     Token,
 };
-use crate::types::{AddedTokenFlags, Bucket};
+use crate::types::{AddedTokenFlags, Bucket, Buckets};
 use crate::vocab_store::VocabStore;
 use ahash::{AHashMap, AHashSet};
 use daachorse::{DoubleArrayAhoCorasick, DoubleArrayAhoCorasickBuilder, MatchKind};
@@ -160,19 +160,19 @@ pub struct AddedVocabulary {
     /// New fast path for normalize and extra needs:
     ///  - multi-bucket first bytes. If its len is 1, we use memchr
     ///  otherwise we just check each car on that table lookup. Its a 1KB table.
-    first_byte_to_bucket_id: [u8; 256],
     ///  - the actual buckets. We could use small vec here. Chose to impl it.
     ///  Buckets give pointers to the inner vocab store.
-    buckets: Box<[Bucket]>,
     /// The metadata of each tokens
     token_metadata: Box<[AddedTokenFlags]>, // indexed using id_to_slot?
-    inner: VocabStore,
+    normalized_vocab: Buckets,
+    vocab: Buckets
+
 }
 impl fmt::Debug for AddedVocabulary {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // TODO: make it clean.
         f.debug_struct("AddedVocabulary")
-            .field("inner_vocab", &self.inner)
-            .field("buckets", &self.buckets)
+            .field("buckets", &self.vocab)
             .field(
                 "reconstructed_added_vocab",
                 &self.get_added_tokens_decoder(),
@@ -184,26 +184,25 @@ impl AddedVocabulary {
     pub fn new() -> Self {
         Self {
             encode_special_tokens: true,
-            first_byte_to_bucket_id: [u8::MAX; 256],
-            buckets: Box::new([]),
             token_metadata: Box::new([]),
-            inner: VocabStore::new(),
+            normalized_vocab: Buckets::new(),
+            vocab: Buckets::new(),
         }
     }
     /// Size of the additional vocabulary
     #[allow(dead_code)] // Suppress the "method is never used" warning
     pub fn len(&self) -> usize {
-        self.inner.len()
+        self.vocab.len()
     }
 
     /// Whether or not this vocabulary is empty
     pub fn is_empty(&self) -> bool {
-        self.inner.is_empty()
+        self.vocab.is_empty()
     }
 
     /// Get the additional vocabulary
     pub fn get_vocab(&self) -> AHashMap<String, u32> {
-        self.inner
+        self.vocab
             .get_vocab()
             .into_iter()
             .collect::<AHashMap<String, u32>>()
