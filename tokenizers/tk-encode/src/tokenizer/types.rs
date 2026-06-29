@@ -160,7 +160,7 @@ impl Buckets {
         return None;
     }
 
-    fn longest_first_match(&self, bytes: &[u8], bucket_id: u32) -> Option<u32> {
+    fn longest_first_match(&self, bytes: &[u8], bucket_id: u32) -> Option<(u32, u32)> {
         // 1. common prefix check
         if !bytes.starts_with(&self.buckets[bucket_id as usize].prefix) {
             return None;
@@ -180,7 +180,7 @@ impl Buckets {
             let len = len as usize;
             if len <= bytes.len() {
                 if let Some(id) = self.inner.get_bytes(&bytes[..len]) {
-                    return Some(id);
+                    return Some((id, len));
                 }
             }
         }
@@ -224,8 +224,6 @@ impl Buckets {
                 None => return best,
             },
         };
-        // 1. we reject the bytes if the 2nd byte is not in next_byte_to_length_idx
-        // we have a bucket that matched. Now we want to extract the id of the token id.
-        let token_id = self.longest_first_match(&bytes[cutoff..], bucket);
+        self.longest_first_match(&bytes[cutoff..], bucket)
     }
 }
