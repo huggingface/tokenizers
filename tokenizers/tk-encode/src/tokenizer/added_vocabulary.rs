@@ -387,62 +387,61 @@ impl AddedVocabulary {
         normalizer: Option<&N>,
         sequence: &str,
     ) -> PreTokenizedString {
-        // 1. if the machinery does not exist, we build it:
-        let mut splits = Vec::new();
-        if self.buckets.len() == 1 {
-            /// memchr with 1, 2 or 3 bytes
-            let mut start = 0;
-            let mut current_seq = sequence.as_bytes();
-            while let Some(next_index) = memchr(self.buckets[0].prefix[0], current_seq) {
-                let end = self.inner.match_bytes(
-                    &current_seq[next_index as usize..],
-                    0,
-                    self.buckets[0].end,
-                );
-                splits.push((start, next_index));
-                if let Some(e) = end {
-                    splits.push((next_index, e as usize));
-                    start = e as usize;
-                    current_seq = &current_seq[e as usize..];
-                } else {
-                    break;
+        let bytes = sequence.as_bytes();
+        let mut splits: Vec<(usize, usize, Option<u32>)> = Vec::new();
+        let mut emit = 0;
+        let mut search = 0;
+        while search < bytes.len() {
+            // Find the next candidate start and the bucket whose entries we should scan.
+            let (match_start, bucket) = if self.buckets.len() == 1 {
+                match memchr(self.buckets[0].prefix[0], &bytes[search..]) {
+                    Some(rel) => (search + rel, &self.buckets[0]),
+                    None => break,
                 }
-            }
-        } else {
-            /// else we use self.first_byte_to_bucket_id
-            let mut start = 0;
-            let mut current_seq = sequence.as_bytes();
-            while let Some(next_index) = current_seq
-                .iter()
-                .position(|&byte| self.first_byte_to_bucket_id[byte as usize] != u8::MAX)
-            {
-                let byte = current_seq[next_index as usize] as usize;
-                let buck = self.buckets[self.first_byte_to_bucket_id[byte] as usize];
-                let end = self.inner.match_bytes(
-                    &current_seq[next_index as usize..],
-                    buck.start,
-                    buck.end,
-                );
-                splits.push((start, next_index));
-                if let Some(e) = end {
-                    if e == 0 {
-                        break;
+            } else {
+                match bytes[search..]
+                    .iter()
+                    .position(|&b| self.first_byte_to_bucket_id[b as usize] != u8::MAX)
+                {
+                    Some(rel) => {
+                        let s = search + rel;
+                        let b = bytes[s] as usize;
+                        (s, &self.buckets[self.first_byte_to_bucket_id[b] as usize])
                     }
-                    splits.push((next_index, e as usize));
-                    start = e as usize;
-                    current_seq = &current_seq[e as usize..];
-                } else {
-                    break;
+                    None => break,
                 }
+            };
+
+            match self
+                .inner
+                .match_bytes(&bytes[match_start..], bucket.start, bucket.end)
+            {
+                Some((id, match_len)) if match_len > 0 => {
+                    if match_start > emit {
+                        splits.push((emit, match_start, None));
+                    }
+                    let match_end = match_start + match_len as usize;
+                    splits.push((match_start, match_end, Some(id)));
+                    emit = match_end;
+                    search = match_end;
+                }
+                // Prefix byte present but no token actually matches: skip just this byte.
+                _ => search = match_start + 1,
             }
+        }
+        if emit < bytes.len() {
+            splits.push((emit, bytes.len(), None));
         }
         println!("Found splits: {:?}", splits);
         let mut pre = PreTokenizedString::from(sequence);
         pre.split(|_, normalized| {
             Ok(splits
                 .iter()
-                .filter_map(|&(start, end)| {
-                    normalized.slice(Range::Normalized(start as usize..end as usize))
+                .filter_map(|&(start, end, id)| {
+                    let ns = normalized.slice(Range::Normalized(start..end))?;
+                    let tokens = id
+                        .map(|id| vec![Token::new(id, ns.get().to_string(), (0, ns.get().len()))]);
+                    Some((ns, tokens))
                 })
                 .collect::<Vec<_>>())
         })

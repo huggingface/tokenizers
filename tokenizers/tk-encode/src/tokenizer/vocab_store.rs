@@ -227,13 +227,7 @@ impl VocabStore {
     #[inline]
     pub fn match_bytes(&self, bytes: &[u8], start: u32, end: u32) -> Option<(u32, u32)> {
         let mut best: Option<(u32, u32)> = None;
-        for i in start..end {
-            let e = self.entries[i as usize];
-            let slice = &self.bytes[e.start as usize..e.start as usize + e.len as usize];
-            if bytes.starts_with(slice) && best.is_none_or(|(_, len)| e.len as u32 > len) {
-                best = Some((e.id, e.len as u32));
-            }
-        }
+        // TODO: this won't be done in this func anymore
         best
     }
 }
