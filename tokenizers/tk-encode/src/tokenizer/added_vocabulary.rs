@@ -255,7 +255,10 @@ impl AddedVocabulary {
 
     /// Check if a token is a special token
     pub fn is_special_token(&self, token: &str) -> bool {
-        self.token_metadata[0].special
+        if let Some(tok) = self.vocab.token_to_id(token) {
+            return self.token_metadata[tok as usize].special;
+        }
+        return true;
     }
 
     /// Add some special tokens to the vocabulary
@@ -279,11 +282,11 @@ impl AddedVocabulary {
         let mut total = 0;
 
         let mut next_id = self.vocab.len();
-        let mut first_byte_to_bucket_id: [u8; 256] = [0xFF; 256];
         let mut byte_set = Vec::from(self.vocab.get_buckets().to_vec());
         let mut all_tokens = self.vocab.get_vocab_bytes();
         let mut all_metadata = Vec::from(self.token_metadata.to_vec());
-
+        let mut first_byte_to_bucket_id = self.vocab.first_byte_to_bucket_id().clone();
+        let mut bucket_counter = byte_set.len();
         for token in tokens {
             total += 1;
             if token.content.is_empty() {
@@ -314,23 +317,33 @@ impl AddedVocabulary {
             };
 
             // We count the first bytes and store the actual lenght of the char
-            let token_bytes = token.content.as_bytes();
+            let token_bytes = token.content.into_bytes();
 
             // dummy bucket for now, next time its seens will just update end.
             if token.normalized {
-                if let Some(n) = normalizer {
-                    let mut s = NormalizedString::from(token.content.as_ref());
-                    n.normalize(&mut s)?;
-                    let normed = s.get().to_string();
-                    // TODO: just init the normalized struct here
-                    if normed != token.content {}
-                }
+                todo!()
+            }
+            if first_byte_to_bucket_id[token_bytes[0] as usize] == 0xFF {
+                first_byte_to_bucket_id[token_bytes[0] as usize] = bucket_counter as u8;
+                bucket_counter += 1;
+                byte_set.push(Bucket {
+                    prefix: token_bytes.clone().into(),
+                    next_byte_to_length_id: [0; 256],
+                    length_list: Box::new([Box::new([])]),
+                })
+            } else {
+                // bucket with prefix exists
+                // we need to update prefix and update length list
+                todo!()
             }
             all_tokens.push((token_bytes.to_vec(), new_id as u32));
         }
-        // TODO: we have
+        // We collected all tokens to be added and previous ones.
+        // Now we need to build the Bucket{longest_common_prefix, next_byte_to_length_id, length_list}
+
         let mut zipped: Vec<_> = all_tokens.into_iter().zip(all_metadata).collect();
-        // group by bucket prefix, then longest token first (so longest-match probing works).
+        // group by bucket prefix, then longest token first (so probing on length has contiguous
+        // acces).
         // sort_unstable_by (not _by_key): prefix is Box<[u8]>, not Copy, so we compare by ref.
         zipped.sort_unstable_by(|((a, _), _), ((b, _), _)| {
             let pa = &byte_set[first_byte_to_bucket_id[a[0] as usize] as usize].prefix;
@@ -338,12 +351,16 @@ impl AddedVocabulary {
             pa.cmp(pb).then_with(|| b.len().cmp(&a.len()))
         });
         let (all_tokens, all_metadata): (Vec<_>, Vec<_>) = zipped.into_iter().unzip();
+        // 1) iterate over all_tokens. They are sorted by prefix, then by length.
+
+        let mut current_prefix: u8;
+
         // at this point all tokens should look like: ["<|1|>", "<||>", "[ooo]", "[i]"]. First same
         //                                           b: <|     b:<|    b:[      b:[     the buckets    #[rustfmt::skip]
         // prefix then just longest
         //
         self.token_metadata = all_metadata.into();
-        self.vocab = Buckets::build(all_tokens, first_byte_to_bucket_id, byte_set.into());
+        self.vocab = Buckets::build(all_tokens, *first_byte_to_bucket_id, byte_set.into());
         // TODO: normalized_inner needed as well!
         // Return the number of added tokens
         Ok(total - ignored)
