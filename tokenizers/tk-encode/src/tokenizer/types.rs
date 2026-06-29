@@ -23,6 +23,7 @@ pub struct Bucket {
 
 /// Buckets are responsible of finding matches.
 /// lo / hi nibble
+#[derive(Clone)]
 pub struct Buckets {
     first_byte_to_bucket_id: [u8; 256],
     // we use optimized SIMD to scan potential special tokens when there are more than 1 bucket.
@@ -35,15 +36,23 @@ pub struct Buckets {
 }
 
 impl Buckets {
-    pub fn new() -> Self {
-        Self {
-            first_byte_to_bucket_id: [0; 256],
+    pub fn new(
+        tokens: Vec<(Vec<u8>, u32)>,
+        first_byte_to_bucket_id: [u8; 256],
+        buckets: Box<[Bucket]>,
+    ) -> Self {
+        // tokens should be sorted
+        let inner = VocabStore::build(tokens);
+        let mut new = Self {
+            first_byte_to_bucket_id: first_byte_to_bucket_id,
             lo16: [0; 16],
             hi16: [0; 16],
             can_use_nibbling: true,
-            buckets: Box::default(),
-            inner: VocabStore::new(),
-        }
+            buckets: buckets,
+            inner: inner,
+        };
+        new.build_nibble_table();
+        new
     }
     //   ┌───────────────────────────────╴
     //   │ 0 1 2 3 4 5 6 7 8 9 a b c d e f
@@ -106,7 +115,7 @@ impl Buckets {
         (self.lo16, self.hi16) = (lo, hi);
     }
     #[cfg(target_arch = "aarch64")]
-    fn nibble_match_bytes(&self, bytes: &[u8]) -> Option<u32> {
+    fn nibble_match_bytes(&self, bytes: &[u8]) -> Option<usize> {
         // lane index   0     1     2     3     4    ...  (16 lanes, one register)
         // input byte  'a'   'b'   '<'   'd'   'e'   ...
         // hex         61    62    3C    64    65    ...
@@ -180,7 +189,7 @@ impl Buckets {
             let len = len as usize;
             if len <= bytes.len() {
                 if let Some(id) = self.inner.get_bytes(&bytes[..len]) {
-                    return Some((id, len));
+                    return Some((id, len as u32));
                 }
             }
         }
@@ -188,21 +197,21 @@ impl Buckets {
     }
     /// returns token_id, match_position, match_len
     pub fn match_bytes(&self, bytes: &[u8]) -> Option<(u32, u32, u32)> {
-        let mut best: Option<(u32, u32, u32)> = None;
-        let search = 0;
-        // return the end of match index and the id of the match token if any.
         // 1. quick scan of the bytes with fast rejection
         let (bucket, cutoff) = match self.buckets.len() {
             // single bucket, fast memchr scan on the first byte of the common prefix
             1 => match memchr::memchr(self.buckets[0].prefix[0], &bytes) {
                 Some(id) => (0, id),
-                None => return best,
+                None => return None,
             },
             2 => {
                 match memchr::memchr2(self.buckets[0].prefix[0], self.buckets[1].prefix[0], &bytes)
                 {
-                    Some(id) => (self.first_byte_to_bucket_id[bytes[id as usize]], id),
-                    None => return best,
+                    Some(id) => (
+                        self.first_byte_to_bucket_id[bytes[id as usize] as usize],
+                        id,
+                    ),
+                    None => return None,
                 }
             }
             // memchr has optimized path for 2 and 3 prefix
@@ -213,19 +222,30 @@ impl Buckets {
                     self.buckets[2].prefix[0],
                     &bytes,
                 ) {
-                    Some(id) => (self.first_byte_to_bucket_id[bytes[id as usize]], id),
-                    None => return best,
+                    Some(id) => (
+                        self.first_byte_to_bucket_id[bytes[id as usize] as usize],
+                        id,
+                    ),
+                    None => return None,
                 }
             }
 
             _ => match self.nibble_match_bytes(bytes) {
-                Some((id, cutoff)) => {
-                    (id, cutoff);
-                }
-                None => return best,
+                Some(id) => (
+                    self.first_byte_to_bucket_id[bytes[id as usize] as usize],
+                    id,
+                ),
+                None => return None,
             },
         };
-        let (token_id, len) = self.longest_first_match(&bytes[cutoff..], bucket);
-        (token_id, cutoff, len)
+        if let Some((token_id, len)) = self.longest_first_match(&bytes[cutoff..], bucket as u32) {
+            Some((token_id, cutoff as u32, len))
+        } else {
+            None
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.inner.len()
     }
 }

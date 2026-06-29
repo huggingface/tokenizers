@@ -165,14 +165,13 @@ pub struct AddedVocabulary {
     /// The metadata of each tokens
     token_metadata: Box<[AddedTokenFlags]>, // indexed using id_to_slot?
     normalized_vocab: Buckets,
-    vocab: Buckets
-
+    vocab: Buckets,
 }
 impl fmt::Debug for AddedVocabulary {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // TODO: make it clean.
         f.debug_struct("AddedVocabulary")
-            .field("buckets", &self.vocab)
+            // .field("buckets", &self.vocab)
             .field(
                 "reconstructed_added_vocab",
                 &self.get_added_tokens_decoder(),
@@ -279,7 +278,7 @@ impl AddedVocabulary {
         let mut ignored = 0;
         let mut total = 0;
 
-        let mut next_id = self.inner.len();
+        let mut next_id = self.vocab.len();
         let mut byte_set = Vec::from(self.buckets.to_vec());
         let mut all_tokens = Vec::from(self.inner.get_vocab_bytes());
         let mut all_metadata = Vec::from(self.token_metadata.to_vec());
@@ -322,9 +321,9 @@ impl AddedVocabulary {
                 0xF0..=0xF4 => 4,
                 _ => return Err(format!("Invalid UTF-8 first byte in token ").into()),
             };
-            if self.first_byte_to_bucket_id[token_bytes[0] as usize] != u8::MAX {
+            if first_byte_to_bucket_id[token_bytes[0] as usize] != u8::MAX {
                 // bucket already exists :)
-                byte_set[self.first_byte_to_bucket_id[token_bytes[0] as usize] as usize].end += 1;
+                byte_set[first_byte_to_bucket_id[token_bytes[0] as usize] as usize].end += 1;
             } else {
                 let mut prefix = [0; 4];
                 prefix[..prefix_len].copy_from_slice(&token_bytes[..prefix_len]);
@@ -373,11 +372,9 @@ impl AddedVocabulary {
         self.buckets = byte_set.into();
         // TODO: normalized_inner needed as well!
         // Return the number of added tokens
-       Ok(total - ignored)
+        Ok(total - ignored)
     }
 
-    /// The first improvement we are working on is on replacing the heavy regex
-    /// with IREE's fast string / normalization algo.
     pub fn extract_and_normalize<N: Normalizer>(
         &self,
         normalizer: Option<&N>,
@@ -389,9 +386,7 @@ impl AddedVocabulary {
         let mut search = 0;
         while search < bytes.len() {
             // Find the next candidate start and the bucket whose entries we should scan.
-            match self.vocab
-                .match_bytes(&bytes[search..])
-            {
+            match self.vocab.match_bytes(&bytes[search..]) {
                 Some((id, match_start, match_len)) if match_len > 0 => {
                     if match_start > emit {
                         splits.push((emit, match_start, None));
