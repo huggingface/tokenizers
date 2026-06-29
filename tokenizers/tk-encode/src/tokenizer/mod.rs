@@ -1190,7 +1190,7 @@ where
     N: Normalizer,
 {
     /// Normalization logic, go through all normalizers
-    fn do_normalize<V: Into<NormalizedString>>(&self, normalized: V) -> Result<NormalizedString> {
+    pub fn do_normalize<V: Into<NormalizedString>>(&self, normalized: V) -> Result<NormalizedString> {
         let mut normalized: NormalizedString = normalized.into();
 
         if let Some(ref normalizer) = self.normalizer {

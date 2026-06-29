@@ -460,6 +460,13 @@ impl BPE {
         }
     }
 
+    /// Fully drop the cache so `tokenize` always recomputes via the uncached path (no
+    /// thread-local lookup). Unlike `resize_cache(0)`, this removes the cache machinery
+    /// entirely — used to benchmark the raw merge algorithm without cache overhead.
+    pub fn disable_cache(&mut self) {
+        self.cache = None;
+    }
+
     pub fn get_vocab(&self) -> HashMap<String, u32> {
         self.vocab.clone().into_iter().collect()
     }
@@ -629,9 +636,12 @@ impl BPE {
     }
 
     pub fn set_backtracking(&mut self, active: bool) {
+        // An empty affix (`Some("")`, as GPT-2 serializes) is a no-op and stays compatible;
+        // only a real affix or byte_fallback forces the naive path.
+        let has_affix = |a: &Option<String>| a.as_deref().map_or(false, |s| !s.is_empty());
         if self.byte_fallback
-            || self.continuing_subword_prefix.is_some()
-            || self.end_of_word_suffix.is_some()
+            || has_affix(&self.continuing_subword_prefix)
+            || has_affix(&self.end_of_word_suffix)
         {
             // Disable backtracking in these configs
             return;
