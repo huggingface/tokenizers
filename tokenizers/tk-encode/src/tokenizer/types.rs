@@ -82,7 +82,7 @@ impl Buckets {
     // we can't have the index be 16 bits, so lo has 8bits length, hi as well.
     fn build_nibble_table(&mut self) {
         // we build the nibble table from the candidate first_byte_to_bucket_id
-        let candidates: [bool; 256] = self.first_byte_to_bucket_id & true;
+        let candidates: [bool; 256] = self.first_byte_to_bucket_id.map(|v| v != 0xFF);
         // for each valid candidate (a u8) we build the 16x16 lookup tabllet (mut next, mut bit, mut has) = (0u32, [0u8;16], [false;16]);
         let (mut lo, mut hi) = ([0u8; 16], [0u8; 16]);
         let (mut next, mut bit, mut has) = (0u32, [0u8; 16], [false; 16]);
@@ -92,7 +92,7 @@ impl Buckets {
             // unique id associated with that match.
             if (0..16).any(|l| candidates[(h << 4) | l]) {
                 if next >= 8 {
-                    return None;
+                    return;
                 } // >8 high nibbles -> caller uses scalar TODO:
                 let counter = 1u8 << next;
                 next += 1;
