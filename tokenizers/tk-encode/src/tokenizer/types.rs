@@ -257,6 +257,7 @@ impl Buckets {
 
     fn longest_first_match(&self, bytes: &[u8], bucket_id: u32) -> Option<(u32, u32)> {
         // 1. common prefix check
+
         if !bytes.starts_with(&self.buckets[bucket_id as usize].prefix) {
             return None;
         }
@@ -403,5 +404,31 @@ mod tests {
         assert_eq!(fake_bucket.lo16, expected_lo16);
         assert_eq!(fake_bucket.hi16, expected_hi16);
         assert!(fake_bucket.nibble_match_bytes("pardis".as_bytes()) == Some(1));
+        assert_eq!(
+            fake_bucket.nibble_match_bytes("where is toad".as_bytes()),
+            Some(9)
+        );
+    }
+
+    #[test]
+    fn test_match_bytes() {
+        let mut first_byte_to_bucket = [0xFFu8; 256];
+        first_byte_to_bucket[b'<' as usize] = 0;
+        let mut next_byte_to_length_id = [0xFFFFu16; 256];
+        next_byte_to_length_id[b'|' as usize] = 0;
+        let fake_vocab = Buckets::build(
+            vec![("<|eos|>".as_bytes().to_vec(), 0)],
+            first_byte_to_bucket,
+            Box::new([Bucket {
+                prefix: Box::from(*b"<"),
+                next_byte_to_length_id,
+                length_list: Box::new([Box::new([7])]),
+            }]),
+        );
+        assert_eq!(
+            fake_vocab.match_bytes(b"This should be kwown<s><|eos|>"),
+            None
+        );
+        assert_eq!(fake_vocab.match_bytes(b"><|eos|>"), Some((0, 1, 7)));
     }
 }
