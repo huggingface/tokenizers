@@ -4,10 +4,8 @@ use super::{
 use crate::buckets::{AddedTokenFlags, Buckets};
 use crate::whitespace::{skip_whitespace_backward, skip_whitespace_forward};
 use ahash::AHashMap;
-use regex::Regex;
 use serde::{ser::SerializeSeq, Deserialize, Serialize, Serializer};
 use std::fmt;
-use std::sync::LazyLock;
 /// Represent a token added by the user on top of the existing Model vocabulary.
 /// AddedToken can be configured to specify the behavior they should have in various situations
 /// like:
