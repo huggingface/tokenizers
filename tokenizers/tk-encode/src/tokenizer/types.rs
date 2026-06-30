@@ -17,8 +17,40 @@ pub struct AddedTokenFlags {
 pub struct Bucket {
     // longest common prefix of the bucket
     pub prefix: Box<[u8]>,
+    // prefix[0..min(len,8)] packed little-endian + a per-byte mask, so the hot-path reject is a
+    // single `(chunk ^ prefix_word) & prefix_mask` instead of walking the boxed prefix slice.
+    pub prefix_word: u64,
+    pub prefix_mask: u64,
     pub next_byte_to_length_id: [u16; 256], // post-prefix byte -> sub-list index; 0xFFFF = none
     pub length_list: Box<[Box<[u16]>]>,
+}
+
+impl Bucket {
+    /// Pack the prefix into `prefix_word`/`prefix_mask` for the one-instruction reject.
+    pub fn new(
+        prefix: Box<[u8]>,
+        next_byte_to_length_id: [u16; 256],
+        length_list: Box<[Box<[u16]>]>,
+    ) -> Self {
+        // native-endian packing so the reject's `from_ne_bytes` read is a pure reinterpret on any
+        // arch (no byte-swap); the equality compare is endian-agnostic as long as both sides match.
+        let mut wbuf = [0u8; 8];
+        let mut mbuf = [0u8; 8];
+        let plen = prefix.len().min(8);
+        wbuf[..plen].copy_from_slice(&prefix[..plen]);
+        for b in mbuf[..plen].iter_mut() {
+            *b = 0xFF;
+        }
+        let prefix_word = u64::from_ne_bytes(wbuf);
+        let prefix_mask = u64::from_ne_bytes(mbuf);
+        Bucket {
+            prefix,
+            prefix_word,
+            prefix_mask,
+            next_byte_to_length_id,
+            length_list,
+        }
+    }
 }
 
 /// Buckets are responsible of finding matches.
@@ -129,11 +161,11 @@ impl Buckets {
             }
             debug_assert!(buckets.len() < 0xFF, "more than 254 distinct first bytes");
             first_byte_to_bucket_id[first_b] = buckets.len() as u8;
-            buckets.push(Bucket {
+            buckets.push(Bucket::new(
                 prefix,
                 next_byte_to_length_id,
-                length_list: length_list.into_iter().map(Vec::into_boxed_slice).collect(),
-            });
+                length_list.into_iter().map(Vec::into_boxed_slice).collect(),
+            ));
         }
         Self::build(tokens, first_byte_to_bucket_id, buckets.into_boxed_slice())
     }
@@ -255,6 +287,8 @@ impl Buckets {
         return None;
     }
 
+    // Reference reject kept only as the naive bench baseline; the shipped path is `match_fast`.
+    #[cfg(test)]
     fn longest_first_match(&self, bytes: &[u8], bucket_id: u32) -> Option<(u32, u32)> {
         // 1. common prefix check
 
@@ -291,20 +325,133 @@ impl Buckets {
         }
     }
 
-    /// returns token_id, match_position, match_len
-    pub fn match_bytes(&self, bytes: &[u8]) -> Option<(u32, u32, u32)> {
-        // TODO: we can push this further by extracting in nibble match the mask
-        // to check all candidates in the 16bytes. this should give 10-40% perf
-        // depending on code heavy inputs.
-        let mut search = 0x0usize;
-        while search < bytes.len() {
-            let candidate = self.next_candidate(&bytes[search..])?;
-            let cutoff = search + candidate as usize;
-            let bucket = self.first_byte_to_bucket_id[bytes[cutoff] as usize] as u32;
-            if let Some((token_id, len)) = self.longest_first_match(&bytes[cutoff..], bucket) {
-                return Some((token_id, cutoff as u32, len));
+    /// Reduced per-candidate reject. The first byte already matched (that's why `pos` is a
+    /// candidate), so verify the rest of the prefix as ONE masked `u64` compare — no boxed-slice
+    /// walk, no loop, `prefix[0]` folded in for free. Only the rare survivor reaches the disc table
+    /// and the hash. This is the work that dominates dense input, so it has to be tiny.
+    #[inline(always)]
+    fn match_fast(&self, bytes: &[u8], pos: usize, bucket_id: u32) -> Option<(u32, u32)> {
+        let bucket = &self.buckets[bucket_id as usize];
+        let n = bytes.len();
+        // 1. prefix: single masked u64 compare over prefix[0..min(len,8)].
+        if pos + 8 <= n {
+            let mut buf = [0u8; 8];
+            buf.copy_from_slice(&bytes[pos..pos + 8]);
+            let chunk = u64::from_ne_bytes(buf);
+            if (chunk ^ bucket.prefix_word) & bucket.prefix_mask != 0 {
+                return None;
             }
-            search = cutoff + 1;
+            // prefix longer than 8 bytes (rare): verify the remainder.
+            if bucket.prefix.len() > 8 && !bytes[pos + 8..].starts_with(&bucket.prefix[8..]) {
+                return None;
+            }
+        } else if !bytes[pos..].starts_with(&bucket.prefix) {
+            return None; // near the end of the buffer: too few bytes for a word load
+        }
+        // 2. byte after the prefix -> length sub-list (0xFFFF = none).
+        let disc = match bytes.get(pos + bucket.prefix.len()) {
+            Some(&b) => b,
+            None => return None,
+        };
+        let length_id = bucket.next_byte_to_length_id[disc as usize];
+        if length_id == 0xFFFF {
+            return None;
+        }
+        // 3. probe candidate lengths, longest first; confirm via the hash.
+        for &len in bucket.length_list[length_id as usize].iter() {
+            let len = len as usize;
+            if pos + len <= n {
+                if let Some(id) = self.inner.get_bytes(&bytes[pos..pos + len]) {
+                    return Some((id, len as u32));
+                }
+            }
+        }
+        None
+    }
+
+    /// Find the leftmost added-token match in `bytes`. Returns (token_id, match_position, match_len).
+    /// Dispatch: 1 bucket -> memchr on the shared first byte; >=2 -> NEON nibble, mask-iterated.
+    pub fn match_bytes(&self, bytes: &[u8]) -> Option<(u32, u32, u32)> {
+        match self.buckets.len() {
+            0 => None,
+            1 => {
+                // ponytail: needle = the bucket's shared first byte. Assumes a non-empty prefix
+                // (false only if a lone 1-byte token is the sole holder of its first byte); store
+                // the first byte explicitly if that case ever appears.
+                let needle = self.buckets[0].prefix[0];
+                let mut search = 0usize;
+                while let Some(off) = memchr::memchr(needle, &bytes[search..]) {
+                    let pos = search + off;
+                    if let Some((id, len)) = self.match_fast(bytes, pos, 0) {
+                        return Some((id, pos as u32, len));
+                    }
+                    search = pos + 1;
+                }
+                None
+            }
+            _ => self.nibble_mask_match(bytes),
+        }
+    }
+
+    /// >=2 buckets: classify each 16-byte window ONCE, then pop EVERY candidate lane and `match_fast`
+    /// it in place — so a false candidate never triggers a NEON reload or window re-align (the
+    /// restart penalty). lo/hi/m0f are loaded once for the whole scan.
+    #[cfg(target_arch = "aarch64")]
+    fn nibble_mask_match(&self, bytes: &[u8]) -> Option<(u32, u32, u32)> {
+        use core::arch::aarch64::*;
+        let n = bytes.len();
+        // SAFETY: NEON is baseline on aarch64; the only memory op is the guarded 16-byte load.
+        unsafe {
+            let lov = vld1q_u8(self.lo16.as_ptr());
+            let hiv = vld1q_u8(self.hi16.as_ptr());
+            let m0f = vdupq_n_u8(0x0f);
+            let mut base = 0usize;
+            while base + 16 <= n {
+                let v = vld1q_u8(bytes.as_ptr().add(base)); // in bounds: base + 16 <= n
+                let lm = vqtbl1q_u8(lov, vandq_u8(v, m0f));
+                let hm = vqtbl1q_u8(hiv, vshrq_n_u8(v, 4));
+                let m = vandq_u8(lm, hm);
+                let t = vreinterpretq_u16_u8(vtstq_u8(m, m));
+                let mut packed = vget_lane_u64(vreinterpret_u64_u8(vshrn_n_u16(t, 4)), 0);
+                while packed != 0 {
+                    let lane = packed.trailing_zeros() as usize >> 2;
+                    let pos = base + lane;
+                    let bucket = self.first_byte_to_bucket_id[bytes[pos] as usize] as u32;
+                    if let Some((id, len)) = self.match_fast(bytes, pos, bucket) {
+                        return Some((id, pos as u32, len));
+                    }
+                    packed &= !(0xFu64 << (lane * 4)); // drop this lane, try the next in the window
+                }
+                base += 16;
+            }
+            // scalar tail (< 16 bytes left)
+            let mut i = base;
+            while i < n {
+                let bucket = self.first_byte_to_bucket_id[bytes[i] as usize];
+                if bucket != 0xFF {
+                    if let Some((id, len)) = self.match_fast(bytes, i, bucket as u32) {
+                        return Some((id, i as u32, len));
+                    }
+                }
+                i += 1;
+            }
+            None
+        }
+    }
+
+    /// Portable scalar fallback until the SSE2/AVX2 nibble path lands.
+    #[cfg(not(target_arch = "aarch64"))]
+    fn nibble_mask_match(&self, bytes: &[u8]) -> Option<(u32, u32, u32)> {
+        let n = bytes.len();
+        let mut i = 0usize;
+        while i < n {
+            let bucket = self.first_byte_to_bucket_id[bytes[i] as usize];
+            if bucket != 0xFF {
+                if let Some((id, len)) = self.match_fast(bytes, i, bucket as u32) {
+                    return Some((id, i as u32, len));
+                }
+            }
+            i += 1;
         }
         None
     }
@@ -419,9 +566,16 @@ mod bench {
             "=== {name} ({:.1} MB, {:.2}% candidate bytes, {o} matches{}) ===",
             bytes.len() as f64 / 1e6,
             100.0 * cand as f64 / bytes.len() as f64,
-            if o == n { "" } else { " — OPT/NAIVE DISAGREE" }
+            if o == n {
+                ""
+            } else {
+                " — OPT/NAIVE DISAGREE"
+            }
         );
-        println!("  match_bytes : {opt:.3} ns/byte ({:>5.0} MB/s)", 1000.0 / opt);
+        println!(
+            "  match_bytes : {opt:.3} ns/byte ({:>5.0} MB/s)",
+            1000.0 / opt
+        );
         println!(
             "  naive scan  : {naive:.3} ns/byte ({:>5.0} MB/s)  match_bytes {:.2}x",
             1000.0 / naive,
@@ -472,7 +626,12 @@ mod bench {
         // extraction costs more than the naive flat scan's well-predicted branch.
         for density in [0.01f64, 0.05, 0.25, 0.50, 0.90] {
             let input = make_input(4_000_000, density);
-            run(&format!("density {:>4.0}%", density * 100.0), &b, &pma, &input);
+            run(
+                &format!("density {:>4.0}%", density * 100.0),
+                &b,
+                &pma,
+                &input,
+            );
         }
     }
 }
@@ -527,11 +686,11 @@ mod tests {
         let fake_vocab = Buckets::build(
             vec![("<|eos|>".as_bytes().to_vec(), 0)],
             first_byte_to_bucket,
-            Box::new([Bucket {
-                prefix: Box::from(*b"<"),
+            Box::new([Bucket::new(
+                Box::from(*b"<"),
                 next_byte_to_length_id,
-                length_list: Box::new([Box::new([7])]),
-            }]),
+                Box::new([Box::new([7])]),
+            )]),
         );
         assert_eq!(
             fake_vocab.match_bytes(b"This should be kwown<s><|eos|>"),
@@ -558,26 +717,26 @@ mod tests {
             ],
             first_byte_to_bucket,
             Box::new([
-                Bucket {
-                    prefix: Box::from(*b"<"),
+                Bucket::new(
+                    Box::from(*b"<"),
                     next_byte_to_length_id,
-                    length_list: Box::new([Box::new([7])]),
-                },
-                Bucket {
-                    prefix: Box::from(*b"["),
+                    Box::new([Box::new([7])]),
+                ),
+                Bucket::new(
+                    Box::from(*b"["),
                     next_byte_to_length_id,
-                    length_list: Box::new([Box::new([5])]),
-                },
-                Bucket {
-                    prefix: Box::from(*b"|"),
+                    Box::new([Box::new([5])]),
+                ),
+                Bucket::new(
+                    Box::from(*b"|"),
                     next_byte_to_length_id,
-                    length_list: Box::new([Box::new([5])]),
-                },
-                Bucket {
-                    prefix: Box::from(*b"]"),
+                    Box::new([Box::new([5])]),
+                ),
+                Bucket::new(
+                    Box::from(*b"]"),
                     next_byte_to_length_id,
-                    length_list: Box::new([Box::new([5])]),
-                },
+                    Box::new([Box::new([5])]),
+                ),
             ]),
         );
 
