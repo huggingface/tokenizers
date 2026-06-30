@@ -287,15 +287,6 @@ impl Buckets {
         return None;
     }
 
-    pub fn next_candidate(&self, bytes: &[u8]) -> Option<usize> {
-        match self.buckets.len() {
-            // single bucket, fast memchr scan on the first byte of the common prefix
-            1 => memchr::memchr(self.buckets[0].prefix[0], &bytes),
-            // we benchmarked 2,3 and their are always slower
-            _ => self.nibble_match_bytes(bytes),
-        }
-    }
-
     /// Reduced per-candidate reject. The first byte already matched (that's why `pos` is a
     /// candidate), so verify the rest of the prefix as ONE masked `u64` compare — no boxed-slice
     /// walk, no loop, `prefix[0]` folded in for free. Only the rare survivor reaches the disc table
