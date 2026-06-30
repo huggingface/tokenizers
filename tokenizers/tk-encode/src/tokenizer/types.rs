@@ -304,13 +304,12 @@ impl Buckets {
         while search < bytes.len() {
             let candidate = self.next_candidate(&bytes[search..])?;
             let cutoff = search + candidate as usize;
-            let bucket = bytes[cutoff] as u32;
+            let bucket = self.first_byte_to_bucket_id[bytes[cutoff] as usize] as u32;
             if let Some((token_id, len)) = self.longest_first_match(&bytes[cutoff..], bucket) {
                 return Some((token_id, cutoff as u32, len));
             }
             search = cutoff + 1;
         }
-
         None
     }
 
@@ -506,7 +505,7 @@ mod tests {
         );
         assert_eq!(
             fake_vocab.match_bytes(b"This should be kwown<s><|eos|>"),
-            None
+            Some((0, 23, 7))
         );
         assert_eq!(fake_vocab.match_bytes(b"><|eos|>"), Some((0, 1, 7)));
         // now nible match
@@ -557,6 +556,6 @@ mod tests {
         assert_eq!(fake_vocab.match_bytes(b"|SLS]>"), Some((2, 0, 5)));
         // if ]] then it will exit early to ask to move the pointer?
         assert_eq!(fake_vocab.match_bytes(b"]FLS]>"), Some((3, 0, 5)));
-        assert_eq!(fake_vocab.match_bytes(b"]]FLS]>"), None);
+        assert_eq!(fake_vocab.match_bytes(b"]]FLS]>"), Some((3, 1, 5)));
     }
 }
