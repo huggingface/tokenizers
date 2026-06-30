@@ -2,6 +2,7 @@ use super::{
     normalizer::Range, Model, NormalizedString, Normalizer, PreTokenizedString, Result, Token,
 };
 use crate::buckets::{AddedTokenFlags, Buckets};
+use crate::whitespace::{skip_whitespace_backward, skip_whitespace_forward};
 use ahash::AHashMap;
 use regex::Regex;
 use serde::{ser::SerializeSeq, Deserialize, Serialize, Serializer};
@@ -103,42 +104,6 @@ impl From<&AddedToken> for AddedTokenFlags {
 impl std::hash::Hash for AddedToken {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.content.hash(state);
-    }
-}
-
-// Word-boundary helpers for lstrip/rstrip/single_word matching (not wired into the new
-// matcher yet — kept so the behavior can be reinstated without rewriting it).
-#[allow(dead_code)]
-static STARTS_WITH_WORD: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\w").unwrap());
-#[allow(dead_code)]
-static ENDS_WITH_WORD: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\w$").unwrap());
-#[allow(dead_code)]
-static RIGHTMOST_SPACE_AT_START: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*").unwrap());
-#[allow(dead_code)]
-static LEFTMOST_SPACE_AT_END: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s*$").unwrap());
-
-#[allow(dead_code)]
-fn ends_with_word(sentence: &str) -> bool {
-    ENDS_WITH_WORD.is_match(sentence)
-}
-#[allow(dead_code)]
-fn starts_with_word(sentence: &str) -> bool {
-    STARTS_WITH_WORD.is_match(sentence)
-}
-#[allow(dead_code)]
-fn space_leftmost_at_end(sentence: &str) -> usize {
-    if let Some(match_) = LEFTMOST_SPACE_AT_END.find(sentence) {
-        match_.start()
-    } else {
-        sentence.len()
-    }
-}
-#[allow(dead_code)]
-fn space_rightmost_at_start(sentence: &str) -> usize {
-    if let Some(match_) = RIGHTMOST_SPACE_AT_START.find(sentence) {
-        match_.end()
-    } else {
-        0
     }
 }
 ///
@@ -367,10 +332,16 @@ impl AddedVocabulary {
                 Some((id, match_start, match_len)) if match_len > 0 => {
                     // TODO: after matching non-normalized we have to match normalized
                     // match_bytes positions are relative to the slice we passed (&bytes[search..])
-                    let match_start = search + match_start as usize;
-                    let match_end = match_start + match_len as usize;
+                    let mut match_start = search + match_start as usize;
+                    let mut match_end = match_start + match_len as usize;
+                    if self.token_metadata[id as usize].lstrip {
+                        match_start = skip_whitespace_backward(&bytes[..match_end], search)
+                    }
                     if match_start > emit {
                         splits.push((emit, match_start, None));
+                    }
+                    if self.token_metadata[id as usize].rstrip {
+                        match_end = skip_whitespace_forward(&bytes, match_end)
                     }
                     splits.push((match_start, match_end, Some(id)));
                     emit = match_end;
