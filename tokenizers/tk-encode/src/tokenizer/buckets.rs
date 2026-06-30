@@ -478,20 +478,47 @@ mod bench {
         }
         hits
     }
-    // Naive baseline: scalar walk, check each byte against the first-byte table, confirm via
-    // `longest_first_match`. No memchr, no SIMD — isolates the candidate-finding speedup.
-    fn scan_naive(b: &Buckets, bytes: &[u8]) -> usize {
-        let (mut hits, mut i) = (0usize, 0usize);
-        while i < bytes.len() {
-            let bk = b.first_byte_to_bucket_id[bytes[i] as usize];
-            if bk != 0xFF {
-                if let Some((_, len)) = b.longest_first_match(&bytes[i..], bk as u32) {
-                    hits += 1;
-                    i += len as usize;
-                    continue;
+    // Naive baseline, IREE-style: tokens grouped by first byte, each group sorted longest-first.
+    // At a candidate position we linearly scan that group and byte-compare (`starts_with`) — no
+    // perfect hash, no disc table, no SIMD. This is what IREE-style matching reduces to: scan the
+    // candidate tokens and compare bytes (IREE pre-filters on a capped prefix; the first-byte group
+    // is that filter at one byte). Isolates the win of the bucket + disc + MPHF path over a scan.
+    struct NaiveMatcher {
+        by_first_byte: Vec<Vec<(Vec<u8>, u32)>>, // [256]; each group sorted longest-first
+    }
+    impl NaiveMatcher {
+        fn new(tokens: &[(Vec<u8>, u32)]) -> Self {
+            let mut by_first_byte = vec![Vec::new(); 256];
+            for (tok, id) in tokens {
+                if let Some(&fb) = tok.first() {
+                    by_first_byte[fb as usize].push((tok.clone(), *id));
                 }
             }
-            i += 1;
+            for g in by_first_byte.iter_mut() {
+                g.sort_by(|a, b| b.0.len().cmp(&a.0.len())); // longest first -> first hit is longest
+            }
+            Self { by_first_byte }
+        }
+        #[inline]
+        fn longest_match(&self, bytes: &[u8], i: usize) -> Option<(u32, u32)> {
+            for (tok, id) in &self.by_first_byte[bytes[i] as usize] {
+                if bytes[i..].starts_with(tok) {
+                    return Some((*id, tok.len() as u32));
+                }
+            }
+            None // empty group (no token starts with this byte) lands here too -> cheap reject
+        }
+    }
+
+    fn scan_naive(m: &NaiveMatcher, bytes: &[u8]) -> usize {
+        let (mut hits, mut i) = (0usize, 0usize);
+        while i < bytes.len() {
+            if let Some((_, len)) = m.longest_match(bytes, i) {
+                hits += 1;
+                i += len as usize;
+            } else {
+                i += 1;
+            }
         }
         hits
     }
@@ -515,14 +542,15 @@ mod bench {
     }
 
     fn run(name: &str, b: &Buckets, pma: &DoubleArrayAhoCorasick<usize>, bytes: &[u8]) {
-        let (o, n) = (scan_opt(b, bytes), scan_naive(b, bytes));
+        let m = NaiveMatcher::new(&b.get_vocab_bytes()); // built once, outside the timed loop
+        let (o, n) = (scan_opt(b, bytes), scan_naive(&m, bytes));
         let cand = bytes
             .iter()
             .filter(|&&x| b.first_byte_to_bucket_id[x as usize] != 0xFF)
             .count();
         let iters = 20u32;
         let opt = time(bytes.len(), iters, || scan_opt(b, black_box(bytes)));
-        let naive = time(bytes.len(), iters, || scan_naive(b, black_box(bytes)));
+        let naive = time(bytes.len(), iters, || scan_naive(&m, black_box(bytes)));
         let daach = time(bytes.len(), iters, || scan_daachorse(black_box(bytes), pma));
         println!(
             "=== {name} ({:.1} MB, {:.2}% candidate bytes, {o} matches{}) ===",
