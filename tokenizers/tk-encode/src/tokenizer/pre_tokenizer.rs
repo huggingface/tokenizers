@@ -298,6 +298,22 @@ impl PreTokenizedString {
             })
             .collect()
     }
+
+    pub fn into_splits(self) -> Vec<((usize, usize), Option<Vec<Token>>)> {
+        let mut offset = 0;
+
+        self.splits
+            .into_iter()
+            .map(|split| {
+                let offsets = {
+                    let len = split.normalized.len();
+                    offset += len;
+                    (offset - len, offset)
+                };
+                (offsets, split.tokens)
+            })
+            .collect::<Vec<_>>()
+    }
 }
 
 impl From<NormalizedString> for PreTokenizedString {

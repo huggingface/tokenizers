@@ -80,8 +80,8 @@ static ASCII_CLASS: LazyLock<[CharType; 128]> =
     LazyLock::new(|| std::array::from_fn(|b| classify(b as u8 as char)));
 
 impl pipeline::PreTokenizer for Whitespace {
-    fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Split>) -> Result<()> {
-        let mut span_start: u32 = 0;
+    fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Split>, start_offset: Option<u32>) -> Result<()> {
+        let mut span_start: u32 = start_offset.unwrap_or(0);
         let mut prev_type: Option<CharType> = None;
 
         for (i, ch) in text.char_indices() {
@@ -97,6 +97,7 @@ impl pipeline::PreTokenizer for Whitespace {
                         out.push(pipeline::Split {
                             start: span_start,
                             end: i as u32,
+                            tokens: None,
                         });
                     }
                     span_start = i as u32;
@@ -110,6 +111,7 @@ impl pipeline::PreTokenizer for Whitespace {
                 out.push(pipeline::Split {
                     start: span_start,
                     end: text.len() as u32,
+                    tokens: None,
                 });
             }
         }
@@ -126,7 +128,7 @@ mod tests {
     fn pretokenize(text: &str) -> Vec<(&str, (u32, u32))> {
         let pretok = Whitespace;
         let mut splits = Vec::new();
-        crate::pipeline::PreTokenizer::pre_tokenize(&pretok, text, &mut splits).unwrap();
+        crate::pipeline::PreTokenizer::pre_tokenize(&pretok, text, &mut splits, None).unwrap();
         splits
             .iter()
             .map(|s| (&text[s.range()], (s.start, s.end)))
