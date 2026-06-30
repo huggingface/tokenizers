@@ -66,6 +66,75 @@ impl Buckets {
         new.build_nibble_table();
         new
     }
+    ///  - group token indices by first byte,
+    ///  - per group: longest-common-prefix capped at `shortest_len - 1` (so every token has a
+    ///    discriminating byte and the "token == prefix" case needs no special handling),
+    ///  - build the post-prefix disc table + per-disc distinct lengths (longest first),
+    /// then `build()` does the VocabStore (hash pass) + nibble table.
+    pub fn from_tokens(tokens: Vec<(Vec<u8>, u32)>) -> Self {
+        if tokens.is_empty() {
+            return Self::new();
+        }
+        // group token indices by first byte
+        let mut groups: Vec<Vec<u32>> = vec![Vec::new(); 256];
+        for (i, (bytes, _)) in tokens.iter().enumerate() {
+            if let Some(&first_b) = bytes.first() {
+                groups[first_b as usize].push(i as u32);
+            }
+        }
+        let mut first_byte_to_bucket_id = [0xFFu8; 256];
+        let mut buckets: Vec<Bucket> = Vec::new();
+        for first_b in 0..256 {
+            if groups[first_b].is_empty() {
+                continue;
+            }
+            // longest common prefix of the group + shortest token length
+            let mut lcp: &[u8] = &tokens[groups[first_b][0] as usize].0;
+            let mut min_len = lcp.len();
+            for &i in &groups[first_b] {
+                // for each token index we start with the longest token
+                // and we iterate over the lcp's bytes until theirs are
+                // no longer equal to the current. At this point we shortest
+                // the lcp and go to the next.
+                let t = &tokens[i as usize].0;
+                min_len = min_len.min(t.len());
+                let common = lcp.iter().zip(t).take_while(|(a, b)| a == b).count();
+                lcp = &lcp[..common];
+            }
+            // cap so prefix.len() < every token's len => every token has a byte at prefix.len()
+            let plen = lcp.len().min(min_len.saturating_sub(1));
+            let prefix: Box<[u8]> = lcp[..plen].to_vec().into_boxed_slice();
+            // disc table (byte after prefix -> sub-list) + per-disc distinct lengths, longest first
+            let mut next_byte_to_length_id = [0xFFFFu16; 256];
+            let mut length_list: Vec<Vec<u16>> = Vec::new();
+            for &i in &groups[first_b] {
+                let t = &tokens[i as usize].0;
+                let disc = t[plen] as usize;
+                let li = if next_byte_to_length_id[disc] == 0xFFFF {
+                    next_byte_to_length_id[disc] = length_list.len() as u16;
+                    length_list.push(Vec::new());
+                    length_list.len() - 1
+                } else {
+                    next_byte_to_length_id[disc] as usize
+                };
+                let l = t.len() as u16;
+                if !length_list[li].contains(&l) {
+                    length_list[li].push(l);
+                }
+            }
+            for list in length_list.iter_mut() {
+                list.sort_unstable_by(|a, b| b.cmp(a)); // longest first
+            }
+            debug_assert!(buckets.len() < 0xFF, "more than 254 distinct first bytes");
+            first_byte_to_bucket_id[first_b] = buckets.len() as u8;
+            buckets.push(Bucket {
+                prefix,
+                next_byte_to_length_id,
+                length_list: length_list.into_iter().map(Vec::into_boxed_slice).collect(),
+            });
+        }
+        Self::build(tokens, first_byte_to_bucket_id, buckets.into_boxed_slice())
+    }
     //   ┌───────────────────────────────╴
     //   │ 0 1 2 3 4 5 6 7 8 9 a b c d e f
     // ╶─┼───────────────────────────────╴

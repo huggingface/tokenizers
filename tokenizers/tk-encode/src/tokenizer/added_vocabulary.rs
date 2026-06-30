@@ -7,10 +7,11 @@ use crate::vocab_store::VocabStore;
 use ahash::{AHashMap, AHashSet};
 use daachorse::{DoubleArrayAhoCorasick, DoubleArrayAhoCorasickBuilder, MatchKind};
 use memchr::memchr;
+use ptr_hash::hash::Hash;
 use regex::Regex;
 use serde::{ser::SerializeSeq, Deserialize, Serialize, Serializer};
 use std::fmt;
-use std::{collections::HashMap, sync::LazyLock};
+use std::{collections::HashMap, collections::HashSet, sync::LazyLock};
 /// Represent a token added by the user on top of the existing Model vocabulary.
 /// AddedToken can be configured to specify the behavior they should have in various situations
 /// like:
@@ -191,19 +192,21 @@ impl AddedVocabulary {
     /// Size of the additional vocabulary
     #[allow(dead_code)] // Suppress the "method is never used" warning
     pub fn len(&self) -> usize {
-        self.vocab.len()
+        self.vocab.len() + self.normalized_vocab.len()
     }
 
     /// Whether or not this vocabulary is empty
     pub fn is_empty(&self) -> bool {
-        self.vocab.is_empty()
+        self.vocab.is_empty() && self.normalized_vocab.is_empty()
     }
 
-    /// Get the additional vocabulary
+    /// Get the additional vocabulary (union of both matchers; normalized tokens appear by their
+    /// normalized form, since the original content isn't retained after partitioning).
     pub fn get_vocab(&self) -> AHashMap<String, u32> {
         self.vocab
             .get_vocab()
             .into_iter()
+            .chain(self.normalized_vocab.get_vocab())
             .collect::<AHashMap<String, u32>>()
     }
 
@@ -231,7 +234,9 @@ impl AddedVocabulary {
 
     /// Get the id matching one of our token if it exists
     pub fn token_to_id(&self, token: &str, model: &dyn Model) -> Option<u32> {
-        self.vocab.token_to_id(token)
+        self.vocab
+            .token_to_id(token)
+            .or_else(|| self.normalized_vocab.token_to_id(token))
     }
 
     /// Return the string form of an added token used during **decoding**.
@@ -281,12 +286,17 @@ impl AddedVocabulary {
         let mut ignored = 0;
         let mut total = 0;
 
-        let mut next_id = self.vocab.len();
-        let mut byte_set = Vec::from(self.vocab.get_buckets().to_vec());
-        let mut all_tokens = self.vocab.get_vocab_bytes();
-        let mut all_metadata = Vec::from(self.token_metadata.to_vec());
-        let mut first_byte_to_bucket_id = self.vocab.first_byte_to_bucket_id().clone();
-        let mut bucket_counter = byte_set.len();
+        // Partition by the `normalized` flag into two independent matchers, then fully rebuild
+        // each. A token lives in exactly ONE matcher (so the normalized matcher never matches a
+        // non-normalized token and vice-versa), keyed by its matcher form:
+        //   - non-normalized -> `vocab`, by raw bytes (matched on raw input)
+        //   - normalized     -> `normalized_vocab`, by normalized bytes (matched on normalized text)
+        // ids span one shared space; `metadata` is indexed by id.
+        let mut metadata = self.token_metadata.to_vec();
+        let mut next_id = (self.vocab.len() + self.normalized_vocab.len()) as u32;
+        let mut raw_tokens = self.vocab.get_vocab_bytes();
+        let mut norm_tokens = self.normalized_vocab.get_vocab_bytes();
+
         for token in tokens {
             total += 1;
             if token.content.is_empty() {
@@ -294,75 +304,50 @@ impl AddedVocabulary {
                 continue;
             }
             let flags = AddedTokenFlags::from(&token);
-            // Fast path: skip if this content is already in the map with identical properties.
-            if let Some(id) = self.token_to_id(&token.content, model) {
-                let id = id as usize;
-                if all_metadata[id] == flags {
-                    ignored += 1;
-                    continue;
+            // the form this token is keyed/matched by, in its matcher
+            let form: String = if flags.normalized {
+                if let Some(n) = normalizer {
+                    let mut s = NormalizedString::from(token.content.as_str());
+                    n.normalize(&mut s)?;
+                    s.get().to_string()
                 } else {
-                    all_metadata[id] = flags
+                    token.content.clone()
                 }
             } else {
-                all_metadata.push(flags)
-            }
-
-            let new_id = if let Some(new_id) = self.token_to_id(&token.content, model) {
-                // its not new here, but we need to update the token flags
-                new_id as usize
-            } else {
-                let id = next_id;
-                next_id += 1;
-                id
+                token.content.clone()
             };
-
-            // We count the first bytes and store the actual lenght of the char
-            let token_bytes = token.content.into_bytes();
-
-            // dummy bucket for now, next time its seens will just update end.
-            if token.normalized {
-                todo!()
-            }
-            if first_byte_to_bucket_id[token_bytes[0] as usize] == 0xFF {
-                first_byte_to_bucket_id[token_bytes[0] as usize] = bucket_counter as u8;
-                bucket_counter += 1;
-                byte_set.push(Bucket {
-                    prefix: token_bytes.clone().into(),
-                    next_byte_to_length_id: [0; 256],
-                    length_list: Box::new([Box::new([])]),
-                })
+            // dedup against the matcher this token belongs to
+            let existing = if flags.normalized {
+                self.normalized_vocab.token_to_id(&form)
             } else {
-                // bucket with prefix exists
-                // we need to update prefix and update length list
-                todo!()
+                self.vocab.token_to_id(&form)
+            };
+            match existing {
+                Some(id) => {
+                    let id = id as usize;
+                    if metadata[id] == flags {
+                        ignored += 1; // identical -> nothing to do
+                    } else {
+                        metadata[id] = flags; // bytes already present, just update the flags
+                    }
+                }
+                None => {
+                    let id = next_id;
+                    next_id += 1;
+                    let is_norm = flags.normalized;
+                    metadata.push(flags);
+                    if is_norm {
+                        norm_tokens.push((form.into_bytes(), id));
+                    } else {
+                        raw_tokens.push((form.into_bytes(), id));
+                    }
+                }
             }
-            all_tokens.push((token_bytes.to_vec(), new_id as u32));
         }
-        // We collected all tokens to be added and previous ones.
-        // Now we need to build the Bucket{longest_common_prefix, next_byte_to_length_id, length_list}
-
-        let mut zipped: Vec<_> = all_tokens.into_iter().zip(all_metadata).collect();
-        // group by bucket prefix, then longest token first (so probing on length has contiguous
-        // acces).
-        // sort_unstable_by (not _by_key): prefix is Box<[u8]>, not Copy, so we compare by ref.
-        zipped.sort_unstable_by(|((a, _), _), ((b, _), _)| {
-            let pa = &byte_set[first_byte_to_bucket_id[a[0] as usize] as usize].prefix;
-            let pb = &byte_set[first_byte_to_bucket_id[b[0] as usize] as usize].prefix;
-            pa.cmp(pb).then_with(|| b.len().cmp(&a.len()))
-        });
-        let (all_tokens, all_metadata): (Vec<_>, Vec<_>) = zipped.into_iter().unzip();
-        // 1) iterate over all_tokens. They are sorted by prefix, then by length.
-
-        let mut current_prefix: u8;
-
-        // at this point all tokens should look like: ["<|1|>", "<||>", "[ooo]", "[i]"]. First same
-        //                                           b: <|     b:<|    b:[      b:[     the buckets    #[rustfmt::skip]
-        // prefix then just longest
-        //
-        self.token_metadata = all_metadata.into();
-        self.vocab = Buckets::build(all_tokens, *first_byte_to_bucket_id, byte_set.into());
-        // TODO: normalized_inner needed as well!
-        // Return the number of added tokens
+        // Rebuild both matchers from scratch (LCP/disc/lengths can shift when tokens are added).
+        self.token_metadata = metadata.into();
+        self.vocab = Buckets::from_tokens(raw_tokens);
+        self.normalized_vocab = Buckets::from_tokens(norm_tokens);
         Ok(total - ignored)
     }
 
@@ -379,6 +364,7 @@ impl AddedVocabulary {
             // Find the next candidate start and the bucket whose entries we should scan.
             match self.vocab.match_bytes(&bytes[search..]) {
                 Some((id, match_start, match_len)) if match_len > 0 => {
+                    // TODO: after matching non-normalized we have to match normalized
                     // match_bytes positions are relative to the slice we passed (&bytes[search..])
                     let match_start = search + match_start as usize;
                     let match_end = match_start + match_len as usize;
