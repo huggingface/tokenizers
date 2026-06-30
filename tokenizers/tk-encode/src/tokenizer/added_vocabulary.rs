@@ -260,6 +260,9 @@ impl AddedVocabulary {
         let mut next_id = (self.vocab.len() + self.normalized_vocab.len()) as u32;
         let mut raw_tokens = self.vocab.get_vocab_bytes();
         let mut norm_tokens = self.normalized_vocab.get_vocab_bytes();
+        // Tokens queued in THIS call, so duplicates within the same batch dedup against each other
+        // (not just against the already-built matchers). Keyed by (normalized?, matcher form).
+        let mut seen: AHashMap<(bool, String), u32> = AHashMap::new();
 
         for token in tokens {
             total += 1;
@@ -268,8 +271,9 @@ impl AddedVocabulary {
                 continue;
             }
             let flags = AddedTokenFlags::from(&token);
+            let is_norm = flags.normalized;
             // the form this token is keyed/matched by, in its matcher
-            let form: String = if flags.normalized {
+            let form: String = if is_norm {
                 if let Some(n) = normalizer {
                     let mut s = NormalizedString::from(token.content.as_str());
                     n.normalize(&mut s)?;
@@ -280,12 +284,13 @@ impl AddedVocabulary {
             } else {
                 token.content.clone()
             };
-            // dedup against the matcher this token belongs to
-            let existing = if flags.normalized {
+            // already present in its matcher, or already queued earlier in this same batch?
+            let existing = if is_norm {
                 self.normalized_vocab.token_to_id(&form)
             } else {
                 self.vocab.token_to_id(&form)
-            };
+            }
+            .or_else(|| seen.get(&(is_norm, form.clone())).copied());
             match existing {
                 Some(id) => {
                     let id = id as usize;
@@ -298,8 +303,8 @@ impl AddedVocabulary {
                 None => {
                     let id = next_id;
                     next_id += 1;
-                    let is_norm = flags.normalized;
                     metadata.push(flags);
+                    seen.insert((is_norm, form.clone()), id);
                     if is_norm {
                         norm_tokens.push((form.into_bytes(), id));
                     } else {
@@ -401,25 +406,19 @@ impl Serialize for AddedVocabulary {
     where
         S: Serializer,
     {
-        // let mut added_tokens = self
-        //     .added_tokens_map_r
-        //     .iter()
-        //     .map(|(id, token)| AddedTokenWithId {
-        //         id: *id,
-        //         token: token.clone(),
-        //     })
-        //     .collect::<Vec<_>>();
-        // // We need to have these added tokens ordered by ascending ID
-        // added_tokens.sort_unstable_by_key(|o| o.id);
-        //
-        // let mut vocabulary = serializer.serialize_seq(Some(added_tokens.len()))?;
-        // for token in added_tokens {
-        //     vocabulary.serialize_element(&token)?;
-        // }
-        //
-        // vocabulary.end()
+        // Serialize the logical added tokens (id + content + flags), ordered by id — NOT the derived
+        // `Buckets`/`VocabStore`, which are rebuilt from this list on deserialize via `add_tokens`.
+        let mut added_tokens: Vec<AddedTokenWithId> = self
+            .get_added_tokens_decoder()
+            .into_iter()
+            .map(|(id, token)| AddedTokenWithId { id, token })
+            .collect();
+        added_tokens.sort_unstable_by_key(|o| o.id);
 
-        let vocabulary = serializer.serialize_seq(Some(0))?;
+        let mut vocabulary = serializer.serialize_seq(Some(added_tokens.len()))?;
+        for token in &added_tokens {
+            vocabulary.serialize_element(token)?;
+        }
         vocabulary.end()
     }
 }
@@ -695,9 +694,9 @@ mod tests {
         vocab
             .add_tokens(
                 [
-                    AddedToken::from("my", false).lstrip(true).rstrip(true),
-                    AddedToken::from("name", false),
-                    AddedToken::from("ony", false).single_word(true),
+                    AddedToken::from("my", true).lstrip(true).rstrip(true),
+                    AddedToken::from("name", true),
+                    AddedToken::from("ony", true).single_word(true),
                 ],
                 &model,
                 Some(&normalizer),
@@ -731,14 +730,6 @@ mod tests {
             ]
         );
     }
-
-    // ponytail: disabled — uses removed `split_trie` field. Re-enable once find_matches has its new signature.
-    // #[test]
-    // fn empty_matches() {
-    //     let vocab = AddedVocabulary::new();
-    //     let matches = vocab.find_matches("", &vocab.split_trie);
-    //     assert_eq!(matches, vec![(None, (0, 0))]);
-    // }
 
     #[test]
     fn test_single_word_is_correct() {

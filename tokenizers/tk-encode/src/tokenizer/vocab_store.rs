@@ -228,13 +228,6 @@ impl VocabStore {
             .collect()
     }
 
-    /// `start` and `end` are indices into `self.entries`. Scans that range for tokens that are a
-    /// prefix of `bytes` and returns the longest one as `(id, byte_len)`, or `None` if none match.
-    #[inline]
-    pub fn match_bytes(&self, _bytes: &[u8], _start: u32, _end: u32) -> Option<(u32, u32)> {
-        // TODO: matching now lives in `Buckets`; this stub stays until callers are migrated.
-        None
-    }
 }
 
 #[cfg(test)]
@@ -290,18 +283,4 @@ mod tests {
         assert_eq!(vocab.id_to_token(1), None);
         assert_eq!(vocab.id_to_token(50), None);
     }
-    #[test]
-    fn test_match_bytes() {
-        let vocab = VocabStore::build(vec![
-            (b"ccci".to_vec(), 0),
-            (b"cc".to_vec(), 5),
-            (b"isn".to_vec(), 100),
-        ]);
-        // Scan all entries: longest prefix wins ("ccci" over "cc"), returns (id, byte_len).
-        assert_eq!(
-            vocab.match_bytes("cccisnot the best".as_bytes(), 0, 3),
-            Some((0, 4))
-        );
-        assert_eq!(vocab.match_bytes("snot the best".as_bytes(), 0, 3), None);
-    } // TODO: support left right strip, single word
 }
