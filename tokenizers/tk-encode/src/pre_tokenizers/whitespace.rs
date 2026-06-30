@@ -72,32 +72,44 @@ fn is_word_char(ch: char) -> bool {
         || ch == '\u{200d}' // Zero-Width Joiner
 }
 
+/// `CharType` of each ASCII codepoint (index == its byte value). Lets the
+/// ASCII fast path skip the Unicode predicates in `classify`; the (cheap) UTF-8
+/// decode still happens via `char_indices`, and non-ASCII falls back to
+/// `classify`.
+static ASCII_CLASS: LazyLock<[CharType; 128]> =
+    LazyLock::new(|| std::array::from_fn(|b| classify(b as u8 as char)));
+
 impl pipeline::PreTokenizer for Whitespace {
     fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Split>) -> Result<()> {
-        let mut span_start = 0;
+        let mut span_start: u32 = 0;
         let mut prev_type: Option<CharType> = None;
 
         for (i, ch) in text.char_indices() {
-            let ct = classify(ch);
+            let ct = if ch.is_ascii() {
+                ASCII_CLASS[ch as usize]
+            } else {
+                classify(ch)
+            };
 
             if let Some(pt) = prev_type {
                 if pt != ct {
                     if pt != CharType::Whitespace {
                         out.push(pipeline::Split {
-                            range: span_start..i,
+                            start: span_start,
+                            end: i as u32,
                         });
                     }
-                    span_start = i;
+                    span_start = i as u32;
                 }
             }
             prev_type = Some(ct);
         }
 
-        // Emit the final span
         if let Some(pt) = prev_type {
             if pt != CharType::Whitespace {
                 out.push(pipeline::Split {
-                    range: span_start..text.len(),
+                    start: span_start,
+                    end: text.len() as u32,
                 });
             }
         }
@@ -111,13 +123,13 @@ mod tests {
     use super::*;
     use crate::{OffsetReferential, OffsetType, PreTokenizedString, PreTokenizer};
 
-    fn pretokenize(text: &str) -> Vec<(&str, (usize, usize))> {
+    fn pretokenize(text: &str) -> Vec<(&str, (u32, u32))> {
         let pretok = Whitespace;
         let mut splits = Vec::new();
         crate::pipeline::PreTokenizer::pre_tokenize(&pretok, text, &mut splits).unwrap();
         splits
             .iter()
-            .map(|s| (&text[s.range.clone()], (s.range.start, s.range.end)))
+            .map(|s| (&text[s.range()], (s.start, s.end)))
             .collect()
     }
 

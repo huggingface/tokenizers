@@ -1,6 +1,7 @@
 use crate::pipeline;
 use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
 use crate::utils::macro_rules_attribute;
+use std::sync::LazyLock;
 use unicode_categories::UnicodeCategories;
 
 fn is_bert_punc(x: char) -> bool {
@@ -18,40 +19,61 @@ impl PreTokenizer for BertPreTokenizer {
     }
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum CharType {
     Whitespace,
     Punctuation,
     Other,
 }
 
+fn bert_classify(c: char) -> CharType {
+    if c.is_whitespace() {
+        CharType::Whitespace
+    } else if is_bert_punc(c) {
+        CharType::Punctuation
+    } else {
+        CharType::Other
+    }
+}
+
+/// `CharType` of each ASCII codepoint (index == its byte value). Lets the
+/// ASCII fast path skip the Unicode predicates in `bert_classify`; the (cheap)
+/// UTF-8 decode still happens via `char_indices`, and non-ASCII falls back to
+/// `bert_classify`.
+static ASCII_CLASS: LazyLock<[CharType; 128]> =
+    LazyLock::new(|| std::array::from_fn(|b| bert_classify(b as u8 as char)));
+
 impl pipeline::PreTokenizer for BertPreTokenizer {
     fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Split>) -> Result<()> {
-        let mut start = 0;
-        let mut prev_type = None;
-        for (i, c) in text.char_indices() {
-            let ct = if c.is_whitespace() {
-                CharType::Whitespace
-            } else if is_bert_punc(c) {
-                CharType::Punctuation
+        let mut start: u32 = 0;
+        let mut prev_type: Option<CharType> = None;
+
+        for (i, ch) in text.char_indices() {
+            let ct = if ch.is_ascii() {
+                ASCII_CLASS[ch as usize]
             } else {
-                CharType::Other
+                bert_classify(ch)
             };
 
             if let Some(pt) = prev_type {
                 if pt != ct || ct == CharType::Punctuation {
                     if pt != CharType::Whitespace {
-                        out.push(pipeline::Split { range: start..i });
+                        out.push(pipeline::Split {
+                            start,
+                            end: i as u32,
+                        });
                     }
-                    start = i;
+                    start = i as u32;
                 }
             }
             prev_type = Some(ct);
         }
+
         if let Some(pt) = prev_type {
             if pt != CharType::Whitespace {
                 out.push(pipeline::Split {
-                    range: start..text.len(),
+                    start,
+                    end: text.len() as u32,
                 });
             }
         }
@@ -64,52 +86,14 @@ mod tests {
     use super::BertPreTokenizer;
     use crate::{NormalizedString, OffsetReferential, OffsetType, PreTokenizedString};
 
-    #[test]
-    fn basic_new() {
-        use crate::pipeline::PreTokenizer;
-
+    fn pretokenize(text: &str) -> Vec<(&str, (u32, u32))> {
         let pretok = BertPreTokenizer;
-        let pretokenized: &str = "   Hey friend!     How are you?!?  ";
-        let mut ranges = Vec::new();
-        pretok.pre_tokenize(pretokenized, &mut ranges).unwrap();
-        let got = ranges.into_iter().map(|s| s.range).collect::<Vec<_>>();
-        assert_eq!(
-            got,
-            vec![
-                3..6,
-                7..13,
-                13..14,
-                19..22,
-                23..26,
-                27..30,
-                30..31,
-                31..32,
-                32..33,
-            ]
-        );
-    }
-
-    #[test]
-    fn chinese_chars_new() {
-        use crate::pipeline::PreTokenizer;
-
-        let mut n = NormalizedString::from("野口里佳 Noguchi Rika");
-        n.transform(
-            n.get().to_owned().chars().flat_map(|c| {
-                if (c as usize) > 0x4E00 {
-                    vec![(' ', 0), (c, 1), (' ', 1)]
-                } else {
-                    vec![(c, 0)]
-                }
-            }),
-            0,
-        );
-        let pretokenized: &str = n.get();
-        let pretok = BertPreTokenizer;
-        let mut ranges = Vec::new();
-        pretok.pre_tokenize(pretokenized, &mut ranges).unwrap();
-        let got = ranges.into_iter().map(|s| s.range).collect::<Vec<_>>();
-        assert_eq!(got, vec![1..4, 6..9, 11..14, 16..19, 21..28, 29..33]);
+        let mut splits = Vec::new();
+        crate::pipeline::PreTokenizer::pre_tokenize(&pretok, text, &mut splits).unwrap();
+        splits
+            .iter()
+            .map(|s| (&text[s.range()], (s.start, s.end)))
+            .collect()
     }
 
     #[test]
@@ -171,6 +155,93 @@ mod tests {
                 ("Noguchi", (13, 20)),
                 ("Rika", (21, 25))
             ]
+        );
+    }
+
+    #[test]
+    fn basic_new() {
+        assert_eq!(
+            pretokenize("   Hey friend!     How are you?!?  "),
+            vec![
+                ("Hey", (3, 6)),
+                ("friend", (7, 13)),
+                ("!", (13, 14)),
+                ("How", (19, 22)),
+                ("are", (23, 26)),
+                ("you", (27, 30)),
+                ("?", (30, 31)),
+                ("!", (31, 32)),
+                ("?", (32, 33)),
+            ],
+        );
+    }
+
+    #[test]
+    fn chinese_chars_new() {
+        let mut n = NormalizedString::from("野口里佳 Noguchi Rika");
+        n.transform(
+            n.get().to_owned().chars().flat_map(|c| {
+                if (c as usize) > 0x4E00 {
+                    vec![(' ', 0), (c, 1), (' ', 1)]
+                } else {
+                    vec![(c, 0)]
+                }
+            }),
+            0,
+        );
+        assert_eq!(
+            pretokenize(n.get()),
+            vec![
+                ("野", (1, 4)),
+                ("口", (6, 9)),
+                ("里", (11, 14)),
+                ("佳", (16, 19)),
+                ("Noguchi", (21, 28)),
+                ("Rika", (29, 33)),
+            ],
+        );
+    }
+
+    #[test]
+    fn edge_cases() {
+        #[allow(clippy::type_complexity)]
+        let cases: Vec<(&str, Vec<(&str, (u32, u32))>)> = vec![
+            ("", vec![]),
+            (" ", vec![]),
+            ("  ", vec![]),
+            ("a", vec![("a", (0, 1))]),
+            ("!", vec![("!", (0, 1))]),
+            ("a!", vec![("a", (0, 1)), ("!", (1, 2))]),
+            ("!a", vec![("!", (0, 1)), ("a", (1, 2))]),
+            (
+                "a!!b",
+                vec![("a", (0, 1)), ("!", (1, 2)), ("!", (2, 3)), ("b", (3, 4))],
+            ),
+            ("a b", vec![("a", (0, 1)), ("b", (2, 3))]),
+            ("a  b", vec![("a", (0, 1)), ("b", (3, 4))]),
+            (
+                "you?!?",
+                vec![("you", (0, 3)), ("?", (3, 4)), ("!", (4, 5)), ("?", (5, 6))],
+            ),
+        ];
+        for (input, expected) in cases {
+            assert_eq!(pretokenize(input), expected, "input: {input:?}");
+        }
+    }
+
+    #[test]
+    fn multibyte_offsets() {
+        assert_eq!(
+            pretokenize("café résumé"),
+            vec![("café", (0, 5)), ("résumé", (6, 14))],
+        );
+        assert_eq!(
+            pretokenize("中文 text"),
+            vec![("中文", (0, 6)), ("text", (7, 11))],
+        );
+        assert_eq!(
+            pretokenize("中 文 text"),
+            vec![("中", (0, 3)), ("文", (4, 7)), ("text", (8, 12))],
         );
     }
 }

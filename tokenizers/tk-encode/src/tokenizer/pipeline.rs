@@ -3,8 +3,17 @@ use std::ops::Range;
 use super::Result;
 
 /// A pre-token split, a range into the input text.
+#[derive(Copy, Clone)]
 pub struct Split {
-    pub range: Range<usize>,
+    pub start: u32,
+    pub end: u32,
+}
+
+impl Split {
+    #[inline]
+    pub fn range(self) -> Range<usize> {
+        self.start as usize..self.end as usize
+    }
 }
 
 pub trait PreTokenizer {
