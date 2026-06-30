@@ -80,7 +80,12 @@ static ASCII_CLASS: LazyLock<[CharType; 128]> =
     LazyLock::new(|| std::array::from_fn(|b| classify(b as u8 as char)));
 
 impl pipeline::PreTokenizer for Whitespace {
-    fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Split>, start_offset: Option<u32>) -> Result<()> {
+    fn pre_tokenize(
+        &self,
+        text: &str,
+        out: &mut Vec<pipeline::Split>,
+        start_offset: Option<u32>,
+    ) -> Result<()> {
         let mut span_start: u32 = start_offset.unwrap_or(0);
         let mut prev_type: Option<CharType> = None;
 
