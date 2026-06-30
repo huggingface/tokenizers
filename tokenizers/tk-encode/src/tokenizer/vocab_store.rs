@@ -225,10 +225,9 @@ impl VocabStore {
     /// `start` and `end` are indices into `self.entries`. Scans that range for tokens that are a
     /// prefix of `bytes` and returns the longest one as `(id, byte_len)`, or `None` if none match.
     #[inline]
-    pub fn match_bytes(&self, bytes: &[u8], start: u32, end: u32) -> Option<(u32, u32)> {
-        let mut best: Option<(u32, u32)> = None;
-        // TODO: this won't be done in this func anymore
-        best
+    pub fn match_bytes(&self, _bytes: &[u8], _start: u32, _end: u32) -> Option<(u32, u32)> {
+        // TODO: matching now lives in `Buckets`; this stub stays until callers are migrated.
+        None
     }
 }
 

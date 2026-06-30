@@ -1,17 +1,12 @@
 use super::{
-    normalizer::Range, Model, NormalizedString, Normalizer, Offsets, PreTokenizedString, Result,
-    Token,
+    normalizer::Range, Model, NormalizedString, Normalizer, PreTokenizedString, Result, Token,
 };
-use crate::types::{AddedTokenFlags, Bucket, Buckets};
-use crate::vocab_store::VocabStore;
-use ahash::{AHashMap, AHashSet};
-use daachorse::{DoubleArrayAhoCorasick, DoubleArrayAhoCorasickBuilder, MatchKind};
-use memchr::memchr;
-use ptr_hash::hash::Hash;
+use crate::types::{AddedTokenFlags, Buckets};
+use ahash::AHashMap;
 use regex::Regex;
 use serde::{ser::SerializeSeq, Deserialize, Serialize, Serializer};
 use std::fmt;
-use std::{collections::HashMap, collections::HashSet, sync::LazyLock};
+use std::sync::LazyLock;
 /// Represent a token added by the user on top of the existing Model vocabulary.
 /// AddedToken can be configured to specify the behavior they should have in various situations
 /// like:
@@ -111,21 +106,26 @@ impl std::hash::Hash for AddedToken {
     }
 }
 
-type MatchingSet = Option<DoubleArrayAhoCorasick<u32>>;
-
+// Word-boundary helpers for lstrip/rstrip/single_word matching (not wired into the new
+// matcher yet — kept so the behavior can be reinstated without rewriting it).
+#[allow(dead_code)]
 static STARTS_WITH_WORD: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\w").unwrap());
+#[allow(dead_code)]
 static ENDS_WITH_WORD: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\w$").unwrap());
+#[allow(dead_code)]
 static RIGHTMOST_SPACE_AT_START: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*").unwrap());
+#[allow(dead_code)]
 static LEFTMOST_SPACE_AT_END: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s*$").unwrap());
 
+#[allow(dead_code)]
 fn ends_with_word(sentence: &str) -> bool {
     ENDS_WITH_WORD.is_match(sentence)
 }
-
+#[allow(dead_code)]
 fn starts_with_word(sentence: &str) -> bool {
     STARTS_WITH_WORD.is_match(sentence)
 }
-
+#[allow(dead_code)]
 fn space_leftmost_at_end(sentence: &str) -> usize {
     if let Some(match_) = LEFTMOST_SPACE_AT_END.find(sentence) {
         match_.start()
@@ -133,6 +133,7 @@ fn space_leftmost_at_end(sentence: &str) -> usize {
         sentence.len()
     }
 }
+#[allow(dead_code)]
 fn space_rightmost_at_start(sentence: &str) -> usize {
     if let Some(match_) = RIGHTMOST_SPACE_AT_START.find(sentence) {
         match_.end()
@@ -233,7 +234,7 @@ impl AddedVocabulary {
     }
 
     /// Get the id matching one of our token if it exists
-    pub fn token_to_id(&self, token: &str, model: &dyn Model) -> Option<u32> {
+    pub fn token_to_id(&self, token: &str, _model: &dyn Model) -> Option<u32> {
         self.vocab
             .token_to_id(token)
             .or_else(|| self.normalized_vocab.token_to_id(token))
@@ -245,7 +246,7 @@ impl AddedVocabulary {
     /// this returns the cached normalized form so that the configured `Decoder` can
     /// invert the transformation correctly. For all other tokens, the original
     /// `content` is returned.
-    pub fn simple_id_to_token(&self, id: u32) -> Option<String> {
+    pub fn simple_id_to_token(&self, _id: u32) -> Option<String> {
         Some(String::new())
     }
 
@@ -280,7 +281,7 @@ impl AddedVocabulary {
     pub fn add_tokens<N: Normalizer>(
         &mut self,
         tokens: impl IntoIterator<Item = AddedToken>,
-        model: &impl Model,
+        _model: &impl Model,
         normalizer: Option<&N>,
     ) -> Result<usize> {
         let mut ignored = 0;
@@ -353,7 +354,7 @@ impl AddedVocabulary {
 
     pub fn extract_and_normalize<N: Normalizer>(
         &self,
-        normalizer: Option<&N>,
+        _normalizer: Option<&N>,
         sequence: &str,
     ) -> PreTokenizedString {
         let bytes = sequence.as_bytes();
@@ -437,7 +438,7 @@ impl Serialize for AddedVocabulary {
         //
         // vocabulary.end()
 
-        let mut vocabulary = serializer.serialize_seq(Some(0))?;
+        let vocabulary = serializer.serialize_seq(Some(0))?;
         vocabulary.end()
     }
 }

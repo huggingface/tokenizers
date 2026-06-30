@@ -30,6 +30,7 @@ pub struct Buckets {
     // this is taken from http://0x80.pl/notesen/2018-10-18-simd-byte-lookup.html
     lo16: [u8; 16],
     hi16: [u8; 16],
+    #[allow(dead_code)] // TODO: honor in the scan — fall back to scalar when false
     can_use_nibbling: bool, // we can't if there are >8 high nibbles (very rare)
     buckets: Box<[Bucket]>,
     inner: VocabStore,
@@ -95,7 +96,8 @@ impl Buckets {
                 // for each token index we start with the longest token
                 // and we iterate over the lcp's bytes until theirs are
                 // no longer equal to the current. At this point we shortest
-                // the lcp and go to the next.
+                // the lcp and go to the next. The tokens are sorted by size and
+                // longest prefix.
                 let t = &tokens[i as usize].0;
                 min_len = min_len.min(t.len());
                 let common = lcp.iter().zip(t).take_while(|(a, b)| a == b).count();
