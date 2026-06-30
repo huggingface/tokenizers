@@ -287,35 +287,6 @@ impl Buckets {
         return None;
     }
 
-    // Reference reject kept only as the naive bench baseline; the shipped path is `match_fast`.
-    #[cfg(test)]
-    fn longest_first_match(&self, bytes: &[u8], bucket_id: u32) -> Option<(u32, u32)> {
-        // 1. common prefix check
-
-        if !bytes.starts_with(&self.buckets[bucket_id as usize].prefix) {
-            return None;
-        }
-        // 2. byte AFTER the common prefix -> which length sub-list (0xFFFF = none)
-        let bucket = &self.buckets[bucket_id as usize];
-        let disc = match bytes.get(bucket.prefix.len()) {
-            Some(&b) => b,
-            None => return None, // input ends at the prefix (a token == prefix would need an `exact` flag)
-        };
-        let length_id = bucket.next_byte_to_length_id[disc as usize];
-        if length_id == 0xFFFF {
-            return None;
-        }
-        // 3. probe each candidate length, longest-first (first hit = longest match)
-        for &len in bucket.length_list[length_id as usize].iter() {
-            let len = len as usize;
-            if len <= bytes.len() {
-                if let Some(id) = self.inner.get_bytes(&bytes[..len]) {
-                    return Some((id, len as u32));
-                }
-            }
-        }
-        None
-    }
     pub fn next_candidate(&self, bytes: &[u8]) -> Option<usize> {
         match self.buckets.len() {
             // single bucket, fast memchr scan on the first byte of the common prefix
