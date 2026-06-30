@@ -2,7 +2,7 @@ use super::{
     normalizer::Range, Model, NormalizedString, Normalizer, PreTokenizedString, Result, Token,
 };
 use crate::buckets::{AddedTokenFlags, Buckets};
-use crate::whitespace::{skip_whitespace_backward, skip_whitespace_forward};
+use crate::whitespace::{is_single_word, skip_whitespace_backward, skip_whitespace_forward};
 use ahash::AHashMap;
 use serde::{ser::SerializeSeq, Deserialize, Serialize, Serializer};
 use std::fmt;
@@ -332,10 +332,20 @@ impl AddedVocabulary {
                     // match_bytes positions are relative to the slice we passed (&bytes[search..])
                     let mut match_start = search + match_start as usize;
                     let mut match_end = match_start + match_len as usize;
+                    // single_word: reject unless the token is a standalone word (neither neighbour
+                    // char is a word char). Checked on the raw byte bounds, before any strip.
+                    if self.token_metadata[id as usize].single_word
+                        && !is_single_word(bytes, search, match_start, match_end)
+                    {
+                        search = match_start + 1; // resume just past the rejected match
+                        continue;
+                    }
                     if self.token_metadata[id as usize].lstrip {
                         match_start =
                             skip_whitespace_backward(&bytes[..match_end], match_start).max(emit)
                     }
+                    // FIXME: here we need to split again on normalized!
+                    // I am not doing because it means allocating a new NormalizedString...
                     if match_start > emit {
                         splits.push((emit, match_start, None));
                     }
