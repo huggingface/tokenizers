@@ -10,12 +10,12 @@
 #[macro_use]
 extern crate derive_builder;
 
+mod train_ext;
 mod trainable;
 mod trainer;
-mod train_ext;
 pub mod trainers;
 
-pub use trainable::Trainable;
 pub use train_ext::TokenizerTrainExt;
+pub use trainable::Trainable;
 pub use trainer::Trainer;
 pub use trainers::*;

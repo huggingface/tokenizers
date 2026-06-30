@@ -1,8 +1,8 @@
 use super::{super::OrderedVocabIter, Error, Pair, Word};
 use crate::tokenizer::{Model, Result, Token};
-use crate::vocab_store::VocabStore;
 use crate::utils::cache::{DEFAULT_CACHE_CAPACITY, MAX_LENGTH};
 use crate::utils::iter::ResultShunt;
+use crate::vocab_store::VocabStore;
 use ahash::AHashMap;
 use serde_json::Value;
 use std::borrow::Cow;
@@ -274,7 +274,12 @@ impl BpeBuilder {
         let vocab = if vocab.is_empty() {
             VocabStore::new()
         } else {
-            VocabStore::build(vocab.into_iter().map(|(k, v)| (k.into_bytes(), v)).collect())
+            VocabStore::build(
+                vocab
+                    .into_iter()
+                    .map(|(k, v)| (k.into_bytes(), v))
+                    .collect(),
+            )
         };
 
         Ok(BPE {

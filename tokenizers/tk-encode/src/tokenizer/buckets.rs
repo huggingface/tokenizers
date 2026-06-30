@@ -89,12 +89,12 @@ impl Buckets {
         // tokens should be sorted
         let inner = VocabStore::build(tokens);
         let mut new = Self {
-            first_byte_to_bucket_id: first_byte_to_bucket_id,
+            first_byte_to_bucket_id,
             lo16: [0; 16],
             hi16: [0; 16],
             can_use_nibbling: true,
-            buckets: buckets,
-            inner: inner,
+            buckets,
+            inner,
         };
         new.build_nibble_table();
         new
@@ -103,7 +103,7 @@ impl Buckets {
     ///  - per group: longest-common-prefix capped at `shortest_len - 1` (so every token has a
     ///    discriminating byte and the "token == prefix" case needs no special handling),
     ///  - build the post-prefix disc table + per-disc distinct lengths (longest first),
-    /// then `build()` does the VocabStore (hash pass) + nibble table.
+    ///    then `build()` does the VocabStore (hash pass) + nibble table.
     pub fn from_tokens(tokens: Vec<(Vec<u8>, u32)>) -> Self {
         if tokens.is_empty() {
             return Self::new();
@@ -232,7 +232,7 @@ impl Buckets {
         }
         (self.lo16, self.hi16) = (lo, hi);
     }
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(all(test, target_arch = "aarch64"))] // test-only helper for the NEON nibble matcher
     fn nibble_match_bytes(&self, bytes: &[u8]) -> Option<usize> {
         // lane index   0     1     2     3     4    ...  (16 lanes, one register)
         // input byte  'a'   'b'   '<'   'd'   'e'   ...
@@ -284,7 +284,7 @@ impl Buckets {
             }
             i += 1;
         } // scalar tail
-        return None;
+        None
     }
 
     /// Reduced per-candidate reject. The first byte already matched (that's why `pos` is a
@@ -356,8 +356,8 @@ impl Buckets {
     }
 
     /// >=2 buckets: classify each 16-byte window ONCE, then pop EVERY candidate lane and `match_fast`
-    /// it in place — so a false candidate never triggers a NEON reload or window re-align (the
-    /// restart penalty). lo/hi/m0f are loaded once for the whole scan.
+    /// > it in place — so a false candidate never triggers a NEON reload or window re-align (the
+    /// > restart penalty). lo/hi/m0f are loaded once for the whole scan.
     #[cfg(target_arch = "aarch64")]
     fn nibble_mask_match(&self, bytes: &[u8]) -> Option<(u32, u32, u32)> {
         use core::arch::aarch64::*;
@@ -629,6 +629,7 @@ mod bench {
 mod tests {
     use super::*;
 
+    #[cfg(target_arch = "aarch64")] // calls the NEON-only nibble_match_bytes
     #[test]
     fn test_build_nibble_table() {
         let mut first_byte_to_bucket = [0xFFu8; 256];

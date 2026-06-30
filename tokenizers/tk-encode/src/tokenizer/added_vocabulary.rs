@@ -123,11 +123,11 @@ impl std::hash::Hash for AddedToken {
 pub struct AddedVocabulary {
     encode_special_tokens: bool,
     /// New fast path for normalize and extra needs:
-    ///  - multi-bucket first bytes. If its len is 1, we use memchr
-    ///  otherwise we just check each car on that table lookup. Its a 1KB table.
-    ///  - the actual buckets. We could use small vec here. Chose to impl it.
-    ///  Buckets give pointers to the inner vocab store.
-    /// The metadata of each tokens
+    ///  - multi-bucket first bytes. If its len is 1, we use memchr; otherwise we just check each
+    ///    byte on that table lookup. Its a 1KB table.
+    ///  - the actual buckets. We could use small vec here. Chose to impl it. Buckets give pointers
+    ///    to the inner vocab store.
+    ///  - the metadata of each token.
     token_metadata: Box<[AddedTokenFlags]>, // indexed using id_to_slot?
     normalized_vocab: Buckets,
     vocab: Buckets,
@@ -227,7 +227,7 @@ impl AddedVocabulary {
         if let Some(tok) = self.vocab.token_to_id(token) {
             return self.token_metadata[tok as usize].special;
         }
-        return true;
+        true
     }
 
     /// Add some special tokens to the vocabulary
@@ -350,7 +350,7 @@ impl AddedVocabulary {
                         splits.push((emit, match_start, None));
                     }
                     if self.token_metadata[id as usize].rstrip {
-                        match_end = skip_whitespace_forward(&bytes, match_end)
+                        match_end = skip_whitespace_forward(bytes, match_end)
                     }
                     splits.push((match_start, match_end, Some(id)));
                     emit = match_end;
@@ -377,7 +377,7 @@ impl AddedVocabulary {
                 .collect::<Vec<_>>())
         })
         .unwrap();
-        return pre;
+        pre
     }
 }
 

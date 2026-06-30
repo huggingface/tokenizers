@@ -74,6 +74,12 @@ impl PartialEq for VocabStore {
     }
 }
 
+impl Default for VocabStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl VocabStore {
     pub fn build(tokens: Vec<(Vec<u8>, u32)>) -> Self {
         let n = tokens.len();
@@ -157,7 +163,7 @@ impl VocabStore {
     }
     #[inline]
     pub fn get_bytes(&self, q: &[u8]) -> Option<u32> {
-        if self.entries.len() == 0 {
+        if self.entries.is_empty() {
             return None;
         }
         let slot = self.mphf.index_single_part(&self.hasher.hash_one(q));
