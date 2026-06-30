@@ -347,8 +347,8 @@ impl Default for Buckets {
 
 #[cfg(test)]
 mod bench {
-    // Throughput bench: optimized `match_bytes` (memchr/nibble skip + bucket) vs a naive
-    // scalar `position`-style scan. Run with:
+    // Throughput: optimized `match_bytes` (memchr for 1 bucket, NEON nibble for >=2 buckets) vs a
+    // naive scalar first-byte scan vs daachorse. All three find every special-token match + advance.
     //   cargo test --release -p tk-encode bench_match_bytes -- --ignored --nocapture
     use super::*;
     use daachorse::DoubleArrayAhoCorasick;
@@ -356,8 +356,6 @@ mod bench {
     use std::time::Instant;
 
     // Optimized: drive `match_bytes` over the input the way `extract_and_normalize` does.
-    // NOTE: this only finds every match if `match_bytes` loops past false candidates (see #2);
-    // until that fix lands it will stop early and the match count below will disagree with naive.
     fn scan_opt(b: &Buckets, bytes: &[u8]) -> usize {
         let (mut hits, mut search) = (0usize, 0usize);
         while search < bytes.len() {
@@ -370,9 +368,6 @@ mod bench {
             }
         }
         hits
-    }
-    fn scan_daachorse(_b: &Buckets, bytes: &[u8], pma: &DoubleArrayAhoCorasick<usize>) -> usize {
-        pma.find_iter(bytes).count()
     }
     // Naive baseline: scalar walk, check each byte against the first-byte table, confirm via
     // `longest_first_match`. No memchr, no SIMD — isolates the candidate-finding speedup.
@@ -391,6 +386,74 @@ mod bench {
         }
         hits
     }
+    fn scan_daachorse(bytes: &[u8], pma: &DoubleArrayAhoCorasick<usize>) -> usize {
+        pma.find_iter(bytes).count()
+    }
+
+    // Hoist-safe timer: black_box the input on every call, accumulate every result so LLVM
+    // can't hoist the (pure) scan out of the loop and report a fictitious 0 ns/byte.
+    fn time<F: Fn() -> usize>(bytes_len: usize, iters: u32, f: F) -> f64 {
+        for _ in 0..2 {
+            black_box(f());
+        }
+        let t = Instant::now();
+        let mut acc = 0usize;
+        for _ in 0..iters {
+            acc = acc.wrapping_add(f());
+        }
+        black_box(acc);
+        t.elapsed().as_nanos() as f64 / (iters as usize * bytes_len) as f64
+    }
+
+    fn run(name: &str, b: &Buckets, pma: &DoubleArrayAhoCorasick<usize>, bytes: &[u8]) {
+        let (o, n) = (scan_opt(b, bytes), scan_naive(b, bytes));
+        let cand = bytes
+            .iter()
+            .filter(|&&x| b.first_byte_to_bucket_id[x as usize] != 0xFF)
+            .count();
+        let iters = 20u32;
+        let opt = time(bytes.len(), iters, || scan_opt(b, black_box(bytes)));
+        let naive = time(bytes.len(), iters, || scan_naive(b, black_box(bytes)));
+        let daach = time(bytes.len(), iters, || scan_daachorse(black_box(bytes), pma));
+        println!(
+            "=== {name} ({:.1} MB, {:.2}% candidate bytes, {o} matches{}) ===",
+            bytes.len() as f64 / 1e6,
+            100.0 * cand as f64 / bytes.len() as f64,
+            if o == n { "" } else { " — OPT/NAIVE DISAGREE" }
+        );
+        println!("  match_bytes : {opt:.3} ns/byte ({:>5.0} MB/s)", 1000.0 / opt);
+        println!(
+            "  naive scan  : {naive:.3} ns/byte ({:>5.0} MB/s)  match_bytes {:.2}x",
+            1000.0 / naive,
+            naive / opt
+        );
+        println!(
+            "  daachorse   : {daach:.3} ns/byte ({:>5.0} MB/s)  match_bytes {:.2}x\n",
+            1000.0 / daach,
+            daach / opt
+        );
+    }
+
+    // Build `len` bytes with ~`density` candidate first-bytes ('<', evenly spread via a Bresenham
+    // accumulator). Those '<' are FALSE candidates ("<a" fails starts_with("<|") -> cheap reject);
+    // a real `<|eos|>` is injected every ~10k bytes so hits stay sparse and the scan cost dominates.
+    fn make_input(len: usize, density: f64) -> Vec<u8> {
+        let mut out = Vec::with_capacity(len + 8);
+        let mut acc = 0.0f64;
+        while out.len() < len {
+            acc += density;
+            if acc >= 1.0 {
+                acc -= 1.0;
+                out.push(b'<');
+            } else {
+                out.push(b'a');
+            }
+            if out.len() % 10_000 == 0 {
+                out.extend_from_slice(b"<|eos|>");
+            }
+        }
+        out
+    }
 
     #[test]
     #[ignore] // slow; explicit run only
@@ -401,59 +464,16 @@ mod bench {
             .map(|(i, s)| (s.as_bytes().to_vec(), i as u32))
             .collect();
         let b = Buckets::from_tokens(specials.clone());
-
         let patterns: Vec<&Vec<u8>> = specials.iter().map(|(v, _)| v).collect();
-        let pma = DoubleArrayAhoCorasick::new(patterns).unwrap();
-        // prose + code-y false candidates ('<', '[') + real special tokens scattered through
-        let unit =
-            "the quick brown fox <|bos|> jumps over a < b && c[0] the lazy [SEP] dog <|eos|>\n";
-        let mut input = String::new();
-        while input.len() < 4_000_000 {
-            input.push_str(unit);
-        }
-        let bytes = input.as_bytes();
+        let pma: DoubleArrayAhoCorasick<usize> = DoubleArrayAhoCorasick::new(patterns).unwrap();
 
-        let (o, n) = (scan_opt(&b, bytes), scan_naive(&b, bytes));
-        println!(
-            "matches: match_bytes={o}  naive={n}  ({})",
-            if o == n {
-                "agree"
-            } else {
-                "DISAGREE -> match_bytes exits early (see #2)"
-            }
-        );
-
-        let iters = 5u32;
-        let t = Instant::now();
-        for _ in 0..iters {
-            black_box(scan_opt(&b, black_box(bytes)));
+        // Sweep candidate-byte density. The SIMD skip wins big when candidates are sparse (real
+        // text); it erodes as they get dense because there is nothing left to skip and per-candidate
+        // extraction costs more than the naive flat scan's well-predicted branch.
+        for density in [0.01f64, 0.05, 0.25, 0.50, 0.90] {
+            let input = make_input(4_000_000, density);
+            run(&format!("density {:>4.0}%", density * 100.0), &b, &pma, &input);
         }
-        let opt_ns = t.elapsed().as_nanos() as f64 / (iters as usize * bytes.len()) as f64;
-
-        let t = Instant::now();
-        for _ in 0..iters {
-            black_box(scan_naive(&b, black_box(bytes)));
-        }
-        let daachorse = t.elapsed().as_nanos() as f64 / (iters as usize * bytes.len()) as f64;
-        let t = Instant::now();
-        for _ in 0..iters {
-            black_box(scan_daachorse(&b, black_box(bytes), &pma));
-        }
-        let naive_ns = t.elapsed().as_nanos() as f64 / (iters as usize * bytes.len()) as f64;
-
-        println!(
-            "match_bytes: {opt_ns:.3} ns/byte ({:.0} MB/s)",
-            1000.0 / opt_ns
-        );
-        println!(
-            "naive pos  : {naive_ns:.3} ns/byte ({:.0} MB/s)",
-            1000.0 / naive_ns
-        );
-        println!(
-            "daach pos  : {daachorse:.3} ns/byte ({:.0} MB/s)",
-            1000.0 / naive_ns
-        );
-        println!("speedup    : {:.2}x", daachorse / opt_ns);
     }
 }
 #[cfg(test)]
