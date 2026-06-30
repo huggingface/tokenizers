@@ -300,6 +300,9 @@ impl Buckets {
 
     /// returns token_id, match_position, match_len
     pub fn match_bytes(&self, bytes: &[u8]) -> Option<(u32, u32, u32)> {
+        // TODO: we can push this further by extracting in nibble match the mask
+        // to check all candidates in the 16bytes. this should give 10-40% perf
+        // depending on code heavy inputs.
         let mut search = 0x0usize;
         while search < bytes.len() {
             let candidate = self.next_candidate(&bytes[search..])?;
