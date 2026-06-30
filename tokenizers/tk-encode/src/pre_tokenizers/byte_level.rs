@@ -1,4 +1,3 @@
-use ahash::AHashSet;
 use std::sync::LazyLock;
 
 use crate::utils::byte_level::{byte_level_transform, BYTES_CHAR_LOOKUP, CHAR_BYTES_LOOKUP};
@@ -60,8 +59,8 @@ impl ByteLevel {
         }
     }
 
-    pub fn alphabet() -> AHashSet<char> {
-        BYTES_CHAR_LOOKUP.iter().copied().collect()
+    pub fn alphabet() -> [char; 256] {
+        *BYTES_CHAR_LOOKUP
     }
 
     #[must_use]

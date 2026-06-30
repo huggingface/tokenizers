@@ -26,6 +26,7 @@ mod added_vocabulary;
 mod encoding;
 pub mod normalizer;
 pub mod pattern;
+pub mod pipeline;
 pub mod pre_tokenizer;
 mod serialization;
 
