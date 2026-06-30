@@ -335,7 +335,8 @@ impl AddedVocabulary {
                     let mut match_start = search + match_start as usize;
                     let mut match_end = match_start + match_len as usize;
                     if self.token_metadata[id as usize].lstrip {
-                        match_start = skip_whitespace_backward(&bytes[..match_end], search)
+                        match_start =
+                            skip_whitespace_backward(&bytes[..match_end], match_start).max(emit)
                     }
                     if match_start > emit {
                         splits.push((emit, match_start, None));

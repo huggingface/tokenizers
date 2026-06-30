@@ -1,3 +1,4 @@
+/// Somewhat ai generated, but its not super complicated
 /// If a Unicode `White_Space` char starts at `bytes[i]`, return its byte length, else `None`.
 /// `bytes` must be valid UTF-8 and `i` a char boundary (true for any `&str`-derived slice).
 /// Matches `char::is_whitespace` — incl. VT (0x0B) and the multi-byte Unicode spaces.
