@@ -286,14 +286,7 @@ impl Buckets {
         match self.buckets.len() {
             // single bucket, fast memchr scan on the first byte of the common prefix
             1 => memchr::memchr(self.buckets[0].prefix[0], &bytes),
-            2 => memchr::memchr2(self.buckets[0].prefix[0], self.buckets[1].prefix[0], &bytes),
-            // memchr has optimized path for 2 and 3 prefix
-            3 => memchr::memchr3(
-                self.buckets[0].prefix[0],
-                self.buckets[1].prefix[0],
-                self.buckets[2].prefix[0],
-                &bytes,
-            ),
+            // we benchmarked 2,3 and their are always slower
             _ => self.nibble_match_bytes(bytes),
         }
     }
@@ -358,6 +351,7 @@ mod bench {
     // scalar `position`-style scan. Run with:
     //   cargo test --release -p tk-encode bench_match_bytes -- --ignored --nocapture
     use super::*;
+    use daachorse::DoubleArrayAhoCorasick;
     use std::hint::black_box;
     use std::time::Instant;
 
@@ -377,7 +371,9 @@ mod bench {
         }
         hits
     }
-
+    fn scan_daachorse(_b: &Buckets, bytes: &[u8], pma: &DoubleArrayAhoCorasick<usize>) -> usize {
+        pma.find_iter(bytes).count()
+    }
     // Naive baseline: scalar walk, check each byte against the first-byte table, confirm via
     // `longest_first_match`. No memchr, no SIMD — isolates the candidate-finding speedup.
     fn scan_naive(b: &Buckets, bytes: &[u8]) -> usize {
@@ -404,8 +400,10 @@ mod bench {
             .enumerate()
             .map(|(i, s)| (s.as_bytes().to_vec(), i as u32))
             .collect();
-        let b = Buckets::from_tokens(specials);
+        let b = Buckets::from_tokens(specials.clone());
 
+        let patterns: Vec<&Vec<u8>> = specials.iter().map(|(v, _)| v).collect();
+        let pma = DoubleArrayAhoCorasick::new(patterns).unwrap();
         // prose + code-y false candidates ('<', '[') + real special tokens scattered through
         let unit =
             "the quick brown fox <|bos|> jumps over a < b && c[0] the lazy [SEP] dog <|eos|>\n";
@@ -436,6 +434,11 @@ mod bench {
         for _ in 0..iters {
             black_box(scan_naive(&b, black_box(bytes)));
         }
+        let daachorse = t.elapsed().as_nanos() as f64 / (iters as usize * bytes.len()) as f64;
+        let t = Instant::now();
+        for _ in 0..iters {
+            black_box(scan_daachorse(&b, black_box(bytes), &pma));
+        }
         let naive_ns = t.elapsed().as_nanos() as f64 / (iters as usize * bytes.len()) as f64;
 
         println!(
@@ -446,7 +449,11 @@ mod bench {
             "naive pos  : {naive_ns:.3} ns/byte ({:.0} MB/s)",
             1000.0 / naive_ns
         );
-        println!("speedup    : {:.2}x", naive_ns / opt_ns);
+        println!(
+            "daach pos  : {daachorse:.3} ns/byte ({:.0} MB/s)",
+            1000.0 / naive_ns
+        );
+        println!("speedup    : {:.2}x", daachorse / opt_ns);
     }
 }
 #[cfg(test)]
