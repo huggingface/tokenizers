@@ -473,8 +473,11 @@ mod tests {
             ]),
         );
 
+        assert_eq!(fake_vocab.buckets.len(), 4);
         assert_eq!(fake_vocab.match_bytes(b"><|eos|>"), Some((0, 1, 7)));
         assert_eq!(fake_vocab.match_bytes(b"|SLS]>"), Some((2, 0, 5)));
-        assert_eq!(fake_vocab.match_bytes(b"]]FLS]>"), Some((3, 1, 5)));
+        // if ]] then it will exit early to ask to move the pointer?
+        assert_eq!(fake_vocab.match_bytes(b"]FLS]>"), Some((3, 0, 5)));
+        assert_eq!(fake_vocab.match_bytes(b"]]FLS]>"), None);
     }
 }
