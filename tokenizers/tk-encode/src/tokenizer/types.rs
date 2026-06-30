@@ -430,5 +430,51 @@ mod tests {
             None
         );
         assert_eq!(fake_vocab.match_bytes(b"><|eos|>"), Some((0, 1, 7)));
+        // now nible match
+        first_byte_to_bucket[b'<' as usize] = 0;
+        first_byte_to_bucket[b'[' as usize] = 1;
+        first_byte_to_bucket[b'|' as usize] = 2;
+        first_byte_to_bucket[b']' as usize] = 3;
+        let mut next_byte_to_length_id = [0xFFFFu16; 256];
+        // we re-use it because we assume a single token
+        next_byte_to_length_id[b'|' as usize] = 0;
+        next_byte_to_length_id[b'C' as usize] = 0;
+        next_byte_to_length_id[b'S' as usize] = 0;
+        next_byte_to_length_id[b'F' as usize] = 0;
+        let fake_vocab = Buckets::build(
+            vec![
+                ("<|eos|>".as_bytes().to_vec(), 0),
+                ("[CLS]".as_bytes().to_vec(), 1),
+                ("|SLS]".as_bytes().to_vec(), 2),
+                ("]FLS]".as_bytes().to_vec(), 3),
+            ],
+            first_byte_to_bucket,
+            Box::new([
+                Bucket {
+                    prefix: Box::from(*b"<"),
+                    next_byte_to_length_id,
+                    length_list: Box::new([Box::new([7])]),
+                },
+                Bucket {
+                    prefix: Box::from(*b"["),
+                    next_byte_to_length_id,
+                    length_list: Box::new([Box::new([5])]),
+                },
+                Bucket {
+                    prefix: Box::from(*b"|"),
+                    next_byte_to_length_id,
+                    length_list: Box::new([Box::new([5])]),
+                },
+                Bucket {
+                    prefix: Box::from(*b"]"),
+                    next_byte_to_length_id,
+                    length_list: Box::new([Box::new([5])]),
+                },
+            ]),
+        );
+
+        assert_eq!(fake_vocab.match_bytes(b"><|eos|>"), Some((0, 1, 7)));
+        assert_eq!(fake_vocab.match_bytes(b"|SLS]>"), Some((2, 0, 5)));
+        assert_eq!(fake_vocab.match_bytes(b"]]FLS]>"), Some((3, 1, 5)));
     }
 }
