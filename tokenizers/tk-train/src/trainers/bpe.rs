@@ -4,14 +4,16 @@ use tk_encode::models::bpe::{Pair, WithFirstLastIterator, Word, BPE};
 use tk_encode::vocab_store::VocabStore;
 use tk_encode::parallelism::*;
 use crate::Trainer;
-use tk_encode::{AddedToken, Result};
-use tk_encode::utils::progress::{ProgressBar, ProgressFormat, ProgressStyle};
 use ahash::{AHashMap, AHashSet};
 use compact_str::CompactString;
 use dary_heap::OctonaryHeap;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::HashSet;
+use tk_encode::models::bpe::{Pair, WithFirstLastIterator, Word, BPE};
+use tk_encode::parallelism::*;
+use tk_encode::utils::progress::{ProgressBar, ProgressFormat, ProgressStyle};
+use tk_encode::{AddedToken, Result};
 
 #[derive(Debug, Eq)]
 struct Merge {
@@ -677,9 +679,9 @@ impl Trainer for BpeTrainer {
 #[cfg(test)]
 mod tests {
     use super::BpeTrainer;
-    use tk_encode::models::bpe::{Pair, BPE};
     use ahash::AHashMap;
     use compact_str::CompactString;
+    use tk_encode::models::bpe::{Pair, BPE};
 
     #[test]
     fn test_train() {

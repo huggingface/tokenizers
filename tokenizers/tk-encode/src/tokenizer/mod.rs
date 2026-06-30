@@ -27,6 +27,7 @@ pub mod buckets;
 mod encoding;
 pub mod normalizer;
 pub mod pattern;
+pub mod pipeline;
 pub mod pre_tokenizer;
 mod serialization;
 pub mod vocab_store;

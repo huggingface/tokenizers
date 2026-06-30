@@ -72,10 +72,14 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libcairo2
 
       - name: Download benchmark data
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: uvx --from huggingface_hub hf download hf-internal-testing/tokenizers-bench-data --repo-type dataset --local-dir data
 
       # Download saved criterion baseline from HF Hub (if exists)
       - name: Download criterion baseline
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           uvx --from huggingface_hub hf download hf-internal-testing/tokenizers-bench \
             criterion-baseline.tar.gz --repo-type dataset --local-dir /tmp/baseline 2>/dev/null || true
@@ -134,6 +138,8 @@ jobs:
       - name: Build comparison chart
         if: hashFiles('tokenizers/output.txt') != ''
         id: compare
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           uvx --from huggingface_hub hf download hf-internal-testing/tokenizers-bench \
             baseline.txt --repo-type dataset --local-dir /tmp/prev_baseline 2>/dev/null || true
@@ -250,6 +256,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libcairo2
 
       - name: Download benchmark data
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: uvx --from huggingface_hub hf download hf-internal-testing/tokenizers-bench-data --repo-type dataset --local-dir tokenizers/data
 
       - name: Install Python bindings + benchmark deps
@@ -285,6 +293,8 @@ jobs:
       - name: Compare Python results with baseline
         id: py_compare
         working-directory: bindings/python
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           source .venv/bin/activate
           uvx --from huggingface_hub hf download hf-internal-testing/tokenizers-bench \

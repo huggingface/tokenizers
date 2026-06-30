@@ -38,28 +38,26 @@ jobs:
       - name: Build
         run: cargo build --target i686-pc-windows-msvc --manifest-path ./bindings/python/Cargo.toml
 
-
   build_and_test:
     name: Check everything builds & tests
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
         python: ["3.14", "3.14t"]
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-        
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
-        with:
-          components: rustfmt, clippy
 
       - name: Cache cargo registry / git / target
         uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc  # v2.9.1
         with:
           workspaces: bindings/python
+          shared-key: python
 
       - name: Install Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
@@ -67,23 +65,13 @@ jobs:
           python-version: ${{ matrix.python }}
           architecture: "x64"
 
-      # RustFmt is gated to a canonical combo (formatting is OS-invariant);
-      # Clippy and Audit run on every matrix cell so platform-specific
-      # cfg gates and target-specific lints get coverage.
-      - name: Lint with RustFmt
-        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.14'
-        run: cargo fmt --manifest-path ./bindings/python/Cargo.toml -- --check
-
-      - name: Lint with Clippy
-        run: cargo clippy --manifest-path ./bindings/python/Cargo.toml --all-targets --all-features -- -D warnings
-
       - name: Install
         working-directory: ./bindings/python
         run: |
           python -m venv .env
           source .env/bin/activate
           pip install -U pip
-          pip install pytest pytest-asyncio requests setuptools_rust numpy pyarrow datasets ruff ty maturin
+          pip install pytest pytest-asyncio huggingface_hub setuptools_rust numpy pyarrow datasets ruff ty maturin
           # Build via maturin so we can drop the abi3 cargo feature on
           # free-threaded Python (3.14t can't load abi3 extensions).
           # `pip install -e .` would build through maturin's PEP 660 path
@@ -95,8 +83,23 @@ jobs:
           fi
 
 
+      # Test fixtures are immutable — cache them (plus the huggingface_hub /
+      # datasets cache used by the test suite at runtime) so CI doesn't
+      # re-download from the Hub (and get rate-limited) on every run.
+      - name: Cache HF test data
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
+        with:
+          path: |
+            bindings/python/data
+            bindings/python/tests/data
+            ~/.cache/huggingface
+          key: hf-test-data-${{ runner.os }}-${{ hashFiles('bindings/python/Makefile', 'bindings/python/tests/utils.py') }}
+          restore-keys: hf-test-data-${{ runner.os }}-
+
       - name: Run tests
         working-directory: ./bindings/python
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           source .env/bin/activate
           # `make test` also runs `cargo test --no-default-features` which
@@ -109,23 +112,55 @@ jobs:
             make test-py
           fi
 
+  quality:
+    name: Lint & format
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo registry / git / target
+        uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc  # v2.9.1
+        with:
+          workspaces: bindings/python
+          shared-key: python
+
+      - name: Lint with RustFmt
+        run: cargo fmt --manifest-path ./bindings/python/Cargo.toml -- --check
+
+      - name: Lint with Clippy
+        run: cargo clippy --manifest-path ./bindings/python/Cargo.toml --all-targets --all-features -- -D warnings
+
+      - name: Install Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+        with:
+          python-version: "3.14"
+          architecture: "x64"
+
+      # check-style builds the abi3 cdylib and imports it, which only works
+      # under a GIL interpreter — hence pinned to 3.14, not free-threaded 3.14t.
+      - name: Install
+        working-directory: ./bindings/python
+        run: |
+          python -m venv .env
+          source .env/bin/activate
+          pip install -U pip
+          pip install pytest pytest-asyncio requests setuptools_rust numpy pyarrow datasets ruff ty maturin
+          maturin develop --release
+
       - name: Check style
-        # `make check-style` runs the stub-gen tool, which always builds
-        # the cdylib with the default cargo features (abi3 on) and then
-        # imports it for introspection. abi3 extensions can't load under
-        # free-threaded Python, so the import fails on 3.14t. Style checks
-        # are matrix-invariant anyway — gate to a single canonical combo.
-        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.14'
         working-directory: ./bindings/python
         run: |
           source .env/bin/activate
           make check-style
 
-
   audit:
     name: Audit dependencies
-    # Runs independently of the build/test matrix so an advisory database hit
-    # (which is OS- and interpreter-invariant) doesn't fail the build.
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -134,14 +169,14 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
 
-      - name: Install cargo-audit
-        uses: taiki-e/install-action@74e87cbfa15a59692b158178d8905a61bf6fca95  # v2.75.20
+      - name: Cache cargo registry / git / target
+        uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc  # v2.9.1
         with:
-          tool: cargo-audit
+          workspaces: bindings/python
+          shared-key: cargo-audit
 
-      # Cargo.lock is gitignored, so generate it (dependency resolution only, no compilation)
-      - name: Generate Cargo.lock
-        run: cargo generate-lockfile --manifest-path ./bindings/python/Cargo.toml
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
 
       - name: Run Audit
         run: cargo audit -D warnings -f ./bindings/python/Cargo.lock --ignore RUSTSEC-2024-0436 --ignore RUSTSEC-2025-0014 --ignore RUSTSEC-2025-0119

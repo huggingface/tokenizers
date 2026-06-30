@@ -170,6 +170,10 @@ impl Unigram {
         self.vocab.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.vocab.is_empty()
+    }
+
     pub fn populate_nodes(&self, lattice: &mut Lattice) {
         let unk_score = self.min_score - K_UNK_PENALTY;
 

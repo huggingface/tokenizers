@@ -1,10 +1,10 @@
-use tk_encode::models::wordlevel::WordLevel;
-use tk_encode::utils::parallelism::*;
 use crate::Trainer;
-use tk_encode::{AddedToken, Result};
 use ahash::AHashMap;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
+use tk_encode::models::wordlevel::WordLevel;
+use tk_encode::utils::parallelism::*;
+use tk_encode::{AddedToken, Result};
 
 #[non_exhaustive]
 #[derive(Debug, Clone, Builder, Serialize, Deserialize)]
