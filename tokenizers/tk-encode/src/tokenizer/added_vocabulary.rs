@@ -356,13 +356,14 @@ impl AddedVocabulary {
                     emit = match_end;
                     search = match_end;
                 }
-                // Prefix byte present but no token actually matches: skip just this byte.
+                // since match_bytes goes to the end, this means we reach the end.
                 _ => break,
             }
         }
         if emit < bytes.len() {
             splits.push((emit, bytes.len(), None));
         }
+        // FIXME: this will go away once we have the 0-allocation in the hot path :)
         let mut pre = PreTokenizedString::from(sequence);
         pre.split(|_, normalized| {
             Ok(splits
