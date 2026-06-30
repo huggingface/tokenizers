@@ -163,10 +163,13 @@ impl Buckets {
     // "\n" = 0x0a  -> col 0, row a
     // The reason we have lo and hi is because for SIMD
     // we can't have the index be 16 bits, so lo has 8bits length, hi as well.
+    // The key is also that we don't store the 16x16 grid, just 2x16 u8 (since u8 is up to 8 values)
+    // So the lo[3] = 0b00100100 ->
+    //                  ..x..x..
+    // store the entire row in the u8 format. (0-255)
     fn build_nibble_table(&mut self) {
         // we build the nibble table from the candidate first_byte_to_bucket_id
         let candidates: [bool; 256] = self.first_byte_to_bucket_id.map(|v| v != 0xFF);
-        // for each valid candidate (a u8) we build the 16x16 lookup tabllet (mut next, mut bit, mut has) = (0u32, [0u8;16], [false;16]);
         let (mut lo, mut hi) = ([0u8; 16], [0u8; 16]);
         let (mut next, mut bit, mut has) = (0u32, [0u8; 16], [false; 16]);
         for h in 0..16 {
@@ -361,5 +364,44 @@ impl Buckets {
 impl Default for Buckets {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_build_nibble_table() {
+        let mut first_byte_to_bucket = [0xFFu8; 256];
+        // spell "toad": t=0x74, o=0x6F, a=0x61, d=0x64
+        //   TOP    collision: o, a, d all have high nibble 6 (same row -> same hi bit)
+        //   BOTTOM collision: t and d share low nibble 4 (lo16[4] ends up with two bits)
+        first_byte_to_bucket[b't' as usize] = 0;
+        first_byte_to_bucket[b'o' as usize] = 1;
+        first_byte_to_bucket[b'a' as usize] = 2;
+        first_byte_to_bucket[b'd' as usize] = 3;
+
+        let mut expected_hi16 = [0u8; 16];
+        let mut expected_lo16 = [0u8; 16];
+
+        // filling hi goes from 0..16. First match gets the first id.
+        expected_hi16[(b'o' >> 4) as usize] = 0b01; // row 6  (o, a, d all share index)
+        expected_hi16[(b't' >> 4) as usize] = 0b10; // row 7  (t)
+
+        // each byte ORs in ITS ROW's bit at its low nibble
+        expected_lo16[(b'o' & 0x0f) as usize] |= 0b01; // o -> lo16[15]
+        expected_lo16[(b'a' & 0x0f) as usize] |= 0b01; // a -> lo16[1]
+        expected_lo16[(b'd' & 0x0f) as usize] |= 0b01; // d -> lo16[4]
+        expected_lo16[(b't' & 0x0f) as usize] |= 0b10; // t -> lo16[4]  => lo16[4] = 0b11  (bottom collision!)
+        let mut fake_bucket = Buckets::build(
+            vec![("ha".as_bytes().to_vec(), 0)],
+            first_byte_to_bucket,
+            Box::new([]),
+        );
+        fake_bucket.build_nibble_table();
+        assert_eq!(fake_bucket.lo16, expected_lo16);
+        assert_eq!(fake_bucket.hi16, expected_hi16);
+        assert!(fake_bucket.nibble_match_bytes("pardis".as_bytes()) == Some(1));
     }
 }
