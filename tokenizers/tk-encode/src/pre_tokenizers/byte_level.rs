@@ -1,6 +1,6 @@
-use ahash::{AHashMap, AHashSet};
 use std::sync::LazyLock;
 
+use crate::utils::byte_level::{byte_level_transform, BYTES_CHAR_LOOKUP, CHAR_BYTES_LOOKUP};
 use crate::utils::SysRegex;
 use serde::{Deserialize, Serialize};
 
@@ -10,43 +10,12 @@ use crate::tokenizer::{
 };
 use crate::utils::macro_rules_attribute;
 
-/// Converts bytes to unicode characters.
-/// See https://github.com/openai/gpt-2/blob/master/src/encoder.py#L9
-pub(crate) fn bytes_char() -> AHashMap<u8, char> {
-    let mut bs: Vec<u8> = vec![];
-    bs.extend(b'!'..=b'~');
-    bs.extend(b'\xA1'..=b'\xAC');
-    bs.extend(b'\xAE'..=b'\xFF');
-
-    let mut cs: Vec<u32> = bs.iter().map(|i| *i as u32).collect();
-    let mut n = 0;
-
-    for b in 0..=255u8 {
-        if !bs.contains(&b) {
-            bs.push(b);
-            cs.push(u32::pow(2, 8) + n);
-            n += 1;
-        }
-    }
-
-    // Safety: cs contains all values from bs (between 0 and 255),
-    // and some values of value 2⁸ + n, where n is between 0 and 255. This is between 255 and 512.
-    // Both ranges are valid UTF-32 values (which is fully saturated until 0xD000)
-    bs.into_iter()
-        .zip(cs)
-        .map(|(f, t)| (f, unsafe { std::char::from_u32_unchecked(t) }))
-        .collect()
-}
-
 /// Regex that matches exactly one token.
 /// See https://github.com/openai/gpt-2/blob/master/src/encoder.py#L98
 static RE: LazyLock<SysRegex> = LazyLock::new(|| {
     SysRegex::new(r"'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+")
         .unwrap()
 });
-static BYTES_CHAR: LazyLock<AHashMap<u8, char>> = LazyLock::new(bytes_char);
-static CHAR_BYTES: LazyLock<AHashMap<char, u8>> =
-    LazyLock::new(|| bytes_char().into_iter().map(|(c, b)| (b, c)).collect());
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 /// Provides all the necessary steps to handle the BPE tokenization at the byte-level. Takes care
@@ -90,8 +59,8 @@ impl ByteLevel {
         }
     }
 
-    pub fn alphabet() -> AHashSet<char> {
-        BYTES_CHAR.values().copied().collect()
+    pub fn alphabet() -> [char; 256] {
+        *BYTES_CHAR_LOOKUP
     }
 
     #[must_use]
@@ -131,17 +100,7 @@ impl PreTokenizer for ByteLevel {
         })?;
         pretokenized.normalize(|normalized| {
             let s = normalized.get();
-            let mut transformations: Vec<(char, isize)> = Vec::with_capacity(s.len());
-            for (i, cur_char) in s.char_indices() {
-                let size = cur_char.len_utf8();
-                transformations.extend(
-                    s.as_bytes()[i..i + size]
-                        .iter()
-                        .enumerate()
-                        .map(|(i, b)| (BYTES_CHAR[b], isize::from(i > 0))),
-                );
-            }
-            normalized.transform(transformations, 0);
+            normalized.transform(byte_level_transform(s), 0);
             Ok(())
         })
     }
@@ -159,7 +118,7 @@ impl Decoder for ByteLevel {
             .flat_map(|t| {
                 t.chars()
                     .try_fold(vec![], |mut acc, c| {
-                        CHAR_BYTES.get(&c).map(|b| {
+                        CHAR_BYTES_LOOKUP.get(&c).map(|b| {
                             acc.push(*b);
                             acc
                         })
@@ -203,12 +162,12 @@ pub fn process_offsets(encoding: &mut Encoding, add_prefix_space: bool) {
     encoding.process_tokens_with_offsets_mut(|(i, (token, offsets))| {
         let mut leading_spaces = token
             .chars()
-            .take_while(|c| *c == BYTES_CHAR[&b' '] || c.is_whitespace())
+            .take_while(|c| *c == BYTES_CHAR_LOOKUP[b' ' as usize] || c.is_whitespace())
             .count();
         let trailing_spaces = token
             .chars()
             .rev()
-            .take_while(|c| *c == BYTES_CHAR[&b' '] || c.is_whitespace())
+            .take_while(|c| *c == BYTES_CHAR_LOOKUP[b' ' as usize] || c.is_whitespace())
             .count();
 
         if leading_spaces > 0 || trailing_spaces > 0 {
@@ -235,11 +194,13 @@ pub fn process_offsets(encoding: &mut Encoding, add_prefix_space: bool) {
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
     use crate::tokenizer::{
         Decoder, Encoding, OffsetReferential, OffsetType, PostProcessor, PreTokenizedString,
         PreTokenizer,
     };
+    use ahash::AHashMap;
     use std::iter::FromIterator;
 
     #[test]
