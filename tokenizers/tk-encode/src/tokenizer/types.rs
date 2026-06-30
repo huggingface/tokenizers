@@ -282,54 +282,36 @@ impl Buckets {
         }
         None
     }
+    pub fn next_candidate(&self, bytes: &[u8]) -> Option<usize> {
+        match self.buckets.len() {
+            // single bucket, fast memchr scan on the first byte of the common prefix
+            1 => memchr::memchr(self.buckets[0].prefix[0], &bytes),
+            2 => memchr::memchr2(self.buckets[0].prefix[0], self.buckets[1].prefix[0], &bytes),
+            // memchr has optimized path for 2 and 3 prefix
+            3 => memchr::memchr3(
+                self.buckets[0].prefix[0],
+                self.buckets[1].prefix[0],
+                self.buckets[2].prefix[0],
+                &bytes,
+            ),
+            _ => self.nibble_match_bytes(bytes),
+        }
+    }
+
     /// returns token_id, match_position, match_len
     pub fn match_bytes(&self, bytes: &[u8]) -> Option<(u32, u32, u32)> {
-        // 1. quick scan of the bytes with fast rejection
-        let (bucket, cutoff) = match self.buckets.len() {
-            // single bucket, fast memchr scan on the first byte of the common prefix
-            1 => match memchr::memchr(self.buckets[0].prefix[0], &bytes) {
-                Some(id) => (0, id),
-                None => return None,
-            },
-            2 => {
-                match memchr::memchr2(self.buckets[0].prefix[0], self.buckets[1].prefix[0], &bytes)
-                {
-                    Some(id) => (
-                        self.first_byte_to_bucket_id[bytes[id as usize] as usize],
-                        id,
-                    ),
-                    None => return None,
-                }
+        let mut search = 0x0usize;
+        while search < bytes.len() {
+            let candidate = self.next_candidate(&bytes[search..])?;
+            let cutoff = search + candidate as usize;
+            let bucket = bytes[cutoff] as u32;
+            if let Some((token_id, len)) = self.longest_first_match(&bytes[cutoff..], bucket) {
+                return Some((token_id, cutoff as u32, len));
             }
-            // memchr has optimized path for 2 and 3 prefix
-            3 => {
-                match memchr::memchr3(
-                    self.buckets[0].prefix[0],
-                    self.buckets[1].prefix[0],
-                    self.buckets[2].prefix[0],
-                    &bytes,
-                ) {
-                    Some(id) => (
-                        self.first_byte_to_bucket_id[bytes[id as usize] as usize],
-                        id,
-                    ),
-                    None => return None,
-                }
-            }
-
-            _ => match self.nibble_match_bytes(bytes) {
-                Some(id) => (
-                    self.first_byte_to_bucket_id[bytes[id as usize] as usize],
-                    id,
-                ),
-                None => return None,
-            },
-        };
-        if let Some((token_id, len)) = self.longest_first_match(&bytes[cutoff..], bucket as u32) {
-            Some((token_id, cutoff as u32, len))
-        } else {
-            None
+            search = cutoff + 1;
         }
+
+        None
     }
 
     pub fn len(&self) -> usize {
@@ -368,6 +350,103 @@ impl Default for Buckets {
     }
 }
 
+#[cfg(test)]
+mod bench {
+    // Throughput bench: optimized `match_bytes` (memchr/nibble skip + bucket) vs a naive
+    // scalar `position`-style scan. Run with:
+    //   cargo test --release -p tk-encode bench_match_bytes -- --ignored --nocapture
+    use super::*;
+    use std::hint::black_box;
+    use std::time::Instant;
+
+    // Optimized: drive `match_bytes` over the input the way `extract_and_normalize` does.
+    // NOTE: this only finds every match if `match_bytes` loops past false candidates (see #2);
+    // until that fix lands it will stop early and the match count below will disagree with naive.
+    fn scan_opt(b: &Buckets, bytes: &[u8]) -> usize {
+        let (mut hits, mut search) = (0usize, 0usize);
+        while search < bytes.len() {
+            match b.match_bytes(&bytes[search..]) {
+                Some((_, start, len)) if len > 0 => {
+                    hits += 1;
+                    search += start as usize + len as usize;
+                }
+                _ => break,
+            }
+        }
+        hits
+    }
+
+    // Naive baseline: scalar walk, check each byte against the first-byte table, confirm via
+    // `longest_first_match`. No memchr, no SIMD — isolates the candidate-finding speedup.
+    fn scan_naive(b: &Buckets, bytes: &[u8]) -> usize {
+        let (mut hits, mut i) = (0usize, 0usize);
+        while i < bytes.len() {
+            let bk = b.first_byte_to_bucket_id[bytes[i] as usize];
+            if bk != 0xFF {
+                if let Some((_, len)) = b.longest_first_match(&bytes[i..], bk as u32) {
+                    hits += 1;
+                    i += len as usize;
+                    continue;
+                }
+            }
+            i += 1;
+        }
+        hits
+    }
+
+    #[test]
+    #[ignore] // slow; explicit run only
+    fn bench_match_bytes_vs_naive() {
+        let specials: Vec<(Vec<u8>, u32)> = ["<|bos|>", "<|eos|>", "<|pad|>", "[CLS]", "[SEP]"]
+            .iter()
+            .enumerate()
+            .map(|(i, s)| (s.as_bytes().to_vec(), i as u32))
+            .collect();
+        let b = Buckets::from_tokens(specials);
+
+        // prose + code-y false candidates ('<', '[') + real special tokens scattered through
+        let unit =
+            "the quick brown fox <|bos|> jumps over a < b && c[0] the lazy [SEP] dog <|eos|>\n";
+        let mut input = String::new();
+        while input.len() < 4_000_000 {
+            input.push_str(unit);
+        }
+        let bytes = input.as_bytes();
+
+        let (o, n) = (scan_opt(&b, bytes), scan_naive(&b, bytes));
+        println!(
+            "matches: match_bytes={o}  naive={n}  ({})",
+            if o == n {
+                "agree"
+            } else {
+                "DISAGREE -> match_bytes exits early (see #2)"
+            }
+        );
+
+        let iters = 5u32;
+        let t = Instant::now();
+        for _ in 0..iters {
+            black_box(scan_opt(&b, black_box(bytes)));
+        }
+        let opt_ns = t.elapsed().as_nanos() as f64 / (iters as usize * bytes.len()) as f64;
+
+        let t = Instant::now();
+        for _ in 0..iters {
+            black_box(scan_naive(&b, black_box(bytes)));
+        }
+        let naive_ns = t.elapsed().as_nanos() as f64 / (iters as usize * bytes.len()) as f64;
+
+        println!(
+            "match_bytes: {opt_ns:.3} ns/byte ({:.0} MB/s)",
+            1000.0 / opt_ns
+        );
+        println!(
+            "naive pos  : {naive_ns:.3} ns/byte ({:.0} MB/s)",
+            1000.0 / naive_ns
+        );
+        println!("speedup    : {:.2}x", naive_ns / opt_ns);
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
