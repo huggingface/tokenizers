@@ -28,7 +28,7 @@ pub mod normalizer;
 pub mod pattern;
 pub mod pre_tokenizer;
 mod serialization;
-pub mod types;
+pub mod buckets;
 pub mod vocab_store;
 // Re-export wrappers
 pub use crate::decoders::DecoderWrapper;

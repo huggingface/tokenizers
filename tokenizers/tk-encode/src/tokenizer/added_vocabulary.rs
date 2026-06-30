@@ -1,7 +1,7 @@
 use super::{
     normalizer::Range, Model, NormalizedString, Normalizer, PreTokenizedString, Result, Token,
 };
-use crate::types::{AddedTokenFlags, Buckets};
+use crate::buckets::{AddedTokenFlags, Buckets};
 use ahash::AHashMap;
 use regex::Regex;
 use serde::{ser::SerializeSeq, Deserialize, Serialize, Serializer};
