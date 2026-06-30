@@ -1,6 +1,6 @@
 use crate::vocab_store::VocabStore;
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, Default)]
 pub struct AddedTokenFlags {
     pub special: bool,
     pub normalized: bool,

@@ -227,7 +227,6 @@ impl VocabStore {
             })
             .collect()
     }
-
 }
 
 #[cfg(test)]

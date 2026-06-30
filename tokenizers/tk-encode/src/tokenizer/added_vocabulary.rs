@@ -244,7 +244,7 @@ impl AddedVocabulary {
     pub fn add_tokens<N: Normalizer>(
         &mut self,
         tokens: impl IntoIterator<Item = AddedToken>,
-        _model: &impl Model,
+        model: &impl Model,
         normalizer: Option<&N>,
     ) -> Result<usize> {
         let mut ignored = 0;
@@ -255,9 +255,13 @@ impl AddedVocabulary {
         // non-normalized token and vice-versa), keyed by its matcher form:
         //   - non-normalized -> `vocab`, by raw bytes (matched on raw input)
         //   - normalized     -> `normalized_vocab`, by normalized bytes (matched on normalized text)
-        // ids span one shared space; `metadata` is indexed by id.
+        // ids span one shared space (added ids start at the model vocab size); `metadata` is indexed
+        // by id and sized to cover every id (model-reused ids sit below `model_size`, leaving gaps).
         let mut metadata = self.token_metadata.to_vec();
-        let mut next_id = (self.vocab.len() + self.normalized_vocab.len()) as u32;
+        let model_size = model.get_vocab_size() as u32;
+        // `metadata` is kept sized to (max id + 1) — we resize it per new id below — so its length is
+        // the next free dense id with no scan/alloc. Added ids start above the model vocab.
+        let mut next_id = (metadata.len() as u32).max(model_size);
         let mut raw_tokens = self.vocab.get_vocab_bytes();
         let mut norm_tokens = self.normalized_vocab.get_vocab_bytes();
         // Tokens queued in THIS call, so duplicates within the same batch dedup against each other
@@ -301,9 +305,19 @@ impl AddedVocabulary {
                     }
                 }
                 None => {
-                    let id = next_id;
-                    next_id += 1;
-                    metadata.push(flags);
+                    // a token already in the model reuses the model id; otherwise take a new id
+                    let id = match model.token_to_id(&token.content) {
+                        Some(model_id) => model_id,
+                        None => {
+                            let i = next_id;
+                            next_id += 1;
+                            i
+                        }
+                    };
+                    if id as usize >= metadata.len() {
+                        metadata.resize(id as usize + 1, AddedTokenFlags::default());
+                    }
+                    metadata[id as usize] = flags;
                     seen.insert((is_norm, form.clone()), id);
                     if is_norm {
                         norm_tokens.push((form.into_bytes(), id));
