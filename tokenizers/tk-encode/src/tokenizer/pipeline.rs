@@ -1,10 +1,10 @@
-use std::convert::TryFrom;
 use std::ops::Range;
+use std::{borrow::Cow, convert::TryFrom};
 
 use crate::{
     pre_tokenizers::{bert::BertPreTokenizer, whitespace::Whitespace},
-    AddedVocabulary, Model, ModelWrapper, NormalizedString, Normalizer, NormalizerWrapper,
-    PostProcessorWrapper, PreTokenizerWrapper, Token, Tokenizer,
+    AddedVocabulary, Model, ModelWrapper, PostProcessorWrapper, PreTokenizerWrapper, Token,
+    Tokenizer,
 };
 
 use super::Result;
@@ -20,6 +20,20 @@ impl Split {
     #[inline]
     pub fn range(&self) -> Range<usize> {
         self.start as usize..self.end as usize
+    }
+}
+
+pub trait Normalizer {
+    fn normalize<'a>(&self, input: &'a str) -> Cow<'a, str>;
+}
+pub enum PipelineNormalizer {
+    None,
+}
+impl Normalizer for PipelineNormalizer {
+    fn normalize<'a>(&self, input: &'a str) -> Cow<'a, str> {
+        match self {
+            Self::None => input.into(),
+        }
     }
 }
 
@@ -57,7 +71,7 @@ impl From<Token> for PipelineToken {
 
 pub struct PipelineTokenizer {
     added_vocabulary: AddedVocabulary,
-    normalizer: Option<NormalizerWrapper>,
+    normalizer: Option<PipelineNormalizer>,
     pre_tokenizer: PipelinePreTokenizer,
     model: ModelWrapper,
     _post_processor: Option<PostProcessorWrapper>,
@@ -82,9 +96,16 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
             }
         };
 
+        let normalizer = match tok.get_normalizer().cloned() {
+            None => None,
+            Some(other) => {
+                return Err(format!("PipelineNormalizer only supports None, got: {other:?}").into())
+            }
+        };
+
         Ok(Self {
             added_vocabulary: tok.get_added_vocabulary().clone(),
-            normalizer: tok.get_normalizer().cloned(),
+            normalizer,
             pre_tokenizer,
             model: tok.get_model().clone(),
             _post_processor: tok.get_post_processor().cloned(),
@@ -100,11 +121,12 @@ impl PipelineTokenizer {
         output: &mut Vec<PipelineToken>,
     ) -> Result<()> {
         // todo: no more NormalizedString
-        let mut normalized: NormalizedString = chunk.into();
-        if let Some(normalizer) = &self.normalizer {
-            normalizer.normalize(&mut normalized)?;
-        }
-        for segment in SpecialSegmentIterator::new(normalized.get(), &self.added_vocabulary, true) {
+        let normalized: &str = if let Some(normalizer) = &self.normalizer {
+            &normalizer.normalize(chunk)
+        } else {
+            chunk
+        };
+        for segment in SpecialSegmentIterator::new(normalized, &self.added_vocabulary, true) {
             match segment {
                 Segment::SpecialToken(token) => {
                     output.push(PipelineToken { id: token });
@@ -166,7 +188,9 @@ pub struct SpecialSegmentIterator<'a, 'b, PatternMatcher: PipelinePatternMatcher
     normalized: bool,
 }
 
-impl<'a, 'b, PatternMatcher: PipelinePatternMatcher> SpecialSegmentIterator<'a, 'b, PatternMatcher> {
+impl<'a, 'b, PatternMatcher: PipelinePatternMatcher>
+    SpecialSegmentIterator<'a, 'b, PatternMatcher>
+{
     fn new(input: &'a str, pattern_matcher: &'b PatternMatcher, normalized: bool) -> Self {
         Self {
             input,

@@ -20,7 +20,8 @@ use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 use std::time::{Duration, Instant};
 
 use tk_encode::pipeline::{
-    PipelinePreTokenizer, PipelineToken, PipelineTokenizer, PreTokenizer as PipePreTok, Split,
+    PipelinePatternMatcher, PipelinePreTokenizer, PipelineToken, PipelineTokenizer,
+    PreTokenizer as PipePreTok, Split,
 };
 use tk_encode::{
     AddedVocabulary, Model, ModelWrapper, NormalizedString, Normalizer, NormalizerWrapper,

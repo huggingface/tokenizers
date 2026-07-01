@@ -1,3 +1,6 @@
+use std::borrow::Cow;
+
+use crate::pipeline;
 use crate::tokenizer::pattern::Pattern;
 use crate::tokenizer::Decoder;
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
@@ -85,6 +88,13 @@ impl Normalizer for Replace {
     }
 }
 
+impl pipeline::Normalizer for Replace {
+    fn normalize<'a>(&self, input: &'a str) -> Cow<'a, str> {
+        // todo
+        input.into()
+    }
+}
+
 impl Decoder for Replace {
     fn decode_chain(&self, tokens: Vec<String>) -> Result<Vec<String>> {
         tokens
@@ -155,5 +165,22 @@ mod tests {
             replace.decode_chain(original).unwrap(),
             vec!["hello", " hello"]
         );
+    }
+
+    #[test]
+    fn pipeline_replace_matches_legacy() {
+        let n = Replace::new("''", "\"").unwrap();
+        for input in &["This is a ''test''", "no quotes", ""] {
+            let mut ns = NormalizedString::from(*input);
+            Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
+            assert_eq!(ns.get(), &*pipeline::Normalizer::normalize(&n, input));
+        }
+
+        let n = Replace::new(ReplacePattern::Regex(r"\s+".into()), " ").unwrap();
+        for input in &["a   b   c", "single", ""] {
+            let mut ns = NormalizedString::from(*input);
+            Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
+            assert_eq!(ns.get(), &*pipeline::Normalizer::normalize(&n, input));
+        }
     }
 }
