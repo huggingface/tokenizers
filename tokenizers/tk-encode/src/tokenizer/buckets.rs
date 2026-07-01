@@ -453,6 +453,7 @@ impl Default for Buckets {
     }
 }
 
+/// We add the bench as test to test private func
 #[cfg(test)]
 mod bench {
     // Throughput: optimized `match_bytes` (memchr for 1 bucket, NEON nibble for >=2 buckets) vs a

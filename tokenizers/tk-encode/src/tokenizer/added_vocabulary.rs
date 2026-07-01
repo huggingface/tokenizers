@@ -86,6 +86,8 @@ impl Default for AddedToken {
     }
 }
 
+// TODO: remove this once we have the final saving format
+// its outside the scope of this PR and allows us to test
 impl From<&AddedToken> for AddedTokenFlags {
     fn from(token: &AddedToken) -> AddedTokenFlags {
         AddedTokenFlags {
@@ -175,7 +177,7 @@ impl AddedVocabulary {
     }
 
     /// Get the additional vocabulary with the AddedTokens
-    /// TODO: this will be slowe because we rebuild the added tokens
+    /// TODO: this will be slow because we rebuild the added tokens
     pub fn get_added_tokens_decoder(&self) -> AHashMap<u32, AddedToken> {
         self.get_vocab()
             .into_iter()
@@ -210,7 +212,9 @@ impl AddedVocabulary {
     /// invert the transformation correctly. For all other tokens, the original
     /// `content` is returned.
     pub fn simple_id_to_token(&self, _id: u32) -> Option<String> {
-        Some(String::new())
+        self.vocab
+            .id_to_token(_id)
+            .or_else(|| self.normalized_vocab.id_to_token(_id))
     }
 
     //
@@ -250,23 +254,24 @@ impl AddedVocabulary {
         let mut ignored = 0;
         let mut total = 0;
 
-        // Partition by the `normalized` flag into two independent matchers, then fully rebuild
-        // each. A token lives in exactly ONE matcher (so the normalized matcher never matches a
-        // non-normalized token and vice-versa), keyed by its matcher form:
-        //   - non-normalized -> `vocab`, by raw bytes (matched on raw input)
-        //   - normalized     -> `normalized_vocab`, by normalized bytes (matched on normalized text)
-        // ids span one shared space (added ids start at the model vocab size); `metadata` is indexed
-        // by id and sized to cover every id (model-reused ids sit below `model_size`, leaving gaps).
+        // One matcher per `normalized` flag: non-normalized tokens live in `vocab` (matched on the
+        // raw input), normalized ones in `normalized_vocab` (matched on normalized text). Single id
+        // space; `metadata` is indexed by id and sized to (max id + 1), so `metadata.len()` is the
+        // next free dense id (no scan/alloc). Added ids start above the model vocab; a token already
+        // in the model reuses the model id.
         let mut metadata = self.token_metadata.to_vec();
         let model_size = model.get_vocab_size() as u32;
-        // `metadata` is kept sized to (max id + 1) — we resize it per new id below — so its length is
-        // the next free dense id with no scan/alloc. Added ids start above the model vocab.
         let mut next_id = (metadata.len() as u32).max(model_size);
-        let mut raw_tokens = self.vocab.get_vocab_bytes();
-        let mut norm_tokens = self.normalized_vocab.get_vocab_bytes();
-        // Tokens queued in THIS call, so duplicates within the same batch dedup against each other
-        // (not just against the already-built matchers). Keyed by (normalized?, matcher form).
-        let mut seen: AHashMap<(bool, String), u32> = AHashMap::new();
+
+        let mut entries: AHashMap<u32, (Vec<u8>, bool)> = AHashMap::new();
+        // Because we allow changing from normalized=true to false, we need to keep track of both
+        for (form, id) in self.vocab.get_vocab_bytes() {
+            entries.insert(id, (form, false));
+        }
+        for (form, id) in self.normalized_vocab.get_vocab_bytes() {
+            entries.insert(id, (form, true));
+        }
+        let mut seen: AHashMap<String, u32> = AHashMap::new();
 
         for token in tokens {
             total += 1;
@@ -276,58 +281,58 @@ impl AddedVocabulary {
             }
             let flags = AddedTokenFlags::from(&token);
             let is_norm = flags.normalized;
-            // the form this token is keyed/matched by, in its matcher
-            let form: String = if is_norm {
-                if let Some(n) = normalizer {
+            let norm_form: String = match normalizer {
+                Some(n) => {
+                    // TODO: fix normalizer to remove allocations :)
                     let mut s = NormalizedString::from(token.content.as_str());
                     n.normalize(&mut s)?;
                     s.get().to_string()
-                } else {
-                    token.content.clone()
                 }
-            } else {
-                token.content.clone()
+                None => token.content.clone(),
             };
-            // already present in its matcher, or already queued earlier in this same batch?
-            let existing = if is_norm {
-                self.normalized_vocab.token_to_id(&form)
+            let form = if is_norm {
+                norm_form.clone().into_bytes()
             } else {
-                self.vocab.token_to_id(&form)
+                token.content.clone().into_bytes()
+            };
+            // token could be in model, in added vocab, in added vocab normalized
+            let existing = seen
+                .get(&token.content)
+                .copied()
+                .or_else(|| model.token_to_id(&token.content))
+                .or_else(|| self.vocab.token_to_id(&token.content))
+                .or_else(|| self.normalized_vocab.token_to_id(&norm_form));
+            // Already present with the exact same flags AND matcher -> nothing to do.
+            if let Some(id) = existing {
+                if metadata.get(id as usize) == Some(&flags)
+                    && entries.get(&id).map(|(_, n)| *n) == Some(is_norm)
+                {
+                    ignored += 1;
+                    continue;
+                }
             }
-            .or_else(|| seen.get(&(is_norm, form.clone())).copied());
-            match existing {
-                Some(id) => {
-                    let id = id as usize;
-                    if metadata[id] == flags {
-                        ignored += 1; // identical -> nothing to do
-                    } else {
-                        metadata[id] = flags; // bytes already present, just update the flags
-                    }
-                }
-                None => {
-                    // a token already in the model reuses the model id; otherwise take a new id
-                    let id = match model.token_to_id(&token.content) {
-                        Some(model_id) => model_id,
-                        None => {
-                            let i = next_id;
-                            next_id += 1;
-                            i
-                        }
-                    };
-                    if id as usize >= metadata.len() {
-                        metadata.resize(id as usize + 1, AddedTokenFlags::default());
-                    }
-                    metadata[id as usize] = flags;
-                    seen.insert((is_norm, form.clone()), id);
-                    if is_norm {
-                        norm_tokens.push((form.into_bytes(), id));
-                    } else {
-                        raw_tokens.push((form.into_bytes(), id));
-                    }
-                }
+            let id = existing.unwrap_or_else(|| {
+                let i = next_id;
+                next_id += 1;
+                i
+            });
+            if id as usize >= metadata.len() {
+                metadata.resize(id as usize + 1, AddedTokenFlags::default());
+            }
+            metadata[id as usize] = flags;
+            entries.insert(id, (form, is_norm)); // if id existed, we overwrite it
+            seen.insert(token.content.clone(), id);
+        }
+
+        // Partition the final set of tokens into two VocabStore and rebuild both from scratch.
+        let (mut raw_tokens, mut norm_tokens) = (Vec::new(), Vec::new());
+        for (id, (form, is_norm)) in entries {
+            if is_norm {
+                norm_tokens.push((form, id));
+            } else {
+                raw_tokens.push((form, id));
             }
         }
-        // Rebuild both matchers from scratch (LCP/disc/lengths can shift when tokens are added).
         self.token_metadata = metadata.into();
         self.vocab = Buckets::from_tokens(raw_tokens);
         self.normalized_vocab = Buckets::from_tokens(norm_tokens);
@@ -397,6 +402,14 @@ impl AddedVocabulary {
         })
         .unwrap();
         pre
+    }
+
+    pub fn extract_next(&self, bytes: &[u8]) -> Option<(u32, u32, u32)> {
+        self.vocab.match_bytes(bytes)
+    }
+
+    pub fn extract_next_normalized(&self, bytes: &[u8]) -> Option<(u32, u32, u32)> {
+        self.normalized_vocab.match_bytes(bytes)
     }
 }
 
@@ -936,41 +949,6 @@ mod tests {
         // // normalized=false → decode returns original content "[CLS]"
         // assert_eq!(vocab.simple_id_to_token(cls_id).unwrap(), "[CLS]");
     }
-
-    // ponytail: disabled — uses removed `added_tokens_map` field and `refresh_normalized_tokens` method.
-    // Re-enable once those exist again on AddedVocabulary.
-    // #[test]
-    // fn refresh_normalized_tokens_on_normalizer_change() {
-    //     // Tokens added without a normalizer should get their normalized_content populated
-    //     // when the normalizer is set later via refresh_normalized_tokens.
-    //     let model = ModelMock::new(&[]);
-    //     let mut vocab = AddedVocabulary::new();
-    //     let normalizer = Lowercase;
-    //
-    //     // Add tokens with NO normalizer first
-    //     vocab
-    //         .add_tokens(
-    //             [AddedToken::from("Hello", false)],
-    //             &model,
-    //             None::<&NormalizerWrapper>,
-    //         )
-    //         .unwrap();
-    //
-    //     // Without a normalizer, simple_id_to_token returns the original content
-    //     let hello_id = vocab.added_tokens_map["Hello"];
-    //     assert_eq!(vocab.simple_id_to_token(hello_id).unwrap(), "Hello");
-    //
-    //     // Now attach a normalizer and refresh
-    //     vocab.refresh_normalized_tokens(Some(&normalizer)).unwrap();
-    //
-    //     // After refresh, simple_id_to_token returns the cached normalized form
-    //     assert_eq!(vocab.simple_id_to_token(hello_id).unwrap(), "hello");
-    //
-    //     // And the vocabulary should still match correctly (splits use normalized form)
-    //     let result = vocab.extract_and_normalize(Some(&normalizer), "Hello world");
-    //     let splits = simplify_output(&result);
-    //     assert_eq!(splits[0], ("hello", Some(vec![0])));
-    // }
 
     #[test]
     fn byte_level_normalizer() {
