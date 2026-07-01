@@ -1,3 +1,6 @@
+use std::borrow::Cow;
+
+use crate::pipeline;
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 pub use spm_precompiled::Precompiled;
 use std::cmp::Ordering;
@@ -65,6 +68,13 @@ impl Normalizer for Precompiled {
             normalized.transform(transformations, 0);
         }
         Ok(())
+    }
+}
+
+impl pipeline::Normalizer for Precompiled {
+    fn normalize<'a>(&self, input: &'a str) -> Cow<'a, str> {
+        // todo
+        input.into()
     }
 }
 

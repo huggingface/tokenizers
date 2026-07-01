@@ -1,4 +1,7 @@
-use crate::tokenizer::{NormalizedString, Normalizer, Result};
+use crate::{
+    pipeline,
+    tokenizer::{NormalizedString, Normalizer, Result},
+};
 
 use serde::{Deserialize, Serialize};
 use unicode_categories::UnicodeCategories;
@@ -133,5 +136,28 @@ impl Normalizer for BertNormalizer {
         }
 
         Ok(())
+    }
+}
+
+impl pipeline::Normalizer for BertNormalizer {
+    fn normalize<'a>(&self, input: &'a str) -> std::borrow::Cow<'a, str> {
+        let input = input.into();
+       // todo
+       input
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pipeline_bert_matches_legacy() {
+        let n = BertNormalizer::default();
+        for input in &["Héllo World", "中文字", "  spaced  ", "abc", "", "\tTab\n"] {
+            let mut ns = NormalizedString::from(*input);
+            Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
+            assert_eq!(ns.get(), &*pipeline::Normalizer::normalize(&n, input));
+        }
     }
 }

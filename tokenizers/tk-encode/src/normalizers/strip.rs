@@ -1,3 +1,6 @@
+use std::borrow::Cow;
+
+use crate::pipeline;
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 use crate::utils::macro_rules_attribute;
 use serde::{Deserialize, Serialize};
@@ -40,6 +43,18 @@ impl Normalizer for Strip {
     }
 }
 
+impl pipeline::Normalizer for Strip {
+    fn normalize<'a>(&self, input: &'a str) -> Cow<'a, str> {
+        let s = if self.strip_left {
+            input.trim_start()
+        } else {
+            input
+        };
+        let s = if self.strip_right { s.trim_end() } else { s };
+        Cow::Borrowed(s)
+    }
+}
+
 // This normalizer removes combining marks from a normalized string
 // It's different from unidecode as it does not attempt to modify
 // non ascii languages.
@@ -52,6 +67,16 @@ impl Normalizer for StripAccents {
     fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
         normalized.filter(|c| !is_combining_mark(c));
         Ok(())
+    }
+}
+
+impl pipeline::Normalizer for StripAccents {
+    fn normalize<'a>(&self, input: &'a str) -> std::borrow::Cow<'a, str> {
+        if input.chars().any(is_combining_mark) {
+            Cow::Owned(input.chars().filter(|&c| !is_combining_mark(c)).collect())
+        } else {
+            Cow::Borrowed(input)
+        }
     }
 }
 
@@ -153,5 +178,27 @@ mod tests {
                 (1, 2)
             ]
         );
+    }
+
+    #[test]
+    fn pipeline_strip_accents_matches_legacy() {
+        let n = StripAccents;
+        for input in &["café", "abc", "", "å ç ñ", "     hello"] {
+            let mut ns = NormalizedString::from(*input);
+            Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
+            assert_eq!(ns.get(), &*pipeline::Normalizer::normalize(&n, input));
+        }
+    }
+
+    #[test]
+    fn pipeline_strip_matches_legacy() {
+        for (strip_left, strip_right) in [(true, true), (true, false), (false, true)] {
+            let n = Strip::new(strip_left, strip_right);
+            for input in &["  hello  ", "hello", "", "   ", "\t hi \n"] {
+                let mut ns = NormalizedString::from(*input);
+                Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
+                assert_eq!(ns.get(), &*pipeline::Normalizer::normalize(&n, input));
+            }
+        }
     }
 }
