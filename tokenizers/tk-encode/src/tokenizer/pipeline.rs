@@ -2,6 +2,7 @@ use std::ops::Range;
 use std::{borrow::Cow, convert::TryFrom};
 
 use crate::{
+    normalizers::NormalizerWrapper,
     pre_tokenizers::{bert::BertPreTokenizer, whitespace::Whitespace},
     AddedVocabulary, Model, ModelWrapper, PostProcessorWrapper, PreTokenizerWrapper, Token,
     Tokenizer,
@@ -25,16 +26,6 @@ impl Split {
 
 pub trait Normalizer {
     fn normalize<'a>(&self, input: &'a str) -> Cow<'a, str>;
-}
-pub enum PipelineNormalizer {
-    None,
-}
-impl Normalizer for PipelineNormalizer {
-    fn normalize<'a>(&self, input: &'a str) -> Cow<'a, str> {
-        match self {
-            Self::None => input.into(),
-        }
-    }
 }
 
 pub trait PreTokenizer {
@@ -71,7 +62,7 @@ impl From<Token> for PipelineToken {
 
 pub struct PipelineTokenizer {
     added_vocabulary: AddedVocabulary,
-    normalizer: Option<PipelineNormalizer>,
+    normalizer: Option<NormalizerWrapper>,
     pre_tokenizer: PipelinePreTokenizer,
     model: ModelWrapper,
     _post_processor: Option<PostProcessorWrapper>,
@@ -96,12 +87,7 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
             }
         };
 
-        let normalizer = match tok.get_normalizer().cloned() {
-            None => None,
-            Some(other) => {
-                return Err(format!("PipelineNormalizer only supports None, got: {other:?}").into())
-            }
-        };
+        let normalizer = tok.get_normalizer().cloned();
 
         Ok(Self {
             added_vocabulary: tok.get_added_vocabulary().clone(),
