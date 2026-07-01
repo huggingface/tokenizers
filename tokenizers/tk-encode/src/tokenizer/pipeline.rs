@@ -47,17 +47,11 @@ impl PreTokenizer for PipelinePreTokenizer {
 #[derive(Debug, Clone, Copy)]
 pub struct PipelineToken {
     pub id: u32,
-    pub start: u32,
-    pub end: u32,
 }
 
 impl From<Token> for PipelineToken {
     fn from(value: Token) -> Self {
-        Self {
-            id: value.id,
-            start: value.offsets.0 as u32,
-            end: value.offsets.1 as u32,
-        }
+        Self { id: value.id }
     }
 }
 
@@ -99,84 +93,61 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
 }
 
 impl PipelineTokenizer {
+    fn tokenize_chunk(
+        &self,
+        chunk: &str,
+        pre_tokens: &mut Vec<Split>,
+        output: &mut Vec<PipelineToken>,
+    ) -> Result<()> {
+        // todo: no more NormalizedString
+        let mut normalized: NormalizedString = chunk.into();
+        if let Some(normalizer) = &self.normalizer {
+            normalizer.normalize(&mut normalized)?;
+        }
+        let normalized_chunk = normalized.get();
+
+        // todo: extract special tokens from normalized input
+
+        pre_tokens.clear();
+        self.pre_tokenizer
+            .pre_tokenize(normalized_chunk, pre_tokens)?;
+        for pre_token in pre_tokens.iter() {
+            output.extend(
+                self.model
+                    .tokenize(&normalized_chunk[pre_token.range()])?
+                    .into_iter()
+                    .map(|Token { id, .. }| PipelineToken { id }),
+            );
+        }
+        Ok(())
+    }
+
     pub fn encode(&self, input: &str, _add_special_tokens: bool) -> Result<Vec<PipelineToken>> {
         let mut output: Vec<PipelineToken> = vec![];
         let mut pre_tokens: Vec<Split> = vec![];
 
-        for (split, maybe_token) in self.added_vocabulary.extract_special_tokens(input) {
-            // todo: compute offsets properly: split here is in the original string space
-            if let Some(id) = maybe_token {
-                output.push(PipelineToken {
-                    id,
-                    start: split.start,
-                    end: split.end,
-                });
-                continue;
-            }
+        let mut offset: usize = 0;
 
-            let base = split.start;
-
-            // todo: NormalizedString allocates 3 times: original String, normalized String + offsets Vec
-            // original String alloc is not necessary
-            let mut normalized: NormalizedString = input[split.range()].into();
-            if let Some(normalizer) = &self.normalizer {
-                normalizer.normalize(&mut normalized)?;
-            }
-            let normalized_chunk = normalized.get();
-
-            for (split, maybe_token) in self
+        loop {
+            if let Some(((start, end), token)) = self
                 .added_vocabulary
-                .extract_normalized_tokens(normalized_chunk)
+                .get_next_special_token(&input[offset..], false)
             {
-                // todo: compute offsets properly: split here is in the _normalized_ string space
-                if let Some(id) = maybe_token {
-                    output.push(PipelineToken {
-                        id,
-                        start: base + split.start,
-                        end: base + split.end,
-                    });
-                    continue;
+                let chunk_to_tokenize = &input[offset..offset + start];
+                if !chunk_to_tokenize.is_empty() {
+                    self.tokenize_chunk(chunk_to_tokenize, &mut pre_tokens, &mut output)?;
                 }
-                self.tokenize_chunk(
-                    &normalized_chunk[split.range()],
-                    base + split.start,
-                    &mut pre_tokens,
-                    &mut output,
-                )?;
+                output.push(PipelineToken { id: token });
+                offset += end;
+            } else {
+                let chunk_to_tokenize = &input[offset..];
+                if !chunk_to_tokenize.is_empty() {
+                    self.tokenize_chunk(chunk_to_tokenize, &mut pre_tokens, &mut output)?;
+                }
+                break;
             }
         }
-        // todo: post-processing
-        // if let Some(post_processor) = self._post_processor {
-        //     post_processor.process_encodings(encodings, add_special_tokens);
-        // }
+
         Ok(output)
-    }
-
-    /// Pre-tokenize `chunk` and run each pre-token through the model, appending the
-    /// resulting tokens to `output`. `base_offset` is the offset of `chunk` within the input.
-    fn tokenize_chunk(
-        &self,
-        chunk: &str,
-        base_offset: u32,
-        pre_tokens: &mut Vec<Split>,
-        output: &mut Vec<PipelineToken>,
-    ) -> Result<()> {
-        pre_tokens.clear();
-        self.pre_tokenizer.pre_tokenize(chunk, pre_tokens)?;
-
-        for pre_token in pre_tokens.iter() {
-            let pt_base = base_offset + pre_token.start;
-            output.extend(
-                self.model
-                    .tokenize(&chunk[pre_token.range()])?
-                    .into_iter()
-                    .map(|Token { id, offsets, .. }| PipelineToken {
-                        id,
-                        start: pt_base + offsets.0 as u32,
-                        end: pt_base + offsets.1 as u32,
-                    }),
-            );
-        }
-        Ok(())
     }
 }
