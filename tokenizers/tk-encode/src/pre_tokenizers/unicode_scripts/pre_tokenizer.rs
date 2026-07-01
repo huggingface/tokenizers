@@ -79,8 +79,9 @@ impl PreTokenizer for UnicodeScripts {
     }
 }
 
-static ASCII_CLASS: LazyLock<[Script; 128]> =
-    LazyLock::new(|| std::array::from_fn(|b| fixed_script(b as u8 as char)));
+static BMP_SCRIPT: LazyLock<[Script; 0x10000]> = LazyLock::new(|| {
+    std::array::from_fn(|i| char::from_u32(i as u32).map_or(Script::Common, fixed_script))
+});
 
 impl pipeline::PreTokenizer for UnicodeScripts {
     fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Split>) -> Result<()> {
@@ -88,8 +89,9 @@ impl pipeline::PreTokenizer for UnicodeScripts {
         let mut last_script = None;
 
         for (i, ch) in text.char_indices() {
-            let script = if ch.is_ascii() {
-                ASCII_CLASS[ch as usize]
+            let cp = ch as u32;
+            let script = if cp < 0x10000 {
+                BMP_SCRIPT[cp as usize]
             } else {
                 fixed_script(ch)
             };
