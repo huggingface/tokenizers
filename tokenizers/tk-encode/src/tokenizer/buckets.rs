@@ -431,11 +431,11 @@ impl Buckets {
     }
     /// All added-token byte strings + ids (e.g. to rebuild the vocab when adding tokens).
     pub fn get_vocab_bytes(&self) -> Vec<(Vec<u8>, u32)> {
-        self.vocab.get_vocab_bytes()
+        self.vocab.byte_content()
     }
     /// All added-token strings + ids.
     pub fn get_vocab(&self) -> Vec<(String, u32)> {
-        self.vocab.get_vocab()
+        self.vocab.content()
     }
     pub fn token_to_id(&self, token: &str) -> Option<u32> {
         self.vocab.token_to_id(token)
