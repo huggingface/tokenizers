@@ -1,10 +1,11 @@
-use std::convert::TryFrom;
 use std::ops::Range;
+use std::{borrow::Cow, convert::TryFrom};
 
 use crate::added_vocabulary::bucket_added_vocabulary::{
     AddedToken as BucketAddedToken, AddedVocabulary as BucketAddedVocabulary,
 };
 use crate::{
+    normalizers::NormalizerWrapper,
     pre_tokenizers::{
         bert::BertPreTokenizer,
         delimiter::CharDelimiterSplit,
@@ -14,8 +15,7 @@ use crate::{
         unicode_scripts::UnicodeScripts,
         whitespace::{Whitespace, WhitespaceSplit},
     },
-    Model, ModelWrapper, NormalizedString, Normalizer, NormalizerWrapper, PostProcessorWrapper,
-    PreTokenizerWrapper, Token, Tokenizer,
+    Model, ModelWrapper, PostProcessorWrapper, PreTokenizerWrapper, Token, Tokenizer,
 };
 
 use super::{Result, SplitDelimiterBehavior};
@@ -32,6 +32,10 @@ impl Split {
     pub fn range(self) -> Range<usize> {
         self.start as usize..self.end as usize
     }
+}
+
+pub trait Normalizer {
+    fn normalize<'a>(&self, input: &'a str) -> Cow<'a, str>;
 }
 
 /// Range-based pre-tokenization: yields spans into the input rather than owned
@@ -276,15 +280,15 @@ impl PipelineTokenizer {
                     output.push(PipelineToken { id: token });
                 }
                 Segment::Text(chunk) => {
-                    // Normalize the text segment
-                    let mut normalized: NormalizedString = chunk.into();
-                    if let Some(normalizer) = &self.normalizer {
-                        normalizer.normalize(&mut normalized)?;
-                    }
+                    let normalized: &str = if let Some(normalizer) = &self.normalizer {
+                        &normalizer.normalize(chunk)
+                    } else {
+                        chunk
+                    };
 
                     // Extract special tokens from the normalized input
                     for segment in
-                        SpecialSegmentIterator::new(normalized.get(), &self.added_vocabulary, true)
+                        SpecialSegmentIterator::new(normalized, &self.added_vocabulary, true)
                     {
                         match segment {
                             Segment::SpecialToken(token) => {
