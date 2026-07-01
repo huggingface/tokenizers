@@ -9,24 +9,33 @@ pub struct AddedTokenFlags {
     pub rstrip: bool,
 }
 
-/// We implement a 2-level check:
-/// 1. on the next byte after the prefix.
-/// 2. on the lenght of the added tokens.
-/// 3. on the hashed bytes.
+/// The key to have a fast byte matching alrogithm is to skip failures fast and reject quickly
+/// potential candidates. What we do here:
+/// 1. memchr / nibble SIMD scan of potential candidates. `pshufb` does parallel lookup in a 16-byte
+///    register, using 4-bit indices. `nibbles` are 4 bytes
+/// 2. on candidate bytes, check the Bucket that corresponds to that byte (1 in 255). If there is a
+///    bucket we check if there is in that bucket's next_byte_to_length_id a valid length_list. If
+///    not we don't have to check anything
+/// 3. We check the prefix interpreted as a u64 (so we take the first 8 bytes). This is a fast &
+/// 4. We iterate over the length list, hash the bytes cropped to the length -> longest first match.
 #[derive(Clone, Debug)]
 pub struct Bucket {
     // longest common prefix of the bucket
     pub prefix: Box<[u8]>,
-    // prefix[0..min(len,8)] packed little-endian + a per-byte mask, so the hot-path reject is a
+    // prefix[0..min(len,8)] packed native-endian + a per-byte masking on invalid bytes, so the hot-path reject is a
     // single `(chunk ^ prefix_word) & prefix_mask` instead of walking the boxed prefix slice.
     pub prefix_word: u64,
     pub prefix_mask: u64,
-    pub next_byte_to_length_id: [u16; 256], // post-prefix byte -> sub-list index; 0xFFFF = none
+    // post-prefix byte -> sub-list index; 0xFFFF = none. We use u16 because proba of having > 65K
+    // different lists is close to 0. We could use u4 safely AFAIK :).
+    pub next_byte_to_length_id: [u16; 256],
+    // per-post-prefix byte indexed by next_byte_to_length_id. We build this once so Box (per byte)
+    // Box (an array of length) and IDK any token are gonna > u16::MAX.
     pub length_list: Box<[Box<[u16]>]>,
 }
 
 impl Bucket {
-    /// Pack the prefix into `prefix_word`/`prefix_mask` for the one-instruction reject.
+    /// Pack the prefix into `prefix_word`/`prefix_mask` for the fast rejection.
     pub fn new(
         prefix: Box<[u8]>,
         next_byte_to_length_id: [u16; 256],
@@ -34,15 +43,17 @@ impl Bucket {
     ) -> Self {
         // native-endian packing so the reject's `from_ne_bytes` read is a pure reinterpret on any
         // arch (no byte-swap); the equality compare is endian-agnostic as long as both sides match.
-        let mut wbuf = [0u8; 8];
-        let mut mbuf = [0u8; 8];
+        let mut word_buf = [0u8; 8];
+        let mut mask_buf = [0u8; 8];
         let plen = prefix.len().min(8);
-        wbuf[..plen].copy_from_slice(&prefix[..plen]);
-        for b in mbuf[..plen].iter_mut() {
+        word_buf[..plen].copy_from_slice(&prefix[..plen]);
+        for b in mask_buf[..plen].iter_mut() {
             *b = 0xFF;
         }
-        let prefix_word = u64::from_ne_bytes(wbuf);
-        let prefix_mask = u64::from_ne_bytes(mbuf);
+        let prefix_word = u64::from_ne_bytes(word_buf);
+        let prefix_mask = u64::from_ne_bytes(mask_buf);
+        // we create a mask over the valid bytes as the prefix can be shorter
+        // than 8 bytes, interpreting 8 bytes + mask is better than slicing.
         Bucket {
             prefix,
             prefix_word,
@@ -53,31 +64,39 @@ impl Bucket {
     }
 }
 
-/// Buckets are responsible of finding matches.
-/// lo / hi nibble
+pub enum MatcherKernel {
+    Universal,
+    SmallSet,
+    // NOTE: open to contributions to add constant nibble and unique higher and lower nibble special case variants
+} // TODO: use this
+
+/// Buckets store added tokens and the stuff needed to quickly find them in bytes.
+/// This is equivalent to a HashMap<token, id> + DoubleArrayAhoCorasick on all token but at a
+/// fraction of the memory cost for the same performance in worst cases (dense inputs) and much
+/// faster when there are no candidates.
 #[derive(Clone)]
 pub struct Buckets {
+    // is there a bucket for that byte. This is used to build the nibble matcher and extract
+    // on match the bucket corresponding to the byte that was scanned.
     first_byte_to_bucket_id: [u8; 256],
     // we use optimized SIMD to scan potential special tokens when there are more than 1 bucket.
     // this is taken from http://0x80.pl/notesen/2018-10-18-simd-byte-lookup.html
     lo16: [u8; 16],
     hi16: [u8; 16],
-    #[allow(dead_code)] // TODO: honor in the scan — fall back to scalar when false
-    can_use_nibbling: bool, // we can't if there are >8 high nibbles (very rare)
     buckets: Box<[Bucket]>,
-    inner: VocabStore,
+    // efficient AHashMap equivalent build on the premise that we know in advance all the keys: we
+    // are in a close addressing problem.
+    vocab: VocabStore,
 }
 
 impl Buckets {
-    /// Empty matcher (no added tokens yet).
     pub fn new() -> Self {
         Self {
             first_byte_to_bucket_id: [0xFF; 256], // 0xFF = no bucket for this first byte
             lo16: [0; 16],
             hi16: [0; 16],
-            can_use_nibbling: true,
             buckets: Box::default(),
-            inner: VocabStore::new(),
+            vocab: VocabStore::new(),
         }
     }
     /// Build the matcher from sorted `tokens`, the first-byte->bucket table, and the buckets.
@@ -86,29 +105,24 @@ impl Buckets {
         first_byte_to_bucket_id: [u8; 256],
         buckets: Box<[Bucket]>,
     ) -> Self {
-        // tokens should be sorted
-        let inner = VocabStore::build(tokens);
+        let vocab = VocabStore::build(tokens);
         let mut new = Self {
             first_byte_to_bucket_id,
             lo16: [0; 16],
             hi16: [0; 16],
-            can_use_nibbling: true,
             buckets,
-            inner,
+            vocab,
         };
         new.build_nibble_table();
         new
     }
-    ///  - group token indices by first byte,
-    ///  - per group: longest-common-prefix capped at `shortest_len - 1` (so every token has a
-    ///    discriminating byte and the "token == prefix" case needs no special handling),
-    ///  - build the post-prefix byte discrimination table + per-byte distinct lengths (longest first),
-    ///    then `build()` does the VocabStore (hash pass) + nibble table.
+
+    /// Used by the AddedVocabulary when a new token is added, we recreate the entire structure.
     pub fn from_tokens(tokens: Vec<(Vec<u8>, u32)>) -> Self {
         if tokens.is_empty() {
             return Self::new();
         }
-        // group token indices by first byte
+        // First we group tokens that have the same starting byte.
         let mut groups: Vec<Vec<u32>> = vec![Vec::new(); 256];
         for (i, (bytes, _)) in tokens.iter().enumerate() {
             if let Some(&first_b) = bytes.first() {
@@ -121,15 +135,14 @@ impl Buckets {
             if groups[first_b].is_empty() {
                 continue;
             }
-            // longest common prefix of the group + shortest token length
+            // longest common prefix of the group + compute token length_list
             let mut lcp: &[u8] = &tokens[groups[first_b][0] as usize].0;
             let mut min_len = lcp.len();
             for &i in &groups[first_b] {
                 // for each token index we start with the longest token
-                // and we iterate over the lcp's bytes until theirs are
-                // no longer equal to the current. At this point we shortest
-                // the lcp and go to the next. The tokens are sorted by size and
-                // longest prefix.
+                // and we iterate over the lcp's bytes until there are
+                // no longer equal to the current. At this point we shorten
+                // the lcp and go to the next.
                 let t = &tokens[i as usize].0;
                 min_len = min_len.min(t.len());
                 let common = lcp.iter().zip(t).take_while(|(a, b)| a == b).count();
@@ -138,24 +151,25 @@ impl Buckets {
             // cap so prefix.len() < every token's len => every token has a byte at prefix.len()
             let plen = lcp.len().min(min_len.saturating_sub(1));
             let prefix: Box<[u8]> = lcp[..plen].to_vec().into_boxed_slice();
-            // disc table (byte after prefix -> sub-list) + per-disc distinct lengths, longest first
+            // build the byte after prefix -> sub-list + per-byte distinct lengths, longest first
             let mut next_byte_to_length_id = [0xFFFFu16; 256];
             let mut length_list: Vec<Vec<u16>> = Vec::new();
             for &i in &groups[first_b] {
                 let t = &tokens[i as usize].0;
-                let disc = t[plen] as usize;
-                let li = if next_byte_to_length_id[disc] == 0xFFFF {
-                    next_byte_to_length_id[disc] = length_list.len() as u16;
+                let post_byte = t[plen] as usize;
+                let list_index = if next_byte_to_length_id[post_byte] == 0xFFFF {
+                    next_byte_to_length_id[post_byte] = length_list.len() as u16;
                     length_list.push(Vec::new());
                     length_list.len() - 1
                 } else {
-                    next_byte_to_length_id[disc] as usize
+                    next_byte_to_length_id[post_byte] as usize
                 };
                 let l = t.len() as u16;
-                if !length_list[li].contains(&l) {
-                    length_list[li].push(l);
+                if !length_list[list_index].contains(&l) {
+                    length_list[list_index].push(l);
                 }
             }
+            // finally sort by longest first
             for list in length_list.iter_mut() {
                 list.sort_unstable_by(|a, b| b.cmp(a)); // longest first
             }
@@ -169,25 +183,6 @@ impl Buckets {
         }
         Self::build(tokens, first_byte_to_bucket_id, buckets.into_boxed_slice())
     }
-    //   ┌───────────────────────────────╴
-    //   │ 0 1 2 3 4 5 6 7 8 9 a b c d e f
-    // ╶─┼───────────────────────────────╴
-    // 0 │ . . . . . . . . . . . . . . . .
-    // 1 │ . . . . . . . . . . . . . . . .
-    // 2 │ . . . . . . . . . . . . . . . .
-    // 3 │ . . . . . . . . . . . . . . . .
-    // 4 │ . . . . . . . . . . . . . . . .
-    // 5 │ . . . . . . . . . . . . . . . .
-    // 6 │ . . . . . . . . . . . . . . . .
-    // 7 │ . . . . . . . . . . . . . . . .
-    // 8 │ . . . . . . . . . . . . . . . .
-    // 9 │ x . . . . . . . . . . . . . . .
-    // a │ x . . . . . . . . . . . . . . .
-    // b │ . . . . . x . . . . . . . . . .
-    // c │ . . . x . . . . . . . . . . . .
-    // d │ . . . . . . . . . . . . . . . .
-    // e │ . . . . . . . . . . . . . . . .
-    // f ╵ . . . . . . . . . . . . . . . .
     // If you have the following first bytes
     // "<"  = 0x3c  -> col 3, row c
     // "["  = 0x5b  -> col 5, row b
@@ -211,7 +206,7 @@ impl Buckets {
             if (0..16).any(|l| candidates[(h << 4) | l]) {
                 if next >= 8 {
                     return;
-                } // >8 high nibbles -> caller uses scalar TODO:
+                } // >8 high nibbles -> fallback to the general implementation TODO:
                 let counter = 1u8 << next;
                 next += 1;
                 hi[h] = counter;
@@ -303,7 +298,7 @@ impl Buckets {
             if (chunk ^ bucket.prefix_word) & bucket.prefix_mask != 0 {
                 return None;
             }
-            // prefix longer than 8 bytes (rare): verify the remainder.
+            // 1.b. prefix longer than 8 bytes (rare): verify the remainder.
             if bucket.prefix.len() > 8 && !bytes[pos + 8..].starts_with(&bucket.prefix[8..]) {
                 return None;
             }
@@ -311,11 +306,11 @@ impl Buckets {
             return None; // near the end of the buffer: too few bytes for a word load
         }
         // 2. byte after the prefix -> length sub-list (0xFFFF = none).
-        let disc = match bytes.get(pos + bucket.prefix.len()) {
+        let post_byte = match bytes.get(pos + bucket.prefix.len()) {
             Some(&b) => b,
             None => return None,
         };
-        let length_id = bucket.next_byte_to_length_id[disc as usize];
+        let length_id = bucket.next_byte_to_length_id[post_byte as usize];
         if length_id == 0xFFFF {
             return None;
         }
@@ -323,7 +318,7 @@ impl Buckets {
         for &len in bucket.length_list[length_id as usize].iter() {
             let len = len as usize;
             if pos + len <= n {
-                if let Some(id) = self.inner.get_bytes(&bytes[pos..pos + len]) {
+                if let Some(id) = self.vocab.get_bytes(&bytes[pos..pos + len]) {
                     return Some((id, len as u32));
                 }
             }
@@ -337,7 +332,7 @@ impl Buckets {
         match self.buckets.len() {
             0 => None,
             1 => {
-                // ponytail: needle = the bucket's shared first byte. Assumes a non-empty prefix
+                // needle = the bucket's shared first byte. Assumes a non-empty prefix
                 // (false only if a lone 1-byte token is the sole holder of its first byte); store
                 // the first byte explicitly if that case ever appears.
                 let needle = self.buckets[0].prefix[0];
@@ -376,6 +371,10 @@ impl Buckets {
                 let t = vreinterpretq_u16_u8(vtstq_u8(m, m));
                 let mut packed = vget_lane_u64(vreinterpret_u64_u8(vshrn_n_u16(t, 4)), 0);
                 while packed != 0 {
+                    // NOTE: this is very specific to our usecase. Since we already loaded the
+                    // 16bytes, we would waste potential check (say 0 an 14 are candidates) if
+                    // we returned early (if packed != 0 -> there is a match)
+                    // So we check here while all lanes still possess the bytes.
                     let lane = packed.trailing_zeros() as usize >> 2;
                     let pos = base + lane;
                     let bucket = self.first_byte_to_bucket_id[bytes[pos] as usize] as u32;
@@ -419,10 +418,10 @@ impl Buckets {
     }
 
     pub fn len(&self) -> usize {
-        self.inner.len()
+        self.vocab.len()
     }
     pub fn is_empty(&self) -> bool {
-        self.inner.is_empty()
+        self.vocab.is_empty()
     }
     /// The bucket metadata (prefix / disc table / length lists), one entry per first-byte group.
     pub fn get_buckets(&self) -> &[Bucket] {
@@ -434,17 +433,17 @@ impl Buckets {
     }
     /// All added-token byte strings + ids (e.g. to rebuild the vocab when adding tokens).
     pub fn get_vocab_bytes(&self) -> Vec<(Vec<u8>, u32)> {
-        self.inner.get_vocab_bytes()
+        self.vocab.get_vocab_bytes()
     }
     /// All added-token strings + ids.
     pub fn get_vocab(&self) -> Vec<(String, u32)> {
-        self.inner.get_vocab()
+        self.vocab.get_vocab()
     }
     pub fn token_to_id(&self, token: &str) -> Option<u32> {
-        self.inner.token_to_id(token)
+        self.vocab.token_to_id(token)
     }
     pub fn id_to_token(&self, id: u32) -> Option<String> {
-        self.inner.id_to_token(id)
+        self.vocab.id_to_token(id)
     }
 }
 

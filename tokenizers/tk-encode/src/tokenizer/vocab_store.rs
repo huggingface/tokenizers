@@ -62,15 +62,17 @@ impl fmt::Debug for VocabStore {
     }
 }
 impl PartialEq for VocabStore {
-    // ponytail: O(n log n) set compare, only used in equality/serde round-trip checks
     fn eq(&self, other: &Self) -> bool {
         if self.len() != other.len() {
             return false;
         }
-        let (mut a, mut b) = (self.get_vocab_bytes(), other.get_vocab_bytes());
-        a.sort();
-        b.sort();
-        a == b
+        // early exit as soon as there is a missmatch
+        for id in 0..self.len() {
+            if self.id_to_token(id as u32) != other.id_to_token(id as u32) {
+                return false;
+            }
+        }
+        false
     }
 }
 
