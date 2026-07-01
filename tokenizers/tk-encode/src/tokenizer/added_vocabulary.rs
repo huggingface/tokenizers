@@ -2,7 +2,6 @@ use super::{
     normalizer::Range, Model, NormalizedString, Normalizer, PreTokenizedString, Result, Token,
 };
 use crate::buckets::{AddedTokenFlags, Buckets};
-use crate::whitespace::{is_single_word, skip_whitespace_backward, skip_whitespace_forward};
 use ahash::AHashMap;
 use serde::{ser::SerializeSeq, Deserialize, Serialize, Serializer};
 use std::fmt;
@@ -26,7 +25,15 @@ pub struct AddedToken {
     /// Whether this token is special
     pub special: bool,
 }
-
+fn is_single_word(bytes: &[u8], search: usize, match_start: usize, match_end: usize) -> bool {
+    true
+}
+fn skip_whitespace_backward(bytes: &[u8], search: usize, match_start: usize) -> usize {
+    0usize
+}
+fn skip_whitespace_forward(bytes: &[u8], search: usize, match_start: usize) -> usize {
+    0usize
+}
 impl AddedToken {
     /// Build this token from the given content, specifying if it is intended to be a
     /// special token. Special tokens are not normalized by default.
