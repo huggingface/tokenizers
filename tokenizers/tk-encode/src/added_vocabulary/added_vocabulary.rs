@@ -500,8 +500,23 @@ impl AddedVocabulary {
     /// Extract added tokens that match against the **raw** input (those with
     /// `normalized = false`, e.g. most special tokens). Mirror of the first
     /// `split` pass in [`Self::extract_and_normalize`].
-    pub fn extract_special_tokens(&self, input: &str) -> Vec<(pipeline::Split, Option<u32>)> {
-        self.extract(input, &self.split_trie)
+    pub fn get_next_special_token(&self, input: &str, normalized: bool) -> Option<(Offsets, u32)> {
+        if input.is_empty() {
+            return None;
+        }
+        let trie = if normalized {
+            self.split_normalized_trie.as_ref()
+        } else {
+            self.split_trie.as_ref()
+        }?;
+        let matched = trie.leftmost_find_iter(input).next()?;
+        let start = matched.start();
+        let end = matched.end();
+        let token_id = matched.value();
+
+        // todo: handle special tokens formatting / lstrip / rstrip skipping
+
+        Some(((start, end), token_id))
     }
 
     /// Extract added tokens that match against the **normalized** text (those with
