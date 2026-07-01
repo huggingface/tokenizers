@@ -41,6 +41,19 @@ impl PreTokenizer for WhitespaceSplit {
     }
 }
 
+impl pipeline::PreTokenizer for WhitespaceSplit {
+    fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Split>) -> Result<()> {
+        pipeline::split(text, out, char::is_whitespace, |is_ws| {
+            if is_ws {
+                SplitPolicy::Remove
+            } else {
+                SplitPolicy::Keep
+            }
+        });
+        Ok(())
+    }
+}
+
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum CharType {
     Whitespace,
@@ -168,6 +181,52 @@ mod tests {
                 res
             );
         }
+    }
+
+    fn pretokenize_split(text: &str) -> Vec<(&str, (u32, u32))> {
+        let pretok = WhitespaceSplit;
+        let mut splits = Vec::new();
+        crate::pipeline::PreTokenizer::pre_tokenize(&pretok, text, &mut splits).unwrap();
+        splits
+            .iter()
+            .map(|s| (&text[s.range()], (s.start, s.end)))
+            .collect()
+    }
+
+    #[test]
+    fn whitespace_split_pipeline() {
+        // same cases as `whitespace_split`, via the pipeline path: only whitespace
+        // splits, punctuation stays attached to its run
+        assert_eq!(
+            pretokenize_split("Hey man!"),
+            vec![("Hey", (0, 3)), ("man!", (4, 8))],
+        );
+        assert_eq!(
+            pretokenize_split("Hey, man, Good?"),
+            vec![("Hey,", (0, 4)), ("man,", (5, 9)), ("Good?", (10, 15))],
+        );
+    }
+
+    #[test]
+    fn whitespace_split_pipeline_edge_cases() {
+        let empty = Vec::<(&str, (u32, u32))>::new();
+        assert_eq!(pretokenize_split(""), empty);
+        assert_eq!(pretokenize_split("   "), empty);
+        assert_eq!(pretokenize_split("a"), vec![("a", (0, 1))]);
+        // leading/trailing/multiple whitespace dropped, runs kept whole
+        assert_eq!(
+            pretokenize_split(" a  b "),
+            vec![("a", (1, 2)), ("b", (4, 5))]
+        );
+        assert_eq!(
+            pretokenize_split("a\tb\nc"),
+            vec![("a", (0, 1)), ("b", (2, 3)), ("c", (4, 5))],
+        );
+        // multibyte: é is 2 bytes -> byte offsets
+        assert_eq!(
+            pretokenize_split("café au lait"),
+            vec![("café", (0, 5)), ("au", (6, 8)), ("lait", (9, 13))],
+        );
     }
 
     #[test]
