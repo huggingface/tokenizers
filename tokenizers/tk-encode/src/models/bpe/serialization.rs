@@ -24,6 +24,7 @@ impl Serialize for BPE {
         model.serialize_field("ignore_merges", &self.ignore_merges)?;
 
         // Then the large ones
+        // TODO: update the file system once we are settled on what we want to save
         let vocab_r: AHashMap<u32, String> = self
             .vocab
             .get_vocab()

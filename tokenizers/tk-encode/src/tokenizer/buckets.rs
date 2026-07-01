@@ -102,7 +102,7 @@ impl Buckets {
     ///  - group token indices by first byte,
     ///  - per group: longest-common-prefix capped at `shortest_len - 1` (so every token has a
     ///    discriminating byte and the "token == prefix" case needs no special handling),
-    ///  - build the post-prefix disc table + per-disc distinct lengths (longest first),
+    ///  - build the post-prefix byte discrimination table + per-byte distinct lengths (longest first),
     ///    then `build()` does the VocabStore (hash pass) + nibble table.
     pub fn from_tokens(tokens: Vec<(Vec<u8>, u32)>) -> Self {
         if tokens.is_empty() {
