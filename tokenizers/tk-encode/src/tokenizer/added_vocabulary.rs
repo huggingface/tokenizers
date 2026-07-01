@@ -28,10 +28,10 @@ pub struct AddedToken {
 fn is_single_word(bytes: &[u8], search: usize, match_start: usize, match_end: usize) -> bool {
     true
 }
-fn skip_whitespace_backward(bytes: &[u8], search: usize, match_start: usize) -> usize {
+fn skip_whitespace_backward(bytes: &[u8], match_start: usize) -> usize {
     0usize
 }
-fn skip_whitespace_forward(bytes: &[u8], search: usize, match_start: usize) -> usize {
+fn skip_whitespace_forward(bytes: &[u8], match_start: usize) -> usize {
     0usize
 }
 impl AddedToken {
