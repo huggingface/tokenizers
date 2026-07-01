@@ -299,7 +299,7 @@ impl PreTokenizedString {
             .collect()
     }
 
-    pub fn into_splits(self) -> Vec<((usize, usize), Option<Vec<Token>>)> {
+    pub fn into_splits(self) -> Vec<(Offsets, Option<Vec<Token>>)> {
         let mut offset = 0;
 
         self.splits
