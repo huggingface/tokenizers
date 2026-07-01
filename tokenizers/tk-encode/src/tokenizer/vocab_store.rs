@@ -212,7 +212,7 @@ impl VocabStore {
         self.entries.is_empty()
     }
 
-    pub fn get_vocab(&self) -> Vec<(String, u32)> {
+    pub fn content(&self) -> Vec<(String, u32)> {
         self.entries
             .iter()
             .filter_map(|m| self.id_to_token(m.id).map(|token| (token, m.id)))
@@ -220,7 +220,7 @@ impl VocabStore {
     }
 
     /// convenient when we want to re-build a vocab
-    pub fn get_vocab_bytes(&self) -> Vec<(Vec<u8>, u32)> {
+    pub fn byte_content(&self) -> Vec<(Vec<u8>, u32)> {
         self.entries
             .iter()
             .filter_map(|m| {
