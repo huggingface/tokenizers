@@ -44,11 +44,7 @@ static ASCII_CLASS: LazyLock<[CharType; 128]> =
     LazyLock::new(|| std::array::from_fn(|b| bert_classify(b as u8 as char)));
 
 impl pipeline::PreTokenizer for BertPreTokenizer {
-    fn pre_tokenize(
-        &self,
-        text: &str,
-        out: &mut Vec<pipeline::Split>,
-    ) -> Result<()> {
+    fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Split>) -> Result<()> {
         let mut start: u32 = 0;
         let mut prev_type: Option<CharType> = None;
 
