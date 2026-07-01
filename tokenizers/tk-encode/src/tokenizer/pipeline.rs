@@ -104,20 +104,25 @@ impl PipelineTokenizer {
         if let Some(normalizer) = &self.normalizer {
             normalizer.normalize(&mut normalized)?;
         }
-        let normalized_chunk = normalized.get();
-
-        // todo: extract special tokens from normalized input
-
-        pre_tokens.clear();
-        self.pre_tokenizer
-            .pre_tokenize(normalized_chunk, pre_tokens)?;
-        for pre_token in pre_tokens.iter() {
-            output.extend(
-                self.model
-                    .tokenize(&normalized_chunk[pre_token.range()])?
-                    .into_iter()
-                    .map(|Token { id, .. }| PipelineToken { id }),
-            );
+        for segment in SpecialSegmentIterator::new(normalized.get(), &self.added_vocabulary, true) {
+            match segment {
+                Segment::SpecialToken(token) => {
+                    output.push(PipelineToken { id: token });
+                }
+                Segment::Text(normalized_chunk) => {
+                    pre_tokens.clear();
+                    self.pre_tokenizer
+                        .pre_tokenize(normalized_chunk, pre_tokens)?;
+                    for pre_token in pre_tokens.iter() {
+                        output.extend(
+                            self.model
+                                .tokenize(&normalized_chunk[pre_token.range()])?
+                                .into_iter()
+                                .map(|Token { id, .. }| PipelineToken { id }),
+                        );
+                    }
+                }
+            }
         }
         Ok(())
     }
@@ -126,28 +131,85 @@ impl PipelineTokenizer {
         let mut output: Vec<PipelineToken> = vec![];
         let mut pre_tokens: Vec<Split> = vec![];
 
-        let mut offset: usize = 0;
+        for segment in SpecialSegmentIterator::new(input, &self.added_vocabulary, false) {
+            match segment {
+                Segment::SpecialToken(token) => {
+                    output.push(PipelineToken { id: token });
+                }
+                Segment::Text(chunk) => {
+                    self.tokenize_chunk(chunk, &mut pre_tokens, &mut output)?;
+                }
+            };
+        }
+        Ok(output)
+    }
+}
 
-        loop {
-            if let Some(((start, end), token)) = self
-                .added_vocabulary
-                .get_next_special_token(&input[offset..], false)
-            {
-                let chunk_to_tokenize = &input[offset..offset + start];
-                if !chunk_to_tokenize.is_empty() {
-                    self.tokenize_chunk(chunk_to_tokenize, &mut pre_tokens, &mut output)?;
-                }
-                output.push(PipelineToken { id: token });
-                offset += end;
-            } else {
-                let chunk_to_tokenize = &input[offset..];
-                if !chunk_to_tokenize.is_empty() {
-                    self.tokenize_chunk(chunk_to_tokenize, &mut pre_tokens, &mut output)?;
-                }
-                break;
-            }
+pub trait PipelinePatternMatcher {
+    fn get_next_special_token(
+        &self,
+        input: &str,
+        normalized: bool,
+    ) -> Option<((usize, usize), u32)>;
+}
+
+pub enum Segment<'a> {
+    Text(&'a str),
+    SpecialToken(u32),
+}
+
+pub struct SpecialSegmentIterator<'a, 'b, PatternMatcher: PipelinePatternMatcher> {
+    input: &'a str,
+    offset: usize,
+    pending: Option<u32>,
+    pattern_matcher: &'b PatternMatcher,
+    normalized: bool,
+}
+
+impl<'a, 'b, PatternMatcher: PipelinePatternMatcher> SpecialSegmentIterator<'a, 'b, PatternMatcher> {
+    fn new(input: &'a str, pattern_matcher: &'b PatternMatcher, normalized: bool) -> Self {
+        Self {
+            input,
+            pattern_matcher,
+            normalized,
+            pending: None,
+            offset: 0,
+        }
+    }
+}
+
+impl<'a, 'b, PatternMatcher: PipelinePatternMatcher> Iterator
+    for SpecialSegmentIterator<'a, 'b, PatternMatcher>
+{
+    type Item = Segment<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // take resets the pending option to None
+        if let Some(special_token) = self.pending.take() {
+            return Some(Segment::SpecialToken(special_token));
         }
 
-        Ok(output)
+        let remaining_input = &self.input[self.offset..];
+        if remaining_input.is_empty() {
+            // We've processed all the input string, return
+            return None;
+        }
+        if let Some(((start, end), token)) = self
+            .pattern_matcher
+            .get_next_special_token(remaining_input, self.normalized)
+        {
+            let before_token = &self.input[self.offset..self.offset + start];
+            if !before_token.is_empty() {
+                // Store the special token to return in the next call
+                self.pending = Some(token);
+                self.offset = self.offset + end;
+                return Some(Segment::Text(before_token));
+            } else {
+                self.offset = self.offset + end;
+                return Some(Segment::SpecialToken(token));
+            }
+        }
+        self.offset = self.input.len();
+        return Some(Segment::Text(remaining_input));
     }
 }
