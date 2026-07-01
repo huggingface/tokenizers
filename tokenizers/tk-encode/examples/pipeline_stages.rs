@@ -7,8 +7,8 @@
 //! as a ground-truth cross-check that the reconstruction captures ~all the work.
 //!
 //! Stages (mirroring the current `encode` + `tokenize_chunk`): special-token
-//! extraction on the raw input -> normalization (+ NormalizedString build) ->
-//! special-token extraction on the normalized chunk -> pre-tokenization ->
+//! extraction on the remaining input (the `get_next_special_token` scan loop)
+//! -> normalization (+ NormalizedString build) -> pre-tokenization ->
 //! tokenization (model.tokenize + extend output). Keep in sync with `encode`.
 //!
 //! Usage:
@@ -19,7 +19,9 @@ use std::convert::TryFrom;
 use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 use std::time::{Duration, Instant};
 
-use tk_encode::pipeline::{PipelinePreTokenizer, PipelineTokenizer, PreTokenizer as PipePreTok, Split};
+use tk_encode::pipeline::{
+    PipelinePreTokenizer, PipelineToken, PipelineTokenizer, PreTokenizer as PipePreTok, Split,
+};
 use tk_encode::{
     AddedVocabulary, Model, ModelWrapper, NormalizedString, Normalizer, NormalizerWrapper,
     PreTokenizerWrapper, Token, Tokenizer,
@@ -79,9 +81,8 @@ impl Acc {
 
 #[derive(Default)]
 struct Stages {
-    extract_raw: Acc,
+    extract: Acc,
     normalize: Acc,
-    extract_norm: Acc,
     pretok: Acc,
     tokenize: Acc,
 }
@@ -187,15 +188,27 @@ fn run_regime(
     let real_wall = start.elapsed();
     let real_allocs = allocs() - a0;
 
-    report(name, tag, inputs.len(), &s, tokens, total_bytes, repeats, real_wall, real_allocs, real_tokens);
+    report(
+        name,
+        tag,
+        inputs.len(),
+        &s,
+        tokens,
+        total_bytes,
+        repeats,
+        real_wall,
+        real_allocs,
+        real_tokens,
+    );
 }
 
 /// Reconstruct `PipelineTokenizer::encode` (+ `tokenize_chunk`) stage-by-stage,
 /// timing + counting allocations for each region. Kept structurally 1-1 with
-/// the real code: fresh `output`/`pre_tokens` Vecs per call, TWO special-token
-/// passes (raw input then each normalized chunk), reused `pre_tokens` via
-/// `clear()`, and a single `output` extended in place. `(u32,u32,u32)` stands
-/// in for `PipelineToken` — identical 12-byte layout / allocation size.
+/// the real code: fresh `output`/`pre_tokens` Vecs per call, a single
+/// `get_next_special_token` scan loop over the remaining input (special tokens
+/// are matched on the raw input only; offsets are discarded), the chunk before
+/// each match tokenized via [`tokenize_chunk`], reused `pre_tokens` via
+/// `clear()`, and a single `output` extended in place.
 fn encode_timed(
     av: &AddedVocabulary,
     normalizer: Option<&NormalizerWrapper>,
@@ -204,60 +217,88 @@ fn encode_timed(
     input: &str,
     s: &mut Stages,
 ) -> usize {
-    let mut output: Vec<(u32, u32, u32)> = Vec::new();
+    let mut output: Vec<PipelineToken> = Vec::new();
     let mut pre_tokens: Vec<Split> = Vec::new();
 
-    // Pass 1: special tokens in the raw input.
-    let (a0, t0) = (allocs(), Instant::now());
-    let raw_splits = av.extract_special_tokens(input);
-    s.extract_raw.add(t0.elapsed(), allocs() - a0);
-
-    for (split, maybe) in raw_splits {
-        if let Some(id) = maybe {
-            output.push((id, split.start, split.end));
-            continue;
-        }
-        let base = split.start;
-
+    let mut offset = 0usize;
+    loop {
         let (a0, t0) = (allocs(), Instant::now());
-        let mut normalized: NormalizedString = input[split.range()].into();
-        if let Some(n) = normalizer {
-            n.normalize(&mut normalized).unwrap();
-        }
-        s.normalize.add(t0.elapsed(), allocs() - a0);
-        let normalized_chunk = normalized.get();
+        let next = av.get_next_special_token(&input[offset..], false);
+        s.extract.add(t0.elapsed(), allocs() - a0);
 
-        // Pass 2: special tokens that only match after normalization.
-        let (a0, t0) = (allocs(), Instant::now());
-        let norm_splits = av.extract_normalized_tokens(normalized_chunk);
-        s.extract_norm.add(t0.elapsed(), allocs() - a0);
-
-        for (nsplit, nmaybe) in norm_splits {
-            if let Some(id) = nmaybe {
-                output.push((id, base + nsplit.start, base + nsplit.end));
-                continue;
+        if let Some(((start, end), token)) = next {
+            let chunk = &input[offset..offset + start];
+            if !chunk.is_empty() {
+                tokenize_chunk(
+                    normalizer,
+                    model,
+                    pretok,
+                    chunk,
+                    &mut pre_tokens,
+                    &mut output,
+                    s,
+                );
             }
-            let chunk = &normalized_chunk[nsplit.range()];
-            let cbase = base + nsplit.start;
-
-            // tokenize_chunk: pre-tokenize (reused buffer) then model.tokenize.
-            let (a0, t0) = (allocs(), Instant::now());
-            pre_tokens.clear();
-            pretok.pre_tokenize(chunk, &mut pre_tokens).unwrap();
-            s.pretok.add(t0.elapsed(), allocs() - a0);
-
-            let (a0, t0) = (allocs(), Instant::now());
-            for pt in pre_tokens.iter() {
-                let pt_base = cbase + pt.start;
-                output.extend(model.tokenize(&chunk[pt.range()]).unwrap().into_iter().map(
-                    |Token { id, offsets: (a, b), .. }| (id, pt_base + a as u32, pt_base + b as u32),
-                ));
+            output.push(PipelineToken { id: token });
+            offset += end;
+        } else {
+            let chunk = &input[offset..];
+            if !chunk.is_empty() {
+                tokenize_chunk(
+                    normalizer,
+                    model,
+                    pretok,
+                    chunk,
+                    &mut pre_tokens,
+                    &mut output,
+                    s,
+                );
             }
-            s.tokenize.add(t0.elapsed(), allocs() - a0);
+            break;
         }
     }
 
     output.len()
+}
+
+/// Mirror of `PipelineTokenizer::tokenize_chunk`: build a `NormalizedString`,
+/// normalize, pre-tokenize (reusing `pre_tokens`), then `model.tokenize` each
+/// pre-token and extend `output` with the ids. Each region is timed +
+/// alloc-counted into `s`.
+#[allow(clippy::too_many_arguments)]
+fn tokenize_chunk(
+    normalizer: Option<&NormalizerWrapper>,
+    model: &ModelWrapper,
+    pretok: &PipelinePreTokenizer,
+    chunk: &str,
+    pre_tokens: &mut Vec<Split>,
+    output: &mut Vec<PipelineToken>,
+    s: &mut Stages,
+) {
+    let (a0, t0) = (allocs(), Instant::now());
+    let mut normalized: NormalizedString = chunk.into();
+    if let Some(n) = normalizer {
+        n.normalize(&mut normalized).unwrap();
+    }
+    s.normalize.add(t0.elapsed(), allocs() - a0);
+    let normalized_chunk = normalized.get();
+
+    let (a0, t0) = (allocs(), Instant::now());
+    pre_tokens.clear();
+    pretok.pre_tokenize(normalized_chunk, pre_tokens).unwrap();
+    s.pretok.add(t0.elapsed(), allocs() - a0);
+
+    let (a0, t0) = (allocs(), Instant::now());
+    for pt in pre_tokens.iter() {
+        output.extend(
+            model
+                .tokenize(&normalized_chunk[pt.range()])
+                .unwrap()
+                .into_iter()
+                .map(|Token { id, .. }| PipelineToken { id }),
+        );
+    }
+    s.tokenize.add(t0.elapsed(), allocs() - a0);
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -276,8 +317,7 @@ fn report(
     let steps = [
         ("tokenization (model + extend)", s.tokenize),
         ("normalization (+ NormString)", s.normalize),
-        ("special-token extract (normalized)", s.extract_norm),
-        ("special-token extract (raw)", s.extract_raw),
+        ("special-token extract", s.extract),
         ("pre-tokenization", s.pretok),
     ];
     let sum_time: Duration = steps.iter().map(|(_, a)| a.time).sum();
@@ -305,7 +345,10 @@ fn report(
             a.allocs as f64 / tokens as f64,
         );
     }
-    println!("  {:-<34} {:->9} {:->7} {:->14} {:->11}", "", "", "", "", "");
+    println!(
+        "  {:-<34} {:->9} {:->7} {:->14} {:->11}",
+        "", "", "", "", ""
+    );
     println!(
         "  {:<34} {:>9.1}  {:>6}   {:>13}  {:>10.3}",
         "sum of steps",
@@ -341,12 +384,12 @@ fn report(
             pct(&s.tokenize),
             pct(&s.normalize),
             pct(&s.pretok),
-            pct(&s.extract_raw) + pct(&s.extract_norm),
+            pct(&s.extract),
             real_allocs as f64 / real_tokens as f64,
             apt(&s.tokenize),
             apt(&s.normalize),
             apt(&s.pretok),
-            apt(&s.extract_raw) + apt(&s.extract_norm),
+            apt(&s.extract),
         );
     }
 }
