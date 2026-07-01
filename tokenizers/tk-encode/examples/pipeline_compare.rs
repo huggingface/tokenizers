@@ -1,6 +1,6 @@
 //! Compare the reference `Tokenizer` (the oracle) against the experimental
-//! `PipelineTokenizer` for correctness (token ids + byte offsets) and
-//! throughput, across two input regimes:
+//! `PipelineTokenizer` for correctness (token ids) and throughput, across two
+//! input regimes:
 //!
 //! * LINES  — one short sequence per line (per-input overhead dominates)
 //! * CHUNKS — lines packed into ~8 KB documents (long sequences; per-input
@@ -112,8 +112,8 @@ fn run_regime(
     Ok(())
 }
 
-/// Encode every input with both tokenizers and compare ids, then (where ids
-/// match) the per-token byte offsets.
+/// Encode every input with both tokenizers and compare token ids. The pipeline
+/// no longer tracks byte offsets, so ids are the only thing to compare.
 fn correctness(
     oracle: &Tokenizer,
     pipeline: &PipelineTokenizer,
@@ -121,14 +121,11 @@ fn correctness(
     unit: &str,
 ) -> Result<()> {
     let mut id_mismatches = 0usize;
-    let mut offset_mismatches = 0usize;
     let mut shown_ids = 0usize;
-    let mut shown_offsets = 0usize;
 
     for input in inputs {
         let expected = oracle.encode(*input, false)?;
         let expected_ids = expected.get_ids();
-        let expected_offsets = expected.get_offsets();
 
         let got = pipeline.encode(input, false)?;
         let got_ids: Vec<u32> = got.iter().map(|t| t.id).collect();
@@ -155,51 +152,18 @@ fn correctness(
                     &got_ids[..got_ids.len().min(diff_at + 6)]
                 );
             }
-            // ids differ => token counts differ => offsets aren't comparable
-            continue;
-        }
-
-        // ids match: compare byte offsets token-for-token
-        let got_offsets: Vec<(usize, usize)> = got
-            .iter()
-            .map(|t| (t.start as usize, t.end as usize))
-            .collect();
-        if expected_offsets != got_offsets.as_slice() {
-            offset_mismatches += 1;
-            if shown_offsets < 5 {
-                shown_offsets += 1;
-                let preview: String = input.chars().take(60).collect();
-                let diff_at = expected_offsets
-                    .iter()
-                    .zip(&got_offsets)
-                    .position(|(a, b)| a != b)
-                    .unwrap_or(0);
-                let end = expected_offsets.len().min(diff_at + 4);
-                println!("  OFFSET MISMATCH on {preview:?} (first diff at token #{diff_at})");
-                println!("    oracle  : {:?}", &expected_offsets[diff_at..end]);
-                println!("    pipeline: {:?}", &got_offsets[diff_at..end]);
-            }
         }
     }
 
     let n = inputs.len();
     let ids_ok = n - id_mismatches;
-    let offsets_ok = ids_ok - offset_mismatches;
     println!("== correctness ==");
     println!(
-        "  ids    : {ids_ok}/{n} {unit}s match ({id_mismatches} mismatch{})",
+        "  ids: {ids_ok}/{n} {unit}s match ({id_mismatches} mismatch{})",
         plural(id_mismatches)
     );
-    println!(
-        "  offsets: {offsets_ok}/{ids_ok} id-matching {unit}s match ({offset_mismatches} mismatch{})",
-        plural(offset_mismatches)
-    );
-    if id_mismatches == 0 && offset_mismatches == 0 {
-        println!("  ✅ ids and offsets are identical to the oracle");
-    } else if id_mismatches == 0 {
-        println!(
-            "  ✅ ids identical; ⚠️  offsets diverge (pipeline emits normalized-space offsets)"
-        );
+    if id_mismatches == 0 {
+        println!("  ✅ ids are identical to the oracle");
     }
     Ok(())
 }
