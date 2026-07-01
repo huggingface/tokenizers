@@ -154,6 +154,7 @@ impl VocabStore {
         }
     }
     pub fn new() -> Self {
+        // convenient to build empty edit later.
         let empty: [u64; 0] = [];
         Self {
             mphf: PtrHash::<u64, Linear>::new(&empty, PtrHashParams::default_fast()),
@@ -163,6 +164,10 @@ impl VocabStore {
             id_to_slot: Box::new([]),
         }
     }
+    /// This function is the equivalent of `get` on a HashaMap, it return the id
+    /// corresponding to the key `q`. Since `mphf` always return a slot, we check
+    /// whether the token indexed by that slot actually match the query. We don't
+    /// care about collisions on query because of this!
     #[inline]
     pub fn get_bytes(&self, q: &[u8]) -> Option<u32> {
         if self.entries.is_empty() {
@@ -173,7 +178,7 @@ impl VocabStore {
         let e = self.entries[slot];
         let (start, len) = (e.start as usize, e.len as usize);
         // Byte equality: confirms `q` really is the token at this slot (perfect hashing only
-        // guarantees a valid slot for in-vocab keys; this rejects collisions and OOV queries).
+        // guarantees a valid slot for in-vocab keys; this rejects collisions and Out Of Vocab queries).
         if len == q.len() && self.bytes[start..start + len] == *q {
             Some(e.id)
         } else {
@@ -200,6 +205,7 @@ impl VocabStore {
 
     #[inline]
     pub fn id_to_token(&self, id: u32) -> Option<String> {
+        // we are not sure its a valid utf8 so if not, adds replacement char
         self.id_to_token_bytes(id)
             .map(|b| String::from_utf8_lossy(b).into_owned())
     }
