@@ -79,8 +79,8 @@ pub struct Buckets {
     // is there a bucket for that byte. This is used to build the nibble matcher and extract
     // on match the bucket corresponding to the byte that was scanned.
     first_byte_to_bucket_id: [u8; 256],
-    // we use optimized SIMD to scan potential special tokens when there are more than 1 bucket.
-    // this is taken from http://0x80.pl/notesen/2018-10-18-simd-byte-lookup.html
+    // we use optimized SIMD instructions (main one being `pshufb`) to scan potential special tokens when there are multiple unique starting bytes, noting that we have one bucket per starting byte.
+    // The algo is taken from http://0x80.pl/notesen/2018-10-18-simd-byte-lookup.html, specifically the "Special case 1 - small sets"
     lo16: [u8; 16],
     hi16: [u8; 16],
     buckets: Box<[Bucket]>,
@@ -188,12 +188,10 @@ impl Buckets {
     // "["  = 0x5b  -> col 5, row b
     // "\t" = 0x09  -> col 0, row 9
     // "\n" = 0x0a  -> col 0, row a
-    // The reason we have lo and hi is because for SIMD
-    // we can't have the index be 16 bits, so lo has 8bits length, hi as well.
-    // The key is also that we don't store the 16x16 grid, just 2x16 u8 (since u8 is up to 8 values)
-    // So the lo[3] = 0b00100100 ->
-    //                  ..x..x..
-    // store the entire row in the u8 format. (0-255)
+    // `pshufb` maps bytes to bytes, so to have a 16bit row  bitmap, we need to split it into two 16x8bit bitmaps. We need two calls to `pshufb` to pull one row of the bitmap.
+    // So the lo[0xc] = 0b00010000 ->
+    //                  ...x....
+    // stores half the row in the u8 format. (0-255)
     fn build_nibble_table(&mut self) {
         // we build the nibble table from the candidate first_byte_to_bucket_id
         let candidates: [bool; 256] = self.first_byte_to_bucket_id.map(|v| v != 0xFF);
@@ -634,7 +632,7 @@ mod tests {
     fn test_build_nibble_table() {
         let mut first_byte_to_bucket = [0xFFu8; 256];
         // spell "toad": t=0x74, o=0x6F, a=0x61, d=0x64
-        //   TOP    collision: o, a, d all have high nibble 6 (same row -> same hi bit)
+        //   TOP    collision: o, a, d all have high nibble 6 (same row -> same hi nibble)
         //   BOTTOM collision: t and d share low nibble 4 (lo16[4] ends up with two bits)
         first_byte_to_bucket[b't' as usize] = 0;
         first_byte_to_bucket[b'o' as usize] = 1;
@@ -644,7 +642,7 @@ mod tests {
         let mut expected_hi16 = [0u8; 16];
         let mut expected_lo16 = [0u8; 16];
 
-        // filling hi goes from 0..16. First match gets the first id.
+        // filling hi goes from 0..=0xF. First match gets the first id.
         expected_hi16[(b'o' >> 4) as usize] = 0b01; // row 6  (o, a, d all share index)
         expected_hi16[(b't' >> 4) as usize] = 0b10; // row 7  (t)
 
