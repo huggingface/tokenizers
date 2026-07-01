@@ -48,9 +48,8 @@ impl pipeline::PreTokenizer for BertPreTokenizer {
         &self,
         text: &str,
         out: &mut Vec<pipeline::Split>,
-        start_offset: Option<u32>,
     ) -> Result<()> {
-        let mut start: u32 = start_offset.unwrap_or(0);
+        let mut start: u32 = 0;
         let mut prev_type: Option<CharType> = None;
 
         for (i, ch) in text.char_indices() {
@@ -66,7 +65,6 @@ impl pipeline::PreTokenizer for BertPreTokenizer {
                         out.push(pipeline::Split {
                             start,
                             end: i as u32,
-                            tokens: None,
                         });
                     }
                     start = i as u32;
@@ -80,7 +78,6 @@ impl pipeline::PreTokenizer for BertPreTokenizer {
                 out.push(pipeline::Split {
                     start,
                     end: text.len() as u32,
-                    tokens: None,
                 });
             }
         }
@@ -96,7 +93,7 @@ mod tests {
     fn pretokenize(text: &str) -> Vec<(&str, (u32, u32))> {
         let pretok = BertPreTokenizer;
         let mut splits = Vec::new();
-        crate::pipeline::PreTokenizer::pre_tokenize(&pretok, text, &mut splits, None).unwrap();
+        crate::pipeline::PreTokenizer::pre_tokenize(&pretok, text, &mut splits).unwrap();
         splits
             .iter()
             .map(|s| (&text[s.range()], (s.start, s.end)))

@@ -1,5 +1,8 @@
-use super::super::{
-    normalizer::Range, Model, NormalizedString, Normalizer, PreTokenizedString, Result, Token,
+use crate::pipeline;
+
+use super::{
+    normalizer::Range, Model, NormalizedString, Normalizer, Offsets, PreTokenizedString, Result,
+    Token,
 };
 use crate::buckets::{AddedTokenFlags, Buckets};
 use crate::pre_tokenizers::whitespace::is_word_char;
@@ -477,6 +480,35 @@ impl AddedVocabulary {
             // since match_bytes goes to the end, this means we reach the end.
             _ => None,
         }
+    }
+
+    fn extract(&self, input: &str, split_re: &MatchingSet) -> Vec<(pipeline::Split, Option<u32>)> {
+        self.find_matches(input, split_re)
+            .into_iter()
+            .map(|(token, (start, end))| {
+                (
+                    pipeline::Split {
+                        start: start as u32,
+                        end: end as u32,
+                    },
+                    token,
+                )
+            })
+            .collect()
+    }
+
+    /// Extract added tokens that match against the **raw** input (those with
+    /// `normalized = false`, e.g. most special tokens). Mirror of the first
+    /// `split` pass in [`Self::extract_and_normalize`].
+    pub fn extract_special_tokens(&self, input: &str) -> Vec<(pipeline::Split, Option<u32>)> {
+        self.extract(input, &self.split_trie)
+    }
+
+    /// Extract added tokens that match against the **normalized** text (those with
+    /// `normalized = true`). Run this on each already-normalized chunk. Mirror of
+    /// the second `split` pass in [`Self::extract_and_normalize`].
+    pub fn extract_normalized_tokens(&self, input: &str) -> Vec<(pipeline::Split, Option<u32>)> {
+        self.extract(input, &self.split_normalized_trie)
     }
 }
 
