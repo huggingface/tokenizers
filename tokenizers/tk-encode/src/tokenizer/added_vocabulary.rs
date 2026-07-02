@@ -25,14 +25,45 @@ pub struct AddedToken {
     /// Whether this token is special
     pub special: bool,
 }
-fn is_single_word(bytes: &[u8], search: usize, match_start: usize, match_end: usize) -> bool {
-    true
+#[inline]
+fn is_word(c: char) -> bool {
+    c.is_alphanumeric() || c == '_'
 }
+#[inline]
+fn is_ws(cp: u32) -> bool {
+    // check if its ascii -> we can answer fast if yes. ASCII rang is < 0x80
+    if cp < 0x80 {
+        cp == 0x20 || (0x09..=0x0d).contains(&cp)
+    } else {
+        char::from_u32(cp).is_some_and(|c| c.is_whitespace())
+    }
+}
+fn is_single_word(bytes: &[u8], search: usize, match_start: usize, match_end: usize) -> bool {
+    // FIXME: we use chr conversion for now, this can be inproved by using bitmap.
+    // This is the equivalent of `\w`, so its letters, numbers and underscore
+    // Since we know the match start and that char is at most 4 byte, we just check if the previous
+    // char is a boudnary
+    let s = unsafe { std::str::from_utf8_unchecked(bytes) };
+    let before_ok = s[search..match_start]
+        .chars()
+        .next_back()
+        .map_or(true, |c| !is_word(c));
+    if !before_ok {
+        return false;
+    };
+    let after_ok = s[match_end..].chars().next().map_or(true, |c| !is_word(c));
+    before_ok && after_ok
+}
+
 fn skip_whitespace_backward(bytes: &[u8], match_start: usize) -> usize {
-    0usize
+    let s = unsafe { std::str::from_utf8_unchecked(bytes) };
+    s[..match_start].trim_end_matches(|c| is_ws(c as u32)).len()
 }
 fn skip_whitespace_forward(bytes: &[u8], match_start: usize) -> usize {
-    0usize
+    let s = unsafe { std::str::from_utf8_unchecked(bytes) };
+    s[match_start..]
+        .trim_start_matches(|c| is_ws(c as u32))
+        .len()
 }
 impl AddedToken {
     /// Build this token from the given content, specifying if it is intended to be a
