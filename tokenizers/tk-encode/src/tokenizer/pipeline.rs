@@ -1,10 +1,13 @@
 use std::convert::TryFrom;
 use std::ops::Range;
 
+use crate::added_vocabulary::bucket_added_vocabulary::{
+    AddedToken as BucketAddedToken, AddedVocabulary as BucketAddedVocabulary,
+};
 use crate::{
     pre_tokenizers::{bert::BertPreTokenizer, whitespace::Whitespace},
-    AddedVocabulary, Model, ModelWrapper, NormalizedString, Normalizer, NormalizerWrapper,
-    PostProcessorWrapper, PreTokenizerWrapper, Token, Tokenizer,
+    Model, ModelWrapper, NormalizedString, Normalizer, NormalizerWrapper, PostProcessorWrapper,
+    PreTokenizerWrapper, Token, Tokenizer,
 };
 
 use super::Result;
@@ -67,9 +70,10 @@ pub trait PipelinePatternMatcher {
     /// `start..end` is its byte range. `normalized` selects whether to match the
     /// tokens declared on normalized or on raw text.
     /// Returns `None` if there is no special tokens in input.
-    fn get_next_special_token(
+    fn extract_next(
         &self,
-        input: &str,
+        full_input: &[u8],
+        search_offset: usize,
         normalized: bool,
     ) -> Option<((usize, usize), u32)>;
 }
@@ -138,19 +142,19 @@ impl<'a, 'b, PatternMatcher: PipelinePatternMatcher> Iterator
             // We've processed all the input string, return
             return None;
         }
-        if let Some(((start, end), token)) = self
-            .pattern_matcher
-            .get_next_special_token(remaining_input, self.normalized)
+        if let Some(((start, end), token)) =
+            self.pattern_matcher
+                .extract_next(self.input.as_bytes(), self.offset, self.normalized)
         {
-            let before_token = &self.input[self.offset..self.offset + start];
+            // `extract_next` positions are absolute in `input`, not relative to `offset`.
+            let before_token = &self.input[self.offset..start];
+            self.offset = end;
             if !before_token.is_empty() {
                 // The iterator returns segments in order: we need to return the chunk of text and then the special token.
                 // Store the special token to return in the next call and return a [`Segment::Text`]
                 self.pending = Some(token);
-                self.offset += end;
                 return Some(Segment::Text(before_token));
             } else {
-                self.offset += end;
                 return Some(Segment::SpecialToken(token));
             }
         }
@@ -163,7 +167,7 @@ impl<'a, 'b, PatternMatcher: PipelinePatternMatcher> Iterator
 /// stages (special-token split → normalize → pre-tokenize → model) over borrowed
 /// ranges to avoid the reference path's allocations.
 pub struct PipelineTokenizer {
-    added_vocabulary: AddedVocabulary,
+    added_vocabulary: BucketAddedVocabulary,
     normalizer: Option<NormalizerWrapper>,
     pre_tokenizer: PipelinePreTokenizer,
     model: ModelWrapper,
@@ -174,6 +178,11 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
     type Error = super::Error;
 
     /// Build a pipeline from an existing [`Tokenizer`], cloning its components.
+    ///
+    /// The base [`Tokenizer`] carries the legacy [`crate::AddedVocabulary`]; the pipeline uses the
+    /// fast bucket [`BucketAddedVocabulary`], so we rebuild it from the tokenizer's added tokens.
+    /// Adding them in id order preserves ids (tokens present in the model reuse their model id, the
+    /// rest keep their dense order), so the pipeline emits the same ids as the reference tokenizer.
     fn try_from(tok: &Tokenizer) -> Result<Self> {
         let pre_tokenizer = match tok.get_pre_tokenizer() {
             None => PipelinePreTokenizer::None,
@@ -187,8 +196,26 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
             }
         };
 
+        let legacy_av = tok.get_added_vocabulary();
+        let mut added_tokens: Vec<_> = legacy_av.get_added_tokens_decoder().iter().collect();
+        added_tokens.sort_by_key(|(id, _)| **id);
+        let mut added_vocabulary = BucketAddedVocabulary::new();
+        added_vocabulary.add_tokens(
+            added_tokens.into_iter().map(|(_, t)| BucketAddedToken {
+                content: t.content.clone(),
+                single_word: t.single_word,
+                lstrip: t.lstrip,
+                rstrip: t.rstrip,
+                normalized: t.normalized,
+                special: t.special,
+            }),
+            tok.get_model(),
+            tok.get_normalizer(),
+        )?;
+        added_vocabulary.set_encode_special_tokens(legacy_av.get_encode_special_tokens());
+
         Ok(Self {
-            added_vocabulary: tok.get_added_vocabulary().clone(),
+            added_vocabulary,
             normalizer: tok.get_normalizer().cloned(),
             pre_tokenizer,
             model: tok.get_model().clone(),
@@ -255,5 +282,49 @@ impl PipelineTokenizer {
             };
         }
         Ok(output)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct FixedMatcher(Vec<((usize, usize), u32)>);
+    impl PipelinePatternMatcher for FixedMatcher {
+        fn extract_next(
+            &self,
+            _bytes: &[u8],
+            search_offset: usize,
+            _normalized: bool,
+        ) -> Option<((usize, usize), u32)> {
+            self.0
+                .iter()
+                .find(|((start, _), _)| *start >= search_offset)
+                .copied()
+        }
+    }
+
+    #[test]
+    fn segment_iterator_yields_text_and_specials_in_order() {
+        let input = "aa<s>bb<s>cc";
+        let matcher = FixedMatcher(vec![((2, 5), 0), ((7, 10), 1)]);
+
+        let segments: Vec<_> = SpecialSegmentIterator::new(input, &matcher, false)
+            .map(|segment| match segment {
+                Segment::Text(text) => (Some(text), None),
+                Segment::SpecialToken(id) => (None, Some(id)),
+            })
+            .collect();
+
+        assert_eq!(
+            segments,
+            vec![
+                (Some("aa"), None),
+                (None, Some(0)),
+                (Some("bb"), None),
+                (None, Some(1)),
+                (Some("cc"), None),
+            ]
+        );
     }
 }

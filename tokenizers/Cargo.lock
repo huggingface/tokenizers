@@ -2305,7 +2305,7 @@ dependencies = [
  "ahash",
  "assert_approx_eq",
  "compact_str",
- "criterion",
+ "criterion 0.6.0",
  "daachorse",
  "dary_heap",
  "derive_builder",
