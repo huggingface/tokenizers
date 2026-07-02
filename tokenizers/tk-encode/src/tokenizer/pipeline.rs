@@ -67,9 +67,10 @@ pub trait PipelinePatternMatcher {
     /// `start..end` is its byte range. `normalized` selects whether to match the
     /// tokens declared on normalized or on raw text.
     /// Returns `None` if there is no special tokens in input.
-    fn get_next_special_token(
+    fn extract_next(
         &self,
-        input: &str,
+        full_input: &[u8],
+        search_offset: usize,
         normalized: bool,
     ) -> Option<((usize, usize), u32)>;
 }
@@ -138,9 +139,9 @@ impl<'a, 'b, PatternMatcher: PipelinePatternMatcher> Iterator
             // We've processed all the input string, return
             return None;
         }
-        if let Some(((start, end), token)) = self
-            .pattern_matcher
-            .get_next_special_token(remaining_input, self.normalized)
+        if let Some(((start, end), token)) =
+            self.pattern_matcher
+                .extract_next(self.input.as_bytes(), self.offset, self.normalized)
         {
             let before_token = &self.input[self.offset..self.offset + start];
             if !before_token.is_empty() {

@@ -1,9 +1,7 @@
+use crate::normalizer::Range;
 use crate::pipeline::PipelinePatternMatcher;
+use crate::{Model, NormalizedString, Normalizer, PreTokenizedString, Result, Token};
 
-use super::{
-    normalizer::Range, Model, NormalizedString, Normalizer, Offsets, PreTokenizedString, Result,
-    Token,
-};
 use crate::buckets::{AddedTokenFlags, Buckets};
 use crate::pre_tokenizers::whitespace::is_word_char;
 use ahash::AHashMap;
@@ -445,13 +443,15 @@ impl AddedVocabulary {
         .unwrap();
         pre
     }
+}
 
-    pub fn extract_next(
+impl PipelinePatternMatcher for AddedVocabulary {
+    fn extract_next(
         &self,
         bytes: &[u8],
         search: usize,
         normalized: bool,
-    ) -> Option<(u32, u32, u32)> {
+    ) -> Option<((usize, usize), u32)> {
         let vocab = if normalized {
             &self.vocab
         } else {
@@ -475,35 +475,11 @@ impl AddedVocabulary {
                 if self.token_metadata[id as usize].rstrip {
                     match_end = skip_whitespace_forward(bytes, match_end)
                 }
-                Some((match_start as u32, match_end as u32, id))
+                Some(((match_start, match_end), id))
             }
             // since match_bytes goes to the end, this means we reach the end.
             _ => None,
         }
-    }
-}
-
-impl PipelinePatternMatcher for AddedVocabulary {
-    /// Leftmost match from the added-token trie (normalized or raw, per the flag).
-    fn get_next_special_token(
-        &self,
-        input: &str,
-        normalized: bool,
-    ) -> Option<((usize, usize), u32)> {
-        if input.is_empty() {
-            return None;
-        }
-        let trie = if normalized {
-            self.split_normalized_trie.as_ref()
-        } else {
-            self.split_trie.as_ref()
-        }?;
-        let matched = trie.leftmost_find_iter(input).next()?;
-        let start = matched.start();
-        let end = matched.end();
-        let token_id = matched.value();
-
-        Some(((start, end), token_id))
     }
 }
 
