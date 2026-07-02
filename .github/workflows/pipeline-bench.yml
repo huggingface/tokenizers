@@ -1,0 +1,168 @@
+name: Pipeline Benchmark
+
+# Comparative benchmark: reference `Tokenizer` vs experimental
+# `PipelineTokenizer`, across every corpus in data/fixtures/ (13 non-Latin
+# scripts + English + code/math/agentic modalities) on ~10 kB inputs — the
+# regime where per-input overhead is amortized.
+#
+# Runs on pushes to the base branch, and on demand: comment "/pipeline-bench"
+# on a PR (see pipeline-bench-trigger.yml) or dispatch manually.
+
+on:
+  push:
+    branches: [feat/train_encode_split]
+    paths:
+      - "tokenizers/tk-encode/**"
+      - "tokenizers/src/**"
+      - ".github/workflows/pipeline-bench.yml"
+      - ".github/scripts/render_pipeline_bench.py"
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "PR number to post the report comment to (optional)"
+        required: false
+        type: string
+      check_run_id:
+        description: "Check run ID to update with results (set by pipeline-bench-trigger)"
+        required: false
+        type: string
+      head_sha:
+        description: "PR head SHA for the check run (set by pipeline-bench-trigger)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+
+env:
+  RUSTC_WRAPPER: sccache
+  SCCACHE_GHA_ENABLED: "true"
+
+jobs:
+  pipeline-bench:
+    name: Tokenizer vs PipelineTokenizer
+    # Same dedicated runner group as benchmarks.yml — shared 2-vCPU runners
+    # produce noisy timings. The comparison is within-run (both impls, same
+    # machine, interleaved), so absolute noise matters less than for baselines,
+    # but keep the environment consistent anyway.
+    runs-on:
+      group: aws-general-8-plus
+    defaults:
+      run:
+        working-directory: tokenizers
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Mark check run in progress
+        if: inputs.check_run_id != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api "repos/${{ github.repository }}/check-runs/${{ inputs.check_run_id }}" \
+            -X PATCH \
+            -f "status=in_progress" \
+            -f "output[title]=Pipeline benchmark running" \
+            -f "output[summary]=Compiling and benchmarking all fixtures..."
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      # cairosvg (chart rendering) dlopens the system libcairo, which the
+      # aws-general-8-plus runner image doesn't ship
+      - name: Install libcairo
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libcairo2
+
+      - name: Download fixtures
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: make fixtures data/bert-wiki.json HF="uvx --from huggingface_hub hf"
+
+      - name: Run comparative benchmark
+        run: |
+          cargo run --release -p tk-encode --example fixture_bench > pipeline_bench.json
+          cat pipeline_bench.json
+
+      - name: Render report
+        id: render
+        run: |
+          base_url="https://huggingface.co/datasets/hf-internal-testing/tokenizers-bench/resolve/main/charts"
+          python3 ${{ github.workspace }}/.github/scripts/render_pipeline_bench.py \
+            pipeline_bench.json \
+            --subtitle "bert-wiki WordPiece · ~10 kB inputs · single thread · ${{ inputs.head_sha || github.sha }}" \
+            --img-light-url "$base_url/pipeline-${{ github.run_id }}-light.png" \
+            --img-dark-url "$base_url/pipeline-${{ github.run_id }}-dark.png"
+          uvx --with cairosvg python -c "
+          import cairosvg
+          for m in ('light', 'dark'):
+              cairosvg.svg2png(url=f'pipeline_bench_{m}.svg', write_to=f'pipeline_bench_{m}.png', scale=2)
+          "
+
+      - name: Upload charts to HF Hub
+        continue-on-error: true
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          for m in light dark; do
+            uvx --from huggingface_hub hf upload hf-internal-testing/tokenizers-bench \
+              "pipeline_bench_${m}.png" "charts/pipeline-${{ github.run_id }}-${m}.png" --repo-type dataset
+          done
+
+      - name: Write step summary
+        run: cat pipeline_bench.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Post report to PR
+        if: inputs.pr_number != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          existing=$(gh api "repos/${{ github.repository }}/issues/${{ inputs.pr_number }}/comments" \
+            --jq '.[] | select(.body | startswith("## PipelineTokenizer benchmark")) | .id' | head -1)
+          if [ -n "$existing" ]; then
+            gh api "repos/${{ github.repository }}/issues/comments/$existing" \
+              -X PATCH -F "body=@pipeline_bench.md"
+          else
+            gh api "repos/${{ github.repository }}/issues/${{ inputs.pr_number }}/comments" \
+              -F "body=@pipeline_bench.md"
+          fi
+
+      # Broadest correctness net we have: id-equality across every script and
+      # modality. A divergence is a bug even when the speedup looks great.
+      - name: Fail on id mismatches
+        run: |
+          python3 -c "
+          import json, sys
+          bad = [r['fixture'] for r in json.load(open('pipeline_bench.json')) if not r['ids_match']]
+          sys.exit(f'ids diverge on: {bad}' if bad else 0)
+          "
+
+      - name: Complete check run
+        if: always() && inputs.check_run_id != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api "repos/${{ github.repository }}/check-runs/${{ inputs.check_run_id }}" \
+            -X PATCH \
+            -f "status=completed" \
+            -f "conclusion=${{ job.status == 'success' && 'success' || 'failure' }}" \
+            -f "output[title]=Pipeline benchmark results" \
+            -F "output[summary]=@pipeline_bench.md" || true
+
+      - name: Upload results artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: pipeline-bench
+          path: |
+            tokenizers/pipeline_bench.json
+            tokenizers/pipeline_bench.md
+            tokenizers/pipeline_bench_*.svg
+            tokenizers/pipeline_bench_*.png
+          retention-days: 30
