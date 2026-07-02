@@ -35,7 +35,7 @@ pub use crate::normalizers::NormalizerWrapper;
 pub use crate::pre_tokenizers::PreTokenizerWrapper;
 pub use crate::processors::PostProcessorWrapper;
 // And some other types
-use crate::added_vocabulary::{AddedToken, AddedVocabulary};
+pub use crate::added_vocabulary::{AddedToken, AddedVocabulary};
 pub use crate::utils::iter::LinesWithEnding;
 pub use crate::utils::padding::{pad_encodings, PaddingDirection, PaddingParams, PaddingStrategy};
 pub use crate::utils::truncation::{

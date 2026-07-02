@@ -32,13 +32,13 @@ struct Entry {
 /// Example:
 ///
 /// ```
-/// use tk-encode::tokenizer::vocab_store::VocabStore;
+/// use tk_encode::added_vocabulary::vocab_store::VocabStore;
 /// let vocab = VocabStore::build(vec![
 ///     (b"a".to_vec(), 0),
 ///     (b"bb".to_vec(), 5),
 ///     (b"ccc".to_vec(), 100),
 /// ]);
-/// vocab.token_to_id("a".to_string());
+/// vocab.token_to_id("a");
 /// vocab.id_to_token(100);
 #[derive(Clone)]
 pub struct VocabStore {
@@ -72,7 +72,7 @@ impl PartialEq for VocabStore {
                 return false;
             }
         }
-        false
+        true
     }
 }
 

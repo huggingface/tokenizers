@@ -493,7 +493,7 @@ mod bench {
                 }
             }
             for g in by_first_byte.iter_mut() {
-                g.sort_by(|a, b| b.0.len().cmp(&a.0.len())); // longest first -> first hit is longest
+                g.sort_by_key(|(v, _)| std::cmp::Reverse(v.len())); // longest first -> first hit is longest
             }
             Self { by_first_byte }
         }
