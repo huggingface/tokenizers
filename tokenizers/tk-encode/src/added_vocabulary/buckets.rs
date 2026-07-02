@@ -1,4 +1,4 @@
-use crate::vocab_store::VocabStore;
+use crate::bucket_vocab_store::BucketVocabStore;
 
 #[derive(Clone, PartialEq, Debug, Default)]
 pub struct AddedTokenFlags {
@@ -86,7 +86,7 @@ pub struct Buckets {
     buckets: Box<[Bucket]>,
     // efficient AHashMap equivalent build on the premise that we know in advance all the keys: we
     // are in a close addressing problem.
-    vocab: VocabStore,
+    vocab: BucketVocabStore,
 }
 
 impl Buckets {
@@ -96,7 +96,7 @@ impl Buckets {
             lo16: [0; 16],
             hi16: [0; 16],
             buckets: Box::default(),
-            vocab: VocabStore::new(),
+            vocab: BucketVocabStore::new(),
         }
     }
     /// Build the matcher from sorted `tokens`, the first-byte->bucket table, and the buckets.
@@ -105,7 +105,7 @@ impl Buckets {
         first_byte_to_bucket_id: [u8; 256],
         buckets: Box<[Bucket]>,
     ) -> Self {
-        let vocab = VocabStore::build(tokens);
+        let vocab = BucketVocabStore::build(tokens);
         let mut new = Self {
             first_byte_to_bucket_id,
             lo16: [0; 16],
@@ -493,7 +493,7 @@ mod bench {
                 }
             }
             for g in by_first_byte.iter_mut() {
-                g.sort_by(|a, b| b.0.len().cmp(&a.0.len())); // longest first -> first hit is longest
+                g.sort_by_key(|(v, _)| std::cmp::Reverse(v.len())); // longest first -> first hit is longest
             }
             Self { by_first_byte }
         }

@@ -1,9 +1,8 @@
-//! Added-vocabulary subsystem: the `AddedVocabulary`/`AddedToken` logic plus the two structures it
-//! relies on — the MPHF `VocabStore` and the special-token `Buckets` matcher.
-#[allow(clippy::module_inception)]
-// keep the AddedVocabulary logic in its own file within this folder
-mod added_vocabulary;
+//! Fast-path token structures for the experimental `PipelineTokenizer`, parked here until the
+//! pipeline PR wires them in: the MPHF [`bucket_vocab_store::BucketVocabStore`], the special-token
+//! [`buckets::Buckets`] matcher, and the bucket-based [`bucket_added_vocabulary::AddedVocabulary`].
+//! The legacy `Tokenizer` path uses `crate::tokenizer::AddedVocabulary` instead; these are not
+//! re-exported at the crate root so they don't collide with it.
+pub mod bucket_added_vocabulary;
+pub mod bucket_vocab_store;
 pub mod buckets;
-pub mod vocab_store;
-
-pub use added_vocabulary::*;
