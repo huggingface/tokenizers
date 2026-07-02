@@ -2325,6 +2325,7 @@ dependencies = [
  "rayon",
  "rayon-cond",
  "regex",
+ "regex-automata",
  "regex-syntax",
  "serde",
  "serde_json",
