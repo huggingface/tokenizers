@@ -484,7 +484,11 @@ impl AddedVocabulary {
 }
 
 impl PipelinePatternMatcher for AddedVocabulary {
-    fn get_next_special_token(&self, input: &str, normalized: bool) -> Option<((usize, usize), u32)> {
+    fn get_next_special_token(
+        &self,
+        input: &str,
+        normalized: bool,
+    ) -> Option<((usize, usize), u32)> {
         if input.is_empty() {
             return None;
         }
@@ -497,7 +501,6 @@ impl PipelinePatternMatcher for AddedVocabulary {
         let start = matched.start();
         let end = matched.end();
         let token_id = matched.value();
-
 
         Some(((start, end), token_id))
     }

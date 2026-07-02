@@ -166,7 +166,9 @@ pub struct SpecialSegmentIterator<'a, 'b, PatternMatcher: PipelinePatternMatcher
     normalized: bool,
 }
 
-impl<'a, 'b, PatternMatcher: PipelinePatternMatcher> SpecialSegmentIterator<'a, 'b, PatternMatcher> {
+impl<'a, 'b, PatternMatcher: PipelinePatternMatcher>
+    SpecialSegmentIterator<'a, 'b, PatternMatcher>
+{
     fn new(input: &'a str, pattern_matcher: &'b PatternMatcher, normalized: bool) -> Self {
         Self {
             input,
@@ -202,14 +204,14 @@ impl<'a, 'b, PatternMatcher: PipelinePatternMatcher> Iterator
             if !before_token.is_empty() {
                 // Store the special token to return in the next call
                 self.pending = Some(token);
-                self.offset = self.offset + end;
+                self.offset += end;
                 return Some(Segment::Text(before_token));
             } else {
-                self.offset = self.offset + end;
+                self.offset += end;
                 return Some(Segment::SpecialToken(token));
             }
         }
         self.offset = self.input.len();
-        return Some(Segment::Text(remaining_input));
+        Some(Segment::Text(remaining_input))
     }
 }
