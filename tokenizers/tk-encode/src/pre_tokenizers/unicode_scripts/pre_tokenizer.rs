@@ -1,3 +1,6 @@
+use std::sync::LazyLock;
+
+use crate::pipeline;
 use crate::pre_tokenizers::unicode_scripts::scripts::{get_script, Script};
 use crate::tokenizer::{normalizer::Range, PreTokenizedString, PreTokenizer, Result};
 use crate::utils::macro_rules_attribute;
@@ -76,6 +79,48 @@ impl PreTokenizer for UnicodeScripts {
     }
 }
 
+static BMP_SCRIPT: LazyLock<[Script; 0x10000]> = LazyLock::new(|| {
+    std::array::from_fn(|i| char::from_u32(i as u32).map_or(Script::Common, fixed_script))
+});
+
+impl pipeline::PreTokenizer for UnicodeScripts {
+    fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Split>) -> Result<()> {
+        let mut start = None;
+        let mut last_script = None;
+
+        for (i, ch) in text.char_indices() {
+            let cp = ch as u32;
+            let script = if cp < 0x10000 {
+                BMP_SCRIPT[cp as usize]
+            } else {
+                fixed_script(ch)
+            };
+            if script == Script::Any {
+                continue;
+            }
+            if last_script.is_none_or(|ls| ls != script) {
+                if let Some(s) = start {
+                    out.push(pipeline::Split {
+                        start: s,
+                        end: i as u32,
+                    });
+                }
+                start = Some(i as u32);
+            }
+            last_script = Some(script);
+        }
+
+        if let Some(start) = start {
+            out.push(pipeline::Split {
+                start,
+                end: text.len() as u32,
+            });
+        }
+
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -126,6 +171,50 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![("Apples are ", (0, 11)), ("りんご 林檎", (11, 27))]
         );
+    }
+
+    fn pretokenize(text: &str) -> Vec<(&str, (u32, u32))> {
+        let pretok = UnicodeScripts;
+        let mut splits = Vec::new();
+        crate::pipeline::PreTokenizer::pre_tokenize(&pretok, text, &mut splits).unwrap();
+        splits
+            .iter()
+            .map(|s| (&text[s.range()], (s.start, s.end)))
+            .collect()
+    }
+
+    #[test]
+    fn pipeline_basic() {
+        // same oracle as the legacy `basic` test: kana+kanji collapse to one Han
+        // run, the CJK full stop is its own script, then Latin.
+        assert_eq!(
+            pretokenize("どこで生れ。Yes"),
+            vec![("どこで生れ", (0, 15)), ("。", (15, 18)), ("Yes", (18, 21))],
+        );
+    }
+
+    #[test]
+    fn pipeline_spaces_are_neutral() {
+        // spaces (`Script::Any`) never trigger a boundary and stick to the run
+        // around them; only the Latin -> Japanese change splits.
+        assert_eq!(
+            pretokenize("Apples are りんご 林檎"),
+            vec![("Apples are ", (0, 11)), ("りんご 林檎", (11, 27))],
+        );
+        // a trailing space stays attached to the preceding run
+        assert_eq!(pretokenize("hi 京"), vec![("hi ", (0, 3)), ("京", (3, 6))],);
+    }
+
+    #[test]
+    fn pipeline_edge_cases() {
+        let empty = Vec::<(&str, (u32, u32))>::new();
+        assert_eq!(pretokenize(""), empty);
+        // all-neutral input produces nothing (no real script ever seen)
+        assert_eq!(pretokenize("   "), empty);
+        // single script -> one split
+        assert_eq!(pretokenize("hello"), vec![("hello", (0, 5))]);
+        // leading spaces are dropped (nothing before the first real script)
+        assert_eq!(pretokenize(" hi"), vec![("hi", (1, 3))]);
     }
 
     #[test]
