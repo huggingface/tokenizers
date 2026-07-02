@@ -324,10 +324,7 @@ mod tests {
         let vocab = BucketVocabStore::build(vec![(b"hi".to_vec(), 0), (b"yo".to_vec(), 1)]);
         let mut got = vocab.get_vocab();
         got.sort();
-        assert_eq!(
-            got,
-            vec![("hi".to_string(), 0), ("yo".to_string(), 1)]
-        );
+        assert_eq!(got, vec![("hi".to_string(), 0), ("yo".to_string(), 1)]);
         assert_eq!(vocab.content(), vocab.get_vocab());
         let mut bytes = vocab.byte_content();
         bytes.sort();

@@ -1,6 +1,4 @@
-use super::super::{
-    normalizer::Range, Model, NormalizedString, Normalizer, PreTokenizedString, Result, Token,
-};
+use super::super::{Model, NormalizedString, Normalizer, Result};
 use crate::buckets::{AddedTokenFlags, Buckets};
 use crate::pre_tokenizers::whitespace::is_word_char;
 use ahash::AHashMap;
@@ -188,7 +186,7 @@ impl fmt::Debug for AddedVocabulary {
 impl AddedVocabulary {
     pub fn new() -> Self {
         Self {
-            encode_special_tokens: false,
+            encode_special_tokens: true,
             token_metadata: Box::new([]),
             normalized_vocab: Buckets::new(),
             vocab: Buckets::new(),
@@ -378,100 +376,6 @@ impl AddedVocabulary {
         Ok(total - ignored)
     }
 
-    pub fn extract_and_normalize<N: Normalizer>(
-        &self,
-        normalizer: Option<&N>,
-        sequence: &str,
-    ) -> PreTokenizedString {
-        let mut pre = PreTokenizedString::from(sequence);
-        pre.split(|_, whole| {
-            let mut splits: Vec<(NormalizedString, Option<Vec<Token>>)> = Vec::new();
-            // Non-normalized tokens (e.g. special tokens) are matched on the raw text, so a
-            // normalizer can't alter them before they're found.
-            for (piece, id) in self.matches(&self.vocab, &whole) {
-                if let Some(id) = id {
-                    let token = Token::new(id, piece.get().to_string(), (0, piece.get().len()));
-                    splits.push((piece, Some(vec![token])));
-                    continue;
-                }
-                // The text in between is normalized, then normalized tokens are matched on it.
-                let mut piece = piece;
-                if let Some(normalizer) = normalizer {
-                    normalizer.normalize(&mut piece)?;
-                }
-                for (sub, id) in self.matches(&self.normalized_vocab, &piece) {
-                    let tokens =
-                        id.map(|id| vec![Token::new(id, sub.get().to_string(), (0, sub.get().len()))]);
-                    splits.push((sub, tokens));
-                }
-            }
-            Ok(splits)
-        })
-        .unwrap();
-        pre
-    }
-
-    /// Slice `normalized` into text runs interleaved with the added tokens found in `vocab`,
-    /// honoring each token's `single_word` / `lstrip` / `rstrip` metadata. Matched spans carry
-    /// their token id; the text between them carries `None`.
-    fn matches(
-        &self,
-        vocab: &Buckets,
-        normalized: &NormalizedString,
-    ) -> Vec<(NormalizedString, Option<u32>)> {
-        let bytes = normalized.get().as_bytes();
-        let mut spans: Vec<(usize, usize, Option<u32>)> = Vec::new();
-        let mut emit = 0;
-        let mut search = 0;
-        while search < bytes.len() {
-            // match_bytes positions are relative to the slice we passed (&bytes[search..]).
-            match vocab.match_bytes(&bytes[search..]) {
-                Some((id, match_start, match_len)) if match_len > 0 => {
-                    let mut match_start = search + match_start as usize;
-                    let mut match_end = match_start + match_len as usize;
-                    // When encoding special tokens as plain text, leave them in the surrounding
-                    // run instead of carving them out.
-                    if self.encode_special_tokens && self.token_metadata[id as usize].special {
-                        search = match_end;
-                        continue;
-                    }
-                    // single_word: reject unless the token is a standalone word (neither neighbour
-                    // char is a word char). Checked on the raw byte bounds, before any strip.
-                    if self.token_metadata[id as usize].single_word
-                        && !is_single_word(bytes, search, match_start, match_end)
-                    {
-                        search = match_start + 1; // resume just past the rejected match
-                        continue;
-                    }
-                    if self.token_metadata[id as usize].lstrip {
-                        match_start =
-                            skip_whitespace_backward(&bytes[..match_end], match_start).max(emit)
-                    }
-                    if match_start > emit {
-                        spans.push((emit, match_start, None));
-                    }
-                    if self.token_metadata[id as usize].rstrip {
-                        match_end = skip_whitespace_forward(bytes, match_end)
-                    }
-                    spans.push((match_start, match_end, Some(id)));
-                    emit = match_end;
-                    search = match_end;
-                }
-                // since match_bytes goes to the end, no match means we reached the end.
-                _ => break,
-            }
-        }
-        if emit < bytes.len() {
-            spans.push((emit, bytes.len(), None));
-        }
-        spans
-            .into_iter()
-            .filter_map(|(start, end, id)| {
-                Some((normalized.slice(Range::Normalized(start..end))?, id))
-            })
-            .collect()
-    }
-
     pub fn extract_next(
         &self,
         bytes: &[u8],
@@ -479,9 +383,9 @@ impl AddedVocabulary {
         normalized: bool,
     ) -> Option<(u32, u32, u32)> {
         let vocab = if normalized {
-            &self.vocab
-        } else {
             &self.normalized_vocab
+        } else {
+            &self.vocab
         };
         match vocab.match_bytes(&bytes[search..]) {
             Some((id, match_start, match_len)) if match_len > 0 => {
@@ -549,10 +453,8 @@ impl Serialize for AddedVocabulary {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::normalizers::byte_level::ByteLevel as ByteLevelNormalizer;
-    use crate::normalizers::utils::Lowercase;
     use crate::normalizers::NormalizerWrapper;
-    use crate::{OffsetReferential, OffsetType, Result, Token};
+    use crate::{Result, Token};
     use std::collections::HashMap;
     use std::path::{Path, PathBuf};
 
@@ -578,21 +480,6 @@ mod tests {
                 vocab,
             }
         }
-    }
-
-    fn simplify_output(result: &'_ PreTokenizedString) -> Vec<(&'_ str, Option<Vec<u32>>)> {
-        result
-            .get_splits(OffsetReferential::Original, OffsetType::Byte)
-            .into_iter()
-            .map(|(s, _, tokens)| {
-                (
-                    s,
-                    tokens
-                        .as_ref()
-                        .map(|t| t.iter().map(|t| t.id).collect::<Vec<_>>()),
-                )
-            })
-            .collect::<Vec<_>>()
     }
 
     impl Model for ModelMock {
@@ -755,326 +642,82 @@ mod tests {
     }
 
     #[test]
-    fn can_extract_added_tokens() {
-        // Is able to extract both normal and special tokens
+    fn extract_next_routes_by_normalized_flag() {
         let model = ModelMock::new(&[]);
         let mut vocab = AddedVocabulary::new();
-        let normalizer: Option<&NormalizerWrapper> = None;
-
+        let none: Option<&NormalizerWrapper> = None;
+        // special token (normalized=false) -> `vocab`, matched on raw text
         vocab
-            .add_tokens(
-                [
-                    AddedToken::from("my", false),
-                    AddedToken::from("name", false),
-                ],
-                &model,
-                normalizer,
-            )
+            .add_special_tokens([AddedToken::from("[CLS]", true)], &model, none)
             .unwrap();
+        // regular token (normalized=true) -> `normalized_vocab`, matched on normalized text
+        vocab
+            .add_tokens([AddedToken::from("my", false)], &model, none)
+            .unwrap();
+        let cls = vocab.token_to_id("[CLS]", &model).unwrap();
+        let my = vocab.token_to_id("my", &model).unwrap();
+
+        // normalized=false searches the raw `vocab`
+        assert_eq!(vocab.extract_next(b"[CLS]", 0, false), Some((0, 5, cls)));
+        assert_eq!(vocab.extract_next(b"my", 0, false), None);
+        // normalized=true searches `normalized_vocab`
+        assert_eq!(vocab.extract_next(b"my", 0, true), Some((0, 2, my)));
+        assert_eq!(vocab.extract_next(b"[CLS]", 0, true), None);
+    }
+
+    #[test]
+    fn extract_next_finds_at_offset_and_returns_none_past_match() {
+        let model = ModelMock::new(&[]);
+        let mut vocab = AddedVocabulary::new();
+        let none: Option<&NormalizerWrapper> = None;
+        vocab
+            .add_special_tokens([AddedToken::from("<s>", true)], &model, none)
+            .unwrap();
+        let id = vocab.token_to_id("<s>", &model).unwrap();
+
+        // match starts partway through the input
+        assert_eq!(vocab.extract_next(b"ab<s>cd", 0, false), Some((2, 5, id)));
+        // searching from the match offset still finds it
+        assert_eq!(vocab.extract_next(b"ab<s>cd", 2, false), Some((2, 5, id)));
+        // searching past the only match, or with no match at all -> None
+        assert_eq!(vocab.extract_next(b"ab<s>cd", 5, false), None);
+        assert_eq!(vocab.extract_next(b"abcd", 0, false), None);
+    }
+
+    #[test]
+    fn extract_next_applies_lstrip_and_rstrip() {
+        let model = ModelMock::new(&[]);
+        let mut vocab = AddedVocabulary::new();
+        let none: Option<&NormalizerWrapper> = None;
         vocab
             .add_special_tokens(
-                [
-                    AddedToken::from("[CLS]", true),
-                    AddedToken::from("[SEP]", true),
-                ],
+                [AddedToken::from("<mask>", true).lstrip(true).rstrip(true)],
                 &model,
-                normalizer,
+                none,
             )
             .unwrap();
-
-        let result = vocab.extract_and_normalize(normalizer, "[CLS] My name is Anthony [SEP]");
+        let id = vocab.token_to_id("<mask>", &model).unwrap();
+        // the match grows to swallow the surrounding whitespace: " <mask> "
         assert_eq!(
-            result
-                .get_splits(OffsetReferential::Original, OffsetType::Byte)
-                .into_iter()
-                .map(|(s, _, tokens)| (
-                    s,
-                    tokens
-                        .as_ref()
-                        .map(|t| t.iter().map(|t| t.id).collect::<Vec<_>>())
-                ))
-                .collect::<Vec<_>>(),
-            vec![
-                ("[CLS]", Some(vec![2])),
-                (" My ", None),
-                ("name", Some(vec![1])),
-                (" is Anthony ", None),
-                ("[SEP]", Some(vec![3]))
-            ]
+            vocab.extract_next(b"a <mask> b", 0, false),
+            Some((1, 9, id))
         );
     }
 
     #[test]
-    fn options_use_cases() {
-        // Is able to extract both normal and special tokens, with various options (lstrip, rstrip,
-        // single_word, normalized)
+    fn extract_next_single_word_matches_when_standalone() {
         let model = ModelMock::new(&[]);
-        let normalizer = Lowercase;
         let mut vocab = AddedVocabulary::new();
-
-        vocab
-            .add_tokens(
-                [
-                    AddedToken::from("my", false).lstrip(true).rstrip(true),
-                    AddedToken::from("name", false),
-                    AddedToken::from("ony", false).single_word(true),
-                ],
-                &model,
-                Some(&normalizer),
-            )
-            .unwrap();
+        let none: Option<&NormalizerWrapper> = None;
         vocab
             .add_special_tokens(
-                [
-                    AddedToken::from("[CLS]", true),
-                    AddedToken::from("[SEP]", true),
-                ],
+                [AddedToken::from("cat", true).single_word(true)],
                 &model,
-                Some(&normalizer),
+                none,
             )
             .unwrap();
-
-        let result =
-            vocab.extract_and_normalize(Some(&normalizer), "[CLS] My name is Anthony [SEP]");
-
-        assert_eq!(
-            simplify_output(&result),
-            vec![
-                ("[CLS]", Some(vec![3])),
-                // This one includes both spaces because of the lstrip & rstrip
-                // And it matches because normalized == true
-                (" my ", Some(vec![0])),
-                ("name", Some(vec![1])),
-                // `ony` is not extracted here thanks to single_word
-                (" is anthony ", None),
-                ("[SEP]", Some(vec![4])),
-            ]
-        );
-    }
-
-    #[test]
-    fn test_single_word_is_correct() {
-        // Is able to extract both normal and special tokens, with various options (lstrip, rstrip,
-        // single_word, normalized)
-        let model = ModelMock::new(&[]);
-        let mut vocab = AddedVocabulary::new();
-        let normalizer = Lowercase;
-
-        vocab
-            .add_tokens(
-                [AddedToken::from("<mask>", false).single_word(true)],
-                &model,
-                Some(&normalizer),
-            )
-            .unwrap();
-        // Left, in the middle, non single world left, non single word right, end of sentence valid
-        let result = vocab.extract_and_normalize(
-            Some(&normalizer),
-            "<mask> My name <mask> A<mask> <mask>ony <mask>",
-        );
-        assert_eq!(
-            simplify_output(&result),
-            vec![
-                ("<mask>", Some(vec![0])),
-                (" my name ", None),
-                ("<mask>", Some(vec![0])),
-                (" a<mask> <mask>ony ", None),
-                ("<mask>", Some(vec![0]))
-            ]
-        );
-    }
-
-    #[test]
-    fn test_single_word_is_unicode_correct() {
-        let model = ModelMock::new(&[]);
-        let mut vocab = AddedVocabulary::new();
-        let normalizer = Lowercase;
-
-        assert_eq!(vocab.len(), 0);
-
-        vocab
-            .add_tokens(
-                [AddedToken::from("<mask>", false).single_word(true)],
-                &model,
-                Some(&normalizer),
-            )
-            .unwrap();
-        let result = vocab.extract_and_normalize(Some(&normalizer), "<mask>, <mask>- ◌̰<mask>");
-        assert_eq!(
-            simplify_output(&result),
-            vec![
-                // Punctuation is not word
-                ("<mask>", Some(vec![0])),
-                (", ", None),
-                // dash is not word
-                ("<mask>", Some(vec![0])),
-                // This is unicode combining mark character and is word: https://en.wikipedia.org/wiki/Combining_Diacritical_Marks
-                ("- ◌̰<mask>", None),
-            ]
-        );
-    }
-
-    #[test]
-    fn test_lstrip_unicode_space() {
-        let model = ModelMock::new(&[]);
-        let mut vocab = AddedVocabulary::new();
-        let normalizer = Lowercase;
-
-        vocab
-            .add_tokens(
-                [AddedToken::from("<mask>", false)
-                    .lstrip(true)
-                    .rstrip(true)
-                    .single_word(true)],
-                &model,
-                Some(&normalizer),
-            )
-            .unwrap();
-        let result = vocab
-            .extract_and_normalize(Some(&normalizer), "Hi <mask> there\t<mask>\t<mask>\u{2000}");
-        assert_eq!(
-            simplify_output(&result),
-            vec![
-                ("hi", None),
-                // Regular space
-                (" <mask> ", Some(vec![0])),
-                ("there", None),
-                // \t is a spacing character
-                ("\t<mask>\t", Some(vec![0])),
-                // Non overlapping
-                // \u{2000} is mongolian vowel separator: https://jkorpela.fi/chars/spaces.html
-                ("<mask>\u{2000}", Some(vec![0])),
-            ]
-        );
-    }
-
-    #[test]
-    fn test_encode_special_tokens() {
-        let model = ModelMock::new(&[]);
-        let mut vocab = AddedVocabulary::new();
-        let normalizer = Lowercase;
-
-        vocab
-            .add_tokens(
-                [
-                    AddedToken::from("<mask>", true)
-                        .lstrip(true)
-                        .rstrip(true)
-                        .single_word(true),
-                    AddedToken::from("ask>", false),
-                    AddedToken::from("<pad>", true),
-                ],
-                &model,
-                Some(&normalizer),
-            )
-            .unwrap();
-        vocab.set_encode_special_tokens(true);
-
-        let result = vocab.extract_and_normalize(
-            Some(&normalizer),
-            "Hi <mask> there\t<mask>\t<mask>\u{2000} <pad> <mask><pad><pad>",
-        );
-
-        assert_eq!(
-            simplify_output(&result),
-            vec![
-                ("hi <m", None),
-                ("ask>", Some(vec![1])),
-                (" there\t<m", None),
-                ("ask>", Some(vec![1])),
-                ("\t<m", None),
-                ("ask>", Some(vec![1])),
-                ("\u{2000} <pad> <m", None),
-                ("ask>", Some(vec![1])),
-                ("<pad><pad>", None)
-            ]
-        );
-
-        vocab.set_encode_special_tokens(false);
-
-        let result = vocab.extract_and_normalize(
-            Some(&normalizer),
-            "Hi <mask> there\t<mask>\t<mask>\u{2000} <pad> <mask><pad><pad>",
-        );
-        assert_eq!(
-            simplify_output(&result),
-            vec![
-                ("hi", None),
-                (" <mask> ", Some(vec![0])),
-                ("there", None),
-                ("\t<mask>\t", Some(vec![0])),
-                ("<mask>\u{2000} ", Some(vec![0])),
-                ("<pad>", Some(vec![2])),
-                (" <mask>", Some(vec![0])),
-                ("<pad>", Some(vec![2])),
-                ("<pad>", Some(vec![2]))
-            ]
-        );
-    }
-    // Parked bucket-AV: its decoder rebuilds token content from the normalized vocab, so it can't
-    // yet return the original (pre-normalization) content. Tracked for the pipeline PR to fix.
-    #[test]
-    #[ignore = "bucket-AV decoder returns normalized form, not original content; pipeline PR to fix"]
-    fn content_preserved_with_normalizer() {
-        // Verify that AddedToken.content always holds the original user-provided string,
-        // and that normalized_content holds the normalizer output separately.
-        let model = ModelMock::new(&[]);
-        let mut vocab = AddedVocabulary::new();
-        let normalizer = Lowercase;
-
-        vocab
-            .add_tokens(
-                [
-                    AddedToken::from("Hello", false),
-                    AddedToken::from("[CLS]", true),
-                ],
-                &model,
-                Some(&normalizer),
-            )
-            .unwrap();
-
-        let decoder = vocab.get_added_tokens_decoder();
-        // Original content is always preserved in the token struct regardless of normalization
-        assert!(decoder.values().any(|t| t.content == "Hello"));
-        assert!(decoder.values().any(|t| t.content == "[CLS]"));
-
-        // "hello" (lowercased) is in the normalized cache — verify via simple_id_to_token
-        // let hello_id = vocab.added_tokens_map["Hello"];
-        // let cls_id = vocab.added_tokens_map["[CLS]"];
-        // normalized=true → decode returns cached form "hello"
-        // assert_eq!(vocab.simple_id_to_token(hello_id).unwrap(), "hello");
-        // // normalized=false → decode returns original content "[CLS]"
-        // assert_eq!(vocab.simple_id_to_token(cls_id).unwrap(), "[CLS]");
-    }
-
-    #[test]
-    fn byte_level_normalizer() {
-        // Is able to extract both normal and special tokens
-        let model = ModelMock::new(&[]);
-        let mut vocab = AddedVocabulary::new();
-        let from = NormalizerWrapper::from(ByteLevelNormalizer::new());
-        let normalizer: Option<&NormalizerWrapper> = Some(&from);
-
-        vocab
-            .add_tokens(
-                [AddedToken::from("my", false), AddedToken::from("今", false)],
-                &model,
-                normalizer,
-            )
-            .unwrap();
-        let result = vocab.extract_and_normalize(normalizer, "my今");
-        assert_eq!(
-            result
-                .get_splits(OffsetReferential::Original, OffsetType::Byte)
-                .into_iter()
-                .map(|(s, _, tokens)| (
-                    s,
-                    tokens
-                        .as_ref()
-                        .map(|t| t.iter().map(|t| t.id).collect::<Vec<_>>())
-                ))
-                .collect::<Vec<_>>(),
-            vec![("my", Some(vec![0])), ("ä»Ĭ", Some(vec![1])),]
-        );
+        let id = vocab.token_to_id("cat", &model).unwrap();
+        // "cat" is a standalone word (next char is whitespace) -> normal match
+        assert_eq!(vocab.extract_next(b"cat ", 0, false), Some((0, 3, id)));
     }
 }
