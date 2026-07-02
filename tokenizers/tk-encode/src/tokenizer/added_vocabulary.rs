@@ -2,6 +2,7 @@ use super::{
     normalizer::Range, Model, NormalizedString, Normalizer, PreTokenizedString, Result, Token,
 };
 use crate::buckets::{AddedTokenFlags, Buckets};
+use crate::pre_tokenizers::whitespace::is_word_char;
 use ahash::AHashMap;
 use serde::{ser::SerializeSeq, Deserialize, Serialize, Serializer};
 use std::fmt;
@@ -25,10 +26,7 @@ pub struct AddedToken {
     /// Whether this token is special
     pub special: bool,
 }
-#[inline]
-fn is_word(c: char) -> bool {
-    c.is_alphanumeric() || c == '_'
-}
+
 #[inline]
 fn is_ws(cp: u32) -> bool {
     // check if its ascii -> we can answer fast if yes. ASCII rang is < 0x80
@@ -45,11 +43,14 @@ fn is_single_word(bytes: &[u8], search: usize, match_start: usize, match_end: us
     let before_ok = s[search..match_start]
         .chars()
         .next_back()
-        .map_or(true, |c| !is_word(c));
+        .map_or(true, |c| !is_word_char(c));
     if !before_ok {
         return false;
     };
-    let after_ok = s[match_end..].chars().next().map_or(true, |c| !is_word(c));
+    let after_ok = s[match_end..]
+        .chars()
+        .next()
+        .map_or(true, |c| !is_word_char(c));
     before_ok && after_ok
 }
 
@@ -269,7 +270,7 @@ impl AddedVocabulary {
         if let Some(tok) = self.vocab.token_to_id(token) {
             return self.token_metadata[tok as usize].special;
         }
-        true
+        false
     }
 
     /// Add some special tokens to the vocabulary
