@@ -11,6 +11,9 @@ Colors follow the validated reference palette (light + dark variants).
 import argparse
 import json
 import math
+import os
+import subprocess
+from datetime import datetime, timezone
 from html import escape
 from pathlib import Path
 
@@ -27,7 +30,7 @@ INK = {
     },
 }
 FONT = "-apple-system,'Segoe UI',Helvetica,Arial,sans-serif"
-GUTTER, PLOT_W, PAD_R, ROW_H, BAR_H = 150, 540, 110, 26, 16
+GUTTER, PLOT_W, PAD_R, COL_W, ROW_H, BAR_H = 150, 540, 110, 150, 26, 16
 TICKS = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0]
 GROUPS = [("lang", "Languages"), ("modalities", "Modalities")]
 
@@ -47,7 +50,7 @@ def bar_path(x0, x1, y, h, r):
             f"V{y + h - r:.1f} q0,{r:.1f} {r:.1f},{r:.1f} H{right:.1f} Z")
 
 
-def render_svg(rows, mode, subtitle):
+def render_svg(rows, mode, subtitle, meta):
     ink = INK[mode]
     lo = min(0.75, min(r["speedup"] for r in rows) / 1.08)
     hi = max(1.5, max(r["speedup"] for r in rows) * 1.08)
@@ -57,7 +60,9 @@ def render_svg(rows, mode, subtitle):
         return GUTTER + (math.log2(v) - math.log2(lo)) / (math.log2(hi) - math.log2(lo)) * PLOT_W
 
     top = 74
-    body = []
+    col_x = GUTTER + PLOT_W + PAD_R + COL_W - 16
+    body = [f'<text x="{col_x}" y="{top - 14}" fill="{ink["muted"]}" font-size="11" '
+            f'text-anchor="end">MB/s: Tokenizer → Pipeline</text>']
     y = top
     for key, title in GROUPS:
         group_rows = sorted((r for r in rows if r["group"] == key),
@@ -88,6 +93,9 @@ def render_svg(rows, mode, subtitle):
             body.append(f'<text x="{lx:.1f}" y="{y + ROW_H / 2 + 4}" fill="{fill}" font-size="12" '
                         f'font-weight="600" text-anchor="{anchor}" '
                         f'style="font-variant-numeric:tabular-nums">{label}</text>')
+            body.append(f'<text x="{col_x}" y="{y + ROW_H / 2 + 4}" fill="{ink["secondary"]}" '
+                        f'font-size="12" text-anchor="end" style="font-variant-numeric:tabular-nums">'
+                        f'{r["legacy_mbps"]:.1f} → {r["pipeline_mbps"]:.1f}</text>')
             y += ROW_H
         y += 10
 
@@ -104,19 +112,37 @@ def render_svg(rows, mode, subtitle):
              f'<text x="{x(1.0) + 8:.1f}" y="{top - 14}" fill="{ink["muted"]}" font-size="11" '
              f'text-anchor="start">faster →</text>')
 
-    width = GUTTER + PLOT_W + PAD_R
+    width = GUTTER + PLOT_W + PAD_R + COL_W
     return f'''<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}"
   viewBox="0 0 {width} {height}" font-family="{FONT}">
 <rect width="{width}" height="{height}" fill="{ink["surface"]}"/>
 <text x="16" y="26" fill="{ink["primary"]}" font-size="15" font-weight="600">PipelineTokenizer vs Tokenizer — encode throughput</text>
 <text x="16" y="44" fill="{ink["secondary"]}" font-size="12">{escape(subtitle)}</text>
+<text x="{width - 16}" y="26" fill="{ink["muted"]}" font-size="11" text-anchor="end"
+  style="font-variant-numeric:tabular-nums">{escape(meta[0])}</text>
+<text x="{width - 16}" y="44" fill="{ink["muted"]}" font-size="11" text-anchor="end">{escape(meta[1])}</text>
 {"".join(grid)}
 {hints}
 {"".join(body)}
 </svg>'''
 
 
-def render_markdown(rows, subtitle, img_light, img_dark):
+def detect_hardware():
+    try:
+        cpu = Path("/proc/cpuinfo").read_text()
+        cpu = next(l.split(":", 1)[1].strip() for l in cpu.splitlines()
+                   if l.startswith("model name"))
+    except (OSError, StopIteration):
+        try:
+            cpu = subprocess.run(["sysctl", "-n", "machdep.cpu.brand_string"],
+                                 capture_output=True, text=True, check=True).stdout.strip()
+        except (OSError, subprocess.CalledProcessError):
+            import platform
+            cpu = platform.processor() or platform.machine() or "unknown cpu"
+    return f"{cpu} · {os.cpu_count()} cores"
+
+
+def render_markdown(rows, subtitle, meta, img_light, img_dark):
     overall = geomean([r["speedup"] for r in rows])
     parts = []
     for key, title in GROUPS:
@@ -129,6 +155,8 @@ def render_markdown(rows, subtitle, img_light, img_dark):
           "",
           f"**Geomean speedup ×{overall:.2f}** across {len(rows)} fixtures "
           f"({', '.join(parts)}) — {subtitle}",
+          "",
+          f"`{meta[0]}` · {meta[1]}",
           ""]
     if mismatches:
         md += [f"> ⚠️ **Token ids diverge from the reference on: "
@@ -156,16 +184,27 @@ def main():
     ap.add_argument("results")
     ap.add_argument("--out-dir", default=".")
     ap.add_argument("--subtitle", default="bert-wiki WordPiece · ~10 kB inputs · single thread")
+    ap.add_argument("--revision", default="")
     ap.add_argument("--img-light-url", default="")
     ap.add_argument("--img-dark-url", default="")
     args = ap.parse_args()
 
+    rev = args.revision
+    if not rev:
+        try:
+            rev = subprocess.run(["git", "rev-parse", "HEAD"],
+                                 capture_output=True, text=True, check=True).stdout.strip()
+        except (OSError, subprocess.CalledProcessError):
+            rev = "unknown"
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    meta = (f"{rev[:9]} · {stamp}", detect_hardware())
+
     rows = json.loads(Path(args.results).read_text())
     out = Path(args.out_dir)
     for mode in ("light", "dark"):
-        (out / f"pipeline_bench_{mode}.svg").write_text(render_svg(rows, mode, args.subtitle))
+        (out / f"pipeline_bench_{mode}.svg").write_text(render_svg(rows, mode, args.subtitle, meta))
     (out / "pipeline_bench.md").write_text(
-        render_markdown(rows, args.subtitle, args.img_light_url, args.img_dark_url))
+        render_markdown(rows, args.subtitle, meta, args.img_light_url, args.img_dark_url))
     print(f"geomean x{geomean([r['speedup'] for r in rows]):.3f}, "
           f"{sum(not r['ids_match'] for r in rows)} id mismatches")
 
