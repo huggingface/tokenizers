@@ -1005,18 +1005,40 @@ where
         let cap = self.model.estimate_decode_capacity(ids.len());
         let mut buf = Vec::with_capacity(if cap > 0 { cap } else { ids.len() * 4 });
 
-        for &id in ids {
+        let n = ids.len();
+        let mut i = 0;
+        while i < n {
+            let id = ids[i];
             if check_added {
                 if let Some(tok) = added.get(&id) {
                     if !(skip_special_tokens && self.added_vocabulary.is_special_token(&tok.content))
                     {
                         buf.extend_from_slice(tok.content.as_bytes());
                     }
+                    i += 1;
                     continue;
                 }
             }
             let bytes = self.model.id_to_decoded_bytes(id)?;
+
+            // Prefetch the decoded bytes of a token a few positions ahead to
+            // hide the latency of the scattered reads into the vocab_decoded
+            // blob. aarch64-only; a no-op elsewhere.
+            #[cfg(target_arch = "aarch64")]
+            if i + 4 < n {
+                if let Some(future) = self.model.id_to_decoded_bytes(ids[i + 4]) {
+                    unsafe {
+                        core::arch::asm!(
+                            "prfm pldl1keep, [{addr}]",
+                            addr = in(reg) future.as_ptr(),
+                            options(readonly, nostack)
+                        );
+                    }
+                }
+            }
+
             buf.extend_from_slice(bytes);
+            i += 1;
         }
 
         // Bytes come from `vocab_decoded` (built from valid token strings) or
