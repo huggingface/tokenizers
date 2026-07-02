@@ -23,7 +23,7 @@ struct Entry {
     id: u32,
 }
 
-/// The VocabStore optimizes for space and speed. We don't use a HashMap to prevent duplicating the
+/// The BucketVocabStore optimizes for space and speed. We don't use a HashMap to prevent duplicating the
 /// keys. Instead, we just use an `id_to_slot` and `entries` table. When you query bytes, you hash
 /// on the fly and get an `index` into the `entries` table. When you query an `id`, you fetch in
 /// the `id_to_slot` the same index.
@@ -32,8 +32,8 @@ struct Entry {
 /// Example:
 ///
 /// ```
-/// use tk_encode::added_vocabulary::vocab_store::VocabStore;
-/// let vocab = VocabStore::build(vec![
+/// use tk_encode::added_vocabulary::bucket_vocab_store::BucketVocabStore;
+/// let vocab = BucketVocabStore::build(vec![
 ///     (b"a".to_vec(), 0),
 ///     (b"bb".to_vec(), 5),
 ///     (b"ccc".to_vec(), 100),
@@ -41,7 +41,7 @@ struct Entry {
 /// vocab.token_to_id("a");
 /// vocab.id_to_token(100);
 #[derive(Clone)]
-pub struct VocabStore {
+pub struct BucketVocabStore {
     mphf: Mphf,
     hasher: RandomState,
     /// All token bytes, concatenated. Ordered by MPHF slot.
@@ -52,16 +52,16 @@ pub struct VocabStore {
     id_to_slot: Box<[u32]>,
 }
 
-impl fmt::Debug for VocabStore {
+impl fmt::Debug for BucketVocabStore {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("VocabStore")
+        f.debug_struct("BucketVocabStore")
             .field("bytes", &self.bytes)
             .field("id_to_slot", &self.id_to_slot)
             .field("entries", &self.entries)
             .finish()
     }
 }
-impl PartialEq for VocabStore {
+impl PartialEq for BucketVocabStore {
     fn eq(&self, other: &Self) -> bool {
         if self.len() != other.len() {
             return false;
@@ -76,13 +76,13 @@ impl PartialEq for VocabStore {
     }
 }
 
-impl Default for VocabStore {
+impl Default for BucketVocabStore {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl VocabStore {
+impl BucketVocabStore {
     pub fn build(tokens: Vec<(Vec<u8>, u32)>) -> Self {
         let n = tokens.len();
 
@@ -248,7 +248,7 @@ mod tests {
 
     #[test]
     fn single_token() {
-        let vocab = VocabStore::build(vec![(b"Hel".to_vec(), 0)]);
+        let vocab = BucketVocabStore::build(vec![(b"Hel".to_vec(), 0)]);
         assert_eq!(vocab.token_to_id("Hel"), Some(0));
         assert_eq!(vocab.token_to_id("lo"), None);
         assert_eq!(vocab.id_to_token(0), Some("Hel".to_string()));
@@ -266,7 +266,7 @@ mod tests {
         .map(|(i, s)| (s.as_bytes().to_vec(), i as u32))
         .collect();
         let n = toks.len();
-        let vocab = VocabStore::build(toks.clone());
+        let vocab = BucketVocabStore::build(toks.clone());
 
         for (s, id) in &toks {
             assert_eq!(vocab.get_bytes(s), Some(*id), "fwd {s:?}");
@@ -281,7 +281,7 @@ mod tests {
 
     #[test]
     fn sparse_ids_with_gaps() {
-        let vocab = VocabStore::build(vec![
+        let vocab = BucketVocabStore::build(vec![
             (b"a".to_vec(), 0),
             (b"bb".to_vec(), 5),
             (b"ccc".to_vec(), 100),
@@ -294,5 +294,52 @@ mod tests {
         assert_eq!(vocab.id_to_token(100), Some("ccc".to_string()));
         assert_eq!(vocab.id_to_token(1), None);
         assert_eq!(vocab.id_to_token(50), None);
+    }
+
+    #[test]
+    fn empty_store() {
+        let vocab = BucketVocabStore::new();
+        assert!(vocab.is_empty());
+        assert_eq!(vocab.len(), 0);
+        assert_eq!(vocab.token_to_id("anything"), None);
+        assert_eq!(vocab.get_bytes(b""), None);
+        assert_eq!(vocab.id_to_token(0), None);
+        assert!(vocab.content().is_empty());
+    }
+
+    #[test]
+    fn eq_matches_on_dense_content() {
+        // Models use dense ids (0..n); equality must reflect the token set on that range.
+        let a = BucketVocabStore::build(vec![(b"x".to_vec(), 0), (b"y".to_vec(), 1)]);
+        let b = BucketVocabStore::build(vec![(b"y".to_vec(), 1), (b"x".to_vec(), 0)]);
+        let c = BucketVocabStore::build(vec![(b"x".to_vec(), 0), (b"z".to_vec(), 1)]);
+        let d = BucketVocabStore::build(vec![(b"x".to_vec(), 0)]);
+        assert_eq!(a, b); // insertion order does not matter
+        assert_ne!(a, c); // different token at id 1
+        assert_ne!(a, d); // different length
+    }
+
+    #[test]
+    fn content_views_agree() {
+        let vocab = BucketVocabStore::build(vec![(b"hi".to_vec(), 0), (b"yo".to_vec(), 1)]);
+        let mut got = vocab.get_vocab();
+        got.sort();
+        assert_eq!(
+            got,
+            vec![("hi".to_string(), 0), ("yo".to_string(), 1)]
+        );
+        assert_eq!(vocab.content(), vocab.get_vocab());
+        let mut bytes = vocab.byte_content();
+        bytes.sort();
+        assert_eq!(bytes, vec![(b"hi".to_vec(), 0), (b"yo".to_vec(), 1)]);
+    }
+
+    #[test]
+    fn non_utf8_token_is_lossy_on_string_but_exact_on_bytes() {
+        let raw = vec![0xffu8, 0xfe];
+        let vocab = BucketVocabStore::build(vec![(raw.clone(), 0)]);
+        assert_eq!(vocab.get_bytes(&raw), Some(0));
+        assert_eq!(vocab.id_to_token_bytes(0), Some(raw.as_slice()));
+        assert_eq!(vocab.id_to_token(0), Some("\u{fffd}\u{fffd}".to_string()));
     }
 }
