@@ -24,6 +24,13 @@ impl Serialize for BPE {
         model.serialize_field("ignore_merges", &self.ignore_merges)?;
 
         // Then the large ones
+        // TODO: update the file system once we are settled on what we want to save
+        let vocab_r: AHashMap<u32, String> = self
+            .vocab
+            .get_vocab()
+            .into_iter()
+            .map(|(s, id)| (id, s))
+            .collect();
         let mut merges: Vec<(&Pair, &u32)> = self
             .merges
             .iter()
@@ -32,9 +39,9 @@ impl Serialize for BPE {
         merges.sort_unstable_by_key(|k| *k.1);
         let merges = merges
             .into_iter()
-            .map(|(pair, _)| (self.vocab_r[&pair.0].clone(), self.vocab_r[&pair.1].clone()))
+            .map(|(pair, _)| (vocab_r[&pair.0].clone(), vocab_r[&pair.1].clone()))
             .collect::<Vec<_>>();
-        let ordered_vocab = OrderedVocabIter::new(&self.vocab_r);
+        let ordered_vocab = OrderedVocabIter::new(&vocab_r);
 
         model.serialize_field("vocab", &ordered_vocab)?;
         model.serialize_field("merges", &merges)?;
