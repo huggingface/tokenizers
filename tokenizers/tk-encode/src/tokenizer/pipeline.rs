@@ -203,10 +203,10 @@ impl PipelineTokenizer {
     /// Special tokens are matched in two passes:
     ///  1. on the raw input,
     ///  2. then on each segment after normalization
-    /// 
+    ///
     /// This way, special / added tokens declared on raw or normalized text are both caught.
     /// The remaining text is pre-tokenized and run through the model span by span.
-    /// 
+    ///
     /// todo: wire the post-processing
     pub fn encode(&self, input: &str, _add_special_tokens: bool) -> Result<Vec<PipelineToken>> {
         let mut output: Vec<PipelineToken> = vec![];
