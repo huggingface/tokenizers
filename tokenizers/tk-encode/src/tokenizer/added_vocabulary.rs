@@ -411,12 +411,40 @@ impl AddedVocabulary {
         pre
     }
 
-    pub fn extract_next(&self, bytes: &[u8]) -> Option<(u32, u32, u32)> {
-        self.vocab.match_bytes(bytes)
-    }
-
-    pub fn extract_next_normalized(&self, bytes: &[u8]) -> Option<(u32, u32, u32)> {
-        self.normalized_vocab.match_bytes(bytes)
+    pub fn extract_next(
+        &self,
+        bytes: &[u8],
+        search: usize,
+        normalized: bool,
+    ) -> Option<(u32, u32, u32)> {
+        let vocab = if normalized {
+            &self.vocab
+        } else {
+            &self.normalized_vocab
+        };
+        match vocab.match_bytes(&bytes[search..]) {
+            Some((id, match_start, match_len)) if match_len > 0 => {
+                let mut match_start = search + match_start as usize;
+                let mut match_end = match_start + match_len as usize;
+                // single_word: reject unless the token is a standalone word (neither neighbour
+                // char is a word char). Checked on the raw byte bounds, before any strip.
+                if self.token_metadata[id as usize].single_word
+                    && !is_single_word(bytes, search, match_start, match_end)
+                {
+                    match_end += 1;
+                }
+                if self.token_metadata[id as usize].lstrip {
+                    match_start =
+                        skip_whitespace_backward(&bytes[..match_end], match_start).max(search)
+                }
+                if self.token_metadata[id as usize].rstrip {
+                    match_end = skip_whitespace_forward(bytes, match_end)
+                }
+                Some((match_start as u32, match_end as u32, id))
+            }
+            // since match_bytes goes to the end, this means we reach the end.
+            _ => None,
+        }
     }
 }
 
