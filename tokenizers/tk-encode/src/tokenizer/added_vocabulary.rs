@@ -41,8 +41,6 @@ fn is_ws(cp: u32) -> bool {
 fn is_single_word(bytes: &[u8], search: usize, match_start: usize, match_end: usize) -> bool {
     // FIXME: we use chr conversion for now, this can be inproved by using bitmap.
     // This is the equivalent of `\w`, so its letters, numbers and underscore
-    // Since we know the match start and that char is at most 4 byte, we just check if the previous
-    // char is a boudnary
     let s = unsafe { std::str::from_utf8_unchecked(bytes) };
     let before_ok = s[search..match_start]
         .chars()
