@@ -67,7 +67,12 @@ unstable_wasm = ["fancy-regex", "getrandom/wasm_js"]
 rustls-tls = ["hf-hub?/rustls-tls"]
 
 [dev-dependencies]
+criterion = "0.6"
 tempfile = "3.10"
 assert_approx_eq = "1.1"
 tracing = "0.1"
 tracing-subscriber = "0.3.18"
+
+[[bench]]
+name = "pipeline_benchmark"
+harness = false
