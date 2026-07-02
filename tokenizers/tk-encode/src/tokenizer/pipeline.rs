@@ -136,8 +136,8 @@ impl PipelineTokenizer {
     }
 
     pub fn encode(&self, input: &str, _add_special_tokens: bool) -> Result<Vec<PipelineToken>> {
-        let mut output: Vec<PipelineToken> = vec![];
-        let mut pre_tokens: Vec<Split> = vec![];
+        let mut output: Vec<PipelineToken> = Vec::with_capacity(1.max(input.len() / 2));
+        let mut pre_tokens: Vec<Split> = Vec::with_capacity(4096);
 
         for segment in SpecialSegmentIterator::new(input, &self.added_vocabulary, false) {
             match segment {
