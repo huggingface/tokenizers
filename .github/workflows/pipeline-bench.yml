@@ -96,7 +96,8 @@ jobs:
           base_url="https://huggingface.co/datasets/hf-internal-testing/tokenizers-bench/resolve/main/charts"
           python3 ${{ github.workspace }}/.github/scripts/render_pipeline_bench.py \
             pipeline_bench.json \
-            --subtitle "bert-wiki WordPiece · ~10 kB inputs · single thread · ${{ inputs.head_sha || github.sha }}" \
+            --subtitle "bert-wiki WordPiece · ~10 kB inputs · single thread" \
+            --revision "${{ inputs.head_sha || github.sha }}" \
             --img-light-url "$base_url/pipeline-${{ github.run_id }}-light.png" \
             --img-dark-url "$base_url/pipeline-${{ github.run_id }}-dark.png"
           uvx --with cairosvg python -c "
