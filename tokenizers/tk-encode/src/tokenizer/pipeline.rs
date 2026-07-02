@@ -114,7 +114,11 @@ impl<'a, 'b, PatternMatcher: PipelinePatternMatcher>
 {
     /// Create a new iterator over [`Segment`] of the [`input`].
     /// This iterator will yield [`Segment`] in order.
-    fn new(input: &'a str, pattern_matcher: &'b PatternMatcher, normalized: bool) -> Self {
+    pub(crate) fn new(
+        input: &'a str,
+        pattern_matcher: &'b PatternMatcher,
+        normalized: bool,
+    ) -> Self {
         Self {
             input,
             pattern_matcher,

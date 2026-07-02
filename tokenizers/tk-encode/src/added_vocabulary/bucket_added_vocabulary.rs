@@ -466,6 +466,7 @@ mod tests {
     use super::*;
     use crate::normalizers::utils::Lowercase;
     use crate::normalizers::NormalizerWrapper;
+    use crate::pipeline::{Segment, SpecialSegmentIterator};
     use crate::{Result, Token};
     use std::collections::HashMap;
     use std::path::{Path, PathBuf};
@@ -680,5 +681,146 @@ mod tests {
 
         assert_eq!(vocab.simple_id_to_token(0).unwrap(), "hello");
         assert_eq!(vocab.simple_id_to_token(1).unwrap(), "[CLS]");
+    }
+
+    /// Drive the real `SpecialSegmentIterator` over an `AddedVocabulary`, mapping each
+    /// segment to `(text, id)` so `extract_next`'s behaviour is easy to assert.
+    fn segments(
+        vocab: &AddedVocabulary,
+        input: &str,
+        normalized: bool,
+    ) -> Vec<(Option<String>, Option<u32>)> {
+        SpecialSegmentIterator::new(input, vocab, normalized)
+            .map(|segment| match segment {
+                Segment::Text(text) => (Some(text.to_string()), None),
+                Segment::SpecialToken(id) => (None, Some(id)),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn segment_iterator_carves_raw_added_tokens() {
+        let model = ModelMock::new(&[]);
+        let mut vocab = AddedVocabulary::new();
+        let normalizer: Option<&NormalizerWrapper> = None;
+        vocab
+            .add_special_tokens(
+                [
+                    AddedToken::from("[CLS]", true),
+                    AddedToken::from("[SEP]", true),
+                ],
+                &model,
+                normalizer,
+            )
+            .unwrap();
+
+        // Special tokens are declared on raw text, so a single raw pass carves them out.
+        assert_eq!(
+            segments(&vocab, "[CLS] hello [SEP]", false),
+            vec![
+                (None, Some(0)),
+                (Some(" hello ".to_string()), None),
+                (None, Some(1)),
+            ]
+        );
+    }
+
+    #[test]
+    fn segment_iterator_respects_single_word() {
+        let model = ModelMock::new(&[]);
+        let mut vocab = AddedVocabulary::new();
+        let normalizer: Option<&NormalizerWrapper> = None;
+        vocab
+            .add_tokens(
+                [AddedToken::from("mask", false)
+                    .normalized(false)
+                    .single_word(true)],
+                &model,
+                normalizer,
+            )
+            .unwrap();
+
+        // Standalone `mask` matches; the `mask` inside `bitmask` does not.
+        assert_eq!(
+            segments(&vocab, "a mask bitmask", false),
+            vec![
+                (Some("a ".to_string()), None),
+                (None, Some(0)),
+                (Some(" bitmask".to_string()), None),
+            ]
+        );
+    }
+
+    #[test]
+    fn segment_iterator_applies_lstrip_rstrip() {
+        let model = ModelMock::new(&[]);
+        let mut vocab = AddedVocabulary::new();
+        let normalizer: Option<&NormalizerWrapper> = None;
+        vocab
+            .add_tokens(
+                [AddedToken::from("<mask>", false)
+                    .normalized(false)
+                    .lstrip(true)
+                    .rstrip(true)],
+                &model,
+                normalizer,
+            )
+            .unwrap();
+
+        // The spaces around `<mask>` are absorbed into the matched span, so the surrounding
+        // text segments come back trimmed.
+        assert_eq!(
+            segments(&vocab, "hi <mask> there", false),
+            vec![
+                (Some("hi".to_string()), None),
+                (None, Some(0)),
+                (Some("there".to_string()), None),
+            ]
+        );
+    }
+
+    #[test]
+    fn segment_iterator_honors_encode_special_tokens() {
+        let model = ModelMock::new(&[]);
+        let mut vocab = AddedVocabulary::new();
+        let normalizer: Option<&NormalizerWrapper> = None;
+        vocab
+            .add_special_tokens([AddedToken::from("[CLS]", true)], &model, normalizer)
+            .unwrap();
+
+        // Default: the special token is carved out.
+        assert_eq!(
+            segments(&vocab, "[CLS] hi", false),
+            vec![(None, Some(0)), (Some(" hi".to_string()), None)]
+        );
+
+        // encode_special_tokens = true: the special token is left in the text for the model.
+        vocab.set_encode_special_tokens(true);
+        assert_eq!(
+            segments(&vocab, "[CLS] hi", false),
+            vec![(Some("[CLS] hi".to_string()), None)]
+        );
+    }
+
+    #[test]
+    fn segment_iterator_selects_raw_vs_normalized_matcher() {
+        let model = ModelMock::new(&[]);
+        let mut vocab = AddedVocabulary::new();
+        let normalizer = Lowercase;
+        // Non-special token, normalized by default → stored in the normalized matcher.
+        vocab
+            .add_tokens([AddedToken::from("mask", false)], &model, Some(&normalizer))
+            .unwrap();
+
+        // Raw pass: the token lives in the normalized matcher, so nothing is carved.
+        assert_eq!(
+            segments(&vocab, "a mask", false),
+            vec![(Some("a mask".to_string()), None)]
+        );
+        // Normalized pass over already-normalized text: the token is matched.
+        assert_eq!(
+            segments(&vocab, "a mask", true),
+            vec![(Some("a ".to_string()), None), (None, Some(0))]
+        );
     }
 }
