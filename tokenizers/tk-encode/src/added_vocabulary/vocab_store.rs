@@ -72,7 +72,7 @@ impl PartialEq for VocabStore {
                 return false;
             }
         }
-        false
+        true
     }
 }
 
