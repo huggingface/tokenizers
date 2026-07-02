@@ -90,13 +90,13 @@ extern crate derive_builder;
 
 #[macro_use]
 pub mod utils;
+pub mod added_vocabulary;
 pub mod decoders;
 pub mod models;
 pub mod normalizers;
 pub mod pre_tokenizers;
 pub mod processors;
 pub mod tokenizer;
-pub mod added_vocabulary;
 
 // Re-export from tokenizer
 pub use tokenizer::*;
