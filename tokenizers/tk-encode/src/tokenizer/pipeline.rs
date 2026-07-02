@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use super::Result;
+use super::{Result, SplitDelimiterBehavior};
 
 /// A pre-token split, a range into the input text.
 #[derive(Copy, Clone)]
@@ -70,6 +70,95 @@ pub fn split<C: Copy + PartialEq>(
             out.push(Split {
                 start,
                 end: text.len() as u32,
+            });
+        }
+    }
+}
+
+/// Applies a [`SplitDelimiterBehavior`] to a match segmentation and appends the
+/// resulting pieces to `out`.
+///
+/// `matches` is the `(offsets, is_match)` sequence covering the whole input,
+/// so regex matches interleaved with the gaps between them (exactly what
+/// `Pattern::find_matches` produces). This is the pipeline-side equivalent of
+/// the fold in `NormalizedString::split`; the arms mirror it exactly. Empty and
+/// removed pieces are dropped.
+pub fn split_matches(
+    out: &mut Vec<Split>,
+    matches: Vec<((usize, usize), bool)>,
+    behavior: SplitDelimiterBehavior,
+) {
+    use SplitDelimiterBehavior::*;
+
+    // (offsets, should_remove) — mirrors `NormalizedString::split`.
+    let splits: Vec<((usize, usize), bool)> = match behavior {
+        Isolated => matches.into_iter().map(|(o, _)| (o, false)).collect(),
+        Removed => matches, // should_remove == is_match
+        Contiguous => {
+            let mut previous_match = false;
+            matches
+                .into_iter()
+                .fold(vec![], |mut acc, (offsets, is_match)| {
+                    if is_match == previous_match {
+                        if let Some(((_, end), _)) = acc.last_mut() {
+                            *end = offsets.1;
+                        } else {
+                            acc.push((offsets, false));
+                        }
+                    } else {
+                        acc.push((offsets, false));
+                    }
+                    previous_match = is_match;
+                    acc
+                })
+        }
+        MergedWithPrevious => {
+            let mut previous_match = false;
+            matches
+                .into_iter()
+                .fold(vec![], |mut acc, (offsets, is_match)| {
+                    if is_match && !previous_match {
+                        if let Some(((_, end), _)) = acc.last_mut() {
+                            *end = offsets.1;
+                        } else {
+                            acc.push((offsets, false));
+                        }
+                    } else {
+                        acc.push((offsets, false));
+                    }
+                    previous_match = is_match;
+                    acc
+                })
+        }
+        MergedWithNext => {
+            let mut previous_match = false;
+            let mut splits =
+                matches
+                    .into_iter()
+                    .rev()
+                    .fold(vec![], |mut acc, (offsets, is_match)| {
+                        if is_match && !previous_match {
+                            if let Some(((start, _), _)) = acc.last_mut() {
+                                *start = offsets.0;
+                            } else {
+                                acc.push((offsets, false));
+                            }
+                        } else {
+                            acc.push((offsets, false));
+                        }
+                        previous_match = is_match;
+                        acc
+                    });
+            splits.reverse();
+            splits
+        }
+    };
+
+    for ((start, end), should_remove) in splits {
+        if !should_remove && start != end {
+            out.push(Split {
+                start: start as u32,
+                end: end as u32,
             });
         }
     }
