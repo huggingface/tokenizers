@@ -44,9 +44,28 @@ static RE: LazyLock<SysRegex> = LazyLock::new(|| {
     SysRegex::new(r"'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+")
         .unwrap()
 });
-static BYTES_CHAR: LazyLock<AHashMap<u8, char>> = LazyLock::new(bytes_char);
-static CHAR_BYTES: LazyLock<AHashMap<char, u8>> =
-    LazyLock::new(|| bytes_char().into_iter().map(|(c, b)| (b, c)).collect());
+/// O(1) array lookup: byte → char (256 entries, no hashing).
+pub(crate) static BYTES_CHAR_TABLE: LazyLock<[char; 256]> = LazyLock::new(|| {
+    let map = bytes_char();
+    let mut table = ['\0'; 256];
+    for (b, c) in map {
+        table[b as usize] = c;
+    }
+    table
+});
+/// O(1) reverse lookup: char → Option<u8>. Chars used by byte-level
+/// encoding are in the range 0..512, so a 512-entry array covers all.
+pub(crate) static CHAR_BYTES_TABLE: LazyLock<[Option<u8>; 512]> = LazyLock::new(|| {
+    let map = bytes_char();
+    let mut table = [None; 512];
+    for (b, c) in map {
+        let idx = c as usize;
+        if idx < 512 {
+            table[idx] = Some(b);
+        }
+    }
+    table
+});
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 /// Provides all the necessary steps to handle the BPE tokenization at the byte-level. Takes care
@@ -91,7 +110,7 @@ impl ByteLevel {
     }
 
     pub fn alphabet() -> AHashSet<char> {
-        BYTES_CHAR.values().copied().collect()
+        BYTES_CHAR_TABLE.iter().copied().filter(|c| *c != '\0').collect()
     }
 
     #[must_use]
@@ -138,7 +157,7 @@ impl PreTokenizer for ByteLevel {
                     s.as_bytes()[i..i + size]
                         .iter()
                         .enumerate()
-                        .map(|(i, b)| (BYTES_CHAR[b], isize::from(i > 0))),
+                        .map(|(i, b)| (BYTES_CHAR_TABLE[*b as usize], isize::from(i > 0))),
                 );
             }
             normalized.transform(transformations, 0);
@@ -159,8 +178,16 @@ impl Decoder for ByteLevel {
             .flat_map(|t| {
                 t.chars()
                     .try_fold(vec![], |mut acc, c| {
-                        CHAR_BYTES.get(&c).map(|b| {
-                            acc.push(*b);
+                        {
+                            let idx = c as usize;
+                            if idx < 512 {
+                                CHAR_BYTES_TABLE[idx]
+                            } else {
+                                None
+                            }
+                        }
+                        .map(|b| {
+                            acc.push(b);
                             acc
                         })
                     })
@@ -201,14 +228,15 @@ impl PostProcessor for ByteLevel {
 
 pub fn process_offsets(encoding: &mut Encoding, add_prefix_space: bool) {
     encoding.process_tokens_with_offsets_mut(|(i, (token, offsets))| {
+        let space_char = BYTES_CHAR_TABLE[b' ' as usize];
         let mut leading_spaces = token
             .chars()
-            .take_while(|c| *c == BYTES_CHAR[&b' '] || c.is_whitespace())
+            .take_while(|c| *c == space_char || c.is_whitespace())
             .count();
         let trailing_spaces = token
             .chars()
             .rev()
-            .take_while(|c| *c == BYTES_CHAR[&b' '] || c.is_whitespace())
+            .take_while(|c| *c == space_char || c.is_whitespace())
             .count();
 
         if leading_spaces > 0 || trailing_spaces > 0 {
