@@ -225,6 +225,11 @@ impl VocabStore {
             .collect()
     }
 
+    /// Alias for `content` — kept so `Model::get_vocab` call sites resolve.
+    pub fn get_vocab(&self) -> Vec<(String, u32)> {
+        self.content()
+    }
+
     /// convenient when we want to re-build a vocab
     pub fn byte_content(&self) -> Vec<(Vec<u8>, u32)> {
         self.entries

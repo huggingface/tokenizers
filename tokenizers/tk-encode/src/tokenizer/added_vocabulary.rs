@@ -59,10 +59,12 @@ fn skip_whitespace_backward(bytes: &[u8], match_start: usize) -> usize {
 }
 fn skip_whitespace_forward(bytes: &[u8], match_start: usize) -> usize {
     let s = unsafe { std::str::from_utf8_unchecked(bytes) };
-    s[match_start..]
-        .trim_start_matches(|c| is_ws(c as u32))
-        .len()
+    s.len()
+        - s[match_start..]
+            .trim_start_matches(|c| is_ws(c as u32))
+            .len()
 }
+
 impl AddedToken {
     /// Build this token from the given content, specifying if it is intended to be a
     /// special token. Special tokens are not normalized by default.
@@ -689,8 +691,6 @@ mod tests {
             .collect::<AHashMap<u32, AddedToken>>()
             .into()
         );
-        // assert!(vocab.added_tokens_map.contains_key("test"));
-        // assert!(vocab.added_tokens_map_r.contains_key(&0));
 
         vocab
             .add_tokens(

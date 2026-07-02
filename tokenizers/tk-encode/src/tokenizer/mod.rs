@@ -31,7 +31,6 @@ pub mod pipeline;
 pub mod pre_tokenizer;
 mod serialization;
 pub mod vocab_store;
-pub mod whitespace;
 // Re-export wrappers
 pub use crate::decoders::DecoderWrapper;
 pub use crate::models::ModelWrapper;
