@@ -22,15 +22,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::utils::parallelism::*;
 
-mod added_vocabulary;
-pub mod buckets;
 mod encoding;
 pub mod normalizer;
 pub mod pattern;
 pub mod pipeline;
 pub mod pre_tokenizer;
 mod serialization;
-pub mod vocab_store;
 // Re-export wrappers
 pub use crate::decoders::DecoderWrapper;
 pub use crate::models::ModelWrapper;
@@ -43,7 +40,7 @@ pub use crate::utils::padding::{pad_encodings, PaddingDirection, PaddingParams, 
 pub use crate::utils::truncation::{
     truncate_encodings, TruncationDirection, TruncationParams, TruncationStrategy,
 };
-pub use added_vocabulary::*;
+use crate::added_vocabulary::{AddedToken, AddedVocabulary};
 pub use encoding::*;
 pub use normalizer::{NormalizedString, OffsetReferential, SplitDelimiterBehavior};
 pub use pre_tokenizer::*;

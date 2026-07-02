@@ -1,4 +1,4 @@
-use super::{
+use super::super::{
     normalizer::Range, Model, NormalizedString, Normalizer, PreTokenizedString, Result, Token,
 };
 use crate::buckets::{AddedTokenFlags, Buckets};
@@ -43,14 +43,14 @@ fn is_single_word(bytes: &[u8], search: usize, match_start: usize, match_end: us
     let before_ok = s[search..match_start]
         .chars()
         .next_back()
-        .map_or(true, |c| !is_word_char(c));
+        .is_none_or(|c| !is_word_char(c));
     if !before_ok {
         return false;
     };
     let after_ok = s[match_end..]
         .chars()
         .next()
-        .map_or(true, |c| !is_word_char(c));
+        .is_none_or(|c| !is_word_char(c));
     before_ok && after_ok
 }
 
@@ -487,7 +487,7 @@ impl Default for AddedVocabulary {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub(super) struct AddedTokenWithId {
+pub(crate) struct AddedTokenWithId {
     /// The id assigned to this token
     pub id: u32,
     #[serde(flatten)]
