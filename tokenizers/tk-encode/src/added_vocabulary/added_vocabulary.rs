@@ -189,7 +189,7 @@ impl fmt::Debug for AddedVocabulary {
 impl AddedVocabulary {
     pub fn new() -> Self {
         Self {
-            encode_special_tokens: true,
+            encode_special_tokens: false,
             token_metadata: Box::new([]),
             normalized_vocab: Buckets::new(),
             vocab: Buckets::new(),
@@ -449,37 +449,44 @@ impl PipelinePatternMatcher for AddedVocabulary {
     fn extract_next(
         &self,
         bytes: &[u8],
-        search: usize,
+        search_offset: usize,
         normalized: bool,
     ) -> Option<((usize, usize), u32)> {
         let vocab = if normalized {
-            &self.vocab
-        } else {
             &self.normalized_vocab
+        } else {
+            &self.vocab
         };
-        match vocab.match_bytes(&bytes[search..]) {
-            Some((id, match_start, match_len)) if match_len > 0 => {
-                let mut match_start = search + match_start as usize;
-                let mut match_end = match_start + match_len as usize;
-                // single_word: reject unless the token is a standalone word (neither neighbour
-                // char is a word char). Checked on the raw byte bounds, before any strip.
-                if self.token_metadata[id as usize].single_word
-                    && !is_single_word(bytes, search, match_start, match_end)
-                {
-                    match_end += 1;
-                }
-                if self.token_metadata[id as usize].lstrip {
-                    match_start =
-                        skip_whitespace_backward(&bytes[..match_end], match_start).max(search)
-                }
-                if self.token_metadata[id as usize].rstrip {
-                    match_end = skip_whitespace_forward(bytes, match_end)
-                }
-                Some(((match_start, match_end), id))
+        let mut search = search_offset;
+        while search < bytes.len() {
+            // since match_bytes goes to the end, no match means we reached the end.
+            let (id, start, len) = match vocab.match_bytes(&bytes[search..]) {
+                Some((id, start, len)) if len > 0 => (id, start, len),
+                _ => return None,
+            };
+            let mut match_start = search + start as usize;
+            let mut match_end = match_start + len as usize;
+            let metadata = &self.token_metadata[id as usize];
+            if self.encode_special_tokens && metadata.special {
+                search = match_end;
+                continue;
             }
-            // since match_bytes goes to the end, this means we reach the end.
-            _ => None,
+            // single_word: reject unless the token is a standalone word (neither neighbour
+            // char is a word char). Checked on the raw byte bounds, before any strip.
+            if metadata.single_word && !is_single_word(bytes, search, match_start, match_end) {
+                search = match_start + 1;
+                continue;
+            }
+            if metadata.lstrip {
+                match_start =
+                    skip_whitespace_backward(&bytes[..match_end], match_start).max(search_offset)
+            }
+            if metadata.rstrip {
+                match_end = skip_whitespace_forward(bytes, match_end)
+            }
+            return Some(((match_start, match_end), id));
         }
+        None
     }
 }
 
@@ -526,7 +533,7 @@ mod tests {
     use crate::normalizers::byte_level::ByteLevel as ByteLevelNormalizer;
     use crate::normalizers::utils::Lowercase;
     use crate::normalizers::NormalizerWrapper;
-    use crate::{OffsetReferential, OffsetType, Result, Token};
+    use crate::{Result, Token};
     use std::collections::HashMap;
     use std::path::{Path, PathBuf};
 
@@ -554,19 +561,59 @@ mod tests {
         }
     }
 
-    fn simplify_output(result: &'_ PreTokenizedString) -> Vec<(&'_ str, Option<Vec<u32>>)> {
-        result
-            .get_splits(OffsetReferential::Original, OffsetType::Byte)
-            .into_iter()
-            .map(|(s, _, tokens)| {
-                (
-                    s,
-                    tokens
-                        .as_ref()
-                        .map(|t| t.iter().map(|t| t.id).collect::<Vec<_>>()),
-                )
-            })
-            .collect::<Vec<_>>()
+    fn extract_segments(
+        vocab: &AddedVocabulary,
+        input: &str,
+        normalized: bool,
+    ) -> Vec<(String, Option<u32>)> {
+        let bytes = input.as_bytes();
+        let mut segments = Vec::new();
+        let mut offset = 0;
+        while offset < bytes.len() {
+            match vocab.extract_next(bytes, offset, normalized) {
+                Some(((start, end), id)) => {
+                    if start > offset {
+                        segments.push((input[offset..start].to_string(), None));
+                    }
+                    segments.push((input[start..end].to_string(), Some(id)));
+                    offset = end;
+                }
+                None => {
+                    segments.push((input[offset..].to_string(), None));
+                    break;
+                }
+            }
+        }
+        segments
+    }
+
+    /// Mirrors `PipelineTokenizer::encode`: extract tokens declared on raw text first,
+    /// then normalize each remaining chunk and extract tokens declared on normalized text.
+    fn extract_two_pass<N: Normalizer>(
+        vocab: &AddedVocabulary,
+        normalizer: Option<&N>,
+        input: &str,
+    ) -> Vec<(String, Option<u32>)> {
+        let mut segments = Vec::new();
+        for (chunk, id) in extract_segments(vocab, input, false) {
+            if id.is_some() {
+                segments.push((chunk, id));
+            } else {
+                let mut normalized = NormalizedString::from(chunk.as_str());
+                if let Some(n) = normalizer {
+                    n.normalize(&mut normalized).unwrap();
+                }
+                segments.extend(extract_segments(vocab, normalized.get(), true));
+            }
+        }
+        segments
+    }
+
+    fn owned(segments: &[(&str, Option<u32>)]) -> Vec<(String, Option<u32>)> {
+        segments
+            .iter()
+            .map(|&(s, id)| (s.to_string(), id))
+            .collect()
     }
 
     impl Model for ModelMock {
@@ -756,25 +803,16 @@ mod tests {
             )
             .unwrap();
 
-        let result = vocab.extract_and_normalize(normalizer, "[CLS] My name is Anthony [SEP]");
+        let result = extract_two_pass(&vocab, normalizer, "[CLS] My name is Anthony [SEP]");
         assert_eq!(
-            result
-                .get_splits(OffsetReferential::Original, OffsetType::Byte)
-                .into_iter()
-                .map(|(s, _, tokens)| (
-                    s,
-                    tokens
-                        .as_ref()
-                        .map(|t| t.iter().map(|t| t.id).collect::<Vec<_>>())
-                ))
-                .collect::<Vec<_>>(),
-            vec![
-                ("[CLS]", Some(vec![2])),
+            result,
+            owned(&[
+                ("[CLS]", Some(2)),
                 (" My ", None),
-                ("name", Some(vec![1])),
+                ("name", Some(1)),
                 (" is Anthony ", None),
-                ("[SEP]", Some(vec![3]))
-            ]
+                ("[SEP]", Some(3)),
+            ])
         );
     }
 
@@ -789,9 +827,9 @@ mod tests {
         vocab
             .add_tokens(
                 [
-                    AddedToken::from("my", true).lstrip(true).rstrip(true),
-                    AddedToken::from("name", true),
-                    AddedToken::from("ony", true).single_word(true),
+                    AddedToken::from("my", false).lstrip(true).rstrip(true),
+                    AddedToken::from("name", false),
+                    AddedToken::from("ony", false).single_word(true),
                 ],
                 &model,
                 Some(&normalizer),
@@ -808,21 +846,20 @@ mod tests {
             )
             .unwrap();
 
-        let result =
-            vocab.extract_and_normalize(Some(&normalizer), "[CLS] My name is Anthony [SEP]");
+        let result = extract_two_pass(&vocab, Some(&normalizer), "[CLS] My name is Anthony [SEP]");
 
         assert_eq!(
-            simplify_output(&result),
-            vec![
-                ("[CLS]", Some(vec![3])),
+            result,
+            owned(&[
+                ("[CLS]", Some(3)),
                 // This one includes both spaces because of the lstrip & rstrip
                 // And it matches because normalized == true
-                (" my ", Some(vec![0])),
-                ("name", Some(vec![1])),
+                (" my ", Some(0)),
+                ("name", Some(1)),
                 // `ony` is not extracted here thanks to single_word
                 (" is anthony ", None),
-                ("[SEP]", Some(vec![4])),
-            ]
+                ("[SEP]", Some(4)),
+            ])
         );
     }
 
@@ -842,19 +879,20 @@ mod tests {
             )
             .unwrap();
         // Left, in the middle, non single world left, non single word right, end of sentence valid
-        let result = vocab.extract_and_normalize(
+        let result = extract_two_pass(
+            &vocab,
             Some(&normalizer),
             "<mask> My name <mask> A<mask> <mask>ony <mask>",
         );
         assert_eq!(
-            simplify_output(&result),
-            vec![
-                ("<mask>", Some(vec![0])),
+            result,
+            owned(&[
+                ("<mask>", Some(0)),
                 (" my name ", None),
-                ("<mask>", Some(vec![0])),
+                ("<mask>", Some(0)),
                 (" a<mask> <mask>ony ", None),
-                ("<mask>", Some(vec![0]))
-            ]
+                ("<mask>", Some(0)),
+            ])
         );
     }
 
@@ -873,18 +911,18 @@ mod tests {
                 Some(&normalizer),
             )
             .unwrap();
-        let result = vocab.extract_and_normalize(Some(&normalizer), "<mask>, <mask>- ◌̰<mask>");
+        let result = extract_two_pass(&vocab, Some(&normalizer), "<mask>, <mask>- ◌̰<mask>");
         assert_eq!(
-            simplify_output(&result),
-            vec![
+            result,
+            owned(&[
                 // Punctuation is not word
-                ("<mask>", Some(vec![0])),
+                ("<mask>", Some(0)),
                 (", ", None),
                 // dash is not word
-                ("<mask>", Some(vec![0])),
+                ("<mask>", Some(0)),
                 // This is unicode combining mark character and is word: https://en.wikipedia.org/wiki/Combining_Diacritical_Marks
                 ("- ◌̰<mask>", None),
-            ]
+            ])
         );
     }
 
@@ -904,21 +942,24 @@ mod tests {
                 Some(&normalizer),
             )
             .unwrap();
-        let result = vocab
-            .extract_and_normalize(Some(&normalizer), "Hi <mask> there\t<mask>\t<mask>\u{2000}");
+        let result = extract_two_pass(
+            &vocab,
+            Some(&normalizer),
+            "Hi <mask> there\t<mask>\t<mask>\u{2000}",
+        );
         assert_eq!(
-            simplify_output(&result),
-            vec![
+            result,
+            owned(&[
                 ("hi", None),
                 // Regular space
-                (" <mask> ", Some(vec![0])),
+                (" <mask> ", Some(0)),
                 ("there", None),
                 // \t is a spacing character
-                ("\t<mask>\t", Some(vec![0])),
+                ("\t<mask>\t", Some(0)),
                 // Non overlapping
                 // \u{2000} is mongolian vowel separator: https://jkorpela.fi/chars/spaces.html
-                ("<mask>\u{2000}", Some(vec![0])),
-            ]
+                ("<mask>\u{2000}", Some(0)),
+            ])
         );
     }
 
@@ -944,51 +985,53 @@ mod tests {
             .unwrap();
         vocab.set_encode_special_tokens(true);
 
-        let result = vocab.extract_and_normalize(
+        let result = extract_two_pass(
+            &vocab,
             Some(&normalizer),
             "Hi <mask> there\t<mask>\t<mask>\u{2000} <pad> <mask><pad><pad>",
         );
 
         assert_eq!(
-            simplify_output(&result),
-            vec![
+            result,
+            owned(&[
                 ("hi <m", None),
-                ("ask>", Some(vec![1])),
+                ("ask>", Some(1)),
                 (" there\t<m", None),
-                ("ask>", Some(vec![1])),
+                ("ask>", Some(1)),
                 ("\t<m", None),
-                ("ask>", Some(vec![1])),
+                ("ask>", Some(1)),
                 ("\u{2000} <pad> <m", None),
-                ("ask>", Some(vec![1])),
-                ("<pad><pad>", None)
-            ]
+                ("ask>", Some(1)),
+                ("<pad><pad>", None),
+            ])
         );
 
         vocab.set_encode_special_tokens(false);
 
-        let result = vocab.extract_and_normalize(
+        let result = extract_two_pass(
+            &vocab,
             Some(&normalizer),
             "Hi <mask> there\t<mask>\t<mask>\u{2000} <pad> <mask><pad><pad>",
         );
         assert_eq!(
-            simplify_output(&result),
-            vec![
+            result,
+            owned(&[
                 ("hi", None),
-                (" <mask> ", Some(vec![0])),
+                (" <mask> ", Some(0)),
                 ("there", None),
-                ("\t<mask>\t", Some(vec![0])),
-                ("<mask>\u{2000} ", Some(vec![0])),
-                ("<pad>", Some(vec![2])),
-                (" <mask>", Some(vec![0])),
-                ("<pad>", Some(vec![2])),
-                ("<pad>", Some(vec![2]))
-            ]
+                ("\t<mask>\t", Some(0)),
+                ("<mask>\u{2000} ", Some(0)),
+                ("<pad>", Some(2)),
+                (" <mask>", Some(0)),
+                ("<pad>", Some(2)),
+                ("<pad>", Some(2)),
+            ])
         );
     }
     #[test]
-    fn content_preserved_with_normalizer() {
-        // Verify that AddedToken.content always holds the original user-provided string,
-        // and that normalized_content holds the normalizer output separately.
+    fn normalized_tokens_are_stored_by_normalized_form() {
+        // The Buckets rewrite doesn't retain the original content of normalized tokens:
+        // they are stored (and decoded) by their normalized form.
         let model = ModelMock::new(&[]);
         let mut vocab = AddedVocabulary::new();
         let normalizer = Lowercase;
@@ -1005,17 +1048,13 @@ mod tests {
             .unwrap();
 
         let decoder = vocab.get_added_tokens_decoder();
-        // Original content is always preserved in the token struct regardless of normalization
-        assert!(decoder.values().any(|t| t.content == "Hello"));
+        // normalized=true → stored under the normalizer output
+        assert!(decoder.values().any(|t| t.content == "hello"));
+        // normalized=false → stored under the original content
         assert!(decoder.values().any(|t| t.content == "[CLS]"));
 
-        // "hello" (lowercased) is in the normalized cache — verify via simple_id_to_token
-        // let hello_id = vocab.added_tokens_map["Hello"];
-        // let cls_id = vocab.added_tokens_map["[CLS]"];
-        // normalized=true → decode returns cached form "hello"
-        // assert_eq!(vocab.simple_id_to_token(hello_id).unwrap(), "hello");
-        // // normalized=false → decode returns original content "[CLS]"
-        // assert_eq!(vocab.simple_id_to_token(cls_id).unwrap(), "[CLS]");
+        assert_eq!(vocab.simple_id_to_token(0).unwrap(), "hello");
+        assert_eq!(vocab.simple_id_to_token(1).unwrap(), "[CLS]");
     }
 
     #[test]
@@ -1033,19 +1072,7 @@ mod tests {
                 normalizer,
             )
             .unwrap();
-        let result = vocab.extract_and_normalize(normalizer, "my今");
-        assert_eq!(
-            result
-                .get_splits(OffsetReferential::Original, OffsetType::Byte)
-                .into_iter()
-                .map(|(s, _, tokens)| (
-                    s,
-                    tokens
-                        .as_ref()
-                        .map(|t| t.iter().map(|t| t.id).collect::<Vec<_>>())
-                ))
-                .collect::<Vec<_>>(),
-            vec![("my", Some(vec![0])), ("ä»Ĭ", Some(vec![1])),]
-        );
+        let result = extract_two_pass(&vocab, normalizer, "my今");
+        assert_eq!(result, owned(&[("my", Some(0)), ("ä»Ĭ", Some(1))]));
     }
 }

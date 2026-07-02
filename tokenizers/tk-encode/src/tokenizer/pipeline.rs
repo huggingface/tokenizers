@@ -143,15 +143,15 @@ impl<'a, 'b, PatternMatcher: PipelinePatternMatcher> Iterator
             self.pattern_matcher
                 .extract_next(self.input.as_bytes(), self.offset, self.normalized)
         {
-            let before_token = &self.input[self.offset..self.offset + start];
+            // `extract_next` positions are absolute in `input`, not relative to `offset`.
+            let before_token = &self.input[self.offset..start];
+            self.offset = end;
             if !before_token.is_empty() {
                 // The iterator returns segments in order: we need to return the chunk of text and then the special token.
                 // Store the special token to return in the next call and return a [`Segment::Text`]
                 self.pending = Some(token);
-                self.offset += end;
                 return Some(Segment::Text(before_token));
             } else {
-                self.offset += end;
                 return Some(Segment::SpecialToken(token));
             }
         }
@@ -256,5 +256,49 @@ impl PipelineTokenizer {
             };
         }
         Ok(output)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct FixedMatcher(Vec<((usize, usize), u32)>);
+    impl PipelinePatternMatcher for FixedMatcher {
+        fn extract_next(
+            &self,
+            _bytes: &[u8],
+            search_offset: usize,
+            _normalized: bool,
+        ) -> Option<((usize, usize), u32)> {
+            self.0
+                .iter()
+                .find(|((start, _), _)| *start >= search_offset)
+                .copied()
+        }
+    }
+
+    #[test]
+    fn segment_iterator_yields_text_and_specials_in_order() {
+        let input = "aa<s>bb<s>cc";
+        let matcher = FixedMatcher(vec![((2, 5), 0), ((7, 10), 1)]);
+
+        let segments: Vec<_> = SpecialSegmentIterator::new(input, &matcher, false)
+            .map(|segment| match segment {
+                Segment::Text(text) => (Some(text), None),
+                Segment::SpecialToken(id) => (None, Some(id)),
+            })
+            .collect();
+
+        assert_eq!(
+            segments,
+            vec![
+                (Some("aa"), None),
+                (None, Some(0)),
+                (Some("bb"), None),
+                (None, Some(1)),
+                (Some("cc"), None),
+            ]
+        );
     }
 }
