@@ -754,7 +754,7 @@ where
         let encode = |is_pre_tokenized, subseq_idx, subseq| -> Result<Encoding> {
             let normalized = self
                 .added_vocabulary
-                .extract_and_normalize(self.normalizer.as_ref(), subseq);
+                .extract_and_normalize(self.normalizer.as_ref(), subseq)?;
             let pre_tokenized = self.do_pre_tokenize(normalized)?;
             let subseq_encoding = self.do_tokenize(
                 pre_tokenized,
@@ -1257,7 +1257,7 @@ where
     pub fn pre_tokenize_for_training(&self, sequence: &str) -> Result<Vec<String>> {
         let normalized = self
             .added_vocabulary
-            .extract_and_normalize(self.normalizer.as_ref(), sequence);
+            .extract_and_normalize(self.normalizer.as_ref(), sequence)?;
         let pre_tokenized = self.do_pre_tokenize(normalized)?;
         Ok(pre_tokenized
             .get_splits(OffsetReferential::Original, OffsetType::Byte)

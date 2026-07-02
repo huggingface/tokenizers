@@ -379,69 +379,59 @@ impl AddedVocabulary {
         Ok(total - ignored)
     }
 
+    /// Extract the added tokens from `sequence`, normalizing everything else.
+    ///
+    /// Two passes, mirroring `PipelineTokenizer::encode`: tokens declared on raw
+    /// text (`normalized: false`) are matched first, then each remaining segment
+    /// is normalized and tokens declared on normalized text are matched on the
+    /// result.
     pub fn extract_and_normalize<N: Normalizer>(
         &self,
-        _normalizer: Option<&N>,
+        normalizer: Option<&N>,
         sequence: &str,
-    ) -> PreTokenizedString {
-        let bytes = sequence.as_bytes();
-        let mut splits: Vec<(usize, usize, Option<u32>)> = Vec::new();
-        let mut emit = 0;
-        let mut search = 0;
-        while search < bytes.len() {
-            // Find the next candidate start and the bucket whose entries we should scan.
-            match self.vocab.match_bytes(&bytes[search..]) {
-                Some((id, match_start, match_len)) if match_len > 0 => {
-                    // TODO: after matching non-normalized we have to match normalized
-                    // match_bytes positions are relative to the slice we passed (&bytes[search..])
-                    let mut match_start = search + match_start as usize;
-                    let mut match_end = match_start + match_len as usize;
-                    // single_word: reject unless the token is a standalone word (neither neighbour
-                    // char is a word char). Checked on the raw byte bounds, before any strip.
-                    if self.token_metadata[id as usize].single_word
-                        && !is_single_word(bytes, search, match_start, match_end)
-                    {
-                        search = match_start + 1; // resume just past the rejected match
-                        continue;
-                    }
-                    if self.token_metadata[id as usize].lstrip {
-                        match_start =
-                            skip_whitespace_backward(&bytes[..match_end], match_start).max(emit)
-                    }
-                    // FIXME: here we need to split again on normalized!
-                    // I am not doing because it means allocating a new NormalizedString...
-                    if match_start > emit {
-                        splits.push((emit, match_start, None));
-                    }
-                    if self.token_metadata[id as usize].rstrip {
-                        match_end = skip_whitespace_forward(bytes, match_end)
-                    }
-                    splits.push((match_start, match_end, Some(id)));
-                    emit = match_end;
-                    search = match_end;
-                }
-                // since match_bytes goes to the end, this means we reach the end.
-                _ => break,
-            }
-        }
-        if emit < bytes.len() {
-            splits.push((emit, bytes.len(), None));
-        }
-        // FIXME: this will go away once we have the 0-allocation in the hot path :)
+    ) -> Result<PreTokenizedString> {
         let mut pre = PreTokenizedString::from(sequence);
-        pre.split(|_, normalized| {
-            Ok(splits
-                .iter()
-                .filter_map(|&(start, end, id)| {
-                    let ns = normalized.slice(Range::Normalized(start..end))?;
-                    let tokens = id
-                        .map(|id| vec![Token::new(id, ns.get().to_string(), (0, ns.get().len()))]);
-                    Some((ns, tokens))
-                })
-                .collect::<Vec<_>>())
-        })
-        .unwrap();
-        pre
+        pre.split(|_, normalized| Ok(self.split_on_matches(normalized, false)))?;
+        pre.split(|_, mut normalized| {
+            if let Some(n) = normalizer {
+                n.normalize(&mut normalized)?;
+            }
+            Ok(self.split_on_matches(normalized, true))
+        })?;
+        Ok(pre)
+    }
+
+    fn split_on_matches(
+        &self,
+        normalized: NormalizedString,
+        match_normalized: bool,
+    ) -> Vec<(NormalizedString, Option<Vec<Token>>)> {
+        let bytes = normalized.get().as_bytes();
+        let mut splits: Vec<(usize, usize, Option<u32>)> = Vec::new();
+        let mut offset = 0;
+        while let Some(((start, end), id)) = self.extract_next(bytes, offset, match_normalized) {
+            if start > offset {
+                splits.push((offset, start, None));
+            }
+            splits.push((start, end, Some(id)));
+            offset = end;
+        }
+        if splits.is_empty() {
+            // no added token in this segment (the common case): avoid re-slicing
+            return vec![(normalized, None)];
+        }
+        if offset < bytes.len() {
+            splits.push((offset, bytes.len(), None));
+        }
+        splits
+            .iter()
+            .filter_map(|&(start, end, id)| {
+                let ns = normalized.slice(Range::Normalized(start..end))?;
+                let tokens =
+                    id.map(|id| vec![Token::new(id, ns.get().to_string(), (0, ns.get().len()))]);
+                Some((ns, tokens))
+            })
+            .collect()
     }
 }
 
@@ -533,7 +523,7 @@ mod tests {
     use crate::normalizers::byte_level::ByteLevel as ByteLevelNormalizer;
     use crate::normalizers::utils::Lowercase;
     use crate::normalizers::NormalizerWrapper;
-    use crate::{Result, Token};
+    use crate::{OffsetReferential, OffsetType, Result, Token};
     use std::collections::HashMap;
     use std::path::{Path, PathBuf};
 
@@ -1028,6 +1018,43 @@ mod tests {
             ])
         );
     }
+    #[test]
+    fn extract_and_normalize_applies_normalizer() {
+        let model = ModelMock::new(&[]);
+        let mut vocab = AddedVocabulary::new();
+        let normalizer = Lowercase;
+
+        vocab
+            .add_tokens(
+                [
+                    AddedToken::from("[CLS]", true),
+                    AddedToken::from("Name", false),
+                ],
+                &model,
+                Some(&normalizer),
+            )
+            .unwrap();
+
+        let pre = vocab
+            .extract_and_normalize(Some(&normalizer), "[CLS] My Name Is")
+            .unwrap();
+        let segments: Vec<(String, Option<u32>)> = pre
+            .get_splits(OffsetReferential::Normalized, OffsetType::Byte)
+            .into_iter()
+            .map(|(s, _, tokens)| (s.to_string(), tokens.as_ref().map(|t| t[0].id)))
+            .collect();
+
+        assert_eq!(
+            segments,
+            owned(&[
+                ("[CLS]", Some(0)),
+                (" my ", None),
+                ("name", Some(1)),
+                (" is", None),
+            ])
+        );
+    }
+
     #[test]
     fn normalized_tokens_are_stored_by_normalized_form() {
         // The Buckets rewrite doesn't retain the original content of normalized tokens:
