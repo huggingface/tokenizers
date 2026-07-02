@@ -1,4 +1,4 @@
-use crate::pipeline;
+use crate::pipeline::{self, SplitPolicy};
 use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
 use crate::utils::macro_rules_attribute;
 use std::sync::LazyLock;
@@ -26,7 +26,20 @@ enum CharType {
     Other,
 }
 
-fn bert_classify(c: char) -> CharType {
+impl CharType {
+    #[inline]
+    fn policy(self) -> SplitPolicy {
+        match self {
+            // whitespace is dropped, each punctuation char is isolated, and
+            // everything else is emitted as a single split.
+            CharType::Whitespace => SplitPolicy::Remove,
+            CharType::Punctuation => SplitPolicy::Isolate,
+            CharType::Other => SplitPolicy::Keep,
+        }
+    }
+}
+
+fn classify(c: char) -> CharType {
     if c.is_whitespace() {
         CharType::Whitespace
     } else if is_bert_punc(c) {
@@ -36,47 +49,25 @@ fn bert_classify(c: char) -> CharType {
     }
 }
 
-/// `CharType` of each ASCII codepoint (index == its byte value). Lets the
-/// ASCII fast path skip the Unicode predicates in `bert_classify`; the (cheap)
-/// UTF-8 decode still happens via `char_indices`, and non-ASCII falls back to
-/// `bert_classify`.
 static ASCII_CLASS: LazyLock<[CharType; 128]> =
-    LazyLock::new(|| std::array::from_fn(|b| bert_classify(b as u8 as char)));
+    LazyLock::new(|| std::array::from_fn(|b| classify(b as u8 as char)));
 
 impl pipeline::PreTokenizer for BertPreTokenizer {
+    // XXX: surprisingly, inlining here yields 10-15% slower performance
+    #[inline(never)]
     fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Split>) -> Result<()> {
-        let mut start: u32 = 0;
-        let mut prev_type: Option<CharType> = None;
-
-        for (i, ch) in text.char_indices() {
-            let ct = if ch.is_ascii() {
-                ASCII_CLASS[ch as usize]
-            } else {
-                bert_classify(ch)
-            };
-
-            if let Some(pt) = prev_type {
-                if pt != ct || ct == CharType::Punctuation {
-                    if pt != CharType::Whitespace {
-                        out.push(pipeline::Split {
-                            start,
-                            end: i as u32,
-                        });
-                    }
-                    start = i as u32;
+        pipeline::split(
+            text,
+            out,
+            |ch| {
+                if ch.is_ascii() {
+                    ASCII_CLASS[ch as usize]
+                } else {
+                    classify(ch)
                 }
-            }
-            prev_type = Some(ct);
-        }
-
-        if let Some(pt) = prev_type {
-            if pt != CharType::Whitespace {
-                out.push(pipeline::Split {
-                    start,
-                    end: text.len() as u32,
-                });
-            }
-        }
+            },
+            CharType::policy,
+        );
         Ok(())
     }
 }
