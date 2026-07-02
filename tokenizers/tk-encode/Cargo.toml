@@ -31,6 +31,7 @@ rand = "0.9"
 onig = { version = "6.5.1", default-features = false, optional = true }
 regex = "1.10"
 regex-syntax = "0.8"
+regex-automata = "0.4"
 rayon = "1.10"
 rayon-cond = "0.4"
 serde = { version = "1.0", features = ["derive"] }
@@ -60,7 +61,10 @@ ptr_hash = { version = "1.1.0" }
 memchr = "2.8.2"
 
 [features]
-default = ["progressbar", "onig"]
+# TODO: onig is C (Oniguruma, archived upstream). We're moving to the pure-Rust
+# fancy-regex backend by default; once the legacy pre-tokenizers are gone, drop
+# the `onig` feature + `src/utils/onig.rs` entirely.
+default = ["progressbar", "fancy-regex"]
 progressbar = ["indicatif"]
 http = ["hf-hub"]
 unstable_wasm = ["fancy-regex", "getrandom/wasm_js"]

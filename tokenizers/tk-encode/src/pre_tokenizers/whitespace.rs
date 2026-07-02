@@ -2,7 +2,7 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
-use crate::pipeline;
+use crate::pipeline::{self, SplitPolicy};
 use crate::tokenizer::{
     pattern::Invert, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior,
 };
@@ -48,6 +48,18 @@ enum CharType {
     Symbol,
 }
 
+impl CharType {
+    #[inline]
+    fn policy(self) -> SplitPolicy {
+        match self {
+            // whitespace is dropped; word and symbol groups are each emitted as one
+            // split, with a boundary between the two classes.
+            CharType::Whitespace => SplitPolicy::Remove,
+            CharType::Word | CharType::Symbol => SplitPolicy::Keep,
+        }
+    }
+}
+
 fn classify(ch: char) -> CharType {
     if ch.is_whitespace() {
         CharType::Whitespace
@@ -72,48 +84,25 @@ pub fn is_word_char(ch: char) -> bool {
         || ch == '\u{200d}' // Zero-Width Joiner
 }
 
-/// `CharType` of each ASCII codepoint (index == its byte value). Lets the
-/// ASCII fast path skip the Unicode predicates in `classify`; the (cheap) UTF-8
-/// decode still happens via `char_indices`, and non-ASCII falls back to
-/// `classify`.
 static ASCII_CLASS: LazyLock<[CharType; 128]> =
     LazyLock::new(|| std::array::from_fn(|b| classify(b as u8 as char)));
 
 impl pipeline::PreTokenizer for Whitespace {
+    // XXX: surprisingly, inlining here yields 10-15% slower performance
+    #[inline(never)]
     fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Split>) -> Result<()> {
-        let mut span_start: u32 = 0;
-        let mut prev_type: Option<CharType> = None;
-
-        for (i, ch) in text.char_indices() {
-            let ct = if ch.is_ascii() {
-                ASCII_CLASS[ch as usize]
-            } else {
-                classify(ch)
-            };
-
-            if let Some(pt) = prev_type {
-                if pt != ct {
-                    if pt != CharType::Whitespace {
-                        out.push(pipeline::Split {
-                            start: span_start,
-                            end: i as u32,
-                        });
-                    }
-                    span_start = i as u32;
+        pipeline::split(
+            text,
+            out,
+            |ch| {
+                if ch.is_ascii() {
+                    ASCII_CLASS[ch as usize]
+                } else {
+                    classify(ch)
                 }
-            }
-            prev_type = Some(ct);
-        }
-
-        if let Some(pt) = prev_type {
-            if pt != CharType::Whitespace {
-                out.push(pipeline::Split {
-                    start: span_start,
-                    end: text.len() as u32,
-                });
-            }
-        }
-
+            },
+            CharType::policy,
+        );
         Ok(())
     }
 }
@@ -183,7 +172,7 @@ mod tests {
 
     #[test]
     fn edge_cases() {
-        // word / symbol / whitespace transitions; whitespace dropped, runs kept whole
+        // word / symbol / whitespace transitions; whitespace dropped, splits kept whole
         let edge_cases = vec![
             ("", vec![]),
             (" ", vec![]),
@@ -212,14 +201,14 @@ mod tests {
             pretokenize("café résumé"),
             vec![("café", (0, 5)), ("résumé", (6, 14))],
         );
-        // CJK ideographs are alphabetic (word chars): one run, no inner split.
+        // CJK ideographs are alphabetic (word chars): one split, no inner boundary.
         assert_eq!(
             pretokenize("中文 text"),
             vec![("中文", (0, 6)), ("text", (7, 11))],
         );
         // '_' is connector punctuation (a word char) -> a single word token.
         assert_eq!(pretokenize("hello_world"), vec![("hello_world", (0, 11))]);
-        // word and symbol runs are each kept whole; only the boundary splits.
+        // word and symbol groups are each one split; only the boundary splits.
         assert_eq!(
             pretokenize("ab!!cd"),
             vec![("ab", (0, 2)), ("!!", (2, 4)), ("cd", (4, 6))],
