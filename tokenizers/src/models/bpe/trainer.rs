@@ -617,6 +617,9 @@ impl BpeTrainer {
             .iter()
             .map(|(key, val)| (*val, key.to_owned()))
             .collect();
+        model.vocab_r_vec = super::model::build_vocab_r_vec(&model.vocab_r);
+        model.vocab_decoded =
+            super::model::build_vocab_decoded(&model.vocab_r_vec, model.byte_fallback);
         model.merges = merges
             .into_iter()
             .enumerate()

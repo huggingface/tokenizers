@@ -76,6 +76,19 @@ pub trait Model {
     fn token_to_id(&self, token: &str) -> Option<u32>;
     /// Find the string token associated to an ID
     fn id_to_token(&self, id: u32) -> Option<String>;
+    /// Return the pre-decoded raw bytes for a token ID, if the model keeps a
+    /// pre-decoded byte table (e.g. byte-level BPE).  Enables the zero-copy
+    /// fused decode fast path.  The default returns `None`, so models without
+    /// such a table fall back to the regular decoder.
+    fn id_to_decoded_bytes(&self, _id: u32) -> Option<&[u8]> {
+        None
+    }
+    /// Estimate the output byte capacity needed to decode `n` tokens.
+    /// Used to size the fused decode buffer in a single allocation.
+    /// The default returns 0 (caller uses a heuristic).
+    fn estimate_decode_capacity(&self, _n: usize) -> usize {
+        0
+    }
     /// Retrieve the entire vocabulary mapping (token -> ID)
     fn get_vocab(&self) -> HashMap<String, u32>;
     /// Retrieve the size of the vocabulary
