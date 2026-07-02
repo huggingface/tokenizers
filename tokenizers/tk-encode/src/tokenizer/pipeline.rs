@@ -10,7 +10,7 @@ use crate::{
 use super::Result;
 
 /// A pre-token split, a range into the input text.
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone)]
 pub struct Split {
     pub start: u32,
     pub end: u32,
@@ -18,7 +18,7 @@ pub struct Split {
 
 impl Split {
     #[inline]
-    pub fn range(&self) -> Range<usize> {
+    pub fn range(self) -> Range<usize> {
         self.start as usize..self.end as usize
     }
 }
@@ -52,96 +52,6 @@ pub struct PipelineToken {
 impl From<Token> for PipelineToken {
     fn from(value: Token) -> Self {
         Self { id: value.id }
-    }
-}
-
-pub struct PipelineTokenizer {
-    added_vocabulary: AddedVocabulary,
-    normalizer: Option<NormalizerWrapper>,
-    pre_tokenizer: PipelinePreTokenizer,
-    model: ModelWrapper,
-    _post_processor: Option<PostProcessorWrapper>,
-}
-
-/// Build a `PipelineTokenizer` from a fully-configured `Tokenizer` (the oracle),
-/// cloning its components. Fails if the oracle uses a pre-tokenizer the pipeline
-/// does not yet support (only `Bert`, `Whitespace`, or none).
-impl TryFrom<&Tokenizer> for PipelineTokenizer {
-    type Error = super::Error;
-
-    fn try_from(tok: &Tokenizer) -> Result<Self> {
-        let pre_tokenizer = match tok.get_pre_tokenizer() {
-            None => PipelinePreTokenizer::None,
-            Some(PreTokenizerWrapper::BertPreTokenizer(p)) => PipelinePreTokenizer::Bert(*p),
-            Some(PreTokenizerWrapper::Whitespace(p)) => PipelinePreTokenizer::Whitespace(p.clone()),
-            Some(other) => {
-                return Err(format!(
-                    "PipelineTokenizer only supports Bert/Whitespace/None pre-tokenizers, got: {other:?}"
-                )
-                .into())
-            }
-        };
-
-        Ok(Self {
-            added_vocabulary: tok.get_added_vocabulary().clone(),
-            normalizer: tok.get_normalizer().cloned(),
-            pre_tokenizer,
-            model: tok.get_model().clone(),
-            _post_processor: tok.get_post_processor().cloned(),
-        })
-    }
-}
-
-impl PipelineTokenizer {
-    fn tokenize_chunk(
-        &self,
-        chunk: &str,
-        pre_tokens: &mut Vec<Split>,
-        output: &mut Vec<PipelineToken>,
-    ) -> Result<()> {
-        // todo: no more NormalizedString
-        let mut normalized: NormalizedString = chunk.into();
-        if let Some(normalizer) = &self.normalizer {
-            normalizer.normalize(&mut normalized)?;
-        }
-        for segment in SpecialSegmentIterator::new(normalized.get(), &self.added_vocabulary, true) {
-            match segment {
-                Segment::SpecialToken(token) => {
-                    output.push(PipelineToken { id: token });
-                }
-                Segment::Text(normalized_chunk) => {
-                    pre_tokens.clear();
-                    self.pre_tokenizer
-                        .pre_tokenize(normalized_chunk, pre_tokens)?;
-                    for pre_token in pre_tokens.iter() {
-                        output.extend(
-                            self.model
-                                .tokenize(&normalized_chunk[pre_token.range()])?
-                                .into_iter()
-                                .map(|Token { id, .. }| PipelineToken { id }),
-                        );
-                    }
-                }
-            }
-        }
-        Ok(())
-    }
-
-    pub fn encode(&self, input: &str, _add_special_tokens: bool) -> Result<Vec<PipelineToken>> {
-        let mut output: Vec<PipelineToken> = vec![];
-        let mut pre_tokens: Vec<Split> = vec![];
-
-        for segment in SpecialSegmentIterator::new(input, &self.added_vocabulary, false) {
-            match segment {
-                Segment::SpecialToken(token) => {
-                    output.push(PipelineToken { id: token });
-                }
-                Segment::Text(chunk) => {
-                    self.tokenize_chunk(chunk, &mut pre_tokens, &mut output)?;
-                }
-            };
-        }
-        Ok(output)
     }
 }
 
@@ -213,5 +123,92 @@ impl<'a, 'b, PatternMatcher: PipelinePatternMatcher> Iterator
         }
         self.offset = self.input.len();
         Some(Segment::Text(remaining_input))
+    }
+}
+
+pub struct PipelineTokenizer {
+    added_vocabulary: AddedVocabulary,
+    normalizer: Option<NormalizerWrapper>,
+    pre_tokenizer: PipelinePreTokenizer,
+    model: ModelWrapper,
+    _post_processor: Option<PostProcessorWrapper>,
+}
+
+impl TryFrom<&Tokenizer> for PipelineTokenizer {
+    type Error = super::Error;
+
+    fn try_from(tok: &Tokenizer) -> Result<Self> {
+        let pre_tokenizer = match tok.get_pre_tokenizer() {
+            None => PipelinePreTokenizer::None,
+            Some(PreTokenizerWrapper::BertPreTokenizer(p)) => PipelinePreTokenizer::Bert(*p),
+            Some(PreTokenizerWrapper::Whitespace(p)) => PipelinePreTokenizer::Whitespace(p.clone()),
+            Some(other) => {
+                return Err(format!(
+                    "PipelineTokenizer only supports Bert/Whitespace/None pre-tokenizers, got: {other:?}"
+                )
+                .into())
+            }
+        };
+
+        Ok(Self {
+            added_vocabulary: tok.get_added_vocabulary().clone(),
+            normalizer: tok.get_normalizer().cloned(),
+            pre_tokenizer,
+            model: tok.get_model().clone(),
+            _post_processor: tok.get_post_processor().cloned(),
+        })
+    }
+}
+
+impl PipelineTokenizer {
+    pub fn encode(&self, input: &str, _add_special_tokens: bool) -> Result<Vec<PipelineToken>> {
+        let mut output: Vec<PipelineToken> = vec![];
+        let mut pre_tokens: Vec<Split> = vec![];
+
+        for segment in SpecialSegmentIterator::new(input, &self.added_vocabulary, false) {
+            match segment {
+                Segment::SpecialToken(token) => {
+                    output.push(PipelineToken { id: token });
+                }
+                Segment::Text(chunk) => {
+                    self.tokenize_chunk(chunk, &mut pre_tokens, &mut output)?;
+                }
+            };
+        }
+        Ok(output)
+    }
+
+    fn tokenize_chunk(
+        &self,
+        chunk: &str,
+        pre_tokens: &mut Vec<Split>,
+        output: &mut Vec<PipelineToken>,
+    ) -> Result<()> {
+        // todo: no more NormalizedString
+        let mut normalized: NormalizedString = chunk.into();
+        if let Some(normalizer) = &self.normalizer {
+            normalizer.normalize(&mut normalized)?;
+        }
+        for segment in SpecialSegmentIterator::new(normalized.get(), &self.added_vocabulary, true) {
+            match segment {
+                Segment::SpecialToken(token) => {
+                    output.push(PipelineToken { id: token });
+                }
+                Segment::Text(normalized_chunk) => {
+                    pre_tokens.clear();
+                    self.pre_tokenizer
+                        .pre_tokenize(normalized_chunk, pre_tokens)?;
+                    for pre_token in pre_tokens.iter() {
+                        output.extend(
+                            self.model
+                                .tokenize(&normalized_chunk[pre_token.range()])?
+                                .into_iter()
+                                .map(|Token { id, .. }| PipelineToken { id }),
+                        );
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 }
