@@ -946,6 +946,10 @@ where
 
     /// Decode the given ids, back to a String
     pub fn decode(&self, ids: &[u32], skip_special_tokens: bool) -> Result<String> {
+        if let Some(result) = self.decode_fused(ids, skip_special_tokens) {
+            return result;
+        }
+
         let tokens = ids
             .iter()
             .filter_map(|id| {
@@ -963,6 +967,65 @@ where
         } else {
             Ok(tokens.join(" "))
         }
+    }
+
+    /// Fused decode fast path: single-pass direct write into one output buffer.
+    ///
+    /// For models that expose pre-decoded token bytes (byte-level BPE), each
+    /// token's bytes are a zero-copy `&[u8]` slice into the model's contiguous
+    /// `vocab_decoded` blob; they are concatenated into a single reused buffer
+    /// and validated as UTF-8 once at the end -- no per-token `String` alloc,
+    /// no intermediate `Vec<String>`, no `join`.
+    ///
+    /// Returns `None` (so `decode` uses the regular decoder path) when there is
+    /// no decoder, when the model keeps no pre-decoded byte table, or when any
+    /// token has no pre-decoded bytes -- e.g. Metaspace tokens, which
+    /// `build_vocab_decoded` deliberately leaves empty so the decoder can
+    /// process them correctly.
+    fn decode_fused(&self, ids: &[u32], skip_special_tokens: bool) -> Option<Result<String>> {
+        self.decoder.as_ref()?;
+
+        // Cheap gate: models with no pre-decoded byte table (Unigram,
+        // WordPiece, WordLevel) can never take this fast path. Bail out
+        // before doing any O(n) work so their decode is not slowed down by
+        // a fused attempt that would fail on the first token anyway.
+        if self.model.estimate_decode_capacity(ids.len()) == 0 {
+            return None;
+        }
+
+        let added = self.added_vocabulary.get_added_tokens_decoder();
+
+        // Skip the per-token added-vocab check entirely when every added-vocab
+        // ID is above the max input ID (common: encoded text IDs are below the
+        // added-vocab range). One min/max scan replaces N HashMap probes.
+        let min_added_id = added.keys().min().copied().unwrap_or(u32::MAX);
+        let max_input_id = ids.iter().max().copied().unwrap_or(0);
+        let check_added = !added.is_empty() && max_input_id >= min_added_id;
+
+        let cap = self.model.estimate_decode_capacity(ids.len());
+        let mut buf = Vec::with_capacity(if cap > 0 { cap } else { ids.len() * 4 });
+
+        for &id in ids {
+            if check_added {
+                if let Some(tok) = added.get(&id) {
+                    if !(skip_special_tokens && self.added_vocabulary.is_special_token(&tok.content))
+                    {
+                        buf.extend_from_slice(tok.content.as_bytes());
+                    }
+                    continue;
+                }
+            }
+            let bytes = self.model.id_to_decoded_bytes(id)?;
+            buf.extend_from_slice(bytes);
+        }
+
+        // Bytes come from `vocab_decoded` (built from valid token strings) or
+        // added-vocab content (valid Strings). Pre-decoded byte_fallback tokens
+        // can form partial UTF-8 sequences, so validate with from_utf8
+        // (zero-copy, reuses the buffer on success) and fall back to
+        // from_utf8_lossy for incomplete sequences.
+        Some(Ok(String::from_utf8(buf)
+            .unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned())))
     }
 
     /// Decode the given ids, back to a String
