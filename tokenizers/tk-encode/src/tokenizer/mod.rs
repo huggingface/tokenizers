@@ -22,14 +22,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::utils::parallelism::*;
 
-mod added_vocabulary;
 mod encoding;
 pub mod normalizer;
 pub mod pattern;
 pub mod pipeline;
 pub mod pre_tokenizer;
 mod serialization;
-
 // Re-export wrappers
 pub use crate::decoders::DecoderWrapper;
 pub use crate::models::ModelWrapper;
@@ -37,12 +35,12 @@ pub use crate::normalizers::NormalizerWrapper;
 pub use crate::pre_tokenizers::PreTokenizerWrapper;
 pub use crate::processors::PostProcessorWrapper;
 // And some other types
+use crate::added_vocabulary::{AddedToken, AddedVocabulary};
 pub use crate::utils::iter::LinesWithEnding;
 pub use crate::utils::padding::{pad_encodings, PaddingDirection, PaddingParams, PaddingStrategy};
 pub use crate::utils::truncation::{
     truncate_encodings, TruncationDirection, TruncationParams, TruncationStrategy,
 };
-pub use added_vocabulary::*;
 pub use encoding::*;
 pub use normalizer::{NormalizedString, OffsetReferential, SplitDelimiterBehavior};
 pub use pre_tokenizer::*;
@@ -113,6 +111,8 @@ pub trait Model {
     }
 }
 
+/// TODO: this behaves kinda like a chat template but it happens after the chate template.
+/// so these days in general its kinda ignored.
 /// A `PostProcessor` has the responsibility to post process an encoded output of the `Tokenizer`.
 /// It adds any special tokens that a language model would require.
 pub trait PostProcessor {
@@ -261,6 +261,8 @@ impl<'s> From<&'s [Cow<'s, str>]> for InputSequence<'s> {
     }
 }
 
+/// TODO: appart from post processing these with the post processor there is almost
+/// no reason to discriminate this vs a normal encoding.
 #[derive(Debug, Clone)]
 pub enum EncodeInput<'s> {
     Single(InputSequence<'s>),
@@ -287,6 +289,7 @@ where
 #[error("{0}")]
 pub struct BuilderError(String);
 
+/// TODO: scratch builder can be added here probably.
 /// Builder for Tokenizer structs.
 ///
 /// `build()` fails if the `model` is missing.
@@ -569,8 +572,6 @@ where
     /// tokens when constructing a tokenizer programmatically.
     pub fn with_normalizer(&mut self, normalizer: Option<impl Into<N>>) -> Result<&mut Self> {
         self.normalizer = normalizer.map(|norm| norm.into());
-        self.added_vocabulary
-            .refresh_normalized_tokens(self.normalizer.as_ref())?;
         Ok(self)
     }
     /// Get the normalizer
@@ -693,7 +694,7 @@ where
             if !added_vocab.is_empty() {
                 final_vocab.reserve(added_vocab.len());
                 for (token, id) in added_vocab {
-                    final_vocab.insert(token.clone(), *id);
+                    final_vocab.insert(token.clone(), id);
                 }
             }
         }

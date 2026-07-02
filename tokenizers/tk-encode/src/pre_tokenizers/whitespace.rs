@@ -61,7 +61,7 @@ fn classify(ch: char) -> CharType {
 /// Matches the same characters as the `\w` regex class (Unicode-aware).
 /// This is: Alphabetic + Nd (decimal digit) + Pc (connector punctuation) +
 /// M (marks) + Join_Control — NOT Nl/No (which Rust's is_alphanumeric includes).
-fn is_word_char(ch: char) -> bool {
+pub fn is_word_char(ch: char) -> bool {
     use unicode_categories::UnicodeCategories;
 
     ch.is_alphabetic()

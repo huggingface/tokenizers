@@ -90,6 +90,7 @@ extern crate derive_builder;
 
 #[macro_use]
 pub mod utils;
+pub mod added_vocabulary;
 pub mod decoders;
 pub mod models;
 pub mod normalizers;
@@ -99,6 +100,8 @@ pub mod tokenizer;
 
 // Re-export from tokenizer
 pub use tokenizer::*;
+// Re-export the added-vocabulary subsystem (AddedToken/AddedVocabulary + vocab_store/buckets modules) at the crate root
+pub use added_vocabulary::*;
 
 // Re-export also parallelism utils
 pub use utils::parallelism;
