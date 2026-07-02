@@ -1,7 +1,7 @@
 use tokenizers::models::bpe::BPE;
 use tokenizers::pre_tokenizers::whitespace::Whitespace;
 use tokenizers::{DecoderWrapper, NormalizerWrapper, PostProcessorWrapper, PreTokenizerWrapper};
-use tokenizers::{Model, Tokenizer, TokenizerBuilder};
+use tokenizers::{Tokenizer, TokenizerBuilder, TokenizerTrainExt, Trainable};
 
 #[test]
 fn bpe_values_after_training() {

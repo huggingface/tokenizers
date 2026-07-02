@@ -7,7 +7,7 @@ use tokenizers::normalizers::{Sequence, Strip, NFC};
 use tokenizers::pre_tokenizers::byte_level::ByteLevel;
 use tokenizers::{AddedToken, TokenizerBuilder};
 use tokenizers::{DecoderWrapper, NormalizerWrapper, PostProcessorWrapper, PreTokenizerWrapper};
-use tokenizers::{Tokenizer, TokenizerImpl};
+use tokenizers::{Tokenizer, TokenizerImpl, TokenizerTrainExt};
 
 #[test]
 fn train_tokenizer() {
