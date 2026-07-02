@@ -6,25 +6,35 @@
 //! counting global allocator). The real `PipelineTokenizer::encode` is also run
 //! as a ground-truth cross-check that the reconstruction captures ~all the work.
 //!
-//! Stages (mirroring the current `encode` + `tokenize_chunk`): special-token
-//! extraction on the remaining input (the `get_next_special_token` scan loop)
-//! -> normalization (+ NormalizedString build) -> pre-tokenization ->
-//! tokenization (model.tokenize + extend output). Keep in sync with `encode`.
+//! The current `encode` drives a `SpecialSegmentIterator` at two sites:
+//!   * `encode` iterates it over the **raw** input (`normalized = false`),
+//!     handing each text `Segment` to `tokenize_chunk` and pushing special
+//!     tokens straight to `output`.
+//!   * `tokenize_chunk` normalizes its chunk to a `Cow<str>` (no
+//!     `NormalizedString`), then iterates a second `SpecialSegmentIterator` over
+//!     the **normalized** text (`normalized = true`), pre-tokenizing + running
+//!     the model on each text `Segment`.
+//!
+//! We mirror that with [`for_each_segment`], a driver reproducing
+//! `SpecialSegmentIterator::next` so each call site reads like the real
+//! `match segment { .. }`. The `get_next_special_token` calls at both sites are
+//! tallied under one "special-token extract" bucket. Keep in sync with `encode`.
 //!
 //! Usage:
 //!   cargo run --release --example pipeline_stages -- [tokenizer.json] [text_file] [repeats]
 
 use std::alloc::{GlobalAlloc, Layout, System};
+use std::borrow::Cow;
 use std::convert::TryFrom;
 use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 use std::time::{Duration, Instant};
 
 use tk_encode::pipeline::{
-    PipelinePreTokenizer, PipelineToken, PipelineTokenizer, PreTokenizer as PipePreTok, Split,
+    Normalizer as PipeNormalizer, PipelinePatternMatcher, PipelinePreTokenizer, PipelineToken,
+    PipelineTokenizer, PreTokenizer as PipePreTok, Segment, Split,
 };
 use tk_encode::{
-    AddedVocabulary, Model, ModelWrapper, NormalizedString, Normalizer, NormalizerWrapper,
-    PreTokenizerWrapper, Token, Tokenizer,
+    AddedVocabulary, Model, ModelWrapper, NormalizerWrapper, PreTokenizerWrapper, Token, Tokenizer,
 };
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
@@ -202,13 +212,48 @@ fn run_regime(
     );
 }
 
-/// Reconstruct `PipelineTokenizer::encode` (+ `tokenize_chunk`) stage-by-stage,
-/// timing + counting allocations for each region. Kept structurally 1-1 with
-/// the real code: fresh `output`/`pre_tokens` Vecs per call, a single
-/// `get_next_special_token` scan loop over the remaining input (special tokens
-/// are matched on the raw input only; offsets are discarded), the chunk before
-/// each match tokenized via [`tokenize_chunk`], reused `pre_tokens` via
-/// `clear()`, and a single `output` extended in place.
+/// Reproduce `SpecialSegmentIterator::next`: scan `input` for the next special
+/// token (timing that scan into `s.extract`), yielding the text before it and
+/// the token itself as [`Segment`]s to `on_segment`, then the trailing text.
+/// This is the shared driver both `encode` (raw input, `normalized = false`) and
+/// `tokenize_chunk` (normalized text, `normalized = true`) iterate over.
+fn for_each_segment<'a>(
+    av: &AddedVocabulary,
+    input: &'a str,
+    normalized: bool,
+    s: &mut Stages,
+    mut on_segment: impl FnMut(Segment<'a>, &mut Stages),
+) {
+    let mut offset = 0usize;
+    loop {
+        let remaining = &input[offset..];
+        if remaining.is_empty() {
+            break;
+        }
+        let (a0, t0) = (allocs(), Instant::now());
+        let next = av.get_next_special_token(remaining, normalized);
+        s.extract.add(t0.elapsed(), allocs() - a0);
+
+        match next {
+            Some(((start, end), token)) => {
+                let before = &input[offset..offset + start];
+                if !before.is_empty() {
+                    on_segment(Segment::Text(before), s);
+                }
+                on_segment(Segment::SpecialToken(token), s);
+                offset += end;
+            }
+            None => {
+                on_segment(Segment::Text(remaining), s);
+                break;
+            }
+        }
+    }
+}
+
+/// Mirror of `PipelineTokenizer::encode`: fresh `output`/`pre_tokens` Vecs, then
+/// iterate the outer `SpecialSegmentIterator` over the **raw** input — text
+/// segments go to [`tokenize_chunk`], special tokens straight to `output`.
 fn encode_timed(
     av: &AddedVocabulary,
     normalizer: Option<&NormalizerWrapper>,
@@ -217,56 +262,35 @@ fn encode_timed(
     input: &str,
     s: &mut Stages,
 ) -> usize {
-    let mut output: Vec<PipelineToken> = Vec::new();
-    let mut pre_tokens: Vec<Split> = Vec::new();
+    let mut output: Vec<PipelineToken> = Vec::with_capacity(1.max(input.len() / 2));
+    let mut pre_tokens: Vec<Split> = Vec::with_capacity(4096);
 
-    let mut offset = 0usize;
-    loop {
-        let (a0, t0) = (allocs(), Instant::now());
-        let next = av.get_next_special_token(&input[offset..], false);
-        s.extract.add(t0.elapsed(), allocs() - a0);
-
-        if let Some(((start, end), token)) = next {
-            let chunk = &input[offset..offset + start];
-            if !chunk.is_empty() {
-                tokenize_chunk(
-                    normalizer,
-                    model,
-                    pretok,
-                    chunk,
-                    &mut pre_tokens,
-                    &mut output,
-                    s,
-                );
-            }
-            output.push(PipelineToken { id: token });
-            offset += end;
-        } else {
-            let chunk = &input[offset..];
-            if !chunk.is_empty() {
-                tokenize_chunk(
-                    normalizer,
-                    model,
-                    pretok,
-                    chunk,
-                    &mut pre_tokens,
-                    &mut output,
-                    s,
-                );
-            }
-            break;
-        }
-    }
+    for_each_segment(av, input, false, s, |segment, s| match segment {
+        Segment::SpecialToken(token) => output.push(PipelineToken { id: token }),
+        Segment::Text(chunk) => tokenize_chunk(
+            av,
+            normalizer,
+            model,
+            pretok,
+            chunk,
+            &mut pre_tokens,
+            &mut output,
+            s,
+        ),
+    });
 
     output.len()
 }
 
-/// Mirror of `PipelineTokenizer::tokenize_chunk`: build a `NormalizedString`,
-/// normalize, pre-tokenize (reusing `pre_tokens`), then `model.tokenize` each
-/// pre-token and extend `output` with the ids. Each region is timed +
-/// alloc-counted into `s`.
+/// Mirror of `PipelineTokenizer::tokenize_chunk`: normalize `chunk` to a
+/// `Cow<str>` (the allocation-light path — no `NormalizedString`), then iterate
+/// the inner `SpecialSegmentIterator` over the **normalized** text. Text
+/// segments go through [`tokenize_text`] (pre-tokenize + `model.tokenize`);
+/// special tokens are pushed straight to `output`. Normalization is timed into
+/// `s.normalize`; the inner scan shares the `s.extract` bucket with the outer.
 #[allow(clippy::too_many_arguments)]
 fn tokenize_chunk(
+    av: &AddedVocabulary,
     normalizer: Option<&NormalizerWrapper>,
     model: &ModelWrapper,
     pretok: &PipelinePreTokenizer,
@@ -276,23 +300,40 @@ fn tokenize_chunk(
     s: &mut Stages,
 ) {
     let (a0, t0) = (allocs(), Instant::now());
-    let mut normalized: NormalizedString = chunk.into();
-    if let Some(n) = normalizer {
-        n.normalize(&mut normalized).unwrap();
-    }
+    let norm: Cow<str> = match normalizer {
+        Some(n) => n.normalize(chunk),
+        None => Cow::Borrowed(chunk),
+    };
     s.normalize.add(t0.elapsed(), allocs() - a0);
-    let normalized_chunk = normalized.get();
+    let normalized: &str = norm.as_ref();
 
+    for_each_segment(av, normalized, true, s, |segment, s| match segment {
+        Segment::SpecialToken(token) => output.push(PipelineToken { id: token }),
+        Segment::Text(text) => tokenize_text(model, pretok, text, pre_tokens, output, s),
+    });
+}
+
+/// Pre-tokenize `text` (reusing `pre_tokens` via `clear()`) then `model.tokenize`
+/// each pre-token, extending `output` with the ids. Pre-tokenization and the
+/// model step are timed + alloc-counted into `s`.
+fn tokenize_text(
+    model: &ModelWrapper,
+    pretok: &PipelinePreTokenizer,
+    text: &str,
+    pre_tokens: &mut Vec<Split>,
+    output: &mut Vec<PipelineToken>,
+    s: &mut Stages,
+) {
     let (a0, t0) = (allocs(), Instant::now());
     pre_tokens.clear();
-    pretok.pre_tokenize(normalized_chunk, pre_tokens).unwrap();
+    pretok.pre_tokenize(text, pre_tokens).unwrap();
     s.pretok.add(t0.elapsed(), allocs() - a0);
 
     let (a0, t0) = (allocs(), Instant::now());
     for pt in pre_tokens.iter() {
         output.extend(
             model
-                .tokenize(&normalized_chunk[pt.range()])
+                .tokenize(&text[pt.range()])
                 .unwrap()
                 .into_iter()
                 .map(|Token { id, .. }| PipelineToken { id }),
@@ -316,8 +357,8 @@ fn report(
 ) {
     let steps = [
         ("tokenization (model + extend)", s.tokenize),
-        ("normalization (+ NormString)", s.normalize),
-        ("special-token extract", s.extract),
+        ("normalization (Cow)", s.normalize),
+        ("special-token extract (raw+norm)", s.extract),
         ("pre-tokenization", s.pretok),
     ];
     let sum_time: Duration = steps.iter().map(|(_, a)| a.time).sum();

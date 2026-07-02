@@ -16,7 +16,7 @@ pub use crate::normalizers::unicode::{Nmt, NFC, NFD, NFKC, NFKD};
 pub use crate::normalizers::utils::{Lowercase, Sequence};
 use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::{NormalizedString, Normalizer};
+use crate::{NormalizedString, Normalizer, pipeline};
 
 /// Wrapper for known Normalizers.
 #[derive(Clone, Debug, Serialize)]
@@ -216,6 +216,27 @@ impl_enum_from!(Precompiled, NormalizerWrapper, Precompiled);
 impl_enum_from!(Replace, NormalizerWrapper, Replace);
 impl_enum_from!(Prepend, NormalizerWrapper, Prepend);
 impl_enum_from!(ByteLevel, NormalizerWrapper, ByteLevel);
+
+impl pipeline::Normalizer for NormalizerWrapper {
+    fn normalize<'a>(&self, input: &'a str) -> std::borrow::Cow<'a, str> {
+        match self {
+            Self::BertNormalizer(bn) => pipeline::Normalizer::normalize(bn, input),
+            Self::StripNormalizer(sn) => pipeline::Normalizer::normalize(sn, input),
+            Self::StripAccents(sn) => pipeline::Normalizer::normalize(sn, input),
+            Self::NFC(nfc) => pipeline::Normalizer::normalize(nfc, input),
+            Self::NFD(nfd) => pipeline::Normalizer::normalize(nfd, input),
+            Self::NFKC(nfkc) => pipeline::Normalizer::normalize(nfkc, input),
+            Self::NFKD(nfkd) => pipeline::Normalizer::normalize(nfkd, input),
+            Self::Sequence(sequence) => pipeline::Normalizer::normalize(sequence, input),
+            Self::Lowercase(lc) => pipeline::Normalizer::normalize(lc, input),
+            Self::Nmt(nmt) => pipeline::Normalizer::normalize(nmt, input),
+            Self::Precompiled(pc) => pipeline::Normalizer::normalize(pc, input),
+            Self::Replace(rp) => pipeline::Normalizer::normalize(rp, input),
+            Self::Prepend(pp) => pipeline::Normalizer::normalize(pp, input),
+            Self::ByteLevel(bl) => pipeline::Normalizer::normalize(bl, input),
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
