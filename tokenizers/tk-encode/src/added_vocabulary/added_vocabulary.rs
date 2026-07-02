@@ -484,6 +484,7 @@ impl AddedVocabulary {
 }
 
 impl PipelinePatternMatcher for AddedVocabulary {
+    /// Leftmost match from the added-token trie (normalized or raw, per the flag).
     fn get_next_special_token(
         &self,
         input: &str,

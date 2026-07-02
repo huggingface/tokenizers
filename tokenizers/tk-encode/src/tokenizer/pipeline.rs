@@ -23,11 +23,14 @@ impl Split {
     }
 }
 
+/// Range-based pre-tokenization: yields spans into the input rather than owned
+/// substrings, so the pipeline can pre-tokenize without allocating.
 pub trait PreTokenizer {
     /// Split `text` into pre-tokens, appending to `out`. Ranges are into `text`.
     fn pre_tokenize(&self, text: &str, out: &mut Vec<Split>) -> Result<()>;
 }
 
+/// The pre-tokenizers a [`PipelineTokenizer`] can run.
 pub enum PipelinePreTokenizer {
     Bert(BertPreTokenizer),
     Whitespace(Whitespace),
@@ -44,6 +47,8 @@ impl PreTokenizer for PipelinePreTokenizer {
     }
 }
 
+/// An output token. Carries only the vocabulary `id` — offsets and the token
+/// string are dropped, which is all an encode-only caller needs.
 #[derive(Debug, Clone, Copy)]
 pub struct PipelineToken {
     pub id: u32,
@@ -55,7 +60,13 @@ impl From<Token> for PipelineToken {
     }
 }
 
+/// Finds special/added tokens in a text segment so the pipeline can carve them
+/// out before running the model.
 pub trait PipelinePatternMatcher {
+    /// Return the first special token in `input` as `Some(((start, end), id))`, where
+    /// `start..end` is its byte range. `normalized` selects whether to match the
+    /// tokens declared on normalized or on raw text.
+    /// Returns `None` if there is no special tokens in input.
     fn get_next_special_token(
         &self,
         input: &str,
@@ -63,28 +74,25 @@ pub trait PipelinePatternMatcher {
     ) -> Option<((usize, usize), u32)>;
 }
 
+/// A piece of the input produced by [`SpecialSegmentIterator`].
 pub enum Segment<'a> {
+    /// Ordinary text still to be (optonally normalized), pre-tokenized and run through the model.
     Text(&'a str),
+    /// A matched special token, identified by its vocabulary id.
     SpecialToken(u32),
 }
 
-/// This iterator wraps the logic to extract special tokens from the input text
-/// It yields [`Segment`] of the input text, in order
+/// Splits `input` into [`Segment`]s, in order: runs of ordinary text
+/// ([`Segment::Text`]) interleaved with the special tokens
+/// ([`Segment::SpecialToken`]) matched by the [`PipelinePatternMatcher`].
 ///
-/// [`Segment`] can either be a chunk of text ([`Segment::Text`]) that needs to be tokenized by the
-/// model, or a [`Segment::SpecialToken`] holding the id (u32) of the special token
-/// 
-/// Usage:
-/// 
-/// ```rust
-/// let mut segment_iterator = SpecialSegmentIterator::new(input, pattern_matcher, false);
-/// 
-/// for segment in segment_iterator {
+/// ```ignore
+/// for segment in SpecialSegmentIterator::new(input, pattern_matcher, false) {
 ///     match segment {
-///         Segment::SpecialToken(token_id) => println!("Segment is a special token!"),
-///         Segment::Text(chunk) => println!("Segment is a chunk of text!"),
+///         Segment::SpecialToken(id) => { /* emit the special token */ }
+///         Segment::Text(chunk) => { /* tokenize this chunk */ }
 ///     }
-/// } 
+/// }
 /// ```
 pub struct SpecialSegmentIterator<'a, 'b, PatternMatcher: PipelinePatternMatcher> {
     /// The chunk of text from which we want to extract special tokens
@@ -151,6 +159,9 @@ impl<'a, 'b, PatternMatcher: PipelinePatternMatcher> Iterator
     }
 }
 
+/// Experimental encode-only pipeline built from a [`Tokenizer`]. Runs the same
+/// stages (special-token split → normalize → pre-tokenize → model) over borrowed
+/// ranges to avoid the reference path's allocations.
 pub struct PipelineTokenizer {
     added_vocabulary: AddedVocabulary,
     normalizer: Option<NormalizerWrapper>,
@@ -162,6 +173,7 @@ pub struct PipelineTokenizer {
 impl TryFrom<&Tokenizer> for PipelineTokenizer {
     type Error = super::Error;
 
+    /// Build a pipeline from an existing [`Tokenizer`], cloning its components.
     fn try_from(tok: &Tokenizer) -> Result<Self> {
         let pre_tokenizer = match tok.get_pre_tokenizer() {
             None => PipelinePreTokenizer::None,
@@ -186,6 +198,16 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
 }
 
 impl PipelineTokenizer {
+    /// Encode `input` into token ids.
+    ///
+    /// Special tokens are matched in two passes:
+    ///  1. on the raw input,
+    ///  2. then on each segment after normalization
+    /// 
+    /// This way, special / added tokens declared on raw or normalized text are both caught.
+    /// The remaining text is pre-tokenized and run through the model span by span.
+    /// 
+    /// todo: wire the post-processing
     pub fn encode(&self, input: &str, _add_special_tokens: bool) -> Result<Vec<PipelineToken>> {
         let mut output: Vec<PipelineToken> = vec![];
         let mut pre_tokens: Vec<Split> = vec![];
