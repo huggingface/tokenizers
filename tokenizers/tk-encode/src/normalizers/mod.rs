@@ -218,22 +218,22 @@ impl_enum_from!(Prepend, NormalizerWrapper, Prepend);
 impl_enum_from!(ByteLevel, NormalizerWrapper, ByteLevel);
 
 impl pipeline::Normalizer for NormalizerWrapper {
-    fn normalize<'a>(&self, input: &'a str) -> std::borrow::Cow<'a, str> {
+    fn normalize<'a>(&self, input: &'a str, scratch: &'a mut String) -> &'a str {
         match self {
-            Self::BertNormalizer(bn) => pipeline::Normalizer::normalize(bn, input),
-            Self::StripNormalizer(sn) => pipeline::Normalizer::normalize(sn, input),
-            Self::StripAccents(sn) => pipeline::Normalizer::normalize(sn, input),
-            Self::NFC(nfc) => pipeline::Normalizer::normalize(nfc, input),
-            Self::NFD(nfd) => pipeline::Normalizer::normalize(nfd, input),
-            Self::NFKC(nfkc) => pipeline::Normalizer::normalize(nfkc, input),
-            Self::NFKD(nfkd) => pipeline::Normalizer::normalize(nfkd, input),
-            Self::Sequence(sequence) => pipeline::Normalizer::normalize(sequence, input),
-            Self::Lowercase(lc) => pipeline::Normalizer::normalize(lc, input),
-            Self::Nmt(nmt) => pipeline::Normalizer::normalize(nmt, input),
-            Self::Precompiled(pc) => pipeline::Normalizer::normalize(pc, input),
-            Self::Replace(rp) => pipeline::Normalizer::normalize(rp, input),
-            Self::Prepend(pp) => pipeline::Normalizer::normalize(pp, input),
-            Self::ByteLevel(bl) => pipeline::Normalizer::normalize(bl, input),
+            Self::BertNormalizer(bn) => pipeline::Normalizer::normalize(bn, input, scratch),
+            Self::StripNormalizer(sn) => pipeline::Normalizer::normalize(sn, input, scratch),
+            Self::StripAccents(sn) => pipeline::Normalizer::normalize(sn, input, scratch),
+            Self::NFC(nfc) => pipeline::Normalizer::normalize(nfc, input, scratch),
+            Self::NFD(nfd) => pipeline::Normalizer::normalize(nfd, input, scratch),
+            Self::NFKC(nfkc) => pipeline::Normalizer::normalize(nfkc, input, scratch),
+            Self::NFKD(nfkd) => pipeline::Normalizer::normalize(nfkd, input, scratch),
+            Self::Sequence(sequence) => pipeline::Normalizer::normalize(sequence, input, scratch),
+            Self::Lowercase(lc) => pipeline::Normalizer::normalize(lc, input, scratch),
+            Self::Nmt(nmt) => pipeline::Normalizer::normalize(nmt, input, scratch),
+            Self::Replace(rp) => pipeline::Normalizer::normalize(rp, input, scratch),
+            Self::Prepend(pp) => pipeline::Normalizer::normalize(pp, input, scratch),
+            Self::ByteLevel(bl) => pipeline::Normalizer::normalize(bl, input, scratch),
+            Self::Precompiled(_) => &input,
         }
     }
 }

@@ -5,6 +5,7 @@ use crate::{
     tokenizer::{NormalizedString, Normalizer, Result},
 };
 
+use itertools::Either;
 use serde::{Deserialize, Serialize};
 use unicode_categories::UnicodeCategories;
 use unicode_normalization::{is_nfd_quick, IsNormalized, UnicodeNormalization};
@@ -166,14 +167,15 @@ impl Normalizer for BertNormalizer {
 }
 
 impl pipeline::Normalizer for BertNormalizer {
-    fn normalize<'a>(&self, input: &'a str) -> Cow<'a, str> {
+    fn normalize<'a>(&self, input: &'a str, scratch: &'a mut String) -> &'a str {
         let strip_accents = self.strip_accents.unwrap_or(self.lowercase);
 
         if self.is_noop(input, strip_accents) {
-            return input.into();
+            return input;
         }
+        scratch.clear();
 
-        let cleaned: String = input
+        let cleaned = input
             .chars()
             .filter(|&c| {
                 !(self.clean_text && (c as usize == 0 || c as usize == 0xfffd || is_control(c)))
@@ -190,22 +192,20 @@ impl pipeline::Normalizer for BertNormalizer {
                     [Some(c), None, None]
                 }
             })
-            .flatten()
-            .collect();
+            .flatten();
 
         let stripped = if strip_accents {
-            cleaned.nfd().filter(|c| !c.is_mark_nonspacing()).collect()
+            Either::Left(cleaned.nfd().filter(|c| !c.is_mark_nonspacing()))
         } else {
-            cleaned
+            Either::Right(cleaned)
         };
-
-        let lowered = if self.lowercase {
-            stripped.chars().flat_map(char::to_lowercase).collect()
+        let lowerecased = if self.lowercase {
+            Either::Left(stripped.flat_map(char::to_lowercase))
         } else {
-            stripped
+            Either::Right(stripped)
         };
-
-        Cow::Owned(lowered)
+        scratch.extend(lowerecased);
+        scratch
     }
 }
 
@@ -247,33 +247,16 @@ mod tests {
                         for input in INPUTS {
                             let mut ns = NormalizedString::from(*input);
                             Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
+                            let mut scratch = String::new();
                             assert_eq!(
                                 ns.get(),
-                                &*pipeline::Normalizer::normalize(&n, input),
+                                &*pipeline::Normalizer::normalize(&n, input, &mut scratch),
                                 "config={n:?} input={input:?}",
                             );
                         }
                     }
                 }
             }
-        }
-    }
-
-    #[test]
-    fn pipeline_bert_borrows_when_noop() {
-        let n = BertNormalizer::default();
-        for input in &["hello world", "already lowercase ascii", ""] {
-            assert!(matches!(
-                pipeline::Normalizer::normalize(&n, input),
-                Cow::Borrowed(_)
-            ));
-        }
-        // Anything that must change is owned.
-        for input in &["Héllo", "中", "\tx", "ABC"] {
-            assert!(matches!(
-                pipeline::Normalizer::normalize(&n, input),
-                Cow::Owned(_)
-            ));
         }
     }
 }

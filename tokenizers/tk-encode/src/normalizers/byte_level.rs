@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 use crate::pipeline;
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 use crate::utils::byte_level::{byte_level_transform, BYTES_CHAR_LOOKUP};
@@ -38,13 +36,14 @@ impl Normalizer for ByteLevel {
 }
 
 impl pipeline::Normalizer for ByteLevel {
-    fn normalize<'a>(&self, input: &'a str) -> Cow<'a, str> {
+    fn normalize<'a>(&self, input: &'a str, scratch: &'a mut String) -> &'a str {
         let table = &*BYTES_CHAR_LOOKUP;
-        let mut out = String::with_capacity(input.len());
+        scratch.clear();
+        scratch.reserve(input.len());
         for &b in input.as_bytes() {
-            out.push(table[b as usize]);
+            scratch.push(table[b as usize]);
         }
-        Cow::Owned(out)
+        scratch
     }
 }
 
@@ -55,10 +54,11 @@ mod tests {
     #[test]
     fn pipeline_byte_level_matches_legacy() {
         let n = ByteLevel::new();
+        let mut scratch = String::new();
         for input in &["Hello world", "Hello 我今天", "abc", ""] {
             let mut ns = NormalizedString::from(*input);
             Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
-            assert_eq!(ns.get(), &*pipeline::Normalizer::normalize(&n, input));
+            assert_eq!(ns.get(), pipeline::Normalizer::normalize(&n, input, &mut scratch));
         }
     }
 }

@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 use crate::pipeline;
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 pub use spm_precompiled::Precompiled;
@@ -71,12 +69,6 @@ impl Normalizer for Precompiled {
     }
 }
 
-impl pipeline::Normalizer for Precompiled {
-    fn normalize<'a>(&self, input: &'a str) -> Cow<'a, str> {
-        // todo
-        input.into()
-    }
-}
 
 #[cfg(test)]
 mod tests {

@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 use serde::{Deserialize, Serialize};
 
 use crate::normalizers::NormalizerWrapper;
@@ -52,23 +50,41 @@ impl Normalizer for Sequence {
 }
 
 impl pipeline::Normalizer for Sequence {
-    fn normalize<'a>(&self, input: &'a str) -> Cow<'a, str> {
-        let mut cow: Cow<'a, str> = Cow::Borrowed(input);
-        for normalizer in &self.normalizers {
-            cow = match cow {
-                // Still borrowing `input` ('a): chain directly so an all-no-op
-                // sequence stays zero-alloc and returns a borrow of `input`.
-                Cow::Borrowed(s) => pipeline::Normalizer::normalize(normalizer, s),
-                // Owned locally: the next step may borrow from it, so materialize
-                // its result before the local `String` is dropped.
-                Cow::Owned(s) => match pipeline::Normalizer::normalize(normalizer, &s) {
-                    Cow::Borrowed(b) => Cow::Owned(b.to_owned()),
-                    Cow::Owned(o) => Cow::Owned(o),
-                },
-            };
+    fn normalize<'a>(&self, input: &'a str, scratch: &'a mut String) -> &'a str {
+        let Some((first_normalizer, rest)) = self.normalizers.split_first() else {
+            return input;
+        };
+
+        // A normalizer can't read and write the same buffer, so chaining needs two.
+        // `scratch` is one; `spare` is the alternate.
+        let mut spare = String::new();
+        normalize_into(first_normalizer, input, scratch);
+        for normalizer in rest {
+            normalize_into(normalizer, scratch, &mut spare);
+            std::mem::swap(scratch, &mut spare);
         }
-        cow
+        scratch
     }
+}
+
+/// Run `n` on `src`, leaving its full output in `dst` (cleared first). A
+/// normalizer may hand back a borrow of `src` rather than writing (input left
+/// unchanged, or a trimmed sub-slice); we copy that in so the result always
+/// lives in `dst`.
+fn normalize_into(n: &NormalizerWrapper, src: &str, dst: &mut String) {
+    dst.clear();
+    // The result's lifetime is tied to the `&mut dst` reborrow, so grab its
+    // address/len and drop the borrow before touching `dst` again.
+    let (out_ptr, out_len) = {
+        let out = pipeline::Normalizer::normalize(n, src, dst);
+        (out.as_ptr() as usize, out.len())
+    };
+    if out_ptr == dst.as_ptr() as usize {
+        return; // `n` wrote straight into `dst`
+    }
+    // Otherwise `out` borrows `src`; copy that slice in.
+    let start = out_ptr - src.as_ptr() as usize;
+    dst.push_str(&src[start..start + out_len]);
 }
 
 /// Lowercases the input
@@ -83,8 +99,10 @@ impl Normalizer for Lowercase {
 }
 
 impl pipeline::Normalizer for Lowercase {
-    fn normalize<'a>(&self, input: &'a str) -> Cow<'a, str> {
-        Cow::Owned(input.to_lowercase())
+    fn normalize<'a>(&self, input: &'a str, scratch: &'a mut String) -> &'a str {
+        scratch.clear();
+        scratch.extend(input.chars().flat_map(char::to_lowercase));
+        scratch
     }
 }
 
@@ -99,7 +117,11 @@ mod tests {
         for input in &["HELLO", "Hello World", "abc", "", "ÀÉ"] {
             let mut ns = NormalizedString::from(*input);
             Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
-            assert_eq!(ns.get(), &*pipeline::Normalizer::normalize(&n, input));
+            let mut scratch = String::new();
+            assert_eq!(
+                ns.get(),
+                &*pipeline::Normalizer::normalize(&n, input, &mut scratch)
+            );
         }
     }
 
@@ -109,7 +131,11 @@ mod tests {
         for input in &["Café", "HÉLLO", "abc", ""] {
             let mut ns = NormalizedString::from(*input);
             Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
-            assert_eq!(ns.get(), &*pipeline::Normalizer::normalize(&n, input));
+            let mut scratch = String::new();
+            assert_eq!(
+                ns.get(),
+                &*pipeline::Normalizer::normalize(&n, input, &mut scratch)
+            );
         }
     }
 }

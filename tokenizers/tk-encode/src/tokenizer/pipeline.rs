@@ -1,5 +1,5 @@
+use std::convert::TryFrom;
 use std::ops::Range;
-use std::{borrow::Cow, convert::TryFrom};
 
 use crate::added_vocabulary::bucket_added_vocabulary::{
     AddedToken as BucketAddedToken, AddedVocabulary as BucketAddedVocabulary,
@@ -27,7 +27,7 @@ impl Split {
 }
 
 pub trait Normalizer {
-    fn normalize<'a>(&self, input: &'a str) -> Cow<'a, str>;
+    fn normalize<'a>(&self, input: &'a str, scratch: &'a mut String) -> &'a str;
 }
 
 /// Range-based pre-tokenization: yields spans into the input rather than owned
@@ -222,6 +222,10 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
         )?;
         added_vocabulary.set_encode_special_tokens(legacy_av.get_encode_special_tokens());
 
+        let normalizer = tok.get_normalizer().cloned();
+        if let Some(NormalizerWrapper::Precompiled(_)) = normalizer {
+            return Err("Precompile Normalizer is not supported for the PipelineTokenizer".into());
+        }
         Ok(Self {
             added_vocabulary,
             normalizer: tok.get_normalizer().cloned(),
@@ -246,6 +250,7 @@ impl PipelineTokenizer {
     pub fn encode(&self, input: &str, _add_special_tokens: bool) -> Result<Vec<PipelineToken>> {
         let mut output: Vec<PipelineToken> = vec![];
         let mut pre_tokens: Vec<Split> = vec![];
+        let mut normalized_scratch: String = String::with_capacity(4096);
 
         // First, we extract all special tokens from the non-normalized input
         for segment in SpecialSegmentIterator::new(input, &self.added_vocabulary, false) {
@@ -255,7 +260,7 @@ impl PipelineTokenizer {
                 }
                 Segment::Text(chunk) => {
                     let normalized: &str = if let Some(normalizer) = &self.normalizer {
-                        &normalizer.normalize(chunk)
+                        normalizer.normalize(chunk, &mut normalized_scratch)
                     } else {
                         chunk
                     };

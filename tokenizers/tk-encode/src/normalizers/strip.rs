@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 use crate::pipeline;
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 use crate::utils::macro_rules_attribute;
@@ -44,14 +42,17 @@ impl Normalizer for Strip {
 }
 
 impl pipeline::Normalizer for Strip {
-    fn normalize<'a>(&self, input: &'a str) -> Cow<'a, str> {
+    fn normalize<'a>(&self, input: &'a str, _scratch: &'a mut String) -> &'a str {
         let s = if self.strip_left {
             input.trim_start()
         } else {
             input
         };
-        let s = if self.strip_right { s.trim_end() } else { s };
-        Cow::Borrowed(s)
+        if self.strip_right {
+            s.trim_end()
+        } else {
+            s
+        }
     }
 }
 
@@ -71,11 +72,13 @@ impl Normalizer for StripAccents {
 }
 
 impl pipeline::Normalizer for StripAccents {
-    fn normalize<'a>(&self, input: &'a str) -> std::borrow::Cow<'a, str> {
+    fn normalize<'a>(&self, input: &'a str, scratch: &'a mut String) -> &'a str {
         if input.chars().any(is_combining_mark) {
-            Cow::Owned(input.chars().filter(|&c| !is_combining_mark(c)).collect())
+            scratch.clear();
+            scratch.extend(input.chars().filter(|&c| !is_combining_mark(c)));
+            scratch
         } else {
-            Cow::Borrowed(input)
+            input
         }
     }
 }
@@ -183,21 +186,23 @@ mod tests {
     #[test]
     fn pipeline_strip_accents_matches_legacy() {
         let n = StripAccents;
+        let mut scratch = String::new();
         for input in &["café", "abc", "", "å ç ñ", "     hello"] {
             let mut ns = NormalizedString::from(*input);
             Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
-            assert_eq!(ns.get(), &*pipeline::Normalizer::normalize(&n, input));
+            assert_eq!(ns.get(), pipeline::Normalizer::normalize(&n, input, &mut scratch));
         }
     }
 
     #[test]
     fn pipeline_strip_matches_legacy() {
+        let mut scratch = String::new();
         for (strip_left, strip_right) in [(true, true), (true, false), (false, true)] {
             let n = Strip::new(strip_left, strip_right);
             for input in &["  hello  ", "hello", "", "   ", "\t hi \n"] {
                 let mut ns = NormalizedString::from(*input);
                 Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
-                assert_eq!(ns.get(), &*pipeline::Normalizer::normalize(&n, input));
+                assert_eq!(ns.get(), pipeline::Normalizer::normalize(&n, input, &mut scratch));
             }
         }
     }

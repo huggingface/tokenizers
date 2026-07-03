@@ -89,21 +89,19 @@ impl Normalizer for Replace {
 }
 
 impl pipeline::Normalizer for Replace {
-    fn normalize<'a>(&self, input: &'a str) -> Cow<'a, str> {
+    fn normalize<'a>(&self, input: &'a str, scratch: &'a mut String) -> &'a str {
         let parts = (&self.regex).find_matches(input).unwrap();
 
         if parts.iter().any(|(_, is_match)| *is_match) {
-            let replaced: String = parts
-                .into_iter()
-                .map(|((start, end), is_match)| {
-                    if is_match {
-                        &self.content
-                    } else {
-                        &input[start..end]
-                    }
-                })
-                .collect();
-            return Cow::Owned(replaced);
+            scratch.clear();
+            scratch.extend(parts.into_iter().map(|((start, end), is_match)| {
+                if is_match {
+                    &self.content
+                } else {
+                    &input[start..end]
+                }
+            }));
+            return scratch;
         }
         input.into()
     }
@@ -187,14 +185,22 @@ mod tests {
         for input in &["This is a ''test''", "no quotes", ""] {
             let mut ns = NormalizedString::from(*input);
             Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
-            assert_eq!(ns.get(), &*pipeline::Normalizer::normalize(&n, input));
+            let mut scratch = String::new();
+            assert_eq!(
+                ns.get(),
+                &*pipeline::Normalizer::normalize(&n, input, &mut scratch)
+            );
         }
 
         let n = Replace::new(ReplacePattern::Regex(r"\s+".into()), " ").unwrap();
         for input in &["a   b   c", "single", ""] {
             let mut ns = NormalizedString::from(*input);
             Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
-            assert_eq!(ns.get(), &*pipeline::Normalizer::normalize(&n, input));
+            let mut scratch = String::new();
+            assert_eq!(
+                ns.get(),
+                &*pipeline::Normalizer::normalize(&n, input, &mut scratch)
+            );
         }
     }
 }

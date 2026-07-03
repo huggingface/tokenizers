@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 use crate::pipeline;
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 use crate::utils::macro_rules_attribute;
@@ -18,11 +16,13 @@ impl Normalizer for NFD {
     }
 }
 impl pipeline::Normalizer for NFD {
-    fn normalize<'a>(&self, input: &'a str) -> Cow<'a, str> {
+    fn normalize<'a>(&self, input: &'a str, scratch: &'a mut String) -> &'a str {
         if let IsNormalized::Yes = is_nfd_quick(input.chars()) {
-            input.into()
+            input
         } else {
-            Cow::Owned(input.nfd().collect())
+            scratch.clear();
+            scratch.extend(input.nfd());
+            scratch
         }
     }
 }
@@ -37,11 +37,13 @@ impl Normalizer for NFKD {
     }
 }
 impl pipeline::Normalizer for NFKD {
-    fn normalize<'a>(&self, input: &'a str) -> Cow<'a, str> {
+    fn normalize<'a>(&self, input: &'a str, scratch: &'a mut String) -> &'a str {
         if let IsNormalized::Yes = is_nfkd_quick(input.chars()) {
-            input.into()
+            input
         } else {
-            Cow::Owned(input.nfkd().collect())
+            scratch.clear();
+            scratch.extend(input.nfkd());
+            scratch
         }
     }
 }
@@ -56,11 +58,13 @@ impl Normalizer for NFC {
     }
 }
 impl pipeline::Normalizer for NFC {
-    fn normalize<'a>(&self, input: &'a str) -> Cow<'a, str> {
+    fn normalize<'a>(&self, input: &'a str, scratch: &'a mut String) -> &'a str {
         if let IsNormalized::Yes = is_nfc_quick(input.chars()) {
-            input.into()
+            input
         } else {
-            Cow::Owned(input.nfc().collect())
+            scratch.clear();
+            scratch.extend(input.nfc());
+            scratch
         }
     }
 }
@@ -75,11 +79,13 @@ impl Normalizer for NFKC {
     }
 }
 impl pipeline::Normalizer for NFKC {
-    fn normalize<'a>(&self, input: &'a str) -> Cow<'a, str> {
+    fn normalize<'a>(&self, input: &'a str, scratch: &'a mut String) -> &'a str {
         if let IsNormalized::Yes = is_nfkc_quick(input.chars()) {
-            input.into()
+            input
         } else {
-            Cow::Owned(input.nfkc().collect())
+            scratch.clear();
+            scratch.extend(input.nfkc());
+            scratch
         }
     }
 }
@@ -125,37 +131,39 @@ impl Normalizer for Nmt {
     }
 }
 impl pipeline::Normalizer for Nmt {
-    fn normalize<'a>(&self, input: &'a str) -> Cow<'a, str> {
-        let normalized: String = input
-            .chars()
-            .filter(|&c| {
-                !matches!(
-                    c as u32,
-                    0x0001..=0x0008 |
-                    0x000B |
-                    0x000E..=0x001F |
-                    0x007F |
-                    0x008F |
-                    0x009F
-                )
-            })
-            // Other code points considered as whitespace.
-            .map(|c| match c as u32 {
-                0x0009 => ' ',
-                0x000A => ' ',
-                0x000C => ' ',
-                0x000D => ' ',
-                0x1680 => ' ',
-                0x200B..=0x200F => ' ',
-                0x2028 => ' ',
-                0x2029 => ' ',
-                0x2581 => ' ',
-                0xFEFF => ' ',
-                0xFFFD => ' ',
-                _ => c,
-            })
-            .collect();
-        Cow::Owned(normalized)
+    fn normalize<'a>(&self, input: &'a str, scratch: &'a mut String) -> &'a str {
+        scratch.clear();
+        scratch.extend(
+            input
+                .chars()
+                .filter(|&c| {
+                    !matches!(
+                        c as u32,
+                        0x0001..=0x0008 |
+                        0x000B |
+                        0x000E..=0x001F |
+                        0x007F |
+                        0x008F |
+                        0x009F
+                    )
+                })
+                // Other code points considered as whitespace.
+                .map(|c| match c as u32 {
+                    0x0009 => ' ',
+                    0x000A => ' ',
+                    0x000C => ' ',
+                    0x000D => ' ',
+                    0x1680 => ' ',
+                    0x200B..=0x200F => ' ',
+                    0x2028 => ' ',
+                    0x2029 => ' ',
+                    0x2581 => ' ',
+                    0xFEFF => ' ',
+                    0xFFFD => ' ',
+                    _ => c,
+                }),
+        );
+        scratch
     }
 }
 
@@ -181,50 +189,55 @@ mod tests {
     #[test]
     fn pipeline_nfd_matches_legacy() {
         let n = NFD;
+        let mut scratch = String::new();
         for input in &["é", "café", "abc", "", "Å"] {
             let mut ns = NormalizedString::from(*input);
             Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
-            assert_eq!(ns.get(), &*pipeline::Normalizer::normalize(&n, input));
+            assert_eq!(ns.get(), pipeline::Normalizer::normalize(&n, input, &mut scratch));
         }
     }
 
     #[test]
     fn pipeline_nfkd_matches_legacy() {
         let n = NFKD;
+        let mut scratch = String::new();
         for input in &["\u{fb01}", "²", "café", "abc", ""] {
             let mut ns = NormalizedString::from(*input);
             Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
-            assert_eq!(ns.get(), &*pipeline::Normalizer::normalize(&n, input));
+            assert_eq!(ns.get(), pipeline::Normalizer::normalize(&n, input, &mut scratch));
         }
     }
 
     #[test]
     fn pipeline_nfc_matches_legacy() {
         let n = NFC;
+        let mut scratch = String::new();
         for input in &["e\u{0301}", "abc", "", "cafe\u{0301}"] {
             let mut ns = NormalizedString::from(*input);
             Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
-            assert_eq!(ns.get(), &*pipeline::Normalizer::normalize(&n, input));
+            assert_eq!(ns.get(), pipeline::Normalizer::normalize(&n, input, &mut scratch));
         }
     }
 
     #[test]
     fn pipeline_nfkc_matches_legacy() {
         let n = NFKC;
+        let mut scratch = String::new();
         for input in &["\u{fb01}", "²", "e\u{0301}", "abc", ""] {
             let mut ns = NormalizedString::from(*input);
             Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
-            assert_eq!(ns.get(), &*pipeline::Normalizer::normalize(&n, input));
+            assert_eq!(ns.get(), pipeline::Normalizer::normalize(&n, input, &mut scratch));
         }
     }
 
     #[test]
     fn pipeline_nmt_matches_legacy() {
         let n = Nmt;
+        let mut scratch = String::new();
         for input in &["a\tb", "x\u{200b}y", "abc", "", "\u{feff}hi", "c\u{0007}d"] {
             let mut ns = NormalizedString::from(*input);
             Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
-            assert_eq!(ns.get(), &*pipeline::Normalizer::normalize(&n, input));
+            assert_eq!(ns.get(), pipeline::Normalizer::normalize(&n, input, &mut scratch));
         }
     }
 }

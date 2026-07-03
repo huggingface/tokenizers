@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 use crate::pipeline;
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 use serde::{Deserialize, Serialize};
@@ -27,11 +25,14 @@ impl Normalizer for Prepend {
 }
 
 impl pipeline::Normalizer for Prepend {
-    fn normalize<'a>(&self, input: &'a str) -> Cow<'a, str> {
+    fn normalize<'a>(&self, input: &'a str, scratch: &'a mut String) -> &'a str {
         if input.is_empty() {
-            return Cow::Borrowed(input);
+            return input;
         }
-        Cow::Owned(format!("{prepend}{input}", prepend = &self.prepend))
+        scratch.clear();
+        scratch.push_str(&self.prepend);
+        scratch.push_str(input);
+        scratch
     }
 }
 
@@ -75,10 +76,11 @@ mod tests {
     #[test]
     fn pipeline_prepend_matches_legacy() {
         let n = Prepend::new("▁".to_string());
+        let mut scratch = String::new();
         for input in &["Hello", "world", ""] {
             let mut ns = NormalizedString::from(*input);
             Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
-            assert_eq!(ns.get(), &*pipeline::Normalizer::normalize(&n, input));
+            assert_eq!(ns.get(), pipeline::Normalizer::normalize(&n, input, &mut scratch));
         }
     }
 }
