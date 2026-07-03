@@ -193,7 +193,10 @@ mod tests {
         for input in &["é", "café", "abc", "", "Å"] {
             let mut ns = NormalizedString::from(*input);
             Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
-            assert_eq!(ns.get(), pipeline::Normalizer::normalize(&n, input, &mut scratch));
+            assert_eq!(
+                ns.get(),
+                pipeline::Normalizer::normalize(&n, input, &mut scratch)
+            );
         }
     }
 
@@ -204,7 +207,10 @@ mod tests {
         for input in &["\u{fb01}", "²", "café", "abc", ""] {
             let mut ns = NormalizedString::from(*input);
             Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
-            assert_eq!(ns.get(), pipeline::Normalizer::normalize(&n, input, &mut scratch));
+            assert_eq!(
+                ns.get(),
+                pipeline::Normalizer::normalize(&n, input, &mut scratch)
+            );
         }
     }
 
@@ -215,7 +221,10 @@ mod tests {
         for input in &["e\u{0301}", "abc", "", "cafe\u{0301}"] {
             let mut ns = NormalizedString::from(*input);
             Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
-            assert_eq!(ns.get(), pipeline::Normalizer::normalize(&n, input, &mut scratch));
+            assert_eq!(
+                ns.get(),
+                pipeline::Normalizer::normalize(&n, input, &mut scratch)
+            );
         }
     }
 
@@ -226,7 +235,10 @@ mod tests {
         for input in &["\u{fb01}", "²", "e\u{0301}", "abc", ""] {
             let mut ns = NormalizedString::from(*input);
             Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
-            assert_eq!(ns.get(), pipeline::Normalizer::normalize(&n, input, &mut scratch));
+            assert_eq!(
+                ns.get(),
+                pipeline::Normalizer::normalize(&n, input, &mut scratch)
+            );
         }
     }
 
@@ -237,7 +249,10 @@ mod tests {
         for input in &["a\tb", "x\u{200b}y", "abc", "", "\u{feff}hi", "c\u{0007}d"] {
             let mut ns = NormalizedString::from(*input);
             Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
-            assert_eq!(ns.get(), pipeline::Normalizer::normalize(&n, input, &mut scratch));
+            assert_eq!(
+                ns.get(),
+                pipeline::Normalizer::normalize(&n, input, &mut scratch)
+            );
         }
     }
 }

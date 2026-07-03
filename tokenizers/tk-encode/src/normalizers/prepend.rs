@@ -80,7 +80,10 @@ mod tests {
         for input in &["Hello", "world", ""] {
             let mut ns = NormalizedString::from(*input);
             Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
-            assert_eq!(ns.get(), pipeline::Normalizer::normalize(&n, input, &mut scratch));
+            assert_eq!(
+                ns.get(),
+                pipeline::Normalizer::normalize(&n, input, &mut scratch)
+            );
         }
     }
 }

@@ -1,4 +1,3 @@
-use crate::pipeline;
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 pub use spm_precompiled::Precompiled;
 use std::cmp::Ordering;
@@ -68,7 +67,6 @@ impl Normalizer for Precompiled {
         Ok(())
     }
 }
-
 
 #[cfg(test)]
 mod tests {

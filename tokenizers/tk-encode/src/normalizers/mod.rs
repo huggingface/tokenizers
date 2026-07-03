@@ -233,7 +233,7 @@ impl pipeline::Normalizer for NormalizerWrapper {
             Self::Replace(rp) => pipeline::Normalizer::normalize(rp, input, scratch),
             Self::Prepend(pp) => pipeline::Normalizer::normalize(pp, input, scratch),
             Self::ByteLevel(bl) => pipeline::Normalizer::normalize(bl, input, scratch),
-            Self::Precompiled(_) => &input,
+            Self::Precompiled(_) => input,
         }
     }
 }

@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 
 use crate::pipeline;
 use crate::tokenizer::pattern::Pattern;
@@ -103,7 +102,7 @@ impl pipeline::Normalizer for Replace {
             }));
             return scratch;
         }
-        input.into()
+        input
     }
 }
 
