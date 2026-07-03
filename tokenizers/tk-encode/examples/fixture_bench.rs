@@ -1,9 +1,15 @@
 //! Comparative throughput of the reference `Tokenizer` vs the experimental
-//! `PipelineTokenizer` over every corpus in `data/fixtures/` (languages +
-//! modalities), on ~10 kB inputs — the regime where per-input overhead is
-//! amortized (see `pipeline_benchmark.rs` for the size sweep).
+//! `PipelineTokenizer`, for every model in `examples/bench_models.json` across
+//! every corpus in `data/fixtures/` (languages + modalities), on ~10 kB inputs
+//! — the regime where per-input overhead is amortized (see `pipeline_benchmark.rs`
+//! for the size sweep).
 //!
-//! Emits one JSON object per fixture on stdout, consumed by
+//! `PipelineTokenizer` is a work in progress: it only builds for tokenizers whose
+//! pre-tokenizer is Bert / Whitespace / None. Models it can't build (byte-level
+//! BPE, SentencePiece/Unigram, …) are reported as `supported: false` with their
+//! pipeline shape, rather than benched — the CI grid renders those as roadmap cards.
+//!
+//! Emits a JSON array (one object per model) on stdout, consumed by
 //! `.github/scripts/render_pipeline_bench.py` in CI.
 
 use std::convert::TryFrom;
@@ -11,10 +17,12 @@ use std::hint::black_box;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
+use serde_json::{json, Value};
 use tk_encode::pipeline::PipelineTokenizer;
-use tk_encode::Tokenizer;
+use tk_encode::{ModelWrapper, Tokenizer};
 
 const DATA_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../data");
+const MANIFEST: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/examples/bench_models.json");
 const CHUNK_BYTES: usize = 10 * 1024;
 const MAX_CHUNKS: usize = 100;
 const REPS: usize = 5;
@@ -72,23 +80,67 @@ fn fixture_files() -> Vec<(String, PathBuf)> {
     files
 }
 
-fn main() {
-    let oracle = Tokenizer::from_file(format!("{DATA_DIR}/bert-wiki.json")).unwrap();
-    let pipeline = PipelineTokenizer::try_from(&oracle).unwrap();
+/// Local path to a manifest entry's config: `data/<file>`, else `data/<name>.json`.
+/// Both come from the test-data dataset (see the Makefile `bench-models` target).
+fn model_path(entry: &Value) -> PathBuf {
+    let name = entry["name"].as_str().unwrap();
+    let file = entry
+        .get("file")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("{name}.json"));
+    Path::new(DATA_DIR).join(file)
+}
 
-    let legacy_enc = |s: &str| oracle.encode(s, false).unwrap().len();
+fn model_kind(tok: &Tokenizer) -> &'static str {
+    match tok.get_model() {
+        ModelWrapper::BPE(_) => "BPE",
+        ModelWrapper::WordPiece(_) => "WordPiece",
+        ModelWrapper::WordLevel(_) => "WordLevel",
+        ModelWrapper::Unigram(_) => "Unigram",
+    }
+}
+
+/// A short pre-tokenizer descriptor read from the raw json — its `type`, and for
+/// a Sequence the (de-duplicated) inner types, e.g. `Split+ByteLevel`.
+fn pretok_label(path: &Path) -> String {
+    let v: Value = std::fs::read_to_string(path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or(Value::Null);
+    let pt = &v["pre_tokenizer"];
+    match pt["type"].as_str() {
+        None => "None".to_string(),
+        Some("Sequence") => {
+            let mut inner: Vec<&str> = pt["pretokenizers"]
+                .as_array()
+                .map(|a| a.iter().filter_map(|x| x["type"].as_str()).collect())
+                .unwrap_or_default();
+            inner.dedup();
+            inner.join("+")
+        }
+        Some("BertPreTokenizer") => "Bert".to_string(),
+        Some(other) => other.to_string(),
+    }
+}
+
+fn bench_model(
+    tok: &Tokenizer,
+    pipeline: &PipelineTokenizer,
+    files: &[(String, PathBuf)],
+) -> Vec<Value> {
+    let legacy_enc = |s: &str| tok.encode(s, false).unwrap().len();
     let pipeline_enc = |s: &str| pipeline.encode(s, false).unwrap().len();
 
-    println!("[");
-    let files = fixture_files();
-    for (i, (group, path)) in files.iter().enumerate() {
+    let mut rows = Vec::new();
+    for (group, path) in files {
         let name = path.file_stem().unwrap().to_str().unwrap().to_string();
         let text = std::fs::read_to_string(path).unwrap();
         let chunks = make_chunks(&text);
         let bytes: usize = chunks.iter().map(String::len).sum();
 
         let ids_match = chunks.iter().take(3).all(|c| {
-            let expected = oracle.encode(c.as_str(), false).unwrap();
+            let expected = tok.encode(c.as_str(), false).unwrap();
             let got: Vec<u32> = pipeline
                 .encode(c, false)
                 .unwrap()
@@ -107,26 +159,68 @@ fn main() {
             pipeline_s.push(time_pass(&pipeline_enc, &chunks));
         }
         let (l, p) = (median_secs(legacy_s), median_secs(pipeline_s));
+        let (legacy_mbps, pipeline_mbps) = (bytes as f64 / l / 1e6, bytes as f64 / p / 1e6);
+        eprintln!("  {name}: legacy {legacy_mbps:.1} MB/s, pipeline {pipeline_mbps:.1} MB/s");
 
-        eprintln!(
-            "{name}: legacy {:.1} MB/s, pipeline {:.1} MB/s",
-            bytes as f64 / l / 1e6,
-            bytes as f64 / p / 1e6
-        );
-        println!(
-            "{}{}",
-            serde_json::json!({
-                "fixture": name,
-                "group": group,
-                "bytes": bytes,
-                "chunks": chunks.len(),
-                "legacy_mbps": bytes as f64 / l / 1e6,
-                "pipeline_mbps": bytes as f64 / p / 1e6,
-                "speedup": l / p,
-                "ids_match": ids_match,
-            }),
-            if i + 1 < files.len() { "," } else { "" }
-        );
+        rows.push(json!({
+            "fixture": name,
+            "group": group,
+            "bytes": bytes,
+            "chunks": chunks.len(),
+            "legacy_mbps": legacy_mbps,
+            "pipeline_mbps": pipeline_mbps,
+            "speedup": l / p,
+            "ids_match": ids_match,
+        }));
     }
-    println!("]");
+    rows
+}
+
+fn main() {
+    let manifest: Vec<Value> =
+        serde_json::from_str(&std::fs::read_to_string(MANIFEST).unwrap()).unwrap();
+    let files = fixture_files();
+
+    let mut out: Vec<Value> = Vec::new();
+    for entry in &manifest {
+        let name = entry["name"].as_str().unwrap().to_string();
+        let repo = entry.get("repo").and_then(Value::as_str).unwrap_or("");
+        let path = model_path(entry);
+        eprintln!("== {name} ({repo}) ==");
+
+        let tok = match Tokenizer::from_file(&path) {
+            Ok(t) => t,
+            Err(e) => {
+                eprintln!("  load failed: {e}");
+                out.push(json!({
+                    "model": name, "repo": repo, "shape": "?",
+                    "supported": false, "reason": format!("load error: {e}"), "results": [],
+                }));
+                continue;
+            }
+        };
+        let shape = format!("{} · {}", model_kind(&tok), pretok_label(&path));
+
+        match PipelineTokenizer::try_from(&tok) {
+            Ok(pipeline) => {
+                let rows = bench_model(&tok, &pipeline, &files);
+                out.push(json!({
+                    "model": name, "repo": repo, "shape": shape,
+                    "supported": true, "results": rows,
+                }));
+            }
+            Err(_) => {
+                eprintln!("  unsupported by PipelineTokenizer ({shape})");
+                out.push(json!({
+                    "model": name, "repo": repo, "shape": shape,
+                    "supported": false, "results": [],
+                }));
+            }
+        }
+    }
+
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&Value::Array(out)).unwrap()
+    );
 }
