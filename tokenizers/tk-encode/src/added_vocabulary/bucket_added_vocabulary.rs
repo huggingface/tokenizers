@@ -1,4 +1,6 @@
-use super::super::{Model, NormalizedString, Normalizer, Result};
+use crate::pipeline::PipelinePatternMatcher;
+use crate::{Model, NormalizedString, Normalizer, Result};
+
 use crate::buckets::{AddedTokenFlags, Buckets};
 use crate::pre_tokenizers::whitespace::is_word_char;
 use ahash::AHashMap;
@@ -186,7 +188,7 @@ impl fmt::Debug for AddedVocabulary {
 impl AddedVocabulary {
     pub fn new() -> Self {
         Self {
-            encode_special_tokens: true,
+            encode_special_tokens: false,
             token_metadata: Box::new([]),
             normalized_vocab: Buckets::new(),
             vocab: Buckets::new(),
@@ -375,41 +377,50 @@ impl AddedVocabulary {
         self.normalized_vocab = Buckets::from_tokens(norm_tokens);
         Ok(total - ignored)
     }
+}
 
-    pub fn extract_next(
+impl PipelinePatternMatcher for AddedVocabulary {
+    fn extract_next(
         &self,
         bytes: &[u8],
-        search: usize,
+        search_offset: usize,
         normalized: bool,
-    ) -> Option<(u32, u32, u32)> {
+    ) -> Option<((usize, usize), u32)> {
         let vocab = if normalized {
             &self.normalized_vocab
         } else {
             &self.vocab
         };
-        match vocab.match_bytes(&bytes[search..]) {
-            Some((id, match_start, match_len)) if match_len > 0 => {
-                let mut match_start = search + match_start as usize;
-                let mut match_end = match_start + match_len as usize;
-                // single_word: reject unless the token is a standalone word (neither neighbour
-                // char is a word char). Checked on the raw byte bounds, before any strip.
-                if self.token_metadata[id as usize].single_word
-                    && !is_single_word(bytes, search, match_start, match_end)
-                {
-                    match_end += 1;
-                }
-                if self.token_metadata[id as usize].lstrip {
-                    match_start =
-                        skip_whitespace_backward(&bytes[..match_end], match_start).max(search)
-                }
-                if self.token_metadata[id as usize].rstrip {
-                    match_end = skip_whitespace_forward(bytes, match_end)
-                }
-                Some((match_start as u32, match_end as u32, id))
+        let mut search = search_offset;
+        while search < bytes.len() {
+            // since match_bytes goes to the end, no match means we reached the end.
+            let (id, start, len) = match vocab.match_bytes(&bytes[search..]) {
+                Some((id, start, len)) if len > 0 => (id, start, len),
+                _ => return None,
+            };
+            let mut match_start = search + start as usize;
+            let mut match_end = match_start + len as usize;
+            let metadata = &self.token_metadata[id as usize];
+            if self.encode_special_tokens && metadata.special {
+                search = match_end;
+                continue;
             }
-            // since match_bytes goes to the end, this means we reach the end.
-            _ => None,
+            // single_word: reject unless the token is a standalone word (neither neighbour
+            // char is a word char). Checked on the raw byte bounds, before any strip.
+            if metadata.single_word && !is_single_word(bytes, search, match_start, match_end) {
+                search = match_start + 1;
+                continue;
+            }
+            if metadata.lstrip {
+                match_start =
+                    skip_whitespace_backward(&bytes[..match_end], match_start).max(search_offset)
+            }
+            if metadata.rstrip {
+                match_end = skip_whitespace_forward(bytes, match_end)
+            }
+            return Some(((match_start, match_end), id));
         }
+        None
     }
 }
 
@@ -453,7 +464,9 @@ impl Serialize for AddedVocabulary {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::normalizers::utils::Lowercase;
     use crate::normalizers::NormalizerWrapper;
+    use crate::pipeline::{Segment, SpecialSegmentIterator};
     use crate::{Result, Token};
     use std::collections::HashMap;
     use std::path::{Path, PathBuf};
@@ -642,82 +655,172 @@ mod tests {
     }
 
     #[test]
-    fn extract_next_routes_by_normalized_flag() {
+    fn normalized_tokens_are_stored_by_normalized_form() {
+        // The Buckets rewrite doesn't retain the original content of normalized tokens:
+        // they are stored (and decoded) by their normalized form.
         let model = ModelMock::new(&[]);
         let mut vocab = AddedVocabulary::new();
-        let none: Option<&NormalizerWrapper> = None;
-        // special token (normalized=false) -> `vocab`, matched on raw text
-        vocab
-            .add_special_tokens([AddedToken::from("[CLS]", true)], &model, none)
-            .unwrap();
-        // regular token (normalized=true) -> `normalized_vocab`, matched on normalized text
-        vocab
-            .add_tokens([AddedToken::from("my", false)], &model, none)
-            .unwrap();
-        let cls = vocab.token_to_id("[CLS]", &model).unwrap();
-        let my = vocab.token_to_id("my", &model).unwrap();
+        let normalizer = Lowercase;
 
-        // normalized=false searches the raw `vocab`
-        assert_eq!(vocab.extract_next(b"[CLS]", 0, false), Some((0, 5, cls)));
-        assert_eq!(vocab.extract_next(b"my", 0, false), None);
-        // normalized=true searches `normalized_vocab`
-        assert_eq!(vocab.extract_next(b"my", 0, true), Some((0, 2, my)));
-        assert_eq!(vocab.extract_next(b"[CLS]", 0, true), None);
-    }
-
-    #[test]
-    fn extract_next_finds_at_offset_and_returns_none_past_match() {
-        let model = ModelMock::new(&[]);
-        let mut vocab = AddedVocabulary::new();
-        let none: Option<&NormalizerWrapper> = None;
         vocab
-            .add_special_tokens([AddedToken::from("<s>", true)], &model, none)
-            .unwrap();
-        let id = vocab.token_to_id("<s>", &model).unwrap();
-
-        // match starts partway through the input
-        assert_eq!(vocab.extract_next(b"ab<s>cd", 0, false), Some((2, 5, id)));
-        // searching from the match offset still finds it
-        assert_eq!(vocab.extract_next(b"ab<s>cd", 2, false), Some((2, 5, id)));
-        // searching past the only match, or with no match at all -> None
-        assert_eq!(vocab.extract_next(b"ab<s>cd", 5, false), None);
-        assert_eq!(vocab.extract_next(b"abcd", 0, false), None);
-    }
-
-    #[test]
-    fn extract_next_applies_lstrip_and_rstrip() {
-        let model = ModelMock::new(&[]);
-        let mut vocab = AddedVocabulary::new();
-        let none: Option<&NormalizerWrapper> = None;
-        vocab
-            .add_special_tokens(
-                [AddedToken::from("<mask>", true).lstrip(true).rstrip(true)],
+            .add_tokens(
+                [
+                    AddedToken::from("Hello", false),
+                    AddedToken::from("[CLS]", true),
+                ],
                 &model,
-                none,
+                Some(&normalizer),
             )
             .unwrap();
-        let id = vocab.token_to_id("<mask>", &model).unwrap();
-        // the match grows to swallow the surrounding whitespace: " <mask> "
+
+        let decoder = vocab.get_added_tokens_decoder();
+        // normalized=true → stored under the normalizer output
+        assert!(decoder.values().any(|t| t.content == "hello"));
+        // normalized=false → stored under the original content
+        assert!(decoder.values().any(|t| t.content == "[CLS]"));
+
+        assert_eq!(vocab.simple_id_to_token(0).unwrap(), "hello");
+        assert_eq!(vocab.simple_id_to_token(1).unwrap(), "[CLS]");
+    }
+
+    /// Drive the real `SpecialSegmentIterator` over an `AddedVocabulary`, mapping each
+    /// segment to `(text, id)` so `extract_next`'s behaviour is easy to assert.
+    fn segments(
+        vocab: &AddedVocabulary,
+        input: &str,
+        normalized: bool,
+    ) -> Vec<(Option<String>, Option<u32>)> {
+        SpecialSegmentIterator::new(input, vocab, normalized)
+            .map(|segment| match segment {
+                Segment::Text(text) => (Some(text.to_string()), None),
+                Segment::SpecialToken(id) => (None, Some(id)),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn segment_iterator_carves_raw_added_tokens() {
+        let model = ModelMock::new(&[]);
+        let mut vocab = AddedVocabulary::new();
+        let normalizer: Option<&NormalizerWrapper> = None;
+        vocab
+            .add_special_tokens(
+                [
+                    AddedToken::from("[CLS]", true),
+                    AddedToken::from("[SEP]", true),
+                ],
+                &model,
+                normalizer,
+            )
+            .unwrap();
+
+        // Special tokens are declared on raw text, so a single raw pass carves them out.
         assert_eq!(
-            vocab.extract_next(b"a <mask> b", 0, false),
-            Some((1, 9, id))
+            segments(&vocab, "[CLS] hello [SEP]", false),
+            vec![
+                (None, Some(0)),
+                (Some(" hello ".to_string()), None),
+                (None, Some(1)),
+            ]
         );
     }
 
     #[test]
-    fn extract_next_single_word_matches_when_standalone() {
+    fn segment_iterator_respects_single_word() {
         let model = ModelMock::new(&[]);
         let mut vocab = AddedVocabulary::new();
-        let none: Option<&NormalizerWrapper> = None;
+        let normalizer: Option<&NormalizerWrapper> = None;
         vocab
-            .add_special_tokens(
-                [AddedToken::from("cat", true).single_word(true)],
+            .add_tokens(
+                [AddedToken::from("mask", false)
+                    .normalized(false)
+                    .single_word(true)],
                 &model,
-                none,
+                normalizer,
             )
             .unwrap();
-        let id = vocab.token_to_id("cat", &model).unwrap();
-        // "cat" is a standalone word (next char is whitespace) -> normal match
-        assert_eq!(vocab.extract_next(b"cat ", 0, false), Some((0, 3, id)));
+
+        // Standalone `mask` matches; the `mask` inside `bitmask` does not.
+        assert_eq!(
+            segments(&vocab, "a mask bitmask", false),
+            vec![
+                (Some("a ".to_string()), None),
+                (None, Some(0)),
+                (Some(" bitmask".to_string()), None),
+            ]
+        );
+    }
+
+    #[test]
+    fn segment_iterator_applies_lstrip_rstrip() {
+        let model = ModelMock::new(&[]);
+        let mut vocab = AddedVocabulary::new();
+        let normalizer: Option<&NormalizerWrapper> = None;
+        vocab
+            .add_tokens(
+                [AddedToken::from("<mask>", false)
+                    .normalized(false)
+                    .lstrip(true)
+                    .rstrip(true)],
+                &model,
+                normalizer,
+            )
+            .unwrap();
+
+        // The spaces around `<mask>` are absorbed into the matched span, so the surrounding
+        // text segments come back trimmed.
+        assert_eq!(
+            segments(&vocab, "hi <mask> there", false),
+            vec![
+                (Some("hi".to_string()), None),
+                (None, Some(0)),
+                (Some("there".to_string()), None),
+            ]
+        );
+    }
+
+    #[test]
+    fn segment_iterator_honors_encode_special_tokens() {
+        let model = ModelMock::new(&[]);
+        let mut vocab = AddedVocabulary::new();
+        let normalizer: Option<&NormalizerWrapper> = None;
+        vocab
+            .add_special_tokens([AddedToken::from("[CLS]", true)], &model, normalizer)
+            .unwrap();
+
+        // Default: the special token is carved out.
+        assert_eq!(
+            segments(&vocab, "[CLS] hi", false),
+            vec![(None, Some(0)), (Some(" hi".to_string()), None)]
+        );
+
+        // encode_special_tokens = true: the special token is left in the text for the model.
+        vocab.set_encode_special_tokens(true);
+        assert_eq!(
+            segments(&vocab, "[CLS] hi", false),
+            vec![(Some("[CLS] hi".to_string()), None)]
+        );
+    }
+
+    #[test]
+    fn segment_iterator_selects_raw_vs_normalized_matcher() {
+        let model = ModelMock::new(&[]);
+        let mut vocab = AddedVocabulary::new();
+        let normalizer = Lowercase;
+        // Non-special token, normalized by default → stored in the normalized matcher.
+        vocab
+            .add_tokens([AddedToken::from("mask", false)], &model, Some(&normalizer))
+            .unwrap();
+
+        // Raw pass: the token lives in the normalized matcher, so nothing is carved.
+        assert_eq!(
+            segments(&vocab, "a mask", false),
+            vec![(Some("a mask".to_string()), None)]
+        );
+        // Normalized pass over already-normalized text: the token is matched.
+        assert_eq!(
+            segments(&vocab, "a mask", true),
+            vec![(Some("a ".to_string()), None), (None, Some(0))]
+        );
     }
 }
