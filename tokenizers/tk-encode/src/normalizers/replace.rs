@@ -1,4 +1,3 @@
-
 use crate::pipeline;
 use crate::tokenizer::pattern::Pattern;
 use crate::tokenizer::Decoder;
