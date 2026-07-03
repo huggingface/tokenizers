@@ -16,7 +16,7 @@ pub use crate::normalizers::unicode::{Nmt, NFC, NFD, NFKC, NFKD};
 pub use crate::normalizers::utils::{Lowercase, Sequence};
 use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::{NormalizedString, Normalizer, pipeline};
+use crate::{pipeline, NormalizedString, Normalizer};
 
 /// Wrapper for known Normalizers.
 #[derive(Clone, Debug, Serialize)]
