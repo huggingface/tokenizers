@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
-"""Render the multi-model fixture_bench JSON as a grid of per-model SVG cards
-+ a markdown report for a PR description.
+"""Render the multi-model fixture_bench JSON as full-size per-model charts +
+a markdown report for a PR description.
 
 Input: JSON array from `cargo run --release -p tk-encode --example fixture_bench`,
 one object per model:
-    {model, repo, shape, supported, [reason], results: [{fixture, group,
+    {model, shape, supported, [reason], results: [{fixture, group,
      legacy_mbps, pipeline_mbps, speedup, ids_match}, ...]}
 
-Each model becomes one fixed-size card (light + dark SVG):
-  • supported  → a diverging bar chart of per-fixture speedup (log2 around ×1.0):
-                 blue = PipelineTokenizer faster, red = slower.
-  • unsupported → a "not supported yet" placeholder showing the pipeline shape.
-All cards share one x-scale (comparable) and one height (a tidy grid). The
-markdown lays them out two-per-row and links each to its uploaded PNG.
+Each supported model gets a full-size diverging bar chart (log2 around ×1.0):
+per-fixture ×speedup + the `MB/s: Tokenizer → Pipeline` throughput column, with
+group headers, slower/faster hints, ticks and an inline "⚠ ids differ" flag.
+Unsupported models (byte-level BPE, Unigram/Metaspace, …) get a compact
+"not supported" card. Charts are rendered full-size so readers can zoom.
 """
 import argparse
 import json
@@ -39,21 +38,11 @@ INK = {
     },
 }
 FONT = "-apple-system,'Segoe UI',Helvetica,Arial,sans-serif"
-TICKS = [0.5, 0.67, 0.8, 1.0, 1.25, 1.5, 2.0, 3.0]
+GUTTER, PLOT_W, PAD_R, COL_W, ROW_H, BAR_H = 150, 540, 110, 150, 26, 16
+CHART_W = GUTTER + PLOT_W + PAD_R + COL_W
+TICKS = [0.5, 0.67, 0.75, 0.8, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0, 5.0]
 GROUPS = [("lang", "Languages"), ("modalities", "Modalities")]
-
-CARD_W = 470
-PAD = 16
-HEADER_H = 56
-GROUP_H = 22
-ROW_H = 17
-BAR_H = 10
-AXIS_H = 28
-LABEL_R = PAD + 94          # right edge of fixture labels
-PLOT_L = LABEL_R + 10       # bars start here
-VAL_W = 62                  # room for the ×value label
-PLOT_R = CARD_W - PAD - VAL_W
-PLOT_W = PLOT_R - PLOT_L
+CARD_W, CARD_H = 470, 150
 
 
 def slugify(name):
@@ -65,6 +54,7 @@ def geomean(values):
 
 
 def bar_path(x0, x1, y, h, r):
+    # square at the baseline (x0), rounded at the data end (x1)
     left, right = min(x0, x1), max(x0, x1)
     r = min(r, (right - left) / 2, h / 2)
     if x1 >= x0:
@@ -74,188 +64,115 @@ def bar_path(x0, x1, y, h, r):
             f"V{y + h - r:.1f} q0,{r:.1f} {r:.1f},{r:.1f} H{right:.1f} Z")
 
 
-def layout_of(models):
-    """Ordered {group: fixture_count} from the first model that has results."""
-    for m in models:
-        if m["results"]:
-            counts = {}
-            for r in m["results"]:
-                counts[r["group"]] = counts.get(r["group"], 0) + 1
-            return counts
-    return {}
-
-
-def body_height(layout):
-    h = sum(GROUP_H + layout[k] * ROW_H for k, _ in GROUPS if layout.get(k))
-    return (h + AXIS_H) if h else 180
-
-
 def scale(models):
-    """Shared log2 x-range across every supported fixture speedup."""
+    """Shared log2 x-range across every supported fixture speedup, so charts
+    for different models are directly comparable."""
     vals = [r["speedup"] for m in models if m["supported"] for r in m["results"]]
     if not vals:
         return 0.75, 1.5
-    lo = min(0.75, min(vals) / 1.08)
-    hi = max(1.5, max(vals) * 1.08)
-    return lo, hi
+    return min(0.75, min(vals) / 1.08), max(1.5, max(vals) * 1.08)
 
 
-def card_svg(model, mode, lo, hi, card_h):
+def chart_svg(model, mode, subtitle_base, meta, lo, hi):
+    """Full-size per-fixture speedup chart for a supported model."""
     ink = INK[mode]
-    b = [f'<rect x="0.5" y="0.5" width="{CARD_W - 1}" height="{card_h - 1}" rx="10" '
-         f'fill="{ink["card"]}" stroke="{ink["border"]}" stroke-width="1"/>']
-
-    # ── header ──────────────────────────────────────────────────────────
-    b.append(f'<text x="{PAD}" y="26" fill="{ink["primary"]}" font-size="15" '
-             f'font-weight="700">{escape(model["model"])}</text>')
-    b.append(f'<text x="{PAD}" y="44" fill="{ink["muted"]}" font-size="11.5">'
-             f'{escape(model["shape"])}</text>')
-
-    if model["supported"]:
-        rows = model["results"]
-        g = geomean([r["speedup"] for r in rows])
-        gc = ink["faster"] if g >= 1 else ink["slower"]
-        b.append(f'<text x="{CARD_W - PAD}" y="24" fill="{gc}" font-size="19" '
-                 f'font-weight="700" text-anchor="end" '
-                 f'style="font-variant-numeric:tabular-nums">×{g:.2f}</text>')
-        b.append(f'<text x="{CARD_W - PAD}" y="42" fill="{ink["muted"]}" font-size="10.5" '
-                 f'text-anchor="end">geomean</text>')
-    else:
-        pill_w = 96
-        b.append(f'<rect x="{CARD_W - PAD - pill_w}" y="11" width="{pill_w}" height="19" rx="9.5" '
-                 f'fill="none" stroke="{ink["border"]}" stroke-width="1"/>')
-        b.append(f'<text x="{CARD_W - PAD - pill_w / 2}" y="24" fill="{ink["muted"]}" '
-                 f'font-size="11" text-anchor="middle">not supported</text>')
-
-    b.append(f'<line x1="{PAD}" y1="{HEADER_H - 8}" x2="{CARD_W - PAD}" y2="{HEADER_H - 8}" '
-             f'stroke="{ink["grid"]}" stroke-width="1"/>')
-
-    # ── unsupported placeholder (compact card) ──────────────────────────
-    if not model["supported"]:
-        pretok = model["shape"].split("·")[-1].strip()
-        cy = HEADER_H + (card_h - HEADER_H) / 2
-        b.append(f'<text x="{CARD_W / 2}" y="{cy - 2}" fill="{ink["secondary"]}" font-size="12.5" '
-                 f'font-weight="600" text-anchor="middle">Not benchmarked yet</text>')
-        b.append(f'<text x="{CARD_W / 2}" y="{cy + 16}" fill="{ink["muted"]}" font-size="11.5" '
-                 f'text-anchor="middle">PipelineTokenizer has no <tspan font-weight="600">'
-                 f'{escape(pretok)}</tspan> pre-tokenizer</text>')
-        return "".join(b)
-
-    # ── supported: diverging bars ───────────────────────────────────────
-    def x(v):
-        return PLOT_L + (math.log2(v) - math.log2(lo)) / (math.log2(hi) - math.log2(lo)) * PLOT_W
-
+    rows = model["results"]
     ticks = [t for t in TICKS if lo <= t <= hi]
-    body_top = HEADER_H + 6
-    y = body_top
+
+    def x(v):
+        return GUTTER + (math.log2(v) - math.log2(lo)) / (math.log2(hi) - math.log2(lo)) * PLOT_W
+
+    top = 74
+    col_x = GUTTER + PLOT_W + PAD_R + COL_W - 16
+    body = [f'<text x="{col_x}" y="{top - 14}" fill="{ink["muted"]}" font-size="11" '
+            f'text-anchor="end">MB/s: Tokenizer → Pipeline</text>']
+    y = top
     for key, title in GROUPS:
-        group_rows = sorted((r for r in model["results"] if r["group"] == key),
+        group_rows = sorted((r for r in rows if r["group"] == key),
                             key=lambda r: -r["speedup"])
         if not group_rows:
             continue
-        b.append(f'<text x="{LABEL_R}" y="{y + 13}" fill="{ink["secondary"]}" font-size="10" '
-                 f'font-weight="700" letter-spacing="1.1" text-anchor="end">{title.upper()}</text>')
-        y += GROUP_H
+        body.append(f'<text x="{GUTTER}" y="{y + 12}" fill="{ink["secondary"]}" font-size="11" '
+                    f'font-weight="600" letter-spacing="1.2" text-anchor="end" dx="-10">{title.upper()}</text>')
+        y += 22
         for r in group_rows:
             v, x0, x1 = r["speedup"], x(1.0), x(r["speedup"])
-            if abs(math.log2(v)) < math.log2(1.02):
+            if abs(math.log2(v)) < math.log2(1.02):  # within noise of the baseline
                 color = ink["muted"]
             else:
                 color = ink["faster"] if v >= 1 else ink["slower"]
             by = y + (ROW_H - BAR_H) / 2
-            b.append(f'<text x="{LABEL_R}" y="{y + ROW_H / 2 + 4}" fill="{ink["secondary"]}" '
-                     f'font-size="11.5" text-anchor="end">{escape(r["fixture"])}</text>')
+            body.append(f'<text x="{GUTTER - 10}" y="{y + ROW_H / 2 + 4}" fill="{ink["secondary"]}" '
+                        f'font-size="12.5" text-anchor="end">{escape(r["fixture"])}</text>')
             if abs(x1 - x0) < 1.5:
-                b.append(f'<rect x="{min(x0, x1):.1f}" y="{by}" width="1.5" height="{BAR_H}" fill="{color}"/>')
+                body.append(f'<rect x="{min(x0, x1):.1f}" y="{by}" width="1.5" height="{BAR_H}" fill="{color}"/>')
             else:
-                b.append(f'<path d="{bar_path(x0, x1, by, BAR_H, 3)}" fill="{color}"/>')
+                body.append(f'<path d="{bar_path(x0, x1, by, BAR_H, 4)}" fill="{color}"/>')
             label = f"×{v:.2f}"
-            anchor, lx = ("start", max(x0, x1) + 5) if v >= 1 else ("end", min(x0, x1) - 5)
-            fill = ink["primary"] if r["ids_match"] else ink["critical"]
+            anchor, lx = ("start", max(x0, x1) + 6) if v >= 1 else ("end", min(x0, x1) - 6)
             if not r["ids_match"]:
-                label += " ⚠"
-            b.append(f'<text x="{lx:.1f}" y="{y + ROW_H / 2 + 4}" fill="{fill}" font-size="11" '
-                     f'font-weight="600" text-anchor="{anchor}" '
-                     f'style="font-variant-numeric:tabular-nums">{label}</text>')
+                label += "  ⚠ ids differ"
+            fill = ink["primary"] if r["ids_match"] else ink["critical"]
+            body.append(f'<text x="{lx:.1f}" y="{y + ROW_H / 2 + 4}" fill="{fill}" font-size="12" '
+                        f'font-weight="600" text-anchor="{anchor}" '
+                        f'style="font-variant-numeric:tabular-nums">{label}</text>')
+            body.append(f'<text x="{col_x}" y="{y + ROW_H / 2 + 4}" fill="{ink["secondary"]}" '
+                        f'font-size="12" text-anchor="end" style="font-variant-numeric:tabular-nums">'
+                        f'{r["legacy_mbps"]:.1f} → {r["pipeline_mbps"]:.1f}</text>')
             y += ROW_H
-        y += 4
+        y += 10
 
-    axis_bottom = y
+    height = y + 34
     grid = []
     for t in ticks:
         strong = t == 1.0
-        grid.append(f'<line x1="{x(t):.1f}" y1="{body_top}" x2="{x(t):.1f}" y2="{axis_bottom}" '
-                    f'stroke="{ink["baseline"] if strong else ink["grid"]}" '
-                    f'stroke-width="1"{"" if strong else ""}/>')
-        grid.append(f'<text x="{x(t):.1f}" y="{axis_bottom + 15}" fill="{ink["muted"]}" font-size="10" '
+        grid.append(f'<line x1="{x(t):.1f}" y1="{top - 6}" x2="{x(t):.1f}" y2="{y - 6}" '
+                    f'stroke="{ink["baseline"] if strong else ink["grid"]}" stroke-width="1"/>')
+        grid.append(f'<text x="{x(t):.1f}" y="{y + 12}" fill="{ink["muted"]}" font-size="11" '
                     f'text-anchor="middle" style="font-variant-numeric:tabular-nums">×{t:g}</text>')
-    # frame (b[0]) first, gridlines behind the bars/labels (b[1:])
-    return b[0] + "".join(grid) + "".join(b[1:])
+    hints = (f'<text x="{x(1.0) - 8:.1f}" y="{top - 14}" fill="{ink["muted"]}" font-size="11" '
+             f'text-anchor="end">← slower</text>'
+             f'<text x="{x(1.0) + 8:.1f}" y="{top - 14}" fill="{ink["muted"]}" font-size="11" '
+             f'text-anchor="start">faster →</text>')
+
+    g = geomean([r["speedup"] for r in rows])
+    subtitle = f'{model["shape"]} · geomean ×{g:.2f} · {subtitle_base}'
+    return f'''<svg xmlns="http://www.w3.org/2000/svg" width="{CHART_W}" height="{height}"
+  viewBox="0 0 {CHART_W} {height}" font-family="{FONT}">
+<rect width="{CHART_W}" height="{height}" fill="{ink["surface"]}"/>
+<text x="16" y="26" fill="{ink["primary"]}" font-size="15" font-weight="700">{escape(model["model"])} — Pipeline vs Tokenizer encode throughput</text>
+<text x="16" y="44" fill="{ink["secondary"]}" font-size="12">{escape(subtitle)}</text>
+<text x="{CHART_W - 16}" y="26" fill="{ink["muted"]}" font-size="11" text-anchor="end"
+  style="font-variant-numeric:tabular-nums">{escape(meta[0])}</text>
+<text x="{CHART_W - 16}" y="44" fill="{ink["muted"]}" font-size="11" text-anchor="end">{escape(meta[1])}</text>
+{"".join(grid)}
+{hints}
+{"".join(body)}
+</svg>'''
 
 
-def wrap_svg(inner, card_h):
-    return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{CARD_W}" height="{card_h}" '
-            f'viewBox="0 0 {CARD_W} {card_h}" font-family="{FONT}">{inner}</svg>')
-
-
-def img_url(base, run_id, slug, mode):
-    if base:
-        return f"{base}/pipeline-{run_id}-{slug}-{mode}.png"
-    return f"pipeline_bench_{slug}_{mode}.png"
-
-
-def render_markdown(models, subtitle, meta, base, run_id):
-    supported = [m for m in models if m["supported"]]
-    ordered = supported + [m for m in models if not m["supported"]]
-    mismatches = [f"{m['model']}/{r['fixture']}"
-                  for m in supported for r in m["results"] if not r["ids_match"]]
-
-    md = ["## PipelineTokenizer benchmark", ""]
-    head = f"**{len(supported)} / {len(models)} models supported**"
-    if supported:
-        g = geomean([r["speedup"] for m in supported for r in m["results"]])
-        nfix = len(supported[0]["results"])
-        head += f" · geomean ×{g:.2f} across supported · {nfix} fixtures each"
-    md += [f"{head} — {subtitle}", "", f"`{meta[0]}` · {meta[1]}", ""]
-
-    unsupported = [m for m in models if not m["supported"]]
-    if unsupported:
-        items = ", ".join(f"`{m['model']}` ({m['shape']})" for m in unsupported)
-        md += [f"> **Not yet supported:** {items} — shown as roadmap cards below.", ""]
-    if mismatches:
-        md += [f"> ⚠️ **Token ids diverge from the reference on: {', '.join(mismatches)}** "
-               f"— speedups there are meaningless until fixed.", ""]
-
-    # two-per-row grid of picture embeds
-    md.append("<table>")
-    for i in range(0, len(ordered), 2):
-        md.append("<tr>")
-        for m in ordered[i:i + 2]:
-            slug = slugify(m["model"])
-            light = img_url(base, run_id, slug, "light")
-            dark = img_url(base, run_id, slug, "dark")
-            md += ['<td align="center" valign="top">',
-                   "<picture>",
-                   f'  <source media="(prefers-color-scheme: dark)" srcset="{dark}">',
-                   f'  <img alt="{escape(m["model"])} speedup" src="{light}" width="430">',
-                   "</picture>",
-                   "</td>"]
-        md.append("</tr>")
-    md += ["</table>", ""]
-
-    if supported:
-        md += ["<details><summary>Per-fixture results (supported models)</summary>", ""]
-        for m in supported:
-            md += [f"#### {m['model']} — {m['shape']}", "",
-                   "| Fixture | Group | Tokenizer MB/s | Pipeline MB/s | Speedup | Ids |",
-                   "|---|---|---:|---:|---:|:--|"]
-            for r in sorted(m["results"], key=lambda r: (r["group"], -r["speedup"])):
-                ids = "match" if r["ids_match"] else "⚠️ differ"
-                md.append(f"| {r['fixture']} | {r['group']} | {r['legacy_mbps']:.1f} "
-                          f"| {r['pipeline_mbps']:.1f} | ×{r['speedup']:.2f} | {ids} |")
-            md.append("")
-        md += ["</details>", ""]
-    return "\n".join(md)
+def card_svg(model, mode):
+    """Compact 'not supported' card for a model the pipeline can't build."""
+    ink = INK[mode]
+    pretok = model["shape"].split("·")[-1].strip()
+    header = 54
+    b = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{CARD_W}" height="{CARD_H}" '
+         f'viewBox="0 0 {CARD_W} {CARD_H}" font-family="{FONT}">',
+         f'<rect x="0.5" y="0.5" width="{CARD_W - 1}" height="{CARD_H - 1}" rx="10" '
+         f'fill="{ink["card"]}" stroke="{ink["border"]}" stroke-width="1"/>',
+         f'<text x="16" y="26" fill="{ink["primary"]}" font-size="15" font-weight="700">{escape(model["model"])}</text>',
+         f'<text x="16" y="44" fill="{ink["muted"]}" font-size="11.5">{escape(model["shape"])}</text>',
+         f'<rect x="{CARD_W - 16 - 96}" y="11" width="96" height="19" rx="9.5" fill="none" '
+         f'stroke="{ink["border"]}" stroke-width="1"/>',
+         f'<text x="{CARD_W - 16 - 48}" y="24" fill="{ink["muted"]}" font-size="11" '
+         f'text-anchor="middle">not supported</text>',
+         f'<line x1="16" y1="{header - 8}" x2="{CARD_W - 16}" y2="{header - 8}" stroke="{ink["grid"]}" stroke-width="1"/>',
+         f'<text x="{CARD_W / 2}" y="{(CARD_H + header) / 2 - 2}" fill="{ink["secondary"]}" font-size="12.5" '
+         f'font-weight="600" text-anchor="middle">Not benchmarked yet</text>',
+         f'<text x="{CARD_W / 2}" y="{(CARD_H + header) / 2 + 16}" fill="{ink["muted"]}" font-size="11.5" '
+         f'text-anchor="middle">PipelineTokenizer has no <tspan font-weight="600">{escape(pretok)}</tspan> pre-tokenizer</text>',
+         "</svg>"]
+    return "".join(b)
 
 
 def detect_hardware():
@@ -271,6 +188,72 @@ def detect_hardware():
             import platform
             cpu = platform.processor() or platform.machine() or "unknown cpu"
     return f"{cpu} · {os.cpu_count()} cores"
+
+
+def img_url(base, run_id, slug, mode):
+    if base:
+        return f"{base}/pipeline-{run_id}-{slug}-{mode}.png"
+    return f"pipeline_bench_{slug}_{mode}.png"
+
+
+def picture(base, run_id, slug, alt, width):
+    return "\n".join([
+        "<picture>",
+        f'  <source media="(prefers-color-scheme: dark)" srcset="{img_url(base, run_id, slug, "dark")}">',
+        f'  <img alt="{escape(alt)}" src="{img_url(base, run_id, slug, "light")}" width="{width}">',
+        "</picture>"])
+
+
+def render_markdown(models, subtitle_base, meta, base, run_id):
+    supported = [m for m in models if m["supported"]]
+    unsupported = [m for m in models if not m["supported"]]
+    mismatches = [f"{m['model']}/{r['fixture']}"
+                  for m in supported for r in m["results"] if not r["ids_match"]]
+
+    md = ["## PipelineTokenizer benchmark", ""]
+    head = f"**{len(supported)} / {len(models)} models supported**"
+    if supported:
+        g = geomean([r["speedup"] for m in supported for r in m["results"]])
+        nfix = len(supported[0]["results"])
+        head += f" · geomean ×{g:.2f} across supported · {nfix} fixtures each"
+    md += [f"{head} — {subtitle_base}", "", f"`{meta[0]}` · {meta[1]}", ""]
+
+    if unsupported:
+        items = ", ".join(f"`{m['model']}` ({m['shape']})" for m in unsupported)
+        md += [f"> **Not yet supported:** {items} — roadmap cards below.", ""]
+    if mismatches:
+        md += [f"> ⚠️ **Token ids diverge from the reference on: {', '.join(mismatches)}** "
+               f"— speedups there are meaningless until fixed.", ""]
+
+    # Supported models: full-size chart each (readable inline, click to zoom).
+    for m in supported:
+        md += [picture(base, run_id, slugify(m["model"]), f"{m['model']} speedup", 860), ""]
+
+    # Unsupported models: compact roadmap cards, two per row.
+    if unsupported:
+        md += ["### Not yet supported", "", "<table>"]
+        for i in range(0, len(unsupported), 2):
+            md.append("<tr>")
+            for m in unsupported[i:i + 2]:
+                md += ['<td align="center" valign="top">',
+                       picture(base, run_id, slugify(m["model"]), f"{m['model']} not supported", 420),
+                       "</td>"]
+            md.append("</tr>")
+        md += ["</table>", ""]
+
+    if supported:
+        md += ["<details><summary>Per-fixture results</summary>", ""]
+        for m in supported:
+            md += [f"#### {m['model']} — {m['shape']}", "",
+                   "| Fixture | Group | Tokenizer MB/s | Pipeline MB/s | Speedup | Ids |",
+                   "|---|---|---:|---:|---:|:--|"]
+            for r in sorted(m["results"], key=lambda r: (r["group"], -r["speedup"])):
+                ids = "match" if r["ids_match"] else "⚠️ differ"
+                md.append(f"| {r['fixture']} | {r['group']} | {r['legacy_mbps']:.1f} "
+                          f"| {r['pipeline_mbps']:.1f} | ×{r['speedup']:.2f} | {ids} |")
+            md.append("")
+        md += ["</details>", ""]
+    return "\n".join(md)
 
 
 def main():
@@ -295,15 +278,12 @@ def main():
 
     models = json.loads(Path(args.results).read_text())
     lo, hi = scale(models)
-    tall_h = HEADER_H + body_height(layout_of(models)) + PAD
-    mini_h = HEADER_H + 62
-
     out = Path(args.out_dir)
     for m in models:
         slug = slugify(m["model"])
-        h = tall_h if m["supported"] else mini_h
         for mode in ("light", "dark"):
-            svg = wrap_svg(card_svg(m, mode, lo, hi, h), h)
+            svg = (chart_svg(m, mode, args.subtitle, meta, lo, hi)
+                   if m["supported"] else card_svg(m, mode))
             (out / f"pipeline_bench_{slug}_{mode}.svg").write_text(svg)
 
     (out / "pipeline_bench.md").write_text(
@@ -311,8 +291,7 @@ def main():
 
     supported = [m for m in models if m["supported"]]
     g = geomean([r["speedup"] for m in supported for r in m["results"]]) if supported else 0
-    print(f"{len(supported)}/{len(models)} supported, geomean x{g:.3f}, "
-          f"cards {CARD_W}x{tall_h} / {CARD_W}x{mini_h}")
+    print(f"{len(supported)}/{len(models)} supported, geomean x{g:.3f}")
 
 
 if __name__ == "__main__":
