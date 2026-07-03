@@ -1,0 +1,178 @@
+name: Pipeline Benchmark
+
+# Comparative benchmark: reference `Tokenizer` vs experimental
+# `PipelineTokenizer`, for every model in tk-encode/examples/bench_models.json
+# across every corpus in data/fixtures/ on ~10 kB inputs
+# Triggers:
+#   • push to feat/train_encode_split → benches and updates PR #2119's description.
+#   • add the "run-pipeline-bench" label to any PR → benches that PR and updates
+#     its description. Works before this workflow reaches the default branch,
+#     because pull_request runs the workflow file from the PR's own branch. The
+#     label is auto-removed on completion, so re-adding it re-runs. Same-repo
+#     PRs only — fork PRs get no secrets and a read-only token.
+#   • workflow_dispatch → manual run (usable only once this file is on the
+#     default branch).
+# Either way it maintains a marker-delimited benchmark section (graph + table)
+# in the target PR's description; the workflow run itself is the PR check.
+
+on:
+  push:
+    branches: [feat/train_encode_split]
+    paths:
+      - "tokenizers/tk-encode/**"
+      - "tokenizers/src/**"
+      - ".github/workflows/pipeline-bench.yml"
+      - ".github/scripts/render_pipeline_bench.py"
+      - "tokenizers/tk-encode/examples/bench_models.json"
+  pull_request:
+    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "PR number whose description gets the benchmark section (optional)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  issues: write         # remove the trigger label
+  pull-requests: write  # edit the PR description
+
+# One live run per target. github.ref discriminates:
+# refs/heads/feat/train_encode_split on push, refs/pull/<n>/merge on a labeled
+# PR — so a newer commit or re-label supersedes an in-flight bench for the same
+# PR, but different PRs never cancel each other.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  RUSTC_WRAPPER: sccache
+  SCCACHE_GHA_ENABLED: "true"
+
+jobs:
+  pipeline-bench:
+    name: Tokenizer vs PipelineTokenizer
+    # push / dispatch always run; a labeled PR runs only for our label.
+    if: github.event_name != 'pull_request' || github.event.label.name == 'run-pipeline-bench'
+    # Same dedicated runner group as benchmarks.yml — shared 2-vCPU runners
+    # produce noisy timings. The comparison is within-run (both impls, same
+    # machine, interleaved), so absolute noise matters less than for baselines,
+    # but keep the environment consistent anyway.
+    runs-on:
+      group: aws-general-8-plus
+    defaults:
+      run:
+        working-directory: tokenizers
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      # cairosvg (chart rendering) dlopens the system libcairo, which the
+      # aws-general-8-plus runner image doesn't ship
+      - name: Install libcairo
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libcairo2
+
+      - name: Download fixtures and model tokenizers
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: make fixtures bench-models HF="uvx --from huggingface_hub hf"
+
+      - name: Run comparative benchmark
+        run: |
+          cargo run --release -p tk-encode --example fixture_bench > pipeline_bench.json
+          cat pipeline_bench.json
+
+      - name: Render report
+        run: |
+          base_url="https://huggingface.co/datasets/hf-internal-testing/tokenizers-bench/resolve/main/charts"
+          python3 ${{ github.workspace }}/.github/scripts/render_pipeline_bench.py \
+            pipeline_bench.json \
+            --subtitle "~10 kB inputs · single thread" \
+            --revision "${{ github.event.pull_request.head.sha || github.sha }}" \
+            --img-base "$base_url" \
+            --run-id "${{ github.run_id }}"
+          uvx --with cairosvg python -c "
+          import cairosvg, glob
+          for f in glob.glob('pipeline_bench_*.svg'):
+              cairosvg.svg2png(url=f, write_to=f[:-4] + '.png', scale=2)
+          "
+      - name: Upload charts to HF Hub
+        continue-on-error: true
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          for png in pipeline_bench_*.png; do
+            rest="${png#pipeline_bench_}"   # <slug>_<mode>.png
+            base="${rest%.png}"             # <slug>_<mode>
+            mode="${base##*_}"              # light | dark
+            slug="${base%_*}"               # <slug>
+            uvx --from huggingface_hub hf upload hf-internal-testing/tokenizers-bench \
+              "$png" "charts/pipeline-${{ github.run_id }}-${slug}-${mode}.png" --repo-type dataset
+          done
+
+      - name: Write step summary
+        run: cat pipeline_bench.md >> "$GITHUB_STEP_SUMMARY"
+
+      # Maintain a marker-delimited benchmark section in the PR *description*.
+      # upsert_pr_section.py replaces the block in place if present, else appends
+      # it, so the author's own description is preserved. Target PR: the labeled
+      # PR, else the dispatch input, else #2119 for pushes to feat/train_encode_split
+      # (retire that default when #2119 lands).
+      - name: Update PR description
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_FROM_EVENT: ${{ github.event.pull_request.number }}
+          PR_FROM_INPUT: ${{ inputs.pr_number }}
+          IS_PUSH: ${{ github.event_name == 'push' }}
+        run: |
+          pr="${PR_FROM_EVENT:-$PR_FROM_INPUT}"
+          if [ -z "$pr" ] && [ "$IS_PUSH" = "true" ]; then pr="2119"; fi
+          if [ -z "$pr" ]; then echo "No target PR — skipping description update."; exit 0; fi
+          gh api "repos/${{ github.repository }}/pulls/$pr" \
+            --jq '.body // ""' > pr_body.md
+          python3 ${{ github.workspace }}/.github/scripts/upsert_pr_section.py \
+            pr_body.md pipeline_bench.md > pr_body_new.md
+          gh api "repos/${{ github.repository }}/pulls/$pr" \
+            -X PATCH -F "body=@pr_body_new.md"
+
+      # Momentary-button behaviour: drop the label so re-adding it re-runs. Runs
+      # on any outcome so the label never sticks; || true since a raced run may
+      # have already removed it.
+      - name: Remove the trigger label
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/labels/run-pipeline-bench" \
+            -X DELETE || true
+
+      - name: Fail on id mismatches
+        run: |
+          python3 -c "
+          import json, sys
+          models = json.load(open('pipeline_bench.json'))
+          bad = [f\"{m['model']}/{r['fixture']}\" for m in models
+                 if m['supported'] for r in m['results'] if not r['ids_match']]
+          sys.exit(f'ids diverge on: {bad}' if bad else 0)
+          "
+
+      - name: Upload results artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: pipeline-bench
+          path: |
+            tokenizers/pipeline_bench.json
+            tokenizers/pipeline_bench.md
+            tokenizers/pipeline_bench_*.svg
+            tokenizers/pipeline_bench_*.png
+          retention-days: 30

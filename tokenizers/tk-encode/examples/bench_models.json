@@ -1,0 +1,6 @@
+[
+  { "name": "bert-base-uncased", "file": "bert-base-uncased.json" },
+  { "name": "deepseek-v4",       "file": "deepseek-v4.json" },
+  { "name": "llama-3",           "file": "llama-3-tokenizer.json" },
+  { "name": "t5-base",           "file": "t5-base.json" }
+]
