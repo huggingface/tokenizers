@@ -1,0 +1,6 @@
+[
+  { "name": "bert-wiki",   "file": "bert-wiki.json" },
+  { "name": "gpt-2",       "file": "gpt2-slim.json" },
+  { "name": "deepseek-v4", "file": "deepseek-v4-slim.json" },
+  { "name": "albert-v1",   "file": "albert-base-v1-tokenizer.json" }
+]

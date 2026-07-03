@@ -12,6 +12,10 @@ FIXTURE_LANGS = amh_Ethi arb_Arab ben_Beng cmn_Hani ell_Grek eng_Latn heb_Hebr h
 FIXTURE_MODALITIES = agentic_swe agentic-traces code_mixed math_latex
 FIXTURES_RESOURCES = $(FIXTURE_LANGS:%=$(DATA_DIR)/fixtures/lang/%.txt) $(FIXTURE_MODALITIES:%=$(DATA_DIR)/fixtures/modalities/%.txt)
 
+# Models benched by tk-encode/examples/fixture_bench.rs; the manifest is the
+# single source of truth (Rust reads it too).
+BENCH_MODELS = tk-encode/examples/bench_models.json
+
 .PHONY : build
 build :
 	cargo build --workspace --all-targets
@@ -53,6 +57,16 @@ bench : $(BENCHMARK_RESOURCES)
 # fixtures/FIXTURES.md in $(HF_TEST_REPO) for provenance.
 .PHONY : fixtures
 fixtures : $(FIXTURES_RESOURCES)
+
+# Fetch each bench model's tokenizer config (the `file` listed in the manifest)
+# from the test-data dataset via the generic data/% rule — same controlled
+# mirror as the fixtures, so no direct pulls from model repos (supply chain).
+.PHONY : bench-models
+bench-models :
+	@python3 -c "import json; [print(m.get('file') or m['name'] + '.json') for m in json.load(open('$(BENCH_MODELS)'))]" \
+	| while read -r file; do \
+	    $(MAKE) $(DATA_DIR)/$$file; \
+	  done
 
 HF_TEST_REPO = hf-internal-testing/tokenizers-test-data
 # Fetch fixtures through the huggingface_hub CLI: it handles auth (HF_TOKEN),
