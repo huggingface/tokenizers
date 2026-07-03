@@ -14,6 +14,7 @@ on:
 permissions:
   actions: write
   checks: write
+  issues: write
   pull-requests: read
 
 jobs:
@@ -27,6 +28,17 @@ jobs:
        github.event.comment.author_association == 'COLLABORATOR')
     runs-on: ubuntu-latest
     steps:
+      # Immediate feedback that the command was seen; the bench workflow adds
+      # 👍 on success when it finishes.
+      - name: Acknowledge with 👀
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+          COMMENT_ID: ${{ github.event.comment.id }}
+        run: |
+          gh api "repos/$REPOSITORY/issues/comments/$COMMENT_ID/reactions" \
+            -X POST -f "content=eyes"
+
       - name: Get PR info
         id: pr
         env:
@@ -67,4 +79,5 @@ jobs:
             --ref "${{ steps.pr.outputs.head_ref }}" \
             -f pr_number="${{ steps.pr.outputs.pr_number }}" \
             -f check_run_id="${{ steps.check.outputs.check_id }}" \
-            -f head_sha="${{ steps.pr.outputs.head_sha }}"
+            -f head_sha="${{ steps.pr.outputs.head_sha }}" \
+            -f comment_id="${{ github.event.comment.id }}"
