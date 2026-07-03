@@ -90,17 +90,20 @@ impl Normalizer for Replace {
 
 impl pipeline::Normalizer for Replace {
     fn normalize<'a>(&self, input: &'a str) -> Cow<'a, str> {
-        let parts = (&self.regex).find_matches(&input).unwrap();
+        let parts = (&self.regex).find_matches(input).unwrap();
 
         if parts.iter().any(|(_, is_match)| *is_match) {
-            let replaced: String = parts.into_iter().map(|((start, end), is_match)| {
-                if is_match {
-                    &self.content
-                } else {
-                    &input[start..end]
-                }
-            }).collect();
-            return Cow::Owned(replaced)
+            let replaced: String = parts
+                .into_iter()
+                .map(|((start, end), is_match)| {
+                    if is_match {
+                        &self.content
+                    } else {
+                        &input[start..end]
+                    }
+                })
+                .collect();
+            return Cow::Owned(replaced);
         }
         input.into()
     }

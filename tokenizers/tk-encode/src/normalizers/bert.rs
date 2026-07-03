@@ -170,7 +170,7 @@ impl pipeline::Normalizer for BertNormalizer {
         let strip_accents = self.strip_accents.unwrap_or(self.lowercase);
 
         if self.is_noop(input, strip_accents) {
-           return input.into()
+            return input.into();
         }
 
         let cleaned: String = input
@@ -222,13 +222,13 @@ mod tests {
         "",
         "\tTab\n\r",
         "MiXeD Café",
-        "e\u{0301}",           // already-NFD combining acute
-        "\u{fb01}ligature",    // NFKC ligature (unchanged by NFD)
+        "e\u{0301}",        // already-NFD combining acute
+        "\u{fb01}ligature", // NFKC ligature (unchanged by NFD)
         "null\0here",
         "repl\u{fffd}char",
         "ctrl\u{0007}char",
-        "ǅ",                   // titlecase, lowercases to multi-mapping
-        "İstanbul",            // dotted capital I: lowercases to 2 chars
+        "ǅ",        // titlecase, lowercases to multi-mapping
+        "İstanbul", // dotted capital I: lowercases to 2 chars
         "straße",
     ];
 
