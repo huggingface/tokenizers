@@ -5,10 +5,17 @@ name: Pipeline Benchmark
 # scripts + English + code/math/agentic modalities) on ~10 kB inputs — the
 # regime where per-input overhead is amortized.
 #
-# Runs on pushes to feat/train_encode_split (updating PR #2119's description),
-# and on demand: comment "/pipeline-bench" on any PR (see
-# pipeline-bench-trigger.yml) or dispatch manually. Either way it maintains a
-# benchmark section (graph + table) in the target PR's description.
+# Triggers:
+#   • push to feat/train_encode_split → benches and updates PR #2119's description.
+#   • add the "run-pipeline-bench" label to any PR → benches that PR and updates
+#     its description. Works before this workflow reaches the default branch,
+#     because pull_request runs the workflow file from the PR's own branch. The
+#     label is auto-removed on completion, so re-adding it re-runs. Same-repo
+#     PRs only — fork PRs get no secrets and a read-only token.
+#   • workflow_dispatch → manual run (usable only once this file is on the
+#     default branch).
+# Either way it maintains a marker-delimited benchmark section (graph + table)
+# in the target PR's description; the workflow run itself is the PR check.
 
 on:
   push:
@@ -18,35 +25,24 @@ on:
       - "tokenizers/src/**"
       - ".github/workflows/pipeline-bench.yml"
       - ".github/scripts/render_pipeline_bench.py"
+  pull_request:
+    types: [labeled]
   workflow_dispatch:
     inputs:
       pr_number:
         description: "PR number whose description gets the benchmark section (optional)"
         required: false
         type: string
-      check_run_id:
-        description: "Check run ID to update with results (set by pipeline-bench-trigger)"
-        required: false
-        type: string
-      head_sha:
-        description: "PR head SHA for the check run (set by pipeline-bench-trigger)"
-        required: false
-        type: string
-      comment_id:
-        description: "Trigger comment ID to react to on success (set by pipeline-bench-trigger)"
-        required: false
-        type: string
 
 permissions:
   contents: read
-  checks: write
-  issues: write
-  pull-requests: write
+  issues: write         # remove the trigger label
+  pull-requests: write  # edit the PR description
 
-# One live run per target. github.ref is the branch for both entrypoints:
-# feat/train_encode_split on push, the PR's head branch on /pipeline-bench
-# dispatch — so a newer commit/comment supersedes an in-flight bench for the
-# same target, but runs for different PRs never cancel each other.
+# One live run per target. github.ref discriminates:
+# refs/heads/feat/train_encode_split on push, refs/pull/<n>/merge on a labeled
+# PR — so a newer commit or re-label supersedes an in-flight bench for the same
+# PR, but different PRs never cancel each other.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -58,6 +54,8 @@ env:
 jobs:
   pipeline-bench:
     name: Tokenizer vs PipelineTokenizer
+    # push / dispatch always run; a labeled PR runs only for our label.
+    if: github.event_name != 'pull_request' || github.event.label.name == 'run-pipeline-bench'
     # Same dedicated runner group as benchmarks.yml — shared 2-vCPU runners
     # produce noisy timings. The comparison is within-run (both impls, same
     # machine, interleaved), so absolute noise matters less than for baselines,
@@ -69,17 +67,6 @@ jobs:
         working-directory: tokenizers
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-
-      - name: Mark check run in progress
-        if: inputs.check_run_id != ''
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh api "repos/${{ github.repository }}/check-runs/${{ inputs.check_run_id }}" \
-            -X PATCH \
-            -f "status=in_progress" \
-            -f "output[title]=Pipeline benchmark running" \
-            -f "output[summary]=Compiling and benchmarking all fixtures..."
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -106,13 +93,12 @@ jobs:
           cat pipeline_bench.json
 
       - name: Render report
-        id: render
         run: |
           base_url="https://huggingface.co/datasets/hf-internal-testing/tokenizers-bench/resolve/main/charts"
           python3 ${{ github.workspace }}/.github/scripts/render_pipeline_bench.py \
             pipeline_bench.json \
             --subtitle "bert-wiki WordPiece · ~10 kB inputs · single thread" \
-            --revision "${{ inputs.head_sha || github.sha }}" \
+            --revision "${{ github.event.pull_request.head.sha || github.sha }}" \
             --img-light-url "$base_url/pipeline-${{ github.run_id }}-light.png" \
             --img-dark-url "$base_url/pipeline-${{ github.run_id }}-dark.png"
           uvx --with cairosvg python -c "
@@ -134,20 +120,21 @@ jobs:
       - name: Write step summary
         run: cat pipeline_bench.md >> "$GITHUB_STEP_SUMMARY"
 
-      # Maintain a marker-delimited benchmark section in the PR *description*
-      # rather than a comment — one always-current graph instead of comment
-      # spam. upsert_pr_section.py replaces the block in place if present, else
-      # appends it, so the author's own description is preserved.
-      # On /pipeline-bench dispatch the PR number is passed in; on pushes to
-      # feat/train_encode_split it defaults to #2119, the tracking PR for that
-      # branch (retire this default when #2119 lands).
+      # Maintain a marker-delimited benchmark section in the PR *description*.
+      # upsert_pr_section.py replaces the block in place if present, else appends
+      # it, so the author's own description is preserved. Target PR: the labeled
+      # PR, else the dispatch input, else #2119 for pushes to feat/train_encode_split
+      # (retire that default when #2119 lands).
       - name: Update PR description
-        if: inputs.pr_number != '' || github.event_name == 'push'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_FROM_EVENT: ${{ github.event.pull_request.number }}
+          PR_FROM_INPUT: ${{ inputs.pr_number }}
+          IS_PUSH: ${{ github.event_name == 'push' }}
         run: |
-          pr="${{ inputs.pr_number }}"
-          pr="${pr:-2119}"
+          pr="${PR_FROM_EVENT:-$PR_FROM_INPUT}"
+          if [ -z "$pr" ] && [ "$IS_PUSH" = "true" ]; then pr="2119"; fi
+          if [ -z "$pr" ]; then echo "No target PR — skipping description update."; exit 0; fi
           gh api "repos/${{ github.repository }}/pulls/$pr" \
             --jq '.body // ""' > pr_body.md
           python3 ${{ github.workspace }}/.github/scripts/upsert_pr_section.py \
@@ -155,8 +142,20 @@ jobs:
           gh api "repos/${{ github.repository }}/pulls/$pr" \
             -X PATCH -F "body=@pr_body_new.md"
 
+      # Momentary-button behaviour: drop the label so re-adding it re-runs. Runs
+      # on any outcome so the label never sticks; || true since a raced run may
+      # have already removed it.
+      - name: Remove the trigger label
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/labels/run-pipeline-bench" \
+            -X DELETE || true
+
       # Broadest correctness net we have: id-equality across every script and
-      # modality. A divergence is a bug even when the speedup looks great.
+      # modality. A divergence is a bug even when the speedup looks great. Last
+      # so the description/chart still land (with the ⚠ banner) before we go red.
       - name: Fail on id mismatches
         run: |
           python3 -c "
@@ -164,29 +163,6 @@ jobs:
           bad = [r['fixture'] for r in json.load(open('pipeline_bench.json')) if not r['ids_match']]
           sys.exit(f'ids diverge on: {bad}' if bad else 0)
           "
-
-      # 👍 the trigger comment once the bench has run and ids match. Gated on
-      # success() so a failing run leaves only the 👀 — the check run carries
-      # the failure detail.
-      - name: React 👍 on success
-        if: success() && inputs.comment_id != ''
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh api "repos/${{ github.repository }}/issues/comments/${{ inputs.comment_id }}/reactions" \
-            -X POST -f "content=+1"
-
-      - name: Complete check run
-        if: always() && inputs.check_run_id != ''
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh api "repos/${{ github.repository }}/check-runs/${{ inputs.check_run_id }}" \
-            -X PATCH \
-            -f "status=completed" \
-            -f "conclusion=${{ job.status == 'success' && 'success' || 'failure' }}" \
-            -f "output[title]=Pipeline benchmark results" \
-            -F "output[summary]=@pipeline_bench.md" || true
 
       - name: Upload results artifact
         if: always()
