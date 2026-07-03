@@ -174,7 +174,7 @@ impl pipeline::Normalizer for BertNormalizer {
         }
         scratch.clear();
 
-        let cleaned = input
+        let cleaned: String = input
             .chars()
             .filter(|&c| {
                 !(self.clean_text && (c as usize == 0 || c as usize == 0xfffd || is_control(c)))
@@ -191,12 +191,13 @@ impl pipeline::Normalizer for BertNormalizer {
                     [Some(c), None, None]
                 }
             })
-            .flatten();
+            .flatten()
+            .collect();
 
         let stripped = if strip_accents {
             Either::Left(cleaned.nfd().filter(|c| !c.is_mark_nonspacing()))
         } else {
-            Either::Right(cleaned)
+            Either::Right(cleaned.chars())
         };
         let lowerecased = if self.lowercase {
             Either::Left(stripped.flat_map(char::to_lowercase))
