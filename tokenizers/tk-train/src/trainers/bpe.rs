@@ -10,7 +10,7 @@ use std::collections::HashSet;
 use tk_encode::models::bpe::{Pair, WithFirstLastIterator, Word, BPE};
 use tk_encode::parallelism::*;
 use tk_encode::utils::progress::{ProgressBar, ProgressFormat, ProgressStyle};
-use tk_encode::vocab_store::VocabStore;
+use tk_encode::vocab::vocab_store::VocabStore;
 use tk_encode::{AddedToken, Result};
 
 #[derive(Debug, Eq)]

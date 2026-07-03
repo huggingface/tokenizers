@@ -42,7 +42,7 @@ pub use crate::utils::padding::{pad_encodings, PaddingDirection, PaddingParams, 
 pub use crate::utils::truncation::{
     truncate_encodings, TruncationDirection, TruncationParams, TruncationStrategy,
 };
-pub use added_vocabulary::*;
+use crate::vocab::added_vocabulary::{AddedToken, AddedVocabulary};
 pub use encoding::*;
 pub use normalizer::{NormalizedString, OffsetReferential, SplitDelimiterBehavior};
 pub use pre_tokenizer::*;

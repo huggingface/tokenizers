@@ -4,7 +4,7 @@ use super::{
 };
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::cache::{Cache, MAX_LENGTH};
-use crate::vocab_store::VocabStore;
+use crate::vocab::vocab_store::VocabStore;
 use std::collections::HashMap;
 
 use std::convert::TryInto;

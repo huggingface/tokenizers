@@ -1,7 +1,14 @@
+<<<<<<<< HEAD:tokenizers/tk-encode/src/vocab/bucket_added_vocabulary.rs
 use crate::pipeline::PipelinePatternMatcher;
 use crate::{Model, NormalizedString, Normalizer, Result};
 
 use crate::buckets::{AddedTokenFlags, Buckets};
+========
+use super::super::{
+    normalizer::Range, Model, NormalizedString, Normalizer, PreTokenizedString, Result, Token,
+};
+use super::buckets::{AddedTokenFlags, Buckets};
+>>>>>>>> 2faa6d44 (move some stuff around):tokenizers/tk-encode/src/vocab/added_vocabulary.rs
 use crate::pre_tokenizers::whitespace::is_word_char;
 use ahash::AHashMap;
 use serde::{ser::SerializeSeq, Deserialize, Serialize, Serializer};
