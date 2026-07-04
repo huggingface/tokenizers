@@ -55,7 +55,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_fancy_equivalence() {
+    fn test_split() {
         let mut out = Vec::new();
         split::<Cl100k>("hey".as_bytes(), &mut out);
         assert_eq!(&out, &vec![(0, 3)]);

@@ -1,4 +1,4 @@
-use crate::matchers::{Letter, Matcher};
+use crate::matchers::Matcher;
 
 pub fn run_matcher<M: Matcher, const MIN: u8, const MAX: u8>(
     b: &[u8],
