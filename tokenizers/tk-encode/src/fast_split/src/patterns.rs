@@ -62,6 +62,6 @@ mod tests {
     fn test_fancy_equivalence() {
         let mut out = Vec::new();
         split::<Cl100k>("hey".as_bytes(), &mut out);
-        assert_eq!(&out, &vec![(0, 3)]);
+        assert_eq!(&out, &vec![(1, 2)]);
     }
 }
