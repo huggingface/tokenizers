@@ -25,11 +25,8 @@ pub fn run_matcher<M: Matcher, const MIN: u8, const MAX: u8>(
 
 pub fn word_rule<L: Matcher>(b: &[u8], from: usize) -> Option<usize> {
     // the end of a word depends of course on the matcher.
-    let mut i = 0;
-    while L::run_end(b, from + i) != usize::MAX && (from + i) < b.len() {
-        i += 1;
-    }
-    if i == b.len() { None } else { Some(i) }
+    let i = L::run_end(b, from);
+    if i == from { None } else { Some(i) }
 }
 
 #[cfg(test)]

@@ -22,11 +22,11 @@ pub enum SplitPatterns {
     Cl100k,
     Gpt2,
 }
-pub struct Cl100k {}
+pub struct Cl100k;
 impl PatternDef for Cl100k {
     fn next_token(bytes: &[u8], from: usize) -> Option<usize> {
         let b = bytes[from];
-        if b > 0x80 {
+        if b >= 0x80 {
             todo!() // unicode
         } else if b.is_ascii_alphabetic() {
             word_rule::<Letter>(bytes, from)
@@ -41,13 +41,9 @@ pub fn split<P: PatternDef>(bytes: &[u8], out: &mut Vec<(usize, usize)>) {
     let mut pos = 0;
     while pos < bytes.len() {
         match P::next_token(bytes, pos) {
-            Some(match_pos) => {
-                if match_pos < bytes.len() {
-                    out.push((pos, match_pos));
-                    pos += match_pos;
-                } else {
-                    return;
-                }
+            Some(end) if end > pos => {
+                out.push((pos, end));
+                pos = end;
             }
             _ => pos += 1,
         }
@@ -62,6 +58,8 @@ mod tests {
     fn test_fancy_equivalence() {
         let mut out = Vec::new();
         split::<Cl100k>("hey".as_bytes(), &mut out);
-        assert_eq!(&out, &vec![(1, 2)]);
+        assert_eq!(&out, &vec![(0, 3)]);
+        split::<Cl100k>("hey what".as_bytes(), &mut out);
+        assert_eq!(&out, &vec![(0, 3), (4, 8)]);
     }
 }
