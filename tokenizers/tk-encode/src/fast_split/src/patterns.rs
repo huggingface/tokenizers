@@ -59,6 +59,7 @@ mod tests {
         let mut out = Vec::new();
         split::<Cl100k>("hey".as_bytes(), &mut out);
         assert_eq!(&out, &vec![(0, 3)]);
+        out.clear();
         split::<Cl100k>("hey what".as_bytes(), &mut out);
         assert_eq!(&out, &vec![(0, 3), (4, 8)]);
     }
