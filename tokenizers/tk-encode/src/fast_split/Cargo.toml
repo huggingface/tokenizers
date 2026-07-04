@@ -1,0 +1,44 @@
+[workspace]
+members = ["bitmap_gen"]
+
+[package]
+name = "fast_split"
+version = "0.1.0"
+edition = "2024"
+authors = [
+  "Arthur Zucker <arthur@huggingface.co",
+  "Luc Georges <luc@huggingface.co",
+]
+homepage = "https://github.com/huggingface/tokenizers"
+repository = "https://github.com/huggingface/tokenizers"
+documentation = "https://docs.rs/tokenizers/"
+license = "Apache-2.0"
+keywords = ["tokenizer", "NLP", "huggingface", "BPE", "WordPiece"]
+description = """
+Inference (encode/decode) half of the 🤗 Tokenizers library: model engines,
+the full pipeline components, and the `Tokenizer` orchestration — without any
+training code.
+"""
+
+[package.metadata.docs.rs]
+all-features = true
+
+[lib]
+name = "fast_split"
+path = "src/lib.rs"
+
+[dependencies]
+onig = { version = "6.5.1", default-features = false, optional = true }
+regex = "1.10"
+regex-syntax = "0.8"
+rayon = "1.10"
+unicode-normalization-alignments = "0.1"
+unicode_categories = "0.1"
+unicode-segmentation = "1.11"
+indicatif = { version = "0.18", optional = true }
+log = "0.4"
+macro_rules_attribute = "0.2.0"
+thiserror = "2"
+fancy-regex = { version = "0.17", optional = true }
+getrandom = { version = "0.3" }
+memchr = "2.8.2"

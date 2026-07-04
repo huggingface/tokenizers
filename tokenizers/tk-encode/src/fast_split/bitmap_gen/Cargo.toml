@@ -1,0 +1,11 @@
+[package]
+name = "bitmap_gen"
+version = "0.1.0"
+edition = "2024"
+description = "Bitmap generator for pre-computed unicode tables"
+
+[[bin]]
+name = "bitmap-gen"
+path = "src/main.rs"
+
+[dependencies]

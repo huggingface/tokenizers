@@ -1,3 +1,7 @@
+[workspace]
+resolver = "3"
+members = ["src/fast_split"]
+
 [package]
 name = "tk-encode"
 version = "0.23.2-dev.0"
