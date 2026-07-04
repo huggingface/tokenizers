@@ -27,7 +27,10 @@ impl PatternDef for Cl100k {
     fn next_token(bytes: &[u8], from: usize) -> Option<usize> {
         let b = bytes[from];
         if b >= 0x80 {
-            todo!() // unicode
+            todo!()
+            // unicode, this is where we'll use bitmap instead of pulling unicode. The idea
+            // is to quickly check if the 2-3 bytes incoming are letters, numbers, etc to apply the
+            // rules on them. To do that efficiently we index a table based on a u64 key
         } else if b.is_ascii_alphabetic() {
             word_rule::<Letter>(bytes, from)
         } else if b.is_ascii_digit() {

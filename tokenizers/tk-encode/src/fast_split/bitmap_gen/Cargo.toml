@@ -5,7 +5,7 @@ edition = "2024"
 description = "Bitmap generator for pre-computed unicode tables"
 
 [[bin]]
-name = "bitmap-gen"
+name = "bitmap_gen"
 path = "src/main.rs"
 
 [dependencies]
