@@ -28,17 +28,14 @@ name = "fast_split"
 path = "src/lib.rs"
 
 [dependencies]
-onig = { version = "6.5.1", default-features = false, optional = true }
 regex = "1.10"
 regex-syntax = "0.8"
-rayon = "1.10"
 unicode-normalization-alignments = "0.1"
 unicode_categories = "0.1"
 unicode-segmentation = "1.11"
-indicatif = { version = "0.18", optional = true }
-log = "0.4"
-macro_rules_attribute = "0.2.0"
 thiserror = "2"
 fancy-regex = { version = "0.17", optional = true }
-getrandom = { version = "0.3" }
 memchr = "2.8.2"
+[profile.release]
+lto = true
+codegen-units = 1

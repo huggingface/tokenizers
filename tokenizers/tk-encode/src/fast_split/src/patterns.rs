@@ -1,5 +1,5 @@
-use crate::matchers::Letter;
-use crate::rules::run_matcher;
+use crate::matchers::{Digit, Letter};
+use crate::rules::{run_matcher, word_rule};
 /// For each of these rules, we'll define fast SIMD optimized scanners
 // Cl100k has 7 branches (separated by `|`)
 // 1  (?i:'s|'t|'re|'ve|'m|'ll|'d)  -> match litterals, ?i case insensitive, `'` first byte to scan
@@ -16,8 +16,7 @@ use crate::rules::run_matcher;
 // digits, letters or litterals.
 // classify the char and say which rule to run. (first char + 1 peek can tell us everything )
 pub trait PatternDef {
-    fn classify(bytes: &[u8], from: u8) -> u32;
-    fn try_rule(rule_id: u8, bytes: &[u8], from: usize) -> Option<usize>;
+    fn next_token(bytes: &[u8], from: usize) -> Option<usize>;
 }
 pub enum SplitPatterns {
     Cl100k,
@@ -25,27 +24,29 @@ pub enum SplitPatterns {
 }
 pub struct Cl100k {}
 impl PatternDef for Cl100k {
-    fn classify(bytes: &[u8], from: u8) -> u32 {
-        return 0;
-    } // it will return a RuleId to run next
-    fn try_rule(rule_id: u8, bytes: &[u8], from: usize) -> Option<usize> {
-        match rule_id {
-            0 => run_matcher::<Letter, 0, 255>(bytes, from),
-            _ => Some(from),
+    fn next_token(bytes: &[u8], from: usize) -> Option<usize> {
+        let b = bytes[from];
+        if b > 0x80 {
+            todo!() // unicode
+        } else if b.is_ascii_alphabetic() {
+            word_rule::<Letter>(bytes, from)
+        } else if b.is_ascii_digit() {
+            run_matcher::<Digit, 1, 3>(bytes, from)
+        } else {
+            None
         }
     } // it will run the rule
 }
 pub fn split<P: PatternDef>(bytes: &[u8], out: &mut Vec<(usize, usize)>) {
     let mut pos = 0;
     while pos < bytes.len() {
-        let rule_id = P::classify(bytes, pos as u8);
-        match P::try_rule(rule_id as u8, bytes, pos) {
+        match P::next_token(bytes, pos) {
             Some(match_pos) => {
                 if match_pos < bytes.len() {
                     out.push((pos, match_pos));
                     pos += match_pos;
                 } else {
-                    pos += 1;
+                    return;
                 }
             }
             _ => pos += 1,

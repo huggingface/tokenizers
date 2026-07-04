@@ -18,3 +18,17 @@ impl Matcher for Letter {
         b.len()
     }
 }
+pub struct Digit;
+impl Matcher for Digit {
+    #[inline]
+    fn run_end(b: &[u8], from: usize) -> usize {
+        // SAFETY: from has to always be a char boundary (loop advances by whole tokens)
+        let s = unsafe { from_utf8_unchecked(&b[from..]) };
+        for (off, c) in s.char_indices() {
+            if !c.is_ascii_digit() {
+                return from + off;
+            }
+        }
+        b.len()
+    }
+}
