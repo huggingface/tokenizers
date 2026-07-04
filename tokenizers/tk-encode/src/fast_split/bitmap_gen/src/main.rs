@@ -74,15 +74,15 @@ fn main() {
     let letter = "é".as_bytes();
     let lead = letter[0] - 0xC0;
     let shift = letter[1] & 0x3F;
-    assert_eq!(LETTER2[lead as usize] >> shift, 1);
+    assert_eq!(LETTER2[lead as usize] >> shift & 1, 1);
 
     let no_letter = "|".as_bytes();
     let lead = no_letter[0] - 0xC0;
     let shift = no_letter[1] & 0x3F;
-    assert_eq!(LETTER2[lead as usize] >> shift, 0);
+    assert_eq!(LETTER2[lead as usize] >> shift & 1, 0);
     let three_byte_letter = "ত".as_bytes();
     let lead = three_byte_letter[0] - 0xE0 << 6;
     let second = three_byte_letter[2] - 0x3F;
     let shift = three_byte_letter[3] & 0x3F;
-    assert_eq!(LETTER3[(lead | second) as usize] >> shift, 0)
+    assert_eq!(LETTER3[(lead | second) as usize] >> shift & 1, 0)
 }
