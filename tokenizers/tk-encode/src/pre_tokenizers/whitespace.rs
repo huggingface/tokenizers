@@ -2,7 +2,7 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
-use crate::pipeline;
+use crate::pipeline::{self, SplitPolicy};
 use crate::tokenizer::{
     pattern::Invert, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior,
 };
@@ -41,11 +41,36 @@ impl PreTokenizer for WhitespaceSplit {
     }
 }
 
+impl pipeline::PreTokenizer for WhitespaceSplit {
+    fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Split>) -> Result<()> {
+        pipeline::split(text, out, char::is_whitespace, |is_ws| {
+            if is_ws {
+                SplitPolicy::Remove
+            } else {
+                SplitPolicy::Keep
+            }
+        });
+        Ok(())
+    }
+}
+
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum CharType {
     Whitespace,
     Word,
     Symbol,
+}
+
+impl CharType {
+    #[inline]
+    fn policy(self) -> SplitPolicy {
+        match self {
+            // whitespace is dropped; word and symbol groups are each emitted as one
+            // split, with a boundary between the two classes.
+            CharType::Whitespace => SplitPolicy::Remove,
+            CharType::Word | CharType::Symbol => SplitPolicy::Keep,
+        }
+    }
 }
 
 fn classify(ch: char) -> CharType {
@@ -72,48 +97,25 @@ pub fn is_word_char(ch: char) -> bool {
         || ch == '\u{200d}' // Zero-Width Joiner
 }
 
-/// `CharType` of each ASCII codepoint (index == its byte value). Lets the
-/// ASCII fast path skip the Unicode predicates in `classify`; the (cheap) UTF-8
-/// decode still happens via `char_indices`, and non-ASCII falls back to
-/// `classify`.
 static ASCII_CLASS: LazyLock<[CharType; 128]> =
     LazyLock::new(|| std::array::from_fn(|b| classify(b as u8 as char)));
 
 impl pipeline::PreTokenizer for Whitespace {
+    // XXX: surprisingly, inlining here yields 10-15% slower performance
+    #[inline(never)]
     fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Split>) -> Result<()> {
-        let mut span_start: u32 = 0;
-        let mut prev_type: Option<CharType> = None;
-
-        for (i, ch) in text.char_indices() {
-            let ct = if ch.is_ascii() {
-                ASCII_CLASS[ch as usize]
-            } else {
-                classify(ch)
-            };
-
-            if let Some(pt) = prev_type {
-                if pt != ct {
-                    if pt != CharType::Whitespace {
-                        out.push(pipeline::Split {
-                            start: span_start,
-                            end: i as u32,
-                        });
-                    }
-                    span_start = i as u32;
+        pipeline::split(
+            text,
+            out,
+            |ch| {
+                if ch.is_ascii() {
+                    ASCII_CLASS[ch as usize]
+                } else {
+                    classify(ch)
                 }
-            }
-            prev_type = Some(ct);
-        }
-
-        if let Some(pt) = prev_type {
-            if pt != CharType::Whitespace {
-                out.push(pipeline::Split {
-                    start: span_start,
-                    end: text.len() as u32,
-                });
-            }
-        }
-
+            },
+            CharType::policy,
+        );
         Ok(())
     }
 }
@@ -181,9 +183,55 @@ mod tests {
         }
     }
 
+    fn pretokenize_split(text: &str) -> Vec<(&str, (u32, u32))> {
+        let pretok = WhitespaceSplit;
+        let mut splits = Vec::new();
+        crate::pipeline::PreTokenizer::pre_tokenize(&pretok, text, &mut splits).unwrap();
+        splits
+            .iter()
+            .map(|s| (&text[s.range()], (s.start, s.end)))
+            .collect()
+    }
+
+    #[test]
+    fn whitespace_split_pipeline() {
+        // same cases as `whitespace_split`, via the pipeline path: only whitespace
+        // splits, punctuation stays attached to its run
+        assert_eq!(
+            pretokenize_split("Hey man!"),
+            vec![("Hey", (0, 3)), ("man!", (4, 8))],
+        );
+        assert_eq!(
+            pretokenize_split("Hey, man, Good?"),
+            vec![("Hey,", (0, 4)), ("man,", (5, 9)), ("Good?", (10, 15))],
+        );
+    }
+
+    #[test]
+    fn whitespace_split_pipeline_edge_cases() {
+        let empty = Vec::<(&str, (u32, u32))>::new();
+        assert_eq!(pretokenize_split(""), empty);
+        assert_eq!(pretokenize_split("   "), empty);
+        assert_eq!(pretokenize_split("a"), vec![("a", (0, 1))]);
+        // leading/trailing/multiple whitespace dropped, runs kept whole
+        assert_eq!(
+            pretokenize_split(" a  b "),
+            vec![("a", (1, 2)), ("b", (4, 5))]
+        );
+        assert_eq!(
+            pretokenize_split("a\tb\nc"),
+            vec![("a", (0, 1)), ("b", (2, 3)), ("c", (4, 5))],
+        );
+        // multibyte: é is 2 bytes -> byte offsets
+        assert_eq!(
+            pretokenize_split("café au lait"),
+            vec![("café", (0, 5)), ("au", (6, 8)), ("lait", (9, 13))],
+        );
+    }
+
     #[test]
     fn edge_cases() {
-        // word / symbol / whitespace transitions; whitespace dropped, runs kept whole
+        // word / symbol / whitespace transitions; whitespace dropped, splits kept whole
         let edge_cases = vec![
             ("", vec![]),
             (" ", vec![]),
@@ -212,14 +260,14 @@ mod tests {
             pretokenize("café résumé"),
             vec![("café", (0, 5)), ("résumé", (6, 14))],
         );
-        // CJK ideographs are alphabetic (word chars): one run, no inner split.
+        // CJK ideographs are alphabetic (word chars): one split, no inner boundary.
         assert_eq!(
             pretokenize("中文 text"),
             vec![("中文", (0, 6)), ("text", (7, 11))],
         );
         // '_' is connector punctuation (a word char) -> a single word token.
         assert_eq!(pretokenize("hello_world"), vec![("hello_world", (0, 11))]);
-        // word and symbol runs are each kept whole; only the boundary splits.
+        // word and symbol groups are each one split; only the boundary splits.
         assert_eq!(
             pretokenize("ab!!cd"),
             vec![("ab", (0, 2)), ("!!", (2, 4)), ("cd", (4, 6))],
