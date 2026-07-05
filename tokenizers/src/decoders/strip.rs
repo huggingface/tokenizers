@@ -42,7 +42,10 @@ impl Decoder for Strip {
                 }
 
                 let mut stop_cut = chars.len();
-                for i in 0..self.stop {
+                // Bound the loop by the token length: `self.stop` comes from the
+                // config unvalidated, so without this `chars.len() - i - 1` would
+                // underflow (and panic / index out of bounds) on short tokens.
+                for i in 0..self.stop.min(chars.len()) {
                     let index = chars.len() - i - 1;
                     if chars[index] == self.content {
                         stop_cut = index;
@@ -52,6 +55,10 @@ impl Decoder for Strip {
                     }
                 }
 
+                // `start_cut` and `stop_cut` can cross when a token is made
+                // entirely of `content` characters; clamp so the range is never
+                // reversed, which would panic when slicing.
+                let stop_cut = stop_cut.max(start_cut);
                 let new_token: String = chars[start_cut..stop_cut].iter().collect();
                 new_token
             })
@@ -76,5 +83,18 @@ mod tests {
             .decode_chain(vec!["Hey".into(), " friend!".into()])
             .unwrap();
         assert_eq!(res, vec!["He", " friend!"]);
+    }
+
+    #[test]
+    fn does_not_panic_on_crafted_config() {
+        // `start`/`stop` come from the config unvalidated. A token made entirely
+        // of `content` chars used to slice a reversed range and panic.
+        let decoder = Strip::new('H', 2, 2);
+        assert_eq!(decoder.decode_chain(vec!["HH".into()]).unwrap(), vec![""]);
+
+        // Empty (and short) tokens used to underflow `chars.len() - i - 1`.
+        let decoder = Strip::new('H', 0, 1);
+        assert_eq!(decoder.decode_chain(vec!["".into()]).unwrap(), vec![""]);
+        assert_eq!(decoder.decode_chain(vec!["H".into()]).unwrap(), vec![""]);
     }
 }
