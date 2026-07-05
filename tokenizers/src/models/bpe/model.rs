@@ -261,10 +261,23 @@ impl BpeBuilder {
                 let b_id = vocab
                     .get(&b)
                     .ok_or_else(|| Error::MergeTokenOutOfVocabulary(b.to_owned()))?;
+                // The `continuing_subword_prefix` is stripped from the right token
+                // before the pair is concatenated. A crafted merge list (e.g. loaded
+                // from an untrusted tokenizer.json) may pair a right token shorter
+                // than the prefix, or two tokens whose concatenation is longer than
+                // any vocabulary entry. In both cases the merged token cannot exist
+                // in the vocabulary, so report it as out-of-vocab rather than
+                // indexing past the scratch buffer (which is only `max_len` long).
+                let b_tail = b
+                    .as_bytes()
+                    .get(prefix_len..)
+                    .ok_or_else(|| Error::MergeTokenOutOfVocabulary(format!("{a}{b}")))?;
+                let merge_len = a.len() + b_tail.len();
+                if merge_len > buffer.len() {
+                    return Err(Error::MergeTokenOutOfVocabulary(format!("{a}{b}")).into());
+                }
                 buffer[0..a.len()].copy_from_slice(a.as_bytes());
-                let b_len = b.len() - prefix_len;
-                let merge_len = a.len() + b_len;
-                buffer[a.len()..merge_len].copy_from_slice(&b.as_bytes()[prefix_len..]);
+                buffer[a.len()..merge_len].copy_from_slice(b_tail);
                 // SAFETY: buffer contains a concatenation of two valid UTF-8 strings, so it is itself valid UTF-8, even considering prefix_len
                 let new_token = unsafe { from_utf8_unchecked(&buffer[..merge_len]) };
                 let new_id = vocab
@@ -1167,5 +1180,42 @@ mod tests {
                 }
             ]
         )
+    }
+
+    // A crafted merge list (e.g. from an untrusted tokenizer.json) whose merged
+    // token is longer than any vocabulary entry must not panic on the scratch
+    // buffer; the builder should return a graceful error instead.
+    #[test]
+    fn merge_concat_longer_than_vocab_does_not_panic() {
+        let vocab: Vocab = [("a".into(), 0u32), ("b".into(), 1u32)]
+            .iter()
+            .cloned()
+            .collect();
+        // "a" + "b" = "ab" is not in the vocab and is longer than max_len (1).
+        let res = BpeBuilder::default()
+            .vocab_and_merges(vocab, vec![("a".to_string(), "b".to_string())])
+            .build();
+        assert!(
+            matches!(
+                res.as_ref().map_err(|e| e.to_string()),
+                Err(msg) if msg.contains("out of vocabulary")
+            ),
+            "expected MergeTokenOutOfVocabulary, got {res:?}"
+        );
+    }
+
+    // A right merge token shorter than `continuing_subword_prefix` used to
+    // underflow `b.len() - prefix_len`; it must now error gracefully.
+    #[test]
+    fn merge_right_token_shorter_than_prefix_does_not_panic() {
+        let vocab: Vocab = [("ab".into(), 0u32), ("x".into(), 1u32)]
+            .iter()
+            .cloned()
+            .collect();
+        let res = BpeBuilder::default()
+            .continuing_subword_prefix("##".into())
+            .vocab_and_merges(vocab, vec![("ab".to_string(), "x".to_string())])
+            .build();
+        assert!(res.is_err(), "expected an error, got {res:?}");
     }
 }
