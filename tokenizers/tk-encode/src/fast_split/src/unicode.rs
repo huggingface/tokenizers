@@ -26,7 +26,7 @@ const fn bitmap_is_number(cp: u32) -> bool {
     }
 }
 
-pub const fn number2_to_hit(l: u8, b2: u8) -> bool {
+pub const fn number2_hit(l: u8, b2: u8) -> bool {
     (NUMBER2[(l & 0x1F) as usize] >> (b2 & 0x3F)) & 1 == 1
 }
 pub const fn letter2_hit(l: u8, b2: u8) -> bool {
