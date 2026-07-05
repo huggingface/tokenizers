@@ -33,12 +33,14 @@ pub const fn letter2_hit(l: u8, b2: u8) -> bool {
     (LETTER2[(l & 0x1F) as usize] >> (b2 & 0x3F)) & 1 == 1
 }
 pub const fn letter3_hit(l: u8, b2: u8, b3: u8) -> bool {
-    (LETTER2[((l & 0x0F) << 6 | (b2 & 0x3F)) as usize] >> (b3 & 0x3F)) & 1 == 1
+    let row = ((l & 0x0F) as usize) << 6 | (b2 & 0x3F) as usize;
+    (LETTER3[row] >> (b3 & 0x3F)) & 1 == 1
 }
 pub const fn number3_hit(l: u8, b2: u8, b3: u8) -> bool {
-    (NUMBER3[((l & 0x0F) << 6 | (b2 & 0x3F)) as usize] >> (b3 & 0x3F)) & 1 == 1
+    let row = ((l & 0x0F) as usize) << 6 | (b2 & 0x3F) as usize;
+    (NUMBER3[row] >> (b3 & 0x3F)) & 1 == 1
 }
-#[cfg(test)]
+#[cfg(all(test, feature = "unicode"))]
 pub mod test {
     use super::*;
     use unicode_categories::*;

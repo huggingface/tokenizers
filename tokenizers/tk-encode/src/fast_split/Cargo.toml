@@ -36,5 +36,14 @@ regex = "1.10"
 [profile.release]
 lto = true
 codegen-units = 1
+# bench profile doesn't inherit release; mirror it so numbers reflect what ships.
+[profile.bench]
+lto = true
+codegen-units = 1
 [features]
 unicode = ["unicode_categories"]
+
+[[bench]]
+name = "matchers"
+harness = false
+required-features = ["unicode"]

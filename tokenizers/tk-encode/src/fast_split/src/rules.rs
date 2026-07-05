@@ -33,12 +33,13 @@ pub fn word_rule<L: Matcher>(b: &[u8], from: usize) -> Option<usize> {
 mod tests {
     use super::*;
 
-    use crate::matchers::Letter;
+    use crate::matchers::{FastLetter, Letter};
     #[test]
     fn test_run_matcher() {
         let string = "This is 123 anditshouldbenotedthat 12".as_bytes();
         //                      3      9                        34
         assert_eq!(run_matcher::<Letter, 1, 3>(string, 0), Some(3));
+        assert_eq!(run_matcher::<FastLetter, 1, 3>(string, 0), Some(3));
         assert_eq!(run_matcher::<Letter, 0, 255>(string, 0), Some(4));
         assert_eq!(run_matcher::<Letter, 0, 255>(string, 9), Some(9)); // because 0 repetition of a letter :)
         assert_eq!(run_matcher::<Letter, 0, 255>(string, 15), Some(34));
