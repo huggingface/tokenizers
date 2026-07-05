@@ -25,16 +25,16 @@ name = "fast_split"
 path = "src/lib.rs"
 
 [dependencies]
-regex = "1.10"
-regex-syntax = "0.8"
-unicode-normalization-alignments = "0.1"
-unicode_categories = "0.1"
-unicode-segmentation = "1.11"
+unicode_categories = { version = "0.1", optional = true }
 thiserror = "2"
-fancy-regex = { version = "0.17", optional = true }
 memchr = "2.8.2"
 [dev-dependencies]
-unicode_categories = "0.1"
+unicode-segmentation = "1.11"
+unicode-normalization-alignments = "0.1"
+regex-syntax = "0.8"
+regex = "1.10"
 [profile.release]
 lto = true
 codegen-units = 1
+[features]
+unicode = ["unicode_categories"]

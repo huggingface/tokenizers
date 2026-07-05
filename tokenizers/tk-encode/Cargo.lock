@@ -670,7 +670,6 @@ dependencies = [
 name = "fast_split"
 version = "0.1.0"
 dependencies = [
- "fancy-regex",
  "memchr",
  "regex",
  "regex-syntax",

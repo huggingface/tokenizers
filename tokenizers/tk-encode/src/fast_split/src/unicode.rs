@@ -12,6 +12,19 @@ const fn bitmap_is_letter(cp: u32) -> bool {
         false
     }
 }
+const fn bitmap_is_number(cp: u32) -> bool {
+    if cp < 0x80 {
+        // ASCII \p{L} == A-Za-z
+        (cp >= 'a' as u32 && cp <= 'z' as u32) || (cp >= 'A' as u32 && cp <= 'Z' as u32)
+    } else if cp <= 0x7FF {
+        (NUMBER2[(cp >> 6) as usize] >> (cp & 0x3F)) & 1 == 1
+    } else if cp <= 0xFFFF {
+        (NUMBER3[(cp >> 6) as usize] >> (cp & 0x3F)) & 1 == 1
+    } else {
+        // 4-byte, we fallback
+        false
+    }
+}
 
 pub const fn number2_to_hit(l: u8, b2: u8) -> bool {
     (NUMBER2[(l & 0x1F) as usize] >> (b2 & 0x3F)) & 1 == 1
@@ -50,6 +63,9 @@ pub mod test {
         for cp in 0x80u32..=0xFFFF {
             let expect = char::from_u32(cp).is_some_and(|c| c.is_letter());
             let got = bitmap_is_letter(cp); // encode cp to bytes, index LETTER2/3
+            assert_eq!(got, expect, "cp {cp:#06x}");
+            let expect = char::from_u32(cp).is_some_and(|c| c.is_numeric());
+            let got = bitmap_is_number(cp); // encode cp to bytes, index LETTER2/3
             assert_eq!(got, expect, "cp {cp:#06x}");
         }
     }
