@@ -9,3 +9,4 @@ name = "bitmap_gen"
 path = "src/main.rs"
 
 [dependencies]
+unicode_categories = "0.1"

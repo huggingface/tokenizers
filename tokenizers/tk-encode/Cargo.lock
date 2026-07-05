@@ -159,6 +159,9 @@ checksum = "b4388bee8683e3d04af747c73422af53102d2bd24d9eadb6cbc100baef4b43f8"
 [[package]]
 name = "bitmap_gen"
 version = "0.1.0"
+dependencies = [
+ "unicode_categories",
+]
 
 [[package]]
 name = "bitvec"

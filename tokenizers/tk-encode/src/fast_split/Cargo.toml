@@ -33,6 +33,8 @@ unicode-segmentation = "1.11"
 thiserror = "2"
 fancy-regex = { version = "0.17", optional = true }
 memchr = "2.8.2"
+[dev-dependencies]
+unicode_categories = "0.1"
 [profile.release]
 lto = true
 codegen-units = 1
