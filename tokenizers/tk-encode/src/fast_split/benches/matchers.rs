@@ -1,11 +1,12 @@
-//! Custom-harness bench (no criterion): bitmap matchers vs the `unicode_categories` oracle.
-//! Run with:  cargo bench --features unicode        (rtk strips stdout → use `rtk proxy` prefix)
+//! Custom-harness bench (no criterion): bitmap matchers vs the `unicode_categories` oracle,
+//! across several input shapes. Measures a WHOLE-BUFFER tokenize (loop `run_end` over every
+//! position, like the split loop) so ns/byte reflects scanning the entire input — NOT a single
+//! run from pos 0 (which, on mixed input, scans ~nothing and reports a fake ~0 ns/byte).
+//! Run:  cargo bench --bench matchers --features unicode      (rtk proxy for stdout)
 use fast_split::matchers::{Digit, FastLetter, FastNumber, Letter, Matcher};
 use std::hint::black_box;
 use std::time::Instant;
 
-/// ns/byte to scan one run from pos 0. black_box the input each call and accumulate the
-/// result so LLVM can't hoist the (pure) scan out of the loop and report a fictitious 0.
 fn time<F: Fn() -> usize>(bytes_len: usize, iters: u32, f: F) -> f64 {
     for _ in 0..3 {
         black_box(f());
@@ -19,54 +20,81 @@ fn time<F: Fn() -> usize>(bytes_len: usize, iters: u32, f: F) -> f64 {
     t.elapsed().as_nanos() as f64 / (iters as usize * bytes_len) as f64
 }
 
-/// Assert the two scanners agree (byte-exactness), then print both throughputs + speedup.
-fn compare(
-    name: &str,
-    bytes: &[u8],
-    iters: u32,
-    fast: impl Fn() -> usize,
-    oracle: impl Fn() -> usize,
-) {
+/// Split the whole buffer into runs of `M`, counting tokens. Every byte is visited once, so
+/// ns/byte is the real cost of scanning the entire input (matching runs AND skipping non-matches).
+fn tokenize<M: Matcher>(bytes: &[u8]) -> usize {
+    let mut pos = 0;
+    let mut n = 0;
+    while pos < bytes.len() {
+        let end = M::run_end(bytes, pos);
+        if end > pos {
+            n += 1;
+            pos = end;
+        } else {
+            pos += 1;
+        }
+    }
+    n
+}
+
+/// Assert bitmap and oracle produce the same tokenization (byte-exactness), then time both.
+fn compare<Fast: Matcher, Oracle: Matcher>(name: &str, text: &str, iters: u32) {
+    let b = text.as_bytes();
+    let fast_n = tokenize::<Fast>(b);
+    let orac_n = tokenize::<Oracle>(b);
     assert_eq!(
-        fast(),
-        oracle(),
-        "{name}: bitmap and unicode oracle disagree"
+        fast_n, orac_n,
+        "{name}: bitmap {fast_n} vs oracle {orac_n} tokens — they disagree"
     );
-    let f = time(bytes.len(), iters, &fast);
-    let o = time(bytes.len(), iters, &oracle);
-    println!("\n{name}  ({} bytes)", bytes.len());
-    println!("  bitmap  : {f:.3} ns/byte ({:>6.0} MB/s)", 1000.0 / f);
+    let f = time(b.len(), iters, || tokenize::<Fast>(black_box(b)));
+    let o = time(b.len(), iters, || tokenize::<Oracle>(black_box(b)));
     println!(
-        "  unicode : {o:.3} ns/byte ({:>6.0} MB/s)  speedup {:.2}x",
+        "  {name:<21} {:>6} B {fast_n:>5} tok | bitmap {f:6.3} ns/B ({:>5.0} MB/s) | oracle {o:6.3} ns/B ({:>5.0} MB/s)  {:5.1}x",
+        b.len(),
+        1000.0 / f,
         1000.0 / o,
         o / f
     );
 }
 
 fn main() {
-    let iters = 2000u32;
+    let it = 400u32;
 
-    // Letters: all-letter, multi-script (1-byte ASCII, 2-byte Greek/Cyrillic/Arabic,
-    // 3-byte CJK/Kana/Hangul), no separators → both scan the whole buffer from pos 0.
-    let letters = "HelloΑλφαПриветمرحبا你好世界こんにちは한국어café".repeat(200);
-    let lb = letters.as_bytes();
-    compare(
-        "FastLetter vs Letter",
-        lb,
-        iters,
-        || FastLetter::run_end(black_box(lb), 0),
-        || Letter::run_end(black_box(lb), 0),
+    println!("== FastLetter vs Letter (\\p{{L}}) ==");
+    // no separators -> one long multiscript run (pure scan speed)
+    compare::<FastLetter, Letter>(
+        "dense multiscript",
+        &"HelloΑλφαПривет你好Мир한국어café".repeat(300),
+        it,
     );
+    // words + spaces -> many tokens; the common shape
+    compare::<FastLetter, Letter>(
+        "prose (ascii+space)",
+        &"the quick brown fox jumps over the lazy dog ".repeat(200),
+        it,
+    );
+    // zero letters -> measures the reject/skip path over non-letters
+    compare::<FastLetter, Letter>("no letters", &"12 34 567 89 !@# 0 , . 42 ".repeat(300), it);
 
-    // Digits: long ASCII-digit run. `Digit` oracle is ASCII-only, so keep the input ASCII
-    // to stay apples-to-apples (a \p{N} comparison would need a \p{N} oracle).
-    let digits = "1234567890 aor woipa jsajfsoiq 183012933 901200 , 09123".repeat(400);
-    let db = digits.as_bytes();
-    compare(
-        "FastNumber vs Digit",
-        db,
-        iters,
-        || FastNumber::run_end(black_box(db), 0),
-        || Digit::run_end(black_box(db), 0),
+    println!("\n== FastNumber vs Digit (\\p{{N}}) ==");
+    // no separators -> one 20 KB digit run (this is the case that used to report 0 ns/byte)
+    compare::<FastNumber, Digit>("dense ascii digits", &"1234567890".repeat(2000), it);
+    // digits embedded in prose -> few digit runs, mostly skipping letters
+    compare::<FastNumber, Digit>(
+        "sparse digits",
+        &"the fox ate 42 of 7 apples and 1337 pears ".repeat(200),
+        it,
+    );
+    // zero digits -> reject/skip path over letters
+    compare::<FastNumber, Digit>(
+        "no digits",
+        &"the quick brown fox jumps over the lazy dog ".repeat(200),
+        it,
+    );
+    // Arabic-Indic (2-byte), Devanagari + fullwidth (3-byte) -> exercises the bitmap paths
+    compare::<FastNumber, Digit>(
+        "non-ascii digits",
+        &"٠١٢٣٤٥ ०१२३४५ ０１２３４５ ".repeat(300),
+        it,
     );
 }
