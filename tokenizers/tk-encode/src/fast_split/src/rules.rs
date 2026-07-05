@@ -1,35 +1,43 @@
 use crate::matchers::Matcher;
 
+/// Match a run of `M` between MIN and MAX chars. `MAX == u8::MAX` means unbounded (`+`/`*`).
+/// Steps one char at a time and stops at MAX — never scans past what it returns, so it's
+/// O(MAX) per call (O(1) for bounded), not O(run length). `MAX == u8::MAX` const-folds away
+/// the cap for the unbounded case.
 pub fn run_matcher<M: Matcher, const MIN: u8, const MAX: u8>(
     b: &[u8],
     from: usize,
 ) -> Option<usize> {
-    // If MAX is bounded we do scallar checks.
-    let longest = M::run_end(b, from);
-    if longest == from {
-        // matcher stopped at the first char as it did not match
-        return if MIN == 0 { Some(from) } else { None };
-    }
+    let mut pos = from;
     if MAX == u8::MAX {
-        return Some(longest); // longest > form there's at least 1 match maybe more
-    }
-    // Now the bounds
-    match unsafe { str::from_utf8_unchecked(&b[from..longest]) }
-        .char_indices()
-        .nth(MAX as usize)
-    {
-        Some((off, _)) => Some(from + off),
-        _ => Some(longest),
+        // unbounded (+/*): step to the run end, no per-char counting.
+        while let Some(end) = M::step(b, pos) {
+            pos = end;
+        }
+        // MIN is 0 (`*`) or 1 (`+`); either MIN==0 or we need at least one char.
+        if MIN == 0 || pos > from { Some(pos) } else { None }
+    } else {
+        // bounded ({m,n}): stop after MAX chars.
+        let mut count = 0usize;
+        while count < MAX as usize {
+            match M::step(b, pos) {
+                Some(end) => {
+                    pos = end;
+                    count += 1;
+                }
+                None => break,
+            }
+        }
+        if count >= MIN as usize { Some(pos) } else { None }
     }
 }
 
 pub fn word_rule<L: Matcher>(b: &[u8], from: usize) -> Option<usize> {
-    // the end of a word depends of course on the matcher.
-    let i = L::run_end(b, from);
-    if i == from { None } else { Some(i) }
+    // a word is `\p{L}+`: one or more, unbounded.
+    run_matcher::<L, 1, { u8::MAX }>(b, from)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "unicode"))]
 mod tests {
     use super::*;
 
