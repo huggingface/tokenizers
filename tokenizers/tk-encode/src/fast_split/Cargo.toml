@@ -1,6 +1,3 @@
-[workspace]
-members = ["bitmap_gen"]
-
 [package]
 name = "fast_split"
 version = "0.1.0"

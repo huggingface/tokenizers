@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["src/fast_split"]
+members = ["src/fast_split", "src/fast_split/bitmap_gen"]
 
 [package]
 name = "tk-encode"
