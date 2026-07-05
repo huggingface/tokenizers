@@ -303,7 +303,13 @@ impl Encoding {
 
     /// Truncate the current `Encoding`.
     ///
-    /// Panics if `stride >= max_len`
+    /// `stride` is the overlap kept between successive overflow windows. If it is
+    /// `>= max_len` it is clamped to `max_len - 1` (the maximum meaningful
+    /// overlap), which also avoids underflowing `max_len - stride`. This is
+    /// reachable from a deserialized tokenizer whose truncation params were not
+    /// validated by [`with_truncation`], so it must not panic. The primary
+    /// (first) truncated encoding is independent of `stride`; only the overflow
+    /// windows are affected.
     pub fn truncate(&mut self, max_len: usize, stride: usize, direction: TruncationDirection) {
         let encoding_len = self.ids.len();
         if max_len >= encoding_len {
@@ -316,7 +322,8 @@ impl Encoding {
             return;
         }
 
-        assert!(stride < max_len, "`stride` must be strictly less than `max_len={}` (note that `max_len` may be shorter than the max length of the original model, as it subtracts the number of special characters", max_len);
+        // max_len >= 1 here (the max_len == 0 case returned above).
+        let stride = stride.min(max_len - 1);
 
         // When truncating, we lose the `sequence_ranges` information.
         self.sequence_ranges.clear();
@@ -646,6 +653,30 @@ mod tests {
                 ..Default::default()
             }
         );
+    }
+
+    #[test]
+    fn truncate_stride_ge_max_len_does_not_panic() {
+        // Reachable from a deserialized tokenizer whose truncation `stride` was
+        // not validated (unlike the `with_truncation` setter). truncate must clamp
+        // instead of panicking on the former `assert(stride < max_len)`.
+        let mut a = Encoding {
+            ids: vec![1, 2, 3],
+            type_ids: vec![0, 0, 0],
+            tokens: vec![
+                String::from("Hello"),
+                String::from("World"),
+                String::from("!"),
+            ],
+            words: vec![Some(0), Some(1), Some(2)],
+            offsets: vec![(0, 5), (6, 11), (11, 12)],
+            special_tokens_mask: vec![0, 0, 0],
+            attention_mask: vec![1, 1, 1],
+            ..Default::default()
+        };
+        a.truncate(2, 5, TruncationDirection::Right); // stride 5 >= max_len 2
+                                                      // The primary (first) truncated encoding is independent of `stride`.
+        assert_eq!(a.get_ids(), &[1, 2]);
     }
 
     #[test]
