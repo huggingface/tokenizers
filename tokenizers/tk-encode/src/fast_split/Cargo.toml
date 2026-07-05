@@ -47,3 +47,8 @@ unicode = ["unicode_categories"]
 name = "matchers"
 harness = false
 required-features = ["unicode"]
+
+[[bench]]
+name = "regex_vs_matcher"
+harness = false
+required-features = ["unicode"]

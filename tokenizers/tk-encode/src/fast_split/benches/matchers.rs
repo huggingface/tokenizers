@@ -20,8 +20,18 @@ fn time<F: Fn() -> usize>(bytes_len: usize, iters: u32, f: F) -> f64 {
 }
 
 /// Assert the two scanners agree (byte-exactness), then print both throughputs + speedup.
-fn compare(name: &str, bytes: &[u8], iters: u32, fast: impl Fn() -> usize, oracle: impl Fn() -> usize) {
-    assert_eq!(fast(), oracle(), "{name}: bitmap and unicode oracle disagree");
+fn compare(
+    name: &str,
+    bytes: &[u8],
+    iters: u32,
+    fast: impl Fn() -> usize,
+    oracle: impl Fn() -> usize,
+) {
+    assert_eq!(
+        fast(),
+        oracle(),
+        "{name}: bitmap and unicode oracle disagree"
+    );
     let f = time(bytes.len(), iters, &fast);
     let o = time(bytes.len(), iters, &oracle);
     println!("\n{name}  ({} bytes)", bytes.len());
@@ -50,7 +60,7 @@ fn main() {
 
     // Digits: long ASCII-digit run. `Digit` oracle is ASCII-only, so keep the input ASCII
     // to stay apples-to-apples (a \p{N} comparison would need a \p{N} oracle).
-    let digits = "1234567890".repeat(400);
+    let digits = "1234567890 aor woipa jsajfsoiq 183012933 901200 , 09123".repeat(400);
     let db = digits.as_bytes();
     compare(
         "FastNumber vs Digit",
