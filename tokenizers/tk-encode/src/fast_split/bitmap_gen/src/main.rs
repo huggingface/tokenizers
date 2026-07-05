@@ -97,7 +97,7 @@ const LETTER3: [u64; 1024] = {
         let mut bitmap = 0u64;
         let mut byte3 = 0u32;
         while byte3 < 64 {
-            let codepoint = i << 5 | byte3;
+            let codepoint = i << 6 | byte3;
             if is_letter(codepoint) {
                 bitmap |= 1u64 << byte3
             }
@@ -131,24 +131,24 @@ const fn letter2_hit(l: u8, b2: u8) -> bool {
 }
 // TODO: now that I got the algo, I need to test every single codepoint?
 fn main() {
+    use std::fs::File;
+    use std::path::Path;
     println!("Generating bitmap table for fast nibble based splitting");
     let letter = "é".as_bytes();
-    let lead = letter[0] - 0xC0;
+    let lead = letter[0] & 0x1F;
     let shift = letter[1] & 0x3F;
-    assert_eq!(LETTER2[lead as usize] >> shift & 1, 1);
-    use std::fs::File;
-    use std::io::IoSlice;
-    use std::path::Path;
-    let no_letter = "|".as_bytes();
-    let lead = no_letter[0] - 0xC0;
+    assert_eq!(letter2_hit(letter[0], letter[1]), true);
+    assert_eq!((LETTER2[lead as usize] >> shift) & 1, 1);
+    let no_letter = "×".as_bytes();
+    let lead = no_letter[0] & 0x1F;
     let shift = no_letter[1] & 0x3F;
     assert_eq!(LETTER2[lead as usize] >> shift & 1, 0);
     assert_eq!(letter2_hit(no_letter[0], no_letter[1]), false);
     let three_byte_letter = "ত".as_bytes();
     let lead = three_byte_letter[0] - 0xE0 << 6;
-    let second = three_byte_letter[2] - 0x3F;
-    let shift = three_byte_letter[3] & 0x3F;
-    assert_eq!(LETTER3[(lead | second) as usize] >> shift & 1, 0);
+    let second = three_byte_letter[1] - 0x3F;
+    let shift = three_byte_letter[2] & 0x3F;
+    assert_eq!((LETTER3[(lead | second) as usize] >> shift) & 1, 0);
     // TEST ON ALL UNICODE:
     for cp in 0x80u32..=0xFFFF {
         let expect = is_letter(cp);
@@ -162,7 +162,7 @@ fn main() {
         Ok(file) => file,
     };
     let mut data = String::new();
-    data.push_str(&format!("const LETTER2: [u64, 32] = ").to_string());
+    data.push_str(&format!("pub const LETTER2: [u64, 32] = {:?}", LETTER2).to_string());
     match file.write_all(data.as_bytes()) {
         Err(why) => panic!("couldn't write to {}: {}", display, why),
         Ok(_) => println!("successfully wrote to {}", display),
