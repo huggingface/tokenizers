@@ -5,7 +5,7 @@ use crate::added_vocabulary::bucket_added_vocabulary::{
     AddedToken as BucketAddedToken, AddedVocabulary as BucketAddedVocabulary,
 };
 use crate::{
-    pre_tokenizers::{bert::BertPreTokenizer, whitespace::Whitespace},
+    pre_tokenizers::{bert::BertPreTokenizer, fixed_length::FixedLength, whitespace::Whitespace},
     Model, ModelWrapper, NormalizedString, Normalizer, NormalizerWrapper, PostProcessorWrapper,
     PreTokenizerWrapper, Token, Tokenizer,
 };
@@ -36,6 +36,7 @@ pub trait PreTokenizer {
 /// The pre-tokenizers a [`PipelineTokenizer`] can run.
 pub enum PipelinePreTokenizer {
     Bert(BertPreTokenizer),
+    FixedLength(FixedLength),
     Whitespace(Whitespace),
     None,
 }
@@ -45,6 +46,7 @@ impl PreTokenizer for PipelinePreTokenizer {
         match self {
             Self::None => Ok(()),
             Self::Bert(pretok) => pretok.pre_tokenize(text, out),
+            Self::FixedLength(pretok) => pretok.pre_tokenize(text, out),
             Self::Whitespace(pretok) => pretok.pre_tokenize(text, out),
         }
     }
@@ -191,6 +193,7 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
         let pre_tokenizer = match tok.get_pre_tokenizer() {
             None => PipelinePreTokenizer::None,
             Some(PreTokenizerWrapper::BertPreTokenizer(p)) => PipelinePreTokenizer::Bert(*p),
+            Some(PreTokenizerWrapper::FixedLength(p)) => PipelinePreTokenizer::FixedLength(*p),
             Some(PreTokenizerWrapper::Whitespace(p)) => PipelinePreTokenizer::Whitespace(p.clone()),
             Some(other) => {
                 return Err(format!(

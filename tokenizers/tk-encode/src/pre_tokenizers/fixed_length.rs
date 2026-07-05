@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::utils::macro_rules_attribute;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[macro_rules_attribute(impl_serde_type!)]
 pub struct FixedLength {
     #[serde(default = "default_length")]
