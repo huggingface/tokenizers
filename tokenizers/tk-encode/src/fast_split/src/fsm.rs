@@ -1,13 +1,13 @@
 //! FSM layer: turn the `Atom` tag stream into token spans. Every pre-tokenizer is one of these
 //! shapes, parameterized by a class mask + behavior (all `const`-generic → fully monomorphized).
-//! They all read the shared stream from `classify::classify_atoms`; the delimiter *behavior* never
+//! They all read the shared stream from `classify::classify::<Atoms>`; the delimiter *behavior* never
 //! touches classification. See `TAG_CLASSIFY_SPEC.md` §4.
 //!
 //! Scalar cores are portable; the SIMD boundary-extract (`extract_boundaries`) is an aarch64
 //! optimization for the RunSplit family (class-change → movemask → bit-iterate).
 #![allow(dead_code)] // skeleton
 
-use crate::classify::{classify_atoms, mask};
+use crate::classify::{classify, mask, Atoms};
 
 /// A token span: byte offsets `[start, end)` into the input.
 pub type Span = (u32, u32);
@@ -88,7 +88,7 @@ pub(crate) unsafe fn extract_boundaries(tags: &[u8], delim: u16, out: &mut Vec<S
 }
 
 // ── Composition recipes ────────────────────────────────────────────────────────────────────────
-// Each pre-tokenizer = (classify_atoms → fsm shape + params). `tags` is caller-owned scratch (reused
+// Each pre-tokenizer = (classify::<Atoms> → fsm shape + params). `tags` is caller-owned scratch (reused
 // across calls, no per-call alloc). In `tk-encode` these delegate from the `pipeline::PreTokenizer`
 // impls (offset conversion Span → pipeline::Split happens there).
 
@@ -96,7 +96,7 @@ pub struct WhitespaceSplit;
 impl WhitespaceSplit {
     #[inline]
     pub fn pre_tokenize(&self, text: &[u8], tags: &mut [u8], out: &mut Vec<Span>) {
-        classify_atoms(text, tags);
+        classify::<Atoms>(text, tags);
         fsm_split::<{ mask::WS }, { Behavior::Removed as u8 }>(text, tags, out);
     }
 }
@@ -105,7 +105,7 @@ pub struct Punctuation;
 impl Punctuation {
     #[inline]
     pub fn pre_tokenize(&self, text: &[u8], tags: &mut [u8], out: &mut Vec<Span>) {
-        classify_atoms(text, tags);
+        classify::<Atoms>(text, tags);
         fsm_split::<{ mask::PUNCT }, { Behavior::Isolated as u8 }>(text, tags, out);
     }
 }
@@ -114,7 +114,7 @@ pub struct Digits;
 impl Digits {
     #[inline]
     pub fn pre_tokenize(&self, text: &[u8], tags: &mut [u8], out: &mut Vec<Span>) {
-        classify_atoms(text, tags);
+        classify::<Atoms>(text, tags);
         fsm_split::<{ mask::NUMERIC }, { Behavior::Contiguous as u8 }>(text, tags, out);
     }
 }
@@ -123,7 +123,7 @@ pub struct Whitespace;
 impl Whitespace {
     #[inline]
     pub fn pre_tokenize(&self, text: &[u8], tags: &mut [u8], out: &mut Vec<Span>) {
-        classify_atoms(text, tags);
+        classify::<Atoms>(text, tags);
         // drop WS runs, keep Word and Symbol runs (isolate nothing)
         fsm_class_runs::<{ mask::WS }, 0>(text, tags, out);
     }
@@ -133,7 +133,7 @@ pub struct Cl100k;
 impl Cl100k {
     #[inline]
     pub fn pre_tokenize(&self, text: &[u8], tags: &mut [u8], out: &mut Vec<Span>) {
-        classify_atoms(text, tags);
+        classify::<Atoms>(text, tags);
         fsm_cl100k(text, tags, out);
     }
 }
