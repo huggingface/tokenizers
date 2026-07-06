@@ -314,8 +314,213 @@ impl Model for WordPiece {
 mod tests {
     use super::*;
 
+    fn vocab(tokens: &[&str]) -> Vocab {
+        tokens
+            .iter()
+            .enumerate()
+            .map(|(id, token)| (token.to_string(), id as u32))
+            .collect()
+    }
+
+    fn model(tokens: &[&str]) -> WordPiece {
+        WordPiece::builder().vocab(vocab(tokens)).build().unwrap()
+    }
+
+    fn tok(id: u32, value: &str, offsets: (usize, usize)) -> Token {
+        Token::new(id, value.to_string(), offsets)
+    }
+
     #[test]
     fn test_error_display() {
         assert!(format!("{}", Error::MissingUnkToken).contains("Missing [UNK] token"));
+    }
+
+    #[test]
+    fn whole_word_in_vocab() {
+        let wp = model(&["[UNK]", "hello"]);
+        assert_eq!(wp.tokenize("hello").unwrap(), vec![tok(1, "hello", (0, 5))]);
+    }
+
+    #[test]
+    fn greedy_longest_match_splits_word() {
+        let wp = model(&["[UNK]", "un", "##aff", "##able"]);
+        assert_eq!(
+            wp.tokenize("unaffable").unwrap(),
+            vec![
+                tok(1, "un", (0, 2)),
+                tok(2, "##aff", (2, 5)),
+                tok(3, "##able", (5, 9)),
+            ]
+        );
+    }
+
+    #[test]
+    fn longest_piece_wins_over_shorter_ones() {
+        let wp = model(&["[UNK]", "un", "unaff", "##aff", "##able"]);
+        assert_eq!(
+            wp.tokenize("unaffable").unwrap(),
+            vec![tok(2, "unaff", (0, 5)), tok(4, "##able", (5, 9))]
+        );
+    }
+
+    #[test]
+    fn single_char_pieces() {
+        let wp = model(&["[UNK]", "a", "##b", "##c"]);
+        assert_eq!(
+            wp.tokenize("abc").unwrap(),
+            vec![
+                tok(1, "a", (0, 1)),
+                tok(2, "##b", (1, 2)),
+                tok(3, "##c", (2, 3)),
+            ]
+        );
+    }
+
+    #[test]
+    fn continuation_piece_requires_prefix() {
+        let wp = model(&["[UNK]", "un", "able"]);
+        assert_eq!(
+            wp.tokenize("unable").unwrap(),
+            vec![tok(0, "[UNK]", (0, 6))]
+        );
+    }
+
+    #[test]
+    fn prefixed_piece_never_matches_at_word_start() {
+        let wp = model(&["[UNK]", "##able"]);
+        assert_eq!(wp.tokenize("able").unwrap(), vec![tok(0, "[UNK]", (0, 4))]);
+    }
+
+    #[test]
+    fn literal_prefix_in_input_matches_prefixed_vocab_entry() {
+        let wp = model(&["[UNK]", "##able"]);
+        assert_eq!(
+            wp.tokenize("##able").unwrap(),
+            vec![tok(1, "##able", (0, 6))]
+        );
+    }
+
+    #[test]
+    fn unmatchable_suffix_collapses_whole_word_to_unk() {
+        let wp = model(&["[UNK]", "un", "##aff", "##able"]);
+        assert_eq!(
+            wp.tokenize("unaffordable").unwrap(),
+            vec![tok(0, "[UNK]", (0, 12))]
+        );
+    }
+
+    #[test]
+    fn greedy_choice_is_never_backtracked() {
+        let wp = model(&["[UNK]", "abc", "a", "##bcd"]);
+        assert_eq!(wp.tokenize("abcd").unwrap(), vec![tok(0, "[UNK]", (0, 4))]);
+    }
+
+    #[test]
+    fn unknown_first_char_is_unk() {
+        let wp = model(&["[UNK]", "a"]);
+        assert_eq!(wp.tokenize("xa").unwrap(), vec![tok(0, "[UNK]", (0, 2))]);
+    }
+
+    #[test]
+    fn unk_id_is_looked_up_in_vocab() {
+        let wp = model(&["a", "b", "[UNK]"]);
+        assert_eq!(wp.tokenize("z").unwrap(), vec![tok(2, "[UNK]", (0, 1))]);
+    }
+
+    #[test]
+    fn empty_input_yields_no_tokens() {
+        let wp = model(&["[UNK]"]);
+        assert_eq!(wp.tokenize("").unwrap(), vec![]);
+    }
+
+    #[test]
+    fn multibyte_offsets_are_byte_positions() {
+        let wp = model(&["[UNK]", "猫", "##です"]);
+        assert_eq!(
+            wp.tokenize("猫です").unwrap(),
+            vec![tok(1, "猫", (0, 3)), tok(2, "##です", (3, 9))]
+        );
+    }
+
+    #[test]
+    fn multibyte_shrinking_stays_on_char_boundaries() {
+        let wp = model(&["[UNK]", "a"]);
+        assert_eq!(wp.tokenize("a€b").unwrap(), vec![tok(0, "[UNK]", (0, 5))]);
+    }
+
+    #[test]
+    fn word_longer_than_max_chars_is_unk_even_if_in_vocab() {
+        let wp = WordPiece::builder()
+            .vocab(vocab(&["[UNK]", "abcde"]))
+            .max_input_chars_per_word(4)
+            .build()
+            .unwrap();
+        assert_eq!(wp.tokenize("abcde").unwrap(), vec![tok(0, "[UNK]", (0, 5))]);
+    }
+
+    #[test]
+    fn word_at_max_chars_is_tokenized() {
+        let wp = WordPiece::builder()
+            .vocab(vocab(&["[UNK]", "abcd"]))
+            .max_input_chars_per_word(4)
+            .build()
+            .unwrap();
+        assert_eq!(wp.tokenize("abcd").unwrap(), vec![tok(1, "abcd", (0, 4))]);
+    }
+
+    #[test]
+    fn max_chars_counts_chars_not_bytes() {
+        let wp = WordPiece::builder()
+            .vocab(vocab(&["[UNK]", "éééé"]))
+            .max_input_chars_per_word(4)
+            .build()
+            .unwrap();
+        assert_eq!(wp.tokenize("éééé").unwrap(), vec![tok(1, "éééé", (0, 8))]);
+    }
+
+    #[test]
+    fn missing_unk_token_is_an_error_when_needed() {
+        let wp = model(&["a"]);
+        let err = wp.tokenize("b").unwrap_err();
+        assert!(err.to_string().contains("Missing [UNK] token"));
+    }
+
+    #[test]
+    fn missing_unk_token_is_an_error_for_overlong_words() {
+        let wp = WordPiece::builder()
+            .vocab(vocab(&["ab"]))
+            .max_input_chars_per_word(1)
+            .build()
+            .unwrap();
+        assert!(wp.tokenize("ab").is_err());
+    }
+
+    #[test]
+    fn missing_unk_token_is_not_an_error_when_unneeded() {
+        let wp = model(&["hello"]);
+        assert_eq!(wp.tokenize("hello").unwrap(), vec![tok(0, "hello", (0, 5))]);
+    }
+
+    #[test]
+    fn custom_unk_token() {
+        let wp = WordPiece::builder()
+            .vocab(vocab(&["<unk>", "a"]))
+            .unk_token("<unk>".into())
+            .build()
+            .unwrap();
+        assert_eq!(wp.tokenize("z").unwrap(), vec![tok(0, "<unk>", (0, 1))]);
+    }
+
+    #[test]
+    fn custom_continuing_subword_prefix() {
+        let wp = WordPiece::builder()
+            .vocab(vocab(&["[UNK]", "foo", "@@bar"]))
+            .continuing_subword_prefix("@@".into())
+            .build()
+            .unwrap();
+        assert_eq!(
+            wp.tokenize("foobar").unwrap(),
+            vec![tok(1, "foo", (0, 3)), tok(2, "@@bar", (3, 6))]
+        );
     }
 }
