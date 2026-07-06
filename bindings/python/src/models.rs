@@ -727,7 +727,7 @@ impl PyWordPiece {
         let vocab = WordPiece::read_file(vocab).map_err(|e| {
             exceptions::PyException::new_err(format!("Error while reading WordPiece file: {e}"))
         })?;
-        Ok(vocab.into_iter().collect())
+        Ok(vocab.get_vocab().into_iter().collect())
     }
 
     /// Instantiate a WordPiece model from the given file
@@ -759,7 +759,7 @@ impl PyWordPiece {
         let vocab = WordPiece::read_file(vocab).map_err(|e| {
             exceptions::PyException::new_err(format!("Error while reading WordPiece file: {e}"))
         })?;
-        let vocab = vocab.into_iter().collect();
+        let vocab = vocab.get_vocab().into_iter().collect();
         Py::new(
             py,
             PyWordPiece::new(py, Some(PyVocab::Vocab(vocab)), kwargs)?,
