@@ -227,6 +227,10 @@ impl<'a> Lattice<'a> {
         self.sentence[node.pos..node.pos + node.length].to_owned()
     }
 
+    pub fn piece_offsets(&self, node: &Node) -> (usize, usize) {
+        (node.pos, node.pos + node.length)
+    }
+
     pub fn tokens(&mut self) -> Vec<String> {
         self.viterbi()
             .iter()
