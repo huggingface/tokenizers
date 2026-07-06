@@ -7,6 +7,7 @@ use crate::added_vocabulary::bucket_added_vocabulary::{
 };
 use crate::models::unigram::Unigram;
 use crate::{ModelWrapper, PostProcessorWrapper, PreTokenizerWrapper, Token, Tokenizer};
+use crate::models::wordpiece::WordPiece;
 use crate::{
     normalizers::NormalizerWrapper,
     pre_tokenizers::{
@@ -78,6 +79,8 @@ impl PreTokenizer for PipelinePreTokenizer {
 
 pub enum PipelineModel {
     Unigram(Unigram),
+    WordPiece(WordPiece),
+    // WordLevel(WordLevel),
     // BPE(BPE),
 }
 
@@ -88,6 +91,7 @@ pub trait Model {
 impl Model for PipelineModel {
     fn tokenize_bytes(&self, bytes: &[u8], output: &mut Vec<PipelineToken>) -> Result<()> {
         match self {
+            Self::WordPiece(model) => model.tokenize_bytes(bytes, output),
             Self::Unigram(model) => model.tokenize_bytes(bytes, output),
             // Self::BPE(model) => model.tokenize_bytes(bytes, output),
         }
@@ -100,6 +104,7 @@ impl TryFrom<ModelWrapper> for PipelineModel {
         match value {
             // ModelWrapper::BPE(model) => Ok(Self::BPE(model)),
             ModelWrapper::Unigram(model) => Ok(Self::Unigram(model)),
+            ModelWrapper::WordPiece(model) => Ok(Self::WordPiece(model)),
             other => Err(format!("PipelineModel cannot be built from {:?}", other).into()),
         }
     }

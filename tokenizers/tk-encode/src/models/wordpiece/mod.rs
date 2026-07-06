@@ -2,6 +2,7 @@
 //! model.
 
 use crate::models::bpe::BPE;
+use crate::pipeline::{self, PipelineToken};
 use crate::tokenizer::{Model, Result, Token};
 use ahash::AHashMap;
 use std::collections::HashMap;
@@ -310,6 +311,30 @@ impl Model for WordPiece {
     }
 }
 
+impl pipeline::Model for WordPiece {
+    fn tokenize_bytes(
+        &self,
+        bytes: &[u8],
+        output: &mut Vec<pipeline::PipelineToken>,
+    ) -> Result<()> {
+        // todo: implement
+        // if bytes.is_empty() {
+        //     return Ok(());
+        // }
+        // // todo: maybe we can use unchecked here (unsafe)
+        // let char_len = str::from_utf8(bytes)?.chars().count();
+        // if char_len > self.max_input_chars_per_word {
+        //     let unk_id = *self
+        //         .vocab
+        //         .get(&self.unk_token)
+        //         .ok_or(Error::MissingUnkToken)?;
+        //     output.push(PipelineToken { id: unk_id });
+        //     return Ok(());
+        // }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -317,5 +342,126 @@ mod tests {
     #[test]
     fn test_error_display() {
         assert!(format!("{}", Error::MissingUnkToken).contains("Missing [UNK] token"));
+    }
+
+    const INVARIANT_CORPUS: &[&str] = &[
+        "",
+        "un",
+        "unaff",
+        "unaffable",
+        "b",
+        "ab",
+        "ba",
+        "xyz",
+        "café",
+        "日本",
+        "日本語",
+        "🙂",
+        "e\u{301}",
+    ];
+
+    fn invariant_model() -> WordPiece {
+        let vocab: Vocab = [
+            ("[UNK]", 0u32),
+            ("un", 1),
+            ("##aff", 2),
+            ("##able", 3),
+            ("日", 4),
+            ("##本", 5),
+            ("ca", 6),
+            ("##fé", 7),
+            ("a", 8),
+            ("##b", 9),
+            ("b", 10),
+        ]
+        .iter()
+        .map(|&(token, id)| (token.to_string(), id))
+        .collect();
+        WordPiece::builder().vocab(vocab).build().unwrap()
+    }
+
+    #[test]
+    fn test_offsets_partition_input() {
+        let model = invariant_model();
+        for word in INVARIANT_CORPUS {
+            let tokens = model.tokenize(word).unwrap();
+            let mut pos = 0;
+            for token in &tokens {
+                let (start, end) = token.offsets;
+                assert_eq!(start, pos, "gap or overlap in {word:?}");
+                assert!(start < end, "empty piece in {:?}", word);
+                assert!(
+                    word.is_char_boundary(end),
+                    "offset {} splits a char in {:?}",
+                    end,
+                    word
+                );
+                pos = end;
+            }
+            assert_eq!(pos, word.len(), "input not covered: {word:?}");
+        }
+    }
+
+    #[test]
+    fn test_pieces_match_input_slices() {
+        let model = invariant_model();
+        for word in INVARIANT_CORPUS {
+            let tokens = model.tokenize(word).unwrap();
+            if tokens.len() == 1 && tokens[0].value == model.unk_token {
+                continue;
+            }
+            for token in &tokens {
+                let (start, end) = token.offsets;
+                let expected = if start == 0 {
+                    word[start..end].to_string()
+                } else {
+                    format!("{}{}", model.continuing_subword_prefix, &word[start..end])
+                };
+                assert_eq!(token.value, expected, "{word:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn test_unk_is_all_or_nothing() {
+        let model = invariant_model();
+        for word in INVARIANT_CORPUS {
+            let tokens = model.tokenize(word).unwrap();
+            if tokens.len() > 1 {
+                for token in &tokens {
+                    assert_ne!(token.value, model.unk_token, "unk fragment in {word:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_max_input_chars_gives_single_unk() {
+        let model = WordPiece::builder()
+            .vocab(invariant_model().vocab)
+            .max_input_chars_per_word(4)
+            .build()
+            .unwrap();
+        let tokens = model.tokenize("unaffable").unwrap();
+        assert_eq!(tokens.len(), 1);
+        assert_eq!(tokens[0].value, "[UNK]");
+        assert_eq!(tokens[0].offsets, (0, "unaffable".len()));
+    }
+
+    #[test]
+    fn test_tokenize_bytes_matches_tokenize() {
+        let model = invariant_model();
+        for word in INVARIANT_CORPUS {
+            let expected: Vec<u32> = model
+                .tokenize(word)
+                .unwrap()
+                .iter()
+                .map(|token| token.id)
+                .collect();
+            let mut output = vec![];
+            pipeline::Model::tokenize_bytes(&model, word.as_bytes(), &mut output).unwrap();
+            let got: Vec<u32> = output.iter().map(|token| token.id).collect();
+            assert_eq!(expected, got, "{word:?}");
+        }
     }
 }
