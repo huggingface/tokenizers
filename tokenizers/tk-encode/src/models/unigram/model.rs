@@ -2,8 +2,11 @@ use super::{
     lattice::Lattice,
     trie::{Trie, TrieBuilder},
 };
-use crate::utils::cache::{Cache, MAX_LENGTH};
-use crate::vocab_store::VocabStore;
+use crate::vocab_store::VocabStoreWrapper;
+use crate::{
+    utils::cache::{Cache, MAX_LENGTH},
+    vocab_store::VocabStore,
+};
 use crate::{
     pipeline::{self, PipelineToken},
     tokenizer::{Model, Result, Token},
@@ -18,7 +21,7 @@ type Vocab = Vec<(String, f64)>;
 
 /// A `Unigram` model to encode sentences.
 pub struct Unigram {
-    token_to_ids: VocabStore,
+    token_to_ids: VocabStoreWrapper,
     byte_fallback_map: [Option<u32>; 256],
     pub(crate) vocab: Vocab,
     cache: Cache<String, Vec<String>>,
@@ -133,9 +136,9 @@ impl Unigram {
             }
         }
         let token_to_ids = if pairs.is_empty() {
-            VocabStore::new()
+            VocabStoreWrapper::new()
         } else {
-            VocabStore::build(pairs)
+            VocabStoreWrapper::build(pairs)
         };
         let trie = builder.build();
         let fuse_unk = true;
@@ -402,6 +405,13 @@ impl Model for Unigram {
         let string = serde_json::to_string_pretty(self)?;
         std::fs::write(&fullpath, string)?;
         Ok(vec![fullpath])
+    }
+}
+
+impl Unigram {
+    pub(crate) fn with_bucket_vocab(mut self) -> Self {
+        self.token_to_ids = self.token_to_ids.into_bucket();
+        self
     }
 }
 

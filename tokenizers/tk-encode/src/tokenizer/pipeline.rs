@@ -99,8 +99,8 @@ impl TryFrom<ModelWrapper> for PipelineModel {
     fn try_from(value: ModelWrapper) -> Result<Self> {
         match value {
             // ModelWrapper::BPE(model) => Ok(Self::BPE(model)),
-            ModelWrapper::Unigram(model) => Ok(Self::Unigram(model)),
-            ModelWrapper::WordPiece(model) => Ok(Self::WordPiece(model)),
+            ModelWrapper::Unigram(model) => Ok(Self::Unigram(model.with_bucket_vocab())),
+            ModelWrapper::WordPiece(model) => Ok(Self::WordPiece(model.with_bucket_vocab())),
             other => Err(format!("PipelineModel cannot be built from {:?}", other).into()),
         }
     }

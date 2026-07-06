@@ -5,6 +5,8 @@ use ptr_hash::bucket_fn::Linear;
 use ptr_hash::{PtrHash, PtrHashParams};
 use std::fmt;
 
+use crate::vocab_store::{LegacyVocabStore, VocabStore};
+
 type Mphf = PtrHash<u64, Linear>;
 
 // Fixed seeds so a given vocab always hashes identically (the hasher is also stored on the struct,
@@ -79,6 +81,12 @@ impl PartialEq for BucketVocabStore {
 impl Default for BucketVocabStore {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl From<LegacyVocabStore> for BucketVocabStore {
+    fn from(value: LegacyVocabStore) -> Self {
+        Self::build(value.byte_content())
     }
 }
 

@@ -4,7 +4,7 @@
 use crate::models::bpe::BPE;
 use crate::pipeline::{self, PipelineToken};
 use crate::tokenizer::{Model, Result, Token};
-use crate::vocab_store::VocabStore;
+use crate::vocab_store::{VocabStore, VocabStoreWrapper};
 use ahash::AHashMap;
 use std::collections::HashMap;
 use std::{
@@ -25,7 +25,7 @@ pub enum Error {
 
 struct Config {
     files: Option<String>,
-    vocab: VocabStore,
+    vocab: VocabStoreWrapper,
     unk_token: String,
     continuing_subword_prefix: String,
     max_input_chars_per_word: usize,
@@ -41,7 +41,7 @@ impl Default for WordPieceBuilder {
         Self {
             config: Config {
                 files: None,
-                vocab: VocabStore::new(),
+                vocab: VocabStoreWrapper::new(),
                 unk_token: String::from("[UNK]"),
                 continuing_subword_prefix: String::from("##"),
                 max_input_chars_per_word: 100,
@@ -67,7 +67,7 @@ impl WordPieceBuilder {
     #[must_use]
     pub fn vocab<V: Into<AHashMap<String, u32>>>(mut self, vocab: V) -> Self {
         let string_vocab: AHashMap<String, u32> = vocab.into();
-        self.config.vocab = VocabStore::build(
+        self.config.vocab = VocabStoreWrapper::build(
             string_vocab
                 .into_iter()
                 .map(|(token_str, token_id)| (token_str.into_bytes(), token_id))
@@ -76,7 +76,7 @@ impl WordPieceBuilder {
         self
     }
 
-    pub fn vocab_store(mut self, vocab_store: VocabStore) -> Self {
+    pub fn vocab_store(mut self, vocab_store: VocabStoreWrapper) -> Self {
         self.config.vocab = vocab_store;
         self
     }
@@ -122,7 +122,7 @@ impl WordPieceBuilder {
 /// model.
 #[derive(Clone, PartialEq)]
 pub struct WordPiece {
-    pub vocab: VocabStore,
+    pub vocab: VocabStoreWrapper,
     pub unk_token: String,
     pub continuing_subword_prefix: String,
     pub max_input_chars_per_word: usize,
@@ -142,7 +142,7 @@ impl std::fmt::Debug for WordPiece {
 impl Default for WordPiece {
     fn default() -> Self {
         Self {
-            vocab: VocabStore::new(),
+            vocab: VocabStoreWrapper::new(),
             unk_token: String::from("[UNK]"),
             continuing_subword_prefix: String::from("##"),
             max_input_chars_per_word: 100,
@@ -157,7 +157,7 @@ impl WordPiece {
     }
 
     /// Read the given files to extract the vocab
-    pub fn read_file(vocab: &str) -> Result<VocabStore> {
+    pub fn read_file(vocab: &str) -> Result<VocabStoreWrapper> {
         let file = File::open(vocab)?;
         let file = BufReader::new(file);
 
@@ -167,12 +167,12 @@ impl WordPiece {
             vocab_raw.push((line.trim_end().to_owned().into_bytes(), index as u32));
         }
 
-        let vocab = VocabStore::build(vocab_raw);
+        let vocab = VocabStoreWrapper::build(vocab_raw);
 
         Ok(vocab)
     }
 
-    pub fn read_bytes(vocab: &[u8]) -> Result<VocabStore> {
+    pub fn read_bytes(vocab: &[u8]) -> Result<VocabStoreWrapper> {
         let file = BufReader::new(vocab);
 
         let mut vocab_raw: Vec<(Vec<u8>, u32)> = vec![];
@@ -180,7 +180,7 @@ impl WordPiece {
             let line = line?;
             vocab_raw.push((line.trim_end().to_owned().into_bytes(), index as u32));
         }
-        let vocab = VocabStore::build(vocab_raw);
+        let vocab = VocabStoreWrapper::build(vocab_raw);
 
         Ok(vocab)
     }
@@ -314,6 +314,13 @@ impl Model for WordPiece {
     }
 }
 
+impl WordPiece {
+    pub(crate) fn with_bucket_vocab(mut self) -> Self {
+        self.vocab = self.vocab.into_bucket();
+        self
+    }
+}
+
 impl pipeline::Model for WordPiece {
     fn tokenize_bytes(
         &self,
@@ -385,8 +392,8 @@ impl pipeline::Model for WordPiece {
 mod tests {
     use super::*;
 
-    fn make_vocab_store(tokens: &[&str]) -> VocabStore {
-        VocabStore::build(
+    fn make_vocab_store(tokens: &[&str]) -> VocabStoreWrapper {
+        VocabStoreWrapper::build(
             tokens
                 .iter()
                 .enumerate()

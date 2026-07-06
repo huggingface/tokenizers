@@ -2,7 +2,7 @@ use super::{super::OrderedVocabIter, Error, Pair, Word};
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::cache::{DEFAULT_CACHE_CAPACITY, MAX_LENGTH};
 use crate::utils::iter::ResultShunt;
-use crate::vocab_store::VocabStore;
+use crate::vocab_store::{VocabStore, VocabStoreWrapper};
 use ahash::AHashMap;
 use serde_json::Value;
 use std::borrow::Cow;
@@ -272,9 +272,9 @@ impl BpeBuilder {
         // merges.insert(pair, (rank as u32, *new_id));
 
         let vocab = if vocab.is_empty() {
-            VocabStore::new()
+            VocabStoreWrapper::new()
         } else {
-            VocabStore::build(
+            VocabStoreWrapper::build(
                 vocab
                     .into_iter()
                     .map(|(k, v)| (k.into_bytes(), v))
@@ -301,7 +301,7 @@ impl BpeBuilder {
 #[derive(PartialEq)]
 pub struct BPE {
     /// The vocabulary, mapping tokens <-> ids both ways.
-    pub vocab: VocabStore,
+    pub vocab: VocabStoreWrapper,
     /// Contains the mapping between Pairs and their (rank, new_id).
     pub merges: MergeMap,
     /// Contains the cache for optimizing the encoding step.
