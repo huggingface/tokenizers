@@ -1,5 +1,5 @@
 use super::{super::OrderedVocabIter, WordLevel, WordLevelBuilder};
-use ahash::AHashSet;
+use ahash::{AHashMap, AHashSet};
 use serde::{
     de::{MapAccess, Visitor},
     ser::SerializeStruct,
@@ -12,7 +12,14 @@ impl Serialize for WordLevel {
         S: Serializer,
     {
         let mut model = serializer.serialize_struct("WordLevel", 3)?;
-        let ordered_vocab = OrderedVocabIter::new(&self.vocab_r);
+        let vocab_r: AHashMap<u32, String> = self
+            .vocab
+            .get_vocab()
+            .into_iter()
+            .map(|(s, id)| (id, s))
+            .collect();
+
+        let ordered_vocab = OrderedVocabIter::new(&vocab_r);
         model.serialize_field("type", "WordLevel")?;
         model.serialize_field("vocab", &ordered_vocab)?;
         model.serialize_field("unk_token", &self.unk_token)?;

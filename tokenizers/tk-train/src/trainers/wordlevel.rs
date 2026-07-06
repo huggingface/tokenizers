@@ -76,7 +76,6 @@ impl WordLevelTrainer {
 
         // Transfer the vocab
         model.vocab = word_level.vocab;
-        model.vocab_r = word_level.vocab_r;
 
         Ok(self.special_tokens.clone())
     }
@@ -130,7 +129,7 @@ impl Trainer for WordLevelTrainer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tk_encode::models::wordlevel::WordLevel;
+    use tk_encode::{models::wordlevel::WordLevel, vocab_store::VocabStore};
 
     #[test]
     fn test_train() {
@@ -153,31 +152,25 @@ mod tests {
 
         let mut model = WordLevel::default();
         trainer.do_train(&word_counts, &mut model).unwrap();
-        let expected_vocab: AHashMap<String, u32> = [
+        let expected_vocab = VocabStore::build(vec![
             ("the".into(), 0),
             ("are".into(), 1),
             ("roses".into(), 2),
             ("blue".into(), 3),
             ("red".into(), 4),
-        ]
-        .iter()
-        .cloned()
-        .collect();
+        ]);
         assert_eq!(model.vocab, expected_vocab);
 
         // If we specify a min_frequency
         trainer.min_frequency = 15;
         let mut model = WordLevel::default();
         trainer.do_train(&word_counts, &mut model).unwrap();
-        let expected_vocab: AHashMap<String, u32> = [
+        let expected_vocab = VocabStore::build(vec![
             ("the".into(), 0),
             ("are".into(), 1),
             ("roses".into(), 2),
             ("blue".into(), 3),
-        ]
-        .iter()
-        .cloned()
-        .collect();
+        ]);
 
         assert_eq!(model.vocab, expected_vocab);
     }
