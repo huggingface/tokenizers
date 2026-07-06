@@ -5,8 +5,8 @@ use crate::added_vocabulary::bucket_added_vocabulary::{
     AddedToken as BucketAddedToken, AddedVocabulary as BucketAddedVocabulary,
 };
 use crate::models::unigram::Unigram;
-use crate::ModelWrapper;
 use crate::models::wordpiece::WordPiece;
+use crate::ModelWrapper;
 use crate::{
     pre_tokenizers::{
         bert::BertPreTokenizer,
@@ -335,7 +335,7 @@ impl PipelineTokenizer {
                                 // Tokenize each chunk
                                 for pre_token in pre_tokens.iter() {
                                     self.model.tokenize_bytes(
-                                        &normalized_chunk[pre_token.range()].as_bytes(),
+                                        normalized_chunk[pre_token.range()].as_bytes(),
                                         &mut output,
                                     )?;
                                 }
