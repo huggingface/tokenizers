@@ -1,9 +1,12 @@
+use std::borrow::Cow;
+use std::convert::{TryFrom, TryInto};
 use std::ops::Range;
-use std::{borrow::Cow, convert::TryFrom};
 
 use crate::added_vocabulary::bucket_added_vocabulary::{
     AddedToken as BucketAddedToken, AddedVocabulary as BucketAddedVocabulary,
 };
+use crate::models::unigram::Unigram;
+use crate::{ModelWrapper, PostProcessorWrapper, PreTokenizerWrapper, Token, Tokenizer};
 use crate::{
     normalizers::NormalizerWrapper,
     pre_tokenizers::{
@@ -15,7 +18,6 @@ use crate::{
         unicode_scripts::UnicodeScripts,
         whitespace::{Whitespace, WhitespaceSplit},
     },
-    Model, ModelWrapper, PostProcessorWrapper, PreTokenizerWrapper, Token, Tokenizer,
 };
 
 use super::{Result, SplitDelimiterBehavior};
@@ -70,6 +72,35 @@ impl PreTokenizer for PipelinePreTokenizer {
             Self::UnicodeScripts(pretok) => pretok.pre_tokenize(text, out),
             Self::Whitespace(pretok) => pretok.pre_tokenize(text, out),
             Self::WhitespaceSplit(pretok) => pretok.pre_tokenize(text, out),
+        }
+    }
+}
+
+pub enum PipelineModel {
+    Unigram(Unigram),
+    // BPE(BPE),
+}
+
+pub trait Model {
+    fn tokenize_bytes(&self, bytes: &[u8], output: &mut Vec<PipelineToken>) -> Result<()>;
+}
+
+impl Model for PipelineModel {
+    fn tokenize_bytes(&self, bytes: &[u8], output: &mut Vec<PipelineToken>) -> Result<()> {
+        match self {
+            Self::Unigram(model) => model.tokenize_bytes(bytes, output),
+            // Self::BPE(model) => model.tokenize_bytes(bytes, output),
+        }
+    }
+}
+
+impl TryFrom<ModelWrapper> for PipelineModel {
+    type Error = super::Error;
+    fn try_from(value: ModelWrapper) -> Result<Self> {
+        match value {
+            // ModelWrapper::BPE(model) => Ok(Self::BPE(model)),
+            ModelWrapper::Unigram(model) => Ok(Self::Unigram(model)),
+            other => Err(format!("PipelineModel cannot be built from {:?}", other).into()),
         }
     }
 }
@@ -198,7 +229,7 @@ pub struct PipelineTokenizer {
     added_vocabulary: BucketAddedVocabulary,
     normalizer: Option<NormalizerWrapper>,
     pre_tokenizer: PipelinePreTokenizer,
-    model: ModelWrapper,
+    model: PipelineModel,
     _post_processor: Option<PostProcessorWrapper>,
 }
 
@@ -252,7 +283,7 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
             added_vocabulary,
             normalizer: tok.get_normalizer().cloned(),
             pre_tokenizer,
-            model: tok.get_model().clone(),
+            model: tok.get_model().clone().try_into()?,
             _post_processor: tok.get_post_processor().cloned(),
         })
     }
@@ -302,12 +333,10 @@ impl PipelineTokenizer {
 
                                 // Tokenize each chunk
                                 for pre_token in pre_tokens.iter() {
-                                    output.extend(
-                                        self.model
-                                            .tokenize(&normalized_chunk[pre_token.range()])?
-                                            .into_iter()
-                                            .map(|Token { id, .. }| PipelineToken { id }),
-                                    );
+                                    self.model.tokenize_bytes(
+                                        &normalized_chunk[pre_token.range()].as_bytes(),
+                                        &mut output,
+                                    )?;
                                 }
                             }
                         }
