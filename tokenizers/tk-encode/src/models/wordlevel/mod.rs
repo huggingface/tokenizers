@@ -210,6 +210,90 @@ impl Model for WordLevel {
 mod tests {
     use super::*;
 
+    fn vocab(tokens: &[&str]) -> Vocab {
+        tokens
+            .iter()
+            .enumerate()
+            .map(|(id, token)| (token.to_string(), id as u32))
+            .collect()
+    }
+
+    fn model(tokens: &[&str]) -> WordLevel {
+        WordLevel::builder().vocab(vocab(tokens)).build().unwrap()
+    }
+
+    fn tok(id: u32, value: &str, offsets: (usize, usize)) -> Token {
+        Token::new(id, value.to_string(), offsets)
+    }
+
+    #[test]
+    fn whole_word_lookup_only_no_splitting() {
+        let wl = model(&["<unk>", "a", "b"]);
+        assert_eq!(wl.tokenize("a").unwrap(), vec![tok(1, "a", (0, 1))]);
+        assert_eq!(wl.tokenize("ab").unwrap(), vec![tok(0, "<unk>", (0, 2))]);
+    }
+
+    #[test]
+    fn multibyte_offsets_are_byte_positions() {
+        let wl = model(&["<unk>", "猫"]);
+        assert_eq!(wl.tokenize("猫").unwrap(), vec![tok(1, "猫", (0, 3))]);
+    }
+
+    #[test]
+    fn unk_offsets_span_whole_input() {
+        let wl = model(&["<unk>"]);
+        assert_eq!(wl.tokenize("東京").unwrap(), vec![tok(0, "<unk>", (0, 6))]);
+    }
+
+    #[test]
+    fn unk_id_is_looked_up_in_vocab() {
+        let wl = model(&["a", "b", "<unk>"]);
+        assert_eq!(wl.tokenize("z").unwrap(), vec![tok(2, "<unk>", (0, 1))]);
+    }
+
+    #[test]
+    fn unk_token_is_a_normal_vocab_entry() {
+        let wl = model(&["<unk>", "a"]);
+        assert_eq!(wl.tokenize("<unk>").unwrap(), vec![tok(0, "<unk>", (0, 5))]);
+    }
+
+    #[test]
+    fn custom_unk_token() {
+        let wl = WordLevel::builder()
+            .vocab(vocab(&["[UNK]", "a"]))
+            .unk_token("[UNK]".to_string())
+            .build()
+            .unwrap();
+        assert_eq!(wl.tokenize("z").unwrap(), vec![tok(0, "[UNK]", (0, 1))]);
+    }
+
+    #[test]
+    fn empty_input_maps_to_unk() {
+        let wl = model(&["<unk>", "a"]);
+        assert_eq!(wl.tokenize("").unwrap(), vec![tok(0, "<unk>", (0, 0))]);
+    }
+
+    #[test]
+    fn regular_sentence_maps_words_to_ids() {
+        let wl = model(&[
+            "<unk>", "the", "quick", "brown", "fox", "jumps", "over", "lazy", "dog", ".",
+        ]);
+        let sentence = "the quick brown vulpine fox jumps over the lazy dog .";
+        let ids: Vec<u32> = sentence
+            .split_whitespace()
+            .flat_map(|word| wl.tokenize(word).unwrap())
+            .map(|t| t.id)
+            .collect();
+        assert_eq!(ids, vec![1, 2, 3, 0, 4, 5, 6, 1, 7, 8, 9]);
+    }
+
+    #[test]
+    fn missing_unk_token_error_message() {
+        let wl = model(&["a"]);
+        let err = wl.tokenize("b").unwrap_err();
+        assert!(err.to_string().contains("Missing [UNK] token"));
+    }
+
     #[test]
     fn test_tokenize_unk() {
         let vocab: Vocab = [("<unk>".into(), 0), ("a".into(), 1), ("b".into(), 2)]

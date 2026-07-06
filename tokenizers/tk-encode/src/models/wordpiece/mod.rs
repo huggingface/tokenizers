@@ -523,4 +523,71 @@ mod tests {
             vec![tok(1, "foo", (0, 3)), tok(2, "@@bar", (3, 6))]
         );
     }
+
+    #[test]
+    fn regular_words_tokenize_like_bert() {
+        let wp = model(&[
+            "[UNK]",
+            "the",
+            "token",
+            "##izer",
+            "##ization",
+            "un",
+            "##believ",
+            "##able",
+            "run",
+            "##ning",
+            "hugging",
+            "##face",
+            "transform",
+            "##ers",
+            "inter",
+            "##national",
+            "in",
+            "##ter",
+            "##nation",
+            "##al",
+            "##iz",
+            "##ation",
+            "fast",
+            "##er",
+            ".",
+            ",",
+        ]);
+        let cases: &[(&str, &[&str])] = &[
+            ("the", &["the"]),
+            ("tokenizer", &["token", "##izer"]),
+            ("tokenization", &["token", "##ization"]),
+            ("unbelievable", &["un", "##believ", "##able"]),
+            ("running", &["run", "##ning"]),
+            ("huggingface", &["hugging", "##face"]),
+            ("transformers", &["transform", "##ers"]),
+            (
+                "internationalization",
+                &["inter", "##national", "##ization"],
+            ),
+            ("faster", &["fast", "##er"]),
+            (".", &["."]),
+            (",", &[","]),
+            ("xylophone", &["[UNK]"]),
+        ];
+        for (word, expected) in cases {
+            let values: Vec<String> = wp
+                .tokenize(word)
+                .unwrap()
+                .into_iter()
+                .map(|t| t.value)
+                .collect();
+            assert_eq!(&values, expected, "word: {word}");
+        }
+
+        assert_eq!(
+            wp.tokenize("internationalization").unwrap(),
+            vec![
+                tok(14, "inter", (0, 5)),
+                tok(15, "##national", (5, 13)),
+                tok(4, "##ization", (13, 20)),
+            ]
+        );
+    }
 }

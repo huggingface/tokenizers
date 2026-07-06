@@ -506,6 +506,161 @@ impl Model for Unigram {
 mod tests {
     use super::*;
 
+    fn model(pieces: &[(&str, f64)]) -> Unigram {
+        let vocab = pieces
+            .iter()
+            .map(|(token, score)| (token.to_string(), *score))
+            .collect();
+        Unigram::from(vocab, Some(0), false).unwrap()
+    }
+
+    fn tok(id: u32, value: &str, offsets: (usize, usize)) -> Token {
+        Token::new(id, value.to_string(), offsets)
+    }
+
+    #[test]
+    fn viterbi_picks_highest_scoring_segmentation() {
+        for optimized in [true, false] {
+            let mut split_wins = model(&[("<unk>", 0.0), ("a", 1.0), ("b", 1.0), ("ab", -1.0)]);
+            split_wins.set_optimized(optimized);
+            assert_eq!(
+                split_wins.tokenize("ab").unwrap(),
+                vec![tok(1, "a", (0, 1)), tok(2, "b", (1, 2))]
+            );
+
+            let mut merge_wins = model(&[("<unk>", 0.0), ("a", -1.0), ("b", -1.0), ("ab", 1.0)]);
+            merge_wins.set_optimized(optimized);
+            assert_eq!(
+                merge_wins.tokenize("ab").unwrap(),
+                vec![tok(3, "ab", (0, 2))]
+            );
+        }
+    }
+
+    #[test]
+    fn tokenize_offsets_are_cumulative_byte_positions() {
+        let unigram = model(&[
+            ("<unk>", 0.0),
+            ("a", 0.0),
+            ("b", 0.0),
+            ("c", 0.0),
+            ("d", 0.0),
+            ("cd", 1.0),
+            ("ab", 2.0),
+            ("abc", 5.0),
+            ("abcd", 10.0),
+        ]);
+        let expected = vec![
+            tok(8, "abcd", (0, 4)),
+            tok(1, "a", (4, 5)),
+            tok(5, "cd", (5, 7)),
+        ];
+        assert_eq!(unigram.tokenize("abcdacd").unwrap(), expected);
+        assert_eq!(unigram.tokenize("abcdacd").unwrap(), expected);
+    }
+
+    #[test]
+    fn unknown_chars_fuse_into_single_unk_token_keeping_raw_text() {
+        let unigram = model(&[("<unk>", 0.0), ("a", 0.0)]);
+        assert_eq!(
+            unigram.tokenize("xyza").unwrap(),
+            vec![tok(0, "xyz", (0, 3)), tok(1, "a", (3, 4))]
+        );
+    }
+
+    #[test]
+    fn unfused_unk_yields_one_token_per_char() {
+        let mut unigram = model(&[("<unk>", 0.0), ("a", 0.0)]);
+        unigram.set_fuse_unk(false);
+        assert_eq!(
+            unigram.tokenize("xya").unwrap(),
+            vec![
+                tok(0, "x", (0, 1)),
+                tok(0, "y", (1, 2)),
+                tok(1, "a", (2, 3)),
+            ]
+        );
+    }
+
+    #[test]
+    fn multibyte_unknown_offsets() {
+        let unigram = model(&[("<unk>", 0.0), ("犬", 0.0)]);
+        assert_eq!(
+            unigram.tokenize("犬東京").unwrap(),
+            vec![tok(1, "犬", (0, 3)), tok(0, "東京", (3, 9))]
+        );
+    }
+
+    #[test]
+    fn empty_input_yields_no_tokens() {
+        let unigram = model(&[("<unk>", 0.0)]);
+        assert_eq!(unigram.tokenize("").unwrap(), vec![]);
+    }
+
+    #[test]
+    fn missing_unk_id_is_an_error_only_when_needed() {
+        let unigram = Unigram::from(vec![("a".to_string(), 0.0)], None, false).unwrap();
+        assert_eq!(unigram.tokenize("a").unwrap(), vec![tok(0, "a", (0, 1))]);
+
+        let err = unigram.tokenize("b").unwrap_err();
+        assert!(err.to_string().contains("`unk_id` is missing"));
+    }
+
+    #[test]
+    fn regular_sentence_viterbi_segmentation() {
+        for optimized in [true, false] {
+            let mut unigram = model(&[
+                ("<unk>", 0.0),
+                ("▁the", -1.0),
+                ("▁quick", -2.0),
+                ("▁qu", -4.0),
+                ("ick", -4.0),
+                ("▁brown", -2.5),
+                ("▁fox", -2.2),
+                ("▁jump", -3.0),
+                ("s", -4.0),
+                ("▁jumps", -8.0),
+                ("▁over", -2.0),
+                ("▁lazy", -3.0),
+                ("▁dog", -2.0),
+                (".", -1.5),
+            ]);
+            unigram.set_optimized(optimized);
+            let values: Vec<String> = unigram
+                .tokenize("▁the▁quick▁brown▁fox▁jumps▁over▁the▁lazy▁dog.")
+                .unwrap()
+                .into_iter()
+                .map(|t| t.value)
+                .collect();
+            assert_eq!(
+                values,
+                vec![
+                    "▁the", "▁quick", "▁brown", "▁fox", "▁jump", "s", "▁over", "▁the", "▁lazy",
+                    "▁dog", "."
+                ],
+                "optimized: {optimized}"
+            );
+        }
+    }
+
+    #[test]
+    fn byte_fallback_disabled_maps_unknown_to_unk() {
+        let vocab = vec![
+            ("<unk>".to_string(), 0.0),
+            ("<0xC3>".to_string(), -0.01),
+            ("<0xA9>".to_string(), -0.03),
+        ];
+        let unigram = Unigram::from(vocab, Some(0), false).unwrap();
+        assert_eq!(unigram.tokenize("é").unwrap(), vec![tok(0, "é", (0, 2))]);
+    }
+
+    #[test]
+    fn byte_fallback_requires_all_bytes_in_vocab() {
+        let vocab = vec![("<unk>".to_string(), 0.0), ("<0xC3>".to_string(), -0.01)];
+        let unigram = Unigram::from(vocab, Some(0), true).unwrap();
+        assert_eq!(unigram.tokenize("é").unwrap(), vec![tok(0, "é", (0, 2))]);
+    }
+
     #[test]
     fn test_populate_nodes_unk() {
         let pieces = vec![("<unk>".to_string(), 0.0)];
