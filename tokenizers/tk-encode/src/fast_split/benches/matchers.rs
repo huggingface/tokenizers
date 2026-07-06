@@ -4,6 +4,7 @@
 //! run from pos 0 (which, on mixed input, scans ~nothing and reports a fake ~0 ns/byte).
 //! Run:  cargo bench --bench matchers --features unicode      (rtk proxy for stdout)
 use fast_split::matchers::{Digit, FastLetter, FastNumber, Letter, Matcher};
+use fast_split::rules::run_matcher;
 use std::hint::black_box;
 use std::time::Instant;
 
@@ -26,12 +27,12 @@ fn tokenize<M: Matcher>(bytes: &[u8]) -> usize {
     let mut pos = 0;
     let mut n = 0;
     while pos < bytes.len() {
-        let end = M::run_end(bytes, pos);
-        if end > pos {
-            n += 1;
-            pos = end;
-        } else {
-            pos += 1;
+        match run_matcher::<M, 1, { u8::MAX }>(bytes, pos) {
+            Some(end) if end > pos => {
+                n += 1;
+                pos = end;
+            }
+            _ => pos += 1,
         }
     }
     n

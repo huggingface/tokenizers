@@ -15,7 +15,11 @@ pub fn run_matcher<M: Matcher, const MIN: u8, const MAX: u8>(
             pos = end;
         }
         // MIN is 0 (`*`) or 1 (`+`); either MIN==0 or we need at least one char.
-        if MIN == 0 || pos > from { Some(pos) } else { None }
+        if MIN == 0 || pos > from {
+            Some(pos)
+        } else {
+            None
+        }
     } else {
         // bounded ({m,n}): stop after MAX chars.
         let mut count = 0usize;
@@ -28,7 +32,11 @@ pub fn run_matcher<M: Matcher, const MIN: u8, const MAX: u8>(
                 None => break,
             }
         }
-        if count >= MIN as usize { Some(pos) } else { None }
+        if count >= MIN as usize {
+            Some(pos)
+        } else {
+            None
+        }
     }
 }
 
