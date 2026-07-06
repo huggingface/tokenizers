@@ -34,6 +34,7 @@ struct Entry {
 /// Example:
 ///
 /// ```
+/// use tk_encode::vocab_store::VocabStore;
 /// use tk_encode::added_vocabulary::bucket_vocab_store::BucketVocabStore;
 /// let vocab = BucketVocabStore::build(vec![
 ///     (b"a".to_vec(), 0),
