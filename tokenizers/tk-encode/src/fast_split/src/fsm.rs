@@ -32,7 +32,11 @@ pub enum Behavior {
 /// Covers: WhitespaceSplit, Punctuation, Digits, Metaspace (marker), CharDelimiterSplit, Split-literal.
 ///
 /// ┌── OWNER: shared (scalar core); SIMD boundary-extract optional on aarch64 ──┐
-pub fn fsm_split<const DELIM: u16, const BEHAVIOR: u8>(text: &[u8], tags: &[u8], out: &mut Vec<Span>) {
+pub fn fsm_split<const DELIM: u16, const BEHAVIOR: u8>(
+    text: &[u8],
+    tags: &[u8],
+    out: &mut Vec<Span>,
+) {
     let _ = (text, tags, out);
     todo!("match-stream = in_mask(tag, DELIM); emit per Behavior::from(BEHAVIOR); spec §4")
 }

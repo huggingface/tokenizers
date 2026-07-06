@@ -1,3 +1,5 @@
+pub mod classify;
+pub mod fsm;
 pub mod matchers;
 pub mod patterns;
 pub mod rules;
