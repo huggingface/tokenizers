@@ -273,19 +273,19 @@ impl Unigram {
     fn encode_optimized(&self, sentence: &str) -> Result<Vec<String>> {
         let mut offsets = Vec::with_capacity(sentence.len());
         self.encode_offsets_optimized(sentence, &mut offsets)?;
-        return Ok(offsets
+        Ok(offsets
             .into_iter()
             .map(|(start, end)| sentence[start..end].to_owned())
-            .collect());
+            .collect())
     }
 
     fn encode_unoptimized(&self, sentence: &str) -> Result<Vec<String>> {
         let mut offsets = Vec::with_capacity(sentence.len());
         self.encode_offsets_unoptimized(sentence, &mut offsets)?;
-        return Ok(offsets
+        Ok(offsets
             .into_iter()
             .map(|(start, end)| sentence[start..end].to_owned())
-            .collect());
+            .collect())
     }
 
     /// Iterate of vocabulary of the model as a pair of `(token, score)`.
@@ -407,7 +407,7 @@ impl Model for Unigram {
 
 impl pipeline::Model for Unigram {
     fn tokenize_bytes(&self, bytes: &[u8], output: &mut Vec<PipelineToken>) -> Result<()> {
-        for (start, end) in self.encode_offsets(&bytes)?.into_iter() {
+        for (start, end) in self.encode_offsets(bytes)?.into_iter() {
             let chunk = &bytes[start..end];
             if let Some(id) = self.token_to_ids.get_bytes(chunk) {
                 output.push(PipelineToken { id });

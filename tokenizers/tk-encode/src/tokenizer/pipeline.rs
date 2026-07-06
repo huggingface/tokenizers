@@ -339,7 +339,7 @@ impl PipelineTokenizer {
                                 // Tokenize each chunk
                                 for pre_token in pre_tokens.iter() {
                                     self.model.tokenize_bytes(
-                                        &normalized_chunk[pre_token.range()].as_bytes(),
+                                        normalized_chunk[pre_token.range()].as_bytes(),
                                         &mut output,
                                     )?;
                                 }
