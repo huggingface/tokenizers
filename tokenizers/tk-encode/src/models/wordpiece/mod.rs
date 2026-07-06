@@ -330,8 +330,10 @@ impl pipeline::Model for WordPiece {
                 .token_to_id(&self.unk_token)
                 .ok_or(Error::MissingUnkToken)?;
             output.push(PipelineToken { id: unk_id });
+            return Ok(());
         }
 
+        let word_start = output.len();
         let mut is_bad = false;
         let mut start = 0;
 
@@ -371,6 +373,7 @@ impl pipeline::Model for WordPiece {
                 .vocab
                 .token_to_id(&self.unk_token)
                 .ok_or(Error::MissingUnkToken)?;
+            output.truncate(word_start);
             output.push(PipelineToken { id: unk_id });
         }
 
