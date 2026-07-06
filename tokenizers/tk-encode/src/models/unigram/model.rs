@@ -738,4 +738,145 @@ mod tests {
         let tokens = unigram.tokenize("?é").unwrap();
         assert_eq!(tokens[0].id, 0);
     }
+
+    const INVARIANT_CORPUS: &[&str] = &[
+        "",
+        "a",
+        "x",
+        "AB",
+        "abc",
+        "abcd",
+        "abABcd",
+        "xabcabaabcdd",
+        "xyz東京",
+        "abABCcd",
+        "ababcdabcdcd",
+        "abqrcd",
+        "🙂👍🏽",
+        "e\u{301}abce\u{301}",
+        "▁ab▁",
+    ];
+
+    fn invariant_model() -> Unigram {
+        let pieces = vec![
+            ("<unk>".to_string(), 0.0),
+            ("ab".to_string(), 0.0),
+            ("cd".to_string(), -0.1),
+            ("abc".to_string(), -0.2),
+            ("a".to_string(), -0.3),
+            ("b".to_string(), -0.4),
+            ("c".to_string(), -0.5),
+            ("ABC".to_string(), -0.5),
+            ("abcdabcd".to_string(), 20.0),
+            ("q".to_string(), 20.5),
+            ("r".to_string(), 20.5),
+            ("qr".to_string(), -0.5),
+        ];
+        Unigram::from(pieces, Some(0), false).unwrap()
+    }
+
+    fn encoded_offsets(model: &Unigram, sentence: &str, optimized: bool) -> Vec<(usize, usize)> {
+        let mut offsets = vec![];
+        if optimized {
+            model
+                .encode_offsets_optimized(sentence, &mut offsets)
+                .unwrap();
+        } else {
+            model
+                .encode_offsets_unoptimized(sentence, &mut offsets)
+                .unwrap();
+        }
+        offsets
+    }
+
+    #[test]
+    fn test_offsets_partition_input() {
+        let mut model = invariant_model();
+        for fuse_unk in [true, false].iter().copied() {
+            model.set_fuse_unk(fuse_unk);
+            for sentence in INVARIANT_CORPUS {
+                for optimized in [true, false].iter().copied() {
+                    let offsets = encoded_offsets(&model, sentence, optimized);
+                    let context = format!("{sentence:?} fuse_unk={fuse_unk} optimized={optimized}");
+                    let mut pos = 0;
+                    for &(start, end) in &offsets {
+                        assert_eq!(start, pos, "gap or overlap: {context}");
+                        assert!(start < end, "empty piece: {}", context);
+                        assert!(
+                            sentence.is_char_boundary(end),
+                            "offset {} splits a char: {}",
+                            end,
+                            context
+                        );
+                        pos = end;
+                    }
+                    assert_eq!(pos, sentence.len(), "input not covered: {context}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_pieces_match_input_slices() {
+        let mut model = invariant_model();
+        for fuse_unk in [true, false].iter().copied() {
+            model.set_fuse_unk(fuse_unk);
+            for sentence in INVARIANT_CORPUS {
+                for token in model.tokenize(sentence).unwrap() {
+                    assert_eq!(
+                        token.value,
+                        &sentence[token.offsets.0..token.offsets.1],
+                        "{sentence:?} fuse_unk={fuse_unk}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_pieces_match_input_slices_byte_fallback() {
+        let pieces = vec![
+            ("<unk>".to_string(), 0.0),
+            ("a".to_string(), -0.3),
+            ("<0xC3>".to_string(), -0.01),
+            ("<0xA9>".to_string(), -0.03),
+        ];
+        let model = Unigram::from(pieces, Some(0), true).unwrap();
+        for sentence in ["aéa", "é", "🙂a"].iter().copied() {
+            for token in model.tokenize(sentence).unwrap() {
+                let is_byte_token = token.value.len() == 6
+                    && token.value.starts_with("<0x")
+                    && token.value.ends_with('>');
+                if !is_byte_token {
+                    assert_eq!(
+                        token.value,
+                        &sentence[token.offsets.0..token.offsets.1],
+                        "{sentence:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_fuse_unk_no_adjacent_unk_pieces() {
+        let model = invariant_model();
+        for sentence in INVARIANT_CORPUS {
+            for optimized in [true, false].iter().copied() {
+                let offsets = encoded_offsets(&model, sentence, optimized);
+                let in_vocab: Vec<bool> = offsets
+                    .iter()
+                    .map(|&(start, end)| model.token_to_id(&sentence[start..end]).is_some())
+                    .collect();
+                for pair in in_vocab.windows(2) {
+                    assert!(
+                        pair[0] || pair[1],
+                        "adjacent unk pieces in {:?} optimized={}",
+                        sentence,
+                        optimized
+                    );
+                }
+            }
+        }
+    }
 }
