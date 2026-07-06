@@ -10,6 +10,7 @@ use crate::{
         delimiter::CharDelimiterSplit,
         digits::Digits,
         fixed_length::FixedLength,
+        punctuation::Punctuation,
         unicode_scripts::UnicodeScripts,
         whitespace::{Whitespace, WhitespaceSplit},
     },
@@ -17,7 +18,7 @@ use crate::{
     PreTokenizerWrapper, Token, Tokenizer,
 };
 
-use super::Result;
+use super::{Result, SplitDelimiterBehavior};
 
 /// A pre-token split, a range into the input text.
 #[derive(Copy, Clone)]
@@ -46,6 +47,7 @@ pub enum PipelinePreTokenizer {
     Delimiter(CharDelimiterSplit),
     Digits(Digits),
     FixedLength(FixedLength),
+    Punctuation(Punctuation),
     UnicodeScripts(UnicodeScripts),
     Whitespace(Whitespace),
     WhitespaceSplit(WhitespaceSplit),
@@ -60,6 +62,7 @@ impl PreTokenizer for PipelinePreTokenizer {
             Self::Delimiter(pretok) => pretok.pre_tokenize(text, out),
             Self::Digits(pretok) => pretok.pre_tokenize(text, out),
             Self::FixedLength(pretok) => pretok.pre_tokenize(text, out),
+            Self::Punctuation(pretok) => pretok.pre_tokenize(text, out),
             Self::UnicodeScripts(pretok) => pretok.pre_tokenize(text, out),
             Self::Whitespace(pretok) => pretok.pre_tokenize(text, out),
             Self::WhitespaceSplit(pretok) => pretok.pre_tokenize(text, out),
@@ -211,6 +214,7 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
             Some(PreTokenizerWrapper::Delimiter(p)) => PipelinePreTokenizer::Delimiter(*p),
             Some(PreTokenizerWrapper::Digits(p)) => PipelinePreTokenizer::Digits(p.clone()),
             Some(PreTokenizerWrapper::FixedLength(p)) => PipelinePreTokenizer::FixedLength(*p),
+            Some(PreTokenizerWrapper::Punctuation(p)) => PipelinePreTokenizer::Punctuation(*p),
             Some(PreTokenizerWrapper::UnicodeScripts(p)) => PipelinePreTokenizer::UnicodeScripts(*p),
             Some(PreTokenizerWrapper::Whitespace(p)) => PipelinePreTokenizer::Whitespace(p.clone()),
             Some(PreTokenizerWrapper::WhitespaceSplit(p)) => PipelinePreTokenizer::WhitespaceSplit(*p),
@@ -407,4 +411,74 @@ pub fn split<C: Copy + PartialEq>(
             });
         }
     }
+}
+
+/// Splits `text` around a single delimiter predicate, honoring the full
+/// [`SplitDelimiterBehavior`] contract. The pipeline-side equivalent of
+/// `NormalizedString::split(pattern, behavior)` for a char predicate.
+///
+/// The three non-merging behaviors reduce to a [`SplitPolicy`] on the delimiter
+/// class and reuse [`split`]. The two merge variants are their own single pass:
+/// - `MergedWithPrevious` cuts the split *after* each delimiter, so a delimiter
+///   joins the run before it (`"the-final"` -> `["the-", "final"]`).
+/// - `MergedWithNext` cuts *before* each delimiter, so it joins the run after it
+///   (`"the-final"` -> `["the", "-final"]`).
+pub fn split_delimiter(
+    text: &str,
+    out: &mut Vec<Split>,
+    is_delim: impl Fn(char) -> bool,
+    behavior: SplitDelimiterBehavior,
+) {
+    use SplitDelimiterBehavior::*;
+
+    let delim_policy = match behavior {
+        Removed => SplitPolicy::Remove,
+        Isolated => SplitPolicy::Isolate,
+        Contiguous => SplitPolicy::Keep,
+        MergedWithPrevious => {
+            let mut start: u32 = 0;
+            for (i, ch) in text.char_indices() {
+                if is_delim(ch) {
+                    let end = (i + ch.len_utf8()) as u32;
+                    out.push(Split { start, end });
+                    start = end;
+                }
+            }
+            if (start as usize) < text.len() {
+                out.push(Split {
+                    start,
+                    end: text.len() as u32,
+                });
+            }
+            return;
+        }
+        MergedWithNext => {
+            let mut start: u32 = 0;
+            for (i, ch) in text.char_indices() {
+                if is_delim(ch) {
+                    let i = i as u32;
+                    // skip the empty span before a leading run of delimiters
+                    if i > start {
+                        out.push(Split { start, end: i });
+                    }
+                    start = i;
+                }
+            }
+            if (start as usize) < text.len() {
+                out.push(Split {
+                    start,
+                    end: text.len() as u32,
+                });
+            }
+            return;
+        }
+    };
+
+    split(text, out, is_delim, |d| {
+        if d {
+            delim_policy
+        } else {
+            SplitPolicy::Keep
+        }
+    });
 }
