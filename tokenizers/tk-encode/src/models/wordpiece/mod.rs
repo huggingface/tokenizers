@@ -3,6 +3,7 @@
 
 use crate::models::bpe::BPE;
 use crate::tokenizer::{Model, Result, Token};
+use crate::vocab_store::VocabStore;
 use ahash::AHashMap;
 use std::collections::HashMap;
 use std::{
@@ -21,12 +22,9 @@ pub enum Error {
     MissingUnkToken,
 }
 
-type Vocab = AHashMap<String, u32>;
-type VocabR = AHashMap<u32, String>;
-
 struct Config {
     files: Option<String>,
-    vocab: Vocab,
+    vocab: VocabStore,
     unk_token: String,
     continuing_subword_prefix: String,
     max_input_chars_per_word: usize,
@@ -42,7 +40,7 @@ impl Default for WordPieceBuilder {
         Self {
             config: Config {
                 files: None,
-                vocab: AHashMap::new(),
+                vocab: VocabStore::new(),
                 unk_token: String::from("[UNK]"),
                 continuing_subword_prefix: String::from("##"),
                 max_input_chars_per_word: 100,
@@ -67,7 +65,18 @@ impl WordPieceBuilder {
     /// Set the vocab (token -> ID) mapping.
     #[must_use]
     pub fn vocab<V: Into<AHashMap<String, u32>>>(mut self, vocab: V) -> Self {
-        self.config.vocab = vocab.into();
+        let string_vocab: AHashMap<String, u32> = vocab.into();
+        self.config.vocab = VocabStore::build(
+            string_vocab
+                .into_iter()
+                .map(|(token_str, token_id)| (token_str.into_bytes(), token_id))
+                .collect(),
+        );
+        self
+    }
+
+    pub fn vocab_store(mut self, vocab_store: VocabStore) -> Self {
+        self.config.vocab = vocab_store;
         self
     }
 
@@ -98,16 +107,8 @@ impl WordPieceBuilder {
             self.config.vocab = WordPiece::read_file(&vocab)?;
         }
 
-        let vocab_r = self
-            .config
-            .vocab
-            .iter()
-            .map(|(key, val)| (*val, key.to_owned()))
-            .collect();
-
         Ok(WordPiece {
             vocab: self.config.vocab,
-            vocab_r,
             unk_token: self.config.unk_token,
             continuing_subword_prefix: self.config.continuing_subword_prefix,
             max_input_chars_per_word: self.config.max_input_chars_per_word,
@@ -118,10 +119,9 @@ impl WordPieceBuilder {
 /// A
 /// [WordPiece](https://static.googleusercontent.com/media/research.google.com/en//pubs/archive/37842.pdf)
 /// model.
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq)]
 pub struct WordPiece {
-    pub vocab: Vocab,
-    pub vocab_r: VocabR,
+    pub vocab: VocabStore,
     pub unk_token: String,
     pub continuing_subword_prefix: String,
     pub max_input_chars_per_word: usize,
@@ -141,8 +141,7 @@ impl std::fmt::Debug for WordPiece {
 impl Default for WordPiece {
     fn default() -> Self {
         Self {
-            vocab: AHashMap::new(),
-            vocab_r: AHashMap::new(),
+            vocab: VocabStore::new(),
             unk_token: String::from("[UNK]"),
             continuing_subword_prefix: String::from("##"),
             max_input_chars_per_word: 100,
@@ -157,27 +156,30 @@ impl WordPiece {
     }
 
     /// Read the given files to extract the vocab
-    pub fn read_file(vocab: &str) -> Result<Vocab> {
+    pub fn read_file(vocab: &str) -> Result<VocabStore> {
         let file = File::open(vocab)?;
         let file = BufReader::new(file);
 
-        let mut vocab = AHashMap::new();
+        let mut vocab_raw: Vec<(Vec<u8>, u32)> = vec![];
         for (index, line) in file.lines().enumerate() {
             let line = line?;
-            vocab.insert(line.trim_end().to_owned(), index as u32);
+            vocab_raw.push((line.trim_end().to_owned().into_bytes(), index as u32));
         }
+
+        let vocab = VocabStore::build(vocab_raw);
 
         Ok(vocab)
     }
 
-    pub fn read_bytes(vocab: &[u8]) -> Result<Vocab> {
+    pub fn read_bytes(vocab: &[u8]) -> Result<VocabStore> {
         let file = BufReader::new(vocab);
 
-        let mut vocab = AHashMap::new();
+        let mut vocab_raw: Vec<(Vec<u8>, u32)> = vec![];
         for (index, line) in file.lines().enumerate() {
             let line = line?;
-            vocab.insert(line.trim_end().to_owned(), index as u32);
+            vocab_raw.push((line.trim_end().to_owned().into_bytes(), index as u32));
         }
+        let vocab = VocabStore::build(vocab_raw);
 
         Ok(vocab)
     }
@@ -210,7 +212,7 @@ impl WordPiece {
 
 impl Model for WordPiece {
     fn get_vocab(&self) -> HashMap<String, u32> {
-        self.vocab.clone().into_iter().collect()
+        self.vocab.get_vocab().into_iter().collect()
     }
 
     fn get_vocab_size(&self) -> usize {
@@ -219,12 +221,13 @@ impl Model for WordPiece {
 
     fn tokenize(&self, sequence: &str) -> Result<Vec<Token>> {
         let char_len = sequence.chars().count();
+
         if char_len > self.max_input_chars_per_word {
             return Ok(vec![Token {
                 value: self.unk_token.clone(),
-                id: *self
+                id: self
                     .vocab
-                    .get(&self.unk_token)
+                    .token_to_id(&self.unk_token)
                     .ok_or(Error::MissingUnkToken)?,
                 offsets: (0, sequence.len()),
             }]);
@@ -244,9 +247,9 @@ impl Model for WordPiece {
                 if start > 0 {
                     substr = Cow::Owned(format!("{}{}", self.continuing_subword_prefix, substr));
                 }
-                if self.vocab.contains_key(substr.as_ref()) {
+                if let Some(token) = self.vocab.token_to_id(substr.as_ref()) {
                     cur_str = Some(Token {
-                        id: self.vocab[substr.as_ref()],
+                        id: token,
                         value: substr.to_string(),
                         offsets: (start, end),
                     });
@@ -267,9 +270,9 @@ impl Model for WordPiece {
         if is_bad {
             Ok(vec![Token {
                 value: self.unk_token.clone(),
-                id: *self
+                id: self
                     .vocab
-                    .get(&self.unk_token)
+                    .token_to_id(&self.unk_token)
                     .ok_or(Error::MissingUnkToken)?,
                 offsets: (0, sequence.len()),
             }])
@@ -279,17 +282,17 @@ impl Model for WordPiece {
     }
 
     fn token_to_id(&self, token: &str) -> Option<u32> {
-        self.vocab.get(token).copied()
+        self.vocab.token_to_id(token)
     }
 
     fn id_to_token(&self, id: u32) -> Option<String> {
-        self.vocab_r.get(&id).cloned()
+        self.vocab.id_to_token(id)
     }
 
     fn save(&self, folder: &Path, name: Option<&str>) -> Result<Vec<PathBuf>> {
         let vocab_file_name = match name {
             Some(name) => format!("{name}-vocab.txt"),
-            None => "vocab.txt".to_string(),
+            _ => "vocab.txt".to_string(),
         };
 
         // Write vocab.txt
@@ -297,8 +300,8 @@ impl Model for WordPiece {
             .iter()
             .collect();
         let mut vocab_file = File::create(&vocab_path)?;
-        let mut vocab: Vec<(&String, &u32)> = self.vocab.iter().collect();
-        vocab.sort_unstable_by_key(|k| *k.1);
+        let mut vocab: Vec<(String, u32)> = self.vocab.get_vocab().into_iter().collect();
+        vocab.sort_unstable_by_key(|(_, rank)| *rank);
         vocab_file.write_all(
             &vocab
                 .into_iter()
@@ -314,16 +317,21 @@ impl Model for WordPiece {
 mod tests {
     use super::*;
 
-    fn vocab(tokens: &[&str]) -> Vocab {
-        tokens
-            .iter()
-            .enumerate()
-            .map(|(id, token)| (token.to_string(), id as u32))
-            .collect()
+    fn make_vocab_store(tokens: &[&str]) -> VocabStore {
+        VocabStore::build(
+            tokens
+                .iter()
+                .enumerate()
+                .map(|(id, token)| (token.to_string().into_bytes(), id as u32))
+                .collect(),
+        )
     }
 
     fn model(tokens: &[&str]) -> WordPiece {
-        WordPiece::builder().vocab(vocab(tokens)).build().unwrap()
+        WordPiece::builder()
+            .vocab_store(make_vocab_store(tokens))
+            .build()
+            .unwrap()
     }
 
     fn tok(id: u32, value: &str, offsets: (usize, usize)) -> Token {
@@ -451,7 +459,7 @@ mod tests {
     #[test]
     fn word_longer_than_max_chars_is_unk_even_if_in_vocab() {
         let wp = WordPiece::builder()
-            .vocab(vocab(&["[UNK]", "abcde"]))
+            .vocab_store(make_vocab_store(&["[UNK]", "abcde"]))
             .max_input_chars_per_word(4)
             .build()
             .unwrap();
@@ -461,7 +469,7 @@ mod tests {
     #[test]
     fn word_at_max_chars_is_tokenized() {
         let wp = WordPiece::builder()
-            .vocab(vocab(&["[UNK]", "abcd"]))
+            .vocab_store(make_vocab_store(&["[UNK]", "abcd"]))
             .max_input_chars_per_word(4)
             .build()
             .unwrap();
@@ -471,7 +479,7 @@ mod tests {
     #[test]
     fn max_chars_counts_chars_not_bytes() {
         let wp = WordPiece::builder()
-            .vocab(vocab(&["[UNK]", "éééé"]))
+            .vocab_store(make_vocab_store(&["[UNK]", "éééé"]))
             .max_input_chars_per_word(4)
             .build()
             .unwrap();
@@ -488,7 +496,7 @@ mod tests {
     #[test]
     fn missing_unk_token_is_an_error_for_overlong_words() {
         let wp = WordPiece::builder()
-            .vocab(vocab(&["ab"]))
+            .vocab_store(make_vocab_store(&["ab"]))
             .max_input_chars_per_word(1)
             .build()
             .unwrap();
@@ -504,7 +512,7 @@ mod tests {
     #[test]
     fn custom_unk_token() {
         let wp = WordPiece::builder()
-            .vocab(vocab(&["<unk>", "a"]))
+            .vocab_store(make_vocab_store(&["<unk>", "a"]))
             .unk_token("<unk>".into())
             .build()
             .unwrap();
@@ -514,7 +522,7 @@ mod tests {
     #[test]
     fn custom_continuing_subword_prefix() {
         let wp = WordPiece::builder()
-            .vocab(vocab(&["[UNK]", "foo", "@@bar"]))
+            .vocab_store(make_vocab_store(&["[UNK]", "foo", "@@bar"]))
             .continuing_subword_prefix("@@".into())
             .build()
             .unwrap();
