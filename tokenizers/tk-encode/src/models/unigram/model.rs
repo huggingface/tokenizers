@@ -135,11 +135,7 @@ impl Unigram {
                 min_score = *score;
             }
         }
-        let token_to_ids = if pairs.is_empty() {
-            VocabStoreWrapper::new()
-        } else {
-            VocabStoreWrapper::build(pairs)
-        };
+        let token_to_ids = VocabStoreWrapper::build(pairs);
         let trie = builder.build();
         let fuse_unk = true;
         let is_optimized = true;
@@ -592,6 +588,30 @@ impl Unigram {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::convert::TryFrom;
+
+    #[test]
+    fn pipeline_model_uses_bucket_vocab_store() {
+        let pieces = vec![
+            ("<unk>".to_string(), 0.0),
+            ("a".to_string(), -0.5),
+            ("ab".to_string(), -0.3),
+        ];
+        let model = Unigram::from(pieces, Some(0), false).unwrap();
+        assert!(matches!(model.token_to_ids, VocabStoreWrapper::Legacy(_)));
+        let id = model.token_to_id("ab");
+
+        let converted =
+            match pipeline::PipelineModel::try_from(crate::ModelWrapper::Unigram(model)).unwrap() {
+                pipeline::PipelineModel::Unigram(m) => m,
+                _ => panic!("expected a Unigram pipeline model"),
+            };
+        assert!(matches!(
+            converted.token_to_ids,
+            VocabStoreWrapper::Bucket(_)
+        ));
+        assert_eq!(converted.token_to_id("ab"), id);
+    }
 
     #[test]
     fn test_populate_nodes_unk() {

@@ -7,32 +7,20 @@ use ahash::AHashMap;
 
 use crate::bucket_vocab_store::BucketVocabStore;
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum VocabStoreWrapper {
     Legacy(LegacyVocabStore),
     Bucket(BucketVocabStore),
 }
 
 impl VocabStoreWrapper {
-    pub fn new() -> Self {
-        Self::Legacy(LegacyVocabStore::new())
-    }
-
     pub fn build(tokens: Vec<(Vec<u8>, u32)>) -> Self {
         Self::Legacy(LegacyVocabStore::build(tokens))
     }
-}
 
-impl Default for VocabStoreWrapper {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl VocabStoreWrapper {
     pub fn into_bucket(self) -> Self {
         match self {
-            Self::Legacy(legacy) => Self::Bucket(legacy.into()),
+            Self::Legacy(legacy) => Self::Bucket(BucketVocabStore::build(legacy.get_vocab_bytes())),
             bucket => bucket,
         }
     }
@@ -43,9 +31,8 @@ pub trait VocabStore {
     fn is_empty(&self) -> bool;
     fn get_bytes(&self, q: &[u8]) -> Option<u32>;
     fn id_to_token_bytes(&self, id: u32) -> Option<&[u8]>;
-    fn content(&self) -> Vec<(String, u32)>;
     fn get_vocab(&self) -> Vec<(String, u32)>;
-    fn byte_content(&self) -> Vec<(Vec<u8>, u32)>;
+    fn get_vocab_bytes(&self) -> Vec<(Vec<u8>, u32)>;
 
     #[inline]
     fn token_to_id(&self, s: &str) -> Option<u32> {
@@ -77,9 +64,8 @@ impl VocabStore for VocabStoreWrapper {
         fn is_empty(&self) -> bool;
         fn get_bytes(&self, q: &[u8]) -> Option<u32>;
         fn id_to_token_bytes(&self, id: u32) -> Option<&[u8]>;
-        fn content(&self) -> Vec<(String, u32)>;
         fn get_vocab(&self) -> Vec<(String, u32)>;
-        fn byte_content(&self) -> Vec<(Vec<u8>, u32)>;
+        fn get_vocab_bytes(&self) -> Vec<(Vec<u8>, u32)>;
     }
 }
 
@@ -130,18 +116,14 @@ impl VocabStore for LegacyVocabStore {
         self.by_bytes.is_empty()
     }
 
-    fn content(&self) -> Vec<(String, u32)> {
+    fn get_vocab(&self) -> Vec<(String, u32)> {
         self.by_id
             .iter()
             .map(|(id, b)| (String::from_utf8_lossy(b).into_owned(), *id))
             .collect()
     }
 
-    fn get_vocab(&self) -> Vec<(String, u32)> {
-        self.content()
-    }
-
-    fn byte_content(&self) -> Vec<(Vec<u8>, u32)> {
+    fn get_vocab_bytes(&self) -> Vec<(Vec<u8>, u32)> {
         self.by_id.iter().map(|(id, b)| (b.clone(), *id)).collect()
     }
 }
@@ -185,6 +167,38 @@ mod tests {
     }
 
     #[test]
+    fn into_bucket_swaps_legacy_and_preserves_lookups() {
+        let wrapper = VocabStoreWrapper::build(vec![
+            (b"a".to_vec(), 0),
+            (b"bb".to_vec(), 5),
+            (b"ccc".to_vec(), 100),
+        ]);
+        assert!(matches!(wrapper, VocabStoreWrapper::Legacy(_)));
+
+        let bucket = wrapper.into_bucket();
+        assert!(matches!(bucket, VocabStoreWrapper::Bucket(_)));
+        assert_eq!(bucket.token_to_id("a"), Some(0));
+        assert_eq!(bucket.token_to_id("bb"), Some(5));
+        assert_eq!(bucket.id_to_token(100), Some("ccc".to_string()));
+        assert_eq!(bucket.token_to_id("zzz"), None);
+        assert_eq!(bucket.len(), 3);
+    }
+
+    #[test]
+    fn into_bucket_is_a_noop_on_bucket() {
+        let bucket = VocabStoreWrapper::build(vec![(b"a".to_vec(), 0)]).into_bucket();
+        assert_eq!(bucket.clone().into_bucket(), bucket);
+    }
+
+    #[test]
+    fn into_bucket_on_empty_store() {
+        let bucket = VocabStoreWrapper::build(Vec::new()).into_bucket();
+        assert!(matches!(bucket, VocabStoreWrapper::Bucket(_)));
+        assert!(bucket.is_empty());
+        assert_eq!(bucket.token_to_id("x"), None);
+    }
+
+    #[test]
     fn roundtrip_byte_content() {
         let toks: Vec<(Vec<u8>, u32)> = ["the", "\u{2581}hello", "\u{4eca}", "\n"]
             .iter()
@@ -192,7 +206,7 @@ mod tests {
             .map(|(i, s)| (s.as_bytes().to_vec(), i as u32))
             .collect();
         let vocab = LegacyVocabStore::build(toks.clone());
-        let mut got = vocab.byte_content();
+        let mut got = vocab.get_vocab_bytes();
         got.sort();
         let mut want = toks;
         want.sort();

@@ -1,4 +1,5 @@
 use crate::bucket_vocab_store::BucketVocabStore;
+use crate::vocab_store::VocabStore;
 
 #[derive(Clone, PartialEq, Debug, Default)]
 pub struct AddedTokenFlags {
@@ -431,11 +432,11 @@ impl Buckets {
     }
     /// All added-token byte strings + ids (e.g. to rebuild the vocab when adding tokens).
     pub fn get_vocab_bytes(&self) -> Vec<(Vec<u8>, u32)> {
-        self.vocab.byte_content()
+        self.vocab.get_vocab_bytes()
     }
     /// All added-token strings + ids.
     pub fn get_vocab(&self) -> Vec<(String, u32)> {
-        self.vocab.content()
+        self.vocab.get_vocab()
     }
     pub fn token_to_id(&self, token: &str) -> Option<u32> {
         self.vocab.token_to_id(token)

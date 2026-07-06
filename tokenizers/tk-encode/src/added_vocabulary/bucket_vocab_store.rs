@@ -5,7 +5,7 @@ use ptr_hash::bucket_fn::Linear;
 use ptr_hash::{PtrHash, PtrHashParams};
 use std::fmt;
 
-use crate::vocab_store::{LegacyVocabStore, VocabStore};
+use crate::vocab_store::VocabStore;
 
 type Mphf = PtrHash<u64, Linear>;
 
@@ -84,12 +84,6 @@ impl Default for BucketVocabStore {
     }
 }
 
-impl From<LegacyVocabStore> for BucketVocabStore {
-    fn from(value: LegacyVocabStore) -> Self {
-        Self::build(value.byte_content())
-    }
-}
-
 impl BucketVocabStore {
     pub fn build(tokens: Vec<(Vec<u8>, u32)>) -> Self {
         let n = tokens.len();
@@ -127,7 +121,7 @@ impl BucketVocabStore {
 
         // 4. Place each token at its MPHF slot; build the slab and the id->slot reverse table.
         let total: usize = tokens.iter().map(|(s, _)| s.len()).sum();
-        let max_id = tokens.iter().map(|(_, id)| *id).max().unwrap();
+        let max_id = tokens.iter().map(|(_, id)| *id).max();
         let mut bytes = Vec::with_capacity(total);
         let mut entries = vec![
             Entry {
@@ -137,7 +131,7 @@ impl BucketVocabStore {
             };
             n
         ];
-        let mut id_to_slot = vec![u32::MAX; max_id as usize + 1];
+        let mut id_to_slot = vec![u32::MAX; max_id.map_or(0, |m| m as usize + 1)];
         for (s, id) in &tokens {
             assert!(
                 s.len() <= u16::MAX as usize,
@@ -162,7 +156,6 @@ impl BucketVocabStore {
         }
     }
     pub fn new() -> Self {
-        // convenient to build empty edit later.
         let empty: [u64; 0] = [];
         Self {
             mphf: PtrHash::<u64, Linear>::new(&empty, PtrHashParams::default_fast()),
@@ -172,12 +165,15 @@ impl BucketVocabStore {
             id_to_slot: Box::new([]),
         }
     }
+}
+
+impl VocabStore for BucketVocabStore {
     /// This function is the equivalent of `get` on a HashaMap, it return the id
     /// corresponding to the key `q`. Since `mphf` always return a slot, we check
     /// whether the token indexed by that slot actually match the query. We don't
     /// care about collisions on query because of this!
     #[inline]
-    pub fn get_bytes(&self, q: &[u8]) -> Option<u32> {
+    fn get_bytes(&self, q: &[u8]) -> Option<u32> {
         if self.entries.is_empty() {
             return None;
         }
@@ -194,14 +190,9 @@ impl BucketVocabStore {
         }
     }
 
-    #[inline]
-    pub fn token_to_id(&self, s: &str) -> Option<u32> {
-        self.get_bytes(s.as_bytes())
-    }
-
     /// `id -> token bytes`, borrowing from the slab (no allocation).
     #[inline]
-    pub fn id_to_token_bytes(&self, id: u32) -> Option<&[u8]> {
+    fn id_to_token_bytes(&self, id: u32) -> Option<&[u8]> {
         let slot = *self.id_to_slot.get(id as usize)?;
         if slot == u32::MAX {
             return None; // id is within range but absent from the vocab
@@ -211,35 +202,21 @@ impl BucketVocabStore {
         self.bytes.get(start..start + e.len as usize)
     }
 
-    #[inline]
-    pub fn id_to_token(&self, id: u32) -> Option<String> {
-        // we are not sure its a valid utf8 so if not, adds replacement char
-        self.id_to_token_bytes(id)
-            .map(|b| String::from_utf8_lossy(b).into_owned())
-    }
-
-    pub fn len(&self) -> usize {
+    fn len(&self) -> usize {
         self.entries.len()
     }
 
-    pub fn is_empty(&self) -> bool {
+    fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
-
-    pub fn content(&self) -> Vec<(String, u32)> {
+    fn get_vocab(&self) -> Vec<(String, u32)> {
         self.entries
             .iter()
             .filter_map(|m| self.id_to_token(m.id).map(|token| (token, m.id)))
             .collect()
     }
 
-    /// Alias for `content` — kept so `Model::get_vocab` call sites resolve.
-    pub fn get_vocab(&self) -> Vec<(String, u32)> {
-        self.content()
-    }
-
-    /// convenient when we want to re-build a vocab
-    pub fn byte_content(&self) -> Vec<(Vec<u8>, u32)> {
+    fn get_vocab_bytes(&self) -> Vec<(Vec<u8>, u32)> {
         self.entries
             .iter()
             .filter_map(|m| {
@@ -312,7 +289,7 @@ mod tests {
         assert_eq!(vocab.token_to_id("anything"), None);
         assert_eq!(vocab.get_bytes(b""), None);
         assert_eq!(vocab.id_to_token(0), None);
-        assert!(vocab.content().is_empty());
+        assert!(vocab.get_vocab().is_empty());
     }
 
     #[test]
@@ -333,8 +310,8 @@ mod tests {
         let mut got = vocab.get_vocab();
         got.sort();
         assert_eq!(got, vec![("hi".to_string(), 0), ("yo".to_string(), 1)]);
-        assert_eq!(vocab.content(), vocab.get_vocab());
-        let mut bytes = vocab.byte_content();
+        assert_eq!(vocab.get_vocab(), vocab.get_vocab());
+        let mut bytes = vocab.get_vocab_bytes();
         bytes.sort();
         assert_eq!(bytes, vec![(b"hi".to_vec(), 0), (b"yo".to_vec(), 1)]);
     }

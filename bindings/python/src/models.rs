@@ -15,6 +15,7 @@ use tk::models::wordlevel::WordLevel;
 use tk::models::wordpiece::{WordPiece, WordPieceBuilder};
 use tk::models::ModelWrapper;
 use tk::tokenizer::PreTokenizedString;
+use tk::vocab_store::VocabStore;
 use tk::{Model, Token, Trainable};
 use tokenizers as tk;
 

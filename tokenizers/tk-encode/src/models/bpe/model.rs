@@ -271,16 +271,12 @@ impl BpeBuilder {
 
         // merges.insert(pair, (rank as u32, *new_id));
 
-        let vocab = if vocab.is_empty() {
-            VocabStoreWrapper::new()
-        } else {
-            VocabStoreWrapper::build(
-                vocab
-                    .into_iter()
-                    .map(|(k, v)| (k.into_bytes(), v))
-                    .collect(),
-            )
-        };
+        let vocab = VocabStoreWrapper::build(
+            vocab
+                .into_iter()
+                .map(|(k, v)| (k.into_bytes(), v))
+                .collect(),
+        );
 
         Ok(BPE {
             vocab,

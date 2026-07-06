@@ -41,7 +41,7 @@ impl Default for WordPieceBuilder {
         Self {
             config: Config {
                 files: None,
-                vocab: VocabStoreWrapper::new(),
+                vocab: VocabStoreWrapper::build(Vec::new()),
                 unk_token: String::from("[UNK]"),
                 continuing_subword_prefix: String::from("##"),
                 max_input_chars_per_word: 100,
@@ -142,7 +142,7 @@ impl std::fmt::Debug for WordPiece {
 impl Default for WordPiece {
     fn default() -> Self {
         Self {
-            vocab: VocabStoreWrapper::new(),
+            vocab: VocabStoreWrapper::build(Vec::new()),
             unk_token: String::from("[UNK]"),
             continuing_subword_prefix: String::from("##"),
             max_input_chars_per_word: 100,
@@ -391,6 +391,26 @@ impl pipeline::Model for WordPiece {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::convert::TryFrom;
+
+    #[test]
+    fn pipeline_model_uses_bucket_vocab_store() {
+        let model = WordPiece::builder()
+            .vocab_store(make_vocab_store(&["[UNK]", "a", "##b"]))
+            .build()
+            .unwrap();
+        assert!(matches!(model.vocab, VocabStoreWrapper::Legacy(_)));
+        let id = model.token_to_id("##b");
+
+        let converted =
+            match pipeline::PipelineModel::try_from(crate::ModelWrapper::WordPiece(model)).unwrap()
+            {
+                pipeline::PipelineModel::WordPiece(m) => m,
+                _ => panic!("expected a WordPiece pipeline model"),
+            };
+        assert!(matches!(converted.vocab, VocabStoreWrapper::Bucket(_)));
+        assert_eq!(converted.token_to_id("##b"), id);
+    }
 
     fn make_vocab_store(tokens: &[&str]) -> VocabStoreWrapper {
         VocabStoreWrapper::build(
