@@ -2,7 +2,7 @@
 //! model.
 
 use crate::models::bpe::BPE;
-use crate::pipeline;
+use crate::pipeline::{self, PipelineToken};
 use crate::tokenizer::{Model, Result, Token};
 use crate::vocab_store::VocabStore;
 use ahash::AHashMap;
@@ -314,9 +314,66 @@ impl Model for WordPiece {
     }
 }
 
-
 impl pipeline::Model for WordPiece {
-    fn tokenize_bytes(&self, bytes: &[u8], output: &mut Vec<pipeline::PipelineToken>) -> Result<()> {
+    fn tokenize_bytes(
+        &self,
+        bytes: &[u8],
+        output: &mut Vec<pipeline::PipelineToken>,
+    ) -> Result<()> {
+        let mut scratch: Vec<u8> = Vec::with_capacity(self.max_input_chars_per_word);
+        let sequence = str::from_utf8(bytes)?;
+        let char_len = sequence.chars().count();
+
+        if char_len > self.max_input_chars_per_word {
+            let unk_id = self
+                .vocab
+                .token_to_id(&self.unk_token)
+                .ok_or(Error::MissingUnkToken)?;
+            output.push(PipelineToken { id: unk_id });
+        }
+
+        let mut is_bad = false;
+        let mut start = 0;
+
+        while start < sequence.len() {
+            let mut end = sequence.len();
+            let mut candidate_token: Option<u32> = None;
+
+            while start < end {
+                scratch.clear();
+                if start > 0 {
+                    scratch.extend(self.continuing_subword_prefix.as_bytes());
+                }
+                scratch.extend(&bytes[start..end]);
+
+                if let Some(id) = self.vocab.get_bytes(&scratch) {
+                    candidate_token = Some(id);
+                    break;
+                }
+                // Step one char back
+                end -= str::from_utf8(&scratch)?
+                    .chars()
+                    .last()
+                    .map_or(1, |c| c.len_utf8());
+            }
+
+            if let Some(id) = candidate_token {
+                output.push(PipelineToken { id });
+            } else {
+                is_bad = true;
+                break;
+            }
+            start = end;
+        }
+
+        if is_bad {
+            let unk_id = self
+                .vocab
+                .token_to_id(&self.unk_token)
+                .ok_or(Error::MissingUnkToken)?;
+            output.push(PipelineToken { id: unk_id });
+        }
+
         Ok(())
     }
 }
