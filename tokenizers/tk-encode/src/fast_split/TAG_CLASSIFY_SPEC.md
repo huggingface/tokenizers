@@ -140,7 +140,26 @@ Bert          [  O,   O,   O,  WS,  WS,  WS,   O,   P,   P,   P,   O,   O ]   //
 - `FixedLength` — positional char count; rides the `char_start` bitplane only.
 - Metaspace / cl100k-apostrophe — literal-byte matches; FSM peeks original bytes (§4).
 
-## 7. Speed contract
+## 7. Portability (SIMD and non-SIMD share one table set)
+
+Every table (`LETTER2/3`, `NUMBER2/3`, and the new `MARK2/3`/`PUNCT2/3`/`SYM2/3`/`CONNECTOR` +
+3-byte range tables) is arch-independent **data**, baked `const` by `bitmap_gen` (dev-only generator).
+Each lane has two readers producing the *identical* tag:
+
+| lane | SIMD reader (aarch64) | scalar reader (portable) |
+|---|---|---|
+| ASCII | nibble-shuffle | `LUT128[byte]` |
+| 2/3-byte bitmap | `vqtbl` gather | `(TABLE[idx] >> bit) & 1` — **this is `FastLetter/FastNumber::step`** |
+| CJK / range | branchless `Σ(cp ≥ tᵢ)` | plain range loop / binary search |
+
+So `classify_cats` = `#[cfg(aarch64)] classify_neon` else `classify_scalar`, both emitting the same
+`tag[]` (one byte-exact gate covers both). The **matchers already built are the scalar 2/3-byte
+reader**, reused as-is. Downstream is already portable: `remap` is a table index; the FSMs are scalar
+even on NEON (the shipped split *is* scalar). The only aarch64-only piece is the SIMD boundary-extract
+optimisation for `Split`/`ClassRuns`; its scalar fallback is a run-scan (the measured winner for short
+runs regardless).
+
+## 8. Speed contract
 
 - **classify** is the one hot pass; keep the ASCII/2-byte/CJK fast lanes, SIMD range for the rest.
   No scalar slow path (range kernel is branchless SIMD).
