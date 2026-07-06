@@ -7,7 +7,7 @@ use crate::added_vocabulary::bucket_added_vocabulary::{
 use crate::{
     pre_tokenizers::{
         bert::BertPreTokenizer, delimiter::CharDelimiterSplit, digits::Digits,
-        fixed_length::FixedLength, whitespace::Whitespace,
+        fixed_length::FixedLength, unicode_scripts::UnicodeScripts, whitespace::Whitespace,
     },
     Model, ModelWrapper, NormalizedString, Normalizer, NormalizerWrapper, PostProcessorWrapper,
     PreTokenizerWrapper, Token, Tokenizer,
@@ -42,6 +42,7 @@ pub enum PipelinePreTokenizer {
     Delimiter(CharDelimiterSplit),
     Digits(Digits),
     FixedLength(FixedLength),
+    UnicodeScripts(UnicodeScripts),
     Whitespace(Whitespace),
     None,
 }
@@ -54,6 +55,7 @@ impl PreTokenizer for PipelinePreTokenizer {
             Self::Delimiter(pretok) => pretok.pre_tokenize(text, out),
             Self::Digits(pretok) => pretok.pre_tokenize(text, out),
             Self::FixedLength(pretok) => pretok.pre_tokenize(text, out),
+            Self::UnicodeScripts(pretok) => pretok.pre_tokenize(text, out),
             Self::Whitespace(pretok) => pretok.pre_tokenize(text, out),
         }
     }
@@ -203,6 +205,7 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
             Some(PreTokenizerWrapper::Delimiter(p)) => PipelinePreTokenizer::Delimiter(*p),
             Some(PreTokenizerWrapper::Digits(p)) => PipelinePreTokenizer::Digits(p.clone()),
             Some(PreTokenizerWrapper::FixedLength(p)) => PipelinePreTokenizer::FixedLength(*p),
+            Some(PreTokenizerWrapper::UnicodeScripts(p)) => PipelinePreTokenizer::UnicodeScripts(*p),
             Some(PreTokenizerWrapper::Whitespace(p)) => PipelinePreTokenizer::Whitespace(p.clone()),
             Some(other) => {
                 return Err(format!(
