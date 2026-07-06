@@ -4,12 +4,12 @@ use super::{
 };
 use crate::vocab_store::VocabStoreWrapper;
 use crate::{
-    utils::cache::{Cache, MAX_LENGTH},
-    vocab_store::VocabStore,
-};
-use crate::{
     pipeline::{self, PipelineToken},
     tokenizer::{Model, Result, Token},
+};
+use crate::{
+    utils::cache::{Cache, MAX_LENGTH},
+    vocab_store::VocabStore,
 };
 use std::collections::HashMap;
 
