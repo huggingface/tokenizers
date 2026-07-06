@@ -2,7 +2,7 @@ use super::{super::OrderedVocabIter, Error, Pair, Word};
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::cache::{DEFAULT_CACHE_CAPACITY, MAX_LENGTH};
 use crate::utils::iter::ResultShunt;
-use crate::vocab::bucket_vocab_store::BucketVocabStore as VocabStore;
+use crate::vocab_store::VocabStore;
 use ahash::AHashMap;
 use serde_json::Value;
 use std::borrow::Cow;

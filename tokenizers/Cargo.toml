@@ -1,5 +1,6 @@
 [workspace]
-members = ["tk-encode", "tk-train"]
+resolver = "3"
+members = ["bitmap_gen", "fast_split", "tk-encode", "tk-train"]
 
 [package]
 authors = [
