@@ -1,7 +1,7 @@
 use std::convert::TryFrom;
 use std::ops::Range;
 
-use crate::added_vocabulary::bucket_added_vocabulary::{
+use crate::vocab::bucket_added_vocabulary::{
     AddedToken as BucketAddedToken, AddedVocabulary as BucketAddedVocabulary,
 };
 use crate::{

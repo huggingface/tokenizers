@@ -1,4 +1,4 @@
-use crate::bucket_vocab_store::BucketVocabStore;
+use super::bucket_vocab_store::BucketVocabStore;
 
 #[derive(Clone, PartialEq, Debug, Default)]
 pub struct AddedTokenFlags {

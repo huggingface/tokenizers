@@ -101,8 +101,6 @@ pub mod vocab;
 
 // Re-export from tokenizer
 pub use tokenizer::*;
-// Re-export the added-vocabulary subsystem (AddedToken/AddedVocabulary + vocab_store/buckets modules) at the crate root
-pub use vocab::added_vocabulary::*;
 
 // Re-export also parallelism utils
 pub use utils::parallelism;
