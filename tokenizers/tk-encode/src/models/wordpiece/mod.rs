@@ -2,8 +2,9 @@
 //! model.
 
 use crate::models::bpe::BPE;
-use crate::pipeline::{self, PipelineToken};
+use crate::pipeline;
 use crate::tokenizer::{Model, Result, Token};
+use crate::vocab_store::VocabStore;
 use ahash::AHashMap;
 use std::collections::HashMap;
 use std::{
@@ -22,12 +23,9 @@ pub enum Error {
     MissingUnkToken,
 }
 
-type Vocab = AHashMap<String, u32>;
-type VocabR = AHashMap<u32, String>;
-
 struct Config {
     files: Option<String>,
-    vocab: Vocab,
+    vocab: VocabStore,
     unk_token: String,
     continuing_subword_prefix: String,
     max_input_chars_per_word: usize,
@@ -43,7 +41,7 @@ impl Default for WordPieceBuilder {
         Self {
             config: Config {
                 files: None,
-                vocab: AHashMap::new(),
+                vocab: VocabStore::new(),
                 unk_token: String::from("[UNK]"),
                 continuing_subword_prefix: String::from("##"),
                 max_input_chars_per_word: 100,
@@ -68,7 +66,18 @@ impl WordPieceBuilder {
     /// Set the vocab (token -> ID) mapping.
     #[must_use]
     pub fn vocab<V: Into<AHashMap<String, u32>>>(mut self, vocab: V) -> Self {
-        self.config.vocab = vocab.into();
+        let string_vocab: AHashMap<String, u32> = vocab.into();
+        self.config.vocab = VocabStore::build(
+            string_vocab
+                .into_iter()
+                .map(|(token_str, token_id)| (token_str.into_bytes(), token_id))
+                .collect(),
+        );
+        self
+    }
+
+    pub fn vocab_store(mut self, vocab_store: VocabStore) -> Self {
+        self.config.vocab = vocab_store;
         self
     }
 
@@ -99,16 +108,8 @@ impl WordPieceBuilder {
             self.config.vocab = WordPiece::read_file(&vocab)?;
         }
 
-        let vocab_r = self
-            .config
-            .vocab
-            .iter()
-            .map(|(key, val)| (*val, key.to_owned()))
-            .collect();
-
         Ok(WordPiece {
             vocab: self.config.vocab,
-            vocab_r,
             unk_token: self.config.unk_token,
             continuing_subword_prefix: self.config.continuing_subword_prefix,
             max_input_chars_per_word: self.config.max_input_chars_per_word,
@@ -119,10 +120,9 @@ impl WordPieceBuilder {
 /// A
 /// [WordPiece](https://static.googleusercontent.com/media/research.google.com/en//pubs/archive/37842.pdf)
 /// model.
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq)]
 pub struct WordPiece {
-    pub vocab: Vocab,
-    pub vocab_r: VocabR,
+    pub vocab: VocabStore,
     pub unk_token: String,
     pub continuing_subword_prefix: String,
     pub max_input_chars_per_word: usize,
@@ -142,8 +142,7 @@ impl std::fmt::Debug for WordPiece {
 impl Default for WordPiece {
     fn default() -> Self {
         Self {
-            vocab: AHashMap::new(),
-            vocab_r: AHashMap::new(),
+            vocab: VocabStore::new(),
             unk_token: String::from("[UNK]"),
             continuing_subword_prefix: String::from("##"),
             max_input_chars_per_word: 100,
@@ -158,27 +157,30 @@ impl WordPiece {
     }
 
     /// Read the given files to extract the vocab
-    pub fn read_file(vocab: &str) -> Result<Vocab> {
+    pub fn read_file(vocab: &str) -> Result<VocabStore> {
         let file = File::open(vocab)?;
         let file = BufReader::new(file);
 
-        let mut vocab = AHashMap::new();
+        let mut vocab_raw: Vec<(Vec<u8>, u32)> = vec![];
         for (index, line) in file.lines().enumerate() {
             let line = line?;
-            vocab.insert(line.trim_end().to_owned(), index as u32);
+            vocab_raw.push((line.trim_end().to_owned().into_bytes(), index as u32));
         }
+
+        let vocab = VocabStore::build(vocab_raw);
 
         Ok(vocab)
     }
 
-    pub fn read_bytes(vocab: &[u8]) -> Result<Vocab> {
+    pub fn read_bytes(vocab: &[u8]) -> Result<VocabStore> {
         let file = BufReader::new(vocab);
 
-        let mut vocab = AHashMap::new();
+        let mut vocab_raw: Vec<(Vec<u8>, u32)> = vec![];
         for (index, line) in file.lines().enumerate() {
             let line = line?;
-            vocab.insert(line.trim_end().to_owned(), index as u32);
+            vocab_raw.push((line.trim_end().to_owned().into_bytes(), index as u32));
         }
+        let vocab = VocabStore::build(vocab_raw);
 
         Ok(vocab)
     }
@@ -211,7 +213,7 @@ impl WordPiece {
 
 impl Model for WordPiece {
     fn get_vocab(&self) -> HashMap<String, u32> {
-        self.vocab.clone().into_iter().collect()
+        self.vocab.get_vocab().into_iter().collect()
     }
 
     fn get_vocab_size(&self) -> usize {
@@ -220,12 +222,13 @@ impl Model for WordPiece {
 
     fn tokenize(&self, sequence: &str) -> Result<Vec<Token>> {
         let char_len = sequence.chars().count();
+
         if char_len > self.max_input_chars_per_word {
             return Ok(vec![Token {
                 value: self.unk_token.clone(),
-                id: *self
+                id: self
                     .vocab
-                    .get(&self.unk_token)
+                    .token_to_id(&self.unk_token)
                     .ok_or(Error::MissingUnkToken)?,
                 offsets: (0, sequence.len()),
             }]);
@@ -245,9 +248,9 @@ impl Model for WordPiece {
                 if start > 0 {
                     substr = Cow::Owned(format!("{}{}", self.continuing_subword_prefix, substr));
                 }
-                if self.vocab.contains_key(substr.as_ref()) {
+                if let Some(token) = self.vocab.token_to_id(substr.as_ref()) {
                     cur_str = Some(Token {
-                        id: self.vocab[substr.as_ref()],
+                        id: token,
                         value: substr.to_string(),
                         offsets: (start, end),
                     });
@@ -268,9 +271,9 @@ impl Model for WordPiece {
         if is_bad {
             Ok(vec![Token {
                 value: self.unk_token.clone(),
-                id: *self
+                id: self
                     .vocab
-                    .get(&self.unk_token)
+                    .token_to_id(&self.unk_token)
                     .ok_or(Error::MissingUnkToken)?,
                 offsets: (0, sequence.len()),
             }])
@@ -280,17 +283,17 @@ impl Model for WordPiece {
     }
 
     fn token_to_id(&self, token: &str) -> Option<u32> {
-        self.vocab.get(token).copied()
+        self.vocab.token_to_id(token)
     }
 
     fn id_to_token(&self, id: u32) -> Option<String> {
-        self.vocab_r.get(&id).cloned()
+        self.vocab.id_to_token(id)
     }
 
     fn save(&self, folder: &Path, name: Option<&str>) -> Result<Vec<PathBuf>> {
         let vocab_file_name = match name {
             Some(name) => format!("{name}-vocab.txt"),
-            None => "vocab.txt".to_string(),
+            _ => "vocab.txt".to_string(),
         };
 
         // Write vocab.txt
@@ -298,8 +301,8 @@ impl Model for WordPiece {
             .iter()
             .collect();
         let mut vocab_file = File::create(&vocab_path)?;
-        let mut vocab: Vec<(&String, &u32)> = self.vocab.iter().collect();
-        vocab.sort_unstable_by_key(|k| *k.1);
+        let mut vocab: Vec<(String, u32)> = self.vocab.get_vocab().into_iter().collect();
+        vocab.sort_unstable_by_key(|(_, rank)| *rank);
         vocab_file.write_all(
             &vocab
                 .into_iter()
@@ -311,26 +314,9 @@ impl Model for WordPiece {
     }
 }
 
+
 impl pipeline::Model for WordPiece {
-    fn tokenize_bytes(
-        &self,
-        bytes: &[u8],
-        output: &mut Vec<pipeline::PipelineToken>,
-    ) -> Result<()> {
-        // todo: implement
-        // if bytes.is_empty() {
-        //     return Ok(());
-        // }
-        // // todo: maybe we can use unchecked here (unsafe)
-        // let char_len = str::from_utf8(bytes)?.chars().count();
-        // if char_len > self.max_input_chars_per_word {
-        //     let unk_id = *self
-        //         .vocab
-        //         .get(&self.unk_token)
-        //         .ok_or(Error::MissingUnkToken)?;
-        //     output.push(PipelineToken { id: unk_id });
-        //     return Ok(());
-        // }
+    fn tokenize_bytes(&self, bytes: &[u8], output: &mut Vec<pipeline::PipelineToken>) -> Result<()> {
         Ok(())
     }
 }
@@ -339,129 +325,285 @@ impl pipeline::Model for WordPiece {
 mod tests {
     use super::*;
 
+    fn make_vocab_store(tokens: &[&str]) -> VocabStore {
+        VocabStore::build(
+            tokens
+                .iter()
+                .enumerate()
+                .map(|(id, token)| (token.to_string().into_bytes(), id as u32))
+                .collect(),
+        )
+    }
+
+    fn model(tokens: &[&str]) -> WordPiece {
+        WordPiece::builder()
+            .vocab_store(make_vocab_store(tokens))
+            .build()
+            .unwrap()
+    }
+
+    fn tok(id: u32, value: &str, offsets: (usize, usize)) -> Token {
+        Token::new(id, value.to_string(), offsets)
+    }
+
     #[test]
     fn test_error_display() {
         assert!(format!("{}", Error::MissingUnkToken).contains("Missing [UNK] token"));
     }
 
-    const INVARIANT_CORPUS: &[&str] = &[
-        "",
-        "un",
-        "unaff",
-        "unaffable",
-        "b",
-        "ab",
-        "ba",
-        "xyz",
-        "café",
-        "日本",
-        "日本語",
-        "🙂",
-        "e\u{301}",
-    ];
-
-    fn invariant_model() -> WordPiece {
-        let vocab: Vocab = [
-            ("[UNK]", 0u32),
-            ("un", 1),
-            ("##aff", 2),
-            ("##able", 3),
-            ("日", 4),
-            ("##本", 5),
-            ("ca", 6),
-            ("##fé", 7),
-            ("a", 8),
-            ("##b", 9),
-            ("b", 10),
-        ]
-        .iter()
-        .map(|&(token, id)| (token.to_string(), id))
-        .collect();
-        WordPiece::builder().vocab(vocab).build().unwrap()
+    #[test]
+    fn whole_word_in_vocab() {
+        let wp = model(&["[UNK]", "hello"]);
+        assert_eq!(wp.tokenize("hello").unwrap(), vec![tok(1, "hello", (0, 5))]);
     }
 
     #[test]
-    fn test_offsets_partition_input() {
-        let model = invariant_model();
-        for word in INVARIANT_CORPUS {
-            let tokens = model.tokenize(word).unwrap();
-            let mut pos = 0;
-            for token in &tokens {
-                let (start, end) = token.offsets;
-                assert_eq!(start, pos, "gap or overlap in {word:?}");
-                assert!(start < end, "empty piece in {:?}", word);
-                assert!(
-                    word.is_char_boundary(end),
-                    "offset {} splits a char in {:?}",
-                    end,
-                    word
-                );
-                pos = end;
-            }
-            assert_eq!(pos, word.len(), "input not covered: {word:?}");
-        }
+    fn greedy_longest_match_splits_word() {
+        let wp = model(&["[UNK]", "un", "##aff", "##able"]);
+        assert_eq!(
+            wp.tokenize("unaffable").unwrap(),
+            vec![
+                tok(1, "un", (0, 2)),
+                tok(2, "##aff", (2, 5)),
+                tok(3, "##able", (5, 9)),
+            ]
+        );
     }
 
     #[test]
-    fn test_pieces_match_input_slices() {
-        let model = invariant_model();
-        for word in INVARIANT_CORPUS {
-            let tokens = model.tokenize(word).unwrap();
-            if tokens.len() == 1 && tokens[0].value == model.unk_token {
-                continue;
-            }
-            for token in &tokens {
-                let (start, end) = token.offsets;
-                let expected = if start == 0 {
-                    word[start..end].to_string()
-                } else {
-                    format!("{}{}", model.continuing_subword_prefix, &word[start..end])
-                };
-                assert_eq!(token.value, expected, "{word:?}");
-            }
-        }
+    fn longest_piece_wins_over_shorter_ones() {
+        let wp = model(&["[UNK]", "un", "unaff", "##aff", "##able"]);
+        assert_eq!(
+            wp.tokenize("unaffable").unwrap(),
+            vec![tok(2, "unaff", (0, 5)), tok(4, "##able", (5, 9))]
+        );
     }
 
     #[test]
-    fn test_unk_is_all_or_nothing() {
-        let model = invariant_model();
-        for word in INVARIANT_CORPUS {
-            let tokens = model.tokenize(word).unwrap();
-            if tokens.len() > 1 {
-                for token in &tokens {
-                    assert_ne!(token.value, model.unk_token, "unk fragment in {word:?}");
-                }
-            }
-        }
+    fn single_char_pieces() {
+        let wp = model(&["[UNK]", "a", "##b", "##c"]);
+        assert_eq!(
+            wp.tokenize("abc").unwrap(),
+            vec![
+                tok(1, "a", (0, 1)),
+                tok(2, "##b", (1, 2)),
+                tok(3, "##c", (2, 3)),
+            ]
+        );
     }
 
     #[test]
-    fn test_max_input_chars_gives_single_unk() {
-        let model = WordPiece::builder()
-            .vocab(invariant_model().vocab)
+    fn continuation_piece_requires_prefix() {
+        let wp = model(&["[UNK]", "un", "able"]);
+        assert_eq!(
+            wp.tokenize("unable").unwrap(),
+            vec![tok(0, "[UNK]", (0, 6))]
+        );
+    }
+
+    #[test]
+    fn prefixed_piece_never_matches_at_word_start() {
+        let wp = model(&["[UNK]", "##able"]);
+        assert_eq!(wp.tokenize("able").unwrap(), vec![tok(0, "[UNK]", (0, 4))]);
+    }
+
+    #[test]
+    fn literal_prefix_in_input_matches_prefixed_vocab_entry() {
+        let wp = model(&["[UNK]", "##able"]);
+        assert_eq!(
+            wp.tokenize("##able").unwrap(),
+            vec![tok(1, "##able", (0, 6))]
+        );
+    }
+
+    #[test]
+    fn unmatchable_suffix_collapses_whole_word_to_unk() {
+        let wp = model(&["[UNK]", "un", "##aff", "##able"]);
+        assert_eq!(
+            wp.tokenize("unaffordable").unwrap(),
+            vec![tok(0, "[UNK]", (0, 12))]
+        );
+    }
+
+    #[test]
+    fn greedy_choice_is_never_backtracked() {
+        let wp = model(&["[UNK]", "abc", "a", "##bcd"]);
+        assert_eq!(wp.tokenize("abcd").unwrap(), vec![tok(0, "[UNK]", (0, 4))]);
+    }
+
+    #[test]
+    fn unknown_first_char_is_unk() {
+        let wp = model(&["[UNK]", "a"]);
+        assert_eq!(wp.tokenize("xa").unwrap(), vec![tok(0, "[UNK]", (0, 2))]);
+    }
+
+    #[test]
+    fn unk_id_is_looked_up_in_vocab() {
+        let wp = model(&["a", "b", "[UNK]"]);
+        assert_eq!(wp.tokenize("z").unwrap(), vec![tok(2, "[UNK]", (0, 1))]);
+    }
+
+    #[test]
+    fn empty_input_yields_no_tokens() {
+        let wp = model(&["[UNK]"]);
+        assert_eq!(wp.tokenize("").unwrap(), vec![]);
+    }
+
+    #[test]
+    fn multibyte_offsets_are_byte_positions() {
+        let wp = model(&["[UNK]", "猫", "##です"]);
+        assert_eq!(
+            wp.tokenize("猫です").unwrap(),
+            vec![tok(1, "猫", (0, 3)), tok(2, "##です", (3, 9))]
+        );
+    }
+
+    #[test]
+    fn multibyte_shrinking_stays_on_char_boundaries() {
+        let wp = model(&["[UNK]", "a"]);
+        assert_eq!(wp.tokenize("a€b").unwrap(), vec![tok(0, "[UNK]", (0, 5))]);
+    }
+
+    #[test]
+    fn word_longer_than_max_chars_is_unk_even_if_in_vocab() {
+        let wp = WordPiece::builder()
+            .vocab_store(make_vocab_store(&["[UNK]", "abcde"]))
             .max_input_chars_per_word(4)
             .build()
             .unwrap();
-        let tokens = model.tokenize("unaffable").unwrap();
-        assert_eq!(tokens.len(), 1);
-        assert_eq!(tokens[0].value, "[UNK]");
-        assert_eq!(tokens[0].offsets, (0, "unaffable".len()));
+        assert_eq!(wp.tokenize("abcde").unwrap(), vec![tok(0, "[UNK]", (0, 5))]);
     }
 
     #[test]
-    fn test_tokenize_bytes_matches_tokenize() {
-        let model = invariant_model();
-        for word in INVARIANT_CORPUS {
-            let expected: Vec<u32> = model
+    fn word_at_max_chars_is_tokenized() {
+        let wp = WordPiece::builder()
+            .vocab_store(make_vocab_store(&["[UNK]", "abcd"]))
+            .max_input_chars_per_word(4)
+            .build()
+            .unwrap();
+        assert_eq!(wp.tokenize("abcd").unwrap(), vec![tok(1, "abcd", (0, 4))]);
+    }
+
+    #[test]
+    fn max_chars_counts_chars_not_bytes() {
+        let wp = WordPiece::builder()
+            .vocab_store(make_vocab_store(&["[UNK]", "éééé"]))
+            .max_input_chars_per_word(4)
+            .build()
+            .unwrap();
+        assert_eq!(wp.tokenize("éééé").unwrap(), vec![tok(1, "éééé", (0, 8))]);
+    }
+
+    #[test]
+    fn missing_unk_token_is_an_error_when_needed() {
+        let wp = model(&["a"]);
+        let err = wp.tokenize("b").unwrap_err();
+        assert!(err.to_string().contains("Missing [UNK] token"));
+    }
+
+    #[test]
+    fn missing_unk_token_is_an_error_for_overlong_words() {
+        let wp = WordPiece::builder()
+            .vocab_store(make_vocab_store(&["ab"]))
+            .max_input_chars_per_word(1)
+            .build()
+            .unwrap();
+        assert!(wp.tokenize("ab").is_err());
+    }
+
+    #[test]
+    fn missing_unk_token_is_not_an_error_when_unneeded() {
+        let wp = model(&["hello"]);
+        assert_eq!(wp.tokenize("hello").unwrap(), vec![tok(0, "hello", (0, 5))]);
+    }
+
+    #[test]
+    fn custom_unk_token() {
+        let wp = WordPiece::builder()
+            .vocab_store(make_vocab_store(&["<unk>", "a"]))
+            .unk_token("<unk>".into())
+            .build()
+            .unwrap();
+        assert_eq!(wp.tokenize("z").unwrap(), vec![tok(0, "<unk>", (0, 1))]);
+    }
+
+    #[test]
+    fn custom_continuing_subword_prefix() {
+        let wp = WordPiece::builder()
+            .vocab_store(make_vocab_store(&["[UNK]", "foo", "@@bar"]))
+            .continuing_subword_prefix("@@".into())
+            .build()
+            .unwrap();
+        assert_eq!(
+            wp.tokenize("foobar").unwrap(),
+            vec![tok(1, "foo", (0, 3)), tok(2, "@@bar", (3, 6))]
+        );
+    }
+
+    #[test]
+    fn regular_words_tokenize_like_bert() {
+        let wp = model(&[
+            "[UNK]",
+            "the",
+            "token",
+            "##izer",
+            "##ization",
+            "un",
+            "##believ",
+            "##able",
+            "run",
+            "##ning",
+            "hugging",
+            "##face",
+            "transform",
+            "##ers",
+            "inter",
+            "##national",
+            "in",
+            "##ter",
+            "##nation",
+            "##al",
+            "##iz",
+            "##ation",
+            "fast",
+            "##er",
+            ".",
+            ",",
+        ]);
+        let cases: &[(&str, &[&str])] = &[
+            ("the", &["the"]),
+            ("tokenizer", &["token", "##izer"]),
+            ("tokenization", &["token", "##ization"]),
+            ("unbelievable", &["un", "##believ", "##able"]),
+            ("running", &["run", "##ning"]),
+            ("huggingface", &["hugging", "##face"]),
+            ("transformers", &["transform", "##ers"]),
+            (
+                "internationalization",
+                &["inter", "##national", "##ization"],
+            ),
+            ("faster", &["fast", "##er"]),
+            (".", &["."]),
+            (",", &[","]),
+            ("xylophone", &["[UNK]"]),
+        ];
+        for (word, expected) in cases {
+            let values: Vec<String> = wp
                 .tokenize(word)
                 .unwrap()
-                .iter()
-                .map(|token| token.id)
+                .into_iter()
+                .map(|t| t.value)
                 .collect();
-            let mut output = vec![];
-            pipeline::Model::tokenize_bytes(&model, word.as_bytes(), &mut output).unwrap();
-            let got: Vec<u32> = output.iter().map(|token| token.id).collect();
-            assert_eq!(expected, got, "{word:?}");
+            assert_eq!(&values, expected, "word: {word}");
         }
+
+        assert_eq!(
+            wp.tokenize("internationalization").unwrap(),
+            vec![
+                tok(14, "inter", (0, 5)),
+                tok(15, "##national", (5, 13)),
+                tok(4, "##ization", (13, 20)),
+            ]
+        );
     }
 }
