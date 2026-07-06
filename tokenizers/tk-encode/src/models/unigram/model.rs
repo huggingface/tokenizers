@@ -2,9 +2,12 @@ use super::{
     lattice::Lattice,
     trie::{Trie, TrieBuilder},
 };
-use crate::tokenizer::{Model, Result, Token};
 use crate::utils::cache::{Cache, MAX_LENGTH};
 use crate::vocab_store::VocabStore;
+use crate::{
+    pipeline::{self, PipelineToken},
+    tokenizer::{Model, Result, Token},
+};
 use std::collections::HashMap;
 
 use std::convert::TryInto;
@@ -16,6 +19,7 @@ type Vocab = Vec<(String, f64)>;
 /// A `Unigram` model to encode sentences.
 pub struct Unigram {
     token_to_ids: VocabStore,
+    byte_fallback_map: [Option<u32>; 256],
     pub(crate) vocab: Vocab,
     cache: Cache<String, Vec<String>>,
     trie: Trie<u8>,
@@ -59,6 +63,7 @@ impl Clone for Unigram {
             byte_fallback: self.byte_fallback,
             alpha: self.alpha,
             nbest_size: self.nbest_size,
+            byte_fallback_map: self.byte_fallback_map,
         }
     }
 }
@@ -136,6 +141,12 @@ impl Unigram {
         let fuse_unk = true;
         let is_optimized = true;
 
+        let byte_fallback_map: [Option<u32>; 256] = if byte_fallback {
+            std::array::from_fn(|byte| token_to_ids.get_bytes(format!("<0x{byte:02X}>").as_bytes()))
+        } else {
+            [None; 256]
+        };
+
         Ok(Self {
             vocab,
             token_to_ids,
@@ -150,6 +161,7 @@ impl Unigram {
             byte_fallback,
             alpha: None,
             nbest_size: None,
+            byte_fallback_map,
         })
     }
 
@@ -259,130 +271,21 @@ impl Unigram {
     }
 
     fn encode_optimized(&self, sentence: &str) -> Result<Vec<String>> {
-        // https://github.com/google/sentencepiece/blob/d48247191a6d50e469ed1a4a36e877befffd1851/src/unigram_model.cc#L600
-        #[derive(Debug, Clone)]
-        struct BestPathNode {
-            /// The vocab id. (maybe UNK)
-            id: usize,
-            /// The total score of the best path ending at this node.
-            best_path_score: f64,
-            /// The starting position (in utf-8) of this node. The entire best
-            /// path can be constructed by backtracking along this link.
-            starts_at: Option<usize>,
-        }
-        impl Default for BestPathNode {
-            fn default() -> Self {
-                Self {
-                    id: 0,
-                    best_path_score: 0.0,
-                    starts_at: None,
-                }
-            }
-        }
-        let size = sentence.len();
-        let unk_score = self.min_score - K_UNK_PENALTY;
-
-        let mut best_path_ends_at = vec![BestPathNode::default(); size + 1];
-        let mut starts_at = 0;
-        while starts_at < size {
-            let best_path_score_till_here = best_path_ends_at[starts_at].best_path_score;
-            let mut has_single_node = false;
-            let mblen = sentence[starts_at..].chars().next().unwrap().len_utf8();
-            for tok_bytes in self
-                .trie
-                .common_prefix_search(sentence.bytes().skip(starts_at))
-            {
-                let key_pos = starts_at + tok_bytes.len();
-                let token: String = String::from_utf8(tok_bytes).unwrap();
-                let target_node = &mut best_path_ends_at[key_pos];
-                let length = key_pos - starts_at;
-                let id = self.token_to_ids.token_to_id(&token).unwrap();
-                let score = self.vocab.get(id as usize).unwrap().1;
-                let candidate_best_path_score = score + best_path_score_till_here;
-                if target_node.starts_at.is_none()
-                    || candidate_best_path_score > target_node.best_path_score
-                {
-                    target_node.best_path_score = candidate_best_path_score;
-                    target_node.starts_at = Some(starts_at);
-                    target_node.id = id as usize;
-                }
-                if !has_single_node && length == mblen {
-                    has_single_node = true;
-                }
-            }
-            if !has_single_node {
-                let target_node = &mut best_path_ends_at[starts_at + mblen];
-                let candidate_best_path_score = unk_score + best_path_score_till_here;
-                if target_node.starts_at.is_none()
-                    || candidate_best_path_score > target_node.best_path_score
-                {
-                    target_node.best_path_score = candidate_best_path_score;
-                    target_node.starts_at = Some(starts_at);
-                    target_node.id = self.unk_id.ok_or(UnigramError::MissingUnkId)?;
-                }
-            }
-            starts_at += mblen
-        }
-        let mut ends_at = size;
-        let mut results: Vec<String> = vec![];
-        let mut token = vec![];
-        while ends_at > 0 {
-            let node = &best_path_ends_at[ends_at];
-            let starts_at = node.starts_at.unwrap();
-            if self.fuse_unk && Some(node.id) == self.unk_id {
-                token.push(sentence[starts_at..ends_at].to_string());
-            } else {
-                if !token.is_empty() {
-                    token.reverse();
-                    results.push(token.concat());
-                    token = vec![];
-                }
-                results.push(sentence[starts_at..ends_at].to_string());
-            }
-            ends_at = starts_at;
-        }
-        if !token.is_empty() {
-            token.reverse();
-            results.push(token.concat());
-        }
-        results.reverse();
-        Ok(results)
+        let mut offsets = Vec::with_capacity(sentence.len());
+        self.encode_offsets_optimized(sentence, &mut offsets)?;
+        return Ok(offsets
+            .into_iter()
+            .map(|(start, end)| sentence[start..end].to_owned())
+            .collect());
     }
 
     fn encode_unoptimized(&self, sentence: &str) -> Result<Vec<String>> {
-        let mut lattice = Lattice::from(sentence, self.bos_id, self.eos_id);
-        self.populate_nodes(&mut lattice);
-        let path = match (self.nbest_size, self.alpha) {
-            (Some(n), Some(alpha)) if n > 0 => lattice.sample_nbest(n, alpha),
-            (_, Some(alpha)) => lattice.sample(alpha),
-            _ => lattice.viterbi(),
-        };
-        if self.fuse_unk {
-            let mut results = vec![];
-            let mut token = String::new();
-            for node in path.iter() {
-                let item = lattice.piece(&node.borrow());
-                if node.borrow().id == self.unk_id.ok_or(UnigramError::MissingUnkId)? {
-                    token.push_str(&item);
-                } else {
-                    if !token.is_empty() {
-                        results.push(token);
-                        token = String::new();
-                    }
-                    results.push(item);
-                }
-            }
-            if !token.is_empty() {
-                results.push(token);
-            }
-            Ok(results)
-        } else {
-            let results: Vec<String> = path
-                .iter()
-                .map(|node| lattice.piece(&node.borrow()))
-                .collect();
-            Ok(results)
-        }
+        let mut offsets = Vec::with_capacity(sentence.len());
+        self.encode_offsets_unoptimized(sentence, &mut offsets)?;
+        return Ok(offsets
+            .into_iter()
+            .map(|(start, end)| sentence[start..end].to_owned())
+            .collect());
     }
 
     /// Iterate of vocabulary of the model as a pair of `(token, score)`.
@@ -499,6 +402,180 @@ impl Model for Unigram {
         let string = serde_json::to_string_pretty(self)?;
         std::fs::write(&fullpath, string)?;
         Ok(vec![fullpath])
+    }
+}
+
+impl pipeline::Model for Unigram {
+    fn tokenize_bytes(&self, bytes: &[u8], output: &mut Vec<PipelineToken>) -> Result<()> {
+        for (start, end) in self.encode_offsets(&bytes)?.into_iter() {
+            let chunk = &bytes[start..end];
+            if let Some(id) = self.token_to_ids.get_bytes(chunk) {
+                output.push(PipelineToken { id });
+            } else {
+                if self.byte_fallback {
+                    // todo: do not materialize the IDs
+                    let ids: Vec<u32> = chunk
+                        .iter()
+                        .map(|&byte| {
+                            self.byte_fallback_map[byte as usize].or(self.unk_id.map(|u| u as u32))
+                        })
+                        .collect::<Option<Vec<_>>>()
+                        .ok_or(UnigramError::MissingUnkId)?;
+                    output.extend(ids.iter().map(|&id| PipelineToken { id }));
+                } else {
+                    let unk_id = self.unk_id.ok_or(UnigramError::MissingUnkId)?;
+                    output.push(PipelineToken { id: unk_id as u32 });
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Unigram {
+    fn encode_offsets(&self, bytes: &[u8]) -> Result<Vec<(usize, usize)>> {
+        let mut offsets = Vec::with_capacity(bytes.len());
+        let string = str::from_utf8(bytes)?;
+        if self.is_optimized {
+            self.encode_offsets_optimized(string, &mut offsets)?;
+        } else {
+            self.encode_offsets_unoptimized(string, &mut offsets)?;
+        }
+        Ok(offsets)
+    }
+
+    fn encode_offsets_optimized(
+        &self,
+        sequence: &str,
+        offsets: &mut Vec<(usize, usize)>,
+    ) -> Result<()> {
+        // https://github.com/google/sentencepiece/blob/d48247191a6d50e469ed1a4a36e877befffd1851/src/unigram_model.cc#L600
+        #[derive(Debug, Clone)]
+        struct BestPathNode {
+            /// The vocab id. (maybe UNK)
+            id: usize,
+            /// The total score of the best path ending at this node.
+            best_path_score: f64,
+            /// The starting position (in utf-8) of this node. The entire best
+            /// path can be constructed by backtracking along this link.
+            starts_at: Option<usize>,
+        }
+        impl Default for BestPathNode {
+            fn default() -> Self {
+                Self {
+                    id: 0,
+                    best_path_score: 0.0,
+                    starts_at: None,
+                }
+            }
+        }
+        let size = sequence.len();
+        let unk_score = self.min_score - K_UNK_PENALTY;
+
+        let mut best_path_ends_at = vec![BestPathNode::default(); size + 1];
+        let mut starts_at = 0;
+        while starts_at < size {
+            let best_path_score_till_here = best_path_ends_at[starts_at].best_path_score;
+            let mut has_single_node = false;
+            let mblen = sequence[starts_at..].chars().next().unwrap().len_utf8();
+            for tok_bytes in self
+                .trie
+                .common_prefix_search(sequence.bytes().skip(starts_at))
+            {
+                let key_pos = starts_at + tok_bytes.len();
+                let token: String = String::from_utf8(tok_bytes).unwrap();
+                let target_node = &mut best_path_ends_at[key_pos];
+                let length = key_pos - starts_at;
+                let id = self.token_to_ids.token_to_id(&token).unwrap();
+                let score = self.vocab.get(id as usize).unwrap().1;
+                let candidate_best_path_score = score + best_path_score_till_here;
+                if target_node.starts_at.is_none()
+                    || candidate_best_path_score > target_node.best_path_score
+                {
+                    target_node.best_path_score = candidate_best_path_score;
+                    target_node.starts_at = Some(starts_at);
+                    target_node.id = id as usize;
+                }
+                if !has_single_node && length == mblen {
+                    has_single_node = true;
+                }
+            }
+            if !has_single_node {
+                let target_node = &mut best_path_ends_at[starts_at + mblen];
+                let candidate_best_path_score = unk_score + best_path_score_till_here;
+                if target_node.starts_at.is_none()
+                    || candidate_best_path_score > target_node.best_path_score
+                {
+                    target_node.best_path_score = candidate_best_path_score;
+                    target_node.starts_at = Some(starts_at);
+                    target_node.id = self.unk_id.ok_or(UnigramError::MissingUnkId)?;
+                }
+            }
+            starts_at += mblen
+        }
+        let mut ends_at = size;
+        let (mut token_start, mut token_end) = (ends_at, ends_at);
+
+        while ends_at > 0 {
+            let node = &best_path_ends_at[ends_at];
+            let starts_at = node.starts_at.unwrap();
+            if self.fuse_unk && Some(node.id) == self.unk_id {
+                token_start = starts_at;
+            } else {
+                if token_start != token_end {
+                    offsets.push((token_start, token_end));
+                }
+                offsets.push((starts_at, ends_at));
+                token_end = starts_at;
+                token_start = starts_at;
+            }
+            ends_at = starts_at;
+        }
+        if token_start != token_end {
+            offsets.push((token_start, token_end));
+        }
+        offsets.reverse();
+        Ok(())
+    }
+
+    fn encode_offsets_unoptimized(
+        &self,
+        sentence: &str,
+        offsets: &mut Vec<(usize, usize)>,
+    ) -> Result<()> {
+        let mut lattice = Lattice::from(sentence, self.bos_id, self.eos_id);
+        self.populate_nodes(&mut lattice);
+        let path = match (self.nbest_size, self.alpha) {
+            (Some(n), Some(alpha)) if n > 0 => lattice.sample_nbest(n, alpha),
+            (_, Some(alpha)) => lattice.sample(alpha),
+            _ => lattice.viterbi(),
+        };
+        if self.fuse_unk {
+            let (mut token_start, mut token_end) = (0usize, 0usize);
+            for node in path.iter() {
+                let (start, end) = lattice.piece_offsets(&node.borrow());
+                if node.borrow().id == self.unk_id.ok_or(UnigramError::MissingUnkId)? {
+                    token_end = end;
+                } else {
+                    if token_start != token_end {
+                        offsets.push((token_start, token_end));
+                    }
+                    offsets.push((start, end));
+                    token_start = end;
+                    token_end = end;
+                }
+            }
+            if token_start != token_end {
+                offsets.push((token_start, token_end));
+            }
+            Ok(())
+        } else {
+            offsets.extend(
+                path.iter()
+                    .map(|node| lattice.piece_offsets(&node.borrow())),
+            );
+            Ok(())
+        }
     }
 }
 
