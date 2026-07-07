@@ -1,9 +1,14 @@
+use std::convert::TryInto;
 use std::ops::Range;
 use std::{borrow::Cow, convert::TryFrom};
 
 use crate::added_vocabulary::bucket_added_vocabulary::{
     AddedToken as BucketAddedToken, AddedVocabulary as BucketAddedVocabulary,
 };
+use crate::models::bpe::BPE;
+use crate::models::unigram::Unigram;
+use crate::models::wordlevel::WordLevel;
+use crate::models::wordpiece::WordPiece;
 use crate::{
     normalizers::NormalizerWrapper,
     pre_tokenizers::{
@@ -16,7 +21,8 @@ use crate::{
         unicode_scripts::UnicodeScripts,
         whitespace::{Whitespace, WhitespaceSplit},
     },
-    Model, ModelWrapper, PostProcessorWrapper, PreTokenizerWrapper, Token, Tokenizer,
+    Model as LegacyModelTrait, ModelWrapper, PostProcessorWrapper, PreTokenizerWrapper, Token,
+    Tokenizer,
 };
 
 use super::{Result, SplitDelimiterBehavior};
@@ -202,7 +208,7 @@ pub struct PipelineTokenizer {
     added_vocabulary: BucketAddedVocabulary,
     normalizer: Option<NormalizerWrapper>,
     pre_tokenizer: PipelinePreTokenizer,
-    model: ModelWrapper,
+    model: PipelineModel,
     _post_processor: Option<PostProcessorWrapper>,
 }
 
@@ -253,11 +259,13 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
         )?;
         added_vocabulary.set_encode_special_tokens(legacy_av.get_encode_special_tokens());
 
+        let model = tok.get_model().clone().try_into()?;
+
         Ok(Self {
             added_vocabulary,
             normalizer: tok.get_normalizer().cloned(),
             pre_tokenizer,
-            model: tok.get_model().clone(),
+            model,
             _post_processor: tok.get_post_processor().cloned(),
         })
     }
@@ -307,12 +315,10 @@ impl PipelineTokenizer {
 
                                 // Tokenize each chunk
                                 for pre_token in pre_tokens.iter() {
-                                    output.extend(
-                                        self.model
-                                            .tokenize(&normalized_chunk[pre_token.range()])?
-                                            .into_iter()
-                                            .map(|Token { id, .. }| PipelineToken { id }),
-                                    );
+                                    self.model.tokenize_bytes(
+                                        &normalized_chunk[pre_token.range()].as_bytes(),
+                                        &mut output,
+                                    )?;
                                 }
                             }
                         }
@@ -578,5 +584,43 @@ pub fn split_matches(
                 end: end as u32,
             });
         }
+    }
+}
+
+pub trait Model {
+    fn tokenize_bytes(&self, bytes: &[u8], output: &mut Vec<PipelineToken>) -> Result<()>;
+}
+
+pub enum PipelineModel {
+    BPE(BPE),
+    Unigram(Unigram),
+    WordLevel(WordLevel),
+    WordPiece(WordPiece),
+}
+
+impl Model for PipelineModel {
+    fn tokenize_bytes(&self, bytes: &[u8], output: &mut Vec<PipelineToken>) -> Result<()> {
+        let sequence = str::from_utf8(bytes)?;
+        let tokens = match self {
+            Self::BPE(model) => model.tokenize(sequence),
+            Self::Unigram(model) => model.tokenize(sequence),
+            Self::WordLevel(model) => model.tokenize(sequence),
+            Self::WordPiece(model) => model.tokenize(sequence),
+        }?;
+        output.extend(tokens.iter().map(|&Token { id, .. }| PipelineToken { id }));
+        Ok(())
+    }
+}
+
+impl TryFrom<ModelWrapper> for PipelineModel {
+    type Error = crate::Error;
+
+    fn try_from(value: ModelWrapper) -> std::prelude::v1::Result<Self, Self::Error> {
+        Ok(match value {
+            ModelWrapper::BPE(model) => Self::BPE(model),
+            ModelWrapper::Unigram(model) => Self::Unigram(model),
+            ModelWrapper::WordLevel(model) => Self::WordLevel(model),
+            ModelWrapper::WordPiece(model) => Self::WordPiece(model),
+        })
     }
 }
