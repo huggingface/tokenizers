@@ -33,13 +33,6 @@ unicode-segmentation = "1.11"
 unicode-normalization-alignments = "0.1"
 regex-syntax = "0.8"
 regex = "1.10"
-[profile.release]
-lto = true
-codegen-units = 1
-# bench profile doesn't inherit release; mirror it so numbers reflect what ships.
-[profile.bench]
-lto = true
-codegen-units = 1
 [features]
 unicode = ["unicode_categories"]
 

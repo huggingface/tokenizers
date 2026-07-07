@@ -3,7 +3,7 @@ use super::classify::Atom;
 /// ASCII nibble-shuffle → atom; 2-byte via `vqtbl` bitmap membership (`LETTER2`/`NUMBER2`/`MARK2`/…);
 /// CJK by lead-byte range; 3-byte-non-CJK via the branchless SIMD range kernel `Σ (cp ≥ tᵢ)`.
 #[cfg(all(target_arch = "aarch64"))]
-unsafe fn classify_neon(text: &[u8], tags: &mut [u8]) {
+pub(crate) unsafe fn classify_neon(text: &[u8], tags: &mut [u8]) {
     use core::arch::aarch64::*;
     let n = text.len();
     let mut i = 0;
