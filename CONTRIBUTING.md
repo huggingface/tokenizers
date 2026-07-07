@@ -34,12 +34,13 @@ git clone https://github.com/huggingface/tokenizers.git
 cd tokenizers
 
 # Create a virtualenv (using uv, venv, or your preferred tool)
-python -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
 ```
 
 ### 2. Build and test the Rust core
 
+From the project root:
 ```bash
 cd tokenizers
 make test    # downloads test data automatically via the hf CLI, then runs cargo test
@@ -50,6 +51,7 @@ files are gitignored.
 
 ### 3. Build and test the Python bindings
 
+From the project root with your virtualenv activated:
 ```bash
 cd bindings/python
 pip install -e ".[dev]"   # install in editable mode with test deps (builds via maturin)
@@ -57,14 +59,25 @@ make test                 # run pytest, then cargo test
 ```
 
 If you need to rebuild after Rust changes without reinstalling:
-
+From the project root with your virtualenv activated:
 ```bash
+cd bindings/python
 pip install maturin       # if not already installed
 maturin develop           # fast rebuild of the extension module
 ```
+### 4. Build and test the Node.js bindings
 
-### 4. Run benchmarks
+From the project root:
+```bash
+cd bindings/node
+npm i             # install devDependencies including napi-rs CLI
+npm run build     # build the native addon (.node) with napi-rs
+make test         # run the Jest test suite
+```
 
+### 5. Run benchmarks
+
+From the project root:
 ```bash
 cd tokenizers
 make bench   # downloads benchmark data if needed, then runs cargo bench
@@ -73,7 +86,9 @@ make bench   # downloads benchmark data if needed, then runs cargo bench
 Benchmark results are stored in `target/criterion/` for comparison across runs.
 To run a specific benchmark:
 
+From the project root:
 ```bash
+cd tokenizers
 cargo bench --bench bpe_benchmark
 cargo bench --bench bert_benchmark
 cargo bench --bench llama3_benchmark
