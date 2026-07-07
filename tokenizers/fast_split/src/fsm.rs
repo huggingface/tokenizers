@@ -7,9 +7,10 @@
 //! optimization for the RunSplit family (class-change → movemask → bit-iterate).
 #![allow(dead_code)] // skeleton
 
-use crate::classify::{classify, mask, Atoms};
+use crate::classify::{Atoms, classify, mask};
 
 /// A token span: byte offsets `[start, end)` into the input.
+/// TODO:i think we could use u16 for one of them if we stored start, offset5
 pub type Span = (u32, u32);
 
 /// Mirror of `tokenizer::SplitDelimiterBehavior`, kept here so it can be a `const`-generic argument.

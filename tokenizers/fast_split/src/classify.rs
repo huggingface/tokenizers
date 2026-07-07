@@ -25,6 +25,8 @@ pub enum Atom {
     Apostrophe = 9,    // 0x27 only
     SymOther = 10,     // non-ASCII \p{S} ∪ control ∪ unassigned
     NumericOther = 11, // is_numeric ∖ \p{N}
+    Sentinel =13,      // this lead / block needs to go 1 level deeper
+    MultiByte = 14,    // simd could not resolve this multibyte, use the lookup table
     Cont = 15,         // UTF-8 continuation byte — transparent to every FSM
 }
 
@@ -166,8 +168,8 @@ impl TagScheme for Atoms {
     /// CJK by lead-byte range; 3-byte-non-CJK via the branchless SIMD range kernel `Σ (cp ≥ tᵢ)`.
     #[cfg(target_arch = "aarch64")]
     unsafe fn classify_neon(text: &[u8], tags: &mut [u8]) {
-        let _ = (text, tags);
-        todo!("SIMD atom classify — TAG_CLASSIFY_SPEC.md §2/§7")
+        use super::simd_classify::classify_neon;
+        classify_neon(text, tags)
     }
 }
 
