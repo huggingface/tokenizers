@@ -1,4 +1,5 @@
 use super::{super::OrderedVocabIter, Error, Pair, Word};
+use crate::pipeline;
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::cache::{DEFAULT_CACHE_CAPACITY, MAX_LENGTH};
 use crate::utils::iter::ResultShunt;
@@ -669,6 +670,23 @@ impl Model for BPE {
         )?;
 
         Ok(vec![vocab_path, merges_path])
+    }
+}
+
+impl pipeline::Model for BPE {
+    fn tokenize_bytes(
+        &self,
+        bytes: &[u8],
+        output: &mut Vec<pipeline::PipelineToken>,
+    ) -> Result<()> {
+        if bytes.is_empty() {
+            return Ok(());
+        }
+        let sequence = str::from_utf8(bytes)?;
+        for token in self.tokenize(sequence)? {
+            output.push(pipeline::PipelineToken { id: token.id });
+        }
+        Ok(())
     }
 }
 
