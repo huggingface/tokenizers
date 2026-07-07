@@ -12,6 +12,7 @@ use crate::{
         digits::Digits,
         fixed_length::FixedLength,
         punctuation::Punctuation,
+        split::Split as SplitPretok,
         unicode_scripts::UnicodeScripts,
         whitespace::{Whitespace, WhitespaceSplit},
     },
@@ -46,12 +47,14 @@ pub trait PreTokenizer {
 }
 
 /// The pre-tokenizers a [`PipelineTokenizer`] can run.
+#[allow(clippy::large_enum_variant)]
 pub enum PipelinePreTokenizer {
     Bert(BertPreTokenizer),
     Delimiter(CharDelimiterSplit),
     Digits(Digits),
     FixedLength(FixedLength),
     Punctuation(Punctuation),
+    Split(SplitPretok),
     UnicodeScripts(UnicodeScripts),
     Whitespace(Whitespace),
     WhitespaceSplit(WhitespaceSplit),
@@ -67,6 +70,7 @@ impl PreTokenizer for PipelinePreTokenizer {
             Self::Digits(pretok) => pretok.pre_tokenize(text, out),
             Self::FixedLength(pretok) => pretok.pre_tokenize(text, out),
             Self::Punctuation(pretok) => pretok.pre_tokenize(text, out),
+            Self::Split(pretok) => pretok.pre_tokenize(text, out),
             Self::UnicodeScripts(pretok) => pretok.pre_tokenize(text, out),
             Self::Whitespace(pretok) => pretok.pre_tokenize(text, out),
             Self::WhitespaceSplit(pretok) => pretok.pre_tokenize(text, out),
@@ -219,6 +223,7 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
             Some(PreTokenizerWrapper::Digits(p)) => PipelinePreTokenizer::Digits(p.clone()),
             Some(PreTokenizerWrapper::FixedLength(p)) => PipelinePreTokenizer::FixedLength(*p),
             Some(PreTokenizerWrapper::Punctuation(p)) => PipelinePreTokenizer::Punctuation(*p),
+            Some(PreTokenizerWrapper::Split(p)) => PipelinePreTokenizer::Split(p.clone()),
             Some(PreTokenizerWrapper::UnicodeScripts(p)) => PipelinePreTokenizer::UnicodeScripts(*p),
             Some(PreTokenizerWrapper::Whitespace(p)) => PipelinePreTokenizer::Whitespace(p.clone()),
             Some(PreTokenizerWrapper::WhitespaceSplit(p)) => PipelinePreTokenizer::WhitespaceSplit(*p),
@@ -485,4 +490,93 @@ pub fn split_delimiter(
             SplitPolicy::Keep
         }
     });
+}
+
+/// Applies a [`SplitDelimiterBehavior`] to a match segmentation and appends the
+/// resulting pieces to `out`.
+///
+/// `matches` is the `(offsets, is_match)` sequence covering the whole input,
+/// so regex matches interleaved with the gaps between them (exactly what
+/// `Pattern::find_matches` produces). This is the pipeline-side equivalent of
+/// the fold in `NormalizedString::split`; the arms mirror it exactly. Empty and
+/// removed pieces are dropped.
+pub fn split_matches(
+    out: &mut Vec<Split>,
+    matches: Vec<((usize, usize), bool)>,
+    behavior: SplitDelimiterBehavior,
+) {
+    use SplitDelimiterBehavior::*;
+
+    // (offsets, should_remove) — mirrors `NormalizedString::split`.
+    let splits: Vec<((usize, usize), bool)> = match behavior {
+        Isolated => matches.into_iter().map(|(o, _)| (o, false)).collect(),
+        Removed => matches, // should_remove == is_match
+        Contiguous => {
+            let mut previous_match = false;
+            matches
+                .into_iter()
+                .fold(vec![], |mut acc, (offsets, is_match)| {
+                    if is_match == previous_match {
+                        if let Some(((_, end), _)) = acc.last_mut() {
+                            *end = offsets.1;
+                        } else {
+                            acc.push((offsets, false));
+                        }
+                    } else {
+                        acc.push((offsets, false));
+                    }
+                    previous_match = is_match;
+                    acc
+                })
+        }
+        MergedWithPrevious => {
+            let mut previous_match = false;
+            matches
+                .into_iter()
+                .fold(vec![], |mut acc, (offsets, is_match)| {
+                    if is_match && !previous_match {
+                        if let Some(((_, end), _)) = acc.last_mut() {
+                            *end = offsets.1;
+                        } else {
+                            acc.push((offsets, false));
+                        }
+                    } else {
+                        acc.push((offsets, false));
+                    }
+                    previous_match = is_match;
+                    acc
+                })
+        }
+        MergedWithNext => {
+            let mut previous_match = false;
+            let mut splits =
+                matches
+                    .into_iter()
+                    .rev()
+                    .fold(vec![], |mut acc, (offsets, is_match)| {
+                        if is_match && !previous_match {
+                            if let Some(((start, _), _)) = acc.last_mut() {
+                                *start = offsets.0;
+                            } else {
+                                acc.push((offsets, false));
+                            }
+                        } else {
+                            acc.push((offsets, false));
+                        }
+                        previous_match = is_match;
+                        acc
+                    });
+            splits.reverse();
+            splits
+        }
+    };
+
+    for ((start, end), should_remove) in splits {
+        if !should_remove && start != end {
+            out.push(Split {
+                start: start as u32,
+                end: end as u32,
+            });
+        }
+    }
 }
