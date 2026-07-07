@@ -6,11 +6,17 @@ dir_guard=@mkdir -p $(@D)
 
 SHARED_RESOURCES = $(DATA_DIR)/gpt2-vocab.json $(DATA_DIR)/gpt2-merges.txt $(DATA_DIR)/bert-base-uncased-vocab.txt $(DATA_DIR)/big.txt $(DATA_DIR)/small.txt $(DATA_DIR)/albert-base-v1-tokenizer.json  $(DATA_DIR)/llama-3-tokenizer.json
 BENCHMARK_RESOURCES = $(SHARED_RESOURCES) $(DATA_DIR)/unigram_wagahaiwa_nekodearu.txt $(DATA_DIR)/bert-wiki.json $(DATA_DIR)/fixtures/modalities/agentic-traces.txt
-TESTS_RESOURCES = $(SHARED_RESOURCES) $(DATA_DIR)/unigram.json $(DATA_DIR)/unigram_wagahaiwa_nekodearu.txt $(DATA_DIR)/roberta.json $(DATA_DIR)/tokenizer-wiki.json $(DATA_DIR)/bert-wiki.json $(DATA_DIR)/fixtures/modalities/agentic-traces.txt
+TESTS_RESOURCES = $(SHARED_RESOURCES) $(DATA_DIR)/unigram.json $(DATA_DIR)/unigram_wagahaiwa_nekodearu.txt $(DATA_DIR)/roberta.json $(DATA_DIR)/tokenizer-wiki.json $(DATA_DIR)/bert-wiki.json $(DATA_DIR)/fixtures/modalities/agentic-traces.txt $(ORACLE_RESOURCES)
 
 FIXTURE_LANGS = amh_Ethi arb_Arab ben_Beng cmn_Hani ell_Grek eng_Latn heb_Hebr hin_Deva jpn_Jpan kat_Geor kor_Hang rus_Cyrl tam_Taml tha_Thai
 FIXTURE_MODALITIES = agentic_swe agentic-traces code_mixed math_latex
 FIXTURES_RESOURCES = $(FIXTURE_LANGS:%=$(DATA_DIR)/fixtures/lang/%.txt) $(FIXTURE_MODALITIES:%=$(DATA_DIR)/fixtures/modalities/%.txt)
+
+# Tokenizer configs + language fixtures exercised by the multilingual oracle
+# (tk-encode/tests/pipeline_oracle.rs): two configs × a subset of languages.
+ORACLE_LANGS = eng_Latn rus_Cyrl arb_Arab cmn_Hani jpn_Jpan hin_Deva kor_Hang tha_Thai
+ORACLE_RESOURCES = $(DATA_DIR)/bert-base-uncased.json $(DATA_DIR)/fixtures/models/llama-2-7b-chat-hf.json \
+	$(ORACLE_LANGS:%=$(DATA_DIR)/fixtures/lang/%.txt)
 
 # Models benched by tk-encode/examples/fixture_bench.rs; the manifest is the
 # single source of truth (Rust reads it too).

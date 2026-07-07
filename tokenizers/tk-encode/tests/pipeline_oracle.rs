@@ -116,5 +116,5 @@ mod bert_base_uncased {
 }
 
 mod llama2 {
-    lang_fixtures!("../data/llama-2-7b-chat-hf.json");
+    lang_fixtures!("../data/fixtures/models/llama-2-7b-chat-hf.json");
 }
