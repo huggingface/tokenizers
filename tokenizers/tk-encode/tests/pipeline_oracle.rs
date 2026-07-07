@@ -1,20 +1,40 @@
 //! The experimental `PipelineTokenizer` must produce exactly the same token
-//! ids as the reference `Tokenizer` (the oracle). Exercised over the bert-wiki
-//! tokenizer (`Whitespace` pre-tokenizer + `WordPiece`) on an English and a
-//! Japanese corpus, with lines packed into ~1 kB and ~10 kB documents. The
-//! oracle is called with `add_special_tokens = false` because the pipeline
-//! does not apply the post-processor yet.
+//! ids as the reference `Tokenizer` (the oracle). Exercised over two tokenizer
+//! configs — `bert-base-uncased` (`BertNormalizer` + `BertPreTokenizer` +
+//! `WordPiece`) and `llama-2` (SentencePiece-style: `Prepend`/`Replace`
+//! normalizer, *no* pre-tokenizer, byte-fallback `BPE`) — against a ~1 MB
+//! fraction of several language fixtures, with lines packed into ~1 kB and
+//! ~10 kB documents. The oracle is called with `add_special_tokens = false`
+//! because the pipeline does not apply the post-processor yet.
 
 use std::convert::TryFrom;
 
 use tk_encode::pipeline::PipelineTokenizer;
 use tk_encode::Tokenizer;
 
-fn load(corpus: &str) -> (Tokenizer, PipelineTokenizer, String) {
-    let oracle = Tokenizer::from_file("../data/bert-wiki.json").unwrap();
+/// Cap each language fixture to a ~1 MB, line-bounded prefix so the oracle
+/// stays affordable while still exercising real multilingual text.
+const FRACTION_BYTES: usize = 1024 * 1024;
+
+fn load_tokenizers(config: &str) -> (Tokenizer, PipelineTokenizer) {
+    let oracle = Tokenizer::from_file(config).unwrap();
     let pipeline = PipelineTokenizer::try_from(&oracle).unwrap();
+    (oracle, pipeline)
+}
+
+/// Read `corpus`, keeping whole lines until adding the next would exceed
+/// `max_bytes`. Whole lines keep the prefix valid UTF-8.
+fn load_fraction(corpus: &str, max_bytes: usize) -> String {
     let text = std::fs::read_to_string(corpus).unwrap();
-    (oracle, pipeline, text)
+    let mut out = String::new();
+    for line in text.lines() {
+        if !out.is_empty() && out.len() + line.len() + 1 > max_bytes {
+            break;
+        }
+        out.push_str(line);
+        out.push('\n');
+    }
+    out
 }
 
 fn make_chunks(text: &str, target_bytes: usize) -> Vec<String> {
@@ -36,8 +56,9 @@ fn make_chunks(text: &str, target_bytes: usize) -> Vec<String> {
     chunks
 }
 
-fn check_chunks(corpus: &str, target_bytes: usize) {
-    let (oracle, pipeline, text) = load(corpus);
+fn check_chunks(config: &str, corpus: &str, target_bytes: usize) {
+    let (oracle, pipeline) = load_tokenizers(config);
+    let text = load_fraction(corpus, FRACTION_BYTES);
     for chunk in make_chunks(&text, target_bytes) {
         let expected = oracle.encode(chunk.as_str(), false).unwrap();
         let got: Vec<u32> = pipeline
@@ -55,24 +76,45 @@ fn check_chunks(corpus: &str, target_bytes: usize) {
     }
 }
 
+/// One `chunks_1kb` / `chunks_10kb` case per corpus, all against a single
+/// tokenizer `$config`. Invoke inside a `mod <tokenizer> { .. }` so cases nest
+/// as `<tokenizer>::<corpus>`.
 macro_rules! corpus_tests {
-    ($($name:ident => $file:literal),* $(,)?) => {
+    ($config:literal; $($corpus:ident => $corpus_path:literal),* $(,)?) => {
         $(
-            mod $name {
+            mod $corpus {
                 #[test]
                 fn chunks_1kb() {
-                    super::check_chunks($file, 1024);
+                    crate::check_chunks($config, $corpus_path, 1024);
                 }
                 #[test]
                 fn chunks_10kb() {
-                    super::check_chunks($file, 10 * 1024);
+                    crate::check_chunks($config, $corpus_path, 10 * 1024);
                 }
             }
         )*
     };
 }
 
-corpus_tests! {
-    big => "../data/big.txt",
-    wagahai => "../data/unigram_wagahaiwa_nekodearu.txt",
+macro_rules! lang_fixtures {
+    ($config:literal) => {
+        corpus_tests! { $config;
+            eng_latn => "../data/fixtures/lang/eng_Latn.txt",
+            rus_cyrl => "../data/fixtures/lang/rus_Cyrl.txt",
+            arb_arab => "../data/fixtures/lang/arb_Arab.txt",
+            cmn_hani => "../data/fixtures/lang/cmn_Hani.txt",
+            jpn_jpan => "../data/fixtures/lang/jpn_Jpan.txt",
+            hin_deva => "../data/fixtures/lang/hin_Deva.txt",
+            kor_hang => "../data/fixtures/lang/kor_Hang.txt",
+            tha_thai => "../data/fixtures/lang/tha_Thai.txt",
+        }
+    };
+}
+
+mod bert_base_uncased {
+    lang_fixtures!("../data/bert-base-uncased.json");
+}
+
+mod llama2 {
+    lang_fixtures!("../data/llama-2-7b-chat-hf.json");
 }
