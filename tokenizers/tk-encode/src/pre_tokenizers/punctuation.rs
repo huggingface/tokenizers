@@ -5,7 +5,7 @@ use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result, SplitDelimiterB
 use crate::utils::macro_rules_attribute;
 use unicode_categories::UnicodeCategories;
 
-fn is_punc(x: char) -> bool {
+pub(crate) fn is_punc(x: char) -> bool {
     char::is_ascii_punctuation(&x) || x.is_punctuation()
 }
 

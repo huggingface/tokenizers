@@ -1,7 +1,15 @@
-use crate::tokenizer::{NormalizedString, Normalizer, Result};
+use std::borrow::Cow;
+
+use crate::{
+    pipeline,
+    tokenizer::{NormalizedString, Normalizer, Result},
+};
+
+use super::utils::lowercases_to_self;
 
 use serde::{Deserialize, Serialize};
 use unicode_categories::UnicodeCategories;
+use unicode_normalization::{is_nfd_quick, IsNormalized, UnicodeNormalization};
 
 /// Checks whether a character is whitespace
 fn is_whitespace(c: char) -> bool {
@@ -21,6 +29,20 @@ fn is_control(c: char) -> bool {
         // Cc, Cf, Cn or Co
         // cf. https://unicode.org/reports/tr44/ (Table 12)
         _ => c.is_other(),
+    }
+}
+
+/// Whether BERT text cleaning removes `c` entirely
+fn clean_text_removes(c: char) -> bool {
+    c == '\0' || c == '\u{fffd}' || is_control(c)
+}
+
+/// The whitespace folding BERT text cleaning applies to kept characters
+fn clean_text_map(c: char) -> char {
+    if is_whitespace(c) {
+        ' '
+    } else {
+        c
     }
 }
 
@@ -91,8 +113,8 @@ impl BertNormalizer {
 
     fn do_clean_text(&self, normalized: &mut NormalizedString) {
         normalized
-            .filter(|c| !(c as usize == 0 || c as usize == 0xfffd || is_control(c)))
-            .map(|c| if is_whitespace(c) { ' ' } else { c });
+            .filter(|c| !clean_text_removes(c))
+            .map(clean_text_map);
     }
 
     fn do_handle_chinese_chars(&self, normalized: &mut NormalizedString) {
@@ -114,6 +136,19 @@ impl BertNormalizer {
     fn do_lowercase(&self, normalized: &mut NormalizedString) {
         normalized.lowercase();
     }
+
+    fn is_noop(&self, input: &str, strip_accents: bool) -> bool {
+        if strip_accents && !matches!(is_nfd_quick(input.chars()), IsNormalized::Yes) {
+            return false;
+        }
+        let changes = |c: char| {
+            (self.clean_text && (clean_text_removes(c) || clean_text_map(c) != c))
+                || (self.handle_chinese_chars && is_chinese_char(c))
+                || (strip_accents && c.is_mark_nonspacing())
+                || (self.lowercase && !lowercases_to_self(c))
+        };
+        !input.chars().any(changes)
+    }
 }
 
 impl Normalizer for BertNormalizer {
@@ -133,5 +168,119 @@ impl Normalizer for BertNormalizer {
         }
 
         Ok(())
+    }
+}
+
+impl pipeline::Normalizer for BertNormalizer {
+    fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
+        let strip_accents = self.strip_accents.unwrap_or(self.lowercase);
+
+        if self.is_noop(input, strip_accents) {
+            return Ok(input.into());
+        }
+
+        let cleaned = input
+            .chars()
+            .filter(|&c| !(self.clean_text && clean_text_removes(c)))
+            .flat_map(|c| {
+                let c = if self.clean_text {
+                    clean_text_map(c)
+                } else {
+                    c
+                };
+                if self.handle_chinese_chars && is_chinese_char(c) {
+                    [Some(' '), Some(c), Some(' ')]
+                } else {
+                    [Some(c), None, None]
+                }
+            })
+            .flatten();
+
+        // `.nfd()` changes the iterator's type, so the stage toggles can't be
+        // plain `if`s mid-chain: each config combination gets its own
+        // statically-typed chain, all funneled into one pre-sized String.
+        let mut normalized = String::with_capacity(input.len());
+        match (strip_accents, self.lowercase) {
+            (true, true) => normalized.extend(
+                cleaned
+                    .nfd()
+                    .filter(|c| !c.is_mark_nonspacing())
+                    .flat_map(char::to_lowercase),
+            ),
+            (true, false) => normalized.extend(cleaned.nfd().filter(|c| !c.is_mark_nonspacing())),
+            (false, true) => normalized.extend(cleaned.flat_map(char::to_lowercase)),
+            (false, false) => normalized.extend(cleaned),
+        }
+
+        Ok(Cow::Owned(normalized))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const INPUTS: &[&str] = &[
+        "Héllo World",
+        "中文字",
+        "a中b文c",
+        "  spaced  ",
+        "abc",
+        "",
+        "\tTab\n\r",
+        "MiXeD Café",
+        "e\u{0301}",        // already-NFD combining acute
+        "\u{fb01}ligature", // NFKC ligature (unchanged by NFD)
+        "null\0here",
+        "repl\u{fffd}char",
+        "ctrl\u{0007}char",
+        "ǅ",        // titlecase, lowercases to multi-mapping
+        "İstanbul", // dotted capital I: lowercases to 2 chars
+        "straße",
+    ];
+
+    #[test]
+    fn pipeline_bert_matches_legacy() {
+        for &clean_text in &[true, false] {
+            for &handle_chinese_chars in &[true, false] {
+                for &strip_accents in &[None, Some(true), Some(false)] {
+                    for &lowercase in &[true, false] {
+                        let n = BertNormalizer::new(
+                            clean_text,
+                            handle_chinese_chars,
+                            strip_accents,
+                            lowercase,
+                        );
+                        for input in INPUTS {
+                            let mut ns = NormalizedString::from(*input);
+                            Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
+                            assert_eq!(
+                                ns.get(),
+                                &*pipeline::Normalizer::normalize(&n, input).unwrap(),
+                                "config={n:?} input={input:?}",
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn pipeline_bert_borrows_when_noop() {
+        let n = BertNormalizer::default();
+        for input in &["hello world", "already lowercase ascii", ""] {
+            assert!(matches!(
+                pipeline::Normalizer::normalize(&n, input).unwrap(),
+                Cow::Borrowed(_)
+            ));
+        }
+        // Anything that must change is owned.
+        for input in &["Héllo", "中", "\tx", "ABC"] {
+            assert!(matches!(
+                pipeline::Normalizer::normalize(&n, input).unwrap(),
+                Cow::Owned(_)
+            ));
+        }
     }
 }

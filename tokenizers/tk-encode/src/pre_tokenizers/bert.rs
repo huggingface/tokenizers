@@ -2,11 +2,8 @@ use crate::pipeline::{self, SplitPolicy};
 use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
 use crate::utils::macro_rules_attribute;
 use std::sync::LazyLock;
-use unicode_categories::UnicodeCategories;
 
-fn is_bert_punc(x: char) -> bool {
-    char::is_ascii_punctuation(&x) || x.is_punctuation()
-}
+use super::punctuation::is_punc;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[macro_rules_attribute(impl_serde_type!)]
@@ -15,7 +12,7 @@ pub struct BertPreTokenizer;
 impl PreTokenizer for BertPreTokenizer {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
         pretokenized.split(|_, s| s.split(char::is_whitespace, SplitDelimiterBehavior::Removed))?;
-        pretokenized.split(|_, s| s.split(is_bert_punc, SplitDelimiterBehavior::Isolated))
+        pretokenized.split(|_, s| s.split(is_punc, SplitDelimiterBehavior::Isolated))
     }
 }
 
@@ -42,7 +39,7 @@ impl CharType {
 fn classify(c: char) -> CharType {
     if c.is_whitespace() {
         CharType::Whitespace
-    } else if is_bert_punc(c) {
+    } else if is_punc(c) {
         CharType::Punctuation
     } else {
         CharType::Other
