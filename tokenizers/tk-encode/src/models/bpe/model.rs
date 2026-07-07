@@ -1,9 +1,11 @@
 use super::{super::OrderedVocabIter, Error, Pair, Word};
+use crate::pipeline::{self, PipelineToken};
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::cache::{DEFAULT_CACHE_CAPACITY, MAX_LENGTH};
 use crate::utils::iter::ResultShunt;
 use crate::vocab_store::VocabStore;
 use ahash::AHashMap;
+use rayon::result;
 use serde_json::Value;
 use std::borrow::Cow;
 use std::cell::RefCell;
@@ -669,6 +671,65 @@ impl Model for BPE {
         )?;
 
         Ok(vec![vocab_path, merges_path])
+    }
+}
+
+impl pipeline::Model for BPE {
+    fn tokenize_bytes(
+        &self,
+        bytes: &[u8],
+        output: &mut Vec<pipeline::PipelineToken>,
+    ) -> Result<()> {
+        let sequence = str::from_utf8(bytes)?;
+        self.encode_ids(sequence, output)
+    }
+}
+
+impl BPE {
+    fn push_word_ids(&self, word: &Word, out: &mut Vec<PipelineToken>) {
+        out.extend(word.get_chars_iter().map(|id| PipelineToken { id }));
+    }
+    fn encode_ids(&self, sequence: &str, out: &mut Vec<PipelineToken>) -> Result<()> {
+        if sequence.is_empty() {
+            return Ok(());
+        }
+
+        if self.dropout.is_none() || self.dropout == Some(0.0) {
+            self.encode_ids_cached(sequence, out)
+        } else {
+            let word = self.merge_word(sequence)?;
+            self.push_word_ids(&word, out);
+            Ok(())
+        }
+    }
+    fn encode_ids_cached(&self, sequence: &str, out: &mut Vec<PipelineToken>) -> Result<()> {
+        if self.ignore_merges {
+            if let Some(id) = self.vocab.token_to_id(sequence) {
+                out.push(PipelineToken { id });
+                return Ok(());
+            }
+        }
+        let Some(cache) = self.cache.as_ref() else {
+            // Cache disabled (capacity 0): fall back to the uncached path.
+            let word = self.merge_word(sequence)?;
+            self.push_word_ids(&word, out);
+            return Ok(());
+        };
+        let cache_id = cache.id();
+        BPE_LOCAL_CACHE.with(|cell| {
+            let mut by_bpe = cell.borrow_mut();
+            let local = by_bpe.entry(cache_id).or_default();
+            if let Some(hit) = local.get(sequence) {
+                self.push_word_ids(&hit, out);
+                return Ok(());
+            }
+            let word = self.merge_word(sequence)?;
+            self.push_word_ids(&word, out);
+            if sequence.len() < MAX_LENGTH && local.len() < cache.capacity {
+                local.insert(sequence.to_owned(), word);
+            }
+            Ok(())
+        })
     }
 }
 
