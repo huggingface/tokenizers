@@ -1,21 +1,29 @@
-use std::convert::TryFrom;
+use std::convert::TryInto;
 use std::ops::Range;
+use std::{borrow::Cow, convert::TryFrom};
 
 use crate::vocab::bucket_added_vocabulary::{
     AddedToken as BucketAddedToken, AddedVocabulary as BucketAddedVocabulary,
 };
+use crate::models::bpe::BPE;
+use crate::models::unigram::Unigram;
+use crate::models::wordlevel::WordLevel;
+use crate::models::wordpiece::WordPiece;
 use crate::{
+    normalizers::NormalizerWrapper,
     pre_tokenizers::{
         bert::BertPreTokenizer,
         delimiter::CharDelimiterSplit,
         digits::Digits,
         fixed_length::FixedLength,
         punctuation::Punctuation,
+        sequence::Sequence,
+        split::Split as SplitPretok,
         unicode_scripts::UnicodeScripts,
         whitespace::{Whitespace, WhitespaceSplit},
     },
-    Model, ModelWrapper, NormalizedString, Normalizer, NormalizerWrapper, PostProcessorWrapper,
-    PreTokenizerWrapper, Token, Tokenizer,
+    Model as LegacyModelTrait, ModelWrapper, PostProcessorWrapper, PreTokenizerWrapper, Token,
+    Tokenizer,
 };
 
 use super::{Result, SplitDelimiterBehavior};
@@ -34,6 +42,10 @@ impl Split {
     }
 }
 
+pub trait Normalizer {
+    fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>>;
+}
+
 /// Range-based pre-tokenization: yields spans into the input rather than owned
 /// substrings, so the pipeline can pre-tokenize without allocating.
 pub trait PreTokenizer {
@@ -42,12 +54,15 @@ pub trait PreTokenizer {
 }
 
 /// The pre-tokenizers a [`PipelineTokenizer`] can run.
+#[allow(clippy::large_enum_variant)]
 pub enum PipelinePreTokenizer {
     Bert(BertPreTokenizer),
     Delimiter(CharDelimiterSplit),
     Digits(Digits),
     FixedLength(FixedLength),
     Punctuation(Punctuation),
+    Sequence(Sequence),
+    Split(SplitPretok),
     UnicodeScripts(UnicodeScripts),
     Whitespace(Whitespace),
     WhitespaceSplit(WhitespaceSplit),
@@ -63,6 +78,8 @@ impl PreTokenizer for PipelinePreTokenizer {
             Self::Digits(pretok) => pretok.pre_tokenize(text, out),
             Self::FixedLength(pretok) => pretok.pre_tokenize(text, out),
             Self::Punctuation(pretok) => pretok.pre_tokenize(text, out),
+            Self::Sequence(pretok) => pretok.pre_tokenize(text, out),
+            Self::Split(pretok) => pretok.pre_tokenize(text, out),
             Self::UnicodeScripts(pretok) => pretok.pre_tokenize(text, out),
             Self::Whitespace(pretok) => pretok.pre_tokenize(text, out),
             Self::WhitespaceSplit(pretok) => pretok.pre_tokenize(text, out),
@@ -194,7 +211,7 @@ pub struct PipelineTokenizer {
     added_vocabulary: BucketAddedVocabulary,
     normalizer: Option<NormalizerWrapper>,
     pre_tokenizer: PipelinePreTokenizer,
-    model: ModelWrapper,
+    model: PipelineModel,
     _post_processor: Option<PostProcessorWrapper>,
 }
 
@@ -215,6 +232,8 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
             Some(PreTokenizerWrapper::Digits(p)) => PipelinePreTokenizer::Digits(p.clone()),
             Some(PreTokenizerWrapper::FixedLength(p)) => PipelinePreTokenizer::FixedLength(*p),
             Some(PreTokenizerWrapper::Punctuation(p)) => PipelinePreTokenizer::Punctuation(*p),
+            Some(PreTokenizerWrapper::Sequence(p)) => PipelinePreTokenizer::Sequence(p.clone()),
+            Some(PreTokenizerWrapper::Split(p)) => PipelinePreTokenizer::Split(p.clone()),
             Some(PreTokenizerWrapper::UnicodeScripts(p)) => PipelinePreTokenizer::UnicodeScripts(*p),
             Some(PreTokenizerWrapper::Whitespace(p)) => PipelinePreTokenizer::Whitespace(p.clone()),
             Some(PreTokenizerWrapper::WhitespaceSplit(p)) => PipelinePreTokenizer::WhitespaceSplit(*p),
@@ -244,11 +263,13 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
         )?;
         added_vocabulary.set_encode_special_tokens(legacy_av.get_encode_special_tokens());
 
+        let model = tok.get_model().clone().try_into()?;
+
         Ok(Self {
             added_vocabulary,
             normalizer: tok.get_normalizer().cloned(),
             pre_tokenizer,
-            model: tok.get_model().clone(),
+            model,
             _post_processor: tok.get_post_processor().cloned(),
         })
     }
@@ -276,15 +297,15 @@ impl PipelineTokenizer {
                     output.push(PipelineToken { id: token });
                 }
                 Segment::Text(chunk) => {
-                    // Normalize the text segment
-                    let mut normalized: NormalizedString = chunk.into();
-                    if let Some(normalizer) = &self.normalizer {
-                        normalizer.normalize(&mut normalized)?;
-                    }
+                    let normalized: &str = if let Some(normalizer) = &self.normalizer {
+                        &normalizer.normalize(chunk)?
+                    } else {
+                        chunk
+                    };
 
                     // Extract special tokens from the normalized input
                     for segment in
-                        SpecialSegmentIterator::new(normalized.get(), &self.added_vocabulary, true)
+                        SpecialSegmentIterator::new(normalized, &self.added_vocabulary, true)
                     {
                         match segment {
                             Segment::SpecialToken(token) => {
@@ -298,12 +319,10 @@ impl PipelineTokenizer {
 
                                 // Tokenize each chunk
                                 for pre_token in pre_tokens.iter() {
-                                    output.extend(
-                                        self.model
-                                            .tokenize(&normalized_chunk[pre_token.range()])?
-                                            .into_iter()
-                                            .map(|Token { id, .. }| PipelineToken { id }),
-                                    );
+                                    self.model.tokenize_bytes(
+                                        &normalized_chunk[pre_token.range()].as_bytes(),
+                                        &mut output,
+                                    )?;
                                 }
                             }
                         }
@@ -312,50 +331,6 @@ impl PipelineTokenizer {
             };
         }
         Ok(output)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    struct FixedMatcher(Vec<((usize, usize), u32)>);
-    impl PipelinePatternMatcher for FixedMatcher {
-        fn extract_next(
-            &self,
-            _bytes: &[u8],
-            search_offset: usize,
-            _normalized: bool,
-        ) -> Option<((usize, usize), u32)> {
-            self.0
-                .iter()
-                .find(|((start, _), _)| *start >= search_offset)
-                .copied()
-        }
-    }
-
-    #[test]
-    fn segment_iterator_yields_text_and_specials_in_order() {
-        let input = "aa<s>bb<s>cc";
-        let matcher = FixedMatcher(vec![((2, 5), 0), ((7, 10), 1)]);
-
-        let segments: Vec<_> = SpecialSegmentIterator::new(input, &matcher, false)
-            .map(|segment| match segment {
-                Segment::Text(text) => (Some(text), None),
-                Segment::SpecialToken(id) => (None, Some(id)),
-            })
-            .collect();
-
-        assert_eq!(
-            segments,
-            vec![
-                (Some("aa"), None),
-                (None, Some(0)),
-                (Some("bb"), None),
-                (None, Some(1)),
-                (Some("cc"), None),
-            ]
-        );
     }
 }
 
@@ -481,4 +456,175 @@ pub fn split_delimiter(
             SplitPolicy::Keep
         }
     });
+}
+
+/// Applies a [`SplitDelimiterBehavior`] to a match segmentation and appends the
+/// resulting pieces to `out`.
+///
+/// `matches` is the `(offsets, is_match)` sequence covering the whole input,
+/// so regex matches interleaved with the gaps between them (exactly what
+/// `Pattern::find_matches` produces). This is the pipeline-side equivalent of
+/// the fold in `NormalizedString::split`; the arms mirror it exactly. Empty and
+/// removed pieces are dropped.
+pub fn split_matches(
+    out: &mut Vec<Split>,
+    matches: Vec<((usize, usize), bool)>,
+    behavior: SplitDelimiterBehavior,
+) {
+    use SplitDelimiterBehavior::*;
+
+    // (offsets, should_remove) — mirrors `NormalizedString::split`.
+    let splits: Vec<((usize, usize), bool)> = match behavior {
+        Isolated => matches.into_iter().map(|(o, _)| (o, false)).collect(),
+        Removed => matches, // should_remove == is_match
+        Contiguous => {
+            let mut previous_match = false;
+            matches
+                .into_iter()
+                .fold(vec![], |mut acc, (offsets, is_match)| {
+                    if is_match == previous_match {
+                        if let Some(((_, end), _)) = acc.last_mut() {
+                            *end = offsets.1;
+                        } else {
+                            acc.push((offsets, false));
+                        }
+                    } else {
+                        acc.push((offsets, false));
+                    }
+                    previous_match = is_match;
+                    acc
+                })
+        }
+        MergedWithPrevious => {
+            let mut previous_match = false;
+            matches
+                .into_iter()
+                .fold(vec![], |mut acc, (offsets, is_match)| {
+                    if is_match && !previous_match {
+                        if let Some(((_, end), _)) = acc.last_mut() {
+                            *end = offsets.1;
+                        } else {
+                            acc.push((offsets, false));
+                        }
+                    } else {
+                        acc.push((offsets, false));
+                    }
+                    previous_match = is_match;
+                    acc
+                })
+        }
+        MergedWithNext => {
+            let mut previous_match = false;
+            let mut splits =
+                matches
+                    .into_iter()
+                    .rev()
+                    .fold(vec![], |mut acc, (offsets, is_match)| {
+                        if is_match && !previous_match {
+                            if let Some(((start, _), _)) = acc.last_mut() {
+                                *start = offsets.0;
+                            } else {
+                                acc.push((offsets, false));
+                            }
+                        } else {
+                            acc.push((offsets, false));
+                        }
+                        previous_match = is_match;
+                        acc
+                    });
+            splits.reverse();
+            splits
+        }
+    };
+
+    for ((start, end), should_remove) in splits {
+        if !should_remove && start != end {
+            out.push(Split {
+                start: start as u32,
+                end: end as u32,
+            });
+        }
+    }
+}
+
+pub trait Model {
+    fn tokenize_bytes(&self, bytes: &[u8], output: &mut Vec<PipelineToken>) -> Result<()>;
+}
+
+pub enum PipelineModel {
+    BPE(BPE),
+    Unigram(Unigram),
+    WordLevel(WordLevel),
+    WordPiece(WordPiece),
+}
+
+impl Model for PipelineModel {
+    fn tokenize_bytes(&self, bytes: &[u8], output: &mut Vec<PipelineToken>) -> Result<()> {
+        let sequence = str::from_utf8(bytes)?;
+        let tokens = match self {
+            Self::BPE(model) => model.tokenize(sequence),
+            Self::Unigram(model) => model.tokenize(sequence),
+            Self::WordLevel(model) => model.tokenize(sequence),
+            Self::WordPiece(model) => model.tokenize(sequence),
+        }?;
+        output.extend(tokens.iter().map(|&Token { id, .. }| PipelineToken { id }));
+        Ok(())
+    }
+}
+
+impl TryFrom<ModelWrapper> for PipelineModel {
+    type Error = crate::Error;
+
+    fn try_from(value: ModelWrapper) -> std::prelude::v1::Result<Self, Self::Error> {
+        Ok(match value {
+            ModelWrapper::BPE(model) => Self::BPE(model),
+            ModelWrapper::Unigram(model) => Self::Unigram(model),
+            ModelWrapper::WordLevel(model) => Self::WordLevel(model),
+            ModelWrapper::WordPiece(model) => Self::WordPiece(model),
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct FixedMatcher(Vec<((usize, usize), u32)>);
+    impl PipelinePatternMatcher for FixedMatcher {
+        fn extract_next(
+            &self,
+            _bytes: &[u8],
+            search_offset: usize,
+            _normalized: bool,
+        ) -> Option<((usize, usize), u32)> {
+            self.0
+                .iter()
+                .find(|((start, _), _)| *start >= search_offset)
+                .copied()
+        }
+    }
+
+    #[test]
+    fn segment_iterator_yields_text_and_specials_in_order() {
+        let input = "aa<s>bb<s>cc";
+        let matcher = FixedMatcher(vec![((2, 5), 0), ((7, 10), 1)]);
+
+        let segments: Vec<_> = SpecialSegmentIterator::new(input, &matcher, false)
+            .map(|segment| match segment {
+                Segment::Text(text) => (Some(text), None),
+                Segment::SpecialToken(id) => (None, Some(id)),
+            })
+            .collect();
+
+        assert_eq!(
+            segments,
+            vec![
+                (Some("aa"), None),
+                (None, Some(0)),
+                (Some("bb"), None),
+                (None, Some(1)),
+                (Some("cc"), None),
+            ]
+        );
+    }
 }
