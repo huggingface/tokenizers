@@ -16,8 +16,14 @@ unsafe fn classify_neon(text: &[u8], tags: &mut [u8]) {
             // 2. ASCII fast path:
             let out = if vmaxvq_u8(bytes) < 0x80 {
                 // Letters in utf-8 start with different ranges.
+                // We load the default value in out, which will be the tags
                 let mut out = vld1q_dup_u8(&(Atom::SymOther as u8));
-                out = vbslq_u8(bytes, vld1q_dup_u8(&(Atom::Space as u8)), out);
+                // we change the value for the space: 0x20
+                out = vbslq_u8(
+                    vceqq_u8(bytes, vdupq_n_u8(0x20)),
+                    vld1q_dup_u8(&(Atom::Space as u8)),
+                    out,
+                );
                 out
             } else {
                 let next_bytes = vld1q_u8(text.as_ptr().add(i + 16));
@@ -25,8 +31,8 @@ unsafe fn classify_neon(text: &[u8], tags: &mut [u8]) {
 
                 todo!();
             };
-            i += 16;
             vst1q_u8(tags.as_mut_ptr().add(i), out);
+            i += 16;
         }
     }
 }
