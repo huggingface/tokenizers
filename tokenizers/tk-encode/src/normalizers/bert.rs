@@ -179,7 +179,7 @@ impl pipeline::Normalizer for BertNormalizer {
             return Ok(input.into());
         }
 
-        let cleaned: String = input
+        let cleaned = input
             .chars()
             .filter(|&c| !(self.clean_text && clean_text_removes(c)))
             .flat_map(|c| {
@@ -194,22 +194,25 @@ impl pipeline::Normalizer for BertNormalizer {
                     [Some(c), None, None]
                 }
             })
-            .flatten()
-            .collect();
+            .flatten();
 
-        let stripped = if strip_accents {
-            cleaned.nfd().filter(|c| !c.is_mark_nonspacing()).collect()
-        } else {
-            cleaned
-        };
+        // `.nfd()` changes the iterator's type, so the stage toggles can't be
+        // plain `if`s mid-chain: each config combination gets its own
+        // statically-typed chain, all funneled into one pre-sized String.
+        let mut normalized = String::with_capacity(input.len());
+        match (strip_accents, self.lowercase) {
+            (true, true) => normalized.extend(
+                cleaned
+                    .nfd()
+                    .filter(|c| !c.is_mark_nonspacing())
+                    .flat_map(char::to_lowercase),
+            ),
+            (true, false) => normalized.extend(cleaned.nfd().filter(|c| !c.is_mark_nonspacing())),
+            (false, true) => normalized.extend(cleaned.flat_map(char::to_lowercase)),
+            (false, false) => normalized.extend(cleaned),
+        }
 
-        let lowered = if self.lowercase {
-            stripped.chars().flat_map(char::to_lowercase).collect()
-        } else {
-            stripped
-        };
-
-        Ok(Cow::Owned(lowered))
+        Ok(Cow::Owned(normalized))
     }
 }
 
