@@ -117,7 +117,7 @@ impl pipeline::PreTokenizer for Split {
     fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Split>) -> Result<()> {
         let matches: Vec<((usize, usize), bool)> = match &self.multi {
             Some(multi) => {
-                let mut segments = Vec::new();
+                let mut segments = Vec::with_capacity(text.len() / 5);
                 let mut prev = 0;
                 for (start, end) in multi.split_ranges(text) {
                     if prev < start {
@@ -235,7 +235,7 @@ mod tests {
         text: &str,
     ) -> Vec<(&str, (u32, u32))> {
         let pretok = Split::new(pattern, behavior, invert).unwrap();
-        let mut splits = Vec::new();
+        let mut splits = Vec::with_capacity(text.len() / 5);
         crate::pipeline::PreTokenizer::pre_tokenize(&pretok, text, &mut splits).unwrap();
         splits
             .iter()
