@@ -47,6 +47,7 @@ pub trait PreTokenizer {
 }
 
 /// The pre-tokenizers a [`PipelineTokenizer`] can run.
+#[allow(clippy::large_enum_variant)]
 pub enum PipelinePreTokenizer {
     Bert(BertPreTokenizer),
     Delimiter(CharDelimiterSplit),
