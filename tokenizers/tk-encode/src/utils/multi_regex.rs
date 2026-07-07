@@ -72,17 +72,13 @@ impl Iterator for MultiSplits<'_, '_> {
         let start = self.last;
         let mut end = self.last + m.range().end;
         if self.lookahead[m.pattern().as_usize()] {
-            // drop the look-ahead char (kept for the next piece)
-            let last = self.text[start..end]
-                .chars()
-                .next_back()
-                .expect("a look-ahead pattern matches at least one char");
-            end -= last.len_utf8();
+            // drop the look-ahead char (kept for the next piece); skip if empty
+            if let Some(last) = self.text[start..end].chars().next_back() {
+                end -= last.len_utf8();
+            }
         }
         if end == start {
-            // no progress: avoid an infinite loop (shouldn't happen for the GPT
-            // patterns, where every alternative consumes ≥1 kept char)
-            return None;
+            return None; // no progress (only reachable via a malformed pattern set)
         }
         self.last = end;
         Some((start, end))
