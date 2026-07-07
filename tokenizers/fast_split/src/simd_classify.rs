@@ -32,13 +32,22 @@ unsafe fn classify_neon(text: &[u8], tags: &mut [u8]) {
                     vceqq_u8(bytes, vdupq_n_u8(0x0D)),
                 );
                 out = vbslq_u8(new_line, vdupq_n_u8(Atom::Newline as u8), out);
-
+                // now whitespaces
+                let white_space = vandq_u8(
+                    vandq_u8(
+                        vceqq_u8(bytes, vdupq_n_u8(0x09)),
+                        vceqq_u8(bytes, vdupq_n_u8(0x0B)),
+                    ),
+                    vceqq_u8(bytes, vdupq_n_u8(0x0C)),
+                );
+                out = vbslq_u8(white_space, vdupq_n_u8(Atom::WsOther as u8), out);
                 // we change the value for the space: 0x20
                 out = vbslq_u8(
                     vceqq_u8(bytes, vdupq_n_u8(0x20)),
                     vdupq_n_u8(Atom::Space as u8),
                     out,
                 );
+                // now num words
                 out
             } else {
                 let next_bytes = vld1q_u8(text.as_ptr().add(i + 16));
@@ -51,7 +60,6 @@ unsafe fn classify_neon(text: &[u8], tags: &mut [u8]) {
         }
     }
 }
-//out = vbsl(v==0x0A | v==0x0D,            Newline,    out)
 // out = vbsl(v==0x09 | v==0x0B | v==0x0C,  WsOther,    out)
 // out = vbsl(v==0x20,                      Space,      out)
 // out = vbsl(digit(0x30..0x39),            NumWord,    out)
