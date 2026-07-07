@@ -18,6 +18,21 @@ unsafe fn classify_neon(text: &[u8], tags: &mut [u8]) {
                 // Letters in utf-8 start with different ranges.
                 // We load the default value in out, which will be the tags
                 let mut out = vld1q_dup_u8(&(Atom::SymOther as u8));
+                // first range of printable chars
+                // from '!' to '~' are all
+                // printable, we set them to be punctuation
+                let printable = vandq_u8(
+                    vcgeq_u8(bytes, vdupq_n_u8(0x21)),
+                    vcleq_u8(bytes, vdupq_n_u8(0x7e)),
+                );
+                out = vbslq_u8(printable, vld1q_dup_u8(&(Atom::Punct as u8)), out);
+                // Now '\n' and '\r'
+                let new_line = vandq_u8(
+                    vceqq_u8(bytes, vdupq_n_u8(0x0A)),
+                    vceqq_u8(bytes, vdupq_n_u8(0x0D)),
+                );
+                out = vbslq_u8(new_line, vld1q_dup_u8(&(Atom::Newline as u8)), out);
+
                 // we change the value for the space: 0x20
                 out = vbslq_u8(
                     vceqq_u8(bytes, vdupq_n_u8(0x20)),
@@ -36,6 +51,13 @@ unsafe fn classify_neon(text: &[u8], tags: &mut [u8]) {
         }
     }
 }
+//out = vbsl(v==0x0A | v==0x0D,            Newline,    out)
+// out = vbsl(v==0x09 | v==0x0B | v==0x0C,  WsOther,    out)
+// out = vbsl(v==0x20,                      Space,      out)
+// out = vbsl(digit(0x30..0x39),            NumWord,    out)
+// out = vbsl((v|0x20) in 0x61..0x7A,       Letter,     out)   // case-fold trick for a-z
+// out = vbsl(v==0x5F,                      Connector,  out)   // '_'
+// out = vbsl(v==0x27,                      Apostrophe, out)   // '\''
 // 4 different SIMD function to implement. Each take text and tags and produce a tag value per char
 //   in the tect right?
 // Continuation-byte sentinel is written to every non-lead byte.
