@@ -72,7 +72,7 @@ impl Normalizer for Precompiled {
 }
 
 impl pipeline::Normalizer for Precompiled {
-    fn normalize<'a>(&self, input: &'a str) -> Cow<'a, str> {
+    fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
         let mut transformed: Option<String> = None;
         for (g_idx, grapheme) in input.grapheme_indices(true) {
             if grapheme.len() < 6 {
@@ -102,9 +102,9 @@ impl pipeline::Normalizer for Precompiled {
             }
         }
         if let Some(string) = transformed {
-            Cow::Owned(string)
+            Ok(Cow::Owned(string))
         } else {
-            Cow::Borrowed(input)
+            Ok(Cow::Borrowed(input))
         }
     }
 }
@@ -148,7 +148,7 @@ mod tests {
             any_modified |= ns.get() != *input;
             assert_eq!(
                 ns.get(),
-                &*pipeline::Normalizer::normalize(&n, input),
+                &*pipeline::Normalizer::normalize(&n, input).unwrap(),
                 "pipeline output diverges from legacy for {input:?}"
             );
         }

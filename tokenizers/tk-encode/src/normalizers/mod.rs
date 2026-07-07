@@ -218,7 +218,7 @@ impl_enum_from!(Prepend, NormalizerWrapper, Prepend);
 impl_enum_from!(ByteLevel, NormalizerWrapper, ByteLevel);
 
 impl pipeline::Normalizer for NormalizerWrapper {
-    fn normalize<'a>(&self, input: &'a str) -> std::borrow::Cow<'a, str> {
+    fn normalize<'a>(&self, input: &'a str) -> crate::Result<std::borrow::Cow<'a, str>> {
         match self {
             Self::BertNormalizer(bn) => pipeline::Normalizer::normalize(bn, input),
             Self::StripNormalizer(sn) => pipeline::Normalizer::normalize(sn, input),

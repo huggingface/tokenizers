@@ -38,13 +38,13 @@ impl Normalizer for ByteLevel {
 }
 
 impl pipeline::Normalizer for ByteLevel {
-    fn normalize<'a>(&self, input: &'a str) -> Cow<'a, str> {
+    fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
         let table = &*BYTES_CHAR_LOOKUP;
-        let mut out = String::with_capacity(input.len());
+        let mut out = String::with_capacity(2 * input.len());
         for &b in input.as_bytes() {
             out.push(table[b as usize]);
         }
-        Cow::Owned(out)
+        Ok(Cow::Owned(out))
     }
 }
 
@@ -58,7 +58,10 @@ mod tests {
         for input in &["Hello world", "Hello 我今天", "abc", ""] {
             let mut ns = NormalizedString::from(*input);
             Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
-            assert_eq!(ns.get(), &*pipeline::Normalizer::normalize(&n, input));
+            assert_eq!(
+                ns.get(),
+                &*pipeline::Normalizer::normalize(&n, input).unwrap()
+            );
         }
     }
 }

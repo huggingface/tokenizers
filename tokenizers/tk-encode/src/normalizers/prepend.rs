@@ -27,11 +27,14 @@ impl Normalizer for Prepend {
 }
 
 impl pipeline::Normalizer for Prepend {
-    fn normalize<'a>(&self, input: &'a str) -> Cow<'a, str> {
+    fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
         if input.is_empty() {
-            return Cow::Borrowed(input);
+            return Ok(Cow::Borrowed(input));
         }
-        Cow::Owned(format!("{prepend}{input}", prepend = &self.prepend))
+        Ok(Cow::Owned(format!(
+            "{prepend}{input}",
+            prepend = &self.prepend
+        )))
     }
 }
 
@@ -78,7 +81,10 @@ mod tests {
         for input in &["Hello", "world", ""] {
             let mut ns = NormalizedString::from(*input);
             Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
-            assert_eq!(ns.get(), &*pipeline::Normalizer::normalize(&n, input));
+            assert_eq!(
+                ns.get(),
+                &*pipeline::Normalizer::normalize(&n, input).unwrap()
+            );
         }
     }
 }

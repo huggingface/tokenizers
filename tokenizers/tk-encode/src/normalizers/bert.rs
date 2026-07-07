@@ -166,11 +166,11 @@ impl Normalizer for BertNormalizer {
 }
 
 impl pipeline::Normalizer for BertNormalizer {
-    fn normalize<'a>(&self, input: &'a str) -> Cow<'a, str> {
+    fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
         let strip_accents = self.strip_accents.unwrap_or(self.lowercase);
 
         if self.is_noop(input, strip_accents) {
-            return input.into();
+            return Ok(input.into());
         }
 
         let cleaned: String = input
@@ -205,7 +205,7 @@ impl pipeline::Normalizer for BertNormalizer {
             stripped
         };
 
-        Cow::Owned(lowered)
+        Ok(Cow::Owned(lowered))
     }
 }
 
@@ -249,7 +249,7 @@ mod tests {
                             Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
                             assert_eq!(
                                 ns.get(),
-                                &*pipeline::Normalizer::normalize(&n, input),
+                                &*pipeline::Normalizer::normalize(&n, input).unwrap(),
                                 "config={n:?} input={input:?}",
                             );
                         }
@@ -264,14 +264,14 @@ mod tests {
         let n = BertNormalizer::default();
         for input in &["hello world", "already lowercase ascii", ""] {
             assert!(matches!(
-                pipeline::Normalizer::normalize(&n, input),
+                pipeline::Normalizer::normalize(&n, input).unwrap(),
                 Cow::Borrowed(_)
             ));
         }
         // Anything that must change is owned.
         for input in &["Héllo", "中", "\tx", "ABC"] {
             assert!(matches!(
-                pipeline::Normalizer::normalize(&n, input),
+                pipeline::Normalizer::normalize(&n, input).unwrap(),
                 Cow::Owned(_)
             ));
         }

@@ -18,11 +18,11 @@ impl Normalizer for NFD {
     }
 }
 impl pipeline::Normalizer for NFD {
-    fn normalize<'a>(&self, input: &'a str) -> Cow<'a, str> {
+    fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
         if let IsNormalized::Yes = is_nfd_quick(input.chars()) {
-            input.into()
+            Ok(input.into())
         } else {
-            Cow::Owned(input.nfd().collect())
+            Ok(Cow::Owned(input.nfd().collect()))
         }
     }
 }
@@ -37,11 +37,11 @@ impl Normalizer for NFKD {
     }
 }
 impl pipeline::Normalizer for NFKD {
-    fn normalize<'a>(&self, input: &'a str) -> Cow<'a, str> {
+    fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
         if let IsNormalized::Yes = is_nfkd_quick(input.chars()) {
-            input.into()
+            Ok(input.into())
         } else {
-            Cow::Owned(input.nfkd().collect())
+            Ok(Cow::Owned(input.nfkd().collect()))
         }
     }
 }
@@ -56,11 +56,11 @@ impl Normalizer for NFC {
     }
 }
 impl pipeline::Normalizer for NFC {
-    fn normalize<'a>(&self, input: &'a str) -> Cow<'a, str> {
+    fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
         if let IsNormalized::Yes = is_nfc_quick(input.chars()) {
-            input.into()
+            Ok(input.into())
         } else {
-            Cow::Owned(input.nfc().collect())
+            Ok(Cow::Owned(input.nfc().collect()))
         }
     }
 }
@@ -75,11 +75,11 @@ impl Normalizer for NFKC {
     }
 }
 impl pipeline::Normalizer for NFKC {
-    fn normalize<'a>(&self, input: &'a str) -> Cow<'a, str> {
+    fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
         if let IsNormalized::Yes = is_nfkc_quick(input.chars()) {
-            input.into()
+            Ok(input.into())
         } else {
-            Cow::Owned(input.nfkc().collect())
+            Ok(Cow::Owned(input.nfkc().collect()))
         }
     }
 }
@@ -124,38 +124,64 @@ impl Normalizer for Nmt {
         Ok(())
     }
 }
+
 impl pipeline::Normalizer for Nmt {
-    fn normalize<'a>(&self, input: &'a str) -> Cow<'a, str> {
-        let normalized: String = input
-            .chars()
-            .filter(|&c| {
-                !matches!(
-                    c as u32,
-                    0x0001..=0x0008 |
-                    0x000B |
-                    0x000E..=0x001F |
-                    0x007F |
-                    0x008F |
-                    0x009F
-                )
-            })
-            // Other code points considered as whitespace.
-            .map(|c| match c as u32 {
-                0x0009 => ' ',
-                0x000A => ' ',
-                0x000C => ' ',
-                0x000D => ' ',
-                0x1680 => ' ',
-                0x200B..=0x200F => ' ',
-                0x2028 => ' ',
-                0x2029 => ' ',
-                0x2581 => ' ',
-                0xFEFF => ' ',
-                0xFFFD => ' ',
-                _ => c,
-            })
-            .collect();
-        Cow::Owned(normalized)
+    fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
+        if input.chars().any(|c| {
+            matches!(
+                c as u32,
+                0x0001..=0x0008 |
+                0x000B |
+                0x000E..=0x001F |
+                0x007F |
+                0x008F |
+                0x009F |
+                0x0009 |
+                0x000A |
+                0x000C |
+                0x000D |
+                0x1680 |
+                0x200B..=0x200F |
+                0x2028 |
+                0x2029 |
+                0x2581 |
+                0xFEFF |
+                0xFFFD
+            )
+        }) {
+            let normalized: String = input
+                .chars()
+                .filter(|&c| {
+                    !matches!(
+                        c as u32,
+                        0x0001..=0x0008 |
+                        0x000B |
+                        0x000E..=0x001F |
+                        0x007F |
+                        0x008F |
+                        0x009F
+                    )
+                })
+                // Other code points considered as whitespace.
+                .map(|c| match c as u32 {
+                    0x0009 => ' ',
+                    0x000A => ' ',
+                    0x000C => ' ',
+                    0x000D => ' ',
+                    0x1680 => ' ',
+                    0x200B..=0x200F => ' ',
+                    0x2028 => ' ',
+                    0x2029 => ' ',
+                    0x2581 => ' ',
+                    0xFEFF => ' ',
+                    0xFFFD => ' ',
+                    _ => c,
+                })
+                .collect();
+            return Ok(Cow::Owned(normalized));
+        }
+
+        Ok(input.into())
     }
 }
 
@@ -184,7 +210,10 @@ mod tests {
         for input in &["é", "café", "abc", "", "Å"] {
             let mut ns = NormalizedString::from(*input);
             Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
-            assert_eq!(ns.get(), &*pipeline::Normalizer::normalize(&n, input));
+            assert_eq!(
+                ns.get(),
+                &*pipeline::Normalizer::normalize(&n, input).unwrap()
+            );
         }
     }
 
@@ -194,7 +223,10 @@ mod tests {
         for input in &["\u{fb01}", "²", "café", "abc", ""] {
             let mut ns = NormalizedString::from(*input);
             Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
-            assert_eq!(ns.get(), &*pipeline::Normalizer::normalize(&n, input));
+            assert_eq!(
+                ns.get(),
+                &*pipeline::Normalizer::normalize(&n, input).unwrap()
+            );
         }
     }
 
@@ -204,7 +236,10 @@ mod tests {
         for input in &["e\u{0301}", "abc", "", "cafe\u{0301}"] {
             let mut ns = NormalizedString::from(*input);
             Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
-            assert_eq!(ns.get(), &*pipeline::Normalizer::normalize(&n, input));
+            assert_eq!(
+                ns.get(),
+                &*pipeline::Normalizer::normalize(&n, input).unwrap()
+            );
         }
     }
 
@@ -214,7 +249,10 @@ mod tests {
         for input in &["\u{fb01}", "²", "e\u{0301}", "abc", ""] {
             let mut ns = NormalizedString::from(*input);
             Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
-            assert_eq!(ns.get(), &*pipeline::Normalizer::normalize(&n, input));
+            assert_eq!(
+                ns.get(),
+                &*pipeline::Normalizer::normalize(&n, input).unwrap()
+            );
         }
     }
 
@@ -224,7 +262,10 @@ mod tests {
         for input in &["a\tb", "x\u{200b}y", "abc", "", "\u{feff}hi", "c\u{0007}d"] {
             let mut ns = NormalizedString::from(*input);
             Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
-            assert_eq!(ns.get(), &*pipeline::Normalizer::normalize(&n, input));
+            assert_eq!(
+                ns.get(),
+                &*pipeline::Normalizer::normalize(&n, input).unwrap()
+            );
         }
     }
 }

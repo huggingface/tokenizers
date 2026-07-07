@@ -44,14 +44,14 @@ impl Normalizer for Strip {
 }
 
 impl pipeline::Normalizer for Strip {
-    fn normalize<'a>(&self, input: &'a str) -> Cow<'a, str> {
+    fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
         let s = if self.strip_left {
             input.trim_start()
         } else {
             input
         };
         let s = if self.strip_right { s.trim_end() } else { s };
-        Cow::Borrowed(s)
+        Ok(Cow::Borrowed(s))
     }
 }
 
@@ -71,11 +71,13 @@ impl Normalizer for StripAccents {
 }
 
 impl pipeline::Normalizer for StripAccents {
-    fn normalize<'a>(&self, input: &'a str) -> std::borrow::Cow<'a, str> {
+    fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
         if input.chars().any(is_combining_mark) {
-            Cow::Owned(input.chars().filter(|&c| !is_combining_mark(c)).collect())
+            Ok(Cow::Owned(
+                input.chars().filter(|&c| !is_combining_mark(c)).collect(),
+            ))
         } else {
-            Cow::Borrowed(input)
+            Ok(Cow::Borrowed(input))
         }
     }
 }
@@ -186,7 +188,10 @@ mod tests {
         for input in &["café", "abc", "", "å ç ñ", "     hello"] {
             let mut ns = NormalizedString::from(*input);
             Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
-            assert_eq!(ns.get(), &*pipeline::Normalizer::normalize(&n, input));
+            assert_eq!(
+                ns.get(),
+                &*pipeline::Normalizer::normalize(&n, input).unwrap()
+            );
         }
     }
 
@@ -197,7 +202,10 @@ mod tests {
             for input in &["  hello  ", "hello", "", "   ", "\t hi \n"] {
                 let mut ns = NormalizedString::from(*input);
                 Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
-                assert_eq!(ns.get(), &*pipeline::Normalizer::normalize(&n, input));
+                assert_eq!(
+                    ns.get(),
+                    &*pipeline::Normalizer::normalize(&n, input).unwrap()
+                );
             }
         }
     }

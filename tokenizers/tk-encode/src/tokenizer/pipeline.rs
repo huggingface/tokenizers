@@ -35,7 +35,7 @@ impl Split {
 }
 
 pub trait Normalizer {
-    fn normalize<'a>(&self, input: &'a str) -> Cow<'a, str>;
+    fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>>;
 }
 
 /// Range-based pre-tokenization: yields spans into the input rather than owned
@@ -281,7 +281,7 @@ impl PipelineTokenizer {
                 }
                 Segment::Text(chunk) => {
                     let normalized: &str = if let Some(normalizer) = &self.normalizer {
-                        &normalizer.normalize(chunk)
+                        &normalizer.normalize(chunk)?
                     } else {
                         chunk
                     };
