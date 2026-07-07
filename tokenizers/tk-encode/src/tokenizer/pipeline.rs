@@ -72,7 +72,10 @@ pub enum PipelinePreTokenizer {
 impl PreTokenizer for PipelinePreTokenizer {
     fn pre_tokenize(&self, text: &str, out: &mut Vec<Split>) -> Result<()> {
         match self {
-            Self::None => Ok(()),
+            Self::None => {
+                out.push(Split { start: 0, end: text.len() as u32 });
+                Ok(())
+            },
             Self::Bert(pretok) => pretok.pre_tokenize(text, out),
             Self::Delimiter(pretok) => pretok.pre_tokenize(text, out),
             Self::Digits(pretok) => pretok.pre_tokenize(text, out),
