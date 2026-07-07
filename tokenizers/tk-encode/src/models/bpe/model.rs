@@ -5,7 +5,6 @@ use crate::utils::cache::{DEFAULT_CACHE_CAPACITY, MAX_LENGTH};
 use crate::utils::iter::ResultShunt;
 use crate::vocab_store::VocabStore;
 use ahash::AHashMap;
-use rayon::result;
 use serde_json::Value;
 use std::borrow::Cow;
 use std::cell::RefCell;
@@ -720,7 +719,7 @@ impl BPE {
             let mut by_bpe = cell.borrow_mut();
             let local = by_bpe.entry(cache_id).or_default();
             if let Some(hit) = local.get(sequence) {
-                self.push_word_ids(&hit, out);
+                self.push_word_ids(hit, out);
                 return Ok(());
             }
             let word = self.merge_word(sequence)?;
@@ -1136,6 +1135,82 @@ mod tests {
             .unwrap();
         let tokens = bpe.tokenize("\n").unwrap();
         assert_eq!(tokens, vec![Token::new(1u32, "<0x0A>".into(), (0, 1)),]);
+    }
+
+    /// Ids from the encode-only pipeline fast path (`pipeline::Model::tokenize_bytes`).
+    fn pipeline_ids(bpe: &BPE, s: &str) -> Vec<u32> {
+        use crate::pipeline::Model as _;
+        let mut out = Vec::new();
+        bpe.tokenize_bytes(s.as_bytes(), &mut out).unwrap();
+        out.into_iter().map(|t| t.id).collect()
+    }
+
+    /// Ids from the reference `Model::tokenize`.
+    fn reference_ids(bpe: &BPE, s: &str) -> Vec<u32> {
+        bpe.tokenize(s).unwrap().iter().map(|t| t.id).collect()
+    }
+
+    #[test]
+    fn test_byte_fallback_tokenize_bytes() {
+        // One covered byte + unk fallback; the fast path must match `tokenize`.
+        let vocab: Vocab = [("<unk>".into(), 0), ("<0x61>".into(), 1)]
+            .iter()
+            .cloned()
+            .collect();
+        let bpe = BpeBuilder::default()
+            .vocab_and_merges(vocab, vec![])
+            .unk_token("<unk>".to_string())
+            .byte_fallback(true)
+            .build()
+            .unwrap();
+        assert_eq!(pipeline_ids(&bpe, "a"), vec![1]); // 'a' -> <0x61>
+        assert_eq!(pipeline_ids(&bpe, "c"), vec![0]); // 'c' uncovered -> <unk>
+        assert_eq!(pipeline_ids(&bpe, "a"), reference_ids(&bpe, "a"));
+        assert_eq!(pipeline_ids(&bpe, "c"), reference_ids(&bpe, "c"));
+
+        // Full byte vocab (<0xNN> -> id N): every char decomposes to its raw
+        // UTF-8 bytes, exercising multi-byte code points through byte fallback.
+        let mut vocab: Vocab = (0u32..=255).map(|b| (format!("<{b:#04X}>"), b)).collect();
+        vocab.insert("<unk>".into(), 256);
+        let bpe = BpeBuilder::default()
+            .vocab_and_merges(vocab, vec![])
+            .unk_token("<unk>".to_string())
+            .byte_fallback(true)
+            .build()
+            .unwrap();
+        for s in ["é", "🦀", "日本語", "a\nz", "café"] {
+            let expected: Vec<u32> = s.bytes().map(u32::from).collect();
+            assert_eq!(pipeline_ids(&bpe, s), expected, "byte ids for {s:?}");
+            assert_eq!(
+                pipeline_ids(&bpe, s),
+                reference_ids(&bpe, s),
+                "fast vs ref {s:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_byte_fallback_fuse_unk_tokenize_bytes() {
+        // Only 'a' is byte-representable; uncovered chars hit the fused-unk path.
+        let vocab: Vocab = [("<unk>".into(), 0), ("<0x61>".into(), 1)]
+            .iter()
+            .cloned()
+            .collect();
+        let bpe = BpeBuilder::default()
+            .vocab_and_merges(vocab, vec![])
+            .unk_token("<unk>".to_string())
+            .byte_fallback(true)
+            .fuse_unk(true)
+            .build()
+            .unwrap();
+        for s in ["a", "c", "cc", "aca", "acca"] {
+            assert_eq!(
+                pipeline_ids(&bpe, s),
+                reference_ids(&bpe, s),
+                "fast vs ref {s:?}"
+            );
+        }
+        assert_eq!(pipeline_ids(&bpe, "cc"), vec![0]); // adjacent unks fuse to one <unk>
     }
 
     #[test]
