@@ -17,6 +17,7 @@ use crate::{
         digits::Digits,
         fixed_length::FixedLength,
         punctuation::Punctuation,
+        sequence::Sequence,
         split::Split as SplitPretok,
         unicode_scripts::UnicodeScripts,
         whitespace::{Whitespace, WhitespaceSplit},
@@ -60,6 +61,7 @@ pub enum PipelinePreTokenizer {
     Digits(Digits),
     FixedLength(FixedLength),
     Punctuation(Punctuation),
+    Sequence(Sequence),
     Split(SplitPretok),
     UnicodeScripts(UnicodeScripts),
     Whitespace(Whitespace),
@@ -76,6 +78,7 @@ impl PreTokenizer for PipelinePreTokenizer {
             Self::Digits(pretok) => pretok.pre_tokenize(text, out),
             Self::FixedLength(pretok) => pretok.pre_tokenize(text, out),
             Self::Punctuation(pretok) => pretok.pre_tokenize(text, out),
+            Self::Sequence(pretok) => pretok.pre_tokenize(text, out),
             Self::Split(pretok) => pretok.pre_tokenize(text, out),
             Self::UnicodeScripts(pretok) => pretok.pre_tokenize(text, out),
             Self::Whitespace(pretok) => pretok.pre_tokenize(text, out),
@@ -229,6 +232,7 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
             Some(PreTokenizerWrapper::Digits(p)) => PipelinePreTokenizer::Digits(p.clone()),
             Some(PreTokenizerWrapper::FixedLength(p)) => PipelinePreTokenizer::FixedLength(*p),
             Some(PreTokenizerWrapper::Punctuation(p)) => PipelinePreTokenizer::Punctuation(*p),
+            Some(PreTokenizerWrapper::Sequence(p)) => PipelinePreTokenizer::Sequence(p.clone()),
             Some(PreTokenizerWrapper::Split(p)) => PipelinePreTokenizer::Split(p.clone()),
             Some(PreTokenizerWrapper::UnicodeScripts(p)) => PipelinePreTokenizer::UnicodeScripts(*p),
             Some(PreTokenizerWrapper::Whitespace(p)) => PipelinePreTokenizer::Whitespace(p.clone()),
@@ -327,50 +331,6 @@ impl PipelineTokenizer {
             };
         }
         Ok(output)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    struct FixedMatcher(Vec<((usize, usize), u32)>);
-    impl PipelinePatternMatcher for FixedMatcher {
-        fn extract_next(
-            &self,
-            _bytes: &[u8],
-            search_offset: usize,
-            _normalized: bool,
-        ) -> Option<((usize, usize), u32)> {
-            self.0
-                .iter()
-                .find(|((start, _), _)| *start >= search_offset)
-                .copied()
-        }
-    }
-
-    #[test]
-    fn segment_iterator_yields_text_and_specials_in_order() {
-        let input = "aa<s>bb<s>cc";
-        let matcher = FixedMatcher(vec![((2, 5), 0), ((7, 10), 1)]);
-
-        let segments: Vec<_> = SpecialSegmentIterator::new(input, &matcher, false)
-            .map(|segment| match segment {
-                Segment::Text(text) => (Some(text), None),
-                Segment::SpecialToken(id) => (None, Some(id)),
-            })
-            .collect();
-
-        assert_eq!(
-            segments,
-            vec![
-                (Some("aa"), None),
-                (None, Some(0)),
-                (Some("bb"), None),
-                (None, Some(1)),
-                (Some("cc"), None),
-            ]
-        );
     }
 }
 
@@ -622,5 +582,49 @@ impl TryFrom<ModelWrapper> for PipelineModel {
             ModelWrapper::WordLevel(model) => Self::WordLevel(model),
             ModelWrapper::WordPiece(model) => Self::WordPiece(model),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct FixedMatcher(Vec<((usize, usize), u32)>);
+    impl PipelinePatternMatcher for FixedMatcher {
+        fn extract_next(
+            &self,
+            _bytes: &[u8],
+            search_offset: usize,
+            _normalized: bool,
+        ) -> Option<((usize, usize), u32)> {
+            self.0
+                .iter()
+                .find(|((start, _), _)| *start >= search_offset)
+                .copied()
+        }
+    }
+
+    #[test]
+    fn segment_iterator_yields_text_and_specials_in_order() {
+        let input = "aa<s>bb<s>cc";
+        let matcher = FixedMatcher(vec![((2, 5), 0), ((7, 10), 1)]);
+
+        let segments: Vec<_> = SpecialSegmentIterator::new(input, &matcher, false)
+            .map(|segment| match segment {
+                Segment::Text(text) => (Some(text), None),
+                Segment::SpecialToken(id) => (None, Some(id)),
+            })
+            .collect();
+
+        assert_eq!(
+            segments,
+            vec![
+                (Some("aa"), None),
+                (None, Some(0)),
+                (Some("bb"), None),
+                (None, Some(1)),
+                (Some("cc"), None),
+            ]
+        );
     }
 }
