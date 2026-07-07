@@ -1,3 +1,4 @@
+use std::convert::TryInto;
 use std::ops::Range;
 use std::{borrow::Cow, convert::TryFrom};
 
@@ -207,7 +208,7 @@ pub struct PipelineTokenizer {
     added_vocabulary: BucketAddedVocabulary,
     normalizer: Option<NormalizerWrapper>,
     pre_tokenizer: PipelinePreTokenizer,
-    model: ModelWrapper,
+    model: PipelineModel,
     _post_processor: Option<PostProcessorWrapper>,
 }
 
@@ -258,11 +259,13 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
         )?;
         added_vocabulary.set_encode_special_tokens(legacy_av.get_encode_special_tokens());
 
+        let model = tok.get_model().clone().try_into()?;
+
         Ok(Self {
             added_vocabulary,
             normalizer: tok.get_normalizer().cloned(),
             pre_tokenizer,
-            model: tok.get_model().clone(),
+            model,
             _post_processor: tok.get_post_processor().cloned(),
         })
     }
@@ -312,12 +315,10 @@ impl PipelineTokenizer {
 
                                 // Tokenize each chunk
                                 for pre_token in pre_tokens.iter() {
-                                    output.extend(
-                                        self.model
-                                            .tokenize(&normalized_chunk[pre_token.range()])?
-                                            .into_iter()
-                                            .map(|Token { id, .. }| PipelineToken { id }),
-                                    );
+                                    self.model.tokenize_bytes(
+                                        &normalized_chunk[pre_token.range()].as_bytes(),
+                                        &mut output,
+                                    )?;
                                 }
                             }
                         }
