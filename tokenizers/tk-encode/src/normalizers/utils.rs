@@ -87,7 +87,7 @@ impl Normalizer for Lowercase {
 }
 
 /// Whether lowercasing `c` leaves it unchanged (a single, identical char)
-fn lowercases_to_self(c: char) -> bool {
+pub(crate) fn lowercases_to_self(c: char) -> bool {
     let mut it = c.to_lowercase();
     matches!((it.next(), it.next()), (Some(first), None) if first == c)
 }
@@ -140,7 +140,14 @@ mod tests {
         // Strip returns a sub-borrow of the previous step's owned output —
         // the one case where a Borrowed result must not be mistaken for a no-op
         let n = Sequence::new(vec![Lowercase.into(), Strip::new(true, true).into()]);
-        for input in &["  HELLO  ", "\tMiXeD Case\n", "NOPAD", "  hello  ", "", "   "] {
+        for input in &[
+            "  HELLO  ",
+            "\tMiXeD Case\n",
+            "NOPAD",
+            "  hello  ",
+            "",
+            "   ",
+        ] {
             let mut ns = NormalizedString::from(*input);
             Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
             assert_eq!(

@@ -84,35 +84,39 @@ impl pipeline::Normalizer for NFKC {
     }
 }
 
+/// Control characters the NMT normalizer removes
+fn nmt_removes(c: char) -> bool {
+    matches!(
+        c as u32,
+        0x0001..=0x0008 |
+        0x000B |
+        0x000E..=0x001F |
+        0x007F |
+        0x008F |
+        0x009F
+    )
+}
+
+/// Code points the NMT normalizer considers whitespace, folded to ' '
+fn nmt_to_space(c: char) -> char {
+    match c as u32 {
+        0x0009
+        | 0x000A
+        | 0x000C
+        | 0x000D
+        | 0x1680
+        | 0x200B..=0x200F
+        | 0x2028
+        | 0x2029
+        | 0x2581
+        | 0xFEFF
+        | 0xFFFD => ' ',
+        _ => c,
+    }
+}
+
 fn do_nmt(normalized: &mut NormalizedString) {
-    // Ascii Control characters
-    normalized
-        .filter(|c| {
-            !matches!(
-                c as u32,
-                0x0001..=0x0008 |
-                0x000B |
-                0x000E..=0x001F |
-                0x007F |
-                0x008F |
-                0x009F
-            )
-        })
-        // Other code points considered as whitespace.
-        .map(|c| match c as u32 {
-            0x0009 => ' ',
-            0x000A => ' ',
-            0x000C => ' ',
-            0x000D => ' ',
-            0x1680 => ' ',
-            0x200B..=0x200F => ' ',
-            0x2028 => ' ',
-            0x2029 => ' ',
-            0x2581 => ' ',
-            0xFEFF => ' ',
-            0xFFFD => ' ',
-            _ => c,
-        });
+    normalized.filter(|c| !nmt_removes(c)).map(nmt_to_space);
 }
 
 #[derive(Default, Copy, Clone, Debug)]
@@ -127,56 +131,14 @@ impl Normalizer for Nmt {
 
 impl pipeline::Normalizer for Nmt {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
-        if input.chars().any(|c| {
-            matches!(
-                c as u32,
-                0x0001..=0x0008 |
-                0x000B |
-                0x000E..=0x001F |
-                0x007F |
-                0x008F |
-                0x009F |
-                0x0009 |
-                0x000A |
-                0x000C |
-                0x000D |
-                0x1680 |
-                0x200B..=0x200F |
-                0x2028 |
-                0x2029 |
-                0x2581 |
-                0xFEFF |
-                0xFFFD
-            )
-        }) {
+        if input
+            .chars()
+            .any(|c| nmt_removes(c) || nmt_to_space(c) != c)
+        {
             let normalized: String = input
                 .chars()
-                .filter(|&c| {
-                    !matches!(
-                        c as u32,
-                        0x0001..=0x0008 |
-                        0x000B |
-                        0x000E..=0x001F |
-                        0x007F |
-                        0x008F |
-                        0x009F
-                    )
-                })
-                // Other code points considered as whitespace.
-                .map(|c| match c as u32 {
-                    0x0009 => ' ',
-                    0x000A => ' ',
-                    0x000C => ' ',
-                    0x000D => ' ',
-                    0x1680 => ' ',
-                    0x200B..=0x200F => ' ',
-                    0x2028 => ' ',
-                    0x2029 => ' ',
-                    0x2581 => ' ',
-                    0xFEFF => ' ',
-                    0xFFFD => ' ',
-                    _ => c,
-                })
+                .filter(|&c| !nmt_removes(c))
+                .map(nmt_to_space)
                 .collect();
             return Ok(Cow::Owned(normalized));
         }

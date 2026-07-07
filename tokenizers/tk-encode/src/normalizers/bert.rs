@@ -5,6 +5,8 @@ use crate::{
     tokenizer::{NormalizedString, Normalizer, Result},
 };
 
+use super::utils::lowercases_to_self;
+
 use serde::{Deserialize, Serialize};
 use unicode_categories::UnicodeCategories;
 use unicode_normalization::{is_nfd_quick, IsNormalized, UnicodeNormalization};
@@ -30,10 +32,18 @@ fn is_control(c: char) -> bool {
     }
 }
 
-/// Whether lowercasing `c` leaves it unchanged (a single, identical char)
-fn lowercases_to_self(c: char) -> bool {
-    let mut it = c.to_lowercase();
-    matches!((it.next(), it.next()), (Some(first), None) if first == c)
+/// Whether BERT text cleaning removes `c` entirely
+fn clean_text_removes(c: char) -> bool {
+    c == '\0' || c == '\u{fffd}' || is_control(c)
+}
+
+/// The whitespace folding BERT text cleaning applies to kept characters
+fn clean_text_map(c: char) -> char {
+    if is_whitespace(c) {
+        ' '
+    } else {
+        c
+    }
 }
 
 /// Checks whether a character is chinese
@@ -103,8 +113,8 @@ impl BertNormalizer {
 
     fn do_clean_text(&self, normalized: &mut NormalizedString) {
         normalized
-            .filter(|c| !(c as usize == 0 || c as usize == 0xfffd || is_control(c)))
-            .map(|c| if is_whitespace(c) { ' ' } else { c });
+            .filter(|c| !clean_text_removes(c))
+            .map(clean_text_map);
     }
 
     fn do_handle_chinese_chars(&self, normalized: &mut NormalizedString) {
@@ -132,11 +142,7 @@ impl BertNormalizer {
             return false;
         }
         let changes = |c: char| {
-            (self.clean_text
-                && (c as usize == 0
-                    || c as usize == 0xfffd
-                    || is_control(c)
-                    || (is_whitespace(c) && c != ' ')))
+            (self.clean_text && (clean_text_removes(c) || clean_text_map(c) != c))
                 || (self.handle_chinese_chars && is_chinese_char(c))
                 || (strip_accents && c.is_mark_nonspacing())
                 || (self.lowercase && !lowercases_to_self(c))
@@ -175,12 +181,10 @@ impl pipeline::Normalizer for BertNormalizer {
 
         let cleaned: String = input
             .chars()
-            .filter(|&c| {
-                !(self.clean_text && (c as usize == 0 || c as usize == 0xfffd || is_control(c)))
-            })
+            .filter(|&c| !(self.clean_text && clean_text_removes(c)))
             .flat_map(|c| {
-                let c = if self.clean_text && is_whitespace(c) {
-                    ' '
+                let c = if self.clean_text {
+                    clean_text_map(c)
                 } else {
                     c
                 };
