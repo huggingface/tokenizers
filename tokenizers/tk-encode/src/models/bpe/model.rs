@@ -1,7 +1,7 @@
 use super::{super::OrderedVocabIter, Error, Pair, Word};
 use crate::pipeline::{self, PipelineToken};
 use crate::tokenizer::{Model, Result, Token};
-use crate::utils::byte_level::transform_vocab;
+use crate::utils::byte_level::{self};
 use crate::utils::cache::{DEFAULT_CACHE_CAPACITY, MAX_LENGTH};
 use crate::utils::iter::ResultShunt;
 use crate::vocab_store::VocabStore;
@@ -709,23 +709,22 @@ impl PipelineBPE {
             return Err("BPE models with dropout not supported yet".into());
         }
         let BPE {
-            mut vocab,
+            vocab,
             merges,
             ignore_merges,
             byte_fallback,
             ..
         } = model;
 
-        let atoms = if with_byte_level {
-            vocab = transform_vocab(vocab);
-
-            Atoms::Bytes {
-                byte_to_id: std::array::from_fn(|byte| {
-                    vocab
-                        .get_bytes(&[byte as u8])
-                        .expect("all bytes must be present in the vocab")
-                }),
+        let (vocab, atoms) = if with_byte_level {
+            let vocab = byte_level::transform_vocab(vocab);
+            let mut byte_to_id = [0u32; 256];
+            for b in 0u8..=255 {
+                byte_to_id[b as usize] = vocab
+                    .get_bytes(&[b])
+                    .ok_or(Error::ByteAtomOutOfVocabulary(b))?;
             }
+            (vocab, Atoms::Bytes { byte_to_id })
         } else {
             let unk_token = if let Some(unk_str) = model.unk_token {
                 let token_id = vocab
@@ -735,22 +734,26 @@ impl PipelineBPE {
             } else {
                 None
             };
-            let byte_fallback = if byte_fallback {
-                Some(std::array::from_fn(|idx| {
-                    let idx = idx as u8;
-                    let code = format!("<{idx:#04X}>");
-                    vocab
+            let fallback_lookup = if byte_fallback {
+                let mut fallback_lookup = [0u32; 256];
+                for b in 0u8..=255 {
+                    let code = format!("<{b:#04X}>");
+                    fallback_lookup[b as usize] = vocab
                         .token_to_id(&code)
-                        .expect("all byte fallback codes must be present in the vocab")
-                }))
+                        .ok_or(Error::ByteFallbackOutOfVocabulary(b))?;
+                }
+                Some(fallback_lookup)
             } else {
                 None
             };
-            Atoms::Chars {
-                fuse_unk: model.fuse_unk,
-                unk_token,
-                byte_fallback,
-            }
+            (
+                vocab,
+                Atoms::Chars {
+                    fuse_unk: model.fuse_unk,
+                    unk_token,
+                    byte_fallback: fallback_lookup,
+                },
+            )
         };
         Ok(Self {
             atoms,
