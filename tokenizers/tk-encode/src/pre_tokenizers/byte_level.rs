@@ -10,12 +10,12 @@ use crate::tokenizer::{
 };
 use crate::utils::macro_rules_attribute;
 
+pub(crate) const GPT2_REGEX_STR: &'static str =
+    r"'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+";
+
 /// Regex that matches exactly one token.
 /// See https://github.com/openai/gpt-2/blob/master/src/encoder.py#L98
-static RE: LazyLock<SysRegex> = LazyLock::new(|| {
-    SysRegex::new(r"'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+")
-        .unwrap()
-});
+static RE: LazyLock<SysRegex> = LazyLock::new(|| SysRegex::new(GPT2_REGEX_STR).unwrap());
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 /// Provides all the necessary steps to handle the BPE tokenization at the byte-level. Takes care
