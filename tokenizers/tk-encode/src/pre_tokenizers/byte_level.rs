@@ -529,6 +529,84 @@ mod tests {
         );
     }
 
+    /// Splits from the pipeline conversion of `byte_level`, with the raw text of each
+    /// range transformed to the byte-level alphabet so it's comparable with the legacy
+    /// oracle's output strings.
+    fn pipeline_splits(byte_level: ByteLevel, text: &str) -> Vec<(String, (usize, usize))> {
+        use std::convert::TryFrom;
+        let converted = crate::pipeline::PipelinePreTokenizer::try_from(
+            crate::PreTokenizerWrapper::ByteLevel(byte_level),
+        )
+        .unwrap();
+        let mut out = Vec::new();
+        crate::pipeline::PreTokenizer::pre_tokenize(&converted, text, &mut out).unwrap();
+        out.iter()
+            .map(|s| {
+                let transformed = text[s.range()]
+                    .bytes()
+                    .map(|b| BYTES_CHAR_LOOKUP[b as usize])
+                    .collect();
+                (transformed, (s.start as usize, s.end as usize))
+            })
+            .collect()
+    }
+
+    fn legacy_splits(byte_level: ByteLevel, text: &str) -> Vec<(String, (usize, usize))> {
+        let mut pre = PreTokenizedString::from(text);
+        byte_level.pre_tokenize(&mut pre).unwrap();
+        pre.get_splits(OffsetReferential::Original, OffsetType::Byte)
+            .into_iter()
+            .map(|(s, o, _)| (s.to_string(), o))
+            .collect()
+    }
+
+    #[test]
+    fn pipeline_conversion_matches_legacy_splits() {
+        let byte_level = ByteLevel::default().add_prefix_space(false);
+        for text in [
+            "Hello my friend, how is your day going?",
+            "Hello there\nHello there",
+            "Hello there       dear",
+            " leading space",
+            "trailing space   ",
+            "i⭢j",
+            "中文 text 123, mixed! 🤗 emoji",
+            "I'm can't we've they'll it's",
+            "tabs\tand\r\nnewlines",
+            "café über naïve",
+            "!!!???...",
+            "single",
+        ] {
+            assert_eq!(
+                pipeline_splits(byte_level, text),
+                legacy_splits(byte_level, text),
+                "diverged on {text:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn pipeline_conversion_no_regex_is_identity_split() {
+        let byte_level = ByteLevel::default().add_prefix_space(false).use_regex(false);
+        let text = "Hello my friend, how is your day going?";
+        assert_eq!(
+            pipeline_splits(byte_level, text),
+            legacy_splits(byte_level, text),
+        );
+    }
+
+    #[test]
+    fn pipeline_conversion_rejects_add_prefix_space() {
+        // The range-based pipeline can't prepend text; converting must fail loudly
+        // rather than silently produce different splits than the legacy path.
+        use std::convert::TryFrom;
+        let byte_level = ByteLevel::default().add_prefix_space(true);
+        assert!(crate::pipeline::PipelinePreTokenizer::try_from(
+            crate::PreTokenizerWrapper::ByteLevel(byte_level)
+        )
+        .is_err());
+    }
+
     #[test]
     fn deserialization() {
         // Before use_regex
