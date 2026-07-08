@@ -4,10 +4,11 @@
 //! — the regime where per-input overhead is amortized (see `pipeline_benchmark.rs`
 //! for the size sweep).
 //!
-//! `PipelineTokenizer` is a work in progress: it only builds for tokenizers whose
-//! pre-tokenizer is Bert / Whitespace / None. Models it can't build (byte-level
-//! BPE, SentencePiece/Unigram, …) are reported as `supported: false` with their
-//! pipeline shape, rather than benched — the CI grid renders those as roadmap cards.
+//! `PipelineTokenizer` is a work in progress: models it can't build yet (standalone
+//! ByteLevel pre-tokenizer, Metaspace/Unigram, …) are reported as `supported: false`
+//! with their pipeline shape, rather than benched — the CI grid renders those as
+//! roadmap cards. Each manifest entry carries a `desc`: a one-line label of the
+//! workload archetype the model exercises, passed through to the report.
 //!
 //! Emits a JSON array (one object per model) on stdout, consumed by
 //! `.github/scripts/render_pipeline_bench.py` in CI.
@@ -272,6 +273,7 @@ fn main() {
     for entry in &manifest {
         let name = entry["name"].as_str().unwrap().to_string();
         let repo = entry.get("repo").and_then(Value::as_str).unwrap_or("");
+        let desc = entry.get("desc").and_then(Value::as_str).unwrap_or("");
         let path = model_path(entry);
         eprintln!("== {name} ({repo}) ==");
 
@@ -280,7 +282,7 @@ fn main() {
             Err(e) => {
                 eprintln!("  load failed: {e}");
                 out.push(json!({
-                    "model": name, "repo": repo, "shape": "?",
+                    "model": name, "repo": repo, "desc": desc, "shape": "?",
                     "supported": false, "reason": format!("load error: {e}"), "results": [],
                 }));
                 continue;
@@ -300,14 +302,14 @@ fn main() {
                 Ok(_) => {
                     let rows = bench_model(&tok, &pipeline, &files);
                     out.push(json!({
-                        "model": name, "repo": repo, "shape": shape,
+                        "model": name, "repo": repo, "desc": desc, "shape": shape,
                         "supported": true, "results": rows,
                     }));
                 }
                 Err(e) => {
                     eprintln!("  builds but can't encode yet ({shape}): {e}");
                     out.push(json!({
-                        "model": name, "repo": repo, "shape": shape,
+                        "model": name, "repo": repo, "desc": desc, "shape": shape,
                         "supported": false, "reason": format!("{e}"), "results": [],
                     }));
                 }
@@ -315,7 +317,7 @@ fn main() {
             Err(_) => {
                 eprintln!("  unsupported by PipelineTokenizer ({shape})");
                 out.push(json!({
-                    "model": name, "repo": repo, "shape": shape,
+                    "model": name, "repo": repo, "desc": desc, "shape": shape,
                     "supported": false, "results": [],
                 }));
             }
