@@ -241,13 +241,26 @@ fn main() {
         let shape = format!("{} · {}", model_kind(&tok), pretok_label(&path));
 
         match PipelineTokenizer::try_from(&tok) {
-            Ok(pipeline) => {
-                let rows = bench_model(&tok, &pipeline, &files);
-                out.push(json!({
-                    "model": name, "repo": repo, "shape": shape,
-                    "supported": true, "results": rows,
-                }));
-            }
+            // A model can satisfy the pipeline's *build* constraints yet still fail at
+            // *encode* time — e.g. a Sequence containing ByteLevel, which rewrites bytes
+            // and has no range-based impl. Probe once and downgrade to "unsupported"
+            // (with the reason) instead of panicking partway through the bench.
+            Ok(pipeline) => match pipeline.encode("The quick brown fox jumps 123.", false) {
+                Ok(_) => {
+                    let rows = bench_model(&tok, &pipeline, &files);
+                    out.push(json!({
+                        "model": name, "repo": repo, "shape": shape,
+                        "supported": true, "results": rows,
+                    }));
+                }
+                Err(e) => {
+                    eprintln!("  builds but can't encode yet ({shape}): {e}");
+                    out.push(json!({
+                        "model": name, "repo": repo, "shape": shape,
+                        "supported": false, "reason": format!("{e}"), "results": [],
+                    }));
+                }
+            },
             Err(_) => {
                 eprintln!("  unsupported by PipelineTokenizer ({shape})");
                 out.push(json!({
