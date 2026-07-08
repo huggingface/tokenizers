@@ -194,12 +194,13 @@ fn bench_model(
         eprintln!("  {name}: legacy {legacy_mbps:.1} MB/s, pipeline {pipeline_mbps:.1} MB/s");
 
         // Staged decomposition of the pipeline's own encode via the ablation ladder:
-        // time each cumulative stage level, subtract to isolate each stage's cost.
-        // 0=frame (special-scan + glue), 1=+normalize, 2=+split, 3=+model (full encode).
-        let t_frame = stage_secs::<0>(pipeline, &chunks);
-        let t_norm = stage_secs::<1>(pipeline, &chunks);
-        let t_split = stage_secs::<2>(pipeline, &chunks);
-        let t_model = stage_secs::<3>(pipeline, &chunks);
+        // time each cumulative stage level, then subtract to isolate each stage's cost
+        // (e.g. model = t_model - t_split). Levels are the named STAGE_* consts on
+        // PipelineTokenizer rather than bare 0/1/2/3.
+        let t_frame = stage_secs::<{ PipelineTokenizer::STAGE_FRAME }>(pipeline, &chunks);
+        let t_norm = stage_secs::<{ PipelineTokenizer::STAGE_NORMALIZE }>(pipeline, &chunks);
+        let t_split = stage_secs::<{ PipelineTokenizer::STAGE_SPLIT }>(pipeline, &chunks);
+        let t_model = stage_secs::<{ PipelineTokenizer::STAGE_MODEL }>(pipeline, &chunks);
         let nspb = |secs: f64| secs * 1e9 / bytes as f64;
         let (ns_norm, ns_split, ns_model, ns_other) = (
             nspb((t_norm - t_frame).max(0.0)),
