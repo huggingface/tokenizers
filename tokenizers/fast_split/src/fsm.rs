@@ -18,6 +18,56 @@ fn run_end(text: &[u8], tags: &[u8], mut i: usize, end: usize, m: u16) -> usize 
     i
 }
 
+/// Membership LUT for the SIMD run-end: `lut[tag] = 0xFF` iff `tag` is in `m` OR is a continuation
+/// byte (so a multibyte char's continuation bytes stay inside the run). Built ONCE per FSM call (not
+/// per run) and reused — the per-call rebuild is what made an earlier version slow.
+fn inmask_tbl(m: u16) -> [u8; 16] {
+    let mut a = [0u8; 16];
+    let mut t = 0u8;
+    while t < 16 {
+        if (m >> t) & 1 != 0 || t == Atom::Cont as u8 {
+            a[t as usize] = 0xFF;
+        }
+        t += 1;
+    }
+    a
+}
+
+/// SIMD run-end (NEON): bulk-skip whole 16-tag chunks that stay in-run — `vqtbl1` membership then
+/// `vminvq == 0xFF` (all lanes members) — and scalar-finish the partial tail. `tbl16` is the
+/// precomputed `inmask_tbl(m)`. Same result as `run_end`; wins on run-heavy text.
+#[cfg(target_arch = "aarch64")]
+#[inline]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn run_end_simd(tags: &[u8], mut i: usize, end: usize, m: u16, tbl16: &[u8; 16]) -> usize {
+    use core::arch::aarch64::*;
+    let t = vld1q_u8(tbl16.as_ptr());
+    while i + 16 <= end {
+        let chunk = vld1q_u8(tags.as_ptr().add(i));
+        if vminvq_u8(vqtbl1q_u8(t, chunk)) == 0xFF {
+            i += 16;
+        } else {
+            break;
+        }
+    }
+    while i < end && (in_mask(tags[i], m) || tags[i] == Atom::Cont as u8) {
+        i += 1;
+    }
+    i
+}
+
+/// Pick SIMD or scalar run-end at monomorphization time. `lut` is the precomputed membership LUT for
+/// `m`; only the SIMD path reads it (the scalar path ignores it).
+#[inline]
+fn run_end_sel<const SIMD: bool>(text: &[u8], tags: &[u8], i: usize, end: usize, m: u16, lut: &[u8; 16]) -> usize {
+    #[cfg(target_arch = "aarch64")]
+    if SIMD {
+        return unsafe { run_end_simd(tags, i, end, m, lut) };
+    }
+    let _ = (SIMD, lut);
+    run_end(text, tags, i, end, m)
+}
+
 /// A token span: byte offsets `[start, end)` into the input.
 /// TODO:i think we could use u16 for one of them if we stored start, offset5
 pub type Span = (u32, u32);
@@ -183,10 +233,21 @@ pub fn fsm_class_runs<const DROP: u16, const ISOLATE: u16, const KEEP_SPLIT: u16
     }
 }
 
-/// cl100k pretokenization (7 rules, segmented `{1,3}` cap + whitespace-tail). Scalar FSM — the
-/// measured winner vs the boundary bitmask. Peeks `text` for the ASCII contraction-suffix literals.
+/// cl100k pretokenization (7 rules, segmented `{1,3}` cap + whitespace-tail). Peeks `text` for the
+/// ASCII contraction-suffix literals. Scalar run-ends.
 /// ┌── OWNER: shared (scalar) ──┐
 pub fn fsm_cl100k(text: &[u8], tags: &[u8], out: &mut Vec<Span>) {
+    cl100k::<false>(text, tags, out)
+}
+
+/// Same, with SIMD (NEON) run-ends (`run_end_simd`) for the letter / symbol / whitespace runs — wins
+/// on run-heavy text. Byte-identical output to `fsm_cl100k`.
+#[cfg(target_arch = "aarch64")]
+pub fn fsm_cl100k_simd(text: &[u8], tags: &[u8], out: &mut Vec<Span>) {
+    cl100k::<true>(text, tags, out)
+}
+
+fn cl100k<const SIMD: bool>(text: &[u8], tags: &[u8], out: &mut Vec<Span>) {
     const AP: u8 = Atom::Apostrophe as u8;
     const L: u8 = Atom::Letter as u8;
     const SP: u8 = Atom::Space as u8;
@@ -200,6 +261,12 @@ pub fn fsm_cl100k(text: &[u8], tags: &[u8], out: &mut Vec<Span>) {
         | Atom::Apostrophe.bit()
         | Atom::SymOther.bit()
         | Atom::NumericOther.bit();
+    // membership LUTs for the SIMD run-ends, built once (scalar path ignores them).
+    let (lut_l, lut_o, lut_w) = (
+        inmask_tbl(mask::LETTER),
+        inmask_tbl(mask::NOT_WS_L_N),
+        inmask_tbl(mask::WS),
+    );
 
     let end = text.len();
     let mut i = 0;
@@ -230,7 +297,7 @@ pub fn fsm_cl100k(text: &[u8], tags: &[u8], out: &mut Vec<Span>) {
         let c = tags[i];
         // rule 2: `[^\r\n\p{L}\p{N}]?\p{L}+` — letters, with at most one non-(nl/l/n) prefix char
         if c == L {
-            i = run_end(text, tags, i, end, mask::LETTER);
+            i = run_end_sel::<SIMD>(text, tags, i, end, mask::LETTER, &lut_l);
             out.push((start as u32, i as u32));
             continue;
         }
@@ -238,7 +305,7 @@ pub fn fsm_cl100k(text: &[u8], tags: &[u8], out: &mut Vec<Span>) {
         if in_mask(c, PREFIX2) {
             let a = i + l0;
             if a < end && tags[a] == L {
-                i = run_end(text, tags, a, end, mask::LETTER);
+                i = run_end_sel::<SIMD>(text, tags, a, end, mask::LETTER, &lut_l);
                 out.push((start as u32, i as u32));
                 continue;
             }
@@ -256,7 +323,7 @@ pub fn fsm_cl100k(text: &[u8], tags: &[u8], out: &mut Vec<Span>) {
         }
         // rule 4: ` ?[^\s\p{L}\p{N}]+[\r\n]*` — optional space, run of "other", trailing newlines
         let sp0 = if c == SP { i + l0 } else { i };
-        let mut p = run_end(text, tags, sp0, end, mask::NOT_WS_L_N);
+        let mut p = run_end_sel::<SIMD>(text, tags, sp0, end, mask::NOT_WS_L_N, &lut_o);
         if p > sp0 {
             while p < end && tags[p] == NL {
                 p += char_len(text[p]);
@@ -267,7 +334,7 @@ pub fn fsm_cl100k(text: &[u8], tags: &[u8], out: &mut Vec<Span>) {
         }
         // rules 5-7: whitespace — `\s*[\r\n]` | `\s+(?!\S)` | `\s+`
         if in_mask(c, mask::WS) {
-            let re = run_end(text, tags, i, end, mask::WS);
+            let re = run_end_sel::<SIMD>(text, tags, i, end, mask::WS, &lut_w);
             if let Some(r) = text[i..re].iter().rposition(|&x| x == 0x0A || x == 0x0D) {
                 i = i + r + 1; // rule 5: up to & including the last newline in the run
             } else if re == end {
