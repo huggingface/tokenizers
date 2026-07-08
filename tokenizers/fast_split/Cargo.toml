@@ -39,3 +39,19 @@ fancy-regex = "0.13"
 [[bench]]
 name = "cl100k"
 harness = false
+
+[[bench]]
+name = "deepseek"
+harness = false
+
+[[bench]]
+name = "wssplit"
+harness = false
+
+[[bench]]
+name = "byte_level"
+harness = false
+
+[[bench]]
+name = "threads"
+harness = false

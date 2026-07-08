@@ -268,113 +268,125 @@ pub fn fsm_cl100k_simd(text: &[u8], tags: &[u8], out: &mut Vec<Span>) {
 }
 
 fn cl100k<const SIMD: bool>(text: &[u8], tags: &[u8], out: &mut Vec<Span>) {
-    const AP: u8 = Atom::Apostrophe as u8;
-    const L: u8 = Atom::Letter as u8;
-    const SP: u8 = Atom::Space as u8;
-    const NL: u8 = Atom::Newline as u8;
-    // rule-2 optional prefix `[^\r\n\p{L}\p{N}]` = every atom except Newline / Letter / Number.
-    const PREFIX2: u16 = Atom::Space.bit()
-        | Atom::WsOther.bit()
-        | Atom::Mark.bit()
-        | Atom::Connector.bit()
-        | Atom::Punct.bit()
-        | Atom::Apostrophe.bit()
-        | Atom::SymOther.bit()
-        | Atom::Control.bit()
-        | Atom::NumericOther.bit();
+    // Leading-atom values, as `const` so the `match` below is a dense jump table (not an if-cascade):
+    // the dispatch is O(1) and a token never pays for a rule it can't start (e.g. non-number tokens
+    // never test the number rule — which is what the POC's const-gating removed by hand; here it's free).
+    const LET: u8 = Atom::Letter as u8;
+    const NW: u8 = Atom::NumWord as u8;
+    const NO: u8 = Atom::NumOther as u8;
+    const NLN: u8 = Atom::Newline as u8;
+    const SPC: u8 = Atom::Space as u8;
+    const WSO: u8 = Atom::WsOther as u8;
+    const MRK: u8 = Atom::Mark as u8;
+    const CON: u8 = Atom::Connector as u8;
+    const PUN: u8 = Atom::Punct as u8;
+    const APO: u8 = Atom::Apostrophe as u8;
+    const SYM: u8 = Atom::SymOther as u8;
+    const NMO: u8 = Atom::NumericOther as u8;
+    const CTL: u8 = Atom::Control as u8;
     // membership LUTs for the SIMD run-ends, built once (scalar path ignores them).
     let (lut_l, lut_o, lut_w) = (
         inmask_tbl(mask::LETTER),
         inmask_tbl(mask::NOT_WS_L_N),
         inmask_tbl(mask::WS),
     );
-
     let end = text.len();
+    let letters = |a: usize| run_end_sel::<SIMD>(tags, a, end, mask::LETTER, &lut_l);
+    // rule 4 body: `[^\s\p{L}\p{N}]+[\r\n]*` from `sp0` (any leading space already consumed). Returns
+    // the run end, or `sp0` if there is no "other" run there (caller then treats it as whitespace).
+    let other = |sp0: usize| -> usize {
+        let mut p = run_end_sel::<SIMD>(tags, sp0, end, mask::NOT_WS_L_N, &lut_o);
+        if p > sp0 {
+            while p < end && tags[p] == NLN {
+                p += char_len(text[p]);
+            }
+        }
+        p
+    };
+    // rules 5-7: `\s*[\r\n]` | `\s+(?!\S)` | `\s+` — end of the whitespace token starting at `i`.
+    let ws = |i: usize| -> usize {
+        let re = run_end_sel::<SIMD>(tags, i, end, mask::WS, &lut_w);
+        if let Some(r) = text[i..re].iter().rposition(|&x| x == 0x0A || x == 0x0D) {
+            i + r + 1 // rule 5: up to & including the last newline
+        } else if re == end {
+            re // rule 7: trailing whitespace at EOF
+        } else {
+            // rule 6: before a non-space, leave the last ws char for the next token
+            let mut last = re - 1;
+            while last > i && text[last] & 0xC0 == 0x80 {
+                last -= 1;
+            }
+            if last > i { last } else { re }
+        }
+    };
+
     let mut i = 0;
     while i < end {
         let start = i;
         let b = text[i];
-        // rule 1: `'(?i:[sdmt]|ll|ve|re)` — apostrophe + ASCII contraction suffix (peek bytes)
-        if tags[i] == AP && i + 1 < end && text[i + 1] < 0x80 {
-            let lc = text[i + 1] | 0x20;
-            let adv = match lc {
-                b's' | b't' | b'm' | b'd' => 2,
-                b'r' | b'v' | b'l' if i + 2 < end && text[i + 2] < 0x80 => {
-                    let l2 = text[i + 2] | 0x20;
-                    if (lc == b'r' && l2 == b'e')
-                        || (lc == b'v' && l2 == b'e')
-                        || (lc == b'l' && l2 == b'l')
-                    {
-                        3
-                    } else {
-                        0
-                    }
+        match tags[i] {
+            // rule 2: `\p{L}+`
+            LET => i = letters(i),
+            // rule 3: `\p{N}{1,3}`
+            NW | NO => {
+                let (mut p, mut cnt) = (i, 0);
+                while p < end && cnt < 3 && in_mask(tags[p], mask::NUMBER) {
+                    p += char_len(text[p]);
+                    cnt += 1;
                 }
-                _ => 0,
-            };
-            if adv > 0 {
-                out.push((start as u32, (start + adv) as u32));
-                i += adv;
-                continue;
+                i = p;
             }
-        }
-        let c = tags[i];
-        // rule 2: `[^\r\n\p{L}\p{N}]?\p{L}+` — letters, with at most one non-(nl/l/n) prefix char
-        if c == L {
-            i = run_end_sel::<SIMD>(tags, i, end, mask::LETTER, &lut_l);
-            out.push((start as u32, i as u32));
-            continue;
-        }
-        let l0 = char_len(b);
-        if in_mask(c, PREFIX2) {
-            let a = i + l0;
-            if a < end && tags[a] == L {
-                i = run_end_sel::<SIMD>(tags, a, end, mask::LETTER, &lut_l);
-                out.push((start as u32, i as u32));
-                continue;
+            // Space: rule 2 (space prefix + `\p{L}+`) | rule 4 (` ` + "other") | rules 5-7
+            SPC => {
+                let a = i + 1; // Space is ASCII (0x20)
+                i = if a < end && tags[a] == LET {
+                    letters(a)
+                } else {
+                    let p = other(a);
+                    if p > a { p } else { ws(i) }
+                };
             }
-        }
-        // rule 3: `\p{N}{1,3}` — 1..3 number chars
-        if in_mask(c, mask::NUMBER) {
-            let (mut p, mut cnt) = (i, 0);
-            while p < end && cnt < 3 && in_mask(tags[p], mask::NUMBER) {
-                p += char_len(text[p]);
-                cnt += 1;
+            // WsOther: rule 2 (prefix + `\p{L}+`) | whitespace (never rule 4 — not in NOT_WS_L_N)
+            WSO => {
+                let a = i + char_len(b);
+                i = if a < end && tags[a] == LET { letters(a) } else { ws(i) };
             }
-            out.push((start as u32, p as u32));
-            i = p;
-            continue;
-        }
-        // rule 4: ` ?[^\s\p{L}\p{N}]+[\r\n]*` — optional space, run of "other", trailing newlines
-        let sp0 = if c == SP { i + l0 } else { i };
-        let mut p = run_end_sel::<SIMD>(tags, sp0, end, mask::NOT_WS_L_N, &lut_o);
-        if p > sp0 {
-            while p < end && tags[p] == NL {
-                p += char_len(text[p]);
-            }
-            out.push((start as u32, p as u32));
-            i = p;
-            continue;
-        }
-        // rules 5-7: whitespace — `\s*[\r\n]` | `\s+(?!\S)` | `\s+`
-        if in_mask(c, mask::WS) {
-            let re = run_end_sel::<SIMD>(tags, i, end, mask::WS, &lut_w);
-            if let Some(r) = text[i..re].iter().rposition(|&x| x == 0x0A || x == 0x0D) {
-                i = i + r + 1; // rule 5: up to & including the last newline in the run
-            } else if re == end {
-                i = re; // rule 7: trailing whitespace at EOF → take it all
-            } else {
-                // rule 6: whitespace before a non-space → leave the last ws char for the next token
-                let mut last = re - 1;
-                while last > i && text[last] & 0xC0 == 0x80 {
-                    last -= 1;
+            // Newline: whitespace (rule 5 ends at the last newline)
+            NLN => i = ws(i),
+            // Apostrophe: rule 1 (contraction) | rule 2 (prefix + `\p{L}+`) | rule 4
+            APO => {
+                let mut adv = 0;
+                if i + 1 < end && text[i + 1] < 0x80 {
+                    let lc = text[i + 1] | 0x20;
+                    adv = match lc {
+                        b's' | b't' | b'm' | b'd' => 2,
+                        b'r' | b'v' | b'l' if i + 2 < end && text[i + 2] < 0x80 => {
+                            let l2 = text[i + 2] | 0x20;
+                            usize::from(
+                                (lc == b'r' && l2 == b'e')
+                                    || (lc == b'v' && l2 == b'e')
+                                    || (lc == b'l' && l2 == b'l'),
+                            ) * 3
+                        }
+                        _ => 0,
+                    };
                 }
-                i = if last > i { last } else { re };
+                i = if adv > 0 {
+                    i + adv
+                } else {
+                    let a = i + 1; // Apostrophe is ASCII (0x27)
+                    if a < end && tags[a] == LET { letters(a) } else { other(i) } // c ∈ NOT_WS_L_N ⇒ > i
+                };
             }
-            out.push((start as u32, i as u32));
-            continue;
+            // Mark | Connector | Punct | SymOther | NumericOther | Control (∈ PREFIX2 ∩ NOT_WS_L_N):
+            // rule 2 (prefix + `\p{L}+`) | rule 4
+            MRK | CON | PUN | SYM | NMO | CTL => {
+                let a = i + char_len(b);
+                i = if a < end && tags[a] == LET { letters(a) } else { other(i) }; // c ∈ NOT_WS_L_N ⇒ > i
+            }
+            // Sentinel / MultiByte / Cont — never a char-start atom; emit one char defensively.
+            _ => i += char_len(b),
         }
-        i += l0;
         out.push((start as u32, i as u32));
     }
 }
@@ -385,7 +397,7 @@ fn cl100k<const SIMD: bool>(text: &[u8], tags: &[u8], out: &mut Vec<Span>) {
 fn ds_is_cjk(cp: u32) -> bool {
     (0x4E00..=0x9FA5).contains(&cp) || (0x3040..=0x30FF).contains(&cp)
 }
-/// Codepoint of a 3-byte UTF-8 char at `text[i]` (only called for leads E3..E9 → always 3-byte).
+/// Codepoint of a 3-byte UTF-8 char at `text[i]` (only called for leads E2..E9 → always 3-byte).
 #[inline]
 fn cp3(text: &[u8], i: usize) -> u32 {
     ((text[i] as u32 & 0x0F) << 12)
@@ -393,157 +405,290 @@ fn cp3(text: &[u8], i: usize) -> u32 {
         | (text[i + 2] as u32 & 0x3F)
 }
 
+/// A char that ENDS a deepseek alt-2 `[\p{L}\p{M}]+` run despite its atom being Letter/Mark: the
+/// CJK-range chars (Split-2 isolated them first) and ZWJ/ZWNJ (U+200C/200D — `\p{Cf}`, so not
+/// `\p{L}∪\p{M}`, but atom-folded into `Mark`). Both are 3-byte (leads E2..E9); cheap cp check.
+/// `inline(always)`: called per lead byte in `letter_run`'s hot loop — a real call there is costly.
+#[inline(always)]
+fn ds_breaks(text: &[u8], p: usize) -> bool {
+    let b = text[p];
+    if (0xE3..=0xE9).contains(&b) {
+        return ds_is_cjk(cp3(text, p));
+    }
+    if b == 0xE2 {
+        let cp = cp3(text, p);
+        return cp == 0x200C || cp == 0x200D;
+    }
+    false
+}
+
+/// A CJK-range char that is also a LETTER/MARK (`\p{L}∪\p{M}`). Split-2 `[…]+` isolates the whole CJK
+/// range — including CJK-range *punctuation/symbols* (・ U+30FB, ゠ U+30A0, ゛゜ U+309B/C) — but Split-3
+/// then RE-splits that piece, peeling those non-letters out via its punct rule. So the net Split-2⇒3
+/// unit is a maximal CJK *letter* run; the non-letters must not extend it (they fall to the punct rule).
+#[inline(always)]
+fn ds_is_cjk_letter(text: &[u8], tags: &[u8], p: usize) -> bool {
+    let b = text[p];
+    (0xE3..=0xE9).contains(&b) && ds_is_cjk(cp3(text, p)) && in_mask(tags[p], mask::LETTER_MARK)
+}
+
 /// deepseek-v3 pretokenization: the `Sequence` of `[N{1,3}]`, `[CJK]+`, `<big regex>` (all Isolated)
 /// collapsed into ONE scalar FSM over the atom stream. Precedence (= the Sequence order): digits →
 /// CJK-range runs → the big-regex alts. Because Split-2 isolates CJK *before* the letter rule, the
 /// letter run stops at CJK-range codepoints. Peeks bytes for the ASCII `[punct][A-Za-z]+` alt.
 ///
-/// NOTE: validated on hand cases; a full byte-exact gate vs the real composed Sequence (onig ×3) is
-/// still TODO — deepseek's rules are subtle (CJK-in-letter split), so treat as unverified until then.
+/// Byte-exact vs the real composed Sequence (onig ×3, each Isolated) on 10 languages — see
+/// `benches/deepseek.rs`. The subtleties the single pass replicates: (1) ws *followed by* a digit/CJK
+/// is its own Sequence piece → the whole run is one token (`\s+(?!\S)`); (2) ZWJ/ZWNJ are `\p{Cf}`, not
+/// `\p{L}∪\p{M}`, so they end a letter run (`ds_breaks`); (3) Split-2 isolates the whole CJK range but
+/// Split-3 re-splits it, so CJK-range punct (・) breaks the CJK *letter* run (`ds_is_cjk_letter`).
 /// ┌── OWNER: shared (scalar) ──┐
 pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut Vec<Span>) {
-    const SP: u8 = Atom::Space as u8;
-    const NL: u8 = Atom::Newline as u8;
-    // big-regex alt-2 optional prefix `[^\r\n\p{L}\p{P}\p{S}]` = not (nl, Letter, \p{P}∪\p{S}).
-    const DS_PREFIX: u16 = Atom::NumWord.bit()
-        | Atom::NumOther.bit()
-        | Atom::Space.bit()
-        | Atom::WsOther.bit()
-        | Atom::Mark.bit()
-        | Atom::NumericOther.bit()
-        | Atom::Control.bit();
-    let lut_ps = inmask_tbl(mask::PUNCT_SYM);
-    let lut_ws = inmask_tbl(mask::WS);
-    let _ = (&lut_ps, &lut_ws); // (SIMD run-ends can use these later; scalar for now)
+    // Leading-atom values as `const` → the `match` is a dense jump table (see `cl100k`). The Split
+    // precedence (digits → CJK → big-regex alts) is preserved because the atom partition is disjoint.
+    const LET: u8 = Atom::Letter as u8;
+    const MRK: u8 = Atom::Mark as u8;
+    const NW: u8 = Atom::NumWord as u8;
+    const NO: u8 = Atom::NumOther as u8;
+    const NLN: u8 = Atom::Newline as u8;
+    const SPC: u8 = Atom::Space as u8;
+    const WSO: u8 = Atom::WsOther as u8;
+    const CON: u8 = Atom::Connector as u8;
+    const PUN: u8 = Atom::Punct as u8;
+    const APO: u8 = Atom::Apostrophe as u8;
+    const SYM: u8 = Atom::SymOther as u8;
+    const NMO: u8 = Atom::NumericOther as u8;
+    const CTL: u8 = Atom::Control as u8;
 
-    // maximal `[\p{L}\p{M}]+` run starting at `from`, STOPPING at CJK-range chars (Split-2 took those).
-    let letter_run = |from: usize| -> usize {
-        let mut p = from;
-        while p < text.len() && in_mask(tags[p], mask::LETTER_MARK) {
-            let bp = text[p];
-            if (0xE3..=0xE9).contains(&bp) && ds_is_cjk(cp3(text, p)) {
+    const CONT: u8 = Atom::Cont as u8;
+    let end = text.len();
+    // maximal `[\p{L}\p{M}]+` run from `a`, stopping at CJK-range chars (Split-2 took those) and
+    // ZWJ/ZWNJ (not `\p{L}∪\p{M}` — see `ds_breaks`). BYTE-wise (`p += 1`, continuation bytes stay
+    // in-run, `ds_breaks` only fires at a lead) — the `char_len`-per-char form was ~2× slower (see
+    // `run_end`'s note). This is the hot inner loop of the dense (latin) deepseek path.
+    let letter_run = |a: usize| -> usize {
+        let mut p = a;
+        while p < end {
+            let t = tags[p];
+            if t == CONT {
+                p += 1;
+            } else if in_mask(t, mask::LETTER_MARK) && !ds_breaks(text, p) {
+                p += 1;
+            } else {
                 break;
             }
-            p += char_len(bp);
         }
         p
     };
+    // is `text[a]` the start of a deepseek letter/mark char (alt-2 run body / space-prefix target)?
+    let is_lm = |a: usize| a < end && in_mask(tags[a], mask::LETTER_MARK) && !ds_breaks(text, a);
+    // Split-3 alt-3 tail `[\p{P}\p{S}]+[\r\n]*` from `sp0` (a leading space is already consumed); `sp0`
+    // if there is no punct/sym run there.
+    let punct = |sp0: usize| -> usize {
+        let mut p = run_end(tags, sp0, end, mask::PUNCT_SYM);
+        if p > sp0 {
+            while p < end && tags[p] == NLN {
+                p += char_len(text[p]);
+            }
+        }
+        p
+    };
+    // Split-3 alts d/e/f (whitespace). Unlike cl100k: a ws run FOLLOWED BY a digit/CJK is its own
+    // Sequence piece (Split-1/2 isolated the next match) → `\s+(?!\S)` takes the WHOLE run; only a
+    // following letter/punct (same Split-3 piece) leaves the last ws char for its ` ?`/`[^…]?` prefix.
+    let ws = |i: usize| -> usize {
+        let re = run_end(tags, i, end, mask::WS);
+        let next_isolated =
+            re < end && (in_mask(tags[re], mask::NUMBER) || ds_is_cjk_letter(text, tags, re));
+        if let Some(r) = text[i..re].iter().rposition(|&x| x == 0x0A || x == 0x0D) {
+            i + r + 1
+        } else if re == end || next_isolated {
+            re // whole ws run is one token
+        } else {
+            let mut last = re - 1;
+            while last > i && text[last] & 0xC0 == 0x80 {
+                last -= 1;
+            }
+            if last > i { last } else { re }
+        }
+    };
 
-    let end = text.len();
     let mut i = 0;
     while i < end {
         let start = i;
         let b = text[i];
-        let c = tags[i];
-
-        // Split-1: `\p{N}{1,3}`
-        if in_mask(c, mask::NUMBER) {
-            let (mut p, mut cnt) = (i, 0);
-            while p < end && cnt < 3 && in_mask(tags[p], mask::NUMBER) {
-                p += char_len(text[p]);
-                cnt += 1;
-            }
-            out.push((start as u32, p as u32));
-            i = p;
-            continue;
-        }
-
-        // Split-2: `[一-龥぀-ゟ゠-ヿ]+` (maximal CJK-range run)
-        if (0xE3..=0xE9).contains(&b) && ds_is_cjk(cp3(text, i)) {
-            let mut p = i;
-            while p < end {
-                let bp = text[p];
-                if !((0xE3..=0xE9).contains(&bp) && ds_is_cjk(cp3(text, p))) {
-                    break;
+        match tags[i] {
+            // Split-1: `\p{N}{1,3}`
+            NW | NO => {
+                let (mut p, mut cnt) = (i, 0);
+                while p < end && cnt < 3 && in_mask(tags[p], mask::NUMBER) {
+                    p += char_len(text[p]);
+                    cnt += 1;
                 }
-                p += 3;
-            }
-            out.push((start as u32, p as u32));
-            i = p;
-            continue;
-        }
-
-        // Split-3 alt-1: `[!"#…~][A-Za-z]+` — ASCII punct/sym then ASCII letters
-        if b.is_ascii_punctuation() && i + 1 < end && text[i + 1].is_ascii_alphabetic() {
-            let mut p = i + 1;
-            while p < end && text[p].is_ascii_alphabetic() {
-                p += 1;
-            }
-            out.push((start as u32, p as u32));
-            i = p;
-            continue;
-        }
-
-        // Split-3 alt-2: `[^\r\n\p{L}\p{P}\p{S}]?[\p{L}\p{M}]+`
-        if in_mask(c, mask::LETTER_MARK) {
-            let p = letter_run(i);
-            out.push((start as u32, p as u32));
-            i = p;
-            continue;
-        }
-        let l0 = char_len(b);
-        if in_mask(c, DS_PREFIX) {
-            let a = i + l0;
-            if a < end
-                && in_mask(tags[a], mask::LETTER_MARK)
-                && !((0xE3..=0xE9).contains(&text[a]) && ds_is_cjk(cp3(text, a)))
-            {
-                let p = letter_run(a);
-                out.push((start as u32, p as u32));
                 i = p;
-                continue;
             }
-        }
-
-        // Split-3 alt-3: ` ?[\p{P}\p{S}]+[\r\n]*`
-        let sp0 = if c == SP { i + l0 } else { i };
-        let mut p = run_end(tags, sp0, end, mask::PUNCT_SYM);
-        if p > sp0 {
-            while p < end && tags[p] == NL {
-                p += char_len(text[p]);
+            // Split-2 CJK *letter* run (⇒ Split-3 re-split), else Split-3 alt-2 `[\p{L}\p{M}]+`. ZWJ/ZWNJ
+            // aren't `\p{L}∪\p{M}`, but they ARE a valid alt-2 prefix `[^\r\n\p{L}\p{P}\p{S}]?`, so a ZWJ
+            // FOLLOWED by a letter starts a "ZWJ + letters" token; otherwise it's its own gap token.
+            LET | MRK => {
+                i = if ds_is_cjk_letter(text, tags, i) {
+                    let mut p = i + 3;
+                    while p < end && ds_is_cjk_letter(text, tags, p) {
+                        p += 3;
+                    }
+                    p
+                } else if !ds_breaks(text, i) {
+                    letter_run(i)
+                } else {
+                    let a = i + char_len(b); // ZWJ/ZWNJ as alt-2 prefix, else own token
+                    if is_lm(a) { letter_run(a) } else { a }
+                };
             }
-            out.push((start as u32, p as u32));
-            i = p;
-            continue;
-        }
-
-        // Split-3 alts d/e/f: whitespace — identical to cl100k (`\s*[\r\n]+` ends at the last newline)
-        if in_mask(c, mask::WS) {
-            let re = run_end(tags, i, end, mask::WS);
-            if let Some(r) = text[i..re].iter().rposition(|&x| x == 0x0A || x == 0x0D) {
-                i = i + r + 1;
-            } else if re == end {
-                i = re;
-            } else {
-                let mut last = re - 1;
-                while last > i && text[last] & 0xC0 == 0x80 {
-                    last -= 1;
-                }
-                i = if last > i { last } else { re };
+            // Space: alt-2 (space prefix + `[\p{L}\p{M}]+`) | alt-3 (` ` + `[\p{P}\p{S}]+`) | whitespace
+            SPC => {
+                let a = i + 1; // Space is ASCII (0x20)
+                i = if is_lm(a) {
+                    letter_run(a)
+                } else {
+                    let p = punct(a);
+                    if p > a { p } else { ws(i) }
+                };
             }
-            out.push((start as u32, i as u32));
-            continue;
+            // WsOther: alt-2 (prefix + `[\p{L}\p{M}]+`) | whitespace (not `\p{P}∪\p{S}` → no alt-3)
+            WSO => {
+                let a = i + char_len(b);
+                i = if is_lm(a) { letter_run(a) } else { ws(i) };
+            }
+            // Newline: whitespace
+            NLN => i = ws(i),
+            // Connector | Punct | Apostrophe | SymOther (∈ `\p{P}∪\p{S}`): alt-1 `[ascii_punct][A-Za-z]+`
+            // | alt-3 `[\p{P}\p{S}]+[\r\n]*`
+            CON | PUN | APO | SYM => {
+                i = if b.is_ascii_punctuation() && i + 1 < end && text[i + 1].is_ascii_alphabetic() {
+                    let mut p = i + 1;
+                    while p < end && text[p].is_ascii_alphabetic() {
+                        p += 1;
+                    }
+                    p
+                } else {
+                    punct(i) // c ∈ PUNCT_SYM ⇒ > i
+                };
+            }
+            // NumericOther | Control (prefix candidates, not `\p{P}∪\p{S}`/ws): alt-2 prefix | own token
+            NMO | CTL => {
+                let a = i + char_len(b);
+                i = if is_lm(a) { letter_run(a) } else { a };
+            }
+            // Sentinel / MultiByte / Cont — never a char-start atom; emit one char defensively.
+            _ => i += char_len(b),
         }
-
-        i += l0;
         out.push((start as u32, i as u32));
     }
 }
 
-/// GPT-2 / ByteLevel pretokenization: like cl100k but `\p{N}+` unbounded and no `[\r\n]` split.
+/// GPT-2 / ByteLevel pretokenization. Regex (same jump-table shape as cl100k, with 3 differences):
+///   `'s|'t|'re|'ve|'m|'ll|'d | ?\p{L}+ | ?\p{N}+ | ?[^\s\p{L}\p{N}]+ | \s+(?!\S) | \s+`
+/// vs cl100k: (1) contractions are case-SENSITIVE (lowercase only, no `(?i:)`); (2) the ` ?` prefix is
+/// a literal SPACE only (not any non-l/n char) and it applies to letters, numbers AND "other"; (3) no
+/// `\p{N}{1,3}` cap (numbers are unbounded) and no `\s*[\r\n]`/trailing-`[\r\n]*` rules.
 /// ┌── OWNER: shared (scalar) ──┐
 pub fn fsm_byte_level(text: &[u8], tags: &[u8], out: &mut Vec<Span>) {
-    let _ = (text, tags, out);
-    todo!()
+    const LET: u8 = Atom::Letter as u8;
+    const NW: u8 = Atom::NumWord as u8;
+    const NO: u8 = Atom::NumOther as u8;
+    const NLN: u8 = Atom::Newline as u8;
+    const SPC: u8 = Atom::Space as u8;
+    const WSO: u8 = Atom::WsOther as u8;
+    const MRK: u8 = Atom::Mark as u8;
+    const CON: u8 = Atom::Connector as u8;
+    const PUN: u8 = Atom::Punct as u8;
+    const APO: u8 = Atom::Apostrophe as u8;
+    const SYM: u8 = Atom::SymOther as u8;
+    const NMO: u8 = Atom::NumericOther as u8;
+    const CTL: u8 = Atom::Control as u8;
+
+    let end = text.len();
+    // `\s+(?!\S)|\s+`: the whole run at EOF, else leave the last ws char for the next ` ?`-prefixed run.
+    let ws = |i: usize| -> usize {
+        let re = run_end(tags, i, end, mask::WS);
+        if re == end {
+            re
+        } else {
+            let mut last = re - 1;
+            while last > i && text[last] & 0xC0 == 0x80 {
+                last -= 1;
+            }
+            if last > i { last } else { re }
+        }
+    };
+
+    let mut i = 0;
+    while i < end {
+        let start = i;
+        match tags[i] {
+            LET => i = run_end(tags, i, end, mask::LETTER), // ` ?\p{L}+` (space taken by the Space arm)
+            NW | NO => i = run_end(tags, i, end, mask::NUMBER), // ` ?\p{N}+` — UNBOUNDED
+            MRK | CON | PUN | SYM | NMO | CTL => i = run_end(tags, i, end, mask::NOT_WS_L_N), // ` ?[^…]+`
+            // `'s|'t|'re|'ve|'m|'ll|'d` (case-sensitive), else `[^\s\p{L}\p{N}]+` (apostrophe ∈ that set)
+            APO => {
+                let adv = match (text.get(i + 1), text.get(i + 2)) {
+                    (Some(b's' | b't' | b'm' | b'd'), _) => 2,
+                    (Some(b'r'), Some(b'e')) | (Some(b'v'), Some(b'e')) | (Some(b'l'), Some(b'l')) => 3,
+                    _ => 0,
+                };
+                i = if adv > 0 { i + adv } else { run_end(tags, i, end, mask::NOT_WS_L_N) };
+            }
+            // Space: the ` ?` prefix — attach one space to a following letter / number / "other" run,
+            // else it's whitespace (rules `\s+(?!\S)|\s+`, which leave one space for the next run).
+            SPC => {
+                let a = i + 1; // Space is ASCII (0x20)
+                i = match tags.get(a) {
+                    Some(&LET) => run_end(tags, a, end, mask::LETTER),
+                    Some(&NW) | Some(&NO) => run_end(tags, a, end, mask::NUMBER),
+                    Some(&t) if in_mask(t, mask::NOT_WS_L_N) => run_end(tags, a, end, mask::NOT_WS_L_N),
+                    _ => ws(i),
+                };
+            }
+            // WsOther / Newline: whitespace only — the ` ?` prefix is a literal 0x20, so tabs/newlines
+            // never prefix a run.
+            WSO | NLN => i = ws(i),
+            // Sentinel / MultiByte / Cont — never a char-start atom; emit one char defensively.
+            _ => i += char_len(text[i]),
+        }
+        out.push((start as u32, i as u32));
+    }
 }
 
-/// UnicodeScripts: split on script-id change, transparent set `{Common, Inherited, Any}` sticks to
-/// the neighbouring run. Reads a `scripts` stream (the parallel classifier), not atoms.
+/// UnicodeScripts: split on script-id change; the transparent set `{Common, Inherited, Any}` (id
+/// [`SCRIPT_ANY`]) sticks to the current run without changing or splitting it. Reads a `scripts` stream
+/// (from `classify::<Scripts>`), NOT atoms — `Scripts::CONT` (0xFF) marks continuation bytes, which
+/// stay in-run byte-wise. A run's script is fixed by its first real (non-Any) char; adjacent real
+/// scripts that differ are a boundary. `text` is unused (offsets only) but kept for a uniform signature.
 /// ┌── OWNER: shared (scalar) ──┐
 pub fn fsm_script_run(text: &[u8], scripts: &[u8], out: &mut Vec<Span>) {
-    let _ = (text, scripts, out);
-    todo!()
+    let _ = text;
+    const CONT: u8 = 0xFF; // Scripts::CONT
+    let n = scripts.len();
+    let mut run_start = 0usize;
+    let mut cur = SCRIPT_ANY; // the current run's fixed script (Any until a real one is seen)
+    let mut i = 0;
+    while i < n {
+        let s = scripts[i];
+        if s != CONT && s != SCRIPT_ANY {
+            if cur != SCRIPT_ANY && s != cur {
+                out.push((run_start as u32, i as u32)); // real script changed → boundary
+                run_start = i;
+            }
+            cur = s;
+        }
+        i += 1; // byte-wise: CONT / Any chars stay in the current run
+    }
+    if run_start < n {
+        out.push((run_start as u32, n as u32));
+    }
 }
+/// Transparent script id for `{Common, Inherited, Any}` (the Scripts scheme must map those to 0).
+pub const SCRIPT_ANY: u8 = 0;
 
 /// SIMD boundary-extract for the RunSplit family: `in_mask` class-change → `movemask` → bit-iterate
 /// to spans. Optional aarch64 acceleration of `fsm_split`/`fsm_class_runs`' scalar core.
@@ -552,6 +697,101 @@ pub fn fsm_script_run(text: &[u8], scripts: &[u8], out: &mut Vec<Span>) {
 pub(crate) unsafe fn extract_boundaries(tags: &[u8], delim: u16, out: &mut Vec<Span>) {
     let _ = (tags, delim, out);
     todo!()
+}
+
+/// Scalar `WhitespaceSplit` (drop WS runs, keep non-WS runs) — thin alias over the generic core, so the
+/// SIMD version has a same-signature scalar twin to bench against.
+pub fn whitespace_split_scalar(text: &[u8], tags: &[u8], out: &mut Vec<Span>) {
+    fsm_split::<{ mask::WS }, { Behavior::Removed as u8 }>(text, tags, out)
+}
+
+/// SIMD (NEON) `WhitespaceSplit`: emit maximal non-whitespace byte runs (WS dropped), byte-identical to
+/// [`whitespace_split_scalar`]. This is the simplest RunSplit — one class, `Removed` — so it's pure
+/// boundary detection: a per-lane keep/drop `vqtbl1` + NEON movemask, then bit-iterate runs. No per-char
+/// rule dispatch, no `segs` scratch, no double pass; whole non-WS chunks (words/CJK) cost one movemask.
+///
+/// `keep[tag] = 0xFF` for a kept byte, `0x00` for a whitespace *lead*. Continuation bytes (`Cont`) are
+/// kept (→ multibyte non-WS chars stay whole); the sole cost is that the continuation bytes of a
+/// non-ASCII whitespace char (NBSP, U+3000, …) also read as "kept" — `push` strips those leading
+/// continuation bytes so the emitted token still starts on a char boundary, keeping it byte-exact.
+#[cfg(target_arch = "aarch64")]
+pub fn whitespace_split_simd(text: &[u8], tags: &[u8], out: &mut Vec<Span>) {
+    use core::arch::aarch64::*;
+    let n = text.len();
+
+    // emit [s,e) after skipping leading continuation bytes (orphaned conts of a dropped multibyte WS
+    // char). The `while` ~never fires (only at non-ASCII whitespace) — no cost on ASCII-spaced text.
+    let push = |mut s: usize, e: usize, out: &mut Vec<Span>| {
+        while s < e && text[s] & 0xC0 == 0x80 {
+            s += 1;
+        }
+        if s < e {
+            out.push((s as u32, e as u32));
+        }
+    };
+
+    let mut run_start = usize::MAX; // usize::MAX = not currently in a run
+    let mut i = 0;
+    if n >= 16 {
+        // keep LUT + NEON movemask weights (lane j → bit j; low 8 → low byte, high 8 → high byte).
+        let mut keep = [0xFFu8; 16];
+        let mut t = 0u8;
+        while t < 16 {
+            if (mask::WS >> t) & 1 != 0 {
+                keep[t as usize] = 0x00; // Newline | Space | WsOther leads
+            }
+            t += 1;
+        }
+        const POW: [u8; 16] = [1, 2, 4, 8, 16, 32, 64, 128, 1, 2, 4, 8, 16, 32, 64, 128];
+        unsafe {
+            let keepv = vld1q_u8(keep.as_ptr());
+            let powv = vld1q_u8(POW.as_ptr());
+            while i + 16 <= n {
+                let bits = vandq_u8(vqtbl1q_u8(keepv, vld1q_u8(tags.as_ptr().add(i))), powv);
+                let km = (vaddv_u8(vget_low_u8(bits)) as u16)
+                    | ((vaddv_u8(vget_high_u8(bits)) as u16) << 8);
+                if km == 0xFFFF {
+                    if run_start == usize::MAX {
+                        run_start = i; // whole chunk kept → (re)open a run
+                    }
+                } else if km == 0 {
+                    if run_start != usize::MAX {
+                        push(run_start, i, out); // whole chunk dropped → close the run
+                        run_start = usize::MAX;
+                    }
+                } else {
+                    let mut j = 0;
+                    while j < 16 {
+                        if (km >> j) & 1 != 0 {
+                            if run_start == usize::MAX {
+                                run_start = i + j;
+                            }
+                        } else if run_start != usize::MAX {
+                            push(run_start, i + j, out);
+                            run_start = usize::MAX;
+                        }
+                        j += 1;
+                    }
+                }
+                i += 16;
+            }
+        }
+    }
+    // scalar tail (Cont ∉ WS → kept, matching the LUT)
+    while i < n {
+        if in_mask(tags[i], mask::WS) {
+            if run_start != usize::MAX {
+                push(run_start, i, out);
+                run_start = usize::MAX;
+            }
+        } else if run_start == usize::MAX {
+            run_start = i;
+        }
+        i += 1;
+    }
+    if run_start != usize::MAX {
+        push(run_start, n, out);
+    }
 }
 
 // ── Composition recipes ────────────────────────────────────────────────────────────────────────
@@ -623,6 +863,50 @@ impl DeepSeek {
         fsm_deepseek(text, tags, out);
     }
 }
+
+pub struct ByteLevel;
+impl ByteLevel {
+    #[inline]
+    pub fn pre_tokenize(&self, text: &[u8], tags: &mut [u8], out: &mut Vec<Span>) {
+        classify::<Atoms>(text, tags);
+        fsm_byte_level(text, tags, out);
+    }
+}
+
+/// `Split(char, Removed)` — the only pre-tokenizer that keys on a *literal char* rather than an atom
+/// class, so it scans bytes directly (no classify pass). UTF-8 is self-synchronizing, so the
+/// delimiter's byte pattern only matches on char boundaries.
+pub struct CharDelimiterSplit(pub char);
+impl CharDelimiterSplit {
+    pub fn pre_tokenize(&self, text: &[u8], _tags: &mut [u8], out: &mut Vec<Span>) {
+        let mut buf = [0u8; 4];
+        let delim = self.0.encode_utf8(&mut buf).as_bytes();
+        let (n, dl) = (text.len(), delim.len());
+        let (mut start, mut i) = (0usize, 0usize);
+        while i + dl <= n {
+            // memchr the first delimiter byte, then confirm the full pattern.
+            match memchr::memchr(delim[0], &text[i..n - dl + 1]) {
+                Some(off) if text[i + off..i + off + dl] == *delim => {
+                    let m = i + off;
+                    if m > start {
+                        out.push((start as u32, m as u32)); // gap before the delimiter (Removed)
+                    }
+                    i = m + dl;
+                    start = i;
+                }
+                Some(off) => i += off + 1, // first byte matched mid-pattern; keep scanning
+                None => break,
+            }
+        }
+        if start < n {
+            out.push((start as u32, n as u32));
+        }
+    }
+}
+
+// UnicodeScripts (`classify::<Scripts>` → `fsm_script_run`) is intentionally NOT wired up as a struct
+// yet: the `Scripts` scheme's SCRIPT_TABLES are Phase 2 (a new unicode-script data source in
+// `bitmap_gen`), so `classify::<Scripts>` would panic. `fsm_script_run` above is done and tested.
 
 #[cfg(test)]
 mod tests {
@@ -724,5 +1008,55 @@ mod tests {
             spans::<{ mask::WS }, { Behavior::MergedWithNext as u8 }>("a b"),
             vec![(0, 1), (1, 3)]
         );
+    }
+
+    fn byte_level(s: &str) -> Vec<Span> {
+        let mut tags = vec![0u8; s.len()];
+        classify::<Atoms>(s.as_bytes(), &mut tags);
+        let mut out = Vec::new();
+        fsm_byte_level(s.as_bytes(), &tags, &mut out);
+        out
+    }
+
+    #[test]
+    fn byte_level_rules() {
+        // ` ?\p{L}+` (space attaches), lowercase contraction, ` ?\p{N}+` UNBOUNDED (no {1,3} cap).
+        // "I" | "'m" | " 12345" | " ok"
+        assert_eq!(byte_level("I'm 12345 ok"), vec![(0, 1), (1, 3), (3, 9), (9, 12)]);
+        // contractions are CASE-SENSITIVE: uppercase 'S is not one → "IT" | "'" | "S"
+        assert_eq!(byte_level("IT'S"), vec![(0, 2), (2, 3), (3, 4)]);
+        // multi-space: `\s+(?!\S)` leaves one space for the next word → "hi" | "  " ... wait: "hi   ok"
+        // → "hi" | "  " (2 of 3, rule \s+(?!\S)) | " ok" (rule ` ?\p{L}+`)
+        assert_eq!(byte_level("hi   ok"), vec![(0, 2), (2, 4), (4, 7)]);
+    }
+
+    #[test]
+    fn script_run_basic() {
+        // ids per byte; ANY(0) sticks, CONT(0xFF) stays in-run. "aa" Latin | "." Any | "bb" Cyr.
+        assert_eq!(
+            {
+                let mut o = Vec::new();
+                fsm_script_run(b"aa.bb", &[1, 1, 0, 2, 2], &mut o);
+                o
+            },
+            vec![(0, 3), (3, 5)] // the "." (Any) sticks to the preceding Latin run
+        );
+        // multibyte: "é"(Latin, lead+CONT) | "Б"(Cyr, lead+CONT)
+        assert_eq!(
+            {
+                let mut o = Vec::new();
+                fsm_script_run("éБ".as_bytes(), &[1, 0xFF, 2, 0xFF], &mut o);
+                o
+            },
+            vec![(0, 2), (2, 4)]
+        );
+    }
+
+    #[test]
+    fn char_delimiter_split() {
+        let mut out = Vec::new();
+        // split on '/', Removed → drop delimiters, drop the empty gap between "//"
+        CharDelimiterSplit('/').pre_tokenize(b"a/bc//d", &mut [], &mut out);
+        assert_eq!(out, vec![(0, 1), (2, 4), (6, 7)]);
     }
 }
