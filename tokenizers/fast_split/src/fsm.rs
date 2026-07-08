@@ -7,7 +7,16 @@
 //! optimization for the RunSplit family (class-change → movemask → bit-iterate).
 #![allow(dead_code)] // skeleton
 
-use crate::classify::{Atoms, classify, in_mask, mask};
+use crate::classify::{Atom, Atoms, char_len, classify, in_mask, mask};
+
+/// Advance from `i` over maximal chars whose (lead) tag is in `m`; returns the byte index past the run.
+#[inline]
+fn run_end(text: &[u8], tags: &[u8], mut i: usize, end: usize, m: u16) -> usize {
+    while i < end && in_mask(tags[i], m) {
+        i += char_len(text[i]);
+    }
+    i
+}
 
 /// A token span: byte offsets `[start, end)` into the input.
 /// TODO:i think we could use u16 for one of them if we stored start, offset5
@@ -178,8 +187,105 @@ pub fn fsm_class_runs<const DROP: u16, const ISOLATE: u16, const KEEP_SPLIT: u16
 /// measured winner vs the boundary bitmask. Peeks `text` for the ASCII contraction-suffix literals.
 /// ┌── OWNER: shared (scalar) ──┐
 pub fn fsm_cl100k(text: &[u8], tags: &[u8], out: &mut Vec<Span>) {
-    let _ = (text, tags, out);
-    todo!("7-rule scalar FSM over atoms; contraction suffix via ASCII byte compare; spec §4")
+    const AP: u8 = Atom::Apostrophe as u8;
+    const L: u8 = Atom::Letter as u8;
+    const SP: u8 = Atom::Space as u8;
+    const NL: u8 = Atom::Newline as u8;
+    // rule-2 optional prefix `[^\r\n\p{L}\p{N}]` = every atom except Newline / Letter / Number.
+    const PREFIX2: u16 = Atom::Space.bit()
+        | Atom::WsOther.bit()
+        | Atom::Mark.bit()
+        | Atom::Connector.bit()
+        | Atom::Punct.bit()
+        | Atom::Apostrophe.bit()
+        | Atom::SymOther.bit()
+        | Atom::NumericOther.bit();
+
+    let end = text.len();
+    let mut i = 0;
+    while i < end {
+        let start = i;
+        let b = text[i];
+        // rule 1: `'(?i:[sdmt]|ll|ve|re)` — apostrophe + ASCII contraction suffix (peek bytes)
+        if tags[i] == AP && i + 1 < end && text[i + 1] < 0x80 {
+            let lc = text[i + 1] | 0x20;
+            let adv = match lc {
+                b's' | b't' | b'm' | b'd' => 2,
+                b'r' | b'v' | b'l' if i + 2 < end && text[i + 2] < 0x80 => {
+                    let l2 = text[i + 2] | 0x20;
+                    if (lc == b'r' && l2 == b'e') || (lc == b'v' && l2 == b'e') || (lc == b'l' && l2 == b'l') {
+                        3
+                    } else {
+                        0
+                    }
+                }
+                _ => 0,
+            };
+            if adv > 0 {
+                out.push((start as u32, (start + adv) as u32));
+                i += adv;
+                continue;
+            }
+        }
+        let c = tags[i];
+        // rule 2: `[^\r\n\p{L}\p{N}]?\p{L}+` — letters, with at most one non-(nl/l/n) prefix char
+        if c == L {
+            i = run_end(text, tags, i, end, mask::LETTER);
+            out.push((start as u32, i as u32));
+            continue;
+        }
+        let l0 = char_len(b);
+        if in_mask(c, PREFIX2) {
+            let a = i + l0;
+            if a < end && tags[a] == L {
+                i = run_end(text, tags, a, end, mask::LETTER);
+                out.push((start as u32, i as u32));
+                continue;
+            }
+        }
+        // rule 3: `\p{N}{1,3}` — 1..3 number chars
+        if in_mask(c, mask::NUMBER) {
+            let (mut p, mut cnt) = (i, 0);
+            while p < end && cnt < 3 && in_mask(tags[p], mask::NUMBER) {
+                p += char_len(text[p]);
+                cnt += 1;
+            }
+            out.push((start as u32, p as u32));
+            i = p;
+            continue;
+        }
+        // rule 4: ` ?[^\s\p{L}\p{N}]+[\r\n]*` — optional space, run of "other", trailing newlines
+        let sp0 = if c == SP { i + l0 } else { i };
+        let mut p = run_end(text, tags, sp0, end, mask::NOT_WS_L_N);
+        if p > sp0 {
+            while p < end && tags[p] == NL {
+                p += char_len(text[p]);
+            }
+            out.push((start as u32, p as u32));
+            i = p;
+            continue;
+        }
+        // rules 5-7: whitespace — `\s*[\r\n]` | `\s+(?!\S)` | `\s+`
+        if in_mask(c, mask::WS) {
+            let re = run_end(text, tags, i, end, mask::WS);
+            if let Some(r) = text[i..re].iter().rposition(|&x| x == 0x0A || x == 0x0D) {
+                i = i + r + 1; // rule 5: up to & including the last newline in the run
+            } else if re == end {
+                i = re; // rule 7: trailing whitespace at EOF → take it all
+            } else {
+                // rule 6: whitespace before a non-space → leave the last ws char for the next token
+                let mut last = re - 1;
+                while last > i && text[last] & 0xC0 == 0x80 {
+                    last -= 1;
+                }
+                i = if last > i { last } else { re };
+            }
+            out.push((start as u32, i as u32));
+            continue;
+        }
+        i += l0;
+        out.push((start as u32, i as u32));
+    }
 }
 
 /// GPT-2 / ByteLevel pretokenization: like cl100k but `\p{N}+` unbounded and no `[\r\n]` split.
@@ -285,6 +391,24 @@ mod tests {
         let mut out = Vec::new();
         fsm_class_runs::<DR, IS, KS>(s.as_bytes(), &tags, &mut out);
         out
+    }
+
+    fn cl100k(s: &str) -> Vec<Span> {
+        let mut tags = vec![0u8; s.len()];
+        classify::<Atoms>(s.as_bytes(), &mut tags);
+        let mut out = Vec::new();
+        fsm_cl100k(s.as_bytes(), &tags, &mut out);
+        out
+    }
+
+    #[test]
+    fn cl100k_rules() {
+        // hand-verified against the tiktoken cl100k_base regex
+        assert_eq!(cl100k("Hello world"), vec![(0, 5), (5, 11)]); // "Hello" | " world" (space attaches)
+        assert_eq!(cl100k("don't"), vec![(0, 3), (3, 5)]); // "don" | "'t" (contraction, rule 1)
+        assert_eq!(cl100k("a1234"), vec![(0, 1), (1, 4), (4, 5)]); // "a" | "123" | "4" ({1,3} digit cap)
+        assert_eq!(cl100k("  hi"), vec![(0, 1), (1, 4)]); // " " | " hi" (leave 1 ws for next word)
+        assert_eq!(cl100k("a, b"), vec![(0, 1), (1, 2), (2, 4)]); // "a" | "," | " b"
     }
 
     #[test]
