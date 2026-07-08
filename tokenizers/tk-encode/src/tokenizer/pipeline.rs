@@ -414,8 +414,8 @@ impl PipelineTokenizer {
                                     if STAGE >= Self::STAGE_MODEL {
                                         // Tokenize each chunk
                                         for pre_token in pre_tokens.iter() {
-                                            self.model.tokenize_bytes(
-                                                normalized_chunk[pre_token.range()].as_bytes(),
+                                            self.model.tokenize_pipeline(
+                                                &normalized_chunk[pre_token.range()],
                                                 output,
                                             )?;
                                         }
@@ -645,7 +645,7 @@ pub fn split_matches(
 }
 
 pub trait Model {
-    fn tokenize_bytes(&self, bytes: &[u8], output: &mut Vec<PipelineToken>) -> Result<()>;
+    fn tokenize_pipeline(&self, sequence: &str, output: &mut Vec<PipelineToken>) -> Result<()>;
 }
 
 pub enum PipelineModel {
@@ -656,16 +656,15 @@ pub enum PipelineModel {
 }
 
 impl Model for PipelineModel {
-    fn tokenize_bytes(&self, bytes: &[u8], output: &mut Vec<PipelineToken>) -> Result<()> {
+    fn tokenize_pipeline(&self, sequence: &str, output: &mut Vec<PipelineToken>) -> Result<()> {
         if let PipelineModel::BPE(model) = self {
-            return model.tokenize_bytes(bytes, output);
+            return model.tokenize_pipeline(sequence, output);
         }
-        let sequence = str::from_utf8(bytes)?;
         let tokens = match self {
+            Self::BPE(_) => unreachable!(),
             Self::Unigram(model) => model.tokenize(sequence),
             Self::WordLevel(model) => model.tokenize(sequence),
             Self::WordPiece(model) => model.tokenize(sequence),
-            Self::BPE(_) => unreachable!(),
         }?;
         output.extend(tokens.iter().map(|&Token { id, .. }| PipelineToken { id }));
         Ok(())

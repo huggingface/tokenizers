@@ -36,7 +36,7 @@ impl Ord for Merge {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct Symbol {
+pub(crate) struct Symbol {
     c: u32,
     prev: isize,
     next: isize,
@@ -50,6 +50,14 @@ impl Symbol {
         self.c = new_c;
         self.len += other.len;
         self.next = other.next;
+    }
+
+    pub fn id(&self) -> u32 {
+        self.c
+    }
+
+    pub fn add_len(&mut self, rhs: usize) {
+        self.len += rhs;
     }
 }
 
@@ -265,6 +273,10 @@ impl Word {
             pos = new_pos;
             offset
         })
+    }
+
+    pub(crate) fn last_mut(&mut self) -> Option<&mut Symbol> {
+        self.symbols.last_mut()
     }
 }
 
