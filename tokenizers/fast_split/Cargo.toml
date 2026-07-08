@@ -35,6 +35,7 @@ unicode-segmentation = "1.11"
 unicode-normalization-alignments = "0.1"
 regex-syntax = "0.8"
 regex = "1.10"
+onig = "6.5.1"
 [features]
 unicode = ["unicode_categories"]
 
@@ -44,6 +45,5 @@ harness = false
 required-features = ["unicode"]
 
 [[bench]]
-name = "regex_vs_matcher"
+name = "cl100k"
 harness = false
-required-features = ["unicode"]
