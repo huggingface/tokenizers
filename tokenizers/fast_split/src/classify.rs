@@ -1,15 +1,3 @@
-//! Tag-classify: map every char to a small tag in one pass — the shared substrate for all
-//! category-based pre-tokenizers (see `TAG_CLASSIFY_SPEC.md`).
-//!
-//! **One generic engine, parameterized by a `TagScheme`** (turbofish → monomorphized): `Atoms` and
-//! `Scripts` are two schemes fed to the same `classify::<S>` — same walk loop, different tables.
-//! Two interchangeable paths per scheme, **SIMD (NEON)** and **scalar**, that MUST produce identical
-//! `tags` (one byte-exact test gates both). Tables are arch-independent `const` data: SIMD gathers
-//! them with `vqtbl`, scalar bit-tests them (that bit-test is exactly the existing matchers).
-#![allow(dead_code)] // skeleton — the two paths land incrementally
-
-/// The 12-atom alphabet (fits `u4`). Mutually exclusive; continuation bytes carry `Cont`.
-/// Exact Unicode definitions are in `TAG_CLASSIFY_SPEC.md` §1 (derived by enumerating all codepoints).
 #[repr(u8)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Atom {
@@ -85,11 +73,6 @@ pub mod mask {
         | NumericOther.bit();
 }
 
-// =================================================================================================
-// The generic engine: classify::<S: TagScheme>.  One walk loop, one hot pass; the scheme supplies
-// the tables (as its scalar `classify_char` + its SIMD `classify_neon`). Turbofish monomorphizes it.
-// =================================================================================================
-
 /// A per-char tag alphabet + its two classify paths. `Atoms` (12-way) and `Scripts` (script-id) are
 /// the two instances; a third pretokenizer-class scheme is just another `impl`.
 pub trait TagScheme {
@@ -147,6 +130,7 @@ pub fn classify_scalar<S: TagScheme>(text: &[u8], tags: &mut [u8]) {
     let mut i = 0;
     while i < n {
         let b = text[i];
+        // 0xC0 is 0b1100 0000, the continuation header byte.
         if b & 0xC0 == 0x80 {
             tags[i] = S::CONT; // stray continuation byte
             i += 1;
