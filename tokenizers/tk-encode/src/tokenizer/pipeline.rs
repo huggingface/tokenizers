@@ -303,7 +303,8 @@ impl PipelineTokenizer {
     /// todo: wire the post-processing
     pub fn encode(&self, input: &str, _add_special_tokens: bool) -> Result<Vec<PipelineToken>> {
         let mut output = Vec::new();
-        self.encode_generic::<{ Self::STAGE_MODEL }>(input, &mut output)?;
+        let mut pre_tokens = Vec::new();
+        self.encode_generic::<{ Self::STAGE_MODEL }>(input, &mut output, &mut pre_tokens)?;
         Ok(output)
     }
 
@@ -316,14 +317,17 @@ impl PipelineTokenizer {
     /// `model = t(MODEL) − t(SPLIT)`. No runtime gate, no `Instant` in the loop.
     ///
     /// [`STAGE_MODEL`]: Self::STAGE_MODEL
+    ///
+    /// `output` and the `pre_tokens` scratch are caller-owned so a benchmark can reuse
+    /// them across calls and observe both buffers to anchor the ablation levels — the
+    /// library itself stays free of any `black_box`/timing artifact.
     #[doc(hidden)] // public only so `examples/fixture_bench.rs` can drive partial stages
     pub fn encode_generic<const STAGE: u8>(
         &self,
         input: &str,
         output: &mut Vec<PipelineToken>,
+        pre_tokens: &mut Vec<Split>,
     ) -> Result<()> {
-        let mut pre_tokens: Vec<Split> = vec![];
-
         // First, we extract all special tokens from the non-normalized input
         for segment in SpecialSegmentIterator::new(input, &self.added_vocabulary, false) {
             match segment {
@@ -339,12 +343,6 @@ impl PipelineTokenizer {
                     } else {
                         Cow::Borrowed(chunk)
                     };
-                    // Benchmark DCE guard: on the level that *stops at* normalize, make its
-                    // output observable so the optimizer can't elide the call. const-gated,
-                    // so it compiles out of every other level (incl. the real STAGE_MODEL).
-                    if STAGE == Self::STAGE_NORMALIZE {
-                        std::hint::black_box(normalized.len());
-                    }
 
                     // Extract special tokens from the normalized input
                     for segment in
@@ -359,10 +357,7 @@ impl PipelineTokenizer {
                                     // Pre-tokenize the chunk of normalized text
                                     pre_tokens.clear();
                                     self.pre_tokenizer
-                                        .pre_tokenize(normalized_chunk, &mut pre_tokens)?;
-                                    if STAGE == Self::STAGE_SPLIT {
-                                        std::hint::black_box(pre_tokens.len());
-                                    }
+                                        .pre_tokenize(normalized_chunk, pre_tokens)?;
                                     if STAGE >= Self::STAGE_MODEL {
                                         // Tokenize each chunk
                                         for pre_token in pre_tokens.iter() {
