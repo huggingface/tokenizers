@@ -36,8 +36,14 @@ const REPS: usize = 5;
 // `added_*` fixtures are built from exactly these strings (see the dataset FIXTURES.md).
 const ADDED_SPECIAL: &[&str] = &["<|xs0|>", "<|xs1|>", "<|xs2|>", "<|xs3|>", "<|xs4|>"];
 const ADDED_NORMALIZED: &[&str] = &[
-    "widgetron", "flibberjast", "zorptastic", "quibblenaut", "snorlaxian", "blorptronic",
-    "wuzzlefang", "crungledorf",
+    "widgetron",
+    "flibberjast",
+    "zorptastic",
+    "quibblenaut",
+    "snorlaxian",
+    "blorptronic",
+    "wuzzlefang",
+    "crungledorf",
 ];
 
 /// Inject the benchmark's added tokens into `tok` before the pipeline is built from it,
