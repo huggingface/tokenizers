@@ -282,6 +282,15 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
 }
 
 impl PipelineTokenizer {
+    /// Stage gates for [`encode_upto`](Self::encode_upto), in execution order. Each
+    /// level runs every stage up to and including itself; `STAGE_MODEL` is a full
+    /// encode. `STAGE_FRAME` is the special-token scan + iteration only (the "other"
+    /// slice in the decomposition).
+    pub const STAGE_FRAME: u8 = 0;
+    pub const STAGE_NORMALIZE: u8 = 1;
+    pub const STAGE_SPLIT: u8 = 2;
+    pub const STAGE_MODEL: u8 = 3;
+
     /// Encode `input` into token ids.
     ///
     /// Special tokens are matched in two passes:
@@ -293,9 +302,32 @@ impl PipelineTokenizer {
     ///
     /// todo: wire the post-processing
     pub fn encode(&self, input: &str, _add_special_tokens: bool) -> Result<Vec<PipelineToken>> {
-        let mut output: Vec<PipelineToken> = vec![];
-        let mut pre_tokens: Vec<Split> = vec![];
+        let mut output = Vec::new();
+        let mut pre_tokens = Vec::new();
+        self.encode_generic::<{ Self::STAGE_MODEL }>(input, &mut output, &mut pre_tokens)?;
+        Ok(output)
+    }
 
+    /// Single source of truth for the encode pipeline, generic over how many stages
+    /// run. `STAGE` is a **const generic**, so `if STAGE >= …` folds at compile time and
+    /// the disabled stages are compiled out — the full specialization ([`STAGE_MODEL`],
+    /// which [`encode`](Self::encode) calls) is branchless and identical to a
+    /// hand-written full pipeline, while the benchmark drives lower `STAGE` values to
+    /// time each stage's marginal cost (the ablation ladder), e.g.
+    /// `model = t(MODEL) − t(SPLIT)`. No runtime gate, no `Instant` in the loop.
+    ///
+    /// [`STAGE_MODEL`]: Self::STAGE_MODEL
+    ///
+    /// `output` and the `pre_tokens` scratch are caller-owned so a benchmark can reuse
+    /// them across calls and observe both buffers to anchor the ablation levels — the
+    /// library itself stays free of any `black_box`/timing artifact.
+    #[doc(hidden)] // public only so `examples/fixture_bench.rs` can drive partial stages
+    pub fn encode_generic<const STAGE: u8>(
+        &self,
+        input: &str,
+        output: &mut Vec<PipelineToken>,
+        pre_tokens: &mut Vec<Split>,
+    ) -> Result<()> {
         // First, we extract all special tokens from the non-normalized input
         for segment in SpecialSegmentIterator::new(input, &self.added_vocabulary, false) {
             match segment {
@@ -303,32 +335,38 @@ impl PipelineTokenizer {
                     output.push(PipelineToken { id: token });
                 }
                 Segment::Text(chunk) => {
-                    let normalized: &str = if let Some(normalizer) = &self.normalizer {
-                        &normalizer.normalize(chunk)?
+                    let normalized: Cow<str> = if STAGE >= Self::STAGE_NORMALIZE {
+                        match &self.normalizer {
+                            Some(normalizer) => normalizer.normalize(chunk)?,
+                            None => Cow::Borrowed(chunk),
+                        }
                     } else {
-                        chunk
+                        Cow::Borrowed(chunk)
                     };
 
                     // Extract special tokens from the normalized input
                     for segment in
-                        SpecialSegmentIterator::new(normalized, &self.added_vocabulary, true)
+                        SpecialSegmentIterator::new(&normalized, &self.added_vocabulary, true)
                     {
                         match segment {
                             Segment::SpecialToken(token) => {
                                 output.push(PipelineToken { id: token });
                             }
                             Segment::Text(normalized_chunk) => {
-                                // Pre-tokenize the chunk of normalized text
-                                pre_tokens.clear();
-                                self.pre_tokenizer
-                                    .pre_tokenize(normalized_chunk, &mut pre_tokens)?;
-
-                                // Tokenize each chunk
-                                for pre_token in pre_tokens.iter() {
-                                    self.model.tokenize_bytes(
-                                        normalized_chunk[pre_token.range()].as_bytes(),
-                                        &mut output,
-                                    )?;
+                                if STAGE >= Self::STAGE_SPLIT {
+                                    // Pre-tokenize the chunk of normalized text
+                                    pre_tokens.clear();
+                                    self.pre_tokenizer
+                                        .pre_tokenize(normalized_chunk, pre_tokens)?;
+                                    if STAGE >= Self::STAGE_MODEL {
+                                        // Tokenize each chunk
+                                        for pre_token in pre_tokens.iter() {
+                                            self.model.tokenize_bytes(
+                                                normalized_chunk[pre_token.range()].as_bytes(),
+                                                output,
+                                            )?;
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -336,7 +374,7 @@ impl PipelineTokenizer {
                 }
             };
         }
-        Ok(output)
+        Ok(())
     }
 }
 
