@@ -5,6 +5,7 @@ use std::{borrow::Cow, convert::TryFrom};
 use crate::added_vocabulary::bucket_added_vocabulary::{
     AddedToken as BucketAddedToken, AddedVocabulary as BucketAddedVocabulary,
 };
+use crate::decoders::byte_level::GPT2_REGEX_STR;
 use crate::models::bpe::BPE;
 use crate::models::unigram::Unigram;
 use crate::models::wordlevel::WordLevel;
