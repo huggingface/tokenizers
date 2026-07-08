@@ -25,7 +25,6 @@ name = "fast_split"
 path = "src/lib.rs"
 
 [dependencies]
-unicode_categories = { version = "0.1", optional = true }
 thiserror = "2"
 memchr = "2.8.2"
 [build-dependencies]
@@ -37,14 +36,6 @@ regex-syntax = "0.8"
 regex = "1.10"
 onig = "6.5.1"
 fancy-regex = "0.13"
-[features]
-unicode = ["unicode_categories"]
-
-[[bench]]
-name = "matchers"
-harness = false
-required-features = ["unicode"]
-
 [[bench]]
 name = "cl100k"
 harness = false

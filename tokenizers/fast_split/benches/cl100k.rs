@@ -37,17 +37,24 @@ const CORPORA: &[(&str, &str)] = &[
     ("Korean", "benches/data/ko.txt"),
 ];
 
+// MIN over TRIALS timed loops — the fastest trial had the least CPU contention, so it's the truest
+// estimate and is robust to thermal throttling / background load (which only ever make a trial slower).
 fn ns_per_byte<F: FnMut() -> usize>(len: usize, iters: u32, mut f: F) -> f64 {
+    const TRIALS: u32 = 7;
     for _ in 0..3 {
-        black_box(f());
+        black_box(f()); // warm
     }
-    let t = Instant::now();
-    let mut acc = 0usize;
-    for _ in 0..iters {
-        acc = acc.wrapping_add(f());
+    let mut best = f64::INFINITY;
+    for _ in 0..TRIALS {
+        let t = Instant::now();
+        let mut acc = 0usize;
+        for _ in 0..iters {
+            acc = acc.wrapping_add(f());
+        }
+        black_box(acc);
+        best = best.min(t.elapsed().as_nanos() as f64 / (iters as usize * len) as f64);
     }
-    black_box(acc);
-    t.elapsed().as_nanos() as f64 / (iters as usize * len) as f64
+    best
 }
 
 fn main() {
@@ -77,7 +84,7 @@ fn main() {
         let text = corpus.as_bytes();
         let n = text.len();
         let bpc = n as f64 / corpus.chars().count() as f64;
-        let iters = (15_000_000 / n).clamp(5, 400) as u32;
+        let iters = (4_000_000 / n).clamp(3, 150) as u32; // × TRIALS inside ns_per_byte
 
         let onig_spans: Vec<Span> = re.find_iter(corpus).map(|(s, e)| (s as u32, e as u32)).collect();
         let mut tags = vec![0u8; n];
