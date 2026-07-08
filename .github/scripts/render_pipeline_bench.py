@@ -6,14 +6,15 @@ Input: JSON array from `cargo run --release -p tk-encode --example fixture_bench
 one object per model:
     {model, shape, supported, [reason], results: [{fixture, group,
      legacy_mbps, pipeline_mbps, speedup, ids_match,
-     stage_ns_per_byte: {normalize, pre_tokenize, model, other, total}}, ...]}
+     stage_ns_per_byte: {added_split, normalize, pre_tokenize, model, total}}, ...]}
 
 Each supported model gets two full-size charts:
   1. a diverging bar chart (log2 around ×1.0): per-fixture ×speedup + the
      `MB/s: Tokenizer → Pipeline` throughput column, with group headers,
      slower/faster hints, ticks and an inline "⚠ ids differ" flag;
   2. a stacked stage-decomposition chart (ns/byte): where the pipeline spends
-     its own encode time — normalize + split + model + other — per fixture,
+     its own encode time per fixture — added-token split + normalize +
+     pre-tokenize + model (the two distinct splitting costs kept separate),
      with each fixture's ×speedup alongside.
 Unsupported models (byte-level BPE, Unigram/Metaspace, …) get a compact
 "not supported" card. Charts are rendered full-size so readers can zoom.
@@ -50,14 +51,16 @@ GROUPS = [("lang", "Languages"), ("modalities", "Modalities")]
 CARD_W, CARD_H = 470, 150
 
 # Pipeline encode stages, in execution order, keyed to `stage_ns_per_byte` in the
-# fixture_bench JSON. "other" is the untimed remainder (special-token scan + glue).
-STAGES = [("normalize", "normalize"), ("pre_tokenize", "split"),
-          ("model", "model"), ("other", "other")]
+# fixture_bench JSON. `added_split` = the added/special-token scan (AddedVocabulary),
+# `pre_tokenize` = the pre-tokenizer split — two distinct splitting costs. The four
+# stages sum to the whole-encode total.
+STAGES = [("added_split", "added-token"), ("normalize", "normalize"),
+          ("pre_tokenize", "pre-tokenize"), ("model", "model")]
 STAGE_INK = {
-    "light": {"normalize": "#2a9d8f", "pre_tokenize": "#e0952b",
-              "model": "#2a78d6", "other": "#c3c2b7"},
-    "dark": {"normalize": "#3fb8a8", "pre_tokenize": "#f0b45a",
-             "model": "#3987e5", "other": "#54544e"},
+    "light": {"added_split": "#7a5ea8", "normalize": "#2a9d8f",
+              "pre_tokenize": "#e0952b", "model": "#2a78d6"},
+    "dark": {"added_split": "#a48ad4", "normalize": "#3fb8a8",
+             "pre_tokenize": "#f0b45a", "model": "#3987e5"},
 }
 
 
@@ -400,13 +403,13 @@ def render_markdown(models, subtitle_base, meta, base, run_id):
         for m in supported:
             md += [f"#### {m['model']} — {m['shape']}", "",
                    "| Fixture | Group | Tokenizer MB/s | Pipeline MB/s | Speedup "
-                   "| norm ns/B | split ns/B | model ns/B | other ns/B | Ids |",
+                   "| added ns/B | norm ns/B | pre-tok ns/B | model ns/B | Ids |",
                    "|---|---|---:|---:|---:|---:|---:|---:|---:|:--|"]
             for r in sorted(m["results"], key=lambda r: (r["group"], -r["speedup"])):
                 ids = "match" if r["ids_match"] else "⚠️ differ"
                 s = r.get("stage_ns_per_byte", {})
                 cells = " ".join(f"| {s[k]:.2f}" if k in s else "| —"
-                                 for k in ("normalize", "pre_tokenize", "model", "other"))
+                                 for k in ("added_split", "normalize", "pre_tokenize", "model"))
                 md.append(f"| {r['fixture']} | {r['group']} | {r['legacy_mbps']:.1f} "
                           f"| {r['pipeline_mbps']:.1f} | ×{r['speedup']:.2f} {cells} | {ids} |")
             md.append("")

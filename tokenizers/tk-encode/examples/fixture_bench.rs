@@ -201,15 +201,19 @@ fn bench_model(
         let t_norm = stage_secs::<{ PipelineTokenizer::STAGE_NORMALIZE }>(pipeline, &chunks);
         let t_split = stage_secs::<{ PipelineTokenizer::STAGE_SPLIT }>(pipeline, &chunks);
         let t_model = stage_secs::<{ PipelineTokenizer::STAGE_MODEL }>(pipeline, &chunks);
+        // Two distinct "split" costs are separated here: `added_split` is the
+        // added/special-token scan (the SpecialSegmentIterator over the AddedVocabulary,
+        // captured by the FRAME level), `pre_tokenize` is the pre-tokenizer split. All
+        // four stages sum exactly to `total`.
         let nspb = |secs: f64| secs * 1e9 / bytes as f64;
-        let (ns_norm, ns_split, ns_model, ns_other) = (
+        let (ns_added, ns_norm, ns_split, ns_model) = (
+            nspb(t_frame.max(0.0)),
             nspb((t_norm - t_frame).max(0.0)),
             nspb((t_split - t_norm).max(0.0)),
             nspb((t_model - t_split).max(0.0)),
-            nspb(t_frame.max(0.0)),
         );
         eprintln!(
-            "    stages ns/byte: norm {ns_norm:.2}, split {ns_split:.2}, model {ns_model:.2}, other {ns_other:.2}"
+            "    stages ns/byte: added-split {ns_added:.2}, norm {ns_norm:.2}, pre-split {ns_split:.2}, model {ns_model:.2}"
         );
 
         rows.push(json!({
@@ -221,12 +225,12 @@ fn bench_model(
             "pipeline_mbps": pipeline_mbps,
             "speedup": l / p,
             "ids_match": ids_match,
-            // pipeline-only stage decomposition (ns/byte); stages + other ≈ total.
+            // pipeline-only stage decomposition (ns/byte); the four stages sum to total.
             "stage_ns_per_byte": {
+                "added_split": ns_added,
                 "normalize": ns_norm,
                 "pre_tokenize": ns_split,
                 "model": ns_model,
-                "other": ns_other,
                 "total": nspb(t_model),
             },
         }));
