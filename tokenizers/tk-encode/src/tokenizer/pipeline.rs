@@ -303,9 +303,10 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
         if let PipelineModel::BPE(bpe) = &mut model {
             let has_byte_level = match tok.get_pre_tokenizer() {
                 Some(PreTokenizerWrapper::ByteLevel(_)) => true,
-                Some(PreTokenizerWrapper::Sequence(seq)) => {
-                    seq.as_ref().iter().any(|wrapper| matches!(wrapper, PreTokenizerWrapper::ByteLevel(_)))
-                },
+                Some(PreTokenizerWrapper::Sequence(seq)) => seq
+                    .as_ref()
+                    .iter()
+                    .any(|wrapper| matches!(wrapper, PreTokenizerWrapper::ByteLevel(_))),
                 _ => false,
             };
             if has_byte_level {
