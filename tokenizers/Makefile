@@ -9,7 +9,7 @@ BENCHMARK_RESOURCES = $(SHARED_RESOURCES) $(DATA_DIR)/unigram_wagahaiwa_nekodear
 TESTS_RESOURCES = $(SHARED_RESOURCES) $(DATA_DIR)/unigram.json $(DATA_DIR)/unigram_wagahaiwa_nekodearu.txt $(DATA_DIR)/roberta.json $(DATA_DIR)/tokenizer-wiki.json $(DATA_DIR)/bert-wiki.json $(DATA_DIR)/fixtures/modalities/agentic-traces.txt
 
 FIXTURE_LANGS = amh_Ethi arb_Arab ben_Beng cmn_Hani ell_Grek eng_Latn heb_Hebr hin_Deva jpn_Jpan kat_Geor kor_Hang rus_Cyrl tam_Taml tha_Thai
-FIXTURE_MODALITIES = agentic_swe agentic-traces code_mixed math_latex
+FIXTURE_MODALITIES = agentic_swe agentic-traces code_mixed math_latex added_special_sparse added_special_dense added_normalized_sparse added_normalized_dense
 FIXTURES_RESOURCES = $(FIXTURE_LANGS:%=$(DATA_DIR)/fixtures/lang/%.txt) $(FIXTURE_MODALITIES:%=$(DATA_DIR)/fixtures/modalities/%.txt)
 
 # Models benched by tk-encode/examples/fixture_bench.rs; the manifest is the

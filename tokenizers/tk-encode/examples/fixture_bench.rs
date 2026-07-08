@@ -19,13 +19,38 @@ use std::time::Instant;
 
 use serde_json::{json, Value};
 use tk_encode::pipeline::PipelineTokenizer;
-use tk_encode::{ModelWrapper, Tokenizer};
+use tk_encode::{AddedToken, ModelWrapper, Tokenizer};
 
 const DATA_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../data");
 const MANIFEST: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/examples/bench_models.json");
 const CHUNK_BYTES: usize = 10 * 1024;
 const MAX_CHUNKS: usize = 100;
 const REPS: usize = 5;
+
+// Added tokens injected into every loaded tokenizer so the `added_*` fixtures exercise
+// the added-token split for whichever model is benched — no bespoke tokenizer config.
+// `ADDED_SPECIAL` (normalized:false) is matched on the raw pass; `ADDED_NORMALIZED`
+// (normalized:true) on the normalized pass. The strings are distinctive markers that do
+// not occur in the language/modality corpora, so they leave those results untouched. The
+// `added_*` fixtures are built from exactly these strings (see the dataset FIXTURES.md).
+const ADDED_SPECIAL: &[&str] = &["<|xs0|>", "<|xs1|>", "<|xs2|>", "<|xs3|>", "<|xs4|>"];
+const ADDED_NORMALIZED: &[&str] = &[
+    "widgetron", "flibberjast", "zorptastic", "quibblenaut", "snorlaxian", "blorptronic",
+    "wuzzlefang", "crungledorf",
+];
+
+/// Inject the benchmark's added tokens into `tok` before the pipeline is built from it,
+/// so both the reference and the pipeline see them (and stay id-for-id identical).
+fn inject_added_tokens(tok: &mut Tokenizer) {
+    let special = ADDED_SPECIAL
+        .iter()
+        .map(|s| AddedToken::from(*s, true).normalized(false));
+    let normalized = ADDED_NORMALIZED
+        .iter()
+        .map(|s| AddedToken::from(*s, false).normalized(true));
+    let _ = tok.add_special_tokens(special);
+    let _ = tok.add_tokens(normalized);
+}
 
 fn make_chunks(text: &str) -> Vec<String> {
     let mut chunks = Vec::new();
@@ -250,7 +275,7 @@ fn main() {
         let path = model_path(entry);
         eprintln!("== {name} ({repo}) ==");
 
-        let tok = match Tokenizer::from_file(&path) {
+        let mut tok = match Tokenizer::from_file(&path) {
             Ok(t) => t,
             Err(e) => {
                 eprintln!("  load failed: {e}");
@@ -261,6 +286,9 @@ fn main() {
                 continue;
             }
         };
+        // Give every model the benchmark's added tokens so the `added_*` fixtures have
+        // something to match, before the pipeline is derived from `tok`.
+        inject_added_tokens(&mut tok);
         let shape = format!("{} · {}", model_kind(&tok), pretok_label(&path));
 
         match PipelineTokenizer::try_from(&tok) {
