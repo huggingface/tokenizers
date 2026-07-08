@@ -7,13 +7,16 @@
 //! optimization for the RunSplit family (class-change → movemask → bit-iterate).
 #![allow(dead_code)] // skeleton
 
-use crate::classify::{Atom, Atoms, char_len, classify, in_mask, mask};
+use crate::classify::{char_len, classify, in_mask, mask, Atom, Atoms};
 
-/// Advance from `i` over maximal chars whose (lead) tag is in `m`; returns the byte index past the run.
+/// Advance over a maximal `m`-membership run; returns the byte index past it. Byte-wise (`i += 1`),
+/// treating continuation bytes as in-run — so NO `char_len` branch per char and no `text` access. This
+/// is THE hot inner loop of the dense (English/code) FSM; the earlier `char_len`-per-char version was
+/// ~2× slower there (English fsm 2.3 → ~1.1 ns/byte). Keep this a tight, inlinable byte scan.
 #[inline]
-fn run_end(text: &[u8], tags: &[u8], mut i: usize, end: usize, m: u16) -> usize {
-    while i < end && in_mask(tags[i], m) {
-        i += char_len(text[i]);
+fn run_end(tags: &[u8], mut i: usize, end: usize, m: u16) -> usize {
+    while i < end && (in_mask(tags[i], m) || tags[i] == Atom::Cont as u8) {
+        i += 1;
     }
     i
 }
@@ -59,13 +62,19 @@ unsafe fn run_end_simd(tags: &[u8], mut i: usize, end: usize, m: u16, tbl16: &[u
 /// Pick SIMD or scalar run-end at monomorphization time. `lut` is the precomputed membership LUT for
 /// `m`; only the SIMD path reads it (the scalar path ignores it).
 #[inline]
-fn run_end_sel<const SIMD: bool>(text: &[u8], tags: &[u8], i: usize, end: usize, m: u16, lut: &[u8; 16]) -> usize {
+fn run_end_sel<const SIMD: bool>(
+    tags: &[u8],
+    i: usize,
+    end: usize,
+    m: u16,
+    lut: &[u8; 16],
+) -> usize {
     #[cfg(target_arch = "aarch64")]
     if SIMD {
         return unsafe { run_end_simd(tags, i, end, m, lut) };
     }
     let _ = (SIMD, lut);
-    run_end(text, tags, i, end, m)
+    run_end(tags, i, end, m)
 }
 
 /// A token span: byte offsets `[start, end)` into the input.
@@ -281,7 +290,10 @@ fn cl100k<const SIMD: bool>(text: &[u8], tags: &[u8], out: &mut Vec<Span>) {
                 b's' | b't' | b'm' | b'd' => 2,
                 b'r' | b'v' | b'l' if i + 2 < end && text[i + 2] < 0x80 => {
                     let l2 = text[i + 2] | 0x20;
-                    if (lc == b'r' && l2 == b'e') || (lc == b'v' && l2 == b'e') || (lc == b'l' && l2 == b'l') {
+                    if (lc == b'r' && l2 == b'e')
+                        || (lc == b'v' && l2 == b'e')
+                        || (lc == b'l' && l2 == b'l')
+                    {
                         3
                     } else {
                         0
@@ -298,7 +310,7 @@ fn cl100k<const SIMD: bool>(text: &[u8], tags: &[u8], out: &mut Vec<Span>) {
         let c = tags[i];
         // rule 2: `[^\r\n\p{L}\p{N}]?\p{L}+` — letters, with at most one non-(nl/l/n) prefix char
         if c == L {
-            i = run_end_sel::<SIMD>(text, tags, i, end, mask::LETTER, &lut_l);
+            i = run_end_sel::<SIMD>(tags, i, end, mask::LETTER, &lut_l);
             out.push((start as u32, i as u32));
             continue;
         }
@@ -306,7 +318,7 @@ fn cl100k<const SIMD: bool>(text: &[u8], tags: &[u8], out: &mut Vec<Span>) {
         if in_mask(c, PREFIX2) {
             let a = i + l0;
             if a < end && tags[a] == L {
-                i = run_end_sel::<SIMD>(text, tags, a, end, mask::LETTER, &lut_l);
+                i = run_end_sel::<SIMD>(tags, a, end, mask::LETTER, &lut_l);
                 out.push((start as u32, i as u32));
                 continue;
             }
@@ -324,7 +336,7 @@ fn cl100k<const SIMD: bool>(text: &[u8], tags: &[u8], out: &mut Vec<Span>) {
         }
         // rule 4: ` ?[^\s\p{L}\p{N}]+[\r\n]*` — optional space, run of "other", trailing newlines
         let sp0 = if c == SP { i + l0 } else { i };
-        let mut p = run_end_sel::<SIMD>(text, tags, sp0, end, mask::NOT_WS_L_N, &lut_o);
+        let mut p = run_end_sel::<SIMD>(tags, sp0, end, mask::NOT_WS_L_N, &lut_o);
         if p > sp0 {
             while p < end && tags[p] == NL {
                 p += char_len(text[p]);
@@ -335,7 +347,7 @@ fn cl100k<const SIMD: bool>(text: &[u8], tags: &[u8], out: &mut Vec<Span>) {
         }
         // rules 5-7: whitespace — `\s*[\r\n]` | `\s+(?!\S)` | `\s+`
         if in_mask(c, mask::WS) {
-            let re = run_end_sel::<SIMD>(text, tags, i, end, mask::WS, &lut_w);
+            let re = run_end_sel::<SIMD>(tags, i, end, mask::WS, &lut_w);
             if let Some(r) = text[i..re].iter().rposition(|&x| x == 0x0A || x == 0x0D) {
                 i = i + r + 1; // rule 5: up to & including the last newline in the run
             } else if re == end {
@@ -351,6 +363,157 @@ fn cl100k<const SIMD: bool>(text: &[u8], tags: &[u8], out: &mut Vec<Span>) {
             out.push((start as u32, i as u32));
             continue;
         }
+        i += l0;
+        out.push((start as u32, i as u32));
+    }
+}
+
+/// The specific CJK ranges deepseek's Split-2 isolates: Han U+4E00..9FA5 ∪ Hiragana U+3040..309F ∪
+/// Katakana U+30A0..30FF. (All 3-byte, leads E3..E9.) Not "all letters" — only these.
+#[inline]
+fn ds_is_cjk(cp: u32) -> bool {
+    (0x4E00..=0x9FA5).contains(&cp) || (0x3040..=0x30FF).contains(&cp)
+}
+/// Codepoint of a 3-byte UTF-8 char at `text[i]` (only called for leads E3..E9 → always 3-byte).
+#[inline]
+fn cp3(text: &[u8], i: usize) -> u32 {
+    ((text[i] as u32 & 0x0F) << 12)
+        | ((text[i + 1] as u32 & 0x3F) << 6)
+        | (text[i + 2] as u32 & 0x3F)
+}
+
+/// deepseek-v3 pretokenization: the `Sequence` of `[N{1,3}]`, `[CJK]+`, `<big regex>` (all Isolated)
+/// collapsed into ONE scalar FSM over the atom stream. Precedence (= the Sequence order): digits →
+/// CJK-range runs → the big-regex alts. Because Split-2 isolates CJK *before* the letter rule, the
+/// letter run stops at CJK-range codepoints. Peeks bytes for the ASCII `[punct][A-Za-z]+` alt.
+///
+/// NOTE: validated on hand cases; a full byte-exact gate vs the real composed Sequence (onig ×3) is
+/// still TODO — deepseek's rules are subtle (CJK-in-letter split), so treat as unverified until then.
+/// ┌── OWNER: shared (scalar) ──┐
+pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut Vec<Span>) {
+    const SP: u8 = Atom::Space as u8;
+    const NL: u8 = Atom::Newline as u8;
+    // big-regex alt-2 optional prefix `[^\r\n\p{L}\p{P}\p{S}]` = not (nl, Letter, \p{P}∪\p{S}).
+    const DS_PREFIX: u16 = Atom::NumWord.bit()
+        | Atom::NumOther.bit()
+        | Atom::Space.bit()
+        | Atom::WsOther.bit()
+        | Atom::Mark.bit()
+        | Atom::NumericOther.bit()
+        | Atom::Control.bit();
+    let lut_ps = inmask_tbl(mask::PUNCT_SYM);
+    let lut_ws = inmask_tbl(mask::WS);
+    let _ = (&lut_ps, &lut_ws); // (SIMD run-ends can use these later; scalar for now)
+
+    // maximal `[\p{L}\p{M}]+` run starting at `from`, STOPPING at CJK-range chars (Split-2 took those).
+    let letter_run = |from: usize| -> usize {
+        let mut p = from;
+        while p < text.len() && in_mask(tags[p], mask::LETTER_MARK) {
+            let bp = text[p];
+            if (0xE3..=0xE9).contains(&bp) && ds_is_cjk(cp3(text, p)) {
+                break;
+            }
+            p += char_len(bp);
+        }
+        p
+    };
+
+    let end = text.len();
+    let mut i = 0;
+    while i < end {
+        let start = i;
+        let b = text[i];
+        let c = tags[i];
+
+        // Split-1: `\p{N}{1,3}`
+        if in_mask(c, mask::NUMBER) {
+            let (mut p, mut cnt) = (i, 0);
+            while p < end && cnt < 3 && in_mask(tags[p], mask::NUMBER) {
+                p += char_len(text[p]);
+                cnt += 1;
+            }
+            out.push((start as u32, p as u32));
+            i = p;
+            continue;
+        }
+
+        // Split-2: `[一-龥぀-ゟ゠-ヿ]+` (maximal CJK-range run)
+        if (0xE3..=0xE9).contains(&b) && ds_is_cjk(cp3(text, i)) {
+            let mut p = i;
+            while p < end {
+                let bp = text[p];
+                if !((0xE3..=0xE9).contains(&bp) && ds_is_cjk(cp3(text, p))) {
+                    break;
+                }
+                p += 3;
+            }
+            out.push((start as u32, p as u32));
+            i = p;
+            continue;
+        }
+
+        // Split-3 alt-1: `[!"#…~][A-Za-z]+` — ASCII punct/sym then ASCII letters
+        if b.is_ascii_punctuation() && i + 1 < end && text[i + 1].is_ascii_alphabetic() {
+            let mut p = i + 1;
+            while p < end && text[p].is_ascii_alphabetic() {
+                p += 1;
+            }
+            out.push((start as u32, p as u32));
+            i = p;
+            continue;
+        }
+
+        // Split-3 alt-2: `[^\r\n\p{L}\p{P}\p{S}]?[\p{L}\p{M}]+`
+        if in_mask(c, mask::LETTER_MARK) {
+            let p = letter_run(i);
+            out.push((start as u32, p as u32));
+            i = p;
+            continue;
+        }
+        let l0 = char_len(b);
+        if in_mask(c, DS_PREFIX) {
+            let a = i + l0;
+            if a < end
+                && in_mask(tags[a], mask::LETTER_MARK)
+                && !((0xE3..=0xE9).contains(&text[a]) && ds_is_cjk(cp3(text, a)))
+            {
+                let p = letter_run(a);
+                out.push((start as u32, p as u32));
+                i = p;
+                continue;
+            }
+        }
+
+        // Split-3 alt-3: ` ?[\p{P}\p{S}]+[\r\n]*`
+        let sp0 = if c == SP { i + l0 } else { i };
+        let mut p = run_end(tags, sp0, end, mask::PUNCT_SYM);
+        if p > sp0 {
+            while p < end && tags[p] == NL {
+                p += char_len(text[p]);
+            }
+            out.push((start as u32, p as u32));
+            i = p;
+            continue;
+        }
+
+        // Split-3 alts d/e/f: whitespace — identical to cl100k (`\s*[\r\n]+` ends at the last newline)
+        if in_mask(c, mask::WS) {
+            let re = run_end(tags, i, end, mask::WS);
+            if let Some(r) = text[i..re].iter().rposition(|&x| x == 0x0A || x == 0x0D) {
+                i = i + r + 1;
+            } else if re == end {
+                i = re;
+            } else {
+                let mut last = re - 1;
+                while last > i && text[last] & 0xC0 == 0x80 {
+                    last -= 1;
+                }
+                i = if last > i { last } else { re };
+            }
+            out.push((start as u32, i as u32));
+            continue;
+        }
+
         i += l0;
         out.push((start as u32, i as u32));
     }
@@ -441,6 +604,15 @@ impl Cl100k {
     }
 }
 
+pub struct DeepSeek;
+impl DeepSeek {
+    #[inline]
+    pub fn pre_tokenize(&self, text: &[u8], tags: &mut [u8], out: &mut Vec<Span>) {
+        classify::<Atoms>(text, tags);
+        fsm_deepseek(text, tags, out);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -467,6 +639,24 @@ mod tests {
         let mut out = Vec::new();
         fsm_cl100k(s.as_bytes(), &tags, &mut out);
         out
+    }
+
+    fn deepseek(s: &str) -> Vec<Span> {
+        let mut tags = vec![0u8; s.len()];
+        classify::<Atoms>(s.as_bytes(), &mut tags);
+        let mut out = Vec::new();
+        fsm_deepseek(s.as_bytes(), &tags, &mut out);
+        out
+    }
+
+    #[test]
+    fn deepseek_rules() {
+        // 中 = U+4E2D (3 bytes) is CJK-range → isolated out of the letter runs (Split-2 before Split-3)
+        assert_eq!(deepseek("abc中def"), vec![(0, 3), (3, 6), (6, 9)]); // letters | CJK | letters
+        assert_eq!(deepseek("abc123"), vec![(0, 3), (3, 6)]); // letters | digits {1,3}
+        assert_eq!(deepseek("_abc"), vec![(0, 4)]); // alt-1: ASCII punct + ASCII letters
+        assert_eq!(deepseek("hello world"), vec![(0, 5), (5, 11)]); // word | space+word (alt-2 prefix)
+        assert_eq!(deepseek("!!!"), vec![(0, 3)]); // \p{P}∪\p{S} run (alt-3)
     }
 
     #[test]
@@ -499,7 +689,10 @@ mod tests {
     #[test]
     fn split_behaviors() {
         // WhitespaceSplit — drop whitespace, keep the runs around it: "ab," | "cd!"
-        assert_eq!(spans::<{ mask::WS }, { Behavior::Removed as u8 }>("ab, cd!"), vec![(0, 3), (4, 7)]);
+        assert_eq!(
+            spans::<{ mask::WS }, { Behavior::Removed as u8 }>("ab, cd!"),
+            vec![(0, 3), (4, 7)]
+        );
         // Punctuation — isolate each punct char: "ab" | "," | " cd" | "!"
         assert_eq!(
             spans::<{ mask::PUNCT }, { Behavior::Isolated as u8 }>("ab, cd!"),
@@ -511,8 +704,14 @@ mod tests {
             vec![(0, 1), (1, 3), (3, 4), (4, 5)]
         );
         // MergedWithPrevious — the space joins the previous piece: "a " | "b"
-        assert_eq!(spans::<{ mask::WS }, { Behavior::MergedWithPrevious as u8 }>("a b"), vec![(0, 2), (2, 3)]);
+        assert_eq!(
+            spans::<{ mask::WS }, { Behavior::MergedWithPrevious as u8 }>("a b"),
+            vec![(0, 2), (2, 3)]
+        );
         // MergedWithNext — the space joins the next piece: "a" | " b"
-        assert_eq!(spans::<{ mask::WS }, { Behavior::MergedWithNext as u8 }>("a b"), vec![(0, 1), (1, 3)]);
+        assert_eq!(
+            spans::<{ mask::WS }, { Behavior::MergedWithNext as u8 }>("a b"),
+            vec![(0, 1), (1, 3)]
+        );
     }
 }
