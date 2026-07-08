@@ -25,7 +25,7 @@ pub enum Atom {
     Apostrophe = 9,    // 0x27 only
     SymOther = 10,     // non-ASCII \p{S} ∪ control ∪ unassigned
     NumericOther = 11, // is_numeric ∖ \p{N}
-    Sentinel =13,      // this lead / block needs to go 1 level deeper
+    Sentinel = 13,     // this lead / block needs to go 1 level deeper
     MultiByte = 14,    // simd could not resolve this multibyte, use the lookup table
     Cont = 15,         // UTF-8 continuation byte — transparent to every FSM
 }
@@ -116,8 +116,9 @@ pub trait TagScheme {
 }
 
 /// Classify `text` under scheme `S` into `tags` (`tags.len() == text.len()`) — the single arch
-/// dispatcher. aarch64: NEON at compile time (baseline). x86_64: AVX2 if present at runtime, else
-/// scalar. Everything else: the portable scalar walk. All paths produce the identical stream.
+/// dispatcher. aarch64: NEON at compile time (baseline). x86_64: AVX-512 VBMI → SSE4.1 → scalar,
+/// runtime-detected. wasm32 with `simd128`: SIMD128. Everything else: the portable scalar walk. All
+/// paths produce the identical stream.
 #[inline]
 pub fn classify<S: TagScheme>(text: &[u8], tags: &mut [u8]) {
     debug_assert_eq!(text.len(), tags.len());
@@ -127,7 +128,15 @@ pub fn classify<S: TagScheme>(text: &[u8], tags: &mut [u8]) {
     }
     #[cfg(target_arch = "x86_64")]
     crate::simd_avx_classify::dispatch::<S>(text, tags);
-    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
+    #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
+    unsafe {
+        crate::simd_wasm_classify::classify_wasm::<S>(text, tags)
+    }
+    #[cfg(not(any(
+        target_arch = "aarch64",
+        target_arch = "x86_64",
+        all(target_arch = "wasm32", target_feature = "simd128")
+    )))]
     classify_scalar::<S>(text, tags);
 }
 
