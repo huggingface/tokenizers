@@ -129,18 +129,7 @@ impl Tables {
 // We define primitives to be able to index into 4 x 16 byte vectors.
 // The vqtbl4q_u8 allows for a table lookup
 // ================================================================================================
-#[cfg(target_arch = "aarch64")]
-#[inline]
-#[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn tbl64(
-    t: &[u8; 64],
-    idx: core::arch::aarch64::uint8x16_t,
-) -> core::arch::aarch64::uint8x16_t {
-    use core::arch::aarch64::*;
-    // vld1q_u8_x4 = LD1 {v0.16b-v3.16b}: 64 CONTIGUOUS bytes into 4 lanes — the layout vqtbl4 wants.
-    // (NOT vld4q_u8: that de-interleaves stride-4 into planes, which would scramble the table.)
-    vqtbl4q_u8(vld1q_u8_x4(t.as_ptr()), idx)
-}
+
 #[cfg(target_arch = "aarch64")]
 #[inline]
 #[allow(unsafe_op_in_unsafe_fn)]
@@ -151,12 +140,12 @@ unsafe fn tbl256(
     use core::arch::aarch64::*;
     vorrq_u8(
         vorrq_u8(
-            tbl64(&t[0], idx),
-            tbl64(&t[1], vsubq_u8(idx, vdupq_n_u8(64))),
+            vqtbl4q_u8(vld1q_u8_x4(t[0].as_ptr()), idx),
+            vqtbl4q_u8(vld1q_u8_x4(t[1].as_ptr()), vsubq_u8(idx, vdupq_n_u8(64))),
         ),
         vorrq_u8(
-            tbl64(&t[2], vsubq_u8(idx, vdupq_n_u8(128))),
-            tbl64(&t[3], vsubq_u8(idx, vdupq_n_u8(192))),
+            vqtbl4q_u8(vld1q_u8_x4(t[2].as_ptr()), vsubq_u8(idx, vdupq_n_u8(128))),
+            vqtbl4q_u8(vld1q_u8_x4(t[3].as_ptr()), vsubq_u8(idx, vdupq_n_u8(192))),
         ),
     )
 }
@@ -169,7 +158,10 @@ unsafe fn ascii_tbl(
     hi: &[u8; 64],
 ) -> core::arch::aarch64::uint8x16_t {
     use core::arch::aarch64::*;
-    vorrq_u8(tbl64(lo, v), tbl64(hi, vsubq_u8(v, vdupq_n_u8(64))))
+    vorrq_u8(
+        vqtbl4q_u8(vld1q_u8_x4(lo.as_ptr()), v),
+        vqtbl4q_u8(vld1q_u8_x4(hi.as_ptr()), vsubq_u8(v, vdupq_n_u8(64))),
+    )
 }
 
 // ── lane predicates (each returns an all-ones / all-zeros mask per lane) — the readable range compares ──
@@ -369,8 +361,11 @@ pub unsafe fn classify_neon<S: super::classify::TagScheme>(text: &[u8], tags: &m
                 } else {
                     let (lo, hi) = &tables.fast3_mixed[tables.fast3_slot[block] as usize];
                     vorrq_u8(
-                        tbl64(lo, block_index),
-                        tbl64(hi, vsubq_u8(block_index, vdupq_n_u8(64))),
+                        vqtbl4q_u8(vld1q_u8_x4(lo.as_ptr()), block_index),
+                        vqtbl4q_u8(
+                            vld1q_u8_x4(hi.as_ptr()),
+                            vsubq_u8(block_index, vdupq_n_u8(64)),
+                        ),
                     )
                 };
                 tags3 = vbslq_u8(block_lanes, block_tags, tags3);
