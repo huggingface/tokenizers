@@ -1,4 +1,4 @@
-use crate::matchers::{Digit, Letter};
+use crate::matchers::{FastLetter, FastNumber};
 use crate::rules::{run_matcher, word_rule};
 /// For each of these rules, we'll define fast SIMD optimized scanners
 // Cl100k has 7 branches (separated by `|`)
@@ -32,9 +32,9 @@ impl PatternDef for Cl100k {
             // is to quickly check if the 2-3 bytes incoming are letters, numbers, etc to apply the
             // rules on them. To do that efficiently we index a table based on a u64 key
         } else if b.is_ascii_alphabetic() {
-            word_rule::<Letter>(bytes, from)
+            word_rule::<FastLetter>(bytes, from)
         } else if b.is_ascii_digit() {
-            run_matcher::<Digit, 1, 3>(bytes, from)
+            run_matcher::<FastNumber, 1, 3>(bytes, from)
         } else {
             None
         }

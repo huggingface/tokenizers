@@ -61,6 +61,30 @@ impl PreTokenizer for PreTokenizerWrapper {
     }
 }
 
+impl crate::pipeline::PreTokenizer for PreTokenizerWrapper {
+    fn pre_tokenize(&self, text: &str, out: &mut Vec<crate::pipeline::Split>) -> crate::Result<()> {
+        use crate::pipeline::PreTokenizer as PipePreTok;
+        match self {
+            Self::BertPreTokenizer(p) => PipePreTok::pre_tokenize(p, text, out),
+            Self::Delimiter(p) => PipePreTok::pre_tokenize(p, text, out),
+            Self::Digits(p) => PipePreTok::pre_tokenize(p, text, out),
+            Self::FixedLength(p) => PipePreTok::pre_tokenize(p, text, out),
+            Self::Punctuation(p) => PipePreTok::pre_tokenize(p, text, out),
+            Self::Sequence(p) => PipePreTok::pre_tokenize(p, text, out),
+            Self::Split(p) => PipePreTok::pre_tokenize(p, text, out),
+            Self::UnicodeScripts(p) => PipePreTok::pre_tokenize(p, text, out),
+            Self::Whitespace(p) => PipePreTok::pre_tokenize(p, text, out),
+            Self::WhitespaceSplit(p) => PipePreTok::pre_tokenize(p, text, out),
+            Self::ByteLevel(_) => {
+                Err("ByteLevel has no range-based pipeline impl (it rewrites bytes)".into())
+            }
+            Self::Metaspace(_) => {
+                Err("Metaspace has no range-based pipeline impl (it rewrites bytes)".into())
+            }
+        }
+    }
+}
+
 impl<'de> Deserialize<'de> for PreTokenizerWrapper {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where

@@ -1,3 +1,6 @@
+use std::borrow::Cow;
+
+use crate::pipeline;
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 pub use spm_precompiled::Precompiled;
 use std::cmp::Ordering;
@@ -68,9 +71,90 @@ impl Normalizer for Precompiled {
     }
 }
 
+impl pipeline::Normalizer for Precompiled {
+    fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
+        let mut transformed: Option<String> = None;
+        for (g_idx, grapheme) in input.grapheme_indices(true) {
+            if grapheme.len() < 6 {
+                if let Some(replacement) = self.transform(grapheme) {
+                    let string = transformed.get_or_insert_with(|| {
+                        let mut s = String::with_capacity(input.len());
+                        s.push_str(&input[..g_idx]);
+                        s
+                    });
+                    string.push_str(replacement);
+                    continue;
+                }
+            }
+            for (c_idx, character) in grapheme.char_indices() {
+                if let Some(replacement) =
+                    self.transform(&grapheme[c_idx..c_idx + character.len_utf8()])
+                {
+                    let string = transformed.get_or_insert_with(|| {
+                        let mut s = String::with_capacity(input.len());
+                        s.push_str(&input[..g_idx + c_idx]);
+                        s
+                    });
+                    string.push_str(replacement);
+                } else if let Some(transformed) = transformed.as_mut() {
+                    transformed.push(character);
+                }
+            }
+        }
+        if let Some(string) = transformed {
+            Ok(Cow::Owned(string))
+        } else {
+            Ok(Cow::Borrowed(input))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn albert_precompiled() -> Precompiled {
+        let json = std::fs::read_to_string("../data/albert-base-v1-tokenizer.json").unwrap();
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let precompiled = value["normalizer"]["normalizers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|n| n["type"] == "Precompiled")
+            .unwrap();
+        // Precompiled can't deserialize through serde_json::Value (the base64
+        // charsmap only decodes via the string deserializer) — same dance as
+        // NormalizerWrapper's Deserialize impl
+        serde_json::from_str(&serde_json::to_string(precompiled).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn pipeline_precompiled_matches_legacy() {
+        let n = albert_precompiled();
+        let mut any_modified = false;
+        for input in &[
+            "™\x1eg",
+            "ＫＡＤＯＫＡＷＡ",
+            "１２３",
+            "…",
+            "\u{fb01}",
+            "e\u{0301}",
+            "㍿",
+            "abc def",
+            "",
+        ] {
+            let mut ns = NormalizedString::from(*input);
+            Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
+            any_modified |= ns.get() != *input;
+            assert_eq!(
+                ns.get(),
+                &*pipeline::Normalizer::normalize(&n, input).unwrap(),
+                "pipeline output diverges from legacy for {input:?}"
+            );
+        }
+        // Guard against the oracle silently becoming a no-op on these inputs
+        assert!(any_modified);
+    }
 
     #[test]
     fn expansion_followed_by_removal() {

@@ -1,6 +1,9 @@
+use std::borrow::Cow;
+
 use serde::{Deserialize, Serialize};
 
 use crate::normalizers::NormalizerWrapper;
+use crate::pipeline;
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 use crate::utils::macro_rules_attribute;
 
@@ -48,6 +51,30 @@ impl Normalizer for Sequence {
     }
 }
 
+impl pipeline::Normalizer for Sequence {
+    fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
+        let mut cow: Cow<'a, str> = Cow::Borrowed(input);
+        for normalizer in &self.normalizers {
+            cow = match cow {
+                // Still borrowing `input` ('a): chain directly so an all-no-op
+                // sequence stays zero-alloc and returns a borrow of `input`.
+                Cow::Borrowed(s) => pipeline::Normalizer::normalize(normalizer, s)?,
+                // Owned locally: the next step may borrow from it, so materialize
+                // its result before the local `String` is dropped.
+                Cow::Owned(s) => {
+                    let out = match pipeline::Normalizer::normalize(normalizer, &s)? {
+                        Cow::Owned(o) => Some(o),
+                        Cow::Borrowed(b) if b.as_ptr() == s.as_ptr() && b.len() == s.len() => None,
+                        Cow::Borrowed(b) => Some(b.to_owned()),
+                    };
+                    Cow::Owned(out.unwrap_or(s))
+                }
+            };
+        }
+        Ok(cow)
+    }
+}
+
 /// Lowercases the input
 #[derive(Copy, Clone, Debug)]
 #[macro_rules_attribute(impl_serde_type!)]
@@ -56,5 +83,78 @@ impl Normalizer for Lowercase {
     fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
         normalized.lowercase();
         Ok(())
+    }
+}
+
+/// Whether lowercasing `c` leaves it unchanged (a single, identical char)
+pub(crate) fn lowercases_to_self(c: char) -> bool {
+    let mut it = c.to_lowercase();
+    matches!((it.next(), it.next()), (Some(first), None) if first == c)
+}
+
+impl pipeline::Normalizer for Lowercase {
+    fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
+        if input.chars().all(lowercases_to_self) {
+            Ok(input.into())
+        } else {
+            Ok(Cow::Owned(
+                input.chars().flat_map(|c| c.to_lowercase()).collect(),
+            ))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::normalizers::{Strip, StripAccents, NFD};
+
+    #[test]
+    fn pipeline_lowercase_matches_legacy() {
+        let n = Lowercase;
+        for input in &["HELLO", "Hello World", "abc", "", "ÀÉ", "ΟΔΟΣ"] {
+            let mut ns = NormalizedString::from(*input);
+            Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
+            assert_eq!(
+                ns.get(),
+                &*pipeline::Normalizer::normalize(&n, input).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn pipeline_sequence_matches_legacy() {
+        let n = Sequence::new(vec![NFD.into(), StripAccents.into(), Lowercase.into()]);
+        for input in &["Café", "HÉLLO", "abc", "", "ΟΔΟΣ"] {
+            let mut ns = NormalizedString::from(*input);
+            Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
+            assert_eq!(
+                ns.get(),
+                &*pipeline::Normalizer::normalize(&n, input).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn pipeline_sequence_strip_after_owned_matches_legacy() {
+        // Strip returns a sub-borrow of the previous step's owned output —
+        // the one case where a Borrowed result must not be mistaken for a no-op
+        let n = Sequence::new(vec![Lowercase.into(), Strip::new(true, true).into()]);
+        for input in &[
+            "  HELLO  ",
+            "\tMiXeD Case\n",
+            "NOPAD",
+            "  hello  ",
+            "",
+            "   ",
+        ] {
+            let mut ns = NormalizedString::from(*input);
+            Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
+            assert_eq!(
+                ns.get(),
+                &*pipeline::Normalizer::normalize(&n, input).unwrap(),
+                "input={input:?}"
+            );
+        }
     }
 }

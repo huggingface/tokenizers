@@ -1,3 +1,6 @@
+use std::borrow::Cow;
+
+use crate::pipeline;
 use crate::tokenizer::pattern::Pattern;
 use crate::tokenizer::Decoder;
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
@@ -85,6 +88,29 @@ impl Normalizer for Replace {
     }
 }
 
+impl pipeline::Normalizer for Replace {
+    fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
+        let iter = self.regex.find_iter(input);
+        let mut replaced: Option<String> = None;
+        let mut last_end = 0;
+
+        for (start, end) in iter {
+            let replaced: &mut String =
+                replaced.get_or_insert_with(|| String::with_capacity(input.len()));
+            replaced.push_str(&input[last_end..start]);
+            replaced.push_str(&self.content);
+            last_end = end;
+        }
+        if let Some(mut replaced) = replaced {
+            if last_end < input.len() {
+                replaced.push_str(&input[last_end..]);
+            }
+            return Ok(Cow::Owned(replaced));
+        }
+        Ok(input.into())
+    }
+}
+
 impl Decoder for Replace {
     fn decode_chain(&self, tokens: Vec<String>) -> Result<Vec<String>> {
         tokens
@@ -155,5 +181,28 @@ mod tests {
             replace.decode_chain(original).unwrap(),
             vec!["hello", " hello"]
         );
+    }
+
+    #[test]
+    fn pipeline_replace_matches_legacy() {
+        let n = Replace::new("''", "\"").unwrap();
+        for input in &["This is a ''test''", "no quotes", ""] {
+            let mut ns = NormalizedString::from(*input);
+            Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
+            assert_eq!(
+                ns.get(),
+                &*pipeline::Normalizer::normalize(&n, input).unwrap()
+            );
+        }
+
+        let n = Replace::new(ReplacePattern::Regex(r"\s+".into()), " ").unwrap();
+        for input in &["a   b   c", "single", ""] {
+            let mut ns = NormalizedString::from(*input);
+            Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
+            assert_eq!(
+                ns.get(),
+                &*pipeline::Normalizer::normalize(&n, input).unwrap()
+            );
+        }
     }
 }

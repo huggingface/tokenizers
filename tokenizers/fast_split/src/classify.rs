@@ -169,7 +169,7 @@ impl TagScheme for Atoms {
     #[cfg(target_arch = "aarch64")]
     unsafe fn classify_neon(text: &[u8], tags: &mut [u8]) {
         use super::simd_classify::classify_neon;
-        classify_neon(text, tags)
+        unsafe { classify_neon(text, tags) }
     }
 }
 
