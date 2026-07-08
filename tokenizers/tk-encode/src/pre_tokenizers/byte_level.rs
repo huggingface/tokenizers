@@ -112,8 +112,16 @@ impl Decoder for ByteLevel {
             .flat_map(|t| {
                 t.chars()
                     .try_fold(vec![], |mut acc, c| {
-                        CHAR_BYTES_LOOKUP.get(&c).map(|b| {
-                            acc.push(*b);
+                        {
+                            let idx = c as usize;
+                            if idx < 512 {
+                                CHAR_BYTES_LOOKUP[idx]
+                            } else {
+                                None
+                            }
+                        }
+                        .map(|b| {
+                            acc.push(b);
                             acc
                         })
                     })

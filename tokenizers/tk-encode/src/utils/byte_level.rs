@@ -1,5 +1,4 @@
 use crate::vocab::bucket_vocab_store::BucketVocabStore;
-use ahash::AHashMap;
 use std::sync::LazyLock;
 
 // The GPT-2 pre-tokenize regex is the canonical spec in atomsplit (single source of truth); re-export
@@ -19,12 +18,19 @@ pub(crate) use atomsplit::regexes::GPT2 as GPT2_REGEX_STR;
 pub static BYTES_CHAR_LOOKUP: LazyLock<[char; 256]> = LazyLock::new(make_byte_char_lookup);
 /// Inverse of [`BYTES_CHAR_LOOKUP`]: maps each byte-level unicode character back to its byte.
 ///
-/// Used when decoding byte-level tokens back into raw bytes. Because [`BYTES_CHAR_LOOKUP`] is
-/// a bijection over all 256 bytes, this map has exactly 256 entries with no collisions.
-pub static CHAR_BYTES_LOOKUP: LazyLock<AHashMap<char, u8>> = LazyLock::new(|| {
-    (0..=255u8)
-        .map(|byte| (BYTES_CHAR_LOOKUP[byte as usize], byte))
-        .collect()
+/// O(1) array lookup indexed by the character's codepoint (no hashing). Byte-level chars
+/// live in `0..324` (see [`BYTES_CHAR_LOOKUP`]), so a 512-entry table covers all of them.
+/// `None` marks a codepoint that is not a byte-level character. Used when decoding byte-level
+/// tokens back into raw bytes.
+pub static CHAR_BYTES_LOOKUP: LazyLock<[Option<u8>; 512]> = LazyLock::new(|| {
+    let mut table = [None; 512];
+    for byte in 0..=255u8 {
+        let idx = BYTES_CHAR_LOOKUP[byte as usize] as usize;
+        if idx < 512 {
+            table[idx] = Some(byte);
+        }
+    }
+    table
 });
 
 /// Expands a UTF-8 string into its GPT-2 byte-level character sequence, paired with the
@@ -82,8 +88,10 @@ fn make_byte_char_lookup() -> [char; 256] {
 
 fn reverse_lookup(c: char) -> Vec<u8> {
     CHAR_BYTES_LOOKUP
-        .get(&c)
-        .map_or_else(|| c.to_string().into_bytes(), |b| vec![*b])
+        .get(c as usize)
+        .copied()
+        .flatten()
+        .map_or_else(|| c.to_string().into_bytes(), |b| vec![b])
 }
 
 pub(crate) fn transform_vocab(vocab: BucketVocabStore) -> BucketVocabStore {
