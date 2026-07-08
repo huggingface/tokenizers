@@ -113,8 +113,11 @@ def chart_svg(model, mode, subtitle_base, meta, lo, hi):
             f'text-anchor="end">MB/s: Tokenizer → Pipeline</text>']
     y = top
     for key, title in GROUPS:
+        # stable order (alphabetical by fixture) so a fixture keeps its row across
+        # runs and lines up with the stage-decomposition chart — not sorted by the
+        # (run-varying) speedup.
         group_rows = sorted((r for r in rows if r["group"] == key),
-                            key=lambda r: -r["speedup"])
+                            key=lambda r: r["fixture"])
         if not group_rows:
             continue
         body.append(f'<text x="{GUTTER}" y="{y + 12}" fill="{ink["secondary"]}" font-size="11" '
@@ -224,7 +227,7 @@ def stage_chart_svg(model, mode, subtitle_base, meta, max_total):
     y = top
     for key, title in GROUPS:
         group_rows = sorted((r for r in rows if r["group"] == key),
-                            key=lambda r: -r["stage_ns_per_byte"]["total"])
+                            key=lambda r: r["fixture"])  # stable order, matches speedup chart
         if not group_rows:
             continue
         body.append(f'<text x="{GUTTER}" y="{y + 12}" fill="{ink["secondary"]}" font-size="11" '
@@ -405,7 +408,7 @@ def render_markdown(models, subtitle_base, meta, base, run_id):
                    "| Fixture | Group | Tokenizer MB/s | Pipeline MB/s | Speedup "
                    "| added ns/B | norm ns/B | pre-tok ns/B | model ns/B | Ids |",
                    "|---|---|---:|---:|---:|---:|---:|---:|---:|:--|"]
-            for r in sorted(m["results"], key=lambda r: (r["group"], -r["speedup"])):
+            for r in sorted(m["results"], key=lambda r: (r["group"], r["fixture"])):
                 ids = "match" if r["ids_match"] else "⚠️ differ"
                 s = r.get("stage_ns_per_byte", {})
                 cells = " ".join(f"| {s[k]:.2f}" if k in s else "| —"
