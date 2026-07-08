@@ -674,11 +674,39 @@ impl Model for BPE {
     }
 }
 
+static PIPELINE_NEXT_CACHE_ID: AtomicU64 = AtomicU64::new(0);
+
+thread_local! {
+    #[allow(clippy::type_complexity)]
+    static PIPELINE_BPE_LOCAL_CACHE: RefCell<AHashMap<u64, AHashMap<Vec<u8>, Vec<u32>>>> =
+        RefCell::new(AHashMap::new());
+}
+
+#[derive(Debug)]
+pub(crate) struct PipelineBpeCache {
+    id: AtomicU64,
+    pub capacity: usize,
+}
+
+impl PipelineBpeCache {
+    pub(crate) fn new(capacity: usize) -> Self {
+        Self {
+            id: AtomicU64::new(PIPELINE_NEXT_CACHE_ID.fetch_add(1, Ordering::Relaxed)),
+            capacity,
+        }
+    }
+
+    pub(crate) fn id(&self) -> u64 {
+        self.id.load(Ordering::Relaxed)
+    }
+}
+
 pub struct PipelineBPE {
     atoms: Atoms,
     vocab: VocabStore,
     merges: MergeMap,
     ignore_merges: bool,
+    cache: Option<PipelineBpeCache>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -760,6 +788,7 @@ impl PipelineBPE {
             ignore_merges,
             merges,
             vocab,
+            cache: model.cache.map(|c| PipelineBpeCache::new(c.capacity)),
         })
     }
 
@@ -824,9 +853,29 @@ impl pipeline::Model for PipelineBPE {
             }
         }
 
-        // todo: use thread-local cache
-        let word = self.merge_word(sequence)?;
-        output.extend(word.get_chars_iter().map(|id| PipelineToken { id }));
+        if let Some(cache) = self.cache.as_ref() {
+            let cache_id = cache.id();
+            PIPELINE_BPE_LOCAL_CACHE.with(|cell| {
+                let mut by_bpe = cell.borrow_mut();
+                let local = by_bpe.entry(cache_id).or_default();
+                if let Some(hit) = local.get(sequence.as_bytes()) {
+                    output.extend(hit.iter().map(|&id| PipelineToken { id }));
+                    return Result::Ok(());
+                }
+                let word = self.merge_word(sequence)?;
+                let tokens: Vec<_> = word.get_chars_iter().collect();
+                output.extend(tokens.iter().map(|&id| PipelineToken { id }));
+                if sequence.len() < MAX_LENGTH && local.len() < cache.capacity {
+                    local.insert(sequence.to_owned().into_bytes(), tokens);
+                }
+                Ok(())
+            })?;
+        } else {
+            // Cache disabled (capacity 0): fall back to the uncached path.
+            let word = self.merge_word(sequence)?;
+            output.extend(word.get_chars_iter().map(|id| PipelineToken { id }));
+        };
+
         Ok(())
     }
 }
