@@ -1,4 +1,4 @@
-use super::classify::{Atom, TagScheme};
+use super::classify::TagScheme;
 
 /// Hot path at each byte-width we compute min/max values which gives us an index to one of the table; the fallback
 /// loops the SAME tables over the min..max range. This happens when we have  mixed scripts.
@@ -192,21 +192,16 @@ fn decode(t: &[u8], i: usize) -> u32 {
     }
 }
 
-/// Reference body for review — Atom scheme. `tag_scalar` = the scalar `classify_char` (friend's), used
-/// only for the <32-byte tail and astral 4-byte codepoints. Wire to the trait via a `OnceLock<Tables>`.
+/// Whole-buffer NEON classify, generic over the scheme. Tables come from `S::tables()`; the scalar
+/// `S::classify_char` covers only the <32-byte tail and astral 4-byte codepoints. Byte-exact vs the
+/// scalar walk. `classify::<S>` dispatches here on aarch64 (NEON is baseline there).
 #[cfg(target_arch = "aarch64")]
-#[allow(unsafe_op_in_unsafe_fn)]
-pub unsafe fn classify_neon_ref(
-    text: &[u8],
-    tags: &mut [u8],
-    tb: &Tables,
-    tag_scalar: impl Fn(&[u8], usize) -> u8,
-) {
+#[allow(unsafe_op_in_unsafe_fn, non_snake_case)]
+pub unsafe fn classify_neon<S: super::classify::TagScheme>(text: &[u8], tags: &mut [u8]) {
     use super::classify::char_len;
     use core::arch::aarch64::*;
-    const CONT: u8 = Atom::Cont as u8;
-    const MB: u8 = Atom::MultiByte as u8;
-    const LETTER: u8 = Atom::Letter as u8;
+    let (MB, CONT) = (S::MB, S::CONT);
+    let tb = S::tables();
 
     let n = text.len();
     let mut mb_seen = false;
@@ -252,7 +247,10 @@ pub unsafe fn classify_neon_ref(
             res = is2;
         }
 
-        // ── CJK letters (E3..ED) via lead-byte ranges (one range beats looping 6 Han leads) ──
+        // ── CJK (E3..ED): lead-byte range shortcut — ONLY when the scheme maps all of CJK to one tag
+        //    (Atoms → Letter). Schemes where CJK spans several tags (Scripts: Han/Hangul/Kana) set
+        //    CJK_RANGE_TAG=None and skip this → the 3-byte tables below resolve E3..ED per (lead,b2-pair).
+        if let Some(cjk_tag) = S::CJK_RANGE_TAG {
         let iscjk = vandq_u8(vcgeq_u8(v, vdupq_n_u8(0xE3)), vcleq_u8(v, vdupq_n_u8(0xED)));
         if vmaxvq_u8(iscjk) != 0 {
             let han = vbicq_u8(
@@ -304,8 +302,9 @@ pub unsafe fn classify_neon_ref(
                 vorrq_u8(vorrq_u8(e1, e2), e3),
             );
             let cjkl = vorrq_u8(vorrq_u8(han, hg), kana);
-            out = vbslq_u8(cjkl, vdupq_n_u8(LETTER), out);
+            out = vbslq_u8(cjkl, vdupq_n_u8(cjk_tag), out);
             res = vorrq_u8(res, cjkl);
+        }
         }
 
         // ── 3-byte non-CJK: peel the EXACT distinct (lead, b2-pair) blocks present. ──
@@ -364,7 +363,7 @@ pub unsafe fn classify_neon_ref(
             i += 1;
             continue;
         }
-        tags[i] = tag_scalar(text, i);
+        tags[i] = S::classify_char(text, i);
         let w = char_len(b);
         for j in 1..w {
             if i + j < n {
@@ -383,23 +382,10 @@ pub unsafe fn classify_neon_ref(
                 tags[k] = if cp < 0x10000 {
                     tb.bmp_tag(cp as u16)
                 } else {
-                    tag_scalar(text, k)
+                    S::classify_char(text, k)
                 };
             }
             k += 1;
         }
     }
-}
-
-/// Trait entry point for the Atom scheme (`Atoms::classify_neon` forwards here). Builds the Atom
-/// `Tables` once (lazily), then runs the reference body with the scalar `classify_char` supplying the
-/// <32-byte tail and astral codepoints.
-#[cfg(target_arch = "aarch64")]
-#[allow(unsafe_op_in_unsafe_fn)]
-pub unsafe fn classify_neon(text: &[u8], tags: &mut [u8]) {
-    use super::classify::{Atoms, TagScheme};
-    use std::sync::OnceLock;
-    static TABLES: OnceLock<Tables> = OnceLock::new();
-    let tb = TABLES.get_or_init(Tables::build::<Atoms>);
-    classify_neon_ref(text, tags, tb, <Atoms as TagScheme>::classify_char);
 }

@@ -4,5 +4,7 @@ pub mod matchers;
 pub mod patterns;
 pub mod rules;
 pub mod simd_classify;
+#[cfg(target_arch = "x86_64")]
+pub mod simd_avx_classify;
 pub mod unicode;
 pub mod unicode_tables;

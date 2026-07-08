@@ -98,27 +98,36 @@ pub trait TagScheme {
     /// Continuation-byte sentinel for this scheme — written to every non-lead byte, transparent to
     /// this scheme's FSMs. (For `Atoms` this is `Atom::Cont`.)
     const CONT: u8;
+    /// Sentinel the SIMD path writes for a multibyte lane it couldn't resolve (→ RLE/scalar fixup).
+    const MB: u8;
+    /// If the whole CJK block (E3–ED) collapses to ONE tag under this scheme, name it here to enable
+    /// the fast lead-byte range shortcut (Atoms → `Some(Letter)`). `None` (e.g. Scripts, where CJK is
+    /// Han/Hangul/Kana — several tags) → CJK is resolved by the per-`(lead,b2-pair)` tables instead.
+    const CJK_RANGE_TAG: Option<u8>;
 
     /// Scalar per-char classifier: tag of the char starting at `text[i]`. ASCII → LUT; 2/3-byte →
-    /// bitmap-hit helpers / range search. Width is the engine's job (`char_len`).
+    /// bitmap-hit helpers / range search. Width is the engine's job (`char_len`). The single source of
+    /// truth: every SIMD table is built from this, and it's the tail/astral fallback.
     fn classify_char(text: &[u8], i: usize) -> u8;
 
-    /// SIMD (NEON) whole-buffer classify for this scheme. Writes `tags[..text.len()]`; continuation
-    /// lanes = `CONT`. MUST equal the scalar walk over `classify_char`.
-    #[cfg(target_arch = "aarch64")]
-    unsafe fn classify_neon(text: &[u8], tags: &mut [u8]);
+    /// This scheme's classify tables, built once (lazily) from `classify_char`. Each scheme owns its
+    /// `OnceLock<Tables>` (a `static` can't be generic over `S`).
+    fn tables() -> &'static crate::simd_classify::Tables;
 }
 
-/// Classify `text` under scheme `S` into `tags` (`tags.len() == text.len()`). SIMD on aarch64,
-/// scalar elsewhere — both paths produce the identical stream. `classify::<Atoms>(t, &mut tags)`.
+/// Classify `text` under scheme `S` into `tags` (`tags.len() == text.len()`) — the single arch
+/// dispatcher. aarch64: NEON at compile time (baseline). x86_64: AVX2 if present at runtime, else
+/// scalar. Everything else: the portable scalar walk. All paths produce the identical stream.
 #[inline]
 pub fn classify<S: TagScheme>(text: &[u8], tags: &mut [u8]) {
     debug_assert_eq!(text.len(), tags.len());
     #[cfg(target_arch = "aarch64")]
     unsafe {
-        S::classify_neon(text, tags)
+        crate::simd_classify::classify_neon::<S>(text, tags)
     }
-    #[cfg(not(target_arch = "aarch64"))]
+    #[cfg(target_arch = "x86_64")]
+    crate::simd_avx_classify::dispatch::<S>(text, tags);
+    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
     classify_scalar::<S>(text, tags);
 }
 
@@ -153,6 +162,8 @@ pub struct Atoms;
 impl TagScheme for Atoms {
     const N_TAGS: usize = 12;
     const CONT: u8 = Atom::Cont as u8;
+    const MB: u8 = Atom::MultiByte as u8;
+    const CJK_RANGE_TAG: Option<u8> = Some(Atom::Letter as u8); // all of CJK → Letter → range shortcut
 
     /// ┌──────────────────────── OWNER: scalar path ────────────────────────┐
     /// ASCII → LUT; 2/3-byte → bitmap-hit helpers (the matchers: `letter2_hit`/`number2_hit` +
@@ -163,13 +174,11 @@ impl TagScheme for Atoms {
         todo!("scalar per-char atom — reuse LETTER2/NUMBER2 bit-tests + ASCII LUT + range tables")
     }
 
-    /// ┌───────────────────────── OWNER: SIMD path ─────────────────────────┐
-    /// ASCII nibble-shuffle → atom; 2-byte via `vqtbl` bitmap membership (`LETTER2`/`NUMBER2`/`MARK2`/…);
-    /// CJK by lead-byte range; 3-byte-non-CJK via the branchless SIMD range kernel `Σ (cp ≥ tᵢ)`.
-    #[cfg(target_arch = "aarch64")]
-    unsafe fn classify_neon(text: &[u8], tags: &mut [u8]) {
-        use super::simd_classify::classify_neon;
-        unsafe { classify_neon(text, tags) }
+    fn tables() -> &'static crate::simd_classify::Tables {
+        use crate::simd_classify::Tables;
+        use std::sync::OnceLock;
+        static T: OnceLock<Tables> = OnceLock::new();
+        T.get_or_init(Tables::build::<Atoms>)
     }
 }
 
@@ -182,6 +191,8 @@ pub struct Scripts;
 impl TagScheme for Scripts {
     const N_TAGS: usize = 160; // ~Unicode script count; script-ids don't fit a u16 mask (FSM uses id equality)
     const CONT: u8 = 0xFF; // reserved continuation sentinel (never a valid script id)
+    const MB: u8 = 0xFE; // reserved "unresolved multibyte" sentinel (never a valid script id)
+    const CJK_RANGE_TAG: Option<u8> = None; // CJK = Han/Hangul/Kana (several ids) → resolved by tables
 
     /// ┌──────────────────────── OWNER: scalar path ────────────────────────┐
     /// SIMD range kernel's scalar twin: codepoint → script-id via `SCRIPT_RANGES` (the `get_script`
@@ -192,12 +203,10 @@ impl TagScheme for Scripts {
         todo!("scalar script-id — SCRIPT_RANGES range search + fixed_script remap")
     }
 
-    /// ┌───────────────────────── OWNER: SIMD path ─────────────────────────┐
-    /// Same lane structure as `Atoms` (ASCII/CJK fast lanes reused), but tables → script-ids and the
-    /// 2/3-byte/general lanes use the SIMD range kernel over `SCRIPT_RANGES`.
-    #[cfg(target_arch = "aarch64")]
-    unsafe fn classify_neon(text: &[u8], tags: &mut [u8]) {
-        let _ = (text, tags);
-        todo!("SIMD script classify — reuse ASCII/CJK lanes; range kernel for the rest; spec §3")
+    fn tables() -> &'static crate::simd_classify::Tables {
+        use crate::simd_classify::Tables;
+        use std::sync::OnceLock;
+        static T: OnceLock<Tables> = OnceLock::new();
+        T.get_or_init(Tables::build::<Scripts>)
     }
 }
