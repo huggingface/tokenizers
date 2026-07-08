@@ -9,6 +9,9 @@ use crate::models::bpe::BPE;
 use crate::models::unigram::Unigram;
 use crate::models::wordlevel::WordLevel;
 use crate::models::wordpiece::WordPiece;
+use crate::pre_tokenizers::sequence::PipelineSequence;
+use crate::pre_tokenizers::split::SplitPattern;
+use crate::SplitDelimiterBehavior::Isolated;
 use crate::{
     normalizers::NormalizerWrapper,
     pre_tokenizers::{
@@ -17,7 +20,6 @@ use crate::{
         digits::Digits,
         fixed_length::FixedLength,
         punctuation::Punctuation,
-        sequence::Sequence,
         split::Split as SplitPretok,
         unicode_scripts::UnicodeScripts,
         whitespace::{Whitespace, WhitespaceSplit},
@@ -55,13 +57,14 @@ pub trait PreTokenizer {
 
 /// The pre-tokenizers a [`PipelineTokenizer`] can run.
 #[allow(clippy::large_enum_variant)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum PipelinePreTokenizer {
     Bert(BertPreTokenizer),
     Delimiter(CharDelimiterSplit),
     Digits(Digits),
     FixedLength(FixedLength),
     Punctuation(Punctuation),
-    Sequence(Sequence),
+    Sequence(PipelineSequence),
     Split(SplitPretok),
     UnicodeScripts(UnicodeScripts),
     Whitespace(Whitespace),
@@ -89,6 +92,47 @@ impl PreTokenizer for PipelinePreTokenizer {
             Self::UnicodeScripts(pretok) => pretok.pre_tokenize(text, out),
             Self::Whitespace(pretok) => pretok.pre_tokenize(text, out),
             Self::WhitespaceSplit(pretok) => pretok.pre_tokenize(text, out),
+        }
+    }
+}
+
+impl TryFrom<PreTokenizerWrapper> for PipelinePreTokenizer {
+    type Error = crate::Error;
+
+    fn try_from(value: PreTokenizerWrapper) -> Result<Self> {
+        match value {
+            PreTokenizerWrapper::BertPreTokenizer(p) => Ok(PipelinePreTokenizer::Bert(p)),
+            PreTokenizerWrapper::Delimiter(p) => Ok(PipelinePreTokenizer::Delimiter(p)),
+            PreTokenizerWrapper::Digits(p) => Ok(PipelinePreTokenizer::Digits(p)),
+            PreTokenizerWrapper::FixedLength(p) => Ok(PipelinePreTokenizer::FixedLength(p)),
+            PreTokenizerWrapper::Punctuation(p) => Ok(PipelinePreTokenizer::Punctuation(p)),
+            PreTokenizerWrapper::Split(p) => Ok(PipelinePreTokenizer::Split(p.clone())),
+            PreTokenizerWrapper::UnicodeScripts(p) => Ok(PipelinePreTokenizer::UnicodeScripts(p)),
+            PreTokenizerWrapper::Whitespace(p) => Ok(PipelinePreTokenizer::Whitespace(p.clone())),
+            PreTokenizerWrapper::WhitespaceSplit(p) => Ok(PipelinePreTokenizer::WhitespaceSplit(p)),
+            PreTokenizerWrapper::ByteLevel(byte_level) => {
+                if byte_level.add_prefix_space {
+                    return Err(
+                        "ByteLevel add_prefix_space=true is not supported by the pipeline yet"
+                            .into(),
+                    );
+                }
+                if byte_level.use_regex {
+                    Ok(PipelinePreTokenizer::Split(SplitPretok::new(
+                        SplitPattern::Regex(GPT2_REGEX_STR.to_owned()),
+                        Isolated,
+                        false,
+                    )?))
+                } else {
+                    Ok(PipelinePreTokenizer::None)
+                }
+            }
+            PreTokenizerWrapper::Sequence(p) => Ok(PipelinePreTokenizer::Sequence(p.try_into()?)),
+            other => {
+                Err(
+                    format!("PipelineTokenizer does not support PreTokenizer: {other:?}").into(),
+                )
+            }
         }
     }
 }
@@ -231,25 +275,12 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
     /// Adding them in id order preserves ids (tokens present in the model reuse their model id, the
     /// rest keep their dense order), so the pipeline emits the same ids as the reference tokenizer.
     fn try_from(tok: &Tokenizer) -> Result<Self> {
-        let pre_tokenizer = match tok.get_pre_tokenizer() {
-            None => PipelinePreTokenizer::None,
-            Some(PreTokenizerWrapper::BertPreTokenizer(p)) => PipelinePreTokenizer::Bert(*p),
-            Some(PreTokenizerWrapper::Delimiter(p)) => PipelinePreTokenizer::Delimiter(*p),
-            Some(PreTokenizerWrapper::Digits(p)) => PipelinePreTokenizer::Digits(p.clone()),
-            Some(PreTokenizerWrapper::FixedLength(p)) => PipelinePreTokenizer::FixedLength(*p),
-            Some(PreTokenizerWrapper::Punctuation(p)) => PipelinePreTokenizer::Punctuation(*p),
-            Some(PreTokenizerWrapper::Sequence(p)) => PipelinePreTokenizer::Sequence(p.clone()),
-            Some(PreTokenizerWrapper::Split(p)) => PipelinePreTokenizer::Split(p.clone()),
-            Some(PreTokenizerWrapper::UnicodeScripts(p)) => PipelinePreTokenizer::UnicodeScripts(*p),
-            Some(PreTokenizerWrapper::Whitespace(p)) => PipelinePreTokenizer::Whitespace(p.clone()),
-            Some(PreTokenizerWrapper::WhitespaceSplit(p)) => PipelinePreTokenizer::WhitespaceSplit(*p),
-            Some(other) => {
-                return Err(format!(
-                    "PipelineTokenizer only supports Bert/Whitespace/None pre-tokenizers, got: {other:?}"
-                )
-                .into())
-            }
-        };
+        let pre_tokenizer: PipelinePreTokenizer = tok
+            .get_pre_tokenizer()
+            .cloned()
+            .map(TryInto::try_into)
+            .transpose()?
+            .unwrap_or(PipelinePreTokenizer::None);
 
         let legacy_av = tok.get_added_vocabulary();
         let mut added_tokens: Vec<_> = legacy_av.get_added_tokens_decoder().iter().collect();
