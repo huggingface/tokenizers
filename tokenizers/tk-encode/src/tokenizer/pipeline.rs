@@ -1,5 +1,6 @@
 use std::convert::TryInto;
 use std::ops::Range;
+use std::time::Instant;
 use std::{borrow::Cow, convert::TryFrom};
 
 use crate::added_vocabulary::bucket_added_vocabulary::{
@@ -221,6 +222,25 @@ pub struct PipelineTokenizer {
     _post_processor: Option<PostProcessorWrapper>,
 }
 
+/// Per-stage wall-time (nanoseconds), accumulated by [`PipelineTokenizer::encode_timed`].
+///
+/// Lets a caller decompose encode cost across the pipeline stages without an external
+/// profiler: the fields sum (plus `total`'s slack for special-token scanning / glue) to
+/// the whole-encode time, so `stage / total` is that stage's share. Used by
+/// `examples/fixture_bench.rs`; the hot [`PipelineTokenizer::encode`] path is untouched.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct StageNanos {
+    /// Normalizer stage (`NormalizerWrapper::normalize`).
+    pub normalize: u128,
+    /// Pre-tokenizer / split stage (`PipelinePreTokenizer::pre_tokenize`).
+    pub pre_tokenize: u128,
+    /// Model stage (`PipelineModel::tokenize_bytes`, i.e. merges / vocab lookup).
+    pub model: u128,
+    /// Whole-encode wall time; `total - (normalize + pre_tokenize + model)` is the
+    /// untimed remainder (special-token scanning, iteration, output assembly).
+    pub total: u128,
+}
+
 impl TryFrom<&Tokenizer> for PipelineTokenizer {
     type Error = super::Error;
 
@@ -337,6 +357,65 @@ impl PipelineTokenizer {
             };
         }
         Ok(output)
+    }
+
+    /// Instrumented sibling of [`encode`](Self::encode): runs the exact same stages but
+    /// wraps each in an [`Instant`] and accumulates the elapsed time into `times`, then
+    /// returns the token count. This is the "staged timing" path used by the benchmark —
+    /// it decomposes encode cost per stage by *adding* one timed region per stage rather
+    /// than running an external profiler.
+    ///
+    /// Not on the hot path (the extra `Instant`s cost a few ns per segment); call
+    /// [`encode`](Self::encode) for real work.
+    pub fn encode_timed(&self, input: &str, times: &mut StageNanos) -> Result<usize> {
+        let whole = Instant::now();
+        let mut output: Vec<PipelineToken> = vec![];
+        let mut pre_tokens: Vec<Split> = vec![];
+
+        for segment in SpecialSegmentIterator::new(input, &self.added_vocabulary, false) {
+            match segment {
+                Segment::SpecialToken(token) => {
+                    output.push(PipelineToken { id: token });
+                }
+                Segment::Text(chunk) => {
+                    let norm_start = Instant::now();
+                    let normalized: &str = if let Some(normalizer) = &self.normalizer {
+                        &normalizer.normalize(chunk)?
+                    } else {
+                        chunk
+                    };
+                    times.normalize += norm_start.elapsed().as_nanos();
+
+                    for segment in
+                        SpecialSegmentIterator::new(normalized, &self.added_vocabulary, true)
+                    {
+                        match segment {
+                            Segment::SpecialToken(token) => {
+                                output.push(PipelineToken { id: token });
+                            }
+                            Segment::Text(normalized_chunk) => {
+                                let pre_start = Instant::now();
+                                pre_tokens.clear();
+                                self.pre_tokenizer
+                                    .pre_tokenize(normalized_chunk, &mut pre_tokens)?;
+                                times.pre_tokenize += pre_start.elapsed().as_nanos();
+
+                                let model_start = Instant::now();
+                                for pre_token in pre_tokens.iter() {
+                                    self.model.tokenize_bytes(
+                                        normalized_chunk[pre_token.range()].as_bytes(),
+                                        &mut output,
+                                    )?;
+                                }
+                                times.model += model_start.elapsed().as_nanos();
+                            }
+                        }
+                    }
+                }
+            };
+        }
+        times.total += whole.elapsed().as_nanos();
+        Ok(output.len())
     }
 }
 
