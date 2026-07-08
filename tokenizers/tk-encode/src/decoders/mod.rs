@@ -164,6 +164,13 @@ impl Decoder for DecoderWrapper {
             Self::Fuse(bf) => bf.decode_chain(tokens),
         }
     }
+
+    fn decode_fused_bytes(&self, tokens: &[&[u8]]) -> Option<Result<String>> {
+        match self {
+            Self::ByteLevel(bl) => bl.decode_fused_bytes(tokens),
+            _ => None,
+        }
+    }
 }
 
 impl_enum_from!(BPEDecoder, DecoderWrapper, BPE);

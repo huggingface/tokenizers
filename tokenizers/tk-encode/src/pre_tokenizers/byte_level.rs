@@ -130,6 +130,38 @@ impl Decoder for ByteLevel {
             .collect::<Vec<u8>>();
         Ok(vec![String::from_utf8_lossy(&toks).to_string()])
     }
+
+    fn decode_fused_bytes(&self, tokens: &[&[u8]]) -> Option<Result<String>> {
+        let total: usize = tokens.iter().map(|t| t.len()).sum();
+        let mut toks = Vec::with_capacity(total);
+        for t in tokens {
+            // Each `t` is a token's UTF-8 bytes. Map every char to its byte via
+            // the CHAR_BYTES_LOOKUP array; if any char is not a byte-level char,
+            // fall back to the raw token bytes for that token — identical to
+            // `decode_chain`, but without a `String` allocation per token.
+            let start = toks.len();
+            let mut all_mapped = true;
+            match std::str::from_utf8(t) {
+                Ok(s) => {
+                    for c in s.chars() {
+                        match CHAR_BYTES_LOOKUP.get(c as usize).copied().flatten() {
+                            Some(b) => toks.push(b),
+                            None => {
+                                all_mapped = false;
+                                break;
+                            }
+                        }
+                    }
+                }
+                Err(_) => all_mapped = false,
+            }
+            if !all_mapped {
+                toks.truncate(start);
+                toks.extend_from_slice(t);
+            }
+        }
+        Some(Ok(String::from_utf8_lossy(&toks).to_string()))
+    }
 }
 
 /// As a `PostProcessor`, `ByteLevel` is in charge of trimming the offsets if necessary.

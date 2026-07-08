@@ -74,6 +74,12 @@ pub trait Model {
     fn token_to_id(&self, token: &str) -> Option<u32>;
     /// Find the string token associated to an ID
     fn id_to_token(&self, id: u32) -> Option<String>;
+    /// Borrow a token's raw bytes from the model's vocab store (zero-copy), or
+    /// `None` if the ID is unknown or the model exposes no byte view. Enables
+    /// the fused decode fast path without a `String` allocation per token.
+    fn id_to_token_bytes(&self, _id: u32) -> Option<&[u8]> {
+        None
+    }
     /// Retrieve the entire vocabulary mapping (token -> ID)
     fn get_vocab(&self) -> HashMap<String, u32>;
     /// Retrieve the size of the vocabulary
@@ -182,6 +188,15 @@ pub trait Decoder {
         Ok(results.join(""))
     }
     fn decode_chain(&self, tokens: Vec<String>) -> Result<Vec<String>>;
+
+    /// Fast path: decode directly from borrowed per-token byte slices, avoiding
+    /// a `String` allocation per token. The output must be identical to
+    /// `self.decode(tokens)` for the same tokens. Returns `None` when the
+    /// decoder does not support this path (the default), so the caller falls
+    /// back to the `decode_chain` route.
+    fn decode_fused_bytes(&self, _tokens: &[&[u8]]) -> Option<Result<String>> {
+        None
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -921,6 +936,10 @@ where
 
     /// Decode the given ids, back to a String
     pub fn decode(&self, ids: &[u32], skip_special_tokens: bool) -> Result<String> {
+        if let Some(result) = self.decode_fused(ids, skip_special_tokens) {
+            return result;
+        }
+
         let tokens = ids
             .iter()
             .filter_map(|id| {
@@ -938,6 +957,42 @@ where
         } else {
             Ok(tokens.join(" "))
         }
+    }
+
+    /// Fused decode fast path: borrow each token's bytes from the model's vocab
+    /// store (zero-copy) and let the decoder concatenate + transform them in a
+    /// single pass, instead of allocating a `String` per token and a
+    /// `Vec<String>`.
+    ///
+    /// Returns `None` (so `decode` uses the regular path) when there is no
+    /// decoder, when the decoder does not support the fused byte path, when any
+    /// input ID is an added/special token (the regular path handles the
+    /// `skip_special_tokens` filtering and added-token content), or when a
+    /// token has no byte view in the model.
+    fn decode_fused(&self, ids: &[u32], skip_special_tokens: bool) -> Option<Result<String>> {
+        let _ = skip_special_tokens;
+        let decoder = self.decoder.as_ref()?;
+
+        // The fast path only reconstructs model tokens. If any id is an
+        // added/special token, defer to the regular decoder path, which applies
+        // skip_special_tokens and writes added-token content.
+        let added = self.added_vocabulary.get_added_tokens_decoder();
+        let check_added = !added.is_empty();
+
+        // Borrow each token's bytes from the model. `id_to_token_bytes` returns
+        // None for models with no byte view (e.g. Unigram/WordPiece), so those
+        // bail here without materializing the whole vector. `decode_fused_bytes`
+        // then returns None for any decoder that can't use it, falling back to
+        // the regular decoder path.
+        let mut token_bytes: Vec<&[u8]> = Vec::with_capacity(ids.len());
+        for &id in ids {
+            if check_added && added.contains_key(&id) {
+                return None;
+            }
+            token_bytes.push(self.model.id_to_token_bytes(id)?);
+        }
+
+        decoder.decode_fused_bytes(&token_bytes)
     }
 
     /// Decode the given ids, back to a String

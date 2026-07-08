@@ -624,6 +624,10 @@ impl Model for BPE {
         self.vocab.id_to_token(id)
     }
 
+    fn id_to_token_bytes(&self, id: u32) -> Option<&[u8]> {
+        self.vocab.id_to_token_bytes(id)
+    }
+
     fn save(&self, folder: &Path, name: Option<&str>) -> Result<Vec<PathBuf>> {
         let vocab_r: VocabR = self
             .vocab

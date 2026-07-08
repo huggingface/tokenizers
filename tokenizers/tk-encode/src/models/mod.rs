@@ -170,6 +170,13 @@ impl Model for ModelWrapper {
         }
     }
 
+    fn id_to_token_bytes(&self, id: u32) -> Option<&[u8]> {
+        match self {
+            Self::BPE(t) => t.id_to_token_bytes(id),
+            _ => None,
+        }
+    }
+
     fn get_vocab(&self) -> HashMap<String, u32> {
         match self {
             Self::WordLevel(t) => t.get_vocab(),
