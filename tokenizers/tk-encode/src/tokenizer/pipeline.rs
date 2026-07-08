@@ -648,6 +648,10 @@ pub trait Model {
     fn tokenize_pipeline(&self, sequence: &str, output: &mut Vec<PipelineToken>) -> Result<()>;
 }
 
+#[allow(
+    clippy::large_enum_variant,
+    reason = "PipelineBPE holds a 1kB byte -> id lookup table"
+)]
 pub enum PipelineModel {
     BPE(PipelineBPE),
     Unigram(Unigram),
