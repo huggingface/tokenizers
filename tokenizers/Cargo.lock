@@ -702,6 +702,7 @@ dependencies = [
 name = "fast_split"
 version = "0.1.0"
 dependencies = [
+ "bitmap_gen",
  "memchr",
  "regex",
  "regex-syntax",

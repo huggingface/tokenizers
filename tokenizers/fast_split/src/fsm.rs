@@ -118,14 +118,60 @@ pub fn fsm_split<const DELIM: u16, const BEHAVIOR: u8>(
 /// than one run type, so it isn't a single `fsm_split`. Covers: Whitespace (drop WS, keep Word+Symbol
 /// runs), Bert (drop WS, isolate Punct).
 ///
+/// Each char maps to one class: `DROP` → dropped run, `ISOLATE` → its own token, `KEEP_SPLIT` → a
+/// "keep-A" run, everything else → a "keep-B" run. keep-A and keep-B are cut apart, so this expresses
+/// Whitespace's Word(=keep-A)/Symbol(=keep-B) boundary while Bert (`KEEP_SPLIT=0`) keeps one run type.
+///
 /// ┌── OWNER: shared (scalar core); SIMD boundary-extract optional ──┐
-pub fn fsm_class_runs<const DROP: u16, const ISOLATE: u16>(
+pub fn fsm_class_runs<const DROP: u16, const ISOLATE: u16, const KEEP_SPLIT: u16>(
     text: &[u8],
     tags: &[u8],
     out: &mut Vec<Span>,
 ) {
-    let _ = (text, tags, out);
-    todo!("cut at class change; drop DROP runs, isolate ISOLATE per char; spec §4")
+    let n = text.len();
+    let mut open: Option<(usize, u8)> = None; // (run_start, keep-class 2|3) — a currently-open keep run
+    let mut i = 0usize;
+    while i < n {
+        let s = i;
+        i += 1;
+        while i < n && text[i] & 0xC0 == 0x80 {
+            i += 1; // char is [s, i)
+        }
+        let tag = tags[s];
+        let class = if in_mask(tag, DROP) {
+            0
+        } else if in_mask(tag, ISOLATE) {
+            1
+        } else if in_mask(tag, KEEP_SPLIT) {
+            2 // keep-A
+        } else {
+            3 // keep-B
+        };
+        match class {
+            0 => {
+                if let Some((st, _)) = open.take() {
+                    out.push((st as u32, s as u32)); // flush the open run; drop this char
+                }
+            }
+            1 => {
+                if let Some((st, _)) = open.take() {
+                    out.push((st as u32, s as u32));
+                }
+                out.push((s as u32, i as u32)); // isolate this char
+            }
+            c => match open {
+                Some((_, oc)) if oc == c => {} // same keep class → extend the run
+                Some((st, _)) => {
+                    out.push((st as u32, s as u32)); // class changed → flush, open new
+                    open = Some((s, c));
+                }
+                None => open = Some((s, c)),
+            },
+        }
+    }
+    if let Some((st, _)) = open {
+        out.push((st as u32, n as u32));
+    }
 }
 
 /// cl100k pretokenization (7 rules, segmented `{1,3}` cap + whitespace-tail). Scalar FSM — the
@@ -198,7 +244,17 @@ impl Whitespace {
     pub fn pre_tokenize(&self, text: &[u8], tags: &mut [u8], out: &mut Vec<Span>) {
         classify::<Atoms>(text, tags);
         // drop WS runs, keep Word and Symbol runs (isolate nothing)
-        fsm_class_runs::<{ mask::WS }, 0>(text, tags, out);
+        fsm_class_runs::<{ mask::WS }, 0, { mask::WORD }>(text, tags, out);
+    }
+}
+
+pub struct Bert;
+impl Bert {
+    #[inline]
+    pub fn pre_tokenize(&self, text: &[u8], tags: &mut [u8], out: &mut Vec<Span>) {
+        classify::<Atoms>(text, tags);
+        // drop WS runs, isolate punctuation, keep everything else as single runs
+        fsm_class_runs::<{ mask::WS }, { mask::PUNCT }, 0>(text, tags, out);
     }
 }
 
@@ -221,6 +277,31 @@ mod tests {
         let mut out = Vec::new();
         fsm_split::<D, B>(s.as_bytes(), &tags, &mut out);
         out
+    }
+
+    fn class_spans<const DR: u16, const IS: u16, const KS: u16>(s: &str) -> Vec<Span> {
+        let mut tags = vec![0u8; s.len()];
+        classify::<Atoms>(s.as_bytes(), &mut tags);
+        let mut out = Vec::new();
+        fsm_class_runs::<DR, IS, KS>(s.as_bytes(), &tags, &mut out);
+        out
+    }
+
+    #[test]
+    fn class_runs_whitespace_and_bert() {
+        // "×" is U+00D7 (2 bytes) — Symbol, not \w, not \s, not \p{P}. So Whitespace cuts Word/Symbol
+        // but Bert keeps them together. Byte offsets: a=0, ×=[1,3), b=3, ' '=4, c=5, !=6, d=7.
+        let s = "a×b c!d";
+        // Whitespace `\w+|[^\w\s]+`: "a" | "×" | "b" | "c" | "!" | "d"  (ws dropped, Word/Symbol cut)
+        assert_eq!(
+            class_spans::<{ mask::WS }, 0, { mask::WORD }>(s),
+            vec![(0, 1), (1, 3), (3, 4), (5, 6), (6, 7), (7, 8)]
+        );
+        // Bert: drop ws, isolate punct, keep the rest as runs: "a×b" | "c" | "!" | "d"
+        assert_eq!(
+            class_spans::<{ mask::WS }, { mask::PUNCT }, 0>(s),
+            vec![(0, 4), (5, 6), (6, 7), (7, 8)]
+        );
     }
 
     #[test]

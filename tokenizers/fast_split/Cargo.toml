@@ -29,7 +29,7 @@ unicode_categories = { version = "0.1", optional = true }
 thiserror = "2"
 memchr = "2.8.2"
 [build-dependencies]
-unicode_categories = "0.1"
+bitmap_gen = { path = "../bitmap_gen" }
 [dev-dependencies]
 unicode-segmentation = "1.11"
 unicode-normalization-alignments = "0.1"

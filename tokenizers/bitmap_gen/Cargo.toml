@@ -1,12 +1,9 @@
 [package]
 name = "bitmap_gen"
 version = "0.1.0"
-edition = "2024"
-description = "Bitmap generator for pre-computed unicode tables"
-
-[[bin]]
-name = "bitmap_gen"
-path = "src/main.rs"
+edition = "2021"
+description = "Dev/build-time generator for fast_split's classify tables (uses unicode_categories)."
+license = "Apache-2.0"
 
 [dependencies]
 unicode_categories = "0.1"
