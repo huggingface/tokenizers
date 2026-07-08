@@ -1,6 +1,6 @@
 use super::{super::OrderedVocabIter, Error, Pair, Word};
+use crate::pipeline;
 use crate::tokenizer::{Model, Result, Token};
-use crate::utils::byte_level::transform_vocab;
 use crate::utils::cache::{DEFAULT_CACHE_CAPACITY, MAX_LENGTH};
 use crate::utils::iter::ResultShunt;
 use crate::vocab_store::VocabStore;
@@ -294,16 +294,10 @@ impl BpeBuilder {
             fuse_unk: self.config.fuse_unk,
             byte_fallback: self.config.byte_fallback,
             ignore_merges: self.config.ignore_merges,
-            vocab_space: BPEVocabSpace::Unicode,
         })
     }
 }
 
-#[derive(PartialEq, Clone, Copy)]
-enum BPEVocabSpace {
-    Unicode,
-    Bytes,
-}
 
 /// A [Byte Pair Encoding](https://www.aclweb.org/anthology/P16-1162/) model.
 #[derive(PartialEq)]
@@ -330,8 +324,6 @@ pub struct BPE {
     pub byte_fallback: bool,
     /// Whether or not to direct output words if they are part of the vocab.
     pub ignore_merges: bool,
-
-    vocab_space: BPEVocabSpace,
 }
 
 impl std::fmt::Debug for BPE {
@@ -372,7 +364,6 @@ impl Clone for BPE {
             fuse_unk: self.fuse_unk,
             byte_fallback: self.byte_fallback,
             ignore_merges: self.ignore_merges,
-            vocab_space: self.vocab_space,
         }
     }
 }
@@ -476,16 +467,6 @@ impl BPE {
     }
 
     fn merge_word(&self, w: &str) -> Result<Word> {
-        if let BPEVocabSpace::Bytes = self.vocab_space {
-            let mut word = Word::with_capacity(w.len());
-            for &byte in w.as_bytes() {
-                let token_id = self.vocab.get_bytes(&[byte]).unwrap();
-                word.add(token_id, 1);
-            }
-            word.merge_all(&self.merges, self.dropout);
-            return Ok(word);
-        }
-
         let mut indices = w.char_indices().map(|(idx, _)| idx).peekable();
         let mut word = Word::with_capacity(w.len());
         let mut unk: Option<(u32, usize)> = None;
@@ -582,15 +563,6 @@ impl BPE {
 
     fn tokenize_with_cache(&self, sequence: &str) -> Result<Vec<Token>> {
         if self.ignore_merges {
-            if let BPEVocabSpace::Bytes = self.vocab_space {
-                if let Some(id) = self.vocab.get_bytes(sequence.as_bytes()) {
-                    return Ok(vec![Token::new(
-                        id,
-                        sequence.to_string(),
-                        (0, sequence.len()),
-                    )]);
-                }
-            }
             if let Some(id) = self.vocab.token_to_id(sequence) {
                 return Ok(vec![Token::new(
                     id,
@@ -702,11 +674,20 @@ impl Model for BPE {
     }
 }
 
-impl BPE {
-    pub(crate) fn transform_vocab(&mut self) {
-        // todo: get rid of clone
-        self.vocab = transform_vocab(self.vocab.clone());
-        self.vocab_space = BPEVocabSpace::Bytes;
+
+pub struct PipelineBPE {
+
+}
+
+impl pipeline::Model for PipelineBPE {
+    fn tokenize_bytes(&self, _bytes: &[u8], _output: &mut Vec<pipeline::PipelineToken>) -> Result<()> {
+        Ok(())
+    }
+}
+
+impl  PipelineBPE {
+    pub fn from_bpe(_model: BPE, _with_byte_level: bool) -> Result<Self> {
+        Ok(Self {})
     }
 }
 
