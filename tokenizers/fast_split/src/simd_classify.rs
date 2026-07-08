@@ -251,62 +251,63 @@ pub unsafe fn classify_neon<S: super::classify::TagScheme>(text: &[u8], tags: &m
         //    (Atoms → Letter). Schemes where CJK spans several tags (Scripts: Han/Hangul/Kana) set
         //    CJK_RANGE_TAG=None and skip this → the 3-byte tables below resolve E3..ED per (lead,b2-pair).
         if let Some(cjk_tag) = S::CJK_RANGE_TAG {
-        let iscjk = vandq_u8(vcgeq_u8(v, vdupq_n_u8(0xE3)), vcleq_u8(v, vdupq_n_u8(0xED)));
-        if vmaxvq_u8(iscjk) != 0 {
-            let han = vbicq_u8(
-                vandq_u8(vcgeq_u8(v, vdupq_n_u8(0xE4)), vcleq_u8(v, vdupq_n_u8(0xE9))),
-                vandq_u8(
-                    vceqq_u8(v, vdupq_n_u8(0xE4)),
-                    vceqq_u8(b2, vdupq_n_u8(0xB7)),
-                ),
-            );
-            let hg = vorrq_u8(
-                vorrq_u8(
-                    vandq_u8(vcgeq_u8(v, vdupq_n_u8(0xEB)), vcleq_u8(v, vdupq_n_u8(0xEC))),
+            let iscjk = vandq_u8(vcgeq_u8(v, vdupq_n_u8(0xE3)), vcleq_u8(v, vdupq_n_u8(0xED)));
+            if vmaxvq_u8(iscjk) != 0 {
+                let han = vbicq_u8(
+                    vandq_u8(vcgeq_u8(v, vdupq_n_u8(0xE4)), vcleq_u8(v, vdupq_n_u8(0xE9))),
                     vandq_u8(
-                        vceqq_u8(v, vdupq_n_u8(0xEA)),
-                        vcgeq_u8(b2, vdupq_n_u8(0xB0)),
+                        vceqq_u8(v, vdupq_n_u8(0xE4)),
+                        vceqq_u8(b2, vdupq_n_u8(0xB7)),
                     ),
-                ),
-                vandq_u8(
-                    vceqq_u8(v, vdupq_n_u8(0xED)),
-                    vcleq_u8(b2, vdupq_n_u8(0x9D)),
-                ),
-            );
-            let e1 = vandq_u8(
-                vceqq_u8(b2, vdupq_n_u8(0x81)),
-                vceqq_u8(b3, vdupq_n_u8(0x80)),
-            );
-            let e2 = vandq_u8(
-                vceqq_u8(b2, vdupq_n_u8(0x82)),
-                vorrq_u8(
+                );
+                let hg = vorrq_u8(
+                    vorrq_u8(
+                        vandq_u8(vcgeq_u8(v, vdupq_n_u8(0xEB)), vcleq_u8(v, vdupq_n_u8(0xEC))),
+                        vandq_u8(
+                            vceqq_u8(v, vdupq_n_u8(0xEA)),
+                            vcgeq_u8(b2, vdupq_n_u8(0xB0)),
+                        ),
+                    ),
                     vandq_u8(
-                        vcgeq_u8(b3, vdupq_n_u8(0x97)),
-                        vcleq_u8(b3, vdupq_n_u8(0x9C)),
+                        vceqq_u8(v, vdupq_n_u8(0xED)),
+                        vcleq_u8(b2, vdupq_n_u8(0x9D)),
                     ),
-                    vceqq_u8(b3, vdupq_n_u8(0xA0)),
-                ),
-            );
-            let e3 = vandq_u8(
-                vceqq_u8(b2, vdupq_n_u8(0x83)),
-                vceqq_u8(b3, vdupq_n_u8(0xBB)),
-            );
-            let kana = vbicq_u8(
-                vandq_u8(
-                    vceqq_u8(v, vdupq_n_u8(0xE3)),
+                );
+                let e1 = vandq_u8(
+                    vceqq_u8(b2, vdupq_n_u8(0x81)),
+                    vceqq_u8(b3, vdupq_n_u8(0x80)),
+                );
+                let e2 = vandq_u8(
+                    vceqq_u8(b2, vdupq_n_u8(0x82)),
+                    vorrq_u8(
+                        vandq_u8(
+                            vcgeq_u8(b3, vdupq_n_u8(0x97)),
+                            vcleq_u8(b3, vdupq_n_u8(0x9C)),
+                        ),
+                        vceqq_u8(b3, vdupq_n_u8(0xA0)),
+                    ),
+                );
+                let e3 = vandq_u8(
+                    vceqq_u8(b2, vdupq_n_u8(0x83)),
+                    vceqq_u8(b3, vdupq_n_u8(0xBB)),
+                );
+                let kana = vbicq_u8(
                     vandq_u8(
-                        vcgeq_u8(b2, vdupq_n_u8(0x81)),
-                        vcleq_u8(b2, vdupq_n_u8(0x83)),
+                        vceqq_u8(v, vdupq_n_u8(0xE3)),
+                        vandq_u8(
+                            vcgeq_u8(b2, vdupq_n_u8(0x81)),
+                            vcleq_u8(b2, vdupq_n_u8(0x83)),
+                        ),
                     ),
-                ),
-                vorrq_u8(vorrq_u8(e1, e2), e3),
-            );
-            let cjkl = vorrq_u8(vorrq_u8(han, hg), kana);
-            out = vbslq_u8(cjkl, vdupq_n_u8(cjk_tag), out);
-            res = vorrq_u8(res, cjkl);
-        }
+                    vorrq_u8(vorrq_u8(e1, e2), e3),
+                );
+                let cjkl = vorrq_u8(vorrq_u8(han, hg), kana);
+                out = vbslq_u8(cjkl, vdupq_n_u8(cjk_tag), out);
+                res = vorrq_u8(res, cjkl);
+            }
         }
 
+        // TODO: this is where i don't know what's happening anymore.
         // ── 3-byte non-CJK: peel the EXACT distinct (lead, b2-pair) blocks present. ──
         // Pick the min (lead, then min b2-pair) among unresolved lanes, resolve that whole block, mask
         // it out, repeat. Iterations = distinct-block count (≤5-6 per chunk), independent of how far
