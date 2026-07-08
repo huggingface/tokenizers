@@ -12,7 +12,7 @@
 //! a SIMD128 wasm engine before trusting it.
 #![allow(unsafe_op_in_unsafe_fn)]
 
-use super::classify::{char_len, TagScheme};
+use super::classify::{TagScheme, char_len};
 use core::arch::wasm32::*;
 
 #[inline]
@@ -45,18 +45,42 @@ unsafe fn ule(a: v128, b: u8) -> v128 {
 }
 #[inline]
 unsafe fn hmax(x: v128) -> u8 {
-    let x = u8x16_max(x, u8x16_shuffle::<8, 9, 10, 11, 12, 13, 14, 15, 8, 9, 10, 11, 12, 13, 14, 15>(x, x));
-    let x = u8x16_max(x, u8x16_shuffle::<4, 5, 6, 7, 4, 5, 6, 7, 4, 5, 6, 7, 4, 5, 6, 7>(x, x));
-    let x = u8x16_max(x, u8x16_shuffle::<2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3>(x, x));
-    let x = u8x16_max(x, u8x16_shuffle::<1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1>(x, x));
+    let x = u8x16_max(
+        x,
+        u8x16_shuffle::<8, 9, 10, 11, 12, 13, 14, 15, 8, 9, 10, 11, 12, 13, 14, 15>(x, x),
+    );
+    let x = u8x16_max(
+        x,
+        u8x16_shuffle::<4, 5, 6, 7, 4, 5, 6, 7, 4, 5, 6, 7, 4, 5, 6, 7>(x, x),
+    );
+    let x = u8x16_max(
+        x,
+        u8x16_shuffle::<2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3>(x, x),
+    );
+    let x = u8x16_max(
+        x,
+        u8x16_shuffle::<1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1>(x, x),
+    );
     u8x16_extract_lane::<0>(x)
 }
 #[inline]
 unsafe fn hmin(x: v128) -> u8 {
-    let x = u8x16_min(x, u8x16_shuffle::<8, 9, 10, 11, 12, 13, 14, 15, 8, 9, 10, 11, 12, 13, 14, 15>(x, x));
-    let x = u8x16_min(x, u8x16_shuffle::<4, 5, 6, 7, 4, 5, 6, 7, 4, 5, 6, 7, 4, 5, 6, 7>(x, x));
-    let x = u8x16_min(x, u8x16_shuffle::<2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3>(x, x));
-    let x = u8x16_min(x, u8x16_shuffle::<1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1>(x, x));
+    let x = u8x16_min(
+        x,
+        u8x16_shuffle::<8, 9, 10, 11, 12, 13, 14, 15, 8, 9, 10, 11, 12, 13, 14, 15>(x, x),
+    );
+    let x = u8x16_min(
+        x,
+        u8x16_shuffle::<4, 5, 6, 7, 4, 5, 6, 7, 4, 5, 6, 7, 4, 5, 6, 7>(x, x),
+    );
+    let x = u8x16_min(
+        x,
+        u8x16_shuffle::<2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3>(x, x),
+    );
+    let x = u8x16_min(
+        x,
+        u8x16_shuffle::<1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1>(x, x),
+    );
     u8x16_extract_lane::<0>(x)
 }
 /// 128-entry from two 64-byte halves via 8× 16-entry swizzle + subtract trick (OOB→0 does the range
@@ -65,9 +89,16 @@ unsafe fn hmin(x: v128) -> u8 {
 unsafe fn lut128_w(lo: &[u8; 64], hi: &[u8; 64], idx: v128) -> v128 {
     let mut acc = u8x16_splat(0);
     for j in 0..8usize {
-        let p = if j < 4 { lo.as_ptr().add(j * 16) } else { hi.as_ptr().add((j - 4) * 16) };
+        let p = if j < 4 {
+            lo.as_ptr().add(j * 16)
+        } else {
+            hi.as_ptr().add((j - 4) * 16)
+        };
         let t = v128_load(p as *const v128);
-        acc = v128_or(acc, u8x16_swizzle(t, i8x16_sub(idx, u8x16_splat((j * 16) as u8))));
+        acc = v128_or(
+            acc,
+            u8x16_swizzle(t, i8x16_sub(idx, u8x16_splat((j * 16) as u8))),
+        );
     }
     acc
 }
@@ -77,7 +108,10 @@ unsafe fn lut256_w(t: *const u8, idx: v128) -> v128 {
     let mut acc = u8x16_splat(0);
     for j in 0..16usize {
         let tt = v128_load(t.add(j * 16) as *const v128);
-        acc = v128_or(acc, u8x16_swizzle(tt, i8x16_sub(idx, u8x16_splat((j * 16) as u8))));
+        acc = v128_or(
+            acc,
+            u8x16_swizzle(tt, i8x16_sub(idx, u8x16_splat((j * 16) as u8))),
+        );
     }
     acc
 }
@@ -113,7 +147,10 @@ pub unsafe fn classify_wasm<S: TagScheme>(text: &[u8], tags: &mut [u8]) {
         // 2-byte (C2..DF): loop the lead-group range, lut256 per present group
         let is2 = u8x16_eq(v128_and(v, u8x16_splat(0xE0)), u8x16_splat(0xC0));
         if v128_any_true(is2) {
-            let idxg = v128_or(i8x16_shl(v128_and(v, u8x16_splat(3)), 6), v128_and(b2, u8x16_splat(0x3F)));
+            let idxg = v128_or(
+                i8x16_shl(v128_and(v, u8x16_splat(3)), 6),
+                v128_and(b2, u8x16_splat(0x3F)),
+            );
             let minl = hmin(v128_bitselect(v, ff, is2)); // v where is2 else 0xFF
             let maxl = hmax(v128_bitselect(v, zero, is2));
             let vsh2 = u8x16_shr(v, 2);
@@ -147,7 +184,10 @@ pub unsafe fn classify_wasm<S: TagScheme>(text: &[u8], tags: &mut [u8]) {
                     v128_and(eqb(v, 0xED), ule(b2, 0x9D)),
                 );
                 let e1 = v128_and(eqb(b2, 0x81), eqb(b3, 0x80));
-                let e2 = v128_and(eqb(b2, 0x82), v128_or(v128_and(uge(b3, 0x97), ule(b3, 0x9C)), eqb(b3, 0xA0)));
+                let e2 = v128_and(
+                    eqb(b2, 0x82),
+                    v128_or(v128_and(uge(b3, 0x97), ule(b3, 0x9C)), eqb(b3, 0xA0)),
+                );
                 let e3 = v128_and(eqb(b2, 0x83), eqb(b3, 0xBB));
                 let kana = v128_andnot(
                     v128_and(eqb(v, 0xE3), v128_and(uge(b2, 0x81), ule(b2, 0x83))),
@@ -162,7 +202,10 @@ pub unsafe fn classify_wasm<S: TagScheme>(text: &[u8], tags: &mut [u8]) {
         // 3-byte non-CJK: exact peel of the distinct (lead, b2-pair) blocks present
         let is3 = v128_andnot(v128_and(uge(v, 0xE0), ule(v, 0xEF)), res);
         if v128_any_true(is3) {
-            let sel = v128_or(i8x16_shl(v128_and(b2, u8x16_splat(1)), 6), v128_and(b3, u8x16_splat(0x3F)));
+            let sel = v128_or(
+                i8x16_shl(v128_and(b2, u8x16_splat(1)), 6),
+                v128_and(b3, u8x16_splat(0x3F)),
+            );
             let vp = u8x16_shr(b2, 1); // b2>>1 (pair id)
             let mut c3 = u8x16_splat(MB);
             let mut rem = is3;
@@ -223,7 +266,11 @@ pub unsafe fn classify_wasm<S: TagScheme>(text: &[u8], tags: &mut [u8]) {
         while k < n {
             if tags[k] == MB {
                 let cp = decode(text, k);
-                tags[k] = if cp < 0x10000 { tb.bmp_tag(cp as u16) } else { S::classify_char(text, k) };
+                tags[k] = if cp < 0x10000 {
+                    tb.bmp_tag(cp as u16)
+                } else {
+                    S::classify_char(text, k)
+                };
             }
             k += 1;
         }

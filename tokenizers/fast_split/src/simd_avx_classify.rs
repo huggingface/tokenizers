@@ -10,7 +10,7 @@
 //! x86_64 (SSE4.1 and, if available, AVX-512 VBMI) hardware before trusting it.
 #![allow(unsafe_op_in_unsafe_fn)]
 
-use super::classify::{char_len, classify_scalar, TagScheme};
+use super::classify::{TagScheme, char_len, classify_scalar};
 use core::arch::x86_64::*;
 
 /// Runtime dispatch, best-first. (Swap in memchr's cached `AtomicPtr` if `is_x86_feature_detected!`
@@ -94,7 +94,11 @@ unsafe fn lut128(lo: &[u8; 64], hi: &[u8; 64], idx: __m128i) -> __m128i {
     let sel = _mm_and_si128(idx, _mm_set1_epi8(0x70));
     let mut acc = _mm_setzero_si128();
     for j in 0..8usize {
-        let p = if j < 4 { lo.as_ptr().add(j * 16) } else { hi.as_ptr().add((j - 4) * 16) };
+        let p = if j < 4 {
+            lo.as_ptr().add(j * 16)
+        } else {
+            hi.as_ptr().add((j - 4) * 16)
+        };
         let sub = _mm_loadu_si128(p as *const __m128i);
         let part = _mm_shuffle_epi8(sub, idxlo);
         let m = _mm_cmpeq_epi8(sel, _mm_set1_epi8((j * 16) as i8));
@@ -124,8 +128,14 @@ unsafe fn lut256(t: *const u8, idx: __m128i) -> __m128i {
 #[inline]
 unsafe fn lut128_512(lo: &[u8; 64], hi: &[u8; 64], idx: __m128i) -> __m128i {
     let idx512 = _mm512_castsi128_si512(idx);
-    let rlo = _mm512_castsi512_si128(_mm512_permutexvar_epi8(idx512, _mm512_loadu_si512(lo.as_ptr() as *const __m512i)));
-    let rhi = _mm512_castsi512_si128(_mm512_permutexvar_epi8(idx512, _mm512_loadu_si512(hi.as_ptr() as *const __m512i)));
+    let rlo = _mm512_castsi512_si128(_mm512_permutexvar_epi8(
+        idx512,
+        _mm512_loadu_si512(lo.as_ptr() as *const __m512i),
+    ));
+    let rhi = _mm512_castsi512_si128(_mm512_permutexvar_epi8(
+        idx512,
+        _mm512_loadu_si512(hi.as_ptr() as *const __m512i),
+    ));
     let mask = _mm_cmpeq_epi8(_mm_and_si128(idx, _mm_set1_epi8(0x40)), _mm_set1_epi8(0x40)); // idx≥64 → hi
     _mm_blendv_epi8(rlo, rhi, mask)
 }
@@ -138,7 +148,10 @@ unsafe fn lut256_512(t: *const u8, idx: __m128i) -> __m128i {
     for j in 0..4usize {
         let tj = _mm512_loadu_si512(t.add(j * 64) as *const __m512i);
         let rj = _mm512_castsi512_si128(_mm512_permutexvar_epi8(idx512, tj)); // t[j*64 + (idx&63)]
-        let mask = _mm_cmpeq_epi8(_mm_and_si128(idx, _mm_set1_epi8(0xC0u8 as i8)), _mm_set1_epi8((j * 64) as u8 as i8));
+        let mask = _mm_cmpeq_epi8(
+            _mm_and_si128(idx, _mm_set1_epi8(0xC0u8 as i8)),
+            _mm_set1_epi8((j * 64) as u8 as i8),
+        );
         acc = _mm_blendv_epi8(acc, rj, mask);
     }
     acc
@@ -171,9 +184,15 @@ macro_rules! x86_body {
             let mut out = $lut128(&tb.ascii_lo, &tb.ascii_hi, v);
             let mut res = z;
 
-            let is2 = _mm_cmpeq_epi8(_mm_and_si128(v, _mm_set1_epi8(0xE0u8 as i8)), _mm_set1_epi8(0xC0u8 as i8));
+            let is2 = _mm_cmpeq_epi8(
+                _mm_and_si128(v, _mm_set1_epi8(0xE0u8 as i8)),
+                _mm_set1_epi8(0xC0u8 as i8),
+            );
             if any(is2) {
-                let idxg = _mm_or_si128(_mm_slli_epi16::<6>(_mm_and_si128(v, _mm_set1_epi8(3))), _mm_and_si128(b2, _mm_set1_epi8(0x3F)));
+                let idxg = _mm_or_si128(
+                    _mm_slli_epi16::<6>(_mm_and_si128(v, _mm_set1_epi8(3))),
+                    _mm_and_si128(b2, _mm_set1_epi8(0x3F)),
+                );
                 let minl = hmin(_mm_blendv_epi8(ff, v, is2));
                 let maxl = hmax(_mm_blendv_epi8(z, v, is2));
                 let vsh2 = _mm_and_si128(_mm_srli_epi16::<2>(v), _mm_set1_epi8(0x3F));
@@ -194,12 +213,27 @@ macro_rules! x86_body {
             if let Some(cjk_tag) = <$S>::CJK_RANGE_TAG {
                 let iscjk = _mm_and_si128(uge(v, 0xE3), ule(v, 0xED));
                 if any(iscjk) {
-                    let han = _mm_andnot_si128(_mm_and_si128(eqb(v, 0xE4), eqb(b2, 0xB7)), _mm_and_si128(uge(v, 0xE4), ule(v, 0xE9)));
-                    let hg = _mm_or_si128(_mm_or_si128(_mm_and_si128(uge(v, 0xEB), ule(v, 0xEC)), _mm_and_si128(eqb(v, 0xEA), uge(b2, 0xB0))), _mm_and_si128(eqb(v, 0xED), ule(b2, 0x9D)));
+                    let han = _mm_andnot_si128(
+                        _mm_and_si128(eqb(v, 0xE4), eqb(b2, 0xB7)),
+                        _mm_and_si128(uge(v, 0xE4), ule(v, 0xE9)),
+                    );
+                    let hg = _mm_or_si128(
+                        _mm_or_si128(
+                            _mm_and_si128(uge(v, 0xEB), ule(v, 0xEC)),
+                            _mm_and_si128(eqb(v, 0xEA), uge(b2, 0xB0)),
+                        ),
+                        _mm_and_si128(eqb(v, 0xED), ule(b2, 0x9D)),
+                    );
                     let e1 = _mm_and_si128(eqb(b2, 0x81), eqb(b3, 0x80));
-                    let e2 = _mm_and_si128(eqb(b2, 0x82), _mm_or_si128(_mm_and_si128(uge(b3, 0x97), ule(b3, 0x9C)), eqb(b3, 0xA0)));
+                    let e2 = _mm_and_si128(
+                        eqb(b2, 0x82),
+                        _mm_or_si128(_mm_and_si128(uge(b3, 0x97), ule(b3, 0x9C)), eqb(b3, 0xA0)),
+                    );
                     let e3 = _mm_and_si128(eqb(b2, 0x83), eqb(b3, 0xBB));
-                    let kana = _mm_andnot_si128(_mm_or_si128(_mm_or_si128(e1, e2), e3), _mm_and_si128(eqb(v, 0xE3), _mm_and_si128(uge(b2, 0x81), ule(b2, 0x83))));
+                    let kana = _mm_andnot_si128(
+                        _mm_or_si128(_mm_or_si128(e1, e2), e3),
+                        _mm_and_si128(eqb(v, 0xE3), _mm_and_si128(uge(b2, 0x81), ule(b2, 0x83))),
+                    );
                     let cjkl = _mm_or_si128(_mm_or_si128(han, hg), kana);
                     out = _mm_blendv_epi8(out, _mm_set1_epi8(cjk_tag as i8), cjkl);
                     res = _mm_or_si128(res, cjkl);
@@ -208,7 +242,10 @@ macro_rules! x86_body {
 
             let is3 = _mm_andnot_si128(res, _mm_and_si128(uge(v, 0xE0), ule(v, 0xEF)));
             if any(is3) {
-                let sel = _mm_or_si128(_mm_slli_epi16::<6>(_mm_and_si128(b2, _mm_set1_epi8(1))), _mm_and_si128(b3, _mm_set1_epi8(0x3F)));
+                let sel = _mm_or_si128(
+                    _mm_slli_epi16::<6>(_mm_and_si128(b2, _mm_set1_epi8(1))),
+                    _mm_and_si128(b3, _mm_set1_epi8(0x3F)),
+                );
                 let vp = _mm_and_si128(_mm_srli_epi16::<1>(b2), _mm_set1_epi8(0x7F));
                 let mut c3 = _mm_set1_epi8(MB as i8);
                 let mut rem = is3;
@@ -234,7 +271,10 @@ macro_rules! x86_body {
 
             let leadmb = _mm_andnot_si128(res, uge(v, 0xC0));
             out = _mm_blendv_epi8(out, _mm_set1_epi8(MB as i8), leadmb);
-            let cont = _mm_cmpeq_epi8(_mm_and_si128(v, _mm_set1_epi8(0xC0u8 as i8)), _mm_set1_epi8(0x80u8 as i8));
+            let cont = _mm_cmpeq_epi8(
+                _mm_and_si128(v, _mm_set1_epi8(0xC0u8 as i8)),
+                _mm_set1_epi8(0x80u8 as i8),
+            );
             out = _mm_blendv_epi8(out, _mm_set1_epi8(CONT as i8), cont);
             if any(eqb(out, MB)) {
                 mb_seen = true;
@@ -263,7 +303,11 @@ macro_rules! x86_body {
             while k < n {
                 if tags[k] == MB {
                     let cp = decode(text, k);
-                    tags[k] = if cp < 0x10000 { tb.bmp_tag(cp as u16) } else { <$S>::classify_char(text, k) };
+                    tags[k] = if cp < 0x10000 {
+                        tb.bmp_tag(cp as u16)
+                    } else {
+                        <$S>::classify_char(text, k)
+                    };
                 }
                 k += 1;
             }
