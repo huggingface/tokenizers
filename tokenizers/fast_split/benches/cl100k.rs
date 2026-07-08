@@ -8,6 +8,7 @@ use fast_split::classify::{Atoms, classify, classify_scalar};
 #[cfg(target_arch = "aarch64")]
 use fast_split::fsm::fsm_cl100k_simd;
 use fast_split::fsm::{Span, fsm_cl100k};
+use fancy_regex::Regex as Fancy;
 use onig::Regex;
 use std::hint::black_box;
 use std::time::Instant;
@@ -21,14 +22,29 @@ const CL100K: &str = concat!(
 );
 
 const SCRIPTS: &[(&str, &str)] = &[
-    ("English  1B", "The quick brown fox jumps over 13 lazy dogs; don't you think? "),
-    ("code     1B", "fn main() { let x = vec![1,2,3]; println!(\"{}\", x.len()); }\n"),
-    ("French   2B", "Portez ce vieux whisky au juge blond qui fume — 42% déjà. "),
-    ("Russian  2B", "Съешь же ещё этих мягких французских булочек да выпей чаю. "),
+    (
+        "English  1B",
+        "The quick brown fox jumps over 13 lazy dogs; don't you think? ",
+    ),
+    (
+        "code     1B",
+        "fn main() { let x = vec![1,2,3]; println!(\"{}\", x.len()); }\n",
+    ),
+    (
+        "French   2B",
+        "Portez ce vieux whisky au juge blond qui fume — 42% déjà. ",
+    ),
+    (
+        "Russian  2B",
+        "Съешь же ещё этих мягких французских булочек да выпей чаю. ",
+    ),
     ("Greek    2B", "Ξεσκεπάζω την ψυχοφθόρα βδελυγμία. "),
     ("Hebrew   2B", "דג סקרן שט בים מאוכזב ולפתע מצא חברה. "),
     ("Arabic   2B", "نص حكيم له سر قاطع وذو شأن عظيم. "),
-    ("Hindi    3B", "ऋषियों को सताने वाले दुष्ट राक्षसों के राजा का सर्वनाश। "),
+    (
+        "Hindi    3B",
+        "ऋषियों को सताने वाले दुष्ट राक्षसों के राजा का सर्वनाश। ",
+    ),
     ("Thai     3B", "เป็นมนุษย์สุดประเสริฐเลิศคุณค่า "),
     ("Chinese  3B", "視野無限廣，窗外有藍天。快速跳躍123。 "),
     ("Japanese 3B", "いろはにほへと ちりぬるを カタカナ 漢字。 "),
@@ -51,14 +67,16 @@ fn ns_per_byte<F: FnMut() -> usize>(len: usize, iters: u32, mut f: F) -> f64 {
 
 fn main() {
     let re = Regex::new(CL100K).expect("cl100k regex");
+    let fancy = Fancy::new(CL100K).expect("fancy cl100k regex"); // the (feature-gated) escape-hatch engine
     let iters = 400;
     let mbps = |ns: f64| 1000.0 / ns;
 
     // MB/s columns; classify (SIMD/scalar), fsm (scalar/SIMD run-end), pipeline SIMD vs onig.
+    // ns/byte (lower is better); MB/s = 1000/ns.
     #[cfg(target_arch = "aarch64")]
     println!(
-        "{:<12} {:>7} {:>4}  {:>8} {:>8} | {:>8} {:>8} | {:>8} {:>7}",
-        "script", "bytes", "b/ch", "clsSIMD", "clsScal", "fsmScal", "fsmSIMD", "onig", "vsOnig"
+        "{:<12} {:>7} {:>4}  {:>8} {:>8} | {:>8} {:>8} | {:>8} {:>8} {:>7}",
+        "script", "bytes", "b/ch", "clsSIMD", "clsScal", "fsmScal", "fsmSIMD", "onig", "fancy", "vsOnig"
     );
 
     for (name, unit) in SCRIPTS {
@@ -68,7 +86,10 @@ fn main() {
         let bpc = n as f64 / corpus.chars().count() as f64;
 
         // correctness: full pipeline == onig
-        let onig: Vec<Span> = re.find_iter(&corpus).map(|(s, e)| (s as u32, e as u32)).collect();
+        let onig: Vec<Span> = re
+            .find_iter(&corpus)
+            .map(|(s, e)| (s as u32, e as u32))
+            .collect();
         let mut tags = vec![0u8; n];
         classify::<Atoms>(text, &mut tags);
         let mut sc = Vec::new();
@@ -93,6 +114,7 @@ fn main() {
             buf.len()
         });
         let onig_ns = ns_per_byte(n, iters, || re.find_iter(&corpus).count());
+        let fancy_ns = ns_per_byte(n, iters, || fancy.find_iter(&corpus).count());
         #[cfg(target_arch = "aarch64")]
         {
             let fsm_simd = ns_per_byte(n, iters, || {
@@ -101,13 +123,9 @@ fn main() {
                 buf.len()
             });
             let pipe = cls_simd + fsm_simd; // SIMD classify + SIMD fsm
+            let _ = mbps;
             println!(
-                "{name:<12} {n:>7} {bpc:>4.1}  {:>8.0} {:>8.0} | {:>8.0} {:>8.0} | {:>8.1} {:>6.1}x {ok}",
-                mbps(cls_simd),
-                mbps(cls_scal),
-                mbps(fsm_scal),
-                mbps(fsm_simd),
-                mbps(onig_ns),
+                "{name:<12} {n:>7} {bpc:>4.1}  {cls_simd:>8.3} {cls_scal:>8.3} | {fsm_scal:>8.3} {fsm_simd:>8.3} | {onig_ns:>8.2} {fancy_ns:>8.2} {:>6.1}x {ok}",
                 onig_ns / pipe
             );
         }
@@ -123,5 +141,7 @@ fn main() {
             );
         }
     }
-    println!("\n(MB/s; higher is better. clsSIMD ceiling is the ASCII fast path; b/ch = bytes per char.)");
+    println!(
+        "\n(ns/byte; lower is better, MB/s = 1000/ns. clsSIMD floor is the ASCII fast path; b/ch = bytes per char.)"
+    );
 }

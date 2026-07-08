@@ -11,8 +11,9 @@ pub enum Atom {
     Connector = 7,     // \p{Pc}
     Punct = 8,         // (\p{P} ∖ Pc) ∪ ASCII-symbols, minus 0x27
     Apostrophe = 9,    // 0x27 only
-    SymOther = 10,     // non-ASCII \p{S} ∪ control ∪ unassigned
+    SymOther = 10,     // non-ASCII \p{S}
     NumericOther = 11, // is_numeric ∖ \p{N}
+    Control = 12,      // control ∪ unassigned (split out of SymOther so \p{P}∪\p{S} excludes it)
     Sentinel = 13,     // this lead / block needs to go 1 level deeper
     MultiByte = 14,    // simd could not resolve this multibyte, use the lookup table
     Cont = 15,         // UTF-8 continuation byte — transparent to every FSM
@@ -70,7 +71,12 @@ pub mod mask {
         | Punct.bit()
         | Apostrophe.bit()
         | SymOther.bit()
+        | Control.bit()
         | NumericOther.bit();
+    /// `\p{P} ∪ \p{S}` (deepseek) — punctuation + symbol, EXCLUDING control/unassigned.
+    pub const PUNCT_SYM: u16 = Connector.bit() | Punct.bit() | Apostrophe.bit() | SymOther.bit();
+    /// `\p{L} ∪ \p{M}` (deepseek letter/mark run).
+    pub const LETTER_MARK: u16 = Letter.bit() | Mark.bit();
 }
 
 /// A per-char tag alphabet + its two classify paths. `Atoms` (12-way) and `Scripts` (script-id) are
@@ -154,7 +160,7 @@ pub fn classify_scalar<S: TagScheme>(text: &[u8], tags: &mut [u8]) {
 pub struct Atoms;
 
 impl TagScheme for Atoms {
-    const N_TAGS: usize = 12;
+    const N_TAGS: usize = 13;
     const CONT: u8 = Atom::Cont as u8;
     const MB: u8 = Atom::MultiByte as u8;
     const CJK_RANGE_TAG: Option<u8> = Some(Atom::Letter as u8); // all of CJK → Letter → range shortcut

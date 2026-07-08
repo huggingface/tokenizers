@@ -45,7 +45,10 @@ fn atom(c: char) -> u8 {
     if c.is_numeric() {
         return 11;
     }
-    10
+    if c.is_symbol() {
+        return 10;
+    }
+    12
 }
 
 // tag of the char encoded by `bytes` (synthetic UTF-8 built by the table loops; surrogates → 10, never hit).

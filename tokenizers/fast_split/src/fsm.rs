@@ -260,6 +260,7 @@ fn cl100k<const SIMD: bool>(text: &[u8], tags: &[u8], out: &mut Vec<Span>) {
         | Atom::Punct.bit()
         | Atom::Apostrophe.bit()
         | Atom::SymOther.bit()
+        | Atom::Control.bit()
         | Atom::NumericOther.bit();
     // membership LUTs for the SIMD run-ends, built once (scalar path ignores them).
     let (lut_l, lut_o, lut_w) = (

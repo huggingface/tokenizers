@@ -36,6 +36,7 @@ unicode-normalization-alignments = "0.1"
 regex-syntax = "0.8"
 regex = "1.10"
 onig = "6.5.1"
+fancy-regex = "0.13"
 [features]
 unicode = ["unicode_categories"]
 
