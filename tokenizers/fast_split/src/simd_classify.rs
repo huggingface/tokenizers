@@ -308,57 +308,41 @@ pub unsafe fn classify_neon_ref(
             res = vorrq_u8(res, cjkl);
         }
 
-        // ── 3-byte non-CJK: loop the (lead × b2-pair) box; single script ⇒ 1×1 (fast path). ──
-        // GUARD: an adversarial multi-script chunk could make the box up to 16×32 — cap it, and let
-        // over-wide chunks fall through to MB → scalar fixup instead of spinning the nested loop.
+        // ── 3-byte non-CJK: peel the EXACT distinct (lead, b2-pair) blocks present. ──
+        // Pick the min (lead, then min b2-pair) among unresolved lanes, resolve that whole block, mask
+        // it out, repeat. Iterations = distinct-block count (≤5-6 per chunk), independent of how far
+        // apart the blocks are → adversarial-proof, no box guard, and faster than the min..max range.
         let is3 = vandq_u8(
             vandq_u8(vcgeq_u8(v, vdupq_n_u8(0xE0)), vcleq_u8(v, vdupq_n_u8(0xEF))),
             vmvnq_u8(res),
         );
         if vmaxvq_u8(is3) != 0 {
-            let minld = vminvq_u8(vbslq_u8(is3, v, vdupq_n_u8(0xFF)));
-            let maxld = vmaxvq_u8(vbslq_u8(is3, v, vdupq_n_u8(0x00)));
-            let minb2 = vminvq_u8(vbslq_u8(is3, b2, vdupq_n_u8(0xFF)));
-            let maxb2 = vmaxvq_u8(vbslq_u8(is3, b2, vdupq_n_u8(0x00)));
-            let box_area =
-                (maxld - minld + 1) as usize * ((maxb2 >> 1) - (minb2 >> 1) + 1) as usize;
-            if box_area <= 8 {
-                let sel = vorrq_u8(
-                    vshlq_n_u8::<6>(vandq_u8(b2, vdupq_n_u8(1))),
-                    vandq_u8(b3, vdupq_n_u8(0x3F)),
-                );
-                let vp = vshrq_n_u8::<1>(b2);
-                let mut c3 = vdupq_n_u8(MB);
-                let mut lead = minld;
-                while lead <= maxld {
-                    let gl = vandq_u8(is3, vceqq_u8(v, vdupq_n_u8(lead)));
-                    if vmaxvq_u8(gl) != 0 {
-                        let mut pr = minb2 >> 1;
-                        while pr <= (maxb2 >> 1) {
-                            let gp = vandq_u8(gl, vceqq_u8(vp, vdupq_n_u8(pr)));
-                            if vmaxvq_u8(gp) != 0 {
-                                let idx = (lead - 0xE0) as usize * 32 + (pr & 0x1F) as usize;
-                                let k = tb.fast3_uni[idx];
-                                let cl = if k != 0xFF {
-                                    vdupq_n_u8(k) // uniform (lead,b2-pair): one constant
-                                } else {
-                                    let (lo, hi) = &tb.fast3_mixed[tb.fast3_slot[idx] as usize];
-                                    vorrq_u8(
-                                        tbl64(lo, sel),
-                                        tbl64(hi, vsubq_u8(sel, vdupq_n_u8(64))),
-                                    )
-                                };
-                                c3 = vbslq_u8(gp, cl, c3);
-                            }
-                            pr += 1;
-                        }
-                    }
-                    lead += 1;
-                }
-                out = vbslq_u8(is3, c3, out);
-                res = vorrq_u8(res, vandq_u8(is3, vmvnq_u8(vceqq_u8(c3, vdupq_n_u8(MB)))));
+            // within-block index: sel = ((b2&1)<<6) | (b3&0x3F);  vp = b2>>1 identifies the b2-pair
+            let sel = vorrq_u8(
+                vshlq_n_u8::<6>(vandq_u8(b2, vdupq_n_u8(1))),
+                vandq_u8(b3, vdupq_n_u8(0x3F)),
+            );
+            let vp = vshrq_n_u8::<1>(b2);
+            let mut c3 = vdupq_n_u8(MB);
+            let mut rem = is3; // lanes still to resolve
+            while vmaxvq_u8(rem) != 0 {
+                let lead = vminvq_u8(vbslq_u8(rem, v, vdupq_n_u8(0xFF))); // min lead among unresolved
+                let ll = vandq_u8(rem, vceqq_u8(v, vdupq_n_u8(lead)));
+                let pr = vminvq_u8(vbslq_u8(ll, vp, vdupq_n_u8(0xFF))); // min b2-pair within that lead
+                let gp = vandq_u8(ll, vceqq_u8(vp, vdupq_n_u8(pr))); // lanes of exactly this block
+                let idx = (lead - 0xE0) as usize * 32 + (pr & 0x1F) as usize;
+                let k = tb.fast3_uni[idx];
+                let cl = if k != 0xFF {
+                    vdupq_n_u8(k) // uniform (lead, b2-pair): one constant
+                } else {
+                    let (lo, hi) = &tb.fast3_mixed[tb.fast3_slot[idx] as usize];
+                    vorrq_u8(tbl64(lo, sel), tbl64(hi, vsubq_u8(sel, vdupq_n_u8(64))))
+                };
+                c3 = vbslq_u8(gp, cl, c3);
+                rem = vbicq_u8(rem, gp); // clear the lanes we just resolved
             }
-            // else: box too wide → is3 lanes stay unclaimed → become MB below → scalar fixup.
+            out = vbslq_u8(is3, c3, out);
+            res = vorrq_u8(res, vandq_u8(is3, vmvnq_u8(vceqq_u8(c3, vdupq_n_u8(MB)))));
         }
 
         // ── residual multibyte lead → MB ; continuation byte → CONT ──
