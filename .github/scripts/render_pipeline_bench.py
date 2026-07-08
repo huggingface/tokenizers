@@ -5,11 +5,17 @@ a markdown report for a PR description.
 Input: JSON array from `cargo run --release -p tk-encode --example fixture_bench`,
 one object per model:
     {model, shape, supported, [reason], results: [{fixture, group,
-     legacy_mbps, pipeline_mbps, speedup, ids_match}, ...]}
+     legacy_mbps, pipeline_mbps, speedup, ids_match,
+     stage_ns_per_byte: {added_split, normalize, pre_tokenize, model, total}}, ...]}
 
-Each supported model gets a full-size diverging bar chart (log2 around ×1.0):
-per-fixture ×speedup + the `MB/s: Tokenizer → Pipeline` throughput column, with
-group headers, slower/faster hints, ticks and an inline "⚠ ids differ" flag.
+Each supported model gets two full-size charts:
+  1. a diverging bar chart (log2 around ×1.0): per-fixture ×speedup + the
+     `MB/s: Tokenizer → Pipeline` throughput column, with group headers,
+     slower/faster hints, ticks and an inline "⚠ ids differ" flag;
+  2. a stacked stage-decomposition chart (ns/byte): where the pipeline spends
+     its own encode time per fixture — added-token split + normalize +
+     pre-tokenize + model (the two distinct splitting costs kept separate),
+     with each fixture's ×speedup alongside.
 Unsupported models (byte-level BPE, Unigram/Metaspace, …) get a compact
 "not supported" card. Charts are rendered full-size so readers can zoom.
 """
@@ -44,6 +50,19 @@ TICKS = [0.5, 0.67, 0.75, 0.8, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0, 5.0]
 GROUPS = [("lang", "Languages"), ("modalities", "Modalities")]
 CARD_W, CARD_H = 470, 150
 
+# Pipeline encode stages, in execution order, keyed to `stage_ns_per_byte` in the
+# fixture_bench JSON. `added_split` = the added/special-token scan (AddedVocabulary),
+# `pre_tokenize` = the pre-tokenizer split — two distinct splitting costs. The four
+# stages sum to the whole-encode total.
+STAGES = [("added_split", "added-token"), ("normalize", "normalize"),
+          ("pre_tokenize", "pre-tokenize"), ("model", "model")]
+STAGE_INK = {
+    "light": {"added_split": "#7a5ea8", "normalize": "#2a9d8f",
+              "pre_tokenize": "#e0952b", "model": "#2a78d6"},
+    "dark": {"added_split": "#a48ad4", "normalize": "#3fb8a8",
+             "pre_tokenize": "#f0b45a", "model": "#3987e5"},
+}
+
 
 def slugify(name):
     return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
@@ -51,6 +70,12 @@ def slugify(name):
 
 def geomean(values):
     return math.exp(sum(math.log(v) for v in values) / len(values))
+
+
+def text_on(hex_color):
+    """Black or white label, whichever reads on `hex_color` (relative luminance)."""
+    r, g, b = (int(hex_color[i:i + 2], 16) / 255 for i in (1, 3, 5))
+    return "#111111" if 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.6 else "#ffffff"
 
 
 def bar_path(x0, x1, y, h, r):
@@ -88,8 +113,11 @@ def chart_svg(model, mode, subtitle_base, meta, lo, hi):
             f'text-anchor="end">MB/s: Tokenizer → Pipeline</text>']
     y = top
     for key, title in GROUPS:
+        # stable order (alphabetical by fixture) so a fixture keeps its row across
+        # runs and lines up with the stage-decomposition chart — not sorted by the
+        # (run-varying) speedup.
         group_rows = sorted((r for r in rows if r["group"] == key),
-                            key=lambda r: -r["speedup"])
+                            key=lambda r: r["fixture"])
         if not group_rows:
             continue
         body.append(f'<text x="{GUTTER}" y="{y + 12}" fill="{ink["secondary"]}" font-size="11" '
@@ -148,6 +176,127 @@ def chart_svg(model, mode, subtitle_base, meta, lo, hi):
 {"".join(grid)}
 {hints}
 {"".join(body)}
+</svg>'''
+
+
+def has_stages(model):
+    return any("stage_ns_per_byte" in r for r in model["results"])
+
+
+def stage_scale(models):
+    """Shared linear ns/byte range across every supported fixture's total, so the
+    stacked stage bars are comparable across models."""
+    vals = [r["stage_ns_per_byte"]["total"] for m in models if m["supported"]
+            for r in m["results"] if "stage_ns_per_byte" in r]
+    vals = [v for v in vals if v > 0]
+    return max(vals) * 1.05 if vals else 1.0
+
+
+def stage_mix(rows):
+    """Mean per-stage share of total, as a list of (label, fraction), largest first."""
+    acc = {k: 0.0 for k, _ in STAGES}
+    n = 0
+    for r in rows:
+        s = r.get("stage_ns_per_byte")
+        if not s or not s["total"]:
+            continue
+        n += 1
+        for k, _ in STAGES:
+            acc[k] += s.get(k, 0.0) / s["total"]
+    if not n:
+        return []
+    label = dict(STAGES)
+    return sorted(((label[k], acc[k] / n) for k in acc), key=lambda kv: -kv[1])
+
+
+def stage_chart_svg(model, mode, subtitle_base, meta, max_total):
+    """Per-fixture stacked decomposition of the *pipeline's* own encode time
+    (ns/byte): normalize + split + model + other. Shows where the pipeline spends
+    its time and — via the right column — how that maps onto the ×speedup headline."""
+    ink = INK[mode]
+    sink = STAGE_INK[mode]
+    rows = [r for r in model["results"] if "stage_ns_per_byte" in r]
+
+    def w(v):  # ns/byte -> px width on the shared scale
+        return (v / max_total) * PLOT_W if max_total else 0.0
+
+    top = 84
+    col_x = GUTTER + PLOT_W + PAD_R + COL_W - 16
+    body = [f'<text x="{col_x}" y="{top - 14}" fill="{ink["muted"]}" font-size="11" '
+            f'text-anchor="end">ns/byte · ×speedup</text>']
+    y = top
+    for key, title in GROUPS:
+        group_rows = sorted((r for r in rows if r["group"] == key),
+                            key=lambda r: r["fixture"])  # stable order, matches speedup chart
+        if not group_rows:
+            continue
+        body.append(f'<text x="{GUTTER}" y="{y + 12}" fill="{ink["secondary"]}" font-size="11" '
+                    f'font-weight="600" letter-spacing="1.2" text-anchor="end" dx="-10">{title.upper()}</text>')
+        y += 22
+        for r in group_rows:
+            s = r["stage_ns_per_byte"]
+            by = y + (ROW_H - BAR_H) / 2
+            body.append(f'<text x="{GUTTER - 10}" y="{y + ROW_H / 2 + 4}" fill="{ink["secondary"]}" '
+                        f'font-size="12.5" text-anchor="end">{escape(r["fixture"])}</text>')
+            cursor = float(GUTTER)
+            for skey, _ in STAGES:
+                val = s.get(skey, 0.0)
+                seg = w(val)
+                if seg > 0.4:
+                    body.append(f'<rect x="{cursor:.1f}" y="{by}" width="{seg:.1f}" '
+                                f'height="{BAR_H}" fill="{sink[skey]}"/>')
+                    # ns/byte inside the slice when it's wide enough to read
+                    if seg >= 24:
+                        txt = f"{val:.0f}" if val >= 9.5 else f"{val:.1f}"
+                        body.append(f'<text x="{cursor + seg / 2:.1f}" y="{y + ROW_H / 2 + 4}" '
+                                    f'fill="{text_on(sink[skey])}" font-size="10.5" '
+                                    f'text-anchor="middle" style="font-variant-numeric:tabular-nums">'
+                                    f'{txt}</text>')
+                cursor += seg
+            body.append(f'<text x="{col_x}" y="{y + ROW_H / 2 + 4}" fill="{ink["secondary"]}" '
+                        f'font-size="12" text-anchor="end" style="font-variant-numeric:tabular-nums">'
+                        f'{s["total"]:.1f} · ×{r["speedup"]:.2f}</text>')
+            y += ROW_H
+        y += 10
+
+    # x-axis: 4 evenly spaced ns/byte gridlines + ticks
+    grid = []
+    for i in range(5):
+        tv = max_total * i / 4
+        gx = GUTTER + w(tv)
+        grid.append(f'<line x1="{gx:.1f}" y1="{top - 6}" x2="{gx:.1f}" y2="{y - 6}" '
+                    f'stroke="{ink["grid"]}" stroke-width="1"/>')
+        grid.append(f'<text x="{gx:.1f}" y="{y + 12}" fill="{ink["muted"]}" font-size="11" '
+                    f'text-anchor="middle" style="font-variant-numeric:tabular-nums">{tv:.0f}</text>')
+
+    # legend row
+    y += 26
+    legend = []
+    lx = GUTTER
+    for skey, lbl in STAGES:
+        legend.append(f'<rect x="{lx}" y="{y - 9}" width="11" height="11" rx="2" fill="{sink[skey]}"/>')
+        legend.append(f'<text x="{lx + 16}" y="{y}" fill="{ink["secondary"]}" font-size="11.5">{lbl}</text>')
+        lx += 16 + 8 + len(lbl) * 7 + 18
+    height = y + 18
+
+    # Keep this subtitle short: the stage-mix string is long, and `subtitle_base`
+    # (the "~10 kB inputs · single thread" run context) already rides in the markdown
+    # header and the speedup chart above — appending it here collides with the
+    # right-aligned hardware line.
+    mix = stage_mix(rows)
+    mix_txt = " · ".join(f"{lbl} {100 * frac:.0f}%" for lbl, frac in mix)
+    subtitle = f'{model["shape"]} · stage mix: {mix_txt}'
+    return f'''<svg xmlns="http://www.w3.org/2000/svg" width="{CHART_W}" height="{height}"
+  viewBox="0 0 {CHART_W} {height}" font-family="{FONT}">
+<rect width="{CHART_W}" height="{height}" fill="{ink["surface"]}"/>
+<text x="16" y="26" fill="{ink["primary"]}" font-size="15" font-weight="700">{escape(model["model"])} — Pipeline encode stage decomposition</text>
+<text x="16" y="44" fill="{ink["secondary"]}" font-size="12">{escape(subtitle)}</text>
+<text x="{CHART_W - 16}" y="26" fill="{ink["muted"]}" font-size="11" text-anchor="end"
+  style="font-variant-numeric:tabular-nums">{escape(meta[0])}</text>
+<text x="{CHART_W - 16}" y="44" fill="{ink["muted"]}" font-size="11" text-anchor="end">{escape(meta[1])}</text>
+{"".join(grid)}
+{"".join(body)}
+{"".join(legend)}
 </svg>'''
 
 
@@ -218,6 +367,12 @@ def render_markdown(models, subtitle_base, meta, base, run_id):
         head += f" · geomean ×{g:.2f} across supported · {nfix} fixtures each"
     md += [f"{head} — {subtitle_base}", "", f"`{meta[0]}` · {meta[1]}", ""]
 
+    staged_rows = [r for m in supported for r in m["results"] if "stage_ns_per_byte" in r]
+    if staged_rows:
+        mix = ", ".join(f"{lbl} {100 * frac:.0f}%" for lbl, frac in stage_mix(staged_rows))
+        md += [f"Pipeline stage mix (mean share of encode time): {mix}. "
+               f"Per-model decomposition charts below.", ""]
+
     if unsupported:
         items = ", ".join(f"`{m['model']}` ({m['shape']})" for m in unsupported)
         md += [f"> **Not yet supported:** {items} — roadmap cards below.", ""]
@@ -225,9 +380,14 @@ def render_markdown(models, subtitle_base, meta, base, run_id):
         md += [f"> ⚠️ **Token ids diverge from the reference on: {', '.join(mismatches)}** "
                f"— speedups there are meaningless until fixed.", ""]
 
-    # Supported models: full-size chart each (readable inline, click to zoom).
+    # Supported models: speedup chart + stage-decomposition chart each
+    # (readable inline, click to zoom).
     for m in supported:
-        md += [picture(base, run_id, slugify(m["model"]), f"{m['model']} speedup", 860), ""]
+        slug = slugify(m["model"])
+        md += [picture(base, run_id, slug, f"{m['model']} speedup", 860), ""]
+        if has_stages(m):
+            md += [picture(base, run_id, f"{slug}-stages",
+                           f"{m['model']} stage decomposition", 860), ""]
 
     # Unsupported models: compact roadmap cards, two per row.
     if unsupported:
@@ -245,12 +405,16 @@ def render_markdown(models, subtitle_base, meta, base, run_id):
         md += ["<details><summary>Per-fixture results</summary>", ""]
         for m in supported:
             md += [f"#### {m['model']} — {m['shape']}", "",
-                   "| Fixture | Group | Tokenizer MB/s | Pipeline MB/s | Speedup | Ids |",
-                   "|---|---|---:|---:|---:|:--|"]
-            for r in sorted(m["results"], key=lambda r: (r["group"], -r["speedup"])):
+                   "| Fixture | Group | Tokenizer MB/s | Pipeline MB/s | Speedup "
+                   "| added ns/B | norm ns/B | pre-tok ns/B | model ns/B | Ids |",
+                   "|---|---|---:|---:|---:|---:|---:|---:|---:|:--|"]
+            for r in sorted(m["results"], key=lambda r: (r["group"], r["fixture"])):
                 ids = "match" if r["ids_match"] else "⚠️ differ"
+                s = r.get("stage_ns_per_byte", {})
+                cells = " ".join(f"| {s[k]:.2f}" if k in s else "| —"
+                                 for k in ("added_split", "normalize", "pre_tokenize", "model"))
                 md.append(f"| {r['fixture']} | {r['group']} | {r['legacy_mbps']:.1f} "
-                          f"| {r['pipeline_mbps']:.1f} | ×{r['speedup']:.2f} | {ids} |")
+                          f"| {r['pipeline_mbps']:.1f} | ×{r['speedup']:.2f} {cells} | {ids} |")
             md.append("")
         md += ["</details>", ""]
     return "\n".join(md)
@@ -278,6 +442,7 @@ def main():
 
     models = json.loads(Path(args.results).read_text())
     lo, hi = scale(models)
+    max_total = stage_scale(models)
     out = Path(args.out_dir)
     for m in models:
         slug = slugify(m["model"])
@@ -285,6 +450,9 @@ def main():
             svg = (chart_svg(m, mode, args.subtitle, meta, lo, hi)
                    if m["supported"] else card_svg(m, mode))
             (out / f"pipeline_bench_{slug}_{mode}.svg").write_text(svg)
+            if m["supported"] and has_stages(m):
+                (out / f"pipeline_bench_{slug}-stages_{mode}.svg").write_text(
+                    stage_chart_svg(m, mode, args.subtitle, meta, max_total))
 
     (out / "pipeline_bench.md").write_text(
         render_markdown(models, args.subtitle, meta, args.img_base, args.run_id))
