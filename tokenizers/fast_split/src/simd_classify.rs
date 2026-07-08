@@ -1,28 +1,35 @@
 use super::classify::{Atom, TagScheme};
 
-/// ┌──────────────── SIMD classify tables (built once from `S::classify_char`) ────────────────┐
-/// One shape for every `TagScheme` — only the bytes inside differ (Atoms vs Scripts vs …).
-/// Hot path at each width is UPFRONT min/max dispatch → one scalar-selected table; the fallback
-/// loops the SAME tables over the min..max range (single-script chunk ⇒ range = 1 ⇒ fast path).
-/// Built byte-exact by construction: the SIMD path reproduces a scalar walk over `classify_char`.
+/// Hot path at each byte-width we compute min/max values which gives us an index to one of the table; the fallback
+/// loops the SAME tables over the min..max range. This happens when we have  mixed scripts.
 pub struct Tables {
     // ── ASCII (v < 0x80): direct 128-entry byte→tag, split 0..63 / 64..127.
-    //    lookup = vorr(tbl64(lo, v), tbl64(hi, v-64))
+    // This uses a trick to lookup more than 64 entries. we shift the bytes
+    // we look for in the second lookup. If the index is > 64 the first lookup will return 0
+    // but the second will then not be out of bound. Similarly if the first is in bound, the second
+    // lookup will be out of bound.
+    //
+    // - byte v = 5:  tbl64(lo, 5) = lo[5];  tbl64(hi, 5-64=197) → 197≥64 → 0.  OR gives lo[5]. ✓
+    // - byte v = 65: tbl64(lo, 65) → 65≥64 → 0; tbl64(hi, 65-64=1) = hi[1]. OR gives hi[1]. ✓
     pub ascii_lo: [u8; 64],
     pub ascii_hi: [u8; 64],
 
     // ── 2-byte (C2..DF): 8 groups of 4 leads (there are only 32 different lead bytes in a 2 byte long utf8);
-    // each a 256-entry table indexed by (lead&3)*64 + continuation byte.
-    //    upfront min/max lead → single group ⇒ ONE tbl256; multi-group ⇒ loop the group range.
+    // Here again, in order to lookup into not 128 but 256 values we need 4 tables.
+    // We decompose a 2 byte char as 110xxxyy 10yyyyyy. xxx gives the group (out of 8) while (yy)
+    // gives the sub group (out of 4). Finally, yyyyyy gives the index (0..64) in the [u8; 64] that
+    // gives the tag of the full 2-byte.
     pub group_tables: [[[u8; 64]; 4]; 8],
 
-    // ── 3-byte non-CJK (E0..EF): per (lead, b2-pair) either a UNIFORM tag (`fast3_uni`, 0xFF = mixed)
-    //    or a 128-entry table (`fast3_mixed[fast3_slot]`), indexed by ((b2&1)<<6)|(b3&0x3F).
-    //    upfront cluster on (lead, b2-pair) — a script is a 2-b2 range ⇒ ONE tbl128; else loop the box.
-    //    (CJK E4..ED stays on lead-byte range compares — one range beats looping 6 Han leads.)
-    pub fast3_uni: Box<[u8; 512]>,
-    pub fast3_slot: Box<[u16; 512]>,
-    pub fast3_mixed: Vec<([u8; 64], [u8; 64])>,
+    // There are uniform and non uniform ranges in the 3-byte family.
+    // - Georgian (E1 82/83), Cherokee, Coptic, Runic/Ogham, Hangul Jamo, Ethiopic (E1 88–9B, syllabary) — alphabets/syllabaries whose marks (if any) sit in separate blocks.
+    // - CJK Han (E4–E9) and Hangul syllables (EB–EC) are all-Letter uniform too — but they go through the range path, not fast3.
+    // - Pure symbol / unassigned regions → uniform SymOther.
+    // 425 of 512 blocks are uniform (~83%); only 87 are mixed.
+    // The rest need mixed slot and a similar trick than what we used above.
+    pub fast3_uni: Box<[u8; 512]>, // per block: the tag if uniform, or 0xFF ("mixed, look deeper")
+    pub fast3_slot: Box<[u16; 512]>, // per block: WHERE this block's 128-table lives in fast3_mixed (only if mixed)
+    pub fast3_mixed: Vec<([u8; 64], [u8; 64])>, // the sparse list of 128-tables — one per MIXED block (~87), lo/hi halves
 
     // ── Cold fallback (astral 4-byte, CJK-letter holes): run-length-encoded BMP tag table,
     //    (run_start_cp, tag), binary-searched. ~1-3 KB vs a dense 64 KB LUT.
@@ -32,6 +39,7 @@ pub struct Tables {
 impl Tables {
     /// Build every table from the scheme's scalar `classify_char`. `tag(bytes)` = tag of the char that
     /// those bytes encode; tables are dense over the byte space, so invalid sequences just never occur.
+    /// These table can be built for unicode script and atoms.
     pub fn build<S: TagScheme>() -> Tables {
         let tag = |bytes: &[u8]| S::classify_char(bytes, 0);
 
@@ -45,16 +53,18 @@ impl Tables {
         // 2-byte: 8 groups × 4 leads × 64 conts
         let mut group_tables = [[[0u8; 64]; 4]; 8];
         for g in 0..8usize {
+            // 0xC0 is 110..... the utf8 header
+            // g is the group: 110xxx.. *4 shifts it by 2
             let base = 0xC0u8 + (g as u8) * 4;
             for k in 0..4usize {
                 for c in 0..64u8 {
+                    // 0x80 is 10yyyyyy, its constructing the 2nd byte.
+                    // We add `k` as its the sub group (0,1,2,3)
                     group_tables[g][k][c as usize] = tag(&[base + k as u8, 0x80 | c]);
                 }
             }
         }
-
-        // 3-byte non-CJK: per (lead E0..EF, b2-pair 0..32) — uniform const or a 128-entry table.
-        // 0xFF is the "mixed" marker (valid tags are 0..N_TAGS ≪ 0xFF for Atoms and Scripts).
+        // Finally we build the hardest of them all:
         let mut fast3_uni = Box::new([0u8; 512]);
         let mut fast3_slot = Box::new([0u16; 512]);
         let mut fast3_mixed: Vec<([u8; 64], [u8; 64])> = Vec::new();
@@ -395,6 +405,19 @@ pub unsafe fn classify_neon_ref(
             k += 1;
         }
     }
+}
+
+/// Trait entry point for the Atom scheme (`Atoms::classify_neon` forwards here). Builds the Atom
+/// `Tables` once (lazily), then runs the reference body with the scalar `classify_char` supplying the
+/// <32-byte tail and astral codepoints.
+#[cfg(target_arch = "aarch64")]
+#[allow(unsafe_op_in_unsafe_fn)]
+pub unsafe fn classify_neon(text: &[u8], tags: &mut [u8]) {
+    use super::classify::{Atoms, TagScheme};
+    use std::sync::OnceLock;
+    static TABLES: OnceLock<Tables> = OnceLock::new();
+    let tb = TABLES.get_or_init(Tables::build::<Atoms>);
+    classify_neon_ref(text, tags, tb, <Atoms as TagScheme>::classify_char);
 }
 
 // out = vbsl(v==0x09 | v==0x0B | v==0x0C,  WsOther,    out)
