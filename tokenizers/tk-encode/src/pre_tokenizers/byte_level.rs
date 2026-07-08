@@ -10,7 +10,7 @@ use crate::tokenizer::{
 };
 use crate::utils::macro_rules_attribute;
 
-pub(crate) const GPT2_REGEX_STR: &'static str =
+pub(crate) const GPT2_REGEX_STR: &str =
     r"'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+";
 
 /// Regex that matches exactly one token.
@@ -587,7 +587,9 @@ mod tests {
 
     #[test]
     fn pipeline_conversion_no_regex_is_identity_split() {
-        let byte_level = ByteLevel::default().add_prefix_space(false).use_regex(false);
+        let byte_level = ByteLevel::default()
+            .add_prefix_space(false)
+            .use_regex(false);
         let text = "Hello my friend, how is your day going?";
         assert_eq!(
             pipeline_splits(byte_level, text),

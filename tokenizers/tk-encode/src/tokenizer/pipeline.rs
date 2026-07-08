@@ -130,9 +130,7 @@ impl TryFrom<PreTokenizerWrapper> for PipelinePreTokenizer {
             }
             PreTokenizerWrapper::Sequence(p) => Ok(PipelinePreTokenizer::Sequence(p.try_into()?)),
             other => {
-                Err(
-                    format!("PipelineTokenizer does not support PreTokenizer: {other:?}").into(),
-                )
+                Err(format!("PipelineTokenizer does not support PreTokenizer: {other:?}").into())
             }
         }
     }
