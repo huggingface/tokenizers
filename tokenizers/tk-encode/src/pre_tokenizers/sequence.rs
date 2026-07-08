@@ -1,4 +1,6 @@
-use crate::pipeline;
+use std::convert::{TryFrom, TryInto};
+
+use crate::pipeline::{self, PipelinePreTokenizer};
 use crate::pre_tokenizers::PreTokenizerWrapper;
 use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result};
 use crate::utils::macro_rules_attribute;
@@ -46,7 +48,52 @@ impl PreTokenizer for Sequence {
     }
 }
 
-impl pipeline::PreTokenizer for Sequence {
+#[derive(Clone, Debug, PartialEq)]
+pub struct PipelineSequence {
+    pre_tokenizers: Vec<PipelinePreTokenizer>,
+}
+
+impl PipelineSequence {
+    pub fn new(pre_tokenizers: Vec<PipelinePreTokenizer>) -> Self {
+        Self { pre_tokenizers }
+    }
+}
+
+impl AsRef<[PipelinePreTokenizer]> for PipelineSequence {
+    fn as_ref(&self) -> &[PipelinePreTokenizer] {
+        &self.pre_tokenizers
+    }
+}
+
+impl AsMut<[PipelinePreTokenizer]> for PipelineSequence {
+    fn as_mut(&mut self) -> &mut [PipelinePreTokenizer] {
+        &mut self.pre_tokenizers
+    }
+}
+
+impl IntoIterator for PipelineSequence {
+    type Item = PipelinePreTokenizer;
+    type IntoIter = std::vec::IntoIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.pre_tokenizers.into_iter()
+    }
+}
+
+impl TryFrom<Sequence> for PipelineSequence {
+    type Error = crate::Error;
+    fn try_from(value: Sequence) -> Result<Self> {
+        Ok(Self {
+            pre_tokenizers: value
+                .pretokenizers
+                .into_iter()
+                .map(TryInto::try_into)
+                .collect::<Result<Vec<_>>>()?,
+        })
+    }
+}
+
+impl pipeline::PreTokenizer for PipelineSequence {
     /// Runs each child in turn, where every child subdivides the spans produced
     /// so far. A child sees only the text of a span (`&text[span]`) and returns
     /// offsets relative to it, which we rebase to absolute mirroring how the
@@ -65,7 +112,7 @@ impl pipeline::PreTokenizer for Sequence {
         });
         let mut next: Vec<pipeline::Split> = Vec::with_capacity(cap);
 
-        for child in &self.pretokenizers {
+        for child in &self.pre_tokenizers {
             next.clear();
             for span in &current {
                 let base = span.start;
@@ -98,7 +145,7 @@ mod tests {
     use crate::{OffsetReferential, OffsetType};
 
     /// Run the pipeline path and return `(piece, (start, end))` for each split.
-    fn pipeline_pretokenize(seq: &Sequence, text: &str) -> Vec<(String, (usize, usize))> {
+    fn pipeline_pretokenize(seq: &PipelineSequence, text: &str) -> Vec<(String, (usize, usize))> {
         let mut out = Vec::new();
         crate::pipeline::PreTokenizer::pre_tokenize(seq, text, &mut out).unwrap();
         out.iter()
@@ -128,8 +175,12 @@ mod tests {
             PreTokenizerWrapper::WhitespaceSplit(WhitespaceSplit),
             PreTokenizerWrapper::Punctuation(Punctuation::default()),
         ]);
+        let pipe_seq = seq
+            .clone()
+            .try_into()
+            .expect("Failed to convert Sequence to PipelineSequence");
         assert_eq!(
-            pipeline_pretokenize(&seq, "Hey friend!     How are you?!?"),
+            pipeline_pretokenize(&pipe_seq, "Hey friend!     How are you?!?"),
             [
                 ("Hey", (0, 3)),
                 ("friend", (4, 10)),
@@ -179,9 +230,13 @@ mod tests {
         ];
         for (ci, cfg) in configs.into_iter().enumerate() {
             let seq = Sequence::new(cfg);
+            let pipe_seq = seq
+                .clone()
+                .try_into()
+                .expect("Failed to convert Sequence to PipelineSequence");
             for text in texts {
                 assert_eq!(
-                    pipeline_pretokenize(&seq, text),
+                    pipeline_pretokenize(&pipe_seq, text),
                     legacy_pretokenize(&seq, text),
                     "config #{ci} diverged on {text:?}",
                 );
@@ -195,18 +250,94 @@ mod tests {
             PreTokenizerWrapper::WhitespaceSplit(WhitespaceSplit),
             PreTokenizerWrapper::Punctuation(Punctuation::default()),
         ]);
-        assert!(pipeline_pretokenize(&seq, "").is_empty());
+        let pipe_seq = seq
+            .clone()
+            .try_into()
+            .expect("Failed to convert Sequence to PipelineSequence");
+
+        assert!(pipeline_pretokenize(&pipe_seq, "").is_empty());
+    }
+
+    #[test]
+    fn pipeline_matches_legacy_oracle_byte_level() {
+        // The Llama-3 / DeepSeek archetype: Sequence[Split(regex), ByteLevel(use_regex=false)].
+        // Pipeline ranges must match the legacy oracle's Original-referential offsets, and the
+        // byte-level transform of each range must match the legacy split string.
+        use crate::pre_tokenizers::byte_level::GPT2_REGEX_STR;
+        use crate::pre_tokenizers::split::{Split, SplitPattern};
+        use crate::utils::byte_level::BYTES_CHAR_LOOKUP;
+        use crate::SplitDelimiterBehavior;
+
+        let seq = Sequence::new(vec![
+            PreTokenizerWrapper::Split(
+                Split::new(
+                    SplitPattern::Regex(GPT2_REGEX_STR.to_owned()),
+                    SplitDelimiterBehavior::Isolated,
+                    false,
+                )
+                .unwrap(),
+            ),
+            PreTokenizerWrapper::ByteLevel(ByteLevel::new(false, true, false)),
+        ]);
+        let pipe_seq: PipelineSequence = seq
+            .clone()
+            .try_into()
+            .expect("Failed to convert Sequence to PipelineSequence");
+        for text in [
+            "Hello there\nHello there",
+            "中文 text 123, mixed! 🤗",
+            "I'm sure it's fine   ",
+        ] {
+            let mut out = Vec::new();
+            crate::pipeline::PreTokenizer::pre_tokenize(&pipe_seq, text, &mut out).unwrap();
+            let pipeline: Vec<(String, (usize, usize))> = out
+                .iter()
+                .map(|s| {
+                    let transformed = text[s.range()]
+                        .bytes()
+                        .map(|b| BYTES_CHAR_LOOKUP[b as usize])
+                        .collect();
+                    (transformed, (s.start as usize, s.end as usize))
+                })
+                .collect();
+            assert_eq!(
+                pipeline,
+                legacy_pretokenize(&seq, text),
+                "diverged on {text:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn deserialized_sequence_matches_legacy_oracle() {
+        // Real tokenizers are loaded via serde, not `Sequence::new` — the pipeline
+        // path must behave identically for a deserialized Sequence.
+        let seq: Sequence = serde_json::from_str(
+            r#"{"type":"Sequence","pretokenizers":[{"type":"WhitespaceSplit"}]}"#,
+        )
+        .unwrap();
+        let pipe_seq = seq
+            .clone()
+            .try_into()
+            .expect("Failed to convert Sequence to PipelineSequence");
+
+        let text = "Hey friend!     How are you?!?";
+        assert_eq!(
+            pipeline_pretokenize(&pipe_seq, text),
+            legacy_pretokenize(&seq, text),
+        );
     }
 
     #[test]
     fn pipeline_unsupported_child_errors() {
-        // A byte-rewriting child has no range-based form → the whole Sequence errors.
+        // Metaspace has no range-based form. Constructing the Sequence must still work
+        // (the legacy path supports it) — only the pipeline conversion should fail.
+        use std::convert::TryFrom;
         let seq = Sequence::new(vec![
             PreTokenizerWrapper::WhitespaceSplit(WhitespaceSplit),
-            PreTokenizerWrapper::ByteLevel(ByteLevel::default()),
+            PreTokenizerWrapper::Metaspace(crate::pre_tokenizers::metaspace::Metaspace::default()),
         ]);
-        let mut out = Vec::new();
-        assert!(crate::pipeline::PreTokenizer::pre_tokenize(&seq, "hi there", &mut out).is_err());
+        assert!(PipelinePreTokenizer::try_from(PreTokenizerWrapper::Sequence(seq)).is_err());
     }
 
     #[test]
