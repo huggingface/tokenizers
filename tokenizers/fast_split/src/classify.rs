@@ -94,8 +94,8 @@ pub trait TagScheme {
     /// truth: every SIMD table is built from this, and it's the tail/astral fallback.
     fn classify_char(text: &[u8], i: usize) -> u8;
 
-    /// This scheme's classify tables, built once (lazily) from `classify_char`. Each scheme owns its
-    /// `OnceLock<Tables>` (a `static` can't be generic over `S`).
+    /// This scheme's classify tables — a `const` set baked at compile time by `build.rs` (the
+    /// `bitmap_gen` generator); read by both the SIMD kernel and the scalar reader, never built at runtime.
     fn tables() -> &'static crate::simd_classify::Tables;
 }
 

@@ -7,7 +7,7 @@
 //! optimization for the RunSplit family (class-change → movemask → bit-iterate).
 #![allow(dead_code)] // skeleton
 
-use crate::classify::{Atoms, classify, mask};
+use crate::classify::{Atoms, classify, in_mask, mask};
 
 /// A token span: byte offsets `[start, end)` into the input.
 /// TODO:i think we could use u16 for one of them if we stored start, offset5
@@ -38,8 +38,80 @@ pub fn fsm_split<const DELIM: u16, const BEHAVIOR: u8>(
     tags: &[u8],
     out: &mut Vec<Span>,
 ) {
-    let _ = (text, tags, out);
-    todo!("match-stream = in_mask(tag, DELIM); emit per Behavior::from(BEHAVIOR); spec §4")
+    // find_matches over the tag stream (HF Pattern for a char-fn): each matching char is its OWN
+    // match; non-matching chars group into maximal runs. `segs` = (start, end, is_match), alternating.
+    let n = text.len();
+    let mut segs: Vec<(u32, u32, bool)> = Vec::new();
+    let mut run_start = 0usize;
+    let mut i = 0usize;
+    while i < n {
+        let s = i;
+        i += 1;
+        while i < n && text[i] & 0xC0 == 0x80 {
+            i += 1; // consume continuation bytes → char is [s, i)
+        }
+        if in_mask(tags[s], DELIM) {
+            if run_start != s {
+                segs.push((run_start as u32, s as u32, false));
+            }
+            segs.push((s as u32, i as u32, true));
+            run_start = i;
+        }
+    }
+    if run_start != n {
+        segs.push((run_start as u32, n as u32, false));
+    }
+
+    // Place / drop the match segments per SplitDelimiterBehavior (tokenizer::normalizer::split).
+    match BEHAVIOR {
+        b if b == Behavior::Isolated as u8 => {
+            for &(s, e, _) in &segs {
+                out.push((s, e));
+            }
+        }
+        b if b == Behavior::Removed as u8 => {
+            for &(s, e, m) in &segs {
+                if !m {
+                    out.push((s, e));
+                }
+            }
+        }
+        b if b == Behavior::Contiguous as u8 => {
+            let mut prev_match = false;
+            for &(s, e, m) in &segs {
+                if m == prev_match && !out.is_empty() {
+                    out.last_mut().unwrap().1 = e; // merge same-kind neighbours
+                } else {
+                    out.push((s, e));
+                }
+                prev_match = m;
+            }
+        }
+        b if b == Behavior::MergedWithPrevious as u8 => {
+            let mut prev_match = false;
+            for &(s, e, m) in &segs {
+                if m && !prev_match && !out.is_empty() {
+                    out.last_mut().unwrap().1 = e; // delimiter joins the previous piece
+                } else {
+                    out.push((s, e));
+                }
+                prev_match = m;
+            }
+        }
+        _ /* MergedWithNext */ => {
+            let base = out.len();
+            let mut prev_match = false;
+            for &(s, e, m) in segs.iter().rev() {
+                if m && !prev_match && out.len() > base {
+                    out.last_mut().unwrap().0 = s; // delimiter joins the next piece
+                } else {
+                    out.push((s, e));
+                }
+                prev_match = m;
+            }
+            out[base..].reverse();
+        }
+    }
 }
 
 /// Cut at *every* class change; drop `DROP`-class runs, isolate `ISOLATE`-class per char. Keeps more
@@ -136,5 +208,38 @@ impl Cl100k {
     pub fn pre_tokenize(&self, text: &[u8], tags: &mut [u8], out: &mut Vec<Span>) {
         classify::<Atoms>(text, tags);
         fsm_cl100k(text, tags, out);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn spans<const D: u16, const B: u8>(s: &str) -> Vec<Span> {
+        let mut tags = vec![0u8; s.len()];
+        classify::<Atoms>(s.as_bytes(), &mut tags);
+        let mut out = Vec::new();
+        fsm_split::<D, B>(s.as_bytes(), &tags, &mut out);
+        out
+    }
+
+    #[test]
+    fn split_behaviors() {
+        // WhitespaceSplit — drop whitespace, keep the runs around it: "ab," | "cd!"
+        assert_eq!(spans::<{ mask::WS }, { Behavior::Removed as u8 }>("ab, cd!"), vec![(0, 3), (4, 7)]);
+        // Punctuation — isolate each punct char: "ab" | "," | " cd" | "!"
+        assert_eq!(
+            spans::<{ mask::PUNCT }, { Behavior::Isolated as u8 }>("ab, cd!"),
+            vec![(0, 2), (2, 3), (3, 6), (6, 7)]
+        );
+        // Digits (contiguous) — group the digit run: "a" | "12" | "b" | "3"
+        assert_eq!(
+            spans::<{ mask::NUMERIC }, { Behavior::Contiguous as u8 }>("a12b3"),
+            vec![(0, 1), (1, 3), (3, 4), (4, 5)]
+        );
+        // MergedWithPrevious — the space joins the previous piece: "a " | "b"
+        assert_eq!(spans::<{ mask::WS }, { Behavior::MergedWithPrevious as u8 }>("a b"), vec![(0, 2), (2, 3)]);
+        // MergedWithNext — the space joins the next piece: "a" | " b"
+        assert_eq!(spans::<{ mask::WS }, { Behavior::MergedWithNext as u8 }>("a b"), vec![(0, 1), (1, 3)]);
     }
 }
