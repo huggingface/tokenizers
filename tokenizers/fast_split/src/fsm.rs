@@ -241,8 +241,8 @@ pub fn fsm_cl100k(text: &[u8], tags: &[u8], out: &mut Vec<Span>) {
 }
 
 /// Same, with SIMD (NEON) run-ends (`run_end_simd`) for the letter / symbol / whitespace runs — wins
-/// on run-heavy text. Byte-identical output to `fsm_cl100k`.
-#[cfg(target_arch = "aarch64")]
+/// on run-heavy text. Byte-identical output to `fsm_cl100k`. On non-aarch64 the run-end falls back to
+/// scalar (so this always exists; no `cfg` at call sites).
 pub fn fsm_cl100k_simd(text: &[u8], tags: &[u8], out: &mut Vec<Span>) {
     cl100k::<true>(text, tags, out)
 }
