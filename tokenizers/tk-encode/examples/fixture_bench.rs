@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use serde_json::{json, Value};
-use tk_encode::pipeline::{PipelineTokenizer, StageNanos};
+use tk_encode::pipeline::PipelineTokenizer;
 use tk_encode::{ModelWrapper, Tokenizer};
 
 const DATA_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../data");
@@ -63,18 +63,28 @@ fn time_pass(encode: &dyn Fn(&str) -> usize, chunks: &[String]) -> f64 {
     start.elapsed().as_secs_f64()
 }
 
-/// One instrumented pass over `chunks`, accumulating per-stage nanoseconds via the
-/// pipeline's staged-timing path (normalize / pre-tokenize / model, plus the whole-encode
-/// total). This is the "measure the time taken adding staged" decomposition — no external
-/// profiler, just one timed region per stage.
-fn stage_pass(pipeline: &PipelineTokenizer, chunks: &[String]) -> StageNanos {
-    let mut t = StageNanos::default();
-    let mut n = 0usize;
+/// Median wall-time (seconds) of one pass over `chunks` through `PipelineTokenizer::
+/// encode_upto::<STAGE>`. `STAGE` is a const generic, so each level is a branchless
+/// specialization with the later stages compiled out — timing successive levels and
+/// subtracting gives each stage's marginal cost (the ablation ladder), no profiler
+/// and no per-segment instrumentation.
+fn stage_secs<const STAGE: u8>(pipeline: &PipelineTokenizer, chunks: &[String]) -> f64 {
+    let mut warm = 0usize;
     for chunk in chunks {
-        n += pipeline.encode_timed(chunk, &mut t).unwrap();
+        warm += pipeline.encode_upto::<STAGE>(chunk);
     }
-    black_box(n);
-    t
+    black_box(warm);
+    let mut samples = Vec::with_capacity(REPS);
+    for _ in 0..REPS {
+        let start = Instant::now();
+        let mut acc = 0usize;
+        for chunk in chunks {
+            acc += pipeline.encode_upto::<STAGE>(chunk);
+        }
+        black_box(acc);
+        samples.push(start.elapsed().as_secs_f64());
+    }
+    median_secs(samples)
 }
 
 fn fixture_files() -> Vec<(String, PathBuf)> {
@@ -176,21 +186,22 @@ fn bench_model(
         let (legacy_mbps, pipeline_mbps) = (bytes as f64 / l / 1e6, bytes as f64 / p / 1e6);
         eprintln!("  {name}: legacy {legacy_mbps:.1} MB/s, pipeline {pipeline_mbps:.1} MB/s");
 
-        // Staged decomposition of the pipeline's own encode: where does its time go?
-        // Take the median-by-total instrumented run, reported as ns/byte per stage.
-        stage_pass(pipeline, &chunks); // warm-up
-        let mut staged: Vec<StageNanos> =
-            (0..REPS).map(|_| stage_pass(pipeline, &chunks)).collect();
-        staged.sort_by_key(|s| s.total);
-        let st = staged[staged.len() / 2];
-        let other = st.total.saturating_sub(st.normalize + st.pre_tokenize + st.model);
-        let nspb = |ns: u128| ns as f64 / bytes as f64;
+        // Staged decomposition of the pipeline's own encode via the ablation ladder:
+        // time each cumulative stage level, subtract to isolate each stage's cost.
+        // 0=frame (special-scan + glue), 1=+normalize, 2=+split, 3=+model (full encode).
+        let t_frame = stage_secs::<0>(pipeline, &chunks);
+        let t_norm = stage_secs::<1>(pipeline, &chunks);
+        let t_split = stage_secs::<2>(pipeline, &chunks);
+        let t_model = stage_secs::<3>(pipeline, &chunks);
+        let nspb = |secs: f64| secs * 1e9 / bytes as f64;
+        let (ns_norm, ns_split, ns_model, ns_other) = (
+            nspb((t_norm - t_frame).max(0.0)),
+            nspb((t_split - t_norm).max(0.0)),
+            nspb((t_model - t_split).max(0.0)),
+            nspb(t_frame.max(0.0)),
+        );
         eprintln!(
-            "    stages ns/byte: norm {:.2}, split {:.2}, model {:.2}, other {:.2}",
-            nspb(st.normalize),
-            nspb(st.pre_tokenize),
-            nspb(st.model),
-            nspb(other),
+            "    stages ns/byte: norm {ns_norm:.2}, split {ns_split:.2}, model {ns_model:.2}, other {ns_other:.2}"
         );
 
         rows.push(json!({
@@ -204,11 +215,11 @@ fn bench_model(
             "ids_match": ids_match,
             // pipeline-only stage decomposition (ns/byte); stages + other ≈ total.
             "stage_ns_per_byte": {
-                "normalize": nspb(st.normalize),
-                "pre_tokenize": nspb(st.pre_tokenize),
-                "model": nspb(st.model),
-                "other": nspb(other),
-                "total": nspb(st.total),
+                "normalize": ns_norm,
+                "pre_tokenize": ns_split,
+                "model": ns_model,
+                "other": ns_other,
+                "total": nspb(t_model),
             },
         }));
     }

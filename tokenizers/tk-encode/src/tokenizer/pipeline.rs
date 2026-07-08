@@ -1,6 +1,5 @@
 use std::convert::TryInto;
 use std::ops::Range;
-use std::time::Instant;
 use std::{borrow::Cow, convert::TryFrom};
 
 use crate::added_vocabulary::bucket_added_vocabulary::{
@@ -222,25 +221,6 @@ pub struct PipelineTokenizer {
     _post_processor: Option<PostProcessorWrapper>,
 }
 
-/// Per-stage wall-time (nanoseconds), accumulated by [`PipelineTokenizer::encode_timed`].
-///
-/// Lets a caller decompose encode cost across the pipeline stages without an external
-/// profiler: the fields sum (plus `total`'s slack for special-token scanning / glue) to
-/// the whole-encode time, so `stage / total` is that stage's share. Used by
-/// `examples/fixture_bench.rs`; the hot [`PipelineTokenizer::encode`] path is untouched.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct StageNanos {
-    /// Normalizer stage (`NormalizerWrapper::normalize`).
-    pub normalize: u128,
-    /// Pre-tokenizer / split stage (`PipelinePreTokenizer::pre_tokenize`).
-    pub pre_tokenize: u128,
-    /// Model stage (`PipelineModel::tokenize_bytes`, i.e. merges / vocab lookup).
-    pub model: u128,
-    /// Whole-encode wall time; `total - (normalize + pre_tokenize + model)` is the
-    /// untimed remainder (special-token scanning, iteration, output assembly).
-    pub total: u128,
-}
-
 impl TryFrom<&Tokenizer> for PipelineTokenizer {
     type Error = super::Error;
 
@@ -302,6 +282,15 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
 }
 
 impl PipelineTokenizer {
+    /// Stage gates for [`encode_upto`](Self::encode_upto), in execution order. Each
+    /// level runs every stage up to and including itself; `STAGE_MODEL` is a full
+    /// encode. `STAGE_FRAME` is the special-token scan + iteration only (the "other"
+    /// slice in the decomposition).
+    pub const STAGE_FRAME: u8 = 0;
+    pub const STAGE_NORMALIZE: u8 = 1;
+    pub const STAGE_SPLIT: u8 = 2;
+    pub const STAGE_MODEL: u8 = 3;
+
     /// Encode `input` into token ids.
     ///
     /// Special tokens are matched in two passes:
@@ -359,63 +348,65 @@ impl PipelineTokenizer {
         Ok(output)
     }
 
-    /// Instrumented sibling of [`encode`](Self::encode): runs the exact same stages but
-    /// wraps each in an [`Instant`] and accumulates the elapsed time into `times`, then
-    /// returns the token count. This is the "staged timing" path used by the benchmark —
-    /// it decomposes encode cost per stage by *adding* one timed region per stage rather
-    /// than running an external profiler.
+    /// Run [`encode`](Self::encode) up to and including stage `STAGE`, returning a
+    /// checksum that touches each executed stage's output. This is the benchmark's
+    /// staged-timing path: `STAGE` is a **const generic**, so `if STAGE >= …` folds at
+    /// compile time and every specialization is branchless — the disabled stages are
+    /// compiled out entirely, no runtime gate and no `Instant` in the loop. Time
+    /// successive levels and subtract to get each stage's marginal cost (the ablation
+    /// ladder), e.g. `model = t(MODEL) − t(SPLIT)`.
     ///
-    /// Not on the hot path (the extra `Instant`s cost a few ns per segment); call
-    /// [`encode`](Self::encode) for real work.
-    pub fn encode_timed(&self, input: &str, times: &mut StageNanos) -> Result<usize> {
-        let whole = Instant::now();
+    /// The returned checksum reads every stage's result (`normalized.len()`,
+    /// `pre_tokens.len()`, `output.len()`) so a disabled downstream stage can't let the
+    /// optimizer elide upstream work; `black_box` it in the timing loop. Not for real
+    /// encoding — use [`encode`](Self::encode) for that.
+    pub fn encode_upto<const STAGE: u8>(&self, input: &str) -> usize {
+        let mut acc: usize = 0;
         let mut output: Vec<PipelineToken> = vec![];
         let mut pre_tokens: Vec<Split> = vec![];
 
         for segment in SpecialSegmentIterator::new(input, &self.added_vocabulary, false) {
             match segment {
-                Segment::SpecialToken(token) => {
-                    output.push(PipelineToken { id: token });
-                }
+                Segment::SpecialToken(_) => acc += 1,
                 Segment::Text(chunk) => {
-                    let norm_start = Instant::now();
-                    let normalized: &str = if let Some(normalizer) = &self.normalizer {
-                        &normalizer.normalize(chunk)?
+                    let normalized: Cow<str> = if STAGE >= Self::STAGE_NORMALIZE {
+                        match &self.normalizer {
+                            Some(n) => n.normalize(chunk).unwrap_or(Cow::Borrowed(chunk)),
+                            None => Cow::Borrowed(chunk),
+                        }
                     } else {
-                        chunk
+                        Cow::Borrowed(chunk)
                     };
-                    times.normalize += norm_start.elapsed().as_nanos();
+                    acc += normalized.len();
 
                     for segment in
-                        SpecialSegmentIterator::new(normalized, &self.added_vocabulary, true)
+                        SpecialSegmentIterator::new(&normalized, &self.added_vocabulary, true)
                     {
                         match segment {
-                            Segment::SpecialToken(token) => {
-                                output.push(PipelineToken { id: token });
-                            }
+                            Segment::SpecialToken(_) => acc += 1,
                             Segment::Text(normalized_chunk) => {
-                                let pre_start = Instant::now();
-                                pre_tokens.clear();
-                                self.pre_tokenizer
-                                    .pre_tokenize(normalized_chunk, &mut pre_tokens)?;
-                                times.pre_tokenize += pre_start.elapsed().as_nanos();
-
-                                let model_start = Instant::now();
-                                for pre_token in pre_tokens.iter() {
-                                    self.model.tokenize_bytes(
-                                        normalized_chunk[pre_token.range()].as_bytes(),
-                                        &mut output,
-                                    )?;
+                                if STAGE >= Self::STAGE_SPLIT {
+                                    pre_tokens.clear();
+                                    let _ = self
+                                        .pre_tokenizer
+                                        .pre_tokenize(normalized_chunk, &mut pre_tokens);
+                                    acc += pre_tokens.len();
+                                    if STAGE >= Self::STAGE_MODEL {
+                                        for pre_token in pre_tokens.iter() {
+                                            let _ = self.model.tokenize_bytes(
+                                                normalized_chunk[pre_token.range()].as_bytes(),
+                                                &mut output,
+                                            );
+                                        }
+                                    }
                                 }
-                                times.model += model_start.elapsed().as_nanos();
                             }
                         }
                     }
                 }
             };
         }
-        times.total += whole.elapsed().as_nanos();
-        Ok(output.len())
+        acc + output.len()
     }
 }
 
