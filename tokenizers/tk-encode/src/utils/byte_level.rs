@@ -1,6 +1,6 @@
-use std::sync::LazyLock;
-
+use crate::vocab_store::VocabStore;
 use ahash::AHashMap;
+use std::sync::LazyLock;
 
 /// Maps each byte to its GPT-2 byte-level unicode character, indexed by the byte value.
 ///
@@ -74,6 +74,22 @@ fn make_byte_char_lookup() -> [char; 256] {
     }
 
     lookup
+}
+
+fn reverse_lookup(c: char) -> Vec<u8> {
+    CHAR_BYTES_LOOKUP
+        .get(&c)
+        .map_or_else(|| c.to_string().into_bytes(), |b| vec![*b])
+}
+
+pub(crate) fn transform_vocab(vocab: VocabStore) -> VocabStore {
+    VocabStore::build(
+        vocab
+            .content()
+            .into_iter()
+            .map(|(string, token_id)| (string.chars().flat_map(reverse_lookup).collect(), token_id))
+            .collect(),
+    )
 }
 
 #[cfg(test)]
