@@ -137,6 +137,7 @@ impl pipeline::PreTokenizer for PipelineSequence {
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
     use crate::pre_tokenizers::byte_level::ByteLevel;
     use crate::pre_tokenizers::digits::Digits;
