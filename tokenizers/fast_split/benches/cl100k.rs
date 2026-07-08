@@ -63,8 +63,8 @@ fn main() {
     let manifest = env!("CARGO_MANIFEST_DIR");
 
     println!(
-        "{:<10} {:>8} {:>4}  {:>8} {:>8} | {:>8} {:>8} | {:>8} {:>8} | {:>7} {:>7}",
-        "lang", "bytes", "b/ch", "clsSIMD", "clsScal", "fsmScal", "fsmSIMD", "onig", "fancy", "vsOnig", "vsFncy"
+        "{:<10} {:>7} {:>4} {:>5}  {:>8} {:>8} | {:>8} {:>8} | {:>8} {:>8} | {:>7} {:>7}",
+        "lang", "bytes", "b/ch", "b/tok", "clsSIMD", "clsScal", "fsmScal", "fsmSIMD", "onig", "fancy", "vsOnig", "vsFncy"
     );
 
     for (label, rel) in CORPORA {
@@ -75,8 +75,10 @@ fn main() {
                 continue;
             }
         };
-        // cap to ~1 MB on a char boundary: big enough to defeat L1, keeps the bench quick.
-        let mut c = raw.len().min(1_000_000);
+        // UNIFORM cap (char boundary): every language same byte size → equal cache behaviour, so
+        // per-byte compute is comparable across scripts (was unfair: English 1 MB vs Chinese 21 KB).
+        // 180 KB > L1, and all corpora have ≥180 KB of real text.
+        let mut c = raw.len().min(180_000);
         while c > 0 && !raw.is_char_boundary(c) {
             c -= 1;
         }
@@ -93,6 +95,7 @@ fn main() {
         let mut sc = Vec::new();
         fsm_cl100k(text, &tags, &mut sc);
         let ok = if sc == onig_spans { "✓" } else { "✗" };
+        let btok = n as f64 / sc.len().max(1) as f64; // bytes per token = density (drives per-token cost)
 
         let mut buf = Vec::with_capacity(sc.len());
         let cls_simd = ns_per_byte(n, iters, || {
@@ -119,7 +122,7 @@ fn main() {
 
         let pipe = cls_simd + fsm_simd; // SIMD classify + SIMD fsm — the full pipeline
         println!(
-            "{label:<10} {n:>8} {bpc:>4.1}  {cls_simd:>8.3} {cls_scal:>8.3} | {fsm_scal:>8.3} {fsm_simd:>8.3} | {onig_ns:>8.2} {fancy_ns:>8.2} | {:>6.1}x {:>6.1}x {ok}",
+            "{label:<10} {n:>7} {bpc:>4.1} {btok:>5.1}  {cls_simd:>8.3} {cls_scal:>8.3} | {fsm_scal:>8.3} {fsm_simd:>8.3} | {onig_ns:>8.2} {fancy_ns:>8.2} | {:>6.1}x {:>6.1}x {ok}",
             onig_ns / pipe,
             fancy_ns / pipe
         );

@@ -13,7 +13,8 @@ use crate::classify::{char_len, classify, in_mask, mask, Atom, Atoms};
 /// treating continuation bytes as in-run — so NO `char_len` branch per char and no `text` access. This
 /// is THE hot inner loop of the dense (English/code) FSM; the earlier `char_len`-per-char version was
 /// ~2× slower there (English fsm 2.3 → ~1.1 ns/byte). Keep this a tight, inlinable byte scan.
-#[inline]
+/// `inline(always)`: it's called once per token (~200K/MB on English) — a real call here doubles fsm cost.
+#[inline(always)]
 fn run_end(tags: &[u8], mut i: usize, end: usize, m: u16) -> usize {
     while i < end && (in_mask(tags[i], m) || tags[i] == Atom::Cont as u8) {
         i += 1;
@@ -44,15 +45,25 @@ fn inmask_tbl(m: u16) -> [u8; 16] {
 #[allow(unsafe_op_in_unsafe_fn)]
 unsafe fn run_end_simd(tags: &[u8], mut i: usize, end: usize, m: u16, tbl16: &[u8; 16]) -> usize {
     use core::arch::aarch64::*;
+    // Phase 1 — scalar for the first ≤16 bytes. Short runs (the dense English/code case) end here with
+    // ZERO vector ops, so no SIMD tax; only a run that survives all 16 is "long" enough to vectorize.
+    let lim = (i + 16).min(end);
+    while i < lim && (in_mask(tags[i], m) || tags[i] == Atom::Cont as u8) {
+        i += 1;
+    }
+    if i < lim {
+        return i; // run ended within 16 → done
+    }
+    // Phase 2 — long run: skip 16 in-run tags at a time (vqtbl1 membership, vminvq == 0xFF = all member).
     let t = vld1q_u8(tbl16.as_ptr());
     while i + 16 <= end {
-        let chunk = vld1q_u8(tags.as_ptr().add(i));
-        if vminvq_u8(vqtbl1q_u8(t, chunk)) == 0xFF {
+        if vminvq_u8(vqtbl1q_u8(t, vld1q_u8(tags.as_ptr().add(i)))) == 0xFF {
             i += 16;
         } else {
             break;
         }
     }
+    // Phase 3 — scalar tail.
     while i < end && (in_mask(tags[i], m) || tags[i] == Atom::Cont as u8) {
         i += 1;
     }
@@ -61,7 +72,7 @@ unsafe fn run_end_simd(tags: &[u8], mut i: usize, end: usize, m: u16, tbl16: &[u
 
 /// Pick SIMD or scalar run-end at monomorphization time. `lut` is the precomputed membership LUT for
 /// `m`; only the SIMD path reads it (the scalar path ignores it).
-#[inline]
+#[inline(always)]
 fn run_end_sel<const SIMD: bool>(
     tags: &[u8],
     i: usize,
