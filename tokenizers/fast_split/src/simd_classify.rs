@@ -125,9 +125,9 @@ impl Tables {
 }
 
 // ================================================================================================
-// Reference SIMD classify body (Atom scheme). Every width = upfront min/max dispatch → one table;
-// the fallback loops the SAME tables over the min..max range (single-script chunk ⇒ 1 iteration).
-// `tag_scalar` (the scalar `classify_char`) is used ONLY for the <32-byte tail and astral (4-byte).
+// The smallest load we can do in neon is vld1q_u8, which handles 16bytes.
+// We define primitives to be able to index into 4 x 16 byte vectors.
+// The vqtbl4q_u8 allows for a table lookup
 // ================================================================================================
 #[cfg(target_arch = "aarch64")]
 #[inline]
@@ -137,14 +137,9 @@ unsafe fn tbl64(
     idx: core::arch::aarch64::uint8x16_t,
 ) -> core::arch::aarch64::uint8x16_t {
     use core::arch::aarch64::*;
-    let p = t.as_ptr();
-    let r = uint8x16x4_t(
-        vld1q_u8(p),
-        vld1q_u8(p.add(16)),
-        vld1q_u8(p.add(32)),
-        vld1q_u8(p.add(48)),
-    );
-    vqtbl4q_u8(r, idx)
+    // vld1q_u8_x4 = LD1 {v0.16b-v3.16b}: 64 CONTIGUOUS bytes into 4 lanes — the layout vqtbl4 wants.
+    // (NOT vld4q_u8: that de-interleaves stride-4 into planes, which would scramble the table.)
+    vqtbl4q_u8(vld1q_u8_x4(t.as_ptr()), idx)
 }
 #[cfg(target_arch = "aarch64")]
 #[inline]
@@ -176,6 +171,53 @@ unsafe fn ascii_tbl(
     use core::arch::aarch64::*;
     vorrq_u8(tbl64(lo, v), tbl64(hi, vsubq_u8(v, vdupq_n_u8(64))))
 }
+
+// ── lane predicates (each returns an all-ones / all-zeros mask per lane) — the readable range compares ──
+/// Lanes equal to `byte`.
+#[cfg(target_arch = "aarch64")]
+#[inline(always)]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn eq(bytes: core::arch::aarch64::uint8x16_t, byte: u8) -> core::arch::aarch64::uint8x16_t {
+    use core::arch::aarch64::*;
+    vceqq_u8(bytes, vdupq_n_u8(byte))
+}
+/// Lanes `>= lo` (unsigned).
+#[cfg(target_arch = "aarch64")]
+#[inline(always)]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn ge(bytes: core::arch::aarch64::uint8x16_t, lo: u8) -> core::arch::aarch64::uint8x16_t {
+    use core::arch::aarch64::*;
+    vcgeq_u8(bytes, vdupq_n_u8(lo))
+}
+/// Lanes `<= hi` (unsigned).
+#[cfg(target_arch = "aarch64")]
+#[inline(always)]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn le(bytes: core::arch::aarch64::uint8x16_t, hi: u8) -> core::arch::aarch64::uint8x16_t {
+    use core::arch::aarch64::*;
+    vcleq_u8(bytes, vdupq_n_u8(hi))
+}
+/// Lanes with `lo <= byte <= hi` (unsigned, inclusive).
+#[cfg(target_arch = "aarch64")]
+#[inline(always)]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn in_range(
+    bytes: core::arch::aarch64::uint8x16_t,
+    lo: u8,
+    hi: u8,
+) -> core::arch::aarch64::uint8x16_t {
+    use core::arch::aarch64::*;
+    vandq_u8(ge(bytes, lo), le(bytes, hi))
+}
+/// `true` iff any lane is set (mask is all-ones / all-zeros per lane).
+#[cfg(target_arch = "aarch64")]
+#[inline(always)]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn any(mask: core::arch::aarch64::uint8x16_t) -> bool {
+    use core::arch::aarch64::*;
+    vmaxvq_u8(mask) != 0
+}
+
 #[inline]
 fn decode(t: &[u8], i: usize) -> u32 {
     let b = t[i] as u32;
@@ -195,163 +237,156 @@ fn decode(t: &[u8], i: usize) -> u32 {
 /// Whole-buffer NEON classify, generic over the scheme. Tables come from `S::tables()`; the scalar
 /// `S::classify_char` covers only the <32-byte tail and astral 4-byte codepoints. Byte-exact vs the
 /// scalar walk. `classify::<S>` dispatches here on aarch64 (NEON is baseline there).
+///
+/// Per lane, `b0`/`b1`/`b2` are the 1st/2nd/3rd bytes of the (potential) UTF-8 char starting there —
+/// i.e. the byte at the lane and the two after it (`vext` shifts the next chunk in).
 #[cfg(target_arch = "aarch64")]
 #[allow(unsafe_op_in_unsafe_fn, non_snake_case)]
 pub unsafe fn classify_neon<S: super::classify::TagScheme>(text: &[u8], tags: &mut [u8]) {
     use super::classify::char_len;
     use core::arch::aarch64::*;
     let (MB, CONT) = (S::MB, S::CONT);
-    let tb = S::tables();
+    let tables = S::tables();
 
     let n = text.len();
     let mut mb_seen = false;
     let mut i = 0;
     while i + 32 <= n {
-        let v = vld1q_u8(text.as_ptr().add(i));
+        let b0 = vld1q_u8(text.as_ptr().add(i));
 
         // ── ASCII fast path: whole chunk < 0x80 → one table, skip everything else ──
-        if vmaxvq_u8(v) < 0x80 {
+        if vmaxvq_u8(b0) < 0x80 {
             vst1q_u8(
                 tags.as_mut_ptr().add(i),
-                ascii_tbl(v, &tb.ascii_lo, &tb.ascii_hi),
+                ascii_tbl(b0, &tables.ascii_lo, &tables.ascii_hi),
             );
             i += 16;
             continue;
         }
 
-        let vn = vld1q_u8(text.as_ptr().add(i + 16));
-        let b2 = vextq_u8::<1>(v, vn); // each lane's next byte
-        let b3 = vextq_u8::<2>(v, vn); // each lane's next-next byte
-        let mut out = ascii_tbl(v, &tb.ascii_lo, &tb.ascii_hi); // base (ASCII lanes correct; MB overwritten)
-        let mut res = vdupq_n_u8(0); // lanes a multibyte handler has claimed
+        let next = vld1q_u8(text.as_ptr().add(i + 16));
+        let b1 = vextq_u8::<1>(b0, next); // byte at lane+1
+        let b2 = vextq_u8::<2>(b0, next); // byte at lane+2
+        let mut out = ascii_tbl(b0, &tables.ascii_lo, &tables.ascii_hi); // base (ASCII lanes correct; MB overwritten)
+        let mut resolved = vdupq_n_u8(0); // lanes a multibyte handler has claimed
 
         // ── 2-byte (C2..DF): loop the lead-GROUP range; single group ⇒ 1 iteration ──
-        let is2 = vceqq_u8(vandq_u8(v, vdupq_n_u8(0xE0)), vdupq_n_u8(0xC0));
-        if vmaxvq_u8(is2) != 0 {
-            let idxg = vorrq_u8(
-                vshlq_n_u8::<6>(vandq_u8(v, vdupq_n_u8(3))),
+        let is_lead2 = eq(vandq_u8(b0, vdupq_n_u8(0xE0)), 0xC0);
+        if any(is_lead2) {
+            let group_index = vorrq_u8(
+                vshlq_n_u8::<6>(vandq_u8(b0, vdupq_n_u8(3))),
+                vandq_u8(b1, vdupq_n_u8(0x3F)),
+            );
+            let min_lead = vminvq_u8(vbslq_u8(is_lead2, b0, vdupq_n_u8(0xFF)));
+            let max_lead = vmaxvq_u8(vbslq_u8(is_lead2, b0, vdupq_n_u8(0x00)));
+            let mut tags2 = vdupq_n_u8(MB);
+            let mut group = min_lead >> 2;
+            while group <= (max_lead >> 2) {
+                let this_group = vandq_u8(is_lead2, eq(vshrq_n_u8::<2>(b0), group));
+                if any(this_group) {
+                    let group_table = &tables.group_tables[(group & 7) as usize];
+                    tags2 = vbslq_u8(this_group, tbl256(group_table, group_index), tags2);
+                }
+                group += 1;
+            }
+            out = vbslq_u8(is_lead2, tags2, out);
+            resolved = is_lead2;
+        }
+
+        // ── CJK fast path (leads E3..ED = U+3000..U+DFFF) — ONLY when the scheme collapses all of CJK
+        //    to one tag (Atoms → Letter). Schemes where CJK spans several tags (Scripts: Han/Hangul/
+        //    Kana) set CJK_RANGE_TAG=None and skip this → the 3-byte tables below resolve E3..ED.
+        //    OPTIMISTIC bulk: flags only DEFINITELY-CJK lanes and leaves boundary/hole codepoints
+        //    unresolved for the exact 3-byte tables — never over-claims, so the result stays byte-exact.
+        if let Some(cjk_tag) = S::CJK_RANGE_TAG {
+            let in_cjk_leads = in_range(b0, 0xE3, 0xED);
+            if any(in_cjk_leads) {
+                // Han — U+4000..U+9FFF (CJK Unified Ideographs + the Ext-A tail), minus the one non-
+                // ideograph hole U+4DC0..U+4DFF (Yijing Hexagram Symbols), which encodes as E4 B7 xx.
+                let han = vbicq_u8(
+                    in_range(b0, 0xE4, 0xE9),
+                    vandq_u8(eq(b0, 0xE4), eq(b1, 0xB7)),
+                );
+
+                // Hangul Syllables (U+AC00..U+D7A3), split across leads EA..ED:
+                //   EB..EC        → U+B000..U+CFFF  (whole middle — every lane a syllable)
+                //   EA, b1 >= B0  → U+AC00..U+AFFF  (syllables begin at AC00; U+A000..ABFF below is excluded)
+                //   ED, b1 <= 9D  → U+D000..U+D77F  (syllables; the U+D780.. tail is left to the exact tables)
+                let hangul = vorrq_u8(
+                    vorrq_u8(
+                        in_range(b0, 0xEB, 0xEC),
+                        vandq_u8(eq(b0, 0xEA), ge(b1, 0xB0)),
+                    ),
+                    vandq_u8(eq(b0, 0xED), le(b1, 0x9D)),
+                );
+
+                // Kana — Hiragana + Katakana U+3040..U+30FF (lead E3, b1 in 81..83), minus the
+                // non-letter holes inside that block:
+                //   U+3040          reserved                 (E3 81 80)
+                //   U+3097..U+309C  unassigned + combining    (E3 82 97..9C)
+                //   U+30A0          double hyphen (Punct)      (E3 82 A0)
+                //   U+30FB          middle dot (Punct)         (E3 83 BB)
+                let hole_3040 = vandq_u8(eq(b1, 0x81), eq(b2, 0x80));
+                let hole_309x = vandq_u8(
+                    eq(b1, 0x82),
+                    vorrq_u8(in_range(b2, 0x97, 0x9C), eq(b2, 0xA0)),
+                );
+                let hole_30fb = vandq_u8(eq(b1, 0x83), eq(b2, 0xBB));
+                let kana = vbicq_u8(
+                    vandq_u8(eq(b0, 0xE3), in_range(b1, 0x81, 0x83)),
+                    vorrq_u8(vorrq_u8(hole_3040, hole_309x), hole_30fb),
+                );
+
+                let is_cjk_letter = vorrq_u8(vorrq_u8(han, hangul), kana);
+                out = vbslq_u8(is_cjk_letter, vdupq_n_u8(cjk_tag), out);
+                resolved = vorrq_u8(resolved, is_cjk_letter);
+            }
+        }
+
+        // ── 3-byte non-CJK: peel the EXACT distinct (lead, b1-pair) blocks present. Pick min (lead,
+        //    then min b1-pair) among unresolved lanes, resolve that whole 128-cp block, mask it out,
+        //    repeat. Iterations = distinct-block count (≤5-6/chunk), independent of how far apart the
+        //    blocks are → adversarial-proof, no box guard, and faster than the min..max range. ──
+        let is_lead3 = vbicq_u8(in_range(b0, 0xE0, 0xEF), resolved);
+        if any(is_lead3) {
+            // within-block index: block_index = ((b1&1)<<6) | (b2&0x3F);  pair = b1>>1 identifies the b1-pair
+            let block_index = vorrq_u8(
+                vshlq_n_u8::<6>(vandq_u8(b1, vdupq_n_u8(1))),
                 vandq_u8(b2, vdupq_n_u8(0x3F)),
             );
-            let minl = vminvq_u8(vbslq_u8(is2, v, vdupq_n_u8(0xFF)));
-            let maxl = vmaxvq_u8(vbslq_u8(is2, v, vdupq_n_u8(0x00)));
-            let mut c2 = vdupq_n_u8(MB);
-            let mut g = minl >> 2;
-            while g <= (maxl >> 2) {
-                let gg = vandq_u8(is2, vceqq_u8(vshrq_n_u8::<2>(v), vdupq_n_u8(g)));
-                if vmaxvq_u8(gg) != 0 {
-                    c2 = vbslq_u8(gg, tbl256(&tb.group_tables[(g & 7) as usize], idxg), c2);
-                }
-                g += 1;
-            }
-            out = vbslq_u8(is2, c2, out);
-            res = is2;
-        }
-
-        // ── CJK (E3..ED): lead-byte range shortcut — ONLY when the scheme maps all of CJK to one tag
-        //    (Atoms → Letter). Schemes where CJK spans several tags (Scripts: Han/Hangul/Kana) set
-        //    CJK_RANGE_TAG=None and skip this → the 3-byte tables below resolve E3..ED per (lead,b2-pair).
-        if let Some(cjk_tag) = S::CJK_RANGE_TAG {
-            let iscjk = vandq_u8(vcgeq_u8(v, vdupq_n_u8(0xE3)), vcleq_u8(v, vdupq_n_u8(0xED)));
-            if vmaxvq_u8(iscjk) != 0 {
-                let han = vbicq_u8(
-                    vandq_u8(vcgeq_u8(v, vdupq_n_u8(0xE4)), vcleq_u8(v, vdupq_n_u8(0xE9))),
-                    vandq_u8(
-                        vceqq_u8(v, vdupq_n_u8(0xE4)),
-                        vceqq_u8(b2, vdupq_n_u8(0xB7)),
-                    ),
-                );
-                let hg = vorrq_u8(
-                    vorrq_u8(
-                        vandq_u8(vcgeq_u8(v, vdupq_n_u8(0xEB)), vcleq_u8(v, vdupq_n_u8(0xEC))),
-                        vandq_u8(
-                            vceqq_u8(v, vdupq_n_u8(0xEA)),
-                            vcgeq_u8(b2, vdupq_n_u8(0xB0)),
-                        ),
-                    ),
-                    vandq_u8(
-                        vceqq_u8(v, vdupq_n_u8(0xED)),
-                        vcleq_u8(b2, vdupq_n_u8(0x9D)),
-                    ),
-                );
-                let e1 = vandq_u8(
-                    vceqq_u8(b2, vdupq_n_u8(0x81)),
-                    vceqq_u8(b3, vdupq_n_u8(0x80)),
-                );
-                let e2 = vandq_u8(
-                    vceqq_u8(b2, vdupq_n_u8(0x82)),
-                    vorrq_u8(
-                        vandq_u8(
-                            vcgeq_u8(b3, vdupq_n_u8(0x97)),
-                            vcleq_u8(b3, vdupq_n_u8(0x9C)),
-                        ),
-                        vceqq_u8(b3, vdupq_n_u8(0xA0)),
-                    ),
-                );
-                let e3 = vandq_u8(
-                    vceqq_u8(b2, vdupq_n_u8(0x83)),
-                    vceqq_u8(b3, vdupq_n_u8(0xBB)),
-                );
-                let kana = vbicq_u8(
-                    vandq_u8(
-                        vceqq_u8(v, vdupq_n_u8(0xE3)),
-                        vandq_u8(
-                            vcgeq_u8(b2, vdupq_n_u8(0x81)),
-                            vcleq_u8(b2, vdupq_n_u8(0x83)),
-                        ),
-                    ),
-                    vorrq_u8(vorrq_u8(e1, e2), e3),
-                );
-                let cjkl = vorrq_u8(vorrq_u8(han, hg), kana);
-                out = vbslq_u8(cjkl, vdupq_n_u8(cjk_tag), out);
-                res = vorrq_u8(res, cjkl);
-            }
-        }
-
-        // TODO: this is where i don't know what's happening anymore.
-        // ── 3-byte non-CJK: peel the EXACT distinct (lead, b2-pair) blocks present. ──
-        // Pick the min (lead, then min b2-pair) among unresolved lanes, resolve that whole block, mask
-        // it out, repeat. Iterations = distinct-block count (≤5-6 per chunk), independent of how far
-        // apart the blocks are → adversarial-proof, no box guard, and faster than the min..max range.
-        let is3 = vandq_u8(
-            vandq_u8(vcgeq_u8(v, vdupq_n_u8(0xE0)), vcleq_u8(v, vdupq_n_u8(0xEF))),
-            vmvnq_u8(res),
-        );
-        if vmaxvq_u8(is3) != 0 {
-            // within-block index: sel = ((b2&1)<<6) | (b3&0x3F);  vp = b2>>1 identifies the b2-pair
-            let sel = vorrq_u8(
-                vshlq_n_u8::<6>(vandq_u8(b2, vdupq_n_u8(1))),
-                vandq_u8(b3, vdupq_n_u8(0x3F)),
-            );
-            let vp = vshrq_n_u8::<1>(b2);
-            let mut c3 = vdupq_n_u8(MB);
-            let mut rem = is3; // lanes still to resolve
-            while vmaxvq_u8(rem) != 0 {
-                let lead = vminvq_u8(vbslq_u8(rem, v, vdupq_n_u8(0xFF))); // min lead among unresolved
-                let ll = vandq_u8(rem, vceqq_u8(v, vdupq_n_u8(lead)));
-                let pr = vminvq_u8(vbslq_u8(ll, vp, vdupq_n_u8(0xFF))); // min b2-pair within that lead
-                let gp = vandq_u8(ll, vceqq_u8(vp, vdupq_n_u8(pr))); // lanes of exactly this block
-                let idx = (lead - 0xE0) as usize * 32 + (pr & 0x1F) as usize;
-                let k = tb.fast3_uni[idx];
-                let cl = if k != 0xFF {
-                    vdupq_n_u8(k) // uniform (lead, b2-pair): one constant
+            let pair = vshrq_n_u8::<1>(b1);
+            let mut tags3 = vdupq_n_u8(MB);
+            let mut unresolved = is_lead3;
+            while any(unresolved) {
+                let lead = vminvq_u8(vbslq_u8(unresolved, b0, vdupq_n_u8(0xFF))); // min lead among unresolved
+                let lead_lanes = vandq_u8(unresolved, eq(b0, lead));
+                let min_pair = vminvq_u8(vbslq_u8(lead_lanes, pair, vdupq_n_u8(0xFF))); // min b1-pair within it
+                let block_lanes = vandq_u8(lead_lanes, eq(pair, min_pair)); // lanes of exactly this block
+                let block = (lead - 0xE0) as usize * 32 + (min_pair & 0x1F) as usize;
+                let uniform_tag = tables.fast3_uni[block];
+                let block_tags = if uniform_tag != 0xFF {
+                    vdupq_n_u8(uniform_tag) // whole block is one tag
                 } else {
-                    let (lo, hi) = &tb.fast3_mixed[tb.fast3_slot[idx] as usize];
-                    vorrq_u8(tbl64(lo, sel), tbl64(hi, vsubq_u8(sel, vdupq_n_u8(64))))
+                    let (lo, hi) = &tables.fast3_mixed[tables.fast3_slot[block] as usize];
+                    vorrq_u8(
+                        tbl64(lo, block_index),
+                        tbl64(hi, vsubq_u8(block_index, vdupq_n_u8(64))),
+                    )
                 };
-                c3 = vbslq_u8(gp, cl, c3);
-                rem = vbicq_u8(rem, gp); // clear the lanes we just resolved
+                tags3 = vbslq_u8(block_lanes, block_tags, tags3);
+                unresolved = vbicq_u8(unresolved, block_lanes); // drop the lanes just resolved
             }
-            out = vbslq_u8(is3, c3, out);
-            res = vorrq_u8(res, vandq_u8(is3, vmvnq_u8(vceqq_u8(c3, vdupq_n_u8(MB)))));
+            out = vbslq_u8(is_lead3, tags3, out);
+            resolved = vorrq_u8(resolved, vbicq_u8(is_lead3, eq(tags3, MB)));
         }
 
         // ── residual multibyte lead → MB ; continuation byte → CONT ──
-        let leadmb = vandq_u8(vcgeq_u8(v, vdupq_n_u8(0xC0)), vmvnq_u8(res));
-        out = vbslq_u8(leadmb, vdupq_n_u8(MB), out);
-        let cont = vceqq_u8(vandq_u8(v, vdupq_n_u8(0xC0)), vdupq_n_u8(0x80));
-        out = vbslq_u8(cont, vdupq_n_u8(CONT), out);
+        let stray_lead = vbicq_u8(ge(b0, 0xC0), resolved);
+        out = vbslq_u8(stray_lead, vdupq_n_u8(MB), out);
+        let is_cont = eq(vandq_u8(b0, vdupq_n_u8(0xC0)), 0x80);
+        out = vbslq_u8(is_cont, vdupq_n_u8(CONT), out);
 
-        mb_seen |= vmaxvq_u8(vceqq_u8(out, vdupq_n_u8(MB))) != 0;
+        mb_seen |= any(eq(out, MB));
         vst1q_u8(tags.as_mut_ptr().add(i), out);
         i += 16;
     }
@@ -374,19 +409,19 @@ pub unsafe fn classify_neon<S: super::classify::TagScheme>(text: &[u8], tags: &m
         i += w;
     }
 
-    // ── MB fixup: resolve every lane the SIMD left as MB (CJK holes, guard bail-outs, astral) ──
+    // ── MB fixup: resolve every lane the SIMD left as MB (CJK holes, astral) ──
     if mb_seen {
-        let mut k = 0;
-        while k < n {
-            if tags[k] == MB {
-                let cp = decode(text, k);
-                tags[k] = if cp < 0x10000 {
-                    tb.bmp_tag(cp as u16)
+        let mut pos = 0;
+        while pos < n {
+            if tags[pos] == MB {
+                let cp = decode(text, pos);
+                tags[pos] = if cp < 0x10000 {
+                    tables.bmp_tag(cp as u16)
                 } else {
-                    S::classify_char(text, k)
+                    S::classify_char(text, pos)
                 };
             }
-            k += 1;
+            pos += 1;
         }
     }
 }

@@ -8,11 +8,14 @@
 //! (`i8x16_shl`/`u8x16_shr`, no cross-byte bleed), so the body is a near 1:1 map of the NEON path.
 //! Same tables (`S::tables()`), same algorithm. 16 bytes/iter.
 //!
+//! Per lane, `b0`/`b1`/`b2` are the 1st/2nd/3rd bytes of the (potential) UTF-8 char starting there —
+//! i.e. the byte at the lane and the two after it (built with cross-chunk shuffles).
+//!
 //! UNTESTED at runtime on aarch64 hosts (cross-compiles only). Validate `== classify_scalar::<S>` in
 //! a SIMD128 wasm engine before trusting it.
 #![allow(unsafe_op_in_unsafe_fn)]
 
-use super::classify::{TagScheme, char_len};
+use super::classify::{char_len, TagScheme};
 use core::arch::wasm32::*;
 
 #[inline]
@@ -31,87 +34,66 @@ fn decode(t: &[u8], i: usize) -> u32 {
     }
 }
 
-#[inline]
-unsafe fn eqb(a: v128, b: u8) -> v128 {
-    u8x16_eq(a, u8x16_splat(b))
+// ── lane predicates (each returns an all-ones / all-zeros mask per lane) ──
+/// Lanes equal to `byte`.
+#[inline(always)]
+unsafe fn eq(bytes: v128, byte: u8) -> v128 {
+    u8x16_eq(bytes, u8x16_splat(byte))
 }
-#[inline]
-unsafe fn uge(a: v128, b: u8) -> v128 {
-    u8x16_ge(a, u8x16_splat(b))
+/// Lanes `>= lo` (unsigned).
+#[inline(always)]
+unsafe fn ge(bytes: v128, lo: u8) -> v128 {
+    u8x16_ge(bytes, u8x16_splat(lo))
 }
-#[inline]
-unsafe fn ule(a: v128, b: u8) -> v128 {
-    u8x16_le(a, u8x16_splat(b))
+/// Lanes `<= hi` (unsigned).
+#[inline(always)]
+unsafe fn le(bytes: v128, hi: u8) -> v128 {
+    u8x16_le(bytes, u8x16_splat(hi))
 }
-#[inline]
-unsafe fn hmax(x: v128) -> u8 {
-    let x = u8x16_max(
-        x,
-        u8x16_shuffle::<8, 9, 10, 11, 12, 13, 14, 15, 8, 9, 10, 11, 12, 13, 14, 15>(x, x),
-    );
-    let x = u8x16_max(
-        x,
-        u8x16_shuffle::<4, 5, 6, 7, 4, 5, 6, 7, 4, 5, 6, 7, 4, 5, 6, 7>(x, x),
-    );
-    let x = u8x16_max(
-        x,
-        u8x16_shuffle::<2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3>(x, x),
-    );
-    let x = u8x16_max(
-        x,
-        u8x16_shuffle::<1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1>(x, x),
-    );
-    u8x16_extract_lane::<0>(x)
+/// Lanes with `lo <= byte <= hi` (unsigned, inclusive) — the readable form of the range compares.
+#[inline(always)]
+unsafe fn in_range(bytes: v128, lo: u8, hi: u8) -> v128 {
+    v128_and(ge(bytes, lo), le(bytes, hi))
 }
-#[inline]
-unsafe fn hmin(x: v128) -> u8 {
-    let x = u8x16_min(
-        x,
-        u8x16_shuffle::<8, 9, 10, 11, 12, 13, 14, 15, 8, 9, 10, 11, 12, 13, 14, 15>(x, x),
-    );
-    let x = u8x16_min(
-        x,
-        u8x16_shuffle::<4, 5, 6, 7, 4, 5, 6, 7, 4, 5, 6, 7, 4, 5, 6, 7>(x, x),
-    );
-    let x = u8x16_min(
-        x,
-        u8x16_shuffle::<2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3>(x, x),
-    );
-    let x = u8x16_min(
-        x,
-        u8x16_shuffle::<1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1>(x, x),
-    );
-    u8x16_extract_lane::<0>(x)
+
+/// Horizontal max over the 16 lanes (shuffle-fold; duplicated lanes never raise the max).
+#[inline(always)]
+unsafe fn hmax(v: v128) -> u8 {
+    let v = u8x16_max(v, u8x16_shuffle::<8, 9, 10, 11, 12, 13, 14, 15, 8, 9, 10, 11, 12, 13, 14, 15>(v, v));
+    let v = u8x16_max(v, u8x16_shuffle::<4, 5, 6, 7, 4, 5, 6, 7, 4, 5, 6, 7, 4, 5, 6, 7>(v, v));
+    let v = u8x16_max(v, u8x16_shuffle::<2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3>(v, v));
+    let v = u8x16_max(v, u8x16_shuffle::<1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1>(v, v));
+    u8x16_extract_lane::<0>(v)
 }
-/// 128-entry from two 64-byte halves via 8× 16-entry swizzle + subtract trick (OOB→0 does the range
-/// gating — no explicit mask). (idx≥128 → all sub-swizzles OOB → 0, like NEON; overwritten later.)
-#[inline]
-unsafe fn lut128_w(lo: &[u8; 64], hi: &[u8; 64], idx: v128) -> v128 {
+/// Horizontal min over the 16 lanes (fill excluded lanes with 0xFF before calling so they don't win).
+#[inline(always)]
+unsafe fn hmin(v: v128) -> u8 {
+    let v = u8x16_min(v, u8x16_shuffle::<8, 9, 10, 11, 12, 13, 14, 15, 8, 9, 10, 11, 12, 13, 14, 15>(v, v));
+    let v = u8x16_min(v, u8x16_shuffle::<4, 5, 6, 7, 4, 5, 6, 7, 4, 5, 6, 7, 4, 5, 6, 7>(v, v));
+    let v = u8x16_min(v, u8x16_shuffle::<2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3>(v, v));
+    let v = u8x16_min(v, u8x16_shuffle::<1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1>(v, v));
+    u8x16_extract_lane::<0>(v)
+}
+
+/// 128-entry lookup from two 64-byte halves via 8× 16-entry swizzle + subtract trick (OOB→0 does the
+/// range gating — no explicit mask). (index≥128 → every sub-swizzle OOB → 0, like NEON; overwritten.)
+#[inline(always)]
+unsafe fn lookup128(lo: &[u8; 64], hi: &[u8; 64], index: v128) -> v128 {
     let mut acc = u8x16_splat(0);
-    for j in 0..8usize {
-        let p = if j < 4 {
-            lo.as_ptr().add(j * 16)
-        } else {
-            hi.as_ptr().add((j - 4) * 16)
-        };
-        let t = v128_load(p as *const v128);
-        acc = v128_or(
-            acc,
-            u8x16_swizzle(t, i8x16_sub(idx, u8x16_splat((j * 16) as u8))),
-        );
+    for sub in 0..8usize {
+        let base = if sub < 4 { lo.as_ptr().add(sub * 16) } else { hi.as_ptr().add((sub - 4) * 16) };
+        let table = v128_load(base as *const v128);
+        acc = v128_or(acc, u8x16_swizzle(table, i8x16_sub(index, u8x16_splat((sub * 16) as u8))));
     }
     acc
 }
-/// 256-entry from a contiguous 256-byte table via 16× swizzle + subtract.
-#[inline]
-unsafe fn lut256_w(t: *const u8, idx: v128) -> v128 {
+/// 256-entry lookup from a contiguous 256-byte table via 16× swizzle + subtract.
+#[inline(always)]
+unsafe fn lookup256(table: *const u8, index: v128) -> v128 {
     let mut acc = u8x16_splat(0);
-    for j in 0..16usize {
-        let tt = v128_load(t.add(j * 16) as *const v128);
-        acc = v128_or(
-            acc,
-            u8x16_swizzle(tt, i8x16_sub(idx, u8x16_splat((j * 16) as u8))),
-        );
+    for sub in 0..16usize {
+        let chunk = v128_load(table.add(sub * 16) as *const v128);
+        acc = v128_or(acc, u8x16_swizzle(chunk, i8x16_sub(index, u8x16_splat((sub * 16) as u8))));
     }
     acc
 }
@@ -120,122 +102,125 @@ unsafe fn lut256_w(t: *const u8, idx: v128) -> v128 {
 #[allow(non_snake_case)]
 pub unsafe fn classify_wasm<S: TagScheme>(text: &[u8], tags: &mut [u8]) {
     let (MB, CONT) = (S::MB, S::CONT);
-    let tb = S::tables();
+    let tables = S::tables();
     let n = text.len();
     let mut mb_seen = false;
     let mut i = 0usize;
-    let ff = u8x16_splat(0xFF);
-    let zero = u8x16_splat(0);
+    let ones = u8x16_splat(0xFF);
+    let zeros = u8x16_splat(0);
 
     while i + 32 <= n {
-        let v = v128_load(text.as_ptr().add(i) as *const v128);
+        let b0 = v128_load(text.as_ptr().add(i) as *const v128);
 
         // ASCII fast path: no lane has the high bit set
-        if u8x16_bitmask(v) == 0 {
-            let out = lut128_w(&tb.ascii_lo, &tb.ascii_hi, v);
+        if u8x16_bitmask(b0) == 0 {
+            let out = lookup128(&tables.ascii_lo, &tables.ascii_hi, b0);
             v128_store(tags.as_mut_ptr().add(i) as *mut v128, out);
             i += 16;
             continue;
         }
 
-        let vn = v128_load(text.as_ptr().add(i + 16) as *const v128);
-        let b2 = u8x16_shuffle::<1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16>(v, vn); // byte i+1
-        let b3 = u8x16_shuffle::<2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17>(v, vn); // byte i+2
-        let mut out = lut128_w(&tb.ascii_lo, &tb.ascii_hi, v);
-        let mut res = zero;
+        let next = v128_load(text.as_ptr().add(i + 16) as *const v128);
+        let b1 = u8x16_shuffle::<1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16>(b0, next); // byte at lane+1
+        let b2 = u8x16_shuffle::<2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17>(b0, next); // byte at lane+2
+        let mut out = lookup128(&tables.ascii_lo, &tables.ascii_hi, b0);
+        let mut resolved = zeros;
 
-        // 2-byte (C2..DF): loop the lead-group range, lut256 per present group
-        let is2 = u8x16_eq(v128_and(v, u8x16_splat(0xE0)), u8x16_splat(0xC0));
-        if v128_any_true(is2) {
-            let idxg = v128_or(
-                i8x16_shl(v128_and(v, u8x16_splat(3)), 6),
-                v128_and(b2, u8x16_splat(0x3F)),
-            );
-            let minl = hmin(v128_bitselect(v, ff, is2)); // v where is2 else 0xFF
-            let maxl = hmax(v128_bitselect(v, zero, is2));
-            let vsh2 = u8x16_shr(v, 2);
-            let mut c2 = u8x16_splat(MB);
-            let mut g = minl >> 2;
-            while g <= (maxl >> 2) {
-                let gg = v128_and(is2, u8x16_eq(vsh2, u8x16_splat(g)));
-                if v128_any_true(gg) {
-                    let gt = tb.group_tables[(g & 7) as usize].as_ptr() as *const u8;
-                    c2 = v128_bitselect(lut256_w(gt, idxg), c2, gg);
+        // 2-byte (C2..DF, i.e. lead & 0xE0 == 0xC0): loop the lead-group range, lookup256 per present group
+        let is_lead2 = u8x16_eq(v128_and(b0, u8x16_splat(0xE0)), u8x16_splat(0xC0));
+        if v128_any_true(is_lead2) {
+            let group_index = v128_or(i8x16_shl(v128_and(b0, u8x16_splat(3)), 6), v128_and(b1, u8x16_splat(0x3F)));
+            let min_lead = hmin(v128_bitselect(b0, ones, is_lead2)); // lead where is_lead2 else 0xFF
+            let max_lead = hmax(v128_bitselect(b0, zeros, is_lead2));
+            let lead_group = u8x16_shr(b0, 2); // which of the 8 lead-groups each lane's lead belongs to
+            let mut tags2 = u8x16_splat(MB);
+            let mut group = min_lead >> 2;
+            while group <= (max_lead >> 2) {
+                let this_group = v128_and(is_lead2, u8x16_eq(lead_group, u8x16_splat(group)));
+                if v128_any_true(this_group) {
+                    let group_table = tables.group_tables[(group & 7) as usize].as_ptr() as *const u8;
+                    tags2 = v128_bitselect(lookup256(group_table, group_index), tags2, this_group);
                 }
-                g += 1;
+                group += 1;
             }
-            out = v128_bitselect(c2, out, is2);
-            res = is2;
+            out = v128_bitselect(tags2, out, is_lead2);
+            resolved = is_lead2;
         }
 
-        // CJK (E3..ED) range shortcut — only when the scheme maps all of CJK to one tag
+        // CJK fast path (leads E3..ED = U+3000..U+DFFF). Enabled only when the scheme collapses all of
+        // CJK to a single tag (Atoms → Letter). This is the OPTIMISTIC bulk: it flags only lanes that
+        // are DEFINITELY that tag; boundary/hole codepoints it leaves unresolved, so they fall through
+        // to the exact 3-byte tables below. It never over-claims, so the result stays byte-exact.
         if let Some(cjk_tag) = S::CJK_RANGE_TAG {
-            let iscjk = v128_and(uge(v, 0xE3), ule(v, 0xED));
-            if v128_any_true(iscjk) {
-                let han = v128_andnot(
-                    v128_and(uge(v, 0xE4), ule(v, 0xE9)),
-                    v128_and(eqb(v, 0xE4), eqb(b2, 0xB7)),
+            let in_cjk_leads = in_range(b0, 0xE3, 0xED);
+            if v128_any_true(in_cjk_leads) {
+                // Han — U+4000..U+9FFF (CJK Unified Ideographs + the Ext-A tail), minus the one
+                // non-ideograph hole U+4DC0..U+4DFF (Yijing Hexagram Symbols), which encodes as E4 B7 xx.
+                let han = v128_andnot(in_range(b0, 0xE4, 0xE9), v128_and(eq(b0, 0xE4), eq(b1, 0xB7)));
+
+                // Hangul Syllables (U+AC00..U+D7A3), split across leads EA..ED:
+                //   EB..EC        → U+B000..U+CFFF  (whole middle — every lane a syllable)
+                //   EA, b1 >= B0  → U+AC00..U+AFFF  (syllables begin at AC00; U+A000..ABFF below is excluded)
+                //   ED, b1 <= 9D  → U+D000..U+D77F  (syllables; the U+D780.. tail is left to the exact tables)
+                let hangul = v128_or(
+                    v128_or(in_range(b0, 0xEB, 0xEC), v128_and(eq(b0, 0xEA), ge(b1, 0xB0))),
+                    v128_and(eq(b0, 0xED), le(b1, 0x9D)),
                 );
-                let hg = v128_or(
-                    v128_or(
-                        v128_and(uge(v, 0xEB), ule(v, 0xEC)),
-                        v128_and(eqb(v, 0xEA), uge(b2, 0xB0)),
-                    ),
-                    v128_and(eqb(v, 0xED), ule(b2, 0x9D)),
-                );
-                let e1 = v128_and(eqb(b2, 0x81), eqb(b3, 0x80));
-                let e2 = v128_and(
-                    eqb(b2, 0x82),
-                    v128_or(v128_and(uge(b3, 0x97), ule(b3, 0x9C)), eqb(b3, 0xA0)),
-                );
-                let e3 = v128_and(eqb(b2, 0x83), eqb(b3, 0xBB));
+
+                // Kana — Hiragana + Katakana U+3040..U+30FF (lead E3, b1 in 81..83), minus the
+                // non-letter holes inside that block:
+                //   U+3040          reserved                 (E3 81 80)
+                //   U+3097..U+309C  unassigned + combining    (E3 82 97..9C)
+                //   U+30A0          double hyphen (Punct)      (E3 82 A0)
+                //   U+30FB          middle dot (Punct)         (E3 83 BB)
+                let hole_3040 = v128_and(eq(b1, 0x81), eq(b2, 0x80));
+                let hole_309x = v128_and(eq(b1, 0x82), v128_or(in_range(b2, 0x97, 0x9C), eq(b2, 0xA0)));
+                let hole_30fb = v128_and(eq(b1, 0x83), eq(b2, 0xBB));
                 let kana = v128_andnot(
-                    v128_and(eqb(v, 0xE3), v128_and(uge(b2, 0x81), ule(b2, 0x83))),
-                    v128_or(v128_or(e1, e2), e3),
+                    v128_and(eq(b0, 0xE3), in_range(b1, 0x81, 0x83)),
+                    v128_or(v128_or(hole_3040, hole_309x), hole_30fb),
                 );
-                let cjkl = v128_or(v128_or(han, hg), kana);
-                out = v128_bitselect(u8x16_splat(cjk_tag), out, cjkl);
-                res = v128_or(res, cjkl);
+
+                let is_cjk_letter = v128_or(v128_or(han, hangul), kana);
+                out = v128_bitselect(u8x16_splat(cjk_tag), out, is_cjk_letter);
+                resolved = v128_or(resolved, is_cjk_letter);
             }
         }
 
-        // 3-byte non-CJK: exact peel of the distinct (lead, b2-pair) blocks present
-        let is3 = v128_andnot(v128_and(uge(v, 0xE0), ule(v, 0xEF)), res);
-        if v128_any_true(is3) {
-            let sel = v128_or(
-                i8x16_shl(v128_and(b2, u8x16_splat(1)), 6),
-                v128_and(b3, u8x16_splat(0x3F)),
-            );
-            let vp = u8x16_shr(b2, 1); // b2>>1 (pair id)
-            let mut c3 = u8x16_splat(MB);
-            let mut rem = is3;
-            while v128_any_true(rem) {
-                let lead = hmin(v128_bitselect(v, ff, rem));
-                let ll = v128_and(rem, eqb(v, lead));
-                let pr = hmin(v128_bitselect(vp, ff, ll));
-                let gp = v128_and(ll, u8x16_eq(vp, u8x16_splat(pr)));
-                let idx = (lead - 0xE0) as usize * 32 + (pr & 0x1F) as usize;
-                let k = tb.fast3_uni[idx];
-                let cl = if k != 0xFF {
-                    u8x16_splat(k)
+        // 3-byte non-CJK: exact peel of the distinct (lead, b1-pair) blocks still present
+        let is_lead3 = v128_andnot(in_range(b0, 0xE0, 0xEF), resolved);
+        if v128_any_true(is_lead3) {
+            let block_index = v128_or(i8x16_shl(v128_and(b1, u8x16_splat(1)), 6), v128_and(b2, u8x16_splat(0x3F)));
+            let pair = u8x16_shr(b1, 1); // b1>>1 — the 128-cp block-pair id
+            let mut tags3 = u8x16_splat(MB);
+            let mut unresolved = is_lead3;
+            while v128_any_true(unresolved) {
+                let lead = hmin(v128_bitselect(b0, ones, unresolved)); // smallest unresolved lead
+                let lead_lanes = v128_and(unresolved, eq(b0, lead));
+                let min_pair = hmin(v128_bitselect(pair, ones, lead_lanes)); // smallest pair within it
+                let block_lanes = v128_and(lead_lanes, u8x16_eq(pair, u8x16_splat(min_pair)));
+                let block = (lead - 0xE0) as usize * 32 + (min_pair & 0x1F) as usize;
+                let uniform_tag = tables.fast3_uni[block];
+                let block_tags = if uniform_tag != 0xFF {
+                    u8x16_splat(uniform_tag) // whole block is one tag
                 } else {
-                    let (lo, hi) = &tb.fast3_mixed[tb.fast3_slot[idx] as usize];
-                    lut128_w(lo, hi, sel)
+                    let (lo, hi) = &tables.fast3_mixed[tables.fast3_slot[block] as usize];
+                    lookup128(lo, hi, block_index)
                 };
-                c3 = v128_bitselect(cl, c3, gp);
-                rem = v128_andnot(rem, gp); // rem &= ~gp
+                tags3 = v128_bitselect(block_tags, tags3, block_lanes);
+                unresolved = v128_andnot(unresolved, block_lanes); // drop the lanes just resolved
             }
-            out = v128_bitselect(c3, out, is3);
-            res = v128_or(res, v128_andnot(is3, eqb(c3, MB)));
+            out = v128_bitselect(tags3, out, is_lead3);
+            resolved = v128_or(resolved, v128_andnot(is_lead3, eq(tags3, MB)));
         }
 
         // residual multibyte lead → MB ; continuation byte → CONT
-        let leadmb = v128_andnot(uge(v, 0xC0), res);
-        out = v128_bitselect(u8x16_splat(MB), out, leadmb);
-        let cont = u8x16_eq(v128_and(v, u8x16_splat(0xC0)), u8x16_splat(0x80));
-        out = v128_bitselect(u8x16_splat(CONT), out, cont);
+        let stray_lead = v128_andnot(ge(b0, 0xC0), resolved);
+        out = v128_bitselect(u8x16_splat(MB), out, stray_lead);
+        let is_cont = u8x16_eq(v128_and(b0, u8x16_splat(0xC0)), u8x16_splat(0x80));
+        out = v128_bitselect(u8x16_splat(CONT), out, is_cont);
 
-        if v128_any_true(eqb(out, MB)) {
+        if v128_any_true(eq(out, MB)) {
             mb_seen = true;
         }
         v128_store(tags.as_mut_ptr().add(i) as *mut v128, out);
@@ -260,19 +245,15 @@ pub unsafe fn classify_wasm<S: TagScheme>(text: &[u8], tags: &mut [u8]) {
         i += w;
     }
 
-    // MB fixup
+    // MB fixup: resolve every lane the SIMD left as MB (CJK holes, astral)
     if mb_seen {
-        let mut k = 0;
-        while k < n {
-            if tags[k] == MB {
-                let cp = decode(text, k);
-                tags[k] = if cp < 0x10000 {
-                    tb.bmp_tag(cp as u16)
-                } else {
-                    S::classify_char(text, k)
-                };
+        let mut pos = 0;
+        while pos < n {
+            if tags[pos] == MB {
+                let cp = decode(text, pos);
+                tags[pos] = if cp < 0x10000 { tables.bmp_tag(cp as u16) } else { S::classify_char(text, pos) };
             }
-            k += 1;
+            pos += 1;
         }
     }
 }
