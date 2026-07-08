@@ -81,14 +81,15 @@ pub trait TagScheme {
     /// Continuation-byte sentinel for this scheme — written to every non-lead byte, transparent to
     /// this scheme's FSMs. (For `Atoms` this is `Atom::Cont`.)
     const CONT: u8;
-    /// Sentinel the SIMD path writes for a multibyte lane it couldn't resolve (→ RLE/scalar fixup).
+    /// Sentinel the SIMD path writes for a multibyte lane it couldn't resolve. This would be
+    /// astral emojis etc.
     const MB: u8;
     /// If the whole CJK block (E3–ED) collapses to ONE tag under this scheme, name it here to enable
     /// the fast lead-byte range shortcut (Atoms → `Some(Letter)`). `None` (e.g. Scripts, where CJK is
     /// Han/Hangul/Kana — several tags) → CJK is resolved by the per-`(lead,b2-pair)` tables instead.
     const CJK_RANGE_TAG: Option<u8>;
 
-    /// Scalar per-char classifier: tag of the char starting at `text[i]`. ASCII → LUT; 2/3-byte →
+    /// Scalar per-char classifier: tag of the char starting at `text[i]`. ASCII → Look Up Table; 2/3-byte →
     /// bitmap-hit helpers / range search. Width is the engine's job (`char_len`). The single source of
     /// truth: every SIMD table is built from this, and it's the tail/astral fallback.
     fn classify_char(text: &[u8], i: usize) -> u8;
@@ -163,14 +164,11 @@ impl TagScheme for Atoms {
     /// `mark2_hit`/`punct2_hit`/… to add); 3-byte-non-CJK residue → range search.
     #[inline]
     fn classify_char(text: &[u8], i: usize) -> u8 {
-        crate::atom_tables::atom_of_cp(crate::atom_tables::decode_cp(text, i))
+        crate::atom_tables::ATOM_TABLES.classify_char(text, i)
     }
 
     fn tables() -> &'static crate::simd_classify::Tables {
-        use crate::simd_classify::Tables;
-        use std::sync::OnceLock;
-        static T: OnceLock<Tables> = OnceLock::new();
-        T.get_or_init(Tables::build::<Atoms>)
+        &crate::atom_tables::ATOM_TABLES
     }
 }
 
@@ -215,9 +213,8 @@ impl TagScheme for Scripts {
     }
 
     fn tables() -> &'static crate::simd_classify::Tables {
-        use crate::simd_classify::Tables;
-        use std::sync::OnceLock;
-        static T: OnceLock<Tables> = OnceLock::new();
-        T.get_or_init(Tables::build::<Scripts>)
+        todo!(
+            "Scripts SCRIPT_TABLES — Phase 2 (generate the const script tables, like ATOM_TABLES)"
+        )
     }
 }

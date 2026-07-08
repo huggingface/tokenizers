@@ -1,4 +1,3 @@
-use super::classify::TagScheme;
 
 /// Hot path at each byte-width we compute min/max values which gives us an index to one of the table; the fallback
 /// loops the SAME tables over the min..max range. This happens when we have  mixed scripts.
@@ -27,94 +26,51 @@ pub struct Tables {
     // - Pure symbol / unassigned regions → uniform SymOther.
     // 425 of 512 blocks are uniform (~83%); only 87 are mixed.
     // The rest need mixed slot and a similar trick than what we used above.
-    pub fast3_uni: Box<[u8; 512]>, // per block: the tag if uniform, or 0xFF ("mixed, look deeper")
-    pub fast3_slot: Box<[u16; 512]>, // per block: WHERE this block's 128-table lives in fast3_mixed (only if mixed)
-    pub fast3_mixed: Vec<([u8; 64], [u8; 64])>, // the sparse list of 128-tables — one per MIXED block (~87), lo/hi halves
+    pub fast3_uni: [u8; 512], // per block: the tag if uniform, or 0xFF ("mixed, look deeper")
+    pub fast3_slot: [u16; 512], // per block: WHERE this block's 128-table lives in fast3_mixed (only if mixed)
+    pub fast3_mixed: &'static [([u8; 64], [u8; 64])], // the sparse list of 128-tables — one per MIXED block (~87), lo/hi halves
 
     // ── Cold fallback (astral 4-byte, CJK-letter holes): run-length-encoded BMP tag table,
     //    (run_start_cp, tag), binary-searched. ~1-3 KB vs a dense 64 KB LUT.
-    pub bmp_rle: Vec<(u16, u8)>,
+    pub bmp_rle: &'static [(u16, u8)],
+
+    // 4-byte astral (cp ≥ 0x10000): run-length-encoded (start_cp, atom), binary-searched.
+    pub astral: &'static [(u32, u8)],
 }
 
 impl Tables {
-    /// Build every table from the scheme's scalar `classify_char`. `tag(bytes)` = tag of the char that
-    /// those bytes encode; tables are dense over the byte space, so invalid sequences just never occur.
-    /// These table can be built for unicode script and atoms.
-    pub fn build<S: TagScheme>() -> Tables {
-        let tag = |bytes: &[u8]| S::classify_char(bytes, 0);
-
-        // ASCII 128-entry table (two halves for the subtract-trick lookup)
-        let (mut ascii_lo, mut ascii_hi) = ([0u8; 64], [0u8; 64]);
-        for b in 0..64u8 {
-            ascii_lo[b as usize] = tag(&[b]);
-            ascii_hi[b as usize] = tag(&[64 + b]);
+    /// Scalar reader over the dense tables — the portable twin of the SIMD kernel, and the single
+    /// source for `TagScheme::classify_char`, the <32-byte SIMD tail, and the SIMD MB-fixup. Returns
+    /// the atom for the char starting at `text[i]`. Byte-exact with the SIMD path (same tables).
+    #[inline]
+    pub fn classify_char(&self, text: &[u8], i: usize) -> u8 {
+        let b0 = text[i];
+        if b0 < 0x80 {
+            return if b0 < 64 { self.ascii_lo[b0 as usize] } else { self.ascii_hi[(b0 - 64) as usize] };
         }
-
-        // 2-byte: 8 groups × 4 leads × 64 conts
-        let mut group_tables = [[[0u8; 64]; 4]; 8];
-        for g in 0..8usize {
-            // 0xC0 is 110..... the utf8 header
-            // g is the group: 110xxx.. *4 shifts it by 2
-            let base = 0xC0u8 + (g as u8) * 4;
-            for k in 0..4usize {
-                for c in 0..64u8 {
-                    // 0x80 is 10yyyyyy, its constructing the 2nd byte.
-                    // We add `k` as its the sub group (0,1,2,3)
-                    group_tables[g][k][c as usize] = tag(&[base + k as u8, 0x80 | c]);
-                }
+        if b0 < 0xE0 {
+            // 2-byte: group_tables[(lead>>2)&7][lead&3][cont&0x3F]
+            let cont = text[i + 1] & 0x3F;
+            return self.group_tables[((b0 >> 2) & 7) as usize][(b0 & 3) as usize][cont as usize];
+        }
+        if b0 < 0xF0 {
+            // 3-byte: block = (lead-0xE0)*32 + ((b1>>1)&0x1F); uniform tag, else lo/hi by b1 parity
+            let b1 = text[i + 1];
+            let c = (text[i + 2] & 0x3F) as usize;
+            let block = (b0 - 0xE0) as usize * 32 + ((b1 >> 1) & 0x1F) as usize;
+            let uni = self.fast3_uni[block];
+            if uni != 0xFF {
+                return uni;
             }
+            let (lo, hi) = &self.fast3_mixed[self.fast3_slot[block] as usize];
+            return if b1 & 1 == 0 { lo[c] } else { hi[c] };
         }
-        // Finally we build the hardest of them all:
-        let mut fast3_uni = Box::new([0u8; 512]);
-        let mut fast3_slot = Box::new([0u16; 512]);
-        let mut fast3_mixed: Vec<([u8; 64], [u8; 64])> = Vec::new();
-        for lead in 0xE0u8..=0xEF {
-            for p in 0..32u8 {
-                let (b2e, b2o) = (0x80 + 2 * p, 0x80 + 2 * p + 1);
-                let (mut lo, mut hi) = ([0u8; 64], [0u8; 64]);
-                for c in 0..64u8 {
-                    lo[c as usize] = tag(&[lead, b2e, 0x80 | c]);
-                    hi[c as usize] = tag(&[lead, b2o, 0x80 | c]);
-                }
-                let idx = (lead - 0xE0) as usize * 32 + p as usize;
-                if lo.iter().chain(hi.iter()).all(|&x| x == lo[0]) {
-                    fast3_uni[idx] = lo[0];
-                } else {
-                    fast3_uni[idx] = 0xFF;
-                    fast3_slot[idx] = fast3_mixed.len() as u16;
-                    fast3_mixed.push((lo, hi));
-                }
-            }
-        }
-
-        // Cold fallback: dense BMP tag → run-length encode (emit only on tag change)
-        let mut buf = [0u8; 4];
-        let mut dense = vec![0u8; 0x10000];
-        for cp in 0..0x10000u32 {
-            if (0xD800..=0xDFFF).contains(&cp) {
-                continue;
-            }
-            if let Some(c) = char::from_u32(cp) {
-                dense[cp as usize] = tag(c.encode_utf8(&mut buf).as_bytes());
-            }
-        }
-        let mut bmp_rle: Vec<(u16, u8)> = Vec::new();
-        for cp in 0..0x10000u32 {
-            let a = dense[cp as usize];
-            if bmp_rle.last().map_or(true, |&(_, la)| la != a) {
-                bmp_rle.push((cp as u16, a));
-            }
-        }
-
-        Tables {
-            ascii_lo,
-            ascii_hi,
-            group_tables,
-            fast3_uni,
-            fast3_slot,
-            fast3_mixed,
-            bmp_rle,
-        }
+        // 4-byte astral
+        let cp = ((b0 as u32 & 0x07) << 18)
+            | ((text[i + 1] as u32 & 0x3F) << 12)
+            | ((text[i + 2] as u32 & 0x3F) << 6)
+            | (text[i + 3] as u32 & 0x3F);
+        self.astral[self.astral.partition_point(|&(s, _)| s <= cp) - 1].1
     }
 
     /// Cold-path BMP fallback: last run whose start ≤ cp (`bmp_rle[0].0 == 0`, so the index ≥ 1).
