@@ -6,7 +6,7 @@ use crate::added_vocabulary::bucket_added_vocabulary::{
     AddedToken as BucketAddedToken, AddedVocabulary as BucketAddedVocabulary,
 };
 use crate::decoders::byte_level::GPT2_REGEX_STR;
-use crate::models::bpe::BPE;
+use crate::models::bpe::PipelineBPE;
 use crate::models::unigram::Unigram;
 use crate::models::wordlevel::WordLevel;
 use crate::models::wordpiece::WordPiece;
@@ -299,20 +299,30 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
         )?;
         added_vocabulary.set_encode_special_tokens(legacy_av.get_encode_special_tokens());
 
-        let mut model = tok.get_model().clone().try_into()?;
-        if let PipelineModel::BPE(bpe) = &mut model {
-            let has_byte_level = match tok.get_pre_tokenizer() {
-                Some(PreTokenizerWrapper::ByteLevel(_)) => true,
-                Some(PreTokenizerWrapper::Sequence(seq)) => seq
-                    .as_ref()
-                    .iter()
-                    .any(|wrapper| matches!(wrapper, PreTokenizerWrapper::ByteLevel(_))),
-                _ => false,
-            };
-            if has_byte_level {
-                bpe.transform_vocab();
+        let with_byte_level = {
+            if let Some(pt) = tok.get_pre_tokenizer() {
+                if let PreTokenizerWrapper::ByteLevel(_) = pt {
+                    true
+                } else if let PreTokenizerWrapper::Sequence(seq) = pt {
+                    seq.as_ref()
+                        .iter()
+                        .any(|p| matches!(p, PreTokenizerWrapper::ByteLevel(_)))
+                } else {
+                    false
+                }
+            } else {
+                false
             }
-        }
+        };
+
+        let model = match tok.get_model().clone() {
+            ModelWrapper::BPE(model) => {
+                PipelineModel::BPE(PipelineBPE::from_bpe(model, with_byte_level)?)
+            }
+            ModelWrapper::Unigram(model) => PipelineModel::Unigram(model),
+            ModelWrapper::WordLevel(model) => PipelineModel::WordLevel(model),
+            ModelWrapper::WordPiece(model) => PipelineModel::WordPiece(model),
+        };
 
         Ok(Self {
             added_vocabulary,
@@ -639,7 +649,7 @@ pub trait Model {
 }
 
 pub enum PipelineModel {
-    BPE(BPE),
+    BPE(PipelineBPE),
     Unigram(Unigram),
     WordLevel(WordLevel),
     WordPiece(WordPiece),
@@ -647,28 +657,18 @@ pub enum PipelineModel {
 
 impl Model for PipelineModel {
     fn tokenize_bytes(&self, bytes: &[u8], output: &mut Vec<PipelineToken>) -> Result<()> {
+        if let PipelineModel::BPE(model) = self {
+            return model.tokenize_bytes(bytes, output);
+        }
         let sequence = str::from_utf8(bytes)?;
         let tokens = match self {
-            Self::BPE(model) => model.tokenize(sequence),
             Self::Unigram(model) => model.tokenize(sequence),
             Self::WordLevel(model) => model.tokenize(sequence),
             Self::WordPiece(model) => model.tokenize(sequence),
+            Self::BPE(_) => unreachable!(),
         }?;
         output.extend(tokens.iter().map(|&Token { id, .. }| PipelineToken { id }));
         Ok(())
-    }
-}
-
-impl TryFrom<ModelWrapper> for PipelineModel {
-    type Error = crate::Error;
-
-    fn try_from(value: ModelWrapper) -> std::prelude::v1::Result<Self, Self::Error> {
-        Ok(match value {
-            ModelWrapper::BPE(model) => Self::BPE(model),
-            ModelWrapper::Unigram(model) => Self::Unigram(model),
-            ModelWrapper::WordLevel(model) => Self::WordLevel(model),
-            ModelWrapper::WordPiece(model) => Self::WordPiece(model),
-        })
     }
 }
 
