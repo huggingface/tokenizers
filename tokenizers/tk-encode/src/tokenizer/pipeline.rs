@@ -302,7 +302,26 @@ impl PipelineTokenizer {
     ///
     /// todo: wire the post-processing
     pub fn encode(&self, input: &str, _add_special_tokens: bool) -> Result<Vec<PipelineToken>> {
-        let mut output: Vec<PipelineToken> = vec![];
+        let mut output = Vec::new();
+        self.encode_generic::<{ Self::STAGE_MODEL }>(input, &mut output)?;
+        Ok(output)
+    }
+
+    /// Single source of truth for the encode pipeline, generic over how many stages
+    /// run. `STAGE` is a **const generic**, so `if STAGE >= …` folds at compile time and
+    /// the disabled stages are compiled out — the full specialization ([`STAGE_MODEL`],
+    /// which [`encode`](Self::encode) calls) is branchless and identical to a
+    /// hand-written full pipeline, while the benchmark drives lower `STAGE` values to
+    /// time each stage's marginal cost (the ablation ladder), e.g.
+    /// `model = t(MODEL) − t(SPLIT)`. No runtime gate, no `Instant` in the loop.
+    ///
+    /// [`STAGE_MODEL`]: Self::STAGE_MODEL
+    #[doc(hidden)] // public only so `examples/fixture_bench.rs` can drive partial stages
+    pub fn encode_generic<const STAGE: u8>(
+        &self,
+        input: &str,
+        output: &mut Vec<PipelineToken>,
+    ) -> Result<()> {
         let mut pre_tokens: Vec<Split> = vec![];
 
         // First, we extract all special tokens from the non-normalized input
@@ -312,91 +331,45 @@ impl PipelineTokenizer {
                     output.push(PipelineToken { id: token });
                 }
                 Segment::Text(chunk) => {
-                    let normalized: &str = if let Some(normalizer) = &self.normalizer {
-                        &normalizer.normalize(chunk)?
+                    let normalized: Cow<str> = if STAGE >= Self::STAGE_NORMALIZE {
+                        match &self.normalizer {
+                            Some(normalizer) => normalizer.normalize(chunk)?,
+                            None => Cow::Borrowed(chunk),
+                        }
                     } else {
-                        chunk
+                        Cow::Borrowed(chunk)
                     };
+                    // Benchmark DCE guard: on the level that *stops at* normalize, make its
+                    // output observable so the optimizer can't elide the call. const-gated,
+                    // so it compiles out of every other level (incl. the real STAGE_MODEL).
+                    if STAGE == Self::STAGE_NORMALIZE {
+                        std::hint::black_box(normalized.len());
+                    }
 
                     // Extract special tokens from the normalized input
                     for segment in
-                        SpecialSegmentIterator::new(normalized, &self.added_vocabulary, true)
+                        SpecialSegmentIterator::new(&normalized, &self.added_vocabulary, true)
                     {
                         match segment {
                             Segment::SpecialToken(token) => {
                                 output.push(PipelineToken { id: token });
                             }
                             Segment::Text(normalized_chunk) => {
-                                // Pre-tokenize the chunk of normalized text
-                                pre_tokens.clear();
-                                self.pre_tokenizer
-                                    .pre_tokenize(normalized_chunk, &mut pre_tokens)?;
-
-                                // Tokenize each chunk
-                                for pre_token in pre_tokens.iter() {
-                                    self.model.tokenize_bytes(
-                                        normalized_chunk[pre_token.range()].as_bytes(),
-                                        &mut output,
-                                    )?;
-                                }
-                            }
-                        }
-                    }
-                }
-            };
-        }
-        Ok(output)
-    }
-
-    /// Run [`encode`](Self::encode) up to and including stage `STAGE`, returning a
-    /// checksum that touches each executed stage's output. This is the benchmark's
-    /// staged-timing path: `STAGE` is a **const generic**, so `if STAGE >= …` folds at
-    /// compile time and every specialization is branchless — the disabled stages are
-    /// compiled out entirely, no runtime gate and no `Instant` in the loop. Time
-    /// successive levels and subtract to get each stage's marginal cost (the ablation
-    /// ladder), e.g. `model = t(MODEL) − t(SPLIT)`.
-    ///
-    /// The returned checksum reads every stage's result (`normalized.len()`,
-    /// `pre_tokens.len()`, `output.len()`) so a disabled downstream stage can't let the
-    /// optimizer elide upstream work; `black_box` it in the timing loop. Not for real
-    /// encoding — use [`encode`](Self::encode) for that.
-    pub fn encode_upto<const STAGE: u8>(&self, input: &str) -> usize {
-        let mut acc: usize = 0;
-        let mut output: Vec<PipelineToken> = vec![];
-        let mut pre_tokens: Vec<Split> = vec![];
-
-        for segment in SpecialSegmentIterator::new(input, &self.added_vocabulary, false) {
-            match segment {
-                Segment::SpecialToken(_) => acc += 1,
-                Segment::Text(chunk) => {
-                    let normalized: Cow<str> = if STAGE >= Self::STAGE_NORMALIZE {
-                        match &self.normalizer {
-                            Some(n) => n.normalize(chunk).unwrap_or(Cow::Borrowed(chunk)),
-                            None => Cow::Borrowed(chunk),
-                        }
-                    } else {
-                        Cow::Borrowed(chunk)
-                    };
-                    acc += normalized.len();
-
-                    for segment in
-                        SpecialSegmentIterator::new(&normalized, &self.added_vocabulary, true)
-                    {
-                        match segment {
-                            Segment::SpecialToken(_) => acc += 1,
-                            Segment::Text(normalized_chunk) => {
                                 if STAGE >= Self::STAGE_SPLIT {
+                                    // Pre-tokenize the chunk of normalized text
                                     pre_tokens.clear();
-                                    let _ = self
-                                        .pre_tokenizer
-                                        .pre_tokenize(normalized_chunk, &mut pre_tokens);
-                                    acc += pre_tokens.len();
+                                    self.pre_tokenizer
+                                        .pre_tokenize(normalized_chunk, &mut pre_tokens)?;
+                                    if STAGE == Self::STAGE_SPLIT {
+                                        std::hint::black_box(pre_tokens.len());
+                                    }
                                     if STAGE >= Self::STAGE_MODEL {
+                                        // Tokenize each chunk
                                         for pre_token in pre_tokens.iter() {
-                                            let _ = self.model.tokenize_bytes(
+                                            self.model.tokenize_bytes(
                                                 normalized_chunk[pre_token.range()].as_bytes(),
-                                                &mut output,
-                                            );
+                                                output,
+                                            )?;
                                         }
                                     }
                                 }
@@ -406,7 +379,7 @@ impl PipelineTokenizer {
                 }
             };
         }
-        acc + output.len()
+        Ok(())
     }
 }
 

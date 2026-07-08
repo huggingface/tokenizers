@@ -63,25 +63,28 @@ fn time_pass(encode: &dyn Fn(&str) -> usize, chunks: &[String]) -> f64 {
     start.elapsed().as_secs_f64()
 }
 
-/// Median wall-time (seconds) of one pass over `chunks` through `PipelineTokenizer::
-/// encode_upto::<STAGE>`. `STAGE` is a const generic, so each level is a branchless
-/// specialization with the later stages compiled out — timing successive levels and
-/// subtracting gives each stage's marginal cost (the ablation ladder), no profiler
-/// and no per-segment instrumentation.
+/// Median wall-time (seconds) of one pass over `chunks` through the shared encode core
+/// `PipelineTokenizer::encode_generic::<STAGE>`. `STAGE` is a const generic, so each
+/// level is a branchless specialization with the later stages compiled out — timing
+/// successive levels and subtracting gives each stage's marginal cost (the ablation
+/// ladder), no profiler and no per-segment instrumentation. The output buffer is reused
+/// across chunks; `black_box` keeps the optimizer from eliding the (empty-at-low-stages)
+/// result.
 fn stage_secs<const STAGE: u8>(pipeline: &PipelineTokenizer, chunks: &[String]) -> f64 {
-    let mut warm = 0usize;
+    let mut out = Vec::new();
     for chunk in chunks {
-        warm += pipeline.encode_upto::<STAGE>(chunk);
+        out.clear();
+        let _ = pipeline.encode_generic::<STAGE>(chunk, &mut out); // warm-up
+        black_box(&out);
     }
-    black_box(warm);
     let mut samples = Vec::with_capacity(REPS);
     for _ in 0..REPS {
         let start = Instant::now();
-        let mut acc = 0usize;
         for chunk in chunks {
-            acc += pipeline.encode_upto::<STAGE>(chunk);
+            out.clear();
+            let _ = pipeline.encode_generic::<STAGE>(chunk, &mut out);
+            black_box(&out);
         }
-        black_box(acc);
         samples.push(start.elapsed().as_secs_f64());
     }
     median_secs(samples)
