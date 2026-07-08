@@ -69,6 +69,12 @@ def geomean(values):
     return math.exp(sum(math.log(v) for v in values) / len(values))
 
 
+def text_on(hex_color):
+    """Black or white label, whichever reads on `hex_color` (relative luminance)."""
+    r, g, b = (int(hex_color[i:i + 2], 16) / 255 for i in (1, 3, 5))
+    return "#111111" if 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.6 else "#ffffff"
+
+
 def bar_path(x0, x1, y, h, r):
     # square at the baseline (x0), rounded at the data end (x1)
     left, right = min(x0, x1), max(x0, x1)
@@ -228,10 +234,18 @@ def stage_chart_svg(model, mode, subtitle_base, meta, max_total):
                         f'font-size="12.5" text-anchor="end">{escape(r["fixture"])}</text>')
             cursor = float(GUTTER)
             for skey, _ in STAGES:
-                seg = w(s.get(skey, 0.0))
+                val = s.get(skey, 0.0)
+                seg = w(val)
                 if seg > 0.4:
                     body.append(f'<rect x="{cursor:.1f}" y="{by}" width="{seg:.1f}" '
                                 f'height="{BAR_H}" fill="{sink[skey]}"/>')
+                    # ns/byte inside the slice when it's wide enough to read
+                    if seg >= 24:
+                        txt = f"{val:.0f}" if val >= 9.5 else f"{val:.1f}"
+                        body.append(f'<text x="{cursor + seg / 2:.1f}" y="{y + ROW_H / 2 + 4}" '
+                                    f'fill="{text_on(sink[skey])}" font-size="10.5" '
+                                    f'text-anchor="middle" style="font-variant-numeric:tabular-nums">'
+                                    f'{txt}</text>')
                 cursor += seg
             body.append(f'<text x="{col_x}" y="{y + ROW_H / 2 + 4}" fill="{ink["secondary"]}" '
                         f'font-size="12" text-anchor="end" style="font-variant-numeric:tabular-nums">'
@@ -259,9 +273,13 @@ def stage_chart_svg(model, mode, subtitle_base, meta, max_total):
         lx += 16 + 8 + len(lbl) * 7 + 18
     height = y + 18
 
+    # Keep this subtitle short: the stage-mix string is long, and `subtitle_base`
+    # (the "~10 kB inputs · single thread" run context) already rides in the markdown
+    # header and the speedup chart above — appending it here collides with the
+    # right-aligned hardware line.
     mix = stage_mix(rows)
     mix_txt = " · ".join(f"{lbl} {100 * frac:.0f}%" for lbl, frac in mix)
-    subtitle = f'{model["shape"]} · stage mix: {mix_txt} · {subtitle_base}'
+    subtitle = f'{model["shape"]} · stage mix: {mix_txt}'
     return f'''<svg xmlns="http://www.w3.org/2000/svg" width="{CHART_W}" height="{height}"
   viewBox="0 0 {CHART_W} {height}" font-family="{FONT}">
 <rect width="{CHART_W}" height="{height}" fill="{ink["surface"]}"/>
