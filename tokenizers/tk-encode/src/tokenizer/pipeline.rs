@@ -2,8 +2,6 @@ use std::convert::TryInto;
 use std::ops::Range;
 use std::{borrow::Cow, convert::TryFrom};
 
-use itertools::Itertools;
-
 use crate::added_vocabulary::bucket_added_vocabulary::{
     AddedToken as BucketAddedToken, AddedVocabulary as BucketAddedVocabulary,
 };
@@ -313,10 +311,10 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
                     {
                         return Err("Nesting Sequence pre tokenizers is not supported".into());
                     }
-                    if let Some((pos, _)) = seq
+                    if let Some(pos) = seq
                         .as_ref()
                         .iter()
-                        .find_position(|p| matches!(p, PreTokenizerWrapper::ByteLevel(_)))
+                        .position(|p| matches!(p, PreTokenizerWrapper::ByteLevel(_)))
                     {
                         if pos != seq.as_ref().len() - 1 {
                             return Err("ByteLevel pre tokenizer must be the last pre tokenizer in the Sequence".into());
@@ -335,9 +333,16 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
 
         let model = tok.get_model();
         if with_byte_level && !matches!(&model, ModelWrapper::BPE(_)) {
-            return Err(
-                format!("ByteLevel pre tokenizer is not supported with model {model:?}").into(),
-            );
+            let model_name = match model {
+                ModelWrapper::BPE(_) => "BPE",
+                ModelWrapper::Unigram(_) => "Unigram",
+                ModelWrapper::WordLevel(_) => "WordLevel",
+                ModelWrapper::WordPiece(_) => "WordPiece",
+            };
+            return Err(format!(
+                "ByteLevel pre tokenizer is not supported with model {model_name}"
+            )
+            .into());
         }
 
         let model = match model.clone() {
@@ -686,30 +691,23 @@ pub enum PipelineModel {
 
 impl Model for PipelineModel {
     fn tokenize_pipeline(&self, sequence: &str, output: &mut Vec<PipelineToken>) -> Result<()> {
-        match self {
-            Self::BPE(model) => model.tokenize_pipeline(sequence, output),
-            Self::Unigram(model) => {
-                let tokens = model.tokenize(sequence)?;
-                output.extend(tokens.iter().map(|&Token { id, .. }| PipelineToken { id }));
-                Ok(())
-            }
-            Self::WordLevel(model) => {
-                let tokens = model.tokenize(sequence)?;
-                output.extend(tokens.iter().map(|&Token { id, .. }| PipelineToken { id }));
-                Ok(())
-            }
-            Self::WordPiece(model) => {
-                let tokens = model.tokenize(sequence)?;
-                output.extend(tokens.iter().map(|&Token { id, .. }| PipelineToken { id }));
-                Ok(())
-            }
-        }
+        let tokens = match self {
+            Self::BPE(model) => return model.tokenize_pipeline(sequence, output),
+            Self::Unigram(model) => model.tokenize(sequence),
+            Self::WordLevel(model) => model.tokenize(sequence),
+            Self::WordPiece(model) => model.tokenize(sequence),
+        }?;
+        output.extend(tokens.iter().map(|&Token { id, .. }| PipelineToken { id }));
+        Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::bpe::BPE;
+    use crate::pre_tokenizers::byte_level::ByteLevel;
+    use crate::pre_tokenizers::sequence::Sequence;
 
     struct FixedMatcher(Vec<((usize, usize), u32)>);
     impl PipelinePatternMatcher for FixedMatcher {
@@ -748,5 +746,43 @@ mod tests {
                 (Some("cc"), None),
             ]
         );
+    }
+
+    // The three rejections below guard configs the pipeline would otherwise
+    // encode with silently wrong ids (the byte-level vocab transform only
+    // applies when ByteLevel is the model's direct input). Each test pins the
+    // error message so an unrelated failure can't stand in for the guard.
+
+    fn conversion_error(tok: &Tokenizer) -> String {
+        PipelineTokenizer::try_from(tok).err().unwrap().to_string()
+    }
+
+    #[test]
+    fn conversion_rejects_nested_sequence() {
+        let mut tok = Tokenizer::new(BPE::default());
+        tok.with_pre_tokenizer(Some(Sequence::new(vec![PreTokenizerWrapper::Sequence(
+            Sequence::new(vec![PreTokenizerWrapper::WhitespaceSplit(WhitespaceSplit)]),
+        )])));
+        let err = conversion_error(&tok);
+        assert!(err.contains("Nesting Sequence"), "{}", err);
+    }
+
+    #[test]
+    fn conversion_rejects_byte_level_not_last_in_sequence() {
+        let mut tok = Tokenizer::new(BPE::default());
+        tok.with_pre_tokenizer(Some(Sequence::new(vec![
+            PreTokenizerWrapper::ByteLevel(ByteLevel::new(false, true, true)),
+            PreTokenizerWrapper::WhitespaceSplit(WhitespaceSplit),
+        ])));
+        let err = conversion_error(&tok);
+        assert!(err.contains("must be the last"), "{}", err);
+    }
+
+    #[test]
+    fn conversion_rejects_byte_level_with_non_bpe_model() {
+        let mut tok = Tokenizer::new(WordPiece::default());
+        tok.with_pre_tokenizer(Some(ByteLevel::new(false, true, true)));
+        let err = conversion_error(&tok);
+        assert!(err.contains("not supported with model"), "{}", err);
     }
 }
