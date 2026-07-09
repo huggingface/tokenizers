@@ -690,7 +690,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "fast_split"
+name = "atomsplit"
 version = "0.1.0"
 dependencies = [
  "memchr",

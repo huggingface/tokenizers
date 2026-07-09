@@ -4,8 +4,8 @@
 //! piece boundaries). Byte-exactness gate (✓/✗) + per-language timing on big real text.
 //!
 //! Run: cargo bench --bench deepseek
-use fast_split::classify::{Atoms, classify, classify_scalar};
-use fast_split::fsm::{Span, fsm_deepseek};
+use atomsplit::classify::{Atoms, classify, classify_scalar};
+use atomsplit::fsm::{Span, fsm_deepseek};
 use onig::Regex;
 use std::hint::black_box;
 use std::time::Instant;

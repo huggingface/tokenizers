@@ -4,7 +4,7 @@
 //!   astral   — wall of emoji (every chunk has MB) → branch ALWAYS true → predictable, measures fixup cost.
 //!   sprinkle — BMP text with an emoji every ~24 B → branch flips irregularly → misprediction stress.
 //! Run before/after the fixup change and compare. Run: cargo bench --bench classify
-use fast_split::classify::{Atoms, classify, classify_scalar};
+use atomsplit::classify::{Atoms, classify, classify_scalar};
 use std::hint::black_box;
 use std::time::Instant;
 

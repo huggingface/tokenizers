@@ -1,6 +1,6 @@
 //! Integration tests for the FSM pre-tokenizers. Kept out of `src/` so the core stays production-only.
-use fast_split::classify::{classify, mask, Atoms};
-use fast_split::fsm::{
+use atomsplit::classify::{classify, mask, Atoms};
+use atomsplit::fsm::{
     class_runs_into, class_runs_runend, fsm_byte_level, fsm_cl100k, fsm_deepseek, CharDelimiterSplit,
     Span,
 };

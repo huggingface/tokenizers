@@ -24,15 +24,15 @@ jobs:
           path: ~/.cargo/registry
           key: ubuntu-latest-cargo-registry-${{ hashFiles('**/Cargo.toml') }}
 
-      # fast_split ships committed classify tables (no build script). Regenerate them here — this
+      # atomsplit ships committed classify tables (no build script). Regenerate them here — this
       # self-validates every codepoint against the reference atom() and fails the release if the
       # committed src/atom_tables.rs is stale (someone changed the scheme without `cargo run -p bitmap_gen`).
       - name: Regenerate & verify classify tables (bitmap_gen)
         working-directory: ./tokenizers
         run: |
           cargo run -p bitmap_gen
-          git diff --exit-code fast_split/src/atom_tables.rs \
-            || { echo "::error::fast_split/src/atom_tables.rs is stale — run 'cargo run -p bitmap_gen' and commit"; exit 1; }
+          git diff --exit-code atomsplit/src/atom_tables.rs \
+            || { echo "::error::atomsplit/src/atom_tables.rs is stale — run 'cargo run -p bitmap_gen' and commit"; exit 1; }
 
       - name: Publish package rust
         working-directory: ./tokenizers

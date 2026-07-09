@@ -9,7 +9,7 @@ for lang, title in ARTS:
     url = f"https://{lang}.wikipedia.org/w/api.php?" + urllib.parse.urlencode(
         {"action":"query","format":"json","prop":"extracts","explaintext":"1","titles":title})
     try:
-        req = urllib.request.Request(url, headers={"User-Agent":"fast_split-bench/0.1"})
+        req = urllib.request.Request(url, headers={"User-Agent":"atomsplit-bench/0.1"})
         text = next(iter(json.load(urllib.request.urlopen(req, timeout=30))["query"]["pages"].values())).get("extract","")
         open(f"{here}/{lang}.txt","w").write(text)
         print(f"{lang}: {len(text.encode())} bytes")

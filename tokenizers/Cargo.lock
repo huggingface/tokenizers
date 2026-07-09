@@ -112,6 +112,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
+name = "atomsplit"
+version = "0.1.0"
+dependencies = [
+ "fancy-regex 0.13.0",
+ "memchr",
+ "onig",
+ "regex",
+ "regex-syntax",
+ "thiserror 2.0.18",
+ "unicode-normalization-alignments",
+ "unicode-segmentation",
+]
+
+[[package]]
 name = "autocfg"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -762,20 +776,6 @@ dependencies = [
  "bit-set 0.8.0",
  "regex-automata",
  "regex-syntax",
-]
-
-[[package]]
-name = "fast_split"
-version = "0.1.0"
-dependencies = [
- "fancy-regex 0.13.0",
- "memchr",
- "onig",
- "regex",
- "regex-syntax",
- "thiserror 2.0.18",
- "unicode-normalization-alignments",
- "unicode-segmentation",
 ]
 
 [[package]]

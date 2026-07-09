@@ -5,8 +5,8 @@
 //!
 //! English is ~memory-bound (classify is near-free → limited scaling); CJK is compute-bound (3-byte
 //! classify dominates → scales close to linear). Run: cargo bench --bench threads
-use fast_split::classify::{Atoms, classify};
-use fast_split::fsm::{Span, fsm_byte_level, fsm_cl100k, fsm_deepseek};
+use atomsplit::classify::{Atoms, classify};
+use atomsplit::fsm::{Span, fsm_byte_level, fsm_cl100k, fsm_deepseek};
 use std::hint::black_box;
 use std::time::Instant;
 

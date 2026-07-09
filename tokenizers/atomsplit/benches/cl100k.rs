@@ -7,8 +7,8 @@
 //! the repo; the rest are fetched by `benches/data/fetch.py` (gitignored). Missing files are skipped.
 //!
 //! Run: cargo bench --bench cl100k
-use fast_split::classify::{Atoms, classify, classify_scalar};
-use fast_split::fsm::{Span, fsm_cl100k};
+use atomsplit::classify::{Atoms, classify, classify_scalar};
+use atomsplit::fsm::{Span, fsm_cl100k};
 use fancy_regex::Regex as Fancy;
 use onig::Regex;
 use std::hint::black_box;

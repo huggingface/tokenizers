@@ -1,8 +1,8 @@
-//! bitmap_gen — generator for fast_split's shared classify tables (TAG_CLASSIFY_SPEC.md §1/§7).
+//! bitmap_gen — generator for atomsplit's shared classify tables (TAG_CLASSIFY_SPEC.md §1/§7).
 //!
 //! Dev-time only (depends on `unicode_categories`); nothing here is linked into the runtime crate.
 //! `cargo run -p bitmap_gen` calls [`generate_atom_tables`] and writes the committed
-//! `fast_split/src/atom_tables.rs`. It bakes the dense `Tables` layout (ascii / 2-byte group / 3-byte
+//! `atomsplit/src/atom_tables.rs`. It bakes the dense `Tables` layout (ascii / 2-byte group / 3-byte
 //! fast3 / bmp_rle / astral) read by BOTH the SIMD kernel (`vqtbl`) and the scalar reader
 //! (`Tables::classify_char`); the per-codepoint value is an `Atom` (u4, stored `u8`).
 use std::fmt::Write as _;

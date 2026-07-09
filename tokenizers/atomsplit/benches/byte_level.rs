@@ -3,8 +3,8 @@
 //! (that's a post-split byte→char remap; the split boundaries are what this checks).
 //!
 //! Run: cargo bench --bench byte_level
-use fast_split::classify::{Atoms, classify};
-use fast_split::fsm::{Span, fsm_byte_level};
+use atomsplit::classify::{Atoms, classify};
+use atomsplit::fsm::{Span, fsm_byte_level};
 use fancy_regex::Regex as Fancy;
 use onig::Regex;
 use std::hint::black_box;

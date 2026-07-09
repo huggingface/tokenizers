@@ -4,7 +4,7 @@
 ╚══════════════════════════════════════════════════════════════════════════════╝
 
 GENERATED ARTIFACTS:
-  📁 tokenizers/fast_split/tests/
+  📁 tokenizers/atomsplit/tests/
     ├── atom_validation_harness.py    # Full Python harness (fetches from HF)
     ├── harness_generated.py          # Test vector generator
     ├── test_gen_atom_parity.rs     # 30 Rust unit tests (auto-generated)
@@ -99,7 +99,7 @@ NEXT STEPS TO COMPLETE
    → Path: onig for rare cases, fast atoms for 99%
 
 3. RUN THE HARNESS:
-   $ cd tokenizers/fast_split/tests
+   $ cd tokenizers/atomsplit/tests
    $ python atom_validation_harness.py --test-local
    
 4. VERIFY span-exact parity:
@@ -109,7 +109,7 @@ NEXT STEPS TO COMPLETE
 ═══════════════════════════════════════════════════════════════════════════════
 FILES LOCATION
 ═══════════════════════════════════════════════════════════════════════════════
-/Users/arthurzucker/Work/tokenizers/tokenizers/fast_split/tests/
+/Users/arthurzucker/Work/tokenizers/tokenizers/atomsplit/tests/
 ├── atom_validation_harness.py    ← Run this for full testing
 ├── harness_generated.py          ← Test vector generator  
 └── test_gen_atom_parity.rs       ← 30 Rust tests (check into repo)

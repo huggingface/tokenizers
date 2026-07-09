@@ -1,5 +1,5 @@
 [package]
-name = "fast_split"
+name = "atomsplit"
 version = "0.1.0"
 edition = "2024"
 authors = [
@@ -21,14 +21,14 @@ training code.
 all-features = true
 
 [lib]
-name = "fast_split"
+name = "atomsplit"
 path = "src/lib.rs"
 
 [dependencies]
 thiserror = "2"
 memchr = "2.8.2"
 # NOTE: classify tables live in src/atom_tables.rs (committed, generated). Regenerate after any atom
-# scheme change with `cargo run -p bitmap_gen`. No build script / build-dep — fast_split builds clean.
+# scheme change with `cargo run -p bitmap_gen`. No build script / build-dep — atomsplit builds clean.
 [dev-dependencies]
 unicode-segmentation = "1.11"
 unicode-normalization-alignments = "0.1"

@@ -1,11 +1,10 @@
-//! Scalar vs SIMD fsm, per pre-tokenizer — the class family (`class_runs_runend` scalar vs
-//! `class_runs_into` = NEON/SIMD movemask + early-out) AND cl100k (`fsm_cl100k` scalar vs
-//! `fsm_cl100k_simd` SIMD run-ends). classify is timed separately. `spd = scalar/simd`: >1 → SIMD wins,
-//! <1 → the scalar path is faster (e.g. cl100k on short-run Latin — SIMD run-ends only pay on long runs).
+//! Scalar vs SIMD fsm for the class family: `class_runs_runend` (scalar run-end core) vs
+//! `class_runs_into` (NEON/SIMD128 movemask boundary-extract + homogeneous-chunk early-out). classify is
+//! timed separately. `spd = scalar/simd`: >1 → SIMD wins. (cl100k is scalar-only — see benches/cl100k.rs.)
 //!
 //! Run: cargo bench --bench class_runs
-use fast_split::classify::{classify, mask, Atoms};
-use fast_split::fsm::{class_runs_into, class_runs_runend, Span};
+use atomsplit::classify::{classify, mask, Atoms};
+use atomsplit::fsm::{class_runs_into, class_runs_runend, Span};
 use std::hint::black_box;
 use std::time::Instant;
 
