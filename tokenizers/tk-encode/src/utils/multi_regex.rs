@@ -138,24 +138,40 @@ fn gpt_decomposition(pattern: &str) -> Option<&'static [(&'static str, bool)]> {
 pub enum GptFsm {
     /// GPT-2 / ByteLevel regex → `atomsplit::fsm::fsm_byte_level`.
     Gpt2,
-    /// cl100k / Llama-3 regex → `atomsplit::fsm::fsm_cl100k`.
-    Cl100k,
+    /// cl100k-family regex → `atomsplit::fsm::fsm_cl100k_cap`. `digit_cap` is rule 3's `\p{N}{1,cap}`
+    /// bound: 3 = cl100k / Llama-3, 1 = Qwen2 (`\p{N}`), `usize::MAX` = an unbounded `\p{N}+`.
+    Cl100k { digit_cap: usize },
     /// o200k / GPT-4o regex → `atomsplit::fsm::fsm_o200k`.
     O200k,
 }
 
-/// If `pattern` is exactly the GPT-2, cl100k (Llama-3), or o200k (GPT-4o) pre-tokenization regex, name
-/// the native FSM that reproduces its `Isolated` split byte-for-byte. Recognition is exact-string,
-/// matching how tokenizers ship the regex; an unknown pattern → `None` (the SysRegex path handles it).
+/// The cl100k-family template is fixed except rule 3's digit rule. If `pattern` is that template, return
+/// the `\p{N}{1,cap}` bound (`\p{N}{1,3}`→3, `\p{N}{1,2}`→2, `\p{N}`→1, `\p{N}+`→`MAX`); else `None`.
+/// This is what makes Qwen2 (cl100k with `\p{N}`) unroll without a per-tokenizer exact-string entry.
+fn cl100k_digit_cap(pattern: &str) -> Option<usize> {
+    // cl100k rules 1-2 (contraction + word) … <DIGIT RULE> … rules 4-7 (other + whitespace).
+    const PRE: &str = r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|";
+    const SUF: &str = r"| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+";
+    match pattern.strip_prefix(PRE)?.strip_suffix(SUF)? {
+        r"\p{N}{1,3}" => Some(3),
+        r"\p{N}{1,2}" => Some(2),
+        r"\p{N}" => Some(1),
+        r"\p{N}+" => Some(usize::MAX),
+        _ => None,
+    }
+}
+
+/// If `pattern` is a recognized GPT pre-tokenization regex, name the native FSM that reproduces its
+/// `Isolated` split byte-for-byte. GPT-2 and o200k are matched exactly; the cl100k family is matched
+/// structurally ([`cl100k_digit_cap`]) so digit-cap variants (Qwen2 …) unroll too. An unrecognized
+/// pattern → `None` (the SysRegex / fancy-regex path handles it).
 pub fn gpt_fsm(pattern: &str) -> Option<GptFsm> {
     if pattern == GPT2 {
         Some(GptFsm::Gpt2)
-    } else if pattern == CL100K {
-        Some(GptFsm::Cl100k)
     } else if pattern == O200K {
         Some(GptFsm::O200k)
     } else {
-        None
+        cl100k_digit_cap(pattern).map(|digit_cap| GptFsm::Cl100k { digit_cap })
     }
 }
 
@@ -180,7 +196,9 @@ impl crate::tokenizer::pattern::Pattern for GptFsmPattern {
         let mut spans = vec![(0u32, 0u32); bytes.len() + 1];
         let n = match self.0 {
             GptFsm::Gpt2 => atomsplit::fsm::fsm_byte_level(bytes, &tags, &mut spans),
-            GptFsm::Cl100k => atomsplit::fsm::fsm_cl100k(bytes, &tags, &mut spans),
+            GptFsm::Cl100k { digit_cap } => {
+                atomsplit::fsm::fsm_cl100k_cap(bytes, &tags, &mut spans, digit_cap)
+            }
             GptFsm::O200k => atomsplit::fsm::fsm_o200k(bytes, &tags, &mut spans),
         };
         Ok(spans[..n]
@@ -231,6 +249,25 @@ mod tests {
             baseline.find_iter(corpus).collect::<Vec<_>>(),
             "decomposition diverged from look-ahead regex",
         );
+    }
+
+    #[test]
+    fn gpt_fsm_recognizes_family_and_extracts_digit_cap() {
+        // Exact matches for gpt2 / o200k, structural (any digit cap) for the cl100k family.
+        assert_eq!(gpt_fsm(GPT2), Some(GptFsm::Gpt2));
+        assert_eq!(gpt_fsm(O200K), Some(GptFsm::O200k));
+        assert_eq!(gpt_fsm(CL100K), Some(GptFsm::Cl100k { digit_cap: 3 }));
+        // Qwen2: cl100k with rule 3 = `\p{N}` → cap 1.
+        let qwen2 = r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+";
+        assert_eq!(gpt_fsm(qwen2), Some(GptFsm::Cl100k { digit_cap: 1 }));
+        // Other in-family digit caps.
+        let cap2 = CL100K.replace(r"\p{N}{1,3}", r"\p{N}{1,2}");
+        assert_eq!(gpt_fsm(&cap2), Some(GptFsm::Cl100k { digit_cap: 2 }));
+        let unbounded = CL100K.replace(r"\p{N}{1,3}", r"\p{N}+");
+        assert_eq!(gpt_fsm(&unbounded), Some(GptFsm::Cl100k { digit_cap: usize::MAX }));
+        // Out of family → None (fancy-regex fallback): a foreign digit rule, and a totally unrelated regex.
+        assert_eq!(gpt_fsm(&CL100K.replace(r"\p{N}{1,3}", r"\p{N}{2,4}")), None);
+        assert_eq!(gpt_fsm(r"\w+|\s+"), None);
     }
 
     #[test]

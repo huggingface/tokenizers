@@ -161,7 +161,9 @@ impl pipeline::PreTokenizer for Split {
             classify::<Atoms>(bytes, &mut tags);
             let mut spans = vec![(0u32, 0u32); bytes.len() + 1];
             let n = match fsm {
-                GptFsm::Cl100k => atomsplit::fsm::fsm_cl100k(bytes, &tags, &mut spans),
+                GptFsm::Cl100k { digit_cap } => {
+                    atomsplit::fsm::fsm_cl100k_cap(bytes, &tags, &mut spans, digit_cap)
+                }
                 GptFsm::Gpt2 => atomsplit::fsm::fsm_byte_level(bytes, &tags, &mut spans),
                 GptFsm::O200k => atomsplit::fsm::fsm_o200k(bytes, &tags, &mut spans),
             };
@@ -474,6 +476,34 @@ mod tests {
 
         assert_eq!(
             pipeline_split(SplitPattern::Regex(o200k.into()), Isolated, false, corpus),
+            legacy,
+        );
+    }
+
+    #[test]
+    fn pipeline_qwen2_uses_fsm_and_matches_legacy() {
+        // Qwen2's regex is cl100k character-for-character EXCEPT rule 3 is `\p{N}` (each digit its own
+        // token) instead of `\p{N}{1,3}`. The structural recognizer extracts digit_cap=1 → fsm_cl100k_cap,
+        // so it unrolls (no per-tokenizer exact-string entry). Corpus stresses multi-digit runs.
+        let qwen2 = r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+";
+        let corpus = "abc 12345 don't A1B2 3.14 100%%  double  spaces\ttab.\n\n世界 42";
+        let pretok = Split::new(SplitPattern::Regex(qwen2.into()), Isolated, false).unwrap();
+        assert_eq!(
+            pretok.fsm,
+            Some(crate::utils::GptFsm::Cl100k { digit_cap: 1 }),
+            "Qwen2 pattern should route to the cl100k FSM with digit cap 1"
+        );
+
+        let mut pre = PreTokenizedString::from(corpus);
+        pretok.pre_tokenize(&mut pre).unwrap();
+        let legacy: Vec<(&str, (u32, u32))> = pre
+            .get_splits(OffsetReferential::Original, OffsetType::Byte)
+            .into_iter()
+            .map(|(s, o, _)| (s, (o.0 as u32, o.1 as u32)))
+            .collect();
+
+        assert_eq!(
+            pipeline_split(SplitPattern::Regex(qwen2.into()), Isolated, false, corpus),
             legacy,
         );
     }

@@ -89,6 +89,8 @@ fn cp_of(bytes: &[u8]) -> u32 {
 /// Rust source for `pub static {struct_name}: Tables` (the committed `atom_tables.rs`). `classify` is the
 /// single source of truth; every table (and the SIMD kernel) is derived from it. `kind` labels the
 /// emitted doc header.
+// fixed-dim UTF-8 table generator: `[8][4][64]` index math reads clearer than iterator chains.
+#[allow(clippy::needless_range_loop)]
 fn generate_tables(struct_name: &str, kind: &str, classify: &dyn Fn(u32) -> u8) -> String {
     let tag = |bytes: &[u8]| classify(cp_of(bytes));
 
@@ -141,7 +143,7 @@ fn generate_tables(struct_name: &str, kind: &str, classify: &dyn Fn(u32) -> u8) 
     let mut bmp_rle: Vec<(u16, u8)> = Vec::new();
     for cp in 0..0x10000u32 {
         let a = classify(cp);
-        if bmp_rle.last().map_or(true, |&(_, la)| la != a) {
+        if bmp_rle.last().is_none_or(|&(_, la)| la != a) {
             bmp_rle.push((cp as u16, a));
         }
     }
@@ -150,7 +152,7 @@ fn generate_tables(struct_name: &str, kind: &str, classify: &dyn Fn(u32) -> u8) 
     let mut astral: Vec<(u32, u8)> = Vec::new();
     for cp in 0x10000u32..=0x10FFFF {
         let a = classify(cp);
-        if astral.last().map_or(true, |&(_, la)| la != a) {
+        if astral.last().is_none_or(|&(_, la)| la != a) {
             astral.push((cp, a));
         }
     }
@@ -308,7 +310,7 @@ fn generate_tables(struct_name: &str, kind: &str, classify: &dyn Fn(u32) -> u8) 
     }
     o.push_str("];\n\n");
 
-    write!(o, "pub static {struct_name}: Tables = Tables {{\n").unwrap();
+    writeln!(o, "pub static {struct_name}: Tables = Tables {{").unwrap();
     o.push_str("    ascii_lo: ASCII_LO,\n    ascii_hi: ASCII_HI,\n    group_tables: GROUP,\n");
     o.push_str("    fast3_uni: FAST3_UNI,\n    fast3_slot: FAST3_SLOT,\n");
     o.push_str(

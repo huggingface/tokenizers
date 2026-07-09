@@ -364,7 +364,10 @@ mod tests {
                 if line.is_empty() {
                     continue;
                 }
-                let (p, l) = (pipeline_pretokenize(&pipe, line), legacy_pretokenize(&seq, line));
+                let (p, l) = (
+                    pipeline_pretokenize(&pipe, line),
+                    legacy_pretokenize(&seq, line),
+                );
                 if p != l {
                     let k = p
                         .iter()
