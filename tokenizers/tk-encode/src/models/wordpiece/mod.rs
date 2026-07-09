@@ -353,8 +353,8 @@ impl pipeline::Model for PipelineWordPiece {
         sequence: &str,
         output: &mut Vec<pipeline::PipelineToken>,
     ) -> Result<()> {
+        let checkpoint = output.len();
         let mut candidate = String::with_capacity(self.max_input_chars_per_word);
-        let mut candidate_tokens = Vec::with_capacity(sequence.len());
 
         let char_len = sequence.chars().count();
         if char_len > self.max_input_chars_per_word {
@@ -385,13 +385,13 @@ impl pipeline::Model for PipelineWordPiece {
                 .last()
             else {
                 let unk_id = self.unk_token.ok_or(Error::MissingUnkToken)?;
+                output.truncate(checkpoint);
                 output.push(PipelineToken { id: unk_id });
                 return Ok(());
             };
-            candidate_tokens.push(PipelineToken { id: token_id });
+            output.push(PipelineToken { id: token_id });
             start += match_len - prefix_len;
         }
-        output.extend_from_slice(&candidate_tokens);
         Ok(())
     }
 }
