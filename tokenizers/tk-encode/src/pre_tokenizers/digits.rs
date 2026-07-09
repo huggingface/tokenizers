@@ -41,19 +41,20 @@ impl PreTokenizer for Digits {
 
 impl pipeline::PreTokenizer for Digits {
     fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Split>) -> Result<()> {
-        let split_digits = self.individual_digits;
-        pipeline::split(
-            text,
-            out,
-            |c| c.is_numeric(),
-            |is_digit| {
-                if is_digit && split_digits {
-                    pipeline::SplitPolicy::Isolate
-                } else {
-                    pipeline::SplitPolicy::Keep
-                }
-            },
-        );
+        // isolate each numeric char (`individual_digits`) or keep numeric runs — atomsplit classify +
+        // class-runs FSM. atom `NUMERIC` == `char::is_numeric`, so byte-exact with the scalar path.
+        use atomsplit::classify::{Atoms, classify, mask};
+        use atomsplit::fsm::class_runs_into;
+        let bytes = text.as_bytes();
+        let mut tags = vec![0u8; bytes.len()];
+        classify::<Atoms>(bytes, &mut tags);
+        let mut spans = vec![(0u32, 0u32); bytes.len() + 1];
+        let n = if self.individual_digits {
+            class_runs_into::<0, { mask::NUMERIC }, 0>(bytes, &tags, &mut spans) // isolate each digit
+        } else {
+            class_runs_into::<0, 0, { mask::NUMERIC }>(bytes, &tags, &mut spans) // keep digit runs
+        };
+        out.extend(spans[..n].iter().map(|&(s, e)| pipeline::Split { start: s, end: e }));
         Ok(())
     }
 }
