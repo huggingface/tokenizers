@@ -195,6 +195,34 @@ mod classify_tests {
         classify_scalar::<Atoms>(text, &mut scalar);
         assert_eq!(simd, scalar, "SIMD classify must be byte-exact vs scalar");
     }
+
+    /// Same byte-exactness gate for the script-id scheme (ids can exceed 15, so this also proves the
+    /// SIMD kernel carries u8 tags, not u4), plus the `fixed_script` remap baked by `bitmap_gen`.
+    #[cfg(feature = "unicode-scripts")]
+    #[test]
+    fn scripts_simd_matches_scalar_and_remap() {
+        let unit = "Hello Привет 世界 ひらがな カタカナ 한글 مرحبا ½ 123 ";
+        let corpus = unit.repeat(40);
+        let text = corpus.as_bytes();
+        let mut simd = vec![0u8; text.len()];
+        let mut scalar = vec![0u8; text.len()];
+        classify::<Scripts>(text, &mut simd);
+        classify_scalar::<Scripts>(text, &mut scalar);
+        assert_eq!(simd, scalar, "SIMD script classify must be byte-exact vs scalar");
+
+        let sid = |s: &str| {
+            let b = s.as_bytes();
+            let mut t = vec![0u8; b.len()];
+            classify::<Scripts>(b, &mut t);
+            t[0]
+        };
+        let han = sid("中");
+        assert!(han != 0 && sid("ひ") == han && sid("カ") == han, "Hira/Kata fold into Han");
+        let (latin, cyr) = (sid("a"), sid("Б"));
+        assert!(latin != 0 && cyr != 0 && latin != cyr, "Latin/Cyrillic are distinct real scripts");
+        assert_eq!(sid(" "), 0, "space (Common) → SCRIPT_ANY");
+        assert_eq!(sid("1"), 0, "ASCII digit (Common) → SCRIPT_ANY");
+    }
 }
 
 // ── Scheme: Scripts (the parallel substrate; same engine, SCRIPT_RANGES table) ─────────────────
@@ -210,17 +238,30 @@ impl TagScheme for Scripts {
     const CJK_RANGE_TAG: Option<u8> = None; // CJK = Han/Hangul/Kana (several ids) → resolved by tables
 
     /// ┌──────────────────────── OWNER: scalar path ────────────────────────┐
-    /// SIMD range kernel's scalar twin: codepoint → script-id via `SCRIPT_RANGES` (the `get_script`
-    /// range match), then `fixed_script` remap (Hira/Kata→Han, space→Any).
+    /// Scalar twin of the SIMD range kernel: codepoint → script-id via the baked `SCRIPT_TABLES`
+    /// (`bitmap_gen` already applied the `fixed_script` remap — Hira/Kata→Han, Common/Inherited→Any).
+    /// Gated on `unicode-scripts`; without the feature the committed table isn't compiled in.
     #[inline]
     fn classify_char(text: &[u8], i: usize) -> u8 {
-        let _ = (text, i);
-        todo!("scalar script-id — SCRIPT_RANGES range search + fixed_script remap")
+        #[cfg(feature = "unicode-scripts")]
+        {
+            return crate::script_tables::SCRIPT_TABLES.classify_char(text, i);
+        }
+        #[cfg(not(feature = "unicode-scripts"))]
+        {
+            let _ = (text, i);
+            todo!("enable the `unicode-scripts` feature (committed src/script_tables.rs)")
+        }
     }
 
     fn tables() -> &'static crate::simd_classify::Tables {
-        todo!(
-            "Scripts SCRIPT_TABLES — Phase 2 (generate the const script tables, like ATOM_TABLES)"
-        )
+        #[cfg(feature = "unicode-scripts")]
+        {
+            return &crate::script_tables::SCRIPT_TABLES;
+        }
+        #[cfg(not(feature = "unicode-scripts"))]
+        {
+            todo!("enable the `unicode-scripts` feature (committed src/script_tables.rs)")
+        }
     }
 }

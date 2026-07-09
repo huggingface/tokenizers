@@ -24,6 +24,11 @@ all-features = true
 name = "fast_split"
 path = "src/lib.rs"
 
+[features]
+# Compile the committed src/script_tables.rs and wire the `Scripts` scheme (UnicodeScripts pretokenizer).
+# Off by default — few tokenizers use it. Regenerate the table with `cargo run -p bitmap_gen --features scripts`.
+unicode-scripts = []
+
 [dependencies]
 thiserror = "2"
 memchr = "2.8.2"
@@ -54,4 +59,8 @@ harness = false
 
 [[bench]]
 name = "threads"
+harness = false
+
+[[bench]]
+name = "classify"
 harness = false

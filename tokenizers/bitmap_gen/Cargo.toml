@@ -7,3 +7,10 @@ license = "Apache-2.0"
 
 [dependencies]
 unicode_categories = "0.1"
+# Only pulled in under the `scripts` feature (UnicodeScripts table generation). Off by default.
+unicode-script = { version = "0.5.5", optional = true }
+
+[features]
+# Generate SCRIPT_TABLES too. Gated: few tokenizers use UnicodeScripts, so the extra build-dep and
+# second table set are opt-in. fast_split's `unicode-scripts` feature turns this on.
+scripts = ["dep:unicode-script"]

@@ -226,7 +226,6 @@ pub unsafe fn classify_neon<S: super::classify::TagScheme>(text: &[u8], tags: &m
     let tables = S::tables();
 
     let n = text.len();
-    let mut mb_seen = false;
     let mut i = 0;
     while i + 32 <= n {
         // 1. load the first byte in each lane. 16 lanes, each now own 1 byte. All operations are
@@ -388,8 +387,22 @@ pub unsafe fn classify_neon<S: super::classify::TagScheme>(text: &[u8], tags: &m
         let is_cont = eq(vandq_u8(b0, vdupq_n_u8(0xC0)), 0x80);
         out = vbslq_u8(is_cont, vdupq_n_u8(CONT), out);
 
-        mb_seen |= any(eq(out, MB));
         vst1q_u8(tags.as_mut_ptr().add(i), out);
+        // Per-chunk MB fixup: astral (4-byte, the vector path only gathers b0/b1/b2) and any RLE-deferred
+        // lead. Rare on real text → the branch is ~always-false and free; when taken, this chunk's bytes
+        // are still hot in L1 (vs a second full pass over the whole buffer). Only the ≤16 MB lanes are fixed.
+        if any(eq(out, MB)) {
+            for j in 0..16 {
+                if tags[i + j] == MB {
+                    let cp = decode(text, i + j);
+                    tags[i + j] = if cp < 0x10000 {
+                        tables.bmp_tag(cp as u16)
+                    } else {
+                        S::classify_char(text, i + j)
+                    };
+                }
+            }
+        }
         i += 16;
     }
 
@@ -409,21 +422,5 @@ pub unsafe fn classify_neon<S: super::classify::TagScheme>(text: &[u8], tags: &m
             }
         }
         i += w;
-    }
-
-    // ── MB fixup: resolve every lane the SIMD left as MB (CJK holes, astral) ──
-    if mb_seen {
-        let mut pos = 0;
-        while pos < n {
-            if tags[pos] == MB {
-                let cp = decode(text, pos);
-                tags[pos] = if cp < 0x10000 {
-                    tables.bmp_tag(cp as u16)
-                } else {
-                    S::classify_char(text, pos)
-                };
-            }
-            pos += 1;
-        }
     }
 }
