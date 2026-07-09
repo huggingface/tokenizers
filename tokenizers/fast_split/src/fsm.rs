@@ -1,3 +1,5 @@
+//! TODO: this is the only file left to review and push to the bring of performances.
+//!
 //! FSM layer: turn the `Atom` tag stream into token spans. Every pre-tokenizer is one of these
 //! shapes, parameterized by a class mask + behavior (all `const`-generic → fully monomorphized).
 //! They all read the shared stream from `classify::classify::<Atoms>`; the delimiter *behavior* never
@@ -7,7 +9,7 @@
 //! optimization for the RunSplit family (class-change → movemask → bit-iterate).
 #![allow(dead_code)] // skeleton
 
-use crate::classify::{char_len, classify, in_mask, mask, Atom, Atoms};
+use crate::classify::{Atom, Atoms, char_len, classify, in_mask, mask};
 
 /// Advance over a maximal `m`-membership run; returns the byte index past it. Byte-wise (`i += 1`),
 /// treating continuation bytes as in-run — so NO `char_len` branch per char and no `text` access. This
@@ -349,7 +351,11 @@ fn cl100k<const SIMD: bool>(text: &[u8], tags: &[u8], out: &mut Vec<Span>) {
             // WsOther: rule 2 (prefix + `\p{L}+`) | whitespace (never rule 4 — not in NOT_WS_L_N)
             WSO => {
                 let a = i + char_len(b);
-                i = if a < end && tags[a] == LET { letters(a) } else { ws(i) };
+                i = if a < end && tags[a] == LET {
+                    letters(a)
+                } else {
+                    ws(i)
+                };
             }
             // Newline: whitespace (rule 5 ends at the last newline)
             NLN => i = ws(i),
@@ -375,14 +381,22 @@ fn cl100k<const SIMD: bool>(text: &[u8], tags: &[u8], out: &mut Vec<Span>) {
                     i + adv
                 } else {
                     let a = i + 1; // Apostrophe is ASCII (0x27)
-                    if a < end && tags[a] == LET { letters(a) } else { other(i) } // c ∈ NOT_WS_L_N ⇒ > i
+                    if a < end && tags[a] == LET {
+                        letters(a)
+                    } else {
+                        other(i)
+                    } // c ∈ NOT_WS_L_N ⇒ > i
                 };
             }
             // Mark | Connector | Punct | SymOther | NumericOther | Control (∈ PREFIX2 ∩ NOT_WS_L_N):
             // rule 2 (prefix + `\p{L}+`) | rule 4
             MRK | CON | PUN | SYM | NMO | CTL => {
                 let a = i + char_len(b);
-                i = if a < end && tags[a] == LET { letters(a) } else { other(i) }; // c ∈ NOT_WS_L_N ⇒ > i
+                i = if a < end && tags[a] == LET {
+                    letters(a)
+                } else {
+                    other(i)
+                }; // c ∈ NOT_WS_L_N ⇒ > i
             }
             // Sentinel / MultiByte / Cont — never a char-start atom; emit one char defensively.
             _ => i += char_len(b),
@@ -564,7 +578,8 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut Vec<Span>) {
             // Connector | Punct | Apostrophe | SymOther (∈ `\p{P}∪\p{S}`): alt-1 `[ascii_punct][A-Za-z]+`
             // | alt-3 `[\p{P}\p{S}]+[\r\n]*`
             CON | PUN | APO | SYM => {
-                i = if b.is_ascii_punctuation() && i + 1 < end && text[i + 1].is_ascii_alphabetic() {
+                i = if b.is_ascii_punctuation() && i + 1 < end && text[i + 1].is_ascii_alphabetic()
+                {
                     let mut p = i + 1;
                     while p < end && text[p].is_ascii_alphabetic() {
                         p += 1;
@@ -633,10 +648,16 @@ pub fn fsm_byte_level(text: &[u8], tags: &[u8], out: &mut Vec<Span>) {
             APO => {
                 let adv = match (text.get(i + 1), text.get(i + 2)) {
                     (Some(b's' | b't' | b'm' | b'd'), _) => 2,
-                    (Some(b'r'), Some(b'e')) | (Some(b'v'), Some(b'e')) | (Some(b'l'), Some(b'l')) => 3,
+                    (Some(b'r'), Some(b'e'))
+                    | (Some(b'v'), Some(b'e'))
+                    | (Some(b'l'), Some(b'l')) => 3,
                     _ => 0,
                 };
-                i = if adv > 0 { i + adv } else { run_end(tags, i, end, mask::NOT_WS_L_N) };
+                i = if adv > 0 {
+                    i + adv
+                } else {
+                    run_end(tags, i, end, mask::NOT_WS_L_N)
+                };
             }
             // Space: the ` ?` prefix — attach one space to a following letter / number / "other" run,
             // else it's whitespace (rules `\s+(?!\S)|\s+`, which leave one space for the next run).
@@ -645,7 +666,9 @@ pub fn fsm_byte_level(text: &[u8], tags: &[u8], out: &mut Vec<Span>) {
                 i = match tags.get(a) {
                     Some(&LET) => run_end(tags, a, end, mask::LETTER),
                     Some(&NW) | Some(&NO) => run_end(tags, a, end, mask::NUMBER),
-                    Some(&t) if in_mask(t, mask::NOT_WS_L_N) => run_end(tags, a, end, mask::NOT_WS_L_N),
+                    Some(&t) if in_mask(t, mask::NOT_WS_L_N) => {
+                        run_end(tags, a, end, mask::NOT_WS_L_N)
+                    }
                     _ => ws(i),
                 };
             }
@@ -904,9 +927,20 @@ impl CharDelimiterSplit {
     }
 }
 
-// UnicodeScripts (`classify::<Scripts>` → `fsm_script_run`) is intentionally NOT wired up as a struct
-// yet: the `Scripts` scheme's SCRIPT_TABLES are Phase 2 (a new unicode-script data source in
-// `bitmap_gen`), so `classify::<Scripts>` would panic. `fsm_script_run` above is done and tested.
+/// `UnicodeScripts` — split on script change; the transparent set `{Common, Inherited, Any}` sticks to
+/// the current run (see [`fsm_script_run`]). Reads the `Scripts` id stream, so `tags` here holds
+/// script-ids, not atoms. Gated on `unicode-scripts`: without the feature the committed `SCRIPT_TABLES`
+/// aren't compiled in and `classify::<Scripts>` would panic.
+#[cfg(feature = "unicode-scripts")]
+pub struct UnicodeScripts;
+#[cfg(feature = "unicode-scripts")]
+impl UnicodeScripts {
+    #[inline]
+    pub fn pre_tokenize(&self, text: &[u8], tags: &mut [u8], out: &mut Vec<Span>) {
+        classify::<crate::classify::Scripts>(text, tags);
+        fsm_script_run(text, tags, out);
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -1022,7 +1056,10 @@ mod tests {
     fn byte_level_rules() {
         // ` ?\p{L}+` (space attaches), lowercase contraction, ` ?\p{N}+` UNBOUNDED (no {1,3} cap).
         // "I" | "'m" | " 12345" | " ok"
-        assert_eq!(byte_level("I'm 12345 ok"), vec![(0, 1), (1, 3), (3, 9), (9, 12)]);
+        assert_eq!(
+            byte_level("I'm 12345 ok"),
+            vec![(0, 1), (1, 3), (3, 9), (9, 12)]
+        );
         // contractions are CASE-SENSITIVE: uppercase 'S is not one → "IT" | "'" | "S"
         assert_eq!(byte_level("IT'S"), vec![(0, 2), (2, 3), (3, 4)]);
         // multi-space: `\s+(?!\S)` leaves one space for the next word → "hi" | "  " ... wait: "hi   ok"
@@ -1058,5 +1095,16 @@ mod tests {
         // split on '/', Removed → drop delimiters, drop the empty gap between "//"
         CharDelimiterSplit('/').pre_tokenize(b"a/bc//d", &mut [], &mut out);
         assert_eq!(out, vec![(0, 1), (2, 4), (6, 7)]);
+    }
+
+    #[cfg(feature = "unicode-scripts")]
+    #[test]
+    fn unicode_scripts_wired() {
+        // classify::<Scripts> → fsm_script_run, end to end: Latin | Cyrillic | Han
+        let s = "aБ中"; // a=1B, Б=2B (U+0411), 中=3B (U+4E2D)
+        let mut tags = vec![0u8; s.len()];
+        let mut out = Vec::new();
+        UnicodeScripts.pre_tokenize(s.as_bytes(), &mut tags, &mut out);
+        assert_eq!(out, vec![(0, 1), (1, 3), (3, 6)]);
     }
 }

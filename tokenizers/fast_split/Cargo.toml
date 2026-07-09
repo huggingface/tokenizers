@@ -41,6 +41,8 @@ regex-syntax = "0.8"
 regex = "1.10"
 onig = "6.5.1"
 fancy-regex = "0.13"
+# UnicodeScripts bench reference (old algorithm) — same script data our SCRIPT_TABLES are built from.
+unicode-script = "0.5.5"
 [[bench]]
 name = "cl100k"
 harness = false
@@ -64,3 +66,8 @@ harness = false
 [[bench]]
 name = "classify"
 harness = false
+
+[[bench]]
+name = "unicode_scripts"
+harness = false
+required-features = ["unicode-scripts"]

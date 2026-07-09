@@ -776,6 +776,7 @@ dependencies = [
  "regex-syntax",
  "thiserror 2.0.18",
  "unicode-normalization-alignments",
+ "unicode-script",
  "unicode-segmentation",
 ]
 
