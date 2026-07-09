@@ -682,37 +682,6 @@ pub fn fsm_byte_level(text: &[u8], tags: &[u8], out: &mut Vec<Span>) {
     }
 }
 
-/// UnicodeScripts: split on script-id change; the transparent set `{Common, Inherited, Any}` (id
-/// [`SCRIPT_ANY`]) sticks to the current run without changing or splitting it. Reads a `scripts` stream
-/// (from `classify::<Scripts>`), NOT atoms — `Scripts::CONT` (0xFF) marks continuation bytes, which
-/// stay in-run byte-wise. A run's script is fixed by its first real (non-Any) char; adjacent real
-/// scripts that differ are a boundary. `text` is unused (offsets only) but kept for a uniform signature.
-/// ┌── OWNER: shared (scalar) ──┐
-pub fn fsm_script_run(text: &[u8], scripts: &[u8], out: &mut Vec<Span>) {
-    let _ = text;
-    const CONT: u8 = 0xFF; // Scripts::CONT
-    let n = scripts.len();
-    let mut run_start = 0usize;
-    let mut cur = SCRIPT_ANY; // the current run's fixed script (Any until a real one is seen)
-    let mut i = 0;
-    while i < n {
-        let s = scripts[i];
-        if s != CONT && s != SCRIPT_ANY {
-            if cur != SCRIPT_ANY && s != cur {
-                out.push((run_start as u32, i as u32)); // real script changed → boundary
-                run_start = i;
-            }
-            cur = s;
-        }
-        i += 1; // byte-wise: CONT / Any chars stay in the current run
-    }
-    if run_start < n {
-        out.push((run_start as u32, n as u32));
-    }
-}
-/// Transparent script id for `{Common, Inherited, Any}` (the Scripts scheme must map those to 0).
-pub const SCRIPT_ANY: u8 = 0;
-
 /// SIMD boundary-extract for the RunSplit family: `in_mask` class-change → `movemask` → bit-iterate
 /// to spans. Optional aarch64 acceleration of `fsm_split`/`fsm_class_runs`' scalar core.
 /// ┌── OWNER: SIMD path ──┐
@@ -927,21 +896,6 @@ impl CharDelimiterSplit {
     }
 }
 
-/// `UnicodeScripts` — split on script change; the transparent set `{Common, Inherited, Any}` sticks to
-/// the current run (see [`fsm_script_run`]). Reads the `Scripts` id stream, so `tags` here holds
-/// script-ids, not atoms. Gated on `unicode-scripts`: without the feature the committed `SCRIPT_TABLES`
-/// aren't compiled in and `classify::<Scripts>` would panic.
-#[cfg(feature = "unicode-scripts")]
-pub struct UnicodeScripts;
-#[cfg(feature = "unicode-scripts")]
-impl UnicodeScripts {
-    #[inline]
-    pub fn pre_tokenize(&self, text: &[u8], tags: &mut [u8], out: &mut Vec<Span>) {
-        classify::<crate::classify::Scripts>(text, tags);
-        fsm_script_run(text, tags, out);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1068,43 +1022,10 @@ mod tests {
     }
 
     #[test]
-    fn script_run_basic() {
-        // ids per byte; ANY(0) sticks, CONT(0xFF) stays in-run. "aa" Latin | "." Any | "bb" Cyr.
-        assert_eq!(
-            {
-                let mut o = Vec::new();
-                fsm_script_run(b"aa.bb", &[1, 1, 0, 2, 2], &mut o);
-                o
-            },
-            vec![(0, 3), (3, 5)] // the "." (Any) sticks to the preceding Latin run
-        );
-        // multibyte: "é"(Latin, lead+CONT) | "Б"(Cyr, lead+CONT)
-        assert_eq!(
-            {
-                let mut o = Vec::new();
-                fsm_script_run("éБ".as_bytes(), &[1, 0xFF, 2, 0xFF], &mut o);
-                o
-            },
-            vec![(0, 2), (2, 4)]
-        );
-    }
-
-    #[test]
     fn char_delimiter_split() {
         let mut out = Vec::new();
         // split on '/', Removed → drop delimiters, drop the empty gap between "//"
         CharDelimiterSplit('/').pre_tokenize(b"a/bc//d", &mut [], &mut out);
         assert_eq!(out, vec![(0, 1), (2, 4), (6, 7)]);
-    }
-
-    #[cfg(feature = "unicode-scripts")]
-    #[test]
-    fn unicode_scripts_wired() {
-        // classify::<Scripts> → fsm_script_run, end to end: Latin | Cyrillic | Han
-        let s = "aБ中"; // a=1B, Б=2B (U+0411), 中=3B (U+4E2D)
-        let mut tags = vec![0u8; s.len()];
-        let mut out = Vec::new();
-        UnicodeScripts.pre_tokenize(s.as_bytes(), &mut tags, &mut out);
-        assert_eq!(out, vec![(0, 1), (1, 3), (3, 6)]);
     }
 }

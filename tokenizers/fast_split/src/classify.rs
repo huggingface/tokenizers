@@ -79,8 +79,8 @@ pub mod mask {
     pub const LETTER_MARK: u16 = Letter.bit() | Mark.bit();
 }
 
-/// A per-char tag alphabet + its two classify paths. `Atoms` (12-way) and `Scripts` (script-id) are
-/// the two instances; a third pretokenizer-class scheme is just another `impl`.
+/// A per-char tag alphabet + its classify paths. `Atoms` (12-way) is the instance today; another
+/// pretokenizer-class scheme is just another `impl`.
 pub trait TagScheme {
     /// Number of distinct tags (excluding `CONT`). Atoms ≤ 16 → the FSM remap fits one `vqtbl1`.
     const N_TAGS: usize;
@@ -91,8 +91,8 @@ pub trait TagScheme {
     /// astral emojis etc.
     const MB: u8;
     /// If the whole CJK block (E3–ED) collapses to ONE tag under this scheme, name it here to enable
-    /// the fast lead-byte range shortcut (Atoms → `Some(Letter)`). `None` (e.g. Scripts, where CJK is
-    /// Han/Hangul/Kana — several tags) → CJK is resolved by the per-`(lead,b2-pair)` tables instead.
+    /// the fast lead-byte range shortcut (Atoms → `Some(Letter)`). `None` → CJK is resolved by the
+    /// per-`(lead,b2-pair)` tables instead (for a scheme that maps CJK blocks to distinct tags).
     const CJK_RANGE_TAG: Option<u8>;
 
     /// Scalar per-char classifier: tag of the char starting at `text[i]`. ASCII → Look Up Table; 2/3-byte →
@@ -196,72 +196,4 @@ mod classify_tests {
         assert_eq!(simd, scalar, "SIMD classify must be byte-exact vs scalar");
     }
 
-    /// Same byte-exactness gate for the script-id scheme (ids can exceed 15, so this also proves the
-    /// SIMD kernel carries u8 tags, not u4), plus the `fixed_script` remap baked by `bitmap_gen`.
-    #[cfg(feature = "unicode-scripts")]
-    #[test]
-    fn scripts_simd_matches_scalar_and_remap() {
-        let unit = "Hello Привет 世界 ひらがな カタカナ 한글 مرحبا ½ 123 ";
-        let corpus = unit.repeat(40);
-        let text = corpus.as_bytes();
-        let mut simd = vec![0u8; text.len()];
-        let mut scalar = vec![0u8; text.len()];
-        classify::<Scripts>(text, &mut simd);
-        classify_scalar::<Scripts>(text, &mut scalar);
-        assert_eq!(simd, scalar, "SIMD script classify must be byte-exact vs scalar");
-
-        let sid = |s: &str| {
-            let b = s.as_bytes();
-            let mut t = vec![0u8; b.len()];
-            classify::<Scripts>(b, &mut t);
-            t[0]
-        };
-        let han = sid("中");
-        assert!(han != 0 && sid("ひ") == han && sid("カ") == han, "Hira/Kata fold into Han");
-        let (latin, cyr) = (sid("a"), sid("Б"));
-        assert!(latin != 0 && cyr != 0 && latin != cyr, "Latin/Cyrillic are distinct real scripts");
-        assert_eq!(sid(" "), 0, "space (Common) → SCRIPT_ANY");
-        assert_eq!(sid("1"), 0, "ASCII digit (Common) → SCRIPT_ANY");
-    }
-}
-
-// ── Scheme: Scripts (the parallel substrate; same engine, SCRIPT_RANGES table) ─────────────────
-
-/// The script scheme fed to `classify::<Scripts>` (UnicodeScripts). Tags are script-ids; the FSM is
-/// `fsm::fsm_script_run` (id-equality + transparent set), not the atom masks. See spec §3.
-pub struct Scripts;
-
-impl TagScheme for Scripts {
-    const N_TAGS: usize = 160; // ~Unicode script count; script-ids don't fit a u16 mask (FSM uses id equality)
-    const CONT: u8 = 0xFF; // reserved continuation sentinel (never a valid script id)
-    const MB: u8 = 0xFE; // reserved "unresolved multibyte" sentinel (never a valid script id)
-    const CJK_RANGE_TAG: Option<u8> = None; // CJK = Han/Hangul/Kana (several ids) → resolved by tables
-
-    /// ┌──────────────────────── OWNER: scalar path ────────────────────────┐
-    /// Scalar twin of the SIMD range kernel: codepoint → script-id via the baked `SCRIPT_TABLES`
-    /// (`bitmap_gen` already applied the `fixed_script` remap — Hira/Kata→Han, Common/Inherited→Any).
-    /// Gated on `unicode-scripts`; without the feature the committed table isn't compiled in.
-    #[inline]
-    fn classify_char(text: &[u8], i: usize) -> u8 {
-        #[cfg(feature = "unicode-scripts")]
-        {
-            return crate::script_tables::SCRIPT_TABLES.classify_char(text, i);
-        }
-        #[cfg(not(feature = "unicode-scripts"))]
-        {
-            let _ = (text, i);
-            todo!("enable the `unicode-scripts` feature (committed src/script_tables.rs)")
-        }
-    }
-
-    fn tables() -> &'static crate::simd_classify::Tables {
-        #[cfg(feature = "unicode-scripts")]
-        {
-            return &crate::script_tables::SCRIPT_TABLES;
-        }
-        #[cfg(not(feature = "unicode-scripts"))]
-        {
-            todo!("enable the `unicode-scripts` feature (committed src/script_tables.rs)")
-        }
-    }
 }

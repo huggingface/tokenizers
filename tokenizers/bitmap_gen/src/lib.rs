@@ -1,15 +1,10 @@
 //! bitmap_gen — generator for fast_split's shared classify tables (TAG_CLASSIFY_SPEC.md §1/§7).
 //!
-//! Dev/build-time only (depends on `unicode_categories`; `unicode-script` under the `scripts` feature);
-//! nothing here is linked into the runtime crate. `fast_split/build.rs` calls [`generate_atom_tables`]
-//! (always) and — under the `scripts` feature — [`generate_script_tables`] at compile time, writing the
-//! result to `$OUT_DIR`, which `fast_split` `include!`s. Both bake the SAME dense `Tables` layout
-//! (ascii / 2-byte group / 3-byte fast3 / bmp_rle / astral) read by BOTH the SIMD kernel (`vqtbl`) and
-//! the scalar reader (`Tables::classify_char`) — only the per-codepoint value differs: an `Atom` (u4)
-//! for atoms, a Unicode script-id (u8) for scripts.
-//!
-//! The `scripts` feature is off by default: few tokenizers use `UnicodeScripts`, so the extra build-dep
-//! and the second table set cost nothing unless asked for.
+//! Dev-time only (depends on `unicode_categories`); nothing here is linked into the runtime crate.
+//! `cargo run -p bitmap_gen` calls [`generate_atom_tables`] and writes the committed
+//! `fast_split/src/atom_tables.rs`. It bakes the dense `Tables` layout (ascii / 2-byte group / 3-byte
+//! fast3 / bmp_rle / astral) read by BOTH the SIMD kernel (`vqtbl`) and the scalar reader
+//! (`Tables::classify_char`); the per-codepoint value is an `Atom` (u4, stored `u8`).
 use std::fmt::Write as _;
 use unicode_categories::UnicodeCategories;
 
@@ -73,9 +68,9 @@ fn cp_of(bytes: &[u8]) -> u32 {
 
 /// Build the dense tables from a per-codepoint `classify`, self-validate the scalar reader reproduces
 /// `classify(cp)` for all 1.1M codepoints (panics → fails the build on any mismatch), and return the
-/// Rust source for `pub static {struct_name}: Tables` to be `include!`d by fast_split. `classify` is the
-/// single source of truth; every table (and the SIMD kernel) is derived from it. `kind` is only for the
-/// emitted doc header ("atom" / "script"). These tables can be built for unicode script and atoms.
+/// Rust source for `pub static {struct_name}: Tables` (the committed `atom_tables.rs`). `classify` is the
+/// single source of truth; every table (and the SIMD kernel) is derived from it. `kind` labels the
+/// emitted doc header.
 fn generate_tables(struct_name: &str, kind: &str, classify: &dyn Fn(u32) -> u8) -> String {
     let tag = |bytes: &[u8]| classify(cp_of(bytes));
 
@@ -273,57 +268,7 @@ fn generate_tables(struct_name: &str, kind: &str, classify: &dyn Fn(u32) -> u8) 
     o
 }
 
-/// Atom tables — the 12-way category alphabet (`ATOM_TABLES`). Always generated.
+/// Atom tables — the 12-way category alphabet (`ATOM_TABLES`).
 pub fn generate_atom_tables() -> String {
     generate_tables("ATOM_TABLES", "atom", &|cp| char::from_u32(cp).map(atom).unwrap_or(10))
-}
-
-/// Unicode-script tables (`SCRIPT_TABLES`) — feature-gated (`scripts`), since few tokenizers use the
-/// `UnicodeScripts` pretokenizer and the `unicode-script` build-dep is only pulled in when this is on.
-/// Values are script-ids consumed by `fsm::fsm_script_run` (id-equality; `0` = transparent). The
-/// `fixed_script` remap (spec §3) is baked in here so the table already carries the FSM's view.
-#[cfg(feature = "scripts")]
-pub fn generate_script_tables() -> String {
-    let ids = build_script_ids();
-    generate_tables("SCRIPT_TABLES", "script", &move |cp| ids[cp as usize])
-}
-
-/// Precompute the script-id for every codepoint, applying the `fixed_script` remap so the baked table is
-/// exactly what `fsm_script_run` reads:
-///   • `Common | Inherited | Unknown` → `0` (SCRIPT_ANY, the transparent set — spec §3)
-///   • `Hiragana | Katakana` → `Han` (Japanese kana+kanji stay one run)
-///   • every other script → a stable id assigned in codepoint order (1.., staying below the `0xFE`/`0xFF`
-///     sentinels reserved by `Scripts::{MB, CONT}`).
-/// ids are keyed on the *canonical* script, so kana and Han share an id regardless of scan order.
-#[cfg(feature = "scripts")]
-fn build_script_ids() -> Vec<u8> {
-    use std::collections::HashMap;
-    use unicode_script::{Script, UnicodeScript};
-
-    let mut ids = vec![0u8; 0x11_0000];
-    let mut map: HashMap<Script, u8> = HashMap::new();
-    let mut next: u8 = 1;
-    for cp in 0u32..=0x10FFFF {
-        let ch = match char::from_u32(cp) {
-            Some(c) => c,
-            None => continue, // surrogate → 0 (Any)
-        };
-        let id = match ch.script() {
-            Script::Common | Script::Inherited | Script::Unknown => 0,
-            s => {
-                let key = match s {
-                    Script::Hiragana | Script::Katakana => Script::Han,
-                    other => other,
-                };
-                *map.entry(key).or_insert_with(|| {
-                    let id = next;
-                    next += 1;
-                    id
-                })
-            }
-        };
-        assert!(id < 0xFE, "too many scripts: id {id} collides with Scripts::{{MB,CONT}} sentinels");
-        ids[cp as usize] = id;
-    }
-    ids
 }

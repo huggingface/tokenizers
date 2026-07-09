@@ -1,6 +1,4 @@
 pub mod atom_tables;
-#[cfg(feature = "unicode-scripts")]
-pub mod script_tables;
 pub mod classify;
 pub mod fsm;
 pub mod simd_classify;

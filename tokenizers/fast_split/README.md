@@ -101,7 +101,7 @@ fast3_uni[block] = tag           if the whole 128-cp block is one atom   (425 bl
                  = 0xFF          otherwise → fast3_mixed[ fast3_slot[block] ] holds a 128-table (87 blocks)
 ```
 
-**CJK shortcut (SIMD only).** When a scheme maps *all* of CJK to a single tag (atoms → `Letter`), the SIMD kernel skips the tables for `E3..ED` and proves "is CJK" with a few range compares (Han `E4..E9`, Hangul `EB..EC`, kana `E3 81..83`, minus a handful of punctuation holes like `・`). It only ever *under*-claims (boundary/hole codepoints fall through to the exact 3-byte tables), so it stays byte-exact. Schemes where CJK spans many tags (scripts: Han/Hangul/Kana are different) set `CJK_RANGE_TAG = None` and use the tables.
+**CJK shortcut (SIMD only).** When a scheme maps *all* of CJK to a single tag (atoms → `Letter`), the SIMD kernel skips the tables for `E3..ED` and proves "is CJK" with a few range compares (Han `E4..E9`, Hangul `EB..EC`, kana `E3 81..83`, minus a handful of punctuation holes like `・`). It only ever *under*-claims (boundary/hole codepoints fall through to the exact 3-byte tables), so it stays byte-exact. A scheme that maps CJK blocks to distinct tags would set `CJK_RANGE_TAG = None` and use the tables.
 
 **Cold fallback + astral.** The dense BMP tag stream and the astral range are **run-length encoded** `(start_cp, tag)` and binary-searched — a few KB instead of a 64 KB dense LUT, because tags change rarely across a codepoint range. The SIMD kernel can't see a 4-byte char's 4th byte (it only gathers 3 bytes per lane), so it stamps those lanes `MB` and a per-chunk fixup resolves them via these tables while the chunk is still hot in L1.
 

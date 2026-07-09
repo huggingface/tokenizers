@@ -292,8 +292,8 @@ pub unsafe fn classify_neon<S: super::classify::TagScheme>(text: &[u8], tags: &m
         }
 
         // ── CJK fast path (leads E3..ED = U+3000..U+DFFF) — ONLY when the scheme collapses all of CJK
-        //    to one tag (Atoms → Letter). Schemes where CJK spans several tags (Scripts: Han/Hangul/
-        //    Kana) set CJK_RANGE_TAG=None and skip this → the 3-byte tables below resolve E3..ED.
+        //    to one tag (Atoms → Letter). A scheme that maps CJK blocks to several tags sets
+        //    CJK_RANGE_TAG=None and skips this → the 3-byte tables below resolve E3..ED.
         //    OPTIMISTIC bulk: flags only DEFINITELY-CJK lanes and leaves boundary/hole codepoints
         //    unresolved for the exact 3-byte tables — never over-claims, so the result stays byte-exact.
         if let Some(cjk_tag) = S::CJK_RANGE_TAG {
