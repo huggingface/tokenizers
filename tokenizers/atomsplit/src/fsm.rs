@@ -578,42 +578,46 @@ fn o_is_lower(t: u8) -> bool {
 
 /// One o200k letter sub-token from `p` within the run `[.., re)`: alt-1 `[UC]*[LC]+` (tried first) else
 /// alt-2 `[UC]+[LC]*` (reached only for an all-U run). Greedy with Perl backtracking — `[UC]*` gives back
-/// to the last C so `[LC]+` can take ≥1. Returns the sub-token end, always in `(p, re]`.
-fn o200k_letter_match(text: &[u8], tags: &[u8], p: usize, re: usize) -> usize {
-    // alt-1 `[UC]*`: greedy over "not L"
+/// to the last C so `[LC]+` can take ≥1. Returns the sub-token end, always in `(p, re]`. BYTE-wise (`+=1`,
+/// like `run_end`): continuation bytes are tag `Cont`(15) → neither U nor L → transparent to `[UC]`/`[LC]`.
+#[inline(always)]
+fn o200k_letter_match(tags: &[u8], p: usize, re: usize) -> usize {
+    // alt-1 `[UC]*`: greedy over "not L" (stops at the next lowercase *lead*)
     let mut q = p;
     while q < re && !o_is_lower(tags[q]) {
-        q += char_len(text[q]);
+        q += 1;
     }
     if q < re {
         // tags[q] is L → `[LC]+` from q: greedy over "not U"
         let mut e = q;
         while e < re && !o_is_upper(tags[e]) {
-            e += char_len(text[e]);
+            e += 1;
         }
         return e;
     }
-    // no L in [p,re): backtrack `[UC]*` to the last C; none (all U) → alt-2 takes the whole run
-    let (mut x, mut last_c) = (p, None);
+    // no L in [p,re): backtrack `[UC]*` to the last C (a char-*start* — `Cont` bytes are also "not U/L");
+    // none (run is all U) → alt-2 takes the whole run.
+    let (mut x, mut last_c) = (p, usize::MAX);
     while x < re {
-        if !o_is_upper(tags[x]) && !o_is_lower(tags[x]) {
-            last_c = Some(x);
+        if tags[x] != CONT_TAG && !o_is_upper(tags[x]) && !o_is_lower(tags[x]) {
+            last_c = x;
         }
-        x += char_len(text[x]);
+        x += 1;
     }
-    match last_c {
-        Some(b) => {
-            let mut e = b;
-            while e < re && !o_is_upper(tags[e]) {
-                e += char_len(text[e]);
-            }
-            e
-        }
-        None => re,
+    if last_c == usize::MAX {
+        return re; // all U → alt-2 `[UC]+[LC]*` (empty `[LC]*`)
     }
+    let mut e = last_c;
+    while e < re && !o_is_upper(tags[e]) {
+        e += 1;
+    }
+    e
 }
 
+const CONT_TAG: u8 = Atom::Cont as u8;
+
 /// Length (incl the `'`) of an o200k contraction suffix `(?i:'s|'t|'re|'ve|'m|'ll|'d)` at `i`, else 0.
+#[inline]
 fn o200k_contraction(text: &[u8], i: usize) -> usize {
     let end = text.len();
     if i >= end || text[i] != 0x27 || i + 1 >= end || text[i + 1] >= 0x80 {
@@ -633,6 +637,7 @@ fn o200k_contraction(text: &[u8], i: usize) -> usize {
 /// Emit the o200k case-split of the letter run `[ls, re)` into `out[*w..]`: the first sub-token starts at
 /// `pfx` (the optional `[^\r\n\p{L}\p{N}]?` prefix; `pfx == ls` when none), the last absorbs a trailing
 /// contraction. Returns the new cursor (past the contraction). `ls < re` (caller-guaranteed).
+#[inline(always)]
 fn emit_o200k_letters(
     text: &[u8],
     tags: &[u8],
@@ -644,7 +649,7 @@ fn emit_o200k_letters(
 ) -> usize {
     let (mut p, mut first, mut cursor) = (ls, true, re);
     while p < re {
-        let e = o200k_letter_match(text, tags, p, re);
+        let e = o200k_letter_match(tags, p, re);
         let start = if first { pfx } else { p };
         let tok_end = if e == re { e + o200k_contraction(text, e) } else { e };
         out[*w] = (start as u32, tok_end as u32);
