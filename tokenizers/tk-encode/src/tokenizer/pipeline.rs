@@ -5,10 +5,14 @@ use std::{borrow::Cow, convert::TryFrom};
 use crate::added_vocabulary::bucket_added_vocabulary::{
     AddedToken as BucketAddedToken, AddedVocabulary as BucketAddedVocabulary,
 };
-use crate::models::bpe::BPE;
+use crate::models::bpe::PipelineBPE;
 use crate::models::unigram::Unigram;
 use crate::models::wordlevel::WordLevel;
 use crate::models::wordpiece::WordPiece;
+use crate::pre_tokenizers::sequence::PipelineSequence;
+use crate::pre_tokenizers::split::SplitPattern;
+use crate::utils::byte_level::GPT2_REGEX_STR;
+use crate::SplitDelimiterBehavior::Isolated;
 use crate::{
     normalizers::NormalizerWrapper,
     pre_tokenizers::{
@@ -17,7 +21,6 @@ use crate::{
         digits::Digits,
         fixed_length::FixedLength,
         punctuation::Punctuation,
-        sequence::Sequence,
         split::Split as SplitPretok,
         unicode_scripts::UnicodeScripts,
         whitespace::{Whitespace, WhitespaceSplit},
@@ -55,13 +58,14 @@ pub trait PreTokenizer {
 
 /// The pre-tokenizers a [`PipelineTokenizer`] can run.
 #[allow(clippy::large_enum_variant)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum PipelinePreTokenizer {
     Bert(BertPreTokenizer),
     Delimiter(CharDelimiterSplit),
     Digits(Digits),
     FixedLength(FixedLength),
     Punctuation(Punctuation),
-    Sequence(Sequence),
+    Sequence(PipelineSequence),
     Split(SplitPretok),
     UnicodeScripts(UnicodeScripts),
     Whitespace(Whitespace),
@@ -89,6 +93,45 @@ impl PreTokenizer for PipelinePreTokenizer {
             Self::UnicodeScripts(pretok) => pretok.pre_tokenize(text, out),
             Self::Whitespace(pretok) => pretok.pre_tokenize(text, out),
             Self::WhitespaceSplit(pretok) => pretok.pre_tokenize(text, out),
+        }
+    }
+}
+
+impl TryFrom<PreTokenizerWrapper> for PipelinePreTokenizer {
+    type Error = crate::Error;
+
+    fn try_from(value: PreTokenizerWrapper) -> Result<Self> {
+        match value {
+            PreTokenizerWrapper::BertPreTokenizer(p) => Ok(PipelinePreTokenizer::Bert(p)),
+            PreTokenizerWrapper::Delimiter(p) => Ok(PipelinePreTokenizer::Delimiter(p)),
+            PreTokenizerWrapper::Digits(p) => Ok(PipelinePreTokenizer::Digits(p)),
+            PreTokenizerWrapper::FixedLength(p) => Ok(PipelinePreTokenizer::FixedLength(p)),
+            PreTokenizerWrapper::Punctuation(p) => Ok(PipelinePreTokenizer::Punctuation(p)),
+            PreTokenizerWrapper::Split(p) => Ok(PipelinePreTokenizer::Split(p)),
+            PreTokenizerWrapper::UnicodeScripts(p) => Ok(PipelinePreTokenizer::UnicodeScripts(p)),
+            PreTokenizerWrapper::Whitespace(p) => Ok(PipelinePreTokenizer::Whitespace(p)),
+            PreTokenizerWrapper::WhitespaceSplit(p) => Ok(PipelinePreTokenizer::WhitespaceSplit(p)),
+            PreTokenizerWrapper::ByteLevel(byte_level) => {
+                if byte_level.add_prefix_space {
+                    return Err(
+                        "ByteLevel add_prefix_space=true is not supported by the pipeline yet"
+                            .into(),
+                    );
+                }
+                if byte_level.use_regex {
+                    Ok(PipelinePreTokenizer::Split(SplitPretok::new(
+                        SplitPattern::Regex(GPT2_REGEX_STR.to_owned()),
+                        Isolated,
+                        false,
+                    )?))
+                } else {
+                    Ok(PipelinePreTokenizer::None)
+                }
+            }
+            PreTokenizerWrapper::Sequence(p) => Ok(PipelinePreTokenizer::Sequence(p.try_into()?)),
+            other => {
+                Err(format!("PipelineTokenizer does not support PreTokenizer: {other:?}").into())
+            }
         }
     }
 }
@@ -231,25 +274,12 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
     /// Adding them in id order preserves ids (tokens present in the model reuse their model id, the
     /// rest keep their dense order), so the pipeline emits the same ids as the reference tokenizer.
     fn try_from(tok: &Tokenizer) -> Result<Self> {
-        let pre_tokenizer = match tok.get_pre_tokenizer() {
-            None => PipelinePreTokenizer::None,
-            Some(PreTokenizerWrapper::BertPreTokenizer(p)) => PipelinePreTokenizer::Bert(*p),
-            Some(PreTokenizerWrapper::Delimiter(p)) => PipelinePreTokenizer::Delimiter(*p),
-            Some(PreTokenizerWrapper::Digits(p)) => PipelinePreTokenizer::Digits(p.clone()),
-            Some(PreTokenizerWrapper::FixedLength(p)) => PipelinePreTokenizer::FixedLength(*p),
-            Some(PreTokenizerWrapper::Punctuation(p)) => PipelinePreTokenizer::Punctuation(*p),
-            Some(PreTokenizerWrapper::Sequence(p)) => PipelinePreTokenizer::Sequence(p.clone()),
-            Some(PreTokenizerWrapper::Split(p)) => PipelinePreTokenizer::Split(p.clone()),
-            Some(PreTokenizerWrapper::UnicodeScripts(p)) => PipelinePreTokenizer::UnicodeScripts(*p),
-            Some(PreTokenizerWrapper::Whitespace(p)) => PipelinePreTokenizer::Whitespace(p.clone()),
-            Some(PreTokenizerWrapper::WhitespaceSplit(p)) => PipelinePreTokenizer::WhitespaceSplit(*p),
-            Some(other) => {
-                return Err(format!(
-                    "PipelineTokenizer only supports Bert/Whitespace/None pre-tokenizers, got: {other:?}"
-                )
-                .into())
-            }
-        };
+        let pre_tokenizer: PipelinePreTokenizer = tok
+            .get_pre_tokenizer()
+            .cloned()
+            .map(TryInto::try_into)
+            .transpose()?
+            .unwrap_or(PipelinePreTokenizer::None);
 
         let legacy_av = tok.get_added_vocabulary();
         let mut added_tokens: Vec<_> = legacy_av.get_added_tokens_decoder().iter().collect();
@@ -269,7 +299,60 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
         )?;
         added_vocabulary.set_encode_special_tokens(legacy_av.get_encode_special_tokens());
 
-        let model = tok.get_model().clone().try_into()?;
+        let with_byte_level = {
+            if let Some(pt) = tok.get_pre_tokenizer() {
+                if let PreTokenizerWrapper::ByteLevel(_) = pt {
+                    true
+                } else if let PreTokenizerWrapper::Sequence(seq) = pt {
+                    if seq
+                        .as_ref()
+                        .iter()
+                        .any(|pt| matches!(pt, PreTokenizerWrapper::Sequence(_)))
+                    {
+                        return Err("Nesting Sequence pre tokenizers is not supported".into());
+                    }
+                    if let Some(pos) = seq
+                        .as_ref()
+                        .iter()
+                        .position(|p| matches!(p, PreTokenizerWrapper::ByteLevel(_)))
+                    {
+                        if pos != seq.as_ref().len() - 1 {
+                            return Err("ByteLevel pre tokenizer must be the last pre tokenizer in the Sequence".into());
+                        }
+                        true
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        };
+
+        let model = tok.get_model();
+        if with_byte_level && !matches!(&model, ModelWrapper::BPE(_)) {
+            let model_name = match model {
+                ModelWrapper::BPE(_) => "BPE",
+                ModelWrapper::Unigram(_) => "Unigram",
+                ModelWrapper::WordLevel(_) => "WordLevel",
+                ModelWrapper::WordPiece(_) => "WordPiece",
+            };
+            return Err(format!(
+                "ByteLevel pre tokenizer is not supported with model {model_name}"
+            )
+            .into());
+        }
+
+        let model = match model.clone() {
+            ModelWrapper::BPE(model) => {
+                PipelineModel::BPE(PipelineBPE::from_bpe(model, with_byte_level)?)
+            }
+            ModelWrapper::Unigram(model) => PipelineModel::Unigram(model),
+            ModelWrapper::WordLevel(model) => PipelineModel::WordLevel(model),
+            ModelWrapper::WordPiece(model) => PipelineModel::WordPiece(model),
+        };
 
         Ok(Self {
             added_vocabulary,
@@ -361,8 +444,8 @@ impl PipelineTokenizer {
                                     if STAGE >= Self::STAGE_MODEL {
                                         // Tokenize each chunk
                                         for pre_token in pre_tokens.iter() {
-                                            self.model.tokenize_bytes(
-                                                normalized_chunk[pre_token.range()].as_bytes(),
+                                            self.model.tokenize_pipeline(
+                                                &normalized_chunk[pre_token.range()],
                                                 output,
                                             )?;
                                         }
@@ -592,21 +675,24 @@ pub fn split_matches(
 }
 
 pub trait Model {
-    fn tokenize_bytes(&self, bytes: &[u8], output: &mut Vec<PipelineToken>) -> Result<()>;
+    fn tokenize_pipeline(&self, sequence: &str, output: &mut Vec<PipelineToken>) -> Result<()>;
 }
 
+#[allow(
+    clippy::large_enum_variant,
+    reason = "PipelineBPE holds a 1kB byte -> id lookup table"
+)]
 pub enum PipelineModel {
-    BPE(BPE),
+    BPE(PipelineBPE),
     Unigram(Unigram),
     WordLevel(WordLevel),
     WordPiece(WordPiece),
 }
 
 impl Model for PipelineModel {
-    fn tokenize_bytes(&self, bytes: &[u8], output: &mut Vec<PipelineToken>) -> Result<()> {
-        let sequence = str::from_utf8(bytes)?;
+    fn tokenize_pipeline(&self, sequence: &str, output: &mut Vec<PipelineToken>) -> Result<()> {
         let tokens = match self {
-            Self::BPE(model) => model.tokenize(sequence),
+            Self::BPE(model) => return model.tokenize_pipeline(sequence, output),
             Self::Unigram(model) => model.tokenize(sequence),
             Self::WordLevel(model) => model.tokenize(sequence),
             Self::WordPiece(model) => model.tokenize(sequence),
@@ -616,22 +702,12 @@ impl Model for PipelineModel {
     }
 }
 
-impl TryFrom<ModelWrapper> for PipelineModel {
-    type Error = crate::Error;
-
-    fn try_from(value: ModelWrapper) -> std::prelude::v1::Result<Self, Self::Error> {
-        Ok(match value {
-            ModelWrapper::BPE(model) => Self::BPE(model),
-            ModelWrapper::Unigram(model) => Self::Unigram(model),
-            ModelWrapper::WordLevel(model) => Self::WordLevel(model),
-            ModelWrapper::WordPiece(model) => Self::WordPiece(model),
-        })
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::bpe::BPE;
+    use crate::pre_tokenizers::byte_level::ByteLevel;
+    use crate::pre_tokenizers::sequence::Sequence;
 
     struct FixedMatcher(Vec<((usize, usize), u32)>);
     impl PipelinePatternMatcher for FixedMatcher {
@@ -670,5 +746,43 @@ mod tests {
                 (Some("cc"), None),
             ]
         );
+    }
+
+    // The three rejections below guard configs the pipeline would otherwise
+    // encode with silently wrong ids (the byte-level vocab transform only
+    // applies when ByteLevel is the model's direct input). Each test pins the
+    // error message so an unrelated failure can't stand in for the guard.
+
+    fn conversion_error(tok: &Tokenizer) -> String {
+        PipelineTokenizer::try_from(tok).err().unwrap().to_string()
+    }
+
+    #[test]
+    fn conversion_rejects_nested_sequence() {
+        let mut tok = Tokenizer::new(BPE::default());
+        tok.with_pre_tokenizer(Some(Sequence::new(vec![PreTokenizerWrapper::Sequence(
+            Sequence::new(vec![PreTokenizerWrapper::WhitespaceSplit(WhitespaceSplit)]),
+        )])));
+        let err = conversion_error(&tok);
+        assert!(err.contains("Nesting Sequence"), "{}", err);
+    }
+
+    #[test]
+    fn conversion_rejects_byte_level_not_last_in_sequence() {
+        let mut tok = Tokenizer::new(BPE::default());
+        tok.with_pre_tokenizer(Some(Sequence::new(vec![
+            PreTokenizerWrapper::ByteLevel(ByteLevel::new(false, true, true)),
+            PreTokenizerWrapper::WhitespaceSplit(WhitespaceSplit),
+        ])));
+        let err = conversion_error(&tok);
+        assert!(err.contains("must be the last"), "{}", err);
+    }
+
+    #[test]
+    fn conversion_rejects_byte_level_with_non_bpe_model() {
+        let mut tok = Tokenizer::new(WordPiece::default());
+        tok.with_pre_tokenizer(Some(ByteLevel::new(false, true, true)));
+        let err = conversion_error(&tok);
+        assert!(err.contains("not supported with model"), "{}", err);
     }
 }

@@ -1,5 +1,7 @@
 use super::{super::OrderedVocabIter, Error, Pair, Word};
+use crate::pipeline::{self, PipelineToken};
 use crate::tokenizer::{Model, Result, Token};
+use crate::utils::byte_level::{self};
 use crate::utils::cache::{DEFAULT_CACHE_CAPACITY, MAX_LENGTH};
 use crate::utils::iter::ResultShunt;
 use crate::vocab_store::VocabStore;
@@ -672,6 +674,163 @@ impl Model for BPE {
     }
 }
 
+pub struct PipelineBPE {
+    atoms: Atoms,
+    vocab: VocabStore,
+    merges: MergeMap,
+    ignore_merges: bool,
+}
+
+enum Atoms {
+    Bytes {
+        byte_to_id: [u32; 256],
+    },
+    Chars {
+        byte_fallback: Option<[u32; 256]>,
+        unk_token: Option<u32>,
+        fuse_unk: bool,
+    },
+}
+
+impl PipelineBPE {
+    pub fn from_bpe(model: BPE, with_byte_level: bool) -> Result<Self> {
+        if matches!(&model.continuing_subword_prefix, Some(prefix) if !prefix.is_empty()) {
+            return Err("BPE models with continuing_subword_prefix are not supported yet".into());
+        }
+        if matches!(&model.end_of_word_suffix, Some(suffix) if !suffix.is_empty()) {
+            return Err("BPE models with end_of_word_suffix are not supported yet".into());
+        }
+        if matches!(&model.dropout, Some(dropout) if *dropout > 0.0) {
+            return Err("BPE models with dropout not supported yet".into());
+        }
+        let BPE {
+            vocab,
+            merges,
+            ignore_merges,
+            byte_fallback,
+            unk_token,
+            fuse_unk,
+            ..
+        } = model;
+
+        let (vocab, atoms) = if with_byte_level {
+            let vocab = byte_level::transform_vocab(vocab);
+            let mut byte_to_id = [0u32; 256];
+            for b in 0u8..=255 {
+                byte_to_id[b as usize] = vocab
+                    .get_bytes(&[b])
+                    .ok_or(Error::ByteAtomOutOfVocabulary(b))?;
+            }
+            (vocab, Atoms::Bytes { byte_to_id })
+        } else {
+            let unk_token = if let Some(unk_str) = unk_token {
+                let token_id = vocab
+                    .token_to_id(&unk_str)
+                    .ok_or_else(|| Error::UnkTokenOutOfVocabulary(unk_str.clone()))?;
+                Some(token_id)
+            } else {
+                None
+            };
+            let fallback_lookup = if byte_fallback {
+                let mut fallback_lookup = [0u32; 256];
+                for b in 0u8..=255 {
+                    let code = format!("<{b:#04X}>");
+                    fallback_lookup[b as usize] = vocab
+                        .token_to_id(&code)
+                        .ok_or(Error::ByteFallbackOutOfVocabulary(b))?;
+                }
+                Some(fallback_lookup)
+            } else {
+                None
+            };
+            (
+                vocab,
+                Atoms::Chars {
+                    fuse_unk,
+                    unk_token,
+                    byte_fallback: fallback_lookup,
+                },
+            )
+        };
+        Ok(Self {
+            atoms,
+            ignore_merges,
+            merges,
+            vocab,
+        })
+    }
+
+    fn merge_word(&self, sequence: &str) -> Word {
+        let mut word = match &self.atoms {
+            Atoms::Bytes { byte_to_id } => {
+                let mut word = Word::with_capacity(sequence.len());
+                for &b in sequence.as_bytes() {
+                    word.add(byte_to_id[b as usize], 1);
+                }
+                word
+            }
+            Atoms::Chars {
+                byte_fallback,
+                unk_token,
+                fuse_unk,
+            } => {
+                let mut word = Word::with_capacity(sequence.len());
+
+                for char_str in sequence
+                    .char_indices()
+                    .map(|(i, c)| &sequence[i..i + c.len_utf8()])
+                {
+                    let char_len = char_str.len();
+                    if let Some(char_id) = self.vocab.token_to_id(char_str) {
+                        word.add(char_id, char_len);
+                    } else {
+                        if let Some(fallback_lookup) = byte_fallback {
+                            for &b in char_str.as_bytes() {
+                                word.add(fallback_lookup[b as usize], 1);
+                            }
+                            continue;
+                        }
+                        if let Some(unk_id) = unk_token {
+                            if *fuse_unk {
+                                if let Some(last) = word.last_mut() {
+                                    if last.id() == *unk_id {
+                                        last.add_len(char_len);
+                                        continue;
+                                    }
+                                }
+                            }
+                            word.add(*unk_id, char_len);
+                        }
+                    }
+                }
+                word
+            }
+        };
+        word.merge_all(&self.merges, None);
+        word
+    }
+}
+
+impl pipeline::Model for PipelineBPE {
+    fn tokenize_pipeline(&self, sequence: &str, output: &mut Vec<PipelineToken>) -> Result<()> {
+        if sequence.is_empty() {
+            return Ok(());
+        }
+
+        if self.ignore_merges {
+            if let Some(id) = self.vocab.get_bytes(sequence.as_bytes()) {
+                output.push(PipelineToken { id });
+                return Ok(());
+            }
+        }
+
+        // todo: use thread-local cache
+        let word = self.merge_word(sequence);
+        output.extend(word.get_chars_iter().map(|id| PipelineToken { id }));
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1171,5 +1330,317 @@ mod tests {
                 }
             ]
         )
+    }
+
+    mod pipeline_bpe {
+        use super::*;
+        use crate::utils::byte_level::BYTES_CHAR_LOOKUP;
+
+        const HELLO_VOCAB: &[(&str, u32)] = &[
+            ("h", 0),
+            ("e", 1),
+            ("l", 2),
+            ("o", 3),
+            ("he", 4),
+            ("hel", 5),
+            ("hell", 6),
+            ("hello", 7),
+        ];
+        const HELLO_MERGES: &[(&str, &str)] =
+            &[("h", "e"), ("he", "l"), ("hel", "l"), ("hell", "o")];
+
+        fn v(pairs: &[(&str, u32)]) -> Vocab {
+            pairs.iter().map(|&(s, i)| (s.into(), i)).collect()
+        }
+
+        fn m(pairs: &[(&str, &str)]) -> Merges {
+            pairs.iter().map(|&(a, b)| (a.into(), b.into())).collect()
+        }
+
+        fn hello_builder() -> BpeBuilder {
+            BpeBuilder::default().vocab_and_merges(v(HELLO_VOCAB), m(HELLO_MERGES))
+        }
+
+        fn pipeline_ids(model: &PipelineBPE, sequence: &str) -> Vec<u32> {
+            let mut out = Vec::new();
+            pipeline::Model::tokenize_pipeline(model, sequence, &mut out).unwrap();
+            out.iter().map(|t| t.id).collect()
+        }
+
+        fn reference_ids(model: &BPE, sequence: &str) -> Vec<u32> {
+            model
+                .tokenize(sequence)
+                .unwrap()
+                .iter()
+                .map(|t| t.id)
+                .collect()
+        }
+
+        #[test]
+        fn applies_merges() {
+            let bpe = hello_builder().build().unwrap();
+            let reference = bpe.clone();
+            let pipeline = PipelineBPE::from_bpe(bpe, false).unwrap();
+            for (input, want) in [
+                ("hello", vec![7]),
+                ("hell", vec![6]),
+                ("helo", vec![5, 3]),
+                ("oleh", vec![3, 2, 1, 0]),
+            ] {
+                assert_eq!(pipeline_ids(&pipeline, input), want, "{input:?}");
+                assert_eq!(
+                    pipeline_ids(&pipeline, input),
+                    reference_ids(&reference, input),
+                    "{input:?} vs reference"
+                );
+            }
+        }
+
+        #[test]
+        fn empty_input_yields_no_tokens() {
+            let pipeline = PipelineBPE::from_bpe(hello_builder().build().unwrap(), false).unwrap();
+            assert!(pipeline_ids(&pipeline, "").is_empty());
+        }
+
+        #[test]
+        fn unknown_char_without_unk_is_dropped() {
+            let bpe = hello_builder().build().unwrap();
+            let reference = bpe.clone();
+            let pipeline = PipelineBPE::from_bpe(bpe, false).unwrap();
+            // 'x' vanishes, making 'h' and 'e' adjacent, so the (h,e) merge
+            // applies — mirrors the reference model.
+            assert_eq!(pipeline_ids(&pipeline, "hxe"), vec![4]);
+            assert_eq!(
+                pipeline_ids(&pipeline, "hxe"),
+                reference_ids(&reference, "hxe")
+            );
+        }
+
+        #[test]
+        fn unk_replaces_unknown_chars() {
+            let mut vocab = v(HELLO_VOCAB);
+            vocab.insert("<unk>".into(), 8);
+            let bpe = BpeBuilder::default()
+                .vocab_and_merges(vocab, m(HELLO_MERGES))
+                .unk_token("<unk>".into())
+                .build()
+                .unwrap();
+            let reference = bpe.clone();
+            let pipeline = PipelineBPE::from_bpe(bpe, false).unwrap();
+            for (input, want) in [
+                ("hxe", vec![0, 8, 1]),
+                ("xh", vec![8, 0]),
+                ("hxxe", vec![0, 8, 8, 1]),
+                ("xx", vec![8, 8]),
+            ] {
+                assert_eq!(pipeline_ids(&pipeline, input), want, "{input:?}");
+                assert_eq!(
+                    pipeline_ids(&pipeline, input),
+                    reference_ids(&reference, input),
+                    "{input:?} vs reference"
+                );
+            }
+        }
+
+        #[test]
+        fn fused_unk_collapses_runs() {
+            let mut vocab = v(HELLO_VOCAB);
+            vocab.insert("<unk>".into(), 8);
+            let bpe = BpeBuilder::default()
+                .vocab_and_merges(vocab, m(HELLO_MERGES))
+                .unk_token("<unk>".into())
+                .fuse_unk(true)
+                .build()
+                .unwrap();
+            let reference = bpe.clone();
+            let pipeline = PipelineBPE::from_bpe(bpe, false).unwrap();
+            for (input, want) in [
+                ("hxxe", vec![0, 8, 1]),
+                ("xxh", vec![8, 0]),
+                ("xxxx", vec![8]),
+                ("xhx", vec![8, 0, 8]),
+            ] {
+                assert_eq!(pipeline_ids(&pipeline, input), want, "{input:?}");
+                assert_eq!(
+                    pipeline_ids(&pipeline, input),
+                    reference_ids(&reference, input),
+                    "{input:?} vs reference"
+                );
+            }
+        }
+
+        fn byte_fallback_vocab() -> Vocab {
+            let mut vocab = v(&[("h", 300), ("e", 301), ("<unk>", 400)]);
+            vocab.extend((0..=255u8).map(|b| (format!("<0x{b:02X}>"), u32::from(b))));
+            vocab
+        }
+
+        #[test]
+        fn byte_fallback_encodes_missing_chars_as_byte_tokens() {
+            let bpe = BpeBuilder::default()
+                .vocab_and_merges(byte_fallback_vocab(), vec![])
+                .byte_fallback(true)
+                .build()
+                .unwrap();
+            let reference = bpe.clone();
+            let pipeline = PipelineBPE::from_bpe(bpe, false).unwrap();
+            // 'é' is not in the vocab: falls back to its UTF-8 bytes C3 A9
+            assert_eq!(pipeline_ids(&pipeline, "hé"), vec![300, 0xC3, 0xA9]);
+            assert_eq!(pipeline_ids(&pipeline, "🤗"), vec![0xF0, 0x9F, 0xA4, 0x97]);
+            for input in ["hé", "🤗", "he"] {
+                assert_eq!(
+                    pipeline_ids(&pipeline, input),
+                    reference_ids(&reference, input),
+                    "{input:?} vs reference"
+                );
+            }
+        }
+
+        #[test]
+        fn byte_fallback_wins_over_unk() {
+            let bpe = BpeBuilder::default()
+                .vocab_and_merges(byte_fallback_vocab(), vec![])
+                .byte_fallback(true)
+                .unk_token("<unk>".into())
+                .build()
+                .unwrap();
+            let reference = bpe.clone();
+            let pipeline = PipelineBPE::from_bpe(bpe, false).unwrap();
+            assert_eq!(pipeline_ids(&pipeline, "é"), vec![0xC3, 0xA9]);
+            assert_eq!(pipeline_ids(&pipeline, "é"), reference_ids(&reference, "é"));
+        }
+
+        #[test]
+        fn ignore_merges_prefers_whole_word() {
+            let bpe = hello_builder().ignore_merges(true).build().unwrap();
+            let reference = bpe.clone();
+            let pipeline = PipelineBPE::from_bpe(bpe, false).unwrap();
+            // direct vocab hit bypasses the merge loop; a miss falls through to it
+            assert_eq!(pipeline_ids(&pipeline, "hello"), vec![7]);
+            assert_eq!(pipeline_ids(&pipeline, "helo"), vec![5, 3]);
+            for input in ["hello", "helo"] {
+                assert_eq!(
+                    pipeline_ids(&pipeline, input),
+                    reference_ids(&reference, input),
+                    "{input:?} vs reference"
+                );
+            }
+        }
+
+        #[test]
+        fn rejects_unsupported_configs() {
+            // no merges: BpeBuilder::build underflows on merges whose right token
+            // is shorter than continuing_subword_prefix (pre-existing, unrelated)
+            let build = |f: fn(BpeBuilder) -> BpeBuilder| {
+                f(BpeBuilder::default().vocab_and_merges(v(HELLO_VOCAB), vec![]))
+                    .build()
+                    .unwrap()
+            };
+            assert!(PipelineBPE::from_bpe(
+                build(|b| b.continuing_subword_prefix("##".into())),
+                false
+            )
+            .is_err());
+            assert!(
+                PipelineBPE::from_bpe(build(|b| b.end_of_word_suffix("</w>".into())), false)
+                    .is_err()
+            );
+            assert!(PipelineBPE::from_bpe(build(|b| b.dropout(0.5)), false).is_err());
+            // no-op values must not be rejected: gpt2's tokenizer.json serializes
+            // prefix/suffix as "" and the reference treats dropout 0.0 as disabled
+            assert!(PipelineBPE::from_bpe(
+                build(|b| {
+                    b.continuing_subword_prefix(String::new())
+                        .end_of_word_suffix(String::new())
+                        .dropout(0.0)
+                }),
+                false
+            )
+            .is_ok());
+        }
+
+        #[test]
+        fn rejects_unk_token_missing_from_vocab() {
+            let bpe = hello_builder().unk_token("<unk>".into()).build().unwrap();
+            assert!(PipelineBPE::from_bpe(bpe, false).is_err());
+        }
+
+        #[test]
+        fn byte_fallback_with_missing_codes_errors() {
+            // Incomplete <0xNN> coverage must be a build error, not a panic.
+            let bpe = hello_builder().byte_fallback(true).build().unwrap();
+            assert!(PipelineBPE::from_bpe(bpe, false).is_err());
+        }
+
+        fn projected(s: &str) -> String {
+            s.bytes().map(|b| BYTES_CHAR_LOOKUP[b as usize]).collect()
+        }
+
+        /// A gpt2-shaped miniature: the 256 projected single-byte tokens
+        /// (id == byte value) plus `extra` tokens and merges, given in raw
+        /// space and projected here — like a real byte-level tokenizer.json,
+        /// whose vocab is stored in the projected alphabet.
+        fn byte_level_bpe(
+            extra: &[(&str, u32)],
+            merges: &[(&str, &str)],
+            ignore_merges: bool,
+        ) -> BPE {
+            let mut vocab: Vocab = (0..=255u8)
+                .map(|b| (BYTES_CHAR_LOOKUP[b as usize].to_string(), u32::from(b)))
+                .collect();
+            vocab.extend(extra.iter().map(|&(s, i)| (projected(s), i)));
+            let merges: Merges = merges
+                .iter()
+                .map(|&(a, b)| (projected(a), projected(b)))
+                .collect();
+            BpeBuilder::default()
+                .vocab_and_merges(vocab, merges)
+                .ignore_merges(ignore_merges)
+                .build()
+                .unwrap()
+        }
+
+        #[test]
+        fn byte_level_merges_raw_bytes() {
+            let bpe = byte_level_bpe(
+                &[("he", 300), (" he", 301)],
+                &[("h", "e"), (" ", "he")],
+                false,
+            );
+            let reference = bpe.clone();
+            let pipeline = PipelineBPE::from_bpe(bpe, true).unwrap();
+            assert_eq!(pipeline_ids(&pipeline, " he"), vec![301]);
+            // single bytes hit the un-projected single-byte tokens (id == byte value)
+            assert_eq!(pipeline_ids(&pipeline, "é"), vec![0xC3, 0xA9]);
+            // the end-to-end invariant: raw input through the pipeline must equal
+            // projected input through the reference model
+            for input in [" he", "é", "\x00\x7f", "hé llo"] {
+                assert_eq!(
+                    pipeline_ids(&pipeline, input),
+                    reference_ids(&reference, &projected(input)),
+                    "{input:?}"
+                );
+            }
+        }
+
+        #[test]
+        fn byte_level_ignore_merges_whole_word() {
+            let bpe = byte_level_bpe(&[(" hello", 300)], &[], true);
+            let pipeline = PipelineBPE::from_bpe(bpe, true).unwrap();
+            assert_eq!(pipeline_ids(&pipeline, " hello"), vec![300]);
+            // not in vocab → falls through to single-byte atoms
+            assert_eq!(
+                pipeline_ids(&pipeline, "zz"),
+                vec![u32::from(b'z'), u32::from(b'z')]
+            );
+        }
+
+        #[test]
+        fn byte_level_requires_full_byte_coverage() {
+            // An ASCII-only vocab covers no control/high bytes: building the
+            // byte-level pipeline must be a build error, not a panic.
+            let bpe = hello_builder().build().unwrap();
+            assert!(PipelineBPE::from_bpe(bpe, true).is_err());
+        }
     }
 }

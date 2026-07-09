@@ -32,6 +32,12 @@ pub enum Error {
     /// Dropout not between 0 and 1.
     #[error("Dropout should be between 0 and 1, inclusive")]
     InvalidDropout,
+    /// When byte_fallback is enabled but the fallback code is not in the vocab
+    #[error("Byte fallback `<{0:#04X}>` not found in the vocabulary")]
+    ByteFallbackOutOfVocabulary(u8),
+    /// When BPE operating with byte_level the byte atom is not in the vocab
+    #[error("Byte atom `{0:#04X}` not found in the vocabulary")]
+    ByteAtomOutOfVocabulary(u8),
 }
 
 /// Provides access to the `FirstLastIterator` to any Iterator
