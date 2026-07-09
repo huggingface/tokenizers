@@ -1,6 +1,8 @@
 [
-  { "name": "bert-base-uncased", "file": "bert-base-uncased.json" },
-  { "name": "deepseek-v4",       "file": "deepseek-v4.json" },
-  { "name": "llama-3",           "file": "llama-3-tokenizer.json" },
-  { "name": "t5-base",           "file": "t5-base.json" }
+  { "name": "bert-base-uncased", "file": "bert-base-uncased.json", "desc": "normalizer-heavy WordPiece" },
+  { "name": "deepseek-v4",       "file": "deepseek-v4.json",       "desc": "split-heavy byte-level BPE, 3 chained regexes" },
+  { "name": "gpt2",              "file": "gpt2.json",              "desc": "standalone ByteLevel pre-tokenizer" },
+  { "name": "llama-2",           "file": "llama-2.json",           "desc": "model-bounded BPE, no pre-tokenizer" },
+  { "name": "llama-3",           "file": "llama-3-tokenizer.json", "desc": "split-heavy byte-level BPE, single regex" },
+  { "name": "t5-base",           "file": "t5-base.json",           "desc": "Unigram + Metaspace" }
 ]
