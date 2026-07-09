@@ -2,6 +2,8 @@ use std::convert::TryInto;
 use std::ops::Range;
 use std::{borrow::Cow, convert::TryFrom};
 
+use itertools::Itertools;
+
 use crate::added_vocabulary::bucket_added_vocabulary::{
     AddedToken as BucketAddedToken, AddedVocabulary as BucketAddedVocabulary,
 };
@@ -304,9 +306,25 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
                 if let PreTokenizerWrapper::ByteLevel(_) = pt {
                     true
                 } else if let PreTokenizerWrapper::Sequence(seq) = pt {
-                    seq.as_ref()
+                    if seq
+                        .as_ref()
                         .iter()
-                        .any(|p| matches!(p, PreTokenizerWrapper::ByteLevel(_)))
+                        .any(|pt| matches!(pt, PreTokenizerWrapper::Sequence(_)))
+                    {
+                        return Err("Nesting Sequence pre tokenizers is not supported".into());
+                    }
+                    if let Some((pos, _)) = seq
+                        .as_ref()
+                        .iter()
+                        .find_position(|p| matches!(p, PreTokenizerWrapper::ByteLevel(_)))
+                    {
+                        if pos != seq.as_ref().len() - 1 {
+                            return Err("ByteLevel pre tokenizer must be the last pre tokenizer in the Sequence".into());
+                        }
+                        true
+                    } else {
+                        false
+                    }
                 } else {
                     false
                 }
@@ -315,7 +333,14 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
             }
         };
 
-        let model = match tok.get_model().clone() {
+        let model = tok.get_model();
+        if with_byte_level && !matches!(&model, ModelWrapper::BPE(_)) {
+            return Err(
+                format!("ByteLevel pre tokenizer is not supported with model {model:?}").into(),
+            );
+        }
+
+        let model = match model.clone() {
             ModelWrapper::BPE(model) => {
                 PipelineModel::BPE(PipelineBPE::from_bpe(model, with_byte_level)?)
             }
