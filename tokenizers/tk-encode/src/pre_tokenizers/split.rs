@@ -163,6 +163,7 @@ impl pipeline::PreTokenizer for Split {
             let n = match fsm {
                 GptFsm::Cl100k => atomsplit::fsm::fsm_cl100k(bytes, &tags, &mut spans),
                 GptFsm::Gpt2 => atomsplit::fsm::fsm_byte_level(bytes, &tags, &mut spans),
+                GptFsm::O200k => atomsplit::fsm::fsm_o200k(bytes, &tags, &mut spans),
             };
             out.extend(
                 spans[..n]
@@ -445,6 +446,34 @@ mod tests {
 
         assert_eq!(
             pipeline_split(SplitPattern::Regex(cl100k.into()), Isolated, false, corpus),
+            legacy,
+        );
+    }
+
+    #[test]
+    fn pipeline_o200k_uses_fsm_and_matches_legacy() {
+        // GPT-4o's EXACT pre_tokenization regex → recognized → routes to fsm_o200k. Output must equal the
+        // legacy SysRegex Isolated split, byte-for-byte. Corpus stresses the case-aware letter split:
+        // camelCase, ALLCAPS→word, McDonald's-style, contractions, accented Ll (é/ß), CJK (caseless).
+        let o200k = r"[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]*[\p{Ll}\p{Lm}\p{Lo}\p{M}]+(?i:'s|'t|'re|'ve|'m|'ll|'d)?|[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]+[\p{Ll}\p{Lm}\p{Lo}\p{M}]*(?i:'s|'t|'re|'ve|'m|'ll|'d)?|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n/]*|\s*[\r\n]+|\s+(?!\S)|\s+";
+        let corpus =
+            "McDonald's iPhone SQLite HELLOWorld camelCase don't I'll We've 3.14 café Straße 世界 안녕\n\n  Mixed CASE end.";
+        let pretok = Split::new(SplitPattern::Regex(o200k.into()), Isolated, false).unwrap();
+        assert!(
+            pretok.fsm.is_some(),
+            "o200k / GPT-4o pattern should route to the native FSM"
+        );
+
+        let mut pre = PreTokenizedString::from(corpus);
+        pretok.pre_tokenize(&mut pre).unwrap();
+        let legacy: Vec<(&str, (u32, u32))> = pre
+            .get_splits(OffsetReferential::Original, OffsetType::Byte)
+            .into_iter()
+            .map(|(s, o, _)| (s, (o.0 as u32, o.1 as u32)))
+            .collect();
+
+        assert_eq!(
+            pipeline_split(SplitPattern::Regex(o200k.into()), Isolated, false, corpus),
             legacy,
         );
     }

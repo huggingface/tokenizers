@@ -2,7 +2,7 @@ use std::convert::TryInto;
 use std::ops::Range;
 use std::{borrow::Cow, convert::TryFrom};
 
-use crate::models::bpe::BPE;
+use crate::models::bpe::PipelineBPE;
 use crate::models::unigram::Unigram;
 use crate::models::wordlevel::WordLevel;
 use crate::models::wordpiece::WordPiece;
@@ -17,10 +17,12 @@ use crate::{
         digits::Digits,
         fixed_length::FixedLength,
         punctuation::Punctuation,
-        split::Split as SplitPretok,
+        sequence::PipelineSequence,
+        split::{Split as SplitPretok, SplitPattern},
         unicode_scripts::UnicodeScripts,
         whitespace::{Whitespace, WhitespaceSplit},
     },
+    utils::byte_level::GPT2_REGEX_STR,
     Model as LegacyModelTrait, ModelWrapper, PostProcessorWrapper, PreTokenizerWrapper, Token,
     Tokenizer,
 };
@@ -117,7 +119,7 @@ impl TryFrom<PreTokenizerWrapper> for PipelinePreTokenizer {
                 if byte_level.use_regex {
                     Ok(PipelinePreTokenizer::Split(SplitPretok::new(
                         SplitPattern::Regex(GPT2_REGEX_STR.to_owned()),
-                        Isolated,
+                        SplitDelimiterBehavior::Isolated,
                         false,
                     )?))
                 } else {

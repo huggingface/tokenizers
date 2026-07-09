@@ -2,7 +2,7 @@
 name = "atomsplit"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.89" # AVX-512 VBMI intrinsics (simd_avx_classify) are stable only since 1.89
 authors = [
   "Arthur Zucker <arthur@huggingface.co>",
   "Luc Georges <luc@huggingface.co>",

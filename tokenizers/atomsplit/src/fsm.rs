@@ -335,8 +335,9 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
         p
     };
     // is `text[a]` the start of a deepseek letter/mark char (alt-2 run body / space-prefix target)?
-    let is_lm =
-        |a: usize| a < end && in_mask(tags[a], mask::LETTER_MARK) && tags[a] != ASM && !ds_breaks(text, a);
+    let is_lm = |a: usize| {
+        a < end && in_mask(tags[a], mask::LETTER_MARK) && tags[a] != ASM && !ds_breaks(text, a)
+    };
     // Split-3 alt-3 tail `[\p{P}\p{S}]+[\r\n]*` from `sp0` (a leading space is already consumed); `sp0`
     // if there is no punct/sym run there. STOPS at CJK-range chars — Split-1 isolated those, so a CJK
     // punct (・) is never merged into a non-CJK punct run (`!・` → `!`, `・`, not `!・`).
@@ -433,7 +434,13 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
             }
             // Split-3 alt-2 `[\p{L}\p{M}]+` (CJK letters + ZWJ/gap chars were consumed above the match).
             // An Other_Alphabetic symbol (`ASM`, coarse `Mark`) is categorically `\p{S}` → the alt-3 run.
-            LET | MRK => i = if tags[i] == ASM { punct(i) } else { letter_run(i) },
+            LET | MRK => {
+                i = if tags[i] == ASM {
+                    punct(i)
+                } else {
+                    letter_run(i)
+                }
+            }
             // Space: alt-2 (space prefix + `[\p{L}\p{M}]+`) | alt-3 (` ` + `[\p{P}\p{S}]+`) | whitespace
             SPC => {
                 let a = i + 1; // Space is ASCII (0x20)
@@ -582,9 +589,15 @@ fn o_is_lower(t: u8) -> bool {
 /// like `run_end`): continuation bytes are tag `Cont`(15) → neither U nor L → transparent to `[UC]`/`[LC]`.
 #[inline(always)]
 fn o200k_letter_match(tags: &[u8], p: usize, re: usize) -> usize {
-    // alt-1 `[UC]*`: greedy over "not L" (stops at the next lowercase *lead*)
+    // alt-1 `[UC]*`: greedy over "not L" (stops at the next lowercase *lead*), tracking the last C
+    // char-start so a no-L run needs no separate backtrack pass (`Cont`=15 is neither U nor L, so it's
+    // "C-like" — the `!= CONT_TAG` guard keeps `last_c` on a real char start).
     let mut q = p;
+    let mut last_c = usize::MAX;
     while q < re && !o_is_lower(tags[q]) {
+        if tags[q] != CONT_TAG && !o_is_upper(tags[q]) {
+            last_c = q;
+        }
         q += 1;
     }
     if q < re {
@@ -595,18 +608,10 @@ fn o200k_letter_match(tags: &[u8], p: usize, re: usize) -> usize {
         }
         return e;
     }
-    // no L in [p,re): backtrack `[UC]*` to the last C (a char-*start* — `Cont` bytes are also "not U/L");
-    // none (run is all U) → alt-2 takes the whole run.
-    let (mut x, mut last_c) = (p, usize::MAX);
-    while x < re {
-        if tags[x] != CONT_TAG && !o_is_upper(tags[x]) && !o_is_lower(tags[x]) {
-            last_c = x;
-        }
-        x += 1;
-    }
     if last_c == usize::MAX {
-        return re; // all U → alt-2 `[UC]+[LC]*` (empty `[LC]*`)
+        return re; // no L and no C → all U → alt-2 `[UC]+[LC]*` (empty `[LC]*`) = the whole run
     }
+    // no L: `[UC]*` gives back to the last C, which begins the `[LC]+`
     let mut e = last_c;
     while e < re && !o_is_upper(tags[e]) {
         e += 1;
@@ -651,7 +656,11 @@ fn emit_o200k_letters(
     while p < re {
         let e = o200k_letter_match(tags, p, re);
         let start = if first { pfx } else { p };
-        let tok_end = if e == re { e + o200k_contraction(text, e) } else { e };
+        let tok_end = if e == re {
+            e + o200k_contraction(text, e)
+        } else {
+            e
+        };
         out[*w] = (start as u32, tok_end as u32);
         *w += 1;
         first = false;
@@ -686,21 +695,19 @@ pub fn fsm_o200k(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
     const ASM: u8 = crate::classify::ALPHA_SYM_MARK;
     let end = text.len();
 
-    // start of a real `[\p{L}\p{M}]` char (excludes ALPHA_SYM symbols and ZWJ/ZWNJ: `\w` but not `[\p{L}
-    // \p{M}]`).
-    let is_lm = |a: usize| -> bool {
-        a < end && in_mask(tags[a], mask::LETTER_MARK) && tags[a] != ASM && !ds_is_zwj(text, a)
+    // Is tag `t` (at byte `p`) a real `[\p{L}\p{M}]` member? Coarse `Letter` (any case) is always in;
+    // coarse `Mark` is in only as a true `\p{M}` — ALPHA_SYM (`\p{S}`) and ZWJ/ZWNJ (`\p{Cf}`) are `\w`
+    // but not `[\p{L}\p{M}]`. The `ds_is_zwj` byte-peek is thus paid ONLY for Marks, never for letters.
+    let member = |t: u8, p: usize| -> bool {
+        let c = t & 0x0F;
+        c == LET || (c == MRK && t != ASM && !ds_is_zwj(text, p))
     };
+    let is_lm = |a: usize| a < end && member(tags[a], a);
     // maximal `[\p{L}\p{M}]+` run from `a` (byte-wise; continuation bytes ride along — see `run_end`).
     let letter_end = |a: usize| -> usize {
         let mut p = a;
-        while p < end {
-            let t = tags[p];
-            if t == CONT || (in_mask(t, mask::LETTER_MARK) && t != ASM && !ds_is_zwj(text, p)) {
-                p += 1;
-            } else {
-                break;
-            }
+        while p < end && (tags[p] == CONT || member(tags[p], p)) {
+            p += 1;
         }
         p
     };

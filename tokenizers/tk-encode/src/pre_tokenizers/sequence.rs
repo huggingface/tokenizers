@@ -78,6 +78,28 @@ impl PipelineSequence {
     pub fn new(pre_tokenizers: Vec<PipelinePreTokenizer>) -> Self {
         Self { pre_tokenizers }
     }
+
+    /// Same recognition as [`Sequence::is_deepseek`], on the converted children: the first three are
+    /// Isolated, non-inverted `Split`s carrying deepseek's `[\p{N}{1,3}, CJK, big]` regexes (the trailing
+    /// byte-map `ByteLevel` converts to `PipelinePreTokenizer::None`). Routes the whole split to one
+    /// `fsm_deepseek` pass.
+    fn is_deepseek(&self) -> bool {
+        use crate::pre_tokenizers::split::SplitPattern;
+        use crate::tokenizer::SplitDelimiterBehavior::Isolated;
+        let regex = |i: usize| match self.pre_tokenizers.get(i) {
+            Some(PipelinePreTokenizer::Split(s)) if s.behavior == Isolated && !s.invert => {
+                match &s.pattern {
+                    SplitPattern::Regex(r) => Some(r.as_str()),
+                    SplitPattern::String(_) => None,
+                }
+            }
+            _ => None,
+        };
+        matches!(
+            (regex(0), regex(1), regex(2)),
+            (Some(a), Some(b), Some(c)) if crate::utils::is_deepseek(a, b, c)
+        )
+    }
 }
 
 impl TryFrom<Sequence> for PipelineSequence {
@@ -286,6 +308,7 @@ mod tests {
             seq.is_deepseek(),
             "deepseek's exact 3-Split sequence must be recognized"
         );
+        let pipe: PipelineSequence = seq.clone().try_into().unwrap();
 
         for text in [
             "中文 with 123 numbers!! and ケーキ don't",
@@ -294,7 +317,7 @@ mod tests {
             "  spaces  and\ttabs 42 café Naïve",
         ] {
             assert_eq!(
-                pipeline_pretokenize(&seq, text),
+                pipeline_pretokenize(&pipe, text),
                 legacy_pretokenize(&seq, text),
                 "deepseek diverged on {text:?}",
             );
@@ -320,9 +343,10 @@ mod tests {
             .map(|c| serde_json::from_value(c.clone()).unwrap())
             .collect();
         let seq = Sequence::new(splits);
+        let pipe: PipelineSequence = seq.clone().try_into().unwrap();
         let text = "hello 世界\n\n表 ・ x"; // standalone ・ with surrounding spaces
         assert_eq!(
-            pipeline_pretokenize(&seq, text),
+            pipeline_pretokenize(&pipe, text),
             legacy_pretokenize(&seq, text)
         );
     }
@@ -348,6 +372,7 @@ mod tests {
             .collect();
         let seq = Sequence::new(splits);
         assert!(seq.is_deepseek());
+        let pipe: PipelineSequence = seq.clone().try_into().unwrap();
         // `he`/`ar` (RTL, RLM/format-mark + Other_Alphabetic-symbol heavy) are the cases the atomsplit
         // deepseek bench doesn't cover; the other 8 languages are byte-exact-gated there.
         for lang in ["he", "ar"] {
@@ -360,7 +385,7 @@ mod tests {
                 if line.is_empty() {
                     continue;
                 }
-                let (p, l) = (pipeline_pretokenize(&seq, line), legacy_pretokenize(&seq, line));
+                let (p, l) = (pipeline_pretokenize(&pipe, line), legacy_pretokenize(&seq, line));
                 if p != l {
                     let k = p
                         .iter()

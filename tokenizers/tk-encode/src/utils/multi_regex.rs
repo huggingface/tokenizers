@@ -140,16 +140,20 @@ pub enum GptFsm {
     Gpt2,
     /// cl100k / Llama-3 regex → `atomsplit::fsm::fsm_cl100k`.
     Cl100k,
+    /// o200k / GPT-4o regex → `atomsplit::fsm::fsm_o200k`.
+    O200k,
 }
 
-/// If `pattern` is exactly the GPT-2 or cl100k (Llama-3) pre-tokenization regex, name the native FSM
-/// that reproduces its `Isolated` split byte-for-byte. O200K has no FSM yet → `None` (the MultiRegex /
-/// SysRegex path still handles it). Recognition is exact-string, matching how tokenizers ship the regex.
+/// If `pattern` is exactly the GPT-2, cl100k (Llama-3), or o200k (GPT-4o) pre-tokenization regex, name
+/// the native FSM that reproduces its `Isolated` split byte-for-byte. Recognition is exact-string,
+/// matching how tokenizers ship the regex; an unknown pattern → `None` (the SysRegex path handles it).
 pub fn gpt_fsm(pattern: &str) -> Option<GptFsm> {
     if pattern == GPT2 {
         Some(GptFsm::Gpt2)
     } else if pattern == CL100K {
         Some(GptFsm::Cl100k)
+    } else if pattern == O200K {
+        Some(GptFsm::O200k)
     } else {
         None
     }
@@ -177,6 +181,7 @@ impl crate::tokenizer::pattern::Pattern for GptFsmPattern {
         let n = match self.0 {
             GptFsm::Gpt2 => atomsplit::fsm::fsm_byte_level(bytes, &tags, &mut spans),
             GptFsm::Cl100k => atomsplit::fsm::fsm_cl100k(bytes, &tags, &mut spans),
+            GptFsm::O200k => atomsplit::fsm::fsm_o200k(bytes, &tags, &mut spans),
         };
         Ok(spans[..n]
             .iter()

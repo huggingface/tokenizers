@@ -1,6 +1,9 @@
-use crate::utils::byte_level::{byte_level_transform, BYTES_CHAR_LOOKUP, CHAR_BYTES_LOOKUP};
-use crate::utils::{GptFsm, GptFsmPattern};
+use crate::utils::byte_level::{
+    byte_level_transform, BYTES_CHAR_LOOKUP, CHAR_BYTES_LOOKUP, GPT2_REGEX_STR,
+};
+use crate::utils::{GptFsm, GptFsmPattern, SysRegex};
 use serde::{Deserialize, Serialize};
+use std::sync::LazyLock;
 
 use crate::tokenizer::{
     Decoder, Encoding, PostProcessor, PreTokenizedString, PreTokenizer, Result,

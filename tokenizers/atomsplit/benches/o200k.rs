@@ -69,8 +69,12 @@ fn report_diff(corpus: &str, ours: &[Span], reference: &[Span]) -> &'static str 
     while k < ours.len() && k < reference.len() && ours[k] == reference[k] {
         k += 1;
     }
-    let (os, oe) = ours.get(k).map_or((0, 0), |&(s, e)| (s as usize, e as usize));
-    let (rs, re) = reference.get(k).map_or((0, 0), |&(s, e)| (s as usize, e as usize));
+    let (os, oe) = ours
+        .get(k)
+        .map_or((0, 0), |&(s, e)| (s as usize, e as usize));
+    let (rs, re) = reference
+        .get(k)
+        .map_or((0, 0), |&(s, e)| (s as usize, e as usize));
     eprintln!(
         "  DIVERGE @tok {k}/{} (ref {}): ours[{os}..{oe}]={:?} ref[{rs}..{re}]={:?}",
         ours.len(),
