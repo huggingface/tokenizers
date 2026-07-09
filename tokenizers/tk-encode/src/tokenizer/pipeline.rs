@@ -25,8 +25,7 @@ use crate::{
         unicode_scripts::UnicodeScripts,
         whitespace::{Whitespace, WhitespaceSplit},
     },
-    Model as LegacyModelTrait, ModelWrapper, PostProcessorWrapper, PreTokenizerWrapper, Token,
-    Tokenizer,
+    ModelWrapper, PostProcessorWrapper, PreTokenizerWrapper, Token, Tokenizer,
 };
 
 use super::{Result, SplitDelimiterBehavior};
