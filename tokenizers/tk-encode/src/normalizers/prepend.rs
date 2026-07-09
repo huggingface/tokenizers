@@ -28,12 +28,12 @@ impl Normalizer for Prepend {
 
 impl pipeline::Normalizer for Prepend {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
-        if input.is_empty() {
+        if input.is_empty() || self.prepend.is_empty() {
             return Ok(Cow::Borrowed(input));
         }
         Ok(Cow::Owned(format!(
             "{prepend}{input}",
-            prepend = &self.prepend
+            prepend = self.prepend
         )))
     }
 }
