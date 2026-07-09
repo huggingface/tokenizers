@@ -1,6 +1,7 @@
 //! [WordPiece](https://static.googleusercontent.com/media/research.google.com/en//pubs/archive/37842.pdf)
 //! model.
 
+use crate::added_vocabulary::bucket_vocab_store::BucketVocabStore;
 use crate::models::bpe::BPE;
 use crate::pipeline::{self, PipelineToken};
 use crate::tokenizer::{Model, Result, Token};
@@ -364,12 +365,167 @@ impl pipeline::Model for WordPiece {
     }
 }
 
+/// Pipeline WordPiece: the `Model` fast path backed by the MPHF [`BucketVocabStore`] with a streamed,
+/// prefetched longest-prefix match instead of the legacy dependent probe loop. Mirrors `PipelineBPE`.
+#[derive(Clone)]
+pub struct PipelineWordPiece {
+    vocab: BucketVocabStore,
+    /// Resolved lazily — an empty/`from_bpe` model may legitimately lack `[UNK]` until a word misses.
+    unk_id: Option<u32>,
+    /// `##` (the configured continuing-subword prefix) as bytes; prepended to non-initial candidates.
+    continuing_subword_prefix: Vec<u8>,
+    max_input_chars_per_word: usize,
+    /// Longest token in the vocab, in bytes. No candidate can match beyond this, so we never probe
+    /// lengths above it — the win over the legacy path, which blindly starts at the full remaining word.
+    max_token_len: usize,
+}
+
+impl PipelineWordPiece {
+    pub fn from_wordpiece(wp: &WordPiece) -> Self {
+        let tokens: Vec<(Vec<u8>, u32)> = wp
+            .vocab
+            .iter()
+            .map(|(s, &id)| (s.as_bytes().to_vec(), id))
+            .collect();
+        let max_token_len = tokens.iter().map(|(s, _)| s.len()).max().unwrap_or(0);
+        // `BucketVocabStore::build` panics on an empty vocab (max_id over no tokens); `new` is the empty ctor.
+        let vocab = if tokens.is_empty() {
+            BucketVocabStore::new()
+        } else {
+            BucketVocabStore::build(tokens)
+        };
+        Self {
+            unk_id: wp.vocab.get(&wp.unk_token).copied(),
+            vocab,
+            continuing_subword_prefix: wp.continuing_subword_prefix.as_bytes().to_vec(),
+            max_input_chars_per_word: wp.max_input_chars_per_word,
+            max_token_len,
+        }
+    }
+}
+
+impl pipeline::Model for PipelineWordPiece {
+    fn tokenize_pipeline(&self, sequence: &str, output: &mut Vec<PipelineToken>) -> Result<()> {
+        if sequence.is_empty() {
+            return Ok(());
+        }
+        if sequence.chars().count() > self.max_input_chars_per_word {
+            output.push(PipelineToken {
+                id: self.unk_id.ok_or(Error::MissingUnkToken)?,
+            });
+            return Ok(());
+        }
+
+        let prefix = &self.continuing_subword_prefix;
+        let bytes = sequence.as_bytes();
+        let mut buf: Vec<u8> = Vec::with_capacity(self.max_token_len);
+        let mut ends: Vec<usize> = Vec::with_capacity(self.max_token_len);
+        let start_out = output.len();
+        let mut start = 0usize;
+
+        while start < sequence.len() {
+            let prefix_len = if start > 0 { prefix.len() } else { 0 };
+            // A match can be at most `max_token_len` bytes, so the word part is capped here — this is
+            // what lets us skip the long run of guaranteed-miss probes the legacy path pays on every
+            // word longer than the vocab's longest token.
+            let cap_word = self.max_token_len.saturating_sub(prefix_len);
+
+            // Char-boundary byte offsets in `word[start..]` that fit under the cap (ascending), and the
+            // matching candidate buffer `["##"] + word[start..start+capped]`.
+            ends.clear();
+            let mut capped = 0usize;
+            for (idx, ch) in sequence[start..].char_indices() {
+                let e = idx + ch.len_utf8();
+                if e > cap_word {
+                    break;
+                }
+                capped = e;
+                ends.push(e);
+            }
+            buf.clear();
+            buf.extend_from_slice(prefix.get(..prefix_len).unwrap_or(&[]));
+            buf.extend_from_slice(&bytes[start..start + capped]);
+
+            // Longest-first with early exit (greedy WordPiece): the first hit is the answer.
+            let mut matched = None;
+            for &e in ends.iter().rev() {
+                if let Some(id) = self.vocab.get_bytes(&buf[..prefix_len + e]) {
+                    matched = Some((e, id));
+                    break;
+                }
+            }
+
+            match matched {
+                Some((word_bytes, id)) => {
+                    output.push(PipelineToken { id });
+                    start += word_bytes;
+                }
+                None => {
+                    // Whole word is unknown: drop any partial sub-tokens, emit a single unk (legacy parity).
+                    output.truncate(start_out);
+                    output.push(PipelineToken {
+                        id: self.unk_id.ok_or(Error::MissingUnkToken)?,
+                    });
+                    return Ok(());
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pipeline::Model as _;
 
     #[test]
     fn test_error_display() {
         assert!(format!("{}", Error::MissingUnkToken).contains("Missing [UNK] token"));
+    }
+
+    /// A small `##` vocab exercising: whole-word hit, greedy split, single-char fallback, and unk.
+    fn toy() -> WordPiece {
+        let pairs = [
+            ("[UNK]", 0),
+            ("un", 1),
+            ("##want", 2),
+            ("##ed", 3),
+            ("un", 1),
+            ("runn", 4),
+            ("##ing", 5),
+            ("a", 6),
+            ("##b", 7),
+            ("##c", 8),
+            ("play", 9),
+        ];
+        let vocab: AHashMap<String, u32> = pairs.iter().map(|(s, i)| (s.to_string(), *i)).collect();
+        WordPiece::builder().vocab(vocab).build().unwrap()
+    }
+
+    /// `PipelineWordPiece` (streamed MPHF) must be byte-exact with the legacy AHashMap pipeline path.
+    #[test]
+    fn pipeline_wordpiece_matches_legacy() {
+        let wp = toy();
+        let fast = PipelineWordPiece::from_wordpiece(&wp);
+        for word in [
+            "unwanted",
+            "running",
+            "unwanteded",
+            "abc",
+            "play",
+            "unk",
+            "xyz",
+            "a",
+            "",
+        ] {
+            let mut legacy = Vec::new();
+            wp.tokenize_pipeline(word, &mut legacy).unwrap();
+            let mut streamed = Vec::new();
+            fast.tokenize_pipeline(word, &mut streamed).unwrap();
+            let legacy: Vec<u32> = legacy.iter().map(|t| t.id).collect();
+            let streamed: Vec<u32> = streamed.iter().map(|t| t.id).collect();
+            assert_eq!(streamed, legacy, "diverged on {word:?}");
+        }
     }
 }
