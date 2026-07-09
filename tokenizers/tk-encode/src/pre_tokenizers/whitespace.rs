@@ -2,7 +2,7 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
-use crate::pipeline::{self, SplitPolicy};
+use crate::pipeline;
 use crate::tokenizer::{
     pattern::Invert, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior,
 };
@@ -70,25 +70,20 @@ pub fn is_word_char(ch: char) -> bool {
         || ch == '\u{200d}' // Zero-Width Joiner
 }
 
-static ASCII_CLASS: LazyLock<[CharType; 128]> =
-    LazyLock::new(|| std::array::from_fn(|b| classify(b as u8 as char)));
-
 impl pipeline::PreTokenizer for Whitespace {
-    // XXX: surprisingly, inlining here yields 10-15% slower performance
     #[inline(never)]
     fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Split>) -> Result<()> {
-        pipeline::split(
-            text,
-            out,
-            |ch| {
-                if ch.is_ascii() {
-                    ASCII_CLASS[ch as usize]
-                } else {
-                    classify(ch)
-                }
-            },
-            CharType::policy,
+        // `\w+|[^\w\s]+`: drop whitespace, cut at the word↔symbol boundary, each run one token —
+        // atomsplit classify + class-runs FSM (`WORD` = `\w`; keep-A = word, keep-B = symbol).
+        use atomsplit::classify::{Atoms, classify, mask};
+        let bytes = text.as_bytes();
+        let mut tags = vec![0u8; bytes.len()];
+        classify::<Atoms>(bytes, &mut tags);
+        let mut spans = vec![(0u32, 0u32); bytes.len() + 1];
+        let n = atomsplit::fsm::class_runs_into::<{ mask::WS }, 0, { mask::WORD }>(
+            bytes, &tags, &mut spans,
         );
+        out.extend(spans[..n].iter().map(|&(s, e)| pipeline::Split { start: s, end: e }));
         Ok(())
     }
 }
