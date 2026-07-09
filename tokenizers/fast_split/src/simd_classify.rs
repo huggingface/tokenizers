@@ -1,5 +1,15 @@
-/// Hot path at each byte-width we compute min/max values which gives us an index to one of the table; the fallback
-/// loops the SAME tables over the min..max range. This happens when we have  mixed scripts.
+/// Dense classify tables. A 16-byte SIMD chunk is tagged at each byte width (ASCII / 2-byte / 3-byte)
+/// with as few table lookups as possible, exploiting that real text is near-homogeneous — almost every
+/// lane in a chunk is in the SAME script block, so one lookup tags all of them.
+///
+/// Mixed chunks are handled by PEELING the blocks that are actually present, not by scanning a range:
+///   1. `vminvq` the block-id over the still-unresolved lanes → the smallest block present in the chunk;
+///   2. look up that ONE block's table and write its tag to exactly the lanes belonging to it;
+///   3. clear those lanes (`vbic`) and repeat until no unresolved lanes remain.
+/// So the number of lookups = the count of DISTINCT blocks in the chunk (usually 1 → that's the fast
+/// path; at most a handful), independent of how far apart the scripts sit: Latin-1 + Cyrillic is 2 peels,
+/// not "every group in between." No bounds guard needed — the earlier `min..=max` loop instead stepped
+/// once per block in the span, wasting a step on every empty gap between the scripts actually present.
 pub struct Tables {
     // ── ASCII (v < 0x80): direct 128-entry byte→tag, split 0..63 / 64..127.
     // This uses a trick to lookup more than 64 entries. we shift the bytes
@@ -246,24 +256,26 @@ pub unsafe fn classify_neon<S: super::classify::TagScheme>(text: &[u8], tags: &m
         // We'll construct the resolved mask
         let mut resolved = vdupq_n_u8(0); // lanes a multibyte handler has claimed
 
-        // ── 2-byte (C2..DF): loop the lead-GROUP range; single group ⇒ 1 iteration ──
+        // ── 2-byte (C2..DF): peel the EXACT distinct lead-groups present (min group among unresolved
+        //    lanes → resolve its 256-table → mask out → repeat). Iterations = distinct groups (≤8,
+        //    usually 1), independent of the min..max span — no wasted empty-group steps, adversarial-
+        //    proof; same shape as the 3-byte peel below (2-byte is one level: a group resolves in one
+        //    tbl256, no b1-pair sub-level). ──
         let is_lead2 = eq(vandq_u8(b0, vdupq_n_u8(0xE0)), 0xC0);
         if any(is_lead2) {
             let group_index = vorrq_u8(
                 vshlq_n_u8::<6>(vandq_u8(b0, vdupq_n_u8(3))),
                 vandq_u8(b1, vdupq_n_u8(0x3F)),
             );
-            let min_lead = vminvq_u8(vbslq_u8(is_lead2, b0, vdupq_n_u8(0xFF)));
-            let max_lead = vmaxvq_u8(vbslq_u8(is_lead2, b0, vdupq_n_u8(0x00)));
+            let grp = vshrq_n_u8::<2>(b0); // lead-group id per lane (garbage on non-leads; masked out)
             let mut tags2 = vdupq_n_u8(MB);
-            let mut group = min_lead >> 2;
-            while group <= (max_lead >> 2) {
-                let this_group = vandq_u8(is_lead2, eq(vshrq_n_u8::<2>(b0), group));
-                if any(this_group) {
-                    let group_table = &tables.group_tables[(group & 7) as usize];
-                    tags2 = vbslq_u8(this_group, tbl256(group_table, group_index), tags2);
-                }
-                group += 1;
+            let mut unresolved = is_lead2;
+            while any(unresolved) {
+                let group = vminvq_u8(vbslq_u8(unresolved, grp, vdupq_n_u8(0xFF))); // min group present
+                let group_lanes = vandq_u8(unresolved, eq(grp, group)); // lanes of exactly this group
+                let group_table = &tables.group_tables[(group & 7) as usize];
+                tags2 = vbslq_u8(group_lanes, tbl256(group_table, group_index), tags2);
+                unresolved = vbicq_u8(unresolved, group_lanes); // drop the lanes just resolved
             }
             out = vbslq_u8(is_lead2, tags2, out);
             resolved = is_lead2;
