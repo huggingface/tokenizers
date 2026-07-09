@@ -136,13 +136,12 @@ fn main() {
         let reference = deepseek_ref(corpus, &rn, &rc, &rb);
         let mut tags = vec![0u8; n];
         classify::<Atoms>(text, &mut tags);
-        let mut ours = Vec::new();
-        fsm_deepseek(text, &tags, &mut ours);
-        let parity = report_diff(corpus, &ours, &reference);
-        let btok = n as f64 / ours.len().max(1) as f64;
+        let mut buf = vec![(0u32, 0u32); n + 1];
+        let k = fsm_deepseek(text, &tags, &mut buf);
+        let parity = report_diff(corpus, &buf[..k], &reference);
+        let btok = n as f64 / k.max(1) as f64;
 
         // timing
-        let mut buf = Vec::with_capacity(ours.len());
         let cls_simd = ns_per_byte(n, iters, || {
             classify::<Atoms>(text, &mut tags);
             tags[n / 2] as usize
@@ -151,11 +150,7 @@ fn main() {
         let _ = classify_scalar::<Atoms>; // (scalar classify measured in the cl100k bench; skip here)
         let _ = &mut tsc;
         classify::<Atoms>(text, &mut tags);
-        let fsm_scal = ns_per_byte(n, iters, || {
-            buf.clear();
-            fsm_deepseek(text, &tags, &mut buf);
-            buf.len()
-        });
+        let fsm_scal = ns_per_byte(n, iters, || fsm_deepseek(text, &tags, &mut buf));
         let onig_ns = ns_per_byte(n, iters, || deepseek_ref(corpus, &rn, &rc, &rb).len());
 
         let pipe = cls_simd + fsm_scal;

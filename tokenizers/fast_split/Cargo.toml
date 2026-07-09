@@ -45,10 +45,6 @@ name = "deepseek"
 harness = false
 
 [[bench]]
-name = "wssplit"
-harness = false
-
-[[bench]]
 name = "byte_level"
 harness = false
 
@@ -61,5 +57,5 @@ name = "classify"
 harness = false
 
 [[bench]]
-name = "fused"
+name = "class_runs"
 harness = false

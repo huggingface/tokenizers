@@ -1,13 +1,15 @@
 //! TODO: this is the only file left to review and push to the bring of performances.
 //!
-//! FSM layer: turn the `Atom` tag stream into token spans. Every pre-tokenizer is one of these
-//! shapes, parameterized by a class mask + behavior (all `const`-generic → fully monomorphized).
-//! They all read the shared stream from `classify::classify::<Atoms>`; the delimiter *behavior* never
-//! touches classification. See `TAG_CLASSIFY_SPEC.md` §4.
+//! FSM layer: turn the `Atom` tag stream (from `classify::<Atoms>`) into token spans. Every fsm is
+//! NO-PUSH — it writes spans into a caller-preallocated `&mut [Span]` (len ≥ text.len()) and returns
+//! the count; no `Vec`, no realloc. See `TAG_CLASSIFY_SPEC.md` §4.
 //!
-//! Scalar cores are portable; the SIMD boundary-extract (`extract_boundaries`) is an aarch64
-//! optimization for the RunSplit family (class-change → movemask → bit-iterate).
-#![allow(dead_code)] // skeleton
+//! The class family (WhitespaceSplit / Punctuation / Digits / Whitespace / Bert) goes through
+//! [`class_runs_into`]: on aarch64 the NEON movemask boundary-extractor + homogeneous-chunk early-out
+//! ([`class_runs_neon`]), elsewhere the scalar run-end core ([`class_runs_runend`]). The regex-shaped
+//! ones ([`fsm_cl100k`] / [`fsm_deepseek`] / [`fsm_byte_level`]) are scalar jump-tables with SIMD
+//! run-ends. Tests live in `tests/`, throughput benches in `benches/`.
+#![allow(dead_code)] // class_runs_runend is the non-aarch64 core (unused on aarch64)
 
 use crate::classify::{Atom, Atoms, char_len, classify, in_mask, mask};
 
@@ -99,8 +101,8 @@ pub type Span = (u32, u32);
 ///   WhitespaceSplit `<{WS},0,0>` · Punctuation `<0,{PUNCT},0>` · Digits `<0,0,{NUMERIC}>` ·
 ///   Whitespace `<{WS},0,{WORD}>` · Bert `<{WS},{PUNCT},0>`.
 /// Class of a char: `DROP`→dropped, `ISOLATE`→own token, `KEEP_A`→run "A", else→run "B" (A/B cut apart).
-/// aarch64 uses the NEON boundary extractor ([`class_runs_neon`]); elsewhere the run-end core. Byte-exact
-/// with the `Vec` fsms and across both paths (see `class_runs_into_matches`). `out.len()` ≥ `text.len()`.
+/// aarch64 uses the NEON boundary extractor ([`class_runs_neon`]); elsewhere the run-end core — byte-exact
+/// across both paths (see the `class_runs_into_matches` test). `out.len()` must be ≥ `text.len()`.
 #[inline]
 pub fn class_runs_into<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>(
     text: &[u8],

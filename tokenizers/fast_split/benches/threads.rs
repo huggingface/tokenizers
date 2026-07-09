@@ -10,7 +10,7 @@ use fast_split::fsm::{Span, fsm_byte_level, fsm_cl100k, fsm_deepseek};
 use std::hint::black_box;
 use std::time::Instant;
 
-type Fsm = fn(&[u8], &[u8], &mut Vec<Span>);
+type Fsm = fn(&[u8], &[u8], &mut [Span]) -> usize;
 
 const DOCS: &[(&str, &str)] = &[
     ("English", "../data/big.txt"),
@@ -68,7 +68,9 @@ fn pipeline(fsm: Fsm, chunk: &[u8], tags: &mut Vec<u8>, out: &mut Vec<Span>) {
     tags.resize(chunk.len(), 0);
     classify::<Atoms>(chunk, tags);
     out.clear();
-    fsm(chunk, tags, out);
+    out.resize(chunk.len() + 1, (0, 0)); // preallocated slice — the fsm writes into it, no push
+    let k = fsm(chunk, tags, out);
+    out.truncate(k);
 }
 
 /// How many tokens differ between the N-way partitioned pipeline (offsets rebased) and the sequential

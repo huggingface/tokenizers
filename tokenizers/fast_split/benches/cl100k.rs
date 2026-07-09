@@ -92,12 +92,11 @@ fn main() {
         let mut tags = vec![0u8; n];
         let mut tsc = vec![0u8; n];
         classify::<Atoms>(text, &mut tags);
-        let mut sc = Vec::new();
-        fsm_cl100k(text, &tags, &mut sc);
-        let ok = if sc == onig_spans { "✓" } else { "✗" };
-        let btok = n as f64 / sc.len().max(1) as f64; // bytes per token = density (drives per-token cost)
+        let mut buf = vec![(0u32, 0u32); n + 1];
+        let ksc = fsm_cl100k(text, &tags, &mut buf);
+        let ok = if buf[..ksc] == onig_spans[..] { "✓" } else { "✗" };
+        let btok = n as f64 / ksc.max(1) as f64; // bytes per token = density (drives per-token cost)
 
-        let mut buf = Vec::with_capacity(sc.len());
         let cls_simd = ns_per_byte(n, iters, || {
             classify::<Atoms>(text, &mut tags);
             tags[n / 2] as usize
@@ -107,16 +106,8 @@ fn main() {
             tsc[n / 2] as usize
         });
         classify::<Atoms>(text, &mut tags);
-        let fsm_scal = ns_per_byte(n, iters, || {
-            buf.clear();
-            fsm_cl100k(text, &tags, &mut buf);
-            buf.len()
-        });
-        let fsm_simd = ns_per_byte(n, iters, || {
-            buf.clear();
-            fsm_cl100k_simd(text, &tags, &mut buf);
-            buf.len()
-        });
+        let fsm_scal = ns_per_byte(n, iters, || fsm_cl100k(text, &tags, &mut buf));
+        let fsm_simd = ns_per_byte(n, iters, || fsm_cl100k_simd(text, &tags, &mut buf));
         let onig_ns = ns_per_byte(n, iters, || re.find_iter(corpus).count());
         let fancy_ns = ns_per_byte(n, iters, || fancy.find_iter(corpus).count());
 

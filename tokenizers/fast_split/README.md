@@ -109,7 +109,11 @@ fast3_uni[block] = tag           if the whole 128-cp block is one atom   (425 bl
 
 For 2-byte and 3-byte a chunk may hold lanes from several blocks. Instead of looping every block id between the min and max present (wasting a step per empty gap), we **peel**: `vminvq` the smallest block still unresolved → resolve exactly its lanes with one lookup → mask them out → repeat. Steps = **distinct blocks present** (usually 1 → that's the fast path), independent of how far apart the scripts sit, and no bounds guard. See `src/simd_classify.rs` for the annotated kernel.
 
-## 2. The FSM: a `u16` class bitmap turns tags into token spans
+## 2. The FSM: classify is nearly free, so the FSM *is* the cost
+
+The single SIMD classify pass is ~free — **~0.05 ns/B on ASCII, ~0.3–0.6 on multibyte** (a handful of table lookups per 16 bytes). The pre-tokenizer's real cost is the **FSM** that turns the tag stream into spans: **~1–3 ns/B on dense Latin/code** (many short tokens ⇒ many state transitions) down to **~0.3 on run-heavy CJK**. So all the performance work lives here. The FSM writes spans into a **caller-owned `&mut [Span]` and returns the count** — no `Vec`, no realloc; the buffer is reused across calls.
+
+### 2.1 A class is a `u16` bitmap
 
 The classifier hands the FSM a stream of atom ids (`0..12`). A **class** is just a *set of atoms*, and a set of ≤ 16 atoms is one `u16` where **bit `t` = "atom `t` is in this class"**:
 
@@ -130,6 +134,21 @@ Atom::WsOther.bit()          // = 1 << 5                     build a class by OR
 in_mask(tag, WS)             // = WS & (1 << tag) != 0       test membership: one AND + compare
 ```
 
-**Composability & scaling.** A class is any union of atoms — `PUNCT_SYM = Connector|Punct|Apostrophe|SymOther`, `LETTER_MARK = Letter|Mark` — composed *without touching the classifier or re-running classification*. Add a 14th atom and every FSM keeps working; the only limit is the mask width. `u16` covers 16 atoms; the exact same code with a `u32`/`u64` mask covers 32/64 classes for free — the classifier already emits arbitrary `u8` tags, so nothing about the classification pass changes.
+A class is any union of atoms — `PUNCT_SYM = Connector|Punct|Apostrophe|SymOther`, `LETTER_MARK = Letter|Mark` — composed *without touching the classifier or re-running classification*. Add a 14th atom and every FSM keeps working; `u16` covers 16 atoms, and the exact same code with a `u32`/`u64` mask covers 32/64 classes for free (the classifier already emits arbitrary `u8` tags).
 
-**Why it's a finite-state machine.** Each pretokenizer is a small automaton over the shared tag alphabet: a handful of **states** (in a letter run, inside whitespace, at a boundary) and, for each incoming tag, a **transition** — extend the current run, emit the span, or start a new one. The class masks *are* the transition predicates (`in_mask(tag, LETTER)` = "stay in the letter state"), and `run_end` walks the maximal run of a state in one tight loop. So cl100k, GPT-2, whitespace-split, deepseek… are all the *same* machine driven by different masks + a few peeked bytes — which is also why the only place SIMD helps the FSM is a maximal-run state (`\p{L}+`, `\s+`): there it can skip 16 in-state tags at a time (`run_end_simd`) instead of one.
+### 2.2 The scalar ↔ SIMD duality — SIMD only earns its keep on run-ends
+
+A pre-tokenizer rule is one of two shapes, and **SIMD only helps the second**:
+
+1. **Per-char decisions** — cl100k's contraction peek (`'s|'t|…`), the ` ?` / `[^…]?` prefix logic: a branchy little automaton, one char at a time. Branches don't vectorize, so this stays **scalar**.
+2. **Run-ends — a `+`/`*` over one class** (`\p{L}+`, `\s+`, `\p{N}+`, a punct run): grab the maximal run. This is the *only* place SIMD wins, and the trick is **skip the invalid, stop only at the valid**:
+
+   `run_end_simd` loads 16 tags → `vqtbl1` membership LUT → `vminvq == 0xFF` means all 16 are still in-run → **skip 16 at once**; it drops to scalar only for the ≤16 bytes around the actual boundary. A 3-char English word finishes entirely in the scalar phase (no vector tax); a 900-char CJK run skips ~56 chunks. `run_end_sel::<SIMD>` picks scalar vs SIMD at monomorphization, so `fsm_cl100k` and `fsm_cl100k_simd` are one body compiled twice.
+
+The **dual** of a run-end is a **boundary**: the class-family pre-tokenizers (Whitespace / Bert / Digits / Punctuation) cut at *every* class change, so `class_runs_neon` scans the other way — classify 16 lanes (`vqtbl1`), fill continuation lanes from the left, `movemask` the class-changes, and iterate the set bits to emit one span per segment. It finds **every boundary in a chunk at once**, so short-run text (English words, ~5 chars) is never paid per-char.
+
+Both fuse in one kernel: `class_runs_neon` first tries the run-end fast path — *whole 16-chunk stays the current class → skip it, no boundary work* — and only movemasks the **mixed** chunks. So it bulk-skips long runs (Digits/Punct/CJK) **and** parallel-boundaries the dense ones, byte-exact with the portable `class_runs_runend` oracle. Two views of the same idea: **run-end skips the invalid to reach the next valid; boundary-extract flags every valid at once.**
+
+### 2.3 Why it's a finite-state machine
+
+Each pre-tokenizer is a small automaton over the shared tag alphabet: a few **states** (in a letter run, inside whitespace, at a boundary) and, per incoming tag, a **transition** — extend the run, emit the span, or start a new one. The class masks *are* the transition predicates (`in_mask(tag, LETTER)` = "stay in the letter state"). So cl100k, GPT-2, whitespace-split, deepseek… are all the *same* machine driven by different masks + a few peeked bytes; only the states that are a maximal `+`/`*` run get the SIMD run-end.
