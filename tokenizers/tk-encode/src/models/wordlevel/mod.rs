@@ -1,4 +1,5 @@
 use super::OrderedVocabIter;
+use crate::pipeline::{self, PipelineToken};
 use crate::tokenizer::{Model, Result, Token};
 use ahash::AHashMap;
 use serde_json::Value;
@@ -203,6 +204,23 @@ impl Model for WordLevel {
         vocab_file.write_all(serialized.as_bytes())?;
 
         Ok(vec![vocab_path])
+    }
+}
+
+impl pipeline::Model for WordLevel {
+    fn tokenize_pipeline(
+        &self,
+        sequence: &str,
+        output: &mut Vec<pipeline::PipelineToken>,
+    ) -> Result<()> {
+        if let Some(&id) = self.vocab.get(sequence) {
+            output.push(PipelineToken { id })
+        } else if let Some(&unk_id) = self.vocab.get(&self.unk_token) {
+            output.push(PipelineToken { id: unk_id });
+        } else {
+            return Err(Box::new(Error::MissingUnkToken));
+        }
+        Ok(())
     }
 }
 
