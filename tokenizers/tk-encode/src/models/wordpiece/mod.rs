@@ -318,6 +318,7 @@ impl pipeline::Model for WordPiece {
         output: &mut Vec<pipeline::PipelineToken>,
     ) -> Result<()> {
         let mut candidate = String::with_capacity(self.max_input_chars_per_word);
+        let mut candidate_tokens = Vec::with_capacity(sequence.len());
 
         let char_len = sequence.chars().count();
         if char_len > self.max_input_chars_per_word {
@@ -326,42 +327,45 @@ impl pipeline::Model for WordPiece {
                 .get(&self.unk_token)
                 .ok_or(Error::MissingUnkToken)?;
             output.push(PipelineToken { id: unk_id });
+            return Ok(());
         }
 
-        let mut is_good = false;
+        let mut is_bad = false;
         let mut start = 0;
 
         while start < sequence.len() {
-            candidate.clear();
             let mut end = sequence.len();
 
             while start < end {
+                candidate.clear();
+
                 if start > 0 {
                     candidate.push_str(&self.continuing_subword_prefix);
                 }
                 candidate.push_str(&sequence[start..end]);
 
                 if let Some(&id) = self.vocab.get(&candidate) {
-                    output.push(PipelineToken { id });
-                    is_good = true;
+                    candidate_tokens.push(PipelineToken { id });
                     break;
                 }
                 end -= candidate.chars().last().map_or(1, |c| c.len_utf8());
             }
 
-            if !is_good {
+            if end <= start {
+                is_bad = true;
                 break;
             }
-
             start = end;
         }
 
-        if !is_good {
+        if is_bad {
             let unk_id = *self
                 .vocab
                 .get(&self.unk_token)
                 .ok_or(Error::MissingUnkToken)?;
             output.push(PipelineToken { id: unk_id });
+        } else {
+            output.extend_from_slice(&candidate_tokens);
         }
         Ok(())
     }

@@ -691,8 +691,8 @@ pub enum PipelineModel {
 
 impl Model for PipelineModel {
     fn tokenize_pipeline(&self, sequence: &str, output: &mut Vec<PipelineToken>) -> Result<()> {
-       match self {
-            Self::BPE(model) => return model.tokenize_pipeline(sequence, output),
+        match self {
+            Self::BPE(model) => model.tokenize_pipeline(sequence, output),
             Self::Unigram(model) => model.tokenize_pipeline(sequence, output),
             Self::WordLevel(model) => model.tokenize_pipeline(sequence, output),
             Self::WordPiece(model) => model.tokenize_pipeline(sequence, output),
