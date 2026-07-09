@@ -59,8 +59,9 @@ dary_heap = { version = "0.3.6", features = ["serde"] }
 compact_str = { version = "0.9", features = ["serde"] }
 ptr_hash = { version = "1.1.0" }
 memchr = "2.8.2"
-unicode-normalization = "0.1.25"
-icu_normalizer = "2.2.0"
+icu_normalizer = { version = "2.2.0", default-features = false, features = [
+  "compiled_data",
+] }
 
 [features]
 # TODO: onig is C (Oniguruma, archived upstream). We're moving to the pure-Rust
