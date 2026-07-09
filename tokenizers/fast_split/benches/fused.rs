@@ -12,7 +12,7 @@
 //! Run: cargo bench --bench fused
 use fast_split::atom_tables::ATOM_TABLES;
 use fast_split::classify::{char_len, classify, in_mask, mask, Atom, Atoms};
-use fast_split::fsm::{fsm_class_runs, fsm_cl100k_simd, fsm_split, Behavior, Span};
+use fast_split::fsm::{class_runs_into, fsm_class_runs, fsm_cl100k_simd, fsm_split, Behavior, Span};
 #[cfg(target_arch = "aarch64")]
 use fast_split::fsm::whitespace_split_simd;
 #[cfg(not(target_arch = "aarch64"))]
@@ -252,44 +252,39 @@ fn fused_cl100k(text: &[u8], out: &mut Vec<Span>) {
     }
 }
 
-// ── two-pass wrappers (SIMD classify + fsm), #[inline(always)] so the timing closure inlines them ──
+// ── fsm-only wrappers (tags precomputed), #[inline(always)] — timed separately from classify so we
+// see the classify vs fsm split. The two-pass total is classify + one of these. ──
 #[inline(always)]
-fn tp_wssplit(text: &[u8], tags: &mut [u8], out: &mut Vec<Span>) {
+fn fo_wssplit(text: &[u8], tags: &[u8], out: &mut Vec<Span>) {
     out.clear();
-    classify::<Atoms>(text, tags);
     #[cfg(target_arch = "aarch64")]
     whitespace_split_simd(text, tags, out);
     #[cfg(not(target_arch = "aarch64"))]
     whitespace_split_scalar(text, tags, out);
 }
 #[inline(always)]
-fn tp_punct(text: &[u8], tags: &mut [u8], out: &mut Vec<Span>) {
+fn fo_punct(text: &[u8], tags: &[u8], out: &mut Vec<Span>) {
     out.clear();
-    classify::<Atoms>(text, tags);
     fsm_split::<{ mask::PUNCT }, { Behavior::Isolated as u8 }>(text, tags, out);
 }
 #[inline(always)]
-fn tp_digits(text: &[u8], tags: &mut [u8], out: &mut Vec<Span>) {
+fn fo_digits(text: &[u8], tags: &[u8], out: &mut Vec<Span>) {
     out.clear();
-    classify::<Atoms>(text, tags);
     fsm_split::<{ mask::NUMERIC }, { Behavior::Contiguous as u8 }>(text, tags, out);
 }
 #[inline(always)]
-fn tp_ws(text: &[u8], tags: &mut [u8], out: &mut Vec<Span>) {
+fn fo_ws(text: &[u8], tags: &[u8], out: &mut Vec<Span>) {
     out.clear();
-    classify::<Atoms>(text, tags);
     fsm_class_runs::<{ mask::WS }, 0, { mask::WORD }>(text, tags, out);
 }
 #[inline(always)]
-fn tp_bert(text: &[u8], tags: &mut [u8], out: &mut Vec<Span>) {
+fn fo_bert(text: &[u8], tags: &[u8], out: &mut Vec<Span>) {
     out.clear();
-    classify::<Atoms>(text, tags);
     fsm_class_runs::<{ mask::WS }, { mask::PUNCT }, 0>(text, tags, out);
 }
 #[inline(always)]
-fn tp_cl100k(text: &[u8], tags: &mut [u8], out: &mut Vec<Span>) {
+fn fo_cl100k(text: &[u8], tags: &[u8], out: &mut Vec<Span>) {
     out.clear();
-    classify::<Atoms>(text, tags);
     fsm_cl100k_simd(text, tags, out);
 }
 
@@ -318,6 +313,28 @@ fn fu_cl100k(text: &[u8], out: &mut Vec<Span>) {
     fused_cl100k(text, out)
 }
 
+// no-push fast fsm (writes into a preallocated slice, returns count) — the class family
+#[inline(always)]
+fn ff_wssplit(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
+    class_runs_into::<{ mask::WS }, 0, 0>(text, tags, out)
+}
+#[inline(always)]
+fn ff_punct(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
+    class_runs_into::<0, { mask::PUNCT }, 0>(text, tags, out)
+}
+#[inline(always)]
+fn ff_digits(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
+    class_runs_into::<0, 0, { mask::NUMERIC }>(text, tags, out)
+}
+#[inline(always)]
+fn ff_ws(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
+    class_runs_into::<{ mask::WS }, 0, { mask::WORD }>(text, tags, out)
+}
+#[inline(always)]
+fn ff_bert(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
+    class_runs_into::<{ mask::WS }, { mask::PUNCT }, 0>(text, tags, out)
+}
+
 fn ns_per_byte<F: FnMut() -> usize>(len: usize, iters: u32, mut f: F) -> f64 {
     for _ in 0..3 {
         black_box(f());
@@ -335,13 +352,14 @@ fn ns_per_byte<F: FnMut() -> usize>(len: usize, iters: u32, mut f: F) -> f64 {
     best
 }
 
-// Direct (inlinable) calls — $tp/$fu are fn *identifiers*, not pointers, so the closure inlines the
-// whole chain (wrapper → fsm/fused → classify_char). fn pointers would block that and skew fused slow.
+// Direct (inlinable) calls — $fsm/$ff/$fu are fn *identifiers*, not pointers, so the closure inlines the
+// whole chain. fn pointers would block that and skew results.
 macro_rules! bench {
-    ($corpora:expr, $name:expr, $tp:ident, $fu:ident) => {{
+    // class family: also has a no-push fast fsm ($ff → slice, returns count)
+    ($corpora:expr, $name:expr, $fsm:ident, $ff:ident, $fu:ident) => {{
         println!(
-            "\n== {} ==\n{:<10} {:>7}  {:>10} {:>10} | {:>7} {:>6}",
-            $name, "lang", "bytes", "2pass", "fused", "speedup", "parity"
+            "\n== {} ==\n{:<10} {:>7}  {:>8} {:>8} {:>8} {:>5}  {:>8} {:>8} | {:>5}",
+            $name, "lang", "bytes", "classify", "fsm", "fsm_np", "gain", "2pass_np", "fused", "spd"
         );
         for (label, corpus) in $corpora {
             let text = corpus.as_bytes();
@@ -349,20 +367,68 @@ macro_rules! bench {
             let iters = (4_000_000 / n).clamp(3, 150) as u32;
             let mut tags = vec![0u8; n];
             let (mut a, mut b) = (Vec::new(), Vec::new());
-            $tp(text, &mut tags, &mut a);
+            let mut buf = vec![(0u32, 0u32); n];
+            classify::<Atoms>(text, &mut tags);
+            $fsm(text, &tags, &mut a);
+            let k = $ff(text, &tags, &mut buf);
             $fu(text, &mut b);
-            let parity = a == b;
-            let t2 = ns_per_byte(n, iters, || {
-                $tp(text, &mut tags, &mut a);
+            let parity = a.as_slice() == &buf[..k] && a == b;
+            let t_cls = ns_per_byte(n, iters, || {
+                classify::<Atoms>(text, &mut tags);
+                n
+            });
+            classify::<Atoms>(text, &mut tags); // re-prime
+            let t_fsm = ns_per_byte(n, iters, || {
+                $fsm(text, &tags, &mut a);
                 a.len()
             });
-            let tf = ns_per_byte(n, iters, || {
+            let t_np = ns_per_byte(n, iters, || $ff(text, &tags, &mut buf));
+            let t_fu = ns_per_byte(n, iters, || {
                 $fu(text, &mut b);
                 b.len()
             });
+            let t2 = t_cls + t_np;
             println!(
-                "{:<10} {:>7}  {:>10.3} {:>10.3} | {:>6.2}x {:>6}",
-                label, n, t2, tf, tf / t2, if parity { "✓" } else { "✗" }
+                "{:<10} {:>7}  {:>8.3} {:>8.3} {:>8.3} {:>4.2}x  {:>8.3} {:>8.3} | {:>4.2}x{}",
+                label, n, t_cls, t_fsm, t_np, t_fsm / t_np, t2, t_fu, t_fu / t2,
+                if parity { "" } else { "  PARITY✗" }
+            );
+        }
+    }};
+    // cl100k etc.: no fast fsm yet
+    ($corpora:expr, $name:expr, $fsm:ident, $fu:ident) => {{
+        println!(
+            "\n== {} ==\n{:<10} {:>7}  {:>8} {:>8} {:>7}  {:>8} {:>8} | {:>5}",
+            $name, "lang", "bytes", "classify", "fsm", "fsm/cls", "2pass", "fused", "spd"
+        );
+        for (label, corpus) in $corpora {
+            let text = corpus.as_bytes();
+            let n = text.len();
+            let iters = (4_000_000 / n).clamp(3, 150) as u32;
+            let mut tags = vec![0u8; n];
+            let (mut a, mut b) = (Vec::new(), Vec::new());
+            classify::<Atoms>(text, &mut tags);
+            $fsm(text, &tags, &mut a);
+            $fu(text, &mut b);
+            let parity = a == b;
+            let t_cls = ns_per_byte(n, iters, || {
+                classify::<Atoms>(text, &mut tags);
+                n
+            });
+            classify::<Atoms>(text, &mut tags);
+            let t_fsm = ns_per_byte(n, iters, || {
+                $fsm(text, &tags, &mut a);
+                a.len()
+            });
+            let t_fu = ns_per_byte(n, iters, || {
+                $fu(text, &mut b);
+                b.len()
+            });
+            let t2 = t_cls + t_fsm;
+            println!(
+                "{:<10} {:>7}  {:>8.3} {:>8.3} {:>6.1}x  {:>8.3} {:>8.3} | {:>4.2}x{}",
+                label, n, t_cls, t_fsm, t_fsm / t_cls, t2, t_fu, t_fu / t2,
+                if parity { "" } else { "  PARITY✗" }
             );
         }
     }};
@@ -383,16 +449,16 @@ fn main() {
         }
     }
 
-    bench!(&corpora, "WhitespaceSplit", tp_wssplit, fu_wssplit);
-    bench!(&corpora, "Punctuation", tp_punct, fu_punct);
-    bench!(&corpora, "Digits", tp_digits, fu_digits);
-    bench!(&corpora, "Whitespace \\w", tp_ws, fu_ws);
-    bench!(&corpora, "Bert", tp_bert, fu_bert);
-    bench!(&corpora, "Cl100k", tp_cl100k, fu_cl100k);
+    bench!(&corpora, "WhitespaceSplit", fo_wssplit, ff_wssplit, fu_wssplit);
+    bench!(&corpora, "Punctuation", fo_punct, ff_punct, fu_punct);
+    bench!(&corpora, "Digits", fo_digits, ff_digits, fu_digits);
+    bench!(&corpora, "Whitespace \\w", fo_ws, ff_ws, fu_ws);
+    bench!(&corpora, "Bert", fo_bert, ff_bert, fu_bert);
+    bench!(&corpora, "Cl100k", fo_cl100k, fu_cl100k);
 
     println!(
-        "\n(ns/byte, lower better. 2pass = SIMD classify::<Atoms> + fsm (classify timed);\n \
-         fused = one scalar pass, classify_char inlined, no tag buffer.\n \
-         speedup = fused/2pass: >1 → two-pass SIMD wins (keep it); <1 → fuse it.)"
+        "\n(ns/byte, lower better. classify = SIMD classify::<Atoms> alone; fsm = Vec-push fsm; fsm_np =\n \
+         no-push fsm into a preallocated slice (class_runs_into); gain = fsm/fsm_np; 2pass_np = classify +\n \
+         fsm_np; fused = one scalar pass. spd = fused/2pass_np. Cl100k has no no-push fsm yet.)"
     );
 }

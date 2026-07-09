@@ -94,182 +94,249 @@ fn run_end_sel<const SIMD: bool>(
 /// TODO:i think we could use u16 for one of them if we stored start, offset5
 pub type Span = (u32, u32);
 
-/// Mirror of `tokenizer::SplitDelimiterBehavior`, kept here so it can be a `const`-generic argument.
-#[repr(u8)]
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum Behavior {
-    Removed = 0,
-    Isolated = 1,
-    Contiguous = 2,
-    MergedWithPrevious = 3,
-    MergedWithNext = 4,
-}
-
-// ── FSM shapes ───────────────────────────────────────────────────────────────────────────────
-
-/// HF `split(delim, behavior)` over the tag stream. A char is a *match* iff `in_mask(tag, DELIM)`;
-/// matches are per-char, non-matches are runs; `BEHAVIOR` places boundaries / drops matches exactly
-/// as `SplitDelimiterBehavior`. Monomorphized on both params.
-///
-/// Covers: WhitespaceSplit, Punctuation, Digits, Metaspace (marker), CharDelimiterSplit, Split-literal.
-///
-/// ┌── OWNER: shared (scalar core); SIMD boundary-extract optional on aarch64 ──┐
-pub fn fsm_split<const DELIM: u16, const BEHAVIOR: u8>(
+/// No-`push` class-family pre-tokenizer core: writes spans into the preallocated `out` slice and returns
+/// the count — no `Vec`, no realloc. ONE shape covers the whole class family via `<DROP, ISOLATE, KEEP_A>`:
+///   WhitespaceSplit `<{WS},0,0>` · Punctuation `<0,{PUNCT},0>` · Digits `<0,0,{NUMERIC}>` ·
+///   Whitespace `<{WS},0,{WORD}>` · Bert `<{WS},{PUNCT},0>`.
+/// Class of a char: `DROP`→dropped, `ISOLATE`→own token, `KEEP_A`→run "A", else→run "B" (A/B cut apart).
+/// aarch64 uses the NEON boundary extractor ([`class_runs_neon`]); elsewhere the run-end core. Byte-exact
+/// with the `Vec` fsms and across both paths (see `class_runs_into_matches`). `out.len()` ≥ `text.len()`.
+#[inline]
+pub fn class_runs_into<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>(
     text: &[u8],
     tags: &[u8],
-    out: &mut Vec<Span>,
-) {
-    // find_matches over the tag stream (HF Pattern for a char-fn): each matching char is its OWN
-    // match; non-matching chars group into maximal runs. `segs` = (start, end, is_match), alternating.
-    let n = text.len();
-    let mut segs: Vec<(u32, u32, bool)> = Vec::new();
-    let mut run_start = 0usize;
-    let mut i = 0usize;
-    while i < n {
-        let s = i;
-        i += 1;
-        while i < n && text[i] & 0xC0 == 0x80 {
-            i += 1; // consume continuation bytes → char is [s, i)
-        }
-        if in_mask(tags[s], DELIM) {
-            if run_start != s {
-                segs.push((run_start as u32, s as u32, false));
-            }
-            segs.push((s as u32, i as u32, true));
-            run_start = i;
-        }
+    out: &mut [Span],
+) -> usize {
+    #[cfg(target_arch = "aarch64")]
+    {
+        class_runs_neon::<DROP, ISOLATE, KEEP_A>(text, tags, out)
     }
-    if run_start != n {
-        segs.push((run_start as u32, n as u32, false));
-    }
-
-    // Place / drop the match segments per SplitDelimiterBehavior (tokenizer::normalizer::split).
-    match BEHAVIOR {
-        b if b == Behavior::Isolated as u8 => {
-            for &(s, e, _) in &segs {
-                out.push((s, e));
-            }
-        }
-        b if b == Behavior::Removed as u8 => {
-            for &(s, e, m) in &segs {
-                if !m {
-                    out.push((s, e));
-                }
-            }
-        }
-        b if b == Behavior::Contiguous as u8 => {
-            let mut prev_match = false;
-            for &(s, e, m) in &segs {
-                if m == prev_match && !out.is_empty() {
-                    out.last_mut().unwrap().1 = e; // merge same-kind neighbours
-                } else {
-                    out.push((s, e));
-                }
-                prev_match = m;
-            }
-        }
-        b if b == Behavior::MergedWithPrevious as u8 => {
-            let mut prev_match = false;
-            for &(s, e, m) in &segs {
-                if m && !prev_match && !out.is_empty() {
-                    out.last_mut().unwrap().1 = e; // delimiter joins the previous piece
-                } else {
-                    out.push((s, e));
-                }
-                prev_match = m;
-            }
-        }
-        _ /* MergedWithNext */ => {
-            let base = out.len();
-            let mut prev_match = false;
-            for &(s, e, m) in segs.iter().rev() {
-                if m && !prev_match && out.len() > base {
-                    out.last_mut().unwrap().0 = s; // delimiter joins the next piece
-                } else {
-                    out.push((s, e));
-                }
-                prev_match = m;
-            }
-            out[base..].reverse();
-        }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        class_runs_runend::<DROP, ISOLATE, KEEP_A>(text, tags, out)
     }
 }
 
-/// Cut at *every* class change; drop `DROP`-class runs, isolate `ISOLATE`-class per char. Keeps more
-/// than one run type, so it isn't a single `fsm_split`. Covers: Whitespace (drop WS, keep Word+Symbol
-/// runs), Bert (drop WS, isolate Punct).
-///
-/// Each char maps to one class: `DROP` → dropped run, `ISOLATE` → its own token, `KEEP_SPLIT` → a
-/// "keep-A" run, everything else → a "keep-B" run. keep-A and keep-B are cut apart, so this expresses
-/// Whitespace's Word(=keep-A)/Symbol(=keep-B) boundary while Bert (`KEEP_SPLIT=0`) keeps one run type.
-///
-/// ┌── OWNER: shared (scalar core); SIMD boundary-extract optional ──┐
-pub fn fsm_class_runs<const DROP: u16, const ISOLATE: u16, const KEEP_SPLIT: u16>(
+/// Run-end core: skip each homogeneous run with `run_end` (bulk skip; NEON `vqtbl` on aarch64). Wins on
+/// long runs (Digits/Punct); the portable path and a test oracle. No `Vec` — writes into `out`.
+pub fn class_runs_runend<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>(
     text: &[u8],
     tags: &[u8],
-    out: &mut Vec<Span>,
-) {
+    out: &mut [Span],
+) -> usize {
+    let mb: u16 = !(DROP | ISOLATE | KEEP_A); // keep-B = everything else (Cont rides along in run_end)
+    let (lut_d, lut_a, lut_b) = (inmask_tbl(DROP), inmask_tbl(KEEP_A), inmask_tbl(mb));
     let n = text.len();
-    let mut open: Option<(usize, u8)> = None; // (run_start, keep-class 2|3) — a currently-open keep run
-    let mut i = 0usize;
+    let (mut w, mut i) = (0usize, 0usize);
     while i < n {
-        let s = i;
-        i += 1;
-        while i < n && text[i] & 0xC0 == 0x80 {
-            i += 1; // char is [s, i)
-        }
-        let tag = tags[s];
-        let class = if in_mask(tag, DROP) {
-            0
-        } else if in_mask(tag, ISOLATE) {
-            1
-        } else if in_mask(tag, KEEP_SPLIT) {
-            2 // keep-A
+        let t = tags[i];
+        if in_mask(t, DROP) {
+            i = run_end_sel::<true>(tags, i, n, DROP, &lut_d); // skip the whole drop run at once
+        } else if in_mask(t, ISOLATE) {
+            let s = i;
+            i += char_len(text[i]);
+            out[w] = (s as u32, i as u32); // isolate: one char = one token
+            w += 1;
         } else {
-            3 // keep-B
-        };
-        match class {
-            0 => {
-                if let Some((st, _)) = open.take() {
-                    out.push((st as u32, s as u32)); // flush the open run; drop this char
-                }
-            }
-            1 => {
-                if let Some((st, _)) = open.take() {
-                    out.push((st as u32, s as u32));
-                }
-                out.push((s as u32, i as u32)); // isolate this char
-            }
-            c => match open {
-                Some((_, oc)) if oc == c => {} // same keep class → extend the run
-                Some((st, _)) => {
-                    out.push((st as u32, s as u32)); // class changed → flush, open new
-                    open = Some((s, c));
-                }
-                None => open = Some((s, c)),
-            },
+            let s = i;
+            i = if in_mask(t, KEEP_A) {
+                run_end_sel::<true>(tags, i, n, KEEP_A, &lut_a)
+            } else {
+                run_end_sel::<true>(tags, i, n, mb, &lut_b)
+            };
+            out[w] = (s as u32, i as u32);
+            w += 1;
         }
     }
-    if let Some((st, _)) = open {
-        out.push((st as u32, n as u32));
+    w
+}
+
+/// NEON movemask boundary-extract: per 16 tags → class via `vqtbl1` (Cont→`0xFF`), fill Cont lanes with
+/// the left neighbour's class (≤3 iters = max continuation bytes), then boundary = class-change | isolate
+/// lead, restricted to leads → `movemask` → iterate set bits, emitting one span per non-`DROP` segment
+/// into `out`. Finds every boundary in a 16-chunk in parallel, so short-run text (English words) isn't
+/// per-char. Open segment + fill/prev carries cross chunks; a scalar tail finishes the < 16-byte remainder.
+#[cfg(target_arch = "aarch64")]
+fn class_runs_neon<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>(
+    text: &[u8],
+    tags: &[u8],
+    out: &mut [Span],
+) -> usize {
+    use core::arch::aarch64::*;
+    const CONT: u8 = Atom::Cont as u8;
+    // class LUT: tag → 0 drop / 1 isolate / 2 keep-A / 3 keep-B; Cont → 0xFF (fill sentinel).
+    let mut lut = [3u8; 16];
+    let mut t = 0u8;
+    while t < 16 {
+        lut[t as usize] = if t == CONT {
+            0xFF
+        } else if (DROP >> t) & 1 != 0 {
+            0
+        } else if (ISOLATE >> t) & 1 != 0 {
+            1
+        } else if (KEEP_A >> t) & 1 != 0 {
+            2
+        } else {
+            3
+        };
+        t += 1;
+    }
+    const POW: [u8; 16] = [1, 2, 4, 8, 16, 32, 64, 128, 1, 2, 4, 8, 16, 32, 64, 128];
+    let n = text.len();
+    let (mut w, mut i) = (0usize, 0usize);
+    let (mut seg_start, mut seg_class) = (0usize, 0u8); // seg_class 0 (drop) → first close emits nothing
+    let mut carry: u8 = 0xFE; // class "before" pos 0 — impossible → forces a boundary at 0
+    let mut cls_arr = [0u8; 16];
+    unsafe {
+        let lutv = vld1q_u8(lut.as_ptr());
+        let powv = vld1q_u8(POW.as_ptr());
+        let contv = vdupq_n_u8(0xFF);
+        let onev = vdupq_n_u8(1);
+        while i + 16 <= n {
+            let v = vld1q_u8(tags.as_ptr().add(i));
+            let raw = vqtbl1q_u8(lutv, v); // class per lane, Cont → 0xFF
+            // fast path (long runs): whole chunk is the current segment's class or continuation → no
+            // boundary; extend and skip all the fill/boundary work. Recovers the run-end bulk-skip for
+            // Digits/Punct/CJK. Not for isolate segments (those need a boundary per char).
+            if seg_class != 1 {
+                let ok = vorrq_u8(vceqq_u8(raw, vdupq_n_u8(seg_class)), vceqq_u8(raw, contv));
+                if vminvq_u8(ok) == 0xFF {
+                    carry = seg_class;
+                    i += 16;
+                    continue;
+                }
+            }
+            // fill Cont lanes with the left neighbour's class (≤3 iters covers a 4-byte char's 3 conts)
+            let mut cls = raw;
+            let mut k = 0;
+            while k < 3 {
+                let shifted = vextq_u8::<15>(vdupq_n_u8(carry), cls); // [carry, cls0..cls14]
+                cls = vbslq_u8(vceqq_u8(cls, contv), shifted, cls);
+                k += 1;
+            }
+            let prev = vextq_u8::<15>(vdupq_n_u8(carry), cls);
+            let changed = vmvnq_u8(vceqq_u8(cls, prev)); // class changed vs left neighbour
+            let is_iso = vceqq_u8(cls, onev);
+            let is_lead = vmvnq_u8(vceqq_u8(raw, contv)); // raw != 0xFF (a char lead)
+            let bnd = vandq_u8(vorrq_u8(changed, vandq_u8(is_iso, is_lead)), is_lead);
+            let bits = vandq_u8(bnd, powv);
+            let mm = (vaddv_u8(vget_low_u8(bits)) as u16)
+                | ((vaddv_u8(vget_high_u8(bits)) as u16) << 8);
+            vst1q_u8(cls_arr.as_mut_ptr(), cls);
+            let mut m = mm;
+            while m != 0 {
+                let j = m.trailing_zeros() as usize;
+                let pos = i + j;
+                if seg_class != 0 {
+                    out[w] = (seg_start as u32, pos as u32);
+                    w += 1;
+                }
+                seg_start = pos;
+                seg_class = cls_arr[j];
+                m &= m - 1;
+            }
+            carry = cls_arr[15];
+            i += 16;
+        }
+    }
+    // scalar tail (< 16 bytes; MAY start mid-char — the chunk loop steps by 16, not by char): per-char
+    // boundary, continuing the open segment. A continuation byte stays in the current segment; advance
+    // ONE byte (`char_len` is only valid on a lead, so never call it on a cont).
+    while i < n {
+        let s = i;
+        let r = tags[s];
+        if r == CONT {
+            i += 1;
+            continue;
+        }
+        let c = if in_mask(r, DROP) {
+            0
+        } else if in_mask(r, ISOLATE) {
+            1
+        } else if in_mask(r, KEEP_A) {
+            2
+        } else {
+            3
+        };
+        i += char_len(text[s]);
+        if c != seg_class || c == 1 || seg_class == 1 {
+            if seg_class != 0 {
+                out[w] = (seg_start as u32, s as u32);
+                w += 1;
+            }
+            seg_start = s;
+            seg_class = c;
+        }
+    }
+    if seg_class != 0 {
+        out[w] = (seg_start as u32, n as u32);
+        w += 1;
+    }
+    w
+}
+
+#[cfg(test)]
+mod class_runs_into_tests {
+    use super::*;
+    use crate::classify::{classify, mask, Atoms};
+
+    /// Both no-push paths (NEON `class_runs_into` and the `class_runs_runend` core) must be byte-exact
+    /// with the `Vec` fsms for every class-family recipe. Corpus mixes ASCII, 2/3-byte scripts,
+    /// Devanagari (letter+matra clusters), combining marks, consecutive punctuation, tabs, astral. The
+    /// truncation SWEEP re-runs at many char-aligned lengths so the < 16-byte NEON tail starts at every
+    /// offset — including MID-CHAR (the chunk loop steps by 16, not by char), which is what caught the
+    /// tail `char_len`-on-continuation-byte bug.
+    #[test]
+    fn class_runs_into_matches() {
+        let corpus =
+            "Hello, world!! 123 café × наука 中文。। नरेंद्र मोदी ने ½²¼ ①② 😀a b\t".repeat(30);
+        let full = corpus.as_bytes();
+        let mut tags = vec![0u8; full.len()];
+        let mut b1 = vec![(0u32, 0u32); full.len()];
+        let mut b2 = vec![(0u32, 0u32); full.len()];
+
+        // NEON path == run-end core, for one recipe, at length t.len()
+        fn eq_paths<const D: u16, const I: u16, const A: u16>(
+            t: &[u8], tg: &[u8], x: &mut [Span], y: &mut [Span], name: &str,
+        ) {
+            let k1 = class_runs_into::<D, I, A>(t, tg, x);
+            let k2 = class_runs_runend::<D, I, A>(t, tg, y);
+            assert_eq!(&x[..k1], &y[..k2], "{} @len {}", name, t.len());
+        }
+        let mut sweep = |len: usize| {
+            let (t, tg) = (&full[..len], &mut tags[..len]);
+            classify::<Atoms>(t, tg);
+            let (x, y) = (&mut b1[..len], &mut b2[..len]);
+            eq_paths::<{ mask::WS }, 0, 0>(t, tg, x, y, "WhitespaceSplit");
+            eq_paths::<0, { mask::PUNCT }, 0>(t, tg, x, y, "Punctuation");
+            eq_paths::<0, 0, { mask::NUMERIC }>(t, tg, x, y, "Digits");
+            eq_paths::<{ mask::WS }, 0, { mask::WORD }>(t, tg, x, y, "Whitespace");
+            eq_paths::<{ mask::WS }, { mask::PUNCT }, 0>(t, tg, x, y, "Bert");
+        };
+        sweep(full.len());
+        for c in full.len().saturating_sub(64)..full.len() {
+            if corpus.is_char_boundary(c) {
+                sweep(c);
+            }
+        }
     }
 }
 
 /// cl100k pretokenization (7 rules, segmented `{1,3}` cap + whitespace-tail). Peeks `text` for the
 /// ASCII contraction-suffix literals. Scalar run-ends.
 /// ┌── OWNER: shared (scalar) ──┐
-pub fn fsm_cl100k(text: &[u8], tags: &[u8], out: &mut Vec<Span>) {
+pub fn fsm_cl100k(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
     cl100k::<false>(text, tags, out)
 }
 
 /// Same, with SIMD (NEON) run-ends (`run_end_simd`) for the letter / symbol / whitespace runs — wins
 /// on run-heavy text. Byte-identical output to `fsm_cl100k`. On non-aarch64 the run-end falls back to
 /// scalar (so this always exists; no `cfg` at call sites).
-pub fn fsm_cl100k_simd(text: &[u8], tags: &[u8], out: &mut Vec<Span>) {
+pub fn fsm_cl100k_simd(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
     cl100k::<true>(text, tags, out)
 }
 
-fn cl100k<const SIMD: bool>(text: &[u8], tags: &[u8], out: &mut Vec<Span>) {
+fn cl100k<const SIMD: bool>(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
     // Leading-atom values, as `const` so the `match` below is a dense jump table (not an if-cascade):
     // the dispatch is O(1) and a token never pays for a rule it can't start (e.g. non-number tokens
     // never test the number rule — which is what the POC's const-gating removed by hand; here it's free).
@@ -323,6 +390,7 @@ fn cl100k<const SIMD: bool>(text: &[u8], tags: &[u8], out: &mut Vec<Span>) {
     };
 
     let mut i = 0;
+    let mut w = 0usize;
     while i < end {
         let start = i;
         let b = text[i];
@@ -401,8 +469,10 @@ fn cl100k<const SIMD: bool>(text: &[u8], tags: &[u8], out: &mut Vec<Span>) {
             // Sentinel / MultiByte / Cont — never a char-start atom; emit one char defensively.
             _ => i += char_len(b),
         }
-        out.push((start as u32, i as u32));
+        out[w] = (start as u32, i as u32);
+        w += 1;
     }
+    w
 }
 
 /// The specific CJK ranges deepseek's Split-2 isolates: Han U+4E00..9FA5 ∪ Hiragana U+3040..309F ∪
@@ -457,7 +527,7 @@ fn ds_is_cjk_letter(text: &[u8], tags: &[u8], p: usize) -> bool {
 /// `\p{L}∪\p{M}`, so they end a letter run (`ds_breaks`); (3) Split-2 isolates the whole CJK range but
 /// Split-3 re-splits it, so CJK-range punct (・) breaks the CJK *letter* run (`ds_is_cjk_letter`).
 /// ┌── OWNER: shared (scalar) ──┐
-pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut Vec<Span>) {
+pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
     // Leading-atom values as `const` → the `match` is a dense jump table (see `cl100k`). The Split
     // precedence (digits → CJK → big-regex alts) is preserved because the atom partition is disjoint.
     const LET: u8 = Atom::Letter as u8;
@@ -528,6 +598,7 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut Vec<Span>) {
     };
 
     let mut i = 0;
+    let mut w = 0usize;
     while i < end {
         let start = i;
         let b = text[i];
@@ -597,8 +668,10 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut Vec<Span>) {
             // Sentinel / MultiByte / Cont — never a char-start atom; emit one char defensively.
             _ => i += char_len(b),
         }
-        out.push((start as u32, i as u32));
+        out[w] = (start as u32, i as u32);
+        w += 1;
     }
+    w
 }
 
 /// GPT-2 / ByteLevel pretokenization. Regex (same jump-table shape as cl100k, with 3 differences):
@@ -607,7 +680,7 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut Vec<Span>) {
 /// a literal SPACE only (not any non-l/n char) and it applies to letters, numbers AND "other"; (3) no
 /// `\p{N}{1,3}` cap (numbers are unbounded) and no `\s*[\r\n]`/trailing-`[\r\n]*` rules.
 /// ┌── OWNER: shared (scalar) ──┐
-pub fn fsm_byte_level(text: &[u8], tags: &[u8], out: &mut Vec<Span>) {
+pub fn fsm_byte_level(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
     const LET: u8 = Atom::Letter as u8;
     const NW: u8 = Atom::NumWord as u8;
     const NO: u8 = Atom::NumOther as u8;
@@ -638,6 +711,7 @@ pub fn fsm_byte_level(text: &[u8], tags: &[u8], out: &mut Vec<Span>) {
     };
 
     let mut i = 0;
+    let mut w = 0usize;
     while i < end {
         let start = i;
         match tags[i] {
@@ -678,190 +752,89 @@ pub fn fsm_byte_level(text: &[u8], tags: &[u8], out: &mut Vec<Span>) {
             // Sentinel / MultiByte / Cont — never a char-start atom; emit one char defensively.
             _ => i += char_len(text[i]),
         }
-        out.push((start as u32, i as u32));
+        out[w] = (start as u32, i as u32);
+        w += 1;
     }
-}
-
-/// SIMD boundary-extract for the RunSplit family: `in_mask` class-change → `movemask` → bit-iterate
-/// to spans. Optional aarch64 acceleration of `fsm_split`/`fsm_class_runs`' scalar core.
-/// ┌── OWNER: SIMD path ──┐
-#[cfg(target_arch = "aarch64")]
-pub(crate) unsafe fn extract_boundaries(tags: &[u8], delim: u16, out: &mut Vec<Span>) {
-    let _ = (tags, delim, out);
-    todo!()
-}
-
-/// Scalar `WhitespaceSplit` (drop WS runs, keep non-WS runs) — thin alias over the generic core, so the
-/// SIMD version has a same-signature scalar twin to bench against.
-pub fn whitespace_split_scalar(text: &[u8], tags: &[u8], out: &mut Vec<Span>) {
-    fsm_split::<{ mask::WS }, { Behavior::Removed as u8 }>(text, tags, out)
-}
-
-/// SIMD (NEON) `WhitespaceSplit`: emit maximal non-whitespace byte runs (WS dropped), byte-identical to
-/// [`whitespace_split_scalar`]. This is the simplest RunSplit — one class, `Removed` — so it's pure
-/// boundary detection: a per-lane keep/drop `vqtbl1` + NEON movemask, then bit-iterate runs. No per-char
-/// rule dispatch, no `segs` scratch, no double pass; whole non-WS chunks (words/CJK) cost one movemask.
-///
-/// `keep[tag] = 0xFF` for a kept byte, `0x00` for a whitespace *lead*. Continuation bytes (`Cont`) are
-/// kept (→ multibyte non-WS chars stay whole); the sole cost is that the continuation bytes of a
-/// non-ASCII whitespace char (NBSP, U+3000, …) also read as "kept" — `push` strips those leading
-/// continuation bytes so the emitted token still starts on a char boundary, keeping it byte-exact.
-#[cfg(target_arch = "aarch64")]
-pub fn whitespace_split_simd(text: &[u8], tags: &[u8], out: &mut Vec<Span>) {
-    use core::arch::aarch64::*;
-    let n = text.len();
-
-    // emit [s,e) after skipping leading continuation bytes (orphaned conts of a dropped multibyte WS
-    // char). The `while` ~never fires (only at non-ASCII whitespace) — no cost on ASCII-spaced text.
-    let push = |mut s: usize, e: usize, out: &mut Vec<Span>| {
-        while s < e && text[s] & 0xC0 == 0x80 {
-            s += 1;
-        }
-        if s < e {
-            out.push((s as u32, e as u32));
-        }
-    };
-
-    let mut run_start = usize::MAX; // usize::MAX = not currently in a run
-    let mut i = 0;
-    if n >= 16 {
-        // keep LUT + NEON movemask weights (lane j → bit j; low 8 → low byte, high 8 → high byte).
-        let mut keep = [0xFFu8; 16];
-        let mut t = 0u8;
-        while t < 16 {
-            if (mask::WS >> t) & 1 != 0 {
-                keep[t as usize] = 0x00; // Newline | Space | WsOther leads
-            }
-            t += 1;
-        }
-        const POW: [u8; 16] = [1, 2, 4, 8, 16, 32, 64, 128, 1, 2, 4, 8, 16, 32, 64, 128];
-        unsafe {
-            let keepv = vld1q_u8(keep.as_ptr());
-            let powv = vld1q_u8(POW.as_ptr());
-            while i + 16 <= n {
-                let bits = vandq_u8(vqtbl1q_u8(keepv, vld1q_u8(tags.as_ptr().add(i))), powv);
-                let km = (vaddv_u8(vget_low_u8(bits)) as u16)
-                    | ((vaddv_u8(vget_high_u8(bits)) as u16) << 8);
-                if km == 0xFFFF {
-                    if run_start == usize::MAX {
-                        run_start = i; // whole chunk kept → (re)open a run
-                    }
-                } else if km == 0 {
-                    if run_start != usize::MAX {
-                        push(run_start, i, out); // whole chunk dropped → close the run
-                        run_start = usize::MAX;
-                    }
-                } else {
-                    let mut j = 0;
-                    while j < 16 {
-                        if (km >> j) & 1 != 0 {
-                            if run_start == usize::MAX {
-                                run_start = i + j;
-                            }
-                        } else if run_start != usize::MAX {
-                            push(run_start, i + j, out);
-                            run_start = usize::MAX;
-                        }
-                        j += 1;
-                    }
-                }
-                i += 16;
-            }
-        }
-    }
-    // scalar tail (Cont ∉ WS → kept, matching the LUT)
-    while i < n {
-        if in_mask(tags[i], mask::WS) {
-            if run_start != usize::MAX {
-                push(run_start, i, out);
-                run_start = usize::MAX;
-            }
-        } else if run_start == usize::MAX {
-            run_start = i;
-        }
-        i += 1;
-    }
-    if run_start != usize::MAX {
-        push(run_start, n, out);
-    }
+    w
 }
 
 // ── Composition recipes ────────────────────────────────────────────────────────────────────────
-// Each pre-tokenizer = (classify::<Atoms> → fsm shape + params). `tags` is caller-owned scratch (reused
-// across calls, no per-call alloc). In `tk-encode` these delegate from the `pipeline::PreTokenizer`
-// impls (offset conversion Span → pipeline::Split happens there).
+// Each pre-tokenizer = (classify::<Atoms> → fsm shape + params). `tags` and `out` are caller-owned
+// scratch, reused across calls — NO per-call alloc, NO push. The class family writes spans into the
+// preallocated `out: &mut [Span]` (len ≥ text.len()) via `class_runs_into` and returns the token count.
+// In `tk-encode` these delegate from the `pipeline::PreTokenizer` impls (offset conversion happens there).
 
 pub struct WhitespaceSplit;
 impl WhitespaceSplit {
     #[inline]
-    pub fn pre_tokenize(&self, text: &[u8], tags: &mut [u8], out: &mut Vec<Span>) {
+    pub fn pre_tokenize(&self, text: &[u8], tags: &mut [u8], out: &mut [Span]) -> usize {
         classify::<Atoms>(text, tags);
-        fsm_split::<{ mask::WS }, { Behavior::Removed as u8 }>(text, tags, out);
+        class_runs_into::<{ mask::WS }, 0, 0>(text, tags, out)
     }
 }
 
 pub struct Punctuation;
 impl Punctuation {
     #[inline]
-    pub fn pre_tokenize(&self, text: &[u8], tags: &mut [u8], out: &mut Vec<Span>) {
+    pub fn pre_tokenize(&self, text: &[u8], tags: &mut [u8], out: &mut [Span]) -> usize {
         classify::<Atoms>(text, tags);
-        fsm_split::<{ mask::PUNCT }, { Behavior::Isolated as u8 }>(text, tags, out);
+        class_runs_into::<0, { mask::PUNCT }, 0>(text, tags, out)
     }
 }
 
 pub struct Digits;
 impl Digits {
     #[inline]
-    pub fn pre_tokenize(&self, text: &[u8], tags: &mut [u8], out: &mut Vec<Span>) {
+    pub fn pre_tokenize(&self, text: &[u8], tags: &mut [u8], out: &mut [Span]) -> usize {
         classify::<Atoms>(text, tags);
-        fsm_split::<{ mask::NUMERIC }, { Behavior::Contiguous as u8 }>(text, tags, out);
+        class_runs_into::<0, 0, { mask::NUMERIC }>(text, tags, out)
     }
 }
 
 pub struct Whitespace;
 impl Whitespace {
     #[inline]
-    pub fn pre_tokenize(&self, text: &[u8], tags: &mut [u8], out: &mut Vec<Span>) {
+    pub fn pre_tokenize(&self, text: &[u8], tags: &mut [u8], out: &mut [Span]) -> usize {
         classify::<Atoms>(text, tags);
         // drop WS runs, keep Word and Symbol runs (isolate nothing)
-        fsm_class_runs::<{ mask::WS }, 0, { mask::WORD }>(text, tags, out);
+        class_runs_into::<{ mask::WS }, 0, { mask::WORD }>(text, tags, out)
     }
 }
 
 pub struct Bert;
 impl Bert {
     #[inline]
-    pub fn pre_tokenize(&self, text: &[u8], tags: &mut [u8], out: &mut Vec<Span>) {
+    pub fn pre_tokenize(&self, text: &[u8], tags: &mut [u8], out: &mut [Span]) -> usize {
         classify::<Atoms>(text, tags);
         // drop WS runs, isolate punctuation, keep everything else as single runs
-        fsm_class_runs::<{ mask::WS }, { mask::PUNCT }, 0>(text, tags, out);
+        class_runs_into::<{ mask::WS }, { mask::PUNCT }, 0>(text, tags, out)
     }
 }
 
 pub struct Cl100k;
 impl Cl100k {
     #[inline]
-    pub fn pre_tokenize(&self, text: &[u8], tags: &mut [u8], out: &mut Vec<Span>) {
+    pub fn pre_tokenize(&self, text: &[u8], tags: &mut [u8], out: &mut [Span]) -> usize {
         classify::<Atoms>(text, tags);
-        fsm_cl100k(text, tags, out);
+        fsm_cl100k_simd(text, tags, out)
     }
 }
 
 pub struct DeepSeek;
 impl DeepSeek {
     #[inline]
-    pub fn pre_tokenize(&self, text: &[u8], tags: &mut [u8], out: &mut Vec<Span>) {
+    pub fn pre_tokenize(&self, text: &[u8], tags: &mut [u8], out: &mut [Span]) -> usize {
         classify::<Atoms>(text, tags);
-        fsm_deepseek(text, tags, out);
+        fsm_deepseek(text, tags, out)
     }
 }
 
 pub struct ByteLevel;
 impl ByteLevel {
     #[inline]
-    pub fn pre_tokenize(&self, text: &[u8], tags: &mut [u8], out: &mut Vec<Span>) {
+    pub fn pre_tokenize(&self, text: &[u8], tags: &mut [u8], out: &mut [Span]) -> usize {
         classify::<Atoms>(text, tags);
-        fsm_byte_level(text, tags, out);
+        fsm_byte_level(text, tags, out)
     }
 }
 
@@ -870,18 +843,19 @@ impl ByteLevel {
 /// delimiter's byte pattern only matches on char boundaries.
 pub struct CharDelimiterSplit(pub char);
 impl CharDelimiterSplit {
-    pub fn pre_tokenize(&self, text: &[u8], _tags: &mut [u8], out: &mut Vec<Span>) {
+    pub fn pre_tokenize(&self, text: &[u8], _tags: &mut [u8], out: &mut [Span]) -> usize {
         let mut buf = [0u8; 4];
         let delim = self.0.encode_utf8(&mut buf).as_bytes();
         let (n, dl) = (text.len(), delim.len());
-        let (mut start, mut i) = (0usize, 0usize);
+        let (mut start, mut i, mut w) = (0usize, 0usize, 0usize);
         while i + dl <= n {
             // memchr the first delimiter byte, then confirm the full pattern.
             match memchr::memchr(delim[0], &text[i..n - dl + 1]) {
                 Some(off) if text[i + off..i + off + dl] == *delim => {
                     let m = i + off;
                     if m > start {
-                        out.push((start as u32, m as u32)); // gap before the delimiter (Removed)
+                        out[w] = (start as u32, m as u32); // gap before the delimiter (Removed)
+                        w += 1;
                     }
                     i = m + dl;
                     start = i;
@@ -891,8 +865,10 @@ impl CharDelimiterSplit {
             }
         }
         if start < n {
-            out.push((start as u32, n as u32));
+            out[w] = (start as u32, n as u32);
+            w += 1;
         }
+        w
     }
 }
 
@@ -900,35 +876,22 @@ impl CharDelimiterSplit {
 mod tests {
     use super::*;
 
-    fn spans<const D: u16, const B: u8>(s: &str) -> Vec<Span> {
-        let mut tags = vec![0u8; s.len()];
-        classify::<Atoms>(s.as_bytes(), &mut tags);
-        let mut out = Vec::new();
-        fsm_split::<D, B>(s.as_bytes(), &tags, &mut out);
-        out
-    }
-
-    fn class_spans<const DR: u16, const IS: u16, const KS: u16>(s: &str) -> Vec<Span> {
-        let mut tags = vec![0u8; s.len()];
-        classify::<Atoms>(s.as_bytes(), &mut tags);
-        let mut out = Vec::new();
-        fsm_class_runs::<DR, IS, KS>(s.as_bytes(), &tags, &mut out);
-        out
-    }
-
+    // helper: run a no-push fsm into a fresh buffer, return the emitted spans
     fn cl100k(s: &str) -> Vec<Span> {
         let mut tags = vec![0u8; s.len()];
         classify::<Atoms>(s.as_bytes(), &mut tags);
-        let mut out = Vec::new();
-        fsm_cl100k(s.as_bytes(), &tags, &mut out);
+        let mut out = vec![(0u32, 0u32); s.len() + 1];
+        let k = fsm_cl100k(s.as_bytes(), &tags, &mut out);
+        out.truncate(k);
         out
     }
 
     fn deepseek(s: &str) -> Vec<Span> {
         let mut tags = vec![0u8; s.len()];
         classify::<Atoms>(s.as_bytes(), &mut tags);
-        let mut out = Vec::new();
-        fsm_deepseek(s.as_bytes(), &tags, &mut out);
+        let mut out = vec![(0u32, 0u32); s.len() + 1];
+        let k = fsm_deepseek(s.as_bytes(), &tags, &mut out);
+        out.truncate(k);
         out
     }
 
