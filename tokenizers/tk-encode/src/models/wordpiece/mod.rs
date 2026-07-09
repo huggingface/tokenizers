@@ -330,43 +330,36 @@ impl pipeline::Model for WordPiece {
             return Ok(());
         }
 
-        let mut is_bad = false;
         let mut start = 0;
 
         while start < sequence.len() {
-            let mut end = sequence.len();
-
-            while start < end {
-                candidate.clear();
-
-                if start > 0 {
-                    candidate.push_str(&self.continuing_subword_prefix);
-                }
-                candidate.push_str(&sequence[start..end]);
-
-                if let Some(&id) = self.vocab.get(&candidate) {
-                    candidate_tokens.push(PipelineToken { id });
-                    break;
-                }
-                end -= candidate.chars().last().map_or(1, |c| c.len_utf8());
+            candidate.clear();
+            if start > 0 {
+                candidate.push_str(&self.continuing_subword_prefix);
             }
+            candidate.push_str(&sequence[start..]);
 
-            if end <= start {
-                is_bad = true;
-                break;
-            }
+            let prefix_len = candidate.len() - (sequence.len() - start);
+            let matched = sequence[start..]
+                .char_indices()
+                .rev()
+                .find_map(|(idx, character)| {
+                    let end = start + idx + character.len_utf8();
+                    candidate.truncate(prefix_len + (end - start));
+                    self.vocab.get(&candidate).map(|&id| (end, id))
+                });
+            let Some((end, token_id)) = matched else {
+                let unk_id = *self
+                    .vocab
+                    .get(&self.unk_token)
+                    .ok_or(Error::MissingUnkToken)?;
+                output.push(PipelineToken { id: unk_id });
+                return Ok(());
+            };
+            candidate_tokens.push(PipelineToken { id: token_id });
             start = end;
         }
-
-        if is_bad {
-            let unk_id = *self
-                .vocab
-                .get(&self.unk_token)
-                .ok_or(Error::MissingUnkToken)?;
-            output.push(PipelineToken { id: unk_id });
-        } else {
-            output.extend_from_slice(&candidate_tokens);
-        }
+        output.extend_from_slice(&candidate_tokens);
         Ok(())
     }
 }
