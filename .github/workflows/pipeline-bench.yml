@@ -1,8 +1,14 @@
 name: Pipeline Benchmark
 
-# Comparative benchmark: reference `Tokenizer` vs experimental
-# `PipelineTokenizer`, for every model in tk-encode/examples/bench_models.json
-# across every corpus in data/fixtures/ on ~10 kB inputs
+# Comparative benchmark: the experimental `PipelineTokenizer` vs the latest
+# *released* tokenizers crate (the baseline to beat — the in-tree legacy
+# `Tokenizer` is being phased out, so it is only the id-correctness oracle,
+# never a benched series), for every model in
+# tk-encode/examples/bench_models.json across every corpus in data/fixtures/.
+# Measures throughput (~10 kB inputs), short-prompt encode latency
+# (time-to-first-token), per-implementation memory footprint (RSS), and
+# stripped minimal-binary size. The release dep is behind tk-encode's
+# `bench-baseline` feature, so production builds never pull it.
 # Triggers:
 #   • push to feat/train_encode_split → benches and updates PR #2119's description.
 #   • add the "run-pipeline-bench" label to any PR → benches that PR and updates
@@ -52,7 +58,7 @@ env:
 
 jobs:
   pipeline-bench:
-    name: Tokenizer vs PipelineTokenizer
+    name: PipelineTokenizer vs latest release
     # push / dispatch always run; a labeled PR runs only for our label.
     if: github.event_name != 'pull_request' || github.event.label.name == 'run-pipeline-bench'
     # Same dedicated runner group as benchmarks.yml — shared 2-vCPU runners
@@ -88,8 +94,27 @@ jobs:
 
       - name: Run comparative benchmark
         run: |
-          cargo run --release -p tk-encode --example fixture_bench > pipeline_bench.json
+          cargo run --release -p tk-encode --features tk-encode/bench-baseline \
+            --example fixture_bench > pipeline_bench.json
           cat pipeline_bench.json
+
+      # Stripped size of a minimal encode program linking each implementation —
+      # the "how much does this library add to my binary" number.
+      - name: Measure binary sizes
+        run: |
+          cargo build --release -p tk-encode --features tk-encode/bench-baseline \
+            --example binsize_baseline --example binsize_pipeline
+          printf '{' > binary_sizes.json
+          sep=''
+          for key in baseline pipeline; do
+            bin="target/release/examples/binsize_$key"
+            "$bin" data/gpt2.json "The quick brown fox jumps 123."   # binary actually works
+            strip -o "$bin.stripped" "$bin"
+            printf '%s"%s": %s' "$sep" "$key" "$(stat -c %s "$bin.stripped")" >> binary_sizes.json
+            sep=', '
+          done
+          printf '}\n' >> binary_sizes.json
+          cat binary_sizes.json
 
       - name: Render report
         run: |
@@ -99,7 +124,8 @@ jobs:
             --subtitle "~10 kB inputs · single thread" \
             --revision "${{ github.event.pull_request.head.sha || github.sha }}" \
             --img-base "$base_url" \
-            --run-id "${{ github.run_id }}"
+            --run-id "${{ github.run_id }}" \
+            --binary-sizes binary_sizes.json
           uvx --with cairosvg python -c "
           import cairosvg, glob
           for f in glob.glob('pipeline_bench_*.svg'):
@@ -155,13 +181,15 @@ jobs:
           gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/labels/run-pipeline-bench" \
             -X DELETE || true
 
+      # Pipeline ids must match this tree's Tokenizer. Baseline id mismatches
+      # (ids_match_baseline) are report-only: a branch may fix encode bugs.
       - name: Fail on id mismatches
         run: |
           python3 -c "
           import json, sys
-          models = json.load(open('pipeline_bench.json'))
+          models = json.load(open('pipeline_bench.json'))['models']
           bad = [f\"{m['model']}/{r['fixture']}\" for m in models
-                 if m['supported'] for r in m['results'] if not r['ids_match']]
+                 for r in m['results'] if r.get('ids_match') is False]
           sys.exit(f'ids diverge on: {bad}' if bad else 0)
           "
 
@@ -172,6 +200,7 @@ jobs:
           name: pipeline-bench
           path: |
             tokenizers/pipeline_bench.json
+            tokenizers/binary_sizes.json
             tokenizers/pipeline_bench.md
             tokenizers/pipeline_bench_*.svg
             tokenizers/pipeline_bench_*.png

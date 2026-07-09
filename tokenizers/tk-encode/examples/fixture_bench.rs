@@ -1,32 +1,50 @@
-//! Comparative throughput of the reference `Tokenizer` vs the experimental
-//! `PipelineTokenizer`, for every model in `examples/bench_models.json` across
-//! every corpus in `data/fixtures/` (languages + modalities), on ~10 kB inputs
-//! — the regime where per-input overhead is amortized (see `pipeline_benchmark.rs`
-//! for the size sweep).
+//! Comparative benchmark of the experimental `PipelineTokenizer` against the
+//! latest *released* `tokenizers` crate (the bar to beat — the in-tree legacy
+//! `Tokenizer` is on its way out, so the release is the reference), for every
+//! model in `examples/bench_models.json` across every corpus in `data/fixtures/`.
 //!
-//! `PipelineTokenizer` is a work in progress: models it can't build yet (standalone
-//! ByteLevel pre-tokenizer, Metaspace/Unigram, …) are reported as `supported: false`
-//! with their pipeline shape, rather than benched — the CI grid renders those as
-//! roadmap cards. Each manifest entry carries a `desc`: a one-line label of the
-//! workload archetype the model exercises, passed through to the report.
+//! Per fixture it measures throughput on ~10 kB inputs (the regime where
+//! per-input overhead is amortized — see `pipeline_benchmark.rs` for the size
+//! sweep). Per model it also measures resident-set deltas by re-spawning itself
+//! as `--memory <impl> <model.json>` children — one implementation per process,
+//! so allocator page reuse across implementations can't blur the attribution.
 //!
-//! Emits a JSON array (one object per model) on stdout, consumed by
-//! `.github/scripts/render_pipeline_bench.py` in CI.
+//! The in-tree `Tokenizer` is *not* benched: it only builds the pipeline and
+//! serves as the id-correctness oracle (`ids_match`, which CI fails on).
+//! `ids_match_baseline` — pipeline vs the released crate — is report-only,
+//! since a branch may intentionally fix encode behavior. Models the pipeline
+//! can't build yet are reported as `supported: false` with their pipeline shape
+//! rather than benched — the CI grid renders those as roadmap cards. Each
+//! manifest entry carries a `desc`: a one-line label of the workload archetype
+//! the model exercises, passed through to the report.
+//!
+//! Emits one JSON object (`{baseline, models}`) on stdout, consumed by
+//! `.github/scripts/render_pipeline_bench.py` in CI. For local iteration the
+//! data dir, manifest and rep count can be overridden with the
+//! `FIXTURE_BENCH_DATA` / `FIXTURE_BENCH_MANIFEST` / `FIXTURE_BENCH_REPS` env vars.
 
 use std::convert::TryFrom;
 use std::hint::black_box;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::time::Instant;
 
 use serde_json::{json, Value};
 use tk_encode::pipeline::PipelineTokenizer;
 use tk_encode::{AddedToken, ModelWrapper, Tokenizer};
+use tokenizers_release::{AddedToken as BaselineAddedToken, Tokenizer as BaselineTokenizer};
 
 const DATA_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../data");
 const MANIFEST: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/examples/bench_models.json");
+// Keep in sync with the `tokenizers-release` pin in Cargo.toml.
+const BASELINE_VERSION: &str = "0.23.1";
 const CHUNK_BYTES: usize = 10 * 1024;
 const MAX_CHUNKS: usize = 100;
 const REPS: usize = 5;
+const PROBE: &str = "The quick brown fox jumps 123.";
+// Chunks per fixture for the memory children's encode pass: enough to warm the
+// lazy structures and grow the output buffers, small enough to stay cheap.
+const MEM_CHUNKS_PER_FIXTURE: usize = 2;
 
 // Added tokens injected into every loaded tokenizer so the `added_*` fixtures exercise
 // the added-token split for whichever model is benched — no bespoke tokenizer config.
@@ -46,8 +64,24 @@ const ADDED_NORMALIZED: &[&str] = &[
     "crungledorf",
 ];
 
+fn data_dir() -> PathBuf {
+    std::env::var_os("FIXTURE_BENCH_DATA").map_or_else(|| PathBuf::from(DATA_DIR), PathBuf::from)
+}
+
+fn manifest_path() -> PathBuf {
+    std::env::var_os("FIXTURE_BENCH_MANIFEST")
+        .map_or_else(|| PathBuf::from(MANIFEST), PathBuf::from)
+}
+
+fn reps() -> usize {
+    std::env::var("FIXTURE_BENCH_REPS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(REPS)
+}
+
 /// Inject the benchmark's added tokens into `tok` before the pipeline is built from it,
-/// so both the reference and the pipeline see them (and stay id-for-id identical).
+/// so both the oracle and the pipeline see them (and stay id-for-id identical).
 fn inject_added_tokens(tok: &mut Tokenizer) {
     let special = ADDED_SPECIAL
         .iter()
@@ -55,6 +89,18 @@ fn inject_added_tokens(tok: &mut Tokenizer) {
     let normalized = ADDED_NORMALIZED
         .iter()
         .map(|s| AddedToken::from(*s, false).normalized(true));
+    let _ = tok.add_special_tokens(special);
+    let _ = tok.add_tokens(normalized);
+}
+
+/// Same injection through the released crate's `AddedToken`.
+fn inject_added_tokens_baseline(tok: &mut BaselineTokenizer) {
+    let special = ADDED_SPECIAL
+        .iter()
+        .map(|s| BaselineAddedToken::from(*s, true).normalized(false));
+    let normalized = ADDED_NORMALIZED
+        .iter()
+        .map(|s| BaselineAddedToken::from(*s, false).normalized(true));
     let _ = tok.add_special_tokens(special);
     let _ = tok.add_tokens(normalized);
 }
@@ -117,8 +163,8 @@ fn stage_secs<const STAGE: u8>(pipeline: &PipelineTokenizer, chunks: &[String]) 
         }
     };
     run(); // warm-up
-    let mut samples = Vec::with_capacity(REPS);
-    for _ in 0..REPS {
+    let mut samples = Vec::with_capacity(reps());
+    for _ in 0..reps() {
         let start = Instant::now();
         run();
         samples.push(start.elapsed().as_secs_f64());
@@ -129,7 +175,7 @@ fn stage_secs<const STAGE: u8>(pipeline: &PipelineTokenizer, chunks: &[String]) 
 fn fixture_files() -> Vec<(String, PathBuf)> {
     let mut files = Vec::new();
     for group in ["lang", "modalities"] {
-        let dir = Path::new(DATA_DIR).join("fixtures").join(group);
+        let dir = data_dir().join("fixtures").join(group);
         let mut entries: Vec<_> = std::fs::read_dir(&dir)
             .unwrap_or_else(|e| panic!("{}: {e} — run `make fixtures` first", dir.display()))
             .map(|e| e.unwrap().path())
@@ -152,7 +198,7 @@ fn model_path(entry: &Value) -> PathBuf {
         .and_then(Value::as_str)
         .map(str::to_string)
         .unwrap_or_else(|| format!("{name}.json"));
-    Path::new(DATA_DIR).join(file)
+    data_dir().join(file)
 }
 
 fn model_kind(tok: &Tokenizer) -> &'static str {
@@ -187,13 +233,130 @@ fn pretok_label(path: &Path) -> String {
     }
 }
 
+/// Resident set size in bytes. Exact on Linux (`/proc`); on macOS a `ps`
+/// fallback good enough for local iteration — CI runs on Linux.
+fn rss_now() -> Option<i64> {
+    if cfg!(target_os = "linux") {
+        proc_status_bytes("VmRSS:")
+    } else {
+        let out = Command::new("ps")
+            .args(["-o", "rss=", "-p"])
+            .arg(std::process::id().to_string())
+            .output()
+            .ok()?;
+        let kb: i64 = String::from_utf8(out.stdout).ok()?.trim().parse().ok()?;
+        Some(kb * 1024)
+    }
+}
+
+/// Peak resident set (VmHWM) in bytes — Linux only, `None` elsewhere.
+fn rss_peak() -> Option<i64> {
+    proc_status_bytes("VmHWM:")
+}
+
+fn proc_status_bytes(key: &str) -> Option<i64> {
+    let status = std::fs::read_to_string("/proc/self/status").ok()?;
+    let kb: i64 = status
+        .lines()
+        .find(|l| l.starts_with(key))?
+        .split_whitespace()
+        .nth(1)?
+        .parse()
+        .ok()?;
+    Some(kb * 1024)
+}
+
+/// `--memory <impl> <model.json>` child entry: load one implementation, encode a
+/// capped pass over the fixtures, print `{load_bytes, encode_bytes, peak_bytes}`.
+/// One implementation per process so the deltas attribute cleanly.
+fn memory_child(which: &str, model: &Path) {
+    let mut chunks: Vec<String> = Vec::new();
+    for (_, path) in &fixture_files() {
+        let text = std::fs::read_to_string(path).unwrap();
+        chunks.extend(make_chunks(&text).into_iter().take(MEM_CHUNKS_PER_FIXTURE));
+    }
+
+    let rss0 = rss_now().unwrap_or(0);
+    let mut n = 0usize;
+    let (after_load, after_encode) = match which {
+        "baseline" => {
+            let mut tok = BaselineTokenizer::from_file(model).unwrap();
+            inject_added_tokens_baseline(&mut tok);
+            let after_load = rss_now().unwrap_or(0);
+            for c in &chunks {
+                n += tok.encode(c.as_str(), false).unwrap().len();
+            }
+            (after_load, rss_now().unwrap_or(0))
+        }
+        "pipeline" => {
+            let mut tok = Tokenizer::from_file(model).unwrap();
+            inject_added_tokens(&mut tok);
+            let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
+            // Count only the pipeline's own structures; the transient source
+            // Tokenizer still shows in peak_bytes, which is honest — building a
+            // pipeline currently requires one.
+            drop(tok);
+            let after_load = rss_now().unwrap_or(0);
+            for c in &chunks {
+                n += pipeline.encode(c, false).unwrap().len();
+            }
+            (after_load, rss_now().unwrap_or(0))
+        }
+        other => panic!("unknown impl {:?}", other),
+    };
+    black_box(n);
+
+    println!(
+        "{}",
+        json!({
+            "load_bytes": after_load - rss0,
+            "encode_bytes": after_encode - after_load,
+            "peak_bytes": rss_peak().map(|p| p - rss0),
+        })
+    );
+}
+
+/// Re-run this binary once per available implementation to get per-impl memory
+/// numbers that a shared address space couldn't provide.
+fn measure_memory(model: &Path, baseline_ok: bool) -> Value {
+    let exe = std::env::current_exe().unwrap();
+    let mut out = serde_json::Map::new();
+    for (key, ok) in [("baseline", baseline_ok), ("pipeline", true)] {
+        if !ok {
+            out.insert(key.into(), Value::Null);
+            continue;
+        }
+        let res = Command::new(&exe)
+            .arg("--memory")
+            .arg(key)
+            .arg(model)
+            .output()
+            .expect("failed to spawn memory child");
+        if !res.status.success() {
+            eprintln!(
+                "  memory child {key} failed: {}",
+                String::from_utf8_lossy(&res.stderr)
+            );
+            out.insert(key.into(), Value::Null);
+            continue;
+        }
+        let parsed: Value = serde_json::from_slice(&res.stdout).unwrap_or(Value::Null);
+        out.insert(key.into(), parsed);
+    }
+    Value::Object(out)
+}
+
+type EncodeFn<'a> = Box<dyn Fn(&str) -> usize + 'a>;
+
 fn bench_model(
-    tok: &Tokenizer,
+    baseline: Option<&BaselineTokenizer>,
+    oracle: &Tokenizer,
     pipeline: &PipelineTokenizer,
     files: &[(String, PathBuf)],
 ) -> Vec<Value> {
-    let legacy_enc = |s: &str| tok.encode(s, false).unwrap().len();
-    let pipeline_enc = |s: &str| pipeline.encode(s, false).unwrap().len();
+    let pipe_enc = |s: &str| pipeline.encode(s, false).unwrap().len();
+    let base_enc: Option<EncodeFn> =
+        baseline.map(|b| Box::new(move |s: &str| b.encode(s, false).unwrap().len()) as EncodeFn);
 
     let mut rows = Vec::new();
     for (group, path) in files {
@@ -202,28 +365,48 @@ fn bench_model(
         let chunks = make_chunks(&text);
         let bytes: usize = chunks.iter().map(String::len).sum();
 
-        let ids_match = chunks.iter().take(3).all(|c| {
-            let expected = tok.encode(c.as_str(), false).unwrap();
-            let got: Vec<u32> = pipeline
+        let pipe_ids = |c: &String| -> Vec<u32> {
+            pipeline
                 .encode(c, false)
                 .unwrap()
                 .iter()
                 .map(|t| t.id)
-                .collect();
-            expected.get_ids() == got
+                .collect()
+        };
+        // The correctness gate CI fails on: pipeline vs this tree's Tokenizer.
+        let ids_match = chunks
+            .iter()
+            .take(3)
+            .all(|c| oracle.encode(c.as_str(), false).unwrap().get_ids() == pipe_ids(c));
+        // Report-only: pipeline vs the released crate (a branch may fix encode bugs).
+        let ids_match_baseline = baseline.map(|b| {
+            chunks
+                .iter()
+                .take(3)
+                .all(|c| b.encode(c.as_str(), false).unwrap().get_ids() == pipe_ids(c))
         });
 
-        // interleave impls so frequency/thermal drift hits both equally
-        time_pass(&legacy_enc, &chunks);
-        time_pass(&pipeline_enc, &chunks);
-        let (mut legacy_s, mut pipeline_s) = (Vec::new(), Vec::new());
-        for _ in 0..REPS {
-            legacy_s.push(time_pass(&legacy_enc, &chunks));
-            pipeline_s.push(time_pass(&pipeline_enc, &chunks));
+        // interleave both impls so frequency/thermal drift hits them equally
+        if let Some(be) = &base_enc {
+            time_pass(be, &chunks);
         }
-        let (l, p) = (median_secs(legacy_s), median_secs(pipeline_s));
-        let (legacy_mbps, pipeline_mbps) = (bytes as f64 / l / 1e6, bytes as f64 / p / 1e6);
-        eprintln!("  {name}: legacy {legacy_mbps:.1} MB/s, pipeline {pipeline_mbps:.1} MB/s");
+        time_pass(&pipe_enc, &chunks);
+        let (mut base_s, mut pipe_s) = (Vec::new(), Vec::new());
+        for _ in 0..reps() {
+            if let Some(be) = &base_enc {
+                base_s.push(time_pass(be, &chunks));
+            }
+            pipe_s.push(time_pass(&pipe_enc, &chunks));
+        }
+        let mbps = |secs: f64| bytes as f64 / secs / 1e6;
+        let base_mbps = (!base_s.is_empty()).then(|| mbps(median_secs(base_s)));
+        let pipe_mbps = mbps(median_secs(pipe_s));
+
+        let fmt = |v: Option<f64>| v.map_or("—".into(), |v| format!("{v:.1}"));
+        eprintln!(
+            "  {name}: baseline {} MB/s, pipeline {pipe_mbps:.1} MB/s",
+            fmt(base_mbps)
+        );
 
         // Staged decomposition of the pipeline's own encode via the ablation ladder:
         // time each cumulative stage level, then subtract to isolate each stage's cost
@@ -253,11 +436,9 @@ fn bench_model(
             "group": group,
             "bytes": bytes,
             "chunks": chunks.len(),
-            "legacy_mbps": legacy_mbps,
-            "pipeline_mbps": pipeline_mbps,
-            "speedup": l / p,
+            "mbps": { "baseline": base_mbps, "pipeline": pipe_mbps },
             "ids_match": ids_match,
-            // pipeline-only stage decomposition (ns/byte); the four stages sum to total.
+            "ids_match_baseline": ids_match_baseline,
             "stage_ns_per_byte": {
                 "added_split": ns_added,
                 "normalize": ns_norm,
@@ -271,11 +452,17 @@ fn bench_model(
 }
 
 fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    if args.get(1).map(String::as_str) == Some("--memory") {
+        memory_child(&args[2], Path::new(&args[3]));
+        return;
+    }
+
     let manifest: Vec<Value> =
-        serde_json::from_str(&std::fs::read_to_string(MANIFEST).unwrap()).unwrap();
+        serde_json::from_str(&std::fs::read_to_string(manifest_path()).unwrap()).unwrap();
     let files = fixture_files();
 
-    let mut out: Vec<Value> = Vec::new();
+    let mut models: Vec<Value> = Vec::new();
     for entry in &manifest {
         let name = entry["name"].as_str().unwrap().to_string();
         let repo = entry.get("repo").and_then(Value::as_str).unwrap_or("");
@@ -287,9 +474,10 @@ fn main() {
             Ok(t) => t,
             Err(e) => {
                 eprintln!("  load failed: {e}");
-                out.push(json!({
+                models.push(json!({
                     "model": name, "repo": repo, "desc": desc, "shape": "?",
-                    "supported": false, "reason": format!("load error: {e}"), "results": [],
+                    "supported": false, "reason": format!("load error: {e}"),
+                    "results": [], "memory": Value::Null,
                 }));
                 continue;
             }
@@ -299,39 +487,65 @@ fn main() {
         inject_added_tokens(&mut tok);
         let shape = format!("{} · {}", model_kind(&tok), pretok_label(&path));
 
-        match PipelineTokenizer::try_from(&tok) {
-            // A model can satisfy the pipeline's *build* constraints yet still fail at
-            // *encode* time — e.g. a Sequence containing ByteLevel, which rewrites bytes
-            // and has no range-based impl. Probe once and downgrade to "unsupported"
-            // (with the reason) instead of panicking partway through the bench.
-            Ok(pipeline) => match pipeline.encode("The quick brown fox jumps 123.", false) {
-                Ok(_) => {
-                    let rows = bench_model(&tok, &pipeline, &files);
-                    out.push(json!({
-                        "model": name, "repo": repo, "desc": desc, "shape": shape,
-                        "supported": true, "results": rows,
-                    }));
-                }
+        // A model can satisfy the pipeline's *build* constraints yet still fail at
+        // *encode* time — e.g. a Sequence containing ByteLevel, which rewrites bytes
+        // and has no range-based impl. Probe once and downgrade to "unsupported"
+        // (with the reason) instead of panicking partway through the bench.
+        let pipeline = match PipelineTokenizer::try_from(&tok) {
+            Ok(p) => match p.encode(PROBE, false) {
+                Ok(_) => p,
                 Err(e) => {
-                    eprintln!("  builds but can't encode yet ({shape}): {e}");
-                    out.push(json!({
+                    eprintln!("  pipeline builds but can't encode yet ({shape}): {e}");
+                    models.push(json!({
                         "model": name, "repo": repo, "desc": desc, "shape": shape,
-                        "supported": false, "reason": format!("{e}"), "results": [],
+                        "supported": false, "reason": format!("{e}"),
+                        "results": [], "memory": Value::Null,
                     }));
+                    continue;
                 }
             },
             Err(_) => {
                 eprintln!("  unsupported by PipelineTokenizer ({shape})");
-                out.push(json!({
+                models.push(json!({
                     "model": name, "repo": repo, "desc": desc, "shape": shape,
-                    "supported": false, "results": [],
+                    "supported": false, "results": [], "memory": Value::Null,
                 }));
+                continue;
             }
-        }
+        };
+
+        // The released crate may not load (or encode) a config that needs
+        // features newer than the release — bench without it rather than fail.
+        let baseline = match BaselineTokenizer::from_file(&path) {
+            Ok(mut b) => {
+                inject_added_tokens_baseline(&mut b);
+                match b.encode(PROBE, false) {
+                    Ok(_) => Some(b),
+                    Err(e) => {
+                        eprintln!("  baseline v{BASELINE_VERSION} loads but can't encode: {e}");
+                        None
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("  baseline v{BASELINE_VERSION} can't load this config: {e}");
+                None
+            }
+        };
+
+        let rows = bench_model(baseline.as_ref(), &tok, &pipeline, &files);
+        let memory = measure_memory(&path, baseline.is_some());
+
+        models.push(json!({
+            "model": name, "repo": repo, "desc": desc, "shape": shape,
+            "supported": true,
+            "results": rows, "memory": memory,
+        }));
     }
 
-    println!(
-        "{}",
-        serde_json::to_string_pretty(&Value::Array(out)).unwrap()
-    );
+    let out = json!({
+        "baseline": { "crate": "tokenizers", "version": BASELINE_VERSION },
+        "models": models,
+    });
+    println!("{}", serde_json::to_string_pretty(&out).unwrap());
 }
