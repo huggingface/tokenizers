@@ -62,7 +62,8 @@ impl Tables {
             };
         }
         if b0 < 0xE0 {
-            // 110xxzz 10yyyyyy -> xxx is the group, zz is the sub group, yyyyyy the continuation
+            // 110xxxzz 10yyyyyy -> xxx is the group, zz is the sub group, yyyyyy the index into
+            // the table (cont)
             // 2-byte: group_tables[(lead>>2)&7][lead&3][cont&0x3F]
             let cont = text[i + 1] & 0x3F;
             return self.group_tables[((b0 >> 2) & 7) as usize][(b0 & 3) as usize][cont as usize];
@@ -256,21 +257,31 @@ pub unsafe fn classify_neon<S: super::classify::TagScheme>(text: &[u8], tags: &m
         // We'll construct the resolved mask
         let mut resolved = vdupq_n_u8(0); // lanes a multibyte handler has claimed
 
-        // ── 2-byte (C2..DF): peel the EXACT distinct lead-groups present (min group among unresolved
-        //    lanes → resolve its 256-table → mask out → repeat). Iterations = distinct groups (≤8,
-        //    usually 1), independent of the min..max span — no wasted empty-group steps, adversarial-
-        //    proof; same shape as the 3-byte peel below (2-byte is one level: a group resolves in one
-        //    tbl256, no b1-pair sub-level). ──
+        // ── 2-byte (C2..DF): here we could have differnt lead groups per byte.
+        // Since we are in SIMD, we need to potentially iterate over the group index
+        // represented in all lanes. So until we no groups are left, we compute the
+        // min group, run the lookup, continue. That's because we are doing lookups in
+        // 2 level table, which SIMD does not support (each of the 16 lanes might need to peekd
+        //   into a different table, which is not possible).
         let is_lead2 = eq(vandq_u8(b0, vdupq_n_u8(0xE0)), 0xC0);
         if any(is_lead2) {
+            // this is extracting yyyyyyyy out of 110xxxyy 10yyyyyy.
+            // 110xxxyy & 000000111 << 6 -> yy000000
+            // 10yyyyyy & 001111111      -> 00yyyyyy
+            //                            | yyyyyyyy -> used to index the 256 lookup table
             let group_index = vorrq_u8(
                 vshlq_n_u8::<6>(vandq_u8(b0, vdupq_n_u8(3))),
                 vandq_u8(b1, vdupq_n_u8(0x3F)),
             );
-            let grp = vshrq_n_u8::<2>(b0); // lead-group id per lane (garbage on non-leads; masked out)
+            let grp = vshrq_n_u8::<2>(b0); // lead-group id per lane (the xxx)
+            // tag2 are the tags for the 2-bytes long chars of this group
             let mut tags2 = vdupq_n_u8(MB);
+            // which of these are still unresolved
             let mut unresolved = is_lead2;
             while any(unresolved) {
+                // we can't lookup per lane more than 256 entries, so we go through the xxx groups
+                // of all the present bytes. this is worst case 8 different groups in aversarial,
+                // best case a single lookup.
                 let group = vminvq_u8(vbslq_u8(unresolved, grp, vdupq_n_u8(0xFF))); // min group present
                 let group_lanes = vandq_u8(unresolved, eq(grp, group)); // lanes of exactly this group
                 let group_table = &tables.group_tables[(group & 7) as usize];
