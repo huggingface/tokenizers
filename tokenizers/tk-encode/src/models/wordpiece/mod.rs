@@ -2,6 +2,7 @@
 //! model.
 
 use crate::models::bpe::BPE;
+use crate::pipeline::{self, PipelineToken};
 use crate::tokenizer::{Model, Result, Token};
 use ahash::AHashMap;
 use std::collections::HashMap;
@@ -307,6 +308,62 @@ impl Model for WordPiece {
         )?;
 
         Ok(vec![vocab_path])
+    }
+}
+
+impl pipeline::Model for WordPiece {
+    fn tokenize_pipeline(
+        &self,
+        sequence: &str,
+        output: &mut Vec<pipeline::PipelineToken>,
+    ) -> Result<()> {
+        let mut candidate = String::with_capacity(self.max_input_chars_per_word);
+
+        let char_len = sequence.chars().count();
+        if char_len > self.max_input_chars_per_word {
+            let unk_id = *self
+                .vocab
+                .get(&self.unk_token)
+                .ok_or(Error::MissingUnkToken)?;
+            output.push(PipelineToken { id: unk_id });
+        }
+
+        let mut is_good = false;
+        let mut start = 0;
+
+        while start < sequence.len() {
+            candidate.clear();
+            let mut end = sequence.len();
+
+            while start < end {
+                if start > 0 {
+                    candidate.push_str(&self.continuing_subword_prefix);
+                }
+                candidate.push_str(&sequence[start..end]);
+
+                if let Some(&id) = self.vocab.get(&candidate) {
+                    output.push(PipelineToken { id });
+                    is_good = true;
+                    break;
+                }
+                end -= candidate.chars().last().map_or(1, |c| c.len_utf8());
+            }
+
+            if !is_good {
+                break;
+            }
+
+            start = end;
+        }
+
+        if !is_good {
+            let unk_id = *self
+                .vocab
+                .get(&self.unk_token)
+                .ok_or(Error::MissingUnkToken)?;
+            output.push(PipelineToken { id: unk_id });
+        }
+        Ok(())
     }
 }
 
