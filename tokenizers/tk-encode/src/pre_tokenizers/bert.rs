@@ -1,7 +1,6 @@
-use crate::pipeline::{self, SplitPolicy};
+use crate::pipeline;
 use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
 use crate::utils::macro_rules_attribute;
-use std::sync::LazyLock;
 
 use super::punctuation::is_punc;
 
@@ -16,55 +15,20 @@ impl PreTokenizer for BertPreTokenizer {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum CharType {
-    Whitespace,
-    Punctuation,
-    Other,
-}
-
-impl CharType {
-    #[inline]
-    fn policy(self) -> SplitPolicy {
-        match self {
-            // whitespace is dropped, each punctuation char is isolated, and
-            // everything else is emitted as a single split.
-            CharType::Whitespace => SplitPolicy::Remove,
-            CharType::Punctuation => SplitPolicy::Isolate,
-            CharType::Other => SplitPolicy::Keep,
-        }
-    }
-}
-
-fn classify(c: char) -> CharType {
-    if c.is_whitespace() {
-        CharType::Whitespace
-    } else if is_punc(c) {
-        CharType::Punctuation
-    } else {
-        CharType::Other
-    }
-}
-
-static ASCII_CLASS: LazyLock<[CharType; 128]> =
-    LazyLock::new(|| std::array::from_fn(|b| classify(b as u8 as char)));
-
 impl pipeline::PreTokenizer for BertPreTokenizer {
-    // XXX: surprisingly, inlining here yields 10-15% slower performance
     #[inline(never)]
     fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Split>) -> Result<()> {
-        pipeline::split(
-            text,
-            out,
-            |ch| {
-                if ch.is_ascii() {
-                    ASCII_CLASS[ch as usize]
-                } else {
-                    classify(ch)
-                }
-            },
-            CharType::policy,
-        );
+        // Bert pre-tokenization = drop whitespace runs, isolate each punctuation char, keep every other
+        // run. One `atomsplit` SIMD classify (bytes → atom tags) + the class-runs FSM, byte-exact with
+        // the legacy `char::is_whitespace` / `is_punc` split above (see the tests).
+        use atomsplit::classify::{Atoms, classify, mask};
+        use atomsplit::fsm::class_runs_into;
+        let bytes = text.as_bytes();
+        let mut tags = vec![0u8; bytes.len()];
+        classify::<Atoms>(bytes, &mut tags);
+        let mut spans = vec![(0u32, 0u32); bytes.len() + 1];
+        let n = class_runs_into::<{ mask::WS }, { mask::PUNCT }, 0>(bytes, &tags, &mut spans);
+        out.extend(spans[..n].iter().map(|&(s, e)| pipeline::Split { start: s, end: e }));
         Ok(())
     }
 }

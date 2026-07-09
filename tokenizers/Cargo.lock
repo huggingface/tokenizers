@@ -2424,6 +2424,7 @@ version = "0.23.2-dev.0"
 dependencies = [
  "ahash",
  "assert_approx_eq",
+ "atomsplit",
  "compact_str",
  "criterion 0.6.0",
  "daachorse",
