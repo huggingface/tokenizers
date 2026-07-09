@@ -2,9 +2,12 @@ use super::{
     lattice::Lattice,
     trie::{Trie, TrieBuilder},
 };
-use crate::tokenizer::{Model, Result, Token};
 use crate::utils::cache::{Cache, MAX_LENGTH};
 use crate::vocab_store::VocabStore;
+use crate::{
+    pipeline::{self, PipelineToken},
+    tokenizer::{Model, Result, Token},
+};
 use std::collections::HashMap;
 
 use std::convert::TryInto;
@@ -499,6 +502,43 @@ impl Model for Unigram {
         let string = serde_json::to_string_pretty(self)?;
         std::fs::write(&fullpath, string)?;
         Ok(vec![fullpath])
+    }
+}
+
+impl pipeline::Model for Unigram {
+    fn tokenize_pipeline(
+        &self,
+        sequence: &str,
+        output: &mut Vec<pipeline::PipelineToken>,
+    ) -> Result<()> {
+        let str_tokens = self.encode(sequence)?;
+
+        for string in str_tokens {
+            match self.token_to_ids.token_to_id(&string) {
+                Some(id) => {
+                    output.push(PipelineToken { id });
+                }
+                None => {
+                    if self.byte_fallback {
+                        let byte_token_ids: Option<Vec<_>> = string
+                            .bytes()
+                            .map(|byte| {
+                                let byte_string = format!("<0x{byte:02X}>");
+                                self.token_to_ids.token_to_id(&byte_string)
+                            })
+                            .collect();
+                        if let Some(token_ids) = byte_token_ids {
+                            output.extend(token_ids.iter().map(|&id| PipelineToken { id }));
+                            continue;
+                        }
+                    }
+                    output.push(PipelineToken {
+                        id: self.unk_id.ok_or(UnigramError::MissingUnkId)? as u32,
+                    });
+                }
+            };
+        }
+        Ok(())
     }
 }
 

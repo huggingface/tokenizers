@@ -2,6 +2,7 @@
 //! model.
 
 use crate::models::bpe::BPE;
+use crate::pipeline::{self, PipelineToken};
 use crate::tokenizer::{Model, Result, Token};
 use ahash::AHashMap;
 use std::collections::HashMap;
@@ -307,6 +308,59 @@ impl Model for WordPiece {
         )?;
 
         Ok(vec![vocab_path])
+    }
+}
+
+impl pipeline::Model for WordPiece {
+    fn tokenize_pipeline(
+        &self,
+        sequence: &str,
+        output: &mut Vec<pipeline::PipelineToken>,
+    ) -> Result<()> {
+        let mut candidate = String::with_capacity(self.max_input_chars_per_word);
+        let mut candidate_tokens = Vec::with_capacity(sequence.len());
+
+        let char_len = sequence.chars().count();
+        if char_len > self.max_input_chars_per_word {
+            let unk_id = *self
+                .vocab
+                .get(&self.unk_token)
+                .ok_or(Error::MissingUnkToken)?;
+            output.push(PipelineToken { id: unk_id });
+            return Ok(());
+        }
+
+        let mut start = 0;
+
+        while start < sequence.len() {
+            candidate.clear();
+            if start > 0 {
+                candidate.push_str(&self.continuing_subword_prefix);
+            }
+            candidate.push_str(&sequence[start..]);
+
+            let prefix_len = candidate.len() - (sequence.len() - start);
+            let matched = sequence[start..]
+                .char_indices()
+                .rev()
+                .find_map(|(idx, character)| {
+                    let end = start + idx + character.len_utf8();
+                    candidate.truncate(prefix_len + (end - start));
+                    self.vocab.get(&candidate).map(|&id| (end, id))
+                });
+            let Some((end, token_id)) = matched else {
+                let unk_id = *self
+                    .vocab
+                    .get(&self.unk_token)
+                    .ok_or(Error::MissingUnkToken)?;
+                output.push(PipelineToken { id: unk_id });
+                return Ok(());
+            };
+            candidate_tokens.push(PipelineToken { id: token_id });
+            start = end;
+        }
+        output.extend_from_slice(&candidate_tokens);
+        Ok(())
     }
 }
 
