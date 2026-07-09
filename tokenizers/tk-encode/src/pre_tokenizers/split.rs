@@ -1,5 +1,5 @@
 use crate::pipeline;
-use crate::utils::{MultiRegex, SysRegex};
+use crate::utils::{gpt_fsm, GptFsm, MultiRegex, SysRegex};
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::tokenizer::{
@@ -38,6 +38,11 @@ pub struct Split {
     /// `None` falls back to `regex`. Span-equivalent to `regex` by construction.
     #[serde(skip)]
     multi: Option<MultiRegex>,
+    /// Native `atomsplit` FSM for a recognized GPT regex (gpt2 / cl100k-Llama-3), used on the pipeline
+    /// path when `behavior == Isolated && !invert` (how these regexes always ship). Byte-exact with
+    /// `regex`; `None` falls back to `multi`/`regex`.
+    #[serde(skip)]
+    fsm: Option<GptFsm>,
 }
 
 impl<'de> Deserialize<'de> for Split {
@@ -85,11 +90,12 @@ impl Split {
         invert: bool,
     ) -> Result<Self> {
         let pattern: SplitPattern = pattern.into();
-        let (regex, multi) = match &pattern {
-            SplitPattern::String(s) => (SysRegex::new(&regex::escape(s))?, None),
+        let (regex, multi, fsm) = match &pattern {
+            SplitPattern::String(s) => (SysRegex::new(&regex::escape(s))?, None, None),
             SplitPattern::Regex(r) => (
                 SysRegex::new(r)?,
                 MultiRegex::for_gpt_pattern(r).transpose()?,
+                gpt_fsm(r),
             ),
         };
 
@@ -99,6 +105,7 @@ impl Split {
             behavior,
             invert,
             multi,
+            fsm,
         })
     }
 }
@@ -115,6 +122,24 @@ impl PreTokenizer for Split {
 
 impl pipeline::PreTokenizer for Split {
     fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Split>) -> Result<()> {
+        // A recognized GPT regex (gpt2 / cl100k-Llama-3) in its only real usage — `Isolated`, not
+        // inverted — routes straight to the native atomsplit FSM. These regexes cover the whole input,
+        // so `Isolated` == the match list, and the FSM is byte-exact with `regex` (see the tests).
+        if let Some(fsm) = self.fsm.filter(|_| {
+            !self.invert && self.behavior == SplitDelimiterBehavior::Isolated
+        }) {
+            use atomsplit::classify::{classify, Atoms};
+            let bytes = text.as_bytes();
+            let mut tags = vec![0u8; bytes.len()];
+            classify::<Atoms>(bytes, &mut tags);
+            let mut spans = vec![(0u32, 0u32); bytes.len() + 1];
+            let n = match fsm {
+                GptFsm::Cl100k => atomsplit::fsm::fsm_cl100k(bytes, &tags, &mut spans),
+                GptFsm::Gpt2 => atomsplit::fsm::fsm_byte_level(bytes, &tags, &mut spans),
+            };
+            out.extend(spans[..n].iter().map(|&(s, e)| pipeline::Split { start: s, end: e }));
+            return Ok(());
+        }
         let matches: Vec<((usize, usize), bool)> = match &self.multi {
             Some(multi) => {
                 let mut segments = Vec::with_capacity(text.len() / 5);
@@ -352,6 +377,30 @@ mod tests {
 
         assert_eq!(
             pipeline_split(SplitPattern::Regex(gpt2.into()), Isolated, false, corpus),
+            legacy,
+        );
+    }
+
+    #[test]
+    fn pipeline_cl100k_llama3_uses_fsm_and_matches_legacy() {
+        // Llama-3's EXACT pre_tokenizer regex (from data/llama-3-tokenizer.json) → recognized → routes
+        // to fsm_cl100k. Output must equal the legacy SysRegex Isolated split, byte-for-byte.
+        let cl100k = r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+";
+        let corpus =
+            "The quick brown fox 123!!!  double  spaces\tand tabs. don't Naïve café.\n\n世界 안녕 ";
+        let pretok = Split::new(SplitPattern::Regex(cl100k.into()), Isolated, false).unwrap();
+        assert!(pretok.fsm.is_some(), "cl100k / Llama-3 pattern should route to the native FSM");
+
+        let mut pre = PreTokenizedString::from(corpus);
+        pretok.pre_tokenize(&mut pre).unwrap();
+        let legacy: Vec<(&str, (u32, u32))> = pre
+            .get_splits(OffsetReferential::Original, OffsetType::Byte)
+            .into_iter()
+            .map(|(s, o, _)| (s, (o.0 as u32, o.1 as u32)))
+            .collect();
+
+        assert_eq!(
+            pipeline_split(SplitPattern::Regex(cl100k.into()), Isolated, false, corpus),
             legacy,
         );
     }

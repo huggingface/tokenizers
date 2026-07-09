@@ -95,7 +95,9 @@ fn seam_diff(fsm: Fsm, pb: &[u8], n: usize) -> usize {
 
 fn main() {
     let manifest = env!("CARGO_MANIFEST_DIR");
-    let cores = std::thread::available_parallelism().map(|x| x.get()).unwrap_or(8);
+    let cores = std::thread::available_parallelism()
+        .map(|x| x.get())
+        .unwrap_or(8);
     let mut threads = vec![1usize, 2, 4, 6, 8];
     if !threads.contains(&cores) {
         threads.push(cores);
@@ -122,7 +124,11 @@ fn main() {
 
         for (plabel, fsm) in PRETOKS {
             let d = seam_diff(*fsm, pb, cores);
-            let seam = if d == 0 { "exact".to_string() } else { format!("Δ{d} tok") };
+            let seam = if d == 0 {
+                "exact".to_string()
+            } else {
+                format!("Δ{d} tok")
+            };
             println!(
                 "{dlabel} · {plabel}  ({:.1} MB, {iters} iters/thread, seams {seam})",
                 pb.len() as f64 / 1e6

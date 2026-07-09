@@ -101,7 +101,7 @@ const GPT2_PATS: &[(&str, bool)] = &[
     (r"\s+", false),
 ];
 
-const CL100K: &str = r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]|\s+(?!\S)|\s+";
+const CL100K: &str = r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+";
 const CL100K_PATS: &[(&str, bool)] = &[
     (
         r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+$",
@@ -131,6 +131,49 @@ fn gpt_decomposition(pattern: &str) -> Option<&'static [(&'static str, bool)]> {
     } else {
         None
     }
+}
+
+/// A recognized GPT pre-tokenization regex that maps to a native `atomsplit` FSM (byte-exact).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GptFsm {
+    /// GPT-2 / ByteLevel regex → `atomsplit::fsm::fsm_byte_level`.
+    Gpt2,
+    /// cl100k / Llama-3 regex → `atomsplit::fsm::fsm_cl100k`.
+    Cl100k,
+}
+
+/// If `pattern` is exactly the GPT-2 or cl100k (Llama-3) pre-tokenization regex, name the native FSM
+/// that reproduces its `Isolated` split byte-for-byte. O200K has no FSM yet → `None` (the MultiRegex /
+/// SysRegex path still handles it). Recognition is exact-string, matching how tokenizers ship the regex.
+pub fn gpt_fsm(pattern: &str) -> Option<GptFsm> {
+    if pattern == GPT2 {
+        Some(GptFsm::Gpt2)
+    } else if pattern == CL100K {
+        Some(GptFsm::Cl100k)
+    } else {
+        None
+    }
+}
+
+// deepseek-v4's pre-tokenizer is a `Sequence` of these three Isolated `Split`s (+ a byte-map
+// `ByteLevel`), which `atomsplit::fsm::fsm_deepseek` collapses into one pass. Byte-exact with the
+// shipped tokenizer.json — the big pattern carries LITERAL CR/LF, spliced in via `concat!`.
+const DS_NUM: &str = r"\p{N}{1,3}";
+const DS_CJK: &str = "[\u{4E00}-\u{9FA5}\u{3040}-\u{309F}\u{30A0}-\u{30FF}]+";
+const DS_BIG: &str = concat!(
+    r##"[!"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~][A-Za-z]+|[^"##,
+    "\r\n",
+    r##"\p{L}\p{P}\p{S}]?[\p{L}\p{M}]+| ?[\p{P}\p{S}]+["##,
+    "\r\n",
+    r##"]*|\s*["##,
+    "\r\n",
+    r##"]+|\s+(?!\S)|\s+"##,
+);
+
+/// True iff three `Split` patterns are exactly deepseek's `[\p{N}{1,3}, CJK-range, big-regex]` prefix →
+/// `atomsplit::fsm::fsm_deepseek` reproduces the whole composed Isolated split in one pass.
+pub fn is_deepseek(p0: &str, p1: &str, p2: &str) -> bool {
+    p0 == DS_NUM && p1 == DS_CJK && p2 == DS_BIG
 }
 
 #[cfg(test)]

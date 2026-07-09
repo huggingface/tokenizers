@@ -1,5 +1,5 @@
 //! Integration test for the atom classifier. Kept out of `src/` so the core stays production-only.
-use atomsplit::classify::{classify, classify_scalar, Atoms};
+use atomsplit::classify::{Atoms, classify, classify_scalar};
 
 /// The byte-exactness gate (spec §8): the SIMD path (NEON on aarch64) MUST equal the scalar walk.
 #[test]

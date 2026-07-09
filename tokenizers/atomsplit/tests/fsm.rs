@@ -1,8 +1,8 @@
 //! Integration tests for the FSM pre-tokenizers. Kept out of `src/` so the core stays production-only.
-use atomsplit::classify::{classify, mask, Atoms};
+use atomsplit::classify::{Atoms, classify, mask};
 use atomsplit::fsm::{
-    class_runs_into, class_runs_runend, fsm_byte_level, fsm_cl100k, fsm_deepseek, CharDelimiterSplit,
-    Span,
+    CharDelimiterSplit, Span, class_runs_into, class_runs_runend, fsm_byte_level, fsm_cl100k,
+    fsm_deepseek,
 };
 
 /// Run a no-push fsm into a fresh buffer and return the emitted spans.
@@ -59,8 +59,7 @@ fn char_delimiter_split() {
 /// mixes ASCII, 2/3-byte scripts, Devanagari letter+matra clusters, consecutive punct, tabs, astral.
 #[test]
 fn class_runs_into_matches() {
-    let corpus =
-        "Hello, world!! 123 café × наука 中文。। नरेंद्र मोदी ने ½²¼ ①② 😀a b\t".repeat(30);
+    let corpus = "Hello, world!! 123 café × наука 中文。। नरेंद्र मोदी ने ½²¼ ①② 😀a b\t".repeat(30);
     let full = corpus.as_bytes();
     let mut tags = vec![0u8; full.len()];
     let mut b1 = vec![(0u32, 0u32); full.len()];

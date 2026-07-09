@@ -6,7 +6,7 @@
 //! next port — slot a `class_runs_sse` in the same shape below.
 #![allow(dead_code)] // arch-gated: only one target's kernel compiles per build
 
-use crate::classify::{char_len, in_mask, Atom};
+use crate::classify::{Atom, char_len, in_mask};
 use crate::fsm::Span;
 
 // ── aarch64 / NEON ──────────────────────────────────────────────────────────────────────────────
@@ -30,6 +30,8 @@ pub(crate) fn class_runs_neon<const DROP: u16, const ISOLATE: u16, const KEEP_A:
     let (mut seg_start, mut seg_class) = (0usize, 0u8);
     let mut carry: u8 = 0xFE;
     let mut cls_arr = [0u8; 16];
+    // SAFETY: the chunk loop runs only while `i + 16 <= n`, so every `vld1q_u8(tags+i)` reads 16 in-bounds
+    // bytes; `vst1q_u8(cls_arr)` writes the 16-byte local array; NEON loads/stores are alignment-free.
     unsafe {
         let lutv = vld1q_u8(lut.as_ptr());
         let powv = vld1q_u8(POW.as_ptr());
@@ -59,13 +61,20 @@ pub(crate) fn class_runs_neon<const DROP: u16, const ISOLATE: u16, const KEEP_A:
             let is_lead = vmvnq_u8(vceqq_u8(raw, contv));
             let bnd = vandq_u8(vorrq_u8(changed, vandq_u8(is_iso, is_lead)), is_lead);
             let bits = vandq_u8(bnd, powv);
-            let mm = (vaddv_u8(vget_low_u8(bits)) as u16)
-                | ((vaddv_u8(vget_high_u8(bits)) as u16) << 8);
+            let mm =
+                (vaddv_u8(vget_low_u8(bits)) as u16) | ((vaddv_u8(vget_high_u8(bits)) as u16) << 8);
             vst1q_u8(cls_arr.as_mut_ptr(), cls);
             let mut m = mm;
             while m != 0 {
                 let j = m.trailing_zeros() as usize;
-                emit(out, &mut w, &mut seg_start, &mut seg_class, i + j, cls_arr[j]);
+                emit(
+                    out,
+                    &mut w,
+                    &mut seg_start,
+                    &mut seg_class,
+                    i + j,
+                    cls_arr[j],
+                );
                 m &= m - 1;
             }
             carry = cls_arr[15];
@@ -110,10 +119,11 @@ pub(crate) fn class_runs_wasm<const DROP: u16, const ISOLATE: u16, const KEEP_A:
         let mut cls = raw;
         for _ in 0..3 {
             // shifted[j] = [carry, cls0..cls14][j] — lane 0 from splat(carry), lanes 1..15 from cls
-            let shifted = u8x16_shuffle::<0, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30>(
-                u8x16_splat(carry),
-                cls,
-            );
+            let shifted =
+                u8x16_shuffle::<0, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30>(
+                    u8x16_splat(carry),
+                    cls,
+                );
             cls = v128_bitselect(shifted, cls, u8x16_eq(cls, contv));
         }
         let prev = u8x16_shuffle::<0, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30>(
@@ -128,7 +138,14 @@ pub(crate) fn class_runs_wasm<const DROP: u16, const ISOLATE: u16, const KEEP_A:
         unsafe { v128_store(cls_arr.as_mut_ptr() as *mut v128, cls) };
         while mm != 0 {
             let j = mm.trailing_zeros() as usize;
-            emit(out, &mut w, &mut seg_start, &mut seg_class, i + j, cls_arr[j]);
+            emit(
+                out,
+                &mut w,
+                &mut seg_start,
+                &mut seg_class,
+                i + j,
+                cls_arr[j],
+            );
             mm &= mm - 1;
         }
         carry = cls_arr[15];
@@ -163,7 +180,14 @@ fn class_lut<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>() -> [u8; 1
 
 /// Close the open segment at `pos` (emit unless DROP), open a new one of class `cls`.
 #[inline(always)]
-fn emit(out: &mut [Span], w: &mut usize, seg_start: &mut usize, seg_class: &mut u8, pos: usize, cls: u8) {
+fn emit(
+    out: &mut [Span],
+    w: &mut usize,
+    seg_start: &mut usize,
+    seg_class: &mut u8,
+    pos: usize,
+    cls: u8,
+) {
     if *seg_class != 0 {
         out[*w] = (*seg_start as u32, pos as u32);
         *w += 1;

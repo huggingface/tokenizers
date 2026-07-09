@@ -1,0 +1,58 @@
+name: atomsplit
+
+on:
+  push:
+    paths: ["tokenizers/atomsplit/**", "tokenizers/bitmap_gen/**", ".github/workflows/atomsplit.yml"]
+  pull_request:
+    paths: ["tokenizers/atomsplit/**", "tokenizers/bitmap_gen/**", ".github/workflows/atomsplit.yml"]
+
+defaults:
+  run:
+    working-directory: tokenizers
+
+jobs:
+  # x86_64 runner → runs the SSE4.1/AVX classify SIMD paths NATIVELY, plus fmt/clippy + the drift guard.
+  native:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with: { components: rustfmt, clippy }
+      - run: cargo fmt -p atomsplit -p bitmap_gen -- --check
+      - run: cargo clippy -p atomsplit --all-targets -- -D warnings
+      - run: cargo test -p atomsplit          # unit + parity gates (cl100k/deepseek/byte_level vs onig)
+      # committed classify tables must match the generator
+      - run: cargo run -p bitmap_gen && git diff --exit-code atomsplit/src/atom_tables.rs
+
+  # AVX-512 classify path — GitHub runners often lack AVX-512, so emulate it with Intel SDE and run the
+  # SAME byte-exact test binaries under it.
+  avx512-sde:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Intel SDE
+        run: |
+          # Pin to the current SDE release (update the version/URL as Intel publishes new builds).
+          SDE_VER=sde-external-9.44.0-2024-08-22-lin
+          curl -sSL "https://downloadmirror.intel.com/831748/${SDE_VER}.tar.xz" | tar -xJ
+          echo "$PWD/tokenizers/${SDE_VER}" >> "$GITHUB_PATH"
+      - name: Run tests under SDE (-future = AVX-512)
+        run: |
+          cargo test -p atomsplit --no-run --message-format=json \
+            | jq -r 'select(.profile.test == true) | .executable | select(. != null)' \
+            | while read -r bin; do echo "SDE: $bin"; sde64 -future -- "$bin"; done
+
+  # wasm32 SIMD128 classify + class-runs boundary extractor — run the test suite under wasmtime.
+  wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with: { targets: wasm32-wasip1 }
+      - uses: bytecodealliance/actions/wasmtime/setup@v1
+      - name: Test under wasmtime (simd128)
+        env:
+          RUSTFLAGS: "-C target-feature=+simd128"
+          CARGO_TARGET_WASM32_WASIP1_RUNNER: "wasmtime run --"
+        run: cargo test -p atomsplit --target wasm32-wasip1

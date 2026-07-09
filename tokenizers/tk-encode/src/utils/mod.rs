@@ -15,7 +15,7 @@ pub use crate::utils::onig::SysRegex;
 compile_error!("One of the `onig`, or `fancy-regex` features must be enabled");
 
 mod multi_regex;
-pub use multi_regex::MultiRegex;
+pub use multi_regex::{gpt_fsm, is_deepseek, GptFsm, MultiRegex};
 
 pub mod byte_level;
 pub mod iter;

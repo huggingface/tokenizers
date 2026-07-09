@@ -6,6 +6,7 @@
 ///   1. `vminvq` the block-id over the still-unresolved lanes → the smallest block present in the chunk;
 ///   2. look up that ONE block's table and write its tag to exactly the lanes belonging to it;
 ///   3. clear those lanes (`vbic`) and repeat until no unresolved lanes remain.
+///
 /// So the number of lookups = the count of DISTINCT blocks in the chunk (usually 1 → that's the fast
 /// path; at most a handful), independent of how far apart the scripts sit: Latin-1 + Cyrillic is 2 peels,
 /// not "every group in between." No bounds guard needed — the earlier `min..=max` loop instead stepped
@@ -217,6 +218,11 @@ fn decode(t: &[u8], i: usize) -> u32 {
 ///
 /// Per lane, `b0`/`b1`/`b2` are the 1st/2nd/3rd bytes of the (potential) UTF-8 char starting there —
 /// i.e. the byte at the lane and the two after it (`vext` shifts the next chunk in).
+///
+/// # Safety
+/// `tags.len()` must be ≥ `text.len()` — the kernel does raw 16-byte `vst1q` stores into `tags` for full
+/// chunks. `text` must be well-formed UTF-8 (the tail/astral scalar path reads a lead's continuation
+/// bytes). Both hold when called via [`crate::classify`], which asserts the length up front.
 #[cfg(target_arch = "aarch64")]
 #[allow(unsafe_op_in_unsafe_fn, non_snake_case)]
 pub unsafe fn classify_neon<S: super::classify::TagScheme>(text: &[u8], tags: &mut [u8]) {

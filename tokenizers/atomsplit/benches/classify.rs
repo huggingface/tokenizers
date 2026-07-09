@@ -28,7 +28,8 @@ fn ns_per_byte(text: &[u8], tags: &mut [u8]) -> f64 {
 
 fn main() {
     let manifest = env!("CARGO_MANIFEST_DIR");
-    let english = std::fs::read_to_string(format!("{manifest}/../data/big.txt")).unwrap_or_default();
+    let english =
+        std::fs::read_to_string(format!("{manifest}/../data/big.txt")).unwrap_or_default();
     let english: String = english.chars().take(120_000).collect();
 
     let astral = "😀🎉🚀🔥🌍🐍".repeat(20_000); // pure 4-byte astral → MB in every chunk
@@ -45,8 +46,15 @@ fn main() {
         }
     }
 
-    println!("{:<10} {:>8} {:>10}  {:>10}", "input", "bytes", "clsSIMD", "clsScalar");
-    for (label, s) in [("none", &english), ("astral", &astral), ("sprinkle", &sprinkle)] {
+    println!(
+        "{:<10} {:>8} {:>10}  {:>10}",
+        "input", "bytes", "clsSIMD", "clsScalar"
+    );
+    for (label, s) in [
+        ("none", &english),
+        ("astral", &astral),
+        ("sprinkle", &sprinkle),
+    ] {
         if s.is_empty() {
             println!("{label:<10} (empty — big.txt missing?)");
             continue;
@@ -68,11 +76,15 @@ fn main() {
                     classify_scalar::<Atoms>(text, &mut sc);
                     black_box(sc[text.len() / 2]);
                 }
-                best = best.min(t.elapsed().as_nanos() as f64 / (iters as usize * text.len()) as f64);
+                best =
+                    best.min(t.elapsed().as_nanos() as f64 / (iters as usize * text.len()) as f64);
             }
             best
         };
-        println!("{label:<10} {:>8} {simd:>10.3} {scal:>10.3}  {ok}", text.len());
+        println!(
+            "{label:<10} {:>8} {simd:>10.3} {scal:>10.3}  {ok}",
+            text.len()
+        );
     }
     println!("\n(ns/byte, lower better. clsSIMD is the path with the MB-fixup branch.)");
 }

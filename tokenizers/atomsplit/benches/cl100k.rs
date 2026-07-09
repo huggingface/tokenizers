@@ -64,7 +64,17 @@ fn main() {
 
     println!(
         "{:<10} {:>7} {:>4} {:>5}  {:>8} {:>8} | {:>8} | {:>8} {:>8} | {:>7} {:>7}",
-        "lang", "bytes", "b/ch", "b/tok", "clsSIMD", "clsScal", "fsm", "onig", "fancy", "vsOnig", "vsFncy"
+        "lang",
+        "bytes",
+        "b/ch",
+        "b/tok",
+        "clsSIMD",
+        "clsScal",
+        "fsm",
+        "onig",
+        "fancy",
+        "vsOnig",
+        "vsFncy"
     );
 
     for (label, rel) in CORPORA {
@@ -88,13 +98,20 @@ fn main() {
         let bpc = n as f64 / corpus.chars().count() as f64;
         let iters = (4_000_000 / n).clamp(3, 150) as u32; // × TRIALS inside ns_per_byte
 
-        let onig_spans: Vec<Span> = re.find_iter(corpus).map(|(s, e)| (s as u32, e as u32)).collect();
+        let onig_spans: Vec<Span> = re
+            .find_iter(corpus)
+            .map(|(s, e)| (s as u32, e as u32))
+            .collect();
         let mut tags = vec![0u8; n];
         let mut tsc = vec![0u8; n];
         classify::<Atoms>(text, &mut tags);
         let mut buf = vec![(0u32, 0u32); n + 1];
         let ksc = fsm_cl100k(text, &tags, &mut buf);
-        let ok = if buf[..ksc] == onig_spans[..] { "✓" } else { "✗" };
+        let ok = if buf[..ksc] == onig_spans[..] {
+            "✓"
+        } else {
+            "✗"
+        };
         let btok = n as f64 / ksc.max(1) as f64; // bytes per token = density (drives per-token cost)
 
         let cls_simd = ns_per_byte(n, iters, || {
@@ -117,5 +134,7 @@ fn main() {
             fancy_ns / pipe
         );
     }
-    println!("\n(ns/byte, lower better. pipeline = SIMD classify + scalar fsm; vs onig / vs fancy on that.)");
+    println!(
+        "\n(ns/byte, lower better. pipeline = SIMD classify + scalar fsm; vs onig / vs fancy on that.)"
+    );
 }

@@ -15,7 +15,7 @@
 //! a SIMD128 wasm engine before trusting it.
 #![allow(unsafe_op_in_unsafe_fn)]
 
-use super::classify::{char_len, TagScheme};
+use super::classify::{TagScheme, char_len};
 use core::arch::wasm32::*;
 
 #[inline]
@@ -59,19 +59,43 @@ unsafe fn in_range(bytes: v128, lo: u8, hi: u8) -> v128 {
 /// Horizontal max over the 16 lanes (shuffle-fold; duplicated lanes never raise the max).
 #[inline(always)]
 unsafe fn hmax(v: v128) -> u8 {
-    let v = u8x16_max(v, u8x16_shuffle::<8, 9, 10, 11, 12, 13, 14, 15, 8, 9, 10, 11, 12, 13, 14, 15>(v, v));
-    let v = u8x16_max(v, u8x16_shuffle::<4, 5, 6, 7, 4, 5, 6, 7, 4, 5, 6, 7, 4, 5, 6, 7>(v, v));
-    let v = u8x16_max(v, u8x16_shuffle::<2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3>(v, v));
-    let v = u8x16_max(v, u8x16_shuffle::<1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1>(v, v));
+    let v = u8x16_max(
+        v,
+        u8x16_shuffle::<8, 9, 10, 11, 12, 13, 14, 15, 8, 9, 10, 11, 12, 13, 14, 15>(v, v),
+    );
+    let v = u8x16_max(
+        v,
+        u8x16_shuffle::<4, 5, 6, 7, 4, 5, 6, 7, 4, 5, 6, 7, 4, 5, 6, 7>(v, v),
+    );
+    let v = u8x16_max(
+        v,
+        u8x16_shuffle::<2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3>(v, v),
+    );
+    let v = u8x16_max(
+        v,
+        u8x16_shuffle::<1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1>(v, v),
+    );
     u8x16_extract_lane::<0>(v)
 }
 /// Horizontal min over the 16 lanes (fill excluded lanes with 0xFF before calling so they don't win).
 #[inline(always)]
 unsafe fn hmin(v: v128) -> u8 {
-    let v = u8x16_min(v, u8x16_shuffle::<8, 9, 10, 11, 12, 13, 14, 15, 8, 9, 10, 11, 12, 13, 14, 15>(v, v));
-    let v = u8x16_min(v, u8x16_shuffle::<4, 5, 6, 7, 4, 5, 6, 7, 4, 5, 6, 7, 4, 5, 6, 7>(v, v));
-    let v = u8x16_min(v, u8x16_shuffle::<2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3>(v, v));
-    let v = u8x16_min(v, u8x16_shuffle::<1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1>(v, v));
+    let v = u8x16_min(
+        v,
+        u8x16_shuffle::<8, 9, 10, 11, 12, 13, 14, 15, 8, 9, 10, 11, 12, 13, 14, 15>(v, v),
+    );
+    let v = u8x16_min(
+        v,
+        u8x16_shuffle::<4, 5, 6, 7, 4, 5, 6, 7, 4, 5, 6, 7, 4, 5, 6, 7>(v, v),
+    );
+    let v = u8x16_min(
+        v,
+        u8x16_shuffle::<2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3>(v, v),
+    );
+    let v = u8x16_min(
+        v,
+        u8x16_shuffle::<1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1>(v, v),
+    );
     u8x16_extract_lane::<0>(v)
 }
 
@@ -81,9 +105,16 @@ unsafe fn hmin(v: v128) -> u8 {
 unsafe fn lookup128(lo: &[u8; 64], hi: &[u8; 64], index: v128) -> v128 {
     let mut acc = u8x16_splat(0);
     for sub in 0..8usize {
-        let base = if sub < 4 { lo.as_ptr().add(sub * 16) } else { hi.as_ptr().add((sub - 4) * 16) };
+        let base = if sub < 4 {
+            lo.as_ptr().add(sub * 16)
+        } else {
+            hi.as_ptr().add((sub - 4) * 16)
+        };
         let table = v128_load(base as *const v128);
-        acc = v128_or(acc, u8x16_swizzle(table, i8x16_sub(index, u8x16_splat((sub * 16) as u8))));
+        acc = v128_or(
+            acc,
+            u8x16_swizzle(table, i8x16_sub(index, u8x16_splat((sub * 16) as u8))),
+        );
     }
     acc
 }
@@ -93,12 +124,20 @@ unsafe fn lookup256(table: *const u8, index: v128) -> v128 {
     let mut acc = u8x16_splat(0);
     for sub in 0..16usize {
         let chunk = v128_load(table.add(sub * 16) as *const v128);
-        acc = v128_or(acc, u8x16_swizzle(chunk, i8x16_sub(index, u8x16_splat((sub * 16) as u8))));
+        acc = v128_or(
+            acc,
+            u8x16_swizzle(chunk, i8x16_sub(index, u8x16_splat((sub * 16) as u8))),
+        );
     }
     acc
 }
 
 /// SIMD128 whole-buffer classify, generic over the scheme. Byte-exact target: `classify_scalar::<S>`.
+///
+/// # Safety
+/// `tags.len()` must be ≥ `text.len()` — the kernel does raw 16-byte `v128_store`s into `tags` for full
+/// chunks. `text` must be well-formed UTF-8 (the tail/astral scalar path reads a lead's continuation
+/// bytes). Both hold when called via [`crate::classify`], which asserts the length up front.
 #[allow(non_snake_case)]
 pub unsafe fn classify_wasm<S: TagScheme>(text: &[u8], tags: &mut [u8]) {
     let (MB, CONT) = (S::MB, S::CONT);
@@ -129,7 +168,10 @@ pub unsafe fn classify_wasm<S: TagScheme>(text: &[u8], tags: &mut [u8]) {
         // 2-byte (C2..DF, i.e. lead & 0xE0 == 0xC0): loop the lead-group range, lookup256 per present group
         let is_lead2 = u8x16_eq(v128_and(b0, u8x16_splat(0xE0)), u8x16_splat(0xC0));
         if v128_any_true(is_lead2) {
-            let group_index = v128_or(i8x16_shl(v128_and(b0, u8x16_splat(3)), 6), v128_and(b1, u8x16_splat(0x3F)));
+            let group_index = v128_or(
+                i8x16_shl(v128_and(b0, u8x16_splat(3)), 6),
+                v128_and(b1, u8x16_splat(0x3F)),
+            );
             let min_lead = hmin(v128_bitselect(b0, ones, is_lead2)); // lead where is_lead2 else 0xFF
             let max_lead = hmax(v128_bitselect(b0, zeros, is_lead2));
             let lead_group = u8x16_shr(b0, 2); // which of the 8 lead-groups each lane's lead belongs to
@@ -138,7 +180,8 @@ pub unsafe fn classify_wasm<S: TagScheme>(text: &[u8], tags: &mut [u8]) {
             while group <= (max_lead >> 2) {
                 let this_group = v128_and(is_lead2, u8x16_eq(lead_group, u8x16_splat(group)));
                 if v128_any_true(this_group) {
-                    let group_table = tables.group_tables[(group & 7) as usize].as_ptr() as *const u8;
+                    let group_table =
+                        tables.group_tables[(group & 7) as usize].as_ptr() as *const u8;
                     tags2 = v128_bitselect(lookup256(group_table, group_index), tags2, this_group);
                 }
                 group += 1;
@@ -156,14 +199,20 @@ pub unsafe fn classify_wasm<S: TagScheme>(text: &[u8], tags: &mut [u8]) {
             if v128_any_true(in_cjk_leads) {
                 // Han — U+4000..U+9FFF (CJK Unified Ideographs + the Ext-A tail), minus the one
                 // non-ideograph hole U+4DC0..U+4DFF (Yijing Hexagram Symbols), which encodes as E4 B7 xx.
-                let han = v128_andnot(in_range(b0, 0xE4, 0xE9), v128_and(eq(b0, 0xE4), eq(b1, 0xB7)));
+                let han = v128_andnot(
+                    in_range(b0, 0xE4, 0xE9),
+                    v128_and(eq(b0, 0xE4), eq(b1, 0xB7)),
+                );
 
                 // Hangul Syllables (U+AC00..U+D7A3), split across leads EA..ED:
                 //   EB..EC        → U+B000..U+CFFF  (whole middle — every lane a syllable)
                 //   EA, b1 >= B0  → U+AC00..U+AFFF  (syllables begin at AC00; U+A000..ABFF below is excluded)
                 //   ED, b1 <= 9D  → U+D000..U+D77F  (syllables; the U+D780.. tail is left to the exact tables)
                 let hangul = v128_or(
-                    v128_or(in_range(b0, 0xEB, 0xEC), v128_and(eq(b0, 0xEA), ge(b1, 0xB0))),
+                    v128_or(
+                        in_range(b0, 0xEB, 0xEC),
+                        v128_and(eq(b0, 0xEA), ge(b1, 0xB0)),
+                    ),
                     v128_and(eq(b0, 0xED), le(b1, 0x9D)),
                 );
 
@@ -174,7 +223,10 @@ pub unsafe fn classify_wasm<S: TagScheme>(text: &[u8], tags: &mut [u8]) {
                 //   U+30A0          double hyphen (Punct)      (E3 82 A0)
                 //   U+30FB          middle dot (Punct)         (E3 83 BB)
                 let hole_3040 = v128_and(eq(b1, 0x81), eq(b2, 0x80));
-                let hole_309x = v128_and(eq(b1, 0x82), v128_or(in_range(b2, 0x97, 0x9C), eq(b2, 0xA0)));
+                let hole_309x = v128_and(
+                    eq(b1, 0x82),
+                    v128_or(in_range(b2, 0x97, 0x9C), eq(b2, 0xA0)),
+                );
                 let hole_30fb = v128_and(eq(b1, 0x83), eq(b2, 0xBB));
                 let kana = v128_andnot(
                     v128_and(eq(b0, 0xE3), in_range(b1, 0x81, 0x83)),
@@ -190,7 +242,10 @@ pub unsafe fn classify_wasm<S: TagScheme>(text: &[u8], tags: &mut [u8]) {
         // 3-byte non-CJK: exact peel of the distinct (lead, b1-pair) blocks still present
         let is_lead3 = v128_andnot(in_range(b0, 0xE0, 0xEF), resolved);
         if v128_any_true(is_lead3) {
-            let block_index = v128_or(i8x16_shl(v128_and(b1, u8x16_splat(1)), 6), v128_and(b2, u8x16_splat(0x3F)));
+            let block_index = v128_or(
+                i8x16_shl(v128_and(b1, u8x16_splat(1)), 6),
+                v128_and(b2, u8x16_splat(0x3F)),
+            );
             let pair = u8x16_shr(b1, 1); // b1>>1 — the 128-cp block-pair id
             let mut tags3 = u8x16_splat(MB);
             let mut unresolved = is_lead3;
@@ -251,7 +306,11 @@ pub unsafe fn classify_wasm<S: TagScheme>(text: &[u8], tags: &mut [u8]) {
         while pos < n {
             if tags[pos] == MB {
                 let cp = decode(text, pos);
-                tags[pos] = if cp < 0x10000 { tables.bmp_tag(cp as u16) } else { S::classify_char(text, pos) };
+                tags[pos] = if cp < 0x10000 {
+                    tables.bmp_tag(cp as u16)
+                } else {
+                    S::classify_char(text, pos)
+                };
             }
             pos += 1;
         }

@@ -28,7 +28,9 @@ const CORPORA: &[(&str, &str)] = &[
 ];
 
 fn onig_spans(re: &Regex, text: &str) -> Vec<Span> {
-    re.find_iter(text).map(|(a, b)| (a as u32, b as u32)).collect()
+    re.find_iter(text)
+        .map(|(a, b)| (a as u32, b as u32))
+        .collect()
 }
 
 fn ns_per_byte<F: FnMut() -> usize>(len: usize, iters: u32, mut f: F) -> f64 {
@@ -80,7 +82,11 @@ fn main() {
         classify::<Atoms>(text, &mut tags);
         let mut sc = vec![(0u32, 0u32); n + 1];
         let k = fsm_byte_level(text, &tags, &mut sc);
-        let ok = if sc[..k] == reference[..] { "✓" } else { "✗" };
+        let ok = if sc[..k] == reference[..] {
+            "✓"
+        } else {
+            "✗"
+        };
         let btok = n as f64 / k.max(1) as f64;
 
         let cls = ns_per_byte(n, iters, || {

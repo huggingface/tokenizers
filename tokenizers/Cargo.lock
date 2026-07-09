@@ -118,11 +118,6 @@ dependencies = [
  "fancy-regex 0.13.0",
  "memchr",
  "onig",
- "regex",
- "regex-syntax",
- "thiserror 2.0.18",
- "unicode-normalization-alignments",
- "unicode-segmentation",
 ]
 
 [[package]]

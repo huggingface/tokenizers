@@ -87,8 +87,12 @@ fn report_diff(corpus: &str, ours: &[Span], reference: &[Span]) -> &'static str 
     let ctx = |lo: usize, hi: usize| {
         let (a, b) = (lo.saturating_sub(6), (hi + 6).min(corpus.len()));
         let (mut a, mut b) = (a, b);
-        while !corpus.is_char_boundary(a) { a -= 1; }
-        while !corpus.is_char_boundary(b) { b += 1; }
+        while !corpus.is_char_boundary(a) {
+            a -= 1;
+        }
+        while !corpus.is_char_boundary(b) {
+            b += 1;
+        }
         corpus[a..b].escape_debug().to_string()
     };
     let (os, oe) = (ours[k].0 as usize, ours[k].1 as usize);
@@ -159,5 +163,7 @@ fn main() {
             onig_ns / pipe
         );
     }
-    println!("\n(ns/byte, lower better; onig×3 = the composed Sequence reference. parity: fsm_deepseek == reference.)");
+    println!(
+        "\n(ns/byte, lower better; onig×3 = the composed Sequence reference. parity: fsm_deepseek == reference.)"
+    );
 }

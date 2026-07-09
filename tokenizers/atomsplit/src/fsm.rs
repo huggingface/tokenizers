@@ -1,15 +1,12 @@
-//! TODO: this is the only file left to review and push to the bring of performances.
-//!
-//! FSM layer: turn the `Atom` tag stream (from `classify::<Atoms>`) into token spans. Every fsm is
-//! NO-PUSH — it writes spans into a caller-preallocated `&mut [Span]` (len ≥ text.len()) and returns
-//! the count; no `Vec`, no realloc. See `TAG_CLASSIFY_SPEC.md` §4.
+//! FSM layer: turn the `Atom` tag stream (from [`crate::classify`]) into token spans. Every fsm is
+//! NO-PUSH — it writes spans into a caller-preallocated `&mut [Span]` (len ≥ `text.len()`) and returns
+//! the token count; no `Vec`, no realloc. Inputs must be well-formed UTF-8 (see the crate-level docs).
 //!
 //! The class family (WhitespaceSplit / Punctuation / Digits / Whitespace / Bert) goes through
 //! [`class_runs_into`]: on aarch64/wasm the SIMD movemask boundary-extractor + homogeneous-chunk
 //! early-out (in `simd_fsm`), elsewhere the scalar run-end core ([`class_runs_runend`]). The
-//! regex-shaped ones ([`fsm_cl100k`] / [`fsm_deepseek`] / [`fsm_byte_level`]) are scalar jump-tables
-//! with SIMD run-ends (`simd_fsm::run_end_*`). Tests live in `tests/`, benches in `benches/`.
-#![allow(dead_code)] // class_runs_runend is the non-aarch64 core (unused on aarch64)
+//! regex-shaped ones ([`fsm_cl100k`] / [`fsm_deepseek`] / [`fsm_byte_level`]) are scalar jump-tables.
+//! Tests live in `tests/`, throughput benches in `benches/`.
 
 use crate::classify::{Atom, Atoms, char_len, classify, in_mask, mask};
 
@@ -38,11 +35,13 @@ pub type Span = (u32, u32);
 /// aarch64 uses the NEON boundary extractor ([`class_runs_neon`]); elsewhere the run-end core — byte-exact
 /// across both paths (see the `class_runs_into_matches` test). `out.len()` must be ≥ `text.len()`.
 #[inline]
+#[must_use]
 pub fn class_runs_into<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>(
     text: &[u8],
     tags: &[u8],
     out: &mut [Span],
 ) -> usize {
+    debug_assert!(out.len() >= text.len() && tags.len() >= text.len());
     #[cfg(target_arch = "aarch64")]
     {
         crate::simd_fsm::class_runs_neon::<DROP, ISOLATE, KEEP_A>(text, tags, out)
@@ -62,11 +61,14 @@ pub fn class_runs_into<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>(
 
 /// Scalar run-end core: skip each homogeneous run with the scalar `run_end`. The portable
 /// (non-aarch64/wasm) class-family path AND the byte-exact oracle for the SIMD kernels in `simd_fsm`.
+#[doc(hidden)]
+#[must_use]
 pub fn class_runs_runend<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>(
     text: &[u8],
     tags: &[u8],
     out: &mut [Span],
 ) -> usize {
+    debug_assert!(out.len() >= text.len() && tags.len() >= text.len());
     let mb: u16 = !(DROP | ISOLATE | KEEP_A); // keep-B = everything else (Cont rides along in run_end)
     let n = text.len();
     let (mut w, mut i) = (0usize, 0usize);
@@ -96,7 +98,9 @@ pub fn class_runs_runend<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>
 /// cl100k pretokenization (7 rules, segmented `{1,3}` cap + whitespace-tail). Peeks `text` for the
 /// ASCII contraction-suffix literals. Scalar run-ends.
 /// ┌── OWNER: shared (scalar) ──┐
+#[must_use]
 pub fn fsm_cl100k(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
+    debug_assert!(out.len() >= text.len() && tags.len() >= text.len());
     cl100k(text, tags, out)
 }
 
@@ -195,8 +199,7 @@ fn cl100k(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
                         b'r' | b'v' | b'l' if i + 2 < end && text[i + 2] < 0x80 => {
                             let l2 = text[i + 2] | 0x20;
                             usize::from(
-                                (lc == b'r' && l2 == b'e')
-                                    || (lc == b'v' && l2 == b'e')
+                                (l2 == b'e' && matches!(lc, b'r' | b'v'))
                                     || (lc == b'l' && l2 == b'l'),
                             ) * 3
                         }
@@ -285,7 +288,9 @@ fn ds_is_cjk_letter(text: &[u8], tags: &[u8], p: usize) -> bool {
 /// `\p{L}∪\p{M}`, so they end a letter run (`ds_breaks`); (3) Split-2 isolates the whole CJK range but
 /// Split-3 re-splits it, so CJK-range punct (・) breaks the CJK *letter* run (`ds_is_cjk_letter`).
 /// ┌── OWNER: shared (scalar) ──┐
+#[must_use]
 pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
+    debug_assert!(out.len() >= text.len() && tags.len() >= text.len());
     // Leading-atom values as `const` → the `match` is a dense jump table (see `cl100k`). The Split
     // precedence (digits → CJK → big-regex alts) is preserved because the atom partition is disjoint.
     const LET: u8 = Atom::Letter as u8;
@@ -312,9 +317,7 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
         let mut p = a;
         while p < end {
             let t = tags[p];
-            if t == CONT {
-                p += 1;
-            } else if in_mask(t, mask::LETTER_MARK) && !ds_breaks(text, p) {
+            if t == CONT || (in_mask(t, mask::LETTER_MARK) && !ds_breaks(text, p)) {
                 p += 1;
             } else {
                 break;
@@ -438,7 +441,9 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
 /// a literal SPACE only (not any non-l/n char) and it applies to letters, numbers AND "other"; (3) no
 /// `\p{N}{1,3}` cap (numbers are unbounded) and no `\s*[\r\n]`/trailing-`[\r\n]*` rules.
 /// ┌── OWNER: shared (scalar) ──┐
+#[must_use]
 pub fn fsm_byte_level(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
+    debug_assert!(out.len() >= text.len() && tags.len() >= text.len());
     const LET: u8 = Atom::Letter as u8;
     const NW: u8 = Atom::NumWord as u8;
     const NO: u8 = Atom::NumOther as u8;
@@ -522,77 +527,98 @@ pub fn fsm_byte_level(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
 // preallocated `out: &mut [Span]` (len ≥ text.len()) via `class_runs_into` and returns the token count.
 // In `tk-encode` these delegate from the `pipeline::PreTokenizer` impls (offset conversion happens there).
 
+/// `WhitespaceSplit` — split on Unicode whitespace and drop it; keeps maximal non-whitespace runs.
 pub struct WhitespaceSplit;
 impl WhitespaceSplit {
+    /// Classify then split; writes spans into `out` (len ≥ `text.len()`) and returns the token count.
     #[inline]
+    #[must_use]
     pub fn pre_tokenize(&self, text: &[u8], tags: &mut [u8], out: &mut [Span]) -> usize {
         classify::<Atoms>(text, tags);
         class_runs_into::<{ mask::WS }, 0, 0>(text, tags, out)
     }
 }
 
+/// `Punctuation` — isolate each punctuation char as its own token; non-punct grouped into runs.
 pub struct Punctuation;
 impl Punctuation {
+    /// Classify then split; writes spans into `out` (len ≥ `text.len()`) and returns the token count.
     #[inline]
+    #[must_use]
     pub fn pre_tokenize(&self, text: &[u8], tags: &mut [u8], out: &mut [Span]) -> usize {
         classify::<Atoms>(text, tags);
         class_runs_into::<0, { mask::PUNCT }, 0>(text, tags, out)
     }
 }
 
+/// `Digits` — cut numeric runs apart from non-numeric runs (contiguous), keeping both.
 pub struct Digits;
 impl Digits {
+    /// Classify then split; writes spans into `out` (len ≥ `text.len()`) and returns the token count.
     #[inline]
+    #[must_use]
     pub fn pre_tokenize(&self, text: &[u8], tags: &mut [u8], out: &mut [Span]) -> usize {
         classify::<Atoms>(text, tags);
         class_runs_into::<0, 0, { mask::NUMERIC }>(text, tags, out)
     }
 }
 
+/// `Whitespace` — the `\w+|[^\w\s]+` pre-tokenizer: drop whitespace, cut word runs from symbol runs.
 pub struct Whitespace;
 impl Whitespace {
+    /// Classify then split; writes spans into `out` (len ≥ `text.len()`) and returns the token count.
     #[inline]
+    #[must_use]
     pub fn pre_tokenize(&self, text: &[u8], tags: &mut [u8], out: &mut [Span]) -> usize {
         classify::<Atoms>(text, tags);
-        // drop WS runs, keep Word and Symbol runs (isolate nothing)
         class_runs_into::<{ mask::WS }, 0, { mask::WORD }>(text, tags, out)
     }
 }
 
+/// `Bert` — the BERT basic pre-tokenizer: drop whitespace, isolate punctuation, keep the rest as runs.
 pub struct Bert;
 impl Bert {
+    /// Classify then split; writes spans into `out` (len ≥ `text.len()`) and returns the token count.
     #[inline]
+    #[must_use]
     pub fn pre_tokenize(&self, text: &[u8], tags: &mut [u8], out: &mut [Span]) -> usize {
         classify::<Atoms>(text, tags);
-        // drop WS runs, isolate punctuation, keep everything else as single runs
         class_runs_into::<{ mask::WS }, { mask::PUNCT }, 0>(text, tags, out)
     }
 }
 
+/// `Cl100k` — the tiktoken cl100k_base / o200k GPT-4 pre-tokenizer (7-rule regex).
 pub struct Cl100k;
 impl Cl100k {
+    /// Classify then split; writes spans into `out` (len ≥ `text.len()`) and returns the token count.
+    /// Uses the scalar run-end core: cl100k's letter/ws runs are short on Latin/code (the common case),
+    /// where a SIMD run-end's setup would lose; only long CJK runs would benefit.
     #[inline]
+    #[must_use]
     pub fn pre_tokenize(&self, text: &[u8], tags: &mut [u8], out: &mut [Span]) -> usize {
         classify::<Atoms>(text, tags);
-        // scalar run-ends are the better default: cl100k's letter/ws runs are short on Latin/code (the
-        // common case), where the SIMD run-end's setup loses (~0.8×); it only wins on long CJK runs.
-        // Use `fsm_cl100k_simd` directly for CJK-dominant workloads. See `benches/class_runs.rs`.
         fsm_cl100k(text, tags, out)
     }
 }
 
+/// `DeepSeek` — the DeepSeek-V3/R1 pre-tokenizer (digits{1,3} → CJK-range → big regex, composed).
 pub struct DeepSeek;
 impl DeepSeek {
+    /// Classify then split; writes spans into `out` (len ≥ `text.len()`) and returns the token count.
     #[inline]
+    #[must_use]
     pub fn pre_tokenize(&self, text: &[u8], tags: &mut [u8], out: &mut [Span]) -> usize {
         classify::<Atoms>(text, tags);
         fsm_deepseek(text, tags, out)
     }
 }
 
+/// `ByteLevel` — the GPT-2 / Llama / Qwen byte-level pre-tokenizer regex (before byte-mapping).
 pub struct ByteLevel;
 impl ByteLevel {
+    /// Classify then split; writes spans into `out` (len ≥ `text.len()`) and returns the token count.
     #[inline]
+    #[must_use]
     pub fn pre_tokenize(&self, text: &[u8], tags: &mut [u8], out: &mut [Span]) -> usize {
         classify::<Atoms>(text, tags);
         fsm_byte_level(text, tags, out)
@@ -604,7 +630,11 @@ impl ByteLevel {
 /// delimiter's byte pattern only matches on char boundaries.
 pub struct CharDelimiterSplit(pub char);
 impl CharDelimiterSplit {
+    /// Split on the literal char (Removed); writes spans into `out` (len ≥ `text.len()`), returns count.
+    #[inline]
+    #[must_use]
     pub fn pre_tokenize(&self, text: &[u8], _tags: &mut [u8], out: &mut [Span]) -> usize {
+        debug_assert!(out.len() >= text.len());
         let mut buf = [0u8; 4];
         let delim = self.0.encode_utf8(&mut buf).as_bytes();
         let (n, dl) = (text.len(), delim.len());

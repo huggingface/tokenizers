@@ -3,8 +3,8 @@
 //! timed separately. `spd = scalar/simd`: >1 → SIMD wins. (cl100k is scalar-only — see benches/cl100k.rs.)
 //!
 //! Run: cargo bench --bench class_runs
-use atomsplit::classify::{classify, mask, Atoms};
-use atomsplit::fsm::{class_runs_into, class_runs_runend, Span};
+use atomsplit::classify::{Atoms, classify, mask};
+use atomsplit::fsm::{Span, class_runs_into, class_runs_runend};
 use std::hint::black_box;
 use std::time::Instant;
 
@@ -62,15 +62,17 @@ fn main() {
     let manifest = env!("CARGO_MANIFEST_DIR");
     let mut corpora: Vec<(&str, String)> = Vec::new();
     for (label, rel) in CORPORA {
-        if let Ok(s) = std::fs::read_to_string(format!("{manifest}/{rel}")) {
-            if !s.trim().is_empty() {
-                let mut c = s.len().min(180_000);
-                while c > 0 && !s.is_char_boundary(c) {
-                    c -= 1;
-                }
-                corpora.push((label, s[..c].to_string()));
-            }
+        let Ok(s) = std::fs::read_to_string(format!("{manifest}/{rel}")) else {
+            continue;
+        };
+        if s.trim().is_empty() {
+            continue;
         }
+        let mut c = s.len().min(180_000);
+        while c > 0 && !s.is_char_boundary(c) {
+            c -= 1;
+        }
+        corpora.push((label, s[..c].to_string()));
     }
 
     macro_rules! compare {
