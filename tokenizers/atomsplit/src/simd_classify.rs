@@ -194,6 +194,7 @@ unsafe fn any(mask: core::arch::aarch64::uint8x16_t) -> bool {
     vmaxvq_u8(mask) != 0
 }
 
+#[cfg(target_arch = "aarch64")] // only `classify_neon`'s MB-fixup calls this; dead on other arches
 #[inline]
 /// This is just for any char lenght, decode a utf8 to its actual value.
 /// TLDR removing the utf8 headers to get the unicode.
