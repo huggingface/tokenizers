@@ -1,7 +1,5 @@
-use std::sync::LazyLock;
-
 use crate::utils::byte_level::{byte_level_transform, BYTES_CHAR_LOOKUP, CHAR_BYTES_LOOKUP};
-use crate::utils::SysRegex;
+use crate::utils::{GptFsm, GptFsmPattern};
 use serde::{Deserialize, Serialize};
 
 use crate::tokenizer::{
@@ -9,13 +7,6 @@ use crate::tokenizer::{
     SplitDelimiterBehavior,
 };
 use crate::utils::macro_rules_attribute;
-
-/// Regex that matches exactly one token.
-/// See https://github.com/openai/gpt-2/blob/master/src/encoder.py#L98
-static RE: LazyLock<SysRegex> = LazyLock::new(|| {
-    SysRegex::new(r"'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+")
-        .unwrap()
-});
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 /// Provides all the necessary steps to handle the BPE tokenization at the byte-level. Takes care
@@ -87,13 +78,13 @@ impl ByteLevel {
 // TODO: Give the ability to modify this regex
 impl PreTokenizer for ByteLevel {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
-        let re_ref: &SysRegex = &RE;
         pretokenized.split(|_, mut normalized| {
             if self.add_prefix_space && !normalized.get().starts_with(' ') {
                 normalized.prepend(" ");
             }
             if self.use_regex {
-                normalized.split(re_ref, SplitDelimiterBehavior::Isolated)
+                // GPT-2 byte-level split via the native atomsplit FSM (byte-exact, no regex backend).
+                normalized.split(GptFsmPattern(GptFsm::Gpt2), SplitDelimiterBehavior::Isolated)
             } else {
                 Ok(vec![normalized])
             }

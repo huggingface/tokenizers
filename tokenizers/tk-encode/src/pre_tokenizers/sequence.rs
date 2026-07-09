@@ -285,6 +285,65 @@ mod tests {
     }
 
     #[test]
+    fn scratch_deepseek_bigdiff() {
+        let path = "../data/deepseek-v4-flash-base-tokenizer.json";
+        if !std::path::Path::new(path).exists() {
+            return;
+        }
+        let v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        let splits: Vec<PreTokenizerWrapper> = v["pre_tokenizer"]["pretokenizers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|c| c["type"] == "Split")
+            .map(|c| serde_json::from_value(c.clone()).unwrap())
+            .collect();
+        let seq = Sequence::new(splits);
+        assert!(seq.is_deepseek());
+        let mut diffs = 0;
+        for corpus_path in [
+            "../data/big.txt",
+            "../data/unigram_wagahaiwa_nekodearu.txt",
+            "../atomsplit/benches/data/fr.txt",
+            "../atomsplit/benches/data/ru.txt",
+            "../atomsplit/benches/data/el.txt",
+            "../atomsplit/benches/data/ar.txt",
+            "../atomsplit/benches/data/he.txt",
+            "../atomsplit/benches/data/hi.txt",
+            "../atomsplit/benches/data/th.txt",
+            "../atomsplit/benches/data/zh.txt",
+            "../atomsplit/benches/data/ko.txt",
+        ] {
+            let Ok(corpus) = std::fs::read_to_string(corpus_path) else {
+                continue;
+            };
+            for (ln, line) in corpus.lines().enumerate() {
+                if line.is_empty() {
+                    continue;
+                }
+                let p = pipeline_pretokenize(&seq, line);
+                let l = legacy_pretokenize(&seq, line);
+                if p != l {
+                    diffs += 1;
+                    if diffs <= 4 {
+                        let k = p
+                            .iter()
+                            .zip(l.iter())
+                            .position(|(a, b)| a != b)
+                            .unwrap_or(p.len().min(l.len()));
+                        let lo = k.saturating_sub(1);
+                        eprintln!("== {corpus_path}:{ln} diverge @tok {k} ==\n  {line:?}");
+                        eprintln!("  pipe: {:?}", &p[lo..(k + 3).min(p.len())]);
+                        eprintln!("  legc: {:?}", &l[lo..(k + 3).min(l.len())]);
+                    }
+                }
+            }
+        }
+        assert_eq!(diffs, 0, "{diffs} lines diverged");
+    }
+
+    #[test]
     fn pipeline_empty_input() {
         let seq = Sequence::new(vec![
             PreTokenizerWrapper::WhitespaceSplit(WhitespaceSplit),

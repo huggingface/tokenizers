@@ -39,8 +39,14 @@ fn atom(c: char) -> u8 {
     if c.is_whitespace() {
         return 5;
     }
-    if c.is_mark() || cp == 0x200C || cp == 0x200D || c.is_alphabetic() {
-        return 6;
+    if c.is_mark() || cp == 0x200C || cp == 0x200D {
+        return 6; // \p{M} ∪ {ZWJ,ZWNJ}: real marks — ∈ deepseek/o200k `[\p{L}\p{M}]` and ∈ `\w`
+    }
+    if c.is_alphabetic() {
+        // Other_Alphabetic non-mark (circled letters Ⓘ …, category So): a `\w` word char (coarse Mark →
+        // WORD mask sees it) but NOT `[\p{L}\p{M}]`. High nibble = refine::ALPHA_SYM(1) tells deepseek /
+        // o200k to treat it as the `\p{S}` symbol it categorically is, not a letter/mark.
+        return 6 | (1 << 4); // 0x16: coarse Mark, refine ALPHA_SYM
     }
     if c.is_punctuation_connector() {
         return 7;

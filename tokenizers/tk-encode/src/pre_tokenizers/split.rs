@@ -1,5 +1,5 @@
 use crate::pipeline;
-use crate::utils::{gpt_fsm, GptFsm, MultiRegex, SysRegex};
+use crate::utils::{gpt_fsm, GptFsm, GptFsmPattern, MultiRegex, SysRegex};
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::tokenizer::{
@@ -30,8 +30,11 @@ impl From<&str> for SplitPattern {
 #[serde(tag = "type")]
 pub struct Split {
     pub pattern: SplitPattern,
+    /// System-regex backend for the pattern. `None` only when no backend is compiled *and* the
+    /// pattern is a recognized GPT regex handled natively by `fsm`/`multi` — so no backend is needed.
+    /// With a backend present (the default) this is always `Some`, and the legacy path is unchanged.
     #[serde(skip)]
-    pub regex: SysRegex,
+    pub regex: Option<SysRegex>,
     pub behavior: SplitDelimiterBehavior,
     pub invert: bool,
     /// Fast pure-DFA matcher for recognized GPT patterns (pipeline path only);
@@ -90,13 +93,21 @@ impl Split {
         invert: bool,
     ) -> Result<Self> {
         let pattern: SplitPattern = pattern.into();
-        let (regex, multi, fsm) = match &pattern {
-            SplitPattern::String(s) => (SysRegex::new(&regex::escape(s))?, None, None),
-            SplitPattern::Regex(r) => (
-                SysRegex::new(r)?,
-                MultiRegex::for_gpt_pattern(r).transpose()?,
-                gpt_fsm(r),
-            ),
+        let (multi, fsm) = match &pattern {
+            SplitPattern::String(_) => (None, None),
+            SplitPattern::Regex(r) => (MultiRegex::for_gpt_pattern(r).transpose()?, gpt_fsm(r)),
+        };
+        // Compile a system-regex backend for the pattern. With a backend present (the default) this
+        // succeeds and the legacy path is unchanged; with none compiled it's only fatal when atomsplit
+        // can't cover the pattern (i.e. an arbitrary regex, not a recognized GPT one).
+        let compiled = match &pattern {
+            SplitPattern::String(s) => SysRegex::new(&regex::escape(s)),
+            SplitPattern::Regex(r) => SysRegex::new(r),
+        };
+        let regex = match compiled {
+            Ok(re) => Some(re),
+            Err(_) if fsm.is_some() || multi.is_some() => None,
+            Err(e) => return Err(e),
         };
 
         Ok(Self {
@@ -112,11 +123,26 @@ impl Split {
 
 impl PreTokenizer for Split {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
-        if self.invert {
-            pretokenized.split(|_, normalized| normalized.split(Invert(&self.regex), self.behavior))
-        } else {
-            pretokenized.split(|_, normalized| normalized.split(&self.regex, self.behavior))
+        if let Some(regex) = &self.regex {
+            return if self.invert {
+                pretokenized.split(|_, normalized| normalized.split(Invert(regex), self.behavior))
+            } else {
+                pretokenized.split(|_, normalized| normalized.split(regex, self.behavior))
+            };
         }
+        // No system-regex backend: only a recognized GPT pattern in its canonical usage (Isolated,
+        // not inverted — how these regexes always ship) can split, via the native atomsplit FSM.
+        let fsm = self
+            .fsm
+            .filter(|_| !self.invert && self.behavior == SplitDelimiterBehavior::Isolated)
+            .ok_or_else(|| -> crate::tokenizer::Error {
+                "this `Split` pattern needs a system-regex backend; enable the `fancy-regex` \
+                 (default) or `onig` feature"
+                    .into()
+            })?;
+        pretokenized.split(|_, normalized| {
+            normalized.split(GptFsmPattern(fsm), SplitDelimiterBehavior::Isolated)
+        })
     }
 }
 
@@ -156,8 +182,18 @@ impl pipeline::PreTokenizer for Split {
                 }
                 segments
             }
-            None if self.invert => Invert(&self.regex).find_matches(text)?,
-            None => (&self.regex).find_matches(text)?,
+            None => {
+                let regex = self.regex.as_ref().ok_or_else(|| -> crate::tokenizer::Error {
+                    "this `Split` pattern needs a system-regex backend; enable the `fancy-regex` \
+                     (default) or `onig` feature"
+                        .into()
+                })?;
+                if self.invert {
+                    Invert(regex).find_matches(text)?
+                } else {
+                    regex.find_matches(text)?
+                }
+            }
         };
         pipeline::split_matches(out, matches, self.behavior);
         Ok(())

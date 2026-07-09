@@ -155,6 +155,36 @@ pub fn gpt_fsm(pattern: &str) -> Option<GptFsm> {
     }
 }
 
+/// `Pattern` that runs the native atomsplit FSM for a [`GptFsm`] — the legacy (`NormalizedString`)
+/// split path's equivalent of the pipeline's native routing, so GPT pre-tokenizers need no
+/// system-regex backend. `Isolated` behaviour keeps every span, and the FSM spans cover the input
+/// contiguously, so this is byte-for-byte identical to the original GPT regex `Isolated` split.
+pub struct GptFsmPattern(pub GptFsm);
+
+impl crate::tokenizer::pattern::Pattern for GptFsmPattern {
+    fn find_matches(
+        &self,
+        inside: &str,
+    ) -> crate::tokenizer::Result<Vec<(crate::tokenizer::Offsets, bool)>> {
+        if inside.is_empty() {
+            return Ok(vec![((0, 0), false)]);
+        }
+        use atomsplit::classify::{classify, Atoms};
+        let bytes = inside.as_bytes();
+        let mut tags = vec![0u8; bytes.len()];
+        classify::<Atoms>(bytes, &mut tags);
+        let mut spans = vec![(0u32, 0u32); bytes.len() + 1];
+        let n = match self.0 {
+            GptFsm::Gpt2 => atomsplit::fsm::fsm_byte_level(bytes, &tags, &mut spans),
+            GptFsm::Cl100k => atomsplit::fsm::fsm_cl100k(bytes, &tags, &mut spans),
+        };
+        Ok(spans[..n]
+            .iter()
+            .map(|&(s, e)| ((s as usize, e as usize), true))
+            .collect())
+    }
+}
+
 // deepseek-v4's pre-tokenizer is a `Sequence` of these three Isolated `Split`s (+ a byte-map
 // `ByteLevel`), which `atomsplit::fsm::fsm_deepseek` collapses into one pass. Byte-exact with the
 // shipped tokenizer.json — the big pattern carries LITERAL CR/LF, spliced in via `concat!`.

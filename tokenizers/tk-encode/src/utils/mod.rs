@@ -2,6 +2,10 @@ pub(crate) mod cache;
 #[cfg(feature = "http")]
 pub(crate) mod from_pretrained;
 
+// System-regex backend for arbitrary (non-atomsplit) patterns. `onig` wins if both are on; with
+// neither, a stub compiles and arbitrary-regex features error at load — the atomsplit-native
+// pre-tokenizers work regardless, so `fancy-regex` is only needed for custom `Split` regexes /
+// `Replace`.
 #[cfg(all(feature = "fancy-regex", not(feature = "onig")))]
 mod fancy;
 #[cfg(all(feature = "fancy-regex", not(feature = "onig")))]
@@ -10,12 +14,13 @@ pub use fancy::SysRegex;
 mod onig;
 #[cfg(feature = "onig")]
 pub use crate::utils::onig::SysRegex;
-
 #[cfg(not(any(feature = "onig", feature = "fancy-regex")))]
-compile_error!("One of the `onig`, or `fancy-regex` features must be enabled");
+mod no_regex;
+#[cfg(not(any(feature = "onig", feature = "fancy-regex")))]
+pub use no_regex::SysRegex;
 
 mod multi_regex;
-pub use multi_regex::{gpt_fsm, is_deepseek, GptFsm, MultiRegex};
+pub use multi_regex::{gpt_fsm, is_deepseek, GptFsm, GptFsmPattern, MultiRegex};
 
 pub mod byte_level;
 pub mod iter;

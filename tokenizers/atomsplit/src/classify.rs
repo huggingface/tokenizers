@@ -53,13 +53,21 @@ pub const fn refine_of(tag: u8) -> u8 {
     tag >> 4
 }
 
-/// Refinement values for the `Letter` coarse class (o200k's case split). `0` = caseless (`\p{Lm}\p{Lo}`).
+/// Refinement values (high nibble). Meaning is *relative to the coarse class* — `1` on `Letter` is
+/// `UPPER`, `1` on `Mark` is `ALPHA_SYM` — so a refinement consumer keys on the whole tag, not the nibble.
 pub mod refine {
-    /// `\p{Lu} ∪ \p{Lt}` — the "upper-ish" leading run in o200k's `[\p{Lu}\p{Lt}…]`.
+    /// `Letter`: `\p{Lu} ∪ \p{Lt}` — the "upper-ish" leading run in o200k's `[\p{Lu}\p{Lt}…]`.
     pub const UPPER: u8 = 1;
-    /// `\p{Ll}` — strictly lowercase; the only letters excluded from o200k's `[\p{Lu}\p{Lt}…]` class.
+    /// `Letter`: `\p{Ll}` — strictly lowercase; the only letters excluded from o200k's `[\p{Lu}\p{Lt}…]`.
     pub const LOWER: u8 = 2;
+    /// `Mark`: Other_Alphabetic non-mark (circled letters …, category `\p{S}`). A `\w` char but NOT
+    /// `[\p{L}\p{M}]` — deepseek/o200k treat it as the symbol it categorically is.
+    pub const ALPHA_SYM: u8 = 1;
 }
+
+/// The full tag for an Other_Alphabetic symbol: coarse `Mark`, refine `ALPHA_SYM` (= `0x16`). A `\w` word
+/// char that deepseek/o200k must exclude from `[\p{L}\p{M}]` and route to `[\p{P}\p{S}]`.
+pub const ALPHA_SYM_MARK: u8 = (refine::ALPHA_SYM << 4) | (Atom::Mark as u8);
 
 /// UTF-8 char length from the lead byte. Width is a pure function of the lead — no classification.
 #[inline]
