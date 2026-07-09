@@ -1,10 +1,11 @@
-//! Class-family pre-tokenizers via the kept path: SIMD `classify::<Atoms>` + the no-push NEON
-//! boundary extractor `class_runs_into` (movemask + homogeneous-chunk early-out, writing spans into a
-//! preallocated slice). classify and each fsm are timed separately, per language.
+//! Scalar vs SIMD fsm, per pre-tokenizer — the class family (`class_runs_runend` scalar vs
+//! `class_runs_into` = NEON/SIMD movemask + early-out) AND cl100k (`fsm_cl100k` scalar vs
+//! `fsm_cl100k_simd` SIMD run-ends). classify is timed separately. `spd = scalar/simd`: >1 → SIMD wins,
+//! <1 → the scalar path is faster (e.g. cl100k on short-run Latin — SIMD run-ends only pay on long runs).
 //!
 //! Run: cargo bench --bench class_runs
 use fast_split::classify::{classify, mask, Atoms};
-use fast_split::fsm::class_runs_into;
+use fast_split::fsm::{class_runs_into, class_runs_runend, Span};
 use std::hint::black_box;
 use std::time::Instant;
 
@@ -20,6 +21,26 @@ const CORPORA: &[(&str, &str)] = &[
     ("Japanese", "../data/unigram_wagahaiwa_nekodearu.txt"),
     ("Korean", "benches/data/ko.txt"),
 ];
+
+// scalar (run-end core) vs SIMD (class_runs_into) wrappers per recipe — #[inline(always)] so the timing
+// closure inlines the whole chain (not a fn-pointer, which would skew the scalar path slow).
+macro_rules! pair {
+    ($sname:ident, $vname:ident, $d:expr, $i:expr, $a:expr) => {
+        #[inline(always)]
+        fn $sname(t: &[u8], tg: &[u8], o: &mut [Span]) -> usize {
+            class_runs_runend::<$d, $i, $a>(t, tg, o)
+        }
+        #[inline(always)]
+        fn $vname(t: &[u8], tg: &[u8], o: &mut [Span]) -> usize {
+            class_runs_into::<$d, $i, $a>(t, tg, o)
+        }
+    };
+}
+pair!(s_wss, v_wss, { mask::WS }, 0, 0);
+pair!(s_pun, v_pun, 0, { mask::PUNCT }, 0);
+pair!(s_dig, v_dig, 0, 0, { mask::NUMERIC });
+pair!(s_ws, v_ws, { mask::WS }, 0, { mask::WORD });
+pair!(s_bert, v_bert, { mask::WS }, { mask::PUNCT }, 0);
 
 fn ns_per_byte<F: FnMut() -> usize>(len: usize, iters: u32, mut f: F) -> f64 {
     for _ in 0..3 {
@@ -40,50 +61,62 @@ fn ns_per_byte<F: FnMut() -> usize>(len: usize, iters: u32, mut f: F) -> f64 {
 
 fn main() {
     let manifest = env!("CARGO_MANIFEST_DIR");
-    println!(
-        "{:<10} {:>7}  {:>8}  {:>8} {:>8} {:>8} {:>8} {:>8}",
-        "lang", "bytes", "classify", "WSsplit", "Punct", "Digits", "WS\\w", "Bert"
-    );
+    let mut corpora: Vec<(&str, String)> = Vec::new();
     for (label, rel) in CORPORA {
-        let raw = match std::fs::read_to_string(format!("{manifest}/{rel}")) {
-            Ok(s) if !s.trim().is_empty() => s,
-            _ => {
-                println!("{label:<10}  (skipped — {rel} missing)");
-                continue;
+        if let Ok(s) = std::fs::read_to_string(format!("{manifest}/{rel}")) {
+            if !s.trim().is_empty() {
+                let mut c = s.len().min(180_000);
+                while c > 0 && !s.is_char_boundary(c) {
+                    c -= 1;
+                }
+                corpora.push((label, s[..c].to_string()));
             }
-        };
-        let mut c = raw.len().min(180_000);
-        while c > 0 && !raw.is_char_boundary(c) {
-            c -= 1;
         }
-        let text = raw[..c].as_bytes();
-        let n = text.len();
-        let iters = (4_000_000 / n).clamp(3, 150) as u32;
-        let mut tags = vec![0u8; n];
-        let mut out = vec![(0u32, 0u32); n];
-        classify::<Atoms>(text, &mut tags);
-
-        let cls = ns_per_byte(n, iters, || {
-            classify::<Atoms>(text, &mut tags);
-            n
-        });
-        classify::<Atoms>(text, &mut tags);
-        macro_rules! fsm {
-            ($d:expr, $i:expr, $a:expr) => {
-                ns_per_byte(n, iters, || class_runs_into::<$d, $i, $a>(text, &tags, &mut out))
-            };
-        }
-        let wss = fsm!({ mask::WS }, 0, 0);
-        let pun = fsm!(0, { mask::PUNCT }, 0);
-        let dig = fsm!(0, 0, { mask::NUMERIC });
-        let ws = fsm!({ mask::WS }, 0, { mask::WORD });
-        let bert = fsm!({ mask::WS }, { mask::PUNCT }, 0);
-        println!(
-            "{label:<10} {n:>7}  {cls:>8.3}  {wss:>8.3} {pun:>8.3} {dig:>8.3} {ws:>8.3} {bert:>8.3}"
-        );
     }
+
+    macro_rules! compare {
+        ($name:expr, $s:ident, $v:ident) => {{
+            println!(
+                "\n== {} ==\n{:<10} {:>7}  {:>8} {:>8} {:>8} | {:>6}",
+                $name, "lang", "bytes", "classify", "scalar", "simd", "spd"
+            );
+            for (label, corpus) in &corpora {
+                let text = corpus.as_bytes();
+                let n = text.len();
+                let iters = (4_000_000 / n).clamp(3, 150) as u32;
+                let mut tags = vec![0u8; n];
+                let mut buf = vec![(0u32, 0u32); n + 1];
+                classify::<Atoms>(text, &mut tags);
+                // parity: scalar == simd
+                let (ks, kv) = ($s(text, &tags, &mut buf), 0);
+                let scalar_out: Vec<Span> = buf[..ks].to_vec();
+                let _ = kv;
+                let kv = $v(text, &tags, &mut buf);
+                let parity = scalar_out == buf[..kv];
+                let cls = ns_per_byte(n, iters, || {
+                    classify::<Atoms>(text, &mut tags);
+                    n
+                });
+                classify::<Atoms>(text, &mut tags);
+                let sc = ns_per_byte(n, iters, || $s(text, &tags, &mut buf));
+                let si = ns_per_byte(n, iters, || $v(text, &tags, &mut buf));
+                println!(
+                    "{label:<10} {n:>7}  {cls:>8.3} {sc:>8.3} {si:>8.3} | {:>5.2}x{}",
+                    sc / si,
+                    if parity { "" } else { "  PARITY✗" }
+                );
+            }
+        }};
+    }
+
+    compare!("WhitespaceSplit", s_wss, v_wss);
+    compare!("Punctuation", s_pun, v_pun);
+    compare!("Digits", s_dig, v_dig);
+    compare!("Whitespace \\w", s_ws, v_ws);
+    compare!("Bert", s_bert, v_bert);
     println!(
-        "\n(ns/byte, lower better. classify = SIMD classify::<Atoms>; the rest = class_runs_into fsm\n \
-         (NEON movemask boundary-extract + early-out, no-push) for each class-family pre-tokenizer.)"
+        "\n(ns/byte, lower better. classify = SIMD classify::<Atoms>; scalar = class_runs_runend (run-end\n \
+         core); simd = class_runs_into (NEON/SIMD128 movemask + early-out). spd = scalar/simd, >1 → SIMD\n \
+         wins. cl100k is scalar-only — its perf is in benches/cl100k.rs.)"
     );
 }

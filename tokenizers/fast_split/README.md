@@ -152,3 +152,46 @@ Both fuse in one kernel: `class_runs_neon` first tries the run-end fast path —
 ### 2.3 Why it's a finite-state machine
 
 Each pre-tokenizer is a small automaton over the shared tag alphabet: a few **states** (in a letter run, inside whitespace, at a boundary) and, per incoming tag, a **transition** — extend the run, emit the span, or start a new one. The class masks *are* the transition predicates (`in_mask(tag, LETTER)` = "stay in the letter state"). So cl100k, GPT-2, whitespace-split, deepseek… are all the *same* machine driven by different masks + a few peeked bytes; only the states that are a maximal `+`/`*` run get the SIMD run-end.
+
+## 3. Measured performance
+
+Single-thread, **180 KB per language** (uniform size → comparable cache behaviour), **min-of-7 trials**, 14-core Apple Silicon (8 P + 6 E), light background load. `ns/byte`, lower is better. **Every row is byte-exact ✓** against the reference regex (onig for cl100k / GPT-2; the composed onig×3 `Sequence` for deepseek). Reproduce with `cargo bench --bench {cl100k,deepseek,byte_level,threads}`.
+
+### 3.1 cl100k — classify is ~free, the FSM is the cost
+
+| lang | b/tok | classify | FSM scalar | FSM SIMD | onig | pipeline **vs onig** |
+|---|--:|--:|--:|--:|--:|--:|
+| English  |  4.6 | **0.066** | 1.285 | 1.528 | 30.6 | **19.2×** |
+| French   |  5.1 | 0.404 | 1.171 | 1.576 | 29.4 | 14.8× |
+| Russian  | 10.2 | 0.286 | 0.725 | 0.741 | 17.2 | 16.7× |
+| Greek    |  9.9 | 0.294 | 0.802 | 0.879 | 18.0 | 15.4× |
+| Hebrew   |  8.3 | 0.297 | 0.797 | 1.051 | 19.8 | 14.7× |
+| Arabic   |  9.1 | 0.289 | 0.818 | 0.978 | 19.3 | 15.2× |
+| Hindi    |  5.3 | 0.320 | 0.962 | 1.276 | 32.6 | 20.5× |
+| Thai     | 11.8 | 0.319 | 0.648 | 0.711 | 18.3 | 17.8× |
+| Chinese  | 19.3 | 0.537 | 0.568 | **0.474** | 11.7 | 11.5× |
+| Japanese | 25.3 | 0.534 | 0.575 | **0.397** | 11.6 | 12.5× |
+| Korean   |  7.4 | 0.430 | 0.885 | 0.926 | 22.8 | 16.8× |
+
+Reading it: **classify ≪ FSM** — the FSM is 10–20× the classify on dense Latin, so it's where the work is (§2). Pure-ASCII English classifies at **0.066** (the ASCII fast path skips whole chunks); accented Latin (French) and multibyte scripts cost more because their 2-/3-byte chars leave that fast path. **FSM SIMD** helps run-heavy CJK (Japanese `0.575 → 0.397`) but *taxes* dense Latin (English `1.285 → 1.528`) — exactly why it's opt-in, per the run-end duality of §2.2. The full pipeline (classify + FSM) is **11–20× onig**.
+
+### 3.2 GPT-2 (ByteLevel) & deepseek — same story, other regexes
+
+All byte-exact; pipeline vs the reference regex:
+
+- **GPT-2 / ByteLevel**: **15–37×** onig (English 26×, Hindi 37×, Chinese 15×).
+- **deepseek** (a `Sequence` of 3 Isolated splits, collapsed into one FSM): **16–38×** the composed onig×3 (Chinese 38×, Japanese 30×, English 17×).
+
+### 3.3 Thread scaling (cl100k, ~16 MB doc, newline-partitioned seams)
+
+Threads spawned once (`std::thread::scope`, no external dep); each chunk's seam sits after a whitespace-run's last `\n`, so no token crosses it — **byte-exact for cl100k/deepseek** (proven: partitioned spans == sequential). MB/s (bytes×iters / wall):
+
+| threads | English | | Chinese | |
+|--:|--:|--:|--:|--:|
+| 1  |   474 | 1.00× |   818 | 1.00× |
+| 2  |   934 | 1.97× |  1580 | 1.93× |
+| 4  |  1883 | 3.98× |  2998 | 3.66× |
+| 8  |  3739 | 7.90× (99% linear) |  5698 | 6.96× |
+| 14 |  4814 | 10.2× |  7229 | 8.83× |
+
+**~99% linear through the 8 performance cores**; the drop at 14 is the 6 efficiency cores (slower, so "% linear" falls — not contention). A single un-splittable long document uses the overlap-chunk path instead (BPE/pretok locality — see the merge notes).

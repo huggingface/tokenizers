@@ -8,7 +8,7 @@
 //!
 //! Run: cargo bench --bench cl100k
 use fast_split::classify::{Atoms, classify, classify_scalar};
-use fast_split::fsm::{Span, fsm_cl100k, fsm_cl100k_simd};
+use fast_split::fsm::{Span, fsm_cl100k};
 use fancy_regex::Regex as Fancy;
 use onig::Regex;
 use std::hint::black_box;
@@ -63,8 +63,8 @@ fn main() {
     let manifest = env!("CARGO_MANIFEST_DIR");
 
     println!(
-        "{:<10} {:>7} {:>4} {:>5}  {:>8} {:>8} | {:>8} {:>8} | {:>8} {:>8} | {:>7} {:>7}",
-        "lang", "bytes", "b/ch", "b/tok", "clsSIMD", "clsScal", "fsmScal", "fsmSIMD", "onig", "fancy", "vsOnig", "vsFncy"
+        "{:<10} {:>7} {:>4} {:>5}  {:>8} {:>8} | {:>8} | {:>8} {:>8} | {:>7} {:>7}",
+        "lang", "bytes", "b/ch", "b/tok", "clsSIMD", "clsScal", "fsm", "onig", "fancy", "vsOnig", "vsFncy"
     );
 
     for (label, rel) in CORPORA {
@@ -106,17 +106,16 @@ fn main() {
             tsc[n / 2] as usize
         });
         classify::<Atoms>(text, &mut tags);
-        let fsm_scal = ns_per_byte(n, iters, || fsm_cl100k(text, &tags, &mut buf));
-        let fsm_simd = ns_per_byte(n, iters, || fsm_cl100k_simd(text, &tags, &mut buf));
+        let fsm = ns_per_byte(n, iters, || fsm_cl100k(text, &tags, &mut buf));
         let onig_ns = ns_per_byte(n, iters, || re.find_iter(corpus).count());
         let fancy_ns = ns_per_byte(n, iters, || fancy.find_iter(corpus).count());
 
-        let pipe = cls_simd + fsm_simd; // SIMD classify + SIMD fsm — the full pipeline
+        let pipe = cls_simd + fsm; // SIMD classify + scalar fsm — the full pipeline
         println!(
-            "{label:<10} {n:>7} {bpc:>4.1} {btok:>5.1}  {cls_simd:>8.3} {cls_scal:>8.3} | {fsm_scal:>8.3} {fsm_simd:>8.3} | {onig_ns:>8.2} {fancy_ns:>8.2} | {:>6.1}x {:>6.1}x {ok}",
+            "{label:<10} {n:>7} {bpc:>4.1} {btok:>5.1}  {cls_simd:>8.3} {cls_scal:>8.3} | {fsm:>8.3} | {onig_ns:>8.2} {fancy_ns:>8.2} | {:>6.1}x {:>6.1}x {ok}",
             onig_ns / pipe,
             fancy_ns / pipe
         );
     }
-    println!("\n(ns/byte, lower better. pipeline = SIMD classify + SIMD fsm; vs onig / vs fancy on that.)");
+    println!("\n(ns/byte, lower better. pipeline = SIMD classify + scalar fsm; vs onig / vs fancy on that.)");
 }

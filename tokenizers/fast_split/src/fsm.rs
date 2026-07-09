@@ -5,10 +5,10 @@
 //! the count; no `Vec`, no realloc. See `TAG_CLASSIFY_SPEC.md` §4.
 //!
 //! The class family (WhitespaceSplit / Punctuation / Digits / Whitespace / Bert) goes through
-//! [`class_runs_into`]: on aarch64 the NEON movemask boundary-extractor + homogeneous-chunk early-out
-//! ([`class_runs_neon`]), elsewhere the scalar run-end core ([`class_runs_runend`]). The regex-shaped
-//! ones ([`fsm_cl100k`] / [`fsm_deepseek`] / [`fsm_byte_level`]) are scalar jump-tables with SIMD
-//! run-ends. Tests live in `tests/`, throughput benches in `benches/`.
+//! [`class_runs_into`]: on aarch64/wasm the SIMD movemask boundary-extractor + homogeneous-chunk
+//! early-out (in `simd_fsm`), elsewhere the scalar run-end core ([`class_runs_runend`]). The
+//! regex-shaped ones ([`fsm_cl100k`] / [`fsm_deepseek`] / [`fsm_byte_level`]) are scalar jump-tables
+//! with SIMD run-ends (`simd_fsm::run_end_*`). Tests live in `tests/`, benches in `benches/`.
 #![allow(dead_code)] // class_runs_runend is the non-aarch64 core (unused on aarch64)
 
 use crate::classify::{Atom, Atoms, char_len, classify, in_mask, mask};
@@ -24,72 +24,6 @@ fn run_end(tags: &[u8], mut i: usize, end: usize, m: u16) -> usize {
         i += 1;
     }
     i
-}
-
-/// Membership LUT for the SIMD run-end: `lut[tag] = 0xFF` iff `tag` is in `m` OR is a continuation
-/// byte (so a multibyte char's continuation bytes stay inside the run). Built ONCE per FSM call (not
-/// per run) and reused — the per-call rebuild is what made an earlier version slow.
-fn inmask_tbl(m: u16) -> [u8; 16] {
-    let mut a = [0u8; 16];
-    let mut t = 0u8;
-    while t < 16 {
-        if (m >> t) & 1 != 0 || t == Atom::Cont as u8 {
-            a[t as usize] = 0xFF;
-        }
-        t += 1;
-    }
-    a
-}
-
-/// SIMD run-end (NEON): bulk-skip whole 16-tag chunks that stay in-run — `vqtbl1` membership then
-/// `vminvq == 0xFF` (all lanes members) — and scalar-finish the partial tail. `tbl16` is the
-/// precomputed `inmask_tbl(m)`. Same result as `run_end`; wins on run-heavy text.
-#[cfg(target_arch = "aarch64")]
-#[inline]
-#[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn run_end_simd(tags: &[u8], mut i: usize, end: usize, m: u16, tbl16: &[u8; 16]) -> usize {
-    use core::arch::aarch64::*;
-    // Phase 1 — scalar for the first ≤16 bytes. Short runs (the dense English/code case) end here with
-    // ZERO vector ops, so no SIMD tax; only a run that survives all 16 is "long" enough to vectorize.
-    let lim = (i + 16).min(end);
-    while i < lim && (in_mask(tags[i], m) || tags[i] == Atom::Cont as u8) {
-        i += 1;
-    }
-    if i < lim {
-        return i; // run ended within 16 → done
-    }
-    // Phase 2 — long run: skip 16 in-run tags at a time (vqtbl1 membership, vminvq == 0xFF = all member).
-    let t = vld1q_u8(tbl16.as_ptr());
-    while i + 16 <= end {
-        if vminvq_u8(vqtbl1q_u8(t, vld1q_u8(tags.as_ptr().add(i)))) == 0xFF {
-            i += 16;
-        } else {
-            break;
-        }
-    }
-    // Phase 3 — scalar tail.
-    while i < end && (in_mask(tags[i], m) || tags[i] == Atom::Cont as u8) {
-        i += 1;
-    }
-    i
-}
-
-/// Pick SIMD or scalar run-end at monomorphization time. `lut` is the precomputed membership LUT for
-/// `m`; only the SIMD path reads it (the scalar path ignores it).
-#[inline(always)]
-fn run_end_sel<const SIMD: bool>(
-    tags: &[u8],
-    i: usize,
-    end: usize,
-    m: u16,
-    lut: &[u8; 16],
-) -> usize {
-    #[cfg(target_arch = "aarch64")]
-    if SIMD {
-        return unsafe { run_end_simd(tags, i, end, m, lut) };
-    }
-    let _ = (SIMD, lut);
-    run_end(tags, i, end, m)
 }
 
 /// A token span: byte offsets `[start, end)` into the input.
@@ -111,29 +45,35 @@ pub fn class_runs_into<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>(
 ) -> usize {
     #[cfg(target_arch = "aarch64")]
     {
-        class_runs_neon::<DROP, ISOLATE, KEEP_A>(text, tags, out)
+        crate::simd_fsm::class_runs_neon::<DROP, ISOLATE, KEEP_A>(text, tags, out)
     }
-    #[cfg(not(target_arch = "aarch64"))]
+    #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
+    {
+        crate::simd_fsm::class_runs_wasm::<DROP, ISOLATE, KEEP_A>(text, tags, out)
+    }
+    #[cfg(not(any(
+        target_arch = "aarch64",
+        all(target_arch = "wasm32", target_feature = "simd128")
+    )))]
     {
         class_runs_runend::<DROP, ISOLATE, KEEP_A>(text, tags, out)
     }
 }
 
-/// Run-end core: skip each homogeneous run with `run_end` (bulk skip; NEON `vqtbl` on aarch64). Wins on
-/// long runs (Digits/Punct); the portable path and a test oracle. No `Vec` — writes into `out`.
+/// Scalar run-end core: skip each homogeneous run with the scalar `run_end`. The portable
+/// (non-aarch64/wasm) class-family path AND the byte-exact oracle for the SIMD kernels in `simd_fsm`.
 pub fn class_runs_runend<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>(
     text: &[u8],
     tags: &[u8],
     out: &mut [Span],
 ) -> usize {
     let mb: u16 = !(DROP | ISOLATE | KEEP_A); // keep-B = everything else (Cont rides along in run_end)
-    let (lut_d, lut_a, lut_b) = (inmask_tbl(DROP), inmask_tbl(KEEP_A), inmask_tbl(mb));
     let n = text.len();
     let (mut w, mut i) = (0usize, 0usize);
     while i < n {
         let t = tags[i];
         if in_mask(t, DROP) {
-            i = run_end_sel::<true>(tags, i, n, DROP, &lut_d); // skip the whole drop run at once
+            i = run_end(tags, i, n, DROP); // skip the whole drop run at once
         } else if in_mask(t, ISOLATE) {
             let s = i;
             i += char_len(text[i]);
@@ -142,9 +82,9 @@ pub fn class_runs_runend<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>
         } else {
             let s = i;
             i = if in_mask(t, KEEP_A) {
-                run_end_sel::<true>(tags, i, n, KEEP_A, &lut_a)
+                run_end(tags, i, n, KEEP_A)
             } else {
-                run_end_sel::<true>(tags, i, n, mb, &lut_b)
+                run_end(tags, i, n, mb)
             };
             out[w] = (s as u32, i as u32);
             w += 1;
@@ -153,145 +93,14 @@ pub fn class_runs_runend<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>
     w
 }
 
-/// NEON movemask boundary-extract: per 16 tags → class via `vqtbl1` (Cont→`0xFF`), fill Cont lanes with
-/// the left neighbour's class (≤3 iters = max continuation bytes), then boundary = class-change | isolate
-/// lead, restricted to leads → `movemask` → iterate set bits, emitting one span per non-`DROP` segment
-/// into `out`. Finds every boundary in a 16-chunk in parallel, so short-run text (English words) isn't
-/// per-char. Open segment + fill/prev carries cross chunks; a scalar tail finishes the < 16-byte remainder.
-#[cfg(target_arch = "aarch64")]
-fn class_runs_neon<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>(
-    text: &[u8],
-    tags: &[u8],
-    out: &mut [Span],
-) -> usize {
-    use core::arch::aarch64::*;
-    const CONT: u8 = Atom::Cont as u8;
-    // class LUT: tag → 0 drop / 1 isolate / 2 keep-A / 3 keep-B; Cont → 0xFF (fill sentinel).
-    let mut lut = [3u8; 16];
-    let mut t = 0u8;
-    while t < 16 {
-        lut[t as usize] = if t == CONT {
-            0xFF
-        } else if (DROP >> t) & 1 != 0 {
-            0
-        } else if (ISOLATE >> t) & 1 != 0 {
-            1
-        } else if (KEEP_A >> t) & 1 != 0 {
-            2
-        } else {
-            3
-        };
-        t += 1;
-    }
-    const POW: [u8; 16] = [1, 2, 4, 8, 16, 32, 64, 128, 1, 2, 4, 8, 16, 32, 64, 128];
-    let n = text.len();
-    let (mut w, mut i) = (0usize, 0usize);
-    let (mut seg_start, mut seg_class) = (0usize, 0u8); // seg_class 0 (drop) → first close emits nothing
-    let mut carry: u8 = 0xFE; // class "before" pos 0 — impossible → forces a boundary at 0
-    let mut cls_arr = [0u8; 16];
-    unsafe {
-        let lutv = vld1q_u8(lut.as_ptr());
-        let powv = vld1q_u8(POW.as_ptr());
-        let contv = vdupq_n_u8(0xFF);
-        let onev = vdupq_n_u8(1);
-        while i + 16 <= n {
-            let v = vld1q_u8(tags.as_ptr().add(i));
-            let raw = vqtbl1q_u8(lutv, v); // class per lane, Cont → 0xFF
-            // fast path (long runs): whole chunk is the current segment's class or continuation → no
-            // boundary; extend and skip all the fill/boundary work. Recovers the run-end bulk-skip for
-            // Digits/Punct/CJK. Not for isolate segments (those need a boundary per char).
-            if seg_class != 1 {
-                let ok = vorrq_u8(vceqq_u8(raw, vdupq_n_u8(seg_class)), vceqq_u8(raw, contv));
-                if vminvq_u8(ok) == 0xFF {
-                    carry = seg_class;
-                    i += 16;
-                    continue;
-                }
-            }
-            // fill Cont lanes with the left neighbour's class (≤3 iters covers a 4-byte char's 3 conts)
-            let mut cls = raw;
-            let mut k = 0;
-            while k < 3 {
-                let shifted = vextq_u8::<15>(vdupq_n_u8(carry), cls); // [carry, cls0..cls14]
-                cls = vbslq_u8(vceqq_u8(cls, contv), shifted, cls);
-                k += 1;
-            }
-            let prev = vextq_u8::<15>(vdupq_n_u8(carry), cls);
-            let changed = vmvnq_u8(vceqq_u8(cls, prev)); // class changed vs left neighbour
-            let is_iso = vceqq_u8(cls, onev);
-            let is_lead = vmvnq_u8(vceqq_u8(raw, contv)); // raw != 0xFF (a char lead)
-            let bnd = vandq_u8(vorrq_u8(changed, vandq_u8(is_iso, is_lead)), is_lead);
-            let bits = vandq_u8(bnd, powv);
-            let mm = (vaddv_u8(vget_low_u8(bits)) as u16)
-                | ((vaddv_u8(vget_high_u8(bits)) as u16) << 8);
-            vst1q_u8(cls_arr.as_mut_ptr(), cls);
-            let mut m = mm;
-            while m != 0 {
-                let j = m.trailing_zeros() as usize;
-                let pos = i + j;
-                if seg_class != 0 {
-                    out[w] = (seg_start as u32, pos as u32);
-                    w += 1;
-                }
-                seg_start = pos;
-                seg_class = cls_arr[j];
-                m &= m - 1;
-            }
-            carry = cls_arr[15];
-            i += 16;
-        }
-    }
-    // scalar tail (< 16 bytes; MAY start mid-char — the chunk loop steps by 16, not by char): per-char
-    // boundary, continuing the open segment. A continuation byte stays in the current segment; advance
-    // ONE byte (`char_len` is only valid on a lead, so never call it on a cont).
-    while i < n {
-        let s = i;
-        let r = tags[s];
-        if r == CONT {
-            i += 1;
-            continue;
-        }
-        let c = if in_mask(r, DROP) {
-            0
-        } else if in_mask(r, ISOLATE) {
-            1
-        } else if in_mask(r, KEEP_A) {
-            2
-        } else {
-            3
-        };
-        i += char_len(text[s]);
-        if c != seg_class || c == 1 || seg_class == 1 {
-            if seg_class != 0 {
-                out[w] = (seg_start as u32, s as u32);
-                w += 1;
-            }
-            seg_start = s;
-            seg_class = c;
-        }
-    }
-    if seg_class != 0 {
-        out[w] = (seg_start as u32, n as u32);
-        w += 1;
-    }
-    w
-}
-
 /// cl100k pretokenization (7 rules, segmented `{1,3}` cap + whitespace-tail). Peeks `text` for the
 /// ASCII contraction-suffix literals. Scalar run-ends.
 /// ┌── OWNER: shared (scalar) ──┐
 pub fn fsm_cl100k(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
-    cl100k::<false>(text, tags, out)
+    cl100k(text, tags, out)
 }
 
-/// Same, with SIMD (NEON) run-ends (`run_end_simd`) for the letter / symbol / whitespace runs — wins
-/// on run-heavy text. Byte-identical output to `fsm_cl100k`. On non-aarch64 the run-end falls back to
-/// scalar (so this always exists; no `cfg` at call sites).
-pub fn fsm_cl100k_simd(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
-    cl100k::<true>(text, tags, out)
-}
-
-fn cl100k<const SIMD: bool>(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
+fn cl100k(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
     // Leading-atom values, as `const` so the `match` below is a dense jump table (not an if-cascade):
     // the dispatch is O(1) and a token never pays for a rule it can't start (e.g. non-number tokens
     // never test the number rule — which is what the POC's const-gating removed by hand; here it's free).
@@ -308,18 +117,12 @@ fn cl100k<const SIMD: bool>(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize
     const SYM: u8 = Atom::SymOther as u8;
     const NMO: u8 = Atom::NumericOther as u8;
     const CTL: u8 = Atom::Control as u8;
-    // membership LUTs for the SIMD run-ends, built once (scalar path ignores them).
-    let (lut_l, lut_o, lut_w) = (
-        inmask_tbl(mask::LETTER),
-        inmask_tbl(mask::NOT_WS_L_N),
-        inmask_tbl(mask::WS),
-    );
     let end = text.len();
-    let letters = |a: usize| run_end_sel::<SIMD>(tags, a, end, mask::LETTER, &lut_l);
+    let letters = |a: usize| run_end(tags, a, end, mask::LETTER);
     // rule 4 body: `[^\s\p{L}\p{N}]+[\r\n]*` from `sp0` (any leading space already consumed). Returns
     // the run end, or `sp0` if there is no "other" run there (caller then treats it as whitespace).
     let other = |sp0: usize| -> usize {
-        let mut p = run_end_sel::<SIMD>(tags, sp0, end, mask::NOT_WS_L_N, &lut_o);
+        let mut p = run_end(tags, sp0, end, mask::NOT_WS_L_N);
         if p > sp0 {
             while p < end && tags[p] == NLN {
                 p += char_len(text[p]);
@@ -329,7 +132,7 @@ fn cl100k<const SIMD: bool>(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize
     };
     // rules 5-7: `\s*[\r\n]` | `\s+(?!\S)` | `\s+` — end of the whitespace token starting at `i`.
     let ws = |i: usize| -> usize {
-        let re = run_end_sel::<SIMD>(tags, i, end, mask::WS, &lut_w);
+        let re = run_end(tags, i, end, mask::WS);
         if let Some(r) = text[i..re].iter().rposition(|&x| x == 0x0A || x == 0x0D) {
             i + r + 1 // rule 5: up to & including the last newline
         } else if re == end {
@@ -771,7 +574,10 @@ impl Cl100k {
     #[inline]
     pub fn pre_tokenize(&self, text: &[u8], tags: &mut [u8], out: &mut [Span]) -> usize {
         classify::<Atoms>(text, tags);
-        fsm_cl100k_simd(text, tags, out)
+        // scalar run-ends are the better default: cl100k's letter/ws runs are short on Latin/code (the
+        // common case), where the SIMD run-end's setup loses (~0.8×); it only wins on long CJK runs.
+        // Use `fsm_cl100k_simd` directly for CJK-dominant workloads. See `benches/class_runs.rs`.
+        fsm_cl100k(text, tags, out)
     }
 }
 
