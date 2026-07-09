@@ -761,7 +761,6 @@ impl PipelineBPE {
     }
 
     fn merge_word(&self, sequence: &str) -> Word {
-        let mut scratch = [0u8; 4];
         let mut word = match &self.atoms {
             Atoms::Bytes { byte_to_id } => {
                 let mut word = Word::with_capacity(sequence.len());
@@ -776,10 +775,14 @@ impl PipelineBPE {
                 fuse_unk,
             } => {
                 let mut word = Word::with_capacity(sequence.len());
-                for c in sequence.chars() {
-                    let char_str = c.encode_utf8(&mut scratch);
+
+                for char_str in sequence
+                    .char_indices()
+                    .map(|(i, c)| &sequence[i..i + c.len_utf8()])
+                {
+                    let char_len = char_str.len();
                     if let Some(char_id) = self.vocab.token_to_id(char_str) {
-                        word.add(char_id, c.len_utf8());
+                        word.add(char_id, char_len);
                     } else {
                         if let Some(fallback_lookup) = byte_fallback {
                             for &b in char_str.as_bytes() {
@@ -791,12 +794,12 @@ impl PipelineBPE {
                             if *fuse_unk {
                                 if let Some(last) = word.last_mut() {
                                     if last.id() == *unk_id {
-                                        last.add_len(c.len_utf8());
+                                        last.add_len(char_len);
                                         continue;
                                     }
                                 }
                             }
-                            word.add(*unk_id, c.len_utf8());
+                            word.add(*unk_id, char_len);
                         }
                     }
                 }
