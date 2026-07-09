@@ -40,6 +40,10 @@ name = "deepseek"
 harness = false
 
 [[bench]]
+name = "o200k"
+harness = false
+
+[[bench]]
 name = "byte_level"
 harness = false
 
