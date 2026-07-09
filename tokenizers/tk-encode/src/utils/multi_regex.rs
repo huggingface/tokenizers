@@ -264,7 +264,12 @@ mod tests {
         let cap2 = CL100K.replace(r"\p{N}{1,3}", r"\p{N}{1,2}");
         assert_eq!(gpt_fsm(&cap2), Some(GptFsm::Cl100k { digit_cap: 2 }));
         let unbounded = CL100K.replace(r"\p{N}{1,3}", r"\p{N}+");
-        assert_eq!(gpt_fsm(&unbounded), Some(GptFsm::Cl100k { digit_cap: usize::MAX }));
+        assert_eq!(
+            gpt_fsm(&unbounded),
+            Some(GptFsm::Cl100k {
+                digit_cap: usize::MAX
+            })
+        );
         // Out of family → None (fancy-regex fallback): a foreign digit rule, and a totally unrelated regex.
         assert_eq!(gpt_fsm(&CL100K.replace(r"\p{N}{1,3}", r"\p{N}{2,4}")), None);
         assert_eq!(gpt_fsm(r"\w+|\s+"), None);
