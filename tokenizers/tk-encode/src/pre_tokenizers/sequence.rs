@@ -59,27 +59,6 @@ impl PipelineSequence {
     }
 }
 
-impl AsRef<[PipelinePreTokenizer]> for PipelineSequence {
-    fn as_ref(&self) -> &[PipelinePreTokenizer] {
-        &self.pre_tokenizers
-    }
-}
-
-impl AsMut<[PipelinePreTokenizer]> for PipelineSequence {
-    fn as_mut(&mut self) -> &mut [PipelinePreTokenizer] {
-        &mut self.pre_tokenizers
-    }
-}
-
-impl IntoIterator for PipelineSequence {
-    type Item = PipelinePreTokenizer;
-    type IntoIter = std::vec::IntoIter<Self::Item>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.pre_tokenizers.into_iter()
-    }
-}
-
 impl TryFrom<Sequence> for PipelineSequence {
     type Error = crate::Error;
     fn try_from(value: Sequence) -> Result<Self> {
@@ -264,9 +243,9 @@ mod tests {
         // The Llama-3 / DeepSeek archetype: Sequence[Split(regex), ByteLevel(use_regex=false)].
         // Pipeline ranges must match the legacy oracle's Original-referential offsets, and the
         // byte-level transform of each range must match the legacy split string.
-        use crate::pre_tokenizers::byte_level::GPT2_REGEX_STR;
         use crate::pre_tokenizers::split::{Split, SplitPattern};
         use crate::utils::byte_level::BYTES_CHAR_LOOKUP;
+        use crate::utils::byte_level::GPT2_REGEX_STR;
         use crate::SplitDelimiterBehavior;
 
         let seq = Sequence::new(vec![

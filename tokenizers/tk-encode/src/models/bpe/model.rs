@@ -681,18 +681,13 @@ pub struct PipelineBPE {
     ignore_merges: bool,
 }
 
-#[derive(Debug, Clone, Copy)]
-struct UnkToken {
-    id: u32,
-}
-
 enum Atoms {
     Bytes {
         byte_to_id: [u32; 256],
     },
     Chars {
         byte_fallback: Option<[u32; 256]>,
-        unk_token: Option<UnkToken>,
+        unk_token: Option<u32>,
         fuse_unk: bool,
     },
 }
@@ -713,6 +708,8 @@ impl PipelineBPE {
             merges,
             ignore_merges,
             byte_fallback,
+            unk_token,
+            fuse_unk,
             ..
         } = model;
 
@@ -726,11 +723,11 @@ impl PipelineBPE {
             }
             (vocab, Atoms::Bytes { byte_to_id })
         } else {
-            let unk_token = if let Some(unk_str) = model.unk_token {
+            let unk_token = if let Some(unk_str) = unk_token {
                 let token_id = vocab
                     .token_to_id(&unk_str)
                     .ok_or_else(|| Error::UnkTokenOutOfVocabulary(unk_str.clone()))?;
-                Some(UnkToken { id: token_id })
+                Some(token_id)
             } else {
                 None
             };
@@ -749,7 +746,7 @@ impl PipelineBPE {
             (
                 vocab,
                 Atoms::Chars {
-                    fuse_unk: model.fuse_unk,
+                    fuse_unk,
                     unk_token,
                     byte_fallback: fallback_lookup,
                 },
@@ -763,9 +760,9 @@ impl PipelineBPE {
         })
     }
 
-    fn merge_word(&self, sequence: &str) -> Result<Word> {
+    fn merge_word(&self, sequence: &str) -> Word {
         let mut scratch = [0u8; 4];
-        let mut word = match self.atoms {
+        let mut word = match &self.atoms {
             Atoms::Bytes { byte_to_id } => {
                 let mut word = Word::with_capacity(sequence.len());
                 for &b in sequence.as_bytes() {
@@ -778,7 +775,7 @@ impl PipelineBPE {
                 unk_token,
                 fuse_unk,
             } => {
-                let mut word = Word::with_capacity(sequence.chars().count());
+                let mut word = Word::with_capacity(sequence.len());
                 for c in sequence.chars() {
                     let char_str = c.encode_utf8(&mut scratch);
                     if let Some(char_id) = self.vocab.token_to_id(char_str) {
@@ -790,16 +787,16 @@ impl PipelineBPE {
                             }
                             continue;
                         }
-                        if let Some(UnkToken { id: unk_id }) = unk_token {
-                            if fuse_unk {
+                        if let Some(unk_id) = unk_token {
+                            if *fuse_unk {
                                 if let Some(last) = word.last_mut() {
-                                    if last.id() == unk_id {
+                                    if last.id() == *unk_id {
                                         last.add_len(c.len_utf8());
                                         continue;
                                     }
                                 }
                             }
-                            word.add(unk_id, c.len_utf8());
+                            word.add(*unk_id, c.len_utf8());
                         }
                     }
                 }
@@ -807,7 +804,7 @@ impl PipelineBPE {
             }
         };
         word.merge_all(&self.merges, None);
-        Ok(word)
+        word
     }
 }
 
@@ -825,7 +822,7 @@ impl pipeline::Model for PipelineBPE {
         }
 
         // todo: use thread-local cache
-        let word = self.merge_word(sequence)?;
+        let word = self.merge_word(sequence);
         output.extend(word.get_chars_iter().map(|id| PipelineToken { id }));
         Ok(())
     }

@@ -7,13 +7,13 @@ use itertools::Itertools;
 use crate::added_vocabulary::bucket_added_vocabulary::{
     AddedToken as BucketAddedToken, AddedVocabulary as BucketAddedVocabulary,
 };
-use crate::decoders::byte_level::GPT2_REGEX_STR;
 use crate::models::bpe::PipelineBPE;
 use crate::models::unigram::Unigram;
 use crate::models::wordlevel::WordLevel;
 use crate::models::wordpiece::WordPiece;
 use crate::pre_tokenizers::sequence::PipelineSequence;
 use crate::pre_tokenizers::split::SplitPattern;
+use crate::utils::byte_level::GPT2_REGEX_STR;
 use crate::SplitDelimiterBehavior::Isolated;
 use crate::{
     normalizers::NormalizerWrapper,
@@ -109,9 +109,9 @@ impl TryFrom<PreTokenizerWrapper> for PipelinePreTokenizer {
             PreTokenizerWrapper::Digits(p) => Ok(PipelinePreTokenizer::Digits(p)),
             PreTokenizerWrapper::FixedLength(p) => Ok(PipelinePreTokenizer::FixedLength(p)),
             PreTokenizerWrapper::Punctuation(p) => Ok(PipelinePreTokenizer::Punctuation(p)),
-            PreTokenizerWrapper::Split(p) => Ok(PipelinePreTokenizer::Split(p.clone())),
+            PreTokenizerWrapper::Split(p) => Ok(PipelinePreTokenizer::Split(p)),
             PreTokenizerWrapper::UnicodeScripts(p) => Ok(PipelinePreTokenizer::UnicodeScripts(p)),
-            PreTokenizerWrapper::Whitespace(p) => Ok(PipelinePreTokenizer::Whitespace(p.clone())),
+            PreTokenizerWrapper::Whitespace(p) => Ok(PipelinePreTokenizer::Whitespace(p)),
             PreTokenizerWrapper::WhitespaceSplit(p) => Ok(PipelinePreTokenizer::WhitespaceSplit(p)),
             PreTokenizerWrapper::ByteLevel(byte_level) => {
                 if byte_level.add_prefix_space {
@@ -686,17 +686,24 @@ pub enum PipelineModel {
 
 impl Model for PipelineModel {
     fn tokenize_pipeline(&self, sequence: &str, output: &mut Vec<PipelineToken>) -> Result<()> {
-        if let PipelineModel::BPE(model) = self {
-            return model.tokenize_pipeline(sequence, output);
+        match self {
+            Self::BPE(model) => model.tokenize_pipeline(sequence, output),
+            Self::Unigram(model) => {
+                let tokens = model.tokenize(sequence)?;
+                output.extend(tokens.iter().map(|&Token { id, .. }| PipelineToken { id }));
+                Ok(())
+            }
+            Self::WordLevel(model) => {
+                let tokens = model.tokenize(sequence)?;
+                output.extend(tokens.iter().map(|&Token { id, .. }| PipelineToken { id }));
+                Ok(())
+            }
+            Self::WordPiece(model) => {
+                let tokens = model.tokenize(sequence)?;
+                output.extend(tokens.iter().map(|&Token { id, .. }| PipelineToken { id }));
+                Ok(())
+            }
         }
-        let tokens = match self {
-            Self::BPE(_) => unreachable!(),
-            Self::Unigram(model) => model.tokenize(sequence),
-            Self::WordLevel(model) => model.tokenize(sequence),
-            Self::WordPiece(model) => model.tokenize(sequence),
-        }?;
-        output.extend(tokens.iter().map(|&Token { id, .. }| PipelineToken { id }));
-        Ok(())
     }
 }
 

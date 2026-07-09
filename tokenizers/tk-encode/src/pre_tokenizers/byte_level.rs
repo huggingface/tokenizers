@@ -1,6 +1,8 @@
 use std::sync::LazyLock;
 
-use crate::utils::byte_level::{byte_level_transform, BYTES_CHAR_LOOKUP, CHAR_BYTES_LOOKUP};
+use crate::utils::byte_level::{
+    byte_level_transform, BYTES_CHAR_LOOKUP, CHAR_BYTES_LOOKUP, GPT2_REGEX_STR,
+};
 use crate::utils::SysRegex;
 use serde::{Deserialize, Serialize};
 
@@ -9,9 +11,6 @@ use crate::tokenizer::{
     SplitDelimiterBehavior,
 };
 use crate::utils::macro_rules_attribute;
-
-pub(crate) const GPT2_REGEX_STR: &str =
-    r"'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+";
 
 /// Regex that matches exactly one token.
 /// See https://github.com/openai/gpt-2/blob/master/src/encoder.py#L98

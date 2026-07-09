@@ -2,6 +2,9 @@ use crate::vocab_store::VocabStore;
 use ahash::AHashMap;
 use std::sync::LazyLock;
 
+pub(crate) const GPT2_REGEX_STR: &str =
+    r"'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+";
+
 /// Maps each byte to its GPT-2 byte-level unicode character, indexed by the byte value.
 ///
 /// This is the reversible bytes-to-unicode scheme from GPT-2's BPE encoder
