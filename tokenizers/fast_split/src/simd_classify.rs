@@ -1,4 +1,3 @@
-
 /// Hot path at each byte-width we compute min/max values which gives us an index to one of the table; the fallback
 /// loops the SAME tables over the min..max range. This happens when we have  mixed scripts.
 pub struct Tables {
@@ -46,15 +45,27 @@ impl Tables {
     pub fn classify_char(&self, text: &[u8], i: usize) -> u8 {
         let b0 = text[i];
         if b0 < 0x80 {
-            return if b0 < 64 { self.ascii_lo[b0 as usize] } else { self.ascii_hi[(b0 - 64) as usize] };
+            return if b0 < 64 {
+                self.ascii_lo[b0 as usize]
+            } else {
+                self.ascii_hi[(b0 - 64) as usize]
+            };
         }
         if b0 < 0xE0 {
+            // 110xxzz 10yyyyyy -> xxx is the group, zz is the sub group, yyyyyy the continuation
             // 2-byte: group_tables[(lead>>2)&7][lead&3][cont&0x3F]
             let cont = text[i + 1] & 0x3F;
             return self.group_tables[((b0 >> 2) & 7) as usize][(b0 & 3) as usize][cont as usize];
         }
         if b0 < 0xF0 {
-            // 3-byte: block = (lead-0xE0)*32 + ((b1>>1)&0x1F); uniform tag, else lo/hi by b1 parity
+            // 1110xxx 10xxxxxx 10yyyyyy-> xxxxxxxxx the 9 lead bits give the group, yyyyyy the sub
+            // group. The 9 bit give 0..511 index. If its uniform, that will give a tag. If not,
+            // the value stored in fast3_uni will be 0xFF and we need to index fast3_slot with the
+            // index. `fast3_slot[index]` gives where to look in `fast3_mixed`'s first table, the
+            // second one is indexed by 0..63 the continuation bytes. yyyyyy.
+            // Example:
+            // 3-byte: block = (lead-0xE0)*32 + ((b1>>1)&0x1F)
+            // if fast3_uni[block] == 0xFF : tag = fast3_mixed[fast3_slot[block]][yyyyyy]
             let b1 = text[i + 1];
             let c = (text[i + 2] & 0x3F) as usize;
             let block = (b0 - 0xE0) as usize * 32 + ((b1 >> 1) & 0x1F) as usize;
@@ -83,12 +94,13 @@ impl Tables {
 // ================================================================================================
 // The smallest load we can do in neon is vld1q_u8, which handles 16bytes.
 // We define primitives to be able to index into 4 x 16 byte vectors.
-// The vqtbl4q_u8 allows for a table lookup
+// The vqtbl4q_u8 allows for that exactly.
 // ================================================================================================
 
 #[cfg(target_arch = "aarch64")]
 #[inline]
 #[allow(unsafe_op_in_unsafe_fn)]
+/// This is a handle to simulate a 256 lookup using 4 x 64 lookups.
 unsafe fn tbl256(
     t: &[[u8; 64]; 4],
     idx: core::arch::aarch64::uint8x16_t,
@@ -108,6 +120,10 @@ unsafe fn tbl256(
 #[cfg(target_arch = "aarch64")]
 #[inline]
 #[allow(unsafe_op_in_unsafe_fn)]
+/// This is using the substraction trick to retrive the tag of any ascii chars.
+/// We look in the first low table, any u8 value that is <64 will give 0. So in the first table
+/// only the bytes whose value is < 64 will give a non 0 tag. In the second lookup we shift all
+/// byte value by 64 so that all bytes>64 can now properly index the 64 entry high table.
 unsafe fn ascii_tbl(
     v: core::arch::aarch64::uint8x16_t,
     lo: &[u8; 64],
@@ -167,6 +183,8 @@ unsafe fn any(mask: core::arch::aarch64::uint8x16_t) -> bool {
 }
 
 #[inline]
+/// This is just for any char lenght, decode a utf8 to its actual value.
+/// TLDR removing the utf8 headers to get the unicode.
 fn decode(t: &[u8], i: usize) -> u32 {
     let b = t[i] as u32;
     match super::classify::char_len(t[i]) {
@@ -200,10 +218,13 @@ pub unsafe fn classify_neon<S: super::classify::TagScheme>(text: &[u8], tags: &m
     let mut mb_seen = false;
     let mut i = 0;
     while i + 32 <= n {
+        // 1. load the first byte in each lane. 16 lanes, each now own 1 byte. All operations are
+        //    run in parallel.
         let b0 = vld1q_u8(text.as_ptr().add(i));
 
-        // ── ASCII fast path: whole chunk < 0x80 → one table, skip everything else ──
+        // ASCII fast path: whole chunk < 0x80 → one table, skip everything else
         if vmaxvq_u8(b0) < 0x80 {
+            // vst1q_u8 stores the value from ascii_tbl into tags.
             vst1q_u8(
                 tags.as_mut_ptr().add(i),
                 ascii_tbl(b0, &tables.ascii_lo, &tables.ascii_hi),
@@ -212,10 +233,17 @@ pub unsafe fn classify_neon<S: super::classify::TagScheme>(text: &[u8], tags: &m
             continue;
         }
 
+        // Not all ascii, so let's default the tags by computing ASCII.
+        let mut out = ascii_tbl(b0, &tables.ascii_lo, &tables.ascii_hi); // base (ASCII lanes correct; MB overwritten)
+
+        // Let's load the next chunk of 16 bytes
         let next = vld1q_u8(text.as_ptr().add(i + 16));
+        // vext::<N>  does: cat(bo[N..], next[..N])
         let b1 = vextq_u8::<1>(b0, next); // byte at lane+1
         let b2 = vextq_u8::<2>(b0, next); // byte at lane+2
-        let mut out = ascii_tbl(b0, &tables.ascii_lo, &tables.ascii_hi); // base (ASCII lanes correct; MB overwritten)
+        // each lane (b0[i]), a lane is `i`, can now access the next byte's value.
+
+        // We'll construct the resolved mask
         let mut resolved = vdupq_n_u8(0); // lanes a multibyte handler has claimed
 
         // ── 2-byte (C2..DF): loop the lead-GROUP range; single group ⇒ 1 iteration ──

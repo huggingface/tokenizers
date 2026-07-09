@@ -27,8 +27,8 @@ path = "src/lib.rs"
 [dependencies]
 thiserror = "2"
 memchr = "2.8.2"
-[build-dependencies]
-bitmap_gen = { path = "../bitmap_gen" }
+# NOTE: classify tables live in src/atom_tables.rs (committed, generated). Regenerate after any atom
+# scheme change with `cargo run -p bitmap_gen`. No build script / build-dep — fast_split builds clean.
 [dev-dependencies]
 unicode-segmentation = "1.11"
 unicode-normalization-alignments = "0.1"
