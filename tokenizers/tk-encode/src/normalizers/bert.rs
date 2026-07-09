@@ -5,11 +5,11 @@ use crate::{
     tokenizer::{NormalizedString, Normalizer, Result},
 };
 
+use super::icu::ICU_NFD;
 use super::utils::lowercases_to_self;
 
 use serde::{Deserialize, Serialize};
 use unicode_categories::UnicodeCategories;
-use unicode_normalization::{is_nfd_quick, IsNormalized, UnicodeNormalization};
 
 /// Checks whether a character is whitespace
 fn is_whitespace(c: char) -> bool {
@@ -138,7 +138,7 @@ impl BertNormalizer {
     }
 
     fn is_noop(&self, input: &str, strip_accents: bool) -> bool {
-        if strip_accents && !matches!(is_nfd_quick(input.chars()), IsNormalized::Yes) {
+        if strip_accents && !ICU_NFD.is_normalized(input) {
             return false;
         }
         let changes = |c: char| {
@@ -196,18 +196,22 @@ impl pipeline::Normalizer for BertNormalizer {
             })
             .flatten();
 
-        // `.nfd()` changes the iterator's type, so the stage toggles can't be
+        // NFD changes the iterator's type, so the stage toggles can't be
         // plain `if`s mid-chain: each config combination gets its own
         // statically-typed chain, all funneled into one pre-sized String.
         let mut normalized = String::with_capacity(input.len());
         match (strip_accents, self.lowercase) {
             (true, true) => normalized.extend(
-                cleaned
-                    .nfd()
+                ICU_NFD
+                    .normalize_iter(cleaned)
                     .filter(|c| !c.is_mark_nonspacing())
                     .flat_map(char::to_lowercase),
             ),
-            (true, false) => normalized.extend(cleaned.nfd().filter(|c| !c.is_mark_nonspacing())),
+            (true, false) => normalized.extend(
+                ICU_NFD
+                    .normalize_iter(cleaned)
+                    .filter(|c| !c.is_mark_nonspacing()),
+            ),
             (false, true) => normalized.extend(cleaned.flat_map(char::to_lowercase)),
             (false, false) => normalized.extend(cleaned),
         }

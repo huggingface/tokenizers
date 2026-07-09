@@ -4,9 +4,7 @@ use crate::pipeline;
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 use crate::utils::macro_rules_attribute;
 
-use unicode_normalization::{
-    is_nfc_quick, is_nfd_quick, is_nfkc_quick, is_nfkd_quick, IsNormalized, UnicodeNormalization,
-};
+use super::icu::{ICU_NFC, ICU_NFD, ICU_NFKC, ICU_NFKD};
 
 #[derive(Default, Copy, Clone, Debug)]
 #[macro_rules_attribute(impl_serde_type!)]
@@ -19,11 +17,7 @@ impl Normalizer for NFD {
 }
 impl pipeline::Normalizer for NFD {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
-        if let IsNormalized::Yes = is_nfd_quick(input.chars()) {
-            Ok(input.into())
-        } else {
-            Ok(Cow::Owned(input.nfd().collect()))
-        }
+        Ok(ICU_NFD.normalize(input))
     }
 }
 
@@ -38,11 +32,7 @@ impl Normalizer for NFKD {
 }
 impl pipeline::Normalizer for NFKD {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
-        if let IsNormalized::Yes = is_nfkd_quick(input.chars()) {
-            Ok(input.into())
-        } else {
-            Ok(Cow::Owned(input.nfkd().collect()))
-        }
+        Ok(ICU_NFKD.normalize(input))
     }
 }
 
@@ -57,11 +47,7 @@ impl Normalizer for NFC {
 }
 impl pipeline::Normalizer for NFC {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
-        if let IsNormalized::Yes = is_nfc_quick(input.chars()) {
-            Ok(input.into())
-        } else {
-            Ok(Cow::Owned(input.nfc().collect()))
-        }
+        Ok(ICU_NFC.normalize(input))
     }
 }
 
@@ -76,11 +62,7 @@ impl Normalizer for NFKC {
 }
 impl pipeline::Normalizer for NFKC {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
-        if let IsNormalized::Yes = is_nfkc_quick(input.chars()) {
-            Ok(input.into())
-        } else {
-            Ok(Cow::Owned(input.nfkc().collect()))
-        }
+        Ok(ICU_NFKC.normalize(input))
     }
 }
 

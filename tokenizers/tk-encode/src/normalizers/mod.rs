@@ -1,5 +1,6 @@
 pub mod bert;
 pub mod byte_level;
+pub(crate) mod icu;
 pub mod precompiled;
 pub mod prepend;
 pub mod replace;
