@@ -156,7 +156,7 @@ fn cl100k(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
     while i < end {
         let start = i;
         let b = text[i];
-        match tags[i] {
+        match tags[i] & 0x0F {
             // rule 2: `\p{L}+`
             LET => i = letters(i),
             // rule 3: `\p{N}{1,3}`
@@ -171,7 +171,7 @@ fn cl100k(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
             // Space: rule 2 (space prefix + `\p{L}+`) | rule 4 (` ` + "other") | rules 5-7
             SPC => {
                 let a = i + 1; // Space is ASCII (0x20)
-                i = if a < end && tags[a] == LET {
+                i = if a < end && (tags[a] & 0x0F) == LET {
                     letters(a)
                 } else {
                     let p = other(a);
@@ -181,7 +181,7 @@ fn cl100k(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
             // WsOther: rule 2 (prefix + `\p{L}+`) | whitespace (never rule 4 — not in NOT_WS_L_N)
             WSO => {
                 let a = i + char_len(b);
-                i = if a < end && tags[a] == LET {
+                i = if a < end && (tags[a] & 0x0F) == LET {
                     letters(a)
                 } else {
                     ws(i)
@@ -210,7 +210,7 @@ fn cl100k(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
                     i + adv
                 } else {
                     let a = i + 1; // Apostrophe is ASCII (0x27)
-                    if a < end && tags[a] == LET {
+                    if a < end && (tags[a] & 0x0F) == LET {
                         letters(a)
                     } else {
                         other(i)
@@ -221,7 +221,7 @@ fn cl100k(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
             // rule 2 (prefix + `\p{L}+`) | rule 4
             MRK | CON | PUN | SYM | NMO | CTL => {
                 let a = i + char_len(b);
-                i = if a < end && tags[a] == LET {
+                i = if a < end && (tags[a] & 0x0F) == LET {
                     letters(a)
                 } else {
                     other(i)
@@ -267,14 +267,13 @@ fn ds_breaks(text: &[u8], p: usize) -> bool {
     false
 }
 
-/// A CJK-range char that is also a LETTER/MARK (`\p{L}∪\p{M}`). Split-2 `[…]+` isolates the whole CJK
-/// range — including CJK-range *punctuation/symbols* (・ U+30FB, ゠ U+30A0, ゛゜ U+309B/C) — but Split-3
-/// then RE-splits that piece, peeling those non-letters out via its punct rule. So the net Split-2⇒3
-/// unit is a maximal CJK *letter* run; the non-letters must not extend it (they fall to the punct rule).
+/// Any CJK-range char (letter OR punct/sym) at `p` — the full `[一-龥぀-ゟ゠-ヿ]` set Split-2 `[…]+`
+/// isolates, INCLUDING CJK punctuation (・ U+30FB, ゠ U+30A0, ゛゜ U+309B/C). Split-3 then re-splits that
+/// isolated run into same-kind sub-runs (letters `[\p{L}\p{M}]+` vs punct/sym `[\p{P}\p{S}]+`); because
+/// the run is a CLOSED unit, none of it steals a surrounding space or merges with non-CJK punct.
 #[inline(always)]
-fn ds_is_cjk_letter(text: &[u8], tags: &[u8], p: usize) -> bool {
-    let b = text[p];
-    (0xE3..=0xE9).contains(&b) && ds_is_cjk(cp3(text, p)) && in_mask(tags[p], mask::LETTER_MARK)
+fn ds_is_cjk_at(text: &[u8], p: usize) -> bool {
+    (0xE3..=0xE9).contains(&text[p]) && ds_is_cjk(cp3(text, p))
 }
 
 /// deepseek-v3 pretokenization: the `Sequence` of `[N{1,3}]`, `[CJK]+`, `<big regex>` (all Isolated)
@@ -328,9 +327,13 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
     // is `text[a]` the start of a deepseek letter/mark char (alt-2 run body / space-prefix target)?
     let is_lm = |a: usize| a < end && in_mask(tags[a], mask::LETTER_MARK) && !ds_breaks(text, a);
     // Split-3 alt-3 tail `[\p{P}\p{S}]+[\r\n]*` from `sp0` (a leading space is already consumed); `sp0`
-    // if there is no punct/sym run there.
+    // if there is no punct/sym run there. STOPS at CJK-range chars — Split-1 isolated those, so a CJK
+    // punct (・) is never merged into a non-CJK punct run (`!・` → `!`, `・`, not `!・`).
     let punct = |sp0: usize| -> usize {
-        let mut p = run_end(tags, sp0, end, mask::PUNCT_SYM);
+        let mut p = sp0;
+        while p < end && in_mask(tags[p], mask::PUNCT_SYM) && !ds_is_cjk_at(text, p) {
+            p += char_len(text[p]);
+        }
         if p > sp0 {
             while p < end && tags[p] == NLN {
                 p += char_len(text[p]);
@@ -343,8 +346,7 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
     // following letter/punct (same Split-3 piece) leaves the last ws char for its ` ?`/`[^…]?` prefix.
     let ws = |i: usize| -> usize {
         let re = run_end(tags, i, end, mask::WS);
-        let next_isolated =
-            re < end && (in_mask(tags[re], mask::NUMBER) || ds_is_cjk_letter(text, tags, re));
+        let next_isolated = re < end && (in_mask(tags[re], mask::NUMBER) || ds_is_cjk_at(text, re));
         if let Some(r) = text[i..re].iter().rposition(|&x| x == 0x0A || x == 0x0D) {
             i + r + 1
         } else if re == end || next_isolated {
@@ -363,7 +365,24 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
     while i < end {
         let start = i;
         let b = text[i];
-        match tags[i] {
+        // Split-2 isolated a maximal CJK-range run; Split-3 re-splits it into same-kind sub-runs
+        // (letters `[\p{L}\p{M}]+` vs punct/sym `[\p{P}\p{S}]+`) — a CLOSED unit, handled before the atom
+        // arms so CJK punct (・) never leaks into alt-3 (stealing a space / merging with non-CJK punct).
+        if ds_is_cjk_at(text, i) {
+            let is_letter = in_mask(tags[i], mask::LETTER_MARK);
+            let mut p = i + 3; // CJK-range chars are all 3-byte (leads E3..E9)
+            while p < end
+                && ds_is_cjk_at(text, p)
+                && in_mask(tags[p], mask::LETTER_MARK) == is_letter
+            {
+                p += 3;
+            }
+            out[w] = (start as u32, p as u32);
+            w += 1;
+            i = p;
+            continue;
+        }
+        match tags[i] & 0x0F {
             // Split-1: `\p{N}{1,3}`
             NW | NO => {
                 let (mut p, mut cnt) = (i, 0);
@@ -376,14 +395,11 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
             // Split-2 CJK *letter* run (⇒ Split-3 re-split), else Split-3 alt-2 `[\p{L}\p{M}]+`. ZWJ/ZWNJ
             // aren't `\p{L}∪\p{M}`, but they ARE a valid alt-2 prefix `[^\r\n\p{L}\p{P}\p{S}]?`, so a ZWJ
             // FOLLOWED by a letter starts a "ZWJ + letters" token; otherwise it's its own gap token.
+            // Split-3 alt-2 `[\p{L}\p{M}]+` (CJK letters are handled above). ZWJ/ZWNJ aren't `\p{L}∪\p{M}`
+            // but ARE a valid alt-2 prefix `[^\r\n\p{L}\p{P}\p{S}]?`, so a ZWJ followed by a letter starts a
+            // "ZWJ + letters" token; otherwise it's its own gap token.
             LET | MRK => {
-                i = if ds_is_cjk_letter(text, tags, i) {
-                    let mut p = i + 3;
-                    while p < end && ds_is_cjk_letter(text, tags, p) {
-                        p += 3;
-                    }
-                    p
-                } else if !ds_breaks(text, i) {
+                i = if !ds_breaks(text, i) {
                     letter_run(i)
                 } else {
                     let a = i + char_len(b); // ZWJ/ZWNJ as alt-2 prefix, else own token
@@ -395,6 +411,8 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
                 let a = i + 1; // Space is ASCII (0x20)
                 i = if is_lm(a) {
                     letter_run(a)
+                } else if a < end && ds_is_cjk_at(text, a) {
+                    ws(i) // next is a Split-1-isolated CJK char → the space is standalone whitespace
                 } else {
                     let p = punct(a);
                     if p > a { p } else { ws(i) }
@@ -477,7 +495,7 @@ pub fn fsm_byte_level(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
     let mut w = 0usize;
     while i < end {
         let start = i;
-        match tags[i] {
+        match tags[i] & 0x0F {
             LET => i = run_end(tags, i, end, mask::LETTER), // ` ?\p{L}+` (space taken by the Space arm)
             NW | NO => i = run_end(tags, i, end, mask::NUMBER), // ` ?\p{N}+` — UNBOUNDED
             MRK | CON | PUN | SYM | NMO | CTL => i = run_end(tags, i, end, mask::NOT_WS_L_N), // ` ?[^…]+`
@@ -500,10 +518,10 @@ pub fn fsm_byte_level(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
             // else it's whitespace (rules `\s+(?!\S)|\s+`, which leave one space for the next run).
             SPC => {
                 let a = i + 1; // Space is ASCII (0x20)
-                i = match tags.get(a) {
-                    Some(&LET) => run_end(tags, a, end, mask::LETTER),
-                    Some(&NW) | Some(&NO) => run_end(tags, a, end, mask::NUMBER),
-                    Some(&t) if in_mask(t, mask::NOT_WS_L_N) => {
+                i = match tags.get(a).map(|&t| t & 0x0F) {
+                    Some(LET) => run_end(tags, a, end, mask::LETTER),
+                    Some(NW) | Some(NO) => run_end(tags, a, end, mask::NUMBER),
+                    Some(t) if in_mask(t, mask::NOT_WS_L_N) => {
                         run_end(tags, a, end, mask::NOT_WS_L_N)
                     }
                     _ => ws(i),
@@ -640,7 +658,9 @@ impl CharDelimiterSplit {
         let (n, dl) = (text.len(), delim.len());
         let (mut start, mut i, mut w) = (0usize, 0usize, 0usize);
         while i + dl <= n {
-            // memchr the first delimiter byte, then confirm the full pattern.
+            // memchr the first delimiter byte, then confirm the full pattern. memchr (already a
+            // workspace dep) beats a scalar scan 1.4–23× here — the gap widening as the delimiter
+            // gets rarer over large inputs, since its SIMD skips whole 16/32/64-byte strides.
             match memchr::memchr(delim[0], &text[i..n - dl + 1]) {
                 Some(off) if text[i + off..i + off + dl] == *delim => {
                     let m = i + off;

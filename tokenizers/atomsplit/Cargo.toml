@@ -2,20 +2,20 @@
 name = "atomsplit"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.85"
 authors = [
-  "Arthur Zucker <arthur@huggingface.co",
-  "Luc Georges <luc@huggingface.co",
+  "Arthur Zucker <arthur@huggingface.co>",
+  "Luc Georges <luc@huggingface.co>",
+  "Simon Brandeis <simon@huggingface.co>",
 ]
 homepage = "https://github.com/huggingface/tokenizers"
 repository = "https://github.com/huggingface/tokenizers"
-documentation = "https://docs.rs/tokenizers/"
+documentation = "https://docs.rs/atomsplit/"
 license = "Apache-2.0"
-keywords = ["tokenizer", "NLP", "huggingface", "BPE", "WordPiece"]
-description = """
-Inference (encode/decode) half of the 🤗 Tokenizers library: model engines,
-the full pipeline components, and the `Tokenizer` orchestration — without any
-training code.
-"""
+keywords = ["tokenizer", "nlp", "pretokenizer", "simd", "unicode"]
+categories = ["text-processing", "parsing"]
+description = "SIMD Unicode atom classification + FSM pre-tokenization: one classify pass into byte-exact token spans (cl100k, GPT-2/ByteLevel, DeepSeek, Whitespace, Bert, ...)."
+exclude = ["benches/data/"]
 
 [package.metadata.docs.rs]
 all-features = true
@@ -25,7 +25,7 @@ name = "atomsplit"
 path = "src/lib.rs"
 
 [dependencies]
-memchr = "2.8.2"
+memchr = "2.8.2" # SIMD single-byte search; used only in CharDelimiterSplit (1.4–23× vs scalar).
 # NOTE: classify tables live in src/atom_tables.rs (committed, generated). Regenerate after any atom
 # scheme change with `cargo run -p bitmap_gen`. No build script / build-dep — atomsplit builds clean.
 [dev-dependencies]

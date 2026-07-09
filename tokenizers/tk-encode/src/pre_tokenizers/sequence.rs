@@ -261,11 +261,9 @@ mod tests {
         }
     }
 
-    // KNOWN fsm_deepseek edge: CJK-range PUNCTUATION (・ U+30FB, ゠, ゛゜) sits inside Split-1's
-    // `[一-龥぀-ゟ゠-ヿ]` range, so Split-1 isolates it — but the FSM treats it as ordinary `\p{P}∪\p{S}`,
-    // so alt-3's ` ?` steals a preceding space and merges it with adjacent non-CJK punct. Fix pending:
-    // process a CJK-range RUN (letters + punct) as a closed unit. Then delete `#[ignore]`.
-    #[ignore = "fsm_deepseek: CJK-range punctuation (・) not treated as Split-1-isolated"]
+    // CJK-range PUNCTUATION (・ U+30FB, ゠, ゛゜) sits inside Split-1's `[一-龥぀-ゟ゠-ヿ]` range, so
+    // Split-1 isolates it (`fsm_deepseek` handles a CJK-range run as a closed unit) — a preceding space
+    // stays separate and it never merges with adjacent non-CJK punct.
     #[test]
     fn pipeline_deepseek_cjk_punct_whitespace_edge() {
         let path = "../data/deepseek-v4-flash-base-tokenizer.json";

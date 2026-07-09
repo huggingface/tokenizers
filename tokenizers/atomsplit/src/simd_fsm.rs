@@ -37,8 +37,12 @@ pub(crate) fn class_runs_neon<const DROP: u16, const ISOLATE: u16, const KEEP_A:
         let powv = vld1q_u8(POW.as_ptr());
         let contv = vdupq_n_u8(0xFF);
         let onev = vdupq_n_u8(1);
+        let lonib = vdupq_n_u8(0x0F);
         while i + 16 <= n {
-            let v = vld1q_u8(tags.as_ptr().add(i));
+            // Fold the refinement (high nibble) away before the 16-entry LUT: a refined tag (e.g. a
+            // lowercase `Letter` = 0x20) indexes out of `vqtbl1`'s 16 lanes, so collapse to the coarse
+            // class first — the class-family splits never distinguish refinements. (Cont=15 is untouched.)
+            let v = vandq_u8(vld1q_u8(tags.as_ptr().add(i)), lonib);
             let raw = vqtbl1q_u8(lutv, v);
             if seg_class != 1 {
                 let ok = vorrq_u8(vceqq_u8(raw, vdupq_n_u8(seg_class)), vceqq_u8(raw, contv));
@@ -105,8 +109,13 @@ pub(crate) fn class_runs_wasm<const DROP: u16, const ISOLATE: u16, const KEEP_A:
     let lutv = unsafe { v128_load(lut.as_ptr() as *const v128) };
     let contv = u8x16_splat(0xFF);
     let onev = u8x16_splat(1);
+    let lonib = u8x16_splat(0x0F);
     while i + 16 <= n {
-        let v = unsafe { v128_load(tags.as_ptr().add(i) as *const v128) };
+        // Fold the refinement nibble away before the 16-entry swizzle LUT (see `class_runs_neon`).
+        let v = v128_and(
+            unsafe { v128_load(tags.as_ptr().add(i) as *const v128) },
+            lonib,
+        );
         let raw = u8x16_swizzle(lutv, v);
         if seg_class != 1 {
             let ok = v128_or(u8x16_eq(raw, u8x16_splat(seg_class)), u8x16_eq(raw, contv));

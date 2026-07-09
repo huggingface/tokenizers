@@ -1,6 +1,15 @@
 /// The per-codepoint "atom" alphabet — the small tag set every codepoint is classified into in one SIMD
 /// pass, which the FSMs then consume. Values 0–12 are real Unicode categories; 13–15 are engine
 /// sentinels (deeper-lookup marker, unresolved-multibyte, and UTF-8 continuation byte).
+///
+/// A tag byte is `(refine << 4) | coarse`: the **low nibble** is this `Atom` (the coarse class every FSM
+/// shares) and the **high nibble** is an optional *refinement* that sub-splits one coarse class for a
+/// pattern that needs finer granularity — e.g. o200k needs case, so `Letter` carries `refine::UPPER`
+/// (`\p{Lu}∪\p{Lt}`) / `refine::LOWER` (`\p{Ll}`) / `0` (caseless `\p{Lm}\p{Lo}`). The classifier stays
+/// agnostic (it just emits the table byte); a coarse consumer collapses the refinement for free —
+/// [`in_mask`] masks it off, and the SIMD class path `& 0x0F`s before its 16-entry LUT — so only the FSM
+/// that opted in (o200k, via [`refine`]) ever sees the high nibble. Ceiling: ≤16 coarse, ≤15 refinements
+/// per class; a >16-coarse scheme would swap the 16-entry LUT for a 256-entry `tbl256` remap.
 #[repr(u8)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Atom {
@@ -30,10 +39,26 @@ impl Atom {
     }
 }
 
-/// `true` iff the raw tag (`Atom as u8`) is in `mask`.
+/// `true` iff the tag's **coarse** class (low nibble) is in `mask`. Masking `tag & 0x0F` makes every
+/// coarse consumer refinement-agnostic (a refined `Letter` like `0x20` still tests as `LETTER`) — and is
+/// mandatory, not just a view: a refined tag's raw value can exceed 15, and `1u16 << 0x20` would overflow.
 #[inline]
 pub const fn in_mask(tag: u8, mask: u16) -> bool {
-    mask & (1u16 << tag) != 0
+    mask & (1u16 << (tag & 0x0F)) != 0
+}
+
+/// Refinement (high nibble) of a tag — `0` when the coarse class was not sub-split. See [`refine`].
+#[inline]
+pub const fn refine_of(tag: u8) -> u8 {
+    tag >> 4
+}
+
+/// Refinement values for the `Letter` coarse class (o200k's case split). `0` = caseless (`\p{Lm}\p{Lo}`).
+pub mod refine {
+    /// `\p{Lu} ∪ \p{Lt}` — the "upper-ish" leading run in o200k's `[\p{Lu}\p{Lt}…]`.
+    pub const UPPER: u8 = 1;
+    /// `\p{Ll}` — strictly lowercase; the only letters excluded from o200k's `[\p{Lu}\p{Lt}…]` class.
+    pub const LOWER: u8 = 2;
 }
 
 /// UTF-8 char length from the lead byte. Width is a pure function of the lead — no classification.

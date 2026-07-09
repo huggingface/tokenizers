@@ -13,7 +13,15 @@ use unicode_categories::UnicodeCategories;
 fn atom(c: char) -> u8 {
     let cp = c as u32;
     if c.is_letter() {
-        return 0;
+        // low nibble = Letter(0); high nibble = o200k case refinement (1=Lu∪Lt, 2=Ll, 0=caseless Lm∪Lo).
+        // Coarse consumers mask it off (`in_mask` / SIMD `& 0x0F`); only `fsm_o200k` reads the nibble.
+        return if c.is_letter_uppercase() || c.is_letter_titlecase() {
+            0x10
+        } else if c.is_letter_lowercase() {
+            0x20
+        } else {
+            0
+        };
     }
     if c.is_number() {
         return if c.is_number_decimal_digit() || c.is_number_letter() {
@@ -303,7 +311,8 @@ fn generate_tables(struct_name: &str, kind: &str, classify: &dyn Fn(u32) -> u8) 
     o
 }
 
-/// Atom tables — the 12-way category alphabet (`ATOM_TABLES`).
+/// Atom tables — the 12-way category alphabet (`ATOM_TABLES`), with the `Letter` coarse class carrying an
+/// o200k case refinement in its high nibble (see [`atom`]).
 pub fn generate_atom_tables() -> String {
     generate_tables("ATOM_TABLES", "atom", &|cp| {
         char::from_u32(cp).map(atom).unwrap_or(10)
