@@ -9,7 +9,8 @@ use crate::models::bpe::PipelineBPE;
 use crate::models::unigram::Unigram;
 use crate::models::wordlevel::WordLevel;
 use crate::models::wordpiece::WordPiece;
-use crate::pre_tokenizers::sequence::PipelineSequence;
+use crate::pre_tokenizers::metaspace::{Metaspace, PrependScheme};
+use crate::pre_tokenizers::sequence::{PipelineSequence, Sequence};
 use crate::pre_tokenizers::split::SplitPattern;
 use crate::utils::byte_level::GPT2_REGEX_STR;
 use crate::SplitDelimiterBehavior::Isolated;
@@ -260,8 +261,57 @@ pub struct PipelineTokenizer {
     added_vocabulary: BucketAddedVocabulary,
     normalizer: Option<NormalizerWrapper>,
     pre_tokenizer: PipelinePreTokenizer,
+    /// Trailing `Metaspace`, run as a rewrite stage after `pre_tokenizer`: it
+    /// edits text (space → replacement, prepend), which the range-based
+    /// pre-tokenizers cannot express, so its output lives in a scratch buffer.
+    rewriter: Option<Metaspace>,
     model: PipelineModel,
     _post_processor: Option<PostProcessorWrapper>,
+}
+
+/// Splits the tokenizer's pre-tokenizer into its range-based part and the
+/// trailing [`Metaspace`] rewriter, if any. Metaspace must come last: a
+/// pre-tokenizer after it would have to see the rewritten text, which stays
+/// out of band in the scratch buffer.
+fn peel_metaspace(
+    pretok: Option<PreTokenizerWrapper>,
+) -> Result<(Option<PreTokenizerWrapper>, Option<Metaspace>)> {
+    fn validate(metaspace: Metaspace) -> Result<Metaspace> {
+        if metaspace.prepend_scheme == PrependScheme::First {
+            return Err(
+                "Metaspace prepend_scheme=first is not supported by the pipeline yet".into(),
+            );
+        }
+        Ok(metaspace)
+    }
+
+    match pretok {
+        Some(PreTokenizerWrapper::Metaspace(metaspace)) => Ok((None, Some(validate(metaspace)?))),
+        Some(PreTokenizerWrapper::Sequence(seq)) => {
+            let mut children: Vec<PreTokenizerWrapper> = seq.into_iter().collect();
+            match children
+                .iter()
+                .position(|p| matches!(p, PreTokenizerWrapper::Metaspace(_)))
+            {
+                None => Ok((
+                    Some(PreTokenizerWrapper::Sequence(Sequence::new(children))),
+                    None,
+                )),
+                Some(pos) if pos + 1 == children.len() => {
+                    let Some(PreTokenizerWrapper::Metaspace(metaspace)) = children.pop() else {
+                        unreachable!()
+                    };
+                    let rest = (!children.is_empty())
+                        .then(|| PreTokenizerWrapper::Sequence(Sequence::new(children)));
+                    Ok((rest, Some(validate(metaspace)?)))
+                }
+                Some(_) => Err(
+                    "Metaspace pre tokenizer must be the last pre tokenizer in the Sequence".into(),
+                ),
+            }
+        }
+        other => Ok((other, None)),
+    }
 }
 
 impl TryFrom<&Tokenizer> for PipelineTokenizer {
@@ -274,9 +324,8 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
     /// Adding them in id order preserves ids (tokens present in the model reuse their model id, the
     /// rest keep their dense order), so the pipeline emits the same ids as the reference tokenizer.
     fn try_from(tok: &Tokenizer) -> Result<Self> {
-        let pre_tokenizer: PipelinePreTokenizer = tok
-            .get_pre_tokenizer()
-            .cloned()
+        let (range_pretok, rewriter) = peel_metaspace(tok.get_pre_tokenizer().cloned())?;
+        let pre_tokenizer: PipelinePreTokenizer = range_pretok
             .map(TryInto::try_into)
             .transpose()?
             .unwrap_or(PipelinePreTokenizer::None);
@@ -358,6 +407,7 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
             added_vocabulary,
             normalizer: tok.get_normalizer().cloned(),
             pre_tokenizer,
+            rewriter,
             model,
             _post_processor: tok.get_post_processor().cloned(),
         })
@@ -387,7 +437,15 @@ impl PipelineTokenizer {
     pub fn encode(&self, input: &str, _add_special_tokens: bool) -> Result<Vec<PipelineToken>> {
         let mut output = Vec::new();
         let mut pre_tokens = Vec::new();
-        self.encode_generic::<{ Self::STAGE_MODEL }>(input, &mut output, &mut pre_tokens)?;
+        let mut rewrite_buf = String::new();
+        let mut rewritten = Vec::new();
+        self.encode_generic::<{ Self::STAGE_MODEL }>(
+            input,
+            &mut output,
+            &mut pre_tokens,
+            &mut rewrite_buf,
+            &mut rewritten,
+        )?;
         Ok(output)
     }
 
@@ -401,15 +459,18 @@ impl PipelineTokenizer {
     ///
     /// [`STAGE_MODEL`]: Self::STAGE_MODEL
     ///
-    /// `output` and the `pre_tokens` scratch are caller-owned so a benchmark can reuse
-    /// them across calls and observe both buffers to anchor the ablation levels — the
-    /// library itself stays free of any `black_box`/timing artifact.
+    /// `output` and the scratch buffers (`pre_tokens`, plus `rewrite_buf`/`rewritten`
+    /// for the Metaspace rewriter) are caller-owned so a benchmark can reuse them
+    /// across calls and observe them to anchor the ablation levels — the library
+    /// itself stays free of any `black_box`/timing artifact.
     #[doc(hidden)] // public only so `examples/fixture_bench.rs` can drive partial stages
     pub fn encode_generic<const STAGE: u8>(
         &self,
         input: &str,
         output: &mut Vec<PipelineToken>,
         pre_tokens: &mut Vec<Split>,
+        rewrite_buf: &mut String,
+        rewritten: &mut Vec<Split>,
     ) -> Result<()> {
         // First, we extract all special tokens from the non-normalized input
         for segment in SpecialSegmentIterator::new(input, &self.added_vocabulary, false) {
@@ -441,11 +502,27 @@ impl PipelineTokenizer {
                                     pre_tokens.clear();
                                     self.pre_tokenizer
                                         .pre_tokenize(normalized_chunk, pre_tokens)?;
+                                    let model_text: &str = match &self.rewriter {
+                                        Some(metaspace) => {
+                                            rewrite_buf.clear();
+                                            rewritten.clear();
+                                            for pre_token in pre_tokens.iter() {
+                                                metaspace.rewrite(
+                                                    &normalized_chunk[pre_token.range()],
+                                                    rewrite_buf,
+                                                    rewritten,
+                                                );
+                                            }
+                                            std::mem::swap(pre_tokens, rewritten);
+                                            rewrite_buf.as_str()
+                                        }
+                                        None => normalized_chunk,
+                                    };
                                     if STAGE >= Self::STAGE_MODEL {
                                         // Tokenize each chunk
                                         for pre_token in pre_tokens.iter() {
                                             self.model.tokenize_pipeline(
-                                                &normalized_chunk[pre_token.range()],
+                                                &model_text[pre_token.range()],
                                                 output,
                                             )?;
                                         }
@@ -784,5 +861,38 @@ mod tests {
         tok.with_pre_tokenizer(Some(ByteLevel::new(false, true, true)));
         let err = conversion_error(&tok);
         assert!(err.contains("not supported with model"), "{}", err);
+    }
+
+    #[test]
+    fn conversion_rejects_metaspace_not_last_in_sequence() {
+        let mut tok = Tokenizer::new(BPE::default());
+        tok.with_pre_tokenizer(Some(Sequence::new(vec![
+            PreTokenizerWrapper::Metaspace(Metaspace::default()),
+            PreTokenizerWrapper::WhitespaceSplit(WhitespaceSplit),
+        ])));
+        let err = conversion_error(&tok);
+        assert!(err.contains("must be the last"), "{}", err);
+    }
+
+    #[test]
+    fn conversion_rejects_metaspace_prepend_scheme_first() {
+        let mut tok = Tokenizer::new(BPE::default());
+        tok.with_pre_tokenizer(Some(Metaspace::new('▁', PrependScheme::First, true)));
+        let err = conversion_error(&tok);
+        assert!(err.contains("prepend_scheme=first"), "{}", err);
+    }
+
+    #[test]
+    fn conversion_peels_trailing_metaspace() {
+        // Bare Metaspace and the T5 shape (Sequence ending in Metaspace) both build.
+        let mut tok = Tokenizer::new(BPE::default());
+        tok.with_pre_tokenizer(Some(Metaspace::default()));
+        assert!(PipelineTokenizer::try_from(&tok).is_ok());
+
+        tok.with_pre_tokenizer(Some(Sequence::new(vec![
+            PreTokenizerWrapper::WhitespaceSplit(WhitespaceSplit),
+            PreTokenizerWrapper::Metaspace(Metaspace::default()),
+        ])));
+        assert!(PipelineTokenizer::try_from(&tok).is_ok());
     }
 }

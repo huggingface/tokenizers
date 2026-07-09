@@ -4,8 +4,8 @@
 //! — the regime where per-input overhead is amortized (see `pipeline_benchmark.rs`
 //! for the size sweep).
 //!
-//! `PipelineTokenizer` is a work in progress: models it can't build yet (standalone
-//! ByteLevel pre-tokenizer, Metaspace/Unigram, …) are reported as `supported: false`
+//! `PipelineTokenizer` is a work in progress: models it can't build yet (e.g.
+//! Metaspace with `prepend_scheme=first`) are reported as `supported: false`
 //! with their pipeline shape, rather than benched — the CI grid renders those as
 //! roadmap cards. Each manifest entry carries a `desc`: a one-line label of the
 //! workload archetype the model exercises, passed through to the report.
@@ -101,19 +101,29 @@ fn time_pass(encode: &dyn Fn(&str) -> usize, chunks: &[String]) -> f64 {
 /// successive levels and subtracting gives each stage's marginal cost (the ablation
 /// ladder), no profiler and no per-segment instrumentation.
 ///
-/// Both caller-owned buffers are reused across chunks and `black_box`'d each iteration:
-/// `output` anchors the special-scan/normalize/model work, `pre_tokens` anchors the
-/// split stage, so under fat LTO no dead partial stage gets optimized away. The
-/// `black_box` lives here, in the bench — never in the library.
+/// The caller-owned buffers are reused across chunks and `black_box`'d each iteration:
+/// `output` anchors the special-scan/normalize/model work, `pre_tokens` and the
+/// Metaspace rewrite buffer anchor the split stage, so under fat LTO no dead partial
+/// stage gets optimized away. The `black_box` lives here, in the bench — never in the
+/// library.
 fn stage_secs<const STAGE: u8>(pipeline: &PipelineTokenizer, chunks: &[String]) -> f64 {
     let mut out = Vec::new();
     let mut pre_tokens = Vec::new();
+    let mut rewrite_buf = String::new();
+    let mut rewritten = Vec::new();
     let mut run = || {
         for chunk in chunks {
             out.clear();
-            let _ = pipeline.encode_generic::<STAGE>(chunk, &mut out, &mut pre_tokens);
+            let _ = pipeline.encode_generic::<STAGE>(
+                chunk,
+                &mut out,
+                &mut pre_tokens,
+                &mut rewrite_buf,
+                &mut rewritten,
+            );
             black_box(&out);
             black_box(&pre_tokens);
+            black_box(&rewrite_buf);
         }
     };
     run(); // warm-up

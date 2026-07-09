@@ -310,8 +310,9 @@ mod tests {
 
     #[test]
     fn pipeline_unsupported_child_errors() {
-        // Metaspace has no range-based form. Constructing the Sequence must still work
-        // (the legacy path supports it) — only the pipeline conversion should fail.
+        // Metaspace has no range-based form: `PipelineTokenizer` peels a *trailing*
+        // Metaspace off into its rewrite stage before this conversion runs, so the
+        // raw enum conversion itself must still reject it.
         use std::convert::TryFrom;
         let seq = Sequence::new(vec![
             PreTokenizerWrapper::WhitespaceSplit(WhitespaceSplit),

@@ -1,17 +1,18 @@
 //! The experimental `PipelineTokenizer` must produce exactly the same token
 //! ids as the reference `Tokenizer` (the oracle). Exercised over the bert-wiki
-//! tokenizer (`Whitespace` pre-tokenizer + `WordPiece`) on an English and a
-//! Japanese corpus, with lines packed into ~1 kB and ~10 kB documents. The
-//! oracle is called with `add_special_tokens = false` because the pipeline
-//! does not apply the post-processor yet.
+//! tokenizer (`Whitespace` pre-tokenizer + `WordPiece`) and the t5-base
+//! tokenizer (`WhitespaceSplit` + `Metaspace` rewriter + `Unigram`) on an
+//! English and a Japanese corpus, with lines packed into ~1 kB and ~10 kB
+//! documents. The oracle is called with `add_special_tokens = false` because
+//! the pipeline does not apply the post-processor yet.
 
 use std::convert::TryFrom;
 
 use tk_encode::pipeline::PipelineTokenizer;
 use tk_encode::Tokenizer;
 
-fn load(corpus: &str) -> (Tokenizer, PipelineTokenizer, String) {
-    let oracle = Tokenizer::from_file("../data/bert-wiki.json").unwrap();
+fn load(tokenizer: &str, corpus: &str) -> (Tokenizer, PipelineTokenizer, String) {
+    let oracle = Tokenizer::from_file(tokenizer).unwrap();
     let pipeline = PipelineTokenizer::try_from(&oracle).unwrap();
     let text = std::fs::read_to_string(corpus).unwrap();
     (oracle, pipeline, text)
@@ -36,8 +37,8 @@ fn make_chunks(text: &str, target_bytes: usize) -> Vec<String> {
     chunks
 }
 
-fn check_chunks(corpus: &str, target_bytes: usize) {
-    let (oracle, pipeline, text) = load(corpus);
+fn check_chunks(tokenizer: &str, corpus: &str, target_bytes: usize) {
+    let (oracle, pipeline, text) = load(tokenizer, corpus);
     for chunk in make_chunks(&text, target_bytes) {
         let expected = oracle.encode(chunk.as_str(), false).unwrap();
         let got: Vec<u32> = pipeline
@@ -56,16 +57,16 @@ fn check_chunks(corpus: &str, target_bytes: usize) {
 }
 
 macro_rules! corpus_tests {
-    ($($name:ident => $file:literal),* $(,)?) => {
+    ($($name:ident => ($tokenizer:literal, $corpus:literal)),* $(,)?) => {
         $(
             mod $name {
                 #[test]
                 fn chunks_1kb() {
-                    super::check_chunks($file, 1024);
+                    super::check_chunks($tokenizer, $corpus, 1024);
                 }
                 #[test]
                 fn chunks_10kb() {
-                    super::check_chunks($file, 10 * 1024);
+                    super::check_chunks($tokenizer, $corpus, 10 * 1024);
                 }
             }
         )*
@@ -73,6 +74,8 @@ macro_rules! corpus_tests {
 }
 
 corpus_tests! {
-    big => "../data/big.txt",
-    wagahai => "../data/unigram_wagahaiwa_nekodearu.txt",
+    bert_wiki_big => ("../data/bert-wiki.json", "../data/big.txt"),
+    bert_wiki_wagahai => ("../data/bert-wiki.json", "../data/unigram_wagahaiwa_nekodearu.txt"),
+    t5_big => ("../data/t5-base.json", "../data/big.txt"),
+    t5_wagahai => ("../data/t5-base.json", "../data/unigram_wagahaiwa_nekodearu.txt"),
 }

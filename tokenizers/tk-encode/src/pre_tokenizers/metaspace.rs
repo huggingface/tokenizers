@@ -1,3 +1,4 @@
+use crate::pipeline;
 use crate::tokenizer::{Decoder, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
 use serde::{de, Deserialize, Deserializer, Serialize};
 
@@ -144,6 +145,57 @@ impl PreTokenizer for Metaspace {
                 Ok(vec![normalized])
             }
         })
+    }
+}
+
+impl Metaspace {
+    /// Pipeline-side form of [`PreTokenizer::pre_tokenize`], for one pre-token
+    /// `piece`. Metaspace edits text (space → replacement, prepend), which the
+    /// range-based [`pipeline::PreTokenizer`] cannot express, so the rewritten
+    /// text is appended to the caller's `scratch` and the emitted
+    /// [`pipeline::Split`]s are ranges into `scratch`.
+    ///
+    /// A single pass replaces, prepends, and splits at once: every replacement
+    /// char landing in `scratch` starts a new split, which is exactly
+    /// `SplitDelimiterBehavior::MergedWithNext` on the rewritten text.
+    ///
+    /// `PrependScheme::First` is unsupported (rejected at pipeline build): it
+    /// depends on the piece's offset in the original input, which the pipeline
+    /// does not track.
+    pub(crate) fn rewrite(
+        &self,
+        piece: &str,
+        scratch: &mut String,
+        out: &mut Vec<pipeline::Split>,
+    ) {
+        let base = scratch.len() as u32;
+        if self.prepend_scheme == PrependScheme::Always
+            && !piece.starts_with([' ', self.replacement])
+        {
+            scratch.push(self.replacement);
+        }
+        let mut split_start = base;
+        for ch in piece.chars() {
+            let ch = if ch == ' ' { self.replacement } else { ch };
+            if self.split && ch == self.replacement {
+                let pos = scratch.len() as u32;
+                if pos > split_start {
+                    out.push(pipeline::Split {
+                        start: split_start,
+                        end: pos,
+                    });
+                }
+                split_start = pos;
+            }
+            scratch.push(ch);
+        }
+        let end = scratch.len() as u32;
+        if end > split_start {
+            out.push(pipeline::Split {
+                start: split_start,
+                end,
+            });
+        }
     }
 }
 
@@ -353,6 +405,66 @@ mod tests {
             ]
         );
     }
+    fn rewrite_pieces(pretok: &Metaspace, pieces: &[&str]) -> Vec<String> {
+        let mut scratch = String::new();
+        let mut out = Vec::new();
+        for piece in pieces {
+            pretok.rewrite(piece, &mut scratch, &mut out);
+        }
+        out.iter().map(|s| scratch[s.range()].to_string()).collect()
+    }
+
+    /// Classic-path splits (Normalized referential) — the oracle for `rewrite`.
+    fn legacy_pieces(pretok: &Metaspace, text: &str) -> Vec<String> {
+        let mut pretokenized = PreTokenizedString::from(text);
+        pretok.pre_tokenize(&mut pretokenized).unwrap();
+        pretokenized
+            .get_splits(OffsetReferential::Normalized, OffsetType::Byte)
+            .into_iter()
+            .map(|(s, _, _)| s.to_string())
+            .collect()
+    }
+
+    #[test]
+    fn rewrite_matches_legacy() {
+        let texts = [
+            "Hey friend!",
+            "Hey   friend!",
+            " Hey",
+            "▁already marked",
+            "how▁are you",
+            "no-spaces",
+            "中文 text 123",
+            "   ",
+        ];
+        for (scheme, split) in [
+            (PrependScheme::Always, true),
+            (PrependScheme::Always, false),
+            (PrependScheme::Never, true),
+            (PrependScheme::Never, false),
+        ] {
+            let pretok = Metaspace::new('▁', scheme, split);
+            for text in texts {
+                assert_eq!(
+                    rewrite_pieces(&pretok, &[text]),
+                    legacy_pieces(&pretok, text),
+                    "{scheme:?} split={split} diverged on {text:?}",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn rewrite_prepends_per_piece() {
+        // T5's shape: WhitespaceSplit runs first, so Metaspace sees one piece
+        // per word and its only effect is the per-piece prepend.
+        let pretok = Metaspace::new('▁', PrependScheme::Always, true);
+        assert_eq!(
+            rewrite_pieces(&pretok, &["Hey", "friend!"]),
+            vec!["▁Hey", "▁friend!"],
+        );
+    }
+
     #[test]
     fn decode() {
         let decoder = Metaspace::new('▁', PrependScheme::Always, true);
