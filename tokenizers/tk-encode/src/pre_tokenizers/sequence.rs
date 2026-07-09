@@ -22,9 +22,7 @@ impl Sequence {
         use crate::pre_tokenizers::split::SplitPattern;
         use crate::tokenizer::SplitDelimiterBehavior::Isolated;
         let regex = |i: usize| match self.pretokenizers.get(i) {
-            Some(PreTokenizerWrapper::Split(s))
-                if s.behavior == Isolated && !s.invert =>
-            {
+            Some(PreTokenizerWrapper::Split(s)) if s.behavior == Isolated && !s.invert => {
                 match &s.pattern {
                     SplitPattern::Regex(r) => Some(r.as_str()),
                     SplitPattern::String(_) => None,
@@ -88,7 +86,11 @@ impl pipeline::PreTokenizer for Sequence {
             classify::<Atoms>(bytes, &mut tags);
             let mut spans = vec![(0u32, 0u32); bytes.len() + 1];
             let n = atomsplit::fsm::fsm_deepseek(bytes, &tags, &mut spans);
-            out.extend(spans[..n].iter().map(|&(s, e)| pipeline::Split { start: s, end: e }));
+            out.extend(
+                spans[..n]
+                    .iter()
+                    .map(|&(s, e)| pipeline::Split { start: s, end: e }),
+            );
             return Ok(());
         }
 
@@ -245,7 +247,10 @@ mod tests {
             .collect();
         assert_eq!(splits.len(), 3, "deepseek has 3 Splits");
         let seq = Sequence::new(splits);
-        assert!(seq.is_deepseek(), "deepseek's exact 3-Split sequence must be recognized");
+        assert!(
+            seq.is_deepseek(),
+            "deepseek's exact 3-Split sequence must be recognized"
+        );
 
         for text in [
             "中文 with 123 numbers!! and ケーキ don't",
@@ -281,11 +286,18 @@ mod tests {
             .collect();
         let seq = Sequence::new(splits);
         let text = "hello 世界\n\n表 ・ x"; // standalone ・ with surrounding spaces
-        assert_eq!(pipeline_pretokenize(&seq, text), legacy_pretokenize(&seq, text));
+        assert_eq!(
+            pipeline_pretokenize(&seq, text),
+            legacy_pretokenize(&seq, text)
+        );
     }
 
+    // fsm_deepseek == the 3-Split onig Sequence over multilingual Wikipedia corpora — the broad byte-exact
+    // guard. `he.txt` is why it exists: Hebrew mixes format controls (RLM, `\p{Cf}`) and Other_Alphabetic
+    // symbols (Ⓘ, `\p{S}` but is_alphabetic), which stress the *gap* grouping (consecutive unmatched chars
+    // = one piece) and the `ALPHA_SYM` Mark refinement (a `\w` char that is NOT `[\p{L}\p{M}]`).
     #[test]
-    fn scratch_deepseek_bigdiff() {
+    fn pipeline_deepseek_matches_legacy_on_corpora() {
         let path = "../data/deepseek-v4-flash-base-tokenizer.json";
         if !std::path::Path::new(path).exists() {
             return;
@@ -301,46 +313,32 @@ mod tests {
             .collect();
         let seq = Sequence::new(splits);
         assert!(seq.is_deepseek());
-        let mut diffs = 0;
-        for corpus_path in [
-            "../data/big.txt",
-            "../data/unigram_wagahaiwa_nekodearu.txt",
-            "../atomsplit/benches/data/fr.txt",
-            "../atomsplit/benches/data/ru.txt",
-            "../atomsplit/benches/data/el.txt",
-            "../atomsplit/benches/data/ar.txt",
-            "../atomsplit/benches/data/he.txt",
-            "../atomsplit/benches/data/hi.txt",
-            "../atomsplit/benches/data/th.txt",
-            "../atomsplit/benches/data/zh.txt",
-            "../atomsplit/benches/data/ko.txt",
-        ] {
-            let Ok(corpus) = std::fs::read_to_string(corpus_path) else {
+        for lang in ["fr", "ru", "el", "ar", "he", "hi", "th", "zh", "ko"] {
+            let Ok(corpus) =
+                std::fs::read_to_string(format!("../atomsplit/benches/data/{lang}.txt"))
+            else {
                 continue;
             };
             for (ln, line) in corpus.lines().enumerate() {
                 if line.is_empty() {
                     continue;
                 }
-                let p = pipeline_pretokenize(&seq, line);
-                let l = legacy_pretokenize(&seq, line);
+                let (p, l) = (pipeline_pretokenize(&seq, line), legacy_pretokenize(&seq, line));
                 if p != l {
-                    diffs += 1;
-                    if diffs <= 4 {
-                        let k = p
-                            .iter()
-                            .zip(l.iter())
-                            .position(|(a, b)| a != b)
-                            .unwrap_or(p.len().min(l.len()));
-                        let lo = k.saturating_sub(1);
-                        eprintln!("== {corpus_path}:{ln} diverge @tok {k} ==\n  {line:?}");
-                        eprintln!("  pipe: {:?}", &p[lo..(k + 3).min(p.len())]);
-                        eprintln!("  legc: {:?}", &l[lo..(k + 3).min(l.len())]);
-                    }
+                    let k = p
+                        .iter()
+                        .zip(l.iter())
+                        .position(|(a, b)| a != b)
+                        .unwrap_or(p.len().min(l.len()));
+                    let lo = k.saturating_sub(1);
+                    panic!(
+                        "deepseek diverged {lang}.txt:{ln} @tok {k}\n  {line:?}\n  pipe: {:?}\n  legc: {:?}",
+                        &p[lo..(k + 3).min(p.len())],
+                        &l[lo..(k + 3).min(l.len())],
+                    );
                 }
             }
         }
-        assert_eq!(diffs, 0, "{diffs} lines diverged");
     }
 
     #[test]

@@ -1,6 +1,6 @@
-use crate::pipeline::PipelinePatternMatcher;
 use super::super::{Model, NormalizedString, Normalizer, Result};
 use super::buckets::{AddedTokenFlags, Buckets};
+use crate::pipeline::PipelinePatternMatcher;
 use crate::pre_tokenizers::whitespace::is_word_char;
 use ahash::AHashMap;
 use serde::{ser::SerializeSeq, Deserialize, Serialize, Serializer};

@@ -276,6 +276,13 @@ fn ds_is_cjk_at(text: &[u8], p: usize) -> bool {
     (0xE3..=0xE9).contains(&text[p]) && ds_is_cjk(cp3(text, p))
 }
 
+/// ZWJ/ZWNJ (U+200C/200D, `\p{Cf}`) at `p` — atom-folded into `Mark` but NOT `\p{L}∪\p{M}`, so they end a
+/// deepseek letter run and (not prefixing a letter) form part of an unmatched gap. 3-byte, lead E2.
+#[inline(always)]
+fn ds_is_zwj(text: &[u8], p: usize) -> bool {
+    text[p] == 0xE2 && matches!(cp3(text, p), 0x200C | 0x200D)
+}
+
 /// deepseek-v3 pretokenization: the `Sequence` of `[N{1,3}]`, `[CJK]+`, `<big regex>` (all Isolated)
 /// collapsed into ONE scalar FSM over the atom stream. Precedence (= the Sequence order): digits →
 /// CJK-range runs → the big-regex alts. Because Split-2 isolates CJK *before* the letter rule, the
@@ -307,16 +314,19 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
     const CTL: u8 = Atom::Control as u8;
 
     const CONT: u8 = Atom::Cont as u8;
+    // `Mark` refined as an Other_Alphabetic symbol (Ⓘ …): coarse `LETTER_MARK`, but categorically `\p{S}`
+    // — excluded from `[\p{L}\p{M}]`, routed to the `[\p{P}\p{S}]+` run instead (see `punct`).
+    const ASM: u8 = crate::classify::ALPHA_SYM_MARK;
     let end = text.len();
-    // maximal `[\p{L}\p{M}]+` run from `a`, stopping at CJK-range chars (Split-2 took those) and
-    // ZWJ/ZWNJ (not `\p{L}∪\p{M}` — see `ds_breaks`). BYTE-wise (`p += 1`, continuation bytes stay
-    // in-run, `ds_breaks` only fires at a lead) — the `char_len`-per-char form was ~2× slower (see
-    // `run_end`'s note). This is the hot inner loop of the dense (latin) deepseek path.
+    // maximal `[\p{L}\p{M}]+` run from `a`, stopping at CJK-range chars (Split-2 took those), ZWJ/ZWNJ
+    // (not `\p{L}∪\p{M}` — see `ds_breaks`), and Other_Alphabetic symbols (`ASM`, categorically `\p{S}`).
+    // BYTE-wise (`p += 1`, continuation bytes stay in-run, `ds_breaks` only fires at a lead) — the
+    // `char_len`-per-char form was ~2× slower (see `run_end`'s note). Hot inner loop of the latin path.
     let letter_run = |a: usize| -> usize {
         let mut p = a;
         while p < end {
             let t = tags[p];
-            if t == CONT || (in_mask(t, mask::LETTER_MARK) && !ds_breaks(text, p)) {
+            if t == CONT || (in_mask(t, mask::LETTER_MARK) && t != ASM && !ds_breaks(text, p)) {
                 p += 1;
             } else {
                 break;
@@ -325,13 +335,17 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
         p
     };
     // is `text[a]` the start of a deepseek letter/mark char (alt-2 run body / space-prefix target)?
-    let is_lm = |a: usize| a < end && in_mask(tags[a], mask::LETTER_MARK) && !ds_breaks(text, a);
+    let is_lm =
+        |a: usize| a < end && in_mask(tags[a], mask::LETTER_MARK) && tags[a] != ASM && !ds_breaks(text, a);
     // Split-3 alt-3 tail `[\p{P}\p{S}]+[\r\n]*` from `sp0` (a leading space is already consumed); `sp0`
     // if there is no punct/sym run there. STOPS at CJK-range chars — Split-1 isolated those, so a CJK
     // punct (・) is never merged into a non-CJK punct run (`!・` → `!`, `・`, not `!・`).
     let punct = |sp0: usize| -> usize {
         let mut p = sp0;
-        while p < end && in_mask(tags[p], mask::PUNCT_SYM) && !ds_is_cjk_at(text, p) {
+        while p < end
+            && (in_mask(tags[p], mask::PUNCT_SYM) || tags[p] == ASM)
+            && !ds_is_cjk_at(text, p)
+        {
             p += char_len(text[p]);
         }
         if p > sp0 {
@@ -382,6 +396,31 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
             i = p;
             continue;
         }
+        // Gap run: maximal Control / NumericOther / ZWJ — none matches a Split-3 alt, so the composed
+        // Split emits the whole run as ONE unmatched piece. Exception: if it's immediately followed by a
+        // letter run, the LAST gap char is that run's alt-2 `[^\r\n\p{L}\p{P}\p{S}]?` prefix (splits off).
+        if matches!(tags[i] & 0x0F, NMO | CTL) || ds_is_zwj(text, i) {
+            let (mut p, mut last) = (i, i);
+            while p < end && (matches!(tags[p] & 0x0F, NMO | CTL) || ds_is_zwj(text, p)) {
+                last = p;
+                p += char_len(text[p]);
+            }
+            if is_lm(p) {
+                if last > i {
+                    out[w] = (start as u32, last as u32); // gap = all but the prefix char
+                    w += 1;
+                }
+                let e = letter_run(p);
+                out[w] = (last as u32, e as u32); // prefix char + `[\p{L}\p{M}]+`
+                w += 1;
+                i = e;
+            } else {
+                out[w] = (start as u32, p as u32); // whole gap run is one piece
+                w += 1;
+                i = p;
+            }
+            continue;
+        }
         match tags[i] & 0x0F {
             // Split-1: `\p{N}{1,3}`
             NW | NO => {
@@ -392,20 +431,9 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
                 }
                 i = p;
             }
-            // Split-2 CJK *letter* run (⇒ Split-3 re-split), else Split-3 alt-2 `[\p{L}\p{M}]+`. ZWJ/ZWNJ
-            // aren't `\p{L}∪\p{M}`, but they ARE a valid alt-2 prefix `[^\r\n\p{L}\p{P}\p{S}]?`, so a ZWJ
-            // FOLLOWED by a letter starts a "ZWJ + letters" token; otherwise it's its own gap token.
-            // Split-3 alt-2 `[\p{L}\p{M}]+` (CJK letters are handled above). ZWJ/ZWNJ aren't `\p{L}∪\p{M}`
-            // but ARE a valid alt-2 prefix `[^\r\n\p{L}\p{P}\p{S}]?`, so a ZWJ followed by a letter starts a
-            // "ZWJ + letters" token; otherwise it's its own gap token.
-            LET | MRK => {
-                i = if !ds_breaks(text, i) {
-                    letter_run(i)
-                } else {
-                    let a = i + char_len(b); // ZWJ/ZWNJ as alt-2 prefix, else own token
-                    if is_lm(a) { letter_run(a) } else { a }
-                };
-            }
+            // Split-3 alt-2 `[\p{L}\p{M}]+` (CJK letters + ZWJ/gap chars were consumed above the match).
+            // An Other_Alphabetic symbol (`ASM`, coarse `Mark`) is categorically `\p{S}` → the alt-3 run.
+            LET | MRK => i = if tags[i] == ASM { punct(i) } else { letter_run(i) },
             // Space: alt-2 (space prefix + `[\p{L}\p{M}]+`) | alt-3 (` ` + `[\p{P}\p{S}]+`) | whitespace
             SPC => {
                 let a = i + 1; // Space is ASCII (0x20)
@@ -438,11 +466,6 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
                 } else {
                     punct(i) // c ∈ PUNCT_SYM ⇒ > i
                 };
-            }
-            // NumericOther | Control (prefix candidates, not `\p{P}∪\p{S}`/ws): alt-2 prefix | own token
-            NMO | CTL => {
-                let a = i + char_len(b);
-                i = if is_lm(a) { letter_run(a) } else { a };
             }
             // Sentinel / MultiByte / Cont — never a char-start atom; emit one char defensively.
             _ => i += char_len(b),

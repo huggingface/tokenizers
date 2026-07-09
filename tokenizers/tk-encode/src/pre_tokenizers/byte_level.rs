@@ -84,7 +84,10 @@ impl PreTokenizer for ByteLevel {
             }
             if self.use_regex {
                 // GPT-2 byte-level split via the native atomsplit FSM (byte-exact, no regex backend).
-                normalized.split(GptFsmPattern(GptFsm::Gpt2), SplitDelimiterBehavior::Isolated)
+                normalized.split(
+                    GptFsmPattern(GptFsm::Gpt2),
+                    SplitDelimiterBehavior::Isolated,
+                )
             } else {
                 Ok(vec![normalized])
             }

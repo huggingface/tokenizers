@@ -2,13 +2,13 @@ use std::convert::TryInto;
 use std::ops::Range;
 use std::{borrow::Cow, convert::TryFrom};
 
-use crate::vocab::bucket_added_vocabulary::{
-    AddedToken as BucketAddedToken, AddedVocabulary as BucketAddedVocabulary,
-};
 use crate::models::bpe::BPE;
 use crate::models::unigram::Unigram;
 use crate::models::wordlevel::WordLevel;
 use crate::models::wordpiece::WordPiece;
+use crate::vocab::bucket_added_vocabulary::{
+    AddedToken as BucketAddedToken, AddedVocabulary as BucketAddedVocabulary,
+};
 use crate::{
     normalizers::NormalizerWrapper,
     pre_tokenizers::{

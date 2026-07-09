@@ -45,13 +45,17 @@ impl pipeline::PreTokenizer for WhitespaceSplit {
     fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Split>) -> Result<()> {
         // drop whitespace runs, keep everything else as runs — atomsplit SIMD classify + class-runs FSM.
         // atom `WS` == `char::is_whitespace`, so byte-exact with the scalar path.
-        use atomsplit::classify::{Atoms, classify, mask};
+        use atomsplit::classify::{classify, mask, Atoms};
         let bytes = text.as_bytes();
         let mut tags = vec![0u8; bytes.len()];
         classify::<Atoms>(bytes, &mut tags);
         let mut spans = vec![(0u32, 0u32); bytes.len() + 1];
         let n = atomsplit::fsm::class_runs_into::<{ mask::WS }, 0, 0>(bytes, &tags, &mut spans);
-        out.extend(spans[..n].iter().map(|&(s, e)| pipeline::Split { start: s, end: e }));
+        out.extend(
+            spans[..n]
+                .iter()
+                .map(|&(s, e)| pipeline::Split { start: s, end: e }),
+        );
         Ok(())
     }
 }
@@ -75,7 +79,7 @@ impl pipeline::PreTokenizer for Whitespace {
     fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Split>) -> Result<()> {
         // `\w+|[^\w\s]+`: drop whitespace, cut at the word↔symbol boundary, each run one token —
         // atomsplit classify + class-runs FSM (`WORD` = `\w`; keep-A = word, keep-B = symbol).
-        use atomsplit::classify::{Atoms, classify, mask};
+        use atomsplit::classify::{classify, mask, Atoms};
         let bytes = text.as_bytes();
         let mut tags = vec![0u8; bytes.len()];
         classify::<Atoms>(bytes, &mut tags);
@@ -83,7 +87,11 @@ impl pipeline::PreTokenizer for Whitespace {
         let n = atomsplit::fsm::class_runs_into::<{ mask::WS }, 0, { mask::WORD }>(
             bytes, &tags, &mut spans,
         );
-        out.extend(spans[..n].iter().map(|&(s, e)| pipeline::Split { start: s, end: e }));
+        out.extend(
+            spans[..n]
+                .iter()
+                .map(|&(s, e)| pipeline::Split { start: s, end: e }),
+        );
         Ok(())
     }
 }

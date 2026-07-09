@@ -151,9 +151,10 @@ impl pipeline::PreTokenizer for Split {
         // A recognized GPT regex (gpt2 / cl100k-Llama-3) in its only real usage — `Isolated`, not
         // inverted — routes straight to the native atomsplit FSM. These regexes cover the whole input,
         // so `Isolated` == the match list, and the FSM is byte-exact with `regex` (see the tests).
-        if let Some(fsm) = self.fsm.filter(|_| {
-            !self.invert && self.behavior == SplitDelimiterBehavior::Isolated
-        }) {
+        if let Some(fsm) = self
+            .fsm
+            .filter(|_| !self.invert && self.behavior == SplitDelimiterBehavior::Isolated)
+        {
             use atomsplit::classify::{classify, Atoms};
             let bytes = text.as_bytes();
             let mut tags = vec![0u8; bytes.len()];
@@ -163,7 +164,11 @@ impl pipeline::PreTokenizer for Split {
                 GptFsm::Cl100k => atomsplit::fsm::fsm_cl100k(bytes, &tags, &mut spans),
                 GptFsm::Gpt2 => atomsplit::fsm::fsm_byte_level(bytes, &tags, &mut spans),
             };
-            out.extend(spans[..n].iter().map(|&(s, e)| pipeline::Split { start: s, end: e }));
+            out.extend(
+                spans[..n]
+                    .iter()
+                    .map(|&(s, e)| pipeline::Split { start: s, end: e }),
+            );
             return Ok(());
         }
         let matches: Vec<((usize, usize), bool)> = match &self.multi {
@@ -425,7 +430,10 @@ mod tests {
         let corpus =
             "The quick brown fox 123!!!  double  spaces\tand tabs. don't Naïve café.\n\n世界 안녕 ";
         let pretok = Split::new(SplitPattern::Regex(cl100k.into()), Isolated, false).unwrap();
-        assert!(pretok.fsm.is_some(), "cl100k / Llama-3 pattern should route to the native FSM");
+        assert!(
+            pretok.fsm.is_some(),
+            "cl100k / Llama-3 pattern should route to the native FSM"
+        );
 
         let mut pre = PreTokenizedString::from(corpus);
         pretok.pre_tokenize(&mut pre).unwrap();

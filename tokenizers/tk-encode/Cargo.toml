@@ -62,9 +62,11 @@ memchr = "2.8.2"
 unicode-normalization = "0.1.25"
 
 [features]
-# TODO: onig is C (Oniguruma, archived upstream). We're moving to the pure-Rust
-# fancy-regex backend by default; once the legacy pre-tokenizers are gone, drop
-# the `onig` feature + `src/utils/onig.rs` entirely.
+# `fancy-regex` / `onig` are the system-regex backends, needed ONLY for a `Split` pre-tokenizer with
+# an arbitrary (non-GPT) regex or the `Replace` normalizer — the atomsplit-native pre-tokenizers
+# (GPT-2, cl100k, deepseek, the class family, char-delimiter) need no backend. Build with
+# `--no-default-features` (optionally re-adding `progressbar`) to drop fancy-regex entirely; a stub
+# then makes those arbitrary-regex paths error at load. onig is C (Oniguruma, archived upstream).
 default = ["progressbar", "fancy-regex"]
 progressbar = ["indicatif"]
 http = ["hf-hub"]
