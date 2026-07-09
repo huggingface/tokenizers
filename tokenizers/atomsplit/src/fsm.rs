@@ -562,6 +562,237 @@ pub fn fsm_byte_level(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
     w
 }
 
+// ── o200k (GPT-4o): case-aware letter split ──────────────────────────────────────────────────────
+
+/// o200k class of a letter-run char (all chars in a run are real `[\p{L}\p{M}]`, never ALPHA_SYM/ZWJ):
+/// `refine::UPPER` → U (`\p{Lu}\p{Lt}`), `refine::LOWER` → L (`\p{Ll}`), else C (caseless `\p{Lm}\p{Lo}
+/// \p{M}`). The two alt char-classes are `[UC]` = "not L" (`!o_is_lower`) and `[LC]` = "not U".
+#[inline]
+fn o_is_upper(t: u8) -> bool {
+    t == (crate::classify::refine::UPPER << 4) // 0x10: coarse Letter, refine UPPER
+}
+#[inline]
+fn o_is_lower(t: u8) -> bool {
+    t == (crate::classify::refine::LOWER << 4) // 0x20
+}
+
+/// One o200k letter sub-token from `p` within the run `[.., re)`: alt-1 `[UC]*[LC]+` (tried first) else
+/// alt-2 `[UC]+[LC]*` (reached only for an all-U run). Greedy with Perl backtracking — `[UC]*` gives back
+/// to the last C so `[LC]+` can take ≥1. Returns the sub-token end, always in `(p, re]`.
+fn o200k_letter_match(text: &[u8], tags: &[u8], p: usize, re: usize) -> usize {
+    // alt-1 `[UC]*`: greedy over "not L"
+    let mut q = p;
+    while q < re && !o_is_lower(tags[q]) {
+        q += char_len(text[q]);
+    }
+    if q < re {
+        // tags[q] is L → `[LC]+` from q: greedy over "not U"
+        let mut e = q;
+        while e < re && !o_is_upper(tags[e]) {
+            e += char_len(text[e]);
+        }
+        return e;
+    }
+    // no L in [p,re): backtrack `[UC]*` to the last C; none (all U) → alt-2 takes the whole run
+    let (mut x, mut last_c) = (p, None);
+    while x < re {
+        if !o_is_upper(tags[x]) && !o_is_lower(tags[x]) {
+            last_c = Some(x);
+        }
+        x += char_len(text[x]);
+    }
+    match last_c {
+        Some(b) => {
+            let mut e = b;
+            while e < re && !o_is_upper(tags[e]) {
+                e += char_len(text[e]);
+            }
+            e
+        }
+        None => re,
+    }
+}
+
+/// Length (incl the `'`) of an o200k contraction suffix `(?i:'s|'t|'re|'ve|'m|'ll|'d)` at `i`, else 0.
+fn o200k_contraction(text: &[u8], i: usize) -> usize {
+    let end = text.len();
+    if i >= end || text[i] != 0x27 || i + 1 >= end || text[i + 1] >= 0x80 {
+        return 0;
+    }
+    let lc = text[i + 1] | 0x20;
+    match lc {
+        b's' | b't' | b'm' | b'd' => 2,
+        b'r' | b'v' | b'l' if i + 2 < end && text[i + 2] < 0x80 => {
+            let l2 = text[i + 2] | 0x20;
+            usize::from((matches!(lc, b'r' | b'v') && l2 == b'e') || (lc == b'l' && l2 == b'l')) * 3
+        }
+        _ => 0,
+    }
+}
+
+/// Emit the o200k case-split of the letter run `[ls, re)` into `out[*w..]`: the first sub-token starts at
+/// `pfx` (the optional `[^\r\n\p{L}\p{N}]?` prefix; `pfx == ls` when none), the last absorbs a trailing
+/// contraction. Returns the new cursor (past the contraction). `ls < re` (caller-guaranteed).
+fn emit_o200k_letters(
+    text: &[u8],
+    tags: &[u8],
+    pfx: usize,
+    ls: usize,
+    re: usize,
+    out: &mut [Span],
+    w: &mut usize,
+) -> usize {
+    let (mut p, mut first, mut cursor) = (ls, true, re);
+    while p < re {
+        let e = o200k_letter_match(text, tags, p, re);
+        let start = if first { pfx } else { p };
+        let tok_end = if e == re { e + o200k_contraction(text, e) } else { e };
+        out[*w] = (start as u32, tok_end as u32);
+        *w += 1;
+        first = false;
+        cursor = tok_end;
+        p = e;
+    }
+    cursor
+}
+
+/// o200k (GPT-4o) pretokenization. Same skeleton as cl100k, but the letter body is `[\p{L}\p{M}]+`
+/// split into case sub-runs (`emit_o200k_letters`), the contraction is a *suffix* on letter tokens (not
+/// a leading rule), and rule 4 is `[^\s\p{L}\p{N}]+[\r\n/]*`. The letter body excludes ALPHA_SYM symbols
+/// and ZWJ/ZWNJ (coarse `Mark` but categorically `\p{S}`/`\p{Cf}`) — they take the prefix / rule-4 path.
+/// Unlike deepseek there are no gaps: rule 4's `[^\s\p{L}\p{N}]+` is a catch-all. Scalar; ┌ OWNER: shared ┐
+#[must_use]
+pub fn fsm_o200k(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
+    debug_assert!(out.len() >= text.len() && tags.len() >= text.len());
+    const LET: u8 = Atom::Letter as u8;
+    const NW: u8 = Atom::NumWord as u8;
+    const NO: u8 = Atom::NumOther as u8;
+    const NLN: u8 = Atom::Newline as u8;
+    const SPC: u8 = Atom::Space as u8;
+    const WSO: u8 = Atom::WsOther as u8;
+    const MRK: u8 = Atom::Mark as u8;
+    const CON: u8 = Atom::Connector as u8;
+    const PUN: u8 = Atom::Punct as u8;
+    const APO: u8 = Atom::Apostrophe as u8;
+    const SYM: u8 = Atom::SymOther as u8;
+    const NMO: u8 = Atom::NumericOther as u8;
+    const CTL: u8 = Atom::Control as u8;
+    const CONT: u8 = Atom::Cont as u8;
+    const ASM: u8 = crate::classify::ALPHA_SYM_MARK;
+    let end = text.len();
+
+    // start of a real `[\p{L}\p{M}]` char (excludes ALPHA_SYM symbols and ZWJ/ZWNJ: `\w` but not `[\p{L}
+    // \p{M}]`).
+    let is_lm = |a: usize| -> bool {
+        a < end && in_mask(tags[a], mask::LETTER_MARK) && tags[a] != ASM && !ds_is_zwj(text, a)
+    };
+    // maximal `[\p{L}\p{M}]+` run from `a` (byte-wise; continuation bytes ride along — see `run_end`).
+    let letter_end = |a: usize| -> usize {
+        let mut p = a;
+        while p < end {
+            let t = tags[p];
+            if t == CONT || (in_mask(t, mask::LETTER_MARK) && t != ASM && !ds_is_zwj(text, p)) {
+                p += 1;
+            } else {
+                break;
+            }
+        }
+        p
+    };
+    // rule 4 `[^\s\p{L}\p{N}]+[\r\n/]*` from `sp0` (any leading space already consumed); `sp0` if none.
+    // `/` is in the `+` body too — the trailing class only matters after the `+` stops at a `\r\n`.
+    let other = |sp0: usize| -> usize {
+        let mut p = run_end(tags, sp0, end, mask::NOT_WS_L_N);
+        if p > sp0 {
+            while p < end && (tags[p] == NLN || text[p] == b'/') {
+                p += char_len(text[p]);
+            }
+        }
+        p
+    };
+    // rules 5-7 `\s*[\r\n]+ | \s+(?!\S) | \s+` — identical to cl100k.
+    let ws = |i: usize| -> usize {
+        let re = run_end(tags, i, end, mask::WS);
+        if let Some(r) = text[i..re].iter().rposition(|&x| x == 0x0A || x == 0x0D) {
+            i + r + 1
+        } else if re == end {
+            re
+        } else {
+            let mut last = re - 1;
+            while last > i && text[last] & 0xC0 == 0x80 {
+                last -= 1;
+            }
+            if last > i { last } else { re }
+        }
+    };
+
+    let mut i = 0;
+    let mut w = 0usize;
+    while i < end {
+        let start = i;
+        let b = text[i];
+        match tags[i] & 0x0F {
+            // rule 3: `\p{N}{1,3}` (no prefix)
+            NW | NO => {
+                let (mut p, mut cnt) = (i, 0);
+                while p < end && cnt < 3 && in_mask(tags[p], mask::NUMBER) {
+                    p += char_len(text[p]);
+                    cnt += 1;
+                }
+                i = p;
+            }
+            // letters `[\p{L}\p{M}]+` (case-split) — but ALPHA_SYM/ZWJ (coarse Mark, not `[\p{L}\p{M}]`)
+            // take the `[^\r\n\p{L}\p{N}]?` prefix / rule-4 path instead.
+            LET | MRK => {
+                if tags[i] != ASM && !ds_is_zwj(text, i) {
+                    i = emit_o200k_letters(text, tags, i, i, letter_end(i), out, &mut w);
+                    continue;
+                }
+                let a = i + char_len(b);
+                if is_lm(a) {
+                    i = emit_o200k_letters(text, tags, i, a, letter_end(a), out, &mut w);
+                    continue;
+                }
+                i = other(i); // ∈ NOT_WS_L_N ⇒ > i
+            }
+            // Space: ` ?` prefix + letters | ` ?` + rule-4 other | whitespace
+            SPC => {
+                let a = i + 1; // Space is ASCII (0x20)
+                if is_lm(a) {
+                    i = emit_o200k_letters(text, tags, i, a, letter_end(a), out, &mut w);
+                    continue;
+                }
+                let p = other(a);
+                i = if p > a { p } else { ws(i) };
+            }
+            // WsOther: prefix + letters | whitespace (∈ `\s` ⇒ never starts rule 4)
+            WSO => {
+                let a = i + char_len(b);
+                if is_lm(a) {
+                    i = emit_o200k_letters(text, tags, i, a, letter_end(a), out, &mut w);
+                    continue;
+                }
+                i = ws(i);
+            }
+            NLN => i = ws(i),
+            // punct / sym / … (∈ `[^\r\n\p{L}\p{N}]` and `[^\s\p{L}\p{N}]`): prefix + letters | rule-4 other
+            CON | PUN | APO | SYM | NMO | CTL => {
+                let a = i + char_len(b);
+                if is_lm(a) {
+                    i = emit_o200k_letters(text, tags, i, a, letter_end(a), out, &mut w);
+                    continue;
+                }
+                i = other(i); // ∈ NOT_WS_L_N ⇒ > i
+            }
+            // Sentinel / MultiByte / Cont — never a char-start atom; emit one char defensively.
+            _ => i += char_len(b),
+        }
+        out[w] = (start as u32, i as u32);
+        w += 1;
+    }
+    w
+}
+
 // ── Composition recipes ────────────────────────────────────────────────────────────────────────
 // Each pre-tokenizer = (classify::<Atoms> → fsm shape + params). `tags` and `out` are caller-owned
 // scratch, reused across calls — NO per-call alloc, NO push. The class family writes spans into the

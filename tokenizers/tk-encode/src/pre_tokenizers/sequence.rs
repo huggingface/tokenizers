@@ -313,7 +313,9 @@ mod tests {
             .collect();
         let seq = Sequence::new(splits);
         assert!(seq.is_deepseek());
-        for lang in ["fr", "ru", "el", "ar", "he", "hi", "th", "zh", "ko"] {
+        // `he`/`ar` (RTL, RLM/format-mark + Other_Alphabetic-symbol heavy) are the cases the atomsplit
+        // deepseek bench doesn't cover; the other 8 languages are byte-exact-gated there.
+        for lang in ["he", "ar"] {
             let Ok(corpus) =
                 std::fs::read_to_string(format!("../atomsplit/benches/data/{lang}.txt"))
             else {
