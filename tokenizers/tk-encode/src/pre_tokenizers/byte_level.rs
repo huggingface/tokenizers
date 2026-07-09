@@ -1,19 +1,12 @@
-use crate::utils::byte_level::{
-    byte_level_transform, BYTES_CHAR_LOOKUP, CHAR_BYTES_LOOKUP, GPT2_REGEX_STR,
-};
-use crate::utils::{GptFsm, GptFsmPattern, SysRegex};
+use crate::utils::byte_level::{byte_level_transform, BYTES_CHAR_LOOKUP, CHAR_BYTES_LOOKUP};
+use crate::utils::{GptFsm, GptFsmPattern};
 use serde::{Deserialize, Serialize};
-use std::sync::LazyLock;
 
 use crate::tokenizer::{
     Decoder, Encoding, PostProcessor, PreTokenizedString, PreTokenizer, Result,
     SplitDelimiterBehavior,
 };
 use crate::utils::macro_rules_attribute;
-
-/// Regex that matches exactly one token.
-/// See https://github.com/openai/gpt-2/blob/master/src/encoder.py#L98
-static RE: LazyLock<SysRegex> = LazyLock::new(|| SysRegex::new(GPT2_REGEX_STR).unwrap());
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 /// Provides all the necessary steps to handle the BPE tokenization at the byte-level. Takes care

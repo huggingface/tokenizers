@@ -5,7 +5,10 @@
 //! accents/marks, Cyrillic/Greek/Arabic/Devanagari, Han/Kana/Hangul, ZWJ, astral emoji).
 //!
 //! This is the byte-exactness gate the hand cases in `fsm.rs` don't provide; the same corpus + gate
-//! should run under x86 (Intel SDE) and wasm (wasmtime) in CI to validate the SIMD paths.
+//! should run under x86 (Intel SDE) in CI to validate the SIMD paths.
+//!
+//! Gated off wasm32: the oniguruma reference is a C library that has no wasi libc to build against.
+#![cfg(not(target_arch = "wasm32"))]
 use atomsplit::classify::{Atoms, classify};
 use atomsplit::fsm::{Span, fsm_byte_level, fsm_cl100k, fsm_deepseek};
 use onig::Regex;

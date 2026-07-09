@@ -36,7 +36,7 @@ jobs:
           # Pin to the current SDE release (update the version/URL as Intel publishes new builds).
           SDE_VER=sde-external-9.44.0-2024-08-22-lin
           curl -sSL "https://downloadmirror.intel.com/831748/${SDE_VER}.tar.xz" | tar -xJ
-          echo "$PWD/tokenizers/${SDE_VER}" >> "$GITHUB_PATH"
+          echo "$PWD/${SDE_VER}" >> "$GITHUB_PATH"
       - name: Run tests under SDE (-future = AVX-512)
         run: |
           cargo test -p atomsplit --no-run --message-format=json \

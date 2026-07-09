@@ -16,27 +16,6 @@ impl Sequence {
     pub fn new(pretokenizers: Vec<PreTokenizerWrapper>) -> Self {
         Self { pretokenizers }
     }
-
-    /// Recognize deepseek's `[Split(\p{N}{1,3}), Split(CJK), Split(big)]` prefix (each Isolated,
-    /// non-inverted) — a trailing `ByteLevel` byte-map may follow. When it matches, the whole split
-    /// collapses to `atomsplit::fsm::fsm_deepseek` (byte-exact with running the three Splits in turn).
-    fn is_deepseek(&self) -> bool {
-        use crate::pre_tokenizers::split::SplitPattern;
-        use crate::tokenizer::SplitDelimiterBehavior::Isolated;
-        let regex = |i: usize| match self.pretokenizers.get(i) {
-            Some(PreTokenizerWrapper::Split(s)) if s.behavior == Isolated && !s.invert => {
-                match &s.pattern {
-                    SplitPattern::Regex(r) => Some(r.as_str()),
-                    SplitPattern::String(_) => None,
-                }
-            }
-            _ => None,
-        };
-        matches!(
-            (regex(0), regex(1), regex(2)),
-            (Some(a), Some(b), Some(c)) if crate::utils::is_deepseek(a, b, c)
-        )
-    }
 }
 
 impl AsRef<[PreTokenizerWrapper]> for Sequence {
@@ -304,11 +283,11 @@ mod tests {
             .collect();
         assert_eq!(splits.len(), 3, "deepseek has 3 Splits");
         let seq = Sequence::new(splits);
+        let pipe: PipelineSequence = seq.clone().try_into().unwrap();
         assert!(
-            seq.is_deepseek(),
+            pipe.is_deepseek(),
             "deepseek's exact 3-Split sequence must be recognized"
         );
-        let pipe: PipelineSequence = seq.clone().try_into().unwrap();
 
         for text in [
             "中文 with 123 numbers!! and ケーキ don't",
@@ -371,8 +350,8 @@ mod tests {
             .map(|c| serde_json::from_value(c.clone()).unwrap())
             .collect();
         let seq = Sequence::new(splits);
-        assert!(seq.is_deepseek());
         let pipe: PipelineSequence = seq.clone().try_into().unwrap();
+        assert!(pipe.is_deepseek());
         // `he`/`ar` (RTL, RLM/format-mark + Other_Alphabetic-symbol heavy) are the cases the atomsplit
         // deepseek bench doesn't cover; the other 8 languages are byte-exact-gated there.
         for lang in ["he", "ar"] {
