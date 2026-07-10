@@ -375,9 +375,15 @@ pub struct PipelineWordPiece {
     /// `##` (the configured continuing-subword prefix) as bytes; prepended to non-initial candidates.
     continuing_subword_prefix: Vec<u8>,
     max_input_chars_per_word: usize,
-    /// Longest token in the vocab, in bytes. No candidate can match beyond this, so we never probe
-    /// lengths above it — the win over the legacy path, which blindly starts at the full remaining word.
-    max_token_len: usize,
+    /// Distinct token byte-lengths in the vocab, **descending**. At each position we probe only these
+    /// (longest first, stop at the first hit) instead of shrinking one char at a time — a length no token
+    /// has can't match, so it's never probed; the descending order gives the greedy longest match.
+    ///
+    /// NOTE: I also tried bucketing these by the candidate's first byte (probe only lengths of tokens
+    /// starting with `word[start]`). On a real bert vocab that was *slower*: WordPiece finds a match in a
+    /// probe or two, so the fewer-lengths win is tiny, while the 256-way `Vec<Vec>` indirection adds a
+    /// cache miss per position. The flat list wins on real data.
+    lens_desc: Box<[u16]>,
 }
 
 impl PipelineWordPiece {
@@ -387,7 +393,10 @@ impl PipelineWordPiece {
             .iter()
             .map(|(s, &id)| (s.as_bytes().to_vec(), id))
             .collect();
-        let max_token_len = tokens.iter().map(|(s, _)| s.len()).max().unwrap_or(0);
+        let mut lens_desc: Vec<u16> = tokens.iter().map(|(s, _)| s.len() as u16).collect();
+        lens_desc.sort_unstable();
+        lens_desc.dedup();
+        lens_desc.reverse();
         // `BucketVocabStore::build` panics on an empty vocab (max_id over no tokens); `new` is the empty ctor.
         let vocab = if tokens.is_empty() {
             BucketVocabStore::new()
@@ -399,7 +408,7 @@ impl PipelineWordPiece {
             vocab,
             continuing_subword_prefix: wp.continuing_subword_prefix.as_bytes().to_vec(),
             max_input_chars_per_word: wp.max_input_chars_per_word,
-            max_token_len,
+            lens_desc: lens_desc.into_boxed_slice(),
         }
     }
 }
@@ -418,39 +427,34 @@ impl pipeline::Model for PipelineWordPiece {
 
         let prefix = &self.continuing_subword_prefix;
         let bytes = sequence.as_bytes();
-        let mut buf: Vec<u8> = Vec::with_capacity(self.max_token_len);
-        let mut ends: Vec<usize> = Vec::with_capacity(self.max_token_len);
+        let max_token_len = self.lens_desc.first().copied().unwrap_or(0) as usize;
+        let mut buf: Vec<u8> = Vec::with_capacity(max_token_len);
         let start_out = output.len();
         let mut start = 0usize;
 
         while start < sequence.len() {
             let prefix_len = if start > 0 { prefix.len() } else { 0 };
-            // A match can be at most `max_token_len` bytes, so the word part is capped here — this is
-            // what lets us skip the long run of guaranteed-miss probes the legacy path pays on every
-            // word longer than the vocab's longest token.
-            let cap_word = self.max_token_len.saturating_sub(prefix_len);
-
-            // Char-boundary byte offsets in `word[start..]` that fit under the cap (ascending), and the
-            // matching candidate buffer `["##"] + word[start..start+capped]`.
-            ends.clear();
-            let mut capped = 0usize;
-            for (idx, ch) in sequence[start..].char_indices() {
-                let e = idx + ch.len_utf8();
-                if e > cap_word {
-                    break;
-                }
-                capped = e;
-                ends.push(e);
-            }
+            let remaining = sequence.len() - start;
+            // A match is at most `max_token_len` bytes; cap the word part there and by what's left.
+            let cap_word = max_token_len.saturating_sub(prefix_len).min(remaining);
             buf.clear();
             buf.extend_from_slice(prefix.get(..prefix_len).unwrap_or(&[]));
-            buf.extend_from_slice(&bytes[start..start + capped]);
+            buf.extend_from_slice(&bytes[start..start + cap_word]);
 
-            // Longest-first with early exit (greedy WordPiece): the first hit is the answer.
+            // Probe real token lengths longest-first; first hit is the greedy answer. Byte-exact: a length
+            // that splits a codepoint or that no token has can't match a valid-UTF-8 token.
             let mut matched = None;
-            for &e in ends.iter().rev() {
-                if let Some(id) = self.vocab.get_bytes(&buf[..prefix_len + e]) {
-                    matched = Some((e, id));
+            for &l in self.lens_desc.iter() {
+                let l = l as usize;
+                if l < prefix_len + 1 {
+                    break;
+                }
+                let word_bytes = l - prefix_len;
+                if word_bytes > cap_word {
+                    continue;
+                }
+                if let Some(id) = self.vocab.get_bytes(&buf[..prefix_len + word_bytes]) {
+                    matched = Some((word_bytes, id));
                     break;
                 }
             }
@@ -484,7 +488,9 @@ mod tests {
         assert!(format!("{}", Error::MissingUnkToken).contains("Missing [UNK] token"));
     }
 
-    /// A small `##` vocab exercising: whole-word hit, greedy split, single-char fallback, and unk.
+    /// A small `##` vocab exercising: whole-word hit, greedy split, single-char fallback, unk, and
+    /// **multibyte** tokens (é = 2B, 中 = 3B) — the length-set path probes byte lengths that can split a
+    /// codepoint, so a splitting length must never produce a false match.
     fn toy() -> WordPiece {
         let pairs = [
             ("[UNK]", 0),
@@ -498,12 +504,17 @@ mod tests {
             ("##b", 7),
             ("##c", 8),
             ("play", 9),
+            ("caf", 10),
+            ("##é", 11),
+            ("中", 12),
+            ("##中", 13),
+            ("中文", 14),
         ];
         let vocab: AHashMap<String, u32> = pairs.iter().map(|(s, i)| (s.to_string(), *i)).collect();
         WordPiece::builder().vocab(vocab).build().unwrap()
     }
 
-    /// `PipelineWordPiece` (streamed MPHF) must be byte-exact with the legacy AHashMap pipeline path.
+    /// `PipelineWordPiece` (length-set MPHF probe) must be byte-exact with the legacy AHashMap path.
     #[test]
     fn pipeline_wordpiece_matches_legacy() {
         let wp = toy();
@@ -518,6 +529,10 @@ mod tests {
             "xyz",
             "a",
             "",
+            "café",
+            "中文中",
+            "中b",
+            "caféunwant",
         ] {
             let mut legacy = Vec::new();
             wp.tokenize_pipeline(word, &mut legacy).unwrap();

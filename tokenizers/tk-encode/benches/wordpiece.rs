@@ -8,97 +8,49 @@
 //!   V4  streamed mphf: BucketVocabStore.longest_prefix_match (index_stream, prefetch, no early-exit)
 //!                                                                          (isolates *streaming*)
 //!
-//! V3 is what `PipelineWordPiece` ships. NOTE: on aarch64 ptr_hash's prefetch is a no-op, so V4 only
-//! shows its instruction-level-parallelism here; its prefetch win is x86/x86_64-only.
+//! V5 is what `PipelineWordPiece` ships (probe the distinct token lengths, not char-by-char). NOTE: on
+//! aarch64 ptr_hash's prefetch is a no-op, so V4 only shows its instruction-level-parallelism here; its
+//! prefetch win is x86/x86_64-only.
 //!
 //! Self-contained (no fixtures): single chars are always in-vocab (guarantees a fallback, no unk), plus
 //! a deterministic ~40% subset of 2/3/4-letter combos (plain and `##`) so greedy does real multi-probe
 //! work per position — not the degenerate "every longest probe hits" case.
 
-use ahash::AHashMap;
 use std::hint::black_box;
 use std::time::Instant;
 use tk_encode::added_vocabulary::bucket_vocab_store::BucketVocabStore;
 use tk_encode::models::wordpiece::{PipelineWordPiece, WordPiece};
 use tk_encode::pipeline::Model as PipelineModel;
 
-struct Lcg(u64);
-impl Lcg {
-    fn next_u64(&mut self) -> u64 {
-        self.0 = self
-            .0
-            .wrapping_mul(6364136223846793005)
-            .wrapping_add(1442695040888963407);
-        self.0
-    }
+fn load_vocab(path: &str) -> WordPiece {
+    WordPiece::from_file(path).build().unwrap()
 }
 
-fn build_vocab() -> WordPiece {
-    let mut vocab: AHashMap<String, u32> = AHashMap::new();
-    let mut next = 0u32;
-    let ins = |s: String, v: &mut AHashMap<String, u32>, n: &mut u32| {
-        v.entry(s).or_insert_with(|| {
-            let id = *n;
-            *n += 1;
-            id
-        });
-    };
-    ins("[UNK]".to_string(), &mut vocab, &mut next);
-    // Single chars always present -> greedy can always fall back to 1 char, so no word is unk.
-    for a in b'a'..=b'z' {
-        let c = (a as char).to_string();
-        ins(c.clone(), &mut vocab, &mut next);
-        ins(format!("##{c}"), &mut vocab, &mut next);
-    }
-    // ~40% of 2/3/4-letter combos, deterministically chosen, both plain and `##`.
-    let mut rng = Lcg(0xDEAD_BEEF_1234_5678);
-    let maybe = |s: String, v: &mut AHashMap<String, u32>, n: &mut u32, r: &mut Lcg| {
-        if r.next_u64() % 5 < 2 {
-            ins(s.clone(), v, n);
-            ins(format!("##{s}"), v, n);
-        }
-    };
-    for a in b'a'..=b'z' {
-        for b in b'a'..=b'z' {
-            maybe(
-                format!("{}{}", a as char, b as char),
-                &mut vocab,
-                &mut next,
-                &mut rng,
-            );
-            for c in b'a'..=b'z' {
-                maybe(
-                    format!("{}{}{}", a as char, b as char, c as char),
-                    &mut vocab,
-                    &mut next,
-                    &mut rng,
-                );
+/// BERT basic pre-tokenization of a real text file: lowercase, split on whitespace, and isolate each
+/// punctuation char as its own pre-token — the per-word inputs the WordPiece model actually sees.
+fn load_corpus(path: &str, max_words: usize) -> Vec<String> {
+    let text = std::fs::read_to_string(path).unwrap();
+    let mut words = Vec::new();
+    let mut cur = String::new();
+    for ch in text.chars() {
+        if ch.is_alphanumeric() {
+            cur.extend(ch.to_lowercase());
+        } else {
+            if !cur.is_empty() {
+                words.push(std::mem::take(&mut cur));
+            }
+            if !ch.is_whitespace() {
+                words.push(ch.to_string());
             }
         }
+        if words.len() >= max_words {
+            break;
+        }
     }
-    // A tail of longer tokens (len 4..=12) so `max_token_len` is realistic (~BERT), not just 3 — bounding
-    // then can't trivially collapse every position to one probe.
-    for _ in 0..4000 {
-        let len = 4 + (rng.next_u64() % 9) as usize;
-        let s: String = (0..len)
-            .map(|_| (b'a' + (rng.next_u64() % 26) as u8) as char)
-            .collect();
-        ins(s.clone(), &mut vocab, &mut next);
-        ins(format!("##{s}"), &mut vocab, &mut next);
+    if !cur.is_empty() && words.len() < max_words {
+        words.push(cur);
     }
-    WordPiece::builder().vocab(vocab).build().unwrap()
-}
-
-fn corpus(n_words: usize) -> Vec<String> {
-    let mut rng = Lcg(0x9E3779B97F4A7C15);
-    (0..n_words)
-        .map(|_| {
-            let len = 4 + (rng.next_u64() % 17) as usize; // 4..=20 chars
-            (0..len)
-                .map(|_| (b'a' + (rng.next_u64() % 26) as u8) as char)
-                .collect()
-        })
-        .collect()
+    words
 }
 
 /// Bounded greedy longest-first + early-exit; `lookup(candidate_bytes) -> id`. Shared by V2/V3.
@@ -196,6 +148,120 @@ fn greedy_streamed(
     }
 }
 
+/// V5 — "added-tokens" style: probe only the DISTINCT vocab token byte-lengths (descending, first hit
+/// wins) instead of shrinking one char at a time. `lens_desc` is the sorted-desc distinct token lengths.
+/// Byte-exact: a byte length that splits a codepoint can't equal any valid-UTF-8 token, so the longest
+/// hit is identical to the legacy greedy choice.
+fn greedy_lenset(
+    word: &str,
+    prefix: &[u8],
+    lens_desc: &[u16],
+    unk: u32,
+    store: &BucketVocabStore,
+    out: &mut Vec<u32>,
+) {
+    let bytes = word.as_bytes();
+    let maxlen = lens_desc.first().copied().unwrap_or(0) as usize;
+    let mut buf = Vec::with_capacity(maxlen);
+    let mut start = 0usize;
+    let base = out.len();
+    while start < word.len() {
+        let prefix_len = if start > 0 { prefix.len() } else { 0 };
+        let remaining = word.len() - start;
+        let cap_wp = maxlen.saturating_sub(prefix_len).min(remaining);
+        buf.clear();
+        buf.extend_from_slice(&prefix[..prefix_len]);
+        buf.extend_from_slice(&bytes[start..start + cap_wp]);
+        let mut hit = None;
+        for &l in lens_desc {
+            let l = l as usize;
+            if l < prefix_len + 1 {
+                break; // descending: no remaining length can hold a word char
+            }
+            let wp = l - prefix_len;
+            if wp > cap_wp {
+                continue; // candidate longer than what's left
+            }
+            if let Some(id) = store.get_bytes(&buf[..prefix_len + wp]) {
+                hit = Some((wp, id));
+                break;
+            }
+        }
+        match hit {
+            Some((wp, id)) => {
+                out.push(id);
+                start += wp;
+            }
+            None => {
+                out.truncate(base);
+                out.push(unk);
+                return;
+            }
+        }
+    }
+}
+
+/// V6 — length set indexed by the candidate's first content byte (the intended design): at each position
+/// probe only the lengths of tokens that actually start with `word[start]`, not every length.
+/// `initial[b]`/`cont[b]` are the sorted-desc distinct token byte-lengths for first byte `b` (word-initial
+/// vs `##`-continuation). This is what `PipelineWordPiece` ships.
+#[allow(clippy::too_many_arguments)]
+fn greedy_lenset_fb(
+    word: &str,
+    prefix: &[u8],
+    initial: &[Vec<u16>],
+    cont: &[Vec<u16>],
+    unk: u32,
+    store: &BucketVocabStore,
+    out: &mut Vec<u32>,
+) {
+    let bytes = word.as_bytes();
+    let mut buf = Vec::with_capacity(64);
+    let mut start = 0usize;
+    let base = out.len();
+    while start < word.len() {
+        let prefix_len = if start > 0 { prefix.len() } else { 0 };
+        let lens = if start > 0 {
+            &cont[bytes[start] as usize]
+        } else {
+            &initial[bytes[start] as usize]
+        };
+        let remaining = word.len() - start;
+        let mut hit = None;
+        if let Some(&maxl) = lens.first() {
+            let cap = (maxl as usize).saturating_sub(prefix_len).min(remaining);
+            buf.clear();
+            buf.extend_from_slice(&prefix[..prefix_len]);
+            buf.extend_from_slice(&bytes[start..start + cap]);
+            for &l in lens {
+                let l = l as usize;
+                if l < prefix_len + 1 {
+                    break;
+                }
+                let wp = l - prefix_len;
+                if wp > cap {
+                    continue;
+                }
+                if let Some(id) = store.get_bytes(&buf[..prefix_len + wp]) {
+                    hit = Some((wp, id));
+                    break;
+                }
+            }
+        }
+        match hit {
+            Some((wp, id)) => {
+                out.push(id);
+                start += wp;
+            }
+            None => {
+                out.truncate(base);
+                out.push(unk);
+                return;
+            }
+        }
+    }
+}
+
 fn time<F: FnMut(&str, &mut Vec<u32>)>(
     words: &[String],
     bytes: usize,
@@ -219,7 +285,16 @@ fn time<F: FnMut(&str, &mut Vec<u32>)>(
 }
 
 fn main() {
-    let wp = build_vocab();
+    let (Some(vpath), Some(cpath)) = (
+        std::env::var("WP_VOCAB").ok(),
+        std::env::var("WP_CORPUS").ok(),
+    ) else {
+        println!(
+            "wordpiece bench: set WP_VOCAB=<bert vocab.txt> WP_CORPUS=<text file> to run; skipping"
+        );
+        return;
+    };
+    let wp = load_vocab(&vpath);
     let prefix = wp.continuing_subword_prefix.as_bytes().to_vec();
     let unk = *wp.vocab.get("[UNK]").unwrap();
     let max_token_len = wp.vocab.keys().map(|k| k.len()).max().unwrap();
@@ -230,11 +305,45 @@ fn main() {
             .collect(),
     );
     let pw = PipelineWordPiece::from_wordpiece(&wp);
-    let words = corpus(5000);
+    // Distinct token byte-lengths, descending — the "added-tokens" length set (V5).
+    let mut lens_desc: Vec<u16> = wp.vocab.keys().map(|k| k.len() as u16).collect();
+    lens_desc.sort_unstable();
+    lens_desc.dedup();
+    lens_desc.reverse();
+    // First-byte-indexed length sets (V6 / shipped): lengths of tokens starting with byte b.
+    let mut initial: Vec<Vec<u16>> = vec![Vec::new(); 256];
+    let mut cont: Vec<Vec<u16>> = vec![Vec::new(); 256];
+    for k in wp.vocab.keys() {
+        let b = k.as_bytes();
+        if b.is_empty() {
+            continue;
+        }
+        initial[b[0] as usize].push(b.len() as u16);
+        if b.len() > prefix.len() && b.starts_with(&prefix) {
+            cont[b[prefix.len()] as usize].push(b.len() as u16);
+        }
+    }
+    for v in initial.iter_mut().chain(cont.iter_mut()) {
+        v.sort_unstable();
+        v.dedup();
+        v.reverse();
+    }
+    let avg_bucket = {
+        let ne: Vec<usize> = initial
+            .iter()
+            .chain(cont.iter())
+            .map(|v| v.len())
+            .filter(|&n| n > 0)
+            .collect();
+        ne.iter().sum::<usize>() as f64 / ne.len().max(1) as f64
+    };
+    let words = load_corpus(&cpath, 200_000);
     let total: usize = words.iter().map(|w| w.len()).sum();
 
     // Byte-exactness of every variant against the shipped legacy path.
-    let (mut base, mut v2, mut v3, mut v4, mut vp, mut tmp) = (
+    let (mut base, mut v2, mut v3, mut v4, mut v5, mut v6, mut vp, mut tmp) = (
+        Vec::new(),
+        Vec::new(),
         Vec::new(),
         Vec::new(),
         Vec::new(),
@@ -259,14 +368,18 @@ fn main() {
         });
         v4.clear();
         greedy_streamed(w, &prefix, max_token_len, unk, &store, &mut v4);
+        v5.clear();
+        greedy_lenset(w, &prefix, &lens_desc, unk, &store, &mut v5);
+        v6.clear();
+        greedy_lenset_fb(w, &prefix, &initial, &cont, unk, &store, &mut v6);
         tmp.clear();
         PipelineModel::tokenize_pipeline(&pw, w, &mut tmp).unwrap();
         vp.clear();
         vp.extend(tmp.iter().map(|t| t.id));
 
-        if v2 != base || v3 != base || v4 != base || vp != base {
+        if v2 != base || v3 != base || v4 != base || v5 != base || v6 != base || vp != base {
             ok = false;
-            eprintln!("DIVERGE on {w:?}: base={base:?} v2={v2:?} v3={v3:?} v4={v4:?} vp={vp:?}");
+            eprintln!("DIVERGE on {w:?}: base={base:?} v5={v5:?} v6={v6:?}");
             break;
         }
     }
@@ -293,19 +406,31 @@ fn main() {
     let (v4, s4) = time(&words, total, iters, |w, o| {
         greedy_streamed(w, &prefix, max_token_len, unk, &store, o)
     });
-    let (vp, s5) = time(&words, total, iters, |w, o| {
+    let (v5, s5) = time(&words, total, iters, |w, o| {
+        greedy_lenset(w, &prefix, &lens_desc, unk, &store, o)
+    });
+    let (v6, s6) = time(&words, total, iters, |w, o| {
+        greedy_lenset_fb(w, &prefix, &initial, &cont, unk, &store, o)
+    });
+    let (vp, s7) = time(&words, total, iters, |w, o| {
         let mut t = Vec::new();
         PipelineModel::tokenize_pipeline(&pw, w, &mut t).unwrap();
         o.extend(t.iter().map(|x| x.id));
     });
-    black_box((s1, s2, s3, s4, s5));
+    black_box((s1, s2, s3, s4, s5, s6, s7));
 
     println!("\nWordPiece model lookup — {} vocab tokens, longest {max_token_len}B, {} words, {total} bytes", wp.vocab.len(), words.len());
     println!("  V1 legacy    (AHashMap, unbounded)      : {v1:>7.3} ns/byte  (1.00x)");
     println!("  V2 bounded   (AHashMap, bounded)        : {v2:>7.3} ns/byte  ({:.2}x)   isolates bounding", v1 / v2);
     println!("  V3 mphf      (BucketVocabStore, scalar) : {v3:>7.3} ns/byte  ({:.2}x)   isolates AHashMap->MPHF", v1 / v3);
     println!("  V4 streamed  (index_stream, prefetch)   : {v4:>7.3} ns/byte  ({:.2}x)   isolates streaming (x86 only)", v1 / v4);
-    println!("  ** PipelineWordPiece (shipped, MPHF+bounded+reused bufs): {vp:>7.3} ns/byte  ({:.2}x) **", v1 / vp);
+    println!(
+        "  V5 len-set   (probe {} distinct token lengths, MPHF) : {v5:>7.3} ns/byte  ({:.2}x)  <- shipped algorithm",
+        lens_desc.len(),
+        v1 / v5
+    );
+    println!("  V6 len-set/1B(probe ~{avg_bucket:.1} lengths for word[start]'s byte) : {v6:>7.3} ns/byte  ({:.2}x)  (slower on real data: per-byte indirection > probe savings)", v1 / v6);
+    println!("  ** PipelineWordPiece end-to-end (V5 + PipelineToken output): {vp:>7.3} ns/byte  ({:.2}x) **", v1 / vp);
     println!(
         "  byte-exact across all variants: {}",
         if ok { "✓" } else { "✗ MISMATCH" }
