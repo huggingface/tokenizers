@@ -60,6 +60,7 @@ compact_str = { version = "0.9", features = ["serde"] }
 ptr_hash = { version = "1.1.0" }
 memchr = "2.8.2"
 unicode-normalization = "0.1.25"
+yada = "0.7.0"
 
 [features]
 # `fancy-regex` / `onig` are the system-regex backends, needed ONLY for a `Split` pre-tokenizer with
