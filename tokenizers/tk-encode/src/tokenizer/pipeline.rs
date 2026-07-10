@@ -26,7 +26,7 @@ use crate::{
     ModelWrapper, PostProcessorWrapper, PreTokenizerWrapper, Token, Tokenizer,
 };
 
-use super::{Result, SplitDelimiterBehavior};
+use super::{Encoding, PostProcessor, Result, SplitDelimiterBehavior};
 
 /// A pre-token split, a range into the input text.
 #[derive(Copy, Clone)]
@@ -258,7 +258,7 @@ pub struct PipelineTokenizer {
     normalizer: Option<NormalizerWrapper>,
     pre_tokenizer: PipelinePreTokenizer,
     model: PipelineModel,
-    _post_processor: Option<PostProcessorWrapper>,
+    post_processor: Option<PostProcessorWrapper>,
 }
 
 impl TryFrom<&Tokenizer> for PipelineTokenizer {
@@ -356,20 +356,22 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
             normalizer: tok.get_normalizer().cloned(),
             pre_tokenizer,
             model,
-            _post_processor: tok.get_post_processor().cloned(),
+            post_processor: tok.get_post_processor().cloned(),
         })
     }
 }
 
 impl PipelineTokenizer {
-    /// Stage gates for [`encode_upto`](Self::encode_upto), in execution order. Each
-    /// level runs every stage up to and including itself; `STAGE_MODEL` is a full
-    /// encode. `STAGE_FRAME` is the special-token scan + iteration only (the "other"
-    /// slice in the decomposition).
+    /// Stage gates for [`encode_generic`](Self::encode_generic), in execution
+    /// order. Each level runs every stage up to and including itself;
+    /// `STAGE_POST` is a full encode (model output run through the post-processor);
+    /// `STAGE_MODEL` stops just before it. `STAGE_FRAME` is the special-token scan
+    /// + iteration only (the "other" slice in the decomposition).
     pub const STAGE_FRAME: u8 = 0;
     pub const STAGE_NORMALIZE: u8 = 1;
     pub const STAGE_SPLIT: u8 = 2;
     pub const STAGE_MODEL: u8 = 3;
+    pub const STAGE_POST: u8 = 4;
 
     /// Encode `input` into token ids.
     ///
@@ -380,11 +382,18 @@ impl PipelineTokenizer {
     /// This way, special / added tokens declared on raw or normalized text are both caught.
     /// The remaining text is pre-tokenized and run through the model span by span.
     ///
-    /// todo: wire the post-processing
-    pub fn encode(&self, input: &str, _add_special_tokens: bool) -> Result<Vec<PipelineToken>> {
+    /// When `add_special_tokens` is set and the tokenizer has a post-processor, the model
+    /// output is run through it (framing/special tokens); otherwise the raw model ids are
+    /// returned. The post-processor is the [`STAGE_POST`](Self::STAGE_POST) stage.
+    pub fn encode(&self, input: &str, add_special_tokens: bool) -> Result<Vec<PipelineToken>> {
         let mut output = Vec::new();
         let mut pre_tokens = Vec::new();
-        self.encode_generic::<{ Self::STAGE_MODEL }>(input, &mut output, &mut pre_tokens)?;
+        self.encode_generic::<{ Self::STAGE_POST }>(
+            input,
+            add_special_tokens,
+            &mut output,
+            &mut pre_tokens,
+        )?;
         Ok(output)
     }
 
@@ -405,6 +414,7 @@ impl PipelineTokenizer {
     pub fn encode_generic<const STAGE: u8>(
         &self,
         input: &str,
+        add_special_tokens: bool,
         output: &mut Vec<PipelineToken>,
         pre_tokens: &mut Vec<Split>,
     ) -> Result<()> {
@@ -453,6 +463,23 @@ impl PipelineTokenizer {
                     }
                 }
             };
+        }
+
+        // STAGE_POST: run the model output through the post-processor (framing / special
+        // tokens). Const-folds away below STAGE_POST. The pipeline is id-only, so we hand the
+        // processor a minimal Encoding carrying just the ids — token strings/offsets are
+        // degenerate, which is fine because an encode-only caller reads back only ids. No pair.
+        if STAGE >= Self::STAGE_POST {
+            if let Some(processor) = &self.post_processor {
+                let tokens = output
+                    .iter()
+                    .map(|t| Token::new(t.id, String::new(), (0, 0)))
+                    .collect();
+                let processed =
+                    processor.process(Encoding::from_tokens(tokens, 0), None, add_special_tokens)?;
+                output.clear();
+                output.extend(processed.get_ids().iter().map(|&id| PipelineToken { id }));
+            }
         }
         Ok(())
     }
@@ -779,5 +806,50 @@ mod tests {
         tok.with_pre_tokenizer(Some(ByteLevel::new(false, true, true)));
         let err = conversion_error(&tok);
         assert!(err.contains("not supported with model"), "{}", err);
+    }
+
+    // STAGE_POST: the pipeline must run the post-processor exactly as the reference
+    // `Tokenizer` does — framing tokens only when `add_special_tokens` is set.
+    #[test]
+    fn pipeline_runs_post_processor_matching_reference() {
+        use crate::models::wordlevel::WordLevel;
+        use crate::processors::bert::BertProcessing;
+        use crate::pre_tokenizers::whitespace::Whitespace;
+
+        let vocab: ahash::AHashMap<String, u32> = IntoIterator::into_iter([
+            ("[CLS]".to_string(), 0u32),
+            ("[SEP]".to_string(), 1),
+            ("hello".to_string(), 2),
+            ("world".to_string(), 3),
+        ])
+        .collect();
+        let model = WordLevel::builder()
+            .vocab(vocab)
+            .unk_token("[SEP]".to_string())
+            .build()
+            .unwrap();
+        let mut tok = Tokenizer::new(model);
+        tok.with_pre_tokenizer(Some(Whitespace));
+        tok.with_post_processor(Some(BertProcessing::new(
+            ("[SEP]".to_string(), 1),
+            ("[CLS]".to_string(), 0),
+        )));
+
+        let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
+        let ids = |enc: Vec<PipelineToken>| enc.iter().map(|t| t.id).collect::<Vec<_>>();
+
+        // add_special_tokens=true frames as [CLS] hello world [SEP]
+        assert_eq!(
+            ids(pipeline.encode("hello world", true).unwrap()),
+            tok.encode("hello world", true).unwrap().get_ids()
+        );
+        assert_eq!(ids(pipeline.encode("hello world", true).unwrap()), vec![0, 2, 3, 1]);
+
+        // add_special_tokens=false leaves the raw model ids unframed
+        assert_eq!(
+            ids(pipeline.encode("hello world", false).unwrap()),
+            tok.encode("hello world", false).unwrap().get_ids()
+        );
+        assert_eq!(ids(pipeline.encode("hello world", false).unwrap()), vec![2, 3]);
     }
 }

@@ -111,7 +111,7 @@ fn stage_secs<const STAGE: u8>(pipeline: &PipelineTokenizer, chunks: &[String]) 
     let mut run = || {
         for chunk in chunks {
             out.clear();
-            let _ = pipeline.encode_generic::<STAGE>(chunk, &mut out, &mut pre_tokens);
+            let _ = pipeline.encode_generic::<STAGE>(chunk, true, &mut out, &mut pre_tokens);
             black_box(&out);
             black_box(&pre_tokens);
         }
@@ -233,19 +233,22 @@ fn bench_model(
         let t_norm = stage_secs::<{ PipelineTokenizer::STAGE_NORMALIZE }>(pipeline, &chunks);
         let t_split = stage_secs::<{ PipelineTokenizer::STAGE_SPLIT }>(pipeline, &chunks);
         let t_model = stage_secs::<{ PipelineTokenizer::STAGE_MODEL }>(pipeline, &chunks);
+        let t_post = stage_secs::<{ PipelineTokenizer::STAGE_POST }>(pipeline, &chunks);
         // Two distinct "split" costs are separated here: `added_split` is the
         // added/special-token scan (the SpecialSegmentIterator over the AddedVocabulary,
-        // captured by the FRAME level), `pre_tokenize` is the pre-tokenizer split. All
-        // four stages sum exactly to `total`.
+        // captured by the FRAME level), `pre_tokenize` is the pre-tokenizer split. `post` is
+        // the post-processor (framing / special tokens), which the user suspects is slow. All
+        // five stages sum exactly to `total`.
         let nspb = |secs: f64| secs * 1e9 / bytes as f64;
-        let (ns_added, ns_norm, ns_split, ns_model) = (
+        let (ns_added, ns_norm, ns_split, ns_model, ns_post) = (
             nspb(t_frame.max(0.0)),
             nspb((t_norm - t_frame).max(0.0)),
             nspb((t_split - t_norm).max(0.0)),
             nspb((t_model - t_split).max(0.0)),
+            nspb((t_post - t_model).max(0.0)),
         );
         eprintln!(
-            "    stages ns/byte: added-split {ns_added:.2}, norm {ns_norm:.2}, pre-split {ns_split:.2}, model {ns_model:.2}"
+            "    stages ns/byte: added-split {ns_added:.2}, norm {ns_norm:.2}, pre-split {ns_split:.2}, model {ns_model:.2}, post {ns_post:.2}"
         );
 
         rows.push(json!({
@@ -257,13 +260,14 @@ fn bench_model(
             "pipeline_mbps": pipeline_mbps,
             "speedup": l / p,
             "ids_match": ids_match,
-            // pipeline-only stage decomposition (ns/byte); the four stages sum to total.
+            // pipeline-only stage decomposition (ns/byte); the five stages sum to total.
             "stage_ns_per_byte": {
                 "added_split": ns_added,
                 "normalize": ns_norm,
                 "pre_tokenize": ns_split,
                 "model": ns_model,
-                "total": nspb(t_model),
+                "post": ns_post,
+                "total": nspb(t_post),
             },
         }));
     }
