@@ -8,7 +8,7 @@ use crate::added_vocabulary::bucket_added_vocabulary::{
 use crate::models::bpe::PipelineBPE;
 use crate::models::unigram::Unigram;
 use crate::models::wordlevel::WordLevel;
-use crate::models::wordpiece::WordPiece;
+use crate::models::wordpiece::PipelineWordPiece;
 use crate::pre_tokenizers::sequence::PipelineSequence;
 use crate::pre_tokenizers::split::SplitPattern;
 use crate::utils::byte_level::GPT2_REGEX_STR;
@@ -350,7 +350,7 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
             }
             ModelWrapper::Unigram(model) => PipelineModel::Unigram(model),
             ModelWrapper::WordLevel(model) => PipelineModel::WordLevel(model),
-            ModelWrapper::WordPiece(model) => PipelineModel::WordPiece(model),
+            ModelWrapper::WordPiece(model) => PipelineModel::WordPiece(model.try_into()?),
         };
 
         Ok(Self {
@@ -685,7 +685,7 @@ pub enum PipelineModel {
     BPE(PipelineBPE),
     Unigram(Unigram),
     WordLevel(WordLevel),
-    WordPiece(WordPiece),
+    WordPiece(PipelineWordPiece),
 }
 
 impl Model for PipelineModel {
@@ -703,6 +703,7 @@ impl Model for PipelineModel {
 mod tests {
     use super::*;
     use crate::models::bpe::BPE;
+    use crate::models::wordpiece::WordPiece;
     use crate::pre_tokenizers::byte_level::ByteLevel;
     use crate::pre_tokenizers::sequence::Sequence;
 
