@@ -368,48 +368,52 @@ impl pipeline::Model for WordPiece {
 /// Pipeline WordPiece: the `Model` fast path. It reuses the added-vocabulary [`Buckets`] matcher — the
 /// same first-byte reject → longest-common-prefix reject → post-byte length-list → MPHF machinery — for
 /// the anchored longest-match at each position, instead of a hand-rolled probe loop. Mirrors `PipelineBPE`.
+///
+/// Two matchers, because word-initial and continuation lookups discriminate on different bytes:
+/// * `initial` holds every token, keyed by the word's first byte — used only at `start == 0` (matches the
+///   raw word, exactly like the legacy path, so even a literal `"##…"` word still resolves correctly).
+/// * `cont` holds the `##` tokens with the prefix **stripped**, keyed by the **content** byte after `##`.
+///   A single merged matcher keyed continuations by `'#'`, and a plain `"#"` token collapses that bucket's
+///   common prefix to empty, so every continuation probed *all* `##` lengths (the `kor_Hang` 56 ns/B). With
+///   `cont` the content byte selects a short per-byte length list, and matching `word[start..]` directly
+///   also removes the `"##"+word` copy.
 #[derive(Clone)]
 pub struct PipelineWordPiece {
-    /// Anchored longest-match matcher over the whole vocab (plain + `##` tokens).
-    vocab: Buckets,
+    /// All tokens, keyed by first byte. Used at `start == 0` (raw-word match, legacy-exact).
+    initial: Buckets,
+    /// `##` tokens with the prefix stripped, keyed by content byte. Used at `start > 0`; a hit's id is the
+    /// original `##` token, its length the content bytes consumed.
+    cont: Buckets,
     /// Resolved lazily — an empty/`from_bpe` model may legitimately lack `[UNK]` until a word misses.
     unk_id: Option<u32>,
-    /// `##` (the configured continuing-subword prefix) as bytes; prepended to non-initial candidates.
-    continuing_subword_prefix: Vec<u8>,
     max_input_chars_per_word: usize,
-    /// Longest `##`-token word part (`token_len − prefix_len`); bounds the continuation scratch copy.
-    max_cont_word: usize,
 }
 
 impl PipelineWordPiece {
     pub fn from_wordpiece(wp: &WordPiece) -> Self {
-        let prefix = wp.continuing_subword_prefix.as_bytes().to_vec();
-        let tokens: Vec<(Vec<u8>, u32)> = wp
+        let prefix = wp.continuing_subword_prefix.as_bytes();
+        let initial: Vec<(Vec<u8>, u32)> = wp
             .vocab
             .iter()
             .map(|(s, &id)| (s.as_bytes().to_vec(), id))
             .collect();
-        let max_cont_word = tokens
+        // Continuation tokens with `##` stripped; drop a bare-prefix token (empty content never matches).
+        let cont: Vec<(Vec<u8>, u32)> = wp
+            .vocab
             .iter()
-            .filter(|(b, _)| b.len() > prefix.len() && b.starts_with(&prefix))
-            .map(|(b, _)| b.len() - prefix.len())
-            .max()
-            .unwrap_or(0);
+            .filter_map(|(s, &id)| {
+                let b = s.as_bytes();
+                (b.len() > prefix.len() && b.starts_with(prefix))
+                    .then(|| (b[prefix.len()..].to_vec(), id))
+            })
+            .collect();
         Self {
             unk_id: wp.vocab.get(&wp.unk_token).copied(),
-            vocab: Buckets::from_tokens(tokens), // handles the empty vocab
-            continuing_subword_prefix: prefix,
+            initial: Buckets::from_tokens(initial), // both handle the empty vocab
+            cont: Buckets::from_tokens(cont),
             max_input_chars_per_word: wp.max_input_chars_per_word,
-            max_cont_word,
         }
     }
-}
-
-thread_local! {
-    /// One reused candidate buffer per thread — the WordPiece hot path is called once per pre-token, so a
-    /// fresh `Vec` here was a heap alloc *per word* (measured ~half the model-lookup cost). Reused, it's
-    /// zero-alloc after warmup; per-thread so parallel encode stays lock-free.
-    static SCRATCH: std::cell::RefCell<Vec<u8>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
 impl pipeline::Model for PipelineWordPiece {
@@ -428,53 +432,37 @@ impl pipeline::Model for PipelineWordPiece {
             return Ok(());
         }
 
-        let prefix = &self.continuing_subword_prefix;
         let bytes = sequence.as_bytes();
         let start_out = output.len();
+        let mut start = 0usize;
+        while start < sequence.len() {
+            // Anchored longest match at `start`. Word-initial hits the raw word in `initial`; a
+            // continuation matches `word[start..]` directly against the `##`-stripped `cont` matcher —
+            // both via the bucket machinery (first-byte reject → LCP reject → post-byte length list → MPHF).
+            let matched = if start == 0 {
+                &self.initial
+            } else {
+                &self.cont
+            }
+            .longest_at(bytes, start);
 
-        SCRATCH.with(|cell| {
-            let mut buf = cell.borrow_mut();
-            // Constant prefix written once; each continuation just rewrites the word part after it.
-            buf.clear();
-            buf.extend_from_slice(prefix);
-            let mut start = 0usize;
-            while start < sequence.len() {
-                // Anchored longest match at `start`, via the shared bucket matcher (first-byte reject →
-                // LCP reject → post-byte length list → MPHF). Word-initial matches the raw word bytes
-                // (no copy); a continuation matches `["##"] + word[start..]`, capped at the longest `##`
-                // token so the scratch copy stays small.
-                let matched = if start == 0 {
-                    self.vocab
-                        .longest_at(bytes, 0)
-                        .map(|(id, len)| (id, len as usize))
-                } else {
-                    let cap = self.max_cont_word.min(sequence.len() - start);
-                    buf.truncate(prefix.len());
-                    buf.extend_from_slice(&bytes[start..start + cap]);
-                    self.vocab
-                        .longest_at(&buf, 0)
-                        // a continuation must have ≥1 byte after the prefix (guards a bare-prefix token)
-                        .filter(|&(_, len)| len as usize > prefix.len())
-                        .map(|(id, len)| (id, len as usize - prefix.len()))
-                };
-
-                match matched {
-                    Some((id, word_bytes)) => {
-                        output.push(PipelineToken { id });
-                        start += word_bytes;
-                    }
-                    None => {
-                        // Whole word is unknown: drop partial sub-tokens, emit one unk (legacy parity).
-                        output.truncate(start_out);
-                        output.push(PipelineToken {
-                            id: self.unk_id.ok_or(Error::MissingUnkToken)?,
-                        });
-                        return Ok(());
-                    }
+            match matched {
+                // `longest_at` returns the matched token's byte length (relative to `start`).
+                Some((id, len)) => {
+                    output.push(PipelineToken { id });
+                    start += len as usize;
+                }
+                None => {
+                    // Whole word is unknown: drop partial sub-tokens, emit one unk (legacy parity).
+                    output.truncate(start_out);
+                    output.push(PipelineToken {
+                        id: self.unk_id.ok_or(Error::MissingUnkToken)?,
+                    });
+                    return Ok(());
                 }
             }
-            Ok(())
-        })
+        }
+        Ok(())
     }
 }
 
@@ -509,6 +497,10 @@ mod tests {
             ("中", 12),
             ("##中", 13),
             ("中文", 14),
+            // a plain "#" token: collapses a merged matcher's '#' bucket prefix to empty, the exact
+            // condition that used to make continuations probe every `##` length. Must stay legacy-exact.
+            ("#", 15),
+            ("###", 16),
         ];
         let vocab: AHashMap<String, u32> = pairs.iter().map(|(s, i)| (s.to_string(), *i)).collect();
         WordPiece::builder().vocab(vocab).build().unwrap()
@@ -533,6 +525,12 @@ mod tests {
             "中文中",
             "中b",
             "caféunwant",
+            "#",
+            "##",
+            "###",
+            "####",
+            "#a",
+            "a#",
         ] {
             let mut legacy = Vec::new();
             wp.tokenize_pipeline(word, &mut legacy).unwrap();
