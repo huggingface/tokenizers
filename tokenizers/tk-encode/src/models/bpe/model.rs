@@ -683,6 +683,7 @@ pub struct PipelineBPE {
     vocab: VocabStore,
     merges: MergeMap,
     ignore_merges: bool,
+    cache_capacity: Option<usize>,
 }
 
 enum Atoms {
@@ -761,15 +762,17 @@ impl PipelineBPE {
             ignore_merges,
             merges,
             vocab,
+            cache_capacity: model.cache.map(|cache| cache.capacity),
         })
     }
 
-    fn merge_word<'a>(&self, sequence: &str, scratch: &'a mut BpeScratch) -> &'a Word {
-        let BpeScratch {
-            merge_queue,
-            skip,
-            word,
-        } = scratch;
+    fn merge_word(
+        &self,
+        sequence: &str,
+        merge_queue: &mut QuaternaryHeap<Merge>,
+        skip: &mut Vec<Merge>,
+        word: &mut Word,
+    ) {
         word.clear();
         match &self.atoms {
             Atoms::Bytes { byte_to_id } => {
@@ -812,7 +815,6 @@ impl PipelineBPE {
             }
         };
         word.merge_all(&self.merges, None, merge_queue, skip);
-        word
     }
 }
 
@@ -835,10 +837,26 @@ impl pipeline::Model for PipelineBPE {
                 return Ok(());
             }
         }
+        let BpeScratch {
+            merge_queue,
+            skip,
+            word,
+            word_cache,
+        } = scratch;
 
-        // todo: use thread-local cache
-        let word = self.merge_word(sequence, scratch);
+        if let Some(cache) = word_cache {
+            if let Some(cached) = cache.get(sequence) {
+                output.extend(cached.iter().map(|&id| PipelineToken { id }));
+                return Ok(());
+            }
+        }
+        self.merge_word(sequence, merge_queue, skip, word);
         output.extend(word.get_chars_iter().map(|id| PipelineToken { id }));
+        if let Some(cache) = word_cache {
+            let tokens = word.get_chars();
+            cache.insert(sequence.to_string(), tokens);
+        }
+
         Ok(())
     }
 
@@ -848,6 +866,9 @@ impl pipeline::Model for PipelineBPE {
             merge_queue: QuaternaryHeap::with_capacity(256),
             skip: Vec::with_capacity(256),
             word: Word::with_capacity(64),
+            word_cache: self
+                .cache_capacity
+                .map(AHashMap::with_capacity),
         }
     }
 }
@@ -856,6 +877,7 @@ pub struct BpeScratch {
     pub(crate) merge_queue: QuaternaryHeap<Merge>,
     pub(crate) skip: Vec<Merge>,
     pub(crate) word: Word,
+    word_cache: Option<AHashMap<String, Vec<u32>>>,
 }
 impl ModelScratch for BpeScratch {}
 
