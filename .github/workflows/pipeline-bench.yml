@@ -5,9 +5,16 @@ name: Pipeline Benchmark
 # `Tokenizer` is being phased out, so it is only the id-correctness oracle,
 # never a benched series), for every model in
 # tk-encode/examples/bench_models.json across every corpus in data/fixtures/.
-# Measures throughput (~10 kB inputs), per-implementation memory footprint
-# (RSS), and stripped minimal-binary size. The release dep is behind
-# tk-encode's `bench-baseline` feature, so production builds never pull it.
+# Measures single- and multi-thread throughput (1/2/4/8/device-max), per-
+# implementation memory footprint (RSS), and stripped minimal-binary size. The
+# release dep is behind tk-encode's `bench-baseline` feature, so production
+# builds never pull it.
+#
+# The work is fanned out across a matrix: each `bench` shard benches a slice of
+# the models on its own isolated 8-vCPU runner (so the multi-thread sweep is
+# accurate and the shards run in parallel), emitting a partial JSON; the single
+# `report` job then concatenates the partials and renders/uploads/updates once.
+#
 # Triggers:
 #   • push to feat/train_encode_split → benches and updates PR #2119's description.
 #   • add the "run-pipeline-bench" label to any PR → benches that PR and updates
@@ -54,16 +61,62 @@ concurrency:
 env:
   RUSTC_WRAPPER: sccache
   SCCACHE_GHA_ENABLED: "true"
+  # Keep in sync with the matrix.shard list below (and passed to `--shard <i> N`).
+  SHARDS: "4"
 
 jobs:
-  pipeline-bench:
-    name: PipelineTokenizer vs latest release
+  # Fan-out: each shard benches the i-th of SHARDS contiguous manifest slices on
+  # its own 8-vCPU runner (isolated + parallel) and uploads its partial JSON.
+  bench:
+    name: bench shard ${{ matrix.shard }}
     # push / dispatch always run; a labeled PR runs only for our label.
     if: github.event_name != 'pull_request' || github.event.label.name == 'run-pipeline-bench'
-    # Same dedicated runner group as benchmarks.yml — shared 2-vCPU runners
-    # produce noisy timings. The comparison is within-run (both impls, same
-    # machine, interleaved), so absolute noise matters less than for baselines,
-    # but keep the environment consistent anyway.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    runs-on:
+      group: aws-general-8-plus
+    defaults:
+      run:
+        working-directory: tokenizers
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Download fixtures and model tokenizers
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: make fixtures bench-models HF="uvx --from huggingface_hub hf"
+
+      - name: Run comparative benchmark (shard ${{ matrix.shard }} of ${{ env.SHARDS }})
+        run: |
+          cargo run --release -p tk-encode --features tk-encode/bench-baseline \
+            --example fixture_bench -- --shard ${{ matrix.shard }} ${{ env.SHARDS }} \
+            > "pipeline_bench_${{ matrix.shard }}.json"
+          cat "pipeline_bench_${{ matrix.shard }}.json"
+
+      - name: Upload shard partial
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: partial-${{ matrix.shard }}
+          path: tokenizers/pipeline_bench_${{ matrix.shard }}.json
+          retention-days: 3
+
+  # Fan-in: concatenate the shard partials (in shard order = manifest order),
+  # then render + upload charts + update the PR, once.
+  report:
+    name: PipelineTokenizer vs latest release
+    needs: bench
+    if: github.event_name != 'pull_request' || github.event.label.name == 'run-pipeline-bench'
     runs-on:
       group: aws-general-8-plus
     defaults:
@@ -86,16 +139,38 @@ jobs:
       - name: Install libcairo
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libcairo2
 
-      - name: Download fixtures and model tokenizers
+      # Only the model tokenizers are needed here (gpt2.json for binsize); the
+      # fixture corpora aren't — the numbers already live in the shard JSONs.
+      - name: Download model tokenizers
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: make fixtures bench-models HF="uvx --from huggingface_hub hf"
+        run: make bench-models HF="uvx --from huggingface_hub hf"
 
-      - name: Run comparative benchmark
+      - name: Download shard partials
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8
+        with:
+          pattern: partial-*
+          merge-multiple: true
+          path: tokenizers/partials
+
+      - name: Merge shard partials
         run: |
-          cargo run --release -p tk-encode --features tk-encode/bench-baseline \
-            --example fixture_bench > pipeline_bench.json
-          cat pipeline_bench.json
+          python3 - <<'PY'
+          import glob, json
+          parts = sorted(glob.glob('partials/**/pipeline_bench_*.json', recursive=True),
+                         key=lambda f: int(f.rsplit('_', 1)[1].split('.')[0]))
+          merged = None
+          for f in parts:
+              d = json.load(open(f))
+              if merged is None:
+                  merged = {"baseline": d["baseline"], "models": []}
+              merged["models"].extend(d["models"])
+          if merged is None:
+              raise SystemExit("no shard partials found")
+          json.dump(merged, open('pipeline_bench.json', 'w'))
+          print(f"merged {len(parts)} shard(s) -> {len(merged['models'])} models")
+          PY
+          head -c 300 pipeline_bench.json; echo
 
       # Stripped size of a minimal encode program linking each implementation —
       # the "how much does this library add to my binary" number.
@@ -120,7 +195,7 @@ jobs:
           base_url="https://huggingface.co/datasets/hf-internal-testing/tokenizers-bench/resolve/main/charts"
           python3 ${{ github.workspace }}/.github/scripts/render_pipeline_bench.py \
             pipeline_bench.json \
-            --subtitle "~10 kB inputs · single thread" \
+            --subtitle "~10 kB inputs · single thread + 1/2/4/8/max-thread sweep" \
             --revision "${{ github.event.pull_request.head.sha || github.sha }}" \
             --img-base "$base_url" \
             --run-id "${{ github.run_id }}" \
