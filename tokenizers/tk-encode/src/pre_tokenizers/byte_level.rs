@@ -130,6 +130,12 @@ impl PostProcessor for ByteLevel {
         0
     }
 
+    // The ByteLevel post-processor only rewrites offsets; it never changes the ids, so for
+    // an id-only pipeline it adds nothing.
+    fn single_sequence_frame(&self, _add_special_tokens: bool) -> Option<(Vec<u32>, Vec<u32>)> {
+        Some((vec![], vec![]))
+    }
+
     fn process_encodings(
         &self,
         mut encodings: Vec<Encoding>,

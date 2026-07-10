@@ -652,6 +652,40 @@ impl PostProcessor for TemplateProcessing {
         }
     }
 
+    // The single template is `[specials…] Sequence(A) [specials…]`; `apply_template`
+    // concatenates each SpecialToken's ids around the sequence in order, so the id-only
+    // frame is just those leading / trailing special ids. Only the canonical shape (exactly
+    // one Sequence piece, all referenced specials present) takes the fast path; anything
+    // else returns None so the caller falls back to the full `process`.
+    fn single_sequence_frame(&self, add_special_tokens: bool) -> Option<(Vec<u32>, Vec<u32>)> {
+        if !add_special_tokens {
+            return Some((vec![], vec![]));
+        }
+        let pieces = &self.single.0;
+        if pieces
+            .iter()
+            .filter(|p| matches!(p, Piece::Sequence { .. }))
+            .count()
+            != 1
+        {
+            return None;
+        }
+        let seq = pieces
+            .iter()
+            .position(|p| matches!(p, Piece::Sequence { .. }))
+            .unwrap();
+        let collect = |slice: &[Piece]| -> Option<Vec<u32>> {
+            let mut ids = Vec::new();
+            for p in slice {
+                if let Piece::SpecialToken { id, .. } = p {
+                    ids.extend_from_slice(&self.special_tokens.0.get(id)?.ids);
+                }
+            }
+            Some(ids)
+        };
+        Some((collect(&pieces[..seq])?, collect(&pieces[seq + 1..])?))
+    }
+
     fn process_encodings(
         &self,
         encodings: Vec<Encoding>,

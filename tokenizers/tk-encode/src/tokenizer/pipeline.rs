@@ -466,19 +466,37 @@ impl PipelineTokenizer {
         }
 
         // STAGE_POST: run the model output through the post-processor (framing / special
-        // tokens). Const-folds away below STAGE_POST. The pipeline is id-only, so we hand the
-        // processor a minimal Encoding carrying just the ids — token strings/offsets are
-        // degenerate, which is fine because an encode-only caller reads back only ids. No pair.
+        // tokens). Const-folds away below STAGE_POST.
         if STAGE >= Self::STAGE_POST {
             if let Some(processor) = &self.post_processor {
-                let tokens = output
-                    .iter()
-                    .map(|t| Token::new(t.id, String::new(), (0, 0)))
-                    .collect();
-                let processed =
-                    processor.process(Encoding::from_tokens(tokens, 0), None, add_special_tokens)?;
-                output.clear();
-                output.extend(processed.get_ids().iter().map(|&id| PipelineToken { id }));
+                if let Some((prefix, suffix)) = processor.single_sequence_frame(add_special_tokens) {
+                    // Fast path: id-only framing, no `Encoding`. One alloc, no String clones —
+                    // vs the fallback's ~8 parallel arrays rebuilt twice (see `single_sequence_frame`).
+                    if !prefix.is_empty() || !suffix.is_empty() {
+                        let mut framed =
+                            Vec::with_capacity(prefix.len() + output.len() + suffix.len());
+                        framed.extend(prefix.iter().map(|&id| PipelineToken { id }));
+                        framed.append(output);
+                        framed.extend(suffix.iter().map(|&id| PipelineToken { id }));
+                        *output = framed;
+                    }
+                } else {
+                    // Fallback for processors with no id-level frame: go through the full
+                    // `Encoding` machinery. The pipeline is id-only, so we hand the processor a
+                    // minimal Encoding carrying just the ids — token strings/offsets are
+                    // degenerate, fine because an encode-only caller reads back only ids. No pair.
+                    let tokens = output
+                        .iter()
+                        .map(|t| Token::new(t.id, String::new(), (0, 0)))
+                        .collect();
+                    let processed = processor.process(
+                        Encoding::from_tokens(tokens, 0),
+                        None,
+                        add_special_tokens,
+                    )?;
+                    output.clear();
+                    output.extend(processed.get_ids().iter().map(|&id| PipelineToken { id }));
+                }
             }
         }
         Ok(())

@@ -50,6 +50,16 @@ impl PostProcessor for PostProcessorWrapper {
             Self::Sequence(bl) => bl.process_encodings(encodings, add_special_tokens),
         }
     }
+
+    fn single_sequence_frame(&self, add_special_tokens: bool) -> Option<(Vec<u32>, Vec<u32>)> {
+        match self {
+            Self::Bert(bert) => bert.single_sequence_frame(add_special_tokens),
+            Self::ByteLevel(bl) => bl.single_sequence_frame(add_special_tokens),
+            Self::Roberta(roberta) => roberta.single_sequence_frame(add_special_tokens),
+            Self::Template(template) => template.single_sequence_frame(add_special_tokens),
+            Self::Sequence(bl) => bl.single_sequence_frame(add_special_tokens),
+        }
+    }
 }
 
 impl_enum_from!(BertProcessing, PostProcessorWrapper, Bert);

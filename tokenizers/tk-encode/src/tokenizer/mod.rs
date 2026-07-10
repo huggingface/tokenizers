@@ -149,6 +149,17 @@ pub trait PostProcessor {
         encodings: Vec<Encoding>,
         add_special_tokens: bool,
     ) -> Result<Vec<Encoding>>;
+
+    /// Fast id-level framing for the single-sequence, id-only path (no pair, no
+    /// truncation/padding): the special-token ids to prepend and append around the model
+    /// output ids, honoring `add_special_tokens`. `Some((vec![], vec![]))` means
+    /// "recognized, adds nothing"; `None` (the default) means there is no id-level fast
+    /// path and the caller must fall back to `process`. Lets an encode-only pipeline skip
+    /// building an `Encoding` (and copying ~8 parallel arrays) just to insert a couple of
+    /// ids — the returned prefix/suffix are short, so allocating them is cheap.
+    fn single_sequence_frame(&self, _add_special_tokens: bool) -> Option<(Vec<u32>, Vec<u32>)> {
+        None
+    }
 }
 impl dyn PostProcessor {
     pub fn default_process(

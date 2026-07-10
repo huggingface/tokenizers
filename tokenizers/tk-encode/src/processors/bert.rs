@@ -48,6 +48,16 @@ impl PostProcessor for BertProcessing {
         }
     }
 
+    // Single sequence is `[CLS] A [SEP]`: prepend cls, append sep. Byte-exact with the
+    // i == 0 arm of `process_encodings` (ids only), but with no `Encoding` allocation.
+    fn single_sequence_frame(&self, add_special_tokens: bool) -> Option<(Vec<u32>, Vec<u32>)> {
+        if add_special_tokens {
+            Some((vec![self.cls.1], vec![self.sep.1]))
+        } else {
+            Some((vec![], vec![]))
+        }
+    }
+
     fn process_encodings(
         &self,
         mut encodings: Vec<Encoding>,
