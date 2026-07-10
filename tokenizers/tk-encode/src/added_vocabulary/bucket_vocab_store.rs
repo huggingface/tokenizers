@@ -117,10 +117,19 @@ impl BucketVocabStore {
         params.single_part = true;
         let mphf = Mphf::new(&seen.into_iter().collect::<Vec<u64>>(), params);
 
-        // 4. Place each token at its MPHF slot; build the slab and the id->slot reverse table.
+        // 4. Lay the slab out in **sorted token order** so tokens sharing a prefix are contiguous — a
+        //    word's successive length-probes then hit nearby slab bytes on the verify load (cache-local).
+        //    The MPHF slot is independent of slab position, so entries just point at the sorted offset.
         let total: usize = tokens.iter().map(|(s, _)| s.len()).sum();
         let max_id = tokens.iter().map(|(_, id)| *id).max().unwrap();
+        let mut order: Vec<usize> = (0..tokens.len()).collect();
+        order.sort_unstable_by(|&a, &b| tokens[a].0.cmp(&tokens[b].0));
         let mut bytes = Vec::with_capacity(total);
+        let mut slab_start = vec![0u32; tokens.len()];
+        for &i in &order {
+            slab_start[i] = bytes.len() as u32;
+            bytes.extend_from_slice(&tokens[i].0);
+        }
         let mut entries = vec![
             Entry {
                 start: 0,
@@ -130,19 +139,18 @@ impl BucketVocabStore {
             n
         ];
         let mut id_to_slot = vec![u32::MAX; max_id as usize + 1];
-        for (s, id) in &tokens {
+        for (i, (s, id)) in tokens.iter().enumerate() {
             assert!(
                 s.len() <= u16::MAX as usize,
                 "token longer than 65535 bytes"
             );
             let slot = mphf.index_single_part(&hasher.hash_one(s.as_slice()));
             entries[slot] = Entry {
-                start: bytes.len() as u32,
+                start: slab_start[i],
                 len: s.len() as u16,
                 id: *id,
             };
             id_to_slot[*id as usize] = slot as u32;
-            bytes.extend_from_slice(s);
         }
 
         Self {

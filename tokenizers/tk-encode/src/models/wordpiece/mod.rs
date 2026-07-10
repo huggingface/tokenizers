@@ -425,7 +425,11 @@ impl pipeline::Model for PipelineWordPiece {
         if sequence.is_empty() {
             return Ok(());
         }
-        if sequence.chars().count() > self.max_input_chars_per_word {
+        // `chars` <= `bytes`, so only pay the O(len) char count when the byte length could exceed the
+        // cap — for a normal word (< max bytes) the decode is skipped entirely.
+        if sequence.len() > self.max_input_chars_per_word
+            && sequence.chars().count() > self.max_input_chars_per_word
+        {
             output.push(PipelineToken {
                 id: self.unk_id.ok_or(Error::MissingUnkToken)?,
             });
@@ -439,15 +443,26 @@ impl pipeline::Model for PipelineWordPiece {
 
         SCRATCH.with(|cell| {
             let mut buf = cell.borrow_mut();
+            // The prefix is constant across the word: write it into the scratch once, then each
+            // continuation only rewrites the word part (`truncate` back to the prefix, append word).
+            buf.clear();
+            buf.extend_from_slice(prefix);
             let mut start = 0usize;
             while start < sequence.len() {
                 let prefix_len = if start > 0 { prefix.len() } else { 0 };
                 let remaining = sequence.len() - start;
                 // A match is at most `max_token_len` bytes; cap the word part there and by what's left.
                 let cap_word = max_token_len.saturating_sub(prefix_len).min(remaining);
-                buf.clear();
-                buf.extend_from_slice(prefix.get(..prefix_len).unwrap_or(&[]));
-                buf.extend_from_slice(&bytes[start..start + cap_word]);
+
+                // Candidate base bytes. Word-initial (`start == 0`, no prefix) probes the word slice
+                // directly — no copy; continuations reuse the prefix already in `buf`, appending the word.
+                let cand: &[u8] = if prefix_len == 0 {
+                    &bytes[start..start + cap_word]
+                } else {
+                    buf.truncate(prefix.len());
+                    buf.extend_from_slice(&bytes[start..start + cap_word]);
+                    &buf
+                };
 
                 // Probe real token lengths longest-first; first hit is the greedy answer. Byte-exact: a
                 // length that splits a codepoint or that no token has can't match a valid-UTF-8 token.
@@ -461,7 +476,7 @@ impl pipeline::Model for PipelineWordPiece {
                     if word_bytes > cap_word {
                         continue;
                     }
-                    if let Some(id) = self.vocab.get_bytes(&buf[..prefix_len + word_bytes]) {
+                    if let Some(id) = self.vocab.get_bytes(&cand[..prefix_len + word_bytes]) {
                         matched = Some((word_bytes, id));
                         break;
                     }
