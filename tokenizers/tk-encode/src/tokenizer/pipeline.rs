@@ -8,7 +8,7 @@ use crate::added_vocabulary::bucket_added_vocabulary::{
 use crate::models::bpe::PipelineBPE;
 use crate::models::unigram::Unigram;
 use crate::models::wordlevel::WordLevel;
-use crate::models::wordpiece::{PipelineWordPiece, WordPiece};
+use crate::models::wordpiece::PipelineWordPiece;
 use crate::pre_tokenizers::sequence::PipelineSequence;
 use crate::pre_tokenizers::split::SplitPattern;
 use crate::utils::byte_level::GPT2_REGEX_STR;
@@ -705,6 +705,7 @@ mod tests {
     use crate::models::bpe::BPE;
     use crate::pre_tokenizers::byte_level::ByteLevel;
     use crate::pre_tokenizers::sequence::Sequence;
+    use crate::models::wordpiece::WordPiece;
 
     struct FixedMatcher(Vec<((usize, usize), u32)>);
     impl PipelinePatternMatcher for FixedMatcher {

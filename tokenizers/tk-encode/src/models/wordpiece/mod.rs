@@ -7,7 +7,6 @@ use crate::tokenizer::{Model, Result, Token};
 use ahash::AHashMap;
 use std::collections::HashMap;
 use std::convert::TryFrom;
-use std::ops::Deref;
 use std::{
     borrow::Cow,
     fs::File,
@@ -334,10 +333,9 @@ impl TryFrom<WordPiece> for PipelineWordPiece {
         } = value;
         let unk_token = vocab.get(&unk_token).copied();
 
-        let keyset: Vec<_> = vocab
-            .into_iter()
-            .map(|(string, token_id)| (string.into_bytes(), token_id))
-            .collect();
+        // yada requires the keyset sorted by key bytes.
+        let mut keyset: Vec<_> = vocab.into_iter().collect();
+        keyset.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
         let vocab_trie = DoubleArray::new(DoubleArrayBuilder::build(&keyset)?)?;
 
         Ok(Self {
@@ -369,20 +367,29 @@ impl pipeline::Model for PipelineWordPiece {
 
         while start < sequence.len() {
             candidate.clear();
-            if start > 0 {
+            let prefix_len = if start > 0 {
                 candidate.push_str(&self.continuing_subword_prefix);
-            }
+                self.continuing_subword_prefix.len()
+            } else {
+                0
+            };
             candidate.push_str(&sequence[start..]);
 
-            let Some((token_id, prefix_len)) =
-                self.vocab_trie.common_prefix_search(&candidate).last()
+            // Matches must extend past the continuing-subword prefix: the
+            // prefix alone (or a fragment of it) is not a valid subword here,
+            // even if it happens to be in the vocab.
+            let Some((token_id, match_len)) = self
+                .vocab_trie
+                .common_prefix_search(&candidate)
+                .filter(|(_, len)| *len > prefix_len)
+                .last()
             else {
                 let unk_id = self.unk_token.ok_or(Error::MissingUnkToken)?;
                 output.push(PipelineToken { id: unk_id });
                 return Ok(());
             };
             candidate_tokens.push(PipelineToken { id: token_id });
-            start = start + prefix_len;
+            start += match_len - prefix_len;
         }
         output.extend_from_slice(&candidate_tokens);
         Ok(())
