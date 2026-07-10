@@ -61,6 +61,9 @@ ptr_hash = { version = "1.1.0" }
 memchr = "2.8.2"
 unicode-normalization = "0.1.25"
 yada = "0.7.0"
+# Latest released tokenizers, used as the comparison baseline by the CI benchmark
+# (examples gated on `bench-baseline`). Optional so production builds never pull it.
+tokenizers-release = { package = "tokenizers", version = "=0.23.1", optional = true }
 
 [features]
 # `fancy-regex` / `onig` are the system-regex backends, needed ONLY for a `Split` pre-tokenizer with
@@ -73,6 +76,7 @@ progressbar = ["indicatif"]
 http = ["hf-hub"]
 unstable_wasm = ["fancy-regex", "getrandom/wasm_js"]
 rustls-tls = ["hf-hub?/rustls-tls"]
+bench-baseline = ["dep:tokenizers-release"]
 
 [dev-dependencies]
 criterion = "0.6"
@@ -84,3 +88,11 @@ tracing-subscriber = "0.3.18"
 [[bench]]
 name = "pipeline_benchmark"
 harness = false
+
+[[example]]
+name = "fixture_bench"
+required-features = ["bench-baseline"]
+
+[[example]]
+name = "binsize_baseline"
+required-features = ["bench-baseline"]
