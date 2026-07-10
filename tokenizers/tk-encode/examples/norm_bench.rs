@@ -13,8 +13,14 @@ use tk_encode::pipeline::Normalizer as _;
 fn samples() -> Vec<(&'static str, String)> {
     let base: &[(&str, &str)] = &[
         ("eng_Latn", "The quick brown fox Jumps over the LAZY dog. "),
-        ("rus_Cyrl", "Съешь же ещё этих мягких французских булок да выпей чаю. "),
-        ("ell_Grek", "Ξεσκεπάζω την ψυχοφθόρα βδελυγμία και ζω χαρούμενος. "),
+        (
+            "rus_Cyrl",
+            "Съешь же ещё этих мягких французских булок да выпей чаю. ",
+        ),
+        (
+            "ell_Grek",
+            "Ξεσκεπάζω την ψυχοφθόρα βδελυγμία και ζω χαρούμενος. ",
+        ),
         ("arb_Arab", "هذا نصٌّ عربيٌّ للاختبار مع بعض الحركات والتشكيل. "),
         ("heb_Hebr", "זֶהוּ טֶקְסְט עִבְרִי לִבְדִיקָה עִם נִקּוּד מָלֵא. "),
         ("hin_Deva", "यह एक हिन्दी परीक्षण वाक्य है जिसमें कुछ शब्द हैं। "),
@@ -22,10 +28,19 @@ fn samples() -> Vec<(&'static str, String)> {
         ("tam_Taml", "இது சில சொற்களைக் கொண்ட ஒரு தமிழ் சோதனை வாக்கியம். "),
         ("tha_Thai", "นี่คือประโยคทดสอบภาษาไทยที่มีคำหลายคำอยู่ในนั้น "),
         ("amh_Ethi", "ይህ አንዳንድ ቃላትን የያዘ የአማርኛ የሙከራ ዓረፍተ ነገር ነው። "),
-        ("kat_Geor", "ეს არის ქართული სატესტო წინადადება რამდენიმე სიტყვით. "),
+        (
+            "kat_Geor",
+            "ეს არის ქართული სატესტო წინადადება რამდენიმე სიტყვით. ",
+        ),
         ("cmn_Hani", "这是一个包含若干汉字的中文测试句子。 "),
-        ("jpn_Jpan", "これは日本語のテスト文で、いくつかの単語を含みます。 "),
-        ("kor_Hang", "이것은 몇 개의 단어를 포함하는 한국어 테스트 문장입니다. "),
+        (
+            "jpn_Jpan",
+            "これは日本語のテスト文で、いくつかの単語を含みます。 ",
+        ),
+        (
+            "kor_Hang",
+            "이것은 몇 개의 단어를 포함하는 한국어 테스트 문장입니다. ",
+        ),
     ];
     base.iter().map(|(n, s)| (*n, s.repeat(5000))).collect()
 }
@@ -44,13 +59,18 @@ fn time<F: FnMut()>(bytes: usize, mut f: F) -> f64 {
 
 fn main() {
     let n = BertNormalizer::new(true, true, None, true); // bert-base-uncased config
-    println!("{:>9}  {:>8}  {:>8}  {:>8}   speedup(simd vs current)", "script", "current", "tag+scal", "tag+simd");
+    println!(
+        "{:>9}  {:>8}  {:>8}  {:>8}   speedup(simd vs current)",
+        "script", "current", "tag+scal", "tag+simd"
+    );
     let mut tags = Vec::new();
     let mut sink = 0usize;
     for (name, text) in samples() {
         let b = text.len();
 
-        let cur = time(b, || sink = sink.wrapping_add(n.normalize(&text).unwrap().len()));
+        let cur = time(b, || {
+            sink = sink.wrapping_add(n.normalize(&text).unwrap().len())
+        });
 
         let scal = time(b, || {
             tags.clear();

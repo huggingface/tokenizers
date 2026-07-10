@@ -22,7 +22,9 @@ impl pipeline::Normalizer for NFD {
         // Only NFD-flagged runs decompose (the bit folds in ccc != 0 reorderables); inert ccc-0 starters
         // are copied verbatim and bound each run so canonical reordering stays inside it.
         use atomsplit::norm_classify::bit;
-        Ok(tag_driven(input, bit::NFD, |run, out| out.extend(run.nfd())))
+        Ok(tag_driven(input, bit::NFD, |run, out| {
+            out.extend(run.nfd())
+        }))
     }
 }
 

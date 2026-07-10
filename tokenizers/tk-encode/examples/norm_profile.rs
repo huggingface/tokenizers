@@ -10,8 +10,14 @@ use unicode_normalization::UnicodeNormalization;
 fn samples() -> Vec<(&'static str, String)> {
     let base: &[(&str, &str)] = &[
         ("eng_Latn", "The quick brown fox Jumps over the LAZY dog. "),
-        ("rus_Cyrl", "Съешь же ещё этих мягких французских булок да выпей чаю. "),
-        ("ell_Grek", "Ξεσκεπάζω την ψυχοφθόρα βδελυγμία και ζω χαρούμενος. "),
+        (
+            "rus_Cyrl",
+            "Съешь же ещё этих мягких французских булок да выпей чаю. ",
+        ),
+        (
+            "ell_Grek",
+            "Ξεσκεπάζω την ψυχοφθόρα βδελυγμία και ζω χαρούμενος. ",
+        ),
         ("arb_Arab", "هذا نصٌّ عربيٌّ للاختبار مع بعض الحركات والتشكيل. "),
         ("heb_Hebr", "זֶהוּ טֶקְסְט עִבְרִי לִבְדִיקָה עִם נִקּוּד מָלֵא. "),
         ("hin_Deva", "यह एक हिन्दी परीक्षण वाक्य है जिसमें कुछ शब्द हैं। "),
@@ -19,10 +25,19 @@ fn samples() -> Vec<(&'static str, String)> {
         ("tam_Taml", "இது சில சொற்களைக் கொண்ட ஒரு தமிழ் சோதனை வாக்கியம். "),
         ("tha_Thai", "นี่คือประโยคทดสอบภาษาไทยที่มีคำหลายคำอยู่ในนั้น "),
         ("amh_Ethi", "ይህ አንዳንድ ቃላትን የያዘ የአማርኛ የሙከራ ዓረፍተ ነገር ነው። "),
-        ("kat_Geor", "ეს არის ქართული სატესტო წინადადება რამდენიმე სიტყვით. "),
+        (
+            "kat_Geor",
+            "ეს არის ქართული სატესტო წინადადება რამდენიმე სიტყვით. ",
+        ),
         ("cmn_Hani", "这是一个包含若干汉字的中文测试句子。 "),
-        ("jpn_Jpan", "これは日本語のテスト文で、いくつかの単語を含みます。 "),
-        ("kor_Hang", "이것은 몇 개의 단어를 포함하는 한국어 테스트 문장입니다. "),
+        (
+            "jpn_Jpan",
+            "これは日本語のテスト文で、いくつかの単語を含みます。 ",
+        ),
+        (
+            "kor_Hang",
+            "이것은 몇 개의 단어를 포함하는 한국어 테스트 문장입니다. ",
+        ),
     ];
     base.iter().map(|(n, s)| (*n, s.repeat(5000))).collect()
 }
@@ -61,9 +76,18 @@ fn main() {
         });
         let copy = time(b, || t.chars().collect::<String>().len());
         let nfd = time(b, || t.nfd().collect::<String>().len());
-        let lower = time(b, || t.chars().flat_map(char::to_lowercase).collect::<String>().len());
-        let strip =
-            time(b, || t.nfd().filter(|c| !c.is_mark_nonspacing()).collect::<String>().len());
+        let lower = time(b, || {
+            t.chars()
+                .flat_map(char::to_lowercase)
+                .collect::<String>()
+                .len()
+        });
+        let strip = time(b, || {
+            t.nfd()
+                .filter(|c| !c.is_mark_nonspacing())
+                .collect::<String>()
+                .len()
+        });
         let full = time(b, || {
             t.nfd()
                 .filter(|c| !c.is_mark_nonspacing())
