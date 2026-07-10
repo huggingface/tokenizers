@@ -1,5 +1,5 @@
 use super::{super::OrderedVocabIter, Error, Pair, Word};
-use crate::pipeline::{self, PipelineToken};
+use crate::pipeline::{self, ModelScratch, PipelineToken};
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::byte_level::{self};
 use crate::utils::cache::{DEFAULT_CACHE_CAPACITY, MAX_LENGTH};
@@ -812,7 +812,13 @@ impl PipelineBPE {
 }
 
 impl pipeline::Model for PipelineBPE {
-    fn tokenize_pipeline(&self, sequence: &str, output: &mut Vec<PipelineToken>) -> Result<()> {
+    type Scratch = BpeScratch;
+    fn tokenize_pipeline(
+        &self,
+        sequence: &str,
+        _scratch: &mut Self::Scratch,
+        output: &mut Vec<PipelineToken>,
+    ) -> Result<()> {
         if sequence.is_empty() {
             return Ok(());
         }
@@ -829,7 +835,14 @@ impl pipeline::Model for PipelineBPE {
         output.extend(word.get_chars_iter().map(|id| PipelineToken { id }));
         Ok(())
     }
+
+    fn init_scratch(&self) -> Self::Scratch {
+        Self::Scratch {}
+    }
 }
+
+pub struct BpeScratch {}
+impl ModelScratch for BpeScratch {}
 
 #[cfg(test)]
 mod tests {

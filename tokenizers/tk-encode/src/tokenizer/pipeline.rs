@@ -4,10 +4,10 @@ use std::{borrow::Cow, convert::TryFrom};
 
 use atomsplit::classify::classify;
 
-use crate::models::bpe::PipelineBPE;
-use crate::models::unigram::Unigram;
+use crate::models::bpe::{BpeScratch, PipelineBPE};
+use crate::models::unigram::{Unigram, UnigramScratch};
 use crate::models::wordlevel::WordLevel;
-use crate::models::wordpiece::PipelineWordPiece;
+use crate::models::wordpiece::{PipelineWordPiece, WordPieceScratch};
 use crate::utils::byte_level::GPT2_REGEX_STR;
 use crate::vocab::bucket_added_vocabulary::{
     AddedToken as BucketAddedToken, AddedVocabulary as BucketAddedVocabulary,
@@ -400,7 +400,14 @@ impl PipelineTokenizer {
     pub fn encode(&self, input: &str, _add_special_tokens: bool) -> Result<Vec<PipelineToken>> {
         let mut output = Vec::new();
         let mut pre_tokens = Vec::new();
-        self.encode_generic::<{ Self::STAGE_MODEL }>(input, &mut output, &mut pre_tokens)?;
+        let mut scratch = self.model.init_scratch();
+
+        self.encode_generic::<{ Self::STAGE_MODEL }>(
+            input,
+            &mut pre_tokens,
+            &mut scratch,
+            &mut output,
+        )?;
         Ok(output)
     }
 
@@ -421,8 +428,9 @@ impl PipelineTokenizer {
     pub fn encode_generic<const STAGE: u8>(
         &self,
         input: &str,
-        output: &mut Vec<PipelineToken>,
         pre_tokens: &mut Vec<Span>,
+        scratch: &mut PipelineModelScratch,
+        output: &mut Vec<PipelineToken>,
     ) -> Result<()> {
         // First, we extract all special tokens from the non-normalized input
         for segment in SpecialSegmentIterator::new(input, &self.added_vocabulary, false) {
@@ -459,6 +467,7 @@ impl PipelineTokenizer {
                                         for pre_token in pre_tokens.iter() {
                                             self.model.tokenize_pipeline(
                                                 &normalized_chunk[pre_token.range()],
+                                                scratch,
                                                 output,
                                             )?;
                                         }
@@ -687,8 +696,19 @@ pub fn split_matches(
     }
 }
 
+pub trait ModelScratch {}
+
 pub trait Model {
-    fn tokenize_pipeline(&self, sequence: &str, output: &mut Vec<PipelineToken>) -> Result<()>;
+    type Scratch: ModelScratch;
+
+    fn tokenize_pipeline(
+        &self,
+        sequence: &str,
+        scratch: &mut Self::Scratch,
+        output: &mut Vec<PipelineToken>,
+    ) -> Result<()>;
+
+    fn init_scratch(&self) -> Self::Scratch;
 }
 
 #[allow(
@@ -703,15 +723,48 @@ pub enum PipelineModel {
 }
 
 impl Model for PipelineModel {
-    fn tokenize_pipeline(&self, sequence: &str, output: &mut Vec<PipelineToken>) -> Result<()> {
+    type Scratch = PipelineModelScratch;
+
+    fn tokenize_pipeline(
+        &self,
+        sequence: &str,
+        scratch: &mut Self::Scratch,
+        output: &mut Vec<PipelineToken>,
+    ) -> Result<()> {
+        match (self, scratch) {
+            (Self::BPE(model), PipelineModelScratch::BPE(scratch)) => {
+                model.tokenize_pipeline(sequence, scratch, output)
+            }
+            (Self::Unigram(model), PipelineModelScratch::Unigram(scratch)) => {
+                model.tokenize_pipeline(sequence, scratch, output)
+            }
+            (Self::WordLevel(model), PipelineModelScratch::WordLevel(scratch)) => {
+                model.tokenize_pipeline(sequence, scratch, output)
+            }
+            (Self::WordPiece(model), PipelineModelScratch::WordPiece(scratch)) => {
+                model.tokenize_pipeline(sequence, scratch, output)
+            }
+        }
+    }
+
+    fn init_scratch(&self) -> Self::Scratch {
         match self {
-            Self::BPE(model) => model.tokenize_pipeline(sequence, output),
-            Self::Unigram(model) => model.tokenize_pipeline(sequence, output),
-            Self::WordLevel(model) => model.tokenize_pipeline(sequence, output),
-            Self::WordPiece(model) => model.tokenize_pipeline(sequence, output),
+            Self::BPE(bpe) => PipelineModelScratch::BPE(bpe.init_scratch()),
+            Self::WordLevel(_) => Self::Scratch::WordLevel(()),
+            Self::WordPiece(wordpiece) => Self::Scratch::WordPiece(wordpiece.init_scratch()),
+            Self::Unigram(unigram) => Self::Scratch::Unigram(unigram.init_scratch()),
         }
     }
 }
+
+pub enum PipelineModelScratch {
+    BPE(BpeScratch),
+    WordLevel(()),
+    WordPiece(WordPieceScratch),
+    Unigram(UnigramScratch),
+}
+
+impl ModelScratch for PipelineModelScratch {}
 
 #[cfg(test)]
 mod tests {
@@ -720,7 +773,6 @@ mod tests {
     use crate::models::wordpiece::WordPiece;
     use crate::pre_tokenizers::byte_level::ByteLevel;
     use crate::pre_tokenizers::sequence::Sequence;
-    use crate::models::wordpiece::WordPiece;
 
     struct FixedMatcher(Vec<((usize, usize), u32)>);
     impl PipelinePatternMatcher for FixedMatcher {

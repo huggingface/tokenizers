@@ -2,7 +2,7 @@
 //! model.
 
 use crate::models::bpe::BPE;
-use crate::pipeline::{self, PipelineToken};
+use crate::pipeline::{self, PipelineModelScratch, PipelineToken};
 use crate::tokenizer::{Model, Result, Token};
 use ahash::AHashMap;
 use std::collections::HashMap;
@@ -314,6 +314,13 @@ impl Model for WordPiece {
     }
 }
 
+pub struct WordPieceScratch {
+    candidate_str: String,
+}
+
+impl pipeline::ModelScratch for WordPieceScratch {}
+
+
 pub struct PipelineWordPiece {
     vocab_trie: yada::DoubleArray<Vec<u8>>,
     unk_token: Option<u32>,
@@ -348,13 +355,22 @@ impl TryFrom<WordPiece> for PipelineWordPiece {
 }
 
 impl pipeline::Model for PipelineWordPiece {
+        type Scratch = WordPieceScratch;
+
+    fn init_scratch(&self) -> Self::Scratch {
+        Self::Scratch {
+            candidate_str: String::with_capacity(self.max_input_chars_per_word)
+        }
+    }
+
     fn tokenize_pipeline(
         &self,
         sequence: &str,
+        scratch: &mut Self::Scratch,
         output: &mut Vec<pipeline::PipelineToken>,
     ) -> Result<()> {
         let checkpoint = output.len();
-        let mut candidate = String::with_capacity(self.max_input_chars_per_word);
+        let candidate = &mut scratch.candidate_str;
 
         let char_len = sequence.chars().count();
         if char_len > self.max_input_chars_per_word {
