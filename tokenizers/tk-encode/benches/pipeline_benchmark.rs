@@ -12,7 +12,8 @@ extern crate criterion;
 use std::convert::TryFrom;
 use std::hint::black_box;
 
-use criterion::{BenchmarkId, Criterion, Throughput};
+use criterion::measurement::WallTime;
+use criterion::{BenchmarkGroup, BenchmarkId, Criterion, Throughput};
 use tk_encode::pipeline::PipelineTokenizer;
 use tk_encode::Tokenizer;
 
@@ -34,6 +35,33 @@ const CHUNK_SIZES: &[(usize, &str)] = &[
     (10 * 1024, "10kB"),
     (100 * 1024, "100kB"),
 ];
+
+// Fixed size (amortized regime) at which the per-stage decomposition is measured.
+const STAGE_CHUNK: usize = 10 * 1024;
+
+/// Cumulative-stage ladder: bench `encode_generic::<STAGE>` (every stage up to and
+/// including `STAGE`) over `chunks`, reusing the caller-owned buffers. Run for each
+/// level and read the stage-to-stage delta as that stage's marginal cost; `POST` −
+/// `MODEL` is the post-processor. `add_special_tokens = true` so the post-processor
+/// actually runs (framing / special tokens) rather than being a no-op.
+fn bench_stage<const STAGE: u8>(
+    group: &mut BenchmarkGroup<'_, WallTime>,
+    label: &str,
+    pipeline: &PipelineTokenizer,
+    chunks: &[String],
+) {
+    group.bench_function(label, |b| {
+        let mut out = Vec::new();
+        let mut pre = Vec::new();
+        b.iter(|| {
+            for chunk in chunks {
+                out.clear();
+                let _ = pipeline.encode_generic::<STAGE>(chunk, true, &mut out, &mut pre);
+                black_box(&out);
+            }
+        });
+    });
+}
 
 fn make_chunks(lines: &[&str], target_bytes: usize) -> Vec<String> {
     let mut chunks = Vec::new();
@@ -87,6 +115,26 @@ fn bench_pipeline(c: &mut Criterion) {
                 });
             }
             group.finish();
+
+            // Per-stage decomposition at a fixed size: each cumulative level, so the
+            // stage-to-stage throughput delta isolates that stage's cost. `5-post` is the
+            // post-processor stage (the one suspected to be slow); it is a no-op — equal to
+            // `4-model` — for tokenizers without a post-processor.
+            let chunks = make_chunks(&lines, STAGE_CHUNK);
+            let total_bytes: u64 = chunks.iter().map(|s| s.len() as u64).sum();
+            let mut sg = c.benchmark_group(format!("{tok_name}-{corpus}-stages"));
+            sg.throughput(Throughput::Bytes(total_bytes));
+            bench_stage::<{ PipelineTokenizer::STAGE_FRAME }>(&mut sg, "1-frame", &pipeline, &chunks);
+            bench_stage::<{ PipelineTokenizer::STAGE_NORMALIZE }>(
+                &mut sg,
+                "2-normalize",
+                &pipeline,
+                &chunks,
+            );
+            bench_stage::<{ PipelineTokenizer::STAGE_SPLIT }>(&mut sg, "3-split", &pipeline, &chunks);
+            bench_stage::<{ PipelineTokenizer::STAGE_MODEL }>(&mut sg, "4-model", &pipeline, &chunks);
+            bench_stage::<{ PipelineTokenizer::STAGE_POST }>(&mut sg, "5-post", &pipeline, &chunks);
+            sg.finish();
         }
     }
 }
