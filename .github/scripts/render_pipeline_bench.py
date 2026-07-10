@@ -31,10 +31,12 @@ always-visible charts:
      measurement, via --binary-sizes).
 
 Everything else is collapsed into per-model <details> blocks: a per-fixture
-×speedup chart, the pipeline stage decomposition (ablation-ladder view with a
-release-total tick per row), and the numbers table. Models the pipeline can't
-build yet render as compact "not supported" roadmap cards. Charts are rendered
-full-size so readers can zoom.
+×speedup chart, the pipeline stage decomposition (100%-normalized per fixture —
+each stage as its share of that fixture's own encode time, labelled `share% ·
+ns/B`, so the mix reads regardless of how slow the release baseline is; total
+ns/B and ×speedup stay in the right column), and the numbers table (which carries
+the same per-stage `share% (ns/B)` columns). Models the pipeline can't build yet
+render as compact "not supported" roadmap cards. Charts are full-size for zoom.
 """
 import argparse
 import json
@@ -459,30 +461,6 @@ def has_stages(model):
     return any("stage_ns_per_byte" in r for r in model["results"])
 
 
-def baseline_ns_per_byte(row):
-    """The release's whole-encode cost in the stage chart's unit (MB/s →
-    ns/byte), so it can be drawn as a tick on the pipeline's stacked bar."""
-    v = row["mbps"]["baseline"]
-    return 1000.0 / v if v else None
-
-
-def stage_scale(models):
-    """Shared linear ns/byte range across every fixture's total — and the
-    release ticks, so they always land on-plot — keeping the stacked stage
-    bars comparable across models."""
-    vals = []
-    for m in models:
-        for r in m["results"]:
-            if "stage_ns_per_byte" not in r:
-                continue
-            vals.append(r["stage_ns_per_byte"]["total"])
-            ref = baseline_ns_per_byte(r)
-            if ref:
-                vals.append(ref)
-    vals = [v for v in vals if v > 0]
-    return max(vals) * 1.05 if vals else 1.0
-
-
 def stage_mix(rows):
     """Mean per-stage share of total, as a list of (label, fraction), largest first."""
     acc = {k: 0.0 for k, _ in STAGES}
@@ -500,26 +478,31 @@ def stage_mix(rows):
     return sorted(((label[k], acc[k] / n) for k in acc), key=lambda kv: -kv[1])
 
 
-def stage_chart_svg(model, mode, subtitle_base, meta, max_total, baseline_label):
-    """Per-fixture stacked decomposition of the pipeline's own encode time
-    (ns/byte). Shows where the pipeline spends its time; the tick puts the
-    release's whole-encode cost on the same scale, so bar vs tick reads the
-    same way as the ×speedup chart."""
+def stage_cell(s, key):
+    """One stage's cost as `share% (ns/B)` for the per-fixture table, else `—`."""
+    if not s or not s.get("total") or key not in s:
+        return "—"
+    val, total = s[key], s["total"]
+    return f"{100 * val / total:.0f}% ({val:.1f})"
+
+
+def stage_chart_svg(model, mode, subtitle_base, meta, baseline_label):
+    """Per-fixture breakdown of where the pipeline spends its OWN encode time, as a
+    100%-normalized stacked bar: each stage is its share of THAT fixture's total,
+    labelled `share% · ns/B`. Normalizing per row (instead of a shared ns/byte scale
+    anchored to the slow release) keeps the mix readable no matter the absolute cost;
+    the right column keeps the total ns/byte and the ×speedup vs the release, so
+    neither the magnitude nor the comparison is lost."""
     ink = INK[mode]
     sink = STAGE_INK[mode]
     rows = [r for r in model["results"] if "stage_ns_per_byte" in r]
 
-    def w(v):  # ns/byte -> px width on the shared scale
-        return (v / max_total) * PLOT_W if max_total else 0.0
-
     top = 84
     col_x = GUTTER + PLOT_W + PAD_R + COL_W - 16
-    # Unlike the speedup chart above it, bars here grow with *time*: call the
-    # direction out explicitly so the two charts can't be read the same way.
     body = [f'<text x="{col_x}" y="{top - 14}" fill="{ink["muted"]}" font-size="11" '
-            f'text-anchor="end">ns/byte · ×speedup</text>',
+            f'text-anchor="end">total ns/B · ×speedup</text>',
             f'<text x="{GUTTER}" y="{top - 14}" fill="{ink["muted"]}" font-size="11">'
-            f'time per byte — shorter is faster · tick = {escape(baseline_label)} total</text>']
+            f'share of pipeline encode time (each bar = 100%) · label = share% · ns/B</text>']
     y = top
     for key, title in GROUPS:
         group_rows = sorted((r for r in rows if r["group"] == key),
@@ -531,31 +514,29 @@ def stage_chart_svg(model, mode, subtitle_base, meta, max_total, baseline_label)
         y += 22
         for r in group_rows:
             s = r["stage_ns_per_byte"]
+            total = s["total"] or 1.0
             by = y + (ROW_H - BAR_H) / 2
             body.append(f'<text x="{GUTTER - 10}" y="{y + ROW_H / 2 + 4}" fill="{ink["secondary"]}" '
                         f'font-size="12.5" text-anchor="end">{escape(r["fixture"])}</text>')
             cursor = float(GUTTER)
             for skey, _ in STAGES:
                 val = s.get(skey, 0.0)
-                seg = w(val)
+                frac = val / total
+                seg = frac * PLOT_W  # each bar fills PLOT_W (100% of this fixture's total)
                 if seg > 0.4:
                     body.append(f'<rect x="{cursor:.1f}" y="{by}" width="{seg:.1f}" '
                                 f'height="{BAR_H}" fill="{sink[skey]}"/>')
-                    # ns/byte inside the slice when it's wide enough to read
-                    if seg >= 24:
-                        txt = f"{val:.0f}" if val >= 9.5 else f"{val:.1f}"
+                    # share% (plus ns/B when the slice is wide enough for both)
+                    if seg >= 22:
+                        pct = f"{100 * frac:.0f}%"
+                        ns = f"{val:.0f}" if val >= 9.5 else f"{val:.1f}"
+                        txt = f"{pct} · {ns}" if seg >= 62 else pct
                         body.append(f'<text x="{cursor + seg / 2:.1f}" y="{y + ROW_H / 2 + 4}" '
                                     f'fill="{text_on(sink[skey])}" font-size="10.5" '
                                     f'text-anchor="middle" style="font-variant-numeric:tabular-nums">'
                                     f'{txt}</text>')
                 cursor += seg
-            # the release's total on the same scale: bar shorter than the tick
-            # ⇔ pipeline faster ⇔ ×speedup ≥ 1
-            ref = baseline_ns_per_byte(r)
-            if ref:
-                rx = GUTTER + w(ref)
-                body.append(f'<line x1="{rx:.1f}" y1="{by - 3}" x2="{rx:.1f}" y2="{by + BAR_H + 3}" '
-                            f'stroke="{ink["primary"]}" stroke-width="1.5"/>')
+            # magnitude + comparison kept in the right column (the % bar drops both)
             vs = speedup(r)
             body.append(f'<text x="{col_x}" y="{y + ROW_H / 2 + 4}" fill="{ink["secondary"]}" '
                         f'font-size="12" text-anchor="end" style="font-variant-numeric:tabular-nums">'
@@ -563,28 +544,25 @@ def stage_chart_svg(model, mode, subtitle_base, meta, max_total, baseline_label)
             y += ROW_H
         y += 10
 
-    # x-axis: round ns/byte gridlines + ticks, unit on the last one
+    # x-axis: fixed 0–100% gridlines
     grid = []
-    axis_ticks = nice_ticks(max_total)
-    for tv in axis_ticks:
-        unit = " ns/B" if tv == axis_ticks[-1] else ""
-        gx = GUTTER + w(tv)
+    for pct in (0, 25, 50, 75, 100):
+        gx = GUTTER + pct / 100 * PLOT_W
         grid.append(f'<line x1="{gx:.1f}" y1="{top - 6}" x2="{gx:.1f}" y2="{y - 6}" '
                     f'stroke="{ink["grid"]}" stroke-width="1"/>')
         grid.append(f'<text x="{gx:.1f}" y="{y + 12}" fill="{ink["muted"]}" font-size="11" '
-                    f'text-anchor="middle" style="font-variant-numeric:tabular-nums">{tv:g}{unit}</text>')
+                    f'text-anchor="middle" style="font-variant-numeric:tabular-nums">'
+                    f'{pct}{"%" if pct == 100 else ""}</text>')
 
-    # legend row: the stage colors + the release-tick glyph
+    # legend row: the stage colors
     y += 26
-    entries = [("swatch", k, lbl) for k, lbl in STAGES]
-    entries.append(("tick", ink["primary"], f"{baseline_label} total"))
-    legend = legend_row(ink, sink, y, entries)
+    legend = legend_row(ink, sink, y, [("swatch", k, lbl) for k, lbl in STAGES])
     height = y + 34
 
     mix = stage_mix(rows)
     mix_txt = " · ".join(f"{lbl} {100 * frac:.0f}%" for lbl, frac in mix)
     subtitle = f'{model["shape"]} · stage mix: {mix_txt}'
-    return svg_doc(ink, height, f'{model["model"]} — Pipeline encode stage decomposition',
+    return svg_doc(ink, height, f'{model["model"]} — Pipeline encode stage mix',
                    subtitle, "".join(grid) + "".join(body) + legend, meta, subtitle_base)
 
 
@@ -747,8 +725,12 @@ def render_markdown(data, subtitle_base, meta, base, run_id, sizes):
             md += [picture(base, run_id, f"{slug}-stages",
                            f"{m['model']} stage decomposition", 860), ""]
         md += [mem_line(m, baseline_label), ""]
-        md += [f"| Fixture | Group | {baseline_label} MB/s | Pipeline MB/s | Speedup | Ids |",
-               "|---|---|---:|---:|---:|:--|"]
+        # Per-stage columns show each split's share of the pipeline's own encode time
+        # with the ns/byte alongside — `share% (ns/B)` — so the split cost is readable
+        # as text regardless of how slow the release baseline is.
+        md += [f"| Fixture | Group | {baseline_label} MB/s | Pipeline MB/s | Speedup "
+               "| added-token | normalize | pre-tokenize | model | Ids |",
+               "|---|---|---:|---:|---:|---:|---:|---:|---:|:--|"]
         for r in sorted(m["results"], key=lambda r: (r["group"], r["fixture"])):
             mb = r["mbps"]
             flags = []
@@ -757,11 +739,14 @@ def render_markdown(data, subtitle_base, meta, base, run_id, sizes):
             if r.get("ids_match_baseline") is False:
                 flags.append(f"≠ {baseline_label}")
             ids = " · ".join(flags) if flags else "match"
+            s = r.get("stage_ns_per_byte")
+            stages = " ".join(f"| {stage_cell(s, k)}"
+                              for k in ("added_split", "normalize", "pre_tokenize", "model"))
             md.append(
                 f"| {r['fixture']} | {r['group']} "
                 f"| {fnum(mb.get('baseline'))} | {fnum(mb.get('pipeline'))} "
                 f"| {fnum(speedup(r), '×{:.2f}')} "
-                f"| {ids} |")
+                f"{stages} | {ids} |")
         md += ["", "</details>", ""]
 
     # Unsupported / failed-to-load models: roadmap cards, collapsed — they're
@@ -808,7 +793,6 @@ def main():
     sizes = json.loads(Path(args.binary_sizes).read_text()) if args.binary_sizes else None
     benched = [m for m in models if m["results"]]
     lo, hi = scale(benched)
-    max_total = stage_scale(benched)
     out = Path(args.out_dir)
     for mode in ("light", "dark"):
         (out / f"pipeline_bench_overview_{mode}.svg").write_text(
@@ -826,7 +810,7 @@ def main():
             (out / f"pipeline_bench_{slug}_{mode}.svg").write_text(svg)
             if has_stages(m):
                 (out / f"pipeline_bench_{slug}-stages_{mode}.svg").write_text(
-                    stage_chart_svg(m, mode, args.subtitle, meta, max_total, baseline_label))
+                    stage_chart_svg(m, mode, args.subtitle, meta, baseline_label))
 
     (out / "pipeline_bench.md").write_text(
         render_markdown(data, args.subtitle, meta, args.img_base, args.run_id, sizes))
