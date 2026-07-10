@@ -26,7 +26,8 @@ pub mod bit {
     pub const CJK: u8 = 1 << 4;
     /// bert `clean_text` removes it (NUL, U+FFFD, control).
     pub const CTRL: u8 = 1 << 5;
-    /// whitespace — bert `clean_text` folds it to `' '` (also `Strip`).
+    /// whitespace that bert `clean_text` folds to `' '` — EXCLUDING a plain space (which is unchanged,
+    /// so it stays inert/borrowable). Also relevant to `Strip`.
     pub const WS: u8 = 1 << 6;
     /// unchanged by every normalization rule → copy verbatim.
     pub const INERT: u8 = 0;

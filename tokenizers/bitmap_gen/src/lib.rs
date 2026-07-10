@@ -411,8 +411,9 @@ fn norm_tag(c: char) -> u8 {
     if c == '\0' || c == '\u{FFFD}' || (!matches!(c, '\t' | '\n' | '\r') && c.is_other()) {
         t |= CTRL;
     }
-    // bert whitespace: \t\n\r plus Unicode White_Space (folded to space by clean_text).
-    if matches!(c, '\t' | '\n' | '\r') || c.is_whitespace() {
+    // bert whitespace that clean_text actually CHANGES: \t\n\r + Unicode White_Space folded to ' ',
+    // EXCLUDING ' ' itself (it folds to ' ', unchanged) so a plain space stays inert (borrowable).
+    if c != ' ' && (matches!(c, '\t' | '\n' | '\r') || c.is_whitespace()) {
         t |= WS;
     }
     t
