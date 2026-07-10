@@ -249,12 +249,14 @@ impl BertNormalizer {
         out.push_str(&input[..first]);
         let mut i = first;
         while i < n {
-            // non-inert run → the Unicode pipeline
+            // non-inert run → per-char dispatch (each rule runs only where its bit is set)
             let ns = i;
             while i < n && tags[i] & active != 0 {
                 i += char_len(bytes[i]);
             }
-            self.normalize_unicode_run(&input[ns..i], strip_accents, &mut out);
+            for (off, c) in input[ns..i].char_indices() {
+                self.dispatch_char(c, tags[ns + off], strip_accents, &mut out);
+            }
             // inert run → verbatim
             let is = i;
             while i < n && tags[i] & active == 0 {
@@ -263,6 +265,57 @@ impl BertNormalizer {
             out.push_str(&input[is..i]);
         }
         Cow::Owned(out)
+    }
+
+    /// Normalize one char from its `norm_classify` tag: run each rule ONLY where its bit is set. A
+    /// script with no cased chars never calls `to_lowercase`; a char that doesn't decompose never pays
+    /// a `canonical_combining_class` lookup. Order matches the pipeline: clean → chinese → the transform.
+    #[inline]
+    fn dispatch_char(&self, c: char, tg: u8, strip_accents: bool, out: &mut String) {
+        use atomsplit::norm_classify::bit;
+        if self.clean_text {
+            if tg & bit::CTRL != 0 {
+                return; // removed
+            }
+            if tg & bit::WS != 0 {
+                out.push(' '); // whitespace folds to space (which carries no further rule)
+                return;
+            }
+        }
+        if self.handle_chinese_chars && tg & bit::CJK != 0 {
+            out.push(' ');
+            self.emit_transform(c, tg, strip_accents, out);
+            out.push(' ');
+            return;
+        }
+        self.emit_transform(c, tg, strip_accents, out);
+    }
+
+    /// NFD → strip nonspacing marks → lowercase, applied per the char's bits. `.nfd()` runs only on
+    /// NFD-flagged chars — the sole place a `canonical_combining_class` lookup is paid; a mark is dropped
+    /// with no lookup; anything else is a `to_lowercase` (LOWER) or a plain push. Byte-exact with the
+    /// run-based pipeline: strip drops every Mn, so per-char decomposition needs no cross-char reordering.
+    #[inline]
+    fn emit_transform(&self, c: char, tg: u8, strip_accents: bool, out: &mut String) {
+        use atomsplit::norm_classify::bit;
+        if strip_accents && tg & bit::NFD != 0 {
+            for d in c.nfd() {
+                if d.is_mark_nonspacing() {
+                    continue;
+                }
+                if self.lowercase {
+                    out.extend(d.to_lowercase());
+                } else {
+                    out.push(d);
+                }
+            }
+        } else if strip_accents && tg & bit::MARK != 0 {
+            // nonspacing mark → stripped (emit nothing)
+        } else if self.lowercase && tg & bit::LOWER != 0 {
+            out.extend(c.to_lowercase());
+        } else {
+            out.push(c);
+        }
     }
 }
 
