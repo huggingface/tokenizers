@@ -720,6 +720,7 @@ mod tests {
     use crate::models::wordpiece::WordPiece;
     use crate::pre_tokenizers::byte_level::ByteLevel;
     use crate::pre_tokenizers::sequence::Sequence;
+    use crate::models::wordpiece::WordPiece;
 
     struct FixedMatcher(Vec<((usize, usize), u32)>);
     impl PipelinePatternMatcher for FixedMatcher {
