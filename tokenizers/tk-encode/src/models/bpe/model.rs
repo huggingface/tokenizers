@@ -853,8 +853,7 @@ impl pipeline::Model for PipelineBPE {
         self.merge_word(sequence, merge_queue, skip, word);
         output.extend(word.get_chars_iter().map(|id| PipelineToken { id }));
         if let Some(cache) = word_cache {
-            let tokens = word.get_chars();
-            cache.insert(sequence.to_string(), tokens);
+            cache.insert(sequence.to_string(), word.get_chars());
         }
 
         Ok(())
