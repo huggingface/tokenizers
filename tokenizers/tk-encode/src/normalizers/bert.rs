@@ -299,6 +299,30 @@ impl BertNormalizer {
     fn emit_transform(&self, c: char, tg: u8, strip_accents: bool, out: &mut String) {
         use atomsplit::norm_classify::bit;
         if strip_accents && tg & bit::NFD != 0 {
+            // Hangul syllables decompose to conjoining jamo by pure S_BASE arithmetic — no table, no
+            // combining-class lookup. The jamo are all `Lo` (kept by strip, caseless), so emit them
+            // directly instead of paying `.nfd()`'s per-jamo `push_back` ccc lookup.
+            const S_BASE: u32 = 0xAC00;
+            const S_COUNT: u32 = 11172;
+            const L_BASE: u32 = 0x1100;
+            const V_BASE: u32 = 0x1161;
+            const T_BASE: u32 = 0x11A7;
+            const N_COUNT: u32 = 588;
+            const T_COUNT: u32 = 28;
+            let cp = c as u32;
+            if (S_BASE..S_BASE + S_COUNT).contains(&cp) {
+                let s = cp - S_BASE;
+                // SAFETY: L/V/T are valid jamo codepoints (U+1100/1161/11A8 blocks) by construction.
+                unsafe {
+                    out.push(char::from_u32_unchecked(L_BASE + s / N_COUNT));
+                    out.push(char::from_u32_unchecked(V_BASE + (s % N_COUNT) / T_COUNT));
+                    let t = s % T_COUNT;
+                    if t != 0 {
+                        out.push(char::from_u32_unchecked(T_BASE + t));
+                    }
+                }
+                return;
+            }
             for d in c.nfd() {
                 if d.is_mark_nonspacing() {
                     continue;
@@ -398,6 +422,9 @@ mod tests {
         "a\u{00a0}b\u{2028}c",
         "a\u{200b}b",
         "The 世界 Café tëst\u{0301} 123 ǅ Москва",
+        // Hangul: exercises the arithmetic S_BASE decompose — 한/국 have a trailing jamo (3), 어 has
+        // none (2); 가 = first syllable (U+AC00), 힣 = last (U+D7A3).
+        "한국어 안녕 가힣",
     ];
 
     #[test]
