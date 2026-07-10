@@ -6,6 +6,8 @@ use crate::pipeline::{self, PipelineToken};
 use crate::tokenizer::{Model, Result, Token};
 use ahash::AHashMap;
 use std::collections::HashMap;
+use std::convert::TryFrom;
+use std::ops::Deref;
 use std::{
     borrow::Cow,
     fs::File,
@@ -13,6 +15,8 @@ use std::{
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
 };
+use yada::builder::DoubleArrayBuilder;
+use yada::DoubleArray;
 
 mod serialization;
 
@@ -311,7 +315,41 @@ impl Model for WordPiece {
     }
 }
 
-impl pipeline::Model for WordPiece {
+pub struct PipelineWordPiece {
+    vocab_trie: yada::DoubleArray<Vec<u8>>,
+    unk_token: Option<u32>,
+    continuing_subword_prefix: String,
+    max_input_chars_per_word: usize,
+}
+
+impl TryFrom<WordPiece> for PipelineWordPiece {
+    type Error = crate::Error;
+    fn try_from(value: WordPiece) -> Result<Self> {
+        let WordPiece {
+            vocab,
+            unk_token,
+            continuing_subword_prefix,
+            max_input_chars_per_word,
+            ..
+        } = value;
+        let unk_token = vocab.get(&unk_token).copied();
+
+        let keyset: Vec<_> = vocab
+            .into_iter()
+            .map(|(string, token_id)| (string.into_bytes(), token_id))
+            .collect();
+        let vocab_trie = DoubleArray::new(DoubleArrayBuilder::build(&keyset)?)?;
+
+        Ok(Self {
+            continuing_subword_prefix,
+            max_input_chars_per_word,
+            unk_token,
+            vocab_trie,
+        })
+    }
+}
+
+impl pipeline::Model for PipelineWordPiece {
     fn tokenize_pipeline(
         &self,
         sequence: &str,
@@ -322,10 +360,7 @@ impl pipeline::Model for WordPiece {
 
         let char_len = sequence.chars().count();
         if char_len > self.max_input_chars_per_word {
-            let unk_id = *self
-                .vocab
-                .get(&self.unk_token)
-                .ok_or(Error::MissingUnkToken)?;
+            let unk_id = self.unk_token.ok_or(Error::MissingUnkToken)?;
             output.push(PipelineToken { id: unk_id });
             return Ok(());
         }
@@ -339,25 +374,15 @@ impl pipeline::Model for WordPiece {
             }
             candidate.push_str(&sequence[start..]);
 
-            let prefix_len = candidate.len() - (sequence.len() - start);
-            let matched = sequence[start..]
-                .char_indices()
-                .rev()
-                .find_map(|(idx, character)| {
-                    let end = start + idx + character.len_utf8();
-                    candidate.truncate(prefix_len + (end - start));
-                    self.vocab.get(&candidate).map(|&id| (end, id))
-                });
-            let Some((end, token_id)) = matched else {
-                let unk_id = *self
-                    .vocab
-                    .get(&self.unk_token)
-                    .ok_or(Error::MissingUnkToken)?;
+            let Some((token_id, prefix_len)) =
+                self.vocab_trie.common_prefix_search(&candidate).last()
+            else {
+                let unk_id = self.unk_token.ok_or(Error::MissingUnkToken)?;
                 output.push(PipelineToken { id: unk_id });
                 return Ok(());
             };
             candidate_tokens.push(PipelineToken { id: token_id });
-            start = end;
+            start = start + prefix_len;
         }
         output.extend_from_slice(&candidate_tokens);
         Ok(())
