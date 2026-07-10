@@ -171,23 +171,17 @@ impl Normalizer for BertNormalizer {
     }
 }
 
-impl pipeline::Normalizer for BertNormalizer {
-    fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
-        let strip_accents = self.strip_accents.unwrap_or(self.lowercase);
-
-        if self.is_noop(input, strip_accents) {
-            return Ok(input.into());
-        }
-
-        let cleaned = input
+impl BertNormalizer {
+    /// The Unicode pipeline (clean → chinese → optional NFD → strip nonspacing marks → lowercase) for
+    /// **one non-ASCII run**, appended to `out`. ASCII runs never reach here (the byte lane in
+    /// `normalize` handles them). NFD is applied only when stripping accents *and* the run isn't already
+    /// NFD — `is_nfd_quick` clears CJK / already-decomposed runs without a per-char table lookup.
+    fn normalize_unicode_run(&self, run: &str, strip_accents: bool, out: &mut String) {
+        let cleaned = run
             .chars()
             .filter(|&c| !(self.clean_text && clean_text_removes(c)))
             .flat_map(|c| {
-                let c = if self.clean_text {
-                    clean_text_map(c)
-                } else {
-                    c
-                };
+                let c = if self.clean_text { clean_text_map(c) } else { c };
                 if self.handle_chinese_chars && is_chinese_char(c) {
                     [Some(' '), Some(c), Some(' ')]
                 } else {
@@ -195,24 +189,75 @@ impl pipeline::Normalizer for BertNormalizer {
                 }
             })
             .flatten();
-
-        // `.nfd()` changes the iterator's type, so the stage toggles can't be
-        // plain `if`s mid-chain: each config combination gets its own
-        // statically-typed chain, all funneled into one pre-sized String.
-        let mut normalized = String::with_capacity(input.len());
-        match (strip_accents, self.lowercase) {
-            (true, true) => normalized.extend(
+        let needs_nfd = strip_accents && !matches!(is_nfd_quick(run.chars()), IsNormalized::Yes);
+        // Each config gets its own statically-typed chain (`.nfd()`/`.filter()` change the type).
+        match (needs_nfd, strip_accents, self.lowercase) {
+            (true, _, true) => out.extend(
                 cleaned
                     .nfd()
                     .filter(|c| !c.is_mark_nonspacing())
                     .flat_map(char::to_lowercase),
             ),
-            (true, false) => normalized.extend(cleaned.nfd().filter(|c| !c.is_mark_nonspacing())),
-            (false, true) => normalized.extend(cleaned.flat_map(char::to_lowercase)),
-            (false, false) => normalized.extend(cleaned),
+            (true, _, false) => out.extend(cleaned.nfd().filter(|c| !c.is_mark_nonspacing())),
+            // already NFD: skip decomposition but still drop any pre-existing nonspacing marks.
+            (false, true, true) => out.extend(
+                cleaned
+                    .filter(|c| !c.is_mark_nonspacing())
+                    .flat_map(char::to_lowercase),
+            ),
+            (false, true, false) => out.extend(cleaned.filter(|c| !c.is_mark_nonspacing())),
+            (false, false, true) => out.extend(cleaned.flat_map(char::to_lowercase)),
+            (false, false, false) => out.extend(cleaned),
+        }
+    }
+}
+
+impl pipeline::Normalizer for BertNormalizer {
+    fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
+        let strip_accents = self.strip_accents.unwrap_or(self.lowercase);
+        if self.is_noop(input, strip_accents) {
+            return Ok(input.into());
         }
 
-        Ok(Cow::Owned(normalized))
+        // Split into ASCII / non-ASCII runs. ASCII chars are always starters (ccc == 0) and never
+        // decompose or carry marks, so a run boundary never splits a base from its combining marks —
+        // NFD ordering stays correct. ASCII runs take a pure byte lane with zero table lookups; only
+        // non-ASCII runs pay the Unicode pipeline.
+        let mut out = String::with_capacity(input.len());
+        let bytes = input.as_bytes();
+        let mut i = 0;
+        while i < bytes.len() {
+            if bytes[i] < 0x80 {
+                let start = i;
+                while i < bytes.len() && bytes[i] < 0x80 {
+                    i += 1;
+                }
+                for &b in &bytes[start..i] {
+                    let b = if self.clean_text {
+                        // control removal: C0 controls except \t\n\r, plus DEL.
+                        if (b < 0x20 && !matches!(b, b'\t' | b'\n' | b'\r')) || b == 0x7F {
+                            continue;
+                        }
+                        // whitespace fold to space (the survivors are \t \n \r ' ').
+                        if matches!(b, b'\t' | b'\n' | b'\r' | b' ') {
+                            b' '
+                        } else {
+                            b
+                        }
+                    } else {
+                        b
+                    };
+                    out.push((if self.lowercase { b.to_ascii_lowercase() } else { b }) as char);
+                }
+            } else {
+                let start = i;
+                while i < bytes.len() && bytes[i] >= 0x80 {
+                    i += 1;
+                }
+                self.normalize_unicode_run(&input[start..i], strip_accents, &mut out);
+            }
+        }
+        Ok(Cow::Owned(out))
     }
 }
 
@@ -237,6 +282,15 @@ mod tests {
         "ǅ",        // titlecase, lowercases to multi-mapping
         "İstanbul", // dotted capital I: lowercases to 2 chars
         "straße",
+        // run-split hardening: marks that NFD-reorders (ccc 230 then 220), on ASCII and non-ASCII bases,
+        // across the ASCII/non-ASCII boundary; non-ASCII whitespace folded to space; a format char
+        // (zero-width space, Cf) that clean_text removes; and a long mixed-script line.
+        "e\u{0301}\u{0323}",
+        "e\u{0323}\u{0301}",
+        "\u{00e8}\u{0323}\u{0301}",
+        "a\u{00a0}b\u{2028}c",
+        "a\u{200b}b",
+        "The 世界 Café tëst\u{0301} 123 ǅ Москва",
     ];
 
     #[test]
