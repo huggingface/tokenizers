@@ -13,15 +13,14 @@
 //! serves as the id-correctness oracle (`ids_match`, which CI fails on).
 //! `ids_match_baseline` — pipeline vs the released crate — is report-only,
 //! since a branch may intentionally fix encode behavior. Models the pipeline
-//! can't build yet are reported as `supported: false` with their pipeline shape
-//! rather than benched — the CI grid renders those as roadmap cards. Each
-//! manifest entry carries a `desc`: a one-line label of the workload archetype
-//! the model exercises, passed through to the report.
+//! can't build yet are reported with empty `results` (plus the failure
+//! `reason`) and their pipeline shape rather than benched — the CI grid
+//! renders those as roadmap cards. Each manifest entry carries a `desc`: a
+//! one-line label of the workload archetype the model exercises, passed
+//! through to the report.
 //!
 //! Emits one JSON object (`{baseline, models}`) on stdout, consumed by
-//! `.github/scripts/render_pipeline_bench.py` in CI. For local iteration the
-//! data dir, manifest and rep count can be overridden with the
-//! `FIXTURE_BENCH_DATA` / `FIXTURE_BENCH_MANIFEST` / `FIXTURE_BENCH_REPS` env vars.
+//! `.github/scripts/render_pipeline_bench.py` in CI.
 
 use std::convert::TryFrom;
 use std::hint::black_box;
@@ -63,22 +62,6 @@ const ADDED_NORMALIZED: &[&str] = &[
     "wuzzlefang",
     "crungledorf",
 ];
-
-fn data_dir() -> PathBuf {
-    std::env::var_os("FIXTURE_BENCH_DATA").map_or_else(|| PathBuf::from(DATA_DIR), PathBuf::from)
-}
-
-fn manifest_path() -> PathBuf {
-    std::env::var_os("FIXTURE_BENCH_MANIFEST")
-        .map_or_else(|| PathBuf::from(MANIFEST), PathBuf::from)
-}
-
-fn reps() -> usize {
-    std::env::var("FIXTURE_BENCH_REPS")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(REPS)
-}
 
 /// Inject the benchmark's added tokens into `tok` before the pipeline is built from it,
 /// so both the oracle and the pipeline see them (and stay id-for-id identical).
@@ -163,8 +146,8 @@ fn stage_secs<const STAGE: u8>(pipeline: &PipelineTokenizer, chunks: &[String]) 
         }
     };
     run(); // warm-up
-    let mut samples = Vec::with_capacity(reps());
-    for _ in 0..reps() {
+    let mut samples = Vec::with_capacity(REPS);
+    for _ in 0..REPS {
         let start = Instant::now();
         run();
         samples.push(start.elapsed().as_secs_f64());
@@ -175,7 +158,7 @@ fn stage_secs<const STAGE: u8>(pipeline: &PipelineTokenizer, chunks: &[String]) 
 fn fixture_files() -> Vec<(String, PathBuf)> {
     let mut files = Vec::new();
     for group in ["lang", "modalities"] {
-        let dir = data_dir().join("fixtures").join(group);
+        let dir = Path::new(DATA_DIR).join("fixtures").join(group);
         let mut entries: Vec<_> = std::fs::read_dir(&dir)
             .unwrap_or_else(|e| panic!("{}: {e} — run `make fixtures` first", dir.display()))
             .map(|e| e.unwrap().path())
@@ -198,7 +181,7 @@ fn model_path(entry: &Value) -> PathBuf {
         .and_then(Value::as_str)
         .map(str::to_string)
         .unwrap_or_else(|| format!("{name}.json"));
-    data_dir().join(file)
+    Path::new(DATA_DIR).join(file)
 }
 
 fn model_kind(tok: &Tokenizer) -> &'static str {
@@ -346,8 +329,6 @@ fn measure_memory(model: &Path, baseline_ok: bool) -> Value {
     Value::Object(out)
 }
 
-type EncodeFn<'a> = Box<dyn Fn(&str) -> usize + 'a>;
-
 fn bench_model(
     baseline: Option<&BaselineTokenizer>,
     oracle: &Tokenizer,
@@ -355,8 +336,7 @@ fn bench_model(
     files: &[(String, PathBuf)],
 ) -> Vec<Value> {
     let pipe_enc = |s: &str| pipeline.encode(s, false).unwrap().len();
-    let base_enc: Option<EncodeFn> =
-        baseline.map(|b| Box::new(move |s: &str| b.encode(s, false).unwrap().len()) as EncodeFn);
+    let base_enc = baseline.map(|b| move |s: &str| b.encode(s, false).unwrap().len());
 
     let mut rows = Vec::new();
     for (group, path) in files {
@@ -392,7 +372,7 @@ fn bench_model(
         }
         time_pass(&pipe_enc, &chunks);
         let (mut base_s, mut pipe_s) = (Vec::new(), Vec::new());
-        for _ in 0..reps() {
+        for _ in 0..REPS {
             if let Some(be) = &base_enc {
                 base_s.push(time_pass(be, &chunks));
             }
@@ -459,7 +439,7 @@ fn main() {
     }
 
     let manifest: Vec<Value> =
-        serde_json::from_str(&std::fs::read_to_string(manifest_path()).unwrap()).unwrap();
+        serde_json::from_str(&std::fs::read_to_string(MANIFEST).unwrap()).unwrap();
     let files = fixture_files();
 
     let mut models: Vec<Value> = Vec::new();
@@ -476,7 +456,7 @@ fn main() {
                 eprintln!("  load failed: {e}");
                 models.push(json!({
                     "model": name, "repo": repo, "desc": desc, "shape": "?",
-                    "supported": false, "reason": format!("load error: {e}"),
+                    "reason": format!("load error: {e}"),
                     "results": [], "memory": Value::Null,
                 }));
                 continue;
@@ -498,7 +478,7 @@ fn main() {
                     eprintln!("  pipeline builds but can't encode yet ({shape}): {e}");
                     models.push(json!({
                         "model": name, "repo": repo, "desc": desc, "shape": shape,
-                        "supported": false, "reason": format!("{e}"),
+                        "reason": format!("{e}"),
                         "results": [], "memory": Value::Null,
                     }));
                     continue;
@@ -508,7 +488,7 @@ fn main() {
                 eprintln!("  unsupported by PipelineTokenizer ({shape})");
                 models.push(json!({
                     "model": name, "repo": repo, "desc": desc, "shape": shape,
-                    "supported": false, "results": [], "memory": Value::Null,
+                    "results": [], "memory": Value::Null,
                 }));
                 continue;
             }
@@ -538,7 +518,6 @@ fn main() {
 
         models.push(json!({
             "model": name, "repo": repo, "desc": desc, "shape": shape,
-            "supported": true,
             "results": rows, "memory": memory,
         }));
     }

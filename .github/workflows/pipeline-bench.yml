@@ -5,10 +5,9 @@ name: Pipeline Benchmark
 # `Tokenizer` is being phased out, so it is only the id-correctness oracle,
 # never a benched series), for every model in
 # tk-encode/examples/bench_models.json across every corpus in data/fixtures/.
-# Measures throughput (~10 kB inputs), short-prompt encode latency
-# (time-to-first-token), per-implementation memory footprint (RSS), and
-# stripped minimal-binary size. The release dep is behind tk-encode's
-# `bench-baseline` feature, so production builds never pull it.
+# Measures throughput (~10 kB inputs), per-implementation memory footprint
+# (RSS), and stripped minimal-binary size. The release dep is behind
+# tk-encode's `bench-baseline` feature, so production builds never pull it.
 # Triggers:
 #   • push to feat/train_encode_split → benches and updates PR #2119's description.
 #   • add the "run-pipeline-bench" label to any PR → benches that PR and updates

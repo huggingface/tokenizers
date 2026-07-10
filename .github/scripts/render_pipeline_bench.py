@@ -6,7 +6,7 @@ Input: JSON object from `cargo run --release -p tk-encode --features
 tk-encode/bench-baseline --example fixture_bench`:
 
     {baseline: {crate, version},
-     models: [{model, shape, desc, supported, [reason],
+     models: [{model, shape, desc, [reason],
                memory: {baseline|pipeline:
                         {load_bytes, encode_bytes, peak_bytes} | null} | null,
                results: [{fixture, group, bytes, chunks,
@@ -645,9 +645,7 @@ def picture(base, run_id, slug, alt, width):
 
 
 def mem_line(model, baseline_label):
-    mem = model.get("memory")
-    if not isinstance(mem, dict):
-        return None
+    mem = model["memory"]
     def part(impl, label):
         d = mem.get(impl)
         if not isinstance(d, dict):
@@ -665,40 +663,28 @@ def binsize_svg(sizes, mode, meta, baseline_label):
     library adds to a shipped binary. Bars are 0-anchored on a linear MB axis."""
     ink, sink = INK[mode], SERIES_INK[mode]
     rows = [("baseline", baseline_label), ("pipeline", "PipelineTokenizer")]
-    present = [sizes.get(k) for k, _ in rows if sizes.get(k)]
-    if not present:
-        return None
-    max_mb = max(present) / 1e6 * 1.15
+    max_mb = max(sizes.values()) / 1e6 * 1.15
     plot_w = CHART_W - OV_GUTTER - PAD_R - COL_W
-    base = sizes.get("baseline")
 
     def x(v):
         return OV_GUTTER + v / max_mb * plot_w
 
     top, bar_h, row_h = 74, 16, 30
-    col_x = CHART_W - 16
-    body = [f'<text x="{col_x}" y="{top - 14}" fill="{ink["muted"]}" font-size="11" '
-            f'text-anchor="end">MB: {escape(baseline_label)} → Pipeline</text>',
-            f'<text x="{OV_GUTTER}" y="{top - 14}" fill="{ink["muted"]}" font-size="11">'
+    body = [f'<text x="{OV_GUTTER}" y="{top - 14}" fill="{ink["muted"]}" font-size="11">'
             f'smaller is better</text>']
     y = top
     for key, label in rows:
-        v = sizes.get(key)
+        mb = sizes[key] / 1e6
         cy = y + row_h / 2
         body.append(f'<text x="{OV_GUTTER - 14}" y="{cy + 4:.1f}" fill="{ink["primary"]}" '
                     f'font-size="12.5" font-weight="600" text-anchor="end">{escape(label)}</text>')
-        if v:
-            mb = v / 1e6
-            body.append(hbar(x(0), x(mb), cy - bar_h / 2, bar_h, sink[key]))
-            txt = f"{mb:.2f} MB"
-            if base and key != "baseline":
-                txt += f"  ({(v / base - 1) * 100:+.0f}% vs {baseline_label})"
-            body.append(f'<text x="{x(mb) + 8:.1f}" y="{cy + 4:.1f}" fill="{ink["primary"]}" '
-                        f'font-size="12" font-weight="600" '
-                        f'style="font-variant-numeric:tabular-nums">{escape(txt)}</text>')
-        else:
-            body.append(f'<text x="{x(0) + 8:.1f}" y="{cy + 4:.1f}" fill="{ink["muted"]}" '
-                        f'font-size="11.5" font-style="italic">not measured</text>')
+        body.append(hbar(x(0), x(mb), cy - bar_h / 2, bar_h, sink[key]))
+        txt = f"{mb:.2f} MB"
+        if key != "baseline":
+            txt += f"  ({(sizes[key] / sizes['baseline'] - 1) * 100:+.0f}% vs {baseline_label})"
+        body.append(f'<text x="{x(mb) + 8:.1f}" y="{cy + 4:.1f}" fill="{ink["primary"]}" '
+                    f'font-size="12" font-weight="600" '
+                    f'style="font-variant-numeric:tabular-nums">{escape(txt)}</text>')
         y += row_h
 
     grid = []
@@ -760,9 +746,7 @@ def render_markdown(data, subtitle_base, meta, base, run_id, sizes):
         if has_stages(m):
             md += [picture(base, run_id, f"{slug}-stages",
                            f"{m['model']} stage decomposition", 860), ""]
-        ml = mem_line(m, baseline_label)
-        if ml:
-            md += [ml, ""]
+        md += [mem_line(m, baseline_label), ""]
         md += [f"| Fixture | Group | {baseline_label} MB/s | Pipeline MB/s | Speedup | Ids |",
                "|---|---|---:|---:|---:|:--|"]
         for r in sorted(m["results"], key=lambda r: (r["group"], r["fixture"])):
@@ -805,7 +789,7 @@ def main():
     ap.add_argument("--img-base", default="", help="base URL for uploaded PNGs")
     ap.add_argument("--run-id", default="local")
     ap.add_argument("--binary-sizes", default="",
-                    help="JSON file {stub, baseline, pipeline} of stripped binary bytes")
+                    help="JSON file {baseline, pipeline} of stripped binary bytes")
     args = ap.parse_args()
 
     rev = args.revision
@@ -832,9 +816,8 @@ def main():
         (out / f"pipeline_bench_memory_{mode}.svg").write_text(
             memory_svg(models, mode, meta, baseline_label))
         if sizes:
-            svg = binsize_svg(sizes, mode, meta, baseline_label)
-            if svg:
-                (out / f"pipeline_bench_binsize_{mode}.svg").write_text(svg)
+            (out / f"pipeline_bench_binsize_{mode}.svg").write_text(
+                binsize_svg(sizes, mode, meta, baseline_label))
     for m in models:
         slug = slugify(m["model"])
         for mode in ("light", "dark"):
