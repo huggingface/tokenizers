@@ -180,16 +180,37 @@ impl PyPreTokenizer {
     ///     :obj:`List[Tuple[str, Offsets]]`:
     ///         A list of tuple with the pre-tokenized parts and their offsets
     #[pyo3(text_signature = "(self, sequence)")]
-    fn pre_tokenize_str(&self, s: &str) -> PyResult<Vec<(String, Offsets)>> {
+    fn pre_tokenize_str(&self, py: Python<'_>, s: &str) -> PyResult<Vec<(String, Offsets)>> {
         let mut pretokenized = tk::tokenizer::PreTokenizedString::from(s);
 
         ToPyResult(self.pretok.pre_tokenize(&mut pretokenized)).into_py()?;
 
-        Ok(pretokenized
+        let result: Vec<(String, Offsets)> = pretokenized
             .get_splits(tk::OffsetReferential::Original, tk::OffsetType::Char)
             .into_iter()
             .map(|(s, o, _)| (s.to_owned(), o))
-            .collect())
+            .collect();
+
+        if let PyPreTokenizerTypeWrapper::Single(ref single) = self.pretok {
+            if let Ok(guard) = single.read() {
+                if let PyPreTokenizerWrapper::Wrapped(PreTokenizerWrapper::Split(ref split)) =
+                    *guard
+                {
+                    if let tk::pre_tokenizers::split::SplitPattern::String(ref pat) = split.pattern
+                    {
+                        let char_len = s.chars().count();
+                        if char_len > 1 && result.len() == 1 && result[0].1 == (0, char_len) {
+                            let msg = format!(
+                                "Split(pattern={pat:?}, ...).pre_tokenize_str() returned the entire input as a single piece (no matches). If you intended regex semantics, wrap the pattern in tokenizers.Regex(); a plain string is matched literally."
+                            );
+                            crate::error::user_warning(py, &msg)?;
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(result)
     }
 
     fn __repr__(&self) -> PyResult<String> {
