@@ -7,10 +7,6 @@ use std::fmt;
 
 type Mphf = PtrHash<u64, Linear>;
 
-/// Prefetch look-ahead for `index_stream` batched lookups. `ptr_hash` suggests 32; 16 is plenty for
-/// the short per-word candidate runs WordPiece produces and keeps the ring-buffer init cheap.
-const STREAM_PREFETCH: usize = 16;
-
 // Fixed seeds so a given vocab always hashes identically (the hasher is also stored on the struct,
 // so build and query are guaranteed consistent regardless).
 const SEEDS: [u64; 4] = [
@@ -193,43 +189,6 @@ impl BucketVocabStore {
     #[inline]
     pub fn token_to_id(&self, s: &str) -> Option<u32> {
         self.get_bytes(s.as_bytes())
-    }
-
-    /// WordPiece-style longest-prefix match, streamed.
-    ///
-    /// `buf` is one contiguous candidate buffer (`[continuing_prefix] + word_slice`) and `ends` lists
-    /// the candidate byte-lengths to probe — each `buf[..ends[i]]` is a prefix of `buf`. Instead of a
-    /// dependent probe-longest-then-shrink loop (one cache-miss stall per length), we feed all the
-    /// candidate hashes through `ptr_hash::index_stream`, which software-pipelines the MPHF pilot loads
-    /// (prefetch `STREAM_PREFETCH` ahead; a no-op on aarch64 but still restructures for ILP), byte-verify
-    /// each slot, and return the **longest** candidate that is in the vocab as `(byte_len, id)`.
-    ///
-    /// `index_stream` is consumed via `for_each` (its `next()` is `unimplemented!`), and `MINIMAL=true`
-    /// so its slots match the minimal `[0, n)` slots the store was built with (`index_single_part`).
-    #[inline]
-    pub fn longest_prefix_match(&self, buf: &[u8], ends: &[usize]) -> Option<(usize, u32)> {
-        if self.entries.is_empty() || ends.is_empty() {
-            return None;
-        }
-        let hashes = ends.iter().map(|&l| self.hasher.hash_one(&buf[..l]));
-        let mut best: Option<(usize, u32)> = None;
-        let mut i = 0usize;
-        self.mphf
-            .index_stream::<STREAM_PREFETCH, true, _>(hashes)
-            .for_each(|slot| {
-                let l = ends[i];
-                i += 1;
-                let e = self.entries[slot];
-                let (start, len) = (e.start as usize, e.len as usize);
-                // Same byte-verify as `get_bytes`: an MPHF slot is meaningful only for in-vocab keys.
-                if len == l
-                    && self.bytes[start..start + len] == buf[..l]
-                    && best.is_none_or(|(bl, _)| l > bl)
-                {
-                    best = Some((l, e.id));
-                }
-            });
-        best
     }
 
     /// `id -> token bytes`, borrowing from the slab (no allocation).

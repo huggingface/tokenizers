@@ -413,6 +413,13 @@ impl PipelineWordPiece {
     }
 }
 
+thread_local! {
+    /// One reused candidate buffer per thread — the WordPiece hot path is called once per pre-token, so a
+    /// fresh `Vec` here was a heap alloc *per word* (measured ~half the model-lookup cost). Reused, it's
+    /// zero-alloc after warmup; per-thread so parallel encode stays lock-free.
+    static SCRATCH: std::cell::RefCell<Vec<u8>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
 impl pipeline::Model for PipelineWordPiece {
     fn tokenize_pipeline(&self, sequence: &str, output: &mut Vec<PipelineToken>) -> Result<()> {
         if sequence.is_empty() {
@@ -428,53 +435,55 @@ impl pipeline::Model for PipelineWordPiece {
         let prefix = &self.continuing_subword_prefix;
         let bytes = sequence.as_bytes();
         let max_token_len = self.lens_desc.first().copied().unwrap_or(0) as usize;
-        let mut buf: Vec<u8> = Vec::with_capacity(max_token_len);
         let start_out = output.len();
-        let mut start = 0usize;
 
-        while start < sequence.len() {
-            let prefix_len = if start > 0 { prefix.len() } else { 0 };
-            let remaining = sequence.len() - start;
-            // A match is at most `max_token_len` bytes; cap the word part there and by what's left.
-            let cap_word = max_token_len.saturating_sub(prefix_len).min(remaining);
-            buf.clear();
-            buf.extend_from_slice(prefix.get(..prefix_len).unwrap_or(&[]));
-            buf.extend_from_slice(&bytes[start..start + cap_word]);
+        SCRATCH.with(|cell| {
+            let mut buf = cell.borrow_mut();
+            let mut start = 0usize;
+            while start < sequence.len() {
+                let prefix_len = if start > 0 { prefix.len() } else { 0 };
+                let remaining = sequence.len() - start;
+                // A match is at most `max_token_len` bytes; cap the word part there and by what's left.
+                let cap_word = max_token_len.saturating_sub(prefix_len).min(remaining);
+                buf.clear();
+                buf.extend_from_slice(prefix.get(..prefix_len).unwrap_or(&[]));
+                buf.extend_from_slice(&bytes[start..start + cap_word]);
 
-            // Probe real token lengths longest-first; first hit is the greedy answer. Byte-exact: a length
-            // that splits a codepoint or that no token has can't match a valid-UTF-8 token.
-            let mut matched = None;
-            for &l in self.lens_desc.iter() {
-                let l = l as usize;
-                if l < prefix_len + 1 {
-                    break;
+                // Probe real token lengths longest-first; first hit is the greedy answer. Byte-exact: a
+                // length that splits a codepoint or that no token has can't match a valid-UTF-8 token.
+                let mut matched = None;
+                for &l in self.lens_desc.iter() {
+                    let l = l as usize;
+                    if l < prefix_len + 1 {
+                        break;
+                    }
+                    let word_bytes = l - prefix_len;
+                    if word_bytes > cap_word {
+                        continue;
+                    }
+                    if let Some(id) = self.vocab.get_bytes(&buf[..prefix_len + word_bytes]) {
+                        matched = Some((word_bytes, id));
+                        break;
+                    }
                 }
-                let word_bytes = l - prefix_len;
-                if word_bytes > cap_word {
-                    continue;
-                }
-                if let Some(id) = self.vocab.get_bytes(&buf[..prefix_len + word_bytes]) {
-                    matched = Some((word_bytes, id));
-                    break;
+
+                match matched {
+                    Some((word_bytes, id)) => {
+                        output.push(PipelineToken { id });
+                        start += word_bytes;
+                    }
+                    None => {
+                        // Whole word is unknown: drop partial sub-tokens, emit one unk (legacy parity).
+                        output.truncate(start_out);
+                        output.push(PipelineToken {
+                            id: self.unk_id.ok_or(Error::MissingUnkToken)?,
+                        });
+                        return Ok(());
+                    }
                 }
             }
-
-            match matched {
-                Some((word_bytes, id)) => {
-                    output.push(PipelineToken { id });
-                    start += word_bytes;
-                }
-                None => {
-                    // Whole word is unknown: drop any partial sub-tokens, emit a single unk (legacy parity).
-                    output.truncate(start_out);
-                    output.push(PipelineToken {
-                        id: self.unk_id.ok_or(Error::MissingUnkToken)?,
-                    });
-                    return Ok(());
-                }
-            }
-        }
-        Ok(())
+            Ok(())
+        })
     }
 }
 
