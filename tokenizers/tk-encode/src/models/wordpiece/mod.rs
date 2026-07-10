@@ -320,7 +320,6 @@ pub struct WordPieceScratch {
 
 impl pipeline::ModelScratch for WordPieceScratch {}
 
-
 pub struct PipelineWordPiece {
     vocab_trie: yada::DoubleArray<Vec<u8>>,
     unk_token: Option<u32>,
@@ -355,7 +354,7 @@ impl TryFrom<WordPiece> for PipelineWordPiece {
 }
 
 impl pipeline::Model for PipelineWordPiece {
-        type Scratch = WordPieceScratch;
+    type Scratch = WordPieceScratch;
 
     fn init_scratch(&self) -> Self::Scratch {
         Self::Scratch {

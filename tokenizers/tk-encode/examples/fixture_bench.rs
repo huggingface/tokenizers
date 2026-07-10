@@ -208,7 +208,8 @@ fn stage_secs<const STAGE: u8>(pipeline: &PipelineTokenizer, chunks: &[String]) 
     let mut run = || {
         for chunk in chunks {
             out.clear();
-            let _ = pipeline.encode_generic::<STAGE>(chunk, &mut pre_tokens, &mut scratch, &mut out, );
+            let _ =
+                pipeline.encode_generic::<STAGE>(chunk, &mut pre_tokens, &mut scratch, &mut out);
             black_box(&out);
             black_box(&pre_tokens);
         }

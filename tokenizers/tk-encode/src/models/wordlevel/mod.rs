@@ -213,7 +213,7 @@ impl ModelScratch for WordLevelScratch {}
 impl pipeline::Model for WordLevel {
     type Scratch = WordLevelScratch;
     fn init_scratch(&self) -> Self::Scratch {
-        ()
+        
     }
     fn tokenize_pipeline(
         &self,
