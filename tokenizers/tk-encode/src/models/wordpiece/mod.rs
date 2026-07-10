@@ -1,7 +1,7 @@
 //! [WordPiece](https://static.googleusercontent.com/media/research.google.com/en//pubs/archive/37842.pdf)
 //! model.
 
-use crate::added_vocabulary::bucket_vocab_store::BucketVocabStore;
+use crate::added_vocabulary::buckets::Buckets;
 use crate::models::bpe::BPE;
 use crate::pipeline::{self, PipelineToken};
 use crate::tokenizer::{Model, Result, Token};
@@ -365,28 +365,20 @@ impl pipeline::Model for WordPiece {
     }
 }
 
-/// Pipeline WordPiece: the `Model` fast path backed by the MPHF [`BucketVocabStore`] with a streamed,
-/// prefetched longest-prefix match instead of the legacy dependent probe loop. Mirrors `PipelineBPE`.
+/// Pipeline WordPiece: the `Model` fast path. It reuses the added-vocabulary [`Buckets`] matcher — the
+/// same first-byte reject → longest-common-prefix reject → post-byte length-list → MPHF machinery — for
+/// the anchored longest-match at each position, instead of a hand-rolled probe loop. Mirrors `PipelineBPE`.
 #[derive(Clone)]
 pub struct PipelineWordPiece {
-    vocab: BucketVocabStore,
+    /// Anchored longest-match matcher over the whole vocab (plain + `##` tokens).
+    vocab: Buckets,
     /// Resolved lazily — an empty/`from_bpe` model may legitimately lack `[UNK]` until a word misses.
     unk_id: Option<u32>,
     /// `##` (the configured continuing-subword prefix) as bytes; prepended to non-initial candidates.
     continuing_subword_prefix: Vec<u8>,
     max_input_chars_per_word: usize,
-    /// Distinct token byte-lengths in the vocab, **descending**. At each position we probe only these
-    /// (longest first, stop at the first hit) instead of shrinking one char at a time — a length no token
-    /// has can't match, so it's never probed; the descending order gives the greedy longest match.
-    lens_desc: Box<[u16]>,
-    /// Longest token byte-length whose **first byte** is `b`, indexed by `b` (0 = no token starts with
-    /// `b`). L1-resident (512 B), no indirection. Two wins over probing the flat list blindly:
-    /// `init_max[b] == 0` → the position can't match anything → emit `[UNK]` with **zero** `get_bytes`
-    /// (huge for out-of-vocab scripts like Hangul, where every word is unk); otherwise it caps the probe
-    /// window to the longest token that could match. `init` = word-initial (`token[0]`), `cont` =
-    /// `##`-continuation (first byte after the prefix).
-    init_max: Box<[u16]>,
-    cont_max: Box<[u16]>,
+    /// Longest `##`-token word part (`token_len − prefix_len`); bounds the continuation scratch copy.
+    max_cont_word: usize,
 }
 
 impl PipelineWordPiece {
@@ -397,40 +389,18 @@ impl PipelineWordPiece {
             .iter()
             .map(|(s, &id)| (s.as_bytes().to_vec(), id))
             .collect();
-        let mut lens_desc: Vec<u16> = tokens.iter().map(|(s, _)| s.len() as u16).collect();
-        lens_desc.sort_unstable();
-        lens_desc.dedup();
-        lens_desc.reverse();
-
-        let mut init_max = vec![0u16; 256];
-        let mut cont_max = vec![0u16; 256];
-        for (b, _) in &tokens {
-            if b.is_empty() {
-                continue;
-            }
-            let l = b.len() as u16;
-            let e = &mut init_max[b[0] as usize];
-            *e = (*e).max(l);
-            if b.len() > prefix.len() && b.starts_with(&prefix) {
-                let e = &mut cont_max[b[prefix.len()] as usize];
-                *e = (*e).max(l);
-            }
-        }
-
-        // `BucketVocabStore::build` panics on an empty vocab (max_id over no tokens); `new` is the empty ctor.
-        let vocab = if tokens.is_empty() {
-            BucketVocabStore::new()
-        } else {
-            BucketVocabStore::build(tokens)
-        };
+        let max_cont_word = tokens
+            .iter()
+            .filter(|(b, _)| b.len() > prefix.len() && b.starts_with(&prefix))
+            .map(|(b, _)| b.len() - prefix.len())
+            .max()
+            .unwrap_or(0);
         Self {
             unk_id: wp.vocab.get(&wp.unk_token).copied(),
-            vocab,
+            vocab: Buckets::from_tokens(tokens), // handles the empty vocab
             continuing_subword_prefix: prefix,
             max_input_chars_per_word: wp.max_input_chars_per_word,
-            lens_desc: lens_desc.into_boxed_slice(),
-            init_max: init_max.into_boxed_slice(),
-            cont_max: cont_max.into_boxed_slice(),
+            max_cont_word,
         }
     }
 }
@@ -464,61 +434,32 @@ impl pipeline::Model for PipelineWordPiece {
 
         SCRATCH.with(|cell| {
             let mut buf = cell.borrow_mut();
-            // The prefix is constant across the word: write it into the scratch once, then each
-            // continuation only rewrites the word part (`truncate` back to the prefix, append word).
+            // Constant prefix written once; each continuation just rewrites the word part after it.
             buf.clear();
             buf.extend_from_slice(prefix);
             let mut start = 0usize;
             while start < sequence.len() {
-                let prefix_len = if start > 0 { prefix.len() } else { 0 };
-                // Longest token that can start at this byte (0 → nothing can → the whole word is unk).
-                // Rejects out-of-vocab scripts (e.g. Hangul) with zero probes, and otherwise caps the
-                // probe window to the longest token that could actually match here.
-                let max_here = if start > 0 {
-                    self.cont_max[bytes[start] as usize]
+                // Anchored longest match at `start`, via the shared bucket matcher (first-byte reject →
+                // LCP reject → post-byte length list → MPHF). Word-initial matches the raw word bytes
+                // (no copy); a continuation matches `["##"] + word[start..]`, capped at the longest `##`
+                // token so the scratch copy stays small.
+                let matched = if start == 0 {
+                    self.vocab
+                        .longest_at(bytes, 0)
+                        .map(|(id, len)| (id, len as usize))
                 } else {
-                    self.init_max[bytes[start] as usize]
-                } as usize;
-                if max_here == 0 {
-                    output.truncate(start_out);
-                    output.push(PipelineToken {
-                        id: self.unk_id.ok_or(Error::MissingUnkToken)?,
-                    });
-                    return Ok(());
-                }
-                let remaining = sequence.len() - start;
-                let cap_word = max_here.saturating_sub(prefix_len).min(remaining);
-
-                // Candidate base bytes. Word-initial (`start == 0`, no prefix) probes the word slice
-                // directly — no copy; continuations reuse the prefix already in `buf`, appending the word.
-                let cand: &[u8] = if prefix_len == 0 {
-                    &bytes[start..start + cap_word]
-                } else {
+                    let cap = self.max_cont_word.min(sequence.len() - start);
                     buf.truncate(prefix.len());
-                    buf.extend_from_slice(&bytes[start..start + cap_word]);
-                    &buf
+                    buf.extend_from_slice(&bytes[start..start + cap]);
+                    self.vocab
+                        .longest_at(&buf, 0)
+                        // a continuation must have ≥1 byte after the prefix (guards a bare-prefix token)
+                        .filter(|&(_, len)| len as usize > prefix.len())
+                        .map(|(id, len)| (id, len as usize - prefix.len()))
                 };
 
-                // Probe real token lengths longest-first; first hit is the greedy answer. Byte-exact: a
-                // length that splits a codepoint or that no token has can't match a valid-UTF-8 token.
-                let mut matched = None;
-                for &l in self.lens_desc.iter() {
-                    let l = l as usize;
-                    if l < prefix_len + 1 {
-                        break;
-                    }
-                    let word_bytes = l - prefix_len;
-                    if word_bytes > cap_word {
-                        continue;
-                    }
-                    if let Some(id) = self.vocab.get_bytes(&cand[..prefix_len + word_bytes]) {
-                        matched = Some((word_bytes, id));
-                        break;
-                    }
-                }
-
                 match matched {
-                    Some((word_bytes, id)) => {
+                    Some((id, word_bytes)) => {
                         output.push(PipelineToken { id });
                         start += word_bytes;
                     }

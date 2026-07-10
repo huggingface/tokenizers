@@ -324,6 +324,19 @@ impl Buckets {
         None
     }
 
+    /// Longest token that starts **exactly** at `bytes[pos]` (anchored), as `(id, byte_len)`, or `None`.
+    /// This is the per-position primitive a greedy longest-match tokenizer (e.g. WordPiece) needs — the
+    /// same bucket machinery `match_bytes` scans with (first-byte reject → LCP reject → post-byte length
+    /// list → MPHF), just without the search. `pos < bytes.len()` required.
+    #[inline]
+    pub fn longest_at(&self, bytes: &[u8], pos: usize) -> Option<(u32, u32)> {
+        let bucket = self.first_byte_to_bucket_id[bytes[pos] as usize];
+        if bucket == 0xFF {
+            return None; // no token starts with this byte → nothing to probe
+        }
+        self.match_fast(bytes, pos, bucket as u32)
+    }
+
     /// Find the leftmost added-token match in `bytes`. Returns (token_id, match_position, match_len).
     /// Dispatch: 1 bucket -> memchr on the shared first byte; >=2 -> NEON nibble, mask-iterated.
     pub fn match_bytes(&self, bytes: &[u8]) -> Option<(u32, u32, u32)> {
