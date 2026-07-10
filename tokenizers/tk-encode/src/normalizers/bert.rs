@@ -289,7 +289,15 @@ impl BertNormalizer {
                 }
             }
         } else if strip_accents && tg & bit::MARK != 0 {
-            // nonspacing mark → stripped (emit nothing)
+            // MARK is any combining mark; bert strips only nonspacing marks (Mn). Keep the rest
+            // (e.g. spacing marks), lowercasing if enabled — matches `nfd().filter(!Mn)`.
+            if !c.is_mark_nonspacing() {
+                if self.lowercase {
+                    out.extend(c.to_lowercase());
+                } else {
+                    out.push(c);
+                }
+            }
         } else if self.lowercase && tg & bit::LOWER != 0 {
             out.extend(c.to_lowercase());
         } else {
@@ -352,6 +360,9 @@ mod tests {
         // Hangul: exercises the arithmetic S_BASE decompose — 한/국 have a trailing jamo (3), 어 has
         // none (2); 가 = first syllable (U+AC00), 힣 = last (U+D7A3).
         "한국어 안녕 가힣",
+        // Devanagari: spacing combining marks (Mc, e.g. vowel signs) are `is_combining_mark` but NOT Mn,
+        // so bert must KEEP them (only Mn stripped) — exercises the MARK-branch runtime refine.
+        "नमस्ते दुनिया",
     ];
 
     #[test]

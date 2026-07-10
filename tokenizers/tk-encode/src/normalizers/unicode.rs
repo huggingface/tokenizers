@@ -1,12 +1,12 @@
 use std::borrow::Cow;
 
+use crate::normalizers::tagged::tag_driven;
 use crate::pipeline;
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 use crate::utils::macro_rules_attribute;
 
-use unicode_normalization::{
-    is_nfc_quick, is_nfd_quick, is_nfkc_quick, is_nfkd_quick, IsNormalized, UnicodeNormalization,
-};
+// NFD/NFKD are tag-driven; NFC/NFKC keep the quick-check gate (recomposition is contextual).
+use unicode_normalization::{is_nfc_quick, is_nfkc_quick, IsNormalized, UnicodeNormalization};
 
 #[derive(Default, Copy, Clone, Debug)]
 #[macro_rules_attribute(impl_serde_type!)]
@@ -19,11 +19,10 @@ impl Normalizer for NFD {
 }
 impl pipeline::Normalizer for NFD {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
-        if let IsNormalized::Yes = is_nfd_quick(input.chars()) {
-            Ok(input.into())
-        } else {
-            Ok(Cow::Owned(input.nfd().collect()))
-        }
+        // Only NFD-flagged runs decompose (the bit folds in ccc != 0 reorderables); inert ccc-0 starters
+        // are copied verbatim and bound each run so canonical reordering stays inside it.
+        use atomsplit::norm_classify::bit;
+        Ok(tag_driven(input, bit::NFD, |run, out| out.extend(run.nfd())))
     }
 }
 
@@ -38,11 +37,11 @@ impl Normalizer for NFKD {
 }
 impl pipeline::Normalizer for NFKD {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
-        if let IsNormalized::Yes = is_nfkd_quick(input.chars()) {
-            Ok(input.into())
-        } else {
-            Ok(Cow::Owned(input.nfkd().collect()))
-        }
+        // A char changes under NFKD if it decomposes canonically (NFD) or compatibly (NFKD-extra).
+        use atomsplit::norm_classify::bit;
+        Ok(tag_driven(input, bit::NFD | bit::NFKD, |run, out| {
+            out.extend(run.nfkd())
+        }))
     }
 }
 

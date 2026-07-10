@@ -18,7 +18,8 @@ pub mod bit {
     pub const NFD: u8 = 1 << 0;
     /// NFD-stable but *compatibility* decomposition changes it (extends NFKD/NFKC over NFD).
     pub const NFKD: u8 = 1 << 1;
-    /// nonspacing mark (Mn) — bert `strip_accents` / `StripAccents` drop it.
+    /// combining mark (`is_combining_mark`, a superset of Mn) — `StripAccents` removes these; bert
+    /// `strip_accents` refines to nonspacing marks (Mn) at runtime.
     pub const MARK: u8 = 1 << 2;
     /// has a lowercase mapping (`Lowercase`, bert lowercase).
     pub const LOWER: u8 = 1 << 3;

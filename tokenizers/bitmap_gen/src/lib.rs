@@ -359,7 +359,8 @@ pub mod norm_bit {
     pub const NFD: u8 = 1 << 0;
     /// NFD-stable but *compatibility* decomposition changes it (adds to NFKD/NFKC over NFD).
     pub const NFKD: u8 = 1 << 1;
-    /// nonspacing mark (Mn) — bert `strip_accents` / the `StripAccents` normalizer drop it.
+    /// combining mark (`is_combining_mark`) — `StripAccents` removes it; bert `strip_accents` refines to
+    /// nonspacing marks (Mn) at runtime. Superset of Mn.
     pub const MARK: u8 = 1 << 2;
     /// has a lowercase mapping (`Lowercase` normalizer, bert lowercase).
     pub const LOWER: u8 = 1 << 3;
@@ -396,7 +397,9 @@ fn norm_tag(c: char) -> u8 {
     } else if !c.nfkd().eq(std::iter::once(c)) {
         t |= NFKD;
     }
-    if c.is_mark_nonspacing() {
+    // MARK = any combining mark (what `StripAccents` removes). Uses the SAME predicate/crate StripAccents
+    // calls so the classifier is byte-exact; it's a superset of Mn, and bert refines back to Mn at runtime.
+    if unicode_normalization_alignments::char::is_combining_mark(c) {
         t |= MARK;
     }
     // has a lowercase mapping: to_lowercase(c) is anything other than the single char c.

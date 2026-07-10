@@ -18,3 +18,6 @@ unicode-properties = "0.1"
 # its `nfd`/`nfkd`. Used ONLY by `norm_tag`, never by the atom tables.
 unicode_categories = "0.1"
 unicode-normalization = "0.1.25"
+# `is_combining_mark` for the MARK bit — the SAME crate/predicate StripAccents removes with, for
+# byte-exactness (it's a superset of Mn; bert refines to Mn at runtime).
+unicode-normalization-alignments = "0.1"
