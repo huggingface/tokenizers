@@ -1,35 +1,32 @@
 //! bitmap_gen — generator for atomsplit's shared classify tables (TAG_CLASSIFY_SPEC.md §1/§7).
 //!
-//! Dev-time only (depends on `unicode_categories`); nothing here is linked into the runtime crate.
+//! Dev-time only (depends on `unicode-properties`); nothing here is linked into the runtime crate.
 //! `cargo run -p bitmap_gen` calls [`generate_atom_tables`] and writes the committed
 //! `atomsplit/src/atom_tables.rs`. It bakes the dense `Tables` layout (ascii / 2-byte group / 3-byte
 //! fast3 / bmp_rle / astral) read by BOTH the SIMD kernel (`vqtbl`) and the scalar reader
 //! (`Tables::classify_char`); the per-codepoint value is a `u8` tag — low nibble = coarse `Atom`, high
 //! nibble = optional refinement (o200k case on `Letter`, `ALPHA_SYM` on `Mark`; `0` = none).
 use std::fmt::Write as _;
-use unicode_categories::UnicodeCategories;
+use unicode_properties::{GeneralCategory, UnicodeGeneralCategory};
 
-// Values returned here correspond to src/classify.rs
-// reference atom, straight from TAG_CLASSIFY_SPEC.md §1
+// Values returned here correspond to src/classify.rs, straight from TAG_CLASSIFY_SPEC.md §1.
+// SINGLE current-Unicode source: general categories from `unicode-properties`; the three derived
+// *properties* it doesn't carry (White_Space / Alphabetic / Numeric) come from std, which is also
+// current — so there is no stale-version mix (the old `unicode_categories` was frozen at Unicode 9.0,
+// which mis-tagged every post-9.0 letter as an `ALPHA_SYM` symbol — see the review).
 fn atom(c: char) -> u8 {
+    use GeneralCategory::*;
     let cp = c as u32;
-    if c.is_letter() {
-        // low nibble = Letter(0); high nibble = o200k case refinement (1=Lu∪Lt, 2=Ll, 0=caseless Lm∪Lo).
+    match c.general_category() {
+        // \p{L}: low nibble Letter(0); high nibble = o200k case refinement (Lu∪Lt=1, Ll=2, Lm∪Lo=0).
         // Coarse consumers mask it off (`in_mask` / SIMD `& 0x0F`); only `fsm_o200k` reads the nibble.
-        return if c.is_letter_uppercase() || c.is_letter_titlecase() {
-            0x10
-        } else if c.is_letter_lowercase() {
-            0x20
-        } else {
-            0
-        };
-    }
-    if c.is_number() {
-        return if c.is_number_decimal_digit() || c.is_number_letter() {
-            1
-        } else {
-            2
-        };
+        UppercaseLetter | TitlecaseLetter => return 0x10,
+        LowercaseLetter => return 0x20,
+        ModifierLetter | OtherLetter => return 0,
+        // \p{N}: Nd∪Nl are numeric AND `\w` (NumWord); No is numeric-only (NumOther).
+        DecimalNumber | LetterNumber => return 1,
+        OtherNumber => return 2,
+        _ => {}
     }
     if cp == 0x0A || cp == 0x0D {
         return 3;
@@ -38,9 +35,14 @@ fn atom(c: char) -> u8 {
         return 4;
     }
     if c.is_whitespace() {
-        return 5;
+        return 5; // \s ∖ {\r\n, 0x20}
     }
-    if c.is_mark() || cp == 0x200C || cp == 0x200D {
+    if matches!(
+        c.general_category(),
+        NonspacingMark | SpacingMark | EnclosingMark
+    ) || cp == 0x200C
+        || cp == 0x200D
+    {
         return 6; // \p{M} ∪ {ZWJ,ZWNJ}: real marks — ∈ deepseek/o200k `[\p{L}\p{M}]` and ∈ `\w`
     }
     if c.is_alphabetic() {
@@ -49,25 +51,36 @@ fn atom(c: char) -> u8 {
         // o200k to treat it as the `\p{S}` symbol it categorically is, not a letter/mark.
         return 6 | (1 << 4); // 0x16: coarse Mark, refine ALPHA_SYM
     }
-    if c.is_punctuation_connector() {
-        return 7;
+    if c.general_category() == ConnectorPunctuation {
+        return 7; // \p{Pc}
     }
     if cp == 0x27 {
-        return 9;
+        return 9; // apostrophe
     }
-    if c.is_punctuation() {
-        return 8;
+    if matches!(
+        c.general_category(),
+        DashPunctuation
+            | OpenPunctuation
+            | ClosePunctuation
+            | InitialPunctuation
+            | FinalPunctuation
+            | OtherPunctuation
+    ) {
+        return 8; // \p{P} ∖ Pc
     }
     if cp < 0x80 && c.is_ascii_punctuation() {
-        return 8;
+        return 8; // ASCII symbols ($ + < = > ^ ` | ~) that `[^\s\p{L}\p{N}]` / is_punc treats as punct
     }
     if c.is_numeric() {
-        return 11;
+        return 11; // NumericOther: is_numeric ∖ \p{N}
     }
-    if c.is_symbol() {
-        return 10;
+    if matches!(
+        c.general_category(),
+        MathSymbol | CurrencySymbol | ModifierSymbol | OtherSymbol
+    ) {
+        return 10; // non-ASCII \p{S}
     }
-    12
+    12 // control ∪ unassigned
 }
 
 // codepoint encoded by `bytes` (synthetic UTF-8 built by the table loops). The caller's classifier

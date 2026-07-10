@@ -1,5 +1,5 @@
-//! Reference-parity gates for the regex-shaped pre-tokenizers. Each of `fsm_cl100k` / `fsm_byte_level`
-//! / `fsm_deepseek` must be BYTE-EXACT with the real reference — the oniguruma regex, composed exactly
+//! Reference-parity gates for the regex-shaped pre-tokenizers. Each of `fsm_cl100k` / `fsm_o200k` /
+//! `fsm_byte_level` / `fsm_deepseek` must be BYTE-EXACT with the real reference — the oniguruma regex, composed exactly
 //! as HF applies it (deepseek is a `Sequence` of three Isolated splits) — on a representative
 //! multilingual corpus (ASCII, contractions, digits, punctuation runs, whitespace variants, Latin
 //! accents/marks, Cyrillic/Greek/Arabic/Devanagari, Han/Kana/Hangul, ZWJ, astral emoji).
@@ -10,10 +10,10 @@
 //! Gated off wasm32: the oniguruma reference is a C library that has no wasi libc to build against.
 #![cfg(not(target_arch = "wasm32"))]
 use atomsplit::classify::{Atoms, classify};
-use atomsplit::fsm::{Span, fsm_byte_level, fsm_cl100k, fsm_deepseek};
+use atomsplit::fsm::{Span, fsm_byte_level, fsm_cl100k, fsm_deepseek, fsm_o200k};
 use onig::Regex;
 
-// tiktoken cl100k_base / o200k pre-tokenizer regex.
+// tiktoken cl100k_base pre-tokenizer regex.
 const CL100K: &str = concat!(
     r"'(?i:[sdmt]|ll|ve|re)",
     r"|[^\r\n\p{L}\p{N}]?\p{L}+",
@@ -24,6 +24,12 @@ const CL100K: &str = concat!(
 // GPT-2 / ByteLevel regex.
 const GPT2: &str =
     r##"'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"##;
+// o200k_base / GPT-4o pre-tokenizer regex (case-aware letter runs + contraction suffix + `[\r\n/]` tail).
+const O200K: &str = concat!(
+    r"[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]*[\p{Ll}\p{Lm}\p{Lo}\p{M}]+(?i:'s|'t|'re|'ve|'m|'ll|'d)?",
+    r"|[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]+[\p{Ll}\p{Lm}\p{Lo}\p{M}]*(?i:'s|'t|'re|'ve|'m|'ll|'d)?",
+    r"|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n/]*|\s*[\r\n]+|\s+(?!\S)|\s+",
+);
 // deepseek-v3 Sequence: `\p{N}{1,3}` → CJK-range → big regex, each Isolated.
 const DS_NUM: &str = r"\p{N}{1,3}";
 const DS_CJK: &str = r"[一-龥぀-ゟ゠-ヿ]+";
@@ -85,6 +91,12 @@ fn deepseek_ref(text: &str) -> Vec<Span> {
 fn cl100k_parity() {
     let re = Regex::new(CL100K).unwrap();
     assert_eq!(spans(fsm_cl100k, CORPUS), onig_spans(&re, CORPUS));
+}
+
+#[test]
+fn o200k_parity() {
+    let re = Regex::new(O200K).unwrap();
+    assert_eq!(spans(fsm_o200k, CORPUS), onig_spans(&re, CORPUS));
 }
 
 #[test]
