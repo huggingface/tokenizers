@@ -6,7 +6,7 @@ Input: JSON array from `cargo run --release -p tk-encode --example fixture_bench
 one object per model:
     {model, shape, supported, [reason], results: [{fixture, group,
      legacy_mbps, pipeline_mbps, speedup, ids_match,
-     stage_ns_per_byte: {added_split, normalize, pre_tokenize, model, total}}, ...]}
+     stage_ns_per_byte: {added_split, normalize, pre_tokenize, model, post, total}}, ...]}
 
 The report leads with a single overview chart — one row per manifest model:
 its workload `desc`, geomean ×speedup bar and a min–max whisker across
@@ -21,8 +21,8 @@ Each supported model gets two full-size charts inside its block:
   2. a stacked stage-decomposition chart (ns/byte, lower is better — the
      opposite direction from the speedup chart, hence the explicit hint and
      the reference tick): where the pipeline spends its own encode time per
-     fixture — added-token split + normalize + pre-tokenize + model — with a
-     tick at the reference Tokenizer's total ns/byte on each row, so bar vs
+     fixture — added-token split + normalize + pre-tokenize + model + post-process
+     — with a tick at the reference Tokenizer's total ns/byte on each row, so bar vs
      tick reads the same way as the ×speedup column.
 Unsupported models (standalone ByteLevel, Unigram/Metaspace, …) get a compact
 "not supported" card. Charts are rendered full-size so readers can zoom.
@@ -62,15 +62,15 @@ CARD_W, CARD_H = 470, 150
 
 # Pipeline encode stages, in execution order, keyed to `stage_ns_per_byte` in the
 # fixture_bench JSON. `added_split` = the added/special-token scan (AddedVocabulary),
-# `pre_tokenize` = the pre-tokenizer split — two distinct splitting costs. The four
-# stages sum to the whole-encode total.
+# `pre_tokenize` = the pre-tokenizer split — two distinct splitting costs; `post` = the
+# post-processor (framing / special tokens). The five stages sum to the whole-encode total.
 STAGES = [("added_split", "added-token"), ("normalize", "normalize"),
-          ("pre_tokenize", "pre-tokenize"), ("model", "model")]
+          ("pre_tokenize", "pre-tokenize"), ("model", "model"), ("post", "post")]
 STAGE_INK = {
     "light": {"added_split": "#7a5ea8", "normalize": "#2a9d8f",
-              "pre_tokenize": "#e0952b", "model": "#2a78d6"},
+              "pre_tokenize": "#e0952b", "model": "#2a78d6", "post": "#c2559b"},
     "dark": {"added_split": "#a48ad4", "normalize": "#3fb8a8",
-             "pre_tokenize": "#f0b45a", "model": "#3987e5"},
+             "pre_tokenize": "#f0b45a", "model": "#3987e5", "post": "#d98fc4"},
 }
 
 
@@ -246,8 +246,8 @@ def stage_mix(rows):
 
 def stage_chart_svg(model, mode, subtitle_base, meta, max_total):
     """Per-fixture stacked decomposition of the *pipeline's* own encode time
-    (ns/byte): normalize + split + model + other. Shows where the pipeline spends
-    its time and — via the right column — how that maps onto the ×speedup headline."""
+    (ns/byte): added-split + normalize + pre-tokenize + model + post. Shows where the
+    pipeline spends its time and — via the right column — how that maps onto the ×speedup headline."""
     ink = INK[mode]
     sink = STAGE_INK[mode]
     rows = [r for r in model["results"] if "stage_ns_per_byte" in r]
@@ -512,13 +512,13 @@ def render_markdown(models, subtitle_base, meta, base, run_id):
             md += [picture(base, run_id, f"{slug}-stages",
                            f"{m['model']} stage decomposition", 860), ""]
         md += ["| Fixture | Group | Tokenizer MB/s | Pipeline MB/s | Speedup "
-               "| added ns/B | norm ns/B | pre-tok ns/B | model ns/B | Ids |",
-               "|---|---|---:|---:|---:|---:|---:|---:|---:|:--|"]
+               "| added ns/B | norm ns/B | pre-tok ns/B | model ns/B | post ns/B | Ids |",
+               "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|:--|"]
         for r in sorted(m["results"], key=lambda r: (r["group"], r["fixture"])):
             ids = "match" if r["ids_match"] else "⚠️ differ"
             s = r.get("stage_ns_per_byte", {})
             cells = " ".join(f"| {s[k]:.2f}" if k in s else "| —"
-                             for k in ("added_split", "normalize", "pre_tokenize", "model"))
+                             for k, _ in STAGES)
             md.append(f"| {r['fixture']} | {r['group']} | {r['legacy_mbps']:.1f} "
                       f"| {r['pipeline_mbps']:.1f} | ×{r['speedup']:.2f} {cells} | {ids} |")
         md += ["", "</details>", ""]
