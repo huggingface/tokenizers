@@ -5,6 +5,7 @@ use crate::models::bpe::BPE;
 use crate::pipeline::{self, PipelineToken};
 use crate::tokenizer::{Model, Result, Token};
 use ahash::AHashMap;
+use daachorse::{CharwiseDoubleArrayAhoCorasick, Match};
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::{
@@ -14,8 +15,6 @@ use std::{
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
 };
-use yada::builder::DoubleArrayBuilder;
-use yada::DoubleArray;
 
 mod serialization;
 
@@ -315,7 +314,7 @@ impl Model for WordPiece {
 }
 
 pub struct PipelineWordPiece {
-    vocab_trie: yada::DoubleArray<Vec<u8>>,
+    vocab_trie: CharwiseDoubleArrayAhoCorasick<u32>,
     unk_token: Option<u32>,
     continuing_subword_prefix: String,
     max_input_chars_per_word: usize,
@@ -323,6 +322,7 @@ pub struct PipelineWordPiece {
 
 impl TryFrom<WordPiece> for PipelineWordPiece {
     type Error = crate::Error;
+
     fn try_from(value: WordPiece) -> Result<Self> {
         let WordPiece {
             vocab,
@@ -333,10 +333,10 @@ impl TryFrom<WordPiece> for PipelineWordPiece {
         } = value;
         let unk_token = vocab.get(&unk_token).copied();
 
-        // yada requires the keyset sorted by key bytes.
-        let mut keyset: Vec<_> = vocab.into_iter().collect();
-        keyset.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
-        let vocab_trie = DoubleArray::new(DoubleArrayBuilder::build(&keyset)?)?;
+        let vocab_trie = daachorse::CharwiseDoubleArrayAhoCorasickBuilder::new()
+            .match_kind(daachorse::MatchKind::LeftmostLongest)
+            .build_with_values(vocab.into_iter())
+            .expect("Failed to build DAAC");
 
         Ok(Self {
             continuing_subword_prefix,
@@ -378,18 +378,18 @@ impl pipeline::Model for PipelineWordPiece {
             // Matches must extend past the continuing-subword prefix: the
             // prefix alone (or a fragment of it) is not a valid subword here,
             // even if it happens to be in the vocab.
-            let Some((token_id, match_len)) = self
+            let Some(m) = self
                 .vocab_trie
-                .common_prefix_search(&candidate)
-                .filter(|(_, len)| *len > prefix_len)
-                .last()
+                .leftmost_find_iter(&candidate)
+                .filter(|&m| m.start() == 0 && (m.end() - m.start()) > prefix_len)
+                .next()
             else {
                 let unk_id = self.unk_token.ok_or(Error::MissingUnkToken)?;
                 output.push(PipelineToken { id: unk_id });
                 return Ok(());
             };
-            candidate_tokens.push(PipelineToken { id: token_id });
-            start += match_len - prefix_len;
+            candidate_tokens.push(PipelineToken { id: m.value() });
+            start += (m.end() - m.start()) - prefix_len;
         }
         output.extend_from_slice(&candidate_tokens);
         Ok(())
