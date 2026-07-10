@@ -1347,7 +1347,9 @@ mod tests {
 
     mod pipeline_bpe {
         use super::*;
-        use crate::utils::byte_level::BYTES_CHAR_LOOKUP;
+        use crate::{
+            pipeline::Model as PipelineModel, utils::byte_level::BYTES_CHAR_LOOKUP, Model,
+        };
 
         const HELLO_VOCAB: &[(&str, u32)] = &[
             ("h", 0),
@@ -1376,7 +1378,8 @@ mod tests {
 
         fn pipeline_ids(model: &PipelineBPE, sequence: &str) -> Vec<u32> {
             let mut out = Vec::new();
-            pipeline::Model::tokenize_pipeline(model, sequence, &mut out).unwrap();
+            let mut scratch = model.init_scratch();
+            pipeline::Model::tokenize_pipeline(model, sequence, &mut scratch, &mut out).unwrap();
             out.iter().map(|t| t.id).collect()
         }
 

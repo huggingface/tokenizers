@@ -2,7 +2,7 @@
 //! model.
 
 use crate::models::bpe::BPE;
-use crate::pipeline::{self, PipelineModelScratch, PipelineToken};
+use crate::pipeline::{self, PipelineToken};
 use crate::tokenizer::{Model, Result, Token};
 use ahash::AHashMap;
 use std::collections::HashMap;
@@ -359,7 +359,7 @@ impl pipeline::Model for PipelineWordPiece {
 
     fn init_scratch(&self) -> Self::Scratch {
         Self::Scratch {
-            candidate_str: String::with_capacity(self.max_input_chars_per_word)
+            candidate_str: String::with_capacity(self.max_input_chars_per_word),
         }
     }
 
