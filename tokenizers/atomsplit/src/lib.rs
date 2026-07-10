@@ -3,7 +3,7 @@
 //! One SIMD pass ([`classify`]) maps every codepoint to a tiny "atom" alphabet; a family of no-push
 //! FSMs ([`fsm`]) turn that atom stream into token spans (byte ranges) — the pre-tokenizer stage that
 //! runs before a BPE/WordPiece model. Pre-tokenizers implemented: `WhitespaceSplit`, `Punctuation`,
-//! `Digits`, `Whitespace`, `Bert`, `Cl100k`, `DeepSeek`, `ByteLevel`, `CharDelimiterSplit`.
+//! `Digits`, `Whitespace`, `Bert`, `Cl100k`, `O200k`, `DeepSeek`, `ByteLevel`, `CharDelimiterSplit`.
 //!
 //! Design: every fsm is *no-push* — it writes spans into a caller-preallocated `&mut [fsm::Span]`
 //! (length ≥ `text.len()`) and returns the token count; there is no `Vec`/allocation on the hot path.

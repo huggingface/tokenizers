@@ -4,7 +4,8 @@
 //! `cargo run -p bitmap_gen` calls [`generate_atom_tables`] and writes the committed
 //! `atomsplit/src/atom_tables.rs`. It bakes the dense `Tables` layout (ascii / 2-byte group / 3-byte
 //! fast3 / bmp_rle / astral) read by BOTH the SIMD kernel (`vqtbl`) and the scalar reader
-//! (`Tables::classify_char`); the per-codepoint value is an `Atom` (u4, stored `u8`).
+//! (`Tables::classify_char`); the per-codepoint value is a `u8` tag — low nibble = coarse `Atom`, high
+//! nibble = optional refinement (o200k case on `Letter`, `ALPHA_SYM` on `Mark`; `0` = none).
 use std::fmt::Write as _;
 use unicode_categories::UnicodeCategories;
 

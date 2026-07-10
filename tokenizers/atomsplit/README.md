@@ -17,7 +17,7 @@ The key design principle is that no matter the number of atoms (well it has to b
 | astral        | `0xF0–0xF4` (4 B)    | run-length `(start_cp, tag)`, binary-searched                          | scalar / SIMD stamps `MB` → fixup  |
 | continuation  | `0x80–0xBF`          | tagged `Cont` — transparent to every FSM                               | ✓                                  |
 
-The **13 atoms** the default scheme emits (a class fits in a `u4`, the whole engine works for any `< 255`):
+The **13 coarse atoms** the default scheme emits (the coarse class is the tag's **low nibble**, so it fits in a `u4`; the whole engine works for any `< 255`):
 
 ```
 0 Letter   1 NumWord   2 NumOther  3 Newline   4 Space    5 WsOther   6 Mark
@@ -25,6 +25,8 @@ The **13 atoms** the default scheme emits (a class fits in a `u4`, the whole eng
                                     ┌ internal sentinels, never seen by the FSM ┐
                                     13 Sentinel  14 MultiByte  15 Cont
 ```
+
+The tag is a full `u8`: the **high nibble** is an optional *refinement* that sub-splits one coarse class for a pretokenizer needing finer granularity — without a second pass. o200k's case split refines `Letter` into `UPPER` (`\p{Lu}\p{Lt}`) / `LOWER` (`\p{Ll}`) / caseless, and `Mark` carries `ALPHA_SYM` for Other_Alphabetic symbols (`\w` but categorically `\p{S}`, e.g. circled letters). Coarse consumers collapse it for free — `in_mask` and the SIMD class path `& 0x0F` off the nibble — so only the FSM that opted in (o200k) ever sees it.
 
 ### 1.1 The only thing you need to know: how UTF-8 lays out a codepoint
 

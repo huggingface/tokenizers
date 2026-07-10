@@ -5,7 +5,8 @@
 //! The class family (WhitespaceSplit / Punctuation / Digits / Whitespace / Bert) goes through
 //! [`class_runs_into`]: on aarch64/wasm the SIMD movemask boundary-extractor + homogeneous-chunk
 //! early-out (in `simd_fsm`), elsewhere the scalar run-end core ([`class_runs_runend`]). The
-//! regex-shaped ones ([`fsm_cl100k`] / [`fsm_deepseek`] / [`fsm_byte_level`]) are scalar jump-tables.
+//! regex-shaped ones ([`fsm_cl100k`] / [`fsm_o200k`] / [`fsm_deepseek`] / [`fsm_byte_level`]) are scalar
+//! jump-tables.
 //! Tests live in `tests/`, throughput benches in `benches/`.
 
 use crate::classify::{Atom, Atoms, char_len, classify, in_mask, mask};
@@ -32,7 +33,7 @@ pub type Span = (u32, u32);
 ///   WhitespaceSplit `<{WS},0,0>` · Punctuation `<0,{PUNCT},0>` · Digits `<0,0,{NUMERIC}>` ·
 ///   Whitespace `<{WS},0,{WORD}>` · Bert `<{WS},{PUNCT},0>`.
 /// Class of a char: `DROP`→dropped, `ISOLATE`→own token, `KEEP_A`→run "A", else→run "B" (A/B cut apart).
-/// aarch64 uses the NEON boundary extractor ([`class_runs_neon`]); elsewhere the run-end core — byte-exact
+/// aarch64 uses the NEON boundary extractor (`class_runs_neon`); elsewhere the run-end core — byte-exact
 /// across both paths (see the `class_runs_into_matches` test). `out.len()` must be ≥ `text.len()`.
 #[inline]
 #[must_use]
@@ -296,10 +297,14 @@ fn ds_is_zwj(text: &[u8], p: usize) -> bool {
 /// letter run stops at CJK-range codepoints. Peeks bytes for the ASCII `[punct][A-Za-z]+` alt.
 ///
 /// Byte-exact vs the real composed Sequence (onig ×3, each Isolated) on 10 languages — see
-/// `benches/deepseek.rs`. The subtleties the single pass replicates: (1) ws *followed by* a digit/CJK
-/// is its own Sequence piece → the whole run is one token (`\s+(?!\S)`); (2) ZWJ/ZWNJ are `\p{Cf}`, not
-/// `\p{L}∪\p{M}`, so they end a letter run (`ds_breaks`); (3) Split-2 isolates the whole CJK range but
-/// Split-3 re-splits it, so CJK-range punct (・) breaks the CJK *letter* run (`ds_is_cjk_letter`).
+/// `benches/deepseek.rs` (plus Hebrew/Arabic via `tk-encode`'s corpus test). The subtleties the single
+/// pass replicates: (1) ws *followed by* a digit/CJK is its own Sequence piece → the whole run is one
+/// token (`\s+(?!\S)`); (2) ZWJ/ZWNJ are `\p{Cf}`, not `\p{L}∪\p{M}`, so they end a letter run
+/// (`ds_breaks`); (3) Split-2 isolates a maximal CJK-range run and Split-3 re-splits it into same-kind
+/// sub-runs — the top-of-loop handler consumes that run as a CLOSED unit (`ds_is_cjk_at`), so CJK punct
+/// (・) never steals a surrounding space nor merges with non-CJK punct; (4) chars matching no alt
+/// (Control / NumericOther / ZWJ) group into ONE gap piece, and Other_Alphabetic symbols (`ALPHA_SYM`:
+/// `\w` but categorically `\p{S}`) take the `[\p{P}\p{S}]` path, not the letter run.
 /// ┌── OWNER: shared (scalar) ──┐
 #[must_use]
 pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
