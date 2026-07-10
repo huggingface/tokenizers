@@ -53,6 +53,25 @@ impl Normalizer for Sequence {
 
 impl pipeline::Normalizer for Sequence {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
+        // Fused metaspace path: `Sequence[Prepend(p), Replace(String s -> c)]` (Llama/Yi/Gemma/Phi-3).
+        // Prepend then Replace is two passes + two allocations; fuse into one. Restricted to a
+        // single-char `s` so a match can never span the p|input boundary — then replacing within `p`
+        // and within `input` separately is byte-exact with replacing `p + input`. (Prepend is a no-op
+        // on empty input, so the general path handles that case.)
+        if let [NormalizerWrapper::Prepend(p), NormalizerWrapper::Replace(r)] =
+            self.normalizers.as_slice()
+        {
+            if let crate::normalizers::replace::ReplacePattern::String(s) = r.pattern() {
+                if !input.is_empty() && !p.prepend.is_empty() && s.chars().count() == 1 {
+                    use crate::normalizers::replace::push_str_replaced;
+                    let mut out = String::with_capacity(p.prepend.len() + input.len());
+                    push_str_replaced(&mut out, &p.prepend, s, &r.content);
+                    push_str_replaced(&mut out, input, s, &r.content);
+                    return Ok(Cow::Owned(out));
+                }
+            }
+        }
+
         let mut cow: Cow<'a, str> = Cow::Borrowed(input);
         for normalizer in &self.normalizers {
             cow = match cow {
@@ -127,6 +146,58 @@ mod tests {
                 ns.get(),
                 &*pipeline::Normalizer::normalize(&n, input).unwrap()
             );
+        }
+    }
+
+    #[test]
+    fn pipeline_sequence_metaspace_fusion_matches_legacy() {
+        use crate::normalizers::{Prepend, Replace};
+        // The fused metaspace path + a prepend that itself contains the pattern + a multi-char pattern
+        // (which must fall to the general path) — all must match sequential Prepend-then-Replace.
+        let cases: &[(Sequence, &[&str])] = &[
+            (
+                Sequence::new(vec![
+                    Prepend::new("▁".to_string()).into(),
+                    Replace::new(" ", "▁").unwrap().into(),
+                ]),
+                &[
+                    "Hello world",
+                    " leading",
+                    "trailing ",
+                    "  多  spaces  ",
+                    "nospace",
+                    "",
+                    "a b c",
+                    "▁already",
+                ],
+            ),
+            // prepend contains the pattern char → its internal match must also be replaced
+            (
+                Sequence::new(vec![
+                    Prepend::new(" x".to_string()).into(),
+                    Replace::new(" ", "_").unwrap().into(),
+                ]),
+                &["hi there", "", "no"],
+            ),
+            // multi-char pattern → not fused (general Cow-threaded path), must still match
+            (
+                Sequence::new(vec![
+                    Prepend::new("<s>".to_string()).into(),
+                    Replace::new("ab", "X").unwrap().into(),
+                ]),
+                &["abab cab", "no match", ""],
+            ),
+        ];
+        for (seq, inputs) in cases {
+            for input in *inputs {
+                let mut ns = NormalizedString::from(*input);
+                Normalizer::normalize(seq, &mut ns).unwrap(); // legacy oracle
+                assert_eq!(
+                    ns.get(),
+                    &*pipeline::Normalizer::normalize(seq, input).unwrap(),
+                    "sequence pipeline diverges on {input:?}",
+                );
+            }
         }
     }
 

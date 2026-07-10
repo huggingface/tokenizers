@@ -66,7 +66,25 @@ impl PartialEq for Replace {
     }
 }
 
+/// Append `text` to `out` with every literal (non-overlapping, left-to-right) occurrence of `pattern`
+/// replaced by `content`. Byte-exact with the regex path for a `String` pattern; used by the `Replace`
+/// fast path and the `Sequence[Prepend, Replace]` fusion.
+pub(crate) fn push_str_replaced(out: &mut String, text: &str, pattern: &str, content: &str) {
+    let mut last = 0;
+    for (start, _) in text.match_indices(pattern) {
+        out.push_str(&text[last..start]);
+        out.push_str(content);
+        last = start + pattern.len();
+    }
+    out.push_str(&text[last..]);
+}
+
 impl Replace {
+    /// The match pattern (literal `String` or `Regex`).
+    pub fn pattern(&self) -> &ReplacePattern {
+        &self.pattern
+    }
+
     pub fn new<I: Into<ReplacePattern>, C: Into<String>>(pattern: I, content: C) -> Result<Self> {
         let pattern: ReplacePattern = pattern.into();
         let regex = match &pattern {
@@ -90,6 +108,28 @@ impl Normalizer for Replace {
 
 impl pipeline::Normalizer for Replace {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
+        // Literal fast path: a `String` pattern (e.g. Llama/Yi/Gemma's " " -> "▁") is plain substring
+        // replacement — skip the regex engine and use `match_indices` (memchr for a 1-byte needle).
+        if let ReplacePattern::String(s) = &self.pattern {
+            if !s.is_empty() {
+                let mut out: Option<String> = None;
+                let mut last = 0;
+                for (start, _) in input.match_indices(s.as_str()) {
+                    let o = out.get_or_insert_with(|| String::with_capacity(input.len()));
+                    o.push_str(&input[last..start]);
+                    o.push_str(&self.content);
+                    last = start + s.len();
+                }
+                return Ok(match out {
+                    Some(mut o) => {
+                        o.push_str(&input[last..]);
+                        Cow::Owned(o)
+                    }
+                    None => Cow::Borrowed(input),
+                });
+            }
+        }
+
         let iter = self.regex.find_iter(input);
         let mut replaced: Option<String> = None;
         let mut last_end = 0;
