@@ -210,6 +210,60 @@ impl BertNormalizer {
             (false, false, false) => out.extend(cleaned),
         }
     }
+
+    /// Which `norm_classify` bits make a char non-inert under the active rules — i.e. a char with none
+    /// of these bits set is left unchanged by every enabled stage and can be copied verbatim.
+    fn active_mask(&self, strip_accents: bool) -> u8 {
+        use atomsplit::norm_classify::bit;
+        (if self.clean_text { bit::CTRL | bit::WS } else { 0 })
+            | (if self.handle_chinese_chars { bit::CJK } else { 0 })
+            // bert `strip_accents` runs canonical NFD then drops Mn; the NFD bit already folds in
+            // reorderable (ccc != 0) chars, so no separate reorder bit is needed.
+            | (if strip_accents { bit::NFD | bit::MARK } else { 0 })
+            | (if self.lowercase { bit::LOWER } else { 0 })
+    }
+
+    /// Tag-driven normalize. `tags` is `input`'s per-byte classification (`tags.len() == input.len()`,
+    /// char-start bytes carry the [`atomsplit::norm_classify`] bitmask; the caller produced it with the
+    /// SIMD or scalar classifier). Maximal **inert** runs (no active bit) are copied verbatim; only the
+    /// runs that actually change go through [`Self::normalize_unicode_run`]. Byte-exact with the legacy
+    /// path: inert chars are starters (ccc 0 — reorderables carry the NFD bit), so an NFD reorder never
+    /// crosses a run boundary.
+    pub fn normalize_from_tags<'a>(&self, input: &'a str, tags: &[u8]) -> Cow<'a, str> {
+        use atomsplit::classify::char_len;
+        let strip_accents = self.strip_accents.unwrap_or(self.lowercase);
+        let active = self.active_mask(strip_accents);
+        let bytes = input.as_bytes();
+        let n = bytes.len();
+
+        // Longest inert prefix is borrowable; if the whole string is inert, return it untouched.
+        let mut first = 0;
+        while first < n && tags[first] & active == 0 {
+            first += char_len(bytes[first]);
+        }
+        if first == n {
+            return Cow::Borrowed(input);
+        }
+
+        let mut out = String::with_capacity(n);
+        out.push_str(&input[..first]);
+        let mut i = first;
+        while i < n {
+            // non-inert run → the Unicode pipeline
+            let ns = i;
+            while i < n && tags[i] & active != 0 {
+                i += char_len(bytes[i]);
+            }
+            self.normalize_unicode_run(&input[ns..i], strip_accents, &mut out);
+            // inert run → verbatim
+            let is = i;
+            while i < n && tags[i] & active == 0 {
+                i += char_len(bytes[i]);
+            }
+            out.push_str(&input[is..i]);
+        }
+        Cow::Owned(out)
+    }
 }
 
 impl pipeline::Normalizer for BertNormalizer {
@@ -312,6 +366,43 @@ mod tests {
                                 ns.get(),
                                 &*pipeline::Normalizer::normalize(&n, input).unwrap(),
                                 "config={n:?} input={input:?}",
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn tag_driven_bert_matches_legacy() {
+        use atomsplit::classify::{classify, classify_scalar};
+        use atomsplit::norm_classify::NormClass;
+        for &clean_text in &[true, false] {
+            for &handle_chinese_chars in &[true, false] {
+                for &strip_accents in &[None, Some(true), Some(false)] {
+                    for &lowercase in &[true, false] {
+                        let n = BertNormalizer::new(
+                            clean_text,
+                            handle_chinese_chars,
+                            strip_accents,
+                            lowercase,
+                        );
+                        for input in INPUTS {
+                            let mut ns = NormalizedString::from(*input);
+                            Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
+                            let expected = ns.get();
+
+                            let mut scal = vec![0u8; input.len()];
+                            classify_scalar::<NormClass>(input.as_bytes(), &mut scal);
+                            let mut simd = vec![0u8; input.len()];
+                            classify::<NormClass>(input.as_bytes(), &mut simd);
+                            assert_eq!(simd, scal, "SIMD/scalar tags differ on {input:?}");
+
+                            assert_eq!(
+                                &*n.normalize_from_tags(input, &scal),
+                                expected,
+                                "tag-driven config={n:?} input={input:?}",
                             );
                         }
                     }

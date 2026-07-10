@@ -12,3 +12,9 @@ publish = false
 # Current Unicode general categories (single source — replaces the frozen-at-Unicode-9.0
 # `unicode_categories`, whose stale `is_letter` mis-classified every post-9.0 letter).
 unicode-properties = "0.1"
+# The NORM tables deliberately mirror the tk-encode normalizers' *runtime* deps so a char is
+# tagged inert IFF the legacy path leaves it unchanged (byte-exact). `unicode_categories` (Unicode
+# 9.0) matches `BertNormalizer`'s `is_mark_nonspacing`/`is_other`; `unicode-normalization` matches
+# its `nfd`/`nfkd`. Used ONLY by `norm_tag`, never by the atom tables.
+unicode_categories = "0.1"
+unicode-normalization = "0.1.25"

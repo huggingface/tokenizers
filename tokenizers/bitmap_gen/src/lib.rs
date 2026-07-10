@@ -340,3 +340,88 @@ pub fn generate_atom_tables() -> String {
         char::from_u32(cp).map(atom).unwrap_or(10)
     })
 }
+
+// ── Normalization classifier ───────────────────────────────────────────────────────────────────
+//
+// A second `Tables` scheme (`NORM_TABLES`) whose per-codepoint `u8` is a *bitmask* of the properties
+// the normalizers branch on. `INERT == 0` means the char is unchanged by every normalization rule, so
+// the runtime can `memcpy` whole inert runs and only touch flagged chars. The bits mirror EXACTLY the
+// functions the tk-encode normalizers call at runtime — `unicode-normalization` `nfd`/`nfkd`,
+// `unicode_categories` `is_mark_nonspacing`/`is_other`, std `to_lowercase`, the bert CJK ranges — so a
+// char is inert here IFF the legacy `NormalizedString` path leaves it unchanged. That byte-exact
+// coupling is why norm_tag deliberately uses the same (Unicode-9.0) `unicode_categories` the normalizer
+// does, rather than the current-Unicode `unicode-properties` used for the atom tables.
+//
+// KEEP IN SYNC with `atomsplit::norm_classify::bit` (identical values). Max tag 0x7D (< 0xFF, the fast3
+// "mixed" sentinel), since NFD/NFKD are mutually exclusive.
+pub mod norm_bit {
+    /// canonical decomposition changes the char (NFD/NFKD/NFC/NFKC; bert strip_accents runs NFD).
+    pub const NFD: u8 = 1 << 0;
+    /// NFD-stable but *compatibility* decomposition changes it (adds to NFKD/NFKC over NFD).
+    pub const NFKD: u8 = 1 << 1;
+    /// nonspacing mark (Mn) — bert `strip_accents` / the `StripAccents` normalizer drop it.
+    pub const MARK: u8 = 1 << 2;
+    /// has a lowercase mapping (`Lowercase` normalizer, bert lowercase).
+    pub const LOWER: u8 = 1 << 3;
+    /// CJK ideograph — bert `handle_chinese_chars` puts spaces around it.
+    pub const CJK: u8 = 1 << 4;
+    /// bert `clean_text` removes it entirely (NUL, U+FFFD, control).
+    pub const CTRL: u8 = 1 << 5;
+    /// whitespace — bert `clean_text` folds it to `' '` (also the `Strip` normalizer).
+    pub const WS: u8 = 1 << 6;
+}
+
+/// bert `handle_chinese_chars` CJK ranges (mirror of `tk-encode`'s `is_chinese_char`).
+fn norm_is_chinese(c: char) -> bool {
+    matches!(
+        c as u32,
+        0x4E00..=0x9FFF | 0x3400..=0x4DBF | 0x20000..=0x2A6DF | 0x2A700..=0x2B73F
+            | 0x2B740..=0x2B81F | 0x2B920..=0x2CEAF | 0xF900..=0xFAFF | 0x2F800..=0x2FA1F
+    )
+}
+
+/// The per-codepoint normalization property bitmask. Single source of truth for `NORM_TABLES`.
+fn norm_tag(c: char) -> u8 {
+    use norm_bit::*;
+    use unicode_categories::UnicodeCategories;
+    use unicode_normalization::char::canonical_combining_class;
+    use unicode_normalization::UnicodeNormalization;
+    let mut t = 0u8;
+    // NFD changes this char's *content* (it decomposes) OR its *order* (nonzero canonical combining
+    // class → NFD reorders it). The order case is essential for memcpy-safety: inert runs are copied
+    // verbatim, so a reorderable char (e.g. the 26 `Mc` viramas/Hangul tone marks with ccc≠0 that aren't
+    // Mn) left inert could land in the wrong position vs a full NFD. `else` = compatibility-only (NFKD).
+    if !c.nfd().eq(std::iter::once(c)) || canonical_combining_class(c) != 0 {
+        t |= NFD;
+    } else if !c.nfkd().eq(std::iter::once(c)) {
+        t |= NFKD;
+    }
+    if c.is_mark_nonspacing() {
+        t |= MARK;
+    }
+    // has a lowercase mapping: to_lowercase(c) is anything other than the single char c.
+    let mut low = c.to_lowercase();
+    if low.next() != Some(c) || low.next().is_some() {
+        t |= LOWER;
+    }
+    if norm_is_chinese(c) {
+        t |= CJK;
+    }
+    // bert clean_text removal: NUL, U+FFFD, and controls (is_other minus \t\n\r).
+    if c == '\0' || c == '\u{FFFD}' || (!matches!(c, '\t' | '\n' | '\r') && c.is_other()) {
+        t |= CTRL;
+    }
+    // bert whitespace: \t\n\r plus Unicode White_Space (folded to space by clean_text).
+    if matches!(c, '\t' | '\n' | '\r') || c.is_whitespace() {
+        t |= WS;
+    }
+    t
+}
+
+/// Normalization classifier tables — a per-codepoint property bitmask (`norm_bit`); `0` = inert.
+/// Regenerated alongside the atom tables by `cargo run -p bitmap_gen`.
+pub fn generate_norm_tables() -> String {
+    generate_tables("NORM_TABLES", "normalization", &|cp| {
+        char::from_u32(cp).map(norm_tag).unwrap_or(0)
+    })
+}
