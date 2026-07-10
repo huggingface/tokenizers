@@ -1,4 +1,5 @@
 use super::{super::OrderedVocabIter, Error, Pair, Word};
+use crate::models::bpe::Merge;
 use crate::pipeline::{self, ModelScratch, PipelineToken};
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::byte_level::{self};
@@ -6,6 +7,7 @@ use crate::utils::cache::{DEFAULT_CACHE_CAPACITY, MAX_LENGTH};
 use crate::utils::iter::ResultShunt;
 use crate::vocab_store::VocabStore;
 use ahash::AHashMap;
+use dary_heap::QuaternaryHeap;
 use serde_json::Value;
 use std::borrow::Cow;
 use std::cell::RefCell;
@@ -548,7 +550,9 @@ impl BPE {
             word.add(unk_id, unk_len);
         }
 
-        word.merge_all(&self.merges, self.dropout);
+        let mut queue = QuaternaryHeap::with_capacity(word.len_symbols());
+        let mut skip = Vec::with_capacity(queue.len());
+        word.merge_all(&self.merges, self.dropout, &mut queue, &mut skip);
 
         Ok(word)
     }
@@ -760,22 +764,24 @@ impl PipelineBPE {
         })
     }
 
-    fn merge_word(&self, sequence: &str) -> Word {
-        let mut word = match &self.atoms {
+    fn merge_word<'a>(&self, sequence: &str, scratch: &'a mut BpeScratch) -> &'a Word {
+        let BpeScratch {
+            merge_queue,
+            skip,
+            word,
+        } = scratch;
+        word.clear();
+        match &self.atoms {
             Atoms::Bytes { byte_to_id } => {
-                let mut word = Word::with_capacity(sequence.len());
                 for &b in sequence.as_bytes() {
                     word.add(byte_to_id[b as usize], 1);
                 }
-                word
             }
             Atoms::Chars {
                 byte_fallback,
                 unk_token,
                 fuse_unk,
             } => {
-                let mut word = Word::with_capacity(sequence.len());
-
                 for char_str in sequence
                     .char_indices()
                     .map(|(i, c)| &sequence[i..i + c.len_utf8()])
@@ -803,20 +809,20 @@ impl PipelineBPE {
                         }
                     }
                 }
-                word
             }
         };
-        word.merge_all(&self.merges, None);
+        word.merge_all(&self.merges, None, merge_queue, skip);
         word
     }
 }
 
 impl pipeline::Model for PipelineBPE {
     type Scratch = BpeScratch;
+
     fn tokenize_pipeline(
         &self,
         sequence: &str,
-        _scratch: &mut Self::Scratch,
+        scratch: &mut Self::Scratch,
         output: &mut Vec<PipelineToken>,
     ) -> Result<()> {
         if sequence.is_empty() {
@@ -831,17 +837,26 @@ impl pipeline::Model for PipelineBPE {
         }
 
         // todo: use thread-local cache
-        let word = self.merge_word(sequence);
+        let word = self.merge_word(sequence, scratch);
         output.extend(word.get_chars_iter().map(|id| PipelineToken { id }));
         Ok(())
     }
 
     fn init_scratch(&self) -> Self::Scratch {
-        Self::Scratch {}
+        Self::Scratch {
+            // 256 is an arbitrary size
+            merge_queue: QuaternaryHeap::with_capacity(256),
+            skip: Vec::with_capacity(256),
+            word: Word::with_capacity(64),
+        }
     }
 }
 
-pub struct BpeScratch {}
+pub struct BpeScratch {
+    pub(crate) merge_queue: QuaternaryHeap<Merge>,
+    pub(crate) skip: Vec<Merge>,
+    pub(crate) word: Word,
+}
 impl ModelScratch for BpeScratch {}
 
 #[cfg(test)]

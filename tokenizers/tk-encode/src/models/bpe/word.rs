@@ -1,3 +1,4 @@
+
 use super::Pair;
 use ahash::AHashMap;
 use dary_heap::QuaternaryHeap;
@@ -5,7 +6,7 @@ use rand::{rng, Rng};
 use std::cmp::Ordering;
 
 #[derive(Debug, Eq)]
-struct Merge {
+pub struct Merge {
     pos: usize,
     rank: u32,
     new_id: u32,
@@ -93,6 +94,14 @@ impl Word {
         }
     }
 
+    pub fn clear(&mut self) {
+        self.symbols.clear();
+    }
+
+    pub fn len_symbols(&self) -> usize {
+        self.symbols.len()
+    }
+
     pub fn add(&mut self, c: u32, byte_len: usize) {
         let (prev, next) = {
             let len = self.symbols.len() as isize;
@@ -167,9 +176,15 @@ impl Word {
         changes
     }
 
-    pub fn merge_all(&mut self, merges: &AHashMap<Pair, (u32, u32)>, dropout: Option<f32>) {
-        let mut queue = QuaternaryHeap::with_capacity(self.symbols.len());
-        let mut skip = Vec::with_capacity(queue.len());
+    pub fn merge_all(
+        &mut self,
+        merges: &AHashMap<Pair, (u32, u32)>,
+        dropout: Option<f32>,
+        queue: &mut QuaternaryHeap<Merge>,
+        skip: &mut Vec<Merge>,
+    ) {
+        queue.clear();
+        skip.clear();
 
         queue.extend(
             self.symbols
