@@ -1,4 +1,3 @@
-
 use super::Pair;
 use ahash::AHashMap;
 use dary_heap::QuaternaryHeap;
