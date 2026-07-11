@@ -689,13 +689,16 @@ def has_threads(m):
 
 
 def threads_svg(model, mode, meta, baseline_label):
-    """Per model: encode throughput (MB/s) over the whole corpus at 1/2/4/8/device-max threads —
-    pipeline vs the release — so both parallel scaling (bars grow down the rows) and the
-    pipeline↔release gap at each thread count are visible on one shared axis."""
+    """Per model: encode throughput (MB/s) at 1/2/4/8/device-max threads — pipeline vs the release —
+    with a per-row *ideal linear* tick (single-thread throughput × N) on the pipeline bar. So whether the
+    pipeline scales linearly (bar reaches the tick) or sub-linearly (bar falls short of it) is visible at a
+    glance, alongside the pipeline↔release gap; the right column carries the self-scaling % of linear."""
     ink, sink = INK[mode], SERIES_INK[mode]
     t = model["threads"]
     counts, pipe, base = t["counts"], t["pipeline_mbps"], t["baseline_mbps"]
-    vals = [v for v in pipe if v] + [v for v in base if v]
+    p1 = pipe[0] if pipe and pipe[0] else None  # single-thread anchor for the linear reference
+    ideal = [p1 * n for n in counts] if p1 else []
+    vals = [v for v in pipe if v] + [v for v in base if v] + ideal
     max_mb = (max(vals) if vals else 1.0) * 1.08
     plot_w = CHART_W - OV_GUTTER - PAD_R - COL_W
 
@@ -706,26 +709,32 @@ def threads_svg(model, mode, meta, baseline_label):
     row_h = 2 * (bar_h + gap) + 16
     col_x = CHART_W - 16
     body = [f'<text x="{col_x}" y="{top - 14}" fill="{ink["muted"]}" font-size="11" '
-            f'text-anchor="end">Pipeline MB/s · ×vs {escape(baseline_label)}</text>',
+            f'text-anchor="end">Pipeline MB/s · self-scaling (% of linear)</text>',
             f'<text x="{OV_GUTTER}" y="{top - 14}" fill="{ink["muted"]}" font-size="11">'
-            f'higher is better · top bar {escape(baseline_label)}, bottom Pipeline</text>']
+            f'higher is better · top bar {escape(baseline_label)}, bottom Pipeline · tick = ideal linear</text>']
     y = top
     for i, n in enumerate(counts):
         cy = y + row_h / 2
         label = f"{n} thread" + ("" if n == 1 else "s")
         body.append(f'<text x="{OV_GUTTER - 14}" y="{cy + 4:.1f}" fill="{ink["primary"]}" '
                     f'font-size="12.5" font-weight="600" text-anchor="end">{label}</text>')
-        by = y + 8
-        for impl, series in (("baseline", base), ("pipeline", pipe)):
-            v = series[i] if i < len(series) else None
-            if v is not None:
-                body.append(hbar(x(0), x(v), by, bar_h, sink[impl]))
-            by += bar_h + gap
-        p = pipe[i] if i < len(pipe) else None
+        base_y, pipe_y = y + 8, y + 8 + bar_h + gap
         b = base[i] if i < len(base) else None
-        right = f"{p:.0f}" if p is not None else "—"
-        if p is not None and b:
-            right += f"  ×{p / b:.2f}"
+        if b is not None:
+            body.append(hbar(x(0), x(b), base_y, bar_h, sink["baseline"]))
+        p = pipe[i] if i < len(pipe) else None
+        if p is not None:
+            body.append(hbar(x(0), x(p), pipe_y, bar_h, sink["pipeline"]))
+        # Ideal-linear reference for the pipeline (single-thread × N): the bar reaching this tick == linear.
+        if p1 is not None and n > 1:
+            ix = x(p1 * n)
+            body.append(f'<line x1="{ix:.1f}" y1="{pipe_y - 2:.1f}" x2="{ix:.1f}" '
+                        f'y2="{pipe_y + bar_h + 2:.1f}" stroke="{ink["primary"]}" stroke-width="1.5"/>')
+        if p is not None and p1:
+            sc = p / p1
+            right = f"{p:.0f} · {sc:.1f}× ({sc / n * 100:.0f}%)"
+        else:
+            right = f"{p:.0f}" if p is not None else "—"
         body.append(f'<text x="{col_x}" y="{cy + 4:.1f}" fill="{ink["secondary"]}" font-size="12" '
                     f'text-anchor="end" style="font-variant-numeric:tabular-nums">{right}</text>')
         y += row_h
@@ -743,12 +752,14 @@ def threads_svg(model, mode, meta, baseline_label):
     legend = legend_row(ink, sink, y, [
         ("swatch", "baseline", baseline_label),
         ("swatch", "pipeline", "PipelineTokenizer"),
+        ("tick", ink["primary"], "ideal linear (T₁ × N)"),
     ])
     height = y + 34
     scaling = ""
-    if len(pipe) >= 2 and pipe[0] and pipe[-1]:
-        scaling = f" · {pipe[-1] / pipe[0]:.1f}× from 1→{counts[-1]} threads"
-    subtitle = f"encode over the full corpus at N threads vs {baseline_label}{scaling}"
+    if p1 and len(pipe) >= 2 and pipe[-1]:
+        sc = pipe[-1] / p1
+        scaling = f" · pipeline {sc:.1f}× on {counts[-1]} threads ({sc / counts[-1] * 100:.0f}% of linear)"
+    subtitle = f"throughput at N threads vs {baseline_label}; tick = perfect linear scaling{scaling}"
     return svg_doc(ink, height, "Thread scaling",
                    subtitle, "".join(grid) + "".join(body) + legend, meta)
 
