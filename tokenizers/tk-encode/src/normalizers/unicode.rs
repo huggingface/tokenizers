@@ -1,12 +1,11 @@
 use std::borrow::Cow;
 
-use crate::normalizers::tagged::tag_driven;
 use crate::pipeline;
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 use crate::utils::macro_rules_attribute;
 
-// NFD/NFKD are tag-driven; NFC/NFKC keep the quick-check gate (recomposition is contextual).
-use unicode_normalization::{is_nfc_quick, is_nfkc_quick, IsNormalized, UnicodeNormalization};
+// All four forms (NFD/NFKD/NFC/NFKC) are pure-Rust via `atomsplit::nfd`; the legacy `Normalizer` impls
+// keep `NormalizedString`'s own `nfd()`/`nfc()`/… (alignment-tracking) for the non-pipeline path.
 
 #[derive(Default, Copy, Clone, Debug)]
 #[macro_rules_attribute(impl_serde_type!)]
@@ -19,12 +18,9 @@ impl Normalizer for NFD {
 }
 impl pipeline::Normalizer for NFD {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
-        // Only NFD-flagged runs decompose (the bit folds in ccc != 0 reorderables); inert ccc-0 starters
-        // are copied verbatim and bound each run so canonical reordering stays inside it.
-        use atomsplit::norm_classify::bit;
-        Ok(tag_driven(input, bit::NFD, |run, out| {
-            out.extend(run.nfd())
-        }))
+        // Pure-Rust SIMD NFD: no classify pass, no per-byte tag buffer. Bulk-skips NFD-stable runs
+        // (bitset probe over vld2/vld3 deinterleave) and decomposes the rest from a baked table.
+        Ok(atomsplit::nfd::nfd(input))
     }
 }
 
@@ -39,11 +35,8 @@ impl Normalizer for NFKD {
 }
 impl pipeline::Normalizer for NFKD {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
-        // A char changes under NFKD if it decomposes canonically (NFD) or compatibly (NFKD-extra).
-        use atomsplit::norm_classify::bit;
-        Ok(tag_driven(input, bit::NFD | bit::NFKD, |run, out| {
-            out.extend(run.nfkd())
-        }))
+        // Pure-Rust SIMD compatibility decomposition — same skip-based kernel as NFD, NFKD tables.
+        Ok(atomsplit::nfd::nfkd(input))
     }
 }
 
@@ -58,11 +51,9 @@ impl Normalizer for NFC {
 }
 impl pipeline::Normalizer for NFC {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
-        if let IsNormalized::Yes = is_nfc_quick(input.chars()) {
-            Ok(input.into())
-        } else {
-            Ok(Cow::Owned(input.nfc().collect()))
-        }
+        // Pure-Rust NFC: a quick-check relevance bitset borrows already-composed input untouched;
+        // otherwise decompose (NFD tables) then canonically recompose from the baked COMPOSE table.
+        Ok(atomsplit::nfd::nfc(input))
     }
 }
 
@@ -77,11 +68,8 @@ impl Normalizer for NFKC {
 }
 impl pipeline::Normalizer for NFKC {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
-        if let IsNormalized::Yes = is_nfkc_quick(input.chars()) {
-            Ok(input.into())
-        } else {
-            Ok(Cow::Owned(input.nfkc().collect()))
-        }
+        // Pure-Rust NFKC: NFKC relevance bitset borrow gate, else NFKD decompose + canonical recompose.
+        Ok(atomsplit::nfd::nfkc(input))
     }
 }
 
@@ -170,7 +158,15 @@ mod tests {
     #[test]
     fn pipeline_nfd_matches_legacy() {
         let n = NFD;
-        for input in &["é", "café", "abc", "", "Å"] {
+        for input in &[
+            "é", "café", "abc", "", "Å",
+            "한국어 테스트",              // Hangul → arithmetic decompose
+            "a\u{0323}\u{0301}",          // combining marks needing canonical reorder (ccc 220 vs 230)
+            "Ἀρχαία ἑλληνικά",           // polytonic Greek (3-byte decomposers)
+            "这是中文",                    // CJK, all NFD-stable → borrowed unchanged
+            "mixed 世界 café Москва",     // multi-script (ASCII + CJK + Latin-accent + Cyrillic)
+            "\u{2F800}",                  // astral CJK-compat ideograph
+        ] {
             let mut ns = NormalizedString::from(*input);
             Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
             assert_eq!(
@@ -183,7 +179,10 @@ mod tests {
     #[test]
     fn pipeline_nfkd_matches_legacy() {
         let n = NFKD;
-        for input in &["\u{fb01}", "²", "café", "abc", ""] {
+        for input in &[
+            "\u{fb01}", "²", "café", "abc", "",
+            "한국어", "½ ﷺ ㍿", "Ấ ṩ", "mixed 世界 ﬁ Москва",
+        ] {
             let mut ns = NormalizedString::from(*input);
             Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
             assert_eq!(
@@ -196,7 +195,12 @@ mod tests {
     #[test]
     fn pipeline_nfc_matches_legacy() {
         let n = NFC;
-        for input in &["e\u{0301}", "abc", "", "cafe\u{0301}"] {
+        for input in &[
+            "e\u{0301}", "abc", "", "cafe\u{0301}",
+            "A\u{0302}\u{0301}",           // nested compose → Ấ
+            "\u{1100}\u{1161}\u{11A8}",    // jamo → Hangul syllable
+            "a\u{0323}\u{0301}", "café", "这是中文", "мир",
+        ] {
             let mut ns = NormalizedString::from(*input);
             Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
             assert_eq!(
@@ -209,7 +213,10 @@ mod tests {
     #[test]
     fn pipeline_nfkc_matches_legacy() {
         let n = NFKC;
-        for input in &["\u{fb01}", "²", "e\u{0301}", "abc", ""] {
+        for input in &[
+            "\u{fb01}", "²", "e\u{0301}", "abc", "",
+            "Ấ ṩ", "½ ﷺ", "한국어", "A\u{0302}\u{0301}", "mixed 世界 ﬁ",
+        ] {
             let mut ns = NormalizedString::from(*input);
             Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
             assert_eq!(

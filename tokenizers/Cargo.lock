@@ -118,6 +118,7 @@ dependencies = [
  "fancy-regex 0.13.0",
  "memchr",
  "onig",
+ "unicode-normalization",
 ]
 
 [[package]]

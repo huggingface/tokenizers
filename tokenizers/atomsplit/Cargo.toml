@@ -30,6 +30,9 @@ memchr = "2.8.2" # SIMD single-byte search; used only in CharDelimiterSplit (1.4
 # scheme change with `cargo run -p bitmap_gen`. No build script / build-dep — atomsplit builds clean.
 # onig is C (Oniguruma) and fancy-regex pulls it in transitively for benches only — neither
 # cross-compiles to wasm32 (no wasi libc for the C build), so gate them off wasm.
+[dev-dependencies]
+unicode-normalization = "0.1.25" # reference NFD for the src/nfd.rs differential tests (not linked at runtime)
+
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 onig = "6.5.1"          # reference regex for the parity tests + benches
 fancy-regex = "0.13"    # second regex engine in the throughput benches

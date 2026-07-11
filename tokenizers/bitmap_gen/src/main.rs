@@ -8,6 +8,9 @@ fn main() {
     for (name, src) in [
         ("atom_tables.rs", bitmap_gen::generate_atom_tables()),
         ("norm_tables.rs", bitmap_gen::generate_norm_tables()),
+        ("nfd_tables.rs", bitmap_gen::generate_nfd_tables()),
+        ("nfkd_tables.rs", bitmap_gen::generate_nfkd_tables()),
+        ("compose_tables.rs", bitmap_gen::generate_compose_tables()),
     ] {
         let out = format!("{dir}/{name}");
         std::fs::write(&out, src).unwrap_or_else(|e| panic!("write {name}: {e}"));

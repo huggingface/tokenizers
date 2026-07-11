@@ -429,3 +429,277 @@ pub fn generate_norm_tables() -> String {
         char::from_u32(cp).map(norm_tag).unwrap_or(0)
     })
 }
+
+// ── Decomposition tables (NFD + NFKD) ────────────────────────────────────────────────────────────
+//
+// The pure-Rust decompose kernel (`atomsplit::nfd`) does NOT classify. It bulk-skips runs that are
+// stable under the target form and only decomposes the rest. "Stable" = does not decompose AND ccc == 0
+// — byte-exact with `unicode-normalization`. NFD and NFKD share this exact layout, differing only in the
+// decomposition function (canonical `nfd` vs compatibility `nfkd`):
+//   {NFD,NFKD}_UNSTABLE  bitset over cp < {…}_CAP; bit set = unstable. Probed per SIMD lane (hot path).
+//   {NFD,NFKD}_DECOMP    flattened decompositions; each entry = (ccc << 24) | cp (cp 21 bits, ccc 8).
+//   {NFD,NFKD}_INDEX     sorted (cp, (off << 8) | len) into {…}_DECOMP — the cold decompose lookup.
+// Hangul syllables are unstable in the bitset but ABSENT from the index: the kernel decomposes them by
+// S_BASE arithmetic (their canonical == compatibility decomposition), so baking ~11k entries is waste.
+
+const HANGUL: std::ops::RangeInclusive<u32> = 0xAC00..=0xD7A3;
+
+/// Is `c` unstable under NFD (decomposes canonically or reorders)? Mirrors `norm_tag`'s `NFD` bit.
+fn nfd_unstable(c: char) -> bool {
+    use unicode_normalization::char::canonical_combining_class;
+    use unicode_normalization::UnicodeNormalization;
+    !c.nfd().eq(std::iter::once(c)) || canonical_combining_class(c) != 0
+}
+/// Is `c` unstable under NFKD (decomposes canonically or compatibly, or reorders)?
+fn nfkd_unstable(c: char) -> bool {
+    use unicode_normalization::char::canonical_combining_class;
+    use unicode_normalization::UnicodeNormalization;
+    !c.nfkd().eq(std::iter::once(c)) || canonical_combining_class(c) != 0
+}
+
+/// Emit a `#[rustfmt::skip] pub static NAME: [TY; N] = [..];` array of `Display` values.
+fn emit_slice<T: std::fmt::Display>(o: &mut String, ty: &str, name: &str, t: &[T]) {
+    write!(o, "#[rustfmt::skip]\npub static {name}: [{ty}; {}] = [", t.len()).unwrap();
+    for (i, v) in t.iter().enumerate() {
+        if i > 0 {
+            o.push(',');
+        }
+        write!(o, "{v}").unwrap();
+    }
+    o.push_str("];\n");
+}
+
+/// Baked "bit set = unstable" bitset over cp `< cap`, sized so the highest unstable cp fits and nothing
+/// above `cap` is unstable (asserted). Used for the {NFD,NFKD} tables and the NFC/NFKC relevance bitsets.
+fn bitset_up_to(pred: &dyn Fn(char) -> bool) -> (u32, Vec<u64>) {
+    let max = (0..0x110000u32)
+        .filter(|&cp| char::from_u32(cp).is_some_and(pred))
+        .next_back()
+        .expect("predicate matched no codepoint");
+    let cap = (max / 64 + 1) * 64;
+    let mut bits = vec![0u64; (cap / 64) as usize];
+    for cp in 0..cap {
+        if char::from_u32(cp).is_some_and(pred) {
+            bits[(cp / 64) as usize] |= 1 << (cp % 64);
+        }
+    }
+    (cap, bits)
+}
+
+/// Emit `{FORM}_CAP/_UNSTABLE/_DECOMP/_TRIE_INDEX/_TRIE_DATA` for decomposition `form` ("NFD"/"NFKD"),
+/// using `decompose` (`c.nfd()`/`c.nfkd()`) + `unstable`. The decomposition lookup is a TWO-LEVEL TRIE
+/// (`DATA[INDEX[cp >> 6] + (cp & 63)]`, one `u32` = `(off << 8) | len` into `DECOMP`, `0` = absent) — an
+/// O(1) gather that replaced a sorted-index binary search (~12 branches/char) and closed the gap to
+/// xxUTF on decompose-heavy scripts. Self-validates every codepoint against `decompose`.
+fn generate_decomp_tables(
+    form: &str,
+    decompose: &dyn Fn(char) -> Vec<char>,
+    unstable: &dyn Fn(char) -> bool,
+) -> String {
+    use unicode_normalization::char::canonical_combining_class as ccc;
+
+    let (cap, bitset) = bitset_up_to(unstable);
+    // Each decomposition output char is one u32 entry: (ccc << 24) | cp. Compact (a u64 inline-UTF-8
+    // variant that would let the runtime `memcpy` instead of re-encoding was tried and REGRESSED the
+    // decompose-heavy cluster — the 2× table doubled DECOMP cache traffic and lost more than encode cost).
+    let mut decomp: Vec<u32> = Vec::new();
+    let mut packed = vec![0u32; cap as usize]; // per-cp (off << 8) | len, 0 = stable/absent
+    for cp in 0..cap {
+        let Some(c) = char::from_u32(cp) else { continue };
+        if !unstable(c) || HANGUL.contains(&cp) {
+            continue; // stable → skip; Hangul → arithmetic at runtime, not baked
+        }
+        let d = decompose(c);
+        assert!(d.len() < 256, "{form} decomp of {cp:#x} too long: {}", d.len());
+        let off = decomp.len() as u32;
+        for &ch in &d {
+            decomp.push((ccc(ch) as u32) << 24 | ch as u32);
+        }
+        // off << 8 | len is never 0 for a real entry: len >= 1, so the "0 = absent" sentinel is safe.
+        packed[cp as usize] = off << 8 | d.len() as u32;
+    }
+
+    // Two-level trie: block 0 of DATA is the shared all-absent block; non-empty 64-cp blocks are appended.
+    let nblocks = (cap / 64) as usize;
+    let mut trie_index = vec![0u32; nblocks];
+    let mut trie_data: Vec<u32> = vec![0u32; 64];
+    for blk in 0..nblocks {
+        let block = &packed[blk * 64..blk * 64 + 64];
+        if block.iter().any(|&p| p != 0) {
+            trie_index[blk] = trie_data.len() as u32;
+            trie_data.extend_from_slice(block);
+        } // else stays 0 → shared empty block
+    }
+    let trie_lookup = |cp: u32| -> Option<&[u32]> {
+        if cp >= cap {
+            return None;
+        }
+        let p = trie_data[(trie_index[(cp >> 6) as usize] + (cp & 63)) as usize];
+        (p != 0).then(|| &decomp[(p >> 8) as usize..((p >> 8) + (p & 0xFF)) as usize])
+    };
+    let entry_char = |e: u32| char::from_u32(e & 0xFF_FFFF).unwrap();
+
+    // self-validation: reconstruct from the trie == `decompose`, for every codepoint
+    let bit = |cp: u32| (bitset[(cp / 64) as usize] >> (cp % 64)) & 1 != 0;
+    for cp in 0..=0x10FFFFu32 {
+        let Some(c) = char::from_u32(cp) else { continue };
+        let expect = decompose(c);
+        let got: Vec<char> = if cp < cap && bit(cp) {
+            if HANGUL.contains(&cp) {
+                let s = cp - 0xAC00;
+                let mut v = vec![
+                    char::from_u32(0x1100 + s / 588).unwrap(),
+                    char::from_u32(0x1161 + (s % 588) / 28).unwrap(),
+                ];
+                if s % 28 != 0 {
+                    v.push(char::from_u32(0x11A7 + s % 28).unwrap());
+                }
+                v
+            } else {
+                trie_lookup(cp)
+                    .expect("unstable non-hangul cp missing from trie")
+                    .iter()
+                    .map(|&e| entry_char(e))
+                    .collect()
+            }
+        } else {
+            vec![c] // stable (or ≥ cap) → itself
+        };
+        assert_eq!(got, expect, "{form} table mismatch at cp={cp:#06x}");
+        if cp < cap && bit(cp) && !HANGUL.contains(&cp) {
+            for &e in trie_lookup(cp).unwrap() {
+                assert_eq!((e >> 24) as u8, ccc(entry_char(e)), "{form} ccc mismatch in decomp of {cp:#x}");
+            }
+        }
+    }
+
+    let mut o = String::new();
+    writeln!(o, "//! GENERATED by `bitmap_gen` — do NOT edit. Regenerate with `cargo run -p bitmap_gen`.").unwrap();
+    writeln!(o, "//! {form} decomposition tables for `atomsplit::nfd`: stable-run bitset + a two-level trie").unwrap();
+    writeln!(o, "//! (DATA[INDEX[cp>>6] + (cp&63)] = (off<<8)|len into DECOMP; 0 = absent) over a flattened").unwrap();
+    writeln!(o, "//! decomposition blob. Reconstructed & checked against `unicode-normalization` for all 1.1M cps.\n").unwrap();
+    writeln!(o, "/// Codepoints < this are covered by `{form}_UNSTABLE`; all higher ones are {form}-stable.").unwrap();
+    writeln!(o, "pub const {form}_CAP: u32 = {cap:#x};").unwrap();
+    emit_slice(&mut o, "u64", &format!("{form}_UNSTABLE"), &bitset);
+    emit_slice(&mut o, "u32", &format!("{form}_DECOMP"), &decomp);
+    emit_slice(&mut o, "u32", &format!("{form}_TRIE_INDEX"), &trie_index);
+    emit_slice(&mut o, "u32", &format!("{form}_TRIE_DATA"), &trie_data);
+    o
+}
+
+/// NFD (canonical) decomposition tables.
+pub fn generate_nfd_tables() -> String {
+    use unicode_normalization::UnicodeNormalization;
+    generate_decomp_tables("NFD", &|c| c.nfd().collect(), &nfd_unstable)
+}
+/// NFKD (compatibility) decomposition tables.
+pub fn generate_nfkd_tables() -> String {
+    use unicode_normalization::UnicodeNormalization;
+    generate_decomp_tables("NFKD", &|c| c.nfkd().collect(), &nfkd_unstable)
+}
+
+// ── Composition tables (NFC + NFKC) ──────────────────────────────────────────────────────────────
+//
+// Composition combines a starter L with a following char C when (L, C) has a canonical primary
+// composite and C is not "blocked". The pairwise table is the SAME for NFC and NFKC (only canonical
+// composites ever recombine). Hangul L+V / LV+T are done by arithmetic at runtime, so they're excluded.
+//   COMPOSE            sorted (key=(a<<21)|b, composite) — the (a,b) → composite lookup.
+//   {NFC,NFKC}_RELEVANT  bitset: cp with ccc != 0 OR quick-check != Yes. If a string trips none of these
+//                        it is already in the target form → the kernel borrows it untouched.
+
+/// Composition table + NFC/NFKC relevance bitsets, self-validated against `unicode-normalization`.
+pub fn generate_compose_tables() -> String {
+    use unicode_normalization::char::{canonical_combining_class as ccc, compose};
+    use unicode_normalization::{is_nfc_quick, is_nfkc_quick, IsNormalized, UnicodeNormalization};
+
+    // Primary (single-step) canonical composites. For a char X with a canonical decomposition, the
+    // single-step decomposition is [A, B] where B is the LAST decomposed char and A is the recomposition
+    // of the prefix (NFC of the prefix → one char). This recovers NESTED composites (e.g. U+1EA4 Ấ →
+    // (U+00C2 Â, U+0301)) that a naive `nfd(X) == [a,b]` test misses — Ấ's FULL NFD is length 3. Hangul is
+    // arithmetic (excluded); `compose` filters composition exclusions & non-starter decompositions.
+    let single_step = |c: char| -> Option<(char, char)> {
+        let full: Vec<char> = c.nfd().collect();
+        if full.len() < 2 {
+            return None; // no decomposition, or a singleton (decompose-only, never composes)
+        }
+        let b = *full.last().unwrap();
+        let prefix: String = full[..full.len() - 1].iter().collect();
+        let mut a = prefix.nfc();
+        let a0 = a.next()?;
+        if a.next().is_some() {
+            return None; // prefix didn't recompose to a single char → not a primary composite
+        }
+        Some((a0, b))
+    };
+
+    let mut table: Vec<(u64, u32)> = Vec::new();
+    for cp in 0..0x110000u32 {
+        let Some(c) = char::from_u32(cp) else { continue };
+        if HANGUL.contains(&cp) {
+            continue;
+        }
+        if let Some((a, b)) = single_step(c) {
+            if compose(a, b) == Some(c) {
+                table.push((((a as u64) << 21) | b as u64, cp));
+            }
+        }
+    }
+    table.sort_by_key(|&(k, _)| k);
+    for w in table.windows(2) {
+        assert_ne!(w[0].0, w[1].0, "duplicate compose key");
+    }
+
+    // Hangul jamo composition, arithmetic (mirrors the runtime kernel).
+    let hangul_compose = |a: u32, b: u32| -> Option<u32> {
+        if (0x1100..=0x1112).contains(&a) && (0x1161..=0x1175).contains(&b) {
+            return Some(0xAC00 + ((a - 0x1100) * 21 + (b - 0x1161)) * 28);
+        }
+        if HANGUL.contains(&a) && (a - 0xAC00) % 28 == 0 && (0x11A8..=0x11C2).contains(&b) {
+            return Some(a + (b - 0x11A7));
+        }
+        None
+    };
+    let lookup = |a: u32, b: u32| -> Option<u32> {
+        let k = ((a as u64) << 21) | b as u64;
+        table.binary_search_by_key(&k, |&(kk, _)| kk).ok().map(|p| table[p].1)
+    };
+    // validate completeness: for every char's single-step pair, table (or Hangul arithmetic) == compose()
+    for cp in 0..0x110000u32 {
+        let Some(c) = char::from_u32(cp) else { continue };
+        if let Some((a, b)) = single_step(c) {
+            let expect = compose(a, b).map(|x| x as u32);
+            let got = hangul_compose(a as u32, b as u32).or_else(|| lookup(a as u32, b as u32));
+            assert_eq!(got, expect, "compose mismatch for ({:#x},{:#x})", a as u32, b as u32);
+        }
+    }
+
+    let nfc_relevant = |c: char| {
+        ccc(c) != 0 || !matches!(is_nfc_quick(std::iter::once(c)), IsNormalized::Yes)
+    };
+    let nfkc_relevant = |c: char| {
+        ccc(c) != 0 || !matches!(is_nfkc_quick(std::iter::once(c)), IsNormalized::Yes)
+    };
+    let (nfc_cap, nfc_bits) = bitset_up_to(&nfc_relevant);
+    let (nfkc_cap, nfkc_bits) = bitset_up_to(&nfkc_relevant);
+
+    let mut o = String::new();
+    writeln!(o, "//! GENERATED by `bitmap_gen` — do NOT edit. Regenerate with `cargo run -p bitmap_gen`.").unwrap();
+    writeln!(o, "//! Canonical composition table (NFC/NFKC) + quick-check relevance bitsets. `bitmap_gen`").unwrap();
+    writeln!(o, "//! validates COMPOSE against `unicode-normalization`'s `compose` for every canonical pair.\n").unwrap();
+    write!(o, "/// Sorted `(key=(a<<21)|b, composite)`; `a`,`b` are the canonical decomposition pair.\n").unwrap();
+    write!(o, "#[rustfmt::skip]\npub static COMPOSE: [(u64, u32); {}] = [", table.len()).unwrap();
+    for (i, (k, x)) in table.iter().enumerate() {
+        if i > 0 {
+            o.push(',');
+        }
+        write!(o, "({k},0x{x:X})").unwrap();
+    }
+    o.push_str("];\n");
+    writeln!(o, "/// A codepoint < this may be composition-relevant; higher ones never are (NFC).").unwrap();
+    writeln!(o, "pub const NFC_RELEVANT_CAP: u32 = {nfc_cap:#x};").unwrap();
+    emit_slice(&mut o, "u64", "NFC_RELEVANT", &nfc_bits);
+    writeln!(o, "/// A codepoint < this may be composition-relevant; higher ones never are (NFKC).").unwrap();
+    writeln!(o, "pub const NFKC_RELEVANT_CAP: u32 = {nfkc_cap:#x};").unwrap();
+    emit_slice(&mut o, "u64", "NFKC_RELEVANT", &nfkc_bits);
+    o
+}
