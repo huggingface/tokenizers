@@ -504,6 +504,10 @@ fn generate_decomp_tables(
     // decompose-heavy cluster — the 2× table doubled DECOMP cache traffic and lost more than encode cost).
     let mut decomp: Vec<u32> = Vec::new();
     let mut packed = vec![0u32; cap as usize]; // per-cp (off << 8) | len, 0 = stable/absent
+    // Max UTF-8 byte expansion (out_bytes / in_bytes, rounded up) over ALL codepoints. Seeded with 3 for
+    // Hangul (3-byte syllable → up to three 3-byte jamo = 9 bytes). Baked so the runtime can reserve a
+    // provably realloc-free output buffer of `input_len * MAX_EXPAND`.
+    let mut max_expand: u32 = 3;
     for cp in 0..cap {
         let Some(c) = char::from_u32(cp) else { continue };
         if !unstable(c) || HANGUL.contains(&cp) {
@@ -511,6 +515,8 @@ fn generate_decomp_tables(
         }
         let d = decompose(c);
         assert!(d.len() < 256, "{form} decomp of {cp:#x} too long: {}", d.len());
+        let (out_bytes, in_bytes) = (d.iter().map(|c| c.len_utf8()).sum::<usize>(), c.len_utf8());
+        max_expand = max_expand.max(out_bytes.div_ceil(in_bytes) as u32);
         let off = decomp.len() as u32;
         for &ch in &d {
             decomp.push((ccc(ch) as u32) << 24 | ch as u32);
@@ -580,6 +586,9 @@ fn generate_decomp_tables(
     writeln!(o, "//! decomposition blob. Reconstructed & checked against `unicode-normalization` for all 1.1M cps.\n").unwrap();
     writeln!(o, "/// Codepoints < this are covered by `{form}_UNSTABLE`; all higher ones are {form}-stable.").unwrap();
     writeln!(o, "pub const {form}_CAP: u32 = {cap:#x};").unwrap();
+    writeln!(o, "/// Max UTF-8 byte expansion of any char under {form}: `out.len() ≤ input.len() * this`,").unwrap();
+    writeln!(o, "/// so the runtime reserves a realloc-free output buffer.").unwrap();
+    writeln!(o, "pub const {form}_MAX_EXPAND: usize = {max_expand};").unwrap();
     emit_slice(&mut o, "u64", &format!("{form}_UNSTABLE"), &bitset);
     emit_slice(&mut o, "u32", &format!("{form}_DECOMP"), &decomp);
     emit_slice(&mut o, "u32", &format!("{form}_TRIE_INDEX"), &trie_index);

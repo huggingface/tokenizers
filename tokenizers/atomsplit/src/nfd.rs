@@ -18,8 +18,10 @@ use std::borrow::Cow;
 use std::cell::RefCell;
 
 use crate::compose_tables::{COMPOSE, NFC_RELEVANT, NFC_RELEVANT_CAP, NFKC_RELEVANT, NFKC_RELEVANT_CAP};
-use crate::nfd_tables::{NFD_CAP, NFD_DECOMP, NFD_TRIE_DATA, NFD_TRIE_INDEX, NFD_UNSTABLE};
-use crate::nfkd_tables::{NFKD_CAP, NFKD_DECOMP, NFKD_TRIE_DATA, NFKD_TRIE_INDEX, NFKD_UNSTABLE};
+use crate::nfd_tables::{NFD_CAP, NFD_DECOMP, NFD_MAX_EXPAND, NFD_TRIE_DATA, NFD_TRIE_INDEX, NFD_UNSTABLE};
+use crate::nfkd_tables::{
+    NFKD_CAP, NFKD_DECOMP, NFKD_MAX_EXPAND, NFKD_TRIE_DATA, NFKD_TRIE_INDEX, NFKD_UNSTABLE,
+};
 
 thread_local! {
     /// Composition scratch: (decomposed (ccc,char) sequence, its reorder buffer, kept-marks buffer).
@@ -45,6 +47,8 @@ trait Decomp: Bitset {
     const DECOMP: &'static [u32];
     const TRIE_INDEX: &'static [u32];
     const TRIE_DATA: &'static [u32];
+    /// `output.len() ≤ input.len() * MAX_EXPAND` — lets the owned path reserve once, realloc-free.
+    const MAX_EXPAND: usize;
 
     /// Baked decomposition entries (`(ccc << 24) | cp` each) of `cp`, or `&[]` if absent — an O(1)
     /// two-level trie gather. Only ever called for unstable chars (bit set ⇒ `cp < CAP`), so all present.
@@ -77,6 +81,7 @@ impl Decomp for Nfd {
     const DECOMP: &'static [u32] = &NFD_DECOMP;
     const TRIE_INDEX: &'static [u32] = &NFD_TRIE_INDEX;
     const TRIE_DATA: &'static [u32] = &NFD_TRIE_DATA;
+    const MAX_EXPAND: usize = NFD_MAX_EXPAND;
 }
 impl Bitset for Nfkd {
     const BITS: &'static [u64] = &NFKD_UNSTABLE;
@@ -86,6 +91,7 @@ impl Decomp for Nfkd {
     const DECOMP: &'static [u32] = &NFKD_DECOMP;
     const TRIE_INDEX: &'static [u32] = &NFKD_TRIE_INDEX;
     const TRIE_DATA: &'static [u32] = &NFKD_TRIE_DATA;
+    const MAX_EXPAND: usize = NFKD_MAX_EXPAND;
 }
 impl Bitset for NfcRelevant {
     const BITS: &'static [u64] = &NFC_RELEVANT;
@@ -413,7 +419,10 @@ fn decompose<'a, D: Decomp>(input: &'a str) -> Cow<'a, str> {
         return Cow::Borrowed(input);
     }
     let (first, mut cp, mut w) = next_set::<D>(bytes, 0);
-    let mut out = String::with_capacity(n + (n >> 4));
+    // Reserve the worst-case decomposed size up front (`n * MAX_EXPAND`) so the owned path never
+    // reallocs mid-build — decompose *expands* (Hangul 3×, accents ~1.5×), and the old `n + n/16` guess
+    // was blown through on exactly those inputs, forcing a full-buffer copy per grow.
+    let mut out = String::with_capacity(n.saturating_mul(D::MAX_EXPAND));
     out.push_str(&input[..first]);
     let mut e = Emit { last_ccc: 0, run_start: out.len() };
     let mut i = first;
@@ -604,7 +613,9 @@ fn compose<'a, D: Decomp, R: Bitset>(input: &'a str) -> Cow<'a, str> {
     // ponytail: recompose the whole string (matches unicode-normalization's non-quick path). A windowed
     // recompose from the last starter before the first relevant char would cut work on long mostly-NFC
     // docs — add if a profile shows it matters.
-    let mut out = String::with_capacity(n);
+    // Reserve the decomposed peak (`n * MAX_EXPAND`): composition never exceeds it (it recombines), so
+    // one reservation covers the whole build without a realloc.
+    let mut out = String::with_capacity(n.saturating_mul(D::MAX_EXPAND));
     COMPOSE_SCRATCH.with(|sc| {
         let (buf, pending, marks) = &mut *sc.borrow_mut();
         decompose_to_pairs::<D>(input, buf, pending);
