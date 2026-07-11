@@ -504,8 +504,27 @@ fn main() {
         return;
     }
 
-    let manifest: Vec<Value> =
+    // Optional model sharding for CI matrix fan-out: `--shard <i> <n>` benches only the i-th of `n`
+    // contiguous manifest chunks, so the models split across parallel isolated runners and the partial
+    // JSONs are concatenated downstream. Without it, `(0, 1)` = the whole manifest, unchanged.
+    let (shard, nshards): (usize, usize) =
+        match (args.get(1).map(String::as_str), args.get(2), args.get(3)) {
+            (Some("--shard"), Some(i), Some(n)) => {
+                (i.parse().unwrap(), n.parse::<usize>().unwrap().max(1))
+            }
+            _ => (0, 1),
+        };
+    let full: Vec<Value> =
         serde_json::from_str(&std::fs::read_to_string(MANIFEST).unwrap()).unwrap();
+    let (lo, hi) = (
+        shard * full.len() / nshards,
+        (shard + 1) * full.len() / nshards,
+    );
+    let manifest = &full[lo.min(full.len())..hi.min(full.len())];
+    eprintln!(
+        "shard {shard}/{nshards}: models {lo}..{hi} of {}",
+        full.len()
+    );
     let files = fixture_files();
     // The whole corpus, concatenated once: the multi-thread sweep runs over all fixtures so
     // thread-spawn/scheduling overhead is amortized and the scaling curve is stable.
@@ -515,7 +534,7 @@ fn main() {
         .collect();
 
     let mut models: Vec<Value> = Vec::new();
-    for entry in &manifest {
+    for entry in manifest {
         let name = entry["name"].as_str().unwrap().to_string();
         let repo = entry.get("repo").and_then(Value::as_str).unwrap_or("");
         let desc = entry.get("desc").and_then(Value::as_str).unwrap_or("");
