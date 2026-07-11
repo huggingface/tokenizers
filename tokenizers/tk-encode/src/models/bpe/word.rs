@@ -272,7 +272,7 @@ impl Word {
     }
 
     pub fn get_chars(&self) -> Vec<u32> {
-        self.symbols.iter().map(|s| s.c).collect()
+        self.get_chars_iter().collect()
     }
 
     pub fn get_chars_iter(&self) -> impl Iterator<Item = u32> + '_ {
