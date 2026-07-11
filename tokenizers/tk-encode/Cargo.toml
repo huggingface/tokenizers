@@ -30,7 +30,6 @@ path = "src/lib.rs"
 rand = "0.9"
 onig = { version = "6.5.1", default-features = false, optional = true }
 regex = "1.10"
-regex-syntax = "0.8"
 regex-automata = "0.4"
 rayon = "1.10"
 rayon-cond = "0.4"
@@ -52,11 +51,10 @@ paste = "1.0.14"
 macro_rules_attribute = "0.2.0"
 thiserror = "2"
 fancy-regex = { version = "0.17", optional = true }
-getrandom = { version = "0.3" }
+getrandom = { version = "0.3", optional = true }
 monostate = "0.1.12"
 ahash = { version = "0.8.11", features = ["serde"] }
 dary_heap = { version = "0.3.6", features = ["serde"] }
-compact_str = { version = "0.9", features = ["serde"] }
 ptr_hash = { git = "https://github.com/RagnarGrootKoerkamp/PtrHash.git", rev = "d637316", default-features = false }
 memchr = "2.8.2"
 unicode-normalization = "0.1.25"
@@ -69,7 +67,9 @@ tokenizers-release = { package = "tokenizers", version = "=0.23.1", optional = t
 # TODO: onig is C (Oniguruma, archived upstream). We're moving to the pure-Rust
 # fancy-regex backend by default; once the legacy pre-tokenizers are gone, drop
 # the `onig` feature + `src/utils/onig.rs` entirely.
-default = ["progressbar", "fancy-regex"]
+# progressbar is not a default: nothing in tk-encode draws a progress bar; tk-train
+# forwards `tk-encode/progressbar` from its own default feature set.
+default = ["fancy-regex"]
 progressbar = ["indicatif"]
 http = ["hf-hub"]
 unstable_wasm = ["fancy-regex", "getrandom/wasm_js"]

@@ -2000,7 +2000,6 @@ version = "0.23.2-dev.0"
 dependencies = [
  "ahash",
  "assert_approx_eq",
- "compact_str",
  "criterion 0.6.0",
  "daachorse 3.0.2",
  "dary_heap",
@@ -2022,7 +2021,6 @@ dependencies = [
  "rayon-cond",
  "regex",
  "regex-automata",
- "regex-syntax",
  "serde",
  "serde_json",
  "spm_precompiled",
