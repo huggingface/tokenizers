@@ -1,6 +1,10 @@
+use std::cell::RefCell;
 use std::convert::TryInto;
 use std::ops::Range;
 use std::{borrow::Cow, convert::TryFrom};
+
+use atomsplit::classify::{classify, Atoms};
+use atomsplit::fsm::Span;
 
 use crate::models::bpe::PipelineBPE;
 use crate::models::unigram::Unigram;
@@ -40,6 +44,35 @@ impl Split {
     pub fn range(self) -> Range<usize> {
         self.start as usize..self.end as usize
     }
+}
+
+/// Classify `bytes` and run `fsm` (an atomsplit FSM / class-runs recipe) into a **thread-local scratch**,
+/// appending the resulting spans to `out`. The scratch (tags + spans) grows to the largest segment seen
+/// and is reused across calls — so pre-tokenizing many small segments (e.g. a special-token-dense input,
+/// where the special scan carves the text into many tiny pieces) pays no per-segment `vec![…]` alloc.
+/// `fsm` writes spans into `&mut [Span]` (len ≥ text len) and returns the count. Byte-identical to a
+/// fresh `vec![0u8; n]` + `vec![(0,0); n+1]` per call — just without the allocations.
+pub(crate) fn classify_into_spans(
+    bytes: &[u8],
+    fsm: impl FnOnce(&[u8], &[u8], &mut [Span]) -> usize,
+    out: &mut Vec<Split>,
+) {
+    thread_local! {
+        static SCRATCH: RefCell<(Vec<u8>, Vec<Span>)> = const { RefCell::new((Vec::new(), Vec::new())) };
+    }
+    let n = bytes.len();
+    SCRATCH.with(|cell| {
+        let (tags, spans) = &mut *cell.borrow_mut();
+        if tags.len() < n {
+            tags.resize(n, 0); // grow-only: after the largest segment, no realloc / no re-zeroing
+        }
+        if spans.len() < n + 1 {
+            spans.resize(n + 1, (0, 0));
+        }
+        classify::<Atoms>(bytes, &mut tags[..n]);
+        let k = fsm(bytes, &tags[..n], &mut spans[..n + 1]);
+        out.extend(spans[..k].iter().map(|&(s, e)| Split { start: s, end: e }));
+    });
 }
 
 pub trait Normalizer {

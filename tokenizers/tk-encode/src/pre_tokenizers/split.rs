@@ -155,22 +155,16 @@ impl pipeline::PreTokenizer for Split {
             .fsm
             .filter(|_| !self.invert && self.behavior == SplitDelimiterBehavior::Isolated)
         {
-            use atomsplit::classify::{classify, Atoms};
-            let bytes = text.as_bytes();
-            let mut tags = vec![0u8; bytes.len()];
-            classify::<Atoms>(bytes, &mut tags);
-            let mut spans = vec![(0u32, 0u32); bytes.len() + 1];
-            let n = match fsm {
-                GptFsm::Cl100k { digit_cap } => {
-                    atomsplit::fsm::fsm_cl100k_cap(bytes, &tags, &mut spans, digit_cap)
-                }
-                GptFsm::Gpt2 => atomsplit::fsm::fsm_byte_level(bytes, &tags, &mut spans),
-                GptFsm::O200k => atomsplit::fsm::fsm_o200k(bytes, &tags, &mut spans),
-            };
-            out.extend(
-                spans[..n]
-                    .iter()
-                    .map(|&(s, e)| pipeline::Split { start: s, end: e }),
+            pipeline::classify_into_spans(
+                text.as_bytes(),
+                |bytes, tags, spans| match fsm {
+                    GptFsm::Cl100k { digit_cap } => {
+                        atomsplit::fsm::fsm_cl100k_cap(bytes, tags, spans, digit_cap)
+                    }
+                    GptFsm::Gpt2 => atomsplit::fsm::fsm_byte_level(bytes, tags, spans),
+                    GptFsm::O200k => atomsplit::fsm::fsm_o200k(bytes, tags, spans),
+                },
+                out,
             );
             return Ok(());
         }
