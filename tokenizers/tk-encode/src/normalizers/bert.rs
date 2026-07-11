@@ -253,8 +253,25 @@ impl BertNormalizer {
     fn emit_transform(&self, c: char, tg: u8, strip_accents: bool, out: &mut String) {
         use atomsplit::norm_classify::bit;
         if strip_accents && tg & bit::NFD != 0 {
-            // Pure-Rust NFD decomposition (baked trie + arithmetic Hangul, no `unicode-normalization`):
-            // decompose the char, drop nonspacing marks (bert's strip), lowercase the rest if enabled.
+            // Hangul decomposes to conjoining jamo by pure S_BASE arithmetic — the jamo are all `Lo`
+            // (kept by strip, caseless), so emit them directly and skip the per-jamo `is_mark_nonspacing`
+            // + `to_lowercase` that every other decomposition pays.
+            let cp = c as u32;
+            if (0xAC00..=0xD7A3).contains(&cp) {
+                let s = cp - 0xAC00;
+                // SAFETY: L/V/T are valid jamo codepoints (U+1100/1161/11A8 blocks) by construction.
+                unsafe {
+                    out.push(char::from_u32_unchecked(0x1100 + s / 588));
+                    out.push(char::from_u32_unchecked(0x1161 + (s % 588) / 28));
+                    let t = s % 28;
+                    if t != 0 {
+                        out.push(char::from_u32_unchecked(0x11A7 + t));
+                    }
+                }
+                return;
+            }
+            // Everything else: pure-Rust NFD (baked trie, no `unicode-normalization`), dropping nonspacing
+            // marks (bert's strip) and lowercasing the rest if enabled.
             atomsplit::nfd::nfd_char(c, |d| {
                 if d.is_mark_nonspacing() {
                     return;
