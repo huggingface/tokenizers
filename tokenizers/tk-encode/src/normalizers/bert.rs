@@ -10,7 +10,6 @@ use atomsplit::classify::classify;
 use atomsplit::norm_classify::NormClass;
 use serde::{Deserialize, Serialize};
 use unicode_categories::UnicodeCategories;
-use unicode_normalization::UnicodeNormalization;
 
 thread_local! {
     /// Per-thread scratch for the classifier's per-byte tag stream — reused across calls so the fast
@@ -246,48 +245,26 @@ impl BertNormalizer {
         self.emit_transform(c, tg, strip_accents, out);
     }
 
-    /// NFD → strip nonspacing marks → lowercase, applied per the char's bits. `.nfd()` runs only on
-    /// NFD-flagged chars — the sole place a `canonical_combining_class` lookup is paid; a mark is dropped
-    /// with no lookup; anything else is a `to_lowercase` (LOWER) or a plain push. Byte-exact with the
-    /// run-based pipeline: strip drops every Mn, so per-char decomposition needs no cross-char reordering.
+    /// NFD → strip nonspacing marks → lowercase, applied per the char's bits. Decomposition runs (via the
+    /// pure-Rust `atomsplit::nfd::nfd_char`) only on NFD-flagged chars; a mark is dropped, anything else is
+    /// a `to_lowercase` (LOWER) or a plain push. Byte-exact with the run-based pipeline: strip drops every
+    /// Mn, so per-char decomposition needs no cross-char reordering.
     #[inline]
     fn emit_transform(&self, c: char, tg: u8, strip_accents: bool, out: &mut String) {
         use atomsplit::norm_classify::bit;
         if strip_accents && tg & bit::NFD != 0 {
-            // Hangul syllables decompose to conjoining jamo by pure S_BASE arithmetic — no table, no
-            // combining-class lookup. The jamo are all `Lo` (kept by strip, caseless), so emit them
-            // directly instead of paying `.nfd()`'s per-jamo `push_back` ccc lookup.
-            const S_BASE: u32 = 0xAC00;
-            const S_COUNT: u32 = 11172;
-            const L_BASE: u32 = 0x1100;
-            const V_BASE: u32 = 0x1161;
-            const T_BASE: u32 = 0x11A7;
-            const N_COUNT: u32 = 588;
-            const T_COUNT: u32 = 28;
-            let cp = c as u32;
-            if (S_BASE..S_BASE + S_COUNT).contains(&cp) {
-                let s = cp - S_BASE;
-                // SAFETY: L/V/T are valid jamo codepoints (U+1100/1161/11A8 blocks) by construction.
-                unsafe {
-                    out.push(char::from_u32_unchecked(L_BASE + s / N_COUNT));
-                    out.push(char::from_u32_unchecked(V_BASE + (s % N_COUNT) / T_COUNT));
-                    let t = s % T_COUNT;
-                    if t != 0 {
-                        out.push(char::from_u32_unchecked(T_BASE + t));
-                    }
-                }
-                return;
-            }
-            for d in c.nfd() {
+            // Pure-Rust NFD decomposition (baked trie + arithmetic Hangul, no `unicode-normalization`):
+            // decompose the char, drop nonspacing marks (bert's strip), lowercase the rest if enabled.
+            atomsplit::nfd::nfd_char(c, |d| {
                 if d.is_mark_nonspacing() {
-                    continue;
+                    return;
                 }
                 if self.lowercase {
                     out.extend(d.to_lowercase());
                 } else {
                     out.push(d);
                 }
-            }
+            });
         } else if strip_accents && tg & bit::MARK != 0 {
             // MARK is any combining mark; bert strips only nonspacing marks (Mn). Keep the rest
             // (e.g. spacing marks), lowercasing if enabled — matches `nfd().filter(!Mn)`.

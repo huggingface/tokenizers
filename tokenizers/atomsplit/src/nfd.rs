@@ -446,6 +446,34 @@ pub fn nfkd(input: &str) -> Cow<'_, str> {
     decompose::<Nfkd>(input)
 }
 
+/// NFD-decompose a single `char`, invoking `f` with each output char in canonical order (a stable char
+/// calls `f(c)` once). A single char's decomposition is already canonically ordered, so callers that
+/// decompose char-by-char (e.g. BertNormalizer's `strip_accents`) need no cross-char reordering. Uses the
+/// baked NFD trie + arithmetic Hangul — no `unicode-normalization` at runtime. Byte-exact with `char::nfd()`.
+#[inline]
+pub fn nfd_char(c: char, mut f: impl FnMut(char)) {
+    let cp = c as u32;
+    if HANGUL.contains(&cp) {
+        let s = cp - 0xAC00;
+        // SAFETY: the three jamo blocks are valid scalar values by construction.
+        unsafe {
+            f(char::from_u32_unchecked(0x1100 + s / 588));
+            f(char::from_u32_unchecked(0x1161 + (s % 588) / 28));
+            let t = s % 28;
+            if t != 0 {
+                f(char::from_u32_unchecked(0x11A7 + t));
+            }
+        }
+    } else if bit_set::<Nfd>(cp) {
+        for &e in Nfd::entries(cp) {
+            // SAFETY: baked from valid chars (bitmap_gen round-trips every entry).
+            f(unsafe { char::from_u32_unchecked(e & 0xFF_FFFF) });
+        }
+    } else {
+        f(c); // stable → itself
+    }
+}
+
 // ── composition (NFC / NFKC) ─────────────────────────────────────────────────────────────────────
 
 /// Canonical primary composite of a starter `a` and following char `b`, if any. Hangul L+V / LV+T are
