@@ -3,11 +3,13 @@
 //! `Tokenizer` is on its way out, so the release is the reference), for every
 //! model in `examples/bench_models.json` across every corpus in `data/fixtures/`.
 //!
-//! Per fixture it measures throughput on ~10 kB inputs (the regime where
-//! per-input overhead is amortized — see `pipeline_benchmark.rs` for the size
-//! sweep). Per model it also measures resident-set deltas by re-spawning itself
-//! as `--memory <impl> <model.json>` children — one implementation per process,
-//! so allocator page reuse across implementations can't blur the attribution.
+//! Per fixture it measures single-thread throughput on ~10 kB inputs (the regime
+//! where per-input overhead is amortized — see `pipeline_benchmark.rs` for the
+//! size sweep). Per model it also (a) runs a **multi-thread throughput sweep** —
+//! pipeline vs the release at 1/2/4/8/device-max threads over the whole corpus, so
+//! parallel scaling is visible — and (b) measures resident-set deltas by re-spawning
+//! itself as `--memory <impl> <model.json>` children — one implementation per
+//! process, so allocator page reuse across implementations can't blur the attribution.
 //!
 //! The in-tree `Tokenizer` is *not* benched: it only builds the pipeline and
 //! serves as the id-correctness oracle (`ids_match`, which CI fails on).
@@ -28,6 +30,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Instant;
 
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use rayon::ThreadPoolBuilder;
 use serde_json::{json, Value};
 use tk_encode::pipeline::PipelineTokenizer;
 use tk_encode::{AddedToken, ModelWrapper, Tokenizer};
@@ -112,6 +116,68 @@ fn make_chunks(text: &str) -> Vec<String> {
 fn median_secs(mut samples: Vec<f64>) -> f64 {
     samples.sort_by(|a, b| a.partial_cmp(b).unwrap());
     samples[samples.len() / 2]
+}
+
+/// Thread counts for the scaling sweep: 1 (the single-thread anchor) + 2/4/8 + the device max,
+/// deduped and capped at max (so an 8-core box reports `[1,2,4,8]`, a 6-core `[1,2,4,6]`).
+fn thread_counts() -> Vec<usize> {
+    let max = std::thread::available_parallelism().map_or(1, |n| n.get());
+    let mut c: Vec<usize> = IntoIterator::into_iter([1usize, 2, 4, 8, max])
+        .filter(|&n| n <= max)
+        .collect();
+    c.sort_unstable();
+    c.dedup();
+    c
+}
+
+/// Median MB/s of encoding `chunks` across `n` threads in a *private* rayon pool (so the sweep can't
+/// perturb — or be perturbed by — the global pool). One `encode` call per chunk; the sum is `black_box`'d
+/// so the work can't be elided.
+fn par_mbps(
+    encode: impl Fn(&str) -> usize + Sync,
+    chunks: &[String],
+    bytes: usize,
+    n: usize,
+) -> f64 {
+    let pool = ThreadPoolBuilder::new().num_threads(n).build().unwrap();
+    let run = || pool.install(|| chunks.par_iter().map(|c| encode(c.as_str())).sum::<usize>());
+    black_box(run()); // warm the pool + lazy structures
+    let mut samples = Vec::with_capacity(REPS);
+    for _ in 0..REPS {
+        let t = Instant::now();
+        black_box(run());
+        samples.push(t.elapsed().as_secs_f64());
+    }
+    bytes as f64 / median_secs(samples) / 1e6
+}
+
+/// Multi-thread throughput sweep for one model — pipeline vs the released crate at 1/2/4/8/max threads
+/// over the whole fixture corpus (thread-spawn/scheduling overhead amortized). Both impls encode the same
+/// chunk list through a fresh pool per count; interleaved so thermal drift hits them equally.
+fn bench_threads(
+    baseline: Option<&BaselineTokenizer>,
+    pipeline: &PipelineTokenizer,
+    chunks: &[String],
+) -> Value {
+    let bytes: usize = chunks.iter().map(String::len).sum();
+    let counts = thread_counts();
+    let (mut pipe, mut base) = (Vec::new(), Vec::new());
+    for &n in &counts {
+        let b = baseline.map(|b| par_mbps(|s| b.encode(s, false).unwrap().len(), chunks, bytes, n));
+        let p = par_mbps(
+            |s| pipeline.encode(s, false).unwrap().len(),
+            chunks,
+            bytes,
+            n,
+        );
+        eprintln!(
+            "    {n} thread(s): pipeline {p:.1} MB/s{}",
+            b.map_or(String::new(), |v| format!(", baseline {v:.1} MB/s"))
+        );
+        pipe.push(p);
+        base.push(b);
+    }
+    json!({ "counts": counts, "pipeline_mbps": pipe, "baseline_mbps": base })
 }
 
 fn time_pass(encode: &dyn Fn(&str) -> usize, chunks: &[String]) -> f64 {
@@ -441,6 +507,12 @@ fn main() {
     let manifest: Vec<Value> =
         serde_json::from_str(&std::fs::read_to_string(MANIFEST).unwrap()).unwrap();
     let files = fixture_files();
+    // The whole corpus, concatenated once: the multi-thread sweep runs over all fixtures so
+    // thread-spawn/scheduling overhead is amortized and the scaling curve is stable.
+    let all_chunks: Vec<String> = files
+        .iter()
+        .flat_map(|(_, p)| make_chunks(&std::fs::read_to_string(p).unwrap()))
+        .collect();
 
     let mut models: Vec<Value> = Vec::new();
     for entry in &manifest {
@@ -515,10 +587,11 @@ fn main() {
 
         let rows = bench_model(baseline.as_ref(), &tok, &pipeline, &files);
         let memory = measure_memory(&path, baseline.is_some());
+        let threads = bench_threads(baseline.as_ref(), &pipeline, &all_chunks);
 
         models.push(json!({
             "model": name, "repo": repo, "desc": desc, "shape": shape,
-            "results": rows, "memory": memory,
+            "results": rows, "memory": memory, "threads": threads,
         }));
     }
 

@@ -9,6 +9,8 @@ tk-encode/bench-baseline --example fixture_bench`:
      models: [{model, shape, desc, [reason],
                memory: {baseline|pipeline:
                         {load_bytes, encode_bytes, peak_bytes} | null} | null,
+               threads: {counts: [1,2,4,8,max],
+                         pipeline_mbps: [..], baseline_mbps: [..|null]},
                results: [{fixture, group, bytes, chunks,
                           mbps: {baseline, pipeline},
                           ids_match, ids_match_baseline,
@@ -31,7 +33,8 @@ always-visible charts:
      measurement, via --binary-sizes).
 
 Everything else is collapsed into per-model <details> blocks: a per-fixture
-×speedup chart, the pipeline stage decomposition (100%-normalized per fixture —
+×speedup chart, a thread-scaling chart (encode throughput at 1/2/4/8/device-max
+threads, pipeline vs the release), the pipeline stage decomposition (100%-normalized per fixture —
 each stage as its share of that fixture's own encode time, labelled `share% ·
 ns/B`, so the mix reads regardless of how slow the release baseline is; total
 ns/B and ×speedup stay in the right column), and the numbers table (which carries
@@ -680,6 +683,76 @@ def binsize_svg(sizes, mode, meta, baseline_label):
                    subtitle, "".join(grid) + "".join(body), meta)
 
 
+def has_threads(m):
+    t = m.get("threads")
+    return isinstance(t, dict) and bool(t.get("counts"))
+
+
+def threads_svg(model, mode, meta, baseline_label):
+    """Per model: encode throughput (MB/s) over the whole corpus at 1/2/4/8/device-max threads —
+    pipeline vs the release — so both parallel scaling (bars grow down the rows) and the
+    pipeline↔release gap at each thread count are visible on one shared axis."""
+    ink, sink = INK[mode], SERIES_INK[mode]
+    t = model["threads"]
+    counts, pipe, base = t["counts"], t["pipeline_mbps"], t["baseline_mbps"]
+    vals = [v for v in pipe if v] + [v for v in base if v]
+    max_mb = (max(vals) if vals else 1.0) * 1.08
+    plot_w = CHART_W - OV_GUTTER - PAD_R - COL_W
+
+    def x(v):
+        return OV_GUTTER + v / max_mb * plot_w
+
+    top, bar_h, gap = 78, 11, 3
+    row_h = 2 * (bar_h + gap) + 16
+    col_x = CHART_W - 16
+    body = [f'<text x="{col_x}" y="{top - 14}" fill="{ink["muted"]}" font-size="11" '
+            f'text-anchor="end">Pipeline MB/s · ×vs {escape(baseline_label)}</text>',
+            f'<text x="{OV_GUTTER}" y="{top - 14}" fill="{ink["muted"]}" font-size="11">'
+            f'higher is better · top bar {escape(baseline_label)}, bottom Pipeline</text>']
+    y = top
+    for i, n in enumerate(counts):
+        cy = y + row_h / 2
+        label = f"{n} thread" + ("" if n == 1 else "s")
+        body.append(f'<text x="{OV_GUTTER - 14}" y="{cy + 4:.1f}" fill="{ink["primary"]}" '
+                    f'font-size="12.5" font-weight="600" text-anchor="end">{label}</text>')
+        by = y + 8
+        for impl, series in (("baseline", base), ("pipeline", pipe)):
+            v = series[i] if i < len(series) else None
+            if v is not None:
+                body.append(hbar(x(0), x(v), by, bar_h, sink[impl]))
+            by += bar_h + gap
+        p = pipe[i] if i < len(pipe) else None
+        b = base[i] if i < len(base) else None
+        right = f"{p:.0f}" if p is not None else "—"
+        if p is not None and b:
+            right += f"  ×{p / b:.2f}"
+        body.append(f'<text x="{col_x}" y="{cy + 4:.1f}" fill="{ink["secondary"]}" font-size="12" '
+                    f'text-anchor="end" style="font-variant-numeric:tabular-nums">{right}</text>')
+        y += row_h
+
+    grid = []
+    ticks = nice_ticks(max_mb)
+    for tv in ticks:
+        unit = " MB/s" if tv == ticks[-1] else ""
+        gx = x(tv)
+        grid.append(f'<line x1="{gx:.1f}" y1="{top - 6}" x2="{gx:.1f}" y2="{y - 4}" '
+                    f'stroke="{ink["grid"]}" stroke-width="1"/>')
+        grid.append(f'<text x="{gx:.1f}" y="{y + 10}" fill="{ink["muted"]}" font-size="11" '
+                    f'text-anchor="middle" style="font-variant-numeric:tabular-nums">{tv:g}{unit}</text>')
+    y += 30
+    legend = legend_row(ink, sink, y, [
+        ("swatch", "baseline", baseline_label),
+        ("swatch", "pipeline", "PipelineTokenizer"),
+    ])
+    height = y + 34
+    scaling = ""
+    if len(pipe) >= 2 and pipe[0] and pipe[-1]:
+        scaling = f" · {pipe[-1] / pipe[0]:.1f}× from 1→{counts[-1]} threads"
+    subtitle = f"encode over the full corpus at N threads vs {baseline_label}{scaling}"
+    return svg_doc(ink, height, "Thread scaling",
+                   subtitle, "".join(grid) + "".join(body) + legend, meta)
+
+
 def render_markdown(data, subtitle_base, meta, base, run_id, sizes):
     """Overview charts inline; everything per-model — charts and the per-fixture
     table — inside one <details> block per model, so the PR description stays a
@@ -724,6 +797,9 @@ def render_markdown(data, subtitle_base, meta, base, run_id, sizes):
         if has_stages(m):
             md += [picture(base, run_id, f"{slug}-stages",
                            f"{m['model']} stage decomposition", 860), ""]
+        if has_threads(m):
+            md += [picture(base, run_id, f"{slug}-threads",
+                           f"{m['model']} thread scaling", 860), ""]
         md += [mem_line(m, baseline_label), ""]
         # Per-stage columns show each split's share of the pipeline's own encode time
         # with the ns/byte alongside — `share% (ns/B)` — so the split cost is readable
@@ -811,6 +887,9 @@ def main():
             if has_stages(m):
                 (out / f"pipeline_bench_{slug}-stages_{mode}.svg").write_text(
                     stage_chart_svg(m, mode, args.subtitle, meta, baseline_label))
+            if has_threads(m):
+                (out / f"pipeline_bench_{slug}-threads_{mode}.svg").write_text(
+                    threads_svg(m, mode, meta, baseline_label))
 
     (out / "pipeline_bench.md").write_text(
         render_markdown(data, args.subtitle, meta, args.img_base, args.run_id, sizes))
