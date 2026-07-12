@@ -331,7 +331,7 @@ mod tests {
             serde_json::from_str(invalid);
         match reconstructed {
             Err(err) => assert!(
-                err.to_string().starts_with("Merges text file invalid at line 1"),
+                err.to_string().starts_with("Invalid merge rule #1"),
                 "unexpected error: {}",
                 err
             ),

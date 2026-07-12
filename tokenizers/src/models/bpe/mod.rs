@@ -20,9 +20,8 @@ pub enum Error {
     /// When the vocab.json file is in the wrong format
     #[error("Bad vocabulary json file")]
     BadVocabulary,
-    /// When the merges.txt file is in the wrong format. This error holds the line
-    /// number of the line that caused the error.
-    #[error("Merges text file invalid at line {0}")]
+    /// A merge rule is in the wrong format. Holds its 1-based position.
+    #[error("Invalid merge rule #{0}")]
     BadMerges(usize),
     /// If a token found in merges, is not in the vocab
     #[error("Token `{0}` out of vocabulary")]

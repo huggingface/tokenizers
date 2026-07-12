@@ -1,10 +1,14 @@
-use super::{super::OrderedVocabIter, convert_merges_to_hashmap, BpeBuilder, Pair, BPE};
+use super::{
+    super::OrderedVocabIter, convert_merges_to_hashmap, parse_legacy_merge, resolve_merge,
+    BpeBuilder, MergeInput, MergeMap, Merges, Pair, BPE,
+};
 use ahash::AHashMap;
 use serde::{
     de::{Error, MapAccess, Visitor},
     ser::SerializeStruct,
     Deserialize, Deserializer, Serialize, Serializer,
 };
+use std::borrow::Cow;
 
 impl Serialize for BPE {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -81,14 +85,10 @@ impl<'de> Visitor<'de> for BPEVisitor {
     {
         let mut builder = BpeBuilder::new();
         let mut vocab: Option<AHashMap<String, u32>> = None;
+        // Needed to resolve merges on the fly; `None` until the field is seen.
+        let mut prefix_len: Option<usize> = None;
+        let mut merges: Option<MergeInput> = None;
 
-        #[derive(Debug, Deserialize)]
-        #[serde(untagged)]
-        enum MergeType {
-            Tuple(Vec<(String, String)>),
-            Legacy(Vec<String>),
-        }
-        let mut merges: Option<MergeType> = None;
         while let Some(key) = map.next_key::<String>()? {
             match key.as_ref() {
                 "dropout" => {
@@ -102,7 +102,9 @@ impl<'de> Visitor<'de> for BPEVisitor {
                     }
                 }
                 "continuing_subword_prefix" => {
-                    if let Some(prefix) = map.next_value()? {
+                    let prefix: Option<String> = map.next_value()?;
+                    prefix_len = Some(prefix.as_ref().map_or(0, String::len));
+                    if let Some(prefix) = prefix {
                         builder = builder.continuing_subword_prefix(prefix);
                     }
                 }
@@ -127,31 +129,114 @@ impl<'de> Visitor<'de> for BPEVisitor {
                     }
                 }
                 "vocab" => vocab = Some(map.next_value()?),
-                "merges" => merges = Some(map.next_value()?),
+                "merges" => {
+                    merges = Some(match (&vocab, prefix_len) {
+                        // Fast path: resolve merges to ids as they are parsed.
+                        (Some(vocab), Some(prefix_len)) => {
+                            let max_len = vocab.keys().map(|k| k.len()).max().unwrap_or(0);
+                            MergeInput::Resolved(map.next_value_seed(MergesResolver {
+                                vocab,
+                                prefix_len,
+                                max_len,
+                            })?)
+                        }
+                        // vocab/prefix not seen yet: buffer raw, resolve in `build`.
+                        _ => MergeInput::Raw(map.next_value::<RawMergeType>()?.into_pairs()?),
+                    });
+                }
                 "type" => match map.next_value()? {
                     "BPE" => {}
-                    u => {
-                        return Err(serde::de::Error::invalid_value(
-                            serde::de::Unexpected::Str(u),
-                            &"BPE",
-                        ))
-                    }
+                    u => return Err(Error::invalid_value(serde::de::Unexpected::Str(u), &"BPE")),
                 },
                 _ => {}
             }
         }
-        if let (Some(vocab), Some(merges)) = (vocab, merges) {
-            let merges = match merges {
-                MergeType::Tuple(merges) => merges,
-                MergeType::Legacy(merges) => {
-                    convert_merges_to_hashmap(merges.into_iter(), &vocab).map_err(Error::custom)?
+        match (vocab, merges) {
+            (Some(vocab), Some(merges)) => builder
+                .vocab_and_merge_input(vocab, merges)
+                .build()
+                .map_err(Error::custom),
+            _ => Err(Error::custom("Missing vocab/merges")),
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum RawMergeType {
+    Tuple(Vec<(String, String)>),
+    Legacy(Vec<String>),
+}
+
+impl RawMergeType {
+    fn into_pairs<E: Error>(self) -> Result<Merges, E> {
+        match self {
+            RawMergeType::Tuple(pairs) => Ok(pairs),
+            RawMergeType::Legacy(lines) => {
+                convert_merges_to_hashmap(lines.into_iter()).map_err(E::custom)
+            }
+        }
+    }
+}
+
+/// Deserializes the `merges` array straight into a resolved `MergeMap`, so the
+/// merge tokens are never collected into an owned `Vec<(String, String)>`.
+struct MergesResolver<'v> {
+    vocab: &'v AHashMap<String, u32>,
+    prefix_len: usize,
+    max_len: usize,
+}
+
+impl<'de, 'v> serde::de::DeserializeSeed<'de> for MergesResolver<'v> {
+    type Value = MergeMap;
+
+    fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_seq(self)
+    }
+}
+
+impl<'de, 'v> Visitor<'de> for MergesResolver<'v> {
+    type Value = MergeMap;
+
+    fn expecting(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(fmt, "a sequence of BPE merge rules")
+    }
+
+    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+    where
+        A: serde::de::SeqAccess<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum MergeElem<'a> {
+            Pair(#[serde(borrow)] (Cow<'a, str>, Cow<'a, str>)),
+            Legacy(#[serde(borrow)] Cow<'a, str>),
+        }
+
+        let mut buffer: Vec<u8> = vec![0; self.max_len];
+        let mut merge_map =
+            MergeMap::with_capacity_and_hasher(seq.size_hint().unwrap_or(0), Default::default());
+        let mut rank: u32 = 0;
+        while let Some(elem) = seq.next_element::<MergeElem>()? {
+            let (a, b): (Cow<str>, Cow<str>) = match elem {
+                MergeElem::Pair((a, b)) => (a, b),
+                MergeElem::Legacy(line) => {
+                    match parse_legacy_merge(&line, rank as usize + 1).map_err(Error::custom)? {
+                        Some((a, b)) => (Cow::Owned(a), Cow::Owned(b)),
+                        None => continue,
+                    }
                 }
             };
-            builder = builder.vocab_and_merges(vocab, merges);
-            Ok(builder.build().map_err(Error::custom)?)
-        } else {
-            Err(Error::custom("Missing vocab/merges"))
+            let (pair, value) =
+                resolve_merge(self.vocab, &mut buffer, self.prefix_len, rank, &a, &b)
+                    .map_err(Error::custom)?;
+            merge_map.insert(pair, value);
+            rank += 1;
         }
+        Ok(merge_map)
     }
 }
 
@@ -234,5 +319,60 @@ mod test {
         bpe.ignore_merges = false;
         let bpe_string = r#"{"type":"BPE","dropout":null,"unk_token":"<unk>","continuing_subword_prefix":null,"end_of_word_suffix":null,"fuse_unk":false,"byte_fallback":false,"vocab":{"<unk>":0,"a":1,"b":2},"merges":[]}"#;
         assert_eq!(serde_json::from_str::<BPE>(bpe_string).unwrap(), bpe);
+    }
+
+    // Deserialization must work independent of JSON field order.
+    #[test]
+    fn test_deserialize_field_order_independent() {
+        use itertools::Itertools;
+
+        let fields = [
+            r#""type":"BPE""#,
+            r#""dropout":null"#,
+            r#""unk_token":"[UNK]""#,
+            r###""continuing_subword_prefix":"##""###,
+            r#""end_of_word_suffix":null"#,
+            r#""fuse_unk":false"#,
+            r#""byte_fallback":false"#,
+            r#""ignore_merges":true"#,
+            r###""vocab":{"[UNK]":0,"a":1,"##b":2,"##c":3,"ab":4,"abc":5}"###,
+            r###""merges":[["a","##b"],["ab","##c"]]"###,
+        ];
+
+        let expected: BPE =
+            serde_json::from_str(&format!("{{{}}}", fields.iter().join(","))).unwrap();
+
+        for i in 0..fields.len() {
+            let mut rotated = fields.iter().cycle().skip(i).take(fields.len());
+            let json = format!("{{{}}}", rotated.join(","));
+            let bpe: BPE = serde_json::from_str(&json)
+                .unwrap_or_else(|e| panic!("failed to deserialize {}: {}", json, e));
+            assert_eq!(bpe, expected, "field order {} changed the model", json);
+        }
+    }
+
+    // Legacy "a b" merges must parse the same whether merges come before or
+    // after vocab (fallback vs fast path).
+    #[test]
+    fn test_deserialize_legacy_merges_both_orders() {
+        let vocab = r#""vocab":{"a":0,"b":1,"ab":2}"#;
+        let merges = r#""merges":["a b"]"#;
+        let vocab_first: BPE =
+            serde_json::from_str(&format!(r#"{{"type":"BPE",{vocab},{merges}}}"#)).unwrap();
+        let merges_first: BPE =
+            serde_json::from_str(&format!(r#"{{"type":"BPE",{merges},{vocab}}}"#)).unwrap();
+        assert_eq!(vocab_first, merges_first);
+    }
+
+    // A merge referencing a token outside the vocab is rejected.
+    #[test]
+    fn test_deserialize_merge_out_of_vocab() {
+        let json = r#"{"type":"BPE","vocab":{"a":0,"b":1,"ab":2},"merges":[["a","zzz"]]}"#;
+        let err = serde_json::from_str::<BPE>(json).unwrap_err();
+        assert!(
+            err.to_string().starts_with("Token `zzz` out of vocabulary"),
+            "unexpected error: {}",
+            err
+        );
     }
 }
