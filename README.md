@@ -52,7 +52,7 @@ or install the released versions with
 ```bash
 pip install tokenizers
 ```
- 
+
 ## Quick example using Python:
 
 Choose your model between Byte-Pair Encoding, WordPiece or Unigram and instantiate a tokenizer:

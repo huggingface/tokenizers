@@ -13,7 +13,7 @@ Simple checklist on how to make releases for `tokenizers`.
   has been done.)
   - Run all fast tests at the VERY least (not just the tokenization tests). (`RUN_PIPELINE_TESTS=1 CUDA_VISIBLE_DEVICES=-1 pytest -sv tests/`)
   - When all *fast*  tests work, then we can also (it's recommended) run the whole `transformers`
-  test suite. 
+  test suite.
     - Rebase this [PR](https://github.com/huggingface/transformers/pull/16708).
         This will create new docker images ready to run the tests suites with `tokenizers` from the main branch.
     - Wait for actions to finish
@@ -84,7 +84,7 @@ Simple checklist on how to make releases for `tokenizers`.
 
 
 If you want to make modifications to the CI/CD of the release GH actions, you need
-to : 
+to :
 - **Comment the part that uploads the artifacts** to `crates.io`, `PyPi` or `npm`.
 - Change the trigger mechanism so it can trigger every time you push to your branch.
 - Keep pushing your changes until the artifacts are properly created.
