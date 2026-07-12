@@ -257,6 +257,52 @@ impl Word {
         self.symbols.retain(|s| s.len != 0);
     }
 
+    /// Allocation-free BPE merge for short pre-tokens: repeatedly merge the
+    /// lowest-rank adjacent pair (leftmost on ties) by a linear scan, in place.
+    /// Byte-exact with `merge_all` (same rank-ordered greedy) but with no heap
+    /// setup — the win the POC measured (11.0 → 6.9 ns/B) since most pre-tokens
+    /// are a handful of symbols. O(n²); only called for `n <= LINEAR_MERGE_MAX`.
+    pub fn merge_all_linear(&mut self, merges: &AHashMap<Pair, (u32, u32)>) {
+        loop {
+            let n = self.symbols.len();
+            if n < 2 {
+                break;
+            }
+            let mut best_rank = u32::MAX;
+            let mut best_pos = usize::MAX;
+            let mut best_new_id = 0u32;
+            for i in 0..n - 1 {
+                let pair = (self.symbols[i].c, self.symbols[i + 1].c);
+                if let Some(&(rank, new_id)) = merges.get(&pair) {
+                    if rank < best_rank {
+                        best_rank = rank;
+                        best_pos = i;
+                        best_new_id = new_id;
+                    }
+                }
+            }
+            if best_pos == usize::MAX {
+                break;
+            }
+            let right = self.symbols[best_pos + 1];
+            self.symbols[best_pos].merge_with(&right, best_new_id);
+            self.symbols.remove(best_pos + 1);
+        }
+    }
+
+    /// Hybrid merge (the POC's design): linear/allocation-free for short
+    /// pre-tokens, heap (`merge_all`) only for pathological long runs where
+    /// O(n log n) wins. No dropout (inference-only pipeline path).
+    pub fn merge_pipeline(&mut self, merges: &AHashMap<Pair, (u32, u32)>) {
+        // POC crossover: linear below 24 symbols, heap at/above.
+        const MERGE_HEAP_MIN: usize = 24;
+        if self.symbols.len() < MERGE_HEAP_MIN {
+            self.merge_all_linear(merges);
+        } else {
+            self.merge_all(merges, None);
+        }
+    }
+
     pub fn get_chars(&self) -> Vec<u32> {
         self.symbols.iter().map(|s| s.c).collect()
     }

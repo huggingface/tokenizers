@@ -84,13 +84,17 @@ impl PipelineSequence {
 impl TryFrom<Sequence> for PipelineSequence {
     type Error = crate::Error;
     fn try_from(value: Sequence) -> Result<Self> {
-        Ok(Self {
-            pre_tokenizers: value
-                .pretokenizers
-                .into_iter()
-                .map(TryInto::try_into)
-                .collect::<Result<Vec<_>>>()?,
-        })
+        let mut pre_tokenizers: Vec<PipelinePreTokenizer> = value
+            .pretokenizers
+            .into_iter()
+            .map(TryInto::try_into)
+            .collect::<Result<Vec<_>>>()?;
+        // `None` children (a byte-map `ByteLevel`, use_regex=false) are identity
+        // for splitting — they emit each input span unchanged. Drop them so a
+        // `Sequence[Split, ByteLevel]` (e.g. Llama-3) collapses to the single
+        // Split's zero-alloc FSM instead of the allocating multi-child loop.
+        pre_tokenizers.retain(|p| !matches!(p, PipelinePreTokenizer::None));
+        Ok(Self { pre_tokenizers })
     }
 }
 
@@ -111,35 +115,51 @@ impl pipeline::PreTokenizer for PipelineSequence {
             return Ok(());
         }
 
-        let cap = text.len() / 5;
-
-        let mut current: Vec<pipeline::Split> = Vec::with_capacity(cap);
-        current.push(pipeline::Split {
-            start: 0,
-            end: text.len() as u32,
-        });
-        let mut next: Vec<pipeline::Split> = Vec::with_capacity(cap);
-
-        for child in &self.pre_tokenizers {
-            next.clear();
-            for span in &current {
-                let base = span.start;
-                // The child appends span-relative spans straight into `next`;
-                // rebase just those to absolute in place — no scratch buffer.
-                let from = next.len();
-                pipeline::PreTokenizer::pre_tokenize(child, &text[span.range()], &mut next)?;
-                // FIXME: do we want to add an `offset` param to `pre_tokenize` so we don't have to
-                // rebase?
-                for s in &mut next[from..] {
-                    s.start += base;
-                    s.end += base;
-                }
+        // After dropping `None` children, most real tokenizers have exactly one
+        // effective splitter (e.g. Llama-3's single Split). Delegate straight to
+        // it — its FSM path writes into `out` with zero per-call allocation.
+        match self.pre_tokenizers.as_slice() {
+            [] => {
+                out.push(pipeline::Split {
+                    start: 0,
+                    end: text.len() as u32,
+                });
+                return Ok(());
             }
-            std::mem::swap(&mut current, &mut next);
+            [only] => return pipeline::PreTokenizer::pre_tokenize(only, text, out),
+            _ => {}
         }
 
-        out.extend_from_slice(&current);
-        Ok(())
+        // Genuine multi-child composition: reuse thread-local scratch so the
+        // `current`/`next` buffers never allocate on the hot path.
+        thread_local! {
+            static SEQ_SCRATCH: std::cell::RefCell<(Vec<pipeline::Split>, Vec<pipeline::Split>)> =
+                const { std::cell::RefCell::new((Vec::new(), Vec::new())) };
+        }
+        SEQ_SCRATCH.with(|cell| -> Result<()> {
+            let (current, next) = &mut *cell.borrow_mut();
+            current.clear();
+            next.clear();
+            current.push(pipeline::Split {
+                start: 0,
+                end: text.len() as u32,
+            });
+            for child in &self.pre_tokenizers {
+                next.clear();
+                for span in current.iter() {
+                    let base = span.start;
+                    let from = next.len();
+                    pipeline::PreTokenizer::pre_tokenize(child, &text[span.range()], next)?;
+                    for s in &mut next[from..] {
+                        s.start += base;
+                        s.end += base;
+                    }
+                }
+                std::mem::swap(current, next);
+            }
+            out.extend_from_slice(current);
+            Ok(())
+        })
     }
 }
 

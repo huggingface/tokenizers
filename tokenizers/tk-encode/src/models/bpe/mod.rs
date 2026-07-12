@@ -1,7 +1,9 @@
 //! [Byte Pair Encoding](https://www.aclweb.org/anthology/P16-1162/) model.
 use std::{iter, mem};
 
+mod flat_cache;
 mod model;
+mod rank_store;
 mod serialization;
 pub mod word;
 

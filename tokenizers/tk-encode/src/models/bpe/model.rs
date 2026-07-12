@@ -1,3 +1,5 @@
+use super::flat_cache::FlatCache;
+use super::rank_store::RankStore;
 use super::{super::OrderedVocabIter, Error, Pair, Word};
 use crate::pipeline::{self, PipelineToken};
 use crate::tokenizer::{Model, Result, Token};
@@ -90,6 +92,14 @@ thread_local! {
     /// same rayon worker thread never see each other's entries.
     static BPE_LOCAL_CACHE: RefCell<AHashMap<u64, AHashMap<String, Word>>> =
         RefCell::new(AHashMap::new());
+}
+
+thread_local! {
+    /// Per-thread FlatCache for the *pipeline* BPE path (pretoken bytes → ids).
+    /// The pipeline previously had no cache at all; this is the POC's
+    /// alloc-free, lock-free thread-local cache. `retarget()` keys it to the
+    /// active `PipelineBPE::cache_id`.
+    static PIPE_FLAT_CACHE: RefCell<FlatCache> = RefCell::new(FlatCache::new());
 }
 pub type Merges = Vec<(String, String)>;
 
@@ -674,11 +684,84 @@ impl Model for BPE {
     }
 }
 
+/// Whether the pipeline FlatCache is disabled (POC_NOCACHE=1), read once.
+fn cache_disabled() -> bool {
+    use std::sync::OnceLock;
+    static D: OnceLock<bool> = OnceLock::new();
+    *D.get_or_init(|| std::env::var("POC_NOCACHE").is_ok())
+}
+
+/// Minimum pre-token byte length worth caching (CACHE_MIN_LEN, default 8).
+/// Shorter pre-tokens re-merge for less than a cache round-trip costs, so we
+/// skip the cache for them entirely — keeps the table small (L2) and unpolluted.
+fn min_cache_len() -> usize {
+    use std::sync::OnceLock;
+    static M: OnceLock<usize> = OnceLock::new();
+    *M.get_or_init(|| {
+        // Default 0 (cache everything): the sweep showed min-length hurts under
+        // clear-on-full because frequent pre-tokens are the short ones. Kept
+        // tunable via CACHE_MIN_LEN for the LRU experiment.
+        std::env::var("CACHE_MIN_LEN")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0)
+    })
+}
+
 pub struct PipelineBPE {
     atoms: Atoms,
     vocab: VocabStore,
-    merges: MergeMap,
+    /// MPHF pair → (rank, merged_id) store: one cache-line read per lookup,
+    /// half the memory of a HashMap (see `rank_store`).
+    pair_ranks: RankStore,
     ignore_merges: bool,
+    /// Unique per-instance id so the thread-local FlatCache never serves
+    /// entries computed by a different PipelineBPE sharing the same thread.
+    cache_id: u64,
+}
+
+/// Reusable, per-thread merge scratch for the heap path (long pre-tokens only).
+/// Pre-sized once; `clear()`-then-reuse keeps the hot path allocation-free.
+struct MergeScratch {
+    next: Vec<i32>,
+    prev: Vec<i32>,
+    alive: Vec<bool>,
+    // 4-ary heap (matches the baseline `merge_all`) — faster than a binary heap
+    // for the long-pre-token path (CJK sentences with no spaces).
+    heap: dary_heap::QuaternaryHeap<std::cmp::Reverse<(u32, u32)>>,
+    // (rank, merged_id) per adjacent pair, for the incremental linear merge:
+    // computed once, then only the two neighbors of a merge are recomputed.
+    ranks: Vec<(u32, u32)>,
+}
+impl MergeScratch {
+    fn new() -> Self {
+        let cap = 1 << 10;
+        MergeScratch {
+            next: Vec::with_capacity(cap),
+            prev: Vec::with_capacity(cap),
+            alive: Vec::with_capacity(cap),
+            heap: dary_heap::QuaternaryHeap::with_capacity(2 * cap),
+            ranks: Vec::with_capacity(cap),
+        }
+    }
+    #[inline]
+    fn ensure(&mut self, n: usize) {
+        if self.next.capacity() < n {
+            self.next.reserve(n);
+            self.prev.reserve(n);
+            self.alive.reserve(n);
+            self.heap.reserve(2 * n);
+        }
+    }
+}
+
+thread_local! {
+    /// Symbol buffer (token ids) reused across pre-tokens — no per-word alloc.
+    static PIPE_SYMS: RefCell<Vec<u32>> = const { RefCell::new(Vec::new()) };
+    /// Output id buffer for a single pre-token (also the FlatCache insert source).
+    static PIPE_OUT_IDS: RefCell<Vec<u32>> = const { RefCell::new(Vec::new()) };
+    /// Heap-path scratch, reused (only touched for pre-tokens >= MERGE_HEAP_MIN).
+    static PIPE_MS: RefCell<MergeScratch> = RefCell::new(MergeScratch::new());
 }
 
 enum Atoms {
@@ -752,62 +835,194 @@ impl PipelineBPE {
                 },
             )
         };
+        let pair_ranks = RankStore::build(&merges);
         Ok(Self {
             atoms,
             ignore_merges,
-            merges,
+            pair_ranks,
             vocab,
+            cache_id: NEXT_CACHE_ID.fetch_add(1, Ordering::Relaxed),
         })
     }
 
-    fn merge_word(&self, sequence: &str) -> Word {
-        let mut word = match &self.atoms {
+    /// Fill `syms` with the initial per-atom token ids for `sequence`
+    /// (byte-level, or char-level with unk / byte-fallback / fuse-unk).
+    /// Offsets are dropped — the pipeline emits ids only.
+    fn fill_syms(&self, sequence: &str, syms: &mut Vec<u32>) {
+        match &self.atoms {
             Atoms::Bytes { byte_to_id } => {
-                let mut word = Word::with_capacity(sequence.len());
-                for &b in sequence.as_bytes() {
-                    word.add(byte_to_id[b as usize], 1);
+                let bytes = sequence.as_bytes();
+                if syms.capacity() < bytes.len() {
+                    syms.reserve(bytes.len());
                 }
-                word
+                for &b in bytes {
+                    syms.push(byte_to_id[b as usize]);
+                }
             }
             Atoms::Chars {
                 byte_fallback,
                 unk_token,
                 fuse_unk,
             } => {
-                let mut word = Word::with_capacity(sequence.len());
-
                 for char_str in sequence
                     .char_indices()
                     .map(|(i, c)| &sequence[i..i + c.len_utf8()])
                 {
-                    let char_len = char_str.len();
                     if let Some(char_id) = self.vocab.token_to_id(char_str) {
-                        word.add(char_id, char_len);
-                    } else {
-                        if let Some(fallback_lookup) = byte_fallback {
-                            for &b in char_str.as_bytes() {
-                                word.add(fallback_lookup[b as usize], 1);
-                            }
+                        syms.push(char_id);
+                    } else if let Some(fallback_lookup) = byte_fallback {
+                        for &b in char_str.as_bytes() {
+                            syms.push(fallback_lookup[b as usize]);
+                        }
+                    } else if let Some(unk_id) = unk_token {
+                        // fuse: a run of consecutive unk chars collapses to one id
+                        if *fuse_unk && syms.last() == Some(unk_id) {
                             continue;
                         }
-                        if let Some(unk_id) = unk_token {
-                            if *fuse_unk {
-                                if let Some(last) = word.last_mut() {
-                                    if last.id() == *unk_id {
-                                        last.add_len(char_len);
-                                        continue;
-                                    }
-                                }
-                            }
-                            word.add(*unk_id, char_len);
+                        syms.push(*unk_id);
+                    }
+                }
+            }
+        }
+    }
+
+    #[inline]
+    fn pair_rank(&self, a: u32, b: u32) -> Option<(u32, u32)> {
+        self.pair_ranks.get(a, b)
+    }
+
+    /// Incremental linear merge for short pre-tokens. Each adjacent pair's
+    /// (rank, merged) is looked up ONCE into `ms.ranks`; after a merge only the
+    /// two neighbouring pairs are recomputed — so the expensive MPHF lookups are
+    /// O(n) (n-1 initial + 2 per merge), not O(n²). The min-find over the small
+    /// `ranks` array is O(n²) but branch-light integer compares on cache-hot
+    /// data. Byte-exact "lowest rank, leftmost on tie"; result compacted in `syms`.
+    fn merge_linear(&self, syms: &mut Vec<u32>, ms: &mut MergeScratch) {
+        let n = syms.len();
+        if n < 2 {
+            return;
+        }
+        let ranks = &mut ms.ranks;
+        ranks.clear();
+        for i in 0..n - 1 {
+            ranks.push(self.pair_rank(syms[i], syms[i + 1]).unwrap_or((u32::MAX, 0)));
+        }
+        loop {
+            let mut best = u32::MAX;
+            let mut bi = usize::MAX;
+            for (i, &(r, _)) in ranks.iter().enumerate() {
+                if r < best {
+                    best = r;
+                    bi = i;
+                }
+            }
+            if bi == usize::MAX {
+                break;
+            }
+            syms[bi] = ranks[bi].1; // merged id
+            syms.remove(bi + 1);
+            ranks.remove(bi);
+            // Recompute only the pairs whose members changed.
+            if bi > 0 {
+                ranks[bi - 1] = self.pair_rank(syms[bi - 1], syms[bi]).unwrap_or((u32::MAX, 0));
+            }
+            if bi < syms.len() - 1 {
+                ranks[bi] = self.pair_rank(syms[bi], syms[bi + 1]).unwrap_or((u32::MAX, 0));
+            }
+        }
+    }
+
+    /// Heap + linked-list merge (O(n log n)) for long pre-tokens, using reused
+    /// scratch so it never allocates on the hot path. Byte-exact. Appends the
+    /// final ids to `out`.
+    fn merge_heap(&self, syms: &mut [u32], out: &mut Vec<u32>, ms: &mut MergeScratch) {
+        use std::cmp::Reverse;
+        let n = syms.len();
+        ms.next.clear();
+        ms.prev.clear();
+        ms.alive.clear();
+        ms.heap.clear();
+        ms.ensure(n);
+        for i in 0..n {
+            ms.next.push(i as i32 + 1);
+            ms.prev.push(i as i32 - 1);
+            ms.alive.push(true);
+        }
+        for i in 0..n - 1 {
+            if let Some((r, _)) = self.pair_rank(syms[i], syms[i + 1]) {
+                ms.heap.push(Reverse((r, i as u32)));
+            }
+        }
+        while let Some(Reverse((r, pos))) = ms.heap.pop() {
+            let i = pos as usize;
+            if !ms.alive[i] {
+                continue;
+            }
+            let j = ms.next[i];
+            if j < 0 || j as usize >= n || !ms.alive[j as usize] {
+                continue;
+            }
+            let j = j as usize;
+            match self.pair_rank(syms[i], syms[j]) {
+                Some((rr, m)) if rr == r => {
+                    syms[i] = m;
+                    ms.alive[j] = false;
+                    let nj = ms.next[j];
+                    ms.next[i] = nj;
+                    if nj >= 0 && (nj as usize) < n {
+                        ms.prev[nj as usize] = i as i32;
+                    }
+                    let pi = ms.prev[i];
+                    if pi >= 0 {
+                        if let Some((r2, _)) = self.pair_rank(syms[pi as usize], syms[i]) {
+                            ms.heap.push(Reverse((r2, pi as u32)));
+                        }
+                    }
+                    if nj >= 0 && (nj as usize) < n {
+                        if let Some((r2, _)) = self.pair_rank(syms[i], syms[nj as usize]) {
+                            ms.heap.push(Reverse((r2, i as u32)));
                         }
                     }
                 }
-                word
+                _ => {}
             }
-        };
-        word.merge_all(&self.merges, None);
-        word
+        }
+        let mut i = 0usize;
+        loop {
+            out.push(syms[i]);
+            let nx = ms.next[i];
+            if nx < 0 || (nx as usize) >= n {
+                break;
+            }
+            i = nx as usize;
+        }
+    }
+
+    /// Hybrid: dual-accumulator linear below the threshold (no heap fixed cost),
+    /// reused-scratch heap above. Appends final ids to `out`.
+    fn merge(&self, syms: &mut Vec<u32>, out: &mut Vec<u32>, ms: &mut MergeScratch) {
+        const MERGE_HEAP_MIN: usize = 32;
+        if syms.len() < MERGE_HEAP_MIN {
+            self.merge_linear(syms, ms);
+            out.extend_from_slice(syms);
+        } else {
+            self.merge_heap(syms, out, ms);
+        }
+    }
+
+    /// Compute the token ids for one pre-token into `out`, reusing thread-local
+    /// symbol + heap scratch (no per-pre-token allocation).
+    fn encode_piece(&self, sequence: &str, out: &mut Vec<u32>) {
+        PIPE_SYMS.with(|s| {
+            let mut syms = s.borrow_mut();
+            syms.clear();
+            self.fill_syms(sequence, &mut syms);
+            if syms.len() <= 1 {
+                out.extend_from_slice(&syms);
+                return;
+            }
+            PIPE_MS.with(|m| self.merge(&mut syms, out, &mut m.borrow_mut()));
+        });
     }
 }
 
@@ -824,9 +1039,35 @@ impl pipeline::Model for PipelineBPE {
             }
         }
 
-        // todo: use thread-local cache
-        let word = self.merge_word(sequence);
-        output.extend(word.get_chars_iter().map(|id| PipelineToken { id }));
+        let p = sequence.as_bytes();
+        // Skip the cache for short pre-tokens (re-merge is cheaper than a cache
+        // round-trip) and when disabled for measurement (POC_NOCACHE).
+        if cache_disabled() || p.len() < min_cache_len() {
+            PIPE_OUT_IDS.with(|o| {
+                let mut ids = o.borrow_mut();
+                ids.clear();
+                self.encode_piece(sequence, &mut ids);
+                output.extend(ids.iter().map(|&id| PipelineToken { id }));
+            });
+            return Ok(());
+        }
+        PIPE_FLAT_CACHE.with(|cell| {
+            let mut cache = cell.borrow_mut();
+            cache.retarget(self.cache_id);
+            let h = cache.hash(p);
+            if let Some((off, len)) = cache.get(h) {
+                output.extend(cache.ids_slice(off, len).iter().map(|&id| PipelineToken { id }));
+                return;
+            }
+            // Miss: merge into reused scratch, cache the ids, emit.
+            PIPE_OUT_IDS.with(|o| {
+                let mut ids = o.borrow_mut();
+                ids.clear();
+                self.encode_piece(sequence, &mut ids);
+                cache.insert(h, &ids);
+                output.extend(ids.iter().map(|&id| PipelineToken { id }));
+            });
+        });
         Ok(())
     }
 }
