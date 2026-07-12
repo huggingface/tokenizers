@@ -70,6 +70,10 @@ harness = false
 name = "ci_benchmark"
 harness = false
 
+[[bench]]
+name = "load_mem"
+harness = false
+
 [dependencies]
 rand = "0.9"
 onig = { version = "6.5.1", default-features = false, optional = true }
@@ -112,6 +116,7 @@ rustls-tls = ["hf-hub?/rustls-tls"]
 
 [dev-dependencies]
 criterion = "0.6"
+dhat = "0.3"
 tempfile = "3.10"
 assert_approx_eq = "1.1"
 tracing = "0.1"
