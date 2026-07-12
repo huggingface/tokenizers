@@ -9,7 +9,8 @@ use ahash::AHashMap;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
+use serde_json::value::RawValue;
 
 use crate::models::bpe::{BpeTrainer, BPE};
 use crate::models::unigram::{Unigram, UnigramTrainer};
@@ -73,65 +74,44 @@ impl<'de> Deserialize<'de> for ModelWrapper {
     where
         D: Deserializer<'de>,
     {
+        let raw: &'de RawValue = Deserialize::deserialize(deserializer)?;
+        let model_json = raw.get();
+
         #[derive(Deserialize)]
-        pub struct Tagged {
+        struct Tag {
             #[serde(rename = "type")]
-            variant: EnumType,
-            #[serde(flatten)]
-            rest: serde_json::Value,
+            variant: Option<String>,
         }
-        #[derive(Deserialize)]
-        pub enum EnumType {
-            BPE,
-            WordPiece,
-            WordLevel,
-            Unigram,
-        }
+        let tag: Tag = serde_json::from_str(model_json).map_err(D::Error::custom)?;
 
-        #[derive(Deserialize)]
-        #[serde(untagged)]
-        pub enum ModelHelper {
-            Tagged(Tagged),
-            Legacy(serde_json::Value),
-        }
-
-        #[derive(Deserialize)]
-        #[serde(untagged)]
-        pub enum ModelUntagged {
-            BPE(BPE),
-            // WordPiece must stay before WordLevel here for deserialization (for retrocompatibility
-            // with the versions not including the "type"), since WordLevel is a subset of WordPiece
-            WordPiece(WordPiece),
-            WordLevel(WordLevel),
-            Unigram(Unigram),
-        }
-
-        let helper = ModelHelper::deserialize(deserializer)?;
-        Ok(match helper {
-            ModelHelper::Tagged(model) => match model.variant {
-                EnumType::BPE => ModelWrapper::BPE(
-                    serde_json::from_value(model.rest).map_err(serde::de::Error::custom)?,
-                ),
-                EnumType::WordPiece => ModelWrapper::WordPiece(
-                    serde_json::from_value(model.rest).map_err(serde::de::Error::custom)?,
-                ),
-                EnumType::WordLevel => ModelWrapper::WordLevel(
-                    serde_json::from_value(model.rest).map_err(serde::de::Error::custom)?,
-                ),
-                EnumType::Unigram => ModelWrapper::Unigram(
-                    serde_json::from_value(model.rest).map_err(serde::de::Error::custom)?,
-                ),
-            },
-            ModelHelper::Legacy(value) => {
-                let untagged = serde_json::from_value(value).map_err(serde::de::Error::custom)?;
-                match untagged {
-                    ModelUntagged::BPE(bpe) => ModelWrapper::BPE(bpe),
-                    ModelUntagged::WordPiece(bpe) => ModelWrapper::WordPiece(bpe),
-                    ModelUntagged::WordLevel(bpe) => ModelWrapper::WordLevel(bpe),
-                    ModelUntagged::Unigram(bpe) => ModelWrapper::Unigram(bpe),
+        match tag.variant.as_deref() {
+            Some("BPE") => Ok(ModelWrapper::BPE(
+                serde_json::from_str(model_json).map_err(D::Error::custom)?,
+            )),
+            Some("WordPiece") => Ok(ModelWrapper::WordPiece(
+                serde_json::from_str(model_json).map_err(D::Error::custom)?,
+            )),
+            Some("WordLevel") => Ok(ModelWrapper::WordLevel(
+                serde_json::from_str(model_json).map_err(D::Error::custom)?,
+            )),
+            Some("Unigram") => Ok(ModelWrapper::Unigram(
+                serde_json::from_str(model_json).map_err(D::Error::custom)?,
+            )),
+            Some(other) => Err(D::Error::custom(format!("Unknown model type `{other}`"))),
+            None => {
+                if let Ok(m) = serde_json::from_str::<BPE>(model_json) {
+                    Ok(ModelWrapper::BPE(m))
+                } else if let Ok(m) = serde_json::from_str::<WordPiece>(model_json) {
+                    Ok(ModelWrapper::WordPiece(m))
+                } else if let Ok(m) = serde_json::from_str::<WordLevel>(model_json) {
+                    Ok(ModelWrapper::WordLevel(m))
+                } else if let Ok(m) = serde_json::from_str::<Unigram>(model_json) {
+                    Ok(ModelWrapper::Unigram(m))
+                } else {
+                    Err(D::Error::custom("Model is not a known variant"))
                 }
             }
-        })
+        }
     }
 }
 
@@ -350,8 +330,51 @@ mod tests {
         let reconstructed: std::result::Result<ModelWrapper, serde_json::Error> =
             serde_json::from_str(invalid);
         match reconstructed {
-            Err(err) => assert_eq!(err.to_string(), "Merges text file invalid at line 1"),
+            Err(err) => assert!(
+                err.to_string().starts_with("Merges text file invalid at line 1"),
+                "unexpected error: {}",
+                err
+            ),
             _ => panic!("Expected an error here"),
         }
+    }
+
+    // The `type` tag must dispatch to the right variant for every model, and an
+    // unknown tag must error (RawValue-based deserialization).
+    #[test]
+    fn model_wrapper_dispatches_on_type() {
+        use crate::models::unigram::Unigram;
+        use crate::models::wordlevel::WordLevel;
+        use crate::models::wordpiece::WordPiece;
+
+        // Round-trip each model's default through `ModelWrapper` and check the
+        // resolved variant.
+        let bpe = serde_json::to_string(&BPE::default()).unwrap();
+        assert!(matches!(
+            serde_json::from_str(&bpe).unwrap(),
+            ModelWrapper::BPE(_)
+        ));
+
+        let wordpiece = serde_json::to_string(&WordPiece::default()).unwrap();
+        assert!(matches!(
+            serde_json::from_str(&wordpiece).unwrap(),
+            ModelWrapper::WordPiece(_)
+        ));
+
+        let wordlevel = serde_json::to_string(&WordLevel::default()).unwrap();
+        assert!(matches!(
+            serde_json::from_str(&wordlevel).unwrap(),
+            ModelWrapper::WordLevel(_)
+        ));
+
+        let unigram = serde_json::to_string(&Unigram::default()).unwrap();
+        assert!(matches!(
+            serde_json::from_str(&unigram).unwrap(),
+            ModelWrapper::Unigram(_)
+        ));
+
+        let unknown = r#"{"type":"NotAModel","vocab":{"a":0}}"#;
+        let err = serde_json::from_str::<ModelWrapper>(unknown).unwrap_err();
+        assert!(err.to_string().starts_with("Unknown model type"));
     }
 }
