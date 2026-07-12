@@ -715,6 +715,10 @@ pub struct PipelineBPE {
     /// half the memory of a HashMap (see `rank_store`).
     pair_ranks: RankStore,
     ignore_merges: bool,
+    /// Max initial-symbol span of any vocab token (≈ longest token in bytes).
+    /// Bounds the merge window: a token can never fuse symbols more than this
+    /// far apart, so long pre-tokens are merged in O(span)-sized windows.
+    max_span: usize,
     /// Unique per-instance id so the thread-local FlatCache never serves
     /// entries computed by a different PipelineBPE sharing the same thread.
     cache_id: u64,
@@ -732,6 +736,11 @@ struct MergeScratch {
     // (rank, merged_id) per adjacent pair, for the incremental linear merge:
     // computed once, then only the two neighbors of a merge are recomputed.
     ranks: Vec<(u32, u32)>,
+    // windowed merge (long pre-tokens): a 2·max_span symbol window + the
+    // initial-symbol span ("cover") of each merged symbol, so we know where a
+    // token ends and which are safe to commit.
+    seg: Vec<u32>,
+    cover: Vec<u32>,
 }
 impl MergeScratch {
     fn new() -> Self {
@@ -742,6 +751,8 @@ impl MergeScratch {
             alive: Vec::with_capacity(cap),
             heap: dary_heap::QuaternaryHeap::with_capacity(2 * cap),
             ranks: Vec::with_capacity(cap),
+            seg: Vec::with_capacity(cap),
+            cover: Vec::with_capacity(cap),
         }
     }
     #[inline]
@@ -796,6 +807,17 @@ impl PipelineBPE {
             ..
         } = model;
 
+        // Longest token in initial symbols: for a projected byte-level vocab one
+        // char == one raw byte == one initial symbol; for char-level one char is
+        // one symbol. So the projected char count is a safe (>=) span bound.
+        let max_span = vocab
+            .content()
+            .iter()
+            .map(|(s, _)| s.chars().count())
+            .max()
+            .unwrap_or(1)
+            .max(1);
+
         let (vocab, atoms) = if with_byte_level {
             let vocab = byte_level::transform_vocab(vocab);
             let mut byte_to_id = [0u32; 256];
@@ -841,6 +863,7 @@ impl PipelineBPE {
             ignore_merges,
             pair_ranks,
             vocab,
+            max_span,
             cache_id: NEXT_CACHE_ID.fetch_add(1, Ordering::Relaxed),
         })
     }
@@ -998,11 +1021,79 @@ impl PipelineBPE {
         }
     }
 
-    /// Hybrid: dual-accumulator linear below the threshold (no heap fixed cost),
-    /// reused-scratch heap above. Appends final ids to `out`.
+    /// Windowed merge for pre-tokens much longer than the vocab's longest token
+    /// (space-free CJK sentences). `f` is always a committed final boundary;
+    /// fully-merge the window `[f, f+2·span)`, commit tokens ending within the
+    /// first `span` initial symbols (a later token would have to span > max_span
+    /// to change them, which is impossible), advance `f`. Byte-exact with the
+    /// full merge (asserted in tests). Cost O(n · span) instead of O(n log n).
+    fn merge_windowed(&self, syms: &mut Vec<u32>, out: &mut Vec<u32>, ms: &mut MergeScratch) {
+        let span = self.max_span.max(1);
+        let n = syms.len();
+        let MergeScratch { seg, cover, ranks, .. } = ms;
+        let mut f = 0usize;
+        while f < n {
+            let end = (f + 2 * span).min(n);
+            let last = end == n;
+            seg.clear();
+            seg.extend_from_slice(&syms[f..end]);
+            cover.clear();
+            cover.resize(end - f, 1);
+            if seg.len() >= 2 {
+                ranks.clear();
+                for i in 0..seg.len() - 1 {
+                    ranks.push(self.pair_rank(seg[i], seg[i + 1]).unwrap_or((u32::MAX, 0)));
+                }
+                loop {
+                    let mut best = u32::MAX;
+                    let mut bi = usize::MAX;
+                    for (i, &(r, _)) in ranks.iter().enumerate() {
+                        if r < best {
+                            best = r;
+                            bi = i;
+                        }
+                    }
+                    if bi == usize::MAX {
+                        break;
+                    }
+                    seg[bi] = ranks[bi].1;
+                    cover[bi] += cover[bi + 1];
+                    seg.remove(bi + 1);
+                    cover.remove(bi + 1);
+                    ranks.remove(bi);
+                    if bi > 0 {
+                        ranks[bi - 1] = self.pair_rank(seg[bi - 1], seg[bi]).unwrap_or((u32::MAX, 0));
+                    }
+                    if bi < seg.len() - 1 {
+                        ranks[bi] = self.pair_rank(seg[bi], seg[bi + 1]).unwrap_or((u32::MAX, 0));
+                    }
+                }
+            }
+            let mut cum = 0usize;
+            let mut advanced = 0usize;
+            for k in 0..seg.len() {
+                let tok_end = cum + cover[k] as usize;
+                if !last && tok_end > span && advanced > 0 {
+                    break; // keep the tail (< span from the edge) for the next window
+                }
+                out.push(seg[k]);
+                cum = tok_end;
+                advanced += cover[k] as usize;
+            }
+            if last {
+                break;
+            }
+            f += advanced;
+        }
+    }
+
+    /// Hybrid: windowed for pre-tokens ≫ max_span, dual-accumulator linear for
+    /// short, reused-scratch heap in between.
     fn merge(&self, syms: &mut Vec<u32>, out: &mut Vec<u32>, ms: &mut MergeScratch) {
         const MERGE_HEAP_MIN: usize = 32;
-        if syms.len() < MERGE_HEAP_MIN {
+        if syms.len() > 4 * self.max_span && syms.len() > 2 * MERGE_HEAP_MIN {
+            self.merge_windowed(syms, out, ms);
+        } else if syms.len() < MERGE_HEAP_MIN {
             self.merge_linear(syms, ms);
             out.extend_from_slice(syms);
         } else {
@@ -1635,6 +1726,22 @@ mod tests {
                     "{input:?} vs reference"
                 );
             }
+        }
+
+        #[test]
+        fn windowed_merge_matches_reference_on_long_input() {
+            // hello vocab has max_span=5, so a >20-symbol input forces the
+            // windowed merge path; it must stay byte-exact with the reference.
+            let bpe = hello_builder().build().unwrap();
+            let reference = bpe.clone();
+            let pipeline = PipelineBPE::from_bpe(bpe, false).unwrap();
+            let input = "hellohelohellheohello".repeat(20); // 420 symbols » 4·max_span
+            assert!(input.len() > 4 * pipeline.max_span, "must trigger windowing");
+            assert_eq!(
+                pipeline_ids(&pipeline, &input),
+                reference_ids(&reference, &input),
+                "windowed merge must match the reference on long input"
+            );
         }
 
         #[test]
