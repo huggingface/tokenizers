@@ -95,10 +95,15 @@ thread_local! {
 }
 pub type Merges = Vec<(String, String)>;
 
+pub(super) enum MergeInput {
+    Raw(Merges),
+    Resolved(MergeMap),
+}
+
 struct Config {
     files: Option<(String, String)>,
     vocab: Vocab,
-    merges: Merges,
+    merges: MergeInput,
     cache_capacity: usize,
     dropout: Option<f32>,
     unk_token: Option<String>,
@@ -120,7 +125,7 @@ impl Default for BpeBuilder {
             config: Config {
                 files: None,
                 vocab: AHashMap::new(),
-                merges: vec![],
+                merges: MergeInput::Raw(vec![]),
                 cache_capacity: DEFAULT_CACHE_CAPACITY,
                 dropout: None,
                 unk_token: None,
@@ -150,11 +155,18 @@ impl BpeBuilder {
     /// Set the vocab (token -> ID) and merges mappings.
     #[must_use]
     pub fn vocab_and_merges<V: Into<AHashMap<String, u32>>>(
-        mut self,
+        self,
         vocab: V,
         merges: Merges,
     ) -> Self {
-        self.config.vocab = vocab.into();
+        self.vocab_and_merge_input(vocab.into(), MergeInput::Raw(merges))
+    }
+
+    /// Set the vocab and merges, where merges may be raw token strings (resolved
+    /// to ids in `build`) or already resolved by the deserializer.
+    #[must_use]
+    pub(super) fn vocab_and_merge_input(mut self, vocab: Vocab, merges: MergeInput) -> Self {
+        self.config.vocab = vocab;
         self.config.merges = merges;
         self
     }
@@ -227,7 +239,7 @@ impl BpeBuilder {
         if let Some((vocab, merges)) = self.config.files {
             let (v, m) = BPE::read_file(&vocab, &merges)?;
             self.config.vocab = v;
-            self.config.merges = m;
+            self.config.merges = MergeInput::Raw(m);
         }
 
         let mut max_len = 0;
@@ -247,31 +259,19 @@ impl BpeBuilder {
         } else {
             0
         };
-        let mut buffer: Vec<u8> = vec![0; max_len];
-        let merge_map: MergeMap = self
-            .config
-            .merges
-            .into_iter()
-            .enumerate()
-            .map(|(i, (a, b))| -> Result<(Pair, (u32, u32))> {
-                let a_id = vocab
-                    .get(&a)
-                    .ok_or_else(|| Error::MergeTokenOutOfVocabulary(a.to_owned()))?;
-                let b_id = vocab
-                    .get(&b)
-                    .ok_or_else(|| Error::MergeTokenOutOfVocabulary(b.to_owned()))?;
-                buffer[0..a.len()].copy_from_slice(a.as_bytes());
-                let b_len = b.len() - prefix_len;
-                let merge_len = a.len() + b_len;
-                buffer[a.len()..merge_len].copy_from_slice(&b.as_bytes()[prefix_len..]);
-                // SAFETY: buffer contains a concatenation of two valid UTF-8 strings, so it is itself valid UTF-8, even considering prefix_len
-                let new_token = unsafe { from_utf8_unchecked(&buffer[..merge_len]) };
-                let new_id = vocab
-                    .get(new_token)
-                    .ok_or_else(|| Error::MergeTokenOutOfVocabulary(new_token.to_owned()))?;
-                Ok(((*a_id, *b_id), (i as u32, *new_id)))
-            })
-            .collect::<Result<MergeMap>>()?;
+        let merge_map: MergeMap = match self.config.merges {
+            MergeInput::Resolved(resolved) => resolved,
+            MergeInput::Raw(merges) => {
+                let mut buffer: Vec<u8> = vec![0; max_len];
+                merges
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, (a, b))| {
+                        resolve_merge(&vocab, &mut buffer, prefix_len, i as u32, &a, &b)
+                    })
+                    .collect::<Result<MergeMap>>()?
+            }
+        };
 
         // merges.insert(pair, (rank as u32, *new_id));
 
@@ -370,24 +370,56 @@ impl Clone for BPE {
     }
 }
 
+/// Resolves a merge rule `(a, b)` into `((a_id, b_id), (rank, new_id))`.
+pub(super) fn resolve_merge(
+    vocab: &Vocab,
+    buffer: &mut [u8],
+    prefix_len: usize,
+    rank: u32,
+    a: &str,
+    b: &str,
+) -> Result<(Pair, (u32, u32))> {
+    let a_id = vocab
+        .get(a)
+        .ok_or_else(|| Error::MergeTokenOutOfVocabulary(a.to_owned()))?;
+    let b_id = vocab
+        .get(b)
+        .ok_or_else(|| Error::MergeTokenOutOfVocabulary(b.to_owned()))?;
+    buffer[0..a.len()].copy_from_slice(a.as_bytes());
+    let b_len = b.len() - prefix_len;
+    let merge_len = a.len() + b_len;
+    buffer[a.len()..merge_len].copy_from_slice(&b.as_bytes()[prefix_len..]);
+    // SAFETY: buffer contains a concatenation of two valid UTF-8 strings, so it is itself valid UTF-8, even considering prefix_len
+    let new_token = unsafe { from_utf8_unchecked(&buffer[..merge_len]) };
+    let new_id = vocab
+        .get(new_token)
+        .ok_or_else(|| Error::MergeTokenOutOfVocabulary(new_token.to_owned()))?;
+    Ok(((*a_id, *b_id), (rank, *new_id)))
+}
+
+/// Parses one legacy `"{a} {b}"` merge line. Returns `Ok(None)` for a
+/// `#version` header, which is skipped without consuming a rank. `rank` is the
+/// 1-based position of the rule, used in the error message.
+pub(super) fn parse_legacy_merge(line: &str, rank: usize) -> Result<Option<(String, String)>> {
+    if line.starts_with("#version") {
+        return Ok(None);
+    }
+    let parts = line.split(' ').collect::<Vec<_>>();
+    if parts.len() != 2 {
+        return Err(Error::BadMerges(rank).into());
+    }
+    Ok(Some((parts[0].to_string(), parts[1].to_string())))
+}
+
 /// Converts the merges strings (for example from `merges.txt` file) with the format
 /// "{pair_a} {pair_b}" into the format expected by the BPE struct
-pub(crate) fn convert_merges_to_hashmap<I: Iterator<Item = String>>(
-    iter: I,
-    _vocab: &Vocab,
-) -> Result<Merges> {
+pub(crate) fn convert_merges_to_hashmap<I: Iterator<Item = String>>(iter: I) -> Result<Merges> {
     let mut merges = vec![];
-
-    let lines = iter.filter(|l| !l.starts_with("#version"));
-    for (rank, line) in lines.enumerate() {
-        let parts = line.split(' ').collect::<Vec<_>>();
-        if parts.len() != 2 {
-            return Err(Error::BadMerges(rank + 1).into());
+    for line in iter {
+        if let Some(pair) = parse_legacy_merge(&line, merges.len() + 1)? {
+            merges.push(pair);
         }
-
-        merges.push((parts[0].to_string(), parts[1].to_string()));
     }
-
     Ok(merges)
 }
 
@@ -435,9 +467,8 @@ impl BPE {
         // Read merges file
         let merge_file = File::open(merges)?;
         let merge_file = BufReader::new(merge_file);
-        let merges = ResultShunt::process(merge_file.lines(), |iter| {
-            convert_merges_to_hashmap(iter, &vocab)
-        })??;
+        let merges =
+            ResultShunt::process(merge_file.lines(), |iter| convert_merges_to_hashmap(iter))??;
 
         Ok((vocab, merges))
     }
