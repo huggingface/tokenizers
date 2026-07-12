@@ -19,16 +19,10 @@ fn pack(a: u32, b: u32) -> u64 {
     ((a as u64) << 32) | b as u64
 }
 
-/// splitmix64 finalizer: a *bijection* u64→u64. Spreads the structured packed
-/// key (high 32 = left id, low 32 = right id) into a well-distributed hash for
-/// the MPHF, with zero collisions by construction (distinct pairs → distinct
-/// packs → distinct mixes), so no dedup/collision handling is needed.
-#[inline(always)]
-fn mix(mut z: u64) -> u64 {
-    z = (z ^ (z >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
-    z = (z ^ (z >> 27)).wrapping_mul(0x94d049bb133111eb);
-    z ^ (z >> 31)
-}
+// The packed pair key is fed to ptr_hash directly: `index_single_part` already
+// hashes the u64 internally (FxHash — it showed up in the profile), so an extra
+// splitmix pass here was pure waste. Packed pairs are distinct by construction,
+// so no dedup is needed.
 
 #[repr(align(16))]
 #[derive(Clone, Copy)]
@@ -58,7 +52,7 @@ impl RankStore {
         // every slot is written exactly once (image gotcha #5).
         let pairs: Vec<((u32, u32), (u32, u32))> =
             merges.iter().map(|(&p, &v)| (p, v)).collect();
-        let keys: Vec<u64> = pairs.iter().map(|&((a, b), _)| mix(pack(a, b))).collect();
+        let keys: Vec<u64> = pairs.iter().map(|&((a, b), _)| pack(a, b)).collect();
         let mphf = Mphf::new(&keys, params);
         let n = pairs.len();
         let mut entries = vec![
@@ -68,7 +62,7 @@ impl RankStore {
         .into_boxed_slice();
         for &((a, b), (rank, merged)) in &pairs {
             let k = pack(a, b);
-            let slot = mphf.index_single_part(&mix(k));
+            let slot = mphf.index_single_part(&k);
             entries[slot] = Entry { key: k, rank, merged };
         }
         debug_assert!(
@@ -81,13 +75,14 @@ impl RankStore {
     /// One MPHF compute + one aligned `Entry` read + key verify. `None` for
     /// out-of-vocab pairs (the MPHF returns an arbitrary slot for those; the
     /// key check is what rejects them — not optional).
-    #[inline]
+    #[cfg_attr(not(feature = "profile-noinline"), inline)]
+    #[cfg_attr(feature = "profile-noinline", inline(never))]
     pub(crate) fn get(&self, a: u32, b: u32) -> Option<(u32, u32)> {
         if self.entries.is_empty() {
             return None;
         }
         let key = pack(a, b);
-        let slot = self.mphf.index_single_part(&mix(key));
+        let slot = self.mphf.index_single_part(&key);
         let e = self.entries[slot];
         if e.key == key {
             Some((e.rank, e.merged))

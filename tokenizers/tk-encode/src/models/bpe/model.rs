@@ -871,6 +871,7 @@ impl PipelineBPE {
     /// Fill `syms` with the initial per-atom token ids for `sequence`
     /// (byte-level, or char-level with unk / byte-fallback / fuse-unk).
     /// Offsets are dropped — the pipeline emits ids only.
+    #[cfg_attr(feature = "profile-noinline", inline(never))]
     fn fill_syms(&self, sequence: &str, syms: &mut Vec<u32>) {
         match &self.atoms {
             Atoms::Bytes { byte_to_id } => {
@@ -914,50 +915,81 @@ impl PipelineBPE {
         self.pair_ranks.get(a, b)
     }
 
-    /// Incremental linear merge for short pre-tokens. Each adjacent pair's
-    /// (rank, merged) is looked up ONCE into `ms.ranks`; after a merge only the
-    /// two neighbouring pairs are recomputed — so the expensive MPHF lookups are
-    /// O(n) (n-1 initial + 2 per merge), not O(n²). The min-find over the small
-    /// `ranks` array is O(n²) but branch-light integer compares on cache-hot
-    /// data. Byte-exact "lowest rank, leftmost on tie"; result compacted in `syms`.
-    fn merge_linear(&self, syms: &mut Vec<u32>, ms: &mut MergeScratch) {
+    #[cfg_attr(feature = "profile-noinline", inline(never))]
+    fn merge_linear(&self, syms: &mut [u32], out: &mut Vec<u32>, ms: &mut MergeScratch) {
         let n = syms.len();
-        if n < 2 {
+        if n == 0 {
             return;
         }
-        let ranks = &mut ms.ranks;
+        if n == 1 {
+            out.push(syms[0]);
+            return;
+        }
+        let MergeScratch {
+            next, prev, alive, ranks, ..
+        } = ms;
+        next.clear();
+        prev.clear();
+        alive.clear();
         ranks.clear();
-        for i in 0..n - 1 {
-            ranks.push(self.pair_rank(syms[i], syms[i + 1]).unwrap_or((u32::MAX, 0)));
+        for i in 0..n {
+            next.push(i as i32 + 1);
+            prev.push(i as i32 - 1);
+            alive.push(true);
+            ranks.push(if i + 1 < n {
+                self.pair_rank(syms[i], syms[i + 1]).unwrap_or((u32::MAX, 0))
+            } else {
+                (u32::MAX, 0)
+            });
         }
         loop {
+            // leftmost lowest-rank live pair
             let mut best = u32::MAX;
             let mut bi = usize::MAX;
-            for (i, &(r, _)) in ranks.iter().enumerate() {
-                if r < best {
-                    best = r;
+            for i in 0..n {
+                if alive[i] && ranks[i].0 < best {
+                    best = ranks[i].0;
                     bi = i;
                 }
             }
             if bi == usize::MAX {
                 break;
             }
-            syms[bi] = ranks[bi].1; // merged id
-            syms.remove(bi + 1);
-            ranks.remove(bi);
-            // Recompute only the pairs whose members changed.
-            if bi > 0 {
-                ranks[bi - 1] = self.pair_rank(syms[bi - 1], syms[bi]).unwrap_or((u32::MAX, 0));
+            let j = next[bi] as usize;
+            syms[bi] = ranks[bi].1; // merged id; right half tombstoned, no shift
+            alive[j] = false;
+            let nj = next[j];
+            next[bi] = nj;
+            if nj >= 0 && (nj as usize) < n {
+                prev[nj as usize] = bi as i32;
             }
-            if bi < syms.len() - 1 {
-                ranks[bi] = self.pair_rank(syms[bi], syms[bi + 1]).unwrap_or((u32::MAX, 0));
+            ranks[bi] = if nj >= 0 && (nj as usize) < n {
+                self.pair_rank(syms[bi], syms[nj as usize]).unwrap_or((u32::MAX, 0))
+            } else {
+                (u32::MAX, 0)
+            };
+            let pb = prev[bi];
+            if pb >= 0 {
+                ranks[pb as usize] =
+                    self.pair_rank(syms[pb as usize], syms[bi]).unwrap_or((u32::MAX, 0));
             }
+        }
+        // walk the surviving symbols in order into `out`
+        let mut i = 0usize;
+        loop {
+            out.push(syms[i]);
+            let nx = next[i];
+            if nx < 0 || (nx as usize) >= n {
+                break;
+            }
+            i = nx as usize;
         }
     }
 
     /// Heap + linked-list merge (O(n log n)) for long pre-tokens, using reused
     /// scratch so it never allocates on the hot path. Byte-exact. Appends the
     /// final ids to `out`.
+    #[cfg_attr(feature = "profile-noinline", inline(never))]
     fn merge_heap(&self, syms: &mut [u32], out: &mut Vec<u32>, ms: &mut MergeScratch) {
         use std::cmp::Reverse;
         let n = syms.len();
@@ -1027,6 +1059,7 @@ impl PipelineBPE {
     /// first `span` initial symbols (a later token would have to span > max_span
     /// to change them, which is impossible), advance `f`. Byte-exact with the
     /// full merge (asserted in tests). Cost O(n · span) instead of O(n log n).
+    #[cfg_attr(feature = "profile-noinline", inline(never))]
     fn merge_windowed(&self, syms: &mut Vec<u32>, out: &mut Vec<u32>, ms: &mut MergeScratch) {
         let span = self.max_span.max(1);
         let n = syms.len();
@@ -1094,8 +1127,7 @@ impl PipelineBPE {
         if syms.len() > 4 * self.max_span && syms.len() > 2 * MERGE_HEAP_MIN {
             self.merge_windowed(syms, out, ms);
         } else if syms.len() < MERGE_HEAP_MIN {
-            self.merge_linear(syms, ms);
-            out.extend_from_slice(syms);
+            self.merge_linear(syms, out, ms);
         } else {
             self.merge_heap(syms, out, ms);
         }
