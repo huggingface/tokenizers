@@ -24,3 +24,5 @@ pip-wheel-metadata
 *.code-workspace
 
 uv.lock
+
+dhat-heap.json

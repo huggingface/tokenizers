@@ -77,6 +77,10 @@ harness = false
 name = "ci_benchmark"
 harness = false
 
+[[bench]]
+name = "load_mem"
+harness = false
+
 [dependencies]
 tk-encode = { path = "tk-encode", version = "0.23.2-dev.0", default-features = false }
 tk-train = { path = "tk-train", version = "0.23.2-dev.0", default-features = false, optional = true }
@@ -97,6 +101,7 @@ parity-aware-bpe = ["train", "tk-train/parity-aware-bpe"]
 criterion = "0.6"
 serde_json = "1.0"
 ahash = "0.8.11"
+dhat = "0.3"
 tempfile = "3.10"
 assert_approx_eq = "1.1"
 tracing = "0.1"
