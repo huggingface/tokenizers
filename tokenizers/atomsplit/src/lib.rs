@@ -22,4 +22,3 @@ mod simd_fsm;
 #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
 mod simd_wasm_classify;
 pub mod tables;
-

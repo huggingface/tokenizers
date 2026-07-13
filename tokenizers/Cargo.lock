@@ -2497,7 +2497,7 @@ dependencies = [
  "derive_builder",
  "esaxx-rs",
  "getrandom 0.3.4",
- "indicatif 0.18.4",
+ "indicatif 0.18.5",
  "itertools 0.14.0",
  "log",
  "macro_rules_attribute",

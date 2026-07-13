@@ -9,7 +9,7 @@
 //!
 //! Gated off wasm32: the oniguruma reference is a C library that has no wasi libc to build against.
 #![cfg(not(target_arch = "wasm32"))]
-use atomsplit::classify::{Atoms, classify};
+use atomsplit::classify::classify;
 use atomsplit::fsm::{Span, fsm_byte_level, fsm_cl100k, fsm_deepseek, fsm_o200k};
 use onig::Regex;
 
@@ -41,7 +41,7 @@ const CORPUS: &str = "The quick brown fox. Don't 12345 numbers, \u{00BD}\u{00B2}
 
 fn spans(f: impl Fn(&[u8], &[u8], &mut [Span]) -> usize, s: &str) -> Vec<Span> {
     let mut tags = vec![0u8; s.len()];
-    classify::<Atoms>(s.as_bytes(), &mut tags);
+    classify(s.as_bytes(), &mut tags);
     let mut out = vec![(0u32, 0u32); s.len() + 1];
     let k = f(s.as_bytes(), &tags, &mut out);
     out.truncate(k);

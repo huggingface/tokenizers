@@ -189,10 +189,10 @@ impl crate::tokenizer::pattern::Pattern for GptFsmPattern {
         if inside.is_empty() {
             return Ok(vec![((0, 0), false)]);
         }
-        use atomsplit::classify::{classify, Atoms};
+        use atomsplit::classify::classify;
         let bytes = inside.as_bytes();
         let mut tags = vec![0u8; bytes.len()];
-        classify::<Atoms>(bytes, &mut tags);
+        classify(bytes, &mut tags);
         let mut spans = vec![(0u32, 0u32); bytes.len() + 1];
         let n = match self.0 {
             GptFsm::Gpt2 => atomsplit::fsm::fsm_byte_level(bytes, &tags, &mut spans),
