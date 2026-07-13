@@ -116,6 +116,10 @@ impl BucketVocabStore {
         let mphf = Mphf::new(&seen.into_iter().collect::<Vec<u64>>(), params);
 
         // 4. Place each token at its MPHF slot; build the slab and the id->slot reverse table.
+        //    `FastPtrHash` is NON-minimal: `index()` returns a slot in `[0, max_index())`, and
+        //    `max_index()` is ~1.01·n — larger than `n`. Size `entries` to `max_index()`, not `n`;
+        //    sizing it `n` overflowed `entries[slot]` (bert's 8 added tokens: "len is 8, index is 8").
+        //    The spare slots keep `len: 0`; real tokens are never empty, so `len != 0` = occupied.
         let total: usize = tokens.iter().map(|(s, _)| s.len()).sum();
         let max_id = tokens.iter().map(|(_, id)| *id).max().unwrap();
         let mut bytes = Vec::with_capacity(total);
@@ -125,7 +129,7 @@ impl BucketVocabStore {
                 len: 0,
                 id: 0
             };
-            n
+            mphf.max_index()
         ];
         let mut id_to_slot = vec![u32::MAX; max_id as usize + 1];
         for (s, id) in &tokens {
@@ -177,7 +181,8 @@ impl BucketVocabStore {
         let (start, len) = (e.start as usize, e.len as usize);
         // Byte equality: confirms `q` really is the token at this slot (perfect hashing only
         // guarantees a valid slot for in-vocab keys; this rejects collisions and Out Of Vocab queries).
-        if len == q.len() && self.bytes[start..start + len] == *q {
+        // `len != 0` also rejects the non-minimal PHF's spare slots (and an empty `q`).
+        if len != 0 && len == q.len() && self.bytes[start..start + len] == *q {
             Some(e.id)
         } else {
             None
@@ -209,7 +214,8 @@ impl BucketVocabStore {
     }
 
     pub fn len(&self) -> usize {
-        self.entries.len()
+        // `entries` is sized `max_index()` (≥ n) for the non-minimal PHF; spare slots have `len == 0`.
+        self.entries.iter().filter(|e| e.len != 0).count()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -219,6 +225,7 @@ impl BucketVocabStore {
     pub fn content(&self) -> Vec<(String, u32)> {
         self.entries
             .iter()
+            .filter(|m| m.len != 0) // skip the non-minimal PHF's spare slots
             .filter_map(|m| self.id_to_token(m.id).map(|token| (token, m.id)))
             .collect()
     }
@@ -232,6 +239,7 @@ impl BucketVocabStore {
     pub fn byte_content(&self) -> Vec<(Vec<u8>, u32)> {
         self.entries
             .iter()
+            .filter(|m| m.len != 0) // skip the non-minimal PHF's spare slots
             .filter_map(|m| {
                 self.id_to_token_bytes(m.id)
                     .map(|token| (token.to_vec(), m.id))
@@ -327,6 +335,25 @@ mod tests {
         let mut bytes = vocab.byte_content();
         bytes.sort();
         assert_eq!(bytes, vec![(b"hi".to_vec(), 0), (b"yo".to_vec(), 1)]);
+    }
+
+    // Regression: `FastPtrHash` is non-minimal — `index()` returns slots up to `max_index() > n`, which
+    // overflowed the (formerly `n`-sized) `entries` (bert-base-uncased's 8 added tokens panicked with
+    // "len is 8 but the index is 8"). Whether it fires depends on the exact keys, so sweep small sizes:
+    // every token round-trips, `len()`/`content()` exclude the spare slots, and OOV misses.
+    #[test]
+    fn small_vocab_sizes_never_overflow() {
+        for n in 1..=64usize {
+            let toks: Vec<(Vec<u8>, u32)> =
+                (0..n).map(|i| (format!("tok{i:04}").into_bytes(), i as u32)).collect();
+            let vocab = BucketVocabStore::build(toks.clone());
+            assert_eq!(vocab.len(), n, "len mismatch at n={n}");
+            assert_eq!(vocab.content().len(), n, "content leaked a spare slot at n={n}");
+            for (s, id) in &toks {
+                assert_eq!(vocab.get_bytes(s), Some(*id), "roundtrip failed at n={n} for {s:?}");
+            }
+            assert_eq!(vocab.token_to_id("absent"), None, "oov leaked at n={n}");
+        }
     }
 
     #[test]
