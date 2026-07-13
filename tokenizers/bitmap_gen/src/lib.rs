@@ -1,19 +1,11 @@
-//! bitmap_gen — generator for atomsplit's shared classify tables (TAG_CLASSIFY_SPEC.md §1/§7).
-//!
 //! Dev-time only (depends on `unicode-properties`); nothing here is linked into the runtime crate.
 //! `cargo run -p bitmap_gen` calls [`generate_atom_tables`] and writes the committed
 //! `atomsplit/src/atom_tables.rs`. It bakes the dense `Tables` layout (ascii / 2-byte group / 3-byte
-//! fast3 / bmp_rle / astral) read by BOTH the SIMD kernel (`vqtbl`) and the scalar reader
-//! (`Tables::classify_char`); the per-codepoint value is a `u8` tag — low nibble = coarse `Atom`, high
-//! nibble = optional refinement (o200k case on `Letter`, `ALPHA_SYM` on `Mark`; `0` = none).
+//! fast3 / bmp_rle / astral)
 use std::fmt::Write as _;
 use unicode_properties::{GeneralCategory, UnicodeGeneralCategory};
 
-// Values returned here correspond to src/classify.rs, straight from TAG_CLASSIFY_SPEC.md §1.
-// SINGLE current-Unicode source: general categories from `unicode-properties`; the three derived
-// *properties* it doesn't carry (White_Space / Alphabetic / Numeric) come from std, which is also
-// current — so there is no stale-version mix (the old `unicode_categories` was frozen at Unicode 9.0,
-// which mis-tagged every post-9.0 letter as an `ALPHA_SYM` symbol — see the review).
+// Produce the atom tag from the character.
 fn atom(c: char) -> u8 {
     use GeneralCategory::*;
     let cp = c as u32;
@@ -83,8 +75,7 @@ fn atom(c: char) -> u8 {
     12 // control ∪ unassigned
 }
 
-// codepoint encoded by `bytes` (synthetic UTF-8 built by the table loops). The caller's classifier
-// maps it (surrogates handled there via `char::from_u32`).
+// extracts the codepoint encoded by `bytes`. It removes the UTF-8 headers
 fn cp_of(bytes: &[u8]) -> u32 {
     match bytes.len() {
         1 => bytes[0] as u32,
@@ -98,12 +89,8 @@ fn cp_of(bytes: &[u8]) -> u32 {
     }
 }
 
-/// Build the dense tables from a per-codepoint `classify`, self-validate the scalar reader reproduces
-/// `classify(cp)` for all 1.1M codepoints (panics → fails the build on any mismatch), and return the
-/// Rust source for `pub static {struct_name}: Tables` (the committed `atom_tables.rs`). `classify` is the
-/// single source of truth; every table (and the SIMD kernel) is derived from it. `kind` labels the
-/// emitted doc header.
-// fixed-dim UTF-8 table generator: `[8][4][64]` index math reads clearer than iterator chains.
+// For more details, you should read the tables.rs file. This is just creating the sctructure. We
+// fill up the different tables for single byte (ASCII) 2-bytes, 3-bytes.
 #[allow(clippy::needless_range_loop)]
 fn generate_tables(struct_name: &str, kind: &str, classify: &dyn Fn(u32) -> u8) -> String {
     let tag = |bytes: &[u8]| classify(cp_of(bytes));
@@ -130,7 +117,7 @@ fn generate_tables(struct_name: &str, kind: &str, classify: &dyn Fn(u32) -> u8) 
             }
         }
     }
-    // Finally we build the hardest of them all:
+    // Finally 3-byte.
     let mut fast3_uni = [0u8; 512];
     let mut fast3_slot = [0u16; 512];
     let mut fast3_mixed: Vec<([u8; 64], [u8; 64])> = Vec::new();
@@ -171,7 +158,7 @@ fn generate_tables(struct_name: &str, kind: &str, classify: &dyn Fn(u32) -> u8) 
         }
     }
 
-    // ── self-validation: the scalar reader (as `Tables::classify_char` indexes these) == classify(cp) ──
+    //self-validation func: the scalar reader (as `Tables::classify_char` indexes these) == classify(cp) ──
     let read = |cp: u32| -> u8 {
         if cp < 0x80 {
             return if cp < 64 {
