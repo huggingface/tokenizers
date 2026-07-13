@@ -4,7 +4,7 @@
 //! piece boundaries). Byte-exactness gate (✓/✗) + per-language timing on big real text.
 //!
 //! Run: cargo bench --bench deepseek
-use atomsplit::classify::{Atoms, classify, classify_scalar};
+use atomsplit::classify::{classify, classify_scalar};
 use atomsplit::fsm::{Span, fsm_deepseek};
 use onig::Regex;
 use std::hint::black_box;
@@ -139,7 +139,7 @@ fn main() {
         // parity: fsm_deepseek == composed 3-split Sequence
         let reference = deepseek_ref(corpus, &rn, &rc, &rb);
         let mut tags = vec![0u8; n];
-        classify::<Atoms>(text, &mut tags);
+        classify(text, &mut tags);
         let mut buf = vec![(0u32, 0u32); n + 1];
         let k = fsm_deepseek(text, &tags, &mut buf);
         let parity = report_diff(corpus, &buf[..k], &reference);
@@ -147,13 +147,13 @@ fn main() {
 
         // timing
         let cls_simd = ns_per_byte(n, iters, || {
-            classify::<Atoms>(text, &mut tags);
+            classify(text, &mut tags);
             tags[n / 2] as usize
         });
         let mut tsc = vec![0u8; n];
-        let _ = classify_scalar::<Atoms>; // (scalar classify measured in the cl100k bench; skip here)
+        let _ = classify_scalar; // (scalar classify measured in the cl100k bench; skip here)
         let _ = &mut tsc;
-        classify::<Atoms>(text, &mut tags);
+        classify(text, &mut tags);
         let fsm_scal = ns_per_byte(n, iters, || fsm_deepseek(text, &tags, &mut buf));
         let onig_ns = ns_per_byte(n, iters, || deepseek_ref(corpus, &rn, &rc, &rb).len());
 

@@ -7,7 +7,7 @@
 //! the repo; the rest are fetched by `benches/data/fetch.py` (gitignored). Missing files are skipped.
 //!
 //! Run: cargo bench --bench cl100k
-use atomsplit::classify::{Atoms, classify, classify_scalar};
+use atomsplit::classify::{classify, classify_scalar};
 use atomsplit::fsm::{Span, fsm_cl100k};
 use fancy_regex::Regex as Fancy;
 use onig::Regex;
@@ -104,7 +104,7 @@ fn main() {
             .collect();
         let mut tags = vec![0u8; n];
         let mut tsc = vec![0u8; n];
-        classify::<Atoms>(text, &mut tags);
+        classify(text, &mut tags);
         let mut buf = vec![(0u32, 0u32); n + 1];
         let ksc = fsm_cl100k(text, &tags, &mut buf);
         let ok = if buf[..ksc] == onig_spans[..] {
@@ -115,14 +115,14 @@ fn main() {
         let btok = n as f64 / ksc.max(1) as f64; // bytes per token = density (drives per-token cost)
 
         let cls_simd = ns_per_byte(n, iters, || {
-            classify::<Atoms>(text, &mut tags);
+            classify(text, &mut tags);
             tags[n / 2] as usize
         });
         let cls_scal = ns_per_byte(n, iters, || {
-            classify_scalar::<Atoms>(text, &mut tsc);
+            classify_scalar(text, &mut tsc);
             tsc[n / 2] as usize
         });
-        classify::<Atoms>(text, &mut tags);
+        classify(text, &mut tags);
         let fsm = ns_per_byte(n, iters, || fsm_cl100k(text, &tags, &mut buf));
         let onig_ns = ns_per_byte(n, iters, || re.find_iter(corpus).count());
         let fancy_ns = ns_per_byte(n, iters, || fancy.find_iter(corpus).count());
