@@ -1,11 +1,10 @@
 use std::collections::HashSet;
 
 use ahash::RandomState;
-use ptr_hash::bucket_fn::Linear;
-use ptr_hash::{PtrHash, PtrHashParams};
+use ptr_hash::{hash::NoHash, FastPtrHash, PtrHashParams};
 use std::fmt;
 
-type Mphf = PtrHash<u64, Linear>;
+type Mphf = FastPtrHash<NoHash, u64>;
 
 // Fixed seeds so a given vocab always hashes identically (the hasher is also stored on the struct,
 // so build and query are guaranteed consistent regardless).
@@ -50,6 +49,10 @@ pub struct BucketVocabStore {
     entries: Box<[Entry]>,
     /// `id_to_slot[token_id] -> entry_idx` -> index into entries as the entries are not really sorted.
     id_to_slot: Box<[u32]>,
+    /// Number of real tokens. Cached at build so `len()` is O(1): `entries` is sized to the
+    /// MPHF's non-minimal slot range (with phantom padding slots), so its length is not the
+    /// token count.
+    n: usize,
 }
 
 impl fmt::Debug for BucketVocabStore {
@@ -113,9 +116,14 @@ impl BucketVocabStore {
         }
 
         // 3. Build the MPHF. `single_part = true` to use the faster `index_single_part` query path.
-        let mut params = PtrHashParams::default_fast();
-        params.single_part = true;
+        let params = PtrHashParams::default_fast();
         let mphf = Mphf::new(&seen.into_iter().collect::<Vec<u64>>(), params);
+
+        // FastPtrHash is non-minimal: `index()` may return a slot up to `max_index()` (>= n),
+        // so `entries` must be sized to cover the whole slot range. Slots never written by the
+        // build loop stay as the default `Entry { len: 0, .. }` (phantom/padding slots), which
+        // enumeration/count paths filter out via `len > 0`.
+        let n_slots = mphf.max_index();
 
         // 4. Place each token at its MPHF slot; build the slab and the id->slot reverse table.
         let total: usize = tokens.iter().map(|(s, _)| s.len()).sum();
@@ -127,7 +135,7 @@ impl BucketVocabStore {
                 len: 0,
                 id: 0
             };
-            n
+            n_slots
         ];
         let mut id_to_slot = vec![u32::MAX; max_id as usize + 1];
         for (s, id) in &tokens {
@@ -135,7 +143,7 @@ impl BucketVocabStore {
                 s.len() <= u16::MAX as usize,
                 "token longer than 65535 bytes"
             );
-            let slot = mphf.index_single_part(&hasher.hash_one(s.as_slice()));
+            let slot = mphf.index(&hasher.hash_one(s.as_slice()));
             entries[slot] = Entry {
                 start: bytes.len() as u32,
                 len: s.len() as u16,
@@ -151,19 +159,23 @@ impl BucketVocabStore {
             bytes: bytes.into_boxed_slice(),
             entries: entries.into_boxed_slice(),
             id_to_slot: id_to_slot.into_boxed_slice(),
+            n,
         }
     }
+
     pub fn new() -> Self {
         // convenient to build empty edit later.
         let empty: [u64; 0] = [];
         Self {
-            mphf: PtrHash::<u64, Linear>::new(&empty, PtrHashParams::default_fast()),
+            mphf: FastPtrHash::<NoHash, u64>::new(&empty, PtrHashParams::default_fast()),
             hasher: RandomState::new(),
             bytes: Box::new([]),
             entries: Box::new([]),
             id_to_slot: Box::new([]),
+            n: 0,
         }
     }
+
     /// This function is the equivalent of `get` on a HashaMap, it return the id
     /// corresponding to the key `q`. Since `mphf` always return a slot, we check
     /// whether the token indexed by that slot actually match the query. We don't
@@ -173,7 +185,7 @@ impl BucketVocabStore {
         if self.entries.is_empty() {
             return None;
         }
-        let slot = self.mphf.index_single_part(&self.hasher.hash_one(q));
+        let slot = self.mphf.index(&self.hasher.hash_one(q));
 
         let e = self.entries[slot];
         let (start, len) = (e.start as usize, e.len as usize);
@@ -211,16 +223,17 @@ impl BucketVocabStore {
     }
 
     pub fn len(&self) -> usize {
-        self.entries.len()
+        self.n
     }
 
     pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
+        self.n == 0
     }
 
     pub fn content(&self) -> Vec<(String, u32)> {
         self.entries
             .iter()
+            .filter(|e| e.len > 0)
             .filter_map(|m| self.id_to_token(m.id).map(|token| (token, m.id)))
             .collect()
     }
@@ -234,6 +247,7 @@ impl BucketVocabStore {
     pub fn byte_content(&self) -> Vec<(Vec<u8>, u32)> {
         self.entries
             .iter()
+            .filter(|e| e.len > 0)
             .filter_map(|m| {
                 self.id_to_token_bytes(m.id)
                     .map(|token| (token.to_vec(), m.id))
