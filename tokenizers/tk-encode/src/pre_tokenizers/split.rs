@@ -119,6 +119,21 @@ impl Split {
             fsm,
         })
     }
+
+    /// Pipeline canonicalization. A recognized whole-covering GPT regex shipped
+    /// as `(invert=true, behavior=Removed)` — the tiktoken-conversion convention
+    /// used by cl100k/o200k — is byte-exactly equivalent to `(invert=false,
+    /// Isolated)`, the form the native FSM fast path requires (the inverted match
+    /// set is the gaps, and these patterns leave no gaps). Rewrite to it so
+    /// cl100k/o200k route to `fsm_cl100k`/`fsm_o200k` instead of `MultiRegex`.
+    pub(crate) fn canonicalized_for_pipeline(self) -> Result<Self> {
+        use crate::tokenizer::SplitDelimiterBehavior::{Isolated, Removed};
+        if self.fsm.is_some() && self.invert && self.behavior == Removed {
+            Split::new(self.pattern, Isolated, false)
+        } else {
+            Ok(self)
+        }
+    }
 }
 
 impl PreTokenizer for Split {
