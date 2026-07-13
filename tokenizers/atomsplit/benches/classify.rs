@@ -1,24 +1,24 @@
-//! classify::<Atoms> throughput across three MB-fixup branch regimes, to check the per-chunk
+//! classify throughput across three MB-fixup branch regimes, to check the per-chunk
 //! `if any(out == MB)` fixup branch is predictable:
 //!   none     — no astral (real text) → branch ALWAYS false → should be free.
 //!   astral   — wall of emoji (every chunk has MB) → branch ALWAYS true → predictable, measures fixup cost.
 //!   sprinkle — BMP text with an emoji every ~24 B → branch flips irregularly → misprediction stress.
 //! Run before/after the fixup change and compare. Run: cargo bench --bench classify
-use atomsplit::classify::{Atoms, classify, classify_scalar};
+use atomsplit::classify::{classify, classify_scalar};
 use std::hint::black_box;
 use std::time::Instant;
 
 fn ns_per_byte(text: &[u8], tags: &mut [u8]) -> f64 {
     let iters = (8_000_000 / text.len().max(1)).clamp(20, 400) as u32;
     for _ in 0..3 {
-        classify::<Atoms>(text, tags);
+        classify(text, tags);
         black_box(tags[text.len() / 2]);
     }
     let mut best = f64::INFINITY;
     for _ in 0..9 {
         let t = Instant::now();
         for _ in 0..iters {
-            classify::<Atoms>(text, tags);
+            classify(text, tags);
             black_box(tags[text.len() / 2]);
         }
         best = best.min(t.elapsed().as_nanos() as f64 / (iters as usize * text.len()) as f64);
@@ -63,8 +63,8 @@ fn main() {
         let mut tags = vec![0u8; text.len()];
         // byte-exactness guard: SIMD == scalar (exercises the astral fixup path)
         let mut sc = vec![0u8; text.len()];
-        classify::<Atoms>(text, &mut tags);
-        classify_scalar::<Atoms>(text, &mut sc);
+        classify(text, &mut tags);
+        classify_scalar(text, &mut sc);
         let ok = if tags == sc { "✓" } else { "✗" };
         let simd = ns_per_byte(text, &mut tags);
         let scal = {
@@ -73,7 +73,7 @@ fn main() {
             for _ in 0..5 {
                 let t = Instant::now();
                 for _ in 0..iters {
-                    classify_scalar::<Atoms>(text, &mut sc);
+                    classify_scalar(text, &mut sc);
                     black_box(sc[text.len() / 2]);
                 }
                 best =

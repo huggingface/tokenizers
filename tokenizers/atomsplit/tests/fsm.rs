@@ -1,5 +1,5 @@
 //! Integration tests for the FSM pre-tokenizers. Kept out of `src/` so the core stays production-only.
-use atomsplit::classify::{Atoms, classify, mask};
+use atomsplit::classify::{classify, mask};
 use atomsplit::fsm::{
     CharDelimiterSplit, Span, class_runs_into, class_runs_runend, fsm_byte_level, fsm_cl100k,
     fsm_deepseek,
@@ -8,7 +8,7 @@ use atomsplit::fsm::{
 /// Run a no-push fsm into a fresh buffer and return the emitted spans.
 fn spans(f: impl Fn(&[u8], &[u8], &mut [Span]) -> usize, s: &str) -> Vec<Span> {
     let mut tags = vec![0u8; s.len()];
-    classify::<Atoms>(s.as_bytes(), &mut tags);
+    classify(s.as_bytes(), &mut tags);
     let mut out = vec![(0u32, 0u32); s.len() + 1];
     let k = f(s.as_bytes(), &tags, &mut out);
     out.truncate(k);
@@ -78,7 +78,7 @@ fn class_runs_into_matches() {
     }
     let mut sweep = |len: usize| {
         let (t, tg) = (&full[..len], &mut tags[..len]);
-        classify::<Atoms>(t, tg);
+        classify(t, tg);
         let (x, y) = (&mut b1[..len], &mut b2[..len]);
         eq::<{ mask::WS }, 0, 0>(t, tg, x, y, "WhitespaceSplit");
         eq::<0, { mask::PUNCT }, 0>(t, tg, x, y, "Punctuation");

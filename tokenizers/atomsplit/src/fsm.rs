@@ -6,15 +6,28 @@
 //! [`class_runs_into`]: on aarch64/wasm the SIMD movemask boundary-extractor + homogeneous-chunk
 //! early-out (in `simd_fsm`), elsewhere the scalar run-end core ([`class_runs_runend`]). The
 //! regex-shaped ones ([`fsm_cl100k`] / [`fsm_o200k`] / [`fsm_deepseek`] / [`fsm_byte_level`]) are scalar
-//! jump-tables.
-//! Tests live in `tests/`, throughput benches in `benches/`.
+//! jump-tables, with some SIMD for the occasional * or + patterns
 
-use crate::classify::{Atom, Atoms, char_len, classify, in_mask, mask};
+use crate::classify::{Atom, char_len, classify, in_mask, mask};
+const LET: u8 = Atom::Letter as u8;
+const NW: u8 = Atom::NumWord as u8;
+const NO: u8 = Atom::NumOther as u8;
+const NLN: u8 = Atom::Newline as u8;
+const SPC: u8 = Atom::Space as u8;
+const WSO: u8 = Atom::WsOther as u8;
+const MRK: u8 = Atom::Mark as u8;
+const CON: u8 = Atom::Connector as u8;
+const PUN: u8 = Atom::Punct as u8;
+const APO: u8 = Atom::Apostrophe as u8;
+const SYM: u8 = Atom::SymOther as u8;
+const NMO: u8 = Atom::NumericOther as u8;
+const CTL: u8 = Atom::Control as u8;
+const CONT: u8 = Atom::Cont as u8;
+const ASM: u8 = Atom::AlphaSymMark as u8;
 
 /// Advance over a maximal `m`-membership run; returns the byte index past it. Byte-wise (`i += 1`),
 /// treating continuation bytes as in-run — so NO `char_len` branch per char and no `text` access. This
-/// is THE hot inner loop of the dense (English/code) FSM; the earlier `char_len`-per-char version was
-/// ~2× slower there (English fsm 2.3 → ~1.1 ns/byte). Keep this a tight, inlinable byte scan.
+/// is THE hot inner loop of the dense (English/code) FSM;
 /// `inline(always)`: it's called once per token (~200K/MB on English) — a real call here doubles fsm cost.
 #[inline(always)]
 fn run_end(tags: &[u8], mut i: usize, end: usize, m: u16) -> usize {
@@ -25,16 +38,13 @@ fn run_end(tags: &[u8], mut i: usize, end: usize, m: u16) -> usize {
 }
 
 /// A token span: byte offsets `[start, end)` into the input.
-/// TODO:i think we could use u16 for one of them if we stored start, offset5
 pub type Span = (u32, u32);
 
 /// No-`push` class-family pre-tokenizer core: writes spans into the preallocated `out` slice and returns
-/// the count — no `Vec`, no realloc. ONE shape covers the whole class family via `<DROP, ISOLATE, KEEP_A>`:
+/// the count. ONE shape covers the whole class family via `<DROP, ISOLATE, KEEP_A>`:
 ///   WhitespaceSplit `<{WS},0,0>` · Punctuation `<0,{PUNCT},0>` · Digits `<0,0,{NUMERIC}>` ·
 ///   Whitespace `<{WS},0,{WORD}>` · Bert `<{WS},{PUNCT},0>`.
 /// Class of a char: `DROP`→dropped, `ISOLATE`→own token, `KEEP_A`→run "A", else→run "B" (A/B cut apart).
-/// aarch64 uses the NEON boundary extractor (`class_runs_neon`); elsewhere the run-end core — byte-exact
-/// across both paths (see the `class_runs_into_matches` test). `out.len()` must be ≥ `text.len()`.
 #[inline]
 #[must_use]
 pub fn class_runs_into<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>(
@@ -116,19 +126,6 @@ fn cl100k(text: &[u8], tags: &[u8], out: &mut [Span], digit_cap: usize) -> usize
     // Leading-atom values, as `const` so the `match` below is a dense jump table (not an if-cascade):
     // the dispatch is O(1) and a token never pays for a rule it can't start (e.g. non-number tokens
     // never test the number rule — which is what the POC's const-gating removed by hand; here it's free).
-    const LET: u8 = Atom::Letter as u8;
-    const NW: u8 = Atom::NumWord as u8;
-    const NO: u8 = Atom::NumOther as u8;
-    const NLN: u8 = Atom::Newline as u8;
-    const SPC: u8 = Atom::Space as u8;
-    const WSO: u8 = Atom::WsOther as u8;
-    const MRK: u8 = Atom::Mark as u8;
-    const CON: u8 = Atom::Connector as u8;
-    const PUN: u8 = Atom::Punct as u8;
-    const APO: u8 = Atom::Apostrophe as u8;
-    const SYM: u8 = Atom::SymOther as u8;
-    const NMO: u8 = Atom::NumericOther as u8;
-    const CTL: u8 = Atom::Control as u8;
     let end = text.len();
     let letters = |a: usize| run_end(tags, a, end, mask::LETTER);
     // rule 4 body: `[^\s\p{L}\p{N}]+[\r\n]*` from `sp0` (any leading space already consumed). Returns
@@ -311,24 +308,8 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
     debug_assert!(out.len() >= text.len() && tags.len() >= text.len());
     // Leading-atom values as `const` → the `match` is a dense jump table (see `cl100k`). The Split
     // precedence (digits → CJK → big-regex alts) is preserved because the atom partition is disjoint.
-    const LET: u8 = Atom::Letter as u8;
-    const MRK: u8 = Atom::Mark as u8;
-    const NW: u8 = Atom::NumWord as u8;
-    const NO: u8 = Atom::NumOther as u8;
-    const NLN: u8 = Atom::Newline as u8;
-    const SPC: u8 = Atom::Space as u8;
-    const WSO: u8 = Atom::WsOther as u8;
-    const CON: u8 = Atom::Connector as u8;
-    const PUN: u8 = Atom::Punct as u8;
-    const APO: u8 = Atom::Apostrophe as u8;
-    const SYM: u8 = Atom::SymOther as u8;
-    const NMO: u8 = Atom::NumericOther as u8;
-    const CTL: u8 = Atom::Control as u8;
-
-    const CONT: u8 = Atom::Cont as u8;
     // `Mark` refined as an Other_Alphabetic symbol (Ⓘ …): coarse `LETTER_MARK`, but categorically `\p{S}`
     // — excluded from `[\p{L}\p{M}]`, routed to the `[\p{P}\p{S}]+` run instead (see `punct`).
-    const ASM: u8 = crate::classify::ALPHA_SYM_MARK;
     let end = text.len();
     // maximal `[\p{L}\p{M}]+` run from `a`, stopping at CJK-range chars (Split-2 took those), ZWJ/ZWNJ
     // (not `\p{L}∪\p{M}` — see `ds_breaks`), and Other_Alphabetic symbols (`ASM`, categorically `\p{S}`).
@@ -504,20 +485,6 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
 #[must_use]
 pub fn fsm_byte_level(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
     debug_assert!(out.len() >= text.len() && tags.len() >= text.len());
-    const LET: u8 = Atom::Letter as u8;
-    const NW: u8 = Atom::NumWord as u8;
-    const NO: u8 = Atom::NumOther as u8;
-    const NLN: u8 = Atom::Newline as u8;
-    const SPC: u8 = Atom::Space as u8;
-    const WSO: u8 = Atom::WsOther as u8;
-    const MRK: u8 = Atom::Mark as u8;
-    const CON: u8 = Atom::Connector as u8;
-    const PUN: u8 = Atom::Punct as u8;
-    const APO: u8 = Atom::Apostrophe as u8;
-    const SYM: u8 = Atom::SymOther as u8;
-    const NMO: u8 = Atom::NumericOther as u8;
-    const CTL: u8 = Atom::Control as u8;
-
     let end = text.len();
     // `\s+(?!\S)|\s+`: the whole run at EOF, else leave the last ws char for the next ` ?`-prefixed run.
     let ws = |i: usize| -> usize {
@@ -588,11 +555,11 @@ pub fn fsm_byte_level(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
 /// \p{M}`). The two alt char-classes are `[UC]` = "not L" (`!o_is_lower`) and `[LC]` = "not U".
 #[inline]
 fn o_is_upper(t: u8) -> bool {
-    t == (crate::classify::refine::UPPER << 4) // 0x10: coarse Letter, refine UPPER
+    t == (Atom::UpperLetter as u8) << 4 // 0x10: coarse Letter, refine UPPER
 }
 #[inline]
 fn o_is_lower(t: u8) -> bool {
-    t == (crate::classify::refine::LOWER << 4) // 0x20
+    t == (Atom::LowerLetter as u8) << 4 // 0x20
 }
 
 /// One o200k letter sub-token from `p` within the run `[.., re)`: alt-1 `[UC]*[LC]+` (tried first) else
@@ -690,21 +657,6 @@ fn emit_o200k_letters(
 #[must_use]
 pub fn fsm_o200k(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
     debug_assert!(out.len() >= text.len() && tags.len() >= text.len());
-    const LET: u8 = Atom::Letter as u8;
-    const NW: u8 = Atom::NumWord as u8;
-    const NO: u8 = Atom::NumOther as u8;
-    const NLN: u8 = Atom::Newline as u8;
-    const SPC: u8 = Atom::Space as u8;
-    const WSO: u8 = Atom::WsOther as u8;
-    const MRK: u8 = Atom::Mark as u8;
-    const CON: u8 = Atom::Connector as u8;
-    const PUN: u8 = Atom::Punct as u8;
-    const APO: u8 = Atom::Apostrophe as u8;
-    const SYM: u8 = Atom::SymOther as u8;
-    const NMO: u8 = Atom::NumericOther as u8;
-    const CTL: u8 = Atom::Control as u8;
-    const CONT: u8 = Atom::Cont as u8;
-    const ASM: u8 = crate::classify::ALPHA_SYM_MARK;
     let end = text.len();
 
     // Is tag `t` (at byte `p`) a real `[\p{L}\p{M}]` member? Coarse `Letter` (any case) is always in;
@@ -818,7 +770,7 @@ pub fn fsm_o200k(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
 }
 
 // ── Composition recipes ────────────────────────────────────────────────────────────────────────
-// Each pre-tokenizer = (classify::<Atoms> → fsm shape + params). `tags` and `out` are caller-owned
+// Each pre-tokenizer = (classify → fsm shape + params). `tags` and `out` are caller-owned
 // scratch, reused across calls — NO per-call alloc, NO push. The class family writes spans into the
 // preallocated `out: &mut [Span]` (len ≥ text.len()) via `class_runs_into` and returns the token count.
 // In `tk-encode` these delegate from the `pipeline::PreTokenizer` impls (offset conversion happens there).
@@ -830,7 +782,7 @@ impl WhitespaceSplit {
     #[inline]
     #[must_use]
     pub fn pre_tokenize(&self, text: &[u8], tags: &mut [u8], out: &mut [Span]) -> usize {
-        classify::<Atoms>(text, tags);
+        classify(text, tags);
         class_runs_into::<{ mask::WS }, 0, 0>(text, tags, out)
     }
 }
@@ -842,7 +794,7 @@ impl Punctuation {
     #[inline]
     #[must_use]
     pub fn pre_tokenize(&self, text: &[u8], tags: &mut [u8], out: &mut [Span]) -> usize {
-        classify::<Atoms>(text, tags);
+        classify(text, tags);
         class_runs_into::<0, { mask::PUNCT }, 0>(text, tags, out)
     }
 }
@@ -854,7 +806,7 @@ impl Digits {
     #[inline]
     #[must_use]
     pub fn pre_tokenize(&self, text: &[u8], tags: &mut [u8], out: &mut [Span]) -> usize {
-        classify::<Atoms>(text, tags);
+        classify(text, tags);
         class_runs_into::<0, 0, { mask::NUMERIC }>(text, tags, out)
     }
 }
@@ -866,7 +818,7 @@ impl Whitespace {
     #[inline]
     #[must_use]
     pub fn pre_tokenize(&self, text: &[u8], tags: &mut [u8], out: &mut [Span]) -> usize {
-        classify::<Atoms>(text, tags);
+        classify(text, tags);
         class_runs_into::<{ mask::WS }, 0, { mask::WORD }>(text, tags, out)
     }
 }
@@ -878,7 +830,7 @@ impl Bert {
     #[inline]
     #[must_use]
     pub fn pre_tokenize(&self, text: &[u8], tags: &mut [u8], out: &mut [Span]) -> usize {
-        classify::<Atoms>(text, tags);
+        classify(text, tags);
         class_runs_into::<{ mask::WS }, { mask::PUNCT }, 0>(text, tags, out)
     }
 }
@@ -892,7 +844,7 @@ impl Cl100k {
     #[inline]
     #[must_use]
     pub fn pre_tokenize(&self, text: &[u8], tags: &mut [u8], out: &mut [Span]) -> usize {
-        classify::<Atoms>(text, tags);
+        classify(text, tags);
         fsm_cl100k(text, tags, out)
     }
 }
@@ -904,7 +856,7 @@ impl DeepSeek {
     #[inline]
     #[must_use]
     pub fn pre_tokenize(&self, text: &[u8], tags: &mut [u8], out: &mut [Span]) -> usize {
-        classify::<Atoms>(text, tags);
+        classify(text, tags);
         fsm_deepseek(text, tags, out)
     }
 }
@@ -916,7 +868,7 @@ impl ByteLevel {
     #[inline]
     #[must_use]
     pub fn pre_tokenize(&self, text: &[u8], tags: &mut [u8], out: &mut [Span]) -> usize {
-        classify::<Atoms>(text, tags);
+        classify(text, tags);
         fsm_byte_level(text, tags, out)
     }
 }

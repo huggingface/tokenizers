@@ -3,7 +3,7 @@
 //! (that's a post-split byte→char remap; the split boundaries are what this checks).
 //!
 //! Run: cargo bench --bench byte_level
-use atomsplit::classify::{Atoms, classify};
+use atomsplit::classify::classify;
 use atomsplit::fsm::{Span, fsm_byte_level};
 use fancy_regex::Regex as Fancy;
 use onig::Regex;
@@ -79,7 +79,7 @@ fn main() {
 
         let reference = onig_spans(&re, corpus);
         let mut tags = vec![0u8; n];
-        classify::<Atoms>(text, &mut tags);
+        classify(text, &mut tags);
         let mut sc = vec![(0u32, 0u32); n + 1];
         let k = fsm_byte_level(text, &tags, &mut sc);
         let ok = if sc[..k] == reference[..] {
@@ -90,10 +90,10 @@ fn main() {
         let btok = n as f64 / k.max(1) as f64;
 
         let cls = ns_per_byte(n, iters, || {
-            classify::<Atoms>(text, &mut tags);
+            classify(text, &mut tags);
             tags[n / 2] as usize
         });
-        classify::<Atoms>(text, &mut tags);
+        classify(text, &mut tags);
         let fsm = ns_per_byte(n, iters, || fsm_byte_level(text, &tags, &mut sc));
         let onig_ns = ns_per_byte(n, iters, || onig_spans(&re, corpus).len());
         let fancy_ns = ns_per_byte(n, iters, || fancy.find_iter(corpus).count());

@@ -3,7 +3,7 @@
 //! timed separately. `spd = scalar/simd`: >1 → SIMD wins. (cl100k is scalar-only — see benches/cl100k.rs.)
 //!
 //! Run: cargo bench --bench class_runs
-use atomsplit::classify::{Atoms, classify, mask};
+use atomsplit::classify::{classify, mask};
 use atomsplit::fsm::{Span, class_runs_into, class_runs_runend};
 use std::hint::black_box;
 use std::time::Instant;
@@ -87,7 +87,7 @@ fn main() {
                 let iters = (4_000_000 / n).clamp(3, 150) as u32;
                 let mut tags = vec![0u8; n];
                 let mut buf = vec![(0u32, 0u32); n + 1];
-                classify::<Atoms>(text, &mut tags);
+                classify(text, &mut tags);
                 // parity: scalar == simd
                 let (ks, kv) = ($s(text, &tags, &mut buf), 0);
                 let scalar_out: Vec<Span> = buf[..ks].to_vec();
@@ -95,10 +95,10 @@ fn main() {
                 let kv = $v(text, &tags, &mut buf);
                 let parity = scalar_out == buf[..kv];
                 let cls = ns_per_byte(n, iters, || {
-                    classify::<Atoms>(text, &mut tags);
+                    classify(text, &mut tags);
                     n
                 });
-                classify::<Atoms>(text, &mut tags);
+                classify(text, &mut tags);
                 let sc = ns_per_byte(n, iters, || $s(text, &tags, &mut buf));
                 let si = ns_per_byte(n, iters, || $v(text, &tags, &mut buf));
                 println!(
@@ -116,7 +116,7 @@ fn main() {
     compare!("Whitespace \\w", s_ws, v_ws);
     compare!("Bert", s_bert, v_bert);
     println!(
-        "\n(ns/byte, lower better. classify = SIMD classify::<Atoms>; scalar = class_runs_runend (run-end\n \
+        "\n(ns/byte, lower better. classify = SIMD classify; scalar = class_runs_runend (run-end\n \
          core); simd = class_runs_into (NEON/SIMD128 movemask + early-out). spd = scalar/simd, >1 → SIMD\n \
          wins. cl100k is scalar-only — its perf is in benches/cl100k.rs.)"
     );

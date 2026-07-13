@@ -5,7 +5,7 @@
 //!
 //! English is ~memory-bound (classify is near-free → limited scaling); CJK is compute-bound (3-byte
 //! classify dominates → scales close to linear). Run: cargo bench --bench threads
-use atomsplit::classify::{Atoms, classify};
+use atomsplit::classify::classify;
 use atomsplit::fsm::{Span, fsm_byte_level, fsm_cl100k, fsm_deepseek};
 use std::hint::black_box;
 use std::time::Instant;
@@ -66,7 +66,7 @@ fn partition_nl(text: &[u8], n: usize) -> Vec<(usize, usize)> {
 fn pipeline(fsm: Fsm, chunk: &[u8], tags: &mut Vec<u8>, out: &mut Vec<Span>) {
     tags.clear();
     tags.resize(chunk.len(), 0);
-    classify::<Atoms>(chunk, tags);
+    classify(chunk, tags);
     out.clear();
     out.resize(chunk.len() + 1, (0, 0)); // preallocated slice — the fsm writes into it, no push
     let k = fsm(chunk, tags, out);
