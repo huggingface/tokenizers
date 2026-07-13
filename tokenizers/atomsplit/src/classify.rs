@@ -1,8 +1,7 @@
-/// The per-codepoint "atom" alphabet — the small tag set every codepoint is classified into in one SIMD
-/// pass, which the FSMs then consume. Values 0–12 are real Unicode categories; 13–15 are engine
-/// sentinels (deeper-lookup marker, unresolved-multibyte, and UTF-8 continuation byte).
+/// The per-codepoint "atom" categories or "tags" that are used by the finite state machine to emit
+/// spit boundaries.
 ///
-/// A tag byte is `(refine << 4) | coarse`: the **low nibble** is this `Atom` (the coarse class every FSM
+/// Proper tags are obtained by composing `(refine << 4) | coarse`: the **low nibble** is this `Atom` (the coarse class every FSM
 /// shares) and the **high nibble** is an optional *refinement* that sub-splits one coarse class for a
 /// pattern that needs finer granularity — e.g. o200k needs case, so `Letter` carries `refine::UPPER`
 /// (`\p{Lu}∪\p{Lt}`) / `refine::LOWER` (`\p{Ll}`) / `0` (caseless `\p{Lm}\p{Lo}`). The classifier stays
@@ -13,25 +12,33 @@
 #[repr(u8)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Atom {
-    Letter = 0,        // \p{L}
-    NumWord = 1,       // Nd ∪ Nl   (numeric AND \w)
-    NumOther = 2,      // No        (numeric, not \w)
-    Newline = 3,       // \r \n
-    Space = 4,         // 0x20 only
-    WsOther = 5,       // \s ∖ {\r\n, 0x20}
-    Mark = 6,          // \p{M} ∪ {ZWJ,ZWNJ} ∪ (Other_Alphabetic ∖ L)
-    Connector = 7,     // \p{Pc}
-    Punct = 8,         // (\p{P} ∖ Pc) ∪ ASCII-symbols, minus 0x27
-    Apostrophe = 9,    // 0x27 only
-    SymOther = 10,     // non-ASCII \p{S}
-    NumericOther = 11, // is_numeric ∖ \p{N}
-    Control = 12,      // control ∪ unassigned (split out of SymOther so \p{P}∪\p{S} excludes it)
-    Sentinel = 13,     // this lead / block needs to go 1 level deeper
-    MultiByte = 14,    // simd could not resolve this multibyte, use the lookup table
-    Cont = 15,         // UTF-8 continuation byte — transparent to every FSM
+    Letter = 0,          // \p{L}
+    NumWord = 1,         // Nd ∪ Nl   (numeric AND \w)
+    NumOther = 2,        // No        (numeric, not \w)
+    Newline = 3,         // \r \n
+    Space = 4,           // 0x20 only
+    WsOther = 5,         // \s ∖ {\r\n, 0x20}
+    Mark = 6,            // \p{M} ∪ {ZWJ,ZWNJ} ∪ (Other_Alphabetic ∖ L)
+    Connector = 7,       // \p{Pc}
+    Punct = 8,           // (\p{P} ∖ Pc) ∪ ASCII-symbols, minus 0x27
+    Apostrophe = 9,      // 0x27 only
+    SymOther = 10,       // non-ASCII \p{S}
+    NumericOther = 11,   // is_numeric ∖ \p{N}
+    Control = 12,        // control ∪ unassigned (split out of SymOther so \p{P}∪\p{S} excludes it)
+    Sentinel = 13,       // this lead / block needs to go 1 level deeper
+    MultiByte = 14,      // simd could not resolve this multibyte, use the lookup table
+    Cont = 15,           // UTF-8 continuation byte — transparent to every FSM
+    AlphaSymMark = 0x16, // 0x16 is low nibble (6) the Mark class, high nibble 1 the refined class
+    // If we need a new class it will usually fall under the 12 unicode ones. If not we can just define
+    // new ones with low and high nibble that are not correlated. You should prioritize using the
+    // low nibble 13, 14, 15 just because you would be taking a subclass otherwise.
+    LowerLetter = 0x10, // 0 is Letter
+    UpperLetter = 0x20, // 0 is Letter
 }
 
 impl Atom {
+    /// Since we only have 16 classes for now, this is a fairly cheap way to get a bitmask over the
+    /// class.
     /// This atom's bit in a `u16` class mask.
     #[inline]
     pub const fn bit(self) -> u16 {
@@ -47,28 +54,6 @@ pub const fn in_mask(tag: u8, mask: u16) -> bool {
     mask & (1u16 << (tag & 0x0F)) != 0
 }
 
-/// Refinement (high nibble) of a tag — `0` when the coarse class was not sub-split. See [`refine`].
-#[inline]
-pub const fn refine_of(tag: u8) -> u8 {
-    tag >> 4
-}
-
-/// Refinement values (high nibble). Meaning is *relative to the coarse class* — `1` on `Letter` is
-/// `UPPER`, `1` on `Mark` is `ALPHA_SYM` — so a refinement consumer keys on the whole tag, not the nibble.
-pub mod refine {
-    /// `Letter`: `\p{Lu} ∪ \p{Lt}` — the "upper-ish" leading run in o200k's `[\p{Lu}\p{Lt}…]`.
-    pub const UPPER: u8 = 1;
-    /// `Letter`: `\p{Ll}` — strictly lowercase; the only letters excluded from o200k's `[\p{Lu}\p{Lt}…]`.
-    pub const LOWER: u8 = 2;
-    /// `Mark`: Other_Alphabetic non-mark (circled letters …, category `\p{S}`). A `\w` char but NOT
-    /// `[\p{L}\p{M}]` — deepseek/o200k treat it as the symbol it categorically is.
-    pub const ALPHA_SYM: u8 = 1;
-}
-
-/// The full tag for an Other_Alphabetic symbol: coarse `Mark`, refine `ALPHA_SYM` (= `0x16`). A `\w` word
-/// char that deepseek/o200k must exclude from `[\p{L}\p{M}]` and route to `[\p{P}\p{S}]`.
-pub const ALPHA_SYM_MARK: u8 = (refine::ALPHA_SYM << 4) | (Atom::Mark as u8);
-
 /// UTF-8 char length from the lead byte. Width is a pure function of the lead — no classification.
 #[inline]
 pub const fn char_len(b: u8) -> usize {
@@ -83,11 +68,11 @@ pub const fn char_len(b: u8) -> usize {
     }
 }
 
-/// Class masks — unions of atoms, the predicates the FSMs test. `const`, so callers inline them and
-/// they double as the const-generic `DELIM`/`DROP` parameters of the FSM shapes.
+/// Class masks: a unions of atoms, they are used to combine atoms into what the usual regex
+/// usually check.
 pub mod mask {
     use super::Atom::*;
-    /// `\w` (Whitespace pretokenizer "Word"): letter | Nd∪Nl | mark | connector.
+    /// `\w` used in Whitespace pretokenizer, a "Word" is: letter | Nd∪Nl | mark | connector.
     pub const WORD: u16 = Letter.bit() | NumWord.bit() | Mark.bit() | Connector.bit();
     /// `\s`: newline + 0x20 + other whitespace.
     pub const WS: u16 = Newline.bit() | Space.bit() | WsOther.bit();
@@ -115,6 +100,29 @@ pub mod mask {
     pub const LETTER_MARK: u16 = Letter.bit() | Mark.bit();
 }
 
+// ── Scheme: Atoms (the 12-way category alphabet) ───────────────────────────────────────────────
+
+/// The atom scheme fed to `classify::<Atoms>`. Zero-sized; carries the tables via its impl.
+pub struct Atoms;
+
+impl TagScheme for Atoms {
+    const N_TAGS: usize = 13;
+    const CONT: u8 = Atom::Cont as u8;
+    const MB: u8 = Atom::MultiByte as u8;
+    const CJK_RANGE_TAG: Option<u8> = Some(Atom::Letter as u8); // all of CJK → Letter → range shortcut
+
+    /// ┌──────────────────────── OWNER: scalar path ────────────────────────┐
+    /// ASCII → LUT; 2/3-byte → bitmap-hit helpers (the matchers: `letter2_hit`/`number2_hit` +
+    /// `mark2_hit`/`punct2_hit`/… to add); 3-byte-non-CJK residue → range search.
+    #[inline]
+    fn classify_char(text: &[u8], i: usize) -> u8 {
+        crate::atom_tables::ATOM_TABLES.classify_char(text, i)
+    }
+
+    fn tables() -> &'static crate::simd_classify::Tables {
+        &crate::atom_tables::ATOM_TABLES
+    }
+}
 /// A per-char tag alphabet + its classify paths. `Atoms` (12-way) is the instance today; another
 /// pretokenizer-class scheme is just another `impl`.
 pub trait TagScheme {
@@ -197,29 +205,5 @@ pub fn classify_scalar<S: TagScheme>(text: &[u8], tags: &mut [u8]) {
             j += 1;
         }
         i += w;
-    }
-}
-
-// ── Scheme: Atoms (the 12-way category alphabet) ───────────────────────────────────────────────
-
-/// The atom scheme fed to `classify::<Atoms>`. Zero-sized; carries the tables via its impl.
-pub struct Atoms;
-
-impl TagScheme for Atoms {
-    const N_TAGS: usize = 13;
-    const CONT: u8 = Atom::Cont as u8;
-    const MB: u8 = Atom::MultiByte as u8;
-    const CJK_RANGE_TAG: Option<u8> = Some(Atom::Letter as u8); // all of CJK → Letter → range shortcut
-
-    /// ┌──────────────────────── OWNER: scalar path ────────────────────────┐
-    /// ASCII → LUT; 2/3-byte → bitmap-hit helpers (the matchers: `letter2_hit`/`number2_hit` +
-    /// `mark2_hit`/`punct2_hit`/… to add); 3-byte-non-CJK residue → range search.
-    #[inline]
-    fn classify_char(text: &[u8], i: usize) -> u8 {
-        crate::atom_tables::ATOM_TABLES.classify_char(text, i)
-    }
-
-    fn tables() -> &'static crate::simd_classify::Tables {
-        &crate::atom_tables::ATOM_TABLES
     }
 }

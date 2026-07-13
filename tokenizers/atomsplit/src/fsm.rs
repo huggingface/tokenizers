@@ -704,7 +704,7 @@ pub fn fsm_o200k(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
     const NMO: u8 = Atom::NumericOther as u8;
     const CTL: u8 = Atom::Control as u8;
     const CONT: u8 = Atom::Cont as u8;
-    const ASM: u8 = crate::classify::ALPHA_SYM_MARK;
+    const ASM: u8 = Atom::AlphaSymMark as u8;
     let end = text.len();
 
     // Is tag `t` (at byte `p`) a real `[\p{L}\p{M}]` member? Coarse `Letter` (any case) is always in;
