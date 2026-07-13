@@ -1,4 +1,4 @@
-use crate::{atom_tables::ATOM_TABLES, tables::Tables};
+use crate::atom_tables::ATOM_TABLES;
 
 /// The per-codepoint "atom" categories or "tags" that are used by the finite state machine to emit
 /// spit boundaries.
@@ -104,7 +104,6 @@ pub mod mask {
 
 pub const CONT: u8 = Atom::Cont as u8;
 pub const MB: u8 = Atom::MultiByte as u8;
-const CJK_RANGE_TAG: Option<u8> = Some(Atom::Letter as u8); // all of CJK → Letter → range shortcut
 
 /// Classify `text` under scheme `S` into `tags` (`tags.len() == text.len()`) — the single arch
 /// dispatcher. aarch64: NEON at compile time (baseline). x86_64: AVX-512 VBMI → SSE4.1 → scalar,
@@ -148,7 +147,7 @@ pub fn classify_scalar(text: &[u8], tags: &mut [u8]) {
     let mut i = 0;
     while i < n {
         let b = text[i];
-        // 0xC0 is 0b1100 0000, the continuation header byte.
+        // 0xC0 is 0b1100 0000, the utf8 continuation header byte.
         if b & 0xC0 == 0x80 {
             tags[i] = CONT; // stray continuation byte
             i += 1;
