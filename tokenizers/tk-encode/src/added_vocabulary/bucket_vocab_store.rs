@@ -49,6 +49,10 @@ pub struct BucketVocabStore {
     entries: Box<[Entry]>,
     /// `id_to_slot[token_id] -> entry_idx` -> index into entries as the entries are not really sorted.
     id_to_slot: Box<[u32]>,
+    /// Number of real tokens. Cached at build so `len()` is O(1): `entries` is sized to the
+    /// MPHF's non-minimal slot range (with phantom padding slots), so its length is not the
+    /// token count.
+    n: usize,
 }
 
 impl fmt::Debug for BucketVocabStore {
@@ -115,6 +119,12 @@ impl BucketVocabStore {
         let params = PtrHashParams::default_fast();
         let mphf = Mphf::new(&seen.into_iter().collect::<Vec<u64>>(), params);
 
+        // FastPtrHash is non-minimal: `index()` may return a slot up to `max_index()` (>= n),
+        // so `entries` must be sized to cover the whole slot range. Slots never written by the
+        // build loop stay as the default `Entry { len: 0, .. }` (phantom/padding slots), which
+        // enumeration/count paths filter out via `len > 0`.
+        let n_slots = mphf.max_index();
+
         // 4. Place each token at its MPHF slot; build the slab and the id->slot reverse table.
         let total: usize = tokens.iter().map(|(s, _)| s.len()).sum();
         let max_id = tokens.iter().map(|(_, id)| *id).max().unwrap();
@@ -125,7 +135,7 @@ impl BucketVocabStore {
                 len: 0,
                 id: 0
             };
-            n
+            n_slots
         ];
         let mut id_to_slot = vec![u32::MAX; max_id as usize + 1];
         for (s, id) in &tokens {
@@ -149,8 +159,10 @@ impl BucketVocabStore {
             bytes: bytes.into_boxed_slice(),
             entries: entries.into_boxed_slice(),
             id_to_slot: id_to_slot.into_boxed_slice(),
+            n,
         }
     }
+
     pub fn new() -> Self {
         // convenient to build empty edit later.
         let empty: [u64; 0] = [];
@@ -160,8 +172,10 @@ impl BucketVocabStore {
             bytes: Box::new([]),
             entries: Box::new([]),
             id_to_slot: Box::new([]),
+            n: 0,
         }
     }
+
     /// This function is the equivalent of `get` on a HashaMap, it return the id
     /// corresponding to the key `q`. Since `mphf` always return a slot, we check
     /// whether the token indexed by that slot actually match the query. We don't
@@ -209,16 +223,17 @@ impl BucketVocabStore {
     }
 
     pub fn len(&self) -> usize {
-        self.entries.len()
+        self.n
     }
 
     pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
+        self.n == 0
     }
 
     pub fn content(&self) -> Vec<(String, u32)> {
         self.entries
             .iter()
+            .filter(|e| e.len > 0)
             .filter_map(|m| self.id_to_token(m.id).map(|token| (token, m.id)))
             .collect()
     }
@@ -232,6 +247,7 @@ impl BucketVocabStore {
     pub fn byte_content(&self) -> Vec<(Vec<u8>, u32)> {
         self.entries
             .iter()
+            .filter(|e| e.len > 0)
             .filter_map(|m| {
                 self.id_to_token_bytes(m.id)
                     .map(|token| (token.to_vec(), m.id))
