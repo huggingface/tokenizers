@@ -56,6 +56,22 @@ fn main() {
         black_box(n);
         mbps.push(n_bytes as f64 / t.elapsed().as_secs_f64() / 1e6);
     }
+    // token-stream checksum (order-sensitive) for cross-config byte-exactness checks
+    if std::env::var("XBENCH_CKSUM").is_ok() {
+        let mut h: u64 = 1469598103934665603;
+        let mut ntok = 0usize;
+        for d in &docs {
+            out.clear();
+            pre.clear();
+            pipe.encode_generic::<{ PipelineTokenizer::STAGE_MODEL }>(d, &mut out, &mut pre).unwrap();
+            for tk in &out {
+                h ^= tk.id as u64;
+                h = h.wrapping_mul(1099511628211);
+            }
+            ntok += out.len();
+        }
+        eprintln!("CKSUM {h:016x} ntok {ntok}");
+    }
     let s: Vec<String> = mbps.iter().map(|m| format!("{m:.1}")).collect();
     // CACHE_STATS=1: report cumulative hit rate (run with iters=1 for the cold single-pass rate).
     let (hits, misses) = tk_encode::models::bpe::flat_cache_stats();

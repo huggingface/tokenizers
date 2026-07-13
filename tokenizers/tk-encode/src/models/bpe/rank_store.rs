@@ -32,20 +32,44 @@ struct Entry {
     merged: u32,
 }
 
+/// 8-bit fingerprint of a packed key, independent of the MPHF's internal hash.
+#[inline(always)]
+fn fp_of(key: u64) -> u8 {
+    (key.wrapping_mul(0x9E37_79B9_7F4A_7C15) >> 56) as u8
+}
+
 pub(crate) struct RankStore {
     mphf: Mphf,
     entries: Box<[Entry]>,
+    // #2 fingerprint pre-filter: fp[slot] == fp_of(key-at-slot). A query whose
+    // fingerprint misses rejects the (absent) pair without the wide entry load.
+    fp: Box<[u8]>,
+    // #3 direct table for byte-byte pairs (a,b < 256): (rank<<32)|merged, or
+    // u64::MAX for "no merge". No hash, no verify — direct index is exact.
+    small: Box<[u64]>,
+    use_fp: bool,
+    use_small: bool,
 }
+
+const SMALL_N: usize = 1 << 16; // (a<<8)|b for a,b < 256
 
 impl RankStore {
     pub(crate) fn build(merges: &MergeMap) -> Self {
         let mut params = PtrHashParams::default_fast();
         params.single_part = true;
+        // #3 small direct table: default ON (benched +3..16%); RANK_NO_SMALL opts out.
+        // #2 fingerprint: opt-in only (benched neutral-to-negative).
+        let use_fp = std::env::var("RANK_FP").is_ok();
+        let use_small = std::env::var("RANK_NO_SMALL").is_err();
         if merges.is_empty() {
             let empty: [u64; 0] = [];
             return RankStore {
                 mphf: Mphf::new(&empty, params),
                 entries: Box::new([]),
+                fp: Box::new([]),
+                small: Box::new([]),
+                use_fp,
+                use_small,
             };
         }
         // Collect once so build order is stable; each merged id is unique so
@@ -69,7 +93,25 @@ impl RankStore {
             entries.iter().all(|e| e.key != u64::MAX),
             "RankStore mis-sized: a slot was never written"
         );
-        RankStore { mphf, entries }
+        // #2 fingerprint per slot — only allocated when enabled.
+        let fp: Box<[u8]> = if use_fp {
+            entries.iter().map(|e| fp_of(e.key)).collect()
+        } else {
+            Box::new([])
+        };
+        // #3 direct byte-byte table — only allocated when enabled (default on).
+        let small = if use_small {
+            let mut s = vec![u64::MAX; SMALL_N].into_boxed_slice();
+            for &((a, b), (rank, merged)) in &pairs {
+                if a < 256 && b < 256 {
+                    s[((a << 8) | b) as usize] = ((rank as u64) << 32) | merged as u64;
+                }
+            }
+            s
+        } else {
+            Box::new([])
+        };
+        RankStore { mphf, entries, fp, small, use_fp, use_small }
     }
 
     /// One MPHF compute + one aligned `Entry` read + key verify. `None` for
@@ -81,8 +123,21 @@ impl RankStore {
         if self.entries.is_empty() {
             return None;
         }
+        // #3 byte-byte pairs: direct index, no hash, no verify.
+        if self.use_small && a < 256 && b < 256 {
+            let v = self.small[((a << 8) | b) as usize];
+            return if v == u64::MAX {
+                None
+            } else {
+                Some(((v >> 32) as u32, v as u32))
+            };
+        }
         let key = pack(a, b);
         let slot = self.mphf.index_single_part(&key);
+        // #2 fingerprint reject: skips the wide entry load for absent pairs.
+        if self.use_fp && self.fp[slot] != fp_of(key) {
+            return None;
+        }
         let e = self.entries[slot];
         if e.key == key {
             Some((e.rank, e.merged))

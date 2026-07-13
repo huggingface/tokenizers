@@ -724,6 +724,40 @@ pub struct PipelineBPE {
     cache_id: u64,
 }
 
+/// #1 toggle: use the no-revalidation versioned heap path (read once).
+fn heap_ver() -> bool {
+    static H: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *H.get_or_init(|| std::env::var("HEAP_VER").is_ok())
+}
+
+/// Versioned heap item for the #1 no-revalidation heap path. Ordered by
+/// `(r, pos)` only (min-heap via reversed `Ord`); `merged` is carried so a pop
+/// needs no rank re-lookup, and `ver` lazily invalidates stale entries.
+#[derive(Clone, Copy)]
+struct HeapItem {
+    r: u32,
+    pos: u32,
+    merged: u32,
+    ver: u32,
+}
+impl PartialEq for HeapItem {
+    fn eq(&self, o: &Self) -> bool {
+        self.r == o.r && self.pos == o.pos
+    }
+}
+impl Eq for HeapItem {}
+impl Ord for HeapItem {
+    fn cmp(&self, o: &Self) -> std::cmp::Ordering {
+        // QuaternaryHeap is a max-heap; make the smallest (r,pos) the greatest.
+        o.r.cmp(&self.r).then_with(|| o.pos.cmp(&self.pos))
+    }
+}
+impl PartialOrd for HeapItem {
+    fn partial_cmp(&self, o: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(o))
+    }
+}
+
 /// Reusable, per-thread merge scratch for the heap path (long pre-tokens only).
 /// Pre-sized once; `clear()`-then-reuse keeps the hot path allocation-free.
 struct MergeScratch {
@@ -733,6 +767,9 @@ struct MergeScratch {
     // 4-ary heap (matches the baseline `merge_all`) — faster than a binary heap
     // for the long-pre-token path (CJK sentences with no spaces).
     heap: dary_heap::QuaternaryHeap<std::cmp::Reverse<(u32, u32)>>,
+    // #1: versioned heap + per-position version — the no-revalidation heap path.
+    heap_v: dary_heap::QuaternaryHeap<HeapItem>,
+    ver: Vec<u32>,
     // (rank, merged_id) per adjacent pair, for the incremental linear merge:
     // computed once, then only the two neighbors of a merge are recomputed.
     ranks: Vec<(u32, u32)>,
@@ -750,6 +787,8 @@ impl MergeScratch {
             prev: Vec::with_capacity(cap),
             alive: Vec::with_capacity(cap),
             heap: dary_heap::QuaternaryHeap::with_capacity(2 * cap),
+            heap_v: dary_heap::QuaternaryHeap::with_capacity(2 * cap),
+            ver: Vec::with_capacity(cap),
             ranks: Vec::with_capacity(cap),
             seg: Vec::with_capacity(cap),
             cover: Vec::with_capacity(cap),
@@ -762,6 +801,8 @@ impl MergeScratch {
             self.prev.reserve(n);
             self.alive.reserve(n);
             self.heap.reserve(2 * n);
+            self.heap_v.reserve(2 * n);
+            self.ver.reserve(n);
         }
     }
 }
@@ -1053,6 +1094,84 @@ impl PipelineBPE {
         }
     }
 
+    /// #1 heap path without the per-pop revalidation lookup. Each heap item
+    /// carries its merged id and a version stamp; a pop is valid iff the item's
+    /// version still equals the position's current version — a plain array read,
+    /// replacing the `pair_rank` re-query the baseline `merge_heap` does on every
+    /// pop. Byte-exact: pops are ordered by `(r,pos)` exactly as before, and the
+    /// version guarantees the pair is unchanged so the stored merged id is fresh.
+    #[cfg_attr(feature = "profile-noinline", inline(never))]
+    fn merge_heap_versioned(&self, syms: &mut [u32], out: &mut Vec<u32>, ms: &mut MergeScratch) {
+        let n = syms.len();
+        ms.next.clear();
+        ms.prev.clear();
+        ms.alive.clear();
+        ms.heap_v.clear();
+        ms.ver.clear();
+        ms.ensure(n);
+        for i in 0..n {
+            ms.next.push(i as i32 + 1);
+            ms.prev.push(i as i32 - 1);
+            ms.alive.push(true);
+            ms.ver.push(0);
+        }
+        for i in 0..n - 1 {
+            if let Some((r, m)) = self.pair_rank(syms[i], syms[i + 1]) {
+                ms.ver[i] += 1;
+                ms.heap_v.push(HeapItem { r, pos: i as u32, merged: m, ver: ms.ver[i] });
+            }
+        }
+        while let Some(HeapItem { pos, merged, ver, .. }) = ms.heap_v.pop() {
+            let i = pos as usize;
+            // stale-entry rejection — no rank re-lookup, just two array reads
+            if !ms.alive[i] || ver != ms.ver[i] {
+                continue;
+            }
+            let j = ms.next[i];
+            if j < 0 || j as usize >= n || !ms.alive[j as usize] {
+                continue;
+            }
+            let j = j as usize;
+            syms[i] = merged;
+            ms.alive[j] = false;
+            let nj = ms.next[j];
+            ms.next[i] = nj;
+            if nj >= 0 && (nj as usize) < n {
+                ms.prev[nj as usize] = i as i32;
+            }
+            ms.ver[i] += 1; // invalidate this + older entries for i
+            if nj >= 0 && (nj as usize) < n {
+                if let Some((r2, m2)) = self.pair_rank(syms[i], syms[nj as usize]) {
+                    ms.heap_v.push(HeapItem { r: r2, pos: i as u32, merged: m2, ver: ms.ver[i] });
+                }
+            }
+            let pi = ms.prev[i];
+            if pi >= 0 {
+                // The pair (pi, i) changed — invalidate pi's stale entries even
+                // when the new pair has no merge rule (else a stale entry would
+                // later merge with a dead neighbor). Bump is unconditional.
+                ms.ver[pi as usize] += 1;
+                if let Some((r2, m2)) = self.pair_rank(syms[pi as usize], syms[i]) {
+                    ms.heap_v.push(HeapItem {
+                        r: r2,
+                        pos: pi as u32,
+                        merged: m2,
+                        ver: ms.ver[pi as usize],
+                    });
+                }
+            }
+        }
+        let mut i = 0usize;
+        loop {
+            out.push(syms[i]);
+            let nx = ms.next[i];
+            if nx < 0 || (nx as usize) >= n {
+                break;
+            }
+            i = nx as usize;
+        }
+    }
+
     /// Windowed merge for pre-tokens much longer than the vocab's longest token
     /// (space-free CJK sentences). `f` is always a committed final boundary;
     /// fully-merge the window `[f, f+2·span)`, commit tokens ending within the
@@ -1128,6 +1247,8 @@ impl PipelineBPE {
             self.merge_windowed(syms, out, ms);
         } else if syms.len() < MERGE_HEAP_MIN {
             self.merge_linear(syms, out, ms);
+        } else if heap_ver() {
+            self.merge_heap_versioned(syms, out, ms);
         } else {
             self.merge_heap(syms, out, ms);
         }
