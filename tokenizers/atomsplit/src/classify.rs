@@ -1,3 +1,5 @@
+use crate::{atom_tables::ATOM_TABLES, tables::Tables};
+
 /// The per-codepoint "atom" categories or "tags" that are used by the finite state machine to emit
 /// spit boundaries.
 ///
@@ -100,28 +102,16 @@ pub mod mask {
     pub const LETTER_MARK: u16 = Letter.bit() | Mark.bit();
 }
 
-const N_TAGS: usize = 13;
-const CONT: u8 = Atom::Cont as u8;
-const MB: u8 = Atom::MultiByte as u8;
+pub const CONT: u8 = Atom::Cont as u8;
+pub const MB: u8 = Atom::MultiByte as u8;
 const CJK_RANGE_TAG: Option<u8> = Some(Atom::Letter as u8); // all of CJK → Letter → range shortcut
 
-/// ┌──────────────────────── OWNER: scalar path ────────────────────────┐
-/// ASCII → LUT; 2/3-byte → bitmap-hit helpers (the matchers: `letter2_hit`/`number2_hit` +
-/// `mark2_hit`/`punct2_hit`/… to add); 3-byte-non-CJK residue → range search.
-#[inline]
-fn classify_char(text: &[u8], i: usize) -> u8 {
-    crate::atom_tables::ATOM_TABLES.classify_char(text, i)
-}
-
-fn tables() -> &'static crate::simd_classify::Tables {
-    &crate::atom_tables::ATOM_TABLES
-}
-/// Number of d/// Classify `text` under scheme `S` into `tags` (`tags.len() == text.len()`) — the single arch
+/// Classify `text` under scheme `S` into `tags` (`tags.len() == text.len()`) — the single arch
 /// dispatcher. aarch64: NEON at compile time (baseline). x86_64: AVX-512 VBMI → SSE4.1 → scalar,
 /// runtime-detected. wasm32 with `simd128`: SIMD128. Everything else: the portable scalar walk. All
 /// paths produce the identical stream.
 #[inline]
-pub fn classify<S: TagScheme>(text: &[u8], tags: &mut [u8]) {
+pub fn classify(text: &[u8], tags: &mut [u8]) {
     // Hard assert (not debug): the SIMD kernels do raw 16-byte stores into `tags` for full chunks, so a
     // short `tags` is out-of-bounds UB in release — reject it here. This is the sole entry point, so the
     // check guards every arch path below.
@@ -132,43 +122,43 @@ pub fn classify<S: TagScheme>(text: &[u8], tags: &mut [u8]) {
     #[cfg(target_arch = "aarch64")]
     // SAFETY: `tags.len() >= text.len()` (asserted above); NEON vld1q/vst1q are alignment-free.
     unsafe {
-        crate::simd_classify::classify_neon::<S>(text, tags)
+        crate::simd_classify::classify_neon(text, tags)
     }
     #[cfg(target_arch = "x86_64")]
-    crate::simd_avx_classify::dispatch::<S>(text, tags);
+    crate::simd_avx_classify::dispatch(text, tags);
     #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
     // SAFETY: `tags.len() >= text.len()` (asserted above); wasm v128 load/store are alignment-free.
     unsafe {
-        crate::simd_wasm_classify::classify_wasm::<S>(text, tags)
+        crate::simd_wasm_classify::classify_wasm(text, tags)
     }
     #[cfg(not(any(
         target_arch = "aarch64",
         target_arch = "x86_64",
         all(target_arch = "wasm32", target_feature = "simd128")
     )))]
-    classify_scalar::<S>(text, tags);
+    classify_scalar(text, tags);
 }
 
 /// The shared scalar walk loop — generic over the scheme. One forward pass; per char-start calls
 /// `S::classify_char`, fills continuation bytes with `S::CONT`. The non-SIMD fallback and the byte-exact
 /// test oracle for the SIMD kernels — not part of the supported public surface.
 #[doc(hidden)]
-pub fn classify_scalar<S: TagScheme>(text: &[u8], tags: &mut [u8]) {
+pub fn classify_scalar(text: &[u8], tags: &mut [u8]) {
     let n = text.len();
     let mut i = 0;
     while i < n {
         let b = text[i];
         // 0xC0 is 0b1100 0000, the continuation header byte.
         if b & 0xC0 == 0x80 {
-            tags[i] = S::CONT; // stray continuation byte
+            tags[i] = CONT; // stray continuation byte
             i += 1;
             continue;
         }
-        tags[i] = S::classify_char(text, i);
+        tags[i] = ATOM_TABLES.classify_char(text, i);
         let w = char_len(b);
         let mut j = 1;
         while j < w && i + j < n {
-            tags[i + j] = S::CONT;
+            tags[i + j] = CONT;
             j += 1;
         }
         i += w;
