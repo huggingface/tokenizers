@@ -1,6 +1,7 @@
 use super::Pair;
 use ahash::AHashMap;
 use dary_heap::QuaternaryHeap;
+use itertools::Itertools;
 use rand::{rng, Rng};
 use std::cmp::Ordering;
 
@@ -178,6 +179,11 @@ impl Word {
     }
 
     pub fn merge_all(&mut self, merges: &impl MergeLookup, dropout: Option<f32>) {
+        pub const RESCAN_THRESHOLD: usize = 128;
+        if self.symbols.len() < RESCAN_THRESHOLD {
+            return self.merge_all_rescan(merges);
+        }
+
         let mut queue = QuaternaryHeap::with_capacity(self.symbols.len());
         let mut skip = Vec::with_capacity(queue.len());
 
@@ -265,6 +271,85 @@ impl Word {
 
         // Filter out the removed symbols
         self.symbols.retain(|s| s.len != 0);
+    }
+
+    pub fn merge_all_rescan(&mut self, merges: &impl MergeLookup) {
+        const NO_MERGE: u32 = u32::MAX;
+        const POS_BITS: u32 = 12;
+        const POS_MASK: u32 = (1 << POS_BITS) - 1;
+
+        assert!(self.symbols.len() <= (POS_MASK as usize) + 1);
+
+        // A Vec holding the rank of each pair of symbols
+        //   ranks[i] = rank of self.(symbols[i], self.symbols[i+1])
+        let mut pair_ranks: Vec<u32> = (0..self.symbols.len().saturating_sub(1))
+            .map(|idx| {
+                if let Some((rank, _)) = merges.get(&(self.symbols[idx].c, self.symbols[idx + 1].c))
+                {
+                    debug_assert!(rank < (1 << (32 - POS_BITS)));
+                    rank
+                } else {
+                    NO_MERGE
+                }
+            })
+            .collect();
+
+        loop {
+            // Get leftmost best merge
+            let Some(best) = pair_ranks
+                .iter()
+                .enumerate()
+                .map(|(pos, &rank)| {
+                    if rank == NO_MERGE {
+                        NO_MERGE
+                    } else {
+                        // Packing breaks ties in rank by leftmost position
+                        (rank << 12) | pos as u32
+                    }
+                })
+                .min()
+            else {
+                // word collapsed to a single symbol
+                break;
+            };
+
+            if best == NO_MERGE {
+                // Nothing mergeable anymore
+                break;
+            }
+
+            let pos = (best & POS_MASK) as usize;
+            let (rank, new_id) = merges
+                .get(&(self.symbols[pos].c, self.symbols[pos + 1].c))
+                .unwrap();
+            debug_assert_eq!(rank, best >> POS_BITS);
+
+            // Merge symbols
+            let right = self.symbols[pos + 1];
+            self.symbols[pos].merge_with(&right, new_id);
+            self.symbols.remove(pos + 1);
+
+            // Repair rank array
+            pair_ranks.remove(pos);
+            if pos > 0 {
+                pair_ranks[pos - 1] = if let Some((rank, _)) =
+                    merges.get(&(self.symbols[pos - 1].c, self.symbols[pos].c))
+                {
+                    rank
+                } else {
+                    NO_MERGE
+                };
+            }
+            if pos < pair_ranks.len() {
+                pair_ranks[pos] = if let Some((rank, _)) =
+                    merges.get(&(self.symbols[pos].c, self.symbols[pos + 1].c))
+                {
+                    rank
+                } else {
+                    NO_MERGE
+                };
+            }
+        }
     }
 
     pub fn get_chars(&self) -> Vec<u32> {
