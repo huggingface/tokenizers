@@ -31,8 +31,15 @@ class ByteLevel(PreTokenizer):
     """
     ByteLevel PreTokenizer
 
-    This pre-tokenizer takes care of replacing all bytes of the given string
-    with a corresponding representation, as well as splitting into words.
+    This pre-tokenizer takes care of replacing each byte of the given string's
+    UTF-8 representation with a corresponding visible character, as well as
+    splitting into words.
+
+    Note: this works on Unicode strings, not raw byte sequences. If you decode
+    arbitrary bytes as Latin-1 before passing them to this pre-tokenizer, bytes
+    above 127 will be encoded as UTF-8 first and may become multiple visible
+    byte-level characters. If your text is already mapped to byte-level visible
+    characters, do not apply this pre-tokenizer again.
 
     Args:
         add_prefix_space (:obj:`bool`, `optional`, defaults to :obj:`True`):
