@@ -1,4 +1,5 @@
 use super::{super::OrderedVocabIter, Error, Pair, Word};
+use crate::models::bpe::merge_store::MergeStore;
 use crate::pipeline::{self, PipelineToken};
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::byte_level::{self};
@@ -678,6 +679,7 @@ pub struct PipelineBPE {
     atoms: Atoms,
     vocab: VocabStore,
     merges: MergeMap,
+    merge_store: MergeStore,
     ignore_merges: bool,
 }
 
@@ -752,10 +754,14 @@ impl PipelineBPE {
                 },
             )
         };
+
+        let merge_store = MergeStore::build(&merges);
+
         Ok(Self {
             atoms,
             ignore_merges,
             merges,
+            merge_store,
             vocab,
         })
     }
@@ -806,7 +812,7 @@ impl PipelineBPE {
                 word
             }
         };
-        word.merge_all(&self.merges, None);
+        word.merge_all(&self.merge_store, None);
         word
     }
 }

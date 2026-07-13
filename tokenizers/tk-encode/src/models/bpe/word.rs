@@ -4,6 +4,16 @@ use dary_heap::QuaternaryHeap;
 use rand::{rng, Rng};
 use std::cmp::Ordering;
 
+pub trait MergeLookup {
+    fn get(&self, pair: &(u32, u32)) -> Option<(u32, u32)>;
+}
+
+impl MergeLookup for AHashMap<(u32, u32), (u32, u32)> {
+    fn get(&self, pair: &(u32, u32)) -> Option<(u32, u32)> {
+        self.get(pair).copied()
+    }
+}
+
 #[derive(Debug, Eq)]
 struct Merge {
     pos: usize,
@@ -167,7 +177,7 @@ impl Word {
         changes
     }
 
-    pub fn merge_all(&mut self, merges: &AHashMap<Pair, (u32, u32)>, dropout: Option<f32>) {
+    pub fn merge_all(&mut self, merges: &impl MergeLookup, dropout: Option<f32>) {
         let mut queue = QuaternaryHeap::with_capacity(self.symbols.len());
         let mut skip = Vec::with_capacity(queue.len());
 
@@ -207,7 +217,7 @@ impl Word {
                 let target_new_pair = (self.symbols[top.pos].c, right.c);
                 if merges
                     .get(&target_new_pair)
-                    .is_none_or(|(_, new_id)| *new_id != top.new_id)
+                    .is_none_or(|(_, new_id)| new_id != top.new_id)
                 {
                     continue;
                 }
@@ -231,8 +241,8 @@ impl Word {
                     if let Some((rank, new_id)) = merges.get(&new_pair) {
                         queue.push(Merge {
                             pos: current.prev as usize,
-                            rank: *rank,
-                            new_id: *new_id,
+                            rank: rank,
+                            new_id: new_id,
                         });
                     }
                 }
@@ -245,8 +255,8 @@ impl Word {
                     if let Some((rank, new_id)) = merges.get(&new_pair) {
                         queue.push(Merge {
                             pos: top.pos,
-                            rank: *rank,
-                            new_id: *new_id,
+                            rank: rank,
+                            new_id: new_id,
                         });
                     }
                 }
