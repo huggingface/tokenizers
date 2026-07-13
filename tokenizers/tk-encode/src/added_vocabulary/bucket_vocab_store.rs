@@ -1,11 +1,10 @@
 use std::collections::HashSet;
 
 use ahash::RandomState;
-use ptr_hash::bucket_fn::Linear;
-use ptr_hash::{PtrHash, PtrHashParams};
+use ptr_hash::{hash::NoHash, FastPtrHash, PtrHashParams};
 use std::fmt;
 
-type Mphf = PtrHash<u64, Linear>;
+type Mphf = FastPtrHash<NoHash, u64>;
 
 // Fixed seeds so a given vocab always hashes identically (the hasher is also stored on the struct,
 // so build and query are guaranteed consistent regardless).
@@ -113,8 +112,7 @@ impl BucketVocabStore {
         }
 
         // 3. Build the MPHF. `single_part = true` to use the faster `index_single_part` query path.
-        let mut params = PtrHashParams::default_fast();
-        params.single_part = true;
+        let params = PtrHashParams::default_fast();
         let mphf = Mphf::new(&seen.into_iter().collect::<Vec<u64>>(), params);
 
         // 4. Place each token at its MPHF slot; build the slab and the id->slot reverse table.
@@ -135,7 +133,7 @@ impl BucketVocabStore {
                 s.len() <= u16::MAX as usize,
                 "token longer than 65535 bytes"
             );
-            let slot = mphf.index_single_part(&hasher.hash_one(s.as_slice()));
+            let slot = mphf.index(&hasher.hash_one(s.as_slice()));
             entries[slot] = Entry {
                 start: bytes.len() as u32,
                 len: s.len() as u16,
@@ -157,7 +155,7 @@ impl BucketVocabStore {
         // convenient to build empty edit later.
         let empty: [u64; 0] = [];
         Self {
-            mphf: PtrHash::<u64, Linear>::new(&empty, PtrHashParams::default_fast()),
+            mphf: FastPtrHash::<NoHash, u64>::new(&empty, PtrHashParams::default_fast()),
             hasher: RandomState::new(),
             bytes: Box::new([]),
             entries: Box::new([]),
@@ -173,7 +171,7 @@ impl BucketVocabStore {
         if self.entries.is_empty() {
             return None;
         }
-        let slot = self.mphf.index_single_part(&self.hasher.hash_one(q));
+        let slot = self.mphf.index(&self.hasher.hash_one(q));
 
         let e = self.entries[slot];
         let (start, len) = (e.start as usize, e.len as usize);
