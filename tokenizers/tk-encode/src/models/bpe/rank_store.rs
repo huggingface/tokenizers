@@ -57,6 +57,10 @@ impl RankStore {
     pub(crate) fn build(merges: &MergeMap) -> Self {
         let mut params = PtrHashParams::default_fast();
         params.single_part = true;
+        // Fast no-remap PHF: skip the Elias-Fano remap to a minimal [0,n) index.
+        // `index_no_remap` returns a slot in [0, max_index()) directly (sparse:
+        // ~1.01·n, some slots empty), avoiding the CachelineEf decode per lookup.
+        params.remap = false;
         // #3 small direct table: default ON (benched +3..16%); RANK_NO_SMALL opts out.
         // #2 fingerprint: opt-in only (benched neutral-to-negative).
         let use_fp = std::env::var("RANK_FP").is_ok();
@@ -78,21 +82,18 @@ impl RankStore {
             merges.iter().map(|(&p, &v)| (p, v)).collect();
         let keys: Vec<u64> = pairs.iter().map(|&((a, b), _)| pack(a, b)).collect();
         let mphf = Mphf::new(&keys, params);
-        let n = pairs.len();
+        // No-remap: the table spans the full slot range (sparse, some empty).
+        let n_slots = mphf.max_index();
         let mut entries = vec![
             Entry { key: u64::MAX, rank: 0, merged: 0 };
-            n
+            n_slots
         ]
         .into_boxed_slice();
         for &((a, b), (rank, merged)) in &pairs {
             let k = pack(a, b);
-            let slot = mphf.index_single_part(&k);
+            let slot = mphf.index_no_remap(&k);
             entries[slot] = Entry { key: k, rank, merged };
         }
-        debug_assert!(
-            entries.iter().all(|e| e.key != u64::MAX),
-            "RankStore mis-sized: a slot was never written"
-        );
         // #2 fingerprint per slot — only allocated when enabled.
         let fp: Box<[u8]> = if use_fp {
             entries.iter().map(|e| fp_of(e.key)).collect()
@@ -133,7 +134,7 @@ impl RankStore {
             };
         }
         let key = pack(a, b);
-        let slot = self.mphf.index_single_part(&key);
+        let slot = self.mphf.index_no_remap(&key);
         // #2 fingerprint reject: skips the wide entry load for absent pairs.
         if self.use_fp && self.fp[slot] != fp_of(key) {
             return None;
