@@ -39,7 +39,9 @@ class ByteLevel(PreTokenizer):
     arbitrary bytes as Latin-1 before passing them to this pre-tokenizer, bytes
     above 127 will be encoded as UTF-8 first and may become multiple visible
     byte-level characters. If your text is already mapped to byte-level visible
-    characters, do not apply this pre-tokenizer again.
+    characters, do not apply this pre-tokenizer again. To encode raw bytes with
+    a byte-level BPE tokenizer, map each byte to its byte-level visible
+    character first and skip the normalizer and pre-tokenizer.
 
     Args:
         add_prefix_space (:obj:`bool`, `optional`, defaults to :obj:`True`):
