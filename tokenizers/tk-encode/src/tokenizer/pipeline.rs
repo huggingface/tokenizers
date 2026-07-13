@@ -137,7 +137,9 @@ impl TryFrom<PreTokenizerWrapper> for PipelinePreTokenizer {
             PreTokenizerWrapper::Digits(p) => Ok(PipelinePreTokenizer::Digits(p)),
             PreTokenizerWrapper::FixedLength(p) => Ok(PipelinePreTokenizer::FixedLength(p)),
             PreTokenizerWrapper::Punctuation(p) => Ok(PipelinePreTokenizer::Punctuation(p)),
-            PreTokenizerWrapper::Split(p) => Ok(PipelinePreTokenizer::Split(p)),
+            PreTokenizerWrapper::Split(p) => {
+                Ok(PipelinePreTokenizer::Split(p.canonicalized_for_pipeline()?))
+            }
             PreTokenizerWrapper::UnicodeScripts(p) => Ok(PipelinePreTokenizer::UnicodeScripts(p)),
             PreTokenizerWrapper::Whitespace(p) => Ok(PipelinePreTokenizer::Whitespace(p)),
             PreTokenizerWrapper::WhitespaceSplit(p) => Ok(PipelinePreTokenizer::WhitespaceSplit(p)),
