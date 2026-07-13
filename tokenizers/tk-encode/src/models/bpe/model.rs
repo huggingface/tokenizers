@@ -1178,7 +1178,7 @@ impl pipeline::Model for PipelineBPE {
             let mut cache = cell.borrow_mut();
             cache.retarget(self.cache_id);
             let h = cache.hash(p);
-            if let Some((off, len)) = cache.get(h) {
+            if let Some((off, len)) = cache.get(p, h) {
                 output.extend(cache.ids_slice(off, len).iter().map(|&id| PipelineToken { id }));
                 return;
             }
@@ -1187,7 +1187,7 @@ impl pipeline::Model for PipelineBPE {
                 let mut ids = o.borrow_mut();
                 ids.clear();
                 self.encode_piece(sequence, &mut ids);
-                cache.insert(h, &ids);
+                cache.insert(p, h, &ids);
                 output.extend(ids.iter().map(|&id| PipelineToken { id }));
             });
         });
