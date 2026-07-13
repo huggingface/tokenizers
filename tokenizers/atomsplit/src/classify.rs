@@ -57,7 +57,7 @@ pub const fn in_mask(tag: u8, mask: u16) -> bool {
 }
 
 /// UTF-8 char length from the lead byte. Width is a pure function of the lead — no classification.
-#[inline]
+#[inline(always)]
 pub const fn char_len(b: u8) -> usize {
     if b < 0x80 {
         1

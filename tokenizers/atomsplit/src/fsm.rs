@@ -6,8 +6,7 @@
 //! [`class_runs_into`]: on aarch64/wasm the SIMD movemask boundary-extractor + homogeneous-chunk
 //! early-out (in `simd_fsm`), elsewhere the scalar run-end core ([`class_runs_runend`]). The
 //! regex-shaped ones ([`fsm_cl100k`] / [`fsm_o200k`] / [`fsm_deepseek`] / [`fsm_byte_level`]) are scalar
-//! jump-tables.
-//! Tests live in `tests/`, throughput benches in `benches/`.
+//! jump-tables, with some SIMD for the occasional * or + patterns
 
 use crate::classify::{Atom, char_len, classify, in_mask, mask};
 const LET: u8 = Atom::Letter as u8;
@@ -25,10 +24,10 @@ const NMO: u8 = Atom::NumericOther as u8;
 const CTL: u8 = Atom::Control as u8;
 const CONT: u8 = Atom::Cont as u8;
 const ASM: u8 = Atom::AlphaSymMark as u8;
+
 /// Advance over a maximal `m`-membership run; returns the byte index past it. Byte-wise (`i += 1`),
 /// treating continuation bytes as in-run — so NO `char_len` branch per char and no `text` access. This
-/// is THE hot inner loop of the dense (English/code) FSM; the earlier `char_len`-per-char version was
-/// ~2× slower there (English fsm 2.3 → ~1.1 ns/byte). Keep this a tight, inlinable byte scan.
+/// is THE hot inner loop of the dense (English/code) FSM;
 /// `inline(always)`: it's called once per token (~200K/MB on English) — a real call here doubles fsm cost.
 #[inline(always)]
 fn run_end(tags: &[u8], mut i: usize, end: usize, m: u16) -> usize {
@@ -39,16 +38,13 @@ fn run_end(tags: &[u8], mut i: usize, end: usize, m: u16) -> usize {
 }
 
 /// A token span: byte offsets `[start, end)` into the input.
-/// TODO:i think we could use u16 for one of them if we stored start, offset5
 pub type Span = (u32, u32);
 
 /// No-`push` class-family pre-tokenizer core: writes spans into the preallocated `out` slice and returns
-/// the count — no `Vec`, no realloc. ONE shape covers the whole class family via `<DROP, ISOLATE, KEEP_A>`:
+/// the count. ONE shape covers the whole class family via `<DROP, ISOLATE, KEEP_A>`:
 ///   WhitespaceSplit `<{WS},0,0>` · Punctuation `<0,{PUNCT},0>` · Digits `<0,0,{NUMERIC}>` ·
 ///   Whitespace `<{WS},0,{WORD}>` · Bert `<{WS},{PUNCT},0>`.
 /// Class of a char: `DROP`→dropped, `ISOLATE`→own token, `KEEP_A`→run "A", else→run "B" (A/B cut apart).
-/// aarch64 uses the NEON boundary extractor (`class_runs_neon`); elsewhere the run-end core — byte-exact
-/// across both paths (see the `class_runs_into_matches` test). `out.len()` must be ≥ `text.len()`.
 #[inline]
 #[must_use]
 pub fn class_runs_into<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>(

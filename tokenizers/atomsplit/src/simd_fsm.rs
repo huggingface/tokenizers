@@ -9,8 +9,86 @@
 use crate::classify::{Atom, char_len, in_mask};
 use crate::fsm::Span;
 
-// ── aarch64 / NEON ──────────────────────────────────────────────────────────────────────────────
+/// Class LookUpTable: tag → 0 drop / 1 isolate / 2 keep-A / 3 keep-B; Cont → 0xFF (fill sentinel).
+#[inline]
+fn class_lut<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>() -> [u8; 16] {
+    let mut lut = [3u8; 16];
+    let mut t = 0u8;
+    while t < 16 {
+        lut[t as usize] = if t == Atom::Cont as u8 {
+            0xFF
+        } else if (DROP >> t) & 1 != 0 {
+            0
+        } else if (ISOLATE >> t) & 1 != 0 {
+            1
+        } else if (KEEP_A >> t) & 1 != 0 {
+            2
+        } else {
+            3
+        };
+        t += 1;
+    }
+    lut
+}
 
+/// Close the open segment at `pos` (emit unless DROP), open a new one of class `cls`.
+#[inline(always)]
+fn emit(
+    out: &mut [Span],
+    w: &mut usize,
+    seg_start: &mut usize,
+    seg_class: &mut u8,
+    pos: usize,
+    cls: u8,
+) {
+    if *seg_class != 0 {
+        out[*w] = (*seg_start as u32, pos as u32);
+        *w += 1;
+    }
+    *seg_start = pos;
+    *seg_class = cls;
+}
+/// Scalar tail for the < 16-byte remainder (MAY start mid-char — the chunk loop steps by 16). A
+/// continuation byte stays in the current segment (advance one byte; `char_len` only valid on a lead).
+#[inline]
+fn tail<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>(
+    text: &[u8],
+    tags: &[u8],
+    out: &mut [Span],
+    mut w: usize,
+    mut i: usize,
+    mut seg_start: usize,
+    mut seg_class: u8,
+) -> usize {
+    let n = text.len();
+    while i < n {
+        let s = i;
+        let r = tags[s];
+        if r == Atom::Cont as u8 {
+            i += 1;
+            continue;
+        }
+        let c = if in_mask(r, DROP) {
+            0
+        } else if in_mask(r, ISOLATE) {
+            1
+        } else if in_mask(r, KEEP_A) {
+            2
+        } else {
+            3
+        };
+        i += char_len(text[s]);
+        if c != seg_class || c == 1 || seg_class == 1 {
+            emit(out, &mut w, &mut seg_start, &mut seg_class, s, c);
+        }
+    }
+    if seg_class != 0 {
+        out[w] = (seg_start as u32, n as u32);
+        w += 1;
+    }
+    w
+}
+// ── aarch64 / NEON ──────────────────────────────────────────────────────────────────────────────
 /// NEON class-runs boundary-extract: per 16 tags → class via `vqtbl1` (Cont→`0xFF`), fill Cont lanes
 /// with the left neighbour's class (≤3 iters = max continuation bytes), then boundary = class-change |
 /// isolate lead, restricted to leads → movemask → iterate set bits, emitting one span per non-`DROP`
@@ -23,6 +101,7 @@ pub(crate) fn class_runs_neon<const DROP: u16, const ISOLATE: u16, const KEEP_A:
     out: &mut [Span],
 ) -> usize {
     use core::arch::aarch64::*;
+    // This is a lookup table
     let lut = class_lut::<DROP, ISOLATE, KEEP_A>();
     const POW: [u8; 16] = [1, 2, 4, 8, 16, 32, 64, 128, 1, 2, 4, 8, 16, 32, 64, 128];
     let n = text.len();
@@ -45,6 +124,10 @@ pub(crate) fn class_runs_neon<const DROP: u16, const ISOLATE: u16, const KEEP_A:
             let v = vandq_u8(vld1q_u8(tags.as_ptr().add(i)), lonib);
             let raw = vqtbl1q_u8(lutv, v);
             if seg_class != 1 {
+                // we are not at the start, we check the 16 bytes at the same time:
+                // raw are the u8 tags. seg class is the running tag or 0
+                // contv is the continuation byte. We are just check all are same class or cont ->
+                // skip the 16 bytes go to next.
                 let ok = vorrq_u8(vceqq_u8(raw, vdupq_n_u8(seg_class)), vceqq_u8(raw, contv));
                 if vminvq_u8(ok) == 0xFF {
                     carry = seg_class;
@@ -52,6 +135,7 @@ pub(crate) fn class_runs_neon<const DROP: u16, const ISOLATE: u16, const KEEP_A:
                     continue;
                 }
             }
+            // TODO: I HAVE not read a single thing here.
             let mut cls = raw;
             let mut k = 0;
             while k < 3 {
@@ -161,87 +245,4 @@ pub(crate) fn class_runs_wasm<const DROP: u16, const ISOLATE: u16, const KEEP_A:
         i += 16;
     }
     tail::<DROP, ISOLATE, KEEP_A>(text, tags, out, w, i, seg_start, seg_class)
-}
-
-// ── shared scalar bits (LUT build, per-bit emit, < 16-byte tail) ────────────────────────────────
-
-/// Class LUT: tag → 0 drop / 1 isolate / 2 keep-A / 3 keep-B; Cont → 0xFF (fill sentinel).
-#[inline]
-fn class_lut<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>() -> [u8; 16] {
-    let mut lut = [3u8; 16];
-    let mut t = 0u8;
-    while t < 16 {
-        lut[t as usize] = if t == Atom::Cont as u8 {
-            0xFF
-        } else if (DROP >> t) & 1 != 0 {
-            0
-        } else if (ISOLATE >> t) & 1 != 0 {
-            1
-        } else if (KEEP_A >> t) & 1 != 0 {
-            2
-        } else {
-            3
-        };
-        t += 1;
-    }
-    lut
-}
-
-/// Close the open segment at `pos` (emit unless DROP), open a new one of class `cls`.
-#[inline(always)]
-fn emit(
-    out: &mut [Span],
-    w: &mut usize,
-    seg_start: &mut usize,
-    seg_class: &mut u8,
-    pos: usize,
-    cls: u8,
-) {
-    if *seg_class != 0 {
-        out[*w] = (*seg_start as u32, pos as u32);
-        *w += 1;
-    }
-    *seg_start = pos;
-    *seg_class = cls;
-}
-
-/// Scalar tail for the < 16-byte remainder (MAY start mid-char — the chunk loop steps by 16). A
-/// continuation byte stays in the current segment (advance one byte; `char_len` only valid on a lead).
-#[inline]
-fn tail<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>(
-    text: &[u8],
-    tags: &[u8],
-    out: &mut [Span],
-    mut w: usize,
-    mut i: usize,
-    mut seg_start: usize,
-    mut seg_class: u8,
-) -> usize {
-    let n = text.len();
-    while i < n {
-        let s = i;
-        let r = tags[s];
-        if r == Atom::Cont as u8 {
-            i += 1;
-            continue;
-        }
-        let c = if in_mask(r, DROP) {
-            0
-        } else if in_mask(r, ISOLATE) {
-            1
-        } else if in_mask(r, KEEP_A) {
-            2
-        } else {
-            3
-        };
-        i += char_len(text[s]);
-        if c != seg_class || c == 1 || seg_class == 1 {
-            emit(out, &mut w, &mut seg_start, &mut seg_class, s, c);
-        }
-    }
-    if seg_class != 0 {
-        out[w] = (seg_start as u32, n as u32);
-        w += 1;
-    }
-    w
 }
