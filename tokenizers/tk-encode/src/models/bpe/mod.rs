@@ -2,6 +2,7 @@
 use std::{iter, mem};
 
 mod flat_cache;
+pub use flat_cache::flat_cache_stats;
 mod model;
 mod rank_store;
 mod serialization;

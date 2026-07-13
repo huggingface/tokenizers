@@ -57,10 +57,20 @@ fn main() {
         mbps.push(n_bytes as f64 / t.elapsed().as_secs_f64() / 1e6);
     }
     let s: Vec<String> = mbps.iter().map(|m| format!("{m:.1}")).collect();
+    // CACHE_STATS=1: report cumulative hit rate (run with iters=1 for the cold single-pass rate).
+    let (hits, misses) = tk_encode::models::bpe::flat_cache_stats();
+    let hr = if hits + misses > 0 {
+        hits as f64 / (hits + misses) as f64 * 100.0
+    } else {
+        0.0
+    };
     println!(
-        "{{\"n_docs\": {}, \"n_bytes\": {}, \"mbps_per_iter\": [{}]}}",
+        "{{\"n_docs\": {}, \"n_bytes\": {}, \"mbps_per_iter\": [{}], \"hits\": {}, \"misses\": {}, \"hit_rate\": {:.1}}}",
         docs.len(),
         n_bytes,
-        s.join(", ")
+        s.join(", "),
+        hits,
+        misses,
+        hr
     );
 }
