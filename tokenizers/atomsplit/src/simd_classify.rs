@@ -1,12 +1,12 @@
 use crate::atom_tables::ATOM_TABLES;
+use crate::classify::{Atom, CONT, MB};
+const CJK_TAG: u8 = Atom::Letter as u8;
+
 // ================================================================================================
 // The smallest load we can do in neon is vld1q_u8, which handles 16bytes.
 // We define primitives to be able to index into 4 x 16 byte vectors.
 // The vqtbl4q_u8 allows for that exactly.
 // ================================================================================================
-use crate::classify::{Atom, CONT, MB};
-const CJK_TAG: u8 = Atom::Letter as u8;
-
 #[cfg(target_arch = "aarch64")]
 #[inline]
 #[allow(unsafe_op_in_unsafe_fn)]
@@ -111,17 +111,37 @@ fn decode(t: &[u8], i: usize) -> u32 {
     }
 }
 
-/// Whole-buffer NEON classify, generic over the scheme. Tables come from `S::tables()`; the scalar
-/// `S::classify_char` covers only the <32-byte tail and astral 4-byte codepoints. Byte-exact vs the
-/// scalar walk. `classify::<S>` dispatches here on aarch64 (NEON is baseline there).
+/// This is the key classification function. We built the ATOM_TABLES, and here we leverage them.
+/// The core idea is to assume 16 bytes are gonna be on average all from the same script. This
+/// means that the same classification rule can be applied for all of them. Otherwise, we run all
+/// the classification rules.
 ///
-/// Per lane, `b0`/`b1`/`b2` are the 1st/2nd/3rd bytes of the (potential) UTF-8 char starting there —
-/// i.e. the byte at the lane and the two after it (`vext` shifts the next chunk in).
+/// Rules are associated with the total number of bytes of the utf8 character:
+///     - 1 bytes: all the ascii table holds in a table of 128 tags.
+///     - 2 bytes: there are 2048 2-byte chars. We can do a fast lookup in such a big table, so we
+///     extract which table needs to be looked at from the leading bytes. 110xxxyy 10zzzzzz: xxx is the
+///     group, yy the sub group and zzzzzz the index. We have to loop on the different xxx because
+///     in SIMD we can't do any indexing in tables with an index > 256. But again, characters of
+///     the same scripts will most often have the same leading xxx:
+// ______________________________________________________________________
+// | xxx | U+ range  | scripts                                            |
+// |_____|___________|____________________________________________________|
+// | 000 | 0080-00FF | Latin-1 Supplement                                 |
+// | 001 | 0100-01FF | Latin Extended-A, Latin Extended-B (start)         |
+// | 010 | 0200-02FF | Latin Extended-B (end), IPA Ext, Spacing Modifiers |
+// | 011 | 0300-03FF | Combining Diacritical Marks, Greek & Coptic        |
+// | 100 | 0400-04FF | Cyrillic                                           |
+// | 101 | 0500-05FF | Cyrillic Supplement, Armenian, Hebrew              |
+// | 110 | 0600-06FF | Arabic                                             |
+// | 111 | 0700-07FF | Syriac, Arabic Supplement, Thaana, NKo             |
+// |_____|___________|____________________________________________________|
+///     We loop until we looked up the tables of each xxx values present in the 16 bytes.
+///     - 3 bytes: there are 3 cases, either the range is known to be cjk, or the range of the leading bytes allow direct
+///     classification (meanin from just the x's in 1110xxx 10xxxxxx 10yyyyyy we are able to
+///     determine the tag/class) or we need to do a lookup. Again, `xxxxxxxxx` gives us the index
+///     in `fast3_mixed`, and yyyyyy which element to lookup inside that table.
 ///
-/// # Safety
-/// `tags.len()` must be ≥ `text.len()` — the kernel does raw 16-byte `vst1q` stores into `tags` for full
-/// chunks. `text` must be well-formed UTF-8 (the tail/astral scalar path reads a lead's continuation
-/// bytes). Both hold when called via [`crate::classify`], which asserts the length up front.
+/// The reason we don't use the same table format for 2 or 3 byte?
 #[cfg(target_arch = "aarch64")]
 #[allow(unsafe_op_in_unsafe_fn, non_snake_case)]
 pub unsafe fn classify_neon(text: &[u8], tags: &mut [u8]) {
