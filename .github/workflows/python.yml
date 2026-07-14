@@ -60,6 +60,12 @@ jobs:
         uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc  # v2.9.1
         with:
           workspaces: bindings/python
+          # Skip caching ~/.cargo/bin — earlier runs left a stale
+          # rustup-init binary masquerading as `cargo`, breaking clippy
+          # on macOS. The cargo toolchain is reinstalled by dtolnay/
+          # rust-toolchain each run anyway, so caching it adds risk
+          # without speedup.
+          cache-bin: false
 
       - name: Install Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
@@ -88,10 +94,13 @@ jobs:
           # free-threaded Python (3.14t can't load abi3 extensions).
           # `pip install -e .` would build through maturin's PEP 660 path
           # which keeps abi3 enabled regardless of the interpreter.
+          # `parity-aware-bpe` must be re-listed explicitly on the 3.14t
+          # branch — `--no-default-features` strips it otherwise, and the
+          # Python shim unconditionally imports `ParityBpeTrainer`.
           if python -c 'import sys; sys.exit(0 if sys._is_gil_enabled() else 1)' 2>/dev/null; then
             maturin develop --release
           else
-            maturin develop --release --no-default-features --features ext-module
+            maturin develop --release --no-default-features --features ext-module,parity-aware-bpe
           fi
 
 

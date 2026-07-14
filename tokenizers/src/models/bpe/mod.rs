@@ -2,6 +2,8 @@
 use std::{iter, mem};
 
 mod model;
+#[cfg(feature = "parity-aware-bpe")]
+pub mod parity_trainer;
 mod serialization;
 pub mod trainer;
 mod word;
@@ -77,5 +79,7 @@ where
 
 // Re-export
 pub use model::*;
+#[cfg(feature = "parity-aware-bpe")]
+pub use parity_trainer::{ParityBpeTrainer, ParityBpeTrainerBuilder, ParityVariant};
 pub use trainer::*;
 use word::*;
