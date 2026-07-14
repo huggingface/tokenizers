@@ -120,7 +120,7 @@ fn decode(t: &[u8], i: usize) -> u32 {
 ///     - 1 bytes: all the ascii table holds in a table of 128 tags.
 ///     - 2 bytes: there are 2048 2-byte chars. We can do a fast lookup in such a big table, so we
 ///     extract which table needs to be looked at from the leading bytes. 110xxxyy 10zzzzzz: xxx is the
-///     group, yy the sub group and zzzzzz the index. We have to loop on the different xxx because
+///     group, yyzzzzzz the index. We have to loop on the different xxx because
 ///     in SIMD we can't do any indexing in tables with an index > 256. But again, characters of
 ///     the same scripts will most often have the same leading xxx:
 // ______________________________________________________________________
@@ -136,11 +136,22 @@ fn decode(t: &[u8], i: usize) -> u32 {
 // | 111 | 0700-07FF | Syriac, Arabic Supplement, Thaana, NKo             |
 // |_____|___________|____________________________________________________|
 ///     We loop until we looked up the tables of each xxx values present in the 16 bytes.
-///     - 3 bytes: there are 3 cases, either the range is known to be cjk, or the range of the leading bytes allow direct
+///     - 3 bytes: there are 3 cases, either the range is known to be cjk, either the range of the leading bytes allow direct
 ///     classification (meanin from just the x's in 1110xxx 10xxxxxx 10yyyyyy we are able to
 ///     determine the tag/class) or we need to do a lookup. Again, `xxxxxxxxx` gives us the index
 ///     in `fast3_mixed`, and yyyyyy which element to lookup inside that table.
-///
+//  ________________________________________________
+// | wwww | lead | U+ range  | kind                 |
+// |______|______|___________|______________________|
+// | 0101 | E5   | 5000-5FFF | Han ideographs       |
+// | 0110 | E6   | 6000-6FFF | Han ideographs       |
+// | 0111 | E7   | 7000-7FFF | Han ideographs       |
+// | 1000 | E8   | 8000-8FFF | Han ideographs       |
+// | 1001 | E9   | 9000-9FFF | Han ideographs       |
+// | 1011 | EB   | B000-BFFF | Hangul syllables     |
+// | 1100 | EC   | C000-CFFF | Hangul syllables     |
+// |______|______|___________|______________________|
+/// For the above ranges, we only need the first bytes.
 /// The reason we don't use the same table format for 2 or 3 byte?
 #[cfg(target_arch = "aarch64")]
 #[allow(unsafe_op_in_unsafe_fn, non_snake_case)]
@@ -180,7 +191,7 @@ pub unsafe fn classify_neon(text: &[u8], tags: &mut [u8]) {
 
         // ── 2-byte (C2..DF): here we could have differnt lead groups per byte.
         // Since we are in SIMD, we need to potentially iterate over the group index
-        // represented in all lanes. So until we no groups are left, we compute the
+        // represented in all lanes. So until there are no groups left, we compute the
         // min group, run the lookup, continue. That's because we are doing lookups in
         // 2 level table, which SIMD does not support (each of the 16 lanes might need to peekd
         //   into a different table, which is not possible).
@@ -213,11 +224,6 @@ pub unsafe fn classify_neon(text: &[u8], tags: &mut [u8]) {
             resolved = is_lead2;
         }
 
-        // ── CJK fast path (leads E3..ED = U+3000..U+DFFF) — ONLY when the scheme collapses all of CJK
-        //    to one tag (Atoms → Letter). A scheme that maps CJK blocks to several tags sets
-        //    CJK_RANGE_TAG=None and skips this → the 3-byte tables below resolve E3..ED.
-        //    OPTIMISTIC bulk: flags only DEFINITELY-CJK lanes and leaves boundary/hole codepoints
-        //    unresolved for the exact 3-byte tables — never over-claims, so the result stays byte-exact.
         let in_cjk_leads = in_range(b0, 0xE3, 0xED);
         if any(in_cjk_leads) {
             // Han — U+4000..U+9FFF (CJK Unified Ideographs + the Ext-A tail), minus the one non-
