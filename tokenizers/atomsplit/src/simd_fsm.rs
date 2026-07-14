@@ -50,11 +50,31 @@ fn emit(
 }
 
 // ── aarch64 / NEON ──────────────────────────────────────────────────────────────────────────────
-/// NEON class-runs boundary-extract: per 16 tags → class via `vqtbl1` (Cont→`0xFF`), fill Cont lanes
-/// with the left neighbour's class (≤3 iters = max continuation bytes), then boundary = class-change |
-/// isolate lead, restricted to leads → movemask → iterate set bits, emitting one span per non-`DROP`
-/// segment. A homogeneous-chunk early-out recovers the run-end bulk-skip for long runs (Digits/CJK).
-/// Open segment + carries cross chunks; a scalar tail finishes the < 16-byte remainder.
+//  legend:  L=letter   W=whitespace(drop)   P=punct(run-B)   C=UTF-8 continuation
+//
+//            0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15   ← lane
+// byte       H  i  ␣ E4 B8 96  ␣  w  o  r  l  d  ␣  !  .  x
+//            └Hi┘ ws └─ 世 ──┘ ws └─ world ──┘ ws └!.┘ x
+//
+// ┌─ STEP 1  load 16 tags into one NEON register ────────────────────────────┐
+//
+// ┌─ STEP 2  tag → class   (vqtbl1q_u8 = one 16-wide table lookup; Cont→C) ───┐
+// class      L  L  W  L  C  C  W  L  L  L  L  L  W  P  P  L
+//
+// ┌─ STEP 3  fill Cont from the left neighbour  (≤3 vext+vbsl; 世's C's ← L) ──┐
+// class'     L  L  W  L  L  L  W  L  L  L  L  L  W  P  P  L
+//                     └──┘  every lane now carries its char's real class
+//
+// ┌─ STEP 4  prev = class' shifted right 1 lane   (lane0 ← carry = W) ────────┐
+// prev       W  L  L  W  L  L  L  W  L  L  L  L  L  W  P  P
+//            ↑carry from previous chunk's last lane
+//
+// ┌─ STEP 5  boundary = (class' ≠ prev)  [isolate lanes also forced on] ──────┐
+// bound      1  .  1  1  .  .  1  1  .  .  .  .  1  1  .  1
+//
+// ┌─ STEP 6  movemask → 16-bit int;  set bits = {0,2,3,6,7,12,13,15} ─────────┐
+//            iterate set bits: each is a token start → span to the next start
+// Open segment + carries cross chunks; a scalar tail finishes the < 16-byte remainder.
 #[cfg(target_arch = "aarch64")]
 pub(crate) fn class_runs_neon<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>(
     text: &[u8],
@@ -86,9 +106,7 @@ pub(crate) fn class_runs_neon<const DROP: u16, const ISOLATE: u16, const KEEP_A:
             let raw = vqtbl1q_u8(lutv, v);
             if seg_class != 1 {
                 // we are not at the start, we check the 16 bytes at the same time:
-                // raw are the u8 tags. seg class is the running tag or 0
-                // contv is the continuation byte. We are just check all are same class or cont ->
-                // skip the 16 bytes go to next.
+                // seg_class is a mask over the 16  tags. We check if 
                 let ok = vorrq_u8(vceqq_u8(raw, vdupq_n_u8(seg_class)), vceqq_u8(raw, contv));
                 if vminvq_u8(ok) == 0xFF {
                     carry = seg_class;
