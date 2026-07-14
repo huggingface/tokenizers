@@ -4,7 +4,7 @@
 //!
 //! The class family (WhitespaceSplit / Punctuation / Digits / Whitespace / Bert) goes through
 //! [`class_runs_into`]: on aarch64/wasm the SIMD movemask boundary-extractor + homogeneous-chunk
-//! early-out (in `simd_fsm`), elsewhere the scalar run-end core ([`class_runs_runend`]). The
+//! early-out (in `simd_fsm`), elsewhere the scalar run-end core ([`emit_class_spans`]). The
 //! regex-shaped ones ([`fsm_cl100k`] / [`fsm_o200k`] / [`fsm_deepseek`] / [`fsm_byte_level`]) are scalar
 //! jump-tables, with some SIMD for the occasional * or + patterns
 
@@ -87,8 +87,8 @@ pub fn emit_class_spans<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>(
     out: &mut [Span],
     mut write_index: usize,         // in the out slice
     mut text_pointer: usize,        // in the text slice
-    mut segment_start: usize,       // previous segment_start
-    mut segment_class: Option<u16>, // previous segment's class
+    segment_start: usize,       // previous segment_start
+    segment_class: Option<u16>, // previous segment's class
 ) -> usize {
     debug_assert!(out.len() >= text.len() && tags.len() >= text.len());
     let n = text.len();
@@ -110,7 +110,7 @@ pub fn emit_class_spans<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>(
             text_pointer += 1;
             continue;
         }
-        /// classify the first char.
+        // classify the first char.
         if in_mask(t, DROP) {
             text_pointer = run_end(tags, text_pointer, n, DROP); // skip the whole drop run at once
         } else if in_mask(t, ISOLATE) {

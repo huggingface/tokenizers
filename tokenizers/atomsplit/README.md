@@ -149,7 +149,7 @@ A pre-tokenizer rule is one of two shapes, and **SIMD only helps the second**:
 
 The **dual** of a run-end is a **boundary**: the class-family pre-tokenizers (Whitespace / Bert / Digits / Punctuation) cut at *every* class change, so `class_runs_neon` scans the other way — classify 16 lanes (`vqtbl1`), fill continuation lanes from the left, `movemask` the class-changes, and iterate the set bits to emit one span per segment. It finds **every boundary in a chunk at once**, so short-run text (English words, ~5 chars) is never paid per-char.
 
-Both fuse in one kernel: `class_runs_neon` first tries the run-end fast path — *whole 16-chunk stays the current class → skip it, no boundary work* — and only movemasks the **mixed** chunks. So it bulk-skips long runs (Digits/Punct/CJK) **and** parallel-boundaries the dense ones, byte-exact with the portable `class_runs_runend` oracle. Two views of the same idea: **run-end skips the invalid to reach the next valid; boundary-extract flags every valid at once.**
+Both fuse in one kernel: `class_runs_neon` first tries the run-end fast path — *whole 16-chunk stays the current class → skip it, no boundary work* — and only movemasks the **mixed** chunks. So it bulk-skips long runs (Digits/Punct/CJK) **and** parallel-boundaries the dense ones, byte-exact with the portable `emit_class_spans` oracle. Two views of the same idea: **run-end skips the invalid to reach the next valid; boundary-extract flags every valid at once.**
 
 ### 2.3 Why it's a finite-state machine
 

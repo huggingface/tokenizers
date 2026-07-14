@@ -1,10 +1,10 @@
-//! Scalar vs SIMD fsm for the class family: `class_runs_runend` (scalar run-end core) vs
+//! Scalar vs SIMD fsm for the class family: `emit_class_spans` (scalar run-end core) vs
 //! `class_runs_into` (NEON/SIMD128 movemask boundary-extract + homogeneous-chunk early-out). classify is
 //! timed separately. `spd = scalar/simd`: >1 → SIMD wins. (cl100k is scalar-only — see benches/cl100k.rs.)
 //!
 //! Run: cargo bench --bench class_runs
 use atomsplit::classify::{classify, mask};
-use atomsplit::fsm::{Span, class_runs_into, class_runs_runend};
+use atomsplit::fsm::{Span, class_runs_into, emit_class_spans};
 use std::hint::black_box;
 use std::time::Instant;
 
@@ -27,7 +27,7 @@ macro_rules! pair {
     ($sname:ident, $vname:ident, $d:expr, $i:expr, $a:expr) => {
         #[inline(always)]
         fn $sname(t: &[u8], tg: &[u8], o: &mut [Span]) -> usize {
-            class_runs_runend::<$d, $i, $a>(t, tg, o)
+            emit_class_spans::<$d, $i, $a>(t, tg, o, 0, 0, 0, None)
         }
         #[inline(always)]
         fn $vname(t: &[u8], tg: &[u8], o: &mut [Span]) -> usize {
@@ -116,7 +116,7 @@ fn main() {
     compare!("Whitespace \\w", s_ws, v_ws);
     compare!("Bert", s_bert, v_bert);
     println!(
-        "\n(ns/byte, lower better. classify = SIMD classify; scalar = class_runs_runend (run-end\n \
+        "\n(ns/byte, lower better. classify = SIMD classify; scalar = emit_class_spans (run-end\n \
          core); simd = class_runs_into (NEON/SIMD128 movemask + early-out). spd = scalar/simd, >1 → SIMD\n \
          wins. cl100k is scalar-only — its perf is in benches/cl100k.rs.)"
     );

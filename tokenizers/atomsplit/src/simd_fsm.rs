@@ -1,5 +1,5 @@
 //! SIMD fsm kernels — the per-architecture accelerators for the class-family boundary extractor. The
-//! scalar core lives in `fsm.rs` (`class_runs_runend`); these are pure perf and BYTE-EXACT with it (the
+//! scalar core lives in `fsm.rs` (`emit_class_spans`); these are pure perf and BYTE-EXACT with it (the
 //! `class_runs_into_matches` sweep in `tests/fsm.rs` proves it on every path). `fsm.rs` dispatches here
 //! per arch: aarch64 → NEON, wasm32+simd128 → SIMD128; any other target uses the scalar core, so
 //! correctness never depends on a SIMD path being present. x86_64 (SSE/AVX `movemask`) is the natural
@@ -49,7 +49,38 @@ fn emit(
     *seg_class = cls;
 }
 
+/// SIMD→scalar handoff: finish the `< 16`-byte remainder from `i` via the scalar core. The kernels
+/// carry the open segment as a `class_lut` *code* (0=drop, 1=isolate, 2=keep-A, 3=keep-B/other; and the
+/// initial 0 = "leading drop run", a no-op when DROP is empty), but [`emit_class_spans`] wants that
+/// segment's tag *mask* — translate, then defer. An open isolate is a single pending char, not a run, so
+/// close it here before scanning the rest fresh (`emit_class_spans`'s open-segment path assumes a run).
+#[cfg(any(target_arch = "aarch64", all(target_arch = "wasm32", target_feature = "simd128")))]
+#[inline]
+fn tail<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>(
+    text: &[u8],
+    tags: &[u8],
+    out: &mut [Span],
+    w: usize,
+    i: usize,
+    seg_start: usize,
+    seg_class: u8,
+) -> usize {
+    if seg_class == 1 {
+        // open isolate = one pending char; emit it, then scan the remainder with no open segment.
+        let e = seg_start + char_len(text[seg_start]);
+        out[w] = (seg_start as u32, e as u32);
+        return emit_class_spans::<DROP, ISOLATE, KEEP_A>(text, tags, out, w + 1, e, 0, None);
+    }
+    let seg_mask = match seg_class {
+        0 => DROP,
+        2 => KEEP_A,
+        _ => !(DROP | ISOLATE | KEEP_A), // 3 = keep-B / other
+    };
+    emit_class_spans::<DROP, ISOLATE, KEEP_A>(text, tags, out, w, i, seg_start, Some(seg_mask))
+}
+
 // ── aarch64 / NEON ──────────────────────────────────────────────────────────────────────────────
+//  This is the same as emit_class_spans but using SIMD. We emit spans at class boundaries
 //  legend:  L=letter   W=whitespace(drop)   P=punct(run-B)   C=UTF-8 continuation
 //
 //            0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15   ← lane
@@ -87,7 +118,7 @@ pub(crate) fn class_runs_neon<const DROP: u16, const ISOLATE: u16, const KEEP_A:
     const POW: [u8; 16] = [1, 2, 4, 8, 16, 32, 64, 128, 1, 2, 4, 8, 16, 32, 64, 128];
     let n = text.len();
     let (mut w, mut i) = (0usize, 0usize);
-    let (mut seg_start, mut seg_class) = (0usize, 0u16);
+    let (mut seg_start, mut seg_class) = (0usize, 0u8);
     let mut carry: u8 = 0xFE;
     let mut cls_arr = [0u8; 16];
     // SAFETY: the chunk loop runs only while `i + 16 <= n`, so every `vld1q_u8(tags+i)` reads 16 in-bounds
@@ -106,7 +137,7 @@ pub(crate) fn class_runs_neon<const DROP: u16, const ISOLATE: u16, const KEEP_A:
             let raw = vqtbl1q_u8(lutv, v);
             if seg_class != 1 {
                 // we are not at the start, we check the 16 bytes at the same time:
-                // seg_class is a mask over the 16  tags. We check if 
+                // seg_class is a mask over the 16  tags. We check if
                 let ok = vorrq_u8(vceqq_u8(raw, vdupq_n_u8(seg_class)), vceqq_u8(raw, contv));
                 if vminvq_u8(ok) == 0xFF {
                     carry = seg_class;
@@ -148,7 +179,7 @@ pub(crate) fn class_runs_neon<const DROP: u16, const ISOLATE: u16, const KEEP_A:
             i += 16;
         }
     }
-    emit_class_spans::<DROP, ISOLATE, KEEP_A>(text, tags, out, w, i, seg_start, Some(seg_class))
+    tail::<DROP, ISOLATE, KEEP_A>(text, tags, out, w, i, seg_start, seg_class)
 }
 
 // ── wasm32 / SIMD128 ────────────────────────────────────────────────────────────────────────────

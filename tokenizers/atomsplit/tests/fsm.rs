@@ -1,7 +1,7 @@
 //! Integration tests for the FSM pre-tokenizers. Kept out of `src/` so the core stays production-only.
 use atomsplit::classify::{classify, mask};
 use atomsplit::fsm::{
-    CharDelimiterSplit, Span, class_runs_into, class_runs_runend, fsm_byte_level, fsm_cl100k,
+    CharDelimiterSplit, Span, class_runs_into, emit_class_spans, fsm_byte_level, fsm_cl100k,
     fsm_deepseek,
 };
 
@@ -54,7 +54,7 @@ fn char_delimiter_split() {
 }
 
 /// Byte-exactness gate for the class family: the NEON boundary extractor (`class_runs_into`) must equal
-/// the run-end core (`class_runs_runend`) for every recipe, at every char-aligned truncation length so
+/// the scalar run-end core (`emit_class_spans`) for every recipe, at every char-aligned truncation length so
 /// the < 16-byte NEON tail starts at every offset — including mid-char (chunk loop steps by 16). Corpus
 /// mixes ASCII, 2/3-byte scripts, Devanagari letter+matra clusters, consecutive punct, tabs, astral.
 #[test]
@@ -73,7 +73,7 @@ fn class_runs_into_matches() {
         name: &str,
     ) {
         let k1 = class_runs_into::<D, I, A>(t, tg, x);
-        let k2 = class_runs_runend::<D, I, A>(t, tg, y);
+        let k2 = emit_class_spans::<D, I, A>(t, tg, y, 0, 0, 0, None);
         assert_eq!(&x[..k1], &y[..k2], "{} @len {}", name, t.len());
     }
     let mut sweep = |len: usize| {
