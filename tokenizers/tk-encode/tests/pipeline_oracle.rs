@@ -41,7 +41,7 @@ fn check_chunks(corpus: &str, target_bytes: usize) {
     for chunk in make_chunks(&text, target_bytes) {
         let expected = oracle.encode(chunk.as_str(), false).unwrap();
         let got: Vec<u32> = pipeline
-            .encode(&chunk, false)
+            .encode_scoped(&chunk, false, |h| h.into_single())
             .unwrap()
             .iter()
             .map(|t| t.id)
@@ -55,6 +55,181 @@ fn check_chunks(corpus: &str, target_bytes: usize) {
     }
 }
 
+/// MS-A parallel floor: a multi-sequence `encode` (fanned out on the pool) must
+/// be result-identical to both the serial pipeline `encode` (order-preserving
+/// parallelism) and the reference oracle. Also checks the two `EncodeHandle`
+/// consumers agree: `wait_for_completion` (bulk collect) and `Iterator`
+/// (input-ordered streaming). Runs the whole corpus as one batch so multiple
+/// documents land on different worker threads.
+fn check_batch(corpus: &str, target_bytes: usize) {
+    let (oracle, pipeline, text) = load(corpus);
+    let chunks = make_chunks(&text, target_bytes);
+    let refs: Vec<&str> = chunks.iter().map(String::as_str).collect();
+
+    let batch = pipeline
+        .encode_scoped(&refs, false, |h| h.wait_for_completion())
+        .unwrap();
+    assert_eq!(batch.len(), chunks.len(), "batch length mismatch");
+
+    // Iterator face must yield the same results, in input order.
+    let streamed: Vec<Vec<u32>> = pipeline.encode_scoped(&refs, false, |h| {
+        h.map(|r| r.unwrap().iter().map(|t| t.id).collect()).collect()
+    });
+
+    for (i, (chunk, got)) in chunks.iter().zip(&batch).enumerate() {
+        let got_ids: Vec<u32> = got.iter().map(|t| t.id).collect();
+
+        // wait_for_completion == Iterator
+        assert_eq!(got_ids, streamed[i], "wait_for_completion != Iterator");
+
+        // batch == serial pipeline
+        let serial: Vec<u32> = pipeline
+            .encode_scoped(chunk, false, |h| h.into_single())
+            .unwrap()
+            .iter()
+            .map(|t| t.id)
+            .collect();
+        assert_eq!(
+            got_ids, serial,
+            "batch != serial on {:?}",
+            chunk.chars().take(80).collect::<String>(),
+        );
+
+        // batch == reference oracle
+        let expected = oracle.encode(chunk.as_str(), false).unwrap();
+        assert_eq!(
+            expected.get_ids(),
+            got_ids.as_slice(),
+            "batch != oracle on {:?}",
+            chunk.chars().take(80).collect::<String>(),
+        );
+    }
+}
+
+/// Exercises the cost gate's *inline* branch: a multi-sequence `encode` whose
+/// summed size is below the fan-out threshold runs on the calling thread (not
+/// the pool) and must still match the oracle. The corpus `check_batch` always
+/// clears the threshold and fans out, so this covers the other side.
+fn check_small_batch(corpus: &str) {
+    let (oracle, pipeline, text) = load(corpus);
+    // A handful of short lines — well under the fan-out byte threshold.
+    let inputs: Vec<&str> = text
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .take(4)
+        .collect();
+    if inputs.len() < 2 {
+        return;
+    }
+    let got = pipeline
+        .encode_scoped(&inputs, false, |h| h.wait_for_completion())
+        .unwrap();
+    assert_eq!(got.len(), inputs.len());
+    for (input, tokens) in inputs.iter().zip(&got) {
+        let expected = oracle.encode(*input, false).unwrap();
+        let ids: Vec<u32> = tokens.iter().map(|t| t.id).collect();
+        assert_eq!(
+            expected.get_ids(),
+            ids.as_slice(),
+            "small-batch (inline) mismatch on {input:?}",
+        );
+    }
+}
+
+/// MS-B intra-sequence chunking: a single large document is encoded through the segment
+/// path — split at newline boundaries into chunks, each run through the full pipeline in
+/// parallel, and concatenated in order. The result must equal the oracle (which, combined
+/// with the serial `check_chunks` above, transitively confirms chunked == serial == oracle).
+/// The bert-wiki config is chunk-safe (per-char normalizer + whitespace-delimiting
+/// pre-tokenizer), so this exercises the split; an unsafe config would stay whole.
+fn check_intra_seq(corpus: &str) {
+    let (oracle, pipeline, text) = load(corpus);
+    // One document large enough to be split into several chunks, but capped so the oracle
+    // reference encode stays cheap.
+    let mut doc = String::new();
+    for line in text.lines().filter(|l| !l.trim().is_empty()) {
+        if !doc.is_empty() {
+            doc.push('\n');
+        }
+        doc.push_str(line);
+        if doc.len() >= 64 * 1024 {
+            break;
+        }
+    }
+    if doc.len() < 16 * 1024 {
+        return; // corpus too small to exercise the parallel path
+    }
+    let got: Vec<u32> = pipeline
+        .encode_scoped(doc.as_str(), false, |h| h.into_single())
+        .unwrap()
+        .iter()
+        .map(|t| t.id)
+        .collect();
+    let expected = oracle.encode(doc.as_str(), false).unwrap();
+    assert_eq!(
+        expected.get_ids(),
+        got.as_slice(),
+        "intra-seq parallel encode != oracle",
+    );
+}
+
+/// Byte-level BPE (llama-3): the `SpaceRun` raw-cut path must be id-identical
+/// to the reference oracle across large real documents. Exercised over English
+/// (dense with non-ws→space cut candidates) and Japanese (multibyte seams —
+/// cuts may only land beside ASCII), through both encode paths.
+fn check_llama3(corpus: &str) {
+    let oracle = Tokenizer::from_file("../data/llama-3-tokenizer.json").unwrap();
+    let pipeline = PipelineTokenizer::try_from(&oracle).unwrap();
+    let text = std::fs::read_to_string(corpus).unwrap();
+    let mut doc = String::new();
+    for line in text.lines().filter(|l| !l.trim().is_empty()) {
+        if !doc.is_empty() {
+            doc.push('\n');
+        }
+        doc.push_str(line);
+        if doc.len() >= 256 * 1024 {
+            break;
+        }
+    }
+    if doc.len() < 32 * 1024 {
+        return;
+    }
+    let expected = oracle.encode(doc.as_str(), false).unwrap();
+    let scoped: Vec<u32> = pipeline
+        .encode_scoped(doc.as_str(), false, |h| h.into_single())
+        .unwrap()
+        .iter()
+        .map(|t| t.id)
+        .collect();
+    assert_eq!(
+        expected.get_ids(),
+        scoped.as_slice(),
+        "llama-3 scoped SpaceRun encode != oracle"
+    );
+    let owned: Vec<u32> = pipeline
+        .encode(doc, false)
+        .into_single()
+        .unwrap()
+        .iter()
+        .map(|t| t.id)
+        .collect();
+    assert_eq!(
+        expected.get_ids(),
+        owned.as_slice(),
+        "llama-3 owned SpaceRun encode != oracle"
+    );
+}
+
+#[test]
+fn llama3_intra_seq_english() {
+    check_llama3("../data/big.txt");
+}
+
+#[test]
+fn llama3_intra_seq_japanese() {
+    check_llama3("../data/unigram_wagahaiwa_nekodearu.txt");
+}
+
 macro_rules! corpus_tests {
     ($($name:ident => $file:literal),* $(,)?) => {
         $(
@@ -64,8 +239,24 @@ macro_rules! corpus_tests {
                     super::check_chunks($file, 1024);
                 }
                 #[test]
+                fn intra_seq() {
+                    super::check_intra_seq($file);
+                }
+                #[test]
                 fn chunks_10kb() {
                     super::check_chunks($file, 10 * 1024);
+                }
+                #[test]
+                fn batch_1kb() {
+                    super::check_batch($file, 1024);
+                }
+                #[test]
+                fn batch_10kb() {
+                    super::check_batch($file, 10 * 1024);
+                }
+                #[test]
+                fn small_batch_inline() {
+                    super::check_small_batch($file);
                 }
             }
         )*

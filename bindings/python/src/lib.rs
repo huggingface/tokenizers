@@ -28,6 +28,7 @@ mod processors;
 mod token;
 mod tokenizer;
 mod trainers;
+mod pipeline;
 mod utils;
 
 use pyo3::prelude::*;
@@ -59,6 +60,10 @@ pub mod tokenizers {
     pub use super::tokenizer::PyAddedToken;
     #[pymodule_export]
     pub use super::tokenizer::PyTokenizer;
+    #[pymodule_export]
+    pub use super::pipeline::PyPipelineTokenizer;
+    #[pymodule_export]
+    pub use super::pipeline::PyEncodeJob;
     #[pymodule_export]
     pub use super::utils::PyNormalizedString;
     #[pymodule_export]

@@ -18,5 +18,8 @@ fn main() {
         .expect("usage: binsize_pipeline <tokenizer.json> <text>");
     let tok = Tokenizer::from_file(path).unwrap();
     let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
-    println!("{}", pipeline.encode(text.as_str(), false).unwrap().len());
+    println!(
+        "{}",
+        pipeline.encode_scoped(text.as_str(), false, |h| h.into_single()).unwrap().len()
+    );
 }

@@ -166,7 +166,7 @@ fn bench_threads(
     for &n in &counts {
         let b = baseline.map(|b| par_mbps(|s| b.encode(s, false).unwrap().len(), chunks, bytes, n));
         let p = par_mbps(
-            |s| pipeline.encode(s, false).unwrap().len(),
+            |s| pipeline.encode_scoped(s, false, |h| h.into_single()).unwrap().len(),
             chunks,
             bytes,
             n,
@@ -350,7 +350,7 @@ fn memory_child(which: &str, model: &Path) {
             drop(tok);
             let after_load = rss_now().unwrap_or(0);
             for c in &chunks {
-                n += pipeline.encode(c, false).unwrap().len();
+                n += pipeline.encode_scoped(c, false, |h| h.into_single()).unwrap().len();
             }
             (after_load, rss_now().unwrap_or(0))
         }
@@ -672,7 +672,12 @@ fn bench_model(
     files: &[(String, PathBuf)],
     model_json: &Path,
 ) -> Vec<Value> {
-    let pipe_enc = |s: &str| pipeline.encode(s, false).unwrap().len();
+    let pipe_enc = |s: &str| {
+        pipeline
+            .encode_scoped(s, false, |h| h.into_single())
+            .unwrap()
+            .len()
+    };
     // per-model: the reference regex(es) onig will time on each fixture (empty for non-regex pretoks).
     let regexes = pretok_regexes(model_json);
     let base_enc = baseline.map(|b| move |s: &str| b.encode(s, false).unwrap().len());
@@ -686,7 +691,7 @@ fn bench_model(
 
         let pipe_ids = |c: &String| -> Vec<u32> {
             pipeline
-                .encode(c, false)
+                .encode_scoped(c, false, |h| h.into_single())
                 .unwrap()
                 .iter()
                 .map(|t| t.id)
@@ -880,7 +885,7 @@ fn main() {
         // and has no range-based impl. Probe once and downgrade to "unsupported"
         // (with the reason) instead of panicking partway through the bench.
         let pipeline = match PipelineTokenizer::try_from(&tok) {
-            Ok(p) => match p.encode(PROBE, false) {
+            Ok(p) => match p.encode_scoped(PROBE, false, |h| h.into_single()) {
                 Ok(_) => p,
                 Err(e) => {
                     eprintln!("  pipeline builds but can't encode yet ({shape}): {e}");

@@ -79,6 +79,11 @@ impl PipelineSequence {
             (Some(a), Some(b), Some(c)) if crate::utils::is_deepseek(a, b, c)
         )
     }
+
+    /// The sequence members, in application order.
+    pub(crate) fn members(&self) -> &[PipelinePreTokenizer] {
+        &self.pre_tokenizers
+    }
 }
 
 impl TryFrom<Sequence> for PipelineSequence {
