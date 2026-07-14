@@ -17,6 +17,7 @@ pub mod classify;
 pub mod fsm;
 #[cfg(target_arch = "x86_64")]
 mod simd_avx_classify;
+#[cfg(target_arch = "aarch64")]
 mod simd_classify;
 mod simd_fsm;
 #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
