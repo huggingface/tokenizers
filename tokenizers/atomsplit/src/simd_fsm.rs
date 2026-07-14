@@ -67,7 +67,7 @@ pub(crate) fn class_runs_neon<const DROP: u16, const ISOLATE: u16, const KEEP_A:
     const POW: [u8; 16] = [1, 2, 4, 8, 16, 32, 64, 128, 1, 2, 4, 8, 16, 32, 64, 128];
     let n = text.len();
     let (mut w, mut i) = (0usize, 0usize);
-    let (mut seg_start, mut seg_class) = (0usize, 0u8);
+    let (mut seg_start, mut seg_class) = (0usize, 0u16);
     let mut carry: u8 = 0xFE;
     let mut cls_arr = [0u8; 16];
     // SAFETY: the chunk loop runs only while `i + 16 <= n`, so every `vld1q_u8(tags+i)` reads 16 in-bounds
@@ -130,7 +130,7 @@ pub(crate) fn class_runs_neon<const DROP: u16, const ISOLATE: u16, const KEEP_A:
             i += 16;
         }
     }
-    emit_class_spans::<DROP, ISOLATE, KEEP_A>(text, tags, out, w, i, seg_start, seg_class)
+    emit_class_spans::<DROP, ISOLATE, KEEP_A>(text, tags, out, w, i, seg_start, Some(seg_class))
 }
 
 // ── wasm32 / SIMD128 ────────────────────────────────────────────────────────────────────────────

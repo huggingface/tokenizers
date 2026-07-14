@@ -66,7 +66,7 @@ pub fn class_runs_into<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>(
         all(target_arch = "wasm32", target_feature = "simd128")
     )))]
     {
-        emit_class_spans::<DROP, ISOLATE, KEEP_A>(text, tags, out)
+        emit_class_spans::<DROP, ISOLATE, KEEP_A>(text, tags, out, 0, 0, 0, None)
     }
 }
 
@@ -74,8 +74,11 @@ pub fn class_runs_into<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>(
 /// It allows to emit class spans with different behaviours for tags we want to drop, tags we want
 /// to isolate and tags we want to keep. Any other tags are assumed to be keept.
 ///
-/// This function is used in all the pretokenizers. More complexe ones will just call it many
-/// times.
+/// This function is used as a fallback to the SIMD fast fsm. It is used for most pre tokenizers
+/// but the unrolled regex, which have more complex variations that cannot be expressed with drop,
+/// isolate, keep. These 3 generic parameters are u16 bitmap masks over the 16 classes we have and
+/// define the behaviour. They are usally one of the [`crate::classify::mask`]. They allow dropping
+/// words, isolating whitespace and keeping new line for example.
 #[must_use]
 #[inline]
 pub fn emit_class_spans<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>(
@@ -93,11 +96,13 @@ pub fn emit_class_spans<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>(
     if let Some(segment_class) = segment_class {
         // this will usually be at the tail of a SIMD call.
         text_pointer = run_end(tags, text_pointer, n, segment_class); // skip the whole drop run at once
-        out[write_index] = (segment_start as u32, text_pointer as u32);
-        if text_pointer == n {
-            return write_index + 1;
+        if !segment_class != DROP {
+            out[write_index] = (segment_start as u32, text_pointer as u32);
+            if text_pointer == n {
+                return write_index + 1;
+            }
+            write_index += 1;
         }
-        write_index += 1;
     }
     while text_pointer < n {
         let t = tags[text_pointer];
