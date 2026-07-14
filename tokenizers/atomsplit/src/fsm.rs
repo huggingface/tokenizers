@@ -28,8 +28,9 @@ const ASM: u8 = Atom::AlphaSymMark as u8;
 /// Advance over a maximal `m`-membership run (m is a mask); returns the byte index past it.
 /// `inline(always)`: it's called once per token (~200K/MB on English) — a real call here doubles fsm cost.
 #[inline(always)]
-fn run_end(tags: &[u8], mut i: usize, end: usize, m: u16) -> usize {
-    while i < end && (in_mask(tags[i], m) || tags[i] == Atom::Cont as u8) {
+fn run_end(tags: &[u8], mut i: usize, end: usize, mut m: u16) -> usize {
+    m |= Atom::Cont.bit();
+    while i < end && in_mask(tags[i], m) {
         i += 1;
     }
     i
@@ -43,6 +44,7 @@ pub type Span = (u32, u32);
 ///   WhitespaceSplit `<{WS},0,0>` · Punctuation `<0,{PUNCT},0>` · Digits `<0,0,{NUMERIC}>` ·
 ///   Whitespace `<{WS},0,{WORD}>` · Bert `<{WS},{PUNCT},0>`.
 /// Class of a char: `DROP`→dropped, `ISOLATE`→own token, `KEEP_A`→run "A", else→run "B" (A/B cut apart).
+/// TODO: find a better explanation
 #[inline]
 #[must_use]
 pub fn class_runs_into<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>(
@@ -64,42 +66,65 @@ pub fn class_runs_into<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>(
         all(target_arch = "wasm32", target_feature = "simd128")
     )))]
     {
-        class_runs_runend::<DROP, ISOLATE, KEEP_A>(text, tags, out)
+        emit_class_spans::<DROP, ISOLATE, KEEP_A>(text, tags, out)
     }
 }
 
 /// This is the most important function as it's the core of the scalar finite state machine.
+/// It allows to emit class spans with different behaviours for tags we want to drop, tags we want
+/// to isolate and tags we want to keep. Any other tags are assumed to be keept.
+///
+/// This function is used in all the pretokenizers. More complexe ones will just call it many
+/// times.
 #[must_use]
-pub fn class_runs_runend<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>(
+#[inline]
+pub fn emit_class_spans<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>(
     text: &[u8],
     tags: &[u8],
     out: &mut [Span],
+    mut write_index: usize,         // in the out slice
+    mut text_pointer: usize,        // in the text slice
+    mut segment_start: usize,       // previous segment_start
+    mut segment_class: Option<u16>, // previous segment's class
 ) -> usize {
     debug_assert!(out.len() >= text.len() && tags.len() >= text.len());
-    let mb: u16 = !(DROP | ISOLATE | KEEP_A); // MB is MultiByte
     let n = text.len();
-    let (mut w, mut i) = (0usize, 0usize);
-    while i < n {
-        let t = tags[i];
+    let other = !(DROP | ISOLATE | KEEP_A); // None of the above correspond to a continuation
+    if let Some(segment_class) = segment_class {
+        // this will usually be at the tail of a SIMD call.
+        text_pointer = run_end(tags, text_pointer, n, segment_class); // skip the whole drop run at once
+        out[write_index] = (segment_start as u32, text_pointer as u32);
+        if text_pointer == n {
+            return write_index + 1;
+        }
+        write_index += 1;
+    }
+    while text_pointer < n {
+        let t = tags[text_pointer];
+        if t == Atom::Cont as u8 {
+            text_pointer += 1;
+            continue;
+        }
+        /// classify the first char.
         if in_mask(t, DROP) {
-            i = run_end(tags, i, n, DROP); // skip the whole drop run at once
+            text_pointer = run_end(tags, text_pointer, n, DROP); // skip the whole drop run at once
         } else if in_mask(t, ISOLATE) {
-            let s = i;
-            i += char_len(text[i]);
-            out[w] = (s as u32, i as u32); // isolate: one char = one token
-            w += 1;
+            let s = text_pointer;
+            text_pointer += char_len(text[text_pointer]);
+            out[write_index] = (s as u32, text_pointer as u32); // isolate: one char = one token
+            write_index += 1;
         } else {
-            let s = i;
-            i = if in_mask(t, KEEP_A) {
-                run_end(tags, i, n, KEEP_A)
+            let s = text_pointer;
+            text_pointer = if in_mask(t, KEEP_A) {
+                run_end(tags, text_pointer, n, KEEP_A)
             } else {
-                run_end(tags, i, n, mb)
+                run_end(tags, text_pointer, n, other)
             };
-            out[w] = (s as u32, i as u32);
-            w += 1;
+            out[write_index] = (s as u32, text_pointer as u32);
+            write_index += 1;
         }
     }
-    w
+    write_index
 }
 
 /// cl100k / Llama-3 pretokenization (7 rules + whitespace-tail, rule-3 cap `\p{N}{1,3}`). Peeks `text`
@@ -298,7 +323,6 @@ fn ds_is_zwj(text: &[u8], p: usize) -> bool {
 /// (・) never steals a surrounding space nor merges with non-CJK punct; (4) chars matching no alt
 /// (Control / NumericOther / ZWJ) group into ONE gap piece, and Other_Alphabetic symbols (`ALPHA_SYM`:
 /// `\w` but categorically `\p{S}`) take the `[\p{P}\p{S}]` path, not the letter run.
-/// ┌── OWNER: shared (scalar) ──┐
 #[must_use]
 pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
     debug_assert!(out.len() >= text.len() && tags.len() >= text.len());
@@ -477,7 +501,6 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
 /// vs cl100k: (1) contractions are case-SENSITIVE (lowercase only, no `(?i:)`); (2) the ` ?` prefix is
 /// a literal SPACE only (not any non-l/n char) and it applies to letters, numbers AND "other"; (3) no
 /// `\p{N}{1,3}` cap (numbers are unbounded) and no `\s*[\r\n]`/trailing-`[\r\n]*` rules.
-/// ┌── OWNER: shared (scalar) ──┐
 #[must_use]
 pub fn fsm_byte_level(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
     debug_assert!(out.len() >= text.len() && tags.len() >= text.len());
@@ -566,11 +589,11 @@ fn o_is_lower(t: u8) -> bool {
 fn o200k_letter_match(tags: &[u8], p: usize, re: usize) -> usize {
     // alt-1 `[UC]*`: greedy over "not L" (stops at the next lowercase *lead*), tracking the last C
     // char-start so a no-L run needs no separate backtrack pass (`Cont`=15 is neither U nor L, so it's
-    // "C-like" — the `!= CONT_TAG` guard keeps `last_c` on a real char start).
+    // "C-like" — the `!= CONT` guard keeps `last_c` on a real char start).
     let mut q = p;
     let mut last_c = usize::MAX;
     while q < re && !o_is_lower(tags[q]) {
-        if tags[q] != CONT_TAG && !o_is_upper(tags[q]) {
+        if tags[q] != CONT && !o_is_upper(tags[q]) {
             last_c = q;
         }
         q += 1;
@@ -593,8 +616,6 @@ fn o200k_letter_match(tags: &[u8], p: usize, re: usize) -> usize {
     }
     e
 }
-
-const CONT_TAG: u8 = Atom::Cont as u8;
 
 /// Length (incl the `'`) of an o200k contraction suffix `(?i:'s|'t|'re|'ve|'m|'ll|'d)` at `i`, else 0.
 #[inline]

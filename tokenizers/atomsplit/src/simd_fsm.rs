@@ -7,7 +7,7 @@
 #![allow(dead_code)] // arch-gated: only one target's kernel compiles per build
 
 use crate::classify::{Atom, char_len, in_mask};
-use crate::fsm::Span;
+use crate::fsm::{Span, emit_class_spans};
 
 /// Class LookUpTable: tag → 0 drop / 1 isolate / 2 keep-A / 3 keep-B; Cont → 0xFF (fill sentinel).
 #[inline]
@@ -48,46 +48,7 @@ fn emit(
     *seg_start = pos;
     *seg_class = cls;
 }
-/// Scalar tail for the < 16-byte remainder (MAY start mid-char — the chunk loop steps by 16). A
-/// continuation byte stays in the current segment (advance one byte; `char_len` only valid on a lead).
-#[inline]
-fn tail<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>(
-    text: &[u8],
-    tags: &[u8],
-    out: &mut [Span],
-    mut w: usize,
-    mut i: usize,
-    mut seg_start: usize,
-    mut seg_class: u8,
-) -> usize {
-    let n = text.len();
-    while i < n {
-        let s = i;
-        let r = tags[s];
-        if r == Atom::Cont as u8 {
-            i += 1;
-            continue;
-        }
-        let c = if in_mask(r, DROP) {
-            0
-        } else if in_mask(r, ISOLATE) {
-            1
-        } else if in_mask(r, KEEP_A) {
-            2
-        } else {
-            3
-        };
-        i += char_len(text[s]);
-        if c != seg_class || c == 1 || seg_class == 1 {
-            emit(out, &mut w, &mut seg_start, &mut seg_class, s, c);
-        }
-    }
-    if seg_class != 0 {
-        out[w] = (seg_start as u32, n as u32);
-        w += 1;
-    }
-    w
-}
+
 // ── aarch64 / NEON ──────────────────────────────────────────────────────────────────────────────
 /// NEON class-runs boundary-extract: per 16 tags → class via `vqtbl1` (Cont→`0xFF`), fill Cont lanes
 /// with the left neighbour's class (≤3 iters = max continuation bytes), then boundary = class-change |
@@ -169,7 +130,7 @@ pub(crate) fn class_runs_neon<const DROP: u16, const ISOLATE: u16, const KEEP_A:
             i += 16;
         }
     }
-    tail::<DROP, ISOLATE, KEEP_A>(text, tags, out, w, i, seg_start, seg_class)
+    emit_class_spans::<DROP, ISOLATE, KEEP_A>(text, tags, out, w, i, seg_start, seg_class)
 }
 
 // ── wasm32 / SIMD128 ────────────────────────────────────────────────────────────────────────────
