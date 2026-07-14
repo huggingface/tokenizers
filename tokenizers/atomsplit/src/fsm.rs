@@ -96,7 +96,7 @@ pub fn emit_class_spans<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>(
     if let Some(segment_class) = segment_class {
         // this will usually be at the tail of a SIMD call.
         text_pointer = run_end(tags, text_pointer, n, segment_class); // skip the whole drop run at once
-        if !segment_class != DROP {
+        if segment_class != DROP {
             out[write_index] = (segment_start as u32, text_pointer as u32);
             if text_pointer == n {
                 return write_index + 1;
@@ -132,6 +132,7 @@ pub fn emit_class_spans<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>(
     write_index
 }
 
+/// TODO: NONE OF THE FOLLOWING HAS BEEN REVIEWED
 /// cl100k / Llama-3 pretokenization (7 rules + whitespace-tail, rule-3 cap `\p{N}{1,3}`). Peeks `text`
 /// for the ASCII contraction literals. Scalar run-ends. See [`fsm_cl100k_cap`] for the variable-cap
 /// family (Qwen2 etc.). ┌── OWNER: shared (scalar) ──┐
