@@ -25,9 +25,7 @@ const CTL: u8 = Atom::Control as u8;
 const CONT: u8 = Atom::Cont as u8;
 const ASM: u8 = Atom::AlphaSymMark as u8;
 
-/// Advance over a maximal `m`-membership run; returns the byte index past it. Byte-wise (`i += 1`),
-/// treating continuation bytes as in-run — so NO `char_len` branch per char and no `text` access. This
-/// is THE hot inner loop of the dense (English/code) FSM;
+/// Advance over a maximal `m`-membership run (m is a mask); returns the byte index past it.
 /// `inline(always)`: it's called once per token (~200K/MB on English) — a real call here doubles fsm cost.
 #[inline(always)]
 fn run_end(tags: &[u8], mut i: usize, end: usize, m: u16) -> usize {
@@ -70,9 +68,7 @@ pub fn class_runs_into<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>(
     }
 }
 
-/// Scalar run-end core: skip each homogeneous run with the scalar `run_end`. The portable
-/// (non-aarch64/wasm) class-family path AND the byte-exact oracle for the SIMD kernels in `simd_fsm`.
-#[doc(hidden)]
+/// This is the most important function as it's the core of the scalar finite state machine.
 #[must_use]
 pub fn class_runs_runend<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>(
     text: &[u8],
@@ -80,7 +76,7 @@ pub fn class_runs_runend<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>
     out: &mut [Span],
 ) -> usize {
     debug_assert!(out.len() >= text.len() && tags.len() >= text.len());
-    let mb: u16 = !(DROP | ISOLATE | KEEP_A); // keep-B = everything else (Cont rides along in run_end)
+    let mb: u16 = !(DROP | ISOLATE | KEEP_A); // MB is MultiByte
     let n = text.len();
     let (mut w, mut i) = (0usize, 0usize);
     while i < n {
