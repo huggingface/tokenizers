@@ -25,7 +25,6 @@ const CTL: u8 = Atom::Control as u8;
 const CONT: u8 = Atom::Cont as u8;
 const ASM: u8 = Atom::AlphaSymMark as u8;
 const ZWJ: u8 = Atom::Zwj as u8; // 0x26 — ZWJ/ZWNJ, tagged in classify so FSMs skip the text peek
-const CJK: u8 = crate::classify::CJK_BIT; // 0x40 — deepseek Split-2 CJK range, tagged in classify
 
 /// Advance over a maximal `m`-membership run (m is a mask); returns the byte index past it.
 /// `inline(always)`: it's called once per token (~200K/MB on English) — a real call here doubles fsm cost.
@@ -61,6 +60,7 @@ pub type Span = (u32, u32);
 ///   WhitespaceSplit `<{WS},0,0>` · Punctuation `<0,{PUNCT},0>` · Digits `<0,0,{NUMERIC}>` ·
 ///   Whitespace `<{WS},0,{WORD}>` · Bert `<{WS},{PUNCT},0>`.
 /// Class of a char: `DROP`→dropped, `ISOLATE`→own token, `KEEP_A`→run "A", else→run "B" (A/B cut apart).
+/// TODO: find a better explanation
 #[inline]
 #[must_use]
 pub fn class_runs_into<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>(
@@ -101,8 +101,8 @@ pub fn emit_class_spans<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>(
     text: &[u8],
     tags: &[u8],
     out: &mut [Span],
-    mut write_index: usize,     // in the out slice
-    mut text_pointer: usize,    // in the text slice
+    mut write_index: usize,         // in the out slice
+    mut text_pointer: usize,        // in the text slice
     segment_start: usize,       // previous segment_start
     segment_class: Option<u16>, // previous segment's class
 ) -> usize {
@@ -288,9 +288,28 @@ fn cl100k(text: &[u8], tags: &[u8], out: &mut [Span], digit_cap: usize) -> usize
     w
 }
 
-// deepseek's Split-2 CJK-range membership (Han U+4E00..9FA5 ∪ Kana U+3040..30FF, INCLUDING CJK punct
-// ・゠ inside that block) is now the `CJK` (0x40) tag bit set by `classify` — tested as `tags[p] & CJK`,
-// no `text` peek. `classify` bakes it exactly (NEON fast path + the 3-byte tables); see `bitmap_gen`.
+/// The specific CJK ranges deepseek's Split-2 isolates: Han U+4E00..9FA5 ∪ Hiragana U+3040..309F ∪
+/// Katakana U+30A0..30FF. (All 3-byte, leads E3..E9.) Not "all letters" — only these.
+#[inline]
+fn ds_is_cjk(cp: u32) -> bool {
+    (0x4E00..=0x9FA5).contains(&cp) || (0x3040..=0x30FF).contains(&cp)
+}
+/// Codepoint of a 3-byte UTF-8 char at `text[i]` (only called for leads E2..E9 → always 3-byte).
+#[inline]
+fn cp3(text: &[u8], i: usize) -> u32 {
+    ((text[i] as u32 & 0x0F) << 12)
+        | ((text[i + 1] as u32 & 0x3F) << 6)
+        | (text[i + 2] as u32 & 0x3F)
+}
+
+/// Any CJK-range char (letter OR punct/sym) at `p` — the full `[一-龥぀-ゟ゠-ヿ]` set Split-2 `[…]+`
+/// isolates, INCLUDING CJK punctuation (・ U+30FB, ゠ U+30A0, ゛゜ U+309B/C). Split-3 then re-splits that
+/// isolated run into same-kind sub-runs (letters `[\p{L}\p{M}]+` vs punct/sym `[\p{P}\p{S}]+`); because
+/// the run is a CLOSED unit, none of it steals a surrounding space or merges with non-CJK punct.
+#[inline(always)]
+fn ds_is_cjk_at(text: &[u8], p: usize) -> bool {
+    (0xE3..=0xE9).contains(&text[p]) && ds_is_cjk(cp3(text, p))
+}
 
 /// deepseek-v3 pretokenization: the `Sequence` of `[N{1,3}]`, `[CJK]+`, `<big regex>` (all Isolated)
 /// collapsed into ONE scalar FSM over the atom stream. Precedence (= the Sequence order): digits →
@@ -327,7 +346,7 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
         while p < end {
             let t = tags[p];
             if t == CONT
-                || (in_mask(t, mask::LETTER_MARK) && t != ASM && t != ZWJ && tags[p] & CJK == 0)
+                || (in_mask(t, mask::LETTER_MARK) && t != ASM && t != ZWJ && !ds_is_cjk_at(text, p))
             {
                 p += 1;
             } else {
@@ -342,14 +361,16 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
             && in_mask(tags[a], mask::LETTER_MARK)
             && tags[a] != ASM
             && tags[a] != ZWJ
-            && tags[a] & CJK == 0
+            && !ds_is_cjk_at(text, a)
     };
     // Split-3 alt-3 tail `[\p{P}\p{S}]+[\r\n]*` from `sp0` (a leading space is already consumed); `sp0`
     // if there is no punct/sym run there. STOPS at CJK-range chars — Split-1 isolated those, so a CJK
     // punct (・) is never merged into a non-CJK punct run (`!・` → `!`, `・`, not `!・`).
     let punct = |sp0: usize| -> usize {
         let mut p = sp0;
-        while p < end && (in_mask(tags[p], mask::PUNCT_SYM) || tags[p] == ASM) && tags[p] & CJK == 0
+        while p < end
+            && (in_mask(tags[p], mask::PUNCT_SYM) || tags[p] == ASM)
+            && !ds_is_cjk_at(text, p)
         {
             p += char_len(text[p]);
         }
@@ -365,7 +386,7 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
     // following letter/punct (same Split-3 piece) leaves the last ws char for its ` ?`/`[^…]?` prefix.
     let ws = |i: usize| -> usize {
         let re = run_end(tags, i, end, mask::WS);
-        let next_isolated = re < end && (in_mask(tags[re], mask::NUMBER) || tags[re] & CJK != 0);
+        let next_isolated = re < end && (in_mask(tags[re], mask::NUMBER) || ds_is_cjk_at(text, re));
         if let Some(r) = text[i..re].iter().rposition(|&x| x == 0x0A || x == 0x0D) {
             i + r + 1
         } else if re == end || next_isolated {
@@ -387,10 +408,12 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
         // Split-2 isolated a maximal CJK-range run; Split-3 re-splits it into same-kind sub-runs
         // (letters `[\p{L}\p{M}]+` vs punct/sym `[\p{P}\p{S}]+`) — a CLOSED unit, handled before the atom
         // arms so CJK punct (・) never leaks into alt-3 (stealing a space / merging with non-CJK punct).
-        if tags[i] & CJK != 0 {
+        if ds_is_cjk_at(text, i) {
             let is_letter = in_mask(tags[i], mask::LETTER_MARK);
             let mut p = i + 3; // CJK-range chars are all 3-byte (leads E3..E9)
-            while p < end && tags[p] & CJK != 0 && in_mask(tags[p], mask::LETTER_MARK) == is_letter
+            while p < end
+                && ds_is_cjk_at(text, p)
+                && in_mask(tags[p], mask::LETTER_MARK) == is_letter
             {
                 p += 3;
             }
@@ -448,7 +471,7 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
                 let a = i + 1; // Space is ASCII (0x20)
                 i = if is_lm(a) {
                     letter_run(a)
-                } else if a < end && tags[a] & CJK != 0 {
+                } else if a < end && ds_is_cjk_at(text, a) {
                     ws(i) // next is a Split-1-isolated CJK char → the space is standalone whitespace
                 } else {
                     let p = punct(a);
@@ -673,17 +696,21 @@ pub fn fsm_o200k(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
     // `tags[i]` in this fsm + its `run_end`/`letter_*` scans. (Callers guarantee `tags.len() >= end`.)
     let tags = &tags[..end];
 
-    // Is tag `t` a real `[\p{L}\p{M}]` member? Coarse `Letter` (any case) is always in; coarse `Mark` is
-    // in only as a true `\p{M}` — ALPHA_SYM (`\p{S}`, tag 0x16) and ZWJ/ZWNJ (`\p{Cf}`, tag 0x26) are `\w`
-    // but not `[\p{L}\p{M}]`, and are now excluded by a tag compare (no `text` peek).
-    let member = |t: u8| -> bool { t & 0x0F == LET || (t & 0x0F == MRK && t != ASM && t != ZWJ) };
-    let is_lm = |a: usize| a < end && member(tags[a]);
+    // Is tag `t` (at byte `p`) a real `[\p{L}\p{M}]` member? Coarse `Letter` (any case) is always in;
+    // coarse `Mark` is in only as a true `\p{M}` — ALPHA_SYM (`\p{S}`) and ZWJ/ZWNJ (`\p{Cf}`) are `\w`
+    // but not `[\p{L}\p{M}]`. The `ds_is_zwj` byte-peek is thus paid ONLY for Marks, never for letters.
+    let member = |t: u8, p: usize| -> bool {
+        let c = t & 0x0F;
+        let _ = p;
+        c == LET || (c == MRK && t != ASM && t != ZWJ)
+    };
+    let is_lm = |a: usize| a < end && member(tags[a], a);
     // maximal `[\p{L}\p{M}]+` run from `a` (byte-wise; continuation bytes ride along — see `run_end`).
     let letter_end = |a: usize| -> usize {
         let mut p = a;
-        // logos-style fast loop: 16 tags/chunk, one bounds check, unchecked reads. A plain `Letter`
-        // (low nibble 0, incl Han — o200k keeps all letters) or a `Cont` byte stays in-run; only a
-        // coarse `Mark` lane is filtered (ASM/ZWJ are tag compares now — no text peek). Byte-exact.
+        // logos-style fast loop: 8 tags/chunk, one bounds check, unchecked reads. A plain `Letter`
+        // (low nibble 0, incl Han — o200k keeps all letters) or a `Cont` byte stays in-run with no
+        // `ds_is_zwj` peek; only a coarse `Mark` lane pays the peek. Byte-exact with the scalar scan.
         // SAFETY: `p + 16 <= end <= tags.len()`/`text.len()` in the body.
         while p + 16 <= end {
             let mut brk = 16;
@@ -703,7 +730,7 @@ pub fn fsm_o200k(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
             }
             p += 16;
         }
-        while p < end && (tags[p] == CONT || member(tags[p])) {
+        while p < end && (tags[p] == CONT || member(tags[p], p)) {
             p += 1;
         }
         p

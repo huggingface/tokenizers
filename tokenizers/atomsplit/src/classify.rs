@@ -42,11 +42,6 @@ pub enum Atom {
     LowerLetter = 0x20,
 }
 
-/// High-nibble bit (orthogonal to the case/ASM/ZWJ refinements, all ≤ 0x2x) marking a codepoint in the
-/// deepseek Split-2 CJK range (Han U+4E00..9FA5 ∪ Kana U+3040..30FF). `fsm_deepseek` tests it instead of
-/// peeking `text`; coarse consumers mask it off with `& 0x0F`.
-pub const CJK_BIT: u8 = 0x40;
-
 impl Atom {
     /// Since we only have 16 classes for now, this is a fairly cheap way to get a bitmask over the
     /// class.

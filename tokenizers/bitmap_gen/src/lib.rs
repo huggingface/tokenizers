@@ -5,21 +5,8 @@
 use std::fmt::Write as _;
 use unicode_properties::{GeneralCategory, UnicodeGeneralCategory};
 
-// Produce the atom tag from the character, OR-ing in the CJK-range bit (0x40) for the exact set
-// deepseek's Split-2 isolates — Han U+4E00..9FA5 ∪ Hiragana/Katakana U+3040..30FF (INCLUDING the CJK
-// punct ・゠ inside that block). Coarse consumers mask it off (`& 0x0F`); `fsm_deepseek` tests it instead
-// of peeking `text`. Kept orthogonal to the case/ASM/ZWJ high-nibble values (bit 6, all of which are ≤ 0x2x).
+// Produce the atom tag from the character.
 fn atom(c: char) -> u8 {
-    let cp = c as u32;
-    let base = atom_base(c);
-    if (0x4E00..=0x9FA5).contains(&cp) || (0x3040..=0x30FF).contains(&cp) {
-        base | 0x40
-    } else {
-        base
-    }
-}
-
-fn atom_base(c: char) -> u8 {
     use GeneralCategory::*;
     let cp = c as u32;
     match c.general_category() {
