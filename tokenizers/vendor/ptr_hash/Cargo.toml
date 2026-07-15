@@ -1,0 +1,164 @@
+# Vendored + slimmed copy of ptr_hash 2.0.1 (github.com/RagnarGrootKoerkamp/ptrhash).
+# The upstream crate makes `colored`, `mem_dbg` (+ its syn/quote/proc-macro2 derive chain) and
+# `tempfile` NON-optional even though they are only used for CLI/debug/on-disk-sharding paths we
+# never hit. This copy removes those three deps (and the example/dev-dep bloat) so `tk-encode`'s
+# dependency graph shrinks. The MPHF build/query path is untouched — byte-exact with upstream.
+# Applied via `[patch.crates-io] ptr_hash = { path = "vendor/ptr_hash" }` in the workspace root.
+
+[package]
+edition = "2021"
+name = "ptr_hash"
+version = "2.0.1"
+authors = ["Ragnar Groot Koerkamp"]
+build = false
+autolib = false
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
+description = "A high-throughput minimal perfect hash function"
+homepage = "https://curiouscoding.nl/posts/ptrhash"
+keywords = [
+    "hashing",
+    "minimal",
+    "perfect",
+    "mphf",
+]
+categories = [
+    "data-structures",
+    "science",
+]
+license = "MIT"
+repository = "https://github.com/RagnarGrootKoerkamp/ptrhash"
+
+[features]
+cacheline-ef = ["dep:cacheline-ef"]
+clap = ["dep:clap"]
+default = [
+    "elias-fano",
+    "cacheline-ef",
+    "gxhash",
+]
+elias-fano = ["dep:sucds"]
+epserde = [
+    "dep:epserde",
+    "dep:epserde-derive",
+    "cacheline-ef/epserde",
+]
+gxhash = ["dep:gxhash"]
+hashers = [
+    "dep:cityhash-102-rs",
+    "dep:fastmurmur3",
+    "dep:hashers",
+    "dep:highway",
+    "dep:metrohash",
+    "dep:murmur2",
+    "dep:murmur3",
+    "dep:wyhash",
+]
+unstable = []
+
+[lib]
+name = "ptr_hash"
+path = "src/lib.rs"
+
+[dependencies.bitvec]
+version = "1.0.1"
+
+[dependencies.cacheline-ef]
+version = "1.1.0"
+optional = true
+
+[dependencies.cityhash-102-rs]
+version = "0.1.0"
+optional = true
+
+[dependencies.clap]
+version = "4.4.6"
+features = ["derive"]
+optional = true
+
+[dependencies.epserde]
+version = "0.13.0"
+optional = true
+
+[dependencies.epserde-derive]
+version = "0.13.0"
+optional = true
+
+[dependencies.fastmurmur3]
+version = "0.2.0"
+optional = true
+
+[dependencies.fastrand]
+version = "2.0.1"
+
+[dependencies.fxhash]
+version = "0.2.1"
+
+[dependencies.gxhash]
+version = "3.5.0"
+optional = true
+
+[dependencies.hashers]
+version = "1.0.1"
+optional = true
+
+[dependencies.highway]
+version = "1.1.0"
+optional = true
+
+[dependencies.itertools]
+version = "0.15.0"
+
+[dependencies.log]
+version = "0.4.27"
+
+[dependencies.metrohash]
+version = "1.0.6"
+optional = true
+
+[dependencies.murmur2]
+version = "0.1.0"
+optional = true
+
+[dependencies.murmur3]
+version = "0.5.2"
+optional = true
+
+[dependencies.prefetch-index]
+version = "0.2.1"
+
+[dependencies.rand]
+version = "0.10.2"
+
+[dependencies.rand_chacha]
+version = "0.10.0"
+
+[dependencies.rayon]
+version = "1.8.0"
+
+[dependencies.rdst]
+version = "0.20.11"
+
+[dependencies.serde]
+version = "1.0.215"
+features = ["derive"]
+
+[dependencies.sucds]
+version = "0.8.0"
+optional = true
+
+[dependencies.wyhash]
+version = "0.6.0"
+optional = true
+
+[dependencies.xxhash-rust]
+version = "0.8.7"
+features = [
+    "xxh64",
+    "xxh3",
+]
+
+# Opt out of the parent tokenizers workspace so this vendored crate is its own root.
+[workspace]
