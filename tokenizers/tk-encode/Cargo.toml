@@ -68,6 +68,7 @@ tokenizers-release = { package = "tokenizers", version = "=0.23.1", optional = t
 # never for `cargo test`/production.
 onig = { version = "6.5.1", optional = true }
 pcre2 = { version = "0.2", optional = true }
+logos = { version = "0.15", optional = true } # compile-time DFA lexer reference (pure Rust)
 
 [features]
 # `fancy-regex` is the OPTIONAL system-regex backend, needed ONLY for a `Split` pre-tokenizer with an
@@ -79,7 +80,7 @@ progressbar = ["indicatif"]
 http = ["hf-hub"]
 unstable_wasm = ["fancy-regex", "getrandom/wasm_js"]
 rustls-tls = ["hf-hub?/rustls-tls"]
-bench-baseline = ["dep:tokenizers-release", "dep:onig", "dep:pcre2", "fancy-regex"]
+bench-baseline = ["dep:tokenizers-release", "dep:onig", "dep:pcre2", "dep:logos", "fancy-regex"]
 
 [dev-dependencies]
 criterion = "0.6"

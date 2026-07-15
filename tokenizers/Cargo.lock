@@ -2283,6 +2283,7 @@ dependencies = [
  "indicatif 0.18.5",
  "itertools 0.14.0",
  "log",
+ "logos",
  "macro_rules_attribute",
  "memchr",
  "monostate",

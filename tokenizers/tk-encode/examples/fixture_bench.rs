@@ -30,6 +30,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Instant;
 
+use logos::Logos;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use rayon::ThreadPoolBuilder;
 use serde_json::{json, Value};
@@ -588,6 +589,80 @@ fn pcre2_reference_ns(text: &str, regexes: &[String]) -> Option<f64> {
     }))
 }
 
+// logos DFA lexers approximating the GPT splits (no look-ahead / case-insensitive → boundaries differ
+// slightly; a raw-throughput reference like fancy, not a byte-exact oracle). Only families logos can
+// express get a number; deepseek / variants / non-regex pretoks report null.
+#[derive(Logos)]
+enum LGpt2 {
+    #[regex(r"'s|'t|'re|'ve|'m|'ll|'d")]
+    Contraction,
+    #[regex(r" ?\p{L}+")]
+    Word,
+    #[regex(r" ?\p{N}+")]
+    Num,
+    #[regex(r" ?[^\s\p{L}\p{N}]+")]
+    Other,
+    #[regex(r"\s+")]
+    Space,
+}
+#[derive(Logos)]
+enum LCl100k {
+    #[regex(r"'s|'t|'re|'ve|'m|'ll|'d", priority = 5)]
+    Contraction,
+    #[regex(r"[^\r\n\p{L}\p{N}]?\p{L}+", priority = 4)]
+    Word,
+    #[regex(r"\p{N}\p{N}?\p{N}?")]
+    Num,
+    #[regex(r" ?[^\s\p{L}\p{N}]+[\r\n]*", priority = 2)]
+    Other,
+    #[regex(r"\s+")]
+    Space,
+}
+#[derive(Logos)]
+enum LO200k {
+    #[regex(r"[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]*[\p{Ll}\p{Lm}\p{Lo}\p{M}]+('s|'t|'re|'ve|'m|'ll|'d)?", priority = 6)]
+    LettersA,
+    #[regex(r"[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]+[\p{Ll}\p{Lm}\p{Lo}\p{M}]*('s|'t|'re|'ve|'m|'ll|'d)?", priority = 5)]
+    LettersB,
+    #[regex(r"\p{N}\p{N}?\p{N}?")]
+    Num,
+    #[regex(r" ?[^\s\p{L}\p{N}]+[\r\n/]*", priority = 2)]
+    Other,
+    #[regex(r"\s+")]
+    Space,
+}
+
+fn lex_count<'s, T: Logos<'s, Source = str>>(s: &'s str) -> usize
+where
+    T::Extras: Default,
+{
+    let mut lex = T::lexer(s);
+    let mut n = 0;
+    while lex.next().is_some() {
+        n += 1;
+    }
+    n
+}
+
+/// logos throughput (ns/byte) when the model's pre-tokenizer is a single regex logos can express (matched
+/// against the canonical gpt2/cl100k/o200k specs); `None` otherwise (deepseek, cl100k-variants, non-regex).
+fn logos_reference_ns(regexes: &[String], text: &str) -> Option<f64> {
+    if text.is_empty() || regexes.len() != 1 {
+        return None;
+    }
+    let r = regexes[0].as_str();
+    let f: fn(&str) -> usize = if r == atomsplit::regexes::GPT2 {
+        |s| lex_count::<LGpt2>(s)
+    } else if r == atomsplit::regexes::CL100K {
+        |s| lex_count::<LCl100k>(s)
+    } else if r == atomsplit::regexes::O200K {
+        |s| lex_count::<LO200k>(s)
+    } else {
+        return None;
+    };
+    Some(timed_ns(text.len(), || f(text)))
+}
+
 fn bench_model(
     baseline: Option<&BaselineTokenizer>,
     oracle: &Tokenizer,
@@ -681,7 +756,11 @@ fn bench_model(
         let onig_ns = onig_reference_ns(&corpus, &regexes);
         let fancy_ns = fancy_reference_ns(&corpus, &regexes);
         let pcre2_ns = pcre2_reference_ns(&corpus, &regexes);
-        if onig_ns.is_some() || fancy_ns.is_some() || pcre2_ns.is_some() {
+        let logos_ns = logos_reference_ns(&regexes, &corpus);
+        if [onig_ns, fancy_ns, pcre2_ns, logos_ns]
+            .iter()
+            .any(Option::is_some)
+        {
             // fsm is the scalar jump-table in both pipes; SIMD/scalar is the classify pass only.
             let scalar_pipe = ns_split + (cls_scalar - cls_simd).max(0.0);
             let vs = |r: Option<f64>| {
@@ -694,10 +773,11 @@ fn bench_model(
                 })
             };
             eprintln!(
-                "    pre-tok: SIMD-cls {ns_split:.2} / scalar-cls {scalar_pipe:.2} ns/B · vs onig {} · vs fancy {} · vs pcre2 {}",
+                "    pre-tok: SIMD-cls {ns_split:.2} / scalar-cls {scalar_pipe:.2} ns/B · vs onig {} · vs fancy {} · vs pcre2 {} · vs logos {}",
                 vs(onig_ns),
                 vs(fancy_ns),
-                vs(pcre2_ns)
+                vs(pcre2_ns),
+                vs(logos_ns)
             );
         }
 
@@ -725,6 +805,7 @@ fn bench_model(
                 "onig": onig_ns,
                 "fancy": fancy_ns,
                 "pcre2": pcre2_ns,
+                "logos": logos_ns,
             },
         }));
     }
