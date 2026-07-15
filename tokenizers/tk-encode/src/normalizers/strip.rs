@@ -72,13 +72,14 @@ impl Normalizer for StripAccents {
 
 impl pipeline::Normalizer for StripAccents {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
-        if input.chars().any(is_combining_mark) {
-            Ok(Cow::Owned(
-                input.chars().filter(|&c| !is_combining_mark(c)).collect(),
-            ))
-        } else {
-            Ok(Cow::Borrowed(input))
-        }
+        // The MARK bit IS `is_combining_mark`, so a non-inert run is entirely combining marks → drop it;
+        // inert runs (no mark) are copied verbatim, and a mark-free string borrows.
+        use atomsplit::norm_classify::bit;
+        Ok(crate::normalizers::tagged::tag_driven(
+            input,
+            bit::MARK,
+            |_run, _out| {},
+        ))
     }
 }
 

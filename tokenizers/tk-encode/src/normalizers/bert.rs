@@ -1,15 +1,20 @@
 use std::borrow::Cow;
+use std::cell::RefCell;
 
 use crate::{
     pipeline,
     tokenizer::{NormalizedString, Normalizer, Result},
 };
 
-use super::utils::lowercases_to_self;
-
+use atomsplit::norm_classify;
 use serde::{Deserialize, Serialize};
 use unicode_categories::UnicodeCategories;
-use unicode_normalization::{is_nfd_quick, IsNormalized, UnicodeNormalization};
+
+thread_local! {
+    /// Per-thread scratch for the classifier's per-byte tag stream — reused across calls so the fast
+    /// `Normalizer::normalize` path is zero-alloc after warmup (per-thread → parallel encode stays lock-free).
+    static TAGS: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
+}
 
 /// Checks whether a character is whitespace
 fn is_whitespace(c: char) -> bool {
@@ -136,19 +141,6 @@ impl BertNormalizer {
     fn do_lowercase(&self, normalized: &mut NormalizedString) {
         normalized.lowercase();
     }
-
-    fn is_noop(&self, input: &str, strip_accents: bool) -> bool {
-        if strip_accents && !matches!(is_nfd_quick(input.chars()), IsNormalized::Yes) {
-            return false;
-        }
-        let changes = |c: char| {
-            (self.clean_text && (clean_text_removes(c) || clean_text_map(c) != c))
-                || (self.handle_chinese_chars && is_chinese_char(c))
-                || (strip_accents && c.is_mark_nonspacing())
-                || (self.lowercase && !lowercases_to_self(c))
-        };
-        !input.chars().any(changes)
-    }
 }
 
 impl Normalizer for BertNormalizer {
@@ -171,48 +163,160 @@ impl Normalizer for BertNormalizer {
     }
 }
 
+impl BertNormalizer {
+    /// Which `norm_classify` bits make a char non-inert under the active rules — i.e. a char with none
+    /// of these bits set is left unchanged by every enabled stage and can be copied verbatim.
+    fn active_mask(&self, strip_accents: bool) -> u8 {
+        use atomsplit::norm_classify::bit;
+        (if self.clean_text { bit::CTRL | bit::WS } else { 0 })
+            | (if self.handle_chinese_chars { bit::CJK } else { 0 })
+            // bert `strip_accents` runs canonical NFD then drops Mn; the NFD bit already folds in
+            // reorderable (ccc != 0) chars, so no separate reorder bit is needed.
+            | (if strip_accents { bit::NFD | bit::MARK } else { 0 })
+            | (if self.lowercase { bit::LOWER } else { 0 })
+    }
+
+    /// Tag-driven normalize. `tags` is `input`'s per-byte classification (`tags.len() == input.len()`,
+    /// char-start bytes carry the [`atomsplit::norm_classify`] bitmask; the caller produced it with the
+    /// SIMD or scalar classifier). Maximal **inert** runs (no active bit) are copied verbatim; only the
+    /// runs that actually change go through per-char dispatch ([`Self::dispatch_char`]). Byte-exact with
+    /// the legacy path: inert chars are starters (ccc 0 — reorderables carry the NFD bit), so an NFD
+    /// reorder never crosses a run boundary.
+    pub fn normalize_from_tags<'a>(&self, input: &'a str, tags: &[u8]) -> Cow<'a, str> {
+        use atomsplit::classify::char_len;
+        let strip_accents = self.strip_accents.unwrap_or(self.lowercase);
+        let active = self.active_mask(strip_accents);
+        let bytes = input.as_bytes();
+        let n = bytes.len();
+
+        // Longest inert prefix is borrowable; if the whole string is inert, return it untouched.
+        let mut first = 0;
+        while first < n && tags[first] & active == 0 {
+            first += char_len(bytes[first]);
+        }
+        if first == n {
+            return Cow::Borrowed(input);
+        }
+
+        let mut out = String::with_capacity(n);
+        out.push_str(&input[..first]);
+        let mut i = first;
+        while i < n {
+            // non-inert run → per-char dispatch (each rule runs only where its bit is set)
+            let ns = i;
+            while i < n && tags[i] & active != 0 {
+                i += char_len(bytes[i]);
+            }
+            for (off, c) in input[ns..i].char_indices() {
+                self.dispatch_char(c, tags[ns + off], strip_accents, &mut out);
+            }
+            // inert run → verbatim
+            let is = i;
+            while i < n && tags[i] & active == 0 {
+                i += char_len(bytes[i]);
+            }
+            out.push_str(&input[is..i]);
+        }
+        Cow::Owned(out)
+    }
+
+    /// Normalize one char from its `norm_classify` tag: run each rule ONLY where its bit is set. A
+    /// script with no cased chars never calls `to_lowercase`; a char that doesn't decompose never pays
+    /// a `canonical_combining_class` lookup. Order matches the pipeline: clean → chinese → the transform.
+    #[inline]
+    fn dispatch_char(&self, c: char, tg: u8, strip_accents: bool, out: &mut String) {
+        use atomsplit::norm_classify::bit;
+        if self.clean_text {
+            if tg & bit::CTRL != 0 {
+                return; // removed
+            }
+            if tg & bit::WS != 0 {
+                out.push(' '); // whitespace folds to space (which carries no further rule)
+                return;
+            }
+        }
+        if self.handle_chinese_chars && tg & bit::CJK != 0 {
+            out.push(' ');
+            self.emit_transform(c, tg, strip_accents, out);
+            out.push(' ');
+            return;
+        }
+        self.emit_transform(c, tg, strip_accents, out);
+    }
+
+    /// NFD → strip nonspacing marks → lowercase, applied per the char's bits. Decomposition runs (via the
+    /// pure-Rust `atomsplit::nfd::nfd_char`) only on NFD-flagged chars; a mark is dropped, anything else is
+    /// a `to_lowercase` (LOWER) or a plain push. Byte-exact with the run-based pipeline: strip drops every
+    /// Mn, so per-char decomposition needs no cross-char reordering.
+    #[inline]
+    fn emit_transform(&self, c: char, tg: u8, strip_accents: bool, out: &mut String) {
+        use atomsplit::norm_classify::bit;
+        if strip_accents && tg & bit::NFD != 0 {
+            // Hangul decomposes to conjoining jamo by pure S_BASE arithmetic — the jamo are all `Lo`
+            // (kept by strip, caseless), so emit them directly and skip the per-jamo `is_mark_nonspacing`
+            // + `to_lowercase` that every other decomposition pays.
+            let cp = c as u32;
+            if (0xAC00..=0xD7A3).contains(&cp) {
+                let s = cp - 0xAC00;
+                // SAFETY: L/V/T are valid jamo codepoints (U+1100/1161/11A8 blocks) by construction.
+                unsafe {
+                    out.push(char::from_u32_unchecked(0x1100 + s / 588));
+                    out.push(char::from_u32_unchecked(0x1161 + (s % 588) / 28));
+                    let t = s % 28;
+                    if t != 0 {
+                        out.push(char::from_u32_unchecked(0x11A7 + t));
+                    }
+                }
+                return;
+            }
+            // Everything else: pure-Rust NFD (baked trie, no `unicode-normalization`), dropping nonspacing
+            // marks (bert's strip) and lowercasing the rest if enabled.
+            atomsplit::nfd::nfd_char(c, |d| {
+                if d.is_mark_nonspacing() {
+                    return;
+                }
+                if self.lowercase {
+                    out.extend(d.to_lowercase());
+                } else {
+                    out.push(d);
+                }
+            });
+        } else if strip_accents && tg & bit::MARK != 0 {
+            // MARK is any combining mark; bert strips only nonspacing marks (Mn). Keep the rest
+            // (e.g. spacing marks), lowercasing if enabled — matches `nfd().filter(!Mn)`.
+            if !c.is_mark_nonspacing() {
+                if self.lowercase {
+                    out.extend(c.to_lowercase());
+                } else {
+                    out.push(c);
+                }
+            }
+        } else if self.lowercase && tg & bit::LOWER != 0 {
+            out.extend(c.to_lowercase());
+        } else {
+            out.push(c);
+        }
+    }
+}
+
 impl pipeline::Normalizer for BertNormalizer {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
-        let strip_accents = self.strip_accents.unwrap_or(self.lowercase);
-
-        if self.is_noop(input, strip_accents) {
-            return Ok(input.into());
+        if input.is_empty() {
+            return Ok(Cow::Borrowed(input));
         }
-
-        let cleaned = input
-            .chars()
-            .filter(|&c| !(self.clean_text && clean_text_removes(c)))
-            .flat_map(|c| {
-                let c = if self.clean_text {
-                    clean_text_map(c)
-                } else {
-                    c
-                };
-                if self.handle_chinese_chars && is_chinese_char(c) {
-                    [Some(' '), Some(c), Some(' ')]
-                } else {
-                    [Some(c), None, None]
-                }
+        // One SIMD pass tags every byte; `normalize_from_tags` then copies inert runs verbatim and runs
+        // each rule only where its bit is set. `Cow::Borrowed` is returned untouched when nothing changes.
+        TAGS.with(|cell| {
+            let mut tags = cell.borrow_mut();
+            tags.clear();
+            tags.resize(input.len(), 0);
+            norm_classify::classify(input.as_bytes(), &mut tags);
+            // The returned Cow borrows `input` (or owns a fresh String); it never borrows `tags`.
+            Ok(match self.normalize_from_tags(input, &tags) {
+                Cow::Borrowed(s) => Cow::Borrowed(s),
+                Cow::Owned(s) => Cow::Owned(s),
             })
-            .flatten();
-
-        // `.nfd()` changes the iterator's type, so the stage toggles can't be
-        // plain `if`s mid-chain: each config combination gets its own
-        // statically-typed chain, all funneled into one pre-sized String.
-        let mut normalized = String::with_capacity(input.len());
-        match (strip_accents, self.lowercase) {
-            (true, true) => normalized.extend(
-                cleaned
-                    .nfd()
-                    .filter(|c| !c.is_mark_nonspacing())
-                    .flat_map(char::to_lowercase),
-            ),
-            (true, false) => normalized.extend(cleaned.nfd().filter(|c| !c.is_mark_nonspacing())),
-            (false, true) => normalized.extend(cleaned.flat_map(char::to_lowercase)),
-            (false, false) => normalized.extend(cleaned),
-        }
-
-        Ok(Cow::Owned(normalized))
+        })
     }
 }
 
@@ -237,6 +341,21 @@ mod tests {
         "ǅ",        // titlecase, lowercases to multi-mapping
         "İstanbul", // dotted capital I: lowercases to 2 chars
         "straße",
+        // run-split hardening: marks that NFD-reorders (ccc 230 then 220), on ASCII and non-ASCII bases,
+        // across the ASCII/non-ASCII boundary; non-ASCII whitespace folded to space; a format char
+        // (zero-width space, Cf) that clean_text removes; and a long mixed-script line.
+        "e\u{0301}\u{0323}",
+        "e\u{0323}\u{0301}",
+        "\u{00e8}\u{0323}\u{0301}",
+        "a\u{00a0}b\u{2028}c",
+        "a\u{200b}b",
+        "The 世界 Café tëst\u{0301} 123 ǅ Москва",
+        // Hangul: exercises the arithmetic S_BASE decompose — 한/국 have a trailing jamo (3), 어 has
+        // none (2); 가 = first syllable (U+AC00), 힣 = last (U+D7A3).
+        "한국어 안녕 가힣",
+        // Devanagari: spacing combining marks (Mc, e.g. vowel signs) are `is_combining_mark` but NOT Mn,
+        // so bert must KEEP them (only Mn stripped) — exercises the MARK-branch runtime refine.
+        "नमस्ते दुनिया",
     ];
 
     #[test]
@@ -258,6 +377,42 @@ mod tests {
                                 ns.get(),
                                 &*pipeline::Normalizer::normalize(&n, input).unwrap(),
                                 "config={n:?} input={input:?}",
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn tag_driven_bert_matches_legacy() {
+        use atomsplit::norm_classify;
+        for &clean_text in &[true, false] {
+            for &handle_chinese_chars in &[true, false] {
+                for &strip_accents in &[None, Some(true), Some(false)] {
+                    for &lowercase in &[true, false] {
+                        let n = BertNormalizer::new(
+                            clean_text,
+                            handle_chinese_chars,
+                            strip_accents,
+                            lowercase,
+                        );
+                        for input in INPUTS {
+                            let mut ns = NormalizedString::from(*input);
+                            Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
+                            let expected = ns.get();
+
+                            let mut scal = vec![0u8; input.len()];
+                            norm_classify::classify_scalar(input.as_bytes(), &mut scal);
+                            let mut simd = vec![0u8; input.len()];
+                            norm_classify::classify(input.as_bytes(), &mut simd);
+                            assert_eq!(simd, scal, "SIMD/scalar tags differ on {input:?}");
+
+                            assert_eq!(
+                                &*n.normalize_from_tags(input, &scal),
+                                expected,
+                                "tag-driven config={n:?} input={input:?}",
                             );
                         }
                     }

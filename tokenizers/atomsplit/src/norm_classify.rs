@@ -51,6 +51,13 @@ pub fn classify(text: &[u8], tags: &mut [u8]) {
     )
 }
 
+/// Scalar twin of [`classify`] — the portable per-char walk over `NORM_TABLES`. Byte-identical to the
+/// SIMD path (see `norm_simd_scalar_parity`); used where a caller wants reference tags without SIMD.
+#[inline]
+pub fn classify_scalar(text: &[u8], tags: &mut [u8]) {
+    crate::classify::classify_scalar_with::<CONT>(text, tags, &crate::norm_tables::NORM_TABLES)
+}
+
 #[cfg(test)]
 mod tests {
     /// The norm SIMD kernel must be byte-exact with the scalar walk over the same `NORM_TABLES` —
