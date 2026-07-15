@@ -1,3 +1,7 @@
+//! ⚠️ THIS WAS AI-GENERATED AND NOT NECESSARILY REVIEWED — but based on the hand-crafted NEON
+//! implementation (`simd_classify.rs`), which is the source of truth. Treat as unverified until
+//! reviewed; the byte-exactness tests are the only guarantee it currently carries.
+//!
 //! wasm32 SIMD128 classify (`u8x16_swizzle`). Compiled only when the build enables `simd128`
 //! (WASM has no runtime feature detection — it's all-or-nothing at compile time); otherwise the
 //! dispatcher in `classify.rs` uses the scalar walk.

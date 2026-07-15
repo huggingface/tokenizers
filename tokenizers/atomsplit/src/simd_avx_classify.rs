@@ -1,3 +1,7 @@
+//! ⚠️ THIS WAS AI-GENERATED AND NOT NECESSARILY REVIEWED — but based on the hand-crafted NEON
+//! implementation (`simd_classify.rs`), which is the source of truth. Treat as unverified until
+//! reviewed; the byte-exactness tests are the only guarantee it currently carries.
+//!
 //! x86_64 SIMD classify. Tiered, runtime-detected: AVX-512 VBMI (`vpermb`, native 64-entry) →
 //! SSE4.1/SSSE3 128-bit (`pshufb`, covers ~all x86_64 since 2008, incl. every AVX2 CPU) → scalar.
 //!

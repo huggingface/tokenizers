@@ -638,7 +638,11 @@ fn bench_model(
             let scalar_pipe = ns_split + (cls_scalar - cls_simd).max(0.0);
             let vs = |r: Option<f64>| {
                 r.map_or("—".into(), |v| {
-                    format!("{:.1}×/{:.1}×", v / ns_split.max(1e-9), v / scalar_pipe.max(1e-9))
+                    format!(
+                        "{:.1}×/{:.1}×",
+                        v / ns_split.max(1e-9),
+                        v / scalar_pipe.max(1e-9)
+                    )
                 })
             };
             eprintln!(
