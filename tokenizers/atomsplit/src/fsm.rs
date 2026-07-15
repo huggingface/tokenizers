@@ -53,6 +53,47 @@ pub(crate) fn run_end(tags: &[u8], mut i: usize, end: usize, mut m: u16) -> usiz
     i
 }
 
+/// End of a whitespace token starting at `i`, for the tail shared byte-for-byte by cl100k and o200k
+/// (`\s*[\r\n]+ | \s+(?!\S) | \s+`): through the last `\r\n` if any (rule 5), else the whole run at
+/// EOF (rule 7), else give the final ws char back to the next token (rule 6). `#[inline]` — hot,
+/// called once per whitespace token. (deepseek's tail differs — it also stops before a digit/CJK — and
+/// byte_level has no `[\r\n]` rule; both keep their own.)
+#[inline]
+pub(crate) fn ws_tail(text: &[u8], tags: &[u8], i: usize, end: usize) -> usize {
+    let re = run_end(tags, i, end, mask::WS);
+    if let Some(r) = text[i..re].iter().rposition(|&x| x == 0x0A || x == 0x0D) {
+        i + r + 1
+    } else if re == end {
+        re
+    } else {
+        let mut last = re - 1;
+        while last > i && text[last] & 0xC0 == 0x80 {
+            last -= 1;
+        }
+        if last > i { last } else { re }
+    }
+}
+
+/// Case-insensitive contraction match at `i` (`'s 't 're 've 'm 'll 'd`), shared by cl100k and o200k:
+/// byte length (2 or 3) or 0 if none. Self-guarding — `text[i]` need not be an apostrophe. `#[inline]`.
+/// (byte_level's contraction is case-SENSITIVE, so it keeps its own.)
+#[inline]
+pub(crate) fn contraction(text: &[u8], i: usize) -> usize {
+    let end = text.len();
+    if i >= end || text[i] != 0x27 || i + 1 >= end || text[i + 1] >= 0x80 {
+        return 0;
+    }
+    let lc = text[i + 1] | 0x20;
+    match lc {
+        b's' | b't' | b'm' | b'd' => 2,
+        b'r' | b'v' | b'l' if i + 2 < end && text[i + 2] < 0x80 => {
+            let l2 = text[i + 2] | 0x20;
+            usize::from((matches!(lc, b'r' | b'v') && l2 == b'e') || (lc == b'l' && l2 == b'l')) * 3
+        }
+        _ => 0,
+    }
+}
+
 /// A token span: byte offsets `[start, end)` into the input. `#[repr(C)]` so the FSM output buffer has a
 /// stable `[start, end]` layout — the pipeline reuses it with zero conversion, and it can be reinterpreted
 /// as bytes / handed across the crate boundary.

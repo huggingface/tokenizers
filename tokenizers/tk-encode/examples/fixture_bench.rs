@@ -598,9 +598,10 @@ fn bench_model(
         let cls_scalar = classify_ns(corpus.as_bytes(), true);
         let onig_ns = onig_reference_ns(&corpus, &regexes);
         if let Some(o) = onig_ns {
+            // fsm is the scalar jump-table in both; SIMD/scalar is the classify pass only.
             let scalar_pipe = ns_split + (cls_scalar - cls_simd).max(0.0);
             eprintln!(
-                "    pre-tok vs onig: SIMD {ns_split:.2} / scalar {scalar_pipe:.2} / onig {o:.2} ns/B  → {:.1}× / {:.1}×",
+                "    pre-tok vs onig: SIMD-cls {ns_split:.2} / scalar-cls {scalar_pipe:.2} / onig {o:.2} ns/B  → {:.1}× / {:.1}×",
                 o / ns_split.max(1e-9),
                 o / scalar_pipe.max(1e-9)
             );

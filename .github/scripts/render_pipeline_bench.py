@@ -798,9 +798,10 @@ def pretok_compare_md(model):
             and r.get("stage_ns_per_byte")]
     if not rows:
         return []
-    md = ["", "**Pre-tokenize: `classify + fsm` vs onig** — ns/byte, lower better; "
-          "`×vs onig` is onig ÷ our pipeline (with / without SIMD classify).", "",
-          "| Fixture | classify SIMD | classify scalar | pre-tok SIMD+fsm | pre-tok scalar+fsm | onig | ×vs onig (SIMD / scalar) |",
+    md = ["", "**Pre-tokenize: `classify + fsm` vs onig** — ns/byte, lower better. The fsm is the scalar "
+          "jump-table in both pipe columns; **SIMD / scalar is the classify pass** (regex pre-tokenizers "
+          "have no SIMD fsm). `×vs onig` = onig ÷ our pipeline, with / without SIMD classify.", "",
+          "| Fixture | classify SIMD | classify scalar | pipe (SIMD cls + fsm) | pipe (scalar cls + fsm) | onig | ×vs onig (SIMD / scalar) |",
           "|---|---:|---:|---:|---:|---:|---:|"]
     for r in sorted(rows, key=lambda r: (r["group"], r["fixture"])):
         pv = r["pretok_vs_regex"]
