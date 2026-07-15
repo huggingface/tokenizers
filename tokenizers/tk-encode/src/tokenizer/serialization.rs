@@ -2,59 +2,50 @@ use std::marker::PhantomData;
 
 use serde::{
     self,
-    de::{Error, MapAccess, Visitor},
+    de::{Error, IgnoredAny, MapAccess, Visitor},
     ser::SerializeStruct,
     Deserialize, Deserializer, Serialize, Serializer,
 };
 
 use super::added_vocabulary::AddedTokenWithId;
 use super::TokenizerImpl;
-use crate::{Decoder, Model, Normalizer, PostProcessor, PreTokenizer, TokenizerBuilder};
+use crate::{Model, Normalizer, PreTokenizer, TokenizerBuilder};
 
 static SERIALIZATION_VERSION: &str = "1.0";
 
-impl<M, N, PT, PP, D> Serialize for TokenizerImpl<M, N, PT, PP, D>
+impl<M, N, PT> Serialize for TokenizerImpl<M, N, PT>
 where
     M: Serialize,
     N: Serialize,
     PT: Serialize,
-    PP: Serialize,
-    D: Serialize,
 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let mut tokenizer = serializer.serialize_struct("Tokenizer", 9)?;
+        let mut tokenizer = serializer.serialize_struct("Tokenizer", 5)?;
 
         // Start by adding the current version
         tokenizer.serialize_field("version", SERIALIZATION_VERSION)?;
 
-        // Params
-        tokenizer.serialize_field("truncation", &self.truncation)?;
-        tokenizer.serialize_field("padding", &self.padding)?;
-
         // Added tokens
         tokenizer.serialize_field("added_tokens", &self.added_vocabulary)?;
 
-        // Then add our parts
+        // Then add our parts. The pipeline-only tokenizer does not carry truncation,
+        // padding, a post-processor or a decoder, so those fields are not emitted.
         tokenizer.serialize_field("normalizer", &self.normalizer)?;
         tokenizer.serialize_field("pre_tokenizer", &self.pre_tokenizer)?;
-        tokenizer.serialize_field("post_processor", &self.post_processor)?;
-        tokenizer.serialize_field("decoder", &self.decoder)?;
         tokenizer.serialize_field("model", &self.model)?;
 
         tokenizer.end()
     }
 }
 
-impl<'de, M, N, PT, PP, D> Deserialize<'de> for TokenizerImpl<M, N, PT, PP, D>
+impl<'de, M, N, PT> Deserialize<'de> for TokenizerImpl<M, N, PT>
 where
     M: Deserialize<'de> + Model,
     N: Deserialize<'de> + Normalizer,
     PT: Deserialize<'de> + PreTokenizer,
-    PP: Deserialize<'de> + PostProcessor,
-    D: Deserialize<'de> + Decoder,
 {
     fn deserialize<De>(deserializer: De) -> Result<Self, De::Error>
     where
@@ -73,34 +64,20 @@ where
                 "decoder",
                 "model",
             ],
-            TokenizerVisitor(
-                PhantomData,
-                PhantomData,
-                PhantomData,
-                PhantomData,
-                PhantomData,
-            ),
+            TokenizerVisitor(PhantomData, PhantomData, PhantomData),
         )
     }
 }
 
-struct TokenizerVisitor<M, N, PT, PP, D>(
-    PhantomData<M>,
-    PhantomData<N>,
-    PhantomData<PT>,
-    PhantomData<PP>,
-    PhantomData<D>,
-);
+struct TokenizerVisitor<M, N, PT>(PhantomData<M>, PhantomData<N>, PhantomData<PT>);
 
-impl<'de, M, N, PT, PP, D> Visitor<'de> for TokenizerVisitor<M, N, PT, PP, D>
+impl<'de, M, N, PT> Visitor<'de> for TokenizerVisitor<M, N, PT>
 where
     M: Deserialize<'de> + Model,
     N: Deserialize<'de> + Normalizer,
     PT: Deserialize<'de> + PreTokenizer,
-    PP: Deserialize<'de> + PostProcessor,
-    D: Deserialize<'de> + Decoder,
 {
-    type Value = TokenizerImpl<M, N, PT, PP, D>;
+    type Value = TokenizerImpl<M, N, PT>;
 
     fn expecting(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(fmt, "struct Tokenizer")
@@ -120,12 +97,6 @@ where
                         return Err(Error::custom(format!("Unknown tokenizer version '{v}'")));
                     }
                 }
-                "truncation" => {
-                    builder = builder.with_truncation(map.next_value()?);
-                }
-                "padding" => {
-                    builder = builder.with_padding(map.next_value()?);
-                }
                 "added_tokens" => {
                     tokens = map.next_value()?;
                 }
@@ -138,13 +109,12 @@ where
                 "model" => {
                     builder = builder.with_model(map.next_value()?);
                 }
-                "decoder" => {
-                    builder = builder.with_decoder(map.next_value()?);
+                // `truncation`, `padding`, `post_processor` and `decoder` are part of the
+                // tokenizer.json schema but are not used by the pipeline-only tokenizer;
+                // consume and discard them so loading a full tokenizer.json still works.
+                _ => {
+                    let _ = map.next_value::<IgnoredAny>()?;
                 }
-                "post_processor" => {
-                    builder = builder.with_post_processor(map.next_value()?);
-                }
-                _ => {}
             };
         }
         let mut tokenizer = builder
@@ -178,10 +148,10 @@ mod tests {
 
     #[test]
     fn test_deserialization_serialization_invariant() {
+        // The pipeline-only tokenizer serializes exactly these fields; `truncation`,
+        // `padding`, `post_processor` and `decoder` are ignored on load and not emitted.
         let tok_json = r#"{
   "version": "1.0",
-  "truncation": null,
-  "padding": null,
   "added_tokens": [
     {
       "id": 0,
@@ -213,8 +183,6 @@ mod tests {
   ],
   "normalizer": null,
   "pre_tokenizer": null,
-  "post_processor": null,
-  "decoder": null,
   "model": {
     "type": "WordPiece",
     "unk_token": "[UNK]",

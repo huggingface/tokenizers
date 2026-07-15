@@ -25,17 +25,19 @@
 //!    that, for example, a language model would need, such as special tokens.
 //!
 //! ## Loading a pretrained tokenizer from the Hub
-//! ```
+//! ```no_run
 //! use tk_encode::tokenizer::{Result, Tokenizer};
+//! use tk_encode::tokenizer::pipeline::PipelineTokenizer;
+//! use std::convert::TryFrom;
 //!
 //! fn main() -> Result<()> {
 //!     # #[cfg(feature = "http")]
 //!     # {
 //!     // needs http feature enabled
 //!     let tokenizer = Tokenizer::from_pretrained("bert-base-cased", None)?;
-//!
-//!     let encoding = tokenizer.encode("Hey there!", false)?;
-//!     println!("{:?}", encoding.get_tokens());
+//!     let pipeline = PipelineTokenizer::try_from(&tokenizer)?;
+//!     let ids = pipeline.encode("Hey there!", false)?;
+//!     println!("{:?}", ids);
 //!     # }
 //!     Ok(())
 //! }
@@ -44,8 +46,10 @@
 //! ## Deserialization and tokenization example
 //!
 //! ```no_run
-//! use tk_encode::tokenizer::{Result, Tokenizer, EncodeInput};
+//! use tk_encode::tokenizer::{Result, Tokenizer};
+//! use tk_encode::tokenizer::pipeline::PipelineTokenizer;
 //! use tk_encode::models::bpe::BPE;
+//! use std::convert::TryFrom;
 //!
 //! fn main() -> Result<()> {
 //!     let bpe_builder = BPE::from_file("./path/to/vocab.json", "./path/to/merges.txt");
@@ -54,10 +58,10 @@
 //!         .unk_token("[UNK]".into())
 //!         .build()?;
 //!
-//!     let mut tokenizer = Tokenizer::new(bpe);
-//!
-//!     let encoding = tokenizer.encode("Hey there!", false)?;
-//!     println!("{:?}", encoding.get_tokens());
+//!     let tokenizer = Tokenizer::new(bpe);
+//!     let pipeline = PipelineTokenizer::try_from(&tokenizer)?;
+//!     let ids = pipeline.encode("Hey there!", false)?;
+//!     println!("{:?}", ids);
 //!
 //!     Ok(())
 //! }
@@ -86,15 +90,10 @@
 extern crate log;
 
 #[macro_use]
-extern crate derive_builder;
-
-#[macro_use]
 pub mod utils;
-pub mod decoders;
 pub mod models;
 pub mod normalizers;
 pub mod pre_tokenizers;
-pub mod processors;
 pub mod tokenizer;
 pub mod vocab;
 /// Legacy map-backed token store; drop-in twin of the fast `bucket_vocab_store::BucketVocabStore`.
