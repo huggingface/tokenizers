@@ -7,9 +7,9 @@
 //! Starting with `0.23`, the implementation is split across two public crates (each built on internal
 //! engines — `tk_encode` on the `atomsplit` SIMD pre-tokenizer, and the shared `bitmap_gen` tables):
 //!
-//! - [`tk_encode`] — inference: the model engines, the full pipeline components
-//!   ([`Normalizer`], [`PreTokenizer`], [`Model`], [`PostProcessor`],
-//!   [`Decoder`]) and the [`Tokenizer`] orchestration (encode / decode).
+//! - [`tk_encode`] — inference: the model engines, the pipeline components
+//!   ([`Normalizer`], [`PreTokenizer`], [`Model`]) and the [`Tokenizer`] loader
+//!   that feeds the fast `PipelineTokenizer` encode path.
 //! - [`tk_train`] — training: the [`Trainer`] trait, every concrete `*Trainer`,
 //!   and the [`TokenizerTrainExt`] extension that adds `train` /
 //!   `train_from_files` onto a [`Tokenizer`].
@@ -18,24 +18,18 @@
 //! `tokenizers::…` paths keep working. Training lives behind the (default-on)
 //! `train` feature; disable default features for an inference-only build.
 //!
-//! ## Deserialization and tokenization example
+//! ## Load and encode (pipeline)
 //!
 //! ```no_run
-//! use tokenizers::tokenizer::{Result, Tokenizer, EncodeInput};
-//! use tokenizers::models::bpe::BPE;
+//! use std::convert::TryFrom;
+//! use tokenizers::tokenizer::{Result, Tokenizer};
+//! use tokenizers::tokenizer::pipeline::PipelineTokenizer;
 //!
 //! fn main() -> Result<()> {
-//!     let bpe_builder = BPE::from_file("./path/to/vocab.json", "./path/to/merges.txt");
-//!     let bpe = bpe_builder
-//!         .dropout(0.1)
-//!         .unk_token("[UNK]".into())
-//!         .build()?;
-//!
-//!     let mut tokenizer = Tokenizer::new(bpe);
-//!
-//!     let encoding = tokenizer.encode("Hey there!", false)?;
-//!     println!("{:?}", encoding.get_tokens());
-//!
+//!     let tok = Tokenizer::from_file("tokenizer.json")?;
+//!     let pipeline = PipelineTokenizer::try_from(&tok)?;
+//!     let ids = pipeline.encode("Hey there!", false)?;
+//!     println!("{:?}", ids.len());
 //!     Ok(())
 //! }
 //! ```
@@ -43,7 +37,7 @@
 // ---------------------------------------------------------------------------
 // Inference (always available) — re-exported from `tk-encode`.
 // ---------------------------------------------------------------------------
-pub use tk_encode::{decoders, normalizers, pre_tokenizers, processors, tokenizer, utils};
+pub use tk_encode::{normalizers, pre_tokenizers, tokenizer, utils};
 
 // Mirror the v1 top-level re-exports (`pub use tokenizer::*;` etc.).
 pub use tk_encode::tokenizer::*;
