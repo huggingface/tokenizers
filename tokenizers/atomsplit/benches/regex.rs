@@ -13,9 +13,10 @@ use atomsplit::classify::{classify, classify_scalar};
 use atomsplit::fsm::{Span, fsm_byte_level, fsm_cl100k, fsm_deepseek, fsm_o200k};
 use atomsplit::regexes;
 use fancy_regex::Regex as Fancy;
-use onig::Regex;
-use std::hint::black_box;
 use logos::Logos;
+use onig::Regex;
+use pcre2::bytes::Regex as Pcre2;
+use std::hint::black_box;
 use std::time::Instant;
 
 type Fsm = fn(&[u8], &[u8], &mut [Span]) -> usize;
@@ -138,6 +139,33 @@ fn onig_pieces(res: &[Regex], text: &str) -> Vec<(usize, usize)> {
     pieces
 }
 
+/// Same composition under PCRE2 (JIT-compiled), operating on bytes; `find_iter` yields `Result<Match>`.
+fn pcre2_pieces(res: &[Pcre2], text: &str) -> Vec<(usize, usize)> {
+    let bytes = text.as_bytes();
+    let mut pieces = vec![(0usize, text.len())];
+    for re in res {
+        let mut next = Vec::with_capacity(pieces.len() * 2);
+        for (s, e) in pieces.drain(..) {
+            let sub = &bytes[s..e];
+            let mut prev = 0usize;
+            for m in re.find_iter(sub) {
+                let Ok(m) = m else { break };
+                let (ms, me) = (m.start(), m.end());
+                if ms > prev {
+                    next.push((s + prev, s + ms));
+                }
+                next.push((s + ms, s + me));
+                prev = me;
+            }
+            if prev < sub.len() {
+                next.push((s + prev, e));
+            }
+        }
+        pieces = next;
+    }
+    pieces
+}
+
 /// Same composition under fancy-regex; `find_iter` yields `Result<Match>` (a match error ends the pass).
 fn fancy_pieces(res: &[Fancy], text: &str) -> Vec<(usize, usize)> {
     let mut pieces = vec![(0usize, text.len())];
@@ -187,7 +215,7 @@ fn ns_per_byte<F: FnMut() -> usize>(len: usize, iters: u32, mut f: F) -> f64 {
 fn main() {
     let manifest = env!("CARGO_MANIFEST_DIR");
     println!(
-        "{:<9} {:<10} {:>7} {:>5}  {:>8} {:>8} | {:>8} | {:>8} {:>8} {:>8} | {:>7} {:>7} {:>7}",
+        "{:<9} {:<10} {:>7} {:>5}  {:>8} {:>8} | {:>8} | {:>8} {:>8} {:>8} {:>8} | {:>7} {:>7} {:>7} {:>7}",
         "engine",
         "lang",
         "bytes",
@@ -198,13 +226,27 @@ fn main() {
         "onig",
         "fancy",
         "logos",
+        "pcre2jit",
         "vsOnig",
         "vsFncy",
-        "vsLogos"
+        "vsLogos",
+        "vsPcre2"
     );
     for &(ename, fsm, rxs) in ENGINES {
         let onig: Vec<Regex> = rxs.iter().map(|r| Regex::new(r).expect(ename)).collect();
         let fancy: Vec<Fancy> = rxs.iter().map(|r| Fancy::new(r).expect(ename)).collect();
+        // PCRE2 with JIT — its speed is the JIT, so bench it there.
+        let pcre2: Vec<Pcre2> = rxs
+            .iter()
+            .map(|r| {
+                pcre2::bytes::RegexBuilder::new()
+                    .utf(true)
+                    .ucp(true)
+                    .jit_if_available(true)
+                    .build(r)
+                    .expect(ename)
+            })
+            .collect();
         for (label, rel) in CORPORA {
             let raw = match std::fs::read_to_string(format!("{manifest}/{rel}")) {
                 Ok(s) if !s.trim().is_empty() => s,
@@ -254,6 +296,7 @@ fn main() {
             let fsm_ns = ns_per_byte(n, iters, || fsm(text, &tags, &mut buf));
             let onig_ns = ns_per_byte(n, iters, || onig_pieces(&onig, corpus).len());
             let fancy_ns = ns_per_byte(n, iters, || fancy_pieces(&fancy, corpus).len());
+            let pcre2_ns = ns_per_byte(n, iters, || pcre2_pieces(&pcre2, corpus).len());
             let logos = logos_ns(ename, corpus, n, iters);
 
             let pipe = cls_simd + fsm_ns; // SIMD classify + scalar fsm — the full pipeline
@@ -262,15 +305,17 @@ fn main() {
                 None => ("       —".into(), "      —".into()), // deepseek: no single logos grammar
             };
             println!(
-                "{ename:<9} {label:<10} {n:>7} {btok:>5.1}  {cls_simd:>8.3} {cls_scal:>8.3} | {fsm_ns:>8.3} | {onig_ns:>8.2} {fancy_ns:>8.2} {logos_c} | {:>6.1}x {:>6.1}x {vslogos} {ok}",
+                "{ename:<9} {label:<10} {n:>7} {btok:>5.1}  {cls_simd:>8.3} {cls_scal:>8.3} | {fsm_ns:>8.3} | {onig_ns:>8.2} {fancy_ns:>8.2} {logos_c} {pcre2_ns:>8.2} | {:>6.1}x {:>6.1}x {vslogos} {:>6.1}x {ok}",
                 onig_ns / pipe,
-                fancy_ns / pipe
+                fancy_ns / pipe,
+                pcre2_ns / pipe
             );
         }
     }
     println!(
-        "\n(ns/byte, lower better. pipeline = SIMD classify + scalar fsm; vs onig / fancy / logos on the \
-         composed Isolated split. ✓ = fsm == onig, byte-exact. logos is a DFA lexer approximating the \
-         grammar — speed reference only; deepseek isn't expressible as one logos grammar.)"
+        "\n(ns/byte, lower better. pipeline = SIMD classify + scalar fsm; vs onig / fancy / logos / \
+         pcre2(JIT) on the composed Isolated split. ✓ = fsm == onig, byte-exact. logos is a DFA lexer \
+         approximating the grammar — speed reference only; deepseek isn't expressible as one logos \
+         grammar. onig/fancy/pcre2 run the exact regex.)"
     );
 }

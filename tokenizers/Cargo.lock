@@ -75,6 +75,7 @@ dependencies = [
  "logos",
  "memchr",
  "onig",
+ "pcre2",
 ]
 
 [[package]]
