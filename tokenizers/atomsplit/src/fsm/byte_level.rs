@@ -79,4 +79,3 @@ pub fn fsm_byte_level(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
     }
     w
 }
-

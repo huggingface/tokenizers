@@ -245,4 +245,3 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
     }
     w
 }
-

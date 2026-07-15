@@ -116,4 +116,3 @@ fn cl100k(text: &[u8], tags: &[u8], out: &mut [Span], digit_cap: usize) -> usize
     }
     w
 }
-

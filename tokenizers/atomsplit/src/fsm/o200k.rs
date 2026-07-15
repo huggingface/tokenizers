@@ -67,11 +67,7 @@ fn emit_o200k_letters(
     while p < re {
         let e = o200k_letter_match(tags, p, re);
         let start = if first { pfx } else { p };
-        let tok_end = if e == re {
-            e + contraction(text, e)
-        } else {
-            e
-        };
+        let tok_end = if e == re { e + contraction(text, e) } else { e };
         unsafe {
             *out.get_unchecked_mut(*w) = Span {
                 start: start as u32,
@@ -224,4 +220,3 @@ pub fn fsm_o200k(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
     }
     w
 }
-
