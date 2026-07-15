@@ -27,9 +27,19 @@ path = "src/lib.rs"
 [dependencies]
 memchr = "2.8.2" # SIMD single-byte search; used only in CharDelimiterSplit (1.4–23× vs scalar).
 # NOTE: classify tables live in src/atom_tables.rs (committed, generated). Regenerate after any atom
-# scheme change with `cargo run -p bitmap_gen`. No build script / build-dep — atomsplit builds clean.
+# scheme change with `cargo run -p bitmap_gen`. The crate is build-script-free by default; the `xxutf`
+# bench feature below is the sole opt-in that adds one (to compile the xxUTF C amalgamation).
+
+[features]
+# Bench-only: add dzfrias/xxUTF (C + SIMD normalizer) as a comparison in `benches/normalize.rs`. Off by
+# default so the crate needs no C toolchain or network; `dep:cc` + build.rs activate only under this.
+xxutf = ["dep:cc"]
+
+[build-dependencies]
+cc = { version = "1", optional = true } # compiles the xxUTF amalgamation, only under `--features xxutf`
+
 [dev-dependencies]
-unicode-normalization = "0.1.25" # reference NFD/NFKD for the src/nfd.rs differential tests (dev-only, not linked at runtime)
+unicode-normalization = "0.1.25" # reference NFD/NFKD for the src/nfd.rs differential tests + normalize bench (dev-only, not linked at runtime)
 
 # onig is C (Oniguruma) and fancy-regex pulls it in transitively for benches only — neither
 # cross-compiles to wasm32 (no wasi libc for the C build), so gate them off wasm.
@@ -48,4 +58,8 @@ harness = false
 
 [[bench]]
 name = "class_runs"
+harness = false
+
+[[bench]]
+name = "normalize"   # NFD/NFKD/NFC/NFKC vs unicode-normalization (+ xxUTF under --features xxutf)
 harness = false

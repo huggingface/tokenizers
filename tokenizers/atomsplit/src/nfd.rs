@@ -227,7 +227,6 @@ fn skip_clear_2byte<B: Bitset>(bytes: &[u8], mut i: usize) -> usize {
                 Some(lane) => return i + lane * 2,
                 None => i += 32,
             }
-            i += 32;
         }
     }
     i
