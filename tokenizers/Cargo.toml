@@ -107,6 +107,16 @@ lto = "fat"
 inherits = "release"
 debug = true
 
+# Size-optimized "thin" release for on-device footprint experiments: opt-for-size,
+# single codegen unit (better cross-fn dedup), abort-on-panic (drops unwind tables),
+# and stripped. Inherits `lto = "fat"` from release. Build: `cargo build --profile thin`.
+[profile.thin]
+inherits = "release"
+opt-level = "z"
+codegen-units = 1
+panic = "abort"
+strip = true
+
 [[example]]
 name = "encode_batch"
 required-features = ["http"]
