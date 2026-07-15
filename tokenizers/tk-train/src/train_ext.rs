@@ -1,10 +1,8 @@
 use std::fs::File;
 use std::io::BufReader;
 
-use tk_encode::decoders::DecoderWrapper;
 use tk_encode::normalizers::NormalizerWrapper;
 use tk_encode::pre_tokenizers::PreTokenizerWrapper;
-use tk_encode::processors::PostProcessorWrapper;
 use tk_encode::tokenizer::pipeline::TrainingPretokenizer;
 use tk_encode::tokenizer::{Model, TokenizerImpl};
 use tk_encode::utils::iter::ResultShunt;
@@ -42,8 +40,7 @@ pub trait TokenizerTrainExt<M> {
 // legacy `Normalizer`/`PreTokenizer` trait runtime) to the concrete config wrappers, so training
 // pre-tokenizes through the fast `TrainingPretokenizer` (atomsplit) pipeline instead. `M` stays
 // generic so both `ModelWrapper` (via `TrainerWrapper`) and single-model trainers still apply.
-impl<M> TokenizerTrainExt<M>
-    for TokenizerImpl<M, NormalizerWrapper, PreTokenizerWrapper, PostProcessorWrapper, DecoderWrapper>
+impl<M> TokenizerTrainExt<M> for TokenizerImpl<M, NormalizerWrapper, PreTokenizerWrapper>
 where
     M: Model + Send + Sync,
 {

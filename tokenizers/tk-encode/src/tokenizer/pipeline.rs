@@ -25,7 +25,7 @@ use crate::{
         unicode_scripts::UnicodeScripts,
         whitespace::{Whitespace, WhitespaceSplit},
     },
-    ModelWrapper, PostProcessorWrapper, PreTokenizerWrapper, Token, Tokenizer,
+    ModelWrapper, PreTokenizerWrapper, Token, Tokenizer,
 };
 
 use super::{Result, SplitDelimiterBehavior};
@@ -392,7 +392,6 @@ pub struct PipelineTokenizer {
     normalizer: Option<NormalizerWrapper>,
     pre_tokenizer: PipelinePreTokenizer,
     model: PipelineModel,
-    _post_processor: Option<PostProcessorWrapper>,
 }
 
 impl TryFrom<&Tokenizer> for PipelineTokenizer {
@@ -490,7 +489,6 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
             normalizer: tok.get_normalizer().cloned(),
             pre_tokenizer,
             model,
-            _post_processor: tok.get_post_processor().cloned(),
         })
     }
 }

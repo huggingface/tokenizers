@@ -20,30 +20,11 @@ pub use unrolled_regex::{gpt_fsm, is_deepseek, GptFsm, GptFsmPattern};
 
 pub mod byte_level;
 pub mod iter;
-pub mod padding;
 pub mod parallelism;
 pub mod progress;
-pub mod truncation;
 
 // Re-export ProgressFormat for public API
 pub use progress::ProgressFormat;
-
-use ahash::AHashMap;
-use serde::{Serialize, Serializer};
-use std::collections::BTreeMap;
-
-pub(crate) fn ordered_map<S, K, V>(
-    value: &AHashMap<K, V>,
-    serializer: S,
-) -> std::result::Result<S::Ok, S::Error>
-where
-    S: Serializer,
-    K: Serialize + std::cmp::Ord,
-    V: Serialize,
-{
-    let ordered: BTreeMap<_, _> = value.iter().collect();
-    ordered.serialize(serializer)
-}
 
 macro_rules! impl_enum_from (
     ($from_ty:ty, $enum:ty, $variant:ident) => {
