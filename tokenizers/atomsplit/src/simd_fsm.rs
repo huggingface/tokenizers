@@ -180,6 +180,7 @@ pub(crate) fn class_runs_neon<const DROP: u16, const ISOLATE: u16, const KEEP_A:
                 k += 1;
             }
             // ┌─ STEP 4  prev = class' shifted right 1 lane   (lane0 ← carry = 0) ────────┐
+            // class'     2  2  0  2  2  2  0  2  2  2  2  2  0  3  3  3
             // prev       0  2  2  0  2  2  2  0  2  2  2  2  2  0  3  3
             //            ↑carry (a class 0..3) from the previous chunk's last lane
             let prev = vextq_u8::<15>(vdupq_n_u8(carry), cls);

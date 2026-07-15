@@ -5,8 +5,21 @@
 use std::fmt::Write as _;
 use unicode_properties::{GeneralCategory, UnicodeGeneralCategory};
 
-// Produce the atom tag from the character.
+// Produce the atom tag from the character, OR-ing in the CJK-range bit (0x40) for the exact set
+// deepseek's Split-2 isolates — Han U+4E00..9FA5 ∪ Hiragana/Katakana U+3040..30FF (INCLUDING the CJK
+// punct ・゠ inside that block). Coarse consumers mask it off (`& 0x0F`); `fsm_deepseek` tests it instead
+// of peeking `text`. Kept orthogonal to the case/ASM/ZWJ high-nibble values (bit 6, all of which are ≤ 0x2x).
 fn atom(c: char) -> u8 {
+    let cp = c as u32;
+    let base = atom_base(c);
+    if (0x4E00..=0x9FA5).contains(&cp) || (0x3040..=0x30FF).contains(&cp) {
+        base | 0x40
+    } else {
+        base
+    }
+}
+
+fn atom_base(c: char) -> u8 {
     use GeneralCategory::*;
     let cp = c as u32;
     match c.general_category() {
@@ -29,13 +42,16 @@ fn atom(c: char) -> u8 {
     if c.is_whitespace() {
         return 5; // \s ∖ {\r\n, 0x20}
     }
+    if cp == 0x200C || cp == 0x200D {
+        // ZWJ/ZWNJ (`\p{Cf}`): coarse Mark (∈ `\w`) but NOT `[\p{L}\p{M}]`. High nibble 2 (0x26) lets the
+        // deepseek/o200k FSMs end a letter run on the tag alone, no `text` peek. Coarse consumers mask it.
+        return 6 | (2 << 4); // 0x26
+    }
     if matches!(
         c.general_category(),
         NonspacingMark | SpacingMark | EnclosingMark
-    ) || cp == 0x200C
-        || cp == 0x200D
-    {
-        return 6; // \p{M} ∪ {ZWJ,ZWNJ}: real marks — ∈ deepseek/o200k `[\p{L}\p{M}]` and ∈ `\w`
+    ) {
+        return 6; // \p{M}: real marks — ∈ deepseek/o200k `[\p{L}\p{M}]` and ∈ `\w`
     }
     if c.is_alphabetic() {
         // Other_Alphabetic non-mark (circled letters Ⓘ …, category So): a `\w` word char (coarse Mark →
