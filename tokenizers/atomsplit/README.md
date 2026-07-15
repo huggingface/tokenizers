@@ -11,7 +11,7 @@ The key design principle is that no matter the number of atoms (well it has to b
 |---------------|----------------------|------------------------------------------------------------------------|------------------------------------|
 | ASCII         | `0x00–0x7F` (1 B)    | 128-entry table, two 64-halves + subtract-trick `OR`                   | ✓ one table                        |
 | 2-byte        | `0xC2–0xDF` (2 B)    | 8 groups × (4 sub × 64); **peel** the min group → one 256-lookup       | ✓ one table                        |
-| CJK shortcut  | `0xE3–0xED` (3 B)    | range compares → one tag; only if the scheme folds all CJK to one tag  | SIMD-only optimism (scalar → 3-byte) |
+| CJK shortcut  | `0xE3–0xED` (3 B)    | range compares → one tag (current scheme folds all CJK → `Letter`)     | SIMD-only optimism (scalar → 3-byte) |
 | 3-byte        | `0xE0–0xEF` (3 B)    | 512 blocks: 425 uniform const / 87 mixed 128-tables; **peel** blocks   | ✓ one table                        |
 | cold BMP      | any BMP deferred     | run-length `(start_cp, tag)`, binary-searched (~1–3 KB)                | scalar reader / SIMD `MB`-fixup    |
 | astral        | `0xF0–0xF4` (4 B)    | run-length `(start_cp, tag)`, binary-searched                          | scalar / SIMD stamps `MB` → fixup  |
@@ -103,7 +103,7 @@ fast3_uni[block] = tag           if the whole 128-cp block is one atom   (425 bl
                  = 0xFF          otherwise → fast3_mixed[ fast3_slot[block] ] holds a 128-table (87 blocks)
 ```
 
-**CJK shortcut (SIMD only).** When a scheme maps *all* of CJK to a single tag (atoms → `Letter`), the SIMD kernel skips the tables for `E3..ED` and proves "is CJK" with a few range compares (Han `E4..E9`, Hangul `EB..EC`, kana `E3 81..83`, minus a handful of punctuation holes like `・`). It only ever *under*-claims (boundary/hole codepoints fall through to the exact 3-byte tables), so it stays byte-exact. A scheme that maps CJK blocks to distinct tags would set `CJK_RANGE_TAG = None` and use the tables.
+**CJK shortcut (SIMD only).** The current scheme folds all of CJK to one tag (`CJK_TAG = Atom::Letter`), so the SIMD kernel skips the tables for `E3..ED` and proves "is CJK" with a few range compares (Han `E4..E9`, Hangul `EB..EC`, kana `E3 81..83`, minus a handful of punctuation holes like `・`). It only ever *under*-claims (boundary/hole codepoints fall through to the exact 3-byte tables), so it stays byte-exact. (A scheme that split CJK into distinct tags would drop this shortcut and use the tables.)
 
 **Cold fallback + astral.** The dense BMP tag stream and the astral range are **run-length encoded** `(start_cp, tag)` and binary-searched — a few KB instead of a 64 KB dense LUT, because tags change rarely across a codepoint range. The SIMD kernel can't see a 4-byte char's 4th byte (it only gathers 3 bytes per lane), so it stamps those lanes `MB` and a per-chunk fixup resolves them via these tables while the chunk is still hot in L1.
 
@@ -143,9 +143,7 @@ A class is any union of atoms — `PUNCT_SYM = Connector|Punct|Apostrophe|SymOth
 A pre-tokenizer rule is one of two shapes, and **SIMD only helps the second**:
 
 1. **Per-char decisions** — cl100k's contraction peek (`'s|'t|…`), the ` ?` / `[^…]?` prefix logic: a branchy little automaton, one char at a time. Branches don't vectorize, so this stays **scalar**.
-2. **Run-ends — a `+`/`*` over one class** (`\p{L}+`, `\s+`, `\p{N}+`, a punct run): grab the maximal run. This is the *only* place SIMD wins, and the trick is **skip the invalid, stop only at the valid**:
-
-   `run_end_simd` loads 16 tags → `vqtbl1` membership LUT → `vminvq == 0xFF` means all 16 are still in-run → **skip 16 at once**; it drops to scalar only for the ≤16 bytes around the actual boundary. A 3-char English word finishes entirely in the scalar phase (no vector tax); a 900-char CJK run skips ~56 chunks. `run_end_sel::<SIMD>` picks scalar vs SIMD at monomorphization, so `fsm_cl100k` and `fsm_cl100k_simd` are one body compiled twice.
+2. **Run-ends — a `+`/`*` over one class** (`\p{L}+`, `\s+`, `\p{N}+`, a punct run): grab the maximal run. The trick is **skip the invalid, stop only at the valid**. The regex-shaped FSMs (`fsm_cl100k`, `fsm_o200k`, …) do this with the scalar `run_end`: it unrolls **16 tags per chunk** (one bounds check, `get_unchecked` reads), so a 3-char English word finishes in the ≤16-byte scalar tail while a long CJK run skips whole chunks. The *SIMD* form of the same idea lives only in the class family's `class_runs_neon` (below): `vqtbl1` a 16-tag membership LUT, `vminvq == 0xFF` ⇒ all 16 still in-run ⇒ skip the chunk.
 
 The **dual** of a run-end is a **boundary**: the class-family pre-tokenizers (Whitespace / Bert / Digits / Punctuation) cut at *every* class change, so `class_runs_neon` scans the other way — classify 16 lanes (`vqtbl1`), fill continuation lanes from the left, `movemask` the class-changes, and iterate the set bits to emit one span per segment. It finds **every boundary in a chunk at once**, so short-run text (English words, ~5 chars) is never paid per-char.
 
@@ -157,36 +155,39 @@ Each pre-tokenizer is a small automaton over the shared tag alphabet: a few **st
 
 ## 3. Measured performance
 
-Single-thread, **180 KB per language** (uniform size → comparable cache behaviour), **min-of-7 trials**, 14-core Apple Silicon (8 P + 6 E), light background load. `ns/byte`, lower is better. **Every row is byte-exact ✓** against the reference regex (onig for cl100k / GPT-2; the composed onig×3 `Sequence` for deepseek). Reproduce with `cargo bench --bench {cl100k,deepseek,byte_level,threads}`.
+Single-thread, **180 KB per language** (uniform size → comparable cache behaviour), **min-of-7 trials**, 14-core Apple Silicon (8 P + 6 E), light background load. `ns/byte`, lower is better. **Every row is byte-exact ✓** against the reference regex (onig for gpt2 / cl100k / o200k; the composed onig×3 `Sequence` for deepseek). Reproduce with `cargo bench --bench regex` (all four regex families in one run); the class family is `--bench class_runs`, classify alone is `--bench classify`.
 
 ### 3.1 cl100k — classify is ~free, the FSM is the cost
 
-| lang | b/tok | classify | FSM scalar | FSM SIMD | onig | pipeline **vs onig** |
-|---|--:|--:|--:|--:|--:|--:|
-| English  |  4.6 | **0.066** | 1.285 | 1.528 | 30.6 | **19.2×** |
-| French   |  5.1 | 0.404 | 1.171 | 1.576 | 29.4 | 14.8× |
-| Russian  | 10.2 | 0.286 | 0.725 | 0.741 | 17.2 | 16.7× |
-| Greek    |  9.9 | 0.294 | 0.802 | 0.879 | 18.0 | 15.4× |
-| Hebrew   |  8.3 | 0.297 | 0.797 | 1.051 | 19.8 | 14.7× |
-| Arabic   |  9.1 | 0.289 | 0.818 | 0.978 | 19.3 | 15.2× |
-| Hindi    |  5.3 | 0.320 | 0.962 | 1.276 | 32.6 | 20.5× |
-| Thai     | 11.8 | 0.319 | 0.648 | 0.711 | 18.3 | 17.8× |
-| Chinese  | 19.3 | 0.537 | 0.568 | **0.474** | 11.7 | 11.5× |
-| Japanese | 25.3 | 0.534 | 0.575 | **0.397** | 11.6 | 12.5× |
-| Korean   |  7.4 | 0.430 | 0.885 | 0.926 | 22.8 | 16.8× |
+The regex-shaped FSMs are scalar (there is no SIMD cl100k FSM — SIMD lives only in the class family's `class_runs_neon`, §2.2). `pipeline = SIMD classify + scalar FSM`.
 
-Reading it: **classify ≪ FSM** — the FSM is 10–20× the classify on dense Latin, so it's where the work is (§2). Pure-ASCII English classifies at **0.066** (the ASCII fast path skips whole chunks); accented Latin (French) and multibyte scripts cost more because their 2-/3-byte chars leave that fast path. **FSM SIMD** helps run-heavy CJK (Japanese `0.575 → 0.397`) but *taxes* dense Latin (English `1.285 → 1.528`) — exactly why it's opt-in, per the run-end duality of §2.2. The full pipeline (classify + FSM) is **11–20× onig**.
+| lang | b/tok | classify | FSM (scalar) | onig | pipeline **vs onig** |
+|---|--:|--:|--:|--:|--:|
+| English  |  4.6 | **0.068** | 1.037 | 36.3 | **32.9×** |
+| French   |  5.1 | 0.158 | 0.836 | 35.9 | 36.1× |
+| Russian  | 10.2 | 0.315 | 0.462 | 20.7 | 26.6× |
+| Greek    |  9.9 | 0.296 | 0.462 | 22.3 | 29.3× |
+| Hebrew   |  8.3 | 0.302 | 0.481 | 24.2 | 30.9× |
+| Arabic   |  9.1 | 0.293 | 0.499 | 23.6 | 29.8× |
+| Hindi    |  5.3 | 0.320 | 0.659 | 39.9 | 40.7× |
+| Thai     | 11.8 | 0.327 | 0.416 | 23.0 | 30.9× |
+| Chinese  | 19.3 | 0.601 | 0.289 | 14.4 | 16.2× |
+| Japanese | 25.3 | 0.715 | 0.265 | 14.1 | 14.4× |
+| Korean   |  7.4 | 0.440 | 0.617 | 26.6 | 25.1× |
 
-### 3.2 GPT-2 (ByteLevel) & deepseek — same story, other regexes
+Reading it: **classify ≪ FSM** — on dense Latin the FSM is ~5–15× the classify, so that's where the work is (§2). Pure-ASCII English classifies at **0.068** (the ASCII fast path skips whole chunks); accented Latin (French) and multibyte scripts leave that fast path so classify costs more. The FSM is *cheapest* on run-heavy CJK (Chinese/Japanese ~0.27 — long homogeneous runs skip fast via the unrolled `run_end`) and dearest on dense short-token Latin. The full pipeline (SIMD classify + scalar FSM) is **14–41× onig**.
 
-All byte-exact; pipeline vs the reference regex:
+### 3.2 GPT-2 (ByteLevel), o200k & deepseek — same story, other regexes
 
-- **GPT-2 / ByteLevel**: **15–37×** onig (English 26×, Hindi 37×, Chinese 15×).
-- **deepseek** (a `Sequence` of 3 Isolated splits, collapsed into one FSM): **16–38×** the composed onig×3 (Chinese 38×, Japanese 30×, English 17×).
+All byte-exact; full-pipeline speedup vs the reference regex (one `cargo bench --bench regex` run covers all four families):
+
+- **GPT-2 / ByteLevel**: **21–45×** onig (English 34×, Hindi 45×, Chinese 22×).
+- **o200k** (GPT-4o — case-aware `[\p{L}\p{M}]+` split, so a heavier FSM): **7–18×** onig (English 17×, Thai 7×, Chinese 10×).
+- **deepseek** (a `Sequence` of 3 Isolated splits, collapsed into one FSM): **17–41×** the composed onig×3 (Chinese 41×, Japanese 28×, English 17×).
 
 ### 3.3 Thread scaling (cl100k, ~16 MB doc, newline-partitioned seams)
 
-Threads spawned once (`std::thread::scope`, no external dep); each chunk's seam sits after a whitespace-run's last `\n`, so no token crosses it — **byte-exact for cl100k/deepseek** (proven: partitioned spans == sequential). MB/s (bytes×iters / wall):
+Threads spawned once (`std::thread::scope`, no external dep); each chunk's seam sits after a whitespace-run's last `\n`, so no token crosses it — **byte-exact for cl100k/deepseek** (proven: partitioned spans == sequential). MB/s (bytes×iters / wall; illustrative from a prior run — thread scaling has no standalone bench target in the current layout):
 
 | threads | English | | Chinese | |
 |--:|--:|--:|--:|--:|

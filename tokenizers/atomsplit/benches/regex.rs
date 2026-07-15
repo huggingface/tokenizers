@@ -117,7 +117,16 @@ fn main() {
     let manifest = env!("CARGO_MANIFEST_DIR");
     println!(
         "{:<9} {:<10} {:>7} {:>5}  {:>8} {:>8} | {:>8} | {:>8} {:>8} | {:>7} {:>7}",
-        "engine", "lang", "bytes", "b/tok", "clsSIMD", "clsScal", "fsm", "onig", "fancy", "vsOnig",
+        "engine",
+        "lang",
+        "bytes",
+        "b/tok",
+        "clsSIMD",
+        "clsScal",
+        "fsm",
+        "onig",
+        "fancy",
+        "vsOnig",
         "vsFncy"
     );
     for &(ename, fsm, rxs) in ENGINES {
@@ -127,7 +136,9 @@ fn main() {
             let raw = match std::fs::read_to_string(format!("{manifest}/{rel}")) {
                 Ok(s) if !s.trim().is_empty() => s,
                 _ => {
-                    println!("{ename:<9} {label:<10}  (skipped — {rel} missing; run benches/data/fetch.py)");
+                    println!(
+                        "{ename:<9} {label:<10}  (skipped — {rel} missing; run benches/data/fetch.py)"
+                    );
                     continue;
                 }
             };
@@ -151,7 +162,11 @@ fn main() {
             classify(text, &mut tags);
             let mut buf = vec![Span::default(); n + 1];
             let k = fsm(text, &tags, &mut buf);
-            let ok = if buf[..k] == ref_spans[..] { "✓" } else { "✗" };
+            let ok = if buf[..k] == ref_spans[..] {
+                "✓"
+            } else {
+                "✗"
+            };
             let btok = n as f64 / k.max(1) as f64;
 
             let cls_simd = ns_per_byte(n, iters, || {

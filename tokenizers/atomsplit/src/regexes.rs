@@ -6,7 +6,8 @@
 //! consts only document (and gate the tests of) the contract the FSMs implement.
 
 /// GPT-2 / ByteLevel. Reproduced by [`crate::fsm::fsm_byte_level`].
-pub const GPT2: &str = r"'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+";
+pub const GPT2: &str =
+    r"'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+";
 
 /// cl100k_base (tiktoken) / Llama-3. Reproduced by [`crate::fsm::fsm_cl100k`]. Rule 3's `\p{N}{1,3}`
 /// digit cap is the only free knob — the cl100k *family* (Qwen2's `\p{N}`, …) is recognized structurally
