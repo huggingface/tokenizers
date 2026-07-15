@@ -1,5 +1,5 @@
 use crate::Result;
-use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
+use hf_hub::{split_id, HFClient};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -57,12 +57,16 @@ pub fn from_pretrained<S: AsRef<str>>(
         .into());
     }
 
-    let mut builder = ApiBuilder::from_env();
+    let mut builder = HFClient::builder();
     if let Some(token) = params.token {
-        builder = builder.with_token(Some(token));
+        builder = builder.token(token);
     }
-    let api = builder.build()?;
-    let repo = Repo::with_revision(identifier, RepoType::Model, params.revision);
-    let api = api.repo(repo);
-    Ok(api.get("tokenizer.json")?)
+    let client = builder.build_sync()?;
+    let (owner, name) = split_id(&identifier);
+    Ok(client
+        .model(owner, name)
+        .download_file()
+        .filename("tokenizer.json")
+        .revision(params.revision)
+        .send()?)
 }
