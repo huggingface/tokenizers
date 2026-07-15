@@ -401,9 +401,9 @@ fn measure_memory(model: &Path, baseline_ok: bool) -> Value {
 // bytes isolate the classify half (scalar-pipeline = pre_tokenize + (cls_scalar − cls_simd)), and `onig`
 // times the model's own pre-tokenizer regex(es) — the split a regex-based tokenizer actually pays for.
 
-/// GPT-2's implicit pre-tokenize regex (a byte-map `ByteLevel` splits on this before mapping bytes).
-const GPT2_REGEX: &str =
-    r"'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+";
+/// GPT-2's implicit pre-tokenize regex (a byte-map `ByteLevel` splits on this before mapping bytes) —
+/// the canonical spec in atomsplit.
+use atomsplit::regexes::GPT2 as GPT2_REGEX;
 
 fn split_regex(p: &Value) -> Option<String> {
     (p["type"].as_str() == Some("Split"))
