@@ -15,6 +15,7 @@
 mod atom_tables;
 pub mod classify;
 pub mod fsm;
+pub mod regexes;
 #[cfg(target_arch = "x86_64")]
 mod simd_avx_classify;
 #[cfg(target_arch = "aarch64")]

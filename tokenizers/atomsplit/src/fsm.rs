@@ -251,7 +251,6 @@ pub use o200k::fsm_o200k;
 /// `WhitespaceSplit` — split on Unicode whitespace and drop it; keeps maximal non-whitespace runs.
 pub struct WhitespaceSplit;
 impl WhitespaceSplit {
-    /// Classify then split; writes spans into `out` (len ≥ `text.len()`) and returns the token count.
     #[inline]
     #[must_use]
     pub fn pre_tokenize(&self, text: &[u8], tags: &mut [u8], out: &mut [Span]) -> usize {
@@ -263,7 +262,6 @@ impl WhitespaceSplit {
 /// `Punctuation` — isolate each punctuation char as its own token; non-punct grouped into runs.
 pub struct Punctuation;
 impl Punctuation {
-    /// Classify then split; writes spans into `out` (len ≥ `text.len()`) and returns the token count.
     #[inline]
     #[must_use]
     pub fn pre_tokenize(&self, text: &[u8], tags: &mut [u8], out: &mut [Span]) -> usize {
@@ -275,7 +273,6 @@ impl Punctuation {
 /// `Digits` — cut numeric runs apart from non-numeric runs (contiguous), keeping both.
 pub struct Digits;
 impl Digits {
-    /// Classify then split; writes spans into `out` (len ≥ `text.len()`) and returns the token count.
     #[inline]
     #[must_use]
     pub fn pre_tokenize(&self, text: &[u8], tags: &mut [u8], out: &mut [Span]) -> usize {
@@ -287,7 +284,6 @@ impl Digits {
 /// `Whitespace` — the `\w+|[^\w\s]+` pre-tokenizer: drop whitespace, cut word runs from symbol runs.
 pub struct Whitespace;
 impl Whitespace {
-    /// Classify then split; writes spans into `out` (len ≥ `text.len()`) and returns the token count.
     #[inline]
     #[must_use]
     pub fn pre_tokenize(&self, text: &[u8], tags: &mut [u8], out: &mut [Span]) -> usize {
@@ -299,7 +295,6 @@ impl Whitespace {
 /// `Bert` — the BERT basic pre-tokenizer: drop whitespace, isolate punctuation, keep the rest as runs.
 pub struct Bert;
 impl Bert {
-    /// Classify then split; writes spans into `out` (len ≥ `text.len()`) and returns the token count.
     #[inline]
     #[must_use]
     pub fn pre_tokenize(&self, text: &[u8], tags: &mut [u8], out: &mut [Span]) -> usize {
@@ -311,7 +306,6 @@ impl Bert {
 /// `Cl100k` — the tiktoken cl100k_base / o200k GPT-4 pre-tokenizer (7-rule regex).
 pub struct Cl100k;
 impl Cl100k {
-    /// Classify then split; writes spans into `out` (len ≥ `text.len()`) and returns the token count.
     /// Uses the scalar run-end core: cl100k's letter/ws runs are short on Latin/code (the common case),
     /// where a SIMD run-end's setup would lose; only long CJK runs would benefit.
     #[inline]
@@ -325,7 +319,6 @@ impl Cl100k {
 /// `DeepSeek` — the DeepSeek-V3/R1 pre-tokenizer (digits{1,3} → CJK-range → big regex, composed).
 pub struct DeepSeek;
 impl DeepSeek {
-    /// Classify then split; writes spans into `out` (len ≥ `text.len()`) and returns the token count.
     #[inline]
     #[must_use]
     pub fn pre_tokenize(&self, text: &[u8], tags: &mut [u8], out: &mut [Span]) -> usize {
@@ -337,7 +330,6 @@ impl DeepSeek {
 /// `ByteLevel` — the GPT-2 / Llama / Qwen byte-level pre-tokenizer regex (before byte-mapping).
 pub struct ByteLevel;
 impl ByteLevel {
-    /// Classify then split; writes spans into `out` (len ≥ `text.len()`) and returns the token count.
     #[inline]
     #[must_use]
     pub fn pre_tokenize(&self, text: &[u8], tags: &mut [u8], out: &mut [Span]) -> usize {
