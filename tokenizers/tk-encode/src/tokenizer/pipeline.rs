@@ -3,7 +3,7 @@ use std::convert::TryInto;
 use std::ops::Range;
 use std::{borrow::Cow, convert::TryFrom};
 
-use atomsplit::classify::{classify, Atoms};
+use atomsplit::classify::classify;
 use atomsplit::fsm::Span;
 
 use crate::models::bpe::PipelineBPE;
@@ -69,7 +69,7 @@ pub(crate) fn classify_into_spans(
         if spans.len() < n + 1 {
             spans.resize(n + 1, (0, 0));
         }
-        classify::<Atoms>(bytes, &mut tags[..n]);
+        classify(bytes, &mut tags[..n]);
         let k = fsm(bytes, &tags[..n], &mut spans[..n + 1]);
         out.extend(spans[..k].iter().map(|&(s, e)| Split { start: s, end: e }));
     });

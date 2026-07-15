@@ -10,20 +10,20 @@
 //! x86_64 (SSE4.1 and, if available, AVX-512 VBMI) hardware before trusting it.
 #![allow(unsafe_op_in_unsafe_fn)]
 
-use super::classify::{TagScheme, char_len, classify_scalar};
+use super::classify::{char_len, classify_scalar};
 use core::arch::x86_64::*;
 
 /// Runtime dispatch, best-first. (Swap in memchr's cached `AtomicPtr` if `is_x86_feature_detected!`
 /// ever shows up in a profile.)
 #[inline]
-pub fn dispatch<S: TagScheme>(text: &[u8], tags: &mut [u8]) {
+pub fn dispatch(text: &[u8], tags: &mut [u8]) {
     if std::is_x86_feature_detected!("avx512vbmi")
         && std::is_x86_feature_detected!("avx512bw")
         && std::is_x86_feature_detected!("avx512vl")
     {
-        unsafe { classify_avx512::<S>(text, tags) } // SAFETY: guarded by the AVX-512 checks
+        unsafe { classify_avx512(text, tags) } // SAFETY: guarded by the AVX-512 checks
     } else if std::is_x86_feature_detected!("sse4.1") && std::is_x86_feature_detected!("ssse3") {
-        unsafe { classify_x86_128::<S>(text, tags) } // SAFETY: guarded by the SSE4.1/SSSE3 checks
+        unsafe { classify_x86_128(text, tags) } // SAFETY: guarded by the SSE4.1/SSSE3 checks
     } else {
         classify_scalar::<S>(text, tags)
     }
@@ -318,7 +318,7 @@ macro_rules! x86_body {
 /// 128-bit path — SSE4.1/SSSE3 `pshufb`. Runs on ~every x86_64 CPU (≈2008+), incl. all AVX2 machines.
 #[target_feature(enable = "ssse3,sse4.1")]
 #[allow(non_snake_case)]
-unsafe fn classify_x86_128<S: TagScheme>(text: &[u8], tags: &mut [u8]) {
+unsafe fn classify_x86_128(text: &[u8], tags: &mut [u8]) {
     x86_body!(S, text, tags, lut128, lut256)
 }
 
@@ -326,6 +326,6 @@ unsafe fn classify_x86_128<S: TagScheme>(text: &[u8], tags: &mut [u8]) {
 /// the `pshufb` chains. Same algorithm/tables. 16 B/iter; full-zmm (64 B/iter) is a further follow-up.
 #[target_feature(enable = "avx512vbmi,avx512bw,avx512vl")]
 #[allow(non_snake_case)]
-unsafe fn classify_avx512<S: TagScheme>(text: &[u8], tags: &mut [u8]) {
+unsafe fn classify_avx512(text: &[u8], tags: &mut [u8]) {
     x86_body!(S, text, tags, lut128_512, lut256_512)
 }

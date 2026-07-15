@@ -4,7 +4,7 @@
 //! IS the oracle. Byte-exactness gate (✓/✗) + per-language timing on big real text.
 //!
 //! Run: cargo bench --bench o200k
-use atomsplit::classify::{Atoms, classify};
+use atomsplit::classify::classify;
 use atomsplit::fsm::{Span, fsm_o200k};
 use onig::Regex;
 use std::hint::black_box;
@@ -114,7 +114,7 @@ fn main() {
         // parity: fsm_o200k == the Isolated o200k Split
         let reference = o200k_ref(corpus, &re);
         let mut tags = vec![0u8; n];
-        classify::<Atoms>(text, &mut tags);
+        classify(text, &mut tags);
         let mut buf = vec![(0u32, 0u32); n + 1];
         let k = fsm_o200k(text, &tags, &mut buf);
         let parity = report_diff(corpus, &buf[..k], &reference);
@@ -122,10 +122,10 @@ fn main() {
 
         // timing
         let cls_simd = ns_per_byte(n, iters, || {
-            classify::<Atoms>(text, &mut tags);
+            classify(text, &mut tags);
             tags[n / 2] as usize
         });
-        classify::<Atoms>(text, &mut tags);
+        classify(text, &mut tags);
         let fsm_scal = ns_per_byte(n, iters, || fsm_o200k(text, &tags, &mut buf));
         let onig_ns = ns_per_byte(n, iters, || o200k_ref(corpus, &re).len());
 
