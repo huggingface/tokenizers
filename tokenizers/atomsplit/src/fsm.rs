@@ -61,7 +61,6 @@ pub type Span = (u32, u32);
 ///   WhitespaceSplit `<{WS},0,0>` · Punctuation `<0,{PUNCT},0>` · Digits `<0,0,{NUMERIC}>` ·
 ///   Whitespace `<{WS},0,{WORD}>` · Bert `<{WS},{PUNCT},0>`.
 /// Class of a char: `DROP`→dropped, `ISOLATE`→own token, `KEEP_A`→run "A", else→run "B" (A/B cut apart).
-/// TODO: find a better explanation
 #[inline]
 #[must_use]
 pub fn class_runs_into<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>(
@@ -102,8 +101,8 @@ pub fn emit_class_spans<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>(
     text: &[u8],
     tags: &[u8],
     out: &mut [Span],
-    mut write_index: usize,         // in the out slice
-    mut text_pointer: usize,        // in the text slice
+    mut write_index: usize,     // in the out slice
+    mut text_pointer: usize,    // in the text slice
     segment_start: usize,       // previous segment_start
     segment_class: Option<u16>, // previous segment's class
 ) -> usize {
@@ -350,9 +349,7 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
     // punct (・) is never merged into a non-CJK punct run (`!・` → `!`, `・`, not `!・`).
     let punct = |sp0: usize| -> usize {
         let mut p = sp0;
-        while p < end
-            && (in_mask(tags[p], mask::PUNCT_SYM) || tags[p] == ASM)
-            && tags[p] & CJK == 0
+        while p < end && (in_mask(tags[p], mask::PUNCT_SYM) || tags[p] == ASM) && tags[p] & CJK == 0
         {
             p += char_len(text[p]);
         }
@@ -393,9 +390,7 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
         if tags[i] & CJK != 0 {
             let is_letter = in_mask(tags[i], mask::LETTER_MARK);
             let mut p = i + 3; // CJK-range chars are all 3-byte (leads E3..E9)
-            while p < end
-                && tags[p] & CJK != 0
-                && in_mask(tags[p], mask::LETTER_MARK) == is_letter
+            while p < end && tags[p] & CJK != 0 && in_mask(tags[p], mask::LETTER_MARK) == is_letter
             {
                 p += 3;
             }

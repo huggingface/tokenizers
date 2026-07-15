@@ -235,8 +235,22 @@ macro_rules! x86_body {
                     _mm_or_si128(_mm_or_si128(e1, e2), e3),
                     _mm_and_si128(eqb(v, 0xE3), _mm_and_si128(uge(b2, 0x81), ule(b2, 0x83))),
                 );
+                // Exact deepseek Split-2 range (Han U+4E00..9FA5 ∪ all Kana) → the 0x40 CJK tag bit;
+                // Hangul + broad-Han tail stay plain Letter. CJK punct/holes get 0x40 from the tables.
+                let han_exact = _mm_or_si128(
+                    _mm_or_si128(
+                        _mm_and_si128(eqb(v, 0xE4), uge(b2, 0xB8)),
+                        _mm_and_si128(uge(v, 0xE5), ule(v, 0xE8)),
+                    ),
+                    _mm_and_si128(
+                        eqb(v, 0xE9),
+                        _mm_or_si128(ule(b2, 0xBD), _mm_and_si128(eqb(b2, 0xBE), ule(b3, 0xA5))),
+                    ),
+                );
+                let cjk_bit = _mm_and_si128(_mm_or_si128(han_exact, kana), _mm_set1_epi8(0x40));
                 let cjkl = _mm_or_si128(_mm_or_si128(han, hg), kana);
-                out = _mm_blendv_epi8(out, _mm_set1_epi8(CJK_TAG as i8), cjkl);
+                let _ = CJK_TAG; // Letter(0x00); the selected tag is just the CJK bit (0x40 / 0x00)
+                out = _mm_blendv_epi8(out, cjk_bit, cjkl);
                 res = _mm_or_si128(res, cjkl);
             }
 
