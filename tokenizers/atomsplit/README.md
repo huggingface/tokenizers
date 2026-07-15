@@ -155,7 +155,28 @@ Each pre-tokenizer is a small automaton over the shared tag alphabet: a few **st
 
 ## 3. Measured performance
 
-Single-thread, **180 KB per language** (uniform size → comparable cache behaviour), **min-of-7 trials**, 14-core Apple Silicon (8 P + 6 E), light background load. `ns/byte`, lower is better. **Every row is byte-exact ✓** against the reference regex (onig for gpt2 / cl100k / o200k; the composed onig×3 `Sequence` for deepseek). Reproduce with `cargo bench --bench regex` (all four regex families in one run); the class family is `--bench class_runs`, classify alone is `--bench classify`.
+Single-thread, **180 KB per language** (uniform size → comparable cache behaviour), **min-of-7 trials**, 14-core Apple Silicon (8 P + 6 E), light background load. `ns/byte`, lower is better. **Every row is byte-exact ✓** against the reference regex (onig for gpt2 / cl100k / o200k; the composed onig×3 `Sequence` for deepseek). Reproduce with `cargo bench --bench regex` (every pre-tokenizer × the four reference engines — the §3.0 chart); the class family's scalar-vs-SIMD boundary extractor is `--bench class_runs`, classify alone is `--bench classify`.
+
+### 3.0 At a glance — vs every SOTA splitter
+
+The `regex` bench pits the full pipeline (SIMD classify + scalar FSM) against **four** reference engines —
+**onig** and **pcre2** (with JIT), both C; **fancy-regex**, pure-Rust; and **logos**, a compile-time DFA
+lexer-generator — for each pre-tokenizer × language. Speedup = engine ÷ our pipeline; **green = we win big,
+red = a close race**:
+
+![pre-tokenization speedup vs onig / fancy / logos / pcre2-JIT](benches/pretok_heatmap.svg)
+
+We lead on every pre-tokenizer — **~4–60×** vs onig/fancy and **~1.4–10×** vs the JIT / DFA engines — the
+only near-ties being **o200k on CJK** (its case-split FSM is heavy there). `n/a` marks a split the engine
+can't express: logos has no look-ahead, so deepseek's 3-regex `Sequence` and the punctuation-isolation
+splits (punct / bert) have no single-grammar logos form. The GPT FSMs are byte-exact with their regex
+(✓); the class-family reference regex is an approximation of the atom mask (`≈` where it diverges), so
+those rows are a speed pairing rather than an equality gate. Regenerate:
+
+```sh
+cargo bench --bench regex > bench.txt
+python3 benches/heatmap.py bench.txt benches/pretok_heatmap.svg   # needs matplotlib + numpy
+```
 
 ### 3.1 cl100k — classify is ~free, the FSM is the cost
 
