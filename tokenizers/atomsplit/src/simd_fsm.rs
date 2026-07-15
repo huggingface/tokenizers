@@ -10,6 +10,9 @@ use crate::classify::{Atom, char_len, in_mask};
 use crate::fsm::{Span, emit_class_spans};
 
 /// Class LookUpTable: tag → 0 drop / 1 isolate / 2 keep-A / 3 keep-B; Cont → 0xFF (fill sentinel).
+/// This lookup table is built per parameter DRIP, ISOLATE and KEEP_A. These as
+/// [`crate::classify::mask`] u16 bitmap masks. The LUT is indexed with a low nibble u4 (0..15) and
+/// gives the behavior {0, 1, 2, 3} for the class.
 #[inline]
 fn class_lut<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>() -> [u8; 16] {
     let mut lut = [3u8; 16];
@@ -54,7 +57,10 @@ fn emit(
 /// initial 0 = "leading drop run", a no-op when DROP is empty), but [`emit_class_spans`] wants that
 /// segment's tag *mask* — translate, then defer. An open isolate is a single pending char, not a run, so
 /// close it here before scanning the rest fresh (`emit_class_spans`'s open-segment path assumes a run).
-#[cfg(any(target_arch = "aarch64", all(target_arch = "wasm32", target_feature = "simd128")))]
+#[cfg(any(
+    target_arch = "aarch64",
+    all(target_arch = "wasm32", target_feature = "simd128")
+))]
 #[inline]
 fn tail<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>(
     text: &[u8],
@@ -71,6 +77,8 @@ fn tail<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>(
         out[w] = (seg_start as u32, e as u32);
         return emit_class_spans::<DROP, ISOLATE, KEEP_A>(text, tags, out, w + 1, e, 0, None);
     }
+    // seg_mask of the last bytes before the tail converted to a full u16 mask. The simd path uses
+    // a u8.
     let seg_mask = match seg_class {
         0 => DROP,
         2 => KEEP_A,
@@ -80,27 +88,31 @@ fn tail<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>(
 }
 
 // ── aarch64 / NEON ──────────────────────────────────────────────────────────────────────────────
-//  This is the same as emit_class_spans but using SIMD. We emit spans at class boundaries
-//  legend:  L=letter   W=whitespace(drop)   P=punct(run-B)   C=UTF-8 continuation
+//  This is the same as emit_class_spans but using SIMD. We emit spans at class boundaries.
+//  A `tag` is the coarse Atom (L=letter W=whitespace P=punct C=UTF-8 cont). The `class` is
+//  class_lut[tag & 0x0F] for THIS pretokenizer's masks:  0=drop 1=isolate 2=keep-A 3=keep-B
+//  (Cont → 0xFF, shown ·, a sentinel filled from the left neighbour in STEP 3).
+//  In this worked example the masks give  L→2 (keep-A),  W→0 (drop),  P→3 (keep-B):
 //
 //            0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15   ← lane
 // byte       H  i  ␣ E4 B8 96  ␣  w  o  r  l  d  ␣  !  .  x
 //            └Hi┘ ws └─ 世 ──┘ ws └─ world ──┘ ws └!.┘ x
+// tag        L  L  W  L  C  C  W  L  L  L  L  L  W  P  P  L
 //
 // ┌─ STEP 1  load 16 tags into one NEON register ────────────────────────────┐
 //
-// ┌─ STEP 2  tag → class   (vqtbl1q_u8 = one 16-wide table lookup; Cont→C) ───┐
-// class      L  L  W  L  C  C  W  L  L  L  L  L  W  P  P  L
+// ┌─ STEP 2  tag → class   (vqtbl1q_u8 = one 16-wide LUT; L→2 W→0 P→3, Cont→·) ┐
+// class      2  2  0  2  ·  ·  0  2  2  2  2  2  0  3  3  2
 //
-// ┌─ STEP 3  fill Cont from the left neighbour  (≤3 vext+vbsl; 世's C's ← L) ──┐
-// class'     L  L  W  L  L  L  W  L  L  L  L  L  W  P  P  L
-//                     └──┘  every lane now carries its char's real class
+// ┌─ STEP 3  fill Cont (·) from the left neighbour  (≤3 vext+vbsl; 世's · ← 2) ─┐
+// class'     2  2  0  2  2  2  0  2  2  2  2  2  0  3  3  2
+//                     └──┘  every cont lane now carries its char's class (2)
 //
-// ┌─ STEP 4  prev = class' shifted right 1 lane   (lane0 ← carry = W) ────────┐
-// prev       W  L  L  W  L  L  L  W  L  L  L  L  L  W  P  P
-//            ↑carry from previous chunk's last lane
+// ┌─ STEP 4  prev = class' shifted right 1 lane   (lane0 ← carry = 0) ────────┐
+// prev       0  2  2  0  2  2  2  0  2  2  2  2  2  0  3  3
+//            ↑carry (a class 0..3) from previous chunk's last lane
 //
-// ┌─ STEP 5  boundary = (class' ≠ prev)  [isolate lanes also forced on] ──────┐
+// ┌─ STEP 5  boundary = (class' ≠ prev)  [isolate (class 1) lanes also forced] ┐
 // bound      1  .  1  1  .  .  1  1  .  .  .  .  1  1  .  1
 //
 // ┌─ STEP 6  movemask → 16-bit int;  set bits = {0,2,3,6,7,12,13,15} ─────────┐
@@ -134,31 +146,52 @@ pub(crate) fn class_runs_neon<const DROP: u16, const ISOLATE: u16, const KEEP_A:
             // lowercase `Letter` = 0x20) indexes out of `vqtbl1`'s 16 lanes, so collapse to the coarse
             // class first — the class-family splits never distinguish refinements. (Cont=15 is untouched.)
             let v = vandq_u8(vld1q_u8(tags.as_ptr().add(i)), lonib);
+            // Lookup for each low nibble (the coarse class like Letter) what the input parameter
+            // require doing. raw is in 0..3
             let raw = vqtbl1q_u8(lutv, v);
             if seg_class != 1 {
-                // we are not at the start, we check the 16 bytes at the same time:
-                // seg_class is a mask over the 16  tags. We check if
+                // Fast-skip: an isolate segment (class 1) is a single char, never a run, so only a
+                // run-forming open segment can extend. Check every lane already has that open class
+                // (the OR lets cont lanes 0xFF pass — they inherit their lead's class in STEP 3).
                 let ok = vorrq_u8(vceqq_u8(raw, vdupq_n_u8(seg_class)), vceqq_u8(raw, contv));
                 if vminvq_u8(ok) == 0xFF {
+                    // no lane differs → no boundary in this chunk; extend the open segment, advance.
                     carry = seg_class;
                     i += 16;
                     continue;
                 }
             }
-            // TODO: I HAVE not read a single thing here.
             let mut cls = raw;
             let mut k = 0;
+            // ┌─ STEP 3  fill Cont (·=0xFF) from the left neighbour  (≤3 vext+vbsl) ───────┐
+            //   class = class_lut[tag & 0x0F] ∈ {0 drop, 1 isolate, 2 keep-A, 3 keep-B};  Cont → ·
+            //   (this example's masks:  L→2  W→0  P→3)
+            // tag        L  L  W  L  C  C  W  L  L  L  L  L  W  P  P  L
+            // class      2  2  0  2  ·  ·  0  2  2  2  2  2  0  3  3  2   ← raw LUT (Cont = ·)
+            // class'     2  2  0  2  2  2  0  2  2  2  2  2  0  3  3  2   ← 世's two · ← left's 2
+            //                     └──┘  every cont lane now carries its char's class
             while k < 3 {
+                // vext::<N>  does: cat(carry[15..], cls[..15])
+                // creating: [carry, cls[0], ..., cls[14]].
                 let shifted = vextq_u8::<15>(vdupq_n_u8(carry), cls);
+                // we fill the cls vector at the index of continuatuion bytes with
+                // the values of shifted. this allows us to fill continuations bytes.
                 cls = vbslq_u8(vceqq_u8(cls, contv), shifted, cls);
                 k += 1;
             }
+            // ┌─ STEP 4  prev = class' shifted right 1 lane   (lane0 ← carry = 0) ────────┐
+            // prev       0  2  2  0  2  2  2  0  2  2  2  2  2  0  3  3
+            //            ↑carry (a class 0..3) from the previous chunk's last lane
             let prev = vextq_u8::<15>(vdupq_n_u8(carry), cls);
+            // ┌─ STEP 5  boundary = (class' ≠ prev)  [isolate (class 1) lanes also forced] ┐
+            // bound      1  .  1  1  .  .  1  1  .  .  .  .  1  1  .  1
             let changed = vmvnq_u8(vceqq_u8(cls, prev));
             let is_iso = vceqq_u8(cls, onev);
             let is_lead = vmvnq_u8(vceqq_u8(raw, contv));
             let bnd = vandq_u8(vorrq_u8(changed, vandq_u8(is_iso, is_lead)), is_lead);
             let bits = vandq_u8(bnd, powv);
+            // ┌─ STEP 6  movemask → 16-bit int;  set bits = {0,2,3,6,7,12,13,15} ─────────┐
+            //            iterate set bits: each is a token start → span to the next start
             let mm =
                 (vaddv_u8(vget_low_u8(bits)) as u16) | ((vaddv_u8(vget_high_u8(bits)) as u16) << 8);
             vst1q_u8(cls_arr.as_mut_ptr(), cls);

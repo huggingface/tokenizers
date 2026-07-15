@@ -27,9 +27,24 @@ const ASM: u8 = Atom::AlphaSymMark as u8;
 
 /// Advance over a maximal `m`-membership run (m is a mask); returns the byte index past it.
 /// `inline(always)`: it's called once per token (~200K/MB on English) — a real call here doubles fsm cost.
+///
+/// logos-style "fast loop": process 8 tags per iteration with ONE bounds check per chunk and unchecked
+/// reads (the loop condition proves `i + 8 <= end`), so short runs pay ~1 bounds check instead of one
+/// per byte and long runs stay a tight unrolled scan. Byte-identical to the plain `while in_mask` scan.
 #[inline(always)]
 fn run_end(tags: &[u8], mut i: usize, end: usize, mut m: u16) -> usize {
     m |= Atom::Cont.bit();
+    debug_assert!(end <= tags.len());
+    // SAFETY: `i + 16 <= end <= tags.len()` in the unrolled body, so every `get_unchecked(i + k)`
+    // (k < 16) is in bounds. The tail is the plain checked scan.
+    while i + 16 <= end {
+        for k in 0..16 {
+            if !in_mask(unsafe { *tags.get_unchecked(i + k) }, m) {
+                return i + k;
+            }
+        }
+        i += 16;
+    }
     while i < end && in_mask(tags[i], m) {
         i += 1;
     }
@@ -154,6 +169,9 @@ fn cl100k(text: &[u8], tags: &[u8], out: &mut [Span], digit_cap: usize) -> usize
     // the dispatch is O(1) and a token never pays for a rule it can't start (e.g. non-number tokens
     // never test the number rule — which is what the POC's const-gating removed by hand; here it's free).
     let end = text.len();
+    // Tie `tags.len() == end` so the optimizer drops the per-byte bounds check on every interior
+    // `tags[i]` in this fsm + its `run_end`/`letter_*` scans. (Callers guarantee `tags.len() >= end`.)
+    let tags = &tags[..end];
     let letters = |a: usize| run_end(tags, a, end, mask::LETTER);
     // rule 4 body: `[^\s\p{L}\p{N}]+[\r\n]*` from `sp0` (any leading space already consumed). Returns
     // the run end, or `sp0` if there is no "other" run there (caller then treats it as whitespace).
@@ -262,7 +280,8 @@ fn cl100k(text: &[u8], tags: &[u8], out: &mut [Span], digit_cap: usize) -> usize
             // Sentinel / MultiByte / Cont — never a char-start atom; emit one char defensively.
             _ => i += char_len(b),
         }
-        out[w] = (start as u32, i as u32);
+        // SAFETY: tokens partition the input, so `w < #tokens <= end < out.len()` (out ≥ text.len()+? ; callers size n+1).
+        unsafe { *out.get_unchecked_mut(w) = (start as u32, i as u32) };
         w += 1;
     }
     w
@@ -337,12 +356,17 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
     // `Mark` refined as an Other_Alphabetic symbol (Ⓘ …): coarse `LETTER_MARK`, but categorically `\p{S}`
     // — excluded from `[\p{L}\p{M}]`, routed to the `[\p{P}\p{S}]+` run instead (see `punct`).
     let end = text.len();
+    // Tie `tags.len() == end` so the optimizer drops the per-byte bounds check on every interior
+    // `tags[i]` in this fsm + its `run_end`/`letter_*` scans. (Callers guarantee `tags.len() >= end`.)
+    let tags = &tags[..end];
     // maximal `[\p{L}\p{M}]+` run from `a`, stopping at CJK-range chars (Split-2 took those), ZWJ/ZWNJ
     // (not `\p{L}∪\p{M}` — see `ds_breaks`), and Other_Alphabetic symbols (`ASM`, categorically `\p{S}`).
     // BYTE-wise (`p += 1`, continuation bytes stay in-run, `ds_breaks` only fires at a lead) — the
     // `char_len`-per-char form was ~2× slower (see `run_end`'s note). Hot inner loop of the latin path.
     let letter_run = |a: usize| -> usize {
         let mut p = a;
+        // NB: unrolling this hurt (+8–13% on Latin) — the CJK exclusion (`ds_breaks`, a per-lane text
+        // peek) can't be skipped, so the fast loop adds overhead without removing the dominant cost.
         while p < end {
             let t = tags[p];
             if t == CONT || (in_mask(t, mask::LETTER_MARK) && t != ASM && !ds_breaks(text, p)) {
@@ -411,7 +435,7 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
             {
                 p += 3;
             }
-            out[w] = (start as u32, p as u32);
+            unsafe { *out.get_unchecked_mut(w) = (start as u32, p as u32) };
             w += 1;
             i = p;
             continue;
@@ -427,15 +451,15 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
             }
             if is_lm(p) {
                 if last > i {
-                    out[w] = (start as u32, last as u32); // gap = all but the prefix char
+                    unsafe { *out.get_unchecked_mut(w) = (start as u32, last as u32) }; // gap sans prefix char
                     w += 1;
                 }
                 let e = letter_run(p);
-                out[w] = (last as u32, e as u32); // prefix char + `[\p{L}\p{M}]+`
+                unsafe { *out.get_unchecked_mut(w) = (last as u32, e as u32) }; // prefix char + `[\p{L}\p{M}]+`
                 w += 1;
                 i = e;
             } else {
-                out[w] = (start as u32, p as u32); // whole gap run is one piece
+                unsafe { *out.get_unchecked_mut(w) = (start as u32, p as u32) }; // whole gap run is one piece
                 w += 1;
                 i = p;
             }
@@ -496,7 +520,8 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
             // Sentinel / MultiByte / Cont — never a char-start atom; emit one char defensively.
             _ => i += char_len(b),
         }
-        out[w] = (start as u32, i as u32);
+        // SAFETY: tokens partition the input, so `w < #tokens <= end < out.len()` (out ≥ text.len()+? ; callers size n+1).
+        unsafe { *out.get_unchecked_mut(w) = (start as u32, i as u32) };
         w += 1;
     }
     w
@@ -511,6 +536,9 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
 pub fn fsm_byte_level(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
     debug_assert!(out.len() >= text.len() && tags.len() >= text.len());
     let end = text.len();
+    // Tie `tags.len() == end` so the optimizer drops the per-byte bounds check on every interior
+    // `tags[i]` in this fsm + its `run_end`/`letter_*` scans. (Callers guarantee `tags.len() >= end`.)
+    let tags = &tags[..end];
     // `\s+(?!\S)|\s+`: the whole run at EOF, else leave the last ws char for the next ` ?`-prefixed run.
     let ws = |i: usize| -> usize {
         let re = run_end(tags, i, end, mask::WS);
@@ -567,7 +595,8 @@ pub fn fsm_byte_level(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
             // Sentinel / MultiByte / Cont — never a char-start atom; emit one char defensively.
             _ => i += char_len(text[i]),
         }
-        out[w] = (start as u32, i as u32);
+        // SAFETY: tokens partition the input, so `w < #tokens <= end < out.len()` (out ≥ text.len()+? ; callers size n+1).
+        unsafe { *out.get_unchecked_mut(w) = (start as u32, i as u32) };
         w += 1;
     }
     w
@@ -663,7 +692,7 @@ fn emit_o200k_letters(
         } else {
             e
         };
-        out[*w] = (start as u32, tok_end as u32);
+        unsafe { *out.get_unchecked_mut(*w) = (start as u32, tok_end as u32) };
         *w += 1;
         first = false;
         cursor = tok_end;
@@ -681,6 +710,9 @@ fn emit_o200k_letters(
 pub fn fsm_o200k(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
     debug_assert!(out.len() >= text.len() && tags.len() >= text.len());
     let end = text.len();
+    // Tie `tags.len() == end` so the optimizer drops the per-byte bounds check on every interior
+    // `tags[i]` in this fsm + its `run_end`/`letter_*` scans. (Callers guarantee `tags.len() >= end`.)
+    let tags = &tags[..end];
 
     // Is tag `t` (at byte `p`) a real `[\p{L}\p{M}]` member? Coarse `Letter` (any case) is always in;
     // coarse `Mark` is in only as a true `\p{M}` — ALPHA_SYM (`\p{S}`) and ZWJ/ZWNJ (`\p{Cf}`) are `\w`
@@ -693,6 +725,28 @@ pub fn fsm_o200k(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
     // maximal `[\p{L}\p{M}]+` run from `a` (byte-wise; continuation bytes ride along — see `run_end`).
     let letter_end = |a: usize| -> usize {
         let mut p = a;
+        // logos-style fast loop: 8 tags/chunk, one bounds check, unchecked reads. A plain `Letter`
+        // (low nibble 0, incl Han — o200k keeps all letters) or a `Cont` byte stays in-run with no
+        // `ds_is_zwj` peek; only a coarse `Mark` lane pays the peek. Byte-exact with the scalar scan.
+        // SAFETY: `p + 16 <= end <= tags.len()`/`text.len()` in the body.
+        while p + 16 <= end {
+            let mut brk = 16;
+            for k in 0..16 {
+                let t = unsafe { *tags.get_unchecked(p + k) };
+                if t == CONT || t & 0x0F == LET {
+                    continue;
+                }
+                if t & 0x0F == MRK && t != ASM && !ds_is_zwj(text, p + k) {
+                    continue;
+                }
+                brk = k;
+                break;
+            }
+            if brk < 16 {
+                return p + brk;
+            }
+            p += 16;
+        }
         while p < end && (tags[p] == CONT || member(tags[p], p)) {
             p += 1;
         }
@@ -786,7 +840,8 @@ pub fn fsm_o200k(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
             // Sentinel / MultiByte / Cont — never a char-start atom; emit one char defensively.
             _ => i += char_len(b),
         }
-        out[w] = (start as u32, i as u32);
+        // SAFETY: tokens partition the input, so `w < #tokens <= end < out.len()` (out ≥ text.len()+? ; callers size n+1).
+        unsafe { *out.get_unchecked_mut(w) = (start as u32, i as u32) };
         w += 1;
     }
     w
