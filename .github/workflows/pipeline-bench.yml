@@ -150,10 +150,9 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v6
 
-      # cairosvg (chart rendering) dlopens the system libcairo, which the
-      # aws-general-8-plus runner image doesn't ship
-      # libcairo for chart rendering; libclang for onig_sys's bindgen (the binsize build below pulls
-      # `bench-baseline`, which activates the onig reference-regex dep).
+      # libcairo: cairosvg (chart rendering) dlopens it. libclang: onig_sys's bindgen needs it (the
+      # binsize build below pulls `bench-baseline`, which activates the onig reference-regex dep). The
+      # aws-general-8-plus runner image ships neither.
       - name: Install libcairo + libclang
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libcairo2 libclang-dev
 

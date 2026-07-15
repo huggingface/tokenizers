@@ -164,11 +164,11 @@ pub struct AddedVocabulary {
     encode_special_tokens: bool,
     /// New fast path for normalize and extra needs:
     ///  - multi-bucket first bytes. If its len is 1, we use memchr; otherwise we just check each
-    ///    byte on that table lookup. Its a 1KB table.
+    ///    byte on that table lookup. Its a 256-byte table.
     ///  - the actual buckets. We could use small vec here. Chose to impl it. Buckets give pointers
     ///    to the inner vocab store.
     ///  - the metadata of each token.
-    token_metadata: Box<[AddedTokenFlags]>, // indexed using id_to_slot?
+    token_metadata: Box<[AddedTokenFlags]>, // indexed by token id
     normalized_vocab: Buckets,
     vocab: Buckets,
 }
