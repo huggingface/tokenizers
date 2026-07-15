@@ -232,8 +232,22 @@ pub unsafe fn classify_wasm(text: &[u8], tags: &mut [u8]) {
                 v128_or(v128_or(hole_3040, hole_309x), hole_30fb),
             );
 
+            // Exact deepseek Split-2 range (Han U+4E00..9FA5 ∪ all Kana) → the 0x40 CJK tag bit;
+            // Hangul + broad-Han tail stay plain Letter. CJK punct/holes get 0x40 from the tables.
+            let han_exact = v128_or(
+                v128_or(
+                    v128_and(eq(b0, 0xE4), ge(b1, 0xB8)),
+                    in_range(b0, 0xE5, 0xE8),
+                ),
+                v128_and(
+                    eq(b0, 0xE9),
+                    v128_or(le(b1, 0xBD), v128_and(eq(b1, 0xBE), le(b2, 0xA5))),
+                ),
+            );
+            let cjk_bit = v128_and(v128_or(han_exact, kana), u8x16_splat(0x40));
             let is_cjk_letter = v128_or(v128_or(han, hangul), kana);
-            out = v128_bitselect(u8x16_splat(CJK_TAG), out, is_cjk_letter);
+            let _ = CJK_TAG; // Letter(0x00); the selected tag is just the CJK bit (0x40 / 0x00)
+            out = v128_bitselect(cjk_bit, out, is_cjk_letter);
             resolved = v128_or(resolved, is_cjk_letter);
         }
 
