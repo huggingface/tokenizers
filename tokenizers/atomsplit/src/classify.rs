@@ -31,6 +31,8 @@ pub enum Atom {
     MultiByte = 14,      // simd could not resolve this multibyte, use the lookup table
     Cont = 15,           // UTF-8 continuation byte — transparent to every FSM
     AlphaSymMark = 0x16, // 0x16 is low nibble (6) the Mark class, high nibble 1 the refined class
+    Zwj = 0x26, // 0x26: coarse Mark (low nibble 6), high nibble 2 — ZWJ/ZWNJ (U+200C/200D). Lets the
+    // deepseek/o200k FSMs test the tag instead of peeking `text` for `\p{Cf}` joiners.
     // If we need a new class it will usually fall under the 12 unicode ones. If not we can just define
     // new ones with low and high nibble that are not correlated. You should prioritize using the
     // low nibble 13, 14, 15 just because you would be taking a subclass otherwise.
@@ -39,6 +41,11 @@ pub enum Atom {
     UpperLetter = 0x10,
     LowerLetter = 0x20,
 }
+
+/// High-nibble bit (orthogonal to the case/ASM/ZWJ refinements, all ≤ 0x2x) marking a codepoint in the
+/// deepseek Split-2 CJK range (Han U+4E00..9FA5 ∪ Kana U+3040..30FF). `fsm_deepseek` tests it instead of
+/// peeking `text`; coarse consumers mask it off with `& 0x0F`.
+pub const CJK_BIT: u8 = 0x40;
 
 impl Atom {
     /// Since we only have 16 classes for now, this is a fairly cheap way to get a bitmask over the

@@ -262,8 +262,26 @@ pub unsafe fn classify_neon(text: &[u8], tags: &mut [u8]) {
                 vorrq_u8(vorrq_u8(hole_3040, hole_309x), hole_30fb),
             );
 
+            // The EXACT deepseek Split-2 range (Han U+4E00..9FA5 ∪ all Kana letters) gets the 0x40
+            // CJK bit so `fsm_deepseek` tests the tag, not `text`. Hangul and the broad-Han tail
+            // (U+4000..4DFF, 9FA6..9FFF) stay plain `Letter` (0x00). CJK punct/holes (30A0/30FB/…),
+            // excluded from `kana`, fall to the exact tables which bake 0x40 for the whole block.
+            //   4E00 = E4 B8 80 · 4FFF = E4 BF BF · 5000..8FFF = E5..E8 · 9000..9FA5 = E9 80 80..E9 BE A5
+            let han_exact = vorrq_u8(
+                vorrq_u8(
+                    vandq_u8(eq(b0, 0xE4), ge(b1, 0xB8)),
+                    in_range(b0, 0xE5, 0xE8),
+                ),
+                vandq_u8(
+                    eq(b0, 0xE9),
+                    vorrq_u8(le(b1, 0xBD), vandq_u8(eq(b1, 0xBE), le(b2, 0xA5))),
+                ),
+            );
+            let cjk_bit = vandq_u8(vorrq_u8(han_exact, kana), vdupq_n_u8(0x40));
             let is_cjk_letter = vorrq_u8(vorrq_u8(han, hangul), kana);
-            out = vbslq_u8(is_cjk_letter, vdupq_n_u8(CJK_TAG), out);
+            // CJK_TAG is Letter(0x00), so the selected tag is just the CJK bit (0x40 exact, else 0x00).
+            let _ = CJK_TAG;
+            out = vbslq_u8(is_cjk_letter, cjk_bit, out);
             resolved = vorrq_u8(resolved, is_cjk_letter);
         }
 
