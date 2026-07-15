@@ -62,11 +62,12 @@ yada = "0.7.0"
 # Latest released tokenizers, used as the comparison baseline by the CI benchmark
 # (examples gated on `bench-baseline`). Optional so production builds never pull it.
 tokenizers-release = { package = "tokenizers", version = "=0.23.1", optional = true }
-# Oniguruma — one of the two reference regex engines `fixture_bench` times the classify+fsm
-# pre-tokenize against (the other is the pure-Rust `fancy-regex`, already optional above; both are
-# pulled in by `bench-baseline`). Optional + behind `bench-baseline` so the C build is pulled ONLY
-# for the CI benchmark, never for `cargo test`/production.
+# Reference regex engines `fixture_bench` times the classify+fsm pre-tokenize against: Oniguruma and
+# PCRE2 (both C) alongside the pure-Rust `fancy-regex` (optional, above). All three are pulled in by
+# `bench-baseline` — optional + behind that feature so the C builds happen ONLY for the CI benchmark,
+# never for `cargo test`/production.
 onig = { version = "6.5.1", optional = true }
+pcre2 = { version = "0.2", optional = true }
 
 [features]
 # `fancy-regex` is the OPTIONAL system-regex backend, needed ONLY for a `Split` pre-tokenizer with an
@@ -78,7 +79,7 @@ progressbar = ["indicatif"]
 http = ["hf-hub"]
 unstable_wasm = ["fancy-regex", "getrandom/wasm_js"]
 rustls-tls = ["hf-hub?/rustls-tls"]
-bench-baseline = ["dep:tokenizers-release", "dep:onig", "fancy-regex"]
+bench-baseline = ["dep:tokenizers-release", "dep:onig", "dep:pcre2", "fancy-regex"]
 
 [dev-dependencies]
 criterion = "0.6"

@@ -225,6 +225,9 @@ pub(crate) fn class_runs_neon<const DROP: u16, const ISOLATE: u16, const KEEP_A:
 
 // ── wasm32 / SIMD128 ────────────────────────────────────────────────────────────────────────────
 
+/// ⚠️ AI-GENERATED, NOT NECESSARILY REVIEWED — ported from the hand-crafted `class_runs_neon` above
+/// (the source of truth); trusted only insofar as the byte-exactness tests pass.
+///
 /// SIMD128 class-runs boundary-extract — wasm twin of `class_runs_neon`. `u8x16_swizzle` = `vqtbl1`,
 /// `v128_bitselect` = `vbsl`, `u8x16_shuffle` = `vext` (lane shift), `u8x16_bitmask` is the native
 /// movemask (no `POW` trick). Same algorithm, byte-exact with the scalar core.

@@ -17,7 +17,8 @@ tk-encode/bench-baseline --example fixture_bench`:
                           stage_ns_per_byte: {added_split, normalize,
                                               pre_tokenize, model, total},
                           pretok_vs_regex: {cls_simd, cls_scalar,
-                                            onig|null, fancy|null}}]}]}
+                                            onig|null, fancy|null,
+                                            pcre2|null}}]}]}
 
 Two series: `baseline` — the latest released tokenizers crate, the bar to beat
 (the in-tree Tokenizer is on its way out, so it isn't benched; it only serves
@@ -794,9 +795,11 @@ def pretok_compare_md(model):
     (a reference is non-null). ns/byte, lower better. pipe-SIMD = the pre-tokenize stage (SIMD classify
     + scalar fsm); pipe-scalar swaps in the scalar classifier (= pre-tokenize + (cls_scalar - cls_simd));
     onig/fancy run the model's own pre-tokenizer regex(es)."""
+    engines = ("onig", "fancy", "pcre2")
+
     def has_ref(r):
         pv = r.get("pretok_vs_regex") or {}
-        return r.get("stage_ns_per_byte") and (pv.get("onig") is not None or pv.get("fancy") is not None)
+        return r.get("stage_ns_per_byte") and any(pv.get(k) is not None for k in engines)
     rows = [r for r in model["results"] if has_ref(r)]
     if not rows:
         return []
@@ -806,10 +809,10 @@ def pretok_compare_md(model):
     md = ["", "**Pre-tokenize: `classify + fsm` vs regex engines** — ns/byte, lower better. The fsm is "
           "the scalar jump-table in both pipe columns; **SIMD / scalar is the classify pass** (regex "
           "pre-tokenizers have no SIMD fsm). `×vs` = engine ÷ our pipeline (SIMD / scalar classify); "
-          "`onig` is C, `fancy` is pure-Rust fancy-regex.", "",
+          "`onig` & `pcre2` are C, `fancy` is pure-Rust fancy-regex.", "",
           "| Fixture | classify SIMD | classify scalar | pipe (SIMD cls + fsm) | pipe (scalar cls + fsm) "
-          "| onig | fancy | ×vs onig | ×vs fancy |",
-          "|---|---:|---:|---:|---:|---:|---:|---:|---:|"]
+          "| onig | fancy | pcre2 | ×vs onig | ×vs fancy | ×vs pcre2 |",
+          "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
     for r in sorted(rows, key=lambda r: (r["group"], r["fixture"])):
         pv = r["pretok_vs_regex"]
         simd_pipe = r["stage_ns_per_byte"]["pre_tokenize"]
@@ -817,9 +820,9 @@ def pretok_compare_md(model):
         md.append(
             f"| {r['fixture']} | {fnum(pv['cls_simd'], '{:.2f}')} | {fnum(pv['cls_scalar'], '{:.2f}')} "
             f"| {fnum(simd_pipe, '{:.2f}')} | {fnum(scalar_pipe, '{:.2f}')} "
-            f"| {cell(pv.get('onig'))} | {cell(pv.get('fancy'))} "
-            f"| {ratio(pv.get('onig'), simd_pipe, scalar_pipe)} "
-            f"| {ratio(pv.get('fancy'), simd_pipe, scalar_pipe)} |")
+            f"| {cell(pv.get('onig'))} | {cell(pv.get('fancy'))} | {cell(pv.get('pcre2'))} "
+            + " ".join(f"| {ratio(pv.get(k), simd_pipe, scalar_pipe)}" for k in engines)
+            + " |")
     return md
 
 

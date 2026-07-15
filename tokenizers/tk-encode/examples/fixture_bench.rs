@@ -503,7 +503,7 @@ fn onig_reference_ns(text: &str, regexes: &[String]) -> Option<f64> {
     }))
 }
 
-/// Same composed Isolated split chain, but under the pure-Rust `fancy-regex` engine — the second
+/// Same composed Isolated split chain, but under the pure-Rust `fancy-regex` engine — a second
 /// reference. `find_iter` yields `Result<Match, _>`; a match error aborts that regex's pass (rare,
 /// backtrack-limit) and the piece is left un-split. `None` if no regex pre-tokenizer or a bad pattern.
 fn fancy_reference_ns(text: &str, regexes: &[String]) -> Option<f64> {
@@ -521,6 +521,51 @@ fn fancy_reference_ns(text: &str, regexes: &[String]) -> Option<f64> {
             let mut next = Vec::with_capacity(pieces.len() * 2);
             for (s, e) in pieces.drain(..) {
                 let sub = &text[s..e];
+                let mut prev = 0usize;
+                for m in re.find_iter(sub) {
+                    let Ok(m) = m else { break };
+                    let (ms, me) = (m.start(), m.end());
+                    if ms > prev {
+                        next.push((s + prev, s + ms));
+                    }
+                    next.push((s + ms, s + me));
+                    prev = me;
+                }
+                if prev < sub.len() {
+                    next.push((s + prev, e));
+                }
+            }
+            pieces = next;
+        }
+        pieces.len()
+    }))
+}
+
+/// Same composed chain under PCRE2 (C) — the third reference. Built with `utf(true).ucp(true)` so
+/// `\p{L}`/`\p{N}`/`\s` are Unicode-aware and byte offsets land on char boundaries, matching onig and
+/// fancy-regex. Operates on `&[u8]`; `find_iter` yields `Result<Match, _>` (a match error breaks the
+/// pass). `None` if no regex pre-tokenizer, or PCRE2 rejects/fails a pattern.
+fn pcre2_reference_ns(text: &str, regexes: &[String]) -> Option<f64> {
+    if regexes.is_empty() || text.is_empty() {
+        return None;
+    }
+    let res: Vec<pcre2::bytes::Regex> = regexes
+        .iter()
+        .map(|r| {
+            pcre2::bytes::RegexBuilder::new()
+                .utf(true)
+                .ucp(true)
+                .build(r)
+        })
+        .collect::<Result<_, _>>()
+        .ok()?;
+    let bytes = text.as_bytes();
+    Some(timed_ns(text.len(), || {
+        let mut pieces = vec![(0usize, text.len())];
+        for re in &res {
+            let mut next = Vec::with_capacity(pieces.len() * 2);
+            for (s, e) in pieces.drain(..) {
+                let sub = &bytes[s..e];
                 let mut prev = 0usize;
                 for m in re.find_iter(sub) {
                     let Ok(m) = m else { break };
@@ -633,7 +678,8 @@ fn bench_model(
         let cls_scalar = classify_ns(corpus.as_bytes(), true);
         let onig_ns = onig_reference_ns(&corpus, &regexes);
         let fancy_ns = fancy_reference_ns(&corpus, &regexes);
-        if onig_ns.is_some() || fancy_ns.is_some() {
+        let pcre2_ns = pcre2_reference_ns(&corpus, &regexes);
+        if onig_ns.is_some() || fancy_ns.is_some() || pcre2_ns.is_some() {
             // fsm is the scalar jump-table in both pipes; SIMD/scalar is the classify pass only.
             let scalar_pipe = ns_split + (cls_scalar - cls_simd).max(0.0);
             let vs = |r: Option<f64>| {
@@ -646,9 +692,10 @@ fn bench_model(
                 })
             };
             eprintln!(
-                "    pre-tok: SIMD-cls {ns_split:.2} / scalar-cls {scalar_pipe:.2} ns/B · vs onig {} · vs fancy {}",
+                "    pre-tok: SIMD-cls {ns_split:.2} / scalar-cls {scalar_pipe:.2} ns/B · vs onig {} · vs fancy {} · vs pcre2 {}",
                 vs(onig_ns),
-                vs(fancy_ns)
+                vs(fancy_ns),
+                vs(pcre2_ns)
             );
         }
 
@@ -675,6 +722,7 @@ fn bench_model(
                 "cls_scalar": cls_scalar,
                 "onig": onig_ns,
                 "fancy": fancy_ns,
+                "pcre2": pcre2_ns,
             },
         }));
     }
