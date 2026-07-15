@@ -4,9 +4,10 @@
 //! per arch: aarch64 → NEON, wasm32+simd128 → SIMD128; any other target uses the scalar core, so
 //! correctness never depends on a SIMD path being present. x86_64 (SSE/AVX `movemask`) is the natural
 //! next port — slot a `class_runs_sse` in the same shape below.
-#![allow(dead_code)] // arch-gated: only one target's kernel compiles per build
+#![allow(dead_code, unused_imports)] // arch-gated: only one target's kernel compiles per build, so on
+// the non-selected arch some items/imports (char_len, emit_class_spans, ...) are legitimately unused
 
-use crate::classify::{Atom, char_len, in_mask};
+use crate::classify::{Atom, char_len};
 use crate::fsm::{Span, emit_class_spans};
 
 /// Class LookUpTable: tag → 0 drop / 1 isolate / 2 keep-A / 3 keep-B; Cont → 0xFF (fill sentinel).
@@ -45,7 +46,10 @@ fn emit(
     cls: u8,
 ) {
     if *seg_class != 0 {
-        out[*w] = Span { start: *seg_start as u32, end: pos as u32 };
+        out[*w] = Span {
+            start: *seg_start as u32,
+            end: pos as u32,
+        };
         *w += 1;
     }
     *seg_start = pos;
@@ -74,7 +78,10 @@ fn tail<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>(
     if seg_class == 1 {
         // open isolate = one pending char; emit it, then scan the remainder with no open segment.
         let e = seg_start + char_len(text[seg_start]);
-        out[w] = Span { start: seg_start as u32, end: e as u32 };
+        out[w] = Span {
+            start: seg_start as u32,
+            end: e as u32,
+        };
         return emit_class_spans::<DROP, ISOLATE, KEEP_A>(text, tags, out, w + 1, e, 0, None);
     }
     // seg_mask of the last bytes before the tail converted to a full u16 mask. The simd path uses

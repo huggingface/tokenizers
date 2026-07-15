@@ -100,12 +100,12 @@ fn main() {
 
         let onig_spans: Vec<Span> = re
             .find_iter(corpus)
-            .map(|(s, e)| (s as u32, e as u32))
+            .map(|(s, e)| Span::new(s as u32, e as u32))
             .collect();
         let mut tags = vec![0u8; n];
         let mut tsc = vec![0u8; n];
         classify(text, &mut tags);
-        let mut buf = vec![(0u32, 0u32); n + 1];
+        let mut buf = vec![Span::default(); n + 1];
         let ksc = fsm_cl100k(text, &tags, &mut buf);
         let ok = if buf[..ksc] == onig_spans[..] {
             "✓"

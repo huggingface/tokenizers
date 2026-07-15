@@ -56,7 +56,7 @@ fn run_end(tags: &[u8], mut i: usize, end: usize, mut m: u16) -> usize {
 /// stable `[start, end]` layout — the pipeline reuses it with zero conversion, and it can be reinterpreted
 /// as bytes / handed across the crate boundary.
 #[repr(C)]
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Hash, PartialOrd, Ord)]
 pub struct Span {
     pub start: u32,
     pub end: u32,
@@ -129,8 +129,8 @@ pub fn emit_class_spans<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>(
     text: &[u8],
     tags: &[u8],
     out: &mut [Span],
-    mut write_index: usize,         // in the out slice
-    mut text_pointer: usize,        // in the text slice
+    mut write_index: usize,     // in the out slice
+    mut text_pointer: usize,    // in the text slice
     segment_start: usize,       // previous segment_start
     segment_class: Option<u16>, // previous segment's class
 ) -> usize {
@@ -141,7 +141,10 @@ pub fn emit_class_spans<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>(
         // this will usually be at the tail of a SIMD call.
         text_pointer = run_end(tags, text_pointer, n, segment_class); // skip the whole drop run at once
         if segment_class != DROP {
-            out[write_index] = Span { start: segment_start as u32, end: text_pointer as u32 };
+            out[write_index] = Span {
+                start: segment_start as u32,
+                end: text_pointer as u32,
+            };
             if text_pointer == n {
                 return write_index + 1;
             }
@@ -160,7 +163,10 @@ pub fn emit_class_spans<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>(
         } else if in_mask(t, ISOLATE) {
             let s = text_pointer;
             text_pointer += char_len(text[text_pointer]);
-            out[write_index] = Span { start: s as u32, end: text_pointer as u32 }; // isolate: one char = one token
+            out[write_index] = Span {
+                start: s as u32,
+                end: text_pointer as u32,
+            }; // isolate: one char = one token
             write_index += 1;
         } else {
             let s = text_pointer;
@@ -169,7 +175,10 @@ pub fn emit_class_spans<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>(
             } else {
                 run_end(tags, text_pointer, n, other)
             };
-            out[write_index] = Span { start: s as u32, end: text_pointer as u32 };
+            out[write_index] = Span {
+                start: s as u32,
+                end: text_pointer as u32,
+            };
             write_index += 1;
         }
     }
@@ -310,7 +319,12 @@ fn cl100k(text: &[u8], tags: &[u8], out: &mut [Span], digit_cap: usize) -> usize
             _ => i += char_len(b),
         }
         // SAFETY: tokens partition the input, so `w < #tokens <= end < out.len()` (out ≥ text.len()+? ; callers size n+1).
-        unsafe { *out.get_unchecked_mut(w) = Span { start: start as u32, end: i as u32 } };
+        unsafe {
+            *out.get_unchecked_mut(w) = Span {
+                start: start as u32,
+                end: i as u32,
+            }
+        };
         w += 1;
     }
     w
@@ -445,7 +459,12 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
             {
                 p += 3;
             }
-            unsafe { *out.get_unchecked_mut(w) = Span { start: start as u32, end: p as u32 } };
+            unsafe {
+                *out.get_unchecked_mut(w) = Span {
+                    start: start as u32,
+                    end: p as u32,
+                }
+            };
             w += 1;
             i = p;
             continue;
@@ -461,15 +480,30 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
             }
             if is_lm(p) {
                 if last > i {
-                    unsafe { *out.get_unchecked_mut(w) = Span { start: start as u32, end: last as u32 } }; // gap sans prefix char
+                    unsafe {
+                        *out.get_unchecked_mut(w) = Span {
+                            start: start as u32,
+                            end: last as u32,
+                        }
+                    }; // gap sans prefix char
                     w += 1;
                 }
                 let e = letter_run(p);
-                unsafe { *out.get_unchecked_mut(w) = Span { start: last as u32, end: e as u32 } }; // prefix char + `[\p{L}\p{M}]+`
+                unsafe {
+                    *out.get_unchecked_mut(w) = Span {
+                        start: last as u32,
+                        end: e as u32,
+                    }
+                }; // prefix char + `[\p{L}\p{M}]+`
                 w += 1;
                 i = e;
             } else {
-                unsafe { *out.get_unchecked_mut(w) = Span { start: start as u32, end: p as u32 } }; // whole gap run is one piece
+                unsafe {
+                    *out.get_unchecked_mut(w) = Span {
+                        start: start as u32,
+                        end: p as u32,
+                    }
+                }; // whole gap run is one piece
                 w += 1;
                 i = p;
             }
@@ -531,7 +565,12 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
             _ => i += char_len(b),
         }
         // SAFETY: tokens partition the input, so `w < #tokens <= end < out.len()` (out ≥ text.len()+? ; callers size n+1).
-        unsafe { *out.get_unchecked_mut(w) = Span { start: start as u32, end: i as u32 } };
+        unsafe {
+            *out.get_unchecked_mut(w) = Span {
+                start: start as u32,
+                end: i as u32,
+            }
+        };
         w += 1;
     }
     w
@@ -606,7 +645,12 @@ pub fn fsm_byte_level(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
             _ => i += char_len(text[i]),
         }
         // SAFETY: tokens partition the input, so `w < #tokens <= end < out.len()` (out ≥ text.len()+? ; callers size n+1).
-        unsafe { *out.get_unchecked_mut(w) = Span { start: start as u32, end: i as u32 } };
+        unsafe {
+            *out.get_unchecked_mut(w) = Span {
+                start: start as u32,
+                end: i as u32,
+            }
+        };
         w += 1;
     }
     w
@@ -702,7 +746,12 @@ fn emit_o200k_letters(
         } else {
             e
         };
-        unsafe { *out.get_unchecked_mut(*w) = Span { start: start as u32, end: tok_end as u32 } };
+        unsafe {
+            *out.get_unchecked_mut(*w) = Span {
+                start: start as u32,
+                end: tok_end as u32,
+            }
+        };
         *w += 1;
         first = false;
         cursor = tok_end;
@@ -852,7 +901,12 @@ pub fn fsm_o200k(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
             _ => i += char_len(b),
         }
         // SAFETY: tokens partition the input, so `w < #tokens <= end < out.len()` (out ≥ text.len()+? ; callers size n+1).
-        unsafe { *out.get_unchecked_mut(w) = Span { start: start as u32, end: i as u32 } };
+        unsafe {
+            *out.get_unchecked_mut(w) = Span {
+                start: start as u32,
+                end: i as u32,
+            }
+        };
         w += 1;
     }
     w
@@ -984,7 +1038,10 @@ impl CharDelimiterSplit {
                 Some(off) if text[i + off..i + off + dl] == *delim => {
                     let m = i + off;
                     if m > start {
-                        out[w] = Span { start: start as u32, end: m as u32 }; // gap before the delimiter (Removed)
+                        out[w] = Span {
+                            start: start as u32,
+                            end: m as u32,
+                        }; // gap before the delimiter (Removed)
                         w += 1;
                     }
                     i = m + dl;
@@ -995,7 +1052,10 @@ impl CharDelimiterSplit {
             }
         }
         if start < n {
-            out[w] = Span { start: start as u32, end: n as u32 };
+            out[w] = Span {
+                start: start as u32,
+                end: n as u32,
+            };
             w += 1;
         }
         w

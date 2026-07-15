@@ -266,6 +266,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "fancy-regex")] // deepseek `Split`s need a backend at construction (legacy baseline)
     #[test]
     fn pipeline_deepseek_uses_fsm_and_matches_legacy() {
         // Load deepseek-v4's real pre_tokenizer, rebuild a Sequence of just its 3 Splits (drop the
@@ -309,6 +310,7 @@ mod tests {
     // CJK-range PUNCTUATION (・ U+30FB, ゠, ゛゜) sits inside Split-1's `[一-龥぀-ゟ゠-ヿ]` range, so
     // Split-1 isolates it (`fsm_deepseek` handles a CJK-range run as a closed unit) — a preceding space
     // stays separate and it never merges with adjacent non-CJK punct.
+    #[cfg(feature = "fancy-regex")] // deepseek `Split`s need a backend at construction (legacy baseline)
     #[test]
     fn pipeline_deepseek_cjk_punct_whitespace_edge() {
         let path = "../data/deepseek-v4-flash-base-tokenizer.json";
@@ -337,6 +339,7 @@ mod tests {
     // guard. `he.txt` is why it exists: Hebrew mixes format controls (RLM, `\p{Cf}`) and Other_Alphabetic
     // symbols (Ⓘ, `\p{S}` but is_alphabetic), which stress the *gap* grouping (consecutive unmatched chars
     // = one piece) and the `ALPHA_SYM` Mark refinement (a `\w` char that is NOT `[\p{L}\p{M}]`).
+    #[cfg(feature = "fancy-regex")] // deepseek `Split`s need a backend at construction (legacy baseline)
     #[test]
     fn pipeline_deepseek_matches_legacy_on_corpora() {
         let path = "../data/deepseek-v4-flash-base-tokenizer.json";

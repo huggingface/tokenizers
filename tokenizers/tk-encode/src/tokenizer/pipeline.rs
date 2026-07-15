@@ -1,6 +1,5 @@
 use std::cell::RefCell;
 use std::convert::TryInto;
-use std::ops::Range;
 use std::{borrow::Cow, convert::TryFrom};
 
 use atomsplit::classify::classify;

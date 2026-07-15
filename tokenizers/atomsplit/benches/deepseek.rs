@@ -56,7 +56,9 @@ fn deepseek_ref(text: &str, re_num: &Regex, re_cjk: &Regex, re_big: &Regex) -> V
     for (s, e) in p2 {
         split_iso(text, s, e, re_big, &mut p3);
     }
-    p3.into_iter().map(|(s, e)| (s as u32, e as u32)).collect()
+    p3.into_iter()
+        .map(|(s, e)| Span::new(s as u32, e as u32))
+        .collect()
 }
 
 fn ns_per_byte<F: FnMut() -> usize>(len: usize, iters: u32, mut f: F) -> f64 {
@@ -95,8 +97,8 @@ fn report_diff(corpus: &str, ours: &[Span], reference: &[Span]) -> &'static str 
         }
         corpus[a..b].escape_debug().to_string()
     };
-    let (os, oe) = (ours[k].0 as usize, ours[k].1 as usize);
-    let (rs, re) = (reference[k].0 as usize, reference[k].1 as usize);
+    let (os, oe) = (ours[k].start as usize, ours[k].end as usize);
+    let (rs, re) = (reference[k].start as usize, reference[k].end as usize);
     eprintln!(
         "  DIVERGE @tok {k}: ours[{os}..{oe}]={:?} ref[{rs}..{re}]={:?}  ctx={:?}",
         &corpus[os..oe],
@@ -140,7 +142,7 @@ fn main() {
         let reference = deepseek_ref(corpus, &rn, &rc, &rb);
         let mut tags = vec![0u8; n];
         classify(text, &mut tags);
-        let mut buf = vec![(0u32, 0u32); n + 1];
+        let mut buf = vec![Span::default(); n + 1];
         let k = fsm_deepseek(text, &tags, &mut buf);
         let parity = report_diff(corpus, &buf[..k], &reference);
         let btok = n as f64 / k.max(1) as f64;

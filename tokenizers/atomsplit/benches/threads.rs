@@ -68,7 +68,7 @@ fn pipeline(fsm: Fsm, chunk: &[u8], tags: &mut Vec<u8>, out: &mut Vec<Span>) {
     tags.resize(chunk.len(), 0);
     classify(chunk, tags);
     out.clear();
-    out.resize(chunk.len() + 1, (0, 0)); // preallocated slice — the fsm writes into it, no push
+    out.resize(chunk.len() + 1, Span::default()); // preallocated slice — the fsm writes into it, no push
     let k = fsm(chunk, tags, out);
     out.truncate(k);
 }
@@ -83,7 +83,10 @@ fn seam_diff(fsm: Fsm, pb: &[u8], n: usize) -> usize {
     for &(st, en) in &partition_nl(pb, n) {
         let mut out = Vec::new();
         pipeline(fsm, &pb[st..en], &mut tags, &mut out);
-        par.extend(out.iter().map(|&(a, b)| (a + st as u32, b + st as u32)));
+        par.extend(
+            out.iter()
+                .map(|sp| Span::new(sp.start + st as u32, sp.end + st as u32)),
+        );
     }
     if par == seq {
         return 0;

@@ -73,7 +73,7 @@ impl crate::tokenizer::pattern::Pattern for GptFsmPattern {
         let bytes = inside.as_bytes();
         let mut tags = vec![0u8; bytes.len()];
         classify(bytes, &mut tags);
-        let mut spans = vec![(0u32, 0u32); bytes.len() + 1];
+        let mut spans = vec![atomsplit::fsm::Span::default(); bytes.len() + 1];
         let n = match self.0 {
             GptFsm::Gpt2 => atomsplit::fsm::fsm_byte_level(bytes, &tags, &mut spans),
             GptFsm::Cl100k { digit_cap } => {
@@ -83,7 +83,7 @@ impl crate::tokenizer::pattern::Pattern for GptFsmPattern {
         };
         Ok(spans[..n]
             .iter()
-            .map(|&(s, e)| ((s as usize, e as usize), true))
+            .map(|sp| ((sp.start as usize, sp.end as usize), true))
             .collect())
     }
 }

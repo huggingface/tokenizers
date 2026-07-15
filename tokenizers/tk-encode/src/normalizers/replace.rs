@@ -131,7 +131,8 @@ impl Decoder for Replace {
     }
 }
 
-#[cfg(test)]
+// `Replace` needs a system-regex backend (SysRegex) for every test here.
+#[cfg(all(test, feature = "fancy-regex"))]
 mod tests {
     use super::*;
 

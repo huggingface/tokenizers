@@ -15,9 +15,11 @@ pub struct SysRegex {
 
 impl SysRegex {
     pub fn new(_regex_str: &str) -> Result<Self, Box<dyn Error + Send + Sync + 'static>> {
-        Err("no system-regex backend compiled: enable the `fancy-regex` feature \
+        Err(
+            "no system-regex backend compiled: enable the `fancy-regex` feature \
              to use a `Split` pre-tokenizer with a custom regex, or the `Replace` normalizer"
-            .into())
+                .into(),
+        )
     }
 
     pub fn find_iter(&self, _inside: &str) -> std::iter::Empty<(usize, usize)> {

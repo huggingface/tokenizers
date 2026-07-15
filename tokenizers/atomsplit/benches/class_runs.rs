@@ -86,7 +86,7 @@ fn main() {
                 let n = text.len();
                 let iters = (4_000_000 / n).clamp(3, 150) as u32;
                 let mut tags = vec![0u8; n];
-                let mut buf = vec![(0u32, 0u32); n + 1];
+                let mut buf = vec![Span::default(); n + 1];
                 classify(text, &mut tags);
                 // parity: scalar == simd
                 let (ks, kv) = ($s(text, &tags, &mut buf), 0);

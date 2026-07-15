@@ -31,7 +31,7 @@ struct Entry {
 /// Example:
 ///
 /// ```
-/// use tk_encode::added_vocabulary::bucket_vocab_store::BucketVocabStore;
+/// use tk_encode::vocab::bucket_vocab_store::BucketVocabStore;
 /// let vocab = BucketVocabStore::build(vec![
 ///     (b"a".to_vec(), 0),
 ///     (b"bb".to_vec(), 5),
@@ -39,6 +39,7 @@ struct Entry {
 /// ]);
 /// vocab.token_to_id("a");
 /// vocab.id_to_token(100);
+/// ```
 #[derive(Clone)]
 pub struct BucketVocabStore {
     mphf: Mphf,

@@ -48,7 +48,7 @@ impl pipeline::PreTokenizer for Digits {
         let bytes = text.as_bytes();
         let mut tags = vec![0u8; bytes.len()];
         classify(bytes, &mut tags);
-        let mut spans = vec![(0u32, 0u32); bytes.len() + 1];
+        let mut spans = vec![pipeline::Span::default(); bytes.len() + 1];
         let n = if self.individual_digits {
             class_runs_into::<0, { mask::NUMERIC }, 0>(bytes, &tags, &mut spans)
         // isolate each digit
@@ -56,11 +56,7 @@ impl pipeline::PreTokenizer for Digits {
             class_runs_into::<0, 0, { mask::NUMERIC }>(bytes, &tags, &mut spans)
             // keep digit runs
         };
-        out.extend(
-            spans[..n]
-                .iter()
-                .map(|&(s, e)| pipeline::Span { start: s, end: e }),
-        );
+        out.extend_from_slice(&spans[..n]);
         Ok(())
     }
 }

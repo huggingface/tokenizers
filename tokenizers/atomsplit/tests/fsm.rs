@@ -9,7 +9,7 @@ use atomsplit::fsm::{
 fn spans(f: impl Fn(&[u8], &[u8], &mut [Span]) -> usize, s: &str) -> Vec<Span> {
     let mut tags = vec![0u8; s.len()];
     classify(s.as_bytes(), &mut tags);
-    let mut out = vec![(0u32, 0u32); s.len() + 1];
+    let mut out = vec![Span::default(); s.len() + 1];
     let k = f(s.as_bytes(), &tags, &mut out);
     out.truncate(k);
     out
@@ -47,7 +47,7 @@ fn byte_level_rules() {
 
 #[test]
 fn char_delimiter_split() {
-    let mut out = vec![(0u32, 0u32); 8];
+    let mut out = vec![Span::default(); 8];
     // split on '/', Removed → drop delimiters, drop the empty gap between "//"
     let k = CharDelimiterSplit('/').pre_tokenize(b"a/bc//d", &mut [], &mut out);
     assert_eq!(&out[..k], &[(0, 1), (2, 4), (6, 7)]);
@@ -62,8 +62,8 @@ fn class_runs_into_matches() {
     let corpus = "Hello, world!! 123 café × наука 中文。। नरेंद्र मोदी ने ½²¼ ①② 😀a b\t".repeat(30);
     let full = corpus.as_bytes();
     let mut tags = vec![0u8; full.len()];
-    let mut b1 = vec![(0u32, 0u32); full.len()];
-    let mut b2 = vec![(0u32, 0u32); full.len()];
+    let mut b1 = vec![Span::default(); full.len()];
+    let mut b2 = vec![Span::default(); full.len()];
 
     fn eq<const D: u16, const I: u16, const A: u16>(
         t: &[u8],

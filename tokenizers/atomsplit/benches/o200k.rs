@@ -33,13 +33,13 @@ fn o200k_ref(text: &str, re: &Regex) -> Vec<Span> {
     let mut prev = 0usize;
     for (ms, me) in re.find_iter(text) {
         if ms > prev {
-            out.push((prev as u32, ms as u32));
+            out.push(Span::new(prev as u32, ms as u32));
         }
-        out.push((ms as u32, me as u32));
+        out.push(Span::new(ms as u32, me as u32));
         prev = me;
     }
     if prev < text.len() {
-        out.push((prev as u32, text.len() as u32));
+        out.push(Span::new(prev as u32, text.len() as u32));
     }
     out
 }
@@ -71,10 +71,10 @@ fn report_diff(corpus: &str, ours: &[Span], reference: &[Span]) -> &'static str 
     }
     let (os, oe) = ours
         .get(k)
-        .map_or((0, 0), |&(s, e)| (s as usize, e as usize));
+        .map_or((0, 0), |sp| (sp.start as usize, sp.end as usize));
     let (rs, re) = reference
         .get(k)
-        .map_or((0, 0), |&(s, e)| (s as usize, e as usize));
+        .map_or((0, 0), |sp| (sp.start as usize, sp.end as usize));
     eprintln!(
         "  DIVERGE @tok {k}/{} (ref {}): ours[{os}..{oe}]={:?} ref[{rs}..{re}]={:?}",
         ours.len(),
@@ -115,7 +115,7 @@ fn main() {
         let reference = o200k_ref(corpus, &re);
         let mut tags = vec![0u8; n];
         classify(text, &mut tags);
-        let mut buf = vec![(0u32, 0u32); n + 1];
+        let mut buf = vec![Span::default(); n + 1];
         let k = fsm_o200k(text, &tags, &mut buf);
         let parity = report_diff(corpus, &buf[..k], &reference);
         let btok = n as f64 / k.max(1) as f64;

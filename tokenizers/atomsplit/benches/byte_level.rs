@@ -29,7 +29,7 @@ const CORPORA: &[(&str, &str)] = &[
 
 fn onig_spans(re: &Regex, text: &str) -> Vec<Span> {
     re.find_iter(text)
-        .map(|(a, b)| (a as u32, b as u32))
+        .map(|(a, b)| Span::new(a as u32, b as u32))
         .collect()
 }
 
@@ -80,7 +80,7 @@ fn main() {
         let reference = onig_spans(&re, corpus);
         let mut tags = vec![0u8; n];
         classify(text, &mut tags);
-        let mut sc = vec![(0u32, 0u32); n + 1];
+        let mut sc = vec![Span::default(); n + 1];
         let k = fsm_byte_level(text, &tags, &mut sc);
         let ok = if sc[..k] == reference[..] {
             "✓"

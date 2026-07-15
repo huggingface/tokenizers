@@ -198,6 +198,7 @@ mod tests {
     use crate::{OffsetReferential, OffsetType, PreTokenizer};
     use SplitDelimiterBehavior::*;
 
+    #[cfg(feature = "fancy-regex")] // needs a system-regex backend
     #[test]
     fn basic() {
         let tests = vec![
@@ -296,6 +297,7 @@ mod tests {
             .collect()
     }
 
+    #[cfg(feature = "fancy-regex")] // needs a system-regex backend
     #[test]
     fn pipeline_matches_legacy() {
         let regex = SplitPattern::Regex(r"\w+|[^\w\s]+".into());
@@ -366,6 +368,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "fancy-regex")] // needs a system-regex backend
     #[test]
     fn pipeline_invert_and_edges() {
         // invert = false: split *on* the regex (whitespace), Removed drops it
@@ -492,6 +495,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "fancy-regex")] // needs a system-regex backend
     #[test]
     fn regex_string() {
         let mut pretok_str_for_regex = PreTokenizedString::from("Hey, man!");
@@ -516,6 +520,7 @@ mod tests {
         assert_eq!(pretok_str_for_regex, pretok_str_for_string);
     }
 
+    #[cfg(feature = "fancy-regex")] // needs a system-regex backend
     #[test]
     fn invert() {
         let mut pretok_str = PreTokenizedString::from("Hello Hello Hello");
@@ -534,6 +539,7 @@ mod tests {
         assert_eq!(pretok_str, pretok_str_for_invert);
     }
 
+    #[cfg(feature = "fancy-regex")] // needs a system-regex backend
     #[test]
     fn serialization() {
         use SplitDelimiterBehavior::*;

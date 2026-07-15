@@ -16,7 +16,7 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 
 use crate::atom_tables::ATOM_TABLES;
-use crate::classify::{Atom, char_len, CONT, MB};
+use crate::classify::{Atom, CONT, MB, char_len};
 use core::arch::wasm32::*;
 
 const CJK_TAG: u8 = Atom::Letter as u8;

@@ -26,13 +26,9 @@ impl pipeline::PreTokenizer for BertPreTokenizer {
         let bytes = text.as_bytes();
         let mut tags = vec![0u8; bytes.len()];
         classify(bytes, &mut tags);
-        let mut spans = vec![(0u32, 0u32); bytes.len() + 1];
+        let mut spans = vec![pipeline::Span::default(); bytes.len() + 1];
         let n = class_runs_into::<{ mask::WS }, { mask::PUNCT }, 0>(bytes, &tags, &mut spans);
-        out.extend(
-            spans[..n]
-                .iter()
-                .map(|&(s, e)| pipeline::Span { start: s, end: e }),
-        );
+        out.extend_from_slice(&spans[..n]);
         Ok(())
     }
 }

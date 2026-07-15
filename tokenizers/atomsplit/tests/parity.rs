@@ -42,14 +42,16 @@ const CORPUS: &str = "The quick brown fox. Don't 12345 numbers, \u{00BD}\u{00B2}
 fn spans(f: impl Fn(&[u8], &[u8], &mut [Span]) -> usize, s: &str) -> Vec<Span> {
     let mut tags = vec![0u8; s.len()];
     classify(s.as_bytes(), &mut tags);
-    let mut out = vec![(0u32, 0u32); s.len() + 1];
+    let mut out = vec![Span::default(); s.len() + 1];
     let k = f(s.as_bytes(), &tags, &mut out);
     out.truncate(k);
     out
 }
 
 fn onig_spans(re: &Regex, s: &str) -> Vec<Span> {
-    re.find_iter(s).map(|(a, b)| (a as u32, b as u32)).collect()
+    re.find_iter(s)
+        .map(|(a, b)| Span::new(a as u32, b as u32))
+        .collect()
 }
 
 // One Isolated split of text[s..e] by `re`: emit gaps + matches (all pieces), absolute offsets.
@@ -84,7 +86,9 @@ fn deepseek_ref(text: &str) -> Vec<Span> {
     for (s, e) in p2 {
         split_iso(text, s, e, &rb, &mut p3);
     }
-    p3.into_iter().map(|(s, e)| (s as u32, e as u32)).collect()
+    p3.into_iter()
+        .map(|(s, e)| Span::new(s as u32, e as u32))
+        .collect()
 }
 
 #[test]
