@@ -319,6 +319,10 @@ pub struct PipelineWordPiece {
     unk_token: Option<u32>,
     continuing_subword_prefix: String,
     max_input_chars_per_word: usize,
+    /// Longest vocab key in bytes. A `common_prefix_search` can never match past
+    /// this depth, so continuing-subword candidates only need the first
+    /// `max_key_len` bytes of the remaining tail — never the whole tail.
+    max_key_len: usize,
 }
 
 impl TryFrom<WordPiece> for PipelineWordPiece {
@@ -336,6 +340,7 @@ impl TryFrom<WordPiece> for PipelineWordPiece {
         // yada requires the keyset sorted by key bytes.
         let mut keyset: Vec<_> = vocab.into_iter().collect();
         keyset.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
+        let max_key_len = keyset.iter().map(|(k, _)| k.len()).max().unwrap_or(0);
         let vocab_trie = DoubleArray::new(DoubleArrayBuilder::build(&keyset)?)?;
 
         Ok(Self {
@@ -343,6 +348,7 @@ impl TryFrom<WordPiece> for PipelineWordPiece {
             max_input_chars_per_word,
             unk_token,
             vocab_trie,
+            max_key_len,
         })
     }
 }
@@ -353,45 +359,76 @@ impl pipeline::Model for PipelineWordPiece {
         sequence: &str,
         output: &mut Vec<pipeline::PipelineToken>,
     ) -> Result<()> {
-        let mut candidate = String::with_capacity(self.max_input_chars_per_word);
-        let mut candidate_tokens = Vec::with_capacity(sequence.len());
-
-        let char_len = sequence.chars().count();
-        if char_len > self.max_input_chars_per_word {
+        // Max-chars cap. The cap is on *characters*, but a string's byte length is
+        // an upper bound on its char count, so we only pay for a full UTF-8 decode
+        // in the rare case where the byte length already exceeds the cap.
+        if sequence.len() > self.max_input_chars_per_word
+            && sequence.chars().count() > self.max_input_chars_per_word
+        {
             let unk_id = self.unk_token.ok_or(Error::MissingUnkToken)?;
             output.push(PipelineToken { id: unk_id });
             return Ok(());
         }
 
+        let bytes = sequence.as_bytes();
+        let prefix = self.continuing_subword_prefix.as_bytes();
+
+        // Continuing-subword candidate buffer: `prefix` + a bounded slice of the
+        // tail. Bounding to `max_key_len` avoids copying the whole remaining tail
+        // every token, and byte slicing (vs `&str`) means we never have to land on
+        // a char boundary — the trie matches on bytes. The buffer lives on the
+        // stack for the common case (no per-word heap allocation — the dominant
+        // cost of the previous impl); only a vocab whose keys exceed the stack
+        // buffer falls back to a one-off heap `Vec`.
+        const CAND_STACK_CAP: usize = 256;
+        let cand_len = prefix.len() + self.max_key_len;
+        let mut stack_buf = [0u8; CAND_STACK_CAP];
+        let mut heap_buf: Vec<u8> = Vec::new();
+        let buf: &mut [u8] = if cand_len <= CAND_STACK_CAP {
+            &mut stack_buf[..]
+        } else {
+            heap_buf.resize(cand_len, 0);
+            &mut heap_buf[..]
+        };
+        buf[..prefix.len()].copy_from_slice(prefix);
+
+        // Push directly to `output`, remembering where this word started so a
+        // mid-word failure can roll the partial tokens back and emit a single UNK
+        // (WordPiece's all-or-nothing semantics), without a temp Vec.
+        let rollback = output.len();
         let mut start = 0;
 
-        while start < sequence.len() {
-            candidate.clear();
-            let prefix_len = if start > 0 {
-                candidate.push_str(&self.continuing_subword_prefix);
-                self.continuing_subword_prefix.len()
+        while start < bytes.len() {
+            let (search, prefix_len): (&[u8], usize) = if start == 0 {
+                // First subword: search the raw tail directly — zero-copy, and the
+                // walk stops itself once the trie runs out of transitions.
+                (&bytes[start..], 0)
             } else {
-                0
+                // Continuing subword: `prefix` is already in `buf`; append the
+                // bounded tail after it (no key can match past `max_key_len`).
+                let end = start + (bytes.len() - start).min(self.max_key_len);
+                let cand = prefix.len() + (end - start);
+                buf[prefix.len()..cand].copy_from_slice(&bytes[start..end]);
+                (&buf[..cand], prefix.len())
             };
-            candidate.push_str(&sequence[start..]);
 
-            // Matches must extend past the continuing-subword prefix: the
-            // prefix alone (or a fragment of it) is not a valid subword here,
-            // even if it happens to be in the vocab.
+            // Matches must extend past the continuing-subword prefix: the prefix
+            // alone (or a fragment of it) is not a valid subword here, even if it
+            // happens to be in the vocab. `.last()` = the longest match.
             let Some((token_id, match_len)) = self
                 .vocab_trie
-                .common_prefix_search(&candidate)
+                .common_prefix_search(search)
                 .filter(|(_, len)| *len > prefix_len)
                 .last()
             else {
+                output.truncate(rollback);
                 let unk_id = self.unk_token.ok_or(Error::MissingUnkToken)?;
                 output.push(PipelineToken { id: unk_id });
                 return Ok(());
             };
-            candidate_tokens.push(PipelineToken { id: token_id });
+            output.push(PipelineToken { id: token_id });
             start += match_len - prefix_len;
         }
-        output.extend_from_slice(&candidate_tokens);
         Ok(())
     }
 }
@@ -399,9 +436,57 @@ impl pipeline::Model for PipelineWordPiece {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pipeline::Model as _;
 
     #[test]
     fn test_error_display() {
         assert!(format!("{}", Error::MissingUnkToken).contains("Missing [UNK] token"));
+    }
+
+    fn wp(vocab: &[(&str, u32)]) -> PipelineWordPiece {
+        let vocab: Vocab = vocab.iter().map(|(k, v)| (k.to_string(), *v)).collect();
+        PipelineWordPiece::try_from(
+            WordPieceBuilder::new()
+                .vocab(vocab)
+                .unk_token("[UNK]".into())
+                .build()
+                .unwrap(),
+        )
+        .unwrap()
+    }
+
+    fn ids(model: &PipelineWordPiece, s: &str) -> Vec<u32> {
+        let mut out = Vec::new();
+        model.tokenize_pipeline(s, &mut out).unwrap();
+        out.into_iter().map(|t| t.id).collect()
+    }
+
+    #[test]
+    fn pipeline_tokenize_matches_greedy_wordpiece() {
+        let model = wp(&[
+            ("[UNK]", 0),
+            ("un", 1),
+            ("##want", 2),
+            ("##ed", 3),
+            ("play", 4),
+            ("##ing", 5),
+            ("hello", 6),
+        ]);
+        // First subword (no prefix) + two continuing subwords (matched via "##").
+        assert_eq!(ids(&model, "unwanted"), vec![1, 2, 3]);
+        assert_eq!(ids(&model, "playing"), vec![4, 5]);
+        assert_eq!(ids(&model, "hello"), vec![6]);
+    }
+
+    #[test]
+    fn pipeline_tokenize_rolls_back_partial_word_to_single_unk() {
+        // "un" matches, but the remaining "zzz" has no continuing subword: the
+        // whole word must collapse to a single [UNK], not "un" + [UNK].
+        let model = wp(&[("[UNK]", 0), ("un", 1), ("##ed", 3)]);
+        assert_eq!(ids(&model, "unzzz"), vec![0]);
+        // A prior real token in the output stays untouched by the rollback.
+        let mut out = vec![PipelineToken { id: 99 }];
+        model.tokenize_pipeline("unzzz", &mut out).unwrap();
+        assert_eq!(out.into_iter().map(|t| t.id).collect::<Vec<_>>(), vec![99, 0]);
     }
 }
