@@ -10,7 +10,7 @@
 //! `vqtbl`'s semantics — so the subtract trick carries over directly (no hi-nibble range masks like
 //! x86 needs). WASM also has native unsigned compares (`u8x16_ge/le`) and per-lane byte shifts
 //! (`i8x16_shl`/`u8x16_shr`, no cross-byte bleed), so the body is a near 1:1 map of the NEON path.
-//! Same tables (`ATOM_TABLES`), same algorithm. 16 bytes/iter.
+//! Same tables (`tables`), same algorithm. 16 bytes/iter.
 //!
 //! Per lane, `b0`/`b1`/`b2` are the 1st/2nd/3rd bytes of the (potential) UTF-8 char starting there —
 //! i.e. the byte at the lane and the two after it (built with cross-chunk shuffles).
@@ -19,11 +19,9 @@
 //! a SIMD128 wasm engine before trusting it.
 #![allow(unsafe_op_in_unsafe_fn)]
 
-use crate::atom_tables::ATOM_TABLES;
-use crate::classify::{Atom, CONT, MB, char_len};
+use crate::classify::char_len;
+use crate::tables::Tables;
 use core::arch::wasm32::*;
-
-const CJK_TAG: u8 = Atom::Letter as u8;
 
 #[inline]
 fn decode(t: &[u8], i: usize) -> u32 {
@@ -145,7 +143,11 @@ unsafe fn lookup256(table: *const u8, index: v128) -> v128 {
 /// `tags.len()` must be ≥ `text.len()` — the kernel does raw 16-byte `v128_store`s into `tags` for full
 /// chunks. `text` must be well-formed UTF-8 (the tail/astral scalar path reads a lead's continuation
 /// bytes). Both hold when called via [`crate::classify`], which asserts the length up front.
-pub unsafe fn classify_wasm(text: &[u8], tags: &mut [u8]) {
+pub unsafe fn classify_wasm<const CONT: u8, const MB: u8, const CJK_TAG: u8>(
+    text: &[u8],
+    tags: &mut [u8],
+    tables: &Tables,
+) {
     let n = text.len();
     let mut mb_seen = false;
     let mut i = 0usize;
@@ -157,7 +159,7 @@ pub unsafe fn classify_wasm(text: &[u8], tags: &mut [u8]) {
 
         // ASCII fast path: no lane has the high bit set
         if u8x16_bitmask(b0) == 0 {
-            let out = lookup128(&ATOM_TABLES.ascii_lo, &ATOM_TABLES.ascii_hi, b0);
+            let out = lookup128(&tables.ascii_lo, &tables.ascii_hi, b0);
             v128_store(tags.as_mut_ptr().add(i) as *mut v128, out);
             i += 16;
             continue;
@@ -166,7 +168,7 @@ pub unsafe fn classify_wasm(text: &[u8], tags: &mut [u8]) {
         let next = v128_load(text.as_ptr().add(i + 16) as *const v128);
         let b1 = u8x16_shuffle::<1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16>(b0, next); // byte at lane+1
         let b2 = u8x16_shuffle::<2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17>(b0, next); // byte at lane+2
-        let mut out = lookup128(&ATOM_TABLES.ascii_lo, &ATOM_TABLES.ascii_hi, b0);
+        let mut out = lookup128(&tables.ascii_lo, &tables.ascii_hi, b0);
         let mut resolved = zeros;
 
         // 2-byte (C2..DF, i.e. lead & 0xE0 == 0xC0): loop the lead-group range, lookup256 per present group
@@ -185,7 +187,7 @@ pub unsafe fn classify_wasm(text: &[u8], tags: &mut [u8]) {
                 let this_group = v128_and(is_lead2, u8x16_eq(lead_group, u8x16_splat(group)));
                 if v128_any_true(this_group) {
                     let group_table =
-                        ATOM_TABLES.group_tables[(group & 7) as usize].as_ptr() as *const u8;
+                        tables.group_tables[(group & 7) as usize].as_ptr() as *const u8;
                     tags2 = v128_bitselect(lookup256(group_table, group_index), tags2, this_group);
                 }
                 group += 1;
@@ -198,8 +200,7 @@ pub unsafe fn classify_wasm(text: &[u8], tags: &mut [u8]) {
         // single tag (`CJK_TAG = Atom::Letter`), so this is always on. It is the OPTIMISTIC bulk: it flags only lanes that
         // are DEFINITELY that tag; boundary/hole codepoints it leaves unresolved, so they fall through
         // to the exact 3-byte tables below. It never over-claims, so the result stays byte-exact.
-        let in_cjk_leads = in_range(b0, 0xE3, 0xED);
-        if v128_any_true(in_cjk_leads) {
+        if CJK_TAG != crate::classify::NO_CJK && v128_any_true(in_range(b0, 0xE3, 0xED)) {
             // Han — U+4000..U+9FFF (CJK Unified Ideographs + the Ext-A tail), minus the one
             // non-ideograph hole U+4DC0..U+4DFF (Yijing Hexagram Symbols), which encodes as E4 B7 xx.
             let han = v128_andnot(
@@ -257,11 +258,11 @@ pub unsafe fn classify_wasm(text: &[u8], tags: &mut [u8]) {
                 let min_pair = hmin(v128_bitselect(pair, ones, lead_lanes)); // smallest pair within it
                 let block_lanes = v128_and(lead_lanes, u8x16_eq(pair, u8x16_splat(min_pair)));
                 let block = (lead - 0xE0) as usize * 32 + (min_pair & 0x1F) as usize;
-                let uniform_tag = ATOM_TABLES.fast3_uni[block];
+                let uniform_tag = tables.fast3_uni[block];
                 let block_tags = if uniform_tag != 0xFF {
                     u8x16_splat(uniform_tag) // whole block is one tag
                 } else {
-                    let (lo, hi) = &ATOM_TABLES.fast3_mixed[ATOM_TABLES.fast3_slot[block] as usize];
+                    let (lo, hi) = &tables.fast3_mixed[tables.fast3_slot[block] as usize];
                     lookup128(lo, hi, block_index)
                 };
                 tags3 = v128_bitselect(block_tags, tags3, block_lanes);
@@ -292,7 +293,7 @@ pub unsafe fn classify_wasm(text: &[u8], tags: &mut [u8]) {
             i += 1;
             continue;
         }
-        tags[i] = ATOM_TABLES.classify_char(text, i);
+        tags[i] = tables.classify_char(text, i);
         let w = char_len(b);
         let mut j = 1;
         while j < w && i + j < n {
@@ -309,9 +310,9 @@ pub unsafe fn classify_wasm(text: &[u8], tags: &mut [u8]) {
             if tags[pos] == MB {
                 let cp = decode(text, pos);
                 tags[pos] = if cp < 0x10000 {
-                    ATOM_TABLES.bmp_tag(cp as u16)
+                    tables.bmp_tag(cp as u16)
                 } else {
-                    ATOM_TABLES.classify_char(text, pos)
+                    tables.classify_char(text, pos)
                 };
             }
             pos += 1;
