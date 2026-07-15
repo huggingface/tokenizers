@@ -136,6 +136,11 @@ pub fn emit_class_spans<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>(
 ) -> usize {
     debug_assert!(out.len() >= text.len() && tags.len() >= text.len());
     let n = text.len();
+    // Tie `tags.len() == text.len() == n` so the optimizer drops the interior `tags[i]` / `text[i]`
+    // bounds checks (callers guarantee len ≥ n; same trick as `cl100k`). Per-byte scanning already
+    // avoids checks via `run_end`'s unrolled `get_unchecked`; this covers the per-token accesses.
+    let tags = &tags[..n];
+    let text = &text[..n];
     let other = !(DROP | ISOLATE | KEEP_A); // None of the above correspond to a continuation
     if let Some(segment_class) = segment_class {
         // this will usually be at the tail of a SIMD call.
