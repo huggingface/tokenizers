@@ -111,6 +111,19 @@ impl pipeline::PreTokenizer for PipelineSequence {
             return Ok(());
         }
 
+        // Fuse Split+ByteLevel: a byte-map `ByteLevel` (use_regex=false) converts to
+        // `PipelinePreTokenizer::None`, a pure identity pass. Skipping the `None`s collapses the
+        // dominant `Sequence[Split(regex), ByteLevel]` archetype (~40% of Hub usage) to a lone child we
+        // run straight into `out` — no double-buffer, no rebase, no redundant identity pass over every
+        // token. Sequences with ≥2 real children (or none) fall through to the generic loop unchanged.
+        let mut work = self
+            .pre_tokenizers
+            .iter()
+            .filter(|c| !matches!(c, PipelinePreTokenizer::None));
+        if let (Some(only), None) = (work.next(), work.next()) {
+            return pipeline::PreTokenizer::pre_tokenize(only, text, out);
+        }
+
         let cap = text.len() / 5;
 
         let mut current: Vec<pipeline::Split> = Vec::with_capacity(cap);
