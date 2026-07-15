@@ -27,6 +27,7 @@ use crate::{PreTokenizedString, PreTokenizer};
 
 #[derive(Serialize, Clone, Debug, PartialEq)]
 #[serde(untagged)]
+#[allow(clippy::large_enum_variant)] // Split holds a compiled regex; boxing it would churn the API
 pub enum PreTokenizerWrapper {
     BertPreTokenizer(BertPreTokenizer),
     ByteLevel(ByteLevel),
@@ -98,6 +99,7 @@ impl<'de> Deserialize<'de> for PreTokenizerWrapper {
 
         #[derive(Deserialize)]
         #[serde(untagged)]
+        #[allow(clippy::large_enum_variant)]
         pub enum PreTokenizerUntagged {
             BertPreTokenizer(BertPreTokenizer),
             ByteLevel(ByteLevel),

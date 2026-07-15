@@ -31,7 +31,7 @@ struct Entry {
 /// Example:
 ///
 /// ```
-/// use tk_encode::added_vocabulary::bucket_vocab_store::BucketVocabStore;
+/// use tk_encode::vocab::bucket_vocab_store::BucketVocabStore;
 /// let vocab = BucketVocabStore::build(vec![
 ///     (b"a".to_vec(), 0),
 ///     (b"bb".to_vec(), 5),
@@ -39,6 +39,7 @@ struct Entry {
 /// ]);
 /// vocab.token_to_id("a");
 /// vocab.id_to_token(100);
+/// ```
 #[derive(Clone)]
 pub struct BucketVocabStore {
     mphf: Mphf,
@@ -97,7 +98,7 @@ impl BucketVocabStore {
             .map(|(s, _)| hasher.hash_one(s.as_slice()))
             .collect();
 
-        // 2. A minimal perfect hash needs distinct keys. Collisions are astronomically unlikely
+        // 2. A perfect hash needs distinct keys. Collisions are astronomically unlikely
         //    (~n^2/2^65); if one ever fires, switch the key type to u128. The byte check below makes
         //    a collision a correct miss at query time, but it would drop a token at build, so guard.
 
@@ -115,7 +116,7 @@ impl BucketVocabStore {
             }
         }
 
-        // 3. Build the MPHF. `single_part = true` to use the faster `index_single_part` query path.
+        // 3. Build the (non-minimal) `FastPtrHash` via `PtrHashParams::default_fast()`; query with `.index()`.
         let params = PtrHashParams::default_fast();
         let mphf = Mphf::new(&seen.into_iter().collect::<Vec<u64>>(), params);
 

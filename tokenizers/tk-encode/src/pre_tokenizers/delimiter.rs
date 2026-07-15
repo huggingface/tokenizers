@@ -27,20 +27,17 @@ impl PreTokenizer for CharDelimiterSplit {
 }
 
 impl pipeline::PreTokenizer for CharDelimiterSplit {
-    fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Split>) -> Result<()> {
-        let delim = self.delimiter;
-        pipeline::split(
-            text,
-            out,
-            |c| c == delim,
-            |is_delim| {
-                if is_delim {
-                    pipeline::SplitPolicy::Remove
-                } else {
-                    pipeline::SplitPolicy::Keep
-                }
-            },
+    fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Span>) -> Result<()> {
+        // native atomsplit FSM (memchr-backed single-byte scan); `Removed` — drops the delimiter,
+        // keeps the runs between, no empty spans. Byte-exact with the char-predicate split.
+        let bytes = text.as_bytes();
+        let mut spans = vec![pipeline::Span::default(); bytes.len() + 1];
+        let n = atomsplit::fsm::CharDelimiterSplit(self.delimiter).pre_tokenize(
+            bytes,
+            &mut [],
+            &mut spans,
         );
+        out.extend_from_slice(&spans[..n]);
         Ok(())
     }
 }

@@ -2,20 +2,21 @@ pub(crate) mod cache;
 #[cfg(feature = "http")]
 pub(crate) mod from_pretrained;
 
-#[cfg(all(feature = "fancy-regex", not(feature = "onig")))]
+// Optional system-regex backend for arbitrary (non-atomsplit) patterns. With `fancy-regex` off a
+// stub compiles and arbitrary-regex features error at load — the atomsplit-native pre-tokenizers
+// work regardless, so `fancy-regex` is only needed for custom `Split` regexes / `Replace`.
+#[cfg(feature = "fancy-regex")]
 mod fancy;
-#[cfg(all(feature = "fancy-regex", not(feature = "onig")))]
+#[cfg(feature = "fancy-regex")]
 pub use fancy::SysRegex;
-#[cfg(feature = "onig")]
-mod onig;
-#[cfg(feature = "onig")]
-pub use crate::utils::onig::SysRegex;
+#[cfg(not(feature = "fancy-regex"))]
+mod no_regex;
+#[cfg(not(feature = "fancy-regex"))]
+pub use no_regex::SysRegex;
 
-#[cfg(not(any(feature = "onig", feature = "fancy-regex")))]
-compile_error!("One of the `onig`, or `fancy-regex` features must be enabled");
-
-mod multi_regex;
-pub use multi_regex::MultiRegex;
+// Recognize known GPT pre-tokenization regexes and route them to atomsplit's native (unrolled) FSM.
+mod unrolled_regex;
+pub use unrolled_regex::{gpt_fsm, is_deepseek, GptFsm, GptFsmPattern};
 
 pub mod byte_level;
 pub mod iter;

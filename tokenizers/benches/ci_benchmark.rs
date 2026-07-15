@@ -3,7 +3,7 @@
 //!
 //! Covers the key performance surfaces in a single binary:
 //!   - BPE GPT-2 encode (single, batch, cached, uncached)
-//!   - Llama-3 encode (single, batch, fast, concurrent)
+//!   - Llama-3 encode (single, batch, fast, char-offsets, concurrent)
 //!   - Decode (ByteLevel single/batch/stream, sentencepiece chain, WordPiece)
 //!   - Serialization round-trip (load + save)
 //!   - BPE training (small corpus)

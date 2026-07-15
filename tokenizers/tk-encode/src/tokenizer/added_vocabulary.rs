@@ -157,9 +157,9 @@ pub struct AddedVocabulary {
     /// Kept separate from `AddedToken` so the token struct stays lean.
     normalized_cache: AHashMap<u32, String>,
 
-    /// A RegexSet containing all the non-normalized patterns used to split on AddedTokens
+    /// An Aho-Corasick trie of all the non-normalized patterns used to split on AddedTokens
     split_trie: MatchingSet,
-    /// A RegexSet containing all the normalized patterns used to split on AddedTokens
+    /// An Aho-Corasick trie of all the normalized patterns used to split on AddedTokens
     split_normalized_trie: MatchingSet,
 
     /// Whether or not special tokens should be splitted when encoding. This is equivalent to ignoring them
@@ -372,9 +372,9 @@ impl AddedVocabulary {
         self.refresh_added_tokens()
     }
 
-    /// Reconstruct our internal RegexSet when new tokens are added to the vocabulary.
-    /// # TODO @ArthurZucker we should probably make this async? rebuilding the regex takes a long time.
-    /// We keep two different RegexSet, one that will take care of matching against the
+    /// Reconstruct our internal matching trie when new tokens are added to the vocabulary.
+    /// # TODO @ArthurZucker we should probably make this async? rebuilding the trie takes a long time.
+    /// We keep two different tries, one that will take care of matching against the
     /// non-normalized string, and one matching against the normalized one.
     fn refresh_added_tokens(&mut self) -> Result<()> {
         // Build two lists: patterns for the normalized trie and for the non-normalized trie.

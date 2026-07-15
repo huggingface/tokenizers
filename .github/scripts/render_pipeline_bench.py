@@ -15,7 +15,10 @@ tk-encode/bench-baseline --example fixture_bench`:
                           mbps: {baseline, pipeline},
                           ids_match, ids_match_baseline,
                           stage_ns_per_byte: {added_split, normalize,
-                                              pre_tokenize, model, total}}]}]}
+                                              pre_tokenize, model, total},
+                          pretok_vs_regex: {cls_simd, cls_scalar,
+                                            onig|null, fancy|null,
+                                            pcre2|null, logos|null}}]}]}
 
 Two series: `baseline` — the latest released tokenizers crate, the bar to beat
 (the in-tree Tokenizer is on its way out, so it isn't benched; it only serves
@@ -786,6 +789,45 @@ def threads_svg(model, mode, meta, baseline_label):
                    subtitle, "".join(grid) + "".join(body) + legend, meta)
 
 
+def pretok_compare_md(model):
+    """Per-fixture 'classify + fsm vs a regex engine' table: the pre-tokenize split beating both onig
+    (C) and fancy-regex (pure Rust), WITH and WITHOUT SIMD. Rendered only for regex pre-tokenizers
+    (a reference is non-null). ns/byte, lower better. pipe-SIMD = the pre-tokenize stage (SIMD classify
+    + scalar fsm); pipe-scalar swaps in the scalar classifier (= pre-tokenize + (cls_scalar - cls_simd));
+    onig/fancy run the model's own pre-tokenizer regex(es)."""
+    engines = ("onig", "fancy", "pcre2", "logos")
+
+    def has_ref(r):
+        pv = r.get("pretok_vs_regex") or {}
+        return r.get("stage_ns_per_byte") and any(pv.get(k) is not None for k in engines)
+    rows = [r for r in model["results"] if has_ref(r)]
+    if not rows:
+        return []
+    cell = lambda v: fnum(v, "{:.1f}")  # noqa: E731 — "—" for null
+    def ratio(v, sp, cp):
+        return f"{v / sp:.1f}× / {v / cp:.1f}×" if (v is not None and sp > 0 and cp > 0) else "—"
+    cols = 4 + 2 * len(engines)  # cls×2 + pipe×2 + one abs + one ×vs per engine
+    md = ["", "**Pre-tokenize: `classify + fsm` vs regex engines** — ns/byte, lower better. The fsm is "
+          "the scalar jump-table in both pipe columns; **SIMD / scalar is the classify pass** (regex "
+          "pre-tokenizers have no SIMD fsm). `×vs` = engine ÷ our pipeline (SIMD / scalar classify); "
+          "`onig` & `pcre2` (JIT) are C, `fancy` is pure-Rust fancy-regex, `logos` is a compile-time DFA "
+          "lexer (approximate grammar; n/a for deepseek).", "",
+          "| Fixture | classify SIMD | classify scalar | pipe (SIMD cls + fsm) | pipe (scalar cls + fsm) | "
+          + " | ".join(engines) + " | " + " | ".join(f"×vs {e}" for e in engines) + " |",
+          "|---" + "|---:" * cols + "|"]
+    for r in sorted(rows, key=lambda r: (r["group"], r["fixture"])):
+        pv = r["pretok_vs_regex"]
+        simd_pipe = r["stage_ns_per_byte"]["pre_tokenize"]
+        scalar_pipe = simd_pipe + max(0.0, pv["cls_scalar"] - pv["cls_simd"])
+        md.append(
+            f"| {r['fixture']} | {fnum(pv['cls_simd'], '{:.2f}')} | {fnum(pv['cls_scalar'], '{:.2f}')} "
+            f"| {fnum(simd_pipe, '{:.2f}')} | {fnum(scalar_pipe, '{:.2f}')} "
+            + "".join(f"| {cell(pv.get(k))} " for k in engines)
+            + " ".join(f"| {ratio(pv.get(k), simd_pipe, scalar_pipe)}" for k in engines)
+            + " |")
+    return md
+
+
 def render_markdown(data, subtitle_base, meta, base, run_id, sizes,
                     base_lookup=None, base_ref=None):
     """Overview charts inline; everything per-model — charts and the per-fixture
@@ -869,6 +911,7 @@ def render_markdown(data, subtitle_base, meta, base, run_id, sizes,
                 f"| {fnum(mb.get('baseline'))} | {fnum(mb.get('pipeline'))} "
                 f"| {fnum(speedup(r), '×{:.2f}')} "
                 f"{base_cell}{stages} | {ids} |")
+        md += pretok_compare_md(m)
         md += ["", "</details>", ""]
 
     # Unsupported / failed-to-load models: roadmap cards, collapsed — they're
