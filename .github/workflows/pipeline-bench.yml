@@ -103,6 +103,11 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v6
 
+      # `onig_sys` (a `bench-baseline` reference-regex dep) generates its bindings with bindgen, which
+      # needs libclang. pcre2/fancy-regex don't. The runner image doesn't ship it.
+      - name: Install libclang (onig_sys → bindgen)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libclang-dev
+
       - name: Download fixtures and model tokenizers
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
@@ -147,8 +152,10 @@ jobs:
 
       # cairosvg (chart rendering) dlopens the system libcairo, which the
       # aws-general-8-plus runner image doesn't ship
-      - name: Install libcairo
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libcairo2
+      # libcairo for chart rendering; libclang for onig_sys's bindgen (the binsize build below pulls
+      # `bench-baseline`, which activates the onig reference-regex dep).
+      - name: Install libcairo + libclang
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libcairo2 libclang-dev
 
       # Only the model tokenizers are needed here (gpt2.json for binsize); the
       # fixture corpora aren't — the numbers already live in the shard JSONs.

@@ -303,7 +303,8 @@ impl Bert {
     }
 }
 
-/// `Cl100k` — the tiktoken cl100k_base / o200k GPT-4 pre-tokenizer (7-rule regex).
+/// `Cl100k` — the tiktoken cl100k_base / Llama-3 pre-tokenizer (7-rule regex). (o200k is a distinct,
+/// case-aware FSM — [`fsm_o200k`].)
 pub struct Cl100k;
 impl Cl100k {
     /// Uses the scalar run-end core: cl100k's letter/ws runs are short on Latin/code (the common case),

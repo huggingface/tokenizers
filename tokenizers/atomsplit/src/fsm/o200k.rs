@@ -3,7 +3,7 @@ use super::*;
 // ── o200k (GPT-4o): case-aware letter split ──────────────────────────────────────────────────────
 
 /// o200k class of a letter-run char (all chars in a run are real `[\p{L}\p{M}]`, never ALPHA_SYM/ZWJ):
-/// `refine::UPPER` → U (`\p{Lu}\p{Lt}`), `refine::LOWER` → L (`\p{Ll}`), else C (caseless `\p{Lm}\p{Lo}
+/// `Atom::UpperLetter` → U (`\p{Lu}\p{Lt}`), `Atom::LowerLetter` → L (`\p{Ll}`), else C (caseless `\p{Lm}\p{Lo}
 /// \p{M}`). The two alt char-classes are `[UC]` = "not L" (`!o_is_lower`) and `[LC]` = "not U".
 #[inline]
 fn o_is_upper(t: u8) -> bool {
@@ -107,7 +107,7 @@ pub fn fsm_o200k(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
     // maximal `[\p{L}\p{M}]+` run from `a` (byte-wise; continuation bytes ride along — see `run_end`).
     let letter_end = |a: usize| -> usize {
         let mut p = a;
-        // logos-style fast loop: 8 tags/chunk, one bounds check, unchecked reads. A plain `Letter`
+        // logos-style fast loop: 16 tags/chunk, one bounds check, unchecked reads. A plain `Letter`
         // (low nibble 0, incl Han — o200k keeps all letters) or a `Cont` byte stays in-run with no
         // `ds_is_zwj` peek; only a coarse `Mark` lane pays the peek. Byte-exact with the scalar scan.
         // SAFETY: `p + 16 <= end <= tags.len()`/`text.len()` in the body.

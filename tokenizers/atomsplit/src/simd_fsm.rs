@@ -11,7 +11,7 @@ use crate::classify::{Atom, char_len};
 use crate::fsm::{Span, emit_class_spans};
 
 /// Class LookUpTable: tag → 0 drop / 1 isolate / 2 keep-A / 3 keep-B; Cont → 0xFF (fill sentinel).
-/// This lookup table is built per parameter DRIP, ISOLATE and KEEP_A. These as
+/// This lookup table is built per parameter DROP, ISOLATE and KEEP_A. These as
 /// [`crate::classify::mask`] u16 bitmap masks. The LUT is indexed with a low nibble u4 (0..15) and
 /// gives the behavior {0, 1, 2, 3} for the class.
 #[inline]

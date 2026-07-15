@@ -1,5 +1,5 @@
 //! Legacy, map-backed token store: the pre-#2129 behavior, kept as a drop-in twin of the fast
-//! [`BucketVocabStore`](crate::bucket_vocab_store::BucketVocabStore). Both expose the same public
+//! [`BucketVocabStore`](crate::vocab::bucket_vocab_store::BucketVocabStore). Both expose the same public
 //! API, so the models compile against either — the legacy `Tokenizer` path uses this store and the
 //! `PipelineTokenizer` path uses the bucket version, which lets the two be compared apples to apples.
 

@@ -58,7 +58,7 @@ impl PipelineSequence {
         Self { pre_tokenizers }
     }
 
-    /// Same recognition as [`Sequence::is_deepseek`], on the converted children: the first three are
+    /// Same recognition as [`crate::utils::is_deepseek`], on the converted children: the first three are
     /// Isolated, non-inverted `Split`s carrying deepseek's `[\p{N}{1,3}, CJK, big]` regexes (the trailing
     /// byte-map `ByteLevel` converts to `PipelinePreTokenizer::None`). Routes the whole split to one
     /// `fsm_deepseek` pass.

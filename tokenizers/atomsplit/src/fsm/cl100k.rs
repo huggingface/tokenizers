@@ -92,7 +92,7 @@ fn cl100k(text: &[u8], tags: &[u8], out: &mut [Span], digit_cap: usize) -> usize
                     } // c ∈ NOT_WS_L_N ⇒ > i
                 };
             }
-            // Mark | Connector | Punct | SymOther | NumericOther | Control (∈ PREFIX2 ∩ NOT_WS_L_N):
+            // Mark | Connector | Punct | SymOther | NumericOther | Control (all in NOT_WS_L_N):
             // rule 2 (prefix + `\p{L}+`) | rule 4
             MRK | CON | PUN | SYM | NMO | CTL => {
                 let a = i + char_len(b);

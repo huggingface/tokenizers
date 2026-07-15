@@ -5,11 +5,11 @@ use crate::atom_tables::ATOM_TABLES;
 ///
 /// Proper tags are obtained by composing `(refine << 4) | coarse`: the **low nibble** is this `Atom` (the coarse class every FSM
 /// shares) and the **high nibble** is an optional *refinement* that sub-splits one coarse class for a
-/// pattern that needs finer granularity — e.g. o200k needs case, so `Letter` carries `refine::UPPER`
-/// (`\p{Lu}∪\p{Lt}`) / `refine::LOWER` (`\p{Ll}`) / `0` (caseless `\p{Lm}\p{Lo}`). The classifier stays
+/// pattern that needs finer granularity — e.g. o200k needs case, so `Letter` refines to `Atom::UpperLetter`
+/// (`\p{Lu}∪\p{Lt}`) / `Atom::LowerLetter` (`\p{Ll}`) / plain `Letter` (caseless `\p{Lm}\p{Lo}`). The classifier stays
 /// agnostic (it just emits the table byte); a coarse consumer collapses the refinement for free —
 /// [`in_mask`] masks it off, and the SIMD class path `& 0x0F`s before its 16-entry LUT — so only the FSM
-/// that opted in (o200k, via [`refine`]) ever sees the high nibble. Ceiling: ≤16 coarse, ≤15 refinements
+/// that opted in (o200k) ever sees the high nibble. Ceiling: ≤16 coarse, ≤15 refinements
 /// per class; a >16-coarse scheme would swap the 16-entry LUT for a 256-entry `tbl256` remap.
 #[repr(u8)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -142,9 +142,9 @@ pub fn classify(text: &[u8], tags: &mut [u8]) {
     classify_scalar(text, tags);
 }
 
-/// The shared scalar walk loop — generic over the scheme. One forward pass; per char-start calls
-/// `S::classify_char`, fills continuation bytes with `S::CONT`. The non-SIMD fallback and the byte-exact
-/// test oracle for the SIMD kernels — not part of the supported public surface.
+/// The shared scalar walk loop. One forward pass; per char-start calls `ATOM_TABLES.classify_char`,
+/// fills continuation bytes with `CONT`. The non-SIMD fallback and the byte-exact test oracle for the
+/// SIMD kernels — not part of the supported public surface.
 #[doc(hidden)]
 pub fn classify_scalar(text: &[u8], tags: &mut [u8]) {
     let n = text.len();

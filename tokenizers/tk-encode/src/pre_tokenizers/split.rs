@@ -32,7 +32,7 @@ pub struct Split {
     pub pattern: SplitPattern,
     /// System-regex backend for the pattern. `None` only when no backend is compiled *and* the
     /// pattern is a recognized GPT regex handled natively by `fsm` — so no backend is needed.
-    /// With a backend present (the default) this is always `Some`, and the legacy path is unchanged.
+    /// With `fancy-regex` enabled this is always `Some`; the default build has no backend (`fsm` only).
     #[serde(skip)]
     pub regex: Option<SysRegex>,
     pub behavior: SplitDelimiterBehavior,
@@ -93,8 +93,8 @@ impl Split {
             SplitPattern::String(_) => None,
             SplitPattern::Regex(r) => gpt_fsm(r),
         };
-        // Compile a system-regex backend for the pattern. With a backend present (the default) this
-        // succeeds and the legacy path is unchanged; with none compiled it's only fatal when atomsplit
+        // Compile a system-regex backend for the pattern. With `fancy-regex` enabled this succeeds and
+        // the legacy path is unchanged; with no backend (the default) it's only fatal when atomsplit
         // can't cover the pattern (i.e. an arbitrary regex, not a recognized GPT one).
         let compiled = match &pattern {
             SplitPattern::String(s) => SysRegex::new(&regex::escape(s)),

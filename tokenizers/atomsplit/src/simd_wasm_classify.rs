@@ -194,8 +194,8 @@ pub unsafe fn classify_wasm(text: &[u8], tags: &mut [u8]) {
             resolved = is_lead2;
         }
 
-        // CJK fast path (leads E3..ED = U+3000..U+DFFF). Enabled only when the scheme collapses all of
-        // CJK to a single tag (Atoms → Letter). This is the OPTIMISTIC bulk: it flags only lanes that
+        // CJK fast path (leads E3..ED = U+3000..U+DFFF). The current scheme folds all of CJK to a
+        // single tag (`CJK_TAG = Atom::Letter`), so this is always on. It is the OPTIMISTIC bulk: it flags only lanes that
         // are DEFINITELY that tag; boundary/hole codepoints it leaves unresolved, so they fall through
         // to the exact 3-byte tables below. It never over-claims, so the result stays byte-exact.
         let in_cjk_leads = in_range(b0, 0xE3, 0xED);

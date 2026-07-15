@@ -50,7 +50,7 @@ pub struct Tables {
 
 impl Tables {
     /// Scalar reader over the dense tables — the portable twin of the SIMD kernel, and the single
-    /// source for `TagScheme::classify_char`, the <32-byte SIMD tail, and the SIMD MB-fixup. Returns
+    /// source for `Tables::classify_char`, the <32-byte SIMD tail, and the SIMD MB-fixup. Returns
     /// the atom for the char starting at `text[i]`. Byte-exact with the SIMD path (same tables).
     #[inline]
     pub fn classify_char(&self, text: &[u8], i: usize) -> u8 {
