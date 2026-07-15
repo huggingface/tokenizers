@@ -3,13 +3,10 @@ use std::sync::{Arc, Mutex};
 
 mod iterators;
 mod normalization;
-mod pretokenization;
 mod regex;
 pub mod serde_pyo3;
 
-pub use iterators::*;
 pub use normalization::*;
-pub use pretokenization::*;
 pub use regex::*;
 
 // RefMut utils

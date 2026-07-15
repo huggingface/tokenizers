@@ -18,13 +18,10 @@ static TOKIO_RUNTIME: Lazy<Arc<Runtime>> = Lazy::new(|| {
         .expect("Failed to create global Tokio runtime");
     Arc::new(rt)
 });
-mod decoders;
-mod encoding;
 mod error;
 mod models;
 mod normalizers;
 mod pre_tokenizers;
-mod processors;
 mod token;
 mod tokenizer;
 mod trainers;
@@ -52,8 +49,6 @@ pub mod tokenizers {
     use super::*;
 
     #[pymodule_export]
-    pub use super::encoding::PyEncoding;
-    #[pymodule_export]
     pub use super::token::PyToken;
     #[pymodule_export]
     pub use super::tokenizer::PyAddedToken;
@@ -62,20 +57,14 @@ pub mod tokenizers {
     #[pymodule_export]
     pub use super::utils::PyNormalizedString;
     #[pymodule_export]
-    pub use super::utils::PyPreTokenizedString;
-    #[pymodule_export]
     pub use super::utils::PyRegex;
 
-    #[pymodule_export]
-    pub use super::decoders::decoders;
     #[pymodule_export]
     pub use super::models::models;
     #[pymodule_export]
     pub use super::normalizers::normalizers;
     #[pymodule_export]
     pub use super::pre_tokenizers::pre_tokenizers;
-    #[pymodule_export]
-    pub use super::processors::processors;
     #[pymodule_export]
     pub use super::trainers::trainers;
 

@@ -14,7 +14,6 @@ use tk::models::unigram::Unigram;
 use tk::models::wordlevel::WordLevel;
 use tk::models::wordpiece::{WordPiece, WordPieceBuilder};
 use tk::models::ModelWrapper;
-use tk::tokenizer::PreTokenizedString;
 use tk::{Model, Token, Trainable};
 use tokenizers as tk;
 
@@ -48,23 +47,6 @@ impl PyModel {
 impl Model for PyModel {
     fn tokenize(&self, tokens: &str) -> tk::Result<Vec<Token>> {
         self.model.read().unwrap().tokenize(tokens)
-    }
-
-    /// See [`Model::tokenize_in_pretokenized`] for the lock-once rationale.
-    fn tokenize_in_pretokenized(
-        &self,
-        pretokenized: &mut PreTokenizedString,
-        truncation: Option<(usize, tk::TruncationDirection)>,
-    ) -> tk::Result<()> {
-        let guard = self.model.read().unwrap();
-        match truncation {
-            Some((max_tokens, direction)) => pretokenized.tokenize_with_limit(
-                |normalized| guard.tokenize(normalized.get()),
-                max_tokens,
-                direction,
-            ),
-            None => pretokenized.tokenize(|normalized| guard.tokenize(normalized.get())),
-        }
     }
 
     fn token_to_id(&self, token: &str) -> Option<u32> {

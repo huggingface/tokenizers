@@ -147,23 +147,6 @@ impl PyPreTokenizer {
         }
     }
 
-    /// Pre-tokenize a :class:`~tokenizers.PyPreTokenizedString` in-place
-    ///
-    /// This method allows to modify a :class:`~tokenizers.PreTokenizedString` to
-    /// keep track of the pre-tokenization, and leverage the capabilities of the
-    /// :class:`~tokenizers.PreTokenizedString`. If you just want to see the result of
-    /// the pre-tokenization of a raw string, you can use
-    /// :meth:`~tokenizers.pre_tokenizers.PreTokenizer.pre_tokenize_str`
-    ///
-    /// Args:
-    ///     pretok (:class:`~tokenizers.PreTokenizedString):
-    ///         The pre-tokenized string on which to apply this
-    ///         :class:`~tokenizers.pre_tokenizers.PreTokenizer`
-    #[pyo3(text_signature = "(self, pretok)")]
-    fn pre_tokenize(&self, pretok: &mut PyPreTokenizedString) -> PyResult<()> {
-        ToPyResult(self.pretok.pre_tokenize(&mut pretok.pretok)).into()
-    }
-
     /// Pre tokenize the given string
     ///
     /// This method provides a way to visualize the effect of a
@@ -900,13 +883,10 @@ impl CustomPreTokenizer {
 }
 
 impl tk::tokenizer::PreTokenizer for CustomPreTokenizer {
-    fn pre_tokenize(&self, sentence: &mut PreTokenizedString) -> tk::Result<()> {
-        Python::attach(|py| {
-            let pretok = PyPreTokenizedStringRefMut::new(sentence);
-            let py_pretok = self.inner.bind(py);
-            py_pretok.call_method("pre_tokenize", (pretok.get().clone(),), None)?;
-            Ok(())
-        })
+    fn pre_tokenize(&self, _sentence: &mut PreTokenizedString) -> tk::Result<()> {
+        // ponytail: custom Python pre-tokenizers relied on PyPreTokenizedStringRefMut, which was
+        // part of the removed offset/encoding machinery. The pipeline-only build can't drive them.
+        Err("custom Python PreTokenizers are not supported in this pipeline-only build".into())
     }
 }
 

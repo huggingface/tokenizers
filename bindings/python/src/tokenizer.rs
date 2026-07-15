@@ -1,34 +1,23 @@
 use serde::{ser::Error as SerError, Serialize, Serializer};
-use std::collections::{hash_map::DefaultHasher, HashMap};
+use std::collections::{hash_map::DefaultHasher, BTreeMap, HashMap};
 use std::hash::{Hash, Hasher};
+use std::str::FromStr;
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
-use numpy::{npyffi, PyArray1, PyArrayMethods};
 use pyo3::class::basic::CompareOp;
 use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::*;
-use pyo3::IntoPyObject;
-use pyo3::{exceptions, IntoPyObjectExt};
+use pyo3::{exceptions, IntoPyObject};
 use tk::models::bpe::BPE;
-use tk::tokenizer::{
-    PaddingDirection, PaddingParams, PaddingStrategy, PostProcessor, TokenizerImpl,
-    TruncationDirection, TruncationParams, TruncationStrategy,
-};
-use tk::utils::iter::ResultShunt;
-use tk::{TokenizerTrainExt, Trainable};
+use tk::tokenizer::pipeline::PipelineTokenizer;
+use tk::tokenizer::TokenizerImpl;
 use tokenizers as tk;
 
-use super::decoders::PyDecoder;
-use super::encoding::PyEncoding;
-use super::error::{PyError, ToPyResult};
+use super::error::ToPyResult;
 use super::models::PyModel;
 use super::normalizers::PyNormalizer;
 use super::pre_tokenizers::PyPreTokenizer;
-use super::trainers::PyTrainer;
-use crate::processors::PyPostProcessor;
-use crate::utils::{MaybeSizedIterator, PyBufferedIterator};
-use std::collections::BTreeMap;
 
 /// Represents a token that can be be added to a :class:`~tokenizers.Tokenizer`.
 /// It can have special options that defines the way it should behave.
@@ -267,259 +256,24 @@ impl PyAddedToken {
     }
 }
 
-struct TextInputSequence<'s>(tk::InputSequence<'s>);
-impl<'a, 'py> FromPyObject<'a, 'py> for TextInputSequence<'py> {
-    type Error = PyErr;
-
-    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> Result<Self, Self::Error> {
-        let err = exceptions::PyTypeError::new_err("TextInputSequence must be str");
-        if let Ok(s) = ob.extract::<String>() {
-            Ok(Self(s.into()))
-        } else {
-            Err(err)
-        }
-    }
-}
-impl<'s> From<TextInputSequence<'s>> for tk::InputSequence<'s> {
-    fn from(s: TextInputSequence<'s>) -> Self {
-        s.0
-    }
-}
-
-struct PyArrayUnicode(Vec<String>);
-impl<'a, 'py> FromPyObject<'a, 'py> for PyArrayUnicode {
-    type Error = PyErr;
-
-    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> Result<Self, Self::Error> {
-        // SAFETY Making sure the pointer is a valid numpy array requires calling numpy C code
-        if unsafe { npyffi::PyArray_Check(ob.py(), ob.as_ptr()) } == 0 {
-            return Err(exceptions::PyTypeError::new_err("Expected an np.array"));
-        }
-        let arr = ob.as_ptr() as *mut npyffi::PyArrayObject;
-        // SAFETY Getting all the metadata about the numpy array to check its sanity
-        let (type_num, elsize, _alignment, data, nd, flags) = unsafe {
-            let desc = (*arr).descr;
-            (
-                (*desc).type_num,
-                npyffi::PyDataType_ELSIZE(ob.py(), desc) as usize,
-                npyffi::PyDataType_ALIGNMENT(ob.py(), desc) as usize,
-                (*arr).data,
-                (*arr).nd,
-                (*arr).flags,
-            )
-        };
-
-        if nd != 1 {
-            return Err(exceptions::PyTypeError::new_err(
-                "Expected a 1 dimensional np.array",
-            ));
-        }
-        if flags & (npyffi::NPY_ARRAY_C_CONTIGUOUS | npyffi::NPY_ARRAY_F_CONTIGUOUS) == 0 {
-            return Err(exceptions::PyTypeError::new_err(
-                "Expected a contiguous np.array",
-            ));
-        }
-        if type_num != npyffi::types::NPY_TYPES::NPY_UNICODE as i32 {
-            return Err(exceptions::PyTypeError::new_err(
-                "Expected a np.array[dtype='U']",
-            ));
-        }
-
-        // SAFETY Looking at the raw numpy data to create new owned Rust strings via copies (so it's safe afterwards).
-        unsafe {
-            let n_elem = *(*arr).dimensions as usize;
-            let all_bytes = std::slice::from_raw_parts(data as *const u8, elsize * n_elem);
-
-            let seq = (0..n_elem)
-                .map(|i| {
-                    let bytes = &all_bytes[i * elsize..(i + 1) * elsize];
-                    Ok(std::str::from_utf8(bytes)
-                        .map_err(|e| exceptions::PyValueError::new_err(e.to_string()))?
-                        .to_owned())
-                    // let unicode = pyo3::ffi::PyUnicode_FromKindAndData(
-                    //     pyo3::ffi::PyUnicode_4BYTE_KIND as _,
-                    //     bytes.as_ptr() as *const _,
-                    //     elsize as isize / alignment as isize,
-                    // );
-                    // let py = ob.py();
-                    // let obj = Py<PyAny>::from_owned_ptr(py, unicode);
-                    // let s = obj.downcast_bound::<PyString>(py)?;
-                    // Ok(s.to_string_lossy().trim_matches(char::from(0)).to_owned())
-                })
-                .collect::<PyResult<Vec<_>>>()?;
-
-            Ok(Self(seq))
-        }
-    }
-}
-impl From<PyArrayUnicode> for tk::InputSequence<'_> {
-    fn from(s: PyArrayUnicode) -> Self {
-        s.0.into()
-    }
-}
-
-struct PyArrayStr(Vec<String>);
-
-impl<'a, 'py> FromPyObject<'a, 'py> for PyArrayStr {
-    type Error = PyErr;
-
-    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> Result<Self, Self::Error> {
-        let array = ob.cast::<PyArray1<Py<PyAny>>>()?;
-        let seq = array
-            .readonly()
-            .as_array()
-            .iter()
-            .map(|obj| {
-                let s = obj.cast_bound::<PyString>(ob.py())?;
-                Ok(s.to_string_lossy().into_owned())
-            })
-            .collect::<PyResult<Vec<_>>>()?;
-
-        Ok(Self(seq))
-    }
-}
-impl From<PyArrayStr> for tk::InputSequence<'_> {
-    fn from(s: PyArrayStr) -> Self {
-        s.0.into()
-    }
-}
-
-struct PreTokenizedInputSequence<'s>(tk::InputSequence<'s>);
-impl<'a, 'py> FromPyObject<'a, 'py> for PreTokenizedInputSequence<'py> {
-    type Error = PyErr;
-
-    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> Result<Self, Self::Error> {
-        if let Ok(seq) = ob.extract::<PyArrayUnicode>() {
-            return Ok(Self(seq.into()));
-        }
-        if let Ok(seq) = ob.extract::<PyArrayStr>() {
-            return Ok(Self(seq.into()));
-        }
-        if let Ok(s) = ob.cast::<PyList>() {
-            if let Ok(seq) = s.extract::<Vec<String>>() {
-                return Ok(Self(seq.into()));
-            }
-        }
-        if let Ok(s) = ob.cast::<PyTuple>() {
-            if let Ok(seq) = s.extract::<Vec<String>>() {
-                return Ok(Self(seq.into()));
-            }
-        }
-        Err(exceptions::PyTypeError::new_err(
-            "PreTokenizedInputSequence must be Union[List[str], Tuple[str]]",
-        ))
-    }
-}
-impl<'s> From<PreTokenizedInputSequence<'s>> for tk::InputSequence<'s> {
-    fn from(s: PreTokenizedInputSequence<'s>) -> Self {
-        s.0
-    }
-}
-
-struct TextEncodeInput<'s>(tk::EncodeInput<'s>);
-impl<'a, 'py> FromPyObject<'a, 'py> for TextEncodeInput<'py> {
-    type Error = PyErr;
-
-    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> Result<Self, Self::Error> {
-        if let Ok(i) = ob.extract::<TextInputSequence>() {
-            return Ok(Self(i.into()));
-        }
-        if let Ok((i1, i2)) = ob.extract::<(TextInputSequence, TextInputSequence)>() {
-            return Ok(Self((i1, i2).into()));
-        }
-        if let Ok(arr) = ob.extract::<Vec<Py<PyAny>>>() {
-            if arr.len() == 2 {
-                let py = ob.py();
-                let first = arr[0].bind(py).extract::<TextInputSequence>()?;
-                let second = arr[1].bind(py).extract::<TextInputSequence>()?;
-                return Ok(Self((first, second).into()));
-            }
-        }
-        Err(exceptions::PyTypeError::new_err(
-            "TextEncodeInput must be Union[TextInputSequence, Tuple[InputSequence, InputSequence]]",
-        ))
-    }
-}
-impl<'s> From<TextEncodeInput<'s>> for tk::tokenizer::EncodeInput<'s> {
-    fn from(i: TextEncodeInput<'s>) -> Self {
-        i.0
-    }
-}
-struct PreTokenizedEncodeInput<'s>(tk::EncodeInput<'s>);
-impl<'a, 'py> FromPyObject<'a, 'py> for PreTokenizedEncodeInput<'py> {
-    type Error = PyErr;
-
-    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> Result<Self, Self::Error> {
-        if let Ok(i) = ob.extract::<PreTokenizedInputSequence>() {
-            return Ok(Self(i.into()));
-        }
-        if let Ok((i1, i2)) = ob.extract::<(PreTokenizedInputSequence, PreTokenizedInputSequence)>()
-        {
-            return Ok(Self((i1, i2).into()));
-        }
-        if let Ok(arr) = ob.extract::<Vec<Py<PyAny>>>() {
-            if arr.len() == 2 {
-                let py = ob.py();
-                let first = arr[0].bind(py).extract::<PreTokenizedInputSequence>()?;
-                let second = arr[1].bind(py).extract::<PreTokenizedInputSequence>()?;
-                return Ok(Self((first, second).into()));
-            }
-        }
-        Err(exceptions::PyTypeError::new_err(
-            "PreTokenizedEncodeInput must be Union[PreTokenizedInputSequence, \
-            Tuple[PreTokenizedInputSequence, PreTokenizedInputSequence]]",
-        ))
-    }
-}
-impl<'s> From<PreTokenizedEncodeInput<'s>> for tk::tokenizer::EncodeInput<'s> {
-    fn from(i: PreTokenizedEncodeInput<'s>) -> Self {
-        i.0
-    }
-}
-
-type Tokenizer = TokenizerImpl<PyModel, PyNormalizer, PyPreTokenizer, PyPostProcessor, PyDecoder>;
+/// The inner tokenizer: pipeline-only, so it carries just the model, normalizer and
+/// pre-tokenizer config (no post-processor / decoder / padding / truncation any more).
+type Tokenizer = TokenizerImpl<PyModel, PyNormalizer, PyPreTokenizer>;
 
 /// A :obj:`Tokenizer` works as a pipeline. It processes some raw text as input
-/// and outputs an :class:`~tokenizers.Encoding`.
+/// and outputs a list of token ids.
 ///
-/// The pipeline is structured as follows:
-///
-///     1. The :class:`~tokenizers.normalizers.Normalizer` normalizes the raw input text.
-///     2. The :class:`~tokenizers.pre_tokenizers.PreTokenizer` splits the normalized text
-///        into word-level tokens.
-///     3. The :class:`~tokenizers.models.Model` tokenizes each word into subword tokens
-///        and maps them to IDs.
-///     4. The :class:`~tokenizers.processors.PostProcessor` applies any final
-///        transformations (e.g., adding special tokens like ``[CLS]`` and ``[SEP]``).
+/// The pipeline is: normalize -> pre-tokenize -> model (subword -> id). This build is
+/// **inference-only** (the fast `PipelineTokenizer` engine); decoding, offsets, padding,
+/// truncation and post-processing are not available.
 ///
 /// Args:
 ///     model (:class:`~tokenizers.models.Model`):
 ///         The core algorithm that this :obj:`Tokenizer` should be using.
-///
-/// Example::
-///
-///     >>> from tokenizers import Tokenizer
-///     >>> from tokenizers.models import BPE
-///     >>> from tokenizers.normalizers import Lowercase
-///     >>> from tokenizers.pre_tokenizers import Whitespace
-///     >>> tokenizer = Tokenizer(BPE(unk_token="<unk>"))
-///     >>> tokenizer.normalizer = Lowercase()
-///     >>> tokenizer.pre_tokenizer = Whitespace()
-///     >>> # Load a pre-built tokenizer from HuggingFace Hub
-///     >>> tokenizer = Tokenizer.from_pretrained("bert-base-uncased")
-///
-#[pyclass(
-    dict,
-    weakref,
-    module = "tokenizers",
-    name = "Tokenizer",
-    from_py_object
-)]
+#[pyclass(dict, weakref, module = "tokenizers", name = "Tokenizer", from_py_object)]
 pub struct PyTokenizer {
-    /// `Arc` so cloning is a refcount bump (matches the pre-RwLock semantics
-    /// where the inner tokenizer was shared across `PyTokenizer` clones).
-    /// `RwLock` so concurrent setters and encoders don't race PyO3's
-    /// per-pyclass borrow check on free-threaded Python.
+    /// `Arc` so cloning is a refcount bump; `RwLock` so concurrent setters and
+    /// encoders don't race PyO3's per-pyclass borrow check on free-threaded Python.
     pub(crate) tokenizer: Arc<RwLock<Tokenizer>>,
 }
 
@@ -533,8 +287,6 @@ impl Clone for PyTokenizer {
 
 impl Serialize for PyTokenizer {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        // Equivalent to the previous `#[serde(transparent)]` derive — forward
-        // through to the inner Tokenizer.
         let guard = self
             .tokenizer
             .read()
@@ -550,16 +302,12 @@ impl PyTokenizer {
         }
     }
 
-    /// Acquire the inner tokenizer for reading; surfaces lock poisoning as a
-    /// `PyException` instead of panicking.
     pub(crate) fn read_inner(&self) -> PyResult<RwLockReadGuard<'_, Tokenizer>> {
         self.tokenizer
             .read()
             .map_err(|_| exceptions::PyException::new_err("Tokenizer RwLock is poisoned"))
     }
 
-    /// Acquire the inner tokenizer for writing; surfaces lock poisoning as a
-    /// `PyException` instead of panicking.
     pub(crate) fn write_inner(&self) -> PyResult<RwLockWriteGuard<'_, Tokenizer>> {
         self.tokenizer
             .write()
@@ -570,109 +318,29 @@ impl PyTokenizer {
         PyTokenizer::new(TokenizerImpl::new(model))
     }
 
-    // Extract a pretokenized sequence into an owned Vec<String>
-    fn extract_pretok_seq(ob: &Bound<'_, PyAny>) -> PyResult<Vec<String>> {
-        if let Ok(seq) = ob.extract::<PyArrayUnicode>() {
-            return Ok(seq.0);
-        }
-        if let Ok(seq) = ob.extract::<PyArrayStr>() {
-            return Ok(seq.0);
-        }
-        if let Ok(list) = ob.cast::<PyList>() {
-            return list.extract::<Vec<String>>();
-        }
-        if let Ok(tup) = ob.cast::<PyTuple>() {
-            return tup.extract::<Vec<String>>();
-        }
-        Err(exceptions::PyTypeError::new_err(
-            "PreTokenizedInputSequence must be List[str] | Tuple[str] | np.ndarray[U] | np.ndarray[object[str]]",
-        ))
-    }
-
-    // Convert Python inputs into fully-owned EncodeInput<'static>
-    fn build_owned_encode_inputs(
-        items: &[Bound<'_, PyAny>],
-        is_pretokenized: bool,
-    ) -> PyResult<Vec<tk::EncodeInput<'static>>> {
-        let mut out = Vec::with_capacity(items.len());
-
-        for it in items {
-            if is_pretokenized {
-                // Pair?
-                if let Ok(tup) = it.cast::<PyTuple>() {
-                    if tup.len() == 2 {
-                        let a = Self::extract_pretok_seq(&tup.get_item(0)?)?;
-                        let b = Self::extract_pretok_seq(&tup.get_item(1)?)?;
-                        out.push(tk::EncodeInput::Dual(a.into(), b.into()));
-                        continue;
-                    }
-                }
-                if let Ok(lst) = it.cast::<PyList>() {
-                    if lst.len() == 2 {
-                        let a = Self::extract_pretok_seq(&lst.get_item(0)?)?;
-                        let b = Self::extract_pretok_seq(&lst.get_item(1)?)?;
-                        out.push(tk::EncodeInput::Dual(a.into(), b.into()));
-                        continue;
-                    }
-                }
-                // Single pretokenized
-                let a = Self::extract_pretok_seq(it)?;
-                out.push(tk::EncodeInput::Single(a.into()));
-            } else {
-                // Raw text: pair?
-                if let Ok(tup) = it.cast::<PyTuple>() {
-                    if tup.len() == 2 {
-                        let a: String = tup.get_item(0)?.extract()?;
-                        let b: String = tup.get_item(1)?.extract()?;
-                        out.push(tk::EncodeInput::Dual(a.into(), b.into()));
-                        continue;
-                    }
-                }
-                if let Ok(lst) = it.cast::<PyList>() {
-                    if lst.len() == 2
-                        && lst.get_item(0)?.cast::<PyString>().is_ok()
-                        && lst.get_item(1)?.cast::<PyString>().is_ok()
-                    {
-                        let a: String = lst.get_item(0)?.extract()?;
-                        let b: String = lst.get_item(1)?.extract()?;
-                        out.push(tk::EncodeInput::Dual(a.into(), b.into()));
-                        continue;
-                    }
-                }
-                // Single raw text
-                let s: String = it.extract()?;
-                out.push(tk::EncodeInput::Single(s.into()));
-            }
-        }
-        Ok(out)
-    }
-
-    // Helper method to build a single owned encode input
-    fn build_single_owned_encode_input(
-        sequence: &Bound<'_, PyAny>,
-        pair: Option<&Bound<'_, PyAny>>,
-        is_pretokenized: bool,
-    ) -> PyResult<tk::EncodeInput<'static>> {
-        let owned_sequence: tk::InputSequence<'static> = if is_pretokenized {
-            let seq = Self::extract_pretok_seq(sequence)?;
-            seq.into()
-        } else {
-            let s: String = sequence.extract()?;
-            s.into()
+    /// Build a fast `PipelineTokenizer` for the current config.
+    ///
+    /// The Python tokenizer carries `Py*` component wrappers; the pipeline needs the concrete
+    /// `tk_encode` wrappers, so we round-trip through the (identical) tokenizer.json serde
+    /// representation. ponytail: rebuilt per encode call — correct but not cached; add a
+    /// mutation-invalidated cache if encode throughput matters.
+    fn build_pipeline(&self) -> PyResult<PipelineTokenizer> {
+        let json = {
+            let guard = self.read_inner()?;
+            serde_json::to_string(&*guard).map_err(|e| {
+                exceptions::PyException::new_err(format!(
+                    "Cannot serialize tokenizer for the pipeline: {e}"
+                ))
+            })?
         };
-
-        if let Some(pair) = pair {
-            let owned_pair: tk::InputSequence<'static> = if is_pretokenized {
-                let seq = Self::extract_pretok_seq(pair)?;
-                seq.into()
-            } else {
-                let s: String = pair.extract()?;
-                s.into()
-            };
-            Ok(tk::EncodeInput::Dual(owned_sequence, owned_pair))
-        } else {
-            Ok(tk::EncodeInput::Single(owned_sequence))
-        }
+        let concrete = tk::Tokenizer::from_str(&json).map_err(|e| {
+            exceptions::PyException::new_err(format!("Cannot rebuild tokenizer: {e}"))
+        })?;
+        PipelineTokenizer::try_from(&concrete).map_err(|e| {
+            exceptions::PyException::new_err(format!(
+                "This tokenizer is not supported by the pipeline encode path: {e}"
+            ))
+        })
     }
 }
 
@@ -716,14 +384,6 @@ impl PyTokenizer {
     }
 
     /// Instantiate a new :class:`~tokenizers.Tokenizer` from the given JSON string.
-    ///
-    /// Args:
-    ///     json (:obj:`str`):
-    ///         A valid JSON string representing a previously serialized
-    ///         :class:`~tokenizers.Tokenizer`
-    ///
-    /// Returns:
-    ///     :class:`~tokenizers.Tokenizer`: The new tokenizer
     #[staticmethod]
     #[pyo3(signature = (json) -> "Tokenizer")]
     #[pyo3(text_signature = "(json)")]
@@ -733,14 +393,6 @@ impl PyTokenizer {
     }
 
     /// Instantiate a new :class:`~tokenizers.Tokenizer` from the file at the given path.
-    ///
-    /// Args:
-    ///     path (:obj:`str`):
-    ///         A path to a local JSON file representing a previously serialized
-    ///         :class:`~tokenizers.Tokenizer`
-    ///
-    /// Returns:
-    ///     :class:`~tokenizers.Tokenizer`: The new tokenizer
     #[staticmethod]
     #[pyo3(signature = (path) -> "Tokenizer")]
     #[pyo3(text_signature = "(path)")]
@@ -750,40 +402,20 @@ impl PyTokenizer {
     }
 
     /// Instantiate a new :class:`~tokenizers.Tokenizer` from the given buffer.
-    ///
-    /// Args:
-    ///     buffer (:obj:`bytes`):
-    ///         A buffer containing a previously serialized :class:`~tokenizers.Tokenizer`
-    ///
-    /// Returns:
-    ///     :class:`~tokenizers.Tokenizer`: The new tokenizer
     #[staticmethod]
     #[pyo3(signature = (buffer) -> "Tokenizer")]
     #[pyo3(text_signature = "(buffer)")]
     fn from_buffer(buffer: &Bound<'_, PyBytes>) -> PyResult<Self> {
-        let tokenizer = serde_json::from_slice(buffer.as_bytes()).map_err(|e| {
+        let tokenizer: Tokenizer = serde_json::from_slice(buffer.as_bytes()).map_err(|e| {
             exceptions::PyValueError::new_err(format!(
                 "Cannot instantiate Tokenizer from buffer: {e}"
             ))
         })?;
-        Ok(Self { tokenizer })
+        Ok(Self::new(tokenizer))
     }
 
     /// Instantiate a new :class:`~tokenizers.Tokenizer` from an existing file on the
     /// Hugging Face Hub.
-    ///
-    /// Args:
-    ///     identifier (:obj:`str`):
-    ///         The identifier of a Model on the Hugging Face Hub, that contains
-    ///         a tokenizer.json file
-    ///     revision (:obj:`str`, defaults to `main`):
-    ///         A branch or commit id
-    ///     token (:obj:`str`, `optional`, defaults to `None`):
-    ///         An optional auth token used to access private repositories on the
-    ///         Hugging Face Hub
-    ///
-    /// Returns:
-    ///     :class:`~tokenizers.Tokenizer`: The new tokenizer
     #[staticmethod]
     #[pyo3(signature = (identifier, revision = String::from("main"), token = None) -> "Tokenizer")]
     #[pyo3(text_signature = "(identifier, revision=\"main\", token=None)")]
@@ -813,13 +445,6 @@ impl PyTokenizer {
     }
 
     /// Gets a serialized string representing this :class:`~tokenizers.Tokenizer`.
-    ///
-    /// Args:
-    ///     pretty (:obj:`bool`, defaults to :obj:`False`):
-    ///         Whether the JSON string should be pretty formatted.
-    ///
-    /// Returns:
-    ///     :obj:`str`: A string representing the serialized Tokenizer
     #[pyo3(signature = (pretty = false) -> "str")]
     #[pyo3(text_signature = "(self, pretty=False)")]
     fn to_str(&self, pretty: bool) -> PyResult<String> {
@@ -827,13 +452,6 @@ impl PyTokenizer {
     }
 
     /// Save the :class:`~tokenizers.Tokenizer` to the file at the given path.
-    ///
-    /// Args:
-    ///     path (:obj:`str`):
-    ///         A path to a file in which to save the serialized tokenizer.
-    ///
-    ///     pretty (:obj:`bool`, defaults to :obj:`True`):
-    ///         Whether the JSON file should be pretty formatted.
     #[pyo3(signature = (path, pretty = true) -> "None")]
     #[pyo3(text_signature = "(self, path, pretty=True)")]
     fn save(&self, path: &str, pretty: bool) -> PyResult<()> {
@@ -850,831 +468,99 @@ impl PyTokenizer {
             .map_err(|e| exceptions::PyException::new_err(e.to_string()))
     }
 
-    /// Return the number of special tokens that would be added for single/pair sentences.
-    /// :param is_pair: Boolean indicating if the input would be a single sentence or a pair
-    /// :return:
-    #[pyo3(text_signature = "(self, is_pair)")]
-    fn num_special_tokens_to_add(&self, is_pair: bool) -> usize {
-        self.tokenizer
-            .read()
-            .unwrap()
-            .get_post_processor()
-            .map_or(0, |p| p.added_tokens(is_pair))
-    }
-
     /// Get the underlying vocabulary
-    ///
-    /// Args:
-    ///     with_added_tokens (:obj:`bool`, defaults to :obj:`True`):
-    ///         Whether to include the added tokens
-    ///
-    /// Returns:
-    ///     :obj:`Dict[str, int]`: The vocabulary
     #[pyo3(signature = (with_added_tokens = true) -> "dict[str, int]")]
     #[pyo3(text_signature = "(self, with_added_tokens=True)")]
     fn get_vocab(&self, with_added_tokens: bool) -> PyResult<HashMap<String, u32>> {
         Ok(self.read_inner()?.get_vocab(with_added_tokens))
     }
 
-    /// Get the underlying vocabulary
-    ///
-    /// Returns:
-    ///     :obj:`Dict[int, AddedToken]`: The vocabulary
+    /// Get the underlying added-token map, keyed by id.
     #[pyo3(signature = () -> "dict[int, AddedToken]")]
     #[pyo3(text_signature = "(self)")]
     fn get_added_tokens_decoder(&self) -> PyResult<BTreeMap<u32, PyAddedToken>> {
         let mut sorted_map = BTreeMap::new();
-
         for (key, value) in self.read_inner()?.get_added_tokens_decoder() {
             sorted_map.insert(key, value.into());
         }
-
         Ok(sorted_map)
     }
 
     /// Get the size of the underlying vocabulary
-    ///
-    /// Args:
-    ///     with_added_tokens (:obj:`bool`, defaults to :obj:`True`):
-    ///         Whether to include the added tokens
-    ///
-    /// Returns:
-    ///     :obj:`int`: The size of the vocabulary
     #[pyo3(signature = (with_added_tokens = true) -> "int")]
     #[pyo3(text_signature = "(self, with_added_tokens=True)")]
-    fn get_vocab_size(&self, with_added_tokens: bool) -> usize {
-        self.tokenizer
-            .read()
-            .unwrap()
-            .get_vocab_size(with_added_tokens)
+    fn get_vocab_size(&self, with_added_tokens: bool) -> PyResult<usize> {
+        Ok(self.read_inner()?.get_vocab_size(with_added_tokens))
     }
 
-    /// Enable truncation
+    /// Encode the given sequence into token ids.
     ///
     /// Args:
-    ///     max_length (:obj:`int`):
-    ///         The max length at which to truncate
-    ///
-    ///     stride (:obj:`int`, `optional`):
-    ///         The length of the previous first sequence to be included in the overflowing
-    ///         sequence
-    ///
-    ///     strategy (:obj:`str`, `optional`, defaults to :obj:`longest_first`):
-    ///         The strategy used to truncation. Can be one of ``longest_first``, ``only_first`` or
-    ///         ``only_second``.
-    ///
-    ///     direction (:obj:`str`, defaults to :obj:`right`):
-    ///         Truncate direction
-    #[pyo3(signature = (max_length, **kwargs) -> "None")]
-    #[pyo3(
-        text_signature = "(self, max_length, stride=0, strategy='longest_first', direction='right')"
-    )]
-    fn enable_truncation(
-        &self,
-        max_length: usize,
-        kwargs: Option<&Bound<'_, PyDict>>,
-    ) -> PyResult<()> {
-        let mut params = TruncationParams {
-            max_length,
-            ..Default::default()
-        };
-
-        if let Some(kwargs) = kwargs {
-            for (key, value) in kwargs {
-                let key: String = key.extract()?;
-                match key.as_ref() {
-                    "stride" => params.stride = value.extract()?,
-                    "strategy" => {
-                        let value: String = value.extract()?;
-                        params.strategy = match value.as_ref() {
-                            "longest_first" => Ok(TruncationStrategy::LongestFirst),
-                            "only_first" => Ok(TruncationStrategy::OnlyFirst),
-                            "only_second" => Ok(TruncationStrategy::OnlySecond),
-                            _ => Err(PyError(format!(
-                                "Unknown `strategy`: `{value}`. Use \
-                                 one of `longest_first`, `only_first`, or `only_second`"
-                            ))
-                            .into_pyerr::<exceptions::PyValueError>()),
-                        }?
-                    }
-                    "direction" => {
-                        let value: String = value.extract()?;
-                        params.direction = match value.as_ref() {
-                            "left" => Ok(TruncationDirection::Left),
-                            "right" => Ok(TruncationDirection::Right),
-                            _ => Err(PyError(format!(
-                                "Unknown `direction`: `{value}`. Use \
-                                 one of `left` or `right`."
-                            ))
-                            .into_pyerr::<exceptions::PyValueError>()),
-                        }?
-                    }
-                    _ => println!("Ignored unknown kwarg option {key}"),
-                }
-            }
-        }
-
-        if let Err(error_message) = self
-            .tokenizer
-            .write()
-            .unwrap()
-            .with_truncation(Some(params))
-        {
-            return Err(PyError(error_message.to_string()).into_pyerr::<exceptions::PyValueError>());
-        }
-        Ok(())
-    }
-
-    /// Disable truncation
-    #[pyo3(text_signature = "(self)")]
-    fn no_truncation(&self) {
-        self.tokenizer
-            .write()
-            .unwrap()
-            .with_truncation(None)
-            .expect("Failed to set truncation to `None`! This should never happen");
-    }
-
-    /// Get the currently set truncation parameters
-    ///
-    /// `Cannot set, use` :meth:`~tokenizers.Tokenizer.enable_truncation` `instead`
+    ///     sequence (:obj:`str`): The sequence to encode.
+    ///     add_special_tokens (:obj:`bool`, defaults to :obj:`True`): Whether to add the special
+    ///         tokens.
     ///
     /// Returns:
-    ///     (:obj:`dict`, `optional`):
-    ///         A dict with the current truncation parameters if truncation is enabled
-    #[getter]
-    fn get_truncation<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyDict>>> {
-        self.tokenizer
-            .read()
-            .unwrap()
-            .get_truncation()
-            .map_or(Ok(None), |params| {
-                let dict = PyDict::new(py);
-
-                dict.set_item("max_length", params.max_length)?;
-                dict.set_item("stride", params.stride)?;
-                dict.set_item("strategy", params.strategy.as_ref())?;
-                dict.set_item("direction", params.direction.as_ref())?;
-
-                Ok(Some(dict))
-            })
+    ///     :obj:`list[int]`: The token ids.
+    #[pyo3(signature = (sequence, add_special_tokens = true) -> "list[int]")]
+    #[pyo3(text_signature = "(self, sequence, add_special_tokens=True)")]
+    fn encode(&self, sequence: &str, add_special_tokens: bool) -> PyResult<Vec<u32>> {
+        let pipeline = self.build_pipeline()?;
+        let tokens = pipeline
+            .encode(sequence, add_special_tokens)
+            .map_err(|e| exceptions::PyException::new_err(e.to_string()))?;
+        Ok(tokens.into_iter().map(|t| t.id).collect())
     }
 
-    /// Enable the padding
-    ///
-    /// Args:
-    ///     direction (:obj:`str`, `optional`, defaults to :obj:`right`):
-    ///         The direction in which to pad. Can be either ``right`` or ``left``
-    ///
-    ///     pad_to_multiple_of (:obj:`int`, `optional`):
-    ///         If specified, the padding length should always snap to the next multiple of the
-    ///         given value. For example if we were going to pad witha length of 250 but
-    ///         ``pad_to_multiple_of=8`` then we will pad to 256.
-    ///
-    ///     pad_id (:obj:`int`, defaults to 0):
-    ///         The id to be used when padding
-    ///
-    ///     pad_type_id (:obj:`int`, defaults to 0):
-    ///         The type id to be used when padding
-    ///
-    ///     pad_token (:obj:`str`, defaults to :obj:`[PAD]`):
-    ///         The pad token to be used when padding
-    ///
-    ///     length (:obj:`int`, `optional`):
-    ///         If specified, the length at which to pad. If not specified we pad using the size of
-    ///         the longest sequence in a batch.
-    #[pyo3(signature = (**kwargs) -> "None")]
-    #[pyo3(
-        text_signature = "(self, direction='right', pad_id=0, pad_type_id=0, pad_token='[PAD]', length=None, pad_to_multiple_of=None)"
-    )]
-    fn enable_padding(&self, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<()> {
-        let mut params = PaddingParams::default();
-
-        if let Some(kwargs) = kwargs {
-            for (key, value) in kwargs {
-                let key: String = key.extract()?;
-                match key.as_ref() {
-                    "direction" => {
-                        let value: String = value.extract()?;
-                        params.direction = match value.as_ref() {
-                            "left" => Ok(PaddingDirection::Left),
-                            "right" => Ok(PaddingDirection::Right),
-                            other => Err(PyError(format!(
-                                "Unknown `direction`: `{other}`. Use \
-                                 one of `left` or `right`"
-                            ))
-                            .into_pyerr::<exceptions::PyValueError>()),
-                        }?;
-                    }
-                    "pad_to_multiple_of" => {
-                        if let Some(multiple) = value.extract()? {
-                            params.pad_to_multiple_of = multiple;
-                        }
-                    }
-                    "pad_id" => params.pad_id = value.extract()?,
-                    "pad_type_id" => params.pad_type_id = value.extract()?,
-                    "pad_token" => params.pad_token = value.extract()?,
-                    "max_length" => {
-                        println!(
-                            "enable_padding(max_length=X) is deprecated, \
-                                 use enable_padding(length=X) instead"
-                        );
-                        if let Some(l) = value.extract()? {
-                            params.strategy = PaddingStrategy::Fixed(l);
-                        } else {
-                            params.strategy = PaddingStrategy::BatchLongest;
-                        }
-                    }
-                    "length" => {
-                        if let Some(l) = value.extract()? {
-                            params.strategy = PaddingStrategy::Fixed(l);
-                        } else {
-                            params.strategy = PaddingStrategy::BatchLongest;
-                        }
-                    }
-                    _ => println!("Ignored unknown kwarg option {key}"),
-                }
-            }
-        }
-
-        self.write_inner()?.with_padding(Some(params));
-
-        Ok(())
-    }
-
-    /// Disable padding
-    #[pyo3(text_signature = "(self)")]
-    fn no_padding(&self) -> PyResult<()> {
-        self.write_inner()?.with_padding(None);
-        Ok(())
-    }
-
-    /// Get the current padding parameters
-    ///
-    /// `Cannot be set, use` :meth:`~tokenizers.Tokenizer.enable_padding` `instead`
-    ///
-    /// Returns:
-    ///     (:obj:`dict`, `optional`):
-    ///         A dict with the current padding parameters if padding is enabled
-    #[getter]
-    fn get_padding<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyDict>>> {
-        self.tokenizer
-            .read()
-            .unwrap()
-            .get_padding()
-            .map_or(Ok(None), |params| {
-                let dict = PyDict::new(py);
-
-                dict.set_item(
-                    "length",
-                    match params.strategy {
-                        tk::PaddingStrategy::BatchLongest => None,
-                        tk::PaddingStrategy::Fixed(size) => Some(size),
-                    },
-                )?;
-                dict.set_item("pad_to_multiple_of", params.pad_to_multiple_of)?;
-                dict.set_item("pad_id", params.pad_id)?;
-                dict.set_item("pad_token", &params.pad_token)?;
-                dict.set_item("pad_type_id", params.pad_type_id)?;
-                dict.set_item("direction", params.direction.as_ref())?;
-
-                Ok(Some(dict))
-            })
-    }
-
-    /// Encode the given sequence and pair. This method can process raw text sequences
-    /// as well as already pre-tokenized sequences.
-    ///
-    /// Example:
-    ///     Here are some examples of the inputs that are accepted::
-    ///
-    ///         encode("A single sequence")`
-    ///         encode("A sequence", "And its pair")`
-    ///         encode([ "A", "pre", "tokenized", "sequence" ], is_pretokenized=True)`
-    ///         encode(
-    ///             [ "A", "pre", "tokenized", "sequence" ], [ "And", "its", "pair" ],
-    ///             is_pretokenized=True
-    ///         )
-    ///
-    /// Args:
-    ///     sequence (:obj:`~tokenizers.InputSequence`):
-    ///         The main input sequence we want to encode. This sequence can be either raw
-    ///         text or pre-tokenized, according to the ``is_pretokenized`` argument:
-    ///
-    ///         - If ``is_pretokenized=False``: :class:`~tokenizers.TextInputSequence`
-    ///         - If ``is_pretokenized=True``: :class:`~tokenizers.PreTokenizedInputSequence`
-    ///
-    ///     pair (:obj:`~tokenizers.InputSequence`, `optional`):
-    ///         An optional input sequence. The expected format is the same that for ``sequence``.
-    ///
-    ///     is_pretokenized (:obj:`bool`, defaults to :obj:`False`):
-    ///         Whether the input is already pre-tokenized
-    ///
-    ///     add_special_tokens (:obj:`bool`, defaults to :obj:`True`):
-    ///         Whether to add the special tokens
-    ///
-    /// Returns:
-    ///     :class:`~tokenizers.Encoding`: The encoded result
-    ///
-    #[pyo3(signature = (sequence, pair = None, is_pretokenized = false, add_special_tokens = true) -> "Encoding")]
-    #[pyo3(
-        text_signature = "(self, sequence, pair=None, is_pretokenized=False, add_special_tokens=True)"
-    )]
-    fn encode(
-        &self,
-        sequence: &Bound<'_, PyAny>,
-        pair: Option<&Bound<'_, PyAny>>,
-        is_pretokenized: bool,
-        add_special_tokens: bool,
-    ) -> PyResult<PyEncoding> {
-        let sequence: tk::InputSequence = if is_pretokenized {
-            sequence.extract::<PreTokenizedInputSequence>()?.into()
-        } else {
-            sequence.extract::<TextInputSequence>()?.into()
-        };
-        let input = match pair {
-            Some(pair) => {
-                let pair: tk::InputSequence = if is_pretokenized {
-                    pair.extract::<PreTokenizedInputSequence>()?.into()
-                } else {
-                    pair.extract::<TextInputSequence>()?.into()
-                };
-                tk::EncodeInput::Dual(sequence, pair)
-            }
-            None => tk::EncodeInput::Single(sequence),
-        };
-
-        ToPyResult(
-            self.tokenizer
-                .read()
-                .unwrap()
-                .encode_char_offsets(input, add_special_tokens)
-                .map(|e| e.into()),
-        )
-        .into()
-    }
-
-    /// Asynchronously encode the given input with character offsets.
-    ///
-    /// This is an async version of encode that can be awaited in async Python code.
-    ///
-    /// Example:
-    ///     Here are some examples of the inputs that are accepted::
-    ///
-    ///         await async_encode("A single sequence")
-    ///
-    /// Args:
-    ///     sequence (:obj:`~tokenizers.InputSequence`):
-    ///         The main input sequence we want to encode. This sequence can be either raw
-    ///         text or pre-tokenized, according to the ``is_pretokenized`` argument:
-    ///
-    ///         - If ``is_pretokenized=False``: :class:`~tokenizers.TextInputSequence`
-    ///         - If ``is_pretokenized=True``: :class:`~tokenizers.PreTokenizedInputSequence`
-    ///
-    ///     pair (:obj:`~tokenizers.InputSequence`, `optional`):
-    ///         An optional input sequence. The expected format is the same that for ``sequence``.
-    ///
-    ///     is_pretokenized (:obj:`bool`, defaults to :obj:`False`):
-    ///         Whether the input is already pre-tokenized
-    ///
-    ///     add_special_tokens (:obj:`bool`, defaults to :obj:`True`):
-    ///         Whether to add the special tokens
-    ///
-    /// Returns:
-    ///     :class:`~tokenizers.Encoding`: The encoded result
-    ///
-    #[pyo3(signature = (sequence, pair = None, is_pretokenized = false, add_special_tokens = true))]
-    #[pyo3(
-        text_signature = "(self, sequence, pair=None, is_pretokenized=False, add_special_tokens=True)"
-    )]
-    fn async_encode<'py>(
-        &self,
-        py: Python<'py>,
-        sequence: &Bound<'_, PyAny>,
-        pair: Option<&Bound<'_, PyAny>>,
-        is_pretokenized: bool,
-        add_special_tokens: bool,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        // Extract and fully own the inputs before leaving the GIL/thread
-        let input = Self::build_single_owned_encode_input(sequence, pair, is_pretokenized)?;
-
-        let tokenizer = self.read_inner()?.clone();
-        let rt = crate::TOKIO_RUNTIME.clone();
-
-        let fut = py.detach(|| async move {
-            rt.spawn_blocking(move || {
-                tokenizer
-                    .encode(input, add_special_tokens)
-                    .map(PyEncoding::from)
-            })
-            .await
-            .unwrap()
-            .map_err(|e| exceptions::PyException::new_err(e.to_string()))
-        });
-
-        pyo3_async_runtimes::tokio::future_into_py(py, fut)
-    }
-
-    /// Encode the given batch of inputs. This method accept both raw text sequences
-    /// as well as already pre-tokenized sequences. The reason we use `PySequence` is
-    /// because it allows type checking with zero-cost (according to PyO3) as we don't
-    /// have to convert to check.
-    ///
-    /// Example:
-    ///     Here are some examples of the inputs that are accepted::
-    ///
-    ///         encode_batch([
-    ///             "A single sequence",
-    ///             ("A tuple with a sequence", "And its pair"),
-    ///             [ "A", "pre", "tokenized", "sequence" ],
-    ///             ([ "A", "pre", "tokenized", "sequence" ], "And its pair")
-    ///         ])
-    ///
-    /// Args:
-    ///     input (A :obj:`List`/:obj:`Tuple` of :obj:`~tokenizers.EncodeInput`):
-    ///         A list of single sequences or pair sequences to encode. Each sequence
-    ///         can be either raw text or pre-tokenized, according to the ``is_pretokenized``
-    ///         argument:
-    ///
-    ///         - If ``is_pretokenized=False``: :class:`~tokenizers.TextEncodeInput`
-    ///         - If ``is_pretokenized=True``: :class:`~tokenizers.PreTokenizedEncodeInput`
-    ///
-    ///     is_pretokenized (:obj:`bool`, defaults to :obj:`False`):
-    ///         Whether the input is already pre-tokenized
-    ///
-    ///     add_special_tokens (:obj:`bool`, defaults to :obj:`True`):
-    ///         Whether to add the special tokens
-    ///
-    /// Returns:
-    ///     A :obj:`List` of :class:`~tokenizers.Encoding`: The encoded batch
-    ///
-    #[pyo3(signature = (input, is_pretokenized = false, add_special_tokens = true) -> "list[Encoding]")]
-    #[pyo3(text_signature = "(self, input, is_pretokenized=False, add_special_tokens=True)")]
+    /// Encode a batch of sequences into token ids.
+    #[pyo3(signature = (input, add_special_tokens = true) -> "list[list[int]]")]
+    #[pyo3(text_signature = "(self, input, add_special_tokens=True)")]
     fn encode_batch(
         &self,
         py: Python<'_>,
-        input: Vec<Bound<'_, PyAny>>,
-        is_pretokenized: bool,
+        input: Vec<String>,
         add_special_tokens: bool,
-    ) -> PyResult<Vec<PyEncoding>> {
-        let mut items = Vec::<tk::EncodeInput>::with_capacity(input.len());
-        for item in &input {
-            let item: tk::EncodeInput = if is_pretokenized {
-                item.extract::<PreTokenizedEncodeInput>()?.into()
-            } else {
-                item.extract::<TextEncodeInput>()?.into()
-            };
-            items.push(item);
-        }
+    ) -> PyResult<Vec<Vec<u32>>> {
+        let pipeline = self.build_pipeline()?;
         py.detach(|| {
-            ToPyResult(
-                self.tokenizer
-                    .read()
-                    .unwrap()
-                    .encode_batch_char_offsets(items, add_special_tokens)
-                    .map(|encodings| encodings.into_iter().map(|e| e.into()).collect()),
-            )
-            .into()
-        })
-    }
-    /// Asynchronously encode the given batch of inputs with character offsets.
-    ///
-    /// This is an async version of encode_batch that can be awaited in async Python code.
-    ///
-    /// Example:
-    ///     Here are some examples of the inputs that are accepted::
-    ///
-    ///         await async_encode_batch([
-    ///             "A single sequence",
-    ///             ("A tuple with a sequence", "And its pair"),
-    ///             [ "A", "pre", "tokenized", "sequence" ],
-    ///             ([ "A", "pre", "tokenized", "sequence" ], "And its pair")
-    ///         ])
-    ///
-    /// Args:
-    ///     input (A :obj:`List`/:obj:`Tuple` of :obj:`~tokenizers.EncodeInput`):
-    ///         A list of single sequences or pair sequences to encode. Each sequence
-    ///         can be either raw text or pre-tokenized, according to the ``is_pretokenized``
-    ///         argument:
-    ///
-    ///         - If ``is_pretokenized=False``: :class:`~tokenizers.TextEncodeInput`
-    ///         - If ``is_pretokenized=True``: :class:`~tokenizers.PreTokenizedEncodeInput`
-    ///
-    ///     is_pretokenized (:obj:`bool`, defaults to :obj:`False`):
-    ///         Whether the input is already pre-tokenized
-    ///
-    ///     add_special_tokens (:obj:`bool`, defaults to :obj:`True`):
-    ///         Whether to add the special tokens
-    ///
-    /// Returns:
-    ///     A :obj:`List` of :class:`~tokenizers.Encoding`: The encoded batch
-    ///
-    #[pyo3(name = "async_encode_batch", signature = (input, is_pretokenized = false, add_special_tokens = true))]
-    #[pyo3(text_signature = "(self, input, is_pretokenized=False, add_special_tokens=True)")]
-    fn async_encode_batch<'py>(
-        &self,
-        py: Python<'py>,
-        input: Vec<Bound<'_, PyAny>>,
-        is_pretokenized: bool,
-        add_special_tokens: bool,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        // Fully own the inputs before leaving the GIL/thread
-        let owned_items = Self::build_owned_encode_inputs(&input, is_pretokenized)?;
-
-        let tokenizer = self.read_inner()?.clone();
-        let rt = crate::TOKIO_RUNTIME.clone();
-
-        let fut = py.detach(|| async move {
-            rt.spawn_blocking(move || {
-                tokenizer
-                    .encode_batch_char_offsets(owned_items, add_special_tokens)
-                    .map(|encs| encs.into_iter().map(PyEncoding::from).collect::<Vec<_>>())
-            })
-            .await
-            .unwrap()
-            .map_err(|e| exceptions::PyException::new_err(e.to_string()))
-        });
-
-        pyo3_async_runtimes::tokio::future_into_py(py, fut)
-    }
-
-    /// Encode the given batch of inputs. This method is faster than `encode_batch`
-    /// because it doesn't keep track of offsets, they will be all zeros.
-    ///
-    /// Example:
-    ///     Here are some examples of the inputs that are accepted::
-    ///
-    ///         encode_batch_fast([
-    ///             "A single sequence",
-    ///             ("A tuple with a sequence", "And its pair"),
-    ///             [ "A", "pre", "tokenized", "sequence" ],
-    ///             ([ "A", "pre", "tokenized", "sequence" ], "And its pair")
-    ///         ])
-    ///
-    /// Args:
-    ///     input (A :obj:`List`/:obj:`Tuple` of :obj:`~tokenizers.EncodeInput`):
-    ///         A list of single sequences or pair sequences to encode. Each sequence
-    ///         can be either raw text or pre-tokenized, according to the ``is_pretokenized``
-    ///         argument:
-    ///
-    ///         - If ``is_pretokenized=False``: :class:`~tokenizers.TextEncodeInput`
-    ///         - If ``is_pretokenized=True``: :class:`~tokenizers.PreTokenizedEncodeInput`
-    ///
-    ///     is_pretokenized (:obj:`bool`, defaults to :obj:`False`):
-    ///         Whether the input is already pre-tokenized
-    ///
-    ///     add_special_tokens (:obj:`bool`, defaults to :obj:`True`):
-    ///         Whether to add the special tokens
-    ///
-    /// Returns:
-    ///     A :obj:`List` of :class:`~tokenizers.Encoding`: The encoded batch
-    ///
-    #[pyo3(signature = (input, is_pretokenized = false, add_special_tokens = true) -> "list[Encoding]")]
-    #[pyo3(text_signature = "(self, input, is_pretokenized=False, add_special_tokens=True)")]
-    fn encode_batch_fast(
-        &self,
-        py: Python<'_>,
-        input: Vec<Bound<'_, PyAny>>,
-        is_pretokenized: bool,
-        add_special_tokens: bool,
-    ) -> PyResult<Vec<PyEncoding>> {
-        let mut items = Vec::<tk::EncodeInput>::with_capacity(input.len());
-        for item in &input {
-            let item: tk::EncodeInput = if is_pretokenized {
-                item.extract::<PreTokenizedEncodeInput>()?.into()
-            } else {
-                item.extract::<TextEncodeInput>()?.into()
-            };
-            items.push(item);
-        }
-        py.detach(|| {
-            ToPyResult(
-                self.tokenizer
-                    .read()
-                    .unwrap()
-                    .encode_batch_fast(items, add_special_tokens)
-                    .map(|encodings| encodings.into_iter().map(|e| e.into()).collect()),
-            )
-            .into()
-        })
-    }
-
-    /// Asynchronously encode the given batch of inputs without tracking character offsets.
-    ///
-    /// This is an async version of encode_batch_fast that can be awaited in async Python code.
-    ///
-    /// Example:
-    ///     Here are some examples of the inputs that are accepted::
-    ///
-    ///         await async_encode_batch_fast([
-    ///             "A single sequence",
-    ///             ("A tuple with a sequence", "And its pair"),
-    ///             [ "A", "pre", "tokenized", "sequence" ],
-    ///             ([ "A", "pre", "tokenized", "sequence" ], "And its pair")
-    ///         ])
-    ///
-    /// Args:
-    ///     input (A :obj:`List`/:obj:`Tuple` of :obj:`~tokenizers.EncodeInput`):
-    ///         A list of single sequences or pair sequences to encode. Each sequence
-    ///         can be either raw text or pre-tokenized, according to the ``is_pretokenized``
-    ///         argument:
-    ///
-    ///         - If ``is_pretokenized=False``: :class:`~tokenizers.TextEncodeInput`
-    ///         - If ``is_pretokenized=True``: :class:`~tokenizers.PreTokenizedEncodeInput`
-    ///
-    ///     is_pretokenized (:obj:`bool`, defaults to :obj:`False`):
-    ///         Whether the input is already pre-tokenized
-    ///
-    ///     add_special_tokens (:obj:`bool`, defaults to :obj:`True`):
-    ///         Whether to add the special tokens
-    ///
-    /// Returns:
-    ///     A :obj:`List` of :class:`~tokenizers.Encoding`: The encoded batch
-    ///
-    #[pyo3(name = "async_encode_batch_fast", signature = (input, is_pretokenized = false, add_special_tokens = true))]
-    #[pyo3(text_signature = "(self, input, is_pretokenized=False, add_special_tokens=True)")]
-    fn async_encode_batch_fast<'py>(
-        &self,
-        py: Python<'py>,
-        input: Vec<Bound<'_, PyAny>>,
-        is_pretokenized: bool,
-        add_special_tokens: bool,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let owned_items = Self::build_owned_encode_inputs(&input, is_pretokenized)?;
-
-        let tokenizer = self.read_inner()?.clone();
-        let rt = crate::TOKIO_RUNTIME.clone();
-        let fut = py.detach(|| async move {
-            let result = rt
-                .spawn_blocking(move || {
-                    tokenizer
-                        .encode_batch_fast(owned_items, add_special_tokens)
-                        .map(|encs| encs.into_iter().map(PyEncoding::from).collect::<Vec<_>>())
+            input
+                .iter()
+                .map(|sequence| {
+                    pipeline
+                        .encode(sequence, add_special_tokens)
+                        .map(|tokens| tokens.into_iter().map(|t| t.id).collect())
+                        .map_err(|e| exceptions::PyException::new_err(e.to_string()))
                 })
-                .await
-                .unwrap();
-
-            // Convert to a Python object directly rather than going through ToPyResult
-            match result {
-                Ok(encodings) => Python::attach(|py| encodings.into_py_any(py)),
-                Err(e) => Err(exceptions::PyException::new_err(e.to_string())),
-            }
-        });
-
-        pyo3_async_runtimes::tokio::future_into_py(py, fut)
-    }
-
-    /// Decode the given list of ids back to a string
-    ///
-    /// This is used to decode anything coming back from a Language Model
-    ///
-    /// Args:
-    ///     ids (A :obj:`List/Tuple` of :obj:`int`):
-    ///         The list of ids that we want to decode
-    ///
-    ///     skip_special_tokens (:obj:`bool`, defaults to :obj:`True`):
-    ///         Whether the special tokens should be removed from the decoded string
-    ///
-    /// Returns:
-    ///     :obj:`str`: The decoded string
-    #[pyo3(signature = (ids, skip_special_tokens = true) -> "str")]
-    #[pyo3(text_signature = "(self, ids, skip_special_tokens=True)")]
-    fn decode(&self, ids: Vec<u32>, skip_special_tokens: bool) -> PyResult<String> {
-        ToPyResult(
-            self.tokenizer
-                .read()
-                .unwrap()
-                .decode(&ids, skip_special_tokens),
-        )
-        .into()
-    }
-
-    /// Decode a batch of ids back to their corresponding string
-    ///
-    /// Args:
-    ///     sequences (:obj:`List` of :obj:`List[int]`):
-    ///         The batch of sequences we want to decode
-    ///
-    ///     skip_special_tokens (:obj:`bool`, defaults to :obj:`True`):
-    ///         Whether the special tokens should be removed from the decoded strings
-    ///
-    /// Returns:
-    ///     :obj:`List[str]`: A list of decoded strings
-    #[pyo3(signature = (sequences, skip_special_tokens = true) -> "list[str]")]
-    #[pyo3(text_signature = "(self, sequences, skip_special_tokens=True)")]
-    fn decode_batch(
-        &self,
-        py: Python<'_>,
-        sequences: Vec<Vec<u32>>,
-        skip_special_tokens: bool,
-    ) -> PyResult<Vec<String>> {
-        py.detach(|| {
-            let slices = sequences.iter().map(|v| &v[..]).collect::<Vec<&[u32]>>();
-            ToPyResult(
-                self.tokenizer
-                    .read()
-                    .unwrap()
-                    .decode_batch(&slices, skip_special_tokens),
-            )
-            .into()
+                .collect()
         })
-    }
-
-    /// Decode a batch of ids back to their corresponding string
-    ///
-    /// Args:
-    ///     sequences (:obj:`List` of :obj:`List[int]`):
-    ///         The batch of sequences we want to decode
-    ///
-    ///     skip_special_tokens (:obj:`bool`, defaults to :obj:`True`):
-    ///         Whether the special tokens should be removed from the decoded strings
-    ///
-    /// Returns:
-    ///     :obj:`List[str]`: A list of decoded strings
-    #[pyo3(name = "async_decode_batch", signature = (sequences, skip_special_tokens = true))]
-    #[pyo3(text_signature = "(self, sequences, skip_special_tokens=True)")]
-    fn async_decode_batch<'py>(
-        &self,
-        py: Python<'py>,
-        sequences: Vec<Vec<u32>>,
-        skip_special_tokens: bool,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let tokenizer = self.read_inner()?.clone();
-        let rt = crate::TOKIO_RUNTIME.clone();
-
-        let fut = py.detach(|| async move {
-            rt.spawn_blocking(move || {
-                let slices = sequences.iter().map(|v| &v[..]).collect::<Vec<&[u32]>>();
-                tokenizer.decode_batch(&slices, skip_special_tokens)
-            })
-            .await
-            .unwrap()
-            .map_err(|e| exceptions::PyException::new_err(e.to_string()))
-        });
-
-        pyo3_async_runtimes::tokio::future_into_py(py, fut)
     }
 
     /// Convert the given token to its corresponding id if it exists
-    ///
-    /// Args:
-    ///     token (:obj:`str`):
-    ///         The token to convert
-    ///
-    /// Returns:
-    ///     :obj:`Optional[int]`: An optional id, :obj:`None` if out of vocabulary
     #[pyo3(signature = (token) -> "int | None", text_signature = "(self, token)")]
     fn token_to_id(&self, token: &str) -> PyResult<Option<u32>> {
         Ok(self.read_inner()?.token_to_id(token))
     }
 
     /// Convert the given id to its corresponding token if it exists
-    ///
-    /// Args:
-    ///     id (:obj:`int`):
-    ///         The id to convert
-    ///
-    /// Returns:
-    ///     :obj:`Optional[str]`: An optional token, :obj:`None` if out of vocabulary
     #[pyo3(signature = (id) -> "str | None", text_signature = "(self, id)")]
     fn id_to_token(&self, id: u32) -> PyResult<Option<String>> {
         Ok(self.read_inner()?.id_to_token(id))
     }
 
-    /// Modifies the tokenizer in order to use or not the special tokens
-    /// during encoding.
-    ///
-    /// Args:
-    ///     value (:obj:`bool`):
-    ///         Whether to use the special tokens or not
-    ///
+    /// Modifies the tokenizer in order to use or not the special tokens during encoding.
     #[setter]
-    fn set_encode_special_tokens(&self, value: bool) {
-        self.tokenizer
-            .write()
-            .unwrap()
-            .set_encode_special_tokens(value);
+    fn set_encode_special_tokens(&self, value: bool) -> PyResult<()> {
+        self.write_inner()?.set_encode_special_tokens(value);
+        Ok(())
     }
+
     /// Get the value of the `encode_special_tokens` attribute
-    ///
-    /// Returns:
-    ///     :obj:`bool`: the tokenizer's encode_special_tokens attribute
     #[getter]
     fn get_encode_special_tokens(&self) -> PyResult<bool> {
         Ok(self.read_inner()?.get_encode_special_tokens())
     }
+
     /// Add the given tokens to the vocabulary
-    ///
-    /// The given tokens are added only if they don't already exist in the vocabulary.
-    /// Each token then gets a new attributed id.
-    ///
-    /// Args:
-    ///     tokens (A :obj:`List` of :class:`~tokenizers.AddedToken` or :obj:`str`):
-    ///         The list of tokens we want to add to the vocabulary. Each token can be either a
-    ///         string or an instance of :class:`~tokenizers.AddedToken` for more customization.
-    ///
-    /// Returns:
-    ///     :obj:`int`: The number of tokens that were created in the vocabulary
     #[pyo3(text_signature = "(self, tokens)")]
     fn add_tokens(&self, tokens: &Bound<'_, PyList>) -> PyResult<usize> {
         let tokens = tokens
@@ -1696,21 +582,6 @@ impl PyTokenizer {
     }
 
     /// Add the given special tokens to the Tokenizer.
-    ///
-    /// If these tokens are already part of the vocabulary, it just let the Tokenizer know about
-    /// them. If they don't exist, the Tokenizer creates them, giving them a new id.
-    ///
-    /// These special tokens will never be processed by the model (ie won't be split into
-    /// multiple tokens), and they can be removed from the output when decoding.
-    ///
-    /// Args:
-    ///     tokens (A :obj:`List` of :class:`~tokenizers.AddedToken` or :obj:`str`):
-    ///         The list of special tokens we want to add to the vocabulary. Each token can either
-    ///         be a string or an instance of :class:`~tokenizers.AddedToken` for more
-    ///         customization.
-    ///
-    /// Returns:
-    ///     :obj:`int`: The number of tokens that were created in the vocabulary
     #[pyo3(text_signature = "(self, tokens)")]
     fn add_special_tokens(&self, tokens: &Bound<'_, PyList>) -> PyResult<usize> {
         let tokens = tokens
@@ -1732,156 +603,10 @@ impl PyTokenizer {
         ToPyResult(self.write_inner()?.add_special_tokens(tokens)).into()
     }
 
-    /// Train the Tokenizer using the given files.
-    ///
-    /// Reads the files line by line, while keeping all the whitespace, even new lines.
-    /// If you want to train from data store in-memory, you can check
-    /// :meth:`~tokenizers.Tokenizer.train_from_iterator`
-    ///
-    /// Args:
-    ///     files (:obj:`List[str]`):
-    ///         A list of path to the files that we should use for training
-    ///
-    ///     trainer (:obj:`~tokenizers.trainers.Trainer`, `optional`):
-    ///         An optional trainer that should be used to train our Model
-    #[pyo3(signature = (files, trainer = None))]
-    #[pyo3(text_signature = "(self, files, trainer = None)")]
-    fn train(&self, files: Vec<String>, trainer: Option<&mut PyTrainer>) -> PyResult<()> {
-        let mut trainer = match trainer {
-            Some(t) => t.clone(),
-            None => self.read_inner()?.get_model().get_trainer(),
-        };
-        Python::attach(|py| {
-            py.detach(|| {
-                ToPyResult(
-                    self.write_inner()?
-                        .train_from_files(&mut trainer, files)
-                        .map(|_| {}),
-                )
-                .into()
-            })
-        })
-    }
-
-    /// Train the Tokenizer using the provided iterator.
-    ///
-    /// You can provide anything that is a Python Iterator
-    ///
-    ///     * A list of sequences :obj:`List[str]`
-    ///     * A generator that yields :obj:`str` or :obj:`List[str]`
-    ///     * A Numpy array of strings
-    ///     * ...
-    ///
-    /// Args:
-    ///     iterator (:obj:`Iterator`):
-    ///         Any iterator over strings or list of strings
-    ///
-    ///     trainer (:obj:`~tokenizers.trainers.Trainer`, `optional`):
-    ///         An optional trainer that should be used to train our Model
-    ///
-    ///     length (:obj:`int`, `optional`):
-    ///         The total number of sequences in the iterator. This is used to
-    ///         provide meaningful progress tracking
-    #[pyo3(signature = (iterator, trainer = None, length = None))]
-    #[pyo3(text_signature = "(self, iterator, trainer=None, length=None)")]
-    fn train_from_iterator(
-        &self,
-        py: Python,
-        iterator: &Bound<'_, PyAny>,
-        trainer: Option<&mut PyTrainer>,
-        length: Option<usize>,
-    ) -> PyResult<()> {
-        let mut trainer = match trainer {
-            Some(t) => t.clone(),
-            None => self.read_inner()?.get_model().get_trainer(),
-        };
-
-        let buffered_iter = PyBufferedIterator::new(
-            iterator,
-            |element| {
-                // Each element of the iterator can either be:
-                //  - An iterator, to allow batching
-                //  - A string
-                if let Ok(s) = element.cast::<PyString>() {
-                    itertools::Either::Right(std::iter::once(s.to_cow().map(|s| s.into_owned())))
-                } else {
-                    match element.try_iter() {
-                        Ok(iter) => itertools::Either::Left(
-                            iter.map(|i| i?.extract::<String>())
-                                .collect::<Vec<_>>()
-                                .into_iter(),
-                        ),
-                        Err(e) => itertools::Either::Right(std::iter::once(Err(e))),
-                    }
-                }
-            },
-            256,
-        )?;
-
-        py.detach(|| {
-            ResultShunt::process(buffered_iter, |iter| {
-                self.tokenizer
-                    .write()
-                    .unwrap()
-                    .train(&mut trainer, MaybeSizedIterator::new(iter, length))
-                    .map(|_| {})
-                    .map_err(|e| exceptions::PyException::new_err(e.to_string()))
-            })?
-        })
-    }
-
-    /// Apply all the post-processing steps to the given encodings.
-    ///
-    /// The various steps are:
-    ///
-    ///     1. Truncate according to the set truncation params (provided with
-    ///        :meth:`~tokenizers.Tokenizer.enable_truncation`)
-    ///     2. Apply the :class:`~tokenizers.processors.PostProcessor`
-    ///     3. Pad according to the set padding params (provided with
-    ///        :meth:`~tokenizers.Tokenizer.enable_padding`)
-    ///
-    /// Args:
-    ///     encoding (:class:`~tokenizers.Encoding`):
-    ///         The :class:`~tokenizers.Encoding` corresponding to the main sequence.
-    ///
-    ///     pair (:class:`~tokenizers.Encoding`, `optional`):
-    ///         An optional :class:`~tokenizers.Encoding` corresponding to the pair sequence.
-    ///
-    ///     add_special_tokens (:obj:`bool`):
-    ///         Whether to add the special tokens
-    ///
-    /// Returns:
-    ///     :class:`~tokenizers.Encoding`: The final post-processed encoding
-    #[pyo3(signature = (encoding, pair = None, add_special_tokens = true))]
-    #[pyo3(text_signature = "(self, encoding, pair=None, add_special_tokens=True)")]
-    fn post_process(
-        &self,
-        encoding: &PyEncoding,
-        pair: Option<&PyEncoding>,
-        add_special_tokens: bool,
-    ) -> PyResult<PyEncoding> {
-        ToPyResult(
-            self.tokenizer
-                .read()
-                .unwrap()
-                .post_process(
-                    encoding.encoding.clone(),
-                    pair.map(|p| p.encoding.clone()),
-                    add_special_tokens,
-                )
-                .map(|e| e.into()),
-        )
-        .into()
-    }
-
     /// The :class:`~tokenizers.models.Model` in use by the Tokenizer
     #[getter]
     fn get_model(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        self.tokenizer
-            .read()
-            .unwrap()
-            .get_model()
-            .get_as_subtype(py)
+        self.read_inner()?.get_model().get_as_subtype(py)
     }
 
     /// Set the :class:`~tokenizers.models.Model`
@@ -1906,9 +631,7 @@ impl PyTokenizer {
     fn set_normalizer(&self, normalizer: Option<PyRef<PyNormalizer>>) -> PyResult<()> {
         let normalizer_option = normalizer.map(|norm| norm.clone());
         ToPyResult(
-            self.tokenizer
-                .write()
-                .unwrap()
+            self.write_inner()?
                 .with_normalizer(normalizer_option)
                 .map(|_| ()),
         )
@@ -1925,94 +648,11 @@ impl PyTokenizer {
         }
     }
 
-    /// Set the :class:`~tokenizers.normalizers.Normalizer`
+    /// Set the :class:`~tokenizers.pre_tokenizers.PreTokenizer`
     #[setter]
-    fn set_pre_tokenizer(&self, pretok: Option<PyRef<PyPreTokenizer>>) {
-        self.tokenizer
-            .write()
-            .unwrap()
+    fn set_pre_tokenizer(&self, pretok: Option<PyRef<PyPreTokenizer>>) -> PyResult<()> {
+        self.write_inner()?
             .with_pre_tokenizer(pretok.map(|pre| pre.clone()));
-    }
-
-    /// The `optional` :class:`~tokenizers.processors.PostProcessor` in use by the Tokenizer
-    #[getter]
-    fn get_post_processor(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        if let Some(n) = self.read_inner()?.get_post_processor() {
-            n.get_as_subtype(py)
-        } else {
-            Ok(py.None())
-        }
-    }
-
-    /// Set the :class:`~tokenizers.processors.PostProcessor`
-    #[setter]
-    fn set_post_processor(&self, processor: Option<PyRef<PyPostProcessor>>) {
-        self.tokenizer
-            .write()
-            .unwrap()
-            .with_post_processor(processor.map(|p| p.clone()));
-    }
-
-    /// The `optional` :class:`~tokenizers.decoders.Decoder` in use by the Tokenizer
-    #[getter]
-    fn get_decoder(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        if let Some(dec) = self.read_inner()?.get_decoder() {
-            dec.get_as_subtype(py)
-        } else {
-            Ok(py.None())
-        }
-    }
-
-    /// Set the :class:`~tokenizers.decoders.Decoder`
-    #[setter]
-    fn set_decoder(&self, decoder: Option<PyRef<PyDecoder>>) {
-        self.tokenizer
-            .write()
-            .unwrap()
-            .with_decoder(decoder.map(|d| d.clone()));
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-    use crate::models::PyModel;
-    use crate::normalizers::{PyNormalizer, PyNormalizerTypeWrapper};
-    use std::sync::{Arc, RwLock};
-    use tempfile::NamedTempFile;
-    use tk::normalizers::{Lowercase, NFKC};
-
-    #[test]
-    fn serialize() {
-        let mut tokenizer = Tokenizer::new(PyModel::from(BPE::default()));
-        tokenizer
-            .with_normalizer(Some(PyNormalizer::new(PyNormalizerTypeWrapper::Sequence(
-                vec![
-                    Arc::new(RwLock::new(NFKC.into())),
-                    Arc::new(RwLock::new(Lowercase.into())),
-                ],
-            ))))
-            .unwrap();
-
-        let tmp = NamedTempFile::new().unwrap().into_temp_path();
-        tokenizer.save(&tmp, false).unwrap();
-
-        Tokenizer::from_file(&tmp).unwrap();
-    }
-
-    #[test]
-    fn serde_pyo3() {
-        let mut tokenizer = Tokenizer::new(PyModel::from(BPE::default()));
-        tokenizer
-            .with_normalizer(Some(PyNormalizer::new(PyNormalizerTypeWrapper::Sequence(
-                vec![
-                    Arc::new(RwLock::new(NFKC.into())),
-                    Arc::new(RwLock::new(Lowercase.into())),
-                ],
-            ))))
-            .unwrap();
-
-        let output = crate::utils::serde_pyo3::to_string(&tokenizer).unwrap();
-        assert_eq!(output, "Tokenizer(version=\"1.0\", truncation=None, padding=None, added_tokens=[], normalizer=Sequence(normalizers=[NFKC(), Lowercase()]), pre_tokenizer=None, post_processor=None, decoder=None, model=BPE(dropout=None, unk_token=None, continuing_subword_prefix=None, end_of_word_suffix=None, fuse_unk=False, byte_fallback=False, ignore_merges=False, vocab={}, merges=[]))");
+        Ok(())
     }
 }
