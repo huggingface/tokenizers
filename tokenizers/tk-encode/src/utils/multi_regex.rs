@@ -134,43 +134,4 @@ mod tests {
         assert_eq!(gpt_fsm(&CL100K.replace(r"\p{N}{1,3}", r"\p{N}{2,4}")), None);
         assert_eq!(gpt_fsm(r"\w+|\s+"), None);
     }
-
-    #[test]
-    fn gpt2_decomposition_is_equivalent() {
-        assert_equivalent(GPT2, CORPUS);
-    }
-
-    #[test]
-    fn cl100k_decomposition_is_equivalent() {
-        assert_equivalent(CL100K, CORPUS);
-    }
-
-    #[test]
-    fn o200k_decomposition_is_equivalent() {
-        assert_equivalent(O200K, CORPUS);
-    }
-
-    #[test]
-    fn unknown_pattern_is_none() {
-        assert!(gpt_decomposition(r"\s+").is_none());
-        assert!(MultiRegex::for_gpt_pattern(r"\w+").is_none());
-    }
-
-    #[test]
-    fn empty_and_edges() {
-        let multi = MultiRegex::new(gpt_decomposition(CL100K).unwrap()).unwrap();
-        assert_eq!(multi.split_ranges("").collect::<Vec<_>>(), Vec::new());
-        assert_eq!(
-            multi.split_ranges("hello").collect::<Vec<_>>(),
-            vec![(0, 5)]
-        );
-        // trailing whitespace run stays whole (no following word to steal a space)
-        assert_eq!(
-            multi.split_ranges("hi   ").collect::<Vec<_>>(),
-            SysRegex::new(CL100K)
-                .unwrap()
-                .find_iter("hi   ")
-                .collect::<Vec<_>>(),
-        );
-    }
 }

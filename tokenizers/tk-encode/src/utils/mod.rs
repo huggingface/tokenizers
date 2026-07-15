@@ -19,8 +19,9 @@ mod no_regex;
 #[cfg(not(any(feature = "onig", feature = "fancy-regex")))]
 pub use no_regex::SysRegex;
 
-mod multi_regex;
-pub use multi_regex::{gpt_fsm, is_deepseek, GptFsm, GptFsmPattern, MultiRegex};
+// Recognize known GPT pre-tokenization regexes and route them to atomsplit's native FSM.
+mod gpt_fsm;
+pub use gpt_fsm::{gpt_fsm, is_deepseek, GptFsm, GptFsmPattern};
 
 pub mod byte_level;
 pub mod iter;
