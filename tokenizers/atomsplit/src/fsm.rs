@@ -580,11 +580,11 @@ pub fn fsm_byte_level(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
 /// \p{M}`). The two alt char-classes are `[UC]` = "not L" (`!o_is_lower`) and `[LC]` = "not U".
 #[inline]
 fn o_is_upper(t: u8) -> bool {
-    t == (Atom::UpperLetter as u8) << 4 // 0x10: coarse Letter, refine UPPER
+    t == Atom::UpperLetter as u8 // 0x10: coarse Letter (low nibble 0) + UPPER refine (\p{Lu}∪\p{Lt})
 }
 #[inline]
 fn o_is_lower(t: u8) -> bool {
-    t == (Atom::LowerLetter as u8) << 4 // 0x20
+    t == Atom::LowerLetter as u8 // 0x20: coarse Letter + LOWER refine (\p{Ll})
 }
 
 /// One o200k letter sub-token from `p` within the run `[.., re)`: alt-1 `[UC]*[LC]+` (tried first) else

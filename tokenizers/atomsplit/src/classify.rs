@@ -34,8 +34,10 @@ pub enum Atom {
     // If we need a new class it will usually fall under the 12 unicode ones. If not we can just define
     // new ones with low and high nibble that are not correlated. You should prioritize using the
     // low nibble 13, 14, 15 just because you would be taking a subclass otherwise.
-    LowerLetter = 0x10, // 0 is Letter
-    UpperLetter = 0x20, // 0 is Letter
+    // Case refinement of `Letter` (low nibble 0), matching `bitmap_gen`: `\p{Lu}∪\p{Lt}` → 0x10,
+    // `\p{Ll}` → 0x20, caseless `\p{Lm}\p{Lo}` → 0x00.
+    UpperLetter = 0x10,
+    LowerLetter = 0x20,
 }
 
 impl Atom {
