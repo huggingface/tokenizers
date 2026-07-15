@@ -2195,6 +2195,7 @@ dependencies = [
  "macro_rules_attribute",
  "memchr",
  "monostate",
+ "onig",
  "paste",
  "ptr_hash",
  "rand 0.9.4",

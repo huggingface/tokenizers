@@ -15,7 +15,9 @@ tk-encode/bench-baseline --example fixture_bench`:
                           mbps: {baseline, pipeline},
                           ids_match, ids_match_baseline,
                           stage_ns_per_byte: {added_split, normalize,
-                                              pre_tokenize, model, total}}]}]}
+                                              pre_tokenize, model, total},
+                          pretok_vs_regex: {cls_simd, cls_scalar,
+                                            onig|null}}]}]}
 
 Two series: `baseline` — the latest released tokenizers crate, the bar to beat
 (the in-tree Tokenizer is on its way out, so it isn't benched; it only serves
@@ -786,6 +788,34 @@ def threads_svg(model, mode, meta, baseline_label):
                    subtitle, "".join(grid) + "".join(body) + legend, meta)
 
 
+def pretok_compare_md(model):
+    """Per-fixture 'classify + fsm vs onig' table: the pre-tokenize split beating a real regex engine
+    both WITH and WITHOUT SIMD. Rendered only for regex pre-tokenizers (onig non-null). ns/byte, lower
+    better. SIMD-pipe = the pre-tokenize stage (SIMD classify + fsm); scalar-pipe swaps in the scalar
+    classifier (= pre-tokenize + (cls_scalar - cls_simd)); onig runs the model's own pre-tokenizer regex(es)."""
+    rows = [r for r in model["results"]
+            if (r.get("pretok_vs_regex") or {}).get("onig") is not None
+            and r.get("stage_ns_per_byte")]
+    if not rows:
+        return []
+    md = ["", "**Pre-tokenize: `classify + fsm` vs onig** — ns/byte, lower better; "
+          "`×vs onig` is onig ÷ our pipeline (with / without SIMD classify).", "",
+          "| Fixture | classify SIMD | classify scalar | pre-tok SIMD+fsm | pre-tok scalar+fsm | onig | ×vs onig (SIMD / scalar) |",
+          "|---|---:|---:|---:|---:|---:|---:|"]
+    for r in sorted(rows, key=lambda r: (r["group"], r["fixture"])):
+        pv = r["pretok_vs_regex"]
+        simd_pipe = r["stage_ns_per_byte"]["pre_tokenize"]
+        scalar_pipe = simd_pipe + max(0.0, pv["cls_scalar"] - pv["cls_simd"])
+        onig = pv["onig"]
+        vs_simd = onig / simd_pipe if simd_pipe > 0 else 0.0
+        vs_scal = onig / scalar_pipe if scalar_pipe > 0 else 0.0
+        md.append(
+            f"| {r['fixture']} | {fnum(pv['cls_simd'], '{:.2f}')} | {fnum(pv['cls_scalar'], '{:.2f}')} "
+            f"| {fnum(simd_pipe, '{:.2f}')} | {fnum(scalar_pipe, '{:.2f}')} | {fnum(onig, '{:.1f}')} "
+            f"| {vs_simd:.1f}× / {vs_scal:.1f}× |")
+    return md
+
+
 def render_markdown(data, subtitle_base, meta, base, run_id, sizes,
                     base_lookup=None, base_ref=None):
     """Overview charts inline; everything per-model — charts and the per-fixture
@@ -869,6 +899,7 @@ def render_markdown(data, subtitle_base, meta, base, run_id, sizes,
                 f"| {fnum(mb.get('baseline'))} | {fnum(mb.get('pipeline'))} "
                 f"| {fnum(speedup(r), '×{:.2f}')} "
                 f"{base_cell}{stages} | {ids} |")
+        md += pretok_compare_md(m)
         md += ["", "</details>", ""]
 
     # Unsupported / failed-to-load models: roadmap cards, collapsed — they're

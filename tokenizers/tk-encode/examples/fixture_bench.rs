@@ -395,13 +395,127 @@ fn measure_memory(model: &Path, baseline_ok: bool) -> Value {
     Value::Object(out)
 }
 
+// ── pre-tokenize comparison: classify (SIMD vs scalar) + fsm, vs an onig regex reference ──
+// The pipeline's `pre_tokenize` stage is `classify (SIMD) + fsm`. These numbers let the report show it
+// beating a real regex engine both WITH and WITHOUT SIMD: `classify`/`classify_scalar` over the same
+// bytes isolate the classify half (scalar-pipeline = pre_tokenize + (cls_scalar − cls_simd)), and `onig`
+// times the model's own pre-tokenizer regex(es) — the split a regex-based tokenizer actually pays for.
+
+/// GPT-2's implicit pre-tokenize regex (a byte-map `ByteLevel` splits on this before mapping bytes).
+const GPT2_REGEX: &str =
+    r"'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+";
+
+fn split_regex(p: &Value) -> Option<String> {
+    (p["type"].as_str() == Some("Split"))
+        .then(|| p["pattern"]["Regex"].as_str().map(str::to_string))
+        .flatten()
+}
+
+/// The ordered Split regexes a model's pre-tokenizer applies (deepseek → 3; a lone `Split` → 1; a
+/// byte-map `ByteLevel` with no Split → GPT-2's implicit regex). Empty → no regex reference (Bert,
+/// Metaspace, WhitespaceSplit, …) → onig reported null for that model.
+fn pretok_regexes(path: &Path) -> Vec<String> {
+    let v: Value = std::fs::read_to_string(path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or(Value::Null);
+    let pt = &v["pre_tokenizer"];
+    match pt["type"].as_str() {
+        Some("Split") => split_regex(pt).into_iter().collect(),
+        Some("ByteLevel") => vec![GPT2_REGEX.to_string()],
+        Some("Sequence") => {
+            let arr = pt["pretokenizers"].as_array().cloned().unwrap_or_default();
+            let res: Vec<String> = arr.iter().filter_map(split_regex).collect();
+            if !res.is_empty() {
+                res
+            } else if arr.iter().any(|p| p["type"] == "ByteLevel") {
+                vec![GPT2_REGEX.to_string()]
+            } else {
+                vec![]
+            }
+        }
+        _ => vec![],
+    }
+}
+
+/// Median ns/byte to classify `bytes` once via the SIMD or scalar path.
+fn classify_ns(bytes: &[u8], scalar: bool) -> f64 {
+    if bytes.is_empty() {
+        return 0.0;
+    }
+    let mut tags = vec![0u8; bytes.len()];
+    let mut run = || {
+        if scalar {
+            atomsplit::classify::classify_scalar(bytes, &mut tags);
+        } else {
+            atomsplit::classify::classify(bytes, &mut tags);
+        }
+        black_box(tags[bytes.len() / 2]);
+    };
+    run(); // warm-up
+    let mut s = Vec::with_capacity(REPS);
+    for _ in 0..REPS {
+        let t = Instant::now();
+        run();
+        s.push(t.elapsed().as_secs_f64());
+    }
+    median_secs(s) * 1e9 / bytes.len() as f64
+}
+
+/// ns/byte for the composed Isolated split chain under onig — each regex splits the previous pieces
+/// (gaps + matches), exactly how the reference tokenizer applies a `Sequence` of Splits. `None` when the
+/// model has no regex pre-tokenizer, or onig rejects a pattern.
+fn onig_reference_ns(text: &str, regexes: &[String]) -> Option<f64> {
+    if regexes.is_empty() || text.is_empty() {
+        return None;
+    }
+    let res: Vec<onig::Regex> = regexes
+        .iter()
+        .map(|r| onig::Regex::new(r))
+        .collect::<Result<_, _>>()
+        .ok()?;
+    let run = || {
+        let mut pieces = vec![(0usize, text.len())];
+        for re in &res {
+            let mut next = Vec::with_capacity(pieces.len() * 2);
+            for (s, e) in pieces.drain(..) {
+                let sub = &text[s..e];
+                let mut prev = 0usize;
+                for (ms, me) in re.find_iter(sub) {
+                    if ms > prev {
+                        next.push((s + prev, s + ms));
+                    }
+                    next.push((s + ms, s + me));
+                    prev = me;
+                }
+                if prev < sub.len() {
+                    next.push((s + prev, e));
+                }
+            }
+            pieces = next;
+        }
+        pieces.len()
+    };
+    run(); // warm-up
+    let mut s = Vec::with_capacity(REPS);
+    for _ in 0..REPS {
+        let t = Instant::now();
+        black_box(run());
+        s.push(t.elapsed().as_secs_f64());
+    }
+    Some(median_secs(s) * 1e9 / text.len() as f64)
+}
+
 fn bench_model(
     baseline: Option<&BaselineTokenizer>,
     oracle: &Tokenizer,
     pipeline: &PipelineTokenizer,
     files: &[(String, PathBuf)],
+    model_json: &Path,
 ) -> Vec<Value> {
     let pipe_enc = |s: &str| pipeline.encode(s, false).unwrap().len();
+    // per-model: the reference regex(es) onig will time on each fixture (empty for non-regex pretoks).
+    let regexes = pretok_regexes(model_json);
     let base_enc = baseline.map(|b| move |s: &str| b.encode(s, false).unwrap().len());
 
     let mut rows = Vec::new();
@@ -477,6 +591,21 @@ fn bench_model(
             "    stages ns/byte: added-split {ns_added:.2}, norm {ns_norm:.2}, pre-split {ns_split:.2}, model {ns_model:.2}"
         );
 
+        // pre_tokenize (= classify SIMD + fsm) vs classify-scalar and vs the onig regex reference, over
+        // the same corpus. Report shows the split beating a regex engine with AND without SIMD.
+        let corpus: String = chunks.concat();
+        let cls_simd = classify_ns(corpus.as_bytes(), false);
+        let cls_scalar = classify_ns(corpus.as_bytes(), true);
+        let onig_ns = onig_reference_ns(&corpus, &regexes);
+        if let Some(o) = onig_ns {
+            let scalar_pipe = ns_split + (cls_scalar - cls_simd).max(0.0);
+            eprintln!(
+                "    pre-tok vs onig: SIMD {ns_split:.2} / scalar {scalar_pipe:.2} / onig {o:.2} ns/B  → {:.1}× / {:.1}×",
+                o / ns_split.max(1e-9),
+                o / scalar_pipe.max(1e-9)
+            );
+        }
+
         rows.push(json!({
             "fixture": name,
             "group": group,
@@ -491,6 +620,14 @@ fn bench_model(
                 "pre_tokenize": ns_split,
                 "model": ns_model,
                 "total": nspb(t_model),
+            },
+            // classify SIMD vs scalar + the onig reference for the pre-tokenize regex (onig null when
+            // the model has no regex pre-tokenizer). simd-pipe = pre_tokenize; scalar-pipe =
+            // pre_tokenize + (cls_scalar − cls_simd); the renderer derives the ×-vs-onig ratios.
+            "pretok_vs_regex": {
+                "cls_simd": cls_simd,
+                "cls_scalar": cls_scalar,
+                "onig": onig_ns,
             },
         }));
     }
@@ -604,7 +741,7 @@ fn main() {
             }
         };
 
-        let rows = bench_model(baseline.as_ref(), &tok, &pipeline, &files);
+        let rows = bench_model(baseline.as_ref(), &tok, &pipeline, &files, &path);
         let memory = measure_memory(&path, baseline.is_some());
         let threads = bench_threads(baseline.as_ref(), &pipeline, &all_chunks);
 
