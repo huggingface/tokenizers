@@ -27,6 +27,9 @@ thread_local! {
     /// Composition scratch: (decomposed (ccc,char) sequence, its reorder buffer, kept-marks buffer).
     static COMPOSE_SCRATCH: RefCell<(Vec<(u8, char)>, Vec<(u8, char)>, Vec<char>)> =
         const { RefCell::new((Vec::new(), Vec::new(), Vec::new())) };
+    /// Norm-classify tag scratch for the whole-buffer decompose (aarch64): one tag byte per input byte,
+    /// reused across calls so steady-state normalization does no allocation.
+    static TAG_SCRATCH: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
 }
 
 const HANGUL: std::ops::RangeInclusive<u32> = 0xAC00..=0xD7A3;
@@ -47,8 +50,29 @@ trait Decomp: Bitset {
     const DECOMP: &'static [u32];
     const TRIE_INDEX: &'static [u32];
     const TRIE_DATA: &'static [u32];
+    /// Byte-form twin of the trie (generated — see `gen_byte_tables`): `BYTE_DATA` is slot-parallel to
+    /// `TRIE_DATA`; a non-zero slot is `(off << 8) | byte_len` with `BYTE_BLOB[off..off+len]` the
+    /// decomposition's UTF-8 bytes and `BYTE_BLOB[off-3..off]` = `[first_ccc, last_ccc, mark_run_off]`.
+    /// The SIMD decompose kernel copies these blobs directly instead of re-encoding `(ccc, char)` entries.
+    const BYTE_DATA: &'static [u32];
+    const BYTE_BLOB: &'static [u8];
     /// `output.len() ≤ input.len() * MAX_EXPAND` — lets the owned path reserve once, realloc-free.
     const MAX_EXPAND: usize;
+    /// Does check-tag `t` mean "this char CHANGES under this form"? (see [`check_tag`]): NFD breaks
+    /// only on `0x7E`; NFKD additionally on the compat values `0x3C`/`0x3D`.
+    fn tag_breaks(t: u8) -> bool;
+
+    /// Byte-form entry of `cp`: `(blob_off, byte_len)` — or `(0, 0)` if absent (stable, or Hangul whose
+    /// decomposition is arithmetic). `byte_len == 0xFF` is the scalar-fallback sentinel.
+    #[inline]
+    fn byte_entry(cp: u32) -> (usize, usize) {
+        // SAFETY: same trie shape as `entries` — cp < CAP (callers only probe unstable chars).
+        unsafe {
+            let slot = *Self::TRIE_INDEX.get_unchecked((cp >> 6) as usize) + (cp & 63);
+            let packed = *Self::BYTE_DATA.get_unchecked(slot as usize);
+            ((packed >> 8) as usize, (packed & 0xFF) as usize)
+        }
+    }
 
     /// Baked decomposition entries (`(ccc << 24) | cp` each) of `cp`, or `&[]` if absent — an O(1)
     /// two-level trie gather. Only ever called for unstable chars (bit set ⇒ `cp < CAP`), so all present.
@@ -81,7 +105,13 @@ impl Decomp for Nfd {
     const DECOMP: &'static [u32] = &NFD_DECOMP;
     const TRIE_INDEX: &'static [u32] = &NFD_TRIE_INDEX;
     const TRIE_DATA: &'static [u32] = &NFD_TRIE_DATA;
+    const BYTE_DATA: &'static [u32] = &crate::nfd_byte_tables::NFD_BYTE_DATA;
+    const BYTE_BLOB: &'static [u8] = &crate::nfd_byte_tables::NFD_BYTE_BLOB;
     const MAX_EXPAND: usize = NFD_MAX_EXPAND;
+    #[inline(always)]
+    fn tag_breaks(t: u8) -> bool {
+        t >= 0x7D // 0x7D/0x7E: canonical decomposition changes it
+    }
 }
 impl Bitset for Nfkd {
     const BITS: &'static [u64] = &NFKD_UNSTABLE;
@@ -91,7 +121,13 @@ impl Decomp for Nfkd {
     const DECOMP: &'static [u32] = &NFKD_DECOMP;
     const TRIE_INDEX: &'static [u32] = &NFKD_TRIE_INDEX;
     const TRIE_DATA: &'static [u32] = &NFKD_TRIE_DATA;
+    const BYTE_DATA: &'static [u32] = &crate::nfd_byte_tables::NFKD_BYTE_DATA;
+    const BYTE_BLOB: &'static [u8] = &crate::nfd_byte_tables::NFKD_BYTE_BLOB;
     const MAX_EXPAND: usize = NFKD_MAX_EXPAND;
+    #[inline(always)]
+    fn tag_breaks(t: u8) -> bool {
+        t >= 0x7D || (t & !1) == 0x3C // canonical (0x7D/0x7E) or compat (0x3C/0x3D) change
+    }
 }
 impl Bitset for NfcRelevant {
     const BITS: &'static [u64] = &NFC_RELEVANT;
@@ -232,6 +268,77 @@ fn skip_clear_2byte<B: Bitset>(bytes: &[u8], mut i: usize) -> usize {
     i
 }
 
+/// Advance over the maximal run of composed Hangul syllables (`U+AC00..=U+D7A3`) AND ASCII from `i`
+/// — BYTE-class compares on 16-byte chunks, so the space between Korean words rides along instead of
+/// bouncing back to the caller per word. A byte passes iff it is ASCII, a continuation (`80..BF`), or
+/// a syllable lead (`EB|EC` free; `EA` requires next ≥ `B0`; `ED` requires next ≤ `9D` — the same
+/// ranges the classify kernel uses; the rare `U+D780..=U+D7A3` tail falls out to the caller). Valid
+/// UTF-8 input makes the class test sound: continuations only ever follow the leads we accepted.
+/// Exits on a char boundary (backs up over continuations at the first failing byte).
+#[cfg(target_arch = "aarch64")]
+#[inline]
+fn skip_hangul_or_ascii(bytes: &[u8], mut i: usize) -> usize {
+    use std::arch::aarch64::*;
+    let n = bytes.len();
+    let start = i;
+    // SAFETY: loads gated by `i + 16 <= n`; NEON loads are alignment-free.
+    unsafe {
+        let mut carry: u8 = 0; // last byte of the previous chunk (0 ⇒ unconstrained lane 0)
+        while i + 16 <= n {
+            let v = vld1q_u8(bytes.as_ptr().add(i));
+            let ascii = vcltq_u8(v, vdupq_n_u8(0x80));
+            let cont = vandq_u8(vcgeq_u8(v, vdupq_n_u8(0x80)), vcltq_u8(v, vdupq_n_u8(0xC0)));
+            let lead = vandq_u8(vcgeq_u8(v, vdupq_n_u8(0xEA)), vcleq_u8(v, vdupq_n_u8(0xED)));
+            let class_ok = vorrq_u8(vorrq_u8(ascii, cont), lead);
+            // pair constraint: prev == EA ⇒ cur ≥ B0 ; prev == ED ⇒ cur ≤ 9D
+            let prev = vextq_u8::<15>(vdupq_n_u8(carry), v);
+            let bad_ea = vandq_u8(vceqq_u8(prev, vdupq_n_u8(0xEA)), vcltq_u8(v, vdupq_n_u8(0xB0)));
+            let bad_ed = vandq_u8(vceqq_u8(prev, vdupq_n_u8(0xED)), vcgtq_u8(v, vdupq_n_u8(0x9D)));
+            let ok = vbicq_u8(class_ok, vorrq_u8(bad_ea, bad_ed));
+            if vminvq_u8(ok) == 0xFF {
+                carry = vgetq_lane_u8::<15>(v);
+                i += 16;
+                continue;
+            }
+            let mut m = [0u8; 16];
+            vst1q_u8(m.as_mut_ptr(), ok);
+            let mut bad = i;
+            for (l, &x) in m.iter().enumerate() {
+                if x != 0xFF {
+                    bad = i + l;
+                    break;
+                }
+            }
+            // back up to the char boundary (a failing continuation invalidates its whole char)
+            while bad > start && bytes[bad] & 0xC0 == 0x80 {
+                bad -= 1;
+            }
+            return bad;
+        }
+    }
+    // scalar tail: whole syllables or ASCII only
+    loop {
+        if i >= n {
+            return i;
+        }
+        let b = bytes[i];
+        if b < 0x80 {
+            i += 1;
+            continue;
+        }
+        if i + 3 <= n && (0xEA..=0xED).contains(&b) {
+            let cp = (((b & 0x0F) as u32) << 12)
+                | (((bytes[i + 1] & 0x3F) as u32) << 6)
+                | ((bytes[i + 2] & 0x3F) as u32);
+            if HANGUL.contains(&cp) {
+                i += 3;
+                continue;
+            }
+        }
+        return i;
+    }
+}
+
 /// Find the next char at or after `i` whose bit is SET in `B`, returning `(index, codepoint, width)` —
 /// or `(bytes.len(), 0, 0)` if none. Returning the DECODE lets the caller decompose it without decoding
 /// twice. Checks the current char's bit FIRST (dense set-runs return immediately, no wasted SIMD probe);
@@ -248,6 +355,17 @@ fn next_set<B: Bitset>(bytes: &[u8], mut i: usize) -> (usize, u32, usize) {
         let (cp, w) = decode_cp(bytes, i);
         if bit_set::<B>(cp) {
             return (i, cp, w);
+        }
+        // Composed-Hangul run (bit clear for the composition-relevance bitsets): range-skip whole
+        // syllable runs with an in-lane compare — no per-cp bitset gather. Korean NFC/NFKC text is
+        // almost entirely such runs.
+        #[cfg(target_arch = "aarch64")]
+        if HANGUL.contains(&cp) {
+            let ni = skip_hangul_or_ascii(bytes, i);
+            if ni > i {
+                i = ni;
+                continue;
+            }
         }
         // stable non-ASCII. Peek the next char scalar: if it's SET, the stable run is just this one char —
         // return the peeked char directly (reusing its decode) and skip the `vld2q`. This is the common
@@ -352,13 +470,14 @@ fn decompose_char<D: Decomp>(cp: u32, out: &mut String, e: &mut Emit) {
     }
 }
 
-/// Is `input` ALREADY in form `D` (`str::nfd()` would be the identity)? Then the caller borrows it —
-/// crucial because most real text is already normalized, including scripts my "unstable" bitset flags
-/// wholesale: e.g. Arabic/Hebrew whose combining marks all carry ccc ≠ 0 but are in canonical order. A
-/// char breaks normalization iff it DECOMPOSES (trie entry ≠ `[itself]`, incl. Hangul's empty entry) or
-/// it's a mark whose ccc drops below the preceding mark's (out of canonical order). Same SIMD skipping as
-/// the owned path, so already-NFD text is one fast pass with no allocation.
-fn is_already_normalized<D: Decomp>(bytes: &[u8]) -> bool {
+/// Byte index of the first char that BREAKS form `D` — or `bytes.len()` if the input is already fully
+/// normalized (then the caller borrows it — crucial because most real text is already normalized,
+/// including scripts my "unstable" bitset flags wholesale: e.g. Arabic/Hebrew whose combining marks all
+/// carry ccc ≠ 0 but are in canonical order). A char breaks normalization iff it DECOMPOSES (trie entry
+/// ≠ `[itself]`, incl. Hangul's empty entry) or it's a mark whose ccc drops below the preceding mark's
+/// (out of canonical order). Same SIMD skipping as the owned path — and returning the *position* (not a
+/// bool) lets the owned path copy the verified prefix wholesale instead of re-scanning it.
+fn normalized_prefix<D: Decomp>(bytes: &[u8]) -> usize {
     let n = bytes.len();
     let mut i = 0;
     let mut last_ccc = 0u8; // ccc of the previous mark in the current combining sequence (0 after a starter)
@@ -393,53 +512,554 @@ fn is_already_normalized<D: Decomp>(bytes: &[u8]) -> bool {
         // flagged char: decomposes, or a mark that might be out of order
         let e = D::entries(cp);
         if e.len() != 1 || (e[0] & 0xFF_FFFF) != cp {
-            return false; // decomposes (content change; Hangul's empty entry lands here too)
+            return i; // decomposes (content change; Hangul's empty entry lands here too)
         }
         let ccc = (e[0] >> 24) as u8;
         if ccc < last_ccc {
-            return false; // reorderable mark out of canonical order
+            return i; // reorderable mark out of canonical order
         }
         last_ccc = ccc;
         i += w;
     }
-    true
+    n
 }
 
-/// Decompose `input` under form `D`. `Cow::Borrowed` when already in that form (the common case — see
-/// [`is_already_normalized`]), else owned. The owned path decomposes each unstable char DIRECTLY to `out`
-/// (reusing `next_set`'s decode — one decode per char) and lets `next_set` bulk-skip+copy the stable runs
-/// between them (`vmaxvq`/`vld2q`/`vld3q`). No deferred reorder buffer: a stable run begins with a ccc-0
-/// starter, so it just resets `Emit`. SIMD-decoding whole chunks and a `u64` memcpy-emit were both tried
-/// and regressed (dispatch / cache) — see the module note.
-fn decompose<'a, D: Decomp>(input: &'a str) -> Cow<'a, str> {
-    let bytes = input.as_bytes();
-    let n = bytes.len();
-    if is_already_normalized::<D>(bytes) {
-        return Cow::Borrowed(input);
+// ── whole-buffer SIMD decompose (aarch64) ────────────────────────────────────────────────────────
+//
+// The owned path's kernel: instead of `next_set`-skipping stable runs and decomposing unstable chars
+// one at a time through `String::push`, process the buffer in fixed uniform-width chunks — 16 codepoints
+// per iteration via `vld2q`/`vld3q` deinterleaved decode — and EMIT in bulk: runs of clear (stable) lanes
+// are one memcpy, each set lane is one unaligned 16-byte blob copy (the generated byte-form tables), and
+// Hangul is arithmetic with direct jamo byte stores. Short runs cost nothing extra: the chunk loop is
+// entered per 16-codepoint window, not per run, which is what the per-run scalar batching attempts missed.
+// Canonical-order across chars is guarded by the blob headers' `[first_ccc, last_ccc, mark_run_off]`
+// chain check; anything irregular (out-of-order mark, > 16-byte decomposition, astral, chunk tails) takes
+// the scalar `decompose_char` path, so the fast path never has to be clever — just byte-exact.
+
+/// Append exactly `len` bytes from `src` with NO `memcpy` call and NO over-read: 16-byte moves plus an
+/// OVERLAPPING tail block (the classic small-copy — every read stays inside `[src, src+len)`). Real
+/// stable spans are words (4–50 bytes), where the call overhead of `push_str`'s memcpy dominates.
+#[cfg(target_arch = "aarch64")]
+#[inline(always)]
+unsafe fn copy_small(out: &mut String, src: *const u8, len: usize) {
+    // SAFETY (caller): out.capacity() ≥ out.len() + len; src has exactly `len` readable bytes; the bytes
+    // are valid UTF-8 at char boundaries (verbatim input spans).
+    unsafe {
+        let v = out.as_mut_vec();
+        let ol = v.len();
+        debug_assert!(ol + len <= v.capacity());
+        let dst = v.as_mut_ptr().add(ol);
+        if len >= 16 {
+            let mut k = 0;
+            while k + 16 <= len {
+                std::ptr::copy_nonoverlapping(src.add(k), dst.add(k), 16);
+                k += 16;
+            }
+            if k < len {
+                // overlapping 16-byte tail: reads [src+len-16, src+len) — in bounds since len ≥ 16
+                std::ptr::copy_nonoverlapping(src.add(len - 16), dst.add(len - 16), 16);
+            }
+        } else if len >= 8 {
+            std::ptr::copy_nonoverlapping(src, dst, 8);
+            std::ptr::copy_nonoverlapping(src.add(len - 8), dst.add(len - 8), 8);
+        } else if len >= 4 {
+            std::ptr::copy_nonoverlapping(src, dst, 4);
+            std::ptr::copy_nonoverlapping(src.add(len - 4), dst.add(len - 4), 4);
+        } else {
+            for k in 0..len {
+                *dst.add(k) = *src.add(k);
+            }
+        }
+        v.set_len(ol + len);
     }
-    let (first, mut cp, mut w) = next_set::<D>(bytes, 0);
-    // Reserve the worst-case decomposed size up front (`n * MAX_EXPAND`) so the owned path never
-    // reallocs mid-build — decompose *expands* (Hangul 3×, accents ~1.5×), and the old `n + n/16` guess
-    // was blown through on exactly those inputs, forcing a full-buffer copy per grow.
-    let mut out = String::with_capacity(n.saturating_mul(D::MAX_EXPAND));
-    out.push_str(&input[..first]);
-    let mut e = Emit { last_ccc: 0, run_start: out.len() };
-    let mut i = first;
+}
+
+/// Append `copy_len` bytes from `src` (may over-copy up to 16 — capacity reserves `+16` for that) but
+/// advance the length by exactly `adv`. The write primitive of the fast emit: blob/Hangul emits pass
+/// `copy_len = 16, adv = real_len` so the store is one unaligned 16-byte move, never a `memcpy` call.
+#[cfg(target_arch = "aarch64")]
+#[inline(always)]
+unsafe fn raw_extend(out: &mut String, src: *const u8, copy_len: usize, adv: usize) {
+    // SAFETY (caller): out.capacity() ≥ out.len() + max(copy_len, adv); src has copy_len readable bytes;
+    // the adv bytes written are valid UTF-8 (blob entries and jamo always are).
+    unsafe {
+        let v = out.as_mut_vec();
+        let len = v.len();
+        debug_assert!(len + copy_len.max(adv) <= v.capacity());
+        std::ptr::copy_nonoverlapping(src, v.as_mut_ptr().add(len), copy_len);
+        v.set_len(len + adv);
+    }
+}
+
+/// Emit one run of consecutive SET (unstable) chars starting at `i` (`cp`/`w` already decoded by the
+/// caller), returning the index past the run. The hot emit is branch-light and push-free:
+///   * Hangul (set bit + empty trie entry) — arithmetic L·V·(T), jamo bytes stored directly;
+///   * everything else — ONE unaligned 16-byte copy from the generated byte-form blob (`BYTE_BLOB`),
+///     guarded by the `[first_ccc, last_ccc, mark_run_off]` header chain check;
+///   * out-of-canonical-order marks and > 16-byte decompositions (rare) — scalar [`decompose_char`].
+/// Dense set runs (Hangul text, Greek accents, Hebrew/Arabic mark clusters) stay in this loop without
+/// re-entering `next_set`'s scan machinery; the stable text between runs is memcpy'd once by the caller.
+#[cfg(target_arch = "aarch64")]
+#[inline]
+fn emit_set<D: Decomp>(
+    bytes: &[u8],
+    mut i: usize,
+    mut cp: u32,
+    mut w: usize,
+    out: &mut String,
+    e: &mut Emit,
+) -> usize {
+    let n = bytes.len();
     loop {
-        // (cp, w) is the already-decoded unstable char at i (from next_set) — never re-decoded
-        decompose_char::<D>(cp, &mut out, &mut e);
+        if HANGUL.contains(&cp) {
+            // Hangul syllable (checked BEFORE the trie gather — Korean is the densest set-run script and
+            // the range test saves both table loads per syllable): arithmetic decomposition, jamo are
+            // 3-byte starters — build L·V·(T) on the stack and store once (advance 6 or 9).
+            let s = cp - 0xAC00;
+            let t = s % 28;
+            let mut buf = [0u8; 16];
+            for (slot, j) in [0x1100 + s / 588, 0x1161 + (s % 588) / 28, 0x11A7 + t]
+                .into_iter()
+                .enumerate()
+            {
+                buf[slot * 3] = 0xE0 | (j >> 12) as u8;
+                buf[slot * 3 + 1] = 0x80 | ((j >> 6) & 0x3F) as u8;
+                buf[slot * 3 + 2] = 0x80 | (j & 0x3F) as u8;
+            }
+            // SAFETY: 16-byte stack buffer; capacity reserved (+16).
+            unsafe { raw_extend(out, buf.as_ptr(), 16, if t != 0 { 9 } else { 6 }) };
+            e.last_ccc = 0;
+            e.run_start = out.len();
+        } else {
+            let (off, blen) = D::byte_entry(cp);
+            // SAFETY: blob offsets point ≥ 3 in (headers precede the bytes); 16-byte zero tail pad.
+            let first = unsafe { *D::BYTE_BLOB.get_unchecked(off - 3) };
+            if blen > 16 || (first != 0 && first < e.last_ccc) {
+                // oversized decomposition or out-of-order mark: the scalar path reorders correctly
+                decompose_char::<D>(cp, out, e);
+            } else {
+                let pos = out.len();
+                // SAFETY: fixed 16-byte copy from the padded blob; capacity reserved.
+                unsafe { raw_extend(out, D::BYTE_BLOB.as_ptr().add(off), 16, blen) };
+                let (last, mark_off) = unsafe {
+                    (*D::BYTE_BLOB.get_unchecked(off - 2), *D::BYTE_BLOB.get_unchecked(off - 1) as usize)
+                };
+                e.last_ccc = last;
+                if mark_off > 0 {
+                    // contains a starter: the current mark run begins just past the last one
+                    e.run_start = pos + mark_off;
+                } // else pure marks: the run continues, run_start stays
+            }
+        }
         i += w;
-        let (ns, ncp, nw) = next_set::<D>(bytes, i);
+        // Continue through SHORT stable gaps: real text alternates letter↔mark (Hebrew niqqud, Hindi
+        // virama, Greek accents) and syllable↔space (Korean) — bailing to the driver per single stable
+        // char costs a `push_str` + `next_set` round-trip each time. A stable char SANDWICHED between
+        // set chars is emitted inline (exact 1–4 byte copy); two stable chars in a row = a real stable
+        // run, where the driver's bulk skip+memcpy wins — bail.
+        loop {
+            if i >= n {
+                return i;
+            }
+            // two ASCII bytes ahead = a real ASCII run: bail to the driver's fused skip+copy without
+            // decoding anything (the common exit in Latin text — one byte compare each).
+            if bytes[i] < 0x80 && (i + 1 >= n || bytes[i + 1] < 0x80) {
+                return i;
+            }
+            let (ncp, nw) = decode_cp(bytes, i);
+            // Hangul range first: Korean set-runs are the densest, and the range test on the decoded
+            // cp saves the two bitset loads per syllable that `bit_set` would spend.
+            if HANGUL.contains(&ncp) || bit_set::<D>(ncp) {
+                (cp, w) = (ncp, nw);
+                break; // next unstable char: emit it
+            }
+            let j = i + nw;
+            if j >= n {
+                return i; // stable tail: driver copies it
+            }
+            let (cp2, w2) = decode_cp(bytes, j);
+            if !bit_set::<D>(cp2) {
+                return i; // two stable in a row: bail to the bulk skip
+            }
+            // SAFETY: exact nw-byte in-bounds copy (nw ≤ 4); capacity reserved.
+            unsafe { raw_extend(out, bytes.as_ptr().add(i), nw, nw) };
+            e.last_ccc = 0;
+            e.run_start = out.len();
+            (cp, w) = (cp2, w2);
+            i = j;
+            break;
+        }
+    }
+}
+
+/// The `next_set`-driven owned path (aarch64): stable regions found by `next_set` are memcpy'd once,
+/// each unstable run goes through [`emit_set`]. The right strategy for ASCII-dominant and CJK-block
+/// text, where [`decompose_tagged`]'s whole-buffer classify costs more than it saves (see [`decompose`]).
+#[cfg(target_arch = "aarch64")]
+fn decompose_owned<D: Decomp>(bytes: &[u8], out: &mut String, e: &mut Emit, mut i: usize) {
+    use std::arch::aarch64::*;
+    let n = bytes.len();
+    while i < n {
+        if bytes[i] < 0x80 {
+            // fused ASCII scan+copy: the `vld1q` needed for the all-ASCII test IS the copy source, so
+            // ASCII-dominant text (French & friends) writes through instead of scan-then-memcpy.
+            // SAFETY: loads/stores gated by `i + 16 <= n` and reserved capacity; exact scalar tail.
+            unsafe {
+                let v = out.as_mut_vec();
+                let mut len = v.len();
+                while i + 16 <= n {
+                    let x = vld1q_u8(bytes.as_ptr().add(i));
+                    if vmaxvq_u8(x) >= 0x80 {
+                        break;
+                    }
+                    vst1q_u8(v.as_mut_ptr().add(len), x);
+                    len += 16;
+                    i += 16;
+                }
+                while i < n && bytes[i] < 0x80 {
+                    *v.as_mut_ptr().add(len) = bytes[i];
+                    len += 1;
+                    i += 1;
+                }
+                v.set_len(len);
+            }
+            e.last_ccc = 0;
+            e.run_start = out.len();
+            continue;
+        }
+        let (ns, cp, w) = next_set::<D>(bytes, i);
         if ns > i {
-            // a stable run followed: it starts with a ccc-0 starter, so the combining sequence is closed
-            out.push_str(&input[i..ns]);
+            // stable region: one callless copy; it ends the previous combining sequence (ccc-0 starters)
+            // SAFETY: exact in-bounds verbatim span; capacity reserved.
+            unsafe { copy_small(out, bytes.as_ptr().add(i), ns - i) };
             e.last_ccc = 0;
             e.run_start = out.len();
         }
         if ns == n {
+            return;
+        }
+        i = emit_set::<D>(bytes, ns, cp, w, out, e);
+    }
+}
+
+/// Exact ccc RANK of the odd (`0x3D`-tagged) mark at `pos` — decode + entry + ccc→rank map. Rare:
+/// only compat-decomposing identity marks take this path.
+#[cfg(target_arch = "aarch64")]
+#[cold]
+fn rank_probe(bytes: &[u8], pos: usize) -> u8 {
+    let (cp, _) = decode_cp(bytes, pos);
+    let ccc = (Nfd::entries(cp)[0] >> 24) as u8;
+    ccc_rank_map()[&ccc]
+}
+
+/// First index ≥ `i` whose check tag is DECOMPOSE-relevant — nonzero, not the composition-only `0x40`
+/// (a Maybe STARTER: stable under decomposition), and a real tag (bit 7 excludes the CONT/MB
+/// sentinels) — or `tags.len()`. The whole-buffer scan the
+/// per-word `next_set` machinery can't match: 16 tags per `vld1q`, indifferent to char-width mixing,
+/// so short words / punctuation cost nothing extra.
+#[cfg(target_arch = "aarch64")]
+#[inline]
+fn next_check_cand(tags: &[u8], mut i: usize) -> usize {
+    use std::arch::aarch64::*;
+    let n = tags.len();
+    // SAFETY: every load is gated by `i + 16 <= n`; NEON loads are alignment-free.
+    unsafe {
+        let comp = vdupq_n_u8(0x40);
+        let hb = vdupq_n_u8(0x80);
+        while i + 16 <= n {
+            let v = vld1q_u8(tags.as_ptr().add(i));
+            // candidate: t != 0, t != 0x40 (composition-only Maybe starter), bit 7 clear (sentinels)
+            let nz = vtstq_u8(v, v); // (t & t) != 0 ⇔ t != 0
+            let hit = vbicq_u8(vbicq_u8(nz, vceqq_u8(v, comp)), vtstq_u8(v, hb));
+            if vmaxvq_u8(hit) != 0 {
+                let mut h = [0u8; 16];
+                vst1q_u8(h.as_mut_ptr(), hit);
+                for (k, &x) in h.iter().enumerate() {
+                    if x != 0 {
+                        return i + k;
+                    }
+                }
+            }
+            i += 16;
+        }
+    }
+    while i < n {
+        let t = tags[i];
+        if t != 0 && t != 0x40 && t & 0x80 == 0 {
+            return i;
+        }
+        i += 1;
+    }
+    n
+}
+
+/// Whole-buffer decompose (aarch64): ONE `norm_classify` pass tags every byte, then both phases are
+/// candidate-driven — the check walks tag hits verifying canonical order, and on failure the owned
+/// rebuild memcpys the stable gaps between hits and routes each confirmed unstable run through
+/// [`emit_set`] (blob copy / arithmetic Hangul). This is the xxUTF-style structure: no per-word SIMD
+/// re-entry, no per-char scan cost on stable text of ANY width mix — the scan is `vld1q`+`vtst` flat.
+#[cfg(target_arch = "aarch64")]
+fn decompose_tagged<'a, D: Decomp>(input: &'a str) -> Cow<'a, str> {
+    let bytes = input.as_bytes();
+    let n = bytes.len();
+    TAG_SCRATCH.with(|sc| {
+        let tags = &mut *sc.borrow_mut();
+        tags.resize(n, 0); // grow-only in steady state; classify overwrites [0..n)
+        crate::classify::classify_with::<0x81, 0x80, { crate::classify::NO_CJK }>(
+            bytes,
+            tags,
+            &crate::nfd_check_tables::NFD_CHECK_TABLES,
+        );
+        let tags = &tags[..n];
+
+        // ── check phase: PURE tag arithmetic — no decode, no table loads. `t >= BREAK_MIN` means the
+        // char changes under this form; otherwise `t & 0x3F` is its ccc RANK (order-preserving), so
+        // canonical order between adjacent marks is one compare. Gaps and rank-0 chars close the
+        // combining sequence.
+        let mut i = 0;
+        let mut prev_rank = 0u8;
+        let brk = loop {
+            let j = next_check_cand(tags, i);
+            if j == n {
+                return Cow::Borrowed(input);
+            }
+            let t = tags[j];
+            if D::tag_breaks(t) {
+                break j; // decomposition changes it (Hangul included)
+            }
+            if j > i {
+                prev_rank = 0; // a stable gap closed the combining sequence
+            }
+            let r = match t & 0x3F {
+                0x3C => 0,                       // compat starter (NFD check): ccc-0, closes the sequence
+                0x3D => rank_probe(bytes, j),    // odd compat mark: rare exact-rank probe
+                r => r,                          // plain / Maybe mark: rank rides in the low bits
+            };
+            if r == 0 {
+                prev_rank = 0;
+            } else {
+                if r < prev_rank {
+                    break j; // reorderable mark out of canonical order
+                }
+                prev_rank = r;
+            }
+            // width from the lead byte (candidates are never ASCII: marks/decomposables are ≥ U+0300)
+            let b = bytes[j];
+            i = j + if b < 0xE0 {
+                2
+            } else if b < 0xF0 {
+                3
+            } else {
+                4
+            };
+        };
+
+        // ── owned rebuild: resume at the stable char before `brk` (its re-processing resets `Emit`) ──
+        let mut s = brk;
+        while s > 0 {
+            let mut p = s - 1;
+            while p > 0 && bytes[p] & 0xC0 == 0x80 {
+                p -= 1;
+            }
+            s = p;
+            let (cp, _) = decode_cp(bytes, p);
+            if !bit_set::<D>(cp) {
+                break;
+            }
+        }
+        let mut out = String::with_capacity(n.saturating_mul(D::MAX_EXPAND) + 16);
+        out.push_str(&input[..s]);
+        let mut e = Emit { last_ccc: 0, run_start: out.len() };
+        // `gap` = start of pending uncopied stable text. FALSE candidates (spacing marks etc. — dense in
+        // Thai/Devanagari) stay inside the gap: they cost one decode+probe, never a copy of their own.
+        // The owned rebuild is verify-as-you-go, exactly like the check: IN-ORDER identity marks stay
+        // inside the gap (their blob is themselves — verbatim copy is the same bytes), so text after a
+        // lone breaking char (a stray accented Latin word in a Thai doc, say) is still one big memcpy.
+        // Only breaking chars and out-of-order marks pay `emit_set` — and when one directly follows
+        // in-gap marks, that trailing mark run is re-emitted through `emit_set` first so the `Emit`
+        // chain state (`last_ccc`/`run_start`) is exact for the reorder logic.
+        let (mut gap, mut i) = (s, s);
+        let mut prev_rank = 0u8;
+        let mut run_begin = usize::MAX; // first mark of the current in-gap mark run (adjacent chain)
+        while i < n {
+            let j = next_check_cand(tags, i);
+            if j == n {
+                break;
+            }
+            let t = tags[j];
+            if j > i {
+                // ≥1 stable char between candidates: the combining sequence closed inside the gap
+                prev_rank = 0;
+                run_begin = usize::MAX;
+            }
+            if !D::tag_breaks(t) {
+                let b = bytes[j];
+                let w = if b < 0xE0 { 2 } else if b < 0xF0 { 3 } else { 4 };
+                // 0x3D (odd compat mark) falls through to the emit path — exactness over speed, rare
+                if t & 0x3F != 0x3D {
+                    let r = if t & 0x3F == 0x3C { 0 } else { t & 0x3F };
+                    if r == 0 {
+                        // stable starter under this form (e.g. compat-only char under NFD): stays in gap
+                        prev_rank = 0;
+                        run_begin = usize::MAX;
+                        i = j + w;
+                        continue;
+                    }
+                    if r >= prev_rank {
+                        // in-order identity mark: stays in the gap
+                        if prev_rank == 0 {
+                            run_begin = j;
+                        }
+                        prev_rank = r;
+                        i = j + w;
+                        continue;
+                    }
+                }
+                // out-of-order or odd mark: real work below
+            }
+            // Breaking char or out-of-order mark. Re-emit any in-gap mark run adjacent to it so the
+            // Emit state is exact; otherwise start emitting at j itself.
+            let start = if run_begin != usize::MAX { run_begin } else { j };
+            if start > gap {
+                // SAFETY: exact in-bounds verbatim span; capacity reserved.
+                unsafe { copy_small(&mut out, bytes.as_ptr().add(gap), start - gap) };
+                e.last_ccc = 0;
+                e.run_start = out.len();
+            }
+            let (cp, w) = decode_cp(bytes, start);
+            debug_assert!(bit_set::<D>(cp), "check-tag candidate must be in the bitset");
+            i = emit_set::<D>(bytes, start, cp, w, &mut out, &mut e);
+            gap = i;
+            prev_rank = 0; // emit_set consumed the whole adjacent set-run: a gap follows by construction
+            run_begin = usize::MAX;
+        }
+        if n > gap {
+            // SAFETY: exact in-bounds verbatim tail; capacity reserved.
+            unsafe { copy_small(&mut out, bytes.as_ptr().add(gap), n - gap) };
+        }
+        Cow::Owned(out)
+    })
+}
+
+/// Decompose `input` under form `D`. `Cow::Borrowed` when already in that form (the common case — see
+/// [`normalized_prefix`]), else owned. The owned path copies the already-verified prefix wholesale
+/// (no re-scan), rewinds to the nearest stable char (whose processing trivially re-establishes the
+/// `Emit` state), then runs the whole-buffer kernel: on aarch64 the chunked SIMD [`decompose_owned`]
+/// (uniform-width `vld2q`/`vld3q` decode, bulk stable-run memcpy, 16-byte blob emits, arithmetic
+/// Hangul); elsewhere the portable `next_set` + [`decompose_char`] loop.
+fn decompose<'a, D: Decomp>(input: &'a str) -> Cow<'a, str> {
+    // aarch64: two strategies, dispatched by a ~64-byte content sample. The whole-buffer TAG kernel
+    // (norm-classify once + candidate scans) wins on marked scripts of any width mix (Cyrillic, Hebrew,
+    // Arabic, Greek, Devanagari, Thai) — flat scan cost, no per-word SIMD re-entry. The NEXT_SET kernel
+    // wins where the classify pass itself is the cost: ASCII-dominant text (skip_ascii is near-free) and
+    // CJK-block text (Han/Hangul/kana have no uniform norm tag, so classify pays the block-peel loop).
+    // Both are byte-exact; the sample only picks the faster one.
+    #[cfg(target_arch = "aarch64")]
+    {
+        let bytes = input.as_bytes();
+        let n = bytes.len();
+        let a0 = skip_ascii(bytes, 0);
+        if a0 == n {
+            return Cow::Borrowed(input); // pure ASCII is NFD/NFKD-stable
+        }
+        if n >= 256 && pick_tagged(bytes, a0) {
+            return decompose_tagged::<D>(input);
+        }
+        decompose_nextset::<D>(input)
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        decompose_nextset::<D>(input)
+    }
+}
+
+/// Sample ≤64 bytes across `[a0, n)` and vote: use the tag kernel unless the text is CJK-block-heavy
+/// (norm-classify block-peel cost) or ASCII-dominant (skip_ascii already near-free). Wrong votes only
+/// cost speed, never correctness.
+#[cfg(target_arch = "aarch64")]
+#[inline]
+fn pick_tagged(bytes: &[u8], a0: usize) -> bool {
+    let n = bytes.len();
+    let span = n - a0;
+    let (mut blocky, mut ascii, mut tot) = (0usize, 0usize, 0usize);
+    for k in 0..4 {
+        let off = a0 + span * k / 4;
+        let end = (off + 16).min(n);
+        for (idx, &b) in bytes[off..end].iter().enumerate() {
+            tot += 1;
+            ascii += usize::from(b < 0x80);
+            // "blocky" scripts where next_set's uniform-width skip beats the classify pass:
+            // kana/Han/Hangul lead bytes (the norm classify has no uniform tag for those blocks).
+            let _ = idx;
+            blocky += usize::from((0xE3..=0xED).contains(&b));
+        }
+    }
+    // pure 3-byte-block text has ~1 lead per 3 bytes (~tot/3 with ascii dilution): ≥ tot/4 is decisive
+    !(blocky * 4 >= tot || ascii * 2 >= tot)
+}
+
+/// `next_set`-driven decompose: `normalized_prefix` for the borrow check, then the owned loop —
+/// [`decompose_owned`] (blob/Hangul emits) on aarch64, the portable `decompose_char` loop elsewhere.
+fn decompose_nextset<'a, D: Decomp>(input: &'a str) -> Cow<'a, str> {
+    let bytes = input.as_bytes();
+    let n = bytes.len();
+    let brk = normalized_prefix::<D>(bytes);
+    if brk == n {
+        return Cow::Borrowed(input);
+    }
+    // Resume point: back up from the breaking char to the previous STABLE (bit-clear) char boundary.
+    // Everything before it is copied verbatim; the stable char itself is re-processed first, and being a
+    // ccc-0 starter its processing resets `Emit` — so the resumed state is exact without re-deriving
+    // `last_ccc`/`run_start` from the copied text. (The chars between it and `brk` are in-order marks —
+    // they didn't break the form — and re-processing them from a reset state emits them unchanged.)
+    let mut s = brk;
+    while s > 0 {
+        let mut p = s - 1;
+        while p > 0 && bytes[p] & 0xC0 == 0x80 {
+            p -= 1;
+        }
+        s = p;
+        let (cp, _) = decode_cp(bytes, p);
+        if !bit_set::<D>(cp) {
             break;
         }
-        (i, cp, w) = (ns, ncp, nw);
+    }
+    // Reserve the worst-case decomposed size up front (`n * MAX_EXPAND`, +16 so the kernel's fixed
+    // 16-byte blob stores never touch unreserved memory) — the owned path never reallocs mid-build.
+    let mut out = String::with_capacity(n.saturating_mul(D::MAX_EXPAND) + 16);
+    out.push_str(&input[..s]);
+    let mut e = Emit { last_ccc: 0, run_start: out.len() };
+    #[cfg(target_arch = "aarch64")]
+    decompose_owned::<D>(bytes, &mut out, &mut e, s);
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        // portable owned path: `next_set` bulk-skips stable runs, `decompose_char` handles the rest
+        let (mut i, mut cp, mut w) = {
+            let (ns, ncp, nw) = next_set::<D>(bytes, s);
+            out.push_str(&input[s..ns]);
+            if ns == n {
+                return Cow::Owned(out);
+            }
+            e.last_ccc = 0;
+            e.run_start = out.len();
+            (ns, ncp, nw)
+        };
+        loop {
+            // (cp, w) is the already-decoded unstable char at i (from next_set) — never re-decoded
+            decompose_char::<D>(cp, &mut out, &mut e);
+            i += w;
+            let (ns, ncp, nw) = next_set::<D>(bytes, i);
+            if ns > i {
+                // a stable run followed: it starts with a ccc-0 starter, closing the combining sequence
+                out.push_str(&input[i..ns]);
+                e.last_ccc = 0;
+                e.run_start = out.len();
+            }
+            if ns == n {
+                break;
+            }
+            (i, cp, w) = (ns, ncp, nw);
+        }
     }
     Cow::Owned(out)
 }
@@ -602,9 +1222,193 @@ fn compose_into(seq: &[(u8, char)], out: &mut String, marks: &mut Vec<char>) {
 
 /// Compose `input` (borrow if already normalized) using decomposition form `D` and relevance bitset `R`.
 /// Shared by NFC (`Nfd` + `NfcRelevant`) and NFKC (`Nfkd` + `NfkcRelevant`).
+/// Tag-driven compose (aarch64): ONE check-tag classify, then the scan decides NFC/NFKC relevance
+/// with tag arithmetic — plain rank marks are ORDER-checked in place (QC=Yes: they can't compose, so
+/// in-order means untouched), `0x3E`/`0x3F` (QC-Maybe composables) and out-of-order marks open a
+/// recompose window, compat tags (`>= 0x40`) open one under NFKC, and `0x7E` (canonically decomposing)
+/// is confirmed against the R bitset — with Hangul-syllable leads (`EA..=ED`) skipped tag-only, since
+/// composed syllables are NFC-stable. Real marked text (Thai/Hindi/Hebrew niqqud) borrows at scan speed.
+#[cfg(target_arch = "aarch64")]
+fn compose_tagged<'a, D: Decomp, R: Bitset>(input: &'a str) -> Cow<'a, str> {
+    let bytes = input.as_bytes();
+    let n = bytes.len();
+    TAG_SCRATCH.with(|sc| {
+        let tags_buf = &mut *sc.borrow_mut();
+        tags_buf.resize(n, 0);
+        crate::classify::classify_with::<0x81, 0x80, { crate::classify::NO_CJK }>(
+            bytes,
+            tags_buf,
+            &crate::nfd_check_tables::NFD_CHECK_TABLES,
+        );
+        let tags = &tags_buf[..n];
+        let mut out = String::new(); // allocated lazily on the first window (borrow = no alloc)
+        COMPOSE_SCRATCH.with(|cs| {
+            let (buf, pending, marks) = &mut *cs.borrow_mut();
+            let (mut gap, mut i) = (0usize, 0usize);
+            let mut prev_rank = 0u8;
+            while i < n {
+                let j = next_check_cand_compose(tags, i);
+                if j == n {
+                    break;
+                }
+                let t = tags[j];
+                if j > i {
+                    prev_rank = 0; // a stable starter gap closed the combining sequence
+                }
+                let b = bytes[j];
+                let w = if b < 0xE0 { 2 } else if b < 0xF0 { 3 } else { 4 };
+                // does this char force a recompose window? — pure tag arithmetic, no decodes
+                // (0x7E — decomposing but composition-stable é/ά/Hangul — never reaches here: the scan
+                // itself skips it, and the byte gap it leaves resets the rank chain.)
+                let relevant = if t == 0x7D {
+                    true // decomposes AND composition-relevant (exclusions/QC≠Yes): window
+                } else if t & 0x40 != 0 {
+                    true // QC-Maybe composable (starter or mark): must recompose
+                } else if t == 0x3C {
+                    D::tag_breaks(0x3C) // compat starter: the K form recomposes, NFC skips it
+                } else if t == 0x3D {
+                    true // odd compat mark: conservative window (rare)
+                } else {
+                    // plain rank mark (QC=Yes — cannot compose): only ORDER can change it
+                    if t < prev_rank {
+                        true
+                    } else {
+                        prev_rank = t;
+                        false
+                    }
+                };
+                if !relevant {
+                    if t == 0x3C {
+                        prev_rank = 0; // ccc-0 starter closes the sequence
+                    }
+                    i = j + w;
+                    continue;
+                }
+                if t == 0x3C {
+                    // compat starter under the K form: if its full NFKC is baked as a neighbour-inert
+                    // blob (all ccc-0, no back/forward composition possible), emit it directly — the
+                    // window machinery (scratch buffers + COMPOSE searches) is overkill for `，`→`,`.
+                    let (cp, _) = decode_cp(bytes, j);
+                    // SAFETY: same trie shape as `entries`; cp < CAP for every 0x3C-tagged char.
+                    let (off, blen) = unsafe {
+                        let slot = *Nfkd::TRIE_INDEX.get_unchecked((cp >> 6) as usize) + (cp & 63);
+                        let packed = *crate::nfd_byte_tables::NFKC_BYTE_DATA
+                            .get_unchecked(slot as usize);
+                        ((packed >> 8) as usize, (packed & 0xFF) as usize)
+                    };
+                    if (1..=16).contains(&blen) {
+                        if out.capacity() == 0 {
+                            out.reserve(n.saturating_mul(D::MAX_EXPAND));
+                        }
+                        out.push_str(&input[gap..j]);
+                        out.push_str(unsafe {
+                            std::str::from_utf8_unchecked(
+                                &crate::nfd_byte_tables::NFKC_BYTE_BLOB[off..off + blen],
+                            )
+                        });
+                        gap = j + w;
+                        i = j + w;
+                        prev_rank = 0;
+                        continue;
+                    }
+                }
+                // open a window: rewind over the WHOLE preceding combining cluster (any chars in D's
+                // unstable bitset — marks and decomposing chars, e.g. in-order plain marks we skipped)
+                // plus ONE starter: composition targets that starter, and everything between it and the
+                // relevant char participates in the reorder+compose.
+                let mut ws = j;
+                while ws > gap {
+                    let mut p = ws - 1;
+                    while p > gap && bytes[p] & 0xC0 == 0x80 {
+                        p -= 1;
+                    }
+                    ws = p;
+                    if !bit_set::<D>(decode_cp(bytes, p).0) {
+                        break; // reached the starter — include it and stop
+                    }
+                }
+                let mut seg_end = j + w; // always consume the relevant char itself (progress even if ∉ R)
+                while seg_end < n {
+                    let (cp, cw) = decode_cp(bytes, seg_end);
+                    if !bit_set::<R>(cp) {
+                        break;
+                    }
+                    seg_end += cw;
+                }
+                if out.capacity() == 0 {
+                    out.reserve(n.saturating_mul(D::MAX_EXPAND));
+                }
+                out.push_str(&input[gap..ws]);
+                decompose_to_pairs::<D>(&input[ws..seg_end], buf, pending);
+                compose_into(buf, &mut out, marks);
+                gap = seg_end;
+                i = seg_end;
+                prev_rank = 0;
+            }
+            if gap == 0 {
+                return Cow::Borrowed(input);
+            }
+            out.push_str(&input[gap..n]);
+            Cow::Owned(out)
+        })
+    })
+}
+
+/// First index ≥ `i` whose check tag is COMPOSE-relevant: nonzero, not `0x7E` (a decomposing char
+/// that is composition-STABLE — precomposed é/ά and Hangul syllables, the bulk of real text — its
+/// ccc-0/QC=Yes nature means skipping it is exact: the byte gap it leaves resets the rank chain), and
+/// a real tag (bit 7 excludes sentinels).
+#[cfg(target_arch = "aarch64")]
+#[inline]
+fn next_check_cand_compose(tags: &[u8], mut i: usize) -> usize {
+    use std::arch::aarch64::*;
+    let n = tags.len();
+    // SAFETY: every load is gated by `i + 16 <= n`; NEON loads are alignment-free.
+    unsafe {
+        let hb = vdupq_n_u8(0x80);
+        let stable = vdupq_n_u8(0x7E);
+        while i + 16 <= n {
+            let v = vld1q_u8(tags.as_ptr().add(i));
+            let hit =
+                vbicq_u8(vbicq_u8(vtstq_u8(v, v), vceqq_u8(v, stable)), vtstq_u8(v, hb));
+            if vmaxvq_u8(hit) != 0 {
+                let mut h = [0u8; 16];
+                vst1q_u8(h.as_mut_ptr(), hit);
+                for (k, &x) in h.iter().enumerate() {
+                    if x != 0 {
+                        return i + k;
+                    }
+                }
+            }
+            i += 16;
+        }
+    }
+    while i < n {
+        let t = tags[i];
+        if t != 0 && t != 0x7E && t & 0x80 == 0 {
+            return i;
+        }
+        i += 1;
+    }
+    n
+}
+
 fn compose<'a, D: Decomp, R: Bitset>(input: &'a str) -> Cow<'a, str> {
     let bytes = input.as_bytes();
     let n = bytes.len();
+    // aarch64: same strategy dispatch as decompose — the tag kernel for marked scripts; the bitset
+    // scan for ASCII-dominant text (skip_ascii is near-free) and CJK-block text (the check classify
+    // pays the block-peel there; the bitset scan skips Han/Hangul with the SIMD range kernels instead).
+    #[cfg(target_arch = "aarch64")]
+    {
+        let a0 = skip_ascii(bytes, 0);
+        if a0 == n {
+            return Cow::Borrowed(input); // pure ASCII is NFC/NFKC-stable
+        }
+        if n >= 256 && pick_tagged(bytes, a0) {
+            return compose_tagged::<D, R>(input);
+        }
+    }
     // First composition-relevant char (ccc != 0, or QC != Yes). None ⇒ already in the target form.
     let mut rel = next_set::<R>(bytes, 0).0;
     if rel == n {
@@ -621,6 +1425,36 @@ fn compose<'a, D: Decomp, R: Bitset>(input: &'a str) -> Cow<'a, str> {
         let (buf, pending, marks) = &mut *sc.borrow_mut();
         let mut i = 0;
         loop {
+            // Compat starter with a baked neighbour-inert NFKC blob (fullwidth punctuation etc. —
+            // the dense case in CJK text under NFKC): emit the blob directly, no window scratch.
+            if D::tag_breaks(0x3C) {
+                let (cp, cw) = decode_cp(bytes, rel);
+                if !HANGUL.contains(&cp) {
+                    // SAFETY: same trie shape as `entries`; rel chars are unstable ⇒ cp < CAP.
+                    let (off, blen) = unsafe {
+                        let slot =
+                            *Nfkd::TRIE_INDEX.get_unchecked((cp >> 6) as usize) + (cp & 63);
+                        let packed = *crate::nfd_byte_tables::NFKC_BYTE_DATA
+                            .get_unchecked(slot as usize);
+                        ((packed >> 8) as usize, (packed & 0xFF) as usize)
+                    };
+                    if (1..=16).contains(&blen) {
+                        out.push_str(&input[i..rel]);
+                        out.push_str(unsafe {
+                            std::str::from_utf8_unchecked(
+                                &crate::nfd_byte_tables::NFKC_BYTE_BLOB[off..off + blen],
+                            )
+                        });
+                        i = rel + cw;
+                        rel = next_set::<R>(bytes, i).0;
+                        if rel == n {
+                            out.push_str(&input[i..n]);
+                            break;
+                        }
+                        continue;
+                    }
+                }
+            }
             // back up one codepoint from `rel` to its starter (never below `i`), copy the stable `[i, ws)`
             let mut ws = rel;
             while ws > i {
@@ -663,6 +1497,270 @@ pub fn nfc(input: &str) -> Cow<'_, str> {
 /// NFKC-normalize `input`. Byte-exact with `str::nfkc()`.
 pub fn nfkc(input: &str) -> Cow<'_, str> {
     compose::<Nfkd, NfkcRelevant>(input)
+}
+
+/// The dedicated NFD-check classify tag of `cp` — the per-codepoint value baked into
+/// `NFD_CHECK_TABLES` (generated by `bitmap_gen`, which calls this; dev-path only, `#[doc(hidden)]`).
+/// One tag drives every normalization check with tag arithmetic alone (no decode, no table loads):
+///   * `0x00`        — inert: stable under NFD/NFKD, ccc 0, composition-irrelevant.
+///   * `0x01..=0x3B` — identity combining mark: the value is its ccc **rank** (order-preserving over
+///     the ~55 distinct ccc values, so rank comparisons decide canonical order exactly).
+///   * `0x3C`        — compat-changing STARTER (NFKD/NFKC break; NFD/NFC stable), e.g. `ﬁ`.
+///   * `0x3D`        — odd mark: compat-changing identity mark — rank via a rare probe under the NFD
+///     check; breaks under NFKD; window under compose.
+///   * `0x40 | rank` — NFC quick-check **Maybe** (composes as the second of some primary composite):
+///     `0x40` alone is a composable starter (V/T jamo); `0x40|r` a composable mark WITH its rank, so
+///     decompose order checks stay exact for the common diacriticals.
+///   * `0x7E`        — CHANGES under NFD (canonical decomposition, Hangul syllables included).
+/// Derived 1:1 from the committed tables, so it can never drift from the normalizer itself.
+#[doc(hidden)]
+pub fn check_tag(cp: u32) -> u8 {
+    let rank = ccc_rank_map();
+    // canonical decomposition changes it (Hangul's empty entry included): 0x7E when composition-
+    // stable (NFC_QC=Yes — precomposed é/ά/Hangul, the overwhelming majority: compose skips them
+    // tag-only), 0x7D when composition-relevant (exclusions/QC≠Yes: compose must open a window).
+    if bit_set::<Nfd>(cp) {
+        let e = Nfd::entries(cp);
+        if e.len() != 1 || (e[0] & 0xFF_FFFF) != cp {
+            let ccc0 = (e.first().map(|&x| x >> 24).unwrap_or(0)) as u8;
+            let comp_relevant =
+                bit_set::<NfcRelevant>(cp) || bit_set::<NfkcRelevant>(cp) || ccc0 != 0;
+            return if comp_relevant { 0x7D } else { 0x7E };
+        }
+    }
+    // identity under NFD from here on; ccc rank from the NFD entry (0 if none)
+    let r = if bit_set::<Nfd>(cp) { rank[&((Nfd::entries(cp)[0] >> 24) as u8)] } else { 0 };
+    // compatibility decomposition changes it
+    let nfkd_changes = bit_set::<Nfkd>(cp) && {
+        let e = Nfkd::entries(cp);
+        e.len() != 1 || (e[0] & 0xFF_FFFF) != cp
+    };
+    if nfkd_changes {
+        return if r == 0 { 0x3C } else { 0x3D }; // compat starter / odd compat mark (rare)
+    }
+    // NFC quick-check "Maybe": composes as the SECOND char of some primary composite — the baked
+    // COMPOSE seconds plus the arithmetic Hangul V/T jamo. Rank rides along in the low bits.
+    if maybe_composable(cp) {
+        return 0x40 | r;
+    }
+    r
+}
+
+/// ccc → order-preserving rank (1-based; ~55 distinct values). Shared by `check_tag` and the odd-mark
+/// probe path. Dev/rare-path only.
+#[doc(hidden)]
+pub fn ccc_rank_map() -> &'static std::collections::HashMap<u8, u8> {
+    use std::sync::OnceLock;
+    static RANK: OnceLock<std::collections::HashMap<u8, u8>> = OnceLock::new();
+    RANK.get_or_init(|| {
+        let mut cccs: Vec<u8> = (0..NFD_CAP)
+            .filter(|&c| bit_set::<Nfd>(c))
+            .flat_map(|c| Nfd::entries(c).iter().map(|&e| (e >> 24) as u8))
+            .filter(|&c| c != 0)
+            .collect();
+        cccs.sort_unstable();
+        cccs.dedup();
+        assert!(cccs.len() <= 0x3B, "ccc rank overflow: {} distinct values", cccs.len());
+        cccs.iter().enumerate().map(|(i, &c)| (c, i as u8 + 1)).collect()
+    })
+}
+
+/// NFC quick-check "Maybe": `cp` composes as the SECOND element of some primary composite.
+fn maybe_composable(cp: u32) -> bool {
+    use std::sync::OnceLock;
+    static MAYBE: OnceLock<std::collections::HashSet<u32>> = OnceLock::new();
+    MAYBE
+        .get_or_init(|| {
+            let mut s: std::collections::HashSet<u32> =
+                COMPOSE.iter().map(|&(k, _)| (k & 0x1F_FFFF) as u32).collect();
+            s.extend(0x1161..=0x1175); // V jamo (L+V composes arithmetically)
+            s.extend(0x11A8..=0x11C2); // T jamo (LV+T)
+            s
+        })
+        .contains(&cp)
+}
+
+/// Generator for `src/nfd_byte_tables.rs` — the byte-form decomposition tables the SIMD decompose
+/// kernel gathers from. Derived 1:1 from the committed `(ccc, char)` trie (never from
+/// `unicode-normalization` directly), so the two representations cannot drift. Regenerate with:
+///   cargo test -p atomsplit --release gen_byte_tables -- --ignored
+///
+/// Layout per form: `BYTE_DATA` is slot-parallel to `TRIE_DATA` (same two-level trie indexing);
+/// a non-zero slot is `(blob_off << 8) | byte_len` where `BLOB[off..off+len]` is the decomposition
+/// as UTF-8 bytes and `BLOB[off-3..off]` is `[first_ccc, last_ccc, mark_run_off]`:
+///   * `first_ccc` / `last_ccc` — ccc of the first / last decomposed char (the cross-char canonical-
+///     order chain check: fast path requires `first_ccc == 0 || first_ccc >= running last_ccc`).
+///   * `mark_run_off` — byte offset just past the LAST starter (0 ⇔ the decomposition is pure marks,
+///     in which case the current mark run continues and `run_start` must not move).
+/// `byte_len == 0xFF` is the scalar-fallback sentinel (internally unsorted or > 0xFE bytes — none
+/// expected; the generator asserts if one appears so we notice). Hangul stays arithmetic: its trie
+/// slots are 0 in both tables. The blob ends with 16 zero bytes so unaligned 16-byte loads at any
+/// valid `off` never read out of bounds.
+#[cfg(test)]
+mod gen_byte_tables {
+    use super::{Decomp, Nfd, Nfkd};
+    use std::collections::HashMap;
+    use std::fmt::Write;
+
+    fn gen_form<D: Decomp>(name: &str, o: &mut String) {
+        let mut blob: Vec<u8> = Vec::new();
+        let mut memo: HashMap<u32, u32> = HashMap::new(); // trie packed → byte packed (dedup: same
+        // packed value ⇒ same DECOMP slice ⇒ same bytes, so block sharing in the trie stays coherent)
+        let mut data: Vec<u32> = Vec::with_capacity(D::TRIE_DATA.len());
+        let mut fallbacks = 0usize;
+        for &packed in D::TRIE_DATA {
+            if packed == 0 {
+                data.push(0);
+                continue;
+            }
+            let v = *memo.entry(packed).or_insert_with(|| {
+                let (off, len) = ((packed >> 8) as usize, (packed & 0xFF) as usize);
+                let entries = &D::DECOMP[off..off + len];
+                let mut bytes = Vec::new();
+                let mut mark_off = 0usize; // byte offset just past the last starter
+                let (mut prev_ccc, mut sorted) = (0u8, true);
+                for &e in entries {
+                    let ccc = (e >> 24) as u8;
+                    let ch = char::from_u32(e & 0xFF_FFFF).unwrap();
+                    if ccc != 0 && ccc < prev_ccc {
+                        sorted = false; // would trigger reorder_insert — not blob-copy-safe
+                    }
+                    let mut buf = [0u8; 4];
+                    bytes.extend_from_slice(ch.encode_utf8(&mut buf).as_bytes());
+                    if ccc == 0 {
+                        mark_off = bytes.len();
+                    }
+                    prev_ccc = ccc; // marks-only compare: a starter resets via ccc==0 < any mark ccc
+                }
+                let first = (entries[0] >> 24) as u8;
+                let last = (entries[entries.len() - 1] >> 24) as u8;
+                let blen = if sorted && bytes.len() <= 0xFE { bytes.len() as u32 } else { 0xFF };
+                if blen == 0xFF {
+                    fallbacks += 1;
+                }
+                blob.extend_from_slice(&[first, last, mark_off as u8]);
+                let boff = blob.len() as u32;
+                blob.extend_from_slice(&bytes);
+                (boff << 8) | blen
+            });
+            data.push(v);
+        }
+        blob.extend_from_slice(&[0u8; 16]); // tail pad: unaligned 16-byte loads never go OOB
+        assert_eq!(fallbacks, 0, "{name}: unexpected fallback entries — investigate before shipping");
+        writeln!(o, "#[rustfmt::skip]").unwrap();
+        write!(o, "pub static {name}_BYTE_DATA: [u32; {}] = [", data.len()).unwrap();
+        for (k, v) in data.iter().enumerate() {
+            if k > 0 {
+                o.push(',');
+            }
+            write!(o, "{v}").unwrap();
+        }
+        writeln!(o, "];").unwrap();
+        writeln!(o, "#[rustfmt::skip]").unwrap();
+        write!(o, "pub static {name}_BYTE_BLOB: [u8; {}] = [", blob.len()).unwrap();
+        for (k, v) in blob.iter().enumerate() {
+            if k > 0 {
+                o.push(',');
+            }
+            write!(o, "{v}").unwrap();
+        }
+        writeln!(o, "];").unwrap();
+    }
+
+    /// Composed (NFKC) byte blobs for compat-decomposing STARTERS: slot-parallel to the NFKD trie,
+    /// `BLOB[off..off+len]` = the char's full NFKC as UTF-8. A slot is baked only when emitting the
+    /// blob verbatim can NEVER interact with neighbours: every result char has ccc 0, the first result
+    /// char is not QC-Maybe (no back-composition), and the last is not a composition FIRST (no forward
+    /// composition with a following Maybe char). Runtime additionally gates on the `0x3C` check tag.
+    fn gen_composed(name: &str, o: &mut String) {
+        use super::{Decomp, Nfkd};
+        use crate::compose_tables::COMPOSE;
+        use crate::nfd::{maybe_composable, nfkc};
+        let firsts: std::collections::HashSet<u32> = COMPOSE
+            .iter()
+            .map(|&(k, _)| (k >> 21) as u32)
+            .chain(0x1100..=0x1112) // L jamo (L+V composes)
+            .chain((0xAC00..=0xD7A3).step_by(28)) // LV syllables (LV+T)
+            .collect();
+        let mut blob: Vec<u8> = Vec::new();
+        let mut memo: HashMap<u32, u32> = HashMap::new();
+        let mut data: Vec<u32> = Vec::with_capacity(Nfkd::TRIE_DATA.len());
+        for &packed in Nfkd::TRIE_DATA {
+            if packed == 0 {
+                data.push(0);
+                continue;
+            }
+            let v = *memo.entry(packed).or_insert_with(|| {
+                let (off, len) = ((packed >> 8) as usize, (packed & 0xFF) as usize);
+                let entries = &Nfkd::DECOMP[off..off + len];
+                let s: String = entries
+                    .iter()
+                    .map(|&e| char::from_u32(e & 0xFF_FFFF).unwrap())
+                    .collect();
+                let k = nfkc(&s).into_owned(); // nfkc of the NFKD expansion == nfkc of the char
+                let chars: Vec<char> = k.chars().collect();
+                let ccc_of = |c: char| {
+                    let e = Nfkd::entries(c as u32);
+                    if e.is_empty() || (e.len() == 1 && (e[0] & 0xFF_FFFF) == c as u32) {
+                        e.first().map(|&x| (x >> 24) as u8).unwrap_or(0)
+                    } else {
+                        1 // decomposes further?! never for an NFKC result — treat as unsafe
+                    }
+                };
+                let safe = !k.is_empty()
+                    && k.len() <= 16
+                    && chars.iter().all(|&c| ccc_of(c) == 0)
+                    && !maybe_composable(chars[0] as u32)
+                    && !firsts.contains(&(*chars.last().unwrap() as u32));
+                if !safe {
+                    return 0;
+                }
+                let boff = blob.len() as u32;
+                blob.extend_from_slice(k.as_bytes());
+                (boff << 8) | k.len() as u32
+            });
+            data.push(v);
+        }
+        blob.extend_from_slice(&[0u8; 16]);
+        writeln!(o, "#[rustfmt::skip]").unwrap();
+        write!(o, "pub static {name}_BYTE_DATA: [u32; {}] = [", data.len()).unwrap();
+        for (k, v) in data.iter().enumerate() {
+            if k > 0 {
+                o.push(',');
+            }
+            write!(o, "{v}").unwrap();
+        }
+        writeln!(o, "];").unwrap();
+        writeln!(o, "#[rustfmt::skip]").unwrap();
+        write!(o, "pub static {name}_BYTE_BLOB: [u8; {}] = [", blob.len()).unwrap();
+        for (k, v) in blob.iter().enumerate() {
+            if k > 0 {
+                o.push(',');
+            }
+            write!(o, "{v}").unwrap();
+        }
+        writeln!(o, "];").unwrap();
+    }
+
+    #[test]
+    #[ignore = "writes src/nfd_byte_tables.rs — run explicitly to regenerate"]
+    fn generate() {
+        let mut o = String::new();
+        writeln!(
+            o,
+            "//! GENERATED — do NOT edit. Byte-form decomposition tables for the SIMD decompose\n\
+             //! kernel, derived 1:1 from the committed `(ccc, char)` tries in `nfd_tables.rs` /\n\
+             //! `nfkd_tables.rs` (see `nfd.rs::gen_byte_tables` for the layout). Regenerate with:\n\
+             //!   cargo test -p atomsplit --release gen_byte_tables -- --ignored\n"
+        )
+        .unwrap();
+        gen_form::<Nfd>("NFD", &mut o);
+        gen_form::<Nfkd>("NFKD", &mut o);
+        gen_composed("NFKC", &mut o);
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/nfd_byte_tables.rs");
+        std::fs::write(path, o).unwrap();
+        eprintln!("wrote {path}");
+    }
 }
 
 #[cfg(test)]
@@ -708,6 +1806,181 @@ mod tests {
     fn nfkc_matches() {
         for s in CORPUS {
             assert_eq!(nfkc(s), s.nfkc().collect::<String>(), "NFKC {s:?}");
+        }
+    }
+
+    /// The generated byte-form tables round-trip the `(ccc, char)` trie exactly: for every unstable
+    /// codepoint under both forms, the blob's UTF-8 decodes to the same char sequence, the header cccs
+    /// match the entries' first/last ccc, and `mark_run_off` equals the offset just past the last starter.
+    #[test]
+    fn byte_tables_round_trip() {
+        use super::{Decomp, bit_set};
+        fn check<D: Decomp>(form: &str) {
+            for cp in 0..D::CAP {
+                if !bit_set::<D>(cp) {
+                    continue;
+                }
+                let entries = D::entries(cp);
+                let (off, len) = D::byte_entry(cp);
+                if entries.is_empty() {
+                    assert_eq!((off, len), (0, 0), "{form} U+{cp:04X}: Hangul/empty must have no blob");
+                    continue;
+                }
+                assert_ne!(len, 0xFF, "{form} U+{cp:04X}: unexpected fallback sentinel");
+                let bytes = &D::BYTE_BLOB[off..off + len];
+                let decoded: Vec<char> = std::str::from_utf8(bytes).unwrap().chars().collect();
+                let expect: Vec<char> = entries
+                    .iter()
+                    .map(|&e| char::from_u32(e & 0xFF_FFFF).unwrap())
+                    .collect();
+                assert_eq!(decoded, expect, "{form} U+{cp:04X}: blob bytes");
+                let (first, last, mark_off) = (
+                    D::BYTE_BLOB[off - 3],
+                    D::BYTE_BLOB[off - 2],
+                    D::BYTE_BLOB[off - 1] as usize,
+                );
+                assert_eq!(first, (entries[0] >> 24) as u8, "{form} U+{cp:04X}: first_ccc");
+                assert_eq!(last, (entries[entries.len() - 1] >> 24) as u8, "{form} U+{cp:04X}: last_ccc");
+                let mut expect_off = 0usize;
+                let mut w = 0usize;
+                for &e in entries {
+                    let ch = char::from_u32(e & 0xFF_FFFF).unwrap();
+                    w += ch.len_utf8();
+                    if (e >> 24) == 0 {
+                        expect_off = w;
+                    }
+                }
+                assert_eq!(mark_off, expect_off, "{form} U+{cp:04X}: mark_run_off");
+            }
+        }
+        check::<super::Nfd>("NFD");
+        check::<super::Nfkd>("NFKD");
+    }
+
+    /// The committed check tables must match `check_tag` exactly (catches a stale
+    /// `nfd_check_tables.rs` after a table change), and `check_tag`'s semantics must match the
+    /// normalizer's own tables: break-tags ⇔ decomposition changes the char; rank order ⇔ ccc order.
+    #[test]
+    fn check_tables_exact() {
+        use super::{Decomp, bit_set, check_tag};
+        let mut buf = [0u8; 4];
+        let mut tags = [0u8; 4];
+        // rank order preserves ccc order: collect (ccc, rank) pairs and verify monotonicity
+        let mut pairs: Vec<(u8, u8)> = Vec::new();
+        for cp in 0..0x110000u32 {
+            let Some(c) = char::from_u32(cp) else { continue };
+            let expect = check_tag(cp);
+            let s = c.encode_utf8(&mut buf);
+            crate::classify::classify_scalar_with::<0x81>(
+                s.as_bytes(),
+                &mut tags[..s.len()],
+                &crate::nfd_check_tables::NFD_CHECK_TABLES,
+            );
+            assert_eq!(tags[0], expect, "U+{cp:04X}: committed check table drifted from check_tag");
+            // semantics vs the normalizer's tables
+            let nfd_changes = bit_set::<super::Nfd>(cp) && {
+                let e = super::Nfd::entries(cp);
+                e.len() != 1 || (e[0] & 0xFF_FFFF) != cp
+            };
+            assert_eq!(expect >= 0x7D, nfd_changes, "U+{cp:04X}: NFD-break tag (t = {expect:#04x})");
+            let nfkd_changes = bit_set::<super::Nfkd>(cp) && {
+                let e = super::Nfkd::entries(cp);
+                e.len() != 1 || (e[0] & 0xFF_FFFF) != cp
+            };
+            assert_eq!(
+                super::Nfkd::tag_breaks(expect),
+                nfkd_changes,
+                "U+{cp:04X}: NFKD-break tag (t = {expect:#04x})"
+            );
+            // Maybe flag ⇔ composable-second, on non-breaking chars only
+            if !nfd_changes && !nfkd_changes {
+                assert_eq!(
+                    expect & 0x40 != 0,
+                    super::maybe_composable(cp),
+                    "U+{cp:04X}: Maybe flag (t = {expect:#04x})"
+                );
+            }
+            let r = expect & 0x3F;
+            if !super::Nfkd::tag_breaks(expect) && r != 0 {
+                let ccc = (super::Nfd::entries(cp)[0] >> 24) as u8;
+                assert_ne!(ccc, 0, "U+{cp:04X}: rank tag on a ccc-0 char (t = {expect:#04x})");
+                pairs.push((ccc, r));
+            }
+        }
+        pairs.sort_unstable();
+        for w in pairs.windows(2) {
+            assert!(
+                (w[0].0 == w[1].0) == (w[0].1 == w[1].1) && w[0].1 <= w[1].1,
+                "rank order must mirror ccc order: {w:?}"
+            );
+        }
+    }
+
+    /// The aarch64 tag-driven kernels are gated behind input-size/content dispatch in `nfd()`/`nfc()`,
+    /// so exercise them DIRECTLY: byte-exact vs `unicode-normalization` for every codepoint glued to
+    /// mark suffixes (both orders), for all four forms.
+    #[cfg(target_arch = "aarch64")]
+    #[test]
+    fn tagged_paths_exhaustive() {
+        use super::{Nfd, Nfkd, NfcRelevant, NfkcRelevant, compose_tagged, decompose_tagged};
+        let mut buf = String::new();
+        for cp in 0u32..0x30000 {
+            let Some(c) = char::from_u32(cp) else { continue };
+            for suffix in ["", "\u{0301}", "\u{0323}\u{0301}", "\u{0301}\u{0323}", "\u{05B4}"] {
+                buf.clear();
+                buf.push(c);
+                buf.push_str(suffix);
+                assert_eq!(
+                    decompose_tagged::<Nfd>(&buf),
+                    buf.nfd().collect::<String>(),
+                    "tagged NFD {cp:#x} {suffix:?}"
+                );
+                assert_eq!(
+                    decompose_tagged::<Nfkd>(&buf),
+                    buf.nfkd().collect::<String>(),
+                    "tagged NFKD {cp:#x} {suffix:?}"
+                );
+                assert_eq!(
+                    compose_tagged::<Nfd, NfcRelevant>(&buf),
+                    buf.nfc().collect::<String>(),
+                    "tagged NFC {cp:#x} {suffix:?}"
+                );
+                assert_eq!(
+                    compose_tagged::<Nfkd, NfkcRelevant>(&buf),
+                    buf.nfkc().collect::<String>(),
+                    "tagged NFKC {cp:#x} {suffix:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    #[ignore = "manual timing probe"]
+    fn timing_probe() {
+        for (label, rel) in [("Thai", "benches/data/th.txt"), ("Korean", "benches/data/ko.txt")] {
+            let path = format!("{}/{}", env!("CARGO_MANIFEST_DIR"), rel);
+            let Ok(s) = std::fs::read_to_string(&path) else { continue };
+            let mut c = s.len().min(180_000);
+            while c > 0 && !s.is_char_boundary(c) {
+                c -= 1;
+            }
+            let text = &s[..c];
+            let n = text.len();
+            let mut tags = vec![0u8; n];
+            let mut best = f64::INFINITY;
+            for _ in 0..7 {
+                let t = std::time::Instant::now();
+                for _ in 0..20 {
+                    crate::classify::classify_with::<0x81, 0x80, { crate::classify::NO_CJK }>(
+                        text.as_bytes(),
+                        &mut tags,
+                        &crate::nfd_check_tables::NFD_CHECK_TABLES,
+                    );
+                    std::hint::black_box(tags[0]);
+                }
+                best = best.min(t.elapsed().as_nanos() as f64 / (20 * n) as f64);
+            }
+            eprintln!("{label}: check-classify {best:.3} ns/B");
         }
     }
 
