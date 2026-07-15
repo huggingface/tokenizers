@@ -29,7 +29,6 @@ path = "src/lib.rs"
 [dependencies]
 atomsplit = { path = "../atomsplit" }
 rand = "0.9"
-onig = { version = "6.5.1", default-features = false, optional = true }
 regex = "1.10"
 rayon = "1.10"
 rayon-cond = "0.4"
@@ -65,12 +64,11 @@ yada = "0.7.0"
 tokenizers-release = { package = "tokenizers", version = "=0.23.1", optional = true }
 
 [features]
-# `fancy-regex` / `onig` are the system-regex backends, needed ONLY for a `Split` pre-tokenizer with
-# an arbitrary (non-GPT) regex or the `Replace` normalizer — the atomsplit-native pre-tokenizers
-# (GPT-2, cl100k, deepseek, the class family, char-delimiter) need no backend. Build with
-# `--no-default-features` (optionally re-adding `progressbar`) to drop fancy-regex entirely; a stub
-# then makes those arbitrary-regex paths error at load. onig is C (Oniguruma, archived upstream).
-default = ["progressbar", "fancy-regex"]
+# `fancy-regex` is the OPTIONAL system-regex backend, needed ONLY for a `Split` pre-tokenizer with an
+# arbitrary (non-GPT) regex or the `Replace` normalizer — the atomsplit-native pre-tokenizers (GPT-2,
+# cl100k, deepseek, the class family, char-delimiter) need no backend. Without it a stub compiles and
+# those arbitrary-regex paths error at load. Enable with `--features fancy-regex`.
+default = ["progressbar"]
 progressbar = ["indicatif"]
 http = ["hf-hub"]
 unstable_wasm = ["fancy-regex", "getrandom/wasm_js"]
