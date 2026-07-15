@@ -1,9 +1,9 @@
-//! Stub `SysRegex` for builds with **no** system-regex backend (`fancy-regex` and `onig` both off).
+//! Stub `SysRegex` for builds with **no** system-regex backend (`fancy-regex` off — the default).
 //!
 //! The type stays present so `Split` / `Replace` still compile, but construction always fails: the
 //! atomsplit-native pre-tokenizers (GPT-2, cl100k, deepseek, the class family, char-delimiter) need
 //! no backend, while a `Split` with an *arbitrary* regex or the `Replace` normalizer error at load
-//! time with a clear message. Enable `fancy-regex` (default) or `onig` to get a real backend.
+//! time with a clear message. Enable `fancy-regex` to get a real backend.
 use std::error::Error;
 
 #[derive(Debug)]
@@ -15,7 +15,7 @@ pub struct SysRegex {
 
 impl SysRegex {
     pub fn new(_regex_str: &str) -> Result<Self, Box<dyn Error + Send + Sync + 'static>> {
-        Err("no system-regex backend compiled: enable the `fancy-regex` (default) or `onig` feature \
+        Err("no system-regex backend compiled: enable the `fancy-regex` feature \
              to use a `Split` pre-tokenizer with a custom regex, or the `Replace` normalizer"
             .into())
     }

@@ -99,7 +99,7 @@ impl pipeline::PreTokenizer for PipelineSequence {
     /// so far. A child sees only the text of a span (`&text[span]`) and returns
     /// offsets relative to it, which we rebase to absolute mirroring how the
     /// legacy path worked.
-    fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Split>) -> Result<()> {
+    fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Span>) -> Result<()> {
         if text.is_empty() {
             return Ok(());
         }
@@ -126,12 +126,12 @@ impl pipeline::PreTokenizer for PipelineSequence {
 
         let cap = text.len() / 5;
 
-        let mut current: Vec<pipeline::Split> = Vec::with_capacity(cap);
-        current.push(pipeline::Split {
+        let mut current: Vec<pipeline::Span> = Vec::with_capacity(cap);
+        current.push(pipeline::Span {
             start: 0,
             end: text.len() as u32,
         });
-        let mut next: Vec<pipeline::Split> = Vec::with_capacity(cap);
+        let mut next: Vec<pipeline::Span> = Vec::with_capacity(cap);
 
         for child in &self.pre_tokenizers {
             next.clear();

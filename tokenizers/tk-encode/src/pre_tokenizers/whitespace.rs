@@ -42,7 +42,7 @@ impl PreTokenizer for WhitespaceSplit {
 }
 
 impl pipeline::PreTokenizer for WhitespaceSplit {
-    fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Split>) -> Result<()> {
+    fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Span>) -> Result<()> {
         // drop whitespace runs, keep everything else as runs — atomsplit SIMD classify + class-runs FSM.
         // atom `WS` == `char::is_whitespace`, so byte-exact with the scalar path.
         use atomsplit::classify::mask;
@@ -71,7 +71,7 @@ pub fn is_word_char(ch: char) -> bool {
 
 impl pipeline::PreTokenizer for Whitespace {
     #[inline(never)]
-    fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Split>) -> Result<()> {
+    fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Span>) -> Result<()> {
         // `\w+|[^\w\s]+`: drop whitespace, cut at the word↔symbol boundary, each run one token —
         // atomsplit classify + class-runs FSM (`WORD` = `\w`; keep-A = word, keep-B = symbol).
         use atomsplit::classify::mask;

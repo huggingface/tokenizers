@@ -45,7 +45,7 @@ fn emit(
     cls: u8,
 ) {
     if *seg_class != 0 {
-        out[*w] = (*seg_start as u32, pos as u32);
+        out[*w] = Span { start: *seg_start as u32, end: pos as u32 };
         *w += 1;
     }
     *seg_start = pos;
@@ -74,7 +74,7 @@ fn tail<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>(
     if seg_class == 1 {
         // open isolate = one pending char; emit it, then scan the remainder with no open segment.
         let e = seg_start + char_len(text[seg_start]);
-        out[w] = (seg_start as u32, e as u32);
+        out[w] = Span { start: seg_start as u32, end: e as u32 };
         return emit_class_spans::<DROP, ISOLATE, KEEP_A>(text, tags, out, w + 1, e, 0, None);
     }
     // seg_mask of the last bytes before the tail converted to a full u16 mask. The simd path uses

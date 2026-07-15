@@ -17,7 +17,7 @@ impl PreTokenizer for BertPreTokenizer {
 
 impl pipeline::PreTokenizer for BertPreTokenizer {
     #[inline(never)]
-    fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Split>) -> Result<()> {
+    fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Span>) -> Result<()> {
         // Bert pre-tokenization = drop whitespace runs, isolate each punctuation char, keep every other
         // run. One `atomsplit` SIMD classify (bytes → atom tags) + the class-runs FSM, byte-exact with
         // the legacy `char::is_whitespace` / `is_punc` split above (see the tests).
@@ -31,7 +31,7 @@ impl pipeline::PreTokenizer for BertPreTokenizer {
         out.extend(
             spans[..n]
                 .iter()
-                .map(|&(s, e)| pipeline::Split { start: s, end: e }),
+                .map(|&(s, e)| pipeline::Span { start: s, end: e }),
         );
         Ok(())
     }

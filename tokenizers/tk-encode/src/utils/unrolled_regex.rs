@@ -1,6 +1,6 @@
 //! Recognize a known GPT pre-tokenization regex and route it to the byte-exact native
 //! `atomsplit` FSM, so those pre-tokenizers need no system-regex backend. An unrecognized
-//! pattern returns `None` and falls back to `SysRegex` (fancy-regex / onig).
+//! pattern returns `None` and falls back to `SysRegex` (the optional fancy-regex backend).
 
 // Canonical GPT pre-tokenization regexes (the look-ahead originals), used as recognition keys:
 // `gpt_fsm` maps each to the `atomsplit` FSM that reproduces its `Isolated` split byte-for-byte.

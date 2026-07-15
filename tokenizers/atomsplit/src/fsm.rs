@@ -52,8 +52,36 @@ fn run_end(tags: &[u8], mut i: usize, end: usize, mut m: u16) -> usize {
     i
 }
 
-/// A token span: byte offsets `[start, end)` into the input.
-pub type Span = (u32, u32);
+/// A token span: byte offsets `[start, end)` into the input. `#[repr(C)]` so the FSM output buffer has a
+/// stable `[start, end]` layout — the pipeline reuses it with zero conversion, and it can be reinterpreted
+/// as bytes / handed across the crate boundary.
+#[repr(C)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct Span {
+    pub start: u32,
+    pub end: u32,
+}
+
+impl Span {
+    #[inline]
+    pub const fn new(start: u32, end: u32) -> Self {
+        Self { start, end }
+    }
+
+    /// `[start, end)` as a `usize` range — for slicing the input text.
+    #[inline]
+    pub fn range(self) -> core::ops::Range<usize> {
+        self.start as usize..self.end as usize
+    }
+}
+
+/// Compare against a bare `(start, end)` tuple — convenience for tests/interop.
+impl PartialEq<(u32, u32)> for Span {
+    #[inline]
+    fn eq(&self, o: &(u32, u32)) -> bool {
+        self.start == o.0 && self.end == o.1
+    }
+}
 
 /// No-`push` class-family pre-tokenizer core: writes spans into the preallocated `out` slice and returns
 /// the count. ONE shape covers the whole class family via `<DROP, ISOLATE, KEEP_A>`:
@@ -113,7 +141,7 @@ pub fn emit_class_spans<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>(
         // this will usually be at the tail of a SIMD call.
         text_pointer = run_end(tags, text_pointer, n, segment_class); // skip the whole drop run at once
         if segment_class != DROP {
-            out[write_index] = (segment_start as u32, text_pointer as u32);
+            out[write_index] = Span { start: segment_start as u32, end: text_pointer as u32 };
             if text_pointer == n {
                 return write_index + 1;
             }
@@ -132,7 +160,7 @@ pub fn emit_class_spans<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>(
         } else if in_mask(t, ISOLATE) {
             let s = text_pointer;
             text_pointer += char_len(text[text_pointer]);
-            out[write_index] = (s as u32, text_pointer as u32); // isolate: one char = one token
+            out[write_index] = Span { start: s as u32, end: text_pointer as u32 }; // isolate: one char = one token
             write_index += 1;
         } else {
             let s = text_pointer;
@@ -141,7 +169,7 @@ pub fn emit_class_spans<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>(
             } else {
                 run_end(tags, text_pointer, n, other)
             };
-            out[write_index] = (s as u32, text_pointer as u32);
+            out[write_index] = Span { start: s as u32, end: text_pointer as u32 };
             write_index += 1;
         }
     }
@@ -282,7 +310,7 @@ fn cl100k(text: &[u8], tags: &[u8], out: &mut [Span], digit_cap: usize) -> usize
             _ => i += char_len(b),
         }
         // SAFETY: tokens partition the input, so `w < #tokens <= end < out.len()` (out ≥ text.len()+? ; callers size n+1).
-        unsafe { *out.get_unchecked_mut(w) = (start as u32, i as u32) };
+        unsafe { *out.get_unchecked_mut(w) = Span { start: start as u32, end: i as u32 } };
         w += 1;
     }
     w
@@ -417,7 +445,7 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
             {
                 p += 3;
             }
-            unsafe { *out.get_unchecked_mut(w) = (start as u32, p as u32) };
+            unsafe { *out.get_unchecked_mut(w) = Span { start: start as u32, end: p as u32 } };
             w += 1;
             i = p;
             continue;
@@ -433,15 +461,15 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
             }
             if is_lm(p) {
                 if last > i {
-                    unsafe { *out.get_unchecked_mut(w) = (start as u32, last as u32) }; // gap sans prefix char
+                    unsafe { *out.get_unchecked_mut(w) = Span { start: start as u32, end: last as u32 } }; // gap sans prefix char
                     w += 1;
                 }
                 let e = letter_run(p);
-                unsafe { *out.get_unchecked_mut(w) = (last as u32, e as u32) }; // prefix char + `[\p{L}\p{M}]+`
+                unsafe { *out.get_unchecked_mut(w) = Span { start: last as u32, end: e as u32 } }; // prefix char + `[\p{L}\p{M}]+`
                 w += 1;
                 i = e;
             } else {
-                unsafe { *out.get_unchecked_mut(w) = (start as u32, p as u32) }; // whole gap run is one piece
+                unsafe { *out.get_unchecked_mut(w) = Span { start: start as u32, end: p as u32 } }; // whole gap run is one piece
                 w += 1;
                 i = p;
             }
@@ -503,7 +531,7 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
             _ => i += char_len(b),
         }
         // SAFETY: tokens partition the input, so `w < #tokens <= end < out.len()` (out ≥ text.len()+? ; callers size n+1).
-        unsafe { *out.get_unchecked_mut(w) = (start as u32, i as u32) };
+        unsafe { *out.get_unchecked_mut(w) = Span { start: start as u32, end: i as u32 } };
         w += 1;
     }
     w
@@ -578,7 +606,7 @@ pub fn fsm_byte_level(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
             _ => i += char_len(text[i]),
         }
         // SAFETY: tokens partition the input, so `w < #tokens <= end < out.len()` (out ≥ text.len()+? ; callers size n+1).
-        unsafe { *out.get_unchecked_mut(w) = (start as u32, i as u32) };
+        unsafe { *out.get_unchecked_mut(w) = Span { start: start as u32, end: i as u32 } };
         w += 1;
     }
     w
@@ -674,7 +702,7 @@ fn emit_o200k_letters(
         } else {
             e
         };
-        unsafe { *out.get_unchecked_mut(*w) = (start as u32, tok_end as u32) };
+        unsafe { *out.get_unchecked_mut(*w) = Span { start: start as u32, end: tok_end as u32 } };
         *w += 1;
         first = false;
         cursor = tok_end;
@@ -824,7 +852,7 @@ pub fn fsm_o200k(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
             _ => i += char_len(b),
         }
         // SAFETY: tokens partition the input, so `w < #tokens <= end < out.len()` (out ≥ text.len()+? ; callers size n+1).
-        unsafe { *out.get_unchecked_mut(w) = (start as u32, i as u32) };
+        unsafe { *out.get_unchecked_mut(w) = Span { start: start as u32, end: i as u32 } };
         w += 1;
     }
     w
@@ -956,7 +984,7 @@ impl CharDelimiterSplit {
                 Some(off) if text[i + off..i + off + dl] == *delim => {
                     let m = i + off;
                     if m > start {
-                        out[w] = (start as u32, m as u32); // gap before the delimiter (Removed)
+                        out[w] = Span { start: start as u32, end: m as u32 }; // gap before the delimiter (Removed)
                         w += 1;
                     }
                     i = m + dl;
@@ -967,7 +995,7 @@ impl CharDelimiterSplit {
             }
         }
         if start < n {
-            out[w] = (start as u32, n as u32);
+            out[w] = Span { start: start as u32, end: n as u32 };
             w += 1;
         }
         w

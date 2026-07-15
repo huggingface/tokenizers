@@ -146,8 +146,7 @@ impl PreTokenizer for Split {
             .fsm
             .filter(|_| !self.invert && self.behavior == SplitDelimiterBehavior::Isolated)
             .ok_or_else(|| -> crate::tokenizer::Error {
-                "this `Split` pattern needs a system-regex backend; enable the `fancy-regex` \
-                 (default) or `onig` feature"
+                "this `Split` pattern needs a system-regex backend; enable the `fancy-regex` feature"
                     .into()
             })?;
         pretokenized.split(|_, normalized| {
@@ -157,7 +156,7 @@ impl PreTokenizer for Split {
 }
 
 impl pipeline::PreTokenizer for Split {
-    fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Split>) -> Result<()> {
+    fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Span>) -> Result<()> {
         // A recognized GPT regex (gpt2 / cl100k-Llama-3) in its only real usage — `Isolated`, not
         // inverted — routes straight to the native atomsplit FSM. These regexes cover the whole input,
         // so `Isolated` == the match list, and the FSM is byte-exact with `regex` (see the tests).
@@ -180,8 +179,7 @@ impl pipeline::PreTokenizer for Split {
         }
         // Not a natively-routed GPT regex: fall back to the system-regex backend.
         let regex = self.regex.as_ref().ok_or_else(|| -> crate::tokenizer::Error {
-            "this `Split` pattern needs a system-regex backend; enable the `fancy-regex` \
-             (default) or `onig` feature"
+            "this `Split` pattern needs a system-regex backend; enable the `fancy-regex` feature"
                 .into()
         })?;
         let matches = if self.invert {

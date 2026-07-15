@@ -39,7 +39,7 @@ impl PreTokenizer for Punctuation {
 }
 
 impl pipeline::PreTokenizer for Punctuation {
-    fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Split>) -> Result<()> {
+    fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Span>) -> Result<()> {
         use SplitDelimiterBehavior::{Isolated, Removed};
         // atom `PUNCT` == `is_punc` (ASCII-punct ∪ \p{P}), so Isolated/Removed map to the class-runs FSM
         // byte-exactly. The merge/contiguous behaviors aren't a class-runs shape → keep the scalar split.
