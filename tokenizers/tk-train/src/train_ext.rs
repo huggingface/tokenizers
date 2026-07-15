@@ -1,9 +1,12 @@
 use std::fs::File;
 use std::io::BufReader;
 
-use tk_encode::tokenizer::{
-    Decoder, Model, Normalizer, PostProcessor, PreTokenizer, TokenizerImpl,
-};
+use tk_encode::decoders::DecoderWrapper;
+use tk_encode::normalizers::NormalizerWrapper;
+use tk_encode::pre_tokenizers::PreTokenizerWrapper;
+use tk_encode::processors::PostProcessorWrapper;
+use tk_encode::tokenizer::pipeline::TrainingPretokenizer;
+use tk_encode::tokenizer::{Model, TokenizerImpl};
 use tk_encode::utils::iter::ResultShunt;
 use tk_encode::utils::progress::{ProgressBar, ProgressStyle};
 use tk_encode::{LinesWithEnding, Result};
@@ -35,13 +38,14 @@ pub trait TokenizerTrainExt<M> {
         S: AsRef<str> + Send;
 }
 
-impl<M, N, PT, PP, D> TokenizerTrainExt<M> for TokenizerImpl<M, N, PT, PP, D>
+// Retargeted from the legacy generic `TokenizerImpl<M,N,PT,PP,D>` (which drove training through the
+// legacy `Normalizer`/`PreTokenizer` trait runtime) to the concrete config wrappers, so training
+// pre-tokenizes through the fast `TrainingPretokenizer` (atomsplit) pipeline instead. `M` stays
+// generic so both `ModelWrapper` (via `TrainerWrapper`) and single-model trainers still apply.
+impl<M> TokenizerTrainExt<M>
+    for TokenizerImpl<M, NormalizerWrapper, PreTokenizerWrapper, PostProcessorWrapper, DecoderWrapper>
 where
     M: Model + Send + Sync,
-    N: Normalizer + Send + Sync,
-    PT: PreTokenizer + Send + Sync,
-    PP: PostProcessor + Send + Sync,
-    D: Decoder + Send + Sync,
 {
     fn train_from_files<T>(&mut self, trainer: &mut T, files: Vec<String>) -> Result<&mut Self>
     where
@@ -84,13 +88,15 @@ where
                     None
                 };
 
+                let pretok =
+                    TrainingPretokenizer::new(self.get_normalizer(), self.get_pre_tokenizer())?;
                 trainer.feed(
                     sequences.inspect(|s| {
                         if let Some(progress) = &progress {
                             progress.inc(s.len() as u64)
                         }
                     }),
-                    |seq| self.pre_tokenize_for_training(seq),
+                    |seq| pretok.pretokenize(seq),
                 )?;
 
                 if let Some(pbar) = progress {
@@ -126,13 +132,14 @@ where
             None
         };
 
+        let pretok = TrainingPretokenizer::new(self.get_normalizer(), self.get_pre_tokenizer())?;
         trainer.feed(
             sequences.inspect(|_s| {
                 if let Some(progress) = &progress {
                     progress.inc(1)
                 }
             }),
-            |seq| self.pre_tokenize_for_training(seq),
+            |seq| pretok.pretokenize(seq),
         )?;
         if let Some(pbar) = progress {
             pbar.finish();

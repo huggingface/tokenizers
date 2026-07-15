@@ -149,6 +149,124 @@ impl TryFrom<PreTokenizerWrapper> for PipelinePreTokenizer {
     }
 }
 
+/// Normalize `seq` with the pipeline `Cow` normalizer (identity when there is no normalizer).
+fn normalize_for_training<'a>(
+    normalizer: Option<&NormalizerWrapper>,
+    seq: &'a str,
+) -> Result<Cow<'a, str>> {
+    match normalizer {
+        Some(n) => Normalizer::normalize(n, seq),
+        None => Ok(Cow::Borrowed(seq)),
+    }
+}
+
+/// Remap a word's bytes to the GPT-2 byte-level alphabet (one printable char per byte), the
+/// content rewrite the legacy [`crate::utils::byte_level::byte_level_transform`] applied before
+/// counting. A byte-level model must train on these symbols, not raw UTF-8.
+fn byte_level_word(word: &str) -> String {
+    word.bytes()
+        .map(|b| crate::utils::byte_level::BYTES_CHAR_LOOKUP[b as usize])
+        .collect()
+}
+
+/// Pipeline-based pre-tokenizer for **training**: built once from a tokenizer's normalizer +
+/// pre-tokenizer config, then applied per sequence to yield the normalized words a `Trainer`
+/// counts. This is the pipeline replacement for the legacy
+/// `TokenizerImpl::pre_tokenize_for_training` — `tk-train` builds one before feeding the trainer.
+pub struct TrainingPretokenizer {
+    normalizer: Option<NormalizerWrapper>,
+    engine: TrainingSplit,
+}
+
+enum TrainingSplit {
+    /// atomsplit-backed pipeline pre-tokenizer over the normalized text.
+    Pipeline(PipelinePreTokenizer),
+    /// ByteLevel: split on the GPT-2 regex (or not), then remap each word to the byte-level
+    /// alphabet — the alphabet remap that `PipelinePreTokenizer`'s encode-path `TryFrom` drops.
+    ByteLevel {
+        split: Option<SplitPretok>,
+        add_prefix_space: bool,
+    },
+}
+
+impl TrainingPretokenizer {
+    /// Prepare a training pre-tokenizer from a tokenizer's normalizer + pre-tokenizer config.
+    ///
+    /// ponytail: Metaspace (and any other pretokenizer the pipeline doesn't cover) surfaces the
+    /// `PipelinePreTokenizer::try_from` error rather than silently mis-training. Add a Metaspace
+    /// variant to `PipelinePreTokenizer` when training those is needed.
+    pub fn new(
+        normalizer: Option<&NormalizerWrapper>,
+        pre_tokenizer: Option<&PreTokenizerWrapper>,
+    ) -> Result<Self> {
+        let engine = match pre_tokenizer {
+            Some(PreTokenizerWrapper::ByteLevel(bl)) => {
+                let split = if bl.use_regex {
+                    Some(SplitPretok::new(
+                        SplitPattern::Regex(GPT2_REGEX_STR.to_owned()),
+                        SplitDelimiterBehavior::Isolated,
+                        false,
+                    )?)
+                } else {
+                    None
+                };
+                TrainingSplit::ByteLevel {
+                    split,
+                    add_prefix_space: bl.add_prefix_space,
+                }
+            }
+            Some(w) => TrainingSplit::Pipeline(w.clone().try_into()?),
+            None => TrainingSplit::Pipeline(PipelinePreTokenizer::None),
+        };
+        Ok(Self {
+            normalizer: normalizer.cloned(),
+            engine,
+        })
+    }
+
+    /// The normalized words of `seq`, ready for the trainer to count.
+    pub fn pretokenize(&self, seq: &str) -> Result<Vec<String>> {
+        let normalized = normalize_for_training(self.normalizer.as_ref(), seq)?;
+        match &self.engine {
+            TrainingSplit::Pipeline(pretok) => {
+                let mut spans = Vec::new();
+                pretok.pre_tokenize(&normalized, &mut spans)?;
+                Ok(spans
+                    .iter()
+                    .map(|s| normalized[s.start as usize..s.end as usize].to_owned())
+                    .collect())
+            }
+            TrainingSplit::ByteLevel {
+                split,
+                add_prefix_space,
+            } => {
+                let prefixed;
+                let text: &str = if *add_prefix_space
+                    && !normalized.is_empty()
+                    && !normalized.starts_with(' ')
+                {
+                    prefixed = format!(" {normalized}");
+                    &prefixed
+                } else {
+                    &normalized
+                };
+                let mut spans = Vec::new();
+                match split {
+                    Some(split) => split.pre_tokenize(text, &mut spans)?,
+                    None => spans.push(Span {
+                        start: 0,
+                        end: text.len() as u32,
+                    }),
+                }
+                Ok(spans
+                    .iter()
+                    .map(|s| byte_level_word(&text[s.start as usize..s.end as usize]))
+                    .collect())
+            }
+        }
+    }
+}
+
 /// An output token. Carries only the vocabulary `id` — offsets and the token
 /// string are dropped, which is all an encode-only caller needs.
 #[derive(Debug, Clone, Copy)]
