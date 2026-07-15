@@ -543,8 +543,9 @@ fn fancy_reference_ns(text: &str, regexes: &[String]) -> Option<f64> {
 
 /// Same composed chain under PCRE2 (C) — the third reference. Built with `utf(true).ucp(true)` so
 /// `\p{L}`/`\p{N}`/`\s` are Unicode-aware and byte offsets land on char boundaries, matching onig and
-/// fancy-regex. Operates on `&[u8]`; `find_iter` yields `Result<Match, _>` (a match error breaks the
-/// pass). `None` if no regex pre-tokenizer, or PCRE2 rejects/fails a pattern.
+/// fancy-regex, and **JIT-compiled** (`jit_if_available`) so PCRE2 is benched at its best. Operates on
+/// `&[u8]`; `find_iter` yields `Result<Match, _>` (a match error breaks the pass). `None` if no regex
+/// pre-tokenizer, or PCRE2 rejects/fails a pattern.
 fn pcre2_reference_ns(text: &str, regexes: &[String]) -> Option<f64> {
     if regexes.is_empty() || text.is_empty() {
         return None;

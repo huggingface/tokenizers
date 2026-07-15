@@ -809,7 +809,7 @@ def pretok_compare_md(model):
     md = ["", "**Pre-tokenize: `classify + fsm` vs regex engines** — ns/byte, lower better. The fsm is "
           "the scalar jump-table in both pipe columns; **SIMD / scalar is the classify pass** (regex "
           "pre-tokenizers have no SIMD fsm). `×vs` = engine ÷ our pipeline (SIMD / scalar classify); "
-          "`onig` & `pcre2` are C, `fancy` is pure-Rust fancy-regex.", "",
+          "`onig` & `pcre2` (JIT) are C, `fancy` is pure-Rust fancy-regex.", "",
           "| Fixture | classify SIMD | classify scalar | pipe (SIMD cls + fsm) | pipe (scalar cls + fsm) "
           "| onig | fancy | pcre2 | ×vs onig | ×vs fancy | ×vs pcre2 |",
           "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]

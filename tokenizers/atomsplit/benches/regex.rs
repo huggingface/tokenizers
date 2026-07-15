@@ -15,9 +15,80 @@ use atomsplit::regexes;
 use fancy_regex::Regex as Fancy;
 use onig::Regex;
 use std::hint::black_box;
+use logos::Logos;
 use std::time::Instant;
 
 type Fsm = fn(&[u8], &[u8], &mut [Span]) -> usize;
+
+// logos DFA lexers approximating the GPT splits. logos has no look-ahead (`(?!\S)`) nor case-insensitive
+// (`(?i:)`), so token boundaries differ slightly — this is a raw-throughput reference (like fancy), not a
+// byte-exact oracle (that's onig). deepseek is a 3-split `Sequence`, not one grammar → no logos number.
+#[derive(Logos)]
+enum LGpt2 {
+    #[regex(r"'s|'t|'re|'ve|'m|'ll|'d")]
+    Contraction,
+    #[regex(r" ?\p{L}+")]
+    Word,
+    #[regex(r" ?\p{N}+")]
+    Num,
+    #[regex(r" ?[^\s\p{L}\p{N}]+")]
+    Other,
+    #[regex(r"\s+")]
+    Space,
+}
+
+#[derive(Logos)]
+enum LCl100k {
+    // Contraction outranks Word: `[^\r\n\p{L}\p{N}]?\p{L}+` can also match `'s`, but the real regex tries
+    // the contraction alternative first.
+    #[regex(r"'s|'t|'re|'ve|'m|'ll|'d", priority = 5)]
+    Contraction,
+    #[regex(r"[^\r\n\p{L}\p{N}]?\p{L}+", priority = 4)]
+    Word,
+    #[regex(r"\p{N}\p{N}?\p{N}?")]
+    Num,
+    #[regex(r" ?[^\s\p{L}\p{N}]+[\r\n]*", priority = 2)]
+    Other,
+    #[regex(r"\s+")]
+    Space,
+}
+
+#[derive(Logos)]
+enum LO200k {
+    #[regex(r"[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]*[\p{Ll}\p{Lm}\p{Lo}\p{M}]+('s|'t|'re|'ve|'m|'ll|'d)?", priority = 6)]
+    LettersA,
+    #[regex(r"[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]+[\p{Ll}\p{Lm}\p{Lo}\p{M}]*('s|'t|'re|'ve|'m|'ll|'d)?", priority = 5)]
+    LettersB,
+    #[regex(r"\p{N}\p{N}?\p{N}?")]
+    Num,
+    #[regex(r" ?[^\s\p{L}\p{N}]+[\r\n/]*", priority = 2)]
+    Other,
+    #[regex(r"\s+")]
+    Space,
+}
+
+fn lex_count<'s, T: Logos<'s, Source = str>>(s: &'s str) -> usize
+where
+    T::Extras: Default,
+{
+    let mut lex = T::lexer(s);
+    let mut n = 0;
+    while lex.next().is_some() {
+        n += 1;
+    }
+    n
+}
+
+/// logos throughput (ns/byte) for the engines it can express; `None` for deepseek (multi-split).
+fn logos_ns(ename: &str, s: &str, len: usize, iters: u32) -> Option<f64> {
+    let f: fn(&str) -> usize = match ename {
+        "gpt2" => |s| lex_count::<LGpt2>(s),
+        "cl100k" => |s| lex_count::<LCl100k>(s),
+        "o200k" => |s| lex_count::<LO200k>(s),
+        _ => return None,
+    };
+    Some(ns_per_byte(len, iters, || f(s)))
+}
 
 // (name, native fsm, reference regex chain). The chain is applied `Isolated`, each regex splitting the
 // previous pieces — one element for gpt2/cl100k/o200k, three for deepseek.
@@ -116,7 +187,7 @@ fn ns_per_byte<F: FnMut() -> usize>(len: usize, iters: u32, mut f: F) -> f64 {
 fn main() {
     let manifest = env!("CARGO_MANIFEST_DIR");
     println!(
-        "{:<9} {:<10} {:>7} {:>5}  {:>8} {:>8} | {:>8} | {:>8} {:>8} | {:>7} {:>7}",
+        "{:<9} {:<10} {:>7} {:>5}  {:>8} {:>8} | {:>8} | {:>8} {:>8} {:>8} | {:>7} {:>7} {:>7}",
         "engine",
         "lang",
         "bytes",
@@ -126,8 +197,10 @@ fn main() {
         "fsm",
         "onig",
         "fancy",
+        "logos",
         "vsOnig",
-        "vsFncy"
+        "vsFncy",
+        "vsLogos"
     );
     for &(ename, fsm, rxs) in ENGINES {
         let onig: Vec<Regex> = rxs.iter().map(|r| Regex::new(r).expect(ename)).collect();
@@ -181,17 +254,23 @@ fn main() {
             let fsm_ns = ns_per_byte(n, iters, || fsm(text, &tags, &mut buf));
             let onig_ns = ns_per_byte(n, iters, || onig_pieces(&onig, corpus).len());
             let fancy_ns = ns_per_byte(n, iters, || fancy_pieces(&fancy, corpus).len());
+            let logos = logos_ns(ename, corpus, n, iters);
 
             let pipe = cls_simd + fsm_ns; // SIMD classify + scalar fsm — the full pipeline
+            let (logos_c, vslogos) = match logos {
+                Some(l) => (format!("{l:8.2}"), format!("{:6.1}x", l / pipe)),
+                None => ("       —".into(), "      —".into()), // deepseek: no single logos grammar
+            };
             println!(
-                "{ename:<9} {label:<10} {n:>7} {btok:>5.1}  {cls_simd:>8.3} {cls_scal:>8.3} | {fsm_ns:>8.3} | {onig_ns:>8.2} {fancy_ns:>8.2} | {:>6.1}x {:>6.1}x {ok}",
+                "{ename:<9} {label:<10} {n:>7} {btok:>5.1}  {cls_simd:>8.3} {cls_scal:>8.3} | {fsm_ns:>8.3} | {onig_ns:>8.2} {fancy_ns:>8.2} {logos_c} | {:>6.1}x {:>6.1}x {vslogos} {ok}",
                 onig_ns / pipe,
                 fancy_ns / pipe
             );
         }
     }
     println!(
-        "\n(ns/byte, lower better. pipeline = SIMD classify + scalar fsm; vs onig / vs fancy on the \
-         composed Isolated split. ✓ = fsm == onig, byte-exact.)"
+        "\n(ns/byte, lower better. pipeline = SIMD classify + scalar fsm; vs onig / fancy / logos on the \
+         composed Isolated split. ✓ = fsm == onig, byte-exact. logos is a DFA lexer approximating the \
+         grammar — speed reference only; deepseek isn't expressible as one logos grammar.)"
     );
 }
