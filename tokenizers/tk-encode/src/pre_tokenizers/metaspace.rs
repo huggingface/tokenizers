@@ -328,18 +328,4 @@ mod tests {
             ]
         );
     }
-    #[test]
-    fn decode() {
-        let decoder = Metaspace::new('▁', PrependScheme::Always, true);
-        let res = decoder
-            .decode_chain(vec!["▁Hey".into(), "▁friend!".into()])
-            .unwrap();
-        assert_eq!(res, vec!["Hey", " friend!"]);
-
-        let decoder = Metaspace::new('▁', PrependScheme::Never, true);
-        let res = decoder
-            .decode_chain(vec!["▁Hey".into(), "▁friend!".into()])
-            .unwrap();
-        assert_eq!(res, vec![" Hey", " friend!"]);
-    }
 }

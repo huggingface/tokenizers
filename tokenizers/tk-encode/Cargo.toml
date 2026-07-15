@@ -82,6 +82,8 @@ tempfile = "3.10"
 assert_approx_eq = "1.1"
 tracing = "0.1"
 tracing-subscriber = "0.3.18"
+# Comparison baseline in the vocab/buckets special-token-matcher test only.
+daachorse = "3.0.0"
 
 [[bench]]
 name = "pipeline_benchmark"
