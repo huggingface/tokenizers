@@ -605,20 +605,52 @@ fn compose_into(seq: &[(u8, char)], out: &mut String, marks: &mut Vec<char>) {
 fn compose<'a, D: Decomp, R: Bitset>(input: &'a str) -> Cow<'a, str> {
     let bytes = input.as_bytes();
     let n = bytes.len();
-    // No composition-relevant char (no ccc != 0, no QC != Yes) ⇒ already in the target form.
-    if next_set::<R>(bytes, 0).0 == n {
+    // First composition-relevant char (ccc != 0, or QC != Yes). None ⇒ already in the target form.
+    let mut rel = next_set::<R>(bytes, 0).0;
+    if rel == n {
         return Cow::Borrowed(input);
     }
-    // ponytail: recompose the whole string (matches unicode-normalization's non-quick path). A windowed
-    // recompose from the last starter before the first relevant char would cut work on long mostly-NFC
-    // docs — add if a profile shows it matters.
-    // Reserve the decomposed peak (`n * MAX_EXPAND`): composition never exceeds it (it recombines), so
-    // one reservation covers the whole build without a realloc.
+    // Multi-window recompose: copy every STABLE run verbatim (SIMD-skipped by `next_set::<R>`) and
+    // decompose+recompose only the ACTIVE mark-clusters around each relevant char. A char not in R is
+    // ccc-0 & QC=Yes — it neither composes backward nor is reached by a preceding composition, so it's a
+    // safe segment boundary. Each active window is `[ws, seg_end)`: `ws` = the starter just before the
+    // relevant char (composition's target), `seg_end` = the next not-in-R char. Byte-exact, and on
+    // marked scripts (Cyrillic/Hebrew/Arabic) it copies the ~80% stable text instead of recomposing it.
     let mut out = String::with_capacity(n.saturating_mul(D::MAX_EXPAND));
     COMPOSE_SCRATCH.with(|sc| {
         let (buf, pending, marks) = &mut *sc.borrow_mut();
-        decompose_to_pairs::<D>(input, buf, pending);
-        compose_into(buf, &mut out, marks);
+        let mut i = 0;
+        loop {
+            // back up one codepoint from `rel` to its starter (never below `i`), copy the stable `[i, ws)`
+            let mut ws = rel;
+            while ws > i {
+                ws -= 1;
+                if bytes[ws] & 0xC0 != 0x80 {
+                    break;
+                }
+            }
+            out.push_str(&input[i..ws]);
+            // active window ends at the first not-in-R char (a safe ccc-0/QC=Yes starter) at/after `rel`
+            let mut seg_end = rel;
+            while seg_end < n {
+                let (cp, w) = decode_cp(bytes, seg_end);
+                if !bit_set::<R>(cp) {
+                    break;
+                }
+                seg_end += w;
+            }
+            decompose_to_pairs::<D>(&input[ws..seg_end], buf, pending);
+            compose_into(buf, &mut out, marks);
+            if seg_end == n {
+                break;
+            }
+            i = seg_end;
+            rel = next_set::<R>(bytes, i).0;
+            if rel == n {
+                out.push_str(&input[i..n]);
+                break;
+            }
+        }
     });
     Cow::Owned(out)
 }
