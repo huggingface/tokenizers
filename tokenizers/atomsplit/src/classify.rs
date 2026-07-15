@@ -1,4 +1,5 @@
 use crate::atom_tables::ATOM_TABLES;
+use crate::tables::Tables;
 
 /// The per-codepoint "atom" categories or "tags" that are used by the finite state machine to emit
 /// spit boundaries.
@@ -109,12 +110,29 @@ pub mod mask {
 pub const CONT: u8 = Atom::Cont as u8;
 pub const MB: u8 = Atom::MultiByte as u8;
 
-/// Classify `text` under scheme `S` into `tags` (`tags.len() == text.len()`) — the single arch
-/// dispatcher. aarch64: NEON at compile time (baseline). x86_64: AVX-512 VBMI → SSE4.1 → scalar,
-/// runtime-detected. wasm32 with `simd128`: SIMD128. Everything else: the portable scalar walk. All
-/// paths produce the identical stream.
+/// `CJK_TAG` sentinel: the scheme does NOT collapse the CJK lead-byte block (E3–ED) to one tag —
+/// resolve CJK through the per-block tables instead of the fast lead-byte range shortcut. No real
+/// tag is `0xFF`, so it is unambiguous as "no shortcut".
+pub const NO_CJK: u8 = 0xFF;
+
+/// Classify `text` into `tags` (`tags.len() == text.len()`) under an arbitrary tag scheme — the
+/// single arch dispatcher, generic over the scheme's compile-time sentinels + its `tables`.
+///
+/// `tables` supplies the per-char classification (its `classify_char`/`bmp_tag` read its own baked
+/// arrays, so a different `Tables` instance = a different scheme); `CONT`/`MB` are the scheme's
+/// continuation / unresolved-multibyte sentinel bytes; `CJK_TAG` is the tag the whole CJK block
+/// collapses to, or [`NO_CJK`] to resolve CJK via the tables. All are `const`, so `CONT`/`MB` are
+/// splat immediates and the CJK branch folds away for a `NO_CJK` scheme. The pretok [`classify`]
+/// and the normalizer's `norm_classify::classify` are the two instantiations.
+///
+/// aarch64: NEON (baseline). x86_64: AVX-512 VBMI → SSE4.1 → scalar, runtime-detected. wasm32 with
+/// `simd128`: SIMD128. Else: the portable scalar walk. All paths produce the identical stream.
 #[inline]
-pub fn classify(text: &[u8], tags: &mut [u8]) {
+pub fn classify_with<const CONT: u8, const MB: u8, const CJK_TAG: u8>(
+    text: &[u8],
+    tags: &mut [u8],
+    tables: &'static Tables,
+) {
     // Hard assert (not debug): the SIMD kernels do raw 16-byte stores into `tags` for full chunks, so a
     // short `tags` is out-of-bounds UB in release — reject it here. This is the sole entry point, so the
     // check guards every arch path below.
@@ -125,28 +143,35 @@ pub fn classify(text: &[u8], tags: &mut [u8]) {
     #[cfg(target_arch = "aarch64")]
     // SAFETY: `tags.len() >= text.len()` (asserted above); NEON vld1q/vst1q are alignment-free.
     unsafe {
-        crate::simd_classify::classify_neon(text, tags)
+        crate::simd_classify::classify_neon::<CONT, MB, CJK_TAG>(text, tags, tables)
     }
     #[cfg(target_arch = "x86_64")]
-    crate::simd_avx_classify::dispatch(text, tags);
+    crate::simd_avx_classify::dispatch::<CONT, MB, CJK_TAG>(text, tags, tables);
     #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
     // SAFETY: `tags.len() >= text.len()` (asserted above); wasm v128 load/store are alignment-free.
     unsafe {
-        crate::simd_wasm_classify::classify_wasm(text, tags)
+        crate::simd_wasm_classify::classify_wasm::<CONT, MB, CJK_TAG>(text, tags, tables)
     }
     #[cfg(not(any(
         target_arch = "aarch64",
         target_arch = "x86_64",
         all(target_arch = "wasm32", target_feature = "simd128")
     )))]
-    classify_scalar(text, tags);
+    classify_scalar_with::<CONT>(text, tags, tables);
+}
+
+/// Pretok (`Atom`) classification — the sole entry the FSMs use. A thin instantiation of
+/// [`classify_with`] with the `Atom` sentinels + `ATOM_TABLES`; behavior-identical to before.
+#[inline]
+pub fn classify(text: &[u8], tags: &mut [u8]) {
+    classify_with::<CONT, MB, { Atom::Letter as u8 }>(text, tags, &ATOM_TABLES)
 }
 
 /// The shared scalar walk loop. One forward pass; per char-start calls `ATOM_TABLES.classify_char`,
 /// fills continuation bytes with `CONT`. The non-SIMD fallback and the byte-exact test oracle for the
 /// SIMD kernels — not part of the supported public surface.
 #[doc(hidden)]
-pub fn classify_scalar(text: &[u8], tags: &mut [u8]) {
+pub fn classify_scalar_with<const CONT: u8>(text: &[u8], tags: &mut [u8], tables: &Tables) {
     let n = text.len();
     let mut i = 0;
     while i < n {
@@ -157,7 +182,7 @@ pub fn classify_scalar(text: &[u8], tags: &mut [u8]) {
             i += 1;
             continue;
         }
-        tags[i] = ATOM_TABLES.classify_char(text, i);
+        tags[i] = tables.classify_char(text, i);
         let w = char_len(b);
         let mut j = 1;
         while j < w && i + j < n {
@@ -166,4 +191,11 @@ pub fn classify_scalar(text: &[u8], tags: &mut [u8]) {
         }
         i += w;
     }
+}
+
+/// Pretok scalar walk — `Atom` instantiation of [`classify_scalar_with`]; the byte-exact SIMD test
+/// oracle + non-SIMD fallback.
+#[doc(hidden)]
+pub fn classify_scalar(text: &[u8], tags: &mut [u8]) {
+    classify_scalar_with::<CONT>(text, tags, &ATOM_TABLES)
 }
