@@ -555,6 +555,7 @@ fn pcre2_reference_ns(text: &str, regexes: &[String]) -> Option<f64> {
             pcre2::bytes::RegexBuilder::new()
                 .utf(true)
                 .ucp(true)
+                .jit_if_available(true) // PCRE2's JIT is where its speed is — bench it at its best.
                 .build(r)
         })
         .collect::<Result<_, _>>()
