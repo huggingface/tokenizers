@@ -1,5 +1,5 @@
 use super::OrderedVocabIter;
-use crate::pipeline::{self, PipelineToken};
+use crate::pipeline::{self, ModelScratch, PipelineToken};
 use crate::tokenizer::{Model, Result, Token};
 use ahash::AHashMap;
 use serde_json::Value;
@@ -207,10 +207,16 @@ impl Model for WordLevel {
     }
 }
 
+type WordLevelScratch = ();
+impl ModelScratch for WordLevelScratch {}
+
 impl pipeline::Model for WordLevel {
+    type Scratch = WordLevelScratch;
+    fn init_scratch(&self) -> Self::Scratch {}
     fn tokenize_pipeline(
         &self,
         sequence: &str,
+        _scratch: &mut Self::Scratch,
         output: &mut Vec<pipeline::PipelineToken>,
     ) -> Result<()> {
         if let Some(&id) = self.vocab.get(sequence) {

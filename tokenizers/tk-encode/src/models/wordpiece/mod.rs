@@ -314,6 +314,12 @@ impl Model for WordPiece {
     }
 }
 
+pub struct WordPieceScratch {
+    candidate_str: String,
+}
+
+impl pipeline::ModelScratch for WordPieceScratch {}
+
 pub struct PipelineWordPiece {
     vocab_trie: yada::DoubleArray<Vec<u8>>,
     unk_token: Option<u32>,
@@ -348,13 +354,22 @@ impl TryFrom<WordPiece> for PipelineWordPiece {
 }
 
 impl pipeline::Model for PipelineWordPiece {
+    type Scratch = WordPieceScratch;
+
+    fn init_scratch(&self) -> Self::Scratch {
+        Self::Scratch {
+            candidate_str: String::with_capacity(self.max_input_chars_per_word),
+        }
+    }
+
     fn tokenize_pipeline(
         &self,
         sequence: &str,
+        scratch: &mut Self::Scratch,
         output: &mut Vec<pipeline::PipelineToken>,
     ) -> Result<()> {
-        let mut candidate = String::with_capacity(self.max_input_chars_per_word);
-        let mut candidate_tokens = Vec::with_capacity(sequence.len());
+        let checkpoint = output.len();
+        let candidate = &mut scratch.candidate_str;
 
         let char_len = sequence.chars().count();
         if char_len > self.max_input_chars_per_word {
@@ -385,13 +400,13 @@ impl pipeline::Model for PipelineWordPiece {
                 .last()
             else {
                 let unk_id = self.unk_token.ok_or(Error::MissingUnkToken)?;
+                output.truncate(checkpoint);
                 output.push(PipelineToken { id: unk_id });
                 return Ok(());
             };
-            candidate_tokens.push(PipelineToken { id: token_id });
+            output.push(PipelineToken { id: token_id });
             start += match_len - prefix_len;
         }
-        output.extend_from_slice(&candidate_tokens);
         Ok(())
     }
 }
