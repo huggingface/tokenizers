@@ -164,8 +164,21 @@ pub unsafe fn classify_neon(text: &[u8], tags: &mut [u8]) {
         // 1. load the first byte in each lane. 16 lanes, each now own 1 byte. All operations are
         //    run in parallel.
         let b0 = vld1q_u8(text.as_ptr().add(i));
+        // Load the next 16 bytes up front: the multibyte path below needs them for the b1/b2 lookahead
+        // anyway, and having them here lets the ASCII fast path clear a whole 32-byte window in one shot.
+        let next = vld1q_u8(text.as_ptr().add(i + 16));
 
-        // ASCII fast path: whole chunk < 0x80 → one table, skip everything else
+        // ASCII fast path: whole 32-byte window < 0x80 → two table stores under ONE bounds check + ONE
+        // vmaxvq. Real text is ~half ASCII (spaces / digits / punctuation), so widening the skip 16→32
+        // halves this overhead broadly (big win on English) — the multibyte path below is left untouched.
+        if vmaxvq_u8(vmaxq_u8(b0, next)) < 0x80 {
+            let (lo, hi) = (&ATOM_TABLES.ascii_lo, &ATOM_TABLES.ascii_hi);
+            vst1q_u8(tags.as_mut_ptr().add(i), ascii_tbl(b0, lo, hi));
+            vst1q_u8(tags.as_mut_ptr().add(i + 16), ascii_tbl(next, lo, hi));
+            i += 32;
+            continue;
+        }
+        // Only b0 is ASCII (the window straddles an ASCII↔multibyte boundary): store it and step 16.
         if vmaxvq_u8(b0) < 0x80 {
             // vst1q_u8 stores the value from ascii_tbl into tags.
             vst1q_u8(
@@ -179,8 +192,7 @@ pub unsafe fn classify_neon(text: &[u8], tags: &mut [u8]) {
         // Not all ascii, so let's default the tags by computing ASCII.
         let mut out = ascii_tbl(b0, &ATOM_TABLES.ascii_lo, &ATOM_TABLES.ascii_hi); // base (ASCII lanes correct; MB overwritten)
 
-        // Let's load the next chunk of 16 bytes
-        let next = vld1q_u8(text.as_ptr().add(i + 16));
+        // `next` (the following 16 bytes) was loaded above for the 32-byte ASCII check; reuse it here.
         // vext::<N>  does: cat(bo[N..], next[..N])
         let b1 = vextq_u8::<1>(b0, next); // byte at lane+1
         let b2 = vextq_u8::<2>(b0, next); // byte at lane+2
