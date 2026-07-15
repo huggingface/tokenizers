@@ -30,8 +30,8 @@ pub(crate) const ZWJ: u8 = Atom::Zwj as u8; // 0x26 — ZWJ/ZWNJ, tagged in clas
 /// Advance over a maximal `m`-membership run (m is a mask); returns the byte index past it.
 /// `inline(always)`: it's called once per token (~200K/MB on English) — a real call here doubles fsm cost.
 ///
-/// logos-style "fast loop": process 8 tags per iteration with ONE bounds check per chunk and unchecked
-/// reads (the loop condition proves `i + 8 <= end`), so short runs pay ~1 bounds check instead of one
+/// logos-style "fast loop": process 16 tags per iteration with ONE bounds check per chunk and unchecked
+/// reads (the loop condition proves `i + 16 <= end`), so short runs pay ~1 bounds check instead of one
 /// per byte and long runs stay a tight unrolled scan. Byte-identical to the plain `while in_mask` scan.
 #[inline(always)]
 pub(crate) fn run_end(tags: &[u8], mut i: usize, end: usize, mut m: u16) -> usize {
