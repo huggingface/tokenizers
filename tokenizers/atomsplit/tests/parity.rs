@@ -12,28 +12,10 @@
 use atomsplit::classify::classify;
 use atomsplit::fsm::{Span, fsm_byte_level, fsm_cl100k, fsm_deepseek, fsm_o200k};
 use onig::Regex;
-
-// tiktoken cl100k_base pre-tokenizer regex.
-const CL100K: &str = concat!(
-    r"'(?i:[sdmt]|ll|ve|re)",
-    r"|[^\r\n\p{L}\p{N}]?\p{L}+",
-    r"|\p{N}{1,3}",
-    r"| ?[^\s\p{L}\p{N}]+[\r\n]*",
-    r"|\s*[\r\n]|\s+(?!\S)|\s+",
-);
-// GPT-2 / ByteLevel regex.
-const GPT2: &str =
-    r##"'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"##;
-// o200k_base / GPT-4o pre-tokenizer regex (case-aware letter runs + contraction suffix + `[\r\n/]` tail).
-const O200K: &str = concat!(
-    r"[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]*[\p{Ll}\p{Lm}\p{Lo}\p{M}]+(?i:'s|'t|'re|'ve|'m|'ll|'d)?",
-    r"|[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]+[\p{Ll}\p{Lm}\p{Lo}\p{M}]*(?i:'s|'t|'re|'ve|'m|'ll|'d)?",
-    r"|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n/]*|\s*[\r\n]+|\s+(?!\S)|\s+",
-);
-// deepseek-v3 Sequence: `\p{N}{1,3}` → CJK-range → big regex, each Isolated.
-const DS_NUM: &str = r"\p{N}{1,3}";
-const DS_CJK: &str = r"[一-龥぀-ゟ゠-ヿ]+";
-const DS_BIG: &str = r##"[!"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~][A-Za-z]+|[^\r\n\p{L}\p{P}\p{S}]?[\p{L}\p{M}]+| ?[\p{P}\p{S}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+"##;
+// The oracle regexes are the canonical specs the FSMs implement — single source of truth in atomsplit.
+use atomsplit::regexes::{
+    CL100K, DEEPSEEK_BIG as DS_BIG, DEEPSEEK_CJK as DS_CJK, DEEPSEEK_NUM as DS_NUM, GPT2, O200K,
+};
 
 const CORPUS: &str = "The quick brown fox. Don't 12345 numbers, \u{00BD}\u{00B2}\u{00BC} \u{2168}! \
      café × naïve — Привет, наука! Ελλάδα 中文分词。ひらがな カタカナ 한글 مرحبا العربية \

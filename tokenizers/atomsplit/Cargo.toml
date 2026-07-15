@@ -34,23 +34,7 @@ memchr = "2.8.2" # SIMD single-byte search; used only in CharDelimiterSplit (1.4
 onig = "6.5.1"          # reference regex for the parity tests + benches
 fancy-regex = "0.13"    # second regex engine in the throughput benches
 [[bench]]
-name = "cl100k"
-harness = false
-
-[[bench]]
-name = "deepseek"
-harness = false
-
-[[bench]]
-name = "o200k"
-harness = false
-
-[[bench]]
-name = "byte_level"
-harness = false
-
-[[bench]]
-name = "threads"
+name = "regex"        # gpt2 · cl100k · o200k · deepseek, one run per regex family
 harness = false
 
 [[bench]]
