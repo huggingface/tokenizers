@@ -1,18 +1,17 @@
+use std::cell::RefCell;
 use std::convert::TryInto;
-use std::ops::Range;
 use std::{borrow::Cow, convert::TryFrom};
 
-use crate::added_vocabulary::bucket_added_vocabulary::{
-    AddedToken as BucketAddedToken, AddedVocabulary as BucketAddedVocabulary,
-};
+use atomsplit::classify::classify;
+
 use crate::models::bpe::PipelineBPE;
 use crate::models::unigram::Unigram;
 use crate::models::wordlevel::WordLevel;
 use crate::models::wordpiece::PipelineWordPiece;
-use crate::pre_tokenizers::sequence::PipelineSequence;
-use crate::pre_tokenizers::split::SplitPattern;
 use crate::utils::byte_level::GPT2_REGEX_STR;
-use crate::SplitDelimiterBehavior::Isolated;
+use crate::vocab::bucket_added_vocabulary::{
+    AddedToken as BucketAddedToken, AddedVocabulary as BucketAddedVocabulary,
+};
 use crate::{
     normalizers::NormalizerWrapper,
     pre_tokenizers::{
@@ -21,7 +20,8 @@ use crate::{
         digits::Digits,
         fixed_length::FixedLength,
         punctuation::Punctuation,
-        split::Split as SplitPretok,
+        sequence::PipelineSequence,
+        split::{Split as SplitPretok, SplitPattern},
         unicode_scripts::UnicodeScripts,
         whitespace::{Whitespace, WhitespaceSplit},
     },
@@ -30,18 +30,30 @@ use crate::{
 
 use super::{Result, SplitDelimiterBehavior};
 
-/// A pre-token split, a range into the input text.
-#[derive(Copy, Clone)]
-pub struct Split {
-    pub start: u32,
-    pub end: u32,
-}
+pub use atomsplit::fsm::Span;
 
-impl Split {
-    #[inline]
-    pub fn range(self) -> Range<usize> {
-        self.start as usize..self.end as usize
+/// We use a thread local scratch for the tags (per byte class) and for the split spans.
+pub(crate) fn classify_into_spans(
+    bytes: &[u8],
+    fsm: impl FnOnce(&[u8], &[u8], &mut [Span]) -> usize,
+    out: &mut Vec<Span>,
+) {
+    thread_local! {
+        static SCRATCH: RefCell<(Vec<u8>, Vec<Span>)> = const { RefCell::new((Vec::new(), Vec::new())) };
     }
+    let n = bytes.len();
+    SCRATCH.with(|cell| {
+        let (tags, spans) = &mut *cell.borrow_mut();
+        if tags.len() < n {
+            tags.resize(n, 0); // grow-only: after the largest segment, no realloc / no re-zeroing
+        }
+        if spans.len() < n + 1 {
+            spans.resize(n + 1, Span::default());
+        }
+        classify(bytes, &mut tags[..n]);
+        let k = fsm(bytes, &tags[..n], &mut spans[..n + 1]);
+        out.extend_from_slice(&spans[..k]); // same type now — plain memcpy, no per-token conversion
+    });
 }
 
 pub trait Normalizer {
@@ -52,7 +64,7 @@ pub trait Normalizer {
 /// substrings, so the pipeline can pre-tokenize without allocating.
 pub trait PreTokenizer {
     /// Split `text` into pre-tokens, appending to `out`. Ranges are into `text`.
-    fn pre_tokenize(&self, text: &str, out: &mut Vec<Split>) -> Result<()>;
+    fn pre_tokenize(&self, text: &str, out: &mut Vec<Span>) -> Result<()>;
 }
 
 /// The pre-tokenizers a [`PipelineTokenizer`] can run.
@@ -73,10 +85,10 @@ pub enum PipelinePreTokenizer {
 }
 
 impl PreTokenizer for PipelinePreTokenizer {
-    fn pre_tokenize(&self, text: &str, out: &mut Vec<Split>) -> Result<()> {
+    fn pre_tokenize(&self, text: &str, out: &mut Vec<Span>) -> Result<()> {
         match self {
             Self::None => {
-                out.push(Split {
+                out.push(Span {
                     start: 0,
                     end: text.len() as u32,
                 });
@@ -106,7 +118,9 @@ impl TryFrom<PreTokenizerWrapper> for PipelinePreTokenizer {
             PreTokenizerWrapper::Digits(p) => Ok(PipelinePreTokenizer::Digits(p)),
             PreTokenizerWrapper::FixedLength(p) => Ok(PipelinePreTokenizer::FixedLength(p)),
             PreTokenizerWrapper::Punctuation(p) => Ok(PipelinePreTokenizer::Punctuation(p)),
-            PreTokenizerWrapper::Split(p) => Ok(PipelinePreTokenizer::Split(p)),
+            PreTokenizerWrapper::Split(p) => {
+                Ok(PipelinePreTokenizer::Split(p.canonicalized_for_pipeline()?))
+            }
             PreTokenizerWrapper::UnicodeScripts(p) => Ok(PipelinePreTokenizer::UnicodeScripts(p)),
             PreTokenizerWrapper::Whitespace(p) => Ok(PipelinePreTokenizer::Whitespace(p)),
             PreTokenizerWrapper::WhitespaceSplit(p) => Ok(PipelinePreTokenizer::WhitespaceSplit(p)),
@@ -120,7 +134,7 @@ impl TryFrom<PreTokenizerWrapper> for PipelinePreTokenizer {
                 if byte_level.use_regex {
                     Ok(PipelinePreTokenizer::Split(SplitPretok::new(
                         SplitPattern::Regex(GPT2_REGEX_STR.to_owned()),
-                        Isolated,
+                        SplitDelimiterBehavior::Isolated,
                         false,
                     )?))
                 } else {
@@ -408,7 +422,7 @@ impl PipelineTokenizer {
         &self,
         input: &str,
         output: &mut Vec<PipelineToken>,
-        pre_tokens: &mut Vec<Split>,
+        pre_tokens: &mut Vec<Span>,
     ) -> Result<()> {
         // First, we extract all special tokens from the non-normalized input
         for segment in SpecialSegmentIterator::new(input, &self.added_vocabulary, false) {
@@ -481,7 +495,7 @@ pub enum SplitPolicy {
 #[inline(always)]
 pub fn split<C: Copy + PartialEq>(
     text: &str,
-    out: &mut Vec<Split>,
+    out: &mut Vec<Span>,
     classify: impl Fn(char) -> C,
     policy: impl Fn(C) -> SplitPolicy,
 ) {
@@ -493,7 +507,7 @@ pub fn split<C: Copy + PartialEq>(
         if let Some(p) = prev {
             if p != c || policy(c) == SplitPolicy::Isolate {
                 if policy(p) != SplitPolicy::Remove {
-                    out.push(Split {
+                    out.push(Span {
                         start,
                         end: i as u32,
                     });
@@ -506,7 +520,7 @@ pub fn split<C: Copy + PartialEq>(
 
     if let Some(p) = prev {
         if policy(p) != SplitPolicy::Remove {
-            out.push(Split {
+            out.push(Span {
                 start,
                 end: text.len() as u32,
             });
@@ -526,7 +540,7 @@ pub fn split<C: Copy + PartialEq>(
 ///   (`"the-final"` -> `["the", "-final"]`).
 pub fn split_delimiter(
     text: &str,
-    out: &mut Vec<Split>,
+    out: &mut Vec<Span>,
     is_delim: impl Fn(char) -> bool,
     behavior: SplitDelimiterBehavior,
 ) {
@@ -541,12 +555,12 @@ pub fn split_delimiter(
             for (i, ch) in text.char_indices() {
                 if is_delim(ch) {
                     let end = (i + ch.len_utf8()) as u32;
-                    out.push(Split { start, end });
+                    out.push(Span { start, end });
                     start = end;
                 }
             }
             if (start as usize) < text.len() {
-                out.push(Split {
+                out.push(Span {
                     start,
                     end: text.len() as u32,
                 });
@@ -560,13 +574,13 @@ pub fn split_delimiter(
                     let i = i as u32;
                     // skip the empty span before a leading run of delimiters
                     if i > start {
-                        out.push(Split { start, end: i });
+                        out.push(Span { start, end: i });
                     }
                     start = i;
                 }
             }
             if (start as usize) < text.len() {
-                out.push(Split {
+                out.push(Span {
                     start,
                     end: text.len() as u32,
                 });
@@ -593,7 +607,7 @@ pub fn split_delimiter(
 /// the fold in `NormalizedString::split`; the arms mirror it exactly. Empty and
 /// removed pieces are dropped.
 pub fn split_matches(
-    out: &mut Vec<Split>,
+    out: &mut Vec<Span>,
     matches: Vec<((usize, usize), bool)>,
     behavior: SplitDelimiterBehavior,
 ) {
@@ -665,7 +679,7 @@ pub fn split_matches(
 
     for ((start, end), should_remove) in splits {
         if !should_remove && start != end {
-            out.push(Split {
+            out.push(Span {
                 start: start as u32,
                 end: end as u32,
             });

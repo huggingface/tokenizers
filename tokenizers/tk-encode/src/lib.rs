@@ -90,20 +90,18 @@ extern crate derive_builder;
 
 #[macro_use]
 pub mod utils;
-pub mod added_vocabulary;
 pub mod decoders;
 pub mod models;
 pub mod normalizers;
 pub mod pre_tokenizers;
 pub mod processors;
 pub mod tokenizer;
+pub mod vocab;
 /// Legacy map-backed token store; drop-in twin of the fast `bucket_vocab_store::BucketVocabStore`.
 pub mod vocab_store;
 
 // Re-export from tokenizer
 pub use tokenizer::*;
-// Re-export the added-vocabulary subsystem (AddedToken/AddedVocabulary + bucket_vocab_store/buckets modules) at the crate root
-pub use added_vocabulary::*;
 
 // Re-export also parallelism utils
 pub use utils::parallelism;

@@ -4,7 +4,8 @@
 
 //! The 🤗 Tokenizers library.
 //!
-//! Starting with `0.23`, the implementation is split across two crates:
+//! Starting with `0.23`, the implementation is split across two public crates (each built on internal
+//! engines — `tk_encode` on the `atomsplit` SIMD pre-tokenizer, and the shared `bitmap_gen` tables):
 //!
 //! - [`tk_encode`] — inference: the model engines, the full pipeline components
 //!   ([`Normalizer`], [`PreTokenizer`], [`Model`], [`PostProcessor`],

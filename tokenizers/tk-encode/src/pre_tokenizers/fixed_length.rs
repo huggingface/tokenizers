@@ -51,13 +51,13 @@ impl PreTokenizer for FixedLength {
 }
 
 impl pipeline::PreTokenizer for FixedLength {
-    fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Split>) -> Result<()> {
+    fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Span>) -> Result<()> {
         if text.is_empty() {
             return Ok(());
         }
 
         if self.length == 0 {
-            out.push(pipeline::Split {
+            out.push(pipeline::Span {
                 start: 0,
                 end: text.len() as u32,
             });
@@ -69,13 +69,13 @@ impl pipeline::PreTokenizer for FixedLength {
         // preceding chunk; the final chunk runs to `text.len()`.
         let mut start: u32 = 0;
         for (end, _) in text.char_indices().step_by(self.length).skip(1) {
-            out.push(pipeline::Split {
+            out.push(pipeline::Span {
                 start,
                 end: end as u32,
             });
             start = end as u32;
         }
-        out.push(pipeline::Split {
+        out.push(pipeline::Span {
             start,
             end: text.len() as u32,
         });

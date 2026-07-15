@@ -2,7 +2,7 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
-use crate::pipeline::{self, SplitPolicy};
+use crate::pipeline;
 use crate::tokenizer::{
     pattern::Invert, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior,
 };
@@ -42,44 +42,16 @@ impl PreTokenizer for WhitespaceSplit {
 }
 
 impl pipeline::PreTokenizer for WhitespaceSplit {
-    fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Split>) -> Result<()> {
-        pipeline::split(text, out, char::is_whitespace, |is_ws| {
-            if is_ws {
-                SplitPolicy::Remove
-            } else {
-                SplitPolicy::Keep
-            }
-        });
+    fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Span>) -> Result<()> {
+        // drop whitespace runs, keep everything else as runs — atomsplit SIMD classify + class-runs FSM.
+        // atom `WS` == `char::is_whitespace`, so byte-exact with the scalar path.
+        use atomsplit::classify::mask;
+        pipeline::classify_into_spans(
+            text.as_bytes(),
+            atomsplit::fsm::class_runs_into::<{ mask::WS }, 0, 0>,
+            out,
+        );
         Ok(())
-    }
-}
-
-#[derive(Clone, Copy, Eq, PartialEq)]
-enum CharType {
-    Whitespace,
-    Word,
-    Symbol,
-}
-
-impl CharType {
-    #[inline]
-    fn policy(self) -> SplitPolicy {
-        match self {
-            // whitespace is dropped; word and symbol groups are each emitted as one
-            // split, with a boundary between the two classes.
-            CharType::Whitespace => SplitPolicy::Remove,
-            CharType::Word | CharType::Symbol => SplitPolicy::Keep,
-        }
-    }
-}
-
-fn classify(ch: char) -> CharType {
-    if ch.is_whitespace() {
-        CharType::Whitespace
-    } else if is_word_char(ch) {
-        CharType::Word
-    } else {
-        CharType::Symbol
     }
 }
 
@@ -97,24 +69,16 @@ pub fn is_word_char(ch: char) -> bool {
         || ch == '\u{200d}' // Zero-Width Joiner
 }
 
-static ASCII_CLASS: LazyLock<[CharType; 128]> =
-    LazyLock::new(|| std::array::from_fn(|b| classify(b as u8 as char)));
-
 impl pipeline::PreTokenizer for Whitespace {
-    // XXX: surprisingly, inlining here yields 10-15% slower performance
     #[inline(never)]
-    fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Split>) -> Result<()> {
-        pipeline::split(
-            text,
+    fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Span>) -> Result<()> {
+        // `\w+|[^\w\s]+`: drop whitespace, cut at the word↔symbol boundary, each run one token —
+        // atomsplit classify + class-runs FSM (`WORD` = `\w`; keep-A = word, keep-B = symbol).
+        use atomsplit::classify::mask;
+        pipeline::classify_into_spans(
+            text.as_bytes(),
+            atomsplit::fsm::class_runs_into::<{ mask::WS }, 0, { mask::WORD }>,
             out,
-            |ch| {
-                if ch.is_ascii() {
-                    ASCII_CLASS[ch as usize]
-                } else {
-                    classify(ch)
-                }
-            },
-            CharType::policy,
         );
         Ok(())
     }

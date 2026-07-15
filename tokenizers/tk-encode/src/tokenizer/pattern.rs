@@ -206,6 +206,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "fancy-regex")] // needs a system-regex backend
     fn sys_regex() {
         let is_whitespace = SysRegex::new(r"\s+").unwrap();
         do_test!("a   b", &is_whitespace => vec![((0, 1), false), ((1, 4), true), ((4, 5), false)]);

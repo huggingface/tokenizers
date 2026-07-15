@@ -1,4 +1,4 @@
-use crate::bucket_vocab_store::BucketVocabStore;
+use super::bucket_vocab_store::BucketVocabStore;
 
 #[derive(Clone, PartialEq, Debug, Default)]
 pub struct AddedTokenFlags {
@@ -12,7 +12,7 @@ pub struct AddedTokenFlags {
 /// The key to have a fast byte matching alrogithm is to skip failures fast and reject quickly
 /// potential candidates. What we do here:
 /// 1. memchr / nibble SIMD scan of potential candidates. `pshufb` does parallel lookup in a 16-byte
-///    register, using 4-bit indices. `nibbles` are 4 bytes
+///    register, using 4-bit indices. `nibbles` are 4 bits
 /// 2. on candidate bytes, check the Bucket that corresponds to that byte (1 in 255). If there is a
 ///    bucket we check if there is in that bucket's next_byte_to_length_id a valid length_list. If
 ///    not we don't have to check anything
@@ -99,7 +99,7 @@ impl Buckets {
             vocab: BucketVocabStore::new(),
         }
     }
-    /// Build the matcher from sorted `tokens`, the first-byte->bucket table, and the buckets.
+    /// Build the matcher from `tokens`, the first-byte->bucket table, and the buckets.
     pub fn build(
         tokens: Vec<(Vec<u8>, u32)>,
         first_byte_to_bucket_id: [u8; 256],
