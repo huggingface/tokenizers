@@ -438,28 +438,33 @@ fn pretok_regexes(path: &Path) -> Vec<String> {
     }
 }
 
-/// Median ns/byte to classify `bytes` once via the SIMD or scalar path.
-fn classify_ns(bytes: &[u8], scalar: bool) -> f64 {
-    if bytes.is_empty() {
+/// Median ns/byte of a warmed-up `run` over `len` bytes (`run` returns a value that's `black_box`'d so
+/// the work isn't optimized away).
+fn timed_ns(len: usize, mut run: impl FnMut() -> usize) -> f64 {
+    if len == 0 {
         return 0.0;
     }
+    run(); // warm-up
+    let mut s = Vec::with_capacity(REPS);
+    for _ in 0..REPS {
+        let t = Instant::now();
+        black_box(run());
+        s.push(t.elapsed().as_secs_f64());
+    }
+    median_secs(s) * 1e9 / len as f64
+}
+
+/// Median ns/byte to classify `bytes` once via the SIMD or scalar path.
+fn classify_ns(bytes: &[u8], scalar: bool) -> f64 {
     let mut tags = vec![0u8; bytes.len()];
-    let mut run = || {
+    timed_ns(bytes.len(), || {
         if scalar {
             atomsplit::classify::classify_scalar(bytes, &mut tags);
         } else {
             atomsplit::classify::classify(bytes, &mut tags);
         }
-        black_box(tags[bytes.len() / 2]);
-    };
-    run(); // warm-up
-    let mut s = Vec::with_capacity(REPS);
-    for _ in 0..REPS {
-        let t = Instant::now();
-        run();
-        s.push(t.elapsed().as_secs_f64());
-    }
-    median_secs(s) * 1e9 / bytes.len() as f64
+        tags[bytes.len() / 2] as usize
+    })
 }
 
 /// ns/byte for the composed Isolated split chain under onig — each regex splits the previous pieces
@@ -474,7 +479,7 @@ fn onig_reference_ns(text: &str, regexes: &[String]) -> Option<f64> {
         .map(|r| onig::Regex::new(r))
         .collect::<Result<_, _>>()
         .ok()?;
-    let run = || {
+    Some(timed_ns(text.len(), || {
         let mut pieces = vec![(0usize, text.len())];
         for re in &res {
             let mut next = Vec::with_capacity(pieces.len() * 2);
@@ -495,15 +500,45 @@ fn onig_reference_ns(text: &str, regexes: &[String]) -> Option<f64> {
             pieces = next;
         }
         pieces.len()
-    };
-    run(); // warm-up
-    let mut s = Vec::with_capacity(REPS);
-    for _ in 0..REPS {
-        let t = Instant::now();
-        black_box(run());
-        s.push(t.elapsed().as_secs_f64());
+    }))
+}
+
+/// Same composed Isolated split chain, but under the pure-Rust `fancy-regex` engine — the second
+/// reference. `find_iter` yields `Result<Match, _>`; a match error aborts that regex's pass (rare,
+/// backtrack-limit) and the piece is left un-split. `None` if no regex pre-tokenizer or a bad pattern.
+fn fancy_reference_ns(text: &str, regexes: &[String]) -> Option<f64> {
+    if regexes.is_empty() || text.is_empty() {
+        return None;
     }
-    Some(median_secs(s) * 1e9 / text.len() as f64)
+    let res: Vec<fancy_regex::Regex> = regexes
+        .iter()
+        .map(|r| fancy_regex::Regex::new(r))
+        .collect::<Result<_, _>>()
+        .ok()?;
+    Some(timed_ns(text.len(), || {
+        let mut pieces = vec![(0usize, text.len())];
+        for re in &res {
+            let mut next = Vec::with_capacity(pieces.len() * 2);
+            for (s, e) in pieces.drain(..) {
+                let sub = &text[s..e];
+                let mut prev = 0usize;
+                for m in re.find_iter(sub) {
+                    let Ok(m) = m else { break };
+                    let (ms, me) = (m.start(), m.end());
+                    if ms > prev {
+                        next.push((s + prev, s + ms));
+                    }
+                    next.push((s + ms, s + me));
+                    prev = me;
+                }
+                if prev < sub.len() {
+                    next.push((s + prev, e));
+                }
+            }
+            pieces = next;
+        }
+        pieces.len()
+    }))
 }
 
 fn bench_model(
@@ -597,13 +632,19 @@ fn bench_model(
         let cls_simd = classify_ns(corpus.as_bytes(), false);
         let cls_scalar = classify_ns(corpus.as_bytes(), true);
         let onig_ns = onig_reference_ns(&corpus, &regexes);
-        if let Some(o) = onig_ns {
-            // fsm is the scalar jump-table in both; SIMD/scalar is the classify pass only.
+        let fancy_ns = fancy_reference_ns(&corpus, &regexes);
+        if onig_ns.is_some() || fancy_ns.is_some() {
+            // fsm is the scalar jump-table in both pipes; SIMD/scalar is the classify pass only.
             let scalar_pipe = ns_split + (cls_scalar - cls_simd).max(0.0);
+            let vs = |r: Option<f64>| {
+                r.map_or("—".into(), |v| {
+                    format!("{:.1}×/{:.1}×", v / ns_split.max(1e-9), v / scalar_pipe.max(1e-9))
+                })
+            };
             eprintln!(
-                "    pre-tok vs onig: SIMD-cls {ns_split:.2} / scalar-cls {scalar_pipe:.2} / onig {o:.2} ns/B  → {:.1}× / {:.1}×",
-                o / ns_split.max(1e-9),
-                o / scalar_pipe.max(1e-9)
+                "    pre-tok: SIMD-cls {ns_split:.2} / scalar-cls {scalar_pipe:.2} ns/B · vs onig {} · vs fancy {}",
+                vs(onig_ns),
+                vs(fancy_ns)
             );
         }
 
@@ -622,13 +663,14 @@ fn bench_model(
                 "model": ns_model,
                 "total": nspb(t_model),
             },
-            // classify SIMD vs scalar + the onig reference for the pre-tokenize regex (onig null when
-            // the model has no regex pre-tokenizer). simd-pipe = pre_tokenize; scalar-pipe =
-            // pre_tokenize + (cls_scalar − cls_simd); the renderer derives the ×-vs-onig ratios.
+            // classify SIMD vs scalar + the onig / fancy-regex references for the pre-tokenize regex
+            // (null when the model has no regex pre-tokenizer). simd-pipe = pre_tokenize; scalar-pipe =
+            // pre_tokenize + (cls_scalar − cls_simd); the renderer derives the ×-vs-engine ratios.
             "pretok_vs_regex": {
                 "cls_simd": cls_simd,
                 "cls_scalar": cls_scalar,
                 "onig": onig_ns,
+                "fancy": fancy_ns,
             },
         }));
     }

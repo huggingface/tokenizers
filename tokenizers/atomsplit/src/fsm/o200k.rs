@@ -50,24 +50,6 @@ fn o200k_letter_match(tags: &[u8], p: usize, re: usize) -> usize {
     e
 }
 
-/// Length (incl the `'`) of an o200k contraction suffix `(?i:'s|'t|'re|'ve|'m|'ll|'d)` at `i`, else 0.
-#[inline]
-fn o200k_contraction(text: &[u8], i: usize) -> usize {
-    let end = text.len();
-    if i >= end || text[i] != 0x27 || i + 1 >= end || text[i + 1] >= 0x80 {
-        return 0;
-    }
-    let lc = text[i + 1] | 0x20;
-    match lc {
-        b's' | b't' | b'm' | b'd' => 2,
-        b'r' | b'v' | b'l' if i + 2 < end && text[i + 2] < 0x80 => {
-            let l2 = text[i + 2] | 0x20;
-            usize::from((matches!(lc, b'r' | b'v') && l2 == b'e') || (lc == b'l' && l2 == b'l')) * 3
-        }
-        _ => 0,
-    }
-}
-
 /// Emit the o200k case-split of the letter run `[ls, re)` into `out[*w..]`: the first sub-token starts at
 /// `pfx` (the optional `[^\r\n\p{L}\p{N}]?` prefix; `pfx == ls` when none), the last absorbs a trailing
 /// contraction. Returns the new cursor (past the contraction). `ls < re` (caller-guaranteed).
@@ -86,7 +68,7 @@ fn emit_o200k_letters(
         let e = o200k_letter_match(tags, p, re);
         let start = if first { pfx } else { p };
         let tok_end = if e == re {
-            e + o200k_contraction(text, e)
+            e + contraction(text, e)
         } else {
             e
         };
@@ -167,21 +149,8 @@ pub fn fsm_o200k(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
         }
         p
     };
-    // rules 5-7 `\s*[\r\n]+ | \s+(?!\S) | \s+` — identical to cl100k.
-    let ws = |i: usize| -> usize {
-        let re = run_end(tags, i, end, mask::WS);
-        if let Some(r) = text[i..re].iter().rposition(|&x| x == 0x0A || x == 0x0D) {
-            i + r + 1
-        } else if re == end {
-            re
-        } else {
-            let mut last = re - 1;
-            while last > i && text[last] & 0xC0 == 0x80 {
-                last -= 1;
-            }
-            if last > i { last } else { re }
-        }
-    };
+    // rules 5-7 (`\s*[\r\n]+ | \s+(?!\S) | \s+`) → the shared `ws_tail` (identical to cl100k).
+    let ws = |i: usize| -> usize { ws_tail(text, tags, i, end) };
 
     let mut i = 0;
     let mut w = 0usize;

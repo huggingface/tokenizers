@@ -37,22 +37,8 @@ fn cl100k(text: &[u8], tags: &[u8], out: &mut [Span], digit_cap: usize) -> usize
         }
         p
     };
-    // rules 5-7: `\s*[\r\n]` | `\s+(?!\S)` | `\s+` — end of the whitespace token starting at `i`.
-    let ws = |i: usize| -> usize {
-        let re = run_end(tags, i, end, mask::WS);
-        if let Some(r) = text[i..re].iter().rposition(|&x| x == 0x0A || x == 0x0D) {
-            i + r + 1 // rule 5: up to & including the last newline
-        } else if re == end {
-            re // rule 7: trailing whitespace at EOF
-        } else {
-            // rule 6: before a non-space, leave the last ws char for the next token
-            let mut last = re - 1;
-            while last > i && text[last] & 0xC0 == 0x80 {
-                last -= 1;
-            }
-            if last > i { last } else { re }
-        }
-    };
+    // rules 5-7 (`\s*[\r\n] | \s+(?!\S) | \s+`) → the shared `ws_tail`.
+    let ws = |i: usize| -> usize { ws_tail(text, tags, i, end) };
 
     let mut i = 0;
     let mut w = 0usize;
@@ -94,21 +80,7 @@ fn cl100k(text: &[u8], tags: &[u8], out: &mut [Span], digit_cap: usize) -> usize
             NLN => i = ws(i),
             // Apostrophe: rule 1 (contraction) | rule 2 (prefix + `\p{L}+`) | rule 4
             APO => {
-                let mut adv = 0;
-                if i + 1 < end && text[i + 1] < 0x80 {
-                    let lc = text[i + 1] | 0x20;
-                    adv = match lc {
-                        b's' | b't' | b'm' | b'd' => 2,
-                        b'r' | b'v' | b'l' if i + 2 < end && text[i + 2] < 0x80 => {
-                            let l2 = text[i + 2] | 0x20;
-                            usize::from(
-                                (l2 == b'e' && matches!(lc, b'r' | b'v'))
-                                    || (lc == b'l' && l2 == b'l'),
-                            ) * 3
-                        }
-                        _ => 0,
-                    };
-                }
+                let adv = contraction(text, i); // rule 1: `'s 't 're 've 'm 'll 'd` (case-insensitive)
                 i = if adv > 0 {
                     i + adv
                 } else {
