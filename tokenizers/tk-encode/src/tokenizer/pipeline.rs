@@ -30,16 +30,9 @@ use crate::{
 
 use super::{Result, SplitDelimiterBehavior};
 
-// A pre-token span (byte range into the input) is `atomsplit::fsm::Span`, re-exported below — the FSM
-// emits it directly, so the pipeline reuses the buffer with no conversion.
 pub use atomsplit::fsm::Span;
 
-/// Classify `bytes` and run `fsm` (an atomsplit FSM / class-runs recipe) into a **thread-local scratch**,
-/// appending the resulting spans to `out`. The scratch (tags + spans) grows to the largest segment seen
-/// and is reused across calls — so pre-tokenizing many small segments (e.g. a special-token-dense input,
-/// where the special scan carves the text into many tiny pieces) pays no per-segment `vec![…]` alloc.
-/// `fsm` writes spans into `&mut [Span]` (len ≥ text len) and returns the count. Byte-identical to a
-/// fresh `vec![0u8; n]` + `vec![(0,0); n+1]` per call — just without the allocations.
+/// We use a thread local scratch for the tags (per byte class) and for the split spans.
 pub(crate) fn classify_into_spans(
     bytes: &[u8],
     fsm: impl FnOnce(&[u8], &[u8], &mut [Span]) -> usize,
