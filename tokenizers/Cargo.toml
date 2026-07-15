@@ -117,6 +117,11 @@ codegen-units = 1
 panic = "abort"
 strip = true
 
+# Slimmed vendored ptr_hash: identical MPHF, minus the non-optional colored/mem_dbg/tempfile deps
+# (and their syn/quote/proc-macro2 chain) that upstream forces. See vendor/ptr_hash/Cargo.toml.
+[patch.crates-io]
+ptr_hash = { path = "vendor/ptr_hash" }
+
 [[example]]
 name = "encode_batch"
 required-features = ["http"]
