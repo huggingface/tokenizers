@@ -39,9 +39,27 @@ impl PreTokenizer for Punctuation {
 }
 
 impl pipeline::PreTokenizer for Punctuation {
-    fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Split>) -> Result<()> {
-        pipeline::split_delimiter(text, out, is_punc, self.behavior);
-
+    fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Span>) -> Result<()> {
+        use SplitDelimiterBehavior::{Isolated, Removed};
+        // atom `PUNCT` == `is_punc` (ASCII-punct ∪ \p{P}), so Isolated/Removed map to the class-runs FSM
+        // byte-exactly. The merge/contiguous behaviors aren't a class-runs shape → keep the scalar split.
+        if matches!(self.behavior, Isolated | Removed) {
+            use atomsplit::classify::mask;
+            use atomsplit::fsm::class_runs_into;
+            pipeline::classify_into_spans(
+                text.as_bytes(),
+                |b, t, s| {
+                    if self.behavior == Removed {
+                        class_runs_into::<{ mask::PUNCT }, 0, 0>(b, t, s) // drop punct
+                    } else {
+                        class_runs_into::<0, { mask::PUNCT }, 0>(b, t, s) // isolate each punct
+                    }
+                },
+                out,
+            );
+        } else {
+            pipeline::split_delimiter(text, out, is_punc, self.behavior);
+        }
         Ok(())
     }
 }

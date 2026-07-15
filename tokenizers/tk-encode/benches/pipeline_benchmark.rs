@@ -16,6 +16,13 @@ use criterion::{BenchmarkId, Criterion, Throughput};
 use tk_encode::pipeline::PipelineTokenizer;
 use tk_encode::Tokenizer;
 
+// (name, tokenizer.json): bert-wiki exercises the Bert/WordPiece path; dsv4 exercises the deepseek
+// pre-tokenizer unroll (`fsm_deepseek`) + BPE end-to-end.
+const TOKENIZERS: &[(&str, &str)] = &[
+    ("bert", "../data/bert-wiki.json"),
+    ("dsv4", "../data/deepseek-v4-flash-base-tokenizer.json"),
+];
+
 const CORPORA: &[(&str, &str)] = &[
     ("big", "../data/big.txt"),
     ("wagahai", "../data/unigram_wagahaiwa_nekodearu.txt"),
@@ -47,29 +54,40 @@ fn make_chunks(lines: &[&str], target_bytes: usize) -> Vec<String> {
 }
 
 fn bench_pipeline(c: &mut Criterion) {
-    let oracle = Tokenizer::from_file("../data/bert-wiki.json").unwrap();
-    let pipeline = PipelineTokenizer::try_from(&oracle).unwrap();
+    for (tok_name, tok_path) in TOKENIZERS {
+        let Ok(oracle) = Tokenizer::from_file(tok_path) else {
+            eprintln!("pipeline bench: skip {tok_name} — {tok_path} not found");
+            continue;
+        };
+        let pipeline = match PipelineTokenizer::try_from(&oracle) {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("pipeline bench: skip {tok_name} — not pipeline-supported: {e}");
+                continue;
+            }
+        };
 
-    for (corpus, path) in CORPORA {
-        let text = std::fs::read_to_string(path).unwrap();
-        let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
+        for (corpus, path) in CORPORA {
+            let text = std::fs::read_to_string(path).unwrap();
+            let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
 
-        let mut group = c.benchmark_group(format!("pipeline-{corpus}"));
-        for (target_bytes, label) in CHUNK_SIZES {
-            let chunks = make_chunks(&lines, *target_bytes);
-            let total_bytes: u64 = chunks.iter().map(|s| s.len() as u64).sum();
-            group.throughput(Throughput::Bytes(total_bytes));
-            group.bench_function(BenchmarkId::from_parameter(label), |b| {
-                b.iter(|| {
-                    let mut n = 0usize;
-                    for chunk in &chunks {
-                        n += pipeline.encode(chunk, false).unwrap().len();
-                    }
-                    black_box(n)
-                })
-            });
+            let mut group = c.benchmark_group(format!("{tok_name}-{corpus}"));
+            for (target_bytes, label) in CHUNK_SIZES {
+                let chunks = make_chunks(&lines, *target_bytes);
+                let total_bytes: u64 = chunks.iter().map(|s| s.len() as u64).sum();
+                group.throughput(Throughput::Bytes(total_bytes));
+                group.bench_function(BenchmarkId::from_parameter(label), |b| {
+                    b.iter(|| {
+                        let mut n = 0usize;
+                        for chunk in &chunks {
+                            n += pipeline.encode(chunk, false).unwrap().len();
+                        }
+                        black_box(n)
+                    })
+                });
+            }
+            group.finish();
         }
-        group.finish();
     }
 }
 

@@ -84,7 +84,7 @@ static BMP_SCRIPT: LazyLock<[Script; 0x10000]> = LazyLock::new(|| {
 });
 
 impl pipeline::PreTokenizer for UnicodeScripts {
-    fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Split>) -> Result<()> {
+    fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Span>) -> Result<()> {
         let mut start = None;
         let mut last_script = None;
 
@@ -100,7 +100,7 @@ impl pipeline::PreTokenizer for UnicodeScripts {
             }
             if last_script.is_none_or(|ls| ls != script) {
                 if let Some(s) = start {
-                    out.push(pipeline::Split {
+                    out.push(pipeline::Span {
                         start: s,
                         end: i as u32,
                     });
@@ -111,7 +111,7 @@ impl pipeline::PreTokenizer for UnicodeScripts {
         }
 
         if let Some(start) = start {
-            out.push(pipeline::Split {
+            out.push(pipeline::Span {
                 start,
                 end: text.len() as u32,
             });

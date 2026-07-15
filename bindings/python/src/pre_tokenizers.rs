@@ -774,7 +774,7 @@ impl PyMetaspace {
     }
 
     #[new]
-    #[pyo3(signature = (replacement = '▁', prepend_scheme=String::from("always"), split=true), text_signature = "(self, replacement=\"_\", prepend_scheme=\"always\", split=True)")]
+    #[pyo3(signature = (replacement = '▁', prepend_scheme=String::from("always"), split=true), text_signature = "(self, replacement=\"▁\", prepend_scheme=\"always\", split=True)")]
     fn new(
         replacement: char,
         prepend_scheme: String,

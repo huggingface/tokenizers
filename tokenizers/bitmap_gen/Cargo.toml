@@ -1,0 +1,14 @@
+[package]
+name = "bitmap_gen"
+version = "0.1.0"
+edition = "2021"
+description = "Dev tool: regenerates atomsplit's committed classify tables (uses unicode-properties). Not for publication."
+license = "Apache-2.0"
+repository = "https://github.com/huggingface/tokenizers"
+authors = ["Arthur Zucker <arthur@huggingface.co>", "Luc Georges <luc@huggingface.co>"]
+publish = false
+
+[dependencies]
+# Current Unicode general categories (single source — replaces the frozen-at-Unicode-9.0
+# `unicode_categories`, whose stale `is_letter` mis-classified every post-9.0 letter).
+unicode-properties = "0.1"

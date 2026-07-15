@@ -27,11 +27,9 @@ name = "tk_encode"
 path = "src/lib.rs"
 
 [dependencies]
+atomsplit = { path = "../atomsplit" }
 rand = "0.9"
-onig = { version = "6.5.1", default-features = false, optional = true }
 regex = "1.10"
-regex-syntax = "0.8"
-regex-automata = "0.4"
 rayon = "1.10"
 rayon-cond = "0.4"
 serde = { version = "1.0", features = ["derive"] }
@@ -57,24 +55,32 @@ monostate = "0.1.12"
 ahash = { version = "0.8.11", features = ["serde"] }
 dary_heap = { version = "0.3.6", features = ["serde"] }
 compact_str = { version = "0.9", features = ["serde"] }
-ptr_hash = { version = "1.1.0" }
+ptr_hash = { version = "2.0.1", default-features = false }
 memchr = "2.8.2"
 unicode-normalization = "0.1.25"
 yada = "0.7.0"
 # Latest released tokenizers, used as the comparison baseline by the CI benchmark
 # (examples gated on `bench-baseline`). Optional so production builds never pull it.
 tokenizers-release = { package = "tokenizers", version = "=0.23.1", optional = true }
+# Reference regex engines `fixture_bench` times the classify+fsm pre-tokenize against: Oniguruma and
+# PCRE2 (both C) alongside the pure-Rust `fancy-regex` (optional, above). All three are pulled in by
+# `bench-baseline` — optional + behind that feature so the C builds happen ONLY for the CI benchmark,
+# never for `cargo test`/production.
+onig = { version = "6.5.1", optional = true }
+pcre2 = { version = "0.2", optional = true }
+logos = { version = "0.15", optional = true } # compile-time DFA lexer reference (pure Rust)
 
 [features]
-# TODO: onig is C (Oniguruma, archived upstream). We're moving to the pure-Rust
-# fancy-regex backend by default; once the legacy pre-tokenizers are gone, drop
-# the `onig` feature + `src/utils/onig.rs` entirely.
-default = ["progressbar", "fancy-regex"]
+# `fancy-regex` is the OPTIONAL system-regex backend, needed ONLY for a `Split` pre-tokenizer with an
+# arbitrary (non-GPT) regex or the `Replace` normalizer — the atomsplit-native pre-tokenizers (GPT-2,
+# cl100k, deepseek, the class family, char-delimiter) need no backend. Without it a stub compiles and
+# those arbitrary-regex paths error at load. Enable with `--features fancy-regex`.
+default = ["progressbar"]
 progressbar = ["indicatif"]
 http = ["hf-hub"]
 unstable_wasm = ["fancy-regex", "getrandom/wasm_js"]
 rustls-tls = ["hf-hub?/rustls-tls"]
-bench-baseline = ["dep:tokenizers-release"]
+bench-baseline = ["dep:tokenizers-release", "dep:onig", "dep:pcre2", "dep:logos", "fancy-regex"]
 
 [dev-dependencies]
 criterion = "0.6"

@@ -26,6 +26,16 @@ name: Pipeline Benchmark
 #     default branch).
 # Either way it maintains a marker-delimited benchmark section (graph + table)
 # in the target PR's description; the workflow run itself is the PR check.
+#
+# vs base branch: besides the "vs latest release" charts, the report shows a
+# "vs base branch" overview — this run's PipelineTokenizer against the base
+# branch's, per fixture, so a PR's own wins/regressions are visible (regressions
+# in red). The base's numbers are cached: a push to feat/train_encode_split
+# uploads its merged JSON to the HF Hub dataset as baselines/pipeline-<sha>.json
+# and force-moves the lightweight `pipeline-baseline` git tag to that commit
+# ("add the tag if not there"). A PR run resolves that tag, downloads the cached
+# JSON, and diffs against it ("otherwise read the data and plot the diff"). No
+# tag yet (or no cached JSON) → the base overview is skipped, release charts stay.
 
 on:
   push:
@@ -46,7 +56,8 @@ on:
         type: string
 
 permissions:
-  contents: read
+  contents: write       # force-move the `pipeline-baseline` tag on base-branch pushes
+  actions: read         # download the base branch's bench artifact (baseline fallback)
   issues: write         # remove the trigger label
   pull-requests: write  # edit the PR description
 
@@ -92,6 +103,11 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v6
 
+      # `onig_sys` (a `bench-baseline` reference-regex dep) generates its bindings with bindgen, which
+      # needs libclang. pcre2/fancy-regex don't. The runner image doesn't ship it.
+      - name: Install libclang (onig_sys → bindgen)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libclang-dev
+
       - name: Download fixtures and model tokenizers
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
@@ -134,10 +150,11 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v6
 
-      # cairosvg (chart rendering) dlopens the system libcairo, which the
-      # aws-general-8-plus runner image doesn't ship
-      - name: Install libcairo
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libcairo2
+      # libcairo: cairosvg (chart rendering) dlopens it. libclang: onig_sys's bindgen needs it (the
+      # binsize build below pulls `bench-baseline`, which activates the onig reference-regex dep). The
+      # aws-general-8-plus runner image ships neither.
+      - name: Install libcairo + libclang
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libcairo2 libclang-dev
 
       # Only the model tokenizers are needed here (gpt2.json for binsize); the
       # fixture corpora aren't — the numbers already live in the shard JSONs.
@@ -190,16 +207,74 @@ jobs:
           printf '}\n' >> binary_sizes.json
           cat binary_sizes.json
 
+      # "vs base branch": find the base branch's bench to diff this run against.
+      #   1. Primary — the `pipeline-baseline` tag pins a base commit whose merged
+      #      bench is cached on HF Hub (durable, survives artifact expiry).
+      #   2. Fallback — before that tag exists (e.g. on this very PR, or any PR
+      #      before the feature has merged + a base push), use the newest
+      #      successful base-branch bench *artifact*. Always available, so the
+      #      comparison shows up without any manual seeding.
+      # Skipped (has_base=false) only when neither exists or both point at this
+      # same commit; the release charts render regardless.
+      - name: Resolve base-branch baseline
+        id: base
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CUR_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          # 1. tag -> HF Hub JSON
+          base_sha=$(git ls-remote origin refs/tags/pipeline-baseline | awk '{print $1}' | head -1)
+          if [ -n "$base_sha" ] && [ "$base_sha" != "$CUR_SHA" ]; then
+            uvx --from huggingface_hub hf download hf-internal-testing/tokenizers-bench \
+              "baselines/pipeline-$base_sha.json" --repo-type dataset --local-dir base_dir 2>/dev/null || true
+            if [ -f "base_dir/baselines/pipeline-$base_sha.json" ]; then
+              {
+                echo "has_base=true"
+                echo "base_json=base_dir/baselines/pipeline-$base_sha.json"
+                echo "base_ref=${base_sha:0:9}"
+              } >> "$GITHUB_OUTPUT"
+              echo "Base baseline from pipeline-baseline tag ($base_sha)."; exit 0
+            fi
+          fi
+          # 2. fallback -> newest successful base-branch bench artifact
+          latest=$(gh run list --workflow pipeline-bench.yml \
+            --branch feat/train_encode_split --status success --limit 1 \
+            --json databaseId,headSha \
+            --jq 'if length > 0 then "\(.[0].databaseId) \(.[0].headSha)" else "" end' \
+            2>/dev/null || true)
+          run_id=${latest%% *}
+          run_sha=${latest##* }
+          if [ -n "$run_id" ] && [ "$run_sha" != "$CUR_SHA" ]; then
+            gh run download "$run_id" --name pipeline-bench --dir base_dir 2>/dev/null || true
+            f=$(find base_dir -name pipeline_bench.json 2>/dev/null | head -1)
+            if [ -n "$f" ]; then
+              {
+                echo "has_base=true"
+                echo "base_json=$f"
+                echo "base_ref=${run_sha:0:9}"
+              } >> "$GITHUB_OUTPUT"
+              echo "Base baseline from base-branch run $run_id artifact ($run_sha)."; exit 0
+            fi
+          fi
+          echo "No base baseline available (no tag, no base-branch artifact) — comparison skipped."
+          echo "has_base=false" >> "$GITHUB_OUTPUT"
+
       - name: Render report
         run: |
           base_url="https://huggingface.co/datasets/hf-internal-testing/tokenizers-bench/resolve/main/charts"
+          base_args=""
+          if [ "${{ steps.base.outputs.has_base }}" = "true" ]; then
+            base_args="--base-bench ${{ steps.base.outputs.base_json }} --base-ref ${{ steps.base.outputs.base_ref }}"
+          fi
           python3 ${{ github.workspace }}/.github/scripts/render_pipeline_bench.py \
             pipeline_bench.json \
             --subtitle "~10 kB inputs · single thread + 1/2/4/8/max-thread sweep" \
             --revision "${{ github.event.pull_request.head.sha || github.sha }}" \
             --img-base "$base_url" \
             --run-id "${{ github.run_id }}" \
-            --binary-sizes binary_sizes.json
+            --binary-sizes binary_sizes.json \
+            $base_args
           uvx --with cairosvg python -c "
           import cairosvg, glob
           for f in glob.glob('pipeline_bench_*.svg'):
@@ -266,6 +341,24 @@ jobs:
                  for r in m['results'] if r.get('ids_match') is False]
           sys.exit(f'ids diverge on: {bad}' if bad else 0)
           "
+
+      # Establish/refresh the base-branch baseline: on a push to
+      # feat/train_encode_split, cache this commit's merged bench on HF Hub and
+      # force-move the `pipeline-baseline` tag to it. Runs only after the id check
+      # passes, so a broken base never becomes the baseline. The tag push is a
+      # refs/tags update — it does NOT match the `push: branches` trigger, so no
+      # re-run loop. Uses the checkout's persisted GITHUB_TOKEN (contents: write).
+      - name: Publish base-branch baseline
+        if: github.event_name == 'push'
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          sha="${{ github.sha }}"
+          uvx --from huggingface_hub hf upload hf-internal-testing/tokenizers-bench \
+            pipeline_bench.json "baselines/pipeline-$sha.json" --repo-type dataset
+          git tag -f pipeline-baseline "$sha"
+          git push -f origin "refs/tags/pipeline-baseline"
+          echo "Published baseline for $sha and moved the pipeline-baseline tag."
 
       - name: Upload results artifact
         if: always()

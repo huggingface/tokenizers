@@ -1,5 +1,6 @@
 [workspace]
-members = ["tk-encode", "tk-train"]
+resolver = "3"
+members = ["bitmap_gen", "atomsplit", "tk-encode", "tk-train"]
 
 [package]
 authors = [
@@ -85,7 +86,7 @@ default = ["progressbar", "onig", "esaxx_fast", "train"]
 train = ["dep:tk-train"]
 esaxx_fast = ["tk-train?/esaxx_fast"]
 progressbar = ["tk-encode/progressbar", "tk-train?/progressbar"]
-onig = ["tk-encode/onig"]
+onig = ["tk-encode/fancy-regex"]
 http = ["tk-encode/http"]
 unstable_wasm = ["tk-encode/unstable_wasm"]
 rustls-tls = ["tk-encode/rustls-tls"]

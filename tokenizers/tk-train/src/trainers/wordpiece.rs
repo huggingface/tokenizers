@@ -84,7 +84,7 @@ impl WordPieceTrainerBuilder {
         self
     }
 
-    /// Constructs the final BpeTrainer
+    /// Constructs the final WordPieceTrainer
     pub fn build(self) -> WordPieceTrainer {
         let bpe_trainer = self.bpe_trainer_builder.build();
         WordPieceTrainer { bpe_trainer }
