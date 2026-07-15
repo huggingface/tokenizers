@@ -392,7 +392,7 @@ mod tests {
     fn pipeline_gpt2_uses_fsm_and_matches_legacy() {
         // The gpt2 pattern is recognized -> the pipeline path routes to the native
         // atomsplit FSM; its output must equal the legacy fancy-regex path.
-        let gpt2 = r"'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+";
+        let gpt2 = atomsplit::regexes::GPT2;
         let corpus = "The quick brown fox 123!!!  double  spaces\tand tabs. don't Naïve café. ";
         let pretok = Split::new(SplitPattern::Regex(gpt2.into()), Isolated, false).unwrap();
         assert!(pretok.fsm.is_some(), "gpt2 pattern should be recognized");
@@ -416,7 +416,7 @@ mod tests {
     fn pipeline_cl100k_llama3_uses_fsm_and_matches_legacy() {
         // Llama-3's EXACT pre_tokenizer regex (from data/llama-3-tokenizer.json) → recognized → routes
         // to fsm_cl100k. Output must equal the legacy SysRegex Isolated split, byte-for-byte.
-        let cl100k = r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+";
+        let cl100k = atomsplit::regexes::CL100K;
         let corpus =
             "The quick brown fox 123!!!  double  spaces\tand tabs. don't Naïve café.\n\n世界 안녕 ";
         let pretok = Split::new(SplitPattern::Regex(cl100k.into()), Isolated, false).unwrap();
@@ -444,7 +444,7 @@ mod tests {
         // GPT-4o's EXACT pre_tokenization regex → recognized → routes to fsm_o200k. Output must equal the
         // legacy SysRegex Isolated split, byte-for-byte. Corpus stresses the case-aware letter split:
         // camelCase, ALLCAPS→word, McDonald's-style, contractions, accented Ll (é/ß), CJK (caseless).
-        let o200k = r"[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]*[\p{Ll}\p{Lm}\p{Lo}\p{M}]+(?i:'s|'t|'re|'ve|'m|'ll|'d)?|[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]+[\p{Ll}\p{Lm}\p{Lo}\p{M}]*(?i:'s|'t|'re|'ve|'m|'ll|'d)?|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n/]*|\s*[\r\n]+|\s+(?!\S)|\s+";
+        let o200k = atomsplit::regexes::O200K;
         let corpus =
             "McDonald's iPhone SQLite HELLOWorld camelCase don't I'll We've 3.14 café Straße 世界 안녕\n\n  Mixed CASE end.";
         let pretok = Split::new(SplitPattern::Regex(o200k.into()), Isolated, false).unwrap();

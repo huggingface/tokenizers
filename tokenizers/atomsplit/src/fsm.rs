@@ -6,7 +6,7 @@
 //! [`class_runs_into`]: on aarch64/wasm the SIMD movemask boundary-extractor + homogeneous-chunk
 //! early-out (in `simd_fsm`), elsewhere the scalar run-end core ([`emit_class_spans`]). The
 //! regex-shaped ones ([`fsm_cl100k`] / [`fsm_o200k`] / [`fsm_deepseek`] / [`fsm_byte_level`]) are scalar
-//! jump-tables, with some SIMD for the occasional * or + patterns
+//! jump-tables (only the class family's [`class_runs_into`] has a SIMD path).
 
 pub(crate) use crate::classify::{Atom, char_len, classify, in_mask, mask};
 // Atom-tag aliases, shared with the per-tokenizer FSM submodules (`fsm/*.rs`) via `use super::*`.
