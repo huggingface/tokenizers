@@ -505,10 +505,21 @@ impl Model for Unigram {
     }
 }
 
+pub struct UnigramScratch {}
+
+impl pipeline::ModelScratch for UnigramScratch {}
+
 impl pipeline::Model for Unigram {
+    type Scratch = UnigramScratch;
+
+    fn init_scratch(&self) -> Self::Scratch {
+        Self::Scratch {}
+    }
+
     fn tokenize_pipeline(
         &self,
         sequence: &str,
+        _scratch: &mut Self::Scratch,
         output: &mut Vec<pipeline::PipelineToken>,
     ) -> Result<()> {
         let str_tokens = self.encode(sequence)?;
