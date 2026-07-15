@@ -15,7 +15,11 @@
 //! `≥ text.len()` (asserted in [`classify`]; documented per-fsm).
 mod atom_tables;
 pub mod classify;
+mod compose_tables;
 pub mod fsm;
+pub mod nfd;
+mod nfd_tables;
+mod nfkd_tables;
 pub mod regexes;
 #[cfg(target_arch = "x86_64")]
 mod simd_avx_classify;

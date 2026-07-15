@@ -28,6 +28,9 @@ path = "src/lib.rs"
 memchr = "2.8.2" # SIMD single-byte search; used only in CharDelimiterSplit (1.4–23× vs scalar).
 # NOTE: classify tables live in src/atom_tables.rs (committed, generated). Regenerate after any atom
 # scheme change with `cargo run -p bitmap_gen`. No build script / build-dep — atomsplit builds clean.
+[dev-dependencies]
+unicode-normalization = "0.1.25" # reference NFD/NFKD for the src/nfd.rs differential tests (dev-only, not linked at runtime)
+
 # onig is C (Oniguruma) and fancy-regex pulls it in transitively for benches only — neither
 # cross-compiles to wasm32 (no wasi libc for the C build), so gate them off wasm.
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
