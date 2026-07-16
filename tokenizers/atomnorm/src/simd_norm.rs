@@ -1,9 +1,101 @@
-//! NEON accelerators for the three skip kernels — pure prefix processors: each consumes as much of
-//! the input as SIMD chunking allows and RETURNS ITS POSITION; the scalar loops in `norm.rs` (the
-//! complete portable implementation) finish from there, which makes the two paths byte-exact by
-//! construction. `STORE` write-through rides the caller's reserved capacity slack.
+//! NEON accelerators (this module only compiles on aarch64) — pure prefix processors: each
+//! consumes as much of the input as SIMD chunking allows and RETURNS ITS POSITION; the scalar
+//! loops in `norm.rs`/`scan.rs` (the complete portable implementations) finish from there, which
+//! makes the two paths byte-exact by construction. `STORE` write-through rides the caller's
+//! reserved capacity slack.
 use crate::norm::bmp_set;
 use crate::tables::*;
+use std::arch::aarch64::*;
+
+const POW: [u8; 16] = [1, 2, 4, 8, 16, 32, 64, 128, 1, 2, 4, 8, 16, 32, 64, 128];
+
+/// Index of the first nonzero lane of a 0/FF mask (mask must be nonzero). `powv` is the
+/// preloaded `POW` vector — callers hoist the load to kernel entry, off the stop path.
+#[inline(always)]
+unsafe fn first_lane(mask: uint8x16_t, powv: uint8x16_t) -> usize {
+    // SAFETY (caller): plain NEON ops on values.
+    unsafe {
+        let m = vandq_u8(mask, powv);
+        let mm = (vaddv_u8(vget_low_u8(m)) as u16) | ((vaddv_u8(vget_high_u8(m)) as u16) << 8);
+        mm.trailing_zeros() as usize
+    }
+}
+
+/// Byte classes of mixed [ascii | 2-byte] text: `(continuation, class_ok)` — a lane failing
+/// `class_ok` (a 3/4-byte lead or invalid byte) ends the kernel's terrain.
+#[inline(always)]
+unsafe fn class2(v: uint8x16_t) -> (uint8x16_t, uint8x16_t) {
+    unsafe {
+        let ascii = vcltq_u8(v, vdupq_n_u8(0x80));
+        let cont = vandq_u8(vcgeq_u8(v, vdupq_n_u8(0x80)), vcltq_u8(v, vdupq_n_u8(0xC0)));
+        let lead2 = vandq_u8(vcgeq_u8(v, vdupq_n_u8(0xC2)), vcleq_u8(v, vdupq_n_u8(0xDF)));
+        (cont, vorrq_u8(vorrq_u8(ascii, cont), lead2))
+    }
+}
+
+/// A 2048-bit set (bitmap words reinterpreted as 256 `vqtbl` bytes), loaded once per kernel entry.
+#[inline(always)]
+unsafe fn load2048(p: *const u8) -> [uint8x16x4_t; 4] {
+    unsafe {
+        [
+            vld1q_u8_x4(p),
+            vld1q_u8_x4(p.add(64)),
+            vld1q_u8_x4(p.add(128)),
+            vld1q_u8_x4(p.add(192)),
+        ]
+    }
+}
+
+/// The 2-byte chars' set bits, evaluated at their continuation lanes entirely in 8-bit lanes:
+/// `idx = (prev & 0x1F) << 3 | (cur & 0x3F) >> 3` picks the table byte, `cur & 7` the bit.
+/// Returns a 0/FF mask (meaningful only at continuation lanes — mask with `cont`).
+#[inline(always)]
+unsafe fn probe2048(t: [uint8x16x4_t; 4], prev: uint8x16_t, v: uint8x16_t) -> uint8x16_t {
+    unsafe {
+        let idx = vorrq_u8(
+            vshlq_n_u8::<3>(vandq_u8(prev, vdupq_n_u8(0x1F))),
+            vshrq_n_u8::<3>(vandq_u8(v, vdupq_n_u8(0x3F))),
+        );
+        let byte = vorrq_u8(
+            vorrq_u8(
+                vqtbl4q_u8(t[0], idx),
+                vqtbl4q_u8(t[1], vsubq_u8(idx, vdupq_n_u8(64))),
+            ),
+            vorrq_u8(
+                vqtbl4q_u8(t[2], vsubq_u8(idx, vdupq_n_u8(128))),
+                vqtbl4q_u8(t[3], vsubq_u8(idx, vdupq_n_u8(192))),
+            ),
+        );
+        let sh = vnegq_s8(vreinterpretq_s8_u8(vandq_u8(v, vdupq_n_u8(7))));
+        let bit = vandq_u8(vshlq_u8(byte, sh), vdupq_n_u8(1));
+        vtstq_u8(bit, bit)
+    }
+}
+
+/// Uppercase `A..=Z` mask — false for every byte ≥ 0x80 (the subtract wraps far above 26).
+#[inline(always)]
+unsafe fn upper_mask(v: uint8x16_t) -> uint8x16_t {
+    unsafe { vcltq_u8(vsubq_u8(v, vdupq_n_u8(b'A')), vdupq_n_u8(26)) }
+}
+
+/// The `CLEAN` ASCII policy masks: `(fold → ' ', removal)`. 1 = bert (`\t\n\r` fold; other
+/// controls and DEL are removed), 2 = nmt (`\t\n\x0C\r` fold; controls minus NUL removed).
+#[inline(always)]
+unsafe fn ascii_policy<const CLEAN: u8>(v: uint8x16_t) -> (uint8x16_t, uint8x16_t) {
+    unsafe {
+        let eq = |b: u8| vceqq_u8(v, vdupq_n_u8(b));
+        let f = match CLEAN {
+            1 => vorrq_u8(vorrq_u8(eq(9), eq(10)), eq(13)),
+            2 => vorrq_u8(vorrq_u8(eq(9), eq(10)), vorrq_u8(eq(12), eq(13))),
+            _ => return (vdupq_n_u8(0), vdupq_n_u8(0)),
+        };
+        let mut ctl = vandq_u8(vcltq_u8(v, vdupq_n_u8(0x20)), vmvnq_u8(f));
+        if CLEAN == 2 {
+            ctl = vandq_u8(ctl, vmvnq_u8(eq(0))); // nmt keeps NUL
+        }
+        (f, vorrq_u8(ctl, eq(0x7F)))
+    }
+}
 
 /// SIMD prefix of `norm::skip_clean` — stops at the first suspect lead or when < 32 bytes remain.
 pub(crate) fn skip_clean<const STORE: bool>(
@@ -13,11 +105,8 @@ pub(crate) fn skip_clean<const STORE: bool>(
     mask: &[u8; 64],
 ) -> usize {
     let n = bytes.len();
-    #[cfg(target_arch = "aarch64")]
     // SAFETY: loads gated by `i + 32 <= n`; stores by reserved capacity; stops are lead bytes.
     unsafe {
-        use std::arch::aarch64::*;
-        const POW: [u8; 16] = [1, 2, 4, 8, 16, 32, 64, 128, 1, 2, 4, 8, 16, 32, 64, 128];
         let tbl = vld1q_u8_x4(mask.as_ptr());
         let powv = vld1q_u8(POW.as_ptr());
         let c0 = vdupq_n_u8(0xC0);
@@ -40,17 +129,15 @@ pub(crate) fn skip_clean<const STORE: bool>(
                 i += 32;
                 continue;
             }
-            // locate the first suspect lane across the two chunks
+            // locate the first suspect lane across the two chunks (no extra reduction: reuse the
+            // POW-packed mask of chunk `a` for both the emptiness test and the position)
             let ma = vandq_u8(ha, powv);
             let mm =
                 (vaddv_u8(vget_low_u8(ma)) as u16) | ((vaddv_u8(vget_high_u8(ma)) as u16) << 8);
             let k = if mm != 0 {
                 mm.trailing_zeros() as usize
             } else {
-                let mb = vandq_u8(hb, powv);
-                let m2 =
-                    (vaddv_u8(vget_low_u8(mb)) as u16) | ((vaddv_u8(vget_high_u8(mb)) as u16) << 8);
-                16 + m2.trailing_zeros() as usize
+                16 + first_lane(hb, powv)
             };
             if STORE {
                 v_out.set_len(len + k);
@@ -66,17 +153,19 @@ pub(crate) fn skip_clean<const STORE: bool>(
 
 /// SIMD prefix of `norm::skip2_ascii` — returns at a set char, a non-(ascii|2-byte) boundary,
 /// or when < 16 bytes remain; the scalar caller re-derives the classification at that position.
+///
+/// NOTE deliberately hand-inlined (not `class2`/`probe2048`): with one table the four `vqtbl4`
+/// groups must stay individual SSA values — the helper-factored variant (array-of-tables, even
+/// by value) measured +25% on this kernel's hottest path (NFD Russian).
 pub(crate) fn skip2_ascii<const STORE: bool>(
     bytes: &[u8],
     mut i: usize,
     out: &mut String,
 ) -> usize {
     let n = bytes.len();
-    #[cfg(target_arch = "aarch64")]
     // SAFETY: loads gated by `i + 16 <= n`; stores ride reserved capacity; stops land on char starts
     // (a suspect continuation rolls back to its lead, which is always inside this chunk or the carry).
     unsafe {
-        use std::arch::aarch64::*;
         let bm = BMP_SET.as_ptr() as *const u8;
         let (t0, t1, t2, t3) = (
             vld1q_u8_x4(bm),
@@ -144,9 +233,9 @@ pub(crate) fn skip2_ascii<const STORE: bool>(
 
 /// SIMD prefix of `scan::next_hit` — the scan normalizers' fused lane: one `vqtbl4` lead probe per
 /// 16 bytes plus the in-register ASCII policy (`LOWER` flips `A..=Z` — the PR #2036 port — and
-/// `CLEAN` 1/2 folds bert/nmt whitespace to `' '` and stops at removal bytes). Check mode
-/// (`!STORE`) also stops at any ASCII transform — the borrow gate; write mode stores the
-/// transformed bytes. Stops are always char boundaries (leads or ASCII).
+/// `CLEAN` folds whitespace to `' '` and stops at removal bytes). Check mode (`!STORE`) also stops
+/// at any ASCII transform — the borrow gate; write mode stores the transformed bytes. `ASCII_SET`
+/// (runtime sets) additionally probes ASCII membership. Stops are always char boundaries.
 pub(crate) fn scan_prefix<
     const STORE: bool,
     const LOWER: bool,
@@ -160,72 +249,32 @@ pub(crate) fn scan_prefix<
     set: &[u64; 1024],
 ) -> usize {
     let n = bytes.len();
-    #[cfg(target_arch = "aarch64")]
     // SAFETY: loads gated by `i + 16 <= n`; stores by the driver's reserved-capacity invariant;
     // `set_len` covers only verified bytes.
     unsafe {
-        use std::arch::aarch64::*;
-        const POW: [u8; 16] = [1, 2, 4, 8, 16, 32, 64, 128, 1, 2, 4, 8, 16, 32, 64, 128];
         let tbl = vld1q_u8_x4(lead.as_ptr());
         let powv = vld1q_u8(POW.as_ptr());
         let c0 = vdupq_n_u8(0xC0);
-        let zero = vdupq_n_u8(0);
         // runtime sets may contain ASCII members: their 128 bits live in the set's first 16 bytes
-        let ascii_tbl = if ASCII_SET {
-            vld1q_u8(set.as_ptr() as *const u8)
-        } else {
-            zero
-        };
+        let ascii_tbl = vld1q_u8(set.as_ptr() as *const u8);
         let v_out = out.as_mut_vec();
         let mut len = v_out.len();
         while i + 16 <= n {
             let v = vld1q_u8(bytes.as_ptr().add(i));
-            let mut lead_hit = vqtbl4q_u8(tbl, vqsubq_u8(v, c0));
+            let mut hit = vqtbl4q_u8(tbl, vqsubq_u8(v, c0));
             if ASCII_SET {
                 // bytes ≥ 0x80 index past the 16-byte table → 0, so only ASCII lanes can fire
                 let byte = vqtbl1q_u8(ascii_tbl, vshrq_n_u8::<3>(v));
                 let sh = vnegq_s8(vreinterpretq_s8_u8(vandq_u8(v, vdupq_n_u8(7))));
                 let bit = vandq_u8(vshlq_u8(byte, sh), vdupq_n_u8(1));
-                lead_hit = vorrq_u8(lead_hit, vtstq_u8(bit, bit));
+                hit = vorrq_u8(hit, vtstq_u8(bit, bit));
             }
-            let upper = if LOWER {
-                // v - 'A' < 26 unsigned: false for every byte ≥ 0x80 (wraps far above 26)
-                vcltq_u8(vsubq_u8(v, vdupq_n_u8(b'A')), vdupq_n_u8(26))
-            } else {
-                zero
-            };
-            let (fold, rm) = match CLEAN {
-                1 => {
-                    let f = vorrq_u8(
-                        vorrq_u8(vceqq_u8(v, vdupq_n_u8(9)), vceqq_u8(v, vdupq_n_u8(10))),
-                        vceqq_u8(v, vdupq_n_u8(13)),
-                    );
-                    let r = vorrq_u8(
-                        vandq_u8(vcltq_u8(v, vdupq_n_u8(0x20)), vmvnq_u8(f)),
-                        vceqq_u8(v, vdupq_n_u8(0x7F)),
-                    );
-                    (f, r)
-                }
-                2 => {
-                    let f = vorrq_u8(
-                        vorrq_u8(vceqq_u8(v, vdupq_n_u8(9)), vceqq_u8(v, vdupq_n_u8(10))),
-                        vorrq_u8(vceqq_u8(v, vdupq_n_u8(12)), vceqq_u8(v, vdupq_n_u8(13))),
-                    );
-                    let r = vorrq_u8(
-                        vandq_u8(
-                            vandq_u8(vcltq_u8(v, vdupq_n_u8(0x20)), vmvnq_u8(f)),
-                            vmvnq_u8(vceqq_u8(v, zero)),
-                        ),
-                        vceqq_u8(v, vdupq_n_u8(0x7F)),
-                    );
-                    (f, r)
-                }
-                _ => (zero, zero),
-            };
+            let upper = if LOWER { upper_mask(v) } else { vdupq_n_u8(0) };
+            let (fold, rm) = ascii_policy::<CLEAN>(v);
             let stop = if STORE {
-                vorrq_u8(lead_hit, rm)
+                vorrq_u8(hit, rm)
             } else {
-                vorrq_u8(vorrq_u8(lead_hit, rm), vorrq_u8(upper, fold))
+                vorrq_u8(vorrq_u8(hit, rm), vorrq_u8(upper, fold))
             };
             if STORE {
                 let mut t = v;
@@ -244,9 +293,7 @@ pub(crate) fn scan_prefix<
                 i += 16;
                 continue;
             }
-            let m = vandq_u8(stop, powv);
-            let mm = (vaddv_u8(vget_low_u8(m)) as u16) | ((vaddv_u8(vget_high_u8(m)) as u16) << 8);
-            let k = mm.trailing_zeros() as usize;
+            let k = first_lane(stop, powv);
             if STORE {
                 v_out.set_len(len + k);
             }
@@ -275,96 +322,25 @@ pub(crate) fn scan2_case<const CLEAN: u8>(
     reg2: &[u64; 32],
 ) -> usize {
     let n = bytes.len();
-    #[cfg(target_arch = "aarch64")]
     // SAFETY: loads gated by `i + 16 <= n`; stores by the driver's reserved-capacity invariant;
     // `set_len` covers only verified bytes; stops roll back to char starts.
     unsafe {
-        use std::arch::aarch64::*;
-        const POW: [u8; 16] = [1, 2, 4, 8, 16, 32, 64, 128, 1, 2, 4, 8, 16, 32, 64, 128];
-        let sm = set.as_ptr() as *const u8;
-        let (s0, s1, s2, s3) = (
-            vld1q_u8_x4(sm),
-            vld1q_u8_x4(sm.add(64)),
-            vld1q_u8_x4(sm.add(128)),
-            vld1q_u8_x4(sm.add(192)),
-        );
-        let rm = reg2.as_ptr() as *const u8;
-        let (r0, r1, r2, r3) = (
-            vld1q_u8_x4(rm),
-            vld1q_u8_x4(rm.add(64)),
-            vld1q_u8_x4(rm.add(128)),
-            vld1q_u8_x4(rm.add(192)),
-        );
+        let st = load2048(set.as_ptr() as *const u8);
+        let rt = load2048(reg2.as_ptr() as *const u8);
         let powv = vld1q_u8(POW.as_ptr());
         let zero = vdupq_n_u8(0);
         let v_out = out.as_mut_vec();
         let mut len = v_out.len();
         while i + 16 <= n {
             let v = vld1q_u8(bytes.as_ptr().add(i));
-            let ascii = vcltq_u8(v, vdupq_n_u8(0x80));
-            let cont = vandq_u8(vcgeq_u8(v, vdupq_n_u8(0x80)), vcltq_u8(v, vdupq_n_u8(0xC0)));
-            let lead2 = vandq_u8(vcgeq_u8(v, vdupq_n_u8(0xC2)), vcleq_u8(v, vdupq_n_u8(0xDF)));
-            let class_ok = vorrq_u8(vorrq_u8(ascii, cont), lead2);
-            // both bitmap probes at the continuation lanes, 8-bit throughout (as in skip2_ascii);
+            let (cont, class_ok) = class2(v);
             // lane 0 never starts mid-pair (entry and advance are char boundaries), so prev=0 is fine
             let prev = vextq_u8::<15>(zero, v);
-            let idx = vorrq_u8(
-                vshlq_n_u8::<3>(vandq_u8(prev, vdupq_n_u8(0x1F))),
-                vshrq_n_u8::<3>(vandq_u8(v, vdupq_n_u8(0x3F))),
-            );
-            let tbl256 = |t0: uint8x16x4_t, t1, t2, t3| {
-                vorrq_u8(
-                    vorrq_u8(
-                        vqtbl4q_u8(t0, idx),
-                        vqtbl4q_u8(t1, vsubq_u8(idx, vdupq_n_u8(64))),
-                    ),
-                    vorrq_u8(
-                        vqtbl4q_u8(t2, vsubq_u8(idx, vdupq_n_u8(128))),
-                        vqtbl4q_u8(t3, vsubq_u8(idx, vdupq_n_u8(192))),
-                    ),
-                )
-            };
-            let sh = vnegq_s8(vreinterpretq_s8_u8(vandq_u8(v, vdupq_n_u8(7))));
-            let bit = |byte: uint8x16_t| {
-                let b = vandq_u8(vshlq_u8(byte, sh), vdupq_n_u8(1));
-                vtstq_u8(b, b)
-            };
-            let set_hit = vandq_u8(cont, bit(tbl256(s0, s1, s2, s3)));
-            let reg_hit = vandq_u8(cont, bit(tbl256(r0, r1, r2, r3)));
-            // ASCII policy (write mode: transforms, removals stop)
-            let upper = vcltq_u8(vsubq_u8(v, vdupq_n_u8(b'A')), vdupq_n_u8(26));
-            let (fold, rmv) = match CLEAN {
-                1 => {
-                    let f = vorrq_u8(
-                        vorrq_u8(vceqq_u8(v, vdupq_n_u8(9)), vceqq_u8(v, vdupq_n_u8(10))),
-                        vceqq_u8(v, vdupq_n_u8(13)),
-                    );
-                    let r = vorrq_u8(
-                        vandq_u8(vcltq_u8(v, vdupq_n_u8(0x20)), vmvnq_u8(f)),
-                        vceqq_u8(v, vdupq_n_u8(0x7F)),
-                    );
-                    (f, r)
-                }
-                2 => {
-                    let f = vorrq_u8(
-                        vorrq_u8(vceqq_u8(v, vdupq_n_u8(9)), vceqq_u8(v, vdupq_n_u8(10))),
-                        vorrq_u8(vceqq_u8(v, vdupq_n_u8(12)), vceqq_u8(v, vdupq_n_u8(13))),
-                    );
-                    let r = vorrq_u8(
-                        vandq_u8(
-                            vandq_u8(vcltq_u8(v, vdupq_n_u8(0x20)), vmvnq_u8(f)),
-                            vmvnq_u8(vceqq_u8(v, zero)),
-                        ),
-                        vceqq_u8(v, vdupq_n_u8(0x7F)),
-                    );
-                    (f, r)
-                }
-                _ => (zero, zero),
-            };
-            let bad = vorrq_u8(
-                vorrq_u8(vmvnq_u8(class_ok), vbicq_u8(set_hit, reg_hit)),
-                rmv,
-            );
+            let set_hit = vandq_u8(cont, probe2048(st, prev, v));
+            let reg_hit = vandq_u8(cont, probe2048(rt, prev, v));
+            let upper = upper_mask(v);
+            let (fold, rm) = ascii_policy::<CLEAN>(v);
+            let bad = vorrq_u8(vorrq_u8(vmvnq_u8(class_ok), vbicq_u8(set_hit, reg_hit)), rm);
             // transform: ASCII policy, then the case-swap target on source-hit lanes
             let mut t = vbslq_u8(upper, vorrq_u8(v, vdupq_n_u8(0x20)), v);
             if CLEAN != 0 {
@@ -372,8 +348,11 @@ pub(crate) fn scan2_case<const CLEAN: u8>(
             }
             let c1 = vaddq_u8(v, vdupq_n_u8(0x20));
             let ovf = vandq_u8(vcgtq_u8(c1, vdupq_n_u8(0xBF)), reg_hit);
-            let c2 = vbslq_u8(ovf, vsubq_u8(c1, vdupq_n_u8(0x40)), c1);
-            t = vbslq_u8(reg_hit, c2, t);
+            t = vbslq_u8(
+                reg_hit,
+                vbslq_u8(ovf, vsubq_u8(c1, vdupq_n_u8(0x40)), c1),
+                t,
+            );
             // the overflowing pair's LEAD (one lane earlier) gets +1
             t = vaddq_u8(t, vandq_u8(vextq_u8::<1>(ovf, zero), vdupq_n_u8(1)));
             vst1q_u8(v_out.as_mut_ptr().add(len), t);
@@ -384,9 +363,7 @@ pub(crate) fn scan2_case<const CLEAN: u8>(
                 i += adv;
                 continue;
             }
-            let m = vandq_u8(bad, powv);
-            let mm = (vaddv_u8(vget_low_u8(m)) as u16) | ((vaddv_u8(vget_high_u8(m)) as u16) << 8);
-            let k = mm.trailing_zeros() as usize;
+            let k = first_lane(bad, powv);
             // a bad continuation belongs to the char starting one byte earlier
             let back = usize::from(bytes[i + k] >= 0x80 && bytes[i + k] < 0xC0);
             v_out.set_len(len + (k - back));
@@ -400,56 +377,34 @@ pub(crate) fn scan2_case<const CLEAN: u8>(
 /// SIMD prefix of `norm::skip3` — returns at a set char / width change / when < 48 bytes remain.
 pub(crate) fn skip3<const STORE: bool>(bytes: &[u8], mut i: usize, out: &mut String) -> usize {
     let n = bytes.len();
-    #[cfg(target_arch = "aarch64")]
-    // SAFETY: loads gated by `i + 16*W <= n`; stores by reserved capacity (`+48` slack); `set_len`
+    // SAFETY: loads gated by `i + 48 <= n`; stores by reserved capacity (`+48` slack); `set_len`
     // only covers verified whole chars.
     unsafe {
-        use std::arch::aarch64::*;
         let v_out = out.as_mut_vec();
         let mut len = v_out.len();
         while i + 48 <= n {
             let (mut cps, mut lok) = ([0u16; 16], [0u8; 16]);
-            if false {
-                let x = vld2q_u8(bytes.as_ptr().add(i));
-                if STORE {
-                    vst2q_u8(v_out.as_mut_ptr().add(len), x);
-                }
-                let ok = vandq_u8(
-                    vcgeq_u8(x.0, vdupq_n_u8(0xC2)),
-                    vcleq_u8(x.0, vdupq_n_u8(0xDF)),
-                );
-                vst1q_u8(lok.as_mut_ptr(), ok);
-                for (h, (l8, c8)) in [
-                    (0usize, (vget_low_u8(x.0), vget_low_u8(x.1))),
-                    (8, (vget_high_u8(x.0), vget_high_u8(x.1))),
-                ] {
-                    let l = vandq_u16(vmovl_u8(l8), vdupq_n_u16(0x1F));
-                    let cc = vandq_u16(vmovl_u8(c8), vdupq_n_u16(0x3F));
-                    vst1q_u16(cps.as_mut_ptr().add(h), vorrq_u16(vshlq_n_u16::<6>(l), cc));
-                }
-            } else {
-                let x = vld3q_u8(bytes.as_ptr().add(i));
-                if STORE {
-                    vst3q_u8(v_out.as_mut_ptr().add(len), x);
-                }
-                let ok = vandq_u8(
-                    vcgeq_u8(x.0, vdupq_n_u8(0xE0)),
-                    vcleq_u8(x.0, vdupq_n_u8(0xEF)),
-                );
-                vst1q_u8(lok.as_mut_ptr(), ok);
-                for (h, (l8, b18, b28)) in [
-                    (
-                        0usize,
-                        (vget_low_u8(x.0), vget_low_u8(x.1), vget_low_u8(x.2)),
-                    ),
-                    (8, (vget_high_u8(x.0), vget_high_u8(x.1), vget_high_u8(x.2))),
-                ] {
-                    let l = vandq_u16(vmovl_u8(l8), vdupq_n_u16(0x0F));
-                    let b1 = vandq_u16(vmovl_u8(b18), vdupq_n_u16(0x3F));
-                    let b2 = vandq_u16(vmovl_u8(b28), vdupq_n_u16(0x3F));
-                    let cp = vorrq_u16(vorrq_u16(vshlq_n_u16::<12>(l), vshlq_n_u16::<6>(b1)), b2);
-                    vst1q_u16(cps.as_mut_ptr().add(h), cp);
-                }
+            let x = vld3q_u8(bytes.as_ptr().add(i));
+            if STORE {
+                vst3q_u8(v_out.as_mut_ptr().add(len), x);
+            }
+            let ok = vandq_u8(
+                vcgeq_u8(x.0, vdupq_n_u8(0xE0)),
+                vcleq_u8(x.0, vdupq_n_u8(0xEF)),
+            );
+            vst1q_u8(lok.as_mut_ptr(), ok);
+            for (h, (l8, b18, b28)) in [
+                (
+                    0usize,
+                    (vget_low_u8(x.0), vget_low_u8(x.1), vget_low_u8(x.2)),
+                ),
+                (8, (vget_high_u8(x.0), vget_high_u8(x.1), vget_high_u8(x.2))),
+            ] {
+                let l = vandq_u16(vmovl_u8(l8), vdupq_n_u16(0x0F));
+                let b1 = vandq_u16(vmovl_u8(b18), vdupq_n_u16(0x3F));
+                let b2 = vandq_u16(vmovl_u8(b28), vdupq_n_u16(0x3F));
+                let cp = vorrq_u16(vorrq_u16(vshlq_n_u16::<12>(l), vshlq_n_u16::<6>(b1)), b2);
+                vst1q_u16(cps.as_mut_ptr().add(h), cp);
             }
             match (0..16).position(|l| lok[l] != 0xFF || bmp_set(cps[l])) {
                 Some(l) => {

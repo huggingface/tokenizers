@@ -52,8 +52,17 @@ fn nmt_removes(c: char) -> bool {
 }
 fn nmt_to_space(c: char) -> char {
     match c as u32 {
-        0x0009 | 0x000A | 0x000C | 0x000D | 0x1680 | 0x200B..=0x200F | 0x2028 | 0x2029 | 0x2581
-        | 0xFEFF | 0xFFFD => ' ',
+        0x0009
+        | 0x000A
+        | 0x000C
+        | 0x000D
+        | 0x1680
+        | 0x200B..=0x200F
+        | 0x2028
+        | 0x2029
+        | 0x2581
+        | 0xFEFF
+        | 0xFFFD => ' ',
         _ => c,
     }
 }
@@ -208,15 +217,51 @@ fn main() {
     type New<'x> = Box<dyn Fn(&str) -> Cow<'_, str> + 'x>;
     type Leg<'x> = Box<dyn Fn(&str) -> Cow<'_, str> + 'x>;
     let rows: Vec<(&str, New, Leg)> = vec![
-        ("NFC", Box::new(|s| Normalizer::normalize(&NFC, s).unwrap()), Box::new(|s| leg_form("NFC", s))),
-        ("NFD", Box::new(|s| Normalizer::normalize(&NFD, s).unwrap()), Box::new(|s| leg_form("NFD", s))),
-        ("NFKC", Box::new(|s| Normalizer::normalize(&NFKC, s).unwrap()), Box::new(|s| leg_form("NFKC", s))),
-        ("NFKD", Box::new(|s| Normalizer::normalize(&NFKD, s).unwrap()), Box::new(|s| leg_form("NFKD", s))),
-        ("lower", Box::new(|s| Normalizer::normalize(&Lowercase, s).unwrap()), Box::new(leg_lower)),
-        ("strip", Box::new(|s| Normalizer::normalize(&StripAccents, s).unwrap()), Box::new(leg_strip_accents)),
-        ("nmt", Box::new(|s| Normalizer::normalize(&Nmt, s).unwrap()), Box::new(leg_nmt)),
-        ("bert", Box::new(move |s| Normalizer::normalize(&bert, s).unwrap()), Box::new(leg_bert)),
-        ("spm", Box::new(move |s| Normalizer::normalize(&precompiled, s).unwrap()), Box::new(move |s| leg_precompiled(&spm, s))),
+        (
+            "NFC",
+            Box::new(|s| Normalizer::normalize(&NFC, s).unwrap()),
+            Box::new(|s| leg_form("NFC", s)),
+        ),
+        (
+            "NFD",
+            Box::new(|s| Normalizer::normalize(&NFD, s).unwrap()),
+            Box::new(|s| leg_form("NFD", s)),
+        ),
+        (
+            "NFKC",
+            Box::new(|s| Normalizer::normalize(&NFKC, s).unwrap()),
+            Box::new(|s| leg_form("NFKC", s)),
+        ),
+        (
+            "NFKD",
+            Box::new(|s| Normalizer::normalize(&NFKD, s).unwrap()),
+            Box::new(|s| leg_form("NFKD", s)),
+        ),
+        (
+            "lower",
+            Box::new(|s| Normalizer::normalize(&Lowercase, s).unwrap()),
+            Box::new(leg_lower),
+        ),
+        (
+            "strip",
+            Box::new(|s| Normalizer::normalize(&StripAccents, s).unwrap()),
+            Box::new(leg_strip_accents),
+        ),
+        (
+            "nmt",
+            Box::new(|s| Normalizer::normalize(&Nmt, s).unwrap()),
+            Box::new(leg_nmt),
+        ),
+        (
+            "bert",
+            Box::new(move |s| Normalizer::normalize(&bert, s).unwrap()),
+            Box::new(leg_bert),
+        ),
+        (
+            "spm",
+            Box::new(move |s| Normalizer::normalize(&precompiled, s).unwrap()),
+            Box::new(move |s| leg_precompiled(&spm, s)),
+        ),
     ];
 
     println!(

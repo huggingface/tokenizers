@@ -202,6 +202,38 @@ fn b64_decode(s: &str) -> Vec<u8> {
 
 // ── normalization ─────────────────────────────────────────────────────────────────────────────────
 
+/// Transform one grapheme (at byte `abs` of `input`) through the charsmap — a whole-grapheme match
+/// first (< 6 bytes), else char by char — materializing `out` (with the verbatim prefix) on the
+/// first replacement. The single copy of the exact-walk step both paths share.
+fn transform_grapheme(
+    inner: &spm_precompiled::Precompiled,
+    input: &str,
+    abs: usize,
+    grapheme: &str,
+    out: &mut Option<String>,
+) {
+    fn materialize<'o>(out: &'o mut Option<String>, input: &str, upto: usize) -> &'o mut String {
+        out.get_or_insert_with(|| {
+            let mut s = String::with_capacity(input.len());
+            s.push_str(&input[..upto]);
+            s
+        })
+    }
+    if grapheme.len() < 6 {
+        if let Some(rep) = inner.transform(grapheme) {
+            materialize(out, input, abs).push_str(rep);
+            return;
+        }
+    }
+    for (ci, c) in grapheme.char_indices() {
+        if let Some(rep) = inner.transform(&grapheme[ci..ci + c.len_utf8()]) {
+            materialize(out, input, abs + ci).push_str(rep);
+        } else if let Some(o) = out.as_mut() {
+            o.push(c);
+        }
+    }
+}
+
 impl Precompiled {
     /// The prefiltered pipeline path: skip cold runs, and at each hot char walk back over
     /// cluster-class chars to a provable grapheme boundary, then run the exact walk until the
@@ -242,32 +274,7 @@ impl Precompiled {
                     exit = abs;
                     break;
                 }
-                let mut done = false;
-                if grapheme.len() < 6 {
-                    if let Some(rep) = self.inner.transform(grapheme) {
-                        let o = out.get_or_insert_with(|| {
-                            let mut s = String::with_capacity(input.len());
-                            s.push_str(&input[..abs]);
-                            s
-                        });
-                        o.push_str(rep);
-                        done = true;
-                    }
-                }
-                if !done {
-                    for (ci, c) in grapheme.char_indices() {
-                        if let Some(rep) = self.inner.transform(&grapheme[ci..ci + c.len_utf8()]) {
-                            let o = out.get_or_insert_with(|| {
-                                let mut s = String::with_capacity(input.len());
-                                s.push_str(&input[..abs + ci]);
-                                s
-                            });
-                            o.push_str(rep);
-                        } else if let Some(o) = out.as_mut() {
-                            o.push(c);
-                        }
-                    }
-                }
+                transform_grapheme(&self.inner, input, abs, grapheme, &mut out);
             }
             verb = exit;
             i = exit;
@@ -283,36 +290,11 @@ impl Precompiled {
 
     /// The plain exact walk — the fallback when the invariant fails, and the test oracle.
     fn normalize_walk<'a>(&self, input: &'a str) -> Cow<'a, str> {
-        let mut transformed: Option<String> = None;
+        let mut out: Option<String> = None;
         for (g_idx, grapheme) in input.grapheme_indices(true) {
-            if grapheme.len() < 6 {
-                if let Some(replacement) = self.inner.transform(grapheme) {
-                    let string = transformed.get_or_insert_with(|| {
-                        let mut s = String::with_capacity(input.len());
-                        s.push_str(&input[..g_idx]);
-                        s
-                    });
-                    string.push_str(replacement);
-                    continue;
-                }
-            }
-            for (c_idx, character) in grapheme.char_indices() {
-                if let Some(replacement) = self
-                    .inner
-                    .transform(&grapheme[c_idx..c_idx + character.len_utf8()])
-                {
-                    let string = transformed.get_or_insert_with(|| {
-                        let mut s = String::with_capacity(input.len());
-                        s.push_str(&input[..g_idx + c_idx]);
-                        s
-                    });
-                    string.push_str(replacement);
-                } else if let Some(transformed) = transformed.as_mut() {
-                    transformed.push(character);
-                }
-            }
+            transform_grapheme(&self.inner, input, g_idx, grapheme, &mut out);
         }
-        match transformed {
+        match out {
             Some(s) => Cow::Owned(s),
             None => Cow::Borrowed(input),
         }
