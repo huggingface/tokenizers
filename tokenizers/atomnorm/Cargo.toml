@@ -32,7 +32,3 @@ unicode-normalization-alignments = "0.1"
 [[bench]]
 name = "normalize"
 harness = false
-
-[[bench]]
-name = "scan"
-harness = false
