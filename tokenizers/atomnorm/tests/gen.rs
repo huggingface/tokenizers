@@ -213,6 +213,22 @@ impl Gen {
     }
 }
 
+fn emit_u64(o: &mut String, name: &str, v: &[u64]) {
+    write!(
+        o,
+        "#[rustfmt::skip]\npub static {name}: [u64; {}] = [",
+        v.len()
+    )
+    .unwrap();
+    for (i, x) in v.iter().enumerate() {
+        if i > 0 {
+            o.push(',');
+        }
+        write!(o, "{x}").unwrap();
+    }
+    o.push_str("];\n");
+}
+
 fn emit_u8(o: &mut String, name: &str, v: &[u8]) {
     write!(
         o,
@@ -388,6 +404,109 @@ fn generate() {
         }
         o.push_str("];\n");
     }
+    // ── scan property sets (Lowercase / StripAccents / Nmt / Bert) ────────────────────────────────
+    // Derived from the SAME predicates the tk-encode legacy normalizers run (std `to_lowercase`,
+    // `unicode_categories`, `unicode_normalization_alignments`), so the baked sets are bug-compatible.
+    {
+        use unicode_categories::UnicodeCategories;
+        let lowercases_to_self = |c: char| {
+            let mut it = c.to_lowercase();
+            matches!((it.next(), it.next()), (Some(first), None) if first == c)
+        };
+        let bert_ws = |c: char| matches!(c, '\t' | '\n' | '\r') || c.is_whitespace();
+        let bert_ctrl = |c: char| !matches!(c, '\t' | '\n' | '\r') && c.is_other();
+        let cjk = |cp: u32| {
+            matches!(cp,
+                0x4E00..=0x9FFF | 0x3400..=0x4DBF | 0x20000..=0x2A6DF | 0x2A700..=0x2B73F |
+                0x2B740..=0x2B81F | 0x2B920..=0x2CEAF | 0xF900..=0xFAFF | 0x2F800..=0x2FA1F)
+        };
+        let nmt_rm = |cp: u32| matches!(cp, 0x0001..=0x0008 | 0x000B | 0x000E..=0x001F | 0x007F | 0x008F | 0x009F);
+        let nmt_ws = |cp: u32| {
+            matches!(
+                cp,
+                0x0009 | 0x000A | 0x000C | 0x000D | 0x1680 | 0x200B
+                    ..=0x200F | 0x2028 | 0x2029 | 0x2581 | 0xFEFF | 0xFFFD
+            )
+        };
+        // one bit-per-property function; bits are `scan.rs`'s P_* constants
+        let props = |cp: u32| -> u16 {
+            let Some(c) = char::from_u32(cp) else {
+                return 0;
+            };
+            let mut p = 0u16;
+            if !lowercases_to_self(c) {
+                p |= 1; // P_UPPER
+            }
+            if c.is_mark_nonspacing() {
+                p |= 2; // P_MN (bert strip filter)
+            }
+            if unicode_normalization_alignments::char::is_combining_mark(c) {
+                p |= 4; // P_M (StripAccents)
+            }
+            if c == '\0' || c == '\u{fffd}' || bert_ctrl(c) {
+                p |= 8; // P_CLEAN (bert clean_text removes)
+            }
+            if cjk(cp) {
+                p |= 16; // P_CJK
+            }
+            if changes(cp, false) || ccc(c) != 0 || c.is_mark_nonspacing() {
+                p |= 32; // P_STRIP (NFD-affected ∪ marks: bert strip_accents relevance)
+            }
+            if c != ' ' && bert_ws(c) {
+                p |= 64; // P_WS (bert clean_text folds to ' ')
+            }
+            if nmt_rm(cp) {
+                p |= 128; // P_NMT_RM
+            }
+            if nmt_ws(cp) {
+                p |= 256; // P_NMT_WS
+            }
+            p
+        };
+        for (name, bit) in [
+            ("SCAN_UPPER", 1u16),
+            ("SCAN_MN", 2),
+            ("SCAN_M", 4),
+            ("SCAN_CLEAN_RM", 8),
+            ("SCAN_CJK", 16),
+            ("SCAN_STRIP", 32),
+            ("SCAN_WS", 64),
+            ("SCAN_NMT_RM", 128),
+            ("SCAN_NMT_WS", 256),
+        ] {
+            let mut bmp = vec![0u64; 1024];
+            for cp in 0..0x10000u32 {
+                if props(cp) & bit != 0 {
+                    bmp[(cp >> 6) as usize] |= 1 << (cp & 63);
+                }
+            }
+            emit_u64(&mut o, name, &bmp);
+        }
+        // astral runs: (start, props) RLE — nmt has no astral members so u8 fits the 7 used bits
+        let mut runs: Vec<(u32, u8)> = vec![(0x10000, props(0x10000) as u8)];
+        for cp in 0x10001..0x110000u32 {
+            assert!(props(cp) < 0x100, "astral prop overflows the u8 RLE");
+            let p = props(cp) as u8;
+            if p != runs.last().unwrap().1 {
+                runs.push((cp, p));
+            }
+        }
+        write!(
+            o,
+            "#[rustfmt::skip]\npub static SCAN_ASTRAL: [(u32, u8); {}] = [",
+            runs.len()
+        )
+        .unwrap();
+        for (i, (s, v)) in runs.iter().enumerate() {
+            if i > 0 {
+                o.push(',');
+            }
+            write!(o, "({s},{v})").unwrap();
+        }
+        o.push_str("];\n");
+        eprintln!("scan astral RLE runs: {}", runs.len());
+    }
+
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/tables.rs");
     std::fs::write(path, o).unwrap();
     eprintln!("wrote {path}");

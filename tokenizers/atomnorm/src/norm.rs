@@ -327,7 +327,7 @@ fn blob<const K: bool>() -> &'static [u8] {
 
 /// Append `copy` bytes from `src` (over-copy rides the capacity slack) advancing by exactly `adv`.
 #[inline(always)]
-unsafe fn raw_extend(out: &mut String, src: *const u8, copy: usize, adv: usize) {
+pub(crate) unsafe fn raw_extend(out: &mut String, src: *const u8, copy: usize, adv: usize) {
     // SAFETY (caller): capacity ≥ len + max(copy, adv); src has `copy` readable bytes; valid UTF-8.
     unsafe {
         let v = out.as_mut_vec();

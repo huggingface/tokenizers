@@ -72,13 +72,8 @@ impl Normalizer for StripAccents {
 
 impl pipeline::Normalizer for StripAccents {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
-        if input.chars().any(is_combining_mark) {
-            Ok(Cow::Owned(
-                input.chars().filter(|&c| !is_combining_mark(c)).collect(),
-            ))
-        } else {
-            Ok(Cow::Borrowed(input))
-        }
+        // atomnorm scan over the baked combining-mark set (same predicate); borrows when mark-free
+        Ok(atomnorm::strip_accents(input))
     }
 }
 

@@ -73,6 +73,8 @@ version = "0.1.0"
 dependencies = [
  "cc",
  "unicode-normalization",
+ "unicode-normalization-alignments",
+ "unicode_categories",
 ]
 
 [[package]]

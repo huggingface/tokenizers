@@ -142,6 +142,104 @@ pub(crate) fn skip2_ascii<const STORE: bool>(
     i
 }
 
+/// SIMD prefix of `scan::next_hit` — the scan normalizers' fused lane: one `vqtbl4` lead probe per
+/// 16 bytes plus the in-register ASCII policy (`LOWER` flips `A..=Z` — the PR #2036 port — and
+/// `CLEAN` 1/2 folds bert/nmt whitespace to `' '` and stops at removal bytes). Check mode
+/// (`!STORE`) also stops at any ASCII transform — the borrow gate; write mode stores the
+/// transformed bytes. Stops are always char boundaries (leads or ASCII).
+pub(crate) fn scan_prefix<const STORE: bool, const LOWER: bool, const CLEAN: u8>(
+    bytes: &[u8],
+    mut i: usize,
+    out: &mut String,
+    lead: &[u8; 64],
+) -> usize {
+    let n = bytes.len();
+    #[cfg(target_arch = "aarch64")]
+    // SAFETY: loads gated by `i + 16 <= n`; stores by the driver's reserved-capacity invariant;
+    // `set_len` covers only verified bytes.
+    unsafe {
+        use std::arch::aarch64::*;
+        const POW: [u8; 16] = [1, 2, 4, 8, 16, 32, 64, 128, 1, 2, 4, 8, 16, 32, 64, 128];
+        let tbl = vld1q_u8_x4(lead.as_ptr());
+        let powv = vld1q_u8(POW.as_ptr());
+        let c0 = vdupq_n_u8(0xC0);
+        let zero = vdupq_n_u8(0);
+        let v_out = out.as_mut_vec();
+        let mut len = v_out.len();
+        while i + 16 <= n {
+            let v = vld1q_u8(bytes.as_ptr().add(i));
+            let lead_hit = vqtbl4q_u8(tbl, vqsubq_u8(v, c0));
+            let upper = if LOWER {
+                // v - 'A' < 26 unsigned: false for every byte ≥ 0x80 (wraps far above 26)
+                vcltq_u8(vsubq_u8(v, vdupq_n_u8(b'A')), vdupq_n_u8(26))
+            } else {
+                zero
+            };
+            let (fold, rm) = match CLEAN {
+                1 => {
+                    let f = vorrq_u8(
+                        vorrq_u8(vceqq_u8(v, vdupq_n_u8(9)), vceqq_u8(v, vdupq_n_u8(10))),
+                        vceqq_u8(v, vdupq_n_u8(13)),
+                    );
+                    let r = vorrq_u8(
+                        vandq_u8(vcltq_u8(v, vdupq_n_u8(0x20)), vmvnq_u8(f)),
+                        vceqq_u8(v, vdupq_n_u8(0x7F)),
+                    );
+                    (f, r)
+                }
+                2 => {
+                    let f = vorrq_u8(
+                        vorrq_u8(vceqq_u8(v, vdupq_n_u8(9)), vceqq_u8(v, vdupq_n_u8(10))),
+                        vorrq_u8(vceqq_u8(v, vdupq_n_u8(12)), vceqq_u8(v, vdupq_n_u8(13))),
+                    );
+                    let r = vorrq_u8(
+                        vandq_u8(
+                            vandq_u8(vcltq_u8(v, vdupq_n_u8(0x20)), vmvnq_u8(f)),
+                            vmvnq_u8(vceqq_u8(v, zero)),
+                        ),
+                        vceqq_u8(v, vdupq_n_u8(0x7F)),
+                    );
+                    (f, r)
+                }
+                _ => (zero, zero),
+            };
+            let stop = if STORE {
+                vorrq_u8(lead_hit, rm)
+            } else {
+                vorrq_u8(vorrq_u8(lead_hit, rm), vorrq_u8(upper, fold))
+            };
+            if STORE {
+                let mut t = v;
+                if LOWER {
+                    t = vbslq_u8(upper, vorrq_u8(v, vdupq_n_u8(0x20)), t);
+                }
+                if CLEAN != 0 {
+                    t = vbslq_u8(fold, vdupq_n_u8(b' '), t);
+                }
+                vst1q_u8(v_out.as_mut_ptr().add(len), t);
+            }
+            if vmaxvq_u8(stop) == 0 {
+                if STORE {
+                    len += 16;
+                }
+                i += 16;
+                continue;
+            }
+            let m = vandq_u8(stop, powv);
+            let mm = (vaddv_u8(vget_low_u8(m)) as u16) | ((vaddv_u8(vget_high_u8(m)) as u16) << 8);
+            let k = mm.trailing_zeros() as usize;
+            if STORE {
+                v_out.set_len(len + k);
+            }
+            return i + k;
+        }
+        if STORE {
+            v_out.set_len(len);
+        }
+    }
+    i
+}
+
 /// SIMD prefix of `norm::skip3` — returns at a set char / width change / when < 48 bytes remain.
 pub(crate) fn skip3<const STORE: bool>(bytes: &[u8], mut i: usize, out: &mut String) -> usize {
     let n = bytes.len();

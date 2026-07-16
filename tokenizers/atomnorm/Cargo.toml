@@ -24,7 +24,15 @@ cc = { version = "1", optional = true }
 
 [dev-dependencies]
 unicode-normalization = "0.1.25" # table generator source + byte-exactness oracle (never linked at runtime)
+# scan-table sources + oracles: the SAME crates the tk-encode legacy normalizers use, so the baked
+# property sets are bug-compatible with them (never linked at runtime either)
+unicode_categories = "0.1"
+unicode-normalization-alignments = "0.1"
 
 [[bench]]
 name = "normalize"
+harness = false
+
+[[bench]]
+name = "scan"
 harness = false

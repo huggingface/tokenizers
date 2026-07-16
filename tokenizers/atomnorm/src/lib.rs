@@ -29,10 +29,15 @@
 //! byte-exact by construction. Zero runtime dependencies; tables are committed, generated from
 //! `unicode-normalization` (also the test oracle):
 //! `cargo test -p atomnorm --release generate -- --ignored`. Inputs must be valid UTF-8.
+//!
+//! The same architecture also powers the **scan normalizers** ([`lowercase`], [`strip_accents`],
+//! [`nmt`], [`bert`] — see `scan.rs`): one skip-scan over per-rule property sets baked from the
+//! exact predicates the legacy tk-encode normalizers use, with an in-register ASCII transform lane.
 
 use std::borrow::Cow;
 
 mod norm;
+mod scan;
 #[cfg(target_arch = "aarch64")]
 mod simd_norm;
 mod tables;
@@ -59,6 +64,41 @@ pub fn nfd_char(c: char, f: impl FnMut(char)) {
     norm::nfd_char(c, f)
 }
 
+// ── scan normalizers (see `scan.rs`): same skip architecture over per-rule property sets ──────────
+
+/// Unicode-lowercase. Byte-exact with `chars().flat_map(char::to_lowercase)`; borrows when already
+/// lowercase. ASCII rides an in-register `|0x20` lane.
+pub fn lowercase(input: &str) -> Cow<'_, str> {
+    scan::lowercase::<true>(input)
+}
+/// Remove combining marks (general category M — the tk `StripAccents` predicate; no decomposition).
+/// Borrows when mark-free.
+pub fn strip_accents(input: &str) -> Cow<'_, str> {
+    scan::strip_accents::<true>(input)
+}
+/// The NMT normalizer: drop its control set, fold its whitespace set to `' '`. Borrows when clean.
+pub fn nmt(input: &str) -> Cow<'_, str> {
+    scan::nmt::<true>(input)
+}
+/// The fused BERT normalizer — clean_text + handle_chinese_chars + strip_accents (NFD, drop Mn) +
+/// lowercase in ONE pass. Callers resolve `strip_accents = strip_accents.unwrap_or(lowercase)`.
+/// Borrows when no enabled rule touches the input.
+pub fn bert(
+    input: &str,
+    clean_text: bool,
+    handle_chinese_chars: bool,
+    strip_accents: bool,
+    lowercase: bool,
+) -> Cow<'_, str> {
+    scan::bert::<true>(
+        input,
+        clean_text,
+        handle_chinese_chars,
+        strip_accents,
+        lowercase,
+    )
+}
+
 /// Scalar-only entry points (the SIMD prefixes disabled) — for benchmarking and differential testing
 /// of the two paths; not part of the supported API surface.
 #[doc(hidden)]
@@ -75,5 +115,17 @@ pub mod scalar {
     }
     pub fn nfkc(input: &str) -> Cow<'_, str> {
         crate::norm::compose::<true, false>(input)
+    }
+    pub fn lowercase(input: &str) -> Cow<'_, str> {
+        crate::scan::lowercase::<false>(input)
+    }
+    pub fn strip_accents(input: &str) -> Cow<'_, str> {
+        crate::scan::strip_accents::<false>(input)
+    }
+    pub fn nmt(input: &str) -> Cow<'_, str> {
+        crate::scan::nmt::<false>(input)
+    }
+    pub fn bert(input: &str, ct: bool, cc: bool, sa: bool, lc: bool) -> Cow<'_, str> {
+        crate::scan::bert::<false>(input, ct, cc, sa, lc)
     }
 }
