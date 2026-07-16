@@ -125,35 +125,49 @@ fn bmp_set(cp: u16) -> bool {
 #[inline]
 fn skip_clean<const FB: u8, const STORE: bool>(bytes: &[u8], mut i: usize, out: &mut String) -> usize {
     let n = bytes.len();
+    let mask: &[u8; 64] = match FB {
+        1 => &LEAD_NFD,
+        2 => &LEAD_NFKD,
+        4 => &LEAD_NFC,
+        _ => &LEAD_NFKC,
+    };
     #[cfg(target_arch = "aarch64")]
-    // SAFETY: loads gated by `i + 16 <= n`; stores by reserved capacity; suspect stops are lead bytes.
+    // SAFETY: loads gated by `i + 32 <= n`; stores by reserved capacity; stops are lead bytes.
     unsafe {
         use std::arch::aarch64::*;
         const POW: [u8; 16] = [1, 2, 4, 8, 16, 32, 64, 128, 1, 2, 4, 8, 16, 32, 64, 128];
-        let tbl = vld1q_u8_x4(LEAD_SUSPECT.as_ptr());
+        let tbl = vld1q_u8_x4(mask.as_ptr());
         let powv = vld1q_u8(POW.as_ptr());
+        let c0 = vdupq_n_u8(0xC0);
         let v_out = out.as_mut_vec();
         let mut len = v_out.len();
-        while i + 16 <= n {
-            let v = vld1q_u8(bytes.as_ptr().add(i));
+        // 32 bytes per iteration: the table output IS the hit mask (0/FF), one vmaxv for both chunks
+        while i + 32 <= n {
+            let a = vld1q_u8(bytes.as_ptr().add(i));
+            let b = vld1q_u8(bytes.as_ptr().add(i + 16));
             if STORE {
-                vst1q_u8(v_out.as_mut_ptr().add(len), v);
+                vst1q_u8(v_out.as_mut_ptr().add(len), a);
+                vst1q_u8(v_out.as_mut_ptr().add(len + 16), b);
             }
-            // bytes < 0xC0 (ASCII + continuations) saturate to index 0, whose entry is 0 (C0 is not a
-            // valid UTF-8 lead) — one lookup classifies the whole byte space.
-            let sus = vqtbl4q_u8(tbl, vqsubq_u8(v, vdupq_n_u8(0xC0)));
-            let hit = vtstq_u8(sus, vdupq_n_u8(FB));
-            if vmaxvq_u8(hit) == 0 {
-                // the overwhelmingly common case: one horizontal op, no movemask math
+            let ha = vqtbl4q_u8(tbl, vqsubq_u8(a, c0));
+            let hb = vqtbl4q_u8(tbl, vqsubq_u8(b, c0));
+            if vmaxvq_u8(vorrq_u8(ha, hb)) == 0 {
                 if STORE {
-                    len += 16;
+                    len += 32;
                 }
-                i += 16;
+                i += 32;
                 continue;
             }
-            let hb = vandq_u8(hit, powv);
-            let mm = (vaddv_u8(vget_low_u8(hb)) as u16) | ((vaddv_u8(vget_high_u8(hb)) as u16) << 8);
-            let k = mm.trailing_zeros() as usize;
+            // locate the first suspect lane across the two chunks
+            let ma = vandq_u8(ha, powv);
+            let mm = (vaddv_u8(vget_low_u8(ma)) as u16) | ((vaddv_u8(vget_high_u8(ma)) as u16) << 8);
+            let k = if mm != 0 {
+                mm.trailing_zeros() as usize
+            } else {
+                let mb = vandq_u8(hb, powv);
+                let m2 = (vaddv_u8(vget_low_u8(mb)) as u16) | ((vaddv_u8(vget_high_u8(mb)) as u16) << 8);
+                16 + m2.trailing_zeros() as usize
+            };
             if STORE {
                 v_out.set_len(len + k);
             }
@@ -166,7 +180,7 @@ fn skip_clean<const FB: u8, const STORE: bool>(bytes: &[u8], mut i: usize, out: 
     // scalar tail (and the portable path)
     while i < n {
         let b = bytes[i];
-        if b >= 0xC0 && LEAD_SUSPECT[(b - 0xC0) as usize] & FB != 0 {
+        if b >= 0xC0 && mask[(b - 0xC0) as usize] != 0 {
             return i;
         }
         if STORE {
@@ -279,6 +293,104 @@ fn astral_tag(bytes: &[u8], i: usize) -> (u8, u32) {
     (tag(cp), cp)
 }
 
+/// Fused ASCII + 2-byte skip for word-structured 2-byte scripts (Hebrew/Cyrillic/Greek/Arabic —
+/// median non-ASCII run is ~5 chars, so per-word kernel round-trips would dominate): 16 BYTES per
+/// chunk, byte-classed as ascii | continuation | 2-byte lead, with the char's union bit probed
+/// IN-REGISTER at its continuation lane — `idx = (prev & 0x1F) << 3 | (cur & 0x3F) >> 3` keeps the
+/// whole 2048-bit bitmap lookup in 8-bit lanes (a 256-byte `vqtbl` table = `BMP_SET[..32]`).
+/// Returns `(pos, cp)`: set char (decoded) or a non-(ascii|2-byte) boundary with `cp == 0`.
+#[inline]
+fn skip2_ascii<const STORE: bool>(bytes: &[u8], mut i: usize, out: &mut String) -> (usize, u32) {
+    let n = bytes.len();
+    #[cfg(target_arch = "aarch64")]
+    // SAFETY: loads gated by `i + 16 <= n`; stores ride reserved capacity; stops land on char starts
+    // (a suspect continuation rolls back to its lead, which is always inside this chunk or the carry).
+    unsafe {
+        use std::arch::aarch64::*;
+        let bm = BMP_SET.as_ptr() as *const u8;
+        let (t0, t1, t2, t3) =
+            (vld1q_u8_x4(bm), vld1q_u8_x4(bm.add(64)), vld1q_u8_x4(bm.add(128)), vld1q_u8_x4(bm.add(192)));
+        let v_out = out.as_mut_vec();
+        let mut len = v_out.len();
+        let mut carry: u8 = 0;
+        while i + 16 <= n {
+            let v = vld1q_u8(bytes.as_ptr().add(i));
+            if STORE {
+                vst1q_u8(v_out.as_mut_ptr().add(len), v);
+            }
+            let ascii = vcltq_u8(v, vdupq_n_u8(0x80));
+            let cont = vandq_u8(vcgeq_u8(v, vdupq_n_u8(0x80)), vcltq_u8(v, vdupq_n_u8(0xC0)));
+            let lead2 = vandq_u8(vcgeq_u8(v, vdupq_n_u8(0xC2)), vcleq_u8(v, vdupq_n_u8(0xDF)));
+            let class_ok = vorrq_u8(vorrq_u8(ascii, cont), lead2);
+            // union-bit of each 2-byte char, evaluated at its continuation lane (8-bit throughout)
+            let prev = vextq_u8::<15>(vdupq_n_u8(carry), v);
+            let idx = vorrq_u8(
+                vshlq_n_u8::<3>(vandq_u8(prev, vdupq_n_u8(0x1F))),
+                vshrq_n_u8::<3>(vandq_u8(v, vdupq_n_u8(0x3F))),
+            );
+            let byte = vorrq_u8(
+                vorrq_u8(vqtbl4q_u8(t0, idx), vqtbl4q_u8(t1, vsubq_u8(idx, vdupq_n_u8(64)))),
+                vorrq_u8(
+                    vqtbl4q_u8(t2, vsubq_u8(idx, vdupq_n_u8(128))),
+                    vqtbl4q_u8(t3, vsubq_u8(idx, vdupq_n_u8(192))),
+                ),
+            );
+            let sh = vnegq_s8(vreinterpretq_s8_u8(vandq_u8(v, vdupq_n_u8(7))));
+            let bit = vandq_u8(vshlq_u8(byte, sh), vdupq_n_u8(1));
+            let sus = vandq_u8(cont, vtstq_u8(bit, bit));
+            let bad = vorrq_u8(vmvnq_u8(class_ok), sus);
+            if vmaxvq_u8(bad) == 0 {
+                carry = vgetq_lane_u8::<15>(v);
+                if STORE {
+                    len += 16;
+                }
+                i += 16;
+                continue;
+            }
+            let mut m = [0u8; 16];
+            vst1q_u8(m.as_mut_ptr(), bad);
+            let k = m.iter().position(|&x| x != 0).unwrap();
+            // a suspect continuation belongs to the char starting one byte earlier
+            let back = usize::from(bytes[i + k] >= 0x80 && bytes[i + k] < 0xC0);
+            let pos = i + k - back;
+            if STORE {
+                v_out.set_len(len + (k - back));
+            }
+            let (cp, _) = decode_cp(bytes, pos);
+            let set = cp < 0x800 && bmp_set(cp as u16);
+            return (pos, if set { cp } else { 0 });
+        }
+        if STORE {
+            v_out.set_len(len);
+        }
+    }
+    // scalar tail (and the portable path)
+    while i < n {
+        let b = bytes[i];
+        if b < 0x80 {
+            if STORE {
+                // SAFETY: verbatim ASCII byte.
+                unsafe { out.as_mut_vec().push(b) };
+            }
+            i += 1;
+            continue;
+        }
+        if !(0xC2..=0xDF).contains(&b) {
+            return (i, 0);
+        }
+        let (cp, _) = decode_cp(bytes, i);
+        if bmp_set(cp as u16) {
+            return (i, cp);
+        }
+        if STORE {
+            // SAFETY: verbatim whole char.
+            unsafe { raw_extend(out, bytes.as_ptr().add(i), 2, 2) };
+        }
+        i += 2;
+    }
+    (n, 0)
+}
+
 /// The whole scan, centralized: layer-0 clean-byte skip, decode-FIRST at suspect leads (dense
 /// suspects — Hebrew marks, French accents — never pay a kernel round-trip), and a width kernel to
 /// skim runs only when consecutive chars are bitmap-clear under a dirty lead. Returns the next
@@ -321,47 +433,61 @@ fn next_suspect<const FB: u8, const STORE: bool>(
             i += 4;
             continue;
         }
-        let (cp, _) = decode_cp(bytes, i);
-        if bmp_set(cp as u16) {
-            return (i, cp);
+        if w == 2 {
+            // decode-first: dense suspects (French é, Greek ά — every hit is set) never pay the
+            // kernel entry; a short clear streak escalates to the fused kernel for real words
+            let mut streak = 0u32;
+            loop {
+                if i + 2 > n || !(0xC2..=0xDF).contains(&bytes[i]) {
+                    break;
+                }
+                let cp = (((bytes[i] & 0x1F) as u32) << 6) | (bytes[i + 1] & 0x3F) as u32;
+                if bmp_set(cp as u16) {
+                    return (i, cp);
+                }
+                if STORE {
+                    // SAFETY: verbatim whole char.
+                    unsafe { raw_extend(out, bytes.as_ptr().add(i), 2, 2) };
+                }
+                i += 2;
+                streak += 1;
+                if streak == 4 {
+                    let (pos, cp2) = skip2_ascii::<STORE>(bytes, i, out);
+                    if cp2 != 0 || pos >= n {
+                        return (pos, cp2);
+                    }
+                    i = pos;
+                    break;
+                }
+            }
+            continue;
         }
-        // bitmap-clear char under a dirty lead: copy inline; only a SECOND consecutive one escalates
-        // to the width kernel (long clear runs: Hebrew/Cyrillic letters between marks)
-        if STORE {
-            // SAFETY: exact in-bounds copy; capacity reserved.
-            unsafe { raw_extend(out, bytes.as_ptr().add(i), w, w) };
-        }
-        i += w;
-        if i < n && bytes[i] >= 0xC0 && LEAD_SUSPECT[(bytes[i] - 0xC0) as usize] & FB != 0 {
-            let nw = if bytes[i] < 0xE0 {
-                2
-            } else if bytes[i] < 0xF0 {
-                3
-            } else {
-                4
-            };
-            if nw == w {
-                let (pos, cp2) = if w == 2 {
-                    skip_w::<2, STORE>(bytes, i, out)
-                } else {
-                    skip_w::<3, STORE>(bytes, i, out)
-                };
+        // 3-byte suspects: scalar-first (runs are short in marked scripts); escalate to the width
+        // kernel only after a streak proves a long clear run (CJK under a dirty lead, e.g. Hangul)
+        let mut streak = 0u32;
+        loop {
+            if i + 3 > n || !(0xE0..=0xEF).contains(&bytes[i]) {
+                break;
+            }
+            let cp = (((bytes[i] & 0x0F) as u32) << 12)
+                | (((bytes[i + 1] & 0x3F) as u32) << 6)
+                | ((bytes[i + 2] & 0x3F) as u32);
+            if bmp_set(cp as u16) {
+                return (i, cp);
+            }
+            if STORE {
+                // SAFETY: verbatim whole char.
+                unsafe { raw_extend(out, bytes.as_ptr().add(i), 3, 3) };
+            }
+            i += 3;
+            streak += 1;
+            if streak == 8 {
+                let (pos, cp2) = skip_w::<3, STORE>(bytes, i, out);
                 if cp2 != 0 {
                     return (pos, cp2);
                 }
-                i = pos.max(i); // width change / boundary — the loop re-dispatches
-                if pos == i && i < n && bytes[i] >= 0xC0 {
-                    // kernel bounced immediately (e.g. width flip): make progress scalar
-                    let (cpx, wx) = decode_cp(bytes, i);
-                    if bmp_set(cpx as u16) || cpx >= 0x10000 {
-                        continue; // handled by the branches above on re-entry
-                    }
-                    if STORE {
-                        // SAFETY: exact in-bounds copy; capacity reserved.
-                        unsafe { raw_extend(out, bytes.as_ptr().add(i), wx, wx) };
-                    }
-                    i += wx;
-                }
+                i = pos;
+                break;
             }
         }
     }

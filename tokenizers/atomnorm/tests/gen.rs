@@ -251,6 +251,11 @@ fn generate() {
     );
     emit_u8(&mut o, "TAG", &t[..0x10000]);
     emit_u8(&mut o, "LEAD_SUSPECT", &lead);
+    // per-form 0/FF masks (vqtbl output IS the hit mask — no vtst in the layer-0 loop)
+    for (name, bit) in [("LEAD_NFD", 1u8), ("LEAD_NFKD", 2), ("LEAD_NFC", 4), ("LEAD_NFKC", 8)] {
+        let m: Vec<u8> = lead.iter().map(|&l| if l & bit != 0 { 0xFF } else { 0 }).collect();
+        emit_u8(&mut o, name, &m);
+    }
     {
         write!(o, "#[rustfmt::skip]\npub static BMP_SET: [u64; 1024] = [").unwrap();
         for (i, x) in bmp.iter().enumerate() {
