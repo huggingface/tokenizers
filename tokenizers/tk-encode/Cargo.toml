@@ -28,6 +28,7 @@ path = "src/lib.rs"
 
 [dependencies]
 atomsplit = { path = "../atomsplit" }
+atomnorm = { path = "../atomnorm" }
 rand = "0.9"
 regex = "1.10"
 rayon = "1.10"

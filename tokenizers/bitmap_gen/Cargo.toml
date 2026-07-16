@@ -12,6 +12,3 @@ publish = false
 # Current Unicode general categories (single source — replaces the frozen-at-Unicode-9.0
 # `unicode_categories`, whose stale `is_letter` mis-classified every post-9.0 letter).
 unicode-properties = "0.1"
-# The nfd-check tag scheme is derived from atomsplit's own committed normalization tables
-# (`atomsplit::nfd::check_tag`) so the check tables can never drift from the normalizer.
-atomsplit = { path = "../atomsplit" }

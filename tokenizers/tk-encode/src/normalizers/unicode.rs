@@ -4,7 +4,7 @@ use crate::pipeline;
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 use crate::utils::macro_rules_attribute;
 
-// All four forms (NFD/NFKD/NFC/NFKC) are pure-Rust via `atomsplit::nfd`; the legacy `Normalizer` impls
+// All four forms (NFD/NFKD/NFC/NFKC) are pure-Rust via `atomnorm`; the legacy `Normalizer` impls
 // keep `NormalizedString`'s own `nfd()`/`nfc()`/… (alignment-tracking) for the non-pipeline path.
 
 #[derive(Default, Copy, Clone, Debug)]
@@ -20,7 +20,7 @@ impl pipeline::Normalizer for NFD {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
         // Pure-Rust SIMD NFD: no classify pass, no per-byte tag buffer. Bulk-skips NFD-stable runs
         // (bitset probe over vld2/vld3 deinterleave) and decomposes the rest from a baked table.
-        Ok(atomsplit::nfd::nfd(input))
+        Ok(atomnorm::nfd(input))
     }
 }
 
@@ -36,7 +36,7 @@ impl Normalizer for NFKD {
 impl pipeline::Normalizer for NFKD {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
         // Pure-Rust SIMD compatibility decomposition — same skip-based kernel as NFD, NFKD tables.
-        Ok(atomsplit::nfd::nfkd(input))
+        Ok(atomnorm::nfkd(input))
     }
 }
 
@@ -53,7 +53,7 @@ impl pipeline::Normalizer for NFC {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
         // Pure-Rust NFC: a quick-check relevance bitset borrows already-composed input untouched;
         // otherwise decompose (NFD tables) then canonically recompose from the baked COMPOSE table.
-        Ok(atomsplit::nfd::nfc(input))
+        Ok(atomnorm::nfc(input))
     }
 }
 
@@ -69,7 +69,7 @@ impl Normalizer for NFKC {
 impl pipeline::Normalizer for NFKC {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
         // Pure-Rust NFKC: NFKC relevance bitset borrow gate, else NFKD decompose + canonical recompose.
-        Ok(atomsplit::nfd::nfkc(input))
+        Ok(atomnorm::nfkc(input))
     }
 }
 

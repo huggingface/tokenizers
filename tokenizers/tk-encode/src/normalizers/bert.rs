@@ -245,7 +245,7 @@ impl BertNormalizer {
     }
 
     /// NFD → strip nonspacing marks → lowercase, applied per the char's bits. Decomposition runs (via the
-    /// pure-Rust `atomsplit::nfd::nfd_char`) only on NFD-flagged chars; a mark is dropped, anything else is
+    /// pure-Rust `atomnorm::nfd_char`) only on NFD-flagged chars; a mark is dropped, anything else is
     /// a `to_lowercase` (LOWER) or a plain push. Byte-exact with the run-based pipeline: strip drops every
     /// Mn, so per-char decomposition needs no cross-char reordering.
     #[inline]
@@ -271,7 +271,7 @@ impl BertNormalizer {
             }
             // Everything else: pure-Rust NFD (baked trie, no `unicode-normalization`), dropping nonspacing
             // marks (bert's strip) and lowercasing the rest if enabled.
-            atomsplit::nfd::nfd_char(c, |d| {
+            atomnorm::nfd_char(c, |d| {
                 if d.is_mark_nonspacing() {
                     return;
                 }

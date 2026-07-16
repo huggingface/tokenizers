@@ -15,11 +15,11 @@ unsafe extern "C" {
 }
 
 type NormFn = fn(&str) -> Cow<'_, str>;
-const FORMS: &[(&str, NormFn, NormFn)] = &[
-    ("NFC", atomnorm::nfc as NormFn, atomsplit::nfd::nfc as NormFn),
-    ("NFD", atomnorm::nfd, atomsplit::nfd::nfd),
-    ("NFKC", atomnorm::nfkc, atomsplit::nfd::nfkc),
-    ("NFKD", atomnorm::nfkd, atomsplit::nfd::nfkd),
+const FORMS: &[(&str, NormFn)] = &[
+    ("NFC", atomnorm::nfc as NormFn),
+    ("NFD", atomnorm::nfd),
+    ("NFKC", atomnorm::nfkc),
+    ("NFKD", atomnorm::nfkd),
 ];
 
 fn unic(form: &str, s: &str) -> String {
@@ -77,14 +77,14 @@ const CORPORA: &[(&str, &str)] = &[
 fn main() {
     let manifest = env!("CARGO_MANIFEST_DIR");
     println!(
-        "\nns/byte, lower=better. norm = atomnorm; split = atomsplit::nfd (POC); vsSplit/vsXX = how many\n\
-         × faster atomnorm is. exact = atomnorm byte-identical to unicode-normalization.\n"
+        "\nns/byte, lower=better. vsUnic/vsXX = how many × faster atomnorm is than unicode-normalization /\n\
+         xxUTF. exact = atomnorm byte-identical to unicode-normalization.\n"
     );
     println!(
-        "{:<5} {:<9} {:>7} {:>7} {:>7} {:>8} {:>8} | {:>7} {:>6} {:>6}",
-        "form", "lang", "bytes", "norm", "split", "unic", "xxUTF", "vsSplit", "vsXX", "exact"
+        "{:<5} {:<9} {:>7} {:>7} {:>8} {:>8} | {:>7} {:>6} {:>6}",
+        "form", "lang", "bytes", "norm", "unic", "xxUTF", "vsUnic", "vsXX", "exact"
     );
-    for (fname, an, asp) in FORMS {
+    for (fname, an) in FORMS {
         for (label, rel) in CORPORA {
             let Ok(s) = std::fs::read_to_string(format!("{manifest}/{rel}")) else { continue };
             if s.trim().is_empty() {
@@ -104,9 +104,6 @@ fn main() {
             let t_norm = best(n, iters, || {
                 black_box(an(text));
             });
-            let t_split = best(n, iters, || {
-                black_box(asp(text));
-            });
             let t_unic = best(n, iters, || {
                 black_box(unic(fname, text));
             });
@@ -123,8 +120,8 @@ fn main() {
             let xxc = t_xx.map_or("       —".into(), |t| format!("{t:>8.3}"));
             let vsxx = t_xx.map_or("     —".into(), |t| format!("{:>5.1}x", t / t_norm));
             println!(
-                "{fname:<5} {label:<9} {n:>7} {t_norm:>7.3} {t_split:>7.3} {t_unic:>8.3} {xxc} | {:>6.1}x {vsxx} {:>6}",
-                t_split / t_norm,
+                "{fname:<5} {label:<9} {n:>7} {t_norm:>7.3} {t_unic:>8.3} {xxc} | {:>6.1}x {vsxx} {:>6}",
+                t_unic / t_norm,
                 if exact { "✓" } else { "✗" }
             );
         }

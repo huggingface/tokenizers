@@ -24,7 +24,6 @@ cc = { version = "1", optional = true }
 
 [dev-dependencies]
 unicode-normalization = "0.1.25" # table generator source + byte-exactness oracle (never linked at runtime)
-atomsplit = { path = "../atomsplit" } # bench column: the POC kernels this crate re-designs
 
 [[bench]]
 name = "normalize"

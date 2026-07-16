@@ -71,7 +71,6 @@ checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 name = "atomnorm"
 version = "0.1.0"
 dependencies = [
- "atomsplit",
  "cc",
  "unicode-normalization",
 ]
@@ -80,13 +79,11 @@ dependencies = [
 name = "atomsplit"
 version = "0.1.0"
 dependencies = [
- "cc",
  "fancy-regex 0.13.0",
  "logos",
  "memchr",
  "onig",
  "pcre2",
- "unicode-normalization",
 ]
 
 [[package]]
@@ -173,7 +170,6 @@ checksum = "b4388bee8683e3d04af747c73422af53102d2bd24d9eadb6cbc100baef4b43f8"
 name = "bitmap_gen"
 version = "0.1.0"
 dependencies = [
- "atomsplit",
  "unicode-properties",
 ]
 
@@ -2283,6 +2279,7 @@ version = "0.23.2-dev.0"
 dependencies = [
  "ahash",
  "assert_approx_eq",
+ "atomnorm",
  "atomsplit",
  "compact_str",
  "criterion 0.6.0",
