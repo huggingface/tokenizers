@@ -2,57 +2,32 @@ name: atomnorm
 
 on:
   push:
-    paths: ["tokenizers/atomnorm/**", "tokenizers/bitmap_gen/**", ".github/workflows/atomsplit.yml"]
+    paths: ["tokenizers/atomnorm/**", ".github/workflows/atomnorm.yml"]
   pull_request:
-    paths: ["tokenizers/atomnorm/**", "tokenizers/bitmap_gen/**", ".github/workflows/atomsplit.yml"]
+    paths: ["tokenizers/atomnorm/**", ".github/workflows/atomnorm.yml"]
 
 defaults:
   run:
     working-directory: tokenizers
 
 jobs:
-  # x86_64 runner → runs the SSE4.1/AVX classify SIMD paths NATIVELY, plus fmt/clippy + the drift guard.
+  # x86_64 runner → exercises the portable scalar path, plus fmt/clippy + the table drift guard.
   native:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with: { components: rustfmt, clippy }
-      - run: cargo fmt -p atomnorm 
+      - run: cargo fmt -p atomnorm -- --check
       - run: cargo clippy -p atomnorm --all-targets -- -D warnings
-      - run: cargo test -p atomnorm --release generate -- --ignored
-      # committed classify tables must match the generator
-      - run: git diff --exit-code atomnorm/src/tables.rs
+      - run: cargo test -p atomnorm --release   # exhaustive cp sweep + long inputs + borrow gates
+      # committed tables must match the generator (unicode-normalization is the oracle)
+      - run: cargo test -p atomnorm --release generate -- --ignored && git diff --exit-code atomnorm/src/tables.rs
 
-  # AVX-512 classify path — GitHub runners often lack AVX-512, so emulate it with Intel SDE and run the
-  # SAME byte-exact test binaries under it.
-  avx512-sde:
-    runs-on: ubuntu-latest
+  # aarch64 runner → atomnorm's only SIMD path (the NEON prefix kernels in simd_norm.rs), natively.
+  neon:
+    runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - name: Install Intel SDE
-        run: |
-          # Pin to the current SDE release (update the version/URL as Intel publishes new builds).
-          SDE_VER=sde-external-9.44.0-2024-08-22-lin
-          curl -sSL "https://downloadmirror.intel.com/831748/${SDE_VER}.tar.xz" | tar -xJ
-          echo "$PWD/${SDE_VER}" >> "$GITHUB_PATH"
-      - name: Run tests under SDE (-future = AVX-512)
-        run: |
-          cargo test -p atomnorm --no-run --message-format=json \
-            | jq -r 'select(.profile.test == true) | .executable | select(. != null)' \
-            | while read -r bin; do echo "SDE: $bin"; sde64 -future -- "$bin"; done
-
-  # wasm32 SIMD128 classify + class-runs boundary extractor — run the test suite under wasmtime.
-  wasm:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with: { targets: wasm32-wasip1 }
-      - uses: bytecodealliance/actions/wasmtime/setup@v1
-      - name: Test under wasmtime (simd128)
-        env:
-          RUSTFLAGS: "-C target-feature=+simd128"
-          CARGO_TARGET_WASM32_WASIP1_RUNNER: "wasmtime run --"
-        run: cargo test -p atomnorm --target wasm32-wasip1
+      - run: cargo test -p atomnorm --release
