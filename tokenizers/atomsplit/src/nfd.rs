@@ -205,7 +205,7 @@ fn skip_ascii(bytes: &[u8], mut i: usize) -> usize {
 /// advancing the uniform-3-byte PREFIX rather than bailing, so runs punctuated by spaces still progress.
 #[cfg(target_arch = "aarch64")]
 #[inline]
-fn skip_clear_3byte<B: Bitset>(bytes: &[u8], mut i: usize) -> usize {
+fn skip_clear_3byte<B: Bitset>(bytes: &[u8], mut i: usize) -> (usize, u32) {
     use std::arch::aarch64::*;
     let n = bytes.len();
     // SAFETY: every load is gated by `i + 48 <= n`; NEON loads/stores are alignment-free.
@@ -227,12 +227,18 @@ fn skip_clear_3byte<B: Bitset>(bytes: &[u8], mut i: usize) -> usize {
             vst1q_u8(lok.as_mut_ptr(), lead_ok);
             // stop at the first lane that isn't a clear 3-byte lead (short-circuits before the bit probe)
             match (0..16).position(|l| lok[l] != 0xFF || bmp_bit::<B>(cps[l])) {
-                Some(lane) => return i + lane * 3,
+                Some(lane) => {
+                    // stopped by a SET bit on a valid 3-byte lead: hand the already-decoded codepoint
+                    // to the caller so it doesn't decode the same char again (one decode per cycle
+                    // matters on set-dense CJK text like literary Japanese).
+                    let cp = if lok[lane] == 0xFF { cps[lane] as u32 } else { 0 };
+                    return (i + lane * 3, cp);
+                }
                 None => i += 48,
             }
         }
     }
-    i
+    (i, 0)
 }
 
 /// Same idea for the leading run of **uniform 2-byte** chars (Latin-1/Greek/Cyrillic/Arabic/…) via
@@ -339,6 +345,54 @@ fn skip_hangul_or_ascii(bytes: &[u8], mut i: usize) -> usize {
     }
 }
 
+/// Write-through twin of [`skip_clear_3byte`] for the OWNED path: verified stable lanes are stored
+/// back (one `vst3q` re-interleaves the registers the check already loaded — over-store rides the +48
+/// capacity slack), so stable CJK/kana spans between emits need no separate copy pass at all.
+/// Returns `(new_i, cp)`; `cp != 0` hands over the decoded SET char the scan stopped at.
+#[cfg(target_arch = "aarch64")]
+#[inline]
+fn skip_clear_3byte_copy<B: Bitset>(bytes: &[u8], mut i: usize, out: &mut String) -> (usize, u32) {
+    use std::arch::aarch64::*;
+    let n = bytes.len();
+    // SAFETY: loads gated by `i + 48 <= n`; stores ride reserved capacity (`+48` slack); only verified
+    // whole-char bytes advance `len`, so the String stays valid UTF-8.
+    unsafe {
+        let v = out.as_mut_vec();
+        let mut len = v.len();
+        while i + 48 <= n {
+            let x = vld3q_u8(bytes.as_ptr().add(i));
+            vst3q_u8(v.as_mut_ptr().add(len), x); // unconditional; advance only by what verifies
+            let lead_ok = vandq_u8(vcgeq_u8(x.0, vdupq_n_u8(0xE0)), vcleq_u8(x.0, vdupq_n_u8(0xEF)));
+            let mut cps = [0u16; 16];
+            let lo = (vget_low_u8(x.0), vget_low_u8(x.1), vget_low_u8(x.2));
+            let hi = (vget_high_u8(x.0), vget_high_u8(x.1), vget_high_u8(x.2));
+            for (h, (l8, b18, b28)) in [(0usize, lo), (8, hi)] {
+                let l = vandq_u16(vmovl_u8(l8), vdupq_n_u16(0x0F));
+                let b1 = vandq_u16(vmovl_u8(b18), vdupq_n_u16(0x3F));
+                let b2 = vandq_u16(vmovl_u8(b28), vdupq_n_u16(0x3F));
+                let cp = vorrq_u16(vorrq_u16(vshlq_n_u16::<12>(l), vshlq_n_u16::<6>(b1)), b2);
+                vst1q_u16(cps.as_mut_ptr().add(h), cp);
+            }
+            let mut lok = [0u8; 16];
+            vst1q_u8(lok.as_mut_ptr(), lead_ok);
+            match (0..16).position(|l| lok[l] != 0xFF || bmp_bit::<B>(cps[l])) {
+                Some(lane) => {
+                    len += lane * 3;
+                    v.set_len(len);
+                    let cp = if lok[lane] == 0xFF { cps[lane] as u32 } else { 0 };
+                    return (i + lane * 3, cp);
+                }
+                None => {
+                    len += 48;
+                    i += 48;
+                }
+            }
+        }
+        v.set_len(len);
+    }
+    (i, 0)
+}
+
 /// Find the next char at or after `i` whose bit is SET in `B`, returning `(index, codepoint, width)` —
 /// or `(bytes.len(), 0, 0)` if none. Returning the DECODE lets the caller decompose it without decoding
 /// twice. Checks the current char's bit FIRST (dense set-runs return immediately, no wasted SIMD probe);
@@ -367,24 +421,31 @@ fn next_set<B: Bitset>(bytes: &[u8], mut i: usize) -> (usize, u32, usize) {
                 continue;
             }
         }
-        // stable non-ASCII. Peek the next char scalar: if it's SET, the stable run is just this one char —
-        // return the peeked char directly (reusing its decode) and skip the `vld2q`. This is the common
-        // mark-dense shape (letter, mark, letter, mark, …) where a per-char SIMD probe is pure overhead.
-        // Only a 2nd consecutive stable non-ASCII char escalates to the SIMD bulk-skip (long runs: CJK/…).
+        // stable non-ASCII. For 2-byte chars, peek the next char scalar: if it's SET, the stable run is
+        // just this one char — return the peeked char directly and skip the `vld2q` (the common
+        // mark-dense shape: letter, mark, letter, mark, …). 3-byte chars go STRAIGHT to the SIMD skip:
+        // two scalar peek-decodes cost as much as the `vld3q` chunk, and CJK/kana gaps are chunk-sized.
         #[cfg(target_arch = "aarch64")]
-        if i + w < n && bytes[i + w] >= 0x80 {
-            let (cp2, w2) = decode_cp(bytes, i + w);
-            if bit_set::<B>(cp2) {
-                return (i + w, cp2, w2);
-            }
-            let ni = match w {
-                2 => skip_clear_2byte::<B>(bytes, i),
-                3 => skip_clear_3byte::<B>(bytes, i),
-                _ => i,
-            };
-            if ni > i {
-                i = ni;
-                continue;
+        {
+            if w == 3 {
+                let (ni, ncp) = skip_clear_3byte::<B>(bytes, i);
+                if ncp != 0 {
+                    return (ni, ncp, 3); // the skip already decoded the SET char it stopped at
+                }
+                if ni > i {
+                    i = ni;
+                    continue;
+                }
+            } else if w == 2 && i + w < n && bytes[i + w] >= 0x80 {
+                let (cp2, w2) = decode_cp(bytes, i + w);
+                if bit_set::<B>(cp2) {
+                    return (i + w, cp2, w2);
+                }
+                let ni = skip_clear_2byte::<B>(bytes, i);
+                if ni > i {
+                    i = ni;
+                    continue;
+                }
             }
         }
         i += w;
@@ -497,7 +558,7 @@ fn normalized_prefix<D: Decomp>(bytes: &[u8]) -> usize {
                 if !bit_set::<D>(cp2) {
                     let ni = match w {
                         2 => skip_clear_2byte::<D>(bytes, i),
-                        3 => skip_clear_3byte::<D>(bytes, i),
+                        3 => skip_clear_3byte::<D>(bytes, i).0,
                         _ => i,
                     };
                     if ni > i {
@@ -612,24 +673,41 @@ fn emit_set<D: Decomp>(
     let n = bytes.len();
     loop {
         if HANGUL.contains(&cp) {
-            // Hangul syllable (checked BEFORE the trie gather — Korean is the densest set-run script and
-            // the range test saves both table loads per syllable): arithmetic decomposition, jamo are
-            // 3-byte starters — build L·V·(T) on the stack and store once (advance 6 or 9).
-            let s = cp - 0xAC00;
-            let t = s % 28;
-            let mut buf = [0u8; 16];
-            for (slot, j) in [0x1100 + s / 588, 0x1161 + (s % 588) / 28, 0x11A7 + t]
-                .into_iter()
-                .enumerate()
-            {
-                buf[slot * 3] = 0xE0 | (j >> 12) as u8;
-                buf[slot * 3 + 1] = 0x80 | ((j >> 6) & 0x3F) as u8;
-                buf[slot * 3 + 2] = 0x80 | (j & 0x3F) as u8;
+            // Hangul syllable run (checked BEFORE the trie gather): arithmetic decomposition, jamo are
+            // 3-byte starters. A TIGHT inner loop eats the whole syllable run — direct 3-byte decode +
+            // lead-range test per step, none of the general continuation machinery — because Korean is
+            // the densest set-run script and per-syllable glue is the difference vs xxUTF.
+            let mut scp = cp;
+            loop {
+                let s = scp - 0xAC00;
+                let t = s % 28;
+                let mut buf = [0u8; 16];
+                for (slot, j) in [0x1100 + s / 588, 0x1161 + (s % 588) / 28, 0x11A7 + t]
+                    .into_iter()
+                    .enumerate()
+                {
+                    buf[slot * 3] = 0xE0 | (j >> 12) as u8;
+                    buf[slot * 3 + 1] = 0x80 | ((j >> 6) & 0x3F) as u8;
+                    buf[slot * 3 + 2] = 0x80 | (j & 0x3F) as u8;
+                }
+                // SAFETY: 16-byte stack buffer; capacity reserved (+16).
+                unsafe { raw_extend(out, buf.as_ptr(), 16, if t != 0 { 9 } else { 6 }) };
+                i += 3;
+                if i + 3 <= n && (0xEA..=0xED).contains(&bytes[i]) {
+                    let c2 = (((bytes[i] & 0x0F) as u32) << 12)
+                        | (((bytes[i + 1] & 0x3F) as u32) << 6)
+                        | ((bytes[i + 2] & 0x3F) as u32);
+                    if HANGUL.contains(&c2) {
+                        scp = c2;
+                        continue;
+                    }
+                }
+                break;
             }
-            // SAFETY: 16-byte stack buffer; capacity reserved (+16).
-            unsafe { raw_extend(out, buf.as_ptr(), 16, if t != 0 { 9 } else { 6 }) };
             e.last_ccc = 0;
             e.run_start = out.len();
+            // fall through to the generic continuation (the next char is NOT a syllable)
+            w = 0; // already advanced past the run
         } else {
             let (off, blen) = D::byte_entry(cp);
             // SAFETY: blob offsets point ≥ 3 in (headers precede the bytes); 16-byte zero tail pad.
@@ -702,19 +780,31 @@ fn decompose_owned<D: Decomp>(bytes: &[u8], out: &mut String, e: &mut Emit, mut 
     while i < n {
         if bytes[i] < 0x80 {
             // fused ASCII scan+copy: the `vld1q` needed for the all-ASCII test IS the copy source, so
-            // ASCII-dominant text (French & friends) writes through instead of scan-then-memcpy.
+            // ASCII-dominant text (French & friends) writes through instead of scan-then-memcpy. The
+            // store is UNCONDITIONAL (over-store rides the +16 capacity slack) and a movemask jumps
+            // straight to the first non-ASCII byte — no per-byte tail before every accent.
             // SAFETY: loads/stores gated by `i + 16 <= n` and reserved capacity; exact scalar tail.
             unsafe {
+                const POW: [u8; 16] = [1, 2, 4, 8, 16, 32, 64, 128, 1, 2, 4, 8, 16, 32, 64, 128];
+                let powv = vld1q_u8(POW.as_ptr());
                 let v = out.as_mut_vec();
                 let mut len = v.len();
                 while i + 16 <= n {
                     let x = vld1q_u8(bytes.as_ptr().add(i));
-                    if vmaxvq_u8(x) >= 0x80 {
-                        break;
-                    }
                     vst1q_u8(v.as_mut_ptr().add(len), x);
-                    len += 16;
-                    i += 16;
+                    if vmaxvq_u8(x) < 0x80 {
+                        len += 16;
+                        i += 16;
+                        continue;
+                    }
+                    // first non-ASCII lane: keep the ASCII prefix of this chunk, stop there
+                    let hb = vandq_u8(vcgeq_u8(x, vdupq_n_u8(0x80)), powv);
+                    let mm = (vaddv_u8(vget_low_u8(hb)) as u16)
+                        | ((vaddv_u8(vget_high_u8(hb)) as u16) << 8);
+                    let k = mm.trailing_zeros() as usize;
+                    len += k;
+                    i += k;
+                    break;
                 }
                 while i < n && bytes[i] < 0x80 {
                     *v.as_mut_ptr().add(len) = bytes[i];
@@ -725,6 +815,32 @@ fn decompose_owned<D: Decomp>(bytes: &[u8], out: &mut String, e: &mut Emit, mut 
             }
             e.last_ccc = 0;
             e.run_start = out.len();
+            continue;
+        }
+        // 3-byte leads (CJK/kana — the dense-emit scripts): the write-through skip scans AND copies in
+        // one pass, handing over the decoded SET char it stops at. Handles bytes[i] itself being SET
+        // (lane 0 stops immediately with cp forwarded).
+        if (0xE0..0xF0).contains(&bytes[i]) && i + 48 <= n {
+            let before = out.len();
+            let (ni, ncp) = skip_clear_3byte_copy::<D>(bytes, i, out);
+            if out.len() > before {
+                e.last_ccc = 0;
+                e.run_start = out.len();
+            }
+            if ncp != 0 {
+                i = emit_set::<D>(bytes, ni, ncp, 3, out, e);
+                continue;
+            }
+            if ni > i {
+                i = ni;
+                continue;
+            }
+        }
+        // inline dispatch: a SET char right after an ASCII run (the à/é/ç case in Latin text) goes
+        // straight to the emit — no `next_set` call-and-return per accent.
+        let (cp0, w0) = decode_cp(bytes, i);
+        if bit_set::<D>(cp0) {
+            i = emit_set::<D>(bytes, i, cp0, w0, out, e);
             continue;
         }
         let (ns, cp, w) = next_set::<D>(bytes, i);
@@ -867,7 +983,7 @@ fn decompose_tagged<'a, D: Decomp>(input: &'a str) -> Cow<'a, str> {
                 break;
             }
         }
-        let mut out = String::with_capacity(n.saturating_mul(D::MAX_EXPAND) + 16);
+        let mut out = String::with_capacity(n.saturating_mul(D::MAX_EXPAND) + 48);
         out.push_str(&input[..s]);
         let mut e = Emit { last_ccc: 0, run_start: out.len() };
         // `gap` = start of pending uncopied stable text. FALSE candidates (spacing marks etc. — dense in
@@ -947,6 +1063,450 @@ fn decompose_tagged<'a, D: Decomp>(input: &'a str) -> Cow<'a, str> {
 /// `Emit` state), then runs the whole-buffer kernel: on aarch64 the chunked SIMD [`decompose_owned`]
 /// (uniform-width `vld2q`/`vld3q` decode, bulk stable-run memcpy, 16-byte blob emits, arithmetic
 /// Hangul); elsewhere the portable `next_set` + [`decompose_char`] loop.
+/// Streaming check for 3-byte single-block scripts (Thai, Devanagari, Lao, …): NO tag buffer — per
+/// uniform run the block's own 128-cp check-tag table (the same `fast3` data the classify engine uses)
+/// is probed IN REGISTERS via `vqtbl4`, with break detection and the canonical-order rank compare as
+/// vector ops. Anything irregular falls out to a scalar per-char verify (`Tables::classify_char` with
+/// the same tag semantics), which then re-enters the vector run — the vector is a pure accelerator,
+/// the scalar referee keeps it byte-exact.
+#[cfg(target_arch = "aarch64")]
+fn streaming3_prefix<D: Decomp>(bytes: &[u8]) -> usize {
+    use std::arch::aarch64::*;
+    let t = &crate::nfd_check_tables::NFD_CHECK_TABLES;
+    let n = bytes.len();
+    let mut i = 0;
+    let mut prev_rank = 0u8;
+    // Block-cached vector state: table registers survive ASCII holes and scalar bails, so re-entering
+    // the vector run for the same block (the common case — Thai text is one block) costs nothing.
+    let mut cur_blk = usize::MAX;
+    let mut uni = 0u8;
+    // SAFETY: all loads gated by explicit bounds; NEON ops are value-level.
+    unsafe {
+        let mut leadv = vdupq_n_u8(0);
+        let mut pairv = vdupq_n_u8(0);
+        let mut lo4 = vld1q_u8_x4([0u8; 64].as_ptr());
+        let mut hi4 = lo4;
+        while i < n {
+            let b = bytes[i];
+            if b < 0x80 {
+                prev_rank = 0;
+                i = skip_ascii(bytes, i);
+                continue;
+            }
+            'vector: {
+                if (0xE0..0xF0).contains(&b) && i + 48 <= n {
+                    let blk = ((b - 0xE0) as usize) * 32 + ((bytes[i + 1] >> 1) & 0x1F) as usize;
+                    if blk != cur_blk {
+                        // Only rebuild the cached tables for a SUSTAINED block change (next char in the
+                        // same new block). Lone foreign chars — Thai text is peppered with U+200B
+                        // zero-width spaces — go to the scalar referee with the cache intact.
+                        let sustained = i + 6 <= n
+                            && bytes[i + 3] == b
+                            && (bytes[i + 4] >> 1) == (bytes[i + 1] >> 1);
+                        if !sustained {
+                            break 'vector;
+                        }
+                        cur_blk = blk;
+                        uni = t.fast3_uni[blk];
+                        leadv = vdupq_n_u8(b);
+                        pairv = vdupq_n_u8(bytes[i + 1] >> 1);
+                        if uni == 0xFF {
+                            let (l, h) = &t.fast3_mixed[t.fast3_slot[blk] as usize];
+                            lo4 = vld1q_u8_x4(l.as_ptr());
+                            hi4 = vld1q_u8_x4(h.as_ptr());
+                        }
+                    }
+                    while i + 48 <= n {
+                        let x = vld3q_u8(bytes.as_ptr().add(i));
+                        let same =
+                            vandq_u8(vceqq_u8(x.0, leadv), vceqq_u8(vshrq_n_u8::<1>(x.1), pairv));
+                        let idx7 = vorrq_u8(
+                            vshlq_n_u8::<6>(vandq_u8(x.1, vdupq_n_u8(1))),
+                            vandq_u8(x.2, vdupq_n_u8(0x3F)),
+                        );
+                        let tag = if uni != 0xFF {
+                            vdupq_n_u8(uni)
+                        } else {
+                            vorrq_u8(
+                                vqtbl4q_u8(lo4, idx7),
+                                vqtbl4q_u8(hi4, vsubq_u8(idx7, vdupq_n_u8(64))),
+                            )
+                        };
+                        // irregular: any form-breaking tag (0x3C/0x3D/0x7D/0x7E — the scalar referee
+                        // decides precisely); canonical order: prev > cur with both ranks nonzero
+                        let r = vandq_u8(tag, vdupq_n_u8(0x3F));
+                        let irregular = vorrq_u8(
+                            vcgeq_u8(tag, vdupq_n_u8(0x7D)),
+                            vcgeq_u8(r, vdupq_n_u8(0x3C)),
+                        );
+                        let prevr = vextq_u8::<15>(vdupq_n_u8(prev_rank), r);
+                        let viol = vandq_u8(
+                            vcgtq_u8(prevr, r),
+                            vandq_u8(vtstq_u8(r, r), vtstq_u8(prevr, prevr)),
+                        );
+                        let bad = vorrq_u8(vorrq_u8(vmvnq_u8(same), irregular), viol);
+                        if vmaxvq_u8(bad) == 0 {
+                            prev_rank = vgetq_lane_u8::<15>(r);
+                            i += 48;
+                            continue;
+                        }
+                        let (mut m, mut rr) = ([0u8; 16], [0u8; 16]);
+                        vst1q_u8(m.as_mut_ptr(), bad);
+                        vst1q_u8(rr.as_mut_ptr(), r);
+                        for (l, &v) in m.iter().enumerate() {
+                            if v != 0 {
+                                if l > 0 {
+                                    prev_rank = rr[l - 1];
+                                }
+                                i += l * 3;
+                                break 'vector; // scalar referee takes the bad lane
+                            }
+                        }
+                    }
+                    if i >= n {
+                        return n;
+                    }
+                }
+            }
+            // scalar referee: one char via the SAME tag semantics
+            let tag = t.classify_char(bytes, i);
+            if D::tag_breaks(tag) {
+                return i;
+            }
+            let r = match tag & 0x3F {
+                0x3C => 0,
+                0x3D => rank_probe(bytes, i),
+                r => r,
+            };
+            if r == 0 {
+                prev_rank = 0;
+            } else {
+                if r < prev_rank {
+                    return i;
+                }
+                prev_rank = r;
+            }
+            let w = if bytes[i] < 0x80 {
+                1 // a vector bail can land on ASCII (word spaces): the referee must not stride over it
+            } else if bytes[i] < 0xE0 {
+                2
+            } else if bytes[i] < 0xF0 {
+                3
+            } else {
+                4
+            };
+            i += w;
+        }
+    }
+    n
+}
+
+/// Owned twin of [`streaming3_prefix`]: the same in-register run verification, but verify-as-you-go —
+/// verified spans stay in a deferred gap (ONE memcpy each), and only form-breaking chars pay a rewind
+/// (back over the adjacent in-gap marks to their starter, restoring exact `Emit` state) + [`emit_set`].
+#[cfg(target_arch = "aarch64")]
+fn streaming3_owned<D: Decomp>(input: &str, out: &mut String, e: &mut Emit, s: usize) {
+    use std::arch::aarch64::*;
+    let bytes = input.as_bytes();
+    let t = &crate::nfd_check_tables::NFD_CHECK_TABLES;
+    let n = bytes.len();
+    let (mut gap, mut i) = (s, s);
+    let mut prev_rank = 0u8;
+    let mut cur_blk = usize::MAX;
+    let mut uni = 0u8;
+    // SAFETY: all loads gated by explicit bounds; NEON ops are value-level.
+    unsafe {
+        let mut leadv = vdupq_n_u8(0);
+        let mut pairv = vdupq_n_u8(0);
+        let mut lo4 = vld1q_u8_x4([0u8; 64].as_ptr());
+        let mut hi4 = lo4;
+        'outer: while i < n {
+            let b = bytes[i];
+            if b < 0x80 {
+                prev_rank = 0;
+                i = skip_ascii(bytes, i);
+                continue;
+            }
+            'vector: {
+                if (0xE0..0xF0).contains(&b) && i + 48 <= n {
+                    let blk = ((b - 0xE0) as usize) * 32 + ((bytes[i + 1] >> 1) & 0x1F) as usize;
+                    if blk != cur_blk {
+                        let sustained = i + 6 <= n
+                            && bytes[i + 3] == b
+                            && (bytes[i + 4] >> 1) == (bytes[i + 1] >> 1);
+                        if !sustained {
+                            break 'vector;
+                        }
+                        cur_blk = blk;
+                        uni = t.fast3_uni[blk];
+                        leadv = vdupq_n_u8(b);
+                        pairv = vdupq_n_u8(bytes[i + 1] >> 1);
+                        if uni == 0xFF {
+                            let (l, h) = &t.fast3_mixed[t.fast3_slot[blk] as usize];
+                            lo4 = vld1q_u8_x4(l.as_ptr());
+                            hi4 = vld1q_u8_x4(h.as_ptr());
+                        }
+                    }
+                    while i + 48 <= n {
+                        let x = vld3q_u8(bytes.as_ptr().add(i));
+                        let same =
+                            vandq_u8(vceqq_u8(x.0, leadv), vceqq_u8(vshrq_n_u8::<1>(x.1), pairv));
+                        let idx7 = vorrq_u8(
+                            vshlq_n_u8::<6>(vandq_u8(x.1, vdupq_n_u8(1))),
+                            vandq_u8(x.2, vdupq_n_u8(0x3F)),
+                        );
+                        let tag = if uni != 0xFF {
+                            vdupq_n_u8(uni)
+                        } else {
+                            vorrq_u8(
+                                vqtbl4q_u8(lo4, idx7),
+                                vqtbl4q_u8(hi4, vsubq_u8(idx7, vdupq_n_u8(64))),
+                            )
+                        };
+                        let r = vandq_u8(tag, vdupq_n_u8(0x3F));
+                        let irregular = vorrq_u8(
+                            vcgeq_u8(tag, vdupq_n_u8(0x7D)),
+                            vcgeq_u8(r, vdupq_n_u8(0x3C)),
+                        );
+                        let prevr = vextq_u8::<15>(vdupq_n_u8(prev_rank), r);
+                        let viol = vandq_u8(
+                            vcgtq_u8(prevr, r),
+                            vandq_u8(vtstq_u8(r, r), vtstq_u8(prevr, prevr)),
+                        );
+                        let bad = vorrq_u8(vorrq_u8(vmvnq_u8(same), irregular), viol);
+                        if vmaxvq_u8(bad) == 0 {
+                            prev_rank = vgetq_lane_u8::<15>(r);
+                            i += 48;
+                            continue;
+                        }
+                        let (mut m, mut rr) = ([0u8; 16], [0u8; 16]);
+                        vst1q_u8(m.as_mut_ptr(), bad);
+                        vst1q_u8(rr.as_mut_ptr(), r);
+                        for (l, &v) in m.iter().enumerate() {
+                            if v != 0 {
+                                if l > 0 {
+                                    prev_rank = rr[l - 1];
+                                }
+                                i += l * 3;
+                                break 'vector;
+                            }
+                        }
+                    }
+                    if i >= n {
+                        break 'outer;
+                    }
+                }
+            }
+            if bytes[i] < 0x80 {
+                continue; // vector bailed onto ASCII: loop top handles it
+            }
+            // scalar referee: verified chars stay in the gap; breaking/out-of-order chars emit
+            let tag = t.classify_char(bytes, i);
+            let breaks = D::tag_breaks(tag);
+            let r = if breaks {
+                0
+            } else {
+                match tag & 0x3F {
+                    0x3C => 0,
+                    0x3D => rank_probe(bytes, i),
+                    r => r,
+                }
+            };
+            if !breaks && !(r != 0 && r < prev_rank) {
+                prev_rank = if r == 0 { 0 } else { r };
+                let w = if bytes[i] < 0xE0 { 2 } else if bytes[i] < 0xF0 { 3 } else { 4 };
+                i += w;
+                continue;
+            }
+            // rewind over the adjacent in-gap marks to their starter so `Emit` state is exact
+            let mut st = i;
+            while st > gap {
+                let mut p = st - 1;
+                while p > gap && bytes[p] & 0xC0 == 0x80 {
+                    p -= 1;
+                }
+                let (pcp, _) = decode_cp(bytes, p);
+                if !bit_set::<D>(pcp) {
+                    break;
+                }
+                st = p;
+            }
+            if st > gap {
+                // (in the enclosing unsafe scope) exact in-bounds verbatim span; capacity reserved.
+                copy_small(out, bytes.as_ptr().add(gap), st - gap);
+                e.last_ccc = 0;
+                e.run_start = out.len();
+            }
+            let (cp, w) = decode_cp(bytes, st);
+            i = if bit_set::<D>(cp) {
+                emit_set::<D>(bytes, st, cp, w, out, e)
+            } else {
+                // breaking tag but stable in D's bitset can't happen (tags derive from the same
+                // tables); defensive: copy verbatim
+                copy_small(out, bytes.as_ptr().add(st), w);
+                st + w
+            };
+            gap = i;
+            prev_rank = 0;
+            cur_blk = usize::MAX; // emit may have crossed blocks; re-resolve lazily
+        }
+    }
+    if n > gap {
+        // SAFETY: exact in-bounds verbatim tail; capacity reserved.
+        unsafe { copy_small(out, bytes.as_ptr().add(gap), n - gap) };
+    }
+}
+
+/// Streaming COMPOSE quick-check for 3-byte single-block scripts (Thai/Lao): the same in-register
+/// vector core as [`streaming3_prefix`] with compose predicates — `0x7E` (decomposing but
+/// composition-stable) and `0x3C` (compat starter, stable under NFC) count as rank-0 starters;
+/// QC-Maybe (`0x40`), `0x7D`, `0x3D`, and (for the K form) `0x3C` bail as relevant. Returns
+/// `bytes.len()` iff the input is already in the composed form — the caller borrows; on the first
+/// relevant char it returns its position and the caller falls back to the full compose machinery.
+#[cfg(target_arch = "aarch64")]
+fn streaming3_compose_ok<D: Decomp>(bytes: &[u8]) -> bool {
+    use std::arch::aarch64::*;
+    let t = &crate::nfd_check_tables::NFD_CHECK_TABLES;
+    let n = bytes.len();
+    let mut i = 0;
+    let mut prev_rank = 0u8;
+    let mut cur_blk = usize::MAX;
+    let mut uni = 0u8;
+    let kform = D::tag_breaks(0x3C);
+    // SAFETY: all loads gated by explicit bounds; NEON ops are value-level.
+    unsafe {
+        let mut leadv = vdupq_n_u8(0);
+        let mut pairv = vdupq_n_u8(0);
+        let mut lo4 = vld1q_u8_x4([0u8; 64].as_ptr());
+        let mut hi4 = lo4;
+        while i < n {
+            let b = bytes[i];
+            if b < 0x80 {
+                prev_rank = 0;
+                i = skip_ascii(bytes, i);
+                continue;
+            }
+            'vector: {
+                if (0xE0..0xF0).contains(&b) && i + 48 <= n {
+                    let blk = ((b - 0xE0) as usize) * 32 + ((bytes[i + 1] >> 1) & 0x1F) as usize;
+                    if blk != cur_blk {
+                        let sustained = i + 6 <= n
+                            && bytes[i + 3] == b
+                            && (bytes[i + 4] >> 1) == (bytes[i + 1] >> 1);
+                        if !sustained {
+                            break 'vector;
+                        }
+                        cur_blk = blk;
+                        uni = t.fast3_uni[blk];
+                        leadv = vdupq_n_u8(b);
+                        pairv = vdupq_n_u8(bytes[i + 1] >> 1);
+                        if uni == 0xFF {
+                            let (l, h) = &t.fast3_mixed[t.fast3_slot[blk] as usize];
+                            lo4 = vld1q_u8_x4(l.as_ptr());
+                            hi4 = vld1q_u8_x4(h.as_ptr());
+                        }
+                    }
+                    while i + 48 <= n {
+                        let x = vld3q_u8(bytes.as_ptr().add(i));
+                        let same =
+                            vandq_u8(vceqq_u8(x.0, leadv), vceqq_u8(vshrq_n_u8::<1>(x.1), pairv));
+                        let idx7 = vorrq_u8(
+                            vshlq_n_u8::<6>(vandq_u8(x.1, vdupq_n_u8(1))),
+                            vandq_u8(x.2, vdupq_n_u8(0x3F)),
+                        );
+                        let tag = if uni != 0xFF {
+                            vdupq_n_u8(uni)
+                        } else {
+                            vorrq_u8(
+                                vqtbl4q_u8(lo4, idx7),
+                                vqtbl4q_u8(hi4, vsubq_u8(idx7, vdupq_n_u8(64))),
+                            )
+                        };
+                        // compose-relevant: Maybe flag (0x40..=0x7B — NOT the 0x7D/0x7E break values,
+                        // which also carry bit 6!), 0x7D, 0x3D — plus 0x3C under the K form
+                        let maybe =
+                            vbicq_u8(vtstq_u8(tag, vdupq_n_u8(0x40)), vcgeq_u8(tag, vdupq_n_u8(0x7D)));
+                        let mut relevant = vorrq_u8(
+                            maybe,
+                            vorrq_u8(
+                                vceqq_u8(tag, vdupq_n_u8(0x7D)),
+                                vceqq_u8(tag, vdupq_n_u8(0x3D)),
+                            ),
+                        );
+                        if kform {
+                            relevant = vorrq_u8(relevant, vceqq_u8(tag, vdupq_n_u8(0x3C)));
+                        }
+                        // rank for the order check: 0x3C / 0x7E are ccc-0 starters → rank 0
+                        let starters = vorrq_u8(
+                            vceqq_u8(tag, vdupq_n_u8(0x3C)),
+                            vceqq_u8(tag, vdupq_n_u8(0x7E)),
+                        );
+                        let r = vbicq_u8(vandq_u8(tag, vdupq_n_u8(0x3F)), starters);
+                        let prevr = vextq_u8::<15>(vdupq_n_u8(prev_rank), r);
+                        let viol = vandq_u8(
+                            vcgtq_u8(prevr, r),
+                            vandq_u8(vtstq_u8(r, r), vtstq_u8(prevr, prevr)),
+                        );
+                        let bad = vorrq_u8(vorrq_u8(vmvnq_u8(same), relevant), viol);
+                        if vmaxvq_u8(bad) == 0 {
+                            prev_rank = vgetq_lane_u8::<15>(r);
+                            i += 48;
+                            continue;
+                        }
+                        let (mut m, mut rr) = ([0u8; 16], [0u8; 16]);
+                        vst1q_u8(m.as_mut_ptr(), bad);
+                        vst1q_u8(rr.as_mut_ptr(), r);
+                        for (l, &v) in m.iter().enumerate() {
+                            if v != 0 {
+                                if l > 0 {
+                                    prev_rank = rr[l - 1];
+                                }
+                                i += l * 3;
+                                break 'vector;
+                            }
+                        }
+                    }
+                    if i >= n {
+                        return true;
+                    }
+                }
+            }
+            if bytes[i] < 0x80 {
+                continue; // vector bailed onto ASCII
+            }
+            // scalar referee under compose semantics
+            let tag = t.classify_char(bytes, i);
+            let relevant = (tag & 0x40 != 0 && tag < 0x7D)
+                || tag == 0x7D
+                || tag == 0x3D
+                || (kform && tag == 0x3C);
+            if relevant {
+                return false; // fall back to the full compose machinery
+            }
+            let r = if tag == 0x3C || tag == 0x7E { 0 } else { tag & 0x3F };
+            if r == 0 {
+                prev_rank = 0;
+            } else {
+                if r < prev_rank {
+                    return false; // out of order: recompose needed
+                }
+                prev_rank = r;
+            }
+            let w = if bytes[i] < 0x80 {
+                1
+            } else if bytes[i] < 0xE0 {
+                2
+            } else if bytes[i] < 0xF0 {
+                3
+            } else {
+                4
+            };
+            i += w;
+        }
+    }
+    true
+}
+
 fn decompose<'a, D: Decomp>(input: &'a str) -> Cow<'a, str> {
     // aarch64: two strategies, dispatched by a ~64-byte content sample. The whole-buffer TAG kernel
     // (norm-classify once + candidate scans) wins on marked scripts of any width mix (Cyrillic, Hebrew,
@@ -962,8 +1522,51 @@ fn decompose<'a, D: Decomp>(input: &'a str) -> Cow<'a, str> {
         if a0 == n {
             return Cow::Borrowed(input); // pure ASCII is NFD/NFKD-stable
         }
-        if n >= 256 && pick_tagged(bytes, a0) {
-            return decompose_tagged::<D>(input);
+        if n >= 256 {
+            // 3-byte non-CJK scripts (leads E0..E2: Thai/Indic/Lao/…): the streaming in-register
+            // check — no tag buffer, the block's fast3 table probed in registers per 16-char chunk.
+            let span = n - a0;
+            let (mut e0c, mut tot) = (0usize, 0usize);
+            for k in 0..4 {
+                let off = a0 + span * k / 4;
+                let end = (off + 16).min(n);
+                for (x, &bb) in bytes[off..end].iter().enumerate() {
+                    tot += 1;
+                    // Thai/Lao only (E0 B8..BB): spaceless scripts where vector runs stay long.
+                    // Word-spaced E0-scripts (Devanagari etc.) do better on the tagged kernel.
+                    e0c += usize::from(
+                        bb == 0xE0
+                            && bytes.get(off + x + 1).is_some_and(|&c| (0xB8..=0xBB).contains(&c)),
+                    );
+                }
+            }
+            if e0c * 4 >= tot {
+                let brk = streaming3_prefix::<D>(bytes);
+                if brk == n {
+                    return Cow::Borrowed(input);
+                }
+                // owned: rewind to a stable boundary, then the streaming verify-as-you-go rebuild
+                let mut s = brk;
+                while s > 0 {
+                    let mut p = s - 1;
+                    while p > 0 && bytes[p] & 0xC0 == 0x80 {
+                        p -= 1;
+                    }
+                    s = p;
+                    let (cp, _) = decode_cp(bytes, p);
+                    if !bit_set::<D>(cp) {
+                        break;
+                    }
+                }
+                let mut out = String::with_capacity(n.saturating_mul(D::MAX_EXPAND) + 48);
+                out.push_str(&input[..s]);
+                let mut e = Emit { last_ccc: 0, run_start: out.len() };
+                streaming3_owned::<D>(input, &mut out, &mut e, s);
+                return Cow::Owned(out);
+            }
+            if pick_tagged(bytes, a0) {
+                return decompose_tagged::<D>(input);
+            }
         }
         decompose_nextset::<D>(input)
     }
@@ -1007,6 +1610,14 @@ fn decompose_nextset<'a, D: Decomp>(input: &'a str) -> Cow<'a, str> {
     if brk == n {
         return Cow::Borrowed(input);
     }
+    decompose_rebuild::<D>(input, brk)
+}
+
+/// The owned rebuild shared by every check strategy: rewind from the breaking char to a stable
+/// boundary, copy the verified prefix wholesale, run the owned kernel from there.
+fn decompose_rebuild<'a, D: Decomp>(input: &'a str, brk: usize) -> Cow<'a, str> {
+    let bytes = input.as_bytes();
+    let n = bytes.len();
     // Resume point: back up from the breaking char to the previous STABLE (bit-clear) char boundary.
     // Everything before it is copied verbatim; the stable char itself is re-processed first, and being a
     // ccc-0 starter its processing resets `Emit` — so the resumed state is exact without re-deriving
@@ -1026,7 +1637,7 @@ fn decompose_nextset<'a, D: Decomp>(input: &'a str) -> Cow<'a, str> {
     }
     // Reserve the worst-case decomposed size up front (`n * MAX_EXPAND`, +16 so the kernel's fixed
     // 16-byte blob stores never touch unreserved memory) — the owned path never reallocs mid-build.
-    let mut out = String::with_capacity(n.saturating_mul(D::MAX_EXPAND) + 16);
+    let mut out = String::with_capacity(n.saturating_mul(D::MAX_EXPAND) + 48);
     out.push_str(&input[..s]);
     let mut e = Emit { last_ccc: 0, run_start: out.len() };
     #[cfg(target_arch = "aarch64")]
@@ -1405,8 +2016,28 @@ fn compose<'a, D: Decomp, R: Bitset>(input: &'a str) -> Cow<'a, str> {
         if a0 == n {
             return Cow::Borrowed(input); // pure ASCII is NFC/NFKC-stable
         }
-        if n >= 256 && pick_tagged(bytes, a0) {
-            return compose_tagged::<D, R>(input);
+        if n >= 256 {
+            // Thai/Lao: the streaming vector quick-check borrows at in-register speed; on failure the
+            // tagged machinery below does the real work (double-checked only for non-normalized docs).
+            let span = n - a0;
+            let (mut e0c, mut tot) = (0usize, 0usize);
+            for k in 0..4 {
+                let off = a0 + span * k / 4;
+                let end = (off + 16).min(n);
+                for (x, &bb) in bytes[off..end].iter().enumerate() {
+                    tot += 1;
+                    e0c += usize::from(
+                        bb == 0xE0
+                            && bytes.get(off + x + 1).is_some_and(|&c| (0xB8..=0xBB).contains(&c)),
+                    );
+                }
+            }
+            if e0c * 4 >= tot && streaming3_compose_ok::<D>(bytes) {
+                return Cow::Borrowed(input);
+            }
+            if pick_tagged(bytes, a0) {
+                return compose_tagged::<D, R>(input);
+            }
         }
     }
     // First composition-relevant char (ccc != 0, or QC != Yes). None ⇒ already in the target form.
@@ -1439,12 +2070,16 @@ fn compose<'a, D: Decomp, R: Bitset>(input: &'a str) -> Cow<'a, str> {
                         ((packed >> 8) as usize, (packed & 0xFF) as usize)
                     };
                     if (1..=16).contains(&blen) {
-                        out.push_str(&input[i..rel]);
-                        out.push_str(unsafe {
-                            std::str::from_utf8_unchecked(
-                                &crate::nfd_byte_tables::NFKC_BYTE_BLOB[off..off + blen],
-                            )
-                        });
+                        // SAFETY: exact in-bounds verbatim span + padded blob; capacity reserved.
+                        unsafe {
+                            copy_small(&mut out, bytes.as_ptr().add(i), rel - i);
+                            raw_extend(
+                                &mut out,
+                                crate::nfd_byte_tables::NFKC_BYTE_BLOB.as_ptr().add(off),
+                                16,
+                                blen,
+                            );
+                        }
                         i = rel + cw;
                         rel = next_set::<R>(bytes, i).0;
                         if rel == n {
@@ -1954,7 +2589,6 @@ mod tests {
         }
     }
 
-    #[test]
     #[ignore = "manual timing probe"]
     fn timing_probe() {
         for (label, rel) in [("Thai", "benches/data/th.txt"), ("Korean", "benches/data/ko.txt")] {
@@ -1982,6 +2616,59 @@ mod tests {
             }
             eprintln!("{label}: check-classify {best:.3} ns/B");
         }
+    }
+
+    /// The streaming3 check only engages for inputs ≥ 256 bytes of 3-byte-lead text, so exercise it
+    /// directly with long synthetic paragraphs — normal, mark-clustered, out-of-order, decomposing,
+    /// block-hopping — byte-exact vs `unicode-normalization` for NFD/NFKD.
+    #[cfg(target_arch = "aarch64")]
+    #[test]
+    fn streaming3_long_inputs() {
+        let cases: Vec<String> = vec![
+            "\u{0E2A}\u{0E27}\u{0E31}\u{0E2A}\u{0E14}\u{0E35}".repeat(60), // Thai w/ mai han-akat
+            "\u{0E01}\u{0E38}\u{0E49}".repeat(80),                    // Thai below-vowel + tone (ccc 103,107)
+            "\u{0E01}\u{0E49}\u{0E38}".repeat(80),                    // out of canonical order (107 then 103)
+            "\u{0915}\u{094D}\u{0937}\u{093F}".repeat(70),           // Devanagari conjunct + matra
+            format!("{}ï{}", "\u{0E44}\u{0E17}\u{0E22}".repeat(40), "\u{0E44}\u{0E17}\u{0E22}".repeat(40)), // stray decomposing latin
+            format!("{}{}", "\u{0E01}".repeat(100), "\u{0995}\u{09CD}".repeat(60)), // block hop Thai→Bengali
+            "\u{0E33}".repeat(90),                                    // SARA AM (decomposes under NFD? no — but NFKD?)
+            format!("abc {} def", "\u{0E01}\u{0E48}".repeat(70)),      // ascii mixing
+        ];
+        for (k, s) in cases.iter().enumerate() {
+            assert!(s.len() >= 256, "case {k} too short");
+            assert_eq!(nfd(s.as_str()), s.nfd().collect::<String>(), "streaming3 NFD case {k}");
+            assert_eq!(nfkd(s.as_str()), s.nfkd().collect::<String>(), "streaming3 NFKD case {k}");
+        }
+    }
+
+    #[ignore = "debug probe"]
+    fn compose_check_probe() {
+        let path = format!("{}/benches/data/th.txt", env!("CARGO_MANIFEST_DIR"));
+        let s = std::fs::read_to_string(&path).unwrap();
+        let mut c = s.len().min(180_000);
+        while c > 0 && !s.is_char_boundary(c) {
+            c -= 1;
+        }
+        let text = &s[..c];
+        let ok = super::streaming3_compose_ok::<super::Nfd>(text.as_bytes());
+        eprintln!("streaming3_compose_ok(th) = {ok}");
+        // find compose-relevant tags scalar
+        let t = &crate::nfd_check_tables::NFD_CHECK_TABLES;
+        let bytes = text.as_bytes();
+        let mut i = 0;
+        let mut found = 0;
+        while i < bytes.len() && found < 5 {
+            let b = bytes[i];
+            if b < 0x80 { i += 1; continue; }
+            let tag = t.classify_char(bytes, i);
+            if tag & 0x40 != 0 || tag == 0x7D || tag == 0x3D {
+                let (cp, _) = super::decode_cp(bytes, i);
+                eprintln!("relevant at byte {i}: U+{cp:04X} tag={tag:#04x}");
+                found += 1;
+            }
+            i += if b < 0xE0 { 2 } else if b < 0xF0 { 3 } else { 4 };
+        }
+        eprintln!("(scan done, {found} relevant chars shown)");
     }
 
     #[test]
