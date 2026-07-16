@@ -98,6 +98,7 @@ harness = false
 [[bench]]
 name = "normalize"
 harness = false
+required-features = ["bench-baseline"] # legacy column = the published tokenizers v0.23.1
 
 [[example]]
 name = "fixture_bench"
