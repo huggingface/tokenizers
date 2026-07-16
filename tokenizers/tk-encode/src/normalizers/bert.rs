@@ -5,11 +5,8 @@ use crate::{
     tokenizer::{NormalizedString, Normalizer, Result},
 };
 
-use super::utils::lowercases_to_self;
-
 use serde::{Deserialize, Serialize};
 use unicode_categories::UnicodeCategories;
-use unicode_normalization::{is_nfd_quick, IsNormalized, UnicodeNormalization};
 
 /// Checks whether a character is whitespace
 fn is_whitespace(c: char) -> bool {
@@ -136,19 +133,6 @@ impl BertNormalizer {
     fn do_lowercase(&self, normalized: &mut NormalizedString) {
         normalized.lowercase();
     }
-
-    fn is_noop(&self, input: &str, strip_accents: bool) -> bool {
-        if strip_accents && !matches!(is_nfd_quick(input.chars()), IsNormalized::Yes) {
-            return false;
-        }
-        let changes = |c: char| {
-            (self.clean_text && (clean_text_removes(c) || clean_text_map(c) != c))
-                || (self.handle_chinese_chars && is_chinese_char(c))
-                || (strip_accents && c.is_mark_nonspacing())
-                || (self.lowercase && !lowercases_to_self(c))
-        };
-        !input.chars().any(changes)
-    }
 }
 
 impl Normalizer for BertNormalizer {
@@ -173,46 +157,15 @@ impl Normalizer for BertNormalizer {
 
 impl pipeline::Normalizer for BertNormalizer {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
-        let strip_accents = self.strip_accents.unwrap_or(self.lowercase);
-
-        if self.is_noop(input, strip_accents) {
-            return Ok(input.into());
-        }
-
-        let cleaned = input
-            .chars()
-            .filter(|&c| !(self.clean_text && clean_text_removes(c)))
-            .flat_map(|c| {
-                let c = if self.clean_text {
-                    clean_text_map(c)
-                } else {
-                    c
-                };
-                if self.handle_chinese_chars && is_chinese_char(c) {
-                    [Some(' '), Some(c), Some(' ')]
-                } else {
-                    [Some(c), None, None]
-                }
-            })
-            .flatten();
-
-        // `.nfd()` changes the iterator's type, so the stage toggles can't be
-        // plain `if`s mid-chain: each config combination gets its own
-        // statically-typed chain, all funneled into one pre-sized String.
-        let mut normalized = String::with_capacity(input.len());
-        match (strip_accents, self.lowercase) {
-            (true, true) => normalized.extend(
-                cleaned
-                    .nfd()
-                    .filter(|c| !c.is_mark_nonspacing())
-                    .flat_map(char::to_lowercase),
-            ),
-            (true, false) => normalized.extend(cleaned.nfd().filter(|c| !c.is_mark_nonspacing())),
-            (false, true) => normalized.extend(cleaned.flat_map(char::to_lowercase)),
-            (false, false) => normalized.extend(cleaned),
-        }
-
-        Ok(Cow::Owned(normalized))
+        // atomnorm's fused scan: all four stages in ONE pass (SIMD ASCII lane + per-rule property
+        // sets), byte-exact with the staged chain; borrows when no enabled rule touches the input
+        Ok(atomnorm::bert(
+            input,
+            self.clean_text,
+            self.handle_chinese_chars,
+            self.strip_accents.unwrap_or(self.lowercase),
+            self.lowercase,
+        ))
     }
 }
 

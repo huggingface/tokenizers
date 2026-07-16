@@ -28,6 +28,7 @@ path = "src/lib.rs"
 
 [dependencies]
 atomsplit = { path = "../atomsplit" }
+atomnorm = { path = "../atomnorm" }
 rand = "0.9"
 regex = "1.10"
 rayon = "1.10"
@@ -93,6 +94,11 @@ tracing-subscriber = "0.3.18"
 [[bench]]
 name = "pipeline_benchmark"
 harness = false
+
+[[bench]]
+name = "normalize"
+harness = false
+required-features = ["bench-baseline"] # legacy column = the published tokenizers v0.23.1
 
 [[example]]
 name = "fixture_bench"

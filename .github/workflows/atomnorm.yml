@@ -1,0 +1,33 @@
+name: atomnorm
+
+on:
+  push:
+    paths: ["tokenizers/atomnorm/**", ".github/workflows/atomnorm.yml"]
+  pull_request:
+    paths: ["tokenizers/atomnorm/**", ".github/workflows/atomnorm.yml"]
+
+defaults:
+  run:
+    working-directory: tokenizers
+
+jobs:
+  # x86_64 runner → exercises the portable scalar path, plus fmt/clippy + the table drift guard.
+  native:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with: { components: rustfmt, clippy }
+      - run: cargo fmt -p atomnorm -- --check
+      - run: cargo clippy -p atomnorm --all-targets -- -D warnings
+      - run: cargo test -p atomnorm --release   # exhaustive cp sweep + long inputs + borrow gates
+      # committed tables must match the generator (unicode-normalization is the oracle)
+      - run: cargo test -p atomnorm --release generate -- --ignored && git diff --exit-code atomnorm/src/tables.rs
+
+  # aarch64 runner → atomnorm's only SIMD path (the NEON prefix kernels in simd_norm.rs), natively.
+  neon:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test -p atomnorm --release
