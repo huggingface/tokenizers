@@ -6,9 +6,14 @@ use crate::norm::bmp_set;
 use crate::tables::*;
 
 /// SIMD prefix of `norm::skip_clean` — stops at the first suspect lead or when < 32 bytes remain.
-pub(crate) fn skip_clean<const STORE: bool>(bytes: &[u8], mut i: usize, out: &mut String, mask: &[u8; 64]) -> usize {
+pub(crate) fn skip_clean<const STORE: bool>(
+    bytes: &[u8],
+    mut i: usize,
+    out: &mut String,
+    mask: &[u8; 64],
+) -> usize {
     let n = bytes.len();
-#[cfg(target_arch = "aarch64")]
+    #[cfg(target_arch = "aarch64")]
     // SAFETY: loads gated by `i + 32 <= n`; stores by reserved capacity; stops are lead bytes.
     unsafe {
         use std::arch::aarch64::*;
@@ -37,12 +42,14 @@ pub(crate) fn skip_clean<const STORE: bool>(bytes: &[u8], mut i: usize, out: &mu
             }
             // locate the first suspect lane across the two chunks
             let ma = vandq_u8(ha, powv);
-            let mm = (vaddv_u8(vget_low_u8(ma)) as u16) | ((vaddv_u8(vget_high_u8(ma)) as u16) << 8);
+            let mm =
+                (vaddv_u8(vget_low_u8(ma)) as u16) | ((vaddv_u8(vget_high_u8(ma)) as u16) << 8);
             let k = if mm != 0 {
                 mm.trailing_zeros() as usize
             } else {
                 let mb = vandq_u8(hb, powv);
-                let m2 = (vaddv_u8(vget_low_u8(mb)) as u16) | ((vaddv_u8(vget_high_u8(mb)) as u16) << 8);
+                let m2 =
+                    (vaddv_u8(vget_low_u8(mb)) as u16) | ((vaddv_u8(vget_high_u8(mb)) as u16) << 8);
                 16 + m2.trailing_zeros() as usize
             };
             if STORE {
@@ -59,16 +66,24 @@ pub(crate) fn skip_clean<const STORE: bool>(bytes: &[u8], mut i: usize, out: &mu
 
 /// SIMD prefix of `norm::skip2_ascii` — returns at a set char, a non-(ascii|2-byte) boundary,
 /// or when < 16 bytes remain; the scalar caller re-derives the classification at that position.
-pub(crate) fn skip2_ascii<const STORE: bool>(bytes: &[u8], mut i: usize, out: &mut String) -> usize {
+pub(crate) fn skip2_ascii<const STORE: bool>(
+    bytes: &[u8],
+    mut i: usize,
+    out: &mut String,
+) -> usize {
     let n = bytes.len();
-#[cfg(target_arch = "aarch64")]
+    #[cfg(target_arch = "aarch64")]
     // SAFETY: loads gated by `i + 16 <= n`; stores ride reserved capacity; stops land on char starts
     // (a suspect continuation rolls back to its lead, which is always inside this chunk or the carry).
     unsafe {
         use std::arch::aarch64::*;
         let bm = BMP_SET.as_ptr() as *const u8;
-        let (t0, t1, t2, t3) =
-            (vld1q_u8_x4(bm), vld1q_u8_x4(bm.add(64)), vld1q_u8_x4(bm.add(128)), vld1q_u8_x4(bm.add(192)));
+        let (t0, t1, t2, t3) = (
+            vld1q_u8_x4(bm),
+            vld1q_u8_x4(bm.add(64)),
+            vld1q_u8_x4(bm.add(128)),
+            vld1q_u8_x4(bm.add(192)),
+        );
         let v_out = out.as_mut_vec();
         let mut len = v_out.len();
         let mut carry: u8 = 0;
@@ -88,7 +103,10 @@ pub(crate) fn skip2_ascii<const STORE: bool>(bytes: &[u8], mut i: usize, out: &m
                 vshrq_n_u8::<3>(vandq_u8(v, vdupq_n_u8(0x3F))),
             );
             let byte = vorrq_u8(
-                vorrq_u8(vqtbl4q_u8(t0, idx), vqtbl4q_u8(t1, vsubq_u8(idx, vdupq_n_u8(64)))),
+                vorrq_u8(
+                    vqtbl4q_u8(t0, idx),
+                    vqtbl4q_u8(t1, vsubq_u8(idx, vdupq_n_u8(64))),
+                ),
                 vorrq_u8(
                     vqtbl4q_u8(t2, vsubq_u8(idx, vdupq_n_u8(128))),
                     vqtbl4q_u8(t3, vsubq_u8(idx, vdupq_n_u8(192))),
@@ -127,7 +145,7 @@ pub(crate) fn skip2_ascii<const STORE: bool>(bytes: &[u8], mut i: usize, out: &m
 /// SIMD prefix of `norm::skip3` — returns at a set char / width change / when < 48 bytes remain.
 pub(crate) fn skip3<const STORE: bool>(bytes: &[u8], mut i: usize, out: &mut String) -> usize {
     let n = bytes.len();
-#[cfg(target_arch = "aarch64")]
+    #[cfg(target_arch = "aarch64")]
     // SAFETY: loads gated by `i + 16*W <= n`; stores by reserved capacity (`+48` slack); `set_len`
     // only covers verified whole chars.
     unsafe {
@@ -141,7 +159,10 @@ pub(crate) fn skip3<const STORE: bool>(bytes: &[u8], mut i: usize, out: &mut Str
                 if STORE {
                     vst2q_u8(v_out.as_mut_ptr().add(len), x);
                 }
-                let ok = vandq_u8(vcgeq_u8(x.0, vdupq_n_u8(0xC2)), vcleq_u8(x.0, vdupq_n_u8(0xDF)));
+                let ok = vandq_u8(
+                    vcgeq_u8(x.0, vdupq_n_u8(0xC2)),
+                    vcleq_u8(x.0, vdupq_n_u8(0xDF)),
+                );
                 vst1q_u8(lok.as_mut_ptr(), ok);
                 for (h, (l8, c8)) in [
                     (0usize, (vget_low_u8(x.0), vget_low_u8(x.1))),
@@ -156,10 +177,16 @@ pub(crate) fn skip3<const STORE: bool>(bytes: &[u8], mut i: usize, out: &mut Str
                 if STORE {
                     vst3q_u8(v_out.as_mut_ptr().add(len), x);
                 }
-                let ok = vandq_u8(vcgeq_u8(x.0, vdupq_n_u8(0xE0)), vcleq_u8(x.0, vdupq_n_u8(0xEF)));
+                let ok = vandq_u8(
+                    vcgeq_u8(x.0, vdupq_n_u8(0xE0)),
+                    vcleq_u8(x.0, vdupq_n_u8(0xEF)),
+                );
                 vst1q_u8(lok.as_mut_ptr(), ok);
                 for (h, (l8, b18, b28)) in [
-                    (0usize, (vget_low_u8(x.0), vget_low_u8(x.1), vget_low_u8(x.2))),
+                    (
+                        0usize,
+                        (vget_low_u8(x.0), vget_low_u8(x.1), vget_low_u8(x.2)),
+                    ),
                     (8, (vget_high_u8(x.0), vget_high_u8(x.1), vget_high_u8(x.2))),
                 ] {
                     let l = vandq_u16(vmovl_u8(l8), vdupq_n_u16(0x0F));
