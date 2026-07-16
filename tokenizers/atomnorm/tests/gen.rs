@@ -36,7 +36,7 @@ impl Gen {
         // ccc → order-preserving rank
         let mut cccs: Vec<u8> = (0..0x110000u32)
             .filter_map(char::from_u32)
-            .map(|c| ccc(c))
+            .map(ccc)
             .filter(|&c| c != 0)
             .collect();
         cccs.sort_unstable();
@@ -110,7 +110,7 @@ impl Gen {
         // trie: IDX[cp>>6] → 64-slot base in DATA; blob bytes with [first_rank, last_rank, mark_off]
         let (mut data, mut blob): (Vec<u32>, Vec<u8>) = (vec![0; 64], Vec::new()); // block 0 = all-absent
         let mut idx = vec![0u32; 0x30000 >> 6];
-        for blk in 0..(0x30000 >> 6) {
+        for (blk, ix) in idx.iter_mut().enumerate() {
             let mut slots = [0u32; 64];
             let mut any = false;
             for lo in 0..64u32 {
@@ -154,7 +154,7 @@ impl Gen {
                 any = true;
             }
             if any {
-                idx[blk] = data.len() as u32;
+                *ix = data.len() as u32;
                 data.extend_from_slice(&slots);
             }
         }
