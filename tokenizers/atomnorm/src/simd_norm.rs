@@ -259,6 +259,144 @@ pub(crate) fn scan_prefix<
     i
 }
 
+/// The two-table case-swap kernel — write-mode only, for case-folding scans riding 2-byte cased
+/// scripts (Cyrillic/Greek/Latin-1). 16 mixed [ascii | 2-byte] bytes per iteration: the ASCII
+/// lanes get the `|0x20` + `CLEAN`-fold policy; each 2-byte char is probed IN-REGISTER against
+/// two 2048-bit tables — the scan SET (stop → scalar fixup) and the case-swap SOURCE (`reg2`:
+/// uppercase mapping to exactly `cp + 0x20`). Source hits are transformed in place: the TARGET is
+/// arithmetic — continuation `+0x20`, with the UTF-8 carry (`> 0xBF`) folding back `-0x40` and
+/// adding `+1` to the lead lane (Р D0A0 → р D180). A trailing lead byte is left for the next
+/// iteration so a pair never straddles a chunk. Returns its stop position (a char boundary).
+pub(crate) fn scan2_case<const CLEAN: u8>(
+    bytes: &[u8],
+    mut i: usize,
+    out: &mut String,
+    set: &[u64; 1024],
+    reg2: &[u64; 32],
+) -> usize {
+    let n = bytes.len();
+    #[cfg(target_arch = "aarch64")]
+    // SAFETY: loads gated by `i + 16 <= n`; stores by the driver's reserved-capacity invariant;
+    // `set_len` covers only verified bytes; stops roll back to char starts.
+    unsafe {
+        use std::arch::aarch64::*;
+        const POW: [u8; 16] = [1, 2, 4, 8, 16, 32, 64, 128, 1, 2, 4, 8, 16, 32, 64, 128];
+        let sm = set.as_ptr() as *const u8;
+        let (s0, s1, s2, s3) = (
+            vld1q_u8_x4(sm),
+            vld1q_u8_x4(sm.add(64)),
+            vld1q_u8_x4(sm.add(128)),
+            vld1q_u8_x4(sm.add(192)),
+        );
+        let rm = reg2.as_ptr() as *const u8;
+        let (r0, r1, r2, r3) = (
+            vld1q_u8_x4(rm),
+            vld1q_u8_x4(rm.add(64)),
+            vld1q_u8_x4(rm.add(128)),
+            vld1q_u8_x4(rm.add(192)),
+        );
+        let powv = vld1q_u8(POW.as_ptr());
+        let zero = vdupq_n_u8(0);
+        let v_out = out.as_mut_vec();
+        let mut len = v_out.len();
+        while i + 16 <= n {
+            let v = vld1q_u8(bytes.as_ptr().add(i));
+            let ascii = vcltq_u8(v, vdupq_n_u8(0x80));
+            let cont = vandq_u8(vcgeq_u8(v, vdupq_n_u8(0x80)), vcltq_u8(v, vdupq_n_u8(0xC0)));
+            let lead2 = vandq_u8(vcgeq_u8(v, vdupq_n_u8(0xC2)), vcleq_u8(v, vdupq_n_u8(0xDF)));
+            let class_ok = vorrq_u8(vorrq_u8(ascii, cont), lead2);
+            // both bitmap probes at the continuation lanes, 8-bit throughout (as in skip2_ascii);
+            // lane 0 never starts mid-pair (entry and advance are char boundaries), so prev=0 is fine
+            let prev = vextq_u8::<15>(zero, v);
+            let idx = vorrq_u8(
+                vshlq_n_u8::<3>(vandq_u8(prev, vdupq_n_u8(0x1F))),
+                vshrq_n_u8::<3>(vandq_u8(v, vdupq_n_u8(0x3F))),
+            );
+            let tbl256 = |t0: uint8x16x4_t, t1, t2, t3| {
+                vorrq_u8(
+                    vorrq_u8(
+                        vqtbl4q_u8(t0, idx),
+                        vqtbl4q_u8(t1, vsubq_u8(idx, vdupq_n_u8(64))),
+                    ),
+                    vorrq_u8(
+                        vqtbl4q_u8(t2, vsubq_u8(idx, vdupq_n_u8(128))),
+                        vqtbl4q_u8(t3, vsubq_u8(idx, vdupq_n_u8(192))),
+                    ),
+                )
+            };
+            let sh = vnegq_s8(vreinterpretq_s8_u8(vandq_u8(v, vdupq_n_u8(7))));
+            let bit = |byte: uint8x16_t| {
+                let b = vandq_u8(vshlq_u8(byte, sh), vdupq_n_u8(1));
+                vtstq_u8(b, b)
+            };
+            let set_hit = vandq_u8(cont, bit(tbl256(s0, s1, s2, s3)));
+            let reg_hit = vandq_u8(cont, bit(tbl256(r0, r1, r2, r3)));
+            // ASCII policy (write mode: transforms, removals stop)
+            let upper = vcltq_u8(vsubq_u8(v, vdupq_n_u8(b'A')), vdupq_n_u8(26));
+            let (fold, rmv) = match CLEAN {
+                1 => {
+                    let f = vorrq_u8(
+                        vorrq_u8(vceqq_u8(v, vdupq_n_u8(9)), vceqq_u8(v, vdupq_n_u8(10))),
+                        vceqq_u8(v, vdupq_n_u8(13)),
+                    );
+                    let r = vorrq_u8(
+                        vandq_u8(vcltq_u8(v, vdupq_n_u8(0x20)), vmvnq_u8(f)),
+                        vceqq_u8(v, vdupq_n_u8(0x7F)),
+                    );
+                    (f, r)
+                }
+                2 => {
+                    let f = vorrq_u8(
+                        vorrq_u8(vceqq_u8(v, vdupq_n_u8(9)), vceqq_u8(v, vdupq_n_u8(10))),
+                        vorrq_u8(vceqq_u8(v, vdupq_n_u8(12)), vceqq_u8(v, vdupq_n_u8(13))),
+                    );
+                    let r = vorrq_u8(
+                        vandq_u8(
+                            vandq_u8(vcltq_u8(v, vdupq_n_u8(0x20)), vmvnq_u8(f)),
+                            vmvnq_u8(vceqq_u8(v, zero)),
+                        ),
+                        vceqq_u8(v, vdupq_n_u8(0x7F)),
+                    );
+                    (f, r)
+                }
+                _ => (zero, zero),
+            };
+            let bad = vorrq_u8(
+                vorrq_u8(vmvnq_u8(class_ok), vbicq_u8(set_hit, reg_hit)),
+                rmv,
+            );
+            // transform: ASCII policy, then the case-swap target on source-hit lanes
+            let mut t = vbslq_u8(upper, vorrq_u8(v, vdupq_n_u8(0x20)), v);
+            if CLEAN != 0 {
+                t = vbslq_u8(fold, vdupq_n_u8(b' '), t);
+            }
+            let c1 = vaddq_u8(v, vdupq_n_u8(0x20));
+            let ovf = vandq_u8(vcgtq_u8(c1, vdupq_n_u8(0xBF)), reg_hit);
+            let c2 = vbslq_u8(ovf, vsubq_u8(c1, vdupq_n_u8(0x40)), c1);
+            t = vbslq_u8(reg_hit, c2, t);
+            // the overflowing pair's LEAD (one lane earlier) gets +1
+            t = vaddq_u8(t, vandq_u8(vextq_u8::<1>(ovf, zero), vdupq_n_u8(1)));
+            vst1q_u8(v_out.as_mut_ptr().add(len), t);
+            if vmaxvq_u8(bad) == 0 {
+                // never consume a trailing lead: its continuation transforms next iteration
+                let adv = 16 - usize::from((0xC2..=0xDF).contains(&bytes[i + 15]));
+                len += adv;
+                i += adv;
+                continue;
+            }
+            let m = vandq_u8(bad, powv);
+            let mm = (vaddv_u8(vget_low_u8(m)) as u16) | ((vaddv_u8(vget_high_u8(m)) as u16) << 8);
+            let k = mm.trailing_zeros() as usize;
+            // a bad continuation belongs to the char starting one byte earlier
+            let back = usize::from(bytes[i + k] >= 0x80 && bytes[i + k] < 0xC0);
+            v_out.set_len(len + (k - back));
+            return i + k - back;
+        }
+        v_out.set_len(len);
+    }
+    i
+}
+
 /// SIMD prefix of `norm::skip3` — returns at a set char / width change / when < 48 bytes remain.
 pub(crate) fn skip3<const STORE: bool>(bytes: &[u8], mut i: usize, out: &mut String) -> usize {
     let n = bytes.len();

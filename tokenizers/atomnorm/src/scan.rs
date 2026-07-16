@@ -64,6 +64,11 @@ pub(crate) struct Scan {
     lead: [u8; 64],
     astral: u8,
     astral_all: bool,
+    /// The two-table case swap's SOURCE set: 2-byte uppercase whose lowercase is exactly
+    /// `cp + 0x20` AND that no other enabled rule touches — transformed in-lane (the target is
+    /// arithmetic: continuation `+0x20`, carry `+1` into the lead) instead of stopping the scan.
+    /// Zero except for case-folding configs. Always a subset of `set`.
+    reg2: [u64; 32],
 }
 
 impl Scan {
@@ -92,8 +97,13 @@ impl Scan {
             }
         }
         for l in 0xE0u8..=0xEF {
-            let base = ((l & 0x0F) as usize) << 6;
-            if set[base..base + 64].iter().any(|&w| w != 0) {
+            // lead E0's valid cps start at 0x800 (overlong encodings are invalid UTF-8) — without
+            // the floor, 2-byte-range set bits (e.g. Latin-1 capitals) falsely taint E0
+            let base = (((l & 0x0F) as usize) << 6).max(32);
+            if set[base..((l & 0x0F) as usize + 1) << 6]
+                .iter()
+                .any(|&w| w != 0)
+            {
                 lead[(l - 0xC0) as usize] = 0xFF;
             }
         }
@@ -114,7 +124,20 @@ impl Scan {
             lead,
             astral,
             astral_all: false,
+            reg2: [0; 32],
         }
+    }
+    /// Enable the in-lane case swap: regular-case chars minus everything in `exclude` (rules whose
+    /// per-char work must still run — e.g. NFD under bert strip makes Й a fixup, not a `+0x20`).
+    fn with_case_swap(mut self, exclude: &[&[u64; 1024]]) -> Scan {
+        for w in 0..32 {
+            let mut x = SCAN_REG2[w];
+            for e in exclude {
+                x &= !e[w];
+            }
+            self.reg2[w] = x;
+        }
+        self
     }
     #[inline]
     fn hit_bmp(&self, cp: u32) -> bool {
@@ -159,15 +182,27 @@ fn next_hit<
     // pay a kernel entry; a run of clean bytes escalates to the SIMD lane, and a suspect-lead probe
     // miss (E2-punctuation inside CJK, cased 2-byte scripts) drops back to scalar
     let mut streak = 0u32;
+    let mut streak2 = 0u32; // consecutive [ascii | 2-byte] bytes: the case-swap kernel's terrain
     while i < n {
         #[cfg(target_arch = "aarch64")]
-        if SIMD && streak >= 8 {
-            i = crate::simd_norm::scan_prefix::<STORE, LOWER, CLEAN, ASCII_SET>(
-                bytes, i, out, &sc.lead, &sc.set,
-            );
-            streak = 0;
-            if i >= n {
-                break;
+        if SIMD {
+            // clean terrain (streak of lead-mask-clean bytes) rides the light 32B kernel; the
+            // case-swap kernel only pays where suspect 2-byte probes dominate (streak keeps
+            // resetting while streak2 grows: cased scripts under a case-folding scan)
+            if streak >= 8 {
+                i = crate::simd_norm::scan_prefix::<STORE, LOWER, CLEAN, ASCII_SET>(
+                    bytes, i, out, &sc.lead, &sc.set,
+                );
+                (streak, streak2) = (0, 0);
+                if i >= n {
+                    break;
+                }
+            } else if STORE && LOWER && streak2 >= 8 {
+                i = crate::simd_norm::scan2_case::<CLEAN>(bytes, i, out, &sc.set, &sc.reg2);
+                (streak, streak2) = (0, 0);
+                if i >= n {
+                    break;
+                }
             }
         }
         let b = bytes[i];
@@ -205,6 +240,7 @@ fn next_hit<
             }
             i += 1;
             streak += 1;
+            streak2 += 1;
             continue;
         }
         if b < 0xC0 {
@@ -215,6 +251,7 @@ fn next_hit<
             }
             i += 1;
             streak += 1;
+            streak2 += 1;
             continue;
         }
         let m = sc.lead[(b - 0xC0) as usize];
@@ -225,10 +262,25 @@ fn next_hit<
         } else {
             4
         };
+        streak2 = if w == 2 { streak2 + 2 } else { 0 };
         if m != 0 {
             let (cp, _) = decode_cp(bytes, i);
-            let hit = sc.contains(cp);
-            if hit {
+            if LOWER && cp < 0x800 && sc.reg2[(cp >> 6) as usize] >> (cp & 63) & 1 != 0 {
+                // two-table case swap, scalar side: source-set char → target = cp + 0x20
+                if !STORE {
+                    return (i, cp); // a change: the borrow gate stops here
+                }
+                let lc = cp + 0x20;
+                // SAFETY: two bytes of a valid 2-byte char; capacity reserved.
+                unsafe {
+                    let v = out.as_mut_vec();
+                    v.push(0xC0 | (lc >> 6) as u8);
+                    v.push(0x80 | (lc & 0x3F) as u8);
+                }
+                i += 2;
+                continue;
+            }
+            if sc.contains(cp) {
                 return (i, cp);
             }
             streak = 0; // suspect neighbourhood: stay scalar
@@ -290,7 +342,7 @@ struct Lower;
 impl Rule for Lower {
     fn scan(&self) -> &'static Scan {
         static S: OnceLock<Scan> = OnceLock::new();
-        S.get_or_init(|| Scan::build(&[&SCAN_UPPER], P_UPPER))
+        S.get_or_init(|| Scan::build(&[&SCAN_UPPER], P_UPPER).with_case_swap(&[]))
     }
     fn fixup(&self, _bytes: &[u8], i: usize, cp: u32, out: &mut String) -> usize {
         // every hit has a lowercase mapping ≠ itself (1..=3 chars)
@@ -477,26 +529,30 @@ fn bert_scan(clean: bool, chinese: bool, strip: bool, lower: bool) -> &'static S
     let k =
         (clean as usize) | (chinese as usize) << 1 | (strip as usize) << 2 | (lower as usize) << 3;
     CACHE[k].get_or_init(|| {
-        let mut sets: Vec<&[u64; 1024]> = Vec::new();
+        // `other` = every enabled non-case rule — both the union input and the case-swap exclusion
+        // (a char another rule touches must stay a fixup, never an in-lane `+0x20`)
+        let mut other: Vec<&[u64; 1024]> = Vec::new();
         let mut astral = 0u8;
         if clean {
-            sets.push(&SCAN_CLEAN_RM);
-            sets.push(&SCAN_WS);
+            other.push(&SCAN_CLEAN_RM);
+            other.push(&SCAN_WS);
             astral |= P_CLEAN | P_WS;
         }
         if chinese {
-            sets.push(&SCAN_CJK);
+            other.push(&SCAN_CJK);
             astral |= P_CJK;
         }
         if strip {
-            sets.push(&SCAN_STRIP);
+            other.push(&SCAN_STRIP);
             astral |= P_STRIP;
         }
+        let mut sets = other.clone();
         if lower {
             sets.push(&SCAN_UPPER);
             astral |= P_UPPER;
         }
-        Scan::build(&sets, astral)
+        let sc = Scan::build(&sets, astral);
+        if lower { sc.with_case_swap(&other) } else { sc }
     })
 }
 

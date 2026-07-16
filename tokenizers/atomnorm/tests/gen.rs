@@ -482,6 +482,22 @@ fn generate() {
             }
             emit_u64(&mut o, name, &bmp);
         }
+        // the "regular case" 2-byte set: uppercase whose lowercase is exactly cp + 0x20 — the
+        // source table of the in-lane two-table case swap (target = arithmetic, +0x20 with a
+        // UTF-8 carry). Everything else cased stays a scalar fixup.
+        let mut reg2 = vec![0u64; 32];
+        for cp in 0x80..0x800u32 {
+            let c = char::from_u32(cp).unwrap();
+            let mut lo = c.to_lowercase();
+            if lo.next() == char::from_u32(cp + 0x20) && lo.next().is_none() {
+                assert!(
+                    cp + 0x20 < 0x800,
+                    "regular-case mapping leaves the 2-byte range"
+                );
+                reg2[(cp >> 6) as usize] |= 1 << (cp & 63);
+            }
+        }
+        emit_u64(&mut o, "SCAN_REG2", &reg2);
         // astral runs: (start, props) RLE — nmt has no astral members so u8 fits the 7 used bits
         let mut runs: Vec<(u32, u8)> = vec![(0x10000, props(0x10000) as u8)];
         for cp in 0x10001..0x110000u32 {
