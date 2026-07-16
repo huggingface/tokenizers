@@ -22,8 +22,14 @@ mod xxutf {
         let c_file = format!("{out}/xxutf-amalgamation-{VERSION}/xxutf.c");
         if !Path::new(&c_file).exists() {
             let zip = format!("{out}/xxutf.zip");
-            run(Command::new("curl").args(["-fsSL", URL, "-o", &zip]), "download xxUTF amalgamation");
-            run(Command::new("unzip").args(["-oq", &zip, "-d", &out]), "unzip xxUTF amalgamation");
+            run(
+                Command::new("curl").args(["-fsSL", URL, "-o", &zip]),
+                "download xxUTF amalgamation",
+            );
+            run(
+                Command::new("unzip").args(["-oq", &zip, "-d", &out]),
+                "unzip xxUTF amalgamation",
+            );
         }
         assert!(
             Path::new(&c_file).exists(),
@@ -38,7 +44,9 @@ mod xxutf {
     }
 
     fn run(cmd: &mut Command, what: &str) {
-        let status = cmd.status().unwrap_or_else(|e| panic!("failed to {what} (is the tool installed?): {e}"));
+        let status = cmd
+            .status()
+            .unwrap_or_else(|e| panic!("failed to {what} (is the tool installed?): {e}"));
         assert!(status.success(), "failed to {what} (exit {status})");
     }
 }

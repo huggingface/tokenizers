@@ -135,7 +135,11 @@ fn astral_tag(bytes: &[u8], i: usize) -> (u8, u32) {
 /// whole 2048-bit bitmap lookup in 8-bit lanes (a 256-byte `vqtbl` table = `BMP_SET[..32]`).
 /// Returns `(pos, cp)`: set char (decoded) or a non-(ascii|2-byte) boundary with `cp == 0`.
 #[inline]
-fn skip2_ascii<const STORE: bool, const SIMD: bool>(bytes: &[u8], mut i: usize, out: &mut String) -> (usize, u32) {
+fn skip2_ascii<const STORE: bool, const SIMD: bool>(
+    bytes: &[u8],
+    mut i: usize,
+    out: &mut String,
+) -> (usize, u32) {
     let n = bytes.len();
     #[cfg(target_arch = "aarch64")]
     if SIMD {
@@ -172,7 +176,11 @@ fn skip2_ascii<const STORE: bool, const SIMD: bool>(bytes: &[u8], mut i: usize, 
 /// `(pos, cp)`: `cp != 0` = a bitmap-set char (already decoded); `cp == 0` = the run ended (width
 /// change / tail) at `pos`. `STORE` writes verified bytes through (`vstNq` of the loaded registers).
 #[inline]
-fn skip3<const STORE: bool, const SIMD: bool>(bytes: &[u8], mut i: usize, out: &mut String) -> (usize, u32) {
+fn skip3<const STORE: bool, const SIMD: bool>(
+    bytes: &[u8],
+    mut i: usize,
+    out: &mut String,
+) -> (usize, u32) {
     let n = bytes.len();
     #[cfg(target_arch = "aarch64")]
     if SIMD {

@@ -16,7 +16,11 @@ unsafe extern "C" {
 
 type NormFn = fn(&str) -> Cow<'_, str>;
 const FORMS: &[(&str, NormFn, NormFn)] = &[
-    ("NFC", atomnorm::nfc as NormFn, atomnorm::scalar::nfc as NormFn),
+    (
+        "NFC",
+        atomnorm::nfc as NormFn,
+        atomnorm::scalar::nfc as NormFn,
+    ),
     ("NFD", atomnorm::nfd, atomnorm::scalar::nfd),
     ("NFKC", atomnorm::nfkc, atomnorm::scalar::nfkc),
     ("NFKD", atomnorm::nfkd, atomnorm::scalar::nfkd),
@@ -82,11 +86,24 @@ fn main() {
     );
     println!(
         "{:<5} {:<9} {:>7} {:>7} {:>7} {:>8} {:>8} | {:>7} {:>6} {:>8} {:>7} {:>6}",
-        "form", "lang", "bytes", "simd", "sclr", "unic", "xxUTF", "vsUnic", "vsXX", "sVsUnic", "sVsXX", "exact"
+        "form",
+        "lang",
+        "bytes",
+        "simd",
+        "sclr",
+        "unic",
+        "xxUTF",
+        "vsUnic",
+        "vsXX",
+        "sVsUnic",
+        "sVsXX",
+        "exact"
     );
     for (fname, an, asc) in FORMS {
         for (label, rel) in CORPORA {
-            let Ok(s) = std::fs::read_to_string(format!("{manifest}/{rel}")) else { continue };
+            let Ok(s) = std::fs::read_to_string(format!("{manifest}/{rel}")) else {
+                continue;
+            };
             if s.trim().is_empty() {
                 continue;
             }
