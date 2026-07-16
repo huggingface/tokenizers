@@ -13,6 +13,8 @@ fn exhaustive() {
             buf.push(c);
             buf.push_str(suffix);
             assert_eq!(atomnorm::nfd(&buf), buf.nfd().collect::<String>(), "NFD {cp:#x} {suffix:?}");
+            assert_eq!(atomnorm::scalar::nfd(&buf), buf.nfd().collect::<String>(), "scalar NFD {cp:#x}");
+            assert_eq!(atomnorm::scalar::nfkc(&buf), buf.nfkc().collect::<String>(), "scalar NFKC {cp:#x}");
             assert_eq!(atomnorm::nfkd(&buf), buf.nfkd().collect::<String>(), "NFKD {cp:#x} {suffix:?}");
             assert_eq!(atomnorm::nfc(&buf), buf.nfc().collect::<String>(), "NFC {cp:#x} {suffix:?}");
             assert_eq!(atomnorm::nfkc(&buf), buf.nfkc().collect::<String>(), "NFKC {cp:#x} {suffix:?}");
@@ -42,6 +44,8 @@ fn long_inputs() {
     ];
     for (k, s) in cases.iter().enumerate() {
         assert_eq!(atomnorm::nfd(s.as_str()), s.nfd().collect::<String>(), "NFD case {k}");
+        assert_eq!(atomnorm::scalar::nfd(s.as_str()), s.nfd().collect::<String>(), "scalar NFD case {k}");
+        assert_eq!(atomnorm::scalar::nfc(s.as_str()), s.nfc().collect::<String>(), "scalar NFC case {k}");
         assert_eq!(atomnorm::nfkd(s.as_str()), s.nfkd().collect::<String>(), "NFKD case {k}");
         assert_eq!(atomnorm::nfc(s.as_str()), s.nfc().collect::<String>(), "NFC case {k}");
         assert_eq!(atomnorm::nfkc(s.as_str()), s.nfkc().collect::<String>(), "NFKC case {k}");

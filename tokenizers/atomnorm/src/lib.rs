@@ -39,22 +39,41 @@ mod tables;
 
 /// NFD-normalize. Byte-exact with `str::nfd()`; borrows when already normalized.
 pub fn nfd(input: &str) -> Cow<'_, str> {
-    norm::decompose::<false>(input)
+    norm::decompose::<false, true>(input)
 }
 /// NFKD-normalize. Byte-exact with `str::nfkd()`; borrows when already normalized.
 pub fn nfkd(input: &str) -> Cow<'_, str> {
-    norm::decompose::<true>(input)
+    norm::decompose::<true, true>(input)
 }
 /// NFC-normalize. Byte-exact with `str::nfc()`; borrows when already normalized.
 pub fn nfc(input: &str) -> Cow<'_, str> {
-    norm::compose::<false>(input)
+    norm::compose::<false, true>(input)
 }
 /// NFKC-normalize. Byte-exact with `str::nfkc()`; borrows when already normalized.
 pub fn nfkc(input: &str) -> Cow<'_, str> {
-    norm::compose::<true>(input)
+    norm::compose::<true, true>(input)
 }
 /// NFD-decompose a single char, invoking `f` with each output char in canonical order (a stable char
 /// calls `f(c)` once). For char-at-a-time consumers like BERT `strip_accents`.
 pub fn nfd_char(c: char, f: impl FnMut(char)) {
     norm::nfd_char(c, f)
+}
+
+/// Scalar-only entry points (the SIMD prefixes disabled) — for benchmarking and differential testing
+/// of the two paths; not part of the supported API surface.
+#[doc(hidden)]
+pub mod scalar {
+    use std::borrow::Cow;
+    pub fn nfd(input: &str) -> Cow<'_, str> {
+        crate::norm::decompose::<false, false>(input)
+    }
+    pub fn nfkd(input: &str) -> Cow<'_, str> {
+        crate::norm::decompose::<true, false>(input)
+    }
+    pub fn nfc(input: &str) -> Cow<'_, str> {
+        crate::norm::compose::<false, false>(input)
+    }
+    pub fn nfkc(input: &str) -> Cow<'_, str> {
+        crate::norm::compose::<true, false>(input)
+    }
 }

@@ -88,7 +88,7 @@ fn lead_mask<const FB: u8>() -> &'static [u8; 64] {
 /// chars whose LEAD is clean for form-bit `FB`. One `vqtbl4` per 16 bytes; `STORE` write-through
 /// rides the caller's `+16` capacity slack. Returns the first suspect-lead position (a char boundary).
 #[inline]
-fn skip_clean<const FB: u8, const STORE: bool>(
+fn skip_clean<const FB: u8, const STORE: bool, const SIMD: bool>(
     bytes: &[u8],
     mut i: usize,
     out: &mut String,
@@ -96,7 +96,7 @@ fn skip_clean<const FB: u8, const STORE: bool>(
     let n = bytes.len();
     let mask = lead_mask::<FB>();
     #[cfg(target_arch = "aarch64")]
-    {
+    if SIMD {
         i = crate::simd_norm::skip_clean::<STORE>(bytes, i, out, mask);
     }
     // scalar tail (and the portable path)
@@ -135,10 +135,10 @@ fn astral_tag(bytes: &[u8], i: usize) -> (u8, u32) {
 /// whole 2048-bit bitmap lookup in 8-bit lanes (a 256-byte `vqtbl` table = `BMP_SET[..32]`).
 /// Returns `(pos, cp)`: set char (decoded) or a non-(ascii|2-byte) boundary with `cp == 0`.
 #[inline]
-fn skip2_ascii<const STORE: bool>(bytes: &[u8], mut i: usize, out: &mut String) -> (usize, u32) {
+fn skip2_ascii<const STORE: bool, const SIMD: bool>(bytes: &[u8], mut i: usize, out: &mut String) -> (usize, u32) {
     let n = bytes.len();
     #[cfg(target_arch = "aarch64")]
-    {
+    if SIMD {
         i = crate::simd_norm::skip2_ascii::<STORE>(bytes, i, out);
     }
     // scalar tail (and the portable path)
@@ -172,10 +172,10 @@ fn skip2_ascii<const STORE: bool>(bytes: &[u8], mut i: usize, out: &mut String) 
 /// `(pos, cp)`: `cp != 0` = a bitmap-set char (already decoded); `cp == 0` = the run ended (width
 /// change / tail) at `pos`. `STORE` writes verified bytes through (`vstNq` of the loaded registers).
 #[inline]
-fn skip3<const STORE: bool>(bytes: &[u8], mut i: usize, out: &mut String) -> (usize, u32) {
+fn skip3<const STORE: bool, const SIMD: bool>(bytes: &[u8], mut i: usize, out: &mut String) -> (usize, u32) {
     let n = bytes.len();
     #[cfg(target_arch = "aarch64")]
-    {
+    if SIMD {
         i = crate::simd_norm::skip3::<STORE>(bytes, i, out);
     }
     // scalar tail (and the portable path)
@@ -202,7 +202,7 @@ fn skip3<const STORE: bool>(bytes: &[u8], mut i: usize, out: &mut String) -> (us
 /// skim runs only when consecutive chars are bitmap-clear under a dirty lead. Returns the next
 /// union-set char `(pos, cp)` or `(len, 0)`. `STORE` writes everything skipped through to `out`.
 #[inline]
-fn next_suspect<const FB: u8, const STORE: bool>(
+fn next_suspect<const FB: u8, const STORE: bool, const SIMD: bool>(
     bytes: &[u8],
     mut i: usize,
     out: &mut String,
@@ -214,7 +214,7 @@ fn next_suspect<const FB: u8, const STORE: bool>(
         }
         let b = bytes[i];
         if b < 0xC0 || lead_mask::<FB>()[(b - 0xC0) as usize] == 0 {
-            i = skip_clean::<FB, STORE>(bytes, i, out);
+            i = skip_clean::<FB, STORE, SIMD>(bytes, i, out);
             if i >= n {
                 return (n, 0);
             }
@@ -258,7 +258,7 @@ fn next_suspect<const FB: u8, const STORE: bool>(
                 i += 2;
                 streak += 1;
                 if streak == 4 {
-                    let (pos, cp2) = skip2_ascii::<STORE>(bytes, i, out);
+                    let (pos, cp2) = skip2_ascii::<STORE, SIMD>(bytes, i, out);
                     if cp2 != 0 || pos >= n {
                         return (pos, cp2);
                     }
@@ -288,7 +288,7 @@ fn next_suspect<const FB: u8, const STORE: bool>(
             i += 3;
             streak += 1;
             if streak == 8 {
-                let (pos, cp2) = skip3::<STORE>(bytes, i, out);
+                let (pos, cp2) = skip3::<STORE, SIMD>(bytes, i, out);
                 if cp2 != 0 {
                     return (pos, cp2);
                 }
@@ -469,7 +469,7 @@ fn reorder_insert(out: &mut String, run_out: usize, r: u8, ch: &[u8]) {
 /// Decompose under the form. Single forward pass: the check IS the scan — on the first char that
 /// breaks the form, rewind to the enclosing starter, copy the verified prefix wholesale, and continue
 /// with the same kernels in write-through mode.
-pub(crate) fn decompose<const K: bool>(input: &str) -> Cow<'_, str> {
+pub(crate) fn decompose<const K: bool, const SIMD: bool>(input: &str) -> Cow<'_, str> {
     let bytes = input.as_bytes();
     let n = bytes.len();
     const MAX_EXPAND: usize = 4; // ≤ 3 in practice (Hangul); headroom keeps the reserve trivial
@@ -479,8 +479,8 @@ pub(crate) fn decompose<const K: bool>(input: &str) -> Cow<'_, str> {
     let mut prev_rank = 0u8;
     let brk = loop {
         let (pos, cp) = match fb {
-            1 => next_suspect::<1, false>(bytes, i, &mut dummy),
-            _ => next_suspect::<2, false>(bytes, i, &mut dummy),
+            1 => next_suspect::<1, false, SIMD>(bytes, i, &mut dummy),
+            _ => next_suspect::<2, false, SIMD>(bytes, i, &mut dummy),
         };
         if pos >= n {
             return Cow::Borrowed(input);
@@ -530,8 +530,8 @@ pub(crate) fn decompose<const K: bool>(input: &str) -> Cow<'_, str> {
     let mut i = s;
     while i < n {
         let (pos, cp) = match fb {
-            1 => next_suspect::<1, true>(bytes, i, &mut out),
-            _ => next_suspect::<2, true>(bytes, i, &mut out),
+            1 => next_suspect::<1, true, SIMD>(bytes, i, &mut out),
+            _ => next_suspect::<2, true, SIMD>(bytes, i, &mut out),
         };
         if pos > i {
             last_rank = 0; // stable chars were written through
@@ -669,7 +669,7 @@ fn recompose_window<const K: bool>(window: &str, out: &mut String) {
 /// Compose under the form: scan with the same skip kernels; each composition-relevant hit opens a
 /// window `[enclosing starter, end of the active cluster)` that is decomposed + recomposed; the rest
 /// of the text — the overwhelming majority — is copied verbatim (or borrowed outright).
-pub(crate) fn compose<const K: bool>(input: &str) -> Cow<'_, str> {
+pub(crate) fn compose<const K: bool, const SIMD: bool>(input: &str) -> Cow<'_, str> {
     let bytes = input.as_bytes();
     let n = bytes.len();
     let fb = c_bit::<K>();
@@ -679,8 +679,8 @@ pub(crate) fn compose<const K: bool>(input: &str) -> Cow<'_, str> {
     let mut prev_rank = 0u8;
     while i < n {
         let (pos, cp) = match fb {
-            4 => next_suspect::<4, false>(bytes, i, &mut dummy),
-            _ => next_suspect::<8, false>(bytes, i, &mut dummy),
+            4 => next_suspect::<4, false, SIMD>(bytes, i, &mut dummy),
+            _ => next_suspect::<8, false, SIMD>(bytes, i, &mut dummy),
         };
         if pos >= n {
             break;
