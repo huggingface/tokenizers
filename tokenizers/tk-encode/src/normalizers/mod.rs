@@ -4,7 +4,6 @@ pub mod precompiled;
 pub mod prepend;
 pub mod replace;
 pub mod strip;
-pub(crate) mod tagged;
 pub mod unicode;
 pub mod utils;
 pub use crate::normalizers::bert::BertNormalizer;

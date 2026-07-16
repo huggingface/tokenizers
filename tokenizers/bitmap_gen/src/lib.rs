@@ -95,7 +95,7 @@ fn cp_of(bytes: &[u8]) -> u32 {
 // For more details, you should read the tables.rs file. This is just creating the sctructure. We
 // fill up the different tables for single byte (ASCII) 2-bytes, 3-bytes.
 #[allow(clippy::needless_range_loop)]
-pub fn generate_tables(struct_name: &str, kind: &str, classify: &dyn Fn(u32) -> u8) -> String {
+fn generate_tables(struct_name: &str, kind: &str, classify: &dyn Fn(u32) -> u8) -> String {
     let tag = |bytes: &[u8]| classify(cp_of(bytes));
 
     // ASCII 128-entry table (two halves for the subtract-trick lookup)

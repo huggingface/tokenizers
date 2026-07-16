@@ -86,16 +86,21 @@ impl Normalizer for Lowercase {
     }
 }
 
+/// Whether lowercasing `c` leaves it unchanged (a single, identical char)
+pub(crate) fn lowercases_to_self(c: char) -> bool {
+    let mut it = c.to_lowercase();
+    matches!((it.next(), it.next()), (Some(first), None) if first == c)
+}
+
 impl pipeline::Normalizer for Lowercase {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
-        // Only LOWER-flagged runs are lowercased; a caseless script is fully inert → borrowed, with no
-        // per-char `to_lowercase` probe (the old `.all(lowercases_to_self)` scanned every char).
-        use atomsplit::norm_classify::bit;
-        Ok(crate::normalizers::tagged::tag_driven(
-            input,
-            bit::LOWER,
-            |run, out| out.extend(run.chars().flat_map(char::to_lowercase)),
-        ))
+        if input.chars().all(lowercases_to_self) {
+            Ok(input.into())
+        } else {
+            Ok(Cow::Owned(
+                input.chars().flat_map(|c| c.to_lowercase()).collect(),
+            ))
+        }
     }
 }
 

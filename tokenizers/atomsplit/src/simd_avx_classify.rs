@@ -14,27 +14,25 @@
 //! x86_64 (SSE4.1 and, if available, AVX-512 VBMI) hardware before trusting it.
 #![allow(unsafe_op_in_unsafe_fn)]
 
-use crate::classify::char_len;
-use crate::tables::Tables;
+use crate::atom_tables::ATOM_TABLES;
+use crate::classify::{Atom, CONT, MB, char_len, classify_scalar};
 use core::arch::x86_64::*;
 
-/// Runtime dispatch, best-first, generic over the tag scheme (see [`crate::classify::classify_with`]).
-/// (Swap in memchr's cached `AtomicPtr` if `is_x86_feature_detected!` ever shows up in a profile.)
+const CJK_TAG: u8 = Atom::Letter as u8;
+
+/// Runtime dispatch, best-first. (Swap in memchr's cached `AtomicPtr` if `is_x86_feature_detected!`
+/// ever shows up in a profile.)
 #[inline]
-pub fn dispatch<const CONT: u8, const MB: u8, const CJK_TAG: u8>(
-    text: &[u8],
-    tags: &mut [u8],
-    tables: &Tables,
-) {
+pub fn dispatch(text: &[u8], tags: &mut [u8]) {
     if std::is_x86_feature_detected!("avx512vbmi")
         && std::is_x86_feature_detected!("avx512bw")
         && std::is_x86_feature_detected!("avx512vl")
     {
-        unsafe { classify_avx512::<CONT, MB, CJK_TAG>(text, tags, tables) } // SAFETY: guarded by the AVX-512 checks
+        unsafe { classify_avx512(text, tags) } // SAFETY: guarded by the AVX-512 checks
     } else if std::is_x86_feature_detected!("sse4.1") && std::is_x86_feature_detected!("ssse3") {
-        unsafe { classify_x86_128::<CONT, MB, CJK_TAG>(text, tags, tables) } // SAFETY: guarded by the SSE4.1/SSSE3 checks
+        unsafe { classify_x86_128(text, tags) } // SAFETY: guarded by the SSE4.1/SSSE3 checks
     } else {
-        crate::classify::classify_scalar_with::<CONT>(text, tags, tables)
+        classify_scalar(text, tags)
     }
 }
 
@@ -169,12 +167,10 @@ unsafe fn lut256_512(t: *const u8, idx: __m128i) -> __m128i {
 /// Shared classify body — instantiated by each x86 path with its own `$lut128`/`$lut256`. Everything
 /// else (algorithm, other 128-bit ops) is identical. `$text`/`$tags` are passed in (macro hygiene).
 macro_rules! x86_body {
-    ($text:ident, $tags:ident, $tables:expr, $cont:expr, $mb:expr, $cjk:expr, $lut128:path, $lut256:path) => {{
+    ($text:ident, $tags:ident, $lut128:path, $lut256:path) => {{
         let text: &[u8] = $text;
         let tags: &mut [u8] = $tags;
-        let tb = $tables;
-        let MB: u8 = $mb;
-        let CONT: u8 = $cont;
+        let tb = &ATOM_TABLES;
         let n = text.len();
         let mut mb_seen = false;
         let mut i = 0usize;
@@ -220,7 +216,8 @@ macro_rules! x86_body {
                 res = is2;
             }
 
-            if $cjk != crate::classify::NO_CJK && any(_mm_and_si128(uge(v, 0xE3), ule(v, 0xED))) {
+            let iscjk = _mm_and_si128(uge(v, 0xE3), ule(v, 0xED));
+            if any(iscjk) {
                 let han = _mm_andnot_si128(
                     _mm_and_si128(eqb(v, 0xE4), eqb(b2, 0xB7)),
                     _mm_and_si128(uge(v, 0xE4), ule(v, 0xE9)),
@@ -243,7 +240,7 @@ macro_rules! x86_body {
                     _mm_and_si128(eqb(v, 0xE3), _mm_and_si128(uge(b2, 0x81), ule(b2, 0x83))),
                 );
                 let cjkl = _mm_or_si128(_mm_or_si128(han, hg), kana);
-                out = _mm_blendv_epi8(out, _mm_set1_epi8($cjk as i8), cjkl);
+                out = _mm_blendv_epi8(out, _mm_set1_epi8(CJK_TAG as i8), cjkl);
                 res = _mm_or_si128(res, cjkl);
             }
 
@@ -296,7 +293,7 @@ macro_rules! x86_body {
                 i += 1;
                 continue;
             }
-            tags[i] = tb.classify_char(text, i);
+            tags[i] = ATOM_TABLES.classify_char(text, i);
             let w = char_len(b);
             let mut j = 1;
             while j < w && i + j < n {
@@ -313,7 +310,7 @@ macro_rules! x86_body {
                     tags[k] = if cp < 0x10000 {
                         tb.bmp_tag(cp as u16)
                     } else {
-                        tb.classify_char(text, k)
+                        ATOM_TABLES.classify_char(text, k)
                     };
                 }
                 k += 1;
@@ -325,22 +322,14 @@ macro_rules! x86_body {
 /// 128-bit path — SSE4.1/SSSE3 `pshufb`. Runs on ~every x86_64 CPU (≈2008+), incl. all AVX2 machines.
 #[target_feature(enable = "ssse3,sse4.1")]
 #[allow(non_snake_case)]
-unsafe fn classify_x86_128<const C: u8, const M: u8, const CJ: u8>(
-    text: &[u8],
-    tags: &mut [u8],
-    tables: &Tables,
-) {
-    x86_body!(text, tags, tables, C, M, CJ, lut128, lut256)
+unsafe fn classify_x86_128(text: &[u8], tags: &mut [u8]) {
+    x86_body!(text, tags, lut128, lut256)
 }
 
 /// AVX-512 VBMI path — `vpermb` native 64-entry lookups (128 = 2 vpermb, 256 = 4), far fewer ops than
 /// the `pshufb` chains. Same algorithm/tables. 16 B/iter; full-zmm (64 B/iter) is a further follow-up.
 #[target_feature(enable = "avx512vbmi,avx512bw,avx512vl")]
 #[allow(non_snake_case)]
-unsafe fn classify_avx512<const C: u8, const M: u8, const CJ: u8>(
-    text: &[u8],
-    tags: &mut [u8],
-    tables: &Tables,
-) {
-    x86_body!(text, tags, tables, C, M, CJ, lut128_512, lut256_512)
+unsafe fn classify_avx512(text: &[u8], tags: &mut [u8]) {
+    x86_body!(text, tags, lut128_512, lut256_512)
 }

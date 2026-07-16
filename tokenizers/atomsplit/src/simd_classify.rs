@@ -1,4 +1,6 @@
-use crate::tables::Tables;
+use crate::atom_tables::ATOM_TABLES;
+use crate::classify::{Atom, CONT, MB};
+const CJK_TAG: u8 = Atom::Letter as u8;
 
 // ================================================================================================
 // The smallest load we can do in neon is vld1q_u8, which handles 16bytes.
@@ -109,7 +111,7 @@ fn decode(t: &[u8], i: usize) -> u32 {
     }
 }
 
-/// This is the key classification function. We built the tables, and here we leverage them.
+/// This is the key classification function. We built the ATOM_TABLES, and here we leverage them.
 /// The core idea is to assume 16 bytes are gonna be on average all from the same script. This
 /// means that the same classification rule can be applied for all of them. Otherwise, we run all
 /// the classification rules.
@@ -153,11 +155,7 @@ fn decode(t: &[u8], i: usize) -> u32 {
 /// The reason we don't use the same table format for 2 or 3 byte?
 #[cfg(target_arch = "aarch64")]
 #[allow(unsafe_op_in_unsafe_fn, non_snake_case)]
-pub unsafe fn classify_neon<const CONT: u8, const MB: u8, const CJK_TAG: u8>(
-    text: &[u8],
-    tags: &mut [u8],
-    tables: &Tables,
-) {
+pub unsafe fn classify_neon(text: &[u8], tags: &mut [u8]) {
     use super::classify::char_len;
     use core::arch::aarch64::*;
     let n = text.len();
@@ -172,14 +170,14 @@ pub unsafe fn classify_neon<const CONT: u8, const MB: u8, const CJK_TAG: u8>(
             // vst1q_u8 stores the value from ascii_tbl into tags.
             vst1q_u8(
                 tags.as_mut_ptr().add(i),
-                ascii_tbl(b0, &tables.ascii_lo, &tables.ascii_hi),
+                ascii_tbl(b0, &ATOM_TABLES.ascii_lo, &ATOM_TABLES.ascii_hi),
             );
             i += 16;
             continue;
         }
 
         // Not all ascii, so let's default the tags by computing ASCII.
-        let mut out = ascii_tbl(b0, &tables.ascii_lo, &tables.ascii_hi); // base (ASCII lanes correct; MB overwritten)
+        let mut out = ascii_tbl(b0, &ATOM_TABLES.ascii_lo, &ATOM_TABLES.ascii_hi); // base (ASCII lanes correct; MB overwritten)
 
         // Let's load the next chunk of 16 bytes
         let next = vld1q_u8(text.as_ptr().add(i + 16));
@@ -218,7 +216,7 @@ pub unsafe fn classify_neon<const CONT: u8, const MB: u8, const CJK_TAG: u8>(
                 // best case a single lookup.
                 let group = vminvq_u8(vbslq_u8(unresolved, grp, vdupq_n_u8(0xFF))); // min group present
                 let group_lanes = vandq_u8(unresolved, eq(grp, group)); // lanes of exactly this group
-                let group_table = &tables.group_tables[(group & 7) as usize];
+                let group_table = &ATOM_TABLES.group_tables[(group & 7) as usize];
                 tags2 = vbslq_u8(group_lanes, tbl256(group_table, group_index), tags2);
                 unresolved = vbicq_u8(unresolved, group_lanes); // drop the lanes just resolved
             }
@@ -226,7 +224,8 @@ pub unsafe fn classify_neon<const CONT: u8, const MB: u8, const CJK_TAG: u8>(
             resolved = is_lead2;
         }
 
-        if CJK_TAG != crate::classify::NO_CJK && any(in_range(b0, 0xE3, 0xED)) {
+        let in_cjk_leads = in_range(b0, 0xE3, 0xED);
+        if any(in_cjk_leads) {
             // Han — U+4000..U+9FFF (CJK Unified Ideographs + the Ext-A tail), minus the one non-
             // ideograph hole U+4DC0..U+4DFF (Yijing Hexagram Symbols), which encodes as E4 B7 xx.
             let han = vbicq_u8(
@@ -288,11 +287,11 @@ pub unsafe fn classify_neon<const CONT: u8, const MB: u8, const CJK_TAG: u8>(
                 let min_pair = vminvq_u8(vbslq_u8(lead_lanes, pair, vdupq_n_u8(0xFF))); // min b1-pair within it
                 let block_lanes = vandq_u8(lead_lanes, eq(pair, min_pair)); // lanes of exactly this block
                 let block = (lead - 0xE0) as usize * 32 + (min_pair & 0x1F) as usize;
-                let uniform_tag = tables.fast3_uni[block];
+                let uniform_tag = ATOM_TABLES.fast3_uni[block];
                 let block_tags = if uniform_tag != 0xFF {
                     vdupq_n_u8(uniform_tag) // whole block is one tag
                 } else {
-                    let (lo, hi) = &tables.fast3_mixed[tables.fast3_slot[block] as usize];
+                    let (lo, hi) = &ATOM_TABLES.fast3_mixed[ATOM_TABLES.fast3_slot[block] as usize];
                     vorrq_u8(
                         vqtbl4q_u8(vld1q_u8_x4(lo.as_ptr()), block_index),
                         vqtbl4q_u8(
@@ -323,9 +322,9 @@ pub unsafe fn classify_neon<const CONT: u8, const MB: u8, const CJK_TAG: u8>(
                 if tags[i + j] == MB {
                     let cp = decode(text, i + j);
                     tags[i + j] = if cp < 0x10000 {
-                        tables.bmp_tag(cp as u16)
+                        ATOM_TABLES.bmp_tag(cp as u16)
                     } else {
-                        tables.classify_char(text, i + j)
+                        ATOM_TABLES.classify_char(text, i + j)
                     };
                 }
             }
@@ -341,7 +340,7 @@ pub unsafe fn classify_neon<const CONT: u8, const MB: u8, const CJK_TAG: u8>(
             i += 1;
             continue;
         }
-        tags[i] = tables.classify_char(text, i);
+        tags[i] = ATOM_TABLES.classify_char(text, i);
         let w = char_len(b);
         for j in 1..w {
             if i + j < n {
