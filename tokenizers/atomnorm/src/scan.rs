@@ -165,6 +165,11 @@ impl Scan {
 /// `LOWER`/`CLEAN` define the ASCII lane: `LOWER` flips `A..=Z`, `CLEAN` (1 = bert, 2 = nmt) folds
 /// its whitespace to `' '` and STOPS at its removal bytes. In check mode (`!STORE`) any ASCII lane
 /// change is itself a stop — the caller's borrow gate; in write mode it is transformed in place.
+// the streak counters only feed the aarch64 kernel escalation; elsewhere they're written, never read
+#[cfg_attr(
+    not(target_arch = "aarch64"),
+    allow(unused_variables, unused_assignments)
+)]
 fn next_hit<
     const STORE: bool,
     const LOWER: bool,
@@ -385,9 +390,7 @@ impl Rule for Nmt {
         S.get_or_init(|| Scan::build(&[&SCAN_NMT_RM, &SCAN_NMT_WS], 0))
     }
     fn fixup(&self, _bytes: &[u8], i: usize, cp: u32, out: &mut String) -> usize {
-        let rm = matches!(cp,
-            0x0001..=0x0008 | 0x000B | 0x000E..=0x001F | 0x007F | 0x008F | 0x009F);
-        if !rm {
+        if !has(&SCAN_NMT_RM, 0, cp) {
             out.push(' '); // the fold set (incl. the ASCII check-mode first hit)
         }
         i + width(cp)

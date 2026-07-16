@@ -106,7 +106,8 @@ impl Gen {
         }
     }
 
-    fn blobs(&self, compat: bool, o: &mut String, name: &str) {
+    /// Returns `(idx, data_len)` so the NFKC parallel table can reuse the same slot mapping.
+    fn blobs(&self, compat: bool, o: &mut String, name: &str) -> (Vec<u32>, usize) {
         // trie: IDX[cp>>6] → 64-slot base in DATA; blob bytes with [first_rank, last_rank, mark_off]
         let (mut data, mut blob): (Vec<u32>, Vec<u8>) = (vec![0; 64], Vec::new()); // block 0 = all-absent
         let mut idx = vec![0u32; 0x30000 >> 6];
@@ -160,8 +161,10 @@ impl Gen {
         }
         blob.extend_from_slice(&[0; 16]);
         emit_u32(o, &format!("{name}_IDX"), &idx);
+        let data_len = data.len();
         emit_u32(o, &format!("{name}_DATA"), &data);
         emit_u8(o, &format!("{name}_BLOB"), &blob);
+        (idx, data_len)
     }
 
     fn nfkc_blobs(
@@ -365,24 +368,10 @@ fn generate() {
         writeln!(o, "pub static ASTRAL_B1: u64 = {astral_b1};").unwrap();
     }
     g.blobs(false, &mut o, "NFD");
-    // capture NFKD idx/data mapping for the NFKC parallel table
-    let before = o.len();
-    g.blobs(true, &mut o, "NFKD");
-    let nfkd_txt = &o[before..];
-    let data_len: usize = {
-        let s = nfkd_txt.split("NFKD_DATA: [u32; ").nth(1).unwrap();
-        s[..s.find(']').unwrap()].parse().unwrap()
-    };
-    // rebuild the same idx mapping to find each 0x3C cp's slot
-    let idx_vals: Vec<u32> = {
-        let s = nfkd_txt.split("NFKD_IDX: [u32; 3072] = [").nth(1).unwrap();
-        s[..s.find(']').unwrap()]
-            .split(',')
-            .map(|x| x.parse().unwrap())
-            .collect()
-    };
-    g.nfkc_blobs(&mut o, data_len, &|cp| {
-        let base = idx_vals[(cp >> 6) as usize];
+    // the NFKC parallel table reuses NFKD's slot mapping
+    let (nfkd_idx, nfkd_data_len) = g.blobs(true, &mut o, "NFKD");
+    g.nfkc_blobs(&mut o, nfkd_data_len, &|cp| {
+        let base = nfkd_idx[(cp >> 6) as usize];
         if base == 0 {
             None
         } else {

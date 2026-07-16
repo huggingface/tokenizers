@@ -571,7 +571,7 @@ fn composite(a: u32, b: u32) -> Option<u32> {
     if (0x1100..=0x1112).contains(&a) && (0x1161..=0x1175).contains(&b) {
         return Some(0xAC00 + ((a - 0x1100) * 21 + (b - 0x1161)) * 28);
     }
-    if HANGUL.contains(&a) && (a - 0xAC00) % 28 == 0 && (0x11A8..=0x11C2).contains(&b) {
+    if HANGUL.contains(&a) && (a - 0xAC00).is_multiple_of(28) && (0x11A8..=0x11C2).contains(&b) {
         return Some(a + (b - 0x11A7));
     }
     let key = ((a as u64) << 21) | b as u64;
@@ -606,7 +606,7 @@ fn recompose_window<const K: bool>(window: &str, out: &mut String) {
                 .into_iter()
                 .enumerate()
             {
-                if k == 2 && s % 28 == 0 {
+                if k == 2 && s.is_multiple_of(28) {
                     break;
                 }
                 push(0, char::from_u32(j).unwrap(), &mut pairs, &mut pending);
@@ -782,7 +782,7 @@ pub(crate) fn nfd_char(c: char, mut f: impl FnMut(char)) {
             .into_iter()
             .enumerate()
         {
-            if k == 2 && s % 28 == 0 {
+            if k == 2 && s.is_multiple_of(28) {
                 break;
             }
             f(char::from_u32(j).unwrap());
