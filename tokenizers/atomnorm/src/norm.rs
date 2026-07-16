@@ -5,7 +5,7 @@ use crate::tables::*;
 use std::borrow::Cow;
 
 const HANGUL: std::ops::RangeInclusive<u32> = 0xAC00..=0xD7A3;
-// LEAD_SUSPECT bit per form: decompose uses bits 0/1, compose bits 2/3.
+// per-form lead-mask bit: decompose uses bits 0/1, compose bits 2/3.
 const fn d_bit<const K: bool>() -> u8 {
     if K { 2 } else { 1 }
 }
@@ -70,18 +70,24 @@ pub(crate) fn bmp_set(cp: u16) -> bool {
 
 // ── the three skip kernels: scalar loops, SIMD-prefixed on aarch64 ────────────────────────────────
 
+/// The form's 64-entry lead mask (0xFF = some char with this lead needs work under the form).
+#[inline]
+fn lead_mask<const FB: u8>() -> &'static [u8; 64] {
+    match FB {
+        1 => &LEAD_NFD,
+        2 => &LEAD_NFKD,
+        4 => &LEAD_NFC,
+        _ => &LEAD_NFKC,
+    }
+}
+
 /// Advance over bytes that provably start nothing the form cares about: ASCII, continuations, and
 /// chars whose LEAD is clean for form-bit `FB`. One `vqtbl4` per 16 bytes; `STORE` write-through
 /// rides the caller's `+16` capacity slack. Returns the first suspect-lead position (a char boundary).
 #[inline]
 fn skip_clean<const FB: u8, const STORE: bool>(bytes: &[u8], mut i: usize, out: &mut String) -> usize {
     let n = bytes.len();
-    let mask: &[u8; 64] = match FB {
-        1 => &LEAD_NFD,
-        2 => &LEAD_NFKD,
-        4 => &LEAD_NFC,
-        _ => &LEAD_NFKC,
-    };
+    let mask = lead_mask::<FB>();
     #[cfg(target_arch = "aarch64")]
     {
         i = crate::simd_norm::skip_clean::<STORE>(bytes, i, out, mask);
@@ -155,20 +161,20 @@ fn skip2_ascii<const STORE: bool>(bytes: &[u8], mut i: usize, out: &mut String) 
     (n, 0)
 }
 
-/// Scan a uniform `W`-byte run from `i`, probing the union bitmap per decoded char. Returns
+/// Scan a uniform 3-byte run from `i`, probing the union bitmap per decoded char. Returns
 /// `(pos, cp)`: `cp != 0` = a bitmap-set char (already decoded); `cp == 0` = the run ended (width
 /// change / tail) at `pos`. `STORE` writes verified bytes through (`vstNq` of the loaded registers).
 #[inline]
-fn skip_w<const W: usize, const STORE: bool>(bytes: &[u8], mut i: usize, out: &mut String) -> (usize, u32) {
+fn skip3<const STORE: bool>(bytes: &[u8], mut i: usize, out: &mut String) -> (usize, u32) {
     let n = bytes.len();
     #[cfg(target_arch = "aarch64")]
-    if W == 3 {
+    {
         i = crate::simd_norm::skip3::<STORE>(bytes, i, out);
     }
     // scalar tail (and the portable path)
     while i < n {
         let b = bytes[i];
-        let ok = if W == 2 { (0xC2..=0xDF).contains(&b) } else { (0xE0..=0xEF).contains(&b) };
+        let ok = (0xE0..=0xEF).contains(&b);
         if !ok {
             return (i, 0);
         }
@@ -177,9 +183,9 @@ fn skip_w<const W: usize, const STORE: bool>(bytes: &[u8], mut i: usize, out: &m
             return (i, cp);
         }
         if STORE {
-            out.push_str(unsafe { std::str::from_utf8_unchecked(&bytes[i..i + W]) });
+            out.push_str(unsafe { std::str::from_utf8_unchecked(&bytes[i..i + 3]) });
         }
-        i += W;
+        i += 3;
     }
     (i, 0)
 }
@@ -200,7 +206,7 @@ fn next_suspect<const FB: u8, const STORE: bool>(
             return (n, 0);
         }
         let b = bytes[i];
-        if b < 0xC0 || LEAD_SUSPECT[(b - 0xC0) as usize] & FB == 0 {
+        if b < 0xC0 || lead_mask::<FB>()[(b - 0xC0) as usize] == 0 {
             i = skip_clean::<FB, STORE>(bytes, i, out);
             if i >= n {
                 return (n, 0);
@@ -275,7 +281,7 @@ fn next_suspect<const FB: u8, const STORE: bool>(
             i += 3;
             streak += 1;
             if streak == 8 {
-                let (pos, cp2) = skip_w::<3, STORE>(bytes, i, out);
+                let (pos, cp2) = skip3::<STORE>(bytes, i, out);
                 if cp2 != 0 {
                     return (pos, cp2);
                 }
