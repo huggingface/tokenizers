@@ -99,6 +99,35 @@ pub fn bert(
     )
 }
 
+/// A runtime scan set — the parameterized skip-scan over a caller-provided per-codepoint set, for
+/// data-driven normalizers whose hit set comes from a model file (e.g. SentencePiece `Precompiled`
+/// charsmaps). Build once per model; `next_member` then skips cold runs with the same layered
+/// kernels the built-in normalizers use.
+pub struct Scanner(Box<scan::Scan>); // boxed: the set is ~8KB and Scanners get embedded in enums
+
+impl std::fmt::Debug for Scanner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Scanner")
+    }
+}
+
+impl Scanner {
+    /// `bmp` is one bit per BMP codepoint (`bmp[cp >> 6] >> (cp & 63) & 1`); `astral_hot` makes
+    /// every astral (≥ U+10000) char a member — the conservative choice when the set may contain
+    /// astral entries.
+    pub fn new(bmp: &[u64; 1024], astral_hot: bool) -> Self {
+        Scanner(Box::new(scan::Scan::build_runtime(bmp, astral_hot)))
+    }
+    /// Byte position of the next member char at/after `i` (always a char boundary), or `len`.
+    pub fn next_member(&self, input: &str, i: usize) -> usize {
+        self.0.next_member::<true>(input.as_bytes(), i)
+    }
+    /// Whether `c` is in the set.
+    pub fn contains(&self, c: char) -> bool {
+        self.0.contains(c as u32)
+    }
+}
+
 /// Scalar-only entry points (the SIMD prefixes disabled) — for benchmarking and differential testing
 /// of the two paths; not part of the supported API surface.
 #[doc(hidden)]

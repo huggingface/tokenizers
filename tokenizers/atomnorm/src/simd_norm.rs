@@ -147,11 +147,17 @@ pub(crate) fn skip2_ascii<const STORE: bool>(
 /// `CLEAN` 1/2 folds bert/nmt whitespace to `' '` and stops at removal bytes). Check mode
 /// (`!STORE`) also stops at any ASCII transform — the borrow gate; write mode stores the
 /// transformed bytes. Stops are always char boundaries (leads or ASCII).
-pub(crate) fn scan_prefix<const STORE: bool, const LOWER: bool, const CLEAN: u8>(
+pub(crate) fn scan_prefix<
+    const STORE: bool,
+    const LOWER: bool,
+    const CLEAN: u8,
+    const ASCII_SET: bool,
+>(
     bytes: &[u8],
     mut i: usize,
     out: &mut String,
     lead: &[u8; 64],
+    set: &[u64; 1024],
 ) -> usize {
     let n = bytes.len();
     #[cfg(target_arch = "aarch64")]
@@ -164,11 +170,24 @@ pub(crate) fn scan_prefix<const STORE: bool, const LOWER: bool, const CLEAN: u8>
         let powv = vld1q_u8(POW.as_ptr());
         let c0 = vdupq_n_u8(0xC0);
         let zero = vdupq_n_u8(0);
+        // runtime sets may contain ASCII members: their 128 bits live in the set's first 16 bytes
+        let ascii_tbl = if ASCII_SET {
+            vld1q_u8(set.as_ptr() as *const u8)
+        } else {
+            zero
+        };
         let v_out = out.as_mut_vec();
         let mut len = v_out.len();
         while i + 16 <= n {
             let v = vld1q_u8(bytes.as_ptr().add(i));
-            let lead_hit = vqtbl4q_u8(tbl, vqsubq_u8(v, c0));
+            let mut lead_hit = vqtbl4q_u8(tbl, vqsubq_u8(v, c0));
+            if ASCII_SET {
+                // bytes ≥ 0x80 index past the 16-byte table → 0, so only ASCII lanes can fire
+                let byte = vqtbl1q_u8(ascii_tbl, vshrq_n_u8::<3>(v));
+                let sh = vnegq_s8(vreinterpretq_s8_u8(vandq_u8(v, vdupq_n_u8(7))));
+                let bit = vandq_u8(vshlq_u8(byte, sh), vdupq_n_u8(1));
+                lead_hit = vorrq_u8(lead_hit, vtstq_u8(bit, bit));
+            }
             let upper = if LOWER {
                 // v - 'A' < 26 unsigned: false for every byte ≥ 0x80 (wraps far above 26)
                 vcltq_u8(vsubq_u8(v, vdupq_n_u8(b'A')), vdupq_n_u8(26))

@@ -57,14 +57,26 @@ fn width(cp: u32) -> usize {
 }
 
 /// A materialized scan set: the union bitmap of every rule the normalizer enables, its derived
-/// lead mask (0/FF per lead byte, `vqtbl` fodder), and which astral prop bits count as hits.
+/// lead mask (0/FF per lead byte, `vqtbl` fodder), and the astral policy — either a mask into the
+/// baked `SCAN_ASTRAL` props, or `astral_all` (every astral char is a hit; for runtime sets).
 pub(crate) struct Scan {
     set: [u64; 1024],
     lead: [u8; 64],
     astral: u8,
+    astral_all: bool,
 }
 
 impl Scan {
+    pub(crate) fn build_runtime(bmp: &[u64; 1024], astral_all: bool) -> Scan {
+        let mut sc = Scan::build(&[bmp], 0);
+        if astral_all {
+            sc.astral_all = true;
+            for l in 0x30..0x35 {
+                sc.lead[l] = 0xFF;
+            }
+        }
+        sc
+    }
     fn build(sets: &[&[u64; 1024]], astral: u8) -> Scan {
         let mut set = [0u64; 1024];
         for s in sets {
@@ -97,11 +109,32 @@ impl Scan {
                 }
             }
         }
-        Scan { set, lead, astral }
+        Scan {
+            set,
+            lead,
+            astral,
+            astral_all: false,
+        }
     }
     #[inline]
     fn hit_bmp(&self, cp: u32) -> bool {
         self.set[(cp >> 6) as usize] >> (cp & 63) & 1 != 0
+    }
+    /// Set membership of any codepoint under this scan's astral policy.
+    #[inline]
+    pub(crate) fn contains(&self, cp: u32) -> bool {
+        if cp < 0x10000 {
+            self.hit_bmp(cp)
+        } else {
+            self.astral_all || astral_props(cp) & self.astral != 0
+        }
+    }
+    /// Position of the next set char at/after byte `i` (always a char boundary), or `len`.
+    /// Unlike the built-in normalizers (whose ASCII behavior is the policy lane), runtime sets may
+    /// contain ASCII members, so this probes them too (`ASCII_SET`).
+    pub(crate) fn next_member<const SIMD: bool>(&self, bytes: &[u8], i: usize) -> usize {
+        let mut dummy = String::new();
+        next_hit::<false, false, 0, SIMD, true>(bytes, i, &mut dummy, self).0
     }
 }
 
@@ -109,7 +142,13 @@ impl Scan {
 /// `LOWER`/`CLEAN` define the ASCII lane: `LOWER` flips `A..=Z`, `CLEAN` (1 = bert, 2 = nmt) folds
 /// its whitespace to `' '` and STOPS at its removal bytes. In check mode (`!STORE`) any ASCII lane
 /// change is itself a stop — the caller's borrow gate; in write mode it is transformed in place.
-fn next_hit<const STORE: bool, const LOWER: bool, const CLEAN: u8, const SIMD: bool>(
+fn next_hit<
+    const STORE: bool,
+    const LOWER: bool,
+    const CLEAN: u8,
+    const SIMD: bool,
+    const ASCII_SET: bool,
+>(
     bytes: &[u8],
     mut i: usize,
     out: &mut String,
@@ -123,7 +162,9 @@ fn next_hit<const STORE: bool, const LOWER: bool, const CLEAN: u8, const SIMD: b
     while i < n {
         #[cfg(target_arch = "aarch64")]
         if SIMD && streak >= 8 {
-            i = crate::simd_norm::scan_prefix::<STORE, LOWER, CLEAN>(bytes, i, out, &sc.lead);
+            i = crate::simd_norm::scan_prefix::<STORE, LOWER, CLEAN, ASCII_SET>(
+                bytes, i, out, &sc.lead, &sc.set,
+            );
             streak = 0;
             if i >= n {
                 break;
@@ -131,6 +172,9 @@ fn next_hit<const STORE: bool, const LOWER: bool, const CLEAN: u8, const SIMD: b
         }
         let b = bytes[i];
         if b < 0x80 {
+            if ASCII_SET && sc.hit_bmp(b as u32) {
+                return (i, b as u32);
+            }
             let fold = match CLEAN {
                 1 => matches!(b, 9 | 10 | 13),
                 2 => matches!(b, 9 | 10 | 12 | 13),
@@ -183,11 +227,7 @@ fn next_hit<const STORE: bool, const LOWER: bool, const CLEAN: u8, const SIMD: b
         };
         if m != 0 {
             let (cp, _) = decode_cp(bytes, i);
-            let hit = if cp < 0x10000 {
-                sc.hit_bmp(cp)
-            } else {
-                astral_props(cp) & sc.astral != 0
-            };
+            let hit = sc.contains(cp);
             if hit {
                 return (i, cp);
             }
@@ -222,7 +262,7 @@ fn run<'a, const LOWER: bool, const CLEAN: u8, const SIMD: bool, R: Rule>(
     let n = bytes.len();
     let sc = r.scan();
     let mut dummy = String::new();
-    let (mut i, mut cp) = next_hit::<false, LOWER, CLEAN, SIMD>(bytes, 0, &mut dummy, sc);
+    let (mut i, mut cp) = next_hit::<false, LOWER, CLEAN, SIMD, false>(bytes, 0, &mut dummy, sc);
     if i >= n {
         return Cow::Borrowed(input);
     }
@@ -235,7 +275,7 @@ fn run<'a, const LOWER: bool, const CLEAN: u8, const SIMD: bool, R: Rule>(
         }
         // keep the raw-store slack invariant: capacity ≥ len + remaining + 32
         out.reserve(n - i + 32);
-        let (pos, c2) = next_hit::<true, LOWER, CLEAN, SIMD>(bytes, i, &mut out, sc);
+        let (pos, c2) = next_hit::<true, LOWER, CLEAN, SIMD, false>(bytes, i, &mut out, sc);
         if pos >= n {
             break;
         }

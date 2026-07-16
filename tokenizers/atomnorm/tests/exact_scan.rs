@@ -268,6 +268,48 @@ fn long_inputs_scan() {
 }
 
 #[test]
+fn runtime_scanner_matches_char_walk() {
+    // a runtime set: newline, é, ⁇ (3-byte), 中, plus all astral via astral_hot
+    let mut bmp = Box::new([0u64; 1024]);
+    for cp in ['\n' as u32, 'é' as u32, '⁇' as u32, '中' as u32] {
+        bmp[(cp >> 6) as usize] |= 1 << (cp & 63);
+    }
+    let sc = atomnorm::Scanner::new(&bmp, true);
+    let texts = [
+        "plain ascii only, nothing hot at all — wait, no newline either".to_string(),
+        "café\nlatte ⁇ 中文 and 😀 astral plus tails ".repeat(9),
+        "мир и труд без хитов ".repeat(30),
+        "x".repeat(100) + "\n" + &"y".repeat(100),
+        String::new(),
+    ];
+    for t in &texts {
+        let expect: Vec<usize> = t
+            .char_indices()
+            .filter(|&(_, c)| matches!(c, '\n' | 'é' | '⁇' | '中') || c as u32 >= 0x10000)
+            .map(|(i, _)| i)
+            .collect();
+        let mut got = Vec::new();
+        let mut i = 0;
+        while i < t.len() {
+            i = sc.next_member(t, i);
+            if i >= t.len() {
+                break;
+            }
+            got.push(i);
+            i += t[i..].chars().next().unwrap().len_utf8();
+        }
+        assert_eq!(got, expect, "scanner positions diverged on {t:?}");
+        for (i, c) in t.char_indices() {
+            assert_eq!(
+                sc.contains(c),
+                expect.contains(&i),
+                "contains({c:?}) diverged"
+            );
+        }
+    }
+}
+
+#[test]
 fn scan_borrows_when_noop() {
     for (name, r) in [
         (
