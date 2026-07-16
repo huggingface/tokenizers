@@ -95,6 +95,10 @@ tracing-subscriber = "0.3.18"
 name = "pipeline_benchmark"
 harness = false
 
+[[bench]]
+name = "normalize"
+harness = false
+
 [[example]]
 name = "fixture_bench"
 required-features = ["bench-baseline"]
