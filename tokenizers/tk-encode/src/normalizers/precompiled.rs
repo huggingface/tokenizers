@@ -29,6 +29,20 @@ pub struct Precompiled {
     prefilter: OnceLock<Option<atomnorm::Scanner>>,
 }
 
+impl Precompiled {
+    /// Build from the raw charsmap bytes — the same inherent constructor `spm_precompiled`
+    /// exposes (the Python/Node bindings call it).
+    #[allow(clippy::should_implement_trait)]
+    pub fn from(
+        precompiled_charsmap: &[u8],
+    ) -> std::result::Result<Precompiled, spm_precompiled::PrecompiledError> {
+        Ok(Precompiled {
+            inner: spm_precompiled::Precompiled::from(precompiled_charsmap)?,
+            prefilter: OnceLock::new(),
+        })
+    }
+}
+
 impl Clone for Precompiled {
     fn clone(&self) -> Self {
         Precompiled {
