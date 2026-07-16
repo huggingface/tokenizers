@@ -77,12 +77,12 @@ const CORPORA: &[(&str, &str)] = &[
 fn main() {
     let manifest = env!("CARGO_MANIFEST_DIR");
     println!(
-        "\nns/byte, lower=better. simd = atomnorm (full); sclr = atomnorm scalar path; vsXX = simd vs xxUTF.\n\
-         exact = BOTH atomnorm paths byte-identical to unicode-normalization.\n"
+        "\nns/byte, lower=better. simd = atomnorm (full); sclr = atomnorm scalar path. vs* = how many × faster\n\
+         than unicode-normalization / xxUTF. exact = BOTH atomnorm paths byte-identical to the reference.\n"
     );
     println!(
-        "{:<5} {:<9} {:>7} {:>7} {:>7} {:>8} {:>8} | {:>7} {:>6} {:>6}",
-        "form", "lang", "bytes", "simd", "sclr", "unic", "xxUTF", "vsUnic", "vsXX", "exact"
+        "{:<5} {:<9} {:>7} {:>7} {:>7} {:>8} {:>8} | {:>7} {:>6} {:>8} {:>7} {:>6}",
+        "form", "lang", "bytes", "simd", "sclr", "unic", "xxUTF", "vsUnic", "vsXX", "sVsUnic", "sVsXX", "exact"
     );
     for (fname, an, asc) in FORMS {
         for (label, rel) in CORPORA {
@@ -123,9 +123,11 @@ fn main() {
 
             let xxc = t_xx.map_or("       —".into(), |t| format!("{t:>8.3}"));
             let vsxx = t_xx.map_or("     —".into(), |t| format!("{:>5.1}x", t / t_norm));
+            let s_vsxx = t_xx.map_or("      —".into(), |t| format!("{:>6.1}x", t / t_sclr));
             println!(
-                "{fname:<5} {label:<9} {n:>7} {t_norm:>7.3} {t_sclr:>7.3} {t_unic:>8.3} {xxc} | {:>6.1}x {vsxx} {:>6}",
+                "{fname:<5} {label:<9} {n:>7} {t_norm:>7.3} {t_sclr:>7.3} {t_unic:>8.3} {xxc} | {:>6.1}x {vsxx} {:>7.1}x {s_vsxx} {:>6}",
                 t_unic / t_norm,
+                t_unic / t_sclr,
                 if exact { "✓" } else { "✗" }
             );
         }
