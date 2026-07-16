@@ -1,57 +1,8 @@
-//! Data-driven Unicode normalization — NFC / NFD / NFKC / NFKD as one lean design.
-//!
-//! Real tokenizer input rarely needs normalization work, so the architecture optimizes the skip, not
-//! the transform: **layer 0** skips whole 16-byte windows whose *lead bytes* provably start no char the
-//! current form cares about (`LEAD_SUSPECT`, 4 bits per lead — ASCII, continuations, and clean scripts
-//! like Han never leave this loop); **layer 1** is one skip kernel per suspect width (2-/3-byte in-lane
-//! decode probing a single union bitmap, 4-byte scalar); **layer 2** touches only confirmed-suspect
-//! chars through ONE flat per-codepoint tag byte (`TAG[cp]`, direct index — no trie):
-//!
-//! ```text
-//! 0x00        inert — stable under every form
-//! 0x01..=0x3B identity combining mark; the value is its ccc RANK (order-preserving, so canonical
-//!             order is a byte compare — no ccc anywhere at runtime)
-//! 0x3C        compat-changing starter (NFKD/NFKC break; NFD/NFC stable), e.g. `ﬁ`
-//! 0x3D        compat-changing mark (rare; conservative under NFD)
-//! 0x40 | r    NFC quick-check Maybe (composes as a second) — rank rides in the low bits
-//! 0x7D        canonically decomposes AND composition-relevant (exclusions): compose must recompose
-//! 0x7E        canonically decomposes, composition-stable (é, ά, Hangul): compose skips it
-//! ```
-//!
-//! Decompose *writes* are a table index → one 16-byte blob copy (`[first_rank, last_rank,
-//! mark_run_off]` headers keep cross-char canonical order a byte compare); Hangul is arithmetic.
-//! Compose is a pair lookup (`COMPOSE`), run inside a small recompose window only where a relevant
-//! char was actually found. Already-normalized input returns `Cow::Borrowed` untouched.
-//!
-//! Zero runtime dependencies. Tables are committed, generated from `unicode-normalization` (also the
-//! byte-exactness oracle): `cargo test -p atomnorm --release generate -- --ignored`.
-//! Inputs must be valid UTF-8 (`&str`).
-
+//! The complete scalar normalization core — portable to every arch and the byte-exactness oracle
+//! for `simd_norm` (whose kernels are pure prefix processors: they stop and these loops finish).
+//! See `lib.rs` for the tag encoding and the layered-skip design.
+use crate::tables::*;
 use std::borrow::Cow;
-
-mod tables;
-use tables::*;
-
-// ── public API ───────────────────────────────────────────────────────────────────────────────────
-
-/// NFD-normalize. Byte-exact with `str::nfd()`; borrows when already normalized.
-pub fn nfd(input: &str) -> Cow<'_, str> {
-    decompose::<false>(input)
-}
-/// NFKD-normalize. Byte-exact with `str::nfkd()`; borrows when already normalized.
-pub fn nfkd(input: &str) -> Cow<'_, str> {
-    decompose::<true>(input)
-}
-/// NFC-normalize. Byte-exact with `str::nfc()`; borrows when already normalized.
-pub fn nfc(input: &str) -> Cow<'_, str> {
-    compose::<false>(input)
-}
-/// NFKC-normalize. Byte-exact with `str::nfkc()`; borrows when already normalized.
-pub fn nfkc(input: &str) -> Cow<'_, str> {
-    compose::<true>(input)
-}
-
-// ── tags & predicates (forms are `const K: bool` — compat or not) ─────────────────────────────────
 
 const HANGUL: std::ops::RangeInclusive<u32> = 0xAC00..=0xD7A3;
 // LEAD_SUSPECT bit per form: decompose uses bits 0/1, compose bits 2/3.
@@ -94,7 +45,7 @@ fn c_relevant<const K: bool>(t: u8) -> bool {
 
 /// Decode the UTF-8 char at `i` → (codepoint, width). `bytes` is valid UTF-8 at a boundary.
 #[inline]
-fn decode_cp(bytes: &[u8], i: usize) -> (u32, usize) {
+pub(crate) fn decode_cp(bytes: &[u8], i: usize) -> (u32, usize) {
     let b0 = bytes[i];
     if b0 < 0x80 {
         return (b0 as u32, 1);
@@ -107,30 +58,23 @@ fn decode_cp(bytes: &[u8], i: usize) -> (u32, usize) {
         } else if b0 < 0xF0 {
             ((((b0 & 0x0F) as u32) << 12) | (c(1) << 6) | c(2), 3)
         } else {
-            (
-                (((b0 & 0x07) as u32) << 18) | (c(1) << 12) | (c(2) << 6) | c(3),
-                4,
-            )
+            ((((b0 & 0x07) as u32) << 18) | (c(1) << 12) | (c(2) << 6) | c(3), 4)
         }
     }
 }
 
 #[inline]
-fn bmp_set(cp: u16) -> bool {
+pub(crate) fn bmp_set(cp: u16) -> bool {
     BMP_SET[(cp >> 6) as usize] >> (cp & 63) & 1 != 0
 }
 
-// ── layer 0: the universal clean-byte skip ────────────────────────────────────────────────────────
+// ── the three skip kernels: scalar loops, SIMD-prefixed on aarch64 ────────────────────────────────
 
 /// Advance over bytes that provably start nothing the form cares about: ASCII, continuations, and
 /// chars whose LEAD is clean for form-bit `FB`. One `vqtbl4` per 16 bytes; `STORE` write-through
 /// rides the caller's `+16` capacity slack. Returns the first suspect-lead position (a char boundary).
 #[inline]
-fn skip_clean<const FB: u8, const STORE: bool>(
-    bytes: &[u8],
-    mut i: usize,
-    out: &mut String,
-) -> usize {
+fn skip_clean<const FB: u8, const STORE: bool>(bytes: &[u8], mut i: usize, out: &mut String) -> usize {
     let n = bytes.len();
     let mask: &[u8; 64] = match FB {
         1 => &LEAD_NFD,
@@ -139,52 +83,8 @@ fn skip_clean<const FB: u8, const STORE: bool>(
         _ => &LEAD_NFKC,
     };
     #[cfg(target_arch = "aarch64")]
-    // SAFETY: loads gated by `i + 32 <= n`; stores by reserved capacity; stops are lead bytes.
-    unsafe {
-        use std::arch::aarch64::*;
-        const POW: [u8; 16] = [1, 2, 4, 8, 16, 32, 64, 128, 1, 2, 4, 8, 16, 32, 64, 128];
-        let tbl = vld1q_u8_x4(mask.as_ptr());
-        let powv = vld1q_u8(POW.as_ptr());
-        let c0 = vdupq_n_u8(0xC0);
-        let v_out = out.as_mut_vec();
-        let mut len = v_out.len();
-        // 32 bytes per iteration: the table output IS the hit mask (0/FF), one vmaxv for both chunks
-        while i + 32 <= n {
-            let a = vld1q_u8(bytes.as_ptr().add(i));
-            let b = vld1q_u8(bytes.as_ptr().add(i + 16));
-            if STORE {
-                vst1q_u8(v_out.as_mut_ptr().add(len), a);
-                vst1q_u8(v_out.as_mut_ptr().add(len + 16), b);
-            }
-            let ha = vqtbl4q_u8(tbl, vqsubq_u8(a, c0));
-            let hb = vqtbl4q_u8(tbl, vqsubq_u8(b, c0));
-            if vmaxvq_u8(vorrq_u8(ha, hb)) == 0 {
-                if STORE {
-                    len += 32;
-                }
-                i += 32;
-                continue;
-            }
-            // locate the first suspect lane across the two chunks
-            let ma = vandq_u8(ha, powv);
-            let mm =
-                (vaddv_u8(vget_low_u8(ma)) as u16) | ((vaddv_u8(vget_high_u8(ma)) as u16) << 8);
-            let k = if mm != 0 {
-                mm.trailing_zeros() as usize
-            } else {
-                let mb = vandq_u8(hb, powv);
-                let m2 =
-                    (vaddv_u8(vget_low_u8(mb)) as u16) | ((vaddv_u8(vget_high_u8(mb)) as u16) << 8);
-                16 + m2.trailing_zeros() as usize
-            };
-            if STORE {
-                v_out.set_len(len + k);
-            }
-            return i + k;
-        }
-        if STORE {
-            v_out.set_len(len);
-        }
+    {
+        i = crate::simd_norm::skip_clean::<STORE>(bytes, i, out, mask);
     }
     // scalar tail (and the portable path)
     while i < n {
@@ -203,110 +103,6 @@ fn skip_clean<const FB: u8, const STORE: bool>(
 }
 
 // ── layer 1: per-width suspect kernels ────────────────────────────────────────────────────────────
-
-/// Scan a uniform `W`-byte run from `i`, probing the union bitmap per decoded char. Returns
-/// `(pos, cp)`: `cp != 0` = a bitmap-set char (already decoded); `cp == 0` = the run ended (width
-/// change / tail) at `pos`. `STORE` writes verified bytes through (`vstNq` of the loaded registers).
-#[inline]
-fn skip_w<const W: usize, const STORE: bool>(
-    bytes: &[u8],
-    mut i: usize,
-    out: &mut String,
-) -> (usize, u32) {
-    let n = bytes.len();
-    #[cfg(target_arch = "aarch64")]
-    // SAFETY: loads gated by `i + 16*W <= n`; stores by reserved capacity (`+48` slack); `set_len`
-    // only covers verified whole chars.
-    unsafe {
-        use std::arch::aarch64::*;
-        let v_out = out.as_mut_vec();
-        let mut len = v_out.len();
-        while i + 16 * W <= n {
-            let (mut cps, mut lok) = ([0u16; 16], [0u8; 16]);
-            if W == 2 {
-                let x = vld2q_u8(bytes.as_ptr().add(i));
-                if STORE {
-                    vst2q_u8(v_out.as_mut_ptr().add(len), x);
-                }
-                let ok = vandq_u8(
-                    vcgeq_u8(x.0, vdupq_n_u8(0xC2)),
-                    vcleq_u8(x.0, vdupq_n_u8(0xDF)),
-                );
-                vst1q_u8(lok.as_mut_ptr(), ok);
-                for (h, (l8, c8)) in [
-                    (0usize, (vget_low_u8(x.0), vget_low_u8(x.1))),
-                    (8, (vget_high_u8(x.0), vget_high_u8(x.1))),
-                ] {
-                    let l = vandq_u16(vmovl_u8(l8), vdupq_n_u16(0x1F));
-                    let cc = vandq_u16(vmovl_u8(c8), vdupq_n_u16(0x3F));
-                    vst1q_u16(cps.as_mut_ptr().add(h), vorrq_u16(vshlq_n_u16::<6>(l), cc));
-                }
-            } else {
-                let x = vld3q_u8(bytes.as_ptr().add(i));
-                if STORE {
-                    vst3q_u8(v_out.as_mut_ptr().add(len), x);
-                }
-                let ok = vandq_u8(
-                    vcgeq_u8(x.0, vdupq_n_u8(0xE0)),
-                    vcleq_u8(x.0, vdupq_n_u8(0xEF)),
-                );
-                vst1q_u8(lok.as_mut_ptr(), ok);
-                for (h, (l8, b18, b28)) in [
-                    (
-                        0usize,
-                        (vget_low_u8(x.0), vget_low_u8(x.1), vget_low_u8(x.2)),
-                    ),
-                    (8, (vget_high_u8(x.0), vget_high_u8(x.1), vget_high_u8(x.2))),
-                ] {
-                    let l = vandq_u16(vmovl_u8(l8), vdupq_n_u16(0x0F));
-                    let b1 = vandq_u16(vmovl_u8(b18), vdupq_n_u16(0x3F));
-                    let b2 = vandq_u16(vmovl_u8(b28), vdupq_n_u16(0x3F));
-                    let cp = vorrq_u16(vorrq_u16(vshlq_n_u16::<12>(l), vshlq_n_u16::<6>(b1)), b2);
-                    vst1q_u16(cps.as_mut_ptr().add(h), cp);
-                }
-            }
-            match (0..16).position(|l| lok[l] != 0xFF || bmp_set(cps[l])) {
-                Some(l) => {
-                    if STORE {
-                        v_out.set_len(len + l * W);
-                    }
-                    let cp = if lok[l] == 0xFF { cps[l] as u32 } else { 0 };
-                    return (i + l * W, cp);
-                }
-                None => {
-                    if STORE {
-                        len += 16 * W;
-                    }
-                    i += 16 * W;
-                }
-            }
-        }
-        if STORE {
-            v_out.set_len(len);
-        }
-    }
-    // scalar tail (and the portable path)
-    while i < n {
-        let b = bytes[i];
-        let ok = if W == 2 {
-            (0xC2..=0xDF).contains(&b)
-        } else {
-            (0xE0..=0xEF).contains(&b)
-        };
-        if !ok {
-            return (i, 0);
-        }
-        let (cp, _) = decode_cp(bytes, i);
-        if bmp_set(cp as u16) {
-            return (i, cp);
-        }
-        if STORE {
-            out.push_str(unsafe { std::str::from_utf8_unchecked(&bytes[i..i + W]) });
-        }
-        i += W;
-    }
-    (i, 0)
-}
 
 /// 4-byte (astral) chars: relevant leads are only `F0` with a handful of `b1` values (`ASTRAL_B1`).
 /// Returns the tag (0 = clean) — pure scalar, astral suspects are rare by construction.
@@ -329,73 +125,8 @@ fn astral_tag(bytes: &[u8], i: usize) -> (u8, u32) {
 fn skip2_ascii<const STORE: bool>(bytes: &[u8], mut i: usize, out: &mut String) -> (usize, u32) {
     let n = bytes.len();
     #[cfg(target_arch = "aarch64")]
-    // SAFETY: loads gated by `i + 16 <= n`; stores ride reserved capacity; stops land on char starts
-    // (a suspect continuation rolls back to its lead, which is always inside this chunk or the carry).
-    unsafe {
-        use std::arch::aarch64::*;
-        let bm = BMP_SET.as_ptr() as *const u8;
-        let (t0, t1, t2, t3) = (
-            vld1q_u8_x4(bm),
-            vld1q_u8_x4(bm.add(64)),
-            vld1q_u8_x4(bm.add(128)),
-            vld1q_u8_x4(bm.add(192)),
-        );
-        let v_out = out.as_mut_vec();
-        let mut len = v_out.len();
-        let mut carry: u8 = 0;
-        while i + 16 <= n {
-            let v = vld1q_u8(bytes.as_ptr().add(i));
-            if STORE {
-                vst1q_u8(v_out.as_mut_ptr().add(len), v);
-            }
-            let ascii = vcltq_u8(v, vdupq_n_u8(0x80));
-            let cont = vandq_u8(vcgeq_u8(v, vdupq_n_u8(0x80)), vcltq_u8(v, vdupq_n_u8(0xC0)));
-            let lead2 = vandq_u8(vcgeq_u8(v, vdupq_n_u8(0xC2)), vcleq_u8(v, vdupq_n_u8(0xDF)));
-            let class_ok = vorrq_u8(vorrq_u8(ascii, cont), lead2);
-            // union-bit of each 2-byte char, evaluated at its continuation lane (8-bit throughout)
-            let prev = vextq_u8::<15>(vdupq_n_u8(carry), v);
-            let idx = vorrq_u8(
-                vshlq_n_u8::<3>(vandq_u8(prev, vdupq_n_u8(0x1F))),
-                vshrq_n_u8::<3>(vandq_u8(v, vdupq_n_u8(0x3F))),
-            );
-            let byte = vorrq_u8(
-                vorrq_u8(
-                    vqtbl4q_u8(t0, idx),
-                    vqtbl4q_u8(t1, vsubq_u8(idx, vdupq_n_u8(64))),
-                ),
-                vorrq_u8(
-                    vqtbl4q_u8(t2, vsubq_u8(idx, vdupq_n_u8(128))),
-                    vqtbl4q_u8(t3, vsubq_u8(idx, vdupq_n_u8(192))),
-                ),
-            );
-            let sh = vnegq_s8(vreinterpretq_s8_u8(vandq_u8(v, vdupq_n_u8(7))));
-            let bit = vandq_u8(vshlq_u8(byte, sh), vdupq_n_u8(1));
-            let sus = vandq_u8(cont, vtstq_u8(bit, bit));
-            let bad = vorrq_u8(vmvnq_u8(class_ok), sus);
-            if vmaxvq_u8(bad) == 0 {
-                carry = vgetq_lane_u8::<15>(v);
-                if STORE {
-                    len += 16;
-                }
-                i += 16;
-                continue;
-            }
-            let mut m = [0u8; 16];
-            vst1q_u8(m.as_mut_ptr(), bad);
-            let k = m.iter().position(|&x| x != 0).unwrap();
-            // a suspect continuation belongs to the char starting one byte earlier
-            let back = usize::from(bytes[i + k] >= 0x80 && bytes[i + k] < 0xC0);
-            let pos = i + k - back;
-            if STORE {
-                v_out.set_len(len + (k - back));
-            }
-            let (cp, _) = decode_cp(bytes, pos);
-            let set = cp < 0x800 && bmp_set(cp as u16);
-            return (pos, if set { cp } else { 0 });
-        }
-        if STORE {
-            v_out.set_len(len);
-        }
+    {
+        i = crate::simd_norm::skip2_ascii::<STORE>(bytes, i, out);
     }
     // scalar tail (and the portable path)
     while i < n {
@@ -422,6 +153,35 @@ fn skip2_ascii<const STORE: bool>(bytes: &[u8], mut i: usize, out: &mut String) 
         i += 2;
     }
     (n, 0)
+}
+
+/// Scan a uniform `W`-byte run from `i`, probing the union bitmap per decoded char. Returns
+/// `(pos, cp)`: `cp != 0` = a bitmap-set char (already decoded); `cp == 0` = the run ended (width
+/// change / tail) at `pos`. `STORE` writes verified bytes through (`vstNq` of the loaded registers).
+#[inline]
+fn skip_w<const W: usize, const STORE: bool>(bytes: &[u8], mut i: usize, out: &mut String) -> (usize, u32) {
+    let n = bytes.len();
+    #[cfg(target_arch = "aarch64")]
+    if W == 3 {
+        i = crate::simd_norm::skip3::<STORE>(bytes, i, out);
+    }
+    // scalar tail (and the portable path)
+    while i < n {
+        let b = bytes[i];
+        let ok = if W == 2 { (0xC2..=0xDF).contains(&b) } else { (0xE0..=0xEF).contains(&b) };
+        if !ok {
+            return (i, 0);
+        }
+        let (cp, _) = decode_cp(bytes, i);
+        if bmp_set(cp as u16) {
+            return (i, cp);
+        }
+        if STORE {
+            out.push_str(unsafe { std::str::from_utf8_unchecked(&bytes[i..i + W]) });
+        }
+        i += W;
+    }
+    (i, 0)
 }
 
 /// The whole scan, centralized: layer-0 clean-byte skip, decode-FIRST at suspect leads (dense
@@ -531,11 +291,7 @@ fn next_suspect<const FB: u8, const STORE: bool>(
 /// Blob entry of `cp` under the form: `(off, len)` into the blob, `(0, 0)` = none (Hangul/inert).
 #[inline]
 fn blob_entry<const K: bool>(cp: u32) -> (usize, usize) {
-    let (idx, data) = if K {
-        (&NFKD_IDX, &NFKD_DATA[..])
-    } else {
-        (&NFD_IDX, &NFD_DATA[..])
-    };
+    let (idx, data) = if K { (&NFKD_IDX, &NFKD_DATA[..]) } else { (&NFD_IDX, &NFD_DATA[..]) };
     let packed = data[(idx[(cp >> 6) as usize] + (cp & 63)) as usize];
     ((packed >> 8) as usize, (packed & 0xFF) as usize)
 }
@@ -560,14 +316,7 @@ unsafe fn raw_extend(out: &mut String, src: *const u8, copy: usize, adv: usize) 
 /// Emit the maximal run of decompose-relevant chars from `i` (first char pre-decoded as `cp`).
 /// Hangul is an arithmetic subloop; everything else is one 16-byte blob copy guarded by the
 /// rank-chain header; an out-of-order mark takes the cold in-place reorder. Returns the end position.
-fn emit_run<const K: bool>(
-    bytes: &[u8],
-    mut i: usize,
-    mut cp: u32,
-    out: &mut String,
-    last_rank: &mut u8,
-    run_out: &mut usize,
-) -> usize {
+fn emit_run<const K: bool>(bytes: &[u8], mut i: usize, mut cp: u32, out: &mut String, last_rank: &mut u8, run_out: &mut usize) -> usize {
     let n = bytes.len();
     loop {
         if HANGUL.contains(&cp) {
@@ -576,10 +325,7 @@ fn emit_run<const K: bool>(
                 let s = cp - 0xAC00;
                 let t = s % 28;
                 let mut buf = [0u8; 16];
-                for (slot, j) in [0x1100 + s / 588, 0x1161 + (s % 588) / 28, 0x11A7 + t]
-                    .into_iter()
-                    .enumerate()
-                {
+                for (slot, j) in [0x1100 + s / 588, 0x1161 + (s % 588) / 28, 0x11A7 + t].into_iter().enumerate() {
                     buf[slot * 3] = 0xE0 | (j >> 12) as u8;
                     buf[slot * 3 + 1] = 0x80 | ((j >> 6) & 0x3F) as u8;
                     buf[slot * 3 + 2] = 0x80 | (j & 0x3F) as u8;
@@ -696,7 +442,7 @@ fn reorder_insert(out: &mut String, run_out: usize, r: u8, ch: &[u8]) {
 /// Decompose under the form. Single forward pass: the check IS the scan — on the first char that
 /// breaks the form, rewind to the enclosing starter, copy the verified prefix wholesale, and continue
 /// with the same kernels in write-through mode.
-fn decompose<const K: bool>(input: &str) -> Cow<'_, str> {
+pub(crate) fn decompose<const K: bool>(input: &str) -> Cow<'_, str> {
     let bytes = input.as_bytes();
     let n = bytes.len();
     const MAX_EXPAND: usize = 4; // ≤ 3 in practice (Hangul); headroom keeps the reserve trivial
@@ -728,16 +474,7 @@ fn decompose<const K: bool>(input: &str) -> Cow<'_, str> {
         } else {
             prev_rank = 0;
         }
-        i = pos
-            + if cp < 0x80 {
-                1
-            } else if cp < 0x800 {
-                2
-            } else if cp < 0x10000 {
-                3
-            } else {
-                4
-            };
+        i = pos + if cp < 0x80 { 1 } else if cp < 0x800 { 2 } else if cp < 0x10000 { 3 } else { 4 };
     };
     // rewind over the in-order marks adjacent to the break so the rank chain restarts exactly
     let mut s = brk;
@@ -794,10 +531,7 @@ fn composite(a: u32, b: u32) -> Option<u32> {
         return Some(a + (b - 0x11A7));
     }
     let key = ((a as u64) << 21) | b as u64;
-    COMPOSE
-        .binary_search_by_key(&key, |&(k, _)| k)
-        .ok()
-        .map(|p| COMPOSE[p].1)
+    COMPOSE.binary_search_by_key(&key, |&(k, _)| k).ok().map(|p| COMPOSE[p].1)
 }
 
 /// Recompose `window` (UAX #15): fully decompose to `(rank, char)` pairs, canonically order, then
@@ -821,10 +555,7 @@ fn recompose_window<const K: bool>(window: &str, out: &mut String) {
         let cp = c as u32;
         if HANGUL.contains(&cp) {
             let s = cp - 0xAC00;
-            for (k, j) in [0x1100 + s / 588, 0x1161 + (s % 588) / 28, 0x11A7 + s % 28]
-                .into_iter()
-                .enumerate()
-            {
+            for (k, j) in [0x1100 + s / 588, 0x1161 + (s % 588) / 28, 0x11A7 + s % 28].into_iter().enumerate() {
                 if k == 2 && s % 28 == 0 {
                     break;
                 }
@@ -840,12 +571,7 @@ fn recompose_window<const K: bool>(window: &str, out: &mut String) {
             let mut p = off;
             while p < off + blen {
                 let (dcp, w) = decode_cp(b, p);
-                push(
-                    rank(tag(dcp)),
-                    char::from_u32(dcp).unwrap(),
-                    &mut pairs,
-                    &mut pending,
-                );
+                push(rank(tag(dcp)), char::from_u32(dcp).unwrap(), &mut pairs, &mut pending);
                 p += w;
             }
         }
@@ -870,11 +596,7 @@ fn recompose_window<const K: bool>(window: &str, out: &mut String) {
         let mut j = i + 1;
         while j < n {
             let (r, c) = pairs[j];
-            let not_blocked = if r == 0 {
-                last_r == -1
-            } else {
-                (r as i16) > last_r || last_r == -1
-            };
+            let not_blocked = if r == 0 { last_r == -1 } else { (r as i16) > last_r || last_r == -1 };
             if not_blocked && let Some(comp) = composite(cur, c as u32) {
                 cur = comp;
                 j += 1;
@@ -896,7 +618,7 @@ fn recompose_window<const K: bool>(window: &str, out: &mut String) {
 /// Compose under the form: scan with the same skip kernels; each composition-relevant hit opens a
 /// window `[enclosing starter, end of the active cluster)` that is decomposed + recomposed; the rest
 /// of the text — the overwhelming majority — is copied verbatim (or borrowed outright).
-fn compose<const K: bool>(input: &str) -> Cow<'_, str> {
+pub(crate) fn compose<const K: bool>(input: &str) -> Cow<'_, str> {
     let bytes = input.as_bytes();
     let n = bytes.len();
     let fb = c_bit::<K>();
@@ -990,4 +712,33 @@ fn compose<const K: bool>(input: &str) -> Cow<'_, str> {
     }
     out.push_str(&input[gap..n]);
     Cow::Owned(out)
+}
+
+/// NFD of a single char via the baked tables (Hangul arithmetic; blob otherwise), in canonical order.
+pub(crate) fn nfd_char(c: char, mut f: impl FnMut(char)) {
+    let cp = c as u32;
+    if HANGUL.contains(&cp) {
+        let s = cp - 0xAC00;
+        for (k, j) in [0x1100 + s / 588, 0x1161 + (s % 588) / 28, 0x11A7 + s % 28].into_iter().enumerate() {
+            if k == 2 && s % 28 == 0 {
+                break;
+            }
+            f(char::from_u32(j).unwrap());
+        }
+        return;
+    }
+    if cp < 0x30000 {
+        let (off, blen) = blob_entry::<false>(cp);
+        if blen != 0 {
+            let b = blob::<false>();
+            let mut p = off;
+            while p < off + blen {
+                let (dcp, w) = decode_cp(b, p);
+                f(char::from_u32(dcp).unwrap());
+                p += w;
+            }
+            return;
+        }
+    }
+    f(c);
 }
