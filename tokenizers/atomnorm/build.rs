@@ -18,6 +18,13 @@ mod xxutf {
         "https://github.com/dzfrias/xxUTF/releases/download/v0.2.0/xxutf-amalgamation.zip";
 
     pub fn build() {
+        // xxUTF's amalgamation is GNU C — MSVC can't parse it. The feature only feeds the bench's
+        // comparison column, so skip the C build there (running the bench under MSVC would fail to
+        // link; everything else — clippy --all-features included — works).
+        if std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc") {
+            println!("cargo::warning=xxutf: skipped under MSVC (GNU C amalgamation)");
+            return;
+        }
         let out = std::env::var("OUT_DIR").expect("OUT_DIR");
         let c_file = format!("{out}/xxutf-amalgamation-{VERSION}/xxutf.c");
         if !Path::new(&c_file).exists() {
