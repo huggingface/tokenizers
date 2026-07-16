@@ -1,21 +1,8 @@
-//! Scan-based per-char normalizers — Lowercase, StripAccents, Nmt, and the fused Bert normalizer —
-//! on the same layered-skip architecture as the forms, over baked per-rule property sets.
-//!
-//! The shape shared by all four: **find the next char the rule set touches** (ASCII rides an
-//! in-register transform lane — the PR #2036 `|0x20` port — and non-ASCII a runtime 64-byte lead
-//! mask + per-cp bitmap), copy everything before it verbatim, fix that one char up scalar, repeat.
-//! Until the first real change the scan is a pure check and the input is returned `Cow::Borrowed`.
-//!
-//! Property sets are generated from the SAME predicates the legacy tk-encode normalizers run
-//! (std `to_lowercase`, `unicode_categories`, `unicode_normalization_alignments`) — bug-compatible
-//! by construction. A normalizer's set is an OR of rule bitmaps done once (`OnceLock`), its lead
-//! mask derived from the result; astral membership rides one shared `(start, props)` RLE.
 use crate::norm::{decode_cp, raw_extend};
 use crate::tables::*;
 use std::borrow::Cow;
 use std::sync::OnceLock;
 
-// astral property bits (`SCAN_ASTRAL` RLE values; keep in sync with `gen.rs` `props`)
 const P_UPPER: u8 = 1;
 const P_MN: u8 = 2;
 const P_M: u8 = 4;
@@ -24,7 +11,6 @@ const P_CJK: u8 = 16;
 const P_STRIP: u8 = 32;
 const P_WS: u8 = 64;
 
-/// Astral props (RLE binary search — astral suspects are rare by construction).
 #[inline]
 fn astral_props(cp: u32) -> u8 {
     match SCAN_ASTRAL.binary_search_by(|&(s, _)| s.cmp(&cp)) {
@@ -33,7 +19,6 @@ fn astral_props(cp: u32) -> u8 {
     }
 }
 
-/// Is `cp` in the property? BMP: bitmap bit; astral: RLE props bit.
 #[inline]
 fn has(bmp: &[u64; 1024], astral_bit: u8, cp: u32) -> bool {
     if cp < 0x10000 {
@@ -56,18 +41,11 @@ fn width(cp: u32) -> usize {
     }
 }
 
-/// A materialized scan set: the union bitmap of every rule the normalizer enables, its derived
-/// lead mask (0/FF per lead byte, `vqtbl` fodder), and the astral policy — either a mask into the
-/// baked `SCAN_ASTRAL` props, or `astral_all` (every astral char is a hit; for runtime sets).
 pub(crate) struct Scan {
     set: [u64; 1024],
     lead: [u8; 64],
     astral: u8,
     astral_all: bool,
-    /// The two-table case swap's SOURCE set: 2-byte uppercase whose lowercase is exactly
-    /// `cp + 0x20` AND that no other enabled rule touches — transformed in-lane (the target is
-    /// arithmetic: continuation `+0x20`, carry `+1` into the lead) instead of stopping the scan.
-    /// Zero except for case-folding configs. Always a subset of `set`.
     reg2: [u64; 32],
 }
 
@@ -90,15 +68,12 @@ impl Scan {
             }
         }
         let mut lead = [0u8; 64];
-        // 2-byte lead L covers exactly bitmap word L & 0x1F; 3-byte lead L covers 64 words
         for l in 0xC2u8..=0xDF {
             if set[(l & 0x1F) as usize] != 0 {
                 lead[(l - 0xC0) as usize] = 0xFF;
             }
         }
         for l in 0xE0u8..=0xEF {
-            // lead E0's valid cps start at 0x800 (overlong encodings are invalid UTF-8) — without
-            // the floor, 2-byte-range set bits (e.g. Latin-1 capitals) falsely taint E0
             let base = (((l & 0x0F) as usize) << 6).max(32);
             if set[base..((l & 0x0F) as usize + 1) << 6]
                 .iter()
@@ -108,7 +83,6 @@ impl Scan {
             }
         }
         if astral != 0 {
-            // 4-byte lead = 0xF0 | cp >> 18: mark each lead whose cp range holds a relevant run
             for (k, &(s, p)) in SCAN_ASTRAL.iter().enumerate() {
                 if p & astral == 0 {
                     continue;
@@ -127,8 +101,6 @@ impl Scan {
             reg2: [0; 32],
         }
     }
-    /// Enable the in-lane case swap: regular-case chars minus everything in `exclude` (rules whose
-    /// per-char work must still run — e.g. NFD under bert strip makes Й a fixup, not a `+0x20`).
     fn with_case_swap(mut self, exclude: &[&[u64; 1024]]) -> Scan {
         for w in 0..32 {
             let mut x = SCAN_REG2[w];
@@ -143,7 +115,6 @@ impl Scan {
     fn hit_bmp(&self, cp: u32) -> bool {
         self.set[(cp >> 6) as usize] >> (cp & 63) & 1 != 0
     }
-    /// Set membership of any codepoint under this scan's astral policy.
     #[inline]
     pub(crate) fn contains(&self, cp: u32) -> bool {
         if cp < 0x10000 {
@@ -152,20 +123,12 @@ impl Scan {
             self.astral_all || astral_props(cp) & self.astral != 0
         }
     }
-    /// Position of the next set char at/after byte `i` (always a char boundary), or `len`.
-    /// Unlike the built-in normalizers (whose ASCII behavior is the policy lane), runtime sets may
-    /// contain ASCII members, so this probes them too (`ASCII_SET`).
     pub(crate) fn next_member<const SIMD: bool>(&self, bytes: &[u8], i: usize) -> usize {
         let mut dummy = String::new();
         next_hit::<false, false, 0, SIMD, true>(bytes, i, &mut dummy, self).0
     }
 }
 
-/// Advance to the next set char (returned decoded) or ASCII policy stop (returned as the byte).
-/// `LOWER`/`CLEAN` define the ASCII lane: `LOWER` flips `A..=Z`, `CLEAN` (1 = bert, 2 = nmt) folds
-/// its whitespace to `' '` and STOPS at its removal bytes. In check mode (`!STORE`) any ASCII lane
-/// change is itself a stop — the caller's borrow gate; in write mode it is transformed in place.
-// the streak counters only feed the aarch64 kernel escalation; elsewhere they're written, never read
 #[cfg_attr(
     not(target_arch = "aarch64"),
     allow(unused_variables, unused_assignments)
@@ -183,17 +146,11 @@ fn next_hit<
     sc: &Scan,
 ) -> (usize, u32) {
     let n = bytes.len();
-    // scalar-first with streak escalation: dense hits (bert CJK padding, mark-heavy scripts) never
-    // pay a kernel entry; a run of clean bytes escalates to the SIMD lane, and a suspect-lead probe
-    // miss (E2-punctuation inside CJK, cased 2-byte scripts) drops back to scalar
     let mut streak = 0u32;
-    let mut streak2 = 0u32; // consecutive [ascii | 2-byte] bytes: the case-swap kernel's terrain
+    let mut streak2 = 0u32;
     while i < n {
         #[cfg(target_arch = "aarch64")]
         if SIMD {
-            // clean terrain (streak of lead-mask-clean bytes) rides the light 32B kernel; the
-            // case-swap kernel only pays where suspect 2-byte probes dominate (streak keeps
-            // resetting while streak2 grows: cased scripts under a case-folding scan)
             if streak >= 8 {
                 i = crate::simd_norm::scan_prefix::<STORE, LOWER, CLEAN, ASCII_SET>(
                     bytes, i, out, &sc.lead, &sc.set,
@@ -240,7 +197,6 @@ fn next_hit<
                 } else {
                     b
                 };
-                // SAFETY: single ASCII byte keeps the String valid UTF-8; capacity reserved.
                 unsafe { out.as_mut_vec().push(t) };
             }
             i += 1;
@@ -249,9 +205,7 @@ fn next_hit<
             continue;
         }
         if b < 0xC0 {
-            // continuation byte: a clean-lead char split by the SIMD 16-byte stride — copy through
             if STORE {
-                // SAFETY: verbatim byte of an already-verified char.
                 unsafe { out.as_mut_vec().push(b) };
             }
             i += 1;
@@ -271,12 +225,10 @@ fn next_hit<
         if m != 0 {
             let (cp, _) = decode_cp(bytes, i);
             if LOWER && cp < 0x800 && sc.reg2[(cp >> 6) as usize] >> (cp & 63) & 1 != 0 {
-                // two-table case swap, scalar side: source-set char → target = cp + 0x20
                 if !STORE {
-                    return (i, cp); // a change: the borrow gate stops here
+                    return (i, cp);
                 }
                 let lc = cp + 0x20;
-                // SAFETY: two bytes of a valid 2-byte char; capacity reserved.
                 unsafe {
                     let v = out.as_mut_vec();
                     v.push(0xC0 | (lc >> 6) as u8);
@@ -288,12 +240,11 @@ fn next_hit<
             if sc.contains(cp) {
                 return (i, cp);
             }
-            streak = 0; // suspect neighbourhood: stay scalar
+            streak = 0;
         } else {
             streak += w as u32;
         }
         if STORE {
-            // SAFETY: verbatim whole char; capacity reserved by the driver invariant.
             unsafe { raw_extend(out, bytes.as_ptr().add(i), w, w) };
         }
         i += w;
@@ -301,16 +252,11 @@ fn next_hit<
     (n, 0)
 }
 
-/// One scan-based normalizer: its set + what to do at a hit.
 trait Rule {
     fn scan(&self) -> &'static Scan;
-    /// Handle the hit char at `bytes[i..]` (`cp` pre-decoded; ASCII stops arrive as the byte),
-    /// push its replacement (possibly nothing) onto `out`, and return the next input position.
     fn fixup(&self, bytes: &[u8], i: usize, cp: u32, out: &mut String) -> usize;
 }
 
-/// The shared driver: check-scan to the first change (borrow if none), then copy the verified
-/// prefix and alternate write-through scans with per-hit fixups.
 fn run<'a, const LOWER: bool, const CLEAN: u8, const SIMD: bool, R: Rule>(
     r: &R,
     input: &'a str,
@@ -330,7 +276,6 @@ fn run<'a, const LOWER: bool, const CLEAN: u8, const SIMD: bool, R: Rule>(
         if i >= n {
             break;
         }
-        // keep the raw-store slack invariant: capacity ≥ len + remaining + 32
         out.reserve(n - i + 32);
         let (pos, c2) = next_hit::<true, LOWER, CLEAN, SIMD, false>(bytes, i, &mut out, sc);
         if pos >= n {
@@ -341,8 +286,6 @@ fn run<'a, const LOWER: bool, const CLEAN: u8, const SIMD: bool, R: Rule>(
     Cow::Owned(out)
 }
 
-// ── Lowercase ─────────────────────────────────────────────────────────────────────────────────────
-
 struct Lower;
 impl Rule for Lower {
     fn scan(&self) -> &'static Scan {
@@ -350,7 +293,6 @@ impl Rule for Lower {
         S.get_or_init(|| Scan::build(&[&SCAN_UPPER], P_UPPER).with_case_swap(&[]))
     }
     fn fixup(&self, _bytes: &[u8], i: usize, cp: u32, out: &mut String) -> usize {
-        // every hit has a lowercase mapping ≠ itself (1..=3 chars)
         for l in char::from_u32(cp).unwrap().to_lowercase() {
             out.push(l);
         }
@@ -358,12 +300,9 @@ impl Rule for Lower {
     }
 }
 
-/// Lowercase — byte-exact with `chars().flat_map(char::to_lowercase)`; borrows when already lower.
 pub(crate) fn lowercase<const SIMD: bool>(input: &str) -> Cow<'_, str> {
     run::<true, 0, SIMD, _>(&Lower, input)
 }
-
-// ── StripAccents ──────────────────────────────────────────────────────────────────────────────────
 
 struct StripAcc;
 impl Rule for StripAcc {
@@ -372,16 +311,13 @@ impl Rule for StripAcc {
         S.get_or_init(|| Scan::build(&[&SCAN_M], P_M))
     }
     fn fixup(&self, _bytes: &[u8], i: usize, cp: u32, _out: &mut String) -> usize {
-        i + width(cp) // combining mark: dropped
+        i + width(cp)
     }
 }
 
-/// Remove combining marks (general category M) — the tk `StripAccents` predicate; no decomposition.
 pub(crate) fn strip_accents<const SIMD: bool>(input: &str) -> Cow<'_, str> {
     run::<false, 0, SIMD, _>(&StripAcc, input)
 }
-
-// ── Nmt ───────────────────────────────────────────────────────────────────────────────────────────
 
 struct Nmt;
 impl Rule for Nmt {
@@ -391,18 +327,15 @@ impl Rule for Nmt {
     }
     fn fixup(&self, _bytes: &[u8], i: usize, cp: u32, out: &mut String) -> usize {
         if !has(&SCAN_NMT_RM, 0, cp) {
-            out.push(' '); // the fold set (incl. the ASCII check-mode first hit)
+            out.push(' ');
         }
         i + width(cp)
     }
 }
 
-/// The NMT normalizer: drop its control set, fold its whitespace set to `' '`.
 pub(crate) fn nmt<const SIMD: bool>(input: &str) -> Cow<'_, str> {
     run::<false, 2, SIMD, _>(&Nmt, input)
 }
-
-// ── Bert (fused clean_text + handle_chinese_chars + strip_accents + lowercase) ────────────────────
 
 struct BertRule {
     clean: bool,
@@ -423,7 +356,6 @@ impl BertRule {
             out.push(c);
         }
     }
-    /// Strip+lower one isolated char: NFD it (canonical order is per-char here), drop Mn, lowercase.
     #[inline]
     fn push_stripped(&self, c: char, out: &mut String) {
         if self.strip && has(&SCAN_STRIP, P_STRIP, c as u32) {
@@ -445,7 +377,6 @@ impl Rule for BertRule {
     fn fixup(&self, bytes: &[u8], i: usize, cp: u32, out: &mut String) -> usize {
         let n = bytes.len();
         if cp < 0x80 {
-            // ASCII lane stop: a clean removal / the check-mode first fold or uppercase
             let b = cp as u8;
             if self.clean {
                 if matches!(b, 9 | 10 | 13) {
@@ -464,7 +395,7 @@ impl Rule for BertRule {
         let c = char::from_u32(cp).unwrap();
         if self.clean {
             if has(&SCAN_CLEAN_RM, P_CLEAN, cp) {
-                return i + w; // removed before any other stage sees it
+                return i + w;
             }
             if has(&SCAN_WS, P_WS, cp) {
                 out.push(' ');
@@ -478,13 +409,11 @@ impl Rule for BertRule {
             return i + w;
         }
         if self.strip && has(&SCAN_STRIP, P_STRIP, cp) {
-            // the NFD cluster: following strip-relevant chars reorder as one unit, and clean-removed
-            // chars are transparent to it (legacy removes them BEFORE the nfd pass)
             let (mut end, mut count, mut removed) = (i + w, 1u32, false);
             while end < n && bytes[end] >= 0x80 {
                 let (c2, w2) = decode_cp(bytes, end);
                 if self.chinese && has(&SCAN_CJK, P_CJK, c2) {
-                    break; // padding splits the stream before nfd runs
+                    break;
                 }
                 if has(&SCAN_STRIP, P_STRIP, c2) {
                     count += 1;
@@ -499,7 +428,6 @@ impl Rule for BertRule {
                 self.push_stripped(c, out);
                 return end;
             }
-            // multi-char cluster: exact NFD (incl. cross-char reorder) via the form machinery
             let survivors: Cow<str> = if removed {
                 let mut t = String::with_capacity(end - i);
                 let (mut p, s) = (i, unsafe { std::str::from_utf8_unchecked(&bytes[..end]) });
@@ -512,7 +440,6 @@ impl Rule for BertRule {
                 }
                 Cow::Owned(t)
             } else {
-                // SAFETY: [i, end) covers whole chars of valid UTF-8
                 Cow::Borrowed(unsafe { std::str::from_utf8_unchecked(&bytes[i..end]) })
             };
             for d in crate::norm::decompose::<false, false>(&survivors).chars() {
@@ -532,8 +459,6 @@ fn bert_scan(clean: bool, chinese: bool, strip: bool, lower: bool) -> &'static S
     let k =
         (clean as usize) | (chinese as usize) << 1 | (strip as usize) << 2 | (lower as usize) << 3;
     CACHE[k].get_or_init(|| {
-        // `other` = every enabled non-case rule — both the union input and the case-swap exclusion
-        // (a char another rule touches must stay a fixup, never an in-lane `+0x20`)
         let mut other: Vec<&[u64; 1024]> = Vec::new();
         let mut astral = 0u8;
         if clean {
@@ -559,7 +484,6 @@ fn bert_scan(clean: bool, chinese: bool, strip: bool, lower: bool) -> &'static S
     })
 }
 
-/// The fused BERT normalizer (resolve `strip_accents = strip_accents.unwrap_or(lowercase)` first).
 pub(crate) fn bert<const SIMD: bool>(
     input: &str,
     clean_text: bool,

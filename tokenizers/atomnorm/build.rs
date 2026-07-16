@@ -1,7 +1,3 @@
-//! Bench-only, opt-in build step. Without `--features xxutf` this is a no-op — atomsplit still builds
-//! with no C toolchain and no network (the whole crate is otherwise build-script-free). With the feature
-//! (only the `normalize` bench needs it), it downloads the pinned MIT xxUTF amalgamation and compiles it,
-//! so the bench can call xxUTF's C SIMD normalizer for comparison.
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     #[cfg(feature = "xxutf")]
@@ -18,9 +14,6 @@ mod xxutf {
         "https://github.com/dzfrias/xxUTF/releases/download/v0.2.0/xxutf-amalgamation.zip";
 
     pub fn build() {
-        // xxUTF's amalgamation is GNU C — MSVC can't parse it. The feature only feeds the bench's
-        // comparison column, so skip the C build there (running the bench under MSVC would fail to
-        // link; everything else — clippy --all-features included — works).
         if std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc") {
             println!("cargo::warning=xxutf: skipped under MSVC (GNU C amalgamation)");
             return;
@@ -42,7 +35,6 @@ mod xxutf {
             Path::new(&c_file).exists(),
             "xxUTF amalgamation missing after download: {c_file}"
         );
-        // -O3, warnings off (it's generated), no libc needed per upstream.
         cc::Build::new()
             .file(&c_file)
             .opt_level(3)
