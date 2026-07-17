@@ -84,7 +84,7 @@ fn bench_pipeline(c: &mut Criterion) {
                         // tail is not a common workload). `black_box` each result to
                         // force the work without an arithmetic reduction.
                         pipeline
-                            .encode(&refs[..], false)
+                            .encode(&refs[..])
                             .for_each(|r| {
                                 black_box(r.unwrap());
                             });

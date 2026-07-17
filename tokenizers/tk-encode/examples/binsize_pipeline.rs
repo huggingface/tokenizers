@@ -20,6 +20,6 @@ fn main() {
     let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
     println!(
         "{}",
-        pipeline.encode(text.as_str(), false).map(|r| r.unwrap().len()).sum::<usize>()
+        pipeline.encode(text.as_str()).map(|r| r.unwrap().len()).sum::<usize>()
     );
 }

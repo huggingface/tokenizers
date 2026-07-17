@@ -41,7 +41,7 @@ fn check_chunks(corpus: &str, target_bytes: usize) {
     for chunk in make_chunks(&text, target_bytes) {
         let expected = oracle.encode(chunk.as_str(), false).unwrap();
         let got: Vec<u32> = pipeline
-            .encode(&chunk, false).into_single()
+            .encode(&chunk).into_single()
             .unwrap()
             .iter()
             .map(|t| t.id)
@@ -67,13 +67,13 @@ fn check_batch(corpus: &str, target_bytes: usize) {
     let refs: Vec<&str> = chunks.iter().map(String::as_str).collect();
 
     let batch = pipeline
-        .encode(&refs[..], false).wait_for_completion()
+        .encode(&refs[..]).wait_for_completion()
         .unwrap();
     assert_eq!(batch.len(), chunks.len(), "batch length mismatch");
 
     // Iterator face must yield the same results, in input order.
     let streamed: Vec<Vec<u32>> = pipeline
-        .encode(&refs[..], false)
+        .encode(&refs[..])
         .map(|r| r.unwrap().iter().map(|t| t.id).collect())
         .collect();
 
@@ -85,7 +85,7 @@ fn check_batch(corpus: &str, target_bytes: usize) {
 
         // batch == serial pipeline
         let serial: Vec<u32> = pipeline
-            .encode(chunk, false).into_single()
+            .encode(chunk).into_single()
             .unwrap()
             .iter()
             .map(|t| t.id)
@@ -123,7 +123,7 @@ fn check_small_batch(corpus: &str) {
         return;
     }
     let got = pipeline
-        .encode(&inputs[..], false).wait_for_completion()
+        .encode(&inputs[..]).wait_for_completion()
         .unwrap();
     assert_eq!(got.len(), inputs.len());
     for (input, tokens) in inputs.iter().zip(&got) {
@@ -161,7 +161,7 @@ fn check_intra_seq(corpus: &str) {
         return; // corpus too small to exercise the parallel path
     }
     let got: Vec<u32> = pipeline
-        .encode(doc.as_str(), false).into_single()
+        .encode(doc.as_str()).into_single()
         .unwrap()
         .iter()
         .map(|t| t.id)
@@ -197,7 +197,7 @@ fn check_llama3(corpus: &str) {
     }
     let expected = oracle.encode(doc.as_str(), false).unwrap();
     let single: Vec<u32> = pipeline
-        .encode(doc.as_str(), false).into_single()
+        .encode(doc.as_str()).into_single()
         .unwrap()
         .iter()
         .map(|t| t.id)
@@ -208,7 +208,7 @@ fn check_llama3(corpus: &str) {
         "llama-3 single-doc SpaceRun encode != oracle"
     );
     let owned: Vec<u32> = pipeline
-        .encode(doc, false)
+        .encode(doc)
         .into_single()
         .unwrap()
         .iter()
@@ -244,7 +244,7 @@ fn llama3_intra_seq_whitespace_free() {
     assert!(!doc.bytes().any(|b| b.is_ascii_whitespace()));
     let expected = oracle.encode(doc.as_str(), false).unwrap();
     let single: Vec<u32> = pipeline
-        .encode(doc.as_str(), false)
+        .encode(doc.as_str())
         .into_single()
         .unwrap()
         .iter()

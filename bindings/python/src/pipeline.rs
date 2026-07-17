@@ -108,31 +108,23 @@ impl PyPipelineTokenizer {
     /// pool workers encode in the background while you hold the job, `wait()`
     /// for everything, or iterate results as they complete (input order).
     /// Zero-copy: the job reads the Python strings' UTF-8 buffers in place.
-    #[pyo3(signature = (input, add_special_tokens = true))]
     fn encode_batch(
         &self,
         py: Python<'_>,
         input: Vec<Bound<'_, PyString>>,
-        add_special_tokens: bool,
     ) -> PyResult<PyEncodeHandle> {
         let batch = PyStrBatch::new(input)?;
         // Below the cost gate the job is computed inline — release the GIL.
-        let job = py.detach(|| self.pipeline.encode(batch, add_special_tokens));
+        let job = py.detach(|| self.pipeline.encode(batch));
         Ok(PyEncodeHandle {
             job: Mutex::new(Some(job)),
         })
     }
 
     /// Blocking convenience: encode one `str` to its token ids.
-    #[pyo3(signature = (input, add_special_tokens = true))]
-    fn encode(
-        &self,
-        py: Python<'_>,
-        input: Bound<'_, PyString>,
-        add_special_tokens: bool,
-    ) -> PyResult<Vec<u32>> {
+    fn encode(&self, py: Python<'_>, input: Bound<'_, PyString>) -> PyResult<Vec<u32>> {
         let batch = PyStrBatch::new(vec![input])?;
-        let res = py.detach(|| self.pipeline.encode(batch, add_special_tokens).into_single());
+        let res = py.detach(|| self.pipeline.encode(batch).into_single());
         Ok(ids(PyResult::from(ToPyResult(res))?))
     }
 }
