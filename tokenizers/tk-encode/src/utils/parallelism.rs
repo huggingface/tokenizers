@@ -1,30 +1,56 @@
+//! Process-wide parallelism controls.
 //!
-//! This module defines helpers to allow optional Rayon usage.
+//! The **programmatic setters are the primary interface**; the environment
+//! variables are the backwards-compatibility channel. Precedence, highest
+//! first:
 //!
+//! 1. [`set_parallelism`] / [`set_num_threads`] — always live; a threads
+//!    change rebuilds the encode pool on its next use.
+//! 2. `TOKENIZERS_PARALLELISM` / `TOKENIZERS_NUM_THREADS` — read **once, at
+//!    first use** (set them before the first encode; to change behavior after
+//!    that, use the setters).
+//! 3. Sound defaults: parallelism on, one worker per available core
+//!    (cgroup-aware via `std::thread::available_parallelism`).
+//!
+//! This module also defines the `Maybe*` helpers the legacy paths use for
+//! optional Rayon usage.
 
 use rayon::iter::IterBridge;
 use rayon::prelude::*;
 use rayon_cond::CondIterator;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicU8;
+use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
+use std::sync::OnceLock;
 
 // Re-export rayon current_num_threads
 pub use rayon::current_num_threads;
 
 pub const ENV_VARIABLE: &str = "TOKENIZERS_PARALLELISM";
+pub const NUM_THREADS_ENV_VARIABLE: &str = "TOKENIZERS_NUM_THREADS";
 
 static USED_PARALLELISM: AtomicBool = AtomicBool::new(false);
 static PARALLELISM: AtomicU8 = AtomicU8::new(0);
+/// Programmatic worker-count override; `0` means "not set".
+static NUM_THREADS: AtomicUsize = AtomicUsize::new(0);
 
-/// Check if the TOKENIZERS_PARALLELISM env variable has been explicitly set
+/// Check if parallelism has been explicitly configured, via either setter or
+/// env var. (The Python bindings' fork guard leaves configured processes
+/// alone and only forces *unconfigured* forked children serial.)
 pub fn is_parallelism_configured() -> bool {
     std::env::var(ENV_VARIABLE).is_ok() || get_override_parallelism().is_some()
 }
 
-/// Check if at some point we used a parallel iterator
+/// Check if parallelism has been used at some point (a parallel iterator, or
+/// the encode worker pool).
 pub fn has_parallelism_been_used() -> bool {
     USED_PARALLELISM.load(Ordering::SeqCst)
+}
+
+/// Record that parallelism was exercised (feeds the fork guard above).
+pub(crate) fn mark_parallelism_used() {
+    USED_PARALLELISM.store(true, Ordering::SeqCst);
 }
 
 /// Get internally set parallelism
@@ -48,17 +74,41 @@ fn get_env_parallelism() -> bool {
     }
 }
 
+/// Whether encoding may parallelize: [`set_parallelism`] wins, then the
+/// `TOKENIZERS_PARALLELISM` env var (cached at first use), then on.
 pub fn get_parallelism() -> bool {
     if let Some(parallel) = get_override_parallelism() {
         parallel
     } else {
-        get_env_parallelism()
+        // The env var is the backwards-compat channel, frozen at first use;
+        // runtime changes go through `set_parallelism`.
+        static ENV: OnceLock<bool> = OnceLock::new();
+        *ENV.get_or_init(get_env_parallelism)
     }
 }
 
-/// Set the value for `TOKENIZERS_PARALLELISM` for the current process
+/// Enable or disable parallelism for the current process. Always live; takes
+/// priority over the `TOKENIZERS_PARALLELISM` env var.
 pub fn set_parallelism(val: bool) {
     PARALLELISM.store(if val { 2 } else { 1 }, Ordering::SeqCst);
+}
+
+/// Set the number of worker threads for the parallel encode pool. Takes
+/// priority over the `TOKENIZERS_NUM_THREADS` env var; `0` resets to the
+/// env-var-or-default resolution. Always live: an existing pool is abandoned
+/// and rebuilt at the new size on the next encode (the abandoned pool is
+/// leaked — bounded by the number of calls, so don't call this in a loop).
+pub fn set_num_threads(num_threads: usize) {
+    NUM_THREADS.store(num_threads, Ordering::SeqCst);
+    crate::tokenizer::pool::invalidate();
+}
+
+/// The programmatic worker-count override, if one was set.
+pub(crate) fn num_threads_override() -> Option<usize> {
+    match NUM_THREADS.load(Ordering::SeqCst) {
+        0 => None,
+        n => Some(n),
+    }
 }
 
 /// Allows to convert into an iterator that can be executed either parallelly or serially.

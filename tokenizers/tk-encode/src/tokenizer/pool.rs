@@ -19,7 +19,9 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 
-use crate::utils::parallelism::get_parallelism;
+use crate::utils::parallelism::{
+    get_parallelism, mark_parallelism_used, num_threads_override, NUM_THREADS_ENV_VARIABLE,
+};
 
 /// Fork generation: bumped in the child by the `pthread_atfork` handler (a
 /// single atomic store — async-signal-safe). Pools stamped with an older
@@ -44,12 +46,23 @@ fn register_fork_handler() {
 #[cfg(not(unix))]
 fn register_fork_handler() {}
 
-/// Worker count: `TOKENIZERS_NUM_THREADS` if set, else the machine's available
-/// parallelism.
+/// Abandon the current pool (without touching it) so the next dispatch builds
+/// a fresh one — used by `set_num_threads` to apply a new size, and by the
+/// fork handler through the same generation mechanism.
+pub(crate) fn invalidate() {
+    POOL_GEN.fetch_add(1, Ordering::SeqCst);
+}
+
+/// Worker count, per the precedence in [`crate::utils::parallelism`]:
+/// `set_num_threads` (live) > `TOKENIZERS_NUM_THREADS` (cached at first use) >
+/// the machine's available parallelism.
 fn num_threads() -> usize {
+    if let Some(n) = num_threads_override() {
+        return n;
+    }
     static N: OnceLock<usize> = OnceLock::new();
     *N.get_or_init(|| {
-        std::env::var("TOKENIZERS_NUM_THREADS")
+        std::env::var(NUM_THREADS_ENV_VARIABLE)
             .ok()
             .and_then(|v| v.parse().ok())
             .filter(|&n| n > 0)
@@ -61,81 +74,82 @@ fn num_threads() -> usize {
     })
 }
 
-/// The runtime a given encode call should dispatch on.
-pub(crate) enum Backend {
-    /// No pool available (parallelism disabled, spawn failure, or the pool cell
-    /// lock unavailable after a fork): encode on the calling thread.
-    Inline,
-    Rayon(&'static rayon::ThreadPool),
-}
+/// The pool for one encode dispatch, or `None` when encoding must run inline:
+/// parallelism disabled, thread spawn failure, or the cell lock unavailable
+/// (held mid-fork by a ghost thread, or poisoned) — `try_lock` is what
+/// guarantees this path can never hang. Cheap on the happy path: one atomic
+/// load and one uncontended `try_lock`.
+pub(crate) fn rayon() -> Option<&'static rayon::ThreadPool> {
+    /// The generation-stamped, intentionally-leaked pool.
+    static CELL: Mutex<Option<(&'static rayon::ThreadPool, u64)>> = Mutex::new(None);
 
-/// Resolve the backend for one encode dispatch. Cheap: one atomic load and one
-/// uncontended `try_lock` on the happy path.
-pub(crate) fn backend() -> Backend {
     if !get_parallelism() {
-        return Backend::Inline;
+        return None;
     }
     register_fork_handler();
-    match rayon_pool() {
-        Some(p) => Backend::Rayon(p),
-        None => Backend::Inline,
-    }
-}
-
-/// A generation-stamped, intentionally-leaked pool.
-struct Stamped<T: 'static> {
-    value: T,
-    generation: u64,
-}
-
-type PoolCell<T> = Mutex<Option<&'static Stamped<T>>>;
-
-/// Get the generation-current value from `cell`, building (and leaking) a fresh
-/// one when absent or stale. Returns `None` — the caller falls back inline —
-/// when `build` fails or the lock is unavailable (held mid-fork by a ghost
-/// thread, or poisoned): `try_lock` is what guarantees this path can never hang.
-fn current<T>(cell: &PoolCell<T>, build: impl FnOnce() -> Option<T>) -> Option<&'static T> {
-    let mut guard = cell.try_lock().ok()?;
+    let mut guard = CELL.try_lock().ok()?;
     let generation = POOL_GEN.load(Ordering::Acquire);
-    if let Some(stamped) = *guard {
-        if stamped.generation == generation {
-            return Some(&stamped.value);
+    if let Some((pool, stamp)) = *guard {
+        if stamp == generation {
+            return Some(pool);
         }
+        // Stale after a fork: abandon the old pool without touching it (its
+        // threads died with the fork; its locks may be held by ghosts) and
+        // build a fresh one for this generation.
     }
-    // Absent, or stale after a fork: abandon the old pool without touching it
-    // and build a fresh one for this generation.
-    let value = build()?;
-    let stamped: &'static Stamped<T> = Box::leak(Box::new(Stamped { value, generation }));
-    *guard = Some(stamped);
-    Some(&stamped.value)
-}
-
-fn rayon_pool() -> Option<&'static rayon::ThreadPool> {
-    static CELL: PoolCell<rayon::ThreadPool> = Mutex::new(None);
-    current(&CELL, || {
-        rayon::ThreadPoolBuilder::new()
-            .num_threads(num_threads())
-            .thread_name(|i| format!("tk-encode-{i}"))
-            .build()
-            .ok()
-    })
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(num_threads())
+        .thread_name(|i| format!("tk-encode-{i}"))
+        .build()
+        .ok()?;
+    let pool: &'static rayon::ThreadPool = Box::leak(Box::new(pool));
+    *guard = Some((pool, generation));
+    // Feed the Python bindings' fork guard: an *unconfigured* forked child of
+    // this process goes serial (v1 semantics, prevents DataLoader thread
+    // oversubscription); explicitly configured parallelism survives forks at
+    // full speed via the generation rebuild.
+    mark_parallelism_used();
+    Some(pool)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// A fork-generation bump abandons the current pool and lazily builds a
-    /// fresh one; a stable generation reuses the same pool.
+    /// One sequential test: both scenarios mutate the process-global pool
+    /// generation, so running them as separate (concurrent) tests would flake.
+    ///
+    /// (a) A fork-generation bump abandons the current pool and lazily builds a
+    /// fresh one; a stable generation reuses the same pool. Building marks
+    /// parallelism as used (fork-guard telemetry).
+    /// (b) `set_num_threads` takes priority over env/default and applies
+    /// *live*: the existing pool is abandoned and the next dispatch builds one
+    /// at the requested size; `0` resets to env-or-default resolution.
     #[test]
-    fn fork_generation_rebuilds_pool() {
-        let a = rayon_pool().unwrap() as *const rayon::ThreadPool;
-        let a2 = rayon_pool().unwrap() as *const rayon::ThreadPool;
+    fn pool_generation_and_num_threads_control() {
+        use crate::utils::parallelism::set_num_threads;
+
+        // (a) fork generation
+        let a = rayon().unwrap() as *const rayon::ThreadPool;
+        let a2 = rayon().unwrap() as *const rayon::ThreadPool;
         assert_eq!(a, a2, "stable generation must reuse the pool");
         POOL_GEN.fetch_add(1, Ordering::SeqCst);
-        let b = rayon_pool().unwrap() as *const rayon::ThreadPool;
+        let b = rayon().unwrap() as *const rayon::ThreadPool;
         assert_ne!(a, b, "generation bump must rebuild the pool");
-        let b2 = rayon_pool().unwrap() as *const rayon::ThreadPool;
+        let b2 = rayon().unwrap() as *const rayon::ThreadPool;
         assert_eq!(b, b2);
+        assert!(crate::utils::parallelism::has_parallelism_been_used());
+
+        // (b) live worker-count control
+        let default_threads = rayon().unwrap().current_num_threads();
+        let target = if default_threads == 3 { 2 } else { 3 };
+        set_num_threads(target);
+        assert_eq!(
+            rayon().unwrap().current_num_threads(),
+            target,
+            "setter must override env/default and rebuild live"
+        );
+        set_num_threads(0); // reset to env-or-default
+        assert_eq!(rayon().unwrap().current_num_threads(), default_threads);
     }
 }

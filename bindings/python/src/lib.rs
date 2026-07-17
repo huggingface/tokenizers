@@ -63,7 +63,7 @@ pub mod tokenizers {
     #[pymodule_export]
     pub use super::pipeline::PyPipelineTokenizer;
     #[pymodule_export]
-    pub use super::pipeline::PyEncodeJob;
+    pub use super::pipeline::PyEncodeHandle;
     #[pymodule_export]
     pub use super::utils::PyNormalizedString;
     #[pymodule_export]

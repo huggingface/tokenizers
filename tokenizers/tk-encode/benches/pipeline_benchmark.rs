@@ -74,18 +74,20 @@ fn bench_pipeline(c: &mut Criterion) {
             let mut group = c.benchmark_group(format!("{tok_name}-{corpus}"));
             for (target_bytes, label) in CHUNK_SIZES {
                 let chunks = make_chunks(&lines, *target_bytes);
+                let refs: Vec<&str> = chunks.iter().map(String::as_str).collect();
                 let total_bytes: u64 = chunks.iter().map(|s| s.len() as u64).sum();
                 group.throughput(Throughput::Bytes(total_bytes));
                 group.bench_function(BenchmarkId::from_parameter(label), |b| {
                     b.iter(|| {
-                        let mut n = 0usize;
-                        for chunk in &chunks {
-                            n += pipeline
-                                .encode_scoped(chunk, false, |h| h.into_single())
-                                .unwrap()
-                                .len();
-                        }
-                        black_box(n)
+                        // Batch encode + streaming-iterator drain — the representative
+                        // path (never `into_single`, whose single-input serial concat
+                        // tail is not a common workload). `black_box` each result to
+                        // force the work without an arithmetic reduction.
+                        pipeline
+                            .encode(&refs[..], false)
+                            .for_each(|r| {
+                                black_box(r.unwrap());
+                            });
                     })
                 });
             }

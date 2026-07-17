@@ -88,7 +88,7 @@ class SplitDelimiterBehavior(Enum):
 
 from .tokenizers import (
     AddedToken,
-    EncodeJob,
+    EncodeHandle,
     Encoding,
     NormalizedString,
     PipelineTokenizer,

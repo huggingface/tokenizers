@@ -1,5 +1,5 @@
 //! Experimental bindings for the encode-only `PipelineTokenizer` and its
-//! owned, escapable `EncodeJob`: parallel encode on the library's persistent
+//! owned, escapable `EncodeHandle`: parallel encode on the library's persistent
 //! pool, with **zero-copy** Python-string inputs (the job keeps each
 //! `PyString` alive and reads its cached UTF-8 buffer directly — no copy into
 //! Rust `String`s).
@@ -10,7 +10,7 @@ use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::PyString;
 
-use tk::pipeline::{EncodeJob, IntoStableInputs, PipelineToken, PipelineTokenizer, StableInputs};
+use tk::pipeline::{EncodeHandle, IntoInputs, PipelineToken, PipelineTokenizer, Inputs};
 
 use crate::error::ToPyResult;
 use crate::tokenizer::PyTokenizer;
@@ -52,7 +52,7 @@ impl PyStrBatch {
     }
 }
 
-impl StableInputs for PyStrBatch {
+impl Inputs for PyStrBatch {
     fn len(&self) -> usize {
         self.views.len()
     }
@@ -63,9 +63,9 @@ impl StableInputs for PyStrBatch {
     }
 }
 
-impl IntoStableInputs for PyStrBatch {
-    type Storage = PyStrBatch;
-    fn into_stable(self) -> PyStrBatch {
+impl IntoInputs for PyStrBatch {
+    type Inputs = PyStrBatch;
+    fn into_inputs(self) -> PyStrBatch {
         self
     }
 }
@@ -104,7 +104,7 @@ impl PyPipelineTokenizer {
         Ok(Self { pipeline })
     }
 
-    /// Encode a batch of `str`, returning an :class:`EncodeJob` **immediately**:
+    /// Encode a batch of `str`, returning an :class:`EncodeHandle` **immediately**:
     /// pool workers encode in the background while you hold the job, `wait()`
     /// for everything, or iterate results as they complete (input order).
     /// Zero-copy: the job reads the Python strings' UTF-8 buffers in place.
@@ -114,11 +114,11 @@ impl PyPipelineTokenizer {
         py: Python<'_>,
         input: Vec<Bound<'_, PyString>>,
         add_special_tokens: bool,
-    ) -> PyResult<PyEncodeJob> {
+    ) -> PyResult<PyEncodeHandle> {
         let batch = PyStrBatch::new(input)?;
         // Below the cost gate the job is computed inline — release the GIL.
         let job = py.detach(|| self.pipeline.encode(batch, add_special_tokens));
-        Ok(PyEncodeJob {
+        Ok(PyEncodeHandle {
             job: Mutex::new(Some(job)),
         })
     }
@@ -141,23 +141,23 @@ impl PyPipelineTokenizer {
 /// `wait()` blocks for all of them; iterating yields each input's ids as it
 /// becomes ready. The consuming thread *assists* the pool while it waits (all
 /// with the GIL released). Dropping the job cancels unclaimed work.
-#[pyclass(module = "tokenizers", name = "EncodeJob")]
-pub struct PyEncodeJob {
-    job: Mutex<Option<EncodeJob>>,
+#[pyclass(module = "tokenizers", name = "EncodeHandle")]
+pub struct PyEncodeHandle {
+    job: Mutex<Option<EncodeHandle>>,
 }
 
-impl PyEncodeJob {
-    fn take(&self) -> PyResult<EncodeJob> {
+impl PyEncodeHandle {
+    fn take(&self) -> PyResult<EncodeHandle> {
         self.job
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .take()
-            .ok_or_else(|| exceptions::PyException::new_err("EncodeJob already consumed"))
+            .ok_or_else(|| exceptions::PyException::new_err("EncodeHandle already consumed"))
     }
 }
 
 #[pymethods]
-impl PyEncodeJob {
+impl PyEncodeHandle {
     /// Block until every input is encoded; returns one id-list per input, in
     /// input order. Consumes the job: calling it a second time raises.
     fn wait(&self, py: Python<'_>) -> PyResult<Vec<Vec<u32>>> {

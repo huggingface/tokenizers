@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc, Mutex, PoisonError};
 use std::{borrow::Cow, convert::TryFrom};
 
-use atomsplit::classify::classify;
+use atomsplit::classify::{classify, in_mask, mask, Atom};
 
 use crate::models::bpe::{BpeScratch, PipelineBPE};
 use crate::models::unigram::{Unigram, UnigramScratch};
@@ -107,6 +107,35 @@ impl PreTokenizer for PipelinePreTokenizer {
             Self::UnicodeScripts(pretok) => pretok.pre_tokenize(text, out),
             Self::Whitespace(pretok) => pretok.pre_tokenize(text, out),
             Self::WhitespaceSplit(pretok) => pretok.pre_tokenize(text, out),
+        }
+    }
+}
+
+impl PipelinePreTokenizer {
+    /// The [`StrideBoundary`] this pre-tokenizer guarantees, if any: a cut
+    /// finder its splitting rules provably cannot tokenize across. This is the
+    /// extension point for raw-text parallel chunking — a pre-tokenizer that
+    /// can prove a boundary for its grammar adds an arm here and large inputs
+    /// split under it automatically; anything without one falls back to the
+    /// model-stage split (still correct, just a serial pre-tokenize).
+    pub(crate) fn stride_boundary(&self) -> Option<StrideBoundary> {
+        match self {
+            // Whitespace-delimiting: whitespace is a dropped delimiter, so any
+            // whitespace character is a safe cut (see `boundary_at_whitespace`).
+            Self::Whitespace(_) | Self::WhitespaceSplit(_) | Self::Bert(_) => {
+                Some(boundary_at_whitespace)
+            }
+            // atomsplit-FSM byte-level families: cut at a space after non-ws, or
+            // a newline after a word character (see `boundary_fsm`).
+            Self::Split(s) if s.has_pipeline_fsm() => Some(boundary_fsm),
+            Self::Sequence(seq) if seq.is_deepseek() => Some(boundary_fsm),
+            Self::Sequence(seq) => match seq.members() {
+                [only] => only.stride_boundary(),
+                // The llama/GPT-4 shape: [Split(FSM), ByteLevel(no regex) -> None].
+                [split, Self::None] => split.stride_boundary(),
+                _ => None,
+            },
+            _ => None,
         }
     }
 }
@@ -214,13 +243,9 @@ pub struct SpecialSegmentIterator<'a, 'b, PatternMatcher: PipelinePatternMatcher
 impl<'a, 'b, PatternMatcher: PipelinePatternMatcher>
     SpecialSegmentIterator<'a, 'b, PatternMatcher>
 {
-    /// Create a new iterator over [`Segment`] of the [`input`].
+    /// Create a new iterator over the [`Segment`]s of `input`.
     /// This iterator will yield [`Segment`] in order.
-    pub(crate) fn new(
-        input: &'a str,
-        pattern_matcher: &'b PatternMatcher,
-        normalized: bool,
-    ) -> Self {
+    pub fn new(input: &'a str, pattern_matcher: &'b PatternMatcher, normalized: bool) -> Self {
         Self {
             input,
             pattern_matcher,
@@ -275,7 +300,7 @@ impl<'a, 'b, PatternMatcher: PipelinePatternMatcher> Iterator
 ///
 /// This is a cheap-clone **handle** over an `Arc`'d frozen core (the v2
 /// `Arc<Compiled>` shape): cloning shares the vocabulary/model, and an owned
-/// [`EncodeJob`] keeps the tokenizer alive past the `encode` call by holding a
+/// [`EncodeHandle`] keeps the tokenizer alive past the `encode` call by holding a
 /// clone.
 #[derive(Clone)]
 pub struct PipelineTokenizer {
@@ -309,6 +334,8 @@ const _: fn() = || {
 #[derive(Default)]
 pub struct EncodeState {
     pre_tokens: Vec<Span>,
+    /// Classify tag scratch for the stride boundary scans (grow-and-reuse).
+    tags: Vec<u8>,
     /// Model-specific heap buffers (merge heap, word symbols, candidate string,
     /// …), lazily built for the model kind this thread last encoded with and
     /// re-initialized on a kind switch — thread-local state is shared across
@@ -330,66 +357,241 @@ impl EncodeState {
 
 /// Total input bytes below which `encode` runs inline on the calling thread (no pool):
 /// under this, the pool's dispatch/wakeup cost outweighs the parallelism gain. The same
-/// threshold sets the target chunk size when a large input is split, so it is the single
-/// "unit of parallel work" knob. Bench-tunable.
+/// threshold sets the stride size for raw-cut chunking and the span-group target for
+/// `SplitAtModel`, so it is the single "unit of parallel work" knob. Bench-tunable —
+/// splitting the three roles into separate knobs is a tracked tuning item.
 const PARALLEL_MIN_TOTAL_BYTES: usize = 8 * 1024;
 
-/// Interim stand-in for the `fast_split` `classify` pass. The real one tags every input
-/// byte with its category in one SIMD/scalar pass; this stub keeps the same shape
-/// (`classify(text, tags)` — one tag byte per input byte) but only distinguishes newlines,
-/// which is enough to derive chunk boundaries for the parallel encode path. The whole
-/// module is throwaway: it is replaced when `fast_split::classify` is wired in.
-mod classify {
-    /// Any non-newline byte.
-    pub const OTHER: u8 = 0;
-    /// A `\n` or `\r` byte.
-    pub const NEWLINE: u8 = 1;
-
-    /// Fill `tags` (length must equal `text.len()`) with one category byte per input byte.
-    pub fn classify(text: &[u8], tags: &mut [u8]) {
-        debug_assert_eq!(text.len(), tags.len());
-        for (b, t) in text.iter().zip(tags.iter_mut()) {
-            *t = if *b == b'\n' || *b == b'\r' {
-                NEWLINE
-            } else {
-                OTHER
-            };
+/// The byte range that stride `index` of `text` owns after boundary snapping,
+/// or `None` when the stride's window contains no safe boundary (its bytes
+/// belong to the previous stride's chunk, which extends across it — that
+/// stride emits an empty result to keep per-input chunk counts static).
+///
+/// This is the **fused executor**'s scheduling primitive: there is no central
+/// cut list and no serial pre-scan — each worker claims a stride index and
+/// derives its chunk locally. Strides are fixed
+/// [`PARALLEL_MIN_TOTAL_BYTES`]-sized windows; a chunk starts at the first safe
+/// boundary inside its own window (stride 0 starts at 0) and ends at the first
+/// safe boundary found in the following windows — the exact scan those
+/// windows' owners also perform, so adjacent workers agree on every cut with
+/// no communication. Total scanning is O(input): each window is scanned at
+/// most twice (once by its owner, once by an extending predecessor). Text with
+/// no boundaries at all degrades to stride 0 owning the whole input.
+fn stride_range(
+    text: &str,
+    index: usize,
+    boundary: StrideBoundary,
+    tags: &mut Vec<u8>,
+) -> Option<Range<usize>> {
+    const STRIDE: usize = PARALLEL_MIN_TOTAL_BYTES;
+    let len = text.len();
+    let start = if index == 0 {
+        0
+    } else {
+        boundary_in_window(
+            text,
+            index * STRIDE,
+            ((index + 1) * STRIDE).min(len),
+            boundary,
+            tags,
+        )?
+    };
+    let mut window = index + 1;
+    let end = loop {
+        let lo = window * STRIDE;
+        if lo >= len {
+            break len;
         }
+        if let Some(b) =
+            boundary_in_window(text, lo, ((window + 1) * STRIDE).min(len), boundary, tags)
+        {
+            break b;
+        }
+        window += 1;
+    };
+    (start < end).then_some(start..end)
+}
+
+/// A safe-cut predicate for one pre-tokenizer family, expressed over the
+/// `atomsplit` **tag stream** (the same SIMD `classify` substrate the FSM
+/// pre-tokenizers run on — boundary logic is not reimplemented byte-matching).
+/// `window_tags[0]` is one byte of left context; the fn returns the first
+/// window-relative position `i >= 1` that is a safe cut: no pre-token — under
+/// that family's splitting rules — can span it, and tokenization of each side
+/// is independent of the other.
+///
+/// The boundary definition **belongs to the pre-tokenizer**
+/// ([`PipelinePreTokenizer::stride_boundary`]): each configuration exposes a
+/// predicate its own token grammar provably cannot cross, and the scheduler
+/// ([`stride_range`]) is agnostic to what the boundary is. Must be a pure
+/// function of the tags — workers rely on recomputing identical results.
+type StrideBoundary = fn(window_tags: &[u8]) -> Option<usize>;
+
+/// Tag classes that are a complete non-whitespace character — the previous-char
+/// requirement for [`boundary_fsm`]'s space cut. Excludes whitespace and the
+/// bytes that don't name a class on their own (`Cont`/`MultiByte`/`Sentinel`)
+/// plus control∪unassigned. Read via [`prev_char_tag`], so a multibyte
+/// character is seen at its resolved lead, never a continuation byte.
+const NON_WS_PREV: u16 = Atom::Letter.bit()
+    | Atom::NumWord.bit()
+    | Atom::NumOther.bit()
+    | Atom::Mark.bit()
+    | Atom::Connector.bit()
+    | Atom::Punct.bit()
+    | Atom::Apostrophe.bit()
+    | Atom::SymOther.bit()
+    | Atom::NumericOther.bit();
+
+/// Tag classes whose token can never carry a *trailing* newline — the
+/// previous-char requirement for [`boundary_fsm`]'s newline cut. Letters
+/// (`\p{L}+`, which is also every CJK character), numbers (`\p{N}{1,3}`), and
+/// marks all live in rules that exclude `\r\n`, so the word token ends before
+/// the newline. Punctuation/symbol classes are deliberately absent: the
+/// cl100k/o200k/deepseek punct rule ` ?[…]+[\r\n]*` absorbs following newlines
+/// into the punct token, so a cut after punct-then-newline is not
+/// side-independent.
+const NEWLINE_PREV: u16 =
+    Atom::Letter.bit() | Atom::NumWord.bit() | Atom::NumOther.bit() | Atom::Mark.bit();
+
+/// Whitespace classes other than newline (space + other unicode whitespace) —
+/// the `cur` side of [`boundary_fsm`]'s whitespace cut. Newline is handled on
+/// its own ([`NEWLINE_PREV`]) because it alone can be absorbed by a trailing
+/// `[\r\n]*` in the punct rule.
+const WS_NON_NEWLINE: u16 = Atom::Space.bit() | Atom::WsOther.bit();
+
+/// Previous-char requirement for [`boundary_fsm`]'s number-run-start cut: a
+/// complete non-whitespace, non-`\p{N}` character (i.e. [`NON_WS_PREV`] minus
+/// the number classes — a number after a number is the same run, not a
+/// boundary). The `\p{N}{1,3}` / `\p{N}+` rule has no prefix that absorbs a
+/// preceding non-number, and every preceding token rule (letters, punct)
+/// excludes `\p{N}`, so the number run starts a fresh token regardless of side.
+const NUM_START_PREV: u16 = Atom::Letter.bit()
+    | Atom::Mark.bit()
+    | Atom::Connector.bit()
+    | Atom::Punct.bit()
+    | Atom::Apostrophe.bit()
+    | Atom::SymOther.bit()
+    | Atom::NumericOther.bit();
+
+/// The class tag of the character ending just before window position `i`: walk
+/// back over `Cont` continuation bytes to the character's lead. `i >= 1`, and
+/// `window_tags[0]` is always a lead (the classify window starts on a char
+/// boundary), so the walk stays in bounds. Lets a boundary predicate judge the
+/// preceding character by its real class even when it is multibyte (e.g. CJK,
+/// whose lead is `Letter` and whose trailing bytes are `Cont`).
+fn prev_char_tag(window_tags: &[u8], i: usize) -> u8 {
+    let mut j = i - 1;
+    while j > 0 && in_mask(window_tags[j], Atom::Cont.bit()) {
+        j -= 1;
     }
+    window_tags[j]
 }
 
-/// A unit of scheduled work: a byte sub-range of input `seq_id`. A small input
-/// is a single chunk; a large, safely-splittable one becomes several (cut at
-/// newline boundaries), all tagged with the same `seq_id` so results reassemble
-/// per input. Ranges (not `&str`s) so the owned encode path can store them
-/// without self-reference.
-struct Chunk {
-    seq_id: usize,
-    range: Range<usize>,
+/// [`StrideBoundary`] for whitespace-delimiting pre-tokenizers (`Whitespace`,
+/// `WhitespaceSplit`, `Bert`): *any* whitespace character is a safe cut. These
+/// splitters drop whitespace as a delimiter and never emit a token that spans
+/// it, so a cut placed at a whitespace character leaves the tokens on either
+/// side unchanged — even one inside a whitespace run, since each side then
+/// drops its own run. Cutting *at* the character (it joins the right chunk)
+/// keeps the cut on a char boundary: a whitespace lead is classed `WS`, its
+/// continuation bytes `Cont`. Denser than a newline-only rule, which matters
+/// for single-line inputs (minified JSON, long CSV rows) that would otherwise
+/// see no intra-input split.
+fn boundary_at_whitespace(window_tags: &[u8]) -> Option<usize> {
+    (1..window_tags.len()).find(|&i| in_mask(window_tags[i], mask::WS))
 }
 
-/// How a single large input may be split for intra-input parallelism — the
-/// escalation ladder: chunk the raw text if the config allows it; otherwise run
-/// the pipeline up to the model serially and parallelize the model; otherwise
-/// rely on batch-level parallelism only. Never wrong, only less parallel.
-/// Where a raw-text cut may fall such that no pre-token (and no added token)
-/// can span it.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum RawCut {
-    /// Just *after* a newline: for whitespace-delimiting pre-tokenizers a
-    /// newline is a dropped hard delimiter.
-    Newline,
-    /// At a non-whitespace→space boundary, the space going to the right chunk:
-    /// for the byte-level GPT regex family, a leading space binds to the
-    /// following token (` ?\p{L}+`) and no token ever contains a
-    /// non-whitespace→space transition, so the cut is match-preserving.
-    SpaceRun,
+/// Whether a cut at a `prev`→`cur` character transition is side-independent for
+/// the atomsplit-FSM byte-level families (gpt2 / cl100k / o200k / deepseek) —
+/// the cut character `cur` joins the right chunk. The four safe transitions,
+/// each checked branch by branch against `atomsplit::regexes` for all four
+/// families:
+///
+/// * **→ space / other whitespace** after a non-whitespace character — the ws
+///   joins the right chunk, where a leading space binds to the following token
+///   (` ?\p{L}+`); no rule matches a non-whitespace character directly followed
+///   by a (non-newline) space *inside* one token.
+/// * **→ newline** after a word character ([`NEWLINE_PREV`]) — a letter/number/
+///   mark token never carries a trailing newline, so the newline opens a fresh
+///   whitespace match (`\s*[\r\n]+`). Gives space-sparse scripts (CJK)
+///   intra-document parallelism.
+/// * **→ number** after a non-number, non-ws character ([`NUM_START_PREV`]) —
+///   `\p{N}{1,3}` / `\p{N}+` starts a fresh token; no preceding rule absorbs it.
+/// * **number → letter** — the letter rule's optional prefix
+///   (`[^\r\n\p{L}\p{N}]?`) excludes digits, so a letter run after a number is a
+///   fresh token.
+///
+/// The number transitions are what let space-and-newline-free byte-level input
+/// (base64, minified JSON, long identifiers) split at all. `punct → letter` is
+/// intentionally absent: cl100k/o200k absorb one leading punct into the letter
+/// run (`!!abc` → `!!` + `abc`, but a mis-cut yields `!` + `!abc`).
+fn safe_fsm_cut(prev: u8, cur: u8) -> bool {
+    (in_mask(cur, WS_NON_NEWLINE) && in_mask(prev, NON_WS_PREV))
+        || (in_mask(cur, mask::NEWLINE) && in_mask(prev, NEWLINE_PREV))
+        || (in_mask(cur, mask::NUMBER) && in_mask(prev, NUM_START_PREV))
+        || (in_mask(cur, mask::LETTER) && in_mask(prev, mask::NUMBER))
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+/// [`StrideBoundary`] for the atomsplit-FSM byte-level families: the first
+/// [`safe_fsm_cut`] transition in the window. The previous character is read
+/// through [`prev_char_tag`], so every branch also fires after a multibyte
+/// character (e.g. CJK).
+fn boundary_fsm(window_tags: &[u8]) -> Option<usize> {
+    (1..window_tags.len())
+        .find(|&i| safe_fsm_cut(prev_char_tag(window_tags, i), window_tags[i]))
+}
+
+/// Find the first safe cut in `text[lo..hi)` (absolute byte index; `lo >= 1`):
+/// classify in blocks — SIMD [`classify`] into the caller's `tags` scratch,
+/// with one byte of left context so the predicate can see the previous tag —
+/// and apply `boundary` per block, early-exiting on the first hit. Blocked so
+/// the common case (a boundary within the first block) classifies ~1 KB, not
+/// the whole window.
+///
+/// Block edges are snapped to char boundaries (`classify` must see complete
+/// characters). The snap is a pure function of the text, so adjacent workers
+/// still agree; the extra bytes a snap adds are continuation bytes, which tag
+/// as `Cont` and can never satisfy a boundary predicate.
+fn boundary_in_window(
+    text: &str,
+    lo: usize,
+    hi: usize,
+    boundary: StrideBoundary,
+    tags: &mut Vec<u8>,
+) -> Option<usize> {
+    const BLOCK: usize = 1024;
+    debug_assert!(1 <= lo && lo <= hi && hi <= text.len());
+    let mut block_lo = lo;
+    while block_lo < hi {
+        let mut ctx = block_lo - 1;
+        while !text.is_char_boundary(ctx) {
+            ctx -= 1;
+        }
+        let mut block_hi = (block_lo + BLOCK).min(hi);
+        while block_hi < text.len() && !text.is_char_boundary(block_hi) {
+            block_hi += 1;
+        }
+        let window = &text.as_bytes()[ctx..block_hi];
+        tags.clear();
+        tags.resize(window.len(), 0);
+        classify(window, tags);
+        if let Some(rel) = boundary(tags) {
+            return Some(ctx + rel);
+        }
+        block_lo = block_hi;
+    }
+    None
+}
+
+/// How a single large input may be split for intra-input parallelism, chosen
+/// per tokenizer configuration: cut the raw text when the components allow it;
+/// otherwise run the pipeline stages up to the model serially and parallelize
+/// the model stage; otherwise rely on batch-level parallelism only. Never
+/// wrong, only less parallel.
+#[derive(Clone, Copy, Debug)]
 enum ParallelPlan {
     /// Cut raw text at safe boundaries; each chunk runs the full pipeline.
-    SplitRaw(RawCut),
+    SplitRaw(StrideBoundary),
     /// Frame + normalize + pre-tokenize serially on the caller; parallelize the
     /// model over ~[`PARALLEL_MIN_TOTAL_BYTES`]-sized groups of pre-token spans.
     /// Valid for every config (each pre-token is modeled independently).
@@ -398,7 +600,7 @@ enum ParallelPlan {
     WholeInput,
 }
 
-/// Serial-prefix output of the `SplitAtModel` rung for **one input**: the frame
+/// Serial-prefix output of the `SplitAtModel` plan for **one input**: the frame
 /// (special tokens), normalization and pre-tokenization are done; what remains
 /// is model work, packaged as span-groups. Everything is index/range-based (no
 /// borrows), so both the scoped and the owned paths can consume it.
@@ -416,7 +618,10 @@ enum PrefixUnit {
     /// A matched special/added token — already resolved, no worker needed.
     Special(u32),
     /// A group of consecutive pre-token spans over one text segment.
-    Group { text: PrefixText, spans: Range<usize> },
+    Group {
+        text: PrefixText,
+        spans: Range<usize>,
+    },
 }
 
 /// Where a span-group's text lives. Spans are relative to the resolved text.
@@ -435,38 +640,6 @@ fn offset_within(base: &str, sub: &str) -> usize {
     off
 }
 
-/// A scheduled unit of work for the scoped path: the `idx`-th piece of input
-/// `seq`.
-struct Item<'a> {
-    seq: usize,
-    idx: usize,
-    work: Work<'a>,
-}
-
-/// What a worker does with one claimed unit.
-enum Work<'a> {
-    /// Run the full pipeline over this text (`SplitRaw` chunks and
-    /// `WholeInput` units).
-    Full(&'a str),
-    /// Run only the model over these pre-token spans of `text` — the
-    /// `SplitAtModel` rung: frame/normalize/pre-tokenize already ran serially
-    /// on the caller. Spans are ranges into `text`.
-    Spans { text: &'a str, spans: &'a [Span] },
-}
-
-impl Work<'_> {
-    /// Approximate work size in input bytes (the LPT sort key).
-    fn cost(&self) -> usize {
-        match self {
-            Work::Full(text) => text.len(),
-            Work::Spans { spans, .. } => spans
-                .last()
-                .map(|last| (last.end - spans[0].start) as usize)
-                .unwrap_or(0),
-        }
-    }
-}
-
 thread_local! {
     /// Per-thread reusable encode scratch: pool drainers, inline callers and the
     /// caller-assist path all keep their buffers warm across encode calls
@@ -475,118 +648,29 @@ thread_local! {
     static SCRATCH: RefCell<EncodeState> = RefCell::new(EncodeState::new());
 }
 
-/// One-or-many borrowed input sequences for [`PipelineTokenizer::encode`],
-/// held on the stack — wrapping a single `&str` allocates nothing.
-pub enum EncodeBatch<'a> {
-    One([&'a str; 1]),
-    Many(&'a [&'a str]),
+/// One unit's result travelling from a worker back to the job: the tokens (or
+/// error) of the `idx`-th chunk of input `seq`.
+struct UnitResult {
+    seq: usize,
+    idx: usize,
+    tokens: Result<Vec<PipelineToken>>,
 }
 
-impl<'a> EncodeBatch<'a> {
-    pub fn as_slice(&self) -> &[&'a str] {
-        match self {
-            Self::One(one) => one,
-            Self::Many(many) => many,
-        }
-    }
-}
-
-/// Accepts one *or many* sequences for [`PipelineTokenizer::encode`], borrowing
-/// them (zero-copy, zero-alloc). A single `&str`/`&String` becomes a one-element
-/// batch; a slice or vec is borrowed as-is.
-pub trait EncodeInputs<'a> {
-    fn into_batch(self) -> EncodeBatch<'a>;
-}
-
-impl<'a> EncodeInputs<'a> for &'a str {
-    fn into_batch(self) -> EncodeBatch<'a> {
-        EncodeBatch::One([self])
-    }
-}
-impl<'a> EncodeInputs<'a> for &'a String {
-    fn into_batch(self) -> EncodeBatch<'a> {
-        EncodeBatch::One([self.as_str()])
-    }
-}
-impl<'a> EncodeInputs<'a> for &'a [&'a str] {
-    fn into_batch(self) -> EncodeBatch<'a> {
-        EncodeBatch::Many(self)
-    }
-}
-impl<'a> EncodeInputs<'a> for &'a Vec<&'a str> {
-    fn into_batch(self) -> EncodeBatch<'a> {
-        EncodeBatch::Many(self.as_slice())
-    }
-}
-
-/// A per-chunk result travelling from a worker back to the handle:
-/// `(input index, chunk index within that input, tokens-or-error)`.
-type ChunkMsg = (usize, usize, Result<Vec<PipelineToken>>);
-
-/// Handle over an in-progress or completed encode, observed only inside the
-/// closure passed to [`PipelineTokenizer::encode`] — the scope that guarantees
-/// every worker borrow of the inputs is dead before `encode` returns. Results
-/// are surfaced in **input order**.
-///
-/// - [`wait_for_completion`](Self::wait_for_completion) blocks and returns every input's
-///   token ids.
-/// - `impl Iterator` yields one `Result<Vec<PipelineToken>>` per input, in input order, so a
-///   caller can consume results as they become ready.
-/// - [`into_single`](Self::into_single) is single-input sugar.
-///
-/// Two states, one surface:
-/// - `Ready` — fully computed already (the inline path, below the cost gate).
-/// - `Streaming` — backed by a channel that pool drainers fill concurrently.
-///   The handle also carries a [`ScopedAssist`]: while waiting for results, the
-///   calling thread claims and encodes chunks itself instead of idling (and is
-///   the liveness backstop if pool threads are scarce).
-pub struct EncodeHandle<'s> {
-    inner: HandleInner<ScopedAssist<'s>>,
-}
-
-/// Caller-assist for the scoped path: the handle claims chunks off the scope's
-/// shared cursor and encodes them with the caller's thread-local scratch.
-struct ScopedAssist<'s> {
-    tokenizer: &'s PipelineTokenizer,
-    items: &'s [Item<'s>],
-    cursor: &'s AtomicUsize,
-    add_special_tokens: bool,
-    tx: mpsc::Sender<ChunkMsg>,
-}
-
-impl Assist for ScopedAssist<'_> {
-    fn assist_one(&self) -> bool {
-        SCRATCH.with(|st| {
-            self.tokenizer.claim_one(
-                self.items,
-                self.cursor,
-                self.add_special_tokens,
-                &self.tx,
-                &mut st.borrow_mut(),
-            )
-        })
-    }
-}
-
-enum HandleInner<A> {
+enum HandleInner {
     /// Fully computed, drained in input order.
     Ready(std::vec::IntoIter<Result<Vec<PipelineToken>>>),
-    /// Being filled by workers over a channel; reassembled in input order on the fly.
-    Streaming(StreamState<A>),
+    /// Being filled by pool workers over a channel; reassembled in input order
+    /// on the fly.
+    Streaming {
+        core: Arc<JobCore>,
+        state: StreamState,
+    },
 }
 
-/// A way for the waiting consumer thread to claim and encode one pending unit of
-/// work itself instead of idling (caller-assist). Implemented by the scoped
-/// path's [`ScopedAssist`] and the owned path's job core.
-trait Assist {
-    /// Claim and run one unit; `false` when nothing is left to claim.
-    fn assist_one(&self) -> bool;
-}
-
-/// Reassembly state for the streaming handle: buffers out-of-order chunk arrivals and yields
+/// Reassembly state for a streaming job: buffers out-of-order chunk arrivals and yields
 /// each input once all of its chunks are in, in input order.
-struct StreamState<A> {
-    rx: mpsc::Receiver<ChunkMsg>,
+struct StreamState {
+    rx: mpsc::Receiver<UnitResult>,
     /// `slots[seq][chunk_idx]` — a chunk's tokens once received; the row length
     /// is the number of chunks expected for that input.
     slots: Vec<Vec<Option<Vec<PipelineToken>>>>,
@@ -596,15 +680,17 @@ struct StreamState<A> {
     err: Vec<Option<super::Error>>,
     /// next input index to emit (input-order cursor).
     next_yield: usize,
-    /// Claim work on the calling thread instead of idling (rayon-scoped path has
-    /// none — its callers can't steal from `in_place_scope`).
-    assist: Option<A>,
+    /// Caller-assist bookkeeping: set once the job's cursor is exhausted so
+    /// the blocking faces stop trying to claim units.
+    assist_done: bool,
 }
 
-impl<A: Assist> StreamState<A> {
-    fn new(rx: mpsc::Receiver<ChunkMsg>, counts: Vec<usize>) -> Self {
-        let slots: Vec<Vec<Option<Vec<PipelineToken>>>> =
-            counts.iter().map(|&n| (0..n).map(|_| None).collect()).collect();
+impl StreamState {
+    fn new(rx: mpsc::Receiver<UnitResult>, counts: Vec<usize>) -> Self {
+        let slots: Vec<Vec<Option<Vec<PipelineToken>>>> = counts
+            .iter()
+            .map(|&n| (0..n).map(|_| None).collect())
+            .collect();
         let filled = vec![0; counts.len()];
         let err = counts.iter().map(|_| None).collect();
         Self {
@@ -613,17 +699,12 @@ impl<A: Assist> StreamState<A> {
             filled,
             err,
             next_yield: 0,
-            assist: None,
+            assist_done: false,
         }
     }
 
-    fn with_assist(mut self, assist: A) -> Self {
-        self.assist = Some(assist);
-        self
-    }
-
-    fn absorb(&mut self, (seq, idx, res): ChunkMsg) {
-        match res {
+    fn record(&mut self, UnitResult { seq, idx, tokens }: UnitResult) {
+        match tokens {
             Ok(t) => self.slots[seq][idx] = Some(t),
             Err(e) => {
                 if self.err[seq].is_none() {
@@ -663,7 +744,7 @@ impl<A: Assist> StreamState<A> {
     /// channel already holds, then encodes pending items itself (caller-assist, when the
     /// backend supports it) rather than blocking. Returns `None` when every input has been
     /// emitted.
-    fn next_in_order(&mut self) -> Option<Result<Vec<PipelineToken>>> {
+    fn next_in_order(&mut self, core: &JobCore) -> Option<Result<Vec<PipelineToken>>> {
         loop {
             if self.next_yield >= self.slots.len() {
                 return None;
@@ -671,27 +752,26 @@ impl<A: Assist> StreamState<A> {
             if let Some(out) = self.try_emit_next() {
                 return Some(out);
             }
-            // Absorb anything already delivered without blocking.
+            // Record anything already delivered without blocking.
             match self.rx.try_recv() {
                 Ok(msg) => {
-                    self.absorb(msg);
+                    self.record(msg);
                     continue;
                 }
                 Err(mpsc::TryRecvError::Empty) => {}
                 Err(mpsc::TryRecvError::Disconnected) => return Some(self.disconnected()),
             }
             // Nothing ready: claim a unit of work ourselves rather than idling.
-            if let Some(assist) = &self.assist {
-                if assist.assist_one() {
+            if !self.assist_done {
+                if SCRATCH.with(|st| core.run_one(&mut st.borrow_mut())) {
                     continue;
                 }
-                // Cursor exhausted: drop the assist (releasing its `Sender` clone,
-                // if it holds one).
-                self.assist = None;
+                // Cursor exhausted: nothing left to claim.
+                self.assist_done = true;
                 continue;
             }
             match self.rx.recv() {
-                Ok(msg) => self.absorb(msg),
+                Ok(msg) => self.record(msg),
                 Err(_) => return Some(self.disconnected()),
             }
         }
@@ -703,7 +783,7 @@ impl<A: Assist> StreamState<A> {
     #[cfg(feature = "async")]
     fn poll_next_in_order(
         &mut self,
-        core: Option<&JobCore>,
+        core: &JobCore,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Option<Result<Vec<PipelineToken>>>> {
         use std::task::Poll;
@@ -716,7 +796,7 @@ impl<A: Assist> StreamState<A> {
             }
             match self.rx.try_recv() {
                 Ok(msg) => {
-                    self.absorb(msg);
+                    self.record(msg);
                     continue;
                 }
                 Err(mpsc::TryRecvError::Empty) => {}
@@ -724,17 +804,12 @@ impl<A: Assist> StreamState<A> {
                     return Poll::Ready(Some(self.disconnected()))
                 }
             }
-            let Some(core) = core else {
-                // No core to wake us (cannot happen for a streaming job) — yield.
-                cx.waker().wake_by_ref();
-                return Poll::Pending;
-            };
             // Register-then-recheck: a send that raced the registration is caught
             // by the second `try_recv`; a send after it wakes the stored waker.
             core.set_waker(cx.waker());
             match self.rx.try_recv() {
                 Ok(msg) => {
-                    self.absorb(msg);
+                    self.record(msg);
                     continue;
                 }
                 Err(mpsc::TryRecvError::Empty) => return Poll::Pending,
@@ -746,64 +821,20 @@ impl<A: Assist> StreamState<A> {
     }
 }
 
-impl<'s> EncodeHandle<'s> {
-    fn ready(results: Vec<Result<Vec<PipelineToken>>>) -> Self {
-        Self {
-            inner: HandleInner::Ready(results.into_iter()),
-        }
-    }
-
-    fn streaming(state: StreamState<ScopedAssist<'s>>) -> Self {
-        Self {
-            inner: HandleInner::Streaming(state),
-        }
-    }
-
-    /// Block until all inputs are encoded; return per-input token lists in input order. Fails
-    /// on the first input that errored.
-    pub fn wait_for_completion(self) -> Result<Vec<Vec<PipelineToken>>> {
-        self.collect()
-    }
-
-    /// Convenience for a single-input encode: return the sole result (or the first, if called
-    /// on a multi-input handle).
-    pub fn into_single(self) -> Result<Vec<PipelineToken>> {
-        self.wait_for_completion().map(|mut all| {
-            if all.is_empty() {
-                Vec::new()
-            } else {
-                all.swap_remove(0)
-            }
-        })
-    }
-}
-
-impl Iterator for EncodeHandle<'_> {
-    type Item = Result<Vec<PipelineToken>>;
-    fn next(&mut self) -> Option<Self::Item> {
-        match &mut self.inner {
-            HandleInner::Ready(it) => it.next(),
-            HandleInner::Streaming(st) => st.next_in_order(),
-        }
-    }
-}
-
-/// Input storage an [`EncodeJob`] keeps alive for its whole lifetime — the
+/// Input storage an [`EncodeHandle`] keeps alive for its whole lifetime — the
 /// contract that makes the returnable handle sound with no scoped lifetimes:
 /// implementors promise every `&str` returned by [`get`](Self::get) stays valid
-/// and unchanged for as long as the value lives. Owned (`String`, `Vec<String>`)
-/// and refcounted (`Arc<str>`) storage qualify trivially; bindings can wrap
-/// refcounted foreign strings (e.g. a `Py<PyString>` keep-alive over Python's
-/// stable UTF-8 buffer) for zero-copy owned encodes.
-pub trait StableInputs: Send + Sync + 'static {
+/// and unchanged for as long as the value lives. Owned storage (`String`,
+/// `Vec<String>`) qualifies trivially; bindings can wrap refcounted foreign
+/// strings (e.g. a `Py<PyString>` keep-alive over Python's stable UTF-8 buffer)
+/// for zero-copy owned encodes.
+#[allow(clippy::len_without_is_empty)] // an empty batch is legal; nothing branches on it
+pub trait Inputs: Send + Sync + 'static {
     fn len(&self) -> usize;
     fn get(&self, i: usize) -> &str;
-    fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
 }
 
-impl StableInputs for String {
+impl Inputs for String {
     fn len(&self) -> usize {
         1
     }
@@ -811,23 +842,7 @@ impl StableInputs for String {
         self
     }
 }
-impl StableInputs for Vec<String> {
-    fn len(&self) -> usize {
-        self.as_slice().len()
-    }
-    fn get(&self, i: usize) -> &str {
-        &self[i]
-    }
-}
-impl StableInputs for Arc<str> {
-    fn len(&self) -> usize {
-        1
-    }
-    fn get(&self, _i: usize) -> &str {
-        self
-    }
-}
-impl StableInputs for Vec<Arc<str>> {
+impl Inputs for Vec<String> {
     fn len(&self) -> usize {
         self.as_slice().len()
     }
@@ -836,62 +851,47 @@ impl StableInputs for Vec<Arc<str>> {
     }
 }
 
-/// Conversion into [`StableInputs`] for [`PipelineTokenizer::encode`]. Owned and
-/// refcounted inputs convert for free (a move / refcount bump); `&str`-family
-/// inputs pay **one copy** at the boundary. Callers who cannot give up ownership
-/// and cannot afford the copy should use
-/// [`encode_scoped`](PipelineTokenizer::encode_scoped) instead (zero-copy,
-/// closure-scoped).
-pub trait IntoStableInputs {
-    type Storage: StableInputs;
-    fn into_stable(self) -> Self::Storage;
+/// Conversion into [`Inputs`] for [`PipelineTokenizer::encode`]. Owned
+/// inputs convert for free (a move); `&str`-family inputs pay **one copy** at
+/// the boundary (measured at low single-digit % of encode cost).
+pub trait IntoInputs {
+    type Inputs: Inputs;
+    fn into_inputs(self) -> Self::Inputs;
 }
 
-impl IntoStableInputs for String {
-    type Storage = String;
-    fn into_stable(self) -> String {
+impl IntoInputs for String {
+    type Inputs = String;
+    fn into_inputs(self) -> String {
         self
     }
 }
-impl IntoStableInputs for Vec<String> {
-    type Storage = Vec<String>;
-    fn into_stable(self) -> Vec<String> {
+impl IntoInputs for Vec<String> {
+    type Inputs = Vec<String>;
+    fn into_inputs(self) -> Vec<String> {
         self
     }
 }
-impl IntoStableInputs for Arc<str> {
-    type Storage = Arc<str>;
-    fn into_stable(self) -> Arc<str> {
-        self
-    }
-}
-impl IntoStableInputs for Vec<Arc<str>> {
-    type Storage = Vec<Arc<str>>;
-    fn into_stable(self) -> Vec<Arc<str>> {
-        self
-    }
-}
-impl IntoStableInputs for &str {
-    type Storage = String;
-    fn into_stable(self) -> String {
+impl IntoInputs for &str {
+    type Inputs = String;
+    fn into_inputs(self) -> String {
         self.to_owned()
     }
 }
-impl IntoStableInputs for &String {
-    type Storage = String;
-    fn into_stable(self) -> String {
+impl IntoInputs for &String {
+    type Inputs = String;
+    fn into_inputs(self) -> String {
         self.clone()
     }
 }
-impl IntoStableInputs for &[&str] {
-    type Storage = Vec<String>;
-    fn into_stable(self) -> Vec<String> {
+impl IntoInputs for &[&str] {
+    type Inputs = Vec<String>;
+    fn into_inputs(self) -> Vec<String> {
         self.iter().map(|s| (*s).to_owned()).collect()
     }
 }
-impl IntoStableInputs for &Vec<&str> {
-    type Storage = Vec<String>;
-    fn into_stable(self) -> Vec<String> {
+impl IntoInputs for &Vec<&str> {
+    type Inputs = Vec<String>;
+    fn into_inputs(self) -> Vec<String> {
         self.iter().map(|s| (*s).to_owned()).collect()
     }
 }
@@ -899,13 +899,13 @@ impl IntoStableInputs for &Vec<&str> {
 /// One owned encode call's worth of work, shared with the pool workers via
 /// `Arc`. Fully safe: the job owns its storage and a tokenizer handle, and the
 /// chunks are byte ranges into the storage — nothing borrows the caller, so the
-/// job outlives the `encode` call freely. Dropping the [`EncodeJob`] sets
+/// job outlives the `encode` call freely. Dropping the [`EncodeHandle`] sets
 /// `cancelled`; workers stop claiming, in-flight chunks finish into the closed
 /// channel, and the last `Arc` holder releases the storage.
 struct JobCore {
-    storage: Box<dyn StableInputs>,
+    storage: Box<dyn Inputs>,
     /// Ordered worker units, (seq, idx)-tagged for reassembly.
-    units: Vec<OwnedUnit>,
+    units: Vec<Item>,
     /// Owned normalized segments for `SplitAtModel` units
     /// ([`PrefixText::Norm`] points here).
     norm_bufs: Vec<String>,
@@ -915,26 +915,35 @@ struct JobCore {
     add_special_tokens: bool,
     cursor: AtomicUsize,
     cancelled: AtomicBool,
-    tx: mpsc::Sender<ChunkMsg>,
+    tx: mpsc::Sender<UnitResult>,
     /// Wakes an async consumer after each delivered chunk; blocking consumers
     /// are woken by the channel itself.
     waker: Mutex<Option<std::task::Waker>>,
 }
 
 /// One owned work unit: the `idx`-th piece of input `seq`.
-struct OwnedUnit {
+struct Item {
     seq: usize,
     idx: usize,
-    work: OwnedWork,
+    work: Work,
 }
 
-enum OwnedWork {
+enum Work {
     /// Full pipeline over this byte range of input `seq`.
     Full(Range<usize>),
+    /// The fused `SplitRaw` unit: stride `index` of input `seq`,
+    /// boundary-snapped **on the worker** via [`stride_range`].
+    Stride {
+        index: usize,
+        boundary: StrideBoundary,
+    },
     /// Model-only over a span-group (`SplitAtModel`): `text` resolves against
     /// input `seq` (`Raw`) or `JobCore::norm_bufs` (`Norm`); `spans` indexes
     /// `JobCore::spans`.
-    Spans { text: PrefixText, spans: Range<usize> },
+    Spans {
+        text: PrefixText,
+        spans: Range<usize>,
+    },
 }
 
 impl JobCore {
@@ -952,12 +961,23 @@ impl JobCore {
         let unit = &self.units[i];
         let seq = unit.seq;
         let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| match &unit.work {
-            OwnedWork::Full(range) => {
+            Work::Full(range) => {
                 let text = &self.storage.get(seq)[range.clone()];
                 self.tokenizer
                     .encode_one_with(text, self.add_special_tokens, scratch)
             }
-            OwnedWork::Spans { text, spans } => {
+            Work::Stride { index, boundary } => {
+                let text = self.storage.get(seq);
+                match stride_range(text, *index, *boundary, &mut scratch.tags) {
+                    Some(range) => self.tokenizer.encode_one_with(
+                        &text[range],
+                        self.add_special_tokens,
+                        scratch,
+                    ),
+                    None => Ok(Vec::new()),
+                }
+            }
+            Work::Spans { text, spans } => {
                 let text = match text {
                     PrefixText::Raw(r) => &self.storage.get(seq)[r.clone()],
                     PrefixText::Norm { buf, range } => &self.norm_bufs[*buf][range.clone()],
@@ -968,7 +988,11 @@ impl JobCore {
         }))
         .unwrap_or_else(|_| Err("encode worker panicked".into()));
         // A dropped receiver (job dropped early) just discards the result.
-        let _ = self.tx.send((seq, unit.idx, res));
+        let _ = self.tx.send(UnitResult {
+            seq,
+            idx: unit.idx,
+            tokens: res,
+        });
         if let Some(w) = self
             .waker
             .lock()
@@ -992,14 +1016,6 @@ impl JobCore {
 
 /// Caller-assist for the owned path: the blocking consumer claims chunks
 /// straight off the job core with its thread-local scratch.
-struct OwnedAssist(Arc<JobCore>);
-
-impl Assist for OwnedAssist {
-    fn assist_one(&self) -> bool {
-        SCRATCH.with(|st| self.0.run_one(&mut st.borrow_mut()))
-    }
-}
-
 /// An owned, escapable encode — what [`PipelineTokenizer::encode`] returns.
 /// Workers keep encoding in the background while the caller holds this; results
 /// surface in **input order** through:
@@ -1012,25 +1028,23 @@ impl Assist for OwnedAssist {
 ///
 /// Dropping the job cancels all unclaimed work; chunks already being encoded
 /// finish into the void. Worker panics surface as the affected input's `Err`.
-pub struct EncodeJob {
-    /// `None` for a `Ready` (already-complete) job.
-    core: Option<Arc<JobCore>>,
-    inner: HandleInner<OwnedAssist>,
+pub struct EncodeHandle {
+    inner: HandleInner,
 }
 
-impl EncodeJob {
+impl EncodeHandle {
     fn ready(results: Vec<Result<Vec<PipelineToken>>>) -> Self {
         Self {
-            core: None,
             inner: HandleInner::Ready(results.into_iter()),
         }
     }
 
-    fn streaming(core: Arc<JobCore>, rx: mpsc::Receiver<ChunkMsg>, counts: Vec<usize>) -> Self {
-        let state = StreamState::new(rx, counts).with_assist(OwnedAssist(Arc::clone(&core)));
+    fn streaming(core: Arc<JobCore>, rx: mpsc::Receiver<UnitResult>, counts: Vec<usize>) -> Self {
         Self {
-            core: Some(core),
-            inner: HandleInner::Streaming(state),
+            inner: HandleInner::Streaming {
+                core,
+                state: StreamState::new(rx, counts),
+            },
         }
     }
 
@@ -1054,39 +1068,38 @@ impl EncodeJob {
     }
 }
 
-impl Iterator for EncodeJob {
+impl Iterator for EncodeHandle {
     type Item = Result<Vec<PipelineToken>>;
     fn next(&mut self) -> Option<Self::Item> {
         match &mut self.inner {
             HandleInner::Ready(it) => it.next(),
-            HandleInner::Streaming(st) => st.next_in_order(),
+            HandleInner::Streaming { core, state } => state.next_in_order(core),
         }
     }
 }
 
-impl Drop for EncodeJob {
+impl Drop for EncodeHandle {
     fn drop(&mut self) {
         // Cancel whatever hasn't been claimed. Harmless after a full drain (the
         // cursor is already exhausted); on an early drop it stops the workers
         // from encoding into the void.
-        if let Some(core) = &self.core {
+        if let HandleInner::Streaming { core, .. } = &self.inner {
             core.cancel();
         }
     }
 }
 
 #[cfg(feature = "async")]
-impl futures_core::Stream for EncodeJob {
+impl futures_core::Stream for EncodeHandle {
     type Item = Result<Vec<PipelineToken>>;
 
     fn poll_next(
         self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Option<Self::Item>> {
-        let this = self.get_mut();
-        match &mut this.inner {
+        match &mut self.get_mut().inner {
             HandleInner::Ready(it) => std::task::Poll::Ready(it.next()),
-            HandleInner::Streaming(st) => st.poll_next_in_order(this.core.as_deref(), cx),
+            HandleInner::Streaming { core, state } => state.poll_next_in_order(core, cx),
         }
     }
 }
@@ -1198,228 +1211,99 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
 }
 
 impl PipelineTokenizer {
-    /// Stage gates for [`encode_upto`](Self::encode_upto), in execution order. Each
-    /// level runs every stage up to and including itself; `STAGE_MODEL` is a full
-    /// encode. `STAGE_FRAME` is the special-token scan + iteration only (the "other"
-    /// slice in the decomposition).
-    pub const STAGE_FRAME: u8 = 0;
-    pub const STAGE_NORMALIZE: u8 = 1;
-    pub const STAGE_SPLIT: u8 = 2;
-    pub const STAGE_MODEL: u8 = 3;
+    // Component accessors: introspection for callers (and for external benches
+    // that recompose partial pipelines — the library itself carries no staging
+    // or timing scaffolding).
 
     pub fn get_model(&self) -> &PipelineModel {
         &self.inner.model
     }
 
-    /// Encode one or many **borrowed** sequences, zero-copy; `f` observes the
-    /// results through an [`EncodeHandle`] while workers may still be encoding.
-    ///
-    /// Pass a `&str` for one sequence or a `&[&str]` / `&Vec<&str>` for many (see
-    /// [`EncodeInputs`]). Results surface in input order; consume them inside `f`
-    /// via `wait_for_completion`, the streaming `Iterator`, or `into_single`.
-    ///
-    /// The scoped-closure shape is what keeps inputs borrowed (`&'a str`, zero-copy)
-    /// while worker threads read them: like `std::thread::scope` (and how smol's
-    /// `Executor<'a>` is actually driven), all worker borrows are discharged before
-    /// `encode_scoped` returns, and there is no returnable handle to `mem::forget`
-    /// your way past. If you can hand over (or share) ownership of the inputs,
-    /// prefer [`encode`](Self::encode) — same runtime, returnable handle.
-    ///
-    /// Special tokens are matched in two passes:
-    ///  1. on the raw input,
-    ///  2. then on each segment after normalization
-    ///
-    /// This way, special / added tokens declared on raw or normalized text are both caught.
-    /// The remaining text is pre-tokenized and run through the model span by span.
-    ///
-    /// Scheduling: below [`PARALLEL_MIN_TOTAL_BYTES`] of total work (or when
-    /// segmentation yields a lone chunk) everything runs inline on the calling thread
-    /// with warm thread-local scratch — no pool, no channel. Otherwise the inputs are
-    /// [`segment`](Self::segment)ed into a flat list of chunks behind one shared
-    /// claim cursor, drained by tasks on the process-global library-private rayon
-    /// pool (see [`pool`]) and by the handle itself (caller-assist). A single big
-    /// input and a batch of small ones ride the same runtime — the big input just
-    /// produces more chunks.
-    ///
-    /// `&PipelineTokenizer` is shared across worker threads — see the `Send + Sync`
-    /// guard next to the struct definition. A panic on a worker resurfaces here after
-    /// the scope joins (the affected input also reports an `Err`, so `f` never
-    /// hangs).
-    ///
-    /// todo: post-processing; fused boundary detection via the real `fast_split`
-    /// classify (this uses the interim newline-only [`classify`] stub).
-    pub fn encode_scoped<'a, I, R>(
-        &self,
-        inputs: I,
-        add_special_tokens: bool,
-        f: impl FnOnce(EncodeHandle<'_>) -> R,
-    ) -> R
-    where
-        I: EncodeInputs<'a>,
-    {
-        let batch = inputs.into_batch();
-        let inputs = batch.as_slice();
-
-        // Cost gate: below the work threshold, run inline (no pool, no channel).
-        let total_bytes: usize = inputs.iter().map(|s| s.len()).sum();
-        if total_bytes < PARALLEL_MIN_TOTAL_BYTES {
-            return f(EncodeHandle::ready(self.encode_serial(inputs, add_special_tokens)));
-        }
-
-        let pool::Backend::Rayon(p) = pool::backend() else {
-            return f(EncodeHandle::ready(self.encode_serial(inputs, add_special_tokens)));
-        };
-
-        // Pick the ladder rung and build the (seq, idx)-tagged work list.
-        // `prefixes` must outlive `items`: `Spans` units borrow its buffers.
-        let mut counts = vec![0usize; inputs.len()];
-        let mut items: Vec<Item> = Vec::new();
-        let mut preresolved: Vec<ChunkMsg> = Vec::new();
-        let mut prefixes: Vec<(usize, ModelPrefix)> = Vec::new();
-
-        match self.plan() {
-            ParallelPlan::SplitRaw(cut) => {
-                for c in self.segment(inputs, cut) {
-                    let idx = counts[c.seq_id];
-                    counts[c.seq_id] += 1;
-                    items.push(Item {
-                        seq: c.seq_id,
-                        idx,
-                        work: Work::Full(&inputs[c.seq_id][c.range]),
-                    });
-                }
-            }
-            // Only worth its serial prefix when the batch alone can't feed the
-            // pool (few, large inputs) — bench-tunable heuristic.
-            ParallelPlan::SplitAtModel if inputs.len() < p.current_num_threads() => {
-                for (seq, &input) in inputs.iter().enumerate() {
-                    if input.len() >= 2 * PARALLEL_MIN_TOTAL_BYTES {
-                        // A prefix error falls through to a Full unit, whose
-                        // worker will surface the same error for this input.
-                        if let Ok(prefix) = self.model_prefix(input) {
-                            prefixes.push((seq, prefix));
-                            continue;
-                        }
-                    }
-                    let idx = counts[seq];
-                    counts[seq] += 1;
-                    items.push(Item {
-                        seq,
-                        idx,
-                        work: Work::Full(input),
-                    });
-                }
-                // Second phase: `prefixes` storage is settled, borrows are safe.
-                for (seq, prefix) in &prefixes {
-                    for unit in &prefix.units {
-                        let idx = counts[*seq];
-                        counts[*seq] += 1;
-                        match unit {
-                            PrefixUnit::Special(t) => {
-                                preresolved.push((*seq, idx, Ok(vec![PipelineToken { id: *t }])))
-                            }
-                            PrefixUnit::Group { text, spans } => {
-                                let text: &str = match text {
-                                    PrefixText::Raw(r) => &inputs[*seq][r.clone()],
-                                    PrefixText::Norm { buf, range } => {
-                                        &prefix.norm_bufs[*buf][range.clone()]
-                                    }
-                                };
-                                items.push(Item {
-                                    seq: *seq,
-                                    idx,
-                                    work: Work::Spans {
-                                        text,
-                                        spans: &prefix.spans[spans.clone()],
-                                    },
-                                });
-                            }
-                        }
-                    }
-                }
-            }
-            _ => {
-                for (seq, &input) in inputs.iter().enumerate() {
-                    counts[seq] = 1;
-                    items.push(Item {
-                        seq,
-                        idx: 0,
-                        work: Work::Full(input),
-                    });
-                }
-            }
-        }
-
-        // Too little schedulable work to be worth the pool.
-        if items.len() < 2 && preresolved.is_empty() {
-            return f(EncodeHandle::ready(self.encode_serial(inputs, add_special_tokens)));
-        }
-
-        // LPT: claim the largest units first so no giant chunk lands last
-        // (straggler tail); the (seq, idx) tags keep reassembly order-free.
-        items.sort_by_key(|item| std::cmp::Reverse(item.work.cost()));
-
-        self.encode_rayon(p, &items, counts, preresolved, add_special_tokens, f)
+    /// The added/special-token matcher the frame passes run with.
+    pub fn get_added_vocabulary(&self) -> &impl PipelinePatternMatcher {
+        &self.inner.added_vocabulary
     }
 
-    /// Encode one or many sequences, returning an [`EncodeJob`] — an owned,
+    pub fn get_normalizer(&self) -> Option<&NormalizerWrapper> {
+        self.inner.normalizer.as_ref()
+    }
+
+    pub fn get_pre_tokenizer(&self) -> &PipelinePreTokenizer {
+        &self.inner.pre_tokenizer
+    }
+
+    /// Encode one or many sequences, returning an [`EncodeHandle`] — an owned,
     /// escapable handle: workers keep encoding in the background while the caller
     /// holds it, drains it (blocking `Iterator` / [`wait_for_completion`]), or polls
     /// it as a `Stream` (with the `async` feature). **This is the default API.**
     ///
-    /// The job is `'static`: it holds the input storage (see [`IntoStableInputs`] —
-    /// moving a `String`/`Vec<String>` or sharing an `Arc<str>` is zero-copy;
+    /// The job is `'static`: it holds the input storage (see [`IntoInputs`] —
+    /// moving a `String`/`Vec<String>` is zero-copy;
     /// passing `&str` pays one copy at the boundary) and a cheap clone of this
     /// tokenizer handle. Chunks are byte *ranges* into that storage, so there is no
     /// unsafe and no join barrier on this path — dropping the job cancels unclaimed
     /// work, and the last worker releases the storage.
     ///
-    /// Same runtime and semantics as [`encode_scoped`](Self::encode_scoped): cost
-    /// gate below [`PARALLEL_MIN_TOTAL_BYTES`] (the job comes back already
-    /// complete), chunk-safe segmentation, input-order results, worker panics
-    /// surface as that input's `Err`.
+    /// Scheduling: cost gate below `PARALLEL_MIN_TOTAL_BYTES` (the job comes
+    /// back already complete, no pool touched); otherwise `ParallelPlan`-driven
+    /// work units behind one shared claim cursor, drained by pool tasks and by
+    /// the job's blocking faces (caller-assist). Results surface in input
+    /// order; worker panics surface as that input's `Err`.
     ///
-    /// [`wait_for_completion`]: EncodeJob::wait_for_completion
-    pub fn encode<I: IntoStableInputs>(&self, inputs: I, add_special_tokens: bool) -> EncodeJob {
-        let storage = inputs.into_stable();
+    /// [`wait_for_completion`]: EncodeHandle::wait_for_completion
+    pub fn encode<I: IntoInputs>(&self, inputs: I, add_special_tokens: bool) -> EncodeHandle {
+        let storage = inputs.into_inputs();
         let n_inputs = storage.len();
         let refs: Vec<&str> = (0..n_inputs).map(|i| storage.get(i)).collect();
 
         // Cost gate: small work is encoded right here; the job comes back Ready.
         let total_bytes: usize = refs.iter().map(|s| s.len()).sum();
         if total_bytes < PARALLEL_MIN_TOTAL_BYTES {
-            return EncodeJob::ready(self.encode_serial(&refs, add_special_tokens));
+            return EncodeHandle::ready(self.encode_serial(&refs, add_special_tokens));
         }
-        let p = match pool::backend() {
-            pool::Backend::Inline => {
-                return EncodeJob::ready(self.encode_serial(&refs, add_special_tokens))
-            }
-            pool::Backend::Rayon(p) => p,
+        let Some(pool) = pool::rayon() else {
+            return EncodeHandle::ready(self.encode_serial(&refs, add_special_tokens));
         };
 
-        // Pick the ladder rung and build the (seq, idx)-tagged unit list.
+        // Pick the parallel plan and build the (seq, idx)-tagged unit list.
         // Everything is range-based, so nothing borrows `refs`/`storage`.
         let mut counts = vec![0usize; n_inputs];
-        let mut units: Vec<OwnedUnit> = Vec::new();
+        let mut units: Vec<Item> = Vec::new();
         let mut norm_bufs: Vec<String> = Vec::new();
         let mut spans: Vec<Span> = Vec::new();
-        let mut preresolved: Vec<ChunkMsg> = Vec::new();
+        let mut preresolved: Vec<UnitResult> = Vec::new();
 
         match self.plan() {
-            ParallelPlan::SplitRaw(cut) => {
-                for c in self.segment(&refs, cut) {
-                    let idx = counts[c.seq_id];
-                    counts[c.seq_id] += 1;
-                    units.push(OwnedUnit {
-                        seq: c.seq_id,
-                        idx,
-                        work: OwnedWork::Full(c.range),
-                    });
+            ParallelPlan::SplitRaw(boundary) => {
+                // Fused: large inputs become fixed strides that workers
+                // boundary-snap themselves — no serial pre-scan. A stride
+                // whose window has no boundary yields an empty result, so the
+                // per-input chunk count stays static for reassembly.
+                for (seq, &input) in refs.iter().enumerate() {
+                    if input.len() >= 2 * PARALLEL_MIN_TOTAL_BYTES {
+                        for index in 0..input.len().div_ceil(PARALLEL_MIN_TOTAL_BYTES) {
+                            let idx = counts[seq];
+                            counts[seq] += 1;
+                            units.push(Item {
+                                seq,
+                                idx,
+                                work: Work::Stride { index, boundary },
+                            });
+                        }
+                    } else {
+                        let idx = counts[seq];
+                        counts[seq] += 1;
+                        units.push(Item {
+                            seq,
+                            idx,
+                            work: Work::Full(0..input.len()),
+                        });
+                    }
                 }
             }
             // Only worth its serial prefix when the batch alone can't feed the
             // pool (few, large inputs) — bench-tunable heuristic.
-            ParallelPlan::SplitAtModel if n_inputs < p.current_num_threads() => {
+            ParallelPlan::SplitAtModel if n_inputs < pool.current_num_threads() => {
                 for (seq, &input) in refs.iter().enumerate() {
                     if input.len() >= 2 * PARALLEL_MIN_TOTAL_BYTES {
                         // A prefix error falls through to a Full unit, whose
@@ -1434,11 +1318,11 @@ impl PipelineTokenizer {
                                 let idx = counts[seq];
                                 counts[seq] += 1;
                                 match unit {
-                                    PrefixUnit::Special(t) => preresolved.push((
+                                    PrefixUnit::Special(t) => preresolved.push(UnitResult {
                                         seq,
                                         idx,
-                                        Ok(vec![PipelineToken { id: t }]),
-                                    )),
+                                        tokens: Ok(vec![PipelineToken { id: t }]),
+                                    }),
                                     PrefixUnit::Group { text, spans: sr } => {
                                         let text = match text {
                                             PrefixText::Raw(r) => PrefixText::Raw(r),
@@ -1447,10 +1331,10 @@ impl PipelineTokenizer {
                                                 range,
                                             },
                                         };
-                                        units.push(OwnedUnit {
+                                        units.push(Item {
                                             seq,
                                             idx,
-                                            work: OwnedWork::Spans {
+                                            work: Work::Spans {
                                                 text,
                                                 spans: sr.start + span_base..sr.end + span_base,
                                             },
@@ -1463,20 +1347,20 @@ impl PipelineTokenizer {
                     }
                     let idx = counts[seq];
                     counts[seq] += 1;
-                    units.push(OwnedUnit {
+                    units.push(Item {
                         seq,
                         idx,
-                        work: OwnedWork::Full(0..input.len()),
+                        work: Work::Full(0..input.len()),
                     });
                 }
             }
             _ => {
                 for (seq, &input) in refs.iter().enumerate() {
                     counts[seq] = 1;
-                    units.push(OwnedUnit {
+                    units.push(Item {
                         seq,
                         idx: 0,
-                        work: OwnedWork::Full(0..input.len()),
+                        work: Work::Full(0..input.len()),
                     });
                 }
             }
@@ -1484,7 +1368,7 @@ impl PipelineTokenizer {
 
         // Too little schedulable work to be worth the pool.
         if units.len() < 2 && preresolved.is_empty() {
-            return EncodeJob::ready(self.encode_serial(&refs, add_special_tokens));
+            return EncodeHandle::ready(self.encode_serial(&refs, add_special_tokens));
         }
         drop(refs);
 
@@ -1492,8 +1376,9 @@ impl PipelineTokenizer {
         // (straggler tail); the (seq, idx) tags keep reassembly order-free.
         units.sort_by_key(|unit| {
             std::cmp::Reverse(match &unit.work {
-                OwnedWork::Full(range) => range.len(),
-                OwnedWork::Spans { spans: sr, .. } => {
+                Work::Full(range) => range.len(),
+                Work::Stride { .. } => PARALLEL_MIN_TOTAL_BYTES,
+                Work::Spans { spans: sr, .. } => {
                     let group = &spans[sr.clone()];
                     group
                         .last()
@@ -1503,7 +1388,7 @@ impl PipelineTokenizer {
             })
         });
 
-        let (tx, rx) = mpsc::channel::<ChunkMsg>();
+        let (tx, rx) = mpsc::channel::<UnitResult>();
         // Units the serial prefix already resolved (special tokens) go straight
         // into the channel; reassembly absorbs them like any other chunk.
         for msg in preresolved {
@@ -1526,10 +1411,10 @@ impl PipelineTokenizer {
         // Spawn one cursor-drainer per potential worker ('static: each holds an
         // Arc of the core). Drainers that find the cursor exhausted are cheap
         // no-ops.
-        let drainers = n_units.min(p.current_num_threads());
+        let drainers = n_units.min(pool.current_num_threads());
         for _ in 0..drainers {
             let core = Arc::clone(&core);
-            p.spawn(move || {
+            pool.spawn(move || {
                 SCRATCH.with(|st| {
                     let scratch = &mut *st.borrow_mut();
                     while core.run_one(scratch) {}
@@ -1537,82 +1422,10 @@ impl PipelineTokenizer {
             });
         }
 
-        EncodeJob::streaming(core, rx, counts)
+        EncodeHandle::streaming(core, rx, counts)
     }
 
-    /// Scoped-path scheduling on the library-private rayon pool: the chunks sit
-    /// behind one shared claim cursor, drained by `min(chunks, threads)`
-    /// scope-spawned drainer tasks (warm TLS scratch) **and** by the caller's
-    /// handle (caller-assist) — the same shared-cursor job model as the owned
-    /// path. `in_place_scope` joins every drainer before returning, so the
-    /// borrowed chunks never escape.
-    fn encode_rayon<R>(
-        &self,
-        p: &rayon::ThreadPool,
-        items: &[Item<'_>],
-        counts: Vec<usize>,
-        preresolved: Vec<ChunkMsg>,
-        add_special_tokens: bool,
-        f: impl FnOnce(EncodeHandle<'_>) -> R,
-    ) -> R {
-        let (tx, rx) = mpsc::channel::<ChunkMsg>();
-        // Units the serial prefix already resolved (special tokens) go straight
-        // into the channel; reassembly absorbs them like any other chunk.
-        for msg in preresolved {
-            let _ = tx.send(msg);
-        }
-        let cursor = AtomicUsize::new(0);
-        let cursor = &cursor;
-        p.in_place_scope(|s| {
-            let drainers = items.len().min(p.current_num_threads());
-            for _ in 0..drainers {
-                let tx = tx.clone();
-                s.spawn(move |_| {
-                    SCRATCH.with(|st| {
-                        let scratch = &mut *st.borrow_mut();
-                        while self.claim_one(items, cursor, add_special_tokens, &tx, scratch) {}
-                    })
-                });
-            }
-            let assist = ScopedAssist {
-                tokenizer: self,
-                items,
-                cursor,
-                add_special_tokens,
-                tx,
-            };
-            f(EncodeHandle::streaming(
-                StreamState::new(rx, counts).with_assist(assist),
-            ))
-        })
-    }
-
-    /// Claim and encode one chunk off `cursor`; `false` when the cursor is
-    /// exhausted or the receiver is gone (handle consumed early — stop working).
-    /// A panicking chunk is delivered as its input's `Err` and the drainer keeps
-    /// going, so the consumer never hangs on a chunk that will not arrive.
-    fn claim_one(
-        &self,
-        items: &[Item<'_>],
-        cursor: &AtomicUsize,
-        add_special_tokens: bool,
-        tx: &mpsc::Sender<ChunkMsg>,
-        scratch: &mut EncodeState,
-    ) -> bool {
-        let i = cursor.fetch_add(1, Ordering::Relaxed);
-        if i >= items.len() {
-            return false;
-        }
-        let item = &items[i];
-        let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| match item.work {
-            Work::Full(text) => self.encode_one_with(text, add_special_tokens, scratch),
-            Work::Spans { text, spans } => self.encode_spans(text, spans, scratch),
-        }))
-        .unwrap_or_else(|_| Err("encode worker panicked".into()));
-        tx.send((item.seq, item.idx, res)).is_ok()
-    }
-
-    /// Model-only kernel for the `SplitAtModel` rung: tokenize each pre-token
+    /// Model-only kernel for the `SplitAtModel` plan: tokenize each pre-token
     /// span of (already normalized) `text` in order.
     fn encode_spans(
         &self,
@@ -1652,14 +1465,14 @@ impl PipelineTokenizer {
         })
     }
 
-    /// Encode a single sequence with a fresh scratch buffer (serial test oracle).
-    #[cfg(test)]
-    fn encode_one(&self, input: &str, add_special_tokens: bool) -> Result<Vec<PipelineToken>> {
-        let mut state = EncodeState::new();
-        self.encode_one_with(input, add_special_tokens, &mut state)
-    }
-
-    /// Encode a single sequence, reusing the caller's [`EncodeState`] scratch.
+    /// The single encode kernel: frame (special tokens on raw text) → normalize
+    /// → frame (special tokens on normalized text) → pre-tokenize → model, for
+    /// one sequence, reusing the caller's [`EncodeState`] scratch. Every encode
+    /// path — inline, pool drainers, caller-assist, span-group prefixes — funnels
+    /// through here (or through [`encode_spans`](Self::encode_spans) for
+    /// pre-split model work).
+    ///
+    /// todo: `add_special_tokens` awaits the post-processor wiring.
     fn encode_one_with(
         &self,
         input: &str,
@@ -1671,105 +1484,52 @@ impl PipelineTokenizer {
         // conservative reserve that avoids most growth reallocations.
         let mut output = Vec::with_capacity(input.len() / 4);
         let scratch = self.inner.model.scratch_in(&mut state.model_scratch);
-        self.encode_generic::<{ Self::STAGE_MODEL }>(
-            input,
-            &mut state.pre_tokens,
-            scratch,
-            &mut output,
-        )?;
-        Ok(output)
-    }
+        let pre_tokens = &mut state.pre_tokens;
 
-    /// Span one-or-many inputs into a flat, ordered list of [`Chunk`]s. A large input is
-    /// cut at `cut` boundaries (see [`raw_cut`](Self::raw_cut)) into
-    /// ~[`PARALLEL_MIN_TOTAL_BYTES`]-sized pieces; small inputs stay whole. Each chunk keeps
-    /// its `seq_id` so results reassemble per input.
-    fn segment(&self, inputs: &[&str], cut: RawCut) -> Vec<Chunk> {
-        let mut chunks = Vec::with_capacity(inputs.len());
-        let mut tags = Vec::new();
-        for (seq_id, &input) in inputs.iter().enumerate() {
-            // Only bother splitting inputs big enough for at least two target-sized pieces.
-            if input.len() >= 2 * PARALLEL_MIN_TOTAL_BYTES {
-                let mut start = 0;
-                for cut in Self::chunk_cuts(input, &mut tags, cut) {
-                    chunks.push(Chunk {
-                        seq_id,
-                        range: start..cut,
-                    });
-                    start = cut;
-                }
-                chunks.push(Chunk {
-                    seq_id,
-                    range: start..input.len(),
-                });
-            } else {
-                chunks.push(Chunk {
-                    seq_id,
-                    range: 0..input.len(),
-                });
-            }
-        }
-        chunks
-    }
-
-    /// Byte offsets at which to cut `input`, at `cut`-kind boundaries spaced roughly
-    /// [`PARALLEL_MIN_TOTAL_BYTES`] apart.
-    ///
-    /// NOTE (MS-B): this scans the whole input on the caller and then *discards*
-    /// the classification, so the (future `fast_split`) pre-tokenizer would
-    /// classify the same bytes again on the worker. The fused MS-B executor
-    /// replaces this central cut list entirely: workers claim byte offsets,
-    /// classify their own chunk into `EncodeState` scratch, snap the boundary
-    /// from those tags, and feed the *same* tags to pretok — one classify per
-    /// byte, parallelized. See PARALLEL_ENCODE_PLAN.md § MS-B.
-    ///
-    /// [`RawCut::Newline`] cuts fall *after* a newline (a dropped delimiter for the
-    /// whitespace-delimiting pre-tokenizers that rung permits, so cut placement
-    /// doesn't change tokens); it uses the interim newline-only [`classify`] pass —
-    /// the shape `fast_split` will slot into, with `tags` as caller-owned scratch.
-    /// [`RawCut::SpaceRun`] cuts fall *at* an ASCII non-whitespace→space boundary
-    /// (the space starts the right chunk, where the GPT regex family binds it to the
-    /// following token); the previous byte is required to be ASCII printable so a
-    /// cut can never land beside a multibyte character.
-    fn chunk_cuts(input: &str, tags: &mut Vec<u8>, cut: RawCut) -> Vec<usize> {
-        let target = PARALLEL_MIN_TOTAL_BYTES;
-        let mut cuts = Vec::new();
-        let mut goal = target;
-        match cut {
-            RawCut::Newline => {
-                tags.clear();
-                tags.resize(input.len(), classify::OTHER);
-                classify::classify(input.as_bytes(), tags);
-                for (i, &tag) in tags.iter().enumerate() {
-                    // Once past the target, cut just after the next newline (a 1-byte char).
-                    if i >= goal && tag == classify::NEWLINE {
-                        let pos = i + 1;
-                        if pos < input.len() {
-                            cuts.push(pos);
-                            goal = pos + target;
+        // Extract the special tokens declared on raw text.
+        for segment in SpecialSegmentIterator::new(input, &self.inner.added_vocabulary, false) {
+            match segment {
+                Segment::SpecialToken(token) => output.push(PipelineToken { id: token }),
+                Segment::Text(chunk) => {
+                    let normalized: Cow<str> = match &self.inner.normalizer {
+                        Some(normalizer) => normalizer.normalize(chunk)?,
+                        None => Cow::Borrowed(chunk),
+                    };
+                    // Extract the special tokens declared on normalized text.
+                    for segment in
+                        SpecialSegmentIterator::new(&normalized, &self.inner.added_vocabulary, true)
+                    {
+                        match segment {
+                            Segment::SpecialToken(token) => {
+                                output.push(PipelineToken { id: token })
+                            }
+                            Segment::Text(normalized_chunk) => {
+                                pre_tokens.clear();
+                                self.inner
+                                    .pre_tokenizer
+                                    .pre_tokenize(normalized_chunk, pre_tokens)?;
+                                for pre_token in pre_tokens.iter() {
+                                    self.inner.model.tokenize_pipeline(
+                                        &normalized_chunk[pre_token.range()],
+                                        scratch,
+                                        &mut output,
+                                    )?;
+                                }
+                            }
                         }
                     }
                 }
             }
-            RawCut::SpaceRun => {
-                let bytes = input.as_bytes();
-                for i in 1..bytes.len() {
-                    if i >= goal && bytes[i] == b' ' && matches!(bytes[i - 1], 0x21..=0x7E) {
-                        cuts.push(i);
-                        goal = i + target;
-                    }
-                }
-            }
         }
-        cuts
+        Ok(output)
     }
 
     /// How this config may split a single large input for intra-input
-    /// parallelism (the escalation ladder, `PARALLEL_RUNTIME_DESIGN.md` §8):
-    /// cheapest safe rung wins.
+    /// parallelism (see `PARALLEL_RUNTIME_DESIGN.md` §8): the cheapest safe
+    /// plan wins.
     fn plan(&self) -> ParallelPlan {
-        if let Some(cut) = self.raw_cut() {
-            ParallelPlan::SplitRaw(cut)
+        if let Some(boundary) = self.stride_boundary() {
+            ParallelPlan::SplitRaw(boundary)
         } else if matches!(self.inner.model, PipelineModel::WordLevel(_)) {
             // A WordLevel "model step" is one hash lookup per pre-token — the
             // serial pre-tokenization prefix would dwarf the parallelized part.
@@ -1782,63 +1542,36 @@ impl PipelineTokenizer {
     /// Whether — and where — the config lets raw text be cut and each piece
     /// encoded independently with the same result as the whole. Requires a
     /// per-character normalizer (or none), no whitespace-absorbing or
-    /// whitespace-containing added tokens, and a pre-tokenizer with a provable
-    /// hard boundary: whitespace-delimiting ([`RawCut::Newline`]) or a
-    /// known-safe byte-level regex ([`RawCut::SpaceRun`]). The real
-    /// classify/boundary substrate (MS-B) will replace this heuristic.
-    fn raw_cut(&self) -> Option<RawCut> {
-        let norm_ok = self.inner.normalizer.as_ref().is_none_or(Self::norm_chunk_safe);
+    /// whitespace-containing added tokens, and a pre-tokenizer that exposes a
+    /// [`StrideBoundary`] its token grammar provably cannot cross. Workers
+    /// find the actual cut positions themselves — see [`stride_range`].
+    /// Each pipeline stage contributes its own split-safety declaration and
+    /// the plan composes them: the normalizer must preserve boundaries
+    /// ([`NormalizerWrapper::preserves_stride_boundaries`]), the added
+    /// vocabulary must not absorb or contain whitespace, and the pre-tokenizer
+    /// provides the boundary finder itself
+    /// ([`PipelinePreTokenizer::stride_boundary`]). Future stage-level splits
+    /// (e.g. cutting *after* a serial normalization pass) hook into the same
+    /// per-component declarations.
+    fn stride_boundary(&self) -> Option<StrideBoundary> {
+        let norm_ok = self
+            .inner
+            .normalizer
+            .as_ref()
+            .is_none_or(NormalizerWrapper::preserves_stride_boundaries);
         if !norm_ok
             || self.inner.added_vocabulary.has_affix_strip()
             || self.inner.added_token_contains_whitespace
         {
             return None;
         }
-        match &self.inner.pre_tokenizer {
-            PipelinePreTokenizer::Whitespace(_)
-            | PipelinePreTokenizer::WhitespaceSplit(_)
-            | PipelinePreTokenizer::Bert(_) => Some(RawCut::Newline),
-            pt if Self::space_cut_safe(pt) => Some(RawCut::SpaceRun),
-            _ => None,
-        }
+        self.inner.pre_tokenizer.stride_boundary()
     }
 
-    /// Whether `pt` provably never yields a pre-token spanning a
-    /// non-whitespace→space boundary — the invariant behind
-    /// [`RawCut::SpaceRun`]. Conservative allowlist of the byte-level GPT
-    /// regex family (each listed pattern has been checked branch by branch: no
-    /// alternative can match a non-whitespace character directly followed by a
-    /// space *inside* one token). The llama/GPT-4 pre-tokenizer shape
-    /// `Sequence[Span(regex), ByteLevel(use_regex: false) → None]` is
-    /// recognized too.
-    fn space_cut_safe(pt: &PipelinePreTokenizer) -> bool {
-        /// GPT-2's regex plus the llama-3 / cl100k-style variant.
-        const SPACE_SAFE_REGEXES: &[&str] = &[
-            GPT2_REGEX_STR,
-            r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+",
-        ];
-        match pt {
-            PipelinePreTokenizer::Split(s) => {
-                !s.invert
-                    && matches!(s.behavior, SplitDelimiterBehavior::Isolated)
-                    && matches!(
-                        &s.pattern,
-                        SplitPattern::Regex(r) if SPACE_SAFE_REGEXES.contains(&r.as_str())
-                    )
-            }
-            PipelinePreTokenizer::Sequence(seq) => match seq.members() {
-                [only] => Self::space_cut_safe(only),
-                [split, PipelinePreTokenizer::None] => Self::space_cut_safe(split),
-                _ => false,
-            },
-            _ => false,
-        }
-    }
-
-    /// Run the serial prefix of the [`ParallelPlan::SplitAtModel`] rung over one
+    /// Run the serial prefix of the [`ParallelPlan::SplitAtModel`] plan over one
     /// input: frame → normalize → frame(normalized) → pre-tokenize, packaging
     /// the remaining model work as ~[`PARALLEL_MIN_TOTAL_BYTES`]-sized
-    /// span-groups. Mirrors [`encode_generic`](Self::encode_generic) stage by
+    /// span-groups. Mirrors the walker in [`encode_one_with`](Self::encode_one_with) stage by
     /// stage — the two must agree on unit order for reassembly to be
     /// byte-identical to the serial encode.
     fn model_prefix(&self, input: &str) -> Result<ModelPrefix> {
@@ -1866,7 +1599,9 @@ impl PipelineTokenizer {
                             }
                             Segment::Text(nchunk) => {
                                 pre_tokens.clear();
-                                self.inner.pre_tokenizer.pre_tokenize(nchunk, &mut pre_tokens)?;
+                                self.inner
+                                    .pre_tokenizer
+                                    .pre_tokenize(nchunk, &mut pre_tokens)?;
                                 if pre_tokens.is_empty() {
                                     continue;
                                 }
@@ -1920,95 +1655,6 @@ impl PipelineTokenizer {
             }
         }
         Ok(prefix)
-    }
-
-    /// Whether a normalizer preserves the newline-boundary chunking invariant: it must be
-    /// per-character (no edge-strip, prefix-insert, or cross-boundary rules). A `Sequence`
-    /// is safe iff every member is.
-    fn norm_chunk_safe(n: &NormalizerWrapper) -> bool {
-        match n {
-            NormalizerWrapper::NFC(_)
-            | NormalizerWrapper::NFD(_)
-            | NormalizerWrapper::NFKC(_)
-            | NormalizerWrapper::NFKD(_)
-            | NormalizerWrapper::Lowercase(_)
-            | NormalizerWrapper::BertNormalizer(_)
-            | NormalizerWrapper::StripAccents(_) => true,
-            NormalizerWrapper::Sequence(seq) => seq.as_ref().iter().all(Self::norm_chunk_safe),
-            // Strip, Prepend, Replace, Precompiled, Nmt, ByteLevel: may cross boundaries.
-            _ => false,
-        }
-    }
-
-    /// Single source of truth for the encode pipeline, generic over how many stages
-    /// run. `STAGE` is a **const generic**, so `if STAGE >= …` folds at compile time and
-    /// the disabled stages are compiled out — the full specialization ([`STAGE_MODEL`],
-    /// which [`encode`](Self::encode) calls) is branchless and identical to a
-    /// hand-written full pipeline, while the benchmark drives lower `STAGE` values to
-    /// time each stage's marginal cost (the ablation ladder), e.g.
-    /// `model = t(MODEL) − t(SPLIT)`. No runtime gate, no `Instant` in the loop.
-    ///
-    /// [`STAGE_MODEL`]: Self::STAGE_MODEL
-    ///
-    /// `output` and the `pre_tokens` scratch are caller-owned so a benchmark can reuse
-    /// them across calls and observe both buffers to anchor the ablation levels — the
-    /// library itself stays free of any `black_box`/timing artifact.
-    #[doc(hidden)] // public only so `examples/fixture_bench.rs` can drive partial stages
-    pub fn encode_generic<const STAGE: u8>(
-        &self,
-        input: &str,
-        pre_tokens: &mut Vec<Span>,
-        scratch: &mut PipelineModelScratch,
-        output: &mut Vec<PipelineToken>,
-    ) -> Result<()> {
-        // First, we extract all special tokens from the non-normalized input
-        for segment in SpecialSegmentIterator::new(input, &self.inner.added_vocabulary, false) {
-            match segment {
-                Segment::SpecialToken(token) => {
-                    output.push(PipelineToken { id: token });
-                }
-                Segment::Text(chunk) => {
-                    let normalized: Cow<str> = if STAGE >= Self::STAGE_NORMALIZE {
-                        match &self.inner.normalizer {
-                            Some(normalizer) => normalizer.normalize(chunk)?,
-                            None => Cow::Borrowed(chunk),
-                        }
-                    } else {
-                        Cow::Borrowed(chunk)
-                    };
-
-                    // Extract special tokens from the normalized input
-                    for segment in
-                        SpecialSegmentIterator::new(&normalized, &self.inner.added_vocabulary, true)
-                    {
-                        match segment {
-                            Segment::SpecialToken(token) => {
-                                output.push(PipelineToken { id: token });
-                            }
-                            Segment::Text(normalized_chunk) => {
-                                if STAGE >= Self::STAGE_SPLIT {
-                                    // Pre-tokenize the chunk of normalized text
-                                    pre_tokens.clear();
-                                    self.inner.pre_tokenizer
-                                        .pre_tokenize(normalized_chunk, pre_tokens)?;
-                                    if STAGE >= Self::STAGE_MODEL {
-                                        // Tokenize each chunk
-                                        for pre_token in pre_tokens.iter() {
-                                            self.inner.model.tokenize_pipeline(
-                                                &normalized_chunk[pre_token.range()],
-                                                scratch,
-                                                output,
-                                            )?;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            };
-        }
-        Ok(())
     }
 }
 
@@ -2333,6 +1979,11 @@ mod tests {
     use crate::pre_tokenizers::byte_level::ByteLevel;
     use crate::pre_tokenizers::sequence::Sequence;
 
+    /// Serial oracle: encode one sequence with a fresh scratch, no pool.
+    fn encode_one(tok: &PipelineTokenizer, input: &str) -> Result<Vec<PipelineToken>> {
+        tok.encode_one_with(input, false, &mut EncodeState::new())
+    }
+
     /// A chunk-safe pipeline: WordLevel model + `WhitespaceSplit` pre-tokenizer, no
     /// normalizer, no added tokens.
     fn chunk_safe_pipeline() -> PipelineTokenizer {
@@ -2359,55 +2010,96 @@ mod tests {
     #[test]
     fn intra_seq_splits_and_matches_serial() {
         let tok = chunk_safe_pipeline();
-        assert_eq!(
-            tok.raw_cut(),
-            Some(RawCut::Newline),
-            "wordlevel + WhitespaceSplit must be newline-chunk-safe"
+        assert!(
+            tok.stride_boundary().is_some(),
+            "wordlevel + WhitespaceSplit must be raw-chunkable"
         );
 
         let big = "aa bb cc\n".repeat(4000); // ~36 KB, newline-delimited
         assert!(big.len() > 2 * PARALLEL_MIN_TOTAL_BYTES);
 
-        let chunks = tok.segment(&[big.as_str()], RawCut::Newline);
+        let strides = big.len().div_ceil(PARALLEL_MIN_TOTAL_BYTES);
+        let mut tags = Vec::new();
+        let chunks = (0..strides)
+            .filter_map(|j| stride_range(&big, j, boundary_at_whitespace, &mut tags))
+            .count();
         assert!(
-            chunks.len() > 1,
-            "expected the large input to split, got {} chunk(s)",
-            chunks.len()
+            chunks > 1,
+            "expected the large input to split, got {}",
+            chunks
         );
 
         let ids = |v: Vec<PipelineToken>| v.iter().map(|t| t.id).collect::<Vec<_>>();
-        let parallel = ids(tok
-            .encode_scoped(big.as_str(), false, |h| h.into_single())
-            .unwrap());
-        let serial = ids(tok.encode_one(big.as_str(), false).unwrap());
+        let parallel = ids(tok.encode(big.as_str(), false).into_single().unwrap());
+        let serial = ids(encode_one(&tok, big.as_str()).unwrap());
         assert_eq!(parallel, serial, "chunked encode must equal serial encode");
 
         // The owned (returnable) job must agree too — move the storage in.
         let owned = ids(tok.encode(big.clone(), false).into_single().unwrap());
-        assert_eq!(owned, serial, "owned EncodeJob must equal serial encode");
+        assert_eq!(owned, serial, "owned EncodeHandle must equal serial encode");
     }
 
-    /// `chunk_cuts` cuts a multi-line input just after newlines, spaced ~target apart, never
-    /// at end-of-input.
+    /// Whitespace-family strides cut *at* a whitespace character (space or
+    /// newline) and tile the input exactly.
     #[test]
-    fn chunk_cuts_at_newlines() {
+    fn stride_cuts_at_whitespace() {
         let input = "aa bb cc\n".repeat(4000);
-        let mut tags = Vec::new();
-        let cuts = PipelineTokenizer::chunk_cuts(&input, &mut tags, RawCut::Newline);
-        assert!(!cuts.is_empty(), "expected at least one cut");
-        for &c in &cuts {
-            assert!(c < input.len(), "cut must be within the input");
-            assert_eq!(
-                input.as_bytes()[c - 1],
-                b'\n',
-                "cut must fall just after a newline"
-            );
-        }
-        for w in cuts.windows(2) {
+        let chunks = assert_strides_partition(&input, boundary_at_whitespace, |bytes, start| {
             assert!(
-                w[1] - w[0] >= PARALLEL_MIN_TOTAL_BYTES,
-                "cuts spaced >= target apart"
+                bytes[start].is_ascii_whitespace(),
+                "cut must fall at a whitespace character"
             );
+        });
+        assert!(chunks > 1, "expected several chunks, got {}", chunks);
+    }
+
+    /// Every non-empty stride chunk must tile the input exactly (no gap, no
+    /// overlap — adjacent workers must agree on every cut with no
+    /// communication), with each chunk start satisfying the cut predicate.
+    /// Returns the number of non-empty chunks.
+    fn assert_strides_partition(
+        input: &str,
+        boundary: StrideBoundary,
+        check_start: impl Fn(&[u8], usize),
+    ) -> usize {
+        let bytes = input.as_bytes();
+        let mut tags = Vec::new();
+        let mut covered = 0;
+        let mut chunks = 0;
+        for j in 0..input.len().div_ceil(PARALLEL_MIN_TOTAL_BYTES) {
+            if let Some(range) = stride_range(input, j, boundary, &mut tags) {
+                assert_eq!(range.start, covered, "chunks must tile the input");
+                assert!(range.end > range.start);
+                if range.start > 0 {
+                    check_start(bytes, range.start);
+                }
+                covered = range.end;
+                chunks += 1;
+            }
+        }
+        assert_eq!(covered, input.len(), "chunks must cover the whole input");
+        chunks
+    }
+
+    /// An input with no safe boundary at all degrades to stride 0 owning the
+    /// whole input (serial), every other stride empty.
+    #[test]
+    fn strides_without_boundaries_degrade_to_whole_input() {
+        let input = "a".repeat(4 * PARALLEL_MIN_TOTAL_BYTES);
+        let mut tags = Vec::new();
+        for boundary in [boundary_at_whitespace as StrideBoundary, boundary_fsm] {
+            assert_eq!(
+                stride_range(&input, 0, boundary, &mut tags),
+                Some(0..input.len())
+            );
+            for j in 1..input.len().div_ceil(PARALLEL_MIN_TOTAL_BYTES) {
+                assert_eq!(
+                    stride_range(&input, j, boundary, &mut tags),
+                    None,
+                    "stride {}",
+                    j
+                );
+            }
         }
     }
 
@@ -2423,26 +2115,34 @@ mod tests {
         let ids = |v: Vec<PipelineToken>| v.iter().map(|t| t.id).collect::<Vec<_>>();
         let serial: Vec<Vec<u32>> = inputs
             .iter()
-            .map(|s| ids(tok.encode_one(s, false).unwrap()))
+            .map(|s| ids(encode_one(tok, s).unwrap()))
             .collect();
 
-        // Scoped, bulk collect.
+        // Borrowed-slice sugar (copies in), bulk collect.
         let collected = tok
-            .encode_scoped(&inputs, false, |h| h.wait_for_completion())
+            .encode(&inputs[..], false)
+            .wait_for_completion()
             .unwrap();
         let collected_ids: Vec<Vec<u32>> = collected.into_iter().map(ids).collect();
         assert_eq!(collected_ids, serial, "wait_for_completion != serial");
 
-        // Scoped, streaming iterator drained inside the scope in input order.
-        let streamed: Vec<Vec<u32>> =
-            tok.encode_scoped(&inputs, false, |h| h.map(|r| ids(r.unwrap())).collect());
+        // Borrowed-slice sugar, streaming iterator in input order.
+        let streamed: Vec<Vec<u32>> = tok
+            .encode(&inputs[..], false)
+            .map(|r| ids(r.unwrap()))
+            .collect();
         assert_eq!(streamed, serial, "streaming Iterator != serial");
 
         // Owned returnable job (the default API): the handle escapes the call and
         // is drained afterwards, both faces.
         let owned_inputs: Vec<String> = inputs.iter().map(|s| (*s).to_owned()).collect();
         let job = tok.encode(owned_inputs.clone(), false);
-        let owned: Vec<Vec<u32>> = job.wait_for_completion().unwrap().into_iter().map(ids).collect();
+        let owned: Vec<Vec<u32>> = job
+            .wait_for_completion()
+            .unwrap()
+            .into_iter()
+            .map(ids)
+            .collect();
         assert_eq!(owned, serial, "owned wait_for_completion != serial");
 
         let job = tok.encode(owned_inputs.clone(), false);
@@ -2454,7 +2154,10 @@ mod tests {
         let job = tok.encode(owned_inputs, false);
         drop(job);
         let again = ids(tok.encode(a.clone(), false).into_single().unwrap());
-        assert_eq!(again, serial[0], "pool must stay usable after a dropped job");
+        assert_eq!(
+            again, serial[0],
+            "pool must stay usable after a dropped job"
+        );
     }
 
     #[test]
@@ -2462,22 +2165,58 @@ mod tests {
         assert_encode_matches_serial(&chunk_safe_pipeline());
     }
 
-    /// `SpaceRun` cuts land only at ASCII non-whitespace→space boundaries,
-    /// spaced ~target apart, never beside a multibyte character.
+    /// FSM-family cuts on mixed prose land at whitespace boundaries and tile the
+    /// input exactly.
     #[test]
-    fn chunk_cuts_at_space_runs() {
+    fn stride_cuts_at_fsm_boundaries() {
         let input = "word, another.  且つ 更に\n".repeat(2000);
-        let mut tags = Vec::new();
-        let cuts = PipelineTokenizer::chunk_cuts(&input, &mut tags, RawCut::SpaceRun);
-        assert!(!cuts.is_empty(), "expected at least one cut");
-        let bytes = input.as_bytes();
-        for &c in &cuts {
-            assert_eq!(bytes[c], b' ', "cut must land on a space");
+        let chunks = assert_strides_partition(&input, boundary_fsm, |bytes, start| {
             assert!(
-                matches!(bytes[c - 1], 0x21..=0x7E),
-                "byte before a cut must be ASCII non-whitespace"
+                bytes[start].is_ascii_whitespace(),
+                "cut must land at whitespace, got {:#x}",
+                bytes[start]
             );
-        }
+        });
+        assert!(chunks > 1, "expected several chunks, got {}", chunks);
+    }
+
+    /// The number transitions are what split space-and-newline-free byte-level
+    /// input: a base64-like blob (letters + digits, no whitespace) still tiles,
+    /// with every cut landing at a digit↔letter flip.
+    #[test]
+    fn stride_cuts_space_free_at_number_transitions() {
+        // No whitespace anywhere; only letter/number run transitions.
+        let input = "aGVsbG8x3Wb29ybGQ7abc123def456ghi".repeat(4000); // ~130 KB
+        assert!(!input.bytes().any(|b| b.is_ascii_whitespace()));
+        let chunks = assert_strides_partition(&input, boundary_fsm, |bytes, start| {
+            let cut = bytes[start];
+            let prev = bytes[start - 1];
+            let flip = (cut.is_ascii_digit() && prev.is_ascii_alphabetic())
+                || (cut.is_ascii_alphabetic() && prev.is_ascii_digit());
+            assert!(flip, "cut must be a digit↔letter flip, got {prev:#x}->{cut:#x}");
+        });
+        assert!(
+            chunks > 1,
+            "whitespace-free input must still split, got {}",
+            chunks
+        );
+    }
+
+    /// The newline-after-word cut is what parallelizes space-sparse scripts: a
+    /// document of CJK lines (no ASCII spaces) still splits, because a newline
+    /// following a CJK letter is a safe FSM cut. The previous character is a
+    /// multibyte letter, so this also exercises the `Cont` walk-back.
+    #[test]
+    fn stride_cuts_cjk_at_newlines() {
+        let input = "吾輩は猫である名前はまだ無い\n".repeat(3000); // ~120 KB, no spaces
+        let chunks = assert_strides_partition(&input, boundary_fsm, |bytes, start| {
+            assert_eq!(bytes[start], b'\n', "CJK cut must land at a newline");
+        });
+        assert!(
+            chunks > 1,
+            "space-sparse CJK input must still split, got {}",
+            chunks
+        );
     }
 
     /// The GPT-2 byte-level regex qualifies for `SpaceRun` raw cuts, both bare
@@ -2503,10 +2242,9 @@ mod tests {
             }
             PipelineTokenizer::try_from(&tok).unwrap()
         };
-        assert_eq!(make(false).raw_cut(), Some(RawCut::SpaceRun));
-        assert_eq!(
-            make(true).raw_cut(),
-            None,
+        assert!(make(false).stride_boundary().is_some());
+        assert!(
+            make(true).stride_boundary().is_none(),
             "whitespace inside an added token must disable raw cuts"
         );
 
@@ -2515,10 +2253,10 @@ mod tests {
             PipelinePreTokenizer::Split(split()),
             PipelinePreTokenizer::None,
         ]));
-        assert!(PipelineTokenizer::space_cut_safe(&seq));
-        // A pre-tokenizer outside the allowlist must not qualify.
-        let not_allowlisted = PipelinePreTokenizer::Punctuation(Punctuation::default());
-        assert!(!PipelineTokenizer::space_cut_safe(&not_allowlisted));
+        assert!(seq.stride_boundary().is_some());
+        // A pre-tokenizer without a provable boundary must not qualify.
+        let no_boundary = PipelinePreTokenizer::Punctuation(Punctuation::default());
+        assert!(no_boundary.stride_boundary().is_none());
     }
 
     /// A large input under the GPT-2 regex pre-tokenizer takes the `SpaceRun`
@@ -2549,24 +2287,25 @@ mod tests {
             .unwrap(),
         ));
         let tok = PipelineTokenizer::try_from(&tok).unwrap();
-        assert_eq!(tok.plan(), ParallelPlan::SplitRaw(RawCut::SpaceRun));
+        assert!(matches!(tok.plan(), ParallelPlan::SplitRaw(_)));
 
         let big = "aa bb,cc!  aa\tbb  cc\n\n".repeat(2000); // ~44 KB, mixed runs
-        let chunks = tok.segment(&[big.as_str()], RawCut::SpaceRun);
-        assert!(chunks.len() > 1, "expected the input to split");
+        let mut tags = Vec::new();
+        let chunks = (0..big.len().div_ceil(PARALLEL_MIN_TOTAL_BYTES))
+            .filter_map(|j| stride_range(&big, j, boundary_fsm, &mut tags))
+            .count();
+        assert!(chunks > 1, "expected the input to split, got {}", chunks);
 
         let ids = |v: Vec<PipelineToken>| v.iter().map(|t| t.id).collect::<Vec<_>>();
-        let serial = ids(tok.encode_one(&big, false).unwrap());
-        let scoped = ids(tok
-            .encode_scoped(big.as_str(), false, |h| h.into_single())
-            .unwrap());
-        assert_eq!(scoped, serial, "SpaceRun scoped != serial");
+        let serial = ids(encode_one(&tok, &big).unwrap());
+        let by_ref = ids(tok.encode(big.as_str(), false).into_single().unwrap());
+        assert_eq!(by_ref, serial, "SpaceRun != serial");
         let owned = ids(tok.encode(big, false).into_single().unwrap());
         assert_eq!(owned, serial, "SpaceRun owned != serial");
     }
 
     /// A non-chunk-safe config: regex `Span` pre-tokenizer (unknown regex, so
-    /// no raw cut qualifies) + WordPiece model, so the ladder must
+    /// no raw cut qualifies) + WordPiece model, so the plan must
     /// escalate to [`ParallelPlan::SplitAtModel`]. Optionally a `Lowercase`
     /// normalizer (safe per-char, but the pretok already forces the escalation)
     /// and a `<s>` special token.
@@ -2603,7 +2342,7 @@ mod tests {
     #[test]
     fn split_at_model_matches_serial() {
         let tok = split_at_model_pipeline(false);
-        assert_eq!(tok.plan(), ParallelPlan::SplitAtModel);
+        assert!(matches!(tok.plan(), ParallelPlan::SplitAtModel));
 
         let big = "aa.bb.cc.".repeat(3000); // ~27 KB, punctuation-delimited
         let prefix = tok.model_prefix(&big).unwrap();
@@ -2613,14 +2352,15 @@ mod tests {
             .filter(|u| matches!(u, PrefixUnit::Group { .. }))
             .count();
         assert!(groups > 1, "expected several span-groups, got {}", groups);
-        assert!(prefix.norm_bufs.is_empty(), "no normalizer -> no owned bufs");
+        assert!(
+            prefix.norm_bufs.is_empty(),
+            "no normalizer -> no owned bufs"
+        );
 
         let ids = |v: Vec<PipelineToken>| v.iter().map(|t| t.id).collect::<Vec<_>>();
-        let serial = ids(tok.encode_one(&big, false).unwrap());
-        let scoped = ids(tok
-            .encode_scoped(big.as_str(), false, |h| h.into_single())
-            .unwrap());
-        assert_eq!(scoped, serial, "scoped SplitAtModel != serial");
+        let serial = ids(encode_one(&tok, &big).unwrap());
+        let by_ref = ids(tok.encode(big.as_str(), false).into_single().unwrap());
+        assert_eq!(by_ref, serial, "SplitAtModel != serial");
         let owned = ids(tok.encode(big, false).into_single().unwrap());
         assert_eq!(owned, serial, "owned SplitAtModel != serial");
     }
@@ -2631,7 +2371,7 @@ mod tests {
     #[test]
     fn split_at_model_normalizer_and_specials_match_serial() {
         let tok = split_at_model_pipeline(true);
-        assert_eq!(tok.plan(), ParallelPlan::SplitAtModel);
+        assert!(matches!(tok.plan(), ParallelPlan::SplitAtModel));
 
         let big = format!(
             "{}<s>{}",
@@ -2652,11 +2392,9 @@ mod tests {
         );
 
         let ids = |v: Vec<PipelineToken>| v.iter().map(|t| t.id).collect::<Vec<_>>();
-        let serial = ids(tok.encode_one(&big, false).unwrap());
-        let scoped = ids(tok
-            .encode_scoped(big.as_str(), false, |h| h.into_single())
-            .unwrap());
-        assert_eq!(scoped, serial, "scoped != serial (norm + specials)");
+        let serial = ids(encode_one(&tok, &big).unwrap());
+        let by_ref = ids(tok.encode(big.as_str(), false).into_single().unwrap());
+        assert_eq!(by_ref, serial, "parallel != serial (norm + specials)");
         let owned = ids(tok.encode(big, false).into_single().unwrap());
         assert_eq!(owned, serial, "owned != serial (norm + specials)");
     }
@@ -2679,7 +2417,7 @@ mod tests {
         let ids = |v: Vec<PipelineToken>| v.iter().map(|t| t.id).collect::<Vec<_>>();
         let serial: Vec<Vec<u32>> = inputs
             .iter()
-            .map(|s| ids(tok.encode_one(s, false).unwrap()))
+            .map(|s| ids(encode_one(&tok, s).unwrap()))
             .collect();
 
         let mut job = tok.encode(inputs, false);
@@ -2717,13 +2455,12 @@ mod tests {
         tok.with_normalizer(Some(Strip::new(true, true))).unwrap();
         let pipe = PipelineTokenizer::try_from(&tok).unwrap();
         assert!(
-            pipe.raw_cut().is_none(),
+            pipe.stride_boundary().is_none(),
             "Strip normalizer must disable raw-text chunking"
         );
-        // WordLevel model: the ladder cannot escalate to SplitAtModel either.
-        assert_eq!(
-            pipe.plan(),
-            ParallelPlan::WholeInput,
+        // WordLevel model: the plan cannot escalate to SplitAtModel either.
+        assert!(
+            matches!(pipe.plan(), ParallelPlan::WholeInput),
             "Strip + WordLevel must fall to batch-level parallelism only",
         );
     }

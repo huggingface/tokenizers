@@ -103,6 +103,12 @@ impl Split {
         let regex = match compiled {
             Ok(re) => Some(re),
             Err(_) if fsm.is_some() => None,
+            // deepseek's member patterns aren't standalone FSMs but never split on
+            // their own — a recognized deepseek `Sequence` drives them via
+            // `fsm_deepseek`, so they need no backend to construct.
+            Err(_) if matches!(&pattern, SplitPattern::Regex(r) if crate::utils::is_deepseek_member(r)) => {
+                None
+            }
             Err(e) => return Err(e),
         };
 
@@ -121,6 +127,16 @@ impl Split {
     /// Isolated)`, the form the native FSM fast path requires (the inverted match
     /// set is the gaps, and these patterns leave no gaps). Rewrite to it so
     /// cl100k/o200k route to `fsm_cl100k`/`fsm_o200k` instead of the SysRegex fallback.
+    /// Whether the pipeline drives this `Split` with a native `atomsplit` FSM
+    /// (a recognized GPT regex in its canonical `Isolated`, non-inverted
+    /// usage). Every recognized family (gpt2 / cl100k / o200k) tokenizes such
+    /// that no token contains a non-whitespace→space transition — the invariant
+    /// the parallel runtime relies on to cut raw text at those boundaries.
+    pub(crate) fn has_pipeline_fsm(&self) -> bool {
+        use crate::tokenizer::SplitDelimiterBehavior::Isolated;
+        self.fsm.is_some() && !self.invert && self.behavior == Isolated
+    }
+
     pub(crate) fn canonicalized_for_pipeline(self) -> Result<Self> {
         use crate::tokenizer::SplitDelimiterBehavior::{Isolated, Removed};
         if self.fsm.is_some() && self.invert && self.behavior == Removed {
