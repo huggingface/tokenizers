@@ -34,7 +34,7 @@ use logos::Logos;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use rayon::ThreadPoolBuilder;
 use serde_json::{json, Value};
-use tk_encode::pipeline::PipelineTokenizer;
+use tk_encode::pipeline::{Model, PipelineTokenizer};
 use tk_encode::{AddedToken, ModelWrapper, Tokenizer};
 use tokenizers_release::{AddedToken as BaselineAddedToken, Tokenizer as BaselineTokenizer};
 
@@ -204,10 +204,12 @@ fn time_pass(encode: &dyn Fn(&str) -> usize, chunks: &[String]) -> f64 {
 fn stage_secs<const STAGE: u8>(pipeline: &PipelineTokenizer, chunks: &[String]) -> f64 {
     let mut out = Vec::new();
     let mut pre_tokens = Vec::new();
+    let mut scratch = pipeline.get_model().init_scratch();
     let mut run = || {
         for chunk in chunks {
             out.clear();
-            let _ = pipeline.encode_generic::<STAGE>(chunk, &mut out, &mut pre_tokens);
+            let _ =
+                pipeline.encode_generic::<STAGE>(chunk, &mut pre_tokens, &mut scratch, &mut out);
             black_box(&out);
             black_box(&pre_tokens);
         }
