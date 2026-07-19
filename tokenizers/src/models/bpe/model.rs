@@ -261,11 +261,17 @@ impl BpeBuilder {
                 let b_id = vocab
                     .get(&b)
                     .ok_or_else(|| Error::MergeTokenOutOfVocabulary(b.to_owned()))?;
+                let b_suffix = b
+                    .get(prefix_len..)
+                    .ok_or_else(|| Error::MergeTokenOutOfVocabulary(format!("{a}{b}")))?;
+                let merge_len = a.len() + b_suffix.len();
+                // A merge result longer than every vocabulary token cannot be in the vocabulary.
+                if merge_len > buffer.len() {
+                    return Err(Error::MergeTokenOutOfVocabulary(format!("{a}{b_suffix}")).into());
+                }
                 buffer[0..a.len()].copy_from_slice(a.as_bytes());
-                let b_len = b.len() - prefix_len;
-                let merge_len = a.len() + b_len;
-                buffer[a.len()..merge_len].copy_from_slice(&b.as_bytes()[prefix_len..]);
-                // SAFETY: buffer contains a concatenation of two valid UTF-8 strings, so it is itself valid UTF-8, even considering prefix_len
+                buffer[a.len()..merge_len].copy_from_slice(b_suffix.as_bytes());
+                // SAFETY: buffer contains a concatenation of two valid UTF-8 strings, so it is itself valid UTF-8.
                 let new_token = unsafe { from_utf8_unchecked(&buffer[..merge_len]) };
                 let new_id = vocab
                     .get(new_token)
@@ -1005,6 +1011,34 @@ mod tests {
                 _ => unreachable!(),
             },
         }
+    }
+
+    #[test]
+    fn test_bpe_merge_result_longer_than_vocab_returns_error() {
+        let vocab: Vocab = vec![("aa".into(), 0), ("bb".into(), 1)]
+            .into_iter()
+            .collect();
+        let merges = vec![("aa".into(), "bb".into())];
+
+        let err = BpeBuilder::default()
+            .vocab_and_merges(vocab, merges)
+            .build()
+            .unwrap_err();
+
+        assert_eq!(err.to_string(), "Token `aabb` out of vocabulary");
+    }
+
+    #[test]
+    fn test_bpe_merge_with_prefix_longer_than_token_returns_error() {
+        let vocab: Vocab = vec![("a".into(), 0), ("b".into(), 1)].into_iter().collect();
+        let merges = vec![("a".into(), "b".into())];
+
+        let result = BpeBuilder::default()
+            .vocab_and_merges(vocab, merges)
+            .continuing_subword_prefix("##".into())
+            .build();
+
+        assert!(result.is_err());
     }
 
     #[test]
