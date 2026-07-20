@@ -7,8 +7,8 @@
 
 use std::convert::TryFrom;
 
-use tk_encode::pipeline::PipelineTokenizer;
 use tk_encode::Tokenizer;
+use tk_encode::pipeline::PipelineTokenizer;
 
 fn load(corpus: &str) -> (Tokenizer, PipelineTokenizer, String) {
     let oracle = Tokenizer::from_file("../data/bert-wiki.json").unwrap();

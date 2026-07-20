@@ -28,19 +28,19 @@ use criterion::{Criterion, SamplingMode, Throughput};
 use std::hint::black_box;
 use std::ops::Deref;
 use std::sync::Arc;
+use tokenizers::Tokenizer;
 use tokenizers::decoders::byte_fallback::ByteFallback;
 use tokenizers::decoders::fuse::Fuse;
 use tokenizers::decoders::sequence::Sequence;
 use tokenizers::decoders::wordpiece::WordPiece as WordPieceDecoder;
-use tokenizers::models::bpe::{BpeTrainerBuilder, BPE};
-use tokenizers::models::wordpiece::WordPiece;
 use tokenizers::models::TrainerWrapper;
+use tokenizers::models::bpe::{BPE, BpeTrainerBuilder};
+use tokenizers::models::wordpiece::WordPiece;
 use tokenizers::normalizers::{BertNormalizer, Replace};
 use tokenizers::pre_tokenizers::bert::BertPreTokenizer;
 use tokenizers::pre_tokenizers::byte_level::ByteLevel;
 use tokenizers::pre_tokenizers::whitespace::Whitespace;
 use tokenizers::tokenizer::{AddedToken, EncodeInput};
-use tokenizers::Tokenizer;
 
 static BATCH_SIZE: usize = 1_000;
 

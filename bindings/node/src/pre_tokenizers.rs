@@ -3,9 +3,9 @@ use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, RwLock};
-use tk::pre_tokenizers::PreTokenizerWrapper;
 use tk::PreTokenizedString;
 use tk::SplitDelimiterBehavior;
+use tk::pre_tokenizers::PreTokenizerWrapper;
 use tokenizers as tk;
 
 #[napi(string_enum)]

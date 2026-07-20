@@ -4,7 +4,7 @@ use regex::Regex;
 
 use crate::pipeline;
 use crate::tokenizer::{
-    pattern::Invert, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior,
+    PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior, pattern::Invert,
 };
 use crate::utils::macro_rules_attribute;
 

@@ -1,10 +1,10 @@
 use crate::pipeline;
-use crate::utils::{gpt_fsm, GptFsm, GptFsmPattern, SysRegex};
+use crate::utils::{GptFsm, GptFsmPattern, SysRegex, gpt_fsm};
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::tokenizer::{
-    pattern::{Invert, Pattern},
     PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior,
+    pattern::{Invert, Pattern},
 };
 
 /// Represents the different patterns that `Split` can use
@@ -445,8 +445,7 @@ mod tests {
         // legacy SysRegex Isolated split, byte-for-byte. Corpus stresses the case-aware letter split:
         // camelCase, ALLCAPS→word, McDonald's-style, contractions, accented Ll (é/ß), CJK (caseless).
         let o200k = atomsplit::regexes::O200K;
-        let corpus =
-            "McDonald's iPhone SQLite HELLOWorld camelCase don't I'll We've 3.14 café Straße 世界 안녕\n\n  Mixed CASE end.";
+        let corpus = "McDonald's iPhone SQLite HELLOWorld camelCase don't I'll We've 3.14 café Straße 世界 안녕\n\n  Mixed CASE end.";
         let pretok = Split::new(SplitPattern::Regex(o200k.into()), Isolated, false).unwrap();
         assert!(
             pretok.fsm.is_some(),

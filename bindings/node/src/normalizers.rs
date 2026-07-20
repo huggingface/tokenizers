@@ -3,8 +3,8 @@ use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, RwLock};
-use tk::normalizers::NormalizerWrapper;
 use tk::NormalizedString;
+use tk::normalizers::NormalizerWrapper;
 use tokenizers as tk;
 
 /// Normalizer

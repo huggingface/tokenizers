@@ -1,9 +1,9 @@
-use super::{super::OrderedVocabIter, convert_merges_to_hashmap, BpeBuilder, Pair, BPE};
+use super::{super::OrderedVocabIter, BPE, BpeBuilder, Pair, convert_merges_to_hashmap};
 use ahash::AHashMap;
 use serde::{
+    Deserialize, Deserializer, Serialize, Serializer,
     de::{Error, MapAccess, Visitor},
     ser::SerializeStruct,
-    Deserialize, Deserializer, Serialize, Serializer,
 };
 
 impl Serialize for BPE {
@@ -141,7 +141,7 @@ impl<'de> Visitor<'de> for BPEVisitor {
                         return Err(serde::de::Error::invalid_value(
                             serde::de::Unexpected::Str(u),
                             &"BPE",
-                        ))
+                        ));
                     }
                 },
                 _ => {}

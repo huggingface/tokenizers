@@ -1,8 +1,8 @@
 use std::borrow::Cow;
 
 use crate::pipeline;
-use crate::tokenizer::pattern::Pattern;
 use crate::tokenizer::Decoder;
+use crate::tokenizer::pattern::Pattern;
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 use crate::utils::SysRegex;
 use serde::{Deserialize, Serialize};

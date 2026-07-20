@@ -4,20 +4,20 @@ use std::sync::RwLock;
 
 use crate::encoding::PyEncoding;
 use crate::error::ToPyResult;
+use pyo3::IntoPyObjectExt;
 use pyo3::exceptions;
 use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
 use pyo3::types::*;
-use pyo3::IntoPyObjectExt;
-use serde::ser::SerializeStruct;
 use serde::Deserializer;
 use serde::Serializer;
+use serde::ser::SerializeStruct;
 use serde::{Deserialize, Serialize};
+use tk::processors::PostProcessorWrapper;
 use tk::processors::bert::BertProcessing;
 use tk::processors::byte_level::ByteLevel;
 use tk::processors::roberta::RobertaProcessing;
 use tk::processors::template::{SpecialToken, Template};
-use tk::processors::PostProcessorWrapper;
 use tk::{Encoding, PostProcessor};
 use tokenizers as tk;
 
@@ -57,9 +57,9 @@ impl PyPostProcessor {
     pub(crate) fn get_as_subtype(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let base = self.clone();
         Ok(
-            match self.processor {
+            match &self.processor {
                 PyPostProcessorTypeWrapper::Sequence(_) => Py::new(py, (PySequence {}, base))?.into_any(),
-                PyPostProcessorTypeWrapper::Single(ref inner) => {
+                PyPostProcessorTypeWrapper::Single(inner) => {
 
             match &*inner.read().map_err(|_| {
                 PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPostProcessor")
@@ -753,13 +753,12 @@ impl PyTemplateProcessing {
     fn set_single(self_: PyRef<Self>, single: PyTemplate) -> PyResult<()> {
         let template: Template = Template::from(single);
         let super_ = self_.as_ref();
-        if let PyPostProcessorTypeWrapper::Single(ref inner) = super_.processor {
-            if let PostProcessorWrapper::Template(ref mut post) = *inner
+        if let PyPostProcessorTypeWrapper::Single(ref inner) = super_.processor
+            && let PostProcessorWrapper::Template(ref mut post) = *inner
                 .write()
                 .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPostProcessor"))? {
                 post.set_single(template);
             }
-        }
         Ok(())
     }
 }
@@ -810,7 +809,7 @@ impl PySequence {
 
     fn __getitem__(self_: PyRef<'_, Self>, py: Python<'_>, index: usize) -> PyResult<Py<PyAny>> {
         match &self_.as_ref().processor {
-            PyPostProcessorTypeWrapper::Sequence(ref inner) => match inner.get(index) {
+            PyPostProcessorTypeWrapper::Sequence(inner) => match inner.get(index) {
                 Some(item) => {
                     PyPostProcessor::new(PyPostProcessorTypeWrapper::Single(item.clone()))
                         .get_as_subtype(py)
@@ -844,13 +843,13 @@ impl PySequence {
                 _ => {
                     return Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(
                         "Index not found",
-                    ))
+                    ));
                 }
             },
             _ => {
                 return Err(PyException::new_err(
                     "This processor is not a Sequence, it does not support __setitem__",
-                ))
+                ));
             }
         };
         Ok(())
@@ -879,8 +878,8 @@ mod test {
     use std::sync::{Arc, RwLock};
 
     use pyo3::prelude::*;
-    use tk::processors::bert::BertProcessing;
     use tk::processors::PostProcessorWrapper;
+    use tk::processors::bert::BertProcessing;
 
     use crate::processors::{PyPostProcessor, PyPostProcessorTypeWrapper};
 

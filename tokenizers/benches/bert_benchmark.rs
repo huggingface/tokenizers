@@ -12,7 +12,7 @@ use tokenizers::models::wordpiece::{WordPiece, WordPieceTrainerBuilder};
 use tokenizers::normalizers::{BertNormalizer, NormalizerWrapper};
 use tokenizers::pre_tokenizers::bert::BertPreTokenizer;
 use tokenizers::processors::bert::BertProcessing;
-use tokenizers::{decoders, EncodeInput, Model, TokenizerImpl};
+use tokenizers::{EncodeInput, Model, TokenizerImpl, decoders};
 
 use common::{iter_bench_encode, iter_bench_encode_batch, iter_bench_train};
 use tokenizers::decoders::DecoderWrapper;

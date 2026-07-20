@@ -4,12 +4,12 @@ extern crate criterion;
 mod common;
 
 use criterion::{Criterion, Throughput};
-use tokenizers::models::bpe::{BpeTrainerBuilder, BPE};
+use tokenizers::Tokenizer;
 use tokenizers::models::TrainerWrapper;
+use tokenizers::models::bpe::{BPE, BpeTrainerBuilder};
 use tokenizers::pre_tokenizers::byte_level::ByteLevel;
 use tokenizers::pre_tokenizers::whitespace::Whitespace;
 use tokenizers::tokenizer::{AddedToken, EncodeInput};
-use tokenizers::Tokenizer;
 
 use common::{iter_bench_encode, iter_bench_encode_batch, iter_bench_train};
 use std::ops::Deref;

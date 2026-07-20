@@ -1,4 +1,4 @@
-use crate::utils::byte_level::{byte_level_transform, BYTES_CHAR_LOOKUP, CHAR_BYTES_LOOKUP};
+use crate::utils::byte_level::{BYTES_CHAR_LOOKUP, CHAR_BYTES_LOOKUP, byte_level_transform};
 use crate::utils::{GptFsm, GptFsmPattern};
 use serde::{Deserialize, Serialize};
 
@@ -597,10 +597,12 @@ mod tests {
         // rather than silently produce different splits than the legacy path.
         use std::convert::TryFrom;
         let byte_level = ByteLevel::default().add_prefix_space(true);
-        assert!(crate::pipeline::PipelinePreTokenizer::try_from(
-            crate::PreTokenizerWrapper::ByteLevel(byte_level)
-        )
-        .is_err());
+        assert!(
+            crate::pipeline::PipelinePreTokenizer::try_from(crate::PreTokenizerWrapper::ByteLevel(
+                byte_level
+            ))
+            .is_err()
+        );
     }
 
     #[test]

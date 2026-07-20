@@ -3,12 +3,12 @@ extern crate criterion;
 
 use criterion::{BenchmarkId, Criterion, Throughput};
 use std::hint::black_box;
+use tokenizers::Tokenizer;
 use tokenizers::models::bpe::BPE;
 use tokenizers::pre_tokenizers::byte_level::ByteLevel;
 use tokenizers::tokenizer::{
     AddedToken, TruncationDirection, TruncationParams, TruncationStrategy,
 };
-use tokenizers::Tokenizer;
 
 fn create_gpt2_tokenizer() -> Tokenizer {
     let bpe = BPE::from_file("data/gpt2-vocab.json", "data/gpt2-merges.txt")

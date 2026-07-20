@@ -1,9 +1,9 @@
 use super::{super::OrderedVocabIter, WordPiece, WordPieceBuilder};
 use ahash::{AHashMap, AHashSet};
 use serde::{
+    Deserialize, Deserializer, Serialize, Serializer,
     de::{MapAccess, Visitor},
     ser::SerializeStruct,
-    Deserialize, Deserializer, Serialize, Serializer,
 };
 
 impl Serialize for WordPiece {
@@ -88,7 +88,7 @@ impl<'de> Visitor<'de> for WordPieceVisitor {
                         return Err(serde::de::Error::invalid_value(
                             serde::de::Unexpected::Str(u),
                             &"WordPiece",
-                        ))
+                        ));
                     }
                 },
                 _ => {}
@@ -133,19 +133,23 @@ mod tests {
             \"max_input_chars_per_word\":100,\
             \"vocab\":{}\
         }";
-        assert!(serde_json::from_str::<WordPiece>(missing_unk)
-            .unwrap_err()
-            .to_string()
-            .starts_with("missing field `unk_token`"));
+        assert!(
+            serde_json::from_str::<WordPiece>(missing_unk)
+                .unwrap_err()
+                .to_string()
+                .starts_with("missing field `unk_token`")
+        );
 
         let wrong_type = "{\
             \"type\":\"WordLevel\",\
             \"unk_token\":\"[UNK]\",\
             \"vocab\":{}\
         }";
-        assert!(serde_json::from_str::<WordPiece>(wrong_type)
-            .unwrap_err()
-            .to_string()
-            .starts_with("invalid value: string \"WordLevel\", expected WordPiece"));
+        assert!(
+            serde_json::from_str::<WordPiece>(wrong_type)
+                .unwrap_err()
+                .to_string()
+                .starts_with("invalid value: string \"WordLevel\", expected WordPiece")
+        );
     }
 }

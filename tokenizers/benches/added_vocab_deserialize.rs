@@ -3,7 +3,7 @@ extern crate criterion;
 use criterion::Criterion;
 use std::hint::black_box;
 use std::path::PathBuf;
-use tokenizers::{normalizers::*, AddedToken, Normalizer, Tokenizer};
+use tokenizers::{AddedToken, Normalizer, Tokenizer, normalizers::*};
 
 fn saved_tokenizer_path<N: Normalizer + Into<NormalizerWrapper>>(
     size: i64,

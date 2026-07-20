@@ -208,10 +208,8 @@ impl Unigram {
                 }
             }
 
-            if !has_single_node {
-                if let Some(unk_id) = self.unk_id {
-                    lattice.insert(begin_pos, mblen, unk_score, unk_id);
-                }
+            if !has_single_node && let Some(unk_id) = self.unk_id {
+                lattice.insert(begin_pos, mblen, unk_score, unk_id);
             }
             begin_pos += mblen
         }

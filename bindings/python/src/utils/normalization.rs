@@ -4,7 +4,7 @@ use crate::error::ToPyResult;
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
-use tk::normalizer::{char_to_bytes, NormalizedString, Range, SplitDelimiterBehavior};
+use tk::normalizer::{NormalizedString, Range, SplitDelimiterBehavior, char_to_bytes};
 use tk::pattern::Pattern;
 
 /// Represents a Pattern as used by `NormalizedString`

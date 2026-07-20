@@ -1,8 +1,8 @@
 use super::model::Unigram;
 use serde::{
+    Deserialize, Deserializer, Serialize, Serializer,
     de::{Error, MapAccess, Visitor},
     ser::SerializeStruct,
-    Deserialize, Deserializer, Serialize, Serializer,
 };
 
 impl Serialize for Unigram {
@@ -62,7 +62,7 @@ impl<'de> Visitor<'de> for UnigramVisitor {
                         return Err(serde::de::Error::invalid_value(
                             serde::de::Unexpected::Str(u),
                             &"Unigram",
-                        ))
+                        ));
                     }
                 },
                 _ => (),

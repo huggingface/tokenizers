@@ -3,7 +3,7 @@ extern crate tokenizers as tk;
 use crate::models::Model;
 use napi::bindgen_prelude::*;
 use std::sync::{Arc, RwLock};
-use tokenizers::models::bpe::{BpeBuilder, BPE};
+use tokenizers::models::bpe::{BPE, BpeBuilder};
 use tokenizers::models::wordlevel::{WordLevel, WordLevelBuilder};
 use tokenizers::models::wordpiece::{WordPiece, WordPieceBuilder};
 

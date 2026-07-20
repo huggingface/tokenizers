@@ -1,5 +1,5 @@
 use serde::de::value::Error;
-use serde::{ser, Serialize};
+use serde::{Serialize, ser};
 type Result<T> = ::std::result::Result<T, Error>;
 
 pub struct Serializer {

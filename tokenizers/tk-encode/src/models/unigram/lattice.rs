@@ -2,7 +2,7 @@ use dary_heap::QuaternaryHeap;
 use rand::distr::weighted::WeightedIndex;
 use rand::{prelude::*, rng};
 use std::cell::RefCell;
-use std::cmp::{min, Ordering};
+use std::cmp::{Ordering, min};
 use std::rc::Rc;
 
 type NodeRef = Rc<RefCell<Node>>;
