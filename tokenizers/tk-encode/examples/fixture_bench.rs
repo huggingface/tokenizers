@@ -134,12 +134,7 @@ fn thread_counts() -> Vec<usize> {
 /// Median MB/s of encoding `chunks` across `n` threads in a *private* rayon pool (so the sweep can't
 /// perturb — or be perturbed by — the global pool). One `encode` call per chunk; the sum is `black_box`'d
 /// so the work can't be elided.
-fn par_mbps(
-    encode: impl Fn(&str) + Sync,
-    chunks: &[String],
-    bytes: usize,
-    n: usize,
-) -> f64 {
+fn par_mbps(encode: impl Fn(&str) + Sync, chunks: &[String], bytes: usize, n: usize) -> f64 {
     let pool = ThreadPoolBuilder::new().num_threads(n).build().unwrap();
     let run = || pool.install(|| chunks.par_iter().for_each(|c| encode(c.as_str())));
     run(); // warm the pool + lazy structures
@@ -176,7 +171,7 @@ fn bench_threads(
         });
         let p = par_mbps(
             |s| {
-                pipeline.encode(s, false).for_each(|r| {
+                pipeline.encode(s).for_each(|r| {
                     black_box(r.unwrap());
                 });
             },
@@ -425,7 +420,7 @@ fn memory_child(which: &str, model: &Path) {
             drop(tok);
             let after_load = rss_now().unwrap_or(0);
             for c in &chunks {
-                pipeline.encode(c, false).for_each(|r| {
+                pipeline.encode(c).for_each(|r| {
                     black_box(r.unwrap());
                 });
             }
@@ -750,7 +745,7 @@ fn bench_model(
     model_json: &Path,
 ) -> Vec<Value> {
     let pipe_enc = |s: &str| {
-        pipeline.encode(s, false).for_each(|r| {
+        pipeline.encode(s).for_each(|r| {
             black_box(r.unwrap());
         });
     };
@@ -771,7 +766,7 @@ fn bench_model(
 
         let pipe_ids = |c: &String| -> Vec<u32> {
             pipeline
-                .encode(c, false)
+                .encode(c)
                 .flat_map(|r| r.unwrap())
                 .map(|t| t.id)
                 .collect()
@@ -963,7 +958,7 @@ fn main() {
         // and has no range-based impl. Probe once and downgrade to "unsupported"
         // (with the reason) instead of panicking partway through the bench.
         let pipeline = match PipelineTokenizer::try_from(&tok) {
-            Ok(p) => match p.encode(PROBE, false).collect::<Result<Vec<_>, _>>() {
+            Ok(p) => match p.encode(PROBE).collect::<Result<Vec<_>, _>>() {
                 Ok(_) => p,
                 Err(e) => {
                     eprintln!("  pipeline builds but can't encode yet ({shape}): {e}");
