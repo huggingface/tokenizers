@@ -5,6 +5,13 @@
 //! for every model in `examples/bench_models.json` across every corpus in
 //! `data/fixtures/`.
 //!
+//! Both references are benched through `encode_fast` (ids, no offset tracking)
+//! — the same regime the pipeline plays in, and on sebpop's branch the entry
+//! point of his fused byte-level fast path; plain `encode` would silently
+//! bypass it. With the `bench-mimalloc` feature the whole bench binary (all
+//! three series uniformly) runs on mimalloc, matching the allocator sebpop's
+//! branch ships by default — per-series allocators can't exist in one process.
+//!
 //! Per fixture it measures single-thread throughput on ~10 kB inputs (the regime
 //! where per-input overhead is amortized — see `pipeline_benchmark.rs` for the
 //! size sweep). Per model it also (a) runs a **multi-thread throughput sweep** —
@@ -40,6 +47,10 @@ use tk_encode::pipeline::{Model, PipelineTokenizer};
 use tk_encode::{AddedToken, ModelWrapper, Tokenizer};
 use tokenizers_release::{AddedToken as BaselineAddedToken, Tokenizer as BaselineTokenizer};
 use tokenizers_sebpop::{AddedToken as SebpopAddedToken, Tokenizer as SebpopTokenizer};
+
+#[cfg(feature = "bench-mimalloc")]
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 const DATA_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../data");
 const MANIFEST: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/examples/bench_models.json");
@@ -186,8 +197,10 @@ fn bench_threads(
     let counts = thread_counts();
     let (mut pipe, mut base, mut seb) = (Vec::new(), Vec::new(), Vec::new());
     for &n in &counts {
-        let b = baseline.map(|b| par_mbps(|s| b.encode(s, false).unwrap().len(), chunks, bytes, n));
-        let sp = sebpop.map(|t| par_mbps(|s| t.encode(s, false).unwrap().len(), chunks, bytes, n));
+        let b = baseline
+            .map(|b| par_mbps(|s| b.encode_fast(s, false).unwrap().len(), chunks, bytes, n));
+        let sp =
+            sebpop.map(|t| par_mbps(|s| t.encode_fast(s, false).unwrap().len(), chunks, bytes, n));
         let p = par_mbps(
             |s| pipeline.encode(s, false).unwrap().len(),
             chunks,
@@ -361,7 +374,7 @@ fn memory_child(which: &str, model: &Path) {
             inject_added_tokens_baseline(&mut tok);
             let after_load = rss_now().unwrap_or(0);
             for c in &chunks {
-                n += tok.encode(c.as_str(), false).unwrap().len();
+                n += tok.encode_fast(c.as_str(), false).unwrap().len();
             }
             (after_load, rss_now().unwrap_or(0))
         }
@@ -370,7 +383,7 @@ fn memory_child(which: &str, model: &Path) {
             inject_added_tokens_sebpop(&mut tok);
             let after_load = rss_now().unwrap_or(0);
             for c in &chunks {
-                n += tok.encode(c.as_str(), false).unwrap().len();
+                n += tok.encode_fast(c.as_str(), false).unwrap().len();
             }
             (after_load, rss_now().unwrap_or(0))
         }
@@ -714,8 +727,8 @@ fn bench_model(
     let pipe_enc = |s: &str| pipeline.encode(s, false).unwrap().len();
     // per-model: the reference regex(es) onig will time on each fixture (empty for non-regex pretoks).
     let regexes = pretok_regexes(model_json);
-    let base_enc = baseline.map(|b| move |s: &str| b.encode(s, false).unwrap().len());
-    let seb_enc = sebpop.map(|t| move |s: &str| t.encode(s, false).unwrap().len());
+    let base_enc = baseline.map(|b| move |s: &str| b.encode_fast(s, false).unwrap().len());
+    let seb_enc = sebpop.map(|t| move |s: &str| t.encode_fast(s, false).unwrap().len());
 
     let mut rows = Vec::new();
     for (group, path) in files {
@@ -742,14 +755,14 @@ fn bench_model(
             chunks
                 .iter()
                 .take(3)
-                .all(|c| b.encode(c.as_str(), false).unwrap().get_ids() == pipe_ids(c))
+                .all(|c| b.encode_fast(c.as_str(), false).unwrap().get_ids() == pipe_ids(c))
         });
         // Report-only: pipeline vs sebpop's branch.
         let ids_match_sebpop = sebpop.map(|t| {
             chunks
                 .iter()
                 .take(3)
-                .all(|c| t.encode(c.as_str(), false).unwrap().get_ids() == pipe_ids(c))
+                .all(|c| t.encode_fast(c.as_str(), false).unwrap().get_ids() == pipe_ids(c))
         });
 
         // interleave all impls so frequency/thermal drift hits them equally
@@ -963,7 +976,7 @@ fn main() {
         let baseline = match BaselineTokenizer::from_file(&path) {
             Ok(mut b) => {
                 inject_added_tokens_baseline(&mut b);
-                match b.encode(PROBE, false) {
+                match b.encode_fast(PROBE, false) {
                     Ok(_) => Some(b),
                     Err(e) => {
                         eprintln!("  baseline v{BASELINE_VERSION} loads but can't encode: {e}");
@@ -982,7 +995,7 @@ fn main() {
         let sebpop = match SebpopTokenizer::from_file(&path) {
             Ok(mut t) => {
                 inject_added_tokens_sebpop(&mut t);
-                match t.encode(PROBE, false) {
+                match t.encode_fast(PROBE, false) {
                     Ok(_) => Some(t),
                     Err(e) => {
                         eprintln!("  {SEBPOP_REF} loads but can't encode: {e}");

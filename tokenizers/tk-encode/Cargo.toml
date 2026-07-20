@@ -76,6 +76,11 @@ tokenizers-sebpop = { package = "tokenizers", git = "https://github.com/sebpop/t
 onig = { version = "6.5.1", optional = true }
 pcre2 = { version = "0.2", optional = true }
 logos = { version = "0.15", optional = true } # compile-time DFA lexer reference (pure Rust)
+# Global allocator for the CI bench binary (`bench-mimalloc`): every series runs on
+# mimalloc — the allocator sebpop's branch ships by default — because one process can't
+# give each series its own allocator. No `override` feature: `#[global_allocator]` in
+# fixture_bench.rs is explicit and scoped to that binary.
+mimalloc = { version = "0.1", optional = true }
 
 [features]
 # `fancy-regex` is the OPTIONAL system-regex backend, needed ONLY for a `Split` pre-tokenizer with an
@@ -88,6 +93,7 @@ http = ["hf-hub"]
 unstable_wasm = ["fancy-regex", "getrandom/wasm_js"]
 rustls-tls = ["hf-hub?/rustls-tls"]
 bench-baseline = ["dep:tokenizers-release", "dep:tokenizers-sebpop", "dep:onig", "dep:pcre2", "dep:logos", "fancy-regex"]
+bench-mimalloc = ["dep:mimalloc"]
 
 [dev-dependencies]
 criterion = "0.6"

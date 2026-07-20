@@ -114,9 +114,14 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: make fixtures bench-models HF="uvx --from huggingface_hub hf"
 
+      # bench-mimalloc: the whole bench binary (all three series uniformly) runs on
+      # mimalloc — the allocator sebpop's branch ships by default. The references are
+      # benched through `encode_fast` (see fixture_bench.rs), so sebpop's fused
+      # fast path is actually engaged.
       - name: Run comparative benchmark (shard ${{ matrix.shard }} of ${{ env.SHARDS }})
         run: |
-          cargo run --release -p tk-encode --features tk-encode/bench-baseline \
+          cargo run --release -p tk-encode \
+            --features tk-encode/bench-baseline,tk-encode/bench-mimalloc \
             --example fixture_bench -- --shard ${{ matrix.shard }} ${{ env.SHARDS }} \
             > "pipeline_bench_${{ matrix.shard }}.json"
           cat "pipeline_bench_${{ matrix.shard }}.json"
@@ -272,7 +277,7 @@ jobs:
           fi
           python3 ${{ github.workspace }}/.github/scripts/render_pipeline_bench.py \
             pipeline_bench.json \
-            --subtitle "~10 kB inputs · single thread + 1/2/4/8/max-thread sweep" \
+            --subtitle "~10 kB inputs · refs via encode_fast · mimalloc (all series) · single thread + 1/2/4/8/max-thread sweep" \
             --revision "${{ github.event.pull_request.head.sha || github.sha }}" \
             --img-base "$base_url" \
             --run-id "${{ github.run_id }}" \
