@@ -1,14 +1,15 @@
 name: Pipeline Benchmark
 
-# Comparative benchmark: the experimental `PipelineTokenizer` vs the latest
-# *released* tokenizers crate (the baseline to beat — the in-tree legacy
-# `Tokenizer` is being phased out, so it is only the id-correctness oracle,
-# never a benched series), for every model in
+# Comparative benchmark: the experimental `PipelineTokenizer` vs two references
+# — the latest *released* tokenizers crate (the baseline to beat — the in-tree
+# legacy `Tokenizer` is being phased out, so it is only the id-correctness
+# oracle, never a benched series) and sebpop's performance branch
+# (github.com/sebpop/tokenizers#upstream) — for every model in
 # tk-encode/examples/bench_models.json across every corpus in data/fixtures/.
 # Measures single- and multi-thread throughput (1/2/4/8/device-max), per-
-# implementation memory footprint (RSS), and stripped minimal-binary size. The
-# release dep is behind tk-encode's `bench-baseline` feature, so production
-# builds never pull it.
+# implementation memory footprint (RSS), and stripped minimal-binary size. Both
+# reference deps are behind tk-encode's `bench-baseline` feature, so production
+# builds never pull them.
 #
 # The work is fanned out across a matrix: each `bench` shard benches a slice of
 # the models on its own isolated 8-vCPU runner (so the multi-thread sweep is
@@ -180,7 +181,9 @@ jobs:
           for f in parts:
               d = json.load(open(f))
               if merged is None:
-                  merged = {"baseline": d["baseline"], "models": []}
+                  # carry every metadata key (baseline, sebpop, …) from the first shard
+                  merged = {k: v for k, v in d.items() if k != "models"}
+                  merged["models"] = []
               merged["models"].extend(d["models"])
           if merged is None:
               raise SystemExit("no shard partials found")
@@ -194,10 +197,10 @@ jobs:
       - name: Measure binary sizes
         run: |
           cargo build --release -p tk-encode --features tk-encode/bench-baseline \
-            --example binsize_baseline --example binsize_pipeline
+            --example binsize_baseline --example binsize_sebpop --example binsize_pipeline
           printf '{' > binary_sizes.json
           sep=''
-          for key in baseline pipeline; do
+          for key in baseline sebpop pipeline; do
             bin="target/release/examples/binsize_$key"
             "$bin" data/gpt2.json "The quick brown fox jumps 123."   # binary actually works
             strip -o "$bin.stripped" "$bin"

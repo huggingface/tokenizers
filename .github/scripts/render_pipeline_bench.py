@@ -6,28 +6,33 @@ Input: JSON object from `cargo run --release -p tk-encode --features
 tk-encode/bench-baseline --example fixture_bench`:
 
     {baseline: {crate, version},
+     sebpop: {crate, ref},
      models: [{model, shape, desc, [reason],
-               memory: {baseline|pipeline:
+               memory: {baseline|sebpop|pipeline:
                         {load_bytes, encode_bytes, peak_bytes} | null} | null,
                threads: {counts: [1,2,4,8,max],
-                         pipeline_mbps: [..], baseline_mbps: [..|null]},
+                         pipeline_mbps: [..], baseline_mbps: [..|null],
+                         sebpop_mbps: [..|null]},
                results: [{fixture, group, bytes, chunks,
-                          mbps: {baseline, pipeline},
-                          ids_match, ids_match_baseline,
+                          mbps: {baseline, sebpop, pipeline},
+                          ids_match, ids_match_baseline, ids_match_sebpop,
                           stage_ns_per_byte: {added_split, normalize,
                                               pre_tokenize, model, total},
                           pretok_vs_regex: {cls_simd, cls_scalar,
                                             onig|null, fancy|null,
                                             pcre2|null, logos|null}}]}]}
 
-Two series: `baseline` — the latest released tokenizers crate, the bar to beat
-(the in-tree Tokenizer is on its way out, so it isn't benched; it only serves
-as the id oracle behind `ids_match`) — drawn gray as context, and `pipeline` —
-the experimental PipelineTokenizer, blue. The report leads with three
+Three series: `baseline` — the latest released tokenizers crate, the bar to
+beat (the in-tree Tokenizer is on its way out, so it isn't benched; it only
+serves as the id oracle behind `ids_match`) — drawn gray as context; `sebpop`
+— the tokenizers crate from sebpop's performance branch, green; and `pipeline`
+— the experimental PipelineTokenizer, blue. The `sebpop` keys are optional
+everywhere so older cached JSONs still render. The report leads with
 always-visible charts:
 
   1. throughput overview — per model, geomean ×speedup of the pipeline against
-     the release (×1.0 = release), with a min–max whisker across fixtures (no
+     the release (×1.0 = release), with a min–max whisker across fixtures, plus
+     a second (green) bar for sebpop's branch on the same vs-release axis (no
      cross-model aggregate: the models exercise different execution modes, so
      averaging them means nothing);
   2. memory overview — per model, resident-set delta after load plus the encode
@@ -68,10 +73,11 @@ INK = {
 }
 # Series identity: the release baseline is context-gray on purpose — in the
 # speedup charts it *is* the ×1.0 axis, in memory/binary-size it's the
-# reference bar the pipeline is read against.
+# reference bar the pipeline is read against. sebpop's branch is the second
+# reference, green.
 SERIES_INK = {
-    "light": {"baseline": "#898781", "pipeline": "#2a78d6"},
-    "dark": {"baseline": "#898781", "pipeline": "#3987e5"},
+    "light": {"baseline": "#898781", "sebpop": "#2f9e44", "pipeline": "#2a78d6"},
+    "dark": {"baseline": "#898781", "sebpop": "#57c464", "pipeline": "#3987e5"},
 }
 FONT = "-apple-system,'Segoe UI',Helvetica,Arial,sans-serif"
 GUTTER, PLOT_W, PAD_R, COL_W, ROW_H, BAR_H = 190, 540, 110, 150, 26, 16
@@ -142,6 +148,27 @@ def speedup(row):
 
 def model_speedups(model):
     return [v for v in (speedup(r) for r in model["results"]) if v]
+
+
+def sebpop_speedup(row):
+    """Pipeline throughput ÷ sebpop-branch throughput for the same fixture."""
+    s, p = row["mbps"].get("sebpop"), row["mbps"]["pipeline"]
+    return p / s if s and p else None
+
+
+def sebpop_model_speedups(model):
+    return [v for v in (sebpop_speedup(r) for r in model["results"]) if v]
+
+
+def sebpop_rel_release(row):
+    """sebpop-branch throughput ÷ release throughput — sebpop's own speedup on
+    the same vs-release axis the pipeline bars are drawn on."""
+    b, s = row["mbps"]["baseline"], row["mbps"].get("sebpop")
+    return s / b if b and s else None
+
+
+def sebpop_rel_model_speedups(model):
+    return [v for v in (sebpop_rel_release(r) for r in model["results"]) if v]
 
 
 def base_speedup(row, base_lookup, model_name):
@@ -242,7 +269,8 @@ def speedup_axis(ink, x, ticks, top, bottom):
 
 def overview_svg(models, mode, subtitle_base, meta, lo, hi, baseline_label,
                  speedups_of=model_speedups, title=None, ref_label=None,
-                 mark_regressions=False, no_cmp_msg=None):
+                 mark_regressions=False, no_cmp_msg=None,
+                 speedups2_of=None, series2_label=None):
     """The headline chart: a row per manifest model — name + workload desc,
     geomean ×speedup of the pipeline vs the reference (×1.0) with a min–max
     whisker across fixtures. No cross-model aggregate on purpose: the models
@@ -251,7 +279,9 @@ def overview_svg(models, mode, subtitle_base, meta, lo, hi, baseline_label,
 
     Defaults draw "vs latest release". Pass `speedups_of=base_model_speedups`-style
     with `mark_regressions=True` for the "vs base branch" twin: bars for models that
-    got slower than the base branch turn red."""
+    got slower than the base branch turn red. Pass `speedups2_of`/`series2_label`
+    to add a second series (sebpop's branch, green) as a second bar per model on
+    the same vs-reference axis."""
     ink, sink = INK[mode], SERIES_INK[mode]
     title = title or "PipelineTokenizer vs latest release — encode throughput"
     ref_label = ref_label or baseline_label
@@ -260,6 +290,24 @@ def overview_svg(models, mode, subtitle_base, meta, lo, hi, baseline_label,
         return OV_GUTTER + (math.log2(v) - math.log2(lo)) / (math.log2(hi) - math.log2(lo)) * OV_PLOT
 
     ticks = thin_ticks([t for t in TICKS if lo <= t <= hi], x, min_px=34, keep=1.0)
+
+    def series_bar(vals, cy, bar_h, color, label_fill, label_size, label_weight):
+        """One geomean bar + min–max whisker + ×label, centered on `cy`."""
+        g, mn, mx = geomean(vals), min(vals), max(vals)
+        parts = [hbar(x(1.0), x(g), cy - bar_h / 2, bar_h, color),
+                 f'<line x1="{x(mn):.1f}" y1="{cy:.1f}" x2="{x(mx):.1f}" y2="{cy:.1f}" '
+                 f'stroke="{ink["secondary"]}" stroke-width="1.5"/>']
+        for v in (mn, mx):
+            parts.append(f'<line x1="{x(v):.1f}" y1="{cy - 4:.1f}" x2="{x(v):.1f}" y2="{cy + 4:.1f}" '
+                         f'stroke="{ink["secondary"]}" stroke-width="1.5"/>')
+        anchor, lx = (("start", max(x(mx), x(1.0)) + 8) if g >= 1
+                      else ("end", min(x(mn), x(1.0)) - 8))
+        if anchor == "end" and lx - 40 < OV_GUTTER + 4:
+            anchor, lx = "start", max(x(mx), x(1.0)) + 8
+        parts.append(f'<text x="{lx:.1f}" y="{cy + 4:.1f}" fill="{label_fill}" '
+                     f'font-size="{label_size}" font-weight="{label_weight}" text-anchor="{anchor}" '
+                     f'style="font-variant-numeric:tabular-nums">×{g:.2f}</text>')
+        return parts
 
     top, row_h = 74, 40
     col_x = CHART_W - 16
@@ -274,22 +322,16 @@ def overview_svg(models, mode, subtitle_base, meta, lo, hi, baseline_label,
         body.append(f'<text x="{OV_GUTTER - 14}" y="{cy + 11:.1f}" fill="{ink["muted"]}" '
                     f'font-size="10.5" text-anchor="end">{escape(desc)}</text>')
         vals = speedups_of(m)
+        vals2 = speedups2_of(m) if speedups2_of else None
         if vals:
-            g, mn, mx = geomean(vals), min(vals), max(vals)
+            g = geomean(vals)
             bar_color = ink["critical"] if (mark_regressions and g < 1) else sink["pipeline"]
-            body.append(hbar(x(1.0), x(g), cy - 7, 14, bar_color))
-            body.append(f'<line x1="{x(mn):.1f}" y1="{cy:.1f}" x2="{x(mx):.1f}" y2="{cy:.1f}" '
-                        f'stroke="{ink["secondary"]}" stroke-width="1.5"/>')
-            for v in (mn, mx):
-                body.append(f'<line x1="{x(v):.1f}" y1="{cy - 4:.1f}" x2="{x(v):.1f}" y2="{cy + 4:.1f}" '
-                            f'stroke="{ink["secondary"]}" stroke-width="1.5"/>')
-            anchor, lx = (("start", max(x(mx), x(1.0)) + 8) if g >= 1
-                          else ("end", min(x(mn), x(1.0)) - 8))
-            if anchor == "end" and lx - 40 < OV_GUTTER + 4:
-                anchor, lx = "start", max(x(mx), x(1.0)) + 8
-            body.append(f'<text x="{lx:.1f}" y="{cy + 4:.1f}" fill="{ink["primary"]}" font-size="12" '
-                        f'font-weight="600" text-anchor="{anchor}" '
-                        f'style="font-variant-numeric:tabular-nums">×{g:.2f}</text>')
+            if vals2:
+                # two bars on the same axis: pipeline on top, the second series below
+                body += series_bar(vals, cy - 7, 11, bar_color, ink["primary"], 11, 600)
+                body += series_bar(vals2, cy + 7, 11, sink["sebpop"], ink["secondary"], 10.5, 400)
+            else:
+                body += series_bar(vals, cy, 14, bar_color, ink["primary"], 12, 600)
             bad = sum(1 for r in m["results"] if r["ids_match"] is False)
             right, fill = ((f"⚠ {bad} differ", ink["critical"]) if bad
                            else (f'{len(m["results"])} · ids ok', ink["secondary"]))
@@ -310,21 +352,23 @@ def overview_svg(models, mode, subtitle_base, meta, lo, hi, baseline_label,
 
     axis = speedup_axis(ink, x, ticks, top, y + 4)
     y += 30
-    legend = legend_row(ink, sink, y, [
-        ("swatch", "pipeline", "PipelineTokenizer"),
-        ("tick", ink["baseline"], f"×1.0 = {ref_label}"),
-    ])
+    entries = [("swatch", "pipeline", "PipelineTokenizer")]
+    if speedups2_of:
+        entries.append(("swatch", "sebpop", series2_label))
+    entries.append(("tick", ink["baseline"], f"×1.0 = {ref_label}"))
+    legend = legend_row(ink, sink, y, entries)
     height = y + 34
     subtitle = (f"geomean ×speedup per model vs {ref_label} · "
                 f"whisker: min–max across fixtures · {subtitle_base}")
     return svg_doc(ink, height, title, subtitle, axis + "".join(body) + legend, meta)
 
 
-def memory_svg(models, mode, meta, baseline_label):
+def memory_svg(models, mode, meta, baseline_label, sebpop_label=None):
     """Per model: resident-set delta of each implementation — load footprint plus
     the encode-pass delta as stacked segments, peak RSS as a tick."""
     ink, sink = INK[mode], SERIES_INK[mode]
     models = [m for m in models if isinstance(m.get("memory"), dict)]
+    impls = ("baseline", "sebpop", "pipeline") if sebpop_label else ("baseline", "pipeline")
 
     def mem(m, impl):
         d = m["memory"].get(impl)
@@ -335,7 +379,7 @@ def memory_svg(models, mode, meta, baseline_label):
 
     vals = []
     for m in models:
-        for impl in ("baseline", "pipeline"):
+        for impl in impls:
             d = mem(m, impl)
             if d:
                 vals.append((d["load_bytes"] or 0) + (d["encode_bytes"] or 0))
@@ -349,10 +393,14 @@ def memory_svg(models, mode, meta, baseline_label):
     def x(v):
         return OV_GUTTER + v / max_mb * plot_w
 
-    top, bar_h, row_h = 78, 12, 2 * (12 + 3) + 16
+    top, bar_h = 78, 12
+    row_h = len(impls) * (bar_h + 3) + 16
     col_x = CHART_W - 16
+    col_head = "MB: " + " → ".join(
+        {"baseline": baseline_label, "sebpop": sebpop_label, "pipeline": "Pipeline"}[i]
+        for i in impls)
     body = [f'<text x="{col_x}" y="{top - 14}" fill="{ink["muted"]}" font-size="11" '
-            f'text-anchor="end">MB: {escape(baseline_label)} → Pipeline</text>',
+            f'text-anchor="end">{escape(col_head)}</text>',
             f'<text x="{OV_GUTTER}" y="{top - 14}" fill="{ink["muted"]}" font-size="11">'
             f'smaller is better · solid: after load · translucent: encode-pass delta</text>']
     y = top
@@ -362,7 +410,7 @@ def memory_svg(models, mode, meta, baseline_label):
                     f'font-size="12.5" font-weight="600" text-anchor="end">{escape(m["model"])}</text>')
         totals = []
         by = y + 8
-        for impl in ("baseline", "pipeline"):
+        for impl in impls:
             d = mem(m, impl)
             if not d:
                 totals.append(None)
@@ -395,20 +443,23 @@ def memory_svg(models, mode, meta, baseline_label):
         grid.append(f'<text x="{x(tv):.1f}" y="{y + 10}" fill="{ink["muted"]}" font-size="11" '
                     f'text-anchor="middle" style="font-variant-numeric:tabular-nums">{tv:g}{unit}</text>')
     y += 30
-    legend = legend_row(ink, sink, y, [
-        ("swatch", "baseline", baseline_label),
-        ("swatch", "pipeline", "PipelineTokenizer"),
-        ("tick", ink["primary"], "peak RSS (VmHWM)"),
-    ])
+    entries = [("swatch", "baseline", baseline_label)]
+    if sebpop_label:
+        entries.append(("swatch", "sebpop", sebpop_label))
+    entries += [("swatch", "pipeline", "PipelineTokenizer"),
+                ("tick", ink["primary"], "peak RSS (VmHWM)")]
+    legend = legend_row(ink, sink, y, entries)
     height = y + 34
     subtitle = "resident-set delta per implementation, one process each · load + encode pass"
     return svg_doc(ink, height, "Memory footprint",
                    subtitle, "".join(grid) + "".join(body) + legend, meta)
 
 
-def chart_svg(model, mode, subtitle_base, meta, lo, hi, baseline_label):
-    """Full-size per-fixture chart: the pipeline's ×speedup vs the release, with
-    the `MB/s: release → Pipeline` throughput column."""
+def chart_svg(model, mode, subtitle_base, meta, lo, hi, baseline_label,
+              sebpop_label=None):
+    """Full-size per-fixture chart: the pipeline's ×speedup vs the release —
+    with sebpop's branch as a second bar on the same vs-release axis — and the
+    `MB/s: release → sebpop → Pipeline` throughput column."""
     ink, sink = INK[mode], SERIES_INK[mode]
     rows = model["results"]
 
@@ -419,10 +470,13 @@ def chart_svg(model, mode, subtitle_base, meta, lo, hi, baseline_label):
 
     top = 74
     col_x = GUTTER + PLOT_W + PAD_R + COL_W - 16
+    col_head = (f"MB/s: {baseline_label} → {sebpop_label} → Pipeline" if sebpop_label
+                else f"MB/s: {baseline_label} → Pipeline")
     body = [f'<text x="{col_x}" y="{top - 14}" fill="{ink["muted"]}" font-size="11" '
-            f'text-anchor="end">MB/s: {escape(baseline_label)} → Pipeline</text>']
+            f'text-anchor="end">{escape(col_head)}</text>']
     y = top
     baseline_id_note = False
+    sebpop_id_note = False
     for key, title in GROUPS:
         # stable order (alphabetical by fixture) so a fixture keeps its row across
         # runs and lines up with the stage-decomposition chart — not sorted by the
@@ -439,38 +493,52 @@ def chart_svg(model, mode, subtitle_base, meta, lo, hi, baseline_label):
             if r.get("ids_match_baseline") is False:
                 label += " †"
                 baseline_id_note = True
+            if r.get("ids_match_sebpop") is False:
+                label += " ‡"
+                sebpop_id_note = True
             body.append(f'<text x="{GUTTER - 10}" y="{y + ROW_H / 2 + 4}" fill="{ink["secondary"]}" '
                         f'font-size="12.5" text-anchor="end">{escape(label)}</text>')
             v = speedup(r)
-            by = y + (ROW_H - BAR_H) / 2
-            if v:
-                body.append(hbar(x(1.0), x(v), by, BAR_H, sink["pipeline"]))
-                txt = f"×{v:.2f}"
-                fill = ink["primary"]
-                if r["ids_match"] is False:
+            sv = sebpop_rel_release(r) if sebpop_label else None
+            # one full-height pipeline bar, or — when sebpop benched this fixture —
+            # two half-height bars on the same vs-release axis (pipeline on top)
+            series = ([("pipeline", v, y + (ROW_H - BAR_H) / 2, BAR_H, 12)] if not sv else
+                      [("pipeline", v, y + (ROW_H - 20) / 2, 9, 10.5),
+                       ("sebpop", sv, y + (ROW_H - 20) / 2 + 11, 9, 10.5)])
+            for skey, val, by, bh, fs in series:
+                if not val:
+                    continue
+                body.append(hbar(x(1.0), x(val), by, bh, sink[skey]))
+                txt = f"×{val:.2f}"
+                fill = ink["primary"] if skey == "pipeline" else ink["secondary"]
+                if skey == "pipeline" and r["ids_match"] is False:
                     txt += "  ⚠ ids differ"
                     fill = ink["critical"]
-                anchor, lx = ("start", max(x(1.0), x(v)) + 6) if v >= 1 else ("end", min(x(1.0), x(v)) - 6)
+                anchor, lx = (("start", max(x(1.0), x(val)) + 6) if val >= 1
+                              else ("end", min(x(1.0), x(val)) - 6))
                 # a long label left of a slow bar would run into the fixture
                 # names — flip it to the empty space right of the ×1.0 axis
                 if anchor == "end" and lx - len(txt) * 6.7 < GUTTER + 4:
                     anchor, lx = "start", x(1.0) + 6
-                body.append(f'<text x="{lx:.1f}" y="{y + ROW_H / 2 + 4}" fill="{fill}" '
-                            f'font-size="12" font-weight="600" text-anchor="{anchor}" '
+                body.append(f'<text x="{lx:.1f}" y="{by + bh / 2 + 4:.1f}" fill="{fill}" '
+                            f'font-size="{fs}" font-weight="600" text-anchor="{anchor}" '
                             f'style="font-variant-numeric:tabular-nums">{txt}</text>')
             mb = r["mbps"]
+            col_vals = ([mb.get("baseline"), mb.get("sebpop"), mb.get("pipeline")] if sebpop_label
+                        else [mb.get("baseline"), mb.get("pipeline")])
             body.append(f'<text x="{col_x}" y="{y + ROW_H / 2 + 4}" fill="{ink["secondary"]}" '
                         f'font-size="12" text-anchor="end" style="font-variant-numeric:tabular-nums">'
-                        f'{chain([mb.get("baseline"), mb.get("pipeline")])}</text>')
+                        f'{chain(col_vals)}</text>')
             y += ROW_H
         y += 10
 
     axis = speedup_axis(ink, x, ticks, top, y)
     y += 26
-    legend = legend_row(ink, sink, y, [
-        ("swatch", "pipeline", "PipelineTokenizer"),
-        ("tick", ink["baseline"], f"×1.0 = {baseline_label}"),
-    ])
+    entries = [("swatch", "pipeline", "PipelineTokenizer")]
+    if sebpop_label:
+        entries.append(("swatch", "sebpop", sebpop_label))
+    entries.append(("tick", ink["baseline"], f"×1.0 = {baseline_label}"))
+    legend = legend_row(ink, sink, y, entries)
     height = y + 44
 
     parts = [model["shape"]]
@@ -479,8 +547,13 @@ def chart_svg(model, mode, subtitle_base, meta, lo, hi, baseline_label):
         parts.append(f"geomean ×{geomean(vals):.2f} vs {baseline_label}")
     else:
         parts.append(f"{baseline_label} can’t load this model — no comparison")
+    svals = sebpop_model_speedups(model)
+    if svals:
+        parts.append(f"×{geomean(svals):.2f} vs {sebpop_label}")
     if baseline_id_note:
         parts.append(f"† ids differ from {baseline_label}")
+    if sebpop_id_note:
+        parts.append(f"‡ ids differ from {sebpop_label}")
     return svg_doc(ink, height, f'{model["model"]} — PipelineTokenizer encode throughput',
                    " · ".join(parts), axis + "".join(body) + legend, meta, subtitle_base)
 
@@ -650,7 +723,7 @@ def picture(base, run_id, slug, alt, width):
         "</picture>"])
 
 
-def mem_line(model, baseline_label):
+def mem_line(model, baseline_label, sebpop_label=None):
     mem = model["memory"]
     def part(impl, label):
         d = mem.get(impl)
@@ -658,17 +731,23 @@ def mem_line(model, baseline_label):
             return f"{label} —"
         cell = lambda k: ("—" if d.get(k) is None else f"{max(0, d[k]) / 1e6:.0f}")
         return f"{label} {cell('load_bytes')}+{cell('encode_bytes')} (peak {cell('peak_bytes')})"
+    impls = [("baseline", baseline_label)]
+    if sebpop_label:
+        impls.append(("sebpop", sebpop_label))
+    impls.append(("pipeline", "Pipeline"))
     return ("**Memory** (RSS MB, load+encode): "
-            + " · ".join(part(i, l) for i, l in
-                         (("baseline", baseline_label), ("pipeline", "Pipeline"))))
+            + " · ".join(part(i, l) for i, l in impls))
 
 
-def binsize_svg(sizes, mode, meta, baseline_label):
+def binsize_svg(sizes, mode, meta, baseline_label, sebpop_label=None):
     """Stripped size of a minimal release-built encode program (load a
     tokenizer.json, encode one string) linking each implementation — what the
     library adds to a shipped binary. Bars are 0-anchored on a linear MB axis."""
     ink, sink = INK[mode], SERIES_INK[mode]
-    rows = [("baseline", baseline_label), ("pipeline", "PipelineTokenizer")]
+    rows = [("baseline", baseline_label)]
+    if sebpop_label and "sebpop" in sizes:
+        rows.append(("sebpop", sebpop_label))
+    rows.append(("pipeline", "PipelineTokenizer"))
     max_mb = max(sizes.values()) / 1e6 * 1.15
     plot_w = CHART_W - OV_GUTTER - PAD_R - COL_W
 
@@ -713,17 +792,21 @@ def has_threads(m):
     return isinstance(t, dict) and bool(t.get("counts"))
 
 
-def threads_svg(model, mode, meta, baseline_label):
-    """Per model: encode throughput (MB/s) at 1/2/4/8/device-max threads — pipeline vs the release —
-    with a per-row *ideal linear* tick (single-thread throughput × N) on the pipeline bar. So whether the
-    pipeline scales linearly (bar reaches the tick) or sub-linearly (bar falls short of it) is visible at a
-    glance, alongside the pipeline↔release gap; the right column carries the self-scaling % of linear."""
+def threads_svg(model, mode, meta, baseline_label, sebpop_label=None):
+    """Per model: encode throughput (MB/s) at 1/2/4/8/device-max threads — pipeline vs the release (and
+    sebpop's branch when present) — with a per-row *ideal linear* tick (single-thread throughput × N) on
+    the pipeline bar. So whether the pipeline scales linearly (bar reaches the tick) or sub-linearly (bar
+    falls short of it) is visible at a glance, alongside the pipeline↔reference gaps; the right column
+    carries the self-scaling % of linear."""
     ink, sink = INK[mode], SERIES_INK[mode]
     t = model["threads"]
     counts, pipe, base = t["counts"], t["pipeline_mbps"], t["baseline_mbps"]
+    seb = t.get("sebpop_mbps") or []
+    has_seb = bool(sebpop_label) and any(v for v in seb)
     p1 = pipe[0] if pipe and pipe[0] else None  # single-thread anchor for the linear reference
     ideal = [p1 * n for n in counts] if p1 else []
-    vals = [v for v in pipe if v] + [v for v in base if v] + ideal
+    vals = ([v for v in pipe if v] + [v for v in base if v]
+            + [v for v in seb if v] + ideal)
     max_mb = (max(vals) if vals else 1.0) * 1.08
     plot_w = CHART_W - OV_GUTTER - PAD_R - COL_W
 
@@ -731,22 +814,30 @@ def threads_svg(model, mode, meta, baseline_label):
         return OV_GUTTER + v / max_mb * plot_w
 
     top, bar_h, gap = 78, 11, 3
-    row_h = 2 * (bar_h + gap) + 16
+    nbars = 3 if has_seb else 2
+    row_h = nbars * (bar_h + gap) + 16
     col_x = CHART_W - 16
+    order = (f"bars: {baseline_label} → {sebpop_label} → Pipeline" if has_seb
+             else f"top bar {baseline_label}, bottom Pipeline")
     body = [f'<text x="{col_x}" y="{top - 14}" fill="{ink["muted"]}" font-size="11" '
             f'text-anchor="end">Pipeline MB/s · self-scaling (% of linear)</text>',
             f'<text x="{OV_GUTTER}" y="{top - 14}" fill="{ink["muted"]}" font-size="11">'
-            f'higher is better · top bar {escape(baseline_label)}, bottom Pipeline · tick = ideal linear</text>']
+            f'higher is better · {escape(order)} · tick = ideal linear</text>']
     y = top
     for i, n in enumerate(counts):
         cy = y + row_h / 2
         label = f"{n} thread" + ("" if n == 1 else "s")
         body.append(f'<text x="{OV_GUTTER - 14}" y="{cy + 4:.1f}" fill="{ink["primary"]}" '
                     f'font-size="12.5" font-weight="600" text-anchor="end">{label}</text>')
-        base_y, pipe_y = y + 8, y + 8 + bar_h + gap
+        base_y = y + 8
+        pipe_y = base_y + (nbars - 1) * (bar_h + gap)
         b = base[i] if i < len(base) else None
         if b is not None:
             body.append(hbar(x(0), x(b), base_y, bar_h, sink["baseline"]))
+        if has_seb:
+            s = seb[i] if i < len(seb) else None
+            if s is not None:
+                body.append(hbar(x(0), x(s), base_y + bar_h + gap, bar_h, sink["sebpop"]))
         p = pipe[i] if i < len(pipe) else None
         if p is not None:
             body.append(hbar(x(0), x(p), pipe_y, bar_h, sink["pipeline"]))
@@ -774,17 +865,19 @@ def threads_svg(model, mode, meta, baseline_label):
         grid.append(f'<text x="{gx:.1f}" y="{y + 10}" fill="{ink["muted"]}" font-size="11" '
                     f'text-anchor="middle" style="font-variant-numeric:tabular-nums">{tv:g}{unit}</text>')
     y += 30
-    legend = legend_row(ink, sink, y, [
-        ("swatch", "baseline", baseline_label),
-        ("swatch", "pipeline", "PipelineTokenizer"),
-        ("tick", ink["primary"], "ideal linear (T₁ × N)"),
-    ])
+    entries = [("swatch", "baseline", baseline_label)]
+    if has_seb:
+        entries.append(("swatch", "sebpop", sebpop_label))
+    entries += [("swatch", "pipeline", "PipelineTokenizer"),
+                ("tick", ink["primary"], "ideal linear (T₁ × N)")]
+    legend = legend_row(ink, sink, y, entries)
     height = y + 34
     scaling = ""
     if p1 and len(pipe) >= 2 and pipe[-1]:
         sc = pipe[-1] / p1
         scaling = f" · pipeline {sc:.1f}× on {counts[-1]} threads ({sc / counts[-1] * 100:.0f}% of linear)"
-    subtitle = f"throughput at N threads vs {baseline_label}; tick = perfect linear scaling{scaling}"
+    refs = f"{baseline_label} + {sebpop_label}" if has_seb else baseline_label
+    subtitle = f"throughput at N threads vs {refs}; tick = perfect linear scaling{scaling}"
     return svg_doc(ink, height, "Thread scaling",
                    subtitle, "".join(grid) + "".join(body) + legend, meta)
 
@@ -836,16 +929,22 @@ def render_markdown(data, subtitle_base, meta, base, run_id, sizes,
     different execution modes, so only per-model geomeans are meaningful."""
     models = data["models"]
     baseline_label = f'v{data["baseline"]["version"]}'
+    sebpop_label = data.get("sebpop", {}).get("ref")
     benched = [m for m in models if m["results"]]
     unsupported = [m for m in models if not m["results"]]
     mismatches = [f"{m['model']}/{r['fixture']}"
                   for m in benched for r in m["results"] if r["ids_match"] is False]
     base_mismatch = sorted({m["model"] for m in benched
                             for r in m["results"] if r.get("ids_match_baseline") is False})
+    seb_mismatch = sorted({m["model"] for m in benched
+                           for r in m["results"] if r.get("ids_match_sebpop") is False})
 
+    refs = f"`tokenizers` {baseline_label} (latest release)"
+    if sebpop_label:
+        refs += f" and `{sebpop_label}`"
     md = ["## PipelineTokenizer benchmark", "",
           f"**{len(benched)} / {len(models)} models supported** — PipelineTokenizer vs "
-          f"`tokenizers` {baseline_label} (latest release) · {subtitle_base}", "",
+          f"{refs} · {subtitle_base}", "",
           f"`{meta[0]}` · {meta[1]}", "",
           picture(base, run_id, "overview", "Per-model encode throughput vs latest release", 860), ""]
     if base_lookup:
@@ -863,6 +962,9 @@ def render_markdown(data, subtitle_base, meta, base, run_id, sizes,
         md += [f"> ℹ️ Token ids differ from {baseline_label} on: {', '.join(base_mismatch)} "
                f"(† in the per-model charts) — expected when this branch fixes encode bugs, "
                f"but worth a look.", ""]
+    if seb_mismatch:
+        md += [f"> ℹ️ Token ids differ from {sebpop_label} on: {', '.join(seb_mismatch)} "
+               f"(‡ in the per-model charts).", ""]
 
     for m in benched:
         slug = slugify(m["model"])
@@ -870,6 +972,9 @@ def render_markdown(data, subtitle_base, meta, base, run_id, sizes,
         vals = model_speedups(m)
         summary = (f"×{geomean(vals):.2f} vs {baseline_label}" if vals
                    else f"{baseline_label} can't load — no comparison")
+        svals = sebpop_model_speedups(m)
+        if svals:
+            summary += f" · ×{geomean(svals):.2f} vs {sebpop_label}"
         if base_lookup:
             bvals = base_model_speedups(m, base_lookup)
             if bvals:
@@ -884,15 +989,19 @@ def render_markdown(data, subtitle_base, meta, base, run_id, sizes,
         if has_threads(m):
             md += [picture(base, run_id, f"{slug}-threads",
                            f"{m['model']} thread scaling", 860), ""]
-        md += [mem_line(m, baseline_label), ""]
+        md += [mem_line(m, baseline_label, sebpop_label), ""]
         # Per-stage columns show each split's share of the pipeline's own encode time
         # with the ns/byte alongside — `share% (ns/B)` — so the split cost is readable
         # as text regardless of how slow the release baseline is.
+        seb_mb_col = f" {sebpop_label} MB/s |" if sebpop_label else ""
+        seb_vs_col = f" vs {sebpop_label} |" if sebpop_label else ""
+        seb_sep = "---:|" if sebpop_label else ""
         base_col = " Δ base |" if base_lookup else ""
         base_sep = "---:|" if base_lookup else ""
-        md += [f"| Fixture | Group | {baseline_label} MB/s | Pipeline MB/s | Speedup |{base_col} "
+        md += [f"| Fixture | Group | {baseline_label} MB/s |{seb_mb_col} Pipeline MB/s "
+               f"| vs {baseline_label} |{seb_vs_col}{base_col} "
                "added-token | normalize | pre-tokenize | model | Ids |",
-               f"|---|---|---:|---:|---:|{base_sep}---:|---:|---:|---:|:--|"]
+               f"|---|---|---:|{seb_sep}---:|---:|{seb_sep}{base_sep}---:|---:|---:|---:|:--|"]
         for r in sorted(m["results"], key=lambda r: (r["group"], r["fixture"])):
             mb = r["mbps"]
             flags = []
@@ -900,17 +1009,22 @@ def render_markdown(data, subtitle_base, meta, base, run_id, sizes,
                 flags.append("⚠️ ≠ tree")
             if r.get("ids_match_baseline") is False:
                 flags.append(f"≠ {baseline_label}")
+            if r.get("ids_match_sebpop") is False:
+                flags.append(f"≠ {sebpop_label}")
             ids = " · ".join(flags) if flags else "match"
             s = r.get("stage_ns_per_byte")
             stages = " ".join(f"| {stage_cell(s, k)}"
                               for k in ("added_split", "normalize", "pre_tokenize", "model"))
+            seb_mb_cell = f"| {fnum(mb.get('sebpop'))} " if sebpop_label else ""
+            seb_vs_cell = (f"| {fnum(sebpop_speedup(r), '×{:.2f}')} "
+                           if sebpop_label else "")
             base_cell = (f"| {fnum(base_speedup(r, base_lookup, m['model']), '×{:.2f}')} "
                          if base_lookup else "")
             md.append(
                 f"| {r['fixture']} | {r['group']} "
-                f"| {fnum(mb.get('baseline'))} | {fnum(mb.get('pipeline'))} "
+                f"| {fnum(mb.get('baseline'))} {seb_mb_cell}| {fnum(mb.get('pipeline'))} "
                 f"| {fnum(speedup(r), '×{:.2f}')} "
-                f"{base_cell}{stages} | {ids} |")
+                f"{seb_vs_cell}{base_cell}{stages} | {ids} |")
         md += pretok_compare_md(m)
         md += ["", "</details>", ""]
 
@@ -959,9 +1073,15 @@ def main():
     data = json.loads(Path(args.results).read_text())
     models = data["models"]
     baseline_label = f'v{data["baseline"]["version"]}'
+    sebpop_label = data.get("sebpop", {}).get("ref")
     sizes = json.loads(Path(args.binary_sizes).read_text()) if args.binary_sizes else None
     benched = [m for m in models if m["results"]]
     lo, hi = scale(benched)
+    if sebpop_label:
+        # sebpop's bars share the vs-release axis with the pipeline's — widen
+        # the range so neither series falls off the plot
+        slo, shi = scale(benched, sebpop_rel_model_speedups)
+        lo, hi = min(lo, slo), max(hi, shi)
 
     # "vs base branch": join the PR results against the base branch's cached run by
     # (model, fixture). base_lookup[(model, fixture)] = base pipeline MB/s.
@@ -979,7 +1099,9 @@ def main():
     out = Path(args.out_dir)
     for mode in ("light", "dark"):
         (out / f"pipeline_bench_overview_{mode}.svg").write_text(
-            overview_svg(models, mode, args.subtitle, meta, lo, hi, baseline_label))
+            overview_svg(models, mode, args.subtitle, meta, lo, hi, baseline_label,
+                         speedups2_of=(sebpop_rel_model_speedups if sebpop_label else None),
+                         series2_label=sebpop_label))
         if base_lookup:
             (out / f"pipeline_bench_base-overview_{mode}.svg").write_text(
                 overview_svg(models, mode, args.subtitle, meta, blo, bhi, baseline_label,
@@ -988,14 +1110,15 @@ def main():
                              ref_label=(args.base_ref or "base branch"), mark_regressions=True,
                              no_cmp_msg="not benched on the base branch"))
         (out / f"pipeline_bench_memory_{mode}.svg").write_text(
-            memory_svg(models, mode, meta, baseline_label))
+            memory_svg(models, mode, meta, baseline_label, sebpop_label))
         if sizes:
             (out / f"pipeline_bench_binsize_{mode}.svg").write_text(
-                binsize_svg(sizes, mode, meta, baseline_label))
+                binsize_svg(sizes, mode, meta, baseline_label, sebpop_label))
     for m in models:
         slug = slugify(m["model"])
         for mode in ("light", "dark"):
-            svg = (chart_svg(m, mode, args.subtitle, meta, lo, hi, baseline_label)
+            svg = (chart_svg(m, mode, args.subtitle, meta, lo, hi, baseline_label,
+                             sebpop_label)
                    if m["results"] else card_svg(m, mode))
             (out / f"pipeline_bench_{slug}_{mode}.svg").write_text(svg)
             if has_stages(m):
@@ -1003,7 +1126,7 @@ def main():
                     stage_chart_svg(m, mode, args.subtitle, meta, baseline_label))
             if has_threads(m):
                 (out / f"pipeline_bench_{slug}-threads_{mode}.svg").write_text(
-                    threads_svg(m, mode, meta, baseline_label))
+                    threads_svg(m, mode, meta, baseline_label, sebpop_label))
 
     (out / "pipeline_bench.md").write_text(
         render_markdown(data, args.subtitle, meta, args.img_base, args.run_id, sizes,
@@ -1016,6 +1139,12 @@ def main():
         for m in benched if model_speedups(m))
     print(f"{len(benched)}/{len(models)} supported"
           + (f" · vs {baseline_label}: {per_model}" if per_model else ""))
+    if sebpop_label:
+        vs_seb = " · ".join(
+            f"{m['model']} x{geomean(sebpop_model_speedups(m)):.3f}"
+            for m in benched if sebpop_model_speedups(m))
+        print(f"vs {sebpop_label}: {vs_seb}" if vs_seb
+              else f"vs {sebpop_label}: no comparable fixtures")
     if base_lookup:
         vs_base = " · ".join(
             f"{m['model']} x{geomean(base_speedups_of(m)):.3f}"

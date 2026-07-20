@@ -63,6 +63,12 @@ yada = "0.7.0"
 # Latest released tokenizers, used as the comparison baseline by the CI benchmark
 # (examples gated on `bench-baseline`). Optional so production builds never pull it.
 tokenizers-release = { package = "tokenizers", version = "=0.23.1", optional = true }
+# sebpop's performance branch, the second comparison reference. Cargo.lock pins the
+# resolved commit — `cargo update tokenizers@0.22.3-dev.0` moves it to the branch tip.
+# His default features minus `mimalloc`: its `override` feature replaces the global
+# allocator for the whole process, which would skew every series benched in the same
+# binary.
+tokenizers-sebpop = { package = "tokenizers", git = "https://github.com/sebpop/tokenizers", branch = "upstream", default-features = false, features = ["progressbar", "pcre2", "esaxx_fast"], optional = true }
 # Reference regex engines `fixture_bench` times the classify+fsm pre-tokenize against: Oniguruma and
 # PCRE2 (both C) alongside the pure-Rust `fancy-regex` (optional, above). All three are pulled in by
 # `bench-baseline` — optional + behind that feature so the C builds happen ONLY for the CI benchmark,
@@ -81,7 +87,7 @@ progressbar = ["indicatif"]
 http = ["hf-hub"]
 unstable_wasm = ["fancy-regex", "getrandom/wasm_js"]
 rustls-tls = ["hf-hub?/rustls-tls"]
-bench-baseline = ["dep:tokenizers-release", "dep:onig", "dep:pcre2", "dep:logos", "fancy-regex"]
+bench-baseline = ["dep:tokenizers-release", "dep:tokenizers-sebpop", "dep:onig", "dep:pcre2", "dep:logos", "fancy-regex"]
 
 [dev-dependencies]
 criterion = "0.6"
@@ -100,4 +106,8 @@ required-features = ["bench-baseline"]
 
 [[example]]
 name = "binsize_baseline"
+required-features = ["bench-baseline"]
+
+[[example]]
+name = "binsize_sebpop"
 required-features = ["bench-baseline"]

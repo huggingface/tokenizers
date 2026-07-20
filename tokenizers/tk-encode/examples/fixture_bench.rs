@@ -1,7 +1,9 @@
-//! Comparative benchmark of the experimental `PipelineTokenizer` against the
-//! latest *released* `tokenizers` crate (the bar to beat — the in-tree legacy
-//! `Tokenizer` is on its way out, so the release is the reference), for every
-//! model in `examples/bench_models.json` across every corpus in `data/fixtures/`.
+//! Comparative benchmark of the experimental `PipelineTokenizer` against two
+//! references — the latest *released* `tokenizers` crate (the bar to beat — the
+//! in-tree legacy `Tokenizer` is on its way out, so the release is the
+//! reference) and sebpop's performance branch (`sebpop/tokenizers#upstream`) —
+//! for every model in `examples/bench_models.json` across every corpus in
+//! `data/fixtures/`.
 //!
 //! Per fixture it measures single-thread throughput on ~10 kB inputs (the regime
 //! where per-input overhead is amortized — see `pipeline_benchmark.rs` for the
@@ -21,7 +23,7 @@
 //! one-line label of the workload archetype the model exercises, passed
 //! through to the report.
 //!
-//! Emits one JSON object (`{baseline, models}`) on stdout, consumed by
+//! Emits one JSON object (`{baseline, sebpop, models}`) on stdout, consumed by
 //! `.github/scripts/render_pipeline_bench.py` in CI.
 
 use std::convert::TryFrom;
@@ -37,11 +39,14 @@ use serde_json::{json, Value};
 use tk_encode::pipeline::{Model, PipelineTokenizer};
 use tk_encode::{AddedToken, ModelWrapper, Tokenizer};
 use tokenizers_release::{AddedToken as BaselineAddedToken, Tokenizer as BaselineTokenizer};
+use tokenizers_sebpop::{AddedToken as SebpopAddedToken, Tokenizer as SebpopTokenizer};
 
 const DATA_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../data");
 const MANIFEST: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/examples/bench_models.json");
 // Keep in sync with the `tokenizers-release` pin in Cargo.toml.
 const BASELINE_VERSION: &str = "0.23.1";
+// Keep in sync with the `tokenizers-sebpop` git dependency in Cargo.toml.
+const SEBPOP_REF: &str = "sebpop/upstream";
 const CHUNK_BYTES: usize = 10 * 1024;
 const MAX_CHUNKS: usize = 100;
 const REPS: usize = 5;
@@ -91,6 +96,21 @@ fn inject_added_tokens_baseline(tok: &mut BaselineTokenizer) {
         .map(|s| BaselineAddedToken::from(*s, false).normalized(true));
     let _ = tok.add_special_tokens(special);
     let _ = tok.add_tokens(normalized);
+}
+
+/// Same injection through the sebpop branch's `AddedToken` (its pre-split API
+/// takes slices, not iterators).
+fn inject_added_tokens_sebpop(tok: &mut SebpopTokenizer) {
+    let special: Vec<SebpopAddedToken> = ADDED_SPECIAL
+        .iter()
+        .map(|s| SebpopAddedToken::from(*s, true).normalized(false))
+        .collect();
+    let normalized: Vec<SebpopAddedToken> = ADDED_NORMALIZED
+        .iter()
+        .map(|s| SebpopAddedToken::from(*s, false).normalized(true))
+        .collect();
+    let _ = tok.add_special_tokens(&special);
+    let _ = tok.add_tokens(&normalized);
 }
 
 fn make_chunks(text: &str) -> Vec<String> {
@@ -152,19 +172,22 @@ fn par_mbps(
     bytes as f64 / median_secs(samples) / 1e6
 }
 
-/// Multi-thread throughput sweep for one model — pipeline vs the released crate at 1/2/4/8/max threads
-/// over the whole fixture corpus (thread-spawn/scheduling overhead amortized). Both impls encode the same
-/// chunk list through a fresh pool per count; interleaved so thermal drift hits them equally.
+/// Multi-thread throughput sweep for one model — pipeline vs the released crate vs sebpop's branch at
+/// 1/2/4/8/max threads over the whole fixture corpus (thread-spawn/scheduling overhead amortized). All
+/// impls encode the same chunk list through a fresh pool per count; interleaved so thermal drift hits
+/// them equally.
 fn bench_threads(
     baseline: Option<&BaselineTokenizer>,
+    sebpop: Option<&SebpopTokenizer>,
     pipeline: &PipelineTokenizer,
     chunks: &[String],
 ) -> Value {
     let bytes: usize = chunks.iter().map(String::len).sum();
     let counts = thread_counts();
-    let (mut pipe, mut base) = (Vec::new(), Vec::new());
+    let (mut pipe, mut base, mut seb) = (Vec::new(), Vec::new(), Vec::new());
     for &n in &counts {
         let b = baseline.map(|b| par_mbps(|s| b.encode(s, false).unwrap().len(), chunks, bytes, n));
+        let sp = sebpop.map(|t| par_mbps(|s| t.encode(s, false).unwrap().len(), chunks, bytes, n));
         let p = par_mbps(
             |s| pipeline.encode(s, false).unwrap().len(),
             chunks,
@@ -172,13 +195,15 @@ fn bench_threads(
             n,
         );
         eprintln!(
-            "    {n} thread(s): pipeline {p:.1} MB/s{}",
-            b.map_or(String::new(), |v| format!(", baseline {v:.1} MB/s"))
+            "    {n} thread(s): pipeline {p:.1} MB/s{}{}",
+            b.map_or(String::new(), |v| format!(", baseline {v:.1} MB/s")),
+            sp.map_or(String::new(), |v| format!(", sebpop {v:.1} MB/s"))
         );
         pipe.push(p);
         base.push(b);
+        seb.push(sp);
     }
-    json!({ "counts": counts, "pipeline_mbps": pipe, "baseline_mbps": base })
+    json!({ "counts": counts, "pipeline_mbps": pipe, "baseline_mbps": base, "sebpop_mbps": seb })
 }
 
 fn time_pass(encode: &dyn Fn(&str) -> usize, chunks: &[String]) -> f64 {
@@ -340,6 +365,15 @@ fn memory_child(which: &str, model: &Path) {
             }
             (after_load, rss_now().unwrap_or(0))
         }
+        "sebpop" => {
+            let mut tok = SebpopTokenizer::from_file(model).unwrap();
+            inject_added_tokens_sebpop(&mut tok);
+            let after_load = rss_now().unwrap_or(0);
+            for c in &chunks {
+                n += tok.encode(c.as_str(), false).unwrap().len();
+            }
+            (after_load, rss_now().unwrap_or(0))
+        }
         "pipeline" => {
             let mut tok = Tokenizer::from_file(model).unwrap();
             inject_added_tokens(&mut tok);
@@ -370,10 +404,14 @@ fn memory_child(which: &str, model: &Path) {
 
 /// Re-run this binary once per available implementation to get per-impl memory
 /// numbers that a shared address space couldn't provide.
-fn measure_memory(model: &Path, baseline_ok: bool) -> Value {
+fn measure_memory(model: &Path, baseline_ok: bool, sebpop_ok: bool) -> Value {
     let exe = std::env::current_exe().unwrap();
     let mut out = serde_json::Map::new();
-    for (key, ok) in [("baseline", baseline_ok), ("pipeline", true)] {
+    for (key, ok) in [
+        ("baseline", baseline_ok),
+        ("sebpop", sebpop_ok),
+        ("pipeline", true),
+    ] {
         if !ok {
             out.insert(key.into(), Value::Null);
             continue;
@@ -667,6 +705,7 @@ fn logos_reference_ns(regexes: &[String], text: &str) -> Option<f64> {
 
 fn bench_model(
     baseline: Option<&BaselineTokenizer>,
+    sebpop: Option<&SebpopTokenizer>,
     oracle: &Tokenizer,
     pipeline: &PipelineTokenizer,
     files: &[(String, PathBuf)],
@@ -676,6 +715,7 @@ fn bench_model(
     // per-model: the reference regex(es) onig will time on each fixture (empty for non-regex pretoks).
     let regexes = pretok_regexes(model_json);
     let base_enc = baseline.map(|b| move |s: &str| b.encode(s, false).unwrap().len());
+    let seb_enc = sebpop.map(|t| move |s: &str| t.encode(s, false).unwrap().len());
 
     let mut rows = Vec::new();
     for (group, path) in files {
@@ -704,27 +744,42 @@ fn bench_model(
                 .take(3)
                 .all(|c| b.encode(c.as_str(), false).unwrap().get_ids() == pipe_ids(c))
         });
+        // Report-only: pipeline vs sebpop's branch.
+        let ids_match_sebpop = sebpop.map(|t| {
+            chunks
+                .iter()
+                .take(3)
+                .all(|c| t.encode(c.as_str(), false).unwrap().get_ids() == pipe_ids(c))
+        });
 
-        // interleave both impls so frequency/thermal drift hits them equally
+        // interleave all impls so frequency/thermal drift hits them equally
         if let Some(be) = &base_enc {
             time_pass(be, &chunks);
         }
+        if let Some(se) = &seb_enc {
+            time_pass(se, &chunks);
+        }
         time_pass(&pipe_enc, &chunks);
-        let (mut base_s, mut pipe_s) = (Vec::new(), Vec::new());
+        let (mut base_s, mut seb_s, mut pipe_s) = (Vec::new(), Vec::new(), Vec::new());
         for _ in 0..REPS {
             if let Some(be) = &base_enc {
                 base_s.push(time_pass(be, &chunks));
+            }
+            if let Some(se) = &seb_enc {
+                seb_s.push(time_pass(se, &chunks));
             }
             pipe_s.push(time_pass(&pipe_enc, &chunks));
         }
         let mbps = |secs: f64| bytes as f64 / secs / 1e6;
         let base_mbps = (!base_s.is_empty()).then(|| mbps(median_secs(base_s)));
+        let seb_mbps = (!seb_s.is_empty()).then(|| mbps(median_secs(seb_s)));
         let pipe_mbps = mbps(median_secs(pipe_s));
 
         let fmt = |v: Option<f64>| v.map_or("—".into(), |v| format!("{v:.1}"));
         eprintln!(
-            "  {name}: baseline {} MB/s, pipeline {pipe_mbps:.1} MB/s",
-            fmt(base_mbps)
+            "  {name}: baseline {} MB/s, sebpop {} MB/s, pipeline {pipe_mbps:.1} MB/s",
+            fmt(base_mbps),
+            fmt(seb_mbps)
         );
 
         // Staged decomposition of the pipeline's own encode via the ablation ladder:
@@ -788,9 +843,10 @@ fn bench_model(
             "group": group,
             "bytes": bytes,
             "chunks": chunks.len(),
-            "mbps": { "baseline": base_mbps, "pipeline": pipe_mbps },
+            "mbps": { "baseline": base_mbps, "sebpop": seb_mbps, "pipeline": pipe_mbps },
             "ids_match": ids_match,
             "ids_match_baseline": ids_match_baseline,
+            "ids_match_sebpop": ids_match_sebpop,
             "stage_ns_per_byte": {
                 "added_split": ns_added,
                 "normalize": ns_norm,
@@ -921,9 +977,35 @@ fn main() {
             }
         };
 
-        let rows = bench_model(baseline.as_ref(), &tok, &pipeline, &files, &path);
-        let memory = measure_memory(&path, baseline.is_some());
-        let threads = bench_threads(baseline.as_ref(), &pipeline, &all_chunks);
+        // Same fallback for sebpop's branch (based on an older tree, so it may
+        // predate configs the release handles).
+        let sebpop = match SebpopTokenizer::from_file(&path) {
+            Ok(mut t) => {
+                inject_added_tokens_sebpop(&mut t);
+                match t.encode(PROBE, false) {
+                    Ok(_) => Some(t),
+                    Err(e) => {
+                        eprintln!("  {SEBPOP_REF} loads but can't encode: {e}");
+                        None
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("  {SEBPOP_REF} can't load this config: {e}");
+                None
+            }
+        };
+
+        let rows = bench_model(
+            baseline.as_ref(),
+            sebpop.as_ref(),
+            &tok,
+            &pipeline,
+            &files,
+            &path,
+        );
+        let memory = measure_memory(&path, baseline.is_some(), sebpop.is_some());
+        let threads = bench_threads(baseline.as_ref(), sebpop.as_ref(), &pipeline, &all_chunks);
 
         models.push(json!({
             "model": name, "repo": repo, "desc": desc, "shape": shape,
@@ -933,6 +1015,7 @@ fn main() {
 
     let out = json!({
         "baseline": { "crate": "tokenizers", "version": BASELINE_VERSION },
+        "sebpop": { "crate": "tokenizers", "ref": SEBPOP_REF },
         "models": models,
     });
     println!("{}", serde_json::to_string_pretty(&out).unwrap());
