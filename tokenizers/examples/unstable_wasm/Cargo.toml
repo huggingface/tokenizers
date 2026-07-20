@@ -2,7 +2,7 @@
 name = "unstable_wasm"
 version = "0.1.0"
 authors = ["Nicolas Patry"]
-edition = "2018"
+edition = "2024"
 
 [lib]
 crate-type = ["cdylib", "rlib"]

@@ -1,6 +1,6 @@
 [package]
 authors = ["Nicolas Patry <nicolas@huggingface.co>"]
-edition = "2021"
+edition = "2024"
 name    = "node"
 version = "0.23.2-dev.0"
 
