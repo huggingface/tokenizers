@@ -106,6 +106,14 @@ pub fn is_deepseek(p0: &str, p1: &str, p2: &str) -> bool {
     p0 == DS_NUM && p1 == DS_CJK && p2 == DS_BIG
 }
 
+/// True iff `pattern` is one of deepseek's three member regexes. None of them is a standalone GPT
+/// FSM, so they'd otherwise demand a system-regex backend at construction — but they only ever run
+/// inside a recognized deepseek `Sequence`, which `fsm_deepseek` drives regex-less. Lets such a
+/// member `Split` build without a backend (its standalone `pre_tokenize` still errors, as before).
+pub fn is_deepseek_member(pattern: &str) -> bool {
+    pattern == DS_NUM || pattern == DS_CJK || pattern == DS_BIG
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

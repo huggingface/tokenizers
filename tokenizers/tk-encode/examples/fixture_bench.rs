@@ -34,7 +34,7 @@ use logos::Logos;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use rayon::ThreadPoolBuilder;
 use serde_json::{json, Value};
-use tk_encode::pipeline::{Model, PipelineTokenizer};
+use tk_encode::pipeline::PipelineTokenizer;
 use tk_encode::{AddedToken, ModelWrapper, Tokenizer};
 use tokenizers_release::{AddedToken as BaselineAddedToken, Tokenizer as BaselineTokenizer};
 
@@ -134,15 +134,10 @@ fn thread_counts() -> Vec<usize> {
 /// Median MB/s of encoding `chunks` across `n` threads in a *private* rayon pool (so the sweep can't
 /// perturb — or be perturbed by — the global pool). One `encode` call per chunk; the sum is `black_box`'d
 /// so the work can't be elided.
-fn par_mbps(
-    encode: impl Fn(&str) -> usize + Sync,
-    chunks: &[String],
-    bytes: usize,
-    n: usize,
-) -> f64 {
+fn par_mbps(encode: impl Fn(&str) + Sync, chunks: &[String], bytes: usize, n: usize) -> f64 {
     let pool = ThreadPoolBuilder::new().num_threads(n).build().unwrap();
-    let run = || pool.install(|| chunks.par_iter().map(|c| encode(c.as_str())).sum::<usize>());
-    black_box(run()); // warm the pool + lazy structures
+    let run = || pool.install(|| chunks.par_iter().for_each(|c| encode(c.as_str())));
+    run(); // warm the pool + lazy structures
     let mut samples = Vec::with_capacity(REPS);
     for _ in 0..REPS {
         let t = Instant::now();
@@ -164,9 +159,22 @@ fn bench_threads(
     let counts = thread_counts();
     let (mut pipe, mut base) = (Vec::new(), Vec::new());
     for &n in &counts {
-        let b = baseline.map(|b| par_mbps(|s| b.encode(s, false).unwrap().len(), chunks, bytes, n));
+        let b = baseline.map(|b| {
+            par_mbps(
+                |s| {
+                    black_box(b.encode(s, false).unwrap());
+                },
+                chunks,
+                bytes,
+                n,
+            )
+        });
         let p = par_mbps(
-            |s| pipeline.encode(s, false).unwrap().len(),
+            |s| {
+                pipeline.encode(s).for_each(|r| {
+                    black_box(r.unwrap());
+                });
+            },
             chunks,
             bytes,
             n,
@@ -181,44 +189,106 @@ fn bench_threads(
     json!({ "counts": counts, "pipeline_mbps": pipe, "baseline_mbps": base })
 }
 
-fn time_pass(encode: &dyn Fn(&str) -> usize, chunks: &[String]) -> f64 {
+fn time_pass(encode: &dyn Fn(&str), chunks: &[String]) -> f64 {
     let start = Instant::now();
-    let mut n = 0usize;
     for chunk in chunks {
-        n += encode(chunk);
+        encode(chunk);
     }
-    black_box(n);
     start.elapsed().as_secs_f64()
 }
 
-/// Median wall-time (seconds) of one pass over `chunks` through the shared encode core
-/// `PipelineTokenizer::encode_generic::<STAGE>`. `STAGE` is a const generic, so each
-/// level is a branchless specialization with the later stages compiled out — timing
-/// successive levels and subtracting gives each stage's marginal cost (the ablation
-/// ladder), no profiler and no per-segment instrumentation.
+/// Cumulative pipeline stage levels for the ablation ladder, in execution
+/// order: each level runs every stage up to and including itself; `Model` is a
+/// full encode, `Frame` is the special-token scan + iteration only.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Stage {
+    Frame,
+    Normalize,
+    Split,
+    Model,
+}
+
+/// Median wall-time (seconds) of one pass over `chunks`, running the pipeline's
+/// stages up to and including `stage`. The partial pipeline is **recomposed
+/// here in the bench** from the pipeline's public components
+/// (`get_added_vocabulary` / `get_normalizer` / `get_pre_tokenizer` /
+/// `get_model`), mirroring the walker in the library's encode kernel — the
+/// library itself carries no staging or timing scaffolding. Timing successive
+/// levels and subtracting gives each stage's marginal cost (the ablation
+/// ladder). A runtime branch per segment is fine in a bench; the subtraction
+/// cancels its cost.
 ///
-/// Both caller-owned buffers are reused across chunks and `black_box`'d each iteration:
-/// `output` anchors the special-scan/normalize/model work, `pre_tokens` anchors the
-/// split stage, so under fat LTO no dead partial stage gets optimized away. The
-/// `black_box` lives here, in the bench — never in the library.
-fn stage_secs<const STAGE: u8>(pipeline: &PipelineTokenizer, chunks: &[String]) -> f64 {
-    let mut out = Vec::new();
+/// The caller-owned buffers are reused across chunks and `black_box`'d each
+/// iteration: `out` anchors the special-scan/normalize/model work, `pre_tokens`
+/// anchors the split stage, so under fat LTO no dead partial stage gets
+/// optimized away.
+fn stage_secs(pipeline: &PipelineTokenizer, chunks: &[String], stage: Stage) -> f64 {
+    use std::borrow::Cow;
+    use tk_encode::pipeline::{
+        Model as _, Normalizer as _, PipelineToken, PreTokenizer as _, Segment,
+        SpecialSegmentIterator,
+    };
+
+    let added_vocabulary = pipeline.get_added_vocabulary();
+    let normalizer = pipeline.get_normalizer();
+    let pre_tokenizer = pipeline.get_pre_tokenizer();
+    let model = pipeline.get_model();
+
+    let mut out: Vec<PipelineToken> = Vec::new();
     let mut pre_tokens = Vec::new();
-    let mut scratch = pipeline.get_model().init_scratch();
-    let mut run = || {
+    let mut scratch = model.init_scratch();
+    let mut run = |out: &mut Vec<PipelineToken>, pre_tokens: &mut Vec<_>| {
         for chunk in chunks {
             out.clear();
-            let _ =
-                pipeline.encode_generic::<STAGE>(chunk, &mut pre_tokens, &mut scratch, &mut out);
+            for segment in SpecialSegmentIterator::new(chunk, added_vocabulary, false) {
+                match segment {
+                    Segment::SpecialToken(id) => out.push(PipelineToken { id }),
+                    Segment::Text(text) => {
+                        let normalized: Cow<str> = if stage >= Stage::Normalize {
+                            match normalizer {
+                                Some(n) => n.normalize(text).unwrap(),
+                                None => Cow::Borrowed(text),
+                            }
+                        } else {
+                            Cow::Borrowed(text)
+                        };
+                        for seg in SpecialSegmentIterator::new(&normalized, added_vocabulary, true)
+                        {
+                            match seg {
+                                Segment::SpecialToken(id) => out.push(PipelineToken { id }),
+                                Segment::Text(normalized_chunk) => {
+                                    if stage >= Stage::Split {
+                                        pre_tokens.clear();
+                                        pre_tokenizer
+                                            .pre_tokenize(normalized_chunk, pre_tokens)
+                                            .unwrap();
+                                        if stage >= Stage::Model {
+                                            for pre_token in pre_tokens.iter() {
+                                                model
+                                                    .tokenize_pipeline(
+                                                        &normalized_chunk[pre_token.range()],
+                                                        &mut scratch,
+                                                        out,
+                                                    )
+                                                    .unwrap();
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             black_box(&out);
             black_box(&pre_tokens);
         }
     };
-    run(); // warm-up
+    run(&mut out, &mut pre_tokens); // warm-up
     let mut samples = Vec::with_capacity(REPS);
     for _ in 0..REPS {
         let start = Instant::now();
-        run();
+        run(&mut out, &mut pre_tokens);
         samples.push(start.elapsed().as_secs_f64());
     }
     median_secs(samples)
@@ -350,7 +420,9 @@ fn memory_child(which: &str, model: &Path) {
             drop(tok);
             let after_load = rss_now().unwrap_or(0);
             for c in &chunks {
-                n += pipeline.encode(c, false).unwrap().len();
+                pipeline.encode(c).for_each(|r| {
+                    black_box(r.unwrap());
+                });
             }
             (after_load, rss_now().unwrap_or(0))
         }
@@ -672,10 +744,18 @@ fn bench_model(
     files: &[(String, PathBuf)],
     model_json: &Path,
 ) -> Vec<Value> {
-    let pipe_enc = |s: &str| pipeline.encode(s, false).unwrap().len();
+    let pipe_enc = |s: &str| {
+        pipeline.encode(s).for_each(|r| {
+            black_box(r.unwrap());
+        });
+    };
     // per-model: the reference regex(es) onig will time on each fixture (empty for non-regex pretoks).
     let regexes = pretok_regexes(model_json);
-    let base_enc = baseline.map(|b| move |s: &str| b.encode(s, false).unwrap().len());
+    let base_enc = baseline.map(|b| {
+        move |s: &str| {
+            black_box(b.encode(s, false).unwrap());
+        }
+    });
 
     let mut rows = Vec::new();
     for (group, path) in files {
@@ -686,9 +766,8 @@ fn bench_model(
 
         let pipe_ids = |c: &String| -> Vec<u32> {
             pipeline
-                .encode(c, false)
-                .unwrap()
-                .iter()
+                .encode(c)
+                .flat_map(|r| r.unwrap())
                 .map(|t| t.id)
                 .collect()
         };
@@ -727,14 +806,13 @@ fn bench_model(
             fmt(base_mbps)
         );
 
-        // Staged decomposition of the pipeline's own encode via the ablation ladder:
+        // Staged decomposition of the pipeline's encode via the ablation ladder:
         // time each cumulative stage level, then subtract to isolate each stage's cost
-        // (e.g. model = t_model - t_split). Levels are the named STAGE_* consts on
-        // PipelineTokenizer rather than bare 0/1/2/3.
-        let t_frame = stage_secs::<{ PipelineTokenizer::STAGE_FRAME }>(pipeline, &chunks);
-        let t_norm = stage_secs::<{ PipelineTokenizer::STAGE_NORMALIZE }>(pipeline, &chunks);
-        let t_split = stage_secs::<{ PipelineTokenizer::STAGE_SPLIT }>(pipeline, &chunks);
-        let t_model = stage_secs::<{ PipelineTokenizer::STAGE_MODEL }>(pipeline, &chunks);
+        // (e.g. model = t_model - t_split).
+        let t_frame = stage_secs(pipeline, &chunks, Stage::Frame);
+        let t_norm = stage_secs(pipeline, &chunks, Stage::Normalize);
+        let t_split = stage_secs(pipeline, &chunks, Stage::Split);
+        let t_model = stage_secs(pipeline, &chunks, Stage::Model);
         // Two distinct "split" costs are separated here: `added_split` is the
         // added/special-token scan (the SpecialSegmentIterator over the AddedVocabulary,
         // captured by the FRAME level), `pre_tokenize` is the pre-tokenizer split. All
@@ -880,7 +958,7 @@ fn main() {
         // and has no range-based impl. Probe once and downgrade to "unsupported"
         // (with the reason) instead of panicking partway through the bench.
         let pipeline = match PipelineTokenizer::try_from(&tok) {
-            Ok(p) => match p.encode(PROBE, false) {
+            Ok(p) => match p.encode(PROBE).collect::<Result<Vec<_>, _>>() {
                 Ok(_) => p,
                 Err(e) => {
                     eprintln!("  pipeline builds but can't encode yet ({shape}): {e}");

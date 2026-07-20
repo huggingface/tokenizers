@@ -16,8 +16,6 @@ use criterion::{BenchmarkId, Criterion, Throughput};
 use tk_encode::pipeline::PipelineTokenizer;
 use tk_encode::Tokenizer;
 
-// (name, tokenizer.json): bert-wiki exercises the Bert/WordPiece path; dsv4 exercises the deepseek
-// pre-tokenizer unroll (`fsm_deepseek`) + BPE end-to-end.
 const TOKENIZERS: &[(&str, &str)] = &[
     ("bert", "../data/bert-wiki.json"),
     ("dsv4", "../data/deepseek-v4-flash-base-tokenizer.json"),
@@ -74,15 +72,14 @@ fn bench_pipeline(c: &mut Criterion) {
             let mut group = c.benchmark_group(format!("{tok_name}-{corpus}"));
             for (target_bytes, label) in CHUNK_SIZES {
                 let chunks = make_chunks(&lines, *target_bytes);
+                let refs: Vec<&str> = chunks.iter().map(String::as_str).collect();
                 let total_bytes: u64 = chunks.iter().map(|s| s.len() as u64).sum();
                 group.throughput(Throughput::Bytes(total_bytes));
                 group.bench_function(BenchmarkId::from_parameter(label), |b| {
                     b.iter(|| {
-                        let mut n = 0usize;
-                        for chunk in &chunks {
-                            n += pipeline.encode(chunk, false).unwrap().len();
-                        }
-                        black_box(n)
+                        pipeline.encode(&refs[..]).for_each(|r| {
+                            black_box(r.unwrap());
+                        });
                     })
                 });
             }
