@@ -8,8 +8,8 @@ use crate::utils::{PyNormalizedString, PyNormalizedStringRefMut, PyPattern};
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tk::normalizers::{
-    BertNormalizer, ByteLevel, Lowercase, NFC, NFD, NFKC, NFKD, Nmt, NormalizerWrapper,
-    Precompiled, Prepend, Replace, Strip, StripAccents,
+    BertNormalizer, ByteLevel, Lowercase, Nmt, NormalizerWrapper, Precompiled, Prepend, Replace,
+    Strip, StripAccents, NFC, NFD, NFKC, NFKD,
 };
 use tk::{NormalizedString, Normalizer};
 use tokenizers as tk;
@@ -30,7 +30,7 @@ impl PyNormalizedStringMut<'_> {
         N: Normalizer,
     {
         match self {
-            PyNormalizedStringMut::Owned(ref mut n) => normalizer.normalize(&mut n.normalized),
+            PyNormalizedStringMut::Owned(n) => normalizer.normalize(&mut n.normalized),
             PyNormalizedStringMut::RefMut(n) => n.map_as_mut(|n| normalizer.normalize(n))?,
         }
         .map_err(|e| exceptions::PyException::new_err(format!("{e}")))
@@ -70,7 +70,7 @@ impl PyNormalizer {
                 PyNormalizerWrapper::Custom(_) => {
                     Py::new(py, base)?.into_any()
                 }
-                PyNormalizerWrapper::Wrapped(ref inner) => match inner {
+                PyNormalizerWrapper::Wrapped(inner) => match inner {
                     NormalizerWrapper::Sequence(_) => Py::new(py, (PySequence {}, base))?
                         .into_any(),
                     NormalizerWrapper::BertNormalizer(_) => {
@@ -1005,9 +1005,9 @@ pub mod normalizers {
 #[cfg(test)]
 mod test {
     use pyo3::prelude::*;
-    use tk::normalizers::NormalizerWrapper;
     use tk::normalizers::unicode::{NFC, NFKC};
     use tk::normalizers::utils::Sequence;
+    use tk::normalizers::NormalizerWrapper;
 
     use crate::normalizers::{PyNormalizer, PyNormalizerTypeWrapper, PyNormalizerWrapper};
 
