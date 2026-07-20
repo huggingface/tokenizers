@@ -16,8 +16,6 @@ use criterion::{BenchmarkId, Criterion, Throughput};
 use tk_encode::pipeline::PipelineTokenizer;
 use tk_encode::Tokenizer;
 
-// (name, tokenizer.json): bert-wiki exercises the Bert/WordPiece path; dsv4 exercises the deepseek
-// pre-tokenizer unroll (`fsm_deepseek`) + BPE end-to-end.
 const TOKENIZERS: &[(&str, &str)] = &[
     ("bert", "../data/bert-wiki.json"),
     ("dsv4", "../data/deepseek-v4-flash-base-tokenizer.json"),
@@ -79,15 +77,9 @@ fn bench_pipeline(c: &mut Criterion) {
                 group.throughput(Throughput::Bytes(total_bytes));
                 group.bench_function(BenchmarkId::from_parameter(label), |b| {
                     b.iter(|| {
-                        // Batch encode + streaming-iterator drain — the representative
-                        // path (never `into_single`, whose single-input serial concat
-                        // tail is not a common workload). `black_box` each result to
-                        // force the work without an arithmetic reduction.
-                        pipeline
-                            .encode(&refs[..])
-                            .for_each(|r| {
-                                black_box(r.unwrap());
-                            });
+                        pipeline.encode(&refs[..]).for_each(|r| {
+                            black_box(r.unwrap());
+                        });
                     })
                 });
             }
