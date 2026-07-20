@@ -43,6 +43,7 @@ fn setup_python_env() -> Result<(), Box<dyn std::error::Error>> {
         // SAFETY: main is still single-threaded at this point — no other
         // threads can race on the environment, and the embedded Python
         // interpreter (which reads PYTHONHOME) hasn't been initialized yet.
+        // FIXME: doesn't look great
         unsafe { std::env::set_var("PYTHONHOME", &base_prefix) };
     }
 

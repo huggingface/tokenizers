@@ -1500,6 +1500,7 @@ impl ParityBpeTrainer {
         // Each position appears at most once (AHashSet), so no two threads
         // mutate the same Word.
         let words_len = words.len();
+        // FIXME: doesn't look great
         struct WordPtr(*mut Word);
         unsafe impl Sync for WordPtr {}
         let word_start = WordPtr(words.as_mut_ptr());

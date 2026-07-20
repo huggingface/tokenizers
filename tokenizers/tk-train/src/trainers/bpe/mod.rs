@@ -558,6 +558,7 @@ impl BpeTrainer {
             let pos: &AHashSet<usize> = &top.pos;
 
             let words_len = words.len();
+            // FIXME: doesn't look great
             struct WordPtr(*mut Word);
             // Safety: We do not actually use this for concurrent access to the same memory,
             // only to different chunks within the same allocation.
