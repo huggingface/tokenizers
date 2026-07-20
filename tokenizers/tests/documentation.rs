@@ -2,8 +2,8 @@ use std::iter::FromIterator;
 
 use ahash::AHashMap;
 use tokenizers::decoders::byte_fallback::ByteFallback;
-use tokenizers::models::bpe::{BpeTrainerBuilder, BPE};
-use tokenizers::normalizers::{Sequence, Strip, NFC};
+use tokenizers::models::bpe::{BPE, BpeTrainerBuilder};
+use tokenizers::normalizers::{NFC, Sequence, Strip};
 use tokenizers::pre_tokenizers::byte_level::ByteLevel;
 use tokenizers::{AddedToken, TokenizerBuilder};
 use tokenizers::{DecoderWrapper, NormalizerWrapper, PostProcessorWrapper, PreTokenizerWrapper};
@@ -188,7 +188,9 @@ fn quicktour() -> tokenizers::Result<()> {
     // END quicktour_print_tokens
     assert_eq!(
         output.get_tokens(),
-        ["Hello", ",", "y", "'", "all", "!", "How", "are", "you", "[UNK]", "?",]
+        [
+            "Hello", ",", "y", "'", "all", "!", "How", "are", "you", "[UNK]", "?",
+        ]
     );
     // START quicktour_print_ids
     println!("{:?}", output.get_ids());
@@ -237,7 +239,9 @@ fn quicktour() -> tokenizers::Result<()> {
     // END quicktour_print_special_tokens
     assert_eq!(
         output.get_tokens(),
-        ["[CLS]", "Hello", ",", "y", "'", "all", "!", "How", "are", "you", "[UNK]", "?", "[SEP]"]
+        [
+            "[CLS]", "Hello", ",", "y", "'", "all", "!", "How", "are", "you", "[UNK]", "?", "[SEP]"
+        ]
     );
     // START quicktour_print_special_tokens_pair
     let output = tokenizer.encode(("Hello, y'all!", "How are you 😁 ?"), true)?;
@@ -424,8 +428,8 @@ fn pipeline() -> tokenizers::Result<()> {
 #[ignore]
 fn train_pipeline_bert() -> tokenizers::Result<()> {
     // START bert_setup_tokenizer
-    use tokenizers::models::wordpiece::WordPiece;
     use tokenizers::Tokenizer;
+    use tokenizers::models::wordpiece::WordPiece;
 
     let mut bert_tokenizer = Tokenizer::new(
         WordPiece::builder()
@@ -466,7 +470,7 @@ fn train_pipeline_bert() -> tokenizers::Result<()> {
     ));
     // END bert_setup_processor
     // START bert_train_tokenizer
-    use tokenizers::models::{wordpiece::WordPieceTrainer, TrainerWrapper};
+    use tokenizers::models::{TrainerWrapper, wordpiece::WordPieceTrainer};
 
     let mut trainer: TrainerWrapper = WordPieceTrainer::builder()
         .vocab_size(30_522)

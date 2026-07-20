@@ -47,12 +47,12 @@ impl Normalizer for Precompiled {
         // You don't pass.
         let mut modified = false;
         normalized.get().graphemes(true).for_each(|grapheme| {
-            if grapheme.len() < 6 {
-                if let Some(norm) = self.transform(grapheme) {
-                    modified = true;
-                    replace(&mut transformations, grapheme, norm);
-                    return;
-                }
+            if grapheme.len() < 6
+                && let Some(norm) = self.transform(grapheme)
+            {
+                modified = true;
+                replace(&mut transformations, grapheme, norm);
+                return;
             }
             for (char_index, c) in grapheme.char_indices() {
                 let part = &grapheme[char_index..char_index + c.len_utf8()];
@@ -75,16 +75,16 @@ impl pipeline::Normalizer for Precompiled {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
         let mut transformed: Option<String> = None;
         for (g_idx, grapheme) in input.grapheme_indices(true) {
-            if grapheme.len() < 6 {
-                if let Some(replacement) = self.transform(grapheme) {
-                    let string = transformed.get_or_insert_with(|| {
-                        let mut s = String::with_capacity(input.len());
-                        s.push_str(&input[..g_idx]);
-                        s
-                    });
-                    string.push_str(replacement);
-                    continue;
-                }
+            if grapheme.len() < 6
+                && let Some(replacement) = self.transform(grapheme)
+            {
+                let string = transformed.get_or_insert_with(|| {
+                    let mut s = String::with_capacity(input.len());
+                    s.push_str(&input[..g_idx]);
+                    s
+                });
+                string.push_str(replacement);
+                continue;
             }
             for (c_idx, character) in grapheme.char_indices() {
                 if let Some(replacement) =

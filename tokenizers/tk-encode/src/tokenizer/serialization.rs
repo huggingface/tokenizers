@@ -1,14 +1,13 @@
 use std::marker::PhantomData;
 
 use serde::{
-    self,
+    self, Deserialize, Deserializer, Serialize, Serializer,
     de::{Error, MapAccess, Visitor},
     ser::SerializeStruct,
-    Deserialize, Deserializer, Serialize, Serializer,
 };
 
-use super::added_vocabulary::AddedTokenWithId;
 use super::TokenizerImpl;
+use super::added_vocabulary::AddedTokenWithId;
 use crate::{Decoder, Model, Normalizer, PostProcessor, PreTokenizer, TokenizerBuilder};
 
 static SERIALIZATION_VERSION: &str = "1.0";
@@ -154,13 +153,13 @@ where
         // Single-pass: warn on ID mismatches, then add all tokens.
         // `add_tokens` computes normalization internally for tokens with `normalized = true`.
         for t in &tokens {
-            if let Some(rid) = tokenizer.token_to_id(&t.token.content) {
-                if rid != t.id {
-                    warn!(
-                        "Warning: Token '{}' was expected to have ID '{}' but was given ID '{}'",
-                        t.token.content, t.id, rid
-                    );
-                }
+            if let Some(rid) = tokenizer.token_to_id(&t.token.content)
+                && rid != t.id
+            {
+                warn!(
+                    "Warning: Token '{}' was expected to have ID '{}' but was given ID '{}'",
+                    t.token.content, t.id, rid
+                );
             }
         }
         tokenizer

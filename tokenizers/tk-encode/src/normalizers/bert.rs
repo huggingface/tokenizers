@@ -9,7 +9,7 @@ use super::utils::lowercases_to_self;
 
 use serde::{Deserialize, Serialize};
 use unicode_categories::UnicodeCategories;
-use unicode_normalization::{is_nfd_quick, IsNormalized, UnicodeNormalization};
+use unicode_normalization::{IsNormalized, UnicodeNormalization, is_nfd_quick};
 
 /// Checks whether a character is whitespace
 fn is_whitespace(c: char) -> bool {
@@ -39,11 +39,7 @@ fn clean_text_removes(c: char) -> bool {
 
 /// The whitespace folding BERT text cleaning applies to kept characters
 fn clean_text_map(c: char) -> char {
-    if is_whitespace(c) {
-        ' '
-    } else {
-        c
-    }
+    if is_whitespace(c) { ' ' } else { c }
 }
 
 /// Checks whether a character is chinese

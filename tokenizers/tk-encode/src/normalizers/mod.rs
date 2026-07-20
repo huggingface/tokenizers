@@ -12,11 +12,11 @@ pub use crate::normalizers::precompiled::Precompiled;
 pub use crate::normalizers::prepend::Prepend;
 pub use crate::normalizers::replace::Replace;
 pub use crate::normalizers::strip::{Strip, StripAccents};
-pub use crate::normalizers::unicode::{Nmt, NFC, NFD, NFKC, NFKD};
+pub use crate::normalizers::unicode::{NFC, NFD, NFKC, NFKD, Nmt};
 pub use crate::normalizers::utils::{Lowercase, Sequence};
 use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::{pipeline, NormalizedString, Normalizer};
+use crate::{NormalizedString, Normalizer, pipeline};
 
 /// Wrapper for known Normalizers.
 #[derive(Clone, Debug, Serialize)]

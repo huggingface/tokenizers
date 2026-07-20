@@ -1,6 +1,6 @@
 use crate::{
-    normalizer::Range, Encoding, NormalizedString, OffsetReferential, Offsets, Result, Token,
-    TruncationDirection,
+    Encoding, NormalizedString, OffsetReferential, Offsets, Result, Token, TruncationDirection,
+    normalizer::Range,
 };
 use std::collections::HashMap;
 

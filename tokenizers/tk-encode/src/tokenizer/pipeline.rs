@@ -13,6 +13,7 @@ use crate::vocab::bucket_added_vocabulary::{
     AddedToken as BucketAddedToken, AddedVocabulary as BucketAddedVocabulary,
 };
 use crate::{
+    ModelWrapper, PostProcessorWrapper, PreTokenizerWrapper, Token, Tokenizer,
     normalizers::NormalizerWrapper,
     pre_tokenizers::{
         bert::BertPreTokenizer,
@@ -25,7 +26,6 @@ use crate::{
         unicode_scripts::UnicodeScripts,
         whitespace::{Whitespace, WhitespaceSplit},
     },
-    ModelWrapper, PostProcessorWrapper, PreTokenizerWrapper, Token, Tokenizer,
 };
 
 use super::{Result, SplitDelimiterBehavior};
@@ -517,27 +517,27 @@ pub fn split<C: Copy + PartialEq>(
 
     for (i, ch) in text.char_indices() {
         let c = classify(ch);
-        if let Some(p) = prev {
-            if p != c || policy(c) == SplitPolicy::Isolate {
-                if policy(p) != SplitPolicy::Remove {
-                    out.push(Span {
-                        start,
-                        end: i as u32,
-                    });
-                }
-                start = i as u32;
+        if let Some(p) = prev
+            && (p != c || policy(c) == SplitPolicy::Isolate)
+        {
+            if policy(p) != SplitPolicy::Remove {
+                out.push(Span {
+                    start,
+                    end: i as u32,
+                });
             }
+            start = i as u32;
         }
         prev = Some(c);
     }
 
-    if let Some(p) = prev {
-        if policy(p) != SplitPolicy::Remove {
-            out.push(Span {
-                start,
-                end: text.len() as u32,
-            });
-        }
+    if let Some(p) = prev
+        && policy(p) != SplitPolicy::Remove
+    {
+        out.push(Span {
+            start,
+            end: text.len() as u32,
+        });
     }
 }
 
@@ -603,11 +603,7 @@ pub fn split_delimiter(
     };
 
     split(text, out, is_delim, |d| {
-        if d {
-            delim_policy
-        } else {
-            SplitPolicy::Keep
-        }
+        if d { delim_policy } else { SplitPolicy::Keep }
     });
 }
 

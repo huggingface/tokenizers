@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use ahash::RandomState;
-use ptr_hash::{hash::NoHash, FastPtrHash, PtrHashParams};
+use ptr_hash::{FastPtrHash, PtrHashParams, hash::NoHash};
 use std::fmt;
 
 type Mphf = FastPtrHash<NoHash, u64>;

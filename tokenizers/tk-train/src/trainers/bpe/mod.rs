@@ -12,7 +12,7 @@ use dary_heap::OctonaryHeap;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::HashSet;
-use tk_encode::models::bpe::{Pair, WithFirstLastIterator, Word, BPE};
+use tk_encode::models::bpe::{BPE, Pair, WithFirstLastIterator, Word};
 use tk_encode::parallelism::*;
 use tk_encode::utils::progress::{ProgressBar, ProgressFormat, ProgressStyle};
 use tk_encode::vocab_store::VocabStore;
@@ -389,17 +389,15 @@ impl BpeTrainer {
                     // Found the initial char in the authorized alphabet
 
                     // Add the `continuing_subword_prefix` if relevant
-                    if !is_first {
-                        if let Some(prefix) = &self.continuing_subword_prefix {
+                    if !is_first
+                        && let Some(prefix) = &self.continuing_subword_prefix {
                             s.insert_str(0, prefix);
                         }
-                    }
                     // Add the `end_of_word_suffix` if relevant
-                    if is_last {
-                        if let Some(suffix) = &self.end_of_word_suffix {
+                    if is_last
+                        && let Some(suffix) = &self.end_of_word_suffix {
                             s.push_str(suffix);
                         }
-                    }
 
                     // Insert the new formed string if necessary
                     if !w2id.contains_key(&CompactString::from(&s)) {
@@ -538,11 +536,10 @@ impl BpeTrainer {
             let mut part_b = id_to_word[top.pair.1 as usize].as_str();
 
             // Build new token
-            if let Some(prefix) = &self.continuing_subword_prefix {
-                if let Some(rest) = part_b.strip_prefix(prefix) {
+            if let Some(prefix) = &self.continuing_subword_prefix
+                && let Some(rest) = part_b.strip_prefix(prefix) {
                     part_b = rest;
                 }
-            }
 
             // Insert new token if it does not already exist
             let new_token = format!("{part_a}{part_b}");
@@ -574,6 +571,9 @@ impl BpeTrainer {
                     // We can merge each of these words in parallel here because each position
                     // can be there only once (AHashSet). So this is safe.
                     unsafe {
+                        // Edition ≥2021 closures capture the `.0` field (a non-Sync raw
+                        // pointer) unless we force whole-struct capture of the Sync wrapper.
+                        let word_start = &word_start;
                         assert!(i < words_len);
                         // This is words[i], but avoids needing to go through &T (which triggers UB)
                         let word = word_start.0.add(i);
@@ -684,7 +684,7 @@ mod tests {
     use super::BpeTrainer;
     use ahash::AHashMap;
     use compact_str::CompactString;
-    use tk_encode::models::bpe::{Pair, BPE};
+    use tk_encode::models::bpe::{BPE, Pair};
 
     #[test]
     fn test_train() {

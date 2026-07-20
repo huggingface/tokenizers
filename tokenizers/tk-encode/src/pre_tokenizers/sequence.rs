@@ -410,10 +410,10 @@ mod tests {
         // The Llama-3 / DeepSeek archetype: Sequence[Split(regex), ByteLevel(use_regex=false)].
         // Pipeline ranges must match the legacy oracle's Original-referential offsets, and the
         // byte-level transform of each range must match the legacy split string.
+        use crate::SplitDelimiterBehavior;
         use crate::pre_tokenizers::split::{Split, SplitPattern};
         use crate::utils::byte_level::BYTES_CHAR_LOOKUP;
         use crate::utils::byte_level::GPT2_REGEX_STR;
-        use crate::SplitDelimiterBehavior;
 
         let seq = Sequence::new(vec![
             PreTokenizerWrapper::Split(

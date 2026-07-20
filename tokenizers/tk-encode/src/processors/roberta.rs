@@ -56,11 +56,7 @@ impl RobertaProcessing {
 
 impl PostProcessor for RobertaProcessing {
     fn added_tokens(&self, is_pair: bool) -> usize {
-        if is_pair {
-            4
-        } else {
-            2
-        }
+        if is_pair { 4 } else { 2 }
     }
 
     fn process_encodings(

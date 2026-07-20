@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use crate::pipeline;
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
-use crate::utils::byte_level::{byte_level_transform, BYTES_CHAR_LOOKUP};
+use crate::utils::byte_level::{BYTES_CHAR_LOOKUP, byte_level_transform};
 use crate::utils::macro_rules_attribute;
 use ahash::AHashSet;
 

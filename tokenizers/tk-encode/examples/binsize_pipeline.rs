@@ -5,8 +5,8 @@
 
 use std::convert::TryFrom;
 
-use tk_encode::pipeline::PipelineTokenizer;
 use tk_encode::Tokenizer;
+use tk_encode::pipeline::PipelineTokenizer;
 
 fn main() {
     let mut args = std::env::args().skip(1);

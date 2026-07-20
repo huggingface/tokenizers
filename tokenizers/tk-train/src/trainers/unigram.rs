@@ -136,13 +136,11 @@ impl UnigramTrainer {
         }
 
         let (unk_id, need_add_unk) = if let Some(ref unk) = self.unk_token {
-            let unk_id = self.special_tokens.iter().enumerate().find_map(|(i, t)| {
-                if t.content == *unk {
-                    Some(i)
-                } else {
-                    None
-                }
-            });
+            let unk_id = self
+                .special_tokens
+                .iter()
+                .enumerate()
+                .find_map(|(i, t)| if t.content == *unk { Some(i) } else { None });
             match unk_id {
                 Some(id) => (Some(id), false),
                 None => (Some(0), true),
@@ -725,10 +723,12 @@ mod tests {
         let required_chars = trainer.required_chars(&sentences);
         assert_eq!(
             required_chars,
-            vec!["こ", "ん", "に", "ち", "は", "友", "達", "a", "b", "c", "d", "e", "f"]
-                .into_iter()
-                .map(|s| s.to_owned())
-                .collect::<AHashSet<_>>()
+            vec![
+                "こ", "ん", "に", "ち", "は", "友", "達", "a", "b", "c", "d", "e", "f"
+            ]
+            .into_iter()
+            .map(|s| s.to_owned())
+            .collect::<AHashSet<_>>()
         );
     }
 

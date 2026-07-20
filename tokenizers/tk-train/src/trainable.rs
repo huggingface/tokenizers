@@ -1,14 +1,14 @@
+use tk_encode::Model;
+use tk_encode::models::ModelWrapper;
 use tk_encode::models::bpe::BPE;
 use tk_encode::models::unigram::Unigram;
 use tk_encode::models::wordlevel::WordLevel;
 use tk_encode::models::wordpiece::WordPiece;
-use tk_encode::models::ModelWrapper;
-use tk_encode::Model;
 
+use crate::Trainer;
 use crate::trainers::{
     BpeTrainer, TrainerWrapper, UnigramTrainer, WordLevelTrainer, WordPieceTrainer,
 };
-use crate::Trainer;
 
 /// A `Model` that knows how to build a `Trainer` capable of training it.
 ///

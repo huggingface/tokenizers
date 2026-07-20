@@ -51,7 +51,9 @@ impl Serialize for OrderedVocabIter<'_> {
         };
 
         if !holes.is_empty() {
-            warn!("The OrderedVocab you are attempting to serialize contains holes for indices {holes:?}, your vocabulary could be corrupted!");
+            warn!(
+                "The OrderedVocab you are attempting to serialize contains holes for indices {holes:?}, your vocabulary could be corrupted!"
+            );
         }
         result
     }
