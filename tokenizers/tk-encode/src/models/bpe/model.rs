@@ -1438,6 +1438,25 @@ mod tests {
             assert!(pipeline_ids(&pipeline, "").is_empty());
         }
 
+        // The scratch pool hands the SAME scratch to successive encodes. A bug leaking
+        // state between calls (an undrained merge queue, a stale word buffer) would
+        // corrupt every encode after the first. Drive several inputs — including
+        // repeats and an empty string — through one reused scratch and check each still
+        // matches the fresh-scratch reference. This is the invariant the pool relies on.
+        #[test]
+        fn reused_scratch_matches_fresh() {
+            let bpe = hello_builder().build().unwrap();
+            let reference = bpe.clone();
+            let model = PipelineBPE::from_bpe(bpe, false).unwrap();
+            let mut scratch = model.init_scratch();
+            for input in ["hello", "hell", "helo", "oleh", "hello", "", "hxe"] {
+                let mut out = Vec::new();
+                pipeline::Model::tokenize_pipeline(&model, input, &mut scratch, &mut out).unwrap();
+                let got: Vec<u32> = out.iter().map(|t| t.id).collect();
+                assert_eq!(got, reference_ids(&reference, input), "{input:?}");
+            }
+        }
+
         #[test]
         fn unknown_char_without_unk_is_dropped() {
             let bpe = hello_builder().build().unwrap();
