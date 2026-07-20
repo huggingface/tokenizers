@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::convert::TryInto;
+use std::sync::{Mutex, PoisonError};
 use std::{borrow::Cow, convert::TryFrom};
 
 use atomsplit::classify::classify;
@@ -389,6 +390,85 @@ pub struct PipelineTokenizer {
     pre_tokenizer: PipelinePreTokenizer,
     model: PipelineModel,
     post_processor: PipelinePostProcessor,
+    scratch_pool: ScratchPool,
+}
+
+/// A pool of reusable per-encode scratch buffers, owned by the [`PipelineTokenizer`].
+/// [`encode`](PipelineTokenizer::encode) checks a scratch out and returns it on drop,
+/// so the tokenizer keeps a `&self` (hence `Sync`) API — `par_iter().map(|s|
+/// tok.encode(s))` just works — while each concurrent caller still gets private,
+/// warm scratch. This is the pattern `regex` uses to present `Regex: Sync` without a
+/// caller-visible cache handle.
+///
+/// The pool's lifetime is the tokenizer's: nothing is process-global (unlike a
+/// `thread_local!`), so idle scratch is freed when the tokenizer drops, and every
+/// scratch it holds was built by this instance's model — a foreign-vocab scratch is
+/// unrepresentable.
+struct ScratchPool {
+    // Not boxed: checkout is once per `encode` call (µs–ms), so the cost of moving a
+    // scratch on/off the freelist is noise — the pointer-indirection trick pays off
+    // only at regex-automata's per-search granularity.
+    idle: Mutex<Vec<PipelineModelScratch>>,
+}
+
+impl ScratchPool {
+    fn new() -> Self {
+        Self {
+            idle: Mutex::new(Vec::new()),
+        }
+    }
+
+    /// Check out a scratch — a warm one off the freelist, or a fresh one built from
+    /// `model`. Population self-limits to the peak number of concurrent encodes, so
+    /// there is no cap or eviction policy to tune. The lock is held for one `pop`
+    /// (nanoseconds) and taken once per `encode`, never per pre-token.
+    fn get<'a>(&'a self, model: &PipelineModel) -> ScratchGuard<'a> {
+        let scratch = self
+            .idle
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) // a poisoned freelist is still a freelist
+            .pop()
+            .unwrap_or_else(|| model.init_scratch());
+        ScratchGuard {
+            scratch: Some(scratch),
+            pool: self,
+        }
+    }
+}
+
+/// RAII checkout: returns its scratch to the pool on drop.
+struct ScratchGuard<'a> {
+    // `Option` only so `Drop` can move the scratch back out.
+    scratch: Option<PipelineModelScratch>,
+    pool: &'a ScratchPool,
+}
+
+impl Drop for ScratchGuard<'_> {
+    fn drop(&mut self) {
+        if let Some(scratch) = self.scratch.take() {
+            // No reset needed: the model's scratch buffers self-clear at the start of
+            // each tokenize (`merge_all` clears the queue/skip, `merge_word` the word,
+            // WordPiece its candidate string). Keeping the allocation warm is the point.
+            self.pool
+                .idle
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .push(scratch);
+        }
+    }
+}
+
+impl std::ops::Deref for ScratchGuard<'_> {
+    type Target = PipelineModelScratch;
+    fn deref(&self) -> &PipelineModelScratch {
+        self.scratch.as_ref().unwrap()
+    }
+}
+
+impl std::ops::DerefMut for ScratchGuard<'_> {
+    fn deref_mut(&mut self) -> &mut PipelineModelScratch {
+        self.scratch.as_mut().unwrap()
+    }
 }
 
 impl TryFrom<&Tokenizer> for PipelineTokenizer {
@@ -491,6 +571,7 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
                 .map(PipelinePostProcessor::try_from)
                 .transpose()?
                 .unwrap_or_default(),
+            scratch_pool: ScratchPool::new(),
         })
     }
 }
@@ -521,7 +602,7 @@ impl PipelineTokenizer {
     pub fn encode(&self, input: &str, add_special_tokens: bool) -> Result<Vec<PipelineToken>> {
         let mut output = Vec::new();
         let mut pre_tokens = Vec::new();
-        let mut scratch = self.model.init_scratch();
+        let mut scratch = self.scratch_pool.get(&self.model);
 
         self.encode_generic::<{ Self::STAGE_POSTPROCESS }>(
             input,
@@ -1228,5 +1309,61 @@ mod tests {
         );
         let err = conversion_error(&tok);
         assert!(err.contains("not supported"), "{}", err);
+    }
+
+    // The scratch pool exists so ONE `&self` tokenizer can be shared across rayon
+    // workers. Encode the same input from thousands of threads through a single shared
+    // instance; each must get private scratch and produce the sequential result. A
+    // data race or shared-scratch bug would corrupt some — and this only compiles if
+    // `PipelineTokenizer: Sync`, which the pool must preserve.
+    #[test]
+    fn encode_shared_across_threads_via_pool() {
+        use crate::models::bpe::{BpeBuilder, Merges, Vocab};
+        use rayon::prelude::*;
+
+        let vocab: Vocab = [
+            ("h", 0u32),
+            ("e", 1),
+            ("l", 2),
+            ("o", 3),
+            ("he", 4),
+            ("hel", 5),
+            ("hell", 6),
+            ("hello", 7),
+        ]
+        .into_iter()
+        .map(|(s, i)| (s.to_string(), i))
+        .collect();
+        let merges: Merges = vec![
+            ("h".to_string(), "e".to_string()),
+            ("he".to_string(), "l".to_string()),
+            ("hel".to_string(), "l".to_string()),
+            ("hell".to_string(), "o".to_string()),
+        ];
+        let bpe = BpeBuilder::default()
+            .vocab_and_merges(vocab, merges)
+            .build()
+            .unwrap();
+        let tok = Tokenizer::new(bpe);
+        let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
+
+        let want: Vec<u32> = pipeline
+            .encode("hello", false)
+            .unwrap()
+            .iter()
+            .map(|t| t.id)
+            .collect();
+        assert_eq!(want, vec![7]);
+
+        let all_match = (0..10_000u32).into_par_iter().all(|_| {
+            pipeline
+                .encode("hello", false)
+                .unwrap()
+                .iter()
+                .map(|t| t.id)
+                .collect::<Vec<_>>()
+                == want
+        });
+        assert!(all_match);
     }
 }
