@@ -597,14 +597,12 @@ impl ParityBpeTrainer {
             for (is_first, is_last, c) in word.chars().with_first_and_last() {
                 let mut s = c.to_string();
                 if w2id.contains_key(&CompactString::from(&s)) {
-                    if !is_first
-                        && let Some(prefix) = &self.continuing_subword_prefix {
-                            s.insert_str(0, prefix);
-                        }
-                    if is_last
-                        && let Some(suffix) = &self.end_of_word_suffix {
-                            s.push_str(suffix);
-                        }
+                    if !is_first && let Some(prefix) = &self.continuing_subword_prefix {
+                        s.insert_str(0, prefix);
+                    }
+                    if is_last && let Some(suffix) = &self.end_of_word_suffix {
+                        s.push_str(suffix);
+                    }
 
                     if !w2id.contains_key(&CompactString::from(&s)) {
                         id2w.push(CompactString::from(&s));
@@ -796,14 +794,15 @@ impl ParityBpeTrainer {
     /// window-variant parameters.
     fn validate_train_config(&self, num_langs: usize) -> Result<()> {
         if let Some(ref ratio) = self.ratio
-            && ratio.len() != num_langs {
-                return Err(format!(
-                    "ratio length ({}) does not match number of languages ({})",
-                    ratio.len(),
-                    num_langs
-                )
-                .into());
-            }
+            && ratio.len() != num_langs
+        {
+            return Err(format!(
+                "ratio length ({}) does not match number of languages ({})",
+                ratio.len(),
+                num_langs
+            )
+            .into());
+        }
 
         if !self.dev_language_words.is_empty() && self.dev_language_words.len() != num_langs {
             return Err(format!(
@@ -942,14 +941,12 @@ impl ParityBpeTrainer {
                         let bare = CompactString::from(c.to_string());
                         if word_to_id.contains_key(&bare) {
                             let mut s = c.to_string();
-                            if !is_first
-                                && let Some(prefix) = &self.continuing_subword_prefix {
-                                    s.insert_str(0, prefix);
-                                }
-                            if is_last
-                                && let Some(suffix) = &self.end_of_word_suffix {
-                                    s.push_str(suffix);
-                                }
+                            if !is_first && let Some(prefix) = &self.continuing_subword_prefix {
+                                s.insert_str(0, prefix);
+                            }
+                            if is_last && let Some(suffix) = &self.end_of_word_suffix {
+                                s.push_str(suffix);
+                            }
                             let key = CompactString::from(&s);
                             if let Some(&id) = word_to_id.get(&key) {
                                 char_ids.push(id);
@@ -1336,9 +1333,10 @@ impl ParityBpeTrainer {
             let part_a = &id_to_word[best_pair.0 as usize];
             let mut part_b = id_to_word[best_pair.1 as usize].as_str();
             if let Some(prefix) = &self.continuing_subword_prefix
-                && let Some(rest) = part_b.strip_prefix(prefix) {
-                    part_b = rest;
-                }
+                && let Some(rest) = part_b.strip_prefix(prefix)
+            {
+                part_b = rest;
+            }
             let new_token = format!("{part_a}{part_b}");
             let new_token_id = word_to_id
                 .get(&CompactString::from(&new_token))

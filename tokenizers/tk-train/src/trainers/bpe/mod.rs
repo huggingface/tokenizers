@@ -389,15 +389,13 @@ impl BpeTrainer {
                     // Found the initial char in the authorized alphabet
 
                     // Add the `continuing_subword_prefix` if relevant
-                    if !is_first
-                        && let Some(prefix) = &self.continuing_subword_prefix {
-                            s.insert_str(0, prefix);
-                        }
+                    if !is_first && let Some(prefix) = &self.continuing_subword_prefix {
+                        s.insert_str(0, prefix);
+                    }
                     // Add the `end_of_word_suffix` if relevant
-                    if is_last
-                        && let Some(suffix) = &self.end_of_word_suffix {
-                            s.push_str(suffix);
-                        }
+                    if is_last && let Some(suffix) = &self.end_of_word_suffix {
+                        s.push_str(suffix);
+                    }
 
                     // Insert the new formed string if necessary
                     if !w2id.contains_key(&CompactString::from(&s)) {
@@ -537,9 +535,10 @@ impl BpeTrainer {
 
             // Build new token
             if let Some(prefix) = &self.continuing_subword_prefix
-                && let Some(rest) = part_b.strip_prefix(prefix) {
-                    part_b = rest;
-                }
+                && let Some(rest) = part_b.strip_prefix(prefix)
+            {
+                part_b = rest;
+            }
 
             // Insert new token if it does not already exist
             let new_token = format!("{part_a}{part_b}");
