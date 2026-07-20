@@ -1,8 +1,8 @@
 use crate::tokenizer::PaddingOptions;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
-use tokenizers::utils::truncation::TruncationDirection;
 use tokenizers::Encoding;
+use tokenizers::utils::truncation::TruncationDirection;
 
 #[napi(js_name = "Encoding")]
 #[derive(Clone, Default)]

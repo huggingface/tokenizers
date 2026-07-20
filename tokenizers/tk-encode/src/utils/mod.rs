@@ -16,7 +16,7 @@ pub use no_regex::SysRegex;
 
 // Recognize known GPT pre-tokenization regexes and route them to atomsplit's native (unrolled) FSM.
 mod unrolled_regex;
-pub use unrolled_regex::{gpt_fsm, is_deepseek, GptFsm, GptFsmPattern};
+pub use unrolled_regex::{GptFsm, GptFsmPattern, gpt_fsm, is_deepseek};
 
 pub mod byte_level;
 pub mod iter;

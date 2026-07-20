@@ -1,4 +1,4 @@
-use super::{Pair, WithFirstLastIterator, Word, BPE};
+use super::{BPE, Pair, WithFirstLastIterator, Word};
 use ahash::{AHashMap, AHashSet};
 use compact_str::CompactString;
 use dary_heap::OctonaryHeap;
@@ -597,15 +597,11 @@ impl ParityBpeTrainer {
             for (is_first, is_last, c) in word.chars().with_first_and_last() {
                 let mut s = c.to_string();
                 if w2id.contains_key(&CompactString::from(&s)) {
-                    if !is_first {
-                        if let Some(prefix) = &self.continuing_subword_prefix {
-                            s.insert_str(0, prefix);
-                        }
+                    if !is_first && let Some(prefix) = &self.continuing_subword_prefix {
+                        s.insert_str(0, prefix);
                     }
-                    if is_last {
-                        if let Some(suffix) = &self.end_of_word_suffix {
-                            s.push_str(suffix);
-                        }
+                    if is_last && let Some(suffix) = &self.end_of_word_suffix {
+                        s.push_str(suffix);
                     }
 
                     if !w2id.contains_key(&CompactString::from(&s)) {
@@ -797,15 +793,15 @@ impl ParityBpeTrainer {
     /// languages: ratio length and values, dev-language length, and the
     /// window-variant parameters.
     fn validate_train_config(&self, num_langs: usize) -> Result<()> {
-        if let Some(ref ratio) = self.ratio {
-            if ratio.len() != num_langs {
-                return Err(format!(
-                    "ratio length ({}) does not match number of languages ({})",
-                    ratio.len(),
-                    num_langs
-                )
-                .into());
-            }
+        if let Some(ref ratio) = self.ratio
+            && ratio.len() != num_langs
+        {
+            return Err(format!(
+                "ratio length ({}) does not match number of languages ({})",
+                ratio.len(),
+                num_langs
+            )
+            .into());
         }
 
         if !self.dev_language_words.is_empty() && self.dev_language_words.len() != num_langs {
@@ -945,15 +941,11 @@ impl ParityBpeTrainer {
                         let bare = CompactString::from(c.to_string());
                         if word_to_id.contains_key(&bare) {
                             let mut s = c.to_string();
-                            if !is_first {
-                                if let Some(prefix) = &self.continuing_subword_prefix {
-                                    s.insert_str(0, prefix);
-                                }
+                            if !is_first && let Some(prefix) = &self.continuing_subword_prefix {
+                                s.insert_str(0, prefix);
                             }
-                            if is_last {
-                                if let Some(suffix) = &self.end_of_word_suffix {
-                                    s.push_str(suffix);
-                                }
+                            if is_last && let Some(suffix) = &self.end_of_word_suffix {
+                                s.push_str(suffix);
                             }
                             let key = CompactString::from(&s);
                             if let Some(&id) = word_to_id.get(&key) {
@@ -1340,10 +1332,10 @@ impl ParityBpeTrainer {
             // Build new token
             let part_a = &id_to_word[best_pair.0 as usize];
             let mut part_b = id_to_word[best_pair.1 as usize].as_str();
-            if let Some(prefix) = &self.continuing_subword_prefix {
-                if let Some(rest) = part_b.strip_prefix(prefix) {
-                    part_b = rest;
-                }
+            if let Some(prefix) = &self.continuing_subword_prefix
+                && let Some(rest) = part_b.strip_prefix(prefix)
+            {
+                part_b = rest;
             }
             let new_token = format!("{part_a}{part_b}");
             let new_token_id = word_to_id
@@ -1508,6 +1500,7 @@ impl ParityBpeTrainer {
         // Each position appears at most once (AHashSet), so no two threads
         // mutate the same Word.
         let words_len = words.len();
+        // FIXME: doesn't look great
         struct WordPtr(*mut Word);
         unsafe impl Sync for WordPtr {}
         let word_start = WordPtr(words.as_mut_ptr());
@@ -1516,6 +1509,9 @@ impl ParityBpeTrainer {
         let changes: Vec<(Vec<(Pair, i32)>, usize, i64)> = positions
             .maybe_par_iter()
             .map(|&i| unsafe {
+                // Edition ≥2021 closures capture the `.0` field (a non-Sync raw
+                // pointer) unless we force whole-struct capture of the Sync wrapper.
+                let word_start = &word_start;
                 assert!(i < words_len);
                 let word = word_start.0.add(i);
                 let old_len = (*word).get_chars().len() as i64;

@@ -107,7 +107,7 @@ impl pipeline::Normalizer for Lowercase {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::normalizers::{Strip, StripAccents, NFD};
+    use crate::normalizers::{NFD, Strip, StripAccents};
 
     #[test]
     fn pipeline_lowercase_matches_legacy() {

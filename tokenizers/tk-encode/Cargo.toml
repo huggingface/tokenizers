@@ -1,7 +1,7 @@
 [package]
 name = "tk-encode"
 version = "0.23.2-dev.0"
-edition = "2018"
+edition = "2024"
 authors = [
   "Anthony MOI <m.anthony.moi@gmail.com>",
   "Nicolas Patry <patry.nicolas@protonmail.com>",

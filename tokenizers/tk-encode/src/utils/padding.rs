@@ -61,10 +61,11 @@ pub fn pad_encodings(encodings: &mut [Encoding], params: &PaddingParams) -> Resu
             .unwrap(),
     };
 
-    if let Some(multiple) = params.pad_to_multiple_of {
-        if multiple > 0 && pad_length % multiple > 0 {
-            pad_length += multiple - pad_length % multiple;
-        }
+    if let Some(multiple) = params.pad_to_multiple_of
+        && multiple > 0
+        && pad_length % multiple > 0
+    {
+        pad_length += multiple - pad_length % multiple;
     }
 
     encodings.maybe_par_iter_mut().for_each(|encoding| {

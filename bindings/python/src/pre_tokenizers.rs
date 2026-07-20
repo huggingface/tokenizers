@@ -8,6 +8,7 @@ use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use tk::normalizer::SplitDelimiterBehavior;
+use tk::pre_tokenizers::PreTokenizerWrapper;
 use tk::pre_tokenizers::bert::BertPreTokenizer;
 use tk::pre_tokenizers::byte_level::ByteLevel;
 use tk::pre_tokenizers::delimiter::CharDelimiterSplit;
@@ -18,7 +19,6 @@ use tk::pre_tokenizers::punctuation::Punctuation;
 use tk::pre_tokenizers::split::Split;
 use tk::pre_tokenizers::unicode_scripts::UnicodeScripts;
 use tk::pre_tokenizers::whitespace::{Whitespace, WhitespaceSplit};
-use tk::pre_tokenizers::PreTokenizerWrapper;
 use tk::tokenizer::Offsets;
 use tk::{PreTokenizedString, PreTokenizer};
 use tokenizers as tk;
@@ -465,7 +465,7 @@ impl PySplit {
                 return Err(exceptions::PyValueError::new_err(
                     "Wrong value for SplitDelimiterBehavior, expected one of: \
                 `removed, isolated, merged_with_previous, merged_with_next, contiguous`",
-                ))
+                ));
             }
         };
         setter!(self_, Split, behavior, behavior);
@@ -600,7 +600,7 @@ impl PyPunctuation {
                 return Err(exceptions::PyValueError::new_err(
                     "Wrong value for SplitDelimiterBehavior, expected one of: \
                 `removed, isolated, merged_with_previous, merged_with_next, contiguous`",
-                ))
+                ));
             }
         };
         setter!(self_, Punctuation, behavior, behavior);
@@ -688,11 +688,11 @@ impl PySequence {
                 _ => {
                     return Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(
                         "Index not found",
-                    ))
+                    ));
                 }
             },
             PyPreTokenizerTypeWrapper::Single(_) => {
-                return Err(PyException::new_err("pre tokenizer is not a sequence"))
+                return Err(PyException::new_err("pre tokenizer is not a sequence"));
             }
         };
         Ok(())
@@ -1083,9 +1083,9 @@ pub mod pre_tokenizers {
 #[cfg(test)]
 mod test {
     use pyo3::prelude::*;
+    use tk::pre_tokenizers::PreTokenizerWrapper;
     use tk::pre_tokenizers::sequence::Sequence;
     use tk::pre_tokenizers::whitespace::{Whitespace, WhitespaceSplit};
-    use tk::pre_tokenizers::PreTokenizerWrapper;
 
     use crate::pre_tokenizers::{
         CustomPreTokenizer, PyPreTokenizer, PyPreTokenizerTypeWrapper, PyPreTokenizerWrapper,

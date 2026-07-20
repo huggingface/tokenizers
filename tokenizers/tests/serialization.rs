@@ -1,22 +1,22 @@
 mod common;
 
 use common::*;
-use tokenizers::decoders::byte_level::ByteLevel;
 use tokenizers::decoders::DecoderWrapper;
+use tokenizers::decoders::byte_level::ByteLevel;
+use tokenizers::models::ModelWrapper;
 use tokenizers::models::bpe::BPE;
 use tokenizers::models::wordlevel::WordLevel;
 use tokenizers::models::wordpiece::WordPiece;
-use tokenizers::models::ModelWrapper;
+use tokenizers::normalizers::NormalizerWrapper;
 use tokenizers::normalizers::bert::BertNormalizer;
 use tokenizers::normalizers::unicode::{NFC, NFKC};
-use tokenizers::normalizers::NormalizerWrapper;
+use tokenizers::pre_tokenizers::PreTokenizerWrapper;
 use tokenizers::pre_tokenizers::bert::BertPreTokenizer;
 use tokenizers::pre_tokenizers::delimiter::CharDelimiterSplit;
 use tokenizers::pre_tokenizers::split::{Split, SplitPattern};
 use tokenizers::pre_tokenizers::whitespace::Whitespace;
-use tokenizers::pre_tokenizers::PreTokenizerWrapper;
-use tokenizers::processors::bert::BertProcessing;
 use tokenizers::processors::PostProcessorWrapper;
+use tokenizers::processors::bert::BertProcessing;
 use tokenizers::{SplitDelimiterBehavior, Tokenizer, TokenizerImpl};
 
 #[test]

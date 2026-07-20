@@ -1,7 +1,7 @@
 use super::Pair;
 use ahash::AHashMap;
 use dary_heap::QuaternaryHeap;
-use rand::{rng, Rng};
+use rand::{Rng, rng};
 use std::cmp::Ordering;
 
 #[derive(Debug, Eq)]
@@ -65,6 +65,7 @@ impl Symbol {
 pub struct Word {
     symbols: Vec<Symbol>,
 }
+
 impl std::fmt::Debug for Word {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
         fmt.debug_struct("Word")

@@ -1,7 +1,7 @@
 use tokenizers::{
+    AddedToken, NormalizerWrapper, PreTokenizerWrapper, SplitDelimiterBehavior, Tokenizer,
     normalizers,
     pre_tokenizers::split::{Split, SplitPattern},
-    AddedToken, NormalizerWrapper, PreTokenizerWrapper, SplitDelimiterBehavior, Tokenizer,
 };
 
 #[test]
@@ -30,7 +30,9 @@ fn test_decoding_with_added_bpe() {
     );
     assert_eq!(
         encoded.get_tokens(),
-        ["Hey", "!", "Ġhow", "Ġi", "s", "Ġthi", "s", "Ġtoken", ":", "Ġ", "嗎"]
+        [
+            "Hey", "!", "Ġhow", "Ġi", "s", "Ġthi", "s", "Ġtoken", ":", "Ġ", "嗎"
+        ]
     );
 
     let decoded = tokenizer.decode(encoded.get_ids(), false);
@@ -48,7 +50,9 @@ fn test_decoding_with_added_bpe() {
     );
     assert_eq!(
         encoded.get_tokens(),
-        ["Hey", "!", "Ġhow", "Ġi", "s", "Ġthi", "s", "Ġtoken", ":", "Ġ", "Ð´"]
+        [
+            "Hey", "!", "Ġhow", "Ġi", "s", "Ġthi", "s", "Ġtoken", ":", "Ġ", "Ð´"
+        ]
     );
     let decoded = tokenizer.decode(encoded.get_ids(), false);
     assert_eq!(decoded.unwrap(), "Hey! how is this token: д")

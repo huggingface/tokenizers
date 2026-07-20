@@ -47,8 +47,8 @@ pub use tk_encode::{decoders, normalizers, pre_tokenizers, processors, tokenizer
 
 // Mirror the v1 top-level re-exports (`pub use tokenizer::*;` etc.).
 pub use tk_encode::tokenizer::*;
-pub use tk_encode::utils::parallelism;
 pub use tk_encode::utils::ProgressFormat;
+pub use tk_encode::utils::parallelism;
 
 #[cfg(feature = "http")]
 pub use tk_encode::FromPretrainedParameters;

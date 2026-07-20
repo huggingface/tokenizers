@@ -3,7 +3,7 @@ use super::buckets::{AddedTokenFlags, Buckets};
 use crate::pipeline::PipelinePatternMatcher;
 use crate::pre_tokenizers::whitespace::is_word_char;
 use ahash::AHashMap;
-use serde::{ser::SerializeSeq, Deserialize, Serialize, Serializer};
+use serde::{Deserialize, Serialize, Serializer, ser::SerializeSeq};
 use std::fmt;
 /// Represent a token added by the user on top of the existing Model vocabulary.
 /// AddedToken can be configured to specify the behavior they should have in various situations
@@ -341,13 +341,12 @@ impl AddedVocabulary {
                 .or_else(|| self.vocab.token_to_id(&token.content))
                 .or_else(|| self.normalized_vocab.token_to_id(&norm_form));
             // Already present with the exact same flags AND matcher -> nothing to do.
-            if let Some(id) = existing {
-                if metadata.get(id as usize) == Some(&flags)
-                    && entries.get(&id).map(|(_, n)| *n) == Some(is_norm)
-                {
-                    ignored += 1;
-                    continue;
-                }
+            if let Some(id) = existing
+                && metadata.get(id as usize) == Some(&flags)
+                && entries.get(&id).map(|(_, n)| *n) == Some(is_norm)
+            {
+                ignored += 1;
+                continue;
             }
             let id = existing.unwrap_or_else(|| {
                 let i = next_id;
@@ -463,8 +462,8 @@ impl Serialize for AddedVocabulary {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::normalizers::utils::Lowercase;
     use crate::normalizers::NormalizerWrapper;
+    use crate::normalizers::utils::Lowercase;
     use crate::pipeline::{Segment, SpecialSegmentIterator};
     use crate::{Result, Token};
     use std::collections::HashMap;

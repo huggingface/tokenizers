@@ -8,8 +8,8 @@ use criterion::{Criterion, Throughput};
 use std::hint::black_box;
 use std::sync::Arc;
 use tokenizers::{
-    models::{bpe::BpeTrainerBuilder, TrainerWrapper},
     EncodeInput, Tokenizer,
+    models::{TrainerWrapper, bpe::BpeTrainerBuilder},
 };
 
 static BATCH_SIZE: usize = 1_000;

@@ -1,11 +1,11 @@
 use super::{
-    normalizer::Range, Model, NormalizedString, Normalizer, Offsets, PreTokenizedString, Result,
-    Token,
+    Model, NormalizedString, Normalizer, Offsets, PreTokenizedString, Result, Token,
+    normalizer::Range,
 };
 use ahash::{AHashMap, AHashSet};
 use daachorse::{DoubleArrayAhoCorasick, DoubleArrayAhoCorasickBuilder, MatchKind};
 use regex::Regex;
-use serde::{ser::SerializeSeq, Deserialize, Serialize, Serializer};
+use serde::{Deserialize, Serialize, Serializer, ser::SerializeSeq};
 use std::sync::LazyLock;
 
 /// Represent a token added by the user on top of the existing Model vocabulary.
@@ -298,11 +298,11 @@ impl AddedVocabulary {
                 continue;
             }
             // Fast path: skip if this content is already in the map with identical properties.
-            if let Some(id) = self.added_tokens_map.get(&token.content) {
-                if self.added_tokens_map_r.get(id) == Some(&token) {
-                    ignored += 1;
-                    continue;
-                }
+            if let Some(id) = self.added_tokens_map.get(&token.content)
+                && self.added_tokens_map_r.get(id) == Some(&token)
+            {
+                ignored += 1;
+                continue;
             }
 
             let new_id = if let Some(new_id) = self.token_to_id(&token.content, model) {
@@ -313,14 +313,14 @@ impl AddedVocabulary {
                 id
             };
 
-            if token.normalized {
-                if let Some(n) = normalizer {
-                    let mut s = NormalizedString::from(token.content.as_ref());
-                    n.normalize(&mut s)?;
-                    let normed = s.get().to_string();
-                    if normed != token.content {
-                        self.normalized_cache.insert(new_id, normed);
-                    }
+            if token.normalized
+                && let Some(n) = normalizer
+            {
+                let mut s = NormalizedString::from(token.content.as_ref());
+                n.normalize(&mut s)?;
+                let normed = s.get().to_string();
+                if normed != token.content {
+                    self.normalized_cache.insert(new_id, normed);
                 }
             }
 
@@ -358,14 +358,14 @@ impl AddedVocabulary {
     ) -> Result<()> {
         self.normalized_cache.clear();
         for (id, token) in &self.added_tokens_map_r {
-            if token.normalized {
-                if let Some(n) = normalizer {
-                    let mut s = NormalizedString::from(token.content.as_ref());
-                    n.normalize(&mut s)?;
-                    let normed = s.get().to_string();
-                    if normed != token.content {
-                        self.normalized_cache.insert(*id, normed);
-                    }
+            if token.normalized
+                && let Some(n) = normalizer
+            {
+                let mut s = NormalizedString::from(token.content.as_ref());
+                n.normalize(&mut s)?;
+                let normed = s.get().to_string();
+                if normed != token.content {
+                    self.normalized_cache.insert(*id, normed);
                 }
             }
         }
@@ -607,9 +607,9 @@ impl Serialize for AddedVocabulary {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::normalizers::NormalizerWrapper;
     use crate::normalizers::byte_level::ByteLevel as ByteLevelNormalizer;
     use crate::normalizers::utils::Lowercase;
-    use crate::normalizers::NormalizerWrapper;
     use crate::{OffsetReferential, OffsetType, Result, Token};
     use std::collections::HashMap;
     use std::path::{Path, PathBuf};

@@ -4,7 +4,7 @@ use criterion::{Criterion, Throughput};
 use tokenizers::models::wordpiece::WordPiece;
 use tokenizers::normalizers::BertNormalizer;
 use tokenizers::pre_tokenizers::bert::BertPreTokenizer;
-use tokenizers::{decoders::wordpiece::WordPiece as WordPieceDecoder, Tokenizer};
+use tokenizers::{Tokenizer, decoders::wordpiece::WordPiece as WordPieceDecoder};
 
 use crate::common::{iter_bench_decode, iter_bench_decode_batch, iter_bench_decode_stream};
 

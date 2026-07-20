@@ -1,5 +1,5 @@
-use crate::tokenizer::pattern::Pattern;
 use crate::Offsets;
+use crate::tokenizer::pattern::Pattern;
 use fancy_regex::Regex;
 use std::error::Error;
 

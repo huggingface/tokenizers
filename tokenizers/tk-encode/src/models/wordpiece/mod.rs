@@ -14,8 +14,8 @@ use std::{
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
 };
-use yada::builder::DoubleArrayBuilder;
 use yada::DoubleArray;
+use yada::builder::DoubleArrayBuilder;
 
 mod serialization;
 

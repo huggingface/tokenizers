@@ -217,10 +217,10 @@ impl BpeBuilder {
     /// Returns a `BPE` model that uses the `BpeBuilder`'s configuration.
     pub fn build(mut self) -> Result<BPE> {
         // Validate dropout.
-        if let Some(p) = self.config.dropout {
-            if !(0.0..=1.0).contains(&p) {
-                return Err(Error::InvalidDropout.into());
-            }
+        if let Some(p) = self.config.dropout
+            && !(0.0..=1.0).contains(&p)
+        {
+            return Err(Error::InvalidDropout.into());
         }
 
         // Read files if necessary
@@ -485,16 +485,12 @@ impl BPE {
             let byte_len = s.len();
 
             // Add the `continuing_subword_prefix` if relevant
-            if !is_first {
-                if let Some(ref prefix) = self.continuing_subword_prefix {
-                    s = format!("{prefix}{s}").into()
-                }
+            if !is_first && let Some(ref prefix) = self.continuing_subword_prefix {
+                s = format!("{prefix}{s}").into()
             }
             // Add the `end_of_word_suffix` if relevant
-            if is_last {
-                if let Some(ref suffix) = self.end_of_word_suffix {
-                    s = format!("{s}{suffix}").into()
-                }
+            if is_last && let Some(ref suffix) = self.end_of_word_suffix {
+                s = format!("{s}{suffix}").into()
             }
 
             if let Some(id) = self.vocab.token_to_id(s.as_ref()) {
@@ -566,14 +562,14 @@ impl BPE {
     }
 
     fn tokenize_with_cache(&self, sequence: &str) -> Result<Vec<Token>> {
-        if self.ignore_merges {
-            if let Some(id) = self.vocab.token_to_id(sequence) {
-                return Ok(vec![Token::new(
-                    id,
-                    sequence.to_string(),
-                    (0, sequence.len()),
-                )]);
-            }
+        if self.ignore_merges
+            && let Some(id) = self.vocab.token_to_id(sequence)
+        {
+            return Ok(vec![Token::new(
+                id,
+                sequence.to_string(),
+                (0, sequence.len()),
+            )]);
         }
         let Some(cache) = self.cache.as_ref() else {
             // Cache disabled (capacity 0): fall back to the uncached path.
@@ -798,13 +794,12 @@ impl PipelineBPE {
                             continue;
                         }
                         if let Some(unk_id) = unk_token {
-                            if *fuse_unk {
-                                if let Some(last) = word.last_mut() {
-                                    if last.id() == *unk_id {
-                                        last.add_len(char_len);
-                                        continue;
-                                    }
-                                }
+                            if *fuse_unk
+                                && let Some(last) = word.last_mut()
+                                && last.id() == *unk_id
+                            {
+                                last.add_len(char_len);
+                                continue;
                             }
                             word.add(*unk_id, char_len);
                         }
@@ -829,11 +824,11 @@ impl pipeline::Model for PipelineBPE {
             return Ok(());
         }
 
-        if self.ignore_merges {
-            if let Some(id) = self.vocab.get_bytes(sequence.as_bytes()) {
-                output.push(PipelineToken { id });
-                return Ok(());
-            }
+        if self.ignore_merges
+            && let Some(id) = self.vocab.get_bytes(sequence.as_bytes())
+        {
+            output.push(PipelineToken { id });
+            return Ok(());
         }
 
         // TODO: persistent cache mapping &str -> &[u32]
@@ -1370,7 +1365,7 @@ mod tests {
     mod pipeline_bpe {
         use super::*;
         use crate::{
-            pipeline::Model as PipelineModel, utils::byte_level::BYTES_CHAR_LOOKUP, Model,
+            Model, pipeline::Model as PipelineModel, utils::byte_level::BYTES_CHAR_LOOKUP,
         };
 
         const HELLO_VOCAB: &[(&str, u32)] = &[
@@ -1574,11 +1569,10 @@ mod tests {
                     .build()
                     .unwrap()
             };
-            assert!(PipelineBPE::from_bpe(
-                build(|b| b.continuing_subword_prefix("##".into())),
-                false
-            )
-            .is_err());
+            assert!(
+                PipelineBPE::from_bpe(build(|b| b.continuing_subword_prefix("##".into())), false)
+                    .is_err()
+            );
             assert!(
                 PipelineBPE::from_bpe(build(|b| b.end_of_word_suffix("</w>".into())), false)
                     .is_err()
@@ -1586,15 +1580,17 @@ mod tests {
             assert!(PipelineBPE::from_bpe(build(|b| b.dropout(0.5)), false).is_err());
             // no-op values must not be rejected: gpt2's tokenizer.json serializes
             // prefix/suffix as "" and the reference treats dropout 0.0 as disabled
-            assert!(PipelineBPE::from_bpe(
-                build(|b| {
-                    b.continuing_subword_prefix(String::new())
-                        .end_of_word_suffix(String::new())
-                        .dropout(0.0)
-                }),
-                false
-            )
-            .is_ok());
+            assert!(
+                PipelineBPE::from_bpe(
+                    build(|b| {
+                        b.continuing_subword_prefix(String::new())
+                            .end_of_word_suffix(String::new())
+                            .dropout(0.0)
+                    }),
+                    false
+                )
+                .is_ok()
+            );
         }
 
         #[test]

@@ -11,7 +11,7 @@
 
 use ahash::AHashMap;
 use std::{
-    fs::{read_to_string, File},
+    fs::{File, read_to_string},
     io::prelude::*,
     ops::{Deref, DerefMut},
     path::{Path, PathBuf},
@@ -39,9 +39,9 @@ pub use crate::processors::PostProcessorWrapper;
 // And some other types
 pub use crate::tokenizer::added_vocabulary::{AddedToken, AddedVocabulary};
 pub use crate::utils::iter::LinesWithEnding;
-pub use crate::utils::padding::{pad_encodings, PaddingDirection, PaddingParams, PaddingStrategy};
+pub use crate::utils::padding::{PaddingDirection, PaddingParams, PaddingStrategy, pad_encodings};
 pub use crate::utils::truncation::{
-    truncate_encodings, TruncationDirection, TruncationParams, TruncationStrategy,
+    TruncationDirection, TruncationParams, TruncationStrategy, truncate_encodings,
 };
 pub use encoding::*;
 pub use normalizer::{NormalizedString, OffsetReferential, SplitDelimiterBehavior};
@@ -650,7 +650,10 @@ where
             if effective_max_length < trunc_params.stride {
                 return Err(Box::new(TruncationParamError(format!(
                     "tokenizer stride set to {}, which is greater than or equal to its effective max length of {} (= {} original max length - {} added special tokens), ",
-                    trunc_params.stride, effective_max_length, trunc_params.max_length, n_added_tokens
+                    trunc_params.stride,
+                    effective_max_length,
+                    trunc_params.max_length,
+                    n_added_tokens
                 ))));
             }
         }
@@ -1070,7 +1073,9 @@ pub struct DecodeStream<'tok, M, N, PT, PP, D> {
 
 #[derive(thiserror::Error, Debug)]
 pub enum DecodeStreamError {
-    #[error("Invalid prefix encountered while decoding stream. Token ID: {token_id}, Expected prefix: '{expected_prefix}', Actual string: '{actual_string}'")]
+    #[error(
+        "Invalid prefix encountered while decoding stream. Token ID: {token_id}, Expected prefix: '{expected_prefix}', Actual string: '{actual_string}'"
+    )]
     InvalidPrefix {
         token_id: u32,
         expected_prefix: String,

@@ -6,10 +6,10 @@ mod common;
 use common::iter_bench_train;
 
 use criterion::{Criterion, Throughput};
-use tokenizers::models::unigram::{Unigram, UnigramTrainerBuilder};
-use tokenizers::models::TrainerWrapper;
-use tokenizers::pre_tokenizers::whitespace::Whitespace;
 use tokenizers::Tokenizer;
+use tokenizers::models::TrainerWrapper;
+use tokenizers::models::unigram::{Unigram, UnigramTrainerBuilder};
+use tokenizers::pre_tokenizers::whitespace::Whitespace;
 
 // pub fn bench_train(c: &mut Criterion) {
 //     let trainer = UnigramTrainer::builder()

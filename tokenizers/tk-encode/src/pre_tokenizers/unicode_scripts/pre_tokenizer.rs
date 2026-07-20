@@ -1,8 +1,8 @@
 use std::sync::LazyLock;
 
 use crate::pipeline;
-use crate::pre_tokenizers::unicode_scripts::scripts::{get_script, Script};
-use crate::tokenizer::{normalizer::Range, PreTokenizedString, PreTokenizer, Result};
+use crate::pre_tokenizers::unicode_scripts::scripts::{Script, get_script};
+use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result, normalizer::Range};
 use crate::utils::macro_rules_attribute;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

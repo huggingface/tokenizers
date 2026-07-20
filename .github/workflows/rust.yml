@@ -144,9 +144,6 @@ jobs:
       - name: Lint with RustFmt
         run: cargo fmt --all -- --check
 
-      - name: Lint Benchmarks with RustFmt
-        run: cargo fmt -- benches/bpe_benchmark.rs --check
-
   readme:
     name: READMEs up to date
     runs-on: ubuntu-latest

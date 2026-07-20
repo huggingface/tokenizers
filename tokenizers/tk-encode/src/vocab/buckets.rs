@@ -261,8 +261,8 @@ impl Buckets {
                 let lm = vqtbl1q_u8(lov, lon); // 3) lo_tbl[low]
                 let hm = vqtbl1q_u8(hiv, hin); // 4) hi_tbl[high]
                 let m = vandq_u8(lm, hm); // nonzero lane == match
-                                          // Here we need to get the index of the match, that's gonna hardware dependant.
-                                          // NEON has no PMOVMSKB: emulate movemask, 4 bits per lane, via shrn-by-4
+                // Here we need to get the index of the match, that's gonna hardware dependant.
+                // NEON has no PMOVMSKB: emulate movemask, 4 bits per lane, via shrn-by-4
                 let t = vreinterpretq_u16_u8(vtstq_u8(m, m));
                 let packed = vget_lane_u64(vreinterpret_u64_u8(vshrn_n_u16(t, 4)), 0);
                 if packed != 0 {
@@ -315,10 +315,10 @@ impl Buckets {
         // 3. probe candidate lengths, longest first; confirm via the hash.
         for &len in bucket.length_list[length_id as usize].iter() {
             let len = len as usize;
-            if pos + len <= n {
-                if let Some(id) = self.vocab.get_bytes(&bytes[pos..pos + len]) {
-                    return Some((id, len as u32));
-                }
+            if pos + len <= n
+                && let Some(id) = self.vocab.get_bytes(&bytes[pos..pos + len])
+            {
+                return Some((id, len as u32));
             }
         }
         None
@@ -387,10 +387,10 @@ impl Buckets {
             let mut i = base;
             while i < n {
                 let bucket = self.first_byte_to_bucket_id[bytes[i] as usize];
-                if bucket != 0xFF {
-                    if let Some((id, len)) = self.match_fast(bytes, i, bucket as u32) {
-                        return Some((id, i as u32, len));
-                    }
+                if bucket != 0xFF
+                    && let Some((id, len)) = self.match_fast(bytes, i, bucket as u32)
+                {
+                    return Some((id, i as u32, len));
                 }
                 i += 1;
             }
@@ -405,10 +405,10 @@ impl Buckets {
         let mut i = 0usize;
         while i < n {
             let bucket = self.first_byte_to_bucket_id[bytes[i] as usize];
-            if bucket != 0xFF {
-                if let Some((id, len)) = self.match_fast(bytes, i, bucket as u32) {
-                    return Some((id, i as u32, len));
-                }
+            if bucket != 0xFF
+                && let Some((id, len)) = self.match_fast(bytes, i, bucket as u32)
+            {
+                return Some((id, i as u32, len));
             }
             i += 1;
         }

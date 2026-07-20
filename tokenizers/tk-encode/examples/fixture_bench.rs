@@ -31,9 +31,9 @@ use std::process::Command;
 use std::time::Instant;
 
 use logos::Logos;
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use rayon::ThreadPoolBuilder;
-use serde_json::{json, Value};
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use serde_json::{Value, json};
 use tk_encode::pipeline::{Model, PipelineTokenizer};
 use tk_encode::{AddedToken, ModelWrapper, Tokenizer};
 use tokenizers_release::{AddedToken as BaselineAddedToken, Tokenizer as BaselineTokenizer};

@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
-use crate::trainers::bpe::{BpeTrainer, BpeTrainerBuilder};
 use crate::Trainer;
+use crate::trainers::bpe::{BpeTrainer, BpeTrainerBuilder};
 use ahash::AHashSet;
 use serde::{Deserialize, Serialize};
 use tk_encode::models::bpe::BPE;

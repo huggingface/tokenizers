@@ -13,8 +13,8 @@ use std::convert::TryFrom;
 use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, Throughput};
-use tk_encode::pipeline::PipelineTokenizer;
 use tk_encode::Tokenizer;
+use tk_encode::pipeline::PipelineTokenizer;
 
 // (name, tokenizer.json): bert-wiki exercises the Bert/WordPiece path; dsv4 exercises the deepseek
 // pre-tokenizer unroll (`fsm_deepseek`) + BPE end-to-end.
