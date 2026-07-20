@@ -1,15 +1,15 @@
-use serde::{ser::Error as SerError, Serialize, Serializer};
-use std::collections::{hash_map::DefaultHasher, HashMap};
+use serde::{Serialize, Serializer, ser::Error as SerError};
+use std::collections::{HashMap, hash_map::DefaultHasher};
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
-use numpy::{npyffi, PyArray1, PyArrayMethods};
+use numpy::{PyArray1, PyArrayMethods, npyffi};
+use pyo3::IntoPyObject;
 use pyo3::class::basic::CompareOp;
 use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::*;
-use pyo3::IntoPyObject;
-use pyo3::{exceptions, IntoPyObjectExt};
+use pyo3::{IntoPyObjectExt, exceptions};
 use tk::models::bpe::BPE;
 use tk::tokenizer::{
     PaddingDirection, PaddingParams, PaddingStrategy, PostProcessor, TokenizerImpl,
@@ -2013,6 +2013,9 @@ mod test {
             .unwrap();
 
         let output = crate::utils::serde_pyo3::to_string(&tokenizer).unwrap();
-        assert_eq!(output, "Tokenizer(version=\"1.0\", truncation=None, padding=None, added_tokens=[], normalizer=Sequence(normalizers=[NFKC(), Lowercase()]), pre_tokenizer=None, post_processor=None, decoder=None, model=BPE(dropout=None, unk_token=None, continuing_subword_prefix=None, end_of_word_suffix=None, fuse_unk=False, byte_fallback=False, ignore_merges=False, vocab={}, merges=[]))");
+        assert_eq!(
+            output,
+            "Tokenizer(version=\"1.0\", truncation=None, padding=None, added_tokens=[], normalizer=Sequence(normalizers=[NFKC(), Lowercase()]), pre_tokenizer=None, post_processor=None, decoder=None, model=BPE(dropout=None, unk_token=None, continuing_subword_prefix=None, end_of_word_suffix=None, fuse_unk=False, byte_fallback=False, ignore_merges=False, vocab={}, merges=[]))"
+        );
     }
 }

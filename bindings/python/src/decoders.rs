@@ -8,6 +8,8 @@ use pyo3::prelude::*;
 use pyo3::types::*;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use tk::Decoder;
+use tk::decoders::DecoderWrapper;
 use tk::decoders::bpe::BPEDecoder;
 use tk::decoders::byte_fallback::ByteFallback;
 use tk::decoders::byte_level::ByteLevel;
@@ -17,9 +19,7 @@ use tk::decoders::metaspace::{Metaspace, PrependScheme};
 use tk::decoders::sequence::Sequence;
 use tk::decoders::strip::Strip;
 use tk::decoders::wordpiece::WordPiece;
-use tk::decoders::DecoderWrapper;
 use tk::normalizers::replace::Replace;
-use tk::Decoder;
 use tokenizers as tk;
 
 use super::error::ToPyResult;
@@ -893,8 +893,8 @@ mod test {
     use std::sync::{Arc, RwLock};
 
     use pyo3::prelude::*;
-    use tk::decoders::metaspace::Metaspace;
     use tk::decoders::DecoderWrapper;
+    use tk::decoders::metaspace::Metaspace;
 
     use crate::decoders::{CustomDecoder, PyDecoder, PyDecoderWrapper};
 

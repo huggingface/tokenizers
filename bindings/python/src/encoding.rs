@@ -5,7 +5,7 @@ use tk::tokenizer::{Offsets, PaddingDirection};
 use tk::utils::truncation::TruncationDirection;
 use tokenizers as tk;
 
-use crate::error::{deprecation_warning, PyError};
+use crate::error::{PyError, deprecation_warning};
 
 /// The :class:`~tokenizers.Encoding` represents the output of a :class:`~tokenizers.Tokenizer`.
 ///

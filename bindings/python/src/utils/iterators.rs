@@ -82,29 +82,31 @@ where
             return Ok(());
         }
 
-        Python::attach(|py| loop {
-            if self.buffer.len() >= self.size {
-                return Ok(());
-            }
-
-            match unsafe {
-                Bound::from_owned_ptr_or_opt(
-                    py,
-                    pyo3::ffi::PyIter_Next(self.iter.as_ref().unwrap().bind(py).as_ptr()),
-                )
-            } {
-                Some(obj) => self.buffer.extend((self.converter)(obj)),
-                None => {
-                    if PyErr::occurred(py) {
-                        return Err(PyErr::fetch(py));
-                    } else {
-                        self.iter = None;
-                    }
+        Python::attach(|py| {
+            loop {
+                if self.buffer.len() >= self.size {
+                    return Ok(());
                 }
-            };
 
-            if self.iter.is_none() {
-                return Ok(());
+                match unsafe {
+                    Bound::from_owned_ptr_or_opt(
+                        py,
+                        pyo3::ffi::PyIter_Next(self.iter.as_ref().unwrap().bind(py).as_ptr()),
+                    )
+                } {
+                    Some(obj) => self.buffer.extend((self.converter)(obj)),
+                    None => {
+                        if PyErr::occurred(py) {
+                            return Err(PyErr::fetch(py));
+                        } else {
+                            self.iter = None;
+                        }
+                    }
+                };
+
+                if self.iter.is_none() {
+                    return Ok(());
+                }
             }
         })
     }

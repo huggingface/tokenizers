@@ -4,20 +4,20 @@ use std::sync::RwLock;
 
 use crate::encoding::PyEncoding;
 use crate::error::ToPyResult;
+use pyo3::IntoPyObjectExt;
 use pyo3::exceptions;
 use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
 use pyo3::types::*;
-use pyo3::IntoPyObjectExt;
-use serde::ser::SerializeStruct;
 use serde::Deserializer;
 use serde::Serializer;
+use serde::ser::SerializeStruct;
 use serde::{Deserialize, Serialize};
+use tk::processors::PostProcessorWrapper;
 use tk::processors::bert::BertProcessing;
 use tk::processors::byte_level::ByteLevel;
 use tk::processors::roberta::RobertaProcessing;
 use tk::processors::template::{SpecialToken, Template};
-use tk::processors::PostProcessorWrapper;
 use tk::{Encoding, PostProcessor};
 use tokenizers as tk;
 
@@ -844,13 +844,13 @@ impl PySequence {
                 _ => {
                     return Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(
                         "Index not found",
-                    ))
+                    ));
                 }
             },
             _ => {
                 return Err(PyException::new_err(
                     "This processor is not a Sequence, it does not support __setitem__",
-                ))
+                ));
             }
         };
         Ok(())
@@ -879,8 +879,8 @@ mod test {
     use std::sync::{Arc, RwLock};
 
     use pyo3::prelude::*;
-    use tk::processors::bert::BertProcessing;
     use tk::processors::PostProcessorWrapper;
+    use tk::processors::bert::BertProcessing;
 
     use crate::processors::{PyPostProcessor, PyPostProcessorTypeWrapper};
 

@@ -9,16 +9,16 @@ use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
 use serde::{Deserialize, Serialize};
-use tk::models::bpe::{BpeBuilder, Merges, BPE};
+use tk::models::ModelWrapper;
+use tk::models::bpe::{BPE, BpeBuilder, Merges};
 use tk::models::unigram::Unigram;
 use tk::models::wordlevel::WordLevel;
 use tk::models::wordpiece::{WordPiece, WordPieceBuilder};
-use tk::models::ModelWrapper;
 use tk::tokenizer::PreTokenizedString;
 use tk::{Model, Token, Trainable};
 use tokenizers as tk;
 
-use super::error::{deprecation_warning, ToPyResult};
+use super::error::{ToPyResult, deprecation_warning};
 
 /// Base class for all models
 ///
@@ -1036,8 +1036,8 @@ pub mod models {
 mod test {
     use crate::models::PyModel;
     use pyo3::prelude::*;
-    use tk::models::bpe::BPE;
     use tk::models::ModelWrapper;
+    use tk::models::bpe::BPE;
 
     #[test]
     fn get_subtype() {

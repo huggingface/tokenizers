@@ -8,9 +8,9 @@ use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
 use serde::{Deserialize, Serialize};
+use tk::Trainer;
 use tk::models::TrainerWrapper;
 use tk::utils::ProgressFormat;
-use tk::Trainer;
 use tokenizers as tk;
 
 /// Base class for all trainers

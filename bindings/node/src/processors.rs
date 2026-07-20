@@ -5,8 +5,8 @@ use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use std::sync::{Arc, RwLock};
 
-use tk::processors::PostProcessorWrapper;
 use tk::Encoding;
+use tk::processors::PostProcessorWrapper;
 
 #[derive(Clone, Serialize, Deserialize)]
 #[napi]
