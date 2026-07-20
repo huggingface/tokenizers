@@ -991,14 +991,22 @@ fn main() {
         };
 
         // Same fallback for sebpop's branch (based on an older tree, so it may
-        // predate configs the release handles).
+        // predate configs the release handles). Probed under catch_unwind: its
+        // encode_fast panics ("offset data accessed on fast path") on any model
+        // whose normalizer mutates the string, e.g. llama-2's Prepend+Replace.
         let sebpop = match SebpopTokenizer::from_file(&path) {
             Ok(mut t) => {
                 inject_added_tokens_sebpop(&mut t);
-                match t.encode_fast(PROBE, false) {
-                    Ok(_) => Some(t),
-                    Err(e) => {
+                match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    t.encode_fast(PROBE, false)
+                })) {
+                    Ok(Ok(_)) => Some(t),
+                    Ok(Err(e)) => {
                         eprintln!("  {SEBPOP_REF} loads but can't encode: {e}");
+                        None
+                    }
+                    Err(_) => {
+                        eprintln!("  {SEBPOP_REF} panics on encode_fast — skipping series");
                         None
                     }
                 }
