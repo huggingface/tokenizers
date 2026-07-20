@@ -396,13 +396,15 @@ impl<'a, 'py> FromPyObject<'a, 'py> for PreTokenizedInputSequence<'py> {
             return Ok(Self(seq.into()));
         }
         if let Ok(s) = ob.cast::<PyList>()
-            && let Ok(seq) = s.extract::<Vec<String>>() {
-                return Ok(Self(seq.into()));
-            }
+            && let Ok(seq) = s.extract::<Vec<String>>()
+        {
+            return Ok(Self(seq.into()));
+        }
         if let Ok(s) = ob.cast::<PyTuple>()
-            && let Ok(seq) = s.extract::<Vec<String>>() {
-                return Ok(Self(seq.into()));
-            }
+            && let Ok(seq) = s.extract::<Vec<String>>()
+        {
+            return Ok(Self(seq.into()));
+        }
         Err(exceptions::PyTypeError::new_err(
             "PreTokenizedInputSequence must be Union[List[str], Tuple[str]]",
         ))
@@ -426,12 +428,13 @@ impl<'a, 'py> FromPyObject<'a, 'py> for TextEncodeInput<'py> {
             return Ok(Self((i1, i2).into()));
         }
         if let Ok(arr) = ob.extract::<Vec<Py<PyAny>>>()
-            && arr.len() == 2 {
-                let py = ob.py();
-                let first = arr[0].bind(py).extract::<TextInputSequence>()?;
-                let second = arr[1].bind(py).extract::<TextInputSequence>()?;
-                return Ok(Self((first, second).into()));
-            }
+            && arr.len() == 2
+        {
+            let py = ob.py();
+            let first = arr[0].bind(py).extract::<TextInputSequence>()?;
+            let second = arr[1].bind(py).extract::<TextInputSequence>()?;
+            return Ok(Self((first, second).into()));
+        }
         Err(exceptions::PyTypeError::new_err(
             "TextEncodeInput must be Union[TextInputSequence, Tuple[InputSequence, InputSequence]]",
         ))
@@ -455,12 +458,13 @@ impl<'a, 'py> FromPyObject<'a, 'py> for PreTokenizedEncodeInput<'py> {
             return Ok(Self((i1, i2).into()));
         }
         if let Ok(arr) = ob.extract::<Vec<Py<PyAny>>>()
-            && arr.len() == 2 {
-                let py = ob.py();
-                let first = arr[0].bind(py).extract::<PreTokenizedInputSequence>()?;
-                let second = arr[1].bind(py).extract::<PreTokenizedInputSequence>()?;
-                return Ok(Self((first, second).into()));
-            }
+            && arr.len() == 2
+        {
+            let py = ob.py();
+            let first = arr[0].bind(py).extract::<PreTokenizedInputSequence>()?;
+            let second = arr[1].bind(py).extract::<PreTokenizedInputSequence>()?;
+            return Ok(Self((first, second).into()));
+        }
         Err(exceptions::PyTypeError::new_err(
             "PreTokenizedEncodeInput must be Union[PreTokenizedInputSequence, \
             Tuple[PreTokenizedInputSequence, PreTokenizedInputSequence]]",
@@ -596,41 +600,44 @@ impl PyTokenizer {
             if is_pretokenized {
                 // Pair?
                 if let Ok(tup) = it.cast::<PyTuple>()
-                    && tup.len() == 2 {
-                        let a = Self::extract_pretok_seq(&tup.get_item(0)?)?;
-                        let b = Self::extract_pretok_seq(&tup.get_item(1)?)?;
-                        out.push(tk::EncodeInput::Dual(a.into(), b.into()));
-                        continue;
-                    }
+                    && tup.len() == 2
+                {
+                    let a = Self::extract_pretok_seq(&tup.get_item(0)?)?;
+                    let b = Self::extract_pretok_seq(&tup.get_item(1)?)?;
+                    out.push(tk::EncodeInput::Dual(a.into(), b.into()));
+                    continue;
+                }
                 if let Ok(lst) = it.cast::<PyList>()
-                    && lst.len() == 2 {
-                        let a = Self::extract_pretok_seq(&lst.get_item(0)?)?;
-                        let b = Self::extract_pretok_seq(&lst.get_item(1)?)?;
-                        out.push(tk::EncodeInput::Dual(a.into(), b.into()));
-                        continue;
-                    }
+                    && lst.len() == 2
+                {
+                    let a = Self::extract_pretok_seq(&lst.get_item(0)?)?;
+                    let b = Self::extract_pretok_seq(&lst.get_item(1)?)?;
+                    out.push(tk::EncodeInput::Dual(a.into(), b.into()));
+                    continue;
+                }
                 // Single pretokenized
                 let a = Self::extract_pretok_seq(it)?;
                 out.push(tk::EncodeInput::Single(a.into()));
             } else {
                 // Raw text: pair?
                 if let Ok(tup) = it.cast::<PyTuple>()
-                    && tup.len() == 2 {
-                        let a: String = tup.get_item(0)?.extract()?;
-                        let b: String = tup.get_item(1)?.extract()?;
-                        out.push(tk::EncodeInput::Dual(a.into(), b.into()));
-                        continue;
-                    }
+                    && tup.len() == 2
+                {
+                    let a: String = tup.get_item(0)?.extract()?;
+                    let b: String = tup.get_item(1)?.extract()?;
+                    out.push(tk::EncodeInput::Dual(a.into(), b.into()));
+                    continue;
+                }
                 if let Ok(lst) = it.cast::<PyList>()
                     && lst.len() == 2
-                        && lst.get_item(0)?.cast::<PyString>().is_ok()
-                        && lst.get_item(1)?.cast::<PyString>().is_ok()
-                    {
-                        let a: String = lst.get_item(0)?.extract()?;
-                        let b: String = lst.get_item(1)?.extract()?;
-                        out.push(tk::EncodeInput::Dual(a.into(), b.into()));
-                        continue;
-                    }
+                    && lst.get_item(0)?.cast::<PyString>().is_ok()
+                    && lst.get_item(1)?.cast::<PyString>().is_ok()
+                {
+                    let a: String = lst.get_item(0)?.extract()?;
+                    let b: String = lst.get_item(1)?.extract()?;
+                    out.push(tk::EncodeInput::Dual(a.into(), b.into()));
+                    continue;
+                }
                 // Single raw text
                 let s: String = it.extract()?;
                 out.push(tk::EncodeInput::Single(s.into()));

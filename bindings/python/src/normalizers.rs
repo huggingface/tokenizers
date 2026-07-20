@@ -8,8 +8,8 @@ use crate::utils::{PyNormalizedString, PyNormalizedStringRefMut, PyPattern};
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tk::normalizers::{
-    BertNormalizer, ByteLevel, Lowercase, Nmt, NormalizerWrapper, Precompiled, Prepend, Replace,
-    Strip, StripAccents, NFC, NFD, NFKC, NFKD,
+    BertNormalizer, ByteLevel, Lowercase, NFC, NFD, NFKC, NFKD, Nmt, NormalizerWrapper,
+    Precompiled, Prepend, Replace, Strip, StripAccents,
 };
 use tk::{NormalizedString, Normalizer};
 use tokenizers as tk;
@@ -1005,9 +1005,9 @@ pub mod normalizers {
 #[cfg(test)]
 mod test {
     use pyo3::prelude::*;
+    use tk::normalizers::NormalizerWrapper;
     use tk::normalizers::unicode::{NFC, NFKC};
     use tk::normalizers::utils::Sequence;
-    use tk::normalizers::NormalizerWrapper;
 
     use crate::normalizers::{PyNormalizer, PyNormalizerTypeWrapper, PyNormalizerWrapper};
 

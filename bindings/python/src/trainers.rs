@@ -1335,13 +1335,14 @@ impl PyParityBpeTrainer {
         }
         let num_langs = train_iterators.len();
         if let Some(ref dev) = dev_iterators
-            && dev.len() != num_langs {
-                return Err(exceptions::PyValueError::new_err(format!(
-                    "dev_iterators length ({}) must match train_iterators length ({})",
-                    dev.len(),
-                    num_langs
-                )));
-            }
+            && dev.len() != num_langs
+        {
+            return Err(exceptions::PyValueError::new_err(format!(
+                "dev_iterators length ({}) must match train_iterators length ({})",
+                dev.len(),
+                num_langs
+            )));
+        }
 
         let has_dev = dev_iterators.as_ref().is_some_and(|d| !d.is_empty());
         let effective_ratio = if has_dev {
