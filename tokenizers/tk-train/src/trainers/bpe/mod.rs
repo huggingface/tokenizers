@@ -1,5 +1,8 @@
 #![allow(clippy::map_entry)]
 
+#[cfg(feature = "parity-aware-bpe")]
+pub mod parity_trainer;
+
 use crate::Trainer;
 use ahash::{AHashMap, AHashSet};
 use compact_str::CompactString;

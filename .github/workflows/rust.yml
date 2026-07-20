@@ -30,6 +30,12 @@ jobs:
         with:
           workspaces: tokenizers
           shared-key: rust-build
+          # Skip caching ~/.cargo/bin — earlier runs left a stale
+          # rustup-init binary masquerading as `cargo`, breaking the
+          # build step on macOS. The cargo toolchain is reinstalled by
+          # dtolnay/rust-toolchain each run anyway, so caching it adds
+          # risk without speedup.
+          cache-bin: false
 
       - name: Build
         run: cargo build --workspace --all-targets --verbose

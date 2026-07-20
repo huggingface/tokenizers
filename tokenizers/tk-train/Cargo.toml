@@ -41,6 +41,7 @@ indicatif = { version = "0.18", optional = true }
 default = ["progressbar", "esaxx_fast"]
 esaxx_fast = ["esaxx-rs/cpp"]
 progressbar = ["indicatif", "tk-encode/progressbar"]
+parity-aware-bpe = []
 
 [dev-dependencies]
 tempfile = "3.10"
