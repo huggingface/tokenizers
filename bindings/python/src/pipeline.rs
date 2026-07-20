@@ -1,8 +1,4 @@
-//! Experimental bindings for the encode-only `PipelineTokenizer` and its
-//! owned, escapable `EncodeHandle`: parallel encode on the library's persistent
-//! pool, with **zero-copy** Python-string inputs (the job keeps each
-//! `PyString` alive and reads its cached UTF-8 buffer directly — no copy into
-//! Rust `String`s).
+//! Pipeline python bindings
 
 use std::sync::Mutex;
 
@@ -10,7 +6,7 @@ use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::PyString;
 
-use tk::pipeline::{EncodeHandle, IntoInputs, PipelineToken, PipelineTokenizer, Inputs};
+use tk::pipeline::{EncodeHandle, Inputs, IntoInputs, PipelineToken, PipelineTokenizer};
 
 use crate::error::ToPyResult;
 use crate::tokenizer::PyTokenizer;
@@ -19,18 +15,20 @@ fn ids(tokens: Vec<PipelineToken>) -> Vec<u32> {
     tokens.iter().map(|t| t.id).collect()
 }
 
-/// Zero-copy batch of Python strings: keeps each `PyString` alive (a refcount
-/// held for the job's whole lifetime) and records its cached UTF-8 buffer,
-/// which CPython guarantees stable and immutable for the string's lifetime.
-struct PyStrBatch {
-    /// Keep-alives. Only pyo3's (GIL-deferred) drop ever touches them again.
-    _owners: Vec<Py<PyString>>,
-    /// (ptr, len) of each string's UTF-8 buffer, captured under the GIL by
-    /// `to_str` (which validates/caches the UTF-8 representation).
-    views: Vec<(*const u8, usize)>,
+struct PyStrView {
+    ptr: *const u8,
+    len: usize,
 }
 
-// Safety: the raw pointers reference CPython's cached UTF-8 buffers, which are
+/// Keep alive mechanism for zero-copy access to utf8 python strings
+struct PyStrBatch {
+    /// the keep alive ref
+    _owners: Vec<Py<PyString>>,
+    /// (ptr, len)
+    views: Vec<PyStrView>,
+}
+
+// SAFETY: the raw pointers reference CPython's cached UTF-8 buffers, which are
 // immutable and outlive the owning `Py<PyString>`s in `_owners`; the batch
 // never mutates or frees them, and pool workers only read through `get`.
 unsafe impl Send for PyStrBatch {}
@@ -42,7 +40,10 @@ impl PyStrBatch {
         let mut views = Vec::with_capacity(strings.len());
         for s in strings {
             let view = s.to_str()?;
-            views.push((view.as_ptr(), view.len()));
+            views.push(PyStrView {
+                ptr: view.as_ptr(),
+                len: view.len(),
+            });
             owners.push(s.unbind());
         }
         Ok(Self {
@@ -56,9 +57,10 @@ impl Inputs for PyStrBatch {
     fn len(&self) -> usize {
         self.views.len()
     }
+
     fn get(&self, i: usize) -> &str {
-        let (ptr, len) = self.views[i];
-        // Safety: see the struct invariant; `to_str` validated UTF-8 at capture.
+        let (ptr, len) = (self.views[i].ptr, self.views[i].len);
+        // SAFTEY: ptr is kept alive by PyStrBatch::_owners, and the underlying buffer is immutable UTF-8
         unsafe { std::str::from_utf8_unchecked(std::slice::from_raw_parts(ptr, len)) }
     }
 }
@@ -70,9 +72,6 @@ impl IntoInputs for PyStrBatch {
     }
 }
 
-/// Experimental encode-only pipeline (ids only — offsets and post-processing
-/// are not applied yet). Encoding runs multi-threaded on a persistent,
-/// fork-safe worker pool, with the GIL released.
 #[pyclass(module = "tokenizers", name = "PipelineTokenizer")]
 pub struct PyPipelineTokenizer {
     pipeline: PipelineTokenizer,
@@ -80,9 +79,6 @@ pub struct PyPipelineTokenizer {
 
 #[pymethods]
 impl PyPipelineTokenizer {
-    /// Build from an existing `Tokenizer`. The tokenizer is snapshotted through
-    /// its JSON form, so custom Python components are not supported (the
-    /// pipeline never runs Python callbacks on its hot path).
     #[staticmethod]
     fn from_tokenizer(tokenizer: &PyTokenizer) -> PyResult<Self> {
         let json = {
@@ -96,7 +92,6 @@ impl PyPipelineTokenizer {
         Ok(Self { pipeline })
     }
 
-    /// Build from a `tokenizer.json` file.
     #[staticmethod]
     fn from_file(path: &str) -> PyResult<Self> {
         let tok = PyResult::from(ToPyResult(tk::Tokenizer::from_file(path)))?;
@@ -119,13 +114,6 @@ impl PyPipelineTokenizer {
         Ok(PyEncodeHandle {
             job: Mutex::new(Some(job)),
         })
-    }
-
-    /// Blocking convenience: encode one `str` to its token ids.
-    fn encode(&self, py: Python<'_>, input: Bound<'_, PyString>) -> PyResult<Vec<u32>> {
-        let batch = PyStrBatch::new(vec![input])?;
-        let res = py.detach(|| self.pipeline.encode(batch).into_single());
-        Ok(ids(PyResult::from(ToPyResult(res))?))
     }
 }
 
@@ -150,8 +138,7 @@ impl PyEncodeHandle {
 
 #[pymethods]
 impl PyEncodeHandle {
-    /// Block until every input is encoded; returns one id-list per input, in
-    /// input order. Consumes the job: calling it a second time raises.
+    /// Block until every input is encoded, returning ids lists in input order
     fn wait(&self, py: Python<'_>) -> PyResult<Vec<Vec<u32>>> {
         let job = self.take()?;
         let res = py.detach(|| job.wait_for_completion());
@@ -163,8 +150,6 @@ impl PyEncodeHandle {
         slf
     }
 
-    /// The next input's ids in input order; blocks (GIL released, assisting
-    /// the pool) until that input is complete.
     fn __next__(&self, py: Python<'_>) -> PyResult<Option<Vec<u32>>> {
         let next = py.detach(|| {
             self.job
