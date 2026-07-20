@@ -2,6 +2,8 @@
 
 #[cfg(feature = "parity-aware-bpe")]
 pub mod parity_trainer;
+#[cfg(feature = "parity-aware-bpe")]
+pub use parity_trainer::{ParityBpeTrainer, ParityBpeTrainerBuilder, ParityVariant};
 
 use crate::Trainer;
 use ahash::{AHashMap, AHashSet};

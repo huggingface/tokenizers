@@ -90,7 +90,7 @@ onig = ["tk-encode/fancy-regex"]
 http = ["tk-encode/http"]
 unstable_wasm = ["tk-encode/unstable_wasm"]
 rustls-tls = ["tk-encode/rustls-tls"]
-parity-aware-bpe = ["tk-train/parity-aware-bpe"]
+parity-aware-bpe = ["train", "tk-train/parity-aware-bpe"]
 
 
 [dev-dependencies]
