@@ -405,10 +405,10 @@ impl Buckets {
         let mut i = 0usize;
         while i < n {
             let bucket = self.first_byte_to_bucket_id[bytes[i] as usize];
-            if bucket != 0xFF {
-                if let Some((id, len)) = self.match_fast(bytes, i, bucket as u32) {
-                    return Some((id, i as u32, len));
-                }
+            if bucket != 0xFF
+                && let Some((id, len)) = self.match_fast(bytes, i, bucket as u32)
+            {
+                return Some((id, i as u32, len));
             }
             i += 1;
         }
