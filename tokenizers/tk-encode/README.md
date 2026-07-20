@@ -25,14 +25,11 @@ The various steps of the pipeline are:
 use tk_encode::tokenizer::{Result, Tokenizer};
 
 fn main() -> Result<()> {
-    # #[cfg(feature = "http")]
-    # {
     // needs http feature enabled
     let tokenizer = Tokenizer::from_pretrained("bert-base-cased", None)?;
 
     let encoding = tokenizer.encode("Hey there!", false)?;
     println!("{:?}", encoding.get_tokens());
-    # }
     Ok(())
 }
 ```
