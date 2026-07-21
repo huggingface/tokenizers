@@ -4,10 +4,10 @@ use std::hash::Hash;
 use std::sync::RwLock;
 
 /// The default capacity for a `BPE`'s internal cache.
-pub static DEFAULT_CACHE_CAPACITY: usize = 1 << 32;
+pub static DEFAULT_CACHE_CAPACITY: usize = 1 << 16;
 /// The maximum length we should cache in a model
 /// Strings that are too long have minimal chances to cache hit anyway
-pub static MAX_LENGTH: usize = 256;
+pub static MAX_LENGTH: usize = 128;
 
 /// Provides a simple multithread cache to speed up BPE tokenization that will try to read values
 /// concurrently but won't block if another thread is writing.
