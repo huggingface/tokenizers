@@ -50,7 +50,7 @@ impl WordCache {
     }
 
     // The low hash bits pick the bucket index, the high bits form the occupancy tag
-	// 0x0 tag is reserved for empty spots (hence the `| 1`)
+    // 0x0 tag is reserved for empty spots (hence the `| 1`)
     fn locate(&self, key: &[u8]) -> (usize, u32) {
         let hash = self.hasher.hash_one(key);
         ((hash & self.bucket_mask) as usize, (hash >> 32) as u32 | 1)
