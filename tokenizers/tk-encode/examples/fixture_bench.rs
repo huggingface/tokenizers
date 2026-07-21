@@ -16,7 +16,8 @@
 //!    `Clone` starts with an empty cache). The warm-up pass then fills each
 //!    cache from that corpus alone — the state a plain `.encode()` loop over
 //!    the corpus reaches — so per-fixture numbers don't depend on which
-//!    fixtures ran before them.
+//!    fixtures ran before them. Both sides encode with `add_special_tokens`
+//!    on, so the headline includes the post-process stage the ladder charges.
 //! 2. **Stage breakdown** — the `encode_generic::<STAGE>` ablation ladder plus
 //!    the pre-tokenize-vs-regex-engine references, on fresh caller-owned
 //!    scratches, fully separate from the phase-1 timings.
@@ -223,10 +224,10 @@ fn bench_throughput(
     let pipeline = PipelineTokenizer::try_from(oracle).expect("probed at model load");
     let base = baseline.cloned();
 
-    let pipe_enc = |s: &str| pipeline.encode(s, false).unwrap().len();
+    let pipe_enc = |s: &str| pipeline.encode(s, true).unwrap().len();
     let base_enc = base
         .as_ref()
-        .map(|b| move |s: &str| b.encode_fast(s, false).unwrap().len());
+        .map(|b| move |s: &str| b.encode_fast(s, true).unwrap().len());
 
     let pipe_ids = |c: &String, add_special_tokens: bool| -> Vec<u32> {
         pipeline
@@ -338,18 +339,21 @@ fn bench_stages(pipeline: &PipelineTokenizer, f: &Fixture, regexes: &[String]) -
     let t_norm = stage_secs::<{ PipelineTokenizer::STAGE_NORMALIZE }>(pipeline, &f.chunks);
     let t_split = stage_secs::<{ PipelineTokenizer::STAGE_SPLIT }>(pipeline, &f.chunks);
     let t_model = stage_secs::<{ PipelineTokenizer::STAGE_MODEL }>(pipeline, &f.chunks);
+    let t_post = stage_secs::<{ PipelineTokenizer::STAGE_POSTPROCESS }>(pipeline, &f.chunks);
     // Two distinct "split" costs: `added_split` is the added/special-token scan (the
     // SpecialSegmentIterator over the AddedVocabulary, captured by the FRAME level),
-    // `pre_tokenize` is the pre-tokenizer split. All four stages sum exactly to `total`.
+    // `pre_tokenize` is the pre-tokenizer split, `post` the special-token id-frame
+    // splice. All five stages sum exactly to `total`.
     let nspb = |secs: f64| secs * 1e9 / f.bytes as f64;
-    let (ns_added, ns_norm, ns_split, ns_model) = (
+    let (ns_added, ns_norm, ns_split, ns_model, ns_post) = (
         nspb(t_frame.max(0.0)),
         nspb((t_norm - t_frame).max(0.0)),
         nspb((t_split - t_norm).max(0.0)),
         nspb((t_model - t_split).max(0.0)),
+        nspb((t_post - t_model).max(0.0)),
     );
     eprintln!(
-        "  {} stages ns/byte: added-split {ns_added:.2}, norm {ns_norm:.2}, pre-split {ns_split:.2}, model {ns_model:.2}",
+        "  {} stages ns/byte: added-split {ns_added:.2}, norm {ns_norm:.2}, pre-split {ns_split:.2}, model {ns_model:.2}, post {ns_post:.2}",
         f.name
     );
 
@@ -394,7 +398,8 @@ fn bench_stages(pipeline: &PipelineTokenizer, f: &Fixture, regexes: &[String]) -
             "normalize": ns_norm,
             "pre_tokenize": ns_split,
             "model": ns_model,
-            "total": nspb(t_model),
+            "post": ns_post,
+            "total": nspb(t_post),
         }),
         json!({
             "cls_simd": cls_simd,
@@ -638,9 +643,9 @@ fn bench_threads(
     let (mut pipe, mut base) = (Vec::new(), Vec::new());
     for &n in &counts {
         let b = baseline
-            .map(|b| par_mbps(|s| b.encode_fast(s, false).unwrap().len(), chunks, bytes, n));
+            .map(|b| par_mbps(|s| b.encode_fast(s, true).unwrap().len(), chunks, bytes, n));
         let p = par_mbps(
-            |s| pipeline.encode(s, false).unwrap().len(),
+            |s| pipeline.encode(s, true).unwrap().len(),
             chunks,
             bytes,
             n,
@@ -726,7 +731,7 @@ fn memory_child(which: &str, model: &Path) {
             inject_added_tokens_baseline(&mut tok);
             let after_load = rss_now().unwrap_or(0);
             for c in &chunks {
-                n += tok.encode_fast(c.as_str(), false).unwrap().len();
+                n += tok.encode_fast(c.as_str(), true).unwrap().len();
             }
             (after_load, rss_now().unwrap_or(0))
         }
@@ -740,7 +745,7 @@ fn memory_child(which: &str, model: &Path) {
             drop(tok);
             let after_load = rss_now().unwrap_or(0);
             for c in &chunks {
-                n += pipeline.encode(c, false).unwrap().len();
+                n += pipeline.encode(c, true).unwrap().len();
             }
             (after_load, rss_now().unwrap_or(0))
         }
