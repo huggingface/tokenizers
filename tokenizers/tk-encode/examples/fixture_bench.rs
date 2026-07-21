@@ -228,26 +228,35 @@ fn bench_throughput(
         .as_ref()
         .map(|b| move |s: &str| b.encode_fast(s, false).unwrap().len());
 
-    let pipe_ids = |c: &String| -> Vec<u32> {
+    let pipe_ids = |c: &String, add_special_tokens: bool| -> Vec<u32> {
         pipeline
-            .encode(c, false)
+            .encode(c, add_special_tokens)
             .unwrap()
             .iter()
             .map(|t| t.id)
             .collect()
     };
-    // The correctness gate CI fails on: pipeline vs this tree's Tokenizer.
-    let ids_match = f
-        .chunks
-        .iter()
-        .take(3)
-        .all(|c| oracle.encode(c.as_str(), false).unwrap().get_ids() == pipe_ids(c));
+    // The correctness gate CI fails on: pipeline vs this tree's Tokenizer, both flags
+    // (add_special_tokens=true exercises the post-process prefix/suffix step).
+    let ids_match = [false, true].into_iter().all(|add_special_tokens| {
+        f.chunks.iter().take(3).all(|c| {
+            oracle
+                .encode(c.as_str(), add_special_tokens)
+                .unwrap()
+                .get_ids()
+                == pipe_ids(c, add_special_tokens)
+        })
+    });
     // Report-only: pipeline vs the released crate (a branch may fix encode bugs).
     let ids_match_baseline = base.as_ref().map(|b| {
-        f.chunks
-            .iter()
-            .take(3)
-            .all(|c| b.encode_fast(c.as_str(), false).unwrap().get_ids() == pipe_ids(c))
+        [false, true].into_iter().all(|add_special_tokens| {
+            f.chunks.iter().take(3).all(|c| {
+                b.encode_fast(c.as_str(), add_special_tokens)
+                    .unwrap()
+                    .get_ids()
+                    == pipe_ids(c, add_special_tokens)
+            })
+        })
     });
 
     if let Some(be) = &base_enc {
@@ -301,8 +310,13 @@ fn stage_secs<const STAGE: u8>(pipeline: &PipelineTokenizer, chunks: &[String]) 
     let mut run = || {
         for chunk in chunks {
             out.clear();
-            let _ =
-                pipeline.encode_generic::<STAGE>(chunk, &mut pre_tokens, &mut scratch, &mut out);
+            let _ = pipeline.encode_generic::<STAGE>(
+                chunk,
+                true,
+                &mut pre_tokens,
+                &mut scratch,
+                &mut out,
+            );
             black_box(&out);
             black_box(&pre_tokens);
         }
