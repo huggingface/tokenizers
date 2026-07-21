@@ -141,7 +141,7 @@ fn par_mbps(encode: impl Fn(&str) + Sync, chunks: &[String], bytes: usize, n: us
     let mut samples = Vec::with_capacity(REPS);
     for _ in 0..REPS {
         let t = Instant::now();
-        black_box(run());
+        run();
         samples.push(t.elapsed().as_secs_f64());
     }
     bytes as f64 / median_secs(samples) / 1e6

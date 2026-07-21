@@ -2301,7 +2301,6 @@ dependencies = [
  "dary_heap",
  "derive_builder",
  "fancy-regex 0.17.0",
- "futures-core",
  "getrandom 0.3.4",
  "hf-hub",
  "indicatif 0.18.6",

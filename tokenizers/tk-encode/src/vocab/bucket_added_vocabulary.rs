@@ -264,13 +264,6 @@ impl AddedVocabulary {
         self.encode_special_tokens
     }
 
-    /// Whether any added token strips surrounding whitespace (`lstrip`/`rstrip`). Used to
-    /// gate boundary-based input chunking, which must not cut inside whitespace that such a
-    /// token would otherwise absorb.
-    pub fn has_affix_strip(&self) -> bool {
-        self.token_metadata.iter().any(|m| m.lstrip || m.rstrip)
-    }
-
     /// Check if a token is a special token
     pub fn is_special_token(&self, token: &str) -> bool {
         if let Some(tok) = self.vocab.token_to_id(token) {

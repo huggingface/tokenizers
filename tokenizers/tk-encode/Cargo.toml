@@ -57,8 +57,6 @@ dary_heap = { version = "0.3.6", features = ["serde"] }
 compact_str = { version = "0.9", features = ["serde"] }
 ptr_hash = { version = "2.0.1", default-features = false }
 memchr = "2.8.2"
-# `Stream` impl for `EncodeJob` (feature `async`); trait-only, no runtime.
-futures-core = { version = "0.3", optional = true }
 unicode-normalization = "0.1.25"
 yada = "0.7.0"
 
@@ -83,8 +81,6 @@ libc = "0.2"
 # cl100k, deepseek, the class family, char-delimiter) need no backend. Without it a stub compiles and
 # those arbitrary-regex paths error at load. Enable with `--features fancy-regex`.
 default = ["progressbar"]
-# `Stream` impl for `EncodeJob` (trait-only dep, no runtime).
-async = ["dep:futures-core"]
 progressbar = ["indicatif"]
 http = ["hf-hub"]
 unstable_wasm = ["fancy-regex", "getrandom/wasm_js"]

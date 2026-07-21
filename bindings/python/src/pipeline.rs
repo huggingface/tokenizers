@@ -60,7 +60,7 @@ impl Inputs for PyStrBatch {
 
     fn get(&self, i: usize) -> &str {
         let (ptr, len) = (self.views[i].ptr, self.views[i].len);
-        // SAFTEY: ptr is kept alive by PyStrBatch::_owners, and the underlying buffer is immutable UTF-8
+        // SAFETY: ptr is kept alive by PyStrBatch::_owners, and the underlying buffer is immutable UTF-8
         unsafe { std::str::from_utf8_unchecked(std::slice::from_raw_parts(ptr, len)) }
     }
 }
