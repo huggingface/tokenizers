@@ -208,7 +208,12 @@ impl Model for WordLevel {
 }
 
 type WordLevelScratch = ();
-impl ModelScratch for WordLevelScratch {}
+
+impl ModelScratch for WordLevelScratch {
+    fn clear(&mut self) {
+        // noop: wordlevel does not have a scratch
+    }
+}
 
 impl pipeline::Model for WordLevel {
     type Scratch = WordLevelScratch;

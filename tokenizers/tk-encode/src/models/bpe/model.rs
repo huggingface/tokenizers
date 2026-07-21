@@ -862,7 +862,18 @@ pub struct BpeScratch {
     pub(crate) skip: Vec<Merge>,
     pub(crate) word: Word,
 }
-impl ModelScratch for BpeScratch {}
+impl ModelScratch for BpeScratch {
+    fn clear(&mut self) {
+        let Self {
+            merge_queue,
+            skip,
+            word,
+        } = self;
+        merge_queue.clear();
+        skip.clear();
+        word.clear();
+    }
+}
 
 #[cfg(test)]
 mod tests {
