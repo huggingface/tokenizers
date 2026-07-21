@@ -3,6 +3,7 @@ use std::{iter, mem};
 
 mod model;
 mod serialization;
+mod word_cache;
 pub mod word;
 
 pub type Pair = (u32, u32);

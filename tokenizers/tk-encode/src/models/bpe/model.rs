@@ -1,5 +1,6 @@
 use super::{super::OrderedVocabIter, Error, Pair, Word};
 use crate::models::bpe::Merge;
+use crate::models::bpe::word_cache::WordCache;
 use crate::pipeline::{self, ModelScratch, PipelineToken};
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::byte_level::{self};
@@ -679,6 +680,7 @@ pub struct PipelineBPE {
     vocab: VocabStore,
     merges: MergeMap,
     ignore_merges: bool,
+    cache_capacity: Option<usize>,
 }
 
 enum Atoms {
@@ -757,6 +759,7 @@ impl PipelineBPE {
             ignore_merges,
             merges,
             vocab,
+            cache_capacity: model.cache.map(|c| c.capacity),
         })
     }
 
@@ -831,15 +834,25 @@ impl pipeline::Model for PipelineBPE {
             return Ok(());
         }
 
-        // TODO: persistent cache mapping &str -> &[u32]
-
         let BpeScratch {
             merge_queue,
             skip,
             word,
+            word_cache,
         } = scratch;
 
+        if let Some(cache) = word_cache
+            && let Some(hit) = cache.get(sequence)
+        {
+            output.extend(hit.iter().map(|&id| PipelineToken { id }));
+            return Ok(());
+        }
+
         self.merge_word(sequence, merge_queue, skip, word);
+
+        if let Some(cache) = word_cache {
+            cache.insert(sequence.to_string(), word.get_chars());
+        }
         output.extend(word.get_chars_iter().map(|id| PipelineToken { id }));
 
         Ok(())
@@ -850,6 +863,9 @@ impl pipeline::Model for PipelineBPE {
             merge_queue: QuaternaryHeap::with_capacity(64),
             word: Word::with_capacity(64),
             skip: Vec::new(),
+            word_cache: self
+                .cache_capacity
+                .map(|capacity| WordCache::init(capacity)),
         }
     }
 }
@@ -858,17 +874,21 @@ pub struct BpeScratch {
     pub(crate) merge_queue: QuaternaryHeap<Merge>,
     pub(crate) skip: Vec<Merge>,
     pub(crate) word: Word,
+    pub(crate) word_cache: Option<WordCache>,
 }
+
 impl ModelScratch for BpeScratch {
     fn clear(&mut self) {
         let Self {
             merge_queue,
             skip,
             word,
+            word_cache: _cache,
         } = self;
         merge_queue.clear();
         skip.clear();
         word.clear();
+        // We don't reset _word_cache on purpose, so it stays warm for future callers
     }
 }
 
