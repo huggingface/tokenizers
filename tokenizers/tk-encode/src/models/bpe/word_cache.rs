@@ -1,5 +1,7 @@
 use ahash::AHashMap;
 
+pub(crate) const MAX_SEQUENCE_SIZE: usize = 256;
+
 /// naive implem of word -> IDs cache
 pub struct WordCache {
     capacity: usize,
@@ -7,14 +9,14 @@ pub struct WordCache {
 }
 
 impl WordCache {
-    pub fn init(capacity: usize) -> Self {
+    pub fn new(capacity: usize) -> Self {
         Self {
             capacity,
             lookup: AHashMap::with_capacity(capacity),
         }
     }
 
-    pub fn get<'a>(&'a self, key: &str) -> Option<&'a [u32]> {
+    pub fn get(&self, key: &str) -> Option<&[u32]> {
         self.lookup.get(key).map(|bx| &bx[..])
     }
 
