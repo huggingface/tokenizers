@@ -1,6 +1,5 @@
 use ahash::AHashMap;
 
-pub(crate) const MAX_SEQUENCE_SIZE: usize = 256;
 
 /// naive implem of word -> IDs cache
 pub struct WordCache {

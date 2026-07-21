@@ -1,6 +1,6 @@
 use super::{super::OrderedVocabIter, Error, Pair, Word};
 use crate::models::bpe::Merge;
-use crate::models::bpe::word_cache::{MAX_SEQUENCE_SIZE, WordCache};
+use crate::models::bpe::word_cache::WordCache;
 use crate::pipeline::{self, ModelScratch, PipelineToken};
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::byte_level::{self};
@@ -851,7 +851,7 @@ impl pipeline::Model for PipelineBPE {
         self.merge_word(sequence, merge_queue, skip, word);
 
         if let Some(cache) = word_cache
-            && sequence.len() < MAX_SEQUENCE_SIZE
+            && sequence.len() < MAX_LENGTH
         {
             let ids = word.get_chars();
             output.extend(ids.iter().map(|&id| PipelineToken { id }));
