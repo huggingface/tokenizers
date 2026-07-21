@@ -1,7 +1,9 @@
 //! Minimal encode program measured by CI for binary size: the `PipelineTokenizer`
 //! encode path (which still links the `Tokenizer` build path — a pipeline is
 //! built from one). Kept structurally identical to `binsize_baseline.rs` so the
-//! stripped sizes compare like for like.
+//! stripped sizes compare like for like. Built WITHOUT `bench-baseline` (unlike the
+//! baseline example), so the size is tk-encode's real shipping footprint — none of
+//! the benchmark-only reference-regex deps.
 
 use std::convert::TryFrom;
 

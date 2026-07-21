@@ -13,5 +13,7 @@ fn main() {
         .next()
         .expect("usage: binsize_baseline <tokenizer.json> <text>");
     let tok = Tokenizer::from_file(path).unwrap();
-    println!("{}", tok.encode(text.as_str(), false).unwrap().len());
+    // `encode_fast` (offset-free) matches the pipeline's encode path — the path
+    // the throughput benchmark times on both sides — so the sizes compare like for like.
+    println!("{}", tok.encode_fast(text.as_str(), false).unwrap().len());
 }

@@ -193,8 +193,12 @@ jobs:
       # the "how much does this library add to my binary" number.
       - name: Measure binary sizes
         run: |
-          cargo build --release -p tk-encode --features tk-encode/bench-baseline \
-            --example binsize_baseline --example binsize_pipeline
+          # The baseline example needs `bench-baseline` (it links the released crate);
+          # the pipeline example is built in its shipping config (NO bench-baseline) so
+          # its size reflects what a user actually links — not the benchmark-only
+          # reference-regex deps (fancy-regex/onig/pcre2/logos) the feature drags in.
+          cargo build --release -p tk-encode --features tk-encode/bench-baseline --example binsize_baseline
+          cargo build --release -p tk-encode --example binsize_pipeline
           printf '{' > binary_sizes.json
           sep=''
           for key in baseline pipeline; do
