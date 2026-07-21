@@ -39,14 +39,14 @@ impl WordCache {
         Self {
             hasher: RandomState::new(),
             slots: vec![CacheSlot::default(); CAPACITY].into_boxed_slice(),
-            ids: Vec::with_capacity(CAPACITY * MAX_LENGTH),
-            key_bytes: Vec::with_capacity(CAPACITY * MAX_LENGTH),
+            ids: Vec::with_capacity(256),
+            key_bytes: Vec::with_capacity(1024),
             slot_mask: MASK,
         }
     }
 
     pub fn get(&self, key: &[u8]) -> Option<&[u32]> {
-        let hash = self.hasher.hash_one(key);
+        let hash = self.hasher.hash_one(key) | 1;
         let slot = self.slots[(hash & self.slot_mask) as usize];
         if hash != slot.hash {
             return None;
@@ -61,12 +61,11 @@ impl WordCache {
         if key.len() > MAX_LENGTH {
             return;
         }
-        let hash = self.hasher.hash_one(key);
+        let hash = self.hasher.hash_one(key) | 1;
         let slot_idx = (hash & self.slot_mask) as usize;
 
         if self.slots[slot_idx].hash != 0 {
             // slot already taken: skip insert
-            // caveat: a key whose hash lower bits resolves to 0 never gets cached
             return;
         }
         let key_offsets = (self.key_bytes.len() as u32, key.len() as u16);
