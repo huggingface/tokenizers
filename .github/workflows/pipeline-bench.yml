@@ -289,14 +289,18 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
+          # Stage the PNGs under their Hub names, then upload the whole folder in ONE
+          # `hf upload` commit — instead of a `uvx hf upload` per file, which spawned
+          # ~30 envs and did as many serial round-trips.
+          mkdir -p charts_upload
           for png in pipeline_bench_*.png; do
-            rest="${png#pipeline_bench_}"   # <slug>_<mode>.png
-            base="${rest%.png}"             # <slug>_<mode>
-            mode="${base##*_}"              # light | dark
-            slug="${base%_*}"               # <slug>
-            uvx --from huggingface_hub hf upload hf-internal-testing/tokenizers-bench \
-              "$png" "charts/pipeline-${{ github.run_id }}-${slug}-${mode}.png" --repo-type dataset
+            slug="${png#pipeline_bench_}"   # <slug>.png
+            slug="${slug%.png}"             # <slug>
+            cp "$png" "charts_upload/pipeline-${{ github.run_id }}-${slug}.png"
           done
+          uvx --from huggingface_hub hf upload hf-internal-testing/tokenizers-bench \
+            charts_upload charts --repo-type dataset \
+            --commit-message "charts: pipeline-bench run ${{ github.run_id }}"
 
       - name: Write step summary
         run: cat pipeline_bench.md >> "$GITHUB_STEP_SUMMARY"
