@@ -138,9 +138,9 @@ fn make_chunks(text: &str) -> Vec<String> {
     chunks
 }
 
-/// Every corpus in `data/fixtures/{lang,modalities}`, read and chunked once.
-fn load_fixtures() -> Vec<Fixture> {
-    let mut fixtures = Vec::new();
+/// The sorted `.txt` fixtures under `data/fixtures/{lang,modalities}`, tagged with group.
+fn fixture_paths() -> Vec<(&'static str, PathBuf)> {
+    let mut out = Vec::new();
     for group in ["lang", "modalities"] {
         let dir = Path::new(DATA_DIR).join("fixtures").join(group);
         let mut paths: Vec<_> = std::fs::read_dir(&dir)
@@ -149,19 +149,27 @@ fn load_fixtures() -> Vec<Fixture> {
             .filter(|p| p.extension().is_some_and(|x| x == "txt"))
             .collect();
         paths.sort();
-        for path in paths {
+        out.extend(paths.into_iter().map(|p| (group, p)));
+    }
+    out
+}
+
+/// Every corpus in `data/fixtures/{lang,modalities}`, read and chunked once.
+fn load_fixtures() -> Vec<Fixture> {
+    fixture_paths()
+        .into_iter()
+        .map(|(group, path)| {
             let name = path.file_stem().unwrap().to_str().unwrap().to_string();
             let chunks = make_chunks(&std::fs::read_to_string(&path).unwrap());
             let bytes = chunks.iter().map(String::len).sum();
-            fixtures.push(Fixture {
+            Fixture {
                 group,
                 name,
                 chunks,
                 bytes,
-            });
-        }
-    }
-    fixtures
+            }
+        })
+        .collect()
 }
 
 // ── timing helpers ──────────────────────────────────────────────────────────
@@ -266,8 +274,6 @@ fn bench_throughput(
     json!({
         "fixture": f.name,
         "group": f.group,
-        "bytes": f.bytes,
-        "chunks": f.chunks.len(),
         "mbps": { "baseline": base_mbps, "pipeline": pipe_mbps },
         "ids_match": ids_match,
         "ids_match_baseline": ids_match_baseline,
@@ -668,14 +674,35 @@ fn proc_status_bytes(key: &str) -> Option<i64> {
     Some(kb * 1024)
 }
 
+/// A small text sample for the memory child: the first `MEM_CHUNKS_PER_FIXTURE`
+/// chunks of each fixture, read as a bounded prefix instead of slurping the whole
+/// (~90 MB) corpus. Loading it all would spike the transient allocation well above
+/// the tokenizer itself, polluting `rss0` and `VmHWM` — corrupting the very numbers
+/// this child measures. The prefix contains those first chunks, so the encode pass
+/// is byte-for-byte what a full load would have produced.
+fn memory_sample() -> Vec<String> {
+    use std::io::Read;
+    let cap = (CHUNK_BYTES * (MEM_CHUNKS_PER_FIXTURE + 1)) as u64;
+    let mut chunks = Vec::new();
+    for (_, path) in fixture_paths() {
+        let mut buf = Vec::new();
+        std::fs::File::open(&path)
+            .unwrap()
+            .take(cap)
+            .read_to_end(&mut buf)
+            .unwrap();
+        let valid = std::str::from_utf8(&buf).map_or_else(|e| e.valid_up_to(), |_| buf.len());
+        let text = std::str::from_utf8(&buf[..valid]).unwrap();
+        chunks.extend(make_chunks(text).into_iter().take(MEM_CHUNKS_PER_FIXTURE));
+    }
+    chunks
+}
+
 /// `--memory <impl> <model.json>` child entry: load one implementation, encode a
 /// capped pass over the fixtures, print `{load_bytes, encode_bytes, peak_bytes}`.
 /// One implementation per process so the deltas attribute cleanly.
 fn memory_child(which: &str, model: &Path) {
-    let chunks: Vec<String> = load_fixtures()
-        .into_iter()
-        .flat_map(|f| f.chunks.into_iter().take(MEM_CHUNKS_PER_FIXTURE))
-        .collect();
+    let chunks = memory_sample();
 
     let rss0 = rss_now().unwrap_or(0);
     let mut n = 0usize;
@@ -872,7 +899,7 @@ fn main() {
             Err(e) => {
                 eprintln!("  load failed: {e}");
                 models.push(json!({
-                    "model": name, "repo": repo, "desc": desc, "shape": "?",
+                    "model": name, "desc": desc, "shape": "?",
                     "reason": format!("load error: {e}"),
                     "results": [], "memory": Value::Null,
                 }));
@@ -894,7 +921,7 @@ fn main() {
                 Err(e) => {
                     eprintln!("  pipeline builds but can't encode yet ({shape}): {e}");
                     models.push(json!({
-                        "model": name, "repo": repo, "desc": desc, "shape": shape,
+                        "model": name, "desc": desc, "shape": shape,
                         "reason": format!("{e}"),
                         "results": [], "memory": Value::Null,
                     }));
@@ -904,7 +931,7 @@ fn main() {
             Err(_) => {
                 eprintln!("  unsupported by PipelineTokenizer ({shape})");
                 models.push(json!({
-                    "model": name, "repo": repo, "desc": desc, "shape": shape,
+                    "model": name, "desc": desc, "shape": shape,
                     "results": [], "memory": Value::Null,
                 }));
                 continue;
@@ -945,7 +972,7 @@ fn main() {
         let threads = bench_threads(baseline.as_ref(), &pipeline, &all_chunks);
 
         models.push(json!({
-            "model": name, "repo": repo, "desc": desc, "shape": shape,
+            "model": name, "desc": desc, "shape": shape,
             "results": rows, "memory": memory, "threads": threads,
         }));
     }
