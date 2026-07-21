@@ -845,7 +845,7 @@ impl pipeline::Model for PipelineBPE {
         } = scratch;
 
         if let Some(cache) = word_cache
-            && let Some(hit) = cache.get(sequence)
+            && let Some(hit) = cache.get(sequence.as_bytes())
         {
             output.extend(hit.iter().map(|&id| PipelineToken { id }));
             return Ok(());
@@ -858,7 +858,7 @@ impl pipeline::Model for PipelineBPE {
         {
             let ids = word.get_chars();
             output.extend(ids.iter().map(|&id| PipelineToken { id }));
-            cache.insert(sequence.to_string(), ids);
+            cache.insert(sequence.as_bytes(), ids.as_slice());
         } else {
             output.extend(word.get_chars_iter().map(|id| PipelineToken { id }));
         }
@@ -871,7 +871,7 @@ impl pipeline::Model for PipelineBPE {
             merge_queue: QuaternaryHeap::with_capacity(64),
             word: Word::with_capacity(64),
             skip: Vec::new(),
-            word_cache: self.cache_capacity.map(WordCache::new),
+            word_cache: self.cache_capacity.map(|_| WordCache::new()),
         }
     }
 }
