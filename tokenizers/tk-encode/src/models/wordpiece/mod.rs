@@ -318,7 +318,12 @@ pub struct WordPieceScratch {
     candidate_str: String,
 }
 
-impl pipeline::ModelScratch for WordPieceScratch {}
+impl pipeline::ModelScratch for WordPieceScratch {
+    fn clear(&mut self) {
+        let Self { candidate_str } = self;
+        candidate_str.clear();
+    }
+}
 
 pub struct PipelineWordPiece {
     vocab_trie: yada::DoubleArray<Vec<u8>>,
