@@ -1,48 +1,18 @@
 #!/usr/bin/env python3
-"""Render the fixture_bench JSON as full-size charts + a markdown report for a
-PR description.
+"""Render the fixture_bench JSON as charts + a markdown PR report.
 
-Input: JSON object from `cargo run --release -p tk-encode --features
-tk-encode/bench-baseline --example fixture_bench`:
+Two series: `baseline` (the latest released `tokenizers` crate — the bar to beat,
+drawn gray; the in-tree `Tokenizer` isn't benched, it's only the id oracle behind
+`ids_match`) and `pipeline` (the experimental PipelineTokenizer, blue). Leads with
+three always-visible charts — per-model geomean ×speedup, memory footprint, binary
+size — then one collapsed <details> per model (per-fixture speedup, thread scaling,
+stage mix, numbers table). Models the pipeline can't build yet render as "not
+supported" roadmap cards. Emits light-theme SVGs + pipeline_bench.md; the CI
+workflow rasterizes and uploads the SVGs. Input schema: see fixture_bench.rs.
 
-    {baseline: {crate, version},
-     models: [{model, shape, desc, [reason],
-               memory: {baseline|pipeline:
-                        {load_bytes, encode_bytes, peak_bytes} | null} | null,
-               threads: {counts: [1,2,4,8,max],
-                         pipeline_mbps: [..], baseline_mbps: [..|null]},
-               results: [{fixture, group, bytes, chunks,
-                          mbps: {baseline, pipeline},
-                          ids_match, ids_match_baseline,
-                          stage_ns_per_byte: {added_split, normalize,
-                                              pre_tokenize, model, total},
-                          pretok_vs_regex: {cls_simd, cls_scalar,
-                                            onig|null, fancy|null,
-                                            pcre2|null, logos|null}}]}]}
-
-Two series: `baseline` — the latest released tokenizers crate, the bar to beat
-(the in-tree Tokenizer is on its way out, so it isn't benched; it only serves
-as the id oracle behind `ids_match`) — drawn gray as context, and `pipeline` —
-the experimental PipelineTokenizer, blue. The report leads with three
-always-visible charts:
-
-  1. throughput overview — per model, geomean ×speedup of the pipeline against
-     the release (×1.0 = release), with a min–max whisker across fixtures (no
-     cross-model aggregate: the models exercise different execution modes, so
-     averaging them means nothing);
-  2. memory overview — per model, resident-set delta after load plus the encode
-     pass, one stacked bar per implementation, tick = peak RSS;
-  3. binary size — stripped minimal encode binary per implementation (workflow
-     measurement, via --binary-sizes).
-
-Everything else is collapsed into per-model <details> blocks: a per-fixture
-×speedup chart, a thread-scaling chart (encode throughput at 1/2/4/8/device-max
-threads, pipeline vs the release), the pipeline stage decomposition (100%-normalized per fixture —
-each stage as its share of that fixture's own encode time, labelled `share% ·
-ns/B`, so the mix reads regardless of how slow the release baseline is; total
-ns/B and ×speedup stay in the right column), and the numbers table (which carries
-the same per-stage `share% (ns/B)` columns). Models the pipeline can't build yet
-render as compact "not supported" roadmap cards. Charts are full-size for zoom.
+No cross-model aggregate anywhere on purpose: the models exercise different
+execution modes (normalizer-heavy / split-heavy / model-bounded), so only
+per-model geomeans mean anything.
 """
 import argparse
 import json
@@ -55,45 +25,30 @@ from html import escape
 from pathlib import Path
 
 INK = {
-    "light": {
-        "surface": "#fcfcfb", "card": "#ffffff", "primary": "#0b0b0b",
-        "secondary": "#52514e", "muted": "#898781", "grid": "#e1e0d9",
-        "border": "#e1e0d9", "baseline": "#c3c2b7", "critical": "#d03b3b",
-    },
-    "dark": {
-        "surface": "#1a1a19", "card": "#212120", "primary": "#ffffff",
-        "secondary": "#c3c2b7", "muted": "#898781", "grid": "#2c2c2a",
-        "border": "#33332f", "baseline": "#4a4a46", "critical": "#e66767",
-    },
+    "surface": "#fcfcfb", "card": "#ffffff", "primary": "#0b0b0b",
+    "secondary": "#52514e", "muted": "#898781", "grid": "#e1e0d9",
+    "border": "#e1e0d9", "baseline": "#c3c2b7", "critical": "#d03b3b",
 }
-# Series identity: the release baseline is context-gray on purpose — in the
-# speedup charts it *is* the ×1.0 axis, in memory/binary-size it's the
-# reference bar the pipeline is read against.
-SERIES_INK = {
-    "light": {"baseline": "#898781", "pipeline": "#2a78d6"},
-    "dark": {"baseline": "#898781", "pipeline": "#3987e5"},
-}
+# The release baseline is context-gray on purpose: in the speedup charts it *is*
+# the ×1.0 axis; in memory/binary-size it's the reference bar to read against.
+SERIES_INK = {"baseline": "#898781", "pipeline": "#2a78d6"}
 FONT = "-apple-system,'Segoe UI',Helvetica,Arial,sans-serif"
 GUTTER, PLOT_W, PAD_R, COL_W, ROW_H, BAR_H = 190, 540, 110, 150, 26, 16
 CHART_W = GUTTER + PLOT_W + PAD_R + COL_W
-# Overview charts: wider gutter (model name + desc), same total width.
+# Overview / linear charts: wider gutter (model name + desc), same total width.
 OV_GUTTER, OV_PLOT = 250, 440
+OV_PLOT_W = CHART_W - OV_GUTTER - PAD_R - COL_W  # plot width for 0-anchored linear bars
 TICKS = [0.5, 0.67, 0.75, 0.8, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0, 5.0, 7.0, 10.0]
 GROUPS = [("lang", "Languages"), ("modalities", "Modalities")]
 CARD_W, CARD_H = 470, 150
 
-# Pipeline encode stages, in execution order, keyed to `stage_ns_per_byte` in the
-# fixture_bench JSON. `added_split` = the added/special-token scan (AddedVocabulary),
-# `pre_tokenize` = the pre-tokenizer split — two distinct splitting costs. The four
-# stages sum to the whole-encode total.
+# Pipeline encode stages in execution order, keyed to `stage_ns_per_byte`.
+# `added_split` = added/special-token scan (AddedVocabulary), `pre_tokenize` =
+# pre-tokenizer split — two distinct splitting costs. The four sum to `total`.
 STAGES = [("added_split", "added-token"), ("normalize", "normalize"),
           ("pre_tokenize", "pre-tokenize"), ("model", "model")]
-STAGE_INK = {
-    "light": {"added_split": "#7a5ea8", "normalize": "#2a9d8f",
-              "pre_tokenize": "#e0952b", "model": "#2a78d6"},
-    "dark": {"added_split": "#a48ad4", "normalize": "#3fb8a8",
-             "pre_tokenize": "#f0b45a", "model": "#3987e5"},
-}
+STAGE_INK = {"added_split": "#7a5ea8", "normalize": "#2a9d8f",
+             "pre_tokenize": "#e0952b", "model": "#2a78d6"}
 
 
 def slugify(name):
@@ -135,6 +90,13 @@ def hbar(x0, x1, y, h, color):
     return f'<path d="{bar_path(x0, x1, y, h, 4)}" fill="{color}"/>'
 
 
+def log_x(gutter, plot_w, lo, hi):
+    """A log2 x-mapping onto [gutter, gutter+plot_w] — shared by the speedup charts
+    so different models plot on the same scale and are directly comparable."""
+    span = math.log2(hi) - math.log2(lo)
+    return lambda v: gutter + (math.log2(v) - math.log2(lo)) / span * plot_w
+
+
 def speedup(row):
     b, p = row["mbps"]["baseline"], row["mbps"]["pipeline"]
     return p / b if b and p else None
@@ -145,9 +107,9 @@ def model_speedups(model):
 
 
 def base_speedup(row, base_lookup, model_name):
-    """This PR's pipeline throughput ÷ the base branch's pipeline throughput for the
-    same (model, fixture) — the "did this PR help vs the base branch" ratio. `None`
-    when the base branch didn't bench that fixture (added model, renamed fixture …)."""
+    """This PR's pipeline throughput ÷ the base branch's, for the same (model,
+    fixture) — the "did this PR help vs base" ratio. `None` when the base branch
+    didn't bench that fixture (added model, renamed fixture …)."""
     p = row["mbps"].get("pipeline")
     b = base_lookup.get((model_name, row["fixture"]))
     return p / b if b and p else None
@@ -159,8 +121,7 @@ def base_model_speedups(model, base_lookup):
 
 
 def scale(models, speedups_of=model_speedups):
-    """Shared log2 x-range across every plotted speedup, so charts for
-    different models are directly comparable."""
+    """Shared log2 x-range across every plotted speedup."""
     vals = [v for m in models for v in speedups_of(m)]
     if not vals:
         return 0.75, 1.5
@@ -168,8 +129,8 @@ def scale(models, speedups_of=model_speedups):
 
 
 def nice_ticks(vmax):
-    """Round ticks for a 0-anchored linear axis: a 1/2/2.5/5×10^k step chosen
-    so ~5 ticks fit, never exceeding vmax."""
+    """Round ticks for a 0-anchored linear axis: a 1/2/2.5/5×10^k step chosen so
+    ~5 ticks fit, never exceeding vmax."""
     raw = vmax / 5
     mag = 10 ** math.floor(math.log10(raw))
     step = next(s * mag for s in (1, 2, 2.5, 5, 10) if s * mag >= raw)
@@ -177,8 +138,8 @@ def nice_ticks(vmax):
 
 
 def thin_ticks(ticks, x, min_px=26, keep=None):
-    """Drop axis ticks that would collide at the current scale. `keep` (e.g. the
-    ×1.0 baseline) always survives."""
+    """Drop axis ticks that would collide at the current scale; `keep` (the ×1.0
+    baseline) always survives."""
     kept = [t for t in ticks if t == keep]
     for t in ticks:
         if t != keep and all(abs(x(t) - x(k)) >= min_px for k in kept):
@@ -187,16 +148,16 @@ def thin_ticks(ticks, x, min_px=26, keep=None):
 
 
 def footer_text(ink, height, meta, subtitle_base=""):
-    """Run metadata as a single muted footer line. Kept out of the header so a
-    long shape/desc subtitle can never collide with the hardware string."""
+    """Run metadata as a single muted footer line, kept out of the header so a long
+    shape/desc subtitle can't collide with the hardware string."""
     parts = [meta[0], meta[1]] + ([subtitle_base] if subtitle_base else [])
     return (f'<text x="16" y="{height - 12}" fill="{ink["muted"]}" font-size="10.5" '
             f'style="font-variant-numeric:tabular-nums">{escape(" · ".join(parts))}</text>')
 
 
 def legend_row(ink, sink, y, entries):
-    """Bottom legend: [(kind, key, label)] with kind ∈ swatch|tick|dot; `key` is
-    a series key into `sink` or a raw color."""
+    """Bottom legend: [(kind, key, label)] with kind ∈ swatch|tick|dot; `key` is a
+    series key into `sink` or a raw color."""
     parts, lx = [], GUTTER
     for kind, key, label in entries:
         color = sink.get(key, key)
@@ -240,25 +201,30 @@ def speedup_axis(ink, x, ticks, top, bottom):
     return "".join(grid) + hints
 
 
-def overview_svg(models, mode, subtitle_base, meta, lo, hi, baseline_label,
+def linear_axis(ink, x, ticks, top, y, unit):
+    """0-anchored linear gridlines + labels (`unit` on the last tick), from `top`
+    down to `y`. Shared by the memory / binary-size / thread-scaling charts."""
+    grid = []
+    for tv in ticks:
+        u = unit if tv == ticks[-1] else ""
+        grid.append(f'<line x1="{x(tv):.1f}" y1="{top - 6}" x2="{x(tv):.1f}" y2="{y - 4}" '
+                    f'stroke="{ink["grid"]}" stroke-width="1"/>')
+        grid.append(f'<text x="{x(tv):.1f}" y="{y + 10}" fill="{ink["muted"]}" font-size="11" '
+                    f'text-anchor="middle" style="font-variant-numeric:tabular-nums">{tv:g}{u}</text>')
+    return "".join(grid)
+
+
+def overview_svg(models, subtitle_base, meta, lo, hi, baseline_label,
                  speedups_of=model_speedups, title=None, ref_label=None,
                  mark_regressions=False, no_cmp_msg=None):
-    """The headline chart: a row per manifest model — name + workload desc,
-    geomean ×speedup of the pipeline vs the reference (×1.0) with a min–max
-    whisker across fixtures. No cross-model aggregate on purpose: the models
-    exercise different execution modes. Unsupported models appear as muted
-    status rows so the overview is the complete state of the world.
-
-    Defaults draw "vs latest release". Pass `speedups_of=base_model_speedups`-style
-    with `mark_regressions=True` for the "vs base branch" twin: bars for models that
-    got slower than the base branch turn red."""
-    ink, sink = INK[mode], SERIES_INK[mode]
+    """Headline chart: one row per model — name + workload desc, geomean ×speedup vs
+    the reference (×1.0) with a min–max whisker across fixtures. Unsupported models
+    show as muted status rows so the overview is the complete state of the world.
+    `mark_regressions=True` (the "vs base branch" twin) turns slower-than-base bars red."""
+    ink, sink = INK, SERIES_INK
     title = title or "PipelineTokenizer vs latest release — encode throughput"
     ref_label = ref_label or baseline_label
-
-    def x(v):
-        return OV_GUTTER + (math.log2(v) - math.log2(lo)) / (math.log2(hi) - math.log2(lo)) * OV_PLOT
-
+    x = log_x(OV_GUTTER, OV_PLOT, lo, hi)
     ticks = thin_ticks([t for t in TICKS if lo <= t <= hi], x, min_px=34, keep=1.0)
 
     top, row_h = 74, 40
@@ -320,10 +286,10 @@ def overview_svg(models, mode, subtitle_base, meta, lo, hi, baseline_label,
     return svg_doc(ink, height, title, subtitle, axis + "".join(body) + legend, meta)
 
 
-def memory_svg(models, mode, meta, baseline_label):
+def memory_svg(models, meta, baseline_label):
     """Per model: resident-set delta of each implementation — load footprint plus
     the encode-pass delta as stacked segments, peak RSS as a tick."""
-    ink, sink = INK[mode], SERIES_INK[mode]
+    ink, sink = INK, SERIES_INK
     models = [m for m in models if isinstance(m.get("memory"), dict)]
 
     def mem(m, impl):
@@ -344,10 +310,9 @@ def memory_svg(models, mode, meta, baseline_label):
     if not vals:
         return svg_doc(ink, 120, "Memory footprint", "no data", "", meta)
     max_mb = max(vals) * 1.05
-    plot_w = CHART_W - OV_GUTTER - PAD_R - COL_W
 
     def x(v):
-        return OV_GUTTER + v / max_mb * plot_w
+        return OV_GUTTER + v / max_mb * OV_PLOT_W
 
     top, bar_h, row_h = 78, 12, 2 * (12 + 3) + 16
     col_x = CHART_W - 16
@@ -386,14 +351,7 @@ def memory_svg(models, mode, meta, baseline_label):
                     f'{chain(totals, "{:.0f}")}</text>')
         y += row_h
 
-    grid = []
-    ticks = nice_ticks(max_mb)
-    for tv in ticks:
-        unit = " MB" if tv == ticks[-1] else ""
-        grid.append(f'<line x1="{x(tv):.1f}" y1="{top - 6}" x2="{x(tv):.1f}" y2="{y - 4}" '
-                    f'stroke="{ink["grid"]}" stroke-width="1"/>')
-        grid.append(f'<text x="{x(tv):.1f}" y="{y + 10}" fill="{ink["muted"]}" font-size="11" '
-                    f'text-anchor="middle" style="font-variant-numeric:tabular-nums">{tv:g}{unit}</text>')
+    grid = linear_axis(ink, x, nice_ticks(max_mb), top, y, " MB")
     y += 30
     legend = legend_row(ink, sink, y, [
         ("swatch", "baseline", baseline_label),
@@ -403,18 +361,15 @@ def memory_svg(models, mode, meta, baseline_label):
     height = y + 34
     subtitle = "resident-set delta per implementation, one process each · load + encode pass"
     return svg_doc(ink, height, "Memory footprint",
-                   subtitle, "".join(grid) + "".join(body) + legend, meta)
+                   subtitle, grid + "".join(body) + legend, meta)
 
 
-def chart_svg(model, mode, subtitle_base, meta, lo, hi, baseline_label):
-    """Full-size per-fixture chart: the pipeline's ×speedup vs the release, with
-    the `MB/s: release → Pipeline` throughput column."""
-    ink, sink = INK[mode], SERIES_INK[mode]
+def chart_svg(model, subtitle_base, meta, lo, hi, baseline_label):
+    """Full-size per-fixture chart: the pipeline's ×speedup vs the release, with the
+    `MB/s: release → Pipeline` throughput column."""
+    ink, sink = INK, SERIES_INK
     rows = model["results"]
-
-    def x(v):
-        return GUTTER + (math.log2(v) - math.log2(lo)) / (math.log2(hi) - math.log2(lo)) * PLOT_W
-
+    x = log_x(GUTTER, PLOT_W, lo, hi)
     ticks = thin_ticks([t for t in TICKS if lo <= t <= hi], x, min_px=34, keep=1.0)
 
     top = 74
@@ -424,9 +379,8 @@ def chart_svg(model, mode, subtitle_base, meta, lo, hi, baseline_label):
     y = top
     baseline_id_note = False
     for key, title in GROUPS:
-        # stable order (alphabetical by fixture) so a fixture keeps its row across
-        # runs and lines up with the stage-decomposition chart — not sorted by the
-        # (run-varying) speedup.
+        # stable order (alphabetical) so a fixture keeps its row across runs and
+        # lines up with the stage chart — not sorted by the (run-varying) speedup.
         group_rows = sorted((r for r in rows if r["group"] == key),
                             key=lambda r: r["fixture"])
         if not group_rows:
@@ -514,15 +468,14 @@ def stage_cell(s, key):
     return f"{100 * val / total:.0f}% ({val:.1f})"
 
 
-def stage_chart_svg(model, mode, subtitle_base, meta, baseline_label):
-    """Per-fixture breakdown of where the pipeline spends its OWN encode time, as a
-    100%-normalized stacked bar: each stage is its share of THAT fixture's total,
-    labelled `share% · ns/B`. Normalizing per row (instead of a shared ns/byte scale
-    anchored to the slow release) keeps the mix readable no matter the absolute cost;
-    the right column keeps the total ns/byte and the ×speedup vs the release, so
-    neither the magnitude nor the comparison is lost."""
-    ink = INK[mode]
-    sink = STAGE_INK[mode]
+def stage_chart_svg(model, subtitle_base, meta, baseline_label):
+    """Per-fixture 100%-normalized stacked bar of where the pipeline spends its OWN
+    encode time — each stage as its share of THAT fixture's total, labelled
+    `share% · ns/B`. Normalizing per row (not on a shared ns/byte scale anchored to
+    the slow release) keeps the mix readable at any absolute cost; the right column
+    keeps the total ns/byte and the ×speedup vs the release."""
+    ink = INK
+    sink = STAGE_INK
     rows = [r for r in model["results"] if "stage_ns_per_byte" in r]
 
     top = 84
@@ -572,7 +525,6 @@ def stage_chart_svg(model, mode, subtitle_base, meta, baseline_label):
             y += ROW_H
         y += 10
 
-    # x-axis: fixed 0–100% gridlines
     grid = []
     for pct in (0, 25, 50, 75, 100):
         gx = GUTTER + pct / 100 * PLOT_W
@@ -582,7 +534,6 @@ def stage_chart_svg(model, mode, subtitle_base, meta, baseline_label):
                     f'text-anchor="middle" style="font-variant-numeric:tabular-nums">'
                     f'{pct}{"%" if pct == 100 else ""}</text>')
 
-    # legend row: the stage colors
     y += 26
     legend = legend_row(ink, sink, y, [("swatch", k, lbl) for k, lbl in STAGES])
     height = y + 34
@@ -594,11 +545,10 @@ def stage_chart_svg(model, mode, subtitle_base, meta, baseline_label):
                    subtitle, "".join(grid) + "".join(body) + legend, meta, subtitle_base)
 
 
-def card_svg(model, mode):
-    """Compact roadmap card for a model the pipeline can't bench yet (or that
-    failed to load). Plain single-chunk text only: cairosvg mis-centers
-    text-anchor with tspans."""
-    ink = INK[mode]
+def card_svg(model):
+    """Compact roadmap card for a model the pipeline can't bench yet (or that failed
+    to load). Plain single-chunk text only: cairosvg mis-centers tspans."""
+    ink = INK
     pretok = model["shape"].split("·")[-1].strip()
     why = model.get("reason") or f"PipelineTokenizer has no {pretok} pre-tokenizer"
     header = 54
@@ -636,18 +586,14 @@ def detect_hardware():
     return f"{cpu} · {os.cpu_count()} cores"
 
 
-def img_url(base, run_id, slug, mode):
+def img_url(base, run_id, slug):
     if base:
-        return f"{base}/pipeline-{run_id}-{slug}-{mode}.png"
-    return f"pipeline_bench_{slug}_{mode}.png"
+        return f"{base}/pipeline-{run_id}-{slug}.png"
+    return f"pipeline_bench_{slug}.png"
 
 
 def picture(base, run_id, slug, alt, width):
-    return "\n".join([
-        "<picture>",
-        f'  <source media="(prefers-color-scheme: dark)" srcset="{img_url(base, run_id, slug, "dark")}">',
-        f'  <img alt="{escape(alt)}" src="{img_url(base, run_id, slug, "light")}" width="{width}">',
-        "</picture>"])
+    return f'<img alt="{escape(alt)}" src="{img_url(base, run_id, slug)}" width="{width}">'
 
 
 def mem_line(model, baseline_label):
@@ -663,17 +609,16 @@ def mem_line(model, baseline_label):
                          (("baseline", baseline_label), ("pipeline", "Pipeline"))))
 
 
-def binsize_svg(sizes, mode, meta, baseline_label):
+def binsize_svg(sizes, meta, baseline_label):
     """Stripped size of a minimal release-built encode program (load a
     tokenizer.json, encode one string) linking each implementation — what the
-    library adds to a shipped binary. Bars are 0-anchored on a linear MB axis."""
-    ink, sink = INK[mode], SERIES_INK[mode]
+    library adds to a shipped binary. Bars 0-anchored on a linear MB axis."""
+    ink, sink = INK, SERIES_INK
     rows = [("baseline", baseline_label), ("pipeline", "PipelineTokenizer")]
     max_mb = max(sizes.values()) / 1e6 * 1.15
-    plot_w = CHART_W - OV_GUTTER - PAD_R - COL_W
 
     def x(v):
-        return OV_GUTTER + v / max_mb * plot_w
+        return OV_GUTTER + v / max_mb * OV_PLOT_W
 
     top, bar_h, row_h = 74, 16, 30
     body = [f'<text x="{OV_GUTTER}" y="{top - 14}" fill="{ink["muted"]}" font-size="11">'
@@ -693,19 +638,12 @@ def binsize_svg(sizes, mode, meta, baseline_label):
                     f'style="font-variant-numeric:tabular-nums">{escape(txt)}</text>')
         y += row_h
 
-    grid = []
-    ticks = nice_ticks(max_mb)
-    for tv in ticks:
-        unit = " MB" if tv == ticks[-1] else ""
-        grid.append(f'<line x1="{x(tv):.1f}" y1="{top - 6}" x2="{x(tv):.1f}" y2="{y - 4}" '
-                    f'stroke="{ink["grid"]}" stroke-width="1"/>')
-        grid.append(f'<text x="{x(tv):.1f}" y="{y + 10}" fill="{ink["muted"]}" font-size="11" '
-                    f'text-anchor="middle" style="font-variant-numeric:tabular-nums">{tv:g}{unit}</text>')
+    grid = linear_axis(ink, x, nice_ticks(max_mb), top, y, " MB")
     height = y + 44
     subtitle = ("stripped release build of a minimal encode program "
                 "(load a tokenizer.json + encode one string)")
     return svg_doc(ink, height, "Binary size",
-                   subtitle, "".join(grid) + "".join(body), meta)
+                   subtitle, grid + "".join(body), meta)
 
 
 def has_threads(m):
@@ -713,22 +651,21 @@ def has_threads(m):
     return isinstance(t, dict) and bool(t.get("counts"))
 
 
-def threads_svg(model, mode, meta, baseline_label):
-    """Per model: encode throughput (MB/s) at 1/2/4/8/device-max threads — pipeline vs the release —
-    with a per-row *ideal linear* tick (single-thread throughput × N) on the pipeline bar. So whether the
-    pipeline scales linearly (bar reaches the tick) or sub-linearly (bar falls short of it) is visible at a
-    glance, alongside the pipeline↔release gap; the right column carries the self-scaling % of linear."""
-    ink, sink = INK[mode], SERIES_INK[mode]
+def threads_svg(model, meta, baseline_label):
+    """Per model: encode throughput (MB/s) at 1/2/4/8/device-max threads — pipeline
+    vs the release — with a per-row *ideal linear* tick (single-thread × N) on the
+    pipeline bar, so linear vs sub-linear scaling is visible at a glance alongside
+    the pipeline↔release gap; the right column carries self-scaling % of linear."""
+    ink, sink = INK, SERIES_INK
     t = model["threads"]
     counts, pipe, base = t["counts"], t["pipeline_mbps"], t["baseline_mbps"]
     p1 = pipe[0] if pipe and pipe[0] else None  # single-thread anchor for the linear reference
     ideal = [p1 * n for n in counts] if p1 else []
     vals = [v for v in pipe if v] + [v for v in base if v] + ideal
     max_mb = (max(vals) if vals else 1.0) * 1.08
-    plot_w = CHART_W - OV_GUTTER - PAD_R - COL_W
 
     def x(v):
-        return OV_GUTTER + v / max_mb * plot_w
+        return OV_GUTTER + v / max_mb * OV_PLOT_W
 
     top, bar_h, gap = 78, 11, 3
     row_h = 2 * (bar_h + gap) + 16
@@ -764,15 +701,7 @@ def threads_svg(model, mode, meta, baseline_label):
                     f'text-anchor="end" style="font-variant-numeric:tabular-nums">{right}</text>')
         y += row_h
 
-    grid = []
-    ticks = nice_ticks(max_mb)
-    for tv in ticks:
-        unit = " MB/s" if tv == ticks[-1] else ""
-        gx = x(tv)
-        grid.append(f'<line x1="{gx:.1f}" y1="{top - 6}" x2="{gx:.1f}" y2="{y - 4}" '
-                    f'stroke="{ink["grid"]}" stroke-width="1"/>')
-        grid.append(f'<text x="{gx:.1f}" y="{y + 10}" fill="{ink["muted"]}" font-size="11" '
-                    f'text-anchor="middle" style="font-variant-numeric:tabular-nums">{tv:g}{unit}</text>')
+    grid = linear_axis(ink, x, nice_ticks(max_mb), top, y, " MB/s")
     y += 30
     legend = legend_row(ink, sink, y, [
         ("swatch", "baseline", baseline_label),
@@ -786,15 +715,13 @@ def threads_svg(model, mode, meta, baseline_label):
         scaling = f" · pipeline {sc:.1f}× on {counts[-1]} threads ({sc / counts[-1] * 100:.0f}% of linear)"
     subtitle = f"throughput at N threads vs {baseline_label}; tick = perfect linear scaling{scaling}"
     return svg_doc(ink, height, "Thread scaling",
-                   subtitle, "".join(grid) + "".join(body) + legend, meta)
+                   subtitle, grid + "".join(body) + legend, meta)
 
 
 def pretok_compare_md(model):
-    """Per-fixture 'classify + fsm vs a regex engine' table: the pre-tokenize split beating both onig
-    (C) and fancy-regex (pure Rust), WITH and WITHOUT SIMD. Rendered only for regex pre-tokenizers
-    (a reference is non-null). ns/byte, lower better. pipe-SIMD = the pre-tokenize stage (SIMD classify
-    + scalar fsm); pipe-scalar swaps in the scalar classifier (= pre-tokenize + (cls_scalar - cls_simd));
-    onig/fancy run the model's own pre-tokenizer regex(es)."""
+    """Per-fixture 'classify + fsm vs a regex engine' table — the pre-tokenize split
+    vs onig/fancy/pcre2/logos on the model's own regex, WITH and WITHOUT SIMD.
+    Rendered only for regex pre-tokenizers (a reference is non-null)."""
     engines = ("onig", "fancy", "pcre2", "logos")
 
     def has_ref(r):
@@ -830,10 +757,8 @@ def pretok_compare_md(model):
 
 def render_markdown(data, subtitle_base, meta, base, run_id, sizes,
                     base_lookup=None, base_ref=None):
-    """Overview charts inline; everything per-model — charts and the per-fixture
-    table — inside one <details> block per model, so the PR description stays a
-    single screen. No cross-model aggregate number anywhere: the models exercise
-    different execution modes, so only per-model geomeans are meaningful."""
+    """Overview charts inline; everything per-model inside one <details> block, so
+    the PR description stays a single screen."""
     models = data["models"]
     baseline_label = f'v{data["baseline"]["version"]}'
     benched = [m for m in models if m["results"]]
@@ -885,9 +810,9 @@ def render_markdown(data, subtitle_base, meta, base, run_id, sizes,
             md += [picture(base, run_id, f"{slug}-threads",
                            f"{m['model']} thread scaling", 860), ""]
         md += [mem_line(m, baseline_label), ""]
-        # Per-stage columns show each split's share of the pipeline's own encode time
-        # with the ns/byte alongside — `share% (ns/B)` — so the split cost is readable
-        # as text regardless of how slow the release baseline is.
+        # Per-stage columns carry each split's share of the pipeline's own encode
+        # time with the ns/byte alongside — `share% (ns/B)` — readable as text
+        # regardless of how slow the release baseline is.
         base_col = " Δ base |" if base_lookup else ""
         base_sep = "---:|" if base_lookup else ""
         md += [f"| Fixture | Group | {baseline_label} MB/s | Pipeline MB/s | Speedup |{base_col} "
@@ -914,8 +839,7 @@ def render_markdown(data, subtitle_base, meta, base, run_id, sizes,
         md += pretok_compare_md(m)
         md += ["", "</details>", ""]
 
-    # Unsupported / failed-to-load models: roadmap cards, collapsed — they're
-    # status, not results.
+    # Unsupported / failed-to-load models: roadmap cards, collapsed — status, not results.
     if unsupported:
         names = ", ".join(f"<code>{escape(m['model'])}</code>" for m in unsupported)
         md += [f"<details><summary><b>Not yet supported:</b> {names}</summary>", "", "<table>"]
@@ -977,40 +901,37 @@ def main():
             base_lookup = None
 
     out = Path(args.out_dir)
-    for mode in ("light", "dark"):
-        (out / f"pipeline_bench_overview_{mode}.svg").write_text(
-            overview_svg(models, mode, args.subtitle, meta, lo, hi, baseline_label))
-        if base_lookup:
-            (out / f"pipeline_bench_base-overview_{mode}.svg").write_text(
-                overview_svg(models, mode, args.subtitle, meta, blo, bhi, baseline_label,
-                             speedups_of=base_speedups_of,
-                             title="PipelineTokenizer vs base branch — encode throughput",
-                             ref_label=(args.base_ref or "base branch"), mark_regressions=True,
-                             no_cmp_msg="not benched on the base branch"))
-        (out / f"pipeline_bench_memory_{mode}.svg").write_text(
-            memory_svg(models, mode, meta, baseline_label))
-        if sizes:
-            (out / f"pipeline_bench_binsize_{mode}.svg").write_text(
-                binsize_svg(sizes, mode, meta, baseline_label))
+    (out / "pipeline_bench_overview.svg").write_text(
+        overview_svg(models, args.subtitle, meta, lo, hi, baseline_label))
+    if base_lookup:
+        (out / "pipeline_bench_base-overview.svg").write_text(
+            overview_svg(models, args.subtitle, meta, blo, bhi, baseline_label,
+                         speedups_of=base_speedups_of,
+                         title="PipelineTokenizer vs base branch — encode throughput",
+                         ref_label=(args.base_ref or "base branch"), mark_regressions=True,
+                         no_cmp_msg="not benched on the base branch"))
+    (out / "pipeline_bench_memory.svg").write_text(
+        memory_svg(models, meta, baseline_label))
+    if sizes:
+        (out / "pipeline_bench_binsize.svg").write_text(
+            binsize_svg(sizes, meta, baseline_label))
     for m in models:
         slug = slugify(m["model"])
-        for mode in ("light", "dark"):
-            svg = (chart_svg(m, mode, args.subtitle, meta, lo, hi, baseline_label)
-                   if m["results"] else card_svg(m, mode))
-            (out / f"pipeline_bench_{slug}_{mode}.svg").write_text(svg)
-            if has_stages(m):
-                (out / f"pipeline_bench_{slug}-stages_{mode}.svg").write_text(
-                    stage_chart_svg(m, mode, args.subtitle, meta, baseline_label))
-            if has_threads(m):
-                (out / f"pipeline_bench_{slug}-threads_{mode}.svg").write_text(
-                    threads_svg(m, mode, meta, baseline_label))
+        svg = (chart_svg(m, args.subtitle, meta, lo, hi, baseline_label)
+               if m["results"] else card_svg(m))
+        (out / f"pipeline_bench_{slug}.svg").write_text(svg)
+        if has_stages(m):
+            (out / f"pipeline_bench_{slug}-stages.svg").write_text(
+                stage_chart_svg(m, args.subtitle, meta, baseline_label))
+        if has_threads(m):
+            (out / f"pipeline_bench_{slug}-threads.svg").write_text(
+                threads_svg(m, meta, baseline_label))
 
     (out / "pipeline_bench.md").write_text(
         render_markdown(data, args.subtitle, meta, args.img_base, args.run_id, sizes,
                         base_lookup=base_lookup, base_ref=args.base_ref))
 
-    # per-model geomeans only — a cross-model aggregate would average unrelated
-    # execution modes (normalizer-heavy vs split-heavy vs model-bounded)
+    # per-model geomeans only — a cross-model aggregate would average unrelated modes
     per_model = " · ".join(
         f"{m['model']} x{geomean(model_speedups(m)):.3f}"
         for m in benched if model_speedups(m))
