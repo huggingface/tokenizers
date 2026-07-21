@@ -1,6 +1,6 @@
 use super::{super::OrderedVocabIter, Error, Pair, Word};
 use crate::models::bpe::Merge;
-use crate::models::bpe::word_cache::WordCache;
+use crate::models::bpe::word_cache::{MAX_SEQUENCE_SIZE, WordCache};
 use crate::pipeline::{self, ModelScratch, PipelineToken};
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::byte_level::{self};
@@ -850,10 +850,15 @@ impl pipeline::Model for PipelineBPE {
 
         self.merge_word(sequence, merge_queue, skip, word);
 
-        if let Some(cache) = word_cache {
-            cache.insert(sequence.to_string(), word.get_chars());
+        if let Some(cache) = word_cache
+            && sequence.len() < MAX_SEQUENCE_SIZE
+        {
+            let ids = word.get_chars();
+            output.extend(ids.iter().map(|&id| PipelineToken { id }));
+            cache.insert(sequence.to_string(), ids);
+        } else {
+            output.extend(word.get_chars_iter().map(|id| PipelineToken { id }));
         }
-        output.extend(word.get_chars_iter().map(|id| PipelineToken { id }));
 
         Ok(())
     }
@@ -863,7 +868,7 @@ impl pipeline::Model for PipelineBPE {
             merge_queue: QuaternaryHeap::with_capacity(64),
             word: Word::with_capacity(64),
             skip: Vec::new(),
-            word_cache: self.cache_capacity.map(WordCache::init),
+            word_cache: self.cache_capacity.map(WordCache::new),
         }
     }
 }
@@ -881,12 +886,12 @@ impl ModelScratch for BpeScratch {
             merge_queue,
             skip,
             word,
-            word_cache: _cache,
+            word_cache: _,
         } = self;
         merge_queue.clear();
         skip.clear();
         word.clear();
-        // We don't reset _word_cache on purpose, so it stays warm for future callers
+        // The word cache is intentionally kept across clears so it stays warm for future callers
     }
 }
 
