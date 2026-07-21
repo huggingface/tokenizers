@@ -866,9 +866,7 @@ impl pipeline::Model for PipelineBPE {
             merge_queue: QuaternaryHeap::with_capacity(64),
             word: Word::with_capacity(64),
             skip: Vec::new(),
-            word_cache: self
-                .cache_capacity
-                .map(|capacity| WordCache::init(capacity)),
+            word_cache: self.cache_capacity.map(WordCache::init),
         }
     }
 }
