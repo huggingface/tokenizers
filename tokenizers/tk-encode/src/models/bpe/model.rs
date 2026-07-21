@@ -762,7 +762,7 @@ impl PipelineBPE {
             ignore_merges,
             merges,
             vocab,
-            cache_capacity: model.cache.map(|c| c.capacity),
+            cache_capacity: model.cache.map(|c| c.capacity).filter(|&c| c > 0),
         })
     }
 
@@ -852,15 +852,9 @@ impl pipeline::Model for PipelineBPE {
         }
 
         self.merge_word(sequence, merge_queue, skip, word);
-
-        if let Some(cache) = word_cache
-            && sequence.len() < MAX_LENGTH
-        {
-            let ids = word.get_chars();
-            output.extend(ids.iter().map(|&id| PipelineToken { id }));
-            cache.insert(sequence.as_bytes(), ids.as_slice());
-        } else {
-            output.extend(word.get_chars_iter().map(|id| PipelineToken { id }));
+        output.extend(word.get_chars_iter().map(|id| PipelineToken { id }));
+        if let Some(cache) = word_cache {
+            cache.insert(sequence.as_bytes(), word.get_chars_iter());
         }
 
         Ok(())
@@ -871,7 +865,7 @@ impl pipeline::Model for PipelineBPE {
             merge_queue: QuaternaryHeap::with_capacity(64),
             word: Word::with_capacity(64),
             skip: Vec::new(),
-            word_cache: self.cache_capacity.map(|_| WordCache::new()),
+            word_cache: self.cache_capacity.map(WordCache::new),
         }
     }
 }
