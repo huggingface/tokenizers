@@ -231,15 +231,16 @@ fn llama3_intra_seq_japanese() {
     check_llama3("../data/unigram_wagahaiwa_nekodearu.txt");
 }
 
-/// Byte-level BPE on a whitespace-free document (base64-like: letters + digits,
-/// no spaces or newlines) must stay byte-identical to the oracle through the
-/// number-transition cuts — the case that previously degraded to whole-input
-/// serial because `boundary_fsm` found no space or newline to cut at.
+/// Byte-level BPE on a whitespace-free document (base64-like) must stay
+/// byte-identical to the oracle. This input has no whitespace, so its only safe
+/// stride cuts are the byte-level letter↔number transitions — re-enabled now
+/// that rung 0 always peels specials first, making a mid-special cut impossible.
+/// So this exercises the number-transition boundary striding (not a whole-input
+/// fallback) and pins it id-identical to tiktoken.
 #[test]
 fn llama3_intra_seq_whitespace_free() {
     let oracle = Tokenizer::from_file("../data/llama-3-tokenizer.json").unwrap();
     let pipeline = PipelineTokenizer::try_from(&oracle).unwrap();
-    // ~200 KB, no whitespace, dense letter↔digit flips (the cut sites).
     let doc = "aGVsbG8x3Wb29ybGQ7abc123def456ghi789jkl0mno".repeat(5000);
     assert!(!doc.bytes().any(|b| b.is_ascii_whitespace()));
     let expected = oracle.encode(doc.as_str(), false).unwrap();
