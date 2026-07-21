@@ -10,10 +10,13 @@ name: Pipeline Benchmark
 # release dep is behind tk-encode's `bench-baseline` feature, so production
 # builds never pull it.
 #
-# The work is fanned out across a matrix: each `bench` shard benches a slice of
-# the models on its own isolated 8-vCPU runner (so the multi-thread sweep is
-# accurate and the shards run in parallel), emitting a partial JSON; the single
-# `report` job then concatenates the partials and renders/uploads/updates once.
+# A `build` job compiles the bench + binsize example binaries ONCE (each with its
+# exact per-example feature set) and uploads them; the work is then fanned out across
+# a matrix: each `bench` shard downloads that binary and benches a slice of the models
+# on its own isolated 8-vCPU runner (so the multi-thread sweep is accurate and the
+# shards run in parallel), emitting a partial JSON; the single `report` job then
+# concatenates the partials and renders/uploads/updates once. Fixture corpora + model
+# tokenizers are cached across jobs (keyed on the Makefile fixture lists + manifest).
 #
 # Triggers:
 #   • push to feat/train_encode_split → benches and updates PR #2119's description.
@@ -70,17 +73,70 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  RUSTC_WRAPPER: sccache
-  SCCACHE_GHA_ENABLED: "true"
   # Keep in sync with the matrix.shard list below (and passed to `--shard <i> N`).
+  # sccache is scoped to the `build` job — the only job that compiles.
   SHARDS: "4"
 
 jobs:
-  # Fan-out: each shard benches the i-th of SHARDS contiguous manifest slices on
-  # its own 8-vCPU runner (isolated + parallel) and uploads its partial JSON.
+  # Compile the bench + binsize example binaries ONCE here, instead of every shard
+  # (and the report job) recompiling them. Uploaded as an artifact the other jobs
+  # download and run — so a code change is compiled a single time per run, not 5-6×.
+  build:
+    name: build bench binaries
+    # push / dispatch always run; a labeled PR runs only for our label.
+    if: github.event_name != 'pull_request' || github.event.label.name == 'run-pipeline-bench'
+    runs-on:
+      group: aws-general-8-plus
+    defaults:
+      run:
+        working-directory: tokenizers
+    env:
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: "true"
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      # `onig_sys` (a `bench-baseline` reference-regex dep) generates its bindings with bindgen,
+      # which needs libclang. pcre2/fancy-regex don't. The runner image doesn't ship it.
+      - name: Install libclang (onig_sys → bindgen)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libclang-dev
+
+      # The per-example feature sets are load-bearing and MUST stay distinct — collapsing
+      # them would corrupt what's measured:
+      #   • fixture_bench + binsize_baseline WITH `bench-baseline` → link the released crate
+      #     (fixture_bench = the throughput/memory bench; binsize_baseline = "cost of the
+      #     released lib" size number).
+      #   • binsize_pipeline WITHOUT it → the real shipping config whose size we report (none
+      #     of the benchmark-only reference-regex deps the feature drags in).
+      # These are byte-for-byte the same cargo invocations the shards / report ran before.
+      - name: Build bench + binsize binaries
+        run: |
+          cargo build --release -p tk-encode --features tk-encode/bench-baseline \
+            --example fixture_bench --example binsize_baseline
+          cargo build --release -p tk-encode --example binsize_pipeline
+
+      - name: Upload bench binaries
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: bench-binaries
+          path: |
+            tokenizers/target/release/examples/fixture_bench
+            tokenizers/target/release/examples/binsize_baseline
+            tokenizers/target/release/examples/binsize_pipeline
+          retention-days: 3
+
+  # Fan-out: each shard benches the i-th of SHARDS contiguous manifest slices on its
+  # own 8-vCPU runner (isolated + parallel), running the prebuilt binary, and uploads
+  # its partial JSON. No toolchain here — the shards only fetch data + the binary.
   bench:
     name: bench shard ${{ matrix.shard }}
-    # push / dispatch always run; a labeled PR runs only for our label.
+    needs: build
     if: github.event_name != 'pull_request' || github.event.label.name == 'run-pipeline-bench'
     strategy:
       fail-fast: false
@@ -94,29 +150,34 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Setup sccache
-        uses: mozilla-actions/sccache-action@v0.0.9
-
       - name: Install uv
         uses: astral-sh/setup-uv@v6
 
-      # `onig_sys` (a `bench-baseline` reference-regex dep) generates its bindings with bindgen, which
-      # needs libclang. pcre2/fancy-regex don't. The runner image doesn't ship it.
-      - name: Install libclang (onig_sys → bindgen)
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libclang-dev
+      # Cache the fixture corpora + model tokenizers (one dataset@main mirror for all).
+      # `make` guards each download by file existence, so a restored data/ makes the
+      # fetch below a no-op. Keyed on the fetch inputs (Makefile fixture lists + model
+      # manifest); bump either to force a refresh if the upstream dataset changes.
+      - name: Cache fixtures + model tokenizers
+        uses: actions/cache@v4
+        with:
+          path: tokenizers/data
+          key: bench-data-${{ hashFiles('tokenizers/Makefile', 'tokenizers/tk-encode/examples/bench_models.json') }}
 
       - name: Download fixtures and model tokenizers
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: make fixtures bench-models HF="uvx --from huggingface_hub hf"
 
+      - name: Download prebuilt bench binary
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8
+        with:
+          name: bench-binaries
+          path: tokenizers/target/release/examples
+
       - name: Run comparative benchmark (shard ${{ matrix.shard }} of ${{ env.SHARDS }})
         run: |
-          cargo run --release -p tk-encode --features tk-encode/bench-baseline \
-            --example fixture_bench -- --shard ${{ matrix.shard }} ${{ env.SHARDS }} \
+          chmod +x target/release/examples/fixture_bench
+          ./target/release/examples/fixture_bench --shard ${{ matrix.shard }} ${{ env.SHARDS }} \
             > "pipeline_bench_${{ matrix.shard }}.json"
           cat "pipeline_bench_${{ matrix.shard }}.json"
 
@@ -141,23 +202,23 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Setup sccache
-        uses: mozilla-actions/sccache-action@v0.0.9
-
       - name: Install uv
         uses: astral-sh/setup-uv@v6
 
-      # libcairo: cairosvg (chart rendering) dlopens it. libclang: onig_sys's bindgen needs it (the
-      # binsize build below pulls `bench-baseline`, which activates the onig reference-regex dep). The
-      # aws-general-8-plus runner image ships neither.
-      - name: Install libcairo + libclang
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libcairo2 libclang-dev
+      # cairosvg (chart rendering) dlopens libcairo; the runner image doesn't ship it.
+      # No Rust/libclang here — this job doesn't compile; it runs the prebuilt binaries.
+      - name: Install libcairo
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libcairo2
 
-      # Only the model tokenizers are needed here (gpt2.json for binsize); the
-      # fixture corpora aren't — the numbers already live in the shard JSONs.
+      # Same data cache as the shards. Only the model tokenizers are needed here
+      # (gpt2.json for the binsize check); the fixture corpora aren't — the numbers
+      # already live in the shard JSONs, but restoring the shared cache is a no-op fetch.
+      - name: Cache fixtures + model tokenizers
+        uses: actions/cache@v4
+        with:
+          path: tokenizers/data
+          key: bench-data-${{ hashFiles('tokenizers/Makefile', 'tokenizers/tk-encode/examples/bench_models.json') }}
+
       - name: Download model tokenizers
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
@@ -189,16 +250,22 @@ jobs:
           PY
           head -c 300 pipeline_bench.json; echo
 
+      - name: Download prebuilt binaries
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8
+        with:
+          name: bench-binaries
+          path: tokenizers/target/release/examples
+
       # Stripped size of a minimal encode program linking each implementation —
       # the "how much does this library add to my binary" number.
       - name: Measure binary sizes
         run: |
-          # The baseline example needs `bench-baseline` (it links the released crate);
-          # the pipeline example is built in its shipping config (NO bench-baseline) so
-          # its size reflects what a user actually links — not the benchmark-only
-          # reference-regex deps (fancy-regex/onig/pcre2/logos) the feature drags in.
-          cargo build --release -p tk-encode --features tk-encode/bench-baseline --example binsize_baseline
-          cargo build --release -p tk-encode --example binsize_pipeline
+          # Built in the `build` job with DISTINCT feature sets (binsize_baseline WITH
+          # `bench-baseline` → links the released crate; binsize_pipeline WITHOUT → the
+          # real shipping config, none of the benchmark-only reference-regex deps). We
+          # only run/strip/stat here — NEVER rebuild — so the sizes are exactly those
+          # binaries; collapsing the features would corrupt the number.
+          chmod +x target/release/examples/binsize_baseline target/release/examples/binsize_pipeline
           printf '{' > binary_sizes.json
           sep=''
           for key in baseline pipeline; do
