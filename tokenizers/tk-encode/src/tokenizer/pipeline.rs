@@ -279,42 +279,32 @@ pub struct PipelineTokenizer {
     _post_processor: Option<PostProcessorWrapper>,
 }
 
-/// A pool of reusable per-encode scratch buffers, owned by the [`PipelineTokenizer`].
-/// [`encode`](PipelineTokenizer::encode) checks a scratch out and returns it on drop,
-/// so the tokenizer keeps a `&self` (hence `Sync`) API — `par_iter().map(|s|
-/// tok.encode(s))` just works — while each concurrent caller still gets private,
-/// warm scratch. This is the pattern `regex` uses to present `Regex: Sync` without a
-/// caller-visible cache handle.
-///
-/// The pool's lifetime is the tokenizer's: nothing is process-global (unlike a
-/// `thread_local!`), so idle scratch is freed when the tokenizer drops, and every
-/// scratch it holds was built by this instance's model — a foreign-vocab scratch is
-/// unrepresentable.
 struct ScratchPool {
-    // Not boxed: checkout is once per `encode` call (µs–ms), so the cost of moving a
-    // scratch on/off the freelist is noise — the pointer-indirection trick pays off
-    // only at regex-automata's per-search granularity.
-    idle: Mutex<Vec<PipelineModelScratch>>,
+    pool: Mutex<Vec<PipelineModelScratch>>,
 }
 
 impl ScratchPool {
     fn new() -> Self {
         Self {
-            idle: Mutex::new(Vec::new()),
+            pool: Mutex::new(Vec::new()),
         }
     }
 
-    /// Check out a scratch — a warm one off the freelist, or a fresh one built from
-    /// `model`. Population self-limits to the peak number of concurrent encodes, so
-    /// there is no cap or eviction policy to tune. The lock is held for one `pop`
-    /// (nanoseconds) and taken once per `encode`, never per pre-token.
     fn get<'a>(&'a self, model: &PipelineModel) -> ScratchGuard<'a> {
-        let scratch = self
-            .idle
+        let maybe_scratch = self
+            .pool
             .lock()
-            .unwrap_or_else(PoisonError::into_inner) // a poisoned freelist is still a freelist
-            .pop()
-            .unwrap_or_else(|| model.init_scratch());
+            .unwrap_or_else(PoisonError::into_inner)
+            .pop(); // Release the lock
+
+        let scratch = maybe_scratch
+            .map(|mut scratch| {
+                // Lazily clear the cache
+                scratch.clear();
+                scratch
+            })
+            .unwrap_or_else(|| model.init_scratch()); // If there is no scratch in the pool, init a fresh one
+
         ScratchGuard {
             scratch: Some(scratch),
             pool: self,
@@ -322,9 +312,10 @@ impl ScratchPool {
     }
 }
 
-/// RAII checkout: returns its scratch to the pool on drop.
+/// RAAI guard for a scratch that adds it back to the pool whenever the scratch gets dropped
 struct ScratchGuard<'a> {
-    // `Option` only so `Drop` can move the scratch back out.
+    // Option so we can use `.take()` to reclaim ownership of the scratch
+    // to push it back to the pool
     scratch: Option<PipelineModelScratch>,
     pool: &'a ScratchPool,
 }
@@ -332,11 +323,8 @@ struct ScratchGuard<'a> {
 impl Drop for ScratchGuard<'_> {
     fn drop(&mut self) {
         if let Some(scratch) = self.scratch.take() {
-            // No reset needed: the model's scratch buffers self-clear at the start of
-            // each tokenize (`merge_all` clears the queue/skip, `merge_word` the word,
-            // WordPiece its candidate string). Keeping the allocation warm is the point.
             self.pool
-                .idle
+                .pool
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
                 .push(scratch);
@@ -777,7 +765,9 @@ pub fn split_matches(
     }
 }
 
-pub trait ModelScratch {}
+pub trait ModelScratch {
+    fn clear(&mut self);
+}
 
 pub trait Model {
     type Scratch: ModelScratch;
@@ -846,7 +836,16 @@ pub enum PipelineModelScratch {
     Unigram(UnigramScratch),
 }
 
-impl ModelScratch for PipelineModelScratch {}
+impl ModelScratch for PipelineModelScratch {
+    fn clear(&mut self) {
+        match self {
+            PipelineModelScratch::BPE(scratch) => scratch.clear(),
+            PipelineModelScratch::Unigram(scratch) => scratch.clear(),
+            PipelineModelScratch::WordLevel(scratch) => scratch.clear(),
+            PipelineModelScratch::WordPiece(scratch) => scratch.clear(),
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {

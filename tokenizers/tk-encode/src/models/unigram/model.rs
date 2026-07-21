@@ -505,7 +505,12 @@ impl Model for Unigram {
 
 pub struct UnigramScratch {}
 
-impl pipeline::ModelScratch for UnigramScratch {}
+impl pipeline::ModelScratch for UnigramScratch {
+    fn clear(&mut self) {
+        // Using this syntax so adding fields to Unigram would trigger a compile error
+        let Self {} = self;
+    }
+}
 
 impl pipeline::Model for Unigram {
     type Scratch = UnigramScratch;
