@@ -1,3 +1,6 @@
+from collections.abc import Coroutine
+from typing import Any
+
 import numpy as np
 import numpy.typing as npt
 
@@ -69,6 +72,18 @@ class Tokenizer:
         Add tokens to the vocabulary and match them in the input text from now
         on. Plain strings match with default options; pass `AddedToken` to
         control matching. Returns how many were actually new.
+        """
+    def async_encode(self, /, text: Any, *, add_special_tokens: bool = True) -> "Coroutine[Any, Any, npt.NDArray[np.uint32]]":
+        """
+        Awaitable `encode`: same arguments and result, run in a worker thread
+        (`asyncio.to_thread`) so the event loop stays free. The thread releases
+        the interpreter lock while Rust encodes, so encodes genuinely overlap.
+        """
+    def async_encode_batch(self, /, texts: Any, *, add_special_tokens: bool = True) -> "Coroutine[Any, Any, list[npt.NDArray[np.uint32]]]":
+        """
+        Awaitable `encode_batch`: same arguments and result, run in a worker
+        thread (`asyncio.to_thread`) so the event loop stays free while the
+        batch encodes on Rust threads.
         """
     def decode(self, /, ids: Sequence[int], *, skip_special_tokens: bool = True) -> str:
         """

@@ -18,10 +18,10 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        # The cdylib is built with `abi3-py310`, so a single binary covers
-        # 3.10–3.14; test the floor and the newest. Free-threaded 3.14t is
-        # not supported (abi3 extensions cannot load there).
-        python: ["3.10", "3.14"]
+        # The default build is abi3-py310 (one binary covers 3.10–3.14):
+        # test the floor and the newest. Free-threaded 3.14t can't load
+        # abi3 extensions, so it builds without the default `abi3` feature.
+        python: ["3.10", "3.14", "3.14t"]
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
@@ -44,7 +44,8 @@ jobs:
         run: |
           uv venv .venv --python ${{ matrix.python }}
           uv pip install --python .venv/bin/python maturin numpy pytest datasets
-          source .venv/bin/activate && maturin develop --release
+          source .venv/bin/activate && maturin develop --release \
+            ${{ matrix.python == '3.14t' && '--no-default-features' || '' }}
 
       # The examples read real tokenizer.json files + a text corpus. Cached
       # under a key of this workflow's own (not shared with pipeline-bench,

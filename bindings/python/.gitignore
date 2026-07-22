@@ -1,4 +1,5 @@
 .venv/
+.venv-ft/
 .release/
 python_bench.json
 python_bench.md

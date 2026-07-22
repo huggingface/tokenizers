@@ -83,6 +83,12 @@ fn postprocess(contents: &str) -> String {
             "import numpy as np\nimport numpy.typing as npt\n\n{contents}"
         );
     }
+    // The async_* annotations reference Coroutine/Any.
+    if contents.contains("Coroutine[") {
+        contents = format!(
+            "from collections.abc import Coroutine\nfrom typing import Any\n\n{contents}"
+        );
+    }
     contents
 }
 

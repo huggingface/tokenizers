@@ -169,6 +169,23 @@ impl PyTokenizer {
     }
 }
 
+/// Wrap a bound method call in `asyncio.to_thread`, returning the coroutine.
+/// The whole legacy async surface (a tokio runtime + pyo3-async-runtimes) is
+/// unnecessary here because encode already releases the interpreter lock —
+/// a worker thread is all it takes to keep the event loop responsive.
+fn to_thread<'py>(
+    slf: &Bound<'py, PyTokenizer>,
+    method: &str,
+    input: &Bound<'py, PyAny>,
+    add_special_tokens: bool,
+) -> PyResult<Bound<'py, PyAny>> {
+    use pyo3::types::IntoPyDict;
+    let py = slf.py();
+    let kwargs = [("add_special_tokens", add_special_tokens)].into_py_dict(py)?;
+    py.import("asyncio")?
+        .call_method("to_thread", (slf.getattr(method)?, input), Some(&kwargs))
+}
+
 /// Normalize and pre-tokenize one sequence into word strings — the same
 /// splitting `Tokenizer.train` applies before counting words.
 fn pretokenize(
@@ -387,6 +404,30 @@ impl PyTokenizer {
             list.append(ids.into_pyarray(py))?;
         }
         Ok(list)
+    }
+
+    /// Awaitable `encode`: same arguments and result, run in a worker thread
+    /// (`asyncio.to_thread`) so the event loop stays free. The thread releases
+    /// the interpreter lock while Rust encodes, so encodes genuinely overlap.
+    #[pyo3(signature = (text, *, add_special_tokens = true) -> "Coroutine[Any, Any, npt.NDArray[np.uint32]]")]
+    fn async_encode<'py>(
+        slf: &Bound<'py, Self>,
+        text: &Bound<'py, PyAny>,
+        add_special_tokens: bool,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        to_thread(slf, "encode", text, add_special_tokens)
+    }
+
+    /// Awaitable `encode_batch`: same arguments and result, run in a worker
+    /// thread (`asyncio.to_thread`) so the event loop stays free while the
+    /// batch encodes on Rust threads.
+    #[pyo3(signature = (texts, *, add_special_tokens = true) -> "Coroutine[Any, Any, list[npt.NDArray[np.uint32]]]")]
+    fn async_encode_batch<'py>(
+        slf: &Bound<'py, Self>,
+        texts: &Bound<'py, PyAny>,
+        add_special_tokens: bool,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        to_thread(slf, "encode_batch", texts, add_special_tokens)
     }
 
     /// Not implemented yet: decoding is not part of the encode pipeline.

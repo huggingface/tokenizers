@@ -39,9 +39,12 @@ tok.save("tokenizer.json")
   you subclass.
 - `decoders`, `processors`, and the `implementations` helpers
   (`BertWordPieceTokenizer`, …) are gone.
-- The wheel is abi3 (one binary for CPython 3.10–3.14); free-threaded
-  interpreters (3.14t) are not supported yet. Multi-threaded encode does not
-  need them — the GIL is released.
+
+Still here: `async_encode`/`async_encode_batch` (awaitable, run in a worker
+thread — encode releases the GIL, so a tokio runtime is no longer needed),
+parity-aware BPE training, and free-threaded Python — default wheels are
+abi3 (one binary for CPython 3.10–3.14), and 3.14t gets its own non-abi3
+wheels (`maturin build --no-default-features`).
 
 ## Build and use locally
 

@@ -22,8 +22,11 @@ Breaking changes:
   `Metaspace` pre-tokenizer.
 - Custom Python components are not supported; components are plain values.
 - `decoders`, `processors`, and the `implementations` helpers are gone.
-- Wheels are abi3-py310 only; free-threaded interpreters (3.14t) are not
-  supported.
+
+Kept from 0.x: `async_encode`/`async_encode_batch` (now a thin
+`asyncio.to_thread` wrapper — no tokio runtime), parity-aware BPE training
+(`trainers.ParityBpeTrainer`), and free-threaded Python support (default
+wheels are abi3-py310; 3.14t ships non-abi3 `cp314t` wheels).
 
 ## [0.13.2] 
 

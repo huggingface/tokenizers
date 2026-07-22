@@ -10,7 +10,7 @@ name = "_native"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-pyo3 = { version = "=0.29", features = ["abi3-py310", "experimental-inspect"] }
+pyo3 = { version = "=0.29", features = ["experimental-inspect"] }
 numpy = "0.29"
 rayon = "1.10"
 serde = "1.0"
@@ -21,6 +21,10 @@ tk-train = { path = "../../tokenizers/tk-train", features = ["parity-aware-bpe"]
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+# abi3 is on by default: one wheel per platform covers CPython 3.10–3.14.
+# Free-threaded interpreters (3.14t) cannot load limited-API extensions, so
+# their wheels build with `--no-default-features` (interpreter-specific tag).
 [features]
-default = []
+default = ["abi3"]
+abi3 = ["pyo3/abi3-py310"]
 ext-module = ["pyo3/extension-module"]
