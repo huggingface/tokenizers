@@ -233,7 +233,7 @@ impl SpecialToken {
         }
     }
 
-    pub fn ids(&self) -> &[u32] {
+    pub(crate) fn ids(&self) -> &[u32] {
         &self.ids
     }
 }
@@ -259,7 +259,7 @@ impl SpecialToken {
 pub struct Template(Vec<Piece>);
 
 impl Template {
-    pub fn iter_pieces(&self) -> std::slice::Iter<'_, Piece> {
+    pub(crate) fn iter_pieces(&self) -> std::slice::Iter<'_, Piece> {
         self.0.iter()
     }
 }

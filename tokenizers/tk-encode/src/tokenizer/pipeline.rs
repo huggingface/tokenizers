@@ -159,8 +159,6 @@ pub struct PipelinePostProcessor {
 impl TryFrom<&PostProcessorWrapper> for PipelinePostProcessor {
     type Error = crate::Error;
 
-    /// No `add_special_tokens=false` frame: every variant treats it as a no-op, so
-    /// `encode_generic` just skips the frame instead of resolving a second empty one.
     fn try_from(value: &PostProcessorWrapper) -> Result<Self> {
         match value {
             PostProcessorWrapper::Bert(pp) => Ok(Self {
