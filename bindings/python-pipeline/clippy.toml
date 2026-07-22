@@ -1,0 +1,6 @@
+disallowed-types = [
+    { path = "std::sync::RwLock", reason = "use DetachedRwLock: blocking on a lock while attached to the interpreter can deadlock against training (lock-before-GIL ordering); the only raw RwLock lives inside detached_lock.rs" },
+]
+disallowed-methods = [
+    { path = "pyo3::marker::Python::attach", reason = "re-attaching can invert the lock/GIL order; the one vetted use is BufferedPyIterator::refill (holds the lock, then attaches — the sanctioned direction)" },
+]
