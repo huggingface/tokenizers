@@ -71,11 +71,15 @@ jobs:
         run: .venv/bin/python -m pytest -q -m "not network"
 
       # Every example runs here so they can never rot. 06 pulls wikitext-2
-      # from the Hub (cached above).
+      # from the Hub (cached above). The threading example's scaling asserts
+      # are disabled on macOS: those runners' noisy shared hosts make parallel
+      # speedup unmeasurable (observed 0.4-0.5x on starved VMs). A held GIL
+      # would be platform-independent, so the strict ubuntu jobs still catch it.
       - name: Run the examples
         working-directory: ./bindings/python
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          TOKENIZERS_SCALING_ASSERTS: ${{ runner.os == 'macOS' && '0' || '1' }}
         run: |
           .venv/bin/python examples/01_train_and_encode.py
           .venv/bin/python examples/02_pretrained.py
