@@ -1,10 +1,11 @@
 name: Pipeline Benchmark
 
 # Comparative benchmark: the experimental `PipelineTokenizer` vs the latest
-# *released* tokenizers crate (the baseline to beat — the in-tree legacy
-# `Tokenizer` is being phased out, so it is only the id-correctness oracle,
-# never a benched series), for every model in
-# tk-encode/examples/bench_models.json across every corpus in data/fixtures/.
+# *released* tokenizers crate — both the baseline to beat AND the correctness
+# reference (`ids_match`/`text_match`). The in-tree legacy `Tokenizer` is being
+# phased out, so it only *builds* the pipeline and is never benched or trusted as
+# an oracle. Runs for every model in tk-encode/examples/bench_models.json across
+# every corpus in data/fixtures/.
 # Measures single- and multi-thread throughput (1/2/4/8/device-max), per-
 # implementation memory footprint (RSS), and stripped minimal-binary size. The
 # release dep is behind tk-encode's `bench-baseline` feature, so production
@@ -130,6 +131,46 @@ jobs:
             tokenizers/target/release/examples/binsize_baseline
             tokenizers/target/release/examples/binsize_pipeline
           retention-days: 3
+
+  # Pipeline oracle tests: encode + decode parity of the pipeline against the
+  # released crate. They live behind `bench-baseline` (they link the released
+  # crate), so a plain `cargo test` skips them — this is where they run. Same
+  # fixtures + models as the shards; the decode oracle is #[ignore]d until
+  # PipelineTokenizer::decode lands, so only encode parity runs today.
+  oracle:
+    name: pipeline oracle tests
+    if: github.event_name != 'pull_request' || github.event.label.name == 'run-pipeline-bench'
+    runs-on:
+      group: aws-general-8-plus
+    defaults:
+      run:
+        working-directory: tokenizers
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      # onig_sys (a bench-baseline dep) generates bindings via bindgen → needs libclang.
+      - name: Install libclang (onig_sys → bindgen)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libclang-dev
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Cache fixtures + model tokenizers
+        uses: actions/cache@v4
+        with:
+          path: tokenizers/data
+          key: bench-data-${{ hashFiles('tokenizers/Makefile', 'tokenizers/tk-encode/examples/bench_models.json') }}
+
+      - name: Download fixtures and model tokenizers
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: make fixtures bench-models HF="uvx --from huggingface_hub hf"
+
+      - name: Run pipeline oracle tests (parity vs the released crate)
+        run: cargo test -p tk-encode --features bench-baseline --test pipeline_oracle --test pipeline_decode_oracle
 
   # Fan-out: each shard benches the i-th of SHARDS contiguous manifest slices on its
   # own 8-vCPU runner (isolated + parallel), running the prebuilt binary, and uploads
@@ -405,16 +446,22 @@ jobs:
           gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/labels/run-pipeline-bench" \
             -X DELETE || true
 
-      # Pipeline ids must match this tree's Tokenizer. Baseline id mismatches
-      # (ids_match_baseline) are report-only: a branch may fix encode bugs.
-      - name: Fail on id mismatches
+      # Pipeline encode ids (`ids_match`) AND decode text (`text_match`) must match
+      # the released crate. Both are null when the release can't load a model (no
+      # reference), and `text_match` is null while decode is a stub → inert until
+      # the pipeline can decode.
+      - name: Fail on id / decode mismatches
         run: |
           python3 -c "
           import json, sys
           models = json.load(open('pipeline_bench.json'))['models']
-          bad = [f\"{m['model']}/{r['fixture']}\" for m in models
+          ids = [f\"{m['model']}/{r['fixture']}\" for m in models
                  for r in m['results'] if r.get('ids_match') is False]
-          sys.exit(f'ids diverge on: {bad}' if bad else 0)
+          text = [f\"{m['model']}/{r['fixture']}\" for m in models
+                  for r in m['results'] if r.get('text_match') is False]
+          errs = ([f'ids diverge on: {ids}'] if ids else []) + \
+                 ([f'decode diverges on: {text}'] if text else [])
+          sys.exit(' · '.join(errs) if errs else 0)
           "
 
       # Establish/refresh the base-branch baseline: on a push to
