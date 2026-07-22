@@ -91,4 +91,6 @@ chunking as the Rust benchmark (`tk-encode/examples/fixture_bench.rs`): every
 fixture under `data/fixtures/{lang,modalities}`, warmed up, median of N runs,
 single-thread per fixture plus one multi-thread sweep, ids verified equal
 before timing. CI runs it in the `python-bindings-bench` job of the Pipeline
-Benchmark workflow and posts the table to the run's step summary.
+Benchmark workflow, posts the table to the run's step summary, and the report
+job renders it as a chart (`.github/scripts/render_python_bench.py`) appended
+to the benchmark section in the PR description, next to the Rust charts.

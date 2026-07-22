@@ -241,6 +241,9 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.label.name == 'run-pipeline-bench'
     runs-on:
       group: aws-general-8-plus
+    env:
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: "true"
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
@@ -252,6 +255,12 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@v6
+
+      - name: Cache fixtures + model tokenizers
+        uses: actions/cache@v4
+        with:
+          path: tokenizers/data
+          key: bench-data-${{ hashFiles('tokenizers/Makefile', 'tokenizers/tk-encode/examples/bench_models.json') }}
 
       - name: Download fixtures and model tokenizers
         working-directory: tokenizers
@@ -285,11 +294,15 @@ jobs:
           retention-days: 30
 
   # Fan-in: concatenate the shard partials (in shard order = manifest order),
-  # then render + upload charts + update the PR, once.
+  # then render + upload charts + update the PR, once. Also folds in the Python
+  # bindings bench (chart + numbers) when its job produced results — but never
+  # blocks on it: a failed/missing Python bench only drops that section.
   report:
     name: PipelineTokenizer vs latest release
-    needs: bench
-    if: github.event_name != 'pull_request' || github.event.label.name == 'run-pipeline-bench'
+    needs: [bench, python-bindings-bench]
+    if: >-
+      !cancelled() && needs.bench.result == 'success' &&
+      (github.event_name != 'pull_request' || github.event.label.name == 'run-pipeline-bench')
     runs-on:
       group: aws-general-8-plus
     defaults:
@@ -427,6 +440,28 @@ jobs:
           echo "No base baseline available (no tag, no base-branch artifact) — comparison skipped."
           echo "has_base=false" >> "$GITHUB_OUTPUT"
 
+      # The Python bindings section: render its chart before "Render report" so
+      # the shared rasterize glob below picks it up. Missing artifact (failed or
+      # skipped python-bindings-bench) → section skipped, report unaffected.
+      - name: Download Python bindings bench results
+        continue-on-error: true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8
+        with:
+          name: python-bindings-bench
+          path: tokenizers/pybench
+
+      - name: Render Python bindings section
+        run: |
+          if [ -f pybench/python_bench.json ]; then
+            base_url="https://huggingface.co/datasets/hf-internal-testing/tokenizers-bench/resolve/main/charts"
+            python3 ${{ github.workspace }}/.github/scripts/render_python_bench.py \
+              pybench/python_bench.json \
+              --img-base "$base_url" \
+              --run-id "${{ github.run_id }}"
+          else
+            echo "No Python bindings bench results — section skipped."
+          fi
+
       - name: Render report
         run: |
           base_url="https://huggingface.co/datasets/hf-internal-testing/tokenizers-bench/resolve/main/charts"
@@ -464,6 +499,14 @@ jobs:
           uvx --from huggingface_hub hf upload hf-internal-testing/tokenizers-bench \
             charts_upload charts --repo-type dataset \
             --commit-message "charts: pipeline-bench run ${{ github.run_id }}"
+
+      # Fold the Python bindings section into the report so the step summary and
+      # the PR-description upsert below carry it inside the same marker block.
+      - name: Append Python bindings section to the report
+        run: |
+          if [ -f python_bench_section.md ]; then
+            cat python_bench_section.md >> pipeline_bench.md
+          fi
 
       - name: Write step summary
         run: cat pipeline_bench.md >> "$GITHUB_STEP_SUMMARY"
