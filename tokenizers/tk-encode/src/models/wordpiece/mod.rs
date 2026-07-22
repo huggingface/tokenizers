@@ -2,8 +2,10 @@
 //! model.
 
 use crate::models::bpe::BPE;
+use crate::models::bpe::word_cache::WordCache;
 use crate::pipeline::{self, PipelineToken};
 use crate::tokenizer::{Model, Result, Token};
+use crate::utils::cache::DEFAULT_CACHE_CAPACITY;
 use ahash::AHashMap;
 use std::collections::HashMap;
 use std::convert::TryFrom;
@@ -317,12 +319,17 @@ impl Model for WordPiece {
 #[derive(Default)]
 pub struct WordPieceScratch {
     candidate_str: String,
+    word_cache: Option<WordCache>,
 }
 
 impl pipeline::ModelScratch for WordPieceScratch {
     fn clear(&mut self) {
-        let Self { candidate_str } = self;
+        let Self {
+            candidate_str,
+            word_cache: _,
+        } = self;
         candidate_str.clear();
+        // The word cache is intentionally kept across clears so it stays warm for future callers
     }
 }
 
@@ -359,23 +366,14 @@ impl TryFrom<WordPiece> for PipelineWordPiece {
     }
 }
 
-impl pipeline::Model for PipelineWordPiece {
-    type Scratch = WordPieceScratch;
-
-    fn init_scratch(&self) -> Self::Scratch {
-        Self::Scratch {
-            candidate_str: String::with_capacity(self.max_input_chars_per_word),
-        }
-    }
-
-    fn tokenize_pipeline(
+impl PipelineWordPiece {
+    fn tokenize_word(
         &self,
         sequence: &str,
-        scratch: &mut Self::Scratch,
-        output: &mut Vec<pipeline::PipelineToken>,
+        candidate: &mut String,
+        output: &mut Vec<PipelineToken>,
     ) -> Result<()> {
         let checkpoint = output.len();
-        let candidate = &mut scratch.candidate_str;
 
         let char_len = sequence.chars().count();
         if char_len > self.max_input_chars_per_word {
@@ -417,6 +415,46 @@ impl pipeline::Model for PipelineWordPiece {
     }
 }
 
+impl pipeline::Model for PipelineWordPiece {
+    type Scratch = WordPieceScratch;
+
+    fn init_scratch(&self) -> Self::Scratch {
+        Self::Scratch {
+            candidate_str: String::with_capacity(self.max_input_chars_per_word),
+            word_cache: Some(WordCache::new(DEFAULT_CACHE_CAPACITY)),
+        }
+    }
+
+    fn tokenize_pipeline(
+        &self,
+        sequence: &str,
+        scratch: &mut Self::Scratch,
+        output: &mut Vec<pipeline::PipelineToken>,
+    ) -> Result<()> {
+        let WordPieceScratch {
+            candidate_str,
+            word_cache,
+        } = scratch;
+
+        if let Some(cache) = word_cache
+            && let Some(hit) = cache.get(sequence.as_bytes())
+        {
+            output.extend(hit.iter().map(|&id| PipelineToken { id }));
+            return Ok(());
+        }
+
+        let checkpoint = output.len();
+        self.tokenize_word(sequence, candidate_str, output)?;
+        if let Some(cache) = word_cache {
+            cache.insert(
+                sequence.as_bytes(),
+                output[checkpoint..].iter().map(|token| token.id),
+            );
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -424,5 +462,89 @@ mod tests {
     #[test]
     fn test_error_display() {
         assert!(format!("{}", Error::MissingUnkToken).contains("Missing [UNK] token"));
+    }
+
+    mod pipeline_wordpiece {
+        use super::*;
+        use crate::pipeline::Model as PipelineModel;
+
+        fn wordpiece() -> WordPiece {
+            let vocab: Vocab = [
+                ("[UNK]", 0u32),
+                ("hell", 1),
+                ("##o", 2),
+                ("hello", 3),
+                ("world", 4),
+            ]
+            .iter()
+            .map(|&(s, i)| (s.into(), i))
+            .collect();
+            WordPieceBuilder::default()
+                .vocab(vocab)
+                .max_input_chars_per_word(8)
+                .build()
+                .unwrap()
+        }
+
+        fn pipeline_ids(
+            model: &PipelineWordPiece,
+            scratch: &mut WordPieceScratch,
+            sequence: &str,
+        ) -> Vec<u32> {
+            let mut out = Vec::new();
+            model
+                .tokenize_pipeline(sequence, scratch, &mut out)
+                .unwrap();
+            out.iter().map(|t| t.id).collect()
+        }
+
+        fn reference_ids(model: &WordPiece, sequence: &str) -> Vec<u32> {
+            model
+                .tokenize(sequence)
+                .unwrap()
+                .iter()
+                .map(|t| t.id)
+                .collect()
+        }
+
+        #[test]
+        fn tokenize_populates_word_cache() {
+            let model = PipelineWordPiece::try_from(wordpiece()).unwrap();
+            let mut scratch = model.init_scratch();
+            let mut out = Vec::new();
+            model
+                .tokenize_pipeline("hello", &mut scratch, &mut out)
+                .unwrap();
+            let cached = scratch.word_cache.as_ref().unwrap().get(b"hello");
+            assert_eq!(cached, Some(&[3u32][..]));
+        }
+
+        // Repeats through ONE scratch take the cache-hit path; every outcome
+        // (match, unk fallback, oversized, empty) must keep matching the
+        // reference model on both the miss and the hit encounter.
+        #[test]
+        fn reused_scratch_matches_reference_on_repeats() {
+            let reference = wordpiece();
+            let model = PipelineWordPiece::try_from(reference.clone()).unwrap();
+            let mut scratch = model.init_scratch();
+            for input in [
+                "hello",
+                "hullo",
+                "hello",
+                "hullo",
+                "hellohello", // 10 chars > max_input_chars_per_word
+                "hellohello",
+                "",
+                "",
+                "helloo",
+                "helloo",
+            ] {
+                assert_eq!(
+                    pipeline_ids(&model, &mut scratch, input),
+                    reference_ids(&reference, input),
+                    "{input:?}"
+                );
+            }
+        }
     }
 }
