@@ -14,13 +14,16 @@ arrays without a copy.
 
 Breaking changes — encoding:
 
-- `encode` returns a numpy array of ids, not an `Encoding` object. Everything
-  the `Encoding` carried is gone from the encode path: tokens, offsets, type
-  ids, attention masks, special-tokens masks, word ids, overflowing/stride,
-  and the char/word/token mapping helpers. Truncation and padding
+- Encoding returns a numpy array of ids, not an `Encoding` object, and the
+  methods are accordingly named `encode_ids`/`encode_batch_ids` — the
+  `encode`/`encode_batch` names are reserved for a planned
+  `Encoding`-returning API. Everything the `Encoding` carried is gone from
+  the encode path: tokens, offsets, type ids, attention masks,
+  special-tokens masks, word ids, overflowing/stride, and the
+  char/word/token mapping helpers. Truncation and padding
   (`enable_truncation`/`enable_padding` and their getters) are gone too.
-- `encode` takes a single text: the `pair=` argument and the
-  `is_pretokenized=` mode no longer exist (same for `encode_batch`).
+- `encode_ids` takes a single text: the `pair=` argument and the
+  `is_pretokenized=` mode no longer exist (same for `encode_batch_ids`).
 - Not implemented yet (loud errors, never wrong ids): `decode`,
   post-processor templates (pass `add_special_tokens=False`), and the
   `Metaspace` pre-tokenizer. `decode_batch`, `DecodeStream`,
@@ -64,8 +67,8 @@ Breaking changes — `Tokenizer` API and packaging:
   moved from a required dependency to the `hub` extra:
   `pip install 'tokenizers[hub]'`. `numpy>=1.24` is a new required dependency.
 
-Kept: `async_encode`/`async_encode_batch` (now a thin `asyncio.to_thread`
-wrapper — no tokio runtime) and free-threaded Python support (default wheels
+Kept: awaitable encodes, as `async_encode_ids`/`async_encode_batch_ids`
+(now a thin `asyncio.to_thread` wrapper — no tokio runtime) and free-threaded Python support (default wheels
 are abi3-py310; free-threaded interpreters get their own non-abi3 wheels).
 New in 1.0: parity-aware BPE training (`trainers.ParityBpeTrainer`), which
 never shipped in a 0.x release.

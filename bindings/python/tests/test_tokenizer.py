@@ -9,23 +9,23 @@ from .conftest import SENTENCES, train_word_tokenizer
 
 
 def test_encode_returns_uint32_array(word_tokenizer):
-    ids = word_tokenizer.encode(SENTENCES[0], add_special_tokens=False)
+    ids = word_tokenizer.encode_ids(SENTENCES[0], add_special_tokens=False)
     assert isinstance(ids, np.ndarray)
     assert ids.dtype == np.uint32
     words = [word_tokenizer.id_to_token(int(i)) for i in ids]
     assert words == SENTENCES[0].split()
 
 
-def test_encode_batch_matches_encode(word_tokenizer):
-    batch = word_tokenizer.encode_batch(SENTENCES, add_special_tokens=False)
+def test_encode_batch_ids_matches_encode_ids(word_tokenizer):
+    batch = word_tokenizer.encode_batch_ids(SENTENCES, add_special_tokens=False)
     assert len(batch) == len(SENTENCES)
     for line, ids in zip(SENTENCES, batch):
-        single = word_tokenizer.encode(line, add_special_tokens=False)
+        single = word_tokenizer.encode_ids(line, add_special_tokens=False)
         assert np.array_equal(ids, single)
 
 
 def test_unknown_words_map_to_unk(word_tokenizer):
-    ids = word_tokenizer.encode("supercalifragilistic", add_special_tokens=False)
+    ids = word_tokenizer.encode_ids("supercalifragilistic", add_special_tokens=False)
     assert [word_tokenizer.id_to_token(int(i)) for i in ids] == ["[UNK]"]
 
 
@@ -42,14 +42,14 @@ def test_add_tokens_and_encode_them():
     tok = train_word_tokenizer()
     assert tok.add_tokens(["procrastination"]) == 1
     assert tok.add_tokens(["procrastination"]) == 0
-    ids = tok.encode("the procrastination", add_special_tokens=False)
+    ids = tok.encode_ids("the procrastination", add_special_tokens=False)
     assert [tok.id_to_token(int(i)) for i in ids] == ["the", "procrastination"]
 
 
 def test_add_special_tokens_marks_special():
     tok = train_word_tokenizer()
     assert tok.add_special_tokens(["<eos>"]) == 1
-    ids = tok.encode("the <eos>", add_special_tokens=False)
+    ids = tok.encode_ids("the <eos>", add_special_tokens=False)
     assert [tok.id_to_token(int(i)) for i in ids] == ["the", "<eos>"]
 
 
@@ -65,24 +65,24 @@ def test_save_and_from_file_round_trip(word_tokenizer, tmp_path):
     reloaded = Tokenizer.from_file(path)
     for line in SENTENCES[:4]:
         assert np.array_equal(
-            reloaded.encode(line, add_special_tokens=False),
-            word_tokenizer.encode(line, add_special_tokens=False),
+            reloaded.encode_ids(line, add_special_tokens=False),
+            word_tokenizer.encode_ids(line, add_special_tokens=False),
         )
 
 
 def test_to_str_and_from_buffer_round_trip(word_tokenizer):
     reloaded = Tokenizer.from_buffer(word_tokenizer.to_str().encode())
     assert np.array_equal(
-        reloaded.encode(SENTENCES[0], add_special_tokens=False),
-        word_tokenizer.encode(SENTENCES[0], add_special_tokens=False),
+        reloaded.encode_ids(SENTENCES[0], add_special_tokens=False),
+        word_tokenizer.encode_ids(SENTENCES[0], add_special_tokens=False),
     )
 
 
 def test_pickle_round_trip(word_tokenizer):
     reloaded = pickle.loads(pickle.dumps(word_tokenizer))
     assert np.array_equal(
-        reloaded.encode(SENTENCES[0], add_special_tokens=False),
-        word_tokenizer.encode(SENTENCES[0], add_special_tokens=False),
+        reloaded.encode_ids(SENTENCES[0], add_special_tokens=False),
+        word_tokenizer.encode_ids(SENTENCES[0], add_special_tokens=False),
     )
 
 

@@ -73,35 +73,37 @@ class Tokenizer:
         on. Plain strings match with default options; pass `AddedToken` to
         control matching. Returns how many were actually new.
         """
-    def async_encode(self, /, text: Any, *, add_special_tokens: bool = True) -> "Coroutine[Any, Any, npt.NDArray[np.uint32]]":
+    def async_encode_batch_ids(self, /, texts: Any, *, add_special_tokens: bool = True) -> "Coroutine[Any, Any, list[npt.NDArray[np.uint32]]]":
         """
-        Awaitable `encode`: same arguments and result, run in a worker thread
-        (`asyncio.to_thread`) so the event loop stays free. The thread releases
-        the interpreter lock while Rust encodes, so encodes genuinely overlap.
+        Awaitable `encode_batch_ids`: same arguments and result, run in a
+        worker thread (`asyncio.to_thread`) so the event loop stays free while
+        the batch encodes on Rust threads.
         """
-    def async_encode_batch(self, /, texts: Any, *, add_special_tokens: bool = True) -> "Coroutine[Any, Any, list[npt.NDArray[np.uint32]]]":
+    def async_encode_ids(self, /, text: Any, *, add_special_tokens: bool = True) -> "Coroutine[Any, Any, npt.NDArray[np.uint32]]":
         """
-        Awaitable `encode_batch`: same arguments and result, run in a worker
-        thread (`asyncio.to_thread`) so the event loop stays free while the
-        batch encodes on Rust threads.
+        Awaitable `encode_ids`: same arguments and result, run in a worker
+        thread (`asyncio.to_thread`) so the event loop stays free. The thread
+        releases the interpreter lock while Rust encodes, so encodes genuinely
+        overlap.
         """
     def decode(self, /, ids: Sequence[int], *, skip_special_tokens: bool = True) -> str:
         """
         Not implemented yet: decoding is not part of the encode pipeline.
         """
-    def encode(self, /, text: str, *, add_special_tokens: bool = True) -> "npt.NDArray[np.uint32]":
-        """
-        Encode `text` into token ids.
-        
-        Runs entirely outside the interpreter lock and returns a `numpy.uint32`
-        array backed by the Rust output buffer (no copy).
-        """
-    def encode_batch(self, /, texts: Sequence[str], *, add_special_tokens: bool = True) -> "list[npt.NDArray[np.uint32]]":
+    def encode_batch_ids(self, /, texts: Sequence[str], *, add_special_tokens: bool = True) -> "list[npt.NDArray[np.uint32]]":
         """
         Encode a batch of texts, in parallel across Rust threads (respects
         `TOKENIZERS_PARALLELISM`), without holding the interpreter lock.
         Input strings are borrowed, not copied; each output is a `numpy.uint32`
         array backed by its Rust buffer.
+        """
+    def encode_ids(self, /, text: str, *, add_special_tokens: bool = True) -> "npt.NDArray[np.uint32]":
+        """
+        Encode `text` into token ids.
+        
+        Runs entirely outside the interpreter lock and returns a `numpy.uint32`
+        array backed by the Rust output buffer (no copy). The `encode` name is
+        reserved for the upcoming `Encoding`-returning API.
         """
     @staticmethod
     def from_buffer(buffer: Sequence[int]) -> "Tokenizer":

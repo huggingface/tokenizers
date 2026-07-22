@@ -18,7 +18,7 @@ def test_trains_with_dev_iterators():
     trainer.train_from_iterator(tok, [iter(EN), iter(DE)], dev_iterators=[iter(EN[:6]), iter(DE[:6])])
     assert tok.token_to_id("<unk>") is not None
     for line in (EN[0], DE[0]):
-        ids = tok.encode(line, add_special_tokens=False)
+        ids = tok.encode_ids(line, add_special_tokens=False)
         assert len(ids) > 0
         assert all(tok.id_to_token(int(i)) is not None for i in ids)
 

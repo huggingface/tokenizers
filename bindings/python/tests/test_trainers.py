@@ -34,7 +34,7 @@ def test_each_trainer_trains(model, trainer):
     tok = fresh(model)
     tok.train_from_iterator(SENTENCES, trainer=trainer)
     assert tok.get_vocab_size() > 0
-    ids = tok.encode(SENTENCES[0], add_special_tokens=False)
+    ids = tok.encode_ids(SENTENCES[0], add_special_tokens=False)
     assert len(ids) > 0
 
 

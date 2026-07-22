@@ -67,11 +67,11 @@ def test_byte_level_alphabet():
 def test_lowercase_normalizer_changes_ids():
     tok = train_word_tokenizer()
     assert tok.token_to_id("THE") is None
-    before = tok.encode("THE", add_special_tokens=False)
+    before = tok.encode_ids("THE", add_special_tokens=False)
     assert [tok.id_to_token(int(i)) for i in before] == ["[UNK]"]
 
     tok.normalizer = normalizers.Lowercase()
-    after = tok.encode("THE", add_special_tokens=False)
+    after = tok.encode_ids("THE", add_special_tokens=False)
     assert [tok.id_to_token(int(i)) for i in after] == ["the"]
 
 
@@ -79,15 +79,15 @@ def test_char_delimiter_split_effect():
     tok = Tokenizer(models.WordLevel(unk_token="[UNK]"))
     tok.pre_tokenizer = pre_tokenizers.CharDelimiterSplit(",")
     tok.train_from_iterator(["a,b", "b,c"], trainer=trainers.WordLevelTrainer(special_tokens=["[UNK]"]))
-    ids = tok.encode("a,c", add_special_tokens=False)
+    ids = tok.encode_ids("a,c", add_special_tokens=False)
     assert [tok.id_to_token(int(i)) for i in ids] == ["a", "c"]
 
 
 def test_component_assignment_invalidates_pipeline():
     tok = train_word_tokenizer()
-    the_id = tok.encode("the", add_special_tokens=False)
+    the_id = tok.encode_ids("the", add_special_tokens=False)
     tok.pre_tokenizer = pre_tokenizers.FixedLength(length=1)
-    per_char = tok.encode("the", add_special_tokens=False)
+    per_char = tok.encode_ids("the", add_special_tokens=False)
     assert len(per_char) == 3
     assert not np.array_equal(the_id, per_char)
 

@@ -23,5 +23,5 @@ def texts(batch_size=1000):
 tokenizer.train_from_iterator(texts())
 
 print(f"trained: {tokenizer.get_vocab_size()} tokens")
-ids = tokenizer.encode("the quick brown fox", add_special_tokens=False)
+ids = tokenizer.encode_ids("the quick brown fox", add_special_tokens=False)
 print([tokenizer.id_to_token(i) for i in ids])

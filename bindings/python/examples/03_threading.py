@@ -1,5 +1,5 @@
 """Demonstrates that encode runs without the interpreter lock (the GIL):
-Python threads calling encode() scale, and encode_batch spreads one batch
+Python threads calling encode_ids() scale, and encode_batch_ids spreads one batch
 across Rust's thread pool (rayon).
 
 Scaling is asserted unless TOKENIZERS_SCALING_ASSERTS=0 (CI sets it on shared
@@ -40,11 +40,11 @@ with open(DATA / "big.txt", encoding="utf-8") as f:
     text = f.read(2_000_000)
 lines = [line for line in text.splitlines() if line.strip()] * 4
 
-tok.encode(text, add_special_tokens=False)  # warmup + compile
+tok.encode_ids(text, add_special_tokens=False)  # warmup + compile
 
 
 def encode_once():
-    return tok.encode(text, add_special_tokens=False)
+    return tok.encode_ids(text, add_special_tokens=False)
 
 
 # 1. Python threads: with the GIL held during encode this could not scale
@@ -61,19 +61,19 @@ print(
 )
 check_scaling(speedup > 1.5, f"threads did not scale ({speedup:.2f}x): is the GIL held?")
 
-# 2. encode_batch: rayon parallelism inside one call, toggled by env var
+# 2. encode_batch_ids: rayon parallelism inside one call, toggled by env var
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
-serial_ids = tok.encode_batch(lines, add_special_tokens=False)
-serial = best_of(3, lambda: tok.encode_batch(lines, add_special_tokens=False))
+serial_ids = tok.encode_batch_ids(lines, add_special_tokens=False)
+serial = best_of(3, lambda: tok.encode_batch_ids(lines, add_special_tokens=False))
 
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
-parallel_ids = tok.encode_batch(lines, add_special_tokens=False)  # warmup: spins up the pool
-parallel = best_of(3, lambda: tok.encode_batch(lines, add_special_tokens=False))
+parallel_ids = tok.encode_batch_ids(lines, add_special_tokens=False)  # warmup: spins up the pool
+parallel = best_of(3, lambda: tok.encode_batch_ids(lines, add_special_tokens=False))
 
 assert all(a.tolist() == b.tolist() for a, b in zip(serial_ids, parallel_ids, strict=True))
 mbps = sum(len(line) for line in lines) / parallel / 1e6
 print(
-    f"encode_batch {len(lines)} lines: serial {serial:.2f}s, "
+    f"encode_batch_ids {len(lines)} lines: serial {serial:.2f}s, "
     f"rayon {parallel:.2f}s ({serial / parallel:.1f}x, {mbps:.0f} MB/s)"
 )
 check_scaling(serial / parallel > 1.5, f"rayon batch did not scale ({serial / parallel:.2f}x)")

@@ -38,25 +38,25 @@ assert tok.get_vocab_size() == 1000, tok.get_vocab_size()
 assert tok.token_to_id("<s>") == 0
 
 # 3. Encode -> numpy uint32 array; special tokens are matched in the text
-ids = tok.encode("The quick brown fox <s> jumps over the lazy dog")
+ids = tok.encode_ids("The quick brown fox <s> jumps over the lazy dog")
 print(f"ids: {ids.dtype} {ids}")
 assert isinstance(ids, np.ndarray) and ids.dtype == np.uint32
 assert tok.token_to_id("<s>") in ids
 assert all(tok.id_to_token(i) is not None for i in ids)
 
 # 4. Mutate a component in place: dropping the lowercasing normalizer changes ids
-tok_ids_lower = tok.encode("HELLO WORLD")
+tok_ids_lower = tok.encode_ids("HELLO WORLD")
 tok.normalizer = normalizers.NFKC()
-tok_ids_upper = tok.encode("HELLO WORLD")
+tok_ids_upper = tok.encode_ids("HELLO WORLD")
 assert not np.array_equal(tok_ids_lower, tok_ids_upper), "normalizer change must affect ids"
 tok.normalizer = normalizers.Sequence([normalizers.NFKC(), normalizers.Lowercase()])
-assert np.array_equal(tok.encode("HELLO WORLD"), tok_ids_lower)
+assert np.array_equal(tok.encode_ids("HELLO WORLD"), tok_ids_lower)
 print(f"component swap: {tok.normalizer!r}")
 
 # 5. Post-hoc vocabulary extension
 added = tok.add_special_tokens(["<mask>"])
 assert added == 1 and tok.token_to_id("<mask>") is not None
-assert tok.token_to_id("<mask>") in tok.encode("a <mask> b")
+assert tok.token_to_id("<mask>") in tok.encode_ids("a <mask> b")
 
 # 6. Serialize / reload round-trip
 with tempfile.TemporaryDirectory() as tmp:
@@ -64,12 +64,12 @@ with tempfile.TemporaryDirectory() as tmp:
     tok.save(path)
     reloaded = Tokenizer.from_file(path)
 text = "Round-trip: 42 tokens?"
-assert np.array_equal(tok.encode(text), reloaded.encode(text))
+assert np.array_equal(tok.encode_ids(text), reloaded.encode_ids(text))
 print("save/load round-trip: identical ids")
 
 # 7. Pickle round-trip (multiprocessing readiness)
 unpickled = pickle.loads(pickle.dumps(tok))
-assert np.array_equal(tok.encode(text), unpickled.encode(text))
+assert np.array_equal(tok.encode_ids(text), unpickled.encode_ids(text))
 print("pickle round-trip: identical ids")
 
 # 8. decode is not implemented yet — it raises instead of guessing

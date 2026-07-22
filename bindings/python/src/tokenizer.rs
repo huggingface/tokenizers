@@ -346,9 +346,10 @@ impl PyTokenizer {
     /// Encode `text` into token ids.
     ///
     /// Runs entirely outside the interpreter lock and returns a `numpy.uint32`
-    /// array backed by the Rust output buffer (no copy).
+    /// array backed by the Rust output buffer (no copy). The `encode` name is
+    /// reserved for the upcoming `Encoding`-returning API.
     #[pyo3(signature = (text, *, add_special_tokens = true) -> "npt.NDArray[np.uint32]")]
-    fn encode<'py>(
+    fn encode_ids<'py>(
         &self,
         py: Python<'py>,
         text: &str,
@@ -369,7 +370,7 @@ impl PyTokenizer {
     /// Input strings are borrowed, not copied; each output is a `numpy.uint32`
     /// array backed by its Rust buffer.
     #[pyo3(signature = (texts, *, add_special_tokens = true) -> "list[npt.NDArray[np.uint32]]")]
-    fn encode_batch<'py>(
+    fn encode_batch_ids<'py>(
         &self,
         py: Python<'py>,
         texts: Vec<PyBackedStr>,
@@ -405,28 +406,29 @@ impl PyTokenizer {
         Ok(list)
     }
 
-    /// Awaitable `encode`: same arguments and result, run in a worker thread
-    /// (`asyncio.to_thread`) so the event loop stays free. The thread releases
-    /// the interpreter lock while Rust encodes, so encodes genuinely overlap.
+    /// Awaitable `encode_ids`: same arguments and result, run in a worker
+    /// thread (`asyncio.to_thread`) so the event loop stays free. The thread
+    /// releases the interpreter lock while Rust encodes, so encodes genuinely
+    /// overlap.
     #[pyo3(signature = (text, *, add_special_tokens = true) -> "Coroutine[Any, Any, npt.NDArray[np.uint32]]")]
-    fn async_encode<'py>(
+    fn async_encode_ids<'py>(
         slf: &Bound<'py, Self>,
         text: &Bound<'py, PyAny>,
         add_special_tokens: bool,
     ) -> PyResult<Bound<'py, PyAny>> {
-        to_thread(slf, "encode", text, add_special_tokens)
+        to_thread(slf, "encode_ids", text, add_special_tokens)
     }
 
-    /// Awaitable `encode_batch`: same arguments and result, run in a worker
-    /// thread (`asyncio.to_thread`) so the event loop stays free while the
-    /// batch encodes on Rust threads.
+    /// Awaitable `encode_batch_ids`: same arguments and result, run in a
+    /// worker thread (`asyncio.to_thread`) so the event loop stays free while
+    /// the batch encodes on Rust threads.
     #[pyo3(signature = (texts, *, add_special_tokens = true) -> "Coroutine[Any, Any, list[npt.NDArray[np.uint32]]]")]
-    fn async_encode_batch<'py>(
+    fn async_encode_batch_ids<'py>(
         slf: &Bound<'py, Self>,
         texts: &Bound<'py, PyAny>,
         add_special_tokens: bool,
     ) -> PyResult<Bound<'py, PyAny>> {
-        to_thread(slf, "encode_batch", texts, add_special_tokens)
+        to_thread(slf, "encode_batch_ids", texts, add_special_tokens)
     }
 
     /// Not implemented yet: decoding is not part of the encode pipeline.

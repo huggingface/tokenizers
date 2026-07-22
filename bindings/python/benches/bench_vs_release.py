@@ -135,8 +135,8 @@ def bench_local_side(tok, fixtures: list[dict], release_row: dict, iters: int) -
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
     for fixture, rel in zip(fixtures, release_row["fixtures"], strict=True):
         chunks = fixture["chunks"]
-        encoded = tok.encode_batch(chunks, add_special_tokens=False)
-        t = timed(lambda: tok.encode_batch(chunks, add_special_tokens=False), iters)
+        encoded = tok.encode_batch_ids(chunks, add_special_tokens=False)
+        t = timed(lambda: tok.encode_batch_ids(chunks, add_special_tokens=False), iters)
         mbps = fixture["bytes"] / t / 1e6
         row["fixtures"].append(
             {
@@ -154,7 +154,7 @@ def bench_local_side(tok, fixtures: list[dict], release_row: dict, iters: int) -
     all_chunks = [c for f in fixtures for c in f["chunks"]]
     nbytes = sum(f["bytes"] for f in fixtures)
     os.environ["TOKENIZERS_PARALLELISM"] = "true"
-    t = timed(lambda: tok.encode_batch(all_chunks, add_special_tokens=False), iters)
+    t = timed(lambda: tok.encode_batch_ids(all_chunks, add_special_tokens=False), iters)
     mbps = nbytes / t / 1e6
     row["multi_thread"] = {
         "bytes": nbytes,
@@ -241,7 +241,7 @@ def main() -> int:
     for m in models:
         try:
             tok = tokenizers.Tokenizer.from_file(m["path"])
-            tok.encode("warmup", add_special_tokens=False)
+            tok.encode_ids("warmup", add_special_tokens=False)
             compiled[m["name"]] = tok
         except (tokenizers.TokenizersError, NotImplementedError) as e:
             skipped[m["name"]] = str(e)

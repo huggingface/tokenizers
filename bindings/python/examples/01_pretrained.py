@@ -24,7 +24,7 @@ for name, file in [
     ("bert-base-uncased", "bert-base-uncased.json"),
 ]:
     tok = Tokenizer.from_file(DATA / file)
-    batch = tok.encode_batch(LINES, add_special_tokens=False)
+    batch = tok.encode_batch_ids(LINES, add_special_tokens=False)
     assert all(ids.dtype == np.uint32 for ids in batch)
     total = sum(len(ids) for ids in batch)
     first_token = tok.id_to_token(batch[0][0])
@@ -35,7 +35,7 @@ for name, file in [
 # not silently wrong ids
 bert = Tokenizer.from_file(DATA / "bert-base-uncased.json")
 try:
-    bert.encode("hello")
+    bert.encode_ids("hello")
     raise AssertionError("should have raised")
 except NotImplementedError as e:
     print(f"bert with add_special_tokens=True: NotImplementedError({e})")
@@ -44,7 +44,7 @@ except NotImplementedError as e:
 # at compile time, with the reason
 t5 = Tokenizer.from_file(DATA / "t5-base.json")
 try:
-    t5.encode("hello", add_special_tokens=False)
+    t5.encode_ids("hello", add_special_tokens=False)
     raise AssertionError("should have raised")
 except TokenizersError as e:
     print(f"t5-base (Metaspace): TokenizersError({e})")

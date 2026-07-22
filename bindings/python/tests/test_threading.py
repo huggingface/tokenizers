@@ -8,9 +8,9 @@ from .conftest import SENTENCES, train_word_tokenizer
 
 def test_concurrent_encode_matches_serial():
     tok = train_word_tokenizer()
-    expected = [tok.encode(line, add_special_tokens=False) for line in SENTENCES]
+    expected = [tok.encode_ids(line, add_special_tokens=False) for line in SENTENCES]
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
-        results = list(pool.map(lambda s: tok.encode(s, add_special_tokens=False), SENTENCES))
+        results = list(pool.map(lambda s: tok.encode_ids(s, add_special_tokens=False), SENTENCES))
     for got, want in zip(results, expected):
         assert np.array_equal(got, want)
 
@@ -18,10 +18,10 @@ def test_concurrent_encode_matches_serial():
 def test_parallel_encode_batch_matches_serial():
     tok = train_word_tokenizer()
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
-    serial = tok.encode_batch(SENTENCES * 32, add_special_tokens=False)
+    serial = tok.encode_batch_ids(SENTENCES * 32, add_special_tokens=False)
     os.environ["TOKENIZERS_PARALLELISM"] = "true"
     try:
-        parallel = tok.encode_batch(SENTENCES * 32, add_special_tokens=False)
+        parallel = tok.encode_batch_ids(SENTENCES * 32, add_special_tokens=False)
     finally:
         del os.environ["TOKENIZERS_PARALLELISM"]
     for got, want in zip(parallel, serial):
@@ -32,7 +32,7 @@ def test_concurrent_mutation_and_encode_is_safe():
     tok = train_word_tokenizer()
 
     def encode_some(_):
-        return tok.encode_batch(SENTENCES, add_special_tokens=False)
+        return tok.encode_batch_ids(SENTENCES, add_special_tokens=False)
 
     def add_some(i):
         return tok.add_tokens([f"<extra_{i}>"])

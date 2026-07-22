@@ -18,11 +18,16 @@ tok = tk.Tokenizer.from_file("tokenizer.json")
 # add_special_tokens=False skips template tokens like [CLS]/[SEP]; inserting
 # them is not implemented yet in 1.0, so leaving it True raises a loud
 # NotImplementedError on tokenizers that use such templates (BERT, Llama, …).
-ids = tok.encode("Hello world", add_special_tokens=False)
+ids = tok.encode_ids("Hello world", add_special_tokens=False)
 
 # A list of arrays, encoded in parallel across Rust threads.
-batch = tok.encode_batch(["Hello world", "How are you?"], add_special_tokens=False)
+batch = tok.encode_batch_ids(["Hello world", "How are you?"], add_special_tokens=False)
 ```
+
+The methods are named `encode_ids`/`encode_batch_ids` because they return
+bare ids: the `encode`/`encode_batch` names are reserved for a planned
+`Encoding`-returning API (masks, word ids, truncation/padding — the interface
+`transformers` consumes).
 
 To load a tokenizer straight from the [Hugging Face Hub](https://huggingface.co),
 install the `hub` extra (`pip install 'tokenizers[hub]'`):
@@ -58,28 +63,30 @@ simplest case (load a pretrained file and encode).
 Encoding releases the Python interpreter lock (the GIL), so this package
 plays well with threads and event loops:
 
-- Calling `encode` from several Python threads scales — the threads really
-  run in parallel, on every interpreter (free-threaded or not).
-- `encode_batch` parallelizes one batch across Rust threads. Set the
+- Calling `encode_ids` from several Python threads scales — the threads
+  really run in parallel, on every interpreter (free-threaded or not).
+- `encode_batch_ids` parallelizes one batch across Rust threads. Set the
   `TOKENIZERS_PARALLELISM` environment variable to `false`/`true` to
   disable/force this.
-- In `asyncio` code, `await tok.async_encode(text)` /
-  `await tok.async_encode_batch(texts)` keep the event loop free while Rust
-  encodes in a worker thread.
+- In `asyncio` code, `await tok.async_encode_ids(text)` /
+  `await tok.async_encode_batch_ids(texts)` keep the event loop free while
+  Rust encodes in a worker thread.
 
 ```python
-ids = await tok.async_encode("Hello world", add_special_tokens=False)
+ids = await tok.async_encode_ids("Hello world", add_special_tokens=False)
 ```
 
 ## Breaking changes vs 0.x
 
 1.x is a ground-up rewrite with a smaller, faster API. The headline changes:
 
-- `encode` returns a `numpy.uint32` array of ids, not an `Encoding` object.
+- Encoding returns a `numpy.uint32` array of ids, not an `Encoding` object,
+  and the methods are accordingly named `encode_ids`/`encode_batch_ids`.
   Tokens, offsets, type ids, attention masks, and word ids are gone from the
   encode path, and so are truncation and padding
   (`enable_truncation`/`enable_padding`).
-- `encode` takes a single text: no `pair=` argument, no `is_pretokenized=`.
+- `encode_ids` takes a single text: no `pair=` argument, no
+  `is_pretokenized=`.
 - Not implemented yet (loud errors, never wrong ids): `decode`,
   post-processor templates (`[CLS]`/`<s>` insertion — pass
   `add_special_tokens=False`), and the `Metaspace` pre-tokenizer
@@ -95,9 +102,9 @@ ids = await tok.async_encode("Hello world", add_special_tokens=False)
 The full list, including smaller removals and renames, is in the 1.0.0 entry
 of [CHANGELOG.md](CHANGELOG.md).
 
-Kept from 0.x: `async_encode`/`async_encode_batch` and free-threaded Python
-support. New in 1.0: parity-aware BPE training across several languages
-(`trainers.ParityBpeTrainer`).
+Kept from 0.x: awaitable encodes (`async_encode_ids`/`async_encode_batch_ids`)
+and free-threaded Python support. New in 1.0: parity-aware BPE training across
+several languages (`trainers.ParityBpeTrainer`).
 
 ## Build and use locally
 
@@ -165,7 +172,7 @@ the output arrays take ownership of the Rust buffers, also copy-free.
 
 ## Benchmark
 
-`benches/bench_vs_release.py` times `encode_batch` end-to-end through Python
+`benches/bench_vs_release.py` times batch encoding end-to-end through Python
 against the latest released `tokenizers` wheel, on the same corpora and ~10 KiB
 chunking as the Rust benchmark (`tk-encode/examples/fixture_bench.rs`): every
 fixture under `data/fixtures/{lang,modalities}`, warmed up, median of N runs,

@@ -44,5 +44,5 @@ tokenizer.save(out)
 print(f"saved {out} ({tokenizer.get_vocab_size()} tokens)")
 
 reloaded = Tokenizer.from_file(out)
-ids = reloaded.encode("Training ByteLevel BPE is very easy", add_special_tokens=False)
+ids = reloaded.encode_ids("Training ByteLevel BPE is very easy", add_special_tokens=False)
 print([reloaded.id_to_token(i) for i in ids])
