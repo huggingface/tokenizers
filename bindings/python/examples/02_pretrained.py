@@ -1,12 +1,14 @@
-"""Load real tokenizer.json files and check id parity against the released
-`tokenizers` package on a real corpus. Also demonstrates the two loud failure
-modes: unsupported pre-tokenizers and unwired post-processing."""
+"""Load real tokenizer.json files and encode a real corpus. Also demonstrates
+the two loud failure modes: unsupported pre-tokenizers and unwired
+post-processing. (Id parity against the released wheel is checked by
+benches/bench_vs_release.py — the released package shares our name, so the
+comparison needs two processes.)"""
 
 from pathlib import Path
 
-import tokenizers as reference
+import numpy as np
 
-from tokenizers_pipeline import Tokenizer, TokenizersError
+from tokenizers import Tokenizer, TokenizersError
 
 DATA = Path(__file__).resolve().parents[3] / "tokenizers" / "data"
 
@@ -21,16 +23,12 @@ for name, file in [
     ("bert-base-uncased", "bert-base-uncased.json"),
 ]:
     tok = Tokenizer.from_file(DATA / file)
-    ref = reference.Tokenizer.from_file(str(DATA / file))
-
-    ours = tok.encode_batch(LINES, add_special_tokens=False)
-    theirs = ref.encode_batch_fast(LINES, add_special_tokens=False)
-    mismatches = sum(
-        1 for a, b in zip(ours, theirs, strict=True) if a.tolist() != b.ids
-    )
-    total = sum(len(a) for a in ours)
-    assert mismatches == 0, f"{name}: {mismatches} mismatching lines"
-    print(f"{name}: {total} tokens, ids identical to `tokenizers` {reference.__version__}")
+    batch = tok.encode_batch(LINES, add_special_tokens=False)
+    assert all(ids.dtype == np.uint32 for ids in batch)
+    total = sum(len(ids) for ids in batch)
+    round_trip = tok.id_to_token(int(batch[0][0]))
+    assert round_trip is not None
+    print(f"{name}: {total} tokens, first token {round_trip!r}")
 
 # Expected failure 1: post-processor would add special tokens -> loud error,
 # not silently wrong ids

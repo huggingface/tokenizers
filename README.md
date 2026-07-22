@@ -28,8 +28,12 @@ versatility.
  - Does all the pre-processing: Truncate, Pad, add the special tokens your model needs.
 
 ## Performances
-Performances can vary depending on hardware, but running the [~/bindings/python/benches/test_tiktoken.py](bindings/python/benches/test_tiktoken.py) should give the following on a g6 aws instance:
-![image](https://github.com/user-attachments/assets/2b913d4b-e488-4cbc-b542-f90a6c40643d)
+Performances can vary depending on hardware. The Python bindings ship a
+benchmark against the released wheel
+([bindings/python/benches/bench_vs_release.py](bindings/python/benches/bench_vs_release.py));
+the Rust core has the equivalent fixture benchmark
+(`tokenizers/tk-encode/examples/fixture_bench.rs`). Both run in the Pipeline
+Benchmark workflow in CI.
 
 
 ## Bindings
@@ -83,10 +87,13 @@ tokenizer.train(files=["wiki.train.raw", "wiki.valid.raw", "wiki.test.raw"], tra
 
 Once your tokenizer is trained, encode any text with just one line:
 ```python
-output = tokenizer.encode("Hello, y'all! How are you 😁 ?")
-print(output.tokens)
+ids = tokenizer.encode("Hello, y'all! How are you 😁 ?")
+print([tokenizer.id_to_token(i) for i in ids])
 # ["Hello", ",", "y", "'", "all", "!", "How", "are", "you", "[UNK]", "?"]
 ```
+
+`encode` returns the token ids as a `numpy.uint32` array — ready to hand to
+your model with no further conversion.
 
 Check the [documentation](https://huggingface.co/docs/tokenizers/index)
 or the [quicktour](https://huggingface.co/docs/tokenizers/quicktour) to learn more!

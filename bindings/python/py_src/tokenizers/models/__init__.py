@@ -1,9 +1,11 @@
-# Generated content DO NOT EDIT
+"""The algorithms that turn pre-tokenized pieces into token ids."""
 
-from .. import models
+from .._native import models as _models
 
-BPE = models.BPE
-Model = models.Model
-Unigram = models.Unigram
-WordLevel = models.WordLevel
-WordPiece = models.WordPiece
+Model = _models.Model
+BPE = _models.BPE
+WordPiece = _models.WordPiece
+WordLevel = _models.WordLevel
+Unigram = _models.Unigram
+
+__all__ = ["Model", "BPE", "WordPiece", "WordLevel", "Unigram"]

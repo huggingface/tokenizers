@@ -6,7 +6,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from tokenizers_pipeline import Tokenizer
+from tokenizers import Tokenizer
 
 DATA = Path(__file__).resolve().parents[3] / "tokenizers" / "data"
 N_THREADS = 4

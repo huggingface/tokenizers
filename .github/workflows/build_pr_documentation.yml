@@ -1,7 +1,10 @@
 name: Build PR Documentation
 
+# docs/source-doc-builder describes the 0.x Python API. The bindings were
+# rewritten for 1.0 (PipelineTokenizer); until the docs are rewritten to
+# match, PR doc previews only run on demand.
 on:
-  pull_request:
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}

@@ -47,7 +47,7 @@ on:
     paths:
       - "tokenizers/tk-encode/**"
       - "tokenizers/src/**"
-      - "bindings/python-pipeline/**"
+      - "bindings/python/**"
       - ".github/workflows/pipeline-bench.yml"
       - ".github/scripts/render_pipeline_bench.py"
       - "tokenizers/tk-encode/examples/bench_models.json"
@@ -230,12 +230,15 @@ jobs:
           path: tokenizers/pipeline_bench_${{ matrix.shard }}.json
           retention-days: 3
 
-  # Python bindings: the tokenizers_pipeline wheel vs the latest *released*
-  # tokenizers wheel from PyPI, timed end-to-end through Python — input
-  # conversion, encode, and output objects all count, because that is what a
-  # user pays. Same models (bench_models.json) and fixture corpora as the Rust
-  # bench; unsupported models are reported as skipped, an id mismatch fails
-  # the job. Results land in the run's step summary + an artifact.
+  # Python bindings: this branch's wheel vs the latest *released* tokenizers
+  # wheel from PyPI, timed end-to-end through Python — input conversion,
+  # encode, and output objects all count, because that is what a user pays.
+  # Both are named `tokenizers`, so the release is installed into its own
+  # directory (pip --target) and benched in a subprocess with PYTHONPATH
+  # pointing there. Same models (bench_models.json) and fixture corpora as
+  # the Rust bench; unsupported models are reported as skipped, an id
+  # mismatch fails the job. Results land in the run's step summary + an
+  # artifact.
   python-bindings-bench:
     name: Python bindings vs released wheel
     if: github.event_name != 'pull_request' || github.event.label.name == 'run-pipeline-bench'
@@ -268,15 +271,19 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: make fixtures bench-models HF="uvx --from huggingface_hub hf"
 
-      - name: Build and install the tokenizers_pipeline wheel
-        working-directory: bindings/python-pipeline
+      - name: Build and install this branch's wheel
+        working-directory: bindings/python
         run: |
           uv venv .venv
-          uv pip install --python .venv/bin/python maturin numpy tokenizers
+          uv pip install --python .venv/bin/python maturin numpy
           source .venv/bin/activate && maturin develop --release
 
+      - name: Install the released wheel into its own directory
+        working-directory: bindings/python
+        run: uv pip install --python .venv/bin/python --target .release tokenizers
+
       - name: Bench against the released wheel
-        working-directory: bindings/python-pipeline
+        working-directory: bindings/python
         run: |
           .venv/bin/python benches/bench_vs_release.py \
             --manifest ../../tokenizers/tk-encode/examples/bench_models.json \
@@ -289,8 +296,8 @@ jobs:
         with:
           name: python-bindings-bench
           path: |
-            bindings/python-pipeline/python_bench.json
-            bindings/python-pipeline/python_bench.md
+            bindings/python/python_bench.json
+            bindings/python/python_bench.md
           retention-days: 30
 
   # Fan-in: concatenate the shard partials (in shard order = manifest order),

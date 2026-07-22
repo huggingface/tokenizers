@@ -126,7 +126,7 @@ def chart_svg(report, meta):
 def section_md(report, img_base, run_id):
     ref = f"`tokenizers` {report['release_version']} (PyPI)"
     lines = [
-        f"### Python bindings — `tokenizers_pipeline` vs {ref}",
+        f"### Python bindings — this branch vs {ref}",
         "",
         rpb.picture(img_base, run_id, SLUG, "Python bindings encode_batch speedup "
                     "vs the released tokenizers wheel", 860),
@@ -163,8 +163,8 @@ def main():
 
     report = json.loads(args.bench_json.read_text())
     meta = [
-        f"tokenizers_pipeline {report['pipeline_version']} vs "
-        f"tokenizers {report['release_version']}",
+        f"tokenizers {report['pipeline_version']} (this branch) vs "
+        f"{report['release_version']} (PyPI)",
         f"{report['cpus']} CPUs · median of {report['iters']} runs · "
         f"{report['fixture_count']} fixtures",
     ]

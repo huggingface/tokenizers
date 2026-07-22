@@ -1,1075 +1,157 @@
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, RwLock};
-
-use crate::token::PyToken;
-use crate::trainers::PyTrainer;
-use ahash::AHashMap;
-use pyo3::exceptions;
 use pyo3::prelude::*;
-use pyo3::types::*;
-use serde::{Deserialize, Serialize};
-use tk::models::ModelWrapper;
-use tk::models::bpe::{BPE, BpeBuilder, Merges};
-use tk::models::unigram::Unigram;
-use tk::models::wordlevel::WordLevel;
-use tk::models::wordpiece::{WordPiece, WordPieceBuilder};
-use tk::tokenizer::PreTokenizedString;
-use tk::{Model, Token, Trainable};
-use tokenizers as tk;
+use tk_encode::models::ModelWrapper;
+use tk_encode::models::bpe::BPE;
+use tk_encode::models::unigram::Unigram;
+use tk_encode::models::wordlevel::WordLevel;
+use tk_encode::models::wordpiece::WordPiece;
 
-use super::error::{ToPyResult, deprecation_warning};
+use crate::error::to_pyerr;
 
-/// Base class for all models
+/// Base class for all models.
 ///
-/// The model represents the actual tokenization algorithm. This is the part that
-/// will contain and manage the learned vocabulary.
-///
-/// This class cannot be constructed directly. Please use one of the concrete models.
-#[pyclass(module = "tokenizers.models", name = "Model", subclass, from_py_object)]
-#[derive(Clone, Serialize, Deserialize)]
-#[serde(transparent)]
+/// The model is the trained part of a tokenizer: it turns each pre-tokenized
+/// piece into token ids using its vocabulary. Models are immutable values —
+/// assigning one to a tokenizer copies it.
+#[pyclass(frozen, subclass, name = "Model", module = "tokenizers.models")]
 pub struct PyModel {
-    pub model: Arc<RwLock<ModelWrapper>>,
-}
-
-impl PyModel {
-    pub(crate) fn get_as_subtype(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        let base = self.clone();
-        Ok(match *self.model.as_ref().read().unwrap() {
-            ModelWrapper::BPE(_) => Py::new(py, (PyBPE {}, base))?.into_any(),
-            ModelWrapper::WordPiece(_) => Py::new(py, (PyWordPiece {}, base))?.into_any(),
-            ModelWrapper::WordLevel(_) => Py::new(py, (PyWordLevel {}, base))?.into_any(),
-            ModelWrapper::Unigram(_) => Py::new(py, (PyUnigram {}, base))?.into_any(),
-        })
-    }
-}
-
-impl Model for PyModel {
-    fn tokenize(&self, tokens: &str) -> tk::Result<Vec<Token>> {
-        self.model.read().unwrap().tokenize(tokens)
-    }
-
-    /// See [`Model::tokenize_in_pretokenized`] for the lock-once rationale.
-    fn tokenize_in_pretokenized(
-        &self,
-        pretokenized: &mut PreTokenizedString,
-        truncation: Option<(usize, tk::TruncationDirection)>,
-    ) -> tk::Result<()> {
-        let guard = self.model.read().unwrap();
-        match truncation {
-            Some((max_tokens, direction)) => pretokenized.tokenize_with_limit(
-                |normalized| guard.tokenize(normalized.get()),
-                max_tokens,
-                direction,
-            ),
-            None => pretokenized.tokenize(|normalized| guard.tokenize(normalized.get())),
-        }
-    }
-
-    fn token_to_id(&self, token: &str) -> Option<u32> {
-        self.model.read().unwrap().token_to_id(token)
-    }
-
-    fn id_to_token(&self, id: u32) -> Option<String> {
-        self.model.read().unwrap().id_to_token(id)
-    }
-
-    fn get_vocab(&self) -> HashMap<String, u32> {
-        self.model.read().unwrap().get_vocab()
-    }
-
-    fn get_vocab_size(&self) -> usize {
-        self.model.read().unwrap().get_vocab_size()
-    }
-
-    fn save(&self, folder: &Path, name: Option<&str>) -> tk::Result<Vec<PathBuf>> {
-        self.model.read().unwrap().save(folder, name)
-    }
-}
-
-impl Trainable for PyModel {
-    type Trainer = PyTrainer;
-
-    fn get_trainer(&self) -> Self::Trainer {
-        self.model.read().unwrap().get_trainer().into()
-    }
-}
-
-impl<I> From<I> for PyModel
-where
-    I: Into<ModelWrapper>,
-{
-    fn from(model: I) -> Self {
-        Self {
-            model: Arc::new(RwLock::new(model.into())),
-        }
-    }
+    pub inner: ModelWrapper,
 }
 
 #[pymethods]
 impl PyModel {
-    #[new]
-    #[pyo3(signature = () -> "Model", text_signature = "(self)")]
-    fn __new__() -> Self {
-        // Instantiate a default empty model. This doesn't really make sense, but we need
-        // to be able to instantiate an empty model for pickle capabilities.
-        PyModel {
-            model: Arc::new(RwLock::new(BPE::default().into())),
-        }
-    }
-
-    fn __getstate__(&self, py: Python) -> PyResult<Py<PyAny>> {
-        let data = serde_json::to_string(&self.model).map_err(|e| {
-            exceptions::PyException::new_err(format!("Error while attempting to pickle Model: {e}"))
-        })?;
-        Ok(PyBytes::new(py, data.as_bytes()).into())
-    }
-
-    fn __setstate__(&mut self, py: Python, state: Py<PyAny>) -> PyResult<()> {
-        match state.extract::<&[u8]>(py) {
-            Ok(s) => {
-                self.model = serde_json::from_slice(s).map_err(|e| {
-                    exceptions::PyException::new_err(format!(
-                        "Error while attempting to unpickle Model: {e}"
-                    ))
-                })?;
-                Ok(())
-            }
-            Err(e) => Err(e.into()),
-        }
-    }
-
-    /// Tokenize a sequence
-    ///
-    /// Args:
-    ///     sequence (:obj:`str`):
-    ///         A sequence to tokenize
-    ///
-    /// Returns:
-    ///     A :obj:`List` of :class:`~tokenizers.Token`: The generated tokens
-    #[pyo3(text_signature = "(self, sequence)")]
-    fn tokenize(&self, sequence: &str) -> PyResult<Vec<PyToken>> {
-        Ok(ToPyResult(self.model.read().unwrap().tokenize(sequence))
-            .into_py()?
-            .into_iter()
-            .map(|t| t.into())
-            .collect())
-    }
-
-    /// Get the ID associated to a token
-    ///
-    /// Args:
-    ///     token (:obj:`str`):
-    ///         A token to convert to an ID
-    ///
-    /// Returns:
-    ///     :obj:`int`: The ID associated to the token
-    #[pyo3(text_signature = "(self, tokens)")]
-    fn token_to_id(&self, token: &str) -> Option<u32> {
-        self.model.read().unwrap().token_to_id(token)
-    }
-
-    /// Get the token associated to an ID
-    ///
-    /// Args:
-    ///     id (:obj:`int`):
-    ///         An ID to convert to a token
-    ///
-    /// Returns:
-    ///     :obj:`str`: The token associated to the ID
-    #[pyo3(text_signature = "(self, id)")]
-    fn id_to_token(&self, id: u32) -> Option<String> {
-        self.model.read().unwrap().id_to_token(id)
-    }
-
-    /// Save the current model
-    ///
-    /// Save the current model in the given folder, using the given prefix for the various
-    /// files that will get created.
-    /// Any file with the same name that already exists in this folder will be overwritten.
-    ///
-    /// Args:
-    ///     folder (:obj:`str`):
-    ///         The path to the target folder in which to save the various files
-    ///
-    ///     prefix (:obj:`str`, `optional`):
-    ///         An optional prefix, used to prefix each file name
-    ///
-    /// Returns:
-    ///     :obj:`List[str]`: The list of saved files
-    #[pyo3(signature = (folder, prefix=None, name=None) -> "list[str]", text_signature = "(self, folder, prefix)")]
-    fn save<'a>(
-        &self,
-        py: Python<'_>,
-        folder: &str,
-        mut prefix: Option<&'a str>,
-        name: Option<&'a str>,
-    ) -> PyResult<Vec<String>> {
-        if name.is_some() {
-            deprecation_warning(
-                py,
-                "0.10.0",
-                "Parameter `name` of Model.save has been renamed `prefix`",
-            )?;
-            if prefix.is_none() {
-                prefix = name;
-            }
-        }
-
-        let saved: PyResult<Vec<_>> =
-            ToPyResult(self.model.read().unwrap().save(Path::new(folder), prefix)).into();
-
-        Ok(saved?
-            .into_iter()
-            .map(|path| path.to_string_lossy().into_owned())
-            .collect())
-    }
-
-    /// Get the associated :class:`~tokenizers.trainers.Trainer`
-    ///
-    /// Retrieve the :class:`~tokenizers.trainers.Trainer` associated to this
-    /// :class:`~tokenizers.models.Model`.
-    ///
-    /// Returns:
-    ///     :class:`~tokenizers.trainers.Trainer`: The Trainer used to train this model
-    #[pyo3(text_signature = "(self)")]
-    fn get_trainer(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        PyTrainer::from(self.model.read().unwrap().get_trainer()).get_as_subtype(py)
-    }
-
-    fn __repr__(&self) -> PyResult<String> {
-        crate::utils::serde_pyo3::repr(self)
-            .map_err(|e| exceptions::PyException::new_err(e.to_string()))
-    }
-
-    fn __str__(&self) -> PyResult<String> {
-        crate::utils::serde_pyo3::to_string(self)
-            .map_err(|e| exceptions::PyException::new_err(e.to_string()))
+    fn __repr__(&self) -> String {
+        crate::component_repr(&self.inner)
     }
 }
 
-/// An implementation of the BPE (Byte-Pair Encoding) algorithm
-///
-/// Args:
-///     vocab (:obj:`Dict[str, int]`, `optional`):
-///         A dictionary of string keys and their ids :obj:`{"am": 0,...}`
-///
-///     merges (:obj:`List[Tuple[str, str]]`, `optional`):
-///         A list of pairs of tokens (:obj:`Tuple[str, str]`) :obj:`[("a", "b"),...]`
-///
-///     cache_capacity (:obj:`int`, `optional`):
-///         The number of words that the BPE cache can contain. The cache allows
-///         to speed-up the process by keeping the result of the merge operations
-///         for a number of words.
-///
-///     dropout (:obj:`float`, `optional`):
-///         A float between 0 and 1 that represents the BPE dropout to use.
-///
-///     unk_token (:obj:`str`, `optional`):
-///         The unknown token to be used by the model.
-///
-///     continuing_subword_prefix (:obj:`str`, `optional`):
-///         The prefix to attach to subword units that don't represent a beginning of word.
-///
-///     end_of_word_suffix (:obj:`str`, `optional`):
-///         The suffix to attach to subword units that represent an end of word.
-///
-///     fuse_unk (:obj:`bool`, `optional`):
-///         Whether to fuse any subsequent unknown tokens into a single one
-///
-///     byte_fallback (:obj:`bool`, `optional`):
-///         Whether to use spm byte-fallback trick (defaults to False)
-///
-///     ignore_merges (:obj:`bool`, `optional`):
-///         Whether or not to match tokens with the vocab before using merges.
-///
-/// Example::
-///
-///     >>> from tokenizers.models import BPE
-///     >>> # Build an empty model (to be trained)
-///     >>> model = BPE(unk_token="<unk>")
-///     >>> # Load from vocabulary and merges files
-///     >>> model = BPE.from_file("vocab.json", "merges.txt")
-///
-#[pyclass(extends=PyModel, module = "tokenizers.models", name = "BPE")]
-pub struct PyBPE {}
-
-impl PyBPE {
-    fn with_builder(
-        mut builder: BpeBuilder,
-        kwargs: Option<&Bound<'_, PyDict>>,
-    ) -> PyResult<PyClassInitializer<Self>> {
-        if let Some(kwargs) = kwargs {
-            for (key, value) in kwargs {
-                let key: String = key.extract()?;
-                match key.as_ref() {
-                    "cache_capacity" => builder = builder.cache_capacity(value.extract()?),
-                    "dropout" => {
-                        if let Some(dropout) = value.extract()? {
-                            builder = builder.dropout(dropout);
-                        }
-                    }
-                    "unk_token" => {
-                        if let Some(unk) = value.extract()? {
-                            builder = builder.unk_token(unk);
-                        }
-                    }
-                    "continuing_subword_prefix" => {
-                        builder = builder.continuing_subword_prefix(value.extract()?)
-                    }
-                    "end_of_word_suffix" => builder = builder.end_of_word_suffix(value.extract()?),
-                    "fuse_unk" => builder = builder.fuse_unk(value.extract()?),
-                    "byte_fallback" => builder = builder.byte_fallback(value.extract()?),
-                    "ignore_merges" => builder = builder.ignore_merges(value.extract()?),
-                    _ => println!("Ignored unknown kwarg option {key}"),
-                };
-            }
-        }
-
-        match builder.build() {
-            Err(e) => Err(exceptions::PyException::new_err(format!(
-                "Error while initializing BPE: {e}"
-            ))),
-            Ok(bpe) => {
-                Ok(PyClassInitializer::<PyModel>::from(PyModel::from(bpe)).add_subclass(PyBPE {}))
-            }
-        }
-    }
+pub fn wrap_model(py: Python<'_>, inner: ModelWrapper) -> PyResult<Py<PyModel>> {
+    let base = PyModel {
+        inner: inner.clone(),
+    };
+    let init = PyClassInitializer::from(base);
+    let obj = match inner {
+        ModelWrapper::BPE(_) => Bound::new(py, init.add_subclass(PyBPE))?.into_super(),
+        ModelWrapper::WordPiece(_) => Bound::new(py, init.add_subclass(PyWordPiece))?.into_super(),
+        ModelWrapper::WordLevel(_) => Bound::new(py, init.add_subclass(PyWordLevel))?.into_super(),
+        ModelWrapper::Unigram(_) => Bound::new(py, init.add_subclass(PyUnigram))?.into_super(),
+    };
+    Ok(obj.unbind())
 }
 
-macro_rules! getter {
-    ($self: ident, $variant: ident, $($name: tt)+) => {{
-        let super_ = $self.as_ref();
-        let model = super_.model.read().unwrap();
-        if let ModelWrapper::$variant(ref mo) = *model {
-            mo.$($name)+
-        } else {
-            unreachable!()
-        }
-    }};
-}
-
-macro_rules! setter {
-    ($self: ident, $variant: ident, $name: ident, $value: expr) => {{
-        let super_ = $self.as_ref();
-        let mut model = super_.model.write().unwrap();
-        if let ModelWrapper::$variant(ref mut mo) = *model {
-            mo.$name = $value;
-        }
-    }};
-}
-
-#[derive(FromPyObject)]
-enum PyVocab {
-    Vocab(HashMap<String, u32>),
-    Filename(String),
-}
-
-#[derive(FromPyObject)]
-enum PyMerges {
-    Merges(Merges),
-    Filename(String),
-}
+/// Byte-Pair Encoding: builds tokens by applying the merges learned during
+/// training. `unk_token` stands in for characters the vocabulary cannot
+/// represent; `byte_fallback` encodes them as raw bytes instead. `dropout`
+/// randomly skips merges (a training-time regularization). `ignore_merges`
+/// looks whole pieces up in the vocabulary before merging.
+#[pyclass(frozen, extends = PyModel, name = "BPE", module = "tokenizers.models")]
+pub struct PyBPE;
 
 #[pymethods]
 impl PyBPE {
-    #[getter]
-    fn get_dropout(self_: PyRef<Self>) -> Option<f32> {
-        getter!(self_, BPE, dropout)
-    }
-
-    #[setter]
-    fn set_dropout(self_: PyRef<Self>, dropout: Option<f32>) {
-        setter!(self_, BPE, dropout, dropout);
-    }
-
-    #[getter]
-    fn get_unk_token(self_: PyRef<Self>) -> Option<String> {
-        getter!(self_, BPE, unk_token.clone())
-    }
-
-    #[setter]
-    fn set_unk_token(self_: PyRef<Self>, unk_token: Option<String>) {
-        setter!(self_, BPE, unk_token, unk_token);
-    }
-
-    #[getter]
-    fn get_continuing_subword_prefix(self_: PyRef<Self>) -> Option<String> {
-        getter!(self_, BPE, continuing_subword_prefix.clone())
-    }
-
-    #[setter]
-    fn set_continuing_subword_prefix(
-        self_: PyRef<Self>,
-        continuing_subword_prefix: Option<String>,
-    ) {
-        setter!(
-            self_,
-            BPE,
-            continuing_subword_prefix,
-            continuing_subword_prefix
-        );
-    }
-
-    #[getter]
-    fn get_end_of_word_suffix(self_: PyRef<Self>) -> Option<String> {
-        getter!(self_, BPE, end_of_word_suffix.clone())
-    }
-
-    #[setter]
-    fn set_end_of_word_suffix(self_: PyRef<Self>, end_of_word_suffix: Option<String>) {
-        setter!(self_, BPE, end_of_word_suffix, end_of_word_suffix);
-    }
-
-    #[getter]
-    fn get_fuse_unk(self_: PyRef<Self>) -> bool {
-        getter!(self_, BPE, fuse_unk)
-    }
-
-    #[setter]
-    fn set_fuse_unk(self_: PyRef<Self>, fuse_unk: bool) {
-        setter!(self_, BPE, fuse_unk, fuse_unk);
-    }
-
-    #[getter]
-    fn get_byte_fallback(self_: PyRef<Self>) -> bool {
-        getter!(self_, BPE, byte_fallback)
-    }
-
-    #[setter]
-    fn set_byte_fallback(self_: PyRef<Self>, byte_fallback: bool) {
-        setter!(self_, BPE, byte_fallback, byte_fallback);
-    }
-    #[getter]
-    fn get_ignore_merges(self_: PyRef<Self>) -> bool {
-        getter!(self_, BPE, ignore_merges)
-    }
-
-    #[setter]
-    fn set_ignore_merges(self_: PyRef<Self>, ignore_merges: bool) {
-        setter!(self_, BPE, ignore_merges, ignore_merges);
-    }
     #[new]
-    #[pyo3(
-        signature = (vocab=None, merges=None, **kwargs),
-        text_signature = "(self, vocab=None, merges=None, cache_capacity=None, dropout=None, unk_token=None, continuing_subword_prefix=None, end_of_word_suffix=None, fuse_unk=None, byte_fallback=False, ignore_merges=False)")]
+    #[pyo3(signature = (*, unk_token = None, dropout = None, fuse_unk = false, byte_fallback = false, ignore_merges = false))]
     fn new(
-        _py: Python<'_>,
-        vocab: Option<PyVocab>,
-        merges: Option<PyMerges>,
-        kwargs: Option<&Bound<'_, PyDict>>,
+        unk_token: Option<String>,
+        dropout: Option<f32>,
+        fuse_unk: bool,
+        byte_fallback: bool,
+        ignore_merges: bool,
     ) -> PyResult<PyClassInitializer<Self>> {
-        if (vocab.is_some() && merges.is_none()) || (vocab.is_none() && merges.is_some()) {
-            return Err(exceptions::PyValueError::new_err(
-                "`vocab` and `merges` must be both specified",
-            ));
+        let mut builder = BPE::builder()
+            .fuse_unk(fuse_unk)
+            .byte_fallback(byte_fallback)
+            .ignore_merges(ignore_merges);
+        if let Some(unk) = unk_token {
+            builder = builder.unk_token(unk);
         }
-
-        let mut builder = BPE::builder();
-        if let (Some(vocab), Some(merges)) = (vocab, merges) {
-            match (vocab, merges) {
-                (PyVocab::Vocab(vocab), PyMerges::Merges(merges)) => {
-                    let vocab: AHashMap<_, _> = vocab.into_iter().collect();
-                    builder = builder.vocab_and_merges(vocab, merges);
-                }
-                (PyVocab::Filename(vocab_filename), PyMerges::Filename(merges_filename)) => {
-                    builder =
-                        builder.files(vocab_filename.to_string(), merges_filename.to_string());
-                }
-                _ => {
-                    return Err(exceptions::PyValueError::new_err(
-                        "`vocab` and `merges` must be both be from memory or both filenames",
-                    ));
-                }
-            }
+        if let Some(d) = dropout {
+            builder = builder.dropout(d);
         }
-
-        PyBPE::with_builder(builder, kwargs)
+        let bpe = builder.build().map_err(to_pyerr)?;
+        Ok(PyClassInitializer::from(PyModel { inner: bpe.into() }).add_subclass(PyBPE))
     }
 
-    /// Read a :obj:`vocab.json` and a :obj:`merges.txt` files
-    ///
-    /// This method provides a way to read and parse the content of these files,
-    /// returning the relevant data structures. If you want to instantiate some BPE models
-    /// from memory, this method gives you the expected input from the standard files.
-    ///
-    /// Args:
-    ///     vocab (:obj:`str`):
-    ///         The path to a :obj:`vocab.json` file
-    ///
-    ///     merges (:obj:`str`):
-    ///         The path to a :obj:`merges.txt` file
-    ///
-    /// Returns:
-    ///     A :obj:`Tuple` with the vocab and the merges:
-    ///         The vocabulary and merges loaded into memory
+    /// Load a BPE from the legacy vocab.json + merges.txt format.
     #[staticmethod]
-    #[pyo3(text_signature = "(vocab, merges)")]
-    fn read_file(vocab: &str, merges: &str) -> PyResult<(HashMap<String, u32>, Merges)> {
-        let (vocab, merges) = BPE::read_file(vocab, merges).map_err(|e| {
-            exceptions::PyException::new_err(format!(
-                "Error while reading vocab & merges files: {e}"
-            ))
-        })?;
-        let vocab = vocab.into_iter().collect();
-        Ok((vocab, merges))
-    }
-
-    /// Instantiate a BPE model from the given files.
-    ///
-    /// This method is roughly equivalent to doing::
-    ///
-    ///    vocab, merges = BPE.read_file(vocab_filename, merges_filename)
-    ///    bpe = BPE(vocab, merges)
-    ///
-    /// If you don't need to keep the :obj:`vocab, merges` values lying around,
-    /// this method is more optimized than manually calling
-    /// :meth:`~tokenizers.models.BPE.read_file` to initialize a :class:`~tokenizers.models.BPE`
-    ///
-    /// Args:
-    ///     vocab (:obj:`str`):
-    ///         The path to a :obj:`vocab.json` file
-    ///
-    ///     merges (:obj:`str`):
-    ///         The path to a :obj:`merges.txt` file
-    ///
-    /// Returns:
-    ///     :class:`~tokenizers.models.BPE`: An instance of BPE loaded from these files
-    #[classmethod]
-    #[pyo3(signature = (vocab, merges, **kwargs) -> "BPE")]
-    #[pyo3(text_signature = "(vocab, merges, **kwargs)")]
+    #[pyo3(signature = (vocab, merges, *, unk_token = None) -> "BPE")]
     fn from_file(
-        _cls: &Bound<'_, PyType>,
-        py: Python,
+        py: Python<'_>,
         vocab: &str,
         merges: &str,
-        kwargs: Option<&Bound<'_, PyDict>>,
-    ) -> PyResult<Py<Self>> {
-        let (vocab, merges) = BPE::read_file(vocab, merges).map_err(|e| {
-            exceptions::PyException::new_err(format!("Error while reading BPE files: {e}"))
-        })?;
-        let vocab = vocab.into_iter().collect();
-        Py::new(
-            py,
-            PyBPE::new(
-                py,
-                Some(PyVocab::Vocab(vocab)),
-                Some(PyMerges::Merges(merges)),
-                kwargs,
-            )?,
-        )
-    }
-
-    /// Clears the internal cache
-    #[pyo3(signature = () -> "None")]
-    #[pyo3(text_signature = "(self)")]
-    fn _clear_cache(self_: PyRef<Self>) -> PyResult<()> {
-        let super_ = self_.as_ref();
-        let mut model = super_.model.write().map_err(|e| {
-            exceptions::PyException::new_err(format!("Error while clearing BPE cache: {e}"))
-        })?;
-        model.clear_cache();
-        Ok(())
-    }
-
-    /// Resize the internal cache
-    #[pyo3(signature = (capacity) -> "None")]
-    #[pyo3(text_signature = "(self, capacity)")]
-    fn _resize_cache(self_: PyRef<Self>, capacity: usize) -> PyResult<()> {
-        let super_ = self_.as_ref();
-        let mut model = super_.model.write().map_err(|e| {
-            exceptions::PyException::new_err(format!("Error while resizing BPE cache: {e}"))
-        })?;
-        model.resize_cache(capacity);
-        Ok(())
+        unk_token: Option<String>,
+    ) -> PyResult<Py<PyModel>> {
+        let mut builder = BPE::from_file(vocab, merges);
+        if let Some(unk) = unk_token {
+            builder = builder.unk_token(unk);
+        }
+        let bpe = py.detach(|| builder.build()).map_err(to_pyerr)?;
+        wrap_model(py, bpe.into())
     }
 }
 
-/// An implementation of the WordPiece algorithm
-///
-/// Args:
-///     vocab (:obj:`Dict[str, int]`, `optional`):
-///         A dictionary of string keys and their ids :obj:`{"am": 0,...}`
-///
-///     unk_token (:obj:`str`, `optional`):
-///         The unknown token to be used by the model.
-///
-///     max_input_chars_per_word (:obj:`int`, `optional`):
-///         The maximum number of characters to authorize in a single word.
-///
-/// Example::
-///
-///     >>> from tokenizers.models import WordPiece
-///     >>> # Build an empty model (to be trained)
-///     >>> model = WordPiece(unk_token="[UNK]")
-///     >>> # Load from a vocabulary file
-///     >>> model = WordPiece.from_file("vocab.txt")
-///
-#[pyclass(extends=PyModel, module = "tokenizers.models", name = "WordPiece")]
-pub struct PyWordPiece {}
-
-impl PyWordPiece {
-    fn with_builder(
-        mut builder: WordPieceBuilder,
-        kwargs: Option<&Bound<'_, PyDict>>,
-    ) -> PyResult<PyClassInitializer<Self>> {
-        if let Some(kwargs) = kwargs {
-            for (key, val) in kwargs {
-                let key: String = key.extract()?;
-                match key.as_ref() {
-                    "unk_token" => {
-                        builder = builder.unk_token(val.extract()?);
-                    }
-                    "max_input_chars_per_word" => {
-                        builder = builder.max_input_chars_per_word(val.extract()?);
-                    }
-                    "continuing_subword_prefix" => {
-                        builder = builder.continuing_subword_prefix(val.extract()?);
-                    }
-                    _ => println!("Ignored unknown kwargs option {key}"),
-                }
-            }
-        }
-
-        match builder.build() {
-            Err(e) => Err(exceptions::PyException::new_err(format!(
-                "Error while initializing WordPiece: {e}"
-            ))),
-            Ok(wordpiece) => Ok(
-                PyClassInitializer::<PyModel>::from(PyModel::from(wordpiece))
-                    .add_subclass(PyWordPiece {}),
-            ),
-        }
-    }
-}
+/// The BERT model: greedily matches the longest vocabulary entry, marking
+/// word continuations with a prefix ("##" by default). A piece longer than
+/// `max_input_chars_per_word` becomes `unk_token` outright.
+#[pyclass(frozen, extends = PyModel, name = "WordPiece", module = "tokenizers.models")]
+pub struct PyWordPiece;
 
 #[pymethods]
 impl PyWordPiece {
-    #[getter]
-    fn get_unk_token(self_: PyRef<Self>) -> String {
-        getter!(self_, WordPiece, unk_token.clone())
-    }
-
-    #[setter]
-    fn set_unk_token(self_: PyRef<Self>, unk_token: String) {
-        setter!(self_, WordPiece, unk_token, unk_token);
-    }
-
-    #[getter]
-    fn get_continuing_subword_prefix(self_: PyRef<Self>) -> String {
-        getter!(self_, WordPiece, continuing_subword_prefix.clone())
-    }
-
-    #[setter]
-    fn set_continuing_subword_prefix(self_: PyRef<Self>, continuing_subword_prefix: String) {
-        setter!(
-            self_,
-            WordPiece,
-            continuing_subword_prefix,
-            continuing_subword_prefix
-        );
-    }
-
-    #[getter]
-    fn get_max_input_chars_per_word(self_: PyRef<Self>) -> usize {
-        getter!(self_, WordPiece, max_input_chars_per_word)
-    }
-
-    #[setter]
-    fn set_max_input_chars_per_word(self_: PyRef<Self>, max: usize) {
-        setter!(self_, WordPiece, max_input_chars_per_word, max);
-    }
-
     #[new]
-    #[pyo3(
-        signature = (vocab=None, **kwargs),
-        text_signature = "(self, vocab=None, unk_token='[UNK]', max_input_chars_per_word=100, continuing_subword_prefix='##')"
-    )]
+    #[pyo3(signature = (*, unk_token = String::from("[UNK]"), continuing_subword_prefix = String::from("##"), max_input_chars_per_word = 100))]
     fn new(
-        _py: Python<'_>,
-        vocab: Option<PyVocab>,
-        kwargs: Option<&Bound<'_, PyDict>>,
+        unk_token: String,
+        continuing_subword_prefix: String,
+        max_input_chars_per_word: usize,
     ) -> PyResult<PyClassInitializer<Self>> {
-        let mut builder = WordPiece::builder();
-
-        if let Some(vocab) = vocab {
-            match vocab {
-                PyVocab::Vocab(vocab) => {
-                    let vocab: AHashMap<_, _> = vocab.into_iter().collect();
-                    builder = builder.vocab(vocab);
-                }
-                PyVocab::Filename(vocab_filename) => {
-                    builder = builder.files(vocab_filename.to_string());
-                }
-            }
-        }
-
-        PyWordPiece::with_builder(builder, kwargs)
-    }
-
-    /// Read a :obj:`vocab.txt` file
-    ///
-    /// This method provides a way to read and parse the content of a standard `vocab.txt`
-    /// file as used by the WordPiece Model, returning the relevant data structures. If you
-    /// want to instantiate some WordPiece models from memory, this method gives you the
-    /// expected input from the standard files.
-    ///
-    /// Args:
-    ///     vocab (:obj:`str`):
-    ///         The path to a :obj:`vocab.txt` file
-    ///
-    /// Returns:
-    ///     :obj:`Dict[str, int]`: The vocabulary as a :obj:`dict`
-    #[staticmethod]
-    #[pyo3(text_signature = "(vocab)")]
-    fn read_file(vocab: &str) -> PyResult<HashMap<String, u32>> {
-        let vocab = WordPiece::read_file(vocab).map_err(|e| {
-            exceptions::PyException::new_err(format!("Error while reading WordPiece file: {e}"))
-        })?;
-        Ok(vocab.into_iter().collect())
-    }
-
-    /// Instantiate a WordPiece model from the given file
-    ///
-    /// This method is roughly equivalent to doing::
-    ///
-    ///     vocab = WordPiece.read_file(vocab_filename)
-    ///     wordpiece = WordPiece(vocab)
-    ///
-    /// If you don't need to keep the :obj:`vocab` values lying around, this method is
-    /// more optimized than manually calling :meth:`~tokenizers.models.WordPiece.read_file` to
-    /// initialize a :class:`~tokenizers.models.WordPiece`
-    ///
-    /// Args:
-    ///     vocab (:obj:`str`):
-    ///         The path to a :obj:`vocab.txt` file
-    ///
-    /// Returns:
-    ///     :class:`~tokenizers.models.WordPiece`: An instance of WordPiece loaded from file
-    #[classmethod]
-    #[pyo3(signature = (vocab, **kwargs) -> "WordPiece")]
-    #[pyo3(text_signature = "(vocab, **kwargs)")]
-    fn from_file(
-        _cls: &Bound<'_, PyType>,
-        py: Python,
-        vocab: &str,
-        kwargs: Option<&Bound<'_, PyDict>>,
-    ) -> PyResult<Py<Self>> {
-        let vocab = WordPiece::read_file(vocab).map_err(|e| {
-            exceptions::PyException::new_err(format!("Error while reading WordPiece file: {e}"))
-        })?;
-        let vocab = vocab.into_iter().collect();
-        Py::new(
-            py,
-            PyWordPiece::new(py, Some(PyVocab::Vocab(vocab)), kwargs)?,
-        )
+        let wp = WordPiece::builder()
+            .unk_token(unk_token)
+            .continuing_subword_prefix(continuing_subword_prefix)
+            .max_input_chars_per_word(max_input_chars_per_word)
+            .build()
+            .map_err(to_pyerr)?;
+        Ok(PyClassInitializer::from(PyModel { inner: wp.into() }).add_subclass(PyWordPiece))
     }
 }
 
-/// An implementation of the WordLevel algorithm
-///
-/// Most simple tokenizer model based on mapping tokens to their corresponding id.
-///
-/// Args:
-///     vocab (:obj:`Dict[str, int]`, `optional`):
-///         A dictionary of string keys and their ids :obj:`{"am": 0,...}`
-///
-///     unk_token (:obj:`str`, `optional`):
-///         The unknown token to be used by the model.
-///
-/// Example::
-///
-///     >>> from tokenizers.models import WordLevel
-///     >>> # Build from a vocabulary dictionary
-///     >>> vocab = {"hello": 0, "world": 1, "<unk>": 2}
-///     >>> model = WordLevel(vocab=vocab, unk_token="<unk>")
-///     >>> # Load from file
-///     >>> model = WordLevel.from_file("vocab.json", unk_token="<unk>")
-///
-#[pyclass(extends=PyModel, module = "tokenizers.models", name = "WordLevel")]
-pub struct PyWordLevel {}
+/// The simplest model: one whole word, one id. Words outside the vocabulary
+/// become `unk_token`.
+#[pyclass(frozen, extends = PyModel, name = "WordLevel", module = "tokenizers.models")]
+pub struct PyWordLevel;
 
 #[pymethods]
 impl PyWordLevel {
-    #[getter]
-    fn get_unk_token(self_: PyRef<Self>) -> String {
-        getter!(self_, WordLevel, unk_token.clone())
-    }
-
-    #[setter]
-    fn set_unk_token(self_: PyRef<Self>, unk_token: String) {
-        setter!(self_, WordLevel, unk_token, unk_token);
-    }
-
     #[new]
-    #[pyo3(
-        signature = (vocab=None, unk_token = None),
-        text_signature = "(self, vocab=None, unk_token=None)"
-    )]
-    fn new(
-        _py: Python<'_>,
-        vocab: Option<PyVocab>,
-        unk_token: Option<String>,
-    ) -> PyResult<PyClassInitializer<Self>> {
-        let mut builder = WordLevel::builder();
-
-        if let Some(vocab) = vocab {
-            match vocab {
-                PyVocab::Vocab(vocab) => {
-                    let vocab = vocab.into_iter().collect();
-                    builder = builder.vocab(vocab);
-                }
-                PyVocab::Filename(vocab_filename) => {
-                    builder = builder.files(vocab_filename.to_string());
-                }
-            };
-        }
-        if let Some(unk_token) = unk_token {
-            builder = builder.unk_token(unk_token);
-        }
-
-        Ok(PyClassInitializer::<PyModel>::from(PyModel::from(
-            builder
-                .build()
-                .map_err(|e| exceptions::PyException::new_err(e.to_string()))?,
-        ))
-        .add_subclass(PyWordLevel {}))
-    }
-
-    /// Read a :obj:`vocab.json`
-    ///
-    /// This method provides a way to read and parse the content of a vocabulary file,
-    /// returning the relevant data structures. If you want to instantiate some WordLevel models
-    /// from memory, this method gives you the expected input from the standard files.
-    ///
-    /// Args:
-    ///     vocab (:obj:`str`):
-    ///         The path to a :obj:`vocab.json` file
-    ///
-    /// Returns:
-    ///     :obj:`Dict[str, int]`: The vocabulary as a :obj:`dict`
-    #[staticmethod]
-    #[pyo3(text_signature = "(vocab)")]
-    fn read_file(vocab: &str) -> PyResult<HashMap<String, u32>> {
-        let vocab = WordLevel::read_file(vocab).map_err(|e| {
-            exceptions::PyException::new_err(format!("Error while reading WordLevel file: {e}"))
-        })?;
-        let vocab: HashMap<_, _> = vocab.into_iter().collect();
-        Ok(vocab)
-    }
-
-    /// Instantiate a WordLevel model from the given file
-    ///
-    /// This method is roughly equivalent to doing::
-    ///
-    ///     vocab = WordLevel.read_file(vocab_filename)
-    ///     wordlevel = WordLevel(vocab)
-    ///
-    /// If you don't need to keep the :obj:`vocab` values lying around, this method is
-    /// more optimized than manually calling :meth:`~tokenizers.models.WordLevel.read_file` to
-    /// initialize a :class:`~tokenizers.models.WordLevel`
-    ///
-    /// Args:
-    ///     vocab (:obj:`str`):
-    ///         The path to a :obj:`vocab.json` file
-    ///
-    /// Returns:
-    ///     :class:`~tokenizers.models.WordLevel`: An instance of WordLevel loaded from file
-    #[classmethod]
-    #[pyo3(signature = (vocab, unk_token = None)-> "WordLevel")]
-    #[pyo3(text_signature = "(vocab, unk_token=None)")]
-    fn from_file(
-        _cls: &Bound<'_, PyType>,
-        py: Python,
-        vocab: &str,
-        unk_token: Option<String>,
-    ) -> PyResult<Py<Self>> {
-        let vocab = WordLevel::read_file(vocab).map_err(|e| {
-            exceptions::PyException::new_err(format!("Error while reading WordLevel file: {e}"))
-        })?;
-        let vocab = vocab.into_iter().collect();
-        Py::new(
-            py,
-            PyWordLevel::new(py, Some(PyVocab::Vocab(vocab)), unk_token)?,
-        )
+    #[pyo3(signature = (*, unk_token = String::from("[UNK]")))]
+    fn new(unk_token: String) -> PyResult<PyClassInitializer<Self>> {
+        let wl = WordLevel::builder()
+            .unk_token(unk_token)
+            .build()
+            .map_err(to_pyerr)?;
+        Ok(PyClassInitializer::from(PyModel { inner: wl.into() }).add_subclass(PyWordLevel))
     }
 }
 
-/// An implementation of the Unigram algorithm
-///
-/// The Unigram algorithm is a subword tokenization algorithm based on unigram language
-/// models, as used in SentencePiece. It learns a vocabulary by starting with a large
-/// initial vocabulary and iteratively pruning it using the EM algorithm.
-///
-/// Args:
-///     vocab (:obj:`List[Tuple[str, float]]`, `optional`):
-///         A list of vocabulary items and their log-probability scores,
-///         e.g. ``[("am", -0.2442), ...]``. If not provided, an empty model is created.
-///
-///     unk_id (:obj:`int`, `optional`):
-///         The index of the unknown token in the vocabulary list.
-///
-///     byte_fallback (:obj:`bool`, `optional`, defaults to :obj:`False`):
-///         Whether to use SentencePiece byte fallback for characters not in the vocabulary.
-///
-///     alpha (:obj:`float`, `optional`):
-///         A float between 0 and 1 that represents the smoothing parameter (temperature) to use.
-///
-///     nbest_size (:obj:`int`, `optional`):
-///         An integer greater than 0 that represents the maximum number of best paths to consider.
-///         If not set, it samples from the full lattice (i.e. all valid subword segmentations).
-///
-/// Example::
-///
-///     >>> from tokenizers.models import Unigram
-///     >>> # Build an empty model (to be trained)
-///     >>> model = Unigram()
-///     >>> # Build from a vocabulary list
-///     >>> vocab = [("<unk>", 0.0), ("hello", -1.0), ("world", -1.5)]
-///     >>> model = Unigram(vocab=vocab, unk_id=0)
-///
-#[pyclass(extends=PyModel, module = "tokenizers.models", name = "Unigram")]
-pub struct PyUnigram {}
+/// The SentencePiece Unigram model: picks the most probable segmentation
+/// under a learned piece vocabulary. Starts empty — train it, or load a
+/// tokenizer.json.
+#[pyclass(frozen, extends = PyModel, name = "Unigram", module = "tokenizers.models")]
+pub struct PyUnigram;
 
 #[pymethods]
 impl PyUnigram {
-    #[getter]
-    fn get_alpha(self_: PyRef<Self>) -> Option<f64> {
-        getter!(self_, Unigram, alpha)
-    }
-
-    #[setter]
-    fn set_alpha(self_: PyRef<Self>, alpha: Option<f64>) {
-        setter!(self_, Unigram, alpha, alpha);
-    }
-
-    #[getter]
-    fn get_nbest_size(self_: PyRef<Self>) -> Option<usize> {
-        getter!(self_, Unigram, nbest_size)
-    }
-
-    #[setter]
-    fn set_nbest_size(self_: PyRef<Self>, nbest_size: Option<usize>) {
-        setter!(self_, Unigram, nbest_size, nbest_size);
-    }
-
     #[new]
-    #[pyo3(
-        signature = (vocab=None, unk_id=None, byte_fallback=None, alpha=None, nbest_size=None),
-        text_signature = "(self, vocab=None, unk_id=None, byte_fallback=None, alpha=None, nbest_size=None)"
-    )]
-    fn new(
-        vocab: Option<Vec<(String, f64)>>,
-        unk_id: Option<usize>,
-        byte_fallback: Option<bool>,
-        alpha: Option<f64>,
-        nbest_size: Option<usize>,
-    ) -> PyResult<PyClassInitializer<Self>> {
-        match (vocab, unk_id, byte_fallback) {
-            (Some(vocab), unk_id, byte_fallback) => {
-                let mut model = Unigram::from(vocab, unk_id, byte_fallback.unwrap_or(false))
-                    .map_err(|e| {
-                        exceptions::PyException::new_err(format!(
-                            "Error while loading Unigram: {e}"
-                        ))
-                    })?;
-                model.alpha = alpha;
-                model.nbest_size = nbest_size;
-                Ok(PyClassInitializer::<PyModel>::from(PyModel::from(model))
-                    .add_subclass(PyUnigram {}))
-            }
-            (None, None, _) => {
-                let mut model = Unigram::default();
-                model.alpha = alpha;
-                model.nbest_size = nbest_size;
-                Ok(PyClassInitializer::<PyModel>::from(PyModel::from(model))
-                    .add_subclass(PyUnigram {}))
-            }
-            _ => Err(exceptions::PyValueError::new_err(
-                "`vocab` and `unk_id` must be both specified",
-            )),
-        }
-    }
-
-    /// Clears the internal cache
-    #[pyo3(signature = () -> "None")]
-    #[pyo3(text_signature = "(self)")]
-    fn _clear_cache(self_: PyRef<Self>) -> PyResult<()> {
-        let super_ = self_.as_ref();
-        let mut model = super_.model.write().map_err(|e| {
-            exceptions::PyException::new_err(format!("Error while clearing Unigram cache: {e}"))
-        })?;
-        model.clear_cache();
-        Ok(())
-    }
-
-    /// Resize the internal cache
-    #[pyo3(signature = (capacity) -> "None")]
-    #[pyo3(text_signature = "(self, capacity)")]
-    fn _resize_cache(self_: PyRef<Self>, capacity: usize) -> PyResult<()> {
-        let super_ = self_.as_ref();
-        let mut model = super_.model.write().map_err(|e| {
-            exceptions::PyException::new_err(format!("Error while resizing Unigram cache: {e}"))
-        })?;
-        model.resize_cache(capacity);
-        Ok(())
+    fn new() -> PyClassInitializer<Self> {
+        PyClassInitializer::from(PyModel {
+            inner: Unigram::default().into(),
+        })
+        .add_subclass(PyUnigram)
     }
 }
 
-/// Models Module
+/// The algorithms that turn pre-tokenized pieces into token ids.
 #[pymodule(gil_used = false)]
 pub mod models {
     #[pymodule_export]
-    pub use super::PyBPE;
-    #[pymodule_export]
-    pub use super::PyModel;
-    #[pymodule_export]
-    pub use super::PyUnigram;
-    #[pymodule_export]
-    pub use super::PyWordLevel;
-    #[pymodule_export]
-    pub use super::PyWordPiece;
-}
-
-#[cfg(test)]
-mod test {
-    use crate::models::PyModel;
-    use pyo3::prelude::*;
-    use tk::models::ModelWrapper;
-    use tk::models::bpe::BPE;
-
-    #[test]
-    fn get_subtype() {
-        Python::attach(|py| {
-            let py_model = PyModel::from(BPE::default());
-            let py_bpe = py_model.get_as_subtype(py).unwrap();
-            assert_eq!("BPE", py_bpe.bind(py).get_type().qualname().unwrap());
-        })
-    }
-
-    #[test]
-    fn serialize() {
-        let rs_bpe = BPE::default();
-        let rs_bpe_ser = serde_json::to_string(&rs_bpe).unwrap();
-        let rs_wrapper: ModelWrapper = rs_bpe.into();
-        let rs_wrapper_ser = serde_json::to_string(&rs_wrapper).unwrap();
-
-        let py_model = PyModel::from(rs_wrapper);
-        let py_ser = serde_json::to_string(&py_model).unwrap();
-        assert_eq!(py_ser, rs_bpe_ser);
-        assert_eq!(py_ser, rs_wrapper_ser);
-
-        let py_model: PyModel = serde_json::from_str(&rs_bpe_ser).unwrap();
-        match *py_model.model.as_ref().read().unwrap() {
-            ModelWrapper::BPE(_) => (),
-            _ => panic!("Expected Bert postprocessor."),
-        };
-
-        let py_model: PyModel = serde_json::from_str(&rs_wrapper_ser).unwrap();
-        match *py_model.model.as_ref().read().unwrap() {
-            ModelWrapper::BPE(_) => (),
-            _ => panic!("Expected Bert postprocessor."),
-        };
-    }
+    pub use super::{PyBPE, PyModel, PyUnigram, PyWordLevel, PyWordPiece};
 }

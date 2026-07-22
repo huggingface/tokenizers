@@ -1,1080 +1,226 @@
-use pyo3::exceptions::PyException;
-use pyo3::types::*;
-use pyo3::{exceptions, prelude::*};
-use std::sync::{Arc, RwLock};
-
-use crate::error::ToPyResult;
-use crate::utils::{PyNormalizedString, PyNormalizedStringRefMut, PyPattern};
-use serde::ser::SerializeStruct;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use tk::normalizers::{
-    BertNormalizer, ByteLevel, Lowercase, NFC, NFD, NFKC, NFKD, Nmt, NormalizerWrapper,
-    Precompiled, Prepend, Replace, Strip, StripAccents,
+use pyo3::prelude::*;
+use tk_encode::normalizers::{
+    BertNormalizer, Lowercase, NFC, NFD, NFKC, NFKD, NormalizerWrapper, Prepend, Replace, Sequence,
+    Strip, StripAccents,
 };
-use tk::{NormalizedString, Normalizer};
-use tokenizers as tk;
 
-/// Represents the different kind of NormalizedString we can receive from Python:
-///  - Owned: Created in Python and owned by Python
-///  - RefMut: A mutable reference to a NormalizedString owned by Rust
-#[derive(FromPyObject)]
-enum PyNormalizedStringMut<'p> {
-    Owned(PyRefMut<'p, PyNormalizedString>),
-    RefMut(PyNormalizedStringRefMut),
-}
+use crate::error::to_pyerr;
 
-impl PyNormalizedStringMut<'_> {
-    /// Normalized the underlying `NormalizedString` using the provided normalizer
-    pub fn normalize_with<N>(&mut self, normalizer: &N) -> PyResult<()>
-    where
-        N: Normalizer,
-    {
-        match self {
-            PyNormalizedStringMut::Owned(n) => normalizer.normalize(&mut n.normalized),
-            PyNormalizedStringMut::RefMut(n) => n.map_as_mut(|n| normalizer.normalize(n))?,
-        }
-        .map_err(|e| exceptions::PyException::new_err(format!("{e}")))
-    }
-}
-
-/// Base class for all normalizers
+/// Base class for all normalizers.
 ///
-/// This class is not supposed to be instantiated directly. Instead, any implementation of a
-/// Normalizer will return an instance of this class when instantiated.
+/// A normalizer rewrites text before it is split: cleanup, case-folding,
+/// Unicode normalization. Normalizers are immutable values — assigning one to
+/// a tokenizer copies it.
 #[pyclass(
-    dict,
-    module = "tokenizers.normalizers",
-    name = "Normalizer",
+    frozen,
     subclass,
-    from_py_object
+    name = "Normalizer",
+    module = "tokenizers.normalizers"
 )]
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(transparent)]
 pub struct PyNormalizer {
-    pub(crate) normalizer: PyNormalizerTypeWrapper,
-}
-
-impl PyNormalizer {
-    pub(crate) fn new(normalizer: PyNormalizerTypeWrapper) -> Self {
-        PyNormalizer { normalizer }
-    }
-    pub(crate) fn get_as_subtype(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        let base = self.clone();
-        Ok(match self.normalizer {
-            PyNormalizerTypeWrapper::Sequence(_) => Py::new(py, (PySequence {}, base))?.into_any(),
-            PyNormalizerTypeWrapper::Single(ref inner) => match &*inner
-                .as_ref()
-                .read()
-                .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyNormalizer"))?
-            {
-                PyNormalizerWrapper::Custom(_) => {
-                    Py::new(py, base)?.into_any()
-                }
-                PyNormalizerWrapper::Wrapped(inner) => match inner {
-                    NormalizerWrapper::Sequence(_) => Py::new(py, (PySequence {}, base))?
-                        .into_any(),
-                    NormalizerWrapper::BertNormalizer(_) => {
-                        Py::new(py, (PyBertNormalizer {}, base))?.into_any()
-                    }
-                    NormalizerWrapper::StripNormalizer(_) => Py::new(py, (PyStrip {}, base))?
-                        .into_any(),
-                    NormalizerWrapper::Prepend(_) => Py::new(py, (PyPrepend {}, base))?
-                        .into_any(),
-                    NormalizerWrapper::ByteLevel(_) => Py::new(py, (PyByteLevel {}, base))?
-                        .into_any(),
-                    NormalizerWrapper::StripAccents(_) => Py::new(py, (PyStripAccents {}, base))?
-                        .into_any(),
-                    NormalizerWrapper::NFC(_) => Py::new(py, (PyNFC {}, base))?
-                        .into_any(),
-                    NormalizerWrapper::NFD(_) => Py::new(py, (PyNFD {}, base))?
-                        .into_any(),
-                    NormalizerWrapper::NFKC(_) => Py::new(py, (PyNFKC {}, base))?
-                        .into_any(),
-                    NormalizerWrapper::NFKD(_) => Py::new(py, (PyNFKD {}, base))?
-                        .into_any(),
-                    NormalizerWrapper::Lowercase(_) => Py::new(py, (PyLowercase {}, base))?
-                        .into_any(),
-                    NormalizerWrapper::Precompiled(_) => Py::new(py, (PyPrecompiled {}, base))?
-                        .into_any(),
-                    NormalizerWrapper::Replace(_) => Py::new(py, (PyReplace {}, base))?
-                        .into_any(),
-                    NormalizerWrapper::Nmt(_) => Py::new(py, (PyNmt {}, base))?
-                        .into_any(),
-                },
-            },
-        })
-    }
-}
-
-impl Normalizer for PyNormalizer {
-    fn normalize(&self, normalized: &mut NormalizedString) -> tk::Result<()> {
-        self.normalizer.normalize(normalized)
-    }
+    pub inner: NormalizerWrapper,
 }
 
 #[pymethods]
 impl PyNormalizer {
-    #[staticmethod]
-    #[pyo3(text_signature = "(normalizer)")]
-    fn custom(obj: Py<PyAny>) -> Self {
-        Self {
-            normalizer: PyNormalizerWrapper::Custom(CustomNormalizer::new(obj)).into(),
-        }
-    }
-
-    fn __getstate__(&self, py: Python) -> PyResult<Py<PyAny>> {
-        let data = serde_json::to_string(&self.normalizer).map_err(|e| {
-            exceptions::PyException::new_err(format!(
-                "Error while attempting to pickle Normalizer: {e}"
-            ))
-        })?;
-        Ok(PyBytes::new(py, data.as_bytes()).into())
-    }
-
-    fn __setstate__(&mut self, py: Python, state: Py<PyAny>) -> PyResult<()> {
-        match state.extract::<&[u8]>(py) {
-            Ok(s) => {
-                self.normalizer = serde_json::from_slice(s).map_err(|e| {
-                    exceptions::PyException::new_err(format!(
-                        "Error while attempting to unpickle Normalizer: {e}"
-                    ))
-                })?;
-                Ok(())
-            }
-            Err(e) => Err(e.into()),
-        }
-    }
-
-    /// Normalize a :class:`~tokenizers.NormalizedString` in-place
-    ///
-    /// This method allows to modify a :class:`~tokenizers.NormalizedString` to
-    /// keep track of the alignment information. If you just want to see the result
-    /// of the normalization on a raw string, you can use
-    /// :meth:`~tokenizers.normalizers.Normalizer.normalize_str`
-    ///
-    /// Args:
-    ///     normalized (:class:`~tokenizers.NormalizedString`):
-    ///         The normalized string on which to apply this
-    ///         :class:`~tokenizers.normalizers.Normalizer`
-    #[pyo3(text_signature = "(self, normalized)")]
-    fn normalize(&self, mut normalized: PyNormalizedStringMut) -> PyResult<()> {
-        normalized.normalize_with(&self.normalizer)
-    }
-
-    /// Normalize the given string
-    ///
-    /// This method provides a way to visualize the effect of a
-    /// :class:`~tokenizers.normalizers.Normalizer` but it does not keep track of the alignment
-    /// information. If you need to get/convert offsets, you can use
-    /// :meth:`~tokenizers.normalizers.Normalizer.normalize`
-    ///
-    /// Args:
-    ///     sequence (:obj:`str`):
-    ///         A string to normalize
-    ///
-    /// Returns:
-    ///     :obj:`str`: A string after normalization
-    #[pyo3(text_signature = "(self, sequence)")]
-    fn normalize_str(&self, sequence: &str) -> PyResult<String> {
-        let mut normalized = NormalizedString::from(sequence);
-        ToPyResult(self.normalizer.normalize(&mut normalized)).into_py()?;
-        Ok(normalized.get().to_owned())
-    }
-
-    fn __repr__(&self) -> PyResult<String> {
-        crate::utils::serde_pyo3::repr(self)
-            .map_err(|e| exceptions::PyException::new_err(e.to_string()))
-    }
-
-    fn __str__(&self) -> PyResult<String> {
-        crate::utils::serde_pyo3::to_string(self)
-            .map_err(|e| exceptions::PyException::new_err(e.to_string()))
+    fn __repr__(&self) -> String {
+        crate::component_repr(&self.inner)
     }
 }
 
-macro_rules! getter {
-    ($self: ident, $variant: ident, $name: ident) => {{
-        let super_ = $self.as_ref();
-        if let PyNormalizerTypeWrapper::Single(ref norm) = super_.normalizer {
-            let wrapper = norm.read().expect(
-                "RwLock synchronisation primitive is poisoned, cannot get subtype of PyNormalizer",
-            );
-            if let PyNormalizerWrapper::Wrapped(NormalizerWrapper::$variant(o)) = (&*wrapper) {
-                o.$name.clone()
-            } else {
-                unreachable!()
+pub fn wrap_normalizer(py: Python<'_>, inner: NormalizerWrapper) -> PyResult<Py<PyNormalizer>> {
+    let base = PyNormalizer {
+        inner: inner.clone(),
+    };
+    let init = PyClassInitializer::from(base);
+    let obj = match inner {
+        NormalizerWrapper::BertNormalizer(_) => {
+            Bound::new(py, init.add_subclass(PyBertNormalizer))?.into_super()
+        }
+        NormalizerWrapper::StripNormalizer(_) => {
+            Bound::new(py, init.add_subclass(PyStrip))?.into_super()
+        }
+        NormalizerWrapper::StripAccents(_) => {
+            Bound::new(py, init.add_subclass(PyStripAccents))?.into_super()
+        }
+        NormalizerWrapper::NFC(_) => Bound::new(py, init.add_subclass(PyNFC))?.into_super(),
+        NormalizerWrapper::NFD(_) => Bound::new(py, init.add_subclass(PyNFD))?.into_super(),
+        NormalizerWrapper::NFKC(_) => Bound::new(py, init.add_subclass(PyNFKC))?.into_super(),
+        NormalizerWrapper::NFKD(_) => Bound::new(py, init.add_subclass(PyNFKD))?.into_super(),
+        NormalizerWrapper::Sequence(_) => {
+            Bound::new(py, init.add_subclass(PySequence))?.into_super()
+        }
+        NormalizerWrapper::Lowercase(_) => {
+            Bound::new(py, init.add_subclass(PyLowercase))?.into_super()
+        }
+        NormalizerWrapper::Replace(_) => Bound::new(py, init.add_subclass(PyReplace))?.into_super(),
+        NormalizerWrapper::Prepend(_) => Bound::new(py, init.add_subclass(PyPrepend))?.into_super(),
+        // Loadable from tokenizer.json but not constructible from Python: exposed as the base class.
+        NormalizerWrapper::Nmt(_)
+        | NormalizerWrapper::Precompiled(_)
+        | NormalizerWrapper::ByteLevel(_) => Bound::new(py, init)?,
+    };
+    Ok(obj.unbind())
+}
+
+macro_rules! unit_normalizer {
+    ($pyname:ident, $name:literal, $inner:expr, $doc:literal) => {
+        #[doc = $doc]
+        #[pyclass(frozen, extends = PyNormalizer, name = $name, module = "tokenizers.normalizers")]
+        pub struct $pyname;
+
+        #[pymethods]
+        impl $pyname {
+            #[new]
+            fn new() -> PyClassInitializer<Self> {
+                PyClassInitializer::from(PyNormalizer {
+                    inner: $inner.into(),
+                })
+                .add_subclass($pyname)
             }
+        }
+    };
+}
+
+unit_normalizer!(
+    PyNFC,
+    "NFC",
+    NFC,
+    "Unicode NFC: recombines split characters (e + ´ becomes é)."
+);
+unit_normalizer!(
+    PyNFD,
+    "NFD",
+    NFD,
+    "Unicode NFD: splits characters into base + accents (é becomes e + ´)."
+);
+unit_normalizer!(
+    PyNFKC,
+    "NFKC",
+    NFKC,
+    "Unicode NFKC: NFC, plus compatibility replacements (ﬁ becomes fi)."
+);
+unit_normalizer!(
+    PyNFKD,
+    "NFKD",
+    NFKD,
+    "Unicode NFKD: NFD, plus compatibility replacements (ﬁ becomes fi)."
+);
+unit_normalizer!(
+    PyLowercase,
+    "Lowercase",
+    Lowercase,
+    "Lowercases everything."
+);
+unit_normalizer!(
+    PyStripAccents,
+    "StripAccents",
+    StripAccents,
+    "Removes accents (é becomes e). Only works on decomposed text: put NFD before it."
+);
+
+/// Removes whitespace at the start and/or end of the text.
+#[pyclass(frozen, extends = PyNormalizer, name = "Strip", module = "tokenizers.normalizers")]
+pub struct PyStrip;
+
+#[pymethods]
+impl PyStrip {
+    #[new]
+    #[pyo3(signature = (*, left = true, right = true))]
+    fn new(left: bool, right: bool) -> PyClassInitializer<Self> {
+        PyClassInitializer::from(PyNormalizer {
+            inner: Strip::new(left, right).into(),
+        })
+        .add_subclass(PyStrip)
+    }
+}
+
+/// Replaces every occurrence of `pattern` with `content`. With `regex=True`
+/// the pattern is a regular expression.
+#[pyclass(frozen, extends = PyNormalizer, name = "Replace", module = "tokenizers.normalizers")]
+pub struct PyReplace;
+
+#[pymethods]
+impl PyReplace {
+    #[new]
+    #[pyo3(signature = (pattern, content, *, regex = false))]
+    fn new(pattern: &str, content: &str, regex: bool) -> PyResult<PyClassInitializer<Self>> {
+        use tk_encode::normalizers::replace::ReplacePattern;
+        let pattern = if regex {
+            ReplacePattern::Regex(pattern.to_owned())
         } else {
-            unreachable!()
-        }
-    }};
+            ReplacePattern::String(pattern.to_owned())
+        };
+        let replace = Replace::new(pattern, content).map_err(to_pyerr)?;
+        Ok(PyClassInitializer::from(PyNormalizer {
+            inner: replace.into(),
+        })
+        .add_subclass(PyReplace))
+    }
 }
 
-macro_rules! setter {
-    ($self: ident, $variant: ident, $name: ident, $value: expr) => {{
-        let super_ = $self.as_ref();
-        if let PyNormalizerTypeWrapper::Single(ref norm) = super_.normalizer {
-            let mut wrapper = norm.write().expect(
-                "RwLock synchronisation primitive is poisoned, cannot get subtype of PyNormalizer",
-            );
-            if let PyNormalizerWrapper::Wrapped(NormalizerWrapper::$variant(ref mut o)) = *wrapper {
-                o.$name = $value;
-            }
-        }
-    }};
+/// Puts a fixed string in front of the text (SentencePiece prepends "▁").
+#[pyclass(frozen, extends = PyNormalizer, name = "Prepend", module = "tokenizers.normalizers")]
+pub struct PyPrepend;
+
+#[pymethods]
+impl PyPrepend {
+    #[new]
+    fn new(prepend: String) -> PyClassInitializer<Self> {
+        PyClassInitializer::from(PyNormalizer {
+            inner: Prepend::new(prepend).into(),
+        })
+        .add_subclass(PyPrepend)
+    }
 }
 
-/// BertNormalizer
-///
-/// Takes care of normalizing raw text before giving it to a Bert model.
-/// This includes cleaning the text, handling accents, chinese chars and lowercasing
-///
-/// Args:
-///     clean_text (:obj:`bool`, `optional`, defaults to :obj:`True`):
-///         Whether to clean the text, by removing any control characters
-///         and replacing all whitespaces by the classic one.
-///
-///     handle_chinese_chars (:obj:`bool`, `optional`, defaults to :obj:`True`):
-///         Whether to handle chinese chars by putting spaces around them.
-///
-///     strip_accents (:obj:`bool`, `optional`):
-///         Whether to strip all accents. If this option is not specified (ie == None),
-///         then it will be determined by the value for `lowercase` (as in the original Bert).
-///
-///     lowercase (:obj:`bool`, `optional`, defaults to :obj:`True`):
-///         Whether to lowercase.
-///
-/// Example::
-///
-///     >>> from tokenizers.normalizers import BertNormalizer
-///     >>> normalizer = BertNormalizer(lowercase=True)
-///     >>> normalizer.normalize_str("Héllo WORLD")
-///     'hello world'
-///
-#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name = "BertNormalizer")]
-pub struct PyBertNormalizer {}
+/// The BERT cleanup: removes control characters, puts spaces around CJK
+/// characters, and optionally strips accents and lowercases.
+/// `strip_accents=None` means "follow the lowercase setting", like the
+/// original BERT.
+#[pyclass(frozen, extends = PyNormalizer, name = "BertNormalizer", module = "tokenizers.normalizers")]
+pub struct PyBertNormalizer;
+
 #[pymethods]
 impl PyBertNormalizer {
-    #[getter]
-    fn get_clean_text(self_: PyRef<Self>) -> bool {
-        getter!(self_, BertNormalizer, clean_text)
-    }
-
-    #[setter]
-    fn set_clean_text(self_: PyRef<Self>, clean_text: bool) {
-        setter!(self_, BertNormalizer, clean_text, clean_text);
-    }
-
-    #[getter]
-    fn get_handle_chinese_chars(self_: PyRef<Self>) -> bool {
-        getter!(self_, BertNormalizer, handle_chinese_chars)
-    }
-
-    #[setter]
-    fn set_handle_chinese_chars(self_: PyRef<Self>, handle_chinese_chars: bool) {
-        setter!(
-            self_,
-            BertNormalizer,
-            handle_chinese_chars,
-            handle_chinese_chars
-        );
-    }
-
-    #[getter]
-    fn get_strip_accents(self_: PyRef<Self>) -> Option<bool> {
-        getter!(self_, BertNormalizer, strip_accents)
-    }
-
-    #[setter]
-    fn set_strip_accents(self_: PyRef<Self>, strip_accents: Option<bool>) {
-        setter!(self_, BertNormalizer, strip_accents, strip_accents);
-    }
-
-    #[getter]
-    fn get_lowercase(self_: PyRef<Self>) -> bool {
-        getter!(self_, BertNormalizer, lowercase)
-    }
-
-    #[setter]
-    fn set_lowercase(self_: PyRef<Self>, lowercase: bool) {
-        setter!(self_, BertNormalizer, lowercase, lowercase)
-    }
-
     #[new]
-    #[pyo3(signature = (
-        clean_text = true,
-        handle_chinese_chars = true,
-        strip_accents = None,
-        lowercase = true
-    ),
-        text_signature = "(self, clean_text=True, handle_chinese_chars=True, strip_accents=None, lowercase=True)")]
+    #[pyo3(signature = (*, clean_text = true, handle_chinese_chars = true, strip_accents = None, lowercase = true))]
     fn new(
         clean_text: bool,
         handle_chinese_chars: bool,
         strip_accents: Option<bool>,
         lowercase: bool,
     ) -> PyClassInitializer<Self> {
-        let normalizer =
-            BertNormalizer::new(clean_text, handle_chinese_chars, strip_accents, lowercase);
-        PyClassInitializer::<PyNormalizer>::from(PyNormalizer::from(normalizer))
-            .add_subclass(PyBertNormalizer {})
+        let inner = BertNormalizer::new(clean_text, handle_chinese_chars, strip_accents, lowercase);
+        PyClassInitializer::from(PyNormalizer {
+            inner: inner.into(),
+        })
+        .add_subclass(PyBertNormalizer)
     }
 }
 
-/// NFD Unicode Normalizer
-///
-/// Applies Unicode NFD (Canonical Decomposition) normalization. Decomposes characters into
-/// their canonical components. For example, accented characters like ``é`` (U+00E9) are
-/// decomposed into ``e`` (U+0065) + combining accent (U+0301).
-///
-/// This is often used as a first step before stripping accents with
-/// :class:`~tokenizers.normalizers.StripAccents`.
-///
-/// Example::
-///
-///     >>> from tokenizers.normalizers import NFD
-///     >>> normalizer = NFD()
-///     >>> normalizer.normalize_str("Héllo")
-///     'He\u0301llo'
-///
-#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name = "NFD")]
-pub struct PyNFD {}
-#[pymethods]
-impl PyNFD {
-    #[new]
-    #[pyo3(text_signature = "(self)")]
-    fn new() -> PyClassInitializer<Self> {
-        PyClassInitializer::from(PyNormalizer::new(NFD.into())).add_subclass(PyNFD {})
-    }
-}
-
-/// NFKD Unicode Normalizer
-///
-/// Applies Unicode NFKD (Compatibility Decomposition) normalization. Like NFD but also
-/// decomposes compatibility characters. For example, the ligature ``ﬁ`` (U+FB01) is
-/// decomposed into ``f`` + ``i``.
-///
-/// Example::
-///
-///     >>> from tokenizers.normalizers import NFKD
-///     >>> normalizer = NFKD()
-///     >>> normalizer.normalize_str("ﬁne")
-///     'fine'
-///
-#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name = "NFKD")]
-pub struct PyNFKD {}
-#[pymethods]
-impl PyNFKD {
-    #[new]
-    #[pyo3(text_signature = "(self)")]
-    fn new() -> PyClassInitializer<Self> {
-        PyClassInitializer::<PyNormalizer>::from(PyNormalizer::from(NFKD)).add_subclass(PyNFKD {})
-    }
-}
-
-/// NFC Unicode Normalizer
-///
-/// Applies Unicode NFC (Canonical Decomposition, followed by Canonical Composition)
-/// normalization. First decomposes characters, then recomposes them using canonical
-/// composition rules. This produces the canonical composed form.
-///
-/// Example::
-///
-///     >>> from tokenizers.normalizers import NFC
-///     >>> normalizer = NFC()
-///     >>> normalizer.normalize_str("e\u0301")  # 'e' + combining accent
-///     'é'
-///
-#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name = "NFC")]
-pub struct PyNFC {}
-#[pymethods]
-impl PyNFC {
-    #[new]
-    #[pyo3(text_signature = "(self)")]
-    fn new() -> PyClassInitializer<Self> {
-        PyClassInitializer::<PyNormalizer>::from(PyNormalizer::from(NFC)).add_subclass(PyNFC {})
-    }
-}
-
-/// NFKC Unicode Normalizer
-///
-/// Applies Unicode NFKC (Compatibility Decomposition, followed by Canonical Composition)
-/// normalization. Like NFC but also maps compatibility characters to their canonical
-/// equivalents. This is the normalization used by Python's :func:`str.casefold` and
-/// by many NLP pipelines.
-///
-/// Example::
-///
-///     >>> from tokenizers.normalizers import NFKC
-///     >>> normalizer = NFKC()
-///     >>> normalizer.normalize_str("ﬁne caf\u00e9")
-///     'fine café'
-///
-#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name = "NFKC")]
-pub struct PyNFKC {}
-#[pymethods]
-impl PyNFKC {
-    #[new]
-    #[pyo3(text_signature = "(self)")]
-    fn new() -> PyClassInitializer<Self> {
-        PyClassInitializer::<PyNormalizer>::from(PyNormalizer::from(NFKC)).add_subclass(PyNFKC {})
-    }
-}
-
-/// Allows concatenating multiple other Normalizer as a Sequence.
-/// All the normalizers run in sequence in the given order
-///
-/// Args:
-///     normalizers (:obj:`List[Normalizer]`):
-///         A list of Normalizer to be run as a sequence
-///
-/// Example::
-///
-///     >>> from tokenizers.normalizers import NFD, Lowercase, StripAccents, Sequence
-///     >>> normalizer = Sequence([NFD(), Lowercase(), StripAccents()])
-///     >>> normalizer.normalize_str("Héllo Wörld")
-///     'hello world'
-///
-#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name = "Sequence")]
-pub struct PySequence {}
+/// Runs several normalizers in order.
+#[pyclass(frozen, extends = PyNormalizer, name = "Sequence", module = "tokenizers.normalizers")]
+pub struct PySequence;
 
 #[pymethods]
 impl PySequence {
     #[new]
-    #[pyo3(signature = (normalizers), text_signature = "(self, normalizers)")]
-    fn new(normalizers: &Bound<'_, PyList>) -> PyResult<PyClassInitializer<Self>> {
-        let mut sequence = Vec::with_capacity(normalizers.len());
-        for n in normalizers.iter() {
-            let normalizer: PyRef<PyNormalizer> = n.extract()?;
-            match &normalizer.normalizer {
-                PyNormalizerTypeWrapper::Sequence(inner) => sequence.extend(inner.iter().cloned()),
-                PyNormalizerTypeWrapper::Single(inner) => sequence.push(inner.clone()),
-            }
-        }
-        Ok(
-            PyClassInitializer::from(PyNormalizer::new(PyNormalizerTypeWrapper::Sequence(
-                sequence,
-            )))
-            .add_subclass(PySequence {}),
-        )
-    }
-
-    fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyTuple>> {
-        PyTuple::new(py, [PyList::empty(py)])
-    }
-
-    fn __len__(self_: PyRef<'_, Self>) -> usize {
-        match &self_.as_ref().normalizer {
-            PyNormalizerTypeWrapper::Sequence(inner) => inner.len(),
-            PyNormalizerTypeWrapper::Single(_) => 1,
-        }
-    }
-
-    fn __getitem__(self_: PyRef<'_, Self>, py: Python<'_>, index: usize) -> PyResult<Py<PyAny>> {
-        match &self_.as_ref().normalizer {
-            PyNormalizerTypeWrapper::Sequence(inner) => match inner.get(index) {
-                Some(item) => PyNormalizer::new(PyNormalizerTypeWrapper::Single(item.clone()))
-                    .get_as_subtype(py),
-                _ => Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(
-                    "Index not found",
-                )),
-            },
-            PyNormalizerTypeWrapper::Single(inner) => {
-                PyNormalizer::new(PyNormalizerTypeWrapper::Single(inner.clone())).get_as_subtype(py)
-            }
-        }
-    }
-
-    fn __setitem__(self_: PyRef<'_, Self>, index: usize, value: Bound<'_, PyAny>) -> PyResult<()> {
-        let norm: PyNormalizer = value.extract()?;
-        let PyNormalizerTypeWrapper::Single(norm) = norm.normalizer else {
-            return Err(PyException::new_err("normalizer should not be a sequence"));
-        };
-        match &self_.as_ref().normalizer {
-            PyNormalizerTypeWrapper::Sequence(inner) => match inner.get(index) {
-                Some(item) => {
-                    *item
-                        .write()
-                        .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyNormalizer"))? = norm
-                        .read()
-                        .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyNormalizer"))?
-                        .clone();
-                }
-                _ => {
-                    return Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(
-                        "Index not found",
-                    ));
-                }
-            },
-            PyNormalizerTypeWrapper::Single(_) => {
-                return Err(PyException::new_err("normalizer is not a sequence"));
-            }
-        };
-        Ok(())
-    }
-}
-
-/// Lowercase Normalizer
-///
-/// Converts all text to lowercase using Unicode-aware lowercasing. This is equivalent
-/// to calling :meth:`str.lower` on the input.
-///
-/// Example::
-///
-///     >>> from tokenizers.normalizers import Lowercase
-///     >>> normalizer = Lowercase()
-///     >>> normalizer.normalize_str("Hello World")
-///     'hello world'
-///
-#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name = "Lowercase")]
-pub struct PyLowercase {}
-#[pymethods]
-impl PyLowercase {
-    #[new]
-    #[pyo3(text_signature = "(self)")]
-    fn new() -> PyClassInitializer<Self> {
-        PyClassInitializer::<PyNormalizer>::from(PyNormalizer::from(Lowercase))
-            .add_subclass(PyLowercase {})
-    }
-}
-
-/// Strip normalizer
-///
-/// Removes leading and/or trailing whitespace from the input string.
-///
-/// Args:
-///     left (:obj:`bool`, defaults to :obj:`True`):
-///         Whether to strip leading (left) whitespace.
-///
-///     right (:obj:`bool`, defaults to :obj:`True`):
-///         Whether to strip trailing (right) whitespace.
-///
-/// Example::
-///
-///     >>> from tokenizers.normalizers import Strip
-///     >>> normalizer = Strip()
-///     >>> normalizer.normalize_str("  hello world  ")
-///     'hello world'
-///     >>> Strip(right=False).normalize_str("  hello  ")
-///     'hello  '
-///
-#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name = "Strip")]
-pub struct PyStrip {}
-#[pymethods]
-impl PyStrip {
-    #[getter]
-    fn get_left(self_: PyRef<Self>) -> bool {
-        getter!(self_, StripNormalizer, strip_left)
-    }
-
-    #[setter]
-    fn set_left(self_: PyRef<Self>, left: bool) {
-        setter!(self_, StripNormalizer, strip_left, left)
-    }
-
-    #[getter]
-    fn get_right(self_: PyRef<Self>) -> bool {
-        getter!(self_, StripNormalizer, strip_right)
-    }
-
-    #[setter]
-    fn set_right(self_: PyRef<Self>, right: bool) {
-        setter!(self_, StripNormalizer, strip_right, right)
-    }
-
-    #[new]
-    #[pyo3(signature = (left = true, right = true), text_signature = "(self, left=True, right=True)")]
-    fn new(left: bool, right: bool) -> PyClassInitializer<Self> {
-        PyClassInitializer::<PyNormalizer>::from(PyNormalizer::from(Strip::new(left, right)))
-            .add_subclass(PyStrip {})
-    }
-}
-
-/// Prepend normalizer
-///
-/// Prepends a given string to the beginning of the input. This is typically used to
-/// add a meta-symbol such as ``▁`` (U+2581) at the start of each sequence, which is
-/// the convention used by SentencePiece-based models to indicate that a token appears
-/// at the start of a word.
-///
-/// Args:
-///     prepend (:obj:`str`, defaults to :obj:`"▁"`):
-///         The string to prepend to the input.
-///
-/// Example::
-///
-///     >>> from tokenizers.normalizers import Prepend
-///     >>> normalizer = Prepend("▁")
-///     >>> normalizer.normalize_str("hello")
-///     '▁hello'
-///
-#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name = "Prepend")]
-pub struct PyPrepend {}
-#[pymethods]
-impl PyPrepend {
-    #[getter]
-    fn get_prepend(self_: PyRef<Self>) -> String {
-        getter!(self_, Prepend, prepend)
-    }
-
-    #[setter]
-    fn set_prepend(self_: PyRef<Self>, prepend: String) {
-        setter!(self_, Prepend, prepend, prepend)
-    }
-
-    #[new]
-    #[pyo3(signature = (prepend="▁".to_string()), text_signature = "(self, prepend)")]
-    fn new(prepend: String) -> PyClassInitializer<Self> {
-        PyClassInitializer::<PyNormalizer>::from(PyNormalizer::from(Prepend::new(prepend)))
-            .add_subclass(PyPrepend {})
-    }
-}
-
-/// Bytelevel Normalizer
-///
-/// Converts all bytes in the input to their Unicode representation using the GPT-2
-/// byte-to-unicode mapping. Every byte value (0–255) is mapped to a unique visible
-/// character so that any arbitrary binary input can be tokenized without needing a
-/// special unknown token.
-///
-/// This normalizer is used together with the
-/// :class:`~tokenizers.pre_tokenizers.ByteLevel` pre-tokenizer and
-/// :class:`~tokenizers.decoders.ByteLevel` decoder.
-///
-/// Example::
-///
-///     >>> from tokenizers.normalizers import ByteLevel
-///     >>> normalizer = ByteLevel()
-///     >>> normalizer.normalize_str("hello\nworld")
-///     'helloĊworld'
-///
-#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name = "ByteLevel")]
-pub struct PyByteLevel {}
-#[pymethods]
-impl PyByteLevel {
-    #[new]
-    #[pyo3(text_signature = "(self)")]
-    fn new() -> PyClassInitializer<Self> {
-        PyClassInitializer::<PyNormalizer>::from(PyNormalizer::from(ByteLevel::new()))
-            .add_subclass(PyByteLevel {})
-    }
-}
-
-/// StripAccents normalizer
-///
-/// Strips all accent marks (combining diacritical characters) from the input. This
-/// normalizer should typically be used after applying :class:`~tokenizers.normalizers.NFD`
-/// or :class:`~tokenizers.normalizers.NFKD` decomposition, which separates base
-/// characters from their combining accents.
-///
-/// Example::
-///
-///     >>> from tokenizers.normalizers import NFD, StripAccents, Sequence
-///     >>> normalizer = Sequence([NFD(), StripAccents()])
-///     >>> normalizer.normalize_str("café")
-///     'cafe'
-///
-#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name = "StripAccents")]
-pub struct PyStripAccents {}
-#[pymethods]
-impl PyStripAccents {
-    #[new]
-    #[pyo3(text_signature = "(self)")]
-    fn new() -> PyClassInitializer<Self> {
-        PyClassInitializer::<PyNormalizer>::from(PyNormalizer::from(StripAccents))
-            .add_subclass(PyStripAccents {})
-    }
-}
-
-/// Nmt normalizer
-///
-/// Normalizer used in the Google NMT pipeline. It handles various text cleaning tasks
-/// including removing control characters, normalizing whitespace, and replacing certain
-/// Unicode characters. This is equivalent to the normalization done in the original
-/// SentencePiece NMT preprocessing.
-///
-/// Example::
-///
-///     >>> from tokenizers.normalizers import Nmt
-///     >>> normalizer = Nmt()
-///     >>> normalizer.normalize_str("Hello\x00World")
-///     'Hello World'
-///
-#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name = "Nmt")]
-pub struct PyNmt {}
-#[pymethods]
-impl PyNmt {
-    #[new]
-    #[pyo3(text_signature = "(self)")]
-    fn new() -> PyClassInitializer<Self> {
-        PyClassInitializer::<PyNormalizer>::from(PyNormalizer::from(Nmt)).add_subclass(PyNmt {})
-    }
-}
-
-/// Precompiled normalizer
-///
-/// A normalizer that uses a precompiled character map built from a SentencePiece model.
-/// This normalizer is automatically extracted from SentencePiece ``.model`` files and
-/// should not be constructed manually — it is used internally for full compatibility
-/// with SentencePiece-based tokenizers.
-///
-/// Args:
-///     precompiled_charsmap (:obj:`bytes`):
-///         The raw bytes of the precompiled character map, as found inside a
-///         SentencePiece ``.model`` file.
-///
-#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name = "Precompiled")]
-pub struct PyPrecompiled {}
-#[pymethods]
-impl PyPrecompiled {
-    #[new]
-    #[pyo3(text_signature = "(self, precompiled_charsmap)")]
-    fn new(precompiled_charsmap: Vec<u8>) -> PyResult<PyClassInitializer<Self>> {
-        // let precompiled_charsmap: Vec<u8> = FromPyObject::extract(py_precompiled_charsmap)?;
-        Ok(PyClassInitializer::<PyNormalizer>::from(PyNormalizer::from(
-            Precompiled::from(&precompiled_charsmap).map_err(|e| {
-                exceptions::PyException::new_err(format!(
-                    "Error while attempting to build Precompiled normalizer: {e}"
-                ))
-            })?,
-        ))
-        .add_subclass(PyPrecompiled {}))
-    }
-}
-
-/// Replace normalizer
-///
-/// Replaces occurrences of a pattern in the input string with the given content.
-/// The pattern can be either a plain string or a regular expression wrapped in
-/// :class:`~tokenizers.Regex`.
-///
-/// Args:
-///     pattern (:obj:`str` or :class:`~tokenizers.Regex`):
-///         The pattern to search for. Use a plain string for literal replacement,
-///         or wrap a regex pattern in :class:`~tokenizers.Regex` for regex replacement.
-///
-///     content (:obj:`str`):
-///         The string to replace each match with.
-///
-/// Example::
-///
-///     >>> from tokenizers import Regex
-///     >>> from tokenizers.normalizers import Replace
-///     >>> # Replace a literal string
-///     >>> Replace(".", " ").normalize_str("hello.world")
-///     'hello world'
-///     >>> # Replace using a regex
-///     >>> Replace(Regex(r"\s+"), " ").normalize_str("hello   world")
-///     'hello world'
-///
-#[pyclass(extends=PyNormalizer, module = "tokenizers.normalizers", name = "Replace")]
-pub struct PyReplace {}
-#[pymethods]
-impl PyReplace {
-    #[new]
-    #[pyo3(text_signature = "(self, pattern, content)")]
-    fn new(pattern: PyPattern, content: String) -> PyResult<PyClassInitializer<Self>> {
-        Ok(PyClassInitializer::<PyNormalizer>::from(PyNormalizer::from(
-            ToPyResult(Replace::new(pattern, content)).into_py()?,
-        ))
-        .add_subclass(PyReplace {}))
-    }
-
-    #[getter]
-    fn get_pattern(_self: PyRef<Self>) -> PyResult<()> {
-        Err(PyException::new_err("Cannot get pattern"))
-    }
-
-    #[setter]
-    fn set_pattern(_self: PyRef<Self>, _pattern: PyPattern) -> PyResult<()> {
-        Err(PyException::new_err(
-            "Cannot set pattern, please instantiate a new replace pattern instead",
-        ))
-    }
-
-    #[getter]
-    fn get_content(self_: PyRef<Self>) -> String {
-        getter!(self_, Replace, content)
-    }
-
-    #[setter]
-    fn set_content(self_: PyRef<Self>, content: String) {
-        setter!(self_, Replace, content, content)
-    }
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct CustomNormalizer {
-    inner: Py<PyAny>,
-}
-impl CustomNormalizer {
-    pub fn new(inner: Py<PyAny>) -> Self {
-        Self { inner }
-    }
-}
-
-impl tk::tokenizer::Normalizer for CustomNormalizer {
-    fn normalize(&self, normalized: &mut NormalizedString) -> tk::Result<()> {
-        Python::attach(|py| {
-            let normalized = PyNormalizedStringRefMut::new(normalized);
-            let py_normalized = self.inner.bind(py);
-            py_normalized.call_method("normalize", (normalized.get().clone(),), None)?;
-            Ok(())
+    fn new(normalizers: Vec<PyRef<'_, PyNormalizer>>) -> PyClassInitializer<Self> {
+        let inner: Vec<NormalizerWrapper> = normalizers.iter().map(|n| n.inner.clone()).collect();
+        PyClassInitializer::from(PyNormalizer {
+            inner: Sequence::new(inner).into(),
         })
+        .add_subclass(PySequence)
     }
 }
 
-impl Serialize for CustomNormalizer {
-    fn serialize<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        Err(serde::ser::Error::custom(
-            "Custom Normalizer cannot be serialized",
-        ))
-    }
-}
-
-impl<'de> Deserialize<'de> for CustomNormalizer {
-    fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        Err(serde::de::Error::custom(
-            "Custom Normalizer cannot be deserialized",
-        ))
-    }
-}
-
-#[derive(Clone, Debug, Deserialize)]
-#[serde(untagged)]
-pub(crate) enum PyNormalizerWrapper {
-    Custom(CustomNormalizer),
-    Wrapped(NormalizerWrapper),
-}
-
-impl Serialize for PyNormalizerWrapper {
-    fn serialize<S>(&self, serializer: S) -> Result<<S as Serializer>::Ok, <S as Serializer>::Error>
-    where
-        S: Serializer,
-    {
-        match self {
-            PyNormalizerWrapper::Wrapped(inner) => inner.serialize(serializer),
-            PyNormalizerWrapper::Custom(inner) => inner.serialize(serializer),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub(crate) enum PyNormalizerTypeWrapper {
-    Sequence(Vec<Arc<RwLock<PyNormalizerWrapper>>>),
-    Single(Arc<RwLock<PyNormalizerWrapper>>),
-}
-
-/// XXX: we need to manually implement deserialize here because of the structure of the
-/// PyNormalizerTypeWrapper enum. Given the underlying PyNormalizerWrapper can contain a Sequence,
-/// default deserialization will give us a PyNormalizerTypeWrapper::Single(Sequence) when we'd like
-/// it to be PyNormalizerTypeWrapper::Sequence(// ...).
-impl<'de> Deserialize<'de> for PyNormalizerTypeWrapper {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wrapper = NormalizerWrapper::deserialize(deserializer)?;
-        let py_wrapper: PyNormalizerWrapper = wrapper.into();
-        Ok(py_wrapper.into())
-    }
-}
-
-impl Serialize for PyNormalizerTypeWrapper {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        match self {
-            PyNormalizerTypeWrapper::Sequence(seq) => {
-                let mut ser = serializer.serialize_struct("Sequence", 2)?;
-                ser.serialize_field("type", "Sequence")?;
-                ser.serialize_field("normalizers", seq)?;
-                ser.end()
-            }
-            PyNormalizerTypeWrapper::Single(inner) => inner.serialize(serializer),
-        }
-    }
-}
-
-impl<I> From<I> for PyNormalizerWrapper
-where
-    I: Into<NormalizerWrapper>,
-{
-    fn from(norm: I) -> Self {
-        PyNormalizerWrapper::Wrapped(norm.into())
-    }
-}
-
-impl<I> From<I> for PyNormalizerTypeWrapper
-where
-    I: Into<PyNormalizerWrapper>,
-{
-    fn from(norm: I) -> Self {
-        let norm = norm.into();
-        match norm {
-            PyNormalizerWrapper::Wrapped(NormalizerWrapper::Sequence(seq)) => {
-                PyNormalizerTypeWrapper::Sequence(
-                    seq.into_iter()
-                        .map(|e| Arc::new(RwLock::new(PyNormalizerWrapper::Wrapped(e.clone()))))
-                        .collect(),
-                )
-            }
-            _ => PyNormalizerTypeWrapper::Single(Arc::new(RwLock::new(norm))),
-        }
-    }
-}
-
-impl<I> From<I> for PyNormalizer
-where
-    I: Into<NormalizerWrapper>,
-{
-    fn from(norm: I) -> Self {
-        PyNormalizer {
-            normalizer: norm.into().into(),
-        }
-    }
-}
-
-impl Normalizer for PyNormalizerTypeWrapper {
-    fn normalize(&self, normalized: &mut NormalizedString) -> tk::Result<()> {
-        match self {
-            PyNormalizerTypeWrapper::Single(inner) => inner
-                .read()
-                .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyNormalizer"))?
-                .normalize(normalized),
-            PyNormalizerTypeWrapper::Sequence(inner) => inner.iter().try_for_each(|n| {
-                n.read()
-                    .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyNormalizer"))?
-                    .normalize(normalized)
-            }),
-        }
-    }
-}
-
-impl Normalizer for PyNormalizerWrapper {
-    fn normalize(&self, normalized: &mut NormalizedString) -> tk::Result<()> {
-        match self {
-            PyNormalizerWrapper::Wrapped(inner) => inner.normalize(normalized),
-            PyNormalizerWrapper::Custom(inner) => inner.normalize(normalized),
-        }
-    }
-}
-
-/// Normalizers Module
+/// Text cleanup that runs before the text is split.
 #[pymodule(gil_used = false)]
 pub mod normalizers {
     #[pymodule_export]
-    pub use super::PyBertNormalizer;
-    #[pymodule_export]
-    pub use super::PyByteLevel;
-    #[pymodule_export]
-    pub use super::PyLowercase;
-    #[pymodule_export]
-    pub use super::PyNFC;
-    #[pymodule_export]
-    pub use super::PyNFD;
-    #[pymodule_export]
-    pub use super::PyNFKC;
-    #[pymodule_export]
-    pub use super::PyNFKD;
-    #[pymodule_export]
-    pub use super::PyNmt;
-    #[pymodule_export]
-    pub use super::PyNormalizer;
-    #[pymodule_export]
-    pub use super::PyPrecompiled;
-    #[pymodule_export]
-    pub use super::PyPrepend;
-    #[pymodule_export]
-    pub use super::PyReplace;
-    #[pymodule_export]
-    pub use super::PySequence;
-    #[pymodule_export]
-    pub use super::PyStrip;
-    #[pymodule_export]
-    pub use super::PyStripAccents;
-}
-
-#[cfg(test)]
-mod test {
-    use pyo3::prelude::*;
-    use tk::normalizers::NormalizerWrapper;
-    use tk::normalizers::unicode::{NFC, NFKC};
-    use tk::normalizers::utils::Sequence;
-
-    use crate::normalizers::{PyNormalizer, PyNormalizerTypeWrapper, PyNormalizerWrapper};
-
-    #[test]
-    fn get_subtype() {
-        Python::attach(|py| {
-            let py_norm = PyNormalizer::new(NFC.into());
-            let py_nfc = py_norm.get_as_subtype(py).unwrap();
-            assert_eq!("NFC", py_nfc.bind(py).get_type().qualname().unwrap());
-        })
-    }
-
-    #[test]
-    fn serialize() {
-        let py_wrapped: PyNormalizerWrapper = NFKC.into();
-        let py_ser = serde_json::to_string(&py_wrapped).unwrap();
-        let rs_wrapped = NormalizerWrapper::NFKC(NFKC);
-        let rs_ser = serde_json::to_string(&rs_wrapped).unwrap();
-        assert_eq!(py_ser, rs_ser);
-        let py_norm: PyNormalizer = serde_json::from_str(&rs_ser).unwrap();
-        match py_norm.normalizer {
-            PyNormalizerTypeWrapper::Single(inner) => match *inner.as_ref().read().unwrap() {
-                PyNormalizerWrapper::Wrapped(NormalizerWrapper::NFKC(_)) => {}
-                _ => panic!("Expected NFKC"),
-            },
-            _ => panic!("Expected wrapped, not sequence."),
-        }
-
-        let py_seq: PyNormalizerWrapper = Sequence::new(vec![NFC.into(), NFKC.into()]).into();
-        let py_wrapper_ser = serde_json::to_string(&py_seq).unwrap();
-        let rs_wrapped = NormalizerWrapper::Sequence(Sequence::new(vec![NFC.into(), NFKC.into()]));
-        let rs_ser = serde_json::to_string(&rs_wrapped).unwrap();
-        assert_eq!(py_wrapper_ser, rs_ser);
-
-        let py_seq = PyNormalizer::new(py_seq.into());
-        let py_ser = serde_json::to_string(&py_seq).unwrap();
-        assert_eq!(py_wrapper_ser, py_ser);
-
-        let rs_seq = Sequence::new(vec![NFC.into(), NFKC.into()]);
-        let rs_ser = serde_json::to_string(&rs_seq).unwrap();
-        assert_eq!(py_wrapper_ser, rs_ser);
-    }
-
-    #[test]
-    fn deserialize_sequence() {
-        let string = r#"{"type": "NFKC"}"#;
-        let normalizer: PyNormalizer = serde_json::from_str(string).unwrap();
-        match normalizer.normalizer {
-            PyNormalizerTypeWrapper::Single(inner) => match *inner.as_ref().read().unwrap() {
-                PyNormalizerWrapper::Wrapped(NormalizerWrapper::NFKC(_)) => {}
-                _ => panic!("Expected NFKC"),
-            },
-            _ => panic!("Expected wrapped, not sequence."),
-        }
-
-        let sequence_string = format!(r#"{{"type": "Sequence", "normalizers": [{string}]}}"#);
-        let normalizer: PyNormalizer = serde_json::from_str(&sequence_string).unwrap();
-
-        match normalizer.normalizer {
-            PyNormalizerTypeWrapper::Sequence(inner) => {
-                assert_eq!(inner.len(), 1);
-                match *inner[0].as_ref().read().unwrap() {
-                    PyNormalizerWrapper::Wrapped(NormalizerWrapper::NFKC(_)) => {}
-                    _ => panic!("Expected NFKC"),
-                };
-            }
-            _ => panic!("Expected sequence"),
-        };
-    }
+    pub use super::{
+        PyBertNormalizer, PyLowercase, PyNFC, PyNFD, PyNFKC, PyNFKD, PyNormalizer, PyPrepend,
+        PyReplace, PySequence, PyStrip, PyStripAccents,
+    };
 }

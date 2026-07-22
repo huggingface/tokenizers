@@ -7,7 +7,7 @@ from pathlib import Path
 
 import numpy as np
 
-from tokenizers_pipeline import AddedToken, Tokenizer, models, normalizers, pre_tokenizers, trainers
+from tokenizers import AddedToken, Tokenizer, models, normalizers, pre_tokenizers, trainers
 
 DATA = Path(__file__).resolve().parents[3] / "tokenizers" / "data"
 

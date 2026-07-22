@@ -1,70 +1,25 @@
+[build-system]
+requires = ["maturin>=1.5,<2.0"]
+build-backend = "maturin"
+
 [project]
 name = "tokenizers"
+description = "Fast Python bindings for 🤗 tokenizers, built on the PipelineTokenizer encode path"
+readme = "README.md"
 requires-python = ">=3.10"
-authors = [
-  { name = "Nicolas Patry", email = "patry.nicolas@protonmail.com" },
-  { name = "Anthony Moi", email = "anthony@huggingface.co" },
-]
-classifiers = [
-  "Development Status :: 5 - Production/Stable",
-  "Intended Audience :: Developers",
-  "Intended Audience :: Education",
-  "Intended Audience :: Science/Research",
-  "License :: OSI Approved :: Apache Software License",
-  "Operating System :: OS Independent",
-  "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3.10",
-  "Programming Language :: Python :: 3.11",
-  "Programming Language :: Python :: 3.12",
-  "Programming Language :: Python :: 3.13",
-  "Programming Language :: Python :: 3.14",
-  "Programming Language :: Python :: 3 :: Only",
-  "Topic :: Scientific/Engineering :: Artificial Intelligence",
-]
 keywords = ["NLP", "tokenizer", "BPE", "transformer", "deep learning"]
-dynamic = ["description", "license", "readme", "version"]
-dependencies = ["huggingface_hub>=0.16.4,<2.0"]
+dependencies = ["numpy>=1.24"]
+dynamic = ["version"]
 
 [project.urls]
 Homepage = "https://github.com/huggingface/tokenizers"
 Source = "https://github.com/huggingface/tokenizers"
 
-
 [project.optional-dependencies]
-testing = ["pytest", "pytest-asyncio", "requests", "numpy", "datasets", "ruff", "ty"]
-docs = ["sphinx", "sphinx_rtd_theme", "setuptools_rust"]
-dev = ["tokenizers[testing]"]
-
-
-[build-system]
-requires = ["maturin>=1.0,<2.0"]
-build-backend = "maturin"
+hub = ["huggingface_hub>=0.16.4"]
 
 [tool.maturin]
 python-source = "py_src"
-module-name = "tokenizers.tokenizers"
+module-name = "tokenizers._native"
 bindings = "pyo3"
-features = ["pyo3/extension-module", "abi3"]
-
-
-[tool.ruff]
-line-length = 119
-target-version = "py311"
-lint.ignore = [
-  # a == None in tests vs is None.
-  "E711",
-  # a == False in tests vs is False.
-  "E712",
-  # try.. import except.. pattern without using the lib.
-  "F401",
-  # Raw type equality is required in asserts
-  "E721",
-  # Import order
-  "E402",
-  # Fixtures unused import
-  "F811",
-]
-
-[tool.ty.rules]
-invalid-method-override = "ignore"
-invalid-type-form = "ignore"
+features = ["ext-module"]

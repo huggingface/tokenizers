@@ -11,41 +11,17 @@ on:
       - bindings/node/**
 
 jobs:
-  build_win_32:
-    name: Check it builds for Windows 32-bit
-    runs-on: windows-latest
-    strategy:
-      matrix:
-        # The cdylib is built with `abi3-py310`, so a single binary covers
-        # 3.10–3.14. Free-threaded 3.14t is the only interpreter that needs
-        # its own build (no abi3 / limited API).
-        python: ["3.14", "3.14t"]
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
-        with:
-          targets: i686-pc-windows-msvc
-
-      - name: Install Python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
-        with:
-          python-version: ${{ matrix.python }}
-          architecture: x86
-
-      - name: Build
-        run: cargo build --target i686-pc-windows-msvc --manifest-path ./bindings/python/Cargo.toml
-
   build_and_test:
-    name: Check everything builds & tests
+    name: Build, run the examples, check the stubs
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        python: ["3.14", "3.14t"]
+        # The cdylib is built with `abi3-py310`, so a single binary covers
+        # 3.10–3.14; test the floor and the newest. Free-threaded 3.14t is
+        # not supported (abi3 extensions cannot load there).
+        python: ["3.10", "3.14"]
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
@@ -58,68 +34,65 @@ jobs:
         with:
           workspaces: bindings/python
           shared-key: python
-          # Skip caching ~/.cargo/bin — earlier runs left a stale
-          # rustup-init binary masquerading as `cargo`, breaking clippy
-          # on macOS. The cargo toolchain is reinstalled by dtolnay/
-          # rust-toolchain each run anyway, so caching it adds risk
-          # without speedup.
           cache-bin: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Build and install
+        working-directory: ./bindings/python
+        run: |
+          uv venv .venv --python ${{ matrix.python }}
+          uv pip install --python .venv/bin/python maturin numpy
+          source .venv/bin/activate && maturin develop --release
+
+      # The examples read real tokenizer.json files + a text corpus. Cached
+      # under a key of this workflow's own (not shared with pipeline-bench,
+      # which needs the fixture corpora on top).
+      - name: Cache test data
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
+        with:
+          path: tokenizers/data
+          key: python-test-data-${{ hashFiles('tokenizers/Makefile', 'tokenizers/tk-encode/examples/bench_models.json') }}
+
+      - name: Download model tokenizers and corpus
+        working-directory: tokenizers
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: make bench-models data/big.txt HF="uvx --from huggingface_hub hf"
+
+      - name: Run the examples
+        working-directory: ./bindings/python
+        run: |
+          .venv/bin/python examples/01_train_and_encode.py
+          .venv/bin/python examples/02_pretrained.py
+          .venv/bin/python examples/03_threading.py
+
+      # The .pyi stubs are generated from the built extension; a diff here
+      # means someone changed the Rust API without running `make stubs`.
+      - name: Check the committed stubs are current
+        working-directory: ./bindings/python
+        run: |
+          cargo run --manifest-path tools/stub-gen/Cargo.toml
+          git diff --exit-code -- py_src
+
+  build_windows:
+    name: Check it builds on Windows
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
 
       - name: Install Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
         with:
-          python-version: ${{ matrix.python }}
-          architecture: "x64"
+          python-version: "3.14"
 
-      - name: Install
-        working-directory: ./bindings/python
-        run: |
-          python -m venv .env
-          source .env/bin/activate
-          pip install -U pip
-          pip install pytest pytest-asyncio huggingface_hub setuptools_rust numpy pyarrow datasets ruff ty maturin
-          # Build via maturin so we can drop the abi3 cargo feature on
-          # free-threaded Python (3.14t can't load abi3 extensions).
-          # `pip install -e .` would build through maturin's PEP 660 path
-          # which keeps abi3 enabled regardless of the interpreter.
-          # `parity-aware-bpe` must be re-listed explicitly on the 3.14t
-          # branch — `--no-default-features` strips it otherwise, and the
-          # Python shim unconditionally imports `ParityBpeTrainer`.
-          if python -c 'import sys; sys.exit(0 if sys._is_gil_enabled() else 1)' 2>/dev/null; then
-            maturin develop --release
-          else
-            maturin develop --release --no-default-features --features ext-module,parity-aware-bpe
-          fi
-
-
-      # Test fixtures are immutable — cache them (plus the huggingface_hub /
-      # datasets cache used by the test suite at runtime) so CI doesn't
-      # re-download from the Hub (and get rate-limited) on every run.
-      - name: Cache HF test data
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
-        with:
-          path: |
-            bindings/python/data
-            bindings/python/tests/data
-            ~/.cache/huggingface
-          key: hf-test-data-${{ runner.os }}-${{ hashFiles('bindings/python/Makefile', 'bindings/python/tests/utils.py') }}
-          restore-keys: hf-test-data-${{ runner.os }}-
-
-      - name: Run tests
-        working-directory: ./bindings/python
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: |
-          source .env/bin/activate
-          # `make test` also runs `cargo test --no-default-features` which
-          # links libpython via pyo3's `auto-initialize`. On free-threaded
-          # Python the macOS runner doesn't ship libpython3.14t in the
-          # framework path, so on 3.14t we run only the python half.
-          if python -c 'import sys; sys.exit(0 if sys._is_gil_enabled() else 1)' 2>/dev/null; then
-            make test
-          else
-            make test-py
-          fi
+      - name: Build
+        run: cargo build --release --manifest-path ./bindings/python/Cargo.toml
 
   quality:
     name: Lint & format
@@ -145,29 +118,6 @@ jobs:
       - name: Lint with Clippy
         run: cargo clippy --manifest-path ./bindings/python/Cargo.toml --all-targets --all-features -- -D warnings
 
-      - name: Install Python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
-        with:
-          python-version: "3.14"
-          architecture: "x64"
-
-      # check-style builds the abi3 cdylib and imports it, which only works
-      # under a GIL interpreter — hence pinned to 3.14, not free-threaded 3.14t.
-      - name: Install
-        working-directory: ./bindings/python
-        run: |
-          python -m venv .env
-          source .env/bin/activate
-          pip install -U pip
-          pip install pytest pytest-asyncio requests setuptools_rust numpy pyarrow datasets ruff ty maturin
-          maturin develop --release
-
-      - name: Check style
-        working-directory: ./bindings/python
-        run: |
-          source .env/bin/activate
-          make check-style
-
   audit:
     name: Audit dependencies
     runs-on: ubuntu-latest
@@ -187,5 +137,7 @@ jobs:
       - name: Install cargo-audit
         run: cargo install cargo-audit
 
+      # Both ignores are unmaintained-crate advisories pulled in transitively
+      # by the core crates (paste via rust-stemmers, fxhash via tk-encode).
       - name: Run Audit
-        run: cargo audit -D warnings -f ./bindings/python/Cargo.lock --ignore RUSTSEC-2024-0436 --ignore RUSTSEC-2025-0014 --ignore RUSTSEC-2025-0119 --ignore RUSTSEC-2026-0204 --ignore RUSTSEC-2025-0057
+        run: cargo audit -D warnings -f ./bindings/python/Cargo.lock --ignore RUSTSEC-2024-0436 --ignore RUSTSEC-2025-0057

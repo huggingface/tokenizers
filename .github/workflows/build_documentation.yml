@@ -1,16 +1,10 @@
 name: Build documentation
 
+# docs/source-doc-builder describes the 0.x Python API. The bindings were
+# rewritten for 1.0 (PipelineTokenizer); until the docs are rewritten to
+# match, the published docs only build on demand — automatic triggers would
+# publish documentation for an API the package no longer has.
 on:
-  push:
-    branches:
-      - main
-      - doc-builder*
-      - v*-release
-      - use_templates
-    tags:
-      - v*
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
       ref:

@@ -7,12 +7,7 @@ use tk_encode::tokenizer::AddedToken;
 /// it; `normalized` matches against normalized instead of raw text (defaults
 /// to the opposite of `special`); `special` marks template tokens like "<s>"
 /// that decoding should be able to skip.
-#[pyclass(
-    frozen,
-    from_py_object,
-    name = "AddedToken",
-    module = "tokenizers_pipeline"
-)]
+#[pyclass(frozen, from_py_object, name = "AddedToken", module = "tokenizers")]
 #[derive(Clone)]
 pub struct PyAddedToken {
     pub inner: AddedToken,
