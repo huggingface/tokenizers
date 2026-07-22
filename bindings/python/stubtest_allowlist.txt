@@ -1,0 +1,12 @@
+# Differences between the generated stubs and the runtime that stubtest may
+# ignore (`python -m mypy.stubtest tokenizers --allowlist stubtest_allowlist.txt`,
+# run by CI and `make test`). Keep this list tiny; explain every entry.
+#
+# These four are "disjoint bases" (PEP 800): pyo3 classes have their own
+# object layout, so no Python class can inherit from two of them. Stub
+# introspection cannot emit `@disjoint_base` yet, and the stubs are generated,
+# never hand-edited. Type checkers only lose a narrow narrowing refinement.
+tokenizers.models.Model
+tokenizers.normalizers.Normalizer
+tokenizers.pre_tokenizers.PreTokenizer
+tokenizers.trainers.Trainer

@@ -1,4 +1,4 @@
-"""Fast tokenizers built on the pipeline encode path. Start with `Tokenizer`."""
+"""Fast tokenizers: turn text into the token ids models consume. Start with `Tokenizer`."""
 
 from ._native import (
     AddedToken,

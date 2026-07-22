@@ -1,12 +1,37 @@
 [build-system]
-requires = ["maturin>=1.5,<2.0"]
+# 1.8 is the floor for PEP 639 license metadata (license as an SPDX string).
+requires = ["maturin>=1.8,<2.0"]
 build-backend = "maturin"
 
 [project]
 name = "tokenizers"
-description = "Fast Python bindings for 🤗 tokenizers, built on the PipelineTokenizer encode path"
+description = "Fast, thread-friendly Python bindings for 🤗 tokenizers"
 readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 requires-python = ">=3.10"
+authors = [
+  { name = "Anthony MOI", email = "m.anthony.moi@gmail.com" },
+  { name = "Nicolas Patry", email = "patry.nicolas@protonmail.com" },
+  { name = "Arthur Zucker", email = "arthur@huggingface.co" },
+  { name = "Luc Georges", email = "luc@huggingface.co" },
+  { name = "Simon Brandeis", email = "simon@huggingface.co" },
+]
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Education",
+  "Intended Audience :: Science/Research",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: 3 :: Only",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 keywords = ["NLP", "tokenizer", "BPE", "transformer", "deep learning"]
 dependencies = ["numpy>=1.24"]
 dynamic = ["version"]

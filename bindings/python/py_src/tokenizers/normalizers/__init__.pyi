@@ -95,3 +95,5 @@ class StripAccents(Normalizer):
     Removes accents (é becomes e). Only works on decomposed text: put NFD before it.
     """
     def __new__(cls, /) -> StripAccents: ...
+
+__all__ = ["BertNormalizer", "Lowercase", "NFC", "NFD", "NFKC", "NFKD", "Normalizer", "Prepend", "Replace", "Sequence", "Strip", "StripAccents"]

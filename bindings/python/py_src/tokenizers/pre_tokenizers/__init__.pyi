@@ -66,7 +66,8 @@ class PreTokenizer:
 class Punctuation(PreTokenizer):
     """
     Splits on punctuation. `behavior` says what happens to the punctuation
-    itself — see `Split` for the options.
+    itself — see `Split` for the options; the default, "isolated", keeps each
+    punctuation character as its own piece.
     """
     def __new__(cls, /, behavior: str = ...) -> Punctuation: ...
 
@@ -109,3 +110,5 @@ class WhitespaceSplit(PreTokenizer):
     Splits on whitespace only.
     """
     def __new__(cls, /) -> WhitespaceSplit: ...
+
+__all__ = ["BertPreTokenizer", "ByteLevel", "CharDelimiterSplit", "Digits", "FixedLength", "PreTokenizer", "Punctuation", "Sequence", "Split", "UnicodeScripts", "Whitespace", "WhitespaceSplit"]

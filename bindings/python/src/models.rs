@@ -135,7 +135,7 @@ impl PyWordLevel {
 
 /// The SentencePiece Unigram model: picks the most probable segmentation
 /// under a learned piece vocabulary. Starts empty — train it, or load a
-/// tokenizer.json.
+/// trained one with `Tokenizer.from_file`.
 #[pyclass(frozen, extends = PyModel, name = "Unigram", module = "tokenizers.models")]
 pub struct PyUnigram;
 

@@ -7,7 +7,7 @@ dev: .venv
 
 .venv:
 	uv venv .venv
-	uv pip install --python $(PYTHON) maturin numpy pytest ruff
+	uv pip install --python $(PYTHON) maturin numpy pytest ruff mypy
 
 # Regenerate the .pyi stubs from the built extension. Run after `make dev`.
 .PHONY: stubs
@@ -17,14 +17,15 @@ stubs:
 .PHONY: test
 test: dev
 	$(PYTHON) -m pytest -q
+	$(PYTHON) -m mypy.stubtest tokenizers --allowlist stubtest_allowlist.txt
 
 # Run the end-to-end examples. `datasets` (for 06) is installed on demand so
 # `make dev` stays lean; 06 downloads wikitext-2 (~12 MB) on first run.
 .PHONY: examples
 examples: dev
 	uv pip install --python $(PYTHON) datasets
-	$(PYTHON) examples/01_train_and_encode.py
-	$(PYTHON) examples/02_pretrained.py
+	$(PYTHON) examples/01_pretrained.py
+	$(PYTHON) examples/02_train_and_encode.py
 	$(PYTHON) examples/03_threading.py
 	$(PYTHON) examples/04_train_bert_wordpiece.py
 	$(PYTHON) examples/05_train_bytelevel_bpe.py

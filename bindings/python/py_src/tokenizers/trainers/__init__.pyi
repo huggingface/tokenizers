@@ -75,3 +75,5 @@ class WordPieceTrainer(Trainer):
     continuation prefix ("##" by default).
     """
     def __new__(cls, /, *, vocab_size: int = 30000, min_frequency: int = 0, special_tokens: Sequence[str |AddedToken] = ..., limit_alphabet: int |None = None, initial_alphabet: Sequence[str] = ..., continuing_subword_prefix: str = ..., end_of_word_suffix: str |None = None, show_progress: bool = True) -> WordPieceTrainer: ...
+
+__all__ = ["BpeTrainer", "ParityBpeTrainer", "Trainer", "UnigramTrainer", "WordLevelTrainer", "WordPieceTrainer"]

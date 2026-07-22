@@ -1,5 +1,5 @@
-"""End-to-end: build a tokenizer from scratch, train it, mutate its components
-in place, encode, serialize, pickle, and hit the decode stub."""
+"""End-to-end: build a tokenizer from scratch, train it, swap its components,
+encode, serialize, pickle, and see that decode raises for now."""
 
 import pickle
 import tempfile
@@ -25,7 +25,8 @@ tok = Tokenizer(models.BPE())
 tok.normalizer = normalizers.Sequence([normalizers.NFKC(), normalizers.Lowercase()])
 tok.pre_tokenizer = pre_tokenizers.Whitespace()
 
-# 2. Train from a Python iterator (GIL only taken to refill 256-line buffers)
+# 2. Train from a Python iterator. Training runs in Rust threads; the
+#    interpreter lock is only taken briefly to pull lines from the iterator.
 trainer = trainers.BpeTrainer(
     vocab_size=1000,
     special_tokens=["<s>", "</s>", AddedToken("<pad>", special=True)],
@@ -41,7 +42,7 @@ ids = tok.encode("The quick brown fox <s> jumps over the lazy dog")
 print(f"ids: {ids.dtype} {ids}")
 assert isinstance(ids, np.ndarray) and ids.dtype == np.uint32
 assert tok.token_to_id("<s>") in ids
-assert all(tok.id_to_token(int(i)) is not None for i in ids)
+assert all(tok.id_to_token(i) is not None for i in ids)
 
 # 4. Mutate a component in place: dropping the lowercasing normalizer changes ids
 tok_ids_lower = tok.encode("HELLO WORLD")

@@ -46,10 +46,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             std::fs::create_dir_all(parent)?;
         }
         let mut contents = postprocess(&contents);
-        if rel_path == Path::new("__init__.pyi") {
+        let is_root = rel_path == Path::new("__init__.pyi");
+        if is_root {
             // `create_exception!` types carry no introspection metadata.
             contents.push_str("\nclass TokenizersError(Exception): ...\n");
+            // The runtime package re-exports the submodules; mirror that so
+            // `tokenizers.models` resolves on the stub too.
+            contents.push('\n');
+            for sub in &module.modules {
+                contents.push_str(&format!("from {MODULE} import {0} as {0}\n", sub.name));
+            }
         }
+        contents.push_str(&render_all(&module, &rel_path, is_root));
         std::fs::write(&out_path, &contents)?;
         println!("generated {}", out_path.display());
     }
@@ -77,19 +85,75 @@ fn postprocess(contents: &str) -> String {
     let mut contents = contents
         .replace("from . import", &format!("from {MODULE} import"))
         .replace("from .", &format!("from {MODULE}."));
+    // Introspection emits a `__getattr__ -> Incomplete` catch-all, which makes
+    // the stub non-exhaustive: any removed or misspelled attribute would still
+    // type-check. Our exports are fully introspected, so drop the escape hatch
+    // and let type checkers reject unknown names.
+    contents = contents
+        .replace("def __getattr__(name: str) -> Incomplete: ...\n", "")
+        .replace("from _typeshed import Incomplete\n", "");
     // Annotated numpy return types need their imports.
     if contents.contains("npt.") || contents.contains("np.") {
-        contents = format!(
-            "import numpy as np\nimport numpy.typing as npt\n\n{contents}"
+        contents = insert_imports(
+            &contents,
+            "import numpy as np\nimport numpy.typing as npt\n",
         );
     }
     // The async_* annotations reference Coroutine/Any.
     if contents.contains("Coroutine[") {
-        contents = format!(
-            "from collections.abc import Coroutine\nfrom typing import Any\n\n{contents}"
+        contents = insert_imports(
+            &contents,
+            "from collections.abc import Coroutine\nfrom typing import Any\n",
         );
     }
     contents
+}
+
+/// Add `imports` to a stub, after the module docstring if there is one —
+/// prepending would demote the docstring to a stray string literal.
+fn insert_imports(contents: &str, imports: &str) -> String {
+    const QUOTES: &str = "\"\"\"";
+    if let Some(body) = contents.strip_prefix(QUOTES)
+        && let Some(body_len) = body.find(QUOTES)
+    {
+        let closing_line_end = QUOTES.len() + body_len + QUOTES.len();
+        let doc_end = contents[closing_line_end..]
+            .find('\n')
+            .map_or(contents.len(), |nl| closing_line_end + nl + 1);
+        let (docstring, rest) = contents.split_at(doc_end);
+        return format!("{docstring}\n{imports}{rest}");
+    }
+    format!("{imports}\n{contents}")
+}
+
+/// `__all__` for one stub, from the introspected module contents — it must
+/// match the runtime `__all__` of the shim `__init__.py`, and `stubtest`
+/// checks that it does.
+fn render_all(root: &pyo3_introspection::model::Module, rel_path: &Path, is_root: bool) -> String {
+    let module = if is_root {
+        root
+    } else {
+        let stem = rel_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .expect("stub paths are utf-8 files");
+        root.modules
+            .iter()
+            .find(|m| m.name == stem)
+            .expect("every submodule stub has an introspected module")
+    };
+    let mut names: Vec<&str> = Vec::new();
+    names.extend(module.classes.iter().map(|c| c.name.as_str()));
+    names.extend(module.functions.iter().map(|f| f.name.as_str()));
+    names.extend(module.attributes.iter().map(|a| a.name.as_str()));
+    if is_root {
+        names.push("TokenizersError");
+        names.extend(module.modules.iter().map(|m| m.name.as_str()));
+    }
+    names.sort_unstable();
+    names.dedup();
+    let quoted: Vec<String> = names.iter().map(|n| format!("\"{n}\"")).collect();
+    format!("\n__all__ = [{}]\n", quoted.join(", "))
 }
 
 /// Fail loudly if introspection came back without docstrings — that means the

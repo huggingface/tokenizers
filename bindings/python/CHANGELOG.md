@@ -12,21 +12,63 @@ Python: encode never holds the GIL, batches run multi-threaded in Rust,
 inputs are borrowed instead of copied, and ids come back as `numpy.uint32`
 arrays without a copy.
 
-Breaking changes:
+Breaking changes — encoding:
 
-- `encode` returns a numpy array of ids, not an `Encoding` object. Offsets,
-  type ids, attention masks, truncation and padding are gone from the encode
-  path.
+- `encode` returns a numpy array of ids, not an `Encoding` object. Everything
+  the `Encoding` carried is gone from the encode path: tokens, offsets, type
+  ids, attention masks, special-tokens masks, word ids, overflowing/stride,
+  and the char/word/token mapping helpers. Truncation and padding
+  (`enable_truncation`/`enable_padding` and their getters) are gone too.
+- `encode` takes a single text: the `pair=` argument and the
+  `is_pretokenized=` mode no longer exist (same for `encode_batch`).
 - Not implemented yet (loud errors, never wrong ids): `decode`,
   post-processor templates (pass `add_special_tokens=False`), and the
-  `Metaspace` pre-tokenizer.
-- Custom Python components are not supported; components are plain values.
-- `decoders`, `processors`, and the `implementations` helpers are gone.
+  `Metaspace` pre-tokenizer. `decode_batch`, `DecodeStream`,
+  `encode_batch_fast`, and `Tokenizer.post_process` are removed.
+- **`transformers`' `PreTrainedTokenizerFast` cannot run on 1.0 yet** — it
+  needs the `Encoding` fields, padding/truncation, and pair inputs listed
+  above. Pin `tokenizers<1.0` for `transformers` until it targets 1.x.
 
-Kept from 0.x: `async_encode`/`async_encode_batch` (now a thin
-`asyncio.to_thread` wrapper — no tokio runtime), parity-aware BPE training
-(`trainers.ParityBpeTrainer`), and free-threaded Python support (default
-wheels are abi3-py310; 3.14t ships non-abi3 `cp314t` wheels).
+Breaking changes — components and introspection:
+
+- Components (models, normalizers, pre-tokenizers, trainers) are immutable
+  values you construct and assign. All attribute getters/setters,
+  `__getstate__`/`__setstate__`, and the helper methods
+  (`Normalizer.normalize_str`, `PreTokenizer.pre_tokenize_str`,
+  `Model.tokenize`, `Model.save`, `Model.get_trainer`, …) are gone; `repr()`
+  shows a component's full `tokenizer.json` serialization instead.
+- Custom Python components (`Normalizer.custom`, `PreTokenizer.custom`,
+  `Decoder.custom`) are not supported, and the supporting types
+  (`NormalizedString`, `PreTokenizedString`, `Regex`, `Token`) are removed.
+  `Replace`/`Split` take `regex=True` instead of a `Regex` object.
+- Models no longer accept in-memory vocabs: `BPE(vocab, merges)`,
+  `WordPiece(vocab)`, `WordLevel(vocab)`, `Unigram(vocab)` and the
+  `read_file`/`from_file` helpers are gone (only `BPE.from_file` remains).
+  Build models by training or by loading a `tokenizer.json`.
+- `decoders`, `processors`, the `implementations` helpers
+  (`BertWordPieceTokenizer`, …), and `tools` (`EncodingVisualizer`) are gone.
+- `pre_tokenizers.ByteLevel` no longer takes `add_prefix_space` (files using
+  it fail at encode); `normalizers.Precompiled`/`Nmt`/`ByteLevel` cannot be
+  constructed from Python (loaded ones still run).
+
+Breaking changes — `Tokenizer` API and packaging:
+
+- Removed: `Tokenizer.from_str` (use `from_buffer`), `get_added_tokens_decoder`,
+  `num_special_tokens_to_add`, the `encode_special_tokens` property, and the
+  `length=` argument of `train_from_iterator`.
+- Most arguments are now keyword-only: `get_vocab(True)` becomes
+  `get_vocab(with_added_tokens=True)`, and so on.
+- Errors raise the new `tokenizers.TokenizersError` (a `RuntimeError` was
+  raised before in most places).
+- `from_pretrained` now calls the `huggingface_hub` Python package, which
+  moved from a required dependency to the `hub` extra:
+  `pip install 'tokenizers[hub]'`. `numpy>=1.24` is a new required dependency.
+
+Kept: `async_encode`/`async_encode_batch` (now a thin `asyncio.to_thread`
+wrapper — no tokio runtime) and free-threaded Python support (default wheels
+are abi3-py310; free-threaded interpreters get their own non-abi3 wheels).
+New in 1.0: parity-aware BPE training (`trainers.ParityBpeTrainer`), which
+never shipped in a 0.x release.
 
 ## [0.13.2] 
 

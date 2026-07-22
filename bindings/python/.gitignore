@@ -3,3 +3,4 @@
 .release/
 python_bench.json
 python_bench.md
+.smoke/

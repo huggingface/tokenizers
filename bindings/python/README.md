@@ -1,20 +1,46 @@
 # tokenizers (Python bindings)
 
-Python bindings for 🤗 tokenizers, built on the `PipelineTokenizer` encode
-path. This is the 1.x rewrite of the bindings: same `tokenizer.json` files,
-same ids as 0.x, and much faster through Python — encode never holds the GIL,
-batches run multi-threaded in Rust, inputs are borrowed instead of copied, and
-ids come back as `numpy.uint32` arrays without a copy.
+Tokenizers turn text into the sequences of integer ids that language models
+consume. This package is the Python interface to Hugging Face's Rust
+[tokenizers](https://github.com/huggingface/tokenizers) library.
+
+This is the 1.x rewrite of the bindings: it loads the same `tokenizer.json`
+files as 0.x and produces the same ids, but is much faster through Python —
+encoding runs in Rust threads without blocking your Python program, and ids
+come back as ready-to-use `numpy` arrays.
 
 ```python
 import tokenizers as tk
 
 tok = tk.Tokenizer.from_file("tokenizer.json")
-ids = tok.encode("Hello world", add_special_tokens=False)   # np.ndarray[uint32]
-batch = tok.encode_batch(lines, add_special_tokens=False)   # list of arrays
+
+# Returns a numpy.uint32 array of token ids.
+# add_special_tokens=False skips template tokens like [CLS]/[SEP]; inserting
+# them is not implemented yet in 1.0, so leaving it True raises a loud
+# NotImplementedError on tokenizers that use such templates (BERT, Llama, …).
+ids = tok.encode("Hello world", add_special_tokens=False)
+
+# A list of arrays, encoded in parallel across Rust threads.
+batch = tok.encode_batch(["Hello world", "How are you?"], add_special_tokens=False)
 ```
 
-Training and in-place modification work too:
+To load a tokenizer straight from the [Hugging Face Hub](https://huggingface.co),
+install the `hub` extra (`pip install 'tokenizers[hub]'`):
+
+```python
+tok = tk.Tokenizer.from_pretrained("openai-community/gpt2")
+```
+
+## Training your own tokenizer
+
+A tokenizer has three parts, applied in order:
+
+- a **normalizer** cleans the text (lowercasing, Unicode fix-ups),
+- a **pre-tokenizer** cuts it into pieces (usually words),
+- the **model** turns each piece into ids, using a vocabulary learned during
+  training (BPE, WordPiece, Unigram, or WordLevel).
+
+You pick the parts, then train the model's vocabulary on your own text:
 
 ```python
 tok = tk.Tokenizer(tk.models.BPE())
@@ -24,12 +50,36 @@ tok.train_from_iterator(lines, trainer=tk.trainers.BpeTrainer(vocab_size=30000))
 tok.save("tokenizer.json")
 ```
 
+The `examples/` directory walks through all of this, starting with the
+simplest case (load a pretrained file and encode).
+
+## Threading and async
+
+Encoding releases the Python interpreter lock (the GIL), so this package
+plays well with threads and event loops:
+
+- Calling `encode` from several Python threads scales — the threads really
+  run in parallel, on every interpreter (free-threaded or not).
+- `encode_batch` parallelizes one batch across Rust threads. Set the
+  `TOKENIZERS_PARALLELISM` environment variable to `false`/`true` to
+  disable/force this.
+- In `asyncio` code, `await tok.async_encode(text)` /
+  `await tok.async_encode_batch(texts)` keep the event loop free while Rust
+  encodes in a worker thread.
+
+```python
+ids = await tok.async_encode("Hello world", add_special_tokens=False)
+```
+
 ## Breaking changes vs 0.x
 
 1.x is a ground-up rewrite with a smaller, faster API. The headline changes:
 
 - `encode` returns a `numpy.uint32` array of ids, not an `Encoding` object.
-  Offsets, type ids, and attention masks are gone from the encode path.
+  Tokens, offsets, type ids, attention masks, and word ids are gone from the
+  encode path, and so are truncation and padding
+  (`enable_truncation`/`enable_padding`).
+- `encode` takes a single text: no `pair=` argument, no `is_pretokenized=`.
 - Not implemented yet (loud errors, never wrong ids): `decode`,
   post-processor templates (`[CLS]`/`<s>` insertion — pass
   `add_special_tokens=False`), and the `Metaspace` pre-tokenizer
@@ -39,12 +89,15 @@ tok.save("tokenizer.json")
   you subclass.
 - `decoders`, `processors`, and the `implementations` helpers
   (`BertWordPieceTokenizer`, …) are gone.
+- **`transformers` cannot use 1.0 as its backend yet** — it needs several of
+  the removed pieces. Pin `tokenizers<1.0` for `transformers`.
 
-Unchanged from 0.x: `async_encode`/`async_encode_batch` (awaitable; encode
-releases the GIL, so they run in a plain worker thread), parity-aware BPE
-training (`trainers.ParityBpeTrainer`), and free-threaded Python — default
-wheels are abi3 (one binary for CPython 3.10–3.14), and 3.14t gets its own
-non-abi3 wheels (`maturin build --no-default-features`).
+The full list, including smaller removals and renames, is in the 1.0.0 entry
+of [CHANGELOG.md](CHANGELOG.md).
+
+Kept from 0.x: `async_encode`/`async_encode_batch` and free-threaded Python
+support. New in 1.0: parity-aware BPE training across several languages
+(`trainers.ParityBpeTrainer`).
 
 ## Build and use locally
 
@@ -62,7 +115,10 @@ Rebuild after changing Rust code with `make dev` again (or `maturin develop
 10-100× slower and any timing you take from it is meaningless.
 
 To build a distributable wheel instead: `maturin build --release` (find it in
-`target/wheels/`).
+`target/wheels/`). Default wheels use the stable Python ABI (abi3): one
+binary per platform covers CPython 3.10–3.14. Free-threaded interpreters
+(3.13t/3.14t) cannot load abi3 extensions, so their wheels are built
+per-version with `maturin build --no-default-features`.
 
 Other targets:
 
@@ -87,7 +143,7 @@ signatures come from the Rust sources; return types that introspection cannot
 see (numpy arrays, `Self`) are declared with
 `#[pyo3(signature = (...) -> "Type")]` annotations in the Rust code.
 
-## How it works
+## How it works (internals)
 
 A `Tokenizer` holds two things behind one lock:
 
@@ -100,7 +156,8 @@ A `Tokenizer` holds two things behind one lock:
 
 Every method releases the GIL before touching the lock — enforced at compile
 time by `DetachedRwLock` (see `src/detached_lock.rs`), with a clippy ban on
-`Python::attach` as the backstop.
+`Python::attach` as the backstop. Input strings are borrowed, not copied, and
+the output arrays take ownership of the Rust buffers, also copy-free.
 
 ## Benchmark
 
@@ -112,6 +169,12 @@ single-thread per fixture plus one multi-thread sweep, ids verified equal
 before the run counts. Because the released wheel and this build share the
 package name, the release is installed into `.release/` (`make bench` does
 this) and benched in a subprocess with `PYTHONPATH` pointing there.
+
+One caveat when quoting numbers: the 0.x side is timed on its fastest API
+(`encode_batch_fast`), but it still builds `Encoding` objects, while 1.x
+returns bare id arrays — part of the speedup is the new API doing strictly
+less output work. That is what a user pays end-to-end, but it is not a
+model-algorithm-only comparison.
 
 CI runs it in the `python-bindings-bench` job of the Pipeline Benchmark
 workflow, posts the table to the run's step summary, and the report job

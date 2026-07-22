@@ -1,12 +1,15 @@
 name: Python Release
 
 # Default wheels are abi3-py310: one binary per platform covers CPython
-# 3.10–3.14. Free-threaded 3.14t gets its own interpreter-specific wheels
-# (flavor: ft), built without the default `abi3` cargo feature.
+# 3.10–3.14. Free-threaded interpreters (3.13t/3.14t) get their own
+# interpreter-specific wheels (flavor: ft), built without the default `abi3`
+# cargo feature. `workflow_dispatch` runs the full matrix without releasing —
+# use it to exercise the exotic targets before tagging.
 on:
   push:
     tags:
       - v*
+  workflow_dispatch:
 
 env:
   AWS_DEFAULT_REGION: us-east-1
@@ -23,10 +26,9 @@ jobs:
         working-directory: ./bindings/python
 
   build:
-    name: build on ${{ matrix.platform || matrix.os }} (${{ matrix.target }} - ${{ matrix.manylinux || 'auto' }} - ${{ matrix.flavor == 'ft' && '3.14t' || matrix.interpreter || '3.14' }})
-    # only run on push to main and on release
+    name: build on ${{ matrix.platform || matrix.os }} (${{ matrix.target }} - ${{ matrix.manylinux || 'auto' }} - ${{ matrix.interpreter || '3.14' }})
     needs: [lock_exists]
-    if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' || contains(github.event.pull_request.labels.*.name, 'Full Build')
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     strategy:
       fail-fast: false
       matrix:
@@ -61,6 +63,7 @@ jobs:
             python-architecture: arm64
             python-install: "3.14"
             interpreter: "3.14"
+            smoke: true
               # - os: windows
               #   ls: dir
               #   target: aarch64
@@ -97,19 +100,34 @@ jobs:
             target: s390x
             interpreter: "3.14"
 
-          # --- Free-threaded Python 3.14t wheels -------------------------
+          # --- Free-threaded Python wheels (3.13t and 3.14t) --------------
           # `flavor: ft` drops the default `abi3` cargo feature (see the
-          # maturin args below), producing interpreter-specific cp314t
-          # wheels. linux container builds get 3.14t from the docker image,
-          # so `python-install` is unset there; macOS/windows host builds
-          # need it so setup-python actually installs 3.14t.
-          - { os: ubuntu, platform: linux, target: x86_64,  manylinux: auto,           flavor: ft }
-          - { os: ubuntu, platform: linux, target: aarch64, manylinux: auto,           flavor: ft }
-          - { os: ubuntu, platform: linux, target: x86_64,  manylinux: musllinux_1_1,  flavor: ft }
-          - { os: ubuntu, platform: linux, target: aarch64, manylinux: musllinux_1_1,  flavor: ft }
-          - { os: macos,                   target: x86_64,  manylinux: auto,           flavor: ft, python-install: "3.14t" }
-          - { os: macos,                   target: aarch64, manylinux: auto,           flavor: ft, python-install: "3.14t" }
-          - { os: windows, ls: dir, target: x86_64, manylinux: auto, python-architecture: x64, python-install: "3.14t", flavor: ft }
+          # maturin args below), producing interpreter-specific cp313t/cp314t
+          # wheels. linux container builds get the ft interpreters from the
+          # docker image, so `python-install` is unset there; macOS/windows
+          # host builds need it so setup-python actually installs them.
+          - { os: ubuntu, platform: linux, target: x86_64,  manylinux: auto,           flavor: ft, interpreter: "3.13t" }
+          - { os: ubuntu, platform: linux, target: x86_64,  manylinux: auto,           flavor: ft, interpreter: "3.14t" }
+          - { os: ubuntu, platform: linux, target: aarch64, manylinux: auto,           flavor: ft, interpreter: "3.13t" }
+          - { os: ubuntu, platform: linux, target: aarch64, manylinux: auto,           flavor: ft, interpreter: "3.14t" }
+          - { os: ubuntu, platform: linux, target: x86_64,  manylinux: musllinux_1_1,  flavor: ft, interpreter: "3.13t" }
+          - { os: ubuntu, platform: linux, target: x86_64,  manylinux: musllinux_1_1,  flavor: ft, interpreter: "3.14t" }
+          - { os: ubuntu, platform: linux, target: aarch64, manylinux: musllinux_1_1,  flavor: ft, interpreter: "3.13t" }
+          - { os: ubuntu, platform: linux, target: aarch64, manylinux: musllinux_1_1,  flavor: ft, interpreter: "3.14t" }
+          - { os: macos,                   target: x86_64,  manylinux: auto,           flavor: ft, interpreter: "3.13t", python-install: "3.13t" }
+          - { os: macos,                   target: x86_64,  manylinux: auto,           flavor: ft, interpreter: "3.14t", python-install: "3.14t" }
+          - { os: macos,                   target: aarch64, manylinux: auto,           flavor: ft, interpreter: "3.13t", python-install: "3.13t", smoke: true }
+          - { os: macos,                   target: aarch64, manylinux: auto,           flavor: ft, interpreter: "3.14t", python-install: "3.14t", smoke: true }
+          - { os: windows, ls: dir, target: x86_64, manylinux: auto, python-architecture: x64, python-install: "3.13t", interpreter: "3.13t", flavor: ft, smoke: true }
+          - { os: windows, ls: dir, target: x86_64, manylinux: auto, python-architecture: x64, python-install: "3.14t", interpreter: "3.14t", flavor: ft, smoke: true }
+
+          # --- Smoke-test flags --------------------------------------------
+          # `smoke: true` marks the cells whose wheel the runner itself can
+          # import (matching OS/arch/libc). Cross-compiled and musl wheels
+          # can't run here; twine check still covers their metadata.
+          - { os: ubuntu, target: x86_64, manylinux: auto, flavor: abi3, smoke: true }
+          - { os: macos,  target: aarch64,                 flavor: abi3, smoke: true }
+          - { os: windows, target: x86_64,                 flavor: abi3, smoke: true }
         exclude:
           - os: windows
             target: aarch64
@@ -149,7 +167,7 @@ jobs:
           # extensions). `flavor=abi3` builds use defaults.
           args: >-
             --release --out dist
-            --interpreter ${{ matrix.flavor == 'ft' && '3.14t' || matrix.interpreter || '3.14' }}
+            --interpreter ${{ matrix.interpreter || '3.14' }}
             ${{ matrix.flavor == 'ft' && '--no-default-features' || '' }}
           rust-toolchain: stable
           sccache: false
@@ -161,9 +179,37 @@ jobs:
       - run: twine check --strict dist/*
         working-directory: ./bindings/python
 
+      - name: Install uv
+        if: matrix.smoke
+        uses: astral-sh/setup-uv@v6
+
+      # abi3 wheels are deliberately smoked on 3.12 — not the 3.14 they were
+      # built with — to prove the stable-ABI claim. ft wheels run on their
+      # exact interpreter and must keep the GIL disabled.
+      - name: Smoke test the wheel
+        if: matrix.smoke
+        working-directory: ./bindings/python
+        shell: bash
+        run: |
+          uv venv .smoke --python ${{ matrix.flavor == 'ft' && matrix.interpreter || '3.12' }}
+          source .smoke/bin/activate 2>/dev/null || source .smoke/Scripts/activate
+          uv pip install dist/*.whl
+          python -c "
+          import sys
+          import tokenizers
+          print('tokenizers', tokenizers.__version__, 'on', sys.version)
+          tok = tokenizers.Tokenizer(tokenizers.models.BPE())
+          tok.pre_tokenizer = tokenizers.pre_tokenizers.Whitespace()
+          tok.train_from_iterator(['smoke test'] * 4, trainer=tokenizers.trainers.BpeTrainer(show_progress=False))
+          assert tok.encode('smoke', add_special_tokens=False).dtype == 'uint32'
+          gil = getattr(sys, '_is_gil_enabled', lambda: True)()
+          assert not ('${{ matrix.flavor }}' == 'ft' and gil), 'free-threaded wheel re-enabled the GIL'
+          print('smoke OK (gil enabled:', gil, ')')
+          "
+
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
-          name: pypi_files-${{ matrix.os }}-${{ matrix.target }}-${{ matrix.manylinux }}-${{ matrix.flavor || 'abi3' }}
+          name: pypi_files-${{ matrix.os }}-${{ matrix.target }}-${{ matrix.manylinux }}-${{ matrix.flavor || 'abi3' }}-${{ matrix.interpreter || 'default' }}
           path: ./bindings/python/dist
   build-sdist:
     name: build sdist
@@ -179,7 +225,7 @@ jobs:
           rust-toolchain: stable
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
-          name: pypi_files-srt
+          name: pypi_files-sdist
           path: ./bindings/python/dist
 
 
@@ -187,6 +233,8 @@ jobs:
     name: Upload package to PyPi
     runs-on: ubuntu-latest
     needs: [build, build-sdist]
+    # Tags only: a workflow_dispatch run is a build dry-run, never a release.
+    if: startsWith(github.ref, 'refs/tags/')
     env:
       PYPI_TOKEN: ${{ secrets.PYPI_TOKEN_DIST }}
 
@@ -203,9 +251,12 @@ jobs:
         with:
           path: ./bindings/python/dist
           merge-multiple: true
-          # Temporary deactivation while testing abi3 CI
-          # - name: Upload to PyPi
-          #   working-directory: ./bindings/python
-          #   run: |
-          #     pip install twine
-          #     twine upload dist/* -u __token__ -p "$PYPI_TOKEN"
+
+      # TODO(release): re-enable before shipping 1.0 — deactivated while the
+      # abi3 CI rework is validated. Until then, tagging builds and checks
+      # everything but publishes nothing.
+      # - name: Upload to PyPi
+      #   working-directory: ./bindings/python
+      #   run: |
+      #     pip install twine
+      #     twine upload dist/* -u __token__ -p "$PYPI_TOKEN"

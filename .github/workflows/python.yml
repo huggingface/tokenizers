@@ -43,7 +43,7 @@ jobs:
         working-directory: ./bindings/python
         run: |
           uv venv .venv --python ${{ matrix.python }}
-          uv pip install --python .venv/bin/python maturin numpy pytest datasets
+          uv pip install --python .venv/bin/python maturin numpy pytest datasets mypy
           source .venv/bin/activate && maturin develop --release \
             ${{ matrix.python == '3.14t' && '--no-default-features' || '' }}
 
@@ -81,23 +81,37 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           TOKENIZERS_SCALING_ASSERTS: ${{ runner.os == 'macOS' && '0' || '1' }}
         run: |
-          .venv/bin/python examples/01_train_and_encode.py
-          .venv/bin/python examples/02_pretrained.py
+          .venv/bin/python examples/01_pretrained.py
+          .venv/bin/python examples/02_train_and_encode.py
           .venv/bin/python examples/03_threading.py
           .venv/bin/python examples/04_train_bert_wordpiece.py
           .venv/bin/python examples/05_train_bytelevel_bpe.py
           .venv/bin/python examples/06_train_with_datasets.py
 
-      # The .pyi stubs are generated from the built extension; a diff here
-      # means someone changed the Rust API without running `make stubs`.
+      # The .pyi stubs are generated from the built extension; a difference
+      # here means someone changed the Rust API without running `make stubs`.
+      # `git status --porcelain` (not `git diff`) so brand-new, not-yet-tracked
+      # stub files are caught too.
       - name: Check the committed stubs are current
         working-directory: ./bindings/python
         run: |
           cargo run --manifest-path tools/stub-gen/Cargo.toml
-          git diff --exit-code -- py_src
+          if [ -n "$(git status --porcelain -- py_src)" ]; then
+            git status --porcelain -- py_src
+            git diff -- py_src
+            echo "::error::committed .pyi stubs are stale — run 'make stubs' and commit the result"
+            exit 1
+          fi
+
+      # Freshness (above) proves the stubs match the Rust API; stubtest
+      # proves they match the *runtime* — every stubbed name exists with the
+      # right shape, and nothing importable is missing from the stubs.
+      - name: Check the stubs against the runtime (stubtest)
+        working-directory: ./bindings/python
+        run: .venv/bin/python -m mypy.stubtest tokenizers --allowlist stubtest_allowlist.txt
 
   build_windows:
-    name: Check it builds on Windows
+    name: Build and test on Windows
     runs-on: windows-latest
     steps:
       - name: Checkout repository
@@ -106,13 +120,28 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
 
-      - name: Install Python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+      - name: Cache cargo registry / git / target
+        uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc  # v2.9.1
         with:
-          python-version: "3.14"
+          workspaces: bindings/python
+          shared-key: python
+          cache-bin: false
 
-      - name: Build
-        run: cargo build --release --manifest-path ./bindings/python/Cargo.toml
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      # No test data on Windows (the fetch targets need `make`): the
+      # data-dependent tests skip themselves, the rest still exercise the
+      # wheel end-to-end (train, encode, pickle, threading).
+      - name: Build and test
+        working-directory: ./bindings/python
+        shell: bash
+        run: |
+          uv venv .venv --python 3.14
+          source .venv/Scripts/activate
+          uv pip install maturin numpy pytest
+          maturin develop --release
+          python -m pytest -q -m "not network"
 
   quality:
     name: Lint & format

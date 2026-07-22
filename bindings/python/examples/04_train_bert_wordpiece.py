@@ -48,4 +48,4 @@ print(f"saved {out} ({tokenizer.get_vocab_size()} tokens)")
 
 reloaded = Tokenizer.from_file(out)
 ids = reloaded.encode("Training a WordPiece tokenizer is very easy", add_special_tokens=False)
-print([reloaded.id_to_token(int(i)) for i in ids])
+print([reloaded.id_to_token(i) for i in ids])

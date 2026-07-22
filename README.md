@@ -23,9 +23,11 @@ versatility.
    less than 20 seconds to tokenize a GB of text on a server's CPU.
  - Easy to use, but also extremely versatile.
  - Designed for research and production.
- - Normalization comes with alignments tracking. It's always possible to get the part of the
-   original sentence that corresponds to a given token.
- - Does all the pre-processing: Truncate, Pad, add the special tokens your model needs.
+ - The Rust library additionally tracks alignments (which part of the original
+   sentence a token comes from) and does the full pre-processing: truncate,
+   pad, add the special tokens your model needs. The 1.x Python bindings
+   focus on fast encoding and do not expose these yet — see the
+   [breaking changes](bindings/python/README.md#breaking-changes-vs-0x).
 
 ## Performances
 Performances can vary depending on hardware. The Python bindings ship a
@@ -46,17 +48,14 @@ We provide bindings to the following languages (more to come!):
 
 ## Installation
 
-You can install from source using:
+`pip install tokenizers` installs the released **0.x** version. The example
+below uses the **1.x** rewrite of the Python bindings, which is not released
+yet — install it from source (needs a Rust toolchain):
+
 ```bash
 pip install git+https://github.com/huggingface/tokenizers.git#subdirectory=bindings/python
 ```
 
-or install the released versions with
-
-```bash
-pip install tokenizers
-```
- 
 ## Quick example using Python:
 
 Choose your model between Byte-Pair Encoding, WordPiece or Unigram and instantiate a tokenizer:
@@ -65,7 +64,7 @@ Choose your model between Byte-Pair Encoding, WordPiece or Unigram and instantia
 from tokenizers import Tokenizer
 from tokenizers.models import BPE
 
-tokenizer = Tokenizer(BPE())
+tokenizer = Tokenizer(BPE(unk_token="[UNK]"))
 ```
 
 You can customize how pre-tokenization (e.g., splitting into words) is done:
@@ -93,7 +92,11 @@ print([tokenizer.id_to_token(i) for i in ids])
 ```
 
 `encode` returns the token ids as a `numpy.uint32` array — ready to hand to
-your model with no further conversion.
+your model with no further conversion. The emoji comes out as `[UNK]`: it
+never appeared in the training files, so it is not in the vocabulary, and BPE
+falls back to the `unk_token` we configured above.
 
-Check the [documentation](https://huggingface.co/docs/tokenizers/index)
-or the [quicktour](https://huggingface.co/docs/tokenizers/quicktour) to learn more!
+More in [bindings/python](bindings/python) — its README and `examples/`
+cover loading pretrained tokenizers, threading and async, and training. (The
+[hosted documentation](https://huggingface.co/docs/tokenizers/index) still
+describes the released 0.x API.)

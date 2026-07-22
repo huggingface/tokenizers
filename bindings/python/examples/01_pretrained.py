@@ -1,8 +1,9 @@
-"""Load real tokenizer.json files and encode a real corpus. Also demonstrates
-the two loud failure modes: unsupported pre-tokenizers and unwired
-post-processing. (Id parity against the released wheel is checked by
-benches/bench_vs_release.py — the released package shares our name, so the
-comparison needs two processes.)"""
+"""The simplest starting point: load real tokenizer.json files and encode a
+real corpus. Also demonstrates the two loud failure modes: pre-tokenizers the
+pipeline does not support yet, and post-processing (special-token insertion),
+which is not implemented yet. (Id parity against the released wheel is
+checked by benches/bench_vs_release.py — the released package shares our
+name, so the comparison needs two processes.)"""
 
 from pathlib import Path
 
@@ -26,9 +27,9 @@ for name, file in [
     batch = tok.encode_batch(LINES, add_special_tokens=False)
     assert all(ids.dtype == np.uint32 for ids in batch)
     total = sum(len(ids) for ids in batch)
-    round_trip = tok.id_to_token(int(batch[0][0]))
-    assert round_trip is not None
-    print(f"{name}: {total} tokens, first token {round_trip!r}")
+    first_token = tok.id_to_token(batch[0][0])
+    assert first_token is not None
+    print(f"{name}: {total} tokens, first token {first_token!r}")
 
 # Expected failure 1: post-processor would add special tokens -> loud error,
 # not silently wrong ids

@@ -2,7 +2,7 @@
 name = "tokenizers-python"
 version = "1.0.0-dev.0"
 edition = "2024"
-description = "Fast Python bindings for 🤗 tokenizers, built on the PipelineTokenizer encode path"
+description = "Fast, thread-friendly Python bindings for 🤗 tokenizers"
 license = "Apache-2.0"
 
 [lib]

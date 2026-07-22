@@ -29,7 +29,8 @@ extern "C" fn child_after_fork() {
     }
 }
 
-/// Fast tokenizers built on the pipeline encode path. Start with `Tokenizer`.
+/// Fast tokenizers: turn text into the token ids models consume.
+/// Start with `Tokenizer`.
 #[pymodule(gil_used = false)]
 pub mod _native {
     use super::*;

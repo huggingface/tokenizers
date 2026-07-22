@@ -449,6 +449,7 @@ impl PyTokenizer {
     ) -> PyResult<()> {
         let explicit = trainer.map(|t| t.inner.clone());
         self.inner.with(py, |lock| {
+            USED_PARALLELISM.store(true, Ordering::SeqCst);
             let mut guard = lock.write().map_err(poisoned)?;
             let mut trainer = explicit.unwrap_or_else(|| guard.spec.get_model().get_trainer());
             guard

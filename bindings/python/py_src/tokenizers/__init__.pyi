@@ -1,18 +1,18 @@
+"""
+Fast tokenizers: turn text into the token ids models consume.
+Start with `Tokenizer`.
+"""
+
 from collections.abc import Coroutine
 from typing import Any
 
 import numpy as np
 import numpy.typing as npt
 
-"""
-Fast tokenizers built on the pipeline encode path. Start with `Tokenizer`.
-"""
-
 from tokenizers.models import Model
 from tokenizers.normalizers import Normalizer
 from tokenizers.pre_tokenizers import PreTokenizer
 from tokenizers.trainers import Trainer
-from _typeshed import Incomplete
 from collections.abc import Sequence
 from os import PathLike
 from typing import Any, Final, final
@@ -183,6 +183,12 @@ class Tokenizer:
         Rust with the lock released.
         """
 
-def __getattr__(name: str) -> Incomplete: ...
 
 class TokenizersError(Exception): ...
+
+from tokenizers import models as models
+from tokenizers import normalizers as normalizers
+from tokenizers import pre_tokenizers as pre_tokenizers
+from tokenizers import trainers as trainers
+
+__all__ = ["AddedToken", "Tokenizer", "TokenizersError", "__version__", "models", "normalizers", "pre_tokenizers", "trainers"]

@@ -214,7 +214,8 @@ impl PyFixedLength {
 }
 
 /// Splits on punctuation. `behavior` says what happens to the punctuation
-/// itself — see `Split` for the options.
+/// itself — see `Split` for the options; the default, "isolated", keeps each
+/// punctuation character as its own piece.
 #[pyclass(frozen, extends = PyPreTokenizer, name = "Punctuation", module = "tokenizers.pre_tokenizers")]
 pub struct PyPunctuation;
 

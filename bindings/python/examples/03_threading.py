@@ -1,5 +1,6 @@
-"""Demonstrates that encode runs without the GIL: Python threads calling
-encode() scale, and encode_batch parallelizes in Rust via rayon.
+"""Demonstrates that encode runs without the interpreter lock (the GIL):
+Python threads calling encode() scale, and encode_batch spreads one batch
+across Rust's thread pool (rayon).
 
 Scaling is asserted unless TOKENIZERS_SCALING_ASSERTS=0 (CI sets it on shared
 macOS runners, whose noisy hosts make parallel speedup unmeasurable there);

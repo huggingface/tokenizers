@@ -36,7 +36,7 @@ class Unigram(Model):
     """
     The SentencePiece Unigram model: picks the most probable segmentation
     under a learned piece vocabulary. Starts empty — train it, or load a
-    tokenizer.json.
+    trained one with `Tokenizer.from_file`.
     """
     def __new__(cls, /) -> Unigram: ...
 
@@ -56,3 +56,5 @@ class WordPiece(Model):
     `max_input_chars_per_word` becomes `unk_token` outright.
     """
     def __new__(cls, /, *, unk_token: str = ..., continuing_subword_prefix: str = ..., max_input_chars_per_word: int = 100) -> WordPiece: ...
+
+__all__ = ["BPE", "Model", "Unigram", "WordLevel", "WordPiece"]
