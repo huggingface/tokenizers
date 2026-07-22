@@ -172,7 +172,7 @@ fn bench_threads(
         let p = par_mbps(
             |s| {
                 pipeline.encode(s).for_each(|r| {
-                    black_box(r.unwrap());
+                    black_box(r.1.unwrap());
                 });
             },
             chunks,
@@ -421,7 +421,7 @@ fn memory_child(which: &str, model: &Path) {
             let after_load = rss_now().unwrap_or(0);
             for c in &chunks {
                 pipeline.encode(c).for_each(|r| {
-                    black_box(r.unwrap());
+                    black_box(r.1.unwrap());
                 });
             }
             (after_load, rss_now().unwrap_or(0))
@@ -746,7 +746,7 @@ fn bench_model(
 ) -> Vec<Value> {
     let pipe_enc = |s: &str| {
         pipeline.encode(s).for_each(|r| {
-            black_box(r.unwrap());
+            black_box(r.1.unwrap());
         });
     };
     // per-model: the reference regex(es) onig will time on each fixture (empty for non-regex pretoks).
@@ -767,7 +767,7 @@ fn bench_model(
         let pipe_ids = |c: &String| -> Vec<u32> {
             pipeline
                 .encode(c)
-                .flat_map(|r| r.unwrap())
+                .flat_map(|r| r.1.unwrap())
                 .map(|t| t.id)
                 .collect()
         };
@@ -958,7 +958,7 @@ fn main() {
         // and has no range-based impl. Probe once and downgrade to "unsupported"
         // (with the reason) instead of panicking partway through the bench.
         let pipeline = match PipelineTokenizer::try_from(&tok) {
-            Ok(p) => match p.encode(PROBE).collect::<Result<Vec<_>, _>>() {
+            Ok(p) => match p.encode(PROBE).map(|(_, r)| r).collect::<Result<Vec<_>, _>>() {
                 Ok(_) => p,
                 Err(e) => {
                     eprintln!("  pipeline builds but can't encode yet ({shape}): {e}");

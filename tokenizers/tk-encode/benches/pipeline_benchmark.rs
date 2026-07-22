@@ -78,7 +78,7 @@ fn bench_pipeline(c: &mut Criterion) {
                 group.bench_function(BenchmarkId::from_parameter(label), |b| {
                     b.iter(|| {
                         pipeline.encode(&refs[..]).for_each(|r| {
-                            black_box(r.unwrap());
+                            black_box(r.1.unwrap());
                         });
                     })
                 });

@@ -1,10 +1,11 @@
 //! Parallel encode runtime for [`PipelineTokenizer`].
 //!
 //! [`PipelineTokenizer::encode`] returns an owned [`EncodeHandle`] immediately;
-//! workers encode in the background. Results surface in input order through the
-//! handle's two faces: the blocking [`Iterator`] (which also *assists* — the
-//! caller drains pending work instead of idling) and
-//! [`EncodeHandle::wait_for_completion`].
+//! workers encode in the background. Results surface through the handle's two
+//! faces: the blocking [`Iterator`], yielding `(input index, result)` in
+//! completion order (and *assisting* — the caller drains pending work instead of
+//! idling), and [`EncodeHandle::wait_for_completion`], which blocks and returns
+//! results back in input order.
 //!
 //! **Job model.** Work is split into `Item`s behind one atomic claim cursor in
 //! `JobCore`; rayon pool tasks and the consuming thread both drain it, so
@@ -35,6 +36,7 @@
 //! stale pool without touching it and lazily rebuilds.
 
 use std::cell::RefCell;
+use std::collections::VecDeque;
 use std::convert::TryInto;
 use std::ops::Range;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -717,18 +719,22 @@ struct UnitResult {
 }
 
 enum HandleInner {
-    /// Fully computed, drained in input order.
-    Ready(std::vec::IntoIter<Result<Vec<PipelineToken>>>),
-    /// Being filled by pool workers over a channel; reassembled in input order
-    /// on the fly.
+    /// Fully computed; yields `(input index, result)` in input order.
+    Ready(std::iter::Enumerate<std::vec::IntoIter<Result<Vec<PipelineToken>>>>),
+    /// Being filled by pool workers over a channel; each input surfaces (tagged
+    /// with its index) as soon as all of its chunks are in — completion order,
+    /// not input order.
     Streaming {
         core: Arc<JobCore>,
         state: StreamState,
     },
 }
 
-/// Reassembly state for a streaming job: buffers out-of-order chunk arrivals and yields
-/// each input once all of its chunks are in, in input order.
+/// Reassembly state for a streaming job. An input is split into parallel chunks
+/// that arrive interleaved with other inputs'; this buffers them per input and
+/// surfaces each input (with its index) the moment its last chunk lands — no
+/// input-order cursor, so a completed input never waits behind an earlier-index
+/// one that is still encoding.
 struct StreamState {
     rx: mpsc::Receiver<UnitResult>,
     /// `slots[seq][chunk_idx]` — a chunk's tokens once received; the row length
@@ -738,8 +744,12 @@ struct StreamState {
     filled: Vec<usize>,
     /// first error seen per input (if any).
     err: Vec<Option<super::Error>>,
-    /// next input index to emit (input-order cursor).
-    next_yield: usize,
+    /// Inputs whose chunks are all in, awaiting emit (also seeded with any
+    /// zero-chunk inputs, which are complete from the start).
+    ready: VecDeque<usize>,
+    /// Inputs not yet returned by [`next_completed`](Self::next_completed); when
+    /// zero, the job is fully drained.
+    remaining: usize,
     /// Caller-assist bookkeeping: set once the job's cursor is exhausted so
     /// the blocking faces stop trying to claim units.
     assist_done: bool,
@@ -751,14 +761,21 @@ impl StreamState {
             .iter()
             .map(|&n| (0..n).map(|_| None).collect())
             .collect();
+        let ready = counts
+            .iter()
+            .enumerate()
+            .filter_map(|(i, &n)| (n == 0).then_some(i))
+            .collect();
         let filled = vec![0; counts.len()];
         let err = counts.iter().map(|_| None).collect();
+        let remaining = counts.len();
         Self {
             rx,
             slots,
             filled,
             err,
-            next_yield: 0,
+            ready,
+            remaining,
             assist_done: false,
         }
     }
@@ -774,43 +791,49 @@ impl StreamState {
             }
         }
         self.filled[seq] += 1;
+        if self.filled[seq] == self.slots[seq].len() {
+            self.ready.push_back(seq);
+        }
     }
 
-    /// Channel closed with the current input still short of its chunks: a worker died
-    /// without sending (a bug or a killed thread). Surface that as an error for it.
-    fn disconnected(&mut self) -> Result<Vec<PipelineToken>> {
-        self.next_yield += 1;
-        Err("encode: worker exited before all chunks were produced".into())
-    }
-
-    /// If the next input in order is complete, emit it and advance the cursor.
-    fn try_emit_next(&mut self) -> Option<Result<Vec<PipelineToken>>> {
-        let k = self.next_yield;
-        if self.filled[k] < self.slots[k].len() {
-            return None;
+    /// Concatenate input `seq`'s chunks in order, or its first error.
+    fn take_result(&mut self, seq: usize) -> Result<Vec<PipelineToken>> {
+        if let Some(e) = self.err[seq].take() {
+            return Err(e);
         }
-        self.next_yield += 1;
-        if let Some(e) = self.err[k].take() {
-            return Some(Err(e));
-        }
-        let toks: Vec<PipelineToken> = self.slots[k]
+        Ok(self.slots[seq]
             .iter_mut()
             .flat_map(|slot| slot.take().unwrap_or_default())
-            .collect();
-        Some(Ok(toks))
+            .collect())
     }
 
-    /// Yield the next input's result in input order. While waiting it absorbs whatever the
-    /// channel already holds, then encodes pending items itself (caller-assist, when the
-    /// backend supports it) rather than blocking. Returns `None` when every input has been
-    /// emitted.
-    fn next_in_order(&mut self, core: &JobCore) -> Option<Result<Vec<PipelineToken>>> {
+    /// Channel closed with inputs still short of their chunks: a worker died
+    /// without sending (a bug or a killed thread). Surface an error for one such
+    /// input; repeated calls drain the rest, so a consumer never hangs.
+    fn disconnected(&mut self) -> (usize, Result<Vec<PipelineToken>>) {
+        let seq = (0..self.slots.len())
+            .find(|&s| self.filled[s] < self.slots[s].len())
+            .expect("channel closed with work outstanding but no unfinished input");
+        self.filled[seq] = self.slots[seq].len();
+        self.remaining -= 1;
+        (
+            seq,
+            Err("encode: worker exited before all chunks were produced".into()),
+        )
+    }
+
+    /// Yield the next input to *complete*, tagged with its index — not input
+    /// order. While waiting it absorbs whatever the channel already holds, then
+    /// encodes pending units itself (caller-assist) rather than idling. `None`
+    /// once every input has been emitted.
+    fn next_completed(&mut self, core: &JobCore) -> Option<(usize, Result<Vec<PipelineToken>>)> {
         loop {
-            if self.next_yield >= self.slots.len() {
-                return None;
+            if let Some(seq) = self.ready.pop_front() {
+                self.remaining -= 1;
+                return Some((seq, self.take_result(seq)));
             }
-            if let Some(out) = self.try_emit_next() {
-                return Some(out);
+            if self.remaining == 0 {
+                return None;
             }
             // Record anything already delivered without blocking.
             match self.rx.try_recv() {
@@ -836,7 +859,6 @@ impl StreamState {
             }
         }
     }
-
 }
 
 /// Input storage an [`EncodeHandle`] keeps alive for its whole lifetime — the
@@ -1072,11 +1094,12 @@ impl JobCore {
 
 /// An owned, escapable encode — what [`PipelineTokenizer::encode`] returns.
 /// Workers keep encoding in the background while the caller holds this; results
-/// surface in **input order** through:
-/// - the blocking `Iterator` (which also *assists*: the calling thread claims
+/// surface through:
+/// - the blocking `Iterator`, yielding `(input index, result)` in **completion
+///   order** as each input finishes (and *assisting*: the calling thread claims
 ///   and encodes pending chunks instead of idling),
-/// - [`EncodeHandle::wait_for_completion`](Self::wait_for_completion) /
-///   [`into_single`](Self::into_single).
+/// - [`EncodeHandle::wait_for_completion`](Self::wait_for_completion), which
+///   blocks and returns results placed back into **input order**.
 ///
 /// Dropping the job cancels all unclaimed work; chunks already being encoded
 /// finish into the void. Worker panics surface as the affected input's `Err`.
@@ -1087,7 +1110,7 @@ pub struct EncodeHandle {
 impl EncodeHandle {
     fn ready(results: Vec<Result<Vec<PipelineToken>>>) -> Self {
         Self {
-            inner: HandleInner::Ready(results.into_iter()),
+            inner: HandleInner::Ready(results.into_iter().enumerate()),
         }
     }
 
@@ -1100,37 +1123,36 @@ impl EncodeHandle {
         }
     }
 
-    /// Block until all inputs are encoded (assisting the pool from this thread);
-    /// return per-input token lists in input order. Fails on the first input
-    /// that errored.
-    pub fn wait_for_completion(self) -> Result<Vec<Vec<PipelineToken>>> {
-        self.collect()
+    /// Number of inputs the handle will process
+    fn len(&self) -> usize {
+        match &self.inner {
+            HandleInner::Ready(it) => it.len(),
+            HandleInner::Streaming { state, .. } => state.slots.len(),
+        }
     }
 
-    /// Convenience for a single-input encode: block for and return the sole
-    /// result (or the first, if called on a multi-input job).
-    ///
-    /// Not an efficient path — it blocks until every chunk of the input is done
-    /// and concatenates them on the calling thread (a serial tail with nothing
-    /// to overlap it). For throughput, prefer the streaming [`Iterator`] over a
-    /// batch, where each input's reassembly overlaps the others' encoding.
-    pub fn into_single(self) -> Result<Vec<PipelineToken>> {
-        self.wait_for_completion().map(|mut all| {
-            if all.is_empty() {
-                Vec::new()
-            } else {
-                all.swap_remove(0)
-            }
-        })
+    /// Block until all inputs are encoded, results are ordered in input order.
+    /// Fails fast: returns the first error it receives.
+    pub fn wait_for_completion(self) -> Result<Vec<Vec<PipelineToken>>> {
+        // XXX: `Vec::new` does not allocate when capacity == 0
+        let mut out: Vec<Vec<PipelineToken>> = vec![Vec::new(); self.len()];
+        for (seq, res) in self {
+            out[seq] = res?;
+        }
+        Ok(out)
     }
+
 }
 
 impl Iterator for EncodeHandle {
-    type Item = Result<Vec<PipelineToken>>;
+    /// `(input index, that input's tokens or error)`. The index is the position
+    /// in the input batch (always `0` for a single input); results arrive in
+    /// completion order, not input order.
+    type Item = (usize, Result<Vec<PipelineToken>>);
     fn next(&mut self) -> Option<Self::Item> {
         match &mut self.inner {
             HandleInner::Ready(it) => it.next(),
-            HandleInner::Streaming { core, state } => state.next_in_order(core),
+            HandleInner::Streaming { core, state } => state.next_completed(core),
         }
     }
 }
@@ -2110,6 +2132,18 @@ mod tests {
         tok.encode_one_with(input, &mut EncodeState::new())
     }
 
+    /// Test-only convenience: drain a single-input handle to its one result.
+    /// (Not on the public API — throughput callers use the streaming `Iterator`.)
+    trait IntoSingle {
+        fn into_single(self) -> Result<Vec<PipelineToken>>;
+    }
+    impl IntoSingle for EncodeHandle {
+        fn into_single(self) -> Result<Vec<PipelineToken>> {
+            self.wait_for_completion()
+                .map(|all| all.into_iter().next().unwrap_or_default())
+        }
+    }
+
     /// A chunk-safe pipeline: WordLevel model + `WhitespaceSplit` pre-tokenizer, no
     /// normalizer, no added tokens.
     fn chunk_safe_pipeline() -> PipelineTokenizer {
@@ -2249,8 +2283,12 @@ mod tests {
         let collected_ids: Vec<Vec<u32>> = collected.into_iter().map(ids).collect();
         assert_eq!(collected_ids, serial, "wait_for_completion != serial");
 
-        // Borrowed-slice sugar, streaming iterator in input order.
-        let streamed: Vec<Vec<u32>> = tok.encode(&inputs[..]).map(|r| ids(r.unwrap())).collect();
+        // Borrowed-slice sugar, streaming iterator: yields (index, result) in
+        // completion order; scattering by index must reproduce input order.
+        let mut streamed = vec![Vec::new(); inputs.len()];
+        for (seq, r) in tok.encode(&inputs[..]) {
+            streamed[seq] = ids(r.unwrap());
+        }
         assert_eq!(streamed, serial, "streaming Iterator != serial");
 
         // Owned returnable job (the default API): the handle escapes the call and
@@ -2266,7 +2304,10 @@ mod tests {
         assert_eq!(owned, serial, "owned wait_for_completion != serial");
 
         let job = tok.encode(owned_inputs.clone());
-        let owned_streamed: Vec<Vec<u32>> = job.map(|r| ids(r.unwrap())).collect();
+        let mut owned_streamed = vec![Vec::new(); owned_inputs.len()];
+        for (seq, r) in job {
+            owned_streamed[seq] = ids(r.unwrap());
+        }
         assert_eq!(owned_streamed, serial, "owned Iterator != serial");
 
         // Dropping a job early cancels cleanly (no hang, no panic) and the pool
@@ -2583,10 +2624,7 @@ mod tests {
             .filter(|u| matches!(u, PrefixUnit::Group { .. }))
             .count();
         assert!(groups > 1, "expected several span-groups, got {}", groups);
-        assert!(
-            prefix.norm_buf.is_none(),
-            "no normalizer -> no owned buf"
-        );
+        assert!(prefix.norm_buf.is_none(), "no normalizer -> no owned buf");
 
         let ids = |v: Vec<PipelineToken>| v.iter().map(|t| t.id).collect::<Vec<_>>();
         let serial = ids(encode_one(&tok, &big).unwrap());

@@ -99,10 +99,11 @@ impl PyPipelineTokenizer {
         Ok(Self { pipeline })
     }
 
-    /// Encode a batch of `str`, returning an :class:`EncodeHandle` **immediately**:
+    /// Encode a batch of `str`, returning an [`PyEncodeHandle`] as soon as possible:
     /// pool workers encode in the background while you hold the job, `wait()`
-    /// for everything, or iterate results as they complete (input order).
-    /// Zero-copy: the job reads the Python strings' UTF-8 buffers in place.
+    /// for everything (returned in input order), or iterate `(index, ids)` as
+    /// each input completes. Zero-copy: the job reads the Python strings' UTF-8
+    /// buffers in place.
     fn encode_batch(
         &self,
         py: Python<'_>,
@@ -117,9 +118,10 @@ impl PyPipelineTokenizer {
     }
 }
 
-/// An in-flight (or completed) batch encode. Results surface in input order:
-/// `wait()` blocks for all of them; iterating yields each input's ids as it
-/// becomes ready. The consuming thread *assists* the pool while it waits (all
+/// An in-flight (or completed) batch encode. `wait()` blocks for all inputs and
+/// returns their ids lists in input order; iterating yields `(index, ids)` for
+/// each input as it completes (completion order, not input order — use `index`
+/// to place it). The consuming thread *assists* the pool while it waits (all
 /// with the GIL released). Dropping the job cancels unclaimed work.
 #[pyclass(module = "tokenizers", name = "EncodeHandle")]
 pub struct PyEncodeHandle {
@@ -150,7 +152,10 @@ impl PyEncodeHandle {
         slf
     }
 
-    fn __next__(&self, py: Python<'_>) -> PyResult<Option<Vec<u32>>> {
+    /// Yield `(input index, ids)` for each input as it finishes — completion
+    /// order, not input order. `index` is the position in the batch passed to
+    /// `encode_batch` (always `0` for a single input).
+    fn __next__(&self, py: Python<'_>) -> PyResult<Option<(usize, Vec<u32>)>> {
         let next = py.detach(|| {
             self.job
                 .lock()
@@ -160,7 +165,7 @@ impl PyEncodeHandle {
         });
         match next {
             None => Ok(None),
-            Some(res) => Ok(Some(ids(PyResult::from(ToPyResult(res))?))),
+            Some((seq, res)) => Ok(Some((seq, ids(PyResult::from(ToPyResult(res))?)))),
         }
     }
 }

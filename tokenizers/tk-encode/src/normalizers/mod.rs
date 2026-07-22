@@ -239,12 +239,11 @@ impl pipeline::Normalizer for NormalizerWrapper {
 }
 
 impl NormalizerWrapper {
-    /// Whether this normalizer preserves raw-text stride boundaries — the
-    /// per-stage split-safety declaration the parallel plan composes (see
-    /// `PipelineTokenizer::stride_boundary`). True iff normalization is
-    /// per-character: no edge-strip, prefix-insert, or cross-boundary rules,
-    /// so normalizing two adjacent chunks separately equals normalizing the
-    /// whole. A `Sequence` qualifies iff every member does.
+    /// checks if the following is possible for the given normalizer:
+    /// ```rs
+    /// let (a, b) = input.split_at(n);
+    /// assert!(normalizer.normalize(a) + normalizer.normalize(b), normalizer.normalize(input));
+    /// ```
     pub(crate) fn preserves_stride_boundaries(&self) -> bool {
         match self {
             NormalizerWrapper::NFC(_)

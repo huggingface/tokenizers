@@ -7,8 +7,20 @@
 
 use std::convert::TryFrom;
 
-use tk_encode::pipeline::PipelineTokenizer;
-use tk_encode::Tokenizer;
+use tk_encode::pipeline::{EncodeHandle, PipelineToken, PipelineTokenizer};
+use tk_encode::{Result, Tokenizer};
+
+/// Test-only convenience: drain a single-input handle to its one result (the
+/// pipeline's public API is the streaming `Iterator` / `wait_for_completion`).
+trait IntoSingle {
+    fn into_single(self) -> Result<Vec<PipelineToken>>;
+}
+impl IntoSingle for EncodeHandle {
+    fn into_single(self) -> Result<Vec<PipelineToken>> {
+        self.wait_for_completion()
+            .map(|all| all.into_iter().next().unwrap_or_default())
+    }
+}
 
 fn load(corpus: &str) -> (Tokenizer, PipelineTokenizer, String) {
     let oracle = Tokenizer::from_file("../data/bert-wiki.json").unwrap();
@@ -71,11 +83,12 @@ fn check_batch(corpus: &str, target_bytes: usize) {
         .unwrap();
     assert_eq!(batch.len(), chunks.len(), "batch length mismatch");
 
-    // Iterator face must yield the same results, in input order.
-    let streamed: Vec<Vec<u32>> = pipeline
-        .encode(&refs[..])
-        .map(|r| r.unwrap().iter().map(|t| t.id).collect())
-        .collect();
+    // Iterator face yields (index, result) in completion order; scattering by
+    // index must reproduce the same per-input results.
+    let mut streamed: Vec<Vec<u32>> = vec![Vec::new(); refs.len()];
+    for (seq, r) in pipeline.encode(&refs[..]) {
+        streamed[seq] = r.unwrap().iter().map(|t| t.id).collect();
+    }
 
     for (i, (chunk, got)) in chunks.iter().zip(&batch).enumerate() {
         let got_ids: Vec<u32> = got.iter().map(|t| t.id).collect();
