@@ -851,6 +851,23 @@ def render_markdown(data, subtitle_base, meta, base, run_id, sizes,
                        "</td>"]
             md.append("</tr>")
         md += ["</table>", "", "</details>", ""]
+
+    # Decode throughput: legacy `Tokenizer::decode` for every model that reports
+    # it (the pipeline has no decode), so byte-level BPE is covered here too.
+    decode_models = [m for m in models if m.get("decode_results")]
+    if decode_models:
+        md += ["<details><summary><b>Decode throughput (Tokenizer)</b></summary>", "",
+               "Single-thread `Tokenizer::decode`, MB/s over decoded output bytes.", ""]
+        for m in decode_models:
+            rows = m["decode_results"]
+            g = geomean([r["decode_mbps"] for r in rows]) if rows else 0.0
+            md += [f"#### {escape(m['model'])} — {escape(m.get('shape', '?'))} · "
+                   f"geomean {g:.1f} MB/s", "",
+                   "| Fixture | Group | Decode MB/s |", "|---|---|---:|"]
+            for r in sorted(rows, key=lambda r: (r["group"], -r["decode_mbps"])):
+                md.append(f"| {r['fixture']} | {r['group']} | {r['decode_mbps']:.1f} |")
+            md.append("")
+        md += ["</details>", ""]
     return "\n".join(md)
 
 

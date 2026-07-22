@@ -189,6 +189,51 @@ fn time_pass(encode: &dyn Fn(&str) -> usize, chunks: &[String]) -> f64 {
     start.elapsed().as_secs_f64()
 }
 
+fn time_decode(decode: &dyn Fn(&[u32]) -> usize, id_chunks: &[Vec<u32>]) -> f64 {
+    let start = Instant::now();
+    let mut n = 0usize;
+    for ids in id_chunks {
+        n += decode(ids);
+    }
+    black_box(n);
+    start.elapsed().as_secs_f64()
+}
+
+/// Legacy-`Tokenizer` decode throughput per fixture. Decode is a `Tokenizer`
+/// capability (the `PipelineTokenizer` has none), so this runs for every model
+/// regardless of pipeline support — including byte-level BPE, where the fused
+/// decode path matters most. Throughput is measured over decoded output bytes.
+fn bench_decode(tok: &Tokenizer, fixtures: &[Fixture]) -> Vec<Value> {
+    let decode = |ids: &[u32]| tok.decode(ids, false).map(|s| s.len()).unwrap_or(0);
+
+    let mut rows = Vec::new();
+    for f in fixtures {
+        // Pre-encode each chunk to ids once; only decode is timed.
+        let id_chunks: Vec<Vec<u32>> = f
+            .chunks
+            .iter()
+            .map(|c| tok.encode(c.as_str(), false).unwrap().get_ids().to_vec())
+            .collect();
+        let out_bytes: usize = id_chunks.iter().map(|ids| decode(ids)).sum();
+
+        time_decode(&decode, &id_chunks); // warm-up
+        let mut samples = Vec::with_capacity(REPS);
+        for _ in 0..REPS {
+            samples.push(time_decode(&decode, &id_chunks));
+        }
+        let decode_mbps = out_bytes as f64 / median_secs(samples) / 1e6;
+        eprintln!("  {}: decode {decode_mbps:.1} MB/s", f.name);
+
+        rows.push(json!({
+            "fixture": f.name,
+            "group": f.group,
+            "out_bytes": out_bytes,
+            "decode_mbps": decode_mbps,
+        }));
+    }
+    rows
+}
+
 /// Median ns/byte of a warmed-up `run` over `len` bytes (`run` returns a value that's
 /// `black_box`'d so the work isn't optimized away).
 fn timed_ns(len: usize, mut run: impl FnMut() -> usize) -> f64 {
@@ -901,7 +946,7 @@ fn main() {
                 models.push(json!({
                     "model": name, "desc": desc, "shape": "?",
                     "reason": format!("load error: {e}"),
-                    "results": [], "memory": Value::Null,
+                    "results": [], "memory": Value::Null, "decode_results": [],
                 }));
                 continue;
             }
@@ -910,6 +955,9 @@ fn main() {
         // something to match, before any pipeline is derived from `tok`.
         inject_added_tokens(&mut tok);
         let shape = format!("{} · {}", model_kind(&tok), pretok_label(&path));
+
+        // Decode is a legacy-`Tokenizer` capability; measure it for every model.
+        let decode_rows = bench_decode(&tok, &fixtures);
 
         // A model can satisfy the pipeline's *build* constraints yet still fail at
         // *encode* time — e.g. a Sequence containing ByteLevel, which rewrites bytes
@@ -923,7 +971,7 @@ fn main() {
                     models.push(json!({
                         "model": name, "desc": desc, "shape": shape,
                         "reason": format!("{e}"),
-                        "results": [], "memory": Value::Null,
+                        "results": [], "memory": Value::Null, "decode_results": decode_rows,
                     }));
                     continue;
                 }
@@ -932,7 +980,7 @@ fn main() {
                 eprintln!("  unsupported by PipelineTokenizer ({shape})");
                 models.push(json!({
                     "model": name, "desc": desc, "shape": shape,
-                    "results": [], "memory": Value::Null,
+                    "results": [], "memory": Value::Null, "decode_results": decode_rows,
                 }));
                 continue;
             }
@@ -974,6 +1022,7 @@ fn main() {
         models.push(json!({
             "model": name, "desc": desc, "shape": shape,
             "results": rows, "memory": memory, "threads": threads,
+            "decode_results": decode_rows,
         }));
     }
 
