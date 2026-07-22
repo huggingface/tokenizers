@@ -10,3 +10,7 @@ tokenizers.models.Model
 tokenizers.normalizers.Normalizer
 tokenizers.pre_tokenizers.PreTokenizer
 tokenizers.trainers.Trainer
+# `__getitem__` is a slot method: its argument is positional-only at runtime,
+# but pyo3 forbids a `signature` annotation on magic methods, so introspection
+# emits it as positional-or-keyword. Runtime behaviour is correct.
+tokenizers.EncodingBatch.__getitem__

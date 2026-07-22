@@ -3,6 +3,8 @@ import asyncio
 import numpy as np
 import pytest
 
+from tokenizers import Encoding, EncodingBatch
+
 from .conftest import SENTENCES, train_word_tokenizer
 
 
@@ -18,6 +20,23 @@ def test_async_encode_matches_sync():
     assert np.array_equal(single, tok.encode_ids(SENTENCES[0], add_special_tokens=False))
     for got, want in zip(batch, tok.encode_batch_ids(SENTENCES, add_special_tokens=False)):
         assert np.array_equal(got, want)
+
+
+def test_async_encode_returns_encoding():
+    tok = train_word_tokenizer()
+
+    async def go():
+        single = await tok.async_encode(SENTENCES[0], add_special_tokens=False)
+        batch = await tok.async_encode_batch(SENTENCES, add_special_tokens=False)
+        return single, batch
+
+    single, batch = asyncio.run(go())
+    assert isinstance(single, Encoding)
+    assert isinstance(batch, EncodingBatch)
+    assert single.ids == tok.encode(SENTENCES[0], add_special_tokens=False).ids
+    assert [batch[i].ids for i in range(len(batch))] == [
+        tok.encode(line, add_special_tokens=False).ids for line in SENTENCES
+    ]
 
 
 def test_async_encodes_overlap():

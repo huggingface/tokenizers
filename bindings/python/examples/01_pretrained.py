@@ -24,12 +24,13 @@ for name, file in [
     ("bert-base-uncased", "bert-base-uncased.json"),
 ]:
     tok = Tokenizer.from_file(DATA / file)
-    batch = tok.encode_batch_ids(LINES, add_special_tokens=False)
-    assert all(ids.dtype == np.uint32 for ids in batch)
-    total = sum(len(ids) for ids in batch)
-    first_token = tok.id_to_token(batch[0][0])
-    assert first_token is not None
-    print(f"{name}: {total} tokens, first token {first_token!r}")
+    batch = tok.encode_batch(LINES, add_special_tokens=False)
+    assert len(batch) == len(LINES)
+    total = sum(len(enc) for enc in batch)
+    first = batch[0]
+    assert first.ids_array().dtype == np.uint32
+    assert first.attention_mask == [1] * len(first)
+    print(f"{name}: {total} tokens, first token {first.tokens[0]!r}")
 
 # Expected failure 1: post-processor would add special tokens -> loud error,
 # not silently wrong ids

@@ -14,20 +14,28 @@ import tokenizers as tk
 
 tok = tk.Tokenizer.from_file("tokenizer.json")
 
-# Returns a numpy.uint32 array of token ids.
+# encode returns an Encoding: ids plus the masks and metadata a model consumes.
 # add_special_tokens=False skips template tokens like [CLS]/[SEP]; inserting
 # them is not implemented yet in 1.0, so leaving it True raises a loud
 # NotImplementedError on tokenizers that use such templates (BERT, Llama, …).
-ids = tok.encode_ids("Hello world", add_special_tokens=False)
+enc = tok.encode("Hello world", add_special_tokens=False)
+enc.ids                # list[int]
+enc.tokens             # list[str]
+enc.attention_mask     # list[int]
 
-# A list of arrays, encoded in parallel across Rust threads.
-batch = tok.encode_batch_ids(["Hello world", "How are you?"], add_special_tokens=False)
+batch = tok.encode_batch(["Hello world", "How are you?"], add_special_tokens=False)
+batch[0].ids           # a batch is a sequence of Encodings
+
+# When you only want the ids, encode_ids skips the Encoding and returns them as
+# a numpy.uint32 array with no copy (encode_batch_ids returns a list of arrays).
+ids = tok.encode_ids("Hello world", add_special_tokens=False)
 ```
 
-The methods are named `encode_ids`/`encode_batch_ids` because they return
-bare ids: the `encode`/`encode_batch` names are reserved for a planned
-`Encoding`-returning API (masks, word ids, truncation/padding — the interface
-`transformers` consumes).
+`encode` and `encode_ids` run exactly the same work; `encode` wraps the ids in
+an `Encoding` and derives its fields on access, so you never pay for what you
+don't read. Fields that need per-token provenance the pipeline does not compute
+yet — `word_ids` and character `offsets` — raise `NotImplementedError` rather
+than return a guess.
 
 To load a tokenizer straight from the [Hugging Face Hub](https://huggingface.co),
 install the `hub` extra (`pip install 'tokenizers[hub]'`):
@@ -63,30 +71,29 @@ simplest case (load a pretrained file and encode).
 Encoding releases the Python interpreter lock (the GIL), so this package
 plays well with threads and event loops:
 
-- Calling `encode_ids` from several Python threads scales — the threads
-  really run in parallel, on every interpreter (free-threaded or not).
-- `encode_batch_ids` parallelizes one batch across Rust threads. Set the
-  `TOKENIZERS_PARALLELISM` environment variable to `false`/`true` to
+- Calling `encode`/`encode_ids` from several Python threads scales — the
+  threads really run in parallel, on every interpreter (free-threaded or not).
+- `encode_batch`/`encode_batch_ids` parallelize one batch across Rust threads.
+  Set the `TOKENIZERS_PARALLELISM` environment variable to `false`/`true` to
   disable/force this.
-- In `asyncio` code, `await tok.async_encode_ids(text)` /
-  `await tok.async_encode_batch_ids(texts)` keep the event loop free while
-  Rust encodes in a worker thread.
+- In `asyncio` code, `await tok.async_encode(text)` (and the `_ids` /
+  `_batch` variants) keep the event loop free while Rust encodes in a worker
+  thread.
 
 ```python
-ids = await tok.async_encode_ids("Hello world", add_special_tokens=False)
+enc = await tok.async_encode("Hello world", add_special_tokens=False)
 ```
 
 ## Breaking changes vs 0.x
 
 1.x is a ground-up rewrite with a smaller, faster API. The headline changes:
 
-- Encoding returns a `numpy.uint32` array of ids, not an `Encoding` object,
-  and the methods are accordingly named `encode_ids`/`encode_batch_ids`.
-  Tokens, offsets, type ids, attention masks, and word ids are gone from the
-  encode path, and so are truncation and padding
-  (`enable_truncation`/`enable_padding`).
-- `encode_ids` takes a single text: no `pair=` argument, no
-  `is_pretokenized=`.
+- `encode` returns an `Encoding` carrying ids, tokens, type ids, attention
+  and special-tokens masks, and sequence ids. Word ids and character offsets
+  are not computed yet and raise; truncation and padding
+  (`enable_truncation`/`enable_padding`) are gone. `encode_ids` is the new
+  name for a bare `numpy.uint32` id array.
+- `encode` takes a single text: no `pair=` argument, no `is_pretokenized=`.
 - Not implemented yet (loud errors, never wrong ids): `decode`,
   post-processor templates (`[CLS]`/`<s>` insertion — pass
   `add_special_tokens=False`), and the `Metaspace` pre-tokenizer
@@ -96,8 +103,9 @@ ids = await tok.async_encode_ids("Hello world", add_special_tokens=False)
   you subclass.
 - `decoders`, `processors`, and the `implementations` helpers
   (`BertWordPieceTokenizer`, …) are gone.
-- **`transformers` cannot use 1.0 as its backend yet** — it needs several of
-  the removed pieces. Pin `tokenizers<1.0` for `transformers`.
+- **`transformers` cannot use 1.0 as its backend yet** — it needs the
+  not-yet-implemented pieces above (post-processing, offsets, decode). Pin
+  `tokenizers<1.0` for `transformers`.
 
 The full list, including smaller removals and renames, is in the 1.0.0 entry
 of [CHANGELOG.md](CHANGELOG.md).

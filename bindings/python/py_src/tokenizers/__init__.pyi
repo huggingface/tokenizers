@@ -44,6 +44,97 @@ class AddedToken:
     def special(self, /) -> bool: ...
 
 @final
+class Encoding:
+    """
+    The result of encoding one sequence: token ids plus the masks and metadata
+    a model consumes. The fields are derived from the ids on access, so an
+    `Encoding` costs the same to produce as a bare id array — `Tokenizer.encode`
+    runs exactly the work `encode_ids` does.
+    
+    `encode` only produces an `Encoding` for a single sequence with no
+    post-processor-inserted special tokens (it raises otherwise), so the
+    segment, attention, special-token and sequence values are constant: one
+    sequence numbered 0, nothing padded, nothing special. Anything that would
+    need per-token provenance the pipeline does not compute — word ids and
+    character offsets — raises rather than returning a plausible-looking guess.
+    """
+    def __len__(self, /) -> int: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def attention_mask(self, /) -> list[int]:
+        """
+        Attention mask, one entry per token: all 1 (nothing padded).
+        """
+    def char_to_token(self, /, char_pos: int, sequence_index: int = 0) -> int |None: ...
+    def char_to_word(self, /, char_pos: int, sequence_index: int = 0) -> int |None: ...
+    @property
+    def ids(self, /) -> list[int]:
+        """
+        The token ids, as a list.
+        """
+    def ids_array(self, /) -> "npt.NDArray[np.uint32]":
+        """
+        The token ids as a `numpy.uint32` array. This copies; for the copy-free
+        array use `Tokenizer.encode_ids`, which hands ownership of the buffer
+        straight to numpy.
+        """
+    @property
+    def n_sequences(self, /) -> int:
+        """
+        Number of sequences in this encoding: always 1.
+        """
+    @property
+    def offsets(self, /) -> list[tuple[int, int]]:
+        """
+        Character span per token — not available: the pipeline does not track
+        offsets yet.
+        """
+    @property
+    def sequence_ids(self, /) -> list[int |None]:
+        """
+        The sequence each token belongs to: all 0 (single sequence).
+        """
+    @property
+    def special_tokens_mask(self, /) -> list[int]:
+        """
+        Special-tokens mask, one entry per token: all 0 (no post-processing).
+        """
+    def token_to_chars(self, /, token_index: int) -> tuple[int, int] |None: ...
+    def token_to_sequence(self, /, token_index: int) -> int |None:
+        """
+        The sequence a token belongs to (0), or None for an out-of-range index.
+        """
+    def token_to_word(self, /, token_index: int) -> int |None: ...
+    @property
+    def tokens(self, /) -> list[str]:
+        """
+        The token strings behind the ids.
+        """
+    @property
+    def type_ids(self, /) -> list[int]:
+        """
+        Segment id per token: all 0 (single sequence).
+        """
+    @property
+    def word_ids(self, /) -> list[int |None]:
+        """
+        Word id per token — not available: the pipeline does not emit word
+        boundaries yet.
+        """
+    def word_to_chars(self, /, word_index: int, sequence_index: int = 0) -> tuple[int, int] |None: ...
+    def word_to_tokens(self, /, word_index: int, sequence_index: int = 0) -> tuple[int, int] |None: ...
+
+@final
+class EncodingBatch:
+    """
+    The result of encoding a batch: a sequence of `Encoding`s. Index it
+    (`batch[0]`) or iterate it.
+    """
+    def __getitem__(self, /, index: int) -> Encoding: ...
+    def __len__(self, /) -> int: ...
+    def __repr__(self, /) -> str: ...
+
+@final
 class Tokenizer:
     """
     A tokenizer: a model plus its optional normalizer and pre-tokenizer.
@@ -73,6 +164,15 @@ class Tokenizer:
         on. Plain strings match with default options; pass `AddedToken` to
         control matching. Returns how many were actually new.
         """
+    def async_encode(self, /, text: Any, *, add_special_tokens: bool = True) -> "Coroutine[Any, Any, Encoding]":
+        """
+        Awaitable `encode`: same arguments and result, run in a worker thread.
+        """
+    def async_encode_batch(self, /, texts: Any, *, add_special_tokens: bool = True) -> "Coroutine[Any, Any, EncodingBatch]":
+        """
+        Awaitable `encode_batch`: same arguments and result, run in a worker
+        thread while the batch encodes on Rust threads.
+        """
     def async_encode_batch_ids(self, /, texts: Any, *, add_special_tokens: bool = True) -> "Coroutine[Any, Any, list[npt.NDArray[np.uint32]]]":
         """
         Awaitable `encode_batch_ids`: same arguments and result, run in a
@@ -90,6 +190,18 @@ class Tokenizer:
         """
         Not implemented yet: decoding is not part of the encode pipeline.
         """
+    def encode(self, /, text: str, *, add_special_tokens: bool = True) -> "Encoding":
+        """
+        Encode `text` into an `Encoding`: token ids plus the masks and metadata
+        a model consumes. Same encode work as `encode_ids` (GIL released, no
+        copies); the `Encoding` wraps the ids and derives its fields on access.
+        """
+    def encode_batch(self, /, texts: Sequence[str], *, add_special_tokens: bool = True) -> "EncodingBatch":
+        """
+        Encode a batch of texts into an `EncodingBatch`, in parallel across Rust
+        threads (respects `TOKENIZERS_PARALLELISM`), without holding the
+        interpreter lock. The batch version of `encode`.
+        """
     def encode_batch_ids(self, /, texts: Sequence[str], *, add_special_tokens: bool = True) -> "list[npt.NDArray[np.uint32]]":
         """
         Encode a batch of texts, in parallel across Rust threads (respects
@@ -102,8 +214,9 @@ class Tokenizer:
         Encode `text` into token ids.
         
         Runs entirely outside the interpreter lock and returns a `numpy.uint32`
-        array backed by the Rust output buffer (no copy). The `encode` name is
-        reserved for the upcoming `Encoding`-returning API.
+        array backed by the Rust output buffer (no copy). For ids plus the
+        masks and metadata models consume, use `encode`, which returns an
+        `Encoding` from the same work.
         """
     @staticmethod
     def from_buffer(buffer: Sequence[int]) -> "Tokenizer":
@@ -193,4 +306,4 @@ from tokenizers import normalizers as normalizers
 from tokenizers import pre_tokenizers as pre_tokenizers
 from tokenizers import trainers as trainers
 
-__all__ = ["AddedToken", "Tokenizer", "TokenizersError", "__version__", "models", "normalizers", "pre_tokenizers", "trainers"]
+__all__ = ["AddedToken", "Encoding", "EncodingBatch", "Tokenizer", "TokenizersError", "__version__", "models", "normalizers", "pre_tokenizers", "trainers"]

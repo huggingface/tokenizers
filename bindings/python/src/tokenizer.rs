@@ -20,6 +20,7 @@ use tk_train::{TokenizerTrainExt, Trainable};
 
 use crate::added_token::{TokenInput, parse_tokens};
 use crate::detached_lock::{Detached, DetachedRwLock};
+use crate::encoding::{PyEncoding, PyEncodingBatch};
 use crate::error::{TokenizersError, to_pyerr};
 use crate::models::{PyModel, wrap_model};
 use crate::normalizers::{PyNormalizer, wrap_normalizer};
@@ -88,6 +89,17 @@ impl PyTokenizer {
         self.inner.with(py, |lock| {
             let guard = lock.read().map_err(poisoned)?;
             Ok(f(&guard.spec))
+        })
+    }
+
+    /// Resolve a run of ids to their token strings in one locked read, for
+    /// `Encoding.tokens`. Unknown ids (out of the vocabulary) become empty
+    /// strings rather than failing the whole lookup.
+    pub(crate) fn ids_to_tokens(&self, py: Python<'_>, ids: &[u32]) -> PyResult<Vec<String>> {
+        self.read_spec(py, |spec| {
+            ids.iter()
+                .map(|&id| spec.id_to_token(id).unwrap_or_default())
+                .collect()
         })
     }
 
@@ -280,6 +292,30 @@ fn encode_one(
     Ok(output.iter().map(|t| t.id).collect())
 }
 
+/// Encode a batch to raw id vectors — the work shared by `encode_batch_ids`
+/// (which wraps each row in a numpy array) and `encode_batch` (which wraps the
+/// batch in an `EncodingBatch`). Runs on rayon threads when parallelism is on
+/// and the batch is worth splitting; the caller has already released the GIL.
+fn encode_batch_core(compiled: &Compiled, texts: &[PyBackedStr]) -> PyResult<Vec<Vec<u32>>> {
+    if get_parallelism() && texts.len() > 1 {
+        USED_PARALLELISM.store(true, Ordering::SeqCst);
+        texts
+            .par_iter()
+            .map_init(
+                || (Vec::new(), compiled.pipe.get_model().init_scratch()),
+                |(pre_tokens, scratch), text| encode_one(&compiled.pipe, text, pre_tokens, scratch),
+            )
+            .collect()
+    } else {
+        let mut pre_tokens = Vec::new();
+        let mut scratch = compiled.pipe.get_model().init_scratch();
+        texts
+            .iter()
+            .map(|text| encode_one(&compiled.pipe, text, &mut pre_tokens, &mut scratch))
+            .collect()
+    }
+}
+
 #[pymethods]
 impl PyTokenizer {
     /// Create an untrained tokenizer from a model.
@@ -346,8 +382,9 @@ impl PyTokenizer {
     /// Encode `text` into token ids.
     ///
     /// Runs entirely outside the interpreter lock and returns a `numpy.uint32`
-    /// array backed by the Rust output buffer (no copy). The `encode` name is
-    /// reserved for the upcoming `Encoding`-returning API.
+    /// array backed by the Rust output buffer (no copy). For ids plus the
+    /// masks and metadata models consume, use `encode`, which returns an
+    /// `Encoding` from the same work.
     #[pyo3(signature = (text, *, add_special_tokens = true) -> "npt.NDArray[np.uint32]")]
     fn encode_ids<'py>(
         &self,
@@ -379,25 +416,7 @@ impl PyTokenizer {
         let batches = self.inner.with(py, |lock| -> PyResult<Vec<Vec<u32>>> {
             let compiled = get_or_compile(&lock)?;
             check_special_tokens_flag(&compiled, add_special_tokens)?;
-            if get_parallelism() && texts.len() > 1 {
-                USED_PARALLELISM.store(true, Ordering::SeqCst);
-                texts
-                    .par_iter()
-                    .map_init(
-                        || (Vec::new(), compiled.pipe.get_model().init_scratch()),
-                        |(pre_tokens, scratch), text| {
-                            encode_one(&compiled.pipe, text, pre_tokens, scratch)
-                        },
-                    )
-                    .collect()
-            } else {
-                let mut pre_tokens = Vec::new();
-                let mut scratch = compiled.pipe.get_model().init_scratch();
-                texts
-                    .iter()
-                    .map(|text| encode_one(&compiled.pipe, text, &mut pre_tokens, &mut scratch))
-                    .collect()
-            }
+            encode_batch_core(&compiled, &texts)
         })?;
         let list = PyList::empty(py);
         for ids in batches {
@@ -429,6 +448,65 @@ impl PyTokenizer {
         add_special_tokens: bool,
     ) -> PyResult<Bound<'py, PyAny>> {
         to_thread(slf, "encode_batch_ids", texts, add_special_tokens)
+    }
+
+    /// Encode `text` into an `Encoding`: token ids plus the masks and metadata
+    /// a model consumes. Same encode work as `encode_ids` (GIL released, no
+    /// copies); the `Encoding` wraps the ids and derives its fields on access.
+    #[pyo3(signature = (text, *, add_special_tokens = true) -> "Encoding")]
+    fn encode(slf: &Bound<'_, Self>, text: &str, add_special_tokens: bool) -> PyResult<PyEncoding> {
+        let py = slf.py();
+        let ids = slf.get().inner.with(py, |lock| -> PyResult<Vec<u32>> {
+            let compiled = get_or_compile(&lock)?;
+            check_special_tokens_flag(&compiled, add_special_tokens)?;
+            let mut pre_tokens = Vec::new();
+            let mut scratch = compiled.pipe.get_model().init_scratch();
+            encode_one(&compiled.pipe, text, &mut pre_tokens, &mut scratch)
+        })?;
+        Ok(PyEncoding::new(ids.into(), slf.clone().unbind()))
+    }
+
+    /// Encode a batch of texts into an `EncodingBatch`, in parallel across Rust
+    /// threads (respects `TOKENIZERS_PARALLELISM`), without holding the
+    /// interpreter lock. The batch version of `encode`.
+    #[pyo3(signature = (texts, *, add_special_tokens = true) -> "EncodingBatch")]
+    fn encode_batch(
+        slf: &Bound<'_, Self>,
+        texts: Vec<PyBackedStr>,
+        add_special_tokens: bool,
+    ) -> PyResult<PyEncodingBatch> {
+        let py = slf.py();
+        let rows = slf
+            .get()
+            .inner
+            .with(py, |lock| -> PyResult<Vec<Vec<u32>>> {
+                let compiled = get_or_compile(&lock)?;
+                check_special_tokens_flag(&compiled, add_special_tokens)?;
+                encode_batch_core(&compiled, &texts)
+            })?;
+        let rows = rows.into_iter().map(Into::into).collect();
+        Ok(PyEncodingBatch::new(rows, slf.clone().unbind()))
+    }
+
+    /// Awaitable `encode`: same arguments and result, run in a worker thread.
+    #[pyo3(signature = (text, *, add_special_tokens = true) -> "Coroutine[Any, Any, Encoding]")]
+    fn async_encode<'py>(
+        slf: &Bound<'py, Self>,
+        text: &Bound<'py, PyAny>,
+        add_special_tokens: bool,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        to_thread(slf, "encode", text, add_special_tokens)
+    }
+
+    /// Awaitable `encode_batch`: same arguments and result, run in a worker
+    /// thread while the batch encodes on Rust threads.
+    #[pyo3(signature = (texts, *, add_special_tokens = true) -> "Coroutine[Any, Any, EncodingBatch]")]
+    fn async_encode_batch<'py>(
+        slf: &Bound<'py, Self>,
+        texts: &Bound<'py, PyAny>,
+        add_special_tokens: bool,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        to_thread(slf, "encode_batch", texts, add_special_tokens)
     }
 
     /// Not implemented yet: decoding is not part of the encode pipeline.

@@ -2,6 +2,7 @@
 
 pub mod added_token;
 pub mod detached_lock;
+pub mod encoding;
 pub mod error;
 pub mod models;
 pub mod normalizers;
@@ -37,6 +38,8 @@ pub mod _native {
 
     #[pymodule_export]
     pub use super::added_token::PyAddedToken;
+    #[pymodule_export]
+    pub use super::encoding::{PyEncoding, PyEncodingBatch};
     #[pymodule_export]
     pub use super::error::TokenizersError;
     #[pymodule_export]

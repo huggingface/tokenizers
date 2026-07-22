@@ -86,15 +86,16 @@ tokenizer.train(files=["wiki.train.raw", "wiki.valid.raw", "wiki.test.raw"], tra
 
 Once your tokenizer is trained, encode any text with just one line:
 ```python
-ids = tokenizer.encode_ids("Hello, y'all! How are you 😁 ?")
-print([tokenizer.id_to_token(i) for i in ids])
+encoding = tokenizer.encode("Hello, y'all! How are you 😁 ?")
+print(encoding.tokens)
 # ["Hello", ",", "y", "'", "all", "!", "How", "are", "you", "[UNK]", "?"]
 ```
 
-`encode_ids` returns the token ids as a `numpy.uint32` array — ready to hand to
-your model with no further conversion. The emoji comes out as `[UNK]`: it
-never appeared in the training files, so it is not in the vocabulary, and BPE
-falls back to the `unk_token` we configured above.
+`encode` returns an `Encoding` — ids, tokens, and the masks a model consumes.
+The emoji comes out as `[UNK]`: it never appeared in the training files, so it
+is not in the vocabulary, and BPE falls back to the `unk_token` we configured
+above. When you only need the ids, `encode_ids` returns them as a
+`numpy.uint32` array with no copy.
 
 More in [bindings/python](bindings/python) — its README and `examples/`
 cover loading pretrained tokenizers, threading and async, and training. (The

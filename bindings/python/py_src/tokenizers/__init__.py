@@ -2,6 +2,8 @@
 
 from ._native import (
     AddedToken,
+    Encoding,
+    EncodingBatch,
     Tokenizer,
     TokenizersError,
     __version__,
@@ -10,6 +12,8 @@ from . import models, normalizers, pre_tokenizers, trainers
 
 __all__ = [
     "AddedToken",
+    "Encoding",
+    "EncodingBatch",
     "Tokenizer",
     "TokenizersError",
     "__version__",

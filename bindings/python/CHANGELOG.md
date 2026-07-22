@@ -14,23 +14,24 @@ arrays without a copy.
 
 Breaking changes — encoding:
 
-- Encoding returns a numpy array of ids, not an `Encoding` object, and the
-  methods are accordingly named `encode_ids`/`encode_batch_ids` — the
-  `encode`/`encode_batch` names are reserved for a planned
-  `Encoding`-returning API. Everything the `Encoding` carried is gone from
-  the encode path: tokens, offsets, type ids, attention masks,
-  special-tokens masks, word ids, overflowing/stride, and the
-  char/word/token mapping helpers. Truncation and padding
-  (`enable_truncation`/`enable_padding` and their getters) are gone too.
-- `encode_ids` takes a single text: the `pair=` argument and the
-  `is_pretokenized=` mode no longer exist (same for `encode_batch_ids`).
+- `encode`/`encode_batch` return an `Encoding`/`EncodingBatch` carrying ids,
+  tokens, type ids, attention and special-tokens masks, and sequence ids
+  (`ids` is a `list`; `ids_array()` gives a numpy array). `encode_ids`/
+  `encode_batch_ids` are the new names for the bare-`numpy.uint32` path — same
+  encode work, no `Encoding` wrapper. Not carried yet, and raising rather than
+  returning a guess: word ids and character offsets (and the char/word/token
+  mapping helpers built on them). Overflowing/stride, truncation, and padding
+  (`enable_truncation`/`enable_padding` and their getters) are gone.
+- `encode` takes a single text: the `pair=` argument and the
+  `is_pretokenized=` mode no longer exist (same for `encode_batch`).
 - Not implemented yet (loud errors, never wrong ids): `decode`,
   post-processor templates (pass `add_special_tokens=False`), and the
   `Metaspace` pre-tokenizer. `decode_batch`, `DecodeStream`,
   `encode_batch_fast`, and `Tokenizer.post_process` are removed.
 - **`transformers`' `PreTrainedTokenizerFast` cannot run on 1.0 yet** — it
-  needs the `Encoding` fields, padding/truncation, and pair inputs listed
-  above. Pin `tokenizers<1.0` for `transformers` until it targets 1.x.
+  needs the not-yet-implemented `Encoding` fields (offsets), post-processing,
+  padding/truncation, and pair inputs. Pin `tokenizers<1.0` for `transformers`
+  until it targets 1.x.
 
 Breaking changes — components and introspection:
 
@@ -67,11 +68,12 @@ Breaking changes — `Tokenizer` API and packaging:
   moved from a required dependency to the `hub` extra:
   `pip install 'tokenizers[hub]'`. `numpy>=1.24` is a new required dependency.
 
-Kept: awaitable encodes, as `async_encode_ids`/`async_encode_batch_ids`
-(now a thin `asyncio.to_thread` wrapper — no tokio runtime) and free-threaded Python support (default wheels
-are abi3-py310; free-threaded interpreters get their own non-abi3 wheels).
-New in 1.0: parity-aware BPE training (`trainers.ParityBpeTrainer`), which
-never shipped in a 0.x release.
+Kept: awaitable encodes — `async_encode`/`async_encode_batch` (returning an
+`Encoding`/`EncodingBatch`) and `async_encode_ids`/`async_encode_batch_ids`,
+now a thin `asyncio.to_thread` wrapper (no tokio runtime) — and free-threaded
+Python support (default wheels are abi3-py310; free-threaded interpreters get
+their own non-abi3 wheels). New in 1.0: parity-aware BPE training
+(`trainers.ParityBpeTrainer`), which never shipped in a 0.x release.
 
 ## [0.13.2] 
 

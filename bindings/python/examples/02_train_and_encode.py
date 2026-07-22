@@ -1,5 +1,6 @@
 """End-to-end: build a tokenizer from scratch, train it, swap its components,
-encode, serialize, pickle, and see that decode raises for now."""
+encode to an `Encoding` (and to a bare id array), serialize, pickle, and see
+that decode raises for now."""
 
 import pickle
 import tempfile
@@ -37,12 +38,30 @@ print(f"trained: {tok!r}")
 assert tok.get_vocab_size() == 1000, tok.get_vocab_size()
 assert tok.token_to_id("<s>") == 0
 
-# 3. Encode -> numpy uint32 array; special tokens are matched in the text
+# 3. Encode -> Encoding: ids plus the masks and metadata a model consumes.
+enc = tok.encode("The quick brown fox <s> jumps over the lazy dog")
+print(f"encoding: {enc!r}")
+print(f"  tokens: {enc.tokens}")
+print(f"  type_ids / attention_mask: {enc.type_ids} / {enc.attention_mask}")
+assert enc.ids == tok.encode_ids("The quick brown fox <s> jumps over the lazy dog").tolist()
+assert tok.token_to_id("<s>") in enc.ids
+assert enc.type_ids == [0] * len(enc) and enc.attention_mask == [1] * len(enc)
+# .ids is a list (models pad with `ids + [pad_id] * n`); .ids_array is numpy.
+assert isinstance(enc.ids, list)
+assert enc.ids_array().dtype == np.uint32
+
+# Word ids and character offsets are not emitted by the encode pipeline yet;
+# they raise rather than returning a plausible-looking guess.
+for feature in (lambda: enc.word_ids, lambda: enc.offsets, lambda: enc.char_to_token(0)):
+    try:
+        feature()
+        raise AssertionError("unavailable feature should raise")
+    except NotImplementedError:
+        pass
+
+# encode_ids skips the Encoding and returns the ids array directly (no copy).
 ids = tok.encode_ids("The quick brown fox <s> jumps over the lazy dog")
-print(f"ids: {ids.dtype} {ids}")
 assert isinstance(ids, np.ndarray) and ids.dtype == np.uint32
-assert tok.token_to_id("<s>") in ids
-assert all(tok.id_to_token(i) is not None for i in ids)
 
 # 4. Mutate a component in place: dropping the lowercasing normalizer changes ids
 tok_ids_lower = tok.encode_ids("HELLO WORLD")
