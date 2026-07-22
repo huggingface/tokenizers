@@ -66,42 +66,6 @@ Training lives in the companion `tk-train` crate (re-exported by the
   environment variable. As an example setting `RAYON_RS_NUM_THREADS=4` will allocate a maximum of 4 threads.
   **_Please note this behavior may evolve in the future_**
 
-## PipelineTokenizer: oracle tests & benchmark
-
-`PipelineTokenizer` is an experimental, allocation-light re-implementation of the
-encode/decode pipeline. Its correctness is judged against the **latest released
-`tokenizers` crate** (not the in-tree `Tokenizer`, which is being retired): the
-pipeline must produce identical token ids and identical decoded text.
-
-That comparison lives behind the optional `bench-baseline` feature (it links the
-released crate), so a plain `cargo test` skips it. To run it you need the fixture
-corpora and model tokenizers, then the feature flag:
-
-```bash
-# from tokenizers/ — fetches data/fixtures/ + model tokenizers (needs HF_TOKEN)
-make fixtures bench-models
-
-# encode parity (pipeline ids == released `encode_fast` ids)
-cargo test -p tk-encode --features bench-baseline --test pipeline_oracle
-
-# decode parity (pipeline decode == released `decode`) — ignored until
-# PipelineTokenizer::decode is implemented, so pass --ignored to run it
-cargo test -p tk-encode --features bench-baseline --test pipeline_decode_oracle -- --ignored
-```
-
-Both oracles sample seeded-random windows of every fixture corpus; a model whose
-tokenizer file isn't present is skipped. CI runs them in the **Pipeline
-Benchmark** workflow (`.github/workflows/pipeline-bench.yml`).
-
-The same workflow runs the comparative benchmark — throughput, thread scaling,
-memory, and binary size vs the release — and renders it to charts. To reproduce
-locally:
-
-```bash
-cargo run --release -p tk-encode --features bench-baseline --example fixture_bench > bench.json
-python3 ../.github/scripts/render_pipeline_bench.py bench.json   # writes SVGs + pipeline_bench.md
-```
-
 ## Features
 
 - **progressbar**: The progress bar visualization is enabled by default. It might be disabled if
