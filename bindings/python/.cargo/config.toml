@@ -1,4 +1,6 @@
-# Required flags on MacOS to defer resolution of the CPython symbols
+# macOS: leave CPython symbols unresolved at link time — they come from the
+# Python process that loads the extension. maturin passes these flags itself;
+# this file covers plain `cargo build` / `cargo clippy`.
 [target.x86_64-apple-darwin]
 rustflags = [
   "-C", "link-arg=-undefined",

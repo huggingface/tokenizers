@@ -19,8 +19,8 @@ from pathlib import Path
 
 import render_pipeline_bench as rpb
 
-# Same-system series colors: pipeline blue for single-thread, the catalog teal
-# for multi-thread (CVD ΔE 16.8 protan, both >= 3:1 on the chart surface).
+# Pipeline blue for single-thread, catalog teal for multi-thread — picked to
+# stay distinguishable for color-blind readers and keep ≥3:1 contrast.
 PY_SINK = {"st": "#2a78d6", "mt": "#2a9d8f"}
 
 SLUG = "pybindings"

@@ -21,7 +21,7 @@ jobs:
     name: Cargo.lock
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-      - name: Cargo.lock lock exists 
+      - name: Cargo.lock exists
         run: cat Cargo.lock
         working-directory: ./bindings/python
 
@@ -64,10 +64,6 @@ jobs:
             python-install: "3.14"
             interpreter: "3.14"
             smoke: true
-              # - os: windows
-              #   ls: dir
-              #   target: aarch64
-              #   interpreter: 3.11 3.12
           - os: macos
             target: aarch64
             interpreter: "3.14"
@@ -129,16 +125,10 @@ jobs:
           - { os: macos,  target: aarch64,                 flavor: abi3, smoke: true }
           - { os: windows, target: x86_64,                 flavor: abi3, smoke: true }
         exclude:
+          # Built by the windows-11-arm include cell instead (needs an arm
+          # runner; the plain windows runner is x64).
           - os: windows
             target: aarch64
-              #   # Optimized PGO builds for x86_64 manylinux and windows follow a different matrix,
-              #   # maybe in future maturin-action can support this automatically
-              #   - os: ubuntu
-              #     target: x86_64
-              #     manylinux: auto
-              #   - os: windows
-              #     target: x86_64
-              # Windows on arm64 only supports Python 3.11+
 
     runs-on: ${{
         matrix.os == 'windows-11-arm' && matrix.os ||

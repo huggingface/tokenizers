@@ -60,7 +60,7 @@ def make_chunks(text: str) -> list[str]:
     for line in text.splitlines():
         if not line.strip():
             continue
-        cur_bytes += len(line.encode()) + bool(cur)
+        cur_bytes += len(line.encode()) + bool(cur)  # +1 for the joining "\n"
         cur.append(line)
         if cur_bytes >= CHUNK_BYTES:
             chunks.append("\n".join(cur))
@@ -227,7 +227,12 @@ def main() -> int:
     models = json.load(open(args.manifest)) if args.manifest else DEFAULT_MODELS
     for model in models:
         model["path"] = str(args.data_dir / model.get("file", model["name"] + ".json"))
-    models = [m for m in models if Path(m["path"]).is_file()] or sys.exit("no model files found")
+    missing = [m["name"] for m in models if not Path(m["path"]).is_file()]
+    if missing:
+        print(f"skipping models with no tokenizer file: {', '.join(missing)}", file=sys.stderr)
+    models = [m for m in models if m["name"] not in missing]
+    if not models:
+        sys.exit("no model files found")
 
     fixtures = load_fixtures(args.data_dir)
 

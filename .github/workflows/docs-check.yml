@@ -19,7 +19,7 @@ jobs:
           python-version: 3.12
 
       - name: Install dependencies
-        run: pip install sphinx sphinx_rtd_theme setuptools-rust
+        run: pip install sphinx sphinx_rtd_theme
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable

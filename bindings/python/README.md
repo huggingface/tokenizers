@@ -143,6 +143,10 @@ signatures come from the Rust sources; return types that introspection cannot
 see (numpy arrays, `Self`) are declared with
 `#[pyo3(signature = (...) -> "Type")]` annotations in the Rust code.
 
+CI enforces this twice: the committed stubs must match what stub-gen
+produces, and `mypy.stubtest` checks them against the actual runtime
+(accepted differences are listed and explained in `stubtest_allowlist.txt`).
+
 ## How it works (internals)
 
 A `Tokenizer` holds two things behind one lock:
