@@ -533,6 +533,17 @@ impl PipelineTokenizer {
         Ok(output)
     }
 
+    /// Decode token ids back to a `String`.
+    ///
+    /// Not implemented yet — the pipeline decode path is being built. It fails
+    /// loud (rather than returning a plausible-but-wrong string) so the oracle
+    /// test and the comparative benchmark report decode as *pending* instead of
+    /// silently validating garbage. Implementing this flips the ignored
+    /// `pipeline_decode_oracle` test on and lights up the decode charts.
+    pub fn decode(&self, _ids: &[u32], _skip_special_tokens: bool) -> Result<String> {
+        Err("PipelineTokenizer::decode is not implemented yet".into())
+    }
+
     /// Single source of truth for the encode pipeline, generic over how many stages
     /// run. `STAGE` is a **const generic**, so `if STAGE >= …` folds at compile time and
     /// the disabled stages are compiled out — the full specialization

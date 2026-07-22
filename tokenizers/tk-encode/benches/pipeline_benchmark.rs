@@ -3,7 +3,7 @@
 //! ~128 B / 1 kB / 10 kB / 100 kB, sweeping from per-input-overhead-dominated
 //! to fully amortized.
 //!
-//! Correctness (id equivalence with the reference `Tokenizer`) is asserted
+//! Correctness (id equivalence with the released `tokenizers` crate) is asserted
 //! separately in `tests/pipeline_oracle.rs`.
 
 #[macro_use]
