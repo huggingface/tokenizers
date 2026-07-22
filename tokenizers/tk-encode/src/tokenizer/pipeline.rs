@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::convert::TryInto;
-use std::sync::{Mutex, PoisonError};
+use std::mem;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::{borrow::Cow, convert::TryFrom};
 
 use atomsplit::classify::classify;
@@ -394,22 +395,22 @@ pub struct PipelineTokenizer {
 }
 
 struct ScratchPool {
-    pool: Mutex<Vec<PipelineModelScratch>>,
+    pool: Arc<Mutex<Vec<PipelineModelScratch>>>,
 }
 
 impl ScratchPool {
     fn new() -> Self {
         Self {
-            pool: Mutex::new(Vec::new()),
+            pool: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
     fn get<'a>(&'a self, model: &PipelineModel) -> ScratchGuard<'a> {
-        let maybe_scratch = self
-            .pool
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .pop(); // Release the lock
+        let maybe_scratch = {
+            let mut pool = self.pool.lock().unwrap_or_else(PoisonError::into_inner);
+            pool.pop()
+        };
+        // Lock is released here
 
         let scratch = maybe_scratch
             .map(|mut scratch| {
@@ -420,42 +421,39 @@ impl ScratchPool {
             .unwrap_or_else(|| model.init_scratch()); // If there is no scratch in the pool, init a fresh one
 
         ScratchGuard {
-            scratch: Some(scratch),
-            pool: self,
+            scratch,
+            scratch_pool: self,
         }
     }
 }
 
 /// RAAI guard for a scratch that adds it back to the pool whenever the scratch gets dropped
 struct ScratchGuard<'a> {
-    // Option so we can use `.take()` to reclaim ownership of the scratch
-    // to push it back to the pool
-    scratch: Option<PipelineModelScratch>,
-    pool: &'a ScratchPool,
+    scratch: PipelineModelScratch,
+    scratch_pool: &'a ScratchPool,
 }
 
 impl Drop for ScratchGuard<'_> {
     fn drop(&mut self) {
-        if let Some(scratch) = self.scratch.take() {
-            self.pool
-                .pool
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .push(scratch);
-        }
+        let scratch = mem::take(&mut self.scratch);
+        self.scratch_pool
+            .pool
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(scratch);
     }
 }
 
 impl std::ops::Deref for ScratchGuard<'_> {
     type Target = PipelineModelScratch;
     fn deref(&self) -> &PipelineModelScratch {
-        self.scratch.as_ref().unwrap()
+        &self.scratch
     }
 }
 
 impl std::ops::DerefMut for ScratchGuard<'_> {
     fn deref_mut(&mut self) -> &mut PipelineModelScratch {
-        self.scratch.as_mut().unwrap()
+        &mut self.scratch
     }
 }
 
@@ -894,7 +892,7 @@ pub fn split_matches(
     }
 }
 
-pub trait ModelScratch {
+pub trait ModelScratch: Default {
     fn clear(&mut self);
 }
 
@@ -958,11 +956,14 @@ impl Model for PipelineModel {
     }
 }
 
+#[derive(Default)]
 pub enum PipelineModelScratch {
     BPE(BpeScratch),
     WordLevel(()),
     WordPiece(WordPieceScratch),
     Unigram(UnigramScratch),
+    #[default]
+    None,
 }
 
 impl ModelScratch for PipelineModelScratch {
@@ -972,6 +973,7 @@ impl ModelScratch for PipelineModelScratch {
             PipelineModelScratch::Unigram(scratch) => scratch.clear(),
             PipelineModelScratch::WordLevel(scratch) => scratch.clear(),
             PipelineModelScratch::WordPiece(scratch) => scratch.clear(),
+            PipelineModelScratch::None => {}
         }
     }
 }

@@ -503,6 +503,7 @@ impl Model for Unigram {
     }
 }
 
+#[derive(Default)]
 pub struct UnigramScratch {}
 
 impl pipeline::ModelScratch for UnigramScratch {
