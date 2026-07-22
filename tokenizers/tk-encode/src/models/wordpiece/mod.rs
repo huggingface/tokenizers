@@ -435,8 +435,8 @@ impl pipeline::Model for PipelineWordPiece {
         Ok(())
     }
 
-    fn id_to_token_bytes(&self, id: &PipelineToken) -> Option<&[u8]> {
-        let i = id.id as usize;
+    fn id_to_token_bytes(&self, id: u32) -> Option<&[u8]> {
+        let i = id as usize;
         let start = *self.vocab_r_offsets.get(i)? as usize;
         let end = *self.vocab_r_offsets.get(i + 1)? as usize;
         Some(&self.vocab_r[start..end])
@@ -454,7 +454,7 @@ mod tests {
 
     #[test]
     fn id_to_token_bytes_round_trips() {
-        use crate::pipeline::{Model as _, PipelineToken};
+        use crate::pipeline::Model as _;
 
         let vocab: Vocab = [
             ("[UNK]".to_string(), 0),
@@ -467,9 +467,9 @@ mod tests {
         let model = PipelineWordPiece::try_from(wp).unwrap();
 
         for (token, id) in [("[UNK]", 0), ("hello", 1), ("##world", 2)] {
-            let bytes = model.id_to_token_bytes(&PipelineToken { id }).unwrap();
+            let bytes = model.id_to_token_bytes(id).unwrap();
             assert_eq!(bytes, token.as_bytes());
         }
-        assert_eq!(model.id_to_token_bytes(&PipelineToken { id: 3 }), None);
+        assert_eq!(model.id_to_token_bytes(3), None);
     }
 }

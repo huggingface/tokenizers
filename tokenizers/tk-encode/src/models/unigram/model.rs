@@ -550,8 +550,8 @@ impl pipeline::Model for Unigram {
         Ok(())
     }
 
-    fn id_to_token_bytes(&self, id: &PipelineToken) -> Option<&[u8]> {
-        self.token_to_ids.id_to_token_bytes(id.id)
+    fn id_to_token_bytes(&self, id: u32) -> Option<&[u8]> {
+        self.token_to_ids.id_to_token_bytes(id)
     }
 }
 

@@ -537,18 +537,16 @@ impl PipelineTokenizer {
 
     /// Decode token ids back to a `String`.
     ///
-    /// Not implemented yet — the pipeline decode path is being built. It fails
-    /// loud (rather than returning a plausible-but-wrong string) so the oracle
-    /// test and the comparative benchmark report decode as *pending* instead of
-    /// silently validating garbage. Implementing this flips the ignored
-    /// `pipeline_decode_oracle` test on and lights up the decode charts.
-    pub fn decode(&self, ids: &[PipelineToken], _skip_special_tokens: bool) -> Result<String> {
+    /// Incomplete: it concatenates raw token bytes only. No decoder, no added-
+    /// vocab lookup, no `skip_special_tokens` — so the `pipeline_decode_oracle`
+    /// test fails on purpose until those land.
+    pub fn decode(&self, ids: &[u32], _skip_special_tokens: bool) -> Result<String> {
         let mut output = Vec::with_capacity(ids.len());
-        for id in ids {
+        for &id in ids {
             let slice = self
                 .model
                 .id_to_token_bytes(id)
-                .ok_or::<crate::Error>(format!("Invalid token id: {}", id.id).into())?;
+                .ok_or::<crate::Error>(format!("Invalid token id: {id}").into())?;
             output.extend_from_slice(slice);
         }
         Ok(String::from_utf8(output)?)
@@ -932,7 +930,7 @@ pub trait Model {
 
     fn init_scratch(&self) -> Self::Scratch;
 
-    fn id_to_token_bytes(&self, id: &PipelineToken) -> Option<&[u8]>;
+    fn id_to_token_bytes(&self, id: u32) -> Option<&[u8]>;
 }
 
 #[allow(
@@ -981,7 +979,7 @@ impl Model for PipelineModel {
         }
     }
 
-    fn id_to_token_bytes(&self, id: &PipelineToken) -> Option<&[u8]> {
+    fn id_to_token_bytes(&self, id: u32) -> Option<&[u8]> {
         match self {
             Self::BPE(model) => model.id_to_token_bytes(id),
             Self::WordLevel(model) => model.id_to_token_bytes(id),

@@ -229,8 +229,8 @@ impl pipeline::Model for WordLevel {
         Ok(())
     }
 
-    fn id_to_token_bytes(&self, id: &PipelineToken) -> Option<&[u8]> {
-        self.vocab_r.get(&id.id).map(|s| s.as_bytes())
+    fn id_to_token_bytes(&self, id: u32) -> Option<&[u8]> {
+        self.vocab_r.get(&id).map(|s| s.as_bytes())
     }
 }
 
