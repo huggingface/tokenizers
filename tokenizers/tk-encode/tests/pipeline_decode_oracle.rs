@@ -87,7 +87,6 @@ macro_rules! decode_tests {
     ($($name:ident => $tok:literal),* $(,)?) => {
         $(
             #[test]
-            #[ignore = "un-ignore once PipelineTokenizer::decode is implemented"]
             fn $name() {
                 check($tok);
             }

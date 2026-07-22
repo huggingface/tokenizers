@@ -186,8 +186,8 @@ make fixtures bench-models   # needs HF_TOKEN
 # encode parity: pipeline ids == released encode_fast ids
 cargo test -p tk-encode --features bench-baseline --test pipeline_oracle
 
-# decode parity: #[ignore]d until PipelineTokenizer::decode is implemented
-cargo test -p tk-encode --features bench-baseline --test pipeline_decode_oracle -- --ignored
+# decode parity
+cargo test -p tk-encode --features bench-baseline --test pipeline_decode_oracle
 ```
 
 The comparative benchmark (throughput, thread scaling, and memory vs the release)
