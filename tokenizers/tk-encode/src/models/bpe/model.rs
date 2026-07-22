@@ -867,6 +867,7 @@ impl pipeline::Model for PipelineBPE {
     }
 }
 
+#[derive(Default)]
 pub struct BpeScratch {
     pub(crate) merge_queue: QuaternaryHeap<Merge>,
     pub(crate) skip: Vec<Merge>,

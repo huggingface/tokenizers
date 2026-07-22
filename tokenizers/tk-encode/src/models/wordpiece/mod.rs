@@ -314,6 +314,7 @@ impl Model for WordPiece {
     }
 }
 
+#[derive(Default)]
 pub struct WordPieceScratch {
     candidate_str: String,
 }
