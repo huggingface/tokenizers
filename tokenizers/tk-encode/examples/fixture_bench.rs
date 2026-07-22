@@ -642,8 +642,8 @@ fn bench_threads(
     let counts = thread_counts();
     let (mut pipe, mut base) = (Vec::new(), Vec::new());
     for &n in &counts {
-        let b = baseline
-            .map(|b| par_mbps(|s| b.encode_fast(s, true).unwrap().len(), chunks, bytes, n));
+        let b =
+            baseline.map(|b| par_mbps(|s| b.encode_fast(s, true).unwrap().len(), chunks, bytes, n));
         let p = par_mbps(
             |s| pipeline.encode(s, true).unwrap().len(),
             chunks,
