@@ -1,4 +1,4 @@
-use crate::vocab_store::VocabStore;
+use crate::vocab::bucket_vocab_store::BucketVocabStore;
 use ahash::AHashMap;
 use std::sync::LazyLock;
 
@@ -86,8 +86,8 @@ fn reverse_lookup(c: char) -> Vec<u8> {
         .map_or_else(|| c.to_string().into_bytes(), |b| vec![*b])
 }
 
-pub(crate) fn transform_vocab(vocab: VocabStore) -> VocabStore {
-    VocabStore::build(
+pub(crate) fn transform_vocab(vocab: BucketVocabStore) -> BucketVocabStore {
+    BucketVocabStore::build(
         vocab
             .content()
             .into_iter()
