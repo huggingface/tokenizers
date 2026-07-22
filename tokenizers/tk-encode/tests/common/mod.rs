@@ -2,8 +2,8 @@
 //! judged over the same inputs: seeded-random windows of the real fixture corpora
 //! (`data/fixtures/{lang,modalities}` — 14 languages + code/math/agentic). Random
 //! for coverage across varied text, seeded so any failure reproduces exactly.
-
-use std::path::{Path, PathBuf};
+//! Both oracles generate one `#[test]` per fixture via [`for_each_fixture`], so a
+//! red run names the exact model and language/modality that broke.
 
 /// Test-data root, shared with the benchmark harness (populated by `make fixtures`).
 pub const DATA: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../data");
@@ -19,22 +19,12 @@ pub fn splitmix64(seed: u64) -> u64 {
     z ^ (z >> 31)
 }
 
-/// Existing `.txt` fixtures under `data/fixtures/{lang,modalities}`, sorted. Empty
-/// when fixtures haven't been fetched — callers skip rather than fail.
-pub fn fixture_files() -> Vec<PathBuf> {
-    let mut out = Vec::new();
-    for group in ["lang", "modalities"] {
-        let dir = Path::new(DATA).join("fixtures").join(group);
-        if let Ok(entries) = std::fs::read_dir(&dir) {
-            let mut paths: Vec<PathBuf> = entries
-                .filter_map(|e| e.ok().map(|e| e.path()))
-                .filter(|p| p.extension().is_some_and(|x| x == "txt"))
-                .collect();
-            paths.sort();
-            out.extend(paths);
-        }
-    }
-    out
+/// Deterministic per-fixture seed — FNV-1a of the stem, so each fixture samples a
+/// different slice of its corpus while any failure still reproduces exactly.
+pub fn stem_seed(stem: &str) -> u64 {
+    stem.bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| {
+        (h ^ b as u64).wrapping_mul(0x0100_0000_01b3)
+    })
 }
 
 /// A `window`-byte slice of `text` from a seeded offset, snapped to char boundaries.
@@ -53,3 +43,47 @@ pub fn random_chunk(text: &str, window: usize, seed: u64) -> &str {
     }
     &text[start..end]
 }
+
+/// One `#[test]` per fixture: expands `$cb($($extra,)* group, stem)` for every
+/// fixture in `data/fixtures/{lang,modalities}`. The list mirrors the Makefile's
+/// `FIXTURE_LANGS`/`FIXTURE_MODALITIES`; absent files skip inside the callback.
+/// `ident = "stem"` overrides the file stem when it isn't a valid identifier.
+macro_rules! for_each_fixture {
+    ($cb:path $(, $extra:expr)* $(,)?) => {
+        crate::common::for_each_fixture!(@one $cb, ($($extra),*),"lang", amh_Ethi);
+        crate::common::for_each_fixture!(@one $cb, ($($extra),*),"lang", arb_Arab);
+        crate::common::for_each_fixture!(@one $cb, ($($extra),*),"lang", ben_Beng);
+        crate::common::for_each_fixture!(@one $cb, ($($extra),*),"lang", cmn_Hani);
+        crate::common::for_each_fixture!(@one $cb, ($($extra),*),"lang", ell_Grek);
+        crate::common::for_each_fixture!(@one $cb, ($($extra),*),"lang", eng_Latn);
+        crate::common::for_each_fixture!(@one $cb, ($($extra),*),"lang", heb_Hebr);
+        crate::common::for_each_fixture!(@one $cb, ($($extra),*),"lang", hin_Deva);
+        crate::common::for_each_fixture!(@one $cb, ($($extra),*),"lang", jpn_Jpan);
+        crate::common::for_each_fixture!(@one $cb, ($($extra),*),"lang", kat_Geor);
+        crate::common::for_each_fixture!(@one $cb, ($($extra),*),"lang", kor_Hang);
+        crate::common::for_each_fixture!(@one $cb, ($($extra),*),"lang", rus_Cyrl);
+        crate::common::for_each_fixture!(@one $cb, ($($extra),*),"lang", tam_Taml);
+        crate::common::for_each_fixture!(@one $cb, ($($extra),*),"lang", tha_Thai);
+        crate::common::for_each_fixture!(@one $cb, ($($extra),*),"modalities", added_normalized_dense);
+        crate::common::for_each_fixture!(@one $cb, ($($extra),*),"modalities", added_normalized_sparse);
+        crate::common::for_each_fixture!(@one $cb, ($($extra),*),"modalities", added_special_dense);
+        crate::common::for_each_fixture!(@one $cb, ($($extra),*),"modalities", added_special_sparse);
+        crate::common::for_each_fixture!(@one $cb, ($($extra),*),"modalities", agentic_swe);
+        crate::common::for_each_fixture!(@one $cb, ($($extra),*),"modalities", agentic_traces = "agentic-traces");
+        crate::common::for_each_fixture!(@one $cb, ($($extra),*),"modalities", code_mixed);
+        crate::common::for_each_fixture!(@one $cb, ($($extra),*),"modalities", math_latex);
+    };
+    (@one $cb:path, ($($extra:expr),*), $group:literal, $name:ident) => {
+        #[test]
+        fn $name() {
+            $cb($($extra,)* $group, stringify!($name));
+        }
+    };
+    (@one $cb:path, ($($extra:expr),*), $group:literal, $name:ident = $stem:literal) => {
+        #[test]
+        fn $name() {
+            $cb($($extra,)* $group, $stem);
+        }
+    };
+}
+pub(crate) use for_each_fixture;
