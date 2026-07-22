@@ -104,6 +104,108 @@ impl PyTokenizer {
             Ok(result)
         })
     }
+
+    /// Drive a parity-aware BPE run: stream one buffered iterator per language
+    /// into the trainer, train a fresh BPE model, and install it (plus the
+    /// trainer's special tokens) into the spec. Lives here because it needs
+    /// `BufferedPyIterator` and the lock internals; the Python-facing class is
+    /// `trainers::PyParityBpeTrainer`.
+    pub(crate) fn train_parity(
+        &self,
+        py: Python<'_>,
+        mut trainer: tk_train::trainers::bpe::ParityBpeTrainer,
+        train_iterators: Vec<Bound<'_, PyAny>>,
+        dev_iterators: Vec<Bound<'_, PyAny>>,
+    ) -> PyResult<()> {
+        let train_seqs = train_iterators
+            .iter()
+            .map(BufferedPyIterator::new)
+            .collect::<PyResult<Vec<_>>>()?;
+        let dev_seqs = dev_iterators
+            .iter()
+            .map(BufferedPyIterator::new)
+            .collect::<PyResult<Vec<_>>>()?;
+        let errors: Vec<_> = train_seqs
+            .iter()
+            .chain(&dev_seqs)
+            .map(|s| s.error.clone())
+            .collect();
+
+        self.inner.with(py, |lock| {
+            USED_PARALLELISM.store(true, Ordering::SeqCst);
+            let mut guard = lock.write().map_err(poisoned)?;
+            let normalizer = guard.spec.get_normalizer().cloned();
+            let pre_tokenizer = guard.spec.get_pre_tokenizer().cloned();
+            let process =
+                |text: &str| pretokenize(text, normalizer.as_ref(), pre_tokenizer.as_ref());
+
+            for (lang, seqs) in train_seqs.into_iter().enumerate() {
+                trainer
+                    .feed_language_from_iter(lang, seqs, process)
+                    .map_err(to_pyerr)?;
+            }
+            for (lang, seqs) in dev_seqs.into_iter().enumerate() {
+                trainer
+                    .feed_dev_language_from_iter(lang, seqs, process)
+                    .map_err(to_pyerr)?;
+            }
+
+            let mut model = tk_encode::models::bpe::BPE::default();
+            let (special_tokens, _) = trainer.do_train(&mut model).map_err(to_pyerr)?;
+            guard.spec.with_model(model);
+            guard
+                .spec
+                .add_special_tokens(special_tokens)
+                .map_err(to_pyerr)?;
+            guard.compiled = None;
+            Ok::<_, PyErr>(())
+        })?;
+        for error in errors {
+            if let Some(err) = error.lock().expect("error slot poisoned").take() {
+                return Err(err);
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Normalize and pre-tokenize one sequence into word strings — the same
+/// splitting `Tokenizer.train` applies before counting words.
+fn pretokenize(
+    text: &str,
+    normalizer: Option<&tk_encode::normalizers::NormalizerWrapper>,
+    pre_tokenizer: Option<&tk_encode::pre_tokenizers::PreTokenizerWrapper>,
+) -> tk_encode::tokenizer::Result<Vec<String>> {
+    use tk_encode::tokenizer::{
+        NormalizedString, Normalizer as _, OffsetReferential, OffsetType, PreTokenizedString,
+        PreTokenizer as _,
+    };
+
+    let normalized_text = if let Some(norm) = normalizer {
+        let mut normalized = NormalizedString::from(text);
+        norm.normalize(&mut normalized)?;
+        normalized.get().to_string()
+    } else {
+        text.to_string()
+    };
+
+    if let Some(pretok) = pre_tokenizer {
+        let mut pretokenized = PreTokenizedString::from(normalized_text.as_str());
+        pretok.pre_tokenize(&mut pretokenized)?;
+        Ok(pretokenized
+            .get_splits(OffsetReferential::Original, OffsetType::Byte)
+            .into_iter()
+            .filter(|(word, _, _)| !word.is_empty())
+            .map(|(word, _, _)| word.to_string())
+            .collect())
+    } else {
+        let trimmed = normalized_text.trim();
+        Ok(if trimmed.is_empty() {
+            Vec::new()
+        } else {
+            vec![trimmed.to_string()]
+        })
+    }
 }
 
 /// Get the compiled pipeline, building it from the spec on first use after a

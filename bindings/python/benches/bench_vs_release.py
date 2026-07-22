@@ -167,8 +167,7 @@ def bench_local_side(tok, fixtures: list[dict], release_row: dict, iters: int) -
 
 def render_markdown(report: dict) -> str:
     lines = [
-        "## Python bindings: this branch vs `tokenizers` "
-        f"{report['release_version']} (PyPI)",
+        f"## Python bindings: this branch vs `tokenizers` {report['release_version']} (PyPI)",
         "",
         f"{report['fixture_count']} fixtures (~10 KiB chunks, ≤100/fixture), median of "
         f"{report['iters']} runs, {report['cpus']} CPUs. Single-thread numbers aggregate "
@@ -250,12 +249,18 @@ def main() -> int:
         release_out = Path(td) / "release.json"
         subprocess.run(
             [
-                sys.executable, __file__,
-                "--side", "release",
-                "--models-json", str(models_json),
-                "--out", str(release_out),
-                "--data-dir", str(args.data_dir),
-                "--iters", str(args.iters),
+                sys.executable,
+                __file__,
+                "--side",
+                "release",
+                "--models-json",
+                str(models_json),
+                "--out",
+                str(release_out),
+                "--data-dir",
+                str(args.data_dir),
+                "--iters",
+                str(args.iters),
             ],
             env=os.environ | {"PYTHONPATH": str(args.release_dir)},
             check=True,

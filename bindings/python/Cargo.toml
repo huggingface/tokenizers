@@ -16,7 +16,7 @@ rayon = "1.10"
 serde = "1.0"
 serde_json = "1.0"
 tk-encode = { path = "../../tokenizers/tk-encode", features = ["fancy-regex"] }
-tk-train = { path = "../../tokenizers/tk-train" }
+tk-train = { path = "../../tokenizers/tk-train", features = ["parity-aware-bpe"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

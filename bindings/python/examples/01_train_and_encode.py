@@ -41,7 +41,7 @@ ids = tok.encode("The quick brown fox <s> jumps over the lazy dog")
 print(f"ids: {ids.dtype} {ids}")
 assert isinstance(ids, np.ndarray) and ids.dtype == np.uint32
 assert tok.token_to_id("<s>") in ids
-assert [tok.id_to_token(int(i)) for i in ids[:2]] is not None
+assert all(tok.id_to_token(int(i)) is not None for i in ids)
 
 # 4. Mutate a component in place: dropping the lowercasing normalizer changes ids
 tok_ids_lower = tok.encode("HELLO WORLD")

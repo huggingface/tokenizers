@@ -64,14 +64,17 @@ impl PyAddedToken {
     }
 
     fn __repr__(&self) -> String {
+        fn py(b: bool) -> &'static str {
+            if b { "True" } else { "False" }
+        }
         format!(
             "AddedToken({:?}, single_word={}, lstrip={}, rstrip={}, normalized={}, special={})",
             self.inner.content,
-            self.inner.single_word,
-            self.inner.lstrip,
-            self.inner.rstrip,
-            self.inner.normalized,
-            self.inner.special
+            py(self.inner.single_word),
+            py(self.inner.lstrip),
+            py(self.inner.rstrip),
+            py(self.inner.normalized),
+            py(self.inner.special)
         )
     }
 }

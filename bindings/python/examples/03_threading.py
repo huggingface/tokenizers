@@ -36,9 +36,11 @@ with ThreadPoolExecutor(N_THREADS) as pool:  # warmup thread pool
     threaded = time.perf_counter() - start
 
 speedup = sequential / threaded
-print(f"{N_THREADS} encodes of {len(text) / 1e6:.1f}MB: "
-      f"sequential {sequential:.2f}s, {N_THREADS} threads {threaded:.2f}s "
-      f"({speedup:.1f}x)")
+print(
+    f"{N_THREADS} encodes of {len(text) / 1e6:.1f}MB: "
+    f"sequential {sequential:.2f}s, {N_THREADS} threads {threaded:.2f}s "
+    f"({speedup:.1f}x)"
+)
 assert speedup > 1.5, f"threads did not scale ({speedup:.2f}x): is the GIL held?"
 
 # 2. encode_batch: rayon parallelism inside one call, toggled by env var
@@ -55,8 +57,10 @@ parallel = time.perf_counter() - start
 
 assert all(a.tolist() == b.tolist() for a, b in zip(serial_ids, parallel_ids, strict=True))
 mbps = len(text) / parallel / 1e6
-print(f"encode_batch {len(lines)} lines: serial {serial:.2f}s, "
-      f"rayon {parallel:.2f}s ({serial / parallel:.1f}x, {mbps:.0f} MB/s)")
+print(
+    f"encode_batch {len(lines)} lines: serial {serial:.2f}s, "
+    f"rayon {parallel:.2f}s ({serial / parallel:.1f}x, {mbps:.0f} MB/s)"
+)
 assert serial / parallel > 1.5, "rayon batch did not scale"
 
 print("OK")

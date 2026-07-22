@@ -43,7 +43,7 @@ jobs:
         working-directory: ./bindings/python
         run: |
           uv venv .venv --python ${{ matrix.python }}
-          uv pip install --python .venv/bin/python maturin numpy
+          uv pip install --python .venv/bin/python maturin numpy pytest datasets
           source .venv/bin/activate && maturin develop --release
 
       # The examples read real tokenizer.json files + a text corpus. Cached
@@ -52,7 +52,9 @@ jobs:
       - name: Cache test data
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
         with:
-          path: tokenizers/data
+          path: |
+            tokenizers/data
+            ~/.cache/huggingface
           key: python-test-data-${{ hashFiles('tokenizers/Makefile', 'tokenizers/tk-encode/examples/bench_models.json') }}
 
       - name: Download model tokenizers and corpus
@@ -61,12 +63,25 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: make bench-models data/big.txt HF="uvx --from huggingface_hub hf"
 
+      # Network-marked tests (Hub downloads) are skipped: they'd flake on
+      # rate limits and from_file covers the same code paths.
+      - name: Run the tests
+        working-directory: ./bindings/python
+        run: .venv/bin/python -m pytest -q -m "not network"
+
+      # Every example runs here so they can never rot. 06 pulls wikitext-2
+      # from the Hub (cached above).
       - name: Run the examples
         working-directory: ./bindings/python
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           .venv/bin/python examples/01_train_and_encode.py
           .venv/bin/python examples/02_pretrained.py
           .venv/bin/python examples/03_threading.py
+          .venv/bin/python examples/04_train_bert_wordpiece.py
+          .venv/bin/python examples/05_train_bytelevel_bpe.py
+          .venv/bin/python examples/06_train_with_datasets.py
 
       # The .pyi stubs are generated from the built extension; a diff here
       # means someone changed the Rust API without running `make stubs`.
@@ -117,6 +132,15 @@ jobs:
 
       - name: Lint with Clippy
         run: cargo clippy --manifest-path ./bindings/python/Cargo.toml --all-targets --all-features -- -D warnings
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Lint the Python sources with ruff
+        working-directory: ./bindings/python
+        run: |
+          uvx ruff check benches examples tests
+          uvx ruff format --check benches examples tests
 
   audit:
     name: Audit dependencies

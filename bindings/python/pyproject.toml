@@ -17,9 +17,18 @@ Source = "https://github.com/huggingface/tokenizers"
 
 [project.optional-dependencies]
 hub = ["huggingface_hub>=0.16.4"]
+testing = ["pytest", "ruff"]
 
 [tool.maturin]
 python-source = "py_src"
 module-name = "tokenizers._native"
 bindings = "pyo3"
 features = ["ext-module"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["network: needs access to the Hugging Face Hub"]
+
+[tool.ruff]
+line-length = 119
+extend-exclude = ["py_src"]

@@ -7,19 +7,28 @@ dev: .venv
 
 .venv:
 	uv venv .venv
-	uv pip install --python $(PYTHON) maturin numpy
+	uv pip install --python $(PYTHON) maturin numpy pytest ruff
 
 # Regenerate the .pyi stubs from the built extension. Run after `make dev`.
 .PHONY: stubs
 stubs:
 	cargo run --manifest-path tools/stub-gen/Cargo.toml
 
-# Run the end-to-end examples (train, pretrained parity, threading).
+.PHONY: test
+test: dev
+	$(PYTHON) -m pytest -q
+
+# Run the end-to-end examples. `datasets` (for 06) is installed on demand so
+# `make dev` stays lean; 06 downloads wikitext-2 (~12 MB) on first run.
 .PHONY: examples
 examples: dev
+	uv pip install --python $(PYTHON) datasets
 	$(PYTHON) examples/01_train_and_encode.py
 	$(PYTHON) examples/02_pretrained.py
 	$(PYTHON) examples/03_threading.py
+	$(PYTHON) examples/04_train_bert_wordpiece.py
+	$(PYTHON) examples/05_train_bytelevel_bpe.py
+	$(PYTHON) examples/06_train_with_datasets.py
 
 # The released PyPI wheel shares our package name, so it lives in its own
 # directory that the bench subprocess puts on PYTHONPATH.
@@ -32,9 +41,11 @@ bench: dev .release
 	$(PYTHON) benches/bench_vs_release.py
 
 .PHONY: lint
-lint:
+lint: .venv
 	cargo fmt --check
 	cargo clippy --all-targets -- -D warnings
+	.venv/bin/ruff check benches examples tests
+	.venv/bin/ruff format --check benches examples tests
 
 .PHONY: clean
 clean:

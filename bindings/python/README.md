@@ -64,10 +64,11 @@ To build a distributable wheel instead: `maturin build --release` (find it in
 Other targets:
 
 ```sh
-make examples     # run the three end-to-end examples (needs ../../tokenizers/data)
+make test         # pytest suite in tests/
+make examples     # run the end-to-end examples (needs ../../tokenizers/data)
 make bench        # benchmark against the released tokenizers wheel from PyPI
 make stubs        # regenerate the .pyi type stubs from the built extension
-make lint         # cargo fmt --check + clippy -D warnings
+make lint         # cargo fmt + clippy, ruff over the python sources
 ```
 
 The examples and the benchmark read test data from `../../tokenizers/data`.

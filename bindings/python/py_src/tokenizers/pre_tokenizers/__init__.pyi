@@ -20,6 +20,13 @@ class ByteLevel(PreTokenizer):
     is always off.
     """
     def __new__(cls, /, *, use_regex: bool = True) -> ByteLevel: ...
+    @staticmethod
+    def alphabet() -> list[str]:
+        """
+        The 256 characters byte-level tokens are spelled with, one per byte
+        value. Pass it as a trainer's `initial_alphabet` so every byte gets a
+        token even if it never appears in the training data.
+        """
 
 @final
 class CharDelimiterSplit(PreTokenizer):

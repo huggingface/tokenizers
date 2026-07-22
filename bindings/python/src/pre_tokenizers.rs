@@ -154,6 +154,14 @@ impl PyByteLevel {
         })
         .add_subclass(PyByteLevel)
     }
+
+    /// The 256 characters byte-level tokens are spelled with, one per byte
+    /// value. Pass it as a trainer's `initial_alphabet` so every byte gets a
+    /// token even if it never appears in the training data.
+    #[staticmethod]
+    fn alphabet() -> Vec<String> {
+        ByteLevel::alphabet().iter().map(char::to_string).collect()
+    }
 }
 
 /// Splits on one fixed character, dropping it.
