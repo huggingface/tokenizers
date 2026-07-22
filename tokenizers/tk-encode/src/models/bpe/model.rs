@@ -855,6 +855,10 @@ impl pipeline::Model for PipelineBPE {
             skip: Vec::new(),
         }
     }
+
+    fn id_to_token_bytes(&self, id: &PipelineToken) -> Option<&[u8]> {
+        self.vocab.id_to_token_bytes(id.id)
+    }
 }
 
 pub struct BpeScratch {

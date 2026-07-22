@@ -542,8 +542,16 @@ impl PipelineTokenizer {
     /// test and the comparative benchmark report decode as *pending* instead of
     /// silently validating garbage. Implementing this flips the ignored
     /// `pipeline_decode_oracle` test on and lights up the decode charts.
-    pub fn decode(&self, _ids: &[u32], _skip_special_tokens: bool) -> Result<String> {
-        Err("PipelineTokenizer::decode is not implemented yet".into())
+    pub fn decode(&self, ids: &[PipelineToken], _skip_special_tokens: bool) -> Result<String> {
+        let mut output = Vec::with_capacity(ids.len());
+        for id in ids {
+            let slice = self
+                .model
+                .id_to_token_bytes(id)
+                .ok_or::<crate::Error>(format!("Invalid token id: {}", id.id).into())?;
+            output.extend_from_slice(slice);
+        }
+        Ok(String::from_utf8(output)?)
     }
 
     /// Decode several id sequences at once, one `String` per input. Mirrors the
@@ -923,6 +931,8 @@ pub trait Model {
     ) -> Result<()>;
 
     fn init_scratch(&self) -> Self::Scratch;
+
+    fn id_to_token_bytes(&self, id: &PipelineToken) -> Option<&[u8]>;
 }
 
 #[allow(
@@ -968,6 +978,15 @@ impl Model for PipelineModel {
             Self::WordLevel(_) => Self::Scratch::WordLevel(()),
             Self::WordPiece(wordpiece) => Self::Scratch::WordPiece(wordpiece.init_scratch()),
             Self::Unigram(unigram) => Self::Scratch::Unigram(unigram.init_scratch()),
+        }
+    }
+
+    fn id_to_token_bytes(&self, id: &PipelineToken) -> Option<&[u8]> {
+        match self {
+            Self::BPE(model) => model.id_to_token_bytes(id),
+            Self::WordLevel(model) => model.id_to_token_bytes(id),
+            Self::WordPiece(model) => model.id_to_token_bytes(id),
+            Self::Unigram(model) => model.id_to_token_bytes(id),
         }
     }
 }

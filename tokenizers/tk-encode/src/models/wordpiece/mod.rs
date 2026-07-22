@@ -322,6 +322,11 @@ impl pipeline::ModelScratch for WordPieceScratch {}
 
 pub struct PipelineWordPiece {
     vocab_trie: yada::DoubleArray<Vec<u8>>,
+    // Token bytes for decoding. The trie can't hand its keys back, so we keep
+    // a second copy; ids are dense line indices, so a flat arena indexed by id
+    // is cheaper than a hashmap. Token `id` is `vocab_r[offs[id]..offs[id + 1]]`.
+    vocab_r: Box<[u8]>,
+    vocab_r_offsets: Box<[u32]>,
     unk_token: Option<u32>,
     continuing_subword_prefix: String,
     max_input_chars_per_word: usize,
@@ -344,11 +349,31 @@ impl TryFrom<WordPiece> for PipelineWordPiece {
         keyset.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
         let vocab_trie = DoubleArray::new(DoubleArrayBuilder::build(&keyset)?)?;
 
+        let vocab_size = keyset
+            .iter()
+            .map(|(_, id)| *id as usize + 1)
+            .max()
+            .unwrap_or(0);
+        let mut vocab_r_offsets = vec![0u32; vocab_size + 1];
+        for (token, id) in &keyset {
+            vocab_r_offsets[*id as usize + 1] = token.len() as u32;
+        }
+        for i in 1..vocab_r_offsets.len() {
+            vocab_r_offsets[i] += vocab_r_offsets[i - 1];
+        }
+        let mut vocab_r = vec![0u8; vocab_r_offsets[vocab_size] as usize];
+        for (token, id) in &keyset {
+            let start = vocab_r_offsets[*id as usize] as usize;
+            vocab_r[start..start + token.len()].copy_from_slice(token.as_bytes());
+        }
+
         Ok(Self {
             continuing_subword_prefix,
             max_input_chars_per_word,
             unk_token,
             vocab_trie,
+            vocab_r: vocab_r.into_boxed_slice(),
+            vocab_r_offsets: vocab_r_offsets.into_boxed_slice(),
         })
     }
 }
@@ -409,6 +434,13 @@ impl pipeline::Model for PipelineWordPiece {
         }
         Ok(())
     }
+
+    fn id_to_token_bytes(&self, id: &PipelineToken) -> Option<&[u8]> {
+        let i = id.id as usize;
+        let start = *self.vocab_r_offsets.get(i)? as usize;
+        let end = *self.vocab_r_offsets.get(i + 1)? as usize;
+        Some(&self.vocab_r[start..end])
+    }
 }
 
 #[cfg(test)]
@@ -418,5 +450,26 @@ mod tests {
     #[test]
     fn test_error_display() {
         assert!(format!("{}", Error::MissingUnkToken).contains("Missing [UNK] token"));
+    }
+
+    #[test]
+    fn id_to_token_bytes_round_trips() {
+        use crate::pipeline::{Model as _, PipelineToken};
+
+        let vocab: Vocab = [
+            ("[UNK]".to_string(), 0),
+            ("hello".to_string(), 1),
+            ("##world".to_string(), 2),
+        ]
+        .into_iter()
+        .collect();
+        let wp = WordPiece::builder().vocab(vocab).build().unwrap();
+        let model = PipelineWordPiece::try_from(wp).unwrap();
+
+        for (token, id) in [("[UNK]", 0), ("hello", 1), ("##world", 2)] {
+            let bytes = model.id_to_token_bytes(&PipelineToken { id }).unwrap();
+            assert_eq!(bytes, token.as_bytes());
+        }
+        assert_eq!(model.id_to_token_bytes(&PipelineToken { id: 3 }), None);
     }
 }
