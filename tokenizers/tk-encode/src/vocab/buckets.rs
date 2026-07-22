@@ -443,6 +443,9 @@ impl Buckets {
     pub fn id_to_token(&self, id: u32) -> Option<String> {
         self.vocab.id_to_token(id)
     }
+    pub fn id_to_token_bytes(&self, id: u32) -> Option<&[u8]> {
+        self.vocab.id_to_token_bytes(id)
+    }
 }
 
 impl Default for Buckets {

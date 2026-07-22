@@ -249,10 +249,17 @@ impl AddedVocabulary {
     /// this returns the cached normalized form so that the configured `Decoder` can
     /// invert the transformation correctly. For all other tokens, the original
     /// `content` is returned.
-    pub fn simple_id_to_token(&self, _id: u32) -> Option<String> {
+    pub fn simple_id_to_token(&self, id: u32) -> Option<String> {
         self.vocab
-            .id_to_token(_id)
-            .or_else(|| self.normalized_vocab.id_to_token(_id))
+            .id_to_token(id)
+            .or_else(|| self.normalized_vocab.id_to_token(id))
+    }
+
+    /// todo: docs
+    pub fn simple_id_to_token_bytes(&self, id: u32) -> Option<&[u8]> {
+        self.vocab
+            .id_to_token_bytes(id)
+            .or_else(|| self.normalized_vocab.id_to_token_bytes(id))
     }
 
     //

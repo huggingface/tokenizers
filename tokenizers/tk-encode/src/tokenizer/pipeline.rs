@@ -540,9 +540,15 @@ impl PipelineTokenizer {
     /// Incomplete: it concatenates raw token bytes only. No decoder, no added-
     /// vocab lookup, no `skip_special_tokens` — so the `pipeline_decode_oracle`
     /// test fails on purpose until those land.
-    pub fn decode(&self, ids: &[u32], _skip_special_tokens: bool) -> Result<String> {
+    pub fn decode(&self, ids: &[u32], skip_special_tokens: bool) -> Result<String> {
         let mut output = Vec::with_capacity(ids.len());
         for &id in ids {
+            if let Some(special_token) = self.added_vocabulary.simple_id_to_token_bytes(id) {
+                if !skip_special_tokens {
+                    output.extend_from_slice(special_token);
+                }
+                continue;
+            }
             let slice = self
                 .model
                 .id_to_token_bytes(id)
