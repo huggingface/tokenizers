@@ -7,8 +7,11 @@ use tk_encode::models::wordpiece::WordPiece;
 
 use crate::error::to_pyerr;
 
-/// Base class for all models. Not constructible from Python; holds the actual
-/// Rust model by value (no sharing with the Tokenizer — assignment copies).
+/// Base class for all models.
+///
+/// The model is the trained part of a tokenizer: it turns each pre-tokenized
+/// piece into token ids using its vocabulary. Models are immutable values —
+/// assigning one to a tokenizer copies it.
 #[pyclass(
     frozen,
     subclass,
@@ -40,6 +43,11 @@ pub fn wrap_model(py: Python<'_>, inner: ModelWrapper) -> PyResult<Py<PyModel>> 
     Ok(obj.unbind())
 }
 
+/// Byte-Pair Encoding: builds tokens by applying the merges learned during
+/// training. `unk_token` stands in for characters the vocabulary cannot
+/// represent; `byte_fallback` encodes them as raw bytes instead. `dropout`
+/// randomly skips merges (a training-time regularization). `ignore_merges`
+/// looks whole pieces up in the vocabulary before merging.
 #[pyclass(frozen, extends = PyModel, name = "BPE", module = "tokenizers_pipeline.models")]
 pub struct PyBPE;
 
@@ -86,6 +94,9 @@ impl PyBPE {
     }
 }
 
+/// The BERT model: greedily matches the longest vocabulary entry, marking
+/// word continuations with a prefix ("##" by default). A piece longer than
+/// `max_input_chars_per_word` becomes `unk_token` outright.
 #[pyclass(frozen, extends = PyModel, name = "WordPiece", module = "tokenizers_pipeline.models")]
 pub struct PyWordPiece;
 
@@ -108,6 +119,8 @@ impl PyWordPiece {
     }
 }
 
+/// The simplest model: one whole word, one id. Words outside the vocabulary
+/// become `unk_token`.
 #[pyclass(frozen, extends = PyModel, name = "WordLevel", module = "tokenizers_pipeline.models")]
 pub struct PyWordLevel;
 
@@ -124,6 +137,9 @@ impl PyWordLevel {
     }
 }
 
+/// The SentencePiece Unigram model: picks the most probable segmentation
+/// under a learned piece vocabulary. Starts empty — train it, or load a
+/// tokenizer.json.
 #[pyclass(frozen, extends = PyModel, name = "Unigram", module = "tokenizers_pipeline.models")]
 pub struct PyUnigram;
 
@@ -138,6 +154,7 @@ impl PyUnigram {
     }
 }
 
+/// The algorithms that turn pre-tokenized pieces into token ids.
 #[pymodule(gil_used = false)]
 pub mod models {
     #[pymodule_export]

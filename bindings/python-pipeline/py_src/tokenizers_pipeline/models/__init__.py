@@ -1,3 +1,5 @@
+"""The algorithms that turn pre-tokenized pieces into token ids."""
+
 from .._native import models as _models
 
 Model = _models.Model

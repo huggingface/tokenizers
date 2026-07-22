@@ -1,7 +1,12 @@
 use pyo3::prelude::*;
 use tk_encode::tokenizer::AddedToken;
 
-/// A token added on top of the model's vocabulary, with its matching options.
+/// A token added to the vocabulary after training, with options for how it
+/// is matched in text: `single_word` only matches when it stands alone (not
+/// inside a word); `lstrip`/`rstrip` also swallow the whitespace before/after
+/// it; `normalized` matches against normalized instead of raw text (defaults
+/// to the opposite of `special`); `special` marks template tokens like "<s>"
+/// that decoding should be able to skip.
 #[pyclass(
     frozen,
     from_py_object,

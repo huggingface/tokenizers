@@ -1,3 +1,5 @@
+"""Recipes for learning a vocabulary from text."""
+
 from .._native import trainers as _trainers
 
 Trainer = _trainers.Trainer

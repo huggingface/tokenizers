@@ -6,8 +6,11 @@ use tk_encode::normalizers::{
 
 use crate::error::to_pyerr;
 
-/// Base class for all normalizers. Immutable value: assigning it to a
-/// Tokenizer copies the configuration, there is no shared state.
+/// Base class for all normalizers.
+///
+/// A normalizer rewrites text before it is split: cleanup, case-folding,
+/// Unicode normalization. Normalizers are immutable values — assigning one to
+/// a tokenizer copies it.
 #[pyclass(
     frozen,
     subclass,
@@ -61,7 +64,8 @@ pub fn wrap_normalizer(py: Python<'_>, inner: NormalizerWrapper) -> PyResult<Py<
 }
 
 macro_rules! unit_normalizer {
-    ($pyname:ident, $name:literal, $inner:expr) => {
+    ($pyname:ident, $name:literal, $inner:expr, $doc:literal) => {
+        #[doc = $doc]
         #[pyclass(frozen, extends = PyNormalizer, name = $name, module = "tokenizers_pipeline.normalizers")]
         pub struct $pyname;
 
@@ -75,13 +79,44 @@ macro_rules! unit_normalizer {
     };
 }
 
-unit_normalizer!(PyNFC, "NFC", NFC);
-unit_normalizer!(PyNFD, "NFD", NFD);
-unit_normalizer!(PyNFKC, "NFKC", NFKC);
-unit_normalizer!(PyNFKD, "NFKD", NFKD);
-unit_normalizer!(PyLowercase, "Lowercase", Lowercase);
-unit_normalizer!(PyStripAccents, "StripAccents", StripAccents);
+unit_normalizer!(
+    PyNFC,
+    "NFC",
+    NFC,
+    "Unicode NFC: recombines split characters (e + ´ becomes é)."
+);
+unit_normalizer!(
+    PyNFD,
+    "NFD",
+    NFD,
+    "Unicode NFD: splits characters into base + accents (é becomes e + ´)."
+);
+unit_normalizer!(
+    PyNFKC,
+    "NFKC",
+    NFKC,
+    "Unicode NFKC: NFC, plus compatibility replacements (ﬁ becomes fi)."
+);
+unit_normalizer!(
+    PyNFKD,
+    "NFKD",
+    NFKD,
+    "Unicode NFKD: NFD, plus compatibility replacements (ﬁ becomes fi)."
+);
+unit_normalizer!(
+    PyLowercase,
+    "Lowercase",
+    Lowercase,
+    "Lowercases everything."
+);
+unit_normalizer!(
+    PyStripAccents,
+    "StripAccents",
+    StripAccents,
+    "Removes accents (é becomes e). Only works on decomposed text: put NFD before it."
+);
 
+/// Removes whitespace at the start and/or end of the text.
 #[pyclass(frozen, extends = PyNormalizer, name = "Strip", module = "tokenizers_pipeline.normalizers")]
 pub struct PyStrip;
 
@@ -97,6 +132,8 @@ impl PyStrip {
     }
 }
 
+/// Replaces every occurrence of `pattern` with `content`. With `regex=True`
+/// the pattern is a regular expression.
 #[pyclass(frozen, extends = PyNormalizer, name = "Replace", module = "tokenizers_pipeline.normalizers")]
 pub struct PyReplace;
 
@@ -119,6 +156,7 @@ impl PyReplace {
     }
 }
 
+/// Puts a fixed string in front of the text (SentencePiece prepends "▁").
 #[pyclass(frozen, extends = PyNormalizer, name = "Prepend", module = "tokenizers_pipeline.normalizers")]
 pub struct PyPrepend;
 
@@ -133,6 +171,10 @@ impl PyPrepend {
     }
 }
 
+/// The BERT cleanup: removes control characters, puts spaces around CJK
+/// characters, and optionally strips accents and lowercases.
+/// `strip_accents=None` means "follow the lowercase setting", like the
+/// original BERT.
 #[pyclass(frozen, extends = PyNormalizer, name = "BertNormalizer", module = "tokenizers_pipeline.normalizers")]
 pub struct PyBertNormalizer;
 
@@ -154,6 +196,7 @@ impl PyBertNormalizer {
     }
 }
 
+/// Runs several normalizers in order.
 #[pyclass(frozen, extends = PyNormalizer, name = "Sequence", module = "tokenizers_pipeline.normalizers")]
 pub struct PySequence;
 
@@ -169,6 +212,7 @@ impl PySequence {
     }
 }
 
+/// Text cleanup that runs before the text is split.
 #[pymodule(gil_used = false)]
 pub mod normalizers {
     #[pymodule_export]

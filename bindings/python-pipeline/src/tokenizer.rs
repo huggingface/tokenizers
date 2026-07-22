@@ -54,8 +54,13 @@ fn poisoned<G>(_: std::sync::PoisonError<G>) -> PyErr {
 }
 
 /// A tokenizer: a model plus its optional normalizer and pre-tokenizer.
-/// Mutations apply to the serializable definition; encode runs a compiled
-/// pipeline that is rebuilt automatically after any change.
+///
+/// Create one from a model (`Tokenizer(models.BPE())`), a file
+/// (`Tokenizer.from_file`), or the Hub (`Tokenizer.from_pretrained`).
+/// Changes — assigning components, training, adding tokens — apply to the
+/// serializable definition; encoding runs a compiled pipeline that is rebuilt
+/// automatically after any change. A definition the pipeline cannot run
+/// raises `TokenizersError` at that point, with the reason.
 // The lock/GIL ordering rule (never block on the lock while attached) is
 // enforced by DetachedRwLock: guards are only reachable inside its
 // detach-first `with` closure. See detached_lock.rs for the rationale and
@@ -159,6 +164,7 @@ fn encode_one(
 
 #[pymethods]
 impl PyTokenizer {
+    /// Create an untrained tokenizer from a model.
     #[new]
     fn new(model: PyRef<'_, PyModel>) -> Self {
         Self::from_spec(SpecTokenizer::new(model.inner.clone()))
@@ -290,7 +296,8 @@ impl PyTokenizer {
         ))
     }
 
-    /// Train the model on text files (one sequence per line).
+    /// Train the model's vocabulary on text files (one sequence per line).
+    /// Without a `trainer`, the model's default trainer is used.
     #[pyo3(signature = (files, *, trainer = None))]
     fn train(
         &self,
@@ -311,7 +318,8 @@ impl PyTokenizer {
         })
     }
 
-    /// Train the model from any iterator of `str`.
+    /// Train the model's vocabulary from any iterator of `str`. Without a
+    /// `trainer`, the model's default trainer is used.
     ///
     /// The interpreter lock is only re-acquired to refill an internal buffer
     /// (256 sequences at a time); the training itself runs multi-threaded in
@@ -343,13 +351,17 @@ impl PyTokenizer {
         Ok(())
     }
 
-    /// Add tokens to the vocabulary, matched literally in the input text.
+    /// Add tokens to the vocabulary and match them in the input text from now
+    /// on. Plain strings match with default options; pass `AddedToken` to
+    /// control matching. Returns how many were actually new.
     fn add_tokens(&self, py: Python<'_>, tokens: Vec<TokenInput>) -> PyResult<usize> {
         let tokens = parse_tokens(tokens, false);
         self.mutate_spec(py, move |spec| spec.add_tokens(tokens).map_err(to_pyerr))
     }
 
-    /// Add special tokens (never split, skipped on decode) to the vocabulary.
+    /// Add special tokens ("<s>", "[CLS]", …) to the vocabulary. Same as
+    /// `add_tokens`, but every token is marked `special`. Returns how many
+    /// were actually new.
     fn add_special_tokens(&self, py: Python<'_>, tokens: Vec<TokenInput>) -> PyResult<usize> {
         let tokens = parse_tokens(tokens, true);
         self.mutate_spec(py, move |spec| {
@@ -357,10 +369,12 @@ impl PyTokenizer {
         })
     }
 
+    /// The id of `token`, or None if it is not in the vocabulary.
     fn token_to_id(&self, py: Python<'_>, token: &str) -> PyResult<Option<u32>> {
         self.read_spec(py, |spec| spec.token_to_id(token))
     }
 
+    /// The token behind `id`, or None if the id is out of range.
     fn id_to_token(&self, py: Python<'_>, id: u32) -> PyResult<Option<String>> {
         self.read_spec(py, move |spec| spec.id_to_token(id))
     }
@@ -372,6 +386,8 @@ impl PyTokenizer {
         self.read_spec(py, move |spec| spec.get_vocab(with_added_tokens))
     }
 
+    /// Number of entries in the vocabulary. `with_added_tokens=False` counts
+    /// only what the model was trained with.
     #[pyo3(signature = (*, with_added_tokens = true))]
     fn get_vocab_size(&self, py: Python<'_>, with_added_tokens: bool) -> PyResult<usize> {
         self.read_spec(py, move |spec| spec.get_vocab_size(with_added_tokens))

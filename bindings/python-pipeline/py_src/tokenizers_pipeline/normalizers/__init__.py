@@ -1,3 +1,5 @@
+"""Text cleanup that runs before the text is split."""
+
 from .._native import normalizers as _normalizers
 
 Normalizer = _normalizers.Normalizer

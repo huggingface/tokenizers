@@ -1,6 +1,10 @@
 import numpy as np
 import numpy.typing as npt
 
+"""
+Fast tokenizers built on the pipeline encode path. Start with `Tokenizer`.
+"""
+
 from tokenizers_pipeline.models import Model
 from tokenizers_pipeline.normalizers import Normalizer
 from tokenizers_pipeline.pre_tokenizers import PreTokenizer
@@ -14,7 +18,12 @@ __version__: Final[str]
 @final
 class AddedToken:
     """
-    A token added on top of the model's vocabulary, with its matching options.
+    A token added to the vocabulary after training, with options for how it
+    is matched in text: `single_word` only matches when it stands alone (not
+    inside a word); `lstrip`/`rstrip` also swallow the whitespace before/after
+    it; `normalized` matches against normalized instead of raw text (defaults
+    to the opposite of `special`); `special` marks template tokens like "<s>"
+    that decoding should be able to skip.
     """
     def __new__(cls, /, content: str, *, single_word: bool = False, lstrip: bool = False, rstrip: bool = False, normalized: bool |None = None, special: bool = False) -> AddedToken: ...
     def __repr__(self, /) -> str: ...
@@ -35,19 +44,31 @@ class AddedToken:
 class Tokenizer:
     """
     A tokenizer: a model plus its optional normalizer and pre-tokenizer.
-    Mutations apply to the serializable definition; encode runs a compiled
-    pipeline that is rebuilt automatically after any change.
+    
+    Create one from a model (`Tokenizer(models.BPE())`), a file
+    (`Tokenizer.from_file`), or the Hub (`Tokenizer.from_pretrained`).
+    Changes — assigning components, training, adding tokens — apply to the
+    serializable definition; encoding runs a compiled pipeline that is rebuilt
+    automatically after any change. A definition the pipeline cannot run
+    raises `TokenizersError` at that point, with the reason.
     """
-    def __new__(cls, /, model: Model) -> Tokenizer: ...
+    def __new__(cls, /, model: Model) -> Tokenizer:
+        """
+        Create an untrained tokenizer from a model.
+        """
     def __reduce__(self, /) -> tuple[Any, tuple[bytes]]: ...
     def __repr__(self, /) -> str: ...
     def add_special_tokens(self, /, tokens: Sequence[str |AddedToken]) -> int:
         """
-        Add special tokens (never split, skipped on decode) to the vocabulary.
+        Add special tokens ("<s>", "[CLS]", …) to the vocabulary. Same as
+        `add_tokens`, but every token is marked `special`. Returns how many
+        were actually new.
         """
     def add_tokens(self, /, tokens: Sequence[str |AddedToken]) -> int:
         """
-        Add tokens to the vocabulary, matched literally in the input text.
+        Add tokens to the vocabulary and match them in the input text from now
+        on. Plain strings match with default options; pass `AddedToken` to
+        control matching. Returns how many were actually new.
         """
     def decode(self, /, ids: Sequence[int], *, skip_special_tokens: bool = True) -> str:
         """
@@ -88,8 +109,15 @@ class Tokenizer:
         The whole vocabulary as a dict. This copies every entry; prefer
         `token_to_id` for lookups.
         """
-    def get_vocab_size(self, /, *, with_added_tokens: bool = True) -> int: ...
-    def id_to_token(self, /, id: int) -> str |None: ...
+    def get_vocab_size(self, /, *, with_added_tokens: bool = True) -> int:
+        """
+        Number of entries in the vocabulary. `with_added_tokens=False` counts
+        only what the model was trained with.
+        """
+    def id_to_token(self, /, id: int) -> str |None:
+        """
+        The token behind `id`, or None if the id is out of range.
+        """
     @property
     def model(self, /) -> Model:
         """
@@ -121,14 +149,19 @@ class Tokenizer:
         """
         Serialize the tokenizer definition as a `tokenizer.json` string.
         """
-    def token_to_id(self, /, token: str) -> int |None: ...
+    def token_to_id(self, /, token: str) -> int |None:
+        """
+        The id of `token`, or None if it is not in the vocabulary.
+        """
     def train(self, /, files: Sequence[str], *, trainer: Trainer |None = None) -> None:
         """
-        Train the model on text files (one sequence per line).
+        Train the model's vocabulary on text files (one sequence per line).
+        Without a `trainer`, the model's default trainer is used.
         """
     def train_from_iterator(self, /, iterator: Any, *, trainer: Trainer |None = None) -> None:
         """
-        Train the model from any iterator of `str`.
+        Train the model's vocabulary from any iterator of `str`. Without a
+        `trainer`, the model's default trainer is used.
         
         The interpreter lock is only re-acquired to refill an internal buffer
         (256 sequences at a time); the training itself runs multi-threaded in

@@ -1,3 +1,5 @@
+"""How text is cut into pieces before the model runs."""
+
 from .._native import pre_tokenizers as _pre_tokenizers
 
 PreTokenizer = _pre_tokenizers.PreTokenizer

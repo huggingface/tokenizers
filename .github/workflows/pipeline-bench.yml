@@ -47,6 +47,7 @@ on:
     paths:
       - "tokenizers/tk-encode/**"
       - "tokenizers/src/**"
+      - "bindings/python-pipeline/**"
       - ".github/workflows/pipeline-bench.yml"
       - ".github/scripts/render_pipeline_bench.py"
       - "tokenizers/tk-encode/examples/bench_models.json"
@@ -228,6 +229,60 @@ jobs:
           name: partial-${{ matrix.shard }}
           path: tokenizers/pipeline_bench_${{ matrix.shard }}.json
           retention-days: 3
+
+  # Python bindings: the tokenizers_pipeline wheel vs the latest *released*
+  # tokenizers wheel from PyPI, timed end-to-end through Python — input
+  # conversion, encode, and output objects all count, because that is what a
+  # user pays. Same models (bench_models.json) and fixture corpora as the Rust
+  # bench; unsupported models are reported as skipped, an id mismatch fails
+  # the job. Results land in the run's step summary + an artifact.
+  python-bindings-bench:
+    name: Python bindings vs released wheel
+    if: github.event_name != 'pull_request' || github.event.label.name == 'run-pipeline-bench'
+    runs-on:
+      group: aws-general-8-plus
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Download fixtures and model tokenizers
+        working-directory: tokenizers
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: make fixtures bench-models HF="uvx --from huggingface_hub hf"
+
+      - name: Build and install the tokenizers_pipeline wheel
+        working-directory: bindings/python-pipeline
+        run: |
+          uv venv .venv
+          uv pip install --python .venv/bin/python maturin numpy tokenizers
+          source .venv/bin/activate && maturin develop --release
+
+      - name: Bench against the released wheel
+        working-directory: bindings/python-pipeline
+        run: |
+          .venv/bin/python benches/bench_vs_release.py \
+            --manifest ../../tokenizers/tk-encode/examples/bench_models.json \
+            --json python_bench.json --markdown python_bench.md
+          cat python_bench.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: python-bindings-bench
+          path: |
+            bindings/python-pipeline/python_bench.json
+            bindings/python-pipeline/python_bench.md
+          retention-days: 30
 
   # Fan-in: concatenate the shard partials (in shard order = manifest order),
   # then render + upload charts + update the PR, once.

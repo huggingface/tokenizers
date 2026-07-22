@@ -6,8 +6,11 @@ use tk_train::trainers::{
 use crate::added_token::{TokenInput, parse_tokens};
 use crate::error::to_pyerr;
 
-/// Base class for all trainers. A trainer is a plain configuration value:
-/// `Tokenizer.train*` copies it, no state is shared or written back.
+/// Base class for all trainers.
+///
+/// A trainer is the recipe for learning a model's vocabulary from text; pass
+/// one to `Tokenizer.train` or `train_from_iterator`. Trainers are plain
+/// configuration values — training copies them and writes nothing back.
 #[pyclass(
     frozen,
     subclass,
@@ -25,6 +28,11 @@ impl PyTrainer {
     }
 }
 
+/// Learns a BPE vocabulary: keeps merging the most frequent pair until
+/// `vocab_size` is reached, ignoring pairs seen fewer than `min_frequency`
+/// times. `special_tokens` get the first ids. `limit_alphabet` caps how many
+/// distinct characters are kept; `initial_alphabet` forces characters in even
+/// if the data never shows them; `max_token_length` caps merged token length.
 #[pyclass(frozen, extends = PyTrainer, name = "BpeTrainer", module = "tokenizers_pipeline.trainers")]
 pub struct PyBpeTrainer;
 
@@ -69,6 +77,8 @@ impl PyBpeTrainer {
     }
 }
 
+/// Learns a WordPiece vocabulary. Same knobs as `BpeTrainer`, plus the
+/// continuation prefix ("##" by default).
 #[pyclass(frozen, extends = PyTrainer, name = "WordPieceTrainer", module = "tokenizers_pipeline.trainers")]
 pub struct PyWordPieceTrainer;
 
@@ -107,6 +117,9 @@ impl PyWordPieceTrainer {
     }
 }
 
+/// Learns a Unigram vocabulary: starts from a large candidate set and prunes
+/// it by `shrinking_factor` each round until `vocab_size` pieces remain.
+/// `unk_token` names the fallback piece for unknown characters.
 #[pyclass(frozen, extends = PyTrainer, name = "UnigramTrainer", module = "tokenizers_pipeline.trainers")]
 pub struct PyUnigramTrainer;
 
@@ -143,6 +156,8 @@ impl PyUnigramTrainer {
     }
 }
 
+/// Learns a WordLevel vocabulary: the `vocab_size` most frequent words,
+/// keeping only those seen at least `min_frequency` times.
 #[pyclass(frozen, extends = PyTrainer, name = "WordLevelTrainer", module = "tokenizers_pipeline.trainers")]
 pub struct PyWordLevelTrainer;
 
@@ -170,6 +185,7 @@ impl PyWordLevelTrainer {
     }
 }
 
+/// Recipes for learning a vocabulary from text.
 #[pymodule(gil_used = false)]
 pub mod trainers {
     #[pymodule_export]

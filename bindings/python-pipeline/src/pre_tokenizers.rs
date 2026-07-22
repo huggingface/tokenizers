@@ -29,11 +29,12 @@ pub fn parse_behavior(s: &str) -> PyResult<SplitDelimiterBehavior> {
     }
 }
 
-/// Base class for all pre-tokenizers. Immutable value: assigning it to a
-/// Tokenizer copies the configuration, there is no shared state.
+/// Base class for all pre-tokenizers.
 ///
-/// Only pre-tokenizers supported by the encode pipeline are constructible here;
-/// notably `Metaspace` is not available yet.
+/// A pre-tokenizer cuts text into pieces (usually words); the model then turns
+/// each piece into token ids. Pre-tokenizers are immutable values — assigning
+/// one to a tokenizer copies it. Only pre-tokenizers the encode pipeline can
+/// run are constructible here; `Metaspace` is not available yet.
 #[pyclass(
     frozen,
     subclass,
@@ -97,7 +98,8 @@ pub fn wrap_pre_tokenizer(
 }
 
 macro_rules! unit_pre_tokenizer {
-    ($pyname:ident, $name:literal, $inner:expr) => {
+    ($pyname:ident, $name:literal, $inner:expr, $doc:literal) => {
+        #[doc = $doc]
         #[pyclass(frozen, extends = PyPreTokenizer, name = $name, module = "tokenizers_pipeline.pre_tokenizers")]
         pub struct $pyname;
 
@@ -111,17 +113,39 @@ macro_rules! unit_pre_tokenizer {
     };
 }
 
-unit_pre_tokenizer!(PyWhitespace, "Whitespace", Whitespace);
-unit_pre_tokenizer!(PyWhitespaceSplit, "WhitespaceSplit", WhitespaceSplit);
-unit_pre_tokenizer!(PyBertPreTokenizer, "BertPreTokenizer", BertPreTokenizer);
-unit_pre_tokenizer!(PyUnicodeScripts, "UnicodeScripts", UnicodeScripts);
+unit_pre_tokenizer!(
+    PyWhitespace,
+    "Whitespace",
+    Whitespace,
+    "Splits into runs of letters/digits/underscore or runs of other symbols (the pattern `\\w+|[^\\w\\s]+`)."
+);
+unit_pre_tokenizer!(
+    PyWhitespaceSplit,
+    "WhitespaceSplit",
+    WhitespaceSplit,
+    "Splits on whitespace only."
+);
+unit_pre_tokenizer!(
+    PyBertPreTokenizer,
+    "BertPreTokenizer",
+    BertPreTokenizer,
+    "The BERT split: on whitespace, and each punctuation character becomes its own piece."
+);
+unit_pre_tokenizer!(
+    PyUnicodeScripts,
+    "UnicodeScripts",
+    UnicodeScripts,
+    "Splits where the script changes (Latin to Han, for example), so a piece never mixes alphabets."
+);
 
+/// GPT-2 style byte-level splitting: cuts with the GPT-2 regex unless
+/// `use_regex=False`. The pipeline does not support `add_prefix_space`, so it
+/// is always off.
 #[pyclass(frozen, extends = PyPreTokenizer, name = "ByteLevel", module = "tokenizers_pipeline.pre_tokenizers")]
 pub struct PyByteLevel;
 
 #[pymethods]
 impl PyByteLevel {
-    /// `add_prefix_space` is not supported by the pipeline and is always false.
     #[new]
     #[pyo3(signature = (*, use_regex = true))]
     fn new(use_regex: bool) -> PyClassInitializer<Self> {
@@ -132,6 +156,7 @@ impl PyByteLevel {
     }
 }
 
+/// Splits on one fixed character, dropping it.
 #[pyclass(frozen, extends = PyPreTokenizer, name = "CharDelimiterSplit", module = "tokenizers_pipeline.pre_tokenizers")]
 pub struct PyCharDelimiterSplit;
 
@@ -146,6 +171,8 @@ impl PyCharDelimiterSplit {
     }
 }
 
+/// Separates digits from everything else. With `individual_digits=True`,
+/// every digit becomes its own piece.
 #[pyclass(frozen, extends = PyPreTokenizer, name = "Digits", module = "tokenizers_pipeline.pre_tokenizers")]
 pub struct PyDigits;
 
@@ -161,6 +188,8 @@ impl PyDigits {
     }
 }
 
+/// Cuts the text into pieces of exactly `length` characters (the last one may
+/// be shorter).
 #[pyclass(frozen, extends = PyPreTokenizer, name = "FixedLength", module = "tokenizers_pipeline.pre_tokenizers")]
 pub struct PyFixedLength;
 
@@ -176,6 +205,8 @@ impl PyFixedLength {
     }
 }
 
+/// Splits on punctuation. `behavior` says what happens to the punctuation
+/// itself — see `Split` for the options.
 #[pyclass(frozen, extends = PyPreTokenizer, name = "Punctuation", module = "tokenizers_pipeline.pre_tokenizers")]
 pub struct PyPunctuation;
 
@@ -191,6 +222,11 @@ impl PyPunctuation {
     }
 }
 
+/// Splits on a pattern: a literal string, or a regular expression with
+/// `regex=True`. `behavior` says what to do with each match — "removed" drops
+/// it, "isolated" keeps it as its own piece, "merged_with_previous" /
+/// "merged_with_next" glue it to a neighbor, "contiguous" merges runs of
+/// matches. `invert=True` keeps the matches and splits everything else.
 #[pyclass(frozen, extends = PyPreTokenizer, name = "Split", module = "tokenizers_pipeline.pre_tokenizers")]
 pub struct PySplit;
 
@@ -217,6 +253,8 @@ impl PySplit {
     }
 }
 
+/// Runs several pre-tokenizers in order, each one further splitting the
+/// pieces left by the previous.
 #[pyclass(frozen, extends = PyPreTokenizer, name = "Sequence", module = "tokenizers_pipeline.pre_tokenizers")]
 pub struct PySequence;
 
@@ -233,6 +271,7 @@ impl PySequence {
     }
 }
 
+/// How text is cut into pieces before the model runs.
 #[pymodule(gil_used = false)]
 pub mod pre_tokenizers {
     #[pymodule_export]
