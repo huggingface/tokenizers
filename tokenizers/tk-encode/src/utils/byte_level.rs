@@ -1,4 +1,4 @@
-use crate::bucket_vocab_store::BucketVocabStore;
+use crate::vocab::bucket_vocab_store::BucketVocabStore;
 use ahash::AHashMap;
 use std::sync::LazyLock;
 

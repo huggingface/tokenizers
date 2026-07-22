@@ -1,11 +1,11 @@
 use super::{super::OrderedVocabIter, Error, Pair, Word};
-use crate::bucket_vocab_store::BucketVocabStore;
 use crate::models::bpe::Merge;
 use crate::pipeline::{self, ModelScratch, PipelineToken};
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::byte_level::{self};
 use crate::utils::cache::{DEFAULT_CACHE_CAPACITY, MAX_LENGTH};
 use crate::utils::iter::ResultShunt;
+use crate::vocab::bucket_vocab_store::BucketVocabStore;
 use crate::vocab_store::VocabStore;
 use ahash::AHashMap;
 use dary_heap::QuaternaryHeap;
