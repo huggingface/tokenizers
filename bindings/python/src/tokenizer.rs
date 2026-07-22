@@ -28,7 +28,7 @@ use crate::trainers::PyTrainer;
 
 /// Set when the bindings actually run a rayon-parallel section, so the
 /// pthread_atfork handler only disables parallelism in children of processes
-/// that really used it (mirrors the v1 bindings' semantics).
+/// that really used it — forking before any parallel work stays quiet.
 pub static USED_PARALLELISM: AtomicBool = AtomicBool::new(false);
 
 /// The compiled encode path plus the facts about the spec the encode calls
@@ -170,9 +170,8 @@ impl PyTokenizer {
 }
 
 /// Wrap a bound method call in `asyncio.to_thread`, returning the coroutine.
-/// The whole legacy async surface (a tokio runtime + pyo3-async-runtimes) is
-/// unnecessary here because encode already releases the interpreter lock —
-/// a worker thread is all it takes to keep the event loop responsive.
+/// No async runtime is involved: encode releases the interpreter lock, so a
+/// plain worker thread is enough to keep the event loop responsive.
 fn to_thread<'py>(
     slf: &Bound<'py, PyTokenizer>,
     method: &str,

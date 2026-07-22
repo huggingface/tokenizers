@@ -71,7 +71,7 @@ unpickled = pickle.loads(pickle.dumps(tok))
 assert np.array_equal(tok.encode(text), unpickled.encode(text))
 print("pickle round-trip: identical ids")
 
-# 8. decode is a stub for now
+# 8. decode is not implemented yet — it raises instead of guessing
 try:
     tok.decode(ids)
     raise AssertionError("decode should not be implemented yet")

@@ -1,5 +1,6 @@
-"""Train a BERT-style WordPiece tokenizer from text files — the 1.x version of
-the old `BertWordPieceTokenizer` helper, built from explicit components."""
+"""Train a BERT-style WordPiece tokenizer from text files: BertNormalizer +
+BertPreTokenizer + WordPieceTrainer (the recipe `BertWordPieceTokenizer`
+bundled in tokenizers 0.x)."""
 
 import argparse
 import glob

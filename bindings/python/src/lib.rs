@@ -18,8 +18,8 @@ pub fn component_repr<T: serde::Serialize>(component: &T) -> String {
 }
 
 // Forked children of a process that used our rayon threads would inherit a
-// poisoned thread pool; disable parallelism there unless the user configured
-// it explicitly (same behavior as the v1 bindings).
+// poisoned thread pool; disable parallelism there unless the user opted in
+// explicitly through TOKENIZERS_PARALLELISM.
 #[cfg(target_family = "unix")]
 extern "C" fn child_after_fork() {
     use std::sync::atomic::Ordering;

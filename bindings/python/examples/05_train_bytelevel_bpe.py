@@ -1,7 +1,7 @@
-"""Train a byte-level BPE tokenizer (GPT-2 style) from text files — the 1.x
-version of the old `ByteLevelBPETokenizer` helper, built from explicit
-components. One difference: the encode pipeline does not support
-`add_prefix_space`, so it is always off."""
+"""Train a byte-level BPE tokenizer (GPT-2 style) from text files: ByteLevel
+pre-tokenization + BpeTrainer seeded with the byte alphabet (the recipe
+`ByteLevelBPETokenizer` bundled in tokenizers 0.x). The encode pipeline does
+not support `add_prefix_space`, so it is always off."""
 
 import argparse
 import glob

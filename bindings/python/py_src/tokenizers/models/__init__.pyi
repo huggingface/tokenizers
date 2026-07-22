@@ -17,7 +17,8 @@ class BPE(Model):
     @staticmethod
     def from_file(vocab: str, merges: str, *, unk_token: str |None = None) -> "BPE":
         """
-        Load a BPE from the legacy vocab.json + merges.txt format.
+        Load a BPE from split vocab.json + merges.txt files (the format that
+        predates single-file tokenizer.json).
         """
 
 class Model:

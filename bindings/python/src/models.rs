@@ -71,7 +71,8 @@ impl PyBPE {
         Ok(PyClassInitializer::from(PyModel { inner: bpe.into() }).add_subclass(PyBPE))
     }
 
-    /// Load a BPE from the legacy vocab.json + merges.txt format.
+    /// Load a BPE from split vocab.json + merges.txt files (the format that
+    /// predates single-file tokenizer.json).
     #[staticmethod]
     #[pyo3(signature = (vocab, merges, *, unk_token = None) -> "BPE")]
     fn from_file(

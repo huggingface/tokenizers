@@ -86,8 +86,8 @@ pub enum TokenInput {
     Token(PyAddedToken),
 }
 
-/// Plain strings become tokens with `special=special_default` (and
-/// `normalized=!special_default`, matching v1).
+/// Plain strings become tokens with `special=special_default` and
+/// `normalized=!special_default` (special tokens match raw text).
 pub fn parse_tokens(items: Vec<TokenInput>, special_default: bool) -> Vec<AddedToken> {
     items
         .into_iter()

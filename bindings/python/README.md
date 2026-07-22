@@ -40,11 +40,11 @@ tok.save("tokenizer.json")
 - `decoders`, `processors`, and the `implementations` helpers
   (`BertWordPieceTokenizer`, …) are gone.
 
-Still here: `async_encode`/`async_encode_batch` (awaitable, run in a worker
-thread — encode releases the GIL, so a tokio runtime is no longer needed),
-parity-aware BPE training, and free-threaded Python — default wheels are
-abi3 (one binary for CPython 3.10–3.14), and 3.14t gets its own non-abi3
-wheels (`maturin build --no-default-features`).
+Unchanged from 0.x: `async_encode`/`async_encode_batch` (awaitable; encode
+releases the GIL, so they run in a plain worker thread), parity-aware BPE
+training (`trainers.ParityBpeTrainer`), and free-threaded Python — default
+wheels are abi3 (one binary for CPython 3.10–3.14), and 3.14t gets its own
+non-abi3 wheels (`maturin build --no-default-features`).
 
 ## Build and use locally
 
