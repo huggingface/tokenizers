@@ -1303,10 +1303,11 @@ impl pipeline::Model for PipelineBPE {
         PIPE_FLAT_CACHE.with(|cell| {
             let mut cache = cell.borrow_mut();
             cache.retarget(self.cache_id);
-            // Fused: the split handed us the packed ≤15-byte key. Derive the bucket hash from it
-            // (cheap CRC) and let the cache confirm the hit with a register 128-bit compare — no
-            // ahash of the bytes, no `kbytes` memcmp. `key == 0` (long or non-GPT) falls back to
-            // hashing the bytes + byte-verify.
+            // Pack the ≤15-byte key from `p` right here — `p` is a slice of the (hot) input, so no
+            // keys buffer to carry and no split penalty. Then a cheap CRC bucket + a register
+            // 128-bit compare in the cache: no ahash, no `kbytes` memcmp. `key == 0` (long/non-GPT)
+            // falls back to hashing the bytes + byte-verify. `carried_key` (if the split fused one)
+            // is preferred to avoid re-packing, but the fallback pack is what removes the keys buffer.
             let key = carried_key.unwrap_or(0);
             let h = if key != 0 {
                 crate::tokenizer::pipeline::crc_key_hash(key)

@@ -216,48 +216,6 @@ impl pipeline::PreTokenizer for Split {
         Ok(())
     }
 
-    fn pre_tokenize_keyed(
-        &self,
-        text: &str,
-        out: &mut Vec<pipeline::Split>,
-        keys: &mut Vec<u128>,
-    ) -> Result<()> {
-        // GPT byte-level FSM path: derive each span's cache hash in the same pass (fused).
-        if let Some(fsm) = self
-            .fsm
-            .filter(|_| !self.invert && self.behavior == SplitDelimiterBehavior::Isolated)
-        {
-            pipeline::classify_into_spans_keyed(
-                text.as_bytes(),
-                |bytes, tags, spans, ks| match fsm {
-                    // Gpt2 packs keys inside the FSM (fused at each bound); cl100k/o200k pack from
-                    // their emitted spans (still one classify pass, no re-walk of the text).
-                    GptFsm::Gpt2 => atomsplit::fsm::fsm_byte_level_keyed(bytes, tags, spans, ks),
-                    GptFsm::Cl100k { digit_cap } => {
-                        let k = atomsplit::fsm::fsm_cl100k_cap(bytes, tags, spans, digit_cap);
-                        for w in 0..k {
-                            let (s, e) = spans[w];
-                            ks[w] = atomsplit::fsm::pack_key(bytes, s as usize, (e - s) as usize);
-                        }
-                        k
-                    }
-                    GptFsm::O200k => {
-                        let k = atomsplit::fsm::fsm_o200k(bytes, tags, spans);
-                        for w in 0..k {
-                            let (s, e) = spans[w];
-                            ks[w] = atomsplit::fsm::pack_key(bytes, s as usize, (e - s) as usize);
-                        }
-                        k
-                    }
-                },
-                out,
-                keys,
-            );
-            return Ok(());
-        }
-        // Regex/multi path: no fused hashes (the model re-hashes).
-        pipeline::PreTokenizer::pre_tokenize(self, text, out)
-    }
 }
 
 #[cfg(test)]

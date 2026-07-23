@@ -525,12 +525,6 @@ pub fn fsm_byte_level(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
     byte_level_impl::<false>(text, tags, out, &mut [])
 }
 
-/// [`fsm_byte_level`] that also writes each span's [`pack_key`] into `keys` (same index as `out`) —
-/// the pre-token cache key derived in the split pass, no second walk. `keys.len() >= text.len()`.
-pub fn fsm_byte_level_keyed(text: &[u8], tags: &[u8], out: &mut [Span], keys: &mut [u128]) -> usize {
-    byte_level_impl::<true>(text, tags, out, keys)
-}
-
 #[inline(always)]
 fn byte_level_impl<const KEYED: bool>(
     text: &[u8],

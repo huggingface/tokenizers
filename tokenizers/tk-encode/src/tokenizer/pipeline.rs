@@ -108,42 +108,6 @@ pub(crate) fn crc_key_hash(key: u128) -> u64 {
     }
 }
 
-/// Like [`classify_into_spans`] but the FSM ALSO writes each span's packed cache key into `keys`
-/// (same index as `out`) — the classify→cache fusion, derived at each bound as the FSM emits it
-/// (bytes still hot), no second walk. The model's probe then reuses the key for a register compare.
-pub(crate) fn classify_into_spans_keyed(
-    bytes: &[u8],
-    fsm: impl FnOnce(&[u8], &[u8], &mut [Span], &mut [u128]) -> usize,
-    out: &mut Vec<Split>,
-    keys: &mut Vec<u128>,
-) {
-    thread_local! {
-        static TAGS: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
-    }
-    let n = bytes.len();
-    TAGS.with(|cell| {
-        let tags = &mut *cell.borrow_mut();
-        if tags.len() < n {
-            tags.resize(n, 0);
-        }
-        classify::<Atoms>(bytes, &mut tags[..n]);
-        let (sbase, kbase) = (out.len(), keys.len());
-        out.reserve(n + 1);
-        keys.reserve(n + 1);
-        // SAFETY: both reserved n+1; Split==Span layout; FSM fills [0,k) of each, exposed via set_len.
-        let spans = unsafe {
-            std::slice::from_raw_parts_mut(out.as_mut_ptr().add(sbase) as *mut Span, n + 1)
-        };
-        let ks = unsafe { std::slice::from_raw_parts_mut(keys.as_mut_ptr().add(kbase), n + 1) };
-        let k = fsm(bytes, &tags[..n], spans, ks);
-        // SAFETY: FSM initialized [0,k) of both spare regions.
-        unsafe {
-            out.set_len(sbase + k);
-            keys.set_len(kbase + k);
-        }
-    });
-}
-
 pub trait Normalizer {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>>;
 }
@@ -154,18 +118,6 @@ pub trait PreTokenizer {
     /// Split `text` into pre-tokens, appending to `out`. Ranges are into `text`.
     fn pre_tokenize(&self, text: &str, out: &mut Vec<Split>) -> Result<()>;
 
-    /// Split, and where possible ALSO append each pre-token's cache hash to `hashes` (fused key
-    /// derivation — see [`classify_into_spans_keyed`]). Default: no hashes (the model then hashes
-    /// pre-token bytes itself). Only the byte-level GPT split path overrides this. A run either
-    /// fills `hashes` 1:1 with the spans it appended, or appends none — never partially.
-    fn pre_tokenize_keyed(
-        &self,
-        text: &str,
-        out: &mut Vec<Split>,
-        _keys: &mut Vec<u128>,
-    ) -> Result<()> {
-        self.pre_tokenize(text, out)
-    }
 }
 
 /// The pre-tokenizers a [`PipelineTokenizer`] can run.
@@ -208,18 +160,6 @@ impl PreTokenizer for PipelinePreTokenizer {
         }
     }
 
-    fn pre_tokenize_keyed(
-        &self,
-        text: &str,
-        out: &mut Vec<Split>,
-        keys: &mut Vec<u128>,
-    ) -> Result<()> {
-        // Only the GPT byte-level Split path fuses keys; the rest use the default (no keys).
-        match self {
-            Self::Split(pretok) => pretok.pre_tokenize_keyed(text, out, keys),
-            other => other.pre_tokenize(text, out),
-        }
-    }
 }
 
 impl TryFrom<PreTokenizerWrapper> for PipelinePreTokenizer {
@@ -538,8 +478,6 @@ impl PipelineTokenizer {
         output: &mut Vec<PipelineToken>,
         pre_tokens: &mut Vec<Split>,
     ) -> Result<()> {
-        // Per-pre-token packed keys, derived by the split (fused). Reused across segments.
-        let mut pre_keys: Vec<u128> = Vec::new();
         // First, we extract all special tokens from the non-normalized input
         for segment in SpecialSegmentIterator::new(input, &self.added_vocabulary, false) {
             match segment {
@@ -566,23 +504,23 @@ impl PipelineTokenizer {
                             }
                             Segment::Text(normalized_chunk) => {
                                 if STAGE >= Self::STAGE_SPLIT {
-                                    // Pre-tokenize the chunk; the split also derives per-pre-token
-                                    // cache hashes here (fused) so the model probe skips re-hashing.
+                                    // Pre-tokenize the chunk. The model packs each pre-token's cache
+                                    // key from its (hot) bytes at lookup — no keys buffer to carry.
                                     pre_tokens.clear();
-                                    pre_keys.clear();
-                                    self.pre_tokenizer.pre_tokenize_keyed(
-                                        normalized_chunk,
-                                        pre_tokens,
-                                        &mut pre_keys,
-                                    )?;
+                                    self.pre_tokenizer
+                                        .pre_tokenize(normalized_chunk, pre_tokens)?;
                                     if STAGE >= Self::STAGE_MODEL {
-                                        // keys carried 1:1 with spans, or none → model hashes bytes
-                                        let keyed = pre_keys.len() == pre_tokens.len();
-                                        for (i, pre_token) in pre_tokens.iter().enumerate() {
+                                        let nb = normalized_chunk.as_bytes();
+                                        for pre_token in pre_tokens.iter() {
+                                            let r = pre_token.range();
+                                            // Pack the key here (parent buffer in hand → the cheap
+                                            // 16-byte wide load is safe mid-buffer) and pass it by
+                                            // value — no keys buffer, and split pays nothing.
+                                            let key = atomsplit::fsm::pack_key(nb, r.start, r.len());
                                             self.model.tokenize_pipeline(
-                                                &normalized_chunk[pre_token.range()],
+                                                &normalized_chunk[r],
                                                 output,
-                                                keyed.then(|| pre_keys[i]),
+                                                Some(key),
                                             )?;
                                         }
                                     }
