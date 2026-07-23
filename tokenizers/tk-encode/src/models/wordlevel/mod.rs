@@ -212,6 +212,7 @@ impl pipeline::Model for WordLevel {
         &self,
         sequence: &str,
         output: &mut Vec<pipeline::PipelineToken>,
+        _carried_key: Option<u128>,
     ) -> Result<()> {
         if let Some(&id) = self.vocab.get(sequence) {
             output.push(PipelineToken { id })

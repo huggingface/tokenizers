@@ -1271,7 +1271,12 @@ impl PipelineBPE {
 }
 
 impl pipeline::Model for PipelineBPE {
-    fn tokenize_pipeline(&self, sequence: &str, output: &mut Vec<PipelineToken>) -> Result<()> {
+    fn tokenize_pipeline(
+        &self,
+        sequence: &str,
+        output: &mut Vec<PipelineToken>,
+        carried_key: Option<u128>,
+    ) -> Result<()> {
         if sequence.is_empty() {
             return Ok(());
         }
@@ -1298,8 +1303,17 @@ impl pipeline::Model for PipelineBPE {
         PIPE_FLAT_CACHE.with(|cell| {
             let mut cache = cell.borrow_mut();
             cache.retarget(self.cache_id);
-            let h = cache.hash(p);
-            if let Some((off, len)) = cache.get(p, h) {
+            // Fused: the split handed us the packed ≤15-byte key. Derive the bucket hash from it
+            // (cheap CRC) and let the cache confirm the hit with a register 128-bit compare — no
+            // ahash of the bytes, no `kbytes` memcmp. `key == 0` (long or non-GPT) falls back to
+            // hashing the bytes + byte-verify.
+            let key = carried_key.unwrap_or(0);
+            let h = if key != 0 {
+                crate::tokenizer::pipeline::crc_key_hash(key)
+            } else {
+                cache.hash(p)
+            };
+            if let Some((off, len)) = cache.get(p, h, key) {
                 output.extend(cache.ids_slice(off, len).iter().map(|&id| PipelineToken { id }));
                 return;
             }
@@ -1308,7 +1322,7 @@ impl pipeline::Model for PipelineBPE {
                 let mut ids = o.borrow_mut();
                 ids.clear();
                 self.encode_piece(sequence, &mut ids);
-                cache.insert(p, h, &ids);
+                cache.insert(p, h, key, &ids);
                 output.extend(ids.iter().map(|&id| PipelineToken { id }));
             });
         });
@@ -1848,7 +1862,7 @@ mod tests {
 
         fn pipeline_ids(model: &PipelineBPE, sequence: &str) -> Vec<u32> {
             let mut out = Vec::new();
-            pipeline::Model::tokenize_pipeline(model, sequence, &mut out).unwrap();
+            pipeline::Model::tokenize_pipeline(model, sequence, &mut out, None).unwrap();
             out.iter().map(|t| t.id).collect()
         }
 

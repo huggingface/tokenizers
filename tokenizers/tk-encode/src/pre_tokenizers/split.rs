@@ -215,6 +215,35 @@ impl pipeline::PreTokenizer for Split {
         pipeline::split_matches(out, matches, self.behavior);
         Ok(())
     }
+
+    fn pre_tokenize_keyed(
+        &self,
+        text: &str,
+        out: &mut Vec<pipeline::Split>,
+        keys: &mut Vec<u128>,
+    ) -> Result<()> {
+        // GPT byte-level FSM path: derive each span's cache hash in the same pass (fused).
+        if let Some(fsm) = self
+            .fsm
+            .filter(|_| !self.invert && self.behavior == SplitDelimiterBehavior::Isolated)
+        {
+            pipeline::classify_into_spans_keyed(
+                text.as_bytes(),
+                |bytes, tags, spans| match fsm {
+                    GptFsm::Cl100k { digit_cap } => {
+                        atomsplit::fsm::fsm_cl100k_cap(bytes, tags, spans, digit_cap)
+                    }
+                    GptFsm::Gpt2 => atomsplit::fsm::fsm_byte_level(bytes, tags, spans),
+                    GptFsm::O200k => atomsplit::fsm::fsm_o200k(bytes, tags, spans),
+                },
+                out,
+                keys,
+            );
+            return Ok(());
+        }
+        // Regex/multi path: no fused hashes (the model re-hashes).
+        pipeline::PreTokenizer::pre_tokenize(self, text, out)
+    }
 }
 
 #[cfg(test)]

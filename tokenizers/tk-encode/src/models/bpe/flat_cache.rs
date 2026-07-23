@@ -34,17 +34,20 @@ fn clear_on_full() -> bool {
     *C.get_or_init(|| std::env::var("CACHE_EVICT").map(|v| v == "clear").unwrap_or(false))
 }
 
-/// 24 bytes: hash(8) + koff(4) + ioff(4) + klen(2) + ilen(2) + freq(1) + pad.
+/// hash(8) + key(16) + koff(4) + ioff(4) + klen(2) + ilen(2) + freq(1). `key != 0` = a ≤15-byte
+/// pre-token packed inline (length in top byte): a hit is a register 128-bit compare, no `kbytes`
+/// load, no `memcmp`. `key == 0` = a long (>15B) pre-token, verified the old way via `kbytes`.
 #[derive(Clone, Copy)]
 struct CSlot {
     hash: u64,
+    key: u128,
     koff: u32,
     ioff: u32,
     klen: u16,
     ilen: u16,
     freq: u8,
 }
-const EMPTY: CSlot = CSlot { hash: 0, koff: 0, ioff: 0, klen: 0, ilen: 0, freq: 0 };
+const EMPTY: CSlot = CSlot { hash: 0, key: 0, koff: 0, ioff: 0, klen: 0, ilen: 0, freq: 0 };
 
 pub(crate) struct FlatCache {
     slots: Box<[CSlot]>,
@@ -137,6 +140,7 @@ impl FlatCache {
             }
             slots2[i] = CSlot {
                 hash: s.hash,
+                key: s.key,
                 koff,
                 ioff,
                 klen: s.klen,
@@ -164,9 +168,13 @@ impl FlatCache {
     }
 
     /// Lookup + bump the entry's frequency on a hit (so the cull can tell hot
-    /// from one-shot). Byte-verify unless hash-only. Needs `&mut self`.
+    /// from one-shot). Needs `&mut self`.
+    ///
+    /// `key != 0`: a packed ≤15-byte pre-token — confirm the hit with a register 128-bit compare
+    /// (`s.key == key`), no `kbytes` load, no `memcmp`. `key == 0`: long pre-token — byte-verify
+    /// via `kbytes` as before (unless hash-only).
     #[inline]
-    pub(crate) fn get(&mut self, p: &[u8], h: u64) -> Option<(u32, u16)> {
+    pub(crate) fn get(&mut self, p: &[u8], h: u64, key: u128) -> Option<(u32, u16)> {
         let mut i = (h as usize) & self.mask;
         loop {
             let s = self.slots[i];
@@ -176,11 +184,16 @@ impl FlatCache {
                 }
                 return None;
             }
-            if s.hash == h
-                && (!self.verify
-                    || (s.klen as usize == p.len()
-                        && self.kbytes[s.koff as usize..s.koff as usize + s.klen as usize] == *p))
-            {
+            let confirmed = if key != 0 {
+                s.key == key // register compare — no arena, no memcmp
+            } else {
+                s.hash == h
+                    && (!self.verify
+                        || (s.klen as usize == p.len()
+                            && self.kbytes[s.koff as usize..s.koff as usize + s.klen as usize]
+                                == *p))
+            };
+            if confirmed {
                 self.slots[i].freq = self.slots[i].freq.saturating_add(1);
                 if self.stats {
                     HITS.fetch_add(1, Ordering::Relaxed);
@@ -197,7 +210,7 @@ impl FlatCache {
     }
 
     #[inline]
-    pub(crate) fn insert(&mut self, p: &[u8], h: u64, ids: &[u32]) {
+    pub(crate) fn insert(&mut self, p: &[u8], h: u64, key: u128, ids: &[u32]) {
         if ids.is_empty() || p.len() > u16::MAX as usize || ids.len() > u16::MAX as usize {
             return;
         }
@@ -208,6 +221,7 @@ impl FlatCache {
             self.cull();
         }
         let (koff, ioff) = (self.kbytes.len() as u32, self.ids.len() as u32);
+        // kbytes retained for all (cull compacts by koff/klen); packed-key gets never read it.
         self.kbytes.extend_from_slice(p);
         self.ids.extend_from_slice(ids);
         let mut i = (h as usize) & self.mask;
@@ -216,6 +230,7 @@ impl FlatCache {
         }
         self.slots[i] = CSlot {
             hash: h,
+            key,
             koff,
             ioff,
             klen: p.len() as u16,

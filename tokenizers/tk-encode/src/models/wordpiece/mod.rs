@@ -352,6 +352,7 @@ impl pipeline::Model for PipelineWordPiece {
         &self,
         sequence: &str,
         output: &mut Vec<pipeline::PipelineToken>,
+        _carried_key: Option<u128>,
     ) -> Result<()> {
         let mut candidate = String::with_capacity(self.max_input_chars_per_word);
         let mut candidate_tokens = Vec::with_capacity(sequence.len());

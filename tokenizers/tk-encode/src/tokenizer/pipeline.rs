@@ -86,6 +86,68 @@ pub(crate) fn classify_into_spans(
     });
 }
 
+/// Pack a pre-token's first ≤15 bytes into a `u128` (length in the top byte), by ONE unaligned
+/// 16-byte load off `bytes[start..]` — the bytes the classify pass just read, so they're hot. A
+/// span in the buffer's last 15 bytes (rare, once per input) falls back to a zero-padded copy.
+#[inline(always)]
+fn pack_key(bytes: &[u8], start: usize, len: usize) -> u128 {
+    // 0 = "not packable" (empty, or >15 bytes): the cache must byte-verify these, because a packed
+    // key only holds the first 15 bytes — two long pre-tokens sharing a 15-byte prefix would alias.
+    if len == 0 || len > 15 {
+        return 0;
+    }
+    let v: u128 = if start + 16 <= bytes.len() {
+        // SAFETY: `start + 16 <= len` — 16 readable bytes; unaligned load is always valid.
+        unsafe { (bytes.as_ptr().add(start) as *const u128).read_unaligned() }
+    } else {
+        let mut b = [0u8; 16];
+        b[..len].copy_from_slice(&bytes[start..start + len]);
+        u128::from_le_bytes(b)
+    };
+    let mask: u128 = (1u128 << (8 * len)) - 1;
+    (v & mask) | ((len as u128) << 120)
+}
+
+/// Hash the packed key with the hardware CRC32 instruction (~3 cycles) — the cheap hash gigatoken
+/// derives during its classify pass. On non-aarch64, a multiplicative finalizer.
+#[inline(always)]
+pub(crate) fn crc_key_hash(key: u128) -> u64 {
+    #[cfg(target_arch = "aarch64")]
+    {
+        // SAFETY: CRC is baseline on the aarch64 stable ABI targets we build (Apple Silicon etc.).
+        unsafe {
+            use std::arch::aarch64::__crc32cd;
+            __crc32cd(__crc32cd(0, key as u64), (key >> 64) as u64) as u64
+        }
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        let mut h = (key as u64).wrapping_mul(0xff51afd7ed558ccd)
+            ^ ((key >> 64) as u64).wrapping_mul(0xc4ceb9fe1a85ec53);
+        h ^= h >> 33;
+        h = h.wrapping_mul(0xff51afd7ed558ccd);
+        h ^ (h >> 33)
+    }
+}
+
+/// Like [`classify_into_spans`] but ALSO fills `hashes` with each span's cache hash, derived in the
+/// same pass (pack the span's bytes → CRC). This is the classify→cache fusion: the model's cache
+/// probe then reuses this hash instead of re-hashing the pre-token bytes cold at lookup time.
+pub(crate) fn classify_into_spans_keyed(
+    bytes: &[u8],
+    fsm: impl FnOnce(&[u8], &[u8], &mut [Span]) -> usize,
+    out: &mut Vec<Split>,
+    keys: &mut Vec<u128>,
+) {
+    let base = out.len();
+    classify_into_spans(bytes, fsm, out);
+    keys.reserve(out.len() - base);
+    for s in &out[base..] {
+        let (start, len) = (s.start as usize, (s.end - s.start) as usize);
+        keys.push(pack_key(bytes, start, len));
+    }
+}
+
 pub trait Normalizer {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>>;
 }
@@ -95,6 +157,19 @@ pub trait Normalizer {
 pub trait PreTokenizer {
     /// Split `text` into pre-tokens, appending to `out`. Ranges are into `text`.
     fn pre_tokenize(&self, text: &str, out: &mut Vec<Split>) -> Result<()>;
+
+    /// Split, and where possible ALSO append each pre-token's cache hash to `hashes` (fused key
+    /// derivation — see [`classify_into_spans_keyed`]). Default: no hashes (the model then hashes
+    /// pre-token bytes itself). Only the byte-level GPT split path overrides this. A run either
+    /// fills `hashes` 1:1 with the spans it appended, or appends none — never partially.
+    fn pre_tokenize_keyed(
+        &self,
+        text: &str,
+        out: &mut Vec<Split>,
+        _keys: &mut Vec<u128>,
+    ) -> Result<()> {
+        self.pre_tokenize(text, out)
+    }
 }
 
 /// The pre-tokenizers a [`PipelineTokenizer`] can run.
@@ -134,6 +209,19 @@ impl PreTokenizer for PipelinePreTokenizer {
             Self::UnicodeScripts(pretok) => pretok.pre_tokenize(text, out),
             Self::Whitespace(pretok) => pretok.pre_tokenize(text, out),
             Self::WhitespaceSplit(pretok) => pretok.pre_tokenize(text, out),
+        }
+    }
+
+    fn pre_tokenize_keyed(
+        &self,
+        text: &str,
+        out: &mut Vec<Split>,
+        keys: &mut Vec<u128>,
+    ) -> Result<()> {
+        // Only the GPT byte-level Split path fuses keys; the rest use the default (no keys).
+        match self {
+            Self::Split(pretok) => pretok.pre_tokenize_keyed(text, out, keys),
+            other => other.pre_tokenize(text, out),
         }
     }
 }
@@ -454,6 +542,8 @@ impl PipelineTokenizer {
         output: &mut Vec<PipelineToken>,
         pre_tokens: &mut Vec<Split>,
     ) -> Result<()> {
+        // Per-pre-token packed keys, derived by the split (fused). Reused across segments.
+        let mut pre_keys: Vec<u128> = Vec::new();
         // First, we extract all special tokens from the non-normalized input
         for segment in SpecialSegmentIterator::new(input, &self.added_vocabulary, false) {
             match segment {
@@ -480,16 +570,23 @@ impl PipelineTokenizer {
                             }
                             Segment::Text(normalized_chunk) => {
                                 if STAGE >= Self::STAGE_SPLIT {
-                                    // Pre-tokenize the chunk of normalized text
+                                    // Pre-tokenize the chunk; the split also derives per-pre-token
+                                    // cache hashes here (fused) so the model probe skips re-hashing.
                                     pre_tokens.clear();
-                                    self.pre_tokenizer
-                                        .pre_tokenize(normalized_chunk, pre_tokens)?;
+                                    pre_keys.clear();
+                                    self.pre_tokenizer.pre_tokenize_keyed(
+                                        normalized_chunk,
+                                        pre_tokens,
+                                        &mut pre_keys,
+                                    )?;
                                     if STAGE >= Self::STAGE_MODEL {
-                                        // Tokenize each chunk
-                                        for pre_token in pre_tokens.iter() {
+                                        // keys carried 1:1 with spans, or none → model hashes bytes
+                                        let keyed = pre_keys.len() == pre_tokens.len();
+                                        for (i, pre_token) in pre_tokens.iter().enumerate() {
                                             self.model.tokenize_pipeline(
                                                 &normalized_chunk[pre_token.range()],
                                                 output,
+                                                keyed.then(|| pre_keys[i]),
                                             )?;
                                         }
                                     }
@@ -718,7 +815,14 @@ pub fn split_matches(
 }
 
 pub trait Model {
-    fn tokenize_pipeline(&self, sequence: &str, output: &mut Vec<PipelineToken>) -> Result<()>;
+    /// Tokenize one pre-token into `output`. `carried_hash` is the pre-token's cache hash when the
+    /// split derived it (fused); models that cache may use it instead of re-hashing, others ignore.
+    fn tokenize_pipeline(
+        &self,
+        sequence: &str,
+        output: &mut Vec<PipelineToken>,
+        carried_key: Option<u128>,
+    ) -> Result<()>;
 }
 
 #[allow(
@@ -733,12 +837,17 @@ pub enum PipelineModel {
 }
 
 impl Model for PipelineModel {
-    fn tokenize_pipeline(&self, sequence: &str, output: &mut Vec<PipelineToken>) -> Result<()> {
+    fn tokenize_pipeline(
+        &self,
+        sequence: &str,
+        output: &mut Vec<PipelineToken>,
+        carried_key: Option<u128>,
+    ) -> Result<()> {
         match self {
-            Self::BPE(model) => model.tokenize_pipeline(sequence, output),
-            Self::Unigram(model) => model.tokenize_pipeline(sequence, output),
-            Self::WordLevel(model) => model.tokenize_pipeline(sequence, output),
-            Self::WordPiece(model) => model.tokenize_pipeline(sequence, output),
+            Self::BPE(model) => model.tokenize_pipeline(sequence, output, carried_key),
+            Self::Unigram(model) => model.tokenize_pipeline(sequence, output, carried_key),
+            Self::WordLevel(model) => model.tokenize_pipeline(sequence, output, carried_key),
+            Self::WordPiece(model) => model.tokenize_pipeline(sequence, output, carried_key),
         }
     }
 }

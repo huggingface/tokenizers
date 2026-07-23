@@ -510,6 +510,7 @@ impl pipeline::Model for Unigram {
         &self,
         sequence: &str,
         output: &mut Vec<pipeline::PipelineToken>,
+        _carried_key: Option<u128>,
     ) -> Result<()> {
         let str_tokens = self.encode(sequence)?;
 
