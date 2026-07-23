@@ -86,28 +86,6 @@ pub(crate) fn classify_into_spans(
     });
 }
 
-/// Pack a pre-token's first ≤15 bytes into a `u128` (length in the top byte), by ONE unaligned
-/// 16-byte load off `bytes[start..]` — the bytes the classify pass just read, so they're hot. A
-/// span in the buffer's last 15 bytes (rare, once per input) falls back to a zero-padded copy.
-#[inline(always)]
-fn pack_key(bytes: &[u8], start: usize, len: usize) -> u128 {
-    // 0 = "not packable" (empty, or >15 bytes): the cache must byte-verify these, because a packed
-    // key only holds the first 15 bytes — two long pre-tokens sharing a 15-byte prefix would alias.
-    if len == 0 || len > 15 {
-        return 0;
-    }
-    let v: u128 = if start + 16 <= bytes.len() {
-        // SAFETY: `start + 16 <= len` — 16 readable bytes; unaligned load is always valid.
-        unsafe { (bytes.as_ptr().add(start) as *const u128).read_unaligned() }
-    } else {
-        let mut b = [0u8; 16];
-        b[..len].copy_from_slice(&bytes[start..start + len]);
-        u128::from_le_bytes(b)
-    };
-    let mask: u128 = (1u128 << (8 * len)) - 1;
-    (v & mask) | ((len as u128) << 120)
-}
-
 /// Hash the packed key with the hardware CRC32 instruction (~3 cycles) — the cheap hash gigatoken
 /// derives during its classify pass. On non-aarch64, a multiplicative finalizer.
 #[inline(always)]
@@ -130,22 +108,40 @@ pub(crate) fn crc_key_hash(key: u128) -> u64 {
     }
 }
 
-/// Like [`classify_into_spans`] but ALSO fills `hashes` with each span's cache hash, derived in the
-/// same pass (pack the span's bytes → CRC). This is the classify→cache fusion: the model's cache
-/// probe then reuses this hash instead of re-hashing the pre-token bytes cold at lookup time.
+/// Like [`classify_into_spans`] but the FSM ALSO writes each span's packed cache key into `keys`
+/// (same index as `out`) — the classify→cache fusion, derived at each bound as the FSM emits it
+/// (bytes still hot), no second walk. The model's probe then reuses the key for a register compare.
 pub(crate) fn classify_into_spans_keyed(
     bytes: &[u8],
-    fsm: impl FnOnce(&[u8], &[u8], &mut [Span]) -> usize,
+    fsm: impl FnOnce(&[u8], &[u8], &mut [Span], &mut [u128]) -> usize,
     out: &mut Vec<Split>,
     keys: &mut Vec<u128>,
 ) {
-    let base = out.len();
-    classify_into_spans(bytes, fsm, out);
-    keys.reserve(out.len() - base);
-    for s in &out[base..] {
-        let (start, len) = (s.start as usize, (s.end - s.start) as usize);
-        keys.push(pack_key(bytes, start, len));
+    thread_local! {
+        static TAGS: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
     }
+    let n = bytes.len();
+    TAGS.with(|cell| {
+        let tags = &mut *cell.borrow_mut();
+        if tags.len() < n {
+            tags.resize(n, 0);
+        }
+        classify::<Atoms>(bytes, &mut tags[..n]);
+        let (sbase, kbase) = (out.len(), keys.len());
+        out.reserve(n + 1);
+        keys.reserve(n + 1);
+        // SAFETY: both reserved n+1; Split==Span layout; FSM fills [0,k) of each, exposed via set_len.
+        let spans = unsafe {
+            std::slice::from_raw_parts_mut(out.as_mut_ptr().add(sbase) as *mut Span, n + 1)
+        };
+        let ks = unsafe { std::slice::from_raw_parts_mut(keys.as_mut_ptr().add(kbase), n + 1) };
+        let k = fsm(bytes, &tags[..n], spans, ks);
+        // SAFETY: FSM initialized [0,k) of both spare regions.
+        unsafe {
+            out.set_len(sbase + k);
+            keys.set_len(kbase + k);
+        }
+    });
 }
 
 pub trait Normalizer {

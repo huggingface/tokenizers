@@ -502,8 +502,44 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
 /// `\p{N}{1,3}` cap (numbers are unbounded) and no `\s*[\r\n]`/trailing-`[\r\n]*` rules.
 /// ┌── OWNER: shared (scalar) ──┐
 #[must_use]
+/// Pack a span's first ≤15 bytes into a `u128` (length in the top byte) via one unaligned 16-byte
+/// load — the bytes the FSM just walked, still hot. `0` = not packable (empty or >15 bytes), so a
+/// caller keyed cache must byte-verify those (two long spans sharing a 15-byte prefix would alias).
+#[inline(always)]
+pub fn pack_key(text: &[u8], start: usize, len: usize) -> u128 {
+    if len == 0 || len > 15 {
+        return 0;
+    }
+    let v: u128 = if start + 16 <= text.len() {
+        // SAFETY: `start + 16 <= text.len()` — 16 readable bytes; unaligned load is always valid.
+        unsafe { (text.as_ptr().add(start) as *const u128).read_unaligned() }
+    } else {
+        let mut b = [0u8; 16];
+        b[..len].copy_from_slice(&text[start..start + len]);
+        u128::from_le_bytes(b)
+    };
+    (v & ((1u128 << (8 * len)) - 1)) | ((len as u128) << 120)
+}
+
 pub fn fsm_byte_level(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
+    byte_level_impl::<false>(text, tags, out, &mut [])
+}
+
+/// [`fsm_byte_level`] that also writes each span's [`pack_key`] into `keys` (same index as `out`) —
+/// the pre-token cache key derived in the split pass, no second walk. `keys.len() >= text.len()`.
+pub fn fsm_byte_level_keyed(text: &[u8], tags: &[u8], out: &mut [Span], keys: &mut [u128]) -> usize {
+    byte_level_impl::<true>(text, tags, out, keys)
+}
+
+#[inline(always)]
+fn byte_level_impl<const KEYED: bool>(
+    text: &[u8],
+    tags: &[u8],
+    out: &mut [Span],
+    keys: &mut [u128],
+) -> usize {
     debug_assert!(out.len() >= text.len() && tags.len() >= text.len());
+    debug_assert!(!KEYED || keys.len() >= text.len());
     const LET: u8 = Atom::Letter as u8;
     const NW: u8 = Atom::NumWord as u8;
     const NO: u8 = Atom::NumOther as u8;
@@ -576,6 +612,9 @@ pub fn fsm_byte_level(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
             _ => i += char_len(text[i]),
         }
         out[w] = (start as u32, i as u32);
+        if KEYED {
+            keys[w] = pack_key(text, start, i - start); // packed right at the bound, bytes hot
+        }
         w += 1;
     }
     w

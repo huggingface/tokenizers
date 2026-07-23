@@ -229,12 +229,26 @@ impl pipeline::PreTokenizer for Split {
         {
             pipeline::classify_into_spans_keyed(
                 text.as_bytes(),
-                |bytes, tags, spans| match fsm {
+                |bytes, tags, spans, ks| match fsm {
+                    // Gpt2 packs keys inside the FSM (fused at each bound); cl100k/o200k pack from
+                    // their emitted spans (still one classify pass, no re-walk of the text).
+                    GptFsm::Gpt2 => atomsplit::fsm::fsm_byte_level_keyed(bytes, tags, spans, ks),
                     GptFsm::Cl100k { digit_cap } => {
-                        atomsplit::fsm::fsm_cl100k_cap(bytes, tags, spans, digit_cap)
+                        let k = atomsplit::fsm::fsm_cl100k_cap(bytes, tags, spans, digit_cap);
+                        for w in 0..k {
+                            let (s, e) = spans[w];
+                            ks[w] = atomsplit::fsm::pack_key(bytes, s as usize, (e - s) as usize);
+                        }
+                        k
                     }
-                    GptFsm::Gpt2 => atomsplit::fsm::fsm_byte_level(bytes, tags, spans),
-                    GptFsm::O200k => atomsplit::fsm::fsm_o200k(bytes, tags, spans),
+                    GptFsm::O200k => {
+                        let k = atomsplit::fsm::fsm_o200k(bytes, tags, spans);
+                        for w in 0..k {
+                            let (s, e) = spans[w];
+                            ks[w] = atomsplit::fsm::pack_key(bytes, s as usize, (e - s) as usize);
+                        }
+                        k
+                    }
                 },
                 out,
                 keys,
