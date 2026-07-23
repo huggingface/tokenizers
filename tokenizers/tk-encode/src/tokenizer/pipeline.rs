@@ -8,6 +8,8 @@ use crate::models::bpe::{BpeScratch, PipelineBPE};
 use crate::models::unigram::{Unigram, UnigramScratch};
 use crate::models::wordlevel::WordLevel;
 use crate::models::wordpiece::{PipelineWordPiece, WordPieceScratch};
+use crate::processors::bert::BertProcessing;
+use crate::processors::roberta::RobertaProcessing;
 use crate::utils::byte_level::GPT2_REGEX_STR;
 use crate::vocab::bucket_added_vocabulary::{
     AddedToken as BucketAddedToken, AddedVocabulary as BucketAddedVocabulary,
@@ -26,6 +28,7 @@ use crate::{
         unicode_scripts::UnicodeScripts,
         whitespace::{Whitespace, WhitespaceSplit},
     },
+    processors::template::Piece,
 };
 
 use super::{Result, SplitDelimiterBehavior};
@@ -149,6 +152,118 @@ impl TryFrom<PreTokenizerWrapper> for PipelinePreTokenizer {
     }
 }
 
+/// A post-processor compiled to a prefix and a suffix (slices of token IDs)
+/// The prefix and suffix are respectively prepended and appended to the sequence encoding:
+/// The default (both slices empty) is the no-post-processor case.
+/// Processors that don't reduce to such a frame are rejected at conversion.
+///
+/// Example:
+///     PipelinePostProcessor {
+///         prefix: vec![100].into_boxed_slice(),
+///         suffix: vec![101, 102].into_boxed_slice()
+///     };
+///
+///     [CLS] The quick Brown fox  [SEP]
+///     <100>|  <3> <4> <19> <67> | <101> <102>
+///   prefix |  sequence encoding | suffix
+///
+#[derive(Debug, Default)]
+pub struct PipelinePostProcessor {
+    prefix: Box<[PipelineToken]>,
+    suffix: Box<[PipelineToken]>,
+}
+
+impl TryFrom<&PostProcessorWrapper> for PipelinePostProcessor {
+    type Error = crate::Error;
+
+    fn try_from(value: &PostProcessorWrapper) -> Result<Self> {
+        match value {
+            PostProcessorWrapper::Bert(BertProcessing {
+                cls: (_, cls_id),
+                sep: (_, sep_id),
+            }) => Ok(Self {
+                prefix: vec![PipelineToken { id: *cls_id }].into_boxed_slice(),
+                suffix: vec![PipelineToken { id: *sep_id }].into_boxed_slice(),
+            }),
+            PostProcessorWrapper::Roberta(RobertaProcessing {
+                cls: (_, cls_id),
+                sep: (_, sep_id),
+                ..
+            }) => Ok(Self {
+                prefix: vec![PipelineToken { id: *cls_id }].into_boxed_slice(),
+                suffix: vec![PipelineToken { id: *sep_id }].into_boxed_slice(),
+            }),
+            PostProcessorWrapper::Template(pp) => {
+                // todo: handle pair template
+                let mut prefix = vec![];
+                let mut suffix = vec![];
+                let mut seen_sequence = false;
+                for piece in pp.single.iter_pieces() {
+                    match piece {
+                        Piece::Sequence { .. } => {
+                            if seen_sequence {
+                                return Err(
+                                    "post-processor not supported: Template `single` references the sequence more than once"
+                                        .into(),
+                                );
+                            }
+                            seen_sequence = true;
+                        }
+                        Piece::SpecialToken {
+                            id: token_string, ..
+                        } => {
+                            let special = pp.get_special_tokens().0.get(token_string).ok_or_else(|| {
+                                format!(
+                                    "post-processor not supported: Template references unknown special token `{token_string}`"
+                                )
+                            })?;
+                            let token_ids = special.ids().iter().map(|&id| PipelineToken { id });
+                            if seen_sequence {
+                                suffix.extend(token_ids);
+                            } else {
+                                prefix.extend(token_ids);
+                            }
+                        }
+                    }
+                }
+                if !seen_sequence {
+                    return Err(
+                        "post-processor not supported: Template `single` does not reference the sequence"
+                            .into(),
+                    );
+                }
+                Ok(Self {
+                    prefix: prefix.into_boxed_slice(),
+                    suffix: suffix.into_boxed_slice(),
+                })
+            }
+            PostProcessorWrapper::ByteLevel(_) => Ok(Self::default()),
+            PostProcessorWrapper::Sequence(sequence) => {
+                // Each member wraps the previous members' output, so later members end up
+                // outermost: prefix accumulates in reverse member order, suffix in forward.
+                let items = sequence
+                    .as_ref()
+                    .iter()
+                    .map(PipelinePostProcessor::try_from)
+                    .collect::<Result<Vec<_>>>()?;
+                let prefix: Vec<_> = items
+                    .iter()
+                    .rev()
+                    .flat_map(|item| item.prefix.iter().copied())
+                    .collect();
+                let suffix: Vec<_> = items
+                    .iter()
+                    .flat_map(|item| item.suffix.iter().copied())
+                    .collect();
+                Ok(Self {
+                    prefix: prefix.into_boxed_slice(),
+                    suffix: suffix.into_boxed_slice(),
+                })
+            }
+        }
+    }
+}
+
 /// An output token. Carries only the vocabulary `id` — offsets and the token
 /// string are dropped, which is all an encode-only caller needs.
 #[derive(Debug, Clone, Copy)]
@@ -267,14 +382,13 @@ impl<'a, 'b, PatternMatcher: PipelinePatternMatcher> Iterator
 }
 
 /// Experimental encode-only pipeline built from a [`Tokenizer`]. Runs the same
-/// stages (special-token split → normalize → pre-tokenize → model) over borrowed
-/// ranges to avoid the reference path's allocations.
+/// stages over borrowed ranges to avoid the reference path's allocations.
 pub struct PipelineTokenizer {
     added_vocabulary: BucketAddedVocabulary,
     normalizer: Option<NormalizerWrapper>,
     pre_tokenizer: PipelinePreTokenizer,
     model: PipelineModel,
-    _post_processor: Option<PostProcessorWrapper>,
+    post_processor: PipelinePostProcessor,
 }
 
 impl TryFrom<&Tokenizer> for PipelineTokenizer {
@@ -372,20 +486,25 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
             normalizer: tok.get_normalizer().cloned(),
             pre_tokenizer,
             model,
-            _post_processor: tok.get_post_processor().cloned(),
+            post_processor: tok
+                .get_post_processor()
+                .map(PipelinePostProcessor::try_from)
+                .transpose()?
+                .unwrap_or_default(),
         })
     }
 }
 
 impl PipelineTokenizer {
-    /// Stage gates for [`encode_upto`](Self::encode_upto), in execution order. Each
-    /// level runs every stage up to and including itself; `STAGE_MODEL` is a full
-    /// encode. `STAGE_FRAME` is the special-token scan + iteration only (the "other"
-    /// slice in the decomposition).
+    /// Stage gates for [`encode_generic`](Self::encode_generic), in execution order.
+    /// Each level runs every stage up to and including itself; `STAGE_POSTPROCESS` is
+    /// a full encode. `STAGE_FRAME` is the special-token scan + iteration only (the
+    /// "other" slice in the decomposition).
     pub const STAGE_FRAME: u8 = 0;
     pub const STAGE_NORMALIZE: u8 = 1;
     pub const STAGE_SPLIT: u8 = 2;
     pub const STAGE_MODEL: u8 = 3;
+    pub const STAGE_POSTPROCESS: u8 = 4;
 
     pub fn get_model(&self) -> &PipelineModel {
         &self.model
@@ -399,15 +518,14 @@ impl PipelineTokenizer {
     ///
     /// This way, special / added tokens declared on raw or normalized text are both caught.
     /// The remaining text is pre-tokenized and run through the model span by span.
-    ///
-    /// todo: wire the post-processing
-    pub fn encode(&self, input: &str, _add_special_tokens: bool) -> Result<Vec<PipelineToken>> {
+    pub fn encode(&self, input: &str, add_special_tokens: bool) -> Result<Vec<PipelineToken>> {
         let mut output = Vec::new();
         let mut pre_tokens = Vec::new();
         let mut scratch = self.model.init_scratch();
 
-        self.encode_generic::<{ Self::STAGE_MODEL }>(
+        self.encode_generic::<{ Self::STAGE_POSTPROCESS }>(
             input,
+            add_special_tokens,
             &mut pre_tokens,
             &mut scratch,
             &mut output,
@@ -417,13 +535,13 @@ impl PipelineTokenizer {
 
     /// Single source of truth for the encode pipeline, generic over how many stages
     /// run. `STAGE` is a **const generic**, so `if STAGE >= …` folds at compile time and
-    /// the disabled stages are compiled out — the full specialization ([`STAGE_MODEL`],
-    /// which [`encode`](Self::encode) calls) is branchless and identical to a
-    /// hand-written full pipeline, while the benchmark drives lower `STAGE` values to
-    /// time each stage's marginal cost (the ablation ladder), e.g.
+    /// the disabled stages are compiled out — the full specialization
+    /// ([`STAGE_POSTPROCESS`], which [`encode`](Self::encode) calls) is branchless and
+    /// identical to a hand-written full pipeline, while the benchmark drives lower
+    /// `STAGE` values to time each stage's marginal cost (the ablation ladder), e.g.
     /// `model = t(MODEL) − t(SPLIT)`. No runtime gate, no `Instant` in the loop.
     ///
-    /// [`STAGE_MODEL`]: Self::STAGE_MODEL
+    /// [`STAGE_POSTPROCESS`]: Self::STAGE_POSTPROCESS
     ///
     /// `output` and the `pre_tokens` scratch are caller-owned so a benchmark can reuse
     /// them across calls and observe both buffers to anchor the ablation levels — the
@@ -432,10 +550,17 @@ impl PipelineTokenizer {
     pub fn encode_generic<const STAGE: u8>(
         &self,
         input: &str,
+        add_special_tokens: bool,
         pre_tokens: &mut Vec<Span>,
         scratch: &mut PipelineModelScratch,
         output: &mut Vec<PipelineToken>,
     ) -> Result<()> {
+        let PipelinePostProcessor { prefix, suffix } = &self.post_processor;
+        // Prepend prefix tokens, if any
+        // todo: handle post-processing when encoding a pair of sequences (currently unsupported by the PipelineTokenizer)
+        if add_special_tokens && STAGE >= Self::STAGE_POSTPROCESS {
+            output.extend_from_slice(prefix);
+        }
         // First, we extract all special tokens from the non-normalized input
         for segment in SpecialSegmentIterator::new(input, &self.added_vocabulary, false) {
             match segment {
@@ -482,6 +607,10 @@ impl PipelineTokenizer {
                     }
                 }
             };
+        }
+        // Append suffix tokens, if any
+        if add_special_tokens && STAGE >= Self::STAGE_POSTPROCESS {
+            output.extend_from_slice(suffix);
         }
         Ok(())
     }
@@ -850,5 +979,254 @@ mod tests {
         tok.with_pre_tokenizer(Some(ByteLevel::new(false, true, true)));
         let err = conversion_error(&tok);
         assert!(err.contains("not supported with model"), "{}", err);
+    }
+
+    fn wordlevel_tokenizer(
+        vocab: Vec<(&str, u32)>,
+        post_processor: Option<PostProcessorWrapper>,
+    ) -> Tokenizer {
+        use crate::models::wordlevel::WordLevel;
+        use crate::pre_tokenizers::whitespace::Whitespace;
+
+        let unk = vocab[0].0.to_string();
+        let vocab: ahash::AHashMap<String, u32> =
+            vocab.into_iter().map(|(k, v)| (k.to_string(), v)).collect();
+        let model = WordLevel::builder()
+            .vocab(vocab)
+            .unk_token(unk)
+            .build()
+            .unwrap();
+        let mut tok = Tokenizer::new(model);
+        tok.with_pre_tokenizer(Some(Whitespace));
+        tok.with_post_processor(post_processor);
+        tok
+    }
+
+    fn assert_pipeline_matches_reference(tok: &Tokenizer, input: &str) {
+        let pipeline = PipelineTokenizer::try_from(tok).unwrap();
+        for add_special_tokens in [false, true] {
+            let expected = tok
+                .encode(input, add_special_tokens)
+                .unwrap()
+                .get_ids()
+                .to_vec();
+            let got: Vec<u32> = pipeline
+                .encode(input, add_special_tokens)
+                .unwrap()
+                .iter()
+                .map(|t| t.id)
+                .collect();
+            assert_eq!(expected, got, "add_special_tokens={add_special_tokens}");
+        }
+    }
+
+    #[test]
+    fn pipeline_runs_bert_post_processor_matching_reference() {
+        use crate::processors::bert::BertProcessing;
+
+        let tok = wordlevel_tokenizer(
+            vec![("[CLS]", 0), ("[SEP]", 1), ("hello", 2), ("world", 3)],
+            Some(PostProcessorWrapper::Bert(BertProcessing::new(
+                ("[SEP]".to_string(), 1),
+                ("[CLS]".to_string(), 0),
+            ))),
+        );
+        assert_pipeline_matches_reference(&tok, "hello world");
+
+        let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
+        let ids = |enc: Vec<PipelineToken>| enc.iter().map(|t| t.id).collect::<Vec<_>>();
+        assert_eq!(
+            ids(pipeline.encode("hello world", true).unwrap()),
+            vec![0, 2, 3, 1]
+        );
+        assert_eq!(
+            ids(pipeline.encode("hello world", false).unwrap()),
+            vec![2, 3]
+        );
+    }
+
+    #[test]
+    fn pipeline_runs_roberta_post_processor_matching_reference() {
+        use crate::processors::roberta::RobertaProcessing;
+
+        let tok = wordlevel_tokenizer(
+            vec![("<s>", 0), ("</s>", 1), ("hello", 2), ("world", 3)],
+            Some(PostProcessorWrapper::Roberta(RobertaProcessing::new(
+                ("</s>".to_string(), 1),
+                ("<s>".to_string(), 0),
+            ))),
+        );
+        assert_pipeline_matches_reference(&tok, "hello world");
+    }
+
+    #[test]
+    fn pipeline_runs_template_post_processor_matching_reference() {
+        use crate::processors::template::TemplateProcessing;
+
+        let tok = wordlevel_tokenizer(
+            vec![("[CLS]", 0), ("[SEP]", 1), ("hello", 2), ("world", 3)],
+            Some(PostProcessorWrapper::Template(
+                TemplateProcessing::builder()
+                    .try_single("[CLS] $0 [SEP]")
+                    .unwrap()
+                    .special_tokens(vec![("[CLS]", 0u32), ("[SEP]", 1u32)])
+                    .build()
+                    .unwrap(),
+            )),
+        );
+        assert_pipeline_matches_reference(&tok, "hello world");
+    }
+
+    #[test]
+    fn pipeline_bytelevel_post_processor_is_noop() {
+        use crate::pre_tokenizers::byte_level::ByteLevel;
+
+        let tok = wordlevel_tokenizer(
+            vec![("hello", 2), ("world", 3)],
+            Some(PostProcessorWrapper::ByteLevel(ByteLevel::default())),
+        );
+        assert_pipeline_matches_reference(&tok, "hello world");
+    }
+
+    #[test]
+    fn pipeline_sequence_composes_later_member_as_outermost() {
+        use crate::processors::bert::BertProcessing;
+        use crate::processors::sequence::Sequence as ProcSequence;
+
+        let tok = wordlevel_tokenizer(
+            vec![
+                ("A", 100),
+                ("B", 101),
+                ("C", 102),
+                ("D", 103),
+                ("hello", 2),
+                ("world", 3),
+            ],
+            Some(PostProcessorWrapper::Sequence(ProcSequence::new(vec![
+                PostProcessorWrapper::Bert(BertProcessing::new(
+                    ("B".to_string(), 101),
+                    ("A".to_string(), 100),
+                )),
+                PostProcessorWrapper::Bert(BertProcessing::new(
+                    ("D".to_string(), 103),
+                    ("C".to_string(), 102),
+                )),
+            ]))),
+        );
+        assert_pipeline_matches_reference(&tok, "hello world");
+
+        let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
+        let ids: Vec<u32> = pipeline
+            .encode("hello world", true)
+            .unwrap()
+            .iter()
+            .map(|t| t.id)
+            .collect();
+        assert_eq!(ids, vec![102, 100, 2, 3, 101, 103]);
+    }
+
+    #[test]
+    fn pipeline_sequence_bytelevel_then_template_matches_reference() {
+        use crate::pre_tokenizers::byte_level::ByteLevel;
+        use crate::processors::sequence::Sequence as ProcSequence;
+        use crate::processors::template::TemplateProcessing;
+
+        let tok = wordlevel_tokenizer(
+            vec![("<|begin_of_text|>", 0), ("hello", 2), ("world", 3)],
+            Some(PostProcessorWrapper::Sequence(ProcSequence::new(vec![
+                PostProcessorWrapper::ByteLevel(ByteLevel::default()),
+                PostProcessorWrapper::Template(
+                    TemplateProcessing::builder()
+                        .try_single("<|begin_of_text|> $0")
+                        .unwrap()
+                        .special_tokens(vec![("<|begin_of_text|>", 0u32)])
+                        .build()
+                        .unwrap(),
+                ),
+            ]))),
+        );
+        assert_pipeline_matches_reference(&tok, "hello world");
+    }
+
+    #[test]
+    fn conversion_rejects_template_referencing_sequence_twice() {
+        use crate::processors::template::TemplateProcessing;
+
+        let tok = wordlevel_tokenizer(
+            vec![("hello", 2), ("world", 3)],
+            Some(PostProcessorWrapper::Template(
+                TemplateProcessing::builder()
+                    .try_single("$0 $0")
+                    .unwrap()
+                    .build()
+                    .unwrap(),
+            )),
+        );
+        let err = conversion_error(&tok);
+        assert!(err.contains("not supported"), "{}", err);
+    }
+
+    #[test]
+    fn conversion_rejects_template_without_sequence_piece() {
+        use crate::processors::template::TemplateProcessing;
+
+        let tok = wordlevel_tokenizer(
+            vec![("[CLS]", 0), ("hello", 2), ("world", 3)],
+            Some(PostProcessorWrapper::Template(
+                TemplateProcessing::builder()
+                    .try_single("[CLS]")
+                    .unwrap()
+                    .special_tokens(vec![("[CLS]", 0u32)])
+                    .build()
+                    .unwrap(),
+            )),
+        );
+        let err = conversion_error(&tok);
+        assert!(err.contains("not supported"), "{}", err);
+    }
+
+    #[test]
+    fn conversion_rejects_template_with_unknown_special_token() {
+        // Deserializing straight from JSON skips `TemplateProcessingBuilder::validate`,
+        // so this (unlike the builder) can reach the pipeline with a dangling reference.
+        let json = r#"{
+            "type":"TemplateProcessing",
+            "single":[
+                {"SpecialToken":{"id":"[CLS]","type_id":0}},
+                {"Sequence":{"id":"A","type_id":0}}
+            ],
+            "pair":[{"Sequence":{"id":"A","type_id":0}}],
+            "special_tokens":{}
+        }"#;
+        let processor: crate::processors::template::TemplateProcessing =
+            serde_json::from_str(json).unwrap();
+
+        let tok = wordlevel_tokenizer(
+            vec![("hello", 2), ("world", 3)],
+            Some(PostProcessorWrapper::Template(processor)),
+        );
+        let err = conversion_error(&tok);
+        assert!(err.contains("not supported"), "{}", err);
+    }
+
+    #[test]
+    fn conversion_rejects_sequence_containing_unsupported_member() {
+        use crate::processors::sequence::Sequence as ProcSequence;
+        use crate::processors::template::TemplateProcessing;
+
+        let tok = wordlevel_tokenizer(
+            vec![("hello", 2), ("world", 3)],
+            Some(PostProcessorWrapper::Sequence(ProcSequence::new(vec![
+                PostProcessorWrapper::Template(
+                    TemplateProcessing::builder()
+                        .try_single("$0 $0")
+                        .unwrap()
+                        .build()
+                        .unwrap(),
+                ),
+            ]))),
+        );
+        let err = conversion_error(&tok);
+        assert!(err.contains("not supported"), "{}", err);
     }
 }
