@@ -95,3 +95,40 @@ weight — the bounded L2 cache is the right call, as designed.
   our probe hits L2, so take only if a profile shows it on the critical path.
 - parquet / jsonl / zstd input, batch file encoding, huge-page allocator, py bindings — out of scope.
 ```
+
+---
+
+## UPDATE — fair per-step head-to-head vs PR #2190 (cached "ours")
+
+The verdict above was too generous and used the *uncached* pipeline. Re-run with PR #2190
+(`poc-merge-cache`: FlatCache + MPHF RankStore) as "ours", one process, ids byte-identical to
+gigatoken on every row (`idsEq OK`). ns/byte, aligned steps (harness:
+`notes/gigatoken_vs_ours_per_step.rs`, needs the 2190 worktree + a gigatoken clone, nightly).
+
+```
+tok         lang       | o.nrm o.splt o.mdlW o.mdlC | t.splt t.prb  t.mrg
+gpt2        English    |  0.00   1.79   3.59   8.66 |  0.73   0.11   1.37
+gpt2        Russian    |  0.00   1.28   2.17  12.38 |  1.21   1.38   6.26
+gpt2        Chinese    |  0.00   1.27   1.46  15.89 |  1.94   0.70  11.54
+gpt2        Korean     |  0.00   1.29   2.60   9.33 |  1.67   1.11   4.80
+llama-3     English    |  0.00   1.90   3.07   6.54 |  0.81   0.17   2.43
+llama-3     Chinese    |  0.00   1.21   1.12  37.72 |  1.98   0.37  25.06
+deepseek-v4 English    |  0.00   3.25   3.40   8.40 |  1.50   0.20   1.74
+deepseek-v4 Chinese    |  0.00   1.46   1.28  30.76 |  0.98   0.54  23.34
+```
+o.* = ours marginals (nrm/split/model-warm/model-cold); t.* = theirs (split / probe+emit / merge).
+
+**Which part wins, quantified:**
+1. **Warm emit is the dominant gap — theirs up to 33× (English 3.59 vs 0.11), 1.6–2.3× elsewhere.**
+   Their branchless `probe_pair` + inline value packing + flat u32 store-and-advance is memcpy-tier;
+   ours does a FlatCache `get` + copy per pretoken. **Highest-value fix by far, and it's the emit
+   path, not merge.**
+2. **Merge (cold): theirs 1.3–6× faster** (English 6×, CJK 1.3–1.5×). PairRankTable + NEON core.
+   Corrects the earlier "merge competitive" claim — it is not.
+3. **Split: ours 2–2.5× slower ONLY on whitespace-heavy Latin** (GPT contraction regex); ours is
+   comparable or faster on CJK/Cyrillic. gigatoken has per-family hand-fused SIMD English splitters.
+4. **Normalize = 0** for GPT-2/Llama/DeepSeek (byte-level BPE, no normalizer) — atomnorm doesn't
+   execute for these models; it only pays for BERT/T5/SPM.
+
+Revised priority for closing the gap: warm emit (flat u32 out + inline-packed ids + branchless
+probe) >> merge (PairRankTable/NEON) > Latin split. Normalization is not on the critical path here.
