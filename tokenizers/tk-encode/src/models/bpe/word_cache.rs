@@ -4,8 +4,45 @@ use ahash::RandomState;
 
 use crate::utils::cache::MAX_LENGTH;
 
+/// This is a cache storing mapping words (pre-tokens, &str) to the corresponding BPE token ids
+///
+/// Implemented as a [`4-way set-associative`](https://en.wikipedia.org/wiki/Cache_placement_policies#Set-associative_cache)
+/// 
+/// The word (`&[u8]`) gets hashed into a u64. The lower bits are used to index into buckets, the higher 32 bits are used to
+/// resolve collisions (two different words having the same lower bits). 
+/// 
+/// There can be up to [`WAYS`](`WAYS`) collisions per index.
+pub struct WordCache {
+    hasher: RandomState,
+    buckets: Box<[Bucket]>,
+    key_bytes: Vec<u8>,
+    ids: Vec<u32>,
+    bucket_mask: u64,
+}
+
+/// 4 ways allows Bucket to be exactly 64 bytes and fit in a cache line, with decent collision handling
 const WAYS: usize = 4;
 
+/// The alignment and [`CacheSlot`](`CacheSlot`) size guarantee that each bucket fits in a cache line
+/// on most modern machines (64 bytes). Enforced at compile time by the const assertions below.
+/// 
+/// Loading a bucket in memory is a single load, and checking the collision is very cheap (no additional memory load).
+#[derive(Clone, Copy, Default)]
+#[repr(align(64))]
+struct Bucket([CacheSlot; WAYS]);
+
+const _: () = assert!(
+    size_of::<Bucket>() == 64,
+    "Bucket must be 64 bytes to fit in a cache line"
+);
+const _: () = assert!(
+    align_of::<Bucket>() == 64,
+    "Bucket must be 64 bytes-aligned to fit in a cache line"
+);
+
+
+/// Cache slot is a tag (to resolve collisions) and offsets in a contiguous buffer of keys and values (arena)
+/// It has the nice property of being 16 bytes in size, so a Bucket (4 cache slots) fit in a single cache line.
 #[derive(Clone, Copy, Default)]
 struct CacheSlot {
     tag: u32,
@@ -15,10 +52,6 @@ struct CacheSlot {
     ids_len: u16,
 }
 
-#[derive(Clone, Copy, Default)]
-#[repr(align(64))]
-struct Bucket([CacheSlot; WAYS]);
-
 impl CacheSlot {
     fn id_range(&self) -> Range<usize> {
         self.ids_off as usize..(self.ids_off as usize + self.ids_len as usize)
@@ -27,14 +60,6 @@ impl CacheSlot {
     fn key_range(&self) -> Range<usize> {
         self.key_off as usize..(self.key_off as usize + self.key_len as usize)
     }
-}
-
-pub struct WordCache {
-    hasher: RandomState,
-    buckets: Box<[Bucket]>,
-    key_bytes: Vec<u8>,
-    ids: Vec<u32>,
-    bucket_mask: u64,
 }
 
 impl WordCache {
