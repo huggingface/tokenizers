@@ -14,28 +14,28 @@ import tokenizers as tk
 
 tok = tk.Tokenizer.from_file("tokenizer.json")
 
-# encode returns an Encoding: ids plus the masks and metadata a model consumes.
-# add_special_tokens=False skips template tokens like [CLS]/[SEP]; inserting
-# them is not implemented yet in 1.0, so leaving it True raises a loud
-# NotImplementedError on tokenizers that use such templates (BERT, Llama, …).
-enc = tok.encode("Hello world", add_special_tokens=False)
+# encode returns an Encoding: ids plus the metadata a model consumes.
+# add_special_tokens=True (the default) inserts the tokenizer's template
+# tokens, like BERT's [CLS]/[SEP]; pass False to leave them off.
+enc = tok.encode("Hello world")
 enc.ids                # list[int]
 enc.tokens             # list[str]
 enc.attention_mask     # list[int]
 
-batch = tok.encode_batch(["Hello world", "How are you?"], add_special_tokens=False)
+batch = tok.encode_batch(["Hello world", "How are you?"])
 batch[0].ids           # a batch is a sequence of Encodings
 
 # When you only want the ids, encode_ids skips the Encoding and returns them as
 # a numpy.uint32 array with no copy (encode_batch_ids returns a list of arrays).
-ids = tok.encode_ids("Hello world", add_special_tokens=False)
+ids = tok.encode_ids("Hello world")
 ```
 
 `encode` and `encode_ids` run exactly the same work; `encode` wraps the ids in
 an `Encoding` and derives its fields on access, so you never pay for what you
-don't read. Fields that need per-token provenance the pipeline does not compute
-yet — `word_ids` and character `offsets` — raise `NotImplementedError` rather
-than return a guess.
+don't read. Fields that need per-token provenance the pipeline does not track
+yet — which tokens are special (`special_tokens_mask`, `sequence_ids`),
+`word_ids`, and character `offsets` — raise `NotImplementedError` rather than
+return a guess.
 
 To load a tokenizer straight from the [Hugging Face Hub](https://huggingface.co),
 install the `hub` extra (`pip install 'tokenizers[hub]'`):
@@ -81,31 +81,29 @@ plays well with threads and event loops:
   thread.
 
 ```python
-enc = await tok.async_encode("Hello world", add_special_tokens=False)
+enc = await tok.async_encode("Hello world")
 ```
 
 ## Breaking changes vs 0.x
 
 1.x is a ground-up rewrite with a smaller, faster API. The headline changes:
 
-- `encode` returns an `Encoding` carrying ids, tokens, type ids, attention
-  and special-tokens masks, and sequence ids. Word ids and character offsets
-  are not computed yet and raise; truncation and padding
+- `encode` returns an `Encoding` carrying ids, tokens, type ids, and the
+  attention mask. Special-tokens mask, sequence ids, word ids, and character
+  offsets are not computed yet and raise; truncation and padding
   (`enable_truncation`/`enable_padding`) are gone. `encode_ids` is the new
   name for a bare `numpy.uint32` id array.
 - `encode` takes a single text: no `pair=` argument, no `is_pretokenized=`.
-- Not implemented yet (loud errors, never wrong ids): `decode`,
-  post-processor templates (`[CLS]`/`<s>` insertion — pass
-  `add_special_tokens=False`), and the `Metaspace` pre-tokenizer
-  (t5-style files).
+- Not implemented yet (loud errors, never wrong ids): `decode` and the
+  `Metaspace` pre-tokenizer (t5-style files).
 - Custom Python components (normalizers/pre-tokenizers written in Python)
   are not supported; components are plain values you assign, not objects
   you subclass.
 - `decoders`, `processors`, and the `implementations` helpers
   (`BertWordPieceTokenizer`, …) are gone.
 - **`transformers` cannot use 1.0 as its backend yet** — it needs the
-  not-yet-implemented pieces above (post-processing, offsets, decode). Pin
-  `tokenizers<1.0` for `transformers`.
+  `Encoding` fields that still raise (offsets, special-tokens mask, sequence
+  ids) plus `decode`. Pin `tokenizers<1.0` for `transformers`.
 
 The full list, including smaller removals and renames, is in the 1.0.0 entry
 of [CHANGELOG.md](CHANGELOG.md).

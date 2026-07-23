@@ -11,12 +11,14 @@ def test_gpt2_encodes_corpus(gpt2_file, corpus):
     assert all(ids.dtype == np.uint32 for ids in batch)
 
 
-def test_bert_special_tokens_gate(bert_file):
+def test_bert_add_special_tokens(bert_file):
     tok = Tokenizer.from_file(bert_file)
-    with pytest.raises(NotImplementedError, match="post-process"):
-        tok.encode_ids("hello")
-    ids = tok.encode_ids("hello", add_special_tokens=False)
-    assert len(ids) > 0
+    wrapped = tok.encode_ids("hello")  # add_special_tokens=True by default
+    plain = tok.encode_ids("hello", add_special_tokens=False)
+    # The post-processor wraps the content with [CLS] ... [SEP].
+    assert len(wrapped) == len(plain) + 2
+    assert tok.id_to_token(int(wrapped[0])) == "[CLS]"
+    assert tok.id_to_token(int(wrapped[-1])) == "[SEP]"
 
 
 def test_metaspace_fails_loudly_at_compile(t5_file):

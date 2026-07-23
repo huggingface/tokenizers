@@ -8,6 +8,7 @@ use crate::tokenizer::PyTokenizer;
 
 const NO_OFFSETS: &str = "character offsets are not tracked by the encode pipeline";
 const NO_WORD_IDS: &str = "word ids are not emitted by the encode pipeline";
+const NO_SPECIALS: &str = "the encode pipeline does not mark which tokens are special";
 
 fn deferred(what: &str, why: &str) -> PyErr {
     PyNotImplementedError::new_err(format!("{what} is not available yet: {why}"))
@@ -18,12 +19,11 @@ fn deferred(what: &str, why: &str) -> PyErr {
 /// `Encoding` costs the same to produce as a bare id array — `Tokenizer.encode`
 /// runs exactly the work `encode_ids` does.
 ///
-/// `encode` only produces an `Encoding` for a single sequence with no
-/// post-processor-inserted special tokens (it raises otherwise), so the
-/// segment, attention, special-token and sequence values are constant: one
-/// sequence numbered 0, nothing padded, nothing special. Anything that would
-/// need per-token provenance the pipeline does not compute — word ids and
-/// character offsets — raises rather than returning a plausible-looking guess.
+/// `encode` handles a single sequence, so `type_ids` and `attention_mask` are
+/// constant (one segment, nothing padded). Fields that need per-token
+/// provenance the pipeline does not track yet — which tokens are special
+/// (`special_tokens_mask`, `sequence_ids`), word ids, and character offsets —
+/// raise rather than returning a plausible-looking guess.
 #[pyclass(frozen, name = "Encoding", module = "tokenizers")]
 pub struct PyEncoding {
     ids: Arc<[u32]>,
@@ -82,16 +82,18 @@ impl PyEncoding {
         vec![1; self.ids.len()]
     }
 
-    /// Special-tokens mask, one entry per token: all 0 (no post-processing).
+    /// Special-tokens mask — not available: the pipeline does not mark which
+    /// tokens are special yet (a backing structure for this is coming).
     #[getter]
-    fn special_tokens_mask(&self) -> Vec<u32> {
-        vec![0; self.ids.len()]
+    fn special_tokens_mask(&self) -> PyResult<Vec<u32>> {
+        Err(deferred("special_tokens_mask", NO_SPECIALS))
     }
 
-    /// The sequence each token belongs to: all 0 (single sequence).
+    /// The sequence each token belongs to — not available: it depends on which
+    /// tokens are special, which the pipeline does not mark yet.
     #[getter]
-    fn sequence_ids(&self) -> Vec<Option<u32>> {
-        vec![Some(0); self.ids.len()]
+    fn sequence_ids(&self) -> PyResult<Vec<Option<u32>>> {
+        Err(deferred("sequence_ids", NO_SPECIALS))
     }
 
     /// Number of sequences in this encoding: always 1.
@@ -100,10 +102,10 @@ impl PyEncoding {
         1
     }
 
-    /// The sequence a token belongs to (0), or None for an out-of-range index.
     #[pyo3(signature = (token_index))]
-    fn token_to_sequence(&self, token_index: usize) -> Option<u32> {
-        (token_index < self.ids.len()).then_some(0)
+    #[allow(unused_variables)]
+    fn token_to_sequence(&self, token_index: usize) -> PyResult<Option<u32>> {
+        Err(deferred("token_to_sequence", NO_SPECIALS))
     }
 
     /// Word id per token — not available: the pipeline does not emit word

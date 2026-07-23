@@ -15,23 +15,24 @@ arrays without a copy.
 Breaking changes — encoding:
 
 - `encode`/`encode_batch` return an `Encoding`/`EncodingBatch` carrying ids,
-  tokens, type ids, attention and special-tokens masks, and sequence ids
-  (`ids` is a `list`; `ids_array()` gives a numpy array). `encode_ids`/
-  `encode_batch_ids` are the new names for the bare-`numpy.uint32` path — same
-  encode work, no `Encoding` wrapper. Not carried yet, and raising rather than
-  returning a guess: word ids and character offsets (and the char/word/token
-  mapping helpers built on them). Overflowing/stride, truncation, and padding
+  tokens, type ids, and the attention mask (`ids` is a `list`; `ids_array()`
+  gives a numpy array). `encode_ids`/`encode_batch_ids` are the new names for
+  the bare-`numpy.uint32` path — same encode work, no `Encoding` wrapper. Not
+  carried yet, and raising rather than returning a guess: special-tokens mask,
+  sequence ids, word ids, character offsets, and the char/word/token mapping
+  helpers built on them. Overflowing/stride, truncation, and padding
   (`enable_truncation`/`enable_padding` and their getters) are gone.
 - `encode` takes a single text: the `pair=` argument and the
   `is_pretokenized=` mode no longer exist (same for `encode_batch`).
-- Not implemented yet (loud errors, never wrong ids): `decode`,
-  post-processor templates (pass `add_special_tokens=False`), and the
+- `add_special_tokens=True` (the default) inserts the post-processor's template
+  tokens, as in 0.x; pass `False` to skip them.
+- Not implemented yet (loud errors, never wrong ids): `decode` and the
   `Metaspace` pre-tokenizer. `decode_batch`, `DecodeStream`,
   `encode_batch_fast`, and `Tokenizer.post_process` are removed.
 - **`transformers`' `PreTrainedTokenizerFast` cannot run on 1.0 yet** — it
-  needs the not-yet-implemented `Encoding` fields (offsets), post-processing,
-  padding/truncation, and pair inputs. Pin `tokenizers<1.0` for `transformers`
-  until it targets 1.x.
+  needs the `Encoding` fields that still raise (offsets, special-tokens mask,
+  sequence ids), padding/truncation, and pair inputs. Pin `tokenizers<1.0` for
+  `transformers` until it targets 1.x.
 
 Breaking changes — components and introspection:
 

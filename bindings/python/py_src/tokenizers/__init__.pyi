@@ -51,12 +51,11 @@ class Encoding:
     `Encoding` costs the same to produce as a bare id array — `Tokenizer.encode`
     runs exactly the work `encode_ids` does.
     
-    `encode` only produces an `Encoding` for a single sequence with no
-    post-processor-inserted special tokens (it raises otherwise), so the
-    segment, attention, special-token and sequence values are constant: one
-    sequence numbered 0, nothing padded, nothing special. Anything that would
-    need per-token provenance the pipeline does not compute — word ids and
-    character offsets — raises rather than returning a plausible-looking guess.
+    `encode` handles a single sequence, so `type_ids` and `attention_mask` are
+    constant (one segment, nothing padded). Fields that need per-token
+    provenance the pipeline does not track yet — which tokens are special
+    (`special_tokens_mask`, `sequence_ids`), word ids, and character offsets —
+    raise rather than returning a plausible-looking guess.
     """
     def __len__(self, /) -> int: ...
     def __repr__(self, /) -> str: ...
@@ -92,18 +91,17 @@ class Encoding:
     @property
     def sequence_ids(self, /) -> list[int |None]:
         """
-        The sequence each token belongs to: all 0 (single sequence).
+        The sequence each token belongs to — not available: it depends on which
+        tokens are special, which the pipeline does not mark yet.
         """
     @property
     def special_tokens_mask(self, /) -> list[int]:
         """
-        Special-tokens mask, one entry per token: all 0 (no post-processing).
+        Special-tokens mask — not available: the pipeline does not mark which
+        tokens are special yet (a backing structure for this is coming).
         """
     def token_to_chars(self, /, token_index: int) -> tuple[int, int] |None: ...
-    def token_to_sequence(self, /, token_index: int) -> int |None:
-        """
-        The sequence a token belongs to (0), or None for an out-of-range index.
-        """
+    def token_to_sequence(self, /, token_index: int) -> int |None: ...
     def token_to_word(self, /, token_index: int) -> int |None: ...
     @property
     def tokens(self, /) -> list[str]:

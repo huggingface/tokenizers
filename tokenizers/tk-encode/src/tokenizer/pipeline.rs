@@ -521,6 +521,8 @@ impl PipelineTokenizer {
     pub fn encode(&self, input: &str, add_special_tokens: bool) -> Result<Vec<PipelineToken>> {
         let mut output = Vec::new();
         let mut pre_tokens = Vec::new();
+        // TODO: reuse scratches across calls instead of building one per encode —
+        // see the ScratchPool pattern in https://github.com/huggingface/tokenizers/pull/2223
         let mut scratch = self.model.init_scratch();
 
         self.encode_generic::<{ Self::STAGE_POSTPROCESS }>(

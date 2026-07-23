@@ -1,7 +1,7 @@
 """The simplest starting point: load real tokenizer.json files and encode a
-real corpus. Also demonstrates the two loud failure modes: pre-tokenizers the
-pipeline does not support yet, and post-processing (special-token insertion),
-which is not implemented yet. (Id parity against the released wheel is
+real corpus, with and without the special tokens the post-processor inserts.
+Also shows the one remaining loud failure mode: a pre-tokenizer the pipeline
+does not support yet (Metaspace). (Id parity against the released wheel is
 checked by benches/bench_vs_release.py — the released package shares our
 name, so the comparison needs two processes.)"""
 
@@ -32,17 +32,17 @@ for name, file in [
     assert first.attention_mask == [1] * len(first)
     print(f"{name}: {total} tokens, first token {first.tokens[0]!r}")
 
-# Expected failure 1: post-processor would add special tokens -> loud error,
-# not silently wrong ids
+# Post-processing runs: add_special_tokens=True wraps the input with the
+# template's special tokens ([CLS]/[SEP] for BERT); False leaves them off.
 bert = Tokenizer.from_file(DATA / "bert-base-uncased.json")
-try:
-    bert.encode_ids("hello")
-    raise AssertionError("should have raised")
-except NotImplementedError as e:
-    print(f"bert with add_special_tokens=True: NotImplementedError({e})")
+wrapped = bert.encode("hello world")
+plain = bert.encode("hello world", add_special_tokens=False)
+assert wrapped.tokens[0] == "[CLS]" and wrapped.tokens[-1] == "[SEP]"
+assert len(wrapped) == len(plain) + 2
+print(f"bert add_special_tokens: {wrapped.tokens}")
 
-# Expected failure 2: pipeline-unsupported component (Metaspace) -> loud error
-# at compile time, with the reason
+# Loud failure mode: a pipeline-unsupported component (Metaspace) -> error at
+# compile time, with the reason
 t5 = Tokenizer.from_file(DATA / "t5-base.json")
 try:
     t5.encode_ids("hello", add_special_tokens=False)

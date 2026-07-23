@@ -14,7 +14,6 @@ use tk_encode::Tokenizer as SpecTokenizer;
 use tk_encode::pipeline::{
     Model as _, PipelineModelScratch, PipelineToken, PipelineTokenizer, Span,
 };
-use tk_encode::tokenizer::PostProcessor as _;
 use tk_encode::utils::parallelism::get_parallelism;
 use tk_train::{TokenizerTrainExt, Trainable};
 
@@ -32,22 +31,11 @@ use crate::trainers::PyTrainer;
 /// that really used it — forking before any parallel work stays quiet.
 pub static USED_PARALLELISM: AtomicBool = AtomicBool::new(false);
 
-/// The compiled encode path plus the facts about the spec the encode calls
-/// need without re-locking it.
-#[derive(Clone)]
-struct Compiled {
-    pipe: Arc<PipelineTokenizer>,
-    /// Whether the spec's post-processor would add special tokens. Post-processing
-    /// is not wired into the pipeline yet, so encode(add_special_tokens=True)
-    /// must fail loudly instead of silently dropping them.
-    post_adds_special_tokens: bool,
-}
-
 struct Inner {
     /// Source of truth: the mutable, serializable tokenizer definition.
     spec: SpecTokenizer,
     /// Memoized compilation of `spec`; invalidated by every mutation.
-    compiled: Option<Compiled>,
+    compiled: Option<Arc<PipelineTokenizer>>,
 }
 
 fn poisoned<G>(_: std::sync::PoisonError<G>) -> PyErr {
@@ -179,6 +167,44 @@ impl PyTokenizer {
         }
         Ok(())
     }
+
+    /// Compile if needed, then encode one text to raw ids with the GIL
+    /// released. Shared by `encode` and `encode_ids`.
+    fn run_encode(
+        &self,
+        py: Python<'_>,
+        text: &str,
+        add_special_tokens: bool,
+    ) -> PyResult<Vec<u32>> {
+        self.inner.with(py, |lock| {
+            let pipe = get_or_compile(&lock)?;
+            let mut pre_tokens = Vec::new();
+            // TODO: reuse scratches across calls instead of building one per encode —
+            // see the ScratchPool pattern in https://github.com/huggingface/tokenizers/pull/2223
+            let mut scratch = pipe.get_model().init_scratch();
+            encode_one(
+                &pipe,
+                text,
+                &mut pre_tokens,
+                add_special_tokens,
+                &mut scratch,
+            )
+        })
+    }
+
+    /// The batch counterpart of `run_encode`, shared by `encode_batch` and
+    /// `encode_batch_ids`.
+    fn run_encode_batch(
+        &self,
+        py: Python<'_>,
+        texts: &[PyBackedStr],
+        add_special_tokens: bool,
+    ) -> PyResult<Vec<Vec<u32>>> {
+        self.inner.with(py, |lock| {
+            let pipe = get_or_compile(&lock)?;
+            encode_batch_core(&pipe, texts, add_special_tokens)
+        })
+    }
 }
 
 /// Wrap a bound method call in `asyncio.to_thread`, returning the coroutine.
@@ -238,7 +264,7 @@ fn pretokenize(
 
 /// Get the compiled pipeline, building it from the spec on first use after a
 /// mutation. The `Detached` parameter is the proof this runs off the GIL.
-fn get_or_compile(lock: &Detached<'_, Inner>) -> PyResult<Compiled> {
+fn get_or_compile(lock: &Detached<'_, Inner>) -> PyResult<Arc<PipelineTokenizer>> {
     {
         let guard = lock.read().map_err(poisoned)?;
         if let Some(compiled) = &guard.compiled {
@@ -252,38 +278,22 @@ fn get_or_compile(lock: &Detached<'_, Inner>) -> PyResult<Compiled> {
                 "this tokenizer cannot be compiled to an encode pipeline: {e}"
             ))
         })?;
-        let post_adds_special_tokens = guard
-            .spec
-            .get_post_processor()
-            .is_some_and(|p| p.added_tokens(false) > 0);
-        guard.compiled = Some(Compiled {
-            pipe: Arc::new(pipe),
-            post_adds_special_tokens,
-        });
+        guard.compiled = Some(Arc::new(pipe));
     }
     Ok(guard.compiled.clone().expect("just set"))
-}
-
-fn check_special_tokens_flag(compiled: &Compiled, add_special_tokens: bool) -> PyResult<()> {
-    if add_special_tokens && compiled.post_adds_special_tokens {
-        return Err(PyNotImplementedError::new_err(
-            "this tokenizer's post-processor adds special tokens, but post-processing is not \
-             implemented in the encode pipeline yet; pass add_special_tokens=False to encode \
-             without them",
-        ));
-    }
-    Ok(())
 }
 
 fn encode_one(
     pipe: &PipelineTokenizer,
     text: &str,
     pre_tokens: &mut Vec<Span>,
+    add_special_tokens: bool,
     scratch: &mut PipelineModelScratch,
 ) -> PyResult<Vec<u32>> {
     let mut output: Vec<PipelineToken> = Vec::new();
-    pipe.encode_generic::<{ PipelineTokenizer::STAGE_MODEL }>(
+    pipe.encode_generic::<{ PipelineTokenizer::STAGE_POSTPROCESS }>(
         text,
+        add_special_tokens,
         pre_tokens,
         scratch,
         &mut output,
@@ -296,22 +306,36 @@ fn encode_one(
 /// (which wraps each row in a numpy array) and `encode_batch` (which wraps the
 /// batch in an `EncodingBatch`). Runs on rayon threads when parallelism is on
 /// and the batch is worth splitting; the caller has already released the GIL.
-fn encode_batch_core(compiled: &Compiled, texts: &[PyBackedStr]) -> PyResult<Vec<Vec<u32>>> {
+fn encode_batch_core(
+    pipe: &PipelineTokenizer,
+    texts: &[PyBackedStr],
+    add_special_tokens: bool,
+) -> PyResult<Vec<Vec<u32>>> {
     if get_parallelism() && texts.len() > 1 {
         USED_PARALLELISM.store(true, Ordering::SeqCst);
         texts
             .par_iter()
             .map_init(
-                || (Vec::new(), compiled.pipe.get_model().init_scratch()),
-                |(pre_tokens, scratch), text| encode_one(&compiled.pipe, text, pre_tokens, scratch),
+                || (Vec::new(), pipe.get_model().init_scratch()),
+                |(pre_tokens, scratch), text| {
+                    encode_one(pipe, text, pre_tokens, add_special_tokens, scratch)
+                },
             )
             .collect()
     } else {
         let mut pre_tokens = Vec::new();
-        let mut scratch = compiled.pipe.get_model().init_scratch();
+        let mut scratch = pipe.get_model().init_scratch();
         texts
             .iter()
-            .map(|text| encode_one(&compiled.pipe, text, &mut pre_tokens, &mut scratch))
+            .map(|text| {
+                encode_one(
+                    pipe,
+                    text,
+                    &mut pre_tokens,
+                    add_special_tokens,
+                    &mut scratch,
+                )
+            })
             .collect()
     }
 }
@@ -392,13 +416,7 @@ impl PyTokenizer {
         text: &str,
         add_special_tokens: bool,
     ) -> PyResult<Bound<'py, PyArray1<u32>>> {
-        let ids = self.inner.with(py, |lock| -> PyResult<Vec<u32>> {
-            let compiled = get_or_compile(&lock)?;
-            check_special_tokens_flag(&compiled, add_special_tokens)?;
-            let mut pre_tokens = Vec::new();
-            let mut scratch = compiled.pipe.get_model().init_scratch();
-            encode_one(&compiled.pipe, text, &mut pre_tokens, &mut scratch)
-        })?;
+        let ids = self.run_encode(py, text, add_special_tokens)?;
         Ok(ids.into_pyarray(py))
     }
 
@@ -413,11 +431,7 @@ impl PyTokenizer {
         texts: Vec<PyBackedStr>,
         add_special_tokens: bool,
     ) -> PyResult<Bound<'py, PyList>> {
-        let batches = self.inner.with(py, |lock| -> PyResult<Vec<Vec<u32>>> {
-            let compiled = get_or_compile(&lock)?;
-            check_special_tokens_flag(&compiled, add_special_tokens)?;
-            encode_batch_core(&compiled, &texts)
-        })?;
+        let batches = self.run_encode_batch(py, &texts, add_special_tokens)?;
         let list = PyList::empty(py);
         for ids in batches {
             list.append(ids.into_pyarray(py))?;
@@ -455,14 +469,7 @@ impl PyTokenizer {
     /// copies); the `Encoding` wraps the ids and derives its fields on access.
     #[pyo3(signature = (text, *, add_special_tokens = true) -> "Encoding")]
     fn encode(slf: &Bound<'_, Self>, text: &str, add_special_tokens: bool) -> PyResult<PyEncoding> {
-        let py = slf.py();
-        let ids = slf.get().inner.with(py, |lock| -> PyResult<Vec<u32>> {
-            let compiled = get_or_compile(&lock)?;
-            check_special_tokens_flag(&compiled, add_special_tokens)?;
-            let mut pre_tokens = Vec::new();
-            let mut scratch = compiled.pipe.get_model().init_scratch();
-            encode_one(&compiled.pipe, text, &mut pre_tokens, &mut scratch)
-        })?;
+        let ids = slf.get().run_encode(slf.py(), text, add_special_tokens)?;
         Ok(PyEncoding::new(ids.into(), slf.clone().unbind()))
     }
 
@@ -475,15 +482,9 @@ impl PyTokenizer {
         texts: Vec<PyBackedStr>,
         add_special_tokens: bool,
     ) -> PyResult<PyEncodingBatch> {
-        let py = slf.py();
         let rows = slf
             .get()
-            .inner
-            .with(py, |lock| -> PyResult<Vec<Vec<u32>>> {
-                let compiled = get_or_compile(&lock)?;
-                check_special_tokens_flag(&compiled, add_special_tokens)?;
-                encode_batch_core(&compiled, &texts)
-            })?;
+            .run_encode_batch(slf.py(), &texts, add_special_tokens)?;
         let rows = rows.into_iter().map(Into::into).collect();
         Ok(PyEncodingBatch::new(rows, slf.clone().unbind()))
     }

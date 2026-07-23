@@ -47,24 +47,22 @@ def test_tokens(word_tokenizer):
     assert enc.tokens == SENTENCES[0].split()
 
 
-def test_metadata_fields_are_constant_for_a_single_sequence(special_tokenizer):
-    # A special token appearing in the text is still an ordinary content token
-    # here: no post-processing means no special-tokens mask, one sequence.
+def test_constant_metadata_fields_for_a_single_sequence(special_tokenizer):
+    # type_ids and attention_mask are constant for one unpadded sequence.
     enc = special_tokenizer.encode("hello <s> world", add_special_tokens=False)
     n = len(enc)
     assert "<s>" in enc.tokens
     assert enc.type_ids == [0] * n
     assert enc.attention_mask == [1] * n
-    assert enc.special_tokens_mask == [0] * n
-    assert enc.sequence_ids == [0] * n
     assert enc.n_sequences == 1
-    assert enc.token_to_sequence(0) == 0
-    assert enc.token_to_sequence(n) is None
 
 
 @pytest.mark.parametrize(
     "access",
     [
+        lambda e: e.special_tokens_mask,
+        lambda e: e.sequence_ids,
+        lambda e: e.token_to_sequence(0),
         lambda e: e.word_ids,
         lambda e: e.offsets,
         lambda e: e.char_to_token(0),
