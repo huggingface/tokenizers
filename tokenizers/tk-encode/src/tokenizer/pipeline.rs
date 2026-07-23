@@ -788,7 +788,12 @@ impl StreamState {
         if let Some(e) = self.err[seq].take() {
             return Err(e);
         }
-        Ok(self.slots[seq]
+        let row = &mut self.slots[seq];
+        // One chunk (small / whole-unit inputs): hand back its `Vec`, no concat copy.
+        if row.len() == 1 {
+            return Ok(row[0].take().unwrap_or_default());
+        }
+        Ok(row
             .iter_mut()
             .flat_map(|slot| slot.take().unwrap_or_default())
             .collect())
@@ -922,6 +927,13 @@ impl IntoInputs for &[&str] {
 /// job outlives the `encode` call freely. Dropping the [`EncodeHandle`] sets
 /// `cancelled`; workers stop claiming, in-flight chunks finish into the closed
 /// channel, and the last `Arc` holder releases the storage.
+/// Isolates a hot atomic on its own cache line. `JobCore.cursor` is `fetch_add`'d
+/// once per unit by every worker; without padding it could share a line with the
+/// read-only fields workers also read per unit, so each claim would invalidate
+/// their caches (false sharing).
+#[repr(align(64))]
+struct CachePadded<T>(T);
+
 struct JobCore {
     storage: Box<dyn Inputs>,
     /// Ordered worker units, (seq, idx)-tagged for reassembly.
@@ -932,7 +944,7 @@ struct JobCore {
     /// Flat pool of pre-token spans for `Pretokenized` units.
     spans: Vec<Span>,
     tokenizer: PipelineTokenizer,
-    cursor: AtomicUsize,
+    cursor: CachePadded<AtomicUsize>,
     cancelled: AtomicBool,
     tx: mpsc::Sender<UnitResult>,
 }
@@ -965,19 +977,24 @@ impl Region {
     /// boundary-snap them), or a single `Full` region when the segment is too
     /// small to be worth striding. The shared "stride-or-whole" decision for the
     /// raw (`Raw`) and normalized (`Normalized`) paths.
-    fn tile(seg: Range<usize>, boundary: StrideBoundary) -> Vec<Region> {
-        let len = seg.len();
-        if len >= 2 * PARALLEL_MIN_TOTAL_BYTES {
-            (0..len.div_ceil(PARALLEL_MIN_TOTAL_BYTES))
-                .map(|index| Region::Stride {
+    fn tile(seg: Range<usize>, boundary: StrideBoundary) -> impl Iterator<Item = Region> {
+        let strided = seg.len() >= 2 * PARALLEL_MIN_TOTAL_BYTES;
+        let n = if strided {
+            seg.len().div_ceil(PARALLEL_MIN_TOTAL_BYTES)
+        } else {
+            1
+        };
+        (0..n).map(move |index| {
+            if strided {
+                Region::Stride {
                     index,
                     boundary,
                     seg: seg.clone(),
-                })
-                .collect()
-        } else {
-            vec![Region::Full(seg)]
-        }
+                }
+            } else {
+                Region::Full(seg.clone())
+            }
+        })
     }
 
     /// Resolve to an absolute byte range within `text`. `None` when a stride's
@@ -1029,7 +1046,7 @@ impl JobCore {
         if self.cancelled.load(Ordering::Relaxed) {
             return false;
         }
-        let i = self.cursor.fetch_add(1, Ordering::Relaxed);
+        let i = self.cursor.0.fetch_add(1, Ordering::Relaxed);
         if i >= self.units.len() {
             return false;
         }
@@ -1483,7 +1500,7 @@ impl PipelineTokenizer {
             norm_bufs,
             spans,
             tokenizer: self.clone(),
-            cursor: AtomicUsize::new(0),
+            cursor: CachePadded(AtomicUsize::new(0)),
             cancelled: AtomicBool::new(false),
             tx,
         });
