@@ -6,7 +6,6 @@ text (decode) and tokens back to source positions (offsets).
 """
 
 import pytest
-
 from tokenizers import Tokenizer
 
 

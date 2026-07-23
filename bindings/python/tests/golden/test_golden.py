@@ -11,7 +11,6 @@ import json
 from functools import cache
 
 import pytest
-
 from tokenizers import Tokenizer
 
 from .generate import DATA, GOLDENS, REPO, ids_digest, text_digest

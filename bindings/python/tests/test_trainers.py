@@ -1,5 +1,4 @@
 import pytest
-
 from tokenizers import Tokenizer, models, pre_tokenizers, trainers
 
 from .conftest import SENTENCES

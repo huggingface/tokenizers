@@ -8,7 +8,6 @@ name, so the comparison needs two processes.)"""
 from pathlib import Path
 
 import numpy as np
-
 from tokenizers import Tokenizer, TokenizersError
 
 DATA = Path(__file__).resolve().parents[3] / "tokenizers" / "data"

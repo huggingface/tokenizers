@@ -1,7 +1,6 @@
 from pathlib import Path
 
 import pytest
-
 from tokenizers import Tokenizer, models, pre_tokenizers, trainers
 
 DATA = Path(__file__).resolve().parents[3] / "tokenizers" / "data"

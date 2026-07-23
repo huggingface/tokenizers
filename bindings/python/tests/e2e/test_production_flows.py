@@ -9,6 +9,7 @@ tokenizer. Models stay tiny and random (see conftest): the assertions pin the
 tokenizer's side of the story, not model quality.
 """
 
+import itertools
 import math
 from threading import Thread
 
@@ -121,7 +122,7 @@ def test_rag_chunk_embed_retrieve_flow():
     assert len(chunks) > 3
     assert spans[0][0] == 0
     assert spans[-1][1] == len(document)
-    assert all(a[1] <= b[0] for a, b in zip(spans, spans[1:]))
+    assert all(a[1] <= b[0] for a, b in itertools.pairwise(spans))
 
     # Embed chunks and query the sentence-transformers way: mean-pool hidden
     # states over the attention mask, so padding never dilutes the vector.

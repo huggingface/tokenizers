@@ -1,6 +1,5 @@
 import numpy as np
 import pytest
-
 from tokenizers import Tokenizer, models, normalizers, pre_tokenizers, trainers
 
 from .conftest import train_word_tokenizer
@@ -93,5 +92,5 @@ def test_component_assignment_invalidates_pipeline():
 
 
 def test_split_rejects_bad_behavior():
-    with pytest.raises(Exception):
+    with pytest.raises(ValueError):
         pre_tokenizers.Split(" ", behavior="not-a-behavior")

@@ -37,7 +37,6 @@ import time
 from pathlib import Path
 
 import numpy as np
-
 import tokenizers
 
 # Keep in sync with fixture_bench.rs (CHUNK_BYTES, MAX_CHUNKS).
@@ -117,7 +116,7 @@ def bench_release_side(models: list[dict], fixtures: list[dict], iters: int) -> 
         for fixture in fixtures:
             chunks = fixture["chunks"]
             encoded = tok.encode_batch_fast(chunks, add_special_tokens=False)
-            t = timed(lambda: tok.encode_batch_fast(chunks, add_special_tokens=False), iters)
+            t = timed(lambda tok=tok, chunks=chunks: tok.encode_batch_fast(chunks, add_special_tokens=False), iters)
             rows.append(
                 {
                     "mbps": fixture["bytes"] / t / 1e6,
@@ -125,7 +124,7 @@ def bench_release_side(models: list[dict], fixtures: list[dict], iters: int) -> 
                 }
             )
         os.environ["TOKENIZERS_PARALLELISM"] = "true"
-        t = timed(lambda: tok.encode_batch_fast(all_chunks, add_special_tokens=False), iters)
+        t = timed(lambda tok=tok: tok.encode_batch_fast(all_chunks, add_special_tokens=False), iters)
         out["models"][model["name"]] = {"fixtures": rows, "multi_thread_mbps": nbytes / t / 1e6}
     return out
 
@@ -136,7 +135,7 @@ def bench_local_side(tok, fixtures: list[dict], release_row: dict, iters: int) -
     for fixture, rel in zip(fixtures, release_row["fixtures"], strict=True):
         chunks = fixture["chunks"]
         encoded = tok.encode_batch_ids(chunks, add_special_tokens=False)
-        t = timed(lambda: tok.encode_batch_ids(chunks, add_special_tokens=False), iters)
+        t = timed(lambda chunks=chunks: tok.encode_batch_ids(chunks, add_special_tokens=False), iters)
         mbps = fixture["bytes"] / t / 1e6
         row["fixtures"].append(
             {
@@ -169,13 +168,17 @@ def render_markdown(report: dict) -> str:
     lines = [
         f"## Python bindings: this branch vs `tokenizers` {report['release_version']} (PyPI)",
         "",
-        f"{report['fixture_count']} fixtures (~10 KiB chunks, ≤100/fixture), median of "
-        f"{report['iters']} runs, {report['cpus']} CPUs. Single-thread numbers aggregate "
-        "all fixtures (speedup range = slowest…fastest fixture); multi-thread runs the "
-        "flattened corpus. Speedup >1 means this branch is faster.",
+        (
+            f"{report['fixture_count']} fixtures (~10 KiB chunks, ≤100/fixture), median of "
+            f"{report['iters']} runs, {report['cpus']} CPUs. Single-thread numbers aggregate "
+            "all fixtures (speedup range = slowest…fastest fixture); multi-thread runs the "
+            "flattened corpus. Speedup >1 means this branch is faster."
+        ),
         "",
-        "| model | ids | branch 1t (MB/s) | release 1t (MB/s) | speedup 1t (range) "
-        "| branch mt (MB/s) | release mt (MB/s) | speedup mt |",
+        (
+            "| model | ids | branch 1t (MB/s) | release 1t (MB/s) | speedup 1t (range) "
+            "| branch mt (MB/s) | release mt (MB/s) | speedup mt |"
+        ),
         "|---|---|---|---|---|---|---|---|",
     ]
     for row in report["models"]:
@@ -224,7 +227,7 @@ def main() -> int:
             f"`uv pip install --target {args.release_dir} tokenizers`"
         )
 
-    models = json.load(open(args.manifest)) if args.manifest else DEFAULT_MODELS
+    models = json.loads(args.manifest.read_text()) if args.manifest else DEFAULT_MODELS
     for model in models:
         model["path"] = str(args.data_dir / model.get("file", model["name"] + ".json"))
     missing = [m["name"] for m in models if not Path(m["path"]).is_file()]

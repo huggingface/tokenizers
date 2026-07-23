@@ -2,7 +2,6 @@ import pickle
 
 import numpy as np
 import pytest
-
 from tokenizers import AddedToken, Tokenizer, models
 
 from .conftest import SENTENCES, train_word_tokenizer
