@@ -42,6 +42,16 @@ fn poisoned<G>(_: std::sync::PoisonError<G>) -> PyErr {
     PyRuntimeError::new_err("tokenizer lock poisoned")
 }
 
+/// The input sequence(s) to [`encode`](`PyTokenizer::encode`)
+/// Can be either a single str or a pair of (str, str)
+#[derive(FromPyObject)]
+enum InputSequence {
+    #[pyo3(annotation = "str")]
+    Single(PyBackedStr),
+    #[pyo3(annotation = "(str, str)")]
+    Pair(PyBackedStr, PyBackedStr),
+}
+
 /// A tokenizer: a model plus its optional normalizer and pre-tokenizer.
 ///
 /// Create one from a model (`Tokenizer(models.BPE())`), a file
@@ -173,7 +183,7 @@ impl PyTokenizer {
     fn run_encode(
         &self,
         py: Python<'_>,
-        text: &str,
+        text: &InputSequence,
         add_special_tokens: bool,
     ) -> PyResult<Vec<u32>> {
         self.inner.with(py, |lock| {
@@ -197,7 +207,7 @@ impl PyTokenizer {
     fn run_encode_batch(
         &self,
         py: Python<'_>,
-        texts: &[PyBackedStr],
+        texts: &[InputSequence],
         add_special_tokens: bool,
     ) -> PyResult<Vec<Vec<u32>>> {
         self.inner.with(py, |lock| {
@@ -285,7 +295,7 @@ fn get_or_compile(lock: &Detached<'_, Inner>) -> PyResult<Arc<PipelineTokenizer>
 
 fn encode_one(
     pipe: &PipelineTokenizer,
-    text: &str,
+    text: InputSequence,
     pre_tokens: &mut Vec<Span>,
     add_special_tokens: bool,
     scratch: &mut PipelineModelScratch,
@@ -308,7 +318,7 @@ fn encode_one(
 /// and the batch is worth splitting; the caller has already released the GIL.
 fn encode_batch_core(
     pipe: &PipelineTokenizer,
-    texts: &[PyBackedStr],
+    texts: &[InputSequence],
     add_special_tokens: bool,
 ) -> PyResult<Vec<Vec<u32>>> {
     if get_parallelism() && texts.len() > 1 {
@@ -428,7 +438,7 @@ impl PyTokenizer {
     fn encode_batch_ids<'py>(
         &self,
         py: Python<'py>,
-        texts: Vec<PyBackedStr>,
+        texts: Vec<InputSequence>,
         add_special_tokens: bool,
     ) -> PyResult<Bound<'py, PyList>> {
         let batches = self.run_encode_batch(py, &texts, add_special_tokens)?;
@@ -479,7 +489,7 @@ impl PyTokenizer {
     #[pyo3(signature = (texts, *, add_special_tokens = true) -> "EncodingBatch")]
     fn encode_batch(
         slf: &Bound<'_, Self>,
-        texts: Vec<PyBackedStr>,
+        texts: Vec<InputSequence>,
         add_special_tokens: bool,
     ) -> PyResult<PyEncodingBatch> {
         let rows = slf
@@ -763,4 +773,9 @@ impl Iterator for BufferedPyIterator {
         }
         self.buffer.pop_front()
     }
+}
+
+
+struct PyEncodeInput {
+
 }

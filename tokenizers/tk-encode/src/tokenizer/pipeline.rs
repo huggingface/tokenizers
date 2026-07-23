@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::convert::TryInto;
+use std::slice::{self, Iter};
 use std::{borrow::Cow, convert::TryFrom};
 
 use atomsplit::classify::classify;
@@ -152,29 +153,42 @@ impl TryFrom<PreTokenizerWrapper> for PipelinePreTokenizer {
     }
 }
 
-/// A post-processor compiled to a prefix and a suffix (slices of token IDs)
-/// The prefix and suffix are respectively prepended and appended to the sequence encoding:
-/// The default (both slices empty) is the no-post-processor case.
-/// Processors that don't reduce to such a frame are rejected at conversion.
-///
-/// Example:
-/// ```text
-/// PipelinePostProcessor {
-///     prefix: vec![100].into_boxed_slice(),
-///     suffix: vec![101, 102].into_boxed_slice()
-/// };
-///
-///   [CLS] The quick Brown fox  [SEP]
-///   <100>|  <3> <4> <19> <67> | <101> <102>
-/// prefix |  sequence encoding | suffix
-/// ```
+///  todo: docs
 #[derive(Debug, Default)]
-pub struct PipelinePostProcessor {
-    prefix: Box<[PipelineToken]>,
-    suffix: Box<[PipelineToken]>,
+pub struct EncodingTemplate {
+    single: Box<[TemplatePart]>,
+    pair: Box<[TemplatePart]>,
 }
 
-impl TryFrom<&PostProcessorWrapper> for PipelinePostProcessor {
+impl EncodingTemplate {
+    fn iter_single(&self) -> Iter<TemplatePart> {
+        self.single.iter()
+    }
+
+    fn iter_pair(&self) -> Iter<TemplatePart> {
+        self.pair.iter()
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+pub enum SequenceIdx {
+    First,
+    Second,
+}
+
+#[derive(Debug, Clone)]
+pub enum TemplatePart {
+    Sequence {
+        sequence_idx: SequenceIdx,
+        type_id: u32,
+    },
+    Specials {
+        ids: Box<[u32]>,
+        type_id: u32,
+    },
+}
+
+impl TryFrom<&PostProcessorWrapper> for EncodingTemplate {
     type Error = crate::Error;
 
     fn try_from(value: &PostProcessorWrapper) -> Result<Self> {
@@ -183,100 +197,123 @@ impl TryFrom<&PostProcessorWrapper> for PipelinePostProcessor {
                 cls: (_, cls_id),
                 sep: (_, sep_id),
             }) => Ok(Self {
-                prefix: vec![PipelineToken { id: *cls_id }].into_boxed_slice(),
-                suffix: vec![PipelineToken { id: *sep_id }].into_boxed_slice(),
+                single: vec![
+                    TemplatePart::Specials {
+                        ids: vec![*cls_id].into_boxed_slice(),
+                        type_id: 0,
+                    },
+                    TemplatePart::Sequence {
+                        sequence_idx: SequenceIdx::First,
+                        type_id: 0,
+                    },
+                    TemplatePart::Specials {
+                        ids: vec![*sep_id].into_boxed_slice(),
+                        type_id: 0,
+                    },
+                ]
+                .into_boxed_slice(),
+                pair: vec![
+                    TemplatePart::Specials {
+                        ids: vec![*cls_id].into_boxed_slice(),
+                        type_id: 0,
+                    },
+                    TemplatePart::Sequence {
+                        sequence_idx: SequenceIdx::First,
+                        type_id: 0,
+                    },
+                    TemplatePart::Specials {
+                        ids: vec![*sep_id].into_boxed_slice(),
+                        type_id: 0,
+                    },
+                    TemplatePart::Sequence {
+                        sequence_idx: SequenceIdx::Second,
+                        type_id: 1,
+                    },
+                    TemplatePart::Specials {
+                        ids: vec![*sep_id].into_boxed_slice(),
+                        type_id: 1,
+                    },
+                ]
+                .into_boxed_slice(),
             }),
             PostProcessorWrapper::Roberta(RobertaProcessing {
                 cls: (_, cls_id),
                 sep: (_, sep_id),
                 ..
-            }) => Ok(Self {
-                prefix: vec![PipelineToken { id: *cls_id }].into_boxed_slice(),
-                suffix: vec![PipelineToken { id: *sep_id }].into_boxed_slice(),
-            }),
+            }) => todo!(),
             PostProcessorWrapper::Template(pp) => {
-                // todo: handle pair template
-                let mut prefix = vec![];
-                let mut suffix = vec![];
-                let mut seen_sequence = false;
-                for piece in pp.single.iter_pieces() {
-                    match piece {
-                        Piece::Sequence { .. } => {
-                            if seen_sequence {
-                                return Err(
-                                    "post-processor not supported: Template `single` references the sequence more than once"
-                                        .into(),
-                                );
-                            }
-                            seen_sequence = true;
-                        }
-                        Piece::SpecialToken {
-                            id: token_string, ..
-                        } => {
-                            let special = pp.get_special_tokens().0.get(token_string).ok_or_else(|| {
-                                format!(
-                                    "post-processor not supported: Template references unknown special token `{token_string}`"
-                                )
-                            })?;
-                            let token_ids = special.ids().iter().map(|&id| PipelineToken { id });
-                            if seen_sequence {
-                                suffix.extend(token_ids);
-                            } else {
-                                prefix.extend(token_ids);
-                            }
-                        }
-                    }
-                }
-                if !seen_sequence {
-                    return Err(
-                        "post-processor not supported: Template `single` does not reference the sequence"
-                            .into(),
-                    );
-                }
-                Ok(Self {
-                    prefix: prefix.into_boxed_slice(),
-                    suffix: suffix.into_boxed_slice(),
-                })
+                // // todo: handle pair template
+                // let mut prefix = vec![];
+                // let mut suffix = vec![];
+                // let mut seen_sequence = false;
+                // for piece in pp.single.iter_pieces() {
+                //     match piece {
+                //         Piece::Sequence { .. } => {
+                //             if seen_sequence {
+                //                 return Err(
+                //                     "post-processor not supported: Template `single` references the sequence more than once"
+                //                         .into(),
+                //                 );
+                //             }
+                //             seen_sequence = true;
+                //         }
+                //         Piece::SpecialToken {
+                //             id: token_string, ..
+                //         } => {
+                //             let special = pp.get_special_tokens().0.get(token_string).ok_or_else(|| {
+                //                 format!(
+                //                     "post-processor not supported: Template references unknown special token `{token_string}`"
+                //                 )
+                //             })?;
+                //             let token_ids = special.ids().iter().map(|&id| PipelineToken { id });
+                //             if seen_sequence {
+                //                 suffix.extend(token_ids);
+                //             } else {
+                //                 prefix.extend(token_ids);
+                //             }
+                //         }
+                //     }
+                // }
+                // if !seen_sequence {
+                //     return Err(
+                //         "post-processor not supported: Template `single` does not reference the sequence"
+                //             .into(),
+                //     );
+                // }
+                // Ok(Self {
+                //     prefix: prefix.into_boxed_slice(),
+                //     suffix: suffix.into_boxed_slice(),
+                // })
+                todo!()
             }
             PostProcessorWrapper::ByteLevel(_) => Ok(Self::default()),
             PostProcessorWrapper::Sequence(sequence) => {
                 // Each member wraps the previous members' output, so later members end up
                 // outermost: prefix accumulates in reverse member order, suffix in forward.
-                let items = sequence
-                    .as_ref()
-                    .iter()
-                    .map(PipelinePostProcessor::try_from)
-                    .collect::<Result<Vec<_>>>()?;
-                let prefix: Vec<_> = items
-                    .iter()
-                    .rev()
-                    .flat_map(|item| item.prefix.iter().copied())
-                    .collect();
-                let suffix: Vec<_> = items
-                    .iter()
-                    .flat_map(|item| item.suffix.iter().copied())
-                    .collect();
-                Ok(Self {
-                    prefix: prefix.into_boxed_slice(),
-                    suffix: suffix.into_boxed_slice(),
-                })
+                // let items = sequence
+                //     .as_ref()
+                //     .iter()
+                //     .map(EncodingTemplate::try_from)
+                //     .collect::<Result<Vec<_>>>()?;
+                // let prefix: Vec<_> = items
+                //     .iter()
+                //     .rev()
+                //     .flat_map(|item| item.prefix.iter().copied())
+                //     .collect();
+                // let suffix: Vec<_> = items
+                //     .iter()
+                //     .flat_map(|item| item.suffix.iter().copied())
+                //     .collect();
+                // Ok(Self {
+                //     prefix: prefix.into_boxed_slice(),
+                //     suffix: suffix.into_boxed_slice(),
+                // })
+                todo!()
             }
         }
     }
 }
 
-/// An output token. Carries only the vocabulary `id` — offsets and the token
-/// string are dropped, which is all an encode-only caller needs.
-#[derive(Debug, Clone, Copy)]
-pub struct PipelineToken {
-    pub id: u32,
-}
-
-impl From<Token> for PipelineToken {
-    fn from(value: Token) -> Self {
-        Self { id: value.id }
-    }
-}
 
 /// Finds special/added tokens in a text segment so the pipeline can carve them
 /// out before running the model.
@@ -389,7 +426,7 @@ pub struct PipelineTokenizer {
     normalizer: Option<NormalizerWrapper>,
     pre_tokenizer: PipelinePreTokenizer,
     model: PipelineModel,
-    post_processor: PipelinePostProcessor,
+    encoding_template: EncodingTemplate,
 }
 
 impl TryFrom<&Tokenizer> for PipelineTokenizer {
@@ -487,12 +524,28 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
             normalizer: tok.get_normalizer().cloned(),
             pre_tokenizer,
             model,
-            post_processor: tok
+            encoding_template: tok
                 .get_post_processor()
-                .map(PipelinePostProcessor::try_from)
+                .map(EncodingTemplate::try_from)
                 .transpose()?
                 .unwrap_or_default(),
         })
+    }
+}
+
+/// Wraps text to use as input to the [`PipelineTokenizer::encode`](`PipelineTokenizer::encode`) method
+/// Accepts either a single text sequence or a pair of text sequences
+#[derive(Clone, Debug)]
+pub enum EncodeInput<'a> {
+    /// A single sequence to encode
+    Single(&'a str),
+    /// A pair of sequences to encode
+    Pair((&'a str, &'a str)),
+}
+
+impl<'a> From<&'a str> for EncodeInput<'a> {
+    fn from(value: &'a str) -> Self {
+        Self::Single(value)
     }
 }
 
@@ -519,7 +572,11 @@ impl PipelineTokenizer {
     ///
     /// This way, special / added tokens declared on raw or normalized text are both caught.
     /// The remaining text is pre-tokenized and run through the model span by span.
-    pub fn encode(&self, input: &str, add_special_tokens: bool) -> Result<Vec<PipelineToken>> {
+    pub fn encode(
+        &self,
+        input: EncodeInput,
+        add_special_tokens: bool,
+    ) -> Result<Vec<u32>> {
         let mut output = Vec::new();
         let mut pre_tokens = Vec::new();
         // TODO: reuse scratches across calls instead of building one per encode —
@@ -563,23 +620,50 @@ impl PipelineTokenizer {
     #[doc(hidden)] // public only so `examples/fixture_bench.rs` can drive partial stages
     pub fn encode_generic<const STAGE: u8>(
         &self,
+        input: EncodeInput,
+        add_special_tokens: bool,
+        pre_tokens: &mut Vec<Span>,
+        scratch: &mut PipelineModelScratch,
+        output: &mut Vec<u32>,
+    ) -> Result<()> {
+        match input {
+            EncodeInput::Single(sequence) => {
+                for piece in self.encoding_template.iter_single() {
+                    match piece {
+                        TemplatePart::Specials { ids, type_id } if add_special_tokens => output.extend_from_slice(ids),
+                        TemplatePart::Sequence { sequence_idx: SequenceIdx::First, .. } => self.encode_single::<STAGE>(sequence, add_special_tokens, pre_tokens, scratch, output)?,
+                        _ => {}
+                    };
+                }
+            },
+            EncodeInput::Pair((first, second))  => {
+                for piece in self.encoding_template.iter_pair() {
+                    match piece {
+                        TemplatePart::Specials { ids, type_id } if add_special_tokens => output.extend_from_slice(ids),
+                        TemplatePart::Sequence { sequence_idx: SequenceIdx::First, type_id } => self.encode_single::<STAGE>(first, add_special_tokens, pre_tokens, scratch, output)?,
+                        TemplatePart::Sequence { sequence_idx: SequenceIdx::Second, type_id } => self.encode_single::<STAGE>(second, add_special_tokens, pre_tokens, scratch, output)?,
+                        _ => {}
+                    };
+                }
+            }
+        }
+        Ok(())
+    }
+
+            pub fn encode_single<const STAGE: u8>(
+        &self,
         input: &str,
         add_special_tokens: bool,
         pre_tokens: &mut Vec<Span>,
         scratch: &mut PipelineModelScratch,
-        output: &mut Vec<PipelineToken>,
+        output: &mut Vec<u32>,
     ) -> Result<()> {
-        let PipelinePostProcessor { prefix, suffix } = &self.post_processor;
-        // Prepend prefix tokens, if any
-        // todo: handle post-processing when encoding a pair of sequences (currently unsupported by the PipelineTokenizer)
-        if add_special_tokens && STAGE >= Self::STAGE_POSTPROCESS {
-            output.extend_from_slice(prefix);
-        }
+
         // First, we extract all special tokens from the non-normalized input
         for segment in SpecialSegmentIterator::new(input, &self.added_vocabulary, false) {
             match segment {
                 Segment::SpecialToken(token) => {
-                    output.push(PipelineToken { id: token });
+                    output.push(token);
                 }
                 Segment::Text(chunk) => {
                     let normalized: Cow<str> = if STAGE >= Self::STAGE_NORMALIZE {
@@ -597,7 +681,7 @@ impl PipelineTokenizer {
                     {
                         match segment {
                             Segment::SpecialToken(token) => {
-                                output.push(PipelineToken { id: token });
+                                output.push(token);
                             }
                             Segment::Text(normalized_chunk) => {
                                 if STAGE >= Self::STAGE_SPLIT {
@@ -621,10 +705,6 @@ impl PipelineTokenizer {
                     }
                 }
             };
-        }
-        // Append suffix tokens, if any
-        if add_special_tokens && STAGE >= Self::STAGE_POSTPROCESS {
-            output.extend_from_slice(suffix);
         }
         Ok(())
     }
@@ -1025,7 +1105,7 @@ mod tests {
                 .get_ids()
                 .to_vec();
             let got: Vec<u32> = pipeline
-                .encode(input, add_special_tokens)
+                .encode(input.into(), add_special_tokens)
                 .unwrap()
                 .iter()
                 .map(|t| t.id)
@@ -1050,11 +1130,11 @@ mod tests {
         let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
         let ids = |enc: Vec<PipelineToken>| enc.iter().map(|t| t.id).collect::<Vec<_>>();
         assert_eq!(
-            ids(pipeline.encode("hello world", true).unwrap()),
+            ids(pipeline.encode("hello world".into(), true).unwrap()),
             vec![0, 2, 3, 1]
         );
         assert_eq!(
-            ids(pipeline.encode("hello world", false).unwrap()),
+            ids(pipeline.encode("hello world".into(), false).unwrap()),
             vec![2, 3]
         );
     }
@@ -1131,7 +1211,7 @@ mod tests {
 
         let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
         let ids: Vec<u32> = pipeline
-            .encode("hello world", true)
+            .encode("hello world".into(), true)
             .unwrap()
             .iter()
             .map(|t| t.id)
