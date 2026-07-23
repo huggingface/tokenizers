@@ -5,7 +5,6 @@ multi-threaded while the iterator is drained in 256-line gulps.
 Needs the `datasets` package; downloads wikitext-2 (~12 MB) on first run."""
 
 import datasets
-
 from tokenizers import Tokenizer, models, normalizers, pre_tokenizers
 
 tokenizer = Tokenizer(models.BPE())

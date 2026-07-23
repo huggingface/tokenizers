@@ -2,7 +2,6 @@ import asyncio
 
 import numpy as np
 import pytest
-
 from tokenizers import Encoding, EncodingBatch
 
 from .conftest import SENTENCES, train_word_tokenizer

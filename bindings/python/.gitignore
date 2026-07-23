@@ -1,6 +1,10 @@
 .venv/
 .venv-ft/
+.venv-e2e/
+.venv-e2e-release/
 .release/
+e2e.log
+golden.log
 python_bench.json
 python_bench.md
 .smoke/

@@ -1,0 +1,153 @@
+name: Python e2e & golden tests
+
+# Two complementary suites for the 1.0 bindings rewrite (bindings/python/tests):
+#   e2e (tests/e2e)       — transformers scenario tests. Run on the wheel
+#                           transformers resolves (required green) and on the
+#                           in-tree build (informational while incomplete).
+#   golden (tests/golden) — exact-output conformance against committed goldens
+#                           generated from the released wheel. Required: the
+#                           goldens must reproduce from the release. The
+#                           in-tree run is informational while incomplete.
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - bindings/node/**
+  pull_request:
+    paths-ignore:
+      - bindings/node/**
+
+env:
+  # CI runners have no GPU: resolve torch from the CPU index instead of
+  # pulling ~2 GB of CUDA wheels.
+  UV_TORCH_BACKEND: cpu
+
+jobs:
+  e2e-release:
+    name: e2e on released tokenizers (must pass)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Cache Hub downloads
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
+        with:
+          path: ~/.cache/huggingface
+          key: e2e-hub-${{ hashFiles('bindings/python/tests/e2e/*') }}
+          restore-keys: e2e-hub-
+
+      - name: Run the e2e suite
+        working-directory: ./bindings/python
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: make e2e-release
+
+  golden-freshness:
+    name: goldens reproduce from the released wheel (must pass)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Cache test data
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
+        with:
+          path: tokenizers/data
+          key: golden-data-${{ hashFiles('tokenizers/Makefile', 'tokenizers/tk-encode/examples/bench_models.json') }}
+
+      - name: Download model tokenizers and fixture corpora
+        working-directory: tokenizers
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: make bench-models fixtures HF="uvx --from huggingface_hub hf"
+
+      # Regenerating must reproduce the committed goldens byte for byte. A
+      # difference means either an uncommitted regen, or a new tokenizers
+      # release that changed behavior — both need a human decision.
+      - name: Regenerate and diff the goldens
+        working-directory: ./bindings/python
+        run: |
+          make golden-regen
+          if [ -n "$(git status --porcelain -- tests/golden/goldens)" ]; then
+            git status --porcelain -- tests/golden/goldens
+            git diff -- tests/golden/goldens | head -100
+            echo "::error::committed goldens do not reproduce from the released wheel — run 'make golden-regen' and commit, or investigate the release"
+            exit 1
+          fi
+
+  in-tree:
+    name: e2e + golden on the in-tree build (informational)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
+
+      - name: Cache cargo registry / git / target
+        uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc  # v2.9.1
+        with:
+          workspaces: bindings/python
+          shared-key: python
+          cache-bin: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Cache test data
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
+        with:
+          path: tokenizers/data
+          key: golden-data-${{ hashFiles('tokenizers/Makefile', 'tokenizers/tk-encode/examples/bench_models.json') }}
+
+      - name: Cache Hub downloads
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
+        with:
+          path: ~/.cache/huggingface
+          key: e2e-hub-${{ hashFiles('bindings/python/tests/e2e/*') }}
+          restore-keys: e2e-hub-
+
+      - name: Download model tokenizers and fixture corpora
+        working-directory: tokenizers
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: make bench-models fixtures HF="uvx --from huggingface_hub hf"
+
+      - name: Run the golden conformance layer
+        working-directory: ./bindings/python
+        run: |
+          set -o pipefail
+          make golden 2>&1 | tee golden.log
+
+      - name: Run the e2e suite
+        if: always()
+        working-directory: ./bindings/python
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          set -o pipefail
+          make e2e 2>&1 | tee e2e.log
+
+      # The point of these runs while the rewrite is in progress: surface
+      # what still fails, without hunting through the logs.
+      - name: Post the failure overview to the step summary
+        if: always()
+        working-directory: ./bindings/python
+        run: |
+          for suite in golden e2e; do
+            echo "## ${suite} on the in-tree build"
+            echo '```'
+            sed -n '/short test summary info/,$p' "${suite}.log" 2>/dev/null || echo "no ${suite} results"
+            echo '```'
+          done >> "$GITHUB_STEP_SUMMARY"

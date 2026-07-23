@@ -1,5 +1,4 @@
 import pytest
-
 from tokenizers import Tokenizer, models, pre_tokenizers, trainers
 
 EN = ["the cat sat on the mat", "the dog ate the food", "a cat and a dog"] * 6

@@ -170,11 +170,13 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v6
 
+      # Pinned: a ruff release can change the default rule set and break CI
+      # without any code change (0.16.0 did). Bump deliberately.
       - name: Lint the Python sources with ruff
         working-directory: ./bindings/python
         run: |
-          uvx ruff check benches examples tests
-          uvx ruff format --check benches examples tests
+          uvx ruff@0.16.0 check benches examples tests
+          uvx ruff@0.16.0 format --check benches examples tests
 
   audit:
     name: Audit dependencies
