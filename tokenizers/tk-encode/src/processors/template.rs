@@ -232,6 +232,10 @@ impl SpecialToken {
             Ok(Self { id, ids, tokens })
         }
     }
+
+    pub(crate) fn ids(&self) -> &[u32] {
+        &self.ids
+    }
 }
 
 /// A Template represents a Vec<[`Piece`]>.
@@ -253,6 +257,12 @@ impl SpecialToken {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq)]
 #[serde(transparent)]
 pub struct Template(Vec<Piece>);
+
+impl Template {
+    pub(crate) fn iter_pieces(&self) -> std::slice::Iter<'_, Piece> {
+        self.0.iter()
+    }
+}
 
 impl<T> TryFrom<Vec<T>> for Template
 where

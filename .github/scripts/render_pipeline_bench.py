@@ -44,11 +44,12 @@ CARD_W, CARD_H = 470, 150
 
 # Pipeline encode stages in execution order, keyed to `stage_ns_per_byte`.
 # `added_split` = added/special-token scan (AddedVocabulary), `pre_tokenize` =
-# pre-tokenizer split — two distinct splitting costs. The four sum to `total`.
+# pre-tokenizer split — two distinct splitting costs. `post` = special-token
+# id-frame splice (~0 for models with no post-processor). The five sum to `total`.
 STAGES = [("added_split", "added-token"), ("normalize", "normalize"),
-          ("pre_tokenize", "pre-tokenize"), ("model", "model")]
+          ("pre_tokenize", "pre-tokenize"), ("model", "model"), ("post", "post")]
 STAGE_INK = {"added_split": "#7a5ea8", "normalize": "#2a9d8f",
-             "pre_tokenize": "#e0952b", "model": "#2a78d6"}
+             "pre_tokenize": "#e0952b", "model": "#2a78d6", "post": "#c2559b"}
 
 
 def slugify(name):
@@ -815,9 +816,11 @@ def render_markdown(data, subtitle_base, meta, base, run_id, sizes,
         # regardless of how slow the release baseline is.
         base_col = " Δ base |" if base_lookup else ""
         base_sep = "---:|" if base_lookup else ""
-        md += [f"| Fixture | Group | {baseline_label} MB/s | Pipeline MB/s | Speedup |{base_col} "
-               "added-token | normalize | pre-tokenize | model | Ids |",
-               f"|---|---|---:|---:|---:|{base_sep}---:|---:|---:|---:|:--|"]
+        stage_hdr = "".join(f" {lbl} |" for _, lbl in STAGES)
+        stage_sep = "---:|" * len(STAGES)
+        md += [f"| Fixture | Group | {baseline_label} MB/s | Pipeline MB/s | Speedup |{base_col}"
+               f"{stage_hdr} Ids |",
+               f"|---|---|---:|---:|---:|{base_sep}{stage_sep}:--|"]
         for r in sorted(m["results"], key=lambda r: (r["group"], r["fixture"])):
             mb = r["mbps"]
             flags = []
@@ -827,8 +830,7 @@ def render_markdown(data, subtitle_base, meta, base, run_id, sizes,
                 flags.append(f"≠ {baseline_label}")
             ids = " · ".join(flags) if flags else "match"
             s = r.get("stage_ns_per_byte")
-            stages = " ".join(f"| {stage_cell(s, k)}"
-                              for k in ("added_split", "normalize", "pre_tokenize", "model"))
+            stages = " ".join(f"| {stage_cell(s, k)}" for k, _ in STAGES)
             base_cell = (f"| {fnum(base_speedup(r, base_lookup, m['model']), '×{:.2f}')} "
                          if base_lookup else "")
             md.append(
