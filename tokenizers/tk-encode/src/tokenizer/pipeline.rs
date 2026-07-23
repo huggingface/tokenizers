@@ -32,8 +32,11 @@ use crate::{
 
 use super::{Result, SplitDelimiterBehavior};
 
-/// A pre-token split, a range into the input text.
+/// A pre-token split, a range into the input text. `repr(C)` and layout-identical to
+/// `atomsplit::fsm::Span` (`(u32, u32)`), so the FSM can write final `Split`s straight into a
+/// caller buffer with no scratch->out copy (see [`classify_into_spans`]).
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct Split {
     pub start: u32,
     pub end: u32,
@@ -58,20 +61,28 @@ pub(crate) fn classify_into_spans(
     out: &mut Vec<Split>,
 ) {
     thread_local! {
-        static SCRATCH: RefCell<(Vec<u8>, Vec<Span>)> = const { RefCell::new((Vec::new(), Vec::new())) };
+        static SCRATCH: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
     }
     let n = bytes.len();
     SCRATCH.with(|cell| {
-        let (tags, spans) = &mut *cell.borrow_mut();
+        let tags = &mut *cell.borrow_mut();
         if tags.len() < n {
             tags.resize(n, 0); // grow-only: after the largest segment, no realloc / no re-zeroing
         }
-        if spans.len() < n + 1 {
-            spans.resize(n + 1, (0, 0));
-        }
         classify::<Atoms>(bytes, &mut tags[..n]);
-        let k = fsm(bytes, &tags[..n], &mut spans[..n + 1]);
-        out.extend(spans[..k].iter().map(|&(s, e)| Split { start: s, end: e }));
+        // The FSM writes its `Span`s (== `Split`, repr(C) 2×u32) directly into `out`'s spare
+        // capacity — no `spans` scratch, no scratch->out copy (that copy was ~55% of split on
+        // Latin: ~250k tuple->struct moves per MB). One write, then `set_len`.
+        let base = out.len();
+        out.reserve(n + 1);
+        // SAFETY: reserved n+1 slots; `Split` and `Span` share layout, so the spare capacity is a
+        // valid `&mut [Span]`; the FSM fills `[0, k)` and we only expose those via `set_len`.
+        let spare = unsafe {
+            std::slice::from_raw_parts_mut(out.as_mut_ptr().add(base) as *mut Span, n + 1)
+        };
+        let k = fsm(bytes, &tags[..n], spare);
+        // SAFETY: FSM returned `k <= n+1` initialized spans, all in-bounds valid `Split`s.
+        unsafe { out.set_len(base + k) };
     });
 }
 
