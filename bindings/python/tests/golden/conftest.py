@@ -28,3 +28,5 @@ pytest.importorskip("transformers", reason="golden tests run in a dedicated venv
 TINY_GPT2 = "hf-internal-testing/tiny-random-gpt2"
 TINY_BERT_CLS = "hf-internal-testing/tiny-random-BertForSequenceClassification"
 TINY_BERT_MLM = "hf-internal-testing/tiny-random-BertForMaskedLM"
+TINY_BERT_NER = "hf-internal-testing/tiny-random-BertForTokenClassification"
+TINY_T5 = "hf-internal-testing/tiny-random-t5"

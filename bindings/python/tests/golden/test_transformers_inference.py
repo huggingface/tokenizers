@@ -6,9 +6,9 @@ the tokenizer is responsible for — prompt round-trips, shapes, masks — never
 generation quality.
 """
 
-from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
+from transformers import AutoModelForCausalLM, AutoModelForSeq2SeqLM, AutoTokenizer, pipeline
 
-from .conftest import TINY_BERT_MLM, TINY_GPT2
+from .conftest import TINY_BERT_MLM, TINY_BERT_NER, TINY_GPT2, TINY_T5
 
 
 def test_batched_generate_round_trips_the_prompt():
@@ -36,6 +36,32 @@ def test_text_generation_pipeline():
     result = generate("Hello world", max_new_tokens=5, do_sample=False)
 
     assert result[0]["generated_text"].startswith("Hello world")
+
+
+def test_encoder_decoder_generate():
+    tok = AutoTokenizer.from_pretrained(TINY_T5)
+    model = AutoModelForSeq2SeqLM.from_pretrained(TINY_T5)
+    prompts = ["translate English to German: Hello world", "summarize: A long day"]
+
+    batch = tok(prompts, padding=True, return_tensors="pt")
+    out = model.generate(**batch, max_new_tokens=5, do_sample=False)
+    texts = tok.batch_decode(out, skip_special_tokens=True)
+
+    assert out.shape[0] == 2
+    assert all(isinstance(t, str) for t in texts)
+
+
+def test_token_classification_pipeline_spans():
+    # Entity spans come straight from the tokenizer's offsets: whatever the
+    # (random) model labels, each span must slice the input text exactly.
+    text = "my name is sylvain and i work at huggingface in brooklyn"
+    ner = pipeline("token-classification", model=TINY_BERT_NER, aggregation_strategy="simple")
+
+    entities = ner(text)
+
+    assert entities
+    for entity in entities:
+        assert text[entity["start"] : entity["end"]] == entity["word"].replace("##", "")
 
 
 def test_fill_mask_pipeline():

@@ -84,3 +84,14 @@ def test_byte_level_round_trip():
 
     assert gpt2.encode("Hello world").ids == [15496, 995]
     assert gpt2.decode(gpt2.encode(text).ids) == text
+
+
+def test_sentencepiece_unigram_archetype():
+    # T5's Unigram + Metaspace pipeline: the third big pretrained archetype
+    # after WordPiece and byte-level BPE.
+    t5 = Tokenizer.from_pretrained("google-t5/t5-small")
+    enc = t5.encode("Hello world")
+
+    assert enc.tokens == ["▁Hello", "▁world", "</s>"]
+    assert enc.ids == [8774, 296, 1]
+    assert t5.decode(enc.ids, skip_special_tokens=True) == "Hello world"

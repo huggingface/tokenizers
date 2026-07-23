@@ -12,12 +12,13 @@ from transformers import (
     AutoModelForSequenceClassification,
     AutoTokenizer,
     DataCollatorForLanguageModeling,
+    DataCollatorForSeq2Seq,
     DataCollatorWithPadding,
     Trainer,
     TrainingArguments,
 )
 
-from .conftest import TINY_BERT_CLS, TINY_GPT2
+from .conftest import TINY_BERT_CLS, TINY_BERT_MLM, TINY_GPT2, TINY_T5
 
 
 def test_data_collator_pads_a_ragged_batch():
@@ -46,6 +47,50 @@ def test_causal_lm_collator_masks_padding_in_labels():
     padded = batch["attention_mask"] == 0
     assert (batch["labels"][padded] == -100).all()
     assert (batch["labels"][~padded] == batch["input_ids"][~padded]).all()
+
+
+def test_mlm_collator_masks_only_real_tokens():
+    # The masked-LM recipe (run_mlm.py): tokenize with the special-tokens
+    # mask so the collator knows which positions it must never mask, then
+    # let it pick tokens to corrupt and put their original ids in the labels.
+    tok = AutoTokenizer.from_pretrained(TINY_BERT_MLM)
+    texts = ["a reasonably long sentence used for masked language modeling"] * 4
+    features = [tok(t, return_special_tokens_mask=True) for t in texts]
+
+    torch.manual_seed(0)
+    batch = DataCollatorForLanguageModeling(tok, mlm=True, mlm_probability=0.5)(features)
+
+    selected = batch["labels"] != -100
+    original = torch.tensor([f["input_ids"] for f in features])
+    assert selected.any()
+    assert (batch["input_ids"] == tok.mask_token_id).any()
+    assert (batch["labels"][selected] == original[selected]).all()
+    # [CLS] and [SEP] are never selected (all rows are the same length here,
+    # so the last column is [SEP], not padding).
+    assert (batch["labels"][:, 0] == -100).all()
+    assert (batch["labels"][:, -1] == -100).all()
+
+
+def test_seq2seq_collator_pads_labels_with_minus_100():
+    # The translation recipe again (run_translation.py): inputs pad with the
+    # pad token, labels with -100 so padding never contributes to the loss.
+    tok = AutoTokenizer.from_pretrained(TINY_T5)
+    inputs = tok(["short", "a much longer input sentence right here"])
+    targets = tok(text_target=["ok", "a longer target"])
+    features = [
+        {
+            "input_ids": inputs["input_ids"][i],
+            "attention_mask": inputs["attention_mask"][i],
+            "labels": targets["input_ids"][i],
+        }
+        for i in range(2)
+    ]
+
+    batch = DataCollatorForSeq2Seq(tok, label_pad_token_id=-100)(features)
+
+    assert batch["input_ids"][0, -1] == tok.pad_token_id
+    assert batch["labels"][0, -1] == -100
+    assert batch["labels"][1, -1] == tok.eos_token_id
 
 
 def test_trainer_runs_a_few_steps(tmp_path):
