@@ -194,6 +194,7 @@ impl TryFrom<&PostProcessorWrapper> for PipelinePostProcessor {
                 suffix: vec![PipelineToken { id: *sep_id }].into_boxed_slice(),
             }),
             PostProcessorWrapper::Template(pp) => {
+                // todo: handle pair template
                 let mut prefix = vec![];
                 let mut suffix = vec![];
                 let mut seen_sequence = false;
@@ -555,7 +556,8 @@ impl PipelineTokenizer {
         output: &mut Vec<PipelineToken>,
     ) -> Result<()> {
         let PipelinePostProcessor { prefix, suffix } = &self.post_processor;
-        // Prepend prefix tokens, if any 
+        // Prepend prefix tokens, if any
+        // todo: handle post-processing when encoding a pair of sequences (currently unsupported by the PipelineTokenizer)
         if add_special_tokens && STAGE >= Self::STAGE_POSTPROCESS {
             output.extend_from_slice(prefix);
         }
