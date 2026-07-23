@@ -1,67 +1,99 @@
-.PHONY: style check-style test
+PYTHON := .venv/bin/python
 
-DATA_DIR = data
+# Everything needed to hack on the bindings: venv, deps, release build.
+.PHONY: dev
+dev: .venv
+	. .venv/bin/activate && maturin develop --release
 
-dir_guard=@mkdir -p $(@D)
-check_dirs := examples py_src/tokenizers tests
-check_stubs := $(filter-out py_src/tokenizers/tokenizers.pyi,$(wildcard py_src/tokenizers/*.pyi py_src/tokenizers/*/*.pyi))
+# huggingface_hub backs from_pretrained (the wheel's optional `hub` extra);
+# the pretrained tests and example 01 need it.
+.venv:
+	uv venv .venv
+	uv pip install --python $(PYTHON) maturin numpy pytest ruff mypy huggingface_hub
 
-# Detect uv and set env vars to work around broken dylib install names
-# in python-build-standalone distributions.
-# See: https://github.com/astral-sh/uv/issues/11006
-HAS_UV := $(shell command -v uv >/dev/null 2>&1 && echo 1 || echo 0)
-ifeq ($(HAS_UV),1)
-  PIP := uv pip
-  CARGO_ENV := DYLD_FALLBACK_LIBRARY_PATH=$(shell python3 -c "import sysconfig; print(sysconfig.get_config_var('LIBDIR'))") \
-    PYTHONHOME=$(shell python3 -c "import sys; print(sys.base_prefix)")
-else
-  PIP := pip
-  CARGO_ENV :=
-endif
+# Regenerate the .pyi stubs from the built extension. Run after `make dev`.
+.PHONY: stubs
+stubs:
+	cargo run --manifest-path tools/stub-gen/Cargo.toml
 
-# Format source code automatically
-style:
-	$(CARGO_ENV) cargo run --manifest-path ./tools/stub-gen/Cargo.toml
-	ruff check  $(check_stubs) --select I --fix
-	ruff check  $(check_dirs) --fix
-	ruff format $(check_dirs)
-	ty check py_src --exclude py_src/tokenizers/implementations --exclude py_src/tokenizers/tools/visualizer.py
+.PHONY: test
+test: dev
+	$(PYTHON) -m pytest -q
+	$(PYTHON) -m mypy.stubtest tokenizers --allowlist stubtest_allowlist.txt
 
+# Examples 01-03 read this corpus; fetch it through the tokenizers repo's
+# data rule, pointing it at the dev venv's `hf` CLI so nothing global is
+# needed.
+TOKENIZERS_DIR := ../../tokenizers
+$(TOKENIZERS_DIR)/data/big.txt: | .venv
+	$(MAKE) -C $(TOKENIZERS_DIR) data/big.txt HF=$(abspath .venv/bin/hf)
 
+# Run the end-to-end examples. `datasets` (for 06) is installed on demand so
+# `make dev` stays lean; 06 downloads wikitext-2 (~12 MB) on first run.
+.PHONY: examples
+examples: dev $(TOKENIZERS_DIR)/data/big.txt
+	uv pip install --python $(PYTHON) datasets
+	$(PYTHON) examples/01_pretrained.py
+	$(PYTHON) examples/02_train_and_encode.py
+	$(PYTHON) examples/03_threading.py
+	$(PYTHON) examples/04_train_bert_wordpiece.py
+	$(PYTHON) examples/05_train_bytelevel_bpe.py
+	$(PYTHON) examples/06_train_with_datasets.py
 
-# Check the source code is formatted correctly
-check-style:
-	$(CARGO_ENV) cargo run --manifest-path ./tools/stub-gen/Cargo.toml
-	ruff check $(check_stubs) --select I --fix
-	ruff check $(check_dirs)
-	ruff format py_src/tokenizers/*.pyi
-	ruff format --check $(check_dirs)
-	ty check py_src --exclude py_src/tokenizers/implementations --exclude py_src/tokenizers/tools/visualizer.py
+# End-to-end tests (tests/e2e): the transformers scenario suite, two builds.
+#   e2e          — the in-tree build; failures list what the rewrite still misses
+#   e2e-release  — the tokenizers wheel transformers resolves; must always pass
+# Dedicated venvs: transformers+torch are heavy, and each venv carries its own
+# tokenizers. The dev venv also needs transformers' import-time tokenizers pin
+# lifted, or it refuses our 1.0.0-dev version (see relax_transformers_pin.py).
+.venv-e2e:
+	uv venv $@ --python 3.12
+	uv pip install --python $@/bin/python -r tests/e2e/requirements.txt maturin
+	$@/bin/python tests/e2e/relax_transformers_pin.py
 
+.PHONY: e2e
+e2e: .venv-e2e
+	. .venv-e2e/bin/activate && maturin develop --release
+	.venv-e2e/bin/python -m pytest tests/e2e -q -ra --continue-on-collection-errors
 
-TESTS_RESOURCES = $(DATA_DIR)/small.txt $(DATA_DIR)/roberta.json
+.venv-e2e-release:
+	uv venv $@ --python 3.12
+	uv pip install --python $@/bin/python -r tests/e2e/requirements.txt
 
-# Launch the Python test suite
-test-py: $(TESTS_RESOURCES)
-	$(PIP) install pytest pytest-asyncio huggingface_hub setuptools_rust numpy pyarrow datasets
-	python -m pytest -s -v tests
+.PHONY: e2e-release
+e2e-release: .venv-e2e-release
+	.venv-e2e-release/bin/python -m pytest tests/e2e -q
 
-# Launch the Rust test suite
-# (cargo test --no-default-features uses pyo3's `auto-initialize` which
-# links libpython; this doesn't work on free-threaded Python on macOS
-# runners where libpython3.14t isn't installed in the framework path.)
-test-rs:
-	$(CARGO_ENV) cargo test --no-default-features
+# Golden conformance layer (tests/golden): exact encode/decode outputs on the
+# data/ fixtures, diffed against committed goldens. The goldens are only ever
+# regenerated from the released wheel (golden-regen) — never hand-edited.
+# `golden` is opt-in (env gate) while the rewrite is incomplete; drop the gate
+# once it runs green so plain pytest enforces conformance everywhere.
+.PHONY: golden
+golden: dev
+	TOKENIZERS_GOLDEN=1 $(PYTHON) -m pytest tests/golden -q -ra
 
-# Full test suite
-test: test-py test-rs
+.PHONY: golden-regen
+golden-regen: .venv .release
+	PYTHONPATH=.release $(PYTHON) tests/golden/generate.py
 
-HF_TEST_REPO = hf-internal-testing/tokenizers-test-data
-# Fetch fixtures through the huggingface_hub CLI: it handles auth (HF_TOKEN),
-# retry/backoff on rate limits, and caching for us. CI overrides HF with
-# `uvx --from huggingface_hub hf` to avoid a separate install step.
-HF ?= hf
+# The released PyPI wheel shares our package name, so it lives in its own
+# directory that the bench subprocess puts on PYTHONPATH.
+.release: | .venv
+	uv pip install --python $(PYTHON) --target .release tokenizers
 
-$(DATA_DIR)/% :
-	$(dir_guard)
-	$(HF) download $(HF_TEST_REPO) $* --repo-type dataset --local-dir $(DATA_DIR)
+# Benchmark against the released tokenizers wheel (same script CI runs).
+.PHONY: bench
+bench: dev .release
+	$(PYTHON) benches/bench_vs_release.py
+
+.PHONY: lint
+lint: .venv
+	cargo fmt --check
+	cargo clippy --all-targets -- -D warnings
+	.venv/bin/ruff check benches examples tests
+	.venv/bin/ruff format --check benches examples tests
+
+.PHONY: clean
+clean:
+	rm -rf .venv .venv-e2e .venv-e2e-release .release target tools/stub-gen/target

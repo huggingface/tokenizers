@@ -1,10 +1,19 @@
-# Generated content DO NOT EDIT
+"""Recipes for learning a vocabulary from text."""
 
-from .. import trainers
+from .._native import trainers as _trainers
 
-BpeTrainer = trainers.BpeTrainer
-ParityBpeTrainer = trainers.ParityBpeTrainer
-Trainer = trainers.Trainer
-UnigramTrainer = trainers.UnigramTrainer
-WordLevelTrainer = trainers.WordLevelTrainer
-WordPieceTrainer = trainers.WordPieceTrainer
+Trainer = _trainers.Trainer
+BpeTrainer = _trainers.BpeTrainer
+ParityBpeTrainer = _trainers.ParityBpeTrainer
+UnigramTrainer = _trainers.UnigramTrainer
+WordLevelTrainer = _trainers.WordLevelTrainer
+WordPieceTrainer = _trainers.WordPieceTrainer
+
+__all__ = [
+    "Trainer",
+    "BpeTrainer",
+    "ParityBpeTrainer",
+    "UnigramTrainer",
+    "WordLevelTrainer",
+    "WordPieceTrainer",
+]

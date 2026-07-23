@@ -1,252 +1,203 @@
-<p align="center">
-    <br>
-    <img src="https://huggingface.co/landing/assets/tokenizers/tokenizers-logo.png" width="600"/>
-    <br>
-<p>
-<p align="center">
-    <a href="https://badge.fury.io/py/tokenizers">
-         <img alt="Build" src="https://badge.fury.io/py/tokenizers.svg">
-    </a>
-    <a href="https://github.com/huggingface/tokenizers/blob/master/LICENSE">
-        <img alt="GitHub" src="https://img.shields.io/github/license/huggingface/tokenizers.svg?color=blue">
-    </a>
-</p>
-<br>
+# tokenizers (Python bindings)
 
-# Tokenizers
+Tokenizers turn text into the sequences of integer ids that language models
+consume. This package is the Python interface to Hugging Face's Rust
+[tokenizers](https://github.com/huggingface/tokenizers) library.
 
-Provides an implementation of today's most used tokenizers, with a focus on performance and
-versatility.
-
-Bindings over the [Rust](https://github.com/huggingface/tokenizers/tree/master/tokenizers) implementation.
-If you are interested in the High-level design, you can go check it there.
-
-Otherwise, let's dive in!
-
-## Main features:
-
- - Train new vocabularies and tokenize using 4 pre-made tokenizers (Bert WordPiece and the 3
-   most common BPE versions).
- - Extremely fast (both training and tokenization), thanks to the Rust implementation. Takes
-   less than 20 seconds to tokenize a GB of text on a server's CPU.
- - Easy to use, but also extremely versatile.
- - Designed for research and production.
- - Normalization comes with alignments tracking. It's always possible to get the part of the
-   original sentence that corresponds to a given token.
- - Does all the pre-processing: Truncate, Pad, add the special tokens your model needs.
-
-### Installation
-
-#### With pip:
-
-```bash
-pip install tokenizers
-```
-
-#### From sources:
-
-To use this method, you need to have the Rust installed:
-
-```bash
-# Install with:
-curl https://sh.rustup.rs -sSf | sh -s -- -y
-export PATH="$HOME/.cargo/bin:$PATH"
-```
-
-Once Rust is installed, you can compile doing the following
-
-```bash
-git clone https://github.com/huggingface/tokenizers
-cd tokenizers/bindings/python
-
-# Create a virtual env (you can use yours as well)
-python -m venv .env
-source .env/bin/activate
-
-# Install `tokenizers` in the current virtual env
-pip install -e .
-```
-
-### Free-threaded Python (3.14t)
-
-`tokenizers` ships dedicated wheels for the [free-threaded build of CPython](https://docs.python.org/3.14/howto/free-threading-python.html)
-(`python3.14t`). These wheels declare `Py_MOD_GIL_NOT_USED`, so importing
-`tokenizers` does **not** force the GIL back on — multi-threaded code stays
-GIL-free.
-
-The full mutable API works on 3.14t — the same as on regular CPython.
-Setters are thread-safe: the inner tokenizer state is wrapped in a
-`std::sync::RwLock`, so concurrent `tokenizer.X = …` from multiple threads
-serialize correctly and concurrent encode operations take a read guard
-that blocks writers only briefly.
+This is the 1.x rewrite of the bindings: it loads the same `tokenizer.json`
+files as 0.x and produces the same ids, but is much faster through Python —
+encoding runs in Rust threads without blocking your Python program, and ids
+come back as ready-to-use `numpy` arrays.
 
 ```python
-from tokenizers import Tokenizer
-from tokenizers.models import BPE
-from tokenizers.pre_tokenizers import Whitespace
-from tokenizers.processors import ByteLevel
+import tokenizers as tk
 
-tok = Tokenizer(BPE())
-tok.pre_tokenizer = Whitespace()                 # ✅ thread-safe on 3.14t
-tok.post_processor = ByteLevel(trim_offsets=True)
+tok = tk.Tokenizer.from_file("tokenizer.json")
+
+# encode returns an Encoding: ids plus the metadata a model consumes.
+# add_special_tokens=True (the default) inserts the tokenizer's template
+# tokens, like BERT's [CLS]/[SEP]; pass False to leave them off.
+enc = tok.encode("Hello world")
+enc.ids                # list[int]
+enc.tokens             # list[str]
+enc.attention_mask     # list[int]
+
+batch = tok.encode_batch(["Hello world", "How are you?"])
+batch[0].ids           # a batch is a sequence of Encodings
+
+# When you only want the ids, encode_ids skips the Encoding and returns them as
+# a numpy.uint32 array with no copy (encode_batch_ids returns a list of arrays).
+ids = tok.encode_ids("Hello world")
 ```
 
-**Caveat — compound mutations are not atomic.** Statements like
-`tokenizer.post_processor.special_tokens = X` evaluate in two steps from
-Python's point of view (read attribute → set attribute on the result). If
-another thread swaps `tokenizer.post_processor` between those steps, the
-mutation lands on an orphaned component. This is the same class of race
-as `dict[k] = v` interleaved with `dict.clear()` — coordinate with a Python
-lock if you need the compound to be atomic.
+`encode` and `encode_ids` run exactly the same work; `encode` wraps the ids in
+an `Encoding` and derives its fields on access, so you never pay for what you
+don't read. Fields that need per-token provenance the pipeline does not track
+yet — which tokens are special (`special_tokens_mask`, `sequence_ids`),
+`word_ids`, and character `offsets` — raise `NotImplementedError` rather than
+return a guess.
 
-For the full thread-safety analysis, see
-[`docs/free-threading-audit.md`](./docs/free-threading-audit.md).
-
-### Load a pretrained tokenizer from the Hub
+To load a tokenizer straight from the [Hugging Face Hub](https://huggingface.co),
+install the `hub` extra (`pip install 'tokenizers[hub]'`):
 
 ```python
-from tokenizers import Tokenizer
-
-tokenizer = Tokenizer.from_pretrained("bert-base-cased")
+tok = tk.Tokenizer.from_pretrained("openai-community/gpt2")
 ```
 
-### Using the provided Tokenizers
+## Training your own tokenizer
 
-We provide some pre-build tokenizers to cover the most common cases. You can easily load one of
-these using some `vocab.json` and `merges.txt` files:
+A tokenizer has three parts, applied in order:
+
+- a **normalizer** cleans the text (lowercasing, Unicode fix-ups),
+- a **pre-tokenizer** cuts it into pieces (usually words),
+- the **model** turns each piece into ids, using a vocabulary learned during
+  training (BPE, WordPiece, Unigram, or WordLevel).
+
+You pick the parts, then train the model's vocabulary on your own text:
 
 ```python
-from tokenizers import CharBPETokenizer
-
-# Initialize a tokenizer
-vocab = "./path/to/vocab.json"
-merges = "./path/to/merges.txt"
-tokenizer = CharBPETokenizer(vocab, merges)
-
-# And then encode:
-encoded = tokenizer.encode("I can feel the magic, can you?")
-print(encoded.ids)
-print(encoded.tokens)
+tok = tk.Tokenizer(tk.models.BPE())
+tok.normalizer = tk.normalizers.Lowercase()
+tok.pre_tokenizer = tk.pre_tokenizers.Whitespace()
+tok.train_from_iterator(lines, trainer=tk.trainers.BpeTrainer(vocab_size=30000))
+tok.save("tokenizer.json")
 ```
 
-And you can train them just as simply:
+The `examples/` directory walks through all of this, starting with the
+simplest case (load a pretrained file and encode).
+
+## Threading and async
+
+Encoding releases the Python interpreter lock (the GIL), so this package
+plays well with threads and event loops:
+
+- Calling `encode`/`encode_ids` from several Python threads scales — the
+  threads really run in parallel, on every interpreter (free-threaded or not).
+- `encode_batch`/`encode_batch_ids` parallelize one batch across Rust threads.
+  Set the `TOKENIZERS_PARALLELISM` environment variable to `false`/`true` to
+  disable/force this.
+- In `asyncio` code, `await tok.async_encode(text)` (and the `_ids` /
+  `_batch` variants) keep the event loop free while Rust encodes in a worker
+  thread.
 
 ```python
-from tokenizers import CharBPETokenizer
-
-# Initialize a tokenizer
-tokenizer = CharBPETokenizer()
-
-# Then train it!
-tokenizer.train([ "./path/to/files/1.txt", "./path/to/files/2.txt" ])
-
-# Now, let's use it:
-encoded = tokenizer.encode("I can feel the magic, can you?")
-
-# And finally save it somewhere
-tokenizer.save("./path/to/directory/my-bpe.tokenizer.json")
+enc = await tok.async_encode("Hello world")
 ```
 
-#### Provided Tokenizers
+## Breaking changes vs 0.x
 
- - `CharBPETokenizer`: The original BPE
- - `ByteLevelBPETokenizer`: The byte level version of the BPE
- - `SentencePieceBPETokenizer`: A BPE implementation compatible with the one used by SentencePiece
- - `BertWordPieceTokenizer`: The famous Bert tokenizer, using WordPiece
+1.x is a ground-up rewrite with a smaller, faster API. The headline changes:
 
-All of these can be used and trained as explained above!
+- `encode` returns an `Encoding` carrying ids, tokens, type ids, and the
+  attention mask. Special-tokens mask, sequence ids, word ids, and character
+  offsets are not computed yet and raise; truncation and padding
+  (`enable_truncation`/`enable_padding`) are gone. `encode_ids` is the new
+  name for a bare `numpy.uint32` id array.
+- `encode` takes a single text: no `pair=` argument, no `is_pretokenized=`.
+- Not implemented yet (loud errors, never wrong ids): `decode` and the
+  `Metaspace` pre-tokenizer (t5-style files).
+- Custom Python components (normalizers/pre-tokenizers written in Python)
+  are not supported; components are plain values you assign, not objects
+  you subclass.
+- `decoders`, `processors`, and the `implementations` helpers
+  (`BertWordPieceTokenizer`, …) are gone.
+- **`transformers` cannot use 1.0 as its backend yet** — it needs the
+  `Encoding` fields that still raise (offsets, special-tokens mask, sequence
+  ids) plus `decode`. Pin `tokenizers<1.0` for `transformers`.
 
-### Build your own
+The full list, including smaller removals and renames, is in the 1.0.0 entry
+of [CHANGELOG.md](CHANGELOG.md).
 
-Whenever these provided tokenizers don't give you enough freedom, you can build your own tokenizer,
-by putting all the different parts you need together.
-You can check how we implemented the [provided tokenizers](https://github.com/huggingface/tokenizers/tree/master/bindings/python/py_src/tokenizers/implementations) and adapt them easily to your own needs.
+Kept from 0.x: awaitable encodes (`async_encode_ids`/`async_encode_batch_ids`)
+and free-threaded Python support. New in 1.0: parity-aware BPE training across
+several languages (`trainers.ParityBpeTrainer`).
 
-#### Building a byte-level BPE
+## Build and use locally
 
-Here is an example showing how to build your own byte-level BPE by putting all the different pieces
-together, and then saving it to a single file:
+Requirements: Rust (stable), [uv](https://docs.astral.sh/uv/), Python ≥ 3.10.
 
-```python
-from tokenizers import Tokenizer, models, pre_tokenizers, decoders, trainers, processors
-
-# Initialize a tokenizer
-tokenizer = Tokenizer(models.BPE())
-
-# Customize pre-tokenization and decoding
-tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=True)
-tokenizer.decoder = decoders.ByteLevel()
-tokenizer.post_processor = processors.ByteLevel(trim_offsets=True)
-
-# And then train
-trainer = trainers.BpeTrainer(
-    vocab_size=20000,
-    min_frequency=2,
-    initial_alphabet=pre_tokenizers.ByteLevel.alphabet()
-)
-tokenizer.train([
-    "./path/to/dataset/1.txt",
-    "./path/to/dataset/2.txt",
-    "./path/to/dataset/3.txt"
-], trainer=trainer)
-
-# And Save it
-tokenizer.save("byte-level-bpe.tokenizer.json", pretty=True)
-```
-
-Now, when you want to use this tokenizer, this is as simple as:
-
-```python
-from tokenizers import Tokenizer
-
-tokenizer = Tokenizer.from_file("byte-level-bpe.tokenizer.json")
-
-encoded = tokenizer.encode("I can feel the magic, can you?")
-```
-
-### Typing support and stub generation
-
-The compiled PyO3 extension does not expose type annotations, so editors and type checkers would otherwise see most objects as `Any`. To provide full typing support, we use a two-step stub generation process:
-
-1. **Rust introspection** (`tools/stub-gen/`): Uses `pyo3-introspection` to analyze the compiled extension and generate `.pyi` stub files
-2. **Python enrichment** (`stub.py`): Adds docstrings from the runtime module and generates forwarding `__init__.py` shims
-
-#### Running stub generation
-
-The easiest way to regenerate stubs is via `make style`:
-
-```bash
+```sh
 cd bindings/python
-make style
+make dev          # venv + deps + release build, installed editable
+source .venv/bin/activate
+python -c "import tokenizers; print(tokenizers.__version__)"
 ```
 
-This will:
-1. Build the extension with `maturin develop --release`
-2. Run introspection to generate `.pyi` files
-3. Enrich stubs with docstrings via `stub.py`
-4. Format with `ruff`
+Rebuild after changing Rust code with `make dev` again (or `maturin develop
+--release` inside the venv). Always use `--release`: a debug build encodes
+10-100× slower and any timing you take from it is meaningless.
 
-#### Running manually
+To build a distributable wheel instead: `maturin build --release` (find it in
+`target/wheels/`). Default wheels use the stable Python ABI (abi3): one
+binary per platform covers CPython 3.10–3.14. Free-threaded interpreters
+(3.13t/3.14t) cannot load abi3 extensions, so their wheels are built
+per-version with `maturin build --no-default-features`.
 
-To run the stub generator directly:
+Other targets:
 
-```bash
-cd bindings/python
-cargo run --manifest-path tools/stub-gen/Cargo.toml
-python stub.py
+```sh
+make test            # pytest suite in tests/
+make examples        # run the end-to-end examples (needs ../../tokenizers/data)
+make bench           # benchmark against the released tokenizers wheel from PyPI
+make e2e             # transformers end-to-end suite (tests/e2e) on this build
+make e2e-release     # same suite on the released wheel — must always pass
+make golden          # exact-output conformance vs the committed goldens (tests/golden)
+make golden-regen    # regenerate the goldens from the released wheel
+make stubs           # regenerate the .pyi type stubs from the built extension
+make lint            # cargo fmt + clippy, ruff over the python sources
 ```
 
-The stub generator automatically:
-- Builds the extension using maturin
-- Copies the built `.so` to the project root for introspection
-- Detects and sets `PYTHONHOME` for embedded Python (handles uv/venv environments)
-- Generates stubs to `py_src/tokenizers/`
+The examples and the benchmark read test data from `../../tokenizers/data`.
+Fetch it once with `make -C ../../tokenizers fixtures bench-models data/big.txt`
+(needs `HF_TOKEN` for the mirror repo).
 
-#### Troubleshooting
+## Type stubs are generated
 
-If you encounter Python initialization errors, you can manually set `PYTHONHOME`:
+Do not edit the `.pyi` files under `py_src/` by hand. They are produced by
+`tools/stub-gen`, which reads the introspection metadata pyo3 embeds in the
+built extension — so run `make dev` first, then `make stubs`. Docstrings and
+signatures come from the Rust sources; return types that introspection cannot
+see (numpy arrays, `Self`) are declared with
+`#[pyo3(signature = (...) -> "Type")]` annotations in the Rust code.
 
-```bash
-export PYTHONHOME=$(python3 -c 'import sys; print(sys.base_prefix)')
-cargo run --manifest-path tools/stub-gen/Cargo.toml
-```
+CI enforces this twice: the committed stubs must match what stub-gen
+produces, and `mypy.stubtest` checks them against the actual runtime
+(accepted differences are listed and explained in `stubtest_allowlist.txt`).
+
+## How it works (internals)
+
+A `Tokenizer` holds two things behind one lock:
+
+- the **spec** — the plain Rust `Tokenizer`, the serializable source of truth.
+  Setters, `train*`, and `add_*` write here.
+- the **compiled pipeline** — an immutable `Arc<PipelineTokenizer>` the encode
+  methods share with worker threads. Any mutation drops it; the next encode
+  rebuilds it once. Configurations the pipeline cannot run fail at that point
+  with the reason, never with different ids.
+
+Every method releases the GIL before touching the lock — enforced at compile
+time by `DetachedRwLock` (see `src/detached_lock.rs`), with a clippy ban on
+`Python::attach` as the backstop. Input strings are borrowed, not copied, and
+the output arrays take ownership of the Rust buffers, also copy-free.
+
+## Benchmark
+
+`benches/bench_vs_release.py` times batch encoding end-to-end through Python
+against the latest released `tokenizers` wheel, on the same corpora and ~10 KiB
+chunking as the Rust benchmark (`tk-encode/examples/fixture_bench.rs`): every
+fixture under `data/fixtures/{lang,modalities}`, warmed up, median of N runs,
+single-thread per fixture plus one multi-thread sweep, ids verified equal
+before the run counts. Because the released wheel and this build share the
+package name, the release is installed into `.release/` (`make bench` does
+this) and benched in a subprocess with `PYTHONPATH` pointing there.
+
+One caveat when quoting numbers: the 0.x side is timed on its fastest API
+(`encode_batch_fast`), but it still builds `Encoding` objects, while 1.x
+returns bare id arrays — part of the speedup is the new API doing strictly
+less output work. That is what a user pays end-to-end, but it is not a
+model-algorithm-only comparison.
+
+CI runs it in the `python-bindings-bench` job of the Pipeline Benchmark
+workflow, posts the table to the run's step summary, and the report job
+renders it as a chart (`.github/scripts/render_python_bench.py`) appended to
+the benchmark section in the PR description, next to the Rust charts.

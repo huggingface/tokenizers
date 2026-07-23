@@ -4,6 +4,78 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] (unreleased)
+
+Ground-up rewrite of the bindings on the `PipelineTokenizer` encode path.
+Same `tokenizer.json` files and the same ids as 0.x, much faster through
+Python: encode never holds the GIL, batches run multi-threaded in Rust,
+inputs are borrowed instead of copied, and ids come back as `numpy.uint32`
+arrays without a copy.
+
+Breaking changes — encoding:
+
+- `encode`/`encode_batch` return an `Encoding`/`EncodingBatch` carrying ids,
+  tokens, type ids, and the attention mask (`ids` is a `list`; `ids_array()`
+  gives a numpy array). `encode_ids`/`encode_batch_ids` are the new names for
+  the bare-`numpy.uint32` path — same encode work, no `Encoding` wrapper. Not
+  carried yet, and raising rather than returning a guess: special-tokens mask,
+  sequence ids, word ids, character offsets, and the char/word/token mapping
+  helpers built on them. Overflowing/stride, truncation, and padding
+  (`enable_truncation`/`enable_padding` and their getters) are gone.
+- `encode` takes a single text: the `pair=` argument and the
+  `is_pretokenized=` mode no longer exist (same for `encode_batch`).
+- `add_special_tokens=True` (the default) inserts the post-processor's template
+  tokens, as in 0.x; pass `False` to skip them.
+- Not implemented yet (loud errors, never wrong ids): `decode` and the
+  `Metaspace` pre-tokenizer. `decode_batch`, `DecodeStream`,
+  `encode_batch_fast`, and `Tokenizer.post_process` are removed.
+- **`transformers`' `PreTrainedTokenizerFast` cannot run on 1.0 yet** — it
+  needs the `Encoding` fields that still raise (offsets, special-tokens mask,
+  sequence ids), padding/truncation, and pair inputs. Pin `tokenizers<1.0` for
+  `transformers` until it targets 1.x.
+
+Breaking changes — components and introspection:
+
+- Components (models, normalizers, pre-tokenizers, trainers) are immutable
+  values you construct and assign. All attribute getters/setters,
+  `__getstate__`/`__setstate__`, and the helper methods
+  (`Normalizer.normalize_str`, `PreTokenizer.pre_tokenize_str`,
+  `Model.tokenize`, `Model.save`, `Model.get_trainer`, …) are gone; `repr()`
+  shows a component's full `tokenizer.json` serialization instead.
+- Custom Python components (`Normalizer.custom`, `PreTokenizer.custom`,
+  `Decoder.custom`) are not supported, and the supporting types
+  (`NormalizedString`, `PreTokenizedString`, `Regex`, `Token`) are removed.
+  `Replace`/`Split` take `regex=True` instead of a `Regex` object.
+- Models no longer accept in-memory vocabs: `BPE(vocab, merges)`,
+  `WordPiece(vocab)`, `WordLevel(vocab)`, `Unigram(vocab)` and the
+  `read_file`/`from_file` helpers are gone (only `BPE.from_file` remains).
+  Build models by training or by loading a `tokenizer.json`.
+- `decoders`, `processors`, the `implementations` helpers
+  (`BertWordPieceTokenizer`, …), and `tools` (`EncodingVisualizer`) are gone.
+- `pre_tokenizers.ByteLevel` no longer takes `add_prefix_space` (files using
+  it fail at encode); `normalizers.Precompiled`/`Nmt`/`ByteLevel` cannot be
+  constructed from Python (loaded ones still run).
+
+Breaking changes — `Tokenizer` API and packaging:
+
+- Removed: `Tokenizer.from_str` (use `from_buffer`), `get_added_tokens_decoder`,
+  `num_special_tokens_to_add`, the `encode_special_tokens` property, and the
+  `length=` argument of `train_from_iterator`.
+- Most arguments are now keyword-only: `get_vocab(True)` becomes
+  `get_vocab(with_added_tokens=True)`, and so on.
+- Errors raise the new `tokenizers.TokenizersError` (a `RuntimeError` was
+  raised before in most places).
+- `from_pretrained` now calls the `huggingface_hub` Python package, which
+  moved from a required dependency to the `hub` extra:
+  `pip install 'tokenizers[hub]'`. `numpy>=1.24` is a new required dependency.
+
+Kept: awaitable encodes — `async_encode`/`async_encode_batch` (returning an
+`Encoding`/`EncodingBatch`) and `async_encode_ids`/`async_encode_batch_ids`,
+now a thin `asyncio.to_thread` wrapper (no tokio runtime) — and free-threaded
+Python support (default wheels are abi3-py310; free-threaded interpreters get
+their own non-abi3 wheels). New in 1.0: parity-aware BPE training
+(`trainers.ParityBpeTrainer`), which never shipped in a 0.x release.
+
 ## [0.13.2] 
 
 - [#1096] Python 3.11 support

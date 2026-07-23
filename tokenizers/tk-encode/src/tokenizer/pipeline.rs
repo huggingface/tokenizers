@@ -158,15 +158,16 @@ impl TryFrom<PreTokenizerWrapper> for PipelinePreTokenizer {
 /// Processors that don't reduce to such a frame are rejected at conversion.
 ///
 /// Example:
-///     PipelinePostProcessor {
-///         prefix: vec![100].into_boxed_slice(),
-///         suffix: vec![101, 102].into_boxed_slice()
-///     };
+/// ```text
+/// PipelinePostProcessor {
+///     prefix: vec![100].into_boxed_slice(),
+///     suffix: vec![101, 102].into_boxed_slice()
+/// };
 ///
-///     [CLS] The quick Brown fox  [SEP]
-///     <100>|  <3> <4> <19> <67> | <101> <102>
-///   prefix |  sequence encoding | suffix
-///
+///   [CLS] The quick Brown fox  [SEP]
+///   <100>|  <3> <4> <19> <67> | <101> <102>
+/// prefix |  sequence encoding | suffix
+/// ```
 #[derive(Debug, Default)]
 pub struct PipelinePostProcessor {
     prefix: Box<[PipelineToken]>,
@@ -521,6 +522,8 @@ impl PipelineTokenizer {
     pub fn encode(&self, input: &str, add_special_tokens: bool) -> Result<Vec<PipelineToken>> {
         let mut output = Vec::new();
         let mut pre_tokens = Vec::new();
+        // TODO: reuse scratches across calls instead of building one per encode —
+        // see the ScratchPool pattern in https://github.com/huggingface/tokenizers/pull/2223
         let mut scratch = self.model.init_scratch();
 
         self.encode_generic::<{ Self::STAGE_POSTPROCESS }>(
@@ -531,6 +534,17 @@ impl PipelineTokenizer {
             &mut output,
         )?;
         Ok(output)
+    }
+
+    /// Decode token ids back to a `String`.
+    ///
+    /// Not implemented yet — the pipeline decode path is being built. It fails
+    /// loud (rather than returning a plausible-but-wrong string) so the oracle
+    /// test and the comparative benchmark report decode as *pending* instead of
+    /// silently validating garbage. Implementing this flips the ignored
+    /// `pipeline_decode_oracle` test on and lights up the decode charts.
+    pub fn decode(&self, _ids: &[u32], _skip_special_tokens: bool) -> Result<String> {
+        Err("PipelineTokenizer::decode is not implemented yet".into())
     }
 
     /// Single source of truth for the encode pipeline, generic over how many stages

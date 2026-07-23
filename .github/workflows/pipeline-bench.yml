@@ -1,10 +1,11 @@
 name: Pipeline Benchmark
 
 # Comparative benchmark: the experimental `PipelineTokenizer` vs the latest
-# *released* tokenizers crate (the baseline to beat — the in-tree legacy
-# `Tokenizer` is being phased out, so it is only the id-correctness oracle,
-# never a benched series), for every model in
-# tk-encode/examples/bench_models.json across every corpus in data/fixtures/.
+# *released* tokenizers crate — both the baseline to beat AND the correctness
+# reference (`ids_match`/`text_match`). The in-tree legacy `Tokenizer` is being
+# phased out, so it only *builds* the pipeline and is never benched or trusted as
+# an oracle. Runs for every model in tk-encode/examples/bench_models.json across
+# every corpus in data/fixtures/.
 # Measures single- and multi-thread throughput (1/2/4/8/device-max), per-
 # implementation memory footprint (RSS), and stripped minimal-binary size. The
 # release dep is behind tk-encode's `bench-baseline` feature, so production
@@ -46,6 +47,7 @@ on:
     paths:
       - "tokenizers/tk-encode/**"
       - "tokenizers/src/**"
+      - "bindings/python/**"
       - ".github/workflows/pipeline-bench.yml"
       - ".github/scripts/render_pipeline_bench.py"
       - "tokenizers/tk-encode/examples/bench_models.json"
@@ -131,6 +133,46 @@ jobs:
             tokenizers/target/release/examples/binsize_pipeline
           retention-days: 3
 
+  # Pipeline oracle tests: encode + decode parity of the pipeline against the
+  # released crate. They live behind `bench-baseline` (they link the released
+  # crate), so a plain `cargo test` skips them — this is where they run. Same
+  # fixtures + models as the shards; the decode oracle is #[ignore]d until
+  # PipelineTokenizer::decode lands, so only encode parity runs today.
+  oracle:
+    name: pipeline oracle tests
+    if: github.event_name != 'pull_request' || github.event.label.name == 'run-pipeline-bench'
+    runs-on:
+      group: aws-general-8-plus
+    defaults:
+      run:
+        working-directory: tokenizers
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      # onig_sys (a bench-baseline dep) generates bindings via bindgen → needs libclang.
+      - name: Install libclang (onig_sys → bindgen)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libclang-dev
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Cache fixtures + model tokenizers
+        uses: actions/cache@v4
+        with:
+          path: tokenizers/data
+          key: bench-data-${{ hashFiles('tokenizers/Makefile', 'tokenizers/tk-encode/examples/bench_models.json') }}
+
+      - name: Download fixtures and model tokenizers
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: make fixtures bench-models HF="uvx --from huggingface_hub hf"
+
+      - name: Run pipeline oracle tests (parity vs the released crate)
+        run: cargo test -p tk-encode --features bench-baseline --test pipeline_oracle --test pipeline_decode_oracle
+
   # Fan-out: each shard benches the i-th of SHARDS contiguous manifest slices on its
   # own 8-vCPU runner (isolated + parallel), running the prebuilt binary, and uploads
   # its partial JSON. No toolchain here — the shards only fetch data + the binary.
@@ -188,12 +230,86 @@ jobs:
           path: tokenizers/pipeline_bench_${{ matrix.shard }}.json
           retention-days: 3
 
+  # Python bindings: this branch's wheel vs the latest *released* tokenizers
+  # wheel from PyPI, timed end-to-end through Python — input conversion,
+  # encode, and output objects all count, because that is what a user pays.
+  # Both are named `tokenizers`, so the release is installed into its own
+  # directory (pip --target) and benched in a subprocess with PYTHONPATH
+  # pointing there. Same models (bench_models.json) and fixture corpora as
+  # the Rust bench; unsupported models are reported as skipped, an id
+  # mismatch fails the job. Results land in the run's step summary + an
+  # artifact.
+  python-bindings-bench:
+    name: Python bindings vs released wheel
+    if: github.event_name != 'pull_request' || github.event.label.name == 'run-pipeline-bench'
+    runs-on:
+      group: aws-general-8-plus
+    env:
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: "true"
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Cache fixtures + model tokenizers
+        uses: actions/cache@v4
+        with:
+          path: tokenizers/data
+          key: bench-data-${{ hashFiles('tokenizers/Makefile', 'tokenizers/tk-encode/examples/bench_models.json') }}
+
+      - name: Download fixtures and model tokenizers
+        working-directory: tokenizers
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: make fixtures bench-models HF="uvx --from huggingface_hub hf"
+
+      - name: Build and install this branch's wheel
+        working-directory: bindings/python
+        run: |
+          uv venv .venv
+          uv pip install --python .venv/bin/python maturin numpy
+          source .venv/bin/activate && maturin develop --release
+
+      - name: Install the released wheel into its own directory
+        working-directory: bindings/python
+        run: uv pip install --python .venv/bin/python --target .release tokenizers
+
+      - name: Bench against the released wheel
+        working-directory: bindings/python
+        run: |
+          .venv/bin/python benches/bench_vs_release.py \
+            --manifest ../../tokenizers/tk-encode/examples/bench_models.json \
+            --json python_bench.json --markdown python_bench.md
+          cat python_bench.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: python-bindings-bench
+          path: |
+            bindings/python/python_bench.json
+            bindings/python/python_bench.md
+          retention-days: 30
+
   # Fan-in: concatenate the shard partials (in shard order = manifest order),
-  # then render + upload charts + update the PR, once.
+  # then render + upload charts + update the PR, once. Also folds in the Python
+  # bindings bench (chart + numbers) when its job produced results — but never
+  # blocks on it: a failed/missing Python bench only drops that section.
   report:
     name: PipelineTokenizer vs latest release
-    needs: bench
-    if: github.event_name != 'pull_request' || github.event.label.name == 'run-pipeline-bench'
+    needs: [bench, python-bindings-bench]
+    if: >-
+      !cancelled() && needs.bench.result == 'success' &&
+      (github.event_name != 'pull_request' || github.event.label.name == 'run-pipeline-bench')
     runs-on:
       group: aws-general-8-plus
     defaults:
@@ -331,6 +447,28 @@ jobs:
           echo "No base baseline available (no tag, no base-branch artifact) — comparison skipped."
           echo "has_base=false" >> "$GITHUB_OUTPUT"
 
+      # The Python bindings section: render its chart before "Render report" so
+      # the shared rasterize glob below picks it up. Missing artifact (failed or
+      # skipped python-bindings-bench) → section skipped, report unaffected.
+      - name: Download Python bindings bench results
+        continue-on-error: true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8
+        with:
+          name: python-bindings-bench
+          path: tokenizers/pybench
+
+      - name: Render Python bindings section
+        run: |
+          if [ -f pybench/python_bench.json ]; then
+            base_url="https://huggingface.co/datasets/hf-internal-testing/tokenizers-bench/resolve/main/charts"
+            python3 ${{ github.workspace }}/.github/scripts/render_python_bench.py \
+              pybench/python_bench.json \
+              --img-base "$base_url" \
+              --run-id "${{ github.run_id }}"
+          else
+            echo "No Python bindings bench results — section skipped."
+          fi
+
       - name: Render report
         run: |
           base_url="https://huggingface.co/datasets/hf-internal-testing/tokenizers-bench/resolve/main/charts"
@@ -369,6 +507,14 @@ jobs:
             charts_upload charts --repo-type dataset \
             --commit-message "charts: pipeline-bench run ${{ github.run_id }}"
 
+      # Fold the Python bindings section into the report so the step summary and
+      # the PR-description upsert below carry it inside the same marker block.
+      - name: Append Python bindings section to the report
+        run: |
+          if [ -f python_bench_section.md ]; then
+            cat python_bench_section.md >> pipeline_bench.md
+          fi
+
       - name: Write step summary
         run: cat pipeline_bench.md >> "$GITHUB_STEP_SUMMARY"
 
@@ -405,16 +551,22 @@ jobs:
           gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/labels/run-pipeline-bench" \
             -X DELETE || true
 
-      # Pipeline ids must match this tree's Tokenizer. Baseline id mismatches
-      # (ids_match_baseline) are report-only: a branch may fix encode bugs.
-      - name: Fail on id mismatches
+      # Pipeline encode ids (`ids_match`) AND decode text (`text_match`) must match
+      # the released crate. Both are null when the release can't load a model (no
+      # reference), and `text_match` is null while decode is a stub → inert until
+      # the pipeline can decode.
+      - name: Fail on id / decode mismatches
         run: |
           python3 -c "
           import json, sys
           models = json.load(open('pipeline_bench.json'))['models']
-          bad = [f\"{m['model']}/{r['fixture']}\" for m in models
+          ids = [f\"{m['model']}/{r['fixture']}\" for m in models
                  for r in m['results'] if r.get('ids_match') is False]
-          sys.exit(f'ids diverge on: {bad}' if bad else 0)
+          text = [f\"{m['model']}/{r['fixture']}\" for m in models
+                  for r in m['results'] if r.get('text_match') is False]
+          errs = ([f'ids diverge on: {ids}'] if ids else []) + \
+                 ([f'decode diverges on: {text}'] if text else [])
+          sys.exit(' · '.join(errs) if errs else 0)
           "
 
       # Establish/refresh the base-branch baseline: on a push to

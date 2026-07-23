@@ -1,7 +1,18 @@
 name: Build PR Documentation
 
+# docs/source-doc-builder describes the 0.x Python API. The bindings were
+# rewritten for 1.0 (PipelineTokenizer); until the docs are rewritten to
+# match, PR doc previews only run on demand. On dispatch, pass the PR's head
+# sha and number by hand (they have no value outside a pull_request event).
 on:
-  pull_request:
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: "Head commit sha of the PR to build docs for"
+        required: true
+      pr_number:
+        description: "PR number the preview is posted to"
+        required: true
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
@@ -11,8 +22,8 @@ jobs:
   build:
     uses: huggingface/doc-builder/.github/workflows/build_pr_documentation.yml@e60a538eea9817ab312196d0d233604b01697265  # main
     with:
-      commit_sha: ${{ github.event.pull_request.head.sha }}
-      pr_number: ${{ github.event.number }}
+      commit_sha: ${{ inputs.commit_sha }}
+      pr_number: ${{ inputs.pr_number }}
       package: tokenizers
       path_to_docs: tokenizers/docs/source-doc-builder/
       package_path: tokenizers/bindings/python/
