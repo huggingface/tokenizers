@@ -7,6 +7,7 @@ further from the library than the last:
 - test_transformers_tokenizer.py — the transformers tokenizer API, which wraps `tokenizers`
 - test_transformers_inference.py — transformers inference (`generate`, `pipeline`)
 - test_transformers_training.py — transformers training (`Trainer`, data collators)
+- test_production_flows.py — whole production stories: chat serving, RAG, SFT
 
 Against the tokenizers wheel that transformers v5 resolves, every test passes:
 `make golden-release`. Against the in-tree build (`make golden`) the failures

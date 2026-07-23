@@ -2,4 +2,5 @@
 # resolves its own tokenizers wheel, so it lives in dedicated venvs
 # (.venv-golden / .venv-golden-release) — see the golden targets in the Makefile.
 transformers[torch]>=5,<6
+datasets
 pytest
