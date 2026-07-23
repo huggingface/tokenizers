@@ -17,26 +17,11 @@
 //! (thread-local, reset-not-realloc) for cache warmth. Panics are caught per
 //! unit and delivered as that input's `Err`.
 //!
-//! **Where the work is split.** Every encode is decomposed the same way, at the
-//! earliest pipeline stage the config allows (earliest = most parallel):
-//!
-//!  * **Special-token split (always):** special tokens are the outermost stage
-//!    of the pipeline, so cutting at each match is unconditionally safe. The
-//!    builder peels them (matched specials resolve immediately, no worker) and
-//!    hands each special-free text **segment** down to the per-segment plan.
-//!    This costs one matcher scan (~0.1% of encode) and is what lets the
-//!    byte-level boundary cut at number transitions — a strided segment can
-//!    never contain a special.
-//!  * **Per-segment plan (`ParallelPlan`, chosen per config):** applied to each
-//!    segment. `Raw` lays fixed ~`PARALLEL_MIN_TOTAL_BYTES` **strides** over the
-//!    segment that workers boundary-snap locally into **chunks** via a
-//!    `StrideBoundary` (a pure predicate over the `atomsplit` tag stream the
-//!    config's grammar provably cannot cross); `Normalized` serial-normalizes
-//!    the segment then strides the buffer; `Pretokenized` serial-normalizes +
-//!    pre-tokenizes and parallelizes the model over span-groups; `Whole` leaves
-//!    the segment to one worker (batch-level parallelism only). The two
-//!    serial-prefix plans run only when the batch alone can't feed the pool.
-//!    Never wrong, only less parallel.
+//! **Where the work is split.** Specials are peeled first (the outermost stage,
+//! so a cut there is always safe; ~0.1% of encode, and it keeps strided segments
+//! special-free). Each special-free **segment** is then split at the earliest
+//! pipeline stage its config allows (the `ParallelPlan` ladder). Earlier = more
+//! parallel; never wrong, only less parallel.
 //!
 //! **Fork safety** lives in `pool`: a `pthread_atfork` child abandons the
 //! stale pool without touching it and lazily rebuilds.
@@ -525,43 +510,22 @@ fn prev_char_tag(window_tags: &[u8], i: usize) -> u8 {
 }
 
 /// [`StrideBoundary`] for whitespace-delimiting pre-tokenizers (`Whitespace`,
-/// `WhitespaceSplit`, `Bert`): *any* whitespace character is a safe cut. These
-/// splitters drop whitespace as a delimiter and never emit a token that spans
-/// it, so a cut placed at a whitespace character leaves the tokens on either
-/// side unchanged — even one inside a whitespace run, since each side then
-/// drops its own run. Cutting *at* the character (it joins the right chunk)
-/// keeps the cut on a char boundary: a whitespace lead is classed `WS`, its
-/// continuation bytes `Cont`. Denser than a newline-only rule, which matters
-/// for single-line inputs (minified JSON, long CSV rows) that would otherwise
-/// see no intra-input split.
+/// `WhitespaceSplit`, `Bert`): any whitespace char is a safe cut — these
+/// splitters drop whitespace and never emit a token spanning it, so each side
+/// drops its own run. The cut joins the right chunk and stays on a char boundary
+/// (a ws lead is `WS`, its continuation `Cont`).
 fn boundary_at_whitespace(window_tags: &[u8]) -> Option<usize> {
     (1..window_tags.len()).find(|&i| in_mask(window_tags[i], mask::WS))
 }
 
-/// Whether a cut at a `prev`→`cur` character transition is side-independent for
-/// the atomsplit-FSM byte-level families (gpt2 / cl100k / o200k / deepseek) —
-/// the cut character `cur` joins the right chunk. Two safe transitions, each
-/// checked branch by branch against `atomsplit::regexes` for all four families:
-///
-/// * **→ space / other whitespace** after a non-whitespace character — the ws
-///   joins the right chunk, where a leading space binds to the following token
-///   (` ?\p{L}+`); no rule matches a non-whitespace character directly followed
-///   by a (non-newline) space *inside* one token.
-/// * **→ newline** after a word character ([`NEWLINE_PREV`]) — a letter/number/
-///   mark token never carries a trailing newline, so the newline opens a fresh
-///   whitespace match (`\s*[\r\n]+`). Gives space-sparse scripts (CJK)
-///   intra-document parallelism.
-///
-/// * **→ number** after a letter/connector/punct/symbol ([`NUM_START_PREV`]) —
-///   a `\p{N}{1,3}` run opens a fresh token; no preceding rule absorbs digits.
-/// * **number → letter** — the digit run ended (`\p{N}{1,3}`), so a following
-///   letter opens a ` ?\p{L}+` token. Together these two give whitespace-free
-///   byte-level content (base64, minified JSON, long IDs) intra-input cuts.
-///
-/// The number transitions *can* fall inside a special (`<…token_0|>`). They are
-/// sound only because the special split always peels specials before striding:
-/// a strided segment is special-free, so no cut can bisect one. Only
-/// normalized-form added tokens then need guarding against a stride.
+/// Side-independent cut for the atomsplit-FSM byte-level families (gpt2 / cl100k
+/// / o200k / deepseek), with the cut char `cur` joining the right chunk. Four
+/// safe `prev`→`cur` transitions (each verified branch-by-branch against
+/// `atomsplit::regexes`): non-ws→whitespace, word ([`NEWLINE_PREV`])→newline,
+/// non-number ([`NUM_START_PREV`])→number, number→letter. The number transitions
+/// can fall inside a special, so they are sound *only* because specials are
+/// peeled before striding (a strided segment is special-free); normalized-form
+/// added tokens still need the stride guard.
 fn safe_fsm_cut(prev: u8, cur: u8) -> bool {
     (in_mask(cur, WS_NON_NEWLINE) && in_mask(prev, NON_WS_PREV))
         || (in_mask(cur, mask::NEWLINE) && in_mask(prev, NEWLINE_PREV))
