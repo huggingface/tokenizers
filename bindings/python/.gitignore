@@ -1,8 +1,9 @@
 .venv/
 .venv-ft/
-.venv-golden/
-.venv-golden-release/
+.venv-e2e/
+.venv-e2e-release/
 .release/
+e2e.log
 golden.log
 python_bench.json
 python_bench.md

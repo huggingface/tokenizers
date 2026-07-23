@@ -31,29 +31,42 @@ examples: dev
 	$(PYTHON) examples/05_train_bytelevel_bpe.py
 	$(PYTHON) examples/06_train_with_datasets.py
 
-# Golden end-to-end tests (tests/golden): the same suite through two builds.
-#   golden          — the in-tree build; failures list what the rewrite still misses
-#   golden-release  — the tokenizers wheel transformers resolves; must always pass
+# End-to-end tests (tests/e2e): the transformers scenario suite, two builds.
+#   e2e          — the in-tree build; failures list what the rewrite still misses
+#   e2e-release  — the tokenizers wheel transformers resolves; must always pass
 # Dedicated venvs: transformers+torch are heavy, and each venv carries its own
 # tokenizers. The dev venv also needs transformers' import-time tokenizers pin
 # lifted, or it refuses our 1.0.0-dev version (see relax_transformers_pin.py).
-.venv-golden:
+.venv-e2e:
 	uv venv $@ --python 3.12
-	uv pip install --python $@/bin/python -r tests/golden/requirements.txt maturin
-	$@/bin/python tests/golden/relax_transformers_pin.py
+	uv pip install --python $@/bin/python -r tests/e2e/requirements.txt maturin
+	$@/bin/python tests/e2e/relax_transformers_pin.py
 
+.PHONY: e2e
+e2e: .venv-e2e
+	. .venv-e2e/bin/activate && maturin develop --release
+	.venv-e2e/bin/python -m pytest tests/e2e -q -ra --continue-on-collection-errors
+
+.venv-e2e-release:
+	uv venv $@ --python 3.12
+	uv pip install --python $@/bin/python -r tests/e2e/requirements.txt
+
+.PHONY: e2e-release
+e2e-release: .venv-e2e-release
+	.venv-e2e-release/bin/python -m pytest tests/e2e -q
+
+# Golden conformance layer (tests/golden): exact encode/decode outputs on the
+# data/ fixtures, diffed against committed goldens. The goldens are only ever
+# regenerated from the released wheel (golden-regen) — never hand-edited.
+# `golden` is opt-in (env gate) while the rewrite is incomplete; drop the gate
+# once it runs green so plain pytest enforces conformance everywhere.
 .PHONY: golden
-golden: .venv-golden
-	. .venv-golden/bin/activate && maturin develop --release
-	.venv-golden/bin/python -m pytest tests/golden -q -ra --continue-on-collection-errors
+golden: dev
+	TOKENIZERS_GOLDEN=1 $(PYTHON) -m pytest tests/golden -q -ra
 
-.venv-golden-release:
-	uv venv $@ --python 3.12
-	uv pip install --python $@/bin/python -r tests/golden/requirements.txt
-
-.PHONY: golden-release
-golden-release: .venv-golden-release
-	.venv-golden-release/bin/python -m pytest tests/golden -q
+.PHONY: golden-regen
+golden-regen: .venv .release
+	PYTHONPATH=.release $(PYTHON) tests/golden/generate.py
 
 # The released PyPI wheel shares our package name, so it lives in its own
 # directory that the bench subprocess puts on PYTHONPATH.
