@@ -31,6 +31,30 @@ examples: dev
 	$(PYTHON) examples/05_train_bytelevel_bpe.py
 	$(PYTHON) examples/06_train_with_datasets.py
 
+# Golden end-to-end tests (tests/golden): the same suite through two builds.
+#   golden          — the in-tree build; failures list what the rewrite still misses
+#   golden-release  — the tokenizers wheel transformers resolves; must always pass
+# Dedicated venvs: transformers+torch are heavy, and each venv carries its own
+# tokenizers. The dev venv also needs transformers' import-time tokenizers pin
+# lifted, or it refuses our 1.0.0-dev version (see relax_transformers_pin.py).
+.venv-golden:
+	uv venv $@ --python 3.12
+	uv pip install --python $@/bin/python -r tests/golden/requirements.txt maturin
+	$@/bin/python tests/golden/relax_transformers_pin.py
+
+.PHONY: golden
+golden: .venv-golden
+	. .venv-golden/bin/activate && maturin develop --release
+	.venv-golden/bin/python -m pytest tests/golden -q -ra --continue-on-collection-errors
+
+.venv-golden-release:
+	uv venv $@ --python 3.12
+	uv pip install --python $@/bin/python -r tests/golden/requirements.txt
+
+.PHONY: golden-release
+golden-release: .venv-golden-release
+	.venv-golden-release/bin/python -m pytest tests/golden -q
+
 # The released PyPI wheel shares our package name, so it lives in its own
 # directory that the bench subprocess puts on PYTHONPATH.
 .release: | .venv

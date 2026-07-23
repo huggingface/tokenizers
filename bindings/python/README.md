@@ -136,11 +136,13 @@ per-version with `maturin build --no-default-features`.
 Other targets:
 
 ```sh
-make test         # pytest suite in tests/
-make examples     # run the end-to-end examples (needs ../../tokenizers/data)
-make bench        # benchmark against the released tokenizers wheel from PyPI
-make stubs        # regenerate the .pyi type stubs from the built extension
-make lint         # cargo fmt + clippy, ruff over the python sources
+make test            # pytest suite in tests/
+make examples        # run the end-to-end examples (needs ../../tokenizers/data)
+make bench           # benchmark against the released tokenizers wheel from PyPI
+make golden          # golden end-to-end suite (tests/golden) on this build
+make golden-release  # same suite on the released wheel — must always pass
+make stubs           # regenerate the .pyi type stubs from the built extension
+make lint            # cargo fmt + clippy, ruff over the python sources
 ```
 
 The examples and the benchmark read test data from `../../tokenizers/data`.

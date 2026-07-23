@@ -1,6 +1,9 @@
 .venv/
 .venv-ft/
+.venv-golden/
+.venv-golden-release/
 .release/
+golden.log
 python_bench.json
 python_bench.md
 .smoke/
