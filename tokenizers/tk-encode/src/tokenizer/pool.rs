@@ -1,12 +1,9 @@
 //! Process-global worker pool for the parallel encode path: a lazily-built,
 //! library-private `rayon::ThreadPool`.
 //!
-//! Scheduling itself lives in `pipeline.rs` as the shared-cursor job model —
-//! drainer tasks and the consuming thread claim chunks off one atomic cursor
-//! (caller-assist), which benching showed is where the throughput wins live; a
-//! bespoke thread pool added nothing over rayon once the job model carried the
-//! assist (see `PARALLEL_RUNTIME_DESIGN.md` §7 for the removal decision and
-//! numbers; the handrolled pool lives in git history if ever needed).
+//! Scheduling lives in `pipeline.rs` as the shared-cursor job model: drainer
+//! tasks and the consuming thread claim chunks off one atomic cursor. This pool
+//! only provides the worker threads.
 //!
 //! Fork safety: a `pthread_atfork` child handler bumps [`POOL_GEN`]; the
 //! dispatch path compares generations and abandons a stale pool *without

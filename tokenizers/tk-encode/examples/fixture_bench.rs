@@ -55,7 +55,7 @@ const MEM_CHUNKS_PER_FIXTURE: usize = 2;
 // `ADDED_SPECIAL` (normalized:false) is matched on the raw pass; `ADDED_NORMALIZED`
 // (normalized:true) on the normalized pass. The strings are distinctive markers that do
 // not occur in the language/modality corpora, so they leave those results untouched. The
-// `added_*` fixtures are built from exactly these strings (see the dataset FIXTURES.md).
+// `added_*` fixtures are built from exactly these strings.
 const ADDED_SPECIAL: &[&str] = &["<|xs0|>", "<|xs1|>", "<|xs2|>", "<|xs3|>", "<|xs4|>"];
 const ADDED_NORMALIZED: &[&str] = &[
     "widgetron",

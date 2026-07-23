@@ -246,10 +246,10 @@ fn llama3_intra_seq_japanese() {
 
 /// Byte-level BPE on a whitespace-free document (base64-like) must stay
 /// byte-identical to the oracle. This input has no whitespace, so its only safe
-/// stride cuts are the byte-level letter↔number transitions — re-enabled now
-/// that rung 0 always peels specials first, making a mid-special cut impossible.
-/// So this exercises the number-transition boundary striding (not a whole-input
-/// fallback) and pins it id-identical to tiktoken.
+/// stride cuts are the byte-level letter↔number transitions — safe because the
+/// special split always peels specials first, so a stride can't bisect one. This
+/// exercises number-transition striding (not a whole-input fallback) and pins it
+/// id-identical to tiktoken.
 #[test]
 fn llama3_intra_seq_whitespace_free() {
     let oracle = Tokenizer::from_file("../data/llama-3-tokenizer.json").unwrap();

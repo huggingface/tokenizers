@@ -2,7 +2,7 @@
 //!
 //! [`PipelineTokenizer::encode`] returns an owned [`EncodeHandle`] immediately;
 //! workers encode in the background. Results surface through the handle's two
-//! faces: the blocking [`Iterator`], yielding `(input index, result)` in
+//! faces: the blocking `Iterator`, yielding `(input index, result)` in
 //! completion order (and *assisting* — the caller drains pending work instead of
 //! idling), and [`EncodeHandle::wait_for_completion`], which blocks and returns
 //! results back in input order.
@@ -13,24 +13,26 @@
 //! `EncodeState` scratch persists (thread-local, reset-not-realloc) for cache
 //! warmth. Panics are caught per unit and delivered as that input's `Err`.
 //!
-//! **Rung ladder.** Every encode is decomposed the same way, outermost stage
-//! first, cheapest split first:
+//! **Where the work is split.** Every encode is decomposed the same way, at the
+//! earliest pipeline stage the config allows (earliest = most parallel):
 //!
-//!  * **Rung 0 (always):** special tokens are the outermost pipeline stage, so
-//!    cutting at each match is unconditionally safe. The builder peels them
-//!    (matched specials resolve immediately, no worker) and hands each
-//!    special-free text segment down to the sub-rung. This costs one matcher
-//!    scan (~0.1% of encode) and is what makes the byte-level boundary able to
-//!    cut at number transitions — a strided segment can never contain a special.
-//!  * **Sub-rung (`ParallelPlan`, chosen per config):** applied to each segment.
-//!    `Raw` strides it into ~`PARALLEL_MIN_TOTAL_BYTES` windows workers
-//!    boundary-snap locally via a `StrideBoundary` (a pure predicate over the
-//!    `atomsplit` tag stream the config's grammar provably cannot cross);
-//!    `Normalized` serial-normalizes the segment then strides the buffer;
-//!    `Pretokenized` serial-normalizes + pre-tokenizes and parallelizes the model
-//!    over span-groups; `Whole` leaves the segment to one worker (batch-level
-//!    parallelism only). The two serial-prefix rungs run only when the batch alone
-//!    can't feed the pool. Never wrong, only less parallel.
+//!  * **Special-token split (always):** special tokens are the outermost stage
+//!    of the pipeline, so cutting at each match is unconditionally safe. The
+//!    builder peels them (matched specials resolve immediately, no worker) and
+//!    hands each special-free text **segment** down to the per-segment plan.
+//!    This costs one matcher scan (~0.1% of encode) and is what lets the
+//!    byte-level boundary cut at number transitions — a strided segment can
+//!    never contain a special.
+//!  * **Per-segment plan (`ParallelPlan`, chosen per config):** applied to each
+//!    segment. `Raw` lays fixed ~`PARALLEL_MIN_TOTAL_BYTES` **strides** over the
+//!    segment that workers boundary-snap locally into **chunks** via a
+//!    `StrideBoundary` (a pure predicate over the `atomsplit` tag stream the
+//!    config's grammar provably cannot cross); `Normalized` serial-normalizes
+//!    the segment then strides the buffer; `Pretokenized` serial-normalizes +
+//!    pre-tokenizes and parallelizes the model over span-groups; `Whole` leaves
+//!    the segment to one worker (batch-level parallelism only). The two
+//!    serial-prefix plans run only when the batch alone can't feed the pool.
+//!    Never wrong, only less parallel.
 //!
 //! **Fork safety** lives in `pool`: a `pthread_atfork` child abandons the
 //! stale pool without touching it and lazily rebuilds.
@@ -150,7 +152,7 @@ impl PreTokenizer for PipelinePreTokenizer {
 }
 
 impl PipelinePreTokenizer {
-    /// The `StrideBoundary` this pre-tokenizer guarantees, if any: a cut
+    /// The [`StrideBoundary`] this pre-tokenizer guarantees, if any: a cut
     /// finder its splitting rules provably cannot tokenize across. This is the
     /// extension point for raw-text parallel chunking — a pre-tokenizer that
     /// can prove a boundary for its grammar adds an arm here and large inputs
@@ -159,12 +161,12 @@ impl PipelinePreTokenizer {
     pub(crate) fn stride_boundary(&self) -> Option<StrideBoundary> {
         match self {
             // Whitespace-delimiting: whitespace is a dropped delimiter, so any
-            // whitespace character is a safe cut (see `boundary_at_whitespace`).
+            // whitespace character is a safe cut (see [`boundary_at_whitespace`]).
             Self::Whitespace(_) | Self::WhitespaceSplit(_) | Self::Bert(_) => {
                 Some(boundary_at_whitespace)
             }
             // atomsplit-FSM byte-level families: cut at a space after non-ws, or
-            // a newline after a word character (see `boundary_fsm`).
+            // a newline after a word character (see [`boundary_fsm`]).
             Self::Split(s) if s.has_pipeline_fsm() => Some(boundary_fsm),
             Self::Sequence(seq) if seq.is_deepseek() => Some(boundary_fsm),
             Self::Sequence(seq) => match seq.members() {
@@ -350,9 +352,9 @@ struct PipelineInner {
     /// either its content carries an internal [`StrideBoundary`] cut, or it is an
     /// affix (`lstrip`/`rstrip`) token whose absorbed adjacent whitespace a cut
     /// could split. Its presence disables `Raw`/`Normalized`. Only
-    /// `normalized` tokens count — raw-matched ones are peeled by rung 0 before
-    /// any striding. Precomputed once at build (the `plan()` gate reads it per
-    /// `encode`, so it must not re-scan the vocab).
+    /// `normalized` tokens count — the special split peels raw-matched ones
+    /// before any striding. Precomputed at build; `plan()` reads it per `encode`,
+    /// so it must not re-scan the vocab.
     normalized_added_token_blocks_stride: bool,
 }
 
@@ -369,7 +371,7 @@ pub(crate) struct EncodeState {
     pre_tokens: Vec<Span>,
     /// Classify tag scratch for the stride boundary scans (grow-and-reuse).
     tags: Vec<u8>,
-    /// Model-specific heap buffers. Deliberately not cleared by [`reset`](Self::reset):
+    /// Model-specific heap buffers. Deliberately not cleared by `reset`:
     /// persistence across sequences and encode calls is the point.
     model_scratch: Option<PipelineModelScratch>,
 }
@@ -443,7 +445,7 @@ fn stride_range(
 }
 
 /// A safe-cut predicate for one pre-tokenizer family, expressed over the
-/// `atomsplit` **tag stream** (the same SIMD `classify` substrate the FSM
+/// `atomsplit` **tag stream** (the same SIMD [`classify`] substrate the FSM
 /// pre-tokenizers run on — boundary logic is not reimplemented byte-matching).
 /// `window_tags[0]` is one byte of left context; the fn returns the first
 /// window-relative position `i >= 1` that is a safe cut: no pre-token — under
@@ -517,7 +519,7 @@ fn prev_char_tag(window_tags: &[u8], i: usize) -> u8 {
     window_tags[j]
 }
 
-/// `StrideBoundary` for whitespace-delimiting pre-tokenizers (`Whitespace`,
+/// [`StrideBoundary`] for whitespace-delimiting pre-tokenizers (`Whitespace`,
 /// `WhitespaceSplit`, `Bert`): *any* whitespace character is a safe cut. These
 /// splitters drop whitespace as a delimiter and never emit a token that spans
 /// it, so a cut placed at a whitespace character leaves the tokens on either
@@ -551,10 +553,10 @@ fn boundary_at_whitespace(window_tags: &[u8]) -> Option<usize> {
 ///   letter opens a ` ?\p{L}+` token. Together these two give whitespace-free
 ///   byte-level content (base64, minified JSON, long IDs) intra-input cuts.
 ///
-/// The number transitions *can* fall inside a special (`<…token_0|>`), so they
-/// are only sound because **rung 0 always peels specials before any striding** —
-/// a strided segment is special-free, so no cut can bisect one. The gate then
-/// only needs to guard normalized-form added tokens (see `normalized_added_token_blocks_stride`).
+/// The number transitions *can* fall inside a special (`<…token_0|>`). They are
+/// sound only because the special split always peels specials before striding:
+/// a strided segment is special-free, so no cut can bisect one. Only
+/// normalized-form added tokens then need guarding against a stride.
 fn safe_fsm_cut(prev: u8, cur: u8) -> bool {
     (in_mask(cur, WS_NON_NEWLINE) && in_mask(prev, NON_WS_PREV))
         || (in_mask(cur, mask::NEWLINE) && in_mask(prev, NEWLINE_PREV))
@@ -562,7 +564,7 @@ fn safe_fsm_cut(prev: u8, cur: u8) -> bool {
         || (in_mask(cur, mask::LETTER) && in_mask(prev, mask::NUMBER))
 }
 
-/// `StrideBoundary` for the atomsplit-FSM byte-level families: the first
+/// [`StrideBoundary`] for the atomsplit-FSM byte-level families: the first
 /// [`safe_fsm_cut`] transition in the window. The previous character is read
 /// through [`prev_char_tag`], so every branch also fires after a multibyte
 /// character (e.g. CJK).
@@ -574,8 +576,8 @@ fn boundary_fsm(window_tags: &[u8]) -> Option<usize> {
 /// i.e. a stride could split this token and each half would mis-frame it. Used
 /// by `normalized_added_token_blocks_stride` to disqualify striding for a `normalized`
 /// added token whose content carries an internal cut (e.g. a `_→0` number
-/// transition). Raw-matched tokens don't need this — rung 0 peels them before
-/// any striding — so only normalized-form tokens reach this check.
+/// transition). The special split peels raw-matched tokens before striding, so
+/// only normalized-form tokens reach this check.
 fn has_internal_boundary(token: &str, boundary: StrideBoundary) -> bool {
     if token.len() < 2 {
         return false;
@@ -592,7 +594,7 @@ fn has_internal_boundary(token: &str, boundary: StrideBoundary) -> bool {
 /// the common case (a boundary within the first block) classifies ~1 KB, not
 /// the whole window.
 ///
-/// Block edges are snapped to char boundaries (`classify` must see complete
+/// Block edges are snapped to char boundaries ([`classify`] must see complete
 /// characters). The snap is a pure function of the text, so adjacent workers
 /// still agree; the extra bytes a snap adds are continuation bytes, which tag
 /// as `Cont` and can never satisfy a boundary predicate.
@@ -627,38 +629,29 @@ fn boundary_in_window(
     None
 }
 
-/// The **sub-rung** applied to each special-free text segment (rung 0 always
-/// peels the specials first), chosen per tokenizer configuration: cut the raw
-/// text when the components allow it; otherwise normalize serially and cut the
-/// normalized text; otherwise pre-tokenize serially and parallelize the model;
-/// otherwise rely on batch-level parallelism only. Never wrong, only less
-/// parallel.
+/// How one special-free segment is split, chosen per config (the special split
+/// already peeled the specials). The pipeline splits at the earliest stage the
+/// config allows; earlier is more parallel. Never wrong, only less parallel.
 #[derive(Clone, Copy, Debug)]
 enum ParallelPlan {
-    /// Rung 1: cut raw text at safe boundaries; each chunk runs the full
-    /// pipeline (`encode_one_with`). Requires a boundary-preserving normalizer.
+    /// Stride the raw text; each chunk runs the full pipeline (`encode_one_with`).
+    /// Needs a boundary-preserving normalizer.
     Raw(StrideBoundary),
-    /// Rung 2: frame + normalize serially on the caller, then cut the normalized
-    /// text at the pre-tokenizer's boundary and parallelize pre-tokenize + model
-    /// (`encode_normalized`) per chunk. The serial normalize takes the normalizer
-    /// out of the correctness equation, so this needs only a splittable
-    /// pre-tokenizer — the fallback when a non-boundary-preserving normalizer
-    /// rules out `Raw` but the pre-tokenizer still cuts.
+    /// Normalize the segment serially, then stride the normalized buffer and
+    /// parallelize pre-tokenize + model (`encode_normalized`). The serial
+    /// normalize takes the normalizer out of the equation, so this needs only a
+    /// splittable pre-tokenizer. Used when the normalizer rules out `Raw`.
     Normalized(StrideBoundary),
-    /// Rung 3: frame + normalize + pre-tokenize serially on the caller;
-    /// parallelize the model over ~`PARALLEL_MIN_TOTAL_BYTES`-sized groups of
-    /// pre-token spans. Valid for every config (each pre-token is modeled
-    /// independently).
+    /// Normalize + pre-tokenize serially, then parallelize the model over
+    /// ~`PARALLEL_MIN_TOTAL_BYTES`-sized span-groups. Valid for any config.
     Pretokenized,
-    /// No intra-input parallelism.
+    /// No intra-input split.
     Whole,
 }
 
-/// One special-free text segment reduced to model-ready work by the
-/// `Pretokenized` sub-rung: normalization, normalized-special framing and
-/// pre-tokenization are done; what remains is the model stage, packaged as
-/// span-groups. Everything is index/range-based (no borrows), so both the scoped
-/// and the owned paths can consume it.
+/// One special-free segment reduced to model-ready work by the `Pretokenized`
+/// plan: normalize, frame normalized specials, and pre-tokenize are done; the
+/// model stage remains, packaged as span-groups. Index/range-based, no borrows.
 struct PretokenizedSegment {
     /// Ordered pipeline units for this segment.
     units: Vec<SegmentUnit>,
@@ -700,7 +693,7 @@ thread_local! {
     /// Per-thread reusable encode scratch: pool drainers, inline callers and the
     /// caller-assist path all keep their buffers warm across encode calls
     /// (reset, never realloc'd) — pool threads persist for the process, so this
-    /// is the cache-warmth contract of `EncodeState`.
+    /// is the cache-warmth contract of [`EncodeState`].
     static SCRATCH: RefCell<EncodeState> = RefCell::new(EncodeState::new());
 }
 
@@ -741,7 +734,7 @@ struct StreamState {
     /// Inputs whose chunks are all in, awaiting emit (also seeded with any
     /// zero-chunk inputs, which are complete from the start).
     ready: VecDeque<usize>,
-    /// Inputs not yet returned by [`next_completed`](Self::next_completed); when
+    /// Inputs not yet returned by `next_completed`; when
     /// zero, the job is fully drained.
     remaining: usize,
     /// Caller-assist bookkeeping: set once the job's cursor is exhausted so
@@ -857,7 +850,7 @@ impl StreamState {
 
 /// Input storage an [`EncodeHandle`] keeps alive for its whole lifetime — the
 /// contract that makes the returnable handle sound with no scoped lifetimes:
-/// implementors promise every `&str` returned by [`get`](Self::get) stays valid
+/// implementors promise every `&str` returned by `get` stays valid
 /// and unchanged for as long as the value lives. Owned storage (`String`,
 /// `Vec<String>`) qualifies trivially; bindings can wrap refcounted foreign
 /// strings (e.g. a `Py<PyString>` keep-alive over Python's stable UTF-8 buffer)
@@ -959,9 +952,9 @@ enum Region {
     Stride {
         index: usize,
         boundary: StrideBoundary,
-        /// The special-free segment (byte range within the source) this stride
-        /// tiles. Strides index from the segment start, so a rung-0-peeled text
-        /// segment is strided independently of the specials around it.
+        /// The special-free segment (byte range in the source) this stride tiles.
+        /// Strides index from the segment start, so each segment is strided
+        /// independently of the specials around it.
         seg: Range<usize>,
     },
 }
@@ -1020,8 +1013,8 @@ enum Work {
     /// already-normalized buffer `JobCore::norm_bufs[buf]` (`Normalized`).
     Normalized { buf: usize, region: Region },
     /// Model-only over a span-group (the `Pretokenized` plan): `text` resolves
-    /// against input `seq` (`SegmentText::Raw`) or `JobCore::norm_bufs`
-    /// (`SegmentText::Norm`); `spans` indexes `JobCore::spans`.
+    /// against input `seq` ([`SegmentText::Raw`]) or `JobCore::norm_bufs`
+    /// ([`SegmentText::Norm`]); `spans` indexes `JobCore::spans`.
     Pretokenized {
         text: SegmentText,
         spans: Range<usize>,
@@ -1092,7 +1085,7 @@ impl JobCore {
 /// - the blocking `Iterator`, yielding `(input index, result)` in **completion
 ///   order** as each input finishes (and *assisting*: the calling thread claims
 ///   and encodes pending chunks instead of idling),
-/// - [`EncodeHandle::wait_for_completion`](Self::wait_for_completion), which
+/// - [`EncodeHandle::wait_for_completion`], which
 ///   blocks and returns results placed back into **input order**.
 ///
 /// Dropping the job cancels all unclaimed work; chunks already being encoded
@@ -1166,8 +1159,8 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
 
     /// Build a pipeline from an existing [`Tokenizer`], cloning its components.
     ///
-    /// The base [`Tokenizer`] carries the legacy [`crate::AddedVocabulary`]; the pipeline uses the
-    /// fast bucket [`BucketAddedVocabulary`], so we rebuild it from the tokenizer's added tokens.
+    /// The base [`Tokenizer`] carries the legacy `crate::AddedVocabulary`; the pipeline uses the
+    /// fast bucket `BucketAddedVocabulary`, so we rebuild it from the tokenizer's added tokens.
     /// Adding them in id order preserves ids (tokens present in the model reuse their model id, the
     /// rest keep their dense order), so the pipeline emits the same ids as the reference tokenizer.
     fn try_from(tok: &Tokenizer) -> Result<Self> {
@@ -1183,7 +1176,7 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
         added_tokens.sort_by_key(|(id, _)| **id);
         // A stride cut must never land inside — or in the affix-stripped
         // whitespace of — an added token (each half would then mis-frame it).
-        // Rung 0 always peels the *raw*-matched (`normalized == false`) tokens
+        // The special split always peels the *raw*-matched (`normalized == false`) tokens
         // before any striding, so those are safe regardless of the boundary.
         // Only `normalized`-form tokens survive into strided text; disqualify
         // striding if any of them either (a) carries an internal cut of the
@@ -1332,13 +1325,12 @@ impl PipelineTokenizer {
         let mut preresolved: Vec<UnitResult> = Vec::new();
 
         let plan = self.plan();
-        // A chunk earns the serial normalize/pre-tokenize prefix (rung 2/3) only
-        // when it exceeds a fair per-thread share of the batch — below that,
-        // batch parallelism balances it as one whole unit and the prefix would
-        // just serialize work. This subsumes "fewer inputs than threads" (each
-        // then exceeds the share) and additionally splits a lone huge input
-        // hiding in an otherwise-large batch, which input-count gating left as a
-        // straggler. `Raw` ignores this — it always strides, no prefix.
+        // `Normalized`/`Pretokenized` earn their serial prefix only for a
+        // segment larger than a fair per-thread share of the batch. Below that,
+        // batch parallelism balances it as one whole unit; the prefix would just
+        // serialize work. This also splits a lone huge segment inside an
+        // otherwise-large batch (a straggler otherwise). `Raw` never pays a
+        // prefix, so it ignores this.
         let fair_share = total_bytes / pool.current_num_threads();
 
         for (seq, &input) in refs.iter().enumerate() {
@@ -1446,9 +1438,9 @@ impl PipelineTokenizer {
                             Err(_) => self.emit_full(seq, range.clone(), &mut counts, &mut units),
                         }
                     }
-                    // `Whole`, or an expensive sub-rung whose prefix isn't
-                    // worth it here (batch saturates the pool, or a small segment):
-                    // one whole-segment unit, full pipeline in the worker.
+                    // `Whole`, or a prefix plan not worth it here (batch saturates
+                    // the pool, or the segment is small): one whole-segment unit,
+                    // full pipeline in the worker.
                     _ => self.emit_full(seq, range.clone(), &mut counts, &mut units),
                 }
             }
@@ -1551,10 +1543,9 @@ impl PipelineTokenizer {
 
     /// The post-normalize suffix of the pipeline: frame (special tokens on
     /// already-normalized text) → pre-tokenize → model, appending to `output`.
-    /// This is the entry point workers use when normalization has already run
-    /// (rung 2 / the `Normalized` plan), and the shared tail of
-    /// [`encode_one_with`](Self::encode_one_with). Reuses the caller's
-    /// `EncodeState` scratch (pre-token buffer + model scratch).
+    /// Workers use this for the `Normalized` plan (normalization already ran);
+    /// it is also the shared tail of `encode_one_with`.
+    /// Reuses the caller's [`EncodeState`] scratch.
     fn encode_normalized(
         &self,
         normalized: &str,
@@ -1583,10 +1574,10 @@ impl PipelineTokenizer {
     }
 
     /// The full single-sequence kernel: frame (special tokens on raw text) →
-    /// normalize → [`encode_normalized`](Self::encode_normalized), reusing the
-    /// caller's `EncodeState` scratch. The entry point when a worker holds a raw
-    /// region (rung 0/1: inline, pool drainers, caller-assist); span-group model
-    /// work goes through [`encode_spans`](Self::encode_spans) instead.
+    /// normalize → `encode_normalized`, reusing the
+    /// caller's [`EncodeState`] scratch. The entry point for a worker holding a raw
+    /// region (the `Raw` and `Whole` plans); span-group model work goes through
+    /// `encode_spans` instead.
     ///
     /// Note: the post-processor (special-token framing like BOS/EOS) is not
     /// wired yet; when it lands it applies per input after chunk concatenation.
@@ -1613,21 +1604,19 @@ impl PipelineTokenizer {
         Ok(output)
     }
 
-    /// The sub-rung this config applies to each special-free text segment (rung 0
-    /// always peels specials first — see [`encode`](Self::encode)). The cheapest
-    /// safe rung wins (see `PARALLEL_RUNTIME_DESIGN.md` §8).
+    /// How this config splits each special-free segment (specials are peeled
+    /// first). The cheapest safe split wins.
     fn plan(&self) -> ParallelPlan {
         if let Some(boundary) = self.stride_boundary() {
-            // Rung 1: no serial prefix, so always worth it when available.
+            // `Raw`: no serial prefix, so always worth it when available.
             ParallelPlan::Raw(boundary)
         } else if matches!(self.inner.model, PipelineModel::WordLevel(_)) {
-            // A WordLevel "model step" is one hash lookup per pre-token, and its
-            // pre-tokenize is cheap too — the serial prefix that rungs 2/3 need
-            // would dwarf the parallelized part, so lean on batch parallelism.
+            // WordLevel's model + pre-tokenize are cheap, so a serial prefix
+            // would dwarf the parallel part. Lean on batch parallelism instead.
             ParallelPlan::Whole
         } else if let Some(boundary) = self.normalized_stride_boundary() {
-            // Rung 2: the normalizer rules out a raw cut, but the pre-tokenizer
-            // can cut the (serially) normalized text — parallelize pretok+model.
+            // Normalizer rules out a raw cut, but the pre-tokenizer can cut the
+            // (serially) normalized text.
             ParallelPlan::Normalized(boundary)
         } else {
             ParallelPlan::Pretokenized
@@ -1635,12 +1624,12 @@ impl PipelineTokenizer {
     }
 
     /// The pre-tokenizer's cut boundary for **already-normalized** text, gated
-    /// only on the added vocabulary (no normalizer requirement — rung 2 runs the
-    /// normalizer serially first, so it's out of the correctness equation). The
-    /// one remaining hazard is a `normalized`-form added token — which rung 0's
-    /// raw peel can't remove — being split by a stride; the precomputed
-    /// [`normalized_added_token_blocks_stride`](PipelineInner::normalized_added_token_blocks_stride)
-    /// bool covers it (raw-matched tokens are already peeled, so they don't gate).
+    /// only on the added vocabulary (the `Normalized` plan normalizes serially
+    /// first, so the normalizer is out of the equation). The one remaining hazard
+    /// is a `normalized`-form added token — which the special split's raw pass
+    /// can't remove — split by a stride; the precomputed
+    /// `normalized_added_token_blocks_stride`
+    /// covers it (raw-matched tokens are already peeled).
     fn normalized_stride_boundary(&self) -> Option<StrideBoundary> {
         if self.inner.normalized_added_token_blocks_stride {
             return None;
@@ -1649,13 +1638,13 @@ impl PipelineTokenizer {
     }
 
     /// Whether — and where — the config lets **raw** text be cut and each piece
-    /// encoded independently with the same result as the whole (rung 1). Composes
-    /// the per-stage split-safety declarations: the normalizer must preserve
+    /// encoded independently with the same result as the whole (the `Raw` plan).
+    /// Composes the per-stage split-safety: the normalizer must preserve
     /// boundaries ([`NormalizerWrapper::preserves_stride_boundaries`]) *and* the
     /// added vocabulary + pre-tokenizer must permit a cut
-    /// ([`normalized_stride_boundary`](Self::normalized_stride_boundary)). When
-    /// the normalizer doesn't preserve boundaries, rung 2 (`Normalized`)
-    /// takes over via `normalized_stride_boundary` after a serial normalize.
+    /// (`normalized_stride_boundary`). If the
+    /// normalizer doesn't preserve boundaries, the `Normalized` plan takes over
+    /// after a serial normalize.
     fn stride_boundary(&self) -> Option<StrideBoundary> {
         let norm_ok = self
             .inner
@@ -1669,8 +1658,8 @@ impl PipelineTokenizer {
     }
 
     /// Emit one whole-segment `Work::Raw` unit (full pipeline in the worker) for
-    /// the byte `range` of input `seq`. The shared fallback for `Whole` and
-    /// for the expensive sub-rungs when their serial prefix isn't worth running.
+    /// the byte `range` of input `seq`. Shared fallback for `Whole` and for the
+    /// prefix plans when their serial prefix isn't worth running.
     fn emit_full(
         &self,
         seq: usize,
@@ -1687,12 +1676,12 @@ impl PipelineTokenizer {
         });
     }
 
-    /// Serial prefix of the [`ParallelPlan::Pretokenized`] plan (rung 3) over one
-    /// **special-free** text segment (rung 0 already peeled raw specials): normalize
-    /// → frame(normalized specials) → pre-tokenize, packaging the remaining model
-    /// work as ~`PARALLEL_MIN_TOTAL_BYTES`-sized span-groups. `input` is the whole
-    /// source the borrowed (`SegmentText::Raw`) offsets resolve against; `segment`
-    /// is a subslice of it. Mirrors the walker in [`encode_one_with`](Self::encode_one_with)
+    /// Serial prefix of the `ParallelPlan::Pretokenized` plan over one
+    /// special-free segment (specials already peeled): normalize → frame
+    /// normalized specials → pre-tokenize, packaging the model work as
+    /// ~`PARALLEL_MIN_TOTAL_BYTES`-sized span-groups. `input` is the whole source
+    /// the borrowed ([`SegmentText::Raw`]) offsets resolve against; `segment` is a
+    /// subslice of it. Mirrors the walker in `encode_one_with`
     /// stage by stage — the two must agree on unit order for reassembly to be
     /// byte-identical to the serial encode.
     fn pretokenize_segment(&self, segment: &str, input: &str) -> Result<PretokenizedSegment> {
@@ -1767,7 +1756,7 @@ impl PipelineTokenizer {
     }
 }
 
-/// What [`split`] does with each split it forms
+/// What `split` does with each split it forms
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum SplitPolicy {
     /// Drop it, emit no split
@@ -1778,10 +1767,10 @@ pub(crate) enum SplitPolicy {
     Isolate,
 }
 
-/// Splits `text` into same-class groups, emitting each as a [`Span`]
-/// according to its [`SplitPolicy`].
+/// Splits `text` into same-class groups, emitting each as a `Span`
+/// according to its `SplitPolicy`.
 ///
-/// `classify` maps each char to a small `Copy + Eq` class, the current
+/// [`classify`] maps each char to a small `Copy + Eq` class, the current
 /// split ends whenever the class changes (or on every char of an `Isolate`
 /// class), and `policy` decides what becomes of it. Ranges are byte offsets
 /// into `text`.
@@ -1822,11 +1811,11 @@ pub(crate) fn split<C: Copy + PartialEq>(
 }
 
 /// Splits `text` around a single delimiter predicate, honoring the full
-/// [`SplitDelimiterBehavior`] contract. The pipeline-side equivalent of
+/// `SplitDelimiterBehavior` contract. The pipeline-side equivalent of
 /// `NormalizedString::split(pattern, behavior)` for a char predicate.
 ///
-/// The three non-merging behaviors reduce to a [`SplitPolicy`] on the delimiter
-/// class and reuse [`split`]. The two merge variants are their own single pass:
+/// The three non-merging behaviors reduce to a `SplitPolicy` on the delimiter
+/// class and reuse `split`. The two merge variants are their own single pass:
 /// - `MergedWithPrevious` cuts the split *after* each delimiter, so a delimiter
 ///   joins the run before it (`"the-final"` -> `["the-", "final"]`).
 /// - `MergedWithNext` cuts *before* each delimiter, so it joins the run after it
@@ -1891,7 +1880,7 @@ pub(crate) fn split_delimiter(
     });
 }
 
-/// Applies a [`SplitDelimiterBehavior`] to a match segmentation and appends the
+/// Applies a `SplitDelimiterBehavior` to a match segmentation and appends the
 /// resulting pieces to `out`.
 ///
 /// `matches` is the `(offsets, is_match)` sequence covering the whole input,
@@ -2009,7 +1998,7 @@ pub enum PipelineModel {
 impl PipelineModel {
     /// Get this model's per-thread scratch out of `slot`, (re)building it when
     /// the slot is empty or was built for a different model kind — the
-    /// thread-local `EncodeState` is shared across tokenizers on a thread.
+    /// thread-local [`EncodeState`] is shared across tokenizers on a thread.
     fn scratch_in<'a>(
         &self,
         slot: &'a mut Option<PipelineModelScratch>,
@@ -2066,7 +2055,7 @@ pub enum PipelineModelScratch {
 
 impl PipelineModelScratch {
     /// Whether this scratch was built for `model`'s kind (see
-    /// [`PipelineModel::scratch_in`]).
+    /// `PipelineModel::scratch_in`).
     fn matches(&self, model: &PipelineModel) -> bool {
         matches!(
             (model, self),
@@ -2322,8 +2311,8 @@ mod tests {
     /// The GPT-2 byte-level regex qualifies for `SpaceRun` raw cuts, both bare
     /// and in the llama-shaped `Sequence[Span, None]`. A whitespace-containing
     /// added token disables raw cutting only when it is `normalized` (matched
-    /// after normalization, so invisible to rung 0's raw peel); a raw/special one
-    /// is peeled by rung 0 first, so a stride can never bisect it.
+    /// after normalization, so invisible to the special split's raw pass); a raw/special one
+    /// is peeled first, so a stride can never bisect it.
     #[test]
     fn space_run_gating() {
         use crate::AddedToken;
@@ -2344,14 +2333,14 @@ mod tests {
             PipelineTokenizer::try_from(&tok).unwrap()
         };
         assert!(make(None).stride_boundary().is_some());
-        // Raw special with whitespace: peeled by rung 0, so raw cuts still qualify.
+        // Raw special with whitespace: peeled by the special split, so raw cuts still qualify.
         assert!(
             make(Some(AddedToken::from("<s> extra", true)))
                 .stride_boundary()
                 .is_some(),
-            "a raw special is peeled by rung 0 and must not disable raw cuts"
+            "a raw special is peeled by the special split and must not disable raw cuts"
         );
-        // Normalized added token with whitespace: rung 0's raw peel can't see it,
+        // Normalized added token with whitespace: the special split's raw pass can't see it,
         // so a stride could bisect it — raw cuts must be disabled.
         assert!(
             make(Some(AddedToken::from("aa bb", false).normalized(true)))
@@ -2416,14 +2405,14 @@ mod tests {
         assert_eq!(owned, serial, "SpaceRun owned != serial");
     }
 
-    /// Directly settles "rung 0 peels specials, so a stride can't split one" — it
-    /// holds only for *raw* (`normalized == false`) tokens. Rung 0's raw pass
+    /// Directly settles "peeling specials means a stride can't split one" — it
+    /// holds only for *raw* (`normalized == false`) tokens. The special split's raw pass
     /// (`SpecialSegmentIterator(.., false)`) searches the non-normalized vocab, so
     /// a `normalized`-form token is invisible to it and stays inside a text
     /// segment; it is peeled only later, *per stride*, by the worker. That is the
     /// residual the `normalized_added_token_blocks_stride` gate exists for.
     #[test]
-    fn rung0_raw_peel_misses_normalized_tokens() {
+    fn special_peel_misses_normalized_tokens() {
         use crate::AddedToken;
         let mut tok = Tokenizer::new(crate::models::bpe::BPE::default());
         tok.add_tokens([AddedToken::from("mask", false).normalized(true)])
@@ -2432,12 +2421,12 @@ mod tests {
         let av = &pipe.inner.added_vocabulary;
         let input = "aa mask bb";
 
-        // Rung-0 pass (normalized = false): the token is NOT peeled.
+        // Raw pass (normalized = false): the token is NOT peeled.
         let raw_special = SpecialSegmentIterator::new(input, av, false)
             .any(|s| matches!(s, Segment::SpecialToken(_)));
         assert!(
             !raw_special,
-            "rung 0's raw pass must not see a normalized-form token"
+            "the raw pass must not see a normalized-form token"
         );
         // Post-normalization pass (normalized = true): now it IS peeled.
         let norm_special = SpecialSegmentIterator::new(input, av, true)
@@ -2445,8 +2434,8 @@ mod tests {
         assert!(norm_special, "the normalized pass must peel it");
     }
 
-    /// Affix-strip gating after rung 0. A *raw* (`normalized == false`)
-    /// `lstrip`/`rstrip` token is peeled by rung 0 with its whitespace absorbed,
+    /// Affix-strip gating after the special split. A *raw* (`normalized == false`)
+    /// `lstrip`/`rstrip` token is peeled by the special split with its whitespace absorbed,
     /// so raw cuts still qualify. A `normalized`-form affix token can't be peeled
     /// before striding, and a whitespace-boundary cut could split its absorbed
     /// run, so it must disable raw cuts. (The old `has_affix_strip` gate rejected
@@ -2475,7 +2464,7 @@ mod tests {
             )
             .stride_boundary()
             .is_some(),
-            "a raw lstrip token is peeled by rung 0 and must not disable raw cuts"
+            "a raw lstrip token is peeled by the special split and must not disable raw cuts"
         );
         assert!(
             make(
@@ -2489,7 +2478,7 @@ mod tests {
         );
     }
 
-    /// A raw (`normalized == false`) `lstrip` token in a large input: rung 0 peels
+    /// A raw (`normalized == false`) `lstrip` token in a large input: the special split peels
     /// it (absorbing the preceding whitespace) and the surrounding segments stride;
     /// the result must stay byte-identical to the serial encode.
     #[test]
@@ -2525,7 +2514,7 @@ mod tests {
     /// specials (`<|reserved_special_token_0|>`), each carrying an internal
     /// number-transition (`_→0`) cut. The old gate checked *all* added tokens and
     /// would disqualify raw striding (silent `Pretokenized` regression); the
-    /// refined gate only checks `normalized` tokens (rung 0 peels the raw ones),
+    /// refined gate only checks `normalized` tokens (the special split peels the raw ones),
     /// so llama-3 must keep `Raw` with the number-transition boundary.
     #[test]
     fn byte_level_raw_specials_keep_split_raw() {
@@ -2539,7 +2528,7 @@ mod tests {
 
     /// A non-chunk-safe config: regex `Span` pre-tokenizer (unknown regex, so
     /// no raw cut qualifies) + WordPiece model, so the plan must
-    /// escalate to [`ParallelPlan::Pretokenized`]. Optionally a `Lowercase`
+    /// escalate to `ParallelPlan::Pretokenized`. Optionally a `Lowercase`
     /// normalizer (safe per-char, but the pretok already forces the escalation)
     /// and a `<s>` special token.
     fn split_at_model_pipeline(lowercase: bool) -> PipelineTokenizer {
@@ -2605,7 +2594,7 @@ mod tests {
 
         let half = "AA.BB.cc.".repeat(2000);
         let big = format!("{half}<s>{}", "CC.aa.BB.".repeat(2000));
-        // Rung 0 peels `<s>` in the builder; the per-segment model prefix runs on
+        // The special split peels `<s>` in the builder; the per-segment model prefix runs on
         // special-free text and (with `Lowercase`) must own its normalized buffer.
         let prefix = tok.pretokenize_segment(&half, &half).unwrap();
         assert!(
@@ -2653,15 +2642,14 @@ mod tests {
         );
     }
 
-    /// Rung 0 (always first): a config no lower rung can cut — `WordLevel` (so no
-    /// `Pretokenized`) under a boundary-hostile `Strip` normalizer (so no
-    /// `Raw`/`Normalized`) picks the `Whole` sub-rung. But a single
-    /// large input dense with special tokens still parallelizes, because rung 0
-    /// wraps every plan: the builder peels the specials (preresolved) and hands
-    /// each inter-special text segment to a worker. Must stay byte-identical to
-    /// the serial encode through both the borrowed and owned handles.
+    /// A config no plan can split — `WordLevel` (so no `Pretokenized`) under a
+    /// boundary-hostile `Strip` normalizer (so no `Raw`/`Normalized`) picks
+    /// `Whole`. A single large input dense with special tokens still
+    /// parallelizes: the special split (always first) peels the specials
+    /// (preresolved) and hands each inter-special segment to a worker. Must stay
+    /// byte-identical to the serial encode, both borrowed and owned handles.
     #[test]
-    fn rung0_specials_parallelize_whole_input() {
+    fn specials_parallelize_whole_input() {
         use crate::models::wordlevel::WordLevelBuilder;
         use crate::normalizers::strip::Strip;
         use crate::pre_tokenizers::whitespace::WhitespaceSplit;
@@ -2684,7 +2672,7 @@ mod tests {
         let tok = PipelineTokenizer::try_from(&tok).unwrap();
         assert!(
             matches!(tok.plan(), ParallelPlan::Whole),
-            "Strip + WordLevel sub-rung must be Whole (rung 0 does the splitting)"
+            "Strip + WordLevel plan must be Whole (the special split does the splitting)"
         );
 
         // ~24 KB, ~2000 interspersed specials → thousands of worker units.
@@ -2692,12 +2680,12 @@ mod tests {
         let ids = |v: Vec<PipelineToken>| v.iter().map(|t| t.id).collect::<Vec<_>>();
         let serial = ids(encode_one(&tok, &big).unwrap());
         let by_ref = ids(tok.encode(big.as_str()).into_single().unwrap());
-        assert_eq!(by_ref, serial, "rung-0 split (borrowed) != serial");
+        assert_eq!(by_ref, serial, "special-split (borrowed) != serial");
         let owned = ids(tok.encode(big.clone()).into_single().unwrap());
-        assert_eq!(owned, serial, "rung-0 split (owned) != serial");
+        assert_eq!(owned, serial, "special-split (owned) != serial");
     }
 
-    /// Rung 2 (`Normalized`): a non-boundary-preserving normalizer
+    /// The `Normalized` plan: a non-boundary-preserving normalizer
     /// (`Prepend`) rules out `Raw`, but the `WhitespaceSplit` pre-tokenizer
     /// can cut the normalized text. The config serial-normalizes then
     /// parallelizes pre-tokenize + model, and must stay byte-identical to the
@@ -2725,7 +2713,7 @@ mod tests {
         let tok = PipelineTokenizer::try_from(&tok).unwrap();
         assert!(
             matches!(tok.plan(), ParallelPlan::Normalized(_)),
-            "Prepend (unsafe normalizer) + WhitespaceSplit + WordPiece must pick rung 2"
+            "Prepend (unsafe normalizer) + WhitespaceSplit + WordPiece must pick `Normalized`"
         );
         let big = "aa bb cc\n".repeat(4000); // ~36 KB, forces striding
         let ids = |v: Vec<PipelineToken>| v.iter().map(|t| t.id).collect::<Vec<_>>();
