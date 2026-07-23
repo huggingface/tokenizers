@@ -205,9 +205,21 @@ impl TryFrom<PreTokenizerWrapper> for PipelinePreTokenizer {
 
 /// An output token. Carries only the vocabulary `id` — offsets and the token
 /// string are dropped, which is all an encode-only caller needs.
+/// `repr(transparent)`: layout-identical to `u32`, so a `&[u32]` id-run reinterprets
+/// as `&[PipelineToken]` for a memcpy emit (see [`ids_as_tokens`]) with no per-id map.
 #[derive(Debug, Clone, Copy)]
+#[repr(transparent)]
 pub struct PipelineToken {
     pub id: u32,
+}
+
+/// Reinterpret a run of raw vocab ids as output tokens — sound because `PipelineToken`
+/// is `repr(transparent)` over `u32`. Lets the BPE emit be a single `extend_from_slice`
+/// (memcpy) instead of an id-by-id `map`/`push`.
+#[inline(always)]
+pub(crate) fn ids_as_tokens(ids: &[u32]) -> &[PipelineToken] {
+    // SAFETY: PipelineToken is repr(transparent) over u32, same size/align/validity.
+    unsafe { std::slice::from_raw_parts(ids.as_ptr() as *const PipelineToken, ids.len()) }
 }
 
 impl From<Token> for PipelineToken {
@@ -510,19 +522,14 @@ impl PipelineTokenizer {
                                     self.pre_tokenizer
                                         .pre_tokenize(normalized_chunk, pre_tokens)?;
                                     if STAGE >= Self::STAGE_MODEL {
-                                        let nb = normalized_chunk.as_bytes();
-                                        for pre_token in pre_tokens.iter() {
-                                            let r = pre_token.range();
-                                            // Pack the key here (parent buffer in hand → the cheap
-                                            // 16-byte wide load is safe mid-buffer) and pass it by
-                                            // value — no keys buffer, and split pays nothing.
-                                            let key = atomsplit::fsm::pack_key(nb, r.start, r.len());
-                                            self.model.tokenize_pipeline(
-                                                &normalized_chunk[r],
-                                                output,
-                                                Some(key),
-                                            )?;
-                                        }
+                                        // One fused call per chunk: BPE hoists the cache borrow /
+                                        // dispatch out of the per-pre-token loop and packs each key
+                                        // from the (hot) parent buffer inside. Split pays nothing.
+                                        self.model.tokenize_chunk(
+                                            normalized_chunk,
+                                            pre_tokens,
+                                            output,
+                                        )?;
                                     }
                                 }
                             }
@@ -783,6 +790,30 @@ impl Model for PipelineModel {
             Self::WordLevel(model) => model.tokenize_pipeline(sequence, output, carried_key),
             Self::WordPiece(model) => model.tokenize_pipeline(sequence, output, carried_key),
         }
+    }
+}
+
+impl PipelineModel {
+    /// Tokenize a whole chunk's pre-tokens into `output`. BPE takes its fused per-chunk path (one
+    /// cache borrow / dispatch for the chunk, not per pre-token); other models fall back to the
+    /// per-pre-token loop, packing the cache key from the (hot) parent buffer as before.
+    #[inline]
+    pub(crate) fn tokenize_chunk(
+        &self,
+        chunk: &str,
+        pre_tokens: &[Split],
+        output: &mut Vec<PipelineToken>,
+    ) -> Result<()> {
+        if let Self::BPE(model) = self {
+            return model.tokenize_chunk(chunk, pre_tokens, output);
+        }
+        let nb = chunk.as_bytes();
+        for pt in pre_tokens {
+            let r = pt.range();
+            let key = atomsplit::fsm::pack_key(nb, r.start, r.len());
+            self.tokenize_pipeline(&chunk[r], output, Some(key))?;
+        }
+        Ok(())
     }
 }
 

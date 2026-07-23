@@ -1296,7 +1296,7 @@ impl pipeline::Model for PipelineBPE {
                 let mut ids = o.borrow_mut();
                 ids.clear();
                 self.encode_piece(sequence, &mut ids);
-                output.extend(ids.iter().map(|&id| PipelineToken { id }));
+                output.extend_from_slice(crate::tokenizer::pipeline::ids_as_tokens(&ids));
             });
             return Ok(());
         }
@@ -1315,7 +1315,7 @@ impl pipeline::Model for PipelineBPE {
                 cache.hash(p)
             };
             if let Some((off, len)) = cache.get(p, h, key) {
-                output.extend(cache.ids_slice(off, len).iter().map(|&id| PipelineToken { id }));
+                output.extend_from_slice(cache.ids_tokens(off, len)); // memcpy emit
                 return;
             }
             // Miss: merge into reused scratch, cache the ids, emit.
@@ -1324,8 +1324,78 @@ impl pipeline::Model for PipelineBPE {
                 ids.clear();
                 self.encode_piece(sequence, &mut ids);
                 cache.insert(p, h, key, &ids);
-                output.extend(ids.iter().map(|&id| PipelineToken { id }));
+                output.extend_from_slice(crate::tokenizer::pipeline::ids_as_tokens(&ids));
             });
+        });
+        Ok(())
+    }
+}
+
+impl PipelineBPE {
+    /// Fused per-chunk tokenize — the de-virtualized hot path. `tokenize_pipeline` was called once
+    /// per pre-token through the `PipelineModel` enum, so every pre-token paid an enum match, a
+    /// thread-local `PIPE_FLAT_CACHE` borrow, and a `retarget` check. Here those happen ONCE per
+    /// chunk; the inner loop then inlines pack_key → hash → probe → emit with no call or TLS barrier
+    /// on the hot (cache-hit) path. Byte-identical to looping `tokenize_pipeline` per pre-token.
+    pub(crate) fn tokenize_chunk(
+        &self,
+        chunk: &str,
+        pre_tokens: &[crate::tokenizer::pipeline::Split],
+        output: &mut Vec<PipelineToken>,
+    ) -> Result<()> {
+        use crate::tokenizer::pipeline::{crc_key_hash, ids_as_tokens, Model as _};
+        let nb = chunk.as_bytes();
+        // Cache off (measurement): defer to the per-pre-token path unchanged.
+        if cache_disabled() {
+            for pt in pre_tokens {
+                let r = pt.range();
+                let key = atomsplit::fsm::pack_key(nb, r.start, r.len());
+                self.tokenize_pipeline(&chunk[r], output, Some(key))?;
+            }
+            return Ok(());
+        }
+        let min_len = min_cache_len();
+        PIPE_FLAT_CACHE.with(|cell| {
+            let mut cache = cell.borrow_mut(); // one borrow for the whole chunk
+            cache.retarget(self.cache_id); // once, not per pre-token
+            for pt in pre_tokens {
+                let r = pt.range();
+                let seq = &chunk[r.start..r.end];
+                if seq.is_empty() {
+                    continue;
+                }
+                let p = seq.as_bytes();
+                if self.ignore_merges {
+                    if let Some(id) = self.vocab.get_bytes(p) {
+                        output.push(PipelineToken { id });
+                        continue;
+                    }
+                }
+                // Short pre-tokens: re-merge is cheaper than a cache round-trip (emit, no insert).
+                if p.len() < min_len {
+                    PIPE_OUT_IDS.with(|o| {
+                        let mut ids = o.borrow_mut();
+                        ids.clear();
+                        self.encode_piece(seq, &mut ids);
+                        output.extend_from_slice(ids_as_tokens(&ids));
+                    });
+                    continue;
+                }
+                let key = atomsplit::fsm::pack_key(nb, r.start, r.len());
+                let h = if key != 0 { crc_key_hash(key) } else { cache.hash(p) };
+                if let Some((off, len)) = cache.get(p, h, key) {
+                    output.extend_from_slice(cache.ids_tokens(off, len)); // memcpy emit
+                    continue;
+                }
+                // Miss: merge into reused scratch, cache the ids, emit.
+                PIPE_OUT_IDS.with(|o| {
+                    let mut ids = o.borrow_mut();
+                    ids.clear();
+                    self.encode_piece(seq, &mut ids);
+                    cache.insert(p, h, key, &ids);
+                    output.extend_from_slice(ids_as_tokens(&ids));
+                });
+            }
         });
         Ok(())
     }

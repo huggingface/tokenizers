@@ -36,7 +36,9 @@ fn clear_on_full() -> bool {
 
 /// hash(8) + key(16) + koff(4) + ioff(4) + klen(2) + ilen(2) + freq(1). `key != 0` = a ≤15-byte
 /// pre-token packed inline (length in top byte): a hit is a register 128-bit compare, no `kbytes`
-/// load, no `memcmp`. `key == 0` = a long (>15B) pre-token, verified the old way via `kbytes`.
+/// load, no `memcmp`. `key == 0` = a long (>15B) pre-token, verified via `kbytes`. The ids always
+/// live in the `ids` arena (inline-in-slot was measured slower in our L2-resident regime — the
+/// wider slot table costs more than the saved arena load, which is already hot here).
 #[derive(Clone, Copy)]
 struct CSlot {
     hash: u64,
@@ -167,12 +169,12 @@ impl FlatCache {
         }
     }
 
-    /// Lookup + bump the entry's frequency on a hit (so the cull can tell hot
-    /// from one-shot). Needs `&mut self`.
-    ///
-    /// `key != 0`: a packed ≤15-byte pre-token — confirm the hit with a register 128-bit compare
-    /// (`s.key == key`), no `kbytes` load, no `memcmp`. `key == 0`: long pre-token — byte-verify
-    /// via `kbytes` as before (unless hash-only).
+    /// Probe for `p`; on a hit bump the entry's frequency (so the cull can tell hot from one-shot)
+    /// and return its ids' `(offset, len)` into the arena; on a miss return `None`. Deliberately
+    /// SMALL so it inlines into the caller's per-pre-token loop — the caller does the memcpy emit
+    /// (`ids_slice` + `extend_from_slice`) so the whole hot path stays branch-local and register-hot.
+    /// `key != 0`: confirm with a register 128-bit compare (`s.key == key`), no `kbytes`, no
+    /// `memcmp`. `key == 0`: byte-verify via `kbytes` (unless hash-only).
     #[inline]
     pub(crate) fn get(&mut self, p: &[u8], h: u64, key: u128) -> Option<(u32, u16)> {
         let mut i = (h as usize) & self.mask;
@@ -204,9 +206,11 @@ impl FlatCache {
         }
     }
 
-    #[inline]
-    pub(crate) fn ids_slice(&self, off: u32, len: u16) -> &[u32] {
-        &self.ids[off as usize..off as usize + len as usize]
+    /// Arena ids for a `(offset, len)` from [`get`], reinterpreted as output tokens for a memcpy emit.
+    #[inline(always)]
+    pub(crate) fn ids_tokens(&self, off: u32, len: u16) -> &[crate::tokenizer::pipeline::PipelineToken] {
+        let (o, n) = (off as usize, len as usize);
+        crate::tokenizer::pipeline::ids_as_tokens(&self.ids[o..o + n])
     }
 
     #[inline]
@@ -238,5 +242,33 @@ impl FlatCache {
             freq: 0, // on probation until reused
         };
         self.count += 1;
+    }
+}
+
+#[cfg(test)]
+mod cache_tests {
+    use super::*;
+
+    #[test]
+    fn slot_fits_one_cache_line() {
+        assert!(std::mem::size_of::<CSlot>() <= 64, "CSlot = {} B", std::mem::size_of::<CSlot>());
+    }
+
+    // Short and long id-runs both round-trip byte-exact through get + ids_tokens.
+    #[test]
+    fn get_roundtrip() {
+        let mut c = FlatCache::new();
+        c.retarget(1);
+        let short: &[u32] = &[10, 20, 30, 40];
+        let long: &[u32] = &[1, 2, 3, 4, 5, 6, 7];
+        let (hs, hl) = (c.hash(b"short"), c.hash(b"longer_token"));
+        c.insert(b"short", hs, 0, short);
+        c.insert(b"longer_token", hl, 0, long);
+        for (p, h, want) in [(&b"short"[..], hs, short), (&b"longer_token"[..], hl, long)] {
+            let (off, len) = c.get(p, h, 0).unwrap_or_else(|| panic!("miss on {p:?}"));
+            let got: Vec<u32> = c.ids_tokens(off, len).iter().map(|t| t.id).collect();
+            assert_eq!(got, want);
+        }
+        assert!(c.get(b"nope", c.hash(b"nope"), 0).is_none()); // absent misses
     }
 }
