@@ -47,6 +47,10 @@ impl PyEncoding {
     }
 
     /// The token ids, as a list.
+    // FIXME: copies Rust -> Python on every access — a fresh list, and each
+    // u32 boxed into an int object, with no caching. Ideally this would return
+    // a numpy uint32 array viewing the Arc buffer (zero-copy), which stays
+    // almost API-compatible: it indexes and iterates like a list, but isn't one.
     #[getter]
     fn ids(&self) -> Vec<u32> {
         self.ids.to_vec()
