@@ -66,7 +66,7 @@ def test_tokens(model):
 def test_offsets(model):
     tok = tokenizer(model)
     for s in samples(model):
-        assert [list(pair) for pair in tok.encode(s["text"]).offsets] == s["offsets"], s["source"]
+        assert [list(span) for span in tok.encode(s["text"]).offsets] == s["offsets"], s["source"]
 
 
 def test_word_ids(model):
@@ -114,7 +114,7 @@ def test_pairs(model):
         assert enc.type_ids == p["type_ids"], p["text"]
         assert enc.sequence_ids == p["sequence_ids"], p["text"]
         assert enc.special_tokens_mask == p["special_tokens_mask"], p["text"]
-        assert [list(pair) for pair in enc.offsets] == p["offsets"], p["text"]
+        assert [list(span) for span in enc.offsets] == p["offsets"], p["text"]
 
 
 def test_fixture_digests(model):

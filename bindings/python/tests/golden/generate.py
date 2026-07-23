@@ -86,7 +86,7 @@ def sample_record(tok: Tokenizer, source: str, text: str) -> dict:
         "ids": enc.ids,
         "ids_no_specials": tok.encode(text, add_special_tokens=False).ids,
         "tokens": enc.tokens,
-        "offsets": [list(pair) for pair in enc.offsets],
+        "offsets": [list(span) for span in enc.offsets],
         "type_ids": enc.type_ids,
         "special_tokens_mask": enc.special_tokens_mask,
         "word_ids": enc.word_ids,
@@ -106,7 +106,7 @@ def pair_record(tok: Tokenizer, text: str, pair: str) -> dict:
         "type_ids": enc.type_ids,
         "sequence_ids": enc.sequence_ids,
         "special_tokens_mask": enc.special_tokens_mask,
-        "offsets": [list(pair) for pair in enc.offsets],
+        "offsets": [list(span) for span in enc.offsets],
     }
 
 

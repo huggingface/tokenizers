@@ -23,7 +23,6 @@ env:
   # CI runners have no GPU: resolve torch from the CPU index instead of
   # pulling ~2 GB of CUDA wheels.
   UV_TORCH_BACKEND: cpu
-  HF_TOKEN: ${{ secrets.HF_TOKEN }}
 
 jobs:
   e2e-release:
@@ -45,6 +44,8 @@ jobs:
 
       - name: Run the e2e suite
         working-directory: ./bindings/python
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: make e2e-release
 
   golden-freshness:
@@ -65,6 +66,8 @@ jobs:
 
       - name: Download model tokenizers and fixture corpora
         working-directory: tokenizers
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: make bench-models fixtures HF="uvx --from huggingface_hub hf"
 
       # Regenerating must reproduce the committed goldens byte for byte. A
@@ -117,6 +120,8 @@ jobs:
 
       - name: Download model tokenizers and fixture corpora
         working-directory: tokenizers
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: make bench-models fixtures HF="uvx --from huggingface_hub hf"
 
       - name: Run the golden conformance layer
@@ -128,6 +133,8 @@ jobs:
       - name: Run the e2e suite
         if: always()
         working-directory: ./bindings/python
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           set -o pipefail
           make e2e 2>&1 | tee e2e.log
