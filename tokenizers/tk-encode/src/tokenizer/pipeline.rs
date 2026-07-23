@@ -8,6 +8,8 @@ use crate::models::bpe::{BpeScratch, PipelineBPE};
 use crate::models::unigram::{Unigram, UnigramScratch};
 use crate::models::wordlevel::WordLevel;
 use crate::models::wordpiece::{PipelineWordPiece, WordPieceScratch};
+use crate::processors::bert::BertProcessing;
+use crate::processors::roberta::RobertaProcessing;
 use crate::utils::byte_level::GPT2_REGEX_STR;
 use crate::vocab::bucket_added_vocabulary::{
     AddedToken as BucketAddedToken, AddedVocabulary as BucketAddedVocabulary,
@@ -150,6 +152,21 @@ impl TryFrom<PreTokenizerWrapper> for PipelinePreTokenizer {
     }
 }
 
+/// A post-processor compiled to a prefix and a suffix (slices of token IDs)
+/// The prefix and suffix are respectively prepended and appended to the sequence encoding:
+/// The default (both slices empty) is the no-post-processor case.
+/// Processors that don't reduce to such a frame are rejected at conversion.
+///
+/// Example:
+///     PipelinePostProcessor {
+///         prefix: vec![100].into_boxed_slice(),
+///         suffix: vec![101, 102].into_boxed_slice()
+///     };
+///
+///     [CLS] The quick Brown fox  [SEP]
+///     <100>|  <3> <4> <19> <67> | <101> <102>
+///   prefix |  sequence encoding | suffix
+///
 #[derive(Debug, Default)]
 pub struct PipelinePostProcessor {
     prefix: Box<[PipelineToken]>,
@@ -161,13 +178,20 @@ impl TryFrom<&PostProcessorWrapper> for PipelinePostProcessor {
 
     fn try_from(value: &PostProcessorWrapper) -> Result<Self> {
         match value {
-            PostProcessorWrapper::Bert(pp) => Ok(Self {
-                prefix: vec![PipelineToken { id: pp.cls.1 }].into_boxed_slice(),
-                suffix: vec![PipelineToken { id: pp.sep.1 }].into_boxed_slice(),
+            PostProcessorWrapper::Bert(BertProcessing {
+                cls: (_, cls_id),
+                sep: (_, sep_id),
+            }) => Ok(Self {
+                prefix: vec![PipelineToken { id: *cls_id }].into_boxed_slice(),
+                suffix: vec![PipelineToken { id: *sep_id }].into_boxed_slice(),
             }),
-            PostProcessorWrapper::Roberta(pp) => Ok(Self {
-                prefix: vec![PipelineToken { id: pp.cls.1 }].into_boxed_slice(),
-                suffix: vec![PipelineToken { id: pp.sep.1 }].into_boxed_slice(),
+            PostProcessorWrapper::Roberta(RobertaProcessing {
+                cls: (_, cls_id),
+                sep: (_, sep_id),
+                ..
+            }) => Ok(Self {
+                prefix: vec![PipelineToken { id: *cls_id }].into_boxed_slice(),
+                suffix: vec![PipelineToken { id: *sep_id }].into_boxed_slice(),
             }),
             PostProcessorWrapper::Template(pp) => {
                 let mut prefix = vec![];
@@ -213,7 +237,6 @@ impl TryFrom<&PostProcessorWrapper> for PipelinePostProcessor {
                 })
             }
             PostProcessorWrapper::ByteLevel(_) => Ok(Self::default()),
-
             PostProcessorWrapper::Sequence(sequence) => {
                 // Each member wraps the previous members' output, so later members end up
                 // outermost: prefix accumulates in reverse member order, suffix in forward.
@@ -358,8 +381,7 @@ impl<'a, 'b, PatternMatcher: PipelinePatternMatcher> Iterator
 }
 
 /// Experimental encode-only pipeline built from a [`Tokenizer`]. Runs the same
-/// stages (special-token split → normalize → pre-tokenize → model) over borrowed
-/// ranges to avoid the reference path's allocations.
+/// stages over borrowed ranges to avoid the reference path's allocations.
 pub struct PipelineTokenizer {
     added_vocabulary: BucketAddedVocabulary,
     normalizer: Option<NormalizerWrapper>,
@@ -473,10 +495,10 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
 }
 
 impl PipelineTokenizer {
-    /// Stage gates for [`encode_upto`](Self::encode_upto), in execution order. Each
-    /// level runs every stage up to and including itself; `STAGE_MODEL` is a full
-    /// encode. `STAGE_FRAME` is the special-token scan + iteration only (the "other"
-    /// slice in the decomposition).
+    /// Stage gates for [`encode_generic`](Self::encode_generic), in execution order.
+    /// Each level runs every stage up to and including itself; `STAGE_POSTPROCESS` is
+    /// a full encode. `STAGE_FRAME` is the special-token scan + iteration only (the
+    /// "other" slice in the decomposition).
     pub const STAGE_FRAME: u8 = 0;
     pub const STAGE_NORMALIZE: u8 = 1;
     pub const STAGE_SPLIT: u8 = 2;
@@ -512,13 +534,13 @@ impl PipelineTokenizer {
 
     /// Single source of truth for the encode pipeline, generic over how many stages
     /// run. `STAGE` is a **const generic**, so `if STAGE >= …` folds at compile time and
-    /// the disabled stages are compiled out — the full specialization ([`STAGE_MODEL`],
-    /// which [`encode`](Self::encode) calls) is branchless and identical to a
-    /// hand-written full pipeline, while the benchmark drives lower `STAGE` values to
-    /// time each stage's marginal cost (the ablation ladder), e.g.
+    /// the disabled stages are compiled out — the full specialization
+    /// ([`STAGE_POSTPROCESS`], which [`encode`](Self::encode) calls) is branchless and
+    /// identical to a hand-written full pipeline, while the benchmark drives lower
+    /// `STAGE` values to time each stage's marginal cost (the ablation ladder), e.g.
     /// `model = t(MODEL) − t(SPLIT)`. No runtime gate, no `Instant` in the loop.
     ///
-    /// [`STAGE_MODEL`]: Self::STAGE_MODEL
+    /// [`STAGE_POSTPROCESS`]: Self::STAGE_POSTPROCESS
     ///
     /// `output` and the `pre_tokens` scratch are caller-owned so a benchmark can reuse
     /// them across calls and observe both buffers to anchor the ablation levels — the
@@ -533,6 +555,7 @@ impl PipelineTokenizer {
         output: &mut Vec<PipelineToken>,
     ) -> Result<()> {
         let PipelinePostProcessor { prefix, suffix } = &self.post_processor;
+        // Prepend prefix tokens, if any 
         if add_special_tokens && STAGE >= Self::STAGE_POSTPROCESS {
             output.extend_from_slice(prefix);
         }
@@ -583,6 +606,7 @@ impl PipelineTokenizer {
                 }
             };
         }
+        // Append suffix tokens, if any
         if add_special_tokens && STAGE >= Self::STAGE_POSTPROCESS {
             output.extend_from_slice(suffix);
         }
