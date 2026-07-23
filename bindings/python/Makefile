@@ -5,9 +5,11 @@ PYTHON := .venv/bin/python
 dev: .venv
 	. .venv/bin/activate && maturin develop --release
 
+# huggingface_hub backs from_pretrained (the wheel's optional `hub` extra);
+# the pretrained tests and example 01 need it.
 .venv:
 	uv venv .venv
-	uv pip install --python $(PYTHON) maturin numpy pytest ruff mypy
+	uv pip install --python $(PYTHON) maturin numpy pytest ruff mypy huggingface_hub
 
 # Regenerate the .pyi stubs from the built extension. Run after `make dev`.
 .PHONY: stubs
