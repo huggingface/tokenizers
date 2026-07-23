@@ -21,10 +21,17 @@ test: dev
 	$(PYTHON) -m pytest -q
 	$(PYTHON) -m mypy.stubtest tokenizers --allowlist stubtest_allowlist.txt
 
+# Examples 01-03 read this corpus; fetch it through the tokenizers repo's
+# data rule, pointing it at the dev venv's `hf` CLI so nothing global is
+# needed.
+TOKENIZERS_DIR := ../../tokenizers
+$(TOKENIZERS_DIR)/data/big.txt: | .venv
+	$(MAKE) -C $(TOKENIZERS_DIR) data/big.txt HF=$(abspath .venv/bin/hf)
+
 # Run the end-to-end examples. `datasets` (for 06) is installed on demand so
 # `make dev` stays lean; 06 downloads wikitext-2 (~12 MB) on first run.
 .PHONY: examples
-examples: dev
+examples: dev $(TOKENIZERS_DIR)/data/big.txt
 	uv pip install --python $(PYTHON) datasets
 	$(PYTHON) examples/01_pretrained.py
 	$(PYTHON) examples/02_train_and_encode.py
@@ -89,4 +96,4 @@ lint: .venv
 
 .PHONY: clean
 clean:
-	rm -rf .venv .release target tools/stub-gen/target
+	rm -rf .venv .venv-e2e .venv-e2e-release .release target tools/stub-gen/target
