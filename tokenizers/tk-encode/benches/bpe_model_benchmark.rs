@@ -3,12 +3,14 @@
 #[macro_use]
 extern crate criterion;
 
-use std::convert::TryFrom;
 use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, Throughput};
-use tk_encode::pipeline::PipelineTokenizer;
-use tk_encode::Tokenizer;
+use tk_encode::{
+    Tokenizer,
+    models::bpe::BpeScratch,
+    pipeline::{Model, PipelineModel, PipelineToken, PipelineTokenizer},
+};
 
 // We will be testing different voacab / merges.
 const TOKENIZERS: &[(&str, &str)] = &[("dsv4", "../data/deepseek-v4-flash-base-tokenizer.json")];
@@ -46,11 +48,24 @@ fn make_chunks(lines: &[&str], target_bytes: usize) -> Vec<String> {
 fn bench_pipeline(c: &mut Criterion) {
     for (tok_name, tok_path) in TOKENIZERS {
         // The oracle will use the old merge,
-        let Ok(oracle) = BPE::from_file(tok_path) else {
+        let Ok(oracle) = Tokenizer::from_file(tok_path) else {
             eprintln!("pipeline bench: skip {tok_name} — {tok_path} not found");
             continue;
         };
-        let pipeline = oracle.clone();
+        let pipeline = match PipelineTokenizer::try_from(&oracle) {
+            Ok(p) => p,
+            _ => {
+                eprint!("Failed to init from the oracle");
+                continue;
+            }
+        };
+        let model = match pipeline.get_model() {
+            PipelineModel::BPE(p) => p,
+            _ => {
+                eprintln!("Only bpe models are supported");
+                continue;
+            }
+        };
         for (corpus, path) in CORPORA {
             let text = std::fs::read_to_string(path).unwrap();
             let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
@@ -62,11 +77,18 @@ fn bench_pipeline(c: &mut Criterion) {
                 group.throughput(Throughput::Bytes(total_bytes));
                 group.bench_function(BenchmarkId::from_parameter(label), |b| {
                     b.iter(|| {
-                        let mut n = 0usize;
                         for chunk in &chunks {
-                            n += pipeline.encode(chunk, false).unwrap().len();
+                            let mut output =
+                                Vec::<PipelineToken>::with_capacity(total_bytes as usize);
+                            model
+                                .tokenize_pipeline(
+                                    chunk.as_str(),
+                                    &mut model.init_scratch(),
+                                    &mut output,
+                                )
+                                .unwrap();
+                            black_box(output);
                         }
-                        black_box(n)
                     })
                 });
             }
