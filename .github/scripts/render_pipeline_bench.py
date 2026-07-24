@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Render the fixture_bench JSON as charts + a markdown PR report.
 
-Two series: `baseline` (the latest released `tokenizers` crate — the bar to beat,
-drawn gray; the in-tree `Tokenizer` isn't benched, it's only the id oracle behind
-`ids_match`) and `pipeline` (the experimental PipelineTokenizer, blue). Leads with
+Two series: `baseline` (the latest released `tokenizers` crate — the bar to beat
+AND the correctness reference, drawn gray; the in-tree `Tokenizer`, being removed,
+only builds the pipeline) and `pipeline` (the experimental PipelineTokenizer,
+blue). `ids_match`/`text_match` compare the pipeline against the release. Leads with
 three always-visible charts — per-model geomean ×speedup, memory footprint, binary
 size — then one collapsed <details> per model (per-fixture speedup, thread scaling,
 stage mix, numbers table). Models the pipeline can't build yet render as "not
@@ -105,6 +106,23 @@ def speedup(row):
 
 def model_speedups(model):
     return [v for v in (speedup(r) for r in model["results"]) if v]
+
+
+def decode_speedup(row):
+    m = row.get("decode_mbps") or {}
+    b, p = m.get("baseline"), m.get("pipeline")
+    return p / b if b and p else None
+
+
+def decode_model_speedups(model):
+    return [v for v in (decode_speedup(r) for r in model["results"]) if v]
+
+
+def has_decode_baseline(model):
+    """True once any fixture carries a released-crate decode number — the decode
+    section renders (baseline bar + pipeline 'pending') even before the pipeline
+    can decode."""
+    return any((r.get("decode_mbps") or {}).get("baseline") for r in model["results"])
 
 
 def base_speedup(row, base_lookup, model_name):
@@ -287,9 +305,14 @@ def overview_svg(models, subtitle_base, meta, lo, hi, baseline_label,
     return svg_doc(ink, height, title, subtitle, axis + "".join(body) + legend, meta)
 
 
-def memory_svg(models, meta, baseline_label):
+def memory_svg(models, meta, baseline_label, pass_key="encode_bytes",
+               pass_label="encode", title="Memory footprint", subtitle_base=""):
     """Per model: resident-set delta of each implementation — load footprint plus
-    the encode-pass delta as stacked segments, peak RSS as a tick."""
+    the `pass_key`-pass delta as stacked segments, peak RSS as a tick. `pass_key`
+    selects the encode-pass or the decode-pass delta (same chart, both directions).
+    An impl that didn't run the pass draws no bar and totals "—" (decode while the
+    pipeline is a stub → baseline-only rows); a model where neither impl ran it is
+    dropped."""
     ink, sink = INK, SERIES_INK
     models = [m for m in models if isinstance(m.get("memory"), dict)]
 
@@ -297,19 +320,24 @@ def memory_svg(models, meta, baseline_label):
         d = m["memory"].get(impl)
         if not isinstance(d, dict):
             return None
-        return {k: max(0, d[k]) / 1e6 if d.get(k) is not None else None
-                for k in ("load_bytes", "encode_bytes", "peak_bytes")}
+        pick = {"load_bytes": "load_bytes", "pass": pass_key, "peak_bytes": "peak_bytes"}
+        return {k: max(0, d[src]) / 1e6 if d.get(src) is not None else None
+                for k, src in pick.items()}
+
+    models = [m for m in models
+              if any((mem(m, impl) or {}).get("pass") is not None
+                     for impl in ("baseline", "pipeline"))]
 
     vals = []
     for m in models:
         for impl in ("baseline", "pipeline"):
             d = mem(m, impl)
-            if d:
-                vals.append((d["load_bytes"] or 0) + (d["encode_bytes"] or 0))
+            if d and d["load_bytes"] is not None and d["pass"] is not None:
+                vals.append(d["load_bytes"] + d["pass"])
                 if d["peak_bytes"]:
                     vals.append(d["peak_bytes"])
     if not vals:
-        return svg_doc(ink, 120, "Memory footprint", "no data", "", meta)
+        return svg_doc(ink, 120, title, "no data", "", meta)
     max_mb = max(vals) * 1.05
 
     def x(v):
@@ -320,7 +348,7 @@ def memory_svg(models, meta, baseline_label):
     body = [f'<text x="{col_x}" y="{top - 14}" fill="{ink["muted"]}" font-size="11" '
             f'text-anchor="end">MB: {escape(baseline_label)} → Pipeline</text>',
             f'<text x="{OV_GUTTER}" y="{top - 14}" fill="{ink["muted"]}" font-size="11">'
-            f'smaller is better · solid: after load · translucent: encode-pass delta</text>']
+            f'smaller is better · solid: after load · translucent: {escape(pass_label)}-pass delta</text>']
     y = top
     for m in models:
         cy = y + row_h / 2
@@ -330,11 +358,11 @@ def memory_svg(models, meta, baseline_label):
         by = y + 8
         for impl in ("baseline", "pipeline"):
             d = mem(m, impl)
-            if not d:
+            if not d or d["load_bytes"] is None or d["pass"] is None:
                 totals.append(None)
                 by += bar_h + 3
                 continue
-            load, enc = d["load_bytes"] or 0, d["encode_bytes"] or 0
+            load, enc = d["load_bytes"], d["pass"]
             totals.append(load + enc)
             body.append(f'<rect x="{x(0):.1f}" y="{by:.1f}" width="{max(1.5, x(load) - x(0)):.1f}" '
                         f'height="{bar_h}" rx="2" fill="{sink[impl]}"/>')
@@ -360,9 +388,9 @@ def memory_svg(models, meta, baseline_label):
         ("tick", ink["primary"], "peak RSS (VmHWM)"),
     ])
     height = y + 34
-    subtitle = "resident-set delta per implementation, one process each · load + encode pass"
-    return svg_doc(ink, height, "Memory footprint",
-                   subtitle, grid + "".join(body) + legend, meta)
+    subtitle = f"resident-set delta per implementation, one process each · load + {pass_label} pass"
+    return svg_doc(ink, height, title, subtitle, grid + "".join(body) + legend, meta,
+                   subtitle_base)
 
 
 def chart_svg(model, subtitle_base, meta, lo, hi, baseline_label):
@@ -378,7 +406,6 @@ def chart_svg(model, subtitle_base, meta, lo, hi, baseline_label):
     body = [f'<text x="{col_x}" y="{top - 14}" fill="{ink["muted"]}" font-size="11" '
             f'text-anchor="end">MB/s: {escape(baseline_label)} → Pipeline</text>']
     y = top
-    baseline_id_note = False
     for key, title in GROUPS:
         # stable order (alphabetical) so a fixture keeps its row across runs and
         # lines up with the stage chart — not sorted by the (run-varying) speedup.
@@ -390,12 +417,8 @@ def chart_svg(model, subtitle_base, meta, lo, hi, baseline_label):
                     f'font-weight="600" letter-spacing="1.2" text-anchor="end" dx="-10">{title.upper()}</text>')
         y += 22
         for r in group_rows:
-            label = r["fixture"]
-            if r.get("ids_match_baseline") is False:
-                label += " †"
-                baseline_id_note = True
             body.append(f'<text x="{GUTTER - 10}" y="{y + ROW_H / 2 + 4}" fill="{ink["secondary"]}" '
-                        f'font-size="12.5" text-anchor="end">{escape(label)}</text>')
+                        f'font-size="12.5" text-anchor="end">{escape(r["fixture"])}</text>')
             v = speedup(r)
             by = y + (ROW_H - BAR_H) / 2
             if v:
@@ -434,9 +457,147 @@ def chart_svg(model, subtitle_base, meta, lo, hi, baseline_label):
         parts.append(f"geomean ×{geomean(vals):.2f} vs {baseline_label}")
     else:
         parts.append(f"{baseline_label} can’t load this model — no comparison")
-    if baseline_id_note:
-        parts.append(f"† ids differ from {baseline_label}")
     return svg_doc(ink, height, f'{model["model"]} — PipelineTokenizer encode throughput',
+                   " · ".join(parts), axis + "".join(body) + legend, meta, subtitle_base)
+
+
+def decode_overview_svg(models, subtitle_base, meta, lo, hi, baseline_label):
+    """Headline decode chart, twin of `overview_svg`: per-model geomean ×speedup of
+    pipeline decode vs the released crate (×1.0), min–max whisker across fixtures.
+    Same row set as the encode overview — models whose decode isn't implemented yet
+    show a muted 'pending' row, ones the pipeline can't build show 'not supported'."""
+    ink, sink = INK, SERIES_INK
+    title = "PipelineTokenizer vs latest release — decode throughput"
+    x = log_x(OV_GUTTER, OV_PLOT, lo, hi)
+    ticks = thin_ticks([t for t in TICKS if lo <= t <= hi], x, min_px=34, keep=1.0)
+
+    top, row_h = 74, 40
+    col_x = CHART_W - 16
+    body = [f'<text x="{col_x}" y="{top - 14}" fill="{ink["muted"]}" font-size="11" '
+            f'text-anchor="end">fixtures · text</text>']
+    y = top
+    for m in models:
+        cy = y + row_h / 2
+        body.append(f'<text x="{OV_GUTTER - 14}" y="{cy - 3:.1f}" fill="{ink["primary"]}" '
+                    f'font-size="12.5" font-weight="600" text-anchor="end">{escape(m["model"])}</text>')
+        desc = m.get("desc") or m["shape"]
+        body.append(f'<text x="{OV_GUTTER - 14}" y="{cy + 11:.1f}" fill="{ink["muted"]}" '
+                    f'font-size="10.5" text-anchor="end">{escape(desc)}</text>')
+        vals = decode_model_speedups(m)
+        if vals:
+            g, mn, mx = geomean(vals), min(vals), max(vals)
+            body.append(hbar(x(1.0), x(g), cy - 7, 14, sink["pipeline"]))
+            body.append(f'<line x1="{x(mn):.1f}" y1="{cy:.1f}" x2="{x(mx):.1f}" y2="{cy:.1f}" '
+                        f'stroke="{ink["secondary"]}" stroke-width="1.5"/>')
+            for v in (mn, mx):
+                body.append(f'<line x1="{x(v):.1f}" y1="{cy - 4:.1f}" x2="{x(v):.1f}" y2="{cy + 4:.1f}" '
+                            f'stroke="{ink["secondary"]}" stroke-width="1.5"/>')
+            anchor, lx = (("start", max(x(mx), x(1.0)) + 8) if g >= 1
+                          else ("end", min(x(mn), x(1.0)) - 8))
+            if anchor == "end" and lx - 40 < OV_GUTTER + 4:
+                anchor, lx = "start", max(x(mx), x(1.0)) + 8
+            body.append(f'<text x="{lx:.1f}" y="{cy + 4:.1f}" fill="{ink["primary"]}" font-size="12" '
+                        f'font-weight="600" text-anchor="{anchor}" '
+                        f'style="font-variant-numeric:tabular-nums">×{g:.2f}</text>')
+            bad = sum(1 for r in m["results"] if r.get("text_match") is False)
+            right, fill = ((f"⚠ {bad} differ", ink["critical"]) if bad
+                           else (f'{len(m["results"])} · text ok', ink["secondary"]))
+            body.append(f'<text x="{col_x}" y="{cy + 4:.1f}" fill="{fill}" font-size="12" '
+                        f'text-anchor="end" style="font-variant-numeric:tabular-nums">{right}</text>')
+        elif not m["results"]:
+            pretok = m["shape"].split("·")[-1].strip()
+            why = (m.get("reason") or f"no {pretok} pre-tokenizer")
+            body.append(f'<text x="{x(1.0) + 8:.1f}" y="{cy + 4:.1f}" fill="{ink["muted"]}" '
+                        f'font-size="11.5" font-style="italic">not supported — {escape(why)}</text>')
+            body.append(f'<text x="{col_x}" y="{cy + 4:.1f}" fill="{ink["muted"]}" font-size="12" '
+                        f'text-anchor="end">—</text>')
+        elif m.get("decode_reason"):
+            body.append(f'<text x="{x(1.0) + 8:.1f}" y="{cy + 4:.1f}" fill="{ink["muted"]}" '
+                        f'font-size="11.5" font-style="italic">decode pending — not implemented yet</text>')
+            body.append(f'<text x="{col_x}" y="{cy + 4:.1f}" fill="{ink["muted"]}" font-size="12" '
+                        f'text-anchor="end">—</text>')
+        else:
+            msg = f"{baseline_label} can’t decode this model — no comparison"
+            body.append(f'<text x="{x(1.0) + 8:.1f}" y="{cy + 4:.1f}" fill="{ink["muted"]}" '
+                        f'font-size="11.5" font-style="italic">{escape(msg)}</text>')
+        y += row_h
+
+    axis = speedup_axis(ink, x, ticks, top, y + 4)
+    y += 30
+    legend = legend_row(ink, sink, y, [
+        ("swatch", "pipeline", "PipelineTokenizer decode"),
+        ("tick", ink["baseline"], f"×1.0 = {baseline_label}"),
+    ])
+    height = y + 34
+    subtitle = (f"geomean ×speedup per model vs {baseline_label} · "
+                f"whisker: min–max across fixtures · both decode the same "
+                f"{baseline_label}-encoded ids · {subtitle_base}")
+    return svg_doc(ink, height, title, subtitle, axis + "".join(body) + legend, meta)
+
+
+def decode_chart_svg(model, subtitle_base, meta, lo, hi, baseline_label):
+    """Per-fixture decode ×speedup vs the release, twin of `chart_svg`. Rows with no
+    pipeline decode yet show the baseline number and a blank (pending) bar."""
+    ink, sink = INK, SERIES_INK
+    rows = model["results"]
+    x = log_x(GUTTER, PLOT_W, lo, hi)
+    ticks = thin_ticks([t for t in TICKS if lo <= t <= hi], x, min_px=34, keep=1.0)
+
+    top = 74
+    col_x = GUTTER + PLOT_W + PAD_R + COL_W - 16
+    body = [f'<text x="{col_x}" y="{top - 14}" fill="{ink["muted"]}" font-size="11" '
+            f'text-anchor="end">MB/s: {escape(baseline_label)} → Pipeline</text>']
+    y = top
+    for key, gtitle in GROUPS:
+        group_rows = sorted((r for r in rows if r["group"] == key), key=lambda r: r["fixture"])
+        if not group_rows:
+            continue
+        body.append(f'<text x="{GUTTER}" y="{y + 12}" fill="{ink["secondary"]}" font-size="11" '
+                    f'font-weight="600" letter-spacing="1.2" text-anchor="end" dx="-10">{gtitle.upper()}</text>')
+        y += 22
+        for r in group_rows:
+            body.append(f'<text x="{GUTTER - 10}" y="{y + ROW_H / 2 + 4}" fill="{ink["secondary"]}" '
+                        f'font-size="12.5" text-anchor="end">{escape(r["fixture"])}</text>')
+            v = decode_speedup(r)
+            by = y + (ROW_H - BAR_H) / 2
+            if v:
+                body.append(hbar(x(1.0), x(v), by, BAR_H, sink["pipeline"]))
+                txt = f"×{v:.2f}"
+                fill = ink["primary"]
+                if r.get("text_match") is False:
+                    txt += "  ⚠ text differs"
+                    fill = ink["critical"]
+                anchor, lx = ("start", max(x(1.0), x(v)) + 6) if v >= 1 else ("end", min(x(1.0), x(v)) - 6)
+                if anchor == "end" and lx - len(txt) * 6.7 < GUTTER + 4:
+                    anchor, lx = "start", x(1.0) + 6
+                body.append(f'<text x="{lx:.1f}" y="{y + ROW_H / 2 + 4}" fill="{fill}" '
+                            f'font-size="12" font-weight="600" text-anchor="{anchor}" '
+                            f'style="font-variant-numeric:tabular-nums">{txt}</text>')
+            mb = r.get("decode_mbps") or {}
+            body.append(f'<text x="{col_x}" y="{y + ROW_H / 2 + 4}" fill="{ink["secondary"]}" '
+                        f'font-size="12" text-anchor="end" style="font-variant-numeric:tabular-nums">'
+                        f'{chain([mb.get("baseline"), mb.get("pipeline")])}</text>')
+            y += ROW_H
+        y += 10
+
+    axis = speedup_axis(ink, x, ticks, top, y)
+    y += 26
+    legend = legend_row(ink, sink, y, [
+        ("swatch", "pipeline", "PipelineTokenizer decode"),
+        ("tick", ink["baseline"], f"×1.0 = {baseline_label}"),
+    ])
+    height = y + 44
+
+    parts = [model["shape"]]
+    vals = decode_model_speedups(model)
+    if vals:
+        parts.append(f"geomean ×{geomean(vals):.2f} vs {baseline_label}")
+    elif model.get("decode_reason"):
+        parts.append("decode pending — not implemented yet")
+    else:
+        parts.append(f"{baseline_label} can’t decode this model — no comparison")
+    parts.append("MB/s = decoded text bytes/s, same ids to both")
+    return svg_doc(ink, height, f'{model["model"]} — PipelineTokenizer decode throughput',
                    " · ".join(parts), axis + "".join(body) + legend, meta, subtitle_base)
 
 
@@ -647,18 +808,21 @@ def binsize_svg(sizes, meta, baseline_label):
                    subtitle, grid + "".join(body), meta)
 
 
-def has_threads(m):
-    t = m.get("threads")
+def has_threads(m, key="threads"):
+    t = m.get(key)
     return isinstance(t, dict) and bool(t.get("counts"))
 
 
-def threads_svg(model, meta, baseline_label):
-    """Per model: encode throughput (MB/s) at 1/2/4/8/device-max threads — pipeline
-    vs the release — with a per-row *ideal linear* tick (single-thread × N) on the
+def threads_svg(model, meta, baseline_label, threads_key="threads", title="Thread scaling",
+                subtitle_base=""):
+    """Per model: throughput (MB/s) at 1/2/4/8/device-max threads — pipeline vs the
+    release — with a per-row *ideal linear* tick (single-thread × N) on the
     pipeline bar, so linear vs sub-linear scaling is visible at a glance alongside
-    the pipeline↔release gap; the right column carries self-scaling % of linear."""
+    the pipeline↔release gap; the right column carries self-scaling % of linear.
+    `threads_key` selects the encode (`threads`) or decode (`decode_threads`) sweep;
+    a `null` pipeline series (decode while stubbed) draws baseline-only."""
     ink, sink = INK, SERIES_INK
-    t = model["threads"]
+    t = model[threads_key]
     counts, pipe, base = t["counts"], t["pipeline_mbps"], t["baseline_mbps"]
     p1 = pipe[0] if pipe and pipe[0] else None  # single-thread anchor for the linear reference
     ideal = [p1 * n for n in counts] if p1 else []
@@ -715,8 +879,8 @@ def threads_svg(model, meta, baseline_label):
         sc = pipe[-1] / p1
         scaling = f" · pipeline {sc:.1f}× on {counts[-1]} threads ({sc / counts[-1] * 100:.0f}% of linear)"
     subtitle = f"throughput at N threads vs {baseline_label}; tick = perfect linear scaling{scaling}"
-    return svg_doc(ink, height, "Thread scaling",
-                   subtitle, grid + "".join(body) + legend, meta)
+    return svg_doc(ink, height, title,
+                   subtitle, grid + "".join(body) + legend, meta, subtitle_base)
 
 
 def pretok_compare_md(model):
@@ -766,8 +930,8 @@ def render_markdown(data, subtitle_base, meta, base, run_id, sizes,
     unsupported = [m for m in models if not m["results"]]
     mismatches = [f"{m['model']}/{r['fixture']}"
                   for m in benched for r in m["results"] if r["ids_match"] is False]
-    base_mismatch = sorted({m["model"] for m in benched
-                            for r in m["results"] if r.get("ids_match_baseline") is False})
+    text_mismatches = [f"{m['model']}/{r['fixture']}"
+                       for m in benched for r in m["results"] if r.get("text_match") is False]
 
     md = ["## PipelineTokenizer benchmark", "",
           f"**{len(benched)} / {len(models)} models supported** — PipelineTokenizer vs "
@@ -782,13 +946,22 @@ def render_markdown(data, subtitle_base, meta, base, run_id, sizes,
     if sizes:
         md += [picture(base, run_id, "binsize", "Minimal encode binary size", 860), ""]
 
+    md += ["### Decode", "",
+           f"Round-trip: {baseline_label} `encode_fast` produces the id streams "
+           "(same fixtures, `add_special_tokens=true`); both implementations decode "
+           "those SAME ids with `skip_special_tokens=false`. MB/s counts decoded "
+           "text bytes.", "",
+           picture(base, run_id, "decode-overview",
+                   "Per-model decode throughput vs latest release", 860), ""]
+    if any(has_decode_baseline(m) for m in benched):
+        md += [picture(base, run_id, "decode-memory", "Per-model decode memory footprint", 860), ""]
+
     if mismatches:
-        md += [f"> ⚠️ **Pipeline token ids diverge from this tree's Tokenizer on: "
+        md += [f"> ⚠️ **Pipeline token ids diverge from `tokenizers` {baseline_label} on: "
                f"{', '.join(mismatches)}** — speedups there are meaningless until fixed.", ""]
-    if base_mismatch:
-        md += [f"> ℹ️ Token ids differ from {baseline_label} on: {', '.join(base_mismatch)} "
-               f"(† in the per-model charts) — expected when this branch fixes encode bugs, "
-               f"but worth a look.", ""]
+    if text_mismatches:
+        md += [f"> ⚠️ **Pipeline decode diverges from `tokenizers` {baseline_label} on: "
+               f"{', '.join(text_mismatches)}** — decode speedups there are meaningless until fixed.", ""]
 
     for m in benched:
         slug = slugify(m["model"])
@@ -800,7 +973,14 @@ def render_markdown(data, subtitle_base, meta, base, run_id, sizes,
             bvals = base_model_speedups(m, base_lookup)
             if bvals:
                 summary += f" · ×{geomean(bvals):.2f} vs base"
+        dvals = decode_model_speedups(m)
+        if dvals:
+            summary += f" · decode ×{geomean(dvals):.2f}"
+        elif m.get("decode_reason"):
+            summary += " · decode pending"
         flag = " · ⚠ ids differ" if any(r["ids_match"] is False for r in m["results"]) else ""
+        if any(r.get("text_match") is False for r in m["results"]):
+            flag += " · ⚠ decode differs"
         md += [f"<details><summary><b>{escape(m['model'])}</b> — {escape(desc)} · "
                f"{summary}{flag}</summary>", ""]
         md += [picture(base, run_id, slug, f"{m['model']} speedup", 860), ""]
@@ -810,6 +990,11 @@ def render_markdown(data, subtitle_base, meta, base, run_id, sizes,
         if has_threads(m):
             md += [picture(base, run_id, f"{slug}-threads",
                            f"{m['model']} thread scaling", 860), ""]
+        md += [picture(base, run_id, f"{slug}-decode",
+                       f"{m['model']} decode speedup", 860), ""]
+        if has_threads(m, "decode_threads"):
+            md += [picture(base, run_id, f"{slug}-decode-threads",
+                           f"{m['model']} decode thread scaling", 860), ""]
         md += [mem_line(m, baseline_label), ""]
         # Per-stage columns carry each split's share of the pipeline's own encode
         # time with the ns/byte alongside — `share% (ns/B)` — readable as text
@@ -823,12 +1008,7 @@ def render_markdown(data, subtitle_base, meta, base, run_id, sizes,
                f"|---|---|---:|---:|---:|{base_sep}{stage_sep}:--|"]
         for r in sorted(m["results"], key=lambda r: (r["group"], r["fixture"])):
             mb = r["mbps"]
-            flags = []
-            if r["ids_match"] is False:
-                flags.append("⚠️ ≠ tree")
-            if r.get("ids_match_baseline") is False:
-                flags.append(f"≠ {baseline_label}")
-            ids = " · ".join(flags) if flags else "match"
+            ids = "⚠️ ≠ release" if r["ids_match"] is False else "match"
             s = r.get("stage_ns_per_byte")
             stages = " ".join(f"| {stage_cell(s, k)}" for k, _ in STAGES)
             base_cell = (f"| {fnum(base_speedup(r, base_lookup, m['model']), '×{:.2f}')} "
@@ -860,7 +1040,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("results")
     ap.add_argument("--out-dir", default=".")
-    ap.add_argument("--subtitle", default="~10 kB inputs · single thread")
+    ap.add_argument("--subtitle", default="~10 kB inputs · add_special_tokens on · single thread")
     ap.add_argument("--revision", default="")
     ap.add_argument("--img-base", default="", help="base URL for uploaded PNGs")
     ap.add_argument("--run-id", default="local")
@@ -913,10 +1093,23 @@ def main():
                          ref_label=(args.base_ref or "base branch"), mark_regressions=True,
                          no_cmp_msg="not benched on the base branch"))
     (out / "pipeline_bench_memory.svg").write_text(
-        memory_svg(models, meta, baseline_label))
+        memory_svg(models, meta, baseline_label, subtitle_base=args.subtitle))
     if sizes:
         (out / "pipeline_bench_binsize.svg").write_text(
             binsize_svg(sizes, meta, baseline_label))
+
+    # Decode: shares the id-correctness/perf story with encode but its own scale.
+    # The overview always renders (pending rows while the pipeline stub stands);
+    # decode memory only when a released decode number exists to draw against.
+    dlo, dhi = scale(benched, decode_model_speedups)
+    (out / "pipeline_bench_decode-overview.svg").write_text(
+        decode_overview_svg(models, args.subtitle, meta, dlo, dhi, baseline_label))
+    if any(has_decode_baseline(m) for m in benched):
+        (out / "pipeline_bench_decode-memory.svg").write_text(
+            memory_svg(models, meta, baseline_label, pass_key="decode_bytes",
+                       pass_label="decode", title="Memory footprint — decode",
+                       subtitle_base=args.subtitle))
+
     for m in models:
         slug = slugify(m["model"])
         svg = (chart_svg(m, args.subtitle, meta, lo, hi, baseline_label)
@@ -927,7 +1120,14 @@ def main():
                 stage_chart_svg(m, args.subtitle, meta, baseline_label))
         if has_threads(m):
             (out / f"pipeline_bench_{slug}-threads.svg").write_text(
-                threads_svg(m, meta, baseline_label))
+                threads_svg(m, meta, baseline_label, subtitle_base=args.subtitle))
+        if m["results"]:
+            (out / f"pipeline_bench_{slug}-decode.svg").write_text(
+                decode_chart_svg(m, args.subtitle, meta, dlo, dhi, baseline_label))
+        if has_threads(m, "decode_threads"):
+            (out / f"pipeline_bench_{slug}-decode-threads.svg").write_text(
+                threads_svg(m, meta, baseline_label, threads_key="decode_threads",
+                            title="Thread scaling — decode", subtitle_base=args.subtitle))
 
     (out / "pipeline_bench.md").write_text(
         render_markdown(data, args.subtitle, meta, args.img_base, args.run_id, sizes,

@@ -167,3 +167,35 @@ Profile from Python to see the full stack including PyO3 overhead:
 ```bash
 samply record python my_script.py
 ```
+
+### PipelineTokenizer oracle tests & benchmark
+
+`PipelineTokenizer` (in `tk-encode`) is an experimental reimplementation of the
+encode/decode pipeline. It is checked for parity against the latest *released*
+`tokenizers` crate — same token ids on encode, same decoded string — rather than
+the in-tree `Tokenizer`, which is being retired.
+
+Those checks link the released crate, so they live behind the `bench-baseline`
+feature and a plain `cargo test` skips them. Fetch the corpora and model
+tokenizers, then run with the feature:
+
+```bash
+cd tokenizers
+make fixtures bench-models   # needs HF_TOKEN
+
+# encode parity: pipeline ids == released encode_fast ids
+cargo test -p tk-encode --features bench-baseline --test pipeline_oracle
+
+# decode parity
+cargo test -p tk-encode --features bench-baseline --test pipeline_decode_oracle
+```
+
+The comparative benchmark (throughput, thread scaling, and memory vs the release)
+runs off the same data and renders to charts:
+
+```bash
+cargo run --release -p tk-encode --features bench-baseline --example fixture_bench > bench.json
+python3 ../.github/scripts/render_pipeline_bench.py bench.json
+```
+
+CI runs both in the **Pipeline Benchmark** workflow (`.github/workflows/pipeline-bench.yml`).
