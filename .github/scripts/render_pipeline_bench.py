@@ -306,12 +306,13 @@ def overview_svg(models, subtitle_base, meta, lo, hi, baseline_label,
 
 
 def memory_svg(models, meta, baseline_label, pass_key="encode_bytes",
-               pass_label="encode", title="Memory footprint"):
+               pass_label="encode", title="Memory footprint", subtitle_base=""):
     """Per model: resident-set delta of each implementation — load footprint plus
     the `pass_key`-pass delta as stacked segments, peak RSS as a tick. `pass_key`
     selects the encode-pass or the decode-pass delta (same chart, both directions).
-    A model with no `pass_key` data for either impl is dropped (e.g. decode while
-    the pipeline stub means only the baseline bar is drawn)."""
+    An impl that didn't run the pass draws no bar and totals "—" (decode while the
+    pipeline is a stub → baseline-only rows); a model where neither impl ran it is
+    dropped."""
     ink, sink = INK, SERIES_INK
     models = [m for m in models if isinstance(m.get("memory"), dict)]
 
@@ -325,15 +326,14 @@ def memory_svg(models, meta, baseline_label, pass_key="encode_bytes",
 
     models = [m for m in models
               if any((mem(m, impl) or {}).get("pass") is not None
-                     or (mem(m, impl) or {}).get("load_bytes") is not None
                      for impl in ("baseline", "pipeline"))]
 
     vals = []
     for m in models:
         for impl in ("baseline", "pipeline"):
             d = mem(m, impl)
-            if d and d["load_bytes"] is not None:
-                vals.append((d["load_bytes"] or 0) + (d["pass"] or 0))
+            if d and d["load_bytes"] is not None and d["pass"] is not None:
+                vals.append(d["load_bytes"] + d["pass"])
                 if d["peak_bytes"]:
                     vals.append(d["peak_bytes"])
     if not vals:
@@ -358,11 +358,11 @@ def memory_svg(models, meta, baseline_label, pass_key="encode_bytes",
         by = y + 8
         for impl in ("baseline", "pipeline"):
             d = mem(m, impl)
-            if not d or d["load_bytes"] is None:
+            if not d or d["load_bytes"] is None or d["pass"] is None:
                 totals.append(None)
                 by += bar_h + 3
                 continue
-            load, enc = d["load_bytes"] or 0, d["pass"] or 0
+            load, enc = d["load_bytes"], d["pass"]
             totals.append(load + enc)
             body.append(f'<rect x="{x(0):.1f}" y="{by:.1f}" width="{max(1.5, x(load) - x(0)):.1f}" '
                         f'height="{bar_h}" rx="2" fill="{sink[impl]}"/>')
@@ -389,7 +389,8 @@ def memory_svg(models, meta, baseline_label, pass_key="encode_bytes",
     ])
     height = y + 34
     subtitle = f"resident-set delta per implementation, one process each · load + {pass_label} pass"
-    return svg_doc(ink, height, title, subtitle, grid + "".join(body) + legend, meta)
+    return svg_doc(ink, height, title, subtitle, grid + "".join(body) + legend, meta,
+                   subtitle_base)
 
 
 def chart_svg(model, subtitle_base, meta, lo, hi, baseline_label):
@@ -529,7 +530,8 @@ def decode_overview_svg(models, subtitle_base, meta, lo, hi, baseline_label):
     ])
     height = y + 34
     subtitle = (f"geomean ×speedup per model vs {baseline_label} · "
-                f"whisker: min–max across fixtures · {subtitle_base}")
+                f"whisker: min–max across fixtures · both decode the same "
+                f"{baseline_label}-encoded ids · {subtitle_base}")
     return svg_doc(ink, height, title, subtitle, axis + "".join(body) + legend, meta)
 
 
@@ -594,6 +596,7 @@ def decode_chart_svg(model, subtitle_base, meta, lo, hi, baseline_label):
         parts.append("decode pending — not implemented yet")
     else:
         parts.append(f"{baseline_label} can’t decode this model — no comparison")
+    parts.append("MB/s = decoded text bytes/s, same ids to both")
     return svg_doc(ink, height, f'{model["model"]} — PipelineTokenizer decode throughput',
                    " · ".join(parts), axis + "".join(body) + legend, meta, subtitle_base)
 
@@ -810,7 +813,8 @@ def has_threads(m, key="threads"):
     return isinstance(t, dict) and bool(t.get("counts"))
 
 
-def threads_svg(model, meta, baseline_label, threads_key="threads", title="Thread scaling"):
+def threads_svg(model, meta, baseline_label, threads_key="threads", title="Thread scaling",
+                subtitle_base=""):
     """Per model: throughput (MB/s) at 1/2/4/8/device-max threads — pipeline vs the
     release — with a per-row *ideal linear* tick (single-thread × N) on the
     pipeline bar, so linear vs sub-linear scaling is visible at a glance alongside
@@ -876,7 +880,7 @@ def threads_svg(model, meta, baseline_label, threads_key="threads", title="Threa
         scaling = f" · pipeline {sc:.1f}× on {counts[-1]} threads ({sc / counts[-1] * 100:.0f}% of linear)"
     subtitle = f"throughput at N threads vs {baseline_label}; tick = perfect linear scaling{scaling}"
     return svg_doc(ink, height, title,
-                   subtitle, grid + "".join(body) + legend, meta)
+                   subtitle, grid + "".join(body) + legend, meta, subtitle_base)
 
 
 def pretok_compare_md(model):
@@ -943,6 +947,10 @@ def render_markdown(data, subtitle_base, meta, base, run_id, sizes,
         md += [picture(base, run_id, "binsize", "Minimal encode binary size", 860), ""]
 
     md += ["### Decode", "",
+           f"Round-trip: {baseline_label} `encode_fast` produces the id streams "
+           "(same fixtures, `add_special_tokens=true`); both implementations decode "
+           "those SAME ids with `skip_special_tokens=false`. MB/s counts decoded "
+           "text bytes.", "",
            picture(base, run_id, "decode-overview",
                    "Per-model decode throughput vs latest release", 860), ""]
     if any(has_decode_baseline(m) for m in benched):
@@ -1032,7 +1040,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("results")
     ap.add_argument("--out-dir", default=".")
-    ap.add_argument("--subtitle", default="~10 kB inputs · single thread")
+    ap.add_argument("--subtitle", default="~10 kB inputs · add_special_tokens on · single thread")
     ap.add_argument("--revision", default="")
     ap.add_argument("--img-base", default="", help="base URL for uploaded PNGs")
     ap.add_argument("--run-id", default="local")
@@ -1085,7 +1093,7 @@ def main():
                          ref_label=(args.base_ref or "base branch"), mark_regressions=True,
                          no_cmp_msg="not benched on the base branch"))
     (out / "pipeline_bench_memory.svg").write_text(
-        memory_svg(models, meta, baseline_label))
+        memory_svg(models, meta, baseline_label, subtitle_base=args.subtitle))
     if sizes:
         (out / "pipeline_bench_binsize.svg").write_text(
             binsize_svg(sizes, meta, baseline_label))
@@ -1099,7 +1107,8 @@ def main():
     if any(has_decode_baseline(m) for m in benched):
         (out / "pipeline_bench_decode-memory.svg").write_text(
             memory_svg(models, meta, baseline_label, pass_key="decode_bytes",
-                       pass_label="decode", title="Memory footprint — decode"))
+                       pass_label="decode", title="Memory footprint — decode",
+                       subtitle_base=args.subtitle))
 
     for m in models:
         slug = slugify(m["model"])
@@ -1111,14 +1120,14 @@ def main():
                 stage_chart_svg(m, args.subtitle, meta, baseline_label))
         if has_threads(m):
             (out / f"pipeline_bench_{slug}-threads.svg").write_text(
-                threads_svg(m, meta, baseline_label))
+                threads_svg(m, meta, baseline_label, subtitle_base=args.subtitle))
         if m["results"]:
             (out / f"pipeline_bench_{slug}-decode.svg").write_text(
                 decode_chart_svg(m, args.subtitle, meta, dlo, dhi, baseline_label))
         if has_threads(m, "decode_threads"):
             (out / f"pipeline_bench_{slug}-decode-threads.svg").write_text(
                 threads_svg(m, meta, baseline_label, threads_key="decode_threads",
-                            title="Thread scaling — decode"))
+                            title="Thread scaling — decode", subtitle_base=args.subtitle))
 
     (out / "pipeline_bench.md").write_text(
         render_markdown(data, args.subtitle, meta, args.img_base, args.run_id, sizes,

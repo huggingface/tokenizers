@@ -381,7 +381,7 @@ jobs:
           fi
           python3 ${{ github.workspace }}/.github/scripts/render_pipeline_bench.py \
             pipeline_bench.json \
-            --subtitle "~10 kB inputs · single thread + 1/2/4/8/max-thread sweep" \
+            --subtitle "~10 kB inputs · add_special_tokens on · single thread + 1/2/4/8/max-thread sweep" \
             --revision "${{ github.event.pull_request.head.sha || github.sha }}" \
             --img-base "$base_url" \
             --run-id "${{ github.run_id }}" \
