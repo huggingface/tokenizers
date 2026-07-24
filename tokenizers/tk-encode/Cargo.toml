@@ -105,7 +105,6 @@ name = "bpe_model_benchmark"
 required-features = ["http"]
 harness = false
 
-
 [[example]]
 name = "fixture_bench"
 required-features = ["bench-baseline"]

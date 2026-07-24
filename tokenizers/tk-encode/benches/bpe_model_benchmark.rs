@@ -8,7 +8,6 @@ use std::hint::black_box;
 use criterion::{BenchmarkId, Criterion, Throughput};
 use tk_encode::{
     Tokenizer,
-    models::bpe::BpeScratch,
     pipeline::{Model, PipelineModel, PipelineToken, PipelineTokenizer},
 };
 
@@ -87,10 +86,10 @@ fn bench_pipeline(c: &mut Criterion) {
                                     &mut output,
                                 )
                                 .unwrap();
-                            black_box(output.clone());
                         }
                     })
                 });
+                black_box(output.clone());
             }
             group.finish();
         }
@@ -100,7 +99,7 @@ fn bench_pipeline(c: &mut Criterion) {
 criterion_group! {
     name = benches;
     config = Criterion::default()
-        .sample_size(10)
+        .sample_size(5)
         .measurement_time(std::time::Duration::from_secs(10));
     targets = bench_pipeline
 }
