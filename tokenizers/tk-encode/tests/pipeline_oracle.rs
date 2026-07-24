@@ -7,7 +7,8 @@
 //! One test per `model::fixture` — so a red run names the exact model and
 //! language/modality that broke (same structure as `pipeline_decode_oracle.rs`; no
 //! `{single,pair}` split here because `PipelineTokenizer::encode` takes a single
-//! sequence and post-processing isn't wired). A model the pipeline can't build or
+//! sequence). Every window is checked for both `add_special_tokens` values —
+//! `true` exercises the post-process frame. A model the pipeline can't build or
 //! encode yet is skipped, not failed; the model set mirrors the decode oracle's.
 //!
 //! Behind the `bench-baseline` feature (the released crate is optional):
@@ -74,23 +75,26 @@ fn check_one(tok_file: &str, group: &str, stem: &str) {
         if chunk.is_empty() {
             continue;
         }
-        let expected = released
-            .encode_fast(chunk, false)
-            .unwrap()
-            .get_ids()
-            .to_vec();
-        let got: Vec<u32> = pipeline
-            .encode(chunk, false)
-            .unwrap()
-            .iter()
-            .map(|t| t.id)
-            .collect();
-        assert_eq!(
-            expected,
-            got,
-            "id mismatch on {tok_file} [{group}/{stem}] @ {:?}",
-            chunk.chars().take(60).collect::<String>(),
-        );
+        for add_special_tokens in [false, true] {
+            let expected = released
+                .encode_fast(chunk, add_special_tokens)
+                .unwrap()
+                .get_ids()
+                .to_vec();
+            let got: Vec<u32> = pipeline
+                .encode(chunk, add_special_tokens)
+                .unwrap()
+                .iter()
+                .map(|t| t.id)
+                .collect();
+            assert_eq!(
+                expected,
+                got,
+                "id mismatch on {tok_file} [{group}/{stem}] \
+                 (add_special_tokens={add_special_tokens}) @ {:?}",
+                chunk.chars().take(60).collect::<String>(),
+            );
+        }
     }
 }
 

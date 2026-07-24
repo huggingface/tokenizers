@@ -672,13 +672,14 @@ fn bench_threads(
 // `PipelineTokenizer::decode` is a loud stub it is false, so the pipeline series
 // is `null` (rendered "pending") and only the baseline bar is drawn.
 
-/// Encode every chunk with the released crate into its id stream (untimed input).
+/// Encode every chunk with the released crate into its id stream (untimed input;
+/// specials included, so decode sees the frame tokens a real stream carries).
 fn ids_of(baseline: &BaselineTokenizer, chunks: &[String]) -> Vec<Vec<u32>> {
     chunks
         .iter()
         .map(|c| {
             baseline
-                .encode_fast(c.as_str(), false)
+                .encode_fast(c.as_str(), true)
                 .unwrap()
                 .get_ids()
                 .to_vec()
@@ -882,7 +883,7 @@ fn memory_child(which: &str, model: &Path) {
             inject_added_tokens_baseline(&mut tok);
             let after_load = rss_now().unwrap_or(0);
             for c in &chunks {
-                let enc = tok.encode_fast(c.as_str(), false).unwrap();
+                let enc = tok.encode_fast(c.as_str(), true).unwrap();
                 n += enc.len();
                 ids.push(enc.get_ids().to_vec());
             }
@@ -903,7 +904,7 @@ fn memory_child(which: &str, model: &Path) {
             drop(tok);
             let after_load = rss_now().unwrap_or(0);
             for c in &chunks {
-                let enc = pipeline.encode(c, false).unwrap();
+                let enc = pipeline.encode(c, true).unwrap();
                 n += enc.len();
                 ids.push(enc.iter().map(|t| t.id).collect());
             }
