@@ -13,7 +13,7 @@ use tk_encode::{
 };
 
 // We will be testing different voacab / merges.
-const TOKENIZERS: &[(&str, &str)] = &[("dsv4", "../data/deepseek-v4-flash-base-tokenizer.json")];
+const TOKENIZERS: &[(&str, &str)] = &[("gpt2", "gpt2")];
 
 const CORPORA: &[(&str, &str)] = &[
     ("big", "../data/big.txt"),
@@ -48,7 +48,7 @@ fn make_chunks(lines: &[&str], target_bytes: usize) -> Vec<String> {
 fn bench_pipeline(c: &mut Criterion) {
     for (tok_name, tok_path) in TOKENIZERS {
         // The oracle will use the old merge,
-        let Ok(oracle) = Tokenizer::from_file(tok_path) else {
+        let Ok(oracle) = Tokenizer::from_pretrained(tok_path, None) else {
             eprintln!("pipeline bench: skip {tok_name} — {tok_path} not found");
             continue;
         };
@@ -74,12 +74,12 @@ fn bench_pipeline(c: &mut Criterion) {
             for (target_bytes, label) in CHUNK_SIZES {
                 let chunks = make_chunks(&lines, *target_bytes);
                 let total_bytes: u64 = chunks.iter().map(|s| s.len() as u64).sum();
+                let mut output = Vec::<PipelineToken>::with_capacity(total_bytes as usize);
+
                 group.throughput(Throughput::Bytes(total_bytes));
                 group.bench_function(BenchmarkId::from_parameter(label), |b| {
                     b.iter(|| {
                         for chunk in &chunks {
-                            let mut output =
-                                Vec::<PipelineToken>::with_capacity(total_bytes as usize);
                             model
                                 .tokenize_pipeline(
                                     chunk.as_str(),
@@ -87,7 +87,7 @@ fn bench_pipeline(c: &mut Criterion) {
                                     &mut output,
                                 )
                                 .unwrap();
-                            black_box(output);
+                            black_box(output.clone());
                         }
                     })
                 });

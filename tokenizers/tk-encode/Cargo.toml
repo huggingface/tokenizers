@@ -102,6 +102,7 @@ harness = false
 
 [[bench]]
 name = "bpe_model_benchmark"
+required-features = ["http"]
 harness = false
 
 
