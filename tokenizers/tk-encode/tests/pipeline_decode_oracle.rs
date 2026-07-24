@@ -113,12 +113,18 @@ fn check_model(tok_file: &str) {
                         );
                         match pipeline.decode(&ids, skip_special_tokens) {
                             Ok(got) if got == expected => {}
-                            Ok(_) => failures.push(format!("{ctx}: decode mismatch")),
+                            Ok(got) => failures.push(format!(
+                                "{ctx}: decode mismatch, {}",
+                                divergence(&expected, &got)
+                            )),
                             Err(e) => failures.push(format!("{ctx}: decode error: {e}")),
                         }
                         match stream_decode(&pipeline, &ids, skip_special_tokens) {
                             Ok(got) if got == expected => {}
-                            Ok(_) => failures.push(format!("{ctx}: decode_stream mismatch")),
+                            Ok(got) => failures.push(format!(
+                                "{ctx}: decode_stream mismatch, {}",
+                                divergence(&expected, &got)
+                            )),
                             Err(e) => failures.push(format!("{ctx}: decode_stream error: {e}")),
                         }
                     }
@@ -134,7 +140,13 @@ fn check_model(tok_file: &str) {
         let expected = released.decode_batch(&sentences, false).unwrap();
         match pipeline.decode_batch(&sentences, false) {
             Ok(got) if got == expected => {}
-            Ok(_) => failures.push("decode_batch mismatch".into()),
+            Ok(got) => {
+                let i = expected.iter().zip(&got).position(|(e, g)| e != g).unwrap();
+                failures.push(format!(
+                    "decode_batch mismatch at sentence {i}, {}",
+                    divergence(&expected[i], &got[i])
+                ));
+            }
             Err(e) => failures.push(format!("decode_batch error: {e}")),
         }
     }
@@ -147,6 +159,35 @@ fn check_model(tok_file: &str) {
         shown.len(),
         shown.join("\n"),
     );
+}
+
+/// Show where `got` first diverges from `expected`, with nearby text from both
+/// sides — fixture windows are kilobytes, so printing whole strings would bury
+/// the interesting byte.
+fn divergence(expected: &str, got: &str) -> String {
+    let byte = expected
+        .bytes()
+        .zip(got.bytes())
+        .position(|(e, g)| e != g)
+        .unwrap_or_else(|| expected.len().min(got.len()));
+    let excerpt = |s: &str| {
+        let mut start = byte.saturating_sub(40);
+        while !s.is_char_boundary(start) {
+            start -= 1;
+        }
+        let mut end = (byte + 40).min(s.len());
+        while !s.is_char_boundary(end) {
+            end += 1;
+        }
+        format!("…{:?}…", &s[start..end])
+    };
+    format!(
+        "first divergence at byte {byte}\n  expected ({} B): {}\n  got      ({} B): {}",
+        expected.len(),
+        excerpt(expected),
+        got.len(),
+        excerpt(got),
+    )
 }
 
 /// Feed `ids` through [`PipelineTokenizer::decode_stream`] one at a time and

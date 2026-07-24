@@ -283,10 +283,10 @@ pub enum PipelineDecoder {
     None,
 }
 
-pub trait Decoder<'a> {
+pub trait Decoder {
     fn decode(
-        &'a self,
-        model: &'a PipelineModel,
+        &self,
+        model: &PipelineModel,
         added_vocabulary: &BucketAddedVocabulary,
         token_id: u32,
         decoded: &mut Vec<u8>,
@@ -298,36 +298,46 @@ pub trait Decoder<'a> {
             }
             return Ok(());
         }
-        let slice = self.decode_token_to_slice(model, token_id)?;
-        decoded.extend_from_slice(slice);
+        self.decode_token(model, token_id, decoded)?;
         Ok(())
     }
 
-    fn decode_token_to_slice(&'a self, model: &'a PipelineModel, token_id: u32)
-    -> Result<&'a [u8]>;
+    fn decode_token(
+        &self,
+        model: &PipelineModel,
+        token_id: u32,
+        decoded: &mut Vec<u8>,
+    ) -> Result<()>;
 }
 
-impl<'a> Decoder<'a> for PipelineDecoder {
-    fn decode_token_to_slice(
-        &'a self,
-        model: &'a PipelineModel,
+impl Decoder for PipelineDecoder {
+    fn decode_token(
+        &self,
+        model: &PipelineModel,
         token_id: u32,
-    ) -> Result<&'a [u8]> {
-        let mut bytes = model
+        decoded: &mut Vec<u8>,
+    ) -> Result<()> {
+        let bytes = model
             .id_to_token_bytes(token_id)
             .ok_or::<crate::Error>(format!("Invalid token id: {token_id}").into())?;
         match self {
-            Self::None => Ok(bytes),
+            Self::None => {
+                decoded.extend_from_slice(bytes);
+                Ok(())
+            }
             PipelineDecoder::WordPiece {
                 word_continuation_prefix,
                 ..
             } => {
                 if bytes.starts_with(word_continuation_prefix.as_bytes()) {
                     // trim prefix
-                    bytes = &bytes[word_continuation_prefix.len()..];
+                    decoded.extend_from_slice(&bytes[word_continuation_prefix.len()..]);
+                } else {
+                    decoded.push(b' ');
+                    decoded.extend_from_slice(bytes);
                 }
-                // todo: cleanup
-                Ok(bytes)
+                // todo: cleanup phase
+                Ok(())
             }
         }
     }
@@ -649,7 +659,7 @@ impl PipelineTokenizer {
 
     /// Decode token ids back to a `String`.
     pub fn decode(&self, ids: &[u32], skip_special_tokens: bool) -> Result<String> {
-        let mut output = Vec::with_capacity(ids.len());
+        let mut output = Vec::with_capacity(2 * ids.len());
 
         for &id in ids {
             self.decoder.decode(
