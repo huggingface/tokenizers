@@ -28,9 +28,10 @@ struct PyStrBatch {
     views: Vec<PyStrView>,
 }
 
-// SAFETY: the raw pointers reference CPython's cached UTF-8 buffers, which are
-// immutable and outlive the owning `Py<PyString>`s in `_owners`; the batch
-// never mutates or frees them, and pool workers only read through `get`.
+// SAFETY: we only ever read from the underlying buffers,
+// and the lifetime of the buffers is guaranteed by storing
+// the Py<PyString> in _owners, which is kept alive as long as
+// a reference is held, because Python refcount.
 unsafe impl Send for PyStrBatch {}
 unsafe impl Sync for PyStrBatch {}
 

@@ -142,12 +142,12 @@ impl PreTokenizer for PipelinePreTokenizer {
 }
 
 impl PipelinePreTokenizer {
-    /// The [`StrideBoundary`] this pre-tokenizer guarantees, if any: a cut
-    /// finder its splitting rules provably cannot tokenize across. This is the
-    /// extension point for raw-text parallel chunking — a pre-tokenizer that
-    /// can prove a boundary for its grammar adds an arm here and large inputs
-    /// split under it automatically; anything without one falls back to the
-    /// model-stage split (still correct, just a serial pre-tokenize).
+    /// Return the [`StrideBoundary`] predicate for this pre-tokenizer, if it has one.
+    /// The predicate determines the safe cutting points in the input, such that:
+    /// ```text
+    /// let (a, b) = input.split(input.len() / 2);
+    /// pre_tokenize(input) == pre_tokenize(a) + pre_tokenize(b)
+    /// ```
     pub(crate) fn stride_boundary(&self) -> Option<StrideBoundary> {
         match self {
             // Whitespace-delimiting: whitespace is a dropped delimiter, so any
@@ -318,20 +318,15 @@ impl<'a, 'b, PatternMatcher: PipelinePatternMatcher> Iterator
     }
 }
 
-/// Experimental encode-only pipeline built from a [`Tokenizer`]. Runs the same
-/// stages (special-token split → normalize → pre-tokenize → model) over borrowed
-/// ranges to avoid the reference path's allocations.
+/// Main tokenizer struct
 ///
-/// This is a cheap-clone **handle** over an `Arc`'d frozen core (the v2
-/// `Arc<Compiled>` shape): cloning shares the vocabulary/model, and an owned
-/// [`EncodeHandle`] keeps the tokenizer alive past the `encode` call by holding a
-/// clone.
+/// Thread-safe because immutable after construction
+/// and cheap clones thanks to arc wrapped internals
 #[derive(Clone)]
 pub struct PipelineTokenizer {
     inner: Arc<PipelineInner>,
 }
 
-/// The frozen pipeline components, shared by every clone of the handle.
 struct PipelineInner {
     added_vocabulary: BucketAddedVocabulary,
     normalizer: Option<NormalizerWrapper>,
@@ -348,7 +343,7 @@ struct PipelineInner {
     normalized_added_token_blocks_stride: bool,
 }
 
-// comptime verification that PipelinePreTokenizer is Send + Sync
+// comptime verification that PipelineTokenizer is Send + Sync
 const _: fn() = || {
     fn assert_send_sync<T: Send + Sync>() {}
     assert_send_sync::<PipelineTokenizer>();
@@ -359,8 +354,6 @@ const _: fn() = || {
 #[derive(Default)]
 pub(crate) struct EncodeState {
     pre_tokens: Vec<Span>,
-    /// Classify tag scratch for the stride boundary scans (grow-and-reuse).
-    tags: Vec<u8>,
     /// Model-specific heap buffers. Deliberately not cleared by `reset`:
     /// persistence across sequences and encode calls is the point.
     model_scratch: Option<PipelineModelScratch>,
@@ -399,24 +392,13 @@ const PARALLEL_MIN_TOTAL_BYTES: usize = 8 * 1024;
 /// no communication. Total scanning is O(input): each window is scanned at
 /// most twice (once by its owner, once by an extending predecessor). Text with
 /// no boundaries at all degrades to stride 0 owning the whole input.
-fn stride_range(
-    text: &str,
-    index: usize,
-    boundary: StrideBoundary,
-    tags: &mut Vec<u8>,
-) -> Option<Range<usize>> {
+fn stride_range(text: &str, index: usize, boundary: StrideBoundary) -> Option<Range<usize>> {
     const STRIDE: usize = PARALLEL_MIN_TOTAL_BYTES;
     let len = text.len();
     let start = if index == 0 {
         0
     } else {
-        boundary_in_window(
-            text,
-            index * STRIDE,
-            ((index + 1) * STRIDE).min(len),
-            boundary,
-            tags,
-        )?
+        boundary_in_window(text, index * STRIDE, ((index + 1) * STRIDE).min(len), boundary)?
     };
     let mut window = index + 1;
     let end = loop {
@@ -424,9 +406,7 @@ fn stride_range(
         if lo >= len {
             break len;
         }
-        if let Some(b) =
-            boundary_in_window(text, lo, ((window + 1) * STRIDE).min(len), boundary, tags)
-        {
+        if let Some(b) = boundary_in_window(text, lo, ((window + 1) * STRIDE).min(len), boundary) {
             break b;
         }
         window += 1;
@@ -567,35 +547,39 @@ fn has_internal_boundary(token: &str, boundary: StrideBoundary) -> bool {
 /// characters). The snap is a pure function of the text, so adjacent workers
 /// still agree; the extra bytes a snap adds are continuation bytes, which tag
 /// as `Cont` and can never satisfy a boundary predicate.
-fn boundary_in_window(
-    text: &str,
-    lo: usize,
-    hi: usize,
-    boundary: StrideBoundary,
-    tags: &mut Vec<u8>,
-) -> Option<usize> {
+fn boundary_in_window(text: &str, lo: usize, hi: usize, boundary: StrideBoundary) -> Option<usize> {
+    // Per-thread classify scratch: overwritten (clear + resize + classify) on
+    // every block before it is read, so nothing carries across calls — it is
+    // kept only to reuse the allocation. Distinct from the pre-tokenizer's own
+    // classify scratch (`classify_into_spans`); the two never share a buffer.
+    thread_local! {
+        static TAGS: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
+    }
     const BLOCK: usize = 1024;
     debug_assert!(1 <= lo && lo <= hi && hi <= text.len());
-    let mut block_lo = lo;
-    while block_lo < hi {
-        let mut ctx = block_lo - 1;
-        while !text.is_char_boundary(ctx) {
-            ctx -= 1;
+    TAGS.with(|cell| {
+        let tags = &mut *cell.borrow_mut();
+        let mut block_lo = lo;
+        while block_lo < hi {
+            let mut ctx = block_lo - 1;
+            while !text.is_char_boundary(ctx) {
+                ctx -= 1;
+            }
+            let mut block_hi = (block_lo + BLOCK).min(hi);
+            while block_hi < text.len() && !text.is_char_boundary(block_hi) {
+                block_hi += 1;
+            }
+            let window = &text.as_bytes()[ctx..block_hi];
+            tags.clear();
+            tags.resize(window.len(), 0);
+            classify(window, tags);
+            if let Some(rel) = boundary(tags) {
+                return Some(ctx + rel);
+            }
+            block_lo = block_hi;
         }
-        let mut block_hi = (block_lo + BLOCK).min(hi);
-        while block_hi < text.len() && !text.is_char_boundary(block_hi) {
-            block_hi += 1;
-        }
-        let window = &text.as_bytes()[ctx..block_hi];
-        tags.clear();
-        tags.resize(window.len(), 0);
-        classify(window, tags);
-        if let Some(rel) = boundary(tags) {
-            return Some(ctx + rel);
-        }
-        block_lo = block_hi;
-    }
-    None
+        None
+    })
 }
 
 /// How one special-free segment is split, chosen per config (the special split
@@ -693,7 +677,10 @@ enum HandleInner {
     Ready(std::iter::Enumerate<std::vec::IntoIter<Result<Vec<PipelineToken>>>>),
     /// Filled by pool workers writing shared slots; the calling thread assists
     /// and surfaces each input in completion order the moment its chunks are in.
-    Streaming { core: Arc<JobCore>, state: StreamState },
+    Streaming {
+        core: Arc<JobCore>,
+        state: StreamState,
+    },
 }
 
 /// Completion-order streaming cursor over a job's shared slots. No channel and no
@@ -736,8 +723,10 @@ impl StreamState {
                 self.next_k += 1;
                 return Some((seq, core.take_result(seq)));
             }
-            // Slot not filled yet: claim a unit ourselves rather than idle.
-            // Assisting drains the shared cursor, finishing pending inputs.
+            // the caller has to wait for its results, so instead of spinning idle or parking the thread,
+            // we do some work which is ~equivalent to waiting: added benefit of not having
+            // to add extra machinery to wake the caller or implement the spin loop; we simply
+            // reuse our worker's job function
             if !self.assist_done {
                 if SCRATCH.with(|st| core.run_one(&mut st.borrow_mut())) {
                     continue;
@@ -911,14 +900,14 @@ impl Region {
     /// window has no boundary — that stride yields an empty result, keeping the
     /// per-input chunk count static for reassembly. A stride resolves against its
     /// own `seg` sub-slice, then shifts the result back to `text` coordinates.
-    fn resolve(&self, text: &str, tags: &mut Vec<u8>) -> Option<Range<usize>> {
+    fn resolve(&self, text: &str) -> Option<Range<usize>> {
         match self {
             Region::Full(r) => Some(r.clone()),
             Region::Stride {
                 index,
                 boundary,
                 seg,
-            } => stride_range(&text[seg.clone()], *index, *boundary, tags)
+            } => stride_range(&text[seg.clone()], *index, *boundary)
                 .map(|r| seg.start + r.start..seg.start + r.end),
         }
     }
@@ -965,14 +954,14 @@ impl JobCore {
         let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| match &unit.work {
             Work::Raw(region) => {
                 let text = self.storage.get(seq);
-                match region.resolve(text, &mut scratch.tags) {
+                match region.resolve(text) {
                     Some(range) => self.tokenizer.encode_one_with(&text[range], scratch),
                     None => Ok(Vec::new()),
                 }
             }
             Work::Normalized { buf, region } => {
                 let text = &self.norm_bufs[*buf];
-                match region.resolve(text, &mut scratch.tags) {
+                match region.resolve(text) {
                     Some(range) => {
                         let mut output = Vec::with_capacity(range.len() / 4);
                         self.tokenizer
@@ -1393,21 +1382,19 @@ impl PipelineTokenizer {
                     }
                     ParallelPlan::Pretokenized if big_enough && segment.len() > fair_share => {
                         match self.pretokenize_segment(segment, input) {
-                            Ok(prefix) => {
-                                // Merge this segment's prefix into the job pools.
-                                // The prefix has at most one norm buffer (local
+                            Ok(pretokenized) => {
+                                // Merge this segment's pretokenized units into the job pools.
+                                // It has at most one norm buffer (local
                                 // index 0); its job index is `buf_base`.
                                 let buf_base = norm_bufs.len();
                                 let span_base = spans.len();
-                                norm_bufs.extend(prefix.norm_buf);
-                                spans.extend_from_slice(&prefix.spans);
-                                for unit in prefix.units {
+                                norm_bufs.extend(pretokenized.norm_buf);
+                                spans.extend_from_slice(&pretokenized.spans);
+                                for unit in pretokenized.units {
                                     let idx = counts[seq];
                                     counts[seq] += 1;
                                     match unit {
-                                        SegmentUnit::Special(t) => {
-                                            preresolved.push((seq, idx, t))
-                                        }
+                                        SegmentUnit::Special(t) => preresolved.push((seq, idx, t)),
                                         SegmentUnit::Group { text, spans: sr } => {
                                             // Norm buffers were merged at `buf_base`;
                                             // Raw offsets are already input-absolute.
@@ -1705,7 +1692,7 @@ impl PipelineTokenizer {
     /// stage by stage — the two must agree on unit order for reassembly to be
     /// byte-identical to the serial encode.
     fn pretokenize_segment(&self, segment: &str, input: &str) -> Result<PretokenizedSegment> {
-        let mut prefix = PretokenizedSegment {
+        let mut pretokenized = PretokenizedSegment {
             units: Vec::new(),
             norm_buf: None,
             spans: Vec::new(),
@@ -1718,7 +1705,7 @@ impl PipelineTokenizer {
         let owned = matches!(normalized, Cow::Owned(_));
         for piece in SpecialSegmentIterator::new(&normalized, &self.inner.added_vocabulary, true) {
             match piece {
-                Segment::SpecialToken(token) => prefix.units.push(SegmentUnit::Special(token)),
+                Segment::SpecialToken(token) => pretokenized.units.push(SegmentUnit::Special(token)),
                 Segment::Text(ntext) => {
                     pre_tokens.clear();
                     self.inner
@@ -1749,8 +1736,8 @@ impl PipelineTokenizer {
                         {
                             e += 1;
                         }
-                        let span_range = prefix.spans.len()..prefix.spans.len() + (e - g);
-                        prefix.spans.extend_from_slice(&pre_tokens[g..e]);
+                        let span_range = pretokenized.spans.len()..pretokenized.spans.len() + (e - g);
+                        pretokenized.spans.extend_from_slice(&pre_tokens[g..e]);
                         let text = if owned {
                             // Local index 0 — the one `norm_buf`; merge rebases it.
                             SegmentText::Norm {
@@ -1760,7 +1747,7 @@ impl PipelineTokenizer {
                         } else {
                             SegmentText::Raw(text_range.clone())
                         };
-                        prefix.units.push(SegmentUnit::Group {
+                        pretokenized.units.push(SegmentUnit::Group {
                             text,
                             spans: span_range,
                         });
@@ -1770,9 +1757,9 @@ impl PipelineTokenizer {
             }
         }
         if let Cow::Owned(s) = normalized {
-            prefix.norm_buf = Some(s);
+            pretokenized.norm_buf = Some(s);
         }
-        Ok(prefix)
+        Ok(pretokenized)
     }
 }
 
@@ -2149,9 +2136,8 @@ mod tests {
         assert!(big.len() > 2 * PARALLEL_MIN_TOTAL_BYTES);
 
         let strides = big.len().div_ceil(PARALLEL_MIN_TOTAL_BYTES);
-        let mut tags = Vec::new();
         let chunks = (0..strides)
-            .filter_map(|j| stride_range(&big, j, boundary_at_whitespace, &mut tags))
+            .filter_map(|j| stride_range(&big, j, boundary_at_whitespace))
             .count();
         assert!(
             chunks > 1,
@@ -2193,11 +2179,10 @@ mod tests {
         check_start: impl Fn(&[u8], usize),
     ) -> usize {
         let bytes = input.as_bytes();
-        let mut tags = Vec::new();
         let mut covered = 0;
         let mut chunks = 0;
         for j in 0..input.len().div_ceil(PARALLEL_MIN_TOTAL_BYTES) {
-            if let Some(range) = stride_range(input, j, boundary, &mut tags) {
+            if let Some(range) = stride_range(input, j, boundary) {
                 assert_eq!(range.start, covered, "chunks must tile the input");
                 assert!(range.end > range.start);
                 if range.start > 0 {
@@ -2216,15 +2201,11 @@ mod tests {
     #[test]
     fn strides_without_boundaries_degrade_to_whole_input() {
         let input = "a".repeat(4 * PARALLEL_MIN_TOTAL_BYTES);
-        let mut tags = Vec::new();
         for boundary in [boundary_at_whitespace as StrideBoundary, boundary_fsm] {
-            assert_eq!(
-                stride_range(&input, 0, boundary, &mut tags),
-                Some(0..input.len())
-            );
+            assert_eq!(stride_range(&input, 0, boundary), Some(0..input.len()));
             for j in 1..input.len().div_ceil(PARALLEL_MIN_TOTAL_BYTES) {
                 assert_eq!(
-                    stride_range(&input, j, boundary, &mut tags),
+                    stride_range(&input, j, boundary),
                     None,
                     "stride {}",
                     j
@@ -2411,9 +2392,8 @@ mod tests {
         assert!(matches!(tok.plan(), ParallelPlan::Raw(_)));
 
         let big = "aa bb,cc!  aa\tbb  cc\n\n".repeat(2000); // ~44 KB, mixed runs
-        let mut tags = Vec::new();
         let chunks = (0..big.len().div_ceil(PARALLEL_MIN_TOTAL_BYTES))
-            .filter_map(|j| stride_range(&big, j, boundary_fsm, &mut tags))
+            .filter_map(|j| stride_range(&big, j, boundary_fsm))
             .count();
         assert!(chunks > 1, "expected the input to split, got {}", chunks);
 
@@ -2587,14 +2567,14 @@ mod tests {
         assert!(matches!(tok.plan(), ParallelPlan::Pretokenized));
 
         let big = "aa.bb.cc.".repeat(3000); // ~27 KB, punctuation-delimited
-        let prefix = tok.pretokenize_segment(&big, &big).unwrap();
-        let groups = prefix
+        let pretokenized = tok.pretokenize_segment(&big, &big).unwrap();
+        let groups = pretokenized
             .units
             .iter()
             .filter(|u| matches!(u, SegmentUnit::Group { .. }))
             .count();
         assert!(groups > 1, "expected several span-groups, got {}", groups);
-        assert!(prefix.norm_buf.is_none(), "no normalizer -> no owned buf");
+        assert!(pretokenized.norm_buf.is_none(), "no normalizer -> no owned buf");
 
         let ids = |v: Vec<PipelineToken>| v.iter().map(|t| t.id).collect::<Vec<_>>();
         let serial = ids(encode_one(&tok, &big).unwrap());
@@ -2616,9 +2596,9 @@ mod tests {
         let big = format!("{half}<s>{}", "CC.aa.BB.".repeat(2000));
         // The special split peels `<s>` in the builder; the per-segment model prefix runs on
         // special-free text and (with `Lowercase`) must own its normalized buffer.
-        let prefix = tok.pretokenize_segment(&half, &half).unwrap();
+        let pretokenized = tok.pretokenize_segment(&half, &half).unwrap();
         assert!(
-            prefix.norm_buf.is_some(),
+            pretokenized.norm_buf.is_some(),
             "lowercased text must live in the owned norm buf"
         );
 
