@@ -81,10 +81,16 @@ progressbar = ["indicatif"]
 http = ["hf-hub"]
 unstable_wasm = ["fancy-regex", "getrandom/wasm_js"]
 rustls-tls = ["hf-hub?/rustls-tls"]
-bench-baseline = ["dep:tokenizers-release", "dep:onig", "dep:pcre2", "dep:logos", "fancy-regex"]
+bench-baseline = [
+  "dep:tokenizers-release",
+  "dep:onig",
+  "dep:pcre2",
+  "dep:logos",
+  "fancy-regex",
+]
 
 [dev-dependencies]
-criterion = "0.6"
+criterion = "0.8.2"
 tempfile = "3.10"
 assert_approx_eq = "1.1"
 tracing = "0.1"
@@ -93,6 +99,11 @@ tracing-subscriber = "0.3.18"
 [[bench]]
 name = "pipeline_benchmark"
 harness = false
+
+[[bench]]
+name = "bpe_model_benchmark"
+harness = false
+
 
 [[example]]
 name = "fixture_bench"

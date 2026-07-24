@@ -45,18 +45,12 @@ fn make_chunks(lines: &[&str], target_bytes: usize) -> Vec<String> {
 
 fn bench_pipeline(c: &mut Criterion) {
     for (tok_name, tok_path) in TOKENIZERS {
-        let Ok(oracle) = Tokenizer::from_file(tok_path) else {
+        // The oracle will use the old merge,
+        let Ok(oracle) = BPE::from_file(tok_path) else {
             eprintln!("pipeline bench: skip {tok_name} — {tok_path} not found");
             continue;
         };
-        let pipeline = match PipelineTokenizer::try_from(&oracle) {
-            Ok(p) => p,
-            Err(e) => {
-                eprintln!("pipeline bench: skip {tok_name} — not pipeline-supported: {e}");
-                continue;
-            }
-        };
-
+        let pipeline = oracle.clone();
         for (corpus, path) in CORPORA {
             let text = std::fs::read_to_string(path).unwrap();
             let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
