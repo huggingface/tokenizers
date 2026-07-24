@@ -33,6 +33,10 @@
 //!   drop one-shots). No key-length cap by design, so it runs once per capacity
 //!   and reports `max_length: null`. This measures the cache structure under
 //!   the shared replay loop — not #2234's fused-split/de-virtualized pipeline.
+//! - `bucket_cull` — the hybrid: assoc_4way's 16 B slots and one-line buckets,
+//!   plus flat_cache's retention idea. A reuse flag in a spare `key_len` bit,
+//!   CLOCK-style second-chance eviction inside the bucket (rejecting an insert
+//!   ages the bucket), arena compaction on a budget trip.
 //!
 //! Per (model × fixture × capacity × max_length × variant):
 //! - warm replay throughput and speedup vs the no-cache floor
@@ -375,6 +379,177 @@ impl<B: Bucket> CacheVariant for FixedCache<B> {
     fn memory(&self) -> MemBreakdown {
         MemBreakdown {
             table: self.buckets.len() * size_of::<B>(),
+            keys: self.key_bytes.capacity(),
+            ids: self.ids.capacity() * size_of::<u32>(),
+        }
+    }
+}
+
+/// The poach experiment: WordCache's 4-way bucket crossed with FlatCache's
+/// retention idea, at zero slot growth. The reuse flag lives in a spare top
+/// bit of `key_len` (sound while max_length < 2^15); a hit sets its slot's
+/// flag. A full-bucket insert scans CLOCK-style: set flags are cleared in
+/// passing and the first unflagged slot is evicted; if every slot was flagged
+/// the insert is rejected and the scan itself has aged the bucket — persistent
+/// hotness must re-earn its place, and a genuinely hot bucket still freezes.
+/// Evicted entries orphan their arena bytes; when an arena outgrows its budget
+/// the live entries are compacted into fresh buffers.
+const REUSE: u16 = 1 << 15;
+
+struct BucketCull {
+    hasher: RandomState,
+    buckets: Box<[Bucket4]>,
+    key_bytes: Vec<u8>,
+    ids: Vec<u32>,
+    bucket_mask: u64,
+    max_length: usize,
+    key_budget: usize,
+    ids_budget: usize,
+    culls: usize,
+}
+
+impl BucketCull {
+    fn new(capacity: usize, max_length: usize) -> Self {
+        let slots = capacity.next_power_of_two();
+        let n_buckets = (slots / 4).max(1);
+        Self {
+            hasher: fixed_hasher(),
+            buckets: vec![Bucket4::default(); n_buckets].into_boxed_slice(),
+            key_bytes: Vec::with_capacity(1024),
+            ids: Vec::with_capacity(256),
+            bucket_mask: (n_buckets as u64) - 1,
+            max_length,
+            key_budget: slots * 16,
+            ids_budget: slots * 8,
+            culls: 0,
+        }
+    }
+
+    fn locate(&self, key: &[u8]) -> (usize, u32) {
+        let hash = self.hasher.hash_one(key);
+        ((hash & self.bucket_mask) as usize, (hash >> 32) as u32 | 1)
+    }
+
+    fn compact(&mut self) {
+        self.culls += 1;
+        let mut keys = Vec::with_capacity(self.key_budget);
+        let mut ids = Vec::with_capacity(self.ids_budget);
+        for bucket in self.buckets.iter_mut() {
+            for s in bucket.slots_mut() {
+                if s.tag == 0 {
+                    continue;
+                }
+                let klen = (s.key_len & !REUSE) as usize;
+                let koff = keys.len() as u32;
+                let ioff = ids.len() as u32;
+                keys.extend_from_slice(&self.key_bytes[s.key_off as usize..s.key_off as usize + klen]);
+                ids.extend_from_slice(&self.ids[s.ids_off as usize..s.ids_off as usize + s.ids_len as usize]);
+                s.key_off = koff;
+                s.ids_off = ioff;
+            }
+        }
+        self.key_bytes = keys;
+        self.ids = ids;
+    }
+}
+
+impl CacheVariant for BucketCull {
+    fn get(&mut self, word: &str) -> Option<&[u32]> {
+        let key = word.as_bytes();
+        if key.len() > self.max_length {
+            return None;
+        }
+        let (bucket_idx, tag) = self.locate(key);
+        let mut found = None;
+        for (i, s) in self.buckets[bucket_idx].slots().iter().enumerate() {
+            let klen = (s.key_len & !REUSE) as usize;
+            if s.tag == tag && key == &self.key_bytes[s.key_off as usize..s.key_off as usize + klen]
+            {
+                found = Some((i, s.ids_off as usize, s.ids_len as usize));
+                break;
+            }
+        }
+        let (i, off, len) = found?;
+        let slot = &mut self.buckets[bucket_idx].slots_mut()[i];
+        if slot.key_len & REUSE == 0 {
+            slot.key_len |= REUSE;
+        }
+        Some(&self.ids[off..off + len])
+    }
+
+    fn insert(&mut self, word: &str, ids: &[u32]) -> InsertOutcome {
+        let key = word.as_bytes();
+        if key.len() > self.max_length {
+            return InsertOutcome::RejectedLen;
+        }
+        if self.key_bytes.len() + key.len() > self.key_budget
+            || self.ids.len() + ids.len() > self.ids_budget
+        {
+            self.compact();
+        }
+        let (bucket_idx, tag) = self.locate(key);
+        let slots = self.buckets[bucket_idx].slots();
+        let (victim, outcome) = match slots.iter().position(|s| s.tag == 0) {
+            Some(empty) => (Some(empty), InsertOutcome::Stored),
+            None => {
+                // Evict only a slot that was never reused; flags survive the
+                // scan. Rejection is the aging tick: when every slot has
+                // earned its place the bucket freezes for this round, and all
+                // flags reset so each entry must re-earn it before the next
+                // conflict. Clearing flags during the scan instead (classic
+                // CLOCK) measured worse: Zipf-tail one-shots kept evicting
+                // warm words.
+                match self.buckets[bucket_idx].slots().iter().position(|s| s.key_len & REUSE == 0)
+                {
+                    Some(i) => (Some(i), InsertOutcome::Evicted),
+                    None => {
+                        for s in self.buckets[bucket_idx].slots_mut() {
+                            s.key_len &= !REUSE;
+                        }
+                        (None, InsertOutcome::RejectedFull)
+                    }
+                }
+            }
+        };
+        let Some(slot) = victim else {
+            return outcome;
+        };
+        self.buckets[bucket_idx].slots_mut()[slot] = CacheSlot {
+            tag,
+            key_off: self.key_bytes.len() as u32,
+            key_len: key.len() as u16,
+            ids_off: self.ids.len() as u32,
+            ids_len: ids.len() as u16,
+        };
+        self.key_bytes.extend_from_slice(key);
+        self.ids.extend_from_slice(ids);
+        outcome
+    }
+
+    fn culls(&self) -> Option<usize> {
+        Some(self.culls)
+    }
+    fn bucket_load(&self, word: &str) -> Option<usize> {
+        let (bucket_idx, _) = self.locate(word.as_bytes());
+        Some(self.buckets[bucket_idx].slots().iter().filter(|s| s.tag != 0).count())
+    }
+    fn probe_tags(&self, word: &str) -> Option<u32> {
+        let key = word.as_bytes();
+        if key.len() > self.max_length {
+            return Some(0);
+        }
+        let (bucket_idx, tag) = self.locate(key);
+        Some(self.buckets[bucket_idx].slots().iter().filter(|s| s.tag == tag).count() as u32)
+    }
+    fn occupied(&self) -> usize {
+        self.buckets.iter().flat_map(Bucket::slots).filter(|s| s.tag != 0).count()
+    }
+    fn slot_count(&self) -> usize {
+        self.buckets.len() * 4
+    }
+    fn memory(&self) -> MemBreakdown {
+        MemBreakdown {
+            table: self.buckets.len() * size_of::<Bucket4>(),
             keys: self.key_bytes.capacity(),
             ids: self.ids.capacity() * size_of::<u32>(),
         }
@@ -875,6 +1050,7 @@ fn build_variant(name: &str, capacity: usize, max_length: usize) -> Box<dyn Cach
         "assoc_4way" => Box::new(FixedCache::<Bucket4>::new(capacity, max_length)),
         "assoc_8way" => Box::new(FixedCache::<Bucket8>::new(capacity, max_length)),
         "flat_cache" => Box::new(FlatCacheReplica::new(capacity)),
+        "bucket_cull" => Box::new(BucketCull::new(capacity, max_length)),
         other => unreachable!("{other}"),
     }
 }
@@ -885,6 +1061,7 @@ const VARIANTS: &[&str] = &[
     "assoc_4way",
     "assoc_8way",
     "flat_cache",
+    "bucket_cull",
 ];
 
 #[allow(clippy::too_many_arguments)]
