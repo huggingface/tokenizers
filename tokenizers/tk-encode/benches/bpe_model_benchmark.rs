@@ -74,22 +74,19 @@ fn bench_pipeline(c: &mut Criterion) {
                 let chunks = make_chunks(&lines, *target_bytes);
                 let total_bytes: u64 = chunks.iter().map(|s| s.len() as u64).sum();
                 let mut output = Vec::<PipelineToken>::with_capacity(total_bytes as usize);
-
+                let scratch = &mut model.init_scratch();
                 group.throughput(Throughput::Bytes(total_bytes));
                 group.bench_function(BenchmarkId::from_parameter(label), |b| {
                     b.iter(|| {
                         for chunk in &chunks {
+                            output.clear();
                             model
-                                .tokenize_pipeline(
-                                    chunk.as_str(),
-                                    &mut model.init_scratch(),
-                                    &mut output,
-                                )
+                                .tokenize_pipeline(black_box(chunk.as_str()), scratch, &mut output)
                                 .unwrap();
+                            black_box(output.as_slice());
                         }
                     })
                 });
-                black_box(output.clone());
             }
             group.finish();
         }
@@ -99,7 +96,7 @@ fn bench_pipeline(c: &mut Criterion) {
 criterion_group! {
     name = benches;
     config = Criterion::default()
-        .sample_size(5)
+        .sample_size(10)
         .measurement_time(std::time::Duration::from_secs(10));
     targets = bench_pipeline
 }
