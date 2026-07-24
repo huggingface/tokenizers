@@ -158,6 +158,7 @@ impl TryFrom<PreTokenizerWrapper> for PipelinePreTokenizer {
 /// Processors that don't reduce to such a frame are rejected at conversion.
 ///
 /// Example:
+/// ```text
 ///     PipelinePostProcessor {
 ///         prefix: vec![100].into_boxed_slice(),
 ///         suffix: vec![101, 102].into_boxed_slice()
@@ -166,6 +167,7 @@ impl TryFrom<PreTokenizerWrapper> for PipelinePreTokenizer {
 ///     [CLS] The quick Brown fox  [SEP]
 ///     <100>|  <3> <4> <19> <67> | <101> <102>
 ///   prefix |  sequence encoding | suffix
+/// ```
 ///
 #[derive(Debug, Default)]
 pub struct PipelinePostProcessor {
