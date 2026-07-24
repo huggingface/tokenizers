@@ -14,6 +14,7 @@ use crate::utils::byte_level::GPT2_REGEX_STR;
 use crate::vocab::bucket_added_vocabulary::{
     AddedToken as BucketAddedToken, AddedVocabulary as BucketAddedVocabulary,
 };
+use crate::{Decoder, DecoderWrapper};
 use crate::{
     ModelWrapper, PostProcessorWrapper, PreTokenizerWrapper, Token, Tokenizer,
     normalizers::NormalizerWrapper,
@@ -266,6 +267,51 @@ impl TryFrom<&PostProcessorWrapper> for PipelinePostProcessor {
     }
 }
 
+#[derive(Debug, Default)]
+pub enum PipelineDecoder {
+    #[default]
+    None,
+}
+
+impl TryFrom<&DecoderWrapper> for PipelineDecoder {
+    type Error = crate::Error;
+
+    fn try_from(value: &DecoderWrapper) -> std::prelude::v1::Result<Self, Self::Error> {
+        match value {
+            DecoderWrapper::BPE(decoder) => {
+                Err(format!("Decoder {:?} not supported yet", decoder).into())
+            }
+            DecoderWrapper::ByteFallback(decoder) => {
+                Err(format!("Decoder {:?} not supported yet", decoder).into())
+            }
+            DecoderWrapper::ByteLevel(decoder) => {
+                Err(format!("Decoder {:?} not supported yet", decoder).into())
+            }
+            DecoderWrapper::CTC(decoder) => {
+                Err(format!("Decoder {:?} not supported yet", decoder).into())
+            }
+            DecoderWrapper::Fuse(decoder) => {
+                Err(format!("Decoder {:?} not supported yet", decoder).into())
+            }
+            DecoderWrapper::Metaspace(decoder) => {
+                Err(format!("Decoder {:?} not supported yet", decoder).into())
+            }
+            DecoderWrapper::Replace(decoder) => {
+                Err(format!("Decoder {:?} not supported yet", decoder).into())
+            }
+            DecoderWrapper::Sequence(decoder) => {
+                Err(format!("Decoder {:?} not supported yet", decoder).into())
+            }
+            DecoderWrapper::Strip(decoder) => {
+                Err(format!("Decoder {:?} not supported yet", decoder).into())
+            }
+            DecoderWrapper::WordPiece(decoder) => {
+                Err(format!("Decoder {:?} not supported yet", decoder).into())
+            }
+        }
+    }
+}
+
 /// An output token. Carries only the vocabulary `id` — offsets and the token
 /// string are dropped, which is all an encode-only caller needs.
 #[derive(Debug, Clone, Copy)]
@@ -391,6 +437,7 @@ pub struct PipelineTokenizer {
     pre_tokenizer: PipelinePreTokenizer,
     model: PipelineModel,
     post_processor: PipelinePostProcessor,
+    decoder: PipelineDecoder,
 }
 
 impl TryFrom<&Tokenizer> for PipelineTokenizer {
@@ -493,6 +540,11 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
                 .map(PipelinePostProcessor::try_from)
                 .transpose()?
                 .unwrap_or_default(),
+            decoder: tok
+                .get_decoder()
+                .map(PipelineDecoder::try_from)
+                .transpose()?
+                .unwrap_or_default(),
         })
     }
 }
@@ -536,10 +588,6 @@ impl PipelineTokenizer {
     }
 
     /// Decode token ids back to a `String`.
-    ///
-    /// Incomplete: it concatenates raw token bytes only. No decoder, no added-
-    /// vocab lookup, no `skip_special_tokens` — so the `pipeline_decode_oracle`
-    /// test fails on purpose until those land.
     pub fn decode(&self, ids: &[u32], skip_special_tokens: bool) -> Result<String> {
         let mut output = Vec::with_capacity(ids.len());
         for &id in ids {
