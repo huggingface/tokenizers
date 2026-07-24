@@ -287,7 +287,7 @@ class WordLevel(Model):
     Most simple tokenizer model based on mapping tokens to their corresponding id.
 
     Args:
-        vocab (:obj:`str`, `optional`):
+        vocab (:obj:`Dict[str, int]`, `optional`):
             A dictionary of string keys and their ids :obj:`{"am": 0,...}`
 
         unk_token (:obj:`str`, `optional`):

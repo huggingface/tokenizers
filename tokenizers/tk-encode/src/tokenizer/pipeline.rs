@@ -158,6 +158,7 @@ impl TryFrom<PreTokenizerWrapper> for PipelinePreTokenizer {
 /// Processors that don't reduce to such a frame are rejected at conversion.
 ///
 /// Example:
+/// ```text
 ///     PipelinePostProcessor {
 ///         prefix: vec![100].into_boxed_slice(),
 ///         suffix: vec![101, 102].into_boxed_slice()
@@ -166,6 +167,7 @@ impl TryFrom<PreTokenizerWrapper> for PipelinePreTokenizer {
 ///     [CLS] The quick Brown fox  [SEP]
 ///     <100>|  <3> <4> <19> <67> | <101> <102>
 ///   prefix |  sequence encoding | suffix
+/// ```
 ///
 #[derive(Debug, Default)]
 pub struct PipelinePostProcessor {
@@ -533,6 +535,44 @@ impl PipelineTokenizer {
         Ok(output)
     }
 
+    /// Decode token ids back to a `String`.
+    ///
+    /// Not implemented yet — the pipeline decode path is being built. It fails
+    /// loud (rather than returning a plausible-but-wrong string) so the oracle
+    /// test and the comparative benchmark report decode as *pending* instead of
+    /// silently validating garbage. Implementing this flips the ignored
+    /// `pipeline_decode_oracle` test on and lights up the decode charts.
+    pub fn decode(&self, _ids: &[u32], _skip_special_tokens: bool) -> Result<String> {
+        Err("PipelineTokenizer::decode is not implemented yet".into())
+    }
+
+    /// Decode several id sequences at once, one `String` per input. Mirrors the
+    /// released `decode_batch`; sequential (KISS) — behavior-identical to a
+    /// parallel map, since each [`decode`](Self::decode) is independent.
+    pub fn decode_batch(
+        &self,
+        sentences: &[&[u32]],
+        skip_special_tokens: bool,
+    ) -> Result<Vec<String>> {
+        sentences
+            .iter()
+            .map(|ids| self.decode(ids, skip_special_tokens))
+            .collect()
+    }
+
+    /// Incremental decode: feed ids one at a time via [`PipelineDecodeStream::step`].
+    /// Same prefix-tracking scheme as the released `DecodeStream`, built on
+    /// [`decode`](Self::decode) — so it is correct exactly where `decode` is.
+    pub fn decode_stream(&self, skip_special_tokens: bool) -> PipelineDecodeStream<'_> {
+        PipelineDecodeStream {
+            tokenizer: self,
+            ids: Vec::new(),
+            skip_special_tokens,
+            prefix: String::new(),
+            prefix_index: 0,
+        }
+    }
+
     /// Single source of truth for the encode pipeline, generic over how many stages
     /// run. `STAGE` is a **const generic**, so `if STAGE >= …` folds at compile time and
     /// the disabled stages are compiled out — the full specialization
@@ -613,6 +653,51 @@ impl PipelineTokenizer {
             output.extend_from_slice(suffix);
         }
         Ok(())
+    }
+}
+
+/// Streaming decoder over a [`PipelineTokenizer`]; see [`PipelineTokenizer::decode_stream`].
+pub struct PipelineDecodeStream<'tok> {
+    tokenizer: &'tok PipelineTokenizer,
+    ids: Vec<u32>,
+    skip_special_tokens: bool,
+    prefix: String,
+    prefix_index: usize,
+}
+
+impl PipelineDecodeStream<'_> {
+    /// Push one id and return the text it completes, or `None` while a multi-token
+    /// (or multi-byte) unit is still forming. Ids past the emitted prefix are kept
+    /// as decode context so cross-token decoders (byte-level, WordPiece `##`, …)
+    /// see the same input a one-shot [`decode`](PipelineTokenizer::decode) would.
+    pub fn step(&mut self, id: u32) -> Result<Option<String>> {
+        if self.prefix.is_empty() && !self.ids.is_empty() {
+            let new_prefix = self.tokenizer.decode(&self.ids, self.skip_special_tokens)?;
+            if !new_prefix.ends_with('\u{fffd}') {
+                self.prefix = new_prefix;
+                self.prefix_index = self.ids.len();
+            }
+        }
+
+        self.ids.push(id);
+        let string = self.tokenizer.decode(&self.ids, self.skip_special_tokens)?;
+        if string.len() > self.prefix.len() && !string.ends_with('\u{fffd}') {
+            if !string.starts_with(&self.prefix) {
+                return Err(format!(
+                    "decode stream: {string:?} does not extend prefix {:?}",
+                    self.prefix
+                )
+                .into());
+            }
+            let new_text = string[self.prefix.len()..].to_string();
+            let new_prefix_index = self.ids.len() - self.prefix_index;
+            self.ids = self.ids.split_off(self.prefix_index);
+            self.prefix = self.tokenizer.decode(&self.ids, self.skip_special_tokens)?;
+            self.prefix_index = new_prefix_index;
+            Ok(Some(new_text))
+        } else {
+            Ok(None)
+        }
     }
 }
 
