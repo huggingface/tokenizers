@@ -1,4 +1,7 @@
-use crate::tokenizer::{Decoder, Result};
+use crate::{
+    pipeline,
+    tokenizer::{Decoder, Result},
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -28,6 +31,7 @@ impl Default for WordPiece {
         }
     }
 }
+
 pub fn cleanup(dirty_input: &str) -> String {
     dirty_input
         .replace(" .", ".")
@@ -58,6 +62,36 @@ impl Decoder for WordPiece {
             }
         }
         Ok(tokens)
+    }
+}
+
+const CLEANUP_LIST: [&'static [u8]; 10] = [
+    b".", b"?", b"!", b",", b"n't", b"'m", b"do not", b"'s", b"'ve", b"'re"
+];
+
+impl pipeline::Decoder for WordPiece {
+    fn decode_token(
+        &self,
+        token_bytes: &[u8],
+        token_index: usize,
+        decoded: &mut Vec<u8>,
+    ) -> Result<()> {
+        if token_index == 0 {
+            decoded.extend_from_slice(token_bytes);
+            return Ok(());
+        }
+
+        if token_bytes.starts_with(self.prefix.as_bytes()) {
+            // trim prefix
+            decoded.extend_from_slice(&token_bytes[self.prefix.len()..]);
+        } else {
+            if !self.cleanup || !CLEANUP_LIST.contains(&token_bytes) {
+                decoded.push(b' ');
+            }
+            decoded.extend_from_slice(token_bytes);
+        }
+
+        Ok(())
     }
 }
 

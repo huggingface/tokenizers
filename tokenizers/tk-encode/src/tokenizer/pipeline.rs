@@ -271,14 +271,7 @@ impl TryFrom<&PostProcessorWrapper> for PipelinePostProcessor {
 /// [`PipelineDecoder`] is responsible for turning a chunk of token ids back into human-readable text
 #[derive(Debug, Default)]
 pub enum PipelineDecoder {
-    WordPiece {
-        /// Tokens that are inside a word start with this prefix.
-        /// For example for bert, it's "##": "tokenization" would be tokenized as ["tok", "##eni", "##z", "##ation"]
-        /// To reconstruct the text from the tokens, we need to strip that prefix for every token
-        word_continuation_prefix: String,
-        /// Whether to perform a cleanup phase (see implementation for details)
-        cleanup: bool,
-    },
+    WordPiece(WordPiece),
     #[default]
     None,
 }
@@ -288,24 +281,33 @@ pub trait Decoder {
         &self,
         model: &PipelineModel,
         added_vocabulary: &BucketAddedVocabulary,
-        token_id: u32,
-        decoded: &mut Vec<u8>,
         skip_special_tokens: bool,
+        ids: &[u32],
+        decoded: &mut Vec<u8>,
     ) -> Result<()> {
-        if let Some(special_token) = added_vocabulary.simple_id_to_token_bytes(token_id) {
-            if !skip_special_tokens {
-                decoded.extend_from_slice(special_token);
+        let mut token_index = 0;
+        for &token_id in ids {
+            if let Some(special) = added_vocabulary.simple_id_to_token_bytes(token_id) {
+                if skip_special_tokens {
+                    continue;
+                }
+                self.decode_token(special, token_index, decoded)?;
+            } else {
+                let token_bytes = model
+                    .id_to_token_bytes(token_id)
+                    .ok_or::<crate::Error>(format!("Invalid token id: {token_id}").into())?;
+
+                self.decode_token(token_bytes, token_index, decoded)?;
             }
-            return Ok(());
+            token_index += 1;
         }
-        self.decode_token(model, token_id, decoded)?;
         Ok(())
     }
 
     fn decode_token(
         &self,
-        model: &PipelineModel,
-        token_id: u32,
+        token_bytes: &[u8],
+        token_index: usize,
         decoded: &mut Vec<u8>,
     ) -> Result<()>;
 }
@@ -313,31 +315,20 @@ pub trait Decoder {
 impl Decoder for PipelineDecoder {
     fn decode_token(
         &self,
-        model: &PipelineModel,
-        token_id: u32,
+        token_bytes: &[u8],
+        token_index: usize,
         decoded: &mut Vec<u8>,
     ) -> Result<()> {
-        let bytes = model
-            .id_to_token_bytes(token_id)
-            .ok_or::<crate::Error>(format!("Invalid token id: {token_id}").into())?;
         match self {
             Self::None => {
-                decoded.extend_from_slice(bytes);
+                if token_index != 0 {
+                    decoded.push(b' ');
+                }
+                decoded.extend_from_slice(token_bytes);
                 Ok(())
             }
-            PipelineDecoder::WordPiece {
-                word_continuation_prefix,
-                ..
-            } => {
-                if bytes.starts_with(word_continuation_prefix.as_bytes()) {
-                    // trim prefix
-                    decoded.extend_from_slice(&bytes[word_continuation_prefix.len()..]);
-                } else {
-                    decoded.push(b' ');
-                    decoded.extend_from_slice(bytes);
-                }
-                // todo: cleanup phase
-                Ok(())
+            PipelineDecoder::WordPiece(decoder) => {
+                decoder.decode_token(token_bytes, token_index, decoded)
             }
         }
     }
@@ -350,10 +341,7 @@ impl TryFrom<&DecoderWrapper> for PipelineDecoder {
         match value {
             // ByteLevel decoder is no longer needed as the vocabulary is stored as raw bytes
             DecoderWrapper::ByteLevel(_) => Ok(Self::None),
-            DecoderWrapper::WordPiece(WordPiece { cleanup, prefix }) => Ok(Self::WordPiece {
-                word_continuation_prefix: prefix.clone(),
-                cleanup: *cleanup,
-            }),
+            DecoderWrapper::WordPiece(decoder) => Ok(Self::WordPiece(decoder.clone())),
             DecoderWrapper::BPE(decoder) => {
                 Err(format!("Decoder {:?} not supported yet", decoder).into())
             }
@@ -659,17 +647,14 @@ impl PipelineTokenizer {
 
     /// Decode token ids back to a `String`.
     pub fn decode(&self, ids: &[u32], skip_special_tokens: bool) -> Result<String> {
-        let mut output = Vec::with_capacity(2 * ids.len());
-
-        for &id in ids {
-            self.decoder.decode(
-                &self.model,
-                &self.added_vocabulary,
-                id,
-                &mut output,
-                skip_special_tokens,
-            )?;
-        }
+        let mut output = Vec::with_capacity(4 * ids.len());
+        self.decoder.decode(
+            &self.model,
+            &self.added_vocabulary,
+            skip_special_tokens,
+            ids,
+            &mut output,
+        )?;
         Ok(String::from_utf8(output)?)
     }
 
