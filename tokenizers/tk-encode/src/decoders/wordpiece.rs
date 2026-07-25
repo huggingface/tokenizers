@@ -65,8 +65,8 @@ impl Decoder for WordPiece {
     }
 }
 
-const CLEANUP_LIST: [&'static [u8]; 10] = [
-    b".", b"?", b"!", b",", b"n't", b"'m", b"do not", b"'s", b"'ve", b"'re"
+const CLEANUP_LIST: [&[u8]; 10] = [
+    b".", b"?", b"!", b",", b"n't", b"'m", b"do not", b"'s", b"'ve", b"'re",
 ];
 
 impl pipeline::Decoder for WordPiece {
