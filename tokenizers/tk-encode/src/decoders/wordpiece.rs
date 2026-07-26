@@ -1,5 +1,7 @@
+use std::mem::replace;
+
 use crate::{
-    pipeline,
+    pipeline::{self, DecoderState},
     tokenizer::{Decoder, Result},
 };
 
@@ -72,25 +74,21 @@ const CLEANUP_LIST: [&[u8]; 10] = [
 impl pipeline::Decoder for WordPiece {
     fn decode_token(
         &self,
+        state: &mut DecoderState,
+        _token_id: u32,
         token_bytes: &[u8],
-        token_index: usize,
         decoded: &mut Vec<u8>,
     ) -> Result<()> {
-        if token_index == 0 {
-            decoded.extend_from_slice(token_bytes);
-            return Ok(());
-        }
-
-        if token_bytes.starts_with(self.prefix.as_bytes()) {
-            // trim prefix
+        if !replace(&mut state.started, true) {
+            decoded.extend(token_bytes)
+        } else if token_bytes.starts_with(self.prefix.as_bytes()) {
             decoded.extend_from_slice(&token_bytes[self.prefix.len()..]);
+        } else if self.cleanup && CLEANUP_LIST.contains(&token_bytes) {
+            decoded.extend(token_bytes);
         } else {
-            if !self.cleanup || !CLEANUP_LIST.contains(&token_bytes) {
-                decoded.push(b' ');
-            }
-            decoded.extend_from_slice(token_bytes);
+            decoded.push(b' ');
+            decoded.extend(token_bytes);
         }
-
         Ok(())
     }
 }

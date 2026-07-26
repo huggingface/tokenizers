@@ -1,10 +1,14 @@
 use std::cell::RefCell;
 use std::convert::TryInto;
+use std::iter::zip;
+use std::mem::{replace, swap};
+use std::u32;
 use std::{borrow::Cow, convert::TryFrom};
 
 use atomsplit::classify::classify;
 
 use crate::DecoderWrapper;
+use crate::decoders::byte_fallback::ByteFallback;
 use crate::decoders::metaspace::Metaspace;
 use crate::decoders::wordpiece::WordPiece;
 use crate::models::bpe::{BpeScratch, PipelineBPE};
@@ -275,9 +279,18 @@ pub enum PipelineDecoder {
     Sequence(Vec<Self>),
     WordPiece(WordPiece),
     MetaSpace(Metaspace),
+    ByteFallback(ByteFallback),
     None,
     #[default]
     JoinWithSpaces,
+}
+
+#[derive(Default)]
+pub struct DecoderState {
+    pub(crate) pending_buffer: Vec<u8>,
+    pub(crate) swap_buffers: [Vec<u8>; 2],
+    pub(crate) started: bool,
+    pub(crate) members: Vec<Self>,
 }
 
 pub trait Decoder {
@@ -288,39 +301,41 @@ pub trait Decoder {
         skip_special_tokens: bool,
         ids: &[u32],
         decoded: &mut Vec<u8>,
-    ) -> Result<()> {
-        let mut token_index = 0;
+    ) -> crate::Result<()> {
+        let mut state = DecoderState::default();
         for &token_id in ids {
-            if let Some(special) = added_vocabulary.simple_id_to_token_bytes(token_id) {
-                if skip_special_tokens {
-                    continue;
-                }
-                self.decode_token(special, token_index, decoded)?;
-            } else {
-                let token_bytes = model
+            let token_bytes = match added_vocabulary.simple_id_to_token_bytes(token_id) {
+                Some(_) if skip_special_tokens => continue,
+                Some(bytes) => bytes,
+                None => model
                     .id_to_token_bytes(token_id)
-                    .ok_or::<crate::Error>(format!("Invalid token id: {token_id}").into())?;
-
-                self.decode_token(token_bytes, token_index, decoded)?;
-            }
-            token_index += 1;
+                    .ok_or(format!("Invalid token id: {token_id}"))?,
+            };
+            self.decode_token(&mut state, token_id, token_bytes, decoded)?;
         }
+        self.flush(&mut state, decoded)?;
         Ok(())
     }
 
     fn decode_token(
         &self,
+        state: &mut DecoderState,
+        token_id: u32,
         token_bytes: &[u8],
-        token_index: usize,
         decoded: &mut Vec<u8>,
     ) -> Result<()>;
+
+    fn flush(&self, _state: &mut DecoderState, _decoded: &mut Vec<u8>) -> Result<()> {
+        return Ok(());
+    }
 }
 
 impl Decoder for PipelineDecoder {
     fn decode_token(
         &self,
+        state: &mut DecoderState,
+        token_id: u32,
         token_bytes: &[u8],
-        token_index: usize,
         decoded: &mut Vec<u8>,
     ) -> Result<()> {
         match self {
@@ -329,22 +344,69 @@ impl Decoder for PipelineDecoder {
                 Ok(())
             }
             Self::JoinWithSpaces => {
-                if token_index != 0 {
+                if replace(&mut state.started, true) {
                     decoded.push(b' ');
                 }
                 decoded.extend_from_slice(token_bytes);
                 Ok(())
             }
-            Self::WordPiece(decoder) => {
-                decoder.decode_token(token_bytes, token_index, decoded)?;
-                if let Some(&last) = decoded.last()
-                    && last == b' '
-                {
-                    decoded.pop();
+            Self::WordPiece(decoder) => decoder.decode_token(state, token_id, token_bytes, decoded),
+            Self::MetaSpace(decoder) => decoder.decode_token(state, token_id, token_bytes, decoded),
+            Self::ByteFallback(decoder) => {
+                decoder.decode_token(state, token_id, token_bytes, decoded)
+            }
+
+            Self::Sequence(stages) => {
+                let DecoderState {
+                    swap_buffers: [a, b],
+                    members,
+                    ..
+                } = state;
+                if members.is_empty() {
+                    members.resize_with(stages.len(), Default::default);
+                }
+                a.copy_from_slice(token_bytes);
+                for (stage, member_state) in zip(stages, members) {
+                    b.clear();
+                    stage.decode_token(member_state, token_id, a, b)?;
+                    if b.is_empty() {
+                        return Ok(());
+                    }
+                    swap(a, b);
+                }
+                decoded.extend_from_slice(a);
+                Ok(())
+            }
+        }
+    }
+
+    fn flush(&self, state: &mut DecoderState, decoded: &mut Vec<u8>) -> Result<()> {
+        match self {
+            Self::Sequence(stages) => {
+                let DecoderState {
+                    swap_buffers: [a, b],
+                    members,
+                    ..
+                } = state;
+                for i in 0..stages.len() {
+                    a.clear();
+                    stages[i].flush(&mut members[i], a)?;
+                    if a.is_empty() {
+                        continue;
+                    }
+                    for (stage, member_state) in stages.iter().zip(members.iter_mut()).skip(i) {
+                        b.clear();
+                        stage.decode_token(member_state, u32::MAX, a, b)?;
+                        if b.is_empty() {
+                            return Ok(());
+                        }
+                        std::mem::swap(a, b);
+                    }
+                    decoded.extend_from_slice(a);
                 }
                 Ok(())
             }
-            Self::MetaSpace(decoder) => decoder.decode_token(token_bytes, token_index, decoded),
+            decoder => decoder.flush(state, decoded),
         }
     }
 }
@@ -359,20 +421,27 @@ impl TryFrom<&DecoderWrapper> for PipelineDecoder {
             DecoderWrapper::WordPiece(decoder) => Ok(Self::WordPiece(decoder.clone())),
             DecoderWrapper::Metaspace(decoder) => Ok(Self::MetaSpace(decoder.clone())),
             DecoderWrapper::Sequence(sequence) => {
-                let decoders = sequence.get_decoders();
+                let mut decoders = sequence
+                    .get_decoders()
+                    .into_iter()
+                    .map(Self::try_from)
+                    .filter(|maybe_decoder| {
+                        if let Ok(Self::None) = maybe_decoder {
+                            false
+                        } else {
+                            true
+                        }
+                    })
+                    .collect::<Result<Vec<_>>>()?;
                 if decoders.len() == 0 {
                     return Ok(Self::default());
                 }
                 if decoders.len() == 1 {
                     // SAFETY: safe to .unwrap() as the len is asserted to be 1
-                    return Self::try_from(decoders.first().unwrap());
+                    let first = decoders.pop().unwrap();
+                    return Ok(first);
                 }
-                Ok(Self::Sequence(
-                    decoders
-                        .into_iter()
-                        .map(Self::try_from)
-                        .collect::<Result<Vec<_>>>()?,
-                ))
+                Ok(Self::Sequence(decoders))
             }
             decoder => Err(format!("Decoder {:?} not supported yet", decoder).into()),
         }

@@ -1,4 +1,8 @@
-use crate::tokenizer::{Decoder, Result};
+use crate::{
+    pipeline::{self, DecoderState},
+    tokenizer::{Decoder, Result},
+};
+use ahash::AHashMap;
 use monostate::MustBe;
 
 use serde::{Deserialize, Serialize};
@@ -11,12 +15,16 @@ use serde::{Deserialize, Serialize};
 pub struct ByteFallback {
     #[serde(rename = "type")]
     type_: MustBe!("ByteFallback"),
+    /// Lookup mapping a token id to the raw byte it represents
+    /// todo: closed-addressing, can use ptrhash
+    fallback_lookup: AHashMap<u32, u8>,
 }
 
 impl ByteFallback {
-    pub fn new() -> Self {
+    pub fn new(fallback_lookup: AHashMap<u32, u8>) -> Self {
         Self {
             type_: MustBe!("ByteFallback"),
+            fallback_lookup,
         }
     }
 }
@@ -62,13 +70,38 @@ impl Decoder for ByteFallback {
     }
 }
 
+impl pipeline::Decoder for ByteFallback {
+    fn decode_token(
+        &self,
+        state: &mut pipeline::DecoderState,
+        token_id: u32,
+        token_bytes: &[u8],
+        decoded: &mut Vec<u8>,
+    ) -> Result<()> {
+        if let Some(&raw_byte) = self.fallback_lookup.get(&token_id) {
+            state.pending_buffer.push(raw_byte);
+            return Ok(());
+        }
+        self.flush(state, decoded)?;
+        decoded.extend_from_slice(token_bytes);
+        Ok(())
+    }
+
+    fn flush(&self, state: &mut DecoderState, decoded: &mut Vec<u8>) -> Result<()> {
+        if state.pending_buffer.len() > 0 {
+            decoded.append(&mut state.pending_buffer);
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn decode() {
-        let decoder = ByteFallback::new();
+        let decoder = ByteFallback::new(AHashMap::new());
         let res = decoder
             .decode_chain(vec!["Hey".into(), "friend!".into()])
             .unwrap();
