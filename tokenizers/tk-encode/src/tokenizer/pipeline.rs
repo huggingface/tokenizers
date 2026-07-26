@@ -5,6 +5,7 @@ use std::{borrow::Cow, convert::TryFrom};
 use atomsplit::classify::classify;
 
 use crate::DecoderWrapper;
+use crate::decoders::metaspace::Metaspace;
 use crate::decoders::wordpiece::WordPiece;
 use crate::models::bpe::{BpeScratch, PipelineBPE};
 use crate::models::unigram::{Unigram, UnigramScratch};
@@ -272,6 +273,7 @@ impl TryFrom<&PostProcessorWrapper> for PipelinePostProcessor {
 #[derive(Debug, Default)]
 pub enum PipelineDecoder {
     WordPiece(WordPiece),
+    MetaSpace(Metaspace),
     None,
     #[default]
     JoinWithSpaces,
@@ -332,9 +334,16 @@ impl Decoder for PipelineDecoder {
                 decoded.extend_from_slice(token_bytes);
                 Ok(())
             }
-            PipelineDecoder::WordPiece(decoder) => {
-                decoder.decode_token(token_bytes, token_index, decoded)
+            Self::WordPiece(decoder) => {
+                decoder.decode_token(token_bytes, token_index, decoded)?;
+                if let Some(&last) = decoded.last()
+                    && last == b' '
+                {
+                    decoded.pop();
+                }
+                Ok(())
             }
+            Self::MetaSpace(decoder) => decoder.decode_token(token_bytes, token_index, decoded),
         }
     }
 }
@@ -347,30 +356,8 @@ impl TryFrom<&DecoderWrapper> for PipelineDecoder {
             // ByteLevel decoder is no longer needed as the vocabulary is stored as raw bytes
             DecoderWrapper::ByteLevel(_) => Ok(Self::None),
             DecoderWrapper::WordPiece(decoder) => Ok(Self::WordPiece(decoder.clone())),
-            DecoderWrapper::BPE(decoder) => {
-                Err(format!("Decoder {:?} not supported yet", decoder).into())
-            }
-            DecoderWrapper::ByteFallback(decoder) => {
-                Err(format!("Decoder {:?} not supported yet", decoder).into())
-            }
-            DecoderWrapper::CTC(decoder) => {
-                Err(format!("Decoder {:?} not supported yet", decoder).into())
-            }
-            DecoderWrapper::Fuse(decoder) => {
-                Err(format!("Decoder {:?} not supported yet", decoder).into())
-            }
-            DecoderWrapper::Metaspace(decoder) => {
-                Err(format!("Decoder {:?} not supported yet", decoder).into())
-            }
-            DecoderWrapper::Replace(decoder) => {
-                Err(format!("Decoder {:?} not supported yet", decoder).into())
-            }
-            DecoderWrapper::Sequence(decoder) => {
-                Err(format!("Decoder {:?} not supported yet", decoder).into())
-            }
-            DecoderWrapper::Strip(decoder) => {
-                Err(format!("Decoder {:?} not supported yet", decoder).into())
-            }
+            DecoderWrapper::Metaspace(decoder) => Ok(Self::MetaSpace(decoder.clone())),
+            decoder => Err(format!("Decoder {:?} not supported yet", decoder).into()),
         }
     }
 }

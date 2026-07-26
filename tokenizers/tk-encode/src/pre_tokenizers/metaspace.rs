@@ -1,4 +1,7 @@
-use crate::tokenizer::{Decoder, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
+use crate::{
+    pipeline,
+    tokenizer::{Decoder, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior},
+};
 use serde::{Deserialize, Deserializer, Serialize, de};
 
 /// Enum representing options for the metaspace prepending scheme.
@@ -169,6 +172,25 @@ impl Decoder for Metaspace {
                     .collect::<String>()
             })
             .collect())
+    }
+}
+
+impl pipeline::Decoder for Metaspace {
+    fn decode_token(
+        &self,
+        token_bytes: &[u8],
+        token_index: usize,
+        decoded: &mut Vec<u8>,
+    ) -> Result<()> {
+        if token_bytes.starts_with(self.str_rep.as_bytes()) {
+            if token_index == 0 && self.prepend_scheme != PrependScheme::Never {
+                decoded.push(b' ');
+            }
+            decoded.extend_from_slice(&token_bytes[self.replacement.len_utf8()..]);
+        } else {
+            decoded.extend_from_slice(token_bytes);
+        }
+        Ok(())
     }
 }
 
