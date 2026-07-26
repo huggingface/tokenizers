@@ -272,6 +272,7 @@ impl TryFrom<&PostProcessorWrapper> for PipelinePostProcessor {
 /// [`PipelineDecoder`] is responsible for turning a chunk of token ids back into human-readable text
 #[derive(Debug, Default)]
 pub enum PipelineDecoder {
+    Sequence(Vec<Self>),
     WordPiece(WordPiece),
     MetaSpace(Metaspace),
     None,
@@ -357,6 +358,22 @@ impl TryFrom<&DecoderWrapper> for PipelineDecoder {
             DecoderWrapper::ByteLevel(_) => Ok(Self::None),
             DecoderWrapper::WordPiece(decoder) => Ok(Self::WordPiece(decoder.clone())),
             DecoderWrapper::Metaspace(decoder) => Ok(Self::MetaSpace(decoder.clone())),
+            DecoderWrapper::Sequence(sequence) => {
+                let decoders = sequence.get_decoders();
+                if decoders.len() == 0 {
+                    return Ok(Self::default());
+                }
+                if decoders.len() == 1 {
+                    // SAFETY: safe to .unwrap() as the len is asserted to be 1
+                    return Self::try_from(decoders.first().unwrap());
+                }
+                Ok(Self::Sequence(
+                    decoders
+                        .into_iter()
+                        .map(Self::try_from)
+                        .collect::<Result<Vec<_>>>()?,
+                ))
+            }
             decoder => Err(format!("Decoder {:?} not supported yet", decoder).into()),
         }
     }
