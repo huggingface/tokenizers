@@ -272,8 +272,9 @@ impl TryFrom<&PostProcessorWrapper> for PipelinePostProcessor {
 #[derive(Debug, Default)]
 pub enum PipelineDecoder {
     WordPiece(WordPiece),
-    #[default]
     None,
+    #[default]
+    JoinWithSpaces,
 }
 
 pub trait Decoder {
@@ -321,6 +322,10 @@ impl Decoder for PipelineDecoder {
     ) -> Result<()> {
         match self {
             Self::None => {
+                decoded.extend_from_slice(token_bytes);
+                Ok(())
+            }
+            Self::JoinWithSpaces => {
                 if token_index != 0 {
                     decoded.push(b' ');
                 }
