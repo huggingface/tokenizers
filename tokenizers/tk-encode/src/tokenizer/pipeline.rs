@@ -332,7 +332,7 @@ pub trait Decoder {
     ) -> Result<()>;
 
     fn flush(&self, _state: &mut DecoderState, _decoded: &mut Vec<u8>) -> Result<()> {
-        return Ok(());
+        Ok(())
     }
 }
 
@@ -451,15 +451,9 @@ impl PipelineDecoder {
                     .get_decoders()
                     .iter()
                     .map(|decoder| Self::from_decoder(decoder, model))
-                    .filter(|maybe_decoder| {
-                        if let Ok(Self::None) = maybe_decoder {
-                            false
-                        } else {
-                            true
-                        }
-                    })
+                    .filter(|maybe_decoder| !matches!(maybe_decoder, Ok(Self::None)))
                     .collect::<Result<Vec<_>>>()?;
-                if decoders.len() == 0 {
+                if decoders.is_empty() {
                     return Ok(Self::default());
                 }
                 if decoders.len() == 1 {

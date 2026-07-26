@@ -1,4 +1,5 @@
 use crate::arc_rwlock_serde;
+use ahash::AHashMap;
 use serde::{Deserialize, Serialize};
 extern crate tokenizers as tk;
 use napi::bindgen_prelude::*;
@@ -58,7 +59,7 @@ pub fn bpe_decoder(suffix: Option<String>) -> Decoder {
 pub fn byte_fallback_decoder() -> Decoder {
   Decoder {
     decoder: Some(Arc::new(RwLock::new(
-      tk::decoders::byte_fallback::ByteFallback::new().into(),
+      tk::decoders::byte_fallback::ByteFallback::new(AHashMap::new()).into(),
     ))),
   }
 }

@@ -3,6 +3,7 @@ use std::sync::{Arc, RwLock};
 use crate::pre_tokenizers::from_string;
 use crate::tokenizer::PyTokenizer;
 use crate::utils::PyPattern;
+use ahash::AHashMap;
 use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
@@ -299,7 +300,7 @@ impl PyByteFallbackDec {
     #[new]
     #[pyo3(signature = (), text_signature = "(self)")]
     fn new() -> PyClassInitializer<Self> {
-        PyClassInitializer::<PyDecoder>::from(PyDecoder::from(ByteFallback::new()))
+        PyClassInitializer::<PyDecoder>::from(PyDecoder::from(ByteFallback::new(AHashMap::new())))
             .add_subclass(PyByteFallbackDec {})
     }
 }
