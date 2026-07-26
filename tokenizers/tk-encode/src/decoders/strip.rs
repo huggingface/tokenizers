@@ -1,4 +1,7 @@
-use crate::tokenizer::{Decoder, Result};
+use crate::{
+    pipeline,
+    tokenizer::{Decoder, Result},
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -56,6 +59,34 @@ impl Decoder for Strip {
                 new_token
             })
             .collect())
+    }
+}
+
+impl pipeline::Decoder for Strip {
+    fn decode_token(
+        &self,
+        _state: &mut pipeline::DecoderState,
+        _token_id: u32,
+        token_bytes: &[u8],
+        decoded: &mut Vec<u8>,
+    ) -> Result<()> {
+        let mut pat_buf = [0u8; 4];
+        let pat = self.content.encode_utf8(&mut pat_buf).as_bytes();
+        let mut token = token_bytes;
+        for _ in 0..self.start {
+            match token.strip_prefix(pat) {
+                Some(rest) => token = rest,
+                None => break,
+            }
+        }
+        for _ in 0..self.stop {
+            match token.strip_suffix(pat) {
+                Some(rest) => token = rest,
+                None => break,
+            }
+        }
+        decoded.extend_from_slice(token);
+        Ok(())
     }
 }
 

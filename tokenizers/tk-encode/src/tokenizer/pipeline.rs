@@ -10,11 +10,13 @@ use atomsplit::classify::classify;
 use crate::DecoderWrapper;
 use crate::decoders::byte_fallback::ByteFallback;
 use crate::decoders::metaspace::Metaspace;
+use crate::decoders::strip::Strip;
 use crate::decoders::wordpiece::WordPiece;
 use crate::models::bpe::{BpeScratch, PipelineBPE};
 use crate::models::unigram::{Unigram, UnigramScratch};
 use crate::models::wordlevel::WordLevel;
 use crate::models::wordpiece::{PipelineWordPiece, WordPieceScratch};
+use crate::normalizers::Replace;
 use crate::processors::bert::BertProcessing;
 use crate::processors::roberta::RobertaProcessing;
 use crate::utils::byte_level::GPT2_REGEX_STR;
@@ -280,6 +282,8 @@ pub enum PipelineDecoder {
     WordPiece(WordPiece),
     MetaSpace(Metaspace),
     ByteFallback(ByteFallback),
+    Replace(Replace),
+    Strip(Strip),
     None,
     #[default]
     JoinWithSpaces,
@@ -305,7 +309,9 @@ pub trait Decoder {
         let mut state = DecoderState::default();
         for &token_id in ids {
             let token_bytes = match added_vocabulary.simple_id_to_token_bytes(token_id) {
-                Some(_) if skip_special_tokens => continue,
+                Some(_) if skip_special_tokens && added_vocabulary.is_special(token_id) => {
+                    continue;
+                }
                 Some(bytes) => bytes,
                 None => model
                     .id_to_token_bytes(token_id)
@@ -350,6 +356,8 @@ impl Decoder for PipelineDecoder {
                 decoded.extend_from_slice(token_bytes);
                 Ok(())
             }
+            Self::Strip(decoder) => decoder.decode_token(state, token_id, token_bytes, decoded),
+            Self::Replace(decoder) => decoder.decode_token(state, token_id, token_bytes, decoded),
             Self::WordPiece(decoder) => decoder.decode_token(state, token_id, token_bytes, decoded),
             Self::MetaSpace(decoder) => decoder.decode_token(state, token_id, token_bytes, decoded),
             Self::ByteFallback(decoder) => {
@@ -365,7 +373,8 @@ impl Decoder for PipelineDecoder {
                 if members.is_empty() {
                     members.resize_with(stages.len(), Default::default);
                 }
-                a.copy_from_slice(token_bytes);
+                a.clear();
+                a.extend_from_slice(token_bytes);
                 for (stage, member_state) in zip(stages, members) {
                     b.clear();
                     stage.decode_token(member_state, token_id, a, b)?;
@@ -394,7 +403,8 @@ impl Decoder for PipelineDecoder {
                     if a.is_empty() {
                         continue;
                     }
-                    for (stage, member_state) in stages.iter().zip(members.iter_mut()).skip(i) {
+                    // stage i's flush is one token for the stages after it
+                    for (stage, member_state) in stages.iter().zip(members.iter_mut()).skip(i + 1) {
                         b.clear();
                         stage.decode_token(member_state, u32::MAX, a, b)?;
                         if b.is_empty() {
@@ -406,25 +416,40 @@ impl Decoder for PipelineDecoder {
                 }
                 Ok(())
             }
-            decoder => decoder.flush(state, decoded),
+            Self::Strip(decoder) => decoder.flush(state, decoded),
+            Self::Replace(decoder) => decoder.flush(state, decoded),
+            Self::WordPiece(decoder) => decoder.flush(state, decoded),
+            Self::MetaSpace(decoder) => decoder.flush(state, decoded),
+            Self::ByteFallback(decoder) => decoder.flush(state, decoded),
+            Self::None | Self::JoinWithSpaces => Ok(()),
         }
     }
 }
 
-impl TryFrom<&DecoderWrapper> for PipelineDecoder {
-    type Error = crate::Error;
-
-    fn try_from(value: &DecoderWrapper) -> std::prelude::v1::Result<Self, Self::Error> {
+impl PipelineDecoder {
+    /// Build from a legacy decoder. Takes the already-built `model` because
+    /// ByteFallback recognizes byte tokens by id, through the model's byte
+    /// fallback table.
+    fn from_decoder(value: &DecoderWrapper, model: &PipelineModel) -> Result<Self> {
         match value {
             // ByteLevel decoder is no longer needed as the vocabulary is stored as raw bytes
             DecoderWrapper::ByteLevel(_) => Ok(Self::None),
             DecoderWrapper::WordPiece(decoder) => Ok(Self::WordPiece(decoder.clone())),
             DecoderWrapper::Metaspace(decoder) => Ok(Self::MetaSpace(decoder.clone())),
+            DecoderWrapper::ByteFallback(_) => {
+                let byte_to_id = model.byte_fallback_ids().ok_or(
+                    "ByteFallback decoder requires a model byte fallback table to map \
+                     token ids to bytes; only BPE models with `byte_fallback: true` build one",
+                )?;
+                Ok(Self::ByteFallback(ByteFallback::from_byte_to_id(
+                    byte_to_id,
+                )))
+            }
             DecoderWrapper::Sequence(sequence) => {
                 let mut decoders = sequence
                     .get_decoders()
-                    .into_iter()
-                    .map(Self::try_from)
+                    .iter()
+                    .map(|decoder| Self::from_decoder(decoder, model))
                     .filter(|maybe_decoder| {
                         if let Ok(Self::None) = maybe_decoder {
                             false
@@ -666,6 +691,12 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
             ModelWrapper::WordPiece(model) => PipelineModel::WordPiece(model.try_into()?),
         };
 
+        let decoder = tok
+            .get_decoder()
+            .map(|decoder| PipelineDecoder::from_decoder(decoder, &model))
+            .transpose()?
+            .unwrap_or_default();
+
         Ok(Self {
             added_vocabulary,
             normalizer: tok.get_normalizer().cloned(),
@@ -676,11 +707,7 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
                 .map(PipelinePostProcessor::try_from)
                 .transpose()?
                 .unwrap_or_default(),
-            decoder: tok
-                .get_decoder()
-                .map(PipelineDecoder::try_from)
-                .transpose()?
-                .unwrap_or_default(),
+            decoder,
         })
     }
 }
@@ -733,7 +760,13 @@ impl PipelineTokenizer {
             ids,
             &mut output,
         )?;
-        Ok(String::from_utf8(output)?)
+        // A byte-level id sequence can end mid-character (a decode_stream
+        // prefix does constantly); the released ByteLevel decoder is lossy
+        // there, so match it instead of erroring.
+        Ok(match String::from_utf8(output) {
+            Ok(text) => text,
+            Err(err) => String::from_utf8_lossy(err.as_bytes()).into_owned(),
+        })
     }
 
     /// Decode several id sequences at once, one `String` per input. Mirrors the
@@ -1173,6 +1206,17 @@ impl Model for PipelineModel {
     }
 }
 
+impl PipelineModel {
+    /// The model's encode-time byte fallback table (`<0xHH>` token ids indexed
+    /// by byte), when it has one.
+    fn byte_fallback_ids(&self) -> Option<&[u32; 256]> {
+        match self {
+            Self::BPE(model) => model.byte_fallback_ids(),
+            _ => None,
+        }
+    }
+}
+
 pub enum PipelineModelScratch {
     BPE(BpeScratch),
     WordLevel(()),
@@ -1265,6 +1309,111 @@ mod tests {
         tok.with_pre_tokenizer(Some(ByteLevel::new(false, true, true)));
         let err = conversion_error(&tok);
         assert!(err.contains("not supported with model"), "{}", err);
+    }
+
+    /// "h" and "e" plus all 256 `<0xHH>` tokens, each byte token's id being
+    /// its byte value.
+    fn byte_fallback_tokenizer(byte_fallback: bool) -> Tokenizer {
+        use crate::decoders::byte_fallback::ByteFallback;
+        use crate::models::bpe::{BpeBuilder, Vocab};
+
+        let mut vocab: Vocab = [("h".to_string(), 300), ("e".to_string(), 301)]
+            .into_iter()
+            .collect();
+        vocab.extend((0..=255u8).map(|b| (format!("<0x{b:02X}>"), u32::from(b))));
+        let bpe = BpeBuilder::default()
+            .vocab_and_merges(vocab, vec![])
+            .byte_fallback(byte_fallback)
+            .build()
+            .unwrap();
+        let mut tok = Tokenizer::new(bpe);
+        tok.with_decoder(Some(ByteFallback::default()));
+        tok
+    }
+
+    #[test]
+    fn byte_fallback_decoder_decodes_byte_tokens_by_id() {
+        let pipeline = PipelineTokenizer::try_from(&byte_fallback_tokenizer(true)).unwrap();
+        // 0xE5 0x8F 0xAB is the UTF-8 encoding of '叫'; the trailing byte run
+        // exercises the end-of-ids flush
+        assert_eq!(
+            pipeline
+                .decode(&[300, 301, 0xE5, 0x8F, 0xAB], false)
+                .unwrap(),
+            "he叫"
+        );
+    }
+
+    #[test]
+    fn conversion_rejects_byte_fallback_decoder_without_model_table() {
+        let err = conversion_error(&byte_fallback_tokenizer(false));
+        assert!(err.contains("byte fallback table"), "{}", err);
+    }
+
+    #[test]
+    fn byte_fallback_decoder_replaces_invalid_byte_runs() {
+        let pipeline = PipelineTokenizer::try_from(&byte_fallback_tokenizer(true)).unwrap();
+        // 0xE5 0x8F alone is an incomplete UTF-8 sequence; legacy emits one
+        // '�' per byte token of the run
+        assert_eq!(pipeline.decode(&[0xE5, 0x8F, 300], false).unwrap(), "��h");
+        assert_eq!(pipeline.decode(&[300, 0xE5, 0x8F], false).unwrap(), "h��");
+    }
+
+    #[test]
+    fn skip_special_tokens_keeps_non_special_added_tokens() {
+        let mut tok = byte_fallback_tokenizer(true);
+        tok.add_tokens([crate::AddedToken::from("<think>", false)])
+            .unwrap();
+        tok.add_special_tokens([crate::AddedToken::from("<end>", true)])
+            .unwrap();
+        let think = tok.token_to_id("<think>").unwrap();
+        let end = tok.token_to_id("<end>").unwrap();
+        let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
+        assert_eq!(
+            pipeline.decode(&[think, end, 300], false).unwrap(),
+            "<think><end>h"
+        );
+        assert_eq!(
+            pipeline.decode(&[think, end, 300], true).unwrap(),
+            "<think>h"
+        );
+    }
+
+    #[test]
+    fn sequence_decoder_chains_stages_per_token() {
+        let decoder = PipelineDecoder::Sequence(vec![
+            PipelineDecoder::Strip(Strip::new('#', 1, 0)),
+            PipelineDecoder::JoinWithSpaces,
+        ]);
+        let mut state = DecoderState::default();
+        let mut out = Vec::new();
+        for token in [b"#hey".as_slice(), b"#you"] {
+            decoder
+                .decode_token(&mut state, 0, token, &mut out)
+                .unwrap();
+        }
+        decoder.flush(&mut state, &mut out).unwrap();
+        assert_eq!(out, b"hey you");
+    }
+
+    #[test]
+    fn sequence_flushes_held_byte_run_through_later_stages() {
+        let mut lookup = ahash::AHashMap::new();
+        lookup.insert(7u32, b'a');
+        let decoder = PipelineDecoder::Sequence(vec![
+            PipelineDecoder::ByteFallback(ByteFallback::new(lookup)),
+            PipelineDecoder::JoinWithSpaces,
+        ]);
+        let mut state = DecoderState::default();
+        let mut out = Vec::new();
+        decoder
+            .decode_token(&mut state, 1, b"hey", &mut out)
+            .unwrap();
+        decoder
+            .decode_token(&mut state, 7, b"<0x61>", &mut out)
+            .unwrap();
+        decoder.flush(&mut state, &mut out).unwrap();
+        assert_eq!(out, b"hey a");
     }
 
     fn wordlevel_tokenizer(

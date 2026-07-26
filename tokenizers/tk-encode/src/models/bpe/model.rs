@@ -763,6 +763,19 @@ impl PipelineBPE {
         })
     }
 
+    /// The `<0xHH>` token ids indexed by byte, when this model encodes with
+    /// byte fallback. `Atoms::Bytes` also holds a byte -> id table, but it
+    /// maps byte-level atoms, not `<0xHH>` tokens, so it is not exposed here.
+    pub(crate) fn byte_fallback_ids(&self) -> Option<&[u32; 256]> {
+        match &self.atoms {
+            Atoms::Chars {
+                byte_fallback: Some(table),
+                ..
+            } => Some(table),
+            _ => None,
+        }
+    }
+
     fn merge_word(
         &self,
         sequence: &str,

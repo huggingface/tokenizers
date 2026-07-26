@@ -15,8 +15,10 @@ use serde::{Deserialize, Serialize};
 pub struct ByteFallback {
     #[serde(rename = "type")]
     type_: MustBe!("ByteFallback"),
-    /// Lookup mapping a token id to the raw byte it represents
+    /// Lookup mapping a token id to the raw byte it represents. Built from
+    /// the model when the pipeline is assembled, never part of tokenizer.json.
     /// todo: closed-addressing, can use ptrhash
+    #[serde(skip)]
     fallback_lookup: AHashMap<u32, u8>,
 }
 
@@ -26,6 +28,18 @@ impl ByteFallback {
             type_: MustBe!("ByteFallback"),
             fallback_lookup,
         }
+    }
+
+    /// Invert the model's encode-time byte -> id table into the id -> byte
+    /// lookup decoding needs.
+    pub(crate) fn from_byte_to_id(byte_to_id: &[u32; 256]) -> Self {
+        Self::new(
+            byte_to_id
+                .iter()
+                .enumerate()
+                .map(|(byte, &id)| (id, byte as u8))
+                .collect(),
+        )
     }
 }
 
@@ -88,8 +102,18 @@ impl pipeline::Decoder for ByteFallback {
     }
 
     fn flush(&self, state: &mut DecoderState, decoded: &mut Vec<u8>) -> Result<()> {
-        if state.pending_buffer.len() > 0 {
+        if state.pending_buffer.is_empty() {
+            return Ok(());
+        }
+        if std::str::from_utf8(&state.pending_buffer).is_ok() {
             decoded.append(&mut state.pending_buffer);
+        } else {
+            // one '�' per byte token, like `decode_chain` above — not
+            // from_utf8_lossy, which merges maximal invalid subparts
+            for _ in 0..state.pending_buffer.len() {
+                decoded.extend_from_slice("�".as_bytes());
+            }
+            state.pending_buffer.clear();
         }
         Ok(())
     }

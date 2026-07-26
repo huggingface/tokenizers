@@ -267,7 +267,7 @@ fn bench_decode(c: &mut Criterion) {
     let mut sp_chain = Tokenizer::from_file("data/albert-base-v1-tokenizer.json").unwrap();
     sp_chain.with_decoder(Some(Sequence::new(vec![
         Replace::new("▁", " ").unwrap().into(),
-        ByteFallback::new().into(),
+        ByteFallback::default().into(),
         Fuse::new().into(),
     ])));
     let lines = encode_lines(&sp_chain, &data);

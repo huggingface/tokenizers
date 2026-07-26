@@ -262,6 +262,14 @@ impl AddedVocabulary {
             .or_else(|| self.normalized_vocab.id_to_token_bytes(id))
     }
 
+    /// Whether `id` is a *special* added token — the kind `skip_special_tokens`
+    /// drops at decode time, as opposed to user-added regular tokens.
+    pub fn is_special(&self, id: u32) -> bool {
+        self.token_metadata
+            .get(id as usize)
+            .is_some_and(|metadata| metadata.special)
+    }
+
     //
     pub fn set_encode_special_tokens(&mut self, value: bool) {
         self.encode_special_tokens = value;

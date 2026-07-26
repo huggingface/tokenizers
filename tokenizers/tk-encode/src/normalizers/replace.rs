@@ -131,6 +131,22 @@ impl Decoder for Replace {
     }
 }
 
+impl pipeline::Decoder for Replace {
+    fn decode_token(
+        &self,
+        state: &mut pipeline::DecoderState,
+        token_id: u32,
+        token_bytes: &[u8],
+        decoded: &mut Vec<u8>,
+    ) -> Result<()> {
+        match &self.pattern {
+            ReplacePattern::String(string) => {}
+            ReplacePattern::Regex(_) => {}
+        }
+        Ok(())
+    }
+}
+
 // `Replace` needs a system-regex backend (SysRegex) for every test here.
 #[cfg(all(test, feature = "fancy-regex"))]
 mod tests {

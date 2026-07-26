@@ -185,14 +185,20 @@ impl pipeline::Decoder for Metaspace {
         token_bytes: &[u8],
         decoded: &mut Vec<u8>,
     ) -> Result<()> {
-        if token_bytes.starts_with(self.str_rep.as_bytes()) {
-            if !replace(&mut state.started, true) && self.prepend_scheme != PrependScheme::Never {
+        // Every replacement char becomes ' ', except in the first token where
+        // prepend_scheme != Never drops it (it was prepended at encode time).
+        let first = !replace(&mut state.started, true);
+        let drop_replacement = first && self.prepend_scheme != PrependScheme::Never;
+        let pat = self.str_rep.as_bytes();
+        let mut rest = token_bytes;
+        while let Some(pos) = rest.windows(pat.len()).position(|window| window == pat) {
+            decoded.extend_from_slice(&rest[..pos]);
+            if !drop_replacement {
                 decoded.push(b' ');
             }
-            decoded.extend_from_slice(&token_bytes[self.replacement.len_utf8()..]);
-        } else {
-            decoded.extend_from_slice(token_bytes);
+            rest = &rest[pos + pat.len()..];
         }
+        decoded.extend_from_slice(rest);
         Ok(())
     }
 }
@@ -203,6 +209,35 @@ mod tests {
 
     use super::*;
     use crate::{OffsetReferential, OffsetType};
+
+    #[test]
+    fn pipeline_decode_token_matches_decode_chain() {
+        let tokens = ["▁Hey", "▁▁friend", "▁", "what", "▁▁"];
+        for scheme in [
+            PrependScheme::Always,
+            PrependScheme::First,
+            PrependScheme::Never,
+        ] {
+            let decoder = Metaspace::new('▁', scheme, true);
+            let expected = decoder
+                .decode_chain(tokens.iter().map(|t| t.to_string()).collect())
+                .unwrap()
+                .concat();
+            let mut state = DecoderState::default();
+            let mut out = Vec::new();
+            for token in tokens {
+                pipeline::Decoder::decode_token(
+                    &decoder,
+                    &mut state,
+                    0,
+                    token.as_bytes(),
+                    &mut out,
+                )
+                .unwrap();
+            }
+            assert_eq!(out, expected.as_bytes(), "prepend_scheme {scheme:?}");
+        }
+    }
 
     #[test]
     fn serialization() {
