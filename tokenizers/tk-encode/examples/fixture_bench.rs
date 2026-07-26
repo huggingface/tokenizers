@@ -670,7 +670,9 @@ fn bench_threads(
 // release. No released baseline → no decode oracle, so the whole phase is null.
 // `pipeline_ok` is the once-probed "can the pipeline decode yet" flag: while
 // `PipelineTokenizer::decode` is a loud stub it is false, so the pipeline series
-// is `null` (rendered "pending") and only the baseline bar is drawn.
+// is `null` (rendered "pending") and only the baseline bar is drawn. A decoder
+// that passes that probe but `Err`s on real ids fails `text_match` and nulls
+// its series for the affected fixtures/sweep — it never aborts the run.
 
 /// Encode every chunk with the released crate into its id stream (untimed input;
 /// specials included, so decode sees the frame tokens a real stream carries).
@@ -724,22 +726,28 @@ fn bench_decode(
     };
     let mbps = |secs: f64| dec_bytes as f64 / secs / 1e6;
 
+    // The `main` probe only decodes `[0]`, so a partial decoder can still `Err`
+    // on this fixture's real id streams — that fails the `text_match` gate and
+    // skips the pipeline timing (series stays null) instead of aborting the run.
+    let pipe_ok = pipeline_ok && ids.iter().all(|i| pipeline.decode(i, false).is_ok());
     // Correctness gate (first 3 chunks): pipeline decode == released decode.
     let text_match = pipeline_ok.then(|| {
-        ids.iter()
-            .take(3)
-            .all(|i| pipeline.decode(i, false).unwrap() == baseline.decode(i, false).unwrap())
+        pipe_ok
+            && ids
+                .iter()
+                .take(3)
+                .all(|i| pipeline.decode(i, false).unwrap() == baseline.decode(i, false).unwrap())
     });
 
     // Interleaved warm-up + REPS so thermal drift hits both equally.
     one_pass(&|i| baseline.decode(i, false).unwrap().len());
-    if pipeline_ok {
+    if pipe_ok {
         one_pass(&|i| pipeline.decode(i, false).unwrap().len());
     }
     let (mut base_s, mut pipe_s) = (Vec::new(), Vec::new());
     for _ in 0..REPS {
         base_s.push(one_pass(&|i| baseline.decode(i, false).unwrap().len()));
-        if pipeline_ok {
+        if pipe_ok {
             pipe_s.push(one_pass(&|i| pipeline.decode(i, false).unwrap().len()));
         }
     }
@@ -793,11 +801,14 @@ fn bench_decode_threads(
         .iter()
         .map(|i| baseline.decode(i, false).unwrap().len())
         .sum();
+    // Same tolerance as `bench_decode`: any `Err` over the corpus drops the
+    // pipeline series to null instead of panicking mid-sweep.
+    let pipe_ok = pipeline_ok && ids.iter().all(|i| pipeline.decode(i, false).is_ok());
     let counts = thread_counts();
     let (mut pipe, mut base) = (Vec::new(), Vec::new());
     for &n in &counts {
         let b = par_decode_mbps(|i| baseline.decode(i, false).unwrap().len(), &ids, bytes, n);
-        let p = pipeline_ok
+        let p = pipe_ok
             .then(|| par_decode_mbps(|i| pipeline.decode(i, false).unwrap().len(), &ids, bytes, n));
         eprintln!(
             "    decode {n} thread(s): pipeline {}, baseline {b:.1} MB/s",
