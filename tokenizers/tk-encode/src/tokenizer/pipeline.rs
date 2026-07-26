@@ -436,6 +436,7 @@ impl PipelineDecoder {
             DecoderWrapper::ByteLevel(_) => Ok(Self::None),
             DecoderWrapper::WordPiece(decoder) => Ok(Self::WordPiece(decoder.clone())),
             DecoderWrapper::Metaspace(decoder) => Ok(Self::MetaSpace(decoder.clone())),
+            DecoderWrapper::Replace(decoder) => Ok(Self::Replace(decoder.clone())),
             DecoderWrapper::ByteFallback(_) => {
                 let byte_to_id = model.byte_fallback_ids().ok_or(
                     "ByteFallback decoder requires a model byte fallback table to map \
@@ -1394,6 +1395,23 @@ mod tests {
         }
         decoder.flush(&mut state, &mut out).unwrap();
         assert_eq!(out, b"hey you");
+    }
+
+    // llama-2's chain in miniature: Replace rewrites plain tokens, ByteFallback
+    // holds byte runs, and the run flushes through the rest of the chain.
+    #[cfg(feature = "fancy-regex")]
+    #[test]
+    fn sequence_replace_then_byte_fallback_decodes() {
+        let mut tok = byte_fallback_tokenizer(true);
+        tok.with_decoder(Some(crate::decoders::sequence::Sequence::new(vec![
+            DecoderWrapper::Replace(crate::normalizers::Replace::new("h", "H").unwrap()),
+            DecoderWrapper::ByteFallback(crate::decoders::byte_fallback::ByteFallback::default()),
+        ])));
+        let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
+        assert_eq!(
+            pipeline.decode(&[300, 0xE5, 0x8F, 0xAB], false).unwrap(),
+            "H叫"
+        );
     }
 
     #[test]

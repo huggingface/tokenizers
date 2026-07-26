@@ -134,16 +134,39 @@ impl Decoder for Replace {
 impl pipeline::Decoder for Replace {
     fn decode_token(
         &self,
-        state: &mut pipeline::DecoderState,
-        token_id: u32,
+        _state: &mut pipeline::DecoderState,
+        _token_id: u32,
         token_bytes: &[u8],
         decoded: &mut Vec<u8>,
     ) -> Result<()> {
         match &self.pattern {
-            ReplacePattern::String(string) => {}
-            ReplacePattern::Regex(_) => {}
+            // Plain byte search: no regex machinery on the hot path, and raw
+            // (non-UTF-8) token bytes pass through unharmed.
+            ReplacePattern::String(pattern) if !pattern.is_empty() => {
+                let pat = pattern.as_bytes();
+                let mut rest = token_bytes;
+                while let Some(pos) = rest.windows(pat.len()).position(|window| window == pat) {
+                    decoded.extend_from_slice(&rest[..pos]);
+                    decoded.extend_from_slice(self.content.as_bytes());
+                    rest = &rest[pos + pat.len()..];
+                }
+                decoded.extend_from_slice(rest);
+                Ok(())
+            }
+            _ => {
+                let token = std::str::from_utf8(token_bytes).map_err(
+                    |_| "Replace decoder with a regex pattern requires valid UTF-8 tokens",
+                )?;
+                let mut last_end = 0;
+                for (start, end) in self.regex.find_iter(token) {
+                    decoded.extend_from_slice(&token.as_bytes()[last_end..start]);
+                    decoded.extend_from_slice(self.content.as_bytes());
+                    last_end = end;
+                }
+                decoded.extend_from_slice(&token.as_bytes()[last_end..]);
+                Ok(())
+            }
         }
-        Ok(())
     }
 }
 
@@ -198,6 +221,40 @@ mod tests {
             replace.decode_chain(original).unwrap(),
             vec!["hello", " hello"]
         );
+    }
+
+    #[test]
+    fn pipeline_decode_token_matches_decode_chain() {
+        let cases = vec![
+            (
+                Replace::new("▁", " ").unwrap(),
+                vec!["▁Hey", "▁▁friend", "no_meta", "▁", ""],
+            ),
+            (Replace::new("ab", "X").unwrap(), vec!["aabb", "abab", "b"]),
+            (
+                Replace::new(ReplacePattern::Regex(r"\s+".into()), " ").unwrap(),
+                vec!["a   b", " x ", "y"],
+            ),
+        ];
+        for (replace, tokens) in cases {
+            let expected = replace
+                .decode_chain(tokens.iter().map(|t| t.to_string()).collect())
+                .unwrap()
+                .concat();
+            let mut state = pipeline::DecoderState::default();
+            let mut out = Vec::new();
+            for token in &tokens {
+                pipeline::Decoder::decode_token(
+                    &replace,
+                    &mut state,
+                    0,
+                    token.as_bytes(),
+                    &mut out,
+                )
+                .unwrap();
+            }
+            assert_eq!(out, expected.as_bytes(), "pattern {:?}", replace.pattern);
+        }
     }
 
     #[test]
