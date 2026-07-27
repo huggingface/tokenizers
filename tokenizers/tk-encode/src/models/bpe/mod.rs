@@ -3,6 +3,7 @@ use std::{iter, mem};
 
 mod model;
 mod serialization;
+mod tables;
 pub mod word;
 mod word_cache;
 

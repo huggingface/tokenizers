@@ -1,5 +1,6 @@
 use super::{super::OrderedVocabIter, Error, Pair, Word};
 use crate::models::bpe::Merge;
+use crate::models::bpe::tables::BpeTables;
 use crate::models::bpe::word_cache::WordCache;
 use crate::pipeline::{self, ModelScratch, PipelineToken};
 use crate::tokenizer::{Model, Result, Token};
@@ -678,6 +679,7 @@ impl Model for BPE {
 
 pub struct PipelineBPE {
     atoms: Atoms,
+    tables: BpeTables,
     vocab: BucketVocabStore,
     merges: MergeMap,
     ignore_merges: bool,
@@ -716,6 +718,7 @@ impl PipelineBPE {
             ..
         } = model;
 
+        let tables = BpeTables::build(vocab.get_vocab(), merges.clone());
         let (vocab, atoms) = if with_byte_level {
             let mut vocab = BucketVocabStore::build(vocab.byte_content());
             vocab = byte_level::transform_vocab(vocab);
@@ -759,6 +762,7 @@ impl PipelineBPE {
         };
         Ok(Self {
             atoms,
+            tables,
             ignore_merges,
             merges,
             vocab,
@@ -854,6 +858,7 @@ impl pipeline::Model for PipelineBPE {
             return Ok(());
         }
 
+        // merges is close-adressing
         self.merge_word(sequence, merge_queue, skip, word);
         output.extend(word.get_chars_iter().map(|id| PipelineToken { id }));
         if let Some(cache) = word_cache {
