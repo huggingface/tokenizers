@@ -1,3 +1,8 @@
+use ahash::{AHashMap, HashMap};
+use itertools::Itertools;
+
+use crate::models::bpe::MergeMap;
+
 // We built tables at load time based on the vocab and merges.
 // There are 5 different tables:
 // - Internal IDS: stores the byte levels and characters in their vocab order, and then we store
@@ -27,8 +32,14 @@ pub(crate) struct BpeTables {
 }
 
 impl BpeTables {
-    pub(crate) fn build(vocab: impl IntoIterator, merges: impl IntoIterator) -> Self {
-        // 1. We build the internal id map
+    pub(crate) fn build(vocab: AHashMap<String, u32>, merges: MergeMap) -> Self {
+        // 1. We build the internal id map. This sorts the merges by their ranks so frequent pairs
+        //    get a smaller rank
+        let vocab_r = AHashMap::from_iter(vocab.iter().map(|(a, b)| (b, a)));
+        let mut internal_id_map = Vec::<u32>::new();
+        let sorted_merges = merges
+            .iter()
+            .sorted_by(|a, b| Ord::cmp(vocab_r[&b.1.0], vocab_r[&a.1.0]));
 
         todo!()
     }

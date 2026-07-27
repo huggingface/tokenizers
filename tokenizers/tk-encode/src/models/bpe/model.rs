@@ -718,7 +718,7 @@ impl PipelineBPE {
             ..
         } = model;
 
-        let tables = BpeTables::build(vocab.get_vocab(), merges.clone());
+        let tables = BpeTables::build(vocab.get_vocab().into_iter().collect(), merges.clone());
         let (vocab, atoms) = if with_byte_level {
             let mut vocab = BucketVocabStore::build(vocab.byte_content());
             vocab = byte_level::transform_vocab(vocab);
