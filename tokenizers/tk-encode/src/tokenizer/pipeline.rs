@@ -2,7 +2,6 @@ use std::cell::RefCell;
 use std::convert::TryInto;
 use std::iter::zip;
 use std::mem::{replace, swap};
-use std::u32;
 use std::{borrow::Cow, convert::TryFrom};
 
 use atomsplit::classify::classify;
@@ -283,7 +282,13 @@ pub enum PipelineDecoder {
     MetaSpace(Metaspace),
     ByteFallback(ByteFallback),
     Replace(Replace),
-    Strip(Strip),
+    /// A `Strip` with no `Fuse` before it: strips each token.
+    StripToken(Strip),
+    /// A `Strip` after a `Fuse` (llama-2 style): `Fuse` concatenates all
+    /// tokens into one, so the strip applies once to the whole decoded output,
+    /// in [`decode_whole`](Decoder::decode_whole). `decode_token` passes bytes
+    /// through untouched.
+    StripWhole(Strip),
     None,
     #[default]
     JoinWithSpaces,
@@ -309,7 +314,7 @@ pub trait Decoder {
         let mut state = DecoderState::default();
         for &token_id in ids {
             let token_bytes = match added_vocabulary.simple_id_to_token_bytes(token_id) {
-                Some(_) if skip_special_tokens && added_vocabulary.is_special(token_id) => {
+                Some(_) if skip_special_tokens && added_vocabulary.skip_on_decode(token_id) => {
                     continue;
                 }
                 Some(bytes) => bytes,
@@ -320,6 +325,7 @@ pub trait Decoder {
             self.decode_token(&mut state, token_id, token_bytes, decoded)?;
         }
         self.flush(&mut state, decoded)?;
+        self.decode_whole(&mut state, decoded)?;
         Ok(())
     }
 
@@ -334,6 +340,13 @@ pub trait Decoder {
     fn flush(&self, _state: &mut DecoderState, _decoded: &mut Vec<u8>) -> Result<()> {
         Ok(())
     }
+
+    /// Runs once at the end of `decode`, on the fully decoded output. This is
+    /// where stages placed after a `Fuse` apply: `Fuse` concatenates all
+    /// tokens into one, so later stages see the whole text as one token.
+    fn decode_whole(&self, _state: &mut DecoderState, _decoded: &mut Vec<u8>) -> Result<()> {
+        Ok(())
+    }
 }
 
 impl Decoder for PipelineDecoder {
@@ -345,7 +358,7 @@ impl Decoder for PipelineDecoder {
         decoded: &mut Vec<u8>,
     ) -> Result<()> {
         match self {
-            Self::None => {
+            Self::None | Self::StripWhole(_) => {
                 decoded.extend_from_slice(token_bytes);
                 Ok(())
             }
@@ -356,7 +369,9 @@ impl Decoder for PipelineDecoder {
                 decoded.extend_from_slice(token_bytes);
                 Ok(())
             }
-            Self::Strip(decoder) => decoder.decode_token(state, token_id, token_bytes, decoded),
+            Self::StripToken(decoder) => {
+                decoder.decode_token(state, token_id, token_bytes, decoded)
+            }
             Self::Replace(decoder) => decoder.decode_token(state, token_id, token_bytes, decoded),
             Self::WordPiece(decoder) => decoder.decode_token(state, token_id, token_bytes, decoded),
             Self::MetaSpace(decoder) => decoder.decode_token(state, token_id, token_bytes, decoded),
@@ -397,6 +412,9 @@ impl Decoder for PipelineDecoder {
                     members,
                     ..
                 } = state;
+                if members.is_empty() {
+                    members.resize_with(stages.len(), Default::default);
+                }
                 for i in 0..stages.len() {
                     a.clear();
                     stages[i].flush(&mut members[i], a)?;
@@ -416,12 +434,31 @@ impl Decoder for PipelineDecoder {
                 }
                 Ok(())
             }
-            Self::Strip(decoder) => decoder.flush(state, decoded),
+            Self::StripToken(decoder) => decoder.flush(state, decoded),
             Self::Replace(decoder) => decoder.flush(state, decoded),
             Self::WordPiece(decoder) => decoder.flush(state, decoded),
             Self::MetaSpace(decoder) => decoder.flush(state, decoded),
             Self::ByteFallback(decoder) => decoder.flush(state, decoded),
-            Self::None | Self::JoinWithSpaces => Ok(()),
+            Self::None | Self::StripWhole(_) | Self::JoinWithSpaces => Ok(()),
+        }
+    }
+
+    fn decode_whole(&self, state: &mut DecoderState, decoded: &mut Vec<u8>) -> Result<()> {
+        match self {
+            Self::Sequence(stages) => {
+                for stage in stages {
+                    stage.decode_whole(state, decoded)?;
+                }
+                Ok(())
+            }
+            Self::StripWhole(strip) => {
+                let [scratch, _] = &mut state.swap_buffers;
+                scratch.clear();
+                strip.decode_token(&mut DecoderState::default(), u32::MAX, decoded, scratch)?;
+                swap(decoded, scratch);
+                Ok(())
+            }
+            _ => Ok(()),
         }
     }
 }
@@ -432,8 +469,10 @@ impl PipelineDecoder {
     /// fallback table.
     fn from_decoder(value: &DecoderWrapper, model: &PipelineModel) -> Result<Self> {
         match value {
-            // ByteLevel decoder is no longer needed as the vocabulary is stored as raw bytes
-            DecoderWrapper::ByteLevel(_) => Ok(Self::None),
+            // ByteLevel is not needed as the vocabulary is stored as raw bytes;
+            // a standalone Fuse only concatenates, which decoding does anyway
+            DecoderWrapper::ByteLevel(_) | DecoderWrapper::Fuse(_) => Ok(Self::None),
+            DecoderWrapper::Strip(decoder) => Ok(Self::StripToken(decoder.clone())),
             DecoderWrapper::WordPiece(decoder) => Ok(Self::WordPiece(decoder.clone())),
             DecoderWrapper::Metaspace(decoder) => Ok(Self::MetaSpace(decoder.clone())),
             DecoderWrapper::Replace(decoder) => Ok(Self::Replace(decoder.clone())),
@@ -447,21 +486,35 @@ impl PipelineDecoder {
                 )))
             }
             DecoderWrapper::Sequence(sequence) => {
-                let mut decoders = sequence
-                    .get_decoders()
-                    .iter()
-                    .map(|decoder| Self::from_decoder(decoder, model))
-                    .filter(|maybe_decoder| !matches!(maybe_decoder, Ok(Self::None)))
-                    .collect::<Result<Vec<_>>>()?;
-                if decoders.is_empty() {
-                    return Ok(Self::default());
+                // Fuse concatenates all tokens into one, so a Strip after it
+                // strips the whole decoded output, not each token. No other
+                // decoder is supported after a Fuse yet.
+                let mut fused = false;
+                let mut decoders = Vec::new();
+                for stage in sequence.get_decoders() {
+                    let decoder = match stage {
+                        DecoderWrapper::Fuse(_) => {
+                            fused = true;
+                            continue;
+                        }
+                        DecoderWrapper::Strip(strip) if fused => Self::StripWhole(strip.clone()),
+                        _ if fused => {
+                            return Err(format!(
+                                "only Strip decoders may follow Fuse, got {stage:?}"
+                            )
+                            .into());
+                        }
+                        _ => Self::from_decoder(stage, model)?,
+                    };
+                    if !matches!(decoder, Self::None) {
+                        decoders.push(decoder);
+                    }
                 }
-                if decoders.len() == 1 {
-                    // SAFETY: safe to .unwrap() as the len is asserted to be 1
-                    let first = decoders.pop().unwrap();
-                    return Ok(first);
+                match decoders.len() {
+                    0 => Ok(Self::None),
+                    1 => Ok(decoders.pop().unwrap()),
+                    _ => Ok(Self::Sequence(decoders)),
                 }
-                Ok(Self::Sequence(decoders))
             }
             decoder => Err(format!("Decoder {:?} not supported yet", decoder).into()),
         }
@@ -609,7 +662,7 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
         let pre_tokenizer: PipelinePreTokenizer = tok
             .get_pre_tokenizer()
             .cloned()
-            .map(TryInto::try_into)
+            .map(PipelinePreTokenizer::try_from)
             .transpose()?
             .unwrap_or(PipelinePreTokenizer::None);
 
@@ -1375,9 +1428,25 @@ mod tests {
     }
 
     #[test]
+    fn skip_special_tokens_keeps_specials_rewritten_by_normalization() {
+        use crate::normalizers::prepend::Prepend;
+
+        let mut tok = byte_fallback_tokenizer(true);
+        tok.with_normalizer(Some(Prepend::new("▁".into()))).unwrap();
+        tok.add_special_tokens([crate::AddedToken::from("<end>", true).normalized(true)])
+            .unwrap();
+        let end = tok.token_to_id("<end>").unwrap();
+        let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
+        // The released crate compares the decode-time (normalized) string
+        // against raw special contents: "▁<end>" never matches "<end>", so the
+        // special survives the skip — llama-2's `<s>` under `Prepend("▁")`.
+        assert_eq!(pipeline.decode(&[end, 300], true).unwrap(), "▁<end>h");
+    }
+
+    #[test]
     fn sequence_decoder_chains_stages_per_token() {
         let decoder = PipelineDecoder::Sequence(vec![
-            PipelineDecoder::Strip(Strip::new('#', 1, 0)),
+            PipelineDecoder::StripToken(Strip::new('#', 1, 0)),
             PipelineDecoder::JoinWithSpaces,
         ]);
         let mut state = DecoderState::default();
@@ -1426,6 +1495,31 @@ mod tests {
             .unwrap();
         decoder.flush(&mut state, &mut out).unwrap();
         assert_eq!(out, b"hey a");
+    }
+
+    #[test]
+    fn stages_after_fuse_decode_the_whole_output() {
+        let mut tok = byte_fallback_tokenizer(true);
+        // llama-2's trailing Strip(' ', 1, 0) comes after Fuse: it must remove
+        // one leading space from the whole text, not one from every token
+        tok.with_decoder(Some(crate::decoders::sequence::Sequence::new(vec![
+            DecoderWrapper::ByteFallback(crate::decoders::byte_fallback::ByteFallback::default()),
+            DecoderWrapper::Fuse(crate::decoders::fuse::Fuse::new()),
+            DecoderWrapper::Strip(Strip::new(' ', 1, 0)),
+        ])));
+        let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
+        assert_eq!(pipeline.decode(&[32, 300, 32, 301], false).unwrap(), "h e");
+    }
+
+    #[test]
+    fn conversion_rejects_fuse_followed_by_non_strip() {
+        let mut tok = byte_fallback_tokenizer(true);
+        tok.with_decoder(Some(crate::decoders::sequence::Sequence::new(vec![
+            DecoderWrapper::Fuse(crate::decoders::fuse::Fuse::new()),
+            DecoderWrapper::WordPiece(crate::decoders::wordpiece::WordPiece::default()),
+        ])));
+        let err = conversion_error(&tok);
+        assert!(err.contains("follow Fuse"), "{}", err);
     }
 
     fn wordlevel_tokenizer(

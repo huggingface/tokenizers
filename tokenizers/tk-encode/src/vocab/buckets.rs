@@ -7,6 +7,11 @@ pub struct AddedTokenFlags {
     pub single_word: bool,
     pub lstrip: bool,
     pub rstrip: bool,
+    /// Whether `skip_special_tokens` drops this token. Not the same as
+    /// `special`: `Tokenizer::decode` compares the decode-time (normalized)
+    /// string against raw special contents, so a special whose content the
+    /// normalizer rewrote (llama-2's `<s>`, stored as `▁<s>`) survives the skip.
+    pub skip_on_decode: bool,
 }
 
 /// The key to have a fast byte matching alrogithm is to skip failures fast and reject quickly

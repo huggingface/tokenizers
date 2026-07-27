@@ -134,6 +134,7 @@ impl From<&AddedToken> for AddedTokenFlags {
             single_word: token.single_word,
             lstrip: token.lstrip,
             rstrip: token.rstrip,
+            skip_on_decode: false,
         }
     }
 }
@@ -262,12 +263,12 @@ impl AddedVocabulary {
             .or_else(|| self.normalized_vocab.id_to_token_bytes(id))
     }
 
-    /// Whether `id` is a *special* added token — the kind `skip_special_tokens`
-    /// drops at decode time, as opposed to user-added regular tokens.
-    pub fn is_special(&self, id: u32) -> bool {
+    /// Whether `skip_special_tokens` drops `id` at decode time — see
+    /// [`AddedTokenFlags::skip_on_decode`] for why this is not `special`.
+    pub fn skip_on_decode(&self, id: u32) -> bool {
         self.token_metadata
             .get(id as usize)
-            .is_some_and(|metadata| metadata.special)
+            .is_some_and(|metadata| metadata.skip_on_decode)
     }
 
     //
@@ -332,7 +333,7 @@ impl AddedVocabulary {
                 ignored += 1;
                 continue;
             }
-            let flags = AddedTokenFlags::from(&token);
+            let mut flags = AddedTokenFlags::from(&token);
             let is_norm = flags.normalized;
             let norm_form: String = match normalizer {
                 Some(n) => {
@@ -343,6 +344,9 @@ impl AddedVocabulary {
                 }
                 None => token.content.clone(),
             };
+            // a special is skipped only if normalization left its content
+            // unchanged — see `AddedTokenFlags::skip_on_decode`
+            flags.skip_on_decode = flags.special && (!is_norm || norm_form == token.content);
             let form = if is_norm {
                 norm_form.clone().into_bytes()
             } else {
