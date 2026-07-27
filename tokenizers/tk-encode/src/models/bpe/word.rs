@@ -121,6 +121,7 @@ impl Word {
         });
     }
 
+    // this is a training only function, should potentially be feature gated.
     pub fn merge(
         &mut self,
         c1: u32,
