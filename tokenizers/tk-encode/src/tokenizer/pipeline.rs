@@ -1041,6 +1041,11 @@ impl Model for PipelineModel {
     }
 }
 
+// The BPE variant carries the word cache inline, making it much larger than the
+// others. Boxing it would put a pointer chase on the per-pre-token hot path to
+// save space in a struct that exists once per thread and is never moved after
+// the pool builds it.
+#[allow(clippy::large_enum_variant)]
 #[derive(Default)]
 pub enum PipelineModelScratch {
     BPE(BpeScratch),
