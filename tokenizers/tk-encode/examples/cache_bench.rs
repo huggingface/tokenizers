@@ -10,6 +10,7 @@
 //!     cargo run --release --features fancy-regex --example cache_bench -- \
 //!         --models gpt2,llama-3 --fixtures eng,kor \
 //!         --capacities 10000,65536 --max-lengths 64,256 \
+//!         --variants assoc_4way,hash64_evict \
 //!         --reps 3 --out cache_bench.json
 //!
 //! Models whose tokenizer needs a system regex engine (llama-2) are skipped
@@ -37,6 +38,12 @@
 //!   plus flat_cache's retention idea. A reuse flag in a spare `key_len` bit,
 //!   CLOCK-style second-chance eviction inside the bucket (rejecting an insert
 //!   ages the bucket), arena compaction on a budget trip.
+//! - `hash64_evict` — trust-the-hash: open addressing where the full 64-bit
+//!   hash is the key; no key bytes are stored or compared, so a colliding
+//!   word pair silently shares ids (odds any pair collides across 2^16
+//!   distinct words: ~2^-33; `ids_match` would catch it). 8-slot probe
+//!   window; a full window overwrites its last slot instead of rejecting, so
+//!   at saturation the table churns where the fixed tables freeze.
 //!
 //! Per (model × fixture × capacity × max_length × variant):
 //! - warm replay throughput and speedup vs the no-cache floor
@@ -155,7 +162,11 @@ impl CacheVariant for NoCache {
         0
     }
     fn memory(&self) -> MemBreakdown {
-        MemBreakdown { table: 0, keys: 0, ids: 0 }
+        MemBreakdown {
+            table: 0,
+            keys: 0,
+            ids: 0,
+        }
     }
 }
 
@@ -195,7 +206,11 @@ impl CacheVariant for NaiveCache {
         }
         self.lookup
             .insert(word.to_owned(), ids.to_vec().into_boxed_slice());
-        if evict { InsertOutcome::Evicted } else { InsertOutcome::Stored }
+        if evict {
+            InsertOutcome::Evicted
+        } else {
+            InsertOutcome::Stored
+        }
     }
 
     fn bucket_load(&self, _: &str) -> Option<usize> {
@@ -214,10 +229,13 @@ impl CacheVariant for NaiveCache {
     /// Ignores allocator slack.
     fn memory(&self) -> MemBreakdown {
         MemBreakdown {
-            table: self.lookup.capacity()
-                * (size_of::<String>() + size_of::<Box<[u32]>>() + 1),
+            table: self.lookup.capacity() * (size_of::<String>() + size_of::<Box<[u32]>>() + 1),
             keys: self.lookup.keys().map(String::len).sum(),
-            ids: self.lookup.values().map(|v| v.len() * size_of::<u32>()).sum(),
+            ids: self
+                .lookup
+                .values()
+                .map(|v| v.len() * size_of::<u32>())
+                .sum(),
         }
     }
 }
@@ -442,8 +460,12 @@ impl BucketCull {
                 let klen = (s.key_len & !REUSE) as usize;
                 let koff = keys.len() as u32;
                 let ioff = ids.len() as u32;
-                keys.extend_from_slice(&self.key_bytes[s.key_off as usize..s.key_off as usize + klen]);
-                ids.extend_from_slice(&self.ids[s.ids_off as usize..s.ids_off as usize + s.ids_len as usize]);
+                keys.extend_from_slice(
+                    &self.key_bytes[s.key_off as usize..s.key_off as usize + klen],
+                );
+                ids.extend_from_slice(
+                    &self.ids[s.ids_off as usize..s.ids_off as usize + s.ids_len as usize],
+                );
                 s.key_off = koff;
                 s.ids_off = ioff;
             }
@@ -499,7 +521,10 @@ impl CacheVariant for BucketCull {
                 // conflict. Clearing flags during the scan instead (classic
                 // CLOCK) measured worse: Zipf-tail one-shots kept evicting
                 // warm words.
-                match self.buckets[bucket_idx].slots().iter().position(|s| s.key_len & REUSE == 0)
+                match self.buckets[bucket_idx]
+                    .slots()
+                    .iter()
+                    .position(|s| s.key_len & REUSE == 0)
                 {
                     Some(i) => (Some(i), InsertOutcome::Evicted),
                     None => {
@@ -531,7 +556,13 @@ impl CacheVariant for BucketCull {
     }
     fn bucket_load(&self, word: &str) -> Option<usize> {
         let (bucket_idx, _) = self.locate(word.as_bytes());
-        Some(self.buckets[bucket_idx].slots().iter().filter(|s| s.tag != 0).count())
+        Some(
+            self.buckets[bucket_idx]
+                .slots()
+                .iter()
+                .filter(|s| s.tag != 0)
+                .count(),
+        )
     }
     fn probe_tags(&self, word: &str) -> Option<u32> {
         let key = word.as_bytes();
@@ -539,10 +570,20 @@ impl CacheVariant for BucketCull {
             return Some(0);
         }
         let (bucket_idx, tag) = self.locate(key);
-        Some(self.buckets[bucket_idx].slots().iter().filter(|s| s.tag == tag).count() as u32)
+        Some(
+            self.buckets[bucket_idx]
+                .slots()
+                .iter()
+                .filter(|s| s.tag == tag)
+                .count() as u32,
+        )
     }
     fn occupied(&self) -> usize {
-        self.buckets.iter().flat_map(Bucket::slots).filter(|s| s.tag != 0).count()
+        self.buckets
+            .iter()
+            .flat_map(Bucket::slots)
+            .filter(|s| s.tag != 0)
+            .count()
     }
     fn slot_count(&self) -> usize {
         self.buckets.len() * 4
@@ -575,8 +616,15 @@ struct FlatSlot {
     ilen: u16,
     freq: u8,
 }
-const FLAT_EMPTY: FlatSlot =
-    FlatSlot { hash: 0, key: 0, koff: 0, ioff: 0, klen: 0, ilen: 0, freq: 0 };
+const FLAT_EMPTY: FlatSlot = FlatSlot {
+    hash: 0,
+    key: 0,
+    koff: 0,
+    ioff: 0,
+    klen: 0,
+    ilen: 0,
+    freq: 0,
+};
 
 fn pack_key(p: &[u8]) -> u128 {
     if p.is_empty() || p.len() > 15 {
@@ -633,7 +681,11 @@ impl FlatCacheReplica {
     }
 
     fn hash_of(&self, p: &[u8], key: u128) -> u64 {
-        if key != 0 { crc_key_hash(key) } else { self.hasher.hash_one(p) }
+        if key != 0 {
+            crc_key_hash(key)
+        } else {
+            self.hasher.hash_one(p)
+        }
     }
 
     fn clear(&mut self) {
@@ -647,7 +699,16 @@ impl FlatCacheReplica {
 
     fn cull(&mut self) {
         self.culls += 1;
-        let Self { slots, slots2, kbytes, kbytes2, ids, ids2, mask, .. } = self;
+        let Self {
+            slots,
+            slots2,
+            kbytes,
+            kbytes2,
+            ids,
+            ids2,
+            mask,
+            ..
+        } = self;
         for s in slots2.iter_mut() {
             s.klen = 0;
         }
@@ -666,7 +727,12 @@ impl FlatCacheReplica {
             while slots2[i].klen != 0 {
                 i = (i + 1) & *mask;
             }
-            slots2[i] = FlatSlot { koff, ioff, freq: s.freq >> 1, ..*s };
+            slots2[i] = FlatSlot {
+                koff,
+                ioff,
+                freq: s.freq >> 1,
+                ..*s
+            };
             kept += 1;
         }
         std::mem::swap(slots, slots2);
@@ -761,6 +827,163 @@ impl CacheVariant for FlatCacheReplica {
             table: (self.slots.len() + self.slots2.len()) * size_of::<FlatSlot>(),
             keys: self.kbytes.capacity() + self.kbytes2.capacity(),
             ids: (self.ids.capacity() + self.ids2.capacity()) * size_of::<u32>(),
+        }
+    }
+}
+
+// Trust-the-hash: the full 64-bit hash is the key, never verified against the
+// word bytes — wrong ids on a collision is the accepted risk. Open addressing
+// over 16 B slots with a bounded probe window; no key arena at all. Slots only
+// ever go empty -> occupied (eviction overwrites in place, nothing is ever
+// removed), so a lookup can still stop at the first empty slot: a stored hash
+// is never hidden behind one. Evicted entries orphan their arena ids; the
+// arena compacts when it outgrows its budget.
+
+const PROBE_WINDOW: usize = 8;
+
+#[derive(Clone, Copy, Default)]
+struct HashSlot {
+    hash: u64,
+    ids_off: u32,
+    ids_len: u16,
+}
+
+struct Hash64Evict {
+    hasher: RandomState,
+    slots: Box<[HashSlot]>,
+    ids: Vec<u32>,
+    mask: usize,
+    max_length: usize,
+    ids_budget: usize,
+    culls: usize,
+}
+
+impl Hash64Evict {
+    fn new(capacity: usize, max_length: usize) -> Self {
+        let n = capacity.next_power_of_two().max(PROBE_WINDOW);
+        Self {
+            hasher: fixed_hasher(),
+            slots: vec![HashSlot::default(); n].into_boxed_slice(),
+            ids: Vec::with_capacity(256),
+            mask: n - 1,
+            max_length,
+            ids_budget: n * 8,
+            culls: 0,
+        }
+    }
+
+    /// 0 marks an empty slot.
+    fn hash(&self, key: &[u8]) -> u64 {
+        self.hasher.hash_one(key).max(1)
+    }
+
+    fn compact(&mut self) {
+        self.culls += 1;
+        let mut ids = Vec::with_capacity(self.ids_budget);
+        for s in self.slots.iter_mut().filter(|s| s.hash != 0) {
+            let off = ids.len() as u32;
+            ids.extend_from_slice(
+                &self.ids[s.ids_off as usize..s.ids_off as usize + s.ids_len as usize],
+            );
+            s.ids_off = off;
+        }
+        self.ids = ids;
+        // A saturated table can hold more live ids than the initial budget
+        // (long CJK words); grow it so compaction stays amortized instead of
+        // firing on every insert.
+        self.ids_budget = self.ids_budget.max(self.ids.len() * 2);
+    }
+}
+
+impl CacheVariant for Hash64Evict {
+    fn get(&mut self, word: &str) -> Option<&[u32]> {
+        let key = word.as_bytes();
+        if key.len() > self.max_length {
+            return None;
+        }
+        let hash = self.hash(key);
+        let base = hash as usize;
+        for j in 0..PROBE_WINDOW {
+            let slot = self.slots[(base + j) & self.mask];
+            if slot.hash == hash {
+                return Some(
+                    &self.ids[slot.ids_off as usize..slot.ids_off as usize + slot.ids_len as usize],
+                );
+            }
+            if slot.hash == 0 {
+                return None;
+            }
+        }
+        None
+    }
+
+    fn insert(&mut self, word: &str, ids: &[u32]) -> InsertOutcome {
+        let key = word.as_bytes();
+        if key.len() > self.max_length {
+            return InsertOutcome::RejectedLen;
+        }
+        if self.ids.len() + ids.len() > self.ids_budget {
+            self.compact();
+        }
+        let hash = self.hash(key);
+        let base = hash as usize;
+        // Full window: evict its last slot. Entries close to their home slot
+        // survive, which under Zipf correlates with arriving early and being
+        // frequent.
+        let mut slot = (base + PROBE_WINDOW - 1) & self.mask;
+        let mut outcome = InsertOutcome::Evicted;
+        for j in 0..PROBE_WINDOW {
+            let i = (base + j) & self.mask;
+            if self.slots[i].hash == 0 {
+                slot = i;
+                outcome = InsertOutcome::Stored;
+                break;
+            }
+        }
+        self.slots[slot] = HashSlot {
+            hash,
+            ids_off: self.ids.len() as u32,
+            ids_len: ids.len() as u16,
+        };
+        self.ids.extend_from_slice(ids);
+        outcome
+    }
+
+    fn culls(&self) -> Option<usize> {
+        Some(self.culls)
+    }
+    // Window load isn't comparable to bucket collisions; report null like
+    // flat_cache.
+    fn bucket_load(&self, _: &str) -> Option<usize> {
+        None
+    }
+    /// Two window slots holding the same hash = a real collision here (there
+    /// is no key compare to reject the second), so the excess over hits
+    /// counts genuinely dangerous matches, not wasted compares.
+    fn probe_tags(&self, word: &str) -> Option<u32> {
+        let key = word.as_bytes();
+        if key.len() > self.max_length {
+            return Some(0);
+        }
+        let hash = self.hash(key);
+        let base = hash as usize;
+        Some(
+            (0..PROBE_WINDOW)
+                .filter(|j| self.slots[(base + j) & self.mask].hash == hash)
+                .count() as u32,
+        )
+    }
+    fn occupied(&self) -> usize {
+        self.slots.iter().filter(|s| s.hash != 0).count()
+    }
+    fn slot_count(&self) -> usize {
+        self.slots.len()
+    }
+    fn memory(&self) -> MemBreakdown {
+        MemBreakdown {
+            table: self.slots.len() * size_of::<HashSlot>(),
+            keys: 0,
+            ids: self.ids.capacity() * size_of::<u32>(),
         }
     }
 }
@@ -1051,6 +1274,7 @@ fn build_variant(name: &str, capacity: usize, max_length: usize) -> Box<dyn Cach
         "assoc_8way" => Box::new(FixedCache::<Bucket8>::new(capacity, max_length)),
         "flat_cache" => Box::new(FlatCacheReplica::new(capacity)),
         "bucket_cull" => Box::new(BucketCull::new(capacity, max_length)),
+        "hash64_evict" => Box::new(Hash64Evict::new(capacity, max_length)),
         other => unreachable!("{other}"),
     }
 }
@@ -1062,6 +1286,7 @@ const VARIANTS: &[&str] = &[
     "assoc_8way",
     "flat_cache",
     "bucket_cull",
+    "hash64_evict",
 ];
 
 #[allow(clippy::too_many_arguments)]
@@ -1070,6 +1295,7 @@ fn bench_fixture(
     name: &str,
     group: &str,
     chunks: &[String],
+    variants: &[&str],
     capacities: &[usize],
     max_lengths: &[usize],
     reps: usize,
@@ -1099,7 +1325,13 @@ fn bench_fixture(
             chunks: vec![entry],
         };
         let mut replay_ids = Vec::new();
-        replay_pass(&mut NoCache, &single, model, &mut scratch, Some(&mut replay_ids))?;
+        replay_pass(
+            &mut NoCache,
+            &single,
+            model,
+            &mut scratch,
+            Some(&mut replay_ids),
+        )?;
         let pipeline_ids: Vec<u32> = pipeline_off
             .encode(chunk, false)?
             .iter()
@@ -1169,7 +1401,7 @@ fn bench_fixture(
     let mut results = Vec::new();
     for &capacity in capacities {
         for (mi, &max_length) in max_lengths.iter().enumerate() {
-            for vname in VARIANTS {
+            for vname in variants {
                 // flat_cache has no key-length cap: one run per capacity.
                 if *vname == "flat_cache" && mi != 0 {
                     continue;
@@ -1299,6 +1531,7 @@ fn bench_fixture(
 struct Args {
     models: Option<Vec<String>>,
     fixtures: Option<Vec<String>>,
+    variants: Option<Vec<String>>,
     capacities: Vec<usize>,
     max_lengths: Vec<usize>,
     reps: usize,
@@ -1309,6 +1542,7 @@ fn parse_args() -> Args {
     let mut args = Args {
         models: None,
         fixtures: None,
+        variants: None,
         capacities: DEFAULT_CAPACITIES.to_vec(),
         max_lengths: DEFAULT_MAX_LENGTHS.to_vec(),
         reps: 3,
@@ -1322,6 +1556,7 @@ fn parse_args() -> Args {
         match flag.as_str() {
             "--models" => args.models = Some(strs()),
             "--fixtures" => args.fixtures = Some(strs()),
+            "--variants" => args.variants = Some(strs()),
             "--capacities" => args.capacities = nums(),
             "--max-lengths" => args.max_lengths = nums(),
             "--reps" => args.reps = value.parse().unwrap(),
@@ -1347,6 +1582,13 @@ fn main() {
     let manifest: Vec<Value> =
         serde_json::from_str(&std::fs::read_to_string(MANIFEST).unwrap()).unwrap();
 
+    let variants: Vec<&str> = VARIANTS
+        .iter()
+        .copied()
+        .filter(|v| keep(&args.variants, v))
+        .collect();
+    assert!(!variants.is_empty(), "--variants matched nothing");
+
     let mut fixtures: Vec<(String, &str, Vec<String>)> = Vec::new();
     for group in ["lang", "modalities"] {
         let dir = Path::new(DATA_DIR).join("fixtures").join(group);
@@ -1363,7 +1605,11 @@ fn main() {
             if name.starts_with("added_") || !keep(&args.fixtures, &name) {
                 continue;
             }
-            fixtures.push((name, group, make_chunks(&std::fs::read_to_string(path).unwrap())));
+            fixtures.push((
+                name,
+                group,
+                make_chunks(&std::fs::read_to_string(path).unwrap()),
+            ));
         }
     }
 
@@ -1407,6 +1653,7 @@ fn main() {
                 fname,
                 group,
                 chunks,
+                &variants,
                 &args.capacities,
                 &args.max_lengths,
                 args.reps,
@@ -1448,6 +1695,7 @@ fn main() {
             "single_threaded": true,
             "capacities": args.capacities,
             "max_lengths": args.max_lengths,
+            "variants": variants,
             "shipped": { "capacity": 65_536, "max_length": 256 },
             "chunk_bytes": CHUNK_BYTES,
             "max_chunks": MAX_CHUNKS,
