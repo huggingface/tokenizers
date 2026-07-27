@@ -1,6 +1,6 @@
 use ahash::RandomState;
 
-use crate::utils::cache::MAX_LENGTH;
+const MAX_LENGTH: usize = 1024;
 
 /// Slots searched from a key's home position. Linear probing normally settles in
 /// one or two, but the walk has to stop somewhere: nothing is ever removed, so a
