@@ -186,12 +186,15 @@ impl Word {
         queue.clear();
         skip.clear();
 
+        // this is O(n)
         queue.extend(
             self.symbols
                 .windows(2)
                 .enumerate()
                 .filter_map(|(index, window)| {
+                    // this could be a u64 adress
                     let pair = (window[0].c, window[1].c);
+                    // merges is close-adressing
                     merges.get(&pair).map(|m| Merge {
                         pos: index,
                         rank: m.0,

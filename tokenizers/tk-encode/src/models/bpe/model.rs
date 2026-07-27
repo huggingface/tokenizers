@@ -766,6 +766,9 @@ impl PipelineBPE {
         })
     }
 
+    // We start by converting the sequence to the corresponding token id of each char/byte depending
+    // on the settings. Tokenizers that use bytelevel pretokenizer work on bytes, others on chars.
+    // TODO: this also means we are iterating twice on the string. Her and then on merge_all
     fn merge_word(
         &self,
         sequence: &str,
