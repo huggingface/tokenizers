@@ -54,6 +54,7 @@ pub struct BucketVocabStore {
     /// MPHF's non-minimal slot range (with phantom padding slots), so its length is not the
     /// token count.
     n: usize,
+    longest_token_len: usize,
 }
 
 impl fmt::Debug for BucketVocabStore {
@@ -139,6 +140,7 @@ impl BucketVocabStore {
             n_slots
         ];
         let mut id_to_slot = vec![u32::MAX; max_id as usize + 1];
+        let mut longest_token_len = 0;
         for (s, id) in &tokens {
             assert!(
                 s.len() <= u16::MAX as usize,
@@ -152,6 +154,7 @@ impl BucketVocabStore {
             };
             id_to_slot[*id as usize] = slot as u32;
             bytes.extend_from_slice(s);
+            longest_token_len = longest_token_len.max(s.len())
         }
 
         Self {
@@ -161,6 +164,7 @@ impl BucketVocabStore {
             entries: entries.into_boxed_slice(),
             id_to_slot: id_to_slot.into_boxed_slice(),
             n,
+            longest_token_len,
         }
     }
 
@@ -174,6 +178,7 @@ impl BucketVocabStore {
             entries: Box::new([]),
             id_to_slot: Box::new([]),
             n: 0,
+            longest_token_len: 0,
         }
     }
 
@@ -185,6 +190,9 @@ impl BucketVocabStore {
     pub fn get_bytes(&self, q: &[u8]) -> Option<u32> {
         if self.entries.is_empty() {
             return None;
+        }
+        if q.len() > self.longest_token_len {
+            return None
         }
         let slot = self.mphf.index(&self.hasher.hash_one(q));
 
