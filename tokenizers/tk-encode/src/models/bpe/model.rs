@@ -768,7 +768,7 @@ impl PipelineBPE {
 
     fn merge_word(
         &self,
-        sequence: &str,
+        split: pipeline::Split<'_>,
         merge_queue: &mut QuaternaryHeap<Merge>,
         skip: &mut Vec<Merge>,
         word: &mut Word,
@@ -776,7 +776,7 @@ impl PipelineBPE {
         word.clear();
         match &self.atoms {
             Atoms::Bytes { byte_to_id } => {
-                for &b in sequence.as_bytes() {
+                for &b in split.as_bytes() {
                     word.add(byte_to_id[b as usize], 1);
                 }
             }
@@ -785,6 +785,7 @@ impl PipelineBPE {
                 unk_token,
                 fuse_unk,
             } => {
+                let sequence = split.as_str();
                 for char_str in sequence
                     .char_indices()
                     .map(|(i, c)| &sequence[i..i + c.len_utf8()])
@@ -826,10 +827,11 @@ impl pipeline::Model for PipelineBPE {
         scratch: &mut Self::Scratch,
         output: &mut Vec<PipelineToken>,
     ) -> Result<()> {
-        let sequence = split.as_str();
-        if sequence.is_empty() {
+        let bytes = split.as_bytes();
+        if bytes.is_empty() {
             return Ok(());
         }
+        let head = split.head();
 
         let BpeScratch {
             merge_queue,
@@ -839,22 +841,22 @@ impl pipeline::Model for PipelineBPE {
         } = scratch;
 
         if let Some(cache) = word_cache
-            && let Some(hit) = cache.get(split.as_bytes(), split.head())
+            && let Some(hit) = cache.get(bytes, head)
         {
             output.extend(hit.iter().map(|&id| PipelineToken { id }));
             return Ok(());
         }
         if self.ignore_merges
-            && let Some(id) = self.vocab.get_bytes(sequence.as_bytes())
+            && let Some(id) = self.vocab.get_bytes(bytes)
         {
             output.push(PipelineToken { id });
             return Ok(());
         }
 
-        self.merge_word(sequence, merge_queue, skip, word);
+        self.merge_word(split, merge_queue, skip, word);
         output.extend(word.get_chars_iter().map(|id| PipelineToken { id }));
         if let Some(cache) = word_cache {
-            cache.insert(split.as_bytes(), split.head(), word.get_chars_iter());
+            cache.insert(bytes, head, word.get_chars_iter());
         }
 
         Ok(())

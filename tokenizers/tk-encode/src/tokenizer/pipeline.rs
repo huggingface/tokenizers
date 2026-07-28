@@ -700,14 +700,12 @@ impl PipelineTokenizer {
                                     self.pre_tokenizer
                                         .pre_tokenize(normalized_chunk, pre_tokens)?;
                                     if STAGE >= Self::STAGE_MODEL {
-                                        // Tokenize each chunk
-                                        for pre_token in pre_tokens.iter() {
-                                            self.model.tokenize_pipeline(
-                                                Split::new(normalized_chunk, pre_token.range()),
-                                                scratch,
-                                                output,
-                                            )?;
-                                        }
+                                        self.model.tokenize_spans(
+                                            normalized_chunk,
+                                            pre_tokens,
+                                            scratch,
+                                            output,
+                                        )?;
                                     }
                                 }
                             }
@@ -992,25 +990,35 @@ pub trait ModelScratch: Default {
 /// number known only at run time is a call into `memcpy`.
 #[derive(Clone, Copy)]
 pub struct Split<'a> {
-    word: &'a str,
+    word: &'a [u8],
+    /// Slicing a `str` checks both ends for a UTF-8 boundary — two loads a byte-level model
+    /// never needs. Keeping the chunk and offset lets [`as_str`](Split::as_str) make that cut
+    /// only for the models that ask for text.
+    chunk: &'a str,
+    start: usize,
     head: Option<&'a [u8; 16]>,
 }
 
 impl<'a> Split<'a> {
     /// `range` is a byte range of `chunk`, the way a pre-tokenizer reports it.
     pub fn new(chunk: &'a str, range: Range<usize>) -> Self {
+        let bytes = chunk.as_bytes();
         Self {
-            word: &chunk[range.clone()],
-            head: chunk.as_bytes()[range.start..].first_chunk(),
+            word: &bytes[range.clone()],
+            chunk,
+            start: range.start,
+            head: bytes[range.start..].first_chunk(),
         }
     }
 
+    /// Prefer [`as_bytes`](Split::as_bytes) where bytes will do: this pays for two UTF-8
+    /// boundary checks.
     pub fn as_str(&self) -> &'a str {
-        self.word
+        &self.chunk[self.start..self.start + self.word.len()]
     }
 
     pub fn as_bytes(&self) -> &'a [u8] {
-        self.word.as_bytes()
+        self.word
     }
 
     /// The 16 bytes of the chunk that start where the word does. Anything past the
@@ -1041,6 +1049,23 @@ pub trait Model {
         scratch: &mut Self::Scratch,
         output: &mut Vec<PipelineToken>,
     ) -> Result<()>;
+
+    /// Tokenize every span the pre-tokenizer found in `chunk`.
+    ///
+    /// Override this to lift per-call setup out of the loop. Words are short — 4 to 5 bytes on
+    /// prose — so a model pays anything it does per span around 200k times per megabyte.
+    fn tokenize_spans(
+        &self,
+        chunk: &str,
+        spans: &[Span],
+        scratch: &mut Self::Scratch,
+        output: &mut Vec<PipelineToken>,
+    ) -> Result<()> {
+        for span in spans {
+            self.tokenize_pipeline(Split::new(chunk, span.range()), scratch, output)?;
+        }
+        Ok(())
+    }
 
     fn init_scratch(&self) -> Self::Scratch;
 }
@@ -1077,6 +1102,32 @@ impl Model for PipelineModel {
             }
             (Self::WordPiece(model), PipelineModelScratch::WordPiece(scratch)) => {
                 model.tokenize_pipeline(split, scratch, output)
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    /// Pairing the model with its scratch is a 4x4 match that LLVM will not lift out of the
+    /// caller's span loop, so it runs here once per chunk instead of once per word.
+    fn tokenize_spans(
+        &self,
+        chunk: &str,
+        spans: &[Span],
+        scratch: &mut Self::Scratch,
+        output: &mut Vec<PipelineToken>,
+    ) -> Result<()> {
+        match (self, scratch) {
+            (Self::BPE(model), PipelineModelScratch::BPE(scratch)) => {
+                model.tokenize_spans(chunk, spans, scratch, output)
+            }
+            (Self::Unigram(model), PipelineModelScratch::Unigram(scratch)) => {
+                model.tokenize_spans(chunk, spans, scratch, output)
+            }
+            (Self::WordLevel(model), PipelineModelScratch::WordLevel(scratch)) => {
+                model.tokenize_spans(chunk, spans, scratch, output)
+            }
+            (Self::WordPiece(model), PipelineModelScratch::WordPiece(scratch)) => {
+                model.tokenize_spans(chunk, spans, scratch, output)
             }
             _ => unreachable!(),
         }
