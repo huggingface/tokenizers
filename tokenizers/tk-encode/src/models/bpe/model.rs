@@ -830,13 +830,6 @@ impl pipeline::Model for PipelineBPE {
             return Ok(());
         }
 
-        if self.ignore_merges
-            && let Some(id) = self.vocab.get_bytes(sequence.as_bytes())
-        {
-            output.push(PipelineToken { id });
-            return Ok(());
-        }
-
         let BpeScratch {
             merge_queue,
             skip,
@@ -848,6 +841,12 @@ impl pipeline::Model for PipelineBPE {
             && let Some(hit) = cache.get(sequence.as_bytes())
         {
             output.extend(hit.iter().map(|&id| PipelineToken { id }));
+            return Ok(());
+        }
+        if self.ignore_merges
+            && let Some(id) = self.vocab.get_bytes(sequence.as_bytes())
+        {
+            output.push(PipelineToken { id });
             return Ok(());
         }
 
