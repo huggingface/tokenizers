@@ -48,17 +48,14 @@ struct MphfMap {
     mphf: Mphf,
     hasher: RandomState,
     entries: Box<[Slot]>,
-    /// `id_to_slot[token_id] -> entry_idx` -> index into entries as the entries are not really sorted.
-    /// Number of real tokens. Cached at build so `len()` is O(1): `entries` is sized to the
-    /// MPHF's non-minimal slot range (with phantom padding slots), so its length is not the
-    /// token count.
-    n: usize,
 }
 
 impl MphfMap {
     pub fn build(keys: Vec<(u32, u32)>, values: Vec<u64>) -> Self {
-        let n = keys.len();
-
+        assert!(
+            keys.len() == values.len(),
+            "Keys and values must be of same lengths"
+        );
         let hasher = RandomState::with_seeds(SEEDS[0], SEEDS[1], SEEDS[2], SEEDS[3]);
 
         // 1. Pre-hash token bytes -> u64 keys using near perfect hash func
@@ -91,12 +88,21 @@ impl MphfMap {
             entries[slot] = Slot { key: key, val: val };
         }
 
-        Self {
+        let new = Self {
             mphf,
             hasher,
             entries: entries.into_boxed_slice(),
-            n,
+        };
+
+        for (k, v) in keys.iter().zip(values) {
+            // we check that we keys and values were properly sorted
+            assert_eq!(
+                new.get((k.0 as u64) << 32 | k.1 as u64),
+                v,
+                "The values stored for one of the keys is wrong. This probably means a wrong index in values"
+            );
         }
+        new
     }
     #[inline]
     // from the key pair, returns the rank, the flags and the new id.
@@ -149,20 +155,19 @@ impl BpeTables {
             .iter()
             .enumerate()
             .for_each(|(a, b)| internal_id_map[*b as usize] = a as u32);
+        let mut values = Vec::new();
         for (_, (rank, external)) in merges.iter() {
             // the first spots are for the alphabet
             let internal = base as u32 + rank;
             unmap[internal as usize] = *external;
+            values.push((*rank as u64) << 32 | (*external as u64));
             internal_id_map[*external as usize] = internal;
         }
         let internal_id_map = internal_id_map.into_boxed_slice();
         let unmap = unmap.into_boxed_slice();
 
-        let values = merges
-            .values()
-            .map(|(rank, id)| (*rank as u64) << 32 | (*id as u64))
-            .collect();
-        let pair_table = MphfMap::build(merges.keys().copied().collect(), values);
+        let keys: Vec<(u32, u32)> = merges.keys().copied().collect();
+        let pair_table = MphfMap::build(keys, values);
         // Now let's build the MPHF for the merge pair table. The key is already a u64.
         // Slot is key as u64,
         // TODO: we need to add a log here on number of folder tokens, unique product merges, etc.
@@ -187,22 +192,16 @@ mod test {
 
     #[test]
     pub fn test_mphf() {
-        let vocab = AHashMap::from_iter(vec![
-            ("a".to_string(), 1),
-            ("b".to_string(), 2),
-            ("ab".to_string(), 5),
-            ("ba".to_string(), 4),
-            ("aab".to_string(), 3),
-        ]);
         let mut merges = MergeMap::new();
         merges.insert((1, 2), (1, 5));
         merges.insert((1, 5), (4, 1));
-        let values = merges
-            .values()
-            .map(|(rank, id)| (*rank as u64) << 32 | (*id as u64))
-            .collect();
-        let pair_table = MphfMap::build(merges.keys().copied().collect(), values);
-        let value = 1u64 << 32 | 5u64;
+
+        let (keys, values): (Vec<(u32, u32)>, Vec<u64>) = merges
+            .iter()
+            .map(|((a, b), (rank, id))| ((*a, *b), (*rank as u64) << 32 | (*id as u64)))
+            .unzip();
+        let pair_table = MphfMap::build(keys, values);
+        let value = 5u64;
         assert_eq!(pair_table.get(1u64 << 32 | 2u64), value);
     }
 
