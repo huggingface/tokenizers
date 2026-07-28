@@ -82,8 +82,8 @@ impl MphfMap {
             n_slots
         ];
         for (pos, (a, b)) in keys.iter().enumerate() {
-            let key = h_keys[pos];
-            let slot = mphf.index(&key);
+            let hash = h_keys[pos];
+            let slot = mphf.index(&hash);
             let val = values[pos];
             entries[slot] = Slot {
                 key: (*a as u64) << 32 | *b as u64,
@@ -212,18 +212,18 @@ mod test {
     #[test]
     pub fn test_build() {
         let vocab = AHashMap::from_iter(vec![
-            ("a".to_string(), 1),
-            ("b".to_string(), 2),
-            ("ab".to_string(), 5),
-            ("ba".to_string(), 4),
-            ("aab".to_string(), 3),
+            ("a".to_string(), 0),
+            ("b".to_string(), 1),
+            ("ab".to_string(), 2),
+            ("aba".to_string(), 3),
         ]);
         let mut merges = MergeMap::new();
-        merges.insert((1, 2), (3, 1));
-        merges.insert((1, 5), (4, 1));
-        merges.insert((1, 3), (5, 1));
+        merges.insert((0, 1), (0, 2));
+        merges.insert((3, 0), (1, 3));
         println!("merges: {:?}", merges);
         let tables = BpeTables::build(vocab, merges);
-        assert_eq!(tables.internal_id_map.to_vec(), vec![0, 1, 3, 4, 5]);
+        // there are only 4 elements because ab and aba are part of the vocab
+        assert_eq!(tables.internal_id_map.to_vec(), vec![0, 1, 2, 3]);
+        assert_eq!(tables.pair_table.get(0u64 << 32 | 1u64) & 0xFFFF, 2u64);
     }
 }
