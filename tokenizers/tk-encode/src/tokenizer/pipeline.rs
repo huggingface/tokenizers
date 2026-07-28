@@ -983,38 +983,37 @@ pub trait ModelScratch: Default {
 /// One pre-token on its way to a model: the word to tokenize, plus the chunk of
 /// text it was split out of.
 ///
-/// A model that only wants the word calls [`Split::as_str`] and is none the wiser.
-/// The chunk is carried for [`Split::head`], which hands out a fixed-size window
-/// of bytes starting at the word — the BPE word cache builds its key out of one,
-/// because copying a fixed number of bytes compiles to a load, where copying a
-/// number known only at run time is a call into `memcpy`.
+/// The word is kept as bytes, which is what a byte-level model and the cache key both
+/// want; [`Split::as_str`] cuts a `&str` out of the chunk for the models that need text.
+/// The chunk is also where [`Split::head`] reads from: a fixed-size window of bytes
+/// starting at the word — the BPE word cache builds its key out of one, because copying a
+/// fixed number of bytes compiles to a load, where copying a number known only at run time
+/// is a call into `memcpy`.
 #[derive(Clone, Copy)]
 pub struct Split<'a> {
     word: &'a [u8],
-    /// Slicing a `str` checks both ends for a UTF-8 boundary — two loads a byte-level model
-    /// never needs. Keeping the chunk and offset lets [`as_str`](Split::as_str) make that cut
-    /// only for the models that ask for text.
     chunk: &'a str,
-    start: usize,
+    word_start: usize,
     head: Option<&'a [u8; 16]>,
 }
 
 impl<'a> Split<'a> {
     /// `range` is a byte range of `chunk`, the way a pre-tokenizer reports it.
     pub fn new(chunk: &'a str, range: Range<usize>) -> Self {
+        let Range { start, end } = range;
         let bytes = chunk.as_bytes();
         Self {
-            word: &bytes[range.clone()],
+            word: &bytes[start..end],
             chunk,
-            start: range.start,
-            head: bytes[range.start..].first_chunk(),
+            word_start: start,
+            head: bytes[start..].first_chunk(),
         }
     }
 
-    /// Prefer [`as_bytes`](Split::as_bytes) where bytes will do: this pays for two UTF-8
-    /// boundary checks.
+    /// Costs two UTF-8 boundary checks, so prefer [`as_bytes`](Split::as_bytes) where bytes
+    /// will do.
     pub fn as_str(&self) -> &'a str {
-        &self.chunk[self.start..self.start + self.word.len()]
+        &self.chunk[self.word_start..self.word_start + self.word.len()]
     }
 
     pub fn as_bytes(&self) -> &'a [u8] {
@@ -1052,8 +1051,9 @@ pub trait Model {
 
     /// Tokenize every span the pre-tokenizer found in `chunk`.
     ///
-    /// Override this to lift per-call setup out of the loop. Words are short — 4 to 5 bytes on
-    /// prose — so a model pays anything it does per span around 200k times per megabyte.
+    /// Override this when a model can do part of the work once for the whole batch instead of
+    /// once per word. Words are short — 4 to 5 bytes on prose — so anything done per span runs
+    /// some 200k times per megabyte.
     fn tokenize_spans(
         &self,
         chunk: &str,
@@ -1107,8 +1107,10 @@ impl Model for PipelineModel {
         }
     }
 
-    /// Pairing the model with its scratch is a 4x4 match that LLVM will not lift out of the
-    /// caller's span loop, so it runs here once per chunk instead of once per word.
+    /// The pipeline calls this rather than looping over [`Model::tokenize_pipeline`] itself.
+    /// The match below pairs a model with its scratch, and the compiler does not move that
+    /// match out of a per-word loop on its own — so doing it here, once per chunk, saves it
+    /// on every word.
     fn tokenize_spans(
         &self,
         chunk: &str,
