@@ -36,7 +36,7 @@ fancy-regex = "0.13"    # second regex engine in the throughput benches
 logos = "0.15"          # third: a compile-time DFA lexer-generator (pure Rust)
 pcre2 = "0.2"           # fourth: PCRE2 with its JIT (C, pregenerated bindings — no libclang)
 [[bench]]
-name = "regex"        # gpt2 · cl100k · o200k · deepseek, one run per regex family
+name = "regex"        # gpt2 · cl100k · o200k · tekken · deepseek, one run per regex family
 harness = false
 
 [[bench]]

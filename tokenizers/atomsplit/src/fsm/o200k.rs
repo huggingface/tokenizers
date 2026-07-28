@@ -52,9 +52,10 @@ fn o200k_letter_match(tags: &[u8], p: usize, re: usize) -> usize {
 
 /// Emit the o200k case-split of the letter run `[ls, re)` into `out[*w..]`: the first sub-token starts at
 /// `pfx` (the optional `[^\r\n\p{L}\p{N}]?` prefix; `pfx == ls` when none), the last absorbs a trailing
-/// contraction. Returns the new cursor (past the contraction). `ls < re` (caller-guaranteed).
+/// contraction (`CONTRACTION` — off for tekken). Returns the new cursor (past the contraction).
+/// `ls < re` (caller-guaranteed).
 #[inline(always)]
-fn emit_o200k_letters(
+fn emit_o200k_letters<const CONTRACTION: bool>(
     text: &[u8],
     tags: &[u8],
     pfx: usize,
@@ -67,7 +68,11 @@ fn emit_o200k_letters(
     while p < re {
         let e = o200k_letter_match(tags, p, re);
         let start = if first { pfx } else { p };
-        let tok_end = if e == re { e + contraction(text, e) } else { e };
+        let tok_end = if CONTRACTION && e == re {
+            e + contraction(text, e)
+        } else {
+            e
+        };
         unsafe {
             *out.get_unchecked_mut(*w) = Span {
                 start: start as u32,
@@ -89,6 +94,21 @@ fn emit_o200k_letters(
 /// Unlike deepseek there are no gaps: rule 4's `[^\s\p{L}\p{N}]+` is a catch-all. Scalar; ┌ OWNER: shared ┐
 #[must_use]
 pub fn fsm_o200k(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
+    o200k::<true, 3>(text, tags, out)
+}
+
+/// Mistral tekken ([`crate::regexes::TEKKEN`]) — the o200k FSM with the contraction suffix off and one
+/// token per digit. Every other rule is shared, so both are the same code monomorphized twice.
+#[must_use]
+pub fn fsm_tekken(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
+    o200k::<false, 1>(text, tags, out)
+}
+
+fn o200k<const CONTRACTION: bool, const DIGIT_CAP: usize>(
+    text: &[u8],
+    tags: &[u8],
+    out: &mut [Span],
+) -> usize {
     debug_assert!(out.len() >= text.len() && tags.len() >= text.len());
     let end = text.len();
     // Tie `tags.len() == end` so the optimizer drops the per-byte bounds check on every interior
@@ -147,6 +167,10 @@ pub fn fsm_o200k(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
     };
     // rules 5-7 (`\s*[\r\n]+ | \s+(?!\S) | \s+`) → the shared `ws_tail` (identical to cl100k).
     let ws = |i: usize| -> usize { ws_tail(text, tags, i, end) };
+    // The letter rules: case-split the run starting at `ls`, first sub-token starting at the prefix `pfx`.
+    let letters = |pfx: usize, ls: usize, out: &mut [Span], w: &mut usize| -> usize {
+        emit_o200k_letters::<CONTRACTION>(text, tags, pfx, ls, letter_end(ls), out, w)
+    };
 
     let mut i = 0;
     let mut w = 0usize;
@@ -154,10 +178,10 @@ pub fn fsm_o200k(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
         let start = i;
         let b = text[i];
         match tags[i] & 0x0F {
-            // rule 3: `\p{N}{1,3}` (no prefix)
+            // rule 3: `\p{N}{1,DIGIT_CAP}`, no prefix (3 = o200k, 1 = tekken)
             NW | NO => {
                 let (mut p, mut cnt) = (i, 0);
-                while p < end && cnt < 3 && in_mask(tags[p], mask::NUMBER) {
+                while p < end && cnt < DIGIT_CAP && in_mask(tags[p], mask::NUMBER) {
                     p += char_len(text[p]);
                     cnt += 1;
                 }
@@ -167,12 +191,12 @@ pub fn fsm_o200k(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
             // take the `[^\r\n\p{L}\p{N}]?` prefix / rule-4 path instead.
             LET | MRK => {
                 if tags[i] != ASM && tags[i] != ZWJ {
-                    i = emit_o200k_letters(text, tags, i, i, letter_end(i), out, &mut w);
+                    i = letters(i, i, out, &mut w);
                     continue;
                 }
                 let a = i + char_len(b);
                 if is_lm(a) {
-                    i = emit_o200k_letters(text, tags, i, a, letter_end(a), out, &mut w);
+                    i = letters(i, a, out, &mut w);
                     continue;
                 }
                 i = other(i); // ∈ NOT_WS_L_N ⇒ > i
@@ -181,7 +205,7 @@ pub fn fsm_o200k(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
             SPC => {
                 let a = i + 1; // Space is ASCII (0x20)
                 if is_lm(a) {
-                    i = emit_o200k_letters(text, tags, i, a, letter_end(a), out, &mut w);
+                    i = letters(i, a, out, &mut w);
                     continue;
                 }
                 let p = other(a);
@@ -191,7 +215,7 @@ pub fn fsm_o200k(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
             WSO => {
                 let a = i + char_len(b);
                 if is_lm(a) {
-                    i = emit_o200k_letters(text, tags, i, a, letter_end(a), out, &mut w);
+                    i = letters(i, a, out, &mut w);
                     continue;
                 }
                 i = ws(i);
@@ -201,7 +225,7 @@ pub fn fsm_o200k(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
             CON | PUN | APO | SYM | NMO | CTL => {
                 let a = i + char_len(b);
                 if is_lm(a) {
-                    i = emit_o200k_letters(text, tags, i, a, letter_end(a), out, &mut w);
+                    i = letters(i, a, out, &mut w);
                     continue;
                 }
                 i = other(i); // ∈ NOT_WS_L_N ⇒ > i
