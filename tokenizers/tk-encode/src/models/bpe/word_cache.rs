@@ -288,13 +288,31 @@ const NEWBORN: u8 = 1;
 /// in the top byte. Including the length keeps `"a"` and `"a\0"` apart, and the
 /// whole key comparison becomes one register-wide equality instead of a
 /// `memcmp` against bytes somewhere else in memory.
-fn pack_word(word: &[u8]) -> Option<u128> {
-    if word.is_empty() || word.len() > 15 {
+///
+/// `head` is 16 bytes starting where the word does, which callers that know what
+/// surrounds the word can hand over — see `Split::head`. Taking the whole window
+/// and masking the surplus off costs one load, where copying just the word's own
+/// bytes costs a call into `memcpy`: its length is only known at run time, and
+/// LLVM can fold a copy into a load only when the length is a constant. That one
+/// call was about a third of what building a key cost.
+fn pack_word(word: &[u8], head: Option<&[u8; 16]>) -> Option<u128> {
+    let len = word.len();
+    if len == 0 || len > 15 {
         return None;
     }
-    let mut lanes = [0u8; 16];
-    lanes[..word.len()].copy_from_slice(word);
-    Some(u128::from_le_bytes(lanes) | ((word.len() as u128) << 120))
+    debug_assert!(
+        head.is_none_or(|head| head[..len] == *word),
+        "head has to start where the word does"
+    );
+    let lanes = match head {
+        Some(head) => u128::from_le_bytes(*head),
+        None => {
+            let mut lanes = [0u8; 16];
+            lanes[..len].copy_from_slice(word);
+            u128::from_le_bytes(lanes)
+        }
+    };
+    Some((lanes & (u128::MAX >> (8 * (16 - len)))) | ((len as u128) << 120))
 }
 
 /// One entry, in the three shapes the module docs draw out. In short:
@@ -438,12 +456,14 @@ impl WordCache {
 
     /// The ids `word` encoded to last time, if the entry is still there.
     ///
-    /// Takes `&mut self` because a hit is also a vote for keeping the entry.
-    pub fn get(&mut self, word: &[u8]) -> Option<&[u32]> {
+    /// `head` is the window `pack_word` builds the key from, and passing `None`
+    /// only costs speed. Takes `&mut self` because a hit is also a vote for keeping
+    /// the entry.
+    pub fn get(&mut self, word: &[u8], head: Option<&[u8; 16]>) -> Option<&[u32]> {
         if word.len() > MAX_LENGTH {
             return None;
         }
-        let (key, hash) = self.slot_key(word);
+        let (key, hash) = self.slot_key(word, head);
         let index = self.find(key, hash, word)?;
         self.freqs[index] = self.freqs[index].saturating_add(1);
         let slot = self.slots[index];
@@ -456,11 +476,16 @@ impl WordCache {
     /// Remember what `word` encoded to. Silently does nothing for a word over
     /// [`MAX_LENGTH`] or when an arena is full: a cache is free to forget, and
     /// the caller has the ids either way.
-    pub fn insert(&mut self, word: &[u8], ids: impl ExactSizeIterator<Item = u32>) {
+    pub fn insert(
+        &mut self,
+        word: &[u8],
+        head: Option<&[u8; 16]>,
+        ids: impl ExactSizeIterator<Item = u32>,
+    ) {
         if word.len() > MAX_LENGTH {
             return;
         }
-        let (key, hash) = self.slot_key(word);
+        let (key, hash) = self.slot_key(word, head);
         // Callers insert after a miss, so there is no existing entry to update.
         let Some(entry) = self.build_entry(key, word, ids) else {
             return;
@@ -481,8 +506,8 @@ impl WordCache {
     /// from. Hashing a slice makes aHash mix the length in and then branch on it to
     /// choose a read width; a `u128` is one fixed-width fold with nothing to decide.
     /// The key already carries the length, so nothing is lost.
-    fn slot_key(&self, word: &[u8]) -> (u128, u64) {
-        match pack_word(word) {
+    fn slot_key(&self, word: &[u8], head: Option<&[u8; 16]>) -> (u128, u64) {
+        match pack_word(word, head) {
             Some(packed) => (packed, self.hasher.hash_one(packed)),
             None => {
                 let hash = self.hasher.hash_one(word);
@@ -635,12 +660,12 @@ mod tests {
     #[test]
     fn roundtrip() {
         let mut cache = WordCache::new(1 << 8);
-        assert_eq!(cache.get(b"hello"), None);
-        cache.insert(b"hello", [1u32, 2, 3].into_iter());
-        cache.insert(b"world", [4u32].into_iter());
-        assert_eq!(cache.get(b"hello"), Some(&[1u32, 2, 3][..]));
-        assert_eq!(cache.get(b"world"), Some(&[4u32][..]));
-        assert_eq!(cache.get(b"hell"), None);
+        assert_eq!(cache.get(b"hello", None), None);
+        cache.insert(b"hello", None, [1u32, 2, 3].into_iter());
+        cache.insert(b"world", None, [4u32].into_iter());
+        assert_eq!(cache.get(b"hello", None), Some(&[1u32, 2, 3][..]));
+        assert_eq!(cache.get(b"world", None), Some(&[4u32][..]));
+        assert_eq!(cache.get(b"hell", None), None);
     }
 
     /// The three properties the whole key encoding rests on: a packed key is
@@ -648,11 +673,33 @@ mod tests {
     /// like a hashed key.
     #[test]
     fn packed_keys_are_unique_and_tagged() {
-        assert_ne!(pack_word(b"a"), pack_word(b"a\0"));
-        assert_ne!(pack_word(&[0u8; 15]), Some(0));
-        assert_eq!(pack_word(&[0u8; 15]).unwrap() & LONG_TAG, 0);
-        assert_eq!(pack_word(b""), None);
-        assert_eq!(pack_word(&[b'x'; 16]), None);
+        assert_ne!(pack_word(b"a", None), pack_word(b"a\0", None));
+        assert_ne!(pack_word(&[0u8; 15], None), Some(0));
+        assert_eq!(pack_word(&[0u8; 15], None).unwrap() & LONG_TAG, 0);
+        assert_eq!(pack_word(b"", None), None);
+        assert_eq!(pack_word(&[b'x'; 16], None), None);
+    }
+
+    /// The window is a shortcut for reading the word, not part of what is stored:
+    /// the bytes it carries past the word belong to the neighbours and have to be
+    /// masked away. If any of them survived into the key, a word looked up with a
+    /// window would miss the entry stored without one — and every hit in a real
+    /// encode would depend on where in its chunk the word happened to sit.
+    #[test]
+    fn the_window_past_the_word_is_masked_off() {
+        let chunk = b"the quick brown fox jumps over the lazy dog";
+        let mut cache = WordCache::new(1 << 8);
+        for (start, len) in [(0usize, 3usize), (4, 5), (10, 5), (16, 3), (26, 4)] {
+            let word = &chunk[start..start + len];
+            let head: &[u8; 16] = chunk[start..start + 16].try_into().unwrap();
+            assert_eq!(
+                cache.slot_key(word, None),
+                cache.slot_key(word, Some(head)),
+                "{word:?}"
+            );
+            cache.insert(word, None, [start as u32].into_iter());
+            assert_eq!(cache.get(word, Some(head)), Some(&[start as u32][..]));
+        }
     }
 
     /// A short word's placement now comes out of its packed key rather than its
@@ -664,7 +711,7 @@ mod tests {
         let cache = WordCache::new(1 << 12);
         let homes: std::collections::HashSet<usize> = (0..1000)
             .map(|i| {
-                let (_, hash) = cache.slot_key(format!("tok{i}").as_bytes());
+                let (_, hash) = cache.slot_key(format!("tok{i}").as_bytes(), None);
                 hash as usize & cache.mask
             })
             .collect();
@@ -677,8 +724,8 @@ mod tests {
     fn oversized_words_are_ignored() {
         let mut cache = WordCache::new(1 << 8);
         let big = vec![7u8; MAX_LENGTH + 1];
-        cache.insert(&big, [1u32].into_iter());
-        assert_eq!(cache.get(&big), None);
+        cache.insert(&big, None, [1u32].into_iter());
+        assert_eq!(cache.get(&big, None), None);
     }
 
     /// Both sides of the 15-byte packing boundary and both sides of the inline/
@@ -697,10 +744,10 @@ mod tests {
             (&long[..64], (0..64).collect()),
         ];
         for (word, ids) in &cases {
-            cache.insert(word, ids.clone().into_iter());
+            cache.insert(word, None, ids.clone().into_iter());
         }
         for (word, ids) in &cases {
-            assert_eq!(cache.get(word), Some(&ids[..]), "{word:?}");
+            assert_eq!(cache.get(word, None), Some(&ids[..]), "{word:?}");
         }
     }
 
@@ -714,17 +761,17 @@ mod tests {
         let mine = vec![b'a'; 40];
         let theirs = vec![b'b'; 40];
 
-        cache.insert(&theirs, [7u32].into_iter());
-        let (their_key, their_hash) = cache.slot_key(&theirs);
+        cache.insert(&theirs, None, [7u32].into_iter());
+        let (their_key, their_hash) = cache.slot_key(&theirs, None);
         let their_slot = cache.slots[cache.find(their_key, their_hash, &theirs).unwrap()];
-        let (my_key, my_hash) = cache.slot_key(&mine);
+        let (my_key, my_hash) = cache.slot_key(&mine, None);
         cache.slots[my_hash as usize & cache.mask] = Slot {
             key: my_key,
             ..their_slot
         };
 
-        cache.insert(&mine, [1u32, 2].into_iter());
-        assert_eq!(cache.get(&mine), Some(&[1u32, 2][..]));
+        cache.insert(&mine, None, [1u32, 2].into_iter());
+        assert_eq!(cache.get(&mine, None), Some(&[1u32, 2][..]));
     }
 
     /// A word that hashes into a full window takes the coldest slot rather than
@@ -734,22 +781,22 @@ mod tests {
         let mut cache = WordCache::new(WINDOW);
         let words: Vec<Vec<u8>> = (0..WINDOW as u8).map(|i| vec![i; 4]).collect();
         for (i, word) in words.iter().enumerate() {
-            cache.insert(word, [i as u32].into_iter());
+            cache.insert(word, None, [i as u32].into_iter());
         }
         // Every word but the first earns a hit, leaving one clear coldest slot.
         for word in &words[1..] {
-            assert!(cache.get(word).is_some());
+            assert!(cache.get(word, None).is_some());
         }
-        cache.insert(b"newcomer", [999u32].into_iter());
-        assert_eq!(cache.get(b"newcomer"), Some(&[999u32][..]));
+        cache.insert(b"newcomer", None, [999u32].into_iter());
+        assert_eq!(cache.get(b"newcomer", None), Some(&[999u32][..]));
         assert_eq!(
-            cache.get(&words[0]),
+            cache.get(&words[0], None),
             None,
             "the unused entry should have gone"
         );
         for (i, word) in words.iter().enumerate().skip(1) {
             assert_eq!(
-                cache.get(word),
+                cache.get(word, None),
                 Some(&[i as u32][..]),
                 "used entry {i} was dropped"
             );
@@ -773,12 +820,12 @@ mod tests {
             }
             .into_bytes();
             let ids: Vec<u32> = (0..=(i % 9) as u32).map(|k| i as u32 * 16 + k).collect();
-            cache.insert(&word, ids.clone().into_iter());
+            cache.insert(&word, None, ids.clone().into_iter());
             expected.push((word, ids));
         }
         let mut live = 0;
         for (word, ids) in &expected {
-            if let Some(hit) = cache.get(word) {
+            if let Some(hit) = cache.get(word, None) {
                 assert_eq!(hit, &ids[..], "{word:?}");
                 live += 1;
             }
@@ -795,8 +842,8 @@ mod tests {
         let mut cache = WordCache::new(64);
         for i in 0..2000usize {
             let word = format!("word-{i}-{}", "x".repeat(i % 20));
-            cache.insert(word.as_bytes(), [i as u32, 7].into_iter());
-            cache.get(word.as_bytes());
+            cache.insert(word.as_bytes(), None, [i as u32, 7].into_iter());
+            cache.get(word.as_bytes(), None);
         }
         assert!(
             cache.freqs.iter().any(|&freq| freq != FREE),
@@ -822,10 +869,10 @@ mod tests {
         // in flight before the entry it replaces gives its own run back.
         let word = |i: usize| format!("a-long-word-past-fifteen-bytes-{i:04}");
         for i in 0..5000usize {
-            cache.insert(word(i).as_bytes(), [i as u32; 8].into_iter());
+            cache.insert(word(i).as_bytes(), None, [i as u32; 8].into_iter());
         }
         assert_eq!(
-            cache.get(word(4999).as_bytes()),
+            cache.get(word(4999).as_bytes(), None),
             Some(&[4999u32; 8][..]),
             "inserts stopped landing — the arenas ran out"
         );

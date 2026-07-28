@@ -220,11 +220,11 @@ impl pipeline::Model for WordLevel {
     fn init_scratch(&self) -> Self::Scratch {}
     fn tokenize_pipeline(
         &self,
-        sequence: &str,
+        split: pipeline::Split<'_>,
         _scratch: &mut Self::Scratch,
         output: &mut Vec<pipeline::PipelineToken>,
     ) -> Result<()> {
-        if let Some(&id) = self.vocab.get(sequence) {
+        if let Some(&id) = self.vocab.get(split.as_str()) {
             output.push(PipelineToken { id })
         } else if let Some(&unk_id) = self.vocab.get(&self.unk_token) {
             output.push(PipelineToken { id: unk_id });

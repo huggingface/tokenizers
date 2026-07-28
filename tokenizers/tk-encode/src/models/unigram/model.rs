@@ -522,11 +522,11 @@ impl pipeline::Model for Unigram {
 
     fn tokenize_pipeline(
         &self,
-        sequence: &str,
+        split: pipeline::Split<'_>,
         _scratch: &mut Self::Scratch,
         output: &mut Vec<pipeline::PipelineToken>,
     ) -> Result<()> {
-        let str_tokens = self.encode(sequence)?;
+        let str_tokens = self.encode(split.as_str())?;
 
         for string in str_tokens {
             match self.token_to_ids.token_to_id(&string) {

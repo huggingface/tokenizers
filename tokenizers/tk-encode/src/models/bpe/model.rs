@@ -822,10 +822,11 @@ impl pipeline::Model for PipelineBPE {
 
     fn tokenize_pipeline(
         &self,
-        sequence: &str,
+        split: pipeline::Split<'_>,
         scratch: &mut Self::Scratch,
         output: &mut Vec<PipelineToken>,
     ) -> Result<()> {
+        let sequence = split.as_str();
         if sequence.is_empty() {
             return Ok(());
         }
@@ -838,7 +839,7 @@ impl pipeline::Model for PipelineBPE {
         } = scratch;
 
         if let Some(cache) = word_cache
-            && let Some(hit) = cache.get(sequence.as_bytes())
+            && let Some(hit) = cache.get(split.as_bytes(), split.head())
         {
             output.extend(hit.iter().map(|&id| PipelineToken { id }));
             return Ok(());
@@ -853,7 +854,7 @@ impl pipeline::Model for PipelineBPE {
         self.merge_word(sequence, merge_queue, skip, word);
         output.extend(word.get_chars_iter().map(|id| PipelineToken { id }));
         if let Some(cache) = word_cache {
-            cache.insert(sequence.as_bytes(), word.get_chars_iter());
+            cache.insert(split.as_bytes(), split.head(), word.get_chars_iter());
         }
 
         Ok(())
@@ -1427,7 +1428,8 @@ mod tests {
         fn pipeline_ids(model: &PipelineBPE, sequence: &str) -> Vec<u32> {
             let mut out = Vec::new();
             let mut scratch = model.init_scratch();
-            pipeline::Model::tokenize_pipeline(model, sequence, &mut scratch, &mut out).unwrap();
+            pipeline::Model::tokenize_pipeline(model, sequence.into(), &mut scratch, &mut out)
+                .unwrap();
             out.iter().map(|t| t.id).collect()
         }
 
@@ -1479,7 +1481,8 @@ mod tests {
             let mut scratch = model.init_scratch();
             for input in ["hello", "hell", "helo", "oleh", "hello", "", "hxe"] {
                 let mut out = Vec::new();
-                pipeline::Model::tokenize_pipeline(&model, input, &mut scratch, &mut out).unwrap();
+                pipeline::Model::tokenize_pipeline(&model, input.into(), &mut scratch, &mut out)
+                    .unwrap();
                 let got: Vec<u32> = out.iter().map(|t| t.id).collect();
                 assert_eq!(got, reference_ids(&reference, input), "{input:?}");
             }
