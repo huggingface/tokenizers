@@ -5,7 +5,7 @@
 // Canonical GPT pre-tokenization regexes (the look-ahead originals), used as recognition keys — the
 // single source of truth lives in `atomsplit::regexes`. `gpt_fsm` maps each to the `atomsplit` FSM that
 // reproduces its `Isolated` split byte-for-byte.
-use atomsplit::regexes::{GPT2, O200K};
+use atomsplit::regexes::{GPT2, O200K, TEKKEN};
 // cl100k is recognized structurally (see `cl100k_digit_cap`), so the exact pattern is only a test key.
 #[cfg(test)]
 use atomsplit::regexes::CL100K;
@@ -20,6 +20,9 @@ pub enum GptFsm {
     Cl100k { digit_cap: usize },
     /// o200k / GPT-4o regex → `atomsplit::fsm::fsm_o200k`.
     O200k,
+    /// Mistral tekken regex → `atomsplit::fsm::fsm_tekken` (o200k's grammar with no contraction
+    /// suffix and one token per digit).
+    Tekken,
 }
 
 /// The cl100k-family template is fixed except rule 3's digit rule. If `pattern` is that template, return
@@ -39,14 +42,16 @@ fn cl100k_digit_cap(pattern: &str) -> Option<usize> {
 }
 
 /// If `pattern` is a recognized GPT pre-tokenization regex, name the native FSM that reproduces its
-/// `Isolated` split byte-for-byte. GPT-2 and o200k are matched exactly; the cl100k family is matched
-/// structurally ([`cl100k_digit_cap`]) so digit-cap variants (Qwen2 …) unroll too. An unrecognized
-/// pattern → `None` (the SysRegex / fancy-regex path handles it).
+/// `Isolated` split byte-for-byte. GPT-2, o200k and tekken are matched exactly; the cl100k family is
+/// matched structurally ([`cl100k_digit_cap`]) so digit-cap variants (Qwen2 …) unroll too. An
+/// unrecognized pattern → `None` (the SysRegex / fancy-regex path handles it).
 pub fn gpt_fsm(pattern: &str) -> Option<GptFsm> {
     if pattern == GPT2 {
         Some(GptFsm::Gpt2)
     } else if pattern == O200K {
         Some(GptFsm::O200k)
+    } else if pattern == TEKKEN {
+        Some(GptFsm::Tekken)
     } else {
         cl100k_digit_cap(pattern).map(|digit_cap| GptFsm::Cl100k { digit_cap })
     }
@@ -77,6 +82,7 @@ impl crate::tokenizer::pattern::Pattern for GptFsmPattern {
                 atomsplit::fsm::fsm_cl100k_cap(bytes, &tags, &mut spans, digit_cap)
             }
             GptFsm::O200k => atomsplit::fsm::fsm_o200k(bytes, &tags, &mut spans),
+            GptFsm::Tekken => atomsplit::fsm::fsm_tekken(bytes, &tags, &mut spans),
         };
         Ok(spans[..n]
             .iter()
@@ -115,6 +121,7 @@ mod tests {
         // Exact matches for gpt2 / o200k, structural (any digit cap) for the cl100k family.
         assert_eq!(gpt_fsm(GPT2), Some(GptFsm::Gpt2));
         assert_eq!(gpt_fsm(O200K), Some(GptFsm::O200k));
+        assert_eq!(gpt_fsm(TEKKEN), Some(GptFsm::Tekken));
         assert_eq!(gpt_fsm(CL100K), Some(GptFsm::Cl100k { digit_cap: 3 }));
         // Qwen2: cl100k with rule 3 = `\p{N}` → cap 1.
         let qwen2 = r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+";

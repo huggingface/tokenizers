@@ -172,6 +172,7 @@ impl pipeline::PreTokenizer for Split {
                     }
                     GptFsm::Gpt2 => atomsplit::fsm::fsm_byte_level(bytes, tags, spans),
                     GptFsm::O200k => atomsplit::fsm::fsm_o200k(bytes, tags, spans),
+                    GptFsm::Tekken => atomsplit::fsm::fsm_tekken(bytes, tags, spans),
                 },
                 out,
             );
@@ -462,6 +463,34 @@ mod tests {
 
         assert_eq!(
             pipeline_split(SplitPattern::Regex(o200k.into()), Isolated, false, corpus),
+            legacy,
+        );
+    }
+
+    #[test]
+    fn pipeline_tekken_uses_fsm_and_matches_legacy() {
+        // Mistral's tekken regex (mistral-small-4) → recognized → routes to fsm_tekken. Same corpus
+        // shape as o200k, whose grammar it shares: the differences it must get right are apostrophes
+        // (no contraction suffix, so `'s` starts a new token) and one token per digit.
+        let tekken = atomsplit::regexes::TEKKEN;
+        let corpus = "McDonald's iPhone SQLite HELLOWorld camelCase don't I'll We've 3.14159 café Straße 世界 안녕\n\n  path/to/file Mixed CASE end.";
+        let pretok = Split::new(SplitPattern::Regex(tekken.into()), Isolated, false).unwrap();
+        assert_eq!(
+            pretok.fsm,
+            Some(crate::utils::GptFsm::Tekken),
+            "tekken / mistral pattern should route to the native FSM"
+        );
+
+        let mut pre = PreTokenizedString::from(corpus);
+        pretok.pre_tokenize(&mut pre).unwrap();
+        let legacy: Vec<(&str, (u32, u32))> = pre
+            .get_splits(OffsetReferential::Original, OffsetType::Byte)
+            .into_iter()
+            .map(|(s, o, _)| (s, (o.0 as u32, o.1 as u32)))
+            .collect();
+
+        assert_eq!(
+            pipeline_split(SplitPattern::Regex(tekken.into()), Isolated, false, corpus),
             legacy,
         );
     }
