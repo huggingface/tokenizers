@@ -1,5 +1,6 @@
 use super::{super::OrderedVocabIter, Error, Pair, Word};
 use crate::models::bpe::Merge;
+use crate::models::bpe::mark_split::MarkSplit;
 use crate::pipeline::{self, ModelScratch, PipelineToken};
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::byte_level::{self};
@@ -680,6 +681,10 @@ pub struct PipelineBPE {
     vocab: BucketVocabStore,
     merges: MergeMap,
     ignore_merges: bool,
+    /// `Some` for SentencePiece vocabs whose pieces let a sequence be cut into
+    /// `▁▁▁word` units. Models whose pre-tokenizer already yields words are
+    /// unaffected: their sequences hold at most one unit.
+    mark_split: Option<MarkSplit>,
 }
 
 enum Atoms {
@@ -714,7 +719,9 @@ impl PipelineBPE {
             ..
         } = model;
 
-        let (vocab, atoms) = if with_byte_level {
+        // Byte-level vocabs spell bytes as visible chars, so a `▁` in them is not
+        // a space marker; they also always come with a splitting pre-tokenizer.
+        let (vocab, atoms, mark_split) = if with_byte_level {
             let mut vocab = BucketVocabStore::build(vocab.byte_content());
             vocab = byte_level::transform_vocab(vocab);
             let mut byte_to_id = [0u32; 256];
@@ -723,9 +730,11 @@ impl PipelineBPE {
                     .get_bytes(&[b])
                     .ok_or(Error::ByteAtomOutOfVocabulary(b))?;
             }
-            (vocab, Atoms::Bytes { byte_to_id })
+            (vocab, Atoms::Bytes { byte_to_id }, None)
         } else {
-            let vocab = BucketVocabStore::build(vocab.byte_content());
+            let entries = vocab.byte_content();
+            let mark_split = MarkSplit::build(&entries);
+            let vocab = BucketVocabStore::build(entries);
             let unk_token = if let Some(unk_str) = unk_token {
                 let token_id = vocab
                     .token_to_id(&unk_str)
@@ -753,6 +762,7 @@ impl PipelineBPE {
                     unk_token,
                     byte_fallback: fallback_lookup,
                 },
+                mark_split,
             )
         };
         Ok(Self {
@@ -760,6 +770,7 @@ impl PipelineBPE {
             ignore_merges,
             merges,
             vocab,
+            mark_split,
         })
     }
 
@@ -842,8 +853,21 @@ impl pipeline::Model for PipelineBPE {
             word,
         } = scratch;
 
-        self.merge_word(sequence, merge_queue, skip, word);
-        output.extend(word.get_chars_iter().map(|id| PipelineToken { id }));
+        // Cutting into units is only ever a speed-up: `ignore_merges` has had
+        // its shot at the whole sequence above, and per-unit merging is exact by
+        // construction (see `mark_split`).
+        match &self.mark_split {
+            Some(split) => {
+                for unit in split.units(sequence) {
+                    self.merge_word(unit, merge_queue, skip, word);
+                    output.extend(word.get_chars_iter().map(|id| PipelineToken { id }));
+                }
+            }
+            None => {
+                self.merge_word(sequence, merge_queue, skip, word);
+                output.extend(word.get_chars_iter().map(|id| PipelineToken { id }));
+            }
+        }
 
         Ok(())
     }
@@ -1678,6 +1702,84 @@ mod tests {
             // byte-level pipeline must be a build error, not a panic.
             let bpe = hello_builder().build().unwrap();
             assert!(PipelineBPE::from_bpe(bpe, true).is_err());
+        }
+
+        /// gemma-4's shape in miniature: `>▁</` and `p▁` hold a `▁` after a
+        /// non-`▁` char, so cutting the sequence at every `▁` would drop those
+        /// merges. `reference_ids` merges whole sequences, so it says what the
+        /// cut must reproduce.
+        fn metaspace_bpe() -> BPE {
+            let vocab = v(&[
+                ("▁", 0),
+                ("<", 1),
+                (">", 2),
+                ("/", 3),
+                ("s", 4),
+                ("p", 5),
+                ("a", 6),
+                ("b", 7),
+                ("</", 8),
+                (">▁", 9),
+                (">▁</", 10),
+                ("p▁", 11),
+                ("sp", 12),
+                ("▁sp", 13),
+                ("▁a", 14),
+                ("▁b", 15),
+            ]);
+            let merges = m(&[
+                ("<", "/"),
+                (">", "▁"),
+                (">▁", "</"),
+                ("p", "▁"),
+                ("s", "p"),
+                ("▁", "sp"),
+                ("▁", "a"),
+                ("▁", "b"),
+            ]);
+            BpeBuilder::default()
+                .vocab_and_merges(vocab, merges)
+                .build()
+                .unwrap()
+        }
+
+        #[test]
+        fn cutting_at_marks_keeps_the_whole_sequence_ids() {
+            let bpe = metaspace_bpe();
+            let reference = bpe.clone();
+            let pipeline = PipelineBPE::from_bpe(bpe, false).unwrap();
+            assert!(pipeline.mark_split.is_some(), "vocab holds ▁");
+            for input in [
+                "▁a▁b",
+                "a▁b",
+                "▁▁▁a",
+                "a▁▁▁b",
+                "▁sp▁a",
+                "sp",
+                "a▁",
+                "▁",
+                "▁a▁sp▁b▁a",
+                // The crossing pieces, alone and surrounded by other cuts.
+                "<b>▁</b>",
+                "▁a<b>▁</b>▁b",
+                "p▁a",
+                "▁ap▁a▁b",
+                // Same first byte as a crossing piece, different tail.
+                "<b>▁a",
+                "q▁a",
+            ] {
+                assert_eq!(
+                    pipeline_ids(&pipeline, input),
+                    reference_ids(&reference, input),
+                    "{input:?}"
+                );
+            }
+        }
+
+        #[test]
+        fn no_cutting_without_the_mark_in_vocab() {
+            let pipeline = PipelineBPE::from_bpe(hello_builder().build().unwrap(), false).unwrap();
+            assert!(pipeline.mark_split.is_none());
         }
     }
 }
