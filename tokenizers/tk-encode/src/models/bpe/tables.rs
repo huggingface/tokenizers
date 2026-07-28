@@ -49,7 +49,6 @@ struct MphfMap {
     hasher: RandomState,
     entries: Box<[Slot]>,
     /// `id_to_slot[token_id] -> entry_idx` -> index into entries as the entries are not really sorted.
-    id_to_slot: Box<[u32]>,
     /// Number of real tokens. Cached at build so `len()` is O(1): `entries` is sized to the
     /// MPHF's non-minimal slot range (with phantom padding slots), so its length is not the
     /// token count.
@@ -63,9 +62,9 @@ impl MphfMap {
         let hasher = RandomState::with_seeds(SEEDS[0], SEEDS[1], SEEDS[2], SEEDS[3]);
 
         // 1. Pre-hash token bytes -> u64 keys using near perfect hash func
-        let keys: Vec<u64> = keys
+        let h_keys: Vec<u64> = keys
             .iter()
-            .map(|(a, b)| hasher.hash_one((a << 32 | b) as u64))
+            .map(|(a, b)| hasher.hash_one((*a as u64) << 32 | *b as u64))
             .collect();
 
         // 2. A perfect hash needs distinct keys. Collisions are astronomically unlikely
@@ -75,7 +74,7 @@ impl MphfMap {
 
         // 3. Build the (non-minimal) `FastPtrHash` via `PtrHashParams::default_fast()`; query with `.index()`.
         let params = PtrHashParams::default_fast();
-        let mphf = Mphf::new(&keys, params);
+        let mphf = Mphf::new(&h_keys, params);
 
         // FastPtrHash is non-minimal: `index()` may return a slot up to `max_index()` (>= n),
         // so `entries` must be sized to cover the whole slot range. Slots never written by the
@@ -86,35 +85,29 @@ impl MphfMap {
         // 4. Place each token at its MPHF slot; build the slab and the id->slot reverse table.
         let mut entries = vec![
             Slot {
-                key: 0u64,
-                val: 0u64
+                key: u64::MAX,
+                val: u64::MAX
             };
             n_slots
         ];
-        let total_slots = *(keys.iter().max().unwrap_or(&0u64)) as usize + 1;
-        let mut id_to_slot = vec![u32::MAX; total_slots];
-        for id in &keys {
-            let slot = mphf.index(&hasher.hash_one(id));
-            let val = values[*id as usize];
-            entries[slot] = Slot {
-                key: *id,
-                val: 0u64,
-            };
-            id_to_slot[*id as usize] = slot as u32;
+        for (pos, id) in keys.iter().enumerate() {
+            let key = (id.0 as u64) << 32 | id.1 as u64;
+            let slot = mphf.index(&hasher.hash_one(key));
+            let val = values[pos];
+            entries[slot] = Slot { key: key, val: val };
         }
 
         Self {
             mphf,
             hasher,
             entries: entries.into_boxed_slice(),
-            id_to_slot: id_to_slot.into_boxed_slice(),
             n,
         }
     }
     #[inline]
     // from the key pair, returns the rank, the flags and the new id.
-    pub fn get(self, key: u64) -> Option<u64> {
-        let slot = self.mphf.index(&key);
+    pub fn get(&self, key: u64) -> Option<u64> {
+        let slot = self.mphf.index(&self.hasher.hash_one(key));
         let e = &self.entries[slot];
         if e.key == key {
             return Some(e.val);
@@ -126,7 +119,7 @@ impl MphfMap {
 pub(crate) struct BpeTables {
     internal_id_map: Box<[u32]>, // internal_id_map[external_id] -> internal_id
     unmap: Box<[u32]>,           // unmap[internal_id] -> external_id
-    pair_table: Box<[Slot]>,     // MPHF! because memory efficiency + bitwise makes check not costly
+    pair_table: MphfMap,         // MPHF! because memory efficiency + bitwise makes check not costly
     top_merges: Box<[u64]>,      // top 512 by 512 merges
     fold: Box<[u32]>,            // Which alphabet chars/bytes fold and can be merged directly
 }
@@ -136,7 +129,6 @@ impl BpeTables {
         // 1. We build the internal id map. This sorts the merges by their ranks so frequent pairs
         //    get a smaller rank.
         let vocab_r = AHashMap::from_iter(vocab.iter().map(|(a, b)| (b, a)));
-        let mut pair_table = Box::new([]);
         let mut top_merges = Box::new([]);
         // used to build fold
         let mut merge_rank_left = Box::new(vec![0u32; merges.len()]);
@@ -172,6 +164,11 @@ impl BpeTables {
         let internal_id_map = internal_id_map.into_boxed_slice();
         let unmap = unmap.into_boxed_slice();
 
+        let values = merges
+            .values()
+            .map(|(rank, id)| (*rank as u64) << 32 | (*id as u64) << 2 as u64)
+            .collect();
+        let mut pair_table = MphfMap::build(merges.keys().copied().collect(), values);
         // Now let's build the MPHF for the merge pair table. The key is already a u64.
         // Slot is key as u64,
         // TODO: we need to add a log here on number of folder tokens, unique product merges, etc.
@@ -189,7 +186,32 @@ impl BpeTables {
 mod test {
     use ahash::AHashMap;
 
-    use crate::models::bpe::{MergeMap, tables::BpeTables};
+    use crate::models::bpe::{
+        MergeMap,
+        tables::{BpeTables, MphfMap},
+    };
+
+    #[test]
+    pub fn test_mphf() {
+        let vocab = AHashMap::from_iter(vec![
+            ("a".to_string(), 1),
+            ("b".to_string(), 2),
+            ("ab".to_string(), 5),
+            ("ba".to_string(), 4),
+            ("aab".to_string(), 3),
+        ]);
+        let mut merges = MergeMap::new();
+        merges.insert((1, 2), (3, 1));
+        merges.insert((1, 5), (4, 1));
+        merges.insert((1, 3), (5, 1));
+        let values = merges
+            .values()
+            .map(|(rank, id)| (*rank as u64) << 32 | (*id as u64) << 2 as u64)
+            .collect();
+        let pair_table = MphfMap::build(merges.keys().copied().collect(), values);
+        let value = 3u64 << 32 | 2u64 << 30 | 1u64;
+        assert_eq!(pair_table.get(1u64 << 32 | 2u64), Some(value));
+    }
 
     #[test]
     pub fn test_build() {
