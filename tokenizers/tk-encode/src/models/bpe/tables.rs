@@ -75,13 +75,7 @@ impl MphfMap {
         // 3. Build the (non-minimal) `FastPtrHash` via `PtrHashParams::default_fast()`; query with `.index()`.
         let params = PtrHashParams::default_fast();
         let mphf = Mphf::new(&h_keys, params);
-
-        // FastPtrHash is non-minimal: `index()` may return a slot up to `max_index()` (>= n),
-        // so `entries` must be sized to cover the whole slot range. Slots never written by the
-        // build loop stay as the default `Entry { len: 0, .. }` (phantom/padding slots), which
-        // enumeration/count paths filter out via `len > 0`.
         let n_slots = mphf.max_index();
-
         // 4. Place each token at its MPHF slot; build the slab and the id->slot reverse table.
         let mut entries = vec![
             Slot {
@@ -106,13 +100,13 @@ impl MphfMap {
     }
     #[inline]
     // from the key pair, returns the rank, the flags and the new id.
-    pub fn get(&self, key: u64) -> Option<u64> {
+    pub fn get(&self, key: u64) -> u64 {
         let slot = self.mphf.index(&self.hasher.hash_one(key));
         let e = &self.entries[slot];
         if e.key == key {
-            return Some(e.val);
+            return e.val;
         } else {
-            return None;
+            return u64::MAX;
         }
     }
 }
@@ -166,7 +160,7 @@ impl BpeTables {
 
         let values = merges
             .values()
-            .map(|(rank, id)| (*rank as u64) << 32 | (*id as u64) << 2 as u64)
+            .map(|(rank, id)| (*rank as u64) << 32 | (*id as u64))
             .collect();
         let pair_table = MphfMap::build(merges.keys().copied().collect(), values);
         // Now let's build the MPHF for the merge pair table. The key is already a u64.
@@ -201,16 +195,15 @@ mod test {
             ("aab".to_string(), 3),
         ]);
         let mut merges = MergeMap::new();
-        merges.insert((1, 2), (3, 1));
+        merges.insert((1, 2), (1, 5));
         merges.insert((1, 5), (4, 1));
-        merges.insert((1, 3), (5, 1));
         let values = merges
             .values()
-            .map(|(rank, id)| (*rank as u64) << 32 | (*id as u64) << 2 as u64)
+            .map(|(rank, id)| (*rank as u64) << 32 | (*id as u64))
             .collect();
         let pair_table = MphfMap::build(merges.keys().copied().collect(), values);
-        let value = 3u64 << 32 | 1u64;
-        assert_eq!(pair_table.get(1u64 << 32 | 2u64), Some(value));
+        let value = 1u64 << 32 | 5u64;
+        assert_eq!(pair_table.get(1u64 << 32 | 2u64), value);
     }
 
     #[test]
