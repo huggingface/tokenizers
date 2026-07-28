@@ -81,11 +81,14 @@ impl MphfMap {
             };
             n_slots
         ];
-        for (pos, _) in keys.iter().enumerate() {
+        for (pos, (a, b)) in keys.iter().enumerate() {
             let key = h_keys[pos];
-            let slot = mphf.index(&hasher.hash_one(key));
+            let slot = mphf.index(&key);
             let val = values[pos];
-            entries[slot] = Slot { key: key, val: val };
+            entries[slot] = Slot {
+                key: (*a as u64) << 32 | *b as u64,
+                val: val,
+            };
         }
 
         let new = Self {
@@ -148,7 +151,8 @@ impl BpeTables {
         alphabet.sort_unstable();
         let base: usize = alphabet.len();
 
-        let mut internal_id_map = vec![u32::MAX; *vocab.values().max().unwrap_or(&0u32) as usize];
+        let mut internal_id_map =
+            vec![u32::MAX; *vocab.values().max().unwrap_or(&0u32) as usize + 1];
         let mut unmap = vec![u32::MAX; base + merges.len()];
         unmap[0..base].copy_from_slice(&alphabet);
         unmap[0..base]
@@ -201,7 +205,7 @@ mod test {
             .map(|((a, b), (rank, id))| ((*a, *b), (*rank as u64) << 32 | (*id as u64)))
             .unzip();
         let pair_table = MphfMap::build(keys, values);
-        let value = 5u64;
+        let value = 1u64 << 32 | 5 as u64;
         assert_eq!(pair_table.get(1u64 << 32 | 2u64), value);
     }
 
