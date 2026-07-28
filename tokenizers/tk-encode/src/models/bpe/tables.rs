@@ -90,8 +90,8 @@ impl MphfMap {
             };
             n_slots
         ];
-        for (pos, id) in keys.iter().enumerate() {
-            let key = (id.0 as u64) << 32 | id.1 as u64;
+        for (pos, _) in keys.iter().enumerate() {
+            let key = h_keys[pos];
             let slot = mphf.index(&hasher.hash_one(key));
             let val = values[pos];
             entries[slot] = Slot { key: key, val: val };
@@ -168,7 +168,7 @@ impl BpeTables {
             .values()
             .map(|(rank, id)| (*rank as u64) << 32 | (*id as u64) << 2 as u64)
             .collect();
-        let mut pair_table = MphfMap::build(merges.keys().copied().collect(), values);
+        let pair_table = MphfMap::build(merges.keys().copied().collect(), values);
         // Now let's build the MPHF for the merge pair table. The key is already a u64.
         // Slot is key as u64,
         // TODO: we need to add a log here on number of folder tokens, unique product merges, etc.
@@ -209,7 +209,7 @@ mod test {
             .map(|(rank, id)| (*rank as u64) << 32 | (*id as u64) << 2 as u64)
             .collect();
         let pair_table = MphfMap::build(merges.keys().copied().collect(), values);
-        let value = 3u64 << 32 | 2u64 << 30 | 1u64;
+        let value = 3u64 << 32 | 1u64;
         assert_eq!(pair_table.get(1u64 << 32 | 2u64), Some(value));
     }
 
