@@ -133,9 +133,8 @@ impl BpeTables {
         // 1. We build the internal id map. This sorts the merges by their ranks so frequent pairs
         //    get a smaller rank.
         // used to build fold
-        let mut merge_rank_left = Box::new(vec![0u32; merges.len()]);
-        let mut merge_rank_right = Box::new(vec![0u32; merges.len()]);
-        let mut fold = Box::new([]);
+        let mut merge_rank_left = (vec![0u32; merges.len()]);
+        let mut merge_rank_right = (vec![0u32; merges.len()]);
 
         let rev_merge = merges
             .iter()
@@ -170,9 +169,23 @@ impl BpeTables {
         let internal_id_map = internal_id_map.into_boxed_slice();
         let unmap = unmap.into_boxed_slice();
 
+        // BUILD the fold:
+        // We iterate over the alphabet, and check if any of them is used in any of the merges.
+        // If not, they are can be skipped fast. This also tells us which codepoint / byte we can
+        // directly convert to their final ids. For example if `é` is never part of a merge, we can
+        // skip it fast.
+        // fold[cp] = token
+        let mut fold = Vec::new();
+        for c in alphabet {
+            if let Some(cp) = rev_merge.get(&c) {
+                let ch = char::from_u32(*cp);
+                // fold will be indexed by cp (non utf8)
+                // to set the value to internal token means we can safely convert 1,2 or 3 bytes to
+                // internal id. This is true iff the bytes that compose is
+            }
+        }
         // For pairs where both id < 512 we avoid the mphf. We iterate over the already initialized
         let mut top_merges = vec![u64::MAX; 512 * 512];
-        let mut id = 0usize;
         merges.iter().for_each(|((a, b), (rank, n))| {
             let (ia, ib) = (internal_id_map[*a as usize], internal_id_map[*b as usize]);
             if ia < 512 && ib < 512 {
@@ -180,7 +193,6 @@ impl BpeTables {
                 // TODO: have not set the flag yet, as I need to build fold
                 top_merges[(ia << 9 | ib) as usize] =
                     (*rank as u64) << 32 | internal_id_map[*n as usize] as u64;
-                id += 1;
             }
         });
         let top_merges = top_merges.into_boxed_slice();
@@ -188,14 +200,9 @@ impl BpeTables {
         // BUILD the mphf hashmap
         let keys: Vec<(u32, u32)> = merges.keys().copied().collect();
         let pair_table = MphfMap::build(keys, values);
+        let fold = fold.into_boxed_slice();
         // Now let's build the MPHF for the merge pair table. The key is already a u64.
         // Slot is key as u64,
-        // BUILD the fold:
-        // We iterate over the alphabet, and check if any of them is used in any of the merges.
-        // If not, they are can be skipped fast. This also tells us which codepoint / byte we can
-        // directly convert to their final ids. For example if `é` is never part of a merge, we can
-        // skip it fast.
-
         // TODO: we need to add a log here on number of folder tokens, unique product merges, etc.
         Self {
             internal_id_map,
