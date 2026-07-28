@@ -44,6 +44,28 @@
 //!   distinct words: ~2^-33; `ids_match` would catch it). 8-slot probe
 //!   window; a full window overwrites its last slot instead of rejecting, so
 //!   at saturation the table churns where the fixed tables freeze.
+//! - `giga_pair` — replica of gigatoken's two-tier pretoken cache: a <= 15-byte
+//!   word packs into a u128 key whose value carries up to 4 ids inline (a hit
+//!   reads the entry and nothing else), probed over 64 B-aligned pairs of 32 B
+//!   entries so a probe step touches one cache line; longer words fall back to
+//!   a hashmap over a shared id arena. Nothing is ever evicted — the table
+//!   doubles at 3/4 load, so `capacity` is a STARTING size and the design
+//!   trades memory for a ~0% miss rate. Structure only: the upstream design
+//!   leans on a prefetch pipeline and vocab pre-seeding this harness has no
+//!   place for (see `meta.notes`).
+//! - `flat_inplace` — flat_cache's properties without its second generation:
+//!   open addressing over 32 B slots that carry the packed key and up to 3 ids
+//!   inline, eviction by overwriting the coldest slot of a 16-slot window
+//!   (aging the rest), and size-classed free lists so the arenas the rare wide
+//!   entries use are reused in place instead of compacted.
+//! - `hash_index` — the hashmap as a pure index: `HashMap<u64, u32>` from the
+//!   word's hash (passed through unhashed — it is already one) to a position in
+//!   an append-only `Vec` of slots owning the key bytes and ids. A hash already
+//!   present takes over that slot; a full Vec recycles slots round-robin. No
+//!   conflict misses, at the price of walking map -> slot -> key -> ids.
+//! - `hash_packed` — the same, with the slot's two buffers folded into one:
+//!   ids then key in a single `u32` allocation. One malloc per slot instead of
+//!   two, and a hit reads one buffer instead of two.
 //!
 //! Per (model × fixture × capacity × max_length × variant):
 //! - warm replay throughput and speedup vs the no-cache floor
@@ -75,7 +97,9 @@
 //!   front and counted in `chunks_skipped`.
 
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
+use std::hash::BuildHasherDefault;
 use std::hint::black_box;
 use std::path::Path;
 use std::time::Instant;
@@ -126,6 +150,11 @@ trait CacheVariant {
     fn insert(&mut self, word: &str, ids: &[u32]) -> InsertOutcome;
     /// Generational culls performed, for designs that make room in batches.
     fn culls(&self) -> Option<usize> {
+        None
+    }
+    /// Table doublings performed, for designs that make room by growing. The
+    /// other half of `culls`: both count full-table reorganizations.
+    fn grows(&self) -> Option<usize> {
         None
     }
     /// Occupied slots in the bucket `word` hashes to, after any insert.
@@ -988,6 +1017,851 @@ impl CacheVariant for Hash64Evict {
     }
 }
 
+// Replica of gigatoken's pretoken cache (src/bpe/pretoken_cache.rs plus the
+// long-pretoken map its `Tokenizer` pairs with it). Keep in sync by hand. Two
+// tiers, split at the 15-byte boundary the packed key imposes:
+//
+//   <= 15 B: bytes + length pack into a u128 key, so a hit is one 128-bit
+//            register compare against a self-contained entry — no stored hash,
+//            no key arena, no memcmp. Up to 4 ids ride inline in the entry's
+//            two value words, so the overwhelmingly common hit reads nothing
+//            beyond the entry; wider id runs spill to the shared arena.
+//    > 15 B: an ordinary hashmap into that same arena.
+//
+// Neither tier ever evicts: the table doubles at 3/4 load. The whole design
+// assumes the table outgrows cache and pays for it with prefetch (which this
+// harness cannot replay) rather than by staying small.
+
+const GIGA_EMPTY: u128 = 0;
+/// `val` bit 7: the ids live in the arena, not in the entry.
+const GIGA_VAL_SPILL: u64 = 0x80;
+/// `val` bits 0-6: the id count, in both the inline and the spilled layout.
+const GIGA_VAL_COUNT: u64 = 0x7F;
+
+#[derive(Clone, Copy, Default)]
+struct GigaEntry {
+    key: u128,
+    val: u64,
+    ext: u64,
+}
+
+/// The probe unit: two entries in one cache line. `Box<[GigaEntry]>` would only
+/// be 16 B-aligned, which lets an even-indexed pair straddle two lines and
+/// costs the design its defining property.
+#[derive(Clone, Copy, Default)]
+#[repr(align(64))]
+struct GigaPairSlot([GigaEntry; 2]);
+
+const _: () = assert!(size_of::<GigaPairSlot>() == 64);
+
+/// Bytes in the low 15 lanes, length in the top byte: keys of different lengths
+/// never collide and a live key is never 0, the empty-slot sentinel. `None`
+/// routes to the long map — including for the empty word, which upstream packs
+/// to key 0 and routes the same way.
+fn pack_giga_key(p: &[u8]) -> Option<u128> {
+    if p.is_empty() || p.len() > 15 {
+        return None;
+    }
+    let mut b = [0u8; 16];
+    b[..p.len()].copy_from_slice(p);
+    Some(u128::from_le_bytes(b) | ((p.len() as u128) << 120))
+}
+
+/// Upstream's `pretoken_key_hash`: hardware CRC32 folded over the packed key,
+/// with its multiply-fold fallback elsewhere. Not `crc_key_hash` above — that
+/// one is CRC32**C**, flat_cache's choice.
+fn giga_key_hash(key: u128) -> u64 {
+    #[cfg(target_arch = "aarch64")]
+    unsafe {
+        use std::arch::aarch64::__crc32d;
+        __crc32d(__crc32d(0, key as u64), (key >> 64) as u64) as u64
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        let mut h = ((key as u64) ^ ((key >> 64) as u64).rotate_right(25))
+            .wrapping_mul(0x9E37_79B9_7F4A_7C15);
+        h ^= h >> 32;
+        h
+    }
+}
+
+/// Count in the low 7 bits, ids 1-2 in `val`'s upper lanes and 3-4 in `ext`.
+/// Id 1 gets 24 bits (true of every real vocab); a wider first id, or a 5th id,
+/// spills to the arena instead. The 7-bit count cannot overflow here: a
+/// <= 15-byte word is seeded with at most 15 symbols and merging only shrinks
+/// that.
+fn pack_giga_val(ids: &[u32], arena: &mut Vec<u32>) -> (u64, u64) {
+    let inline = match *ids {
+        [a] if a < 1 << 24 => Some((1 | ((a as u64) << 8), 0)),
+        [a, b] if a < 1 << 24 => Some((2 | ((a as u64) << 8) | ((b as u64) << 32), 0)),
+        [a, b, c] if a < 1 << 24 => Some((3 | ((a as u64) << 8) | ((b as u64) << 32), c as u64)),
+        [a, b, c, d] if a < 1 << 24 => Some((
+            4 | ((a as u64) << 8) | ((b as u64) << 32),
+            c as u64 | ((d as u64) << 32),
+        )),
+        _ => None,
+    };
+    inline.unwrap_or_else(|| {
+        let offset = arena.len() as u64;
+        arena.extend_from_slice(ids);
+        (GIGA_VAL_SPILL | ids.len() as u64 | (offset << 32), 0)
+    })
+}
+
+fn unpack_giga_lanes(val: u64, ext: u64) -> [u32; 4] {
+    [
+        (val >> 8) as u32 & 0xFF_FFFF,
+        (val >> 32) as u32,
+        ext as u32,
+        (ext >> 32) as u32,
+    ]
+}
+
+struct GigaTable {
+    pairs: Box<[GigaPairSlot]>,
+    pair_mask: usize,
+    len: usize,
+    grows: usize,
+}
+
+impl GigaTable {
+    fn new(slots: usize) -> Self {
+        let pairs = (slots.next_power_of_two() / 2).max(1);
+        Self {
+            pairs: vec![GigaPairSlot::default(); pairs].into_boxed_slice(),
+            pair_mask: pairs - 1,
+            len: 0,
+            grows: 0,
+        }
+    }
+
+    fn slots(&self) -> usize {
+        self.pairs.len() * 2
+    }
+
+    /// Upstream indexes slots and clears the low bit (`h & mask & !1`); over an
+    /// array of pairs that selects the same hash bits, one shift down.
+    fn home(&self, h: u64) -> usize {
+        (h as usize >> 1) & self.pair_mask
+    }
+
+    /// Inserts fill the first empty slot of the walk, so any pair holding one
+    /// terminates it: a stored key is never hidden behind an empty slot.
+    fn get(&self, key: u128, h: u64) -> Option<(u64, u64)> {
+        let mut i = self.home(h);
+        loop {
+            let [e0, e1] = self.pairs[i].0;
+            if e0.key == key {
+                return Some((e0.val, e0.ext));
+            }
+            if e1.key == key {
+                return Some((e1.val, e1.ext));
+            }
+            if e0.key == GIGA_EMPTY || e1.key == GIGA_EMPTY {
+                return None;
+            }
+            i = (i + 1) & self.pair_mask;
+        }
+    }
+
+    /// First empty slot of `h`'s walk, as (pair, lane). Load < 1 guarantees one.
+    fn first_empty(&self, h: u64) -> (usize, usize) {
+        let mut i = self.home(h);
+        loop {
+            if self.pairs[i].0[0].key == GIGA_EMPTY {
+                return (i, 0);
+            }
+            if self.pairs[i].0[1].key == GIGA_EMPTY {
+                return (i, 1);
+            }
+            i = (i + 1) & self.pair_mask;
+        }
+    }
+
+    /// Insert a key the caller has already missed on.
+    fn insert(&mut self, key: u128, h: u64, val: u64, ext: u64) {
+        if (self.len + 1) * 4 > self.slots() * 3 {
+            self.grow();
+        }
+        let (i, lane) = self.first_empty(h);
+        self.pairs[i].0[lane] = GigaEntry { key, val, ext };
+        self.len += 1;
+    }
+
+    fn grow(&mut self) {
+        self.grows += 1;
+        let doubled = vec![GigaPairSlot::default(); self.pairs.len() * 2].into_boxed_slice();
+        let old = std::mem::replace(&mut self.pairs, doubled);
+        self.pair_mask = self.pairs.len() - 1;
+        for e in old.iter().flat_map(|p| p.0.iter()) {
+            if e.key == GIGA_EMPTY {
+                continue;
+            }
+            let (i, lane) = self.first_empty(giga_key_hash(e.key));
+            self.pairs[i].0[lane] = *e;
+        }
+    }
+}
+
+struct GigaPair {
+    table: GigaTable,
+    /// Words too long to pack. Unbounded, like the table.
+    long: AHashMap<Box<[u8]>, (u32, u32)>,
+    /// Shared by the long map and the table's spilled values.
+    arena: Vec<u32>,
+    /// Inline values are unpacked here so `get` can hand back a slice; upstream
+    /// emits them straight from the two value registers.
+    unpacked: [u32; 4],
+}
+
+impl GigaPair {
+    fn new(capacity: usize) -> Self {
+        Self {
+            table: GigaTable::new(capacity),
+            long: AHashMap::with_hasher(fixed_hasher()),
+            arena: Vec::new(),
+            unpacked: [0; 4],
+        }
+    }
+}
+
+impl CacheVariant for GigaPair {
+    fn get(&mut self, word: &str) -> Option<&[u32]> {
+        let p = word.as_bytes();
+        let Some(key) = pack_giga_key(p) else {
+            let &(off, len) = self.long.get(p)?;
+            return Some(&self.arena[off as usize..off as usize + len as usize]);
+        };
+        let (val, ext) = self.table.get(key, giga_key_hash(key))?;
+        let n = (val & GIGA_VAL_COUNT) as usize;
+        if val & GIGA_VAL_SPILL != 0 {
+            let off = (val >> 32) as usize;
+            return Some(&self.arena[off..off + n]);
+        }
+        self.unpacked = unpack_giga_lanes(val, ext);
+        Some(&self.unpacked[..n])
+    }
+
+    /// Never rejects and never evicts — the table grows instead.
+    fn insert(&mut self, word: &str, ids: &[u32]) -> InsertOutcome {
+        let p = word.as_bytes();
+        match pack_giga_key(p) {
+            Some(key) => {
+                let (val, ext) = pack_giga_val(ids, &mut self.arena);
+                self.table.insert(key, giga_key_hash(key), val, ext);
+            }
+            None => {
+                let off = self.arena.len() as u32;
+                self.arena.extend_from_slice(ids);
+                self.long.insert(p.into(), (off, ids.len() as u32));
+            }
+        }
+        InsertOutcome::Stored
+    }
+
+    fn grows(&self) -> Option<usize> {
+        Some(self.table.grows)
+    }
+    // Displacement in open addressing isn't comparable to bucket collisions,
+    // and full-key entries carry no tag; report null like flat_cache.
+    fn bucket_load(&self, _: &str) -> Option<usize> {
+        None
+    }
+    fn probe_tags(&self, _: &str) -> Option<u32> {
+        None
+    }
+    /// Pair-table entries only, so `occupancy.rate` reads as the load factor
+    /// the growth policy holds under 0.75. Long-map words are not slotted; they
+    /// show up under `memory_bytes.keys`.
+    fn occupied(&self) -> usize {
+        self.table.len
+    }
+    fn slot_count(&self) -> usize {
+        self.table.slots()
+    }
+    fn memory(&self) -> MemBreakdown {
+        MemBreakdown {
+            table: self.table.pairs.len() * size_of::<GigaPairSlot>(),
+            keys: self.long.capacity() * (size_of::<Box<[u8]>>() + size_of::<(u32, u32)>() + 1)
+                + self.long.keys().map(|k| k.len()).sum::<usize>(),
+            ids: self.arena.capacity() * size_of::<u32>(),
+        }
+    }
+}
+
+// FlatCache's properties without its second generation.
+//
+// What the twin buffers actually buy FlatCache is the compacting cull: its
+// arenas are append-only, so a dead entry's bytes are unreclaimable and the only
+// way to get space back is to relocate every live entry into fresh buffers. That
+// pass is also what its retention policy rides on. Three changes make it
+// unnecessary:
+//
+// - Eviction by overwrite. Slots go empty -> occupied and never back, so probe
+//   chains survive with no tombstones and no backward shift; a bounded window
+//   keeps a saturated table's miss cost capped instead of unbounded.
+// - Self-contained slots. The packed u128 key already spares the key arena for
+//   <= 15-byte words; inlining short id runs spares the id arena for most of the
+//   rest. Both arenas become a rare path rather than the common one.
+// - Size-classed free lists for that rare path. An evicted entry's run goes back
+//   to its class and the next entry takes it, so the arena is reused in place and
+//   never needs compacting — which is what forced the twin in the first place.
+//
+// Retention is FlatCache's idea made local: a full window evicts its coldest slot
+// and halves the rest (aging), instead of a stop-the-world pass over the table.
+
+const INPLACE_WINDOW: usize = 16;
+const INLINE_IDS: usize = 3;
+/// `count` marker for an entry whose key bytes and/or ids live in an arena.
+const SPILLED: u8 = u8::MAX;
+/// Set in `key` for a > 15-byte word, whose `key` holds a hash rather than the
+/// word itself. Packed short keys carry their length (1..=15) in the top byte, so
+/// the two can never be confused, and neither can be 0 (the empty sentinel).
+const LONG_TAG: u128 = 1 << 127;
+
+#[derive(Clone, Copy, Default)]
+#[repr(C)]
+struct InplaceSlot {
+    key: u128,
+    /// Inline ids when `count <= INLINE_IDS`; otherwise
+    /// `[key_off, ids_off, key_len << 16 | ids_len]` (`key_len == 0` = the key is
+    /// packed in `key` and no bytes are stored).
+    w: [u32; 3],
+    count: u8,
+    freq: u8,
+    _pad: u16,
+}
+
+const _: () = assert!(size_of::<InplaceSlot>() == 32);
+
+/// A corpus reuses the same word shapes, so the run lengths that recur are worth
+/// an exact-fit list each — no rounding waste, and a freed run is taken by the
+/// next word of that shape. Above `EXACT_FIT_MAX` (rare, and unbounded in
+/// principle) runs fall back to power-of-two classes so one pathological length
+/// cannot allocate a free list per byte.
+const EXACT_FIT_MAX: usize = 512;
+
+fn pow2_class(len: usize) -> usize {
+    (usize::BITS - (len - 1).leading_zeros()) as usize
+}
+
+fn free_bucket(len: usize) -> usize {
+    if len <= EXACT_FIT_MAX {
+        len
+    } else {
+        EXACT_FIT_MAX + pow2_class(len)
+    }
+}
+
+fn run_size(len: usize) -> usize {
+    if len <= EXACT_FIT_MAX {
+        len
+    } else {
+        1 << pow2_class(len)
+    }
+}
+
+/// An arena whose freed runs come back for reuse, so it grows to the live set
+/// rather than to everything ever inserted.
+struct Slab<T> {
+    data: Vec<T>,
+    free: Vec<Vec<u32>>,
+    budget: usize,
+}
+
+impl<T: Copy + Default> Slab<T> {
+    fn new(budget: usize) -> Self {
+        Self {
+            data: Vec::new(),
+            free: (0..EXACT_FIT_MAX + usize::BITS as usize + 1)
+                .map(|_| Vec::new())
+                .collect(),
+            budget,
+        }
+    }
+
+    /// Reuse a freed run of the same shape, else extend — the arena only ever
+    /// reaches the high-water mark of what is live at once.
+    fn alloc(&mut self, len: usize) -> Option<u32> {
+        if let Some(off) = self.free[free_bucket(len)].pop() {
+            return Some(off);
+        }
+        let size = run_size(len);
+        if self.data.len() + size > self.budget {
+            return None;
+        }
+        let off = self.data.len() as u32;
+        self.data.resize(self.data.len() + size, T::default());
+        Some(off)
+    }
+
+    fn release(&mut self, off: u32, len: usize) {
+        self.free[free_bucket(len)].push(off);
+    }
+
+    fn put(&mut self, off: u32, src: &[T]) {
+        self.data[off as usize..off as usize + src.len()].copy_from_slice(src);
+    }
+
+    fn get(&self, off: u32, len: usize) -> &[T] {
+        &self.data[off as usize..off as usize + len]
+    }
+
+    fn bytes(&self) -> usize {
+        self.data.capacity() * size_of::<T>()
+            + self.free.iter().map(|f| f.capacity() * 4).sum::<usize>()
+    }
+}
+
+struct FlatInplace {
+    slots: Box<[InplaceSlot]>,
+    kbytes: Slab<u8>,
+    ids: Slab<u32>,
+    mask: usize,
+    count: usize,
+    unpacked: [u32; INLINE_IDS],
+    hasher: RandomState,
+}
+
+impl FlatInplace {
+    fn new(capacity: usize) -> Self {
+        let n = capacity.next_power_of_two().max(INPLACE_WINDOW);
+        Self {
+            slots: vec![InplaceSlot::default(); n].into_boxed_slice(),
+            // Ceilings, not reservations: the arenas only ever allocate what is
+            // live (see `memory`). They are sized so the slot table stays the
+            // binding constraint — a budget tight enough to reject inserts while
+            // slots sit empty is just a capacity limit wearing a disguise, which
+            // is what flat_cache's slots×16 key arena turns into on CJK.
+            kbytes: Slab::new(n * 48),
+            ids: Slab::new(n * 16),
+            mask: n - 1,
+            count: 0,
+            unpacked: [0; INLINE_IDS],
+            hasher: fixed_hasher(),
+        }
+    }
+
+    /// Short words key on their own bytes (exact, no verification needed); long
+    /// words key on a tagged hash and are confirmed against the arena.
+    fn key_of(&self, p: &[u8]) -> (u128, u64) {
+        let packed = pack_key(p);
+        if packed != 0 {
+            (packed, crc_key_hash(packed))
+        } else {
+            let h = self.hasher.hash_one(p);
+            ((h as u128) | LONG_TAG, h)
+        }
+    }
+
+    fn confirmed(&self, s: &InplaceSlot, p: &[u8]) -> bool {
+        if s.key & LONG_TAG == 0 {
+            return true; // the packed key IS the word
+        }
+        let key_len = (s.w[2] >> 16) as usize;
+        key_len == p.len() && self.kbytes.get(s.w[0], key_len) == p
+    }
+
+    /// Return an overwritten entry's arena runs to their free lists.
+    fn reclaim(&mut self, i: usize) {
+        let s = self.slots[i];
+        if s.count != SPILLED {
+            return;
+        }
+        let (key_len, ids_len) = ((s.w[2] >> 16) as usize, (s.w[2] & 0xFFFF) as usize);
+        if key_len > 0 {
+            self.kbytes.release(s.w[0], key_len);
+        }
+        if ids_len > 0 {
+            self.ids.release(s.w[1], ids_len);
+        }
+    }
+}
+
+impl CacheVariant for FlatInplace {
+    fn get(&mut self, word: &str) -> Option<&[u32]> {
+        let p = word.as_bytes();
+        let (key, h) = self.key_of(p);
+        let home = h as usize;
+        for j in 0..INPLACE_WINDOW {
+            let i = (home + j) & self.mask;
+            let s = self.slots[i];
+            if s.key == 0 {
+                return None;
+            }
+            if s.key == key && self.confirmed(&s, p) {
+                self.slots[i].freq = s.freq.saturating_add(1);
+                if s.count == SPILLED {
+                    return Some(self.ids.get(s.w[1], (s.w[2] & 0xFFFF) as usize));
+                }
+                self.unpacked = s.w;
+                return Some(&self.unpacked[..s.count as usize]);
+            }
+        }
+        None
+    }
+
+    fn insert(&mut self, word: &str, ids: &[u32]) -> InsertOutcome {
+        let p = word.as_bytes();
+        if p.len() > u16::MAX as usize || ids.len() > u16::MAX as usize {
+            return InsertOutcome::RejectedLen;
+        }
+        let (key, h) = self.key_of(p);
+        let long = key & LONG_TAG != 0;
+
+        // Reserve arena space before touching the table, so a full arena costs
+        // nothing but the attempt.
+        let (w, count) = if long || ids.len() > INLINE_IDS {
+            let key_off = if long {
+                match self.kbytes.alloc(p.len()) {
+                    Some(off) => off,
+                    None => return InsertOutcome::RejectedFull,
+                }
+            } else {
+                0
+            };
+            let ids_off = if ids.is_empty() {
+                0
+            } else {
+                match self.ids.alloc(ids.len()) {
+                    Some(off) => off,
+                    None => {
+                        if long {
+                            self.kbytes.release(key_off, p.len());
+                        }
+                        return InsertOutcome::RejectedFull;
+                    }
+                }
+            };
+            if long {
+                self.kbytes.put(key_off, p);
+            }
+            self.ids.put(ids_off, ids);
+            let key_len = if long { p.len() } else { 0 };
+            (
+                [
+                    key_off,
+                    ids_off,
+                    ((key_len as u32) << 16) | ids.len() as u32,
+                ],
+                SPILLED,
+            )
+        } else {
+            let mut w = [0u32; INLINE_IDS];
+            w[..ids.len()].copy_from_slice(ids);
+            (w, ids.len() as u8)
+        };
+
+        let home = h as usize;
+        let mut coldest = (u8::MAX, home & self.mask);
+        let mut empty = None;
+        for j in 0..INPLACE_WINDOW {
+            let i = (home + j) & self.mask;
+            if self.slots[i].key == 0 {
+                empty = Some(i);
+                break;
+            }
+            if self.slots[i].freq < coldest.0 {
+                coldest = (self.slots[i].freq, i);
+            }
+        }
+        let (slot, outcome) = match empty {
+            Some(i) => {
+                self.count += 1;
+                (i, InsertOutcome::Stored)
+            }
+            None => {
+                // Age the whole window on the way past, so a run of once-hot
+                // entries cannot hold it forever — each must re-earn its place.
+                for j in 0..INPLACE_WINDOW {
+                    let i = (home + j) & self.mask;
+                    self.slots[i].freq >>= 1;
+                }
+                self.reclaim(coldest.1);
+                (coldest.1, InsertOutcome::Evicted)
+            }
+        };
+        self.slots[slot] = InplaceSlot {
+            key,
+            w,
+            count,
+            freq: 0, // on probation until reused, as in flat_cache
+            _pad: 0,
+        };
+        outcome
+    }
+
+    // Open addressing: displacement isn't comparable to bucket collisions, and
+    // full-key entries carry no tag. Report null like flat_cache.
+    fn bucket_load(&self, _: &str) -> Option<usize> {
+        None
+    }
+    fn probe_tags(&self, _: &str) -> Option<u32> {
+        None
+    }
+    fn occupied(&self) -> usize {
+        self.count
+    }
+    fn slot_count(&self) -> usize {
+        self.slots.len()
+    }
+    /// One generation of everything — the arenas hold the live set, not the
+    /// high-water mark of every insert.
+    fn memory(&self) -> MemBreakdown {
+        MemBreakdown {
+            table: self.slots.len() * size_of::<InplaceSlot>(),
+            keys: self.kbytes.bytes(),
+            ids: self.ids.bytes(),
+        }
+    }
+}
+
+// A hashmap that holds no data, only positions: the word's hash maps to an
+// index into a `Vec<Slot>` that owns the key bytes and the ids. Its key is
+// already a hash, so it is passed through unhashed and the table stays 12 bytes
+// an entry whatever the words look like.
+//
+// Nothing is conflict-mapped. A word is displaced only when the Vec is full
+// (round-robin over the slots — the O(1) reading of "evict an arbitrary entry",
+// and it needs the hash kept in the slot to find the map entry to retire), or
+// when two words genuinely share a 64-bit hash, which takes ~2^32 distinct words
+// to become likely. So it misses on capacity and on nothing else.
+//
+// What it pays for that is indirection: a hit walks map -> slot -> key -> ids,
+// four dependent loads where a self-contained slot needs one. Slots keep their
+// `Vec` allocations across occupants, so recycling one copies bytes but does not
+// allocate.
+
+/// Hasher for keys that are already hashes. ahash spreads bits well enough for
+/// both halves of hashbrown's lookup (low bits index, top 7 bits tag).
+#[derive(Default)]
+struct PassThrough(u64);
+
+impl std::hash::Hasher for PassThrough {
+    fn write(&mut self, _: &[u8]) {
+        unreachable!("hash_index keys are u64")
+    }
+    fn write_u64(&mut self, hash: u64) {
+        self.0 = hash;
+    }
+    fn finish(&self) -> u64 {
+        self.0
+    }
+}
+
+/// What a slot holds. The two layouts below differ in nothing else, so the
+/// benchmark reads as a straight comparison of how a slot stores its word.
+trait Payload: Default {
+    fn fill(&mut self, key: &[u8], ids: &[u32]);
+    fn matches(&self, key: &[u8]) -> bool;
+    fn ids(&self) -> &[u32];
+    /// Bytes held, split key / ids, for the memory breakdown.
+    fn bytes(&self) -> (usize, usize);
+}
+
+/// The obvious layout: one buffer each. Two allocations the first time a slot is
+/// filled, and a hit dereferences both.
+#[derive(Default)]
+struct SplitPayload {
+    key: Vec<u8>,
+    ids: Vec<u32>,
+}
+
+impl Payload for SplitPayload {
+    fn fill(&mut self, key: &[u8], ids: &[u32]) {
+        self.key.clear();
+        self.key.extend_from_slice(key);
+        self.ids.clear();
+        self.ids.extend_from_slice(ids);
+    }
+    fn matches(&self, key: &[u8]) -> bool {
+        self.key == key
+    }
+    fn ids(&self) -> &[u32] {
+        &self.ids
+    }
+    fn bytes(&self) -> (usize, usize) {
+        (self.key.capacity(), self.ids.capacity() * size_of::<u32>())
+    }
+}
+
+/// Both halves in one allocation: ids first, then the key packed
+/// little-endian into the words after them. Backing it with `u32` (rather than
+/// putting the key first in a `Vec<u8>`) keeps the ids aligned, so a hit can
+/// still hand back a real `&[u32]` — and for a short word the key and the ids
+/// share a cache line.
+#[derive(Default)]
+struct PackedPayload {
+    buf: Vec<u32>,
+    ids_len: u16,
+    key_len: u16,
+}
+
+impl PackedPayload {
+    fn key_words(&self) -> &[u32] {
+        &self.buf[self.ids_len as usize..]
+    }
+
+    /// The packed key seen as bytes, so the compare is one `bcmp` rather than a
+    /// word-at-a-time loop. Sound: `u32` is plain data, `u8` has weaker
+    /// alignment, and the view borrows the buffer it came from.
+    fn key_bytes(&self) -> &[u8] {
+        let words = self.key_words();
+        unsafe { std::slice::from_raw_parts(words.as_ptr().cast::<u8>(), words.len() * 4) }
+    }
+}
+
+/// A whole 4-byte chunk, as a fixed-width load — `copy_from_slice` on a
+/// variable-length chunk would compile to a memcpy call instead.
+fn key_word(chunk: &[u8]) -> u32 {
+    u32::from_le_bytes(chunk.try_into().unwrap())
+}
+
+/// The key's trailing bytes, zero-padded. Both sides pad the same way, so a
+/// word-at-a-time compare is exact once the lengths agree.
+fn tail_word(tail: &[u8]) -> u32 {
+    let mut b = [0u8; 4];
+    b[..tail.len()].copy_from_slice(tail);
+    u32::from_le_bytes(b)
+}
+
+/// Key bytes split at the last whole word.
+fn split_key(key: &[u8]) -> (&[u8], &[u8]) {
+    key.split_at(key.len() & !3)
+}
+
+impl Payload for PackedPayload {
+    fn fill(&mut self, key: &[u8], ids: &[u32]) {
+        self.ids_len = ids.len() as u16;
+        self.key_len = key.len() as u16;
+        self.buf.clear();
+        // One growth for the whole entry: reserving after the ids are in would
+        // let the key words realloc a buffer just sized for the ids.
+        self.buf.reserve(ids.len() + key.len().div_ceil(4));
+        self.buf.extend_from_slice(ids);
+        let (whole, tail) = split_key(key);
+        self.buf.extend(whole.chunks_exact(4).map(key_word));
+        if !tail.is_empty() {
+            self.buf.push(tail_word(tail));
+        }
+    }
+    fn matches(&self, key: &[u8]) -> bool {
+        self.key_len as usize == key.len() && &self.key_bytes()[..key.len()] == key
+    }
+    fn ids(&self) -> &[u32] {
+        &self.buf[..self.ids_len as usize]
+    }
+    fn bytes(&self) -> (usize, usize) {
+        let key = size_of_val(self.key_words());
+        (key, self.buf.capacity() * size_of::<u32>() - key)
+    }
+}
+
+#[derive(Default)]
+struct IndexSlot<P> {
+    hash: u64,
+    payload: P,
+}
+
+struct HashIndex<P> {
+    hasher: RandomState,
+    index: HashMap<u64, u32, BuildHasherDefault<PassThrough>>,
+    slots: Vec<IndexSlot<P>>,
+    capacity: usize,
+    next_victim: usize,
+    max_length: usize,
+}
+
+impl<P: Payload> HashIndex<P> {
+    fn new(capacity: usize, max_length: usize) -> Self {
+        // Rounded like the slot tables so every variant holds the same number of
+        // entries at a given capacity.
+        let n = capacity.next_power_of_two();
+        Self {
+            hasher: fixed_hasher(),
+            index: HashMap::with_capacity_and_hasher(n, BuildHasherDefault::default()),
+            slots: Vec::with_capacity(n),
+            capacity: n,
+            next_victim: 0,
+            max_length,
+        }
+    }
+
+    fn fill(&mut self, at: usize, hash: u64, key: &[u8], ids: &[u32]) {
+        let slot = &mut self.slots[at];
+        slot.hash = hash;
+        slot.payload.fill(key, ids);
+    }
+}
+
+impl<P: Payload> CacheVariant for HashIndex<P> {
+    fn get(&mut self, word: &str) -> Option<&[u32]> {
+        let key = word.as_bytes();
+        if key.len() > self.max_length {
+            return None;
+        }
+        let hash = self.hasher.hash_one(key);
+        let slot = &self.slots[*self.index.get(&hash)? as usize];
+        slot.payload.matches(key).then(|| slot.payload.ids())
+    }
+
+    fn insert(&mut self, word: &str, ids: &[u32]) -> InsertOutcome {
+        let key = word.as_bytes();
+        if key.len() > self.max_length {
+            return InsertOutcome::RejectedLen;
+        }
+        let hash = self.hasher.hash_one(key);
+        // Hash already taken by another word: it owns the map entry, so the new
+        // word takes over its slot rather than getting one of its own.
+        if let Some(&at) = self.index.get(&hash) {
+            self.fill(at as usize, hash, key, ids);
+            return InsertOutcome::Evicted;
+        }
+        let (at, outcome) = if self.slots.len() < self.capacity {
+            self.slots.push(IndexSlot::<P>::default());
+            (self.slots.len() - 1, InsertOutcome::Stored)
+        } else {
+            let at = self.next_victim;
+            self.next_victim = (at + 1) % self.capacity;
+            self.index.remove(&self.slots[at].hash);
+            (at, InsertOutcome::Evicted)
+        };
+        self.fill(at, hash, key, ids);
+        self.index.insert(hash, at as u32);
+        outcome
+    }
+
+    // One entry per hash, so there is no bucket to be loaded and no tag to
+    // falsely match. Report null like the other hashmap variant.
+    fn bucket_load(&self, _: &str) -> Option<usize> {
+        None
+    }
+    fn probe_tags(&self, _: &str) -> Option<u32> {
+        None
+    }
+    fn occupied(&self) -> usize {
+        self.slots.len()
+    }
+    fn slot_count(&self) -> usize {
+        self.capacity
+    }
+    /// Like naive_hashmap, this counts what the per-slot allocations hold, not
+    /// the allocator's per-allocation overhead.
+    fn memory(&self) -> MemBreakdown {
+        let (keys, ids) = self
+            .slots
+            .iter()
+            .map(|s| s.payload.bytes())
+            .fold((0, 0), |(k, i), (dk, di)| (k + dk, i + di));
+        MemBreakdown {
+            table: self.slots.capacity() * size_of::<IndexSlot<P>>()
+                + self.index.capacity() * (size_of::<(u64, u32)>() + 1),
+            keys,
+            ids,
+        }
+    }
+}
+
 // ── workload ────────────────────────────────────────────────────────────────
 
 /// The word stream a fixture produces for a given tokenizer: per chunk, the
@@ -1275,6 +2149,10 @@ fn build_variant(name: &str, capacity: usize, max_length: usize) -> Box<dyn Cach
         "flat_cache" => Box::new(FlatCacheReplica::new(capacity)),
         "bucket_cull" => Box::new(BucketCull::new(capacity, max_length)),
         "hash64_evict" => Box::new(Hash64Evict::new(capacity, max_length)),
+        "giga_pair" => Box::new(GigaPair::new(capacity)),
+        "flat_inplace" => Box::new(FlatInplace::new(capacity)),
+        "hash_index" => Box::new(HashIndex::<SplitPayload>::new(capacity, max_length)),
+        "hash_packed" => Box::new(HashIndex::<PackedPayload>::new(capacity, max_length)),
         other => unreachable!("{other}"),
     }
 }
@@ -1287,7 +2165,18 @@ const VARIANTS: &[&str] = &[
     "flat_cache",
     "bucket_cull",
     "hash64_evict",
+    "giga_pair",
+    "flat_inplace",
+    "hash_index",
+    "hash_packed",
 ];
+
+/// Variants with no key-length cap: their own layout decides what is cacheable
+/// (flat_cache caches everything, giga_pair routes long words to a second
+/// tier). The sweep runs them once per capacity and reports `max_length: null`.
+fn uses_max_length(variant: &str) -> bool {
+    !matches!(variant, "flat_cache" | "giga_pair" | "flat_inplace")
+}
 
 #[allow(clippy::too_many_arguments)]
 fn bench_fixture(
@@ -1402,8 +2291,7 @@ fn bench_fixture(
     for &capacity in capacities {
         for (mi, &max_length) in max_lengths.iter().enumerate() {
             for vname in variants {
-                // flat_cache has no key-length cap: one run per capacity.
-                if *vname == "flat_cache" && mi != 0 {
+                if !uses_max_length(vname) && mi != 0 {
                     continue;
                 }
                 let mut cache = build_variant(vname, capacity, max_length);
@@ -1454,8 +2342,9 @@ fn bench_fixture(
                 results.push(json!({
                     "variant": vname,
                     "capacity": capacity,
-                    "max_length": if *vname == "flat_cache" { Value::Null } else { max_length.into() },
+                    "max_length": uses_max_length(vname).then_some(max_length),
                     "culls": cache.culls(),
+                    "grows": cache.grows(),
                     "ids_match": ids_match,
                     "warm_mb_per_s": mb_s,
                     "speedup_vs_none": mb_s / baseline_mb_s,
@@ -1707,6 +2596,8 @@ fn main() {
                 "variant hashers use fixed seeds for reproducibility; the shipped cache seeds randomly per process",
                 "naive_hashmap gets the same max_length guard as the fixed tables here; its historical v1 had none",
                 "latency percentiles are raw per-op wall clock — read them against meta.timer (an op below resolution reads as 0)",
+                "giga_pair grows instead of evicting: its `capacity` is only a starting size, so compare it on occupancy.slots and memory_bytes, not on the capacity column",
+                "giga_pair omits three parts of the upstream design this harness cannot replay: the two-stage prefetch that hides its DRAM latency (the replay loop has no lookahead), vocab pre-seeding (upstream fills every 1..=15-byte vocab entry up front, so whole-word pretokens hit on first sight — here they miss once), and huge-page-backed slots. Its hit path also stores inline ids to a scratch array to return a slice, and its insert re-walks the probe chain the get already walked",
             ],
         },
         "models": models,
@@ -1718,4 +2609,187 @@ fn main() {
         eprintln!("wrote {out}");
     }
     println!("{rendered}");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Growth rehashes every entry into a fresh table, and an entry dropped
+    /// there is invisible to the `ids_match` gate: the word simply re-merges
+    /// and still yields correct ids, showing up only as a quieter hit rate. So
+    /// drive several doublings and demand every word back, across all three
+    /// value layouts — inline (<= 4 ids), spilled (wider, or a first id past 24
+    /// bits), and the long-word map.
+    #[test]
+    fn giga_pair_keeps_every_entry_across_growth() {
+        let ids_of = |i: usize| -> Vec<u32> { (0..=(i % 7)).map(|k| (i * 8 + k) as u32).collect() };
+        let mut words: Vec<String> = (0..500).map(|i| format!("word{i}")).collect();
+        words.extend((0..50).map(|i| format!("a-word-well-over-fifteen-bytes-{i}")));
+        // First id past 24 bits: inline packing declines it, so it spills.
+        let wide = ("wide".to_string(), vec![1 << 25, 7]);
+
+        let mut cache = GigaPair::new(8);
+        for (i, w) in words.iter().enumerate() {
+            cache.insert(w, &ids_of(i));
+        }
+        cache.insert(&wide.0, &wide.1);
+
+        assert!(cache.table.grows >= 4, "grows = {}", cache.table.grows);
+        for (i, w) in words.iter().enumerate() {
+            assert_eq!(cache.get(w).map(<[u32]>::to_vec), Some(ids_of(i)), "{w}");
+        }
+        assert_eq!(cache.get(&wide.0).map(<[u32]>::to_vec), Some(wide.1));
+        assert_eq!(cache.get("never-inserted"), None);
+    }
+
+    /// Reusing an evicted entry's arena run is where an in-place design can go
+    /// wrong: hand one run to two live entries and a hit starts returning another
+    /// word's ids — silently, and byte-exactly wrong. Churn a table far too small
+    /// for the input, across all four slot shapes (short/long key × inline/spilled
+    /// ids), and demand the invariant that actually matters: an entry may be
+    /// evicted, but a hit is never wrong.
+    #[test]
+    fn flat_inplace_never_returns_another_entrys_ids() {
+        let mut cache = FlatInplace::new(64);
+        let mut want: Vec<(String, Vec<u32>)> = Vec::new();
+        for i in 0..2000usize {
+            // Cycle key length across the 15-byte packing boundary and id-run
+            // length across the inline/spill boundary.
+            let word = match i % 4 {
+                0 => format!("w{i}"),
+                1 => format!("a-long-word-past-fifteen-bytes-{i}"),
+                2 => format!("k{i}xxxxxxxxxxxx"),
+                _ => format!("{}-{i}", "z".repeat(i % 40)),
+            };
+            let ids: Vec<u32> = (0..=(i % 9)).map(|k| (i * 16 + k) as u32).collect();
+            cache.insert(&word, &ids);
+            want.push((word, ids));
+            if let Some((w, expect)) = want.get(i / 3) {
+                assert_eq!(
+                    cache
+                        .get(w)
+                        .map(<[u32]>::to_vec)
+                        .unwrap_or_else(|| expect.clone()),
+                    *expect,
+                    "{w}"
+                );
+            }
+        }
+        let mut live = 0;
+        for (w, expect) in &want {
+            if let Some(got) = cache.get(w) {
+                assert_eq!(got, &expect[..], "{w}");
+                live += 1;
+            }
+        }
+        assert!(live > 0, "everything was evicted — the test proves nothing");
+    }
+
+    /// Freed runs must actually come back: without reuse the arena would grow
+    /// with every insert and the design would just be leaking instead of culling.
+    #[test]
+    fn flat_inplace_arena_holds_the_live_set_not_every_insert() {
+        let mut cache = FlatInplace::new(64);
+        for i in 0..5000usize {
+            let word = format!("a-long-word-past-fifteen-bytes-{i}");
+            cache.insert(&word, &[i as u32; 8]);
+        }
+        let mem = cache.memory();
+        // 64 slots can hold at most 64 keys of ~34 B and 64 id-runs of 8 u32s.
+        assert!(mem.keys < 8 * 1024, "key arena grew to {} B", mem.keys);
+        assert!(mem.ids < 8 * 1024, "id arena grew to {} B", mem.ids);
+    }
+
+    /// Recycling a slot must retire the map entry that pointed at it too, or the
+    /// index outgrows the data it indexes and a stale hash ends up naming a slot
+    /// another word has taken over.
+    fn recycles_slots_and_map_entries_together<P: Payload>() {
+        let mut cache = HashIndex::<P>::new(64, 256);
+        for i in 0..5000usize {
+            cache.insert(&format!("word{i}"), &[i as u32]);
+        }
+        assert_eq!(cache.slots.len(), 64);
+        assert_eq!(cache.index.len(), 64);
+        // Round-robin eviction takes the oldest slot, so the last 64 words in.
+        for i in 4936..5000usize {
+            assert_eq!(
+                cache.get(&format!("word{i}")).map(<[u32]>::to_vec),
+                Some(vec![i as u32]),
+                "word{i}"
+            );
+        }
+    }
+
+    /// A slot outlives its occupants, so the danger is a hit reading what the
+    /// previous one left behind — the more so for the packed layout, where a
+    /// short key leaves the tail of a longer predecessor's buffer in place.
+    /// Churn a table far too small for the input, with keys that share prefixes
+    /// and straddle the 4-byte packing boundary, and demand that every word
+    /// still in it answers with its own ids.
+    fn never_returns_another_words_ids<P: Payload>() {
+        let mut cache = HashIndex::<P>::new(64, 256);
+        let mut want: Vec<(String, Vec<u32>)> = Vec::new();
+        for i in 0..2000usize {
+            let word = format!("{}{i}", "ab".repeat(i % 20));
+            let ids: Vec<u32> = (0..=(i % 9)).map(|k| (i * 16 + k) as u32).collect();
+            cache.insert(&word, &ids);
+            want.push((word, ids));
+        }
+        let mut live = 0;
+        for (w, expect) in &want {
+            if let Some(got) = cache.get(w) {
+                assert_eq!(got, &expect[..], "{w}");
+                live += 1;
+            }
+        }
+        assert!(live > 0, "everything was evicted — the test proves nothing");
+    }
+
+    #[test]
+    fn hash_index_recycles_slots_and_map_entries_together() {
+        recycles_slots_and_map_entries_together::<SplitPayload>();
+    }
+
+    #[test]
+    fn hash_packed_recycles_slots_and_map_entries_together() {
+        recycles_slots_and_map_entries_together::<PackedPayload>();
+    }
+
+    #[test]
+    fn hash_index_never_returns_another_words_ids() {
+        never_returns_another_words_ids::<SplitPayload>();
+    }
+
+    #[test]
+    fn hash_packed_never_returns_another_words_ids() {
+        never_returns_another_words_ids::<PackedPayload>();
+    }
+
+    /// The pair table's defining property: a probe step reads one cache line.
+    /// That needs 64-byte alignment, which the entry type's own 16 does not
+    /// give the array.
+    #[test]
+    fn giga_pairs_are_cache_line_aligned() {
+        let table = GigaTable::new(64);
+        assert_eq!(align_of::<GigaPairSlot>(), 64);
+        assert_eq!(table.pairs.as_ptr() as usize % 64, 0);
+    }
+
+    /// Load stays under the 3/4 threshold that triggers the doubling, and every
+    /// short word occupies exactly one slot.
+    #[test]
+    fn giga_pair_holds_its_load_factor() {
+        let mut cache = GigaPair::new(8);
+        for i in 0..1000 {
+            cache.insert(&format!("word{i}"), &[i as u32]);
+        }
+        assert_eq!(cache.occupied(), 1000);
+        assert!(
+            cache.occupied() * 4 <= cache.slot_count() * 3,
+            "{} / {}",
+            cache.occupied(),
+            cache.slot_count()
+        );
+    }
 }
