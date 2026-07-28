@@ -250,6 +250,8 @@
 
 use ahash::RandomState;
 
+use crate::utils::packed_key::{LONG_TAG, pack};
+
 /// Longest word the cache will store, in bytes.
 ///
 /// Long words are rare and rarely repeat, so storing them buys little, and the
@@ -272,48 +274,12 @@ const INLINE_IDS: usize = 3;
 /// `len` marker for an entry whose ids, and possibly whose bytes, are in the
 /// arenas.
 const SPILLED: u8 = u8::MAX;
-/// Set in `key` when it holds the hash of a long word instead of the word
-/// itself. Packed keys carry their length (1..=15) in the top byte, so a hashed
-/// key can never be mistaken for a packed one, and neither can be 0 — the
-/// empty-slot marker.
-const LONG_TAG: u128 = 1 << 127;
 /// A `freqs` entry for a slot nothing has been stored in yet. Live entries are at
 /// least [`NEWBORN`], so the one array answers both "is this slot free?" and "how
 /// much is this entry being used?" — see [`WordCache::pick_slot`].
 const FREE: u8 = 0;
 /// Where a new entry's frequency starts: on probation, but not free.
 const NEWBORN: u8 = 1;
-
-/// A word of 1..=15 bytes packed into a `u128`: bytes in the low lanes, length
-/// in the top byte. Including the length keeps `"a"` and `"a\0"` apart, and the
-/// whole key comparison becomes one register-wide equality instead of a
-/// `memcmp` against bytes somewhere else in memory.
-///
-/// `head` is 16 bytes starting where the word does, which callers that know what
-/// surrounds the word can hand over — see `Split::head`. Taking the whole window
-/// and masking the surplus off costs one load, where copying just the word's own
-/// bytes costs a call into `memcpy`: its length is only known at run time, and
-/// LLVM can fold a copy into a load only when the length is a constant. That one
-/// call was about a third of what building a key cost.
-fn pack_word(word: &[u8], head: Option<&[u8; 16]>) -> Option<u128> {
-    let len = word.len();
-    if len == 0 || len > 15 {
-        return None;
-    }
-    debug_assert!(
-        head.is_none_or(|head| head[..len] == *word),
-        "head has to start where the word does"
-    );
-    let lanes = match head {
-        Some(head) => u128::from_le_bytes(*head),
-        None => {
-            let mut lanes = [0u8; 16];
-            lanes[..len].copy_from_slice(word);
-            u128::from_le_bytes(lanes)
-        }
-    };
-    Some((lanes & (u128::MAX >> (8 * (16 - len)))) | ((len as u128) << 120))
-}
 
 /// One entry, in the three shapes the module docs draw out. In short:
 ///
@@ -507,7 +473,7 @@ impl WordCache {
     /// choose a read width; a `u128` is one fixed-width fold with nothing to decide.
     /// The key already carries the length, so nothing is lost.
     fn slot_key(&self, word: &[u8], head: Option<&[u8; 16]>) -> (u128, u64) {
-        match pack_word(word, head) {
+        match pack(word, head) {
             Some(packed) => (packed, self.hasher.hash_one(packed)),
             None => {
                 let hash = self.hasher.hash_one(word);
@@ -668,37 +634,23 @@ mod tests {
         assert_eq!(cache.get(b"hell", None), None);
     }
 
-    /// The three properties the whole key encoding rests on: a packed key is
-    /// unique per word, is never `0` (the empty-slot marker), and never looks
-    /// like a hashed key.
+    /// A word stored without a window has to be found with one, and vice versa —
+    /// otherwise a hit in a real encode would depend on where in its chunk the word
+    /// happened to sit. The key encoding is tested in [`crate::utils::packed_key`];
+    /// this is the same property seen through the table.
     #[test]
-    fn packed_keys_are_unique_and_tagged() {
-        assert_ne!(pack_word(b"a", None), pack_word(b"a\0", None));
-        assert_ne!(pack_word(&[0u8; 15], None), Some(0));
-        assert_eq!(pack_word(&[0u8; 15], None).unwrap() & LONG_TAG, 0);
-        assert_eq!(pack_word(b"", None), None);
-        assert_eq!(pack_word(&[b'x'; 16], None), None);
-    }
-
-    /// The window is a shortcut for reading the word, not part of what is stored:
-    /// the bytes it carries past the word belong to the neighbours and have to be
-    /// masked away. If any of them survived into the key, a word looked up with a
-    /// window would miss the entry stored without one — and every hit in a real
-    /// encode would depend on where in its chunk the word happened to sit.
-    #[test]
-    fn the_window_past_the_word_is_masked_off() {
+    fn a_window_does_not_change_what_the_cache_finds() {
         let chunk = b"the quick brown fox jumps over the lazy dog";
         let mut cache = WordCache::new(1 << 8);
         for (start, len) in [(0usize, 3usize), (4, 5), (10, 5), (16, 3), (26, 4)] {
             let word = &chunk[start..start + len];
             let head: &[u8; 16] = chunk[start..start + 16].try_into().unwrap();
+            cache.insert(word, None, [start as u32].into_iter());
             assert_eq!(
-                cache.slot_key(word, None),
-                cache.slot_key(word, Some(head)),
+                cache.get(word, Some(head)),
+                Some(&[start as u32][..]),
                 "{word:?}"
             );
-            cache.insert(word, None, [start as u32].into_iter());
-            assert_eq!(cache.get(word, Some(head)), Some(&[start as u32][..]));
         }
     }
 

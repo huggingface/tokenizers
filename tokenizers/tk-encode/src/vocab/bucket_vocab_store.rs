@@ -4,6 +4,8 @@ use ahash::RandomState;
 use ptr_hash::{FastPtrHash, PtrHashParams, hash::NoHash};
 use std::fmt;
 
+use crate::utils::packed_key::{LONG_TAG, pack};
+
 type Mphf = FastPtrHash<NoHash, u64>;
 
 // Fixed seeds so a given vocab always hashes identically (the hasher is also stored on the struct,
@@ -15,12 +17,30 @@ const SEEDS: [u64; 4] = [
     0x082E_FA98_EC4E_6C89,
 ];
 
-#[derive(Clone, Copy, Debug)]
+/// One slot. `key` is the token itself when it fits in 15 bytes, otherwise its hash
+/// with `LONG_TAG` set — see [`crate::utils::packed_key`].
+///
+/// Carrying the token here rather than only its coordinates is what makes a lookup
+/// one memory access instead of two: confirming a hit is a register compare, so
+/// `start`/`len` and the `bytes` slab are only touched for a token too long to pack.
+/// That costs 32 bytes a slot against 12 (`key`'s alignment rounds 28 up), which on
+/// llama-3's 128k tokens is 4.1 MB of entries against 1.5 MB. Measured on real
+/// vocabularies and real pre-tokenized words it halves `get_bytes` on English and
+/// code — `examples/vocab_entry_bench.rs` runs both layouts in one binary.
+///
+/// `len == 0` still marks a slot the build never wrote, which is what the
+/// enumeration paths filter on.
+#[derive(Clone, Copy, Debug, Default)]
+#[repr(C)]
 struct Entry {
+    key: u128,
+    id: u32,
     start: u32,
     len: u16,
-    id: u32,
+    _pad: u16,
 }
+
+const _: () = assert!(std::mem::size_of::<Entry>() == 32);
 
 /// The BucketVocabStore optimizes for space and speed. We don't use a HashMap to prevent duplicating the
 /// keys. Instead, we just use an `id_to_slot` and `entries` table. When you query bytes, you hash
@@ -87,16 +107,36 @@ impl Default for BucketVocabStore {
     }
 }
 
+/// What a slot stores in its `key`, and the hash that places it.
+///
+/// A free function rather than a method because [`BucketVocabStore::build`] needs it
+/// before there is a store, and both must derive the key the same way: the MPHF is
+/// built from these hashes, so two derivations means every lookup misses.
+#[inline]
+fn slot_key(hasher: &RandomState, token: &[u8], head: Option<&[u8; 16]>) -> (u128, u64) {
+    match pack(token, head) {
+        // The key is the token, so it is also the whole hash input — one fixed-width
+        // fold, where hashing the slice would mix the length in and then branch on it.
+        Some(packed) => (packed, hasher.hash_one(packed)),
+        None => {
+            let hash = hasher.hash_one(token);
+            ((hash as u128) | LONG_TAG, hash)
+        }
+    }
+}
+
 impl BucketVocabStore {
     pub fn build(tokens: Vec<(Vec<u8>, u32)>) -> Self {
         let n = tokens.len();
 
         let hasher = RandomState::with_seeds(SEEDS[0], SEEDS[1], SEEDS[2], SEEDS[3]);
 
-        // 1. Pre-hash token bytes -> u64 keys using near perfect hash func
+        // 1. Pre-hash tokens -> u64 keys using near perfect hash func. Goes through
+        //    `slot_key` because a query has to land on the same key, and the MPHF is
+        //    built from these: derive them two different ways and every lookup misses.
         let keys: Vec<u64> = tokens
             .iter()
-            .map(|(s, _)| hasher.hash_one(s.as_slice()))
+            .map(|(s, _)| slot_key(&hasher, s, None).1)
             .collect();
 
         // 2. A perfect hash needs distinct keys. Collisions are astronomically unlikely
@@ -131,14 +171,7 @@ impl BucketVocabStore {
         let total: usize = tokens.iter().map(|(s, _)| s.len()).sum();
         let max_id = tokens.iter().map(|(_, id)| *id).max().unwrap();
         let mut bytes = Vec::with_capacity(total);
-        let mut entries = vec![
-            Entry {
-                start: 0,
-                len: 0,
-                id: 0
-            };
-            n_slots
-        ];
+        let mut entries = vec![Entry::default(); n_slots];
         let mut id_to_slot = vec![u32::MAX; max_id as usize + 1];
         let mut longest_token_len = 0;
         for (s, id) in &tokens {
@@ -146,11 +179,14 @@ impl BucketVocabStore {
                 s.len() <= u16::MAX as usize,
                 "token longer than 65535 bytes"
             );
-            let slot = mphf.index(&hasher.hash_one(s.as_slice()));
+            let (key, hash) = slot_key(&hasher, s, None);
+            let slot = mphf.index(&hash);
             entries[slot] = Entry {
+                key,
+                id: *id,
                 start: bytes.len() as u32,
                 len: s.len() as u16,
-                id: *id,
+                _pad: 0,
             };
             id_to_slot[*id as usize] = slot as u32;
             bytes.extend_from_slice(s);
@@ -186,30 +222,36 @@ impl BucketVocabStore {
     /// corresponding to the key `q`. Since `mphf` always return a slot, we check
     /// whether the token indexed by that slot actually match the query. We don't
     /// care about collisions on query because of this!
+    ///
+    /// `head` is 16 readable bytes starting where `q` does, when the caller has them
+    /// — a pre-tokenized word has the rest of its chunk behind it, so `Split::head`
+    /// supplies one. `None` is always correct and returns the same id; it just packs
+    /// the query with a copy whose length is known only at run time, which on real
+    /// vocabularies is the difference between halving this function's cost and
+    /// shaving a tenth off it.
     #[inline]
-    pub fn get_bytes(&self, q: &[u8]) -> Option<u32> {
-        if self.entries.is_empty() {
+    pub fn get_bytes(&self, q: &[u8], head: Option<&[u8; 16]>) -> Option<u32> {
+        if self.entries.is_empty() || q.len() > self.longest_token_len {
             return None;
         }
-        if q.len() > self.longest_token_len {
-            return None
+        let (key, hash) = slot_key(&self.hasher, q, head);
+        let e = self.entries[self.mphf.index(&hash)];
+        if e.key != key {
+            return None;
         }
-        let slot = self.mphf.index(&self.hasher.hash_one(q));
-
-        let e = self.entries[slot];
+        // A packed key *is* the token, so an equal key is an equal token and there is
+        // nothing left to check. A tagged one is only a hash, and two long tokens can
+        // hash alike, so that case still confirms against the bytes.
+        if key & LONG_TAG == 0 {
+            return Some(e.id);
+        }
         let (start, len) = (e.start as usize, e.len as usize);
-        // Byte equality: confirms `q` really is the token at this slot (perfect hashing only
-        // guarantees a valid slot for in-vocab keys; this rejects collisions and Out Of Vocab queries).
-        if len == q.len() && self.bytes[start..start + len] == *q {
-            Some(e.id)
-        } else {
-            None
-        }
+        (len == q.len() && self.bytes[start..start + len] == *q).then_some(e.id)
     }
 
     #[inline]
     pub fn token_to_id(&self, s: &str) -> Option<u32> {
-        self.get_bytes(s.as_bytes())
+        self.get_bytes(s.as_bytes(), None)
     }
 
     /// `id -> token bytes`, borrowing from the slab (no allocation).
@@ -292,7 +334,7 @@ mod tests {
         let vocab = BucketVocabStore::build(toks.clone());
 
         for (s, id) in &toks {
-            assert_eq!(vocab.get_bytes(s), Some(*id), "fwd {s:?}");
+            assert_eq!(vocab.get_bytes(s, None), Some(*id), "fwd {s:?}");
             assert_eq!(vocab.id_to_token_bytes(*id), Some(s.as_slice()), "rev {id}");
         }
         for q in ["", "zzz", "th", "theX", "fo", "doggo"] {
@@ -300,6 +342,40 @@ mod tests {
         }
         assert_eq!(vocab.id_to_token(n as u32), None);
         assert_eq!(vocab.len(), n);
+    }
+
+    /// A token past 15 bytes keys on a hash instead of on its own bytes, so its slot
+    /// still needs the byte comparison that a packed key makes unnecessary. Nothing
+    /// else in this module reaches that branch.
+    #[test]
+    fn long_tokens_are_confirmed_against_their_bytes() {
+        let long = b"a-token-well-past-fifteen-bytes".to_vec();
+        let other = b"another-token-of-the-same-size!".to_vec();
+        assert_eq!(long.len(), other.len(), "the point is a same-length miss");
+        let vocab = BucketVocabStore::build(vec![(long.clone(), 7), (b"short".to_vec(), 1)]);
+
+        assert_eq!(vocab.get_bytes(&long, None), Some(7));
+        assert_eq!(vocab.id_to_token_bytes(7), Some(long.as_slice()));
+        // Not in the vocabulary: it lands on some slot regardless, and only the bytes
+        // say so. The length check cannot help here.
+        assert_eq!(vocab.get_bytes(&other, None), None);
+    }
+
+    /// The window is a cheaper way to read the query, not part of the key, so it must
+    /// not change the answer — for a packed key or a hashed one.
+    #[test]
+    fn a_window_does_not_change_the_id() {
+        let chunk = b"short a-token-well-past-fifteen-bytes tail-padding-so-a-window-exists";
+        let vocab = BucketVocabStore::build(vec![
+            (b"short".to_vec(), 1),
+            (b"a-token-well-past-fifteen-bytes".to_vec(), 7),
+        ]);
+        for (start, len, want) in [(0usize, 5usize, Some(1)), (6, 31, Some(7)), (38, 4, None)] {
+            let q = &chunk[start..start + len];
+            let head: &[u8; 16] = chunk[start..start + 16].try_into().unwrap();
+            assert_eq!(vocab.get_bytes(q, None), want, "{q:?}");
+            assert_eq!(vocab.get_bytes(q, Some(head)), want, "{q:?} with a window");
+        }
     }
 
     #[test]
@@ -325,7 +401,7 @@ mod tests {
         assert!(vocab.is_empty());
         assert_eq!(vocab.len(), 0);
         assert_eq!(vocab.token_to_id("anything"), None);
-        assert_eq!(vocab.get_bytes(b""), None);
+        assert_eq!(vocab.get_bytes(b"", None), None);
         assert_eq!(vocab.id_to_token(0), None);
         assert!(vocab.content().is_empty());
     }
@@ -358,7 +434,7 @@ mod tests {
     fn non_utf8_token_is_lossy_on_string_but_exact_on_bytes() {
         let raw = vec![0xffu8, 0xfe];
         let vocab = BucketVocabStore::build(vec![(raw.clone(), 0)]);
-        assert_eq!(vocab.get_bytes(&raw), Some(0));
+        assert_eq!(vocab.get_bytes(&raw, None), Some(0));
         assert_eq!(vocab.id_to_token_bytes(0), Some(raw.as_slice()));
         assert_eq!(vocab.id_to_token(0), Some("\u{fffd}\u{fffd}".to_string()));
     }

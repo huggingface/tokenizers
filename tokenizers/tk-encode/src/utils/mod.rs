@@ -1,6 +1,7 @@
 pub(crate) mod cache;
 #[cfg(feature = "http")]
 pub(crate) mod from_pretrained;
+pub(crate) mod packed_key;
 
 // Optional system-regex backend for arbitrary (non-atomsplit) patterns. With `fancy-regex` off a
 // stub compiles and arbitrary-regex features error at load — the atomsplit-native pre-tokenizers

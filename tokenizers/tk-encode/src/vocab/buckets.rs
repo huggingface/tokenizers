@@ -316,7 +316,9 @@ impl Buckets {
         for &len in bucket.length_list[length_id as usize].iter() {
             let len = len as usize;
             if pos + len <= n
-                && let Some(id) = self.vocab.get_bytes(&bytes[pos..pos + len])
+                && let Some(id) = self
+                    .vocab
+                    .get_bytes(&bytes[pos..pos + len], bytes[pos..].first_chunk())
             {
                 return Some((id, len as u32));
             }

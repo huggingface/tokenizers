@@ -722,7 +722,7 @@ impl PipelineBPE {
             let mut byte_to_id = [0u32; 256];
             for b in 0u8..=255 {
                 byte_to_id[b as usize] = vocab
-                    .get_bytes(&[b])
+                    .get_bytes(&[b], None)
                     .ok_or(Error::ByteAtomOutOfVocabulary(b))?;
             }
             (vocab, Atoms::Bytes { byte_to_id })
@@ -845,7 +845,7 @@ impl pipeline::Model for PipelineBPE {
             return Ok(());
         }
         if self.ignore_merges
-            && let Some(id) = self.vocab.get_bytes(sequence.as_bytes())
+            && let Some(id) = self.vocab.get_bytes(split.as_bytes(), split.head())
         {
             output.push(PipelineToken { id });
             return Ok(());

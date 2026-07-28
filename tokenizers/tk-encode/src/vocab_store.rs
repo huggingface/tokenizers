@@ -32,14 +32,16 @@ impl VocabStore {
         Self::default()
     }
 
+    /// `head` is ignored — a map lookup has no key to pack. It is in the signature so
+    /// this stays a drop-in twin of `BucketVocabStore`, which uses it.
     #[inline]
-    pub fn get_bytes(&self, q: &[u8]) -> Option<u32> {
+    pub fn get_bytes(&self, q: &[u8], _head: Option<&[u8; 16]>) -> Option<u32> {
         self.by_bytes.get(q).copied()
     }
 
     #[inline]
     pub fn token_to_id(&self, s: &str) -> Option<u32> {
-        self.get_bytes(s.as_bytes())
+        self.get_bytes(s.as_bytes(), None)
     }
 
     #[inline]
