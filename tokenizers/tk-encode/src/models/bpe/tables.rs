@@ -111,6 +111,17 @@ impl MphfMap {
             n,
         }
     }
+    #[inline]
+    // from the key pair, returns the rank, the flags and the new id.
+    pub fn get(self, key: u64) -> Option<u64> {
+        let slot = self.mphf.index(&key);
+        let e = &self.entries[slot];
+        if e.key == key {
+            return Some(e.val);
+        } else {
+            return None;
+        }
+    }
 }
 pub(crate) struct BpeTables {
     internal_id_map: Box<[u32]>, // internal_id_map[external_id] -> internal_id
