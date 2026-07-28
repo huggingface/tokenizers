@@ -476,11 +476,18 @@ impl WordCache {
     /// The value a slot stores in its `key`, and the hash that places it. A short
     /// word is its own key; a longer one keys on a tagged hash and has to be
     /// confirmed against `key_bytes`, since two long words can hash alike.
+    ///
+    /// A packed key is hashed as one `u128`, not as the word's bytes it was built
+    /// from. Hashing a slice makes aHash mix the length in and then branch on it to
+    /// choose a read width; a `u128` is one fixed-width fold with nothing to decide.
+    /// The key already carries the length, so nothing is lost.
     fn slot_key(&self, word: &[u8]) -> (u128, u64) {
-        let hash = self.hasher.hash_one(word);
         match pack_word(word) {
-            Some(packed) => (packed, hash),
-            None => ((hash as u128) | LONG_TAG, hash),
+            Some(packed) => (packed, self.hasher.hash_one(packed)),
+            None => {
+                let hash = self.hasher.hash_one(word);
+                ((hash as u128) | LONG_TAG, hash)
+            }
         }
     }
 
@@ -646,6 +653,24 @@ mod tests {
         assert_eq!(pack_word(&[0u8; 15]).unwrap() & LONG_TAG, 0);
         assert_eq!(pack_word(b""), None);
         assert_eq!(pack_word(&[b'x'; 16]), None);
+    }
+
+    /// A short word's placement now comes out of its packed key rather than its
+    /// bytes, which leaves the hash doing all of the mixing. Words that differ in
+    /// one byte pack to keys that differ in one byte, so an index taken from those
+    /// bits as they are — `packed as u64` — drops most of these on one slot.
+    #[test]
+    fn short_words_spread_across_the_table() {
+        let cache = WordCache::new(1 << 12);
+        let homes: std::collections::HashSet<usize> = (0..1000)
+            .map(|i| {
+                let (_, hash) = cache.slot_key(format!("tok{i}").as_bytes());
+                hash as usize & cache.mask
+            })
+            .collect();
+        // 1000 words over 4096 slots share homes by chance alone; ~887 distinct is
+        // as good as a perfect hash gets, so the floor is well under it.
+        assert!(homes.len() > 820, "only {} distinct homes", homes.len());
     }
 
     #[test]
