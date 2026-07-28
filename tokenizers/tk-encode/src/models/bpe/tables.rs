@@ -178,11 +178,9 @@ impl BpeTables {
             if ia < 512 && ib < 512 {
                 // becaus a and b <512, they are both <2^9::max = 512
                 // TODO: have not set the flag yet, as I need to build fold
-                top_merges[(ia << 10 | ib) as usize] = (*rank as u64) << 32 | *n as u64;
+                top_merges[(ia << 9 | ib) as usize] =
+                    (*rank as u64) << 32 | internal_id_map[*n as usize] as u64;
                 id += 1;
-            }
-            if id >= 512 * 512 {
-                return;
             }
         });
         let top_merges = top_merges.into_boxed_slice();
