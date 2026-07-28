@@ -7,12 +7,14 @@
 //! a hit has to be far cheaper than merging, and a miss has to cost close to
 //! nothing, because every word pays for one the first time it is seen.
 //!
-//! There are three pieces. The table is `N` fixed-size slots, `N` being the
-//! requested capacity rounded up to a power of two, and next to it two arenas
-//! hold what a slot is too small for:
+//! There are four pieces. The table is `N` fixed-size slots, `N` being the
+//! requested capacity rounded up to a power of two; beside it one byte per slot
+//! records how much that slot is being used; and two arenas hold what a slot is
+//! too small for:
 //!
 //! ```text
 //!   slots     [Slot; N]      32 bytes each, one word per slot
+//!   freqs     [u8; N]        how used each slot is — and 0 means "never written"
 //!   key_bytes Slab<u8>       the bytes of words longer than 15
 //!   ids       Slab<u32>      id runs longer than 3
 //! ```
@@ -44,11 +46,11 @@
 //!
 //! # What a slot holds
 //!
-//! A slot is 32 bytes: a 16-byte `key`, three `u32`s of `payload`, and two bytes
-//! of bookkeeping. It takes one of three shapes, depending on how long the word
-//! is and how many ids it encoded to. The first is the common case — most words
-//! are short and encode to one or two tokens — and it touches nothing but the
-//! slot itself:
+//! A slot is 32 bytes: a 16-byte `key`, three `u32`s of `payload`, and four bytes
+//! of bookkeeping, one of them spare. It takes one of three shapes, depending on
+//! how long the word is and how many ids it encoded to. The first is the common
+//! case for English or code — a short word encoding to one or two tokens — and it
+//! touches nothing but the slot itself:
 //!
 //! ```text
 //!  (1) at most 15 bytes, at most 3 ids — the slot holds everything
@@ -85,33 +87,36 @@
 //!
 //! An entry is born on a miss, keeps its slot for as long as it is being used,
 //! and is eventually overwritten by another word that hashes into the same
-//! window. The record of "being used" is one byte per slot, `freq`. Here are four
-//! slots of one window over time, each entry shown with its `freq` (`·` = still
-//! empty):
+//! window. All of that is decided by `freqs` — here are four of one window's
+//! sixteen bytes over time:
 //!
 //! ```text
-//!    1. A, B, C are inserted; a new entry          A:0   B:0   C:0    ·
-//!       starts at 0, on probation
+//!                                                    A    B    C    D
+//!    1. A, B, C inserted, each starting at            1    1    1    0
+//!       NEWBORN — on probation, but not free
 //!
-//!    2. B and C are looked up again,               A:0   B:3   C:1    ·
-//!       scoring one hit each
+//!    2. B is looked up three times, C once            1    4    2    0
 //!
-//!    3. D takes the last free slot, and            A:0   B:3   C:1   D:1
-//!       is used once too
+//!    3. D takes the last free slot, then a hit        1    4    2    2
 //!
-//!    4. E arrives, and the window is full, so one entry has to go:
+//!    4. E arrives and the window is full:
 //!
-//!         the coldest is A, stored but never used  A:0   B:3   C:1   D:1
-//!         every freq in the window is halved       A:0   B:1   C:0   D:0
-//!         A is overwritten where it lies           E:0   B:1   C:0   D:0
-//!                                                  └ and A's arena runs, if it
-//!                                                    had any, are handed back
+//!         A is the coldest — stored, never used       1    4    2    2
+//!         every frequency halves, floored at 1        1    2    1    1
+//!         A's slot goes to E, back at NEWBORN         1    2    1    1
+//!                                                     ▲ E's now; A's arena runs,
+//!                                                       if it had any, come back
 //! ```
 //!
 //! Halving is what keeps this from being "whoever got there first wins": B was
 //! hot once, but unless it keeps earning hits it will be down with the rest by
 //! the time the next word needs a slot. C and D are one unlucky moment from
 //! eviction and one hit from safety.
+//!
+//! The floor at [`NEWBORN`] is what lets the same byte also mean *free*: no live
+//! entry can ever fall to 0, so a 0 says nothing was ever stored in that slot, and
+//! one scan of sixteen bytes answers both "is there a free slot here?" and "which
+//! entry is coldest?".
 //!
 //! Overwriting the victim where it lies is what keeps the whole structure small.
 //! Removing an entry from an open-addressed table normally needs a tombstone or a
@@ -121,6 +126,36 @@
 //! changes owner. That is what lets a lookup stop at the first empty slot, and it
 //! is why the window has to be bounded — in a saturated table, that bound is all
 //! that stops a walk from running over the whole table.
+//!
+//! ## Why the frequencies are not in the slot
+//!
+//! There is room for them — the slot has a spare byte where one used to sit. But
+//! then a window's sixteen frequencies would be sixteen bytes scattered across
+//! eight cache lines of slot table, read one slot at a time. In their own array
+//! they are sixteen *consecutive* bytes, and picking a slot compiles to a 16-byte
+//! load, a vector minimum, and — when the window is full — a vector shift and a
+//! vector maximum to age the whole window at once.
+//!
+//! That is a trade, not a free win: a hit now also writes a byte to a line it
+//! would otherwise never touch, which buys nothing while the table still has room.
+//! Measured over 24 model × corpus × capacity combinations, against the same cache
+//! with `freq` back in the slot (`examples/cache_freq_bench.rs` — it runs both in
+//! one binary, because cross-binary timings here swing ±30% on code layout alone):
+//!
+//! ```text
+//!   evictions per 1000 lookups        time per word
+//!            0 -   2                      ×1.02      ← paying, getting nothing
+//!            5 - 100                      ×1.01
+//!          136 - 160                      ×0.96
+//!          230 - 240                      ×0.91
+//!          376 - 442                      ×0.92
+//! ```
+//!
+//! So the crossover is around 50 evictions per 1000 lookups. A cache comfortably
+//! larger than the corpus in front of it stays below that and pays the 2% — at the
+//! default capacity most of our fixtures never evict at all. A cache that is
+//! actually working sits above it: a table smaller than the vocabulary it sees, or
+//! a long-lived process whose traffic keeps changing shape.
 //!
 //! # Where an evicted entry's space goes
 //!
@@ -203,7 +238,7 @@
 //!   `while local.len() < capacity`, so the words from the first pages of text
 //!   keep their places forever, however useless they turn out to be. Choosing
 //!   *which* entry to drop needs evidence about how much each one is used, and
-//!   somewhere to keep it — the `freq` byte in the slot.
+//!   somewhere to keep it — the frequency byte beside every slot.
 //! - **Entries cost more than twice the memory.** 24 bytes for the `String` and
 //!   24 for the value's vector inside the table, before the two heap blocks they
 //!   point at, against 32 bytes here for the common word.
@@ -229,8 +264,10 @@ const MAX_LENGTH: usize = 1024;
 /// so a saturated table would otherwise scan forever looking for an empty slot.
 const WINDOW: usize = 16;
 /// Ids carried in the slot itself — three `u32`s is what fits beside the key.
-/// Most words encode to one or two tokens, so this keeps the id arena for the
-/// tail rather than the common case.
+/// Enough for 80-96% of lookups on English or code, but only about a quarter of
+/// them on Chinese or Korean, where a vocabulary holding none of those scripts
+/// spends ten ids or more on one word. `examples/cache_freq_bench.rs --lengths`
+/// prints the distribution per model and corpus.
 const INLINE_IDS: usize = 3;
 /// `len` marker for an entry whose ids, and possibly whose bytes, are in the
 /// arenas.
@@ -240,6 +277,12 @@ const SPILLED: u8 = u8::MAX;
 /// key can never be mistaken for a packed one, and neither can be 0 — the
 /// empty-slot marker.
 const LONG_TAG: u128 = 1 << 127;
+/// A `freqs` entry for a slot nothing has been stored in yet. Live entries are at
+/// least [`NEWBORN`], so the one array answers both "is this slot free?" and "how
+/// much is this entry being used?" — see [`WordCache::pick_slot`].
+const FREE: u8 = 0;
+/// Where a new entry's frequency starts: on probation, but not free.
+const NEWBORN: u8 = 1;
 
 /// A word of 1..=15 bytes packed into a `u128`: bytes in the low lanes, length
 /// in the top byte. Including the length keeps `"a"` and `"a\0"` apart, and the
@@ -264,18 +307,18 @@ fn pack_word(word: &[u8]) -> Option<u128> {
 /// - `key_len` is 0 unless the word's bytes went to `key_bytes`, so it doubles as
 ///   "does a matching `key` need confirming?".
 ///
-/// The size assertion is the point of the layout: 32 bytes means a hit reads the
-/// key, the ids and the bookkeeping in one go.
+/// How much an entry is used is *not* here — it lives in `WordCache::freqs`, for
+/// the reasons the module docs give. The byte it left behind cannot be spent on
+/// anything: `key`'s 16-byte alignment fixes the slot at 32 bytes, and a fourth
+/// inline id would need four. That the size is 32 is the point of the layout —
+/// a hit reads the key, the ids and the bookkeeping in one go.
 #[derive(Clone, Copy, Default)]
 #[repr(C)]
 struct Slot {
     key: u128,
     payload: [u32; INLINE_IDS],
     len: u8,
-    /// How much the entry is being used, halved whenever its window has to make
-    /// room (see the module docs). A new entry starts at 0, on probation until
-    /// it earns a hit.
-    freq: u8,
+    _pad: u8,
     key_len: u16,
 }
 
@@ -364,6 +407,10 @@ pub struct WordCache {
     slots: Box<[Slot]>,
     key_bytes: Slab<u8>,
     ids: Slab<u32>,
+    /// How much each slot is being used, one byte per slot, [`FREE`] while the
+    /// slot has never been written. Outside the slots so that a whole window's
+    /// worth is 16 consecutive bytes — see [`WordCache::pick_slot`].
+    freqs: Box<[u8]>,
     /// `slots.len() - 1`. The table is a power of two, so this folds a hash into
     /// a slot index.
     mask: usize,
@@ -384,6 +431,7 @@ impl WordCache {
             // no CJK in it, which spends ~17 ids on a single Chinese word.
             key_bytes: Slab::new(n_slots * 48),
             ids: Slab::new(n_slots * 16),
+            freqs: vec![FREE; n_slots].into_boxed_slice(),
             mask: n_slots - 1,
         }
     }
@@ -397,8 +445,8 @@ impl WordCache {
         }
         let (key, hash) = self.slot_key(word);
         let index = self.find(key, hash, word)?;
+        self.freqs[index] = self.freqs[index].saturating_add(1);
         let slot = self.slots[index];
-        self.slots[index].freq = slot.freq.saturating_add(1);
         if slot.spilled() {
             return Some(self.ids.get(slot.ids_off(), slot.ids_len()));
         }
@@ -420,6 +468,9 @@ impl WordCache {
         let index = self.pick_slot(hash);
         self.reclaim(index);
         self.slots[index] = entry;
+        // Both writes or neither: a slot is occupied exactly when its frequency is
+        // above [`FREE`], and `pick_slot` reads emptiness out of `freqs` alone.
+        self.freqs[index] = NEWBORN;
     }
 
     /// The value a slot stores in its `key`, and the hash that places it. A short
@@ -476,7 +527,7 @@ impl WordCache {
                 key,
                 payload,
                 len: ids_len as u8,
-                freq: 0,
+                _pad: 0,
                 key_len: 0,
             });
         }
@@ -493,39 +544,72 @@ impl WordCache {
             key,
             payload: [key_off, ids_off, ids_len as u32],
             len: SPILLED,
-            freq: 0,
+            _pad: 0,
             key_len: key_len as u16,
         })
     }
 
-    /// The slot the next entry goes in: the first empty one in the window, or the
+    /// The slot the next entry goes in: the first free one in the window, or the
     /// coldest one if they are all taken.
+    ///
+    /// `#[inline]` because this and [`WordCache::reclaim`] exist to give the steps
+    /// of `insert` names, not to be called: left out of line they cost `insert` two
+    /// calls and the pointers it had already loaded.
+    ///
+    /// This reads nothing but `freqs`, which is why the frequencies live outside
+    /// the slots. A window's worth of them is 16 consecutive bytes, so the whole
+    /// decision is a 16-byte load, a vector minimum, and — when the window is full
+    /// — a vector shift to age it. Reading a `freq` out of each slot instead would
+    /// mean 16 strided reads over 8 cache lines. Both jobs come out of the one
+    /// array because [`FREE`] is a frequency no live entry can have.
+    #[inline]
     fn pick_slot(&mut self, hash: u64) -> usize {
         let home = hash as usize & self.mask;
-        // Starting at `home` rather than 0 matters when every slot in the window
-        // has reached the maximum `freq`: the victim still has to be in the
-        // window.
+        let Some(&window) = self.freqs[home..].first_chunk::<WINDOW>() else {
+            return self.pick_slot_wrapping(home);
+        };
+        let coldest = window.iter().copied().min().unwrap_or(FREE);
+        let offset = window.iter().position(|&freq| freq == coldest).unwrap_or(0);
+        if coldest == FREE {
+            return home + offset;
+        }
+        // Age the window on the way past: every entry in it now has to be used
+        // again before the next word arrives here, or become the next victim. The
+        // floor keeps them all distinguishable from a free slot.
+        for freq in &mut self.freqs[home..home + WINDOW] {
+            *freq = (*freq >> 1).max(NEWBORN);
+        }
+        home + offset
+    }
+
+    /// [`WordCache::pick_slot`] for the one home in `mask + 1` whose window runs
+    /// off the end of the table: same policy, read one slot at a time, because the
+    /// frequencies are not contiguous there.
+    #[inline]
+    fn pick_slot_wrapping(&mut self, home: usize) -> usize {
+        // Seeded at `home` rather than 0 so that a window whose entries have all
+        // reached the maximum frequency still evicts one of its own.
         let mut coldest = (u8::MAX, home);
         for step in 0..WINDOW {
             let index = (home + step) & self.mask;
-            let slot = &self.slots[index];
-            if slot.is_empty() {
+            let freq = self.freqs[index];
+            if freq == FREE {
                 return index;
             }
-            if slot.freq < coldest.0 {
-                coldest = (slot.freq, index);
+            if freq < coldest.0 {
+                coldest = (freq, index);
             }
         }
-        // Age the window on the way past: every entry in it now has to be used
-        // again before the next word arrives here, or become the next victim.
         for step in 0..WINDOW {
-            self.slots[(home + step) & self.mask].freq >>= 1;
+            let freq = &mut self.freqs[(home + step) & self.mask];
+            *freq = (*freq >> 1).max(NEWBORN);
         }
         coldest.1
     }
 
     /// Hand an overwritten entry's arena runs back, so the next entry can use
     /// them.
+    #[inline]
     fn reclaim(&mut self, index: usize) {
         let slot = self.slots[index];
         if !slot.spilled() {
@@ -675,6 +759,31 @@ mod tests {
             }
         }
         assert!(live > 0, "everything was evicted — the test proves nothing");
+    }
+
+    /// `find` reads emptiness off the slot's key and `pick_slot` reads it off the
+    /// frequency, so the two have to agree about every slot, always. They only can
+    /// if `insert` writes both and the aging never lets a live entry reach
+    /// [`FREE`].
+    #[test]
+    fn occupancy_agrees_between_slots_and_frequencies() {
+        let mut cache = WordCache::new(64);
+        for i in 0..2000usize {
+            let word = format!("word-{i}-{}", "x".repeat(i % 20));
+            cache.insert(word.as_bytes(), [i as u32, 7].into_iter());
+            cache.get(word.as_bytes());
+        }
+        assert!(
+            cache.freqs.iter().any(|&freq| freq != FREE),
+            "nothing was stored — the test proves nothing"
+        );
+        for (index, slot) in cache.slots.iter().enumerate() {
+            assert_eq!(
+                slot.is_empty(),
+                cache.freqs[index] == FREE,
+                "slot {index} and its frequency disagree"
+            );
+        }
     }
 
     /// Freed runs have to come back. Without reuse the arenas grow with every
