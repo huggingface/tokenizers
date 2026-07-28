@@ -830,6 +830,12 @@ impl pipeline::Model for PipelineBPE {
         if sequence.is_empty() {
             return Ok(());
         }
+        if self.ignore_merges
+            && let Some(id) = self.vocab.get_bytes(split.as_bytes(), split.head())
+        {
+            output.push(PipelineToken { id });
+            return Ok(());
+        }
 
         let BpeScratch {
             merge_queue,
@@ -842,12 +848,6 @@ impl pipeline::Model for PipelineBPE {
             && let Some(hit) = cache.get(split.as_bytes(), split.head())
         {
             output.extend(hit.iter().map(|&id| PipelineToken { id }));
-            return Ok(());
-        }
-        if self.ignore_merges
-            && let Some(id) = self.vocab.get_bytes(split.as_bytes(), split.head())
-        {
-            output.push(PipelineToken { id });
             return Ok(());
         }
 
