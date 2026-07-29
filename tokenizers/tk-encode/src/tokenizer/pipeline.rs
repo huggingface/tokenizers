@@ -455,19 +455,14 @@ pub struct PipelineTokenizer {
     scratch_pool: ScratchPool,
 }
 
-/// Working space for encoding, lent out and taken back.
+/// A pool of [`PipelineModelScratch`].
 ///
-/// Encoding needs buffers to build tokens in, and building them per call means asking the
-/// allocator for the same things over and over. So they are borrowed instead: a caller
-/// takes a scratch, hands it back when it is done, and the next caller gets one whose
-/// buffers are already as big as the last encode needed. A model empties what it uses as
-/// it goes, so a scratch comes back ready to use.
+/// When calling [`PipelineTokenizer::encode`], an instance of [`PipelineModelScratch`] is taken out of this pool
+/// and given to the tokenizer. When the encoding is done, the scratch buffer is returned to the pool and can be
+/// reused by later calls.
 ///
-/// A tokenizer encodes through `&self` and several threads may be in it at once, so a
-/// scratch cannot simply live in the tokenizer — each thread needs its own. The pool ends
-/// up holding one per thread that has encoded at the same time as the others, and frees
-/// them all with the tokenizer. A single thread encoding in a loop — the common case —
-/// borrows and returns the same one every time.
+/// The reusability matters because the scratch buffer may hold cache structures which are more useful when reused,
+/// and less importantly it saves an extra allocation for an fresh buffer every time.
 struct ScratchPool(Mutex<Vec<PipelineModelScratch>>);
 
 impl ScratchPool {
@@ -475,23 +470,31 @@ impl ScratchPool {
         Self(Mutex::new(Vec::new()))
     }
 
-    /// Borrow a scratch; dropping the guard gives it back. The lock is held just long
-    /// enough to move one out, never while encoding.
+    /// Get a scratch buffer from the pool, wrapped in a [`ScratchGuard`].
+    /// When the [`ScratchGuard`] gets dropped, the scratch buffer is pushed back to the pool.
     fn get<'a>(&'a self, model: &PipelineModel) -> ScratchGuard<'a> {
+        // The Mutex lock is held just long enough to pop the scratch out of the pool
         let taken = self.0.lock().unwrap_or_else(PoisonError::into_inner).pop();
         ScratchGuard {
+            // If there was no scratch buffer available in the pool, we build.a fresh one
             scratch: taken.unwrap_or_else(|| model.init_scratch()),
             pool: self,
         }
     }
 
     #[cfg(test)]
-    fn stored_scratches(&self) -> usize {
+    fn len(&self) -> usize {
         self.0.lock().unwrap_or_else(PoisonError::into_inner).len()
     }
 }
 
-/// Gives the scratch back to the pool when it goes out of scope.
+/// A wrapper around [`PipelineModelScratch`].
+/// Implements [`Deref`] and [`DerefMut`], so it behaves as [`PipelineModelScratch`].
+///
+/// When it gets dropped, it pushes [`Self::scratch`] back into the shared [`Self::pool`] so it can
+/// get reused by a later call to [`PipelineTokenizer::encode`].
+///
+/// TODO @McPatate : The Mutex can create contention, to be replaced by a better access pattern
 struct ScratchGuard<'a> {
     scratch: PipelineModelScratch,
     pool: &'a ScratchPool,
@@ -499,7 +502,9 @@ struct ScratchGuard<'a> {
 
 impl Drop for ScratchGuard<'_> {
     fn drop(&mut self) {
+        // Steals the scratch buffer from self, replaces it with PipelineModelScratch::default()
         let scratch = mem::take(&mut self.scratch);
+        // Push the scratch back in the pool
         self.pool
             .0
             .lock()
@@ -1287,14 +1292,17 @@ impl Model for PipelineModel {
     }
 }
 
+/// A set of buffers and other state the model needs to encode efficiently,
+/// reused among calls to [`PipelineTokenizer::encode`].
+///
+/// Each model gets its own variant.
 #[derive(Default)]
 pub enum PipelineModelScratch {
     BPE(BpeScratch),
     WordLevel(()),
     WordPiece(WordPieceScratch),
     Unigram(UnigramScratch),
-    /// Costs nothing to build, and stands in for the real scratch while a guard is
-    /// handing it back to the pool.
+    /// We need a default value to able to use [`mem::take`] in [`ScratchGuard::drop`]
     #[default]
     None,
 }
@@ -1754,7 +1762,7 @@ mod tests {
         for _ in 0..1000 {
             pipeline.encode("hello", false).wait().unwrap();
         }
-        assert_eq!(pipeline.scratch_pool.stored_scratches(), 1);
+        assert_eq!(pipeline.scratch_pool.len(), 1);
 
         let threads = 64;
         let all_holding = Barrier::new(threads);
@@ -1768,7 +1776,7 @@ mod tests {
             }
         });
 
-        let after_burst = pipeline.scratch_pool.stored_scratches();
+        let after_burst = pipeline.scratch_pool.len();
         assert!(
             after_burst <= threads,
             "{after_burst} scratches kept for {threads} threads"
@@ -1776,6 +1784,6 @@ mod tests {
         for _ in 0..1000 {
             pipeline.encode("hello", false).wait().unwrap();
         }
-        assert_eq!(pipeline.scratch_pool.stored_scratches(), after_burst);
+        assert_eq!(pipeline.scratch_pool.len(), after_burst);
     }
 }
