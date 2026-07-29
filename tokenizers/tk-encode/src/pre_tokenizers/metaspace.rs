@@ -1,3 +1,6 @@
+use crate::normalizers::metaspace::MetaspaceNormalizer;
+use crate::pre_tokenizers::PreTokenizerWrapper;
+use crate::pre_tokenizers::split::Split;
 use crate::tokenizer::{Decoder, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
 use serde::{Deserialize, Deserializer, Serialize, de};
 
@@ -170,6 +173,55 @@ impl Decoder for Metaspace {
             })
             .collect())
     }
+}
+
+/// Splits [`PreTokenizerWrapper::Metaspace`] into two steps:
+///   - [`MetaspaceNormalizer`] that rewrites spaces and whitespaces
+///   - [`Split`] pretokenizers that splits words based on the metaspace delimiter
+/// 
+/// Returns `None` if the pre tokenizer is not a metaspace
+pub(crate) fn to_normalizer_and_split(
+    pre_tokenizer: Option<&PreTokenizerWrapper>,
+) -> Option<(MetaspaceNormalizer, Split)> {
+    match pre_tokenizer {
+        Some(PreTokenizerWrapper::Metaspace(metaspace)) => from_metaspace(metaspace, false),
+        // The same, with the whitespace thrown away first. t5 and albert ship this shape.
+        Some(PreTokenizerWrapper::Sequence(sequence)) => match sequence.as_ref() {
+            [
+                PreTokenizerWrapper::WhitespaceSplit(_),
+                PreTokenizerWrapper::Metaspace(metaspace),
+            ] => from_metaspace(metaspace, true),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn from_metaspace(
+    metaspace: &Metaspace,
+    drop_whitespace: bool,
+) -> Option<(MetaspaceNormalizer, Split)> {
+    if !metaspace.split {
+        return None;
+    }
+    let prepend = match metaspace.prepend_scheme {
+        PrependScheme::Always => true,
+        PrependScheme::Never => false,
+        PrependScheme::First => return None,
+    };
+    if drop_whitespace && !prepend {
+        return None;
+    }
+    let delimiter = metaspace.replacement;
+    Some((
+        MetaspaceNormalizer::new(delimiter, prepend, drop_whitespace),
+        Split::new(
+            delimiter.to_string(),
+            SplitDelimiterBehavior::MergedWithNext,
+            false,
+        )
+        .ok()?,
+    ))
 }
 
 #[cfg(test)]
@@ -366,5 +418,116 @@ mod tests {
             .decode_chain(vec!["▁Hey".into(), "▁friend!".into()])
             .unwrap();
         assert_eq!(res, vec![" Hey", " friend!"]);
+    }
+
+    mod to_normalizer_and_split {
+        use super::*;
+        use crate::tokenizer::pipeline;
+
+        fn declared(json: &str) -> PreTokenizerWrapper {
+            serde_json::from_str(json).unwrap()
+        }
+
+        /// t5 and albert: throw the whitespace away, then start every word with `▁`.
+        const T5: &str = r#"{"type":"Sequence","pretokenizers":[{"type":"WhitespaceSplit"},{"type":"Metaspace","replacement":"▁","prepend_scheme":"always","split":true}]}"#;
+        /// A `Metaspace` on its own: each space becomes `▁`, tabs and newlines stay.
+        const BARE: &str =
+            r#"{"type":"Metaspace","replacement":"▁","prepend_scheme":"always","split":true}"#;
+
+        /// Every kind of gap, plus text that already holds the delimiter.
+        const TEXTS: &[&str] = &[
+            "hello world",
+            "hello   world",
+            " leading",
+            "trailing ",
+            "  both  ",
+            "one\ttab\nand a newline",
+            "▁already marked",
+            "a▁b c",
+            "▁▁▁a b",
+            "single",
+            "   ",
+            "",
+        ];
+
+        /// Normalizing and then splitting must produce exactly the words the declared pre-tokenizer
+        /// produces on its own — it is the tokenizer's own output, so it is the answer.
+        fn assert_words_match_the_pre_tokenizer(json: &str) {
+            let declared = declared(json);
+            let (normalizer, split) =
+                to_normalizer_and_split(Some(&declared)).expect("this shape is supported");
+            for text in TEXTS {
+                let mut legacy = PreTokenizedString::from(*text);
+                declared.pre_tokenize(&mut legacy).unwrap();
+                let expected: Vec<&str> = legacy
+                    .get_splits(OffsetReferential::Normalized, OffsetType::Byte)
+                    .iter()
+                    .map(|(word, _, _)| *word)
+                    .collect();
+
+                let normalized = pipeline::Normalizer::normalize(&normalizer, text).unwrap();
+                let mut spans = Vec::new();
+                pipeline::PreTokenizer::pre_tokenize(&split, &normalized, &mut spans).unwrap();
+                let words: Vec<&str> = spans.iter().map(|s| &normalized[s.range()]).collect();
+                assert_eq!(words, expected, "{text:?}");
+            }
+        }
+
+        #[test]
+        fn the_t5_shape_matches_its_pre_tokenizer() {
+            assert_words_match_the_pre_tokenizer(T5);
+        }
+
+        #[test]
+        fn a_bare_metaspace_matches_its_pre_tokenizer() {
+            assert_words_match_the_pre_tokenizer(BARE);
+        }
+
+        #[test]
+        fn refuses_what_it_cannot_reproduce() {
+            let refused = [
+                // A metaspace that keeps whole sentences is a different pipeline.
+                (
+                    "a metaspace that does not split",
+                    r#"{"type":"Metaspace","replacement":"▁","prepend_scheme":"always","split":false}"#,
+                ),
+                // `first` picks the word by where it sat in the untouched input, which is lost here.
+                (
+                    "a metaspace that prepends to the first word only",
+                    r#"{"type":"Metaspace","replacement":"▁","prepend_scheme":"first","split":true}"#,
+                ),
+                // With the whitespace gone and no delimiter written, nothing marks where a word starts.
+                (
+                    "dropped whitespace and no prepending",
+                    r#"{"type":"Sequence","pretokenizers":[{"type":"WhitespaceSplit"},{"type":"Metaspace","replacement":"▁","prepend_scheme":"never","split":true}]}"#,
+                ),
+                // Not a metaspace shape at all.
+                ("a bare whitespace split", r#"{"type":"WhitespaceSplit"}"#),
+            ];
+            for (name, json) in refused {
+                assert!(
+                    to_normalizer_and_split(Some(&declared(json))).is_none(),
+                    "{name}"
+                );
+            }
+            assert!(to_normalizer_and_split(None).is_none(), "no pre-tokenizer");
+        }
+
+        /// The real files, so a config shape drifting out of the two above shows up here instead of
+        /// silently skipping the pipeline oracle for these models. Skipped when they are not fetched.
+        #[test]
+        fn the_real_configs_convert() {
+            for file in ["t5-base.json", "albert-base-v1-tokenizer.json"] {
+                let path = format!("../data/{file}");
+                if !std::path::Path::new(&path).exists() {
+                    continue;
+                }
+                let tokenizer = crate::Tokenizer::from_file(&path).unwrap();
+                assert!(
+                    to_normalizer_and_split(tokenizer.get_pre_tokenizer()).is_some(),
+                    "{file} should convert"
+                );
+            }
+        }
     }
 }

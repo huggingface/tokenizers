@@ -16,12 +16,13 @@ use crate::vocab::bucket_added_vocabulary::{
 };
 use crate::{
     ModelWrapper, PostProcessorWrapper, PreTokenizerWrapper, Token, Tokenizer,
-    normalizers::NormalizerWrapper,
+    normalizers::{NormalizerWrapper, metaspace::MetaspaceNormalizer},
     pre_tokenizers::{
         bert::BertPreTokenizer,
         delimiter::CharDelimiterSplit,
         digits::Digits,
         fixed_length::FixedLength,
+        metaspace,
         punctuation::Punctuation,
         sequence::PipelineSequence,
         split::{Split as SplitPretok, SplitPattern},
@@ -61,6 +62,57 @@ pub(crate) fn classify_into_spans(
 
 pub trait Normalizer {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>>;
+}
+
+/// Runs `normalizers` in order, threading the text through them.
+///
+/// Normalizers return a [`Cow`] (copy-on-write) of the input string. Handling chained Cows is a bit tricky.
+pub(crate) fn normalize_all<'a, N: Normalizer>(
+    normalizers: &[N],
+    input: &'a str,
+) -> Result<Cow<'a, str>> {
+    let mut cow: Cow<'a, str> = Cow::Borrowed(input);
+    for normalizer in normalizers {
+        cow = match cow {
+            // Still borrowing `input`: chain directly so a sequence that does not mutate the String stays zero-alloc
+            // and returns a borrow of `input`.
+            Cow::Borrowed(s) => normalizer.normalize(s)?,
+            // Owned locally: the next step may borrow from it, so materialize its result before the
+            // local `String` is dropped.
+            Cow::Owned(s) => {
+                let out = match normalizer.normalize(&s)? {
+                    // The normalize rewrote the string again: we can use that String object
+                    Cow::Owned(o) => Some(o),
+                    // The normalizer returned a reference to the exact same data
+                    Cow::Borrowed(b) if b.as_ptr() == s.as_ptr() && b.len() == s.len() => None,
+                    // The normalizer returned a different string reference (for example, a substring of `s`)
+                    // We need to clone it to use it as input fot the next normalizer
+                    Cow::Borrowed(b) => Some(b.to_owned()),
+                };
+                Cow::Owned(out.unwrap_or(s))
+            }
+        };
+    }
+    Ok(cow)
+}
+
+/// The normalizers a [`PipelineTokenizer`] runs.
+#[allow(clippy::large_enum_variant)]
+#[derive(Debug)]
+enum PipelineNormalizer {
+    /// Declared explicitly in the tokenizers.json config
+    Declared(NormalizerWrapper),
+    /// Derived from the Metaspace pre-tokenizer
+    Metaspace(MetaspaceNormalizer),
+}
+
+impl Normalizer for PipelineNormalizer {
+    fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
+        match self {
+            Self::Declared(normalizer) => normalizer.normalize(input),
+            Self::Metaspace(normalizer) => normalizer.normalize(input),
+        }
+    }
 }
 
 /// Range-based pre-tokenization: yields spans into the input rather than owned
@@ -387,7 +439,7 @@ impl<'a, 'b, PatternMatcher: PipelinePatternMatcher> Iterator
 /// stages over borrowed ranges to avoid the reference path's allocations.
 pub struct PipelineTokenizer {
     added_vocabulary: BucketAddedVocabulary,
-    normalizer: Option<NormalizerWrapper>,
+    normalizers: Vec<PipelineNormalizer>,
     pre_tokenizer: PipelinePreTokenizer,
     model: PipelineModel,
     post_processor: PipelinePostProcessor,
@@ -403,12 +455,30 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
     /// Adding them in id order preserves ids (tokens present in the model reuse their model id, the
     /// rest keep their dense order), so the pipeline emits the same ids as the reference tokenizer.
     fn try_from(tok: &Tokenizer) -> Result<Self> {
-        let pre_tokenizer: PipelinePreTokenizer = tok
-            .get_pre_tokenizer()
+        let mut normalizers: Vec<PipelineNormalizer> = tok
+            .get_normalizer()
             .cloned()
-            .map(TryInto::try_into)
-            .transpose()?
-            .unwrap_or(PipelinePreTokenizer::None);
+            .map(PipelineNormalizer::Declared)
+            .into_iter()
+            .collect();
+
+        // The legacy `Metaspace` pre-tokenizer is in fact a combination of a Normalizer (adding the delimiter in the input string)
+        // followed by a Split. pre-tokenizer (to split on the delimiter).
+        // Here we deconstruct the legacy pre-tokenizer into those two steps.
+        let pre_tokenizer = match metaspace::to_normalizer_and_split(tok.get_pre_tokenizer()) {
+            // If the pre tokenizer is metaspace: add a Metaspace normalizer to the normalizers Vec, and use a Split pretokenizer
+            Some((normalizer, split)) => {
+                normalizers.push(PipelineNormalizer::Metaspace(normalizer));
+                PipelinePreTokenizer::Split(split)
+            }
+            // Else, just forward the tokenizer as-is
+            None => tok
+                .get_pre_tokenizer()
+                .cloned()
+                .map(TryInto::try_into)
+                .transpose()?
+                .unwrap_or(PipelinePreTokenizer::None),
+        };
 
         let legacy_av = tok.get_added_vocabulary();
         let mut added_tokens: Vec<_> = legacy_av.get_added_tokens_decoder().iter().collect();
@@ -485,7 +555,7 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
 
         Ok(Self {
             added_vocabulary,
-            normalizer: tok.get_normalizer().cloned(),
+            normalizers,
             pre_tokenizer,
             model,
             post_processor: tok
@@ -609,10 +679,7 @@ impl PipelineTokenizer {
                 }
                 Segment::Text(chunk) => {
                     let normalized: Cow<str> = if STAGE >= Self::STAGE_NORMALIZE {
-                        match &self.normalizer {
-                            Some(normalizer) => normalizer.normalize(chunk)?,
-                            None => Cow::Borrowed(chunk),
-                        }
+                        normalize_all(&self.normalizers, chunk)?
                     } else {
                         Cow::Borrowed(chunk)
                     };
