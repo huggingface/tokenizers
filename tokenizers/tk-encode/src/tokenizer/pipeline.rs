@@ -64,9 +64,15 @@ pub trait Normalizer {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>>;
 }
 
-/// Runs `normalizers` in order, threading the text through them.
+/// Runs `normalizers` in order, each one seeing what the one before it produced.
 ///
-/// Normalizers return a [`Cow`] (copy-on-write) of the input string. Handling chained Cows is a bit tricky.
+/// A normalizer returns a [`Cow`] (copy-on-write): a borrow when it had nothing to change, an owned
+/// `String` when it rewrote the text.
+/// 
+/// Chaining them needs care, because an owned `String` produced halfway through the chain is local to this function.
+/// The next normalizer may hand back a borrow of that locally owned [`String`], and that borrow cannot outlive the `String`.
+/// 
+/// Text no normalizer touches is never copied: it stays a borrow of `input` throughout.
 pub(crate) fn normalize_all<'a, N: Normalizer>(
     normalizers: &[N],
     input: &'a str,
@@ -74,35 +80,34 @@ pub(crate) fn normalize_all<'a, N: Normalizer>(
     let mut cow: Cow<'a, str> = Cow::Borrowed(input);
     for normalizer in normalizers {
         cow = match cow {
-            // Still borrowing `input`: chain directly so a sequence that does not mutate the String stays zero-alloc
-            // and returns a borrow of `input`.
+            // Still `input` itself, which outlives us: pass it straight on.
             Cow::Borrowed(s) => normalizer.normalize(s)?,
-            // Owned locally: the next step may borrow from it, so materialize its result before the
-            // local `String` is dropped.
             Cow::Owned(s) => {
                 let out = match normalizer.normalize(&s)? {
-                    // The normalize rewrote the string again: we can use that String object
+                    // Rewritten again: keep the new `String`, drop ours.
                     Cow::Owned(o) => Some(o),
-                    // The normalizer returned a reference to the exact same data
+                    // Handed `s` back untouched: keep the `String` we already own.
                     Cow::Borrowed(b) if b.as_ptr() == s.as_ptr() && b.len() == s.len() => None,
-                    // The normalizer returned a different string reference (for example, a substring of `s`)
-                    // We need to clone it to use it as input fot the next normalizer
+                    // A borrow into `s` (for example, a substring of `s`): copy it out before `s` is dropped.
                     Cow::Borrowed(b) => Some(b.to_owned()),
                 };
                 Cow::Owned(out.unwrap_or(s))
             }
         };
-    }
+    } 
     Ok(cow)
 }
 
-/// The normalizers a [`PipelineTokenizer`] runs.
+/// One normalization step of a [`PipelineTokenizer`]. Not every step comes from the config's
+/// `normalizer` field: a `Metaspace` pre-tokenizer contributes one too, see
+/// [`PipelineTokenizer::try_from`].
+// `NormalizerWrapper` is the big variant, and there are only ever a couple of these per tokenizer.
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 enum PipelineNormalizer {
-    /// Declared explicitly in the tokenizers.json config
+    /// The `normalizer` field of the config, as-is.
     Declared(NormalizerWrapper),
-    /// Derived from the Metaspace pre-tokenizer
+    /// The text-rewriting half of a `Metaspace` pre-tokenizer.
     Metaspace(MetaspaceNormalizer),
 }
 
@@ -455,23 +460,24 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
     /// Adding them in id order preserves ids (tokens present in the model reuse their model id, the
     /// rest keep their dense order), so the pipeline emits the same ids as the reference tokenizer.
     fn try_from(tok: &Tokenizer) -> Result<Self> {
-        let mut normalizers: Vec<PipelineNormalizer> = tok
-            .get_normalizer()
-            .cloned()
-            .map(PipelineNormalizer::Declared)
-            .into_iter()
-            .collect();
+        let mut normalizers = Vec::new();
+        if let Some(declared) = tok.get_normalizer() {
+            normalizers.push(PipelineNormalizer::Declared(declared.clone()));
+        }
 
-        // The legacy `Metaspace` pre-tokenizer is in fact a combination of a Normalizer (adding the delimiter in the input string)
-        // followed by a Split. pre-tokenizer (to split on the delimiter).
-        // Here we deconstruct the legacy pre-tokenizer into those two steps.
+        // A `Metaspace` pre-tokenizer does two jobs at once: it writes `▁` delimiters into the text,
+        // then cuts on them. The pipeline keeps rewriting and cutting apart, so we rebuild it as a
+        // normalizer plus a `Split`. That normalizer runs after the declared one, matching the order
+        // the config asks for: the whole normalizer first, then the pre-tokenizer.
         let pre_tokenizer = match metaspace::to_normalizer_and_split(tok.get_pre_tokenizer()) {
-            // If the pre tokenizer is metaspace: add a Metaspace normalizer to the normalizers Vec, and use a Split pretokenizer
-            Some((normalizer, split)) => {
-                normalizers.push(PipelineNormalizer::Metaspace(normalizer));
+            Some((metaspace_normalizer, split)) => {
+                // One shift this brings: added tokens flagged `normalized` are matched against text
+                // that already carries the delimiters, so such a token containing a space would stop
+                // matching. The t5 and albert configs we test have no normalized added token at all.
+                normalizers.push(PipelineNormalizer::Metaspace(metaspace_normalizer));
                 PipelinePreTokenizer::Split(split)
             }
-            // Else, just forward the tokenizer as-is
+            // Every other pre-tokenizer converts on its own.
             None => tok
                 .get_pre_tokenizer()
                 .cloned()
