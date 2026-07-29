@@ -165,12 +165,66 @@ fn space_replacement(replace: &Replace) -> Option<char> {
 /// How many veto pieces we put up with before giving up on cutting at all.
 const MAX_VETO_PIECES: usize = 32;
 
+/// Width of one padded half of a veto piece. Whatever length the halves really are, they are compared
+/// a full `u128` at a time.
+const HALF_WIDTH: usize = size_of::<u128>();
+
+/// One half of a [`VetoPiece`], padded out to [`HALF_WIDTH`] bytes.
+///
+/// The halves are a byte or two long, but their length is only known once the vocabulary is read, and
+/// comparing a run-time number of bytes means calling `memcmp`. Padding to a fixed width instead
+/// turns the compare into a couple of register operations, which is worth it in a loop that runs once
+/// per word.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Half {
+    bytes: u128,
+    /// `0xff` over the bytes of the half, `0` over the padding.
+    mask: u128,
+}
+
+impl Half {
+    /// The half at the end of the window, where the bytes running up to a cut land.
+    fn ending(half: &[u8]) -> Option<Self> {
+        Self::padded(half, HALF_WIDTH.checked_sub(half.len())?)
+    }
+
+    /// The half at the start of the window, where the bytes following a cut land.
+    fn starting(half: &[u8]) -> Option<Self> {
+        Self::padded(half, 0)
+    }
+
+    /// `None` when the half is wider than the window.
+    fn padded(half: &[u8], at: usize) -> Option<Self> {
+        let mut bytes = [0u8; HALF_WIDTH];
+        let mut mask = [0u8; HALF_WIDTH];
+        bytes.get_mut(at..at + half.len())?.copy_from_slice(half);
+        mask[at..at + half.len()].fill(0xff);
+        Some(Self {
+            bytes: u128::from_le_bytes(bytes),
+            mask: u128::from_le_bytes(mask),
+        })
+    }
+
+    fn matches(&self, window: u128) -> bool {
+        (window ^ self.bytes) & self.mask == 0
+    }
+}
+
 /// A vocabulary piece holding a delimiter that is not at its start, split at that delimiter: `>▁</`
 /// becomes `VetoPiece { before: ">", after: "</" }`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct VetoPiece {
-    before: Vec<u8>,
-    after: Vec<u8>,
+    before: Half,
+    after: Half,
+}
+
+impl VetoPiece {
+    fn new(before: &[u8], after: &[u8]) -> Option<Self> {
+        Some(Self {
+            before: Half::ending(before)?,
+            after: Half::starting(after)?,
+        })
+    }
 }
 
 /// The cuts a vocabulary does not allow.
@@ -182,8 +236,11 @@ struct VetoPiece {
 struct Veto {
     /// Empty means no merge can reach across a cut, so every cut is allowed.
     pieces: Vec<VetoPiece>,
+    /// Last bytes of the `before` halves, as a 256-bit set. A cut with any other byte in front of it
+    /// fits no piece, which is how most cuts get away without a single comparison.
+    bytes_before: [u64; 4],
     /// Length of the delimiter the pieces were split at. Every `after` half starts at the byte right
-    /// behind the delimiter, so the text is compared to it from there.
+    /// behind the delimiter, so the window compared to it has to start there too.
     delimiter_len: usize,
 }
 
@@ -191,13 +248,14 @@ impl Veto {
     /// Reads the vocabulary and collects the pieces a merge could use to reach across a cut.
     ///
     /// `None` turns cutting off: either this is not a SentencePiece vocabulary (no delimiter piece in
-    /// it), or its veto pieces are too many or too tangled to rule out cheaply.
+    /// it), or its veto pieces are too many, too long or too tangled to rule out cheaply.
     fn build(vocab: &[(Vec<u8>, u32)], delimiter: &Literal) -> Option<Self> {
         let pattern = delimiter.pattern();
         if !vocab.iter().any(|(piece, _)| piece.as_slice() == pattern) {
             return None;
         }
         let mut pieces = Vec::new();
+        let mut bytes_before = [0u64; 4];
         for (piece, _) in vocab {
             for at in delimiter.matches(piece) {
                 // A piece starting with a delimiter sits right after a cut, not across it, and a
@@ -215,26 +273,60 @@ impl Veto {
                 {
                     return None;
                 }
-                pieces.push(VetoPiece {
-                    before: before.to_vec(),
-                    after: after.to_vec(),
-                });
+                let previous = *before.last().expect("`at` is past the start of the piece");
+                bytes_before[(previous >> 6) as usize] |= 1 << (previous & 63);
+                pieces.push(VetoPiece::new(before, after)?);
             }
         }
         Some(Self {
             pieces,
+            bytes_before,
             delimiter_len: pattern.len(),
         })
     }
 
     /// Could a piece cover the delimiter at `at`, so that a merge reaches over a cut placed there? A
     /// match only means such a merge is possible, not that the model performs it — either way we
-    /// leave the text in one piece.
+    /// leave the text in one piece. `at` is past the start of the text, so there is a byte in front
+    /// of it.
     fn forbids(&self, text: &[u8], at: usize) -> bool {
-        let after = &text[at + self.delimiter_len..];
+        let previous = text[at - 1];
+        if self.bytes_before[(previous >> 6) as usize] & (1 << (previous & 63)) == 0 {
+            return false;
+        }
+        // Both windows are padded with zeros, so a half can only match beyond the ends of `text` if
+        // the half itself holds a zero byte — and one match too many only leaves the text uncut.
+        let before = window_ending(&text[..at]);
+        let after = window_starting(&text[at + self.delimiter_len..]);
         self.pieces
             .iter()
-            .any(|piece| text[..at].ends_with(&piece.before) && after.starts_with(&piece.after))
+            .any(|piece| piece.before.matches(before) && piece.after.matches(after))
+    }
+}
+
+/// The last [`HALF_WIDTH`] bytes of `bytes`, padded on the left when there are fewer, packed the way
+/// [`Half::ending`] packs a half.
+fn window_ending(bytes: &[u8]) -> u128 {
+    match bytes.last_chunk() {
+        Some(window) => u128::from_le_bytes(*window),
+        None => {
+            let mut window = [0u8; HALF_WIDTH];
+            window[HALF_WIDTH - bytes.len()..].copy_from_slice(bytes);
+            u128::from_le_bytes(window)
+        }
+    }
+}
+
+/// The first [`HALF_WIDTH`] bytes of `bytes`, padded on the right when there are fewer, packed the way
+/// [`Half::starting`] packs a half.
+fn window_starting(bytes: &[u8]) -> u128 {
+    match bytes.first_chunk() {
+        Some(window) => u128::from_le_bytes(*window),
+        None => {
+            let mut window = [0u8; HALF_WIDTH];
+            window[..bytes.len()].copy_from_slice(bytes);
+            u128::from_le_bytes(window)
+        }
     }
 }
 
@@ -396,10 +488,7 @@ mod tests {
         assert!(veto_of(&["▁", "▁hello", "▁▁"]).unwrap().pieces.is_empty());
         assert_eq!(
             veto_of(&["▁", "p▁"]).unwrap().pieces,
-            [VetoPiece {
-                before: b"p".to_vec(),
-                after: Vec::new(),
-            }]
+            [VetoPiece::new(b"p", b"").unwrap()]
         );
     }
 
@@ -412,6 +501,22 @@ mod tests {
         vocab.extend((0..=MAX_VETO_PIECES).map(|i| format!("{i}▁x")));
         let vocab: Vec<&str> = vocab.iter().map(String::as_str).collect();
         assert!(veto_of(&vocab).is_none());
+        // A half that does not fit the fixed-width compare.
+        let wide = "a".repeat(HALF_WIDTH + 1);
+        assert!(veto_of(&["▁", &format!("{wide}▁x")]).is_none());
+        assert!(veto_of(&["▁", &format!("a▁{wide}")]).is_none());
+    }
+
+    #[test]
+    fn veto_matches_a_half_that_fills_the_window() {
+        let before = "a".repeat(HALF_WIDTH);
+        let veto = || veto_of(&["▁", &format!("{before}▁x"), "▁x"]).unwrap();
+        let text = format!("{before}▁x");
+        assert_eq!(split_on(veto(), &text), [text.as_str()]);
+        // One byte short of the half: the window pads with a zero the half does not hold, so the
+        // piece cannot form and the cut stands.
+        let short = &before[1..];
+        assert_eq!(split_on(veto(), &format!("{short}▁x")), [short, "▁x"]);
     }
 
     mod for_tokenizer {
