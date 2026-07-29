@@ -29,6 +29,17 @@ fn matches_do_not_overlap() {
     assert_eq!(literal.matches(b"aaaa").collect::<Vec<_>>(), [0, 2]);
 }
 
+/// A `Literal` is stored inline in the normalizer and decoder enums, where every other variant is a
+/// handful of bytes. `memmem::Finder` itself is a few hundred, so it has to stay behind a pointer.
+#[test]
+fn a_literal_is_pointer_sized() {
+    assert_eq!(
+        size_of::<Literal>(),
+        size_of::<*const u8>(),
+        "a Literal must not carry its finder inline"
+    );
+}
+
 #[test]
 fn an_empty_pattern_is_rejected() {
     assert_eq!(Literal::new(b"").unwrap_err(), EmptyPattern);

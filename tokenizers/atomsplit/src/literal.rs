@@ -22,9 +22,12 @@ impl fmt::Display for EmptyPattern {
 impl std::error::Error for EmptyPattern {}
 
 /// A literal string to split on.
+///
+/// The finder is boxed because it is large — a few hundred bytes of prefilter state on x86_64 — and
+/// callers store it inside enums whose other variants are tiny.
 #[derive(Debug, Clone)]
 pub struct Literal {
-    finder: memmem::Finder<'static>,
+    finder: Box<memmem::Finder<'static>>,
 }
 
 impl Literal {
@@ -35,7 +38,7 @@ impl Literal {
             return Err(EmptyPattern);
         }
         Ok(Self {
-            finder: memmem::Finder::new(pattern).into_owned(),
+            finder: Box::new(memmem::Finder::new(pattern).into_owned()),
         })
     }
 
