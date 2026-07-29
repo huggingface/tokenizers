@@ -2,7 +2,7 @@
 use atomsplit::classify::{classify, mask};
 use atomsplit::fsm::{
     CharDelimiterSplit, Span, class_runs_into, emit_class_spans, fsm_byte_level, fsm_cl100k,
-    fsm_deepseek,
+    fsm_deepseek, fsm_o200k, fsm_tekken,
 };
 
 /// Run a no-push fsm into a fresh buffer and return the emitted spans.
@@ -24,6 +24,18 @@ fn cl100k_rules() {
     assert_eq!(cl("a1234"), vec![(0, 1), (1, 4), (4, 5)]); // "a" | "123" | "4" ({1,3} cap)
     assert_eq!(cl("  hi"), vec![(0, 1), (1, 4)]); // " " | " hi"
     assert_eq!(cl("a, b"), vec![(0, 1), (1, 2), (2, 4)]); // "a" | "," | " b"
+}
+
+/// Mistral's tekken split is o200k's, minus the contraction suffix, with one token per digit.
+#[test]
+fn tekken_rules() {
+    let tk = |s| spans(fsm_tekken, s);
+    assert_eq!(tk("don't"), vec![(0, 3), (3, 5)]); // "don" | "'t" — prefix+letters, not a contraction
+    assert_eq!(spans(fsm_o200k, "don't"), vec![(0, 5)]); // o200k glues the contraction on
+    assert_eq!(tk("a1234"), vec![(0, 1), (1, 2), (2, 3), (3, 4), (4, 5)]); // `\p{N}`, one digit each
+    assert_eq!(tk("XMLHttpRequest"), vec![(0, 7), (7, 14)]); // case split: "XMLHttp" | "Request"
+    assert_eq!(tk("a/\r\nb"), vec![(0, 1), (1, 4), (4, 5)]); // "/" run + its `[\r\n/]*` tail
+    assert_eq!(tk("hi   ok"), vec![(0, 2), (2, 4), (4, 7)]); // \s+(?!\S) leaves one space
 }
 
 #[test]

@@ -1,5 +1,5 @@
 //! Pre-tokenization on BIG real text (Wikipedia / big.txt), per language, for every pre-tokenizer at
-//! once — the GPT regex FSMs (gpt2 · cl100k · o200k · deepseek) and the class family (WhitespaceSplit ·
+//! once — the GPT regex FSMs (gpt2 · cl100k · o200k · tekken · deepseek) and the class family (WhitespaceSplit ·
 //! Whitespace · Digits · Punctuation · Bert). Per (engine, corpus): classify (SIMD vs scalar) + fsm in
 //! ns/byte, and the full pipeline (SIMD classify + scalar fsm) vs FOUR reference engines — onig (C),
 //! fancy-regex (pure Rust), logos (compile-time DFA lexer), pcre2 (C + JIT). GPT regexes come from
@@ -12,7 +12,9 @@
 //!
 //! Run: cargo bench --bench regex
 use atomsplit::classify::{classify, classify_scalar, mask};
-use atomsplit::fsm::{Span, class_runs_into, fsm_byte_level, fsm_cl100k, fsm_deepseek, fsm_o200k};
+use atomsplit::fsm::{
+    Span, class_runs_into, fsm_byte_level, fsm_cl100k, fsm_deepseek, fsm_o200k, fsm_tekken,
+};
 use atomsplit::regexes;
 use fancy_regex::Regex as Fancy;
 use logos::Logos;
@@ -70,6 +72,27 @@ enum LO200k {
     Space,
 }
 
+// tekken = LO200k with no contraction suffix and one token per digit.
+#[derive(Logos)]
+enum LTekken {
+    #[regex(
+        r"[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]*[\p{Ll}\p{Lm}\p{Lo}\p{M}]+",
+        priority = 6
+    )]
+    LettersA,
+    #[regex(
+        r"[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]+[\p{Ll}\p{Lm}\p{Lo}\p{M}]*",
+        priority = 5
+    )]
+    LettersB,
+    #[regex(r"\p{N}")]
+    Num,
+    #[regex(r" ?[^\s\p{L}\p{N}]+[\r\n/]*", priority = 2)]
+    Other,
+    #[regex(r"\s+")]
+    Space,
+}
+
 // class-family logos grammars. The whitespace-dropping ones use `skip` so logos never emits ws tokens.
 #[derive(Logos)]
 #[logos(skip r"\s+")]
@@ -112,6 +135,7 @@ fn logos_ns(ename: &str, s: &str, len: usize, iters: u32) -> Option<f64> {
         "gpt2" => |s| lex_count::<LGpt2>(s),
         "cl100k" => |s| lex_count::<LCl100k>(s),
         "o200k" => |s| lex_count::<LO200k>(s),
+        "tekken" => |s| lex_count::<LTekken>(s),
         "ws_split" => |s| lex_count::<LWsSplit>(s),
         "whitespace" => |s| lex_count::<LWhitespace>(s),
         "digits" => |s| lex_count::<LDigits>(s),
@@ -159,6 +183,7 @@ const ENGINES: &[(&str, Fsm, &[&str], bool, bool)] = &[
     ("gpt2", fsm_byte_level as Fsm, &[regexes::GPT2], true, true),
     ("cl100k", fsm_cl100k as Fsm, &[regexes::CL100K], true, true),
     ("o200k", fsm_o200k as Fsm, &[regexes::O200K], true, true),
+    ("tekken", fsm_tekken as Fsm, &[regexes::TEKKEN], true, true),
     (
         "deepseek",
         fsm_deepseek as Fsm,
@@ -396,7 +421,7 @@ fn main() {
     }
     println!(
         "\n(ns/byte, lower better. pipeline = SIMD classify + scalar fsm; vs onig / fancy / logos / \
-         pcre2(JIT). GPT FSMs (gpt2/cl100k/o200k/deepseek): the regex IS the spec, ✓ = byte-exact, \
+         pcre2(JIT). GPT FSMs (gpt2/cl100k/o200k/tekken/deepseek): the regex IS the spec, ✓ = byte-exact, \
          ✗ = regression. Class family (ws_split/whitespace/digits/punct/bert): the mask can't be written \
          as a regex class, so the reference is approximate — ✓ where it happens to match, ≈ where it \
          diverges (speed still comparable). logos approximates the grammar (deepseek/punct/bert: n/a).)"
