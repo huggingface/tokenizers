@@ -18,6 +18,11 @@ pub const CL100K: &str = r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+
 /// [`crate::fsm::fsm_o200k`].
 pub const O200K: &str = r"[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]*[\p{Ll}\p{Lm}\p{Lo}\p{M}]+(?i:'s|'t|'re|'ve|'m|'ll|'d)?|[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]+[\p{Ll}\p{Lm}\p{Lo}\p{M}]*(?i:'s|'t|'re|'ve|'m|'ll|'d)?|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n/]*|\s*[\r\n]+|\s+(?!\S)|\s+";
 
+/// Mistral tekken (mistral-small-4 / mistral-4). o200k's grammar with two changes: letter tokens take
+/// no contraction suffix, and the digit rule is a bare `\p{N}` — one token per digit. Reproduced by
+/// [`crate::fsm::fsm_tekken`].
+pub const TEKKEN: &str = r"[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]*[\p{Ll}\p{Lm}\p{Lo}\p{M}]+|[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]+[\p{Ll}\p{Lm}\p{Lo}\p{M}]*|\p{N}| ?[^\s\p{L}\p{N}]+[\r\n/]*|\s*[\r\n]+|\s+(?!\S)|\s+";
+
 /// deepseek-v3 `Sequence`: `NUM` → `CJK` → `BIG`, each `Isolated`. Reproduced by
 /// [`crate::fsm::fsm_deepseek`] as one pass.
 pub const DEEPSEEK_NUM: &str = r"\p{N}{1,3}";

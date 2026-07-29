@@ -1,25 +1,37 @@
 //! Reference-parity gates for the regex-shaped pre-tokenizers. Each of `fsm_cl100k` / `fsm_o200k` /
-//! `fsm_byte_level` / `fsm_deepseek` must be BYTE-EXACT with the real reference — the oniguruma regex, composed exactly
-//! as HF applies it (deepseek is a `Sequence` of three Isolated splits) — on a representative
-//! multilingual corpus (ASCII, contractions, digits, punctuation runs, whitespace variants, Latin
-//! accents/marks, Cyrillic/Greek/Arabic/Devanagari, Han/Kana/Hangul, ZWJ, astral emoji).
+//! `fsm_tekken` / `fsm_byte_level` / `fsm_deepseek` must be BYTE-EXACT with the real reference — the
+//! oniguruma regex, composed exactly as HF applies it (deepseek is a `Sequence` of three Isolated
+//! splits) — on two corpora: a multilingual one (ASCII, contractions, digits, punctuation runs,
+//! whitespace variants, Latin accents/marks, Cyrillic/Greek/Arabic/Devanagari, Han/Kana/Hangul, ZWJ,
+//! astral emoji) and an edge-case one (see [`EDGE`]).
 //!
-//! This is the byte-exactness gate the hand cases in `fsm.rs` don't provide; the same corpus + gate
+//! This is the byte-exactness gate the hand cases in `fsm.rs` don't provide; the same corpora + gate
 //! should run under x86 (Intel SDE) in CI to validate the SIMD paths.
 //!
 //! Gated off wasm32: the oniguruma reference is a C library that has no wasi libc to build against.
 #![cfg(not(target_arch = "wasm32"))]
 use atomsplit::classify::classify;
-use atomsplit::fsm::{Span, fsm_byte_level, fsm_cl100k, fsm_deepseek, fsm_o200k};
+use atomsplit::fsm::{Span, fsm_byte_level, fsm_cl100k, fsm_deepseek, fsm_o200k, fsm_tekken};
 use onig::Regex;
 // The oracle regexes are the canonical specs the FSMs implement — single source of truth in atomsplit.
 use atomsplit::regexes::{
     CL100K, DEEPSEEK_BIG as DS_BIG, DEEPSEEK_CJK as DS_CJK, DEEPSEEK_NUM as DS_NUM, GPT2, O200K,
+    TEKKEN,
 };
 
 const CORPUS: &str = "The quick brown fox. Don't 12345 numbers, \u{00BD}\u{00B2}\u{00BC} \u{2168}! \
      café × naïve — Привет, наука! Ελλάδα 中文分词。ひらがな カタカナ 한글 مرحبا العربية \
      नरेंद्र मोदी x_y a1b2c3 e-mail@host.com 😀👍 hello  world\ttabs\nnewlines   end ";
+
+/// Second corpus, aimed at the axes where the o200k-shaped FSMs differ from each other: apostrophes
+/// (contraction suffix vs plain prefix+letters), digit-run length (`{1,3}` vs one-per-token), and the
+/// `[\r\n/]*` tail after a symbol run.
+const EDGE: &str = "IT'S O'Brien can't 'quoted' l'été rock'n'roll\r\n\
+     0 42 999 1000 1234567 v1.2.3 3.14159 1,000,000 \
+     https://host/a/b?c=1&d=2 path/to//file /\r\n/ ///x \
+     CamelCase XMLHttpRequest ĲSSELMEER ǅAMBO ŀl a\u{0301}b \
+     日本語1234テスト ½3¼ \u{2168}42\u{2169} #tag @user $9.99 100% \
+     end\n\n\nlines\r\n\r\n  \t  trailing   ";
 
 fn spans(f: impl Fn(&[u8], &[u8], &mut [Span]) -> usize, s: &str) -> Vec<Span> {
     let mut tags = vec![0u8; s.len()];
@@ -73,25 +85,37 @@ fn deepseek_ref(text: &str) -> Vec<Span> {
         .collect()
 }
 
+/// Both corpora, one regex: the FSM must reproduce the oracle span-for-span.
+fn check(fsm: impl Fn(&[u8], &[u8], &mut [Span]) -> usize + Copy, pattern: &str) {
+    let re = Regex::new(pattern).unwrap();
+    for text in [CORPUS, EDGE] {
+        assert_eq!(spans(fsm, text), onig_spans(&re, text), "{text:?}");
+    }
+}
+
 #[test]
 fn cl100k_parity() {
-    let re = Regex::new(CL100K).unwrap();
-    assert_eq!(spans(fsm_cl100k, CORPUS), onig_spans(&re, CORPUS));
+    check(fsm_cl100k, CL100K);
 }
 
 #[test]
 fn o200k_parity() {
-    let re = Regex::new(O200K).unwrap();
-    assert_eq!(spans(fsm_o200k, CORPUS), onig_spans(&re, CORPUS));
+    check(fsm_o200k, O200K);
+}
+
+#[test]
+fn tekken_parity() {
+    check(fsm_tekken, TEKKEN);
 }
 
 #[test]
 fn byte_level_parity() {
-    let re = Regex::new(GPT2).unwrap();
-    assert_eq!(spans(fsm_byte_level, CORPUS), onig_spans(&re, CORPUS));
+    check(fsm_byte_level, GPT2);
 }
 
 #[test]
 fn deepseek_parity() {
-    assert_eq!(spans(fsm_deepseek, CORPUS), deepseek_ref(CORPUS));
+    for text in [CORPUS, EDGE] {
+        assert_eq!(spans(fsm_deepseek, text), deepseek_ref(text), "{text:?}");
+    }
 }

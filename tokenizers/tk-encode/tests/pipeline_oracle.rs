@@ -107,9 +107,10 @@ fn check_model(tok_file: &str) {
     );
 }
 
-// Same model set as the decode oracle (one per decoder archetype); whichever files
-// a given checkout has get run (bert-wiki + llama-3 ship with `make test`; the rest
-// with `make bench-models`). Unsupported models skip, not fail.
+// The decode oracle's model set (one per decoder archetype) plus mistral-small-4, whose
+// tekken pre-tokenizer is its own encode archetype; whichever files a given checkout has
+// get run (bert-wiki + llama-3 ship with `make test`; the rest with `make bench-models`).
+// Unsupported models skip, not fail.
 #[test]
 fn bert_wiki() {
     check_model("bert-wiki.json");
@@ -143,4 +144,9 @@ fn t5_base() {
 #[test]
 fn albert() {
     check_model("albert-base-v1-tokenizer.json");
+}
+
+#[test]
+fn mistral_small_4() {
+    check_model("mistral-small-4.json");
 }
