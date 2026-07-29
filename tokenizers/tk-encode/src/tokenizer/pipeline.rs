@@ -1,5 +1,7 @@
 use std::cell::RefCell;
 use std::convert::TryInto;
+use std::mem;
+use std::sync::{Mutex, PoisonError};
 use std::{borrow::Cow, convert::TryFrom};
 
 use atomsplit::classify::classify;
@@ -391,6 +393,73 @@ pub struct PipelineTokenizer {
     pre_tokenizer: PipelinePreTokenizer,
     model: PipelineModel,
     post_processor: PipelinePostProcessor,
+    scratch_pool: ScratchPool,
+}
+
+/// Working space for encoding, lent out and taken back.
+///
+/// Encoding needs buffers to build tokens in, and building them per call means asking the
+/// allocator for the same things over and over. So they are borrowed instead: a caller
+/// takes a scratch, hands it back when it is done, and the next caller gets one whose
+/// buffers are already as big as the last encode needed. A model empties what it uses as
+/// it goes, so a scratch comes back ready to use.
+///
+/// A tokenizer encodes through `&self` and several threads may be in it at once, so a
+/// scratch cannot simply live in the tokenizer — each thread needs its own. The pool ends
+/// up holding one per thread that has encoded at the same time as the others, and frees
+/// them all with the tokenizer. A single thread encoding in a loop — the common case —
+/// borrows and returns the same one every time.
+struct ScratchPool(Mutex<Vec<PipelineModelScratch>>);
+
+impl ScratchPool {
+    fn new() -> Self {
+        Self(Mutex::new(Vec::new()))
+    }
+
+    /// Borrow a scratch; dropping the guard gives it back. The lock is held just long
+    /// enough to move one out, never while encoding.
+    fn get<'a>(&'a self, model: &PipelineModel) -> ScratchGuard<'a> {
+        let taken = self.0.lock().unwrap_or_else(PoisonError::into_inner).pop();
+        ScratchGuard {
+            scratch: taken.unwrap_or_else(|| model.init_scratch()),
+            pool: self,
+        }
+    }
+
+    #[cfg(test)]
+    fn stored_scratches(&self) -> usize {
+        self.0.lock().unwrap_or_else(PoisonError::into_inner).len()
+    }
+}
+
+/// Gives the scratch back to the pool when it goes out of scope.
+struct ScratchGuard<'a> {
+    scratch: PipelineModelScratch,
+    pool: &'a ScratchPool,
+}
+
+impl Drop for ScratchGuard<'_> {
+    fn drop(&mut self) {
+        let scratch = mem::take(&mut self.scratch);
+        self.pool
+            .0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(scratch);
+    }
+}
+
+impl std::ops::Deref for ScratchGuard<'_> {
+    type Target = PipelineModelScratch;
+    fn deref(&self) -> &PipelineModelScratch {
+        &self.scratch
+    }
+}
+
+impl std::ops::DerefMut for ScratchGuard<'_> {
+    fn deref_mut(&mut self) -> &mut PipelineModelScratch {
+        &mut self.scratch
+    }
 }
 
 impl TryFrom<&Tokenizer> for PipelineTokenizer {
@@ -493,6 +562,7 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
                 .map(PipelinePostProcessor::try_from)
                 .transpose()?
                 .unwrap_or_default(),
+            scratch_pool: ScratchPool::new(),
         })
     }
 }
@@ -523,7 +593,7 @@ impl PipelineTokenizer {
     pub fn encode(&self, input: &str, add_special_tokens: bool) -> Result<Vec<PipelineToken>> {
         let mut output = Vec::new();
         let mut pre_tokens = Vec::new();
-        let mut scratch = self.model.init_scratch();
+        let mut scratch = self.scratch_pool.get(&self.model);
 
         self.encode_generic::<{ Self::STAGE_POSTPROCESS }>(
             input,
@@ -972,11 +1042,16 @@ impl Model for PipelineModel {
     }
 }
 
+#[derive(Default)]
 pub enum PipelineModelScratch {
     BPE(BpeScratch),
     WordLevel(()),
     WordPiece(WordPieceScratch),
     Unigram(UnigramScratch),
+    /// Costs nothing to build, and stands in for the real scratch while a guard is
+    /// handing it back to the pool.
+    #[default]
+    None,
 }
 
 impl ModelScratch for PipelineModelScratch {}
@@ -1313,5 +1388,102 @@ mod tests {
         );
         let err = conversion_error(&tok);
         assert!(err.contains("not supported"), "{}", err);
+    }
+
+    /// A BPE pipeline that merges "hello" into the single id 7.
+    fn hello_pipeline() -> PipelineTokenizer {
+        use crate::models::bpe::{BpeBuilder, Merges, Vocab};
+
+        let vocab: Vocab = [
+            ("h", 0u32),
+            ("e", 1),
+            ("l", 2),
+            ("o", 3),
+            ("he", 4),
+            ("hel", 5),
+            ("hell", 6),
+            ("hello", 7),
+        ]
+        .into_iter()
+        .map(|(s, i)| (s.to_string(), i))
+        .collect();
+        let merges: Merges = vec![
+            ("h".to_string(), "e".to_string()),
+            ("he".to_string(), "l".to_string()),
+            ("hel".to_string(), "l".to_string()),
+            ("hell".to_string(), "o".to_string()),
+        ];
+        let bpe = BpeBuilder::default()
+            .vocab_and_merges(vocab, merges)
+            .build()
+            .unwrap();
+        PipelineTokenizer::try_from(&Tokenizer::new(bpe)).unwrap()
+    }
+
+    // The pool exists so ONE `&self` tokenizer can be shared across rayon workers. Encode
+    // the same input from thousands of threads through a single instance; each must get a
+    // private scratch and produce the sequential result. Two threads sharing a scratch
+    // would corrupt some of them — and this only compiles if `PipelineTokenizer: Sync`,
+    // which the pool has to preserve.
+    #[test]
+    fn encode_shared_across_threads() {
+        use rayon::prelude::*;
+
+        let pipeline = hello_pipeline();
+
+        let want: Vec<u32> = pipeline
+            .encode("hello", false)
+            .unwrap()
+            .iter()
+            .map(|t| t.id)
+            .collect();
+        assert_eq!(want, vec![7]);
+
+        let all_match = (0..10_000u32).into_par_iter().all(|_| {
+            pipeline
+                .encode("hello", false)
+                .unwrap()
+                .iter()
+                .map(|t| t.id)
+                .collect::<Vec<_>>()
+                == want
+        });
+        assert!(all_match);
+    }
+
+    // Reusing scratches is the whole point of the pool, so it must not build one per call:
+    // one thread encoding in a loop has to keep coming back to the same scratch, and a
+    // burst of N threads must leave at most N behind for later calls to use.
+    #[test]
+    fn scratches_are_reused_rather_than_piling_up() {
+        use std::sync::Barrier;
+
+        let pipeline = hello_pipeline();
+        for _ in 0..1000 {
+            pipeline.encode("hello", false).unwrap();
+        }
+        assert_eq!(pipeline.scratch_pool.stored_scratches(), 1);
+
+        let threads = 64;
+        let all_holding = Barrier::new(threads);
+        std::thread::scope(|scope| {
+            for _ in 0..threads {
+                scope.spawn(|| {
+                    let scratch = pipeline.scratch_pool.get(&pipeline.model);
+                    all_holding.wait();
+                    drop(scratch);
+                });
+            }
+        });
+
+        let after_burst = pipeline.scratch_pool.stored_scratches();
+        assert!(
+            after_burst <= threads,
+            "{after_burst} scratches kept for {threads} threads"
+        );
+        for _ in 0..1000 {
+            pipeline.encode("hello", false).unwrap();
+        }
+        assert_eq!(pipeline.scratch_pool.stored_scratches(), after_burst);
     }
 }
