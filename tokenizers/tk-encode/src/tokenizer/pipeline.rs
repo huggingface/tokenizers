@@ -27,6 +27,7 @@ use crate::{
         digits::Digits,
         fixed_length::FixedLength,
         metaspace,
+        proven_cuts::{self, ProvenCuts},
         punctuation::Punctuation,
         sequence::PipelineSequence,
         split::{Split as SplitPretok, SplitPattern},
@@ -139,6 +140,7 @@ pub enum PipelinePreTokenizer {
     Delimiter(CharDelimiterSplit),
     Digits(Digits),
     FixedLength(FixedLength),
+    ProvenCuts(ProvenCuts),
     Punctuation(Punctuation),
     Sequence(PipelineSequence),
     Split(SplitPretok),
@@ -162,6 +164,7 @@ impl PreTokenizer for PipelinePreTokenizer {
             Self::Delimiter(pretok) => pretok.pre_tokenize(text, out),
             Self::Digits(pretok) => pretok.pre_tokenize(text, out),
             Self::FixedLength(pretok) => pretok.pre_tokenize(text, out),
+            Self::ProvenCuts(pretok) => pretok.pre_tokenize(text, out),
             Self::Punctuation(pretok) => pretok.pre_tokenize(text, out),
             Self::Sequence(pretok) => pretok.pre_tokenize(text, out),
             Self::Split(pretok) => pretok.pre_tokenize(text, out),
@@ -635,6 +638,16 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
             ModelWrapper::WordPiece(model) => PipelineModel::WordPiece(model.try_into()?),
         };
 
+        // Some tokenizers spell every space as `▁` and then cut nowhere, so the model receives the
+        // whole text in one piece. Cutting it into words is faster wherever the vocabulary proves
+        // that leaves the ids alone — and that proof reads the vocabulary, hence after the model.
+        let pre_tokenizer =
+            match proven_cuts::for_tokenizer(tok.get_normalizer(), tok.get_pre_tokenizer(), &model)
+            {
+                Some(cuts) => PipelinePreTokenizer::ProvenCuts(cuts),
+                None => pre_tokenizer,
+            };
+
         Ok(Self {
             added_vocabulary,
             normalizers,
@@ -810,6 +823,10 @@ impl PipelineTokenizer {
 
     pub fn get_model(&self) -> &PipelineModel {
         &self.model
+    }
+
+    pub fn get_pre_tokenizer(&self) -> &PipelinePreTokenizer {
+        &self.pre_tokenizer
     }
 
     /// Encode `input` into token ids.

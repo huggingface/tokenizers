@@ -767,6 +767,17 @@ impl PipelineBPE {
         })
     }
 
+    /// Does this model look the whole text up in the vocabulary before merging it?
+    pub(crate) fn ignore_merges(&self) -> bool {
+        self.ignore_merges
+    }
+
+    /// Every piece of the vocabulary, as bytes. Used at build time to work out how the text may be
+    /// cut into words; not cheap, so call it once.
+    pub(crate) fn vocab_bytes(&self) -> Vec<(Vec<u8>, u32)> {
+        self.vocab.byte_content()
+    }
+
     fn merge_word(
         &self,
         sequence: &str,

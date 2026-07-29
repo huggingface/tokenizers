@@ -26,6 +26,20 @@ use tokenizers_release::Tokenizer as Released;
 
 const PROBE: &str = "The quick brown fox jumps 123.";
 
+/// Inputs built to break word boundaries, which the natural corpora do not reach. `<b> </b>` is the
+/// one that matters most: gemma-4 merges its `>`, mark and `</` into a single token across what looks
+/// like a word boundary, so a cut placed there would change the ids.
+const HOSTILE: &[&str] = &[
+    "html-ish <b> </b> crossing > </ pieces > </ literal mark \u{2581}word",
+    "<p>one</p> <p>two</p>",
+    "The  quick   brown fox \u{2014} jumps; over, the: lazy. dog!  ",
+    "\t\tindent()\twide  spacing      here \r\nCRLF\r\n",
+    "\u{2581}\u{2581}\u{2581}already marked\u{2581}",
+    "trailing space and mark p\u{2581}q ",
+    "\u{65e5}\u{672c}\u{8a9e}\u{306e}\u{30c6}\u{30ad}\u{30b9}\u{30c8} \u{1f389} combining a\u{301}e\u{308} nbsp\u{a0}here",
+    "   leading and trailing   ",
+];
+
 fn check_model(tok_file: &str) {
     let path = Path::new(DATA).join(tok_file);
     // The legacy `Tokenizer` only *builds* the pipeline (its sole constructor
@@ -52,6 +66,42 @@ fn check_model(tok_file: &str) {
     };
 
     let mut failures = Vec::new();
+    let mut check = |case: String, chunk: &str| {
+        for add_special_tokens in [false, true] {
+            let expected = released
+                .encode_fast(chunk, add_special_tokens)
+                .unwrap()
+                .get_ids()
+                .to_vec();
+            let got: Vec<u32> = pipeline
+                .encode(chunk, add_special_tokens)
+                .wait()
+                .unwrap()
+                .first()
+                .unwrap()
+                .iter()
+                .map(|t| t.id)
+                .collect();
+            if expected != got {
+                let at = expected
+                    .iter()
+                    .zip(&got)
+                    .position(|(e, g)| e != g)
+                    .unwrap_or(expected.len().min(got.len()));
+                failures.push(format!(
+                    "{case} (add_special_tokens={add_special_tokens}): ids diverge at {at} \
+                     (expected len {}, got len {})",
+                    expected.len(),
+                    got.len(),
+                ));
+            }
+        }
+    };
+
+    for (i, chunk) in HOSTILE.iter().enumerate() {
+        check(format!("hostile/{i}"), chunk);
+    }
+
     for &(group, stem) in FIXTURES {
         let fixture = Path::new(DATA)
             .join("fixtures")
@@ -71,35 +121,7 @@ fn check_model(tok_file: &str) {
             if chunk.is_empty() {
                 continue;
             }
-            for add_special_tokens in [false, true] {
-                let expected = released
-                    .encode_fast(chunk, add_special_tokens)
-                    .unwrap()
-                    .get_ids()
-                    .to_vec();
-                let got: Vec<u32> = pipeline
-                    .encode(chunk, add_special_tokens)
-                    .wait()
-                    .unwrap()
-                    .first()
-                    .unwrap()
-                    .iter()
-                    .map(|t| t.id)
-                    .collect();
-                if expected != got {
-                    let at = expected
-                        .iter()
-                        .zip(&got)
-                        .position(|(e, g)| e != g)
-                        .unwrap_or(expected.len().min(got.len()));
-                    failures.push(format!(
-                        "{group}/{stem} ({w} B window, add_special_tokens={add_special_tokens}): \
-                         ids diverge at {at} (expected len {}, got len {})",
-                        expected.len(),
-                        got.len(),
-                    ));
-                }
-            }
+            check(format!("{group}/{stem} ({w} B window)"), chunk);
         }
     }
     assert!(
