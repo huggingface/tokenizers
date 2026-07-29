@@ -1,5 +1,6 @@
 use crate::utils::SysRegex;
 use crate::{Offsets, Result};
+use atomsplit::literal::Literal;
 use regex::Regex;
 
 /// Pattern used to split a NormalizedString
@@ -52,6 +53,32 @@ impl Pattern for &Regex {
             }
             splits.push(((m.start(), m.end()), true));
             prev = m.end();
+        }
+        if prev != inside.len() {
+            splits.push(((prev, inside.len()), false))
+        }
+        Ok(splits)
+    }
+}
+
+/// Searching for a plain string, which needs no regex engine at all: [`Literal`] scans the bytes.
+/// `Pattern for &str` builds a `regex::Regex` on every call, so prefer this whenever the same pattern
+/// is used more than once — a [`Literal`] is built once and kept.
+impl Pattern for &Literal {
+    fn find_matches(&self, inside: &str) -> Result<Vec<(Offsets, bool)>> {
+        if inside.is_empty() {
+            return Ok(vec![((0, 0), false)]);
+        }
+
+        let mut prev = 0;
+        let mut splits = Vec::with_capacity(inside.len());
+        for start in self.matches(inside.as_bytes()) {
+            let end = start + self.pattern().len();
+            if prev != start {
+                splits.push(((prev, start), false));
+            }
+            splits.push(((start, end), true));
+            prev = end;
         }
         if prev != inside.len() {
             splits.push(((prev, inside.len()), false))

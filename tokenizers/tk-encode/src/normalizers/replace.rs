@@ -5,6 +5,7 @@ use crate::tokenizer::Decoder;
 use crate::tokenizer::pattern::Pattern;
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 use crate::utils::SysRegex;
+use atomsplit::literal::Literal;
 use serde::{Deserialize, Serialize};
 
 /// Represents the different patterns that `Replace` can use
@@ -26,7 +27,7 @@ impl From<&str> for ReplacePattern {
     }
 }
 
-/// We use this custom deserializer to provide the value for `regex` for `Replace`
+/// We use this custom deserializer to build the search for `Replace`
 #[doc(hidden)]
 #[derive(Deserialize)]
 #[serde(tag = "type")]
@@ -43,6 +44,28 @@ impl std::convert::TryFrom<ReplaceDeserializer> for Replace {
     }
 }
 
+/// How a [`Replace`] looks for its pattern.
+#[derive(Debug)]
+enum Search {
+    /// A plain string, scanned for directly — no regex engine involved, so this works in every build.
+    Literal(Literal),
+    /// A real regex, which needs the system backend (the `fancy-regex` feature).
+    Regex(SysRegex),
+    /// The empty string, which matches nothing. `Pattern for &str` makes the same choice, and a
+    /// pattern that matched everywhere would replace the whole text with copies of `content`.
+    Nothing,
+}
+
+impl Search {
+    fn find_matches(&self, inside: &str) -> Result<Vec<((usize, usize), bool)>> {
+        match self {
+            Self::Literal(literal) => literal.find_matches(inside),
+            Self::Regex(regex) => regex.find_matches(inside),
+            Self::Nothing => Ok(vec![((0, inside.len()), false)]),
+        }
+    }
+}
+
 /// This normalizer will take a `pattern` (for now only a String)
 /// and replace every occurrence with `content`.
 #[derive(Debug, Serialize, Deserialize)]
@@ -51,7 +74,7 @@ pub struct Replace {
     pattern: ReplacePattern,
     pub content: String,
     #[serde(skip)]
-    regex: SysRegex,
+    search: Search,
 }
 
 impl Clone for Replace {
@@ -69,15 +92,16 @@ impl PartialEq for Replace {
 impl Replace {
     pub fn new<I: Into<ReplacePattern>, C: Into<String>>(pattern: I, content: C) -> Result<Self> {
         let pattern: ReplacePattern = pattern.into();
-        let regex = match &pattern {
-            ReplacePattern::String(s) => SysRegex::new(&regex::escape(s))?,
-            ReplacePattern::Regex(r) => SysRegex::new(r)?,
+        let search = match &pattern {
+            ReplacePattern::String(s) if s.is_empty() => Search::Nothing,
+            ReplacePattern::String(s) => Search::Literal(Literal::new(s.as_bytes())),
+            ReplacePattern::Regex(r) => Search::Regex(SysRegex::new(r)?),
         };
 
         Ok(Self {
             pattern,
             content: content.into(),
-            regex,
+            search,
         })
     }
 
@@ -89,30 +113,52 @@ impl Replace {
 
 impl Normalizer for Replace {
     fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
-        normalized.replace(&self.regex, &self.content)
+        match &self.search {
+            Search::Literal(literal) => normalized.replace(literal, &self.content),
+            Search::Regex(regex) => normalized.replace(regex, &self.content),
+            Search::Nothing => Ok(()),
+        }
+    }
+}
+
+/// Builds the text with every match swapped for `content`. Borrows the input back untouched when
+/// nothing matched, which is what keeps the common case free of allocation.
+fn replace_matches<'a>(
+    input: &'a str,
+    content: &str,
+    matches: impl Iterator<Item = (usize, usize)>,
+) -> Cow<'a, str> {
+    let mut replaced: Option<String> = None;
+    let mut last_end = 0;
+    for (start, end) in matches {
+        let replaced: &mut String =
+            replaced.get_or_insert_with(|| String::with_capacity(input.len()));
+        replaced.push_str(&input[last_end..start]);
+        replaced.push_str(content);
+        last_end = end;
+    }
+    match replaced {
+        Some(mut replaced) => {
+            replaced.push_str(&input[last_end..]);
+            Cow::Owned(replaced)
+        }
+        None => Cow::Borrowed(input),
     }
 }
 
 impl pipeline::Normalizer for Replace {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
-        let iter = self.regex.find_iter(input);
-        let mut replaced: Option<String> = None;
-        let mut last_end = 0;
-
-        for (start, end) in iter {
-            let replaced: &mut String =
-                replaced.get_or_insert_with(|| String::with_capacity(input.len()));
-            replaced.push_str(&input[last_end..start]);
-            replaced.push_str(&self.content);
-            last_end = end;
-        }
-        if let Some(mut replaced) = replaced {
-            if last_end < input.len() {
-                replaced.push_str(&input[last_end..]);
+        Ok(match &self.search {
+            Search::Literal(literal) => {
+                let width = literal.pattern().len();
+                let matches = literal
+                    .matches(input.as_bytes())
+                    .map(|start| (start, start + width));
+                replace_matches(input, &self.content, matches)
             }
-            return Ok(Cow::Owned(replaced));
-        }
-        Ok(input.into())
+            Search::Regex(regex) => replace_matches(input, &self.content, regex.find_iter(input)),
+            Search::Nothing => Cow::Borrowed(input),
+        })
     }
 }
 
@@ -123,7 +169,7 @@ impl Decoder for Replace {
             .map(|token| -> Result<String> {
                 let mut new_token = "".to_string();
 
-                for ((start, stop), is_match) in (&self.regex).find_matches(&token)? {
+                for ((start, stop), is_match) in self.search.find_matches(&token)? {
                     if is_match {
                         new_token.push_str(&self.content);
                     } else {
@@ -136,8 +182,7 @@ impl Decoder for Replace {
     }
 }
 
-// `Replace` needs a system-regex backend (SysRegex) for every test here.
-#[cfg(all(test, feature = "fancy-regex"))]
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -153,6 +198,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "fancy-regex")] // a regex pattern needs a system-regex backend
     fn test_replace_regex() {
         let original = "This     is   a         test";
         let normalized = "This is a test";
@@ -167,6 +213,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "fancy-regex")] // a regex pattern needs a system-regex backend
     fn serialization() {
         let replace = Replace::new("Hello", "Hey").unwrap();
         let replace_s = r#"{"type":"Replace","pattern":{"String":"Hello"},"content":"Hey"}"#;
@@ -177,6 +224,27 @@ mod tests {
         let replace_s = r#"{"type":"Replace","pattern":{"Regex":"\\s+"},"content":" "}"#;
         assert_eq!(serde_json::to_string(&replace).unwrap(), replace_s);
         assert_eq!(serde_json::from_str::<Replace>(replace_s).unwrap(), replace);
+    }
+
+    /// The goal of the literal path: a plain string pattern builds and runs with no regex backend.
+    #[test]
+    fn a_string_pattern_needs_no_backend() {
+        let replace = Replace::new(" ", "▁").unwrap();
+        assert_eq!(
+            pipeline::Normalizer::normalize(&replace, "a b  c").unwrap(),
+            "a▁b▁▁c"
+        );
+        // Nothing to replace: the input is handed back as it is, with nothing allocated.
+        assert!(matches!(
+            pipeline::Normalizer::normalize(&replace, "abc").unwrap(),
+            Cow::Borrowed("abc")
+        ));
+        // An empty pattern would match everywhere, so it matches nowhere instead.
+        let empty = Replace::new("", "x").unwrap();
+        assert_eq!(
+            pipeline::Normalizer::normalize(&empty, "abc").unwrap(),
+            "abc"
+        );
     }
 
     #[test]
@@ -190,6 +258,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "fancy-regex")] // a regex pattern needs a system-regex backend
     fn pipeline_replace_matches_legacy() {
         let n = Replace::new("''", "\"").unwrap();
         for input in &["This is a ''test''", "no quotes", ""] {

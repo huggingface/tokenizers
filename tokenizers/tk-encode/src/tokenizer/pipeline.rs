@@ -22,7 +22,7 @@ use crate::{
         delimiter::CharDelimiterSplit,
         digits::Digits,
         fixed_length::FixedLength,
-        metaspace_split::{self, MetaspaceSplit},
+        metaspace_split::{self, MetaspaceRewrite, MetaspaceSplit},
         punctuation::Punctuation,
         sequence::PipelineSequence,
         split::{Split as SplitPretok, SplitPattern},
@@ -62,6 +62,28 @@ pub(crate) fn classify_into_spans(
 
 pub trait Normalizer {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>>;
+}
+
+/// The normalizing a pipeline does: what the tokenizer declares, then — for a tokenizer whose
+/// pre-tokenizer used to write delimiters into the text — the rewrite that took its place.
+#[derive(Debug)]
+struct PipelineNormalizer {
+    declared: Option<NormalizerWrapper>,
+    rewrite: Option<MetaspaceRewrite>,
+}
+
+impl Normalizer for PipelineNormalizer {
+    fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
+        let normalized = match &self.declared {
+            Some(normalizer) => normalizer.normalize(input)?,
+            None => Cow::Borrowed(input),
+        };
+        match &self.rewrite {
+            // The rewrite always builds a new string, so handing it a borrowed one costs nothing.
+            Some(rewrite) => Ok(Cow::Owned(rewrite.normalize(&normalized)?.into_owned())),
+            None => Ok(normalized),
+        }
+    }
 }
 
 /// Range-based pre-tokenization: yields spans into the input rather than owned
@@ -394,7 +416,7 @@ impl<'a, 'b, PatternMatcher: PipelinePatternMatcher> Iterator
 /// stages over borrowed ranges to avoid the reference path's allocations.
 pub struct PipelineTokenizer {
     added_vocabulary: BucketAddedVocabulary,
-    normalizer: Option<NormalizerWrapper>,
+    normalizer: PipelineNormalizer,
     pre_tokenizer: PipelinePreTokenizer,
     model: PipelineModel,
     post_processor: PipelinePostProcessor,
@@ -483,22 +505,31 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
             ModelWrapper::WordPiece(model) => PipelineModel::WordPiece(model.try_into()?),
         };
 
-        // A tokenizer that spells spaces as `▁` is rewritten into one splitter, which needs the
-        // vocabulary — hence after the model is built. Anything else keeps the components it declares.
-        let pre_tokenizer =
+        // A tokenizer that spells spaces as `▁` is rewritten into a text rewrite plus one splitter.
+        // The splitter needs the vocabulary, hence after the model is built. Anything else keeps the
+        // components it declares.
+        let (rewrite, pre_tokenizer) =
             match metaspace_split::lower(tok.get_normalizer(), tok.get_pre_tokenizer(), &model) {
-                Some(split) => PipelinePreTokenizer::MetaspaceSplit(split),
-                None => tok
-                    .get_pre_tokenizer()
-                    .cloned()
-                    .map(TryInto::try_into)
-                    .transpose()?
-                    .unwrap_or(PipelinePreTokenizer::None),
+                Some(lowered) => (
+                    lowered.rewrite,
+                    PipelinePreTokenizer::MetaspaceSplit(lowered.split),
+                ),
+                None => (
+                    None,
+                    tok.get_pre_tokenizer()
+                        .cloned()
+                        .map(TryInto::try_into)
+                        .transpose()?
+                        .unwrap_or(PipelinePreTokenizer::None),
+                ),
             };
 
         Ok(Self {
             added_vocabulary,
-            normalizer: tok.get_normalizer().cloned(),
+            normalizer: PipelineNormalizer {
+                declared: tok.get_normalizer().cloned(),
+                rewrite,
+            },
             pre_tokenizer,
             model,
             post_processor: tok
@@ -628,10 +659,7 @@ impl PipelineTokenizer {
                 }
                 Segment::Text(chunk) => {
                     let normalized: Cow<str> = if STAGE >= Self::STAGE_NORMALIZE {
-                        match &self.normalizer {
-                            Some(normalizer) => normalizer.normalize(chunk)?,
-                            None => Cow::Borrowed(chunk),
-                        }
+                        self.normalizer.normalize(chunk)?
                     } else {
                         Cow::Borrowed(chunk)
                     };

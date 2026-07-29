@@ -1,19 +1,21 @@
 //! Cutting text into words on the SentencePiece delimiter.
 //!
-//! SentencePiece vocabularies (gemma, llama-2, …) write a space as `▁` (U+2581), so `"tell me"`
-//! becomes `"tell▁me"` before the model sees it. The rewriting is the normalizer's job — a
-//! pre-tokenizer only returns byte ranges, it cannot change the text — and this module does the rest:
-//! it cuts the text before each `▁`, so every word arrives at the model on its own.
+//! SentencePiece vocabularies (gemma, llama-2, t5, …) write a space as `▁` (U+2581), so `"tell me"`
+//! reaches the model as `"tell▁me"`. Two jobs go with that: writing the delimiters into the text, and
+//! cutting the text into words at them. A pipeline pre-tokenizer only returns byte ranges, so it can
+//! only do the cutting — [`MetaspaceRewrite`] does the writing, running with the normalizers.
 //!
-//! Two kinds of tokenizers end up here, and they do not want the same cuts.
+//! Three kinds of tokenizers end up here, and they do not want the same cuts.
 //!
-//! Some ship a `Metaspace` pre-tokenizer, which already cuts before every `▁`. Their tokens are
-//! whatever that produces, so we have to make exactly the same cuts.
+//! Some ship a `Metaspace` pre-tokenizer, which writes the delimiters and cuts before every one of
+//! them. Its tokens are the tokenizer's own output, so we reproduce those cuts exactly. t5 and albert
+//! put a `WhitespaceSplit` in front of it, which throws the whitespace away first.
 //!
-//! The others ship no pre-tokenizer at all, so the model receives the whole text in one piece.
-//! Cutting it into words is only a speed-up: merging a long text costs more than merging its words
-//! one after another, and short words are friendlier to the cache. But a speed-up is worthless if it
-//! changes the tokens, so here every cut has to be proven harmless first. Two rules do that:
+//! The others have their normalizer write the delimiters and ship no pre-tokenizer that cuts, so the
+//! model receives the whole text in one piece. Cutting it into words is only a speed-up: merging a
+//! long text costs more than merging its words one after another, and short words are friendlier to
+//! the cache. But a speed-up is worthless if it changes the tokens, so here every cut has to be proven
+//! harmless first. Two rules do that:
 //!
 //! 1. A group of delimiters stays with the word that follows it (`a▁▁▁b` → `a`, `▁▁▁b`).
 //!    Vocabularies hold pieces made of several delimiters (`▁▁`, `▁▁▁`), and cutting inside a group
@@ -22,12 +24,14 @@
 //!    piece that is in the vocabulary, so this can only happen if some piece holds a delimiter that
 //!    is not at its start. gemma has exactly one such piece: `>▁</`. See [`Veto`].
 
+use std::borrow::Cow;
+
 use atomsplit::literal::Literal;
 
 use crate::normalizers::NormalizerWrapper;
 use crate::normalizers::replace::{Replace, ReplacePattern};
 use crate::pre_tokenizers::PreTokenizerWrapper;
-use crate::pre_tokenizers::metaspace::PrependScheme;
+use crate::pre_tokenizers::metaspace::{Metaspace, PrependScheme};
 use crate::pre_tokenizers::split::SplitPattern;
 use crate::tokenizer::Result;
 use crate::tokenizer::pipeline::{self, PipelineModel, Span};
@@ -93,47 +97,153 @@ impl pipeline::PreTokenizer for MetaspaceSplit {
     }
 }
 
-/// Rewrites a tokenizer that spells spaces as a delimiter into one [`MetaspaceSplit`], or returns
-/// `None` to leave it alone.
+/// Writing the delimiter into the text, the half of a `Metaspace` pre-tokenizer that a pipeline
+/// pre-tokenizer cannot do — it only returns byte ranges. It runs with the normalizers instead, and
+/// [`MetaspaceSplit`] then cuts the text it produced.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MetaspaceRewrite {
+    delimiter: char,
+    /// Start every word with the delimiter, `Metaspace`'s `prepend_scheme: always`. Off leaves the
+    /// text as it is apart from the spaces.
+    prepend: bool,
+    /// Throw whitespace away and keep only the runs between, which is what a `WhitespaceSplit` in
+    /// front of the `Metaspace` does. Off turns each space into a delimiter and leaves tabs and
+    /// newlines alone, exactly like a `Metaspace` on its own.
+    drop_whitespace: bool,
+}
+
+impl MetaspaceRewrite {
+    fn new(metaspace: &Metaspace, drop_whitespace: bool) -> Option<Self> {
+        // A `Metaspace` that does not split hands the model whole sentences, which is a different
+        // pipeline. `first` prepends to one word only, going by where it sits in the untouched input —
+        // something this stage no longer knows.
+        if !metaspace.get_split() {
+            return None;
+        }
+        let prepend = match metaspace.get_prepend_scheme() {
+            PrependScheme::Always => true,
+            PrependScheme::Never => false,
+            PrependScheme::First => return None,
+        };
+        // Without a prepended delimiter, dropped whitespace leaves nothing to mark where one word
+        // ends and the next starts, so the splitter afterwards could not find the boundary again.
+        if drop_whitespace && !prepend {
+            return None;
+        }
+        Some(Self {
+            delimiter: metaspace.get_replacement(),
+            prepend,
+            drop_whitespace,
+        })
+    }
+}
+
+impl pipeline::Normalizer for MetaspaceRewrite {
+    fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
+        // No text, no word to open — a prepended delimiter here would become a token of its own.
+        if input.is_empty() {
+            return Ok(Cow::Borrowed(input));
+        }
+        let mut rewritten = String::with_capacity(input.len() + input.len() / 4);
+        // A word already opening with the delimiter keeps it — `Metaspace` does not double it.
+        let open_word = |word: &str, rewritten: &mut String| {
+            if self.prepend && !word.starts_with(self.delimiter) {
+                rewritten.push(self.delimiter);
+            }
+            rewritten.push_str(word);
+        };
+        if self.drop_whitespace {
+            let mut words = Vec::new();
+            pipeline::classify_into_spans(
+                input.as_bytes(),
+                atomsplit::fsm::class_runs_into::<{ atomsplit::classify::mask::WS }, 0, 0>,
+                &mut words,
+            );
+            for word in &words {
+                open_word(&input[word.range()], &mut rewritten);
+            }
+        } else {
+            // A space at the front becomes a delimiter, so the text already opens with one and gets
+            // no second. Deciding it here, before the loop, saves building the text twice.
+            if self.prepend && !input.starts_with(' ') && !input.starts_with(self.delimiter) {
+                rewritten.push(self.delimiter);
+            }
+            // One byte to look for, so a plain byte search; tabs and newlines are left alone.
+            let mut rest = input;
+            while let Some(space) = memchr::memchr(b' ', rest.as_bytes()) {
+                rewritten.push_str(&rest[..space]);
+                rewritten.push(self.delimiter);
+                rest = &rest[space + 1..];
+            }
+            rewritten.push_str(rest);
+        }
+        Ok(Cow::Owned(rewritten))
+    }
+}
+
+/// Rewrites a tokenizer that spells spaces as a delimiter into the pair of steps this pipeline can
+/// run: an optional text rewrite, and one splitter. `None` leaves the tokenizer alone.
 ///
-/// The normalizer has to turn every space into a single character, and the pre-tokenizer has to be
-/// one of the three shapes below. Anything else is refused: guessing wrong here changes the tokens a
-/// tokenizer produces.
+/// Only the four pre-tokenizer shapes below are accepted. Anything else is refused: guessing wrong
+/// here changes the tokens a tokenizer produces.
 pub(crate) fn lower(
     normalizer: Option<&NormalizerWrapper>,
     pre_tokenizer: Option<&PreTokenizerWrapper>,
     model: &PipelineModel,
-) -> Option<MetaspaceSplit> {
-    let replacement = delimiter_from_normalizer(normalizer?)?;
-    let delimiter = Literal::new(replacement.to_string().as_bytes());
+) -> Option<Lowered> {
     match pre_tokenizer {
-        // No pre-tokenizer: the model gets the whole text, so cuts must be proven harmless.
-        None => {
-            let veto = proven_cuts(model, &delimiter)?;
-            Some(MetaspaceSplit::new(delimiter, Cuts::Proven(veto)))
-        }
+        // A `Metaspace` writes the delimiters itself, so the text it hands on is cut at every one of
+        // them — that is the tokenizer's own output and we reproduce it exactly.
+        Some(PreTokenizerWrapper::Metaspace(metaspace)) => lower_metaspace(metaspace, false),
+        // The same, with the whitespace thrown away first. t5 and albert ship this shape.
+        Some(PreTokenizerWrapper::Sequence(sequence)) => match sequence.as_ref() {
+            [
+                PreTokenizerWrapper::WhitespaceSplit(_),
+                PreTokenizerWrapper::Metaspace(metaspace),
+            ] => lower_metaspace(metaspace, true),
+            _ => None,
+        },
+        // The shapes below write no delimiters of their own, so the normalizer has to have done it,
+        // and they hand the model the whole text — which means cutting it up needs a proof.
+        None => lower_proven(normalizer?, model),
         // A `Split` that can never match, because the normalizer already replaced every space it
         // looks for. With nothing to match, every behaviour it could carry leaves the text in one
-        // piece, so the model gets the whole text here too. gemma ships this shape.
+        // piece. gemma ships this shape.
         Some(PreTokenizerWrapper::Split(split))
             if !split.invert
                 && matches!(&split.pattern, SplitPattern::String(pattern)
                     if !pattern.is_empty() && pattern.chars().all(|c| c == ' ')) =>
         {
-            let veto = proven_cuts(model, &delimiter)?;
-            Some(MetaspaceSplit::new(delimiter, Cuts::Proven(veto)))
-        }
-        // A `Metaspace` that only splits: the normalizer left it no space to replace, and it is set
-        // not to prepend anything. Its own cuts are the reference, so we make all of them.
-        Some(PreTokenizerWrapper::Metaspace(metaspace))
-            if metaspace.get_split()
-                && metaspace.get_prepend_scheme() == PrependScheme::Never
-                && metaspace.get_replacement() == replacement =>
-        {
-            Some(MetaspaceSplit::new(delimiter, Cuts::Every))
+            lower_proven(normalizer?, model)
         }
         _ => None,
     }
+}
+
+/// The steps a `▁`-spelling tokenizer becomes.
+pub(crate) struct Lowered {
+    /// Runs after the tokenizer's own normalizers, when the pre-tokenizer used to rewrite the text.
+    pub rewrite: Option<MetaspaceRewrite>,
+    pub split: MetaspaceSplit,
+}
+
+fn lower_metaspace(metaspace: &Metaspace, drop_whitespace: bool) -> Option<Lowered> {
+    let rewrite = MetaspaceRewrite::new(metaspace, drop_whitespace)?;
+    let delimiter = Literal::new(metaspace.get_replacement().to_string().as_bytes());
+    Some(Lowered {
+        rewrite: Some(rewrite),
+        split: MetaspaceSplit::new(delimiter, Cuts::Every),
+    })
+}
+
+fn lower_proven(normalizer: &NormalizerWrapper, model: &PipelineModel) -> Option<Lowered> {
+    let replacement = delimiter_from_normalizer(normalizer)?;
+    let delimiter = Literal::new(replacement.to_string().as_bytes());
+    let veto = proven_cuts(model, &delimiter)?;
+    Some(Lowered {
+        rewrite: None,
+        split: MetaspaceSplit::new(delimiter, Cuts::Proven(veto)),
+    })
 }
 
 /// The vocabulary rules for cutting a text the model expects whole, or `None` when this model cannot
@@ -515,20 +625,20 @@ mod tests {
         }
     }
 
-    /// The build-time rewrite of a `▁`-spelling tokenizer into one splitter.
-    ///
-    /// A `Replace` normalizer cannot even be built without a system-regex backend, so these need the
-    /// `fancy-regex` feature.
-    #[cfg(feature = "fancy-regex")]
+    /// The build-time rewrite of a tokenizer into the steps this pipeline runs.
     mod lowering {
         use super::*;
 
-        /// The two shapes a `▁`-spelling tokenizer ships, copied from `data/gemma-4.json` and
-        /// `data/llama-2.json`.
+        /// The shapes a `▁`-spelling tokenizer ships, copied from the files in `data/`.
         const GEMMA_NORMALIZER: &str =
             r#"{"type":"Replace","pattern":{"String":" "},"content":"▁"}"#;
         const GEMMA_PRE_TOKENIZER: &str = r#"{"type":"Split","pattern":{"String":" "},"behavior":"MergedWithPrevious","invert":false}"#;
         const LLAMA_NORMALIZER: &str = r#"{"type":"Sequence","normalizers":[{"type":"Prepend","prepend":"▁"},{"type":"Replace","pattern":{"String":" "},"content":"▁"}]}"#;
+        /// t5 and albert: throw the whitespace away, then start every word with `▁`.
+        const T5_PRE_TOKENIZER: &str = r#"{"type":"Sequence","pretokenizers":[{"type":"WhitespaceSplit"},{"type":"Metaspace","replacement":"▁","prepend_scheme":"always","split":true}]}"#;
+        /// A `Metaspace` on its own: each space becomes `▁`, tabs and newlines stay.
+        const BARE_PRE_TOKENIZER: &str =
+            r#"{"type":"Metaspace","replacement":"▁","prepend_scheme":"always","split":true}"#;
 
         fn normalizer(json: &str) -> NormalizerWrapper {
             serde_json::from_str(json).unwrap()
@@ -542,8 +652,72 @@ mod tests {
             PipelineModel::BPE(PipelineBPE::from_bpe(bpe, false).unwrap())
         }
 
+        /// Rewriting the text and then cutting it must produce exactly the words the `Metaspace`
+        /// pre-tokenizer produces on its own — it is the tokenizer's own output, so it is the answer.
+        fn assert_words_match_the_pre_tokenizer(json: &str, texts: &[&str]) {
+            let declared = pre_tokenizer(json);
+            let lowered = lower(None, Some(&declared), &bpe_model(metaspace_bpe()))
+                .expect("this shape is supported");
+            let rewrite = lowered.rewrite.expect("it rewrites the text");
+            for text in texts {
+                let mut legacy = PreTokenizedString::from(*text);
+                LegacyPreTokenizer::pre_tokenize(&declared, &mut legacy).unwrap();
+                let expected: Vec<&str> = legacy
+                    .get_splits(OffsetReferential::Normalized, OffsetType::Byte)
+                    .iter()
+                    .map(|(word, _, _)| *word)
+                    .collect();
+
+                let rewritten = pipeline::Normalizer::normalize(&rewrite, text).unwrap();
+                let mut spans = Vec::new();
+                pipeline::PreTokenizer::pre_tokenize(&lowered.split, &rewritten, &mut spans)
+                    .unwrap();
+                let words: Vec<&str> = spans.iter().map(|span| &rewritten[span.range()]).collect();
+                assert_eq!(words, expected, "{text:?}");
+            }
+        }
+
+        /// Every kind of gap, plus text that already holds the delimiter.
+        const TEXTS: &[&str] = &[
+            "hello world",
+            "hello   world",
+            " leading",
+            "trailing ",
+            "  both  ",
+            "one\ttab\nand a newline",
+            "▁already marked",
+            "a▁b c",
+            "▁▁▁a b",
+            "single",
+            "   ",
+            "",
+        ];
+
         #[test]
-        fn lower_rewrites_the_shapes_that_hand_the_model_whole_text() {
+        fn t5_shape_matches_its_pre_tokenizer() {
+            assert_words_match_the_pre_tokenizer(T5_PRE_TOKENIZER, TEXTS);
+        }
+
+        #[test]
+        fn bare_metaspace_matches_its_pre_tokenizer() {
+            assert_words_match_the_pre_tokenizer(BARE_PRE_TOKENIZER, TEXTS);
+        }
+
+        #[test]
+        fn a_metaspace_needs_no_help_from_the_normalizer() {
+            // It writes the delimiters itself, so there is nothing for the normalizer to prove.
+            let lowered = lower(
+                None,
+                Some(&pre_tokenizer(BARE_PRE_TOKENIZER)),
+                &bpe_model(metaspace_bpe()),
+            )
+            .unwrap();
+            assert_eq!(lowered.split.cuts, Cuts::Every);
+            assert!(lowered.rewrite.is_some());
+        }
+
+        #[test]
+        fn shapes_that_hand_the_model_whole_text_are_proven_instead() {
             let model = bpe_model(metaspace_bpe());
             for (name, normalizer_json, pre_tokenizer_json) in [
                 ("gemma", GEMMA_NORMALIZER, Some(GEMMA_PRE_TOKENIZER)),
@@ -555,33 +729,18 @@ mod tests {
                     &model,
                 )
                 .unwrap_or_else(|| panic!("{name} should be rewritten"));
-                assert_eq!(lowered.delimiter.pattern(), "▁".as_bytes(), "{name}");
-                assert!(matches!(lowered.cuts, Cuts::Proven(_)), "{name}");
+                assert_eq!(lowered.split.delimiter.pattern(), "▁".as_bytes(), "{name}");
+                assert!(matches!(lowered.split.cuts, Cuts::Proven(_)), "{name}");
+                // The normalizer already wrote the delimiters, so nothing is added here.
+                assert!(lowered.rewrite.is_none(), "{name}");
             }
         }
 
         #[test]
-        fn lower_rewrites_a_metaspace_that_only_splits() {
-            let metaspace =
-                r#"{"type":"Metaspace","replacement":"▁","prepend_scheme":"never","split":true}"#;
-            let lowered = lower(
-                Some(&normalizer(GEMMA_NORMALIZER)),
-                Some(&pre_tokenizer(metaspace)),
-                &bpe_model(metaspace_bpe()),
-            )
-            .unwrap();
-            assert_eq!(lowered.cuts, Cuts::Every);
-        }
-
-        #[test]
-        fn lower_refuses_what_it_cannot_prove() {
+        fn refuses_what_it_cannot_reproduce() {
             let model = bpe_model(metaspace_bpe());
-            let refused: [(
-                &str,
-                Option<&NormalizerWrapper>,
-                Option<PreTokenizerWrapper>,
-            ); 6] = [
-                ("no normalizer at all", None, None),
+            let refused: [(&str, Option<&NormalizerWrapper>, Option<&str>); 8] = [
+                ("no normalizer and no pre-tokenizer", None, None),
                 // Nothing here turns spaces into the delimiter.
                 (
                     "a normalizer that keeps spaces",
@@ -596,32 +755,50 @@ mod tests {
                     )),
                     None,
                 ),
-                // The pre-tokenizer cuts the text itself, so the model never sees it whole.
+                // This one cuts the text itself, so the model never sees it whole.
                 (
                     "a split that does match",
                     Some(&normalizer(GEMMA_NORMALIZER)),
-                    Some(pre_tokenizer(
+                    Some(
                         r#"{"type":"Split","pattern":{"String":"▁"},"behavior":"MergedWithNext","invert":false}"#,
-                    )),
-                ),
-                (
-                    "a metaspace that prepends",
-                    Some(&normalizer(GEMMA_NORMALIZER)),
-                    Some(pre_tokenizer(
-                        r#"{"type":"Metaspace","replacement":"▁","prepend_scheme":"always","split":true}"#,
-                    )),
+                    ),
                 ),
                 (
                     "a byte-level pre-tokenizer",
                     Some(&normalizer(GEMMA_NORMALIZER)),
-                    Some(pre_tokenizer(
+                    Some(
                         r#"{"type":"ByteLevel","add_prefix_space":false,"trim_offsets":true,"use_regex":true}"#,
-                    )),
+                    ),
+                ),
+                // A metaspace that keeps whole sentences is a different pipeline.
+                (
+                    "a metaspace that does not split",
+                    None,
+                    Some(
+                        r#"{"type":"Metaspace","replacement":"▁","prepend_scheme":"always","split":false}"#,
+                    ),
+                ),
+                // `first` picks the word by where it sat in the untouched input, which is lost here.
+                (
+                    "a metaspace that prepends to the first word only",
+                    None,
+                    Some(
+                        r#"{"type":"Metaspace","replacement":"▁","prepend_scheme":"first","split":true}"#,
+                    ),
+                ),
+                // With the whitespace gone and no delimiter written, nothing marks where a word starts.
+                (
+                    "dropped whitespace and no prepending",
+                    None,
+                    Some(
+                        r#"{"type":"Sequence","pretokenizers":[{"type":"WhitespaceSplit"},{"type":"Metaspace","replacement":"▁","prepend_scheme":"never","split":true}]}"#,
+                    ),
                 ),
             ];
-            for (name, normalizer, pre_tokenizer) in refused {
+            for (name, normalizer, json) in refused {
+                let declared = json.map(pre_tokenizer);
                 assert!(
-                    lower(normalizer, pre_tokenizer.as_ref(), &model).is_none(),
+                    lower(normalizer, declared.as_ref(), &model).is_none(),
                     "{name}"
                 );
             }
@@ -640,11 +817,16 @@ mod tests {
             );
         }
 
-        /// The real files, so a change to either config shape shows up here. Skipped when the fixtures
-        /// have not been fetched.
+        /// The real files, so a change to any of these config shapes shows up here. Skipped when the
+        /// fixtures have not been fetched.
         #[test]
-        fn lower_rewrites_the_real_fixtures() {
-            for file in ["gemma-4.json", "llama-2.json"] {
+        fn the_real_fixtures_are_rewritten() {
+            for file in [
+                "gemma-4.json",
+                "llama-2.json",
+                "t5-base.json",
+                "albert-base-v1-tokenizer.json",
+            ] {
                 let Ok(tree) = crate::Tokenizer::from_file(format!("../data/{file}")) else {
                     eprintln!("skip {file}: not present (fetch with `make bench-models`)");
                     continue;
