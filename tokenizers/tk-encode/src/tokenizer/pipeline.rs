@@ -1004,6 +1004,34 @@ mod tests {
         }
     }
 
+    /// Test the literal only replace and splits can be run without the fancy-regex feature
+    #[cfg(not(feature = "fancy-regex"))]
+    #[test]
+    fn string_pattern_config_loads_and_encodes_with_no_regex_backend() {
+        let normalizer: NormalizerWrapper =
+            serde_json::from_str(r#"{"type":"Replace","pattern":{"String":" "},"content":"▁"}"#)
+                .unwrap();
+        let pre_tokenizer: PreTokenizerWrapper = serde_json::from_str(
+            r#"{"type":"Split","pattern":{"String":"▁"},"behavior":"MergedWithPrevious","invert":false}"#,
+        )
+        .unwrap();
+
+        let mut tok = wordlevel_tokenizer(vec![("<unk>", 0), ("hello▁", 1), ("world", 2)], None);
+        tok.with_normalizer(Some(normalizer)).unwrap();
+        tok.with_pre_tokenizer(Some(pre_tokenizer));
+
+        let ids: Vec<u32> = PipelineTokenizer::try_from(&tok)
+            .unwrap()
+            .encode("hello world", false)
+            .unwrap()
+            .iter()
+            .map(|t| t.id)
+            .collect();
+        // Not the unk id: both the `Replace` and the `Split` really ran on the literal path.
+        assert_eq!(ids, [1, 2]);
+        assert_pipeline_matches_reference(&tok, "hello world");
+    }
+
     #[test]
     fn segment_iterator_yields_text_and_specials_in_order() {
         let input = "aa<s>bb<s>cc";
