@@ -2,7 +2,7 @@ use ahash::RandomState;
 use ahash::{AHashMap, HashMap, HashSet};
 use itertools::Itertools;
 use ptr_hash::{FastPtrHash, PtrHashParams, hash::NoHash};
-use std::fmt;
+use std::{cmp, fmt};
 
 type Mphf = FastPtrHash<NoHash, u64>;
 
@@ -121,11 +121,10 @@ impl MphfMap {
     }
 }
 pub(crate) struct BpeTables {
-    internal_id_map: Box<[u32]>, // internal_id_map[external_id] -> internal_id
-    unmap: Box<[u32]>,           // unmap[internal_id] -> external_id
-    pair_table: MphfMap,         // MPHF! because memory efficiency + bitwise makes check not costly
-    top_merges: Box<[u64]>,      // top 512 by 512 merges
-    fold: Box<[u32]>,            // Which alphabet chars/bytes fold and can be merged directly
+    unmap: Box<[u32]>,      // unmap[internal_id] -> external_id
+    pair_table: MphfMap,    // MPHF! because memory efficiency + bitwise makes check not costly
+    top_merges: Box<[u64]>, // top 512 by 512 merges
+    fold: Box<[u32]>,       // Which alphabet chars/bytes fold and can be merged directly
 }
 
 impl BpeTables {
@@ -133,9 +132,6 @@ impl BpeTables {
         // 1. We build the internal id map. This sorts the merges by their ranks so frequent pairs
         //    get a smaller rank.
         // used to build fold
-        let mut merge_rank_left = (vec![0u32; merges.len()]);
-        let mut merge_rank_right = (vec![0u32; merges.len()]);
-
         let rev_merge = merges
             .iter()
             .map(|(_, (_, id))| *id)
@@ -150,6 +146,7 @@ impl BpeTables {
         let base: usize = alphabet.len();
 
         // BUILD internal map
+        let mut top_merges = vec![u64::MAX; 512 * 512];
         let mut internal_id_map =
             vec![u32::MAX; *vocab.values().max().unwrap_or(&0u32) as usize + 1];
         let mut unmap = vec![u32::MAX; base + merges.len()];
@@ -159,53 +156,36 @@ impl BpeTables {
             .enumerate()
             .for_each(|(a, b)| internal_id_map[*b as usize] = a as u32);
         let mut values = Vec::new();
-        for (_, (rank, external)) in merges.iter() {
+        let mut keys = Vec::new();
+        for ((a, b), (rank, external)) in merges.iter() {
             // the first spots are for the alphabet
             let internal = base as u32 + rank;
             unmap[internal as usize] = *external;
             values.push((*rank as u64) << 32 | (*external as u64));
             internal_id_map[*external as usize] = internal;
+            // a and b must already be in the map as they are part of the alphabet, or rank<
+            let ia = internal_id_map[*a as usize];
+            let ib = internal_id_map[*b as usize];
+            let value = (*rank as u64) | internal as u64;
+            // if a and b < 512 -> Dense grid
+            if (ia | ib) < 512 {
+                top_merges[(ia << 9 | ib) as usize] = value;
+            } else {
+                keys.push((ia, ib));
+                values.push(value);
+            }
         }
         let internal_id_map = internal_id_map.into_boxed_slice();
         let unmap = unmap.into_boxed_slice();
-
-        // BUILD the fold:
-        // We iterate over the alphabet, and check if any of them is used in any of the merges.
-        // If not, they are can be skipped fast. This also tells us which codepoint / byte we can
-        // directly convert to their final ids. For example if `é` is never part of a merge, we can
-        // skip it fast.
-        // fold[cp] = token
-        let mut fold = Vec::new();
-        for c in alphabet {
-            if let Some(cp) = rev_merge.get(&c) {
-                let ch = char::from_u32(*cp);
-                // fold will be indexed by cp (non utf8)
-                // to set the value to internal token means we can safely convert 1,2 or 3 bytes to
-                // internal id. This is true iff the bytes that compose is
-            }
-        }
-        // For pairs where both id < 512 we avoid the mphf. We iterate over the already initialized
-        let mut top_merges = vec![u64::MAX; 512 * 512];
-        merges.iter().for_each(|((a, b), (rank, n))| {
-            let (ia, ib) = (internal_id_map[*a as usize], internal_id_map[*b as usize]);
-            if ia < 512 && ib < 512 {
-                // becaus a and b <512, they are both <2^9::max = 512
-                // TODO: have not set the flag yet, as I need to build fold
-                top_merges[(ia << 9 | ib) as usize] =
-                    (*rank as u64) << 32 | internal_id_map[*n as usize] as u64;
-            }
-        });
         let top_merges = top_merges.into_boxed_slice();
-
-        // BUILD the mphf hashmap
-        let keys: Vec<(u32, u32)> = merges.keys().copied().collect();
         let pair_table = MphfMap::build(keys, values);
-        let fold = fold.into_boxed_slice();
+
+        let cp_to_internal_id = build_conversion_table(vocab, merges, &internal_id_map, &unmap);
+        let fold = cp_to_internal_id.into_boxed_slice();
         // Now let's build the MPHF for the merge pair table. The key is already a u64.
         // Slot is key as u64,
         // TODO: we need to add a log here on number of folder tokens, unique product merges, etc.
         Self {
-            internal_id_map,
             unmap,
             pair_table,
             top_merges,
@@ -214,14 +194,149 @@ impl BpeTables {
     }
 }
 
+fn bytes_to_unicode() -> [char; 256] {
+    let mut bs: Vec<u32> = (b'!' as u32..=b'~' as u32)
+        .chain(0xA1..=0xAC)
+        .chain(0xAE..=0xFF)
+        .collect();
+    let mut cs: Vec<u32> = bs.clone();
+    let mut n = 0;
+    for b in 0u32..256 {
+        if !bs.contains(&b) {
+            bs.push(b);
+            cs.push(256 + n);
+            n += 1;
+        }
+    }
+    let mut table = [' '; 256];
+    for (b, c) in bs.iter().zip(cs.iter()) {
+        table[*b as usize] = char::from_u32(*c).unwrap();
+    }
+    table
+}
+
+fn build_conversion_table(
+    vocab: AHashMap<String, u32>,
+    merges: AHashMap<(u32, u32), (u32, u32)>,
+    internal_id_map: &Box<[u32]>,
+    unmap: &Box<[u32]>,
+) -> Vec<u32> {
+    let mut merge_rank_left = vec![0u32; merges.len()];
+    let mut merge_rank_right = vec![0u32; merges.len()];
+    let b2u = bytes_to_unicode();
+    // We are building mrl and mrr which for a byte will tell us the minimum
+    // rank of merge that involves it on the right or on the left. This allows us to check
+    // for a char: b0,b1,b2 if its safe to fold. It is if:
+    // - rank(b0, b1) <= rank(b0, *)
+    // - rank(b1, b2) <= rank(b0, b1)
+    // - rank(b2, *)  >= rank((b0,b1), b2)
+    // - rank((b0,b1), b2) <= rank(b2, *)
+    for (pair, key) in merges.iter() {
+        merge_rank_right[pair.0 as usize] = cmp::min(merge_rank_left[pair.0 as usize], key.0);
+        merge_rank_left[pair.1 as usize] = cmp::min(merge_rank_right[pair.0 as usize], key.0);
+    }
+    let mut non_bmp: AHashMap<char, u32> = AHashMap::new();
+    let mut cp_to_internal_id = vec![u32::MAX; 65536];
+    // BUILD the codepoint to internal id. This table will also account for byte level that are
+    // safe to fold. b0|b1|b2 are safe to fold if rank(b0,b1) < rank(b0, *) & < rank(*, b1)
+    // We cover the basic multilingual plan here, so any input codepoint that is <u32::MAX;
+    // The rest of them have to be converted directly.
+    for (s, cp) in vocab {
+        // 1. Filter string that are valid codepoints:
+        // tokens can be bytes as str in which case the count will be wrong.
+        let mut ch = s.chars().next().unwrap();
+        if s.len() == 1 {
+            ch = b2u[s.chars().next().unwrap() as usize];
+        };
+        if s.chars().count() > 1 {
+            continue;
+        };
+        // for each, we need to write at the codepoint the internal id.
+        // we also have to check if its foldable.
+        cp_to_internal_id[ch as usize] = internal_id_map[cp as usize];
+        // fold will be indexed by cp (non utf8)
+        // to set the value to internal token means we can safely convert 1,2 or 3 bytes to
+        // internal id. This is true iff the bytes that compose is
+        // here the codepoint could be multibyte and collapse to a single token. We do
+        // pre-emptive merge instead of ByteLevel, iff (r < mrr[left_edge] && r < mrl[right_edge])r
+        let mut buff = [u8::MAX; 4];
+        let s = ch.encode_utf8(&mut buff);
+        let mut running_ids: Vec<u32> = s.as_bytes().iter().map(|&byte| u32::from(byte)).collect();
+        let mut safe = false;
+        let mut foldable = false;
+        loop {
+            // are the bytes mergeable?
+            let ib0 = internal_id_map[running_ids[0] as usize];
+            let ib1 = internal_id_map[running_ids[running_ids.len()] as usize];
+
+            if let Some((r, _)) = merges.get(&(ib0, ib1)) {
+                // if this fails, its unsafe to merge
+                if merge_rank_right[ib0 as usize] >= *r && merge_rank_left[ib1 as usize] >= *r {
+                    running_ids[1] = unmap[*r as usize];
+                    running_ids = running_ids[1..].to_vec();
+                } else {
+                    safe = false;
+                }
+            } else {
+                break;
+            }
+            // is the rank merge the smallest?
+            // is length of buff 1?
+            if running_ids.len() == 1 {
+                foldable = true;
+                break;
+            }
+        }
+        log!(
+            log::Level::Info,
+            "Computed {:} foldable and {:} safe foldable bytes to chars",
+            foldable,
+            safe
+        );
+        // if *ch as u32 > 0xFFFF {
+        //     non_bmp.insert(*ch, internal_id_map[*ch as usize]);
+        // }
+    }
+    cp_to_internal_id
+}
+
 #[cfg(test)]
 mod test {
     use ahash::AHashMap;
 
     use crate::models::bpe::{
         MergeMap,
-        tables::{BpeTables, MphfMap},
+        tables::{BpeTables, MphfMap, build_conversion_table},
     };
+    #[test]
+    pub fn test_build_conversion_table() {
+        // we are gonna simulate byte-level merges
+        let vocab = AHashMap::from_iter(vec![
+            ("a".to_string(), 0),
+            ("b".to_string(), 1),
+            ("c".to_string(), 2),
+            ("ab".to_string(), 3),
+            ("aba".to_string(), 4),
+            ("ba".to_string(), 5),
+        ]);
+        let mut merges = MergeMap::new();
+        // keys are rank id, new id
+        merges.insert((0, 1), (1, 3)); // a , b -> ab
+        merges.insert((3, 0), (4, 4)); // ab, a -> aba
+        merges.insert((1, 0), (3, 5)); // b , a -> ba  with rank(ab)  < rank(ba)
+        merges.insert((3, 2), (2, 4)); // ab, c -> abc with rank(abc) < rank(aba)
+
+        let out = build_conversion_table(
+            vocab,
+            merges,
+            // we don't need complicated mapping so this one is just ordered
+            &vec![0, 1, 2, 3, 4, 5].into_boxed_slice(),
+            &vec![0, 1, 2, 3, 4, 5].into_boxed_slice(),
+        );
+
+        // test that 'aba' is not merged because 'abc' would have prio
+        assert_eq!(out['a' as usize], 0);
+    }
 
     #[test]
     pub fn test_mphf() {
