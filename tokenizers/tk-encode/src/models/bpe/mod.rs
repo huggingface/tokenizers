@@ -2,7 +2,6 @@
 use std::{iter, mem};
 
 mod model;
-mod sentence_piece_split;
 mod serialization;
 pub mod word;
 

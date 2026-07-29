@@ -4,6 +4,7 @@ pub mod delimiter;
 pub mod digits;
 pub mod fixed_length;
 pub mod metaspace;
+pub mod metaspace_split;
 pub mod punctuation;
 pub mod sequence;
 pub mod split;

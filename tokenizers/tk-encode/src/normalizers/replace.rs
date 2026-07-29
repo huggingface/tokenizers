@@ -80,6 +80,11 @@ impl Replace {
             regex,
         })
     }
+
+    /// What this normalizer looks for.
+    pub fn pattern(&self) -> &ReplacePattern {
+        &self.pattern
+    }
 }
 
 impl Normalizer for Replace {

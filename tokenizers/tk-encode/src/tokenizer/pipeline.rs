@@ -22,6 +22,7 @@ use crate::{
         delimiter::CharDelimiterSplit,
         digits::Digits,
         fixed_length::FixedLength,
+        metaspace_split::{self, MetaspaceSplit},
         punctuation::Punctuation,
         sequence::PipelineSequence,
         split::{Split as SplitPretok, SplitPattern},
@@ -78,6 +79,11 @@ pub enum PipelinePreTokenizer {
     Delimiter(CharDelimiterSplit),
     Digits(Digits),
     FixedLength(FixedLength),
+    /// Not a component a tokenizer configures: it is what a `▁`-spelling tokenizer is rewritten into
+    /// at build time (see [`metaspace_split::lower`]).
+    ///
+    /// [`metaspace_split::lower`]: crate::pre_tokenizers::metaspace_split::lower
+    MetaspaceSplit(MetaspaceSplit),
     Punctuation(Punctuation),
     Sequence(PipelineSequence),
     Split(SplitPretok),
@@ -101,6 +107,7 @@ impl PreTokenizer for PipelinePreTokenizer {
             Self::Delimiter(pretok) => pretok.pre_tokenize(text, out),
             Self::Digits(pretok) => pretok.pre_tokenize(text, out),
             Self::FixedLength(pretok) => pretok.pre_tokenize(text, out),
+            Self::MetaspaceSplit(pretok) => pretok.pre_tokenize(text, out),
             Self::Punctuation(pretok) => pretok.pre_tokenize(text, out),
             Self::Sequence(pretok) => pretok.pre_tokenize(text, out),
             Self::Split(pretok) => pretok.pre_tokenize(text, out),
@@ -403,13 +410,6 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
     /// Adding them in id order preserves ids (tokens present in the model reuse their model id, the
     /// rest keep their dense order), so the pipeline emits the same ids as the reference tokenizer.
     fn try_from(tok: &Tokenizer) -> Result<Self> {
-        let pre_tokenizer: PipelinePreTokenizer = tok
-            .get_pre_tokenizer()
-            .cloned()
-            .map(TryInto::try_into)
-            .transpose()?
-            .unwrap_or(PipelinePreTokenizer::None);
-
         let legacy_av = tok.get_added_vocabulary();
         let mut added_tokens: Vec<_> = legacy_av.get_added_tokens_decoder().iter().collect();
         added_tokens.sort_by_key(|(id, _)| **id);
@@ -483,6 +483,19 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
             ModelWrapper::WordPiece(model) => PipelineModel::WordPiece(model.try_into()?),
         };
 
+        // A tokenizer that spells spaces as `▁` is rewritten into one splitter, which needs the
+        // vocabulary — hence after the model is built. Anything else keeps the components it declares.
+        let pre_tokenizer =
+            match metaspace_split::lower(tok.get_normalizer(), tok.get_pre_tokenizer(), &model) {
+                Some(split) => PipelinePreTokenizer::MetaspaceSplit(split),
+                None => tok
+                    .get_pre_tokenizer()
+                    .cloned()
+                    .map(TryInto::try_into)
+                    .transpose()?
+                    .unwrap_or(PipelinePreTokenizer::None),
+            };
+
         Ok(Self {
             added_vocabulary,
             normalizer: tok.get_normalizer().cloned(),
@@ -510,6 +523,12 @@ impl PipelineTokenizer {
 
     pub fn get_model(&self) -> &PipelineModel {
         &self.model
+    }
+
+    /// The splitter this pipeline ended up with. It is not always the one the tokenizer declares —
+    /// some are rewritten at build time.
+    pub fn get_pre_tokenizer(&self) -> &PipelinePreTokenizer {
+        &self.pre_tokenizer
     }
 
     /// Encode `input` into token ids.
