@@ -178,7 +178,7 @@ impl Decoder for Metaspace {
 /// Splits [`PreTokenizerWrapper::Metaspace`] into two steps:
 ///   - [`MetaspaceNormalizer`] that rewrites spaces and whitespaces
 ///   - [`Split`] pretokenizers that splits words based on the metaspace delimiter
-/// 
+///
 /// Returns `None` if the pre tokenizer is not a metaspace
 pub(crate) fn to_normalizer_and_split(
     pre_tokenizer: Option<&PreTokenizerWrapper>,
