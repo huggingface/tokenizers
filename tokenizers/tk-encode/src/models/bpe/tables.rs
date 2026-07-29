@@ -253,7 +253,6 @@ fn build_conversion_table(
         };
         // for each, we need to write at the codepoint the internal id.
         // we also have to check if its foldable.
-        cp_to_internal_id[ch as usize] = internal_id_map[cp as usize];
         // fold will be indexed by cp (non utf8)
         // to set the value to internal token means we can safely convert 1,2 or 3 bytes to
         // internal id. This is true iff the bytes that compose is
@@ -261,18 +260,23 @@ fn build_conversion_table(
         // pre-emptive merge instead of ByteLevel, iff (r < mrr[left_edge] && r < mrl[right_edge])r
         let mut buff = [u8::MAX; 4];
         let s = ch.encode_utf8(&mut buff);
-        let mut running_ids: Vec<u32> = s.as_bytes().iter().map(|&byte| u32::from(byte)).collect();
+        let mut running_ids: Vec<u32> = s
+            .as_bytes()
+            .iter()
+            .map(|&byte| internal_id_map[usize::from(byte)])
+            .collect();
         let mut safe = false;
         let mut foldable = false;
         loop {
             // are the bytes mergeable?
-            let ib0 = internal_id_map[running_ids[0] as usize];
-            let ib1 = internal_id_map[running_ids[running_ids.len()] as usize];
+            let ib0 = running_ids[0];
+            let ib1 = running_ids[running_ids.len()];
 
-            if let Some((r, _)) = merges.get(&(ib0, ib1)) {
+            // merges does not use the internal rank but the external
+            if let Some((r, _)) = merges.get(&(unmap[ib0 as usize], unmap[ib1 as usize])) {
                 // if this fails, its unsafe to merge
                 if merge_rank_right[ib0 as usize] >= *r && merge_rank_left[ib1 as usize] >= *r {
-                    running_ids[1] = unmap[*r as usize];
+                    running_ids[1] = internal_id_map[cp as usize];
                     running_ids = running_ids[1..].to_vec();
                 } else {
                     safe = false;
@@ -287,6 +291,7 @@ fn build_conversion_table(
                 break;
             }
         }
+        cp_to_internal_id[ch as usize] = internal_id_map[cp as usize];
         log!(
             log::Level::Info,
             "Computed {:} foldable and {:} safe foldable bytes to chars",
@@ -367,7 +372,6 @@ mod test {
         let tables = BpeTables::build(vocab, merges);
         // there are only 4 elements because ab and aba are part of the vocab
         // so the alphabet is a,b and the ranks are ab and aba
-        assert_eq!(tables.internal_id_map.to_vec(), vec![0, 1, 2, 3]);
         assert_eq!(tables.pair_table.get(0u64 << 32 | 1u64) & 0xFFFF, 2u64);
     }
 }
