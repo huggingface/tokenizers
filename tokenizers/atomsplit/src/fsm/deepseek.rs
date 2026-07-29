@@ -23,22 +23,88 @@ fn ds_is_cjk_at(text: &[u8], p: usize) -> bool {
     (0xE3..=0xE9).contains(&text[p]) && ds_is_cjk(cp3(text, p))
 }
 
-/// deepseek-v3 pretokenization: the `Sequence` of `[N{1,3}]`, `[CJK]+`, `<big regex>` (all Isolated)
-/// collapsed into ONE scalar FSM over the atom stream. Precedence (= the Sequence order): digits →
-/// CJK-range runs → the big-regex alts. Because Split-2 isolates CJK *before* the letter rule, the
-/// letter run stops at CJK-range codepoints. Peeks bytes for the ASCII `[punct][A-Za-z]+` alt.
-///
-/// Byte-exact vs the real composed Sequence (onig ×3, each Isolated) on 10 languages — see
-/// `benches/deepseek.rs` (plus Hebrew/Arabic via `tk-encode`'s corpus test). The subtleties the single
-/// pass replicates: (1) ws *followed by* a digit/CJK is its own Sequence piece → the whole run is one
-/// token (`\s+(?!\S)`); (2) ZWJ/ZWNJ are `\p{Cf}`, not `\p{L}∪\p{M}`, so they end a letter run
-/// (`ds_breaks`); (3) Split-2 isolates a maximal CJK-range run and Split-3 re-splits it into same-kind
-/// sub-runs — the top-of-loop handler consumes that run as a CLOSED unit (`ds_is_cjk_at`), so CJK punct
-/// (・) never steals a surrounding space nor merges with non-CJK punct; (4) chars matching no alt
-/// (Control / NumericOther / ZWJ) group into ONE gap piece, and Other_Alphabetic symbols (`ALPHA_SYM`:
-/// `\w` but categorically `\p{S}`) take the `[\p{P}\p{S}]` path, not the letter run.
+/// Does the char tagged `t` match NO alternative of deepseek's big regex? Control / NumericOther / ZWJ
+/// never do. `\p{N}` also doesn't — but only when Split-1 is absent (`NUM == false`), since the big
+/// regex has no digit rule of its own; there a digit is either a gap char or a letter run's optional
+/// `[^\r\n\p{L}\p{P}\p{S}]?` prefix. Consecutive such chars become ONE unmatched piece.
+#[inline(always)]
+fn ds_is_gap<const NUM: bool>(t: u8) -> bool {
+    matches!(t & 0x0F, NMO | CTL) || t == ZWJ || (!NUM && in_mask(t, mask::NUMBER))
+}
+
+/// deepseek Split-1 on its own: `\p{N}{1,3}` under an `Isolated` split — numeric runs cut into
+/// ≤3-*char* tokens, every maximal non-numeric run emitted as ONE gap piece. `fsm_deepseek` fuses this
+/// in; the standalone form is what a lone `Split` with that pattern needs.
 #[must_use]
-pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
+pub fn fsm_deepseek_num(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
+    debug_assert!(out.len() >= text.len() && tags.len() >= text.len());
+    let end = text.len();
+    let tags = &tags[..end];
+    let (mut i, mut w) = (0usize, 0usize);
+    while i < end {
+        let start = i;
+        if in_mask(tags[i], mask::NUMBER) {
+            let mut cnt = 0;
+            while i < end && cnt < 3 && in_mask(tags[i], mask::NUMBER) {
+                i += char_len(text[i]);
+                cnt += 1;
+            }
+        } else {
+            i = run_end(tags, i, end, !mask::NUMBER);
+        }
+        out[w] = Span::new(start as u32, i as u32);
+        w += 1;
+    }
+    w
+}
+
+/// deepseek Split-2 on its own: `[一-龥぀-ゟ゠-ヿ]+` under an `Isolated` split — maximal CJK-range runs,
+/// every maximal non-CJK run as ONE gap piece. Unlike the fused [`fsm_deepseek`], the run is NOT cut
+/// into letter / punct sub-runs: that cut comes from Split-3 re-splitting the isolated piece.
+///
+/// The one fsm that reads no tags: a codepoint *range* is not an atom class, so it works off the text.
+/// It keeps the shared signature anyway, so callers can dispatch over any fsm without a special case.
+#[must_use]
+pub fn fsm_deepseek_cjk(text: &[u8], _tags: &[u8], out: &mut [Span]) -> usize {
+    debug_assert!(out.len() >= text.len());
+    let end = text.len();
+    let (mut i, mut w) = (0usize, 0usize);
+    while i < end {
+        let start = i;
+        if ds_is_cjk_at(text, i) {
+            while i < end && ds_is_cjk_at(text, i) {
+                i += 3; // CJK-range chars are all 3-byte
+            }
+        } else {
+            while i < end && !ds_is_cjk_at(text, i) {
+                i += char_len(text[i]);
+            }
+        }
+        out[w] = Span::new(start as u32, i as u32);
+        w += 1;
+    }
+    w
+}
+
+/// deepseek pretokenization over the atom stream, as one scalar pass. The two flags say which of the
+/// `Sequence`'s earlier Splits are fused in — they are pure compile-time switches, so each instantiation
+/// is the straight-line FSM for its grammar:
+/// * `<true, true>` = [`fsm_deepseek`], the whole `Sequence`. Precedence (= Sequence order): digits →
+///   CJK-range runs → the big-regex alts, so the letter run stops at CJK codepoints and a `\p{N}{1,3}`
+///   token wins over them all.
+/// * `<false, false>` = [`fsm_deepseek_big`], Split-3's regex alone: digits match no alt (they become
+///   gap chars, or the leading `[^\r\n\p{L}\p{P}\p{S}]?` of a following letter run) and CJK is just
+///   `\p{L}`, free to join an adjacent letter run.
+///
+/// Peeks bytes for the ASCII `[punct][A-Za-z]+` alt. The subtleties either instantiation replicates:
+/// (1) a ws run *followed by* a fused-Split match is its own Sequence piece → `\s+(?!\S)` takes the
+/// WHOLE run; (2) ZWJ/ZWNJ are `\p{Cf}`, not `\p{L}∪\p{M}`, so they end a letter run; (3) a CJK run is
+/// consumed as a CLOSED unit, so CJK punct (・) never steals a surrounding space nor merges with
+/// non-CJK punct; (4) chars matching no alt group into ONE gap piece, and Other_Alphabetic symbols
+/// (`ASM`: `\w` but categorically `\p{S}`) take the `[\p{P}\p{S}]` path, not the letter run.
+#[must_use]
+#[inline] // so each wrapper below gets its own flat copy, as if hand-written, rather than a shared call
+fn fsm_ds<const NUM: bool, const CJK: bool>(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
     debug_assert!(out.len() >= text.len() && tags.len() >= text.len());
     // Leading-atom values as `const` → the `match` is a dense jump table (see `cl100k`). The Split
     // precedence (digits → CJK → big-regex alts) is preserved because the atom partition is disjoint.
@@ -48,6 +114,10 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
     // Tie `tags.len() == end` so the optimizer drops the per-byte bounds check on every interior
     // `tags[i]` in this fsm + its `run_end`/`letter_*` scans. (Callers guarantee `tags.len() >= end`.)
     let tags = &tags[..end];
+    // The CJK test below is spelled out at each use site as `CJK && ds_is_cjk_at(…)` rather than hoisted
+    // into one local closure: it sits in `letter_run`'s per-byte loop, and a closure captured by another
+    // closure stopped inlining there — worth ~7% on the multilingual bench.
+    //
     // maximal `[\p{L}\p{M}]+` run from `a`, stopping at CJK-range chars (Split-2 took those), ZWJ/ZWNJ
     // (not `\p{L}∪\p{M}` — see `ds_breaks`), and Other_Alphabetic symbols (`ASM`, categorically `\p{S}`).
     // BYTE-wise (`p += 1`, continuation bytes stay in-run, `ds_breaks` only fires at a lead) — the
@@ -58,7 +128,10 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
         while p < end {
             let t = tags[p];
             if t == CONT
-                || (in_mask(t, mask::LETTER_MARK) && t != ASM && t != ZWJ && !ds_is_cjk_at(text, p))
+                || (in_mask(t, mask::LETTER_MARK)
+                    && t != ASM
+                    && t != ZWJ
+                    && !(CJK && ds_is_cjk_at(text, p)))
             {
                 p += 1;
             } else {
@@ -73,16 +146,16 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
             && in_mask(tags[a], mask::LETTER_MARK)
             && tags[a] != ASM
             && tags[a] != ZWJ
-            && !ds_is_cjk_at(text, a)
+            && !(CJK && ds_is_cjk_at(text, a))
     };
     // Split-3 alt-3 tail `[\p{P}\p{S}]+[\r\n]*` from `sp0` (a leading space is already consumed); `sp0`
-    // if there is no punct/sym run there. STOPS at CJK-range chars — Split-1 isolated those, so a CJK
+    // if there is no punct/sym run there. STOPS at CJK-range chars — Split-2 isolated those, so a CJK
     // punct (・) is never merged into a non-CJK punct run (`!・` → `!`, `・`, not `!・`).
     let punct = |sp0: usize| -> usize {
         let mut p = sp0;
         while p < end
             && (in_mask(tags[p], mask::PUNCT_SYM) || tags[p] == ASM)
-            && !ds_is_cjk_at(text, p)
+            && !(CJK && ds_is_cjk_at(text, p))
         {
             p += char_len(text[p]);
         }
@@ -98,7 +171,8 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
     // following letter/punct (same Split-3 piece) leaves the last ws char for its ` ?`/`[^…]?` prefix.
     let ws = |i: usize| -> usize {
         let re = run_end(tags, i, end, mask::WS);
-        let next_isolated = re < end && (in_mask(tags[re], mask::NUMBER) || ds_is_cjk_at(text, re));
+        let next_isolated = re < end
+            && ((NUM && in_mask(tags[re], mask::NUMBER)) || (CJK && ds_is_cjk_at(text, re)));
         if let Some(r) = text[i..re].iter().rposition(|&x| x == 0x0A || x == 0x0D) {
             i + r + 1
         } else if re == end || next_isolated {
@@ -120,7 +194,7 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
         // Split-2 isolated a maximal CJK-range run; Split-3 re-splits it into same-kind sub-runs
         // (letters `[\p{L}\p{M}]+` vs punct/sym `[\p{P}\p{S}]+`) — a CLOSED unit, handled before the atom
         // arms so CJK punct (・) never leaks into alt-3 (stealing a space / merging with non-CJK punct).
-        if ds_is_cjk_at(text, i) {
+        if CJK && ds_is_cjk_at(text, i) {
             let is_letter = in_mask(tags[i], mask::LETTER_MARK);
             let mut p = i + 3; // CJK-range chars are all 3-byte (leads E3..E9)
             while p < end
@@ -139,12 +213,12 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
             i = p;
             continue;
         }
-        // Gap run: maximal Control / NumericOther / ZWJ — none matches a Split-3 alt, so the composed
-        // Split emits the whole run as ONE unmatched piece. Exception: if it's immediately followed by a
-        // letter run, the LAST gap char is that run's alt-2 `[^\r\n\p{L}\p{P}\p{S}]?` prefix (splits off).
-        if matches!(tags[i] & 0x0F, NMO | CTL) || tags[i] == ZWJ {
+        // A maximal run of chars that match no alt (see `ds_is_gap`) is ONE unmatched piece. Exception:
+        // if a letter run follows immediately, the LAST gap char is that run's alt-2
+        // `[^\r\n\p{L}\p{P}\p{S}]?` prefix, so it splits off the gap and joins the letters.
+        if ds_is_gap::<NUM>(tags[i]) {
             let (mut p, mut last) = (i, i);
-            while p < end && (matches!(tags[p] & 0x0F, NMO | CTL) || tags[p] == ZWJ) {
+            while p < end && ds_is_gap::<NUM>(tags[p]) {
                 last = p;
                 p += char_len(text[p]);
             }
@@ -180,7 +254,7 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
             continue;
         }
         match tags[i] & 0x0F {
-            // Split-1: `\p{N}{1,3}`
+            // Split-1: `\p{N}{1,3}` — reachable only with `NUM`; otherwise `ds_is_gap` took these above.
             NW | NO => {
                 let (mut p, mut cnt) = (i, 0);
                 while p < end && cnt < 3 && in_mask(tags[p], mask::NUMBER) {
@@ -203,8 +277,8 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
                 let a = i + 1; // Space is ASCII (0x20)
                 i = if is_lm(a) {
                     letter_run(a)
-                } else if a < end && ds_is_cjk_at(text, a) {
-                    ws(i) // next is a Split-1-isolated CJK char → the space is standalone whitespace
+                } else if CJK && a < end && ds_is_cjk_at(text, a) {
+                    ws(i) // next is a Split-2-isolated CJK char → the space is standalone whitespace
                 } else {
                     let p = punct(a);
                     if p > a { p } else { ws(i) }
@@ -244,4 +318,19 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
         w += 1;
     }
     w
+}
+
+/// deepseek pretokenization: the `Sequence` of `[\p{N}{1,3}]`, `[CJK]+`, `<big regex>` (all `Isolated`)
+/// as ONE pass — see [`fsm_ds`]. Byte-exact vs the real composed Sequence (onig ×3) on both parity
+/// corpora and 9 Wikipedia languages (`tests/parity.rs`, `benches/regex.rs`).
+#[must_use]
+pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
+    fsm_ds::<true, true>(text, tags, out)
+}
+
+/// deepseek Split-3 on its own: the big regex under an `Isolated` split — see [`fsm_ds`]. Without the
+/// earlier Splits, digits are unmatched gap chars and CJK is plain `\p{L}`.
+#[must_use]
+pub fn fsm_deepseek_big(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
+    fsm_ds::<false, false>(text, tags, out)
 }

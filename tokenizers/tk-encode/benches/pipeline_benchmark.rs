@@ -20,7 +20,7 @@ use tk_encode::pipeline::PipelineTokenizer;
 // pre-tokenizer unroll (`fsm_deepseek`) + BPE end-to-end.
 const TOKENIZERS: &[(&str, &str)] = &[
     ("bert", "../data/bert-wiki.json"),
-    ("dsv4", "../data/deepseek-v4-flash-base-tokenizer.json"),
+    ("dsv4", "../data/deepseek-v4.json"),
 ];
 
 const CORPORA: &[(&str, &str)] = &[

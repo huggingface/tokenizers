@@ -11,7 +11,10 @@
 //! Gated off wasm32: the oniguruma reference is a C library that has no wasi libc to build against.
 #![cfg(not(target_arch = "wasm32"))]
 use atomsplit::classify::classify;
-use atomsplit::fsm::{Span, fsm_byte_level, fsm_cl100k, fsm_deepseek, fsm_o200k, fsm_tekken};
+use atomsplit::fsm::{
+    Span, fsm_byte_level, fsm_cl100k, fsm_deepseek, fsm_deepseek_big, fsm_deepseek_cjk,
+    fsm_deepseek_num, fsm_o200k, fsm_tekken,
+};
 use onig::Regex;
 // The oracle regexes are the canonical specs the FSMs implement — single source of truth in atomsplit.
 use atomsplit::regexes::{
@@ -117,5 +120,96 @@ fn byte_level_parity() {
 fn deepseek_parity() {
     for text in [CORPUS, EDGE] {
         assert_eq!(spans(fsm_deepseek, text), deepseek_ref(text), "{text:?}");
+    }
+}
+
+/// Wikipedia-per-language corpora (`benches/data/fetch.py`). Gitignored, so absent is a skip: the two
+/// inline corpora are always checked, these widen the alphabet (RTL + format marks, Thai, Devanagari,
+/// Greek, Han/Kana).
+fn wikipedia_corpora() -> Vec<String> {
+    let got: Vec<String> = ["fr", "ru", "el", "he", "ar", "hi", "th", "zh", "ko"]
+        .iter()
+        .filter_map(|l| {
+            std::fs::read_to_string(format!(
+                "{}/benches/data/{l}.txt",
+                env!("CARGO_MANIFEST_DIR")
+            ))
+            .ok()
+        })
+        .collect();
+    eprintln!("wikipedia corpora: {}/9 (fetch.py to widen)", got.len());
+    got
+}
+
+/// One regex as a SINGLE Isolated split — matches *and* the gaps between them, which is what each of
+/// deepseek's three `Split`s emits on its own (the fused [`fsm_deepseek`] never sees a gap piece,
+/// since the three together cover the input). Line-by-line so a divergence names a short text.
+fn check_iso(fsm: impl Fn(&[u8], &[u8], &mut [Span]) -> usize + Copy, pattern: &str) {
+    let re = Regex::new(pattern).unwrap();
+    let corpora = wikipedia_corpora();
+    for text in [CORPUS, EDGE]
+        .into_iter()
+        .chain(corpora.iter().map(String::as_str))
+    {
+        for line in text.lines() {
+            let mut want = Vec::new();
+            split_iso(line, 0, line.len(), &re, &mut want);
+            let want: Vec<Span> = want
+                .into_iter()
+                .map(|(s, e)| Span::new(s as u32, e as u32))
+                .collect();
+            assert_eq!(spans(fsm, line), want, "{line:?}");
+        }
+    }
+}
+
+#[test]
+fn deepseek_num_parity() {
+    check_iso(fsm_deepseek_num, DS_NUM);
+}
+
+#[test]
+fn deepseek_cjk_parity() {
+    check_iso(fsm_deepseek_cjk, DS_CJK);
+}
+
+#[test]
+fn deepseek_big_parity() {
+    check_iso(fsm_deepseek_big, DS_BIG);
+}
+
+/// The three standalone FSMs chained the way the `Sequence` chains its `Split`s (each one re-splitting
+/// every piece of the previous, seeing ONLY that piece's text) must equal the fused [`fsm_deepseek`].
+/// This is what makes the fusion an optimization rather than a second implementation — and it covers
+/// the multilingual bench corpora, not just the two inline ones.
+#[test]
+fn deepseek_split_chain_equals_fused() {
+    let chain = |text: &str| -> Vec<Span> {
+        let mut pieces = vec![Span::new(0, text.len() as u32)];
+        for fsm in [
+            fsm_deepseek_num as fn(&[u8], &[u8], &mut [Span]) -> usize,
+            fsm_deepseek_cjk,
+            fsm_deepseek_big,
+        ] {
+            pieces = pieces
+                .iter()
+                .flat_map(|p| {
+                    spans(fsm, &text[p.range()])
+                        .into_iter()
+                        .map(|s| Span::new(p.start + s.start, p.start + s.end))
+                        .collect::<Vec<_>>()
+                })
+                .collect();
+        }
+        pieces
+    };
+    let corpora = wikipedia_corpora();
+    for text in [CORPUS, EDGE]
+        .into_iter()
+        .chain(corpora.iter().map(String::as_str))
+    {
+        for line in text.lines() {
+            assert_eq!(spans(fsm_deepseek, line), chain(line), "{line:?}");
+        }
     }
 }

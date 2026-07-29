@@ -23,11 +23,24 @@ pub const O200K: &str = r"[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]*[\p{
 /// [`crate::fsm::fsm_tekken`].
 pub const TEKKEN: &str = r"[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]*[\p{Ll}\p{Lm}\p{Lo}\p{M}]+|[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]+[\p{Ll}\p{Lm}\p{Lo}\p{M}]*|\p{N}| ?[^\s\p{L}\p{N}]+[\r\n/]*|\s*[\r\n]+|\s+(?!\S)|\s+";
 
-/// deepseek-v3 `Sequence`: `NUM` → `CJK` → `BIG`, each `Isolated`. Reproduced by
-/// [`crate::fsm::fsm_deepseek`] as one pass.
+/// deepseek `Sequence`: `NUM` → `CJK` → `BIG`, each `Isolated`. Fused into one pass by
+/// [`crate::fsm::fsm_deepseek`]; each also stands alone ([`crate::fsm::fsm_deepseek_num`] /
+/// [`crate::fsm::fsm_deepseek_cjk`] / [`crate::fsm::fsm_deepseek_big`]).
+///
+/// These are byte-for-byte the strings deepseek's `tokenizer.json` ships, so a loader can recognize a
+/// `Split` by string equality — hence `BIG` carries LITERAL CR/LF (spliced in with `concat!`) rather
+/// than the `\r` / `\n` escapes an equivalent regex could use.
 pub const DEEPSEEK_NUM: &str = r"\p{N}{1,3}";
 pub const DEEPSEEK_CJK: &str = r"[一-龥぀-ゟ゠-ヿ]+";
-pub const DEEPSEEK_BIG: &str = r##"[!"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~][A-Za-z]+|[^\r\n\p{L}\p{P}\p{S}]?[\p{L}\p{M}]+| ?[\p{P}\p{S}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+"##;
+pub const DEEPSEEK_BIG: &str = concat!(
+    r##"[!"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~][A-Za-z]+|[^"##,
+    "\r\n",
+    r##"\p{L}\p{P}\p{S}]?[\p{L}\p{M}]+| ?[\p{P}\p{S}]+["##,
+    "\r\n",
+    r##"]*|\s*["##,
+    "\r\n",
+    r##"]+|\s+(?!\S)|\s+"##,
+);
 
 /// The deepseek chain in application order — convenience for the multi-regex reference.
 pub const DEEPSEEK: &[&str] = &[DEEPSEEK_NUM, DEEPSEEK_CJK, DEEPSEEK_BIG];

@@ -49,11 +49,11 @@ pub struct Split {
     pub search: Search,
     pub behavior: SplitDelimiterBehavior,
     pub invert: bool,
-    /// Native `atomsplit` FSM for a recognized GPT regex (gpt2 / cl100k-Llama-3 / o200k), used on the
-    /// pipeline path when `behavior == Isolated && !invert` (how these regexes always ship). Byte-exact
-    /// with `regex`; `None` falls back to `regex`.
+    /// Native `atomsplit` FSM for a recognized GPT regex (gpt2 / cl100k-Llama-3 / o200k / tekken /
+    /// deepseek's three), used when `behavior == Isolated && !invert` (how these regexes always ship).
+    /// Byte-exact with `regex`; `None` falls back to `regex`.
     #[serde(skip)]
-    fsm: Option<GptFsm>,
+    pub(crate) fsm: Option<GptFsm>,
 }
 
 impl<'de> Deserialize<'de> for Split {
@@ -132,9 +132,13 @@ impl Split {
     /// Isolated)`, the form the native FSM fast path requires (the inverted match
     /// set is the gaps, and these patterns leave no gaps). Rewrite to it so
     /// cl100k/o200k route to `fsm_cl100k`/`fsm_o200k` instead of the SysRegex fallback.
+    ///
+    /// Only whole-covering patterns qualify ([`GptFsm::covers_input`]): where a pattern *does* leave
+    /// gaps, `Removed` on the inverted match set drops those gaps while `Isolated` keeps them, so the
+    /// two forms differ and the rewrite is unsound.
     pub(crate) fn canonicalized_for_pipeline(self) -> Result<Self> {
         use crate::tokenizer::SplitDelimiterBehavior::{Isolated, Removed};
-        if self.fsm.is_some() && self.invert && self.behavior == Removed {
+        if self.fsm.is_some_and(GptFsm::covers_input) && self.invert && self.behavior == Removed {
             Split::new(self.pattern, Isolated, false)
         } else {
             Ok(self)
@@ -180,23 +184,17 @@ impl PreTokenizer for Split {
 
 impl pipeline::PreTokenizer for Split {
     fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Span>) -> Result<()> {
-        // A recognized GPT regex (gpt2 / cl100k-Llama-3) in its only real usage — `Isolated`, not
-        // inverted — routes straight to the native atomsplit FSM. These regexes cover the whole input,
-        // so `Isolated` == the match list, and the FSM is byte-exact with `regex` (see the tests).
+        // A recognized GPT regex (gpt2 / cl100k-Llama-3 / …) in its only real usage — `Isolated`, not
+        // inverted — routes straight to the native atomsplit FSM, which is byte-exact with `regex` (see
+        // the tests). The FSM emits the gap pieces too, so this is the full `Isolated` split even for
+        // deepseek's patterns, which (unlike the GPT ones) do not cover the whole input on their own.
         if let Some(fsm) = self
             .fsm
             .filter(|_| !self.invert && self.behavior == SplitDelimiterBehavior::Isolated)
         {
             pipeline::classify_into_spans(
                 text.as_bytes(),
-                |bytes, tags, spans| match fsm {
-                    GptFsm::Cl100k { digit_cap } => {
-                        atomsplit::fsm::fsm_cl100k_cap(bytes, tags, spans, digit_cap)
-                    }
-                    GptFsm::Gpt2 => atomsplit::fsm::fsm_byte_level(bytes, tags, spans),
-                    GptFsm::O200k => atomsplit::fsm::fsm_o200k(bytes, tags, spans),
-                    GptFsm::Tekken => atomsplit::fsm::fsm_tekken(bytes, tags, spans),
-                },
+                |bytes, tags, spans| fsm.split_into(bytes, tags, spans),
                 out,
             );
             return Ok(());
@@ -582,6 +580,30 @@ mod tests {
         let split = Split::new("Hello", SplitDelimiterBehavior::Removed, true).unwrap();
         assert_eq!(serde_json::from_str::<Split>(split_s).unwrap(), split);
         assert_eq!(serde_json::to_string(&split).unwrap(), split_s);
+    }
+
+    #[test]
+    fn canonicalization_skips_patterns_that_leave_gaps() {
+        // `(invert, Removed)` → `(!invert, Isolated)` only holds when the pattern matches the whole
+        // input. deepseek's do not, so rewriting one would turn "drop the unmatched text" into "keep
+        // it" — the rewrite must leave them alone even though they have a native FSM.
+        let cl100k = Split::new(
+            SplitPattern::Regex(atomsplit::regexes::CL100K.into()),
+            Removed,
+            true,
+        )
+        .unwrap();
+        let canon = cl100k.canonicalized_for_pipeline().unwrap();
+        assert_eq!((canon.behavior, canon.invert), (Isolated, false));
+
+        let ds = Split::new(
+            SplitPattern::Regex(atomsplit::regexes::DEEPSEEK_NUM.into()),
+            Removed,
+            true,
+        )
+        .unwrap();
+        let canon = ds.canonicalized_for_pipeline().unwrap();
+        assert_eq!((canon.behavior, canon.invert), (Removed, true));
     }
 
     #[cfg(feature = "fancy-regex")] // needs a system-regex backend

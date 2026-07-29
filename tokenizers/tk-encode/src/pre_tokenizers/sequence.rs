@@ -58,25 +58,20 @@ impl PipelineSequence {
         Self { pre_tokenizers }
     }
 
-    /// Same recognition as [`crate::utils::is_deepseek`], on the converted children: the first three are
-    /// Isolated, non-inverted `Split`s carrying deepseek's `[\p{N}{1,3}, CJK, big]` regexes (the trailing
-    /// byte-map `ByteLevel` converts to `PipelinePreTokenizer::None`). Routes the whole split to one
-    /// `fsm_deepseek` pass.
+    /// True iff the first three children are Isolated, non-inverted `Split`s carrying deepseek's
+    /// `[\p{N}{1,3}, CJK, big]` regexes, in that order (the trailing byte-map `ByteLevel` converts to
+    /// `PipelinePreTokenizer::None`). Each child already recognized its own pattern at construction;
+    /// spotting the chain lets us replace three passes with one fused `fsm_deepseek`.
     fn is_deepseek(&self) -> bool {
-        use crate::pre_tokenizers::split::SplitPattern;
         use crate::tokenizer::SplitDelimiterBehavior::Isolated;
-        let regex = |i: usize| match self.pre_tokenizers.get(i) {
-            Some(PipelinePreTokenizer::Split(s)) if s.behavior == Isolated && !s.invert => {
-                match &s.pattern {
-                    SplitPattern::Regex(r) => Some(r.as_str()),
-                    SplitPattern::String(_) => None,
-                }
-            }
+        use crate::utils::GptFsm::{DeepSeekBig, DeepSeekCjk, DeepSeekNum};
+        let fsm = |i: usize| match self.pre_tokenizers.get(i) {
+            Some(PipelinePreTokenizer::Split(s)) if s.behavior == Isolated && !s.invert => s.fsm,
             _ => None,
         };
         matches!(
-            (regex(0), regex(1), regex(2)),
-            (Some(a), Some(b), Some(c)) if crate::utils::is_deepseek(a, b, c)
+            (fsm(0), fsm(1), fsm(2)),
+            (Some(DeepSeekNum), Some(DeepSeekCjk), Some(DeepSeekBig))
         )
     }
 }
@@ -266,15 +261,16 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "fancy-regex")] // deepseek `Split`s need a backend at construction (legacy baseline)
-    #[test]
-    fn pipeline_deepseek_uses_fsm_and_matches_legacy() {
-        // Load deepseek-v4's real pre_tokenizer, rebuild a Sequence of just its 3 Splits (drop the
-        // trailing byte-map ByteLevel), and prove: (1) the exact fixture patterns are recognized,
-        // (2) the fsm_deepseek pipeline output == the 3-regex-split legacy output, byte-for-byte.
-        let path = "../data/deepseek-v4-flash-base-tokenizer.json";
+    /// deepseek-v4's real pre_tokenizer as a `Sequence` of just its 3 `Split`s (dropping the trailing
+    /// byte-map ByteLevel), plus the pipeline form. `None` when the fixture isn't downloaded.
+    ///
+    /// Constructing these needs NO system-regex backend — all three patterns are recognized — so what
+    /// `legacy_pretokenize` compares against depends on the build: fancy-regex (the reference) when the
+    /// feature is on, the three standalone atomsplit FSMs when it's off. Both must equal the fused pass.
+    fn deepseek_seq() -> Option<(Sequence, PipelineSequence)> {
+        let path = "../data/deepseek-v4.json";
         if !std::path::Path::new(path).exists() {
-            return; // fixture not downloaded in this environment
+            return None;
         }
         let v: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
@@ -292,7 +288,14 @@ mod tests {
             pipe.is_deepseek(),
             "deepseek's exact 3-Split sequence must be recognized"
         );
+        Some((seq, pipe))
+    }
 
+    #[test]
+    fn pipeline_deepseek_uses_fsm_and_matches_legacy() {
+        let Some((seq, pipe)) = deepseek_seq() else {
+            return;
+        };
         for text in [
             "中文 with 123 numbers!! and ケーキ don't",
             "hello 世界\n\n表 x",
@@ -307,27 +310,14 @@ mod tests {
         }
     }
 
-    // CJK-range PUNCTUATION (・ U+30FB, ゠, ゛゜) sits inside Split-1's `[一-龥぀-ゟ゠-ヿ]` range, so
-    // Split-1 isolates it (`fsm_deepseek` handles a CJK-range run as a closed unit) — a preceding space
+    // CJK-range PUNCTUATION (・ U+30FB, ゠, ゛゜) sits inside Split-2's `[一-龥぀-ゟ゠-ヿ]` range, so
+    // Split-2 isolates it (`fsm_deepseek` handles a CJK-range run as a closed unit) — a preceding space
     // stays separate and it never merges with adjacent non-CJK punct.
-    #[cfg(feature = "fancy-regex")] // deepseek `Split`s need a backend at construction (legacy baseline)
     #[test]
     fn pipeline_deepseek_cjk_punct_whitespace_edge() {
-        let path = "../data/deepseek-v4-flash-base-tokenizer.json";
-        if !std::path::Path::new(path).exists() {
+        let Some((seq, pipe)) = deepseek_seq() else {
             return;
-        }
-        let v: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
-        let splits: Vec<PreTokenizerWrapper> = v["pre_tokenizer"]["pretokenizers"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .filter(|c| c["type"] == "Split")
-            .map(|c| serde_json::from_value(c.clone()).unwrap())
-            .collect();
-        let seq = Sequence::new(splits);
-        let pipe: PipelineSequence = seq.clone().try_into().unwrap();
+        };
         let text = "hello 世界\n\n表 ・ x"; // standalone ・ with surrounding spaces
         assert_eq!(
             pipeline_pretokenize(&pipe, text),
@@ -335,29 +325,15 @@ mod tests {
         );
     }
 
-    // fsm_deepseek == the 3-Split onig Sequence over multilingual Wikipedia corpora — the broad byte-exact
+    // fsm_deepseek == the 3-Split Sequence over multilingual Wikipedia corpora — the broad byte-exact
     // guard. `he.txt` is why it exists: Hebrew mixes format controls (RLM, `\p{Cf}`) and Other_Alphabetic
     // symbols (Ⓘ, `\p{S}` but is_alphabetic), which stress the *gap* grouping (consecutive unmatched chars
     // = one piece) and the `ALPHA_SYM` Mark refinement (a `\w` char that is NOT `[\p{L}\p{M}]`).
-    #[cfg(feature = "fancy-regex")] // deepseek `Split`s need a backend at construction (legacy baseline)
     #[test]
     fn pipeline_deepseek_matches_legacy_on_corpora() {
-        let path = "../data/deepseek-v4-flash-base-tokenizer.json";
-        if !std::path::Path::new(path).exists() {
+        let Some((seq, pipe)) = deepseek_seq() else {
             return;
-        }
-        let v: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
-        let splits: Vec<PreTokenizerWrapper> = v["pre_tokenizer"]["pretokenizers"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .filter(|c| c["type"] == "Split")
-            .map(|c| serde_json::from_value(c.clone()).unwrap())
-            .collect();
-        let seq = Sequence::new(splits);
-        let pipe: PipelineSequence = seq.clone().try_into().unwrap();
-        assert!(pipe.is_deepseek());
+        };
         // `he`/`ar` (RTL, RLM/format-mark + Other_Alphabetic-symbol heavy) are the cases the atomsplit
         // deepseek bench doesn't cover; the other 8 languages are byte-exact-gated there.
         for lang in ["he", "ar"] {

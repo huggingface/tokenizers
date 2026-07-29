@@ -5,7 +5,8 @@
 // Canonical GPT pre-tokenization regexes (the look-ahead originals), used as recognition keys — the
 // single source of truth lives in `atomsplit::regexes`. `gpt_fsm` maps each to the `atomsplit` FSM that
 // reproduces its `Isolated` split byte-for-byte.
-use atomsplit::regexes::{GPT2, O200K, TEKKEN};
+use atomsplit::fsm::Span;
+use atomsplit::regexes::{DEEPSEEK_BIG, DEEPSEEK_CJK, DEEPSEEK_NUM, GPT2, O200K, TEKKEN};
 // cl100k is recognized structurally (see `cl100k_digit_cap`), so the exact pattern is only a test key.
 #[cfg(test)]
 use atomsplit::regexes::CL100K;
@@ -23,6 +24,42 @@ pub enum GptFsm {
     /// Mistral tekken regex → `atomsplit::fsm::fsm_tekken` (o200k's grammar with no contraction
     /// suffix and one token per digit).
     Tekken,
+    /// deepseek Split-1 `\p{N}{1,3}` → `atomsplit::fsm::fsm_deepseek_num`.
+    DeepSeekNum,
+    /// deepseek Split-2 `[一-龥぀-ゟ゠-ヿ]+` → `atomsplit::fsm::fsm_deepseek_cjk`.
+    DeepSeekCjk,
+    /// deepseek Split-3 (the big regex) → `atomsplit::fsm::fsm_deepseek_big`.
+    DeepSeekBig,
+}
+
+impl GptFsm {
+    /// Does every byte of the input land in some match? True for the GPT regexes, whose final `\s+`
+    /// alternative makes them total. False for deepseek's three, which each match only part of the text
+    /// (they are composed, and only together do they cover it) — so those leave *gap* pieces, and any
+    /// rewrite that treats "matched" and "kept" as the same set is invalid for them.
+    pub fn covers_input(self) -> bool {
+        !matches!(
+            self,
+            Self::DeepSeekNum | Self::DeepSeekCjk | Self::DeepSeekBig
+        )
+    }
+
+    /// Run this pattern's `atomsplit` FSM: `tags` from `classify`, spans into `out` (len ≥ `text.len()`),
+    /// token count returned. The single dispatch point — both the legacy [`GptFsmPattern`] and the
+    /// pipeline `Split` route through it.
+    #[inline]
+    pub fn split_into(self, text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
+        use atomsplit::fsm::*;
+        match self {
+            Self::Gpt2 => fsm_byte_level(text, tags, out),
+            Self::Cl100k { digit_cap } => fsm_cl100k_cap(text, tags, out, digit_cap),
+            Self::O200k => fsm_o200k(text, tags, out),
+            Self::Tekken => fsm_tekken(text, tags, out),
+            Self::DeepSeekNum => fsm_deepseek_num(text, tags, out),
+            Self::DeepSeekCjk => fsm_deepseek_cjk(text, tags, out),
+            Self::DeepSeekBig => fsm_deepseek_big(text, tags, out),
+        }
+    }
 }
 
 /// The cl100k-family template is fixed except rule 3's digit rule. If `pattern` is that template, return
@@ -42,18 +79,18 @@ fn cl100k_digit_cap(pattern: &str) -> Option<usize> {
 }
 
 /// If `pattern` is a recognized GPT pre-tokenization regex, name the native FSM that reproduces its
-/// `Isolated` split byte-for-byte. GPT-2, o200k and tekken are matched exactly; the cl100k family is
-/// matched structurally ([`cl100k_digit_cap`]) so digit-cap variants (Qwen2 …) unroll too. An
-/// unrecognized pattern → `None` (the SysRegex / fancy-regex path handles it).
+/// `Isolated` split byte-for-byte. GPT-2, o200k, tekken and deepseek's three are matched exactly; the
+/// cl100k family is matched structurally ([`cl100k_digit_cap`]) so digit-cap variants (Qwen2 …) unroll
+/// too. An unrecognized pattern → `None` (the SysRegex / fancy-regex path handles it).
 pub fn gpt_fsm(pattern: &str) -> Option<GptFsm> {
-    if pattern == GPT2 {
-        Some(GptFsm::Gpt2)
-    } else if pattern == O200K {
-        Some(GptFsm::O200k)
-    } else if pattern == TEKKEN {
-        Some(GptFsm::Tekken)
-    } else {
-        cl100k_digit_cap(pattern).map(|digit_cap| GptFsm::Cl100k { digit_cap })
+    match pattern {
+        GPT2 => Some(GptFsm::Gpt2),
+        O200K => Some(GptFsm::O200k),
+        TEKKEN => Some(GptFsm::Tekken),
+        DEEPSEEK_NUM => Some(GptFsm::DeepSeekNum),
+        DEEPSEEK_CJK => Some(GptFsm::DeepSeekCjk),
+        DEEPSEEK_BIG => Some(GptFsm::DeepSeekBig),
+        _ => cl100k_digit_cap(pattern).map(|digit_cap| GptFsm::Cl100k { digit_cap }),
     }
 }
 
@@ -75,41 +112,13 @@ impl crate::tokenizer::pattern::Pattern for GptFsmPattern {
         let bytes = inside.as_bytes();
         let mut tags = vec![0u8; bytes.len()];
         classify(bytes, &mut tags);
-        let mut spans = vec![atomsplit::fsm::Span::default(); bytes.len() + 1];
-        let n = match self.0 {
-            GptFsm::Gpt2 => atomsplit::fsm::fsm_byte_level(bytes, &tags, &mut spans),
-            GptFsm::Cl100k { digit_cap } => {
-                atomsplit::fsm::fsm_cl100k_cap(bytes, &tags, &mut spans, digit_cap)
-            }
-            GptFsm::O200k => atomsplit::fsm::fsm_o200k(bytes, &tags, &mut spans),
-            GptFsm::Tekken => atomsplit::fsm::fsm_tekken(bytes, &tags, &mut spans),
-        };
+        let mut spans = vec![Span::default(); bytes.len() + 1];
+        let n = self.0.split_into(bytes, &tags, &mut spans);
         Ok(spans[..n]
             .iter()
             .map(|sp| ((sp.start as usize, sp.end as usize), true))
             .collect())
     }
-}
-
-// deepseek-v4's pre-tokenizer is a `Sequence` of these three Isolated `Split`s (+ a byte-map
-// `ByteLevel`), which `atomsplit::fsm::fsm_deepseek` collapses into one pass. Byte-exact with the
-// shipped tokenizer.json — the big pattern carries LITERAL CR/LF, spliced in via `concat!`.
-const DS_NUM: &str = r"\p{N}{1,3}";
-const DS_CJK: &str = "[\u{4E00}-\u{9FA5}\u{3040}-\u{309F}\u{30A0}-\u{30FF}]+";
-const DS_BIG: &str = concat!(
-    r##"[!"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~][A-Za-z]+|[^"##,
-    "\r\n",
-    r##"\p{L}\p{P}\p{S}]?[\p{L}\p{M}]+| ?[\p{P}\p{S}]+["##,
-    "\r\n",
-    r##"]*|\s*["##,
-    "\r\n",
-    r##"]+|\s+(?!\S)|\s+"##,
-);
-
-/// True iff three `Split` patterns are exactly deepseek's `[\p{N}{1,3}, CJK-range, big-regex]` prefix →
-/// `atomsplit::fsm::fsm_deepseek` reproduces the whole composed Isolated split in one pass.
-pub fn is_deepseek(p0: &str, p1: &str, p2: &str) -> bool {
-    p0 == DS_NUM && p1 == DS_CJK && p2 == DS_BIG
 }
 
 #[cfg(test)]
@@ -139,5 +148,18 @@ mod tests {
         // Out of family → None (fancy-regex fallback): a foreign digit rule, and a totally unrelated regex.
         assert_eq!(gpt_fsm(&CL100K.replace(r"\p{N}{1,3}", r"\p{N}{2,4}")), None);
         assert_eq!(gpt_fsm(r"\w+|\s+"), None);
+    }
+
+    #[test]
+    fn gpt_fsm_recognizes_deepseeks_three_splits() {
+        // The `Sequence` fuses these into one `fsm_deepseek` pass (see `PipelineSequence`), but each
+        // must be recognized on its own — that is what lets a deepseek `tokenizer.json` LOAD with no
+        // system-regex backend, since `Split::new` only tolerates a missing backend for a known pattern.
+        assert_eq!(gpt_fsm(DEEPSEEK_NUM), Some(GptFsm::DeepSeekNum));
+        assert_eq!(gpt_fsm(DEEPSEEK_CJK), Some(GptFsm::DeepSeekCjk));
+        assert_eq!(gpt_fsm(DEEPSEEK_BIG), Some(GptFsm::DeepSeekBig));
+        // The big pattern ships with LITERAL CR/LF; the `\r`/`\n`-escaped form is an equivalent regex
+        // but a different string, so it is (correctly) not recognized by string equality.
+        assert_eq!(gpt_fsm(&DEEPSEEK_BIG.replace('\r', r"\r")), None);
     }
 }

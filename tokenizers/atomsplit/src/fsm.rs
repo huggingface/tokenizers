@@ -8,6 +8,11 @@
 //! regex-shaped ones ([`fsm_cl100k`] / [`fsm_o200k`] / [`fsm_tekken`] / [`fsm_deepseek`] /
 //! [`fsm_byte_level`]) are scalar jump-tables (only the class family's [`class_runs_into`] has a SIMD
 //! path).
+//!
+//! Most fsms stand for ONE regex, so a `Split` carrying that regex routes straight to it. deepseek is
+//! the exception: it ships three `Split`s applied in turn, so it gets four entry points — one per split
+//! ([`fsm_deepseek_num`] / [`fsm_deepseek_cjk`] / [`fsm_deepseek_big`]) plus [`fsm_deepseek`], which
+//! fuses all three into a single pass for a caller that recognizes the whole chain.
 
 pub(crate) use crate::classify::{Atom, char_len, classify, in_mask, mask};
 // Atom-tag aliases, shared with the per-tokenizer FSM submodules (`fsm/*.rs`) via `use super::*`.
@@ -240,7 +245,7 @@ mod deepseek;
 mod o200k;
 pub use byte_level::fsm_byte_level;
 pub use cl100k::{fsm_cl100k, fsm_cl100k_cap};
-pub use deepseek::fsm_deepseek;
+pub use deepseek::{fsm_deepseek, fsm_deepseek_big, fsm_deepseek_cjk, fsm_deepseek_num};
 pub use o200k::{fsm_o200k, fsm_tekken};
 
 // ── Composition recipes ────────────────────────────────────────────────────────────────────────
