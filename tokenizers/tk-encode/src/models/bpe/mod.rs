@@ -1,8 +1,8 @@
 //! [Byte Pair Encoding](https://www.aclweb.org/anthology/P16-1162/) model.
 use std::{iter, mem};
 
-mod mark_split;
 mod model;
+mod sentence_piece_split;
 mod serialization;
 pub mod word;
 
