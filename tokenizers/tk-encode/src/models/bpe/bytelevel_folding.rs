@@ -20,7 +20,6 @@
 //! prerequisite -- so an empty fold table is still byte-exact, just slower on non-ASCII.
 
 use ahash::AHashMap;
-use std::cmp;
 
 use crate::models::bpe::MergeMap;
 use crate::utils::byte_level::{BYTES_CHAR_LOOKUP, CHAR_BYTES_LOOKUP};
@@ -40,10 +39,10 @@ pub(super) struct ByteLevelFold<'a> {
     /// byte -> internal id of that byte's own one-character token. A byte's VALUE is not its
     /// external id (gpt2: 0x41 -> 32, 0x20 -> 220), which is why this indirection exists.
     byte_internal: [u32; 256],
-    /// Lowest rank of any merge the symbol appears in as the left operand, i.e. `(sym, Y)`.
-    merge_rank_left: Vec<u32>,
-    /// Lowest rank of any merge the symbol appears in as the right operand, i.e. `(X, sym)`.
-    merge_rank_right: Vec<u32>,
+    /// `merge_rank_tables`: lowest rank at which the symbol can be taken from the left / right.
+    /// Owned by `tables`, which needs the same two arrays for the `eager` flag.
+    merge_rank_left: &'a [u32],
+    merge_rank_right: &'a [u32],
     merges: &'a MergeMap,
     internal_id_map: &'a [u32],
     unmap: &'a [u32],
@@ -55,6 +54,8 @@ impl<'a> ByteLevelFold<'a> {
         merges: &'a MergeMap,
         internal_id_map: &'a [u32],
         unmap: &'a [u32],
+        merge_rank_left: &'a [u32],
+        merge_rank_right: &'a [u32],
     ) -> Self {
         let iid = |external: u32| {
             internal_id_map
@@ -62,19 +63,6 @@ impl<'a> ByteLevelFold<'a> {
                 .copied()
                 .unwrap_or(u32::MAX)
         };
-
-        // Internal ids run over the distinct vocab tokens, so `internal_id_map.len()` (max
-        // external id + 1) is always big enough.
-        let mut merge_rank_left = vec![u32::MAX; internal_id_map.len()];
-        let mut merge_rank_right = vec![u32::MAX; internal_id_map.len()];
-        for ((a, b), (rank, _)) in merges.iter() {
-            let (ia, ib) = (iid(*a), iid(*b));
-            if ia == u32::MAX || ib == u32::MAX {
-                continue; // merge over a token that is not in the vocab: malformed file
-            }
-            merge_rank_left[ia as usize] = cmp::min(merge_rank_left[ia as usize], *rank);
-            merge_rank_right[ib as usize] = cmp::min(merge_rank_right[ib as usize], *rank);
-        }
 
         let mut byte_internal = [u32::MAX; 256];
         let mut buf = [0u8; 4];
@@ -167,6 +155,7 @@ impl<'a> ByteLevelFold<'a> {
 mod test {
     use super::{ByteLevelFold, Fold};
     use crate::models::bpe::MergeMap;
+    use crate::models::bpe::tables::merge_rank_tables;
     use ahash::AHashMap;
 
     /// 'é' is U+00E9 = bytes C3 A9; both are printable latin-1, so the byte-level names are the
@@ -193,7 +182,8 @@ mod test {
     fn folds_when_nothing_can_steal_an_edge() {
         let (vocab, merges) = setup(false);
         let ids = [0, 1, 2, 3, 4];
-        let f = ByteLevelFold::new(&vocab, &merges, &ids, &ids);
+        let (mrl, mrr) = merge_rank_tables(&merges, &ids);
+        let f = ByteLevelFold::new(&vocab, &merges, &ids, &ids, &mrl, &mrr);
         assert!(matches!(f.fold("Ã©", 2), Fold::Folds('é', 2)));
     }
 
@@ -201,7 +191,8 @@ mod test {
     fn rejects_a_boundary_steal() {
         let (vocab, merges) = setup(true);
         let ids = [0, 1, 2, 3, 4];
-        let f = ByteLevelFold::new(&vocab, &merges, &ids, &ids);
+        let (mrl, mrr) = merge_rank_tables(&merges, &ids);
+        let f = ByteLevelFold::new(&vocab, &merges, &ids, &ids, &mrl, &mrr);
         assert!(matches!(f.fold("Ã©", 2), Fold::Unsafe));
     }
 
@@ -209,7 +200,8 @@ mod test {
     fn skips_what_is_not_one_character() {
         let (vocab, merges) = setup(false);
         let ids = [0, 1, 2, 3, 4];
-        let f = ByteLevelFold::new(&vocab, &merges, &ids, &ids);
+        let (mrl, mrr) = merge_rank_tables(&merges, &ids);
+        let f = ByteLevelFold::new(&vocab, &merges, &ids, &ids, &mrl, &mrr);
         assert!(matches!(f.fold("xÃ", 4), Fold::Skip)); // two characters once decoded
         assert!(matches!(f.fold("<|endoftext|>", 9), Fold::Skip)); // '<' is fine, '|' is not remapped
         assert!(matches!(f.fold("Ã", 0), Fold::Skip)); // lone 0xC3 is not valid UTF-8

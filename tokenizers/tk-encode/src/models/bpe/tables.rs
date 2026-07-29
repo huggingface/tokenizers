@@ -8,25 +8,26 @@ type Mphf = FastPtrHash<NoHash, u64>;
 use crate::models::bpe::MergeMap;
 use crate::models::bpe::bytelevel_folding::{ByteLevelFold, Fold};
 
+/// Pair-table value layout: `rank[63:32] | eager[31] | internal_id[30:0]`, sentinel `u64::MAX`.
+/// Rank sits in the high half so a plain `val < min_val` is a rank comparison.
+const EAGER: u64 = 1 << 31;
+const ID_MASK: u64 = EAGER - 1;
+
 // We built tables at load time based on the vocab and merges.
 // There are 5 different tables:
 // - Internal IDS: stores the byte levels and characters in their vocab order, and then we store
 // the merges in their rank orders. This allows us to build the other tables at a lower cost, and
 // converting back is almost free. This allows us to no longer carry rank and ID at the same time,
-// and just look at ranks.
-// - Pair table: for each merge pair (u64 packed key) we store key << 18 | new_id . The key is
-// stored to check. This is a custom implementation of AHashmap to have a single load.
-// - Grid: [u32; 1024, 1024] this is a dense merge for internal ids < 1024. Since we sort internal
-// ids, this is the most used grid and only works because we sort the internal ids based on merge rank.
-// - Participation bitmaps: 2 bools, true if  participates, one map for left, one for right. This
-// allows to skip fast folded/chars that never actually participate in merges. This is used before
-// checking the PairTable.
-// - fold [u32; 65536]: this tables goes from codepoint to internal id directly. It is only
-// adressable by the lvl1 codepoints, so basically characters / bytes.
-//
-// With this we implement the Lookup functions wich redirects based on the id comparisons.
-//
-//
+// and just look at ranks. It also means more frequent merges can live in a L1 cache.
+// - Pair table: for each merge pair (u64 packed key) we store built a custom hash, close adressing
+// for memory efficiency. The key is stored in the value to check.
+// - Grid: [u32; 512*512] this is a dense merge for internal ids < 512. Since we sort rank ids, it
+// holds the most frequent merges.
+// - fold [u32; 65536]: this tables goes from codepoint to internal id directly. It is the
+// trickiest to build, especially for byte level tokenizer. We directly map 2-3 byte chars
+// to the merged token if we can prove that BPE would construct it.
+// - non_bmp: this holds a mapping from char to the index in the vocab when we can't fold. Hashing
+// is slower and less efficient, but bmp are rare.
 
 // PairTable slot
 #[derive(Clone)]
@@ -128,11 +129,9 @@ pub(crate) struct BpeTables {
     unmap: Box<[u32]>,            // unmap[internal_id] -> external_id
     pair_table: MphfMap, // MPHF! because memory efficiency + bitwise makes check not costly
     top_merges: Box<[u64]>, // top 512 by 512 merges
-    fold: Box<[u32]>,    // Which alphabet chars/bytes fold and can be merged directly
+    fold: Box<[u32]>,    // codepoint in vocab to internal id
     non_bmp: AHashMap<char, u32>, // same as `fold`, for the codepoints past 0xFFFF (emoji, CJK ext)
 }
-
-// byte level needs to unmap from non printable to the actual byte
 
 impl BpeTables {
     pub(crate) fn build(vocab: AHashMap<String, u32>, merges: MergeMap, byte_level: bool) -> Self {
@@ -153,34 +152,52 @@ impl BpeTables {
         let base: usize = alphabet.len();
 
         // BUILD internal map.
-        // Products get one internal id each, canonicalised on their LOWEST rank. `base + rank`
-        // only holds for strictly 1:1 vocabs; converted ones reuse a product across several
-        // merges (llama-3: 280_147 merges -> 127_744 distinct products), so ranks are not a
-        // dense id space and two ids for one token would break `unmap`.
+        // Products (unique merges result obtainable from potentially many pairs) get one internal id for the LOWEST rank.
+        // llama-3: 280_147 merges -> 127_744 distinct products). The internal ID only account for
+        // them, not the duplicates.
         let mut lowest_rank: AHashMap<u32, u32> = AHashMap::new();
-        for (_, (rank, product)) in merges.iter() {
-            let slot = lowest_rank.entry(*product).or_insert(*rank);
+        for (_, (rank, merge_id)) in merges.iter() {
+            let slot = lowest_rank.entry(*merge_id).or_insert(*rank);
             *slot = cmp::min(*slot, *rank);
         }
+        // individual merges
         let mut products: Vec<(u32, u32)> = lowest_rank.iter().map(|(p, r)| (*r, *p)).collect();
+        // to build external->internal and internal->external we need it to be sorted.
         products.sort_unstable();
 
+        // this one is destroyed afterwards, does not matter if its big.
         let mut internal_id_map =
             vec![u32::MAX; *vocab.values().max().unwrap_or(&0u32) as usize + 1];
         let mut unmap = vec![u32::MAX; base + products.len()];
+        // fill the first 0->base with the alphabet sorted by rank
         unmap[0..base].copy_from_slice(&alphabet);
         for (internal, external) in alphabet.iter().enumerate() {
             internal_id_map[*external as usize] = internal as u32;
         }
+        // now fill the rest of the tables
         for (pos, (_, product)) in products.iter().enumerate() {
             let internal = (base + pos) as u32;
             unmap[internal as usize] = *product;
             internal_id_map[*product as usize] = internal;
         }
+        // mrl/mrr, a property of the merge table itself. Two consumers: the `eager` flag just
+        // below asks it about a merge's own operands, the fold guard asks it about a character's
+        // outer edges. Build-time only, neither array reaches the encoder.
+        let (merge_rank_left, merge_rank_right) = merge_rank_tables(&merges, &internal_id_map);
 
-        // Only now is every operand resolvable: `merges.iter()` is hash order, so a merge whose
-        // operand is another merge's product would otherwise read u32::MAX and push a garbage key.
+        let (cp_to_internal_id, non_bmp) = build_conversion_table(
+            &vocab,
+            &merges,
+            &internal_id_map,
+            &unmap,
+            &merge_rank_left,
+            &merge_rank_right,
+            byte_level,
+        );
+        let fold = cp_to_internal_id.into_boxed_slice();
+
         let mut top_merges = vec![u64::MAX; 512 * 512];
+        // The values and keys of the PairTable
         let mut values = Vec::new();
         let mut keys = Vec::new();
         let mut dropped = 0usize;
@@ -197,7 +214,18 @@ impl BpeTables {
                 dropped += 1; // merge over a token that is not in the vocab: malformed file
                 continue;
             }
-            let value = (*rank as u64) << 32 | internal_id_map[*product as usize] as u64;
+            // `eager` = this merge is safe to apply the moment the pair is seen, without looking
+            // at either neighbour: nothing can take `a` from the left or `b` from the right at a
+            // lower rank. Our own merge never trips the test, since it has `a` on the left and
+            // `b` on the right while the tables consulted are the opposite sides.
+            let eager =
+                *rank < merge_rank_right[ia as usize] && *rank < merge_rank_left[ib as usize];
+            let internal = internal_id_map[*product as usize] as u64;
+            debug_assert!(
+                internal <= ID_MASK,
+                "internal id does not fit under the flags"
+            );
+            let value = (*rank as u64) << 32 | if eager { EAGER } else { 0 } | internal;
             // if a and b < 512 -> Dense grid
             if (ia | ib) < 512 {
                 top_merges[(ia << 9 | ib) as usize] = value;
@@ -206,14 +234,12 @@ impl BpeTables {
                 values.push(value);
             }
         }
-        let internal_id_map = internal_id_map.into_boxed_slice();
+        // `internal_id_map` is dropped here: it is only needed to build the other tables, and
+        // going the other way at encode time is `unmap`.
         let unmap = unmap.into_boxed_slice();
         let top_merges = top_merges.into_boxed_slice();
         let pair_table = MphfMap::build(keys, values);
 
-        let (cp_to_internal_id, non_bmp) =
-            build_conversion_table(vocab, merges, &internal_id_map, &unmap, byte_level);
-        let fold = cp_to_internal_id.into_boxed_slice();
         info!(
             "bpe tables: {base} alphabet + {} products, {} in the dense grid, {dropped} merges dropped",
             products.len(),
@@ -229,18 +255,50 @@ impl BpeTables {
     }
 }
 
+/// For every symbol, the lowest rank of a merge it appears in as the left operand (`(sym, Y)`)
+/// and as the right operand (`(X, sym)`). Both indexed by internal id; `u32::MAX` means the
+/// symbol never appears on that side, i.e. nothing can ever take it from there.
+pub(super) fn merge_rank_tables(
+    merges: &MergeMap,
+    internal_id_map: &[u32],
+) -> (Vec<u32>, Vec<u32>) {
+    let iid = |external: u32| {
+        internal_id_map
+            .get(external as usize)
+            .copied()
+            .unwrap_or(u32::MAX)
+    };
+    // Internal ids run over the distinct vocab tokens, so `internal_id_map.len()` (max external
+    // id + 1) is always big enough.
+    let mut left = vec![u32::MAX; internal_id_map.len()];
+    let mut right = vec![u32::MAX; internal_id_map.len()];
+    for ((a, b), (rank, _)) in merges.iter() {
+        let (ia, ib) = (iid(*a), iid(*b));
+        if ia == u32::MAX || ib == u32::MAX {
+            continue; // merge over a token that is not in the vocab: malformed file
+        }
+        left[ia as usize] = cmp::min(left[ia as usize], *rank);
+        right[ib as usize] = cmp::min(right[ib as usize], *rank);
+    }
+    (left, right)
+}
+
 /// `byte_level` says which alphabet the vocab keys are written in, and the two readings are
 /// incompatible: `"Ġ"` is byte 0x20 remapped when it is true and the character U+0120 when it is
 /// false. Nothing in the vocab itself distinguishes them, so the caller has to say.
+#[allow(clippy::too_many_arguments)]
 fn build_conversion_table(
-    vocab: AHashMap<String, u32>,
-    merges: MergeMap,
+    vocab: &AHashMap<String, u32>,
+    merges: &MergeMap,
     internal_id_map: &[u32],
     unmap: &[u32],
+    merge_rank_left: &[u32],
+    merge_rank_right: &[u32],
     byte_level: bool,
 ) -> (Vec<u32>, AHashMap<char, u32>) {
-    // an emoji is a single-char token there, but four remapped
-    // chars under byte-level, so it can never be one token's worth of codepoint.
+    // Past 0xFFFF a 4 MB table is not worth it, so those codepoints go in a map. Only char mode
+    // ever puts entries there: an emoji is a single-char token in that alphabet, but four
+    // remapped chars under byte-level, so it can never be one token's worth of codepoint.
     fn place(bmp: &mut [u32], non_bmp: &mut AHashMap<char, u32>, ch: char, id: u32) {
         if (ch as u32) < 0x10000 {
             bmp[ch as usize] = id;
@@ -257,7 +315,14 @@ fn build_conversion_table(
     if byte_level {
         // A character reaches the merge loop as its bytes, so folding it means proving the
         // assembly is predetermined. See `bytelevel_folding`.
-        let folder = ByteLevelFold::new(&vocab, &merges, internal_id_map, unmap);
+        let folder = ByteLevelFold::new(
+            vocab,
+            merges,
+            internal_id_map,
+            unmap,
+            merge_rank_left,
+            merge_rank_right,
+        );
         for (s, external) in vocab.iter() {
             match folder.fold(s, *external) {
                 Fold::Folds(ch, id) => {
@@ -293,9 +358,10 @@ fn build_conversion_table(
 mod test {
     use ahash::AHashMap;
 
+    use crate::models::bpe::tables::{EAGER, ID_MASK};
     use crate::models::bpe::{
         MergeMap,
-        tables::{BpeTables, MphfMap, build_conversion_table},
+        tables::{BpeTables, MphfMap, build_conversion_table, merge_rank_tables},
     };
     #[test]
     pub fn test_build_conversion_table() {
@@ -315,14 +381,10 @@ mod test {
         merges.insert((1, 0), (3, 5)); // b , a -> ba  with rank(ab)  < rank(ba)
         merges.insert((3, 2), (2, 4)); // ab, c -> abc with rank(abc) < rank(aba)
 
-        let (out, _) = build_conversion_table(
-            vocab,
-            merges,
-            // we don't need complicated mapping so this one is just ordered
-            &vec![0, 1, 2, 3, 4, 5].into_boxed_slice(),
-            &vec![0, 1, 2, 3, 4, 5].into_boxed_slice(),
-            true,
-        );
+        // we don't need complicated mapping so this one is just ordered
+        let ids = [0, 1, 2, 3, 4, 5];
+        let (mrl, mrr) = merge_rank_tables(&merges, &ids);
+        let (out, _) = build_conversion_table(&vocab, &merges, &ids, &ids, &mrl, &mrr, true);
 
         // test that 'aba' is not merged because 'abc' would have priority
         // but we want aba to be folded. But CP needs to be a codepoint to a 2-byte char
@@ -359,10 +421,16 @@ mod test {
         // there are only 4 elements because ab and aba are part of the vocab
         // so the alphabet is a,b and the ranks are ab and aba.
         // Both operands are < 512, so the merge lives in the dense grid, not the MPHF.
-        assert_eq!(tables.top_merges[1] & 0xFFFF_FFFF, 2u64); // (a, b) -> ab, internal 2
+        assert_eq!(tables.top_merges[1] & ID_MASK, 2u64); // (a, b) -> ab, internal 2
         assert_eq!(tables.top_merges[1] >> 32, 0u64); // at rank 0
         assert_eq!(tables.pair_table.get(1u64), u64::MAX); // and nowhere else
         assert_eq!(&*tables.unmap, &[0, 1, 2, 3]);
+        // (a, b) at rank 0 is eager: `a` is never a right operand and `b` is never a left one,
+        // so no neighbour can take either of them at all, let alone sooner.
+        assert_eq!(tables.top_merges[1] & EAGER, EAGER);
+        // (aba, a) at rank 1 is not: `a` is the left operand of (a, b) at rank 0, so a right
+        // neighbour `b` would take it first.
+        assert_eq!(tables.top_merges[3 << 9] & EAGER, 0);
     }
 }
 
