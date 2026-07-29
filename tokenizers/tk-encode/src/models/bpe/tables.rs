@@ -222,8 +222,8 @@ fn build_conversion_table(
     internal_id_map: &Box<[u32]>,
     unmap: &Box<[u32]>,
 ) -> Vec<u32> {
-    let mut merge_rank_left = vec![u32::MAX; merges.len()];
-    let mut merge_rank_right = vec![u32::MAX; merges.len()];
+    let mut merge_rank_left = vec![u32::MAX; internal_id_map.len()];
+    let mut merge_rank_right = vec![u32::MAX; internal_id_map.len()];
     // We are building mrl and mrr which for a byte will tell us the minimum
     // rank of merge that involves it on the right or on the left. This allows us to check
     // for a char: b0,b1,b2 if its safe to fold. It is if:
@@ -232,8 +232,10 @@ fn build_conversion_table(
     // - rank(b2, *)  >= rank((b0,b1), b2)
     // - rank((b0,b1), b2) <= rank(b2, *)
     for (pair, key) in merges.iter() {
-        merge_rank_right[pair.0 as usize] = cmp::min(merge_rank_left[pair.0 as usize], key.0);
-        merge_rank_left[pair.1 as usize] = cmp::min(merge_rank_right[pair.0 as usize], key.0);
+        let i0 = internal_id_map[pair.1 as usize] as usize;
+        let i1 = internal_id_map[pair.0 as usize] as usize;
+        merge_rank_right[i0] = cmp::min(merge_rank_right[i0], key.0);
+        merge_rank_left[i1] = cmp::min(merge_rank_left[i1], key.0);
     }
     let mut non_bmp: AHashMap<char, u32> = AHashMap::new();
     let mut cp_to_internal_id = vec![u32::MAX; 65536];
@@ -241,26 +243,39 @@ fn build_conversion_table(
     // safe to fold. b0|b1|b2 are safe to fold if rank(b0,b1) < rank(b0, *) & < rank(*, b1)
     // We cover the basic multilingual plan here, so any input codepoint that is <u32::MAX;
     // The rest of them have to be converted directly.
-    let mut inv_table = Vec::new();
+    // Inverse of bytes_to_unicode: remapped char -> byte. 324 = U+0143 + 1, the largest
+    // char b2u can produce. u16 so the sentinel is distinguishable from byte 0xFF.
     let b2u = bytes_to_unicode();
-    for b in 0..255 {
-        inv_table[b2u[b] as usize] = b;
+    let mut inv_table = [0xFFFFu16; 324];
+    for b in 0..256usize {
+        inv_table[b2u[b] as usize] = b as u16;
     }
-    for (mut s, cp) in vocab {
+    for (s, cp) in vocab {
         // 1. Filter string that are valid codepoints:
         // string tokens can be bytes as str in which case the count will be wrong.
         // thus we make sure to map them to the actual byte, and re-convert to utf8.
-        let bytes = s
+        // All-or-nothing: one unmapped char (special/added token) rejects the whole token,
+        // otherwise a token like "aあ" would decode to "a" and steal that codepoint's entry.
+        let Some(bytes) = s
             .chars()
-            .map(|ch| inv_table[ch as usize] as u8)
-            .collect::<Vec<u8>>();
-        // TODO: i don't even need the checks
-
-        if let Ok(s) = str::from_utf8(&bytes) {
-            if s.chars().count() > 1 {
-                continue;
-            }
-        } else {
+            .map(|ch| {
+                inv_table
+                    .get(ch as usize) // if ch not in table -> exit
+                    .copied() // deref
+                    .filter(|&v| v != 0xFFFF) // filter tokens in 0..324 that are
+                    // not valid.
+                    .map(|v| v as u8)
+            })
+            .collect::<Option<Vec<u8>>>()
+        // if one value is an option -> whole vec is None
+        else {
+            continue;
+        };
+        let Ok(text) = str::from_utf8(&bytes) else {
+            continue;
+        };
+        let mut it = text.chars();
+        let (Some(ch), None) = (it.next(), it.next()) else {
             continue;
         };
         // for each, we need to write at the codepoint the internal id.
@@ -270,14 +285,13 @@ fn build_conversion_table(
         // internal id. This is true iff the bytes that compose is
         // here the codepoint could be multibyte and collapse to a single token. We do
         // pre-emptive merge instead of ByteLevel, iff (r < mrr[left_edge] && r < mrl[right_edge])r
-        let mut buff = [u8::MAX; 4];
         let mut running_ids: Vec<u32> = bytes
             .iter()
             .map(|&byte| internal_id_map[usize::from(byte)])
             .collect();
         let mut safe = true;
         let mut foldable = false;
-        loop {
+        while running_ids.len() > 1 {
             // are the bytes mergeable?
             let ib0 = running_ids[0];
             let ib1 = running_ids[1];
@@ -304,7 +318,7 @@ fn build_conversion_table(
             }
         }
         if safe {
-            cp_to_internal_id[s.chars().next().unwrap() as usize] = internal_id_map[cp as usize];
+            cp_to_internal_id[ch as usize] = internal_id_map[cp as usize];
         } else {
             // can't fold, we just convert to internal id for each byte
             for (i, b) in s.bytes().enumerate() {
