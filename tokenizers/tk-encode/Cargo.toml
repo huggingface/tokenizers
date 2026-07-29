@@ -64,10 +64,10 @@ libc = "0.2"
 # Latest released tokenizers, used as the comparison baseline by the CI benchmark
 # (examples gated on `bench-baseline`). Optional so production builds never pull it.
 tokenizers-release = { package = "tokenizers", version = "=0.23.1", optional = true }
-# Reference regex engines `fixture_bench` times the classify+fsm pre-tokenize against: Oniguruma and
-# PCRE2 (both C) alongside the pure-Rust `fancy-regex` (optional, above). All three are pulled in by
-# `bench-baseline` — optional + behind that feature so the C builds happen ONLY for the CI benchmark,
-# never for `cargo test`/production.
+# Reference regex engines the `pretok_engines` example times our classify+fsm split against:
+# Oniguruma and PCRE2 (both C) alongside the pure-Rust `fancy-regex` (optional, above). Behind
+# `bench-engines` so the C libraries are built ONLY for that comparison, never for
+# `cargo test`/production, and never for the throughput benchmark.
 onig = { version = "6.5.1", optional = true }
 pcre2 = { version = "0.2", optional = true }
 logos = { version = "0.15", optional = true } # compile-time DFA lexer reference (pure Rust)
@@ -83,13 +83,14 @@ progressbar = ["indicatif"]
 http = ["hf-hub"]
 unstable_wasm = ["fancy-regex", "getrandom/wasm_js"]
 rustls-tls = ["hf-hub?/rustls-tls"]
-bench-baseline = [
-  "dep:tokenizers-release",
-  "dep:onig",
-  "dep:pcre2",
-  "dep:logos",
-  "fancy-regex",
-]
+# The released crate as the comparison baseline + correctness oracle. Deliberately does NOT enable
+# `fancy-regex`: the throughput/memory benchmark then measures the pipeline in its real shipping
+# configuration, and the same build is what the binary-size numbers describe.
+bench-baseline = ["dep:tokenizers-release"]
+# Reference regex engines for the `pretok_engines` comparison only (onig + PCRE2 are C libraries,
+# `fancy-regex` is the pure-Rust one). Separate from `bench-baseline` so timing our split against
+# them cannot drag a regex backend into the benchmarked pipeline.
+bench-engines = ["dep:onig", "dep:pcre2", "dep:logos", "fancy-regex"]
 
 [dev-dependencies]
 criterion = "0.6"
@@ -105,6 +106,10 @@ harness = false
 [[example]]
 name = "fixture_bench"
 required-features = ["bench-baseline"]
+
+[[example]]
+name = "pretok_engines"
+required-features = ["bench-engines"]
 
 [[example]]
 name = "binsize_baseline"

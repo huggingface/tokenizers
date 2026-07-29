@@ -114,9 +114,9 @@ fn fsm_ds<const NUM: bool, const CJK: bool>(text: &[u8], tags: &[u8], out: &mut 
     // Tie `tags.len() == end` so the optimizer drops the per-byte bounds check on every interior
     // `tags[i]` in this fsm + its `run_end`/`letter_*` scans. (Callers guarantee `tags.len() >= end`.)
     let tags = &tags[..end];
-    // The CJK test below is spelled out at each use site as `CJK && ds_is_cjk_at(…)` rather than hoisted
-    // into one local closure: it sits in `letter_run`'s per-byte loop, and a closure captured by another
-    // closure stopped inlining there — worth ~7% on the multilingual bench.
+    // The CJK test below is spelled out at each use site as `CJK && ds_is_cjk_at(…)` rather than
+    // hoisted into one local closure: it sits in `letter_run`'s per-byte loop, where a closure
+    // captured by another closure did not inline.
     //
     // maximal `[\p{L}\p{M}]+` run from `a`, stopping at CJK-range chars (Split-2 took those), ZWJ/ZWNJ
     // (not `\p{L}∪\p{M}` — see `ds_breaks`), and Other_Alphabetic symbols (`ASM`, categorically `\p{S}`).

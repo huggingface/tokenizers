@@ -11,6 +11,12 @@ name: Pipeline Benchmark
 # release dep is behind tk-encode's `bench-baseline` feature, so production
 # builds never pull it.
 #
+# What gets measured is tk-encode as it ships: `bench-baseline` brings in the released crate to
+# compare against but leaves `fancy-regex` off, so the throughput numbers and the binary size
+# describe the same build. The reference regex engines we time our split against are a separate
+# binary (`pretok_engines`, feature `bench-engines`) precisely because one of them IS that backend —
+# its per-fixture numbers are merged back into the report in the `report` job.
+#
 # A `build` job compiles the bench + binsize example binaries ONCE (each with its
 # exact per-example feature set) and uploads them; the work is then fanned out across
 # a matrix: each `bench` shard downloads that binary and benches a slice of the models
@@ -103,8 +109,9 @@ jobs:
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@v0.0.9
 
-      # `onig_sys` (a `bench-baseline` reference-regex dep) generates its bindings with bindgen,
-      # which needs libclang. pcre2/fancy-regex don't. The runner image doesn't ship it.
+      # `onig_sys` generates its bindings with bindgen, which needs libclang. It arrives two ways:
+      # inside the released crate (`bench-baseline`) and as a reference engine (`bench-engines`).
+      # pcre2/fancy-regex don't need it. The runner image doesn't ship it.
       - name: Install libclang (onig_sys → bindgen)
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libclang-dev
 
@@ -112,14 +119,18 @@ jobs:
       # them would corrupt what's measured:
       #   • fixture_bench + binsize_baseline WITH `bench-baseline` → link the released crate
       #     (fixture_bench = the throughput/memory bench; binsize_baseline = "cost of the
-      #     released lib" size number).
-      #   • binsize_pipeline WITHOUT it → the real shipping config whose size we report (none
-      #     of the benchmark-only reference-regex deps the feature drags in).
-      # These are byte-for-byte the same cargo invocations the shards / report ran before.
+      #     released lib" size number). `bench-baseline` does NOT enable `fancy-regex`, so
+      #     fixture_bench measures tk-encode in the same configuration it ships in — the one
+      #     binsize_pipeline reports a size for.
+      #   • pretok_engines WITH `bench-engines` → the only binary allowed the reference regex
+      #     engines, since one of them IS the `fancy-regex` backend.
+      #   • binsize_pipeline with NO features → the real shipping config whose size we report.
       - name: Build bench + binsize binaries
         run: |
           cargo build --release -p tk-encode --features tk-encode/bench-baseline \
             --example fixture_bench --example binsize_baseline
+          cargo build --release -p tk-encode --features tk-encode/bench-engines \
+            --example pretok_engines
           cargo build --release -p tk-encode --example binsize_pipeline
 
       - name: Upload bench binaries
@@ -128,6 +139,7 @@ jobs:
           name: bench-binaries
           path: |
             tokenizers/target/release/examples/fixture_bench
+            tokenizers/target/release/examples/pretok_engines
             tokenizers/target/release/examples/binsize_baseline
             tokenizers/target/release/examples/binsize_pipeline
           retention-days: 3
@@ -222,11 +234,21 @@ jobs:
             > "pipeline_bench_${{ matrix.shard }}.json"
           cat "pipeline_bench_${{ matrix.shard }}.json"
 
+      # Separate binary because it links the reference regex engines (see the build job). Same
+      # shard, so its rows line up with the benchmark's; the report job merges the two.
+      - name: Compare pre-tokenize against regex engines (shard ${{ matrix.shard }})
+        run: |
+          chmod +x target/release/examples/pretok_engines
+          ./target/release/examples/pretok_engines --shard ${{ matrix.shard }} ${{ env.SHARDS }} \
+            > "pretok_engines_${{ matrix.shard }}.json"
+
       - name: Upload shard partial
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: partial-${{ matrix.shard }}
-          path: tokenizers/pipeline_bench_${{ matrix.shard }}.json
+          path: |
+            tokenizers/pipeline_bench_${{ matrix.shard }}.json
+            tokenizers/pretok_engines_${{ matrix.shard }}.json
           retention-days: 3
 
   # Fan-in: concatenate the shard partials (in shard order = manifest order),
@@ -272,12 +294,16 @@ jobs:
           merge-multiple: true
           path: tokenizers/partials
 
+      # Two partials per shard: the benchmark itself, and the regex-engine comparison that had to be
+      # built separately (see the build job). The engine numbers are folded back onto the row they
+      # describe as `pretok_vs_regex`, which is where the renderer looks for them.
       - name: Merge shard partials
         run: |
           python3 - <<'PY'
           import glob, json
+          shard_no = lambda f: int(f.rsplit('_', 1)[1].split('.')[0])
           parts = sorted(glob.glob('partials/**/pipeline_bench_*.json', recursive=True),
-                         key=lambda f: int(f.rsplit('_', 1)[1].split('.')[0]))
+                         key=shard_no)
           merged = None
           for f in parts:
               d = json.load(open(f))
@@ -286,8 +312,21 @@ jobs:
               merged["models"].extend(d["models"])
           if merged is None:
               raise SystemExit("no shard partials found")
+
+          engines = {}
+          for f in sorted(glob.glob('partials/**/pretok_engines_*.json', recursive=True),
+                          key=shard_no):
+              engines.update(json.load(open(f)))
+          attached = 0
+          for m in merged["models"]:
+              per_fixture = engines.get(m["model"], {})
+              for row in m["results"]:
+                  if row["fixture"] in per_fixture:
+                      row["pretok_vs_regex"] = per_fixture[row["fixture"]]
+                      attached += 1
           json.dump(merged, open('pipeline_bench.json', 'w'))
-          print(f"merged {len(parts)} shard(s) -> {len(merged['models'])} models")
+          print(f"merged {len(parts)} shard(s) -> {len(merged['models'])} models, "
+                f"{attached} rows with engine numbers")
           PY
           head -c 300 pipeline_bench.json; echo
 
