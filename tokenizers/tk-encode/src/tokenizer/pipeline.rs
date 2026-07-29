@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::convert::TryInto;
 use std::mem;
+use std::ops::Range;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::{borrow::Cow, convert::TryFrom};
 
@@ -702,7 +703,7 @@ impl PipelineTokenizer {
                                         // Tokenize each chunk
                                         for pre_token in pre_tokens.iter() {
                                             self.model.tokenize_pipeline(
-                                                &normalized_chunk[pre_token.range()],
+                                                Split::new(normalized_chunk, pre_token.range()),
                                                 scratch,
                                                 output,
                                             )?;
@@ -981,12 +982,62 @@ pub trait ModelScratch: Default {
     fn clear(&mut self);
 }
 
+/// One pre-token on its way to a model: the word to tokenize, plus the chunk of
+/// text it was split out of.
+///
+/// A model that only wants the word calls [`Split::as_str`] and is none the wiser.
+/// The chunk is carried for [`Split::head`], which hands out a fixed-size window
+/// of bytes starting at the word — the BPE word cache builds its key out of one,
+/// because copying a fixed number of bytes compiles to a load, where copying a
+/// number known only at run time is a call into `memcpy`.
+#[derive(Clone, Copy)]
+pub struct Split<'a> {
+    word: &'a str,
+    head: Option<&'a [u8; 16]>,
+}
+
+impl<'a> Split<'a> {
+    /// `range` is a byte range of `chunk`, the way a pre-tokenizer reports it.
+    pub fn new(chunk: &'a str, range: Range<usize>) -> Self {
+        Self {
+            word: &chunk[range.clone()],
+            head: chunk.as_bytes()[range.start..].first_chunk(),
+        }
+    }
+
+    pub fn as_str(&self) -> &'a str {
+        self.word
+    }
+
+    pub fn as_bytes(&self) -> &'a [u8] {
+        self.word.as_bytes()
+    }
+
+    /// The 16 bytes of the chunk that start where the word does. Anything past the
+    /// word's own length belongs to whatever follows it, so a caller has to know
+    /// how much of the window means something.
+    ///
+    /// `None` when the word starts within 16 bytes of the chunk's end and there is
+    /// nothing to read — at most one word per chunk.
+    pub fn head(&self) -> Option<&'a [u8; 16]> {
+        self.head
+    }
+}
+
+/// A bare word, with no chunk around it: there is a window only when the word is
+/// long enough to fill one on its own.
+impl<'a> From<&'a str> for Split<'a> {
+    fn from(word: &'a str) -> Self {
+        Self::new(word, 0..word.len())
+    }
+}
+
 pub trait Model {
     type Scratch: ModelScratch;
 
     fn tokenize_pipeline(
         &self,
-        sequence: &str,
+        split: Split<'_>,
         scratch: &mut Self::Scratch,
         output: &mut Vec<PipelineToken>,
     ) -> Result<()>;
@@ -1010,22 +1061,22 @@ impl Model for PipelineModel {
 
     fn tokenize_pipeline(
         &self,
-        sequence: &str,
+        split: Split<'_>,
         scratch: &mut Self::Scratch,
         output: &mut Vec<PipelineToken>,
     ) -> Result<()> {
         match (self, scratch) {
             (Self::BPE(model), PipelineModelScratch::BPE(scratch)) => {
-                model.tokenize_pipeline(sequence, scratch, output)
+                model.tokenize_pipeline(split, scratch, output)
             }
             (Self::Unigram(model), PipelineModelScratch::Unigram(scratch)) => {
-                model.tokenize_pipeline(sequence, scratch, output)
+                model.tokenize_pipeline(split, scratch, output)
             }
             (Self::WordLevel(model), PipelineModelScratch::WordLevel(scratch)) => {
-                model.tokenize_pipeline(sequence, scratch, output)
+                model.tokenize_pipeline(split, scratch, output)
             }
             (Self::WordPiece(model), PipelineModelScratch::WordPiece(scratch)) => {
-                model.tokenize_pipeline(sequence, scratch, output)
+                model.tokenize_pipeline(split, scratch, output)
             }
             _ => unreachable!(),
         }
@@ -1041,6 +1092,11 @@ impl Model for PipelineModel {
     }
 }
 
+// The BPE variant carries the word cache inline, making it much larger than the
+// others. Boxing it would put a pointer chase on the per-pre-token hot path to
+// save space in a struct that exists once per thread and is never moved after
+// the pool builds it.
+#[allow(clippy::large_enum_variant)]
 #[derive(Default)]
 pub enum PipelineModelScratch {
     BPE(BpeScratch),
@@ -1070,6 +1126,29 @@ mod tests {
     use crate::models::wordpiece::WordPiece;
     use crate::pre_tokenizers::byte_level::ByteLevel;
     use crate::pre_tokenizers::sequence::Sequence;
+
+    /// Everything the window is good for rests on it starting at the word's first
+    /// byte and staying inside the chunk. A window taken from the wrong offset
+    /// would silently key one word's cache entry on another word's bytes.
+    #[test]
+    fn a_splits_window_starts_at_the_word_and_stops_at_the_chunk() {
+        let chunk = "the quick brown fox jumps";
+        let word = Split::new(chunk, 4..9);
+        assert_eq!(word.as_str(), "quick");
+        assert_eq!(word.head(), Some(b"quick brown fox "));
+
+        // A word near the end has no window: 25 - 20 is under 16 bytes.
+        let last = Split::new(chunk, 20..25);
+        assert_eq!(last.as_str(), "jumps");
+        assert_eq!(last.head(), None);
+
+        // A bare word is its own chunk, so it only has a window if it fills one.
+        assert_eq!(Split::from("quick").head(), None);
+        assert_eq!(
+            Split::from("sixteen bytes ok").head(),
+            Some(b"sixteen bytes ok")
+        );
+    }
 
     struct FixedMatcher(Vec<((usize, usize), u32)>);
     impl PipelinePatternMatcher for FixedMatcher {

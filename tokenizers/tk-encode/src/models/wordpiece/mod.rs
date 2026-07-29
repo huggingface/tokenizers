@@ -370,10 +370,11 @@ impl pipeline::Model for PipelineWordPiece {
 
     fn tokenize_pipeline(
         &self,
-        sequence: &str,
+        split: pipeline::Split<'_>,
         scratch: &mut Self::Scratch,
         output: &mut Vec<pipeline::PipelineToken>,
     ) -> Result<()> {
+        let sequence = split.as_str();
         let checkpoint = output.len();
         let candidate = &mut scratch.candidate_str;
 
