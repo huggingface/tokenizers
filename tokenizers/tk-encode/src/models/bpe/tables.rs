@@ -491,20 +491,69 @@ mod real_vocab_test {
         let n_vocab = vocab.len();
         let n_merges = merges.len();
         let products: std::collections::HashSet<u32> = merges.values().map(|(_, p)| *p).collect();
+
+        // Eager stratified by how deep the operands sit. Conversion emits alphabet symbols (or a
+        // folded character's product), so the eager merges it can fire on the first step are the
+        // shallow ones; deep ones only become reachable once the cascade has already run.
+        // Computed straight off `merges` in external id space -- mrl/mrr are per-symbol, so the
+        // verdict is identical to `build`'s, which makes the totals a cross-check.
+        let (mut mrl, mut mrr) = (AHashMap::new(), AHashMap::new());
+        for ((a, b), (rank, _)) in merges.iter() {
+            let e = mrl.entry(*a).or_insert(*rank);
+            *e = (*e).min(*rank);
+            let e = mrr.entry(*b).or_insert(*rank);
+            *e = (*e).min(*rank);
+        }
+        let mut level = [[0usize; 2]; 3]; // [product operands][is eager]
+        for ((a, b), (rank, _)) in merges.iter() {
+            let depth = usize::from(products.contains(a)) + usize::from(products.contains(b));
+            let eager = *rank < *mrr.get(a).unwrap_or(&u32::MAX)
+                && *rank < *mrl.get(b).unwrap_or(&u32::MAX);
+            level[depth][usize::from(eager)] += 1;
+        }
+        let pct = |[cold, hot]: [usize; 2]| {
+            let n = cold + hot;
+            format!("{hot}/{n} ({:.0}%)", 100.0 * hot as f64 / n.max(1) as f64)
+        };
         let t = BpeTables::build(vocab, merges, byte_level);
         let folded = t.fold.iter().filter(|v| **v != u32::MAX).count();
         let ascii = t.fold[0..128].iter().filter(|v| **v != u32::MAX).count();
+        // How many stored merges carry the eager flag, over both halves of the pair table.
+        let live = t
+            .top_merges
+            .iter()
+            .chain(t.pair_table.entries.iter().map(|s| &s.val))
+            .filter(|v| **v != u64::MAX);
+        let (stored, eager) = live.fold((0usize, 0usize), |(n, e), v| {
+            (n + 1, e + usize::from(v & super::EAGER != 0))
+        });
         println!(
             "{name}: vocab {n_vocab}, merges {n_merges} -> {} products, unmap {}, \
-             fold {folded} ({ascii} ascii + {} multi-byte), non_bmp {}",
+             fold {folded} ({ascii} ascii + {} multi-byte), non_bmp {}, \
+             eager {eager}/{stored} ({:.0}%)",
             products.len(),
             t.unmap.len(),
             folded - ascii,
             t.non_bmp.len(),
+            100.0 * eager as f64 / stored as f64,
+        );
+        println!(
+            "  {name} eager by depth: alphabet+alphabet {}, one product {}, both products {}",
+            pct(level[0]),
+            pct(level[1]),
+            pct(level[2]),
         );
         assert!(
             t.unmap.iter().all(|v| *v != u32::MAX),
             "{name}: unmap has holes"
+        );
+        // The stratified count is computed independently, in external id space, so agreeing with
+        // the flags actually stored in the tables checks `build`'s eager pass end to end. A
+        // mismatch means merges were dropped as malformed, or the internal mapping is wrong.
+        assert_eq!(
+            level.iter().map(|l| l[1]).sum::<usize>(),
+            eager,
+            "{name}: stored eager flags disagree with the independent count"
         );
     }
 
