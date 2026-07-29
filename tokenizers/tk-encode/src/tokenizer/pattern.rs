@@ -66,6 +66,25 @@ impl Pattern for &Literal {
     }
 }
 
+/// A plain string is one [`Literal`], built here because the pattern only lives for this call. Prefer
+/// keeping a [`Literal`] around when the same pattern is searched for repeatedly.
+impl Pattern for &str {
+    fn find_matches(&self, inside: &str) -> Result<Vec<(Offsets, bool)>> {
+        match Literal::new(self.as_bytes()) {
+            Ok(literal) => (&literal).find_matches(inside),
+            // An empty pattern would match everywhere, so it matches nowhere instead.
+            Err(_) => Ok(vec![((0, inside.len()), false)]),
+        }
+    }
+}
+
+impl Pattern for &String {
+    fn find_matches(&self, inside: &str) -> Result<Vec<(Offsets, bool)>> {
+        let s: &str = self;
+        s.find_matches(inside)
+    }
+}
+
 impl Pattern for &SysRegex {
     fn find_matches(&self, inside: &str) -> Result<Vec<(Offsets, bool)>> {
         if inside.is_empty() {
@@ -196,6 +215,21 @@ mod tests {
 
         // An empty pattern would match everywhere, so there is no `Literal` for it.
         assert!(Literal::new(b"").is_err());
+    }
+
+    #[test]
+    fn str() {
+        do_test!("aba", "a" => vec![((0, 1), true), ((1, 2), false), ((2, 3), true)]);
+        do_test!("aabbab", "ab" =>
+            vec![((0, 1), false), ((1, 3), true), ((3, 4), false), ((4, 6), true)]
+        );
+        do_test!("aaa", "b" => vec![((0, 3), false)]);
+        do_test!("", "" => vec![((0, 0), false)]);
+        // An empty pattern would match everywhere, so it matches nowhere instead.
+        do_test!("aaa", "" => vec![((0, 3), false)]);
+
+        let owned = String::from("ab");
+        do_test!("aabbb", &owned => vec![((0, 1), false), ((1, 3), true), ((3, 5), false)]);
     }
 
     #[test]
