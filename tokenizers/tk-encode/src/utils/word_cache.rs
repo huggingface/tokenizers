@@ -228,15 +228,15 @@
 //! for those, and only those, a match is confirmed by comparing the bytes.
 //!
 //! The two overflow buffers ([`Arena`]) grow up to a budget and then stop. When an
-//! entry is thrown out, the space it used goes on a free list for its exact
+//! entry is evicted, the space it used goes on a free list for its exact
 //! length, so the next word of that shape reuses it. Nothing is ever compacted or
 //! moved. Words longer than [`MAX_WORD_BYTES`] are not cached at all.
 //!
-//! # Which entry gives way
+//! # Which entry gets evicted
 //!
-//! When a word's window is full, something has to go, and it is whatever sits in
-//! the home slot. Nothing is measured and nothing is ranked: the newcomer takes
-//! the slot it wanted in the first place.
+//! When a word's window is full, one of its entries gets evicted, and it is whatever
+//! sits in the home slot. Nothing is measured and nothing is ranked: the newcomer
+//! takes the slot it wanted in the first place.
 //!
 //! A cleverer rule is possible, and this module used to have one: a use counter per
 //! entry, the least-used slot of the window loses it, and the counters fade so that
@@ -442,8 +442,8 @@ impl WordCache {
             }
         }
         Walk::Absent(Placement {
-            // A full window means one of its words has to give way, and the one
-            // that does is the word in the home slot. The module docs say why the
+            // A full window means one of its words gets evicted, and the one that
+            // does is the word in the home slot. The module docs say why the
             // choice does not have to be any cleverer than that.
             index: free.unwrap_or(home),
             key,
@@ -706,8 +706,8 @@ impl<T: Copy + Default> Arena<T> {
 
 // ---------------------------------------------------------------- the row of tags
 
-/// How many slots [`WordCache::find_word_in_cache`] walks before it gives up and
-/// evicts: a word is in the sixteen slots from its home slot on, or nowhere.
+/// How many slots [`WordCache::find_word_in_cache`] walks before it stops looking
+/// and evicts: a word is in the sixteen slots from its home slot on, or nowhere.
 ///
 /// Sixteen one-byte tags cross at most two cache lines, and a walk rarely reads
 /// that many, since it stops at the first empty slot, usually a step or two along.
@@ -909,10 +909,10 @@ mod tests {
     }
 
     /// A word that hashes into a full window is stored rather than turned away,
-    /// and the entry it replaces is the one in its home slot, even when that
-    /// entry has just been used, which is the whole of what this policy gives up.
+    /// and the entry evicted is the one in its home slot, even when that entry has
+    /// just been used, which is the whole of what this policy costs.
     #[test]
-    fn a_full_window_gives_up_its_home_slot() {
+    fn a_full_window_evicts_its_home_slot() {
         let mut cache = WordCache::new(WALK_WINDOW);
         let words: Vec<Vec<u8>> = (0..WALK_WINDOW as u8).map(|i| vec![i; 4]).collect();
         for (i, word) in words.iter().enumerate() {
