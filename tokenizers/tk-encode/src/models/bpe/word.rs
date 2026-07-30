@@ -276,7 +276,7 @@ impl Word {
         self.get_chars_iter().collect()
     }
 
-    pub fn get_chars_iter(&self) -> impl Iterator<Item = u32> + '_ {
+    pub fn get_chars_iter(&self) -> impl ExactSizeIterator<Item = u32> + '_ {
         self.symbols.iter().map(|s| s.c)
     }
 

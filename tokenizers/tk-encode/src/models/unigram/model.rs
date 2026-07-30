@@ -3,6 +3,7 @@ use super::{
     trie::{Trie, TrieBuilder},
 };
 use crate::utils::cache::{Cache, MAX_LENGTH};
+use crate::utils::word_cache::{Lookup, WordCache};
 use crate::vocab_store::VocabStore;
 use crate::{
     pipeline::{self, PipelineToken},
@@ -239,23 +240,33 @@ impl Unigram {
         if sentence.is_empty() {
             return Ok(vec![]);
         }
-        if self.alpha.is_none() || self.alpha == Some(0.0) {
-            if let Some(result) = self.cache.get(sentence) {
-                Ok(result.to_vec())
-            } else {
-                let result = if self.is_optimized {
-                    self.encode_optimized(sentence)?
-                } else {
-                    self.encode_unoptimized(sentence)?
-                };
-                if sentence.len() < MAX_LENGTH {
-                    self.cache.set(sentence.to_owned(), result.clone());
-                }
-                Ok(result)
-            }
+        if self.samples() {
+            return self.encode_uncached(sentence);
+        }
+        if let Some(result) = self.cache.get(sentence) {
+            return Ok(result.to_vec());
+        }
+        let result = self.encode_uncached(sentence)?;
+        if sentence.len() < MAX_LENGTH {
+            self.cache.set(sentence.to_owned(), result.clone());
+        }
+        Ok(result)
+    }
+
+    /// Whether [`Unigram::alpha`] asks for a tokenization drawn at random from the
+    /// lattice instead of its best path. Such a result is one draw out of many, so no
+    /// cache may hold it.
+    fn samples(&self) -> bool {
+        matches!(self.alpha, Some(alpha) if alpha != 0.0)
+    }
+
+    /// What `sentence` encodes to, worked out rather than looked up: the lattice's
+    /// best path, or a draw from it when [`Unigram::samples`].
+    fn encode_uncached(&self, sentence: &str) -> Result<Vec<String>> {
+        if self.is_optimized && !self.samples() {
+            self.encode_optimized(sentence)
         } else {
-            let result = self.encode_unoptimized(sentence)?;
-            Ok(result)
+            self.encode_unoptimized(sentence)
         }
     }
 
@@ -503,7 +514,11 @@ impl Model for Unigram {
     }
 }
 
-pub struct UnigramScratch {}
+pub struct UnigramScratch {
+    /// Kept for the life of the scratch: a cache is only worth having once it has seen
+    /// some text, so it must outlive the encode call that filled it.
+    pub(crate) word_cache: Option<WordCache>,
+}
 
 impl pipeline::ModelScratch for UnigramScratch {}
 
@@ -511,18 +526,44 @@ impl pipeline::Model for Unigram {
     type Scratch = UnigramScratch;
 
     fn init_scratch(&self) -> Self::Scratch {
-        Self::Scratch {}
+        Self::Scratch {
+            word_cache: match self.cache.capacity {
+                0 => None,
+                capacity => Some(WordCache::new(capacity)),
+            },
+        }
     }
 
+    /// The pipeline asks for ids and nothing else, so this path caches ids, where
+    /// [`Unigram::encode`] has to hand back the pieces themselves and caches those. A hit
+    /// skips the lattice, the `String` every piece is built into, and the vocabulary
+    /// lookup that turns each one back into an id.
     fn tokenize_pipeline(
         &self,
         sequence: &str,
-        _scratch: &mut Self::Scratch,
+        scratch: &mut Self::Scratch,
         output: &mut Vec<pipeline::PipelineToken>,
     ) -> Result<()> {
-        let str_tokens = self.encode(sequence)?;
+        if sequence.is_empty() {
+            return Ok(());
+        }
+        // The lookup also picks the slot this sequence would go in, so the
+        // insert below has no window to walk of its own.
+        let mut placement = None;
+        if !self.samples()
+            && let Some(cache) = scratch.word_cache.as_mut()
+        {
+            match cache.lookup(sequence.as_bytes()) {
+                Lookup::Hit(ids) => {
+                    output.extend(ids.iter().map(|&id| PipelineToken { id }));
+                    return Ok(());
+                }
+                Lookup::Miss(at) => placement = at,
+            }
+        }
 
-        for string in str_tokens {
+        let start = output.len();
+        for string in self.encode_uncached(sequence)? {
             match self.token_to_ids.token_to_id(&string) {
                 Some(id) => {
                     output.push(PipelineToken { id });
@@ -546,6 +587,15 @@ impl pipeline::Model for Unigram {
                     });
                 }
             };
+        }
+
+        // A sampled tokenization never produced a placement, so it is never
+        // stored: remembering one draw would turn every later call on the same
+        // text into that same draw.
+        if let Some(cache) = scratch.word_cache.as_mut()
+            && let Some(at) = placement
+        {
+            cache.insert(at, output[start..].iter().map(|token| token.id));
         }
         Ok(())
     }
@@ -709,5 +759,124 @@ mod tests {
 
         let tokens = unigram.tokenize("?é").unwrap();
         assert_eq!(tokens[0].id, 0);
+    }
+
+    /// Ids 0..=8 are `<unk>`, `a`, `b`, `c`, `d`, `cd`, `ab`, `abc`, `abcd`.
+    fn abcd_vocab() -> Vocab {
+        vec![
+            ("<unk>".to_string(), 0.0),
+            ("a".to_string(), 0.0),
+            ("b".to_string(), 0.0),
+            ("c".to_string(), 0.0),
+            ("d".to_string(), 0.0),
+            ("cd".to_string(), 1.0),
+            ("ab".to_string(), 2.0),
+            ("abc".to_string(), 5.0),
+            ("abcd".to_string(), 10.0),
+        ]
+    }
+
+    fn pipeline_ids(model: &Unigram, sequence: &str, scratch: &mut UnigramScratch) -> Vec<u32> {
+        let mut output = vec![];
+        pipeline::Model::tokenize_pipeline(model, sequence, scratch, &mut output).unwrap();
+        output.iter().map(|token| token.id).collect()
+    }
+
+    #[test]
+    fn pipeline_remembers_what_a_sequence_encoded_to() {
+        let model = Unigram::from(abcd_vocab(), Some(0), false).unwrap();
+        let mut scratch = pipeline::Model::init_scratch(&model);
+
+        let ids = pipeline_ids(&model, "abcd", &mut scratch);
+
+        let cache = scratch
+            .word_cache
+            .as_mut()
+            .expect("Unigram encodes with a cache");
+        assert_eq!(cache.lookup(b"abcd").hit(), Some(&ids[..]));
+    }
+
+    #[test]
+    fn cache_hits_agree_with_a_cold_run() {
+        let model = Unigram::from(abcd_vocab(), Some(0), false).unwrap();
+        let long = "abcd".repeat(400);
+        let corpus = [
+            "abcdacdxx",
+            "ab",
+            // The same sequence again, so this one is served from the cache.
+            "abcdacdxx",
+            // Out of the vocabulary, and multibyte.
+            "東京",
+            // 1600 bytes, past the longest word the cache will store.
+            long.as_str(),
+            "abcdacdxx",
+        ];
+
+        let mut warm_scratch = pipeline::Model::init_scratch(&model);
+        let warm = corpus.map(|sequence| pipeline_ids(&model, sequence, &mut warm_scratch));
+        let cold = corpus.map(|sequence| {
+            let mut scratch = pipeline::Model::init_scratch(&model);
+            pipeline_ids(&model, sequence, &mut scratch)
+        });
+
+        assert_eq!(warm, cold);
+    }
+
+    #[test]
+    fn caches_only_the_ids_this_sequence_produced() {
+        // Every sequence the pipeline hands the model appends to one output buffer,
+        // so a sequence has to remember its own ids, not everything the buffer holds.
+        let model = Unigram::from(abcd_vocab(), Some(0), false).unwrap();
+        let mut scratch = pipeline::Model::init_scratch(&model);
+        let mut output = vec![];
+        pipeline::Model::tokenize_pipeline(&model, "ab", &mut scratch, &mut output).unwrap();
+        pipeline::Model::tokenize_pipeline(&model, "cd", &mut scratch, &mut output).unwrap();
+
+        let ids: Vec<u32> = output.iter().map(|token| token.id).collect();
+        assert_eq!(ids, [6, 5]);
+        let cache = scratch.word_cache.as_mut().unwrap();
+        assert_eq!(cache.lookup(b"cd").hit(), Some(&[5u32][..]));
+    }
+
+    #[test]
+    fn byte_fallback_ids_survive_the_cache() {
+        // A piece the vocabulary has no id for becomes one id per byte. The cache
+        // stores what came out, so a hit has to replay all of them.
+        let vocab = vec![
+            ("<unk>".to_string(), 0.0),
+            ("<0xC3>".to_string(), -0.01),
+            ("<0xA9>".to_string(), -0.03),
+        ];
+        let model = Unigram::from(vocab, Some(0), true).unwrap();
+        let mut scratch = pipeline::Model::init_scratch(&model);
+
+        let ids = pipeline_ids(&model, "é", &mut scratch);
+
+        assert_eq!(ids, [1, 2]);
+        assert_eq!(pipeline_ids(&model, "é", &mut scratch), ids);
+    }
+
+    #[test]
+    fn sampling_is_never_cached() {
+        // A sampled tokenization is one draw out of many. Remembering it would turn
+        // every later call on the same text into that same draw.
+        let mut model = Unigram::from(abcd_vocab(), Some(0), false).unwrap();
+        model.alpha = Some(0.5);
+        let mut scratch = pipeline::Model::init_scratch(&model);
+
+        pipeline_ids(&model, "abcd", &mut scratch);
+
+        let cache = scratch.word_cache.as_mut().unwrap();
+        assert_eq!(cache.lookup(b"abcd").hit(), None);
+    }
+
+    #[test]
+    fn a_capacity_of_zero_turns_the_cache_off() {
+        let mut model = Unigram::from(abcd_vocab(), Some(0), false).unwrap();
+        model.resize_cache(0);
+        let mut scratch = pipeline::Model::init_scratch(&model);
+
+        assert_eq!(pipeline_ids(&model, "abcd", &mut scratch), [8]);
+        assert!(scratch.word_cache.is_none());
     }
 }
