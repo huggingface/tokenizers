@@ -3,7 +3,8 @@ use std::borrow::Borrow;
 use std::hash::Hash;
 use std::sync::RwLock;
 
-/// The default capacity for a `BPE`'s internal cache.
+/// The default capacity of a model's cache, whether it is a [`Cache`] or a
+/// [`WordCache`](crate::utils::word_cache::WordCache).
 pub static DEFAULT_CACHE_CAPACITY: usize = 65_536;
 /// The maximum length we should cache in a model
 /// Strings that are too long have minimal chances to cache hit anyway

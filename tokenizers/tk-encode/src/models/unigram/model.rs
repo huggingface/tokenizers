@@ -515,8 +515,7 @@ impl Model for Unigram {
 }
 
 pub struct UnigramScratch {
-    /// Kept for the life of the scratch: a cache is only worth having once it has seen
-    /// some text, so it must outlive the encode call that filled it.
+    /// Outlives the encode call that fills it, or it would never see a word twice.
     pub(crate) word_cache: Option<WordCache>,
 }
 
@@ -547,8 +546,6 @@ impl pipeline::Model for Unigram {
         if sequence.is_empty() {
             return Ok(());
         }
-        // The lookup also picks the slot this sequence would go in, so the
-        // insert below has no window to walk of its own.
         let mut placement = None;
         if !self.samples()
             && let Some(cache) = scratch.word_cache.as_mut()
@@ -589,9 +586,8 @@ impl pipeline::Model for Unigram {
             };
         }
 
-        // A sampled tokenization never produced a placement, so it is never
-        // stored: remembering one draw would turn every later call on the same
-        // text into that same draw.
+        // Sampling skipped the lookup, so `placement` is `None` and this stores
+        // nothing, which is what `samples` says has to happen.
         if let Some(cache) = scratch.word_cache.as_mut()
             && let Some(at) = placement
         {

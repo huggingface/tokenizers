@@ -318,8 +318,7 @@ impl Model for WordPiece {
 
 pub struct WordPieceScratch {
     candidate_str: String,
-    /// Kept for the life of the scratch: a cache is only worth having once it has seen
-    /// some text, so it must outlive the encode call that filled it.
+    /// Outlives the encode call that fills it, or it would never see a word twice.
     word_cache: WordCache,
 }
 
@@ -421,7 +420,7 @@ impl pipeline::Model for PipelineWordPiece {
         }
     }
 
-    /// A hit skips [`Self::tokenize_word`]: one trie search per piece of the word,
+    /// A hit skips `tokenize_word`: one trie search per piece of the word,
     /// each over a fresh copy of what is left to match.
     fn tokenize_pipeline(
         &self,
@@ -437,8 +436,6 @@ impl pipeline::Model for PipelineWordPiece {
             word_cache,
         } = scratch;
 
-        // The lookup also picks the slot this word would go in, so the insert
-        // below has no window to walk of its own.
         let placement = match word_cache.lookup(sequence.as_bytes()) {
             Lookup::Hit(ids) => {
                 output.extend(ids.iter().map(|&id| PipelineToken { id }));
