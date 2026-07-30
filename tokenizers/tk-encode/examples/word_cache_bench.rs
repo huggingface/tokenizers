@@ -517,11 +517,11 @@ fn main() {
             store(&mut cache, pool.word(i), [i as u32, 7].into_iter());
         }
         bench.run(
-            "settle(), one whole-table pass  (64k slots)",
+            "restart_epochs(), one whole-table pass  (64k slots)",
             200,
             |iters| {
                 for _ in 0..iters {
-                    black_box(&mut cache).bench_settle();
+                    black_box(&mut cache).bench_restart_epochs();
                 }
                 0
             },
