@@ -154,6 +154,25 @@ impl pipeline::PreTokenizer for PipelineSequence {
         out.extend_from_slice(&current);
         Ok(())
     }
+
+    /// The lone child's scan, under the same rule
+    /// [`pre_tokenize`](pipeline::PreTokenizer::pre_tokenize) collapses on: a
+    /// `Sequence[Split(regex), ByteLevel(use_regex=false)]` is that `Split`, since
+    /// the byte-map `ByteLevel` converts to an identity pass. This is what puts
+    /// llama-3 on the keyed path — its pre-tokenizer ships in exactly that shape.
+    fn scan(&self) -> Option<pipeline::Scan> {
+        if self.is_deepseek() {
+            return None;
+        }
+        let mut work = self
+            .pre_tokenizers
+            .iter()
+            .filter(|c| !matches!(c, PipelinePreTokenizer::None));
+        match (work.next(), work.next()) {
+            (Some(only), None) => only.scan(),
+            _ => None,
+        }
+    }
 }
 
 #[cfg(test)]

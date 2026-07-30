@@ -72,6 +72,7 @@ pub(crate) fn classify_into_spans(
 #[derive(Clone, Copy)]
 pub enum Scan {
     ByteLevel,
+    Cl100k { digit_cap: usize },
 }
 
 /// A pre-token together with the word-cache key for its bytes, built by the scan
@@ -99,6 +100,25 @@ impl KeyedSpan {
 /// the model works through it.
 const KEYED_BATCH: usize = 32;
 
+/// Key the word `span` covers and store the pair at `out[n]`, reporting whether
+/// there is room for another. The body of every scan's `emit`.
+#[inline(always)]
+fn key_into(
+    out: &mut [KeyedSpan],
+    n: &mut usize,
+    cache: &WordCache,
+    bytes: &[u8],
+    span: Span,
+) -> bool {
+    let key = cache.key(&bytes[span.range()]);
+    if !key.is_none() {
+        cache.prefetch(key);
+    }
+    out[*n] = KeyedSpan { span, key };
+    *n += 1;
+    *n < out.len()
+}
+
 /// Cut the next spans of `text` from `at`, keying each word as it is cut, and
 /// report how many spans landed in `out` and where the scan stopped. A stop at
 /// `bytes.len()` means the text is done.
@@ -111,16 +131,18 @@ fn fill_keyed_spans(
     out: &mut [KeyedSpan],
 ) -> (usize, usize) {
     let mut n = 0;
+    // Each arm builds its own closure and passes it by value, so the keying is
+    // inlined into that scan's loop. Handing both arms one `&mut` closure instead
+    // costs gpt2 a third of its gain — the body stops being inlined.
     let stopped = match scan {
         Scan::ByteLevel => atomsplit::fsm::scan_byte_level(bytes, tags, at, |span| {
-            let key = cache.key(&bytes[span.range()]);
-            if !key.is_none() {
-                cache.prefetch(key);
-            }
-            out[n] = KeyedSpan { span, key };
-            n += 1;
-            n < out.len()
+            key_into(out, &mut n, cache, bytes, span)
         }),
+        Scan::Cl100k { digit_cap } => {
+            atomsplit::fsm::scan_cl100k_cap(bytes, tags, at, digit_cap, |span| {
+                key_into(out, &mut n, cache, bytes, span)
+            })
+        }
     };
     (n, stopped)
 }
@@ -185,6 +207,8 @@ impl PreTokenizer for PipelinePreTokenizer {
     fn scan(&self) -> Option<Scan> {
         match self {
             Self::Split(pretok) => pretok.scan(),
+            // A sequence can still reduce to a single Split — llama-3's does.
+            Self::Sequence(pretok) => pretok.scan(),
             _ => None,
         }
     }

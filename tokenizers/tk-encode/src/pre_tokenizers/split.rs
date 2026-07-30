@@ -197,8 +197,9 @@ impl pipeline::PreTokenizer for Split {
             .filter(|_| !self.invert && self.behavior == SplitDelimiterBehavior::Isolated)
         {
             Some(GptFsm::Gpt2) => Some(pipeline::Scan::ByteLevel),
-            // cl100k and o200k have no resumable scan yet, so they keep filling a
-            // whole chunk's spans through `pre_tokenize`.
+            Some(GptFsm::Cl100k { digit_cap }) => Some(pipeline::Scan::Cl100k { digit_cap }),
+            // o200k has no resumable scan yet, so it keeps filling a whole chunk's
+            // spans through `pre_tokenize`.
             _ => None,
         }
     }
@@ -425,10 +426,10 @@ mod tests {
     }
 
     /// The resumable scan is what routes a chunk through the keyed path, so which
-    /// patterns have one is worth pinning: gpt2 does, and the two FSMs without a
-    /// resumable scan yet must say so rather than be routed there.
+    /// patterns have one is worth pinning — o200k has none yet and must say so
+    /// rather than be routed there.
     #[test]
-    fn only_gpt2_offers_a_resumable_scan() {
+    fn gpt2_and_cl100k_offer_a_resumable_scan() {
         use crate::pipeline::PreTokenizer as _;
         let scan_of = |pattern: &str, behavior, invert| {
             Split::new(SplitPattern::Regex(pattern.into()), behavior, invert)
@@ -437,7 +438,7 @@ mod tests {
                 .is_some()
         };
         assert!(scan_of(atomsplit::regexes::GPT2, Isolated, false));
-        assert!(!scan_of(atomsplit::regexes::CL100K, Isolated, false));
+        assert!(scan_of(atomsplit::regexes::CL100K, Isolated, false));
         assert!(!scan_of(atomsplit::regexes::O200K, Isolated, false));
         // Not the canonical usage the FSM covers, so there is nothing to resume.
         // (An unrecognized pattern cannot even be built without a system-regex

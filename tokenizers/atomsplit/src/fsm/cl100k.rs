@@ -14,10 +14,28 @@ pub fn fsm_cl100k(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
 #[must_use]
 pub fn fsm_cl100k_cap(text: &[u8], tags: &[u8], out: &mut [Span], digit_cap: usize) -> usize {
     debug_assert!(out.len() >= text.len() && tags.len() >= text.len());
-    cl100k(text, tags, out, digit_cap)
+    let mut w = 0usize;
+    scan_cl100k_cap(text, tags, 0, digit_cap, |span| {
+        // SAFETY: spans partition the input, so `w < #spans <= text.len() <= out.len()`.
+        unsafe { *out.get_unchecked_mut(w) = span };
+        w += 1;
+        true
+    });
+    w
 }
 
-fn cl100k(text: &[u8], tags: &[u8], out: &mut [Span], digit_cap: usize) -> usize {
+/// The same scan, handing each span to `emit` as it is cut and stopping early when
+/// `emit` returns `false`. Returns the offset to resume from. See
+/// [`scan_byte_level`](super::scan_byte_level) for what this is for.
+#[inline]
+pub fn scan_cl100k_cap(
+    text: &[u8],
+    tags: &[u8],
+    from: usize,
+    digit_cap: usize,
+    mut emit: impl FnMut(Span) -> bool,
+) -> usize {
+    debug_assert!(tags.len() >= text.len());
     // Leading-atom values, as `const` so the `match` below is a dense jump table (not an if-cascade):
     // the dispatch is O(1) and a token never pays for a rule it can't start (e.g. non-number tokens
     // never test the number rule — which is what the POC's const-gating removed by hand; here it's free).
@@ -40,8 +58,7 @@ fn cl100k(text: &[u8], tags: &[u8], out: &mut [Span], digit_cap: usize) -> usize
     // rules 5-7 (`\s*[\r\n] | \s+(?!\S) | \s+`) → the shared `ws_tail`.
     let ws = |i: usize| -> usize { ws_tail(text, tags, i, end) };
 
-    let mut i = 0;
-    let mut w = 0usize;
+    let mut i = from;
     while i < end {
         let start = i;
         let b = text[i];
@@ -105,14 +122,12 @@ fn cl100k(text: &[u8], tags: &[u8], out: &mut [Span], digit_cap: usize) -> usize
             // Sentinel / MultiByte / Cont — never a char-start atom; emit one char defensively.
             _ => i += char_len(b),
         }
-        // SAFETY: tokens partition the input, so `w < #tokens <= end < out.len()` (out ≥ text.len()+? ; callers size n+1).
-        unsafe {
-            *out.get_unchecked_mut(w) = Span {
-                start: start as u32,
-                end: i as u32,
-            }
-        };
-        w += 1;
+        if !emit(Span {
+            start: start as u32,
+            end: i as u32,
+        }) {
+            return i;
+        }
     }
-    w
+    i
 }

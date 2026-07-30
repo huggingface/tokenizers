@@ -238,7 +238,7 @@ mod cl100k;
 mod deepseek;
 mod o200k;
 pub use byte_level::{fsm_byte_level, scan_byte_level};
-pub use cl100k::{fsm_cl100k, fsm_cl100k_cap};
+pub use cl100k::{fsm_cl100k, fsm_cl100k_cap, scan_cl100k_cap};
 pub use deepseek::fsm_deepseek;
 pub use o200k::fsm_o200k;
 
