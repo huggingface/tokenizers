@@ -129,12 +129,12 @@ const MAX_WORD_BYTES: usize = 1024;
 /// Word bytes to token ids. See the module docs for the design.
 pub struct WordCache {
     /// A table of up to N [`CachedWord`]. The main data.
-    /// 
+    ///
     /// For a given word, we derive its index in [`Self::cached_word`] by keeping the lower N bytes of its hash:
     /// ```text
     /// hash(word) & (N - 1)
     /// ```
-    /// 
+    ///
     /// Where N is the cache capacity (= number of slots). N has to be a power of 2.
     cached_words: Box<[CachedWord]>,
 
@@ -145,7 +145,7 @@ pub struct WordCache {
     index_mask: usize,
 
     /// Sibling table of [`Self::cached_words`].
-    /// 
+    ///
     /// One byte per slot, at the same index as the corresponding [`CachedWord`] in [`Self::cached_words`].
     /// For a given index, hold the 7 high bits of the hash of the corresponding `CachedWord`, or [`EMPTY`] if the slot is empty.
     /// Being a contiguous buffer of bytes, it allows to do a very efficient lookup of candidates in [`Self::cached_words`]
@@ -178,7 +178,7 @@ impl WordCache {
     }
 
     /// Lookup a word in the cache.
-    /// 
+    ///
     /// If the word is found in the cache, returns the ids the word encodes to.
     /// If the word is not found in the cache, returns the index at which the [`CachedWord`] should be inserted.
     ///
@@ -362,36 +362,6 @@ impl WordCache {
         self.word_bytes_arena
             .release(slot.key_off(), slot.key_len());
         self.token_ids_arena.release(slot.ids_off(), slot.ids_len());
-    }
-}
-
-/// Handles for `examples/word_cache_bench.rs`, which times the parts of the cache
-/// the encoder never calls directly. Compiled out of every build that does not
-/// ask for them.
-#[cfg(feature = "bench-internals")]
-impl WordCache {
-    /// Just the key building at the front of a lookup: pack the word, hash it.
-    pub fn bench_slot_key(&self, word: &[u8]) -> u64 {
-        self.make_word_key(word).1
-    }
-
-    /// One eviction's worth of fading, without an eviction.
-    pub fn bench_fade(&mut self) {
-        self.evictor.on_eviction()
-    }
-
-    /// The whole-table pass that starts the epoch count again.
-    pub fn bench_restart_epochs(&mut self) {
-        self.evictor.restart_epochs()
-    }
-
-    /// How many slots hold an entry. Equal to the capacity once the table is
-    /// saturated, which is the state the eviction measurements need.
-    pub fn bench_occupancy(&self) -> usize {
-        self.probe_lookup_table[..self.cached_words.len()]
-            .iter()
-            .filter(|&&tag| tag != EMPTY)
-            .count()
     }
 }
 
