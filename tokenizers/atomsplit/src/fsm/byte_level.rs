@@ -8,6 +8,36 @@ use super::*;
 #[must_use]
 pub fn fsm_byte_level(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
     debug_assert!(out.len() >= text.len() && tags.len() >= text.len());
+    let mut w = 0usize;
+    scan_byte_level(text, tags, 0, |span| {
+        // SAFETY: spans partition the input, so `w < #spans <= text.len() <= out.len()`.
+        unsafe { *out.get_unchecked_mut(w) = span };
+        w += 1;
+        true
+    });
+    w
+}
+
+/// The same scan, handing each span to `emit` as it is cut and stopping early when
+/// `emit` returns `false`. Returns the offset to resume from, which is the end of
+/// the last span emitted.
+///
+/// This is what lets a caller do something per span *while the scan is at it* —
+/// the pipeline builds each word's cache key here, where the word's bytes are
+/// still in L1 and its bounds are still in registers, rather than walking the
+/// spans again afterwards. `emit` is a closure so it is inlined into the loop and
+/// this file needs to know nothing about what the caller does with a span.
+///
+/// Stopping early is what keeps a batch of spans small enough to stay in cache:
+/// the caller fills a fixed-size batch, consumes it, and resumes here.
+#[inline]
+pub fn scan_byte_level(
+    text: &[u8],
+    tags: &[u8],
+    from: usize,
+    mut emit: impl FnMut(Span) -> bool,
+) -> usize {
+    debug_assert!(tags.len() >= text.len());
     let end = text.len();
     // Tie `tags.len() == end` so the optimizer drops the per-byte bounds check on every interior
     // `tags[i]` in this fsm + its `run_end`/`letter_*` scans. (Callers guarantee `tags.len() >= end`.)
@@ -26,8 +56,7 @@ pub fn fsm_byte_level(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
         }
     };
 
-    let mut i = 0;
-    let mut w = 0usize;
+    let mut i = from;
     while i < end {
         let start = i;
         match tags[i] & 0x0F {
@@ -68,14 +97,12 @@ pub fn fsm_byte_level(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
             // Sentinel / MultiByte / Cont — never a char-start atom; emit one char defensively.
             _ => i += char_len(text[i]),
         }
-        // SAFETY: tokens partition the input, so `w < #tokens <= end < out.len()` (out ≥ text.len()+? ; callers size n+1).
-        unsafe {
-            *out.get_unchecked_mut(w) = Span {
-                start: start as u32,
-                end: i as u32,
-            }
-        };
-        w += 1;
+        if !emit(Span {
+            start: start as u32,
+            end: i as u32,
+        }) {
+            return i;
+        }
     }
-    w
+    i
 }

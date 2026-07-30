@@ -520,7 +520,11 @@ pub struct UnigramScratch {
     pub(crate) word_cache: Option<WordCache>,
 }
 
-impl pipeline::ModelScratch for UnigramScratch {}
+impl pipeline::ModelScratch for UnigramScratch {
+    fn word_cache(&mut self) -> Option<&mut WordCache> {
+        self.word_cache.as_mut()
+    }
+}
 
 impl pipeline::Model for Unigram {
     type Scratch = UnigramScratch;

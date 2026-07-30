@@ -323,7 +323,11 @@ pub struct WordPieceScratch {
     word_cache: WordCache,
 }
 
-impl pipeline::ModelScratch for WordPieceScratch {}
+impl pipeline::ModelScratch for WordPieceScratch {
+    fn word_cache(&mut self) -> Option<&mut WordCache> {
+        Some(&mut self.word_cache)
+    }
+}
 
 pub struct PipelineWordPiece {
     vocab_trie: yada::DoubleArray<Vec<u8>>,

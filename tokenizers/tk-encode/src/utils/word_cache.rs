@@ -873,10 +873,26 @@ impl<'c> Lookup<'c, '_> {
 }
 
 /// A word's key and the hash that places it, from [`WordCache::key`].
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub struct WordKey {
     key: u128,
     hash: u64,
+}
+
+impl WordKey {
+    /// The key of a word the table will not store, which every operation here
+    /// treats as an immediate miss.
+    ///
+    /// A key of zero cannot come from a word: [`pack_word`] puts the length in the
+    /// top byte and no word is zero bytes long, and a hashed key always has
+    /// [`KEY_IS_HASH`] set. So zero is free to mean "no slot", which keeps this a
+    /// plain `u128` — an `Option` would push a keyed span past the 32 bytes that
+    /// let a batch of them stay in cache.
+    pub const NONE: Self = Self { key: 0, hash: 0 };
+
+    pub fn is_none(self) -> bool {
+        self.key == 0
+    }
 }
 
 /// Ask the memory system for the cache line holding `p`, on the architectures
@@ -993,24 +1009,21 @@ impl WordCache {
     ///
     /// Takes `&mut self` because a hit is also a vote for keeping the entry.
     pub fn lookup<'c, 'w>(&'c mut self, word: &'w [u8]) -> Lookup<'c, 'w> {
-        match self.key(word) {
-            Some(key) => self.lookup_keyed(word, key),
-            None => Lookup::Miss(None),
-        }
+        self.lookup_keyed(word, self.key(word))
     }
 
-    /// The key for `word`, or `None` for a word the table will not store: an
-    /// empty one, or one longer than [`MAX_WORD_BYTES`].
+    /// The key for `word`, or [`WordKey::NONE`] for a word the table will not
+    /// store: an empty one, or one longer than [`MAX_WORD_BYTES`].
     ///
-    /// Split out of [`WordCache::lookup`] so that a caller holding several words
-    /// can key them all and [`WordCache::prefetch`] their slots before probing
-    /// the first one.
-    pub fn key(&self, word: &[u8]) -> Option<WordKey> {
+    /// Split out of [`WordCache::lookup`] so that a caller can key a word at the
+    /// point it is cut out of the text, while its bytes are still in cache, and
+    /// probe for it later.
+    pub fn key(&self, word: &[u8]) -> WordKey {
         if word.is_empty() || word.len() > MAX_WORD_BYTES {
-            return None;
+            return WordKey::NONE;
         }
         let (key, hash) = self.slot_key(word);
-        Some(WordKey { key, hash })
+        WordKey { key, hash }
     }
 
     /// Ask for the two lines a [`WordCache::lookup_keyed`] on this key reads: the
@@ -1029,6 +1042,9 @@ impl WordCache {
 
     /// [`WordCache::lookup`] with the key already built by [`WordCache::key`].
     pub fn lookup_keyed<'c, 'w>(&'c mut self, word: &'w [u8], key: WordKey) -> Lookup<'c, 'w> {
+        if key.is_none() {
+            return Lookup::Miss(None);
+        }
         let WordKey { key, hash } = key;
         let index = match self.probe(key, hash, word) {
             Probe::Hit(index) => {
@@ -1387,7 +1403,7 @@ mod tests {
             (long, Some(&[4u32][..])),
             (&b"absent"[..], None),
         ] {
-            let key = cache.key(word).expect("word is cacheable");
+            let key = cache.key(word);
             cache.prefetch(key);
             assert_eq!(cache.lookup_keyed(word, key).hit(), ids, "{word:?}");
         }
@@ -1400,7 +1416,7 @@ mod tests {
         let cache = WordCache::new(1 << 8);
         assert!(cache.key(b"").is_none());
         assert!(cache.key(&vec![7u8; MAX_WORD_BYTES + 1]).is_none());
-        assert!(cache.key(&vec![7u8; MAX_WORD_BYTES]).is_some());
+        assert!(!cache.key(&vec![7u8; MAX_WORD_BYTES]).is_none());
     }
 
     #[test]

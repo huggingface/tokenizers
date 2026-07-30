@@ -1,6 +1,6 @@
 use super::{super::OrderedVocabIter, Error, Pair, Word};
 use crate::models::bpe::Merge;
-use crate::pipeline::{self, ModelScratch, PipelineToken, Span};
+use crate::pipeline::{self, KeyedSpan, ModelScratch, PipelineToken, Span};
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::byte_level::{self};
 use crate::utils::cache::{DEFAULT_CACHE_CAPACITY, MAX_LENGTH};
@@ -901,19 +901,61 @@ impl pipeline::Model for PipelineBPE {
         Ok(())
     }
 
-    /// Two loops per batch of pre-tokens: the first builds every word's cache key
-    /// and asks for the slot it will land in, the second probes those slots and
-    /// tokenizes what missed. Splitting them is what gives the prefetches
-    /// something to hide behind — by the time the second loop probes a word, the
-    /// first loop has moved on far enough for its line to have arrived.
+    /// Key a batch of pre-tokens, ask for the slots they will land in, and hand the
+    /// batch to [`Self::tokenize_keyed_spans`]. Keying a batch ahead is what gives
+    /// the prefetches something to hide behind.
+    ///
+    /// A pre-tokenizer with a [`Scan`](pipeline::Scan) keys each word inside the
+    /// scan that cuts it and calls [`Self::tokenize_keyed_spans`] itself; this is
+    /// the path for the ones that hand over a whole chunk's spans at once.
     ///
     /// Keys come off `chunk.as_bytes()` rather than a `&str` slice per span. The
-    /// cache reads bytes, so a hit here never pays for the two boundary checks
-    /// that slicing a `str` costs; only a miss needs the text.
+    /// cache reads bytes, so a hit never pays for the two boundary checks that
+    /// slicing a `str` costs; only a miss needs the text.
     fn tokenize_spans(
         &self,
         chunk: &str,
         spans: &[Span],
+        scratch: &mut Self::Scratch,
+        output: &mut Vec<PipelineToken>,
+    ) -> Result<()> {
+        if scratch.word_cache.is_none() {
+            let BpeScratch {
+                merge_queue,
+                skip,
+                word,
+                ..
+            } = scratch;
+            for span in spans {
+                self.tokenize_word(&chunk[span.range()], merge_queue, skip, word, output);
+            }
+            return Ok(());
+        }
+
+        let bytes = chunk.as_bytes();
+        let mut batch = [KeyedSpan::default(); SPAN_BATCH];
+        for group in spans.chunks(SPAN_BATCH) {
+            {
+                let cache = scratch.word_cache.as_ref().expect("checked above");
+                for (keyed, span) in batch.iter_mut().zip(group) {
+                    let key = cache.key(&bytes[span.range()]);
+                    if !key.is_none() {
+                        cache.prefetch(key);
+                    }
+                    *keyed = KeyedSpan { span: *span, key };
+                }
+            }
+            self.tokenize_keyed_spans(chunk, &batch[..group.len()], scratch, output)?;
+        }
+        Ok(())
+    }
+
+    /// The keyed path: the scan already built each word's key, so this is only the
+    /// probe and what a miss needs.
+    fn tokenize_keyed_spans(
+        &self,
+        chunk: &str,
+        spans: &[KeyedSpan],
         scratch: &mut Self::Scratch,
         output: &mut Vec<PipelineToken>,
     ) -> Result<()> {
@@ -923,45 +965,26 @@ impl pipeline::Model for PipelineBPE {
             word,
             word_cache,
         } = scratch;
-        let Some(cache) = word_cache.as_mut() else {
-            for span in spans {
-                self.tokenize_word(&chunk[span.range()], merge_queue, skip, word, output);
-            }
-            return Ok(());
-        };
-
+        let cache = word_cache
+            .as_mut()
+            .expect("the keyed path is only taken when there is a cache");
         let bytes = chunk.as_bytes();
-        let mut keys = [None; SPAN_BATCH];
-        for batch in spans.chunks(SPAN_BATCH) {
-            for (key, span) in keys.iter_mut().zip(batch) {
-                *key = cache.key(&bytes[span.range()]);
-                if let Some(key) = key {
-                    cache.prefetch(*key);
-                }
-            }
-            for (key, span) in keys.iter().zip(batch) {
-                let Some(key) = *key else {
-                    // No key means no slot: an empty span, or a word past what the
-                    // cache stores. A tokenizer with no pre-tokenizer hands whole
-                    // documents over this way.
-                    self.tokenize_word(&chunk[span.range()], merge_queue, skip, word, output);
+        for keyed in spans {
+            // The lookup also picks the slot this word would go in, so the insert
+            // below has no window to walk of its own.
+            let placement = match cache.lookup_keyed(&bytes[keyed.span.range()], keyed.key) {
+                Lookup::Hit(ids) => {
+                    output.extend(ids.iter().map(|&id| PipelineToken { id }));
                     continue;
-                };
-                // The lookup also picks the slot this word would go in, so the
-                // insert below has no window to walk of its own.
-                let placement = match cache.lookup_keyed(&bytes[span.range()], key) {
-                    Lookup::Hit(ids) => {
-                        output.extend(ids.iter().map(|&id| PipelineToken { id }));
-                        continue;
-                    }
-                    Lookup::Miss(at) => at,
-                };
-                let ids = self.tokenize_word(&chunk[span.range()], merge_queue, skip, word, output);
-                if let Some(at) = placement {
-                    match ids {
-                        WordIds::Whole(id) => cache.insert(at, std::iter::once(id)),
-                        WordIds::Merged => cache.insert(at, word.get_chars_iter()),
-                    }
+                }
+                Lookup::Miss(at) => at,
+            };
+            let ids =
+                self.tokenize_word(&chunk[keyed.span.range()], merge_queue, skip, word, output);
+            if let Some(at) = placement {
+                match ids {
+                    WordIds::Whole(id) => cache.insert(at, std::iter::once(id)),
+                    WordIds::Merged => cache.insert(at, word.get_chars_iter()),
                 }
             }
         }
@@ -986,7 +1009,11 @@ pub struct BpeScratch {
     /// some text, so it must outlive the encode call that filled it.
     pub(crate) word_cache: Option<WordCache>,
 }
-impl ModelScratch for BpeScratch {}
+impl ModelScratch for BpeScratch {
+    fn word_cache(&mut self) -> Option<&mut WordCache> {
+        self.word_cache.as_mut()
+    }
+}
 
 #[cfg(test)]
 mod tests {

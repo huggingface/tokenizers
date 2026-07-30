@@ -13,6 +13,7 @@ use crate::models::wordpiece::{PipelineWordPiece, WordPieceScratch};
 use crate::processors::bert::BertProcessing;
 use crate::processors::roberta::RobertaProcessing;
 use crate::utils::byte_level::GPT2_REGEX_STR;
+use crate::utils::word_cache::{WordCache, WordKey};
 use crate::vocab::bucket_added_vocabulary::{
     AddedToken as BucketAddedToken, AddedVocabulary as BucketAddedVocabulary,
 };
@@ -61,6 +62,69 @@ pub(crate) fn classify_into_spans(
     });
 }
 
+/// A pre-tokenizer whose scan can be stopped and picked up again, so the encode
+/// loop can take its spans a batch at a time instead of a whole chunk at once.
+///
+/// That is what lets each word be keyed for the word cache at the point it is cut
+/// out of the text, while its bytes are still in cache — see [`KeyedSpan`]. Only
+/// the ByteLevel (gpt2) FSM has one so far; every other pre-tokenizer fills a
+/// chunk's spans in one call and the model keys the words itself.
+#[derive(Clone, Copy)]
+pub enum Scan {
+    ByteLevel,
+}
+
+/// A pre-token together with the word-cache key for its bytes, built by the scan
+/// that cut it.
+///
+/// The key is [`WordKey::NONE`] for a word the cache will not store, which the
+/// model tokenizes without probing.
+#[derive(Clone, Copy, Default)]
+pub struct KeyedSpan {
+    pub span: Span,
+    pub key: WordKey,
+}
+
+impl KeyedSpan {
+    /// An empty span with no key, for building the batch buffer in a `const`
+    /// context — [`Default`] is not usable there.
+    const ZERO: Self = Self {
+        span: Span { start: 0, end: 0 },
+        key: WordKey::NONE,
+    };
+}
+
+/// Spans per batch on the keyed path. Large enough to amortize resuming the scan,
+/// small enough that the batch and the lines it prefetched are still in cache when
+/// the model works through it.
+const KEYED_BATCH: usize = 32;
+
+/// Cut the next spans of `text` from `at`, keying each word as it is cut, and
+/// report how many spans landed in `out` and where the scan stopped. A stop at
+/// `bytes.len()` means the text is done.
+fn fill_keyed_spans(
+    scan: Scan,
+    bytes: &[u8],
+    tags: &[u8],
+    at: usize,
+    cache: &WordCache,
+    out: &mut [KeyedSpan],
+) -> (usize, usize) {
+    let mut n = 0;
+    let stopped = match scan {
+        Scan::ByteLevel => atomsplit::fsm::scan_byte_level(bytes, tags, at, |span| {
+            let key = cache.key(&bytes[span.range()]);
+            if !key.is_none() {
+                cache.prefetch(key);
+            }
+            out[n] = KeyedSpan { span, key };
+            n += 1;
+            n < out.len()
+        }),
+    };
+    (n, stopped)
+}
+
 pub trait Normalizer {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>>;
 }
@@ -70,6 +134,12 @@ pub trait Normalizer {
 pub trait PreTokenizer {
     /// Split `text` into pre-tokens, appending to `out`. Ranges are into `text`.
     fn pre_tokenize(&self, text: &str, out: &mut Vec<Span>) -> Result<()>;
+
+    /// This pre-tokenizer's resumable scan, when it has one. `None` means the
+    /// encode loop uses [`PreTokenizer::pre_tokenize`].
+    fn scan(&self) -> Option<Scan> {
+        None
+    }
 }
 
 /// The pre-tokenizers a [`PipelineTokenizer`] can run.
@@ -109,6 +179,13 @@ impl PreTokenizer for PipelinePreTokenizer {
             Self::UnicodeScripts(pretok) => pretok.pre_tokenize(text, out),
             Self::Whitespace(pretok) => pretok.pre_tokenize(text, out),
             Self::WhitespaceSplit(pretok) => pretok.pre_tokenize(text, out),
+        }
+    }
+
+    fn scan(&self) -> Option<Scan> {
+        match self {
+            Self::Split(pretok) => pretok.scan(),
+            _ => None,
         }
     }
 }
@@ -701,18 +778,30 @@ impl PipelineTokenizer {
                                 output.push(PipelineToken { id: token });
                             }
                             Segment::Text(normalized_chunk) => {
-                                if STAGE >= Self::STAGE_SPLIT {
-                                    // Pre-tokenize the chunk of normalized text
-                                    pre_tokens.clear();
-                                    self.pre_tokenizer
-                                        .pre_tokenize(normalized_chunk, pre_tokens)?;
-                                    if STAGE >= Self::STAGE_MODEL {
-                                        self.model.tokenize_spans(
-                                            normalized_chunk,
-                                            pre_tokens,
-                                            scratch,
-                                            output,
-                                        )?;
+                                if STAGE < Self::STAGE_SPLIT {
+                                    continue;
+                                }
+                                // The keyed path needs both halves: a pre-tokenizer
+                                // whose scan can be resumed, and a model with a
+                                // cache for the keys to be worth building.
+                                match self.pre_tokenizer.scan().filter(|_| {
+                                    STAGE >= Self::STAGE_MODEL && scratch.word_cache().is_some()
+                                }) {
+                                    Some(scan) => {
+                                        self.encode_keyed(scan, normalized_chunk, scratch, output)?
+                                    }
+                                    None => {
+                                        pre_tokens.clear();
+                                        self.pre_tokenizer
+                                            .pre_tokenize(normalized_chunk, pre_tokens)?;
+                                        if STAGE >= Self::STAGE_MODEL {
+                                            self.model.tokenize_spans(
+                                                normalized_chunk,
+                                                pre_tokens,
+                                                scratch,
+                                                output,
+                                            )?;
+                                        }
                                     }
                                 }
                             }
@@ -726,6 +815,51 @@ impl PipelineTokenizer {
             output.extend_from_slice(suffix);
         }
         Ok(())
+    }
+
+    /// Split and tokenize one chunk a batch of pre-tokens at a time, keying each
+    /// word inside the scan that cuts it.
+    ///
+    /// The alternative — the path every other pre-tokenizer takes — cuts the whole
+    /// chunk into a span list, then walks that list to key each word, reading every
+    /// byte of the chunk a second time. Here the key is built while the scan is
+    /// still standing on the word. Batching is what keeps that possible without
+    /// holding a key for every span of the chunk at once.
+    ///
+    /// The tags are still a pass of their own. Fusing them in would save 0.08 ns
+    /// per byte of English, measured — the scan itself costs 1.8.
+    fn encode_keyed(
+        &self,
+        scan: Scan,
+        chunk: &str,
+        scratch: &mut PipelineModelScratch,
+        output: &mut Vec<PipelineToken>,
+    ) -> Result<()> {
+        thread_local! {
+            static SCRATCH: RefCell<(Vec<u8>, [KeyedSpan; KEYED_BATCH])> =
+                const { RefCell::new((Vec::new(), [KeyedSpan::ZERO; KEYED_BATCH])) };
+        }
+        let bytes = chunk.as_bytes();
+        SCRATCH.with(|cell| {
+            let (tags, batch) = &mut *cell.borrow_mut();
+            if tags.len() < bytes.len() {
+                tags.resize(bytes.len(), 0);
+            }
+            let tags = &mut tags[..bytes.len()];
+            classify(bytes, tags);
+
+            let mut at = 0;
+            while at < bytes.len() {
+                let cache = scratch
+                    .word_cache()
+                    .expect("checked before taking the keyed path");
+                let (n, stopped) = fill_keyed_spans(scan, bytes, tags, at, cache, batch);
+                self.model
+                    .tokenize_keyed_spans(chunk, &batch[..n], scratch, output)?;
+                at = stopped;
+            }
+            Ok(())
+        })
     }
 }
 
@@ -983,7 +1117,13 @@ pub fn split_matches(
     }
 }
 
-pub trait ModelScratch {}
+pub trait ModelScratch {
+    /// The word cache this scratch holds, when the model has one. The encode loop
+    /// needs it to key each word as the scan cuts it, before the model sees it.
+    fn word_cache(&mut self) -> Option<&mut WordCache> {
+        None
+    }
+}
 
 pub trait Model {
     type Scratch: ModelScratch;
@@ -1010,6 +1150,25 @@ pub trait Model {
     ) -> Result<()> {
         for span in spans {
             self.tokenize_pipeline(&chunk[span.range()], scratch, output)?;
+        }
+        Ok(())
+    }
+
+    /// Tokenize one batch of pre-tokens whose keys are already built, which is how
+    /// a model with a word cache is fed when the pre-tokenizer has a [`Scan`].
+    ///
+    /// The default throws the keys away and goes through
+    /// [`Model::tokenize_spans`], which is right for a model with no cache to
+    /// probe with them.
+    fn tokenize_keyed_spans(
+        &self,
+        chunk: &str,
+        spans: &[KeyedSpan],
+        scratch: &mut Self::Scratch,
+        output: &mut Vec<PipelineToken>,
+    ) -> Result<()> {
+        for keyed in spans {
+            self.tokenize_pipeline(&chunk[keyed.span.range()], scratch, output)?;
         }
         Ok(())
     }
@@ -1049,6 +1208,30 @@ impl Model for PipelineModel {
             }
             (Self::WordPiece(model), PipelineModelScratch::WordPiece(scratch)) => {
                 model.tokenize_pipeline(sequence, scratch, output)
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    fn tokenize_keyed_spans(
+        &self,
+        chunk: &str,
+        spans: &[KeyedSpan],
+        scratch: &mut Self::Scratch,
+        output: &mut Vec<PipelineToken>,
+    ) -> Result<()> {
+        match (self, scratch) {
+            (Self::BPE(model), PipelineModelScratch::BPE(scratch)) => {
+                model.tokenize_keyed_spans(chunk, spans, scratch, output)
+            }
+            (Self::Unigram(model), PipelineModelScratch::Unigram(scratch)) => {
+                model.tokenize_keyed_spans(chunk, spans, scratch, output)
+            }
+            (Self::WordLevel(model), PipelineModelScratch::WordLevel(scratch)) => {
+                model.tokenize_keyed_spans(chunk, spans, scratch, output)
+            }
+            (Self::WordPiece(model), PipelineModelScratch::WordPiece(scratch)) => {
+                model.tokenize_keyed_spans(chunk, spans, scratch, output)
             }
             _ => unreachable!(),
         }
@@ -1111,7 +1294,16 @@ pub enum PipelineModelScratch {
     None,
 }
 
-impl ModelScratch for PipelineModelScratch {}
+impl ModelScratch for PipelineModelScratch {
+    fn word_cache(&mut self) -> Option<&mut WordCache> {
+        match self {
+            Self::BPE(scratch) => scratch.word_cache(),
+            Self::WordPiece(scratch) => scratch.word_cache(),
+            Self::Unigram(scratch) => scratch.word_cache(),
+            Self::WordLevel(_) | Self::None => None,
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
