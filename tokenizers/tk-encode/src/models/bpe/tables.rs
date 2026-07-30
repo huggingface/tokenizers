@@ -49,7 +49,7 @@ const SEEDS: [u64; 4] = [
     0x082E_FA98_EC4E_6C89,
 ];
 
-struct MphfMap {
+pub struct MphfMap {
     mphf: Mphf,
     hasher: RandomState,
     entries: Box<[Slot]>,
@@ -128,11 +128,11 @@ impl MphfMap {
     }
 }
 pub(crate) struct BpeTables {
-    unmap: Box<[u32]>,            // unmap[internal_id] -> external_id
-    pair_table: MphfMap, // MPHF! because memory efficiency + bitwise makes check not costly
-    top_merges: Box<[u64]>, // top 512 by 512 merges
-    fold: Box<[u32]>,    // codepoint in vocab to internal id
-    non_bmp: AHashMap<char, u32>, // same as `fold`, for the codepoints past 0xFFFF (emoji, CJK ext)
+    pub unmap: Box<[u32]>,            // unmap[internal_id] -> external_id
+    pub pair_table: MphfMap, // MPHF! because memory efficiency + bitwise makes check not costly
+    pub top_merges: Box<[u32]>, // top 512 by 512 merges
+    pub fold: Box<[u32]>,    // codepoint in vocab to internal id
+    pub non_bmp: AHashMap<char, u32>, // same as `fold`, for the codepoints past 0xFFFF (emoji, CJK ext)
 }
 
 impl BpeTables {
@@ -189,7 +189,7 @@ impl BpeTables {
             build_conversion_table(&vocab, &merges, &internal_id_map, &unmap, byte_level);
         let fold = cp_to_internal_id.into_boxed_slice();
 
-        let mut top_merges = vec![u64::MAX; 512 * 512];
+        let mut top_merges = vec![u32::MAX; 512 * 512];
         let mut values = Vec::new();
         let mut keys = Vec::new();
         let mut dropped = 0usize;
@@ -216,7 +216,8 @@ impl BpeTables {
             let value = (*rank as u64) << 32 | if eager { EAGER } else { 0 } | internal;
             // if a and b < 512 -> Dense grid
             if (ia | ib) < 512 {
-                top_merges[(ia << 9 | ib) as usize] = value;
+                top_merges[(ia << 9 | ib) as usize] =
+                    if eager { EAGER } else { 0 } as u32 | internal as u32;
             } else {
                 keys.push((ia, ib));
                 values.push(value);
@@ -228,7 +229,7 @@ impl BpeTables {
         info!(
             "bpe tables: {base} alphabet + {} products (unique merges), {} merge in the dense grid, {dropped} merges dropped , {eager_t} eager merges",
             products.len(),
-            512 * 512 - top_merges.iter().filter(|c| **c == u64::MAX).count()
+            512 * 512 - top_merges.iter().filter(|c| **c == u32::MAX).count()
         );
         Self {
             unmap,
@@ -236,6 +237,13 @@ impl BpeTables {
             top_merges,
             fold,
             non_bmp,
+        }
+    }
+    pub fn get_value(&self, a: &u32, b: &u32) -> u64 {
+        if (a | b) < 512 {
+            return self.top_merges[(a << 9 | b) as usize] as u64;
+        } else {
+            return self.pair_table.get(((*a as u64) << 32) | *b as u64);
         }
     }
 }
@@ -356,15 +364,15 @@ mod test {
         // there are only 4 elements because ab and aba are part of the vocab
         // so the alphabet is a,b and the ranks are ab and aba.
         // Both operands are < 512, so the merge lives in the dense grid, not the MPHF.
-        assert_eq!(tables.top_merges[1] & ID_MASK, 2u64); // (a, b) -> ab, internal 2
-        assert_eq!(tables.top_merges[1] >> 32, 0u64); // at rank 0
+        assert_eq!(tables.top_merges[1] & ID_MASK as u32, 2u32); // (a, b) -> ab, internal 2
+        assert_eq!(tables.top_merges[1] >> 32, 0u32); // at rank 0
         assert_eq!(tables.pair_table.get(1u64), u64::MAX); // and nowhere else
         assert_eq!(&*tables.unmap, &[0, 1, 2, 3]);
         // (a, b) at rank 0 is eager: `a` is never a right operand and `b` is never a left one,
         // so no neighbour can take either of them at all, let alone sooner.
-        assert_eq!(tables.top_merges[1] & EAGER, EAGER);
+        assert_eq!(tables.top_merges[1] & EAGER as u32, EAGER as u32);
         // (aba, a) at rank 1 is not: `a` is the left operand of (a, b) at rank 0, so a right
         // neighbour `b` would take it first.
-        assert_eq!(tables.top_merges[3 << 9] & EAGER, 0);
+        assert_eq!(tables.top_merges[3 << 9] & EAGER as u32, 0);
     }
 }

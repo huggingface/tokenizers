@@ -784,47 +784,53 @@ impl PipelineBPE {
         skip: &mut Vec<Merge>,
         word: &mut Word,
     ) {
-        word.clear();
-        match &self.atoms {
-            Atoms::Bytes { byte_to_id } => {
-                for &b in sequence.as_bytes() {
-                    word.add(byte_to_id[b as usize], 1);
-                }
+        const FALLBACK_THRESHOLD: u8 = 8;
+        let mut to_merge = Vec::new();
+        // 1. we convert the codepoint to internal ID (rank)
+        let mut global_min = 0u32;
+        let mut past_rank = u32::MAX;
+        for c in sequence.chars() {
+            let rank = self
+                .tables
+                .fold
+                .get(c as usize)
+                .unwrap_or(&self.tables.non_bmp[&c]);
+            // we compute the min rank as this will be the first merge we'll do
+            let merge_rank = self.tables.get_value(&past_rank, &rank);
+            global_min = std::cmp::min(global_min, (merge_rank >> 32) as u32);
+            past_rank = *rank;
+            to_merge.push(*rank);
+        }
+        let mut i = 0u8;
+        // in multi-pass, we read and write in the same buffer
+        let mut read_id = 0usize;
+        let mut write_id = 0usize;
+        let slice = &to_merge[0..to_merge.len()];
+        let mut last_id = slice.len();
+        while true {
+            if i == FALLBACK_THRESHOLD {
+                todo!("Implement merge with a simple heap")
             }
-            Atoms::Chars {
-                byte_fallback,
-                unk_token,
-                fuse_unk,
-            } => {
-                for char_str in sequence
-                    .char_indices()
-                    .map(|(i, c)| &sequence[i..i + c.len_utf8()])
-                {
-                    let char_len = char_str.len();
-                    if let Some(char_id) = self.vocab.token_to_id(char_str) {
-                        word.add(char_id, char_len);
-                    } else {
-                        if let Some(fallback_lookup) = byte_fallback {
-                            for &b in char_str.as_bytes() {
-                                word.add(fallback_lookup[b as usize], 1);
-                            }
-                            continue;
-                        }
-                        if let Some(unk_id) = unk_token {
-                            if *fuse_unk
-                                && let Some(last) = word.last_mut()
-                                && last.id() == *unk_id
-                            {
-                                last.add_len(char_len);
-                                continue;
-                            }
-                            word.add(*unk_id, char_len);
-                        }
-                    }
+            let mut running_min = u32::MAX;
+            for _ in 0..last_id {
+                let (ia, ib) = (to_merge[read_id], to_merge[read_id + 1]);
+                let value = self.tables.get_value(&ia, &ib);
+                let rank = (value >> 32) as u32;
+                let id = value as u32;
+                // only merge pairs that have the min rank.
+                if rank == global_min {
+                    to_merge[write_id as usize] = id;
+                    read_id += 1;
                 }
+                write_id += 1;
+                read_id += 1;
+                // we need to update with the previous and the next local merges
+                running_min = std::cmp::min(running_min, rank);
             }
-        };
-        word.merge_all(&self.merges, None, merge_queue, skip);
+            i += 1;
+            global_min = running_min;
+        }
+        // Finally, we use the unmap
     }
 }
 
