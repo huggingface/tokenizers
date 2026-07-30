@@ -363,32 +363,51 @@ mod test {
         MergeMap,
         tables::{BpeTables, MphfMap, build_conversion_table, merge_rank_tables},
     };
+    use crate::utils::byte_level::{BYTES_CHAR_LOOKUP, CHAR_BYTES_LOOKUP};
     #[test]
     pub fn test_build_conversion_table() {
-        // we are gonna simulate byte-level merges
+        // we are gonna simulate byte-level merges in a gpt2-like encoding.
+        // let's use 0x1D 0xE6\x9C\x9D which is 朝, with codepoint U+671D
+        // byte level replaces in the vocab bytes that can't be represented with
+        // printables non ascii.
+        // U+1740 ᝀ  → E1 9D 80 -> 'á','Ŀ','Ģ'
+        // U+671D 朝 → E6 9C 9D -> 'æ','ľ','Ŀ'
+        // U+65E5 日 → E6 97 A5 -> 'æ','Ĺ','¥'
+        // We want to make sure only safe merges are merged. So we are building an unsafe one with
+        // 'ᝀ', as it has 9D in the middle. We give rank(9D, 80) < rank(9C, 9D). This will prevent
+        // 朝 from folding as merging ('æľ','Ŀ') risks 'Ŀ' being in fact stolen on the left byt 80
+        // if 80 is next
+
+        let codes: [u8; 3] = [0xE6, 0x9C, 0x9D];
+        let bytes = codes
+            .iter()
+            .map(|b| BYTES_CHAR_LOOKUP[*b as usize])
+            .collect::<Vec<char>>();
+        assert_eq!(bytes, vec!['æ', 'ľ', 'Ŀ']);
+        // bytes should contain
         let vocab = AHashMap::from_iter(vec![
-            ("a".to_string(), 0),
-            ("b".to_string(), 1),
-            ("c".to_string(), 2),
-            ("ab".to_string(), 3),
-            ("aba".to_string(), 4),
-            ("ba".to_string(), 5),
+            (bytes[0].to_string(), 0),
+            (bytes[1].to_string(), 1),
+            (bytes[2].to_string(), 2),
+            ("æľ".to_string(), 6),
+            ("æľ".to_string(), 6),
+            ("æľĿ".to_string(), 7), // this one is confusing
         ]);
         let mut merges = MergeMap::new();
         // keys are rank id, new id
-        merges.insert((0, 1), (1, 3)); // a , b -> ab
-        merges.insert((3, 0), (4, 4)); // ab, a -> aba
-        merges.insert((1, 0), (3, 5)); // b , a -> ba  with rank(ab)  < rank(ba)
-        merges.insert((3, 2), (2, 4)); // ab, c -> abc with rank(abc) < rank(aba)
+        merges.insert((0, 1), (1, 5)); // a , b -> ab
+        merges.insert((1, 2), (2, 6)); // ab, a -> aba
+        merges.insert((2, 3), (3, 7)); // b , a -> ba  with rank(ab)  < rank(ba)
 
         // we don't need complicated mapping so this one is just ordered
         let ids = [0, 1, 2, 3, 4, 5];
         let (mrl, mrr) = merge_rank_tables(&merges, &ids);
         let (out, _) = build_conversion_table(&vocab, &merges, &ids, &ids, &mrl, &mrr, true);
 
-        // test that 'aba' is not merged because 'abc' would have priority
+        // test that '朝' is not split into the bytelevels, and is mapped to the internal id.
+        // test that '朝' is not split into the bytelevels, and is mapped to the internal id.
         // but we want aba to be folded. But CP needs to be a codepoint to a 2-byte char
-        assert_eq!(out['a' as usize], 0);
+        assert_eq!(out['朝' as usize], 0);
     }
 
     #[test]
