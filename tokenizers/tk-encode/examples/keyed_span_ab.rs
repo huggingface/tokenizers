@@ -37,10 +37,7 @@ const MAX_CHUNKS: usize = 100;
 /// Models whose pre-tokenizer cuts the text into words, so the word cache is on
 /// the path: gpt2 splits on the ByteLevel regex, llama-3 on the cl100k one and
 /// takes whole-word vocabulary hits (`ignore_merges`) on top.
-const MODELS: [(&str, &str); 2] = [
-    ("gpt2", "gpt2.json"),
-    ("llama-3", "llama-3-tokenizer.json"),
-];
+const MODELS: [(&str, &str); 2] = [("gpt2", "gpt2.json"), ("llama-3", "llama-3-tokenizer.json")];
 
 /// One script per writing system the split behaves differently on: English words
 /// are long and repeat, agentic code is mostly punctuation and indentation, and

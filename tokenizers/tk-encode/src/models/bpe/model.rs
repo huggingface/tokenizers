@@ -676,6 +676,15 @@ impl Model for BPE {
     }
 }
 
+/// Where one word's ids came from, which decides what the cache stores for it.
+enum WordIds {
+    /// The whole word is a vocabulary entry and `ignore_merges` says to prefer
+    /// that id over merging — this is the id, and `word` was left untouched.
+    Whole(u32),
+    /// The merge loop ran and filled `word`.
+    Merged,
+}
+
 /// Pre-tokens keyed and prefetched together in
 /// [`PipelineBPE::tokenize_spans`](pipeline::Model::tokenize_spans).
 ///
@@ -826,13 +835,7 @@ impl PipelineBPE {
     }
 
     /// Tokenize one word the cache could not answer, appending its ids to
-    /// `output`.
-    ///
-    /// `true` when the ids came out of `word` and so can be stored in the cache.
-    /// The other case is `ignore_merges`: a word the vocabulary holds whole takes
-    /// that id and skips merging entirely, and since `word` is then untouched
-    /// there is nothing to store. Those words keep missing the cache — see
-    /// [`WordCache`] on what a miss costs.
+    /// `output` and saying where they came from so the caller can store them.
     fn tokenize_word(
         &self,
         sequence: &str,
@@ -840,16 +843,16 @@ impl PipelineBPE {
         skip: &mut Vec<Merge>,
         word: &mut Word,
         output: &mut Vec<PipelineToken>,
-    ) -> bool {
+    ) -> WordIds {
         if self.ignore_merges
             && let Some(id) = self.vocab.get_bytes(sequence.as_bytes())
         {
             output.push(PipelineToken { id });
-            return false;
+            return WordIds::Whole(id);
         }
         self.merge_word(sequence, merge_queue, skip, word);
         output.extend(word.get_chars_iter().map(|id| PipelineToken { id }));
-        true
+        WordIds::Merged
     }
 }
 
@@ -885,12 +888,14 @@ impl pipeline::Model for PipelineBPE {
                 Lookup::Miss(at) => placement = at,
             }
         }
-        let merged = self.tokenize_word(sequence, merge_queue, skip, word, output);
-        if merged
-            && let Some(cache) = word_cache.as_mut()
+        let ids = self.tokenize_word(sequence, merge_queue, skip, word, output);
+        if let Some(cache) = word_cache.as_mut()
             && let Some(at) = placement
         {
-            cache.insert(at, word.get_chars_iter());
+            match ids {
+                WordIds::Whole(id) => cache.insert(at, std::iter::once(id)),
+                WordIds::Merged => cache.insert(at, word.get_chars_iter()),
+            }
         }
 
         Ok(())
@@ -951,10 +956,12 @@ impl pipeline::Model for PipelineBPE {
                     }
                     Lookup::Miss(at) => at,
                 };
-                let merged =
-                    self.tokenize_word(&chunk[span.range()], merge_queue, skip, word, output);
-                if merged && let Some(at) = placement {
-                    cache.insert(at, word.get_chars_iter());
+                let ids = self.tokenize_word(&chunk[span.range()], merge_queue, skip, word, output);
+                if let Some(at) = placement {
+                    match ids {
+                        WordIds::Whole(id) => cache.insert(at, std::iter::once(id)),
+                        WordIds::Merged => cache.insert(at, word.get_chars_iter()),
+                    }
                 }
             }
         }
@@ -1726,6 +1733,73 @@ mod tests {
                     "{input:?} vs reference"
                 );
             }
+        }
+
+        /// `hello` is in the vocabulary but the merges stop one pair short of
+        /// reaching it, so merging gives `[6, 3]` where the whole-word id is `7`.
+        /// Every `ignore_merges` assertion below rests on that difference.
+        fn unreachable_whole_word() -> BpeBuilder {
+            BpeBuilder::default()
+                .vocab_and_merges(v(HELLO_VOCAB), m(&[("h", "e"), ("he", "l"), ("hel", "l")]))
+                .ignore_merges(true)
+        }
+
+        /// The ids of one chunk, cut into `spans` and run through the batch entry
+        /// the pipeline uses.
+        fn spans_ids(model: &PipelineBPE, words: &[&str]) -> Vec<u32> {
+            let chunk = words.concat();
+            let mut spans = Vec::new();
+            let mut at = 0u32;
+            for word in words {
+                spans.push(Span {
+                    start: at,
+                    end: at + word.len() as u32,
+                });
+                at += word.len() as u32;
+            }
+            let mut out = Vec::new();
+            let mut scratch = model.init_scratch();
+            PipelineModel::tokenize_spans(model, &chunk, &spans, &mut scratch, &mut out).unwrap();
+            out.iter().map(|t| t.id).collect()
+        }
+
+        /// The batch entry is the only one the pipeline calls, and every other test
+        /// here goes through the one-word entry. They have to agree — including on
+        /// the repeat, which the second time round is answered by the cache.
+        #[test]
+        fn batch_entry_agrees_with_one_word_at_a_time() {
+            let words = ["hello", "helo", "hell", "o", "hello"];
+            for builder in [hello_builder(), unreachable_whole_word()] {
+                let pipeline = PipelineBPE::from_bpe(builder.build().unwrap(), false).unwrap();
+                let one_at_a_time: Vec<u32> = {
+                    let mut out = Vec::new();
+                    let mut scratch = pipeline.init_scratch();
+                    for word in words {
+                        PipelineModel::tokenize_pipeline(&pipeline, word, &mut scratch, &mut out)
+                            .unwrap();
+                    }
+                    out.iter().map(|t| t.id).collect()
+                };
+                assert_eq!(spans_ids(&pipeline, &words), one_at_a_time);
+            }
+        }
+
+        /// A word `ignore_merges` answers from the vocabulary is stored like any
+        /// other, so the next ask for it is a cache hit rather than a second walk
+        /// through the vocabulary.
+        #[test]
+        fn whole_word_vocab_hit_is_cached() {
+            let pipeline =
+                PipelineBPE::from_bpe(unreachable_whole_word().build().unwrap(), false).unwrap();
+            let mut scratch = pipeline.init_scratch();
+            let mut out = Vec::new();
+            PipelineModel::tokenize_pipeline(&pipeline, "hello", &mut scratch, &mut out).unwrap();
+
+            assert_eq!(out.iter().map(|t| t.id).collect::<Vec<_>>(), vec![7]);
+            assert_eq!(
+                scratch.word_cache.as_mut().unwrap().lookup(b"hello").hit(),
+                Some(&[7u32][..])
+            );
         }
 
         #[test]
