@@ -324,64 +324,8 @@ mod test {
     use crate::models::bpe::tables::{EAGER, ID_MASK};
     use crate::models::bpe::{
         MergeMap,
-        tables::{BpeTables, MphfMap, build_conversion_table, merge_rank_tables},
+        tables::{BpeTables, MphfMap},
     };
-    use crate::utils::byte_level::BYTES_CHAR_LOOKUP;
-    // Byte-level merges in a gpt2-like encoding. Byte level rewrites the vocab so every byte is a
-    // printable char; bytes 0x80..=0xA0 become U+0122.. and 0xAE..=0xFF stay themselves.
-    // U+671D 朝 → E6 9C 9D -> 'æ','ľ','Ŀ'
-    // U+65E5 日 → E6 97 A5 -> 'æ','Ĺ','¥'
-    //
-    // 朝 assembles with ('æ','ľ') and ('æľ','Ŀ'), so it may only merge if no merge pair can take
-    // an edge symbol first. We add such a pair:('Ŀ','æ') 9D E6, which appear in 朝朝 and 朝日
-    // at the boundary `.. 9D | E6 ..`. It has to be a LEAD byte (E6) doing the stealing: the symbol
-    // after a complete character is always the next character's first byte.
-    fn cjk_vocab(with_thief: bool) -> (AHashMap<String, u32>, MergeMap, Vec<u32>) {
-        assert_eq!(
-            [0xE6u8, 0x9C, 0x9D].map(|b| BYTES_CHAR_LOOKUP[b as usize]),
-            ['æ', 'ľ', 'Ŀ']
-        );
-        let mut vocab = AHashMap::from_iter(vec![
-            ("æ".to_string(), 0),   // E6
-            ("ľ".to_string(), 1),   // 9C
-            ("Ŀ".to_string(), 2),   // 9D
-            ("æľ".to_string(), 3),  // E6 9C
-            ("æľĿ".to_string(), 4), // E6 9C 9D = 朝
-        ]);
-        let mut merges = MergeMap::new();
-        // (left, right) -> (rank, product). Ranks leave room below for the thief.
-        merges.insert((0, 1), (1, 3)); // 'æ' + 'ľ'  -> "æľ"
-        merges.insert((3, 2), (2, 4)); // "æľ" + 'Ŀ' -> 朝
-        if with_thief {
-            vocab.insert("Ŀæ".to_string(), 5); // 9D E6, straddles a character boundary
-            merges.insert((2, 0), (0, 5)); // rank 0, below every step of 朝's assembly
-        }
-        let ids = (0..vocab.len() as u32).collect();
-        (vocab, merges, ids)
-    }
-
-    #[test]
-    pub fn folds_a_cjk_char_when_no_neighbour_can_steal() {
-        let (vocab, merges, ids) = cjk_vocab(false);
-        let (out, _) = build_conversion_table(&vocab, &merges, &ids, &ids, true);
-        // 朝 collapses to one symbol, so the codepoint maps straight to it and the encoder never
-        // emits its three bytes.
-        assert_eq!(out['朝' as usize], 4);
-        assert_eq!(out['æ' as usize], u32::MAX);
-    }
-
-    #[test]
-    pub fn refuses_the_same_char_once_a_lead_byte_can_steal() {
-        let (vocab, merges, ids) = cjk_vocab(true);
-        // The unrestricted tables that feed `eager` see the thief on both sides...
-        let (mrl, mrr) = merge_rank_tables(&merges, &ids);
-        assert_eq!(mrr[0], 0);
-        assert_eq!(mrl[2], 0);
-        // ...and so does the fold's restricted pair, because 'æ' is byte 0xE6, a lead byte.
-        let (out, _) = build_conversion_table(&vocab, &merges, &ids, &ids, true);
-        assert_eq!(out['朝' as usize], u32::MAX);
-    }
-
     #[test]
     pub fn test_mphf() {
         let mut merges = MergeMap::new();

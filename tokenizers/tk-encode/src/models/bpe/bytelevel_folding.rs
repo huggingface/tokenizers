@@ -213,6 +213,7 @@ fn boundary_merge_ranks(
 mod test {
     use super::{ByteLevelFold, Fold};
     use crate::models::bpe::MergeMap;
+    use crate::utils::byte_level::BYTES_CHAR_LOOKUP;
     use ahash::AHashMap;
 
     /// 'é' is U+00E9 = bytes C3 A9; both are printable latin-1, so the byte-level names are the
@@ -262,9 +263,26 @@ mod test {
         assert!(matches!(f.fold("x", 3), Fold::Folds('x', 3))); // ASCII needs no assembly
     }
 
-    /// The boundary restriction, isolated. 朝 = E6 9C 9D -> 'æ','ľ','Ŀ'; the thief takes 'Ŀ' as a
-    /// left operand in both cases, but only a LEAD byte can actually follow a complete character.
-    fn cjk(thief_is_lead: bool) -> (AHashMap<String, u32>, MergeMap, Vec<u32>) {
+    // Byte-level merges in a gpt2-like encoding. Byte level rewrites the vocab so every byte is a
+    // printable char; bytes 0x80..=0xA0 become U+0122.. and 0xAE..=0xFF stay themselves.
+    // U+671D 朝 → E6 9C 9D -> 'æ','ľ','Ŀ'
+    // U+65E5 日 → E6 97 A5 -> 'æ','Ĺ','¥'
+    //
+    // 朝 assembles with ('æ','ľ') and ('æľ','Ŀ'), so it may only merge if no merge pair can take
+    // an edge symbol first. We add such a pair:('Ŀ','æ') 9D E6, which appear in 朝朝 and 朝日
+    // at the boundary `.. 9D | E6 ..`. It has to be a LEAD byte (E6) doing the stealing: the symbol
+    // after a complete character is always the next character's first byte.
+    enum Thief {
+        None,
+        Lead,
+        Continuation,
+    }
+
+    fn cjk_vocab(thief: Thief) -> (AHashMap<String, u32>, MergeMap, Vec<u32>) {
+        assert_eq!(
+            [0xE6u8, 0x9C, 0x9D].map(|b| BYTES_CHAR_LOOKUP[b as usize]),
+            ['æ', 'ľ', 'Ŀ']
+        );
         let mut vocab = AHashMap::from_iter(vec![
             ("æ".to_string(), 0),   // E6
             ("ľ".to_string(), 1),   // 9C
@@ -273,33 +291,43 @@ mod test {
             ("æľĿ".to_string(), 4), // E6 9C 9D = 朝
         ]);
         let mut merges = MergeMap::new();
+        // (left, right) -> (rank, product). Ranks leave room below for the thief.
         merges.insert((0, 1), (1, 3)); // 'æ' + 'ľ'  -> "æľ"
         merges.insert((3, 2), (2, 4)); // "æľ" + 'Ŀ' -> 朝
-        if thief_is_lead {
-            vocab.insert("Ŀæ".to_string(), 5); // 9D E6, reachable: 朝朝 spells .. 9D | E6 ..
-            merges.insert((2, 0), (0, 5));
-        } else {
-            vocab.insert("ĿĢ".to_string(), 5); // 9D 80, and 0x80 can never start a character
-            merges.insert((2, 5), (0, 5));
+        match thief {
+            Thief::None => {}
+            Thief::Lead => {
+                vocab.insert("Ŀæ".to_string(), 5); // 9D E6, straddles a character boundary
+                merges.insert((2, 0), (0, 5)); // rank 0, below every step of 朝's assembly
+            }
+            Thief::Continuation => {
+                vocab.insert("Ģ".to_string(), 5); // 80
+                vocab.insert("ĿĢ".to_string(), 6); // 9D 80, never at a boundary
+                merges.insert((2, 5), (0, 6));
+            }
         }
         let ids = (0..vocab.len() as u32).collect();
         (vocab, merges, ids)
     }
 
     #[test]
-    fn a_lead_byte_neighbour_blocks_the_fold() {
-        let (vocab, merges, ids) = cjk(true);
+    fn folds_a_cjk_char_when_no_neighbour_can_steal() {
+        let (vocab, merges, ids) = cjk_vocab(Thief::None);
+        let f = ByteLevelFold::new(&vocab, &merges, &ids, &ids);
+        assert!(matches!(f.fold("æľĿ", 4), Fold::Folds('朝', 4)));
+    }
+
+    #[test]
+    fn refuses_the_same_char_once_a_lead_byte_can_steal() {
+        let (vocab, merges, ids) = cjk_vocab(Thief::Lead);
         let f = ByteLevelFold::new(&vocab, &merges, &ids, &ids);
         assert!(matches!(f.fold("æľĿ", 4), Fold::Unsafe));
     }
 
     #[test]
-    fn a_continuation_byte_neighbour_does_not() {
-        let (vocab, merges, ids) = cjk(false);
+    fn a_continuation_byte_cannot_steal_so_it_still_folds() {
+        let (vocab, merges, ids) = cjk_vocab(Thief::Continuation);
         let f = ByteLevelFold::new(&vocab, &merges, &ids, &ids);
-        // Same shape of thief at the same rank, but 0x80 is a continuation byte: it is never the
-        // first byte of the following character, so the merge describes an input that cannot
-        // exist and the restriction drops it. 朝 folds.
         assert!(matches!(f.fold("æľĿ", 4), Fold::Folds('朝', 4)));
     }
 }
