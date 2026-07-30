@@ -60,7 +60,7 @@ pub(crate) fn classify_into_spans(
         }
         classify(bytes, &mut tags[..n]);
         let k = fsm(bytes, &tags[..n], &mut spans[..n + 1]);
-        out.extend_from_slice(&spans[..k]); // same type now — plain memcpy, no per-token conversion
+        out.extend_from_slice(&spans[..k]); // same type now: plain memcpy, no per-token conversion
     });
 }
 
@@ -327,7 +327,7 @@ impl TryFrom<&PostProcessorWrapper> for PipelinePostProcessor {
     }
 }
 
-/// An output token. Carries only the vocabulary `id` — offsets and the token
+/// An output token. Carries only the vocabulary `id`, since offsets and the token
 /// string are dropped, which is all an encode-only caller needs.
 #[derive(Debug, Clone, Copy)]
 pub struct PipelineToken {
@@ -860,7 +860,7 @@ impl PipelineTokenizer {
 
     /// Decode token ids back to a `String`.
     ///
-    /// Not implemented yet — the pipeline decode path is being built. It fails
+    /// Not implemented yet: the pipeline decode path is being built. It fails
     /// loud (rather than returning a plausible-but-wrong string) so the oracle
     /// test and the comparative benchmark report decode as *pending* instead of
     /// silently validating garbage. Implementing this flips the ignored
@@ -870,7 +870,7 @@ impl PipelineTokenizer {
     }
 
     /// Decode several id sequences at once, one `String` per input. Mirrors the
-    /// released `decode_batch`; sequential (KISS) — behavior-identical to a
+    /// released `decode_batch`; sequential (KISS), behavior-identical to a
     /// parallel map, since each [`decode`](Self::decode) is independent.
     pub fn decode_batch(
         &self,
@@ -885,7 +885,7 @@ impl PipelineTokenizer {
 
     /// Incremental decode: feed ids one at a time via [`PipelineDecodeStream::step`].
     /// Same prefix-tracking scheme as the released `DecodeStream`, built on
-    /// [`decode`](Self::decode) — so it is correct exactly where `decode` is.
+    /// [`decode`](Self::decode), so it is correct exactly where `decode` is.
     pub fn decode_stream(&self, skip_special_tokens: bool) -> PipelineDecodeStream<'_> {
         PipelineDecodeStream {
             tokenizer: self,
@@ -898,7 +898,7 @@ impl PipelineTokenizer {
 
     /// Single source of truth for the encode pipeline, generic over how many stages
     /// run. `STAGE` is a **const generic**, so `if STAGE >= …` folds at compile time and
-    /// the disabled stages are compiled out — the full specialization
+    /// the disabled stages are compiled out, so the full specialization
     /// ([`STAGE_POSTPROCESS`], which [`encode`](Self::encode) calls) is branchless and
     /// identical to a hand-written full pipeline, while the benchmark drives lower
     /// `STAGE` values to time each stage's marginal cost (the ablation ladder), e.g.
@@ -907,7 +907,7 @@ impl PipelineTokenizer {
     /// [`STAGE_POSTPROCESS`]: Self::STAGE_POSTPROCESS
     ///
     /// `output` and the `pre_tokens` scratch are caller-owned so a benchmark can reuse
-    /// them across calls and observe both buffers to anchor the ablation levels — the
+    /// them across calls and observe both buffers to anchor the ablation levels. The
     /// library itself stays free of any `black_box`/timing artifact.
     #[doc(hidden)] // public only so `examples/fixture_bench.rs` can drive partial stages
     pub fn encode_generic<const STAGE: u8>(
@@ -1156,7 +1156,7 @@ pub fn split_matches(
 ) {
     use SplitDelimiterBehavior::*;
 
-    // (offsets, should_remove) — mirrors `NormalizedString::split`.
+    // (offsets, should_remove), mirroring `NormalizedString::split`.
     let splits: Vec<((usize, usize), bool)> = match behavior {
         Isolated => matches.into_iter().map(|(o, _)| (o, false)).collect(),
         Removed => matches, // should_remove == is_match
@@ -1296,19 +1296,13 @@ impl Model for PipelineModel {
 /// reused among calls to [`PipelineTokenizer::encode`].
 ///
 /// Each model gets its own variant.
-//
-// The BPE variant holds the word cache, which makes this enum far bigger than the other
-// variants need. Boxing it would add a pointer to follow on every single pre-token, to save
-// moving those bytes twice per encode call. The cache itself is on the heap either way, so
-// moving the enum never copies it.
-#[allow(clippy::large_enum_variant)]
 #[derive(Default)]
 pub enum PipelineModelScratch {
     BPE(BpeScratch),
     WordLevel(()),
     WordPiece(WordPieceScratch),
     Unigram(UnigramScratch),
-    /// We need a default value to able to use [`mem::take`] in [`ScratchGuard::drop`]
+    /// We need a default value to be able to use [`mem::take`] in [`ScratchGuard::drop`]
     #[default]
     None,
 }
@@ -1725,7 +1719,7 @@ mod tests {
     // The pool exists so ONE `&self` tokenizer can be shared across rayon workers. Encode
     // the same input from thousands of threads through a single instance; each must get a
     // private scratch and produce the sequential result. Two threads sharing a scratch
-    // would corrupt some of them — and this only compiles if `PipelineTokenizer: Sync`,
+    // would corrupt some of them. This only compiles if `PipelineTokenizer: Sync`,
     // which the pool has to preserve.
     #[test]
     fn encode_shared_across_threads() {
@@ -1837,9 +1831,8 @@ mod tests {
         );
     }
 
-    // Why a scratch is worth passing around at all: the word cache is only useful once it
-    // has seen some text, so it has to outlive the call that filled it. The scratch coming
-    // back from the pool must already know the words of the last encode.
+    // A scratch coming back out of the pool has to still know the words of the last
+    // encode: a cache emptied between calls would never hit.
     #[test]
     fn the_word_cache_outlives_the_encode_call() {
         let pipeline = hello_pipeline();

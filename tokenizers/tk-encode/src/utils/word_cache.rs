@@ -3,9 +3,6 @@
 //!
 //! # Context
 //!
-//! This section gives more context about tokenization, why the word_cache is useful, and
-//! where does it fit in the tokenization pipeline.
-//!
 //! A tokenizer turns text into *token ids*: small integers a language model reads.
 //! It gets there in three stages:
 //!   - It **normalizes** the text (for example: lowercasing),
@@ -43,15 +40,14 @@
 //!   the longest piece the vocabulary holds, then carries on from where that piece ended. That is
 //!   one search per piece of the word.
 //!
-//! It is possible to work around the expensive tokenization algorithm because:
-//! - Words in text often repeats
-//! - The tokenization of a word is always the same (the model gives the same ids)
+//! Two things make that expense avoidable:
+//! - Words repeat, in every kind of text.
+//! - A word always encodes to the same ids.
 //!
-//! If we remember ("cache" or "memoize") the output of the tokenization model for a word,
-//! we can bypass the model algorithm altogether the next time the word shows up.
+//! So a word only ever has to go through the model once. Cache the ids that came out, and
+//! every later occurrence of that word skips the model altogether.
 //!
-//! This module implements a data structure that makes caching / memoization of words efficient
-//! and memory-bound:
+//! This module is the table that does the remembering, in bounded memory:
 //!
 //! ```text
 //!               "The cat sat on The Mat"
@@ -62,7 +58,7 @@
 //!          │      │      │      │      │      │
 //!          ▼      ▼      ▼      ▼      ▼      ▼
 //!    ┌─────────────────────────────────────────────┐
-//!    │  WordCache — have I encoded this word yet?  │
+//!    │  WordCache: have I encoded this word yet?   │
 //!    └─────────────────────────────────────────────┘
 //!                  │                │
 //!             miss │                │ hit
@@ -80,8 +76,6 @@
 //!                                      └ the second "the": a cache hit
 //! ```
 //!
-//! This simple memoization trick gives huge performance gains: up to 20x more throughput.
-//!
 //! # What the cache is allowed to get wrong
 //!
 //! The cache is free to *forget*: if a word's ids are gone, the model works them
@@ -94,7 +88,7 @@
 //! the ids that word encodes to. The number of slots is fixed when the cache is
 //! built and never changes, which is what keeps the memory bounded.
 //!
-//! To decide where a word belongs, the cache turns the word into a number — its
+//! To decide where a word belongs, the cache turns the word into a number, its
 //! **hash**. Two different pieces of that number are used, and they never overlap:
 //!
 //! ```text
@@ -105,7 +99,7 @@
 //!         ┌─────────────────────────────────────────┐
 //!         │ 1010 0111 ................... 0000 0101 │
 //!         └────┬───────────────────────────────┬────┘
-//!              │ the top 7 bits                │ the bottom bits
+//!              │ the top 8 bits                │ the bottom bits
 //!              ▼                               ▼
 //!         the tag: A7                    the home slot: 5
 //! ```
@@ -128,11 +122,11 @@
 //!                  · = empty slot
 //! ```
 //!
-//! A word does not always get its home slot — another word may have taken it
+//! A word does not always get its home slot: another word may have taken it
 //! first, which is what happened to "hat" above. So the word may be in its home
 //! slot or in any of the fifteen slots after it. Those sixteen slots are the
 //! word's **window**, and the word is either in there or nowhere
-//! ([`PROBE_WINDOW`]).
+//! ([`WALK_WINDOW`]).
 //!
 //! # Looking a word up
 //!
@@ -141,7 +135,7 @@
 //! this word, and where would this word go if none of them does.
 //!
 //! ```text
-//!    looking up "hat" — tag A7, home slot 5
+//!    looking up "hat" (tag A7, home slot 5)
 //!
 //!    slot:          5     6     7     8     9    10    11    12  ...
 //!                ┌─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┐
@@ -153,31 +147,31 @@
 //!                   │           │     │           └ tagged A7 too, but past the
 //!                   │           │     │             empty slot: out of reach
 //!                   │           │     └ empty: the search stops here
-//!                   │           └ tag matches, and the key says "hat" — found it
-//!                   └ tag matches, but the key says "the" — keep looking
+//!                   │           └ tag matches, and the key says "hat", so found it
+//!                   └ tag matches, but the key says "the", so keep looking
 //! ```
 //!
 //! The walk reads tags, not entries: ruling a slot out costs one byte of memory
-//! traffic rather than the 32 an entry takes. It rarely gets far — on running text
+//! traffic rather than the 32 an entry takes. It rarely gets far: on running text
 //! a word is usually in its home slot, or the slot after it, or not in the table
 //! at all.
 //!
-//! A matching tag is a hint, not an answer. A tag is only seven bits of the hash,
-//! so about one slot in 128 matches a word that is not there — which is exactly
-//! what slot 5 does above. Each matching slot is therefore read and its **key**
+//! A matching tag is a hint, not an answer. A tag is only one byte of the hash, so
+//! about one slot in 255 matches a word that is not there, which is exactly what
+//! slot 5 does above. Each matching slot is therefore read and its **key**
 //! compared. The key is the copy of the word kept inside the slot, and it is what
 //! settles the question.
 //!
 //! The search stops at the first empty slot. That is safe because storing stops
 //! there too: a word is always put in the first empty slot of its window, so no
-//! word can ever sit past one. This is why slot 10 is out of reach — whatever is
+//! word can ever sit past one. This is why slot 10 is out of reach: whatever is
 //! in it, it is not "hat", because "hat" would have taken slot 8.
 //!
 //! A lookup ends one of two ways ([`Lookup`]):
 //!
-//! - **Hit** — the ids, ready to use. Nothing is written: a hit leaves the table
+//! - **Hit**: the ids, ready to use. Nothing is written: a hit leaves the table
 //!   exactly as it was.
-//! - **Miss** — a [`Placement`]: the slot this word should take. The caller runs
+//! - **Miss**: a [`Placement`], the slot this word should take. The caller runs
 //!   the model, then hands the placement back to [`WordCache::insert`] along with
 //!   the ids. The placement carries the hash work the lookup already did, so
 //!   storing the word costs no second hash and no second read of the tags.
@@ -189,8 +183,8 @@
 //!
 //! 1. **Builds the entry.** The word and its ids go in the slot if they fit; what
 //!    does not fit is copied into an overflow buffer (below). If those buffers are
-//!    full, the insert is dropped and nothing changes — the cache is allowed to
-//!    forget.
+//!    full, the insert is dropped and nothing changes, since the cache is allowed
+//!    to forget.
 //! 2. **Clears the old entry, if there was one.** When the window had no empty
 //!    slot the placement points at the home slot, and that word's ids are lost.
 //!    Any overflow space it was using is handed back.
@@ -199,10 +193,11 @@
 //!
 //! # What a slot holds
 //!
-//! A slot is 32 bytes: sixteen for the key, twelve for the ids, and one that says
-//! how many ids there are. It comes in three shapes ([`CachedWord`]). The first is
-//! the common case, and the reason the sizes are what they are: the whole answer —
-//! word and ids — is right there, so a hit reads one slot and stops.
+//! A slot is 32 bytes: sixteen for the key, twelve for the ids, one that says how
+//! many ids there are, and three of padding. It comes in three shapes
+//! ([`CachedWord`]). The first is the common case, and the reason the sizes are what
+//! they are: the whole answer (word and ids) is right there, so a hit reads one
+//! slot and stops.
 //!
 //! ```text
 //!                                    ├───── key ─────┤├─── ids ───┤├─────┤
@@ -224,13 +219,13 @@
 //!                                      H says "a hash,   where to look in
 //!                                      not the word"     the buffers
 //!
-//!                                    ▒ = "not in the slot — follow the positions"
+//!                                    ▒ = "not in the slot, follow the offsets"
 //! ```
 //!
 //! A word of up to 15 bytes is kept whole, with its length in the sixteenth byte.
 //! A longer word cannot fit, so the slot keeps the word's hash instead and the
 //! bytes go to a buffer. Two different long words can hash to the same number, so
-//! for those — and only those — a match is confirmed by comparing the bytes.
+//! for those, and only those, a match is confirmed by comparing the bytes.
 //!
 //! The two overflow buffers ([`Arena`]) grow up to a budget and then stop. When an
 //! entry is thrown out, the space it used goes on a free list for its exact
@@ -258,11 +253,13 @@
 //! - **Tags live in their own row** so that a walk over sixteen slots reads sixteen
 //!   bytes, which is one or two cache lines. The entries are 32 bytes each, so the
 //!   same sixteen slots would be 512 bytes and eight cache lines.
-//! - **A tag is one byte**: seven bits of the hash plus one bit saying the slot is
-//!   taken, so a slot that cannot hold the word is ruled out without reading it.
+//! - **A tag is one byte of the hash**, so a slot that cannot hold the word is ruled
+//!   out without reading it. All eight bits carry hash: emptiness needs a value no
+//!   live tag can take rather than a bit of its own, and one value is cheaper than
+//!   one bit ([`make_tag`]).
 //! - **The tag uses the top bits of the hash** because the bottom bits already
 //!   chose the home slot, and every slot in a window would share those.
-//! - **A window is sixteen slots** — how far a word may end up from its home slot
+//! - **A window is sixteen slots**: how far a word may end up from its home slot
 //!   before the cache stops looking and evicts instead. Long enough that a full
 //!   window is uncommon, short enough that walking a full one stays cheap.
 //! - **The key is 128 bits** because 15 bytes of word plus one byte of length
@@ -272,28 +269,29 @@
 //! - **Up to three ids fit in the slot** because most words encode to one, two or
 //!   three, and that makes a hit a single read.
 //! - **The number of slots is a power of two**, so picking the home slot is one
-//!   bit operation rather than a division — and so is folding a step of the walk
-//!   back into the table when a window runs off the end.
+//!   bit operation rather than a division. So is folding a step of the walk back
+//!   into the table when a window runs off the end.
 //! - **A miss hands back a placement** because the lookup already knows the hash,
 //!   the tag and the slot to use, and making the insert work them out again would
 //!   double that cost on every new word.
-//! - **Freed overflow space is filed by exact length** — every run is at most
+//! - **Freed overflow space is filed by exact length**: every run is at most
 //!   [`MAX_WORD_BYTES`] long, so there can be one free list per length and a freed
 //!   run always fits the next word of that shape exactly.
 //!
 //! # Where the ideas come from
 //!
-//! - [Swiss Tables] — Abseil's design notes: one control byte per slot, holding a
-//!   flag bit and seven bits of hash.
-//! - [gigatoken] — a BPE tokenizer with a pre-token cache built from the same
+//! - [Swiss Tables] is where the control byte comes from: one byte per slot, holding
+//!   a flag bit and seven bits of hash. Here the whole byte is hash, because the flag
+//!   bit was there to be tested sixteen lanes at a time and this walk tests one.
+//! - [gigatoken] is a BPE tokenizer with a pre-token cache built from the same
 //!   parts: `u128` packed keys with the length in the top byte, self-contained
 //!   32-byte entries, ids inline. It never evicts (it doubles at 3/4 load) and
 //!   leans on huge pages and prefetching, because its table is sized for DRAM
 //!   rather than for a CPU cache.
 //! - [TinyLFU] (Einziger, Friedman & Manes), as its reference implementation
-//!   [Caffeine] does it — the use-counter-and-fade rule this module tried for
-//!   eviction and dropped, kept here for whoever wants to try it again.
-//! - [huggingface/tokenizers#2234] — an open-addressed cache for this same encode
+//!   [Caffeine] does it. That is the use-counter-and-fade rule this module tried
+//!   for eviction and dropped, kept here for whoever wants to try it again.
+//! - [huggingface/tokenizers#2234] is an open-addressed cache for this same encode
 //!   pipeline, arrived at in parallel, fused into the pre-tokenizer's split loop.
 //!
 //! [Swiss Tables]: https://abseil.io/about/design/swisstables
@@ -311,65 +309,59 @@ const MAX_WORD_BYTES: usize = 1024;
 
 /// Word bytes to token ids. See the module docs for the design.
 pub struct WordCache {
-    /// A table of up to N [`CachedWord`]. The main data.
-    ///
-    /// For a given word, we derive its index in [`Self::cached_words`] by keeping the lower N bytes of its hash:
+    /// The slots, one word each. Their number is a power of two, so a word's home
+    /// slot is just the bottom bits of its hash:
     /// ```text
-    /// hash(word) & (N - 1)
+    /// hash(word) & index_mask
     /// ```
-    ///
-    /// Where N is the cache capacity (= number of slots). N has to be a power of 2.
     cached_words: Box<[CachedWord]>,
 
-    /// Produces hashes from a word's bytes
+    /// Hashes a slot's key: the packed word when it is short enough, the word's
+    /// bytes when it is not. See [`WordCache::make_word_key`].
     hasher: RandomState,
 
-    /// Masks the lower N bytes of a value
+    /// `cached_words.len() - 1`. Masks a hash down to its bottom bits, which give the
+    /// word's home slot.
     index_mask: usize,
 
-    /// Sibling table of [`Self::cached_words`].
+    /// One tag per slot, at the slot's own index: the top byte of the word's hash
+    /// ([`make_tag`]), or [`EMPTY`] when the slot holds nothing.
     ///
-    /// One byte per slot, at the same index as the corresponding [`CachedWord`] in [`Self::cached_words`].
-    /// For a given index, hold the 7 high bits of the hash of the corresponding `CachedWord`, or [`EMPTY`] if the slot is empty.
-    /// A probe walks this row instead of the entries, so ruling a slot out reads one byte rather than
-    /// the 32 an entry takes.
-    probe_lookup_table: Box<[u8]>,
+    /// A walk reads this row instead of the entries, so ruling a slot out costs one
+    /// byte rather than the 32 an entry takes.
+    tags: Box<[u8]>,
 
-    /// If the bytes of the word don't fit in a CachedWord, they are stored here
+    /// Holds the word's bytes when they don't fit in a [`CachedWord`] key.
     word_bytes_arena: Arena<u8>,
 
-    /// If the IDs of the word don't fit in a CachedWord, they are stored here
+    /// Holds the word's ids when they don't fit in a [`CachedWord`].
     token_ids_arena: Arena<u32>,
 }
 
 impl WordCache {
+    /// `capacity` is rounded up to a power of two, and to at least one full window.
     pub fn new(capacity: usize) -> Self {
-        // todo: warn when the capacity is rounded up
-        let n_slots = capacity.next_power_of_two().max(PROBE_WINDOW);
+        let n_slots = capacity.next_power_of_two().max(WALK_WINDOW);
         Self {
             hasher: RandomState::new(),
             cached_words: vec![CachedWord::default(); n_slots].into_boxed_slice(),
-            probe_lookup_table: vec![EMPTY; n_slots].into_boxed_slice(),
+            tags: vec![EMPTY; n_slots].into_boxed_slice(),
             word_bytes_arena: Arena::new(n_slots * 48),
             token_ids_arena: Arena::new(n_slots * 16),
             index_mask: n_slots - 1,
         }
     }
 
-    /// Lookup a word in the cache.
-    ///
-    /// If the word is found in the cache, returns the ids the word encodes to.
-    /// If the word is not found in the cache, returns the index at which the [`CachedWord`] should be inserted.
+    /// The ids `word` encoded to last time, or the [`Placement`] it should be stored
+    /// in once the model has worked them out. See [`Lookup`].
     pub fn lookup<'c, 'w>(&'c self, word: &'w [u8]) -> Lookup<'c, 'w> {
-        // Never cache a word longer than `MAX_WORD_BYTES`
         if word.len() > MAX_WORD_BYTES {
             return Lookup::Miss(None);
         }
 
         let (key, hash) = self.make_word_key(word);
         match self.find_word_in_cache(key, hash, word) {
-            // Found the word in the cache => return its ids
-            Probe::Found(index) => {
+            Walk::Found(index) => {
                 let slot = self.cached_words[index];
                 Lookup::Hit(if slot.ids_stored_in_arena() {
                     self.token_ids_arena.get(slot.ids_off(), slot.ids_len())
@@ -377,30 +369,29 @@ impl WordCache {
                     &self.cached_words[index].word_ids[..slot.inline_id_count as usize]
                 })
             }
-            // The word is not in the cache => return a miss with an indication of where the
-            // encoded ids should be stored.
-            Probe::Absent(placement) => Lookup::Miss(Some(placement)),
+            Walk::Absent(placement) => Lookup::Miss(Some(placement)),
         }
     }
 
-    /// Creates and inserts a [`CachedWord`]
+    /// Store `ids` as the encoding of the word that `at` was built for.
+    ///
+    /// Overwrites whatever the slot held, which only happens when the word's window
+    /// was full. The module docs say why the choice does not have to be cleverer than
+    /// that. If the arenas have no room for the entry, nothing is stored.
     pub fn insert(&mut self, at: Placement<'_>, ids: impl ExactSizeIterator<Item = u32>) {
         let Some(cached_word) = self.build_entry(at.key, at.word, ids) else {
-            // No-op if the word would spill and one of the arena is over budget
             return;
         };
-        // Slot is not empty => evict it
-        if self.probe_lookup_table[at.index] != EMPTY {
+        if self.tags[at.index] != EMPTY {
             self.reclaim(at.index);
         }
-        // Update the cached slot
-        self.probe_lookup_table[at.index] = at.lookup_tag;
+        self.tags[at.index] = at.tag;
         self.cached_words[at.index] = cached_word;
     }
 
-    /// The value a slot stores in its `key`, and the hash that places it. A short
-    /// word is its own key; a longer one keys on a tagged hash and has to be
-    /// confirmed against `key_arena`, since two long words can hash alike.
+    /// The value a slot stores in its key, and the hash that places it. A short
+    /// word is its own key; a longer one keys on its hash and has to be confirmed
+    /// against [`WordCache::word_bytes_arena`], since two long words can hash alike.
     ///
     /// A packed key is hashed as one `u128`, not as the word's bytes it was built
     /// from. Hashing a slice makes aHash mix the length in and then branch on it
@@ -416,26 +407,26 @@ impl WordCache {
         }
     }
 
-    /// One probe over `word`'s window, from its home slot, answering both
-    /// questions a lookup has: which slot holds the word, and — if none does —
-    /// which slot it should take.
+    /// One walk over `word`'s window, from its home slot, answering both
+    /// questions a lookup has: which slot holds the word, and which slot it should
+    /// take if none of them does.
     ///
     /// The second answer comes out of the same walk, so a word that is not in the
     /// table is placed without hashing it again or reading the tags again.
     ///
     /// The walk stops at the first empty slot, which is safe because storing stops
     /// there too: an empty slot means the word was never stored.
-    fn find_word_in_cache<'w>(&self, key: u128, hash: u64, word: &'w [u8]) -> Probe<'w> {
+    fn find_word_in_cache<'w>(&self, key: u128, hash: u64, word: &'w [u8]) -> Walk<'w> {
         let home = hash as usize & self.index_mask;
-        let tag = make_lookup_tag(hash);
+        let tag = make_tag(hash);
         // Only a hashed key can turn out to belong to a different word, and
-        // whether this one is hashed is settled before the walk starts — the
+        // whether this one is hashed is settled before the walk starts, since the
         // caller built the key out of the word it is looking for.
         let hashed = key & KEY_IS_HASH != 0;
         let mut free = None;
-        for step in 0..PROBE_WINDOW {
+        for step in 0..WALK_WINDOW {
             let index = (home + step) & self.index_mask;
-            let slot_tag = self.probe_lookup_table[index];
+            let slot_tag = self.tags[index];
             if slot_tag == EMPTY {
                 free = Some(index);
                 break;
@@ -444,19 +435,19 @@ impl WordCache {
                 let slot = &self.cached_words[index];
                 if slot.word_bytes_or_hash == key
                     && (!hashed
-                        || self.word_bytes_arena.get(slot.key_off(), slot.key_len()) == word)
+                        || self.word_bytes_arena.get(slot.word_off(), slot.word_len()) == word)
                 {
-                    return Probe::Found(index);
+                    return Walk::Found(index);
                 }
             }
         }
-        Probe::Absent(Placement {
+        Walk::Absent(Placement {
             // A full window means one of its words has to give way, and the one
-            // that does is the word in the home slot — the module docs say why the
+            // that does is the word in the home slot. The module docs say why the
             // choice does not have to be any cleverer than that.
             index: free.unwrap_or(home),
             key,
-            lookup_tag: tag,
+            tag,
             word,
         })
     }
@@ -484,19 +475,19 @@ impl WordCache {
             });
         }
         // A short word stays in the key, which is a zero-length run here.
-        let key_len = if long { word.len() } else { 0 };
-        let key_off = self.word_bytes_arena.alloc(key_len)?;
+        let word_len = if long { word.len() } else { 0 };
+        let word_off = self.word_bytes_arena.alloc(word_len)?;
         let Some(ids_off) = self.token_ids_arena.alloc(ids_len) else {
-            self.word_bytes_arena.release(key_off, key_len);
+            self.word_bytes_arena.release(word_off, word_len);
             return None;
         };
         self.word_bytes_arena
-            .fill(key_off, key_len, word.iter().copied());
+            .fill(word_off, word_len, word.iter().copied());
         self.token_ids_arena.fill(ids_off, ids_len, ids);
-        let lengths = (key_len as u32) << PACKED_LEN_BITS | ids_len as u32;
+        let lengths = (word_len as u32) << PACKED_LEN_BITS | ids_len as u32;
         Some(CachedWord {
             word_bytes_or_hash: key,
-            word_ids: [key_off, ids_off, lengths],
+            word_ids: [word_off, ids_off, lengths],
             inline_id_count: SPILLED,
         })
     }
@@ -514,7 +505,7 @@ impl WordCache {
             return;
         }
         self.word_bytes_arena
-            .release(slot.key_off(), slot.key_len());
+            .release(slot.word_off(), slot.word_len());
         self.token_ids_arena.release(slot.ids_off(), slot.ids_len());
     }
 }
@@ -526,7 +517,7 @@ pub enum Lookup<'c, 'w> {
     /// The ids the word encoded to last time.
     Hit(&'c [u32]),
     /// The word is not in the table. The [`Placement`] is the slot it should go
-    /// in — hand it to [`WordCache::insert`] once the model has done the work, or
+    /// in. Hand it to [`WordCache::insert`] once the model has done the work, or
     /// drop it and nothing is stored. `None` when the word is too long to be
     /// worth a slot at all.
     Miss(Option<Placement<'w>>),
@@ -534,7 +525,7 @@ pub enum Lookup<'c, 'w> {
 
 impl<'c> Lookup<'c, '_> {
     /// The ids, throwing the [`Placement`] away. Every caller in the encoder
-    /// wants the placement — this is for tests asserting on what the table holds.
+    /// wants the placement, so this is for tests asserting on what the table holds.
     #[cfg(test)]
     pub fn hit(self) -> Option<&'c [u32]> {
         match self {
@@ -545,7 +536,7 @@ impl<'c> Lookup<'c, '_> {
 }
 
 /// Where a word that missed will go, and what [`WordCache::insert`] needs to put
-/// it there. Built by [`WordCache::find_word_in_cache`] out of what the probe had
+/// it there. Built by [`WordCache::find_word_in_cache`] out of what the walk had
 /// already worked out, so storing the word costs no second hash, no second walk
 /// over the tags and no second tag.
 ///
@@ -555,12 +546,12 @@ impl<'c> Lookup<'c, '_> {
 pub struct Placement<'w> {
     index: usize,
     key: u128,
-    lookup_tag: u8,
+    tag: u8,
     word: &'w [u8],
 }
 
-/// How a probe over a word's window ended.
-enum Probe<'w> {
+/// How a walk over a word's window ended.
+enum Walk<'w> {
     /// The word is in this slot.
     Found(usize),
     /// The word is not in the table; here is the slot it should take.
@@ -569,10 +560,10 @@ enum Probe<'w> {
 
 // ---------------------------------------------------------------- what a slot holds
 
-/// How many ids can be stored inline in  [`CachedWord`] without the need to spill into the arena.
-///
-/// Typically enough for 80-96% of lookups on English or code, but only about a quarter of
-/// them on Chinese or Korean.
+/// How many ids a [`CachedWord`] holds before it has to spill into
+/// [`WordCache::token_ids_arena`]. Three is enough for most words in an alphabetic
+/// script, and for far fewer of them in Chinese or Korean, where a word turns into
+/// more ids.
 const MAX_INLINE_IDS: usize = 3;
 
 /// A sentinel value stored in [`CachedWord::word_bytes_or_hash`] when it holds the hash of a long word instead of the word itself.
@@ -582,9 +573,10 @@ const KEY_IS_HASH: u128 = 1 << 127;
 /// the slot and went to the arena instead.
 const SPILLED: u8 = u8::MAX;
 
-/// Bits per length in a spilled entry's `payload[2]`, which packs the key's byte
-/// count above the id count. Eleven, because both are bounded by
-/// [`MAX_WORD_BYTES`] and two of them have to share one `u32`.
+/// Bits per length in a spilled entry's third `word_ids` lane, which packs the
+/// word's byte count above the id count. Eleven, because the two have to share one
+/// `u32`, and [`MAX_WORD_BYTES`] is the most either of them can be: the cache turns
+/// longer words away, and no model emits more than one id per byte.
 const PACKED_LEN_BITS: u32 = 11;
 
 const PACKED_LEN_MASK: u32 = (1 << PACKED_LEN_BITS) - 1;
@@ -593,11 +585,11 @@ const _: () = assert!(MAX_WORD_BYTES <= PACKED_LEN_MASK as usize);
 
 /// One entry, in the three shapes the module docs draw out. In short:
 ///
-/// - `key` is the word itself when it fits in 15 bytes, otherwise its hash with
-///   [`KEY_IS_HASH`] set.
-/// - `payload` is the token ids while `inline_id_count` counts them, and becomes
-///   `[key_off, ids_off, packed lengths]` once that byte is [`SPILLED`] — which
-///   is what the `key_off`/`ids_off`/`key_len`/`ids_len` readers below are for.
+/// - `word_bytes_or_hash` is the key: the word itself when it fits in 15 bytes,
+///   otherwise its hash with [`KEY_IS_HASH`] set.
+/// - `word_ids` is the token ids while `inline_id_count` counts them, and becomes
+///   `[word_off, ids_off, packed lengths]` once that byte is [`SPILLED`], which is
+///   what [`CachedWord::word_off`] and the readers beside it are for.
 ///
 /// Nothing in here is read until the slot's tag has said the word might be in it.
 #[derive(Clone, Copy, Default)]
@@ -615,7 +607,7 @@ impl CachedWord {
         self.inline_id_count == SPILLED
     }
 
-    fn key_off(&self) -> u32 {
+    fn word_off(&self) -> u32 {
         self.word_ids[0]
     }
 
@@ -627,7 +619,7 @@ impl CachedWord {
         (self.word_ids[2] & PACKED_LEN_MASK) as usize
     }
 
-    fn key_len(&self) -> usize {
+    fn word_len(&self) -> usize {
         (self.word_ids[2] >> PACKED_LEN_BITS) as usize
     }
 }
@@ -640,9 +632,9 @@ impl CachedWord {
 /// `None` for anything longer, which is the caller's signal to key on a hash
 /// instead.
 ///
-/// TODO: the copy is a call into `memcpy` — about a third of what building a key
-/// costs — because `len` is only known at run time, and LLVM folds a copy into a
-/// load only when the length is a constant. A caller that knows what surrounds
+/// TODO: the copy is a call into `memcpy`, about a third of what building a key
+/// costs, because `len` is only known at run time and LLVM folds a copy into a load
+/// only when the length is a constant. A caller that knows what surrounds
 /// the word could pass the 16 bytes starting where the word does instead,
 /// turning the copy into one load plus a mask for the surplus bytes.
 fn pack_word(word: &[u8]) -> Option<u128> {
@@ -718,27 +710,33 @@ impl<T: Copy + Default> Arena<T> {
 /// evicts: a word is in the sixteen slots from its home slot on, or nowhere.
 ///
 /// Sixteen one-byte tags cross at most two cache lines, and a walk rarely reads
-/// that many — it stops at the first empty slot, usually a step or two along.
-const PROBE_WINDOW: usize = 16;
+/// that many, since it stops at the first empty slot, usually a step or two along.
+const WALK_WINDOW: usize = 16;
 
-/// A sentinel value used to mark an empty [`CachedWord`].
+/// The tag of a slot that holds nothing. No live entry ever carries it
+/// ([`make_tag`]), which is what lets a walk stop at the first one it reads,
+/// and lets [`WordCache::insert`] tell a slot it has to clear from one it can write
+/// straight into.
 const EMPTY: u8 = 0;
 
-/// Set in a tag beside the hash bits, so that a live entry's tag is never
-/// [`EMPTY`] and an occupied slot is never read as the end of the walk.
-const OCCUPIED: u8 = 0x80;
+/// How many bits of the hash a tag carries. All eight of them: a walk therefore
+/// reads a slot it did not want about once in 255.
+const TAG_BITS: u32 = 8;
 
-/// How many bits of the hash a tag carries. Seven, because the eighth is
-/// [`OCCUPIED`]; a probe therefore reads a slot it did not want once in 128.
-const LOOKUP_TAG_BITS: u32 = 7;
-
-/// The tag a hash gives its slot.
+/// The tag a hash gives its slot, which is never [`EMPTY`].
 ///
 /// The top of the hash, because the bottom of it already chose the home slot: a
 /// tag built from those bits would be the same for every slot the word can reach
-/// and would tell a probe nothing.
-fn make_lookup_tag(hash: u64) -> u8 {
-    OCCUPIED | (hash >> (u64::BITS - LOOKUP_TAG_BITS)) as u8
+/// and would tell a walk nothing.
+///
+/// Top bytes of 0 and 1 both come out as 1, since [`EMPTY`] is 0 and no live tag may
+/// be that. A word with either of those top bytes therefore shares its tag with one
+/// other, and pays a wasted entry read twice as often as the rest. A live tag of
+/// [`EMPTY`] would cost far more: a walk would stop at that slot, losing every entry
+/// stored after it in the window, and the insert that overwrote it would hand its
+/// arena runs back to nobody.
+fn make_tag(hash: u64) -> u8 {
+    ((hash >> (u64::BITS - TAG_BITS)) as u8).max(EMPTY + 1)
 }
 
 #[cfg(test)]
@@ -761,8 +759,8 @@ mod tests {
     fn slot_of(cache: &WordCache, word: &[u8]) -> Option<usize> {
         let (key, hash) = cache.make_word_key(word);
         match cache.find_word_in_cache(key, hash, word) {
-            Probe::Found(index) => Some(index),
-            Probe::Absent(_) => None,
+            Walk::Found(index) => Some(index),
+            Walk::Absent(_) => None,
         }
     }
 
@@ -787,19 +785,23 @@ mod tests {
         assert_eq!(pack_word(&[b'x'; 16]), None);
     }
 
-    /// A live entry's tag has to be something [`EMPTY`] is not, or a probe reads
-    /// an occupied slot as the end of the chain and stores on top of it.
+    /// A live entry's tag has to be something [`EMPTY`] is not, or a walk reads an
+    /// occupied slot as the end of the chain, stores on top of it, and drops the
+    /// arena runs it was using on the floor. Every tag is a byte of hash now, so
+    /// the hashes whose top byte is zero are the ones that have to be caught.
     #[test]
     fn a_live_tag_is_never_the_empty_marker() {
-        for hash in [0u64, 1, u64::MAX, 1 << 57, u64::MAX >> LOOKUP_TAG_BITS] {
-            assert_ne!(make_lookup_tag(hash), EMPTY, "hash {hash:#x}");
+        for hash in [0u64, 1, u64::MAX, 1 << 57, u64::MAX >> TAG_BITS] {
+            assert_ne!(make_tag(hash), EMPTY, "hash {hash:#x}");
         }
+        // Any other top byte is a tag in its own right, kept as it is.
+        assert_eq!(make_tag(0xA7 << (u64::BITS - TAG_BITS)), 0xA7);
     }
 
     /// A short word's placement comes out of its packed key rather than its
     /// bytes, which leaves the hash doing all of the mixing. Words that differ in
     /// one byte pack to keys that differ in one byte, so an index taken from those
-    /// bits as they are — `packed as u64` — drops most of these on one slot.
+    /// bits as they are (`packed as u64`) drops most of these on one slot.
     #[test]
     fn short_words_spread_across_the_table() {
         let cache = WordCache::new(1 << 12);
@@ -847,8 +849,9 @@ mod tests {
 
     /// A spilled entry keeps the word's byte count and its id count in eleven bits
     /// each, side by side in one `u32`. The longest word the cache accepts, when it
-    /// encodes to one id per byte, is the largest either of them can get — and if
-    /// they ever overlapped, the entry would come back as a different word's.
+    /// encodes to one id per byte, is the largest either of them can get. If they
+    /// ever overlapped, a hit would read the wrong lengths and hand back the wrong
+    /// ids.
     #[test]
     fn a_word_at_the_length_limit_round_trips() {
         let mut cache = WordCache::new(1 << 8);
@@ -858,16 +861,16 @@ mod tests {
         assert_eq!(cache.lookup(&word).hit(), Some(&ids[..]));
     }
 
-    /// A tag is seven bits, so one slot in 128 answers for a word that is not in
+    /// A tag is one byte, so one slot in 255 answers for a word that is not in
     /// it. That is too rare to wait for, so forge one: put a word's tag on a slot
-    /// holding a different key, and demand the probe look past it rather than
+    /// holding a different key, and demand the walk look past it rather than
     /// treat the tag as the answer.
     #[test]
     fn a_tag_collision_is_confirmed_against_the_key() {
-        let mut cache = WordCache::new(PROBE_WINDOW);
+        let mut cache = WordCache::new(WALK_WINDOW);
         let (_, hash) = cache.make_word_key(b"beta");
         let decoy = hash as usize & cache.index_mask;
-        cache.probe_lookup_table[decoy] = make_lookup_tag(hash);
+        cache.tags[decoy] = make_tag(hash);
         // Any key that is not beta's. A packed key always carries a length in its
         // top byte, so 1 cannot be one.
         cache.cached_words[decoy] = CachedWord {
@@ -883,7 +886,7 @@ mod tests {
     /// Two long words can hash to the same key, and then only their bytes tell
     /// them apart. Real hash collisions are too rare to write a test around, so
     /// forge one: park another word's entry on this word's home slot, stamp this
-    /// word's key and tag on it, and demand the probe look past it.
+    /// word's key and tag on it, and demand the walk look past it.
     #[test]
     fn a_hashed_key_is_confirmed_against_the_word_bytes() {
         let mut cache = WordCache::new(1 << 8);
@@ -899,19 +902,19 @@ mod tests {
             word_bytes_or_hash: my_key,
             ..their_slot
         };
-        cache.probe_lookup_table[my_home] = make_lookup_tag(my_hash);
+        cache.tags[my_home] = make_tag(my_hash);
 
         store(&mut cache, &mine, [1u32, 2].into_iter());
         assert_eq!(cache.lookup(&mine).hit(), Some(&[1u32, 2][..]));
     }
 
     /// A word that hashes into a full window is stored rather than turned away,
-    /// and the entry it replaces is the one in its home slot — even when that
+    /// and the entry it replaces is the one in its home slot, even when that
     /// entry has just been used, which is the whole of what this policy gives up.
     #[test]
     fn a_full_window_gives_up_its_home_slot() {
-        let mut cache = WordCache::new(PROBE_WINDOW);
-        let words: Vec<Vec<u8>> = (0..PROBE_WINDOW as u8).map(|i| vec![i; 4]).collect();
+        let mut cache = WordCache::new(WALK_WINDOW);
+        let words: Vec<Vec<u8>> = (0..WALK_WINDOW as u8).map(|i| vec![i; 4]).collect();
         for (i, word) in words.iter().enumerate() {
             store(&mut cache, word, [i as u32].into_iter());
         }
@@ -941,11 +944,11 @@ mod tests {
 
     /// A window that runs off the end of the table carries on at the start, and a
     /// word stored past that seam has to be found there. Nothing mirrors the first
-    /// tags at the end of the row — every step of the walk is folded back into the
+    /// tags at the end of the row. Every step of the walk is folded back into the
     /// table instead.
     #[test]
     fn a_word_stored_past_the_end_of_the_table_is_found() {
-        let mut cache = WordCache::new(PROBE_WINDOW);
+        let mut cache = WordCache::new(WALK_WINDOW);
         let last_slot = cache.cached_words.len() - 1;
         let homed_on_the_last_slot: Vec<Vec<u8>> = (0..4000u32)
             .map(|i| format!("w{i}").into_bytes())
@@ -970,7 +973,7 @@ mod tests {
     /// Reusing an evicted entry's arena run is where this design can go wrong:
     /// hand one run to two live entries and a hit starts returning another word's
     /// ids. Churn a table far too small for the input and demand the invariant
-    /// that matters — an entry may be evicted, but a hit is never wrong.
+    /// that matters: an entry may be evicted, but a hit is never wrong.
     #[test]
     fn a_hit_never_returns_another_words_ids() {
         let mut cache = WordCache::new(64);
@@ -994,7 +997,10 @@ mod tests {
                 live += 1;
             }
         }
-        assert!(live > 0, "everything was evicted — the test proves nothing");
+        assert!(
+            live > 0,
+            "everything was evicted, so the test proves nothing"
+        );
     }
 
     /// Freed runs have to come back. Without reuse the arenas grow with every
@@ -1013,7 +1019,7 @@ mod tests {
         assert_eq!(
             cache.lookup(word(4999).as_bytes()).hit(),
             Some(&[4999u32; 8][..]),
-            "inserts stopped landing — the arenas ran out"
+            "inserts stopped landing: the arenas ran out"
         );
         assert!(cache.word_bytes_arena.data.len() <= 65 * 35);
         assert!(cache.token_ids_arena.data.len() <= 65 * 8);

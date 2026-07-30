@@ -838,8 +838,6 @@ impl pipeline::Model for PipelineBPE {
             word_cache,
         } = scratch;
 
-        // The lookup also picks the slot this word would go in, so the insert
-        // below has no window to walk of its own.
         let mut placement = None;
         if let Some(cache) = word_cache.as_mut() {
             match cache.lookup(sequence.as_bytes()) {
@@ -859,9 +857,8 @@ impl pipeline::Model for PipelineBPE {
             self.merge_word(sequence, merge_queue, skip, word);
             output.extend(word.get_chars_iter().map(|id| PipelineToken { id }));
         }
-        // Reading the ids back out of `output` rather than out of `word` is what
-        // lets the whole-word hit above be stored too — and it is the only place
-        // both exits have their ids in common.
+        // The ids come back out of `output` because that is the only place both
+        // branches above leave them: `ignore_merges` never touches `word`.
         if let Some(cache) = word_cache.as_mut()
             && let Some(at) = placement
         {
@@ -885,8 +882,7 @@ pub struct BpeScratch {
     pub(crate) merge_queue: QuaternaryHeap<Merge>,
     pub(crate) skip: Vec<Merge>,
     pub(crate) word: Word,
-    /// Kept for the life of the scratch: a cache is only worth having once it has seen
-    /// some text, so it must outlive the encode call that filled it.
+    /// Outlives the encode call that fills it, or it would never see a word twice.
     pub(crate) word_cache: Option<WordCache>,
 }
 impl ModelScratch for BpeScratch {}
@@ -1466,7 +1462,7 @@ mod tests {
         }
 
         // The pool hands the SAME scratch to successive encodes. State left behind by one
-        // call — an undrained merge queue, a stale word buffer — would corrupt every call
+        // call (an undrained merge queue, a stale word buffer) would corrupt every call
         // after it. Drive several inputs through one scratch and check each still matches
         // the reference model.
         #[test]
@@ -1484,7 +1480,7 @@ mod tests {
         }
 
         // A cache may forget a word, but it must never change one. Run every word twice
-        // through one scratch — the second time answered from the cache — against a model
+        // through one scratch, the second time answered from the cache, against a model
         // built with no cache at all.
         #[test]
         fn cached_ids_match_uncached() {
@@ -1519,7 +1515,7 @@ mod tests {
             let reference = bpe.clone();
             let pipeline = PipelineBPE::from_bpe(bpe, false).unwrap();
             // 'x' vanishes, making 'h' and 'e' adjacent, so the (h,e) merge
-            // applies — mirrors the reference model.
+            // applies, mirroring the reference model.
             assert_eq!(pipeline_ids(&pipeline, "hxe"), vec![4]);
             assert_eq!(
                 pipeline_ids(&pipeline, "hxe"),
@@ -1690,7 +1686,7 @@ mod tests {
 
         /// A gpt2-shaped miniature: the 256 projected single-byte tokens
         /// (id == byte value) plus `extra` tokens and merges, given in raw
-        /// space and projected here — like a real byte-level tokenizer.json,
+        /// space and projected here, like a real byte-level tokenizer.json,
         /// whose vocab is stored in the projected alphabet.
         fn byte_level_bpe(
             extra: &[(&str, u32)],
