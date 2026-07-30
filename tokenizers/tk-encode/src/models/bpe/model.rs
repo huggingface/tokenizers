@@ -784,7 +784,6 @@ impl PipelineBPE {
         skip: &mut Vec<Merge>,
         word: &mut Word,
     ) {
-        const FALLBACK_THRESHOLD: u8 = 8;
         let mut to_merge = Vec::new();
         // 1. we convert the codepoint to internal ID (rank)
         let mut global_min = 0u32;
@@ -801,6 +800,12 @@ impl PipelineBPE {
             past_rank = *rank;
             to_merge.push(*rank);
         }
+        self.multipass_merge(to_merge, global_min);
+        // Finally, we use the unmap
+    }
+
+    fn multipass_merge(&self, mut to_merge: Vec<u32>, mut global_min: u32) {
+        const FALLBACK_THRESHOLD: u8 = 8;
         let mut i = 0u8;
         // in multi-pass, we read and write in the same buffer
         let mut read_id = 0usize;
@@ -809,7 +814,7 @@ impl PipelineBPE {
         let mut last_id = slice.len();
         while true {
             if i == FALLBACK_THRESHOLD {
-                todo!("Implement merge with a simple heap")
+                todo!("Implement merge with a simple binary heap")
             }
             let mut running_min = u32::MAX;
             for _ in 0..last_id {
@@ -827,10 +832,10 @@ impl PipelineBPE {
                 // we need to update with the previous and the next local merges
                 running_min = std::cmp::min(running_min, rank);
             }
+            last_id = read_id + 1;
             i += 1;
             global_min = running_min;
         }
-        // Finally, we use the unmap
     }
 }
 
