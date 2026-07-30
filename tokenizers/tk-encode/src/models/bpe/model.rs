@@ -850,12 +850,13 @@ impl pipeline::Model for PipelineBPE {
                 Lookup::Miss(at) => placement = at,
             }
         }
-        if self.ignore_merges
-            && let Some(id) = self.vocab.get_bytes(sequence.as_bytes())
-        {
-            output.push(PipelineToken { id });
-            return Ok(());
-        }
+        // Experiment: skip vocab lookup
+        // if self.ignore_merges
+        //     && let Some(id) = self.vocab.get_bytes(sequence.as_bytes())
+        // {
+        //     output.push(PipelineToken { id });
+        //     return Ok(());
+        // }
 
         self.merge_word(sequence, merge_queue, skip, word);
         output.extend(word.get_chars_iter().map(|id| PipelineToken { id }));
