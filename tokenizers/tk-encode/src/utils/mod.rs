@@ -1,12 +1,6 @@
 pub(crate) mod cache;
 #[cfg(feature = "http")]
 pub(crate) mod from_pretrained;
-// Public only so `examples/word_cache_bench.rs` can reach it. Hidden because
-// this is not API: the encoder gets at the cache through the models.
-#[cfg(feature = "bench-internals")]
-#[doc(hidden)]
-pub mod word_cache;
-#[cfg(not(feature = "bench-internals"))]
 pub(crate) mod word_cache;
 
 // Optional system-regex backend, needed only for a *regex* pattern that atomsplit does not cover.
