@@ -5,6 +5,7 @@ use crate::tokenizer::{Model, Result, Token};
 use crate::utils::byte_level::{self};
 use crate::utils::cache::{DEFAULT_CACHE_CAPACITY, MAX_LENGTH};
 use crate::utils::iter::ResultShunt;
+use crate::utils::word_cache::{Lookup, WordCache};
 use crate::vocab::bucket_vocab_store::BucketVocabStore;
 use crate::vocab_store::VocabStore;
 use ahash::AHashMap;
@@ -680,6 +681,8 @@ pub struct PipelineBPE {
     vocab: BucketVocabStore,
     merges: MergeMap,
     ignore_merges: bool,
+    /// `None` when the tokenizer asked for no cache.
+    cache_capacity: Option<usize>,
 }
 
 enum Atoms {
@@ -760,6 +763,7 @@ impl PipelineBPE {
             ignore_merges,
             merges,
             vocab,
+            cache_capacity: model.cache.map(|c| c.capacity).filter(|&c| c > 0),
         })
     }
 
@@ -827,6 +831,25 @@ impl pipeline::Model for PipelineBPE {
             return Ok(());
         }
 
+        let BpeScratch {
+            merge_queue,
+            skip,
+            word,
+            word_cache,
+        } = scratch;
+
+        // The lookup also picks the slot this word would go in, so the insert
+        // below has no window to walk of its own.
+        let mut placement = None;
+        if let Some(cache) = word_cache.as_mut() {
+            match cache.lookup(sequence.as_bytes()) {
+                Lookup::Hit(ids) => {
+                    output.extend(ids.iter().map(|&id| PipelineToken { id }));
+                    return Ok(());
+                }
+                Lookup::Miss(at) => placement = at,
+            }
+        }
         if self.ignore_merges
             && let Some(id) = self.vocab.get_bytes(sequence.as_bytes())
         {
@@ -834,16 +857,13 @@ impl pipeline::Model for PipelineBPE {
             return Ok(());
         }
 
-        // TODO: persistent cache mapping &str -> &[u32]
-
-        let BpeScratch {
-            merge_queue,
-            skip,
-            word,
-        } = scratch;
-
         self.merge_word(sequence, merge_queue, skip, word);
         output.extend(word.get_chars_iter().map(|id| PipelineToken { id }));
+        if let Some(cache) = word_cache.as_mut()
+            && let Some(at) = placement
+        {
+            cache.insert(at, word.get_chars_iter());
+        }
 
         Ok(())
     }
@@ -853,6 +873,7 @@ impl pipeline::Model for PipelineBPE {
             merge_queue: QuaternaryHeap::with_capacity(64),
             word: Word::with_capacity(64),
             skip: Vec::new(),
+            word_cache: self.cache_capacity.map(WordCache::new),
         }
     }
 }
@@ -861,6 +882,9 @@ pub struct BpeScratch {
     pub(crate) merge_queue: QuaternaryHeap<Merge>,
     pub(crate) skip: Vec<Merge>,
     pub(crate) word: Word,
+    /// Kept for the life of the scratch: a cache is only worth having once it has seen
+    /// some text, so it must outlive the encode call that filled it.
+    pub(crate) word_cache: Option<WordCache>,
 }
 impl ModelScratch for BpeScratch {}
 
@@ -1453,6 +1477,36 @@ mod tests {
                 pipeline::Model::tokenize_pipeline(&model, input, &mut scratch, &mut out).unwrap();
                 let got: Vec<u32> = out.iter().map(|t| t.id).collect();
                 assert_eq!(got, reference_ids(&reference, input), "{input:?}");
+            }
+        }
+
+        // A cache may forget a word, but it must never change one. Run every word twice
+        // through one scratch — the second time answered from the cache — against a model
+        // built with no cache at all.
+        #[test]
+        fn cached_ids_match_uncached() {
+            let cached = PipelineBPE::from_bpe(hello_builder().build().unwrap(), false).unwrap();
+            let uncached =
+                PipelineBPE::from_bpe(hello_builder().cache_capacity(0).build().unwrap(), false)
+                    .unwrap();
+
+            let mut scratch = cached.init_scratch();
+            assert!(scratch.word_cache.is_some(), "nothing is being cached");
+            for _ in 0..2 {
+                for word in [
+                    "hello",
+                    "hell",
+                    "o",
+                    "hellohello",
+                    "hello-a-word-past-fifteen-bytes",
+                    "hxe",
+                ] {
+                    let mut out = Vec::new();
+                    pipeline::Model::tokenize_pipeline(&cached, word, &mut scratch, &mut out)
+                        .unwrap();
+                    let got: Vec<u32> = out.iter().map(|t| t.id).collect();
+                    assert_eq!(got, pipeline_ids(&uncached, word), "{word:?}");
+                }
             }
         }
 

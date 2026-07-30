@@ -1032,7 +1032,7 @@ pub enum SplitPolicy {
     Isolate,
 }
 
-/// Splits `text` into same-class groups, emitting each as a [`Split`]
+/// Splits `text` into same-class groups, emitting each as a [`Span`]
 /// according to its [`SplitPolicy`].
 ///
 /// `classify` maps each char to a small `Copy + Eq` class, the current
@@ -1296,6 +1296,12 @@ impl Model for PipelineModel {
 /// reused among calls to [`PipelineTokenizer::encode`].
 ///
 /// Each model gets its own variant.
+//
+// The BPE variant holds the word cache, which makes this enum far bigger than the other
+// variants need. Boxing it would add a pointer to follow on every single pre-token, to save
+// moving those bytes twice per encode call. The cache itself is on the heap either way, so
+// moving the enum never copies it.
+#[allow(clippy::large_enum_variant)]
 #[derive(Default)]
 pub enum PipelineModelScratch {
     BPE(BpeScratch),
@@ -1829,5 +1835,21 @@ mod tests {
             bpe_scratch.word.capacity(),
             long_input.len()
         );
+    }
+
+    // Why a scratch is worth passing around at all: the word cache is only useful once it
+    // has seen some text, so it has to outlive the call that filled it. The scratch coming
+    // back from the pool must already know the words of the last encode.
+    #[test]
+    fn the_word_cache_outlives_the_encode_call() {
+        let pipeline = hello_pipeline();
+        pipeline.encode("hello", false).wait().unwrap();
+
+        let mut scratch = pipeline.scratch_pool.get(&pipeline.model);
+        let PipelineModelScratch::BPE(bpe) = &mut *scratch else {
+            panic!("a BPE pipeline encodes with a BPE scratch");
+        };
+        let cache = bpe.word_cache.as_mut().expect("BPE encodes with a cache");
+        assert_eq!(cache.lookup(b"hello").hit(), Some(&[7u32][..]));
     }
 }
