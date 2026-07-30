@@ -147,14 +147,14 @@
 //!                   │           │     │           └ tagged A7 too, but past the
 //!                   │           │     │             empty slot: out of reach
 //!                   │           │     └ empty: the search stops here
-//!                   │           └ tag matches, and the key says "hat", so found it
+//!                   │           └ tag matches, and the key says "hat": found it
 //!                   └ tag matches, but the key says "the", so keep looking
 //! ```
 //!
 //! The walk reads tags, not entries: ruling a slot out costs one byte of memory
-//! traffic rather than the 32 an entry takes. It rarely gets far: on running text
-//! a word is usually in its home slot, or the slot after it, or not in the table
-//! at all.
+//! traffic rather than the 32 an entry takes. It rarely gets far. On running text a
+//! word is usually in its home slot, or the slot after it, or not in the table at
+//! all.
 //!
 //! A matching tag is a hint, not an answer. A tag is only one byte of the hash, so
 //! about one slot in 255 matches a word that is not there, which is exactly what
@@ -288,9 +288,9 @@
 //!   32-byte entries, ids inline. It never evicts (it doubles at 3/4 load) and
 //!   leans on huge pages and prefetching, because its table is sized for DRAM
 //!   rather than for a CPU cache.
-//! - [TinyLFU] (Einziger, Friedman & Manes), as its reference implementation
-//!   [Caffeine] does it. That is the use-counter-and-fade rule this module tried
-//!   for eviction and dropped, kept here for whoever wants to try it again.
+//! - [TinyLFU] (Einziger, Friedman & Manes) is the use-counter-and-fade rule this
+//!   module tried for eviction and dropped, as its reference implementation
+//!   [Caffeine] does it. Kept here for whoever wants to try it again.
 //! - [huggingface/tokenizers#2234] is an open-addressed cache for this same encode
 //!   pipeline, arrived at in parallel, fused into the pre-tokenizer's split loop.
 //!
@@ -634,9 +634,9 @@ impl CachedWord {
 ///
 /// TODO: the copy is a call into `memcpy`, about a third of what building a key
 /// costs, because `len` is only known at run time and LLVM folds a copy into a load
-/// only when the length is a constant. A caller that knows what surrounds
-/// the word could pass the 16 bytes starting where the word does instead,
-/// turning the copy into one load plus a mask for the surplus bytes.
+/// only when the length is a constant. A caller that knows what surrounds the word
+/// could pass the 16 bytes starting where the word does instead, turning the copy
+/// into one load plus a mask for the surplus bytes.
 fn pack_word(word: &[u8]) -> Option<u128> {
     let len = word.len();
     if len == 0 || len > 15 {
