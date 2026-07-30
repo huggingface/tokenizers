@@ -363,51 +363,59 @@ mod test {
         MergeMap,
         tables::{BpeTables, MphfMap, build_conversion_table, merge_rank_tables},
     };
-    use crate::utils::byte_level::{BYTES_CHAR_LOOKUP, CHAR_BYTES_LOOKUP};
-    #[test]
-    pub fn test_build_conversion_table() {
-        // we are gonna simulate byte-level merges in a gpt2-like encoding.
-        // let's use 0x1D 0xE6\x9C\x9D which is 朝, with codepoint U+671D
-        // byte level replaces in the vocab bytes that can't be represented with
-        // printables non ascii.
-        // U+1740 ᝀ  → E1 9D 80 -> 'á','Ŀ','Ģ'
-        // U+671D 朝 → E6 9C 9D -> 'æ','ľ','Ŀ'
-        // U+65E5 日 → E6 97 A5 -> 'æ','Ĺ','¥'
-        // We want to make sure only safe merges are merged. So we are building an unsafe one with
-        // 'ᝀ', as it has 9D in the middle. We give rank(9D, 80) < rank(9C, 9D). This will prevent
-        // 朝 from folding as merging ('æľ','Ŀ') risks 'Ŀ' being in fact stolen on the left byt 80
-        // if 80 is next
-
-        let codes: [u8; 3] = [0xE6, 0x9C, 0x9D];
-        let bytes = codes
-            .iter()
-            .map(|b| BYTES_CHAR_LOOKUP[*b as usize])
-            .collect::<Vec<char>>();
-        assert_eq!(bytes, vec!['æ', 'ľ', 'Ŀ']);
-        // bytes should contain
-        let vocab = AHashMap::from_iter(vec![
-            (bytes[0].to_string(), 0),
-            (bytes[1].to_string(), 1),
-            (bytes[2].to_string(), 2),
-            ("æľ".to_string(), 6),
-            ("æľ".to_string(), 6),
-            ("æľĿ".to_string(), 7), // this one is confusing
+    use crate::utils::byte_level::BYTES_CHAR_LOOKUP;
+    // Byte-level merges in a gpt2-like encoding. Byte level rewrites the vocab so every byte is a
+    // printable char; bytes 0x80..=0xA0 become U+0122.. and 0xAE..=0xFF stay themselves.
+    // U+671D 朝 → E6 9C 9D -> 'æ','ľ','Ŀ'
+    // U+65E5 日 → E6 97 A5 -> 'æ','Ĺ','¥'
+    //
+    // 朝 assembles with ('æ','ľ') and ('æľ','Ŀ'), so it may only merge if no merge pair can take
+    // an edge symbol first. We add such a pair:('Ŀ','æ') 9D E6, which appear in 朝朝 and 朝日
+    // at the boundary `.. 9D | E6 ..`. It has to be a LEAD byte (E6) doing the stealing: the symbol
+    // after a complete character is always the next character's first byte.
+    fn cjk_vocab(with_thief: bool) -> (AHashMap<String, u32>, MergeMap, Vec<u32>) {
+        assert_eq!(
+            [0xE6u8, 0x9C, 0x9D].map(|b| BYTES_CHAR_LOOKUP[b as usize]),
+            ['æ', 'ľ', 'Ŀ']
+        );
+        let mut vocab = AHashMap::from_iter(vec![
+            ("æ".to_string(), 0),   // E6
+            ("ľ".to_string(), 1),   // 9C
+            ("Ŀ".to_string(), 2),   // 9D
+            ("æľ".to_string(), 3),  // E6 9C
+            ("æľĿ".to_string(), 4), // E6 9C 9D = 朝
         ]);
         let mut merges = MergeMap::new();
-        // keys are rank id, new id
-        merges.insert((0, 1), (1, 5)); // a , b -> ab
-        merges.insert((1, 2), (2, 6)); // ab, a -> aba
-        merges.insert((2, 3), (3, 7)); // b , a -> ba  with rank(ab)  < rank(ba)
+        // (left, right) -> (rank, product). Ranks leave room below for the thief.
+        merges.insert((0, 1), (1, 3)); // 'æ' + 'ľ'  -> "æľ"
+        merges.insert((3, 2), (2, 4)); // "æľ" + 'Ŀ' -> 朝
+        if with_thief {
+            vocab.insert("Ŀæ".to_string(), 5); // 9D E6, straddles a character boundary
+            merges.insert((2, 0), (0, 5)); // rank 0, below every step of 朝's assembly
+        }
+        let ids = (0..vocab.len() as u32).collect();
+        (vocab, merges, ids)
+    }
 
-        // we don't need complicated mapping so this one is just ordered
-        let ids = [0, 1, 2, 3, 4, 5];
+    #[test]
+    pub fn folds_a_cjk_char_when_no_neighbour_can_steal() {
+        let (vocab, merges, ids) = cjk_vocab(false);
         let (mrl, mrr) = merge_rank_tables(&merges, &ids);
         let (out, _) = build_conversion_table(&vocab, &merges, &ids, &ids, &mrl, &mrr, true);
+        // 朝 collapses to one symbol, so the codepoint maps straight to it and the encoder never
+        // emits its three bytes.
+        assert_eq!(out['朝' as usize], 4);
+        assert_eq!(out['æ' as usize], u32::MAX);
+    }
 
-        // test that '朝' is not split into the bytelevels, and is mapped to the internal id.
-        // test that '朝' is not split into the bytelevels, and is mapped to the internal id.
-        // but we want aba to be folded. But CP needs to be a codepoint to a 2-byte char
-        assert_eq!(out['朝' as usize], 0);
+    #[test]
+    pub fn refuses_the_same_char_once_a_lead_byte_can_steal() {
+        let (vocab, merges, ids) = cjk_vocab(true);
+        let (mrl, mrr) = merge_rank_tables(&merges, &ids);
+        assert_eq!(mrr[0], 0);
+        assert_eq!(mrl[2], 0);
+        let (out, _) = build_conversion_table(&vocab, &merges, &ids, &ids, &mrl, &mrr, true);
+        assert_eq!(out['朝' as usize], u32::MAX);
     }
 
     #[test]
