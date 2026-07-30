@@ -88,33 +88,216 @@
 //! out again. What it must never do is hand back the *wrong* ids. Every
 //! trade-off below spends the first freedom and none of the second.
 //!
+//! # The table
+//!
+//! The cache is one long row of numbered **slots**. Each slot holds one word and
+//! the ids that word encodes to. The number of slots is fixed when the cache is
+//! built and never changes, which is what keeps the memory bounded.
+//!
+//! To decide where a word belongs, the cache turns the word into a number — its
+//! **hash**. Two different pieces of that number are used, and they never overlap:
+//!
+//! ```text
+//!                          "the"
+//!                            │
+//!                            │  hash
+//!                            ▼
+//!         ┌─────────────────────────────────────────┐
+//!         │ 1010 0111 ................... 0000 0101 │
+//!         └────┬───────────────────────────────┬────┘
+//!              │ the top 7 bits                │ the bottom bits
+//!              ▼                               ▼
+//!         the tag: A7                    the home slot: 5
+//! ```
+//!
+//! The **home slot** is where the word would like to live. The **tag** is a
+//! one-byte summary of the word. Tags are kept in their own row, one byte per
+//! slot, beside the row of entries:
+//!
+//! ```text
+//!    slot index:    0     1     2     3     4     5     6     7   ...
+//!                ┌─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┐
+//!    tags        │  ·  │ 9B  │  ·  │  ·  │ C4  │ A7  │ 31  │ A7  │   1 byte each
+//!                ├─────┼─────┼─────┼─────┼─────┼─────┼─────┼─────┤
+//!    entries     │     │"of" │     │     │"cat"│"the"│"sat"│"hat"│  32 bytes each
+//!                └─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┘
+//!                                                 ▲
+//!                                                 home slot of "the",
+//!                                                 and of "hat" as well
+//!
+//!                  · = empty slot
+//! ```
+//!
+//! A word does not always get its home slot — another word may have taken it
+//! first, which is what happened to "hat" above. So the word may be in its home
+//! slot or in any of the fifteen slots after it. Those sixteen slots are the
+//! word's **window**, and the word is either in there or nowhere
+//! ([`PROBE_WINDOW`]).
+//!
+//! # Looking a word up
+//!
+//! [`WordCache::lookup`] walks the window one tag at a time, starting at the home
+//! slot, and answers both of a lookup's questions on the way: which slot holds
+//! this word, and where would this word go if none of them does.
+//!
+//! ```text
+//!    looking up "hat" — tag A7, home slot 5
+//!
+//!    slot:          5     6     7     8     9    10    11    12  ...
+//!                ┌─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┐
+//!    tags        │ A7  │ 31  │ A7  │  ·  │ 5F  │ A7  │  ·  │  ·  │
+//!                ├─────┼─────┼─────┼─────┼─────┼─────┼─────┼─────┤
+//!    entries     │"the"│"sat"│"hat"│     │"on" │"mat"│     │     │
+//!                └─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┘
+//!                   ▲           ▲     ▲           ▲
+//!                   │           │     │           └ tagged A7 too, but past the
+//!                   │           │     │             empty slot: out of reach
+//!                   │           │     └ empty: the search stops here
+//!                   │           └ tag matches, and the key says "hat" — found it
+//!                   └ tag matches, but the key says "the" — keep looking
+//! ```
+//!
+//! The walk reads tags, not entries: ruling a slot out costs one byte of memory
+//! traffic rather than the 32 an entry takes. It rarely gets far — on running text
+//! a word is usually in its home slot, or the slot after it, or not in the table
+//! at all.
+//!
+//! A matching tag is a hint, not an answer. A tag is only seven bits of the hash,
+//! so about one slot in 128 matches a word that is not there — which is exactly
+//! what slot 5 does above. Each matching slot is therefore read and its **key**
+//! compared. The key is the copy of the word kept inside the slot, and it is what
+//! settles the question.
+//!
+//! The search stops at the first empty slot. That is safe because storing stops
+//! there too: a word is always put in the first empty slot of its window, so no
+//! word can ever sit past one. This is why slot 10 is out of reach — whatever is
+//! in it, it is not "hat", because "hat" would have taken slot 8.
+//!
+//! A lookup ends one of two ways ([`Lookup`]):
+//!
+//! - **Hit** — the ids, ready to use. Nothing is written: a hit leaves the table
+//!   exactly as it was.
+//! - **Miss** — a [`Placement`]: the slot this word should take. The caller runs
+//!   the model, then hands the placement back to [`WordCache::insert`] along with
+//!   the ids. The placement carries the hash work the lookup already did, so
+//!   storing the word costs no second hash and no second read of the tags.
+//!
+//! # Storing a word
+//!
+//! [`WordCache::insert`] takes the placement from the miss and the ids the model
+//! produced, and does four things:
+//!
+//! 1. **Builds the entry.** The word and its ids go in the slot if they fit; what
+//!    does not fit is copied into an overflow buffer (below). If those buffers are
+//!    full, the insert is dropped and nothing changes — the cache is allowed to
+//!    forget.
+//! 2. **Clears the old entry, if there was one.** When the window had no empty
+//!    slot the placement points at the home slot, and that word's ids are lost.
+//!    Any overflow space it was using is handed back.
+//! 3. **Writes the tag**, which is what makes the slot findable.
+//! 4. **Writes the entry.**
+//!
+//! # What a slot holds
+//!
+//! A slot is 32 bytes: sixteen for the key, twelve for the ids, and one that says
+//! how many ids there are. It comes in three shapes ([`CachedWord`]). The first is
+//! the common case, and the reason the sizes are what they are: the whole answer —
+//! word and ids — is right there, so a hit reads one slot and stops.
+//!
+//! ```text
+//!                                    ├───── key ─────┤├─── ids ───┤├─────┤
+//!                                                                    how many
+//!
+//!    "the" → [464]                   ┌────────────────┬────────────┬─────┐
+//!    short word, up to 3 ids         │ t h e        3 │ 464        │  1  │
+//!                                    └────────────────┴────────────┴─────┘
+//!                                      the word, then    the ids
+//!                                      its length        themselves
+//!
+//!    "hello" → [40,71,12,9,33]       ┌────────────────┬────────────┬─────┐
+//!    short word, too many ids        │ h e l l o    5 │ ids are at │  ▒  │
+//!                                    └────────────────┴────────────┴─────┘
+//!
+//!    "counterrevolutionary" → …      ┌────────────────┬────────────┬─────┐
+//!    word too long for the key       │ hash of word H │ both are at│  ▒  │
+//!                                    └────────────────┴────────────┴─────┘
+//!                                      H says "a hash,   where to look in
+//!                                      not the word"     the buffers
+//!
+//!                                    ▒ = "not in the slot — follow the positions"
+//! ```
+//!
+//! A word of up to 15 bytes is kept whole, with its length in the sixteenth byte.
+//! A longer word cannot fit, so the slot keeps the word's hash instead and the
+//! bytes go to a buffer. Two different long words can hash to the same number, so
+//! for those — and only those — a match is confirmed by comparing the bytes.
+//!
+//! The two overflow buffers ([`Arena`]) grow up to a budget and then stop. When an
+//! entry is thrown out, the space it used goes on a free list for its exact
+//! length, so the next word of that shape reuses it. Nothing is ever compacted or
+//! moved. Words longer than [`MAX_WORD_BYTES`] are not cached at all.
+//!
+//! # Which entry gives way
+//!
+//! When a word's window is full, something has to go, and it is whatever sits in
+//! the home slot. Nothing is measured and nothing is ranked: the newcomer takes
+//! the slot it wanted in the first place.
+//!
+//! A cleverer rule is possible, and this module used to have one: a use counter per
+//! entry, the least-used slot of the window loses it, and the counters fade so that
+//! a word that was busy early in a document cannot keep its slot forever. Measured
+//! against the plain rule, it did keep slightly more of the words worth keeping, and
+//! it lost more than it gained to the counter that every hit had to write, so it
+//! went. Two things let the plain rule get away with it: nothing is evicted until
+//! all sixteen slots of a window are taken, and words repeat closely enough that a
+//! word's next use usually comes round before anything has had the chance to evict
+//! it.
+//!
+//! # Why it is built this way
+//!
+//! - **Tags live in their own row** so that a walk over sixteen slots reads sixteen
+//!   bytes, which is one or two cache lines. The entries are 32 bytes each, so the
+//!   same sixteen slots would be 512 bytes and eight cache lines.
+//! - **A tag is one byte**: seven bits of the hash plus one bit saying the slot is
+//!   taken, so a slot that cannot hold the word is ruled out without reading it.
+//! - **The tag uses the top bits of the hash** because the bottom bits already
+//!   chose the home slot, and every slot in a window would share those.
+//! - **A window is sixteen slots** — how far a word may end up from its home slot
+//!   before the cache stops looking and evicts instead. Long enough that a full
+//!   window is uncommon, short enough that walking a full one stays cheap.
+//! - **The key is 128 bits** because 15 bytes of word plus one byte of length
+//!   covers nearly every word whole, and comparing it is then one comparison of one
+//!   value instead of following a pointer to bytes elsewhere in memory.
+//! - **The length is part of the key**, or `"a"` and `"a\0"` would look identical.
+//! - **Up to three ids fit in the slot** because most words encode to one, two or
+//!   three, and that makes a hit a single read.
+//! - **The number of slots is a power of two**, so picking the home slot is one
+//!   bit operation rather than a division — and so is folding a step of the walk
+//!   back into the table when a window runs off the end.
+//! - **A miss hands back a placement** because the lookup already knows the hash,
+//!   the tag and the slot to use, and making the insert work them out again would
+//!   double that cost on every new word.
+//! - **Freed overflow space is filed by exact length** — every run is at most
+//!   [`MAX_WORD_BYTES`] long, so there can be one free list per length and a freed
+//!   run always fits the next word of that shape exactly.
+//!
 //! # Where the ideas come from
 //!
 //! - [Swiss Tables] — Abseil's design notes: one control byte per slot, holding a
-//!   flag bit and seven bits of hash, sixteen tested at a time.
-//! - [hashbrown] — the hash map behind Rust's `std::collections::HashMap`. Its
-//!   portable fallback tests a group of control bytes with the same
-//!   `(x - ONES) & !x & HIGHS` arithmetic used in [`tag_matches`].
-//! - [Bit Twiddling Hacks] — that expression on its own, credited to Alan Mycroft,
-//!   1987.
+//!   flag bit and seven bits of hash.
 //! - [gigatoken] — a BPE tokenizer with a pre-token cache built from the same
 //!   parts: `u128` packed keys with the length in the top byte, self-contained
 //!   32-byte entries, ids inline. It never evicts (it doubles at 3/4 load) and
 //!   leans on huge pages and prefetching, because its table is sized for DRAM
 //!   rather than for a CPU cache.
-//! - [Redis key eviction] — an eight-bit counter per key plus a decay period,
-//!   which is the same shape as [`EvictionMetadata`].
-//! - [TinyLFU] (Einziger, Friedman & Manes) and its reference implementation,
-//!   [Caffeine], which ages counters by halving all of them at once
-//!   (`table[i] = (table[i] >>> 1) & RESET_MASK`) rather than by dating them.
+//! - [TinyLFU] (Einziger, Friedman & Manes), as its reference implementation
+//!   [Caffeine] does it — the use-counter-and-fade rule this module tried for
+//!   eviction and dropped, kept here for whoever wants to try it again.
 //! - [huggingface/tokenizers#2234] — an open-addressed cache for this same encode
 //!   pipeline, arrived at in parallel, fused into the pre-tokenizer's split loop.
 //!
 //! [Swiss Tables]: https://abseil.io/about/design/swisstables
-//! [hashbrown]: https://github.com/rust-lang/hashbrown/blob/master/src/control/group/generic.rs
-//! [Bit Twiddling Hacks]: https://graphics.stanford.edu/~seander/bithacks.html#ZeroInWord
 //! [gigatoken]: https://github.com/marcelroed/gigatoken
-//! [Redis key eviction]: https://redis.io/docs/latest/develop/reference/eviction/
 //! [TinyLFU]: https://arxiv.org/abs/1512.00727
 //! [Caffeine]: https://github.com/ben-manes/caffeine/blob/master/caffeine/src/main/java/com/github/benmanes/caffeine/cache/FrequencySketch.java
 //! [huggingface/tokenizers#2234]: https://github.com/huggingface/tokenizers/pull/2234
@@ -130,7 +313,7 @@ const MAX_WORD_BYTES: usize = 1024;
 pub struct WordCache {
     /// A table of up to N [`CachedWord`]. The main data.
     ///
-    /// For a given word, we derive its index in [`Self::cached_word`] by keeping the lower N bytes of its hash:
+    /// For a given word, we derive its index in [`Self::cached_words`] by keeping the lower N bytes of its hash:
     /// ```text
     /// hash(word) & (N - 1)
     /// ```
@@ -148,12 +331,9 @@ pub struct WordCache {
     ///
     /// One byte per slot, at the same index as the corresponding [`CachedWord`] in [`Self::cached_words`].
     /// For a given index, hold the 7 high bits of the hash of the corresponding `CachedWord`, or [`EMPTY`] if the slot is empty.
-    /// Being a contiguous buffer of bytes, it allows to do a very efficient lookup of candidates in [`Self::cached_words`]
-    /// using SIMD with a register techniques, probing [`PROBE_WINDOW`] slots at the same time.
+    /// A probe walks this row instead of the entries, so ruling a slot out reads one byte rather than
+    /// the 32 an entry takes.
     probe_lookup_table: Box<[u8]>,
-
-    /// This computes which slot gets evicted when the lookup could not find an empty slot to insert a new word in.
-    evictor: Evictor,
 
     /// If the bytes of the word don't fit in a CachedWord, they are stored here
     word_bytes_arena: Arena<u8>,
@@ -169,8 +349,7 @@ impl WordCache {
         Self {
             hasher: RandomState::new(),
             cached_words: vec![CachedWord::default(); n_slots].into_boxed_slice(),
-            probe_lookup_table: vec![EMPTY; n_slots + PROBE_WINDOW].into_boxed_slice(),
-            evictor: Evictor::new(n_slots),
+            probe_lookup_table: vec![EMPTY; n_slots].into_boxed_slice(),
             word_bytes_arena: Arena::new(n_slots * 48),
             token_ids_arena: Arena::new(n_slots * 16),
             index_mask: n_slots - 1,
@@ -181,9 +360,7 @@ impl WordCache {
     ///
     /// If the word is found in the cache, returns the ids the word encodes to.
     /// If the word is not found in the cache, returns the index at which the [`CachedWord`] should be inserted.
-    ///
-    /// Takes `&mut self` because a cache hit needs to update the freshness of the slot for eviction bookkeeping.
-    pub fn lookup<'c, 'w>(&'c mut self, word: &'w [u8]) -> Lookup<'c, 'w> {
+    pub fn lookup<'c, 'w>(&'c self, word: &'w [u8]) -> Lookup<'c, 'w> {
         // Never cache a word longer than `MAX_WORD_BYTES`
         if word.len() > MAX_WORD_BYTES {
             return Lookup::Miss(None);
@@ -193,7 +370,6 @@ impl WordCache {
         match self.find_word_in_cache(key, hash, word) {
             // Found the word in the cache => return its ids
             Probe::Found(index) => {
-                self.evictor.record_hit(index);
                 let slot = self.cached_words[index];
                 Lookup::Hit(if slot.ids_stored_in_arena() {
                     self.token_ids_arena.get(slot.ids_off(), slot.ids_len())
@@ -216,11 +392,9 @@ impl WordCache {
         // Slot is not empty => evict it
         if self.probe_lookup_table[at.index] != EMPTY {
             self.reclaim(at.index);
-            self.evictor.on_eviction();
         }
         // Update the cached slot
-        self.update_lookup_table(at.index, at.lookup_tag);
-        self.evictor.record_insert(at.index);
+        self.probe_lookup_table[at.index] = at.lookup_tag;
         self.cached_words[at.index] = cached_word;
     }
 
@@ -242,56 +416,45 @@ impl WordCache {
         }
     }
 
-    /// The tags of the window starting at `home`. The mirrored tail of
-    /// `probe_lookup_table` is what makes the slice contiguous for every `home`.
-    fn make_probe_window(&self, start_index: usize) -> u128 {
-        read_window(
-            self.probe_lookup_table[start_index..start_index + PROBE_WINDOW]
-                .try_into()
-                .unwrap(),
-        )
-    }
-
-    /// One probe over `word`'s window, from its home position, answering both
+    /// One probe over `word`'s window, from its home slot, answering both
     /// questions a lookup has: which slot holds the word, and — if none does —
     /// which slot it should take.
     ///
-    /// The second answer is nearly free: both come out of the window's tags,
-    /// which are one load, and only a full window needs anything more. Working it
-    /// out afterwards would mean reading them again and hashing the word again.
+    /// The second answer comes out of the same walk, so a word that is not in the
+    /// table is placed without hashing it again or reading the tags again.
     ///
-    /// Stopping at the first empty slot is safe because slots never go back to
-    /// being empty: an empty one means the word was never stored.
+    /// The walk stops at the first empty slot, which is safe because storing stops
+    /// there too: an empty slot means the word was never stored.
     fn find_word_in_cache<'w>(&self, key: u128, hash: u64, word: &'w [u8]) -> Probe<'w> {
-        let start_index = hash as usize & self.index_mask;
+        let home = hash as usize & self.index_mask;
         let tag = make_lookup_tag(hash);
-        let window = self.make_probe_window(start_index);
-        let empty = empty_slots(window);
-        // Nothing past the first empty slot can hold the word: the probe that
-        // stored it would have stopped there and taken that slot.
-        let mut candidates = tag_matches(window, tag) & steps_before(empty);
         // Only a hashed key can turn out to belong to a different word, and
-        // whether this one is hashed is settled before the probe starts — the
+        // whether this one is hashed is settled before the walk starts — the
         // caller built the key out of the word it is looking for.
         let hashed = key & KEY_IS_HASH != 0;
-        while candidates != 0 {
-            let step = first_step(candidates);
-            let index = (start_index + step) & self.index_mask;
-            let slot = &self.cached_words[index];
-            if slot.word_bytes_or_hash == key
-                && (!hashed || self.word_bytes_arena.get(slot.key_off(), slot.key_len()) == word)
-            {
-                return Probe::Found(index);
+        let mut free = None;
+        for step in 0..PROBE_WINDOW {
+            let index = (home + step) & self.index_mask;
+            let slot_tag = self.probe_lookup_table[index];
+            if slot_tag == EMPTY {
+                free = Some(index);
+                break;
             }
-            candidates = clear_step(candidates, step);
+            if slot_tag == tag {
+                let slot = &self.cached_words[index];
+                if slot.word_bytes_or_hash == key
+                    && (!hashed
+                        || self.word_bytes_arena.get(slot.key_off(), slot.key_len()) == word)
+                {
+                    return Probe::Found(index);
+                }
+            }
         }
-        let step = if empty == 0 {
-            self.evictor.coldest(start_index)
-        } else {
-            first_step(empty)
-        };
         Probe::Absent(Placement {
-            index: (start_index + step) & self.index_mask,
+            // A full window means one of its words has to give way, and the one
+            // that does is the word in the home slot — the module docs say why the
+            // choice does not have to be any cleverer than that.
+            index: free.unwrap_or(home),
             key,
             lookup_tag: tag,
             word,
@@ -338,15 +501,6 @@ impl WordCache {
         })
     }
 
-    /// Write a slot's tag, and the copy of it in the mirrored tail when the slot
-    /// is one of the first [`PROBE_WINDOW`].
-    fn update_lookup_table(&mut self, index: usize, hash_high_bits: u8) {
-        self.probe_lookup_table[index] = hash_high_bits;
-        if index < PROBE_WINDOW {
-            self.probe_lookup_table[self.cached_words.len() + index] = hash_high_bits;
-        }
-    }
-
     /// Hand an overwritten entry's arena runs back, so the next entry can use
     /// them.
     ///
@@ -391,9 +545,9 @@ impl<'c> Lookup<'c, '_> {
 }
 
 /// Where a word that missed will go, and what [`WordCache::insert`] needs to put
-/// it there. Built by [`WordCache::find_slot`] out of what the probe had already
-/// worked out, so storing the word costs no second hash, no second read of the
-/// window and no second tag.
+/// it there. Built by [`WordCache::find_word_in_cache`] out of what the probe had
+/// already worked out, so storing the word costs no second hash, no second walk
+/// over the tags and no second tag.
 ///
 /// It carries the word rather than letting `insert` take it again, because the
 /// slot, the key and the tag inside were chosen for *this* word: handing back a
@@ -501,200 +655,6 @@ fn pack_word(word: &[u8]) -> Option<u128> {
     Some(u128::from_le_bytes(lanes) | ((len as u128) << 120))
 }
 
-// ---------------------------------------------------------------- which entry gives way
-
-/// What a newly stored entry's counter starts at. One rather than zero, so that a
-/// fresh entry outranks anything that has already faded to zero — otherwise a word
-/// could lose its slot before it is ever looked up again. One hit then lifts it
-/// above its untouched neighbours, which start here too.
-const INITIAL_COUNTER: u8 = 1;
-
-/// Highest epoch an [`EvictionMetadata`] can hold, which makes a lap 256 epochs
-/// long. On the last one, [`Evictor::restart_epochs`] starts the count again.
-const MAX_EPOCH: u8 = u8::MAX;
-
-/// Missing this many epochs takes any counter to zero, because a counter is a
-/// byte and each missed epoch halves it.
-const MAX_HALVINGS: u8 = 8;
-
-/// Decides which entry gives way when a word's window is full.
-///
-/// Every entry carries a counter of how much its word is being used, bumped on
-/// each hit, and the lowest counter in a full window loses its slot. A counter
-/// that only ever went up would measure the wrong thing: the first page of a
-/// document can make `"the"` the most-used word in the table, and fifty pages
-/// later, when the text has moved on to another subject entirely, `"the"` still
-/// holds the highest count and nothing can ever catch up with it. What should
-/// decide an eviction is how much a word is being used *lately*, so counters have
-/// to fade.
-///
-/// Fading them by hand is the expensive way: every eviction would rewrite all
-/// [`PROBE_WINDOW`] counters of a window. So nothing is rewritten. `epoch` counts the
-/// fades the table has been through, each [`EvictionMetadata`] records the epoch
-/// its counter was written in, and [`EvictionMetadata::score`] halves that
-/// counter once for every epoch it has missed. No stored number changes; what
-/// changes is what a stored number is worth.
-///
-/// ```text
-///   the table is in epoch 9
-///
-///     A   counter 32, written in epoch 9  →  0 epochs missed  →  score 32
-///     B   counter 32, written in epoch 5  →  4 epochs missed  →  score 2
-///                                                                   ▲ B was hot
-///                                                                     once, and
-///                                                                     has coasted
-/// ```
-///
-/// A counter is one byte, so [`MAX_HALVINGS`] missed epochs take any entry to
-/// zero, however hot it once was.
-struct Evictor {
-    /// One [`EvictionMetadata`] per slot, and then a copy of the first [`PROBE_WINDOW`]
-    /// of them, so that the window of any home is `WINDOW` entries in a row and
-    /// [`Self::coldest`] can read it as one flat slice. This is the same mirrored
-    /// tail [`WordCache::probe_lookup_table`] has, and [`Self::write`] keeps the
-    /// copy in step.
-    metadata: Box<[EvictionMetadata]>,
-    /// Which epoch the table is in, from 0 to [`MAX_EPOCH`] and no higher.
-    epoch: u8,
-    /// Evictions to go before the next epoch.
-    evictions_left: u32,
-    /// Evictions per epoch: `N / WINDOW`.
-    ///
-    /// One epoch fades every counter in the table at once, but eviction pressure
-    /// is per window, and this is the rate that lines the two up. A slot can be
-    /// reached from [`PROBE_WINDOW`] different homes, so it sits in [`PROBE_WINDOW`] of the
-    /// table's `N` windows, and an eviction anywhere in the table lands in any
-    /// given window with probability `WINDOW / N`. Fading at that rate gives each
-    /// window, on average, one fade per eviction of its own — which is what fading
-    /// a window by hand would have done.
-    ///
-    /// Fading on every eviction instead would fade the whole table at the speed of
-    /// whichever window happens to be churning hardest: counters would sit at zero
-    /// and every eviction would be an arbitrary pick.
-    evictions_per_epoch: u32,
-}
-
-impl Evictor {
-    fn new(n_slots: usize) -> Self {
-        let evictions_per_epoch = (n_slots / PROBE_WINDOW) as u32;
-        Self {
-            metadata: vec![EvictionMetadata::default(); n_slots + PROBE_WINDOW].into_boxed_slice(),
-            epoch: 0,
-            evictions_left: evictions_per_epoch,
-            evictions_per_epoch,
-        }
-    }
-
-    /// Count a hit on the entry in `index`, which is a vote for keeping it.
-    fn record_hit(&mut self, index: usize) {
-        let epoch = self.epoch;
-        // Saturating, so hits past what a byte holds are not counted. An entry
-        // that busy is in no danger of eviction anyway.
-        let counter = self.metadata[index].score(epoch).saturating_add(1);
-        self.write(index, EvictionMetadata { counter, epoch });
-    }
-
-    /// Start a freshly stored entry off, as of the current epoch.
-    fn record_insert(&mut self, index: usize) {
-        self.write(
-            index,
-            EvictionMetadata {
-                counter: INITIAL_COUNTER,
-                epoch: self.epoch,
-            },
-        );
-    }
-
-    /// The step of the window's lowest-scoring slot, ties going to the slot
-    /// nearest home.
-    ///
-    /// Reads the window as one flat slice, which is what the mirrored tail of
-    /// `metadata` is for. Folding each step back into the table instead costs an
-    /// `and` per slot and leaves nothing for the compiler to widen.
-    fn coldest(&self, home: usize) -> usize {
-        let window = &self.metadata[home..home + PROBE_WINDOW];
-        // `min_by_key` keeps the first of equal keys, which is what sends a tie
-        // to the slot nearest home.
-        (0..PROBE_WINDOW)
-            .min_by_key(|&step| window[step].score(self.epoch))
-            .unwrap()
-    }
-
-    /// Charge the table one eviction's worth of fading: step the countdown, and
-    /// move the epoch on when it runs out.
-    fn on_eviction(&mut self) {
-        self.evictions_left -= 1;
-        if self.evictions_left > 0 {
-            return;
-        }
-        self.evictions_left = self.evictions_per_epoch;
-        if self.epoch == MAX_EPOCH {
-            self.restart_epochs();
-        } else {
-            self.epoch += 1;
-        }
-    }
-
-    /// Write a slot's [`EvictionMetadata`], and the copy of it in the mirrored
-    /// tail when the slot is one of the first [`PROBE_WINDOW`].
-    fn write(&mut self, index: usize, metadata: EvictionMetadata) {
-        self.metadata[index] = metadata;
-        if index < PROBE_WINDOW {
-            let n_slots = self.metadata.len() - PROBE_WINDOW;
-            self.metadata[n_slots + index] = metadata;
-        }
-    }
-
-    /// Spend every entry's outstanding fade and start the epoch count again: each
-    /// live entry's score becomes its counter, and the epoch and every
-    /// [`EvictionMetadata`] go back to zero.
-    ///
-    /// Run on the last epoch an [`EvictionMetadata`] can hold, and only then. The
-    /// epoch has to start over at some point, and the moment it does, the
-    /// difference between it and a stored epoch stops meaning anything for entries
-    /// written before the restart: an entry idle for the whole lap would read as
-    /// freshly written, at full strength, and could never be evicted again. So the
-    /// differences are cashed in first, while they can still be read. No entry
-    /// moves up or down against another.
-    ///
-    /// That is one pass over `metadata` every 256 epochs, which at the default
-    /// capacity is once every million evictions.
-    fn restart_epochs(&mut self) {
-        let epoch = self.epoch;
-        // The mirrored tail gets the same pass as the front, so both stay in step
-        // without a second walk.
-        for metadata in self.metadata.iter_mut() {
-            metadata.counter = metadata.score(epoch);
-            metadata.epoch = 0;
-        }
-        self.epoch = 0;
-    }
-}
-
-/// How much an entry is being used, and when that was last written down. One per
-/// slot, in [`Evictor::metadata`].
-#[derive(Clone, Copy, Default, PartialEq, Eq, Debug)]
-#[repr(C)]
-struct EvictionMetadata {
-    /// How much the word is being used, as of `epoch`.
-    counter: u8,
-    /// The epoch `counter` was written in.
-    epoch: u8,
-}
-
-impl EvictionMetadata {
-    /// What this entry's counter is worth at `epoch`: what was written down,
-    /// halved once for every epoch that has gone by since.
-    ///
-    /// `self.epoch` is never ahead of `epoch` — both are reset together by
-    /// [`Evictor::restart_epochs`] — so the subtraction cannot go below zero.
-    fn score(&self, epoch: u8) -> u8 {
-        // Widened because shifting a `u8` by MAX_HALVINGS is shifting it by its
-        // own width, which Rust leaves undefined.
-        (self.counter as u32 >> (epoch - self.epoch).min(MAX_HALVINGS)) as u8
-    }
-}
-
 // ---------------------------------------------------------------- overflow storage
 
 /// A grow-only buffer that reuses the space of evicted entries instead of
@@ -752,20 +712,20 @@ impl<T: Copy + Default> Arena<T> {
     }
 }
 
-// ---------------------------------------------------------------- reading a window of tags
+// ---------------------------------------------------------------- the row of tags
 
-/// How many cache slots a probe can check at the same time.
+/// How many slots [`WordCache::find_word_in_cache`] walks before it gives up and
+/// evicts: a word is in the sixteen slots from its home slot on, or nowhere.
 ///
-/// Chose 16 because 16 x u8 is u128 which allows SIMD within a register techniques.
-///
-/// TODO: link to the probe code
+/// Sixteen one-byte tags cross at most two cache lines, and a walk rarely reads
+/// that many — it stops at the first empty slot, usually a step or two along.
 const PROBE_WINDOW: usize = 16;
 
 /// A sentinel value used to mark an empty [`CachedWord`].
 const EMPTY: u8 = 0;
 
 /// Set in a tag beside the hash bits, so that a live entry's tag is never
-/// [`EMPTY`] — which is also what makes [`empty_slots`] a single `and`.
+/// [`EMPTY`] and an occupied slot is never read as the end of the walk.
 const OCCUPIED: u8 = 0x80;
 
 /// How many bits of the hash a tag carries. Seven, because the eighth is
@@ -779,81 +739,6 @@ const LOOKUP_TAG_BITS: u32 = 7;
 /// and would tell a probe nothing.
 fn make_lookup_tag(hash: u64) -> u8 {
     OCCUPIED | (hash >> (u64::BITS - LOOKUP_TAG_BITS)) as u8
-}
-
-/// Every byte of one of these is `0x01`, or `0x80`. Broadcasting a value over all
-/// [`PROBE_WINDOW`] lanes and testing every lane's top bit is what turns a window into
-/// arithmetic — see [`StepMask`].
-const ONES: u128 = u128::from_le_bytes([0x01; PROBE_WINDOW]);
-
-const HIGHS: u128 = u128::from_le_bytes([0x80; PROBE_WINDOW]);
-
-/// One window's worth of yes-or-no, as the top bit of each of a `u128`'s bytes:
-/// byte `step` answers for the slot `step` places along from home.
-///
-/// A window is [`PROBE_WINDOW`] tags, which is sixteen bytes, which is one `u128`. So
-/// the questions a probe asks are answered for the whole window by ordinary
-/// integer arithmetic, in about as many instructions as it takes to ask one of
-/// them of one slot. No vector types, nothing target-specific: the same handful
-/// of `and`s and `xor`s on every machine this builds for.
-type StepMask = u128;
-
-/// The first step a mask answers `true` for, or [`PROBE_WINDOW`] when it answers `true`
-/// for none.
-///
-/// A flagged step `s` has its bit at `8 * s + 7`, so the count of trailing zeros
-/// divided by eight is the step — and an empty mask counts 128 zeros, which
-/// divides to [`PROBE_WINDOW`] and reads as "nothing".
-fn first_step(mask: StepMask) -> usize {
-    (mask.trailing_zeros() / 8) as usize
-}
-
-/// The same mask with `step` taken out of it.
-fn clear_step(mask: StepMask, step: usize) -> StepMask {
-    mask & !(0x80 << (step * 8))
-}
-
-/// Everything a mask says about the steps *before* the first one `bound` answers
-/// for. All of it when `bound` answers for none.
-///
-/// `bound - 1` clears the lowest set bit and sets every bit below it, and
-/// `!bound` drops the higher ones it left alone — so this is branchless, and the
-/// all-of-it case falls out of `0 - 1` being all ones.
-fn steps_before(bound: StepMask) -> StepMask {
-    bound.wrapping_sub(1) & !bound
-}
-
-/// The tags of one window, read as a single value.
-///
-/// `from_le_bytes` puts the tag of the slot `step` places from home in byte
-/// `step`, on a big-endian machine as much as on a little-endian one, so
-/// [`first_step`] means the same thing everywhere.
-fn read_window(tags: &[u8; PROBE_WINDOW]) -> u128 {
-    u128::from_le_bytes(*tags)
-}
-
-/// Which steps of the window are empty slots.
-///
-/// Exact, and one instruction: a live tag always carries [`OCCUPIED`] and
-/// [`EMPTY`] is zero, so "empty" is precisely "top bit clear".
-fn empty_slots(window: u128) -> StepMask {
-    !window & HIGHS
-}
-
-/// Which steps of the window could hold the word `tag` belongs to.
-///
-/// The `xor` is zero exactly in the lanes that match, and the rest is the
-/// standard hunt for a zero byte: subtracting one from every lane borrows out of
-/// a zero lane into its top bit, and `!x` keeps only the lanes that were small
-/// enough for that top bit to be news.
-///
-/// A borrow can run on into the next lane, so a lane holding exactly `tag ^ 1`
-/// directly above a match is answered `true` as well. It cannot go the other
-/// way — a matching lane is never missed — and the probe confirms every answer
-/// against the key anyway, so the cost of the rare extra one is a slot read.
-fn tag_matches(window: u128, tag: u8) -> StepMask {
-    let x = window ^ u128::from_le_bytes([tag; PROBE_WINDOW]);
-    x.wrapping_sub(ONES) & !x & HIGHS
 }
 
 #[cfg(test)]
@@ -870,11 +755,6 @@ mod tests {
         if let Some(at) = at {
             cache.insert(at, ids);
         }
-    }
-
-    /// What the entry in `index` is worth as of the table's current epoch.
-    fn score(cache: &WordCache, index: usize) -> u8 {
-        cache.evictor.metadata[index].score(cache.evictor.epoch)
     }
 
     /// The slot a word is in, or `None` if the table does not hold it.
@@ -987,14 +867,7 @@ mod tests {
         let mut cache = WordCache::new(PROBE_WINDOW);
         let (_, hash) = cache.make_word_key(b"beta");
         let decoy = hash as usize & cache.index_mask;
-        cache.update_lookup_table(decoy, make_lookup_tag(hash));
-        cache.evictor.write(
-            decoy,
-            EvictionMetadata {
-                counter: INITIAL_COUNTER,
-                epoch: 0,
-            },
-        );
+        cache.probe_lookup_table[decoy] = make_lookup_tag(hash);
         // Any key that is not beta's. A packed key always carries a length in its
         // top byte, so 1 cannot be one.
         cache.cached_words[decoy] = CachedWord {
@@ -1020,129 +893,78 @@ mod tests {
         store(&mut cache, &theirs, [7u32].into_iter());
         let their_index = slot_of(&cache, &theirs).unwrap();
         let their_slot = cache.cached_words[their_index];
-        let their_usage = cache.evictor.metadata[their_index];
         let (my_key, my_hash) = cache.make_word_key(&mine);
         let my_home = my_hash as usize & cache.index_mask;
         cache.cached_words[my_home] = CachedWord {
             word_bytes_or_hash: my_key,
             ..their_slot
         };
-        cache.update_lookup_table(my_home, make_lookup_tag(my_hash));
-        cache.evictor.write(my_home, their_usage);
+        cache.probe_lookup_table[my_home] = make_lookup_tag(my_hash);
 
         store(&mut cache, &mine, [1u32, 2].into_iter());
         assert_eq!(cache.lookup(&mine).hit(), Some(&[1u32, 2][..]));
     }
 
-    /// A word that hashes into a full window takes the lowest-scoring slot rather
-    /// than being turned away, and the words that were actually used keep their
-    /// place.
+    /// A word that hashes into a full window is stored rather than turned away,
+    /// and the entry it replaces is the one in its home slot — even when that
+    /// entry has just been used, which is the whole of what this policy gives up.
     #[test]
-    fn a_full_window_evicts_its_coldest_entry() {
+    fn a_full_window_gives_up_its_home_slot() {
         let mut cache = WordCache::new(PROBE_WINDOW);
         let words: Vec<Vec<u8>> = (0..PROBE_WINDOW as u8).map(|i| vec![i; 4]).collect();
         for (i, word) in words.iter().enumerate() {
             store(&mut cache, word, [i as u32].into_iter());
         }
-        // Every word but the first earns a hit, leaving one clear coldest slot.
-        for word in &words[1..] {
-            assert!(cache.lookup(word).hit().is_some());
+        let (_, hash) = cache.make_word_key(b"newcomer");
+        let home = hash as usize & cache.index_mask;
+        let evicted = words
+            .iter()
+            .position(|word| slot_of(&cache, word) == Some(home))
+            .expect("the table is full, so some word holds that slot");
+        for _ in 0..8 {
+            assert!(cache.lookup(&words[evicted]).hit().is_some());
         }
+
         store(&mut cache, b"newcomer", [999u32].into_iter());
         assert_eq!(cache.lookup(b"newcomer").hit(), Some(&[999u32][..]));
-        assert_eq!(
-            cache.lookup(&words[0]).hit(),
-            None,
-            "the unused entry should have gone"
-        );
-        for (i, word) in words.iter().enumerate().skip(1) {
-            assert_eq!(
-                cache.lookup(word).hit(),
-                Some(&[i as u32][..]),
-                "used entry {i} was dropped"
-            );
+        assert_eq!(cache.lookup(&words[evicted]).hit(), None);
+        for (i, word) in words.iter().enumerate() {
+            if i != evicted {
+                assert_eq!(
+                    cache.lookup(word).hit(),
+                    Some(&[i as u32][..]),
+                    "entry {i} was dropped as well"
+                );
+            }
         }
     }
 
-    /// An entry that stops being used has to fade even though nothing ever writes
-    /// to it. Here one word is hit until its counter saturates and then abandoned,
-    /// while other words keep the table busy.
+    /// A window that runs off the end of the table carries on at the start, and a
+    /// word stored past that seam has to be found there. Nothing mirrors the first
+    /// tags at the end of the row — every step of the walk is folded back into the
+    /// table instead.
     #[test]
-    fn an_abandoned_entry_fades_without_being_touched() {
+    fn a_word_stored_past_the_end_of_the_table_is_found() {
         let mut cache = WordCache::new(PROBE_WINDOW);
-        store(&mut cache, b"hot", [1u32].into_iter());
-        for _ in 0..u8::MAX {
-            cache.lookup(b"hot").hit();
-        }
-        let index = slot_of(&cache, b"hot").unwrap();
-        assert_eq!(score(&cache, index), u8::MAX);
+        let last_slot = cache.cached_words.len() - 1;
+        let homed_on_the_last_slot: Vec<Vec<u8>> = (0..4000u32)
+            .map(|i| format!("w{i}").into_bytes())
+            .filter(|word| {
+                let (_, hash) = cache.make_word_key(word);
+                hash as usize & cache.index_mask == last_slot
+            })
+            .take(3)
+            .collect();
+        assert_eq!(homed_on_the_last_slot.len(), 3);
 
-        for _ in 0..MAX_HALVINGS {
-            cache.evictor.on_eviction();
+        for (i, word) in homed_on_the_last_slot.iter().enumerate() {
+            store(&mut cache, word, [i as u32].into_iter());
         }
-        assert_eq!(score(&cache, index), 0);
-    }
-
-    /// An epoch is a byte, so the count has to start over at zero every 256
-    /// bumps. An entry written before the restart carries an epoch larger than
-    /// the current one, and left to itself the coldest thing in the table would
-    /// come out reading as the hottest and could never be evicted again.
-    #[test]
-    fn a_lap_of_the_epoch_does_not_make_a_stale_entry_look_hot() {
-        let mut cache = WordCache::new(PROBE_WINDOW);
-        store(&mut cache, b"stale", [1u32].into_iter());
-        for _ in 0..u8::MAX {
-            cache.lookup(b"stale").hit();
+        for (i, word) in homed_on_the_last_slot.iter().enumerate() {
+            assert_eq!(cache.lookup(word).hit(), Some(&[i as u32][..]), "{word:?}");
         }
-        let index = slot_of(&cache, b"stale").unwrap();
-
-        // One slot per window here, so one eviction is one epoch.
-        assert_eq!(cache.evictor.evictions_per_epoch, 1);
-        for _ in 0..=MAX_EPOCH {
-            cache.evictor.on_eviction();
-        }
-        assert_eq!(cache.evictor.epoch, 0, "the lap did not start over");
-        assert_eq!(score(&cache, index), 0);
-    }
-
-    /// The tail of `tags` is a copy of its first [`PROBE_WINDOW`] entries, so that a
-    /// window starting near the end of the table is still `WINDOW` entries in a
-    /// row. Every write has to keep the two in step, or a probe whose window
-    /// crosses the seam reads control bytes that no longer describe the slots.
-    #[test]
-    fn the_mirrored_tail_tracks_the_front() {
-        let mut cache = WordCache::new(64);
-        let n = cache.cached_words.len();
-        for i in 0..500usize {
-            store(
-                &mut cache,
-                format!("w{i}").as_bytes(),
-                [i as u32].into_iter(),
-            );
-            assert_eq!(
-                cache.probe_lookup_table[..PROBE_WINDOW],
-                cache.probe_lookup_table[n..],
-                "tags, insert {i}"
-            );
-            assert_eq!(
-                cache.evictor.metadata[..PROBE_WINDOW],
-                cache.evictor.metadata[n..],
-                "eviction metadata, insert {i}"
-            );
-        }
-        // Restarting the epochs rewrites every live entry's metadata and no tag
-        // at all, so the two must still agree afterwards.
-        cache.evictor.restart_epochs();
-        assert_eq!(
-            cache.probe_lookup_table[..PROBE_WINDOW],
-            cache.probe_lookup_table[n..],
-            "tags, after restart"
-        );
-        assert_eq!(
-            cache.evictor.metadata[..PROBE_WINDOW],
-            cache.evictor.metadata[n..],
-            "eviction metadata, after restart"
-        );
+        // The first one took the last slot, so the other two could only go past it.
+        assert!(slot_of(&cache, &homed_on_the_last_slot[1]).unwrap() < last_slot);
     }
 
     /// Reusing an evicted entry's arena run is where this design can go wrong:
@@ -1173,78 +995,6 @@ mod tests {
             }
         }
         assert!(live > 0, "everything was evicted — the test proves nothing");
-    }
-
-    /// Every step a mask answers for, so it can be read against a picture of the
-    /// window it came from.
-    fn steps(mask: StepMask) -> Vec<usize> {
-        let mut left = mask;
-        let mut found = Vec::new();
-        while left != 0 {
-            let step = first_step(left);
-            found.push(step);
-            left = clear_step(left, step);
-        }
-        found
-    }
-
-    /// The arithmetic in [`tag_matches`], [`empty_slots`] and [`steps_before`]
-    /// read back as the slots they are talking about.
-    #[test]
-    fn a_window_answers_for_the_slots_it_should() {
-        let mut tags = [EMPTY; PROBE_WINDOW];
-        tags[0] = 0x81;
-        tags[3] = 0xC4;
-        tags[5] = 0x81;
-        tags[9] = 0x81;
-        let window = read_window(&tags);
-
-        assert_eq!(steps(tag_matches(window, 0x81)), [0, 5, 9]);
-        assert_eq!(steps(tag_matches(window, 0xC4)), [3]);
-        assert_eq!(
-            steps(empty_slots(window)),
-            [1, 2, 4, 6, 7, 8, 10, 11, 12, 13, 14, 15]
-        );
-        // Slot 1 is empty, so slots 5 and 9 are out of reach: whatever put a word
-        // there would have stopped at slot 1 and taken it.
-        assert_eq!(
-            steps(tag_matches(window, 0x81) & steps_before(empty_slots(window))),
-            [0]
-        );
-    }
-
-    /// A full window has no empty slot to stop at, so every match stays in reach.
-    #[test]
-    fn a_full_window_bounds_nothing() {
-        let tags = [OCCUPIED | 0x11; PROBE_WINDOW];
-        let window = read_window(&tags);
-        assert_eq!(empty_slots(window), 0);
-        assert_eq!(
-            steps(tag_matches(window, OCCUPIED | 0x11) & steps_before(0)).len(),
-            PROBE_WINDOW
-        );
-    }
-
-    /// [`tag_matches`] hunts for a zero byte by subtracting one from every lane,
-    /// and a borrow out of a matching lane can run on into the one above it — so a
-    /// slot holding `tag ^ 1` just above a match is answered for as well. That
-    /// costs one slot read, which the key comparison then rejects.
-    ///
-    /// What it must never do is the other thing. A tag that is really there and
-    /// goes unanswered is a word that reads as absent, and the table would grow a
-    /// second entry for it.
-    #[test]
-    fn tag_matches_never_misses_a_tag() {
-        for tag in OCCUPIED..=u8::MAX {
-            for step in 0..PROBE_WINDOW {
-                let mut tags = [OCCUPIED; PROBE_WINDOW];
-                tags[step] = tag;
-                assert!(
-                    steps(tag_matches(read_window(&tags), tag)).contains(&step),
-                    "tag {tag:#x} at step {step} went unanswered"
-                );
-            }
-        }
     }
 
     /// Freed runs have to come back. Without reuse the arenas grow with every
