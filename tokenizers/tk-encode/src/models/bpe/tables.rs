@@ -8,11 +8,9 @@ type Mphf = FastPtrHash<NoHash, u64>;
 use crate::models::bpe::MergeMap;
 use crate::models::bpe::bytelevel_folding::{ByteLevelFold, Fold};
 
-/// Pair-table value layout: `rank[63:32] | eager[31] | internal_id[30:0]`, sentinel `u64::MAX`.
-/// Rank is shifted to the high half so `val < min_val` is a rank comparison without having to do
-/// any shifting.
-const EAGER: u64 = 1 << 31;
-const ID_MASK: u64 = EAGER - 1;
+/// Pair-table value layout: `rank[63:32] | internal_id[31:0]`, sentinel `u64::MAX`. Rank is
+/// shifted to the high half so `val < min_val` is a rank comparison without having to do any
+/// shifting.
 
 // We built tables at load time based on the vocab and merges.
 // There are 5 different tables:
@@ -130,7 +128,7 @@ impl MphfMap {
 pub(crate) struct BpeTables {
     pub unmap: Box<[u32]>,            // unmap[internal_id] -> external_id
     pub pair_table: MphfMap, // MPHF! because memory efficiency + bitwise makes check not costly
-    pub top_merges: Box<[u32]>, // top 512 by 512 merges
+    pub top_merges: Box<[u64]>, // top 512 by 512 merges, same packed value as the pair table
     pub fold: Box<[u32]>,    // codepoint in vocab to internal id
     pub non_bmp: AHashMap<char, u32>, // same as `fold`, for the codepoints past 0xFFFF (emoji, CJK ext)
 }
@@ -180,20 +178,14 @@ impl BpeTables {
             unmap[internal as usize] = *product;
             internal_id_map[*product as usize] = internal;
         }
-        // mrl/mrr will define the `eager` flag. Its a table indexed by the internal ID, that gives
-        // what's the minimum rank of the merge involved with this token on the left or right.
-        // Basically min(rank(*, id)) for right, min(rank(id, *)) for left.
-        let (merge_rank_left, merge_rank_right) = merge_rank_tables(&merges, &internal_id_map);
-
         let (cp_to_internal_id, non_bmp) =
             build_conversion_table(&vocab, &merges, &internal_id_map, &unmap, byte_level);
         let fold = cp_to_internal_id.into_boxed_slice();
 
-        let mut top_merges = vec![u32::MAX; 512 * 512];
+        let mut top_merges = vec![u64::MAX; 512 * 512];
         let mut values = Vec::new();
         let mut keys = Vec::new();
         let mut dropped = 0usize;
-        let mut eager_t = 0usize;
         for ((a, b), (rank, product)) in merges.iter() {
             let ia = internal_id_map
                 .get(*a as usize)
@@ -207,17 +199,11 @@ impl BpeTables {
                 dropped += 1; // merge over a token that is not in the vocab: malformed file
                 continue;
             }
-            // `eager` = this merge is safe to apply the moment the pair is seen, without looking
-            // at either neighbour: nothing can take `a` from the left or `b` from the right at a
-            let eager =
-                *rank < merge_rank_right[ia as usize] && *rank < merge_rank_left[ib as usize];
-            eager_t += if eager { 1 } else { 0 };
             let internal = internal_id_map[*product as usize] as u64;
-            let value = (*rank as u64) << 32 | if eager { EAGER } else { 0 } | internal;
+            let value = (*rank as u64) << 32 | internal;
             // if a and b < 512 -> Dense grid
             if (ia | ib) < 512 {
-                top_merges[(ia << 9 | ib) as usize] =
-                    if eager { EAGER } else { 0 } as u32 | internal as u32;
+                top_merges[(ia << 9 | ib) as usize] = value;
             } else {
                 keys.push((ia, ib));
                 values.push(value);
@@ -227,9 +213,9 @@ impl BpeTables {
         let top_merges = top_merges.into_boxed_slice();
         let pair_table = MphfMap::build(keys, values);
         info!(
-            "bpe tables: {base} alphabet + {} products (unique merges), {} merge in the dense grid, {dropped} merges dropped , {eager_t} eager merges",
+            "bpe tables: {base} alphabet + {} products (unique merges), {} merge in the dense grid, {dropped} merges dropped",
             products.len(),
-            512 * 512 - top_merges.iter().filter(|c| **c == u32::MAX).count()
+            512 * 512 - top_merges.iter().filter(|c| **c == u64::MAX).count()
         );
         Self {
             unmap,
@@ -241,36 +227,11 @@ impl BpeTables {
     }
     pub fn get_value(&self, a: &u32, b: &u32) -> u64 {
         if (a | b) < 512 {
-            return self.top_merges[(a << 9 | b) as usize] as u64;
+            return self.top_merges[(a << 9 | b) as usize];
         } else {
             return self.pair_table.get(((*a as u64) << 32) | *b as u64);
         }
     }
-}
-
-pub(super) fn merge_rank_tables(
-    merges: &MergeMap,
-    internal_id_map: &[u32],
-) -> (Vec<u32>, Vec<u32>) {
-    let iid = |external: u32| {
-        internal_id_map
-            .get(external as usize)
-            .copied()
-            .unwrap_or(u32::MAX)
-    };
-    // Internal ids run over the distinct vocab tokens, so `internal_id_map.len()` (max external
-    // id + 1) is always big enough.
-    let mut left = vec![u32::MAX; internal_id_map.len()];
-    let mut right = vec![u32::MAX; internal_id_map.len()];
-    for ((a, b), (rank, _)) in merges.iter() {
-        let (ia, ib) = (iid(*a), iid(*b));
-        if ia == u32::MAX || ib == u32::MAX {
-            continue; // merge over a token that is not in the vocab: malformed file
-        }
-        left[ia as usize] = cmp::min(left[ia as usize], *rank);
-        right[ib as usize] = cmp::min(right[ib as usize], *rank);
-    }
-    (left, right)
 }
 
 /// We build the codepoint character to internal id table.
@@ -329,7 +290,6 @@ fn build_conversion_table(
 mod test {
     use ahash::AHashMap;
 
-    use crate::models::bpe::tables::{EAGER, ID_MASK};
     use crate::models::bpe::{
         MergeMap,
         tables::{BpeTables, MphfMap},
@@ -364,15 +324,11 @@ mod test {
         // there are only 4 elements because ab and aba are part of the vocab
         // so the alphabet is a,b and the ranks are ab and aba.
         // Both operands are < 512, so the merge lives in the dense grid, not the MPHF.
-        assert_eq!(tables.top_merges[1] & ID_MASK as u32, 2u32); // (a, b) -> ab, internal 2
-        assert_eq!(tables.top_merges[1] >> 32, 0u32); // at rank 0
+        // grid and pair table share the value layout, so both halves have to be right
+        assert_eq!(tables.top_merges[1], 2u64); // (a, b) -> ab: rank 0, internal 2
+        assert_eq!(tables.top_merges[3 << 9], 1u64 << 32 | 3); // (aba, a) -> aba: rank 1, internal 3
+        assert_eq!(tables.top_merges[2], u64::MAX); // (a, c) is not a merge
         assert_eq!(tables.pair_table.get(1u64), u64::MAX); // and nowhere else
         assert_eq!(&*tables.unmap, &[0, 1, 2, 3]);
-        // (a, b) at rank 0 is eager: `a` is never a right operand and `b` is never a left one,
-        // so no neighbour can take either of them at all, let alone sooner.
-        assert_eq!(tables.top_merges[1] & EAGER as u32, EAGER as u32);
-        // (aba, a) at rank 1 is not: `a` is the left operand of (a, b) at rank 0, so a right
-        // neighbour `b` would take it first.
-        assert_eq!(tables.top_merges[3 << 9] & EAGER as u32, 0);
     }
 }
