@@ -8,12 +8,13 @@
 //! cheaper than encoding the word, and a miss has to cost close to nothing, because
 //! every word pays for one the first time it is seen.
 //!
-//! There are three pieces. The table is `N` fixed-size slots, `N` being the
-//! requested capacity rounded up to a power of two; beside it two arenas hold what
-//! a slot is too small for:
+//! There are four pieces. The table is `N` fixed-size slots, `N` being the
+//! requested capacity rounded up to a power of two; beside it a small control byte
+//! per slot, and two arenas holding what a slot is too small for:
 //!
 //! ```text
 //!   slots     [Slot; N]      32 bytes each, one word per slot
+//!   sidecar   [Ctrl; N]      3 bytes each, everything a search reads
 //!   key_bytes Slab<u8>       the bytes of words longer than 15
 //!   ids       Slab<u32>      id runs longer than 3
 //! ```
@@ -47,40 +48,79 @@
 //! [`Placement`], which the caller returns to [`WordCache::insert`] once the
 //! model has encoded the word. So a miss costs one walk over the window, not
 //! two. Picking a slot needs exactly the reads that failing to find the word has
-//! already done, and doing it afterwards instead would mean sixteen slots and
-//! eight cache lines of repetition, plus hashing the word a second time. The
-//! caller can also drop the placement and store nothing: nothing has changed
-//! yet, and an entry only loses its slot when something is written over it.
+//! already done, and doing it afterwards instead would mean reading the window
+//! again and hashing the word a second time. The caller can also drop the
+//! placement and store nothing: nothing has changed yet, and an entry only loses
+//! its slot when something is written over it.
+//!
+//! ## The walk never reads a slot it does not need
+//!
+//! Done slot by slot, that walk reads two things from each: the key, to see
+//! whether this is the word, and a use counter, to see who should give way if
+//! none of them is. They sit at either end of a 32-byte slot, so walking a
+//! window drags 512 bytes through the cache to answer a question that is nearly
+//! always "no".
+//!
+//! So neither of them lives in the slot. Each slot has a three-byte [`Ctrl`] in
+//! the *sidecar*, and a window's worth of those is 48 bytes — one load:
+//!
+//! ```text
+//!   sidecar   ┌─────┬─────┬─────┬─────┬─  …  ─┬─────┐   48 bytes for a window
+//!             │T C E│T C E│T C E│T C E│       │T C E│
+//!             └─────┴─────┴─────┴─────┴───────┴─────┘
+//!               4     5     6     7              19
+//!
+//!     T  tag      seven bits of the word's hash, 0 when the slot is empty
+//!     C  counter  how much the word is being used
+//!     E  epoch    when that counter was written — see below
+//! ```
+//!
+//! A walk asks three questions of a window, and each is answered for all sixteen
+//! slots at once rather than one slot at a time: which slots carry this word's
+//! tag, which are empty, and — when the window is full and something has to give
+//! way — which holds the lowest score. A slot is read only once its tag has said
+//! the word might be in it. A tag is seven bits, so for a word the table does not
+//! hold, that is no slot at all about 127 times in 128.
+//!
+//! On AArch64 the load is `LD3`, which takes the 48 bytes and hands back the
+//! tags, the counters and the epochs already separated into three registers.
+//! Everywhere else a plain loop answers the same three questions. Both live in
+//! [`Window`] and hand their answers back in the same form, so the walk does not
+//! know which one ran.
+//!
+//! A tag comes from the *high* bits of the hash. The low bits already chose the
+//! home slot, so tags built from them would be equal across a window and would
+//! tell a walk nothing.
 //!
 //! # What a slot holds
 //!
-//! A slot is 32 bytes: a 16-byte `key`, three `u32`s of `payload`, and a `u32` of
-//! bookkeeping called `meta`. It takes one of three shapes, depending on how long
-//! the word is and how many ids it encoded to. The first is the common case for
-//! English or code — a short word encoding to one or two tokens — and it touches
-//! nothing but the slot itself:
+//! A slot is 32 bytes: a 16-byte `key`, three `u32`s of `payload`, and a byte
+//! counting how many of those payload words are token ids. It takes one of three
+//! shapes, depending on how long the word is and how many ids it encoded to. The
+//! first is the common case for English or code — a short word encoding to one or
+//! two tokens — and it touches nothing but the slot itself:
 //!
 //! ```text
 //!  (1) at most 15 bytes, at most 3 ids — the slot holds everything
 //!
 //!     b"tion" → [5378, 262]
-//!    key     │ t  i  o  n  00 … 00 │ 4 │  the word, length in the top byte
-//!    payload │ 5378 │ 262 │  ·  │         the ids, right here
-//!    meta    │ tag │ counter │ 2 │        2 of the 3 payload words are ids
+//!    key        │ t  i  o  n  00 … 00 │ 4 │  the word, length in the top byte
+//!    payload    │ 5378 │ 262 │  ·  │         the ids, right here
+//!    inline_ids │ 2 │                        2 of the 3 payload words are ids
 //!
 //!  (2) at most 15 bytes, more than 3 ids — the ids move to the arena
 //!
 //!     b"电脑" (6 bytes) → 8 ids
-//!    key     │ e7 94 b5 e8 84 91 … │ 6 │  still the word itself
-//!    payload │  ·  │  40  │ 0:8 │         8 ids, in the ids arena at 40
-//!    meta    │ tag │ counter │ SPILLED │  payload is coordinates, not ids
+//!    key        │ e7 94 b5 e8 84 91 … │ 6 │  still the word itself
+//!    payload    │  ·  │  40  │ 0:8 │         8 ids, in the ids arena at 40
+//!    inline_ids │ SPILLED │                  payload is coordinates, not ids
 //!
 //!  (3) over 15 bytes — the bytes move too, and the key becomes a hash
 //!
 //!     b"unbelievabilities" (17 bytes) → 6 ids
-//!    key     │ hash(word) │ LONG_TAG │   no room for 17 bytes
-//!    payload │  12  │  40  │ 17:6 │      17 bytes at 12, 6 ids at 40
-//!    meta    │ tag │ counter │ SPILLED │
+//!    key        │ hash(word) │ LONG_TAG │   no room for 17 bytes
+//!    payload    │  12  │  40  │ 17:6 │      17 bytes at 12, 6 ids at 40
+//!    inline_ids │ SPILLED │
 //! ```
 //!
 //! Shape (3) is the only one where a matching `key` is not proof: two different
@@ -91,12 +131,10 @@
 //! Both spilled shapes need to record two lengths — how many bytes are in
 //! `key_bytes` and how many ids are in `ids` — and both are capped by
 //! [`MAX_LENGTH`], so eleven bits each is enough and the two share `payload[2]`.
-//! Packing them there is what leaves `meta` room for the sixteen-bit `tag` the
-//! next section needs.
 //!
 //! # How an entry earns its place
 //!
-//! Every slot carries a *counter* of how much its word is being used, bumped on
+//! Every entry carries a *counter* of how much its word is being used, bumped on
 //! each hit. When a word arrives and all [`WINDOW`] slots of its window are taken,
 //! the lowest counter loses its slot.
 //!
@@ -108,13 +146,12 @@
 //! fade.
 //!
 //! Fading them by hand is the expensive way: every eviction would rewrite all
-//! sixteen counters of a window, and sixteen slots is eight cache lines. So
-//! nothing is rewritten. The cache keeps a single number — the *epoch* — and
-//! bumps it every so often; each slot records the epoch it was last written in,
-//! its *tag*. A counter is then read as
+//! sixteen counters of a window. So nothing is rewritten. The cache keeps a
+//! single number — the *epoch* — and bumps it every so often; each [`Ctrl`]
+//! records the epoch its counter was written in. A counter is then read as
 //!
 //! ```text
-//!   score = counter >> (epoch - tag)        "halved once per epoch I have missed"
+//!   score = counter >> (epoch - written_in)   "halved once per epoch I have missed"
 //! ```
 //!
 //! No stored number changes. What changes is what a stored number is worth. Two
@@ -123,16 +160,16 @@
 //! ```text
 //!   the cache is at epoch 9
 //!
-//!     A   counter 32, tag 9   →  0 epochs missed  →  score 32
-//!     B   counter 32, tag 5   →  4 epochs missed  →  score 32 >> 4 = 2
-//!                                                          ▲ B was hot once and
-//!                                                            has coasted since
+//!     A   counter 32, written in 9  →  0 epochs missed  →  score 32
+//!     B   counter 32, written in 5  →  4 epochs missed  →  score 32 >> 4 = 2
+//!                                                              ▲ B was hot once
+//!                                                                and has coasted
 //! ```
 //!
 //! A counter is one byte, so eight missed epochs take any entry to zero however
 //! hot it once was; that ceiling is [`MAX_DECAY`]. Whenever an entry *is*
-//! written — a hit, or a fresh insert — it is settled up first: its score
-//! becomes its new counter and its tag becomes the current epoch.
+//! written — a hit, or a fresh insert — it is settled up first: its score becomes
+//! its new counter, written in the current epoch.
 //!
 //! ## How often the epoch moves
 //!
@@ -150,21 +187,20 @@
 //!
 //! ## Starting the count again
 //!
-//! A tag has sixteen bits, so the epoch runs out of numbers after 65536 bumps and
-//! has to start over at zero. The moment it does, every tag written before the
-//! restart is a number larger than the epoch, and `epoch - tag` stops meaning
-//! anything: an entry idle for the whole lap would read as freshly written, at
-//! full strength, and could never be evicted again. That is dead weight forever —
-//! the exact failure fading exists to prevent.
+//! An epoch is a byte, so the count runs out of numbers after 256 bumps and has
+//! to start over at zero. The moment it does, every epoch written before the
+//! restart is a number larger than the current one, and the difference between
+//! them stops meaning anything: an entry idle for the whole lap would read as
+//! freshly written, at full strength, and could never be evicted again. That is
+//! dead weight forever — the exact failure fading exists to prevent.
 //!
 //! So the last bump of a lap does not restart the count on its own. It first
-//! walks the table, writing each live entry's score into its counter, and then
-//! puts the epoch and every tag back to zero together (see
+//! walks the sidecar, writing each live entry's score into its counter, and then
+//! puts the epoch and every [`Ctrl`] back to zero together (see
 //! [`WordCache::settle`]). No entry moves up or down against another; the
 //! differences are just cashed in while they can still be read. It is one pass
-//! over a few
-//! megabytes, once every 65536 bumps — at the default capacity, once every
-//! quarter of a billion evictions.
+//! over the sidecar every 256 bumps — at the default capacity, once every million
+//! evictions.
 //!
 //! # Where an evicted entry's space goes
 //!
@@ -249,29 +285,31 @@
 //!   Here an insert writes into space that already exists.
 //! - **A hit is two more random loads.** The key bytes and the value both live
 //!   in their own heap blocks, elsewhere in memory from the table that pointed
-//!   at them. A slot here answers the common word out of the 32 bytes the probe
-//!   has already read.
+//!   at them. A slot here answers the common word out of the 32 bytes the walk
+//!   has already decided to read.
 //! - **It cannot make room.** A `HashMap` grows until something stops it, and
 //!   the only thing it can do when stopped is refuse: the legacy cache inserts
 //!   `while local.len() < capacity`, so the words from the first pages of text
 //!   keep their places forever, however useless they turn out to be. Choosing
 //!   *which* entry to drop needs evidence about how much each one is used, and
-//!   somewhere to keep it — the counter in every slot.
+//!   somewhere to keep it — the counter in every [`Ctrl`].
 //! - **Entries cost more than twice the memory.** 24 bytes for the `String` and
 //!   24 for the value's vector inside the table, before the two heap blocks they
-//!   point at, against 32 bytes here for the common word.
+//!   point at, against 35 bytes here for the common word.
 //!
 //! A *shared* map costs more again: [`crate::utils::cache::Cache`], which the
 //! Unigram model still uses, wraps one in an `RwLock` and then has to
 //! `try_read`/`try_write` and silently drop the read or the write whenever
 //! another thread holds it.
 
-// These docs are written for someone reading the source, and link freely to the
-// module's own internals. Under `bench-internals` the module is `pub`, which
-// otherwise turns every one of those links into a rustdoc warning.
-#![allow(rustdoc::private_intra_doc_links)]
-
 use ahash::RandomState;
+
+#[cfg(target_arch = "aarch64")]
+use std::arch::aarch64::{
+    uint8x16_t, vceqq_u8, vdupq_n_u8, vget_lane_u64, vld3q_u8, vminq_u8, vminvq_u8, vnegq_s8,
+    vreinterpret_u64_u8, vreinterpretq_s8_u8, vreinterpretq_u16_u8, vshlq_u8, vshrn_n_u16,
+    vsubq_u8,
+};
 
 /// Longest word the cache will store, in bytes.
 ///
@@ -285,6 +323,9 @@ const MAX_LENGTH: usize = 1024;
 /// Slots searched from a word's home position. Linear probing normally settles
 /// in one or two, but the walk has to stop somewhere: nothing is ever removed,
 /// so a saturated table would otherwise scan forever looking for an empty slot.
+///
+/// Sixteen is also how many bytes a vector register holds, so a window's worth
+/// of [`Ctrl`] tags is one comparison rather than sixteen — see [`Window`].
 const WINDOW: usize = 16;
 /// Ids carried in the slot itself — three `u32`s is what fits beside the key.
 /// Enough for 80-96% of lookups on English or code, but only about a quarter of
@@ -293,28 +334,29 @@ const WINDOW: usize = 16;
 const INLINE_IDS: usize = 3;
 /// Set in `key` when it holds the hash of a long word instead of the word
 /// itself. Packed keys carry their length (1..=15) in the top byte, so a hashed
-/// key can never be mistaken for a packed one, and neither can be 0 — the
-/// empty-slot marker.
+/// key can never be mistaken for a packed one.
 const LONG_TAG: u128 = 1 << 127;
 
-/// The id count in `Slot::meta` when the ids did not fit in the slot and went
-/// to the arena instead.
+/// The id count in [`Slot::inline_ids`] when the ids did not fit in the slot and
+/// went to the arena instead.
 const SPILLED: u8 = u8::MAX;
-/// Where `counter` starts in `Slot::meta`. It is a byte wide, hence
-/// [`MAX_DECAY`].
-const COUNTER_SHIFT: u32 = 8;
-/// Highest counter an entry can reach. Hits past this are not counted; an entry
-/// that busy is in no danger anyway.
-const COUNTER_MAX: u32 = u8::MAX as u32;
 /// What a newly stored entry's counter starts at.
-const NEWBORN: u32 = 1;
-/// Where `tag` starts in `Slot::meta`, and the highest epoch one can hold —
-/// a lap of 65536, after which [`WordCache::settle`] starts the count again.
-const TAG_SHIFT: u32 = 16;
-const TAG_MASK: u32 = 0xFFFF;
+const NEWBORN: u8 = 1;
+/// Highest epoch a [`Ctrl`] can hold — a lap of 256, after which
+/// [`WordCache::settle`] starts the count again.
+const EPOCH_MAX: u8 = u8::MAX;
 /// Missing this many epochs takes any counter to zero, because a counter is a
-/// byte. Shifting further would be both pointless and undefined.
-const MAX_DECAY: u32 = 8;
+/// byte.
+const MAX_DECAY: u8 = 8;
+
+/// The [`Ctrl::tag`] of a slot nothing has ever been stored in.
+const EMPTY: u8 = 0;
+/// Set in [`Ctrl::tag`] beside the hash bits, so a live entry's tag is never
+/// [`EMPTY`].
+const OCCUPIED: u8 = 0x80;
+/// How many bits of the hash a tag carries. Seven, because the eighth is
+/// [`OCCUPIED`]; a walk therefore reads a slot it did not want once in 128.
+const TAG_BITS: u32 = 7;
 
 /// Bits per length in a spilled entry's `payload[2]`, which packs the key's byte
 /// count above the id count. Both are capped by [`MAX_LENGTH`].
@@ -342,70 +384,67 @@ fn pack_word(word: &[u8]) -> Option<u128> {
     Some(u128::from_le_bytes(lanes) | ((len as u128) << 120))
 }
 
+/// The [`Ctrl::tag`] a hash gives its slot.
+///
+/// The top of the hash, because the bottom of it already chose the home slot: a
+/// tag built from those bits would be the same for every slot the word can reach
+/// and would tell a walk nothing.
+fn ctrl_tag(hash: u64) -> u8 {
+    OCCUPIED | (hash >> (u64::BITS - TAG_BITS)) as u8
+}
+
+/// What a walk reads, kept out of [`Slot`] so that reading it is not reading the
+/// slots. There is one per slot, in [`WordCache::sidecar`].
+#[derive(Clone, Copy, Default, PartialEq, Eq, Debug)]
+#[repr(C)]
+struct Ctrl {
+    /// Bits of the word's hash, or [`EMPTY`]. See [`ctrl_tag`].
+    tag: u8,
+    /// How much the word is being used, as of `epoch`.
+    counter: u8,
+    /// The epoch `counter` was written in.
+    epoch: u8,
+}
+
+const _: () = assert!(std::mem::size_of::<Ctrl>() == 3);
+
+impl Ctrl {
+    /// What this entry's counter is worth at `epoch`: what was written down,
+    /// halved once for every epoch that has gone by since.
+    ///
+    /// `self.epoch` is never ahead of `epoch` — both are reset together by
+    /// [`WordCache::settle`] — so the subtraction cannot go below zero.
+    fn score(&self, epoch: u8) -> u8 {
+        // Widened because shifting a `u8` by MAX_DECAY is shifting it by its own
+        // width, which Rust leaves undefined.
+        (self.counter as u32 >> (epoch - self.epoch).min(MAX_DECAY)) as u8
+    }
+}
+
 /// One entry, in the three shapes the module docs draw out. In short:
 ///
 /// - `key` is the word itself when it fits in 15 bytes, otherwise its hash with
 ///   [`LONG_TAG`] set.
-/// - `payload` is the token ids while `meta`'s low byte counts them, and becomes
+/// - `payload` is the token ids while `inline_ids` counts them, and becomes
 ///   `[key_off, ids_off, packed lengths]` once that byte is [`SPILLED`] — which
 ///   is what the `key_off`/`ids_off`/`key_len`/`ids_len` readers below are for.
-/// - `meta` also carries how much the entry is being used, as the counter and
-///   tag the module docs describe.
 ///
-/// That the size is 32 bytes is the point of the layout — a hit reads the key,
-/// the ids and the bookkeeping in one go, and two slots share a cache line.
+/// Nothing in here is read until the slot's [`Ctrl`] has said the word might be
+/// in it.
 #[derive(Clone, Copy, Default)]
 #[repr(C)]
 struct Slot {
     key: u128,
     payload: [u32; INLINE_IDS],
-    /// Three fields in one word:
-    ///
-    /// ```text
-    ///  bit 31            16 15         8 7          0
-    ///     │ tag        16 │ counter   8 │ ids      8 │
-    /// ```
-    meta: u32,
+    /// How many of `payload`'s words are token ids, or [`SPILLED`].
+    inline_ids: u8,
 }
 
 const _: () = assert!(std::mem::size_of::<Slot>() == 32);
 
 impl Slot {
-    fn is_empty(&self) -> bool {
-        self.key == 0
-    }
-
-    /// How many of `payload`'s words are token ids, or [`SPILLED`].
-    fn inline_ids(&self) -> u8 {
-        self.meta as u8
-    }
-
     fn spilled(&self) -> bool {
-        self.inline_ids() == SPILLED
-    }
-
-    fn counter(&self) -> u32 {
-        (self.meta >> COUNTER_SHIFT) & COUNTER_MAX
-    }
-
-    fn tag(&self) -> u32 {
-        self.meta >> TAG_SHIFT
-    }
-
-    /// What this entry's counter is worth at `epoch`: what was written down,
-    /// halved once for every epoch that has gone by since.
-    ///
-    /// A tag is never ahead of the epoch — both are reset together by
-    /// [`WordCache::settle`] — so the subtraction cannot go below zero.
-    fn score(&self, epoch: u32) -> u32 {
-        let missed = epoch - self.tag();
-        self.counter() >> missed.min(MAX_DECAY)
-    }
-
-    /// Write down a counter and the epoch it was written in, leaving the id
-    /// count alone.
-    fn stamp(&mut self, counter: u32, epoch: u32) {
-        self.meta = self.inline_ids() as u32 | counter << COUNTER_SHIFT | epoch << TAG_SHIFT;
+        self.inline_ids == SPILLED
     }
 
     fn key_off(&self) -> u32 {
@@ -422,6 +461,132 @@ impl Slot {
 
     fn key_len(&self) -> usize {
         (self.payload[2] >> PACKED_LEN_BITS) as usize
+    }
+}
+
+/// The first step a window's answer is `true` for, or [`WINDOW`] when it is
+/// true for none.
+///
+/// Every [`Window`] question comes back as one nibble per slot, `0xF` for true
+/// and `0` for false, lowest slot in the lowest nibble. A nibble each rather
+/// than a bit each because that is what AArch64 can narrow a vector comparison
+/// to in one instruction, and answering in the same form on both targets is what
+/// keeps the walk itself free of either.
+fn first_step(mask: u64) -> usize {
+    mask.trailing_zeros() as usize / 4
+}
+
+/// Clears the nibble `step` holds.
+fn without_step(mask: u64, step: usize) -> u64 {
+    mask & !(0xF << (step * 4))
+}
+
+/// The [`Ctrl`]s of one window, and the three questions a walk asks of them.
+///
+/// Every question is answered for all [`WINDOW`] slots at once. On AArch64 that
+/// is [`NeonWindow`]; everywhere else [`ScalarWindow`] loops. The two are held to
+/// the same answers by `the_neon_window_answers_what_the_scalar_one_does`.
+#[cfg(target_arch = "aarch64")]
+type Window = NeonWindow;
+#[cfg(not(target_arch = "aarch64"))]
+type Window = ScalarWindow;
+
+/// Compiled on AArch64 too, where only the test above uses it: it is what
+/// [`NeonWindow`] is checked against, and a copy that never builds would rot.
+#[cfg_attr(target_arch = "aarch64", cfg(test))]
+struct ScalarWindow([Ctrl; WINDOW]);
+
+#[cfg_attr(target_arch = "aarch64", cfg(test))]
+impl ScalarWindow {
+    /// One nibble per slot, in the order [`first_step`] reads them.
+    fn nibbles(&self, holds: impl Fn(&Ctrl) -> bool) -> u64 {
+        (0..WINDOW).fold(0, |mask, i| {
+            if holds(&self.0[i]) {
+                mask | 0xF << (i * 4)
+            } else {
+                mask
+            }
+        })
+    }
+
+    fn load(ctrl: &[Ctrl; WINDOW]) -> Self {
+        Self(*ctrl)
+    }
+
+    fn matching(&self, tag: u8) -> u64 {
+        self.nibbles(|ctrl| ctrl.tag == tag)
+    }
+
+    fn empty(&self) -> u64 {
+        self.nibbles(|ctrl| ctrl.tag == EMPTY)
+    }
+
+    fn coldest(&self, epoch: u8) -> usize {
+        // `min_by_key` keeps the first of equal keys, which is what sends a tie
+        // to the slot nearest home.
+        (0..WINDOW).min_by_key(|&i| self.0[i].score(epoch)).unwrap()
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+struct NeonWindow {
+    tags: uint8x16_t,
+    counters: uint8x16_t,
+    epochs: uint8x16_t,
+}
+
+#[cfg(target_arch = "aarch64")]
+impl NeonWindow {
+    /// Vector instructions are part of the AArch64 baseline, so there is nothing
+    /// to detect and no run-time choice to make between this and
+    /// [`ScalarWindow`].
+    fn load(ctrl: &[Ctrl; WINDOW]) -> Self {
+        // SAFETY: `LD3` reads three lanes of sixteen bytes, and a `Ctrl` is three
+        // bytes with no padding, so a `[Ctrl; WINDOW]` is exactly those 48 bytes.
+        let window = unsafe { vld3q_u8(ctrl.as_ptr().cast()) };
+        Self {
+            tags: window.0,
+            counters: window.1,
+            epochs: window.2,
+        }
+    }
+
+    /// A comparison result in the form [`first_step`] reads.
+    ///
+    /// AArch64 has no instruction that collects one bit per lane. `SHRN` narrows
+    /// the sixteen `0xFF`/`0x00` lanes into sixteen nibbles of one 64-bit
+    /// register, which is the same answer in the same order — and is why the
+    /// answers are nibbles rather than bits.
+    fn mask(compared: uint8x16_t) -> u64 {
+        unsafe {
+            vget_lane_u64::<0>(vreinterpret_u64_u8(vshrn_n_u16::<4>(vreinterpretq_u16_u8(
+                compared,
+            ))))
+        }
+    }
+
+    fn matching(&self, tag: u8) -> u64 {
+        unsafe { Self::mask(vceqq_u8(self.tags, vdupq_n_u8(tag))) }
+    }
+
+    fn empty(&self) -> u64 {
+        unsafe { Self::mask(vceqq_u8(self.tags, vdupq_n_u8(EMPTY))) }
+    }
+
+    fn coldest(&self, epoch: u8) -> usize {
+        unsafe {
+            let missed = vminq_u8(
+                vsubq_u8(vdupq_n_u8(epoch), self.epochs),
+                vdupq_n_u8(MAX_DECAY),
+            );
+            // `USHL` shifts right on a negative count, and gives zero once that
+            // count reaches the lane width — the same ceiling MAX_DECAY sets.
+            let score = vshlq_u8(self.counters, vnegq_s8(vreinterpretq_s8_u8(missed)));
+            let lowest = vdupq_n_u8(vminvq_u8(score));
+            // The first lane holding the minimum, so a tie goes to the slot
+            // nearest home exactly as it does in `ScalarWindow::coldest`.
+            first_step(Self::mask(vceqq_u8(score, lowest)))
+        }
     }
 }
 
@@ -506,14 +671,15 @@ impl<'c> Lookup<'c, '_> {
 
 /// Where a word that missed will go, and what [`WordCache::insert`] needs to put
 /// it there. Found by the walk that missed, so storing the word costs no second
-/// hash and no second walk over its window.
+/// hash and no second read of the window.
 ///
 /// It carries the word rather than letting `insert` take it again, because the
-/// slot and the key inside were chosen for *this* word: handing back a different
-/// one would file its ids under the first word's name.
+/// slot, the key and the tag inside were chosen for *this* word: handing back a
+/// different one would file its ids under the first word's name.
 pub struct Placement<'w> {
     index: usize,
     key: u128,
+    tag: u8,
     word: &'w [u8],
 }
 
@@ -528,17 +694,21 @@ enum Probe {
 pub struct WordCache {
     hasher: RandomState,
     slots: Box<[Slot]>,
+    /// One [`Ctrl`] per slot, and then a copy of the first [`WINDOW`] of them, so
+    /// that the window of any home is `WINDOW` entries in a row and can be read
+    /// with a single load. [`WordCache::write_ctrl`] keeps the copy in step.
+    sidecar: Box<[Ctrl]>,
     key_bytes: Slab<u8>,
     ids: Slab<u32>,
     /// `slots.len() - 1`. The table is a power of two, so this folds a hash into
     /// a slot index.
     mask: usize,
-    /// Where the fade count stands, from 0 to [`TAG_MASK`] and no higher. A
-    /// slot's `tag` is what this held when the slot was last written, so
-    /// `epoch - tag` is how many fades that entry has sat through.
-    /// [`WordCache::settle`] puts the epoch and every tag back to zero together
+    /// Where the fade count stands, from 0 to [`EPOCH_MAX`] and no higher. A
+    /// [`Ctrl::epoch`] is what this held when that entry was last written, so the
+    /// difference between them is how many fades it has sat through.
+    /// [`WordCache::settle`] puts this and every `Ctrl` back to zero together
     /// when the count runs out of room.
-    epoch: u32,
+    epoch: u8,
     /// Evictions still to come before the next `epoch` bump.
     countdown: u32,
     /// Evictions per `epoch` bump — see the module docs on how often the epoch
@@ -553,6 +723,7 @@ impl WordCache {
         Self {
             hasher: RandomState::new(),
             slots: vec![Slot::default(); n_slots].into_boxed_slice(),
+            sidecar: vec![Ctrl::default(); n_slots + WINDOW].into_boxed_slice(),
             // Ceilings, not reservations: the arenas grow only as far as the live
             // set takes them. Deliberately generous, so that the slot table is
             // what runs out first — an arena that turns inserts away while slots
@@ -581,37 +752,59 @@ impl WordCache {
         let index = match self.probe(key, hash, word) {
             Probe::Hit(index) => {
                 let epoch = self.epoch;
-                let counter = (self.slots[index].score(epoch) + 1).min(COUNTER_MAX);
-                self.slots[index].stamp(counter, epoch);
+                let ctrl = self.sidecar[index];
+                // Saturating, so hits past what a byte holds are not counted. An
+                // entry that busy is in no danger of eviction anyway.
+                let counter = ctrl.score(epoch).saturating_add(1);
+                self.write_ctrl(
+                    index,
+                    Ctrl {
+                        counter,
+                        epoch,
+                        ..ctrl
+                    },
+                );
                 let slot = self.slots[index];
                 return Lookup::Hit(if slot.spilled() {
                     self.ids.get(slot.ids_off(), slot.ids_len())
                 } else {
-                    &self.slots[index].payload[..slot.inline_ids() as usize]
+                    &self.slots[index].payload[..slot.inline_ids as usize]
                 });
             }
             Probe::Miss(index) => index,
         };
-        Lookup::Miss(Some(Placement { index, key, word }))
+        Lookup::Miss(Some(Placement {
+            index,
+            key,
+            tag: ctrl_tag(hash),
+            word,
+        }))
     }
 
     /// Remember what the word encoded to, in the slot its [`WordCache::lookup`]
     /// picked out. Silently does nothing when an arena is full: a cache is free
     /// to forget, and the caller has the ids either way.
     pub fn insert(&mut self, at: Placement<'_>, ids: impl ExactSizeIterator<Item = u32>) {
-        let Some(mut entry) = self.build_entry(at.key, at.word, ids) else {
+        let Some(entry) = self.build_entry(at.key, at.word, ids) else {
             return;
         };
         // A slot that is not empty belongs to somebody else, so this is an
         // eviction: give the arena runs back and charge the table one round of
         // fading. Both wait until here, so a lookup whose caller decides not to
         // store anything after all costs the entry sitting there nothing.
-        if !self.slots[at.index].is_empty() {
+        if self.sidecar[at.index].tag != EMPTY {
             self.reclaim(at.index);
             self.fade();
         }
         // Fading moves the epoch, so stamp the new entry after it.
-        entry.stamp(NEWBORN, self.epoch);
+        self.write_ctrl(
+            at.index,
+            Ctrl {
+                tag: at.tag,
+                counter: NEWBORN,
+                epoch: self.epoch,
+            },
+        );
         self.slots[at.index] = entry;
     }
 
@@ -633,49 +826,60 @@ impl WordCache {
         }
     }
 
-    /// One walk of `word`'s window, from its home position, answering both
+    /// The [`Ctrl`]s of the window starting at `home`, in the form a walk reads
+    /// them. The mirrored tail of `sidecar` is what makes the slice contiguous
+    /// for every `home`.
+    fn window(&self, home: usize) -> Window {
+        let ctrl: &[Ctrl; WINDOW] = self.sidecar[home..home + WINDOW].try_into().unwrap();
+        Window::load(ctrl)
+    }
+
+    /// One walk over `word`'s window, from its home position, answering both
     /// questions a lookup has: which slot holds the word, and — if none does —
     /// which slot it should take.
     ///
-    /// The second answer is free. Finding the word means reading every slot in
-    /// the window until it turns up, and the slot a miss wants is the first empty
-    /// one or the lowest-scoring one, both of which fall out of the same reads.
-    /// Working it out later would mean walking the same sixteen slots again, and
-    /// sixteen slots is eight cache lines.
+    /// The second answer is free. Both come out of the window's [`Ctrl`]s, which
+    /// are one load; working the second one out afterwards would mean reading
+    /// them again and hashing the word again.
     ///
     /// Stopping at the first empty slot is safe because slots never go back to
     /// being empty: an empty one means the word was never stored.
     fn probe(&self, key: u128, hash: u64, word: &[u8]) -> Probe {
+        let home = hash as usize & self.mask;
+        let window = self.window(home);
+        let empty = window.empty();
+        // Nothing past the first empty slot can hold the word: the walk that
+        // stored it would have stopped there and taken that slot.
+        let before_empty = 1u64
+            .checked_shl(empty.trailing_zeros())
+            .map_or(u64::MAX, |bit| bit - 1);
+        let mut candidates = window.matching(ctrl_tag(hash)) & before_empty;
         // Only a hashed key can turn out to belong to a different word, and
         // whether this one is hashed is settled before the walk starts — the
         // caller built the key out of the word it is looking for.
         let hashed = key & LONG_TAG != 0;
-        let mut coldest = hash as usize & self.mask;
-        let mut lowest = u32::MAX;
-        for step in 0..WINDOW {
-            let index = (hash as usize + step) & self.mask;
+        while candidates != 0 {
+            let step = first_step(candidates);
+            let index = (home + step) & self.mask;
             let slot = &self.slots[index];
-            if slot.is_empty() {
-                return Probe::Miss(index);
-            }
             if slot.key == key
                 && (!hashed || self.key_bytes.get(slot.key_off(), slot.key_len()) == word)
             {
                 return Probe::Hit(index);
             }
-            let score = slot.score(self.epoch);
-            if score < lowest {
-                lowest = score;
-                coldest = index;
-            }
+            candidates = without_step(candidates, step);
         }
-        Probe::Miss(coldest)
+        let step = if empty == 0 {
+            window.coldest(self.epoch)
+        } else {
+            first_step(empty)
+        };
+        Probe::Miss((home + step) & self.mask)
     }
 
     /// The entry to store, with whatever does not fit in a slot copied into the
-    /// arenas, and `meta` holding only the id count — [`WordCache::insert`]
-    /// stamps the rest. `None` when an arena is full, so a rejected insert leaves
-    /// the table and the arenas exactly as they were.
+    /// arenas. `None` when an arena is full, so a rejected insert leaves the
+    /// table and the arenas exactly as they were.
     fn build_entry(
         &mut self,
         key: u128,
@@ -692,7 +896,7 @@ impl WordCache {
             return Some(Slot {
                 key,
                 payload,
-                meta: ids_len as u32,
+                inline_ids: ids_len as u8,
             });
         }
         // A short word stays in the key, which is a zero-length run here.
@@ -708,8 +912,17 @@ impl WordCache {
         Some(Slot {
             key,
             payload: [key_off, ids_off, lengths],
-            meta: SPILLED as u32,
+            inline_ids: SPILLED,
         })
+    }
+
+    /// Write a slot's [`Ctrl`], and the copy of it in the mirrored tail when the
+    /// slot is one of the first [`WINDOW`].
+    fn write_ctrl(&mut self, index: usize, ctrl: Ctrl) {
+        self.sidecar[index] = ctrl;
+        if index < WINDOW {
+            self.sidecar[self.slots.len() + index] = ctrl;
+        }
     }
 
     /// One eviction's worth of fading: step the countdown, and move the epoch on
@@ -720,7 +933,7 @@ impl WordCache {
             return;
         }
         self.countdown = self.epoch_length;
-        if self.epoch == TAG_MASK {
+        if self.epoch == EPOCH_MAX {
             self.settle();
         } else {
             self.epoch += 1;
@@ -728,21 +941,24 @@ impl WordCache {
     }
 
     /// Spend every entry's outstanding fade and start the count again: each live
-    /// entry's score becomes its counter, and the epoch and every tag go back to
-    /// zero.
+    /// entry's score becomes its counter, and the epoch and every [`Ctrl`] go
+    /// back to zero.
     ///
-    /// Run on the last epoch a tag can hold, and only then. The epoch has to
-    /// start over at some point, and the moment it does, `epoch - tag` stops
-    /// meaning anything for entries stamped before the restart. So the
-    /// differences are cashed in first, while they are still readable.
+    /// Run on the last epoch a `Ctrl` can hold, and only then. The epoch has to
+    /// start over at some point, and the moment it does, the difference between
+    /// it and a stored epoch stops meaning anything for entries written before
+    /// the restart. So the differences are cashed in first, while they can still
+    /// be read.
     fn settle(&mut self) {
         let epoch = self.epoch;
-        for slot in self.slots.iter_mut() {
-            if slot.is_empty() {
+        // The mirrored tail is a copy of the front, so one pass over the whole
+        // sidecar leaves the two in step without a second walk.
+        for ctrl in self.sidecar.iter_mut() {
+            if ctrl.tag == EMPTY {
                 continue;
             }
-            let score = slot.score(epoch);
-            slot.stamp(score, 0);
+            ctrl.counter = ctrl.score(epoch);
+            ctrl.epoch = 0;
         }
         self.epoch = 0;
     }
@@ -787,7 +1003,10 @@ impl WordCache {
     /// How many slots hold an entry. Equal to the capacity once the table is
     /// saturated, which is the state the eviction measurements need.
     pub fn bench_occupancy(&self) -> usize {
-        self.slots.iter().filter(|slot| !slot.is_empty()).count()
+        self.sidecar[..self.slots.len()]
+            .iter()
+            .filter(|ctrl| ctrl.tag != EMPTY)
+            .count()
     }
 }
 
@@ -797,11 +1016,7 @@ mod tests {
 
     /// Look a word up and store what it encoded to, for tests that care about
     /// what the table ends up holding rather than about the two steps.
-    pub(super) fn store(
-        cache: &mut WordCache,
-        word: &[u8],
-        ids: impl ExactSizeIterator<Item = u32>,
-    ) {
+    fn store(cache: &mut WordCache, word: &[u8], ids: impl ExactSizeIterator<Item = u32>) {
         let at = match cache.lookup(word) {
             Lookup::Miss(at) => at,
             Lookup::Hit(_) => None,
@@ -831,19 +1046,26 @@ mod tests {
         assert_eq!(cache.lookup(b"hell").hit(), None);
     }
 
-    /// The three properties the whole key encoding rests on: a packed key is
-    /// unique per word, is never `0` (the empty-slot marker), and never looks
-    /// like a hashed key.
+    /// The two properties the key encoding rests on: a packed key is unique per
+    /// word, and never looks like a hashed one.
     #[test]
     fn packed_keys_are_unique_and_tagged() {
         assert_ne!(pack_word(b"a"), pack_word(b"a\0"));
-        assert_ne!(pack_word(&[0u8; 15]), Some(0));
         assert_eq!(pack_word(&[0u8; 15]).unwrap() & LONG_TAG, 0);
         assert_eq!(pack_word(b""), None);
         assert_eq!(pack_word(&[b'x'; 16]), None);
     }
 
-    /// A short word's placement now comes out of its packed key rather than its
+    /// A live entry's tag has to be something [`EMPTY`] is not, or a walk reads
+    /// an occupied slot as the end of the chain and stores on top of it.
+    #[test]
+    fn a_live_tag_is_never_the_empty_marker() {
+        for hash in [0u64, 1, u64::MAX, 1 << 57, u64::MAX >> TAG_BITS] {
+            assert_ne!(ctrl_tag(hash), EMPTY, "hash {hash:#x}");
+        }
+    }
+
+    /// A short word's placement comes out of its packed key rather than its
     /// bytes, which leaves the hash doing all of the mixing. Words that differ in
     /// one byte pack to keys that differ in one byte, so an index taken from those
     /// bits as they are — `packed as u64` — drops most of these on one slot.
@@ -905,10 +1127,39 @@ mod tests {
         assert_eq!(cache.lookup(&word).hit(), Some(&ids[..]));
     }
 
+    /// A tag is seven bits, so one slot in 128 answers for a word that is not in
+    /// it. That is too rare to wait for, so forge one: put a word's tag on a slot
+    /// holding a different key, and demand the walk look past it rather than
+    /// treat the tag as the answer.
+    #[test]
+    fn a_tag_collision_is_confirmed_against_the_key() {
+        let mut cache = WordCache::new(WINDOW);
+        let (_, hash) = cache.slot_key(b"beta");
+        let decoy = hash as usize & cache.mask;
+        cache.write_ctrl(
+            decoy,
+            Ctrl {
+                tag: ctrl_tag(hash),
+                counter: NEWBORN,
+                epoch: 0,
+            },
+        );
+        // Any key that is not beta's. A packed key always carries a length in its
+        // top byte, so 1 cannot be one.
+        cache.slots[decoy] = Slot {
+            key: 1,
+            payload: [7, 0, 0],
+            inline_ids: 1,
+        };
+
+        store(&mut cache, b"beta", [2u32].into_iter());
+        assert_eq!(cache.lookup(b"beta").hit(), Some(&[2u32][..]));
+    }
+
     /// Two long words can hash to the same key, and then only their bytes tell
     /// them apart. Real hash collisions are too rare to write a test around, so
-    /// forge one: park another word's entry on this word's home slot and stamp
-    /// this word's key on it. The lookup has to walk past it.
+    /// forge one: park another word's entry on this word's home slot, stamp this
+    /// word's key and tag on it, and demand the walk look past it.
     #[test]
     fn a_hashed_key_is_confirmed_against_the_word_bytes() {
         let mut cache = WordCache::new(1 << 8);
@@ -916,12 +1167,22 @@ mod tests {
         let theirs = vec![b'b'; 40];
 
         store(&mut cache, &theirs, [7u32].into_iter());
-        let their_slot = cache.slots[slot_of(&cache, &theirs).unwrap()];
+        let their_index = slot_of(&cache, &theirs).unwrap();
+        let their_slot = cache.slots[their_index];
+        let their_ctrl = cache.sidecar[their_index];
         let (my_key, my_hash) = cache.slot_key(&mine);
-        cache.slots[my_hash as usize & cache.mask] = Slot {
+        let my_home = my_hash as usize & cache.mask;
+        cache.slots[my_home] = Slot {
             key: my_key,
             ..their_slot
         };
+        cache.write_ctrl(
+            my_home,
+            Ctrl {
+                tag: ctrl_tag(my_hash),
+                ..their_ctrl
+            },
+        );
 
         store(&mut cache, &mine, [1u32, 2].into_iter());
         assert_eq!(cache.lookup(&mine).hit(), Some(&[1u32, 2][..]));
@@ -964,38 +1225,59 @@ mod tests {
     fn an_abandoned_entry_fades_without_being_touched() {
         let mut cache = WordCache::new(WINDOW);
         store(&mut cache, b"hot", [1u32].into_iter());
-        for _ in 0..COUNTER_MAX {
+        for _ in 0..u8::MAX {
             cache.lookup(b"hot").hit();
         }
         let index = slot_of(&cache, b"hot").unwrap();
-        assert_eq!(cache.slots[index].score(cache.epoch), COUNTER_MAX);
+        assert_eq!(cache.sidecar[index].score(cache.epoch), u8::MAX);
 
         for _ in 0..MAX_DECAY {
             cache.fade();
         }
-        assert_eq!(cache.slots[index].score(cache.epoch), 0);
+        assert_eq!(cache.sidecar[index].score(cache.epoch), 0);
     }
 
-    /// A tag is sixteen bits, so the epoch has to start over at zero every 65536
-    /// bumps. An entry stamped before the restart carries a tag larger than the
-    /// epoch, and left to itself the coldest thing in the table would come out
-    /// reading as the hottest and could never be evicted again.
+    /// An epoch is a byte, so the count has to start over at zero every 256
+    /// bumps. An entry written before the restart carries an epoch larger than
+    /// the current one, and left to itself the coldest thing in the table would
+    /// come out reading as the hottest and could never be evicted again.
     #[test]
     fn a_lap_of_the_epoch_does_not_make_a_stale_entry_look_hot() {
         let mut cache = WordCache::new(WINDOW);
         store(&mut cache, b"stale", [1u32].into_iter());
-        for _ in 0..COUNTER_MAX {
+        for _ in 0..u8::MAX {
             cache.lookup(b"stale").hit();
         }
         let index = slot_of(&cache, b"stale").unwrap();
 
         // One slot per window here, so one eviction is one epoch.
         assert_eq!(cache.epoch_length, 1);
-        for _ in 0..=TAG_MASK {
+        for _ in 0..=EPOCH_MAX {
             cache.fade();
         }
         assert_eq!(cache.epoch, 0, "the lap did not start over");
-        assert_eq!(cache.slots[index].score(cache.epoch), 0);
+        assert_eq!(cache.sidecar[index].score(cache.epoch), 0);
+    }
+
+    /// The tail of the sidecar is a copy of its first [`WINDOW`] entries, so that
+    /// a window starting near the end of the table is still `WINDOW` entries in a
+    /// row. Every write has to keep the two in step, or a walk whose window
+    /// crosses the seam reads control bytes that no longer describe the slots.
+    #[test]
+    fn the_mirrored_tail_tracks_the_front() {
+        let mut cache = WordCache::new(64);
+        let n = cache.slots.len();
+        for i in 0..500usize {
+            store(
+                &mut cache,
+                format!("w{i}").as_bytes(),
+                [i as u32].into_iter(),
+            );
+            assert_eq!(cache.sidecar[..WINDOW], cache.sidecar[n..], "insert {i}");
+        }
+        // A settle rewrites every live entry, and has to leave the two in step too.
+        cache.settle();
+        assert_eq!(cache.sidecar[..WINDOW], cache.sidecar[n..], "after settle");
     }
 
     /// Reusing an evicted entry's arena run is where this design can go wrong:
@@ -1048,5 +1330,60 @@ mod tests {
         );
         assert!(cache.key_bytes.data.len() <= 65 * 35);
         assert!(cache.ids.data.len() <= 65 * 8);
+    }
+
+    /// Control bytes covering what a window can present: empty slots, repeated
+    /// tags, counters at both ends, and epochs far enough back to reach
+    /// [`MAX_DECAY`].
+    fn sample_window(seed: u64) -> [Ctrl; WINDOW] {
+        let mut state = seed | 1;
+        let mut next = || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        std::array::from_fn(|_| {
+            let n = next();
+            Ctrl {
+                tag: if n % 5 == 0 {
+                    EMPTY
+                } else {
+                    n as u8 | OCCUPIED
+                },
+                counter: (n >> 8) as u8,
+                epoch: ((n >> 16) % 200) as u8,
+            }
+        })
+    }
+
+    /// [`ScalarWindow`] is the definition and [`NeonWindow`] is an implementation
+    /// of it, so anything they disagree about is a bug in the vector path that no
+    /// other test would separate from a bug in the walk.
+    #[cfg(target_arch = "aarch64")]
+    #[test]
+    fn the_neon_window_answers_what_the_scalar_one_does() {
+        for seed in 0..64u64 {
+            let ctrl = sample_window(seed);
+            let neon = NeonWindow::load(&ctrl);
+            let scalar = ScalarWindow::load(&ctrl);
+            assert_eq!(neon.empty(), scalar.empty(), "empty, seed {seed}");
+            for tag in [EMPTY, OCCUPIED, 0xC3, 0xFF, ctrl[0].tag, ctrl[9].tag] {
+                assert_eq!(
+                    neon.matching(tag),
+                    scalar.matching(tag),
+                    "matching {tag:#x}, seed {seed}"
+                );
+            }
+            // `sample_window` stops at 199, so every epoch here is at or past
+            // every entry's and the decay subtraction stays in range.
+            for epoch in [200u8, 201, EPOCH_MAX] {
+                assert_eq!(
+                    neon.coldest(epoch),
+                    scalar.coldest(epoch),
+                    "coldest at {epoch}, seed {seed}"
+                );
+            }
+        }
     }
 }
