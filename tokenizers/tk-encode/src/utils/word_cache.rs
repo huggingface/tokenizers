@@ -872,6 +872,44 @@ impl<'c> Lookup<'c, '_> {
     }
 }
 
+/// A word's key and the hash that places it, from [`WordCache::key`].
+#[derive(Clone, Copy)]
+pub struct WordKey {
+    key: u128,
+    hash: u64,
+}
+
+/// Ask the memory system for the cache line holding `p`, on the architectures
+/// that have an instruction for it. A prefetch changes nothing a reader can
+/// observe, which is why any address is allowed and why this needs no more care
+/// than passing a pointer we already hold.
+///
+/// The two-flavour version of this in [gigatoken]'s `pretoken_cache` is what
+/// suggested it — it separates an L2 hint issued a chunk ahead from an L1 hint a
+/// few probes ahead. Only the L1 hint is worth having here, because our callers
+/// run a batch of words ahead of the probes, not a whole chunk.
+///
+/// [gigatoken]: https://github.com/marcelroed/gigatoken
+#[inline(always)]
+fn prefetch_line<T>(p: *const T) {
+    #[cfg(target_arch = "x86_64")]
+    // SAFETY: a prefetch has no memory effects, so any address is accepted.
+    unsafe {
+        core::arch::x86_64::_mm_prefetch(p as *const i8, core::arch::x86_64::_MM_HINT_T0);
+    }
+    #[cfg(target_arch = "aarch64")]
+    // SAFETY: as above. `prfm` is unconditionally available on aarch64.
+    unsafe {
+        core::arch::asm!(
+            "prfm pldl1keep, [{p}]",
+            p = in(reg) p,
+            options(nostack, preserves_flags, readonly)
+        );
+    }
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+    let _ = p;
+}
+
 /// Where a word that missed will go, and what [`WordCache::insert`] needs to put
 /// it there. Found by the probe that missed, so storing the word costs no second
 /// hash and no second read of the window.
@@ -955,10 +993,43 @@ impl WordCache {
     ///
     /// Takes `&mut self` because a hit is also a vote for keeping the entry.
     pub fn lookup<'c, 'w>(&'c mut self, word: &'w [u8]) -> Lookup<'c, 'w> {
-        if word.len() > MAX_WORD_BYTES {
-            return Lookup::Miss(None);
+        match self.key(word) {
+            Some(key) => self.lookup_keyed(word, key),
+            None => Lookup::Miss(None),
+        }
+    }
+
+    /// The key for `word`, or `None` for a word the table will not store: an
+    /// empty one, or one longer than [`MAX_WORD_BYTES`].
+    ///
+    /// Split out of [`WordCache::lookup`] so that a caller holding several words
+    /// can key them all and [`WordCache::prefetch`] their slots before probing
+    /// the first one.
+    pub fn key(&self, word: &[u8]) -> Option<WordKey> {
+        if word.is_empty() || word.len() > MAX_WORD_BYTES {
+            return None;
         }
         let (key, hash) = self.slot_key(word);
+        Some(WordKey { key, hash })
+    }
+
+    /// Ask for the two lines a [`WordCache::lookup_keyed`] on this key reads: the
+    /// window of tags it probes, and the slot at home, where a word that is in
+    /// the table usually sits.
+    ///
+    /// Whether the wait for those lines costs anything depends on how much of the
+    /// table is in cache, so this is the caller's call rather than something the
+    /// probe does for itself — it pays only when the caller still has work left
+    /// to cover the latency with.
+    pub fn prefetch(&self, key: WordKey) {
+        let home = key.hash as usize & self.index_mask;
+        prefetch_line(&self.tags[home]);
+        prefetch_line(&self.slots[home]);
+    }
+
+    /// [`WordCache::lookup`] with the key already built by [`WordCache::key`].
+    pub fn lookup_keyed<'c, 'w>(&'c mut self, word: &'w [u8], key: WordKey) -> Lookup<'c, 'w> {
+        let WordKey { key, hash } = key;
         let index = match self.probe(key, hash, word) {
             Probe::Hit(index) => {
                 let epoch = self.epoch;
@@ -1298,6 +1369,38 @@ mod tests {
         // 1000 words over 4096 slots share homes by chance alone; ~887 distinct is
         // as good as a perfect hash gets, so the floor is well under it.
         assert!(homes.len() > 820, "only {} distinct homes", homes.len());
+    }
+
+    /// The batch path keys a word, prefetches its slot, and probes later; it has
+    /// to land on the same answer as looking the word up in one go. Both key
+    /// shapes are covered: `hello` packs into its key, the 24-byte word keys on a
+    /// hash and is confirmed against its stored bytes.
+    #[test]
+    fn keyed_lookup_matches_lookup() {
+        let long = &[b'z'; 24][..];
+        let mut cache = WordCache::new(1 << 8);
+        store(&mut cache, b"hello", [1u32, 2, 3].into_iter());
+        store(&mut cache, long, [4u32].into_iter());
+
+        for (word, ids) in [
+            (&b"hello"[..], Some(&[1u32, 2, 3][..])),
+            (long, Some(&[4u32][..])),
+            (&b"absent"[..], None),
+        ] {
+            let key = cache.key(word).expect("word is cacheable");
+            cache.prefetch(key);
+            assert_eq!(cache.lookup_keyed(word, key).hit(), ids, "{word:?}");
+        }
+    }
+
+    /// A word with no key is one the caller has to tokenize itself, so the two
+    /// cases have to be the same ones [`WordCache::lookup`] refuses.
+    #[test]
+    fn words_the_table_will_not_store_have_no_key() {
+        let cache = WordCache::new(1 << 8);
+        assert!(cache.key(b"").is_none());
+        assert!(cache.key(&vec![7u8; MAX_WORD_BYTES + 1]).is_none());
+        assert!(cache.key(&vec![7u8; MAX_WORD_BYTES]).is_some());
     }
 
     #[test]

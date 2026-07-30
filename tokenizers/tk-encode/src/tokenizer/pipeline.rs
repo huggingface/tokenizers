@@ -707,14 +707,12 @@ impl PipelineTokenizer {
                                     self.pre_tokenizer
                                         .pre_tokenize(normalized_chunk, pre_tokens)?;
                                     if STAGE >= Self::STAGE_MODEL {
-                                        // Tokenize each chunk
-                                        for pre_token in pre_tokens.iter() {
-                                            self.model.tokenize_pipeline(
-                                                &normalized_chunk[pre_token.range()],
-                                                scratch,
-                                                output,
-                                            )?;
-                                        }
+                                        self.model.tokenize_spans(
+                                            normalized_chunk,
+                                            pre_tokens,
+                                            scratch,
+                                            output,
+                                        )?;
                                     }
                                 }
                             }
@@ -997,6 +995,25 @@ pub trait Model {
         output: &mut Vec<PipelineToken>,
     ) -> Result<()>;
 
+    /// Tokenize every pre-token of one chunk, `spans` being ranges into `chunk`.
+    ///
+    /// The default runs [`Model::tokenize_pipeline`] over them one at a time. A
+    /// model overrides this when there is something to gain from holding the
+    /// whole batch: [`PipelineBPE`] keys a batch of words against its word cache
+    /// and asks for their slots before probing the first one.
+    fn tokenize_spans(
+        &self,
+        chunk: &str,
+        spans: &[Span],
+        scratch: &mut Self::Scratch,
+        output: &mut Vec<PipelineToken>,
+    ) -> Result<()> {
+        for span in spans {
+            self.tokenize_pipeline(&chunk[span.range()], scratch, output)?;
+        }
+        Ok(())
+    }
+
     fn init_scratch(&self) -> Self::Scratch;
 }
 
@@ -1032,6 +1049,32 @@ impl Model for PipelineModel {
             }
             (Self::WordPiece(model), PipelineModelScratch::WordPiece(scratch)) => {
                 model.tokenize_pipeline(sequence, scratch, output)
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    /// The match below is why this override exists: it runs once per chunk rather
+    /// than once per pre-token. LLVM does not lift it out of the loop by itself.
+    fn tokenize_spans(
+        &self,
+        chunk: &str,
+        spans: &[Span],
+        scratch: &mut Self::Scratch,
+        output: &mut Vec<PipelineToken>,
+    ) -> Result<()> {
+        match (self, scratch) {
+            (Self::BPE(model), PipelineModelScratch::BPE(scratch)) => {
+                model.tokenize_spans(chunk, spans, scratch, output)
+            }
+            (Self::Unigram(model), PipelineModelScratch::Unigram(scratch)) => {
+                model.tokenize_spans(chunk, spans, scratch, output)
+            }
+            (Self::WordLevel(model), PipelineModelScratch::WordLevel(scratch)) => {
+                model.tokenize_spans(chunk, spans, scratch, output)
+            }
+            (Self::WordPiece(model), PipelineModelScratch::WordPiece(scratch)) => {
+                model.tokenize_spans(chunk, spans, scratch, output)
             }
             _ => unreachable!(),
         }

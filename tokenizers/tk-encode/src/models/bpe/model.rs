@@ -1,6 +1,6 @@
 use super::{super::OrderedVocabIter, Error, Pair, Word};
 use crate::models::bpe::Merge;
-use crate::pipeline::{self, ModelScratch, PipelineToken};
+use crate::pipeline::{self, ModelScratch, PipelineToken, Span};
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::byte_level::{self};
 use crate::utils::cache::{DEFAULT_CACHE_CAPACITY, MAX_LENGTH};
@@ -676,6 +676,14 @@ impl Model for BPE {
     }
 }
 
+/// Pre-tokens keyed and prefetched together in
+/// [`PipelineBPE::tokenize_spans`](pipeline::Model::tokenize_spans).
+///
+/// It has to be large enough that the keying loop covers the wait for a slot,
+/// and small enough that a batch of keys stays in L1. Anything in that range
+/// will do; 32 keys is 1 kB.
+const SPAN_BATCH: usize = 32;
+
 pub struct PipelineBPE {
     atoms: Atoms,
     vocab: BucketVocabStore,
@@ -816,6 +824,33 @@ impl PipelineBPE {
         };
         word.merge_all(&self.merges, None, merge_queue, skip);
     }
+
+    /// Tokenize one word the cache could not answer, appending its ids to
+    /// `output`.
+    ///
+    /// `true` when the ids came out of `word` and so can be stored in the cache.
+    /// The other case is `ignore_merges`: a word the vocabulary holds whole takes
+    /// that id and skips merging entirely, and since `word` is then untouched
+    /// there is nothing to store. Those words keep missing the cache — see
+    /// [`WordCache`] on what a miss costs.
+    fn tokenize_word(
+        &self,
+        sequence: &str,
+        merge_queue: &mut QuaternaryHeap<Merge>,
+        skip: &mut Vec<Merge>,
+        word: &mut Word,
+        output: &mut Vec<PipelineToken>,
+    ) -> bool {
+        if self.ignore_merges
+            && let Some(id) = self.vocab.get_bytes(sequence.as_bytes())
+        {
+            output.push(PipelineToken { id });
+            return false;
+        }
+        self.merge_word(sequence, merge_queue, skip, word);
+        output.extend(word.get_chars_iter().map(|id| PipelineToken { id }));
+        true
+    }
 }
 
 impl pipeline::Model for PipelineBPE {
@@ -850,21 +885,79 @@ impl pipeline::Model for PipelineBPE {
                 Lookup::Miss(at) => placement = at,
             }
         }
-        if self.ignore_merges
-            && let Some(id) = self.vocab.get_bytes(sequence.as_bytes())
-        {
-            output.push(PipelineToken { id });
-            return Ok(());
-        }
-
-        self.merge_word(sequence, merge_queue, skip, word);
-        output.extend(word.get_chars_iter().map(|id| PipelineToken { id }));
-        if let Some(cache) = word_cache.as_mut()
+        let merged = self.tokenize_word(sequence, merge_queue, skip, word, output);
+        if merged
+            && let Some(cache) = word_cache.as_mut()
             && let Some(at) = placement
         {
             cache.insert(at, word.get_chars_iter());
         }
 
+        Ok(())
+    }
+
+    /// Two loops per batch of pre-tokens: the first builds every word's cache key
+    /// and asks for the slot it will land in, the second probes those slots and
+    /// tokenizes what missed. Splitting them is what gives the prefetches
+    /// something to hide behind — by the time the second loop probes a word, the
+    /// first loop has moved on far enough for its line to have arrived.
+    ///
+    /// Keys come off `chunk.as_bytes()` rather than a `&str` slice per span. The
+    /// cache reads bytes, so a hit here never pays for the two boundary checks
+    /// that slicing a `str` costs; only a miss needs the text.
+    fn tokenize_spans(
+        &self,
+        chunk: &str,
+        spans: &[Span],
+        scratch: &mut Self::Scratch,
+        output: &mut Vec<PipelineToken>,
+    ) -> Result<()> {
+        let BpeScratch {
+            merge_queue,
+            skip,
+            word,
+            word_cache,
+        } = scratch;
+        let Some(cache) = word_cache.as_mut() else {
+            for span in spans {
+                self.tokenize_word(&chunk[span.range()], merge_queue, skip, word, output);
+            }
+            return Ok(());
+        };
+
+        let bytes = chunk.as_bytes();
+        let mut keys = [None; SPAN_BATCH];
+        for batch in spans.chunks(SPAN_BATCH) {
+            for (key, span) in keys.iter_mut().zip(batch) {
+                *key = cache.key(&bytes[span.range()]);
+                if let Some(key) = key {
+                    cache.prefetch(*key);
+                }
+            }
+            for (key, span) in keys.iter().zip(batch) {
+                let Some(key) = *key else {
+                    // No key means no slot: an empty span, or a word past what the
+                    // cache stores. A tokenizer with no pre-tokenizer hands whole
+                    // documents over this way.
+                    self.tokenize_word(&chunk[span.range()], merge_queue, skip, word, output);
+                    continue;
+                };
+                // The lookup also picks the slot this word would go in, so the
+                // insert below has no window to walk of its own.
+                let placement = match cache.lookup_keyed(&bytes[span.range()], key) {
+                    Lookup::Hit(ids) => {
+                        output.extend(ids.iter().map(|&id| PipelineToken { id }));
+                        continue;
+                    }
+                    Lookup::Miss(at) => at,
+                };
+                let merged =
+                    self.tokenize_word(&chunk[span.range()], merge_queue, skip, word, output);
+                if merged && let Some(at) = placement {
+                    cache.insert(at, word.get_chars_iter());
+                }
+            }
+        }
         Ok(())
     }
 
