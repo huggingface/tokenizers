@@ -850,19 +850,22 @@ impl pipeline::Model for PipelineBPE {
                 Lookup::Miss(at) => placement = at,
             }
         }
+        let start = output.len();
         if self.ignore_merges
             && let Some(id) = self.vocab.get_bytes(sequence.as_bytes())
         {
             output.push(PipelineToken { id });
-            return Ok(());
+        } else {
+            self.merge_word(sequence, merge_queue, skip, word);
+            output.extend(word.get_chars_iter().map(|id| PipelineToken { id }));
         }
-
-        self.merge_word(sequence, merge_queue, skip, word);
-        output.extend(word.get_chars_iter().map(|id| PipelineToken { id }));
+        // Reading the ids back out of `output` rather than out of `word` is what
+        // lets the whole-word hit above be stored too — and it is the only place
+        // both exits have their ids in common.
         if let Some(cache) = word_cache.as_mut()
             && let Some(at) = placement
         {
-            cache.insert(at, word.get_chars_iter());
+            cache.insert(at, output[start..].iter().map(|token| token.id));
         }
 
         Ok(())
@@ -1742,6 +1745,22 @@ mod tests {
                 pipeline_ids(&pipeline, "zz"),
                 vec![u32::from(b'z'), u32::from(b'z')]
             );
+        }
+
+        /// A whole-word vocab hit skips the merge loop but not the vocab lookup,
+        /// and in a byte-level vocab the words that take that path are the
+        /// commonest ones in the text. Storing the id it found turns the next
+        /// occurrence into a cache hit.
+        #[test]
+        fn ignore_merges_stores_the_whole_word_id() {
+            let bpe = byte_level_bpe(&[(" hello", 300)], &[], true);
+            let model = PipelineBPE::from_bpe(bpe, true).unwrap();
+            let mut scratch = model.init_scratch();
+            let mut out = Vec::new();
+            PipelineModel::tokenize_pipeline(&model, " hello", &mut scratch, &mut out).unwrap();
+
+            let cache = scratch.word_cache.as_mut().unwrap();
+            assert_eq!(cache.lookup(b" hello").hit(), Some(&[300u32][..]));
         }
 
         #[test]
