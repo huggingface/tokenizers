@@ -786,7 +786,7 @@ impl PipelineBPE {
     ) {
         let mut to_merge = Vec::new();
         // 1. we convert the codepoint to internal ID (rank)
-        let mut global_min = 0u32;
+        let mut global_min = 0u64;
         let mut past_rank = u32::MAX;
         for c in sequence.chars() {
             let rank = self
@@ -796,44 +796,56 @@ impl PipelineBPE {
                 .unwrap_or(&self.tables.non_bmp[&c]);
             // we compute the min rank as this will be the first merge we'll do
             let merge_rank = self.tables.get_value(&past_rank, &rank);
-            global_min = std::cmp::min(global_min, (merge_rank >> 32) as u32);
+            global_min = std::cmp::min(global_min, merge_rank);
             past_rank = *rank;
             to_merge.push(*rank);
         }
-        self.multipass_merge(to_merge, global_min);
+        self.multipass_merge(&mut to_merge, global_min);
         // Finally, we use the unmap
     }
 
-    fn multipass_merge(&self, mut to_merge: Vec<u32>, mut global_min: u32) {
+    fn multipass_merge(&self, to_merge: &mut Vec<u32>, mut global_min: u64) {
         const FALLBACK_THRESHOLD: u8 = 8;
         let mut i = 0u8;
         // in multi-pass, we read and write in the same buffer
         let mut read_id = 0usize;
         let mut write_id = 0usize;
-        let slice = &to_merge[0..to_merge.len()];
-        let mut last_id = slice.len();
+        let mut last_id = to_merge.len() - 1;
         while true {
             if i == FALLBACK_THRESHOLD {
                 todo!("Implement merge with a simple binary heap")
             }
-            let mut running_min = u32::MAX;
-            for _ in 0..last_id {
+            // TODO: let's check if the global min pair is safe to merge more than once. If not we
+            // cannot batch modify.
+            let mut running_min = u64::MAX;
+            while read_id + 1 < last_id {
+                // past iteration already holds previous ia / ib.
                 let (ia, ib) = (to_merge[read_id], to_merge[read_id + 1]);
                 let value = self.tables.get_value(&ia, &ib);
-                let rank = (value >> 32) as u32;
                 let id = value as u32;
-                // only merge pairs that have the min rank.
-                if rank == global_min {
+                // only merge pairs that have the min rank
+                if value <= global_min {
                     to_merge[write_id as usize] = id;
+                    // we continue onto the next occurent iff the pair is tagged as `SAFE`
+                    if write_id >= 1 {
+                        // less branches, do it outside the loop for the first 1.
+                        let merge_rank =
+                            self.tables.get_value(&to_merge[write_id - 1 as usize], &ia);
+                        running_min = std::cmp::min(running_min, merge_rank);
+                    }
+
                     read_id += 1;
+                } else {
+                    to_merge[write_id as usize] = ia;
                 }
                 write_id += 1;
                 read_id += 1;
-                // we need to update with the previous and the next local merges
-                running_min = std::cmp::min(running_min, rank);
             }
-            last_id = read_id + 1;
             i += 1;
+            last_id = write_id;
+            if running_min == u64::MAX {
+                break;
+            }
             global_min = running_min;
         }
     }
