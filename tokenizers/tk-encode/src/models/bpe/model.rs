@@ -1,4 +1,4 @@
-use super::{super::OrderedVocabIter, Error, Pair, Word};
+use super::{super::OrderedVocabIter, Error, Pair, Word, bytelevel_folding};
 use crate::models::bpe::Merge;
 use crate::pipeline::{self, ModelScratch, PipelineToken};
 use crate::tokenizer::{Model, Result, Token};
@@ -688,6 +688,9 @@ pub struct PipelineBPE {
 enum Atoms {
     Bytes {
         byte_to_id: [u32; 256],
+        /// Multi-byte characters proven to always assemble into one token; see
+        /// [`bytelevel_folding`]. The merge loop is seeded with that token directly.
+        fold: bytelevel_folding::FoldTable,
     },
     Chars {
         byte_fallback: Option<[u32; 256]>,
@@ -718,6 +721,7 @@ impl PipelineBPE {
         } = model;
 
         let (vocab, atoms) = if with_byte_level {
+            let fold = bytelevel_folding::build_fold_table(&vocab.content(), &merges);
             let mut vocab = BucketVocabStore::build(vocab.byte_content());
             vocab = byte_level::transform_vocab(vocab);
             let mut byte_to_id = [0u32; 256];
@@ -726,7 +730,7 @@ impl PipelineBPE {
                     .get_bytes(&[b])
                     .ok_or(Error::ByteAtomOutOfVocabulary(b))?;
             }
-            (vocab, Atoms::Bytes { byte_to_id })
+            (vocab, Atoms::Bytes { byte_to_id, fold })
         } else {
             let vocab = BucketVocabStore::build(vocab.byte_content());
             let unk_token = if let Some(unk_str) = unk_token {
@@ -787,9 +791,32 @@ impl PipelineBPE {
     ) {
         word.clear();
         match &self.atoms {
-            Atoms::Bytes { byte_to_id } => {
-                for &b in sequence.as_bytes() {
-                    word.add(byte_to_id[b as usize], 1);
+            Atoms::Bytes { byte_to_id, fold } => {
+                let bytes = sequence.as_bytes();
+                let mut i = 0;
+                while i < bytes.len() {
+                    let b = bytes[i];
+                    if b < 0x80 {
+                        word.add(byte_to_id[b as usize], 1);
+                        i += 1;
+                        continue;
+                    }
+                    // A multi-byte character seeds as its own token when the fold proved the
+                    // merges would assemble it anyway, and as its bytes otherwise.
+                    let ch = sequence[i..].chars().next().unwrap();
+                    let len = ch.len_utf8();
+                    let id = match (ch as usize) < bytelevel_folding::FOLD_TABLE_LEN {
+                        true => fold[ch as usize],
+                        false => bytelevel_folding::NO_FOLD,
+                    };
+                    if id != bytelevel_folding::NO_FOLD {
+                        word.add(id, len);
+                    } else {
+                        for &b in &bytes[i..i + len] {
+                            word.add(byte_to_id[b as usize], 1);
+                        }
+                    }
+                    i += len;
                 }
             }
             Atoms::Chars {
@@ -1752,6 +1779,159 @@ mod tests {
                 pipeline_ids(&pipeline, "zz"),
                 vec![u32::from(b'z'), u32::from(b'z')]
             );
+        }
+
+        /// Blanks a model's fold table, so it seeds every character as bytes again.
+        fn without_fold(mut model: PipelineBPE) -> PipelineBPE {
+            let Atoms::Bytes { fold, .. } = &mut model.atoms else {
+                panic!("not a byte-level model");
+            };
+            *fold = vec![bytelevel_folding::NO_FOLD; bytelevel_folding::FOLD_TABLE_LEN]
+                .into_boxed_slice()
+                .try_into()
+                .unwrap();
+            model
+        }
+
+        /// 'é' (bytes C3 A9) has a token and an unstealable assembly, so the fold seeds it as
+        /// that token; a thief merge on its first byte must blank the entry, and a character
+        /// outside the Basic Multilingual Plane never enters the table. Ids stay the same
+        /// either way.
+        #[test]
+        fn folded_char_seeds_as_its_token() {
+            let n = |b: u8| BYTES_CHAR_LOOKUP[b as usize].to_string();
+            let mut vocab: Vocab = (0..=255u8).map(|b| (n(b), u32::from(b))).collect();
+            vocab.insert(n(0xC3) + &n(0xA9), 300);
+            let merges = vec![(n(0xC3), n(0xA9))];
+            let bpe = BpeBuilder::default()
+                .vocab_and_merges(vocab.clone(), merges.clone())
+                .build()
+                .unwrap();
+            let pipeline = PipelineBPE::from_bpe(bpe, true).unwrap();
+
+            let Atoms::Bytes { fold, .. } = &pipeline.atoms else {
+                panic!("not a byte-level model");
+            };
+            assert_eq!(fold['é' as usize], 300);
+            assert_eq!(pipeline_ids(&pipeline, "é"), vec![300]);
+            // 4-byte characters stay out of the table and encode as their bytes.
+            assert_eq!(pipeline_ids(&pipeline, "🎉").len(), 4);
+
+            // "x" + C3 at rank 0 fires before é's assembly, so é may not fold; the byte
+            // path still merges it wherever no thief is adjacent.
+            vocab.insert("x".to_string() + &n(0xC3), 301);
+            let mut merges = merges;
+            merges.insert(0, ("x".to_string(), n(0xC3)));
+            let bpe = BpeBuilder::default()
+                .vocab_and_merges(vocab, merges)
+                .build()
+                .unwrap();
+            let pipeline = PipelineBPE::from_bpe(bpe, true).unwrap();
+            let Atoms::Bytes { fold, .. } = &pipeline.atoms else {
+                panic!("not a byte-level model");
+            };
+            assert_eq!(fold['é' as usize], bytelevel_folding::NO_FOLD);
+            assert_eq!(pipeline_ids(&pipeline, "xé"), vec![301, 0xA9]);
+            assert_eq!(pipeline_ids(&pipeline, "é"), vec![300]);
+        }
+
+        /// The fold is a shortcut, never a different answer: over a real vocabulary, seeding
+        /// through the table and seeding plain bytes must give identical ids. Skipped when the
+        /// file is not fetched.
+        #[test]
+        fn fold_seeding_matches_byte_seeding_on_llama3() {
+            let path = "../data/llama-3-tokenizer.json";
+            if !std::path::Path::new(path).exists() {
+                eprintln!("skip llama-3: not present (fetch with `make bench-models`)");
+                return;
+            }
+            let tok = crate::Tokenizer::from_file(path).unwrap();
+            let crate::models::ModelWrapper::BPE(bpe) = tok.get_model().clone() else {
+                panic!("llama-3 is BPE");
+            };
+            let folded = PipelineBPE::from_bpe(bpe.clone(), true).unwrap();
+            let plain = without_fold(PipelineBPE::from_bpe(bpe, true).unwrap());
+
+            let Atoms::Bytes { fold, .. } = &folded.atoms else {
+                panic!("llama-3 is byte-level");
+            };
+            let entries = fold
+                .iter()
+                .filter(|&&id| id != bytelevel_folding::NO_FOLD)
+                .count();
+            assert!(entries > 0, "no character folds in llama-3's vocabulary");
+            let cjk = fold[0x3000..]
+                .iter()
+                .filter(|&&id| id != bytelevel_folding::NO_FOLD)
+                .count();
+            eprintln!("llama-3 folds {entries} characters, {cjk} at U+3000 and above");
+
+            for text in [
+                "朝日新聞デジタルの記事一覧です。",
+                "缓存的错误信息不完整，请重试。",
+                "Καλημέρα κόσμε, добрый день",
+                "mixed ascii と 日本語 and émojis 🎉🚀 nbsp\u{a0}end",
+                "   leading spaces, ▁marks and érrors   ",
+            ] {
+                assert_eq!(
+                    pipeline_ids(&folded, text),
+                    pipeline_ids(&plain, text),
+                    "{text:?}"
+                );
+            }
+        }
+
+        /// Not a test: a manual probe for what the fold is worth on CJK text, model stage only,
+        /// cache off. Run with `cargo test --release -p tk-encode --lib fold_speed -- --ignored
+        /// --nocapture`.
+        #[test]
+        #[ignore]
+        fn fold_speed_probe_llama3_cjk() {
+            let path = "../data/llama-3-tokenizer.json";
+            let jpn = std::fs::read_to_string("../data/fixtures/lang/jpn_Jpan.txt");
+            let (Ok(tok), Ok(text)) = (crate::Tokenizer::from_file(path), jpn) else {
+                eprintln!("skip: llama-3 or the jpn fixture is not fetched");
+                return;
+            };
+            let crate::models::ModelWrapper::BPE(bpe) = tok.get_model().clone() else {
+                panic!("llama-3 is BPE");
+            };
+            let mut folded = PipelineBPE::from_bpe(bpe.clone(), true).unwrap();
+            folded.cache_capacity = None;
+            let mut plain = without_fold(PipelineBPE::from_bpe(bpe, true).unwrap());
+            plain.cache_capacity = None;
+
+            // 32-character chunks as a stand-in for the pre-tokenizer's CJK runs.
+            let chunks: Vec<&str> = {
+                let mut chunks = Vec::new();
+                let mut rest = text.as_str();
+                while let Some((i, _)) = rest.char_indices().nth(32) {
+                    chunks.push(&rest[..i]);
+                    rest = &rest[i..];
+                }
+                chunks
+            };
+            let bytes: usize = chunks.iter().map(|c| c.len()).sum();
+
+            for (name, model) in [("folded", &folded), ("plain", &plain)] {
+                let mut scratch = model.init_scratch();
+                let mut out = Vec::new();
+                for _ in 0..2 {
+                    // warm-up rep first; the second rep is the one printed
+                    let start = std::time::Instant::now();
+                    for chunk in &chunks {
+                        out.clear();
+                        pipeline::Model::tokenize_pipeline(model, chunk, &mut scratch, &mut out)
+                            .unwrap();
+                    }
+                    let elapsed = start.elapsed();
+                    eprintln!(
+                        "{name}: {:.2} ns/B over {} chunks ({bytes} B)",
+                        elapsed.as_nanos() as f64 / bytes as f64,
+                        chunks.len(),
+                    );
+                }
+            }
         }
 
         /// A whole-word vocab hit skips the merge loop but not the vocab lookup,
