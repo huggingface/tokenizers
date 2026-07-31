@@ -804,6 +804,35 @@ impl PipelineBPE {
         // Finally, we use the unmap
     }
 
+    fn advance_one<const M: bool>(
+        &self,
+        to_merge: &mut Vec<u32>,
+        mut read_id: usize,
+        global_min: u64,
+        mut write_id: usize,
+        mut running_min: u64,
+    ) -> (u64, usize, usize) {
+        let (ia, ib) = (to_merge[read_id], to_merge[read_id + 1]);
+        let value = self.tables.get_value(&ia, &ib);
+        let id = value as u32;
+        // only merge pairs that have the min rank
+        if value <= global_min {
+            to_merge[write_id as usize] = id;
+            // we continue onto the next occurent iff the pair is tagged as `SAFE`
+            if M {
+                // less branches, do it outside the loop for the first 1.
+                let merge_rank = self.tables.get_value(&to_merge[write_id - 1 as usize], &ia);
+                running_min = std::cmp::min(running_min, merge_rank);
+            }
+
+            read_id += 1;
+        } else {
+            to_merge[write_id as usize] = ia;
+        }
+        write_id += 1;
+        read_id += 1;
+        (running_min, write_id, read_id)
+    }
     fn multipass_merge(&self, to_merge: &mut Vec<u32>, mut global_min: u64) {
         const FALLBACK_THRESHOLD: u8 = 8;
         let mut i = 0u8;
@@ -811,35 +840,20 @@ impl PipelineBPE {
         let mut read_id = 0usize;
         let mut write_id = 0usize;
         let mut last_id = to_merge.len() - 1;
-        while true {
+        loop {
             if i == FALLBACK_THRESHOLD {
-                todo!("Implement merge with a simple binary heap")
+                self.heap_merge(to_merge, global_min);
             }
             // TODO: let's check if the global min pair is safe to merge more than once. If not we
             // cannot batch modify.
+
             let mut running_min = u64::MAX;
+            (running_min, read_id, write_id) =
+                self.advance_one::<false>(to_merge, read_id, global_min, write_id, running_min);
             while read_id + 1 < last_id {
                 // past iteration already holds previous ia / ib.
-                let (ia, ib) = (to_merge[read_id], to_merge[read_id + 1]);
-                let value = self.tables.get_value(&ia, &ib);
-                let id = value as u32;
-                // only merge pairs that have the min rank
-                if value <= global_min {
-                    to_merge[write_id as usize] = id;
-                    // we continue onto the next occurent iff the pair is tagged as `SAFE`
-                    if write_id >= 1 {
-                        // less branches, do it outside the loop for the first 1.
-                        let merge_rank =
-                            self.tables.get_value(&to_merge[write_id - 1 as usize], &ia);
-                        running_min = std::cmp::min(running_min, merge_rank);
-                    }
-
-                    read_id += 1;
-                } else {
-                    to_merge[write_id as usize] = ia;
-                }
-                write_id += 1;
-                read_id += 1;
+                (running_min, read_id, write_id) =
+                    self.advance_one::<true>(to_merge, read_id, global_min, write_id, running_min);
             }
             i += 1;
             last_id = write_id;
@@ -848,6 +862,10 @@ impl PipelineBPE {
             }
             global_min = running_min;
         }
+    }
+
+    fn heap_merge(&self, to_merge: &mut Vec<u32>, mut global_min: u64) {
+        todo!()
     }
 }
 
