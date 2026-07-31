@@ -70,7 +70,7 @@ impl Search {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type", try_from = "ReplaceDeserializer")]
 pub struct Replace {
-    pattern: ReplacePattern,
+    pub(crate) pattern: ReplacePattern,
     pub content: String,
     #[serde(skip)]
     search: Search,

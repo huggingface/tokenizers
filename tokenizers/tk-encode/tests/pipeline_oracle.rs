@@ -26,6 +26,26 @@ use tokenizers_release::Tokenizer as Released;
 
 const PROBE: &str = "The quick brown fox jumps 123.";
 
+/// Chunk shapes the SentencePiece space rewrite gets wrong first: empty input, text already
+/// starting with the `▁` delimiter, leading, trailing and repeated spaces, other whitespace, and
+/// special tokens cutting the text into chunks (normalization, and with it the delimiter prepend,
+/// runs on each chunk). Strings that are not special tokens for a given model just encode as
+/// text, so the whole list is checked for every model.
+const EDGE_TEXTS: &[&str] = &[
+    "",
+    " leading",
+    "trailing ",
+    "  both  ",
+    "a  b   c",
+    "▁already marked",
+    "▁",
+    "no_spaces",
+    "\ttab\nand newline",
+    "hello <s> world",
+    "<s>hugging <s> face<s>",
+    "a <unk> b <bos> c <eos>",
+];
+
 fn check_model(tok_file: &str) {
     let path = Path::new(DATA).join(tok_file);
     // The legacy `Tokenizer` only *builds* the pipeline (its sole constructor
@@ -52,6 +72,27 @@ fn check_model(tok_file: &str) {
     };
 
     let mut failures = Vec::new();
+    for &text in EDGE_TEXTS {
+        for add_special_tokens in [false, true] {
+            let expected = released
+                .encode_fast(text, add_special_tokens)
+                .unwrap()
+                .get_ids()
+                .to_vec();
+            let got: Vec<u32> = pipeline
+                .encode(text, add_special_tokens)
+                .unwrap()
+                .iter()
+                .map(|t| t.id)
+                .collect();
+            if expected != got {
+                failures.push(format!(
+                    "edge case {text:?} (add_special_tokens={add_special_tokens}): \
+                     expected {expected:?}, got {got:?}",
+                ));
+            }
+        }
+    }
     for &(group, stem) in FIXTURES {
         let fixture = Path::new(DATA)
             .join("fixtures")

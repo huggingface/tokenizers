@@ -1,4 +1,4 @@
-use crate::normalizers::metaspace::MetaspaceNormalizer;
+use crate::normalizers::metaspace::{MetaspaceNormalizer, PrependMode};
 use crate::pre_tokenizers::PreTokenizerWrapper;
 use crate::pre_tokenizers::split::Split;
 use crate::tokenizer::{Decoder, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
@@ -212,15 +212,17 @@ fn normalizer_and_split(
         return None;
     }
     let prepend = match metaspace.prepend_scheme {
-        PrependScheme::Always => true,
-        PrependScheme::Never => false,
+        // `Metaspace` swaps spaces first and then marks only text not already starting with the
+        // delimiter, so its `always` scheme is the conditional prepend.
+        PrependScheme::Always => PrependMode::IfMissing,
+        PrependScheme::Never => PrependMode::Never,
         // `First` writes the delimiter only on the piece at the very start of the text it came from.
         // A normalizer is handed one chunk at a time, without that context.
         PrependScheme::First => return None,
     };
     // Removes whitespaces and does not prepend words: nothing would show where words begin
-    // The output is one big continuous blob of words hlued together
-    if drop_whitespace && !prepend {
+    // The output is one big continuous blob of words glued together
+    if drop_whitespace && prepend == PrependMode::Never {
         return None;
     }
     let delimiter = metaspace.replacement;
