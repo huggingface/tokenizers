@@ -1285,6 +1285,36 @@ mod tests {
         );
     }
 
+    /// The real llama-2 and gemma-4 files qualify for two independent rewrites: their declared
+    /// space rewrite fuses into the one-pass [`MetaspaceNormalizer`], and the whole-chunk text
+    /// they hand the model is cut into words by [`ProvenCuts`]. Both read the declared config,
+    /// not each other's output, so building the pipeline must apply both; this pins that neither
+    /// detection hides the other. Skipped when the files are not fetched.
+    #[test]
+    fn real_sentencepiece_configs_get_the_fused_normalizer_and_proven_cuts() {
+        for file in ["llama-2.json", "gemma-4.json"] {
+            let path = format!("../data/{file}");
+            if !std::path::Path::new(&path).exists() {
+                eprintln!("skip {file}: not present (fetch with `make bench-models`)");
+                continue;
+            }
+            let tok = crate::Tokenizer::from_file(&path).unwrap();
+            let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
+            assert!(
+                matches!(
+                    pipeline.normalizers.as_slice(),
+                    [PipelineNormalizer::Metaspace(_)]
+                ),
+                "{file}: the declared space rewrite should fuse, got {:?}",
+                pipeline.normalizers,
+            );
+            assert!(
+                matches!(pipeline.pre_tokenizer, PipelinePreTokenizer::ProvenCuts(_)),
+                "{file}: the whole-chunk text should get proven cuts",
+            );
+        }
+    }
+
     /// Normalization runs on each chunk between special tokens, so the fused prepend must too:
     /// the text after `<s>` starts with a space, and `Prepend` + swap turn that into two
     /// delimiters. Only `"▁▁world"` is in the vocabulary; a prepend skipping the marked chunk
