@@ -5,6 +5,7 @@ use crate::tokenizer::{Model, Result, Token};
 use crate::utils::byte_level::{self};
 use crate::utils::cache::{DEFAULT_CACHE_CAPACITY, MAX_LENGTH};
 use crate::utils::iter::ResultShunt;
+use crate::utils::word_cache::{Lookup, WordCache};
 use crate::vocab::bucket_vocab_store::BucketVocabStore;
 use crate::vocab_store::VocabStore;
 use ahash::AHashMap;
@@ -680,6 +681,8 @@ pub struct PipelineBPE {
     vocab: BucketVocabStore,
     merges: MergeMap,
     ignore_merges: bool,
+    /// `None` when the tokenizer asked for no cache.
+    cache_capacity: Option<usize>,
 }
 
 enum Atoms {
@@ -760,6 +763,7 @@ impl PipelineBPE {
             ignore_merges,
             merges,
             vocab,
+            cache_capacity: model.cache.map(|c| c.capacity).filter(|&c| c > 0),
         })
     }
 
@@ -827,23 +831,39 @@ impl pipeline::Model for PipelineBPE {
             return Ok(());
         }
 
-        if self.ignore_merges
-            && let Some(id) = self.vocab.get_bytes(sequence.as_bytes())
-        {
-            output.push(PipelineToken { id });
-            return Ok(());
-        }
-
-        // TODO: persistent cache mapping &str -> &[u32]
-
         let BpeScratch {
             merge_queue,
             skip,
             word,
+            word_cache,
         } = scratch;
 
-        self.merge_word(sequence, merge_queue, skip, word);
-        output.extend(word.get_chars_iter().map(|id| PipelineToken { id }));
+        let mut placement = None;
+        if let Some(cache) = word_cache.as_mut() {
+            match cache.lookup(sequence.as_bytes()) {
+                Lookup::Hit(ids) => {
+                    output.extend(ids.iter().map(|&id| PipelineToken { id }));
+                    return Ok(());
+                }
+                Lookup::Miss(at) => placement = at,
+            }
+        }
+        let start = output.len();
+        if self.ignore_merges
+            && let Some(id) = self.vocab.get_bytes(sequence.as_bytes())
+        {
+            output.push(PipelineToken { id });
+        } else {
+            self.merge_word(sequence, merge_queue, skip, word);
+            output.extend(word.get_chars_iter().map(|id| PipelineToken { id }));
+        }
+        // The ids come back out of `output` because that is the only place both
+        // branches above leave them: `ignore_merges` never touches `word`.
+        if let Some(cache) = word_cache.as_mut()
+            && let Some(at) = placement
+        {
+            cache.insert(at, output[start..].iter().map(|token| token.id));
+        }
 
         Ok(())
     }
@@ -853,6 +873,7 @@ impl pipeline::Model for PipelineBPE {
             merge_queue: QuaternaryHeap::with_capacity(64),
             word: Word::with_capacity(64),
             skip: Vec::new(),
+            word_cache: self.cache_capacity.map(WordCache::new),
         }
     }
 }
@@ -861,6 +882,8 @@ pub struct BpeScratch {
     pub(crate) merge_queue: QuaternaryHeap<Merge>,
     pub(crate) skip: Vec<Merge>,
     pub(crate) word: Word,
+    /// Outlives the encode call that fills it, or it would never see a word twice.
+    pub(crate) word_cache: Option<WordCache>,
 }
 impl ModelScratch for BpeScratch {}
 
@@ -1438,13 +1461,61 @@ mod tests {
             assert!(pipeline_ids(&pipeline, "").is_empty());
         }
 
+        // The pool hands the SAME scratch to successive encodes. State left behind by one
+        // call (an undrained merge queue, a stale word buffer) would corrupt every call
+        // after it. Drive several inputs through one scratch and check each still matches
+        // the reference model.
+        #[test]
+        fn reused_scratch_matches_fresh() {
+            let bpe = hello_builder().build().unwrap();
+            let reference = bpe.clone();
+            let model = PipelineBPE::from_bpe(bpe, false).unwrap();
+            let mut scratch = model.init_scratch();
+            for input in ["hello", "hell", "helo", "oleh", "hello", "", "hxe"] {
+                let mut out = Vec::new();
+                pipeline::Model::tokenize_pipeline(&model, input, &mut scratch, &mut out).unwrap();
+                let got: Vec<u32> = out.iter().map(|t| t.id).collect();
+                assert_eq!(got, reference_ids(&reference, input), "{input:?}");
+            }
+        }
+
+        // A cache may forget a word, but it must never change one. Run every word twice
+        // through one scratch, the second time answered from the cache, against a model
+        // built with no cache at all.
+        #[test]
+        fn cached_ids_match_uncached() {
+            let cached = PipelineBPE::from_bpe(hello_builder().build().unwrap(), false).unwrap();
+            let uncached =
+                PipelineBPE::from_bpe(hello_builder().cache_capacity(0).build().unwrap(), false)
+                    .unwrap();
+
+            let mut scratch = cached.init_scratch();
+            assert!(scratch.word_cache.is_some(), "nothing is being cached");
+            for _ in 0..2 {
+                for word in [
+                    "hello",
+                    "hell",
+                    "o",
+                    "hellohello",
+                    "hello-a-word-past-fifteen-bytes",
+                    "hxe",
+                ] {
+                    let mut out = Vec::new();
+                    pipeline::Model::tokenize_pipeline(&cached, word, &mut scratch, &mut out)
+                        .unwrap();
+                    let got: Vec<u32> = out.iter().map(|t| t.id).collect();
+                    assert_eq!(got, pipeline_ids(&uncached, word), "{word:?}");
+                }
+            }
+        }
+
         #[test]
         fn unknown_char_without_unk_is_dropped() {
             let bpe = hello_builder().build().unwrap();
             let reference = bpe.clone();
             let pipeline = PipelineBPE::from_bpe(bpe, false).unwrap();
             // 'x' vanishes, making 'h' and 'e' adjacent, so the (h,e) merge
-            // applies — mirrors the reference model.
+            // applies, mirroring the reference model.
             assert_eq!(pipeline_ids(&pipeline, "hxe"), vec![4]);
             assert_eq!(
                 pipeline_ids(&pipeline, "hxe"),
@@ -1615,7 +1686,7 @@ mod tests {
 
         /// A gpt2-shaped miniature: the 256 projected single-byte tokens
         /// (id == byte value) plus `extra` tokens and merges, given in raw
-        /// space and projected here — like a real byte-level tokenizer.json,
+        /// space and projected here, like a real byte-level tokenizer.json,
         /// whose vocab is stored in the projected alphabet.
         fn byte_level_bpe(
             extra: &[(&str, u32)],
@@ -1670,6 +1741,22 @@ mod tests {
                 pipeline_ids(&pipeline, "zz"),
                 vec![u32::from(b'z'), u32::from(b'z')]
             );
+        }
+
+        /// A whole-word vocab hit skips the merge loop but not the vocab lookup,
+        /// and in a byte-level vocab the words that take that path are the
+        /// commonest ones in the text. Storing the id it found turns the next
+        /// occurrence into a cache hit.
+        #[test]
+        fn ignore_merges_stores_the_whole_word_id() {
+            let bpe = byte_level_bpe(&[(" hello", 300)], &[], true);
+            let model = PipelineBPE::from_bpe(bpe, true).unwrap();
+            let mut scratch = model.init_scratch();
+            let mut out = Vec::new();
+            PipelineModel::tokenize_pipeline(&model, " hello", &mut scratch, &mut out).unwrap();
+
+            let cache = scratch.word_cache.as_mut().unwrap();
+            assert_eq!(cache.lookup(b" hello").hit(), Some(&[300u32][..]));
         }
 
         #[test]

@@ -1,5 +1,7 @@
 use std::cell::RefCell;
 use std::convert::TryInto;
+use std::mem;
+use std::sync::{Mutex, PoisonError};
 use std::{borrow::Cow, convert::TryFrom};
 
 use atomsplit::classify::classify;
@@ -56,7 +58,7 @@ pub(crate) fn classify_into_spans(
         }
         classify(bytes, &mut tags[..n]);
         let k = fsm(bytes, &tags[..n], &mut spans[..n + 1]);
-        out.extend_from_slice(&spans[..k]); // same type now — plain memcpy, no per-token conversion
+        out.extend_from_slice(&spans[..k]); // same type now: plain memcpy, no per-token conversion
     });
 }
 
@@ -323,7 +325,7 @@ impl TryFrom<&PostProcessorWrapper> for PipelinePostProcessor {
     }
 }
 
-/// An output token. Carries only the vocabulary `id` — offsets and the token
+/// An output token. Carries only the vocabulary `id`, since offsets and the token
 /// string are dropped, which is all an encode-only caller needs.
 #[derive(Debug, Clone, Copy)]
 pub struct PipelineToken {
@@ -448,6 +450,78 @@ pub struct PipelineTokenizer {
     pre_tokenizer: PipelinePreTokenizer,
     model: PipelineModel,
     post_processor: PipelinePostProcessor,
+    scratch_pool: ScratchPool,
+}
+
+/// A pool of [`PipelineModelScratch`].
+///
+/// When calling [`PipelineTokenizer::encode`], an instance of [`PipelineModelScratch`] is taken out of this pool
+/// and given to the tokenizer. When the encoding is done, the scratch buffer is returned to the pool and can be
+/// reused by later calls.
+///
+/// The reusability matters because the scratch buffer may hold cache structures which are more useful when reused,
+/// and less importantly it saves an extra allocation for an fresh buffer every time.
+struct ScratchPool(Mutex<Vec<PipelineModelScratch>>);
+
+impl ScratchPool {
+    fn new() -> Self {
+        Self(Mutex::new(Vec::new()))
+    }
+
+    /// Get a scratch buffer from the pool, wrapped in a [`ScratchGuard`].
+    /// When the [`ScratchGuard`] gets dropped, the scratch buffer is pushed back to the pool.
+    fn get<'a>(&'a self, model: &PipelineModel) -> ScratchGuard<'a> {
+        // The Mutex lock is held just long enough to pop the scratch out of the pool
+        let taken = self.0.lock().unwrap_or_else(PoisonError::into_inner).pop();
+        ScratchGuard {
+            // If there was no scratch buffer available in the pool, we build.a fresh one
+            scratch: taken.unwrap_or_else(|| model.init_scratch()),
+            pool: self,
+        }
+    }
+
+    #[cfg(test)]
+    fn len(&self) -> usize {
+        self.0.lock().unwrap_or_else(PoisonError::into_inner).len()
+    }
+}
+
+/// A wrapper around [`PipelineModelScratch`].
+/// Implements [`Deref`] and [`DerefMut`], so it behaves as [`PipelineModelScratch`].
+///
+/// When it gets dropped, it pushes [`Self::scratch`] back into the shared [`Self::pool`] so it can
+/// get reused by a later call to [`PipelineTokenizer::encode`].
+///
+/// TODO @McPatate : The Mutex can create contention, to be replaced by a better access pattern
+struct ScratchGuard<'a> {
+    scratch: PipelineModelScratch,
+    pool: &'a ScratchPool,
+}
+
+impl Drop for ScratchGuard<'_> {
+    fn drop(&mut self) {
+        // Steals the scratch buffer from self, replaces it with PipelineModelScratch::default()
+        let scratch = mem::take(&mut self.scratch);
+        // Push the scratch back in the pool
+        self.pool
+            .0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(scratch);
+    }
+}
+
+impl std::ops::Deref for ScratchGuard<'_> {
+    type Target = PipelineModelScratch;
+    fn deref(&self) -> &PipelineModelScratch {
+        &self.scratch
+    }
+}
+
+impl std::ops::DerefMut for ScratchGuard<'_> {
+    fn deref_mut(&mut self) -> &mut PipelineModelScratch {
+        &mut self.scratch
+    }
 }
 
 impl TryFrom<&Tokenizer> for PipelineTokenizer {
@@ -569,6 +643,7 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
                 .map(PipelinePostProcessor::try_from)
                 .transpose()?
                 .unwrap_or_default(),
+            scratch_pool: ScratchPool::new(),
         })
     }
 }
@@ -599,7 +674,7 @@ impl PipelineTokenizer {
     pub fn encode(&self, input: &str, add_special_tokens: bool) -> Result<Vec<PipelineToken>> {
         let mut output = Vec::new();
         let mut pre_tokens = Vec::new();
-        let mut scratch = self.model.init_scratch();
+        let mut scratch = self.scratch_pool.get(&self.model);
 
         self.encode_generic::<{ Self::STAGE_POSTPROCESS }>(
             input,
@@ -613,7 +688,7 @@ impl PipelineTokenizer {
 
     /// Decode token ids back to a `String`.
     ///
-    /// Not implemented yet — the pipeline decode path is being built. It fails
+    /// Not implemented yet: the pipeline decode path is being built. It fails
     /// loud (rather than returning a plausible-but-wrong string) so the oracle
     /// test and the comparative benchmark report decode as *pending* instead of
     /// silently validating garbage. Implementing this flips the ignored
@@ -623,7 +698,7 @@ impl PipelineTokenizer {
     }
 
     /// Decode several id sequences at once, one `String` per input. Mirrors the
-    /// released `decode_batch`; sequential (KISS) — behavior-identical to a
+    /// released `decode_batch`; sequential (KISS), behavior-identical to a
     /// parallel map, since each [`decode`](Self::decode) is independent.
     pub fn decode_batch(
         &self,
@@ -638,7 +713,7 @@ impl PipelineTokenizer {
 
     /// Incremental decode: feed ids one at a time via [`PipelineDecodeStream::step`].
     /// Same prefix-tracking scheme as the released `DecodeStream`, built on
-    /// [`decode`](Self::decode) — so it is correct exactly where `decode` is.
+    /// [`decode`](Self::decode), so it is correct exactly where `decode` is.
     pub fn decode_stream(&self, skip_special_tokens: bool) -> PipelineDecodeStream<'_> {
         PipelineDecodeStream {
             tokenizer: self,
@@ -651,7 +726,7 @@ impl PipelineTokenizer {
 
     /// Single source of truth for the encode pipeline, generic over how many stages
     /// run. `STAGE` is a **const generic**, so `if STAGE >= …` folds at compile time and
-    /// the disabled stages are compiled out — the full specialization
+    /// the disabled stages are compiled out, so the full specialization
     /// ([`STAGE_POSTPROCESS`], which [`encode`](Self::encode) calls) is branchless and
     /// identical to a hand-written full pipeline, while the benchmark drives lower
     /// `STAGE` values to time each stage's marginal cost (the ablation ladder), e.g.
@@ -660,7 +735,7 @@ impl PipelineTokenizer {
     /// [`STAGE_POSTPROCESS`]: Self::STAGE_POSTPROCESS
     ///
     /// `output` and the `pre_tokens` scratch are caller-owned so a benchmark can reuse
-    /// them across calls and observe both buffers to anchor the ablation levels — the
+    /// them across calls and observe both buffers to anchor the ablation levels. The
     /// library itself stays free of any `black_box`/timing artifact.
     #[doc(hidden)] // public only so `examples/fixture_bench.rs` can drive partial stages
     pub fn encode_generic<const STAGE: u8>(
@@ -785,7 +860,7 @@ pub enum SplitPolicy {
     Isolate,
 }
 
-/// Splits `text` into same-class groups, emitting each as a [`Split`]
+/// Splits `text` into same-class groups, emitting each as a [`Span`]
 /// according to its [`SplitPolicy`].
 ///
 /// `classify` maps each char to a small `Copy + Eq` class, the current
@@ -909,7 +984,7 @@ pub fn split_matches(
 ) {
     use SplitDelimiterBehavior::*;
 
-    // (offsets, should_remove) — mirrors `NormalizedString::split`.
+    // (offsets, should_remove), mirroring `NormalizedString::split`.
     let splits: Vec<((usize, usize), bool)> = match behavior {
         Isolated => matches.into_iter().map(|(o, _)| (o, false)).collect(),
         Removed => matches, // should_remove == is_match
@@ -1045,11 +1120,19 @@ impl Model for PipelineModel {
     }
 }
 
+/// A set of buffers and other state the model needs to encode efficiently,
+/// reused among calls to [`PipelineTokenizer::encode`].
+///
+/// Each model gets its own variant.
+#[derive(Default)]
 pub enum PipelineModelScratch {
     BPE(BpeScratch),
     WordLevel(()),
     WordPiece(WordPieceScratch),
     Unigram(UnigramScratch),
+    /// We need a default value to be able to use [`mem::take`] in [`ScratchGuard::drop`]
+    #[default]
+    None,
 }
 
 impl ModelScratch for PipelineModelScratch {}
@@ -1414,5 +1497,117 @@ mod tests {
         );
         let err = conversion_error(&tok);
         assert!(err.contains("not supported"), "{}", err);
+    }
+
+    /// A BPE pipeline that merges "hello" into the single id 7.
+    fn hello_pipeline() -> PipelineTokenizer {
+        use crate::models::bpe::{BpeBuilder, Merges, Vocab};
+
+        let vocab: Vocab = [
+            ("h", 0u32),
+            ("e", 1),
+            ("l", 2),
+            ("o", 3),
+            ("he", 4),
+            ("hel", 5),
+            ("hell", 6),
+            ("hello", 7),
+        ]
+        .into_iter()
+        .map(|(s, i)| (s.to_string(), i))
+        .collect();
+        let merges: Merges = vec![
+            ("h".to_string(), "e".to_string()),
+            ("he".to_string(), "l".to_string()),
+            ("hel".to_string(), "l".to_string()),
+            ("hell".to_string(), "o".to_string()),
+        ];
+        let bpe = BpeBuilder::default()
+            .vocab_and_merges(vocab, merges)
+            .build()
+            .unwrap();
+        PipelineTokenizer::try_from(&Tokenizer::new(bpe)).unwrap()
+    }
+
+    // The pool exists so ONE `&self` tokenizer can be shared across rayon workers. Encode
+    // the same input from thousands of threads through a single instance; each must get a
+    // private scratch and produce the sequential result. Two threads sharing a scratch
+    // would corrupt some of them. This only compiles if `PipelineTokenizer: Sync`,
+    // which the pool has to preserve.
+    #[test]
+    fn encode_shared_across_threads() {
+        use rayon::prelude::*;
+
+        let pipeline = hello_pipeline();
+
+        let want: Vec<u32> = pipeline
+            .encode("hello", false)
+            .unwrap()
+            .iter()
+            .map(|t| t.id)
+            .collect();
+        assert_eq!(want, vec![7]);
+
+        let all_match = (0..10_000u32).into_par_iter().all(|_| {
+            pipeline
+                .encode("hello", false)
+                .unwrap()
+                .iter()
+                .map(|t| t.id)
+                .collect::<Vec<_>>()
+                == want
+        });
+        assert!(all_match);
+    }
+
+    // Reusing scratches is the whole point of the pool, so it must not build one per call:
+    // one thread encoding in a loop has to keep coming back to the same scratch, and a
+    // burst of N threads must leave at most N behind for later calls to use.
+    #[test]
+    fn scratches_are_reused_rather_than_piling_up() {
+        use std::sync::Barrier;
+
+        let pipeline = hello_pipeline();
+        for _ in 0..1000 {
+            pipeline.encode("hello", false).unwrap();
+        }
+        assert_eq!(pipeline.scratch_pool.len(), 1);
+
+        let threads = 64;
+        let all_holding = Barrier::new(threads);
+        std::thread::scope(|scope| {
+            for _ in 0..threads {
+                scope.spawn(|| {
+                    let scratch = pipeline.scratch_pool.get(&pipeline.model);
+                    all_holding.wait();
+                    drop(scratch);
+                });
+            }
+        });
+
+        let after_burst = pipeline.scratch_pool.len();
+        assert!(
+            after_burst <= threads,
+            "{after_burst} scratches kept for {threads} threads"
+        );
+        for _ in 0..1000 {
+            pipeline.encode("hello", false).unwrap();
+        }
+        assert_eq!(pipeline.scratch_pool.len(), after_burst);
+    }
+
+    // A scratch coming back out of the pool has to still know the words of the last
+    // encode: a cache emptied between calls would never hit.
+    #[test]
+    fn the_word_cache_outlives_the_encode_call() {
+        let pipeline = hello_pipeline();
+        pipeline.encode("hello", false).unwrap();
+
+        let mut scratch = pipeline.scratch_pool.get(&pipeline.model);
+        let PipelineModelScratch::BPE(bpe) = &mut *scratch else {
+            panic!("a BPE pipeline encodes with a BPE scratch");
+        };
+        let cache = bpe.word_cache.as_mut().expect("BPE encodes with a cache");
+        assert_eq!(cache.lookup(b"hello").hit(), Some(&[7u32][..]));
     }
 }
