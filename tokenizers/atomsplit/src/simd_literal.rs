@@ -85,6 +85,10 @@
 //! on bit `4 * j`. `SHIFT` is that spacing (`bit position >> SHIFT` recovers the offset),
 //! and it is the only difference the shared code ever sees.
 //!
+//! On x86 the 16-byte baseline is SSE2, which every x86_64 CPU has; when the CPU reports
+//! wider vectors, [`matches_into`] and [`count_matches`] pick a faster front end per call
+//! (the `wide` module: AVX2 and AVX-512).
+//!
 //! The wasm layer is compile-checked but not run in CI; the other targets run the full
 //! `tests/literal.rs` parity suite.
 
@@ -287,6 +291,10 @@ pub(crate) fn count_matches<const K: usize>(pattern: [u8; K], text: &[u8]) -> us
     if len < K {
         return 0;
     }
+    #[cfg(target_arch = "x86_64")]
+    if let Some(count) = wide::count_matches_wide::<K>(pattern, text) {
+        return count;
+    }
     let p = text.as_ptr();
     let mut pattern_chunks = [arch::splat(0); K];
     for (chunk, &byte) in pattern_chunks.iter_mut().zip(&pattern) {
@@ -315,20 +323,37 @@ pub(crate) fn count_matches<const K: usize>(pattern: [u8; K], text: &[u8]) -> us
         i += 64;
     }
 
+    count + unsafe { count_tail::<K>(pattern, &pattern_chunks, text, i) }
+}
+
+/// The counting twin of [`scan_tail`]: 16-byte rounds from `i`, the overlapped final block,
+/// or the byte-by-byte walk for texts shorter than one block.
+///
+/// # Safety
+/// Reads are bounded by the loop conditions, exactly as in [`scan_tail`]. Nothing writes.
+unsafe fn count_tail<const K: usize>(
+    pattern: [u8; K],
+    pattern_chunks: &[arch::Chunk; K],
+    text: &[u8],
+    mut i: usize,
+) -> usize {
+    let len = text.len();
+    let p = text.as_ptr();
+    let mut count = 0usize;
+
     // SAFETY: reads end at `i + 16 + (K - 1) <= len`.
     while i + 16 + (K - 1) <= len {
-        let starts = unsafe { arch::match_starts::<K>(p.add(i), &pattern_chunks) };
+        let starts = unsafe { arch::match_starts::<K>(p.add(i), pattern_chunks) };
         count += arch::bits(starts).count_ones() as usize;
         i += 16;
     }
 
     if i + K <= len {
         if len >= 16 + (K - 1) {
-            // The overlapped final block, exactly as in `scan`: bits below `i` were counted
-            // by the loops above and are masked off.
+            // The overlapped final block: bits below `i` were counted above and are masked off.
             // SAFETY: the block reads `base .. base + 16 + K - 1`, which ends exactly at `len`.
             let base = len - 16 - (K - 1);
-            let starts = unsafe { arch::match_starts::<K>(p.add(base), &pattern_chunks) };
+            let starts = unsafe { arch::match_starts::<K>(p.add(base), pattern_chunks) };
             let bits = arch::bits(starts) & (!0u64 << ((i - base) << arch::SHIFT));
             count += bits.count_ones() as usize;
         } else {
@@ -339,6 +364,276 @@ pub(crate) fn count_matches<const K: usize>(pattern: [u8; K], text: &[u8]) -> us
         }
     }
     count
+}
+
+/// The wider x86 front ends. Every x86_64 CPU has the SSE2 baseline above; these two rungs
+/// are picked per call when the CPU reports the feature:
+///
+/// - **AVX2** compares 32 bytes per instruction, so one round covers 64 bytes with two
+///   compares and one combined mask.
+/// - **AVX-512** compares 64 bytes straight into a bit mask (`_mm512_cmpeq_epi8_mask`, no
+///   separate mask step) and decodes with `vpcompressd`: the CPU packs the matching offsets
+///   itself, 16 at a time, replacing the whole count-trailing-zeros loop.
+///
+/// Each rung is its own function because `#[target_feature]` applies per function; the bodies
+/// mirror [`scan`] and [`count_matches`] round for round and share [`decode`], [`scan_tail`]
+/// and [`count_tail`]. The AVX2 rung is exercised by the `tests/literal.rs` suite on any
+/// AVX2 machine or emulator; the AVX-512 rung runs the same suite only on hardware that has
+/// it, so run the tests on such a machine before trusting changes to it.
+#[cfg(target_arch = "x86_64")]
+mod wide {
+    use super::{arch, count_tail, decode, scan_tail};
+    use core::arch::x86_64::*;
+
+    /// Runs the widest scan this CPU supports; `None` means only the baseline exists.
+    #[inline]
+    pub(super) fn matches_into_wide<const K: usize>(
+        pattern: [u8; K],
+        text: &[u8],
+        out: &mut [u32],
+    ) -> Option<usize> {
+        if is_x86_feature_detected!("avx512f") && is_x86_feature_detected!("avx512bw") {
+            // SAFETY: the features were just detected; the buffer contract is the caller's.
+            return Some(unsafe { scan_avx512::<K>(pattern, text, out) });
+        }
+        if is_x86_feature_detected!("avx2") {
+            // SAFETY: the feature was just detected; the buffer contract is the caller's.
+            return Some(unsafe { scan_avx2::<K>(pattern, text, out) });
+        }
+        None
+    }
+
+    /// The counting twin of [`matches_into_wide`].
+    #[inline]
+    pub(super) fn count_matches_wide<const K: usize>(
+        pattern: [u8; K],
+        text: &[u8],
+    ) -> Option<usize> {
+        if is_x86_feature_detected!("avx512f") && is_x86_feature_detected!("avx512bw") {
+            // SAFETY: the features were just detected. Counting never writes.
+            return Some(unsafe { count_avx512::<K>(pattern, text) });
+        }
+        if is_x86_feature_detected!("avx2") {
+            // SAFETY: the feature was just detected. Counting never writes.
+            return Some(unsafe { count_avx2::<K>(pattern, text) });
+        }
+        None
+    }
+
+    /// All-ones per lane where a whole `K`-byte match starts, for 32 positions at `p`.
+    ///
+    /// # Safety
+    /// AVX2 must be available, and `p .. p + 32 + K - 1` must be readable.
+    #[inline]
+    #[target_feature(enable = "avx2")]
+    unsafe fn match_starts32<const K: usize>(p: *const u8, pattern: &[__m256i; K]) -> __m256i {
+        // SAFETY: the caller's contract above; each load of 32 bytes from `p + k`, `k < K`,
+        // stays inside that readable range.
+        let mut starts = _mm256_cmpeq_epi8(unsafe { _mm256_loadu_si256(p.cast()) }, pattern[0]);
+        for (k, &byte) in pattern.iter().enumerate().skip(1) {
+            starts = _mm256_and_si256(
+                starts,
+                _mm256_cmpeq_epi8(unsafe { _mm256_loadu_si256(p.add(k).cast()) }, byte),
+            );
+        }
+        starts
+    }
+
+    /// One byte copied into every lane, and the baseline chunks [`scan_tail`] wants.
+    #[target_feature(enable = "avx2")]
+    fn splat32<const K: usize>(pattern: [u8; K]) -> ([__m256i; K], [arch::Chunk; K]) {
+        let mut wide = [_mm256_set1_epi8(0); K];
+        let mut baseline = [arch::splat(0); K];
+        for k in 0..K {
+            wide[k] = _mm256_set1_epi8(pattern[k] as i8);
+            baseline[k] = arch::splat(pattern[k]);
+        }
+        (wide, baseline)
+    }
+
+    /// [`scan`](super::scan) with the AVX2 front end: 64 bytes per round as two 32-byte
+    /// compares, one combined mask, decoded in the same 16-bit quarters as the baseline so
+    /// [`decode`]'s four-slot unroll stays matched to typical match density.
+    ///
+    /// # Safety
+    /// AVX2 must be available, and `out` must satisfy
+    /// [`matches_into`](super::matches_into)'s buffer bound, which it asserts.
+    #[target_feature(enable = "avx2")]
+    unsafe fn scan_avx2<const K: usize>(pattern: [u8; K], text: &[u8], out: &mut [u32]) -> usize {
+        let len = text.len();
+        if len < K {
+            return 0;
+        }
+        let p = text.as_ptr();
+        let (pattern_chunks, baseline) = splat32::<K>(pattern);
+        let start = out.as_mut_ptr();
+        // SAFETY: one past the buffer's last slot is a valid address to form (never read).
+        let end = unsafe { start.add(out.len()) } as *const u32;
+        let mut cursor = start;
+        let mut i = 0usize;
+
+        // SAFETY: reads end at `i + 32 + 32 + (K - 1) <= len`; writes are the buffer
+        // contract, handed to `decode` as `end`.
+        while i + 64 + (K - 1) <= len {
+            let (s0, s1) = unsafe {
+                (
+                    match_starts32::<K>(p.add(i), &pattern_chunks),
+                    match_starts32::<K>(p.add(i + 32), &pattern_chunks),
+                )
+            };
+            let bits = (_mm256_movemask_epi8(s0) as u32 as u64)
+                | ((_mm256_movemask_epi8(s1) as u32 as u64) << 32);
+            if bits != 0 {
+                unsafe {
+                    cursor = decode(bits & 0xFFFF, i as u32, cursor, end);
+                    cursor = decode((bits >> 16) & 0xFFFF, i as u32 + 16, cursor, end);
+                    cursor = decode((bits >> 32) & 0xFFFF, i as u32 + 32, cursor, end);
+                    cursor = decode(bits >> 48, i as u32 + 48, cursor, end);
+                }
+            }
+            i += 64;
+        }
+        // SAFETY: `scan_tail` continues under the same contract.
+        cursor = unsafe { scan_tail::<K>(pattern, &baseline, text, i, cursor, end) };
+        // SAFETY: `cursor` and `start` both point into `out`'s buffer.
+        unsafe { cursor.offset_from(start) as usize }
+    }
+
+    /// The counting twin of [`scan_avx2`].
+    ///
+    /// # Safety
+    /// AVX2 must be available.
+    #[target_feature(enable = "avx2")]
+    unsafe fn count_avx2<const K: usize>(pattern: [u8; K], text: &[u8]) -> usize {
+        let len = text.len();
+        if len < K {
+            return 0;
+        }
+        let p = text.as_ptr();
+        let (pattern_chunks, baseline) = splat32::<K>(pattern);
+        let mut count = 0usize;
+        let mut i = 0usize;
+
+        // SAFETY: reads end at `i + 64 + (K - 1) <= len`. Nothing writes.
+        while i + 64 + (K - 1) <= len {
+            let (s0, s1) = unsafe {
+                (
+                    match_starts32::<K>(p.add(i), &pattern_chunks),
+                    match_starts32::<K>(p.add(i + 32), &pattern_chunks),
+                )
+            };
+            count += (_mm256_movemask_epi8(s0).count_ones() + _mm256_movemask_epi8(s1).count_ones())
+                as usize;
+            i += 64;
+        }
+        // SAFETY: `count_tail` continues under the same read bounds.
+        count + unsafe { count_tail::<K>(pattern, &baseline, text, i) }
+    }
+
+    /// The 64-byte match mask, straight from the compares: AVX-512 byte compares produce a
+    /// bit per lane natively, so there is no separate mask step to pay for.
+    ///
+    /// # Safety
+    /// AVX-512 F and BW must be available, and `p .. p + 64 + K - 1` must be readable.
+    #[inline]
+    #[target_feature(enable = "avx512f,avx512bw")]
+    unsafe fn match_bits64<const K: usize>(p: *const u8, pattern: &[__m512i; K]) -> u64 {
+        // SAFETY: the caller's contract above; each load of 64 bytes from `p + k`, `k < K`,
+        // stays inside that readable range.
+        let mut bits = _mm512_cmpeq_epi8_mask(unsafe { _mm512_loadu_si512(p.cast()) }, pattern[0]);
+        for (k, &byte) in pattern.iter().enumerate().skip(1) {
+            bits &= _mm512_cmpeq_epi8_mask(unsafe { _mm512_loadu_si512(p.add(k).cast()) }, byte);
+        }
+        bits
+    }
+
+    /// One byte copied into every lane, and the baseline chunks the shared tails want.
+    #[target_feature(enable = "avx512f")]
+    fn splat64<const K: usize>(pattern: [u8; K]) -> ([__m512i; K], [arch::Chunk; K]) {
+        let mut wide = [_mm512_set1_epi8(0); K];
+        let mut baseline = [arch::splat(0); K];
+        for k in 0..K {
+            wide[k] = _mm512_set1_epi8(pattern[k] as i8);
+            baseline[k] = arch::splat(pattern[k]);
+        }
+        (wide, baseline)
+    }
+
+    /// [`scan`](super::scan) with the AVX-512 front end. The decode is `vpcompressd`
+    /// (`_mm512_mask_compressstoreu_epi32`): give the CPU sixteen candidate offsets and a
+    /// mask, and it stores exactly the matching ones, packed. The count-trailing-zeros loop
+    /// and its density concerns disappear; four compress-stores cover a 64-byte round.
+    ///
+    /// # Safety
+    /// AVX-512 F and BW must be available, and `out` must satisfy
+    /// [`matches_into`](super::matches_into)'s buffer bound, which it asserts.
+    #[target_feature(enable = "avx512f,avx512bw")]
+    unsafe fn scan_avx512<const K: usize>(pattern: [u8; K], text: &[u8], out: &mut [u32]) -> usize {
+        let len = text.len();
+        if len < K {
+            return 0;
+        }
+        let p = text.as_ptr();
+        let (pattern_chunks, baseline) = splat64::<K>(pattern);
+        let start = out.as_mut_ptr();
+        // SAFETY: one past the buffer's last slot is a valid address to form (never read).
+        let end = unsafe { start.add(out.len()) } as *const u32;
+        let mut cursor = start;
+        let mut i = 0usize;
+        // Lane numbers 0..16, the base of every offset vector.
+        let lanes = _mm512_set_epi32(15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0);
+
+        // SAFETY: reads end at `i + 64 + (K - 1) <= len`. Each compress-store writes exactly
+        // the matches of its quarter, within the buffer contract.
+        while i + 64 + (K - 1) <= len {
+            let bits = unsafe { match_bits64::<K>(p.add(i), &pattern_chunks) };
+            if bits != 0 {
+                let base = _mm512_add_epi32(lanes, _mm512_set1_epi32(i as i32));
+                for quarter in 0..4 {
+                    let mask = ((bits >> (16 * quarter)) & 0xFFFF) as __mmask16;
+                    let offsets = _mm512_add_epi32(base, _mm512_set1_epi32(16 * quarter));
+                    debug_assert!(
+                        end as usize - cursor as usize
+                            >= mask.count_ones() as usize * size_of::<u32>(),
+                        "compress-store would write past the match buffer"
+                    );
+                    unsafe {
+                        _mm512_mask_compressstoreu_epi32(cursor.cast(), mask, offsets);
+                        cursor = cursor.add(mask.count_ones() as usize);
+                    }
+                }
+            }
+            i += 64;
+        }
+        // SAFETY: `scan_tail` continues under the same contract.
+        cursor = unsafe { scan_tail::<K>(pattern, &baseline, text, i, cursor, end) };
+        // SAFETY: `cursor` and `start` both point into `out`'s buffer.
+        unsafe { cursor.offset_from(start) as usize }
+    }
+
+    /// The counting twin of [`scan_avx512`].
+    ///
+    /// # Safety
+    /// AVX-512 F and BW must be available.
+    #[target_feature(enable = "avx512f,avx512bw")]
+    unsafe fn count_avx512<const K: usize>(pattern: [u8; K], text: &[u8]) -> usize {
+        let len = text.len();
+        if len < K {
+            return 0;
+        }
+        let p = text.as_ptr();
+        let (pattern_chunks, baseline) = splat64::<K>(pattern);
+        let mut count = 0usize;
+        let mut i = 0usize;
+
+        // SAFETY: reads end at `i + 64 + (K - 1) <= len`. Nothing writes.
+        while i + 64 + (K - 1) <= len {
+            count += unsafe { match_bits64::<K>(p.add(i), &pattern_chunks) }.count_ones() as usize;
+            i += 64;
+        }
+        // SAFETY: `count_tail` continues under the same read bounds.
+        count + unsafe { count_tail::<K>(pattern, &baseline, text, i) }
+    }
 }
 
 /// One-pass scan: writes the start offset of every match of `pattern` in `text` into `out` and
@@ -364,6 +659,10 @@ pub(crate) fn matches_into<const K: usize>(
         out.len() >= text.len() / K + 4,
         "the match buffer must hold text.len() / pattern.len() + 4 offsets"
     );
+    #[cfg(target_arch = "x86_64")]
+    if let Some(count) = wide::matches_into_wide::<K>(pattern, text, out) {
+        return count;
+    }
     // SAFETY: the assert above is exactly `scan`'s buffer contract.
     unsafe { scan::<K>(pattern, text, out) }
 }
@@ -414,12 +713,35 @@ unsafe fn scan<const K: usize>(pattern: [u8; K], text: &[u8], out: &mut [u32]) -
         i += 64;
     }
 
+    cursor = unsafe { scan_tail::<K>(pattern, &pattern_chunks, text, i, cursor, end) };
+    // SAFETY: `cursor` and `start` both point into `out`'s buffer.
+    unsafe { cursor.offset_from(start) as usize }
+}
+
+/// The remainder every scan front end shares, once its 64-byte rounds got to `i`: 16-byte
+/// rounds, then one overlapped final block, or a byte-by-byte walk when the whole text is
+/// shorter than a block. Returns the advanced cursor.
+///
+/// # Safety
+/// Same contract as [`scan`]: reads are bounded by the loop conditions, and `cursor .. end`
+/// must have room for every remaining match plus `decode`'s four-slot slack.
+unsafe fn scan_tail<const K: usize>(
+    pattern: [u8; K],
+    pattern_chunks: &[arch::Chunk; K],
+    text: &[u8],
+    mut i: usize,
+    mut cursor: *mut u32,
+    end: *const u32,
+) -> *mut u32 {
+    let len = text.len();
+    let p = text.as_ptr();
+
     // 16 bytes per round over what the 64-byte rounds left.
-    // SAFETY: reads end at `i + 16 + (K - 1) <= len`; writes as above.
+    // SAFETY: reads end at `i + 16 + (K - 1) <= len`; writes as in [`scan`].
     while i + 16 + (K - 1) <= len {
         cursor = unsafe {
             decode(
-                arch::bits(arch::match_starts::<K>(p.add(i), &pattern_chunks)),
+                arch::bits(arch::match_starts::<K>(p.add(i), pattern_chunks)),
                 i as u32,
                 cursor,
                 end,
@@ -431,13 +753,13 @@ unsafe fn scan<const K: usize>(pattern: [u8; K], text: &[u8], out: &mut [u32]) -
     if i + K <= len {
         if len >= 16 + (K - 1) {
             // One last 16-byte block, moved back to end flush with the last position a match
-            // can still start at. Its low bits re-cover positions the loops above already
+            // can still start at. Its low bits re-cover positions the rounds above already
             // decoded, so they are masked off.
             // SAFETY: the block reads `base .. base + 16 + K - 1`, which ends exactly at `len`;
-            // writes as above.
+            // writes as in [`scan`].
             let base = len - 16 - (K - 1);
             unsafe {
-                let mut bits = arch::bits(arch::match_starts::<K>(p.add(base), &pattern_chunks));
+                let mut bits = arch::bits(arch::match_starts::<K>(p.add(base), pattern_chunks));
                 bits &= !0u64 << ((i - base) << arch::SHIFT);
                 cursor = decode(bits, base as u32, cursor, end);
             }
@@ -457,6 +779,5 @@ unsafe fn scan<const K: usize>(pattern: [u8; K], text: &[u8], out: &mut [u32]) -
             }
         }
     }
-    // SAFETY: `cursor` and `start` both point into `out`'s buffer.
-    unsafe { cursor.offset_from(start) as usize }
+    cursor
 }

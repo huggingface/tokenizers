@@ -201,13 +201,33 @@ impl pipeline::PreTokenizer for Split {
             );
             return Ok(());
         }
-        // Not a natively-routed GPT regex: fall-back to Literal or Regex search
+        // A plain-string pattern streams: the batch scan hands each delimiter offset straight
+        // to the span fold, and nothing is built in between. The count pass sizes `out` for
+        // the worst case, one span per match plus the pieces around them.
+        if let Search::Literal(literal) = &self.search {
+            let width = literal.pattern().len();
+            let count = literal.count_matches(text.as_bytes());
+            out.reserve(2 * count + 1);
+            let mut fold = pipeline::SplitFold::new(out, self.behavior);
+            let mut prev = 0;
+            literal.for_each_match(text.as_bytes(), |start| {
+                if prev != start {
+                    fold.segment((prev, start), self.invert);
+                }
+                fold.segment((start, start + width), !self.invert);
+                prev = start + width;
+            });
+            if prev != text.len() {
+                fold.segment((prev, text.len()), self.invert);
+            }
+            fold.finish();
+            return Ok(());
+        }
+        // Not a natively-routed GPT regex either: fall back to the Regex search
         let matches = match (&self.search, self.invert) {
-            (Search::Literal(literal), false) => literal.find_matches(text)?,
-            (Search::Literal(literal), true) => Invert(literal).find_matches(text)?,
             (Search::Regex(regex), false) => regex.find_matches(text)?,
             (Search::Regex(regex), true) => Invert(regex).find_matches(text)?,
-            (Search::Unavailable, _) => {
+            _ => {
                 return Err(
                     "this `Split` pattern needs a system-regex backend; enable the `fancy-regex` feature"
                         .into(),
@@ -412,6 +432,84 @@ mod tests {
         assert_eq!(
             pipeline_split("-".into(), Isolated, false, "a-b"),
             vec![("a", (0, 1)), ("-", (1, 2)), ("b", (2, 3))],
+        );
+    }
+
+    /// The literal path across every behavior, on a text with a delimiter at both ends and a
+    /// consecutive pair — the shapes the span fold can get wrong.
+    #[test]
+    fn pipeline_literal_covers_every_behavior() {
+        let text = "-a--b-";
+        #[allow(clippy::type_complexity)]
+        let cases: Vec<(SplitDelimiterBehavior, Vec<(&str, (u32, u32))>)> = vec![
+            (Removed, vec![("a", (1, 2)), ("b", (4, 5))]),
+            (
+                Isolated,
+                vec![
+                    ("-", (0, 1)),
+                    ("a", (1, 2)),
+                    ("-", (2, 3)),
+                    ("-", (3, 4)),
+                    ("b", (4, 5)),
+                    ("-", (5, 6)),
+                ],
+            ),
+            (
+                MergedWithPrevious,
+                vec![("-", (0, 1)), ("a-", (1, 3)), ("-", (3, 4)), ("b-", (4, 6))],
+            ),
+            (
+                MergedWithNext,
+                vec![("-a", (0, 2)), ("-", (2, 3)), ("-b", (3, 5)), ("-", (5, 6))],
+            ),
+            (
+                Contiguous,
+                vec![
+                    ("-", (0, 1)),
+                    ("a", (1, 2)),
+                    ("--", (2, 4)),
+                    ("b", (4, 5)),
+                    ("-", (5, 6)),
+                ],
+            ),
+        ];
+        for (behavior, expected) in cases {
+            assert_eq!(
+                pipeline_split("-".into(), behavior, false, text),
+                expected,
+                "behavior: {behavior:?}",
+            );
+        }
+    }
+
+    /// Inverted literal search: the gaps between delimiters become the matches.
+    #[test]
+    fn pipeline_literal_inverts() {
+        // Removed drops the (inverted) matches, keeping each delimiter.
+        assert_eq!(
+            pipeline_split("-".into(), Removed, true, "-a--b-"),
+            vec![("-", (0, 1)), ("-", (2, 3)), ("-", (3, 4)), ("-", (5, 6))],
+        );
+        // Isolated keeps everything either way.
+        assert_eq!(
+            pipeline_split("-".into(), Isolated, true, "a-b"),
+            vec![("a", (0, 1)), ("-", (1, 2)), ("b", (2, 3))],
+        );
+    }
+
+    #[test]
+    fn pipeline_literal_edges() {
+        assert_eq!(
+            pipeline_split("-".into(), Removed, false, ""),
+            Vec::<(&str, (u32, u32))>::new(),
+        );
+        assert_eq!(
+            pipeline_split("-".into(), Removed, false, "---"),
+            Vec::<(&str, (u32, u32))>::new(),
+        );
+        assert_eq!(
+            pipeline_split("-".into(), Removed, false, "abc"),
+            vec![("abc", (0, 3))],
         );
     }
 

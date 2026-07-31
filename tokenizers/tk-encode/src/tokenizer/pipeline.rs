@@ -1240,75 +1240,101 @@ pub fn split_matches(
     matches: Vec<((usize, usize), bool)>,
     behavior: SplitDelimiterBehavior,
 ) {
-    use SplitDelimiterBehavior::*;
+    let mut fold = SplitFold::new(out, behavior);
+    for (offsets, is_match) in matches {
+        fold.segment(offsets, is_match);
+    }
+    fold.finish();
+}
 
-    // (offsets, should_remove), mirroring `NormalizedString::split`.
-    let splits: Vec<((usize, usize), bool)> = match behavior {
-        Isolated => matches.into_iter().map(|(o, _)| (o, false)).collect(),
-        Removed => matches, // should_remove == is_match
-        Contiguous => {
-            let mut previous_match = false;
-            matches
-                .into_iter()
-                .fold(vec![], |mut acc, (offsets, is_match)| {
-                    if is_match == previous_match {
-                        if let Some(((_, end), _)) = acc.last_mut() {
-                            *end = offsets.1;
-                        } else {
-                            acc.push((offsets, false));
-                        }
-                    } else {
-                        acc.push((offsets, false));
-                    }
-                    previous_match = is_match;
-                    acc
-                })
-        }
-        MergedWithPrevious => {
-            let mut previous_match = false;
-            matches
-                .into_iter()
-                .fold(vec![], |mut acc, (offsets, is_match)| {
-                    if is_match && !previous_match {
-                        if let Some(((_, end), _)) = acc.last_mut() {
-                            *end = offsets.1;
-                        } else {
-                            acc.push((offsets, false));
-                        }
-                    } else {
-                        acc.push((offsets, false));
-                    }
-                    previous_match = is_match;
-                    acc
-                })
-        }
-        MergedWithNext => {
-            let mut previous_match = false;
-            let mut splits =
-                matches
-                    .into_iter()
-                    .rev()
-                    .fold(vec![], |mut acc, (offsets, is_match)| {
-                        if is_match && !previous_match {
-                            if let Some(((start, _), _)) = acc.last_mut() {
-                                *start = offsets.0;
-                            } else {
-                                acc.push((offsets, false));
-                            }
-                        } else {
-                            acc.push((offsets, false));
-                        }
-                        previous_match = is_match;
-                        acc
-                    });
-            splits.reverse();
-            splits
-        }
-    };
+/// The streaming form of [`split_matches`]: feed it the covering `(offsets, is_match)`
+/// segments left to right with [`SplitFold::segment`], then call [`SplitFold::finish`].
+/// Callers that produce segments one at a time (the literal path in `Split`) drive it
+/// directly and never build the segment vector.
+///
+/// One span under construction and the previous segment's flag are the only state. A span
+/// stays pending as long as the next segment might still extend it (a delimiter merging with
+/// its neighbour, a contiguous run); a segment that cannot extend it flushes it to `out` and
+/// takes its place.
+pub(crate) struct SplitFold<'a> {
+    out: &'a mut Vec<Span>,
+    behavior: SplitDelimiterBehavior,
+    pending: Option<(usize, usize)>,
+    previous_match: bool,
+}
 
-    for ((start, end), should_remove) in splits {
-        if !should_remove && start != end {
-            out.push(Span {
+impl<'a> SplitFold<'a> {
+    pub(crate) fn new(out: &'a mut Vec<Span>, behavior: SplitDelimiterBehavior) -> Self {
+        Self {
+            out,
+            behavior,
+            pending: None,
+            previous_match: false,
+        }
+    }
+
+    pub(crate) fn segment(&mut self, offsets: (usize, usize), is_match: bool) {
+        use SplitDelimiterBehavior::*;
+        match self.behavior {
+            Isolated => self.emit(Some(offsets)),
+            Removed => {
+                if !is_match {
+                    self.emit(Some(offsets));
+                }
+            }
+            // A run of equal flags becomes one span.
+            Contiguous => {
+                if is_match == self.previous_match {
+                    self.extend_pending_to(offsets);
+                } else {
+                    let done = self.pending.replace(offsets);
+                    self.emit(done);
+                }
+            }
+            // A delimiter glues onto the piece before it; in a run of delimiters only the
+            // first one glues, the rest stand alone.
+            MergedWithPrevious => {
+                if is_match && !self.previous_match {
+                    self.extend_pending_to(offsets);
+                } else {
+                    let done = self.pending.replace(offsets);
+                    self.emit(done);
+                }
+            }
+            // A delimiter glues onto the piece after it, so it stays pending until that
+            // piece arrives; a delimiter followed by another delimiter stands alone.
+            MergedWithNext => {
+                if !is_match && self.previous_match {
+                    self.extend_pending_to(offsets);
+                } else {
+                    let done = self.pending.replace(offsets);
+                    self.emit(done);
+                }
+            }
+        }
+        self.previous_match = is_match;
+    }
+
+    /// Flushes the last pending span.
+    pub(crate) fn finish(mut self) {
+        let last = self.pending.take();
+        self.emit(last);
+    }
+
+    /// Stretches the pending span to cover `offsets` too, or starts one from it.
+    fn extend_pending_to(&mut self, offsets: (usize, usize)) {
+        match &mut self.pending {
+            Some((_, end)) => *end = offsets.1,
+            None => self.pending = Some(offsets),
+        }
+    }
+
+    /// Empty pieces are dropped, matching the fold in `NormalizedString::split`.
+    fn emit(&mut self, span: Option<(usize, usize)>) {
+        if let Some((start, end)) = span
+            && start != end
+        {
+            self.out.push(Span {
                 start: start as u32,
                 end: end as u32,
             });
