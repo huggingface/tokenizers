@@ -145,9 +145,11 @@ impl pipeline::Normalizer for Replace {
         Ok(match &self.search {
             Search::Literal(literal) => {
                 let width = literal.pattern().len();
-                let matches = literal
-                    .matches(input.as_bytes())
-                    .map(|start| (start, start + width));
+                let mut positions = vec![0u32; input.len() / width + 4];
+                let count = literal.matches_into(input.as_bytes(), &mut positions);
+                let matches = positions[..count]
+                    .iter()
+                    .map(|&start| (start as usize, start as usize + width));
                 replace_matches(input, &self.content, matches)
             }
             Search::Regex(regex) => replace_matches(input, &self.content, regex.find_iter(input)),

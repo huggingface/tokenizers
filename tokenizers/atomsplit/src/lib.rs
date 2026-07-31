@@ -28,6 +28,12 @@ mod simd_avx_classify;
 #[cfg(target_arch = "aarch64")]
 mod simd_classify;
 mod simd_fsm;
+#[cfg(any(
+    target_arch = "aarch64",
+    target_arch = "x86_64",
+    all(target_arch = "wasm32", target_feature = "simd128")
+))]
+mod simd_literal;
 #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
 mod simd_wasm_classify;
 pub mod tables;

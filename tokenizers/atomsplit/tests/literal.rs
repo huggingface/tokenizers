@@ -48,3 +48,132 @@ fn an_empty_pattern_is_rejected() {
         "an empty pattern matches everywhere"
     );
 }
+
+// ---- the batch scan, `matches_into` ----
+
+/// Run `matches_into` with a buffer of exactly the documented size and return what it wrote.
+fn batch(literal: &Literal, text: &[u8]) -> Vec<u32> {
+    let mut out = vec![0u32; text.len() / literal.pattern().len() + 4];
+    let count = literal.matches_into(text, &mut out);
+    out.truncate(count);
+    out
+}
+
+fn iterated(literal: &Literal, text: &[u8]) -> Vec<u32> {
+    literal.matches(text).map(|p| p as u32).collect()
+}
+
+#[test]
+fn matches_into_reports_the_iterator_positions() {
+    let dash = Literal::new(b"-").unwrap();
+    assert_eq!(batch(&dash, b"a-b--c"), [1, 3, 4]);
+    assert_eq!(batch(&dash, b"-starts and ends-"), [0, 16]);
+    assert_eq!(batch(&dash, b"none here"), []);
+    assert_eq!(batch(&dash, b""), []);
+
+    let space = Literal::new(b" ").unwrap();
+    let text = b"the quick brown fox jumps over the lazy dog".repeat(40);
+    assert_eq!(batch(&space, &text), iterated(&space, &text));
+
+    let metaspace = Literal::new("\u{2581}".as_bytes()).unwrap();
+    let text = "\u{2581}the\u{2581}quick\u{2581}brown\u{2581}fox".repeat(40);
+    assert_eq!(
+        batch(&metaspace, text.as_bytes()),
+        iterated(&metaspace, text.as_bytes())
+    );
+}
+
+/// The scan works in blocks; a match starting on either side of an internal block edge, or on
+/// the last position where the pattern still fits, must not be missed or doubled.
+#[test]
+fn matches_into_is_seamless_across_block_boundaries() {
+    for pattern in [&b"-"[..], "\u{2581}".as_bytes()] {
+        let literal = Literal::new(pattern).unwrap();
+        for start in [0, 13, 14, 15, 16, 17, 61, 62, 63, 64, 65, 127, 128] {
+            for len in [start + pattern.len(), 90, 129, 200] {
+                if start + pattern.len() > len {
+                    continue;
+                }
+                let mut text = vec![b'x'; len];
+                text[start..start + pattern.len()].copy_from_slice(pattern);
+                assert_eq!(
+                    batch(&literal, &text),
+                    [start as u32],
+                    "pattern {pattern:?} at {start} in {len} bytes"
+                );
+            }
+        }
+    }
+}
+
+/// Every position matches: the largest count a text can produce, written into a buffer of
+/// exactly the documented size.
+#[test]
+fn matches_into_handles_the_densest_text() {
+    let a = Literal::new(b"a").unwrap();
+    let text = vec![b'a'; 300];
+    assert_eq!(batch(&a, &text), (0..300).collect::<Vec<u32>>());
+
+    let metaspace = Literal::new("\u{2581}".as_bytes()).unwrap();
+    let text = "\u{2581}".repeat(100);
+    assert_eq!(
+        batch(&metaspace, text.as_bytes()),
+        (0..100).map(|i| i * 3).collect::<Vec<u32>>()
+    );
+}
+
+#[test]
+fn a_self_overlapping_pattern_keeps_non_overlapping_matches() {
+    let aa = Literal::new(b"aa").unwrap();
+    assert_eq!(batch(&aa, b"aaa"), [0]);
+    let run = [b'a'; 100];
+    assert_eq!(batch(&aa, &run), iterated(&aa, &run));
+
+    let aba = Literal::new(b"aba").unwrap();
+    assert_eq!(batch(&aba, b"ababa"), [0]);
+}
+
+#[test]
+fn a_pattern_longer_than_three_bytes_still_matches() {
+    let literal = Literal::new(b"abcd").unwrap();
+    let text = b"abcd xabcdx abcabcd".repeat(20);
+    assert_eq!(batch(&literal, &text), iterated(&literal, &text));
+}
+
+#[test]
+#[should_panic(expected = "matches_into")]
+fn an_undersized_buffer_is_rejected() {
+    let a = Literal::new(b"a").unwrap();
+    let mut out = vec![0u32; 7]; // "aaaa" needs 4 / 1 + 4 = 8
+    a.matches_into(b"aaaa", &mut out);
+}
+
+#[test]
+fn matches_into_agrees_with_the_iterator_on_random_inputs() {
+    // xorshift64: deterministic, no dev-dependency needed.
+    let mut state = 0x9E37_79B9_7F4A_7C15u64;
+    let mut next = move || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        state
+    };
+    let patterns: &[&[u8]] = &[
+        b"a", b"b", b"ab", b"aa", b"ba", b"aab", b"aba", b"abc", b"abca",
+    ];
+    for _ in 0..20_000 {
+        let len = (next() % 300) as usize;
+        let alphabet = 2 + (next() % 2) as u8;
+        let text: Vec<u8> = (0..len)
+            .map(|_| b'a' + (next() % alphabet as u64) as u8)
+            .collect();
+        let literal = Literal::new(patterns[(next() % patterns.len() as u64) as usize]).unwrap();
+        assert_eq!(
+            batch(&literal, &text),
+            iterated(&literal, &text),
+            "pattern {:?} text {:?}",
+            literal.pattern(),
+            text
+        );
+    }
+}

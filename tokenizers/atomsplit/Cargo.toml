@@ -44,5 +44,9 @@ name = "classify"
 harness = false
 
 [[bench]]
+name = "literal"
+harness = false
+
+[[bench]]
 name = "class_runs"
 harness = false
