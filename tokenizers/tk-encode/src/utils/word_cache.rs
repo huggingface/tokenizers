@@ -642,9 +642,28 @@ fn pack_word(word: &[u8]) -> Option<u128> {
     if len == 0 || len > 15 {
         return None;
     }
-    let mut lanes = [0u8; 16];
-    lanes[..len].copy_from_slice(word);
-    Some(u128::from_le_bytes(lanes) | ((len as u128) << 120))
+    // Overlapping fixed-width reads instead of a zeroed buffer and a
+    // variable-length copy: the buffer form compiled to a memset and a memcpy
+    // libcall per word, which the profile put at a third of gpt2's encode. Two
+    // reads of the same width, one from each end of the word, cover every
+    // length; the overlapped middle bytes are identical, so or-ing them is
+    // harmless, and every byte above `len` stays zero for key equality.
+    let value = if len >= 8 {
+        let head = u64::from_le_bytes(word[..8].try_into().unwrap()) as u128;
+        let tail = u64::from_le_bytes(word[len - 8..].try_into().unwrap()) as u128;
+        head | (tail << ((len - 8) * 8))
+    } else if len >= 4 {
+        let head = u32::from_le_bytes(word[..4].try_into().unwrap()) as u128;
+        let tail = u32::from_le_bytes(word[len - 4..].try_into().unwrap()) as u128;
+        head | (tail << ((len - 4) * 8))
+    } else {
+        // 1 to 3 bytes: first, middle and last byte land on their own lanes
+        // (for the shorter lengths some of the three are the same byte).
+        (word[0] as u128)
+            | ((word[len / 2] as u128) << (len / 2 * 8))
+            | ((word[len - 1] as u128) << ((len - 1) * 8))
+    };
+    Some(value | ((len as u128) << 120))
 }
 
 // ---------------------------------------------------------------- overflow storage
@@ -761,6 +780,25 @@ mod tests {
         match cache.find_word_in_cache(key, hash, word) {
             Walk::Found(index) => Some(index),
             Walk::Absent(_) => None,
+        }
+    }
+
+    /// Every packable length and byte pattern packs as if the word were copied
+    /// into a zeroed 16-byte buffer: same bytes in the low lanes, zeros above
+    /// them, the length in the top lane. Pins [`pack_word`]'s read trickery to
+    /// the plain buffer form it replaced.
+    #[test]
+    fn pack_word_matches_the_buffer_form() {
+        for len in 0..=16usize {
+            for fill in [0x00u8, 0x5a, 0xff] {
+                let word: Vec<u8> = (0..len).map(|i| fill.wrapping_add(i as u8)).collect();
+                let expected = (len >= 1 && len <= 15).then(|| {
+                    let mut lanes = [0u8; 16];
+                    lanes[..len].copy_from_slice(&word);
+                    u128::from_le_bytes(lanes) | ((len as u128) << 120)
+                });
+                assert_eq!(pack_word(&word), expected, "len {len} fill {fill:#x}");
+            }
         }
     }
 
