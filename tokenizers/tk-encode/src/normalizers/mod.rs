@@ -1,5 +1,6 @@
 pub mod bert;
 pub mod byte_level;
+pub mod metaspace;
 pub mod precompiled;
 pub mod prepend;
 pub mod replace;
