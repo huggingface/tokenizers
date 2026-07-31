@@ -35,8 +35,8 @@ fn main() {
     let metaspaced = english.replace(' ', "\u{2581}");
 
     println!(
-        "{:<22} {:>9} {:>12} {:>12} {:>9}",
-        "", "matches", "iterator", "batch", "speedup"
+        "{:<22} {:>9} {:>12} {:>12} {:>9} {:>12}",
+        "", "matches", "iterator", "batch", "speedup", "count-only"
     );
     for (label, text, pattern) in [
         ("space in English", english.as_bytes(), " "),
@@ -54,12 +54,14 @@ fn main() {
             offsets.len()
         });
         let batch = best_ns_per_byte(text.len(), || literal.matches_into(text, &mut buffer));
+        let counting = best_ns_per_byte(text.len(), || literal.count_matches(text));
 
         println!(
-            "{label:<22} {count:>9} {:>7.2} GB/s {:>7.2} GB/s {:>8.2}x",
+            "{label:<22} {count:>9} {:>7.2} GB/s {:>7.2} GB/s {:>8.2}x {:>7.2} GB/s",
             1.0 / iterator,
             1.0 / batch,
-            iterator / batch
+            iterator / batch,
+            1.0 / counting
         );
     }
 }

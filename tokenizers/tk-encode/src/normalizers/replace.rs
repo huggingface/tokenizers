@@ -145,12 +145,22 @@ impl pipeline::Normalizer for Replace {
         Ok(match &self.search {
             Search::Literal(literal) => {
                 let width = literal.pattern().len();
-                let mut positions = vec![0u32; input.len() / width + 4];
-                let count = literal.matches_into(input.as_bytes(), &mut positions);
-                let matches = positions[..count]
-                    .iter()
-                    .map(|&start| (start as usize, start as usize + width));
-                replace_matches(input, &self.content, matches)
+                let count = literal.count_matches(input.as_bytes());
+                if count == 0 {
+                    return Ok(Cow::Borrowed(input));
+                }
+                // Counting first buys the exact output length (every match swaps `width`
+                // bytes for the content), so the build below never reallocates.
+                let exact = input.len() - count * width + count * self.content.len();
+                let mut replaced = String::with_capacity(exact);
+                let mut last_end = 0;
+                literal.for_each_match(input.as_bytes(), |start| {
+                    replaced.push_str(&input[last_end..start]);
+                    replaced.push_str(&self.content);
+                    last_end = start + width;
+                });
+                replaced.push_str(&input[last_end..]);
+                Cow::Owned(replaced)
             }
             Search::Regex(regex) => replace_matches(input, &self.content, regex.find_iter(input)),
             Search::Nothing => Cow::Borrowed(input),

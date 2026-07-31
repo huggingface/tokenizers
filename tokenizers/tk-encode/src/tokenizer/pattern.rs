@@ -43,9 +43,9 @@ impl Pattern for &Regex {
 }
 
 /// Searching for a plain string, does not need a regex engine: [`Literal`] scans the bytes.
-/// The batch scan ([`Literal::matches_into`]) finds every match in one pass, and knowing the
-/// count first sizes `splits` exactly: each match adds itself and at most one gap before it,
-/// plus the final gap.
+/// Two batch-scan passes: [`Literal::count_matches`] sizes `splits` exactly (each match adds
+/// itself and at most one gap before it, plus the final gap), then
+/// [`Literal::for_each_match`] streams the offsets in.
 impl Pattern for &Literal {
     fn find_matches(&self, inside: &str) -> Result<Vec<(Offsets, bool)>> {
         if inside.is_empty() {
@@ -53,19 +53,17 @@ impl Pattern for &Literal {
         }
 
         let width = self.pattern().len();
-        let mut positions = vec![0u32; inside.len() / width + 4];
-        let count = self.matches_into(inside.as_bytes(), &mut positions);
-
-        let mut prev = 0;
+        let count = self.count_matches(inside.as_bytes());
         let mut splits = Vec::with_capacity(2 * count + 1);
-        for &start in &positions[..count] {
-            let (start, end) = (start as usize, start as usize + width);
+        let mut prev = 0;
+        self.for_each_match(inside.as_bytes(), |start| {
+            let end = start + width;
             if prev != start {
                 splits.push(((prev, start), false));
             }
             splits.push(((start, end), true));
             prev = end;
-        }
+        });
         if prev != inside.len() {
             splits.push(((prev, inside.len()), false))
         }

@@ -148,6 +148,77 @@ fn an_undersized_buffer_is_rejected() {
     a.matches_into(b"aaaa", &mut out);
 }
 
+// ---- the streaming pair, `count_matches` + `for_each_match` ----
+
+fn streamed(literal: &Literal, text: &[u8]) -> Vec<u32> {
+    let mut out = Vec::new();
+    literal.for_each_match(text, |start| out.push(start as u32));
+    out
+}
+
+/// The streaming scan works through a fixed window; a text much longer than any plausible
+/// window must report the same matches as the iterator, including around every window edge.
+#[test]
+fn for_each_match_streams_the_iterator_offsets_across_windows() {
+    for pattern in [&b" "[..], "\u{2581}".as_bytes(), b"ab"] {
+        let literal = Literal::new(pattern).unwrap();
+        let mut text = b"word ".repeat(4_000); // ~20KB, matches every 5 bytes
+        text.extend_from_slice("\u{2581}ab".repeat(2_000).as_bytes());
+        assert_eq!(streamed(&literal, &text), iterated(&literal, &text));
+        assert_eq!(
+            literal.count_matches(&text),
+            literal.matches(&text).count(),
+            "count for {pattern:?}"
+        );
+    }
+}
+
+/// The densest possible long text: every byte starts a match, in every window.
+#[test]
+fn for_each_match_handles_dense_windows() {
+    let a = Literal::new(b"a").unwrap();
+    let text = vec![b'a'; 10_000];
+    assert_eq!(streamed(&a, &text), (0..10_000).collect::<Vec<u32>>());
+    assert_eq!(a.count_matches(&text), 10_000);
+}
+
+#[test]
+fn for_each_match_takes_the_iterator_route_for_uncovered_patterns() {
+    // Self-overlapping and longer-than-three patterns are exactly the ones the batch scan
+    // refuses; the streaming pair must still report the iterator's non-overlapping matches.
+    for pattern in [&b"aa"[..], b"aba", b"abcd"] {
+        let literal = Literal::new(pattern).unwrap();
+        let text = b"aabaabcdaaaba".repeat(2_000);
+        assert_eq!(streamed(&literal, &text), iterated(&literal, &text));
+        assert_eq!(literal.count_matches(&text), literal.matches(&text).count());
+    }
+}
+
+#[test]
+fn streaming_agrees_with_the_iterator_on_random_lengths() {
+    let mut state = 0x1234_5678_9ABC_DEF0u64;
+    let mut next = move || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        state
+    };
+    let patterns: &[&[u8]] = &[b"a", b"ab", b"aa", b"aba", b"abc", b"abca"];
+    for _ in 0..500 {
+        // lengths spread around plausible window sizes, so edges get hit both exactly and off by one
+        let len = (next() % 8_000) as usize;
+        let text: Vec<u8> = (0..len).map(|_| b'a' + (next() % 3) as u8).collect();
+        let literal = Literal::new(patterns[(next() % patterns.len() as u64) as usize]).unwrap();
+        assert_eq!(
+            streamed(&literal, &text),
+            iterated(&literal, &text),
+            "pattern {:?} len {len}",
+            literal.pattern()
+        );
+        assert_eq!(literal.count_matches(&text), literal.matches(&text).count());
+    }
+}
+
 #[test]
 fn matches_into_agrees_with_the_iterator_on_random_inputs() {
     // xorshift64: deterministic, no dev-dependency needed.

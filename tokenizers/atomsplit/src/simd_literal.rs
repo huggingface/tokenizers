@@ -273,6 +273,74 @@ unsafe fn decode(mut bits: u64, base: u32, cursor: *mut u32, end: *const u32) ->
     unsafe { cursor.add(count) }
 }
 
+/// How many matches of `pattern` are in `text`: the compare and mask steps only, counting set
+/// bits instead of decoding them, which makes counting several times faster than the full
+/// scan. Same pattern rules as [`matches_into`].
+pub(crate) fn count_matches<const K: usize>(pattern: [u8; K], text: &[u8]) -> usize {
+    const {
+        assert!(
+            K >= 1 && K <= 3,
+            "the scan is built for patterns of 1 to 3 bytes"
+        );
+    }
+    let len = text.len();
+    if len < K {
+        return 0;
+    }
+    let p = text.as_ptr();
+    let mut pattern_chunks = [arch::splat(0); K];
+    for (chunk, &byte) in pattern_chunks.iter_mut().zip(&pattern) {
+        *chunk = arch::splat(byte);
+    }
+    let mut count = 0usize;
+    let mut i = 0usize;
+
+    // The same block layout as `scan`, and the same SAFETY story for the reads: each loop
+    // condition bounds its loads inside `text`. Nothing here writes.
+    while i + 64 + (K - 1) <= len {
+        let (s0, s1, s2, s3) = unsafe {
+            (
+                arch::match_starts::<K>(p.add(i), &pattern_chunks),
+                arch::match_starts::<K>(p.add(i + 16), &pattern_chunks),
+                arch::match_starts::<K>(p.add(i + 32), &pattern_chunks),
+                arch::match_starts::<K>(p.add(i + 48), &pattern_chunks),
+            )
+        };
+        if arch::any(s0, s1, s2, s3) {
+            count += (arch::bits(s0).count_ones()
+                + arch::bits(s1).count_ones()
+                + arch::bits(s2).count_ones()
+                + arch::bits(s3).count_ones()) as usize;
+        }
+        i += 64;
+    }
+
+    // SAFETY: reads end at `i + 16 + (K - 1) <= len`.
+    while i + 16 + (K - 1) <= len {
+        let starts = unsafe { arch::match_starts::<K>(p.add(i), &pattern_chunks) };
+        count += arch::bits(starts).count_ones() as usize;
+        i += 16;
+    }
+
+    if i + K <= len {
+        if len >= 16 + (K - 1) {
+            // The overlapped final block, exactly as in `scan`: bits below `i` were counted
+            // by the loops above and are masked off.
+            // SAFETY: the block reads `base .. base + 16 + K - 1`, which ends exactly at `len`.
+            let base = len - 16 - (K - 1);
+            let starts = unsafe { arch::match_starts::<K>(p.add(base), &pattern_chunks) };
+            let bits = arch::bits(starts) & (!0u64 << ((i - base) << arch::SHIFT));
+            count += bits.count_ones() as usize;
+        } else {
+            while i + K <= len {
+                count += (text[i..i + K] == pattern[..]) as usize;
+                i += 1;
+            }
+        }
+    }
+    count
+}
+
 /// One-pass scan: writes the start offset of every match of `pattern` in `text` into `out` and
 /// returns how many. The pattern must not be able to overlap itself, so that every matching
 /// position belongs to the non-overlapping match list;

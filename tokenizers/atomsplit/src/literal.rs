@@ -79,21 +79,18 @@ impl Literal {
             u32::try_from(text.len()).is_ok(),
             "matches_into writes u32 offsets"
         );
-        // The SIMD scan emits every position where the pattern matches, with no ordering check
-        // between them. That is only the non-overlapping match list when the pattern cannot
-        // overlap itself, which one byte comparison per length decides: a two-byte pattern
-        // overlaps itself when both bytes are equal, a three-byte one when last equals first.
-        // Longer or self-overlapping patterns fall through to the iterator.
         #[cfg(any(
             target_arch = "aarch64",
             target_arch = "x86_64",
             all(target_arch = "wasm32", target_feature = "simd128")
         ))]
-        match *self.pattern() {
-            [a] => return crate::simd_literal::matches_into([a], text, out),
-            [a, b] if a != b => return crate::simd_literal::matches_into([a, b], text, out),
-            [a, b, c] if a != c => return crate::simd_literal::matches_into([a, b, c], text, out),
-            _ => {}
+        if self.scannable() {
+            match *self.pattern() {
+                [a] => return crate::simd_literal::matches_into([a], text, out),
+                [a, b] => return crate::simd_literal::matches_into([a, b], text, out),
+                [a, b, c] => return crate::simd_literal::matches_into([a, b, c], text, out),
+                _ => unreachable!("scannable patterns are one to three bytes"),
+            }
         }
         let mut count = 0;
         for position in self.finder.find_iter(text) {
@@ -101,5 +98,98 @@ impl Literal {
             count += 1;
         }
         count
+    }
+
+    /// How many matches [`Literal::matches`] would report. Counting runs the compare step
+    /// without producing any offsets, so it is several times faster than a full scan; count
+    /// first to size an output exactly, then fill it with a [`Literal::for_each_match`] pass.
+    #[must_use]
+    pub fn count_matches(&self, text: &[u8]) -> usize {
+        #[cfg(any(
+            target_arch = "aarch64",
+            target_arch = "x86_64",
+            all(target_arch = "wasm32", target_feature = "simd128")
+        ))]
+        if self.scannable() {
+            match *self.pattern() {
+                [a] => return crate::simd_literal::count_matches([a], text),
+                [a, b] => return crate::simd_literal::count_matches([a, b], text),
+                [a, b, c] => return crate::simd_literal::count_matches([a, b, c], text),
+                _ => unreachable!("scannable patterns are one to three bytes"),
+            }
+        }
+        self.finder.find_iter(text).count()
+    }
+
+    /// Calls `on_match` with the byte offset of every match, left to right: the same offsets
+    /// as [`Literal::matches`] at batch-scan speed, with no buffer for the caller to provide.
+    /// The scan streams through a small stack window, so its footprint stays flat however
+    /// long the text is.
+    pub fn for_each_match(&self, text: &[u8], mut on_match: impl FnMut(usize)) {
+        if !self.scannable() {
+            for position in self.finder.find_iter(text) {
+                on_match(position);
+            }
+            return;
+        }
+        self.scan_windows(text, |base, matches| {
+            for &position in matches {
+                on_match(base + position as usize);
+            }
+        });
+    }
+
+    /// Whether the batch scan covers this pattern. The scan emits every position where the
+    /// pattern matches, with no ordering check between them; that is only the non-overlapping
+    /// match list when the pattern cannot overlap itself, which one byte comparison per
+    /// length decides: a two-byte pattern overlaps itself when both bytes are equal, a
+    /// three-byte one when last equals first. Longer or self-overlapping patterns search
+    /// through the [`memmem`] engine instead.
+    #[cfg(any(
+        target_arch = "aarch64",
+        target_arch = "x86_64",
+        all(target_arch = "wasm32", target_feature = "simd128")
+    ))]
+    fn scannable(&self) -> bool {
+        match *self.pattern() {
+            [_] => true,
+            [a, b] => a != b,
+            [a, _, c] => a != c,
+            _ => false,
+        }
+    }
+
+    /// Without a SIMD kernel there is no batch scan; everything searches through [`memmem`].
+    #[cfg(not(any(
+        target_arch = "aarch64",
+        target_arch = "x86_64",
+        all(target_arch = "wasm32", target_feature = "simd128")
+    )))]
+    fn scannable(&self) -> bool {
+        false
+    }
+
+    /// Streams the batch scan window by window: [`Literal::matches_into`] fills a stack
+    /// buffer for one stretch of text, `on_window` consumes it (offsets are relative to the
+    /// window's `base`), and the next window starts where a match could no longer fit in the
+    /// previous one, so nothing at a window edge is missed or reported twice.
+    fn scan_windows(&self, text: &[u8], mut on_window: impl FnMut(usize, &[u32])) {
+        // 4KB of stack; a window of (1024 - 4) * pattern.len() bytes fills it exactly.
+        let mut buffer = [0u32; 1024];
+        let width = self.pattern().len();
+        let window = (buffer.len() - 4) * width;
+        let mut base = 0;
+        loop {
+            let end = usize::min(base + window, text.len());
+            let count = self.matches_into(&text[base..end], &mut buffer);
+            on_window(base, &buffer[..count]);
+            if end == text.len() {
+                return;
+            }
+            // A match crossing `end` was not reported; the next window re-covers its
+            // possible starts. Matches of a scannable pattern never overlap, so the reports
+            // stay disjoint.
+            base = end - (width - 1);
+        }
     }
 }
