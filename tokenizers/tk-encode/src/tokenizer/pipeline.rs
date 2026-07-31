@@ -108,9 +108,11 @@ pub(crate) fn normalize_all<'a, N: Normalizer>(
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 enum PipelineNormalizer {
-    /// The `normalizer` field of the config, as-is.
+    /// One step of the config's `normalizer` field, as-is (a `Sequence`'s members each get their
+    /// own entry).
     Declared(NormalizerWrapper),
-    /// The text-rewriting half of a `Metaspace` pre-tokenizer.
+    /// The one-pass stand-in for declared steps that spell out the SentencePiece space rewrite
+    /// ([`MetaspaceNormalizer::fuse`]), or the text-rewriting half of a `Metaspace` pre-tokenizer.
     Metaspace(MetaspaceNormalizer),
 }
 
@@ -539,7 +541,29 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
     fn try_from(tok: &Tokenizer) -> Result<Self> {
         let mut normalizers = Vec::new();
         if let Some(declared) = tok.get_normalizer() {
-            normalizers.push(PipelineNormalizer::Declared(declared.clone()));
+            // A `Sequence` runs its members in order, exactly what this list does, so its members
+            // join the list one by one. That puts them in [`MetaspaceNormalizer::fuse`]'s reach:
+            // steps spelling out the SentencePiece space rewrite (llama-2 as two whole-chunk
+            // copies, `Prepend("▁")` then `Replace(" " -> "▁")`; gemma-4 as the `Replace` alone)
+            // are swapped for the normalizer doing that job in one pass. Only this in-memory
+            // pipeline is rewritten; the config still serializes as declared.
+            let steps: &[NormalizerWrapper] = match declared {
+                NormalizerWrapper::Sequence(sequence) => sequence.as_ref(),
+                single => std::slice::from_ref(single),
+            };
+            let mut index = 0;
+            while index < steps.len() {
+                match MetaspaceNormalizer::fuse(&steps[index..]) {
+                    Some((fused, covered)) => {
+                        normalizers.push(PipelineNormalizer::Metaspace(fused));
+                        index += covered;
+                    }
+                    None => {
+                        normalizers.push(PipelineNormalizer::Declared(steps[index].clone()));
+                        index += 1;
+                    }
+                }
+            }
         }
 
         // A `Metaspace` pre-tokenizer does two jobs at once: it writes `▁` delimiters into the text,
@@ -1226,9 +1250,95 @@ mod tests {
             .iter()
             .map(|t| t.id)
             .collect();
-        // Not the unk id: both the `Replace` and the `Split` really ran on the literal path.
+        // Not the unk id: the string-pattern config ran end-to-end with no regex backend (the
+        // `Replace` fuses into the Metaspace normalizer; the `Split` runs on the literal path).
         assert_eq!(ids, [1, 2]);
         assert_pipeline_matches_reference(&tok, "hello world");
+    }
+
+    /// llama-2's declared normalizer is `Prepend("▁")` then `Replace(" " -> "▁")`, two steps that
+    /// each copy the chunk. Building the pipeline must swap them for the one-pass
+    /// [`MetaspaceNormalizer`] (see [`MetaspaceNormalizer::fuse`]), and must not touch the source
+    /// config while doing so.
+    #[test]
+    fn try_from_fuses_the_declared_space_rewrite() {
+        let normalizer: NormalizerWrapper = serde_json::from_str(
+            r#"{"type":"Sequence","normalizers":[{"type":"Prepend","prepend":"▁"},{"type":"Replace","pattern":{"String":" "},"content":"▁"}]}"#,
+        )
+        .unwrap();
+        let mut tok = wordlevel_tokenizer(vec![("<unk>", 0)], None);
+        tok.with_normalizer(Some(normalizer)).unwrap();
+
+        let declared = serde_json::to_string(tok.get_normalizer().unwrap()).unwrap();
+        let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
+        assert!(
+            matches!(
+                pipeline.normalizers.as_slice(),
+                [PipelineNormalizer::Metaspace(_)]
+            ),
+            "{:?}",
+            pipeline.normalizers
+        );
+        assert_eq!(
+            serde_json::to_string(tok.get_normalizer().unwrap()).unwrap(),
+            declared,
+        );
+    }
+
+    /// Normalization runs on each chunk between special tokens, so the fused prepend must too:
+    /// the text after `<s>` starts with a space, and `Prepend` + swap turn that into two
+    /// delimiters. Only `"▁▁world"` is in the vocabulary; a prepend skipping the marked chunk
+    /// would produce the unk id instead.
+    #[test]
+    fn fused_metaspace_normalizer_prepends_per_chunk() {
+        let normalizer: NormalizerWrapper = serde_json::from_str(
+            r#"{"type":"Sequence","normalizers":[{"type":"Prepend","prepend":"▁"},{"type":"Replace","pattern":{"String":" "},"content":"▁"}]}"#,
+        )
+        .unwrap();
+        let mut tok = wordlevel_tokenizer(vec![("<unk>", 0), ("▁hello▁", 1), ("▁▁world", 2)], None);
+        tok.with_normalizer(Some(normalizer)).unwrap();
+        tok.with_pre_tokenizer(None::<PreTokenizerWrapper>);
+        let _ = tok.add_special_tokens([crate::AddedToken::from("<s>", true)]);
+
+        let ids: Vec<u32> = PipelineTokenizer::try_from(&tok)
+            .unwrap()
+            .encode("hello <s> world", false)
+            .unwrap()
+            .iter()
+            .map(|t| t.id)
+            .collect();
+        assert_eq!(ids, [1, 3, 2]);
+        assert_pipeline_matches_reference(&tok, "hello <s> world");
+    }
+
+    /// A `Replace` swapping anything but a single space stays a declared step, and the ids stay
+    /// those of the declared rewrite.
+    #[test]
+    fn a_replace_that_is_not_the_space_swap_is_left_declared() {
+        let normalizer: NormalizerWrapper =
+            serde_json::from_str(r#"{"type":"Replace","pattern":{"String":"x"},"content":"y"}"#)
+                .unwrap();
+        let mut tok = wordlevel_tokenizer(vec![("<unk>", 0), ("y a", 1)], None);
+        tok.with_normalizer(Some(normalizer)).unwrap();
+        tok.with_pre_tokenizer(None::<PreTokenizerWrapper>);
+
+        let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
+        assert!(
+            matches!(
+                pipeline.normalizers.as_slice(),
+                [PipelineNormalizer::Declared(_)]
+            ),
+            "{:?}",
+            pipeline.normalizers
+        );
+        let ids: Vec<u32> = pipeline
+            .encode("x a", false)
+            .unwrap()
+            .iter()
+            .map(|t| t.id)
+            .collect();
+        assert_eq!(ids, [1]);
+        assert_pipeline_matches_reference(&tok, "x a");
     }
 
     #[test]
