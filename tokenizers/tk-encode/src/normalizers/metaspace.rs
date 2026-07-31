@@ -21,6 +21,8 @@
 
 use std::borrow::Cow;
 
+use atomsplit::literal::Literal;
+
 use crate::normalizers::NormalizerWrapper;
 use crate::normalizers::replace::{Replace, ReplacePattern};
 use crate::pre_tokenizers::whitespace::WhitespaceSplit;
@@ -113,12 +115,15 @@ impl pipeline::Normalizer for MetaspaceNormalizer {
             return Ok(Cow::Borrowed(input));
         }
         if self.drop_whitespace {
-            // The delimiter is 3 bytes where a space is 1, so the rewrite grows by 2 bytes per space, hence we allocate a bit more space
-            let mut rewritten = String::with_capacity(input.len() + input.len() / 2);
             // Whitespace is thrown away, so cut the text where `WhitespaceSplit` would and write the
             // words back one after the other, each with its own delimiter.
             let mut words = Vec::new();
             pipeline::PreTokenizer::pre_tokenize(&WhitespaceSplit, input, &mut words)?;
+            // Exact when every word takes a delimiter; a word that already starts with one
+            // (`IfMissing`) leaves a few bytes spare.
+            let words_len: usize = words.iter().map(|span| span.range().len()).sum();
+            let mut rewritten =
+                String::with_capacity(words_len + words.len() * self.delimiter.len_utf8());
             for span in &words {
                 let word = &input[span.range()];
                 let prepend = match self.prepend {
@@ -142,23 +147,33 @@ impl pipeline::Normalizer for MetaspaceNormalizer {
                 }
                 PrependMode::Unconditional => true,
             };
+            // Only spaces become delimiters; tabs and newlines are left alone. Counting them
+            // first sizes the rewrite exactly (a space is one byte, the delimiter up to four)
+            // and lets the swap stream through the batch scan instead of restarting a search
+            // at every space.
+            let space = Literal::new(b" ").expect("a space is not empty");
+            let count = space.count_matches(input.as_bytes());
             // Nothing to prepend and nothing to swap: hand the input back instead of copying it.
-            if !prepend && memchr::memchr(b' ', input.as_bytes()).is_none() {
+            if !prepend && count == 0 {
                 return Ok(Cow::Borrowed(input));
             }
-            // The delimiter is 3 bytes where a space is 1, so the rewrite grows by 2 bytes per space, hence we allocate a bit more space
-            let mut rewritten = String::with_capacity(input.len() + input.len() / 2);
+            let mut buf = [0u8; 4];
+            let delimiter = self.delimiter.encode_utf8(&mut buf);
+            let mut rewritten = String::with_capacity(
+                input.len()
+                    + (delimiter.len() - 1) * count
+                    + if prepend { delimiter.len() } else { 0 },
+            );
             if prepend {
-                rewritten.push(self.delimiter);
+                rewritten.push_str(delimiter);
             }
-            // Only spaces become delimiters; tabs and newlines are left alone
-            let mut rest = input;
-            while let Some(space) = memchr::memchr(b' ', rest.as_bytes()) {
-                rewritten.push_str(&rest[..space]);
-                rewritten.push(self.delimiter);
-                rest = &rest[space + 1..];
-            }
-            rewritten.push_str(rest);
+            let mut prev = 0;
+            space.for_each_match(input.as_bytes(), |start| {
+                rewritten.push_str(&input[prev..start]);
+                rewritten.push_str(delimiter);
+                prev = start + 1;
+            });
+            rewritten.push_str(&input[prev..]);
             Ok(Cow::Owned(rewritten))
         }
     }

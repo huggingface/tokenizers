@@ -1,3 +1,4 @@
+use atomsplit::literal::Literal;
 use serde::{Deserialize, Serialize};
 
 use crate::pipeline;
@@ -28,16 +29,18 @@ impl PreTokenizer for CharDelimiterSplit {
 
 impl pipeline::PreTokenizer for CharDelimiterSplit {
     fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Span>) -> Result<()> {
-        // native atomsplit FSM (memchr-backed single-byte scan); `Removed` — drops the delimiter,
-        // keeps the runs between, no empty spans. Byte-exact with the char-predicate split.
-        let bytes = text.as_bytes();
-        let mut spans = vec![pipeline::Span::default(); bytes.len() + 1];
-        let n = atomsplit::fsm::CharDelimiterSplit(self.delimiter).pre_tokenize(
-            bytes,
-            &mut [],
-            &mut spans,
+        // The same streaming literal cut as a `Split` on this char: `Removed` drops each
+        // delimiter and keeps the runs between them, with no empty spans.
+        let mut buf = [0u8; 4];
+        let delimiter = Literal::new(self.delimiter.encode_utf8(&mut buf).as_bytes())
+            .expect("a char is never empty");
+        pipeline::split_literal(
+            out,
+            &delimiter,
+            text,
+            SplitDelimiterBehavior::Removed,
+            false,
         );
-        out.extend_from_slice(&spans[..n]);
         Ok(())
     }
 }

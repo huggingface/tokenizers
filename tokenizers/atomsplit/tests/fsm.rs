@@ -1,8 +1,8 @@
 //! Integration tests for the FSM pre-tokenizers. Kept out of `src/` so the core stays production-only.
 use atomsplit::classify::{classify, mask};
 use atomsplit::fsm::{
-    CharDelimiterSplit, Span, class_runs_into, emit_class_spans, fsm_byte_level, fsm_cl100k,
-    fsm_deepseek, fsm_o200k, fsm_tekken,
+    Span, class_runs_into, emit_class_spans, fsm_byte_level, fsm_cl100k, fsm_deepseek, fsm_o200k,
+    fsm_tekken,
 };
 
 /// Run a no-push fsm into a fresh buffer and return the emitted spans.
@@ -55,14 +55,6 @@ fn byte_level_rules() {
     assert_eq!(bl("I'm 12345 ok"), vec![(0, 1), (1, 3), (3, 9), (9, 12)]);
     assert_eq!(bl("IT'S"), vec![(0, 2), (2, 3), (3, 4)]); // 'S is not a contraction (case-sensitive)
     assert_eq!(bl("hi   ok"), vec![(0, 2), (2, 4), (4, 7)]); // \s+(?!\S) leaves one space
-}
-
-#[test]
-fn char_delimiter_split() {
-    let mut out = vec![Span::default(); 8];
-    // split on '/', Removed → drop delimiters, drop the empty gap between "//"
-    let k = CharDelimiterSplit('/').pre_tokenize(b"a/bc//d", &mut [], &mut out);
-    assert_eq!(&out[..k], &[(0, 1), (2, 4), (6, 7)]);
 }
 
 /// Byte-exactness gate for the class family: the NEON boundary extractor (`class_runs_into`) must equal

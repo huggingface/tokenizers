@@ -202,25 +202,9 @@ impl pipeline::PreTokenizer for Split {
             return Ok(());
         }
         // A plain-string pattern streams: the batch scan hands each delimiter offset straight
-        // to the span fold, and nothing is built in between. The count pass sizes `out` for
-        // the worst case, one span per match plus the pieces around them.
+        // to the span fold, and nothing is built in between.
         if let Search::Literal(literal) = &self.search {
-            let width = literal.pattern().len();
-            let count = literal.count_matches(text.as_bytes());
-            out.reserve(2 * count + 1);
-            let mut fold = pipeline::SplitFold::new(out, self.behavior);
-            let mut prev = 0;
-            literal.for_each_match(text.as_bytes(), |start| {
-                if prev != start {
-                    fold.segment((prev, start), self.invert);
-                }
-                fold.segment((start, start + width), !self.invert);
-                prev = start + width;
-            });
-            if prev != text.len() {
-                fold.segment((prev, text.len()), self.invert);
-            }
-            fold.finish();
+            pipeline::split_literal(out, literal, text, self.behavior, self.invert);
             return Ok(());
         }
         // Not a natively-routed GPT regex either: fall back to the Regex search

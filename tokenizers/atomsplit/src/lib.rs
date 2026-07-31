@@ -3,7 +3,7 @@
 //! One SIMD pass ([`classify`]) maps every codepoint to a tiny "atom" alphabet; a family of no-push
 //! FSMs ([`fsm`]) turn that atom stream into token spans (byte ranges) — the pre-tokenizer stage that
 //! runs before a BPE/WordPiece model. Pre-tokenizers implemented: `WhitespaceSplit`, `Punctuation`,
-//! `Digits`, `Whitespace`, `Bert`, `Cl100k`, `DeepSeek`, `ByteLevel`, `CharDelimiterSplit` (o200k and
+//! `Digits`, `Whitespace`, `Bert`, `Cl100k`, `DeepSeek`, `ByteLevel` (o200k and
 //! Mistral's tekken are exposed as the [`fsm::fsm_o200k`] / [`fsm::fsm_tekken`] functions rather than
 //! recipe structs).
 //!

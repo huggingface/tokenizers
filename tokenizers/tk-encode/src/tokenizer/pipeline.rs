@@ -1030,9 +1030,39 @@ pub fn split_matches(
     fold.finish();
 }
 
+/// [`split_matches`] for a plain-byte pattern, shared by every pre-tokenizer that cuts on a
+/// literal (`Split` with a string pattern, `CharDelimiterSplit`). The count pass sizes `out`
+/// for the worst case, one span per match plus the pieces around them; the batch scan then
+/// hands each match offset straight to the fold, so no segment vector is built. `invert`
+/// flips which side counts as the delimiter, as in `Split`.
+pub(crate) fn split_literal(
+    out: &mut Vec<Span>,
+    literal: &atomsplit::literal::Literal,
+    text: &str,
+    behavior: SplitDelimiterBehavior,
+    invert: bool,
+) {
+    let width = literal.pattern().len();
+    let count = literal.count_matches(text.as_bytes());
+    out.reserve(2 * count + 1);
+    let mut fold = SplitFold::new(out, behavior);
+    let mut prev = 0;
+    literal.for_each_match(text.as_bytes(), |start| {
+        if prev != start {
+            fold.segment((prev, start), invert);
+        }
+        fold.segment((start, start + width), !invert);
+        prev = start + width;
+    });
+    if prev != text.len() {
+        fold.segment((prev, text.len()), invert);
+    }
+    fold.finish();
+}
+
 /// The streaming form of [`split_matches`]: feed it the covering `(offsets, is_match)`
 /// segments left to right with [`SplitFold::segment`], then call [`SplitFold::finish`].
-/// Callers that produce segments one at a time (the literal path in `Split`) drive it
+/// Callers that produce segments one at a time ([`split_literal`]) drive it
 /// directly and never build the segment vector.
 ///
 /// One span under construction and the previous segment's flag are the only state. A span
