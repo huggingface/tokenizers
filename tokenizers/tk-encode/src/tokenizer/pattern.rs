@@ -1,5 +1,6 @@
 use crate::utils::SysRegex;
 use crate::{Offsets, Result};
+use atomsplit::literal::Literal;
 use regex::Regex;
 
 /// Pattern used to split a NormalizedString
@@ -16,25 +17,6 @@ impl Pattern for char {
     fn find_matches(&self, inside: &str) -> Result<Vec<(Offsets, bool)>> {
         let is_char = |c: char| -> bool { c == *self };
         is_char.find_matches(inside)
-    }
-}
-
-impl Pattern for &str {
-    fn find_matches(&self, inside: &str) -> Result<Vec<(Offsets, bool)>> {
-        if self.is_empty() {
-            // If we try to find the matches with an empty string, just don't match anything
-            return Ok(vec![((0, inside.chars().count()), false)]);
-        }
-
-        let re = Regex::new(&regex::escape(self))?;
-        (&re).find_matches(inside)
-    }
-}
-
-impl Pattern for &String {
-    fn find_matches(&self, inside: &str) -> Result<Vec<(Offsets, bool)>> {
-        let s: &str = self;
-        s.find_matches(inside)
     }
 }
 
@@ -57,6 +39,49 @@ impl Pattern for &Regex {
             splits.push(((prev, inside.len()), false))
         }
         Ok(splits)
+    }
+}
+
+/// Searching for a plain string, does not need a regex engine: [`Literal`] scans the bytes.
+impl Pattern for &Literal {
+    fn find_matches(&self, inside: &str) -> Result<Vec<(Offsets, bool)>> {
+        if inside.is_empty() {
+            return Ok(vec![((0, 0), false)]);
+        }
+
+        let mut prev = 0;
+        let mut splits = Vec::with_capacity(inside.len());
+        for start in self.matches(inside.as_bytes()) {
+            let end = start + self.pattern().len();
+            if prev != start {
+                splits.push(((prev, start), false));
+            }
+            splits.push(((start, end), true));
+            prev = end;
+        }
+        if prev != inside.len() {
+            splits.push(((prev, inside.len()), false))
+        }
+        Ok(splits)
+    }
+}
+
+/// A plain string is one [`Literal`], built here because the pattern only lives for this call. Prefer
+/// keeping a [`Literal`] around when the same pattern is searched for repeatedly.
+impl Pattern for &str {
+    fn find_matches(&self, inside: &str) -> Result<Vec<(Offsets, bool)>> {
+        match Literal::new(self.as_bytes()) {
+            Ok(literal) => (&literal).find_matches(inside),
+            // An empty pattern would match everywhere, so it matches nowhere instead.
+            Err(_) => Ok(vec![((0, inside.len()), false)]),
+        }
+    }
+}
+
+impl Pattern for &String {
+    fn find_matches(&self, inside: &str) -> Result<Vec<(Offsets, bool)>> {
+        let s: &str = self;
+        s.find_matches(inside)
     }
 }
 
@@ -168,17 +193,43 @@ mod tests {
     }
 
     #[test]
+    fn literal() {
+        let a = Literal::new(b"a").unwrap();
+        do_test!("aba", &a => vec![((0, 1), true), ((1, 2), false), ((2, 3), true)]);
+        do_test!("bbbba", &a => vec![((0, 4), false), ((4, 5), true)]);
+        do_test!("aabbb", &a => vec![((0, 1), true), ((1, 2), true), ((2, 5), false)]);
+        do_test!("", &a => vec![((0, 0), false)]);
+
+        let ab = Literal::new(b"ab").unwrap();
+        do_test!("aabbb", &ab => vec![((0, 1), false), ((1, 3), true), ((3, 5), false)]);
+        do_test!("aabbab", &ab =>
+            vec![((0, 1), false), ((1, 3), true), ((3, 4), false), ((4, 6), true)]
+        );
+
+        let b = Literal::new(b"b").unwrap();
+        do_test!("aaa", &b => vec![((0, 3), false)]);
+
+        // Offsets are byte offsets, over the whole input a multi-byte pattern covers.
+        let metaspace = Literal::new("▁".as_bytes()).unwrap();
+        do_test!("a▁b", &metaspace => vec![((0, 1), false), ((1, 4), true), ((4, 5), false)]);
+
+        // An empty pattern would match everywhere, so there is no `Literal` for it.
+        assert!(Literal::new(b"").is_err());
+    }
+
+    #[test]
     fn str() {
         do_test!("aba", "a" => vec![((0, 1), true), ((1, 2), false), ((2, 3), true)]);
-        do_test!("bbbba", "a" => vec![((0, 4), false), ((4, 5), true)]);
-        do_test!("aabbb", "a" => vec![((0, 1), true), ((1, 2), true), ((2, 5), false)]);
-        do_test!("aabbb", "ab" => vec![((0, 1), false), ((1, 3), true), ((3, 5), false)]);
         do_test!("aabbab", "ab" =>
             vec![((0, 1), false), ((1, 3), true), ((3, 4), false), ((4, 6), true)]
         );
-        do_test!("", "" => vec![((0, 0), false)]);
-        do_test!("aaa", "" => vec![((0, 3), false)]);
         do_test!("aaa", "b" => vec![((0, 3), false)]);
+        do_test!("", "" => vec![((0, 0), false)]);
+        // An empty pattern would match everywhere, so it matches nowhere instead.
+        do_test!("aaa", "" => vec![((0, 3), false)]);
+
+        let owned = String::from("ab");
+        do_test!("aabbb", &owned => vec![((0, 1), false), ((1, 3), true), ((3, 5), false)]);
     }
 
     #[test]

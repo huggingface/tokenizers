@@ -7,6 +7,10 @@
 //! Mistral's tekken are exposed as the [`fsm::fsm_o200k`] / [`fsm::fsm_tekken`] functions rather than
 //! recipe structs).
 //!
+//! For pre-tokenizers that split on single characters (such as the Metaspace `▁` delimiter),
+//! we skip the atom classification pass entirely and search for the raw  bytes instead.
+//! See [`literal`].
+//!
 //! Design: every fsm is *no-push* — it writes spans into a caller-preallocated `&mut [fsm::Span]`
 //! (length ≥ `text.len()`) and returns the token count; there is no `Vec`/allocation on the hot path.
 //!
@@ -17,6 +21,7 @@
 mod atom_tables;
 pub mod classify;
 pub mod fsm;
+pub mod literal;
 pub mod regexes;
 #[cfg(target_arch = "x86_64")]
 mod simd_avx_classify;

@@ -2,9 +2,10 @@ pub(crate) mod cache;
 #[cfg(feature = "http")]
 pub(crate) mod from_pretrained;
 
-// Optional system-regex backend for arbitrary (non-atomsplit) patterns. With `fancy-regex` off a
-// stub compiles and arbitrary-regex features error at load — the atomsplit-native pre-tokenizers
-// work regardless, so `fancy-regex` is only needed for custom `Split` regexes / `Replace`.
+// Optional system-regex backend, needed only for a *regex* pattern that atomsplit does not cover.
+// With `fancy-regex` off a stub compiles and those patterns error at load. Everything else works
+// regardless: the atomsplit-native pre-tokenizers, and any `Split` or `Replace` whose pattern is a
+// plain string (searched for directly, see `atomsplit::literal`).
 #[cfg(feature = "fancy-regex")]
 mod fancy;
 #[cfg(feature = "fancy-regex")]
