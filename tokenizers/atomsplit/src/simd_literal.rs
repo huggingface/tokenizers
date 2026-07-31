@@ -1,5 +1,5 @@
 //! Finds every place a short pattern (up to three bytes) occurs in a text, in one pass.
-//! This is the engine behind [`Literal::matches_into`](crate::literal::Literal::matches_into);
+//! This is the scan behind [`Literal::matches_into`](crate::literal::Literal::matches_into);
 //! [`crate::literal`] explains when it is picked over the plain iterator.
 //!
 //! # Why a dedicated scan
@@ -14,10 +14,15 @@
 //!
 //! # How: compare, mask, decode
 //!
-//! **Step 1, compare.** A SIMD register compares 16 bytes at once. Compare the text against
-//! the pattern's first byte, the text shifted by one against the second byte, and so on, then
-//! AND the answers together: a position that passed every compare is the start of a whole
-//! match, and nothing needs a second look. Searching for `▁` (three bytes, `E2 96 81`) in
+//! Two words come up in everything below. A SIMD **register** is an extra-wide CPU value
+//! holding 16 bytes side by side; one instruction operates on all 16 at once. Each of those
+//! 16 byte slots is a **lane**. A SIMD compare answers lane by lane: a lane becomes all ones
+//! where the answer is yes, all zeros where it is no.
+//!
+//! **Step 1, compare.** Compare the text against the pattern's first byte (copied across all
+//! 16 lanes), the text shifted by one against the second byte, and so on, then AND the
+//! answers together: a lane that passed every compare is the start of a whole match, and
+//! nothing needs a second look. Searching for `▁` (three bytes, `E2 96 81`) in
 //! `"a…b▁c"`, where the `…` (`E2 80 A6`) shares a first byte with `▁` and acts as the decoy:
 //!
 //! ```text
@@ -33,21 +38,23 @@
 //! Only offset 5 passes all three rows: a match starts at 5, and the decoy at 1 is out after
 //! the second row.
 //!
-//! **Step 2, mask.** The 16 yes/no answers are squeezed into one integer, one bit (or one
-//! nibble) per position. Each target has a one-or-two instruction way to do this; for the
-//! example above the mask is `0b100000`, bit 5.
+//! **Step 2, mask.** The 16 lane answers are squeezed into one ordinary integer so plain
+//! arithmetic can take over: bit `j` set means "a match starts at offset `j`". For the
+//! example above the mask is `0b100000`, bit 5. Each target has a one-or-two instruction way
+//! to build this integer; on NEON the bits come out spaced four positions apart instead of
+//! one, a spacing the shared code carries along as `SHIFT` (the per-target layer below).
 //!
 //! **Step 3, decode.** Count-trailing-zeros on the mask gives the lowest set bit, which is the
 //! next match offset; clear that bit and repeat. The one twist is that the code decodes four
-//! offsets *without checking whether any bits are left*. Say this block had matches at
-//! offsets 2 and 5:
+//! offsets *without checking whether any bits are left*. Say a block starting at text offset
+//! `base` had matches at offsets 2 and 5 (shown with the one-bit spacing):
 //!
 //! ```text
 //!   mask 0b100100  trailing zeros = 2   write base + 2   clear bit → 0b100000
 //!   mask 0b100000  trailing zeros = 5   write base + 5   clear bit → 0
 //!   mask 0       trailing zeros = 64  write garbage    (slot 3)
 //!   mask 0       trailing zeros = 64  write garbage    (slot 4)
-//!                                      cursor += 2      (the popcount of the mask)
+//!                                      cursor += 2      (how many bits were set)
 //! ```
 //!
 //! The two garbage slots sit past the cursor, so the next block's writes (or nothing) land on
@@ -59,18 +66,27 @@
 //! Sparse text takes none of this: one instruction per 64-byte block answers "nothing here"
 //! (see `any`), so a pattern that is rare or absent stays close to `memmem` speed.
 //!
-//! The compare trick is Wojciech Muła's ("SIMD-friendly algorithms for substring searching"),
-//! the branch-free decode is how simdjson reads its structural-character masks, and the NEON
-//! `shrn` mask is Danila Kutenin's movemask substitute.
+//! The compare trick is Wojciech Muła's ("SIMD-friendly algorithms for substring searching");
+//! the branch-free decode is how simdjson reads its masks.
 //!
 //! # The per-target layer
 //!
-//! Everything from the mask on is plain `u64` arithmetic and is shared. A target only
-//! provides the four primitives in its `arch` module: `splat`, `match_starts`, `any` and
-//! `bits`. The masks differ in spacing, which `SHIFT` records: NEON's `shrn` yields a nibble
-//! per position (bit `4 * j` for offset `j`), x86's `movemask` and wasm's `bitmask` yield one
-//! bit per position. The wasm layer is compile-checked but not run in CI; the other targets
-//! run the full `tests/literal.rs` parity suite.
+//! Everything from the mask on is plain integer arithmetic and is shared. A target provides
+//! four primitives in its `arch` module:
+//!
+//! - `splat`: one byte copied into every lane, the shape a compare wants.
+//! - `match_starts`: step 1, the shifted compares ANDed together.
+//! - `any`: "did anything in these 64 bytes match?", the cheap exit for sparse text.
+//! - `bits`: step 2, lane answers to integer mask.
+//!
+//! x86 (`movemask`) and wasm (`bitmask`) each have an instruction that grabs one bit from
+//! every lane, so offset `j` lands on bit `j`. NEON has no such instruction; its standard
+//! substitute (Danila Kutenin's) leaves the bits four positions apart, so offset `j` lands
+//! on bit `4 * j`. `SHIFT` is that spacing (`bit position >> SHIFT` recovers the offset),
+//! and it is the only difference the shared code ever sees.
+//!
+//! The wasm layer is compile-checked but not run in CI; the other targets run the full
+//! `tests/literal.rs` parity suite.
 
 #[cfg(target_arch = "aarch64")]
 mod arch {
@@ -78,9 +94,10 @@ mod arch {
 
     /// 16 bytes of text in one register.
     pub(super) type Chunk = uint8x16_t;
-    /// Mask bits are a nibble apart: offset `j` sits at bit `4 * j`.
+    /// Offsets sit four bit positions apart in a mask from [`bits`]: offset `j` is bit `4 * j`.
     pub(super) const SHIFT: u32 = 2;
 
+    /// One byte copied into every lane.
     #[inline(always)]
     pub(super) fn splat(byte: u8) -> Chunk {
         unsafe { vdupq_n_u8(byte) }
@@ -108,13 +125,18 @@ mod arch {
         unsafe { vmaxvq_u8(vorrq_u8(vorrq_u8(s0, s1), vorrq_u8(s2, s3))) != 0 }
     }
 
-    /// The lane mask as bits, one nibble per lane (`shrn` narrows each 16-bit pair to its
-    /// middle nibble); keeping the low bit of each nibble puts offset `j` at bit `4 * j`.
+    /// The lane answers as one integer: one bit per lane, four bit positions apart.
+    ///
+    /// NEON cannot grab one bit from every lane in a single instruction. Instead `vshrn`
+    /// ("shift right and narrow") halves the register to 64 bits, shrinking each lane's
+    /// answer from eight bits to four (still all ones or all zeros); the `0x1111..` mask
+    /// then keeps one bit of each four, so clearing one bit in the decode drops exactly
+    /// one match.
     #[inline(always)]
     pub(super) fn bits(starts: Chunk) -> u64 {
         unsafe {
-            let nibbles = vshrn_n_u16::<4>(vreinterpretq_u16_u8(starts));
-            vget_lane_u64::<0>(vreinterpret_u64_u8(nibbles)) & 0x1111_1111_1111_1111
+            let halved = vshrn_n_u16::<4>(vreinterpretq_u16_u8(starts));
+            vget_lane_u64::<0>(vreinterpret_u64_u8(halved)) & 0x1111_1111_1111_1111
         }
     }
 }
@@ -125,9 +147,10 @@ mod arch {
 
     /// 16 bytes of text in one register.
     pub(super) type Chunk = __m128i;
-    /// `movemask` packs the lanes tight: offset `j` sits at bit `j`.
+    /// One bit per lane in a mask from [`bits`]: offset `j` is bit `j`, nothing to shift.
     pub(super) const SHIFT: u32 = 0;
 
+    /// One byte copied into every lane.
     #[inline(always)]
     pub(super) fn splat(byte: u8) -> Chunk {
         unsafe { _mm_set1_epi8(byte as i8) }
@@ -160,7 +183,8 @@ mod arch {
         unsafe { _mm_movemask_epi8(_mm_or_si128(_mm_or_si128(s0, s1), _mm_or_si128(s2, s3))) != 0 }
     }
 
-    /// The lane mask as bits: `movemask` takes each lane's top bit, so offset `j` is bit `j`.
+    /// The lane answers as one integer: `movemask` grabs each lane's top bit, so offset `j`
+    /// is bit `j`.
     #[inline(always)]
     pub(super) fn bits(starts: Chunk) -> u64 {
         unsafe { _mm_movemask_epi8(starts) as u32 as u64 }
@@ -173,9 +197,10 @@ mod arch {
 
     /// 16 bytes of text in one register.
     pub(super) type Chunk = v128;
-    /// `bitmask` packs the lanes tight: offset `j` sits at bit `j`.
+    /// One bit per lane in a mask from [`bits`]: offset `j` is bit `j`, nothing to shift.
     pub(super) const SHIFT: u32 = 0;
 
+    /// One byte copied into every lane.
     #[inline(always)]
     pub(super) fn splat(byte: u8) -> Chunk {
         u8x16_splat(byte)
@@ -203,7 +228,8 @@ mod arch {
         v128_any_true(v128_or(v128_or(s0, s1), v128_or(s2, s3)))
     }
 
-    /// The lane mask as bits: offset `j` is bit `j`.
+    /// The lane answers as one integer: `bitmask` grabs each lane's top bit, so offset `j`
+    /// is bit `j`.
     #[inline(always)]
     pub(super) fn bits(starts: Chunk) -> u64 {
         u8x16_bitmask(starts) as u64

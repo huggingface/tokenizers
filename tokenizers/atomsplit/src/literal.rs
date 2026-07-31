@@ -11,8 +11,8 @@
 //! - [`Literal::matches_into`] scans the whole text once and writes every offset into a caller
 //!   buffer. Pre-tokenizer delimiters are the opposite of rare (running English text has a space
 //!   about every six bytes), and at that density the per-match restarts dominate the iterator.
-//!   The scan builds one match bitmask per block of text and decodes the set bits into offsets;
-//!   `simd_literal.rs` holds the kernel.
+//!   The scan answers a whole block of text at once and turns the answers into offsets;
+//!   `simd_literal.rs` explains how, step by step.
 
 use memchr::memmem;
 use std::fmt;
