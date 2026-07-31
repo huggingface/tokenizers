@@ -68,10 +68,10 @@ pub trait Normalizer {
 ///
 /// A normalizer returns a [`Cow`] (copy-on-write): a borrow when it had nothing to change, an owned
 /// `String` when it rewrote the text.
-/// 
+///
 /// Chaining them needs care, because an owned `String` produced halfway through the chain is local to this function.
 /// The next normalizer may hand back a borrow of that locally owned [`String`], and that borrow cannot outlive the `String`.
-/// 
+///
 /// Text no normalizer touches is never copied: it stays a borrow of `input` throughout.
 pub(crate) fn normalize_all<'a, N: Normalizer>(
     normalizers: &[N],
@@ -94,7 +94,7 @@ pub(crate) fn normalize_all<'a, N: Normalizer>(
                 Cow::Owned(out.unwrap_or(s))
             }
         };
-    } 
+    }
     Ok(cow)
 }
 
