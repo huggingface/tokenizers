@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 
+use crate::normalizers::metaspace::PrependMode;
 use crate::pipeline;
 use crate::tokenizer::Decoder;
 use crate::tokenizer::pattern::Pattern;
@@ -146,6 +147,23 @@ fn replace_matches<'a>(
 }
 
 impl pipeline::Normalizer for Replace {
+    /// A swap of one character for another qualifies. Regex patterns, multi-character
+    /// literals and deletions change the text's structure and have to be written.
+    fn pending_rewrite(&self) -> Option<pipeline::PendingRewrite> {
+        let ReplacePattern::String(pattern) = &self.pattern else {
+            return None;
+        };
+        let mut pattern = pattern.chars();
+        let from = pattern.next().filter(|_| pattern.next().is_none())?;
+        let mut content = self.content.chars();
+        let to = content.next().filter(|_| content.next().is_none())?;
+        Some(pipeline::PendingRewrite {
+            from,
+            to,
+            prepend: PrependMode::Never,
+        })
+    }
+
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
         Ok(match &self.search {
             Search::Literal(literal) => {

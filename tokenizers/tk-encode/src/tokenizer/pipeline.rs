@@ -19,14 +19,17 @@ use crate::vocab::bucket_added_vocabulary::{
 };
 use crate::{
     ModelWrapper, PostProcessorWrapper, PreTokenizerWrapper, Token, Tokenizer,
-    normalizers::{NormalizerWrapper, metaspace::MetaspaceNormalizer},
+    normalizers::{
+        NormalizerWrapper,
+        metaspace::{MetaspaceNormalizer, PrependMode},
+    },
     pre_tokenizers::{
         bert::BertPreTokenizer,
         delimiter::CharDelimiterSplit,
         digits::Digits,
         fixed_length::FixedLength,
         metaspace,
-        proven_cuts::{self, ProvenCuts},
+        proven_cuts::{self, ProvenCuts, ZeroCopyMetaspace},
         punctuation::Punctuation,
         sequence::PipelineSequence,
         split::{Split as SplitPretok, SplitPattern},
@@ -66,15 +69,160 @@ pub(crate) fn classify_into_spans(
 
 pub trait Normalizer {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>>;
+
+    /// The rewrite this normalizer could leave pending instead of writing, or `None` when its
+    /// rewrite restructures the text and has to be written. Only rewrites that change the
+    /// text one character at a time qualify — see [`PendingRewrite`]. Today those are
+    /// [`MetaspaceNormalizer`] (the SentencePiece space swap) and a single-character literal
+    /// [`Replace`](crate::normalizers::replace::Replace).
+    fn pending_rewrite(&self) -> Option<PendingRewrite> {
+        None
+    }
+}
+
+/// A rewrite that changes the text one character at a time: every `from` reads as `to`, and
+/// `prepend` may put one `to` in front of the chunk.
+///
+/// Because positions map one to one, such a rewrite does not have to be written into a copy:
+/// a consumer can read the rewritten form off the raw text. [`NormalizedText`] carries one
+/// left pending by the normalizer chain, and the zero-copy encode path consumes it in place;
+/// [`PendingRewrite::write`] produces the rewritten text for every other consumer.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PendingRewrite {
+    pub(crate) from: char,
+    pub(crate) to: char,
+    pub(crate) prepend: PrependMode,
+}
+
+impl PendingRewrite {
+    /// Whether the rewrite puts a `to` in front of `text`. Empty text is handed back as is,
+    /// so it never takes one.
+    pub(crate) fn prepends(&self, text: &str) -> bool {
+        !text.is_empty()
+            && match self.prepend {
+                PrependMode::Never => false,
+                // Text already opening with the rewrite's own characters counts as marked
+                // (a leading `from` becomes a `to` under the swap).
+                PrependMode::IfMissing => {
+                    !text.starts_with(self.from) && !text.starts_with(self.to)
+                }
+                PrependMode::Unconditional => true,
+            }
+    }
+
+    /// Writes the rewrite into a copy: one pass, one right-sized allocation, and a borrow
+    /// when there is nothing to swap or prepend.
+    pub(crate) fn write<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
+        if input.is_empty() {
+            return Ok(Cow::Borrowed(input));
+        }
+        let prepend = self.prepends(input);
+        let mut from_buf = [0u8; 4];
+        let from = self.from.encode_utf8(&mut from_buf);
+        let mut to_buf = [0u8; 4];
+        let to = self.to.encode_utf8(&mut to_buf);
+        // Counting the swaps first sizes the copy exactly and lets them stream through the
+        // batch scan instead of restarting a search at every match.
+        let pattern =
+            atomsplit::literal::Literal::new(from.as_bytes()).expect("a char is never empty");
+        let count = pattern.count_matches(input.as_bytes());
+        if !prepend && count == 0 {
+            return Ok(Cow::Borrowed(input));
+        }
+        let mut rewritten = String::with_capacity(
+            input.len() - count * from.len()
+                + count * to.len()
+                + if prepend { to.len() } else { 0 },
+        );
+        if prepend {
+            rewritten.push_str(to);
+        }
+        let mut prev = 0;
+        pattern.for_each_match(input.as_bytes(), |start| {
+            rewritten.push_str(&input[prev..start]);
+            rewritten.push_str(to);
+            prev = start + from.len();
+        });
+        rewritten.push_str(&input[prev..]);
+        Ok(Cow::Owned(rewritten))
+    }
+}
+
+impl Normalizer for PendingRewrite {
+    fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
+        self.write(input)
+    }
+
+    fn pending_rewrite(&self) -> Option<PendingRewrite> {
+        Some(*self)
+    }
+}
+
+/// What a normalizer chain produced for one chunk: the normalized text, or that text one
+/// pending rewrite short of it.
+///
+/// [`NormalizedText::from_chain`] leaves a trailing [`PendingRewrite`] unwritten; the
+/// zero-copy encode path reads the rewritten form off `text`'s raw characters, and every
+/// other consumer calls [`NormalizedText::write`] to get plain text.
+pub struct NormalizedText<'a> {
+    text: Cow<'a, str>,
+    pending: Option<PendingRewrite>,
+}
+
+impl<'a> NormalizedText<'a> {
+    /// Runs `normalizers` over `input`, leaving a trailing pending rewrite unwritten. A
+    /// pending rewrite anywhere else in the chain runs as declared: the step after it needs
+    /// the written text.
+    pub(crate) fn from_chain<N: Normalizer>(normalizers: &[N], input: &'a str) -> Result<Self> {
+        if let [head @ .., last] = normalizers
+            && let Some(pending) = last.pending_rewrite()
+        {
+            return Ok(Self {
+                text: normalize_all(head, input)?,
+                pending: Some(pending),
+            });
+        }
+        Ok(Self {
+            text: normalize_all(normalizers, input)?,
+            pending: None,
+        })
+    }
+
+    /// The normalized text, with any pending rewrite written into it.
+    pub fn write(self) -> Result<Cow<'a, str>> {
+        match self.pending {
+            None => Ok(self.text),
+            Some(rewrite) => normalize_step(&rewrite, self.text),
+        }
+    }
+}
+
+/// One normalizer step over the running text: the copy-on-write bookkeeping one link of
+/// [`normalize_all`]'s chain needs.
+///
+/// A normalizer returns a [`Cow`] (copy-on-write): a borrow when it had nothing to change, an
+/// owned `String` when it rewrote the text. Chaining needs care, because an owned `String`
+/// produced halfway through the chain is local: the next normalizer may hand back a borrow of
+/// that `String`, and that borrow cannot outlive it.
+fn normalize_step<'a, N: Normalizer>(normalizer: &N, cow: Cow<'a, str>) -> Result<Cow<'a, str>> {
+    Ok(match cow {
+        // Still the caller's input, which outlives us: pass it straight on.
+        Cow::Borrowed(s) => normalizer.normalize(s)?,
+        Cow::Owned(s) => {
+            let out = match normalizer.normalize(&s)? {
+                // Rewritten again: keep the new `String`, drop ours.
+                Cow::Owned(o) => Some(o),
+                // Handed `s` back untouched: keep the `String` we already own.
+                Cow::Borrowed(b) if b.as_ptr() == s.as_ptr() && b.len() == s.len() => None,
+                // A borrow into `s` (for example, a substring of `s`): copy it out before `s` is dropped.
+                Cow::Borrowed(b) => Some(b.to_owned()),
+            };
+            Cow::Owned(out.unwrap_or(s))
+        }
+    })
 }
 
 /// Runs `normalizers` in order, each one seeing what the one before it produced.
-///
-/// A normalizer returns a [`Cow`] (copy-on-write): a borrow when it had nothing to change, an owned
-/// `String` when it rewrote the text.
-///
-/// Chaining them needs care, because an owned `String` produced halfway through the chain is local to this function.
-/// The next normalizer may hand back a borrow of that locally owned [`String`], and that borrow cannot outlive the `String`.
 ///
 /// Text no normalizer touches is never copied: it stays a borrow of `input` throughout.
 pub(crate) fn normalize_all<'a, N: Normalizer>(
@@ -83,21 +231,7 @@ pub(crate) fn normalize_all<'a, N: Normalizer>(
 ) -> Result<Cow<'a, str>> {
     let mut cow: Cow<'a, str> = Cow::Borrowed(input);
     for normalizer in normalizers {
-        cow = match cow {
-            // Still `input` itself, which outlives us: pass it straight on.
-            Cow::Borrowed(s) => normalizer.normalize(s)?,
-            Cow::Owned(s) => {
-                let out = match normalizer.normalize(&s)? {
-                    // Rewritten again: keep the new `String`, drop ours.
-                    Cow::Owned(o) => Some(o),
-                    // Handed `s` back untouched: keep the `String` we already own.
-                    Cow::Borrowed(b) if b.as_ptr() == s.as_ptr() && b.len() == s.len() => None,
-                    // A borrow into `s` (for example, a substring of `s`): copy it out before `s` is dropped.
-                    Cow::Borrowed(b) => Some(b.to_owned()),
-                };
-                Cow::Owned(out.unwrap_or(s))
-            }
-        };
+        cow = normalize_step(normalizer, cow)?;
     }
     Ok(cow)
 }
@@ -122,6 +256,13 @@ impl Normalizer for PipelineNormalizer {
         match self {
             Self::Declared(normalizer) => normalizer.normalize(input),
             Self::Metaspace(normalizer) => normalizer.normalize(input),
+        }
+    }
+
+    fn pending_rewrite(&self) -> Option<PendingRewrite> {
+        match self {
+            Self::Declared(normalizer) => normalizer.pending_rewrite(),
+            Self::Metaspace(normalizer) => normalizer.pending_rewrite(),
         }
     }
 }
@@ -479,6 +620,10 @@ pub struct PipelineTokenizer {
     model: PipelineModel,
     post_processor: PipelinePostProcessor,
     scratch_pool: ScratchPool,
+    /// When set, a full encode runs each chunk through [`ZeroCopyMetaspace`] instead of the
+    /// normalize/pre-tokenize stages: the rewrite those stages would write is read off the
+    /// raw text. `None` for every other pipeline shape; see [`PipelineTokenizer::try_from`].
+    zero_copy: Option<ZeroCopyMetaspace>,
 }
 
 /// A pool of [`PipelineModelScratch`].
@@ -693,11 +838,26 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
                 None => pre_tokenizer,
             };
 
+        // A chain ending in a pending rewrite, followed by proven cuts: the rewrite can be
+        // read off the raw text instead of written (see [`ZeroCopyMetaspace`]). Added tokens
+        // flagged `normalized` are matched against rewritten text, which this path never
+        // builds, so one such token keeps the written stages.
+        let zero_copy = match (normalizers.last(), &pre_tokenizer, &model) {
+            (Some(last), PipelinePreTokenizer::ProvenCuts(cuts), PipelineModel::BPE(bpe))
+                if !added_vocabulary.has_normalized_tokens() =>
+            {
+                last.pending_rewrite()
+                    .and_then(|rewrite| ZeroCopyMetaspace::build(rewrite, cuts, bpe))
+            }
+            _ => None,
+        };
+
         Ok(Self {
             added_vocabulary,
             normalizers,
             pre_tokenizer,
             model,
+            zero_copy,
             post_processor: tok
                 .get_post_processor()
                 .map(PipelinePostProcessor::try_from)
@@ -823,11 +983,31 @@ impl PipelineTokenizer {
                     output.push(PipelineToken { id: token });
                 }
                 Segment::Text(chunk) => {
-                    let normalized: Cow<str> = if STAGE >= Self::STAGE_NORMALIZE {
-                        normalize_all(&self.normalizers, chunk)?
+                    let normalized = if STAGE >= Self::STAGE_NORMALIZE {
+                        NormalizedText::from_chain(&self.normalizers, chunk)?
                     } else {
-                        Cow::Borrowed(chunk)
+                        NormalizedText {
+                            text: Cow::Borrowed(chunk),
+                            pending: None,
+                        }
                     };
+                    // Full encodes consume a pending rewrite in place when the pipeline has
+                    // the zero-copy route for it; the partial stages write it below, so the
+                    // ablation ladder times the stages the zero-copy path replaces.
+                    if STAGE >= Self::STAGE_POSTPROCESS
+                        && normalized.pending.is_some()
+                        && let Some(zero_copy) = &self.zero_copy
+                    {
+                        self.encode_chunk_zero_copy(
+                            zero_copy,
+                            &normalized.text,
+                            pre_tokens,
+                            scratch,
+                            output,
+                        )?;
+                        continue;
+                    }
+                    let normalized: Cow<str> = normalized.write()?;
 
                     // Extract special tokens from the normalized input
                     for segment in
@@ -932,6 +1112,49 @@ impl PipelineTokenizer {
             }
         });
         true
+    }
+
+    /// One chunk through [`ZeroCopyMetaspace`]: cut the raw text, then read each span through
+    /// the swap. The rewritten chunk is never built, and the special-token pass over it is
+    /// skipped with it — the path is only built when no added token matches normalized text.
+    fn encode_chunk_zero_copy(
+        &self,
+        zero_copy: &ZeroCopyMetaspace,
+        chunk: &str,
+        pre_tokens: &mut Vec<Span>,
+        scratch: &mut PipelineModelScratch,
+        output: &mut Vec<PipelineToken>,
+    ) -> Result<()> {
+        let (PipelineModel::BPE(bpe), PipelineModelScratch::BPE(scratch)) = (&self.model, scratch)
+        else {
+            unreachable!("`try_from` only builds `zero_copy` for a BPE model");
+        };
+        pre_tokens.clear();
+        let prepend = zero_copy.cut(chunk, pre_tokens);
+        let mut spans = pre_tokens.iter();
+        if prepend && let Some(first) = spans.next() {
+            // The prepend rewrites this one word for real, so its cache key is the rewritten
+            // form; every other span's key is its raw bytes.
+            let rewritten = zero_copy.rewrite().write(&chunk[first.range()])?;
+            bpe.tokenize_pipeline(&rewritten, scratch, output)?;
+        }
+        let swap = zero_copy.swap();
+        for span in spans {
+            bpe.tokenize_swapped(&chunk[span.range()], swap, scratch, output)?;
+        }
+        Ok(())
+    }
+
+    /// Turns the zero-copy metaspace path off, so a full encode runs the written rewrite.
+    #[doc(hidden)] // public only so `examples/normalize_claims.rs` can A/B the two paths
+    pub fn disable_zero_copy(&mut self) {
+        self.zero_copy = None;
+    }
+
+    /// Whether full encodes take the zero-copy metaspace path.
+    #[doc(hidden)] // public only so `examples/normalize_claims.rs` can verify the path fires
+    pub fn has_zero_copy(&self) -> bool {
+        self.zero_copy.is_some()
     }
 }
 
@@ -1491,6 +1714,250 @@ mod tests {
         assert_pipeline_matches_reference(&tok, "x a");
     }
 
+    /// The metaspace-shaped BPE from the proven-cuts tests, plus an unk token and a `▁▁`
+    /// piece: the swap, the delimiter-group rule and the veto prefilter all have something
+    /// to act on.
+    fn metaspace_bpe_tokenizer(
+        normalizer_json: &str,
+        pre_tokenizer_json: Option<&str>,
+    ) -> Tokenizer {
+        use crate::models::bpe::{BpeBuilder, Merges, Vocab};
+
+        let vocab: Vocab = [
+            ("<unk>", 0u32),
+            ("▁", 1),
+            ("<", 2),
+            (">", 3),
+            ("/", 4),
+            ("s", 5),
+            ("p", 6),
+            ("a", 7),
+            ("b", 8),
+            ("</", 9),
+            (">▁", 10),
+            (">▁</", 11),
+            ("p▁", 12),
+            ("sp", 13),
+            ("▁sp", 14),
+            ("▁a", 15),
+            ("▁b", 16),
+            ("▁▁", 17),
+        ]
+        .into_iter()
+        .map(|(s, i)| (s.to_string(), i))
+        .collect();
+        let merges: Merges = [
+            ("<", "/"),
+            (">", "▁"),
+            (">▁", "</"),
+            ("p", "▁"),
+            ("s", "p"),
+            ("▁", "sp"),
+            ("▁", "a"),
+            ("▁", "b"),
+            ("▁", "▁"),
+        ]
+        .into_iter()
+        .map(|(a, b)| (a.to_string(), b.to_string()))
+        .collect();
+        let bpe = BpeBuilder::default()
+            .vocab_and_merges(vocab, merges)
+            .unk_token("<unk>".to_string())
+            .build()
+            .unwrap();
+        let mut tok = Tokenizer::new(bpe);
+        tok.with_normalizer(Some(
+            serde_json::from_str::<NormalizerWrapper>(normalizer_json).unwrap(),
+        ))
+        .unwrap();
+        if let Some(json) = pre_tokenizer_json {
+            tok.with_pre_tokenizer(Some(
+                serde_json::from_str::<PreTokenizerWrapper>(json).unwrap(),
+            ));
+        }
+        tok
+    }
+
+    /// The two spellings of the space rewrite that reach the proven cuts, copied from the
+    /// files in `data/`.
+    const LLAMA_STYLE_NORMALIZER: &str = r#"{"type":"Sequence","normalizers":[{"type":"Prepend","prepend":"▁"},{"type":"Replace","pattern":{"String":" "},"content":"▁"}]}"#;
+    const GEMMA_STYLE_NORMALIZER: &str =
+        r#"{"type":"Replace","pattern":{"String":" "},"content":"▁"}"#;
+    const GEMMA_STYLE_PRE_TOKENIZER: &str = r#"{"type":"Split","pattern":{"String":" "},"behavior":"MergedWithPrevious","invert":false}"#;
+
+    /// Chunk shapes the raw-coordinate cuts must reproduce: leading, trailing and grouped
+    /// spaces, raw delimiters, the veto text (cut by the written path, kept whole by the
+    /// prefilter), characters outside the vocabulary, and no spaces at all.
+    const ZERO_COPY_TEXTS: &[&str] = &[
+        "sp a",
+        " sp",
+        "a b ",
+        "  b  a  ",
+        "",
+        " ",
+        "   ",
+        "sp",
+        "▁",
+        "▁a b",
+        "a▁b sp",
+        "<b> </b>",
+        "a <b> </b> b",
+        "p a",
+        "a\tb\nsp",
+        "x y",
+    ];
+
+    /// Both space-rewrite spellings reach the fused-normalizer + proven-cuts shape, so both
+    /// must take the zero-copy path, and its ids must match the written rewrite's on every
+    /// chunk shape — including the veto text, where the two paths cut differently and only
+    /// the ids agree.
+    #[test]
+    fn zero_copy_ids_match_the_written_rewrite() {
+        for (name, normalizer, pre_tokenizer) in [
+            ("llama-2 shape", LLAMA_STYLE_NORMALIZER, None),
+            (
+                "gemma-4 shape",
+                GEMMA_STYLE_NORMALIZER,
+                Some(GEMMA_STYLE_PRE_TOKENIZER),
+            ),
+        ] {
+            let tok = metaspace_bpe_tokenizer(normalizer, pre_tokenizer);
+            let zero_copy = PipelineTokenizer::try_from(&tok).unwrap();
+            assert!(
+                zero_copy.zero_copy.is_some(),
+                "{name} should take the zero-copy path"
+            );
+            let mut written = PipelineTokenizer::try_from(&tok).unwrap();
+            written.disable_zero_copy();
+            for text in ZERO_COPY_TEXTS {
+                let got: Vec<u32> = zero_copy
+                    .encode(text, false)
+                    .unwrap()
+                    .iter()
+                    .map(|t| t.id)
+                    .collect();
+                let want: Vec<u32> = written
+                    .encode(text, false)
+                    .unwrap()
+                    .iter()
+                    .map(|t| t.id)
+                    .collect();
+                assert_eq!(got, want, "{name}: {text:?}");
+                assert_pipeline_matches_reference(&tok, text);
+            }
+        }
+    }
+
+    /// An added token flagged `normalized` is matched against rewritten text, which the
+    /// zero-copy path never builds; one such token must keep the written stages.
+    #[test]
+    fn a_normalized_added_token_keeps_the_written_rewrite() {
+        let mut tok = metaspace_bpe_tokenizer(LLAMA_STYLE_NORMALIZER, None);
+        let _ = tok.add_tokens([crate::AddedToken::from("spa", false).normalized(true)]);
+        let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
+        assert!(pipeline.zero_copy.is_none());
+        assert_pipeline_matches_reference(&tok, "b spa sp a");
+    }
+
+    /// The chain hands a trailing pending rewrite back unwritten; `write` must produce
+    /// exactly what running the chain as declared produces.
+    #[test]
+    fn a_chain_ending_in_a_pending_rewrite_leaves_it_unwritten() {
+        let chain = [
+            PipelineNormalizer::Declared(serde_json::from_str(r#"{"type":"Lowercase"}"#).unwrap()),
+            PipelineNormalizer::Metaspace(MetaspaceNormalizer::new(
+                '▁',
+                PrependMode::Unconditional,
+                false,
+            )),
+        ];
+        for text in ["Hello World", "", "  A  ", "no_spaces", "▁Marked"] {
+            let normalized = NormalizedText::from_chain(&chain, text).unwrap();
+            assert!(normalized.pending.is_some(), "{text:?}");
+            assert_eq!(
+                NormalizedText::from_chain(&chain, text)
+                    .unwrap()
+                    .write()
+                    .unwrap(),
+                normalize_all(&chain, text).unwrap(),
+                "{text:?}"
+            );
+        }
+    }
+
+    /// A pending rewrite anywhere but last runs as declared: the step after it needs the
+    /// written text.
+    #[test]
+    fn a_mid_chain_rewrite_is_written() {
+        let chain = [
+            PipelineNormalizer::Metaspace(MetaspaceNormalizer::new(
+                '▁',
+                PrependMode::Unconditional,
+                false,
+            )),
+            PipelineNormalizer::Declared(serde_json::from_str(r#"{"type":"Lowercase"}"#).unwrap()),
+        ];
+        let normalized = NormalizedText::from_chain(&chain, "Hello World").unwrap();
+        assert!(normalized.pending.is_none());
+        assert_eq!(
+            NormalizedText::from_chain(&chain, "Hello World")
+                .unwrap()
+                .write()
+                .unwrap(),
+            normalize_all(&chain, "Hello World").unwrap()
+        );
+    }
+
+    /// A `Replace` swapping one character for another is a pending rewrite too; anything
+    /// changing the text's structure is not.
+    #[test]
+    fn a_single_char_replace_is_a_pending_rewrite() {
+        let single: NormalizerWrapper =
+            serde_json::from_str(r#"{"type":"Replace","pattern":{"String":"x"},"content":"y"}"#)
+                .unwrap();
+        assert_eq!(
+            Normalizer::pending_rewrite(&single),
+            Some(PendingRewrite {
+                from: 'x',
+                to: 'y',
+                prepend: PrependMode::Never,
+            })
+        );
+        let refused = [
+            (
+                "a multi-char pattern",
+                r#"{"type":"Replace","pattern":{"String":"xy"},"content":"y"}"#,
+            ),
+            (
+                "multi-char content",
+                r#"{"type":"Replace","pattern":{"String":"x"},"content":"yy"}"#,
+            ),
+            (
+                "a deletion",
+                r#"{"type":"Replace","pattern":{"String":"x"},"content":""}"#,
+            ),
+        ];
+        for (name, json) in refused {
+            let replace: NormalizerWrapper = serde_json::from_str(json).unwrap();
+            assert_eq!(Normalizer::pending_rewrite(&replace), None, "{name}");
+        }
+    }
+
+    /// Skipped when the fixtures have not been fetched.
+    #[test]
+    fn zero_copy_is_built_for_the_real_sentencepiece_configs() {
+        for file in ["llama-2.json", "gemma-4.json"] {
+            let path = format!("../data/{file}");
+            if !std::path::Path::new(&path).exists() {
+                eprintln!("skip {file}: not present (fetch with `make bench-models`)");
+                continue;
+            }
+            let tok = crate::Tokenizer::from_file(&path).unwrap();
+            let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
+            assert!(pipeline.zero_copy.is_some(), "{file}");
+        }
+    }
+
     #[test]
     fn segment_iterator_yields_text_and_specials_in_order() {
         let input = "aa<s>bb<s>cc";
@@ -1914,3 +2381,4 @@ mod tests {
         assert_eq!(cache.lookup(b"hello").hit(), Some(&[7u32][..]));
     }
 }
+

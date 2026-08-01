@@ -26,12 +26,13 @@
 
 use atomsplit::literal::Literal;
 
+use crate::models::bpe::{CharSwap, PipelineBPE};
 use crate::normalizers::NormalizerWrapper;
 use crate::normalizers::replace::{Replace, ReplacePattern};
 use crate::pre_tokenizers::PreTokenizerWrapper;
 use crate::pre_tokenizers::split::SplitPattern;
 use crate::tokenizer::Result;
-use crate::tokenizer::pipeline::{self, PipelineModel, Span};
+use crate::tokenizer::pipeline::{self, PendingRewrite, PipelineModel, Span};
 
 /// Splits `▁`-spelled text into words, at the delimiters the vocabulary allows. See the module docs.
 #[derive(Debug, Clone)]
@@ -160,6 +161,120 @@ fn space_replacement(replace: &Replace) -> Option<char> {
     let mut content = replace.content.chars();
     let delimiter = content.next()?;
     content.next().is_none().then_some(delimiter)
+}
+
+/// [`ProvenCuts`] without the rewrite it runs on: the same cuts, found on the raw text.
+///
+/// The tokenizers this serves normalize with a [`PendingRewrite`], swapping every space for
+/// the delimiter (llama-2 prepends one too), so their rewritten text differs from the raw
+/// text one character at a time. Every position [`ProvenCuts`] would cut is therefore
+/// visible in the raw text: it is a raw `from` or a raw `to`. Cutting there directly means
+/// the rewrite is never written; the model reads each raw span through a [`CharSwap`]
+/// ([`PipelineBPE::tokenize_swapped`]), and only the one word a prepend touches is rewritten
+/// for real.
+///
+/// The veto is taken at its prefilter's word: a cut whose preceding byte could open a veto
+/// piece is skipped without checking the piece itself. Skipping a cut never changes the ids
+/// (each cut is only ever a speed-up), it only hands the model a longer span. The full check
+/// reads the rewritten bytes around the cut, which is exactly what this path avoids building.
+#[derive(Debug, Clone)]
+pub(crate) struct ZeroCopyMetaspace {
+    /// The rewrite this path stands in for; also writes the one span the prepend touches.
+    rewrite: PendingRewrite,
+    /// The rewrite's `from`, as the single byte it encodes to. The cuts are only proven for
+    /// the space swap, so `from` is always one byte; comparing a byte (not a runtime-length
+    /// slice, which compiles to a `memcmp` call) is what keeps the scan tight.
+    from: u8,
+    /// UTF-8 bytes of the delimiter (the rewrite's `to`); only the first `to_len` are meaningful.
+    to: [u8; 4],
+    to_len: u8,
+    /// The delimiter's vocabulary id, seeded for every raw `from`.
+    to_id: u32,
+    /// [`Veto::bytes_before`]: last bytes of the pieces' `before` halves, as a 256-bit set.
+    veto_bytes_before: [u64; 4],
+}
+
+impl ZeroCopyMetaspace {
+    /// `None` when the raw text cannot stand in for the rewritten text: the cuts were proven
+    /// for the space swap only, and byte-atom models spell text in another alphabet.
+    pub(crate) fn build(
+        rewrite: PendingRewrite,
+        cuts: &ProvenCuts,
+        bpe: &PipelineBPE,
+    ) -> Option<Self> {
+        if rewrite.from != ' ' || !bpe.char_atoms() {
+            return None;
+        }
+        let mut to = [0u8; 4];
+        let encoded = rewrite.to.encode_utf8(&mut to);
+        if cuts.delimiter.pattern() != encoded.as_bytes() {
+            return None;
+        }
+        let to_id = bpe.id_of_bytes(encoded.as_bytes())?;
+        let to_len = encoded.len() as u8;
+        Some(Self {
+            rewrite,
+            from: rewrite.from as u8,
+            to,
+            to_len,
+            to_id,
+            veto_bytes_before: cuts.veto.bytes_before,
+        })
+    }
+
+    pub(crate) fn rewrite(&self) -> PendingRewrite {
+        self.rewrite
+    }
+
+    pub(crate) fn swap(&self) -> CharSwap {
+        CharSwap {
+            from: self.from,
+            id: self.to_id,
+            len: self.to_len,
+        }
+    }
+
+    /// Cuts `text` where [`ProvenCuts`] would cut its rewritten form, as raw byte offsets.
+    /// Returns whether the first span takes the prepended delimiter; the caller writes that
+    /// one span's rewrite for real and reads the rest through the swap.
+    pub(crate) fn cut(&self, text: &str, out: &mut Vec<Span>) -> bool {
+        let bytes = text.as_bytes();
+        let to = &self.to[..self.to_len as usize];
+        let mut start = 0usize;
+        let mut search = 0usize;
+        while let Some(found) = memchr::memchr2(self.from, to[0], &bytes[search..]) {
+            let at = search + found;
+            let width = if bytes[at] == self.from {
+                1
+            } else if bytes[at..].starts_with(to) {
+                to.len()
+            } else {
+                // The delimiter's first byte opens other characters too; not a delimiter.
+                search = at + 1;
+                continue;
+            };
+            // The same three refusals as [`ProvenCuts::pre_tokenize`]: the word would be
+            // empty, the delimiter sits inside a group (its predecessor is a raw `from` or
+            // a raw `to`), or the veto's prefilter byte fires. The predecessor byte is
+            // never rewritten (a rewritten one is the group case), so raw is exact here.
+            if at != start
+                && !(bytes[at - 1] == self.from || bytes[..at].ends_with(to))
+                && !self.prefilter_forbids(bytes[at - 1])
+            {
+                out.push(Span::new(start as u32, at as u32));
+                start = at;
+            }
+            search = at + width;
+        }
+        if start < bytes.len() {
+            out.push(Span::new(start as u32, bytes.len() as u32));
+        }
+        self.rewrite.prepends(text)
+    }
+
+    fn prefilter_forbids(&self, previous: u8) -> bool {
+        self.veto_bytes_before[(previous >> 6) as usize] & (1 << (previous & 63)) != 0
+    }
 }
 
 /// How many veto pieces we put up with before giving up on cutting at all.

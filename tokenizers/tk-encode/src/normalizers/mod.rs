@@ -237,6 +237,25 @@ impl pipeline::Normalizer for NormalizerWrapper {
             Self::ByteLevel(bl) => pipeline::Normalizer::normalize(bl, input),
         }
     }
+
+    fn pending_rewrite(&self) -> Option<pipeline::PendingRewrite> {
+        match self {
+            Self::BertNormalizer(bn) => pipeline::Normalizer::pending_rewrite(bn),
+            Self::StripNormalizer(sn) => pipeline::Normalizer::pending_rewrite(sn),
+            Self::StripAccents(sn) => pipeline::Normalizer::pending_rewrite(sn),
+            Self::NFC(nfc) => pipeline::Normalizer::pending_rewrite(nfc),
+            Self::NFD(nfd) => pipeline::Normalizer::pending_rewrite(nfd),
+            Self::NFKC(nfkc) => pipeline::Normalizer::pending_rewrite(nfkc),
+            Self::NFKD(nfkd) => pipeline::Normalizer::pending_rewrite(nfkd),
+            Self::Sequence(sequence) => pipeline::Normalizer::pending_rewrite(sequence),
+            Self::Lowercase(lc) => pipeline::Normalizer::pending_rewrite(lc),
+            Self::Nmt(nmt) => pipeline::Normalizer::pending_rewrite(nmt),
+            Self::Precompiled(pc) => pipeline::Normalizer::pending_rewrite(pc),
+            Self::Replace(rp) => pipeline::Normalizer::pending_rewrite(rp),
+            Self::Prepend(pp) => pipeline::Normalizer::pending_rewrite(pp),
+            Self::ByteLevel(bl) => pipeline::Normalizer::pending_rewrite(bl),
+        }
+    }
 }
 
 #[cfg(test)]

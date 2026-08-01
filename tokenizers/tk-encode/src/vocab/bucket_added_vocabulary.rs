@@ -204,6 +204,12 @@ impl AddedVocabulary {
         self.vocab.is_empty() && self.normalized_vocab.is_empty()
     }
 
+    /// Does any added token match against normalized text? When none does, the pass over each
+    /// normalized chunk has nothing to find, and an encode path may skip building that text.
+    pub(crate) fn has_normalized_tokens(&self) -> bool {
+        !self.normalized_vocab.is_empty()
+    }
+
     /// Get the additional vocabulary (union of both matchers; normalized tokens appear by their
     /// normalized form, since the original content isn't retained after partitioning).
     pub fn get_vocab(&self) -> AHashMap<String, u32> {

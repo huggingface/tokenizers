@@ -21,11 +21,10 @@
 
 use std::borrow::Cow;
 
-use atomsplit::literal::Literal;
-
 use crate::normalizers::NormalizerWrapper;
 use crate::normalizers::replace::{Replace, ReplacePattern};
 use crate::pre_tokenizers::whitespace::WhitespaceSplit;
+use crate::tokenizer::pipeline::PendingRewrite;
 use crate::tokenizer::{Result, pipeline};
 
 /// When [`MetaspaceNormalizer`] writes a delimiter at the start of the text it is given.
@@ -64,6 +63,16 @@ impl MetaspaceNormalizer {
             prepend,
             drop_whitespace,
         }
+    }
+
+    /// The swap and prepend as a [`PendingRewrite`]. The whitespace-dropping form deletes
+    /// characters, which no character-for-character rewrite can express, so it has none.
+    pub(crate) fn as_rewrite(&self) -> Option<PendingRewrite> {
+        (!self.drop_whitespace).then_some(PendingRewrite {
+            from: ' ',
+            to: self.delimiter,
+            prepend: self.prepend,
+        })
     }
 
     /// The one-pass stand-in for the leading `steps`, when they spell out this normalizer's job:
@@ -109,73 +118,43 @@ fn space_swap(replace: &Replace) -> Option<char> {
 }
 
 impl pipeline::Normalizer for MetaspaceNormalizer {
+    fn pending_rewrite(&self) -> Option<PendingRewrite> {
+        self.as_rewrite()
+    }
+
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
+        // Only spaces become delimiters; tabs and newlines are left alone. The swap and the
+        // prepend are exactly a [`PendingRewrite`], written here.
+        if let Some(rewrite) = self.as_rewrite() {
+            return rewrite.write(input);
+        }
         // Return empty input as is
         if input.is_empty() {
             return Ok(Cow::Borrowed(input));
         }
-        if self.drop_whitespace {
-            // Whitespace is thrown away, so cut the text where `WhitespaceSplit` would and write the
-            // words back one after the other, each with its own delimiter.
-            let mut words = Vec::new();
-            pipeline::PreTokenizer::pre_tokenize(&WhitespaceSplit, input, &mut words)?;
-            // Exact when every word takes a delimiter; a word that already starts with one
-            // (`IfMissing`) leaves a few bytes spare.
-            let words_len: usize = words.iter().map(|span| span.range().len()).sum();
-            let mut rewritten =
-                String::with_capacity(words_len + words.len() * self.delimiter.len_utf8());
-            for span in &words {
-                let word = &input[span.range()];
-                let prepend = match self.prepend {
-                    PrependMode::Never => false,
-                    // The text may already hold delimiters of its own: never write a second one.
-                    PrependMode::IfMissing => !word.starts_with(self.delimiter),
-                    PrependMode::Unconditional => true,
-                };
-                if prepend {
-                    rewritten.push(self.delimiter);
-                }
-                rewritten.push_str(word);
-            }
-            Ok(Cow::Owned(rewritten))
-        } else {
+        // Whitespace is thrown away, so cut the text where `WhitespaceSplit` would and write the
+        // words back one after the other, each with its own delimiter.
+        let mut words = Vec::new();
+        pipeline::PreTokenizer::pre_tokenize(&WhitespaceSplit, input, &mut words)?;
+        // Exact when every word takes a delimiter; a word that already starts with one
+        // (`IfMissing`) leaves a few bytes spare.
+        let words_len: usize = words.iter().map(|span| span.range().len()).sum();
+        let mut rewritten =
+            String::with_capacity(words_len + words.len() * self.delimiter.len_utf8());
+        for span in &words {
+            let word = &input[span.range()];
             let prepend = match self.prepend {
                 PrependMode::Never => false,
-                // A leading space counts as already marked: the swap turns it into a delimiter.
-                PrependMode::IfMissing => {
-                    !input.starts_with(' ') && !input.starts_with(self.delimiter)
-                }
+                // The text may already hold delimiters of its own: never write a second one.
+                PrependMode::IfMissing => !word.starts_with(self.delimiter),
                 PrependMode::Unconditional => true,
             };
-            // Only spaces become delimiters; tabs and newlines are left alone. Counting them
-            // first sizes the rewrite exactly (a space is one byte, the delimiter up to four)
-            // and lets the swap stream through the batch scan instead of restarting a search
-            // at every space.
-            let space = Literal::new(b" ").expect("a space is not empty");
-            let count = space.count_matches(input.as_bytes());
-            // Nothing to prepend and nothing to swap: hand the input back instead of copying it.
-            if !prepend && count == 0 {
-                return Ok(Cow::Borrowed(input));
-            }
-            let mut buf = [0u8; 4];
-            let delimiter = self.delimiter.encode_utf8(&mut buf);
-            let mut rewritten = String::with_capacity(
-                input.len()
-                    + (delimiter.len() - 1) * count
-                    + if prepend { delimiter.len() } else { 0 },
-            );
             if prepend {
-                rewritten.push_str(delimiter);
+                rewritten.push(self.delimiter);
             }
-            let mut prev = 0;
-            space.for_each_match(input.as_bytes(), |start| {
-                rewritten.push_str(&input[prev..start]);
-                rewritten.push_str(delimiter);
-                prev = start + 1;
-            });
-            rewritten.push_str(&input[prev..]);
-            Ok(Cow::Owned(rewritten))
+            rewritten.push_str(word);
         }
+        Ok(Cow::Owned(rewritten))
     }
 }
 

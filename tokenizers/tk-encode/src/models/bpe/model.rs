@@ -776,6 +776,17 @@ impl PipelineBPE {
         self.ignore_merges
     }
 
+    /// Does this model seed the merge loop with characters (rather than raw bytes)? Only
+    /// character atoms can read a span through a [`SpaceSwap`], which swaps one char.
+    pub(crate) fn char_atoms(&self) -> bool {
+        matches!(self.atoms, Atoms::Chars { .. })
+    }
+
+    /// The id of the vocabulary piece spelled exactly `bytes`, if there is one.
+    pub(crate) fn id_of_bytes(&self, bytes: &[u8]) -> Option<u32> {
+        self.vocab.get_bytes(bytes)
+    }
+
     /// Every piece of the vocabulary, as bytes. Used at build time to work out how the text may be
     /// cut into words; not cheap, so call it once.
     pub(crate) fn vocab_bytes(&self) -> Vec<(Vec<u8>, u32)> {
@@ -785,6 +796,7 @@ impl PipelineBPE {
     fn merge_word(
         &self,
         sequence: &str,
+        swap: Option<CharSwap>,
         merge_queue: &mut QuaternaryHeap<Merge>,
         skip: &mut Vec<Merge>,
         word: &mut Word,
@@ -828,6 +840,14 @@ impl PipelineBPE {
                     .char_indices()
                     .map(|(i, c)| &sequence[i..i + c.len_utf8()])
                 {
+                    // A raw `from` stands for its replacement: its atom is the replacement's
+                    // id, as wide as what the rewrite would have written.
+                    if let Some(swap) = swap
+                        && char_str.as_bytes() == [swap.from]
+                    {
+                        word.add(swap.id, swap.len as usize);
+                        continue;
+                    }
                     let char_len = char_str.len();
                     if let Some(char_id) = self.vocab.token_to_id(char_str) {
                         word.add(char_id, char_len);
@@ -854,6 +874,19 @@ impl PipelineBPE {
         };
         word.merge_all(&self.merges, None, merge_queue, skip);
     }
+}
+
+/// One raw character read as the one a pending rewrite would swap in: the raw `from` (a
+/// single byte, all its route supports), the replacement's vocabulary id, and the byte width
+/// the rewritten form would have.
+///
+/// The zero-copy metaspace path (see [`crate::pre_tokenizers::proven_cuts`]) hands this to
+/// [`PipelineBPE::tokenize_swapped`] so the merge loop seeds spans that were never rewritten.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct CharSwap {
+    pub(crate) from: u8,
+    pub(crate) id: u32,
+    pub(crate) len: u8,
 }
 
 impl PipelineBPE {
@@ -895,7 +928,7 @@ impl PipelineBPE {
         {
             output.push(PipelineToken { id });
         } else {
-            self.merge_word(sequence, merge_queue, skip, word);
+            self.merge_word(sequence, None, merge_queue, skip, word);
             output.extend(word.get_chars_iter().map(|id| PipelineToken { id }));
         }
         // The ids come back out of `output` because that is the only place both
@@ -905,6 +938,49 @@ impl PipelineBPE {
         {
             cache.insert(at, output[start..].iter().map(|token| token.id));
         }
+    }
+
+    /// [`Self::tokenize_span`] for a raw span read through `swap`. The cache key is the
+    /// span's raw bytes; a rewritten form never holds the swap's `from`, so raw and rewritten
+    /// keys can only collide when they spell the same word, and the cached ids agree.
+    /// `ignore_merges` plays no part here: the zero-copy path is only built for models
+    /// without it, as the proven cuts it rides on already require.
+    pub(crate) fn tokenize_swapped(
+        &self,
+        sequence: &str,
+        swap: CharSwap,
+        scratch: &mut BpeScratch,
+        output: &mut Vec<PipelineToken>,
+    ) -> Result<()> {
+        if sequence.is_empty() {
+            return Ok(());
+        }
+        let BpeScratch {
+            merge_queue,
+            skip,
+            word,
+            word_cache,
+        } = scratch;
+
+        let mut placement = None;
+        if let Some(cache) = word_cache.as_mut() {
+            match cache.lookup(sequence.as_bytes()) {
+                Lookup::Hit(ids) => {
+                    output.extend(ids.iter().map(|&id| PipelineToken { id }));
+                    return Ok(());
+                }
+                Lookup::Miss(at) => placement = at,
+            }
+        }
+        let start = output.len();
+        self.merge_word(sequence, Some(swap), merge_queue, skip, word);
+        output.extend(word.get_chars_iter().map(|id| PipelineToken { id }));
+        if let Some(cache) = word_cache.as_mut()
+            && let Some(at) = placement
+        {
+            cache.insert(at, output[start..].iter().map(|token| token.id));
+        }
+        Ok(())
     }
 }
 
