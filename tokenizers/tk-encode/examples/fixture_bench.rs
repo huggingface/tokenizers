@@ -20,7 +20,10 @@
 //!    on, so the headline includes the post-process stage the ladder charges.
 //! 2. **Stage breakdown** — the `encode_generic::<STAGE>` ablation ladder plus
 //!    the pre-tokenize-vs-regex-engine references, on fresh caller-owned
-//!    scratches, fully separate from the phase-1 timings.
+//!    scratches, fully separate from the phase-1 timings. Every rung drives the
+//!    same route a full `encode` takes (fused scan, zero-copy or staged, reported
+//!    as `route`), so the split bar is the splitter that actually ships and the
+//!    model bar is a difference between two runs of it. See `stage_secs`.
 //! 3. **Scaling & memory** — a multi-thread throughput sweep (1/2/4/8/max) over
 //!    the whole corpus on fresh instances, and resident-set deltas measured by
 //!    re-spawning this binary as `--memory <impl> <model.json>` children — one
@@ -299,6 +302,23 @@ fn bench_throughput(
 /// successive levels and subtracting gives each stage's marginal cost (the ablation
 /// ladder), no profiler and no per-segment instrumentation.
 ///
+/// Every rung runs the **route a full encode runs**, which is what makes subtracting
+/// them meaningful. A fused pipeline's split rung drives the same masked FSM scan the
+/// model rung does, emitting each span into `pre_tokens` instead of the model; a
+/// zero-copy pipeline's split rung is its proven-cut pass, with neither the rewrite
+/// write nor the added-token scan over rewritten text that the route never performs.
+/// Two consequences to read the numbers with:
+///
+/// - The split rung pays one span write per pre-token that a full fused encode does not
+///   (it hands the span straight to the model), so the split bar reads a little high and
+///   the model bar a little low.
+/// - The `&str` slice the model call makes is charged to the model, not to the split. On
+///   these corpora that is UTF-8 boundary checking, and it is not a small share.
+///
+/// Before this was route-aware the split rung ran the *staged* array FSM, a splitter no
+/// shipping encode uses. That put the split bar about twice too high and made the model
+/// bar a subtraction across two different pipelines.
+///
 /// The scratch is created fresh here (never taken from the pipeline's pool), so the
 /// stage numbers are warmed on this fixture alone and can't perturb — or be flattered
 /// by — the phase-1 cache state. Both caller-owned buffers are reused across chunks
@@ -333,6 +353,46 @@ fn stage_secs<const STAGE: u8>(pipeline: &PipelineTokenizer, chunks: &[String]) 
     median_secs(samples)
 }
 
+/// The top of the ladder with the output and span buffers allocated **per chunk**, the way
+/// `PipelineTokenizer::encode` does for every call. The pipeline, the fresh scratch and
+/// the warm-up are all identical to `stage_secs`, so subtracting `t_post` isolates
+/// allocation with no other variable in play.
+///
+/// It comes out near zero on these corpora: growing and freeing the output `Vec` is not a
+/// cost worth chasing. It is reported anyway, because it looks like one.
+///
+/// Timing the real `encode` here instead was tried and dropped. Phase 2 shares one pipeline
+/// across every fixture, so its scratch pool holds the words of all previously benched
+/// corpora, and against 64k slots that saturates. The delta then came out larger than the
+/// whole encode: it measures cache eviction, not call overhead. A number that size in the
+/// report would have read as a per-call cost.
+fn fresh_buffer_secs(pipeline: &PipelineTokenizer, chunks: &[String]) -> f64 {
+    let mut scratch = pipeline.get_model().init_scratch();
+    let mut run = || {
+        for chunk in chunks {
+            let mut out = Vec::new();
+            let mut pre_tokens = Vec::new();
+            let _ = pipeline.encode_generic::<{ PipelineTokenizer::STAGE_POSTPROCESS }>(
+                chunk,
+                true,
+                &mut pre_tokens,
+                &mut scratch,
+                &mut out,
+            );
+            black_box(&out);
+            black_box(&pre_tokens);
+        }
+    };
+    run(); // warm-up
+    let mut samples = Vec::with_capacity(REPS);
+    for _ in 0..REPS {
+        let start = Instant::now();
+        run();
+        samples.push(start.elapsed().as_secs_f64());
+    }
+    median_secs(samples)
+}
+
 /// Stage decomposition + regex-engine references for one fixture: the
 /// `stage_ns_per_byte` and `pretok_vs_regex` objects of its report row.
 fn bench_stages(pipeline: &PipelineTokenizer, f: &Fixture, regexes: &[String]) -> (Value, Value) {
@@ -341,10 +401,23 @@ fn bench_stages(pipeline: &PipelineTokenizer, f: &Fixture, regexes: &[String]) -
     let t_split = stage_secs::<{ PipelineTokenizer::STAGE_SPLIT }>(pipeline, &f.chunks);
     let t_model = stage_secs::<{ PipelineTokenizer::STAGE_MODEL }>(pipeline, &f.chunks);
     let t_post = stage_secs::<{ PipelineTokenizer::STAGE_POSTPROCESS }>(pipeline, &f.chunks);
+    let t_fresh = fresh_buffer_secs(pipeline, &f.chunks);
     // Two distinct "split" costs: `added_split` is the added/special-token scan (the
     // SpecialSegmentIterator over the AddedVocabulary, captured by the FRAME level),
-    // `pre_tokenize` is the pre-tokenizer split, `post` the special-token id-frame
-    // splice. All five stages sum exactly to `total`.
+    // `pre_tokenize` is the pre-tokenizer split *as this model's route performs it*,
+    // `post` the special-token id-frame splice. The five stages sum to `total`, which is
+    // the ladder's own full encode.
+    //
+    // `clamped` is what the five do NOT account for: the rungs are independent medians, so
+    // a stage at or below the noise floor goes negative and clamps to zero, after which the
+    // parts sum slightly above `total`. A `clamped` that is not near zero means this
+    // fixture's rungs are noise-dominated and its breakdown should not be trusted.
+    //
+    // `alloc` is the one cost outside the decomposition that can be isolated cleanly; see
+    // `fresh_buffer_secs`. `total` is still below what phase 1 measures through the public
+    // `encode`, which also acquires a pooled scratch and hands back an owned `Vec`; that
+    // remainder is NOT reported here, because no measurement in this bench separates it
+    // from the pool's cache state. Better an acknowledged gap than a mislabelled bar.
     let nspb = |secs: f64| secs * 1e9 / f.bytes as f64;
     let (ns_added, ns_norm, ns_split, ns_model, ns_post) = (
         nspb(t_frame.max(0.0)),
@@ -353,15 +426,23 @@ fn bench_stages(pipeline: &PipelineTokenizer, f: &Fixture, regexes: &[String]) -
         nspb((t_model - t_split).max(0.0)),
         nspb((t_post - t_model).max(0.0)),
     );
+    let ns_total = nspb(t_post);
+    let clamped = ns_total - (ns_added + ns_norm + ns_split + ns_model + ns_post);
+    let ns_alloc = nspb(t_fresh - t_post);
     eprintln!(
-        "  {} stages ns/byte: added-split {ns_added:.2}, norm {ns_norm:.2}, pre-split {ns_split:.2}, model {ns_model:.2}, post {ns_post:.2}",
+        "  {} stages ns/byte: added-split {ns_added:.2}, norm {ns_norm:.2}, pre-split {ns_split:.2}, model {ns_model:.2}, post {ns_post:.2} → total {ns_total:.2} (clamped {clamped:+.2}) · buffer alloc {ns_alloc:+.2}",
         f.name
     );
 
-    // pre_tokenize (= classify SIMD + fsm) vs classify-scalar and vs real regex engines
-    // over the same corpus, so the report shows the split beating a regex engine both
-    // WITH and WITHOUT SIMD. `scalar_pipe` = pre_tokenize + (cls_scalar − cls_simd):
-    // fsm is the scalar jump-table in both pipes, SIMD/scalar is the classify pass only.
+    // The shipped split vs real regex engines over the same corpus. `ns_split` is now the
+    // route's own splitter, so these ratios describe the code that runs. Before the ladder
+    // was route-aware they compared the engines against the staged array FSM and undersold
+    // the split by roughly 2x.
+    //
+    // `scalar_pipe` = ns_split + (cls_scalar − cls_simd) swaps *only* the classify pass
+    // for its scalar version. It is not "the split without SIMD": for a regex-shaped FSM
+    // the scan is a boundary-mask scanner, so SIMD lives in the scan too and cannot be
+    // subtracted out this way. Read it as the split with a scalar classify pass.
     let corpus: String = f.chunks.concat();
     let cls_simd = classify_ns(corpus.as_bytes(), false);
     let cls_scalar = classify_ns(corpus.as_bytes(), true);
@@ -384,7 +465,7 @@ fn bench_stages(pipeline: &PipelineTokenizer, f: &Fixture, regexes: &[String]) -
             })
         };
         eprintln!(
-            "  {} pre-tok: SIMD-cls {ns_split:.2} / scalar-cls {scalar_pipe:.2} ns/B · vs onig {} · vs fancy {} · vs pcre2 {} · vs logos {}",
+            "  {} split: {ns_split:.2} / scalar-classify {scalar_pipe:.2} ns/B · vs onig {} · vs fancy {} · vs pcre2 {} · vs logos {}",
             f.name,
             vs(onig_ns),
             vs(fancy_ns),
@@ -400,7 +481,9 @@ fn bench_stages(pipeline: &PipelineTokenizer, f: &Fixture, regexes: &[String]) -
             "pre_tokenize": ns_split,
             "model": ns_model,
             "post": ns_post,
-            "total": nspb(t_post),
+            "total": ns_total,
+            "clamped": clamped,
+            "alloc": ns_alloc,
         }),
         json!({
             "cls_simd": cls_simd,
@@ -1188,6 +1271,9 @@ fn main() {
 
         models.push(json!({
             "model": name, "desc": desc, "shape": shape,
+            // Which encode route the stage numbers decompose: the three split the work
+            // differently, so a stage chart is only readable against the route it timed.
+            "route": pipeline.encode_route().as_str(),
             "results": rows, "memory": memory, "threads": threads,
             "decode_threads": decode_threads, "decode_reason": decode_reason,
         }));

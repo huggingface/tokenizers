@@ -300,6 +300,32 @@ pub(crate) enum FusedScan {
     DeepSeek,
 }
 
+/// The route a chunk takes through [`PipelineTokenizer::encode_generic`]. See
+/// [`PipelineTokenizer::encode_route`].
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum EncodeRoute {
+    /// The pending rewrite is read in place and proven cuts split the raw text: no
+    /// rewritten copy is built and no added-token scan runs over one.
+    ZeroCopy,
+    /// One native FSM cuts the chunk and hands each span straight to the BPE model, so
+    /// the split and the model are a single pass.
+    Fused,
+    /// Normalize, write, scan for added tokens, pre-tokenize into a span buffer, then run
+    /// the model once per span.
+    Staged,
+}
+
+impl EncodeRoute {
+    /// The route's name, for a benchmark's report.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ZeroCopy => "zero-copy",
+            Self::Fused => "fused",
+            Self::Staged => "staged",
+        }
+    }
+}
+
 impl PipelinePreTokenizer {
     /// The single native FSM this whole pre-tokenizer reduces to, if any: a recognized
     /// lone `Split`, or a `Sequence` that collapses to one. Each arm asks the child for
@@ -887,6 +913,33 @@ impl PipelineTokenizer {
         &self.pre_tokenizer
     }
 
+    /// The single native FSM the whole split reduces to, when the model behind it is one
+    /// the fused scan can feed. [`encode_fused`](Self::encode_fused) and
+    /// [`encode_route`](Self::encode_route) both ask this, so the route a benchmark
+    /// reports cannot disagree with the route an encode takes.
+    fn fused_scan(&self) -> Option<FusedScan> {
+        let scan = self.pre_tokenizer.native_fsm()?;
+        matches!(self.model, PipelineModel::BPE(_)).then_some(scan)
+    }
+
+    /// Which route this tokenizer's chunks take through [`encode_generic`].
+    ///
+    /// The three routes decompose into stages differently. The fused scan does the split
+    /// and the model in one pass, and the zero-copy route replaces the rewrite write and
+    /// the added-token scan over the rewritten text as well as the split. A stage
+    /// breakdown is only meaningful against the route it measured, so a benchmark reports
+    /// this next to the numbers.
+    pub fn encode_route(&self) -> EncodeRoute {
+        // Same order `encode_generic` tests them in.
+        if self.zero_copy.is_some() {
+            EncodeRoute::ZeroCopy
+        } else if self.fused_scan().is_some() {
+            EncodeRoute::Fused
+        } else {
+            EncodeRoute::Staged
+        }
+    }
+
     /// Encode `input` into token ids.
     ///
     /// Special tokens are matched in two passes:
@@ -991,21 +1044,32 @@ impl PipelineTokenizer {
                             pending: None,
                         }
                     };
-                    // Full encodes consume a pending rewrite in place when the pipeline has
-                    // the zero-copy route for it; the partial stages write it below, so the
-                    // ablation ladder times the stages the zero-copy path replaces.
-                    if STAGE >= Self::STAGE_POSTPROCESS
-                        && normalized.pending.is_some()
-                        && let Some(zero_copy) = &self.zero_copy
-                    {
-                        self.encode_chunk_zero_copy(
-                            zero_copy,
-                            &normalized.text,
-                            pre_tokens,
-                            scratch,
-                            output,
-                        )?;
-                        continue;
+                    // A pipeline with the zero-copy route reads the pending rewrite in
+                    // place at *every* stage: it never writes the rewritten text and never
+                    // scans it for added tokens, so no rung may charge this route for work
+                    // it does not do. The cut is its split stage and the model its own.
+                    //
+                    // Whether the route applies is a property of the pipeline, not of
+                    // the chunk. That matters below `STAGE_NORMALIZE`: there the ladder has
+                    // not computed the rewrite yet, so `pending` is `None` for a reason
+                    // that says nothing about the route. Falling through on a missing
+                    // `pending` above that keeps ids right if a chunk ever lacks one.
+                    if let Some(zero_copy) = &self.zero_copy {
+                        if STAGE < Self::STAGE_NORMALIZE {
+                            continue;
+                        }
+                        if normalized.pending.is_some() {
+                            if STAGE >= Self::STAGE_SPLIT {
+                                self.encode_chunk_zero_copy::<STAGE>(
+                                    zero_copy,
+                                    &normalized.text,
+                                    pre_tokens,
+                                    scratch,
+                                    output,
+                                )?;
+                            }
+                            continue;
+                        }
                     }
                     let normalized: Cow<str> = normalized.write()?;
 
@@ -1019,9 +1083,12 @@ impl PipelineTokenizer {
                             }
                             Segment::Text(normalized_chunk) => {
                                 if STAGE >= Self::STAGE_SPLIT {
-                                    if STAGE >= Self::STAGE_MODEL
-                                        && self.encode_fused(normalized_chunk, scratch, output)
-                                    {
+                                    if self.encode_fused::<STAGE>(
+                                        normalized_chunk,
+                                        pre_tokens,
+                                        scratch,
+                                        output,
+                                    ) {
                                         // Split and model ran as one pass; nothing left to do.
                                     } else {
                                         // Pre-tokenize the chunk of normalized text
@@ -1059,13 +1126,23 @@ impl PipelineTokenizer {
     /// disappear, and the model reads each word while its bytes are still hot from
     /// the scan. Returns `false` when this tokenizer is not that shape, and the
     /// staged path must run instead.
-    fn encode_fused(
+    ///
+    /// Below [`STAGE_MODEL`](Self::STAGE_MODEL) the scan still runs, because it *is* the
+    /// split stage for a fused pipeline, and each span lands in `pre_tokens` instead of
+    /// going to the model. So the ladder's split rung times the scanner a full encode
+    /// really uses, and the model rung is a difference between two runs of the same scan.
+    /// Timing the staged array FSM here instead would report a splitter that no longer
+    /// runs, and make the model rung a subtraction across two different pipelines.
+    ///
+    /// [`STAGE_MODEL`]: Self::STAGE_MODEL
+    fn encode_fused<const STAGE: u8>(
         &self,
         chunk: &str,
+        pre_tokens: &mut Vec<Span>,
         scratch: &mut PipelineModelScratch,
         output: &mut Vec<PipelineToken>,
     ) -> bool {
-        let Some(scan) = self.pre_tokenizer.native_fsm() else {
+        let Some(scan) = self.fused_scan() else {
             return false;
         };
         let PipelineModel::BPE(model) = &self.model else {
@@ -1076,6 +1153,9 @@ impl PipelineTokenizer {
         };
         thread_local! {
             static TAGS: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
+        }
+        if STAGE < Self::STAGE_MODEL {
+            pre_tokens.clear();
         }
         let bytes = chunk.as_bytes();
         TAGS.with(|cell| {
@@ -1089,25 +1169,42 @@ impl PipelineTokenizer {
                 scan_byte_level_masked, scan_cl100k_cap_masked, scan_deepseek_masked,
                 scan_o200k_masked, scan_tekken_masked,
             };
+            /// One span, either through the model or into the span buffer. `STAGE` is a
+            /// const generic, so a full encode compiles to the model call alone.
+            #[inline(always)]
+            fn feed<const STAGE: u8>(
+                model: &PipelineBPE,
+                chunk: &str,
+                span: Span,
+                pre_tokens: &mut Vec<Span>,
+                scratch: &mut BpeScratch,
+                output: &mut Vec<PipelineToken>,
+            ) {
+                if STAGE < PipelineTokenizer::STAGE_MODEL {
+                    pre_tokens.push(span);
+                    return;
+                }
+                model.tokenize_span(&chunk[span.range()], scratch, output);
+            }
             // One emit closure literal per arm: each scan gets its own instance by
             // value, which is what lets the emit inline into the scan loop.
             match scan {
                 FusedScan::Gpt(GptFsm::Gpt2) => scan_byte_level_masked(bytes, tags, |span| {
-                    model.tokenize_span(&chunk[span.range()], scratch, output);
+                    feed::<STAGE>(model, chunk, span, pre_tokens, scratch, output);
                 }),
                 FusedScan::Gpt(GptFsm::Cl100k { digit_cap }) => {
                     scan_cl100k_cap_masked(bytes, tags, digit_cap, |span| {
-                        model.tokenize_span(&chunk[span.range()], scratch, output);
+                        feed::<STAGE>(model, chunk, span, pre_tokens, scratch, output);
                     })
                 }
                 FusedScan::Gpt(GptFsm::O200k) => scan_o200k_masked(bytes, tags, |span| {
-                    model.tokenize_span(&chunk[span.range()], scratch, output);
+                    feed::<STAGE>(model, chunk, span, pre_tokens, scratch, output);
                 }),
                 FusedScan::Gpt(GptFsm::Tekken) => scan_tekken_masked(bytes, tags, |span| {
-                    model.tokenize_span(&chunk[span.range()], scratch, output);
+                    feed::<STAGE>(model, chunk, span, pre_tokens, scratch, output);
                 }),
                 FusedScan::DeepSeek => scan_deepseek_masked(bytes, tags, |span| {
-                    model.tokenize_span(&chunk[span.range()], scratch, output);
+                    feed::<STAGE>(model, chunk, span, pre_tokens, scratch, output);
                 }),
             }
         });
@@ -1117,7 +1214,12 @@ impl PipelineTokenizer {
     /// One chunk through [`ZeroCopyMetaspace`]: cut the raw text, then read each span through
     /// the swap. The rewritten chunk is never built, and the special-token pass over it is
     /// skipped with it — the path is only built when no added token matches normalized text.
-    fn encode_chunk_zero_copy(
+    ///
+    /// The cut is this route's split stage, so below [`STAGE_MODEL`](Self::STAGE_MODEL) it
+    /// returns with `pre_tokens` filled and the model unrun.
+    ///
+    /// [`STAGE_MODEL`]: Self::STAGE_MODEL
+    fn encode_chunk_zero_copy<const STAGE: u8>(
         &self,
         zero_copy: &ZeroCopyMetaspace,
         chunk: &str,
@@ -1131,6 +1233,9 @@ impl PipelineTokenizer {
         };
         pre_tokens.clear();
         let prepend = zero_copy.cut(chunk, pre_tokens);
+        if STAGE < Self::STAGE_MODEL {
+            return Ok(());
+        }
         let mut spans = pre_tokens.iter();
         if prepend && let Some(first) = spans.next() {
             // The prepend rewrites this one word for real, so its cache key is the rewritten
@@ -1958,6 +2063,139 @@ mod tests {
         }
     }
 
+    /// The benchmark's stage ladder subtracts one rung from the next, which is only
+    /// meaningful if every rung runs the route a full encode runs. These three pin that
+    /// for each route, on the real configs.
+    ///
+    /// Without them the ladder can silently drift back to timing a splitter nothing uses:
+    /// the `pipeline_oracle` tests only ever drive `STAGE_POSTPROCESS`, so they prove ids
+    /// and say nothing about which path produced them.
+    mod stage_ladder {
+        use super::*;
+
+        fn real_pipeline(file: &str) -> Option<PipelineTokenizer> {
+            let path = format!("../data/{file}");
+            if !std::path::Path::new(&path).exists() {
+                eprintln!("skip {file}: not present (fetch with `make bench-models`)");
+                return None;
+            }
+            let tok = crate::Tokenizer::from_file(&path).unwrap();
+            Some(PipelineTokenizer::try_from(&tok).unwrap())
+        }
+
+        const TEXT: &str =
+            "The quick brown fox jumps 123 times, don't it?\n\tif x == 1: return 'a'\n";
+
+        fn run<const STAGE: u8>(pipeline: &PipelineTokenizer) -> (Vec<Span>, Vec<u32>) {
+            let mut pre_tokens = Vec::new();
+            let mut output = Vec::new();
+            let mut scratch = pipeline.get_model().init_scratch();
+            pipeline
+                .encode_generic::<STAGE>(TEXT, false, &mut pre_tokens, &mut scratch, &mut output)
+                .unwrap();
+            (pre_tokens, output.iter().map(|t| t.id).collect())
+        }
+
+        /// The fused route's split rung must run the *fused scan* and cut the text exactly
+        /// where the staged pre-tokenizer does.
+        ///
+        /// Both halves are needed. Agreeing cuts alone would not catch the rung falling
+        /// back to the staged array FSM, since that FSM produces the same spans, and that
+        /// is exactly the bug this ladder had. So the fused entry point is called directly and
+        /// its `true` return asserted: `encode_generic` takes the staged path only when it
+        /// returns `false`, so a `true` here is proof of which splitter the rung timed.
+        #[test]
+        fn fused_split_rung_runs_the_fused_scan_and_cuts_where_the_pre_tokenizer_does() {
+            for file in ["gpt2.json", "llama-3-tokenizer.json"] {
+                let Some(pipeline) = real_pipeline(file) else {
+                    continue;
+                };
+                assert_eq!(pipeline.encode_route(), EncodeRoute::Fused, "{file}");
+
+                let mut fused_spans = Vec::new();
+                let mut output = Vec::new();
+                let mut scratch = pipeline.get_model().init_scratch();
+                assert!(
+                    pipeline.encode_fused::<{ PipelineTokenizer::STAGE_SPLIT }>(
+                        TEXT,
+                        &mut fused_spans,
+                        &mut scratch,
+                        &mut output,
+                    ),
+                    "{file}: the fused scan declined the split rung, so the ladder timed \
+                     the staged FSM instead"
+                );
+                assert!(
+                    output.is_empty(),
+                    "{file}: the split rung must not run the model"
+                );
+
+                let mut staged = Vec::new();
+                pipeline
+                    .get_pre_tokenizer()
+                    .pre_tokenize(TEXT, &mut staged)
+                    .unwrap();
+                assert_eq!(fused_spans, staged, "{file}");
+
+                // And the same spans come back out through the ladder itself.
+                let (through_ladder, ids) = run::<{ PipelineTokenizer::STAGE_SPLIT }>(&pipeline);
+                assert_eq!(through_ladder, staged, "{file}");
+                assert!(ids.is_empty(), "{file}");
+            }
+        }
+
+        /// The zero-copy route's split rung is its proven-cut pass: spans out, no ids,
+        /// and no rewritten copy built.
+        #[test]
+        fn zero_copy_split_rung_cuts_without_running_the_model() {
+            for file in ["gemma-4.json", "llama-2.json"] {
+                let Some(pipeline) = real_pipeline(file) else {
+                    continue;
+                };
+                if pipeline.encode_route() != EncodeRoute::ZeroCopy {
+                    continue; // `has_normalized_tokens` can veto the route for a config
+                }
+                let (spans, ids) = run::<{ PipelineTokenizer::STAGE_SPLIT }>(&pipeline);
+                assert!(!spans.is_empty(), "{file}: the cut produced nothing");
+                assert!(
+                    ids.is_empty(),
+                    "{file}: the split rung must not run the model"
+                );
+            }
+        }
+
+        /// The top of the ladder is a real encode: `STAGE_MODEL` without specials has to
+        /// agree id-for-id with `encode`, on every route. This is what makes `total`
+        /// comparable to the phase-1 throughput number.
+        #[test]
+        fn model_rung_agrees_with_encode() {
+            for file in [
+                "gpt2.json",
+                "llama-3-tokenizer.json",
+                "gemma-4.json",
+                "llama-2.json",
+                "bert-base-uncased.json",
+            ] {
+                let Some(pipeline) = real_pipeline(file) else {
+                    continue;
+                };
+                let (_, rung) = run::<{ PipelineTokenizer::STAGE_MODEL }>(&pipeline);
+                let direct: Vec<u32> = pipeline
+                    .encode(TEXT, false)
+                    .unwrap()
+                    .iter()
+                    .map(|t| t.id)
+                    .collect();
+                assert_eq!(
+                    rung,
+                    direct,
+                    "{file} ({})",
+                    pipeline.encode_route().as_str()
+                );
+            }
+        }
+    }
+
     #[test]
     fn segment_iterator_yields_text_and_specials_in_order() {
         let input = "aa<s>bb<s>cc";
@@ -2381,4 +2619,3 @@ mod tests {
         assert_eq!(cache.lookup(b"hello").hit(), Some(&[7u32][..]));
     }
 }
-

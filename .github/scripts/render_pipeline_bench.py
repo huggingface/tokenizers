@@ -47,6 +47,12 @@ CARD_W, CARD_H = 470, 150
 # `added_split` = added/special-token scan (AddedVocabulary), `pre_tokenize` =
 # pre-tokenizer split — two distinct splitting costs. `post` = special-token
 # id-frame splice (~0 for models with no post-processor). The five sum to `total`.
+#
+# `total` is the ladder's own full encode, NOT the public `encode` call the throughput
+# phase times: that additionally acquires a pooled scratch and returns an owned Vec.
+# The subtitle names that exclusion rather than the stack absorbing it, because the
+# difference is part real cost and part pooled-vs-fresh cache state, and no measurement in
+# the bench separates the two.
 STAGES = [("added_split", "added-token"), ("normalize", "normalize"),
           ("pre_tokenize", "pre-tokenize"), ("model", "model"), ("post", "post")]
 STAGE_INK = {"added_split": "#7a5ea8", "normalize": "#2a9d8f",
@@ -640,12 +646,20 @@ def stage_chart_svg(model, subtitle_base, meta, baseline_label):
     sink = STAGE_INK
     rows = [r for r in model["results"] if "stage_ns_per_byte" in r]
 
+    # A row's stages are shares of that row's `total`, and they can sum past 100% when a
+    # rung measured at or below the noise floor and clamped to zero. Scaling the plot by the
+    # widest row keeps such a bar on the canvas and visibly past the 100% gridline, instead
+    # of running off the right edge as though the chart were broken.
+    span = max([1.0] + [sum(r["stage_ns_per_byte"].get(k, 0.0) for k, _ in STAGES)
+                        / (r["stage_ns_per_byte"]["total"] or 1.0) for r in rows])
+    scale = PLOT_W / span
+
     top = 84
     col_x = GUTTER + PLOT_W + PAD_R + COL_W - 16
     body = [f'<text x="{col_x}" y="{top - 14}" fill="{ink["muted"]}" font-size="11" '
             f'text-anchor="end">total ns/B · ×speedup</text>',
             f'<text x="{GUTTER}" y="{top - 14}" fill="{ink["muted"]}" font-size="11">'
-            f'share of pipeline encode time (each bar = 100%) · label = share% · ns/B</text>']
+            f'share of pipeline encode time (100% = that fixture\'s total) · label = share% · ns/B</text>']
     y = top
     for key, title in GROUPS:
         group_rows = sorted((r for r in rows if r["group"] == key),
@@ -665,7 +679,7 @@ def stage_chart_svg(model, subtitle_base, meta, baseline_label):
             for skey, _ in STAGES:
                 val = s.get(skey, 0.0)
                 frac = val / total
-                seg = frac * PLOT_W  # each bar fills PLOT_W (100% of this fixture's total)
+                seg = frac * scale  # 100% of this fixture's total is `scale` wide
                 if seg > 0.4:
                     body.append(f'<rect x="{cursor:.1f}" y="{by}" width="{seg:.1f}" '
                                 f'height="{BAR_H}" fill="{sink[skey]}"/>')
@@ -689,7 +703,7 @@ def stage_chart_svg(model, subtitle_base, meta, baseline_label):
 
     grid = []
     for pct in (0, 25, 50, 75, 100):
-        gx = GUTTER + pct / 100 * PLOT_W
+        gx = GUTTER + pct / 100 * scale
         grid.append(f'<line x1="{gx:.1f}" y1="{top - 6}" x2="{gx:.1f}" y2="{y - 6}" '
                     f'stroke="{ink["grid"]}" stroke-width="1"/>')
         grid.append(f'<text x="{gx:.1f}" y="{y + 12}" fill="{ink["muted"]}" font-size="11" '
@@ -701,8 +715,25 @@ def stage_chart_svg(model, subtitle_base, meta, baseline_label):
     height = y + 34
 
     mix = stage_mix(rows)
-    mix_txt = " · ".join(f"{lbl} {100 * frac:.0f}%" for lbl, frac in mix)
-    subtitle = f'{model["shape"]} · stage mix: {mix_txt}'
+    # Stages under 2% mean go unlisted: the subtitle is one line at a fixed width, and
+    # spending it on "normalize 0%" pushed the notes below off the right edge.
+    mix_txt = " · ".join(f"{lbl} {100 * frac:.0f}%" for lbl, frac in mix if frac >= 0.02)
+    # The route is part of the reading, not decoration: each one decomposes into stages
+    # differently, and the split bar only means the shipped splitter because every rung
+    # drives this route. Older JSON has no `route` key, so say so rather than guess.
+    route = model.get("route") or "route not recorded"
+    subtitle = f'{model["shape"]} · {route} route · {mix_txt}'
+    # Two things the reader would otherwise have to infer. The rungs are independent
+    # medians, so one at or below the noise floor clamps to zero and the parts then sum
+    # past 100%, which is visible as a bar overrunning the axis. And `total` is the
+    # ladder's own encode, without the pooled scratch and returned Vec of a real call.
+    sums = [sum(r["stage_ns_per_byte"].get(k, 0.0) for k, _ in STAGES)
+            / r["stage_ns_per_byte"]["total"]
+            for r in rows if r["stage_ns_per_byte"].get("total")]
+    if sums:
+        subtitle += f' · parts sum {100 * sum(sums) / len(sums):.0f}% (rung noise)'
+    if any("alloc" in r["stage_ns_per_byte"] for r in rows):
+        subtitle += " · excludes encode() call overhead"
     return svg_doc(ink, height, f'{model["model"]} — Pipeline encode stage mix',
                    subtitle, "".join(grid) + "".join(body) + legend, meta, subtitle_base)
 
@@ -884,9 +915,9 @@ def threads_svg(model, meta, baseline_label, threads_key="threads", title="Threa
 
 
 def pretok_compare_md(model):
-    """Per-fixture 'classify + fsm vs a regex engine' table — the pre-tokenize split
-    vs onig/fancy/pcre2/logos on the model's own regex, WITH and WITHOUT SIMD.
-    Rendered only for regex pre-tokenizers (a reference is non-null)."""
+    """Per-fixture table of the shipped pre-tokenize split against onig, fancy, pcre2 and
+    logos on the model's own regex. Rendered only for regex pre-tokenizers (a reference is
+    non-null)."""
     engines = ("onig", "fancy", "pcre2", "logos")
 
     def has_ref(r):
@@ -898,13 +929,15 @@ def pretok_compare_md(model):
     cell = lambda v: fnum(v, "{:.1f}")  # noqa: E731 — "—" for null
     def ratio(v, sp, cp):
         return f"{v / sp:.1f}× / {v / cp:.1f}×" if (v is not None and sp > 0 and cp > 0) else "—"
-    cols = 4 + 2 * len(engines)  # cls×2 + pipe×2 + one abs + one ×vs per engine
-    md = ["", "**Pre-tokenize: `classify + fsm` vs regex engines** — ns/byte, lower better. The fsm is "
-          "the scalar jump-table in both pipe columns; **SIMD / scalar is the classify pass** (regex "
-          "pre-tokenizers have no SIMD fsm). `×vs` = engine ÷ our pipeline (SIMD / scalar classify); "
-          "`onig` & `pcre2` (JIT) are C, `fancy` is pure-Rust fancy-regex, `logos` is a compile-time DFA "
-          "lexer (approximate grammar; n/a for deepseek).", "",
-          "| Fixture | classify SIMD | classify scalar | pipe (SIMD cls + fsm) | pipe (scalar cls + fsm) | "
+    cols = 4 + 2 * len(engines)  # cls×2 + split×2 + one abs + one ×vs per engine
+    md = ["", "**Pre-tokenize: our split vs regex engines.** ns/byte, lower better. `split` is the "
+          "splitter this model's route actually runs, straight off the stage ladder. "
+          "`scalar-cls` swaps **only the classify pass** for its scalar version. It is not the split "
+          "without SIMD, since a regex-shaped fsm is a boundary-mask scanner and carries SIMD of its "
+          "own. `×vs` = engine ÷ our split (shipped / scalar-classify); `onig` & `pcre2` (JIT) are C, "
+          "`fancy` is pure-Rust fancy-regex, `logos` is a compile-time DFA lexer (approximate grammar; "
+          "n/a for deepseek).", "",
+          "| Fixture | classify SIMD | classify scalar | split (shipped) | split (scalar-cls) | "
           + " | ".join(engines) + " | " + " | ".join(f"×vs {e}" for e in engines) + " |",
           "|---" + "|---:" * cols + "|"]
     for r in sorted(rows, key=lambda r: (r["group"], r["fixture"])):
