@@ -125,6 +125,143 @@ pub fn scan_tekken(text: &[u8], tags: &[u8], emit: impl FnMut(Span)) {
     o200k::<false, 1, _>(text, tags, emit);
 }
 
+/// Is tag `t` a real `[\p{L}\p{M}]` member? Coarse `Letter` (any case) is always in; coarse
+/// `Mark` is in only as a true `\p{M}` — ALPHA_SYM (`\p{S}`) and ZWJ/ZWNJ (`\p{Cf}`) are `\w`
+/// but not `[\p{L}\p{M}]`.
+#[inline(always)]
+fn member(t: u8) -> bool {
+    let c = t & 0x0F;
+    c == LET || (c == MRK && t != ASM && t != ZWJ)
+}
+
+#[inline(always)]
+fn is_lm(tags: &[u8], a: usize, end: usize) -> bool {
+    a < end && member(tags[a])
+}
+
+/// Maximal `[\p{L}\p{M}]+` run from `a` (byte-wise; continuation bytes ride along — see `run_end`).
+#[inline(always)]
+fn letter_end(tags: &[u8], a: usize, end: usize) -> usize {
+    let mut p = a;
+    // logos-style fast loop: 16 tags/chunk, one bounds check, unchecked reads. A plain `Letter`
+    // (low nibble 0, incl Han — o200k keeps all letters) or a `Cont` byte stays in-run; only a
+    // coarse `Mark` lane pays the refinement test. Byte-exact with the plain scan below.
+    // SAFETY: `p + 16 <= end <= tags.len()` in the body.
+    while p + 16 <= end {
+        let mut brk = 16;
+        for k in 0..16 {
+            let t = unsafe { *tags.get_unchecked(p + k) };
+            if t == CONT || t & 0x0F == LET {
+                continue;
+            }
+            if t & 0x0F == MRK && t != ASM && t != ZWJ {
+                continue;
+            }
+            brk = k;
+            break;
+        }
+        if brk < 16 {
+            return p + brk;
+        }
+        p += 16;
+    }
+    while p < end && (tags[p] == CONT || member(tags[p])) {
+        p += 1;
+    }
+    p
+}
+
+/// rule 4 `[^\s\p{L}\p{N}]+[\r\n/]*` from `sp0` (any leading space already consumed); `sp0` if
+/// none. `/` is in the `+` body too — the trailing class only matters after the `+` stops at a
+/// `\r\n`.
+#[inline(always)]
+fn other(text: &[u8], tags: &[u8], sp0: usize, end: usize) -> usize {
+    let mut p = run_end(tags, sp0, end, mask::NOT_WS_L_N);
+    if p > sp0 {
+        while p < end && (tags[p] == NLN || text[p] == b'/') {
+            p += char_len(text[p]);
+        }
+    }
+    p
+}
+
+/// End of the token starting at `i` (`i < end`, `i` on a token boundary): one rule dispatch of
+/// the o200k-family regex. A letter-path token is the FIRST case sub-run from its start (the
+/// case split restarts at every sub-token, so one dispatch per sub-token equals the run loop in
+/// [`emit_o200k_letters`]); the masked scanner re-derives tokens with this where its batch
+/// masks are not trustworthy.
+#[inline(always)]
+pub(super) fn advance_o200k<const CONTRACTION: bool, const DIGIT_CAP: usize>(
+    text: &[u8],
+    tags: &[u8],
+    i: usize,
+    end: usize,
+) -> usize {
+    let one_letter = |ls: usize| -> usize {
+        let re = letter_end(tags, ls, end);
+        let e = o200k_letter_match(tags, ls, re);
+        if CONTRACTION && e == re {
+            e + contraction(text, e)
+        } else {
+            e
+        }
+    };
+    let b = text[i];
+    match tags[i] & 0x0F {
+        NW | NO => {
+            let (mut p, mut cnt) = (i, 0);
+            while p < end && cnt < DIGIT_CAP && in_mask(tags[p], mask::NUMBER) {
+                p += char_len(text[p]);
+                cnt += 1;
+            }
+            p
+        }
+        LET | MRK => {
+            if tags[i] != ASM && tags[i] != ZWJ {
+                one_letter(i)
+            } else {
+                let a = i + char_len(b);
+                if is_lm(tags, a, end) {
+                    one_letter(a)
+                } else {
+                    other(text, tags, i, end)
+                }
+            }
+        }
+        SPC => {
+            let a = i + 1; // Space is ASCII (0x20)
+            if is_lm(tags, a, end) {
+                one_letter(a)
+            } else {
+                let p = other(text, tags, a, end);
+                if p > a {
+                    p
+                } else {
+                    ws_tail(text, tags, i, end)
+                }
+            }
+        }
+        WSO => {
+            let a = i + char_len(b);
+            if is_lm(tags, a, end) {
+                one_letter(a)
+            } else {
+                ws_tail(text, tags, i, end)
+            }
+        }
+        NLN => ws_tail(text, tags, i, end),
+        CON | PUN | APO | SYM | NMO | CTL => {
+            let a = i + char_len(b);
+            if is_lm(tags, a, end) {
+                one_letter(a)
+            } else {
+                other(text, tags, i, end)
+            }
+        }
+        _ => i + char_len(b),
+    }
+}
+
 fn o200k<const CONTRACTION: bool, const DIGIT_CAP: usize, E: FnMut(Span)>(
     text: &[u8],
     tags: &[u8],
@@ -136,61 +273,13 @@ fn o200k<const CONTRACTION: bool, const DIGIT_CAP: usize, E: FnMut(Span)>(
     // `tags[i]` in this fsm + its `run_end`/`letter_*` scans. (Callers guarantee `tags.len() >= end`.)
     let tags = &tags[..end];
 
-    // Is tag `t` (at byte `p`) a real `[\p{L}\p{M}]` member? Coarse `Letter` (any case) is always in;
-    // coarse `Mark` is in only as a true `\p{M}` — ALPHA_SYM (`\p{S}`) and ZWJ/ZWNJ (`\p{Cf}`) are `\w`
-    // but not `[\p{L}\p{M}]`. The `ds_is_zwj` byte-peek is thus paid ONLY for Marks, never for letters.
-    let member = |t: u8, p: usize| -> bool {
-        let c = t & 0x0F;
-        let _ = p;
-        c == LET || (c == MRK && t != ASM && t != ZWJ)
-    };
-    let is_lm = |a: usize| a < end && member(tags[a], a);
-    // maximal `[\p{L}\p{M}]+` run from `a` (byte-wise; continuation bytes ride along — see `run_end`).
-    let letter_end = |a: usize| -> usize {
-        let mut p = a;
-        // logos-style fast loop: 16 tags/chunk, one bounds check, unchecked reads. A plain `Letter`
-        // (low nibble 0, incl Han — o200k keeps all letters) or a `Cont` byte stays in-run with no
-        // `ds_is_zwj` peek; only a coarse `Mark` lane pays the peek. Byte-exact with the scalar scan.
-        // SAFETY: `p + 16 <= end <= tags.len()`/`text.len()` in the body.
-        while p + 16 <= end {
-            let mut brk = 16;
-            for k in 0..16 {
-                let t = unsafe { *tags.get_unchecked(p + k) };
-                if t == CONT || t & 0x0F == LET {
-                    continue;
-                }
-                if t & 0x0F == MRK && t != ASM && t != ZWJ {
-                    continue;
-                }
-                brk = k;
-                break;
-            }
-            if brk < 16 {
-                return p + brk;
-            }
-            p += 16;
-        }
-        while p < end && (tags[p] == CONT || member(tags[p], p)) {
-            p += 1;
-        }
-        p
-    };
-    // rule 4 `[^\s\p{L}\p{N}]+[\r\n/]*` from `sp0` (any leading space already consumed); `sp0` if none.
-    // `/` is in the `+` body too — the trailing class only matters after the `+` stops at a `\r\n`.
-    let other = |sp0: usize| -> usize {
-        let mut p = run_end(tags, sp0, end, mask::NOT_WS_L_N);
-        if p > sp0 {
-            while p < end && (tags[p] == NLN || text[p] == b'/') {
-                p += char_len(text[p]);
-            }
-        }
-        p
-    };
+    let is_lm = |a: usize| is_lm(tags, a, end);
     // rules 5-7 (`\s*[\r\n]+ | \s+(?!\S) | \s+`) → the shared `ws_tail` (identical to cl100k).
     let ws = |i: usize| -> usize { ws_tail(text, tags, i, end) };
+    let other = |sp0: usize| -> usize { other(text, tags, sp0, end) };
     // The letter rules: case-split the run starting at `ls`, first sub-token starting at the prefix `pfx`.
     let letters = |pfx: usize, ls: usize, emit: &mut E| -> usize {
-        emit_o200k_letters::<CONTRACTION, E>(text, tags, pfx, ls, letter_end(ls), emit)
+        emit_o200k_letters::<CONTRACTION, E>(text, tags, pfx, ls, letter_end(tags, ls, end), emit)
     };
 
     let mut i = 0;

@@ -49,6 +49,159 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
     w
 }
 
+/// Maximal `[\p{L}\p{M}]+` run from `a`, stopping at CJK-range chars (Split-2 took those),
+/// ZWJ/ZWNJ (not `\p{L}∪\p{M}`), and Other_Alphabetic symbols (`ASM`, categorically `\p{S}`).
+/// BYTE-wise (`p += 1`, continuation bytes stay in-run) — the `char_len`-per-char form was ~2×
+/// slower (see `run_end`'s note). Hot inner loop of the latin path.
+#[inline(always)]
+fn letter_run(text: &[u8], tags: &[u8], a: usize, end: usize) -> usize {
+    let mut p = a;
+    // ZWJ/ASM are tags (no text peek); only the CJK-range exclusion still peeks text.
+    while p < end {
+        let t = tags[p];
+        if t == CONT
+            || (in_mask(t, mask::LETTER_MARK) && t != ASM && t != ZWJ && !ds_is_cjk_at(text, p))
+        {
+            p += 1;
+        } else {
+            break;
+        }
+    }
+    p
+}
+
+/// Is `text[a]` the start of a deepseek letter/mark char (alt-2 run body / space-prefix target)?
+#[inline(always)]
+fn is_lm(text: &[u8], tags: &[u8], a: usize, end: usize) -> bool {
+    a < end
+        && in_mask(tags[a], mask::LETTER_MARK)
+        && tags[a] != ASM
+        && tags[a] != ZWJ
+        && !ds_is_cjk_at(text, a)
+}
+
+/// Split-3 alt-3 tail `[\p{P}\p{S}]+[\r\n]*` from `sp0` (a leading space is already consumed);
+/// `sp0` if there is no punct/sym run there. STOPS at CJK-range chars — Split-1 isolated those,
+/// so a CJK punct (・) is never merged into a non-CJK punct run (`!・` → `!`, `・`, not `!・`).
+#[inline(always)]
+fn punct(text: &[u8], tags: &[u8], sp0: usize, end: usize) -> usize {
+    let mut p = sp0;
+    while p < end && (in_mask(tags[p], mask::PUNCT_SYM) || tags[p] == ASM) && !ds_is_cjk_at(text, p)
+    {
+        p += char_len(text[p]);
+    }
+    if p > sp0 {
+        while p < end && tags[p] == NLN {
+            p += char_len(text[p]);
+        }
+    }
+    p
+}
+
+/// Split-3 alts d/e/f (whitespace). Unlike cl100k: a ws run FOLLOWED BY a digit/CJK is its own
+/// Sequence piece (Split-1/2 isolated the next match) → `\s+(?!\S)` takes the WHOLE run; only a
+/// following letter/punct (same Split-3 piece) leaves the last ws char for its ` ?`/`[^…]?`
+/// prefix.
+#[inline(always)]
+fn ds_ws(text: &[u8], tags: &[u8], i: usize, end: usize) -> usize {
+    let re = run_end(tags, i, end, mask::WS);
+    let next_isolated = re < end && (in_mask(tags[re], mask::NUMBER) || ds_is_cjk_at(text, re));
+    if let Some(r) = text[i..re].iter().rposition(|&x| x == 0x0A || x == 0x0D) {
+        i + r + 1
+    } else if re == end || next_isolated {
+        re // whole ws run is one token
+    } else {
+        let mut last = re - 1;
+        while last > i && text[last] & 0xC0 == 0x80 {
+            last -= 1;
+        }
+        if last > i { last } else { re }
+    }
+}
+
+/// End of the token starting at `i` (`i < end`, `i` on a token boundary): one rule dispatch of
+/// the deepseek Sequence. The two multi-emit paths of [`scan_deepseek`] decompose per token: a
+/// gap run followed by letters ends at its LAST gap char (the next dispatch, on that char,
+/// takes the prefix-plus-letters path), and a CJK run is one same-kind sub-run per call. The
+/// masked scanner re-derives tokens with this where its batch masks are not trustworthy.
+#[inline(always)]
+pub(super) fn advance_deepseek(text: &[u8], tags: &[u8], i: usize, end: usize) -> usize {
+    if ds_is_cjk_at(text, i) {
+        let is_letter = in_mask(tags[i], mask::LETTER_MARK);
+        let mut p = i + 3; // CJK-range chars are all 3-byte (leads E3..E9)
+        while p < end && ds_is_cjk_at(text, p) && in_mask(tags[p], mask::LETTER_MARK) == is_letter {
+            p += 3;
+        }
+        return p;
+    }
+    if matches!(tags[i] & 0x0F, NMO | CTL) || tags[i] == ZWJ {
+        let (mut p, mut last) = (i, i);
+        while p < end && (matches!(tags[p] & 0x0F, NMO | CTL) || tags[p] == ZWJ) {
+            last = p;
+            p += char_len(text[p]);
+        }
+        return if is_lm(text, tags, p, end) {
+            if last > i {
+                last // gap sans the prefix char
+            } else {
+                letter_run(text, tags, p, end) // prefix char + `[\p{L}\p{M}]+`
+            }
+        } else {
+            p
+        };
+    }
+    let b = text[i];
+    match tags[i] & 0x0F {
+        NW | NO => {
+            let (mut p, mut cnt) = (i, 0);
+            while p < end && cnt < 3 && in_mask(tags[p], mask::NUMBER) {
+                p += char_len(text[p]);
+                cnt += 1;
+            }
+            p
+        }
+        LET | MRK => {
+            if tags[i] == ASM {
+                punct(text, tags, i, end)
+            } else {
+                letter_run(text, tags, i, end)
+            }
+        }
+        SPC => {
+            let a = i + 1; // Space is ASCII (0x20)
+            if is_lm(text, tags, a, end) {
+                letter_run(text, tags, a, end)
+            } else if a < end && ds_is_cjk_at(text, a) {
+                ds_ws(text, tags, i, end)
+            } else {
+                let p = punct(text, tags, a, end);
+                if p > a { p } else { ds_ws(text, tags, i, end) }
+            }
+        }
+        WSO => {
+            let a = i + char_len(b);
+            if is_lm(text, tags, a, end) {
+                letter_run(text, tags, a, end)
+            } else {
+                ds_ws(text, tags, i, end)
+            }
+        }
+        NLN => ds_ws(text, tags, i, end),
+        CON | PUN | APO | SYM => {
+            if b.is_ascii_punctuation() && i + 1 < end && text[i + 1].is_ascii_alphabetic() {
+                let mut p = i + 1;
+                while p < end && text[p].is_ascii_alphabetic() {
+                    p += 1;
+                }
+                p
+            } else {
+                punct(text, tags, i, end) // c ∈ PUNCT_SYM ⇒ > i
+            }
+        }
+        _ => i + char_len(b),
+    }
+}
+
 /// The scan under [`fsm_deepseek`]: hands each token to `emit` the moment it is cut,
 /// so a caller can consume tokens in place instead of collecting a span buffer first.
 pub fn scan_deepseek(text: &[u8], tags: &[u8], mut emit: impl FnMut(Span)) {
@@ -61,69 +214,10 @@ pub fn scan_deepseek(text: &[u8], tags: &[u8], mut emit: impl FnMut(Span)) {
     // Tie `tags.len() == end` so the optimizer drops the per-byte bounds check on every interior
     // `tags[i]` in this fsm + its `run_end`/`letter_*` scans. (Callers guarantee `tags.len() >= end`.)
     let tags = &tags[..end];
-    // maximal `[\p{L}\p{M}]+` run from `a`, stopping at CJK-range chars (Split-2 took those), ZWJ/ZWNJ
-    // (not `\p{L}∪\p{M}` — see `ds_breaks`), and Other_Alphabetic symbols (`ASM`, categorically `\p{S}`).
-    // BYTE-wise (`p += 1`, continuation bytes stay in-run, `ds_breaks` only fires at a lead) — the
-    // `char_len`-per-char form was ~2× slower (see `run_end`'s note). Hot inner loop of the latin path.
-    let letter_run = |a: usize| -> usize {
-        let mut p = a;
-        // ZWJ/ASM are now tags (no text peek); only the CJK-range exclusion still peeks text.
-        while p < end {
-            let t = tags[p];
-            if t == CONT
-                || (in_mask(t, mask::LETTER_MARK) && t != ASM && t != ZWJ && !ds_is_cjk_at(text, p))
-            {
-                p += 1;
-            } else {
-                break;
-            }
-        }
-        p
-    };
-    // is `text[a]` the start of a deepseek letter/mark char (alt-2 run body / space-prefix target)?
-    let is_lm = |a: usize| {
-        a < end
-            && in_mask(tags[a], mask::LETTER_MARK)
-            && tags[a] != ASM
-            && tags[a] != ZWJ
-            && !ds_is_cjk_at(text, a)
-    };
-    // Split-3 alt-3 tail `[\p{P}\p{S}]+[\r\n]*` from `sp0` (a leading space is already consumed); `sp0`
-    // if there is no punct/sym run there. STOPS at CJK-range chars — Split-1 isolated those, so a CJK
-    // punct (・) is never merged into a non-CJK punct run (`!・` → `!`, `・`, not `!・`).
-    let punct = |sp0: usize| -> usize {
-        let mut p = sp0;
-        while p < end
-            && (in_mask(tags[p], mask::PUNCT_SYM) || tags[p] == ASM)
-            && !ds_is_cjk_at(text, p)
-        {
-            p += char_len(text[p]);
-        }
-        if p > sp0 {
-            while p < end && tags[p] == NLN {
-                p += char_len(text[p]);
-            }
-        }
-        p
-    };
-    // Split-3 alts d/e/f (whitespace). Unlike cl100k: a ws run FOLLOWED BY a digit/CJK is its own
-    // Sequence piece (Split-1/2 isolated the next match) → `\s+(?!\S)` takes the WHOLE run; only a
-    // following letter/punct (same Split-3 piece) leaves the last ws char for its ` ?`/`[^…]?` prefix.
-    let ws = |i: usize| -> usize {
-        let re = run_end(tags, i, end, mask::WS);
-        let next_isolated = re < end && (in_mask(tags[re], mask::NUMBER) || ds_is_cjk_at(text, re));
-        if let Some(r) = text[i..re].iter().rposition(|&x| x == 0x0A || x == 0x0D) {
-            i + r + 1
-        } else if re == end || next_isolated {
-            re // whole ws run is one token
-        } else {
-            let mut last = re - 1;
-            while last > i && text[last] & 0xC0 == 0x80 {
-                last -= 1;
-            }
-            if last > i { last } else { re }
-        }
-    };
+    let letter_run = |a: usize| letter_run(text, tags, a, end);
+    let is_lm = |a: usize| is_lm(text, tags, a, end);
+    let punct = |sp0: usize| punct(text, tags, sp0, end);
+    let ws = |i: usize| ds_ws(text, tags, i, end);
 
     let mut i = 0;
     while i < end {

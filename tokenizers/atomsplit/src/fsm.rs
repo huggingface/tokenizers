@@ -6,8 +6,8 @@
 //! [`class_runs_into`]: on aarch64/wasm the SIMD movemask boundary-extractor + homogeneous-chunk
 //! early-out (in `simd_fsm`), elsewhere the scalar run-end core ([`emit_class_spans`]). The
 //! regex-shaped ones ([`fsm_cl100k`] / [`fsm_o200k`] / [`fsm_tekken`] / [`fsm_deepseek`] /
-//! [`fsm_byte_level`]) are scalar jump-tables (only the class family's [`class_runs_into`] has a SIMD
-//! path).
+//! [`fsm_byte_level`]) are scalar jump-tables; byte_level additionally has a boundary-mask SIMD
+//! form ([`scan_byte_level_masked`], aarch64 only).
 
 pub(crate) use crate::classify::{Atom, char_len, classify, in_mask, mask};
 // Atom-tag aliases, shared with the per-tokenizer FSM submodules (`fsm/*.rs`) via `use super::*`.
@@ -237,10 +237,16 @@ pub fn emit_class_spans<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>(
 mod byte_level;
 mod cl100k;
 mod deepseek;
+mod masked;
 mod o200k;
 pub use byte_level::{fsm_byte_level, scan_byte_level};
 pub use cl100k::{fsm_cl100k, fsm_cl100k_cap, scan_cl100k_cap};
 pub use deepseek::{fsm_deepseek, scan_deepseek};
+pub use masked::{
+    fsm_byte_level_masked, fsm_cl100k_cap_masked, fsm_deepseek_masked, fsm_o200k_masked,
+    fsm_tekken_masked, scan_byte_level_masked, scan_cl100k_cap_masked, scan_deepseek_masked,
+    scan_o200k_masked, scan_tekken_masked,
+};
 pub use o200k::{fsm_o200k, fsm_tekken, scan_o200k, scan_tekken};
 
 // ── Composition recipes ────────────────────────────────────────────────────────────────────────

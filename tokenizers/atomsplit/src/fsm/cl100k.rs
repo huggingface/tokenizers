@@ -23,17 +23,17 @@ pub fn fsm_cl100k_cap(text: &[u8], tags: &[u8], out: &mut [Span], digit_cap: usi
     w
 }
 
-/// The scan under [`fsm_cl100k_cap`]: hands each token to `emit` the moment it is cut,
-/// so a caller can consume tokens in place instead of collecting a span buffer first.
-pub fn scan_cl100k_cap(text: &[u8], tags: &[u8], digit_cap: usize, mut emit: impl FnMut(Span)) {
-    debug_assert!(tags.len() >= text.len());
-    // Leading-atom values, as `const` so the `match` below is a dense jump table (not an if-cascade):
-    // the dispatch is O(1) and a token never pays for a rule it can't start (e.g. non-number tokens
-    // never test the number rule — which is what the POC's const-gating removed by hand; here it's free).
-    let end = text.len();
-    // Tie `tags.len() == end` so the optimizer drops the per-byte bounds check on every interior
-    // `tags[i]` in this fsm + its `run_end`/`letter_*` scans. (Callers guarantee `tags.len() >= end`.)
-    let tags = &tags[..end];
+/// End of the token starting at `i` (`i < end`, `i` on a token boundary): one rule dispatch of
+/// the cl100k-family regex. [`scan_cl100k_cap`] loops it over the whole text; the masked scanner
+/// re-derives tokens with it where its batch masks are not trustworthy.
+#[inline(always)]
+pub(super) fn advance_cl100k_cap(
+    text: &[u8],
+    tags: &[u8],
+    i: usize,
+    end: usize,
+    digit_cap: usize,
+) -> usize {
     let letters = |a: usize| run_end(tags, a, end, mask::LETTER);
     // rule 4 body: `[^\s\p{L}\p{N}]+[\r\n]*` from `sp0` (any leading space already consumed). Returns
     // the run end, or `sp0` if there is no "other" run there (caller then treats it as whitespace).
@@ -49,73 +49,84 @@ pub fn scan_cl100k_cap(text: &[u8], tags: &[u8], digit_cap: usize, mut emit: imp
     // rules 5-7 (`\s*[\r\n] | \s+(?!\S) | \s+`) → the shared `ws_tail`.
     let ws = |i: usize| -> usize { ws_tail(text, tags, i, end) };
 
-    let mut i = 0;
-    while i < end {
-        let start = i;
-        let b = text[i];
-        match tags[i] & 0x0F {
-            // rule 2: `\p{L}+`
-            LET => i = letters(i),
-            // rule 3: `\p{N}{1,cap}` (cap = 3 cl100k, 1 Qwen2, MAX for `\p{N}+`)
-            NW | NO => {
-                let (mut p, mut cnt) = (i, 0);
-                while p < end && cnt < digit_cap && in_mask(tags[p], mask::NUMBER) {
-                    p += char_len(text[p]);
-                    cnt += 1;
-                }
-                i = p;
+    let b = text[i];
+    match tags[i] & 0x0F {
+        // rule 2: `\p{L}+`
+        LET => letters(i),
+        // rule 3: `\p{N}{1,cap}` (cap = 3 cl100k, 1 Qwen2, MAX for `\p{N}+`)
+        NW | NO => {
+            let (mut p, mut cnt) = (i, 0);
+            while p < end && cnt < digit_cap && in_mask(tags[p], mask::NUMBER) {
+                p += char_len(text[p]);
+                cnt += 1;
             }
-            // Space: rule 2 (space prefix + `\p{L}+`) | rule 4 (` ` + "other") | rules 5-7
-            SPC => {
-                let a = i + 1; // Space is ASCII (0x20)
-                i = if a < end && (tags[a] & 0x0F) == LET {
-                    letters(a)
-                } else {
-                    let p = other(a);
-                    if p > a { p } else { ws(i) }
-                };
+            p
+        }
+        // Space: rule 2 (space prefix + `\p{L}+`) | rule 4 (` ` + "other") | rules 5-7
+        SPC => {
+            let a = i + 1; // Space is ASCII (0x20)
+            if a < end && (tags[a] & 0x0F) == LET {
+                letters(a)
+            } else {
+                let p = other(a);
+                if p > a { p } else { ws(i) }
             }
-            // WsOther: rule 2 (prefix + `\p{L}+`) | whitespace (never rule 4 — not in NOT_WS_L_N)
-            WSO => {
-                let a = i + char_len(b);
-                i = if a < end && (tags[a] & 0x0F) == LET {
-                    letters(a)
-                } else {
-                    ws(i)
-                };
+        }
+        // WsOther: rule 2 (prefix + `\p{L}+`) | whitespace (never rule 4 — not in NOT_WS_L_N)
+        WSO => {
+            let a = i + char_len(b);
+            if a < end && (tags[a] & 0x0F) == LET {
+                letters(a)
+            } else {
+                ws(i)
             }
-            // Newline: whitespace (rule 5 ends at the last newline)
-            NLN => i = ws(i),
-            // Apostrophe: rule 1 (contraction) | rule 2 (prefix + `\p{L}+`) | rule 4
-            APO => {
-                let adv = contraction(text, i); // rule 1: `'s 't 're 've 'm 'll 'd` (case-insensitive)
-                i = if adv > 0 {
-                    i + adv
-                } else {
-                    let a = i + 1; // Apostrophe is ASCII (0x27)
-                    if a < end && (tags[a] & 0x0F) == LET {
-                        letters(a)
-                    } else {
-                        other(i)
-                    } // c ∈ NOT_WS_L_N ⇒ > i
-                };
-            }
-            // Mark | Connector | Punct | SymOther | NumericOther | Control (all in NOT_WS_L_N):
-            // rule 2 (prefix + `\p{L}+`) | rule 4
-            MRK | CON | PUN | SYM | NMO | CTL => {
-                let a = i + char_len(b);
-                i = if a < end && (tags[a] & 0x0F) == LET {
+        }
+        // Newline: whitespace (rule 5 ends at the last newline)
+        NLN => ws(i),
+        // Apostrophe: rule 1 (contraction) | rule 2 (prefix + `\p{L}+`) | rule 4
+        APO => {
+            let adv = contraction(text, i); // rule 1: `'s 't 're 've 'm 'll 'd` (case-insensitive)
+            if adv > 0 {
+                i + adv
+            } else {
+                let a = i + 1; // Apostrophe is ASCII (0x27)
+                if a < end && (tags[a] & 0x0F) == LET {
                     letters(a)
                 } else {
                     other(i)
-                }; // c ∈ NOT_WS_L_N ⇒ > i
+                } // c ∈ NOT_WS_L_N ⇒ > i
             }
-            // Sentinel / MultiByte / Cont — never a char-start atom; emit one char defensively.
-            _ => i += char_len(b),
         }
+        // Mark | Connector | Punct | SymOther | NumericOther | Control (all in NOT_WS_L_N):
+        // rule 2 (prefix + `\p{L}+`) | rule 4
+        MRK | CON | PUN | SYM | NMO | CTL => {
+            let a = i + char_len(b);
+            if a < end && (tags[a] & 0x0F) == LET {
+                letters(a)
+            } else {
+                other(i)
+            } // c ∈ NOT_WS_L_N ⇒ > i
+        }
+        // Sentinel / MultiByte / Cont — never a char-start atom; emit one char defensively.
+        _ => i + char_len(b),
+    }
+}
+
+/// The scan under [`fsm_cl100k_cap`]: hands each token to `emit` the moment it is cut,
+/// so a caller can consume tokens in place instead of collecting a span buffer first.
+pub fn scan_cl100k_cap(text: &[u8], tags: &[u8], digit_cap: usize, mut emit: impl FnMut(Span)) {
+    debug_assert!(tags.len() >= text.len());
+    let end = text.len();
+    // Tie `tags.len() == end` so the optimizer drops the per-byte bounds check on every interior
+    // `tags[i]` in this fsm + its `run_end`/`letter_*` scans. (Callers guarantee `tags.len() >= end`.)
+    let tags = &tags[..end];
+    let mut i = 0;
+    while i < end {
+        let e = advance_cl100k_cap(text, tags, i, end, digit_cap);
         emit(Span {
-            start: start as u32,
-            end: i as u32,
+            start: i as u32,
+            end: e as u32,
         });
+        i = e;
     }
 }

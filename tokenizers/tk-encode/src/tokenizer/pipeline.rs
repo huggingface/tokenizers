@@ -906,26 +906,27 @@ impl PipelineTokenizer {
             classify(bytes, &mut tags[..bytes.len()]);
             let tags = &tags[..bytes.len()];
             use atomsplit::fsm::{
-                scan_byte_level, scan_cl100k_cap, scan_deepseek, scan_o200k, scan_tekken,
+                scan_byte_level_masked, scan_cl100k_cap_masked, scan_deepseek_masked,
+                scan_o200k_masked, scan_tekken_masked,
             };
             // One emit closure literal per arm: each scan gets its own instance by
             // value, which is what lets the emit inline into the scan loop.
             match scan {
-                FusedScan::Gpt(GptFsm::Gpt2) => scan_byte_level(bytes, tags, |span| {
+                FusedScan::Gpt(GptFsm::Gpt2) => scan_byte_level_masked(bytes, tags, |span| {
                     model.tokenize_span(&chunk[span.range()], scratch, output);
                 }),
                 FusedScan::Gpt(GptFsm::Cl100k { digit_cap }) => {
-                    scan_cl100k_cap(bytes, tags, digit_cap, |span| {
+                    scan_cl100k_cap_masked(bytes, tags, digit_cap, |span| {
                         model.tokenize_span(&chunk[span.range()], scratch, output);
                     })
                 }
-                FusedScan::Gpt(GptFsm::O200k) => scan_o200k(bytes, tags, |span| {
+                FusedScan::Gpt(GptFsm::O200k) => scan_o200k_masked(bytes, tags, |span| {
                     model.tokenize_span(&chunk[span.range()], scratch, output);
                 }),
-                FusedScan::Gpt(GptFsm::Tekken) => scan_tekken(bytes, tags, |span| {
+                FusedScan::Gpt(GptFsm::Tekken) => scan_tekken_masked(bytes, tags, |span| {
                     model.tokenize_span(&chunk[span.range()], scratch, output);
                 }),
-                FusedScan::DeepSeek => scan_deepseek(bytes, tags, |span| {
+                FusedScan::DeepSeek => scan_deepseek_masked(bytes, tags, |span| {
                     model.tokenize_span(&chunk[span.range()], scratch, output);
                 }),
             }
