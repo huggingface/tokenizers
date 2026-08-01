@@ -8,6 +8,19 @@ use super::*;
 #[must_use]
 pub fn fsm_byte_level(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
     debug_assert!(out.len() >= text.len() && tags.len() >= text.len());
+    let mut w = 0usize;
+    scan_byte_level(text, tags, |span| {
+        // SAFETY: tokens partition the input, so `w < #tokens <= text.len() <= out.len()`.
+        unsafe { *out.get_unchecked_mut(w) = span };
+        w += 1;
+    });
+    w
+}
+
+/// The scan under [`fsm_byte_level`]: hands each token to `emit` the moment it is cut,
+/// so a caller can consume tokens in place instead of collecting a span buffer first.
+pub fn scan_byte_level(text: &[u8], tags: &[u8], mut emit: impl FnMut(Span)) {
+    debug_assert!(tags.len() >= text.len());
     let end = text.len();
     // Tie `tags.len() == end` so the optimizer drops the per-byte bounds check on every interior
     // `tags[i]` in this fsm + its `run_end`/`letter_*` scans. (Callers guarantee `tags.len() >= end`.)
@@ -27,7 +40,6 @@ pub fn fsm_byte_level(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
     };
 
     let mut i = 0;
-    let mut w = 0usize;
     while i < end {
         let start = i;
         match tags[i] & 0x0F {
@@ -68,14 +80,9 @@ pub fn fsm_byte_level(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
             // Sentinel / MultiByte / Cont — never a char-start atom; emit one char defensively.
             _ => i += char_len(text[i]),
         }
-        // SAFETY: tokens partition the input, so `w < #tokens <= end < out.len()` (out ≥ text.len()+? ; callers size n+1).
-        unsafe {
-            *out.get_unchecked_mut(w) = Span {
-                start: start as u32,
-                end: i as u32,
-            }
-        };
-        w += 1;
+        emit(Span {
+            start: start as u32,
+            end: i as u32,
+        });
     }
-    w
 }

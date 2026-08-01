@@ -62,6 +62,26 @@ impl PipelineSequence {
     /// Isolated, non-inverted `Split`s carrying deepseek's `[\p{N}{1,3}, CJK, big]` regexes (the trailing
     /// byte-map `ByteLevel` converts to `PipelinePreTokenizer::None`). Routes the whole split to one
     /// `fsm_deepseek` pass.
+    /// The single native FSM this sequence reduces to, if any: deepseek's three-Split
+    /// composition whole, or the lone real child left once identity passes
+    /// (`PipelinePreTokenizer::None`) are skipped. Both answers mirror the routing
+    /// `pre_tokenize` below applies, in the same order.
+    pub(crate) fn native_fsm(&self) -> Option<pipeline::FusedScan> {
+        if self.is_deepseek() {
+            return Some(pipeline::FusedScan::DeepSeek);
+        }
+        let mut work = self
+            .pre_tokenizers
+            .iter()
+            .filter(|c| !matches!(c, PipelinePreTokenizer::None));
+        match (work.next(), work.next()) {
+            (Some(PipelinePreTokenizer::Split(split)), None) => {
+                split.native_fsm().map(pipeline::FusedScan::Gpt)
+            }
+            _ => None,
+        }
+    }
+
     fn is_deepseek(&self) -> bool {
         use crate::pre_tokenizers::split::SplitPattern;
         use crate::tokenizer::SplitDelimiterBehavior::Isolated;

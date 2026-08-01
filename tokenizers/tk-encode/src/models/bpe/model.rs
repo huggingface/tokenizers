@@ -856,17 +856,20 @@ impl PipelineBPE {
     }
 }
 
-impl pipeline::Model for PipelineBPE {
-    type Scratch = BpeScratch;
-
-    fn tokenize_pipeline(
+impl PipelineBPE {
+    /// One pre-token through the cache and the merge loop. This is the whole model
+    /// step for a span and it cannot fail; it stands alone so the fused byte-level
+    /// scan can call it per span as the span is cut, and
+    /// [`Model::tokenize_pipeline`](pipeline::Model::tokenize_pipeline) is the same
+    /// body behind the trait.
+    pub(crate) fn tokenize_span(
         &self,
         sequence: &str,
-        scratch: &mut Self::Scratch,
+        scratch: &mut BpeScratch,
         output: &mut Vec<PipelineToken>,
-    ) -> Result<()> {
+    ) {
         if sequence.is_empty() {
-            return Ok(());
+            return;
         }
 
         let BpeScratch {
@@ -881,7 +884,7 @@ impl pipeline::Model for PipelineBPE {
             match cache.lookup(sequence.as_bytes()) {
                 Lookup::Hit(ids) => {
                     output.extend(ids.iter().map(|&id| PipelineToken { id }));
-                    return Ok(());
+                    return;
                 }
                 Lookup::Miss(at) => placement = at,
             }
@@ -902,7 +905,19 @@ impl pipeline::Model for PipelineBPE {
         {
             cache.insert(at, output[start..].iter().map(|token| token.id));
         }
+    }
+}
 
+impl pipeline::Model for PipelineBPE {
+    type Scratch = BpeScratch;
+
+    fn tokenize_pipeline(
+        &self,
+        sequence: &str,
+        scratch: &mut Self::Scratch,
+        output: &mut Vec<PipelineToken>,
+    ) -> Result<()> {
+        self.tokenize_span(sequence, scratch, output);
         Ok(())
     }
 

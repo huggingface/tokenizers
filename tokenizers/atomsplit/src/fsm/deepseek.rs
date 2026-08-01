@@ -39,7 +39,20 @@ fn ds_is_cjk_at(text: &[u8], p: usize) -> bool {
 /// `\w` but categorically `\p{S}`) take the `[\p{P}\p{S}]` path, not the letter run.
 #[must_use]
 pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
-    debug_assert!(out.len() >= text.len() && tags.len() >= text.len());
+    debug_assert!(out.len() >= text.len());
+    let mut w = 0usize;
+    scan_deepseek(text, tags, |span| {
+        // SAFETY: tokens partition the input, so `w < #tokens <= text.len() <= out.len()`.
+        unsafe { *out.get_unchecked_mut(w) = span };
+        w += 1;
+    });
+    w
+}
+
+/// The scan under [`fsm_deepseek`]: hands each token to `emit` the moment it is cut,
+/// so a caller can consume tokens in place instead of collecting a span buffer first.
+pub fn scan_deepseek(text: &[u8], tags: &[u8], mut emit: impl FnMut(Span)) {
+    debug_assert!(tags.len() >= text.len());
     // Leading-atom values as `const` → the `match` is a dense jump table (see `cl100k`). The Split
     // precedence (digits → CJK → big-regex alts) is preserved because the atom partition is disjoint.
     // `Mark` refined as an Other_Alphabetic symbol (Ⓘ …): coarse `LETTER_MARK`, but categorically `\p{S}`
@@ -113,7 +126,6 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
     };
 
     let mut i = 0;
-    let mut w = 0usize;
     while i < end {
         let start = i;
         let b = text[i];
@@ -129,13 +141,10 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
             {
                 p += 3;
             }
-            unsafe {
-                *out.get_unchecked_mut(w) = Span {
-                    start: start as u32,
-                    end: p as u32,
-                }
-            };
-            w += 1;
+            emit(Span {
+                start: start as u32,
+                end: p as u32,
+            });
             i = p;
             continue;
         }
@@ -150,31 +159,22 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
             }
             if is_lm(p) {
                 if last > i {
-                    unsafe {
-                        *out.get_unchecked_mut(w) = Span {
-                            start: start as u32,
-                            end: last as u32,
-                        }
-                    }; // gap sans prefix char
-                    w += 1;
+                    emit(Span {
+                        start: start as u32,
+                        end: last as u32,
+                    }); // gap sans prefix char
                 }
                 let e = letter_run(p);
-                unsafe {
-                    *out.get_unchecked_mut(w) = Span {
-                        start: last as u32,
-                        end: e as u32,
-                    }
-                }; // prefix char + `[\p{L}\p{M}]+`
-                w += 1;
+                emit(Span {
+                    start: last as u32,
+                    end: e as u32,
+                }); // prefix char + `[\p{L}\p{M}]+`
                 i = e;
             } else {
-                unsafe {
-                    *out.get_unchecked_mut(w) = Span {
-                        start: start as u32,
-                        end: p as u32,
-                    }
-                }; // whole gap run is one piece
-                w += 1;
+                emit(Span {
+                    start: start as u32,
+                    end: p as u32,
+                }); // whole gap run is one piece
                 i = p;
             }
             continue;
@@ -234,14 +234,9 @@ pub fn fsm_deepseek(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
             // Sentinel / MultiByte / Cont — never a char-start atom; emit one char defensively.
             _ => i += char_len(b),
         }
-        // SAFETY: tokens partition the input, so `w < #tokens <= end < out.len()` (out ≥ text.len()+? ; callers size n+1).
-        unsafe {
-            *out.get_unchecked_mut(w) = Span {
-                start: start as u32,
-                end: i as u32,
-            }
-        };
-        w += 1;
+        emit(Span {
+            start: start as u32,
+            end: i as u32,
+        });
     }
-    w
 }

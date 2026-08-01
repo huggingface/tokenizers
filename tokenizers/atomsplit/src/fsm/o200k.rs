@@ -50,19 +50,18 @@ fn o200k_letter_match(tags: &[u8], p: usize, re: usize) -> usize {
     e
 }
 
-/// Emit the o200k case-split of the letter run `[ls, re)` into `out[*w..]`: the first sub-token starts at
+/// Emit the o200k case-split of the letter run `[ls, re)`: the first sub-token starts at
 /// `pfx` (the optional `[^\r\n\p{L}\p{N}]?` prefix; `pfx == ls` when none), the last absorbs a trailing
 /// contraction (`CONTRACTION` — off for tekken). Returns the new cursor (past the contraction).
 /// `ls < re` (caller-guaranteed).
 #[inline(always)]
-fn emit_o200k_letters<const CONTRACTION: bool>(
+fn emit_o200k_letters<const CONTRACTION: bool, E: FnMut(Span)>(
     text: &[u8],
     tags: &[u8],
     pfx: usize,
     ls: usize,
     re: usize,
-    out: &mut [Span],
-    w: &mut usize,
+    emit: &mut E,
 ) -> usize {
     let (mut p, mut first, mut cursor) = (ls, true, re);
     while p < re {
@@ -73,13 +72,10 @@ fn emit_o200k_letters<const CONTRACTION: bool>(
         } else {
             e
         };
-        unsafe {
-            *out.get_unchecked_mut(*w) = Span {
-                start: start as u32,
-                end: tok_end as u32,
-            }
-        };
-        *w += 1;
+        emit(Span {
+            start: start as u32,
+            end: tok_end as u32,
+        });
         first = false;
         cursor = tok_end;
         p = e;
@@ -94,22 +90,47 @@ fn emit_o200k_letters<const CONTRACTION: bool>(
 /// Unlike deepseek there are no gaps: rule 4's `[^\s\p{L}\p{N}]+` is a catch-all. Scalar; ┌ OWNER: shared ┐
 #[must_use]
 pub fn fsm_o200k(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
-    o200k::<true, 3>(text, tags, out)
+    debug_assert!(out.len() >= text.len());
+    let mut w = 0usize;
+    scan_o200k(text, tags, |span| {
+        // SAFETY: tokens partition the input, so `w < #tokens <= text.len() <= out.len()`.
+        unsafe { *out.get_unchecked_mut(w) = span };
+        w += 1;
+    });
+    w
 }
 
 /// Mistral tekken ([`crate::regexes::TEKKEN`]) — the o200k FSM with the contraction suffix off and one
 /// token per digit. Every other rule is shared, so both are the same code monomorphized twice.
 #[must_use]
 pub fn fsm_tekken(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
-    o200k::<false, 1>(text, tags, out)
+    debug_assert!(out.len() >= text.len());
+    let mut w = 0usize;
+    scan_tekken(text, tags, |span| {
+        // SAFETY: tokens partition the input, so `w < #tokens <= text.len() <= out.len()`.
+        unsafe { *out.get_unchecked_mut(w) = span };
+        w += 1;
+    });
+    w
 }
 
-fn o200k<const CONTRACTION: bool, const DIGIT_CAP: usize>(
+/// The scan under [`fsm_o200k`]: hands each token to `emit` the moment it is cut,
+/// so a caller can consume tokens in place instead of collecting a span buffer first.
+pub fn scan_o200k(text: &[u8], tags: &[u8], emit: impl FnMut(Span)) {
+    o200k::<true, 3, _>(text, tags, emit);
+}
+
+/// The scan under [`fsm_tekken`]; see [`scan_o200k`].
+pub fn scan_tekken(text: &[u8], tags: &[u8], emit: impl FnMut(Span)) {
+    o200k::<false, 1, _>(text, tags, emit);
+}
+
+fn o200k<const CONTRACTION: bool, const DIGIT_CAP: usize, E: FnMut(Span)>(
     text: &[u8],
     tags: &[u8],
-    out: &mut [Span],
-) -> usize {
-    debug_assert!(out.len() >= text.len() && tags.len() >= text.len());
+    mut emit: E,
+) {
+    debug_assert!(tags.len() >= text.len());
     let end = text.len();
     // Tie `tags.len() == end` so the optimizer drops the per-byte bounds check on every interior
     // `tags[i]` in this fsm + its `run_end`/`letter_*` scans. (Callers guarantee `tags.len() >= end`.)
@@ -168,12 +189,11 @@ fn o200k<const CONTRACTION: bool, const DIGIT_CAP: usize>(
     // rules 5-7 (`\s*[\r\n]+ | \s+(?!\S) | \s+`) → the shared `ws_tail` (identical to cl100k).
     let ws = |i: usize| -> usize { ws_tail(text, tags, i, end) };
     // The letter rules: case-split the run starting at `ls`, first sub-token starting at the prefix `pfx`.
-    let letters = |pfx: usize, ls: usize, out: &mut [Span], w: &mut usize| -> usize {
-        emit_o200k_letters::<CONTRACTION>(text, tags, pfx, ls, letter_end(ls), out, w)
+    let letters = |pfx: usize, ls: usize, emit: &mut E| -> usize {
+        emit_o200k_letters::<CONTRACTION, E>(text, tags, pfx, ls, letter_end(ls), emit)
     };
 
     let mut i = 0;
-    let mut w = 0usize;
     while i < end {
         let start = i;
         let b = text[i];
@@ -191,12 +211,12 @@ fn o200k<const CONTRACTION: bool, const DIGIT_CAP: usize>(
             // take the `[^\r\n\p{L}\p{N}]?` prefix / rule-4 path instead.
             LET | MRK => {
                 if tags[i] != ASM && tags[i] != ZWJ {
-                    i = letters(i, i, out, &mut w);
+                    i = letters(i, i, &mut emit);
                     continue;
                 }
                 let a = i + char_len(b);
                 if is_lm(a) {
-                    i = letters(i, a, out, &mut w);
+                    i = letters(i, a, &mut emit);
                     continue;
                 }
                 i = other(i); // ∈ NOT_WS_L_N ⇒ > i
@@ -205,7 +225,7 @@ fn o200k<const CONTRACTION: bool, const DIGIT_CAP: usize>(
             SPC => {
                 let a = i + 1; // Space is ASCII (0x20)
                 if is_lm(a) {
-                    i = letters(i, a, out, &mut w);
+                    i = letters(i, a, &mut emit);
                     continue;
                 }
                 let p = other(a);
@@ -215,7 +235,7 @@ fn o200k<const CONTRACTION: bool, const DIGIT_CAP: usize>(
             WSO => {
                 let a = i + char_len(b);
                 if is_lm(a) {
-                    i = letters(i, a, out, &mut w);
+                    i = letters(i, a, &mut emit);
                     continue;
                 }
                 i = ws(i);
@@ -225,7 +245,7 @@ fn o200k<const CONTRACTION: bool, const DIGIT_CAP: usize>(
             CON | PUN | APO | SYM | NMO | CTL => {
                 let a = i + char_len(b);
                 if is_lm(a) {
-                    i = letters(i, a, out, &mut w);
+                    i = letters(i, a, &mut emit);
                     continue;
                 }
                 i = other(i); // ∈ NOT_WS_L_N ⇒ > i
@@ -233,14 +253,9 @@ fn o200k<const CONTRACTION: bool, const DIGIT_CAP: usize>(
             // Sentinel / MultiByte / Cont — never a char-start atom; emit one char defensively.
             _ => i += char_len(b),
         }
-        // SAFETY: tokens partition the input, so `w < #tokens <= end < out.len()` (out ≥ text.len()+? ; callers size n+1).
-        unsafe {
-            *out.get_unchecked_mut(w) = Span {
-                start: start as u32,
-                end: i as u32,
-            }
-        };
-        w += 1;
+        emit(Span {
+            start: start as u32,
+            end: i as u32,
+        });
     }
-    w
 }

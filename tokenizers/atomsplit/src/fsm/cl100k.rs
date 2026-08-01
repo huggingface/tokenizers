@@ -14,10 +14,19 @@ pub fn fsm_cl100k(text: &[u8], tags: &[u8], out: &mut [Span]) -> usize {
 #[must_use]
 pub fn fsm_cl100k_cap(text: &[u8], tags: &[u8], out: &mut [Span], digit_cap: usize) -> usize {
     debug_assert!(out.len() >= text.len() && tags.len() >= text.len());
-    cl100k(text, tags, out, digit_cap)
+    let mut w = 0usize;
+    scan_cl100k_cap(text, tags, digit_cap, |span| {
+        // SAFETY: tokens partition the input, so `w < #tokens <= text.len() <= out.len()`.
+        unsafe { *out.get_unchecked_mut(w) = span };
+        w += 1;
+    });
+    w
 }
 
-fn cl100k(text: &[u8], tags: &[u8], out: &mut [Span], digit_cap: usize) -> usize {
+/// The scan under [`fsm_cl100k_cap`]: hands each token to `emit` the moment it is cut,
+/// so a caller can consume tokens in place instead of collecting a span buffer first.
+pub fn scan_cl100k_cap(text: &[u8], tags: &[u8], digit_cap: usize, mut emit: impl FnMut(Span)) {
+    debug_assert!(tags.len() >= text.len());
     // Leading-atom values, as `const` so the `match` below is a dense jump table (not an if-cascade):
     // the dispatch is O(1) and a token never pays for a rule it can't start (e.g. non-number tokens
     // never test the number rule — which is what the POC's const-gating removed by hand; here it's free).
@@ -41,7 +50,6 @@ fn cl100k(text: &[u8], tags: &[u8], out: &mut [Span], digit_cap: usize) -> usize
     let ws = |i: usize| -> usize { ws_tail(text, tags, i, end) };
 
     let mut i = 0;
-    let mut w = 0usize;
     while i < end {
         let start = i;
         let b = text[i];
@@ -105,14 +113,9 @@ fn cl100k(text: &[u8], tags: &[u8], out: &mut [Span], digit_cap: usize) -> usize
             // Sentinel / MultiByte / Cont — never a char-start atom; emit one char defensively.
             _ => i += char_len(b),
         }
-        // SAFETY: tokens partition the input, so `w < #tokens <= end < out.len()` (out ≥ text.len()+? ; callers size n+1).
-        unsafe {
-            *out.get_unchecked_mut(w) = Span {
-                start: start as u32,
-                end: i as u32,
-            }
-        };
-        w += 1;
+        emit(Span {
+            start: start as u32,
+            end: i as u32,
+        });
     }
-    w
 }

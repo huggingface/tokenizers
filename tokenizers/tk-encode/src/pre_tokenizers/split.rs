@@ -126,6 +126,14 @@ impl Split {
         })
     }
 
+    /// The native atomsplit FSM this split routes to, if its shape allows it: the
+    /// same recognition and `Isolated`, not-inverted filter `pre_tokenize` applies,
+    /// so a caller planning around the FSM cannot disagree with the split itself.
+    pub(crate) fn native_fsm(&self) -> Option<GptFsm> {
+        self.fsm
+            .filter(|_| !self.invert && self.behavior == SplitDelimiterBehavior::Isolated)
+    }
+
     /// Pipeline canonicalization. A recognized whole-covering GPT regex shipped
     /// as `(invert=true, behavior=Removed)` — the tiktoken-conversion convention
     /// used by cl100k/o200k — is byte-exactly equivalent to `(invert=false,

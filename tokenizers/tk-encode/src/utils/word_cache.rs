@@ -792,7 +792,7 @@ mod tests {
         for len in 0..=16usize {
             for fill in [0x00u8, 0x5a, 0xff] {
                 let word: Vec<u8> = (0..len).map(|i| fill.wrapping_add(i as u8)).collect();
-                let expected = (len >= 1 && len <= 15).then(|| {
+                let expected = (1..=15).contains(&len).then(|| {
                     let mut lanes = [0u8; 16];
                     lanes[..len].copy_from_slice(&word);
                     u128::from_le_bytes(lanes) | ((len as u128) << 120)

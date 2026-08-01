@@ -12,6 +12,7 @@ use crate::models::wordlevel::WordLevel;
 use crate::models::wordpiece::{PipelineWordPiece, WordPieceScratch};
 use crate::processors::bert::BertProcessing;
 use crate::processors::roberta::RobertaProcessing;
+use crate::utils::GptFsm;
 use crate::utils::byte_level::GPT2_REGEX_STR;
 use crate::vocab::bucket_added_vocabulary::{
     AddedToken as BucketAddedToken, AddedVocabulary as BucketAddedVocabulary,
@@ -148,6 +149,28 @@ pub enum PipelinePreTokenizer {
     Whitespace(Whitespace),
     WhitespaceSplit(WhitespaceSplit),
     None,
+}
+
+/// A pre-tokenizer whose whole split runs as one native FSM pass, named ahead of time
+/// so [`PipelineTokenizer::encode_fused`] can drive the scan and the model together.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum FusedScan {
+    Gpt(GptFsm),
+    DeepSeek,
+}
+
+impl PipelinePreTokenizer {
+    /// The single native FSM this whole pre-tokenizer reduces to, if any: a recognized
+    /// lone `Split`, or a `Sequence` that collapses to one. Each arm asks the child for
+    /// the routing its own `pre_tokenize` applies, so a fused caller cannot disagree
+    /// with the split it bypasses.
+    pub(crate) fn native_fsm(&self) -> Option<FusedScan> {
+        match self {
+            Self::Split(split) => split.native_fsm().map(FusedScan::Gpt),
+            Self::Sequence(sequence) => sequence.native_fsm(),
+            _ => None,
+        }
+    }
 }
 
 impl PreTokenizer for PipelinePreTokenizer {
@@ -816,18 +839,24 @@ impl PipelineTokenizer {
                             }
                             Segment::Text(normalized_chunk) => {
                                 if STAGE >= Self::STAGE_SPLIT {
-                                    // Pre-tokenize the chunk of normalized text
-                                    pre_tokens.clear();
-                                    self.pre_tokenizer
-                                        .pre_tokenize(normalized_chunk, pre_tokens)?;
-                                    if STAGE >= Self::STAGE_MODEL {
-                                        // Tokenize each chunk
-                                        for pre_token in pre_tokens.iter() {
-                                            self.model.tokenize_pipeline(
-                                                &normalized_chunk[pre_token.range()],
-                                                scratch,
-                                                output,
-                                            )?;
+                                    if STAGE >= Self::STAGE_MODEL
+                                        && self.encode_fused(normalized_chunk, scratch, output)
+                                    {
+                                        // Split and model ran as one pass; nothing left to do.
+                                    } else {
+                                        // Pre-tokenize the chunk of normalized text
+                                        pre_tokens.clear();
+                                        self.pre_tokenizer
+                                            .pre_tokenize(normalized_chunk, pre_tokens)?;
+                                        if STAGE >= Self::STAGE_MODEL {
+                                            // Tokenize each chunk
+                                            for pre_token in pre_tokens.iter() {
+                                                self.model.tokenize_pipeline(
+                                                    &normalized_chunk[pre_token.range()],
+                                                    scratch,
+                                                    output,
+                                                )?;
+                                            }
                                         }
                                     }
                                 }
@@ -842,6 +871,66 @@ impl PipelineTokenizer {
             output.extend_from_slice(suffix);
         }
         Ok(())
+    }
+
+    /// The fused fast path: cut `chunk` with its native FSM and hand each span
+    /// straight to the BPE model the moment it is emitted. The span buffer, the
+    /// per-span model dispatch and the per-span trait call of the staged path all
+    /// disappear, and the model reads each word while its bytes are still hot from
+    /// the scan. Returns `false` when this tokenizer is not that shape, and the
+    /// staged path must run instead.
+    fn encode_fused(
+        &self,
+        chunk: &str,
+        scratch: &mut PipelineModelScratch,
+        output: &mut Vec<PipelineToken>,
+    ) -> bool {
+        let Some(scan) = self.pre_tokenizer.native_fsm() else {
+            return false;
+        };
+        let PipelineModel::BPE(model) = &self.model else {
+            return false;
+        };
+        let PipelineModelScratch::BPE(scratch) = scratch else {
+            return false;
+        };
+        thread_local! {
+            static TAGS: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
+        }
+        let bytes = chunk.as_bytes();
+        TAGS.with(|cell| {
+            let tags = &mut *cell.borrow_mut();
+            if tags.len() < bytes.len() {
+                tags.resize(bytes.len(), 0); // grow-only, as in `classify_into_spans`
+            }
+            classify(bytes, &mut tags[..bytes.len()]);
+            let tags = &tags[..bytes.len()];
+            use atomsplit::fsm::{
+                scan_byte_level, scan_cl100k_cap, scan_deepseek, scan_o200k, scan_tekken,
+            };
+            // One emit closure literal per arm: each scan gets its own instance by
+            // value, which is what lets the emit inline into the scan loop.
+            match scan {
+                FusedScan::Gpt(GptFsm::Gpt2) => scan_byte_level(bytes, tags, |span| {
+                    model.tokenize_span(&chunk[span.range()], scratch, output);
+                }),
+                FusedScan::Gpt(GptFsm::Cl100k { digit_cap }) => {
+                    scan_cl100k_cap(bytes, tags, digit_cap, |span| {
+                        model.tokenize_span(&chunk[span.range()], scratch, output);
+                    })
+                }
+                FusedScan::Gpt(GptFsm::O200k) => scan_o200k(bytes, tags, |span| {
+                    model.tokenize_span(&chunk[span.range()], scratch, output);
+                }),
+                FusedScan::Gpt(GptFsm::Tekken) => scan_tekken(bytes, tags, |span| {
+                    model.tokenize_span(&chunk[span.range()], scratch, output);
+                }),
+                FusedScan::DeepSeek => scan_deepseek(bytes, tags, |span| {
+                    model.tokenize_span(&chunk[span.range()], scratch, output);
+                }),
+            }
+        });
+        true
     }
 }
 
