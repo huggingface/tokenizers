@@ -18,7 +18,7 @@ pub fn build_byte_to_gate() -> [u16; 256] {
 
 #[derive(Clone, Copy)]
 #[repr(C)]
-pub(super) struct Entry {
+pub(crate) struct Entry {
     pub rank: u32, // the rank of the merge? but this should be the internal ID.
     pub prod: u32, // the internal ID of the merge (unique as its a product and not a merge)
     pub a: u32,    // the merge is (a,b) these are the internal ids of them
