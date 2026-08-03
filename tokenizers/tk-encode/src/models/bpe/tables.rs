@@ -126,15 +126,208 @@ impl MphfMap {
     }
 }
 pub(crate) struct BpeTables {
-    pub unmap: Box<[u32]>,            // unmap[internal_id] -> external_id
+    pub unmap: Box<[u32]>,         // unmap[internal_id] -> external_id
     pub pair_table: MphfMap, // MPHF! because memory efficiency + bitwise makes check not costly
     pub top_merges: Box<[u64]>, // top 512 by 512 merges, same packed value as the pair table
-    pub fold: Box<[u32]>,    // codepoint in vocab to internal id
-    pub non_bmp: AHashMap<char, u32>, // same as `fold`, for the codepoints past 0xFFFF (emoji, CJK ext)
+    pub fold: SparseFold,    // codepoint in vocab to internal id, sparse: see SparseFold
+    pub byte_internal: [u32; 256], // byte -> internal id, for characters that do not fold
 }
 
+/// NOTE: Unchecked indexing, justified once instead of everywhere we do it.
+///
+/// Every use of `.at()` in the fold and conversion paths is safe: the
+/// bytes come from a `&str`, so a sequence length taken from a lead byte cannot run past the end;
+/// and every table index is masked to that table's fixed size (`& 0x0F` << 6 | `& 0x3F` <= 1023,
+/// `& 0x3F` < 64, a `u8` into `[_; 256]`). It exists because bounds-checked indexing measured
+/// 25-44% slower on conversion.
+pub trait At {
+    type Out;
+    fn at(&self, index: usize) -> Self::Out;
+}
+
+impl<T: Copy> At for [T] {
+    type Out = T;
+    #[inline(always)]
+    fn at(&self, index: usize) -> T {
+        unsafe { *self.get_unchecked(index) }
+    }
+}
+
+/// A bitmap of which codepoints fold, plus the symbols they fold to.
+///
+/// A codepoint fits in a u16, so there are 65536 of them and one bit each is 65536 bits = 1024
+/// u64s = 8 KB. `rows` is that Vec of u64. Splitting a codepoint into a row and a column is just
+/// dividing by 64 and taking the remainder, and 64 is a power of two, so it is a shift and a mask:
+///
+///   row = codepoint >> 6        col = codepoint & 0x3F
+///
+///   rows:  [    u64    |    u64    |    u64    | ... |    u64    ]   1024 rows, 8 KB
+///            row 0       row 1       row 2             row 1023
+///            cp 0..63     cp 64..127
+///
+///   one row is 64 codepoints, one bit each:
+///
+///   row 192:   bit 63 <-------------------------------------- bit 0
+///              0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0
+///                    ^                       ^
+///                    col 60 folds            col 16 folds
+///
+/// A set bit means that codepoint folds to one symbol. `symbols` holds those symbols and nothing
+/// else, packed in codepoint order: 13 KB instead of 256 KB for a flat `[u32; 65536]`
+/// codepoint's slot in the `symbols` table, count the set bits before it: `row_start` has the count for all
+/// earlier rows, and one popcount covers the bits before `col` in its own row.
+pub struct SparseFold {
+    /// One bit per codepoint: set iff it folds. If it does we emit the corresponding u32 directly.
+    rows: Box<[u64]>,
+    /// indexed by the row, indexes the symbols
+    row_start: Box<[u32]>,
+    /// The symbols of folding codepoints only, in codepoint order.
+    symbols: Box<[u32]>,
+    /// One-byte characters, which are always exactly one symbol whether they fold or not. 512 B.
+    ascii: [u32; 128],
+    /// The same mapping for codepoints past 0xFFFF (emoji, CJK ext). Too few and too spread out to
+    /// be worth optimizing at all.
+    non_bmp: AHashMap<char, u32>,
+}
+
+impl SparseFold {
+    fn build(
+        codepoint_to_symbol: &[u32],
+        byte_symbols: &[u32; 256],
+        non_bmp: AHashMap<char, u32>,
+    ) -> Self {
+        let mut rows = vec![0u64; 1024];
+        for (codepoint, &symbol) in codepoint_to_symbol.iter().enumerate() {
+            if symbol != u32::MAX {
+                // we set a single bit using |
+                rows[codepoint >> 6] |= 1u64 << (codepoint & 0x3F);
+            }
+        }
+        let mut row_start = vec![0u32; 1024];
+        let mut seen = 0u32;
+        for row in 0..1024 {
+            row_start[row] = seen;
+            seen += rows[row].count_ones();
+        }
+        let symbols: Vec<u32> = codepoint_to_symbol
+            .iter()
+            .copied()
+            .filter(|&symbol| symbol != u32::MAX)
+            .collect();
+        let mut ascii = [0u32; 128];
+        for (byte, symbol) in ascii.iter_mut().enumerate() {
+            *symbol = if codepoint_to_symbol[byte] != u32::MAX {
+                codepoint_to_symbol[byte]
+            } else {
+                byte_symbols[byte]
+            };
+        }
+        Self {
+            rows: rows.into_boxed_slice(),
+            row_start: row_start.into_boxed_slice(),
+            symbols: symbols.into_boxed_slice(),
+            ascii,
+            non_bmp,
+        }
+    }
+
+    pub fn footprint(&self) -> usize {
+        self.rows.len() * 8 + self.row_start.len() * 4 + self.symbols.len() * 4 + 512
+    }
+
+    /// The symbol at (row, col), or `u32::MAX` if that codepoint does not fold.
+    #[inline(always)]
+    fn get(&self, row: usize, col: u32) -> u32 {
+        let bits = self.rows.at(row);
+        if (bits >> col) & 1 == 0 {
+            return u32::MAX;
+        }
+        let before =
+            self.row_start.at(row) as usize + (bits & ((1u64 << col) - 1)).count_ones() as usize;
+        self.symbols.at(before)
+    }
+
+    /// A one-byte character. Always one symbol, fold or not.
+    #[inline(always)]
+    pub fn get_ascii(&self, byte: u8) -> u32 {
+        self.ascii.at((byte & 0x7F) as usize)
+    }
+
+    /// A character given as UTF-8 bytes. `u32::MAX` means it does not fold and the caller emits its
+    /// bytes instead. `lead` and `char_len` come from the caller, which already has them.
+    ///
+    /// We use a small trick: any continuation byte can be converted to a key ton index or sparse fold.
+    /// For:
+    ///   3 bytes:  1110xxxx 10yyyyyy 10zzzzzz     row = xxxx yyyyyy     col = zzzzzz
+    ///             (0F)1111   111111(3F)
+    ///
+    ///   2 bytes:  110yyyyy 10zzzzzz              row =      yyyyy      col = zzzzzz
+    ///            (1F)11111   111111(3F)
+    #[inline(always)]
+    pub fn get_bytes(&self, bytes: &[u8], start: usize, lead: u8, char_len: usize) -> u32 {
+        match char_len {
+            3 => self.get(
+                (((lead & 0x0F) as usize) << 6) | (bytes.at(start + 1) & 0x3F) as usize,
+                (bytes.at(start + 2) & 0x3F) as u32,
+            ),
+            2 => self.get((lead & 0x1F) as usize, (bytes.at(start + 1) & 0x3F) as u32),
+            // four bytes: past the BitMapPlane, so the bitmap does not cover it
+            _ => {
+                let codepoint = (((lead & 0x07) as u32) << 18)
+                    | (((bytes.at(start + 1) & 0x3F) as u32) << 12)
+                    | (((bytes.at(start + 2) & 0x3F) as u32) << 6)
+                    | (bytes.at(start + 3) & 0x3F) as u32;
+                self.get_code(codepoint)
+            }
+        }
+    }
+
+    /// A character, for models whose atoms are characters rather than bytes.
+    #[inline(always)]
+    pub fn get_char(&self, character: char) -> u32 {
+        self.get_code(character as u32)
+    }
+
+    #[inline(always)]
+    fn get_code(&self, codepoint: u32) -> u32 {
+        if codepoint < 0x10000 {
+            // in that case we already have the codepoint so we need less masking than utf8.
+            self.get(codepoint as usize >> 6, codepoint & 0x3F)
+        } else {
+            char::from_u32(codepoint)
+                .and_then(|character| self.non_bmp.get(&character).copied())
+                .unwrap_or(u32::MAX)
+        }
+    }
+}
+
+/// UTF-8 sequence length by lead byte.
+pub const UTF8_LEN: [u8; 256] = {
+    let mut l = [1u8; 256];
+    let mut b = 0xC0usize;
+    while b < 0xE0 {
+        l[b] = 2;
+        b += 1;
+    }
+    while b < 0xF0 {
+        l[b] = 3;
+        b += 1;
+    }
+    while b < 0xF8 {
+        l[b] = 4;
+        b += 1;
+    }
+    l
+};
+
 impl BpeTables {
-    pub(crate) fn build(vocab: AHashMap<String, u32>, merges: MergeMap, byte_level: bool) -> Self {
+    /// Returns the tables plus the dense `external id -> internal id` map built along the way.
+    /// Callers that do not need the map just drop it; it is ~4 bytes per vocab entry.
+    pub(crate) fn build(
+        vocab: AHashMap<String, u32>,
+        merges: MergeMap,
+        byte_level: bool,
+    ) -> (Self, Vec<u32>) {
         // 1. We build the internal id map. This sorts the merges by their ranks so frequent pairs
         //    get a smaller rank.
         let rev_merge = merges
@@ -178,9 +371,16 @@ impl BpeTables {
             unmap[internal as usize] = *product;
             internal_id_map[*product as usize] = internal;
         }
-        let (cp_to_internal_id, non_bmp) =
+        let (cp_to_internal_id, non_bmp, byte_internal) =
             build_conversion_table(&vocab, &merges, &internal_id_map, &unmap, byte_level);
-        let fold = cp_to_internal_id.into_boxed_slice();
+        // the flat 256 KB table is build-time only: it is compacted here and dropped
+        let fold = SparseFold::build(&cp_to_internal_id, &byte_internal, non_bmp);
+        drop(cp_to_internal_id);
+        info!(
+            "fold table: {:.1} KB sparse (flat would be {:.1} KB)",
+            fold.footprint() as f64 / 1024.0,
+            65536.0 * 4.0 / 1024.0
+        );
 
         let mut top_merges = vec![u64::MAX; 512 * 512];
         let mut values = Vec::new();
@@ -217,13 +417,16 @@ impl BpeTables {
             products.len(),
             512 * 512 - top_merges.iter().filter(|c| **c == u64::MAX).count()
         );
-        Self {
-            unmap,
-            pair_table,
-            top_merges,
-            fold,
-            non_bmp,
-        }
+        (
+            Self {
+                unmap,
+                pair_table,
+                top_merges,
+                fold,
+                byte_internal,
+            },
+            internal_id_map,
+        )
     }
     pub fn get_value(&self, a: &u32, b: &u32) -> u64 {
         if (a | b) < 512 {
@@ -241,7 +444,7 @@ fn build_conversion_table(
     internal_id_map: &[u32],
     unmap: &[u32],
     byte_level: bool,
-) -> (Vec<u32>, AHashMap<char, u32>) {
+) -> (Vec<u32>, AHashMap<char, u32>, [u32; 256]) {
     // We don't create a hashmap for everything for memory efficiency.
     fn place(bmp: &mut [u32], non_bmp: &mut AHashMap<char, u32>, ch: char, id: u32) {
         if (ch as u32) < 0x10000 {
@@ -254,10 +457,12 @@ fn build_conversion_table(
     let mut cp_to_internal_id = vec![u32::MAX; 65536];
     let mut non_bmp: AHashMap<char, u32> = AHashMap::new();
     let (mut folded, mut unsafe_chars) = (0usize, 0usize);
+    let mut byte_internal = [u32::MAX; 256];
     if byte_level {
         // A character reaches the merge loop as bytes, so folding it means proving the
         // merges are  predetermined. See `bytelevel_folding`.
         let folder = ByteLevelFold::new(vocab, merges, internal_id_map, unmap);
+        byte_internal = folder.byte_internal();
         for (s, external) in vocab.iter() {
             match folder.fold(s, *external) {
                 Fold::Folds(ch, id) => {
@@ -283,7 +488,7 @@ fn build_conversion_table(
         }
     }
     info!("fold table: {folded} characters fold, {unsafe_chars} formable but boundary-unsafe");
-    (cp_to_internal_id, non_bmp)
+    (cp_to_internal_id, non_bmp, byte_internal)
 }
 
 #[cfg(test)]
@@ -320,7 +525,7 @@ mod test {
         let mut merges = MergeMap::new();
         merges.insert((0, 1), (0, 2));
         merges.insert((3, 0), (1, 3));
-        let tables = BpeTables::build(vocab, merges, true);
+        let (tables, _) = BpeTables::build(vocab, merges, true);
         // there are only 4 elements because ab and aba are part of the vocab
         // so the alphabet is a,b and the ranks are ab and aba.
         // Both operands are < 512, so the merge lives in the dense grid, not the MPHF.
