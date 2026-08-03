@@ -2,13 +2,13 @@
 use std::{iter, mem};
 mod bytelevel_folding;
 mod convert;
+mod merge_hot_cold_queue;
+mod merge_multipass;
 mod model;
-mod multipass;
 mod pipeline_bpe;
 mod scratch;
 mod serialization;
 mod tables;
-mod two_tier_merge;
 pub mod word;
 mod word_cache;
 

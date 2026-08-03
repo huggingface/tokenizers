@@ -69,8 +69,9 @@ impl PipelineBPE {
             // neighbour so this pass's minimum accounts for the last pair too.
             if read_id < len {
                 to_merge[write_id] = to_merge[read_id];
-                let merge_rank =
-                    self.tables.get_value(&to_merge[write_id - 1], &to_merge[write_id]);
+                let merge_rank = self
+                    .tables
+                    .get_value(&to_merge[write_id - 1], &to_merge[write_id]);
                 running_min = cmp::min(running_min, merge_rank);
                 write_id += 1;
             }

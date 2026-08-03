@@ -131,7 +131,7 @@ impl MphfMap {
     }
 }
 pub(crate) struct BpeTables {
-    pub unmap: Box<[u32]>,         // unmap[internal_id] -> external_id
+    pub unmap: Box<[u32]>,   // unmap[internal_id] -> external_id
     pub pair_table: MphfMap, // MPHF! because memory efficiency + bitwise makes check not costly
     /// The 512x512 grid of hottest pairs, kept directly indexed so a lookup is one load, but with
     /// a u16 index per cell instead of the value inline: only 3.5-5.7% of cells hold a merge, so
@@ -139,7 +139,7 @@ pub(crate) struct BpeTables {
     /// hit is two.
     pub top_index: Box<[u16]>,
     pub top_values: Box<[u64]>,
-    pub fold: SparseFold,    // codepoint in vocab to internal id, sparse: see SparseFold
+    pub fold: SparseFold, // codepoint in vocab to internal id, sparse: see SparseFold
     pub byte_internal: [u32; 256], // byte -> internal id, for characters that do not fold
 }
 

@@ -1,6 +1,6 @@
 //! Per-thread scratch for BPE. Every buffer here is cleared, never reallocated, so tokenizing a
 //! sequence does not allocate.
-use crate::models::bpe::two_tier_merge::MergeScratch;
+use crate::models::bpe::merge_hot_cold_queue::MergeScratch;
 use crate::models::bpe::word_cache::WordCache;
 use crate::models::bpe::{Merge, Word};
 use crate::pipeline::ModelScratch;

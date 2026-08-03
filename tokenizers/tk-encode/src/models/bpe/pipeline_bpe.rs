@@ -1,18 +1,20 @@
 //! The pipeline BPE model: its tables, how it is built from a [`BPE`], and how a pretokenized
-//! sequence is turned into tokens. The merge engines themselves live in `convert`, `multipass` and
-//! `two_tier_merge`.
+//! sequence is turned into tokens. The merge engines themselves live in `convert`, `merge_multipass` and
+//! `merge_hot_cold_queue`.
+use crate::models::bpe::merge_hot_cold_queue::{
+    MergeScratch, build_byte_to_gate, two_tier_queue_merge,
+};
 use crate::models::bpe::model::BPE;
-use crate::models::bpe::word::Word;
-use dary_heap::QuaternaryHeap;
 use crate::models::bpe::scratch::BpeScratch;
 use crate::models::bpe::tables::BpeTables;
-use crate::models::bpe::two_tier_merge::{MergeScratch, build_byte_to_gate, two_tier_queue_merge};
-use crate::models::bpe::{Error, tables::At};
+use crate::models::bpe::word::Word;
 use crate::models::bpe::word_cache::WordCache;
+use crate::models::bpe::{Error, tables::At};
 use crate::pipeline::{self, PipelineToken};
 use crate::tokenizer::Result;
 use crate::utils::byte_level::{self};
 use crate::vocab::bucket_vocab_store::BucketVocabStore;
+use dary_heap::QuaternaryHeap;
 
 /// Set only for the few models that decorate their atoms: `end_of_word_suffix` (CLIP, openai-gpt,
 /// XLM) and `continuing_subword_prefix`. A character's atom then depends on its position in the
@@ -175,7 +177,6 @@ impl PipelineBPE {
             self.multipass_merge(to_merge, first_merge);
         }
     }
-
 }
 
 impl pipeline::Model for PipelineBPE {
@@ -220,7 +221,9 @@ impl pipeline::Model for PipelineBPE {
         if let Some(cache) = word_cache {
             cache.insert(
                 sequence.as_bytes(),
-                to_merge.iter().map(|&symbol| self.tables.unmap.at(symbol as usize)),
+                to_merge
+                    .iter()
+                    .map(|&symbol| self.tables.unmap.at(symbol as usize)),
             );
         }
 
@@ -238,4 +241,3 @@ impl pipeline::Model for PipelineBPE {
         }
     }
 }
-
