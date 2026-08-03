@@ -135,11 +135,7 @@ impl MphfMap {
     pub fn get(&self, key: u64) -> u64 {
         let slot = self.mphf.index(&self.hasher.hash_one(key));
         let e = &self.entries[slot];
-        if e.key == key {
-            e.val
-        } else {
-            u64::MAX
-        }
+        if e.key == key { e.val } else { u64::MAX }
     }
 }
 pub(crate) struct BpeTables {
