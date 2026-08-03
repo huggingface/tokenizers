@@ -158,7 +158,7 @@ impl PipelineBPE {
 
         if sequence.len() > gate as usize {
             // conversion writes the entries and cold keys directly: no intermediate rank array
-            self.convert::<false>(
+            self.convert_queue(
                 sequence,
                 symbols,
                 &mut merge_scratch.entries,
@@ -166,12 +166,7 @@ impl PipelineBPE {
             );
             two_tier_queue_merge(&self.tables, symbols, merge_scratch);
         } else {
-            let first_merge = self.convert::<true>(
-                sequence,
-                symbols,
-                &mut merge_scratch.entries,
-                &mut merge_scratch.cold,
-            );
+            let first_merge = self.convert_multipass(sequence, symbols);
             merge_multipass(&self.tables, symbols, first_merge);
         }
     }
