@@ -164,7 +164,7 @@ impl PipelineBPE {
                 &mut merge_scratch.entries,
                 &mut merge_scratch.cold,
             );
-            two_tier_queue_merge(&self.tables, merge_scratch, to_merge);
+            two_tier_queue_merge(&self.tables, to_merge, merge_scratch);
         } else {
             let first_merge = self.convert::<true>(
                 sequence,

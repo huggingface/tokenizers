@@ -729,15 +729,15 @@ use crate::tokenizer::{Model, Result, Token};
                     .build()
                     .unwrap()
             };
+            assert!(PipelineBPE::from_bpe(build(|b| b.dropout(0.5)), false).is_err());
+            // affixes are supported: `convert_affixed` decorates each character before the lookup
             assert!(
                 PipelineBPE::from_bpe(build(|b| b.continuing_subword_prefix("##".into())), false)
-                    .is_err()
+                    .is_ok()
             );
             assert!(
-                PipelineBPE::from_bpe(build(|b| b.end_of_word_suffix("</w>".into())), false)
-                    .is_err()
+                PipelineBPE::from_bpe(build(|b| b.end_of_word_suffix("</w>".into())), false).is_ok()
             );
-            assert!(PipelineBPE::from_bpe(build(|b| b.dropout(0.5)), false).is_err());
             // no-op values must not be rejected: gpt2's tokenizer.json serializes
             // prefix/suffix as "" and the reference treats dropout 0.0 as disabled
             assert!(

@@ -38,6 +38,11 @@ struct Slot {
               // rank sits high so `val < min_val` is a rank comparison. mrl/mrr are NOT stored
               // here: they are build-time only, consumed by the fold guard.
 }
+
+/// The rank half of a packed merge value, for reusing a rank as the high half of a queue key.
+/// It keeps the rank alone: the flags live below bit 32, so they are dropped with the product id,
+/// and an unmergeable pair (`u64::MAX`) still masks to a rank of `u32::MAX`, the worst possible.
+pub(super) const RANK_MASK: u64 = 0xFFFF_FFFF_0000_0000;
 // Fixed seeds so a given vocab always hashes identically (the hasher is also stored on the struct,
 // so build and query are guaranteed consistent regardless).
 const SEEDS: [u64; 4] = [

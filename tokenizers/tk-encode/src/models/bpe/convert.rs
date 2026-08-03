@@ -1,8 +1,10 @@
 //! Turning a pretokenized word into merge ranks, which are then processed in `multipass` or
 //! `two_tier_merge`.
 use crate::models::bpe::pipeline_bpe::{AFFIX_BUF, Atoms, PipelineBPE};
-use crate::models::bpe::tables::{At, BpeTables, UTF8_LEN};
+use crate::models::bpe::tables::{At, BpeTables, RANK_MASK, UTF8_LEN};
 use crate::models::bpe::two_tier_merge::Entry;
+use std::marker::PhantomData;
+use std::ptr;
 
 /// Collects the converted ranks of a sequence into whatever the engine that merges it needs.
 /// `MULTIPASS` picks which: a flat rank array plus the lowest-ranked adjacent pair, which is the
@@ -11,12 +13,22 @@ use crate::models::bpe::two_tier_merge::Entry;
 ///
 /// Either way the pair is looked up exactly once: both engines want that same value, multipass for
 /// the minimum and the queue for the pair's rank and product.
+///
+/// The destinations are pointers with a count each, and `convert` sets the lengths once the word is
+/// done. A word never converts to more ranks than it has bytes, so a single reserve up front covers
+/// every write and `push` needs no capacity check. The one branch left per rank is "is there a rank
+/// to the left of this one", which the queue path needs to keep entry indices contiguous; it is
+/// taken once per word and predicted for the rest of it.
 struct SymbolSink<'a, const MULTIPASS: bool> {
-    symbols: &'a mut Vec<u32>,
-    entries: &'a mut Vec<Entry>,
-    cold: &'a mut Vec<u64>,
+    symbols: *mut u32,
+    entries: *mut Entry,
+    cold: *mut u64,
+    symbol_count: usize,
+    entry_count: usize,
+    cold_count: usize,
     previous_symbol: u32,
     lowest_merge: u64,
+    reserved: PhantomData<&'a mut ()>,
 }
 
 impl<const MULTIPASS: bool> SymbolSink<'_, MULTIPASS> {
@@ -26,27 +38,39 @@ impl<const MULTIPASS: bool> SymbolSink<'_, MULTIPASS> {
         if self.previous_symbol != u32::MAX {
             let merge = tables.get_value(&self.previous_symbol, &symbol);
             if MULTIPASS {
-                if merge < self.lowest_merge {
-                    self.lowest_merge = merge;
-                }
+                self.lowest_merge = self.lowest_merge.min(merge);
             } else {
-                let index = self.entries.len() as u32;
-                self.entries.push(Entry {
-                    rank: (merge >> 32) as u32,
-                    prod: merge as u32,
-                    a: self.previous_symbol,
-                    b: symbol,
-                    l: index.wrapping_sub(1), // u32::MAX at index 0, which is NONE
-                    r: index + 1,             // the final entry is patched in `convert`
-                });
-                if merge != u64::MAX {
-                    self.cold.push((merge & 0xFFFF_FFFF_0000_0000) | index as u64);
+                let index = self.entry_count as u32;
+                // SAFETY: `convert` reserved a slot per byte of the word in each destination, which
+                // is at least a slot per rank, and so at least a slot per pair
+                unsafe {
+                    ptr::write(
+                        self.entries.add(self.entry_count),
+                        Entry {
+                            rank: (merge >> 32) as u32,
+                            prod: merge as u32,
+                            a: self.previous_symbol,
+                            b: symbol,
+                            l: index.wrapping_sub(1), // u32::MAX at index 0, which is NONE
+                            r: index + 1,             // the final entry is patched in `convert`
+                        },
+                    );
+                    // the key is written whatever the rank, and the count only moves on when the
+                    // pair does merge, so an unmergeable pair leaves its slot to the next one
+                    ptr::write(
+                        self.cold.add(self.cold_count),
+                        (merge & RANK_MASK) | index as u64,
+                    );
                 }
+                self.entry_count += 1;
+                self.cold_count += (merge != u64::MAX) as usize;
             }
         }
         self.previous_symbol = symbol;
         if MULTIPASS {
-            self.symbols.push(symbol);
+            // SAFETY: as above, a slot was reserved per byte of the word
+            unsafe { ptr::write(self.symbols.add(self.symbol_count), symbol) };
+            self.symbol_count += 1;
         }
     }
 }
@@ -67,19 +91,23 @@ impl PipelineBPE {
         symbols.clear();
         entries.clear();
         cold.clear();
-        // a word never has more ranks than bytes, so one reserve covers every push
-        if MULTIPASS {
-            symbols.reserve(sequence.len());
-        } else {
-            entries.reserve(sequence.len());
-            cold.reserve(sequence.len());
+        // a word never has more ranks than bytes, so one reserve covers every write in `push`
+        let room = sequence.len();
+        symbols.reserve(room);
+        if !MULTIPASS {
+            entries.reserve(room);
+            cold.reserve(room);
         }
         let mut sink = SymbolSink::<MULTIPASS> {
-            symbols,
-            entries,
-            cold,
+            symbols: symbols.as_mut_ptr(),
+            entries: entries.as_mut_ptr(),
+            cold: cold.as_mut_ptr(),
+            symbol_count: 0,
+            entry_count: 0,
+            cold_count: 0,
             previous_symbol: u32::MAX,
             lowest_merge: u64::MAX,
+            reserved: PhantomData,
         };
         if self.affixes.is_some() {
             self.convert_affixed(sequence, &mut sink);
@@ -88,8 +116,13 @@ impl PipelineBPE {
         } else {
             self.convert_chars(sequence, &mut sink);
         }
-        let last = sink.previous_symbol;
-        let lowest = sink.lowest_merge;
+        let (last, lowest) = (sink.previous_symbol, sink.lowest_merge);
+        // SAFETY: `push` wrote exactly this many of each, all within the reserves above
+        unsafe {
+            symbols.set_len(sink.symbol_count);
+            entries.set_len(sink.entry_count);
+            cold.set_len(sink.cold_count);
+        }
         if !MULTIPASS {
             match entries.last_mut() {
                 Some(entry) => entry.r = u32::MAX, // NONE: nothing right of the final pair

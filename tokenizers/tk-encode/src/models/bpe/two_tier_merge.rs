@@ -43,40 +43,6 @@ pub fn two_tier_queue_merge(
     to_merge: &mut Vec<u32>,
     merge_scratch: &mut MergeScratch,
 ) {
-    if to_merge.len() >= 2 {
-        let a = to_merge[0];
-        let b = to_merge[1];
-        let val = tables.get_value(&a, &b);
-        let (rank, prod) = ((val >> 32) as u32, val as u32);
-        let l = NONE;
-        let r = 2u32;
-        merge_scratch.entries.push(Entry {
-            rank,
-            prod,
-            a,
-            b,
-            l,
-            r,
-        });
-
-        for id in 1..to_merge.len() - 1 {
-            // we need to create the entries
-            let a = to_merge[id];
-            let b = to_merge[id + 1];
-            let val = tables.get_value(&a, &b);
-            let (rank, prod) = ((val >> 32) as u32, val as u32);
-            let l = id as u32 - 1;
-            let r = id as u32 + 1;
-            merge_scratch.entries.push(Entry {
-                rank,
-                prod,
-                a,
-                b,
-                l,
-                r,
-            })
-        }
-    }
     merge_scratch.cold = to_merge
         .iter()
         .enumerate()
