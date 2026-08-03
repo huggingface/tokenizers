@@ -30,18 +30,22 @@ struct Entry {
 const DEAD_RANK: u32 = u32::MAX;
 const NONE: u32 = u32::MAX;
 
-struct MergeScratch {
-    entries: Vec<Entry>,
-    cold: Vec<u32>,
-    hot: Vec<u32>,
+pub struct MergeScratch {
+    pub entries: Vec<Entry>,
+    pub cold: Vec<u64>, // even though the values stored can be u32, this makes it simpler to pack the
+    // rank and the entry index
+    pub hot: Vec<u64>,
 }
 
 pub fn two_tier_queue_merge(
-    tables: BpeTables,
+    tables: &BpeTables,
     to_merge: &mut Vec<u32>,
-    mut global_min: u64,
-    merge_scratch: MergeScratch,
+    merge_scratch: &mut MergeScratch,
 ) {
-    let sorted_cold = to_merge.sort_unstable();
+    merge_scratch.cold = to_merge
+        .iter()
+        .enumerate()
+        .map(|(i, n)| (*n as u64) << 32 | i as u64)
+        .collect();
     todo!()
 }

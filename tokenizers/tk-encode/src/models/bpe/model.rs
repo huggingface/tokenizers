@@ -1,7 +1,7 @@
 use super::{super::OrderedVocabIter, Error, Pair, Word};
 use crate::models::bpe::Merge;
 use crate::models::bpe::tables::BpeTables;
-use crate::models::bpe::two_tier_merge::{build_byte_to_gate, two_tier_queue_merge};
+use crate::models::bpe::two_tier_merge::{MergeScratch, build_byte_to_gate, two_tier_queue_merge};
 use crate::models::bpe::word_cache::WordCache;
 use crate::pipeline::{self, ModelScratch, PipelineToken};
 use crate::tokenizer::{Model, Result, Token};
@@ -780,33 +780,40 @@ impl PipelineBPE {
     // We start by converting the sequence to the corresponding token id of each char/byte depending
     // on the settings. Tokenizers that use bytelevel pretokenizer work on bytes, others on chars.
     // TODO: this also means we are iterating twice on the string. Her and then on merge_all
-    fn merge_word(
-        &self,
-        sequence: &str,
-        merge_queue: &mut QuaternaryHeap<Merge>,
-        skip: &mut Vec<Merge>,
-        word: &mut Word,
-    ) {
+    fn merge_word(&self, sequence: &str, merge_scratch: &mut MergeScratch) {
         let mut to_merge = Vec::new();
         // 1. we convert the codepoint to internal ID (rank)
         let mut global_min = 0u64;
         let mut past_rank = u32::MAX;
-        let mut algo: u16 = 0;
-        for c in sequence.chars() {
-            algo = self.byte_to_mode[(c as u8) as usize];
-            let rank = self
-                .tables
-                .fold
-                .get(c as usize)
-                .unwrap_or(&self.tables.non_bmp[&c]);
-            // we compute the min rank as this will be the first merge we'll do
-            let merge_rank = self.tables.get_value(&past_rank, &rank);
-            global_min = std::cmp::min(global_min, merge_rank);
-            past_rank = *rank;
-            to_merge.push(*rank);
+        let algo: u16 = self.byte_to_mode[sequence.as_bytes()[0] as usize];
+
+        // TODO: we actually should not cast to chars, this will be replaced
+        if sequence.len() > algo as usize {
+            for c in sequence.chars() {
+                let rank = self
+                    .tables
+                    .fold
+                    .get(c as usize)
+                    .unwrap_or(&self.tables.non_bmp[&c]);
+                to_merge.push(*rank);
+            }
+
+            two_tier_queue_merge(&self.tables, &mut to_merge, merge_scratch);
+        } else {
+            for c in sequence.chars() {
+                let rank = self
+                    .tables
+                    .fold
+                    .get(c as usize)
+                    .unwrap_or(&self.tables.non_bmp[&c]);
+                // we compute the min rank as this will be the first merge we'll do
+                let merge_rank = self.tables.get_value(&past_rank, &rank);
+                global_min = std::cmp::min(global_min, merge_rank);
+                past_rank = *rank;
+                to_merge.push(*rank);
+            }
+            self.multipass_merge(&mut to_merge, global_min);
         }
-        two_tier_queue_merge(&self.tables, to_merge, merge_scratch);
-        self.multipass_merge(&mut to_merge, global_min);
         // Finally, we use the unmap
     }
 
