@@ -10,6 +10,11 @@
 //! pre-tokenization. The legacy side materializes a `String` and offsets per token while the
 //! pipeline side emits ids only, which flatters the pipeline by whatever that allocation costs.
 //!
+//! `{model}-{corpus}-merge` isolates the model stage instead: one pre-token at a time, taken from
+//! the model's own pre-tokenizer. Each side gets the form its own design expects -- with ByteLevel
+//! the legacy model reads the remapped string its pre-tokenizer produces, while the current model
+//! reads the original slice at the same offsets and folds that remap into conversion.
+//!
 //! Corpora beyond english/japanese live in `../data/corpora` (see `CORPORA`); missing files are
 //! skipped, as are models that are neither in `../data` nor reachable on the hub.
 
@@ -21,7 +26,10 @@ use std::hint::black_box;
 use criterion::{BenchmarkId, Criterion, Throughput};
 use tk_encode::Tokenizer;
 use tk_encode::models::ModelWrapper;
-use tk_encode::pipeline::PipelineTokenizer;
+use tk_encode::pipeline::{Model as PipelineModelTrait, PipelineModel, PipelineTokenizer};
+use tk_encode::tokenizer::{
+    Model as LegacyModelTrait, OffsetReferential, OffsetType, PreTokenizedString, PreTokenizer,
+};
 use tk_encode::utils::parallelism::set_parallelism;
 
 /// Local `tokenizer.json`s.
@@ -102,6 +110,90 @@ fn pair(name: &str, path: &str, cache: bool) -> Option<(Tokenizer, PipelineToken
         }
     };
     Some((oracle, pipeline))
+}
+
+/// Both forms of one real pre-tokenization, i.e. what each engine's model is actually handed.
+/// `.0` is the model's own pre-tokenizer output -- with ByteLevel that string has already been
+/// remapped bytes->unicode, which is the form the legacy model looks up. `.1` is the original slice
+/// at the same offsets, which is what the current model takes, because it does that remap itself.
+fn model_inputs(oracle: &Tokenizer, text: &str) -> Vec<(String, String)> {
+    let Some(pre_tokenizer) = oracle.get_pre_tokenizer() else {
+        return vec![(text.to_string(), text.to_string())];
+    };
+    let mut pre_tokenized = PreTokenizedString::from(text);
+    if pre_tokenizer.pre_tokenize(&mut pre_tokenized).is_err() {
+        return vec![];
+    }
+    pre_tokenized
+        .get_splits(OffsetReferential::Original, OffsetType::Byte)
+        .into_iter()
+        .filter(|(piece, offsets, _)| !piece.is_empty() && offsets.1 > offsets.0)
+        .map(|(piece, offsets, _)| (piece.to_string(), text[offsets.0..offsets.1].to_string()))
+        .collect()
+}
+
+/// The model stage alone: legacy `BPE::tokenize` against the current
+/// `PipelineBPE::tokenize_pipeline`, one pre-token at a time, straight from the model's own
+/// pre-tokenizer. Caches off on both sides, so this is conversion + merge and nothing else.
+fn bench_merge_stage(c: &mut Criterion) {
+    for (tok_name, tok_path) in TOKENIZERS.iter().chain(HUB_TOKENIZERS.iter()).copied() {
+        let Some((oracle, pipeline)) = pair(tok_name, tok_path, false) else {
+            continue;
+        };
+        let ModelWrapper::BPE(legacy) = oracle.get_model() else {
+            continue;
+        };
+        let PipelineModel::BPE(current) = pipeline.get_model() else {
+            continue;
+        };
+
+        for (corpus, path) in CORPORA {
+            let Ok(text) = std::fs::read_to_string(path) else {
+                continue;
+            };
+            let mut end = CORPUS_BYTES.min(text.len());
+            while end > 0 && !text.is_char_boundary(end) {
+                end -= 1;
+            }
+            let inputs = model_inputs(&oracle, &text[..end]);
+            let total_bytes: u64 = inputs.iter().map(|(_, raw)| raw.len() as u64).sum();
+            if total_bytes == 0 {
+                continue;
+            }
+
+            let mut group = c.benchmark_group(format!("{tok_name}-{corpus}-merge"));
+            group.throughput(Throughput::Bytes(total_bytes));
+            group.bench_with_input(BenchmarkId::new("legacy", "pretoken"), &inputs, |b, inputs| {
+                b.iter(|| {
+                    for (pretokenized, _) in inputs {
+                        black_box(legacy.tokenize(black_box(pretokenized.as_str())).unwrap());
+                    }
+                })
+            });
+            group.bench_with_input(
+                BenchmarkId::new("pipeline", "pretoken"),
+                &inputs,
+                |b, inputs| {
+                    let mut scratch = current.init_scratch();
+                    let mut output = Vec::new();
+                    b.iter(|| {
+                        for (_, raw) in inputs {
+                            output.clear();
+                            current
+                                .tokenize_pipeline(
+                                    black_box(raw.as_str()),
+                                    &mut scratch,
+                                    &mut output,
+                                )
+                                .unwrap();
+                            black_box(output.as_slice());
+                        }
+                    })
+                },
+            );
+            group.finish();
+        }
+    }
 }
 
 fn bench_pipeline(c: &mut Criterion) {
@@ -187,6 +279,6 @@ criterion_group! {
         .sample_size(10)
         .measurement_time(std::time::Duration::from_secs(3))
         .warm_up_time(std::time::Duration::from_millis(500));
-    targets = bench_pipeline
+    targets = bench_merge_stage, bench_pipeline
 }
 criterion_main!(benches);
