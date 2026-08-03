@@ -92,7 +92,7 @@ bench-baseline = [
 ]
 
 [dev-dependencies]
-criterion = "0.8.2"
+criterion = "0.6"
 tempfile = "3.10"
 assert_approx_eq = "1.1"
 tracing = "0.1"

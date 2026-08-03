@@ -10,7 +10,6 @@ mod legacy_serialization;
 pub mod legacy_word;
 mod merge_hot_cold_queue;
 mod merge_multipass;
-mod word_cache;
 
 #[cfg(test)]
 mod tests;

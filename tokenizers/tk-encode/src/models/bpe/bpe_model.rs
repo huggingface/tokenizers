@@ -36,7 +36,6 @@ pub struct PipelineBPE {
     pub(super) affixes: Option<Affixes>,
     pub(super) vocab: BucketVocabStore,
     ignore_merges: bool,
-    cache_capacity: Option<usize>,
     byte_to_mode: [u16; 256],
 }
 
@@ -140,7 +139,6 @@ impl PipelineBPE {
             affixes,
             ignore_merges,
             vocab,
-            cache_capacity: model.cache.map(|c| c.capacity).filter(|&c| c > 0),
             byte_to_mode: build_byte_to_gate(),
         })
     }
