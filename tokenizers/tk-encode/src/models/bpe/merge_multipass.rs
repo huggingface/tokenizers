@@ -155,9 +155,6 @@ struct MergeOnceOutput {
 ///
 /// Returns the next pass's target (`u64::MAX` when no pair in the rewritten word merges), and the number of symbols written.
 /// Symbols past `len` are leftovers of earlier passes and should be truncated.
-///
-/// `&mut [u32]` rather than `&mut Vec<u32>` so the length is a local and the reads can have
-/// their bounds checks removed.
 fn merge_once(
     tables: &BpeTables,
     symbols: &mut [u32],
@@ -165,6 +162,10 @@ fn merge_once(
     target_merge: u64,
     batched: bool,
 ) -> MergeOnceOutput {
+    // Resliced so the loop bound and the slice length are the same value. Without this the
+    // compiler cannot connect `len` to the length of `symbols` and keeps a bounds check on
+    // every read and write of the sweep.
+    let symbols = &mut symbols[..len];
     let mut state = MergeState::new(target_merge, batched);
     let mut known_pair_value = None;
     while state.read_cursor + 1 < len {

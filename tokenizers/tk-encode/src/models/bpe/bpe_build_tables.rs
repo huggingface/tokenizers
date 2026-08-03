@@ -492,6 +492,7 @@ impl BpeTables {
             internal_id_map,
         )
     }
+    #[inline(always)]
     pub fn get_value(&self, a: &u32, b: &u32) -> u64 {
         if (a | b) < 512 {
             let slot = self.top_index.at((a << 9 | b) as usize);
