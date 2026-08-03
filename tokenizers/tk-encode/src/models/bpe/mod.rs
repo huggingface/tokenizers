@@ -1,12 +1,19 @@
 //! [Byte Pair Encoding](https://www.aclweb.org/anthology/P16-1162/) model.
 use std::{iter, mem};
 mod bytelevel_folding;
+mod convert;
 mod model;
+mod multipass;
+mod pipeline_bpe;
+mod scratch;
 mod serialization;
 mod tables;
 mod two_tier_merge;
 pub mod word;
 mod word_cache;
+
+#[cfg(test)]
+mod tests;
 
 pub type Pair = (u32, u32);
 
@@ -86,4 +93,6 @@ where
 
 // Re-export
 pub use model::*;
+pub use pipeline_bpe::*;
+pub use scratch::*;
 pub use word::*;
