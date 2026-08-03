@@ -2,42 +2,82 @@
 //! `two_tier_merge`.
 use crate::models::bpe::pipeline_bpe::{AFFIX_BUF, Atoms, PipelineBPE};
 use crate::models::bpe::tables::{At, BpeTables, UTF8_LEN};
+use crate::models::bpe::two_tier_merge::Entry;
 
-/// Collects the converted ranks of a sequence.`TRACK_MIN` triggers
-/// lowest-ranked adjacent pair computation as it will be the first merge multipass applies.
-struct SymbolSink<'a, const TRACK_MIN: bool> {
+/// Collects the converted ranks of a sequence into whatever the engine that merges it needs.
+/// `MULTIPASS` picks which: a flat rank array plus the lowest-ranked adjacent pair, which is the
+/// first merge multipass applies, or the pair entries and cold queue keys built as the ranks are
+/// produced, so the two-tier queue needs no intermediate array to read back.
+///
+/// Either way the pair is looked up exactly once: both engines want that same value, multipass for
+/// the minimum and the queue for the pair's rank and product.
+struct SymbolSink<'a, const MULTIPASS: bool> {
     symbols: &'a mut Vec<u32>,
+    entries: &'a mut Vec<Entry>,
+    cold: &'a mut Vec<u64>,
     previous_symbol: u32,
     lowest_merge: u64,
 }
 
-impl<const TRACK_MIN: bool> SymbolSink<'_, TRACK_MIN> {
+impl<const MULTIPASS: bool> SymbolSink<'_, MULTIPASS> {
     // inlining here is very important
     #[inline(always)]
     fn push(&mut self, tables: &BpeTables, symbol: u32) {
-        if TRACK_MIN && self.previous_symbol != u32::MAX {
+        if self.previous_symbol != u32::MAX {
             let merge = tables.get_value(&self.previous_symbol, &symbol);
-            if merge < self.lowest_merge {
-                self.lowest_merge = merge;
+            if MULTIPASS {
+                if merge < self.lowest_merge {
+                    self.lowest_merge = merge;
+                }
+            } else {
+                let index = self.entries.len() as u32;
+                self.entries.push(Entry {
+                    rank: (merge >> 32) as u32,
+                    prod: merge as u32,
+                    a: self.previous_symbol,
+                    b: symbol,
+                    l: index.wrapping_sub(1), // u32::MAX at index 0, which is NONE
+                    r: index + 1,             // the final entry is patched in `convert`
+                });
+                if merge != u64::MAX {
+                    self.cold.push((merge & 0xFFFF_FFFF_0000_0000) | index as u64);
+                }
             }
         }
         self.previous_symbol = symbol;
-        self.symbols.push(symbol);
+        if MULTIPASS {
+            self.symbols.push(symbol);
+        }
     }
 }
 
 impl PipelineBPE {
-    /// Converts one pretoken to internal IDs, returning the lowest-ranked adjacent pair when `TRACK_MIN`
-    /// and `u64::MAX` otherwise.
-    pub(super) fn convert<const TRACK_MIN: bool>(
+    /// Converts one pretoken to internal IDs, returning the lowest-ranked adjacent pair when
+    /// `MULTIPASS` and `u64::MAX` otherwise.
+    ///
+    /// Without `MULTIPASS` a pretoken of fewer than two ranks has no pairs and so no entries; its
+    /// single rank is left in `symbols` instead, and the queue engine sees an empty entry list.
+    pub(super) fn convert<const MULTIPASS: bool>(
         &self,
         sequence: &str,
         symbols: &mut Vec<u32>,
+        entries: &mut Vec<Entry>,
+        cold: &mut Vec<u64>,
     ) -> u64 {
         symbols.clear();
-        symbols.reserve(sequence.len()); // a word never has more symbols than bytes
-        let mut sink = SymbolSink::<TRACK_MIN> {
+        entries.clear();
+        cold.clear();
+        // a word never has more ranks than bytes, so one reserve covers every push
+        if MULTIPASS {
+            symbols.reserve(sequence.len());
+        } else {
+            entries.reserve(sequence.len());
+            cold.reserve(sequence.len());
+        }
+        let mut sink = SymbolSink::<MULTIPASS> {
             symbols,
+            entries,
+            cold,
             previous_symbol: u32::MAX,
             lowest_merge: u64::MAX,
         };
@@ -48,13 +88,22 @@ impl PipelineBPE {
         } else {
             self.convert_chars(sequence, &mut sink);
         }
-        sink.lowest_merge
+        let last = sink.previous_symbol;
+        let lowest = sink.lowest_merge;
+        if !MULTIPASS {
+            match entries.last_mut() {
+                Some(entry) => entry.r = u32::MAX, // NONE: nothing right of the final pair
+                None if last != u32::MAX => symbols.push(last),
+                None => {}
+            }
+        }
+        lowest
     }
 
-    fn convert_bytes<const TRACK_MIN: bool>(
+    fn convert_bytes<const MULTIPASS: bool>(
         &self,
         bytes: &[u8],
-        sink: &mut SymbolSink<'_, TRACK_MIN>,
+        sink: &mut SymbolSink<'_, MULTIPASS>,
     ) {
         let byte_symbols = &self.tables.byte_internal[..];
         let mut pos = 0usize;
@@ -88,10 +137,10 @@ impl PipelineBPE {
 
     /// Character-level conversion, for models without a byte-level pretokenizer: every vocab token
     /// of one character has a fold entry, so there is no byte decomposition to do here.
-    fn convert_chars<const TRACK_MIN: bool>(
+    fn convert_chars<const MULTIPASS: bool>(
         &self,
         sequence: &str,
-        sink: &mut SymbolSink<'_, TRACK_MIN>,
+        sink: &mut SymbolSink<'_, MULTIPASS>,
     ) {
         let Atoms::Chars {
             byte_fallback,
@@ -133,10 +182,10 @@ impl PipelineBPE {
     /// character but the first, `end_of_word_suffix` on the last. The decorated form is assembled
     /// in a stack buffer and looked up in the vocab, which costs a hash per character -- these
     /// models are rare enough that it is not worth a second fold table to avoid it.
-    fn convert_affixed<const TRACK_MIN: bool>(
+    fn convert_affixed<const MULTIPASS: bool>(
         &self,
         sequence: &str,
-        sink: &mut SymbolSink<'_, TRACK_MIN>,
+        sink: &mut SymbolSink<'_, MULTIPASS>,
     ) {
         let Some(affixes) = self.affixes.as_ref() else {
             return;
@@ -173,10 +222,10 @@ impl PipelineBPE {
     }
 
     /// A character with no atom of its own: bytes if the model has `byte_fallback`, else `unk`.
-    fn push_unknown<const TRACK_MIN: bool>(
+    fn push_unknown<const MULTIPASS: bool>(
         &self,
         character: char,
-        sink: &mut SymbolSink<'_, TRACK_MIN>,
+        sink: &mut SymbolSink<'_, MULTIPASS>,
     ) {
         match &self.atoms {
             Atoms::Bytes { .. } => {
