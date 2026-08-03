@@ -128,7 +128,12 @@ impl MphfMap {
 pub(crate) struct BpeTables {
     pub unmap: Box<[u32]>,         // unmap[internal_id] -> external_id
     pub pair_table: MphfMap, // MPHF! because memory efficiency + bitwise makes check not costly
-    pub top_merges: Box<[u64]>, // top 512 by 512 merges, same packed value as the pair table
+    /// The 512x512 grid of hottest pairs, kept directly indexed so a lookup is one load, but with
+    /// a u16 index per cell instead of the value inline: only 3.5-5.7% of cells hold a merge, so
+    /// 2 MiB of u64s becomes 512 KB of indices plus 8 B per live entry. A miss is still one load, a
+    /// hit is two.
+    pub top_index: Box<[u16]>,
+    pub top_values: Box<[u64]>,
     pub fold: SparseFold,    // codepoint in vocab to internal id, sparse: see SparseFold
     pub byte_internal: [u32; 256], // byte -> internal id, for characters that do not fold
 }
@@ -410,18 +415,35 @@ impl BpeTables {
             }
         }
         let unmap = unmap.into_boxed_slice();
-        let top_merges = top_merges.into_boxed_slice();
+        // compact: cells keep a u16 index into the live values
+        let live = 512 * 512 - top_merges.iter().filter(|c| **c == u64::MAX).count();
+        assert!(
+            live < u16::MAX as usize,
+            "{live} live grid entries exceed a u16 index; widen top_index to u32"
+        );
+        let mut top_index = vec![u16::MAX; 512 * 512];
+        let mut top_values = Vec::with_capacity(live);
+        for (slot, &value) in top_merges.iter().enumerate() {
+            if value != u64::MAX {
+                top_index[slot] = top_values.len() as u16;
+                top_values.push(value);
+            }
+        }
+        drop(top_merges);
+        let top_index = top_index.into_boxed_slice();
+        let top_values = top_values.into_boxed_slice();
         let pair_table = MphfMap::build(keys, values);
         info!(
             "bpe tables: {base} alphabet + {} products (unique merges), {} merge in the dense grid, {dropped} merges dropped",
             products.len(),
-            512 * 512 - top_merges.iter().filter(|c| **c == u64::MAX).count()
+            top_values.len()
         );
         (
             Self {
                 unmap,
                 pair_table,
-                top_merges,
+                top_index,
+                top_values,
                 fold,
                 byte_internal,
             },
@@ -430,7 +452,12 @@ impl BpeTables {
     }
     pub fn get_value(&self, a: &u32, b: &u32) -> u64 {
         if (a | b) < 512 {
-            return self.top_merges[(a << 9 | b) as usize];
+            let slot = self.top_index.at((a << 9 | b) as usize);
+            return if slot == u16::MAX {
+                u64::MAX
+            } else {
+                self.top_values.at(slot as usize)
+            };
         } else {
             return self.pair_table.get(((*a as u64) << 32) | *b as u64);
         }
@@ -530,9 +557,9 @@ mod test {
         // so the alphabet is a,b and the ranks are ab and aba.
         // Both operands are < 512, so the merge lives in the dense grid, not the MPHF.
         // grid and pair table share the value layout, so both halves have to be right
-        assert_eq!(tables.top_merges[1], 2u64); // (a, b) -> ab: rank 0, internal 2
-        assert_eq!(tables.top_merges[3 << 9], 1u64 << 32 | 3); // (aba, a) -> aba: rank 1, internal 3
-        assert_eq!(tables.top_merges[2], u64::MAX); // (a, c) is not a merge
+        assert_eq!(tables.get_value(&0, &1), 2u64); // (a, b) -> ab: rank 0, internal 2
+        assert_eq!(tables.get_value(&3, &0), 1u64 << 32 | 3); // (aba, a) -> aba: rank 1, internal 3
+        assert_eq!(tables.get_value(&0, &2), u64::MAX); // (a, c) is not a merge
         assert_eq!(tables.pair_table.get(1u64), u64::MAX); // and nowhere else
         assert_eq!(&*tables.unmap, &[0, 1, 2, 3]);
     }
