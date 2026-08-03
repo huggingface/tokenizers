@@ -5,13 +5,8 @@
 use rayon::iter::IterBridge;
 use rayon::prelude::*;
 use rayon_cond::CondIterator;
-use std::sync::Arc;
-use std::sync::Mutex;
-use std::sync::MutexGuard;
-use std::sync::TryLockError;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicU8;
-use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 
 // Re-export rayon current_num_threads
@@ -25,64 +20,6 @@ static USED_PARALLELISM: AtomicBool = AtomicBool::new(false);
 
 /// TODO: deprecate
 static PARALLELISM: AtomicU8 = AtomicU8::new(0);
-
-static NUM_THREADS: AtomicUsize = AtomicUsize::new(1);
-static POOL_GEN: AtomicUsize = AtomicUsize::new(0);
-
-#[cfg(unix)]
-fn register_fork_handler() {
-    static REGISTERED: std::sync::Once = std::sync::Once::new();
-    REGISTERED.call_once(|| {
-        unsafe extern "C" fn child_after_fork() {
-            POOL_GEN.fetch_add(1, Ordering::SeqCst);
-        }
-        unsafe {
-            let _ = libc::pthread_atfork(None, None, Some(child_after_fork));
-        }
-    });
-}
-
-#[cfg(not(unix))]
-fn register_fork_handler() {}
-
-static CELL: Mutex<Option<(Arc<rayon::ThreadPool>, usize)>> = Mutex::new(None);
-
-fn lock() -> Option<MutexGuard<'static, Option<(Arc<rayon::ThreadPool>, usize)>>> {
-    match CELL.try_lock() {
-        Ok(g) => Some(g),
-        Err(TryLockError::Poisoned(p)) => Some(p.into_inner()),
-        Err(TryLockError::WouldBlock) => None,
-    }
-}
-
-fn pool() -> Option<Arc<rayon::ThreadPool>> {
-    register_fork_handler();
-
-    let generation = POOL_GEN.load(Ordering::Acquire);
-    if let Some(guard) = lock()
-        && let Some((pool, version)) = guard.as_ref()
-        && generation == *version
-    {
-        return Some(pool.clone());
-    }
-
-    let pool = rayon::ThreadPoolBuilder::new()
-        .num_threads(num_threads())
-        .thread_name(|i| format!("tk-encode-{i}"))
-        .build()
-        .ok()?;
-    let pool = Arc::new(pool);
-    if let Some(mut guard) = lock() {
-        *guard = Some((pool.clone(), generation));
-    }
-    Some(pool)
-}
-
-fn num_threads() -> usize {
-    std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(1)
-}
 
 /// Check if the TOKENIZERS_PARALLELISM env variable has been explicitly set
 pub fn is_parallelism_configured() -> bool {

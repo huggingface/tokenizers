@@ -51,14 +51,6 @@ impl Symbol {
         self.len += other.len;
         self.next = other.next;
     }
-
-    pub fn id(&self) -> u32 {
-        self.c
-    }
-
-    pub fn add_len(&mut self, rhs: usize) {
-        self.len += rhs;
-    }
 }
 
 #[derive(Clone, Default)]
@@ -292,10 +284,6 @@ impl Word {
             pos = new_pos;
             offset
         })
-    }
-
-    pub(crate) fn last_mut(&mut self) -> Option<&mut Symbol> {
-        self.symbols.last_mut()
     }
 }
 

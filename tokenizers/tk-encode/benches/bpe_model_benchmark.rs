@@ -99,11 +99,10 @@ fn load(name: &str, path: &str) -> Option<Tokenizer> {
 /// Fresh tokenizer with the word cache in the requested state, plus the pipeline built from it.
 fn pair(name: &str, path: &str, cache: bool) -> Option<(Tokenizer, PipelineTokenizer)> {
     let mut oracle = load(name, path)?;
-    if !cache {
-        if let ModelWrapper::BPE(bpe) = oracle.get_model_mut() {
+    if !cache
+        && let ModelWrapper::BPE(bpe) = oracle.get_model_mut() {
             bpe.resize_cache(0);
         }
-    }
     let pipeline = match PipelineTokenizer::try_from(&oracle) {
         Ok(p) => p,
         Err(e) => {
@@ -198,13 +197,17 @@ fn bench_merge_stage(c: &mut Criterion) {
 
             let mut group = c.benchmark_group(format!("{tok_name}-{corpus}-merge"));
             group.throughput(Throughput::Bytes(total_bytes));
-            group.bench_with_input(BenchmarkId::new("legacy", "pretoken"), &inputs, |b, inputs| {
-                b.iter(|| {
-                    for (pretokenized, _) in inputs {
-                        black_box(legacy.tokenize(black_box(pretokenized.as_str())).unwrap());
-                    }
-                })
-            });
+            group.bench_with_input(
+                BenchmarkId::new("legacy", "pretoken"),
+                &inputs,
+                |b, inputs| {
+                    b.iter(|| {
+                        for (pretokenized, _) in inputs {
+                            black_box(legacy.tokenize(black_box(pretokenized.as_str())).unwrap());
+                        }
+                    })
+                },
+            );
             group.bench_with_input(
                 BenchmarkId::new("pipeline", "pretoken"),
                 &inputs,

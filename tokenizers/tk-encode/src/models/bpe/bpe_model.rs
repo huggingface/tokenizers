@@ -4,7 +4,6 @@
 use crate::models::bpe::bpe_build_tables::BpeTables;
 use crate::models::bpe::bpe_scratch::BpeScratch;
 use crate::models::bpe::legacy_model::BPE;
-use crate::models::bpe::legacy_word::Word;
 use crate::models::bpe::merge_hot_cold_queue::{
     MergeScratch, build_byte_to_gate, two_tier_queue_merge,
 };
@@ -13,7 +12,6 @@ use crate::pipeline::{self, PipelineToken};
 use crate::tokenizer::Result;
 use crate::utils::byte_level::{self};
 use crate::vocab::bucket_vocab_store::BucketVocabStore;
-use dary_heap::QuaternaryHeap;
 
 /// Set only for the few models that decorate their atoms: `end_of_word_suffix` (CLIP, openai-gpt,
 /// XLM) and `continuing_subword_prefix`. A character's atom then depends on its position in the
@@ -39,10 +37,11 @@ pub struct PipelineBPE {
     byte_to_mode: [u16; 256],
 }
 
+// A `PipelineBPE` holds exactly one `Atoms`, so `Chars`' 1 KB byte-fallback table costs nothing.
+#[allow(clippy::large_enum_variant)]
 pub(super) enum Atoms {
-    Bytes {
-        byte_to_id: [u32; 256],
-    },
+    /// The atoms are the 256 bytes; the symbol for each lives in `BpeTables::byte_internal`.
+    Bytes,
     Chars {
         byte_fallback: Option<[u32; 256]>,
         unk_token: Option<u32>,
@@ -87,13 +86,13 @@ impl PipelineBPE {
         let (vocab, atoms) = if with_byte_level {
             let mut vocab = BucketVocabStore::build(vocab.byte_content());
             vocab = byte_level::transform_vocab(vocab);
-            let mut byte_to_id = [0u32; 256];
+            // every byte has to be an atom, or a word containing it could not be encoded at all
             for b in 0u8..=255 {
-                byte_to_id[b as usize] = vocab
+                vocab
                     .get_bytes(&[b])
                     .ok_or(Error::ByteAtomOutOfVocabulary(b))?;
             }
-            (vocab, Atoms::Bytes { byte_to_id })
+            (vocab, Atoms::Bytes)
         } else {
             let vocab = BucketVocabStore::build(vocab.byte_content());
             let unk_token = if let Some(unk_str) = unk_token {
@@ -213,9 +212,6 @@ impl pipeline::Model for PipelineBPE {
         Self::Scratch {
             to_merge: Vec::with_capacity(64),
             merge: MergeScratch::default(),
-            merge_queue: QuaternaryHeap::with_capacity(64),
-            word: Word::with_capacity(64),
-            skip: Vec::new(),
         }
     }
 }

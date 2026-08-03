@@ -2,7 +2,7 @@
 use super::*;
 use crate::models::OrderedVocabIter;
 use crate::pipeline;
-use crate::tokenizer::{Model, Result, Token};
+use crate::tokenizer::{Model, Token};
 use std::io::Write;
 
 use tempfile::NamedTempFile;

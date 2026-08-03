@@ -81,7 +81,7 @@ impl PipelineBPE {
         };
         if self.affixes.is_some() {
             self.convert_affixed(sequence, &mut sink);
-        } else if matches!(self.atoms, Atoms::Bytes { .. }) {
+        } else if matches!(self.atoms, Atoms::Bytes) {
             self.convert_bytes(sequence.as_bytes(), &mut sink);
         } else {
             self.convert_chars(sequence, &mut sink);
@@ -225,7 +225,7 @@ impl PipelineBPE {
         sink: &mut SymbolSink<'_, MULTIPASS>,
     ) {
         match &self.atoms {
-            Atoms::Bytes { .. } => {
+            Atoms::Bytes => {
                 let mut buf = [0u8; 4];
                 for &byte in character.encode_utf8(&mut buf).as_bytes() {
                     sink.push(&self.tables, self.tables.byte_internal.at(byte as usize));

@@ -110,7 +110,7 @@ impl MphfMap {
             let val = values[pos];
             entries[slot] = Slot {
                 key: (*a as u64) << 32 | *b as u64,
-                val: val,
+                val,
             };
         }
 
@@ -136,9 +136,9 @@ impl MphfMap {
         let slot = self.mphf.index(&self.hasher.hash_one(key));
         let e = &self.entries[slot];
         if e.key == key {
-            return e.val;
+            e.val
         } else {
-            return u64::MAX;
+            u64::MAX
         }
     }
 }
@@ -373,7 +373,7 @@ impl BpeTables {
         // them, not the duplicates. We compute the lowest rank of the different merge that give
         // the same product.
         let mut lowest_rank: AHashMap<u32, u32> = AHashMap::new();
-        for (_, (rank, merge_id)) in merges.iter() {
+        for (rank, merge_id) in merges.values() {
             let slot = lowest_rank.entry(*merge_id).or_insert(*rank);
             *slot = cmp::min(*slot, *rank);
         }
@@ -447,8 +447,8 @@ impl BpeTables {
                 internal <= ID_MASK,
                 "product id {internal} overflows the 30-bit id field"
             );
-            let safe = *rank
-                < min_rank_left[internal as usize].min(min_rank_right[internal as usize]);
+            let safe =
+                *rank < min_rank_left[internal as usize].min(min_rank_right[internal as usize]);
             unsafe_merges += usize::from(!safe);
             let value = (*rank as u64) << 32 | if safe { SAFE } else { 0 } | internal;
             // if a and b < 512 -> Dense grid
@@ -499,13 +499,13 @@ impl BpeTables {
     pub fn get_value(&self, a: &u32, b: &u32) -> u64 {
         if (a | b) < 512 {
             let slot = self.top_index.at((a << 9 | b) as usize);
-            return if slot == u16::MAX {
+            if slot == u16::MAX {
                 u64::MAX
             } else {
                 self.top_values.at(slot as usize)
-            };
+            }
         } else {
-            return self.pair_table.get(((*a as u64) << 32) | *b as u64);
+            self.pair_table.get(((*a as u64) << 32) | *b as u64)
         }
     }
 }
@@ -583,7 +583,7 @@ mod test {
             .map(|((a, b), (rank, id))| ((*a, *b), (*rank as u64) << 32 | (*id as u64)))
             .unzip();
         let pair_table = MphfMap::build(keys, values);
-        let value = 1u64 << 32 | 5 as u64;
+        let value = 1u64 << 32 | 5_u64;
         assert_eq!(pair_table.get(1u64 << 32 | 2u64), value);
     }
 

@@ -3,17 +3,11 @@ const GATE_MULTI: u16 = 8;
 const GATE_ASCII: u16 = 24;
 
 pub fn build_byte_to_gate() -> [u16; 256] {
-    let mut b2g = [0u16; 256];
-    for b in 0..256 {
-        if b < 0x80 {
-            b2g[b] = GATE_ASCII;
-        } else {
-            b2g[b] = GATE_MULTI;
-        }
-    }
+    let mut b2g = [GATE_MULTI; 256];
+    b2g[..0x80].fill(GATE_ASCII);
     // A ByteLevel pre-tokenizer hands us the leading space (" word"), so the first byte says
     // nothing about the script of the rest: " <greek>" would read as ASCII and take the long gate.
-    for ws in [b' ', b'\t', b'\n', b'\r'] {
+    for ws in *b" \t\n\r" {
         b2g[ws as usize] = GATE_MULTI;
     }
     b2g
