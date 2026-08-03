@@ -11,6 +11,11 @@ pub fn build_byte_to_gate() -> [u16; 256] {
             b2g[b] = GATE_MULTI;
         }
     }
+    // A ByteLevel pre-tokenizer hands us the leading space (" word"), so the first byte says
+    // nothing about the script of the rest: " <greek>" would read as ASCII and take the long gate.
+    for ws in [b' ', b'\t', b'\n', b'\r'] {
+        b2g[ws as usize] = GATE_MULTI;
+    }
     b2g
 }
 
