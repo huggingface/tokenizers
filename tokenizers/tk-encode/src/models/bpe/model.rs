@@ -1,6 +1,7 @@
 use super::{super::OrderedVocabIter, Error, Pair, Word};
 use crate::models::bpe::Merge;
 use crate::models::bpe::tables::BpeTables;
+use crate::models::bpe::two_tier_merge::{build_byte_to_gate, two_tier_queue_merge};
 use crate::models::bpe::word_cache::WordCache;
 use crate::pipeline::{self, ModelScratch, PipelineToken};
 use crate::tokenizer::{Model, Result, Token};
@@ -684,6 +685,7 @@ pub struct PipelineBPE {
     merges: MergeMap,
     ignore_merges: bool,
     cache_capacity: Option<usize>,
+    byte_to_mode: [u16; 256],
 }
 
 enum Atoms {
@@ -771,6 +773,7 @@ impl PipelineBPE {
             merges,
             vocab,
             cache_capacity: model.cache.map(|c| c.capacity).filter(|&c| c > 0),
+            byte_to_mode: build_byte_to_gate(),
         })
     }
 
@@ -788,7 +791,9 @@ impl PipelineBPE {
         // 1. we convert the codepoint to internal ID (rank)
         let mut global_min = 0u64;
         let mut past_rank = u32::MAX;
+        let mut algo: u16 = 0;
         for c in sequence.chars() {
+            algo = self.byte_to_mode[(c as u8) as usize];
             let rank = self
                 .tables
                 .fold
@@ -800,6 +805,7 @@ impl PipelineBPE {
             past_rank = *rank;
             to_merge.push(*rank);
         }
+        two_tier_queue_merge(&self.tables, to_merge, merge_scratch);
         self.multipass_merge(&mut to_merge, global_min);
         // Finally, we use the unmap
     }
@@ -838,17 +844,13 @@ impl PipelineBPE {
         read_id += 1;
         (running_min, read_id, write_id)
     }
+
     fn multipass_merge(&self, to_merge: &mut Vec<u32>, mut global_min: u64) {
-        const FALLBACK_THRESHOLD: u8 = 8;
-        let mut i = 0u8;
         // in multi-pass, we read and write in the same buffer
         let mut read_id = 0usize;
         let mut write_id = 0usize;
         let mut last_id = to_merge.len() - 1;
         loop {
-            if i == FALLBACK_THRESHOLD {
-                self.two_tier_queue_merge(to_merge, global_min);
-            }
             let mut running_min = u64::MAX;
             (running_min, read_id, write_id) =
                 self.advance_one::<false>(to_merge, read_id, global_min, write_id, running_min);
@@ -856,17 +858,12 @@ impl PipelineBPE {
                 (running_min, read_id, write_id) =
                     self.advance_one::<true>(to_merge, read_id, global_min, write_id, running_min);
             }
-            i += 1;
             last_id = write_id;
             if running_min == u64::MAX {
                 break;
             }
             global_min = running_min;
         }
-    }
-
-    fn two_tier_queue_merge(&self, to_merge: &mut Vec<u32>, mut global_min: u64) {
-        todo!()
     }
 }
 

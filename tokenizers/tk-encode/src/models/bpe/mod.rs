@@ -1,10 +1,10 @@
 //! [Byte Pair Encoding](https://www.aclweb.org/anthology/P16-1162/) model.
 use std::{iter, mem};
-
 mod bytelevel_folding;
 mod model;
 mod serialization;
 mod tables;
+mod two_tier_merge;
 pub mod word;
 mod word_cache;
 
