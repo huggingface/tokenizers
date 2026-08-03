@@ -3,7 +3,7 @@
 //! Each pass rewrites the word in place, merging every occurrence of the lowest-ranked pair and
 //! recording the lowest pair of the result, which becomes the next pass's target. Read and write
 //! cursors share one buffer, so a pass shortens it by one per merge applied.
-use crate::models::bpe::pipeline_bpe::PipelineBPE;
+use crate::models::bpe::bpe_model::PipelineBPE;
 use std::cmp;
 
 impl PipelineBPE {

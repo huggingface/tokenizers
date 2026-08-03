@@ -1,4 +1,4 @@
-use crate::models::bpe::tables::{BpeTables, RANK_MASK};
+use crate::models::bpe::bpe_build_tables::{BpeTables, RANK_MASK};
 const GATE_MULTI: u16 = 8;
 const GATE_ASCII: u16 = 24;
 

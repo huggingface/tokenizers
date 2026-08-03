@@ -4,10 +4,10 @@
 use crate::models::bpe::merge_hot_cold_queue::{
     MergeScratch, build_byte_to_gate, two_tier_queue_merge,
 };
-use crate::models::bpe::model::BPE;
-use crate::models::bpe::scratch::BpeScratch;
-use crate::models::bpe::tables::BpeTables;
-use crate::models::bpe::word::Word;
+use crate::models::bpe::legacy_model::BPE;
+use crate::models::bpe::bpe_scratch::BpeScratch;
+use crate::models::bpe::bpe_build_tables::BpeTables;
+use crate::models::bpe::legacy_word::Word;
 use crate::models::bpe::word_cache::WordCache;
 use crate::models::bpe::{Error, tables::At};
 use crate::pipeline::{self, PipelineToken};
