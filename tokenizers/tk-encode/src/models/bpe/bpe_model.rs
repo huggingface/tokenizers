@@ -151,7 +151,7 @@ impl PipelineBPE {
     pub(super) fn merge_word(
         &self,
         sequence: &str,
-        to_merge: &mut Vec<u32>,
+        symbols: &mut Vec<u32>,
         merge_scratch: &mut MergeScratch,
     ) {
         let gate: u16 = self.byte_to_mode[sequence.as_bytes()[0] as usize];
@@ -160,19 +160,19 @@ impl PipelineBPE {
             // conversion writes the entries and cold keys directly: no intermediate rank array
             self.convert::<false>(
                 sequence,
-                to_merge,
+                symbols,
                 &mut merge_scratch.entries,
                 &mut merge_scratch.cold,
             );
-            two_tier_queue_merge(&self.tables, to_merge, merge_scratch);
+            two_tier_queue_merge(&self.tables, symbols, merge_scratch);
         } else {
             let first_merge = self.convert::<true>(
                 sequence,
-                to_merge,
+                symbols,
                 &mut merge_scratch.entries,
                 &mut merge_scratch.cold,
             );
-            merge_multipass(&self.tables, to_merge, first_merge);
+            merge_multipass(&self.tables, symbols, first_merge);
         }
     }
 }
@@ -198,12 +198,14 @@ impl pipeline::Model for PipelineBPE {
         }
 
         let BpeScratch {
-            to_merge, merge, ..
+            symbols,
+            merge: merge_scratch,
+            ..
         } = scratch;
 
-        self.merge_word(sequence, to_merge, merge);
+        self.merge_word(sequence, symbols, merge_scratch);
         // the merge engines work in internal ids; `unmap` takes them back to the vocab's own ids
-        output.extend(to_merge.iter().map(|&symbol| PipelineToken {
+        output.extend(symbols.iter().map(|&symbol| PipelineToken {
             id: self.tables.unmap.at(symbol as usize),
         }));
 
@@ -212,7 +214,7 @@ impl pipeline::Model for PipelineBPE {
 
     fn init_scratch(&self) -> Self::Scratch {
         Self::Scratch {
-            to_merge: Vec::with_capacity(64),
+            symbols: Vec::with_capacity(64),
             merge: MergeScratch::default(),
         }
     }
