@@ -44,6 +44,12 @@ pub(super) struct ByteLevelFold<'a> {
 }
 
 impl<'a> ByteLevelFold<'a> {
+    /// byte -> internal id of that byte's own token. Needed by the encoder for the fallback path:
+    /// a character that does not fold is emitted as its bytes.
+    pub(super) fn byte_internal(&self) -> [u32; 256] {
+        self.byte_internal
+    }
+
     pub(super) fn new(
         vocab: &AHashMap<String, u32>,
         merges: &'a MergeMap,
