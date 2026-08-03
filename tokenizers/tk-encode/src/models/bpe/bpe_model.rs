@@ -1,15 +1,15 @@
 //! The pipeline BPE model: its tables, how it is built from a [`BPE`], and how a pretokenized
-//! sequence is turned into tokens. The merge engines themselves live in `convert`, `merge_multipass` and
-//! `merge_hot_cold_queue`.
+//! sequence is turned into tokens. The merge engines themselves live in `bpe_pretoken_to_rank`, `merge_multipass`
+//! and `merge_hot_cold_queue`.
+use crate::models::bpe::bpe_build_tables::BpeTables;
+use crate::models::bpe::bpe_scratch::BpeScratch;
+use crate::models::bpe::legacy_model::BPE;
+use crate::models::bpe::legacy_word::Word;
 use crate::models::bpe::merge_hot_cold_queue::{
     MergeScratch, build_byte_to_gate, two_tier_queue_merge,
 };
-use crate::models::bpe::legacy_model::BPE;
-use crate::models::bpe::bpe_scratch::BpeScratch;
-use crate::models::bpe::bpe_build_tables::BpeTables;
-use crate::models::bpe::legacy_word::Word;
 use crate::models::bpe::word_cache::WordCache;
-use crate::models::bpe::{Error, tables::At};
+use crate::models::bpe::{Error, bpe_build_tables::At};
 use crate::pipeline::{self, PipelineToken};
 use crate::tokenizer::Result;
 use crate::utils::byte_level::{self};

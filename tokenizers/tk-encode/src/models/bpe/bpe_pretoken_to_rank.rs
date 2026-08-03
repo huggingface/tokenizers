@@ -1,8 +1,8 @@
 //! Turning a pretokenized word into merge ranks, which are then processed in `merge_multipass` or
 //! `merge_hot_cold_queue`.
-use crate::models::bpe::merge_hot_cold_queue::Entry;
-use crate::models::bpe::bpe_model::{AFFIX_BUF, Atoms, PipelineBPE};
 use crate::models::bpe::bpe_build_tables::{At, BpeTables, RANK_MASK, UTF8_LEN};
+use crate::models::bpe::bpe_model::{AFFIX_BUF, Atoms, PipelineBPE};
+use crate::models::bpe::merge_hot_cold_queue::Entry;
 
 /// Collects the converted ranks of a sequence into whatever the engine that merges it needs.
 /// `MULTIPASS` picks which: a flat rank array plus the lowest-ranked adjacent pair, which is the
@@ -35,7 +35,7 @@ impl<const MULTIPASS: bool> SymbolSink<'_, MULTIPASS> {
                     a: self.previous_symbol,
                     b: symbol,
                     l: index.wrapping_sub(1), // u32::MAX at index 0, which is NONE
-                    r: index + 1,             // the final entry is patched in `convert`
+                    r: index + 1,             // the final entry is patched below
                 });
                 if merge != u64::MAX {
                     self.cold.push((merge & RANK_MASK) | index as u64);

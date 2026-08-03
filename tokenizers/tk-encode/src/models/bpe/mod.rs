@@ -1,15 +1,15 @@
 //! [Byte Pair Encoding](https://www.aclweb.org/anthology/P16-1162/) model.
 use std::{iter, mem};
-mod bytelevel_folding;
+mod bpe_build_tables;
+mod bpe_model;
 mod bpe_pretoken_to_rank;
+mod bpe_scratch;
+mod bytelevel_folding;
+mod legacy_model;
+mod legacy_serialization;
+pub mod legacy_word;
 mod merge_hot_cold_queue;
 mod merge_multipass;
-mod legacy_model;
-mod bpe_model;
-mod bpe_scratch;
-mod legacy_serialization;
-mod bpe_build_tables;
-pub mod legacy_word;
 mod word_cache;
 
 #[cfg(test)]
@@ -92,7 +92,7 @@ where
 }
 
 // Re-export
-pub use legacy_model::*;
 pub use bpe_model::*;
 pub use bpe_scratch::*;
+pub use legacy_model::*;
 pub use legacy_word::*;
