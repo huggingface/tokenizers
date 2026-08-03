@@ -6,6 +6,8 @@ extern crate criterion;
 use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, Throughput};
+use tk_encode::models::ModelWrapper;
+use tk_encode::tokenizer::Model as LegacyModel;
 use tk_encode::{
     Tokenizer,
     pipeline::{Model, PipelineModel, PipelineToken, PipelineTokenizer},
@@ -65,6 +67,13 @@ fn bench_pipeline(c: &mut Criterion) {
                 continue;
             }
         };
+        let legacy = match oracle.get_model() {
+            ModelWrapper::BPE(b) => b,
+            _ => {
+                eprintln!("Only bpe models are supported");
+                continue;
+            }
+        };
         for (corpus, path) in CORPORA {
             let text = std::fs::read_to_string(path).unwrap();
             let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
@@ -76,9 +85,16 @@ fn bench_pipeline(c: &mut Criterion) {
                 let mut output = Vec::<PipelineToken>::with_capacity(total_bytes as usize);
                 let scratch = &mut model.init_scratch();
                 group.throughput(Throughput::Bytes(total_bytes));
-                group.bench_function(BenchmarkId::from_parameter(label), |b| {
+                group.bench_with_input(BenchmarkId::new("legacy", label), &chunks, |b, chunks| {
                     b.iter(|| {
-                        for chunk in &chunks {
+                        for chunk in chunks {
+                            black_box(legacy.tokenize(black_box(chunk.as_str())).unwrap());
+                        }
+                    })
+                });
+                group.bench_with_input(BenchmarkId::new("pipeline", label), &chunks, |b, chunks| {
+                    b.iter(|| {
+                        for chunk in chunks {
                             output.clear();
                             model
                                 .tokenize_pipeline(black_box(chunk.as_str()), scratch, &mut output)
