@@ -1,124 +1,240 @@
-//! Multipass merging, for words below the gate.
+//! Multipass merging, for short words (pre tokens)
 //!
-//! Each pass rewrites the word in place, merging the lowest-ranked pair and recording the lowest
-//! pair of the result, which becomes the next pass's target. Read and write cursors share one
-//! buffer, so a pass shortens it by one per merge applied.
+//! For short words, running BPE naively can be faster than using a more complex data structure.
 //!
-//! A pass merges *every* occurrence of that pair only when the pair is `SAFE`: batching is exact
-//! only if the product cannot reach a merge cheaper than the one being applied, since such a merge
-//! would be due before the pair's remaining occurrences. When it is not safe the pass stops after
-//! the first occurrence, which costs a pass per occurrence but is what BPE actually does.
-use crate::models::bpe::bpe_build_tables::{ID_MASK, SAFE};
-use crate::models::bpe::bpe_model::PipelineBPE;
+//! We iteratively sweep the pre token's pairs of symbols to find the pair with the lowest merge rank,
+//! merge it in-place, and repeat until there is no legal merge left.
+//!
+//! # Example
+//!
+//! Merging the word: "hello".
+//! The internal ids are h=0, e=1, l=2, o=3, ll=4, he=5, llo=6, hello=7
+//! The model has 4 merges, we store them in a lookup table as follows:
+//!
+//! | key (pair) | value                 | rank              | SAFE | merged symbol id |
+//! |------------|-----------------------|-------------------|------|------------------|
+//! | (l,l)      | `0x00000000_40000004` | 0                 | yes  | 4 (ll)           |
+//! | (h,e)      | `0x00000001_40000005` | 1                 | yes  | 5 (he)           |
+//! | (ll,o)     | `0x00000002_40000006` | 2                 | yes  | 6 (llo)          |
+//! | (he,llo)   | `0x00000003_40000007` | 3                 | yes  | 7 (hello)        |
+//! | any other  | `0xFFFFFFFF_FFFFFFFF` | not a legal merge |      |                  |
+//!
+//! The values are `u64` packed as follows:
+//!
+//!  ```text
+//! bit 63                              32    31     30   29                           0
+//!    ┌──────────────────────────────────┬──────┬────┬──────────────────────────────┐
+//!    │            rank : u32            │unused│SAFE│      product id : 30 bits    │
+//!    │      (merge priority, 0 = best)  │      │    │   (internal id of the token  │
+//!    │                                  │      │    │      this pair merges into)  │
+//!    └──────────────────────────────────┴──────┴────┴──────────────────────────────┘
+//! ```
+//!
+//! Then we repeatedly merge symbols with "passes", until there is no legal merge left.
+//!
+//! A pass builds the new word in the same array that holds the old one, using two cursors that both start at index 0.
+//! The read cursor marks the start of what is left of the old word.
+//! The write cursor marks the end of the new word built so far.
+//! Every step writes exactly one symbol: a copy moves both cursors by one, and a merge writes one symbol but consumes two, so the read cursor moves ahead.
+//! The write cursor never gets ahead of the read cursor, so a write only ever lands on a slot that was already read.
+//! The pass needs no second array and no allocation, and each merge makes the new word one symbol shorter.
+//!
+//! ## Illustrated
+//!
+//! ```text
+//!   ┌───┬───┬───┬───┬───┐      (h,e) = 0x00000001_40000005
+//!   │ h │ e │ l │ l │ o │      (e,l) = u64::MAX
+//!   └───┴───┴───┴───┴───┘      (l,l) = 0x00000000_40000004  <- lowest: pass 1's target
+//!                              (l,o) = u64::MAX
+//! ```
+//!
+//! Pass 1 then sweeps the array:
+//!
+//! ```text
+//!   ┌───┬───┬───┬───┬───┐
+//!   │ h │ e │ l │ l │ o │
+//!   └───┴───┴───┴───┴───┘
+//!     ^w                    value(h,e) != target: copy h, both cursors move by one.
+//!     ^r                    First write: nothing to its left to rank yet
+//!
+//!   ┌───┬───┬───┬───┬───┐
+//!   │ h │ e │ l │ l │ o │
+//!   └───┴───┴───┴───┴───┘
+//!         ^w                value(e,l) != target: copy e,
+//!         ^r                and rank the newly written pair (h,e): rank 1
+//!
+//!   ┌───┬───┬───┬───┬───┐
+//!   │ h │ e │ l │ l │ o │
+//!   └───┴───┴───┴───┴───┘
+//!             ^w            value(l,l) == target: write its product id, ll, and skip
+//!             ^r            both l; rank the newly written pair (e,ll): not a merge
+//!
+//!   ┌───┬───┬────┬───┬───┐
+//!   │ h │ e │ ll │ l │ o │
+//!   └───┴───┴────┴───┴───┘
+//!                  ^w       read is now ahead of write; the leftover l was already
+//!                      ^r   read, so the next write may overwrite it
+//!
+//!   ┌───┬───┬────┬───┐
+//!   │ h │ e │ ll │ o │
+//!   └───┴───┴────┴───┘
+//!                           the last symbol has no pair left: copy it as is,
+//!                           and rank (ll,o): rank 2. 5 symbols in, 4 out.
+//!                           The lowest pair ranked during the sweep was (h,e),
+//!                           so (h,e) is pass 2's target
+//! ```
+//!
+//! Each later pass repeats this, merging the target the previous pass found:
+//!
+//! ```text
+//!   pass 2  target (h,e):     [ h │ e │ ll │ o ]   ->   [ he │ ll │ o ]   lowest written pair: (ll,o)
+//!   pass 3  target (ll,o):    [ he │ ll │ o ]      ->   [ he │ llo ]      lowest written pair: (he,llo)
+//!   pass 4  target (he,llo):  [ he │ llo ]         ->   [ hello ]         no pair left to rank: done
+//! ```
+//!
+//! Recording the lowest-ranked pair happens while writing the symbols: after each write, we look up the
+//! value of the last two written symbols and keep the minimum. A merge creates new pairs around
+//! the product, and this ranks them in the same pass that creates them. When a pass ends with a
+//! minimum of `u64::MAX`, no pair in the word merges anymore, and the word is done.
+//!
+//! # Batching and the `SAFE` bit
+//!
+//! The target can occur several times in the word. When its merge is `SAFE`, one pass merges every occurrence.
+//! Batch merges are only legal when the produced id (merged symbol) does not take part in other merges with lower rank (higher priority).
+//! This is enforced when building the lookup table and encoded in the SAFE bit.
+//!
+use crate::models::bpe::bpe_build_tables::{BpeTables, ID_MASK, SAFE_MASK};
 use std::cmp;
 
-impl PipelineBPE {
-    /// `M` is false only for the first written symbol, which has no left neighbour and therefore no
-    /// pair to rank. `BATCH` merges every occurrence of `global_min`; without it only the first
-    /// merges, which `merged` tracks.
-    ///
-    /// `&mut [u32]` rather than `&mut Vec<u32>` so the length is a local and the reads can have
-    /// their bounds checks removed..
-    #[inline(always)]
-    fn advance_one<const M: bool, const BATCH: bool>(
-        &self,
-        to_merge: &mut [u32],
-        mut read_id: usize,
-        global_min: u64,
-        mut write_id: usize,
-        mut running_min: u64,
-        mut merged: bool,
-    ) -> (u64, usize, usize, bool) {
-        let (ia, ib) = (to_merge[read_id], to_merge[read_id + 1]);
-        let value = self.tables.get_value(&ia, &ib);
-        let id = (value & ID_MASK) as u32;
-        // only merge pairs that have the min rank, and only the first of them unless BATCH
-        let written = if value == global_min && (BATCH || !merged) {
-            read_id += 1;
-            merged = true;
-            id
-        } else {
-            ia
-        };
-        to_merge[write_id] = written;
-        if M {
-            let merge_rank = self.tables.get_value(&to_merge[write_id - 1], &written);
-            running_min = std::cmp::min(running_min, merge_rank);
-        }
-        write_id += 1;
-        read_id += 1;
-        (running_min, read_id, write_id, merged)
-    }
+const NOT_LEGAL: u64 = u64::MAX;
 
-    /// One sweep of the live buffer, returning this pass's lowest pair and the new length.
-    fn one_pass<const BATCH: bool>(
-        &self,
-        to_merge: &mut [u32],
-        len: usize,
-        global_min: u64,
-    ) -> (u64, usize) {
-        // Both cursors restart every pass: a pass is a full sweep of the live buffer.
-        let mut read_id = 0usize;
-        let mut write_id = 0usize;
-        let mut running_min = u64::MAX;
-        let mut merged = false;
-        (running_min, read_id, write_id, merged) = self.advance_one::<false, BATCH>(
-            to_merge,
-            read_id,
-            global_min,
-            write_id,
-            running_min,
-            merged,
+/// Iteratively merges a word in place until it has no legal merge left
+pub(super) fn merge_multipass(tables: &BpeTables, symbols: &mut Vec<u32>, mut target_merge: u64) {
+    let mut len = symbols.len();
+    if len < 2 || target_merge == NOT_LEGAL {
+        return;
+    }
+    loop {
+        let MergeOnceOutput {
+            next_merge,
+            merged_length,
+        } = merge_once(
+            tables,
+            symbols,
+            len,
+            target_merge,
+            batch_merging_is_safe(tables, target_merge),
         );
-        while read_id + 1 < len {
-            (running_min, read_id, write_id, merged) = self.advance_one::<true, BATCH>(
-                to_merge,
-                read_id,
-                global_min,
-                write_id,
-                running_min,
-                merged,
-            );
+        len = merged_length;
+        if next_merge == NOT_LEGAL {
+            break;
         }
-        // `advance_one` consumes a pair per call, so when the sweep ends on the final symbol it
-        // has no right neighbour and was never written. Copy it, and rank it against its left
-        // neighbour so this pass's minimum accounts for the last pair too.
-        if read_id < len {
-            to_merge[write_id] = to_merge[read_id];
-            let merge_rank = self
-                .tables
-                .get_value(&to_merge[write_id - 1], &to_merge[write_id]);
-            running_min = cmp::min(running_min, merge_rank);
-            write_id += 1;
+        target_merge = next_merge;
+    }
+    symbols.truncate(len);
+}
+
+/// Whether one pass may merge every occurrence of the target, or only the first occurrence.
+#[inline(always)]
+fn batch_merging_is_safe(tables: &BpeTables, target_merge: u64) -> bool {
+    // A NOT_LEGAL merge has the SAFE bit set, it would incorrectly return true here
+    // The caller is responsible for checking NOT_LEGAL does not reach this
+    debug_assert!(target_merge != NOT_LEGAL);
+    !tables.any_unsafe || (target_merge & SAFE_MASK != 0)
+}
+
+struct MergeOnceOutput {
+    next_merge: u64,
+    merged_length: usize,
+}
+
+/// One pass: walk the first `len` elements of `symbols` and merge occurrences of `target_merge`.
+///
+/// Returns the next pass's target (`u64::MAX` when no pair in the rewritten word merges), and the number of symbols written.
+/// Symbols past `len` are leftovers of earlier passes and should be truncated.
+///
+/// `&mut [u32]` rather than `&mut Vec<u32>` so the length is a local and the reads can have
+/// their bounds checks removed.
+fn merge_once(
+    tables: &BpeTables,
+    symbols: &mut [u32],
+    len: usize,
+    target_merge: u64,
+    batched: bool,
+) -> MergeOnceOutput {
+    let mut state = MergeState::new(target_merge, batched);
+    while state.read_cursor + 1 < len {
+        state.step(tables, symbols);
+    }
+    if state.read_cursor < len {
+        state.copy_last(tables, symbols);
+    }
+    MergeOnceOutput {
+        next_merge: state.next_merge,
+        merged_length: state.write_cursor,
+    }
+}
+/// One pass's cursors and running result.
+///
+/// The read cursor marks the start of what is left of the old word, the write cursor
+/// the end of the new word built so far (see the module docs).
+struct MergeState {
+    read_cursor: usize,
+    write_cursor: usize,
+    target_merge: u64,
+    batched: bool,
+    has_merged: bool,
+    next_merge: u64,
+}
+
+impl MergeState {
+    fn new(target_merge: u64, batched: bool) -> Self {
+        Self {
+            read_cursor: 0,
+            write_cursor: 0,
+            target_merge,
+            batched,
+            has_merged: false,
+            next_merge: NOT_LEGAL,
         }
-        (running_min, write_id)
     }
 
-    /// Merges the lowest-ranked pair, then repeats with the next lowest, until no pair merges. Read
-    /// and write cursors share one buffer: a pass rewrites `to_merge` in place and shortens it, so
-    /// `len` shrinks by one per merge applied.
-    pub(super) fn multipass_merge(&self, to_merge: &mut Vec<u32>, mut global_min: u64) {
-        // `global_min` is the value of the pair to merge, and a missing pair is `u64::MAX`. If the
-        // word has no merge at all then every non-merging pair also compares equal to `u64::MAX`,
-        // so without this guard `advance_one` would "merge" all of them into id 0.
-        if to_merge.len() < 2 || global_min == u64::MAX {
-            return;
+    /// Looks up the pair at the read cursor and writes one symbol: the pair's product id when
+    /// its value equals the target and the pair may still merge, the left symbol otherwise. A
+    /// merge consumes both symbols of the pair, a copy only the left one.
+    #[inline(always)]
+    fn step(&mut self, tables: &BpeTables, symbols: &mut [u32]) {
+        let (left_symbol, right_symbol) =
+            (symbols[self.read_cursor], symbols[self.read_cursor + 1]);
+        let pair_value = tables.get_value(&left_symbol, &right_symbol);
+        let should_merge = pair_value == self.target_merge && (self.batched || !self.has_merged);
+        let written = if should_merge {
+            self.has_merged = true;
+            self.read_cursor += 2;
+            (pair_value & ID_MASK) as u32
+        } else {
+            self.read_cursor += 1;
+            left_symbol
+        };
+        self.write(tables, symbols, written);
+    }
+
+    /// Copies the sweep's final symbol, which has no right neighbour to pair with.
+    fn copy_last(&mut self, tables: &BpeTables, symbols: &mut [u32]) {
+        let last_symbol = symbols[self.read_cursor];
+        self.write(tables, symbols, last_symbol);
+    }
+
+    /// Writes one symbol at the write cursor and ranks the pair it forms with the previously
+    /// written symbol as a candidate for the next pass's target.
+    ///  The first written symbol has no left neighbour and nothing to rank.
+    #[inline(always)]
+    fn write(&mut self, tables: &BpeTables, symbols: &mut [u32], symbol: u32) {
+        symbols[self.write_cursor] = symbol;
+        if self.write_cursor > 0 {
+            let rank = tables.get_value(&symbols[self.write_cursor - 1], &symbol);
+            self.next_merge = cmp::min(self.next_merge, rank);
         }
-        let mut len = to_merge.len();
-        loop {
-            // One test per pass, not per merge. The guard above means `global_min` is a real merge
-            // here, so its flag bits are the ones the table stored rather than a sentinel's.
-            let (running_min, written) = if !self.tables.any_unsafe || global_min & SAFE != 0 {
-                self.one_pass::<true>(to_merge, len, global_min)
-            } else {
-                self.one_pass::<false>(to_merge, len, global_min)
-            };
-            len = written;
-            if running_min == u64::MAX {
-                break; // no pair in the rewritten buffer merges: done
-            }
-            global_min = running_min;
-        }
-        to_merge.truncate(len);
+        self.write_cursor += 1;
     }
 }

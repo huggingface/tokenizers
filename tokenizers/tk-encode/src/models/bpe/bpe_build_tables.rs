@@ -54,7 +54,7 @@ pub(super) const ID_MASK: u64 = (1 << 30) - 1;
 /// `rank < min(min_rank_left[product], min_rank_right[product])` -- otherwise that cheaper merge is
 /// due before the pair's remaining occurrences, and the sweep has to stop at the first one.
 /// gpt2 and deepseek have no unsafe merges at all; llama-2 and llama-3 have ~22%.
-pub(super) const SAFE: u64 = 1 << 30;
+pub(super) const SAFE_MASK: u64 = 1 << 30;
 // Fixed seeds so a given vocab always hashes identically (the hasher is also stored on the struct,
 // so build and query are guaranteed consistent regardless).
 const SEEDS: [u64; 4] = [
@@ -446,7 +446,7 @@ impl BpeTables {
             let safe =
                 *rank < min_rank_left[internal as usize].min(min_rank_right[internal as usize]);
             unsafe_merges += usize::from(!safe);
-            let value = (*rank as u64) << 32 | if safe { SAFE } else { 0 } | internal;
+            let value = (*rank as u64) << 32 | if safe { SAFE_MASK } else { 0 } | internal;
             // if a and b < 512 -> Dense grid
             if (ia | ib) < 512 {
                 top_merges[(ia << 9 | ib) as usize] = value;
@@ -566,7 +566,7 @@ mod test {
 
     use crate::models::bpe::{
         MergeMap,
-        bpe_build_tables::{BpeTables, MphfMap, SAFE},
+        bpe_build_tables::{BpeTables, MphfMap, SAFE_MASK},
     };
     #[test]
     pub fn test_mphf() {
@@ -601,7 +601,7 @@ mod test {
         // grid and pair table share the value layout, so both halves have to be right
         // (a, b) -> ab: rank 0, internal 2, and SAFE because `ab` is in no merge of its own, so
         // batching every occurrence of (a, b) in one sweep cannot skip a cheaper merge
-        assert_eq!(tables.get_value(&0, &1), SAFE | 2);
+        assert_eq!(tables.get_value(&0, &1), SAFE_MASK | 2);
         // (aba, a) -> aba: rank 1, internal 3, NOT safe: `aba` is the left member of that same
         // rank-1 merge, so the product can immediately form a pair no dearer than the one applied
         assert_eq!(tables.get_value(&3, &0), 1u64 << 32 | 3);

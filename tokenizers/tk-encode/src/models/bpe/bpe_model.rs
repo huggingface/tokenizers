@@ -7,6 +7,7 @@ use crate::models::bpe::legacy_model::BPE;
 use crate::models::bpe::merge_hot_cold_queue::{
     MergeScratch, build_byte_to_gate, two_tier_queue_merge,
 };
+use crate::models::bpe::merge_multipass::merge_multipass;
 use crate::models::bpe::{Error, bpe_build_tables::At};
 use crate::pipeline::{self, PipelineToken};
 use crate::tokenizer::Result;
@@ -141,6 +142,7 @@ impl PipelineBPE {
             byte_to_mode: build_byte_to_gate(),
         })
     }
+
     /// Converts a word to symbols and merges it. The gate, indexed by the word's first byte, says
     /// which engine gets it: short words go to multipass, longer ones to the two-tier queue.
     /// `to_merge` is the caller's reusable symbol buffer -- it lives in the scratch so that a word
@@ -170,7 +172,7 @@ impl PipelineBPE {
                 &mut merge_scratch.entries,
                 &mut merge_scratch.cold,
             );
-            self.multipass_merge(to_merge, first_merge);
+            merge_multipass(&self.tables, to_merge, first_merge);
         }
     }
 }
