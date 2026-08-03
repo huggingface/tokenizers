@@ -3,6 +3,7 @@
 //! Each pass rewrites the word in place, merging every occurrence of the lowest-ranked pair and
 //! recording the lowest pair of the result, which becomes the next pass's target. Read and write
 //! cursors share one buffer, so a pass shortens it by one per merge applied.
+use crate::models::bpe::bpe_build_tables::ID_MASK;
 use crate::models::bpe::bpe_model::PipelineBPE;
 use std::cmp;
 
@@ -23,8 +24,7 @@ impl PipelineBPE {
     ) -> (u64, usize, usize) {
         let (ia, ib) = (to_merge[read_id], to_merge[read_id + 1]);
         let value = self.tables.get_value(&ia, &ib);
-        // TODO: we are adding the `SAFE` flag on bit 31 this has to become `(value & ID_MASK) as u32`.
-        let id = value as u32;
+        let id = (value & ID_MASK) as u32;
         // only merge pairs that have the min rank
         let written = if value == global_min {
             read_id += 1;

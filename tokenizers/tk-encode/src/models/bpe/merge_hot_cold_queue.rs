@@ -1,4 +1,4 @@
-use crate::models::bpe::bpe_build_tables::{BpeTables, RANK_MASK};
+use crate::models::bpe::bpe_build_tables::{BpeTables, ID_MASK, RANK_MASK};
 const GATE_MULTI: u16 = 8;
 const GATE_ASCII: u16 = 24;
 
@@ -43,7 +43,7 @@ impl Entry {
             let key = tables.get_value(&left.a, &self.prod);
             left.b = self.prod;
             left.rank = (key >> 32) as u32;
-            left.prod = key as u32;
+            left.prod = (key & ID_MASK) as u32;
             left.r = self.r;
             if key != NO_MERGE {
                 hot_push(hot, (key & RANK_MASK) | self.l as u64)
@@ -56,7 +56,7 @@ impl Entry {
             let key = tables.get_value(&self.prod, &right.b);
             right.a = self.prod;
             right.rank = (key >> 32) as u32;
-            right.prod = key as u32;
+            right.prod = (key & ID_MASK) as u32;
             right.l = self.l;
             if key != NO_MERGE {
                 hot_push(hot, (key & RANK_MASK) | self.r as u64)

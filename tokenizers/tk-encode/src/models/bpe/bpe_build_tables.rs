@@ -8,8 +8,8 @@ type Mphf = FastPtrHash<NoHash, u64>;
 use crate::models::bpe::MergeMap;
 use crate::models::bpe::bytelevel_folding::{ByteLevelFold, Fold};
 
-/// Pair-table value layout: `rank[63:32] | internal_id[31:0]`, sentinel `u64::MAX`. Rank is
-/// shifted to the high half so `val < min_val` is a rank comparison without having to do any
+/// Pair-table value layout: `rank[63:32] | flags[31:30] | internal_id[29:0]`, sentinel `u64::MAX`.
+/// Rank is shifted to the high half so `val < min_val` is a rank comparison without having to do any
 /// shifting.
 
 // We built tables at load time based on the vocab and merges.
@@ -35,14 +35,19 @@ use crate::models::bpe::bytelevel_folding::{ByteLevelFold, Fold};
 struct Slot {
     key: u64, // holds (a << 32, b)
     val: u64, // holds rank as u64 << 32, flags << 30, id there is 2^30 possible ids, 1B is enough
-              // rank sits high so `val < min_val` is a rank comparison. mrl/mrr are NOT stored
-              // here: they are build-time only, consumed by the fold guard.
+              // rank sits high so `val < min_val` is a rank comparison. No flag is set yet, so the
+              // low half is the id alone; readers mask with ID_MASK regardless. mrl/mrr are NOT
+              // stored here: they are build-time only, consumed by the fold guard.
 }
 
 /// The rank half of a packed merge value, for reusing a rank as the high half of a queue key.
-/// It keeps the rank alone: the flags live below bit 32, so they are dropped with the product id,
-/// and an unmergeable pair (`u64::MAX`) still masks to a rank of `u32::MAX`, the worst possible.
+/// It keeps the rank alone: everything below bit 32 is dropped, flags and product id together, and
+/// an unmergeable pair (`u64::MAX`) still masks to a rank of `u32::MAX`, the worst possible.
 pub(super) const RANK_MASK: u64 = 0xFFFF_FFFF_0000_0000;
+
+/// The product-id half, which is the low 30 bits: bits 30 and 31 are the flag field, so every read
+/// of a product id masks rather than truncating to `u32`. 2^30 ids is ~1.07 B, far past any vocab.
+pub(super) const ID_MASK: u64 = (1 << 30) - 1;
 // Fixed seeds so a given vocab always hashes identically (the hasher is also stored on the struct,
 // so build and query are guaranteed consistent regardless).
 const SEEDS: [u64; 4] = [
@@ -410,6 +415,7 @@ impl BpeTables {
                 continue;
             }
             let internal = internal_id_map[*product as usize] as u64;
+            assert!(internal <= ID_MASK, "product id {internal} overflows the 30-bit id field");
             let value = (*rank as u64) << 32 | internal;
             // if a and b < 512 -> Dense grid
             if (ia | ib) < 512 {

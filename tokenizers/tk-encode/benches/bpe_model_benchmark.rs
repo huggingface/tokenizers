@@ -28,7 +28,8 @@ use tk_encode::Tokenizer;
 use tk_encode::models::ModelWrapper;
 use tk_encode::pipeline::{Model as PipelineModelTrait, PipelineModel, PipelineTokenizer};
 use tk_encode::tokenizer::{
-    Model as LegacyModelTrait, OffsetReferential, OffsetType, PreTokenizedString, PreTokenizer,
+    Model as LegacyModelTrait, NormalizedString, Normalizer, OffsetReferential, OffsetType,
+    PreTokenizedString, PreTokenizer,
 };
 use tk_encode::utils::parallelism::set_parallelism;
 
@@ -37,6 +38,7 @@ const TOKENIZERS: &[(&str, &str)] = &[
     ("gpt2", "../data/gpt2.json"),
     ("llama-3", "../data/llama-3-tokenizer.json"),
     ("deepseek", "../data/deepseek-v4.json"),
+    ("llama-2", "../data/llama-2.json"),
 ];
 
 /// Tried on the hub when absent from `../data` -- needs the `http` feature, and gemma is gated, so
@@ -117,10 +119,38 @@ fn pair(name: &str, path: &str, cache: bool) -> Option<(Tokenizer, PipelineToken
 /// remapped bytes->unicode, which is the form the legacy model looks up. `.1` is the original slice
 /// at the same offsets, which is what the current model takes, because it does that remap itself.
 fn model_inputs(oracle: &Tokenizer, text: &str) -> Vec<(String, String)> {
+    // the model's own normalizer runs first: llama-2 rewrites every space to U+2581, and without it
+    // nothing would be found in the vocab and both engines would just measure byte fallback
+    let mut normalized = NormalizedString::from(text);
+    if let Some(normalizer) = oracle.get_normalizer()
+        && normalizer.normalize(&mut normalized).is_err()
+    {
+        return vec![];
+    }
+    let normalized = normalized.get().to_string();
+
+    // sentencepiece-style models (llama-2) declare no pre-tokenizer, so the model is handed whole
+    // sequences. Feed it documents rather than the entire corpus as one pre-token.
     let Some(pre_tokenizer) = oracle.get_pre_tokenizer() else {
-        return vec![(text.to_string(), text.to_string())];
+        return normalized
+            .as_bytes()
+            .chunks(CHUNK_BYTES)
+            .scan(0usize, |start, _| {
+                let from = *start;
+                if from >= normalized.len() {
+                    return None;
+                }
+                let mut to = (from + CHUNK_BYTES).min(normalized.len());
+                while to < normalized.len() && !normalized.is_char_boundary(to) {
+                    to += 1;
+                }
+                *start = to;
+                Some(normalized[from..to].to_string())
+            })
+            .map(|chunk| (chunk.clone(), chunk))
+            .collect();
     };
-    let mut pre_tokenized = PreTokenizedString::from(text);
+    let mut pre_tokenized = PreTokenizedString::from(normalized.as_str());
     if pre_tokenizer.pre_tokenize(&mut pre_tokenized).is_err() {
         return vec![];
     }
@@ -128,7 +158,12 @@ fn model_inputs(oracle: &Tokenizer, text: &str) -> Vec<(String, String)> {
         .get_splits(OffsetReferential::Original, OffsetType::Byte)
         .into_iter()
         .filter(|(piece, offsets, _)| !piece.is_empty() && offsets.1 > offsets.0)
-        .map(|(piece, offsets, _)| (piece.to_string(), text[offsets.0..offsets.1].to_string()))
+        .map(|(piece, offsets, _)| {
+            (
+                piece.to_string(),
+                normalized[offsets.0..offsets.1].to_string(),
+            )
+        })
         .collect()
 }
 

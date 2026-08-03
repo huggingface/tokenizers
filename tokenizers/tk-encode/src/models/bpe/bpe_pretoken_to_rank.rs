@@ -1,6 +1,6 @@
 //! Turning a pretokenized word into merge ranks, which are then processed in `merge_multipass` or
 //! `merge_hot_cold_queue`.
-use crate::models::bpe::bpe_build_tables::{At, BpeTables, RANK_MASK, UTF8_LEN};
+use crate::models::bpe::bpe_build_tables::{At, BpeTables, ID_MASK, RANK_MASK, UTF8_LEN};
 use crate::models::bpe::bpe_model::{AFFIX_BUF, Atoms, PipelineBPE};
 use crate::models::bpe::merge_hot_cold_queue::Entry;
 
@@ -31,7 +31,7 @@ impl<const MULTIPASS: bool> SymbolSink<'_, MULTIPASS> {
                 let index = self.entries.len() as u32;
                 self.entries.push(Entry {
                     rank: (merge >> 32) as u32,
-                    prod: merge as u32,
+                    prod: (merge & ID_MASK) as u32,
                     a: self.previous_symbol,
                     b: symbol,
                     l: index.wrapping_sub(1), // u32::MAX at index 0, which is NONE
