@@ -157,10 +157,21 @@ impl PipelineBPE {
         let gate: u16 = self.byte_to_mode[sequence.as_bytes()[0] as usize];
 
         if sequence.len() > gate as usize {
-            self.convert::<false>(sequence, to_merge);
-            two_tier_queue_merge(&self.tables, to_merge, merge_scratch);
+            // conversion writes the entries and cold keys directly: no intermediate rank array
+            self.convert::<false>(
+                sequence,
+                to_merge,
+                &mut merge_scratch.entries,
+                &mut merge_scratch.cold,
+            );
+            two_tier_queue_merge(&self.tables, merge_scratch, to_merge);
         } else {
-            let first_merge = self.convert::<true>(sequence, to_merge);
+            let first_merge = self.convert::<true>(
+                sequence,
+                to_merge,
+                &mut merge_scratch.entries,
+                &mut merge_scratch.cold,
+            );
             self.multipass_merge(to_merge, first_merge);
         }
     }
