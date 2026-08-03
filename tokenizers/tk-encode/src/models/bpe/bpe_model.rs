@@ -8,7 +8,6 @@ use crate::models::bpe::legacy_word::Word;
 use crate::models::bpe::merge_hot_cold_queue::{
     MergeScratch, build_byte_to_gate, two_tier_queue_merge,
 };
-use crate::models::bpe::word_cache::WordCache;
 use crate::models::bpe::{Error, bpe_build_tables::At};
 use crate::pipeline::{self, PipelineToken};
 use crate::tokenizer::Result;
@@ -200,32 +199,14 @@ impl pipeline::Model for PipelineBPE {
         }
 
         let BpeScratch {
-            to_merge,
-            merge,
-            word_cache,
-            ..
+            to_merge, merge, ..
         } = scratch;
-
-        if let Some(cache) = word_cache
-            && let Some(hit) = cache.get(sequence.as_bytes())
-        {
-            output.extend(hit.iter().map(|&id| PipelineToken { id }));
-            return Ok(());
-        }
 
         self.merge_word(sequence, to_merge, merge);
         // the merge engines work in internal ids; `unmap` takes them back to the vocab's own ids
         output.extend(to_merge.iter().map(|&symbol| PipelineToken {
             id: self.tables.unmap.at(symbol as usize),
         }));
-        if let Some(cache) = word_cache {
-            cache.insert(
-                sequence.as_bytes(),
-                to_merge
-                    .iter()
-                    .map(|&symbol| self.tables.unmap.at(symbol as usize)),
-            );
-        }
 
         Ok(())
     }
@@ -237,7 +218,6 @@ impl pipeline::Model for PipelineBPE {
             merge_queue: QuaternaryHeap::with_capacity(64),
             word: Word::with_capacity(64),
             skip: Vec::new(),
-            word_cache: self.cache_capacity.map(WordCache::new),
         }
     }
 }
