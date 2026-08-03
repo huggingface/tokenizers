@@ -847,7 +847,7 @@ impl PipelineBPE {
         let mut last_id = to_merge.len() - 1;
         loop {
             if i == FALLBACK_THRESHOLD {
-                self.heap_merge(to_merge, global_min);
+                self.two_tier_queue_merge(to_merge, global_min);
             }
             let mut running_min = u64::MAX;
             (running_min, read_id, write_id) =
@@ -865,7 +865,7 @@ impl PipelineBPE {
         }
     }
 
-    fn heap_merge(&self, to_merge: &mut Vec<u32>, mut global_min: u64) {
+    fn two_tier_queue_merge(&self, to_merge: &mut Vec<u32>, mut global_min: u64) {
         todo!()
     }
 }
