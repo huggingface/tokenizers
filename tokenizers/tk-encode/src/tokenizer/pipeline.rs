@@ -1,7 +1,5 @@
 use std::cell::RefCell;
 use std::convert::TryInto;
-use std::mem;
-use std::sync::{Arc, Mutex, PoisonError};
 use std::{borrow::Cow, convert::TryFrom};
 
 use atomsplit::classify::classify;
@@ -450,70 +448,6 @@ pub struct PipelineTokenizer {
     pre_tokenizer: PipelinePreTokenizer,
     model: PipelineModel,
     post_processor: PipelinePostProcessor,
-    scratch_pool: ScratchPool,
-}
-
-struct ScratchPool {
-    pool: Arc<Mutex<Vec<PipelineModelScratch>>>,
-}
-
-impl ScratchPool {
-    fn new() -> Self {
-        Self {
-            pool: Arc::new(Mutex::new(Vec::new())),
-        }
-    }
-
-    fn get<'a>(&'a self, model: &PipelineModel) -> ScratchGuard<'a> {
-        let maybe_scratch = {
-            let mut pool = self.pool.lock().unwrap_or_else(PoisonError::into_inner);
-            pool.pop()
-        };
-        // Lock is released here
-
-        let scratch = maybe_scratch
-            .map(|mut scratch| {
-                // Lazily clear the cache
-                scratch.clear();
-                scratch
-            })
-            .unwrap_or_else(|| model.init_scratch()); // If there is no scratch in the pool, init a fresh one
-
-        ScratchGuard {
-            scratch,
-            scratch_pool: self,
-        }
-    }
-}
-
-/// RAAI guard for a scratch that adds it back to the pool whenever the scratch gets dropped
-struct ScratchGuard<'a> {
-    scratch: PipelineModelScratch,
-    scratch_pool: &'a ScratchPool,
-}
-
-impl Drop for ScratchGuard<'_> {
-    fn drop(&mut self) {
-        let scratch = mem::take(&mut self.scratch);
-        self.scratch_pool
-            .pool
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(scratch);
-    }
-}
-
-impl std::ops::Deref for ScratchGuard<'_> {
-    type Target = PipelineModelScratch;
-    fn deref(&self) -> &PipelineModelScratch {
-        &self.scratch
-    }
-}
-
-impl std::ops::DerefMut for ScratchGuard<'_> {
-    fn deref_mut(&mut self) -> &mut PipelineModelScratch {
-        &mut self.scratch
-    }
 }
 
 impl TryFrom<&Tokenizer> for PipelineTokenizer {
@@ -635,7 +569,6 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
                 .map(PipelinePostProcessor::try_from)
                 .transpose()?
                 .unwrap_or_default(),
-            scratch_pool: ScratchPool::new(),
         })
     }
 }
@@ -666,7 +599,7 @@ impl PipelineTokenizer {
     pub fn encode(&self, input: &str, add_special_tokens: bool) -> Result<Vec<PipelineToken>> {
         let mut output = Vec::new();
         let mut pre_tokens = Vec::new();
-        let mut scratch = self.scratch_pool.get(&self.model);
+        let mut scratch = self.model.init_scratch();
 
         self.encode_generic::<{ Self::STAGE_POSTPROCESS }>(
             input,
@@ -1050,9 +983,7 @@ pub fn split_matches(
     }
 }
 
-pub trait ModelScratch: Default {
-    fn clear(&mut self);
-}
+pub trait ModelScratch {}
 
 pub trait Model {
     type Scratch: ModelScratch;
@@ -1114,27 +1045,14 @@ impl Model for PipelineModel {
     }
 }
 
-#[derive(Default)]
 pub enum PipelineModelScratch {
     BPE(BpeScratch),
     WordLevel(()),
     WordPiece(WordPieceScratch),
     Unigram(UnigramScratch),
-    #[default]
-    None,
 }
 
-impl ModelScratch for PipelineModelScratch {
-    fn clear(&mut self) {
-        match self {
-            PipelineModelScratch::BPE(scratch) => scratch.clear(),
-            PipelineModelScratch::Unigram(scratch) => scratch.clear(),
-            PipelineModelScratch::WordLevel(scratch) => scratch.clear(),
-            PipelineModelScratch::WordPiece(scratch) => scratch.clear(),
-            PipelineModelScratch::None => {}
-        }
-    }
-}
+impl ModelScratch for PipelineModelScratch {}
 
 #[cfg(test)]
 mod tests {
@@ -1496,61 +1414,5 @@ mod tests {
         );
         let err = conversion_error(&tok);
         assert!(err.contains("not supported"), "{}", err);
-    }
-
-    // The scratch pool exists so ONE `&self` tokenizer can be shared across rayon
-    // workers. Encode the same input from thousands of threads through a single shared
-    // instance; each must get private scratch and produce the sequential result. A
-    // data race or shared-scratch bug would corrupt some — and this only compiles if
-    // `PipelineTokenizer: Sync`, which the pool must preserve.
-    #[test]
-    fn encode_shared_across_threads_via_pool() {
-        use crate::models::bpe::{BpeBuilder, Merges, Vocab};
-        use rayon::prelude::*;
-
-        let vocab: Vocab = [
-            ("h", 0u32),
-            ("e", 1),
-            ("l", 2),
-            ("o", 3),
-            ("he", 4),
-            ("hel", 5),
-            ("hell", 6),
-            ("hello", 7),
-        ]
-        .into_iter()
-        .map(|(s, i)| (s.to_string(), i))
-        .collect();
-        let merges: Merges = vec![
-            ("h".to_string(), "e".to_string()),
-            ("he".to_string(), "l".to_string()),
-            ("hel".to_string(), "l".to_string()),
-            ("hell".to_string(), "o".to_string()),
-        ];
-        let bpe = BpeBuilder::default()
-            .vocab_and_merges(vocab, merges)
-            .build()
-            .unwrap();
-        let tok = Tokenizer::new(bpe);
-        let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
-
-        let want: Vec<u32> = pipeline
-            .encode("hello", false)
-            .unwrap()
-            .iter()
-            .map(|t| t.id)
-            .collect();
-        assert_eq!(want, vec![7]);
-
-        let all_match = (0..10_000u32).into_par_iter().all(|_| {
-            pipeline
-                .encode("hello", false)
-                .unwrap()
-                .iter()
-                .map(|t| t.id)
-                .collect::<Vec<_>>()
-                == want
-        });
-        assert!(all_match);
     }
 }

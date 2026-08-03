@@ -35,9 +35,9 @@ use crate::models::bpe::bytelevel_folding::{ByteLevelFold, Fold};
 struct Slot {
     key: u64, // holds (a << 32, b)
     val: u64, // holds rank as u64 << 32, flags << 30, id there is 2^30 possible ids, 1B is enough
-              // rank sits high so `val < min_val` is a rank comparison. No flag is set yet, so the
-              // low half is the id alone; readers mask with ID_MASK regardless. mrl/mrr are NOT
-              // stored here: they are build-time only, consumed by the fold guard.
+              // rank sits high so `val < min_val` is a rank comparison. Bit 30 is SAFE; bit 31 is
+              // free. mrl/mrr are NOT stored here: they are build-time only, consumed by the fold
+              // guard and by SAFE.
 }
 
 /// The rank half of a packed merge value, for reusing a rank as the high half of a queue key.
@@ -48,6 +48,13 @@ pub(super) const RANK_MASK: u64 = 0xFFFF_FFFF_0000_0000;
 /// The product-id half, which is the low 30 bits: bits 30 and 31 are the flag field, so every read
 /// of a product id masks rather than truncating to `u32`. 2^30 ids is ~1.07 B, far past any vocab.
 pub(super) const ID_MASK: u64 = (1 << 30) - 1;
+
+/// Bit 30: batching every occurrence of this pair in one multipass sweep is exact. It is only so
+/// when the product cannot reach a merge cheaper than the one being applied,
+/// `rank < min(min_rank_left[product], min_rank_right[product])` -- otherwise that cheaper merge is
+/// due before the pair's remaining occurrences, and the sweep has to stop at the first one.
+/// gpt2 and deepseek have no unsafe merges at all; llama-2 and llama-3 have ~22%.
+pub(super) const SAFE: u64 = 1 << 30;
 // Fixed seeds so a given vocab always hashes identically (the hasher is also stored on the struct,
 // so build and query are guaranteed consistent regardless).
 const SEEDS: [u64; 4] = [
@@ -146,6 +153,8 @@ pub(crate) struct BpeTables {
     pub top_values: Box<[u64]>,
     pub fold: SparseFold, // codepoint in vocab to internal id, sparse: see SparseFold
     pub byte_internal: [u32; 256], // byte -> internal id, for characters that do not fold
+    /// False when every merge is safe, which lets multipass skip the per-pass SAFE test entirely.
+    pub any_unsafe: bool,
 }
 
 /// NOTE: Unchecked indexing, justified once instead of everywhere we do it.
@@ -397,10 +406,29 @@ impl BpeTables {
             65536.0 * 4.0 / 1024.0
         );
 
+        // For the SAFE flag: the cheapest rank at which a token appears as the left member of some
+        // merge, and as the right member. A merge is safe to batch when its product cannot reach a
+        // cheaper merge than the one being applied, on either side.
+        let mut min_rank_left = vec![u32::MAX; unmap.len()];
+        let mut min_rank_right = vec![u32::MAX; unmap.len()];
+        for ((a, b), (rank, _)) in merges.iter() {
+            if let Some(&ia) = internal_id_map.get(*a as usize)
+                && (ia as usize) < min_rank_left.len()
+            {
+                min_rank_left[ia as usize] = min_rank_left[ia as usize].min(*rank);
+            }
+            if let Some(&ib) = internal_id_map.get(*b as usize)
+                && (ib as usize) < min_rank_right.len()
+            {
+                min_rank_right[ib as usize] = min_rank_right[ib as usize].min(*rank);
+            }
+        }
+
         let mut top_merges = vec![u64::MAX; 512 * 512];
         let mut values = Vec::new();
         let mut keys = Vec::new();
         let mut dropped = 0usize;
+        let mut unsafe_merges = 0usize;
         for ((a, b), (rank, product)) in merges.iter() {
             let ia = internal_id_map
                 .get(*a as usize)
@@ -415,8 +443,14 @@ impl BpeTables {
                 continue;
             }
             let internal = internal_id_map[*product as usize] as u64;
-            assert!(internal <= ID_MASK, "product id {internal} overflows the 30-bit id field");
-            let value = (*rank as u64) << 32 | internal;
+            assert!(
+                internal <= ID_MASK,
+                "product id {internal} overflows the 30-bit id field"
+            );
+            let safe = *rank
+                < min_rank_left[internal as usize].min(min_rank_right[internal as usize]);
+            unsafe_merges += usize::from(!safe);
+            let value = (*rank as u64) << 32 | if safe { SAFE } else { 0 } | internal;
             // if a and b < 512 -> Dense grid
             if (ia | ib) < 512 {
                 top_merges[(ia << 9 | ib) as usize] = value;
@@ -445,7 +479,7 @@ impl BpeTables {
         let top_values = top_values.into_boxed_slice();
         let pair_table = MphfMap::build(keys, values);
         info!(
-            "bpe tables: {base} alphabet + {} products (unique merges), {} merge in the dense grid, {dropped} merges dropped",
+            "bpe tables: {base} alphabet + {} products (unique merges), {} merge in the dense grid, {dropped} merges dropped, {unsafe_merges} merges unsafe to batch",
             products.len(),
             top_values.len()
         );
@@ -457,6 +491,7 @@ impl BpeTables {
                 top_values,
                 fold,
                 byte_internal,
+                any_unsafe: unsafe_merges > 0,
             },
             internal_id_map,
         )
@@ -535,7 +570,7 @@ mod test {
 
     use crate::models::bpe::{
         MergeMap,
-        bpe_build_tables::{BpeTables, MphfMap},
+        bpe_build_tables::{BpeTables, MphfMap, SAFE},
     };
     #[test]
     pub fn test_mphf() {
@@ -568,8 +603,13 @@ mod test {
         // so the alphabet is a,b and the ranks are ab and aba.
         // Both operands are < 512, so the merge lives in the dense grid, not the MPHF.
         // grid and pair table share the value layout, so both halves have to be right
-        assert_eq!(tables.get_value(&0, &1), 2u64); // (a, b) -> ab: rank 0, internal 2
-        assert_eq!(tables.get_value(&3, &0), 1u64 << 32 | 3); // (aba, a) -> aba: rank 1, internal 3
+        // (a, b) -> ab: rank 0, internal 2, and SAFE because `ab` is in no merge of its own, so
+        // batching every occurrence of (a, b) in one sweep cannot skip a cheaper merge
+        assert_eq!(tables.get_value(&0, &1), SAFE | 2);
+        // (aba, a) -> aba: rank 1, internal 3, NOT safe: `aba` is the left member of that same
+        // rank-1 merge, so the product can immediately form a pair no dearer than the one applied
+        assert_eq!(tables.get_value(&3, &0), 1u64 << 32 | 3);
+        assert!(tables.any_unsafe);
         assert_eq!(tables.get_value(&0, &2), u64::MAX); // (a, c) is not a merge
         assert_eq!(tables.pair_table.get(1u64), u64::MAX); // and nowhere else
         assert_eq!(&*tables.unmap, &[0, 1, 2, 3]);
