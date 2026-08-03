@@ -465,7 +465,7 @@ impl BPE {
         &self.continuing_subword_prefix
     }
 
-    fn merge_word(&self, w: &str) -> Result<Word> {
+    pub(super) fn merge_word(&self, w: &str) -> Result<Word> {
         let mut indices = w.char_indices().map(|(idx, _)| idx).peekable();
         let mut word = Word::with_capacity(w.len());
         let mut unk: Option<(u32, usize)> = None;

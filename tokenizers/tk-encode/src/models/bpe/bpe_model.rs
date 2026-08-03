@@ -150,7 +150,7 @@ impl PipelineBPE {
     /// `to_merge` is the caller's reusable symbol buffer -- it lives in the scratch so that a word
     /// costs no allocation. On return it holds the merged word as internal ids, which the caller
     /// maps to external ids through `unmap`.
-    fn merge_word(
+    pub(super) fn merge_word(
         &self,
         sequence: &str,
         to_merge: &mut Vec<u32>,
