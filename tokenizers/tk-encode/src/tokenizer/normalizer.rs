@@ -1022,6 +1022,7 @@ impl From<&str> for NormalizedString {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use atomsplit::literal::Literal;
     use regex::Regex;
     use unicode_categories::UnicodeCategories;
 
@@ -1479,7 +1480,7 @@ mod tests {
 
         // Overlapping
         let mut s = NormalizedString::from("aaaab");
-        s.replace("aaa", "b").unwrap();
+        s.replace(&Literal::new(b"aaa").unwrap(), "b").unwrap();
         assert_eq!(s.get(), "bab");
 
         // Regex

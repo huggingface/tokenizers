@@ -2359,6 +2359,7 @@ dependencies = [
  "hf-hub",
  "indicatif 0.18.6",
  "itertools 0.14.0",
+ "libc",
  "log",
  "logos",
  "macro_rules_attribute",

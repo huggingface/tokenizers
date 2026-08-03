@@ -59,6 +59,7 @@ ptr_hash = { version = "2.0.1", default-features = false }
 memchr = "2.8.2"
 unicode-normalization = "0.1.25"
 yada = "0.7.0"
+libc = "0.2"
 
 # Latest released tokenizers, used as the comparison baseline by the CI benchmark
 # (examples gated on `bench-baseline`). Optional so production builds never pull it.
@@ -72,10 +73,11 @@ pcre2 = { version = "0.2", optional = true }
 logos = { version = "0.15", optional = true } # compile-time DFA lexer reference (pure Rust)
 
 [features]
-# `fancy-regex` is the OPTIONAL system-regex backend, needed ONLY for a `Split` pre-tokenizer with an
-# arbitrary (non-GPT) regex or the `Replace` normalizer — the atomsplit-native pre-tokenizers (GPT-2,
-# cl100k, deepseek, the class family, char-delimiter) need no backend. Without it a stub compiles and
-# those arbitrary-regex paths error at load. Enable with `--features fancy-regex`.
+# `fancy-regex` is the OPTIONAL system-regex backend, needed ONLY for a *regex* pattern in a `Split`
+# pre-tokenizer or a `Replace` normalizer — the atomsplit-native pre-tokenizers (GPT-2, cl100k,
+# deepseek, the class family, char-delimiter) need no backend, and a plain string pattern is searched
+# for directly. Without it a stub compiles and those regex paths error at load. Enable with
+# `--features fancy-regex`.
 default = ["progressbar"]
 progressbar = ["indicatif"]
 http = ["hf-hub"]

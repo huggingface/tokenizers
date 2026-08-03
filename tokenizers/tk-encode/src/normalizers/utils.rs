@@ -53,25 +53,7 @@ impl Normalizer for Sequence {
 
 impl pipeline::Normalizer for Sequence {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
-        let mut cow: Cow<'a, str> = Cow::Borrowed(input);
-        for normalizer in &self.normalizers {
-            cow = match cow {
-                // Still borrowing `input` ('a): chain directly so an all-no-op
-                // sequence stays zero-alloc and returns a borrow of `input`.
-                Cow::Borrowed(s) => pipeline::Normalizer::normalize(normalizer, s)?,
-                // Owned locally: the next step may borrow from it, so materialize
-                // its result before the local `String` is dropped.
-                Cow::Owned(s) => {
-                    let out = match pipeline::Normalizer::normalize(normalizer, &s)? {
-                        Cow::Owned(o) => Some(o),
-                        Cow::Borrowed(b) if b.as_ptr() == s.as_ptr() && b.len() == s.len() => None,
-                        Cow::Borrowed(b) => Some(b.to_owned()),
-                    };
-                    Cow::Owned(out.unwrap_or(s))
-                }
-            };
-        }
-        Ok(cow)
+        pipeline::normalize_all(&self.normalizers, input)
     }
 }
 

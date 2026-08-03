@@ -6,7 +6,7 @@
 //! because the pipeline's `encode` computes no offsets either; timing the
 //! baseline's offset-tracking `encode` would flatter the pipeline.
 //!
-//! Three isolated phases per model:
+//! Four isolated phases per model:
 //!
 //! 1. **Throughput** — single-thread warm MB/s per fixture on ~10 kB inputs
 //!    (the regime where per-input overhead is amortized — see
@@ -26,16 +26,25 @@
 //!    re-spawning this binary as `--memory <impl> <model.json>` children — one
 //!    implementation per process, so allocator page reuse can't blur the
 //!    attribution.
+//! 4. **Decode** — the inverse direction, anchored on the RELEASED crate (never
+//!    the in-tree legacy `Tokenizer`, which is being removed — oracles must not
+//!    depend on it). The release's `encode_fast` produces the id stream; pipeline
+//!    and released `decode` then consume the SAME ids (single-thread throughput +
+//!    the 1/2/4/8/max sweep + a decode-pass RSS delta), gated by `text_match`
+//!    (pipeline decode == released decode). While `PipelineTokenizer::decode` is a
+//!    loud stub the pipeline decode series is `null` (rendered "pending"); the
+//!    released baseline is measured regardless. No released baseline → no decode
+//!    oracle → the phase is skipped for that model.
 //!
-//! The in-tree `Tokenizer` is *not* benched: it only builds the pipeline and
-//! serves as the id-correctness oracle (`ids_match`, which CI fails on).
-//! `ids_match_baseline` — pipeline vs the released crate — is report-only,
-//! since a branch may intentionally fix encode behavior. Models the pipeline
-//! can't build (or encode) yet are reported with empty `results` (plus the
-//! failure `reason`) and their pipeline shape rather than benched — the CI
-//! grid renders those as roadmap cards. Each manifest entry carries a `desc`:
-//! a one-line label of the workload archetype the model exercises, passed
-//! through to the report.
+//! Correctness is judged against the released crate, never the in-tree
+//! `Tokenizer` (which is being removed and only *builds* the pipeline here):
+//! `ids_match` (encode ids) and `text_match` (decode text) both compare against
+//! the release and both fail CI. They are `null` when the release can't load the
+//! model — no reference, so no gate. Models the pipeline can't build (or encode)
+//! yet are reported with empty `results` (plus the failure `reason`) and their
+//! pipeline shape rather than benched — the CI grid renders those as roadmap
+//! cards. Each manifest entry carries a `desc`: a one-line label of the workload
+//! archetype the model exercises, passed through to the report.
 //!
 //! Emits one JSON object (`{baseline, models}`) on stdout, consumed by
 //! `.github/scripts/render_pipeline_bench.py` in CI.
@@ -237,19 +246,12 @@ fn bench_throughput(
             .map(|t| t.id)
             .collect()
     };
-    // The correctness gate CI fails on: pipeline vs this tree's Tokenizer, both flags
-    // (add_special_tokens=true exercises the post-process prefix/suffix step).
-    let ids_match = [false, true].into_iter().all(|add_special_tokens| {
-        f.chunks.iter().take(3).all(|c| {
-            oracle
-                .encode(c.as_str(), add_special_tokens)
-                .unwrap()
-                .get_ids()
-                == pipe_ids(c, add_special_tokens)
-        })
-    });
-    // Report-only: pipeline vs the released crate (a branch may fix encode bugs).
-    let ids_match_baseline = base.as_ref().map(|b| {
+    // The correctness gate CI fails on: pipeline ids == the released crate's ids,
+    // for both `add_special_tokens` values (`true` exercises the post-process
+    // stage). The in-tree `Tokenizer` only *builds* the pipeline here — never the
+    // reference, since it is on its way out. `None` when the release can't load
+    // this model (no reference to compare against).
+    let ids_match = base.as_ref().map(|b| {
         [false, true].into_iter().all(|add_special_tokens| {
             f.chunks.iter().take(3).all(|c| {
                 b.encode_fast(c.as_str(), add_special_tokens)
@@ -286,7 +288,6 @@ fn bench_throughput(
         "group": f.group,
         "mbps": { "baseline": base_mbps, "pipeline": pipe_mbps },
         "ids_match": ids_match,
-        "ids_match_baseline": ids_match_baseline,
     })
 }
 
@@ -660,6 +661,154 @@ fn bench_threads(
     json!({ "counts": counts, "pipeline_mbps": pipe, "baseline_mbps": base })
 }
 
+// ── decode: throughput + scaling ─────────────────────────────────────────────
+// Mirror of the encode phases, over the inverse direction, anchored on the
+// RELEASED crate — never the in-tree legacy `Tokenizer` (which is being removed;
+// oracles must not depend on it). The id stream is produced by the release's
+// `encode_fast`, and both decoders — pipeline and released baseline — consume
+// those SAME ids, so decode is a clean apples-to-apples judged against the
+// release. No released baseline → no decode oracle, so the whole phase is null.
+// `pipeline_ok` is the once-probed "can the pipeline decode yet" flag: while
+// `PipelineTokenizer::decode` is a loud stub it is false, so the pipeline series
+// is `null` (rendered "pending") and only the baseline bar is drawn.
+
+/// Encode every chunk with the released crate into its id stream (untimed input;
+/// specials included, so decode sees the frame tokens a real stream carries).
+fn ids_of(baseline: &BaselineTokenizer, chunks: &[String]) -> Vec<Vec<u32>> {
+    chunks
+        .iter()
+        .map(|c| {
+            baseline
+                .encode_fast(c.as_str(), true)
+                .unwrap()
+                .get_ids()
+                .to_vec()
+        })
+        .collect()
+}
+
+/// Warm single-thread decode throughput + the `text_match` gate for one fixture.
+/// `text_match` = pipeline decode == released decode (the gate CI fails on). All
+/// null when there is no released baseline to judge against.
+fn bench_decode(
+    baseline: Option<&BaselineTokenizer>,
+    pipeline: &PipelineTokenizer,
+    f: &Fixture,
+    pipeline_ok: bool,
+) -> Value {
+    let null = json!({
+        "decode_mbps": { "baseline": Value::Null, "pipeline": Value::Null },
+        "text_match": Value::Null,
+    });
+    let Some(baseline) = baseline else {
+        return null;
+    };
+    let ids = ids_of(baseline, &f.chunks);
+    // Throughput basis: bytes of text decode emits, measured once via the release.
+    let dec_bytes: usize = ids
+        .iter()
+        .map(|i| baseline.decode(i, false).unwrap().len())
+        .sum();
+    if dec_bytes == 0 {
+        return null;
+    }
+
+    let one_pass = |dec: &dyn Fn(&[u32]) -> usize| -> f64 {
+        let start = Instant::now();
+        let mut n = 0usize;
+        for i in &ids {
+            n += dec(i);
+        }
+        black_box(n);
+        start.elapsed().as_secs_f64()
+    };
+    let mbps = |secs: f64| dec_bytes as f64 / secs / 1e6;
+
+    // Correctness gate (first 3 chunks): pipeline decode == released decode.
+    let text_match = pipeline_ok.then(|| {
+        ids.iter()
+            .take(3)
+            .all(|i| pipeline.decode(i, false).unwrap() == baseline.decode(i, false).unwrap())
+    });
+
+    // Interleaved warm-up + REPS so thermal drift hits both equally.
+    one_pass(&|i| baseline.decode(i, false).unwrap().len());
+    if pipeline_ok {
+        one_pass(&|i| pipeline.decode(i, false).unwrap().len());
+    }
+    let (mut base_s, mut pipe_s) = (Vec::new(), Vec::new());
+    for _ in 0..REPS {
+        base_s.push(one_pass(&|i| baseline.decode(i, false).unwrap().len()));
+        if pipeline_ok {
+            pipe_s.push(one_pass(&|i| pipeline.decode(i, false).unwrap().len()));
+        }
+    }
+    let base_mbps = mbps(median_secs(base_s));
+    let pipe_mbps = (!pipe_s.is_empty()).then(|| mbps(median_secs(pipe_s)));
+
+    eprintln!(
+        "  {} decode: baseline {base_mbps:.1} MB/s, pipeline {}",
+        f.name,
+        pipe_mbps.map_or("pending".into(), |v: f64| format!("{v:.1} MB/s")),
+    );
+
+    json!({
+        "decode_mbps": { "baseline": base_mbps, "pipeline": pipe_mbps },
+        "text_match": text_match,
+    })
+}
+
+/// Median MB/s of decoding `ids` across `n` threads in a private rayon pool.
+fn par_decode_mbps(
+    decode: impl Fn(&[u32]) -> usize + Sync,
+    ids: &[Vec<u32>],
+    bytes: usize,
+    n: usize,
+) -> f64 {
+    let pool = ThreadPoolBuilder::new().num_threads(n).build().unwrap();
+    let run = || pool.install(|| ids.par_iter().map(|i| decode(i.as_slice())).sum::<usize>());
+    black_box(run());
+    let mut samples = Vec::with_capacity(REPS);
+    for _ in 0..REPS {
+        let t = Instant::now();
+        black_box(run());
+        samples.push(t.elapsed().as_secs_f64());
+    }
+    bytes as f64 / median_secs(samples) / 1e6
+}
+
+/// Multi-thread decode throughput sweep — pipeline vs the released crate at
+/// 1/2/4/8/max threads over the whole fixture corpus's id stream (release-produced).
+fn bench_decode_threads(
+    baseline: Option<&BaselineTokenizer>,
+    pipeline: &PipelineTokenizer,
+    all_chunks: &[String],
+    pipeline_ok: bool,
+) -> Value {
+    let Some(baseline) = baseline else {
+        return json!({ "counts": [], "pipeline_mbps": [], "baseline_mbps": [] });
+    };
+    let ids = ids_of(baseline, all_chunks);
+    let bytes: usize = ids
+        .iter()
+        .map(|i| baseline.decode(i, false).unwrap().len())
+        .sum();
+    let counts = thread_counts();
+    let (mut pipe, mut base) = (Vec::new(), Vec::new());
+    for &n in &counts {
+        let b = par_decode_mbps(|i| baseline.decode(i, false).unwrap().len(), &ids, bytes, n);
+        let p = pipeline_ok
+            .then(|| par_decode_mbps(|i| pipeline.decode(i, false).unwrap().len(), &ids, bytes, n));
+        eprintln!(
+            "    decode {n} thread(s): pipeline {}, baseline {b:.1} MB/s",
+            p.map_or("pending".into(), |v: f64| format!("{v:.1} MB/s")),
+        );
+        pipe.push(p);
+        base.push(b);
+    }
+    json!({ "counts": counts, "pipeline_mbps": pipe, "baseline_mbps": base })
+}
+
 /// Resident set size in bytes. Exact on Linux (`/proc`); on macOS a `ps`
 /// fallback good enough for local iteration — CI runs on Linux.
 fn rss_now() -> Option<i64> {
@@ -718,22 +867,32 @@ fn memory_sample() -> Vec<String> {
 }
 
 /// `--memory <impl> <model.json>` child entry: load one implementation, encode a
-/// capped pass over the fixtures, print `{load_bytes, encode_bytes, peak_bytes}`.
-/// One implementation per process so the deltas attribute cleanly.
+/// capped pass over the fixtures, then decode that pass's ids, printing
+/// `{load_bytes, encode_bytes, decode_bytes, peak_bytes}`. One implementation per
+/// process so the deltas attribute cleanly. `decode_bytes` is `null` when the
+/// implementation can't decode yet (the pipeline's loud stub).
 fn memory_child(which: &str, model: &Path) {
     let chunks = memory_sample();
 
     let rss0 = rss_now().unwrap_or(0);
     let mut n = 0usize;
-    let (after_load, after_encode) = match which {
+    let mut ids: Vec<Vec<u32>> = Vec::new();
+    let (after_load, after_encode, decode_bytes) = match which {
         "baseline" => {
             let mut tok = BaselineTokenizer::from_file(model).unwrap();
             inject_added_tokens_baseline(&mut tok);
             let after_load = rss_now().unwrap_or(0);
             for c in &chunks {
-                n += tok.encode_fast(c.as_str(), true).unwrap().len();
+                let enc = tok.encode_fast(c.as_str(), true).unwrap();
+                n += enc.len();
+                ids.push(enc.get_ids().to_vec());
             }
-            (after_load, rss_now().unwrap_or(0))
+            let after_encode = rss_now().unwrap_or(0);
+            for i in &ids {
+                n += tok.decode(i, false).map(|s| s.len()).unwrap_or(0);
+            }
+            let decode_bytes = rss_now().unwrap_or(0) - after_encode;
+            (after_load, after_encode, Some(decode_bytes))
         }
         "pipeline" => {
             let mut tok = Tokenizer::from_file(model).unwrap();
@@ -745,9 +904,25 @@ fn memory_child(which: &str, model: &Path) {
             drop(tok);
             let after_load = rss_now().unwrap_or(0);
             for c in &chunks {
-                n += pipeline.encode(c, true).unwrap().len();
+                let enc = pipeline.encode(c, true).unwrap();
+                n += enc.len();
+                ids.push(enc.iter().map(|t| t.id).collect());
             }
-            (after_load, rss_now().unwrap_or(0))
+            let after_encode = rss_now().unwrap_or(0);
+            // Decode is a loud stub today → skip the pass and report null, so the
+            // decode memory bar reads "pending" rather than a bogus 0.
+            let decode_bytes = if ids
+                .first()
+                .is_some_and(|i| pipeline.decode(i, false).is_ok())
+            {
+                for i in &ids {
+                    n += pipeline.decode(i, false).map(|s| s.len()).unwrap_or(0);
+                }
+                Some(rss_now().unwrap_or(0) - after_encode)
+            } else {
+                None
+            };
+            (after_load, after_encode, decode_bytes)
         }
         other => panic!("unknown impl {:?}", other),
     };
@@ -758,6 +933,7 @@ fn memory_child(which: &str, model: &Path) {
         json!({
             "load_bytes": after_load - rss0,
             "encode_bytes": after_encode - after_load,
+            "decode_bytes": decode_bytes,
             "peak_bytes": rss_peak().map(|p| p - rss0),
         })
     );
@@ -987,12 +1163,33 @@ fn main() {
             row.insert("stage_ns_per_byte".into(), stages);
             row.insert("pretok_vs_regex".into(), pretok);
         }
+        // Decode: probe once whether the pipeline can decode yet (a loud stub
+        // today → the pipeline decode series is `null`, rendered "pending"). The
+        // probe uses a bare id slice so it never touches the legacy encode path.
+        let (decode_ok, decode_reason) = match pipeline.decode(&[0], false) {
+            Ok(_) => (true, None),
+            Err(e) => {
+                eprintln!("  pipeline decode pending ({shape}): {e}");
+                (false, Some(format!("{e}")))
+            }
+        };
+        for (row, f) in rows.iter_mut().zip(&fixtures) {
+            let dec = bench_decode(baseline.as_ref(), &pipeline, f, decode_ok);
+            let row = row.as_object_mut().unwrap();
+            for (k, v) in dec.as_object().unwrap() {
+                row.insert(k.clone(), v.clone());
+            }
+        }
+        let decode_threads =
+            bench_decode_threads(baseline.as_ref(), &pipeline, &all_chunks, decode_ok);
+
         let memory = measure_memory(&path, baseline.is_some());
         let threads = bench_threads(baseline.as_ref(), &pipeline, &all_chunks);
 
         models.push(json!({
             "model": name, "desc": desc, "shape": shape,
             "results": rows, "memory": memory, "threads": threads,
+            "decode_threads": decode_threads, "decode_reason": decode_reason,
         }));
     }
 
