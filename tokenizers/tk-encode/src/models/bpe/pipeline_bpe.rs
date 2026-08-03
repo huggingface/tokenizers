@@ -1,7 +1,7 @@
 //! The pipeline BPE model: its tables, how it is built from a [`BPE`], and how a pretokenized
 //! sequence is turned into tokens. The merge engines themselves live in `convert`, `multipass` and
 //! `two_tier_merge`.
-use crate::models::bpe::model::{BPE, MergeMap};
+use crate::models::bpe::model::BPE;
 use crate::models::bpe::word::Word;
 use dary_heap::QuaternaryHeap;
 use crate::models::bpe::scratch::BpeScratch;
