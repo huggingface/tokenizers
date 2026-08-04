@@ -8,8 +8,8 @@
 //!
 //! Four isolated phases per model:
 //!
-//! 1. **Throughput** — single-thread warm MB/s per fixture on ~10 kB inputs
-//!    (the regime where per-input overhead is amortized — see
+//! 1. **Throughput** — single-thread warm MB/s per fixture on one ~10 MB input
+//!    (long enough that per-call overhead is negligible — see
 //!    `pipeline_benchmark.rs` for the size sweep). Every fixture starts from a
 //!    cold cache on both sides: the pipeline is rebuilt (fresh scratch pool →
 //!    fresh BPE word cache) and the baseline is cloned (the released BPE's
@@ -67,8 +67,17 @@ const DATA_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../data");
 const MANIFEST: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/examples/bench_models.json");
 // Keep in sync with the `tokenizers-release` pin in Cargo.toml.
 const BASELINE_VERSION: &str = "0.23.1";
+/// One long input per fixture for the throughput and scaling phases. Short inputs spend a large
+/// share of their time in per-call overhead — scratch checkout, added-token scan, post-process —
+/// which flatters or penalises implementations for work that has nothing to do with tokenizing.
+/// A fixture shorter than this is repeated up to it.
+const INPUT_BYTES: usize = 10 * 1024 * 1024;
+const MAX_CHUNKS: usize = 1;
+/// The memory child reads a bounded prefix instead, so its `rss0` measures the tokenizer and not
+/// the corpus sitting beside it.
 const CHUNK_BYTES: usize = 10 * 1024;
-const MAX_CHUNKS: usize = 100;
+/// How finely the scaling sweep cuts that long input, so every thread has units to take.
+const SCALE_PIECE: usize = 512 * 1024;
 const REPS: usize = 5;
 const PROBE: &str = "The quick brown fox jumps 123.";
 // Chunks per fixture for the memory children's encode pass: enough to warm the
@@ -127,18 +136,24 @@ struct Fixture {
     bytes: usize,
 }
 
-fn make_chunks(text: &str) -> Vec<String> {
+fn make_chunks(text: &str, target: usize, max: usize) -> Vec<String> {
     let mut chunks = Vec::new();
     let mut cur = String::new();
-    for line in text.lines().filter(|l| !l.trim().is_empty()) {
-        if !cur.is_empty() {
-            cur.push('\n');
-        }
-        cur.push_str(line);
-        if cur.len() >= CHUNK_BYTES {
-            chunks.push(std::mem::take(&mut cur));
-            if chunks.len() == MAX_CHUNKS {
-                return chunks;
+    // A fixture shorter than `target` is read repeatedly until it reaches it. Repetition is what a
+    // long document looks like to the caches anyway — vocabulary reuse is the steady state they are
+    // supposed to be measured in.
+    let passes = target.div_ceil(text.len().max(1)).max(1);
+    for _ in 0..passes {
+        for line in text.lines().filter(|l| !l.trim().is_empty()) {
+            if !cur.is_empty() {
+                cur.push('\n');
+            }
+            cur.push_str(line);
+            if cur.len() >= target {
+                chunks.push(std::mem::take(&mut cur));
+                if chunks.len() == max {
+                    return chunks;
+                }
             }
         }
     }
@@ -170,7 +185,11 @@ fn load_fixtures() -> Vec<Fixture> {
         .into_iter()
         .map(|(group, path)| {
             let name = path.file_stem().unwrap().to_str().unwrap().to_string();
-            let chunks = make_chunks(&std::fs::read_to_string(&path).unwrap());
+            let chunks = make_chunks(
+                &std::fs::read_to_string(&path).unwrap(),
+                INPUT_BYTES,
+                MAX_CHUNKS,
+            );
             let bytes = chunks.iter().map(String::len).sum();
             Fixture {
                 group,
@@ -612,14 +631,38 @@ fn thread_counts() -> Vec<usize> {
 /// Median MB/s of encoding `chunks` across `n` threads in a *private* rayon pool (so the sweep can't
 /// perturb — or be perturbed by — the global pool). One `encode` call per chunk; the sum is `black_box`'d
 /// so the work can't be elided.
+/// The throughput phase wants ONE long input; this phase wants more units than it has threads.
+/// Same bytes either way — cut the long input into pieces rather than encode more of it, so the
+/// sweep costs no extra work.
+fn scaling_pieces(chunks: &[String]) -> Vec<&str> {
+    let mut pieces = Vec::new();
+    for chunk in chunks {
+        let mut rest = chunk.as_str();
+        while rest.len() > SCALE_PIECE {
+            let mut cut = SCALE_PIECE;
+            while cut < rest.len() && !rest.is_char_boundary(cut) {
+                cut += 1;
+            }
+            let (head, tail) = rest.split_at(cut);
+            pieces.push(head);
+            rest = tail;
+        }
+        if !rest.is_empty() {
+            pieces.push(rest);
+        }
+    }
+    pieces
+}
+
 fn par_mbps(
     encode: impl Fn(&str) -> usize + Sync,
     chunks: &[String],
     bytes: usize,
     n: usize,
 ) -> f64 {
+    let pieces = scaling_pieces(chunks);
     let pool = ThreadPoolBuilder::new().num_threads(n).build().unwrap();
-    let run = || pool.install(|| chunks.par_iter().map(|c| encode(c.as_str())).sum::<usize>());
+    let run = || pool.install(|| pieces.par_iter().map(|c| encode(c)).sum::<usize>());
     black_box(run()); // warm the pool + lazy structures
     let mut samples = Vec::with_capacity(REPS);
     for _ in 0..REPS {
@@ -861,7 +904,7 @@ fn memory_sample() -> Vec<String> {
             .unwrap();
         let valid = std::str::from_utf8(&buf).map_or_else(|e| e.valid_up_to(), |_| buf.len());
         let text = std::str::from_utf8(&buf[..valid]).unwrap();
-        chunks.extend(make_chunks(text).into_iter().take(MEM_CHUNKS_PER_FIXTURE));
+        chunks.extend(make_chunks(text, CHUNK_BYTES, MEM_CHUNKS_PER_FIXTURE));
     }
     chunks
 }
