@@ -632,19 +632,27 @@ impl CachedWord {
 /// `None` for anything longer, which is the caller's signal to key on a hash
 /// instead.
 ///
-/// TODO: the copy is a call into `memcpy`, about a third of what building a key
-/// costs, because `len` is only known at run time and LLVM folds a copy into a load
-/// only when the length is a constant. A caller that knows what surrounds the word
-/// could pass the 16 bytes starting where the word does instead, turning the copy
-/// into one load plus a mask for the surplus bytes.
+/// The 16 bytes are taken in one load and the surplus masked off, rather than
+/// copied `len` bytes at a time: `len` is only known at run time, so the copy is a
+/// call into `memcpy` and the branch on its length mispredicts on every short word.
+/// The load reads past the word, so it is only taken when all 16 bytes fall in the
+/// page the word already sits in.
 fn pack_word(word: &[u8]) -> Option<u128> {
     let len = word.len();
     if len == 0 || len > 15 {
         return None;
     }
-    let mut lanes = [0u8; 16];
-    lanes[..len].copy_from_slice(word);
-    Some(u128::from_le_bytes(lanes) | ((len as u128) << 120))
+    let ptr = word.as_ptr();
+    let raw = if ptr as usize & 0xFFF <= 0x1000 - 16 {
+        // SAFETY: the read stays inside one page, and that page is mapped because
+        // `word` is not empty. The bytes past `len` are masked off below.
+        u128::from_le(unsafe { ptr.cast::<u128>().read_unaligned() })
+    } else {
+        let mut lanes = [0u8; 16];
+        lanes[..len].copy_from_slice(word);
+        u128::from_le_bytes(lanes)
+    };
+    Some((raw & (u128::MAX >> (8 * (16 - len)))) | ((len as u128) << 120))
 }
 
 // ---------------------------------------------------------------- overflow storage
@@ -783,6 +791,29 @@ mod tests {
         assert_eq!(pack_word(&[0u8; 15]).unwrap() & KEY_IS_HASH, 0);
         assert_eq!(pack_word(b""), None);
         assert_eq!(pack_word(&[b'x'; 16]), None);
+    }
+
+    /// The wide load and the copy it falls back to near a page boundary have to
+    /// agree, or the same word keys differently depending on where it landed.
+    #[test]
+    fn a_packed_key_is_the_words_bytes_whichever_read_took_it() {
+        let naive = |word: &[u8]| {
+            let mut lanes = [0u8; 16];
+            lanes[..word.len()].copy_from_slice(word);
+            Some(u128::from_le_bytes(lanes) | ((word.len() as u128) << 120))
+        };
+        let buffer = vec![b'z'; 3 * 0x1000];
+        for len in 1..=15usize {
+            let word: Vec<u8> = (0..len as u8).map(|i| i.wrapping_add(1)).collect();
+            assert_eq!(pack_word(&word), naive(&word));
+
+            // the same word placed so that reading 16 bytes would cross into the
+            // next page, which is the case the wide load has to decline
+            let start = 0x1000 - (buffer.as_ptr() as usize & 0xFFF) + 0x1000 - len;
+            let at = &mut buffer.clone()[start..start + len];
+            at.copy_from_slice(&word);
+            assert_eq!(pack_word(at), naive(&word));
+        }
     }
 
     /// A live entry's tag has to be something [`EMPTY`] is not, or a walk reads an
