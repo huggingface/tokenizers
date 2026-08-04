@@ -646,24 +646,41 @@ impl From<&[(&str, &str)]> for Inputs {
     }
 }
 
-pub enum EncodeHandle {
+impl From<Vec<&str>> for Inputs {
+    fn from(b: Vec<&str>) -> Self {
+        Inputs::Batch(b.into_iter().map(|s| s.to_owned()).collect())
+    }
+}
+
+enum HandleState {
     Blocking(Enumerate<IntoIter<Result<Vec<PipelineToken>>>>),
     // TODO:
     // Streaming
 }
 
+pub struct EncodeHandle {
+    state: HandleState,
+}
+
 impl EncodeHandle {
     /// Fully computed results, for the serial case
     fn blocking(results: Vec<Result<Vec<PipelineToken>>>) -> Self {
-        Self::Blocking(results.into_iter().enumerate())
-    }
-
-    fn len(&self) -> usize {
-        match self {
-            EncodeHandle::Blocking(results) => results.len(),
+        Self {
+            state: HandleState::Blocking(results.into_iter().enumerate()),
         }
     }
 
+    fn len(&self) -> usize {
+        match &self.state {
+            HandleState::Blocking(it) => it.len(),
+        }
+    }
+}
+
+impl EncodeHandle {
+    /// Wait for all scheduled encoding to finish
+    ///
+    /// Returns in input order
     pub fn wait(self) -> Result<Vec<Vec<PipelineToken>>> {
         // XXX: `Vec::new` does not allocate anything when capacity == 0
         let mut out = vec![Vec::new(); self.len()];
@@ -674,13 +691,27 @@ impl EncodeHandle {
     }
 }
 
-impl Iterator for EncodeHandle {
+/// Iterator yields results in completion order
+pub struct HandleIter {
+    handle: EncodeHandle,
+}
+
+impl Iterator for HandleIter {
     type Item = (usize, Result<Vec<PipelineToken>>);
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            Self::Blocking(it) => it.next(),
+        match &mut self.handle.state {
+            HandleState::Blocking(it) => it.next(),
         }
+    }
+}
+
+impl IntoIterator for EncodeHandle {
+    type Item = (usize, Result<Vec<PipelineToken>>);
+    type IntoIter = HandleIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        Self::IntoIter { handle: self }
     }
 }
 
@@ -736,6 +767,7 @@ impl PipelineTokenizer {
                 }
                 EncodeHandle::blocking(output)
             }
+            // TODO: proper post-processor logic, this is temporary
             Inputs::PairBatch(pb) => {
                 let mut output = Vec::with_capacity(pb.len() * 2);
                 for (s1, s2) in pb {
