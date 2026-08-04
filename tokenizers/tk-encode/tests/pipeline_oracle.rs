@@ -39,7 +39,7 @@ fn check_model(tok_file: &str) {
         return;
     };
     // Build constraints can be met while encode is still unimplemented for this shape.
-    if pipeline.encode(PROBE, false).is_err() {
+    if pipeline.encode(PROBE, false).wait().is_err() {
         eprintln!("skip {tok_file}: pipeline can't encode this model yet");
         return;
     }
@@ -79,6 +79,9 @@ fn check_model(tok_file: &str) {
                     .to_vec();
                 let got: Vec<u32> = pipeline
                     .encode(chunk, add_special_tokens)
+                    .wait()
+                    .unwrap()
+                    .first()
                     .unwrap()
                     .iter()
                     .map(|t| t.id)

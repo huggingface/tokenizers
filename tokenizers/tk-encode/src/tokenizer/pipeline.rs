@@ -1,5 +1,7 @@
 use std::cell::RefCell;
 use std::convert::TryInto;
+use std::iter::Enumerate;
+use std::vec::IntoIter;
 use std::{borrow::Cow, convert::TryFrom};
 
 use atomsplit::classify::classify;
@@ -573,6 +575,115 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
     }
 }
 
+pub enum Inputs {
+    Single(String),
+    Pair(String, String),
+    Batch(Vec<String>),
+    PairBatch(Vec<(String, String)>),
+}
+
+impl From<String> for Inputs {
+    fn from(s: String) -> Self {
+        Inputs::Single(s)
+    }
+}
+
+impl From<&str> for Inputs {
+    fn from(s: &str) -> Self {
+        Inputs::Single(s.to_owned())
+    }
+}
+
+impl From<&String> for Inputs {
+    fn from(s: &String) -> Self {
+        Inputs::Single(s.to_owned())
+    }
+}
+
+impl From<Vec<String>> for Inputs {
+    fn from(b: Vec<String>) -> Self {
+        Inputs::Batch(b)
+    }
+}
+
+impl From<&[&str]> for Inputs {
+    fn from(b: &[&str]) -> Self {
+        Inputs::Batch(b.iter().map(|s| (*s).to_owned()).collect())
+    }
+}
+
+impl From<(String, String)> for Inputs {
+    fn from(p: (String, String)) -> Self {
+        Inputs::Pair(p.0, p.1)
+    }
+}
+
+impl From<(&str, &str)> for Inputs {
+    fn from(p: (&str, &str)) -> Self {
+        Inputs::Pair(p.0.to_owned(), p.1.to_owned())
+    }
+}
+
+impl From<(&String, &String)> for Inputs {
+    fn from(p: (&String, &String)) -> Self {
+        Inputs::Pair(p.0.to_owned(), p.1.to_owned())
+    }
+}
+
+impl From<Vec<(String, String)>> for Inputs {
+    fn from(b: Vec<(String, String)>) -> Self {
+        Inputs::PairBatch(b)
+    }
+}
+
+impl From<&[(&str, &str)]> for Inputs {
+    fn from(b: &[(&str, &str)]) -> Self {
+        Inputs::PairBatch(
+            b.iter()
+                .map(|(s1, s2)| ((*s1).to_owned(), (*s2).to_owned()))
+                .collect(),
+        )
+    }
+}
+
+pub enum EncodeHandle {
+    Blocking(Enumerate<IntoIter<Result<Vec<PipelineToken>>>>),
+    // TODO:
+    // Streaming
+}
+
+impl EncodeHandle {
+    /// Fully computed results, for the serial case
+    fn blocking(results: Vec<Result<Vec<PipelineToken>>>) -> Self {
+        Self::Blocking(results.into_iter().enumerate())
+    }
+
+    fn len(&self) -> usize {
+        match self {
+            EncodeHandle::Blocking(results) => results.len(),
+        }
+    }
+
+    pub fn wait(self) -> Result<Vec<Vec<PipelineToken>>> {
+        // XXX: `Vec::new` does not allocate anything when capacity == 0
+        let mut out = vec![Vec::new(); self.len()];
+        for (seq, res) in self {
+            out[seq] = res?;
+        }
+        Ok(out)
+    }
+}
+
+impl Iterator for EncodeHandle {
+    type Item = (usize, Result<Vec<PipelineToken>>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Blocking(it) => it.next(),
+        }
+    }
+}
+
 impl PipelineTokenizer {
     /// Stage gates for [`encode_generic`](Self::encode_generic), in execution order.
     /// Each level runs every stage up to and including itself; `STAGE_POSTPROCESS` is
@@ -596,19 +707,48 @@ impl PipelineTokenizer {
     ///
     /// This way, special / added tokens declared on raw or normalized text are both caught.
     /// The remaining text is pre-tokenized and run through the model span by span.
-    pub fn encode(&self, input: &str, add_special_tokens: bool) -> Result<Vec<PipelineToken>> {
-        let mut output = Vec::new();
-        let mut pre_tokens = Vec::new();
-        let mut scratch = self.model.init_scratch();
+    pub fn encode(&self, inputs: impl Into<Inputs>, add_special_tokens: bool) -> EncodeHandle {
+        let inputs = inputs.into();
 
-        self.encode_generic::<{ Self::STAGE_POSTPROCESS }>(
-            input,
-            add_special_tokens,
-            &mut pre_tokens,
-            &mut scratch,
-            &mut output,
-        )?;
-        Ok(output)
+        match inputs {
+            Inputs::Single(s) => {
+                let output =
+                    self.encode_generic::<{ Self::STAGE_POSTPROCESS }>(&s, add_special_tokens);
+                EncodeHandle::blocking(vec![output])
+            }
+            // TODO: proper post-processor logic, this is temporary
+            Inputs::Pair(s1, s2) => {
+                let p1 =
+                    self.encode_generic::<{ Self::STAGE_POSTPROCESS }>(&s1, add_special_tokens);
+                let p2 =
+                    self.encode_generic::<{ Self::STAGE_POSTPROCESS }>(&s2, add_special_tokens);
+                EncodeHandle::blocking(vec![p1, p2])
+            }
+            Inputs::Batch(b) => {
+                let mut output = Vec::with_capacity(b.len());
+                for seq in b {
+                    output.push(
+                        self.encode_generic::<{ Self::STAGE_POSTPROCESS }>(
+                            &seq,
+                            add_special_tokens,
+                        ),
+                    );
+                }
+                EncodeHandle::blocking(output)
+            }
+            Inputs::PairBatch(pb) => {
+                let mut output = Vec::with_capacity(pb.len() * 2);
+                for (s1, s2) in pb {
+                    output.push(
+                        self.encode_generic::<{ Self::STAGE_POSTPROCESS }>(&s1, add_special_tokens),
+                    );
+                    output.push(
+                        self.encode_generic::<{ Self::STAGE_POSTPROCESS }>(&s2, add_special_tokens),
+                    );
+                }
+                EncodeHandle::blocking(output)
+            }
+        }
     }
 
     /// Decode token ids back to a `String`.
@@ -667,10 +807,10 @@ impl PipelineTokenizer {
         &self,
         input: &str,
         add_special_tokens: bool,
-        pre_tokens: &mut Vec<Span>,
-        scratch: &mut PipelineModelScratch,
-        output: &mut Vec<PipelineToken>,
-    ) -> Result<()> {
+    ) -> Result<Vec<PipelineToken>> {
+        let mut pre_tokens = Vec::with_capacity(input.len() / 4);
+        let mut output = Vec::with_capacity(input.len() / 4);
+        let mut scratch = self.model.init_scratch();
         let PipelinePostProcessor { prefix, suffix } = &self.post_processor;
         // Prepend prefix tokens, if any
         // todo: handle post-processing when encoding a pair of sequences (currently unsupported by the PipelineTokenizer)
@@ -703,14 +843,14 @@ impl PipelineTokenizer {
                                     // Pre-tokenize the chunk of normalized text
                                     pre_tokens.clear();
                                     self.pre_tokenizer
-                                        .pre_tokenize(normalized_chunk, pre_tokens)?;
+                                        .pre_tokenize(normalized_chunk, &mut pre_tokens)?;
                                     if STAGE >= Self::STAGE_MODEL {
                                         // Tokenize each chunk
                                         for pre_token in pre_tokens.iter() {
                                             self.model.tokenize_pipeline(
                                                 &normalized_chunk[pre_token.range()],
-                                                scratch,
-                                                output,
+                                                &mut scratch,
+                                                &mut output,
                                             )?;
                                         }
                                     }
@@ -725,7 +865,7 @@ impl PipelineTokenizer {
         if add_special_tokens && STAGE >= Self::STAGE_POSTPROCESS {
             output.extend_from_slice(suffix);
         }
-        Ok(())
+        Ok(output)
     }
 }
 
@@ -1096,6 +1236,9 @@ mod tests {
         let ids: Vec<u32> = PipelineTokenizer::try_from(&tok)
             .unwrap()
             .encode("hello world", false)
+            .wait()
+            .unwrap()
+            .first()
             .unwrap()
             .iter()
             .map(|t| t.id)
@@ -1198,6 +1341,9 @@ mod tests {
                 .to_vec();
             let got: Vec<u32> = pipeline
                 .encode(input, add_special_tokens)
+                .wait()
+                .unwrap()
+                .first()
                 .unwrap()
                 .iter()
                 .map(|t| t.id)
@@ -1220,13 +1366,19 @@ mod tests {
         assert_pipeline_matches_reference(&tok, "hello world");
 
         let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
-        let ids = |enc: Vec<PipelineToken>| enc.iter().map(|t| t.id).collect::<Vec<_>>();
+        let ids = |enc: Vec<Vec<PipelineToken>>| {
+            enc.first()
+                .unwrap()
+                .iter()
+                .map(|t| t.id)
+                .collect::<Vec<_>>()
+        };
         assert_eq!(
-            ids(pipeline.encode("hello world", true).unwrap()),
+            ids(pipeline.encode("hello world", true).wait().unwrap()),
             vec![0, 2, 3, 1]
         );
         assert_eq!(
-            ids(pipeline.encode("hello world", false).unwrap()),
+            ids(pipeline.encode("hello world", false).wait().unwrap()),
             vec![2, 3]
         );
     }
@@ -1304,6 +1456,9 @@ mod tests {
         let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
         let ids: Vec<u32> = pipeline
             .encode("hello world", true)
+            .wait()
+            .unwrap()
+            .first()
             .unwrap()
             .iter()
             .map(|t| t.id)

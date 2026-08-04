@@ -80,7 +80,13 @@ fn bench_pipeline(c: &mut Criterion) {
                     b.iter(|| {
                         let mut n = 0usize;
                         for chunk in &chunks {
-                            n += pipeline.encode(chunk, true).unwrap().len();
+                            n += pipeline
+                                .encode(chunk, true)
+                                .wait()
+                                .unwrap()
+                                .first()
+                                .unwrap()
+                                .len();
                         }
                         black_box(n)
                     })
