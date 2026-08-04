@@ -1948,10 +1948,8 @@ impl PipelineTokenizer {
             }
         }
         // Empty inputs (no chunks) are complete from the start.
-        for seq in 0..n_inputs {
-            if counts[seq] == 0 {
-                core.mark_done(seq);
-            }
+        for (seq, _) in counts.iter().enumerate().filter(|&(_, &c)| c == 0) {
+            core.mark_done(seq);
         }
 
         // Spawn one cursor-drainer per potential worker ('static: each holds an

@@ -86,14 +86,14 @@ pub(crate) fn rayon() -> Option<&'static rayon::ThreadPool> {
     register_fork_handler();
     let mut guard = CELL.try_lock().ok()?;
     let generation = POOL_GEN.load(Ordering::Acquire);
-    if let Some((pool, stamp)) = *guard {
-        if stamp == generation {
-            return Some(pool);
-        }
-        // Stale after a fork: abandon the old pool without touching it (its
-        // threads died with the fork; its locks may be held by ghosts) and
-        // build a fresh one for this generation.
+    if let Some((pool, stamp)) = *guard
+        && stamp == generation
+    {
+        return Some(pool);
     }
+    // A stamped-but-stale pool means we forked: abandon the old one without touching it
+    // (its threads died with the fork; its locks may be held by ghosts) and build a fresh
+    // one for this generation.
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(num_threads())
         .thread_name(|i| format!("tk-encode-{i}"))
