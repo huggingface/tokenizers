@@ -1,11 +1,11 @@
 use super::{super::OrderedVocabIter, Error, Pair, Word};
 use crate::models::bpe::Merge;
-use crate::pipeline::{self, ModelScratch, PipelineToken};
+use crate::pipeline::{self, ModelScratch, PipelineToken, Span};
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::byte_level::{self};
 use crate::utils::cache::{DEFAULT_CACHE_CAPACITY, MAX_LENGTH};
 use crate::utils::iter::ResultShunt;
-use crate::utils::word_cache::{Lookup, WordCache};
+use crate::utils::word_cache::{Lookup, MAX_INLINE_IDS, ProbeEmit, WordCache};
 use crate::vocab::bucket_vocab_store::BucketVocabStore;
 use crate::vocab_store::VocabStore;
 use ahash::AHashMap;
@@ -820,6 +820,90 @@ impl PipelineBPE {
 
 impl pipeline::Model for PipelineBPE {
     type Scratch = BpeScratch;
+
+    /// Every pre-token of a chunk in one call. Same work per word as [`Self::tokenize_pipeline`];
+    /// the scratch, the output reservation and the `Result` stop being per-word, and a cache hit
+    /// writes its ids at a running cursor rather than through `Vec::extend`.
+    fn tokenize_spans(
+        &self,
+        chunk: &str,
+        spans: &[Span],
+        scratch: &mut Self::Scratch,
+        output: &mut Vec<PipelineToken>,
+    ) -> Result<()> {
+        let BpeScratch {
+            merge_queue,
+            skip,
+            word,
+            word_cache,
+        } = scratch;
+        // 92% of English pre-tokens are one id, 98% at most two.
+        output.reserve(2 * spans.len() + MAX_INLINE_IDS);
+        let mut capacity = output.capacity();
+        let mut cursor = output.len();
+        for span in spans {
+            // SAFETY: the pre-tokenizer only cuts on char boundaries, so `&chunk[..]`'s check is
+            // already satisfied -- and it is not free once per word.
+            let sequence = unsafe { chunk.get_unchecked(span.range()) };
+            if sequence.is_empty() {
+                continue;
+            }
+            let mut placement = None;
+            if let Some(cache) = word_cache.as_mut() {
+                // The probe writes before it reports a count, so make the room first.
+                if cursor + MAX_INLINE_IDS > capacity {
+                    // SAFETY: `cursor` counts what has been written so far.
+                    unsafe { output.set_len(cursor) };
+                    output.reserve(spans.len() + MAX_INLINE_IDS);
+                    capacity = output.capacity();
+                }
+                // SAFETY: the check above leaves `MAX_INLINE_IDS` slots past `cursor`.
+                let found = unsafe {
+                    cache.probe_emit(
+                        sequence.as_bytes(),
+                        output.as_mut_ptr().add(cursor).cast::<u32>(),
+                    )
+                };
+                match found {
+                    ProbeEmit::Wrote(n) => {
+                        cursor += n;
+                        continue;
+                    }
+                    // Spilled to the arena: copy what the probe found, do not probe again.
+                    ProbeEmit::Hit(ids) => {
+                        // SAFETY: `cursor` counts what has been written so far.
+                        unsafe { output.set_len(cursor) };
+                        output.extend(ids.iter().map(|&id| PipelineToken { id }));
+                        cursor = output.len();
+                        capacity = output.capacity();
+                        continue;
+                    }
+                    ProbeEmit::Miss(at) => placement = at,
+                }
+            }
+            // SAFETY: `cursor` counts what was written; the paths below use `output` normally.
+            unsafe { output.set_len(cursor) };
+            let start = output.len();
+            if self.ignore_merges
+                && let Some(id) = self.vocab.get_bytes(sequence.as_bytes())
+            {
+                output.push(PipelineToken { id });
+            } else {
+                self.merge_word(sequence, merge_queue, skip, word);
+                output.extend(word.get_chars_iter().map(|id| PipelineToken { id }));
+            }
+            if let Some(cache) = word_cache.as_mut()
+                && let Some(at) = placement
+            {
+                cache.insert(at, output[start..].iter().map(|token| token.id));
+            }
+            cursor = output.len();
+            capacity = output.capacity();
+        }
+        // SAFETY: `cursor` counts every token written above.
+        unsafe { output.set_len(cursor) };
+        Ok(())
+    }
 
     fn tokenize_pipeline(
         &self,

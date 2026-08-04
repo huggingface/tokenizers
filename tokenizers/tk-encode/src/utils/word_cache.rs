@@ -373,6 +373,36 @@ impl WordCache {
         }
     }
 
+    /// Probe, and on an inline hit write the ids to `dst`, returning how many there were.
+    ///
+    /// [`Self::lookup`] returns a `&[u32]`, which costs the caller a second read of the slot and a
+    /// copy of run-time length. Here the line is read once and every lane is stored
+    /// unconditionally; lanes past the count are dead. Anything else falls back to the walk.
+    ///
+    /// # Safety
+    /// `dst` must have room for [`MAX_INLINE_IDS`] writes.
+    #[inline]
+    pub unsafe fn probe_emit<'c, 'w>(&'c self, word: &'w [u8], dst: *mut u32) -> ProbeEmit<'c, 'w> {
+        if let Some(key) = pack_word(word) {
+            let home = self.hasher.hash_one(key) as usize & self.index_mask;
+            // SAFETY: `index_mask` is `n_slots - 1`, so a masked index is in range.
+            let slot = unsafe { &*self.cached_words.as_ptr().add(home) };
+            if slot.word_bytes_or_hash == key && slot.inline_id_count != SPILLED {
+                // SAFETY: the caller guarantees room for `MAX_INLINE_IDS` writes.
+                unsafe {
+                    for lane in 0..MAX_INLINE_IDS {
+                        dst.add(lane).write(slot.word_ids[lane]);
+                    }
+                }
+                return ProbeEmit::Wrote(slot.inline_id_count as usize);
+            }
+        }
+        match self.lookup(word) {
+            Lookup::Hit(ids) => ProbeEmit::Hit(ids),
+            Lookup::Miss(at) => ProbeEmit::Miss(at),
+        }
+    }
+
     /// Store `ids` as the encoding of the word that `at` was built for.
     ///
     /// Overwrites whatever the slot held, which only happens when the word's window
@@ -512,6 +542,16 @@ impl WordCache {
 
 // ---------------------------------------------------------------- what a lookup returns
 
+/// What [`WordCache::probe_emit`] found.
+pub enum ProbeEmit<'c, 'w> {
+    /// Already written at the cursor; advance by this many.
+    Wrote(usize),
+    /// A hit whose ids live in the arena; the caller copies them.
+    Hit(&'c [u32]),
+    /// As [`Lookup::Miss`].
+    Miss(Option<Placement<'w>>),
+}
+
 /// What [`WordCache::lookup`] found.
 pub enum Lookup<'c, 'w> {
     /// The ids the word encoded to last time.
@@ -564,7 +604,7 @@ enum Walk<'w> {
 /// [`WordCache::token_ids_arena`]. Three is enough for most words in an alphabetic
 /// script, and for far fewer of them in Chinese or Korean, where a word turns into
 /// more ids.
-const MAX_INLINE_IDS: usize = 3;
+pub(crate) const MAX_INLINE_IDS: usize = 3;
 
 /// A sentinel value stored in [`CachedWord::word_bytes_or_hash`] when it holds the hash of a long word instead of the word itself.
 const KEY_IS_HASH: u128 = 1 << 127;
