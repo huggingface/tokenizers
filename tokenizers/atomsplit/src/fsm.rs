@@ -5,8 +5,9 @@
 //! The class family (WhitespaceSplit / Punctuation / Digits / Whitespace / Bert) goes through
 //! [`class_runs_into`]: on aarch64/wasm the SIMD movemask boundary-extractor + homogeneous-chunk
 //! early-out (in `simd_fsm`), elsewhere the scalar run-end core ([`emit_class_spans`]). The
-//! regex-shaped ones ([`fsm_cl100k`] / [`fsm_o200k`] / [`fsm_deepseek`] / [`fsm_byte_level`]) are scalar
-//! jump-tables (only the class family's [`class_runs_into`] has a SIMD path).
+//! regex-shaped ones ([`fsm_cl100k`] / [`fsm_o200k`] / [`fsm_tekken`] / [`fsm_deepseek`] /
+//! [`fsm_byte_level`]) are scalar jump-tables (only the class family's [`class_runs_into`] has a SIMD
+//! path).
 
 pub(crate) use crate::classify::{Atom, char_len, classify, in_mask, mask};
 // Atom-tag aliases, shared with the per-tokenizer FSM submodules (`fsm/*.rs`) via `use super::*`.
@@ -240,7 +241,7 @@ mod o200k;
 pub use byte_level::fsm_byte_level;
 pub use cl100k::{fsm_cl100k, fsm_cl100k_cap};
 pub use deepseek::fsm_deepseek;
-pub use o200k::fsm_o200k;
+pub use o200k::{fsm_o200k, fsm_tekken};
 
 // ── Composition recipes ────────────────────────────────────────────────────────────────────────
 // Each pre-tokenizer = (classify → fsm shape + params). `tags` and `out` are caller-owned

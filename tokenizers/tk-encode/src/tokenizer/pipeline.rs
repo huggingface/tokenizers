@@ -18,12 +18,13 @@ use crate::vocab::bucket_added_vocabulary::{
 };
 use crate::{
     ModelWrapper, PostProcessorWrapper, PreTokenizerWrapper, Token, Tokenizer,
-    normalizers::NormalizerWrapper,
+    normalizers::{NormalizerWrapper, metaspace::MetaspaceNormalizer},
     pre_tokenizers::{
         bert::BertPreTokenizer,
         delimiter::CharDelimiterSplit,
         digits::Digits,
         fixed_length::FixedLength,
+        metaspace,
         punctuation::Punctuation,
         sequence::PipelineSequence,
         split::{Split as SplitPretok, SplitPattern},
@@ -122,6 +123,62 @@ pub(crate) fn classify_into_spans_bits(
 
 pub trait Normalizer {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>>;
+}
+
+/// Runs `normalizers` in order, each one seeing what the one before it produced.
+///
+/// A normalizer returns a [`Cow`] (copy-on-write): a borrow when it had nothing to change, an owned
+/// `String` when it rewrote the text.
+///
+/// Chaining them needs care, because an owned `String` produced halfway through the chain is local to this function.
+/// The next normalizer may hand back a borrow of that locally owned [`String`], and that borrow cannot outlive the `String`.
+///
+/// Text no normalizer touches is never copied: it stays a borrow of `input` throughout.
+pub(crate) fn normalize_all<'a, N: Normalizer>(
+    normalizers: &[N],
+    input: &'a str,
+) -> Result<Cow<'a, str>> {
+    let mut cow: Cow<'a, str> = Cow::Borrowed(input);
+    for normalizer in normalizers {
+        cow = match cow {
+            // Still `input` itself, which outlives us: pass it straight on.
+            Cow::Borrowed(s) => normalizer.normalize(s)?,
+            Cow::Owned(s) => {
+                let out = match normalizer.normalize(&s)? {
+                    // Rewritten again: keep the new `String`, drop ours.
+                    Cow::Owned(o) => Some(o),
+                    // Handed `s` back untouched: keep the `String` we already own.
+                    Cow::Borrowed(b) if b.as_ptr() == s.as_ptr() && b.len() == s.len() => None,
+                    // A borrow into `s` (for example, a substring of `s`): copy it out before `s` is dropped.
+                    Cow::Borrowed(b) => Some(b.to_owned()),
+                };
+                Cow::Owned(out.unwrap_or(s))
+            }
+        };
+    }
+    Ok(cow)
+}
+
+/// One normalization step of a [`PipelineTokenizer`]. Not every step comes from the config's
+/// `normalizer` field: a `Metaspace` pre-tokenizer contributes one too, see
+/// [`PipelineTokenizer::try_from`].
+// `NormalizerWrapper` is the big variant, and there are only ever a couple of these per tokenizer.
+#[allow(clippy::large_enum_variant)]
+#[derive(Debug)]
+enum PipelineNormalizer {
+    /// The `normalizer` field of the config, as-is.
+    Declared(NormalizerWrapper),
+    /// The text-rewriting half of a `Metaspace` pre-tokenizer.
+    Metaspace(MetaspaceNormalizer),
+}
+
+impl Normalizer for PipelineNormalizer {
+    fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
+        match self {
+            Self::Declared(normalizer) => normalizer.normalize(input),
+            Self::Metaspace(normalizer) => normalizer.normalize(input),
+        }
+    }
 }
 
 /// Range-based pre-tokenization: yields spans into the input rather than owned
@@ -448,7 +505,7 @@ impl<'a, 'b, PatternMatcher: PipelinePatternMatcher> Iterator
 /// stages over borrowed ranges to avoid the reference path's allocations.
 pub struct PipelineTokenizer {
     added_vocabulary: BucketAddedVocabulary,
-    normalizer: Option<NormalizerWrapper>,
+    normalizers: Vec<PipelineNormalizer>,
     pre_tokenizer: PipelinePreTokenizer,
     model: PipelineModel,
     post_processor: PipelinePostProcessor,
@@ -536,12 +593,31 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
     /// Adding them in id order preserves ids (tokens present in the model reuse their model id, the
     /// rest keep their dense order), so the pipeline emits the same ids as the reference tokenizer.
     fn try_from(tok: &Tokenizer) -> Result<Self> {
-        let pre_tokenizer: PipelinePreTokenizer = tok
-            .get_pre_tokenizer()
-            .cloned()
-            .map(TryInto::try_into)
-            .transpose()?
-            .unwrap_or(PipelinePreTokenizer::None);
+        let mut normalizers = Vec::new();
+        if let Some(declared) = tok.get_normalizer() {
+            normalizers.push(PipelineNormalizer::Declared(declared.clone()));
+        }
+
+        // A `Metaspace` pre-tokenizer does two jobs at once: it writes `▁` delimiters into the text,
+        // then cuts on them. The pipeline keeps rewriting and cutting apart, so we rebuild it as a
+        // normalizer plus a `Split`. That normalizer runs after the declared one, matching the order
+        // the config asks for: the whole normalizer first, then the pre-tokenizer.
+        let pre_tokenizer = match metaspace::to_normalizer_and_split(tok.get_pre_tokenizer()) {
+            Some((metaspace_normalizer, split)) => {
+                // One shift this brings: added tokens flagged `normalized` are matched against text
+                // that already carries the delimiters, so such a token containing a space would stop
+                // matching. The t5 and albert configs we test have no normalized added token at all.
+                normalizers.push(PipelineNormalizer::Metaspace(metaspace_normalizer));
+                PipelinePreTokenizer::Split(split)
+            }
+            // Every other pre-tokenizer converts on its own.
+            None => tok
+                .get_pre_tokenizer()
+                .cloned()
+                .map(TryInto::try_into)
+                .transpose()?
+                .unwrap_or(PipelinePreTokenizer::None),
+        };
 
         let legacy_av = tok.get_added_vocabulary();
         let mut added_tokens: Vec<_> = legacy_av.get_added_tokens_decoder().iter().collect();
@@ -618,7 +694,7 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
 
         Ok(Self {
             added_vocabulary,
-            normalizer: tok.get_normalizer().cloned(),
+            normalizers,
             pre_tokenizer,
             model,
             post_processor: tok
@@ -743,10 +819,7 @@ impl PipelineTokenizer {
                 }
                 Segment::Text(chunk) => {
                     let normalized: Cow<str> = if STAGE >= Self::STAGE_NORMALIZE {
-                        match &self.normalizer {
-                            Some(normalizer) => normalizer.normalize(chunk)?,
-                            None => Cow::Borrowed(chunk),
-                        }
+                        normalize_all(&self.normalizers, chunk)?
                     } else {
                         Cow::Borrowed(chunk)
                     };
@@ -1185,6 +1258,34 @@ mod tests {
                 .find(|((start, _), _)| *start >= search_offset)
                 .copied()
         }
+    }
+
+    /// Test the literal only replace and splits can be run without the fancy-regex feature
+    #[cfg(not(feature = "fancy-regex"))]
+    #[test]
+    fn string_pattern_config_loads_and_encodes_with_no_regex_backend() {
+        let normalizer: NormalizerWrapper =
+            serde_json::from_str(r#"{"type":"Replace","pattern":{"String":" "},"content":"▁"}"#)
+                .unwrap();
+        let pre_tokenizer: PreTokenizerWrapper = serde_json::from_str(
+            r#"{"type":"Split","pattern":{"String":"▁"},"behavior":"MergedWithPrevious","invert":false}"#,
+        )
+        .unwrap();
+
+        let mut tok = wordlevel_tokenizer(vec![("<unk>", 0), ("hello▁", 1), ("world", 2)], None);
+        tok.with_normalizer(Some(normalizer)).unwrap();
+        tok.with_pre_tokenizer(Some(pre_tokenizer));
+
+        let ids: Vec<u32> = PipelineTokenizer::try_from(&tok)
+            .unwrap()
+            .encode("hello world", false)
+            .unwrap()
+            .iter()
+            .map(|t| t.id)
+            .collect();
+        // Not the unk id: both the `Replace` and the `Split` really ran on the literal path.
+        assert_eq!(ids, [1, 2]);
+        assert_pipeline_matches_reference(&tok, "hello world");
     }
 
     #[test]

@@ -51,14 +51,6 @@ impl Symbol {
         self.len += other.len;
         self.next = other.next;
     }
-
-    pub fn id(&self) -> u32 {
-        self.c
-    }
-
-    pub fn add_len(&mut self, rhs: usize) {
-        self.len += rhs;
-    }
 }
 
 #[derive(Clone, Default)]
@@ -121,6 +113,7 @@ impl Word {
         });
     }
 
+    // this is a training only function, should potentially be feature gated.
     pub fn merge(
         &mut self,
         c1: u32,
@@ -186,12 +179,15 @@ impl Word {
         queue.clear();
         skip.clear();
 
+        // this is O(n)
         queue.extend(
             self.symbols
                 .windows(2)
                 .enumerate()
                 .filter_map(|(index, window)| {
+                    // this could be a u64 adress
                     let pair = (window[0].c, window[1].c);
+                    // merges is close-adressing
                     merges.get(&pair).map(|m| Merge {
                         pos: index,
                         rank: m.0,
@@ -288,10 +284,6 @@ impl Word {
             pos = new_pos;
             offset
         })
-    }
-
-    pub(crate) fn last_mut(&mut self) -> Option<&mut Symbol> {
-        self.symbols.last_mut()
     }
 }
 

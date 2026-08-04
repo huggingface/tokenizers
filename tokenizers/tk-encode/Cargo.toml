@@ -73,16 +73,23 @@ pcre2 = { version = "0.2", optional = true }
 logos = { version = "0.15", optional = true } # compile-time DFA lexer reference (pure Rust)
 
 [features]
-# `fancy-regex` is the OPTIONAL system-regex backend, needed ONLY for a `Split` pre-tokenizer with an
-# arbitrary (non-GPT) regex or the `Replace` normalizer — the atomsplit-native pre-tokenizers (GPT-2,
-# cl100k, deepseek, the class family, char-delimiter) need no backend. Without it a stub compiles and
-# those arbitrary-regex paths error at load. Enable with `--features fancy-regex`.
+# `fancy-regex` is the OPTIONAL system-regex backend, needed ONLY for a *regex* pattern in a `Split`
+# pre-tokenizer or a `Replace` normalizer — the atomsplit-native pre-tokenizers (GPT-2, cl100k,
+# deepseek, the class family, char-delimiter) need no backend, and a plain string pattern is searched
+# for directly. Without it a stub compiles and those regex paths error at load. Enable with
+# `--features fancy-regex`.
 default = ["progressbar"]
 progressbar = ["indicatif"]
 http = ["hf-hub"]
 unstable_wasm = ["fancy-regex", "getrandom/wasm_js"]
 rustls-tls = ["hf-hub?/rustls-tls"]
-bench-baseline = ["dep:tokenizers-release", "dep:onig", "dep:pcre2", "dep:logos", "fancy-regex"]
+bench-baseline = [
+  "dep:tokenizers-release",
+  "dep:onig",
+  "dep:pcre2",
+  "dep:logos",
+  "fancy-regex",
+]
 
 [dev-dependencies]
 criterion = "0.6"
@@ -93,6 +100,11 @@ tracing-subscriber = "0.3.18"
 
 [[bench]]
 name = "pipeline_benchmark"
+harness = false
+
+[[bench]]
+name = "bpe_model_benchmark"
+required-features = ["http"]
 harness = false
 
 [[example]]

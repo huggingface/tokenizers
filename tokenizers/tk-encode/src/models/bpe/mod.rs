@@ -1,9 +1,18 @@
 //! [Byte Pair Encoding](https://www.aclweb.org/anthology/P16-1162/) model.
 use std::{iter, mem};
+mod bpe_build_tables;
+mod bpe_model;
+mod bpe_pretoken_to_rank;
+mod bpe_scratch;
+mod bytelevel_folding;
+mod legacy_model;
+mod legacy_serialization;
+pub mod legacy_word;
+mod merge_hot_cold_queue;
+mod merge_multipass;
 
-mod model;
-mod serialization;
-pub mod word;
+#[cfg(test)]
+mod tests;
 
 pub type Pair = (u32, u32);
 
@@ -82,5 +91,7 @@ where
 }
 
 // Re-export
-pub use model::*;
-pub use word::*;
+pub use bpe_model::*;
+pub use bpe_scratch::*;
+pub use legacy_model::*;
+pub use legacy_word::*;

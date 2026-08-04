@@ -12,9 +12,13 @@ use std::sync::atomic::Ordering;
 // Re-export rayon current_num_threads
 pub use rayon::current_num_threads;
 
+/// TODO: deprecate
 pub const ENV_VARIABLE: &str = "TOKENIZERS_PARALLELISM";
 
+/// TODO: deprecate
 static USED_PARALLELISM: AtomicBool = AtomicBool::new(false);
+
+/// TODO: deprecate
 static PARALLELISM: AtomicU8 = AtomicU8::new(0);
 
 /// Check if the TOKENIZERS_PARALLELISM env variable has been explicitly set

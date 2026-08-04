@@ -1,5 +1,6 @@
 use crate::pipeline;
 use crate::utils::{GptFsm, GptFsmPattern, SysRegex, gpt_fsm};
+use atomsplit::literal::Literal;
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::tokenizer::{
@@ -26,15 +27,26 @@ impl From<&str> for SplitPattern {
     }
 }
 
+/// How a [`Split`] looks for its pattern.
+#[derive(Debug)]
+pub enum Search {
+    /// A plain string, scanned for directly — no regex engine involved, so this works in every build.
+    Literal(Literal),
+    /// A real regex, which needs the system backend (the `fancy-regex` feature).
+    Regex(SysRegex),
+    /// No way to search: no backend is compiled and the pattern is a regex. Splitting then only works
+    /// through the native FSM below, and errors otherwise.
+    Unavailable,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(tag = "type")]
 pub struct Split {
     pub pattern: SplitPattern,
-    /// System-regex backend for the pattern. `None` only when no backend is compiled *and* the
-    /// pattern is a recognized GPT regex handled natively by `fsm` — so no backend is needed.
-    /// With `fancy-regex` enabled this is always `Some`; the default build has no backend (`fsm` only).
+    /// How the pattern is found. A plain string never needs a backend; a regex does, unless it is one
+    /// of the GPT patterns the native FSM below covers.
     #[serde(skip)]
-    pub regex: Option<SysRegex>,
+    pub search: Search,
     pub behavior: SplitDelimiterBehavior,
     pub invert: bool,
     /// Native `atomsplit` FSM for a recognized GPT regex (gpt2 / cl100k-Llama-3 / o200k), used on the
@@ -93,22 +105,21 @@ impl Split {
             SplitPattern::String(_) => None,
             SplitPattern::Regex(r) => gpt_fsm(r),
         };
-        // Compile a system-regex backend for the pattern. With `fancy-regex` enabled this succeeds and
-        // the legacy path is unchanged; with no backend (the default) it's only fatal when atomsplit
-        // can't cover the pattern (i.e. an arbitrary regex, not a recognized GPT one).
-        let compiled = match &pattern {
-            SplitPattern::String(s) => SysRegex::new(&regex::escape(s)),
-            SplitPattern::Regex(r) => SysRegex::new(r),
-        };
-        let regex = match compiled {
-            Ok(re) => Some(re),
-            Err(_) if fsm.is_some() => None,
-            Err(e) => return Err(e),
+        let search = match &pattern {
+            SplitPattern::String(s) => Search::Literal(Literal::new(s.as_bytes())?),
+            // A regex needs the system backend. Missing it is only fatal when the native FSM cannot
+            // cover this pattern either — which `pre_tokenize` reports, since a recognized GPT
+            // pattern in its usual form splits without any backend.
+            SplitPattern::Regex(r) => match SysRegex::new(r) {
+                Ok(regex) => Search::Regex(regex),
+                Err(_) if fsm.is_some() => Search::Unavailable,
+                Err(e) => return Err(e),
+            },
         };
 
         Ok(Self {
             pattern,
-            regex,
+            search,
             behavior,
             invert,
             fsm,
@@ -133,15 +144,27 @@ impl Split {
 
 impl PreTokenizer for Split {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
-        if let Some(regex) = &self.regex {
-            return if self.invert {
-                pretokenized.split(|_, normalized| normalized.split(Invert(regex), self.behavior))
-            } else {
-                pretokenized.split(|_, normalized| normalized.split(regex, self.behavior))
-            };
+        match &self.search {
+            Search::Literal(literal) => {
+                return if self.invert {
+                    pretokenized
+                        .split(|_, normalized| normalized.split(Invert(literal), self.behavior))
+                } else {
+                    pretokenized.split(|_, normalized| normalized.split(literal, self.behavior))
+                };
+            }
+            Search::Regex(regex) => {
+                return if self.invert {
+                    pretokenized
+                        .split(|_, normalized| normalized.split(Invert(regex), self.behavior))
+                } else {
+                    pretokenized.split(|_, normalized| normalized.split(regex, self.behavior))
+                };
+            }
+            Search::Unavailable => {}
         }
-        // No system-regex backend: only a recognized GPT pattern in its canonical usage (Isolated,
-        // not inverted — how these regexes always ship) can split, via the native atomsplit FSM.
+        // No way to search for the pattern: only a recognized GPT pattern in its canonical usage
+        // (Isolated, not inverted — how these regexes always ship) can split, via the native FSM.
         let fsm = self
             .fsm
             .filter(|_| !self.invert && self.behavior == SplitDelimiterBehavior::Isolated)
@@ -191,21 +214,25 @@ impl pipeline::PreTokenizer for Split {
                         }
                         GptFsm::Gpt2 => atomsplit::fsm::fsm_byte_level(bytes, tags, spans),
                         GptFsm::O200k => atomsplit::fsm::fsm_o200k(bytes, tags, spans),
+                        GptFsm::Tekken => atomsplit::fsm::fsm_tekken(bytes, tags, spans),
                     },
                     out,
                 ),
             }
             return Ok(());
         }
-        // Not a natively-routed GPT regex: fall back to the system-regex backend.
-        let regex = self.regex.as_ref().ok_or_else(|| -> crate::tokenizer::Error {
-            "this `Split` pattern needs a system-regex backend; enable the `fancy-regex` feature"
-                .into()
-        })?;
-        let matches = if self.invert {
-            Invert(regex).find_matches(text)?
-        } else {
-            regex.find_matches(text)?
+        // Not a natively-routed GPT regex: fall-back to Literal or Regex search
+        let matches = match (&self.search, self.invert) {
+            (Search::Literal(literal), false) => literal.find_matches(text)?,
+            (Search::Literal(literal), true) => Invert(literal).find_matches(text)?,
+            (Search::Regex(regex), false) => regex.find_matches(text)?,
+            (Search::Regex(regex), true) => Invert(regex).find_matches(text)?,
+            (Search::Unavailable, _) => {
+                return Err(
+                    "this `Split` pattern needs a system-regex backend; enable the `fancy-regex` feature"
+                        .into(),
+                );
+            }
         };
         pipeline::split_matches(out, matches, self.behavior);
         Ok(())
@@ -487,6 +514,34 @@ mod tests {
     }
 
     #[test]
+    fn pipeline_tekken_uses_fsm_and_matches_legacy() {
+        // Mistral's tekken regex (mistral-small-4) → recognized → routes to fsm_tekken. Same corpus
+        // shape as o200k, whose grammar it shares: the differences it must get right are apostrophes
+        // (no contraction suffix, so `'s` starts a new token) and one token per digit.
+        let tekken = atomsplit::regexes::TEKKEN;
+        let corpus = "McDonald's iPhone SQLite HELLOWorld camelCase don't I'll We've 3.14159 café Straße 世界 안녕\n\n  path/to/file Mixed CASE end.";
+        let pretok = Split::new(SplitPattern::Regex(tekken.into()), Isolated, false).unwrap();
+        assert_eq!(
+            pretok.fsm,
+            Some(crate::utils::GptFsm::Tekken),
+            "tekken / mistral pattern should route to the native FSM"
+        );
+
+        let mut pre = PreTokenizedString::from(corpus);
+        pretok.pre_tokenize(&mut pre).unwrap();
+        let legacy: Vec<(&str, (u32, u32))> = pre
+            .get_splits(OffsetReferential::Original, OffsetType::Byte)
+            .into_iter()
+            .map(|(s, o, _)| (s, (o.0 as u32, o.1 as u32)))
+            .collect();
+
+        assert_eq!(
+            pipeline_split(SplitPattern::Regex(tekken.into()), Isolated, false, corpus),
+            legacy,
+        );
+    }
+
+    #[test]
     fn pipeline_qwen2_uses_fsm_and_matches_legacy() {
         // Qwen2's regex is cl100k character-for-character EXCEPT rule 3 is `\p{N}` (each digit its own
         // token) instead of `\p{N}{1,3}`. The structural recognizer extracts digit_cap=1 → fsm_cl100k_cap,
@@ -514,6 +569,41 @@ mod tests {
         );
     }
 
+    /// The goal of the literal path: a plain string pattern splits with no regex backend, on both the
+    /// legacy and the pipeline path.
+    #[test]
+    fn a_string_pattern_needs_no_backend() {
+        let pretok = Split::new("-", SplitDelimiterBehavior::Removed, false).unwrap();
+        let mut legacy = PreTokenizedString::from("a-b--c");
+        pretok.pre_tokenize(&mut legacy).unwrap();
+        let words: Vec<&str> = legacy
+            .get_splits(OffsetReferential::Original, OffsetType::Byte)
+            .iter()
+            .map(|(word, _, _)| *word)
+            .collect();
+        assert_eq!(words, ["a", "b", "c"]);
+        assert_eq!(
+            pipeline_split(
+                SplitPattern::String("-".into()),
+                SplitDelimiterBehavior::Removed,
+                false,
+                "a-b--c"
+            ),
+            [("a", (0, 1)), ("b", (2, 3)), ("c", (5, 6))]
+        );
+    }
+
+    /// A config spelling its pattern as a string must also *deserialize* with no backend — the
+    /// regex half of `serialization` below can only run once one is compiled.
+    #[test]
+    fn a_string_pattern_deserializes_with_no_backend() {
+        let split_s =
+            r#"{"type":"Split","pattern":{"String":"Hello"},"behavior":"Removed","invert":true}"#;
+        let split = Split::new("Hello", SplitDelimiterBehavior::Removed, true).unwrap();
+        assert_eq!(serde_json::from_str::<Split>(split_s).unwrap(), split);
+        assert_eq!(serde_json::to_string(&split).unwrap(), split_s);
+    }
+
     #[cfg(feature = "fancy-regex")] // needs a system-regex backend
     #[test]
     fn regex_string() {
@@ -539,7 +629,6 @@ mod tests {
         assert_eq!(pretok_str_for_regex, pretok_str_for_string);
     }
 
-    #[cfg(feature = "fancy-regex")] // needs a system-regex backend
     #[test]
     fn invert() {
         let mut pretok_str = PreTokenizedString::from("Hello Hello Hello");

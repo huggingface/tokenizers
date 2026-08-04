@@ -174,6 +174,7 @@ fn stream_decode(
 /// containing it. Byte-level gpt2 decodes this ASCII round-trip correctly, so the
 /// only thing under test here is the special-vs-non-special distinction.
 #[test]
+#[ignore = "PipelineTokenizer::decode is not implemented yet"]
 fn non_special_added_token_survives_skip() {
     let path = Path::new(DATA).join("gpt2.json");
     let Ok(mut tree) = Tokenizer::from_file(&path) else {

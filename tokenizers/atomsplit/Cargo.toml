@@ -25,7 +25,7 @@ name = "atomsplit"
 path = "src/lib.rs"
 
 [dependencies]
-memchr = "2.8.2" # SIMD single-byte search; used only in CharDelimiterSplit (1.4–23× vs scalar).
+memchr = "2.8.2" # SIMD search: used for single-byte  search in CharDelimiterSplit (1.4–23× vs scalar), or multi-byte string pattern search in `literal`.
 # NOTE: classify tables live in src/atom_tables.rs (committed, generated). Regenerate after any atom
 # scheme change with `cargo run -p bitmap_gen`. No build script / build-dep — atomsplit builds clean.
 # onig is C (Oniguruma) and fancy-regex pulls it in transitively for benches only — neither
@@ -36,7 +36,7 @@ fancy-regex = "0.13"    # second regex engine in the throughput benches
 logos = "0.15"          # third: a compile-time DFA lexer-generator (pure Rust)
 pcre2 = "0.2"           # fourth: PCRE2 with its JIT (C, pregenerated bindings — no libclang)
 [[bench]]
-name = "regex"        # gpt2 · cl100k · o200k · deepseek, one run per regex family
+name = "regex"        # gpt2 · cl100k · o200k · tekken · deepseek, one run per regex family
 harness = false
 
 [[bench]]
