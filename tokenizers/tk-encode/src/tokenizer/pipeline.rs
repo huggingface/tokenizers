@@ -800,6 +800,27 @@ fn boundary_fsm(window_tags: &[u8]) -> Option<usize> {
     (1..window_tags.len()).find(|&i| safe_fsm_cut(prev_char_tag(window_tags, i), window_tags[i]))
 }
 
+/// Whether `text` contains any `boundary` cut at all, deciding within a bounded prefix.
+///
+/// Used by [`PipelineTokenizer::plan`] to reject a cut-based plan for input that has no cuts.
+/// Only the first few strides are examined: a text whose opening `PROBE` bytes hold no cut is
+/// treated as uncuttable, which is right for the case this exists for (Chinese/Japanese prose
+/// has none anywhere) and merely gives up some parallelism in the pathological case of a
+/// document that is boundary-free only at the front. Bounded so the probe stays O(1) in the
+/// input: it runs once per `encode`, before any work is dispatched.
+fn cut_exists(text: &str, boundary: StrideBoundary) -> bool {
+    const PROBE: usize = 4 * PARALLEL_MIN_TOTAL_BYTES;
+    // `boundary_in_window` reads one byte of left context (`block_lo - 1`), so `lo` must be
+    // at least 1 -- passing 0 underflows and hangs the char-boundary walk-back. Byte 0 is
+    // never a cut anyway: stride 0 starts at 0 unconditionally.
+    if text.len() < 2 {
+        return false;
+    }
+    let hi = text.len().min(PROBE);
+    let hi = (1..=hi).rev().find(|&i| text.is_char_boundary(i)).unwrap_or(1);
+    boundary_in_window(text, 1, hi, boundary).is_some()
+}
+
 /// Whether `token`'s own bytes contain a cut of `boundary` strictly inside it —
 /// i.e. a stride could split this token and each half would mis-frame it. Used
 /// by `normalized_added_token_blocks_stride` to disqualify striding for a `normalized`
@@ -1790,7 +1811,9 @@ impl PipelineTokenizer {
         let mut spans: Vec<Span> = Vec::new();
         let mut preresolved: Vec<(usize, usize, u32)> = Vec::new();
 
-        let plan = self.plan();
+        // Probed on the longest input: it dominates the wall time, and a short one is
+        // unrepresentative (a 20-byte first input would decide the plan for a 4 MB second).
+        let plan = self.plan(refs.iter().copied().max_by_key(|s| s.len()).unwrap_or(""));
         // `Normalized`/`Pretokenized` earn their serial prefix only for a
         // segment larger than a fair per-thread share of the batch. Below that,
         // batch parallelism balances it as one whole unit; the prefix would just
@@ -2097,19 +2120,40 @@ impl PipelineTokenizer {
 
     /// How this config splits each special-free segment (specials are peeled
     /// first). The cheapest safe split wins.
-    fn plan(&self) -> ParallelPlan {
-        if let Some(boundary) = self.stride_boundary() {
-            // `Raw`: no serial prefix, so always worth it when available.
+    ///
+    /// `sample` is the text about to be encoded. A boundary the *config* allows is not the
+    /// same as a boundary the *input* contains, and the difference is not academic:
+    /// punctuation-terminated CJK has no cut at all (no spaces anywhere, and
+    /// [`NEWLINE_PREV`] rejects a newline after punctuation because the punct rule
+    /// ` ?[…]+[\r\n]*` absorbs it). Striding such an input scans it twice for cuts that do
+    /// not exist and then hands the whole thing to one worker — measured at 0.28x the plain
+    /// serial encode, and it does not parallelise at any thread count. So probe the input
+    /// before committing to a cut-based plan.
+    ///
+    /// Every plan is byte-exact (the oracles pin all of them), so this only ever trades
+    /// throughput — a mis-probe cannot change the ids.
+    fn plan(&self, sample: &str) -> ParallelPlan {
+        if let Some(boundary) = self.stride_boundary()
+            && cut_exists(sample, boundary)
+        {
+            // `Raw`: no serial prefix, so always worth it when the input can be cut.
             ParallelPlan::Raw(boundary)
         } else if matches!(self.inner.model, PipelineModel::WordLevel(_)) {
             // WordLevel's model + pre-tokenize are cheap, so a serial prefix
             // would dwarf the parallel part. Lean on batch parallelism instead.
             ParallelPlan::Whole
-        } else if let Some(boundary) = self.normalized_stride_boundary() {
+        } else if let Some(boundary) = self.normalized_stride_boundary()
+            && cut_exists(sample, boundary)
+        {
             // Normalizer rules out a raw cut, but the pre-tokenizer can cut the
-            // (serially) normalized text.
+            // (serially) normalized text. Probed on the raw sample: normalization does not
+            // manufacture whitespace, so a text with no cut raw has none normalized either.
             ParallelPlan::Normalized(boundary)
         } else {
+            // No usable cut: pre-tokenize serially and parallelise the model over span
+            // groups. The serial prefix goes through the normal pre-tokenizer, so it is
+            // `bitsplit` wherever `bitsplit` is wired (gpt2, cl100k) -- which is what makes
+            // this fallback cheap enough to prefer over a degenerate stride.
             ParallelPlan::Pretokenized
         }
     }
@@ -2615,6 +2659,11 @@ impl ModelScratch for PipelineModelScratch {}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A `plan()` probe input that plainly contains cuts (spaces after letters), so these
+    /// tests keep asserting what the *config* allows rather than what a sample happens to
+    /// hold -- `cut_exists` is covered separately by `uncuttable_input_skips_striding`.
+    const CUTTABLE: &str = "the quick brown fox jumps over the lazy dog and runs away fast ";
     use crate::models::bpe::BPE;
     use crate::models::wordpiece::WordPiece;
     use crate::pre_tokenizers::byte_level::ByteLevel;
@@ -2850,6 +2899,45 @@ mod tests {
     /// added token disables raw cutting only when it is `normalized` (matched
     /// after normalization, so invisible to the special split's raw pass); a raw/special one
     /// is peeled first, so a stride can never bisect it.
+    /// The bug this guards: a config CAN cut (gpt2 exposes `boundary_fsm`) but the INPUT
+    /// cannot. Chinese prose has no space anywhere and ends its lines with `。`, and a
+    /// newline after punctuation is not a legal cut (the punct rule absorbs it), so striding
+    /// found zero cuts, gave one worker the whole document, and scanned the document twice
+    /// on the way. Measured at 0.28x the serial encode and flat across thread counts.
+    #[test]
+    fn uncuttable_input_skips_striding() {
+        let split = SplitPretok::new(
+            SplitPattern::Regex(GPT2_REGEX_STR.to_owned()),
+            SplitDelimiterBehavior::Isolated,
+            false,
+        )
+        .unwrap();
+        let mut tok = Tokenizer::new(crate::models::bpe::BPE::default());
+        tok.with_pre_tokenizer(Some(split));
+        let pipe = PipelineTokenizer::try_from(&tok).unwrap();
+
+        // The config itself allows a cut -- that is why the old code chose `Raw`.
+        assert!(pipe.stride_boundary().is_some());
+
+        // Punctuation-terminated Chinese: no space, and every newline follows `。`.
+        let cjk = "汉字汉字汉字汉字汉字。\n".repeat(2000);
+        assert!(
+            !cut_exists(&cjk, pipe.stride_boundary().unwrap()),
+            "`。` then newline must not count as a cut"
+        );
+        assert!(
+            matches!(pipe.plan(&cjk), ParallelPlan::Pretokenized),
+            "uncuttable input must not be strided"
+        );
+
+        // A newline after a Han *letter* is a legal cut, so that input still strides.
+        let cuttable = "汉字汉字汉字汉字汉字\n".repeat(2000);
+        assert!(matches!(pipe.plan(&cuttable), ParallelPlan::Raw(_)));
+
+        // And ordinary spaced text is unaffected.
+        assert!(matches!(pipe.plan(CUTTABLE), ParallelPlan::Raw(_)));
+    }
+
     #[test]
     fn space_run_gating() {
         use crate::AddedToken;
@@ -2925,7 +3013,7 @@ mod tests {
             .unwrap(),
         ));
         let tok = PipelineTokenizer::try_from(&tok).unwrap();
-        assert!(matches!(tok.plan(), ParallelPlan::Raw(_)));
+        assert!(matches!(tok.plan(CUTTABLE), ParallelPlan::Raw(_)));
 
         let big = "aa bb,cc!  aa\tbb  cc\n\n".repeat(2000); // ~44 KB, mixed runs
         let chunks = (0..big.len().div_ceil(PARALLEL_MIN_TOTAL_BYTES))
@@ -3035,7 +3123,7 @@ mod tests {
             .unwrap();
         let pipe = PipelineTokenizer::try_from(&tok).unwrap();
         assert!(
-            matches!(pipe.plan(), ParallelPlan::Raw(_)),
+            matches!(pipe.plan(CUTTABLE), ParallelPlan::Raw(_)),
             "raw affix token must keep Raw"
         );
         // Two ~20 KB segments around one lstrip token → both stride.
@@ -3057,7 +3145,7 @@ mod tests {
         let oracle = Tokenizer::from_file("../data/llama-3-tokenizer.json").unwrap();
         let tok = PipelineTokenizer::try_from(&oracle).unwrap();
         assert!(
-            matches!(tok.plan(), ParallelPlan::Raw(_)),
+            matches!(tok.plan(CUTTABLE), ParallelPlan::Raw(_)),
             "llama-3's raw-only specials must not disqualify Raw"
         );
     }
@@ -3100,7 +3188,7 @@ mod tests {
     #[test]
     fn split_at_model_matches_serial() {
         let tok = split_at_model_pipeline(false);
-        assert!(matches!(tok.plan(), ParallelPlan::Pretokenized));
+        assert!(matches!(tok.plan(CUTTABLE), ParallelPlan::Pretokenized));
 
         let big = "aa.bb.cc.".repeat(3000); // ~27 KB, punctuation-delimited
         let pretokenized = tok.pretokenize_segment(&big, &big).unwrap();
@@ -3126,7 +3214,7 @@ mod tests {
     #[test]
     fn split_at_model_normalizer_and_specials_match_serial() {
         let tok = split_at_model_pipeline(true);
-        assert!(matches!(tok.plan(), ParallelPlan::Pretokenized));
+        assert!(matches!(tok.plan(CUTTABLE), ParallelPlan::Pretokenized));
 
         let half = "AA.BB.cc.".repeat(2000);
         let big = format!("{half}<s>{}", "CC.aa.BB.".repeat(2000));
@@ -3173,7 +3261,7 @@ mod tests {
         );
         // WordLevel model: the plan cannot escalate to Pretokenized either.
         assert!(
-            matches!(pipe.plan(), ParallelPlan::Whole),
+            matches!(pipe.plan(CUTTABLE), ParallelPlan::Whole),
             "Strip + WordLevel must fall to batch-level parallelism only",
         );
     }
@@ -3207,7 +3295,7 @@ mod tests {
             .unwrap();
         let tok = PipelineTokenizer::try_from(&tok).unwrap();
         assert!(
-            matches!(tok.plan(), ParallelPlan::Whole),
+            matches!(tok.plan(CUTTABLE), ParallelPlan::Whole),
             "Strip + WordLevel plan must be Whole (the special split does the splitting)"
         );
 
@@ -3248,7 +3336,7 @@ mod tests {
             .unwrap();
         let tok = PipelineTokenizer::try_from(&tok).unwrap();
         assert!(
-            matches!(tok.plan(), ParallelPlan::Normalized(_)),
+            matches!(tok.plan(CUTTABLE), ParallelPlan::Normalized(_)),
             "Prepend (unsafe normalizer) + WhitespaceSplit + WordPiece must pick `Normalized`"
         );
         let big = "aa bb cc\n".repeat(4000); // ~36 KB, forces striding
