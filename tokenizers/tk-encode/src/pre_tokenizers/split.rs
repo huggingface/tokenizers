@@ -169,14 +169,14 @@ impl pipeline::PreTokenizer for Split {
             // where the bitstream build is SIMD. Its portable builder is slower than the FSM, so
             // everything else keeps the FSM.
             match fsm {
-                GptFsm::Gpt2 if bitsplit::FAST_BUILDER => {
+                GptFsm::Gpt2 if bitsplit::fast_builder() => {
                     pipeline::classify_into_spans_bits(
                         text.as_bytes(),
                         bitsplit::bitsplit_byte_level,
                         out,
                     );
                 }
-                GptFsm::Cl100k { digit_cap: 3 } if bitsplit::FAST_BUILDER => {
+                GptFsm::Cl100k { digit_cap: 3 } if bitsplit::fast_builder() => {
                     pipeline::classify_into_spans_bits(
                         text.as_bytes(),
                         bitsplit::bitsplit_cl100k,

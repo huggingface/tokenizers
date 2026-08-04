@@ -30,14 +30,44 @@ pub mod deepseek;
 pub mod gpt;
 #[cfg(target_arch = "aarch64")]
 mod simd;
+#[cfg(target_arch = "x86_64")]
+mod simd_x86;
 
 pub use deepseek::bitsplit_deepseek;
 pub use gpt::{bitsplit_byte_level, bitsplit_cl100k};
 
-/// Whether this target has the SIMD block builder. Without it the builder is the portable
-/// byte-at-a-time reference, which is slower than the FSM this replaces -- so a caller should
-/// keep its FSM path on those targets rather than route here.
-pub const FAST_BUILDER: bool = cfg!(target_arch = "aarch64");
+/// Whether this target builds its bitstreams with SIMD. Without it the builder is the portable
+/// byte-at-a-time reference, which is slower than the FSM this replaces -- so a caller should keep
+/// its FSM path rather than route here. On x86 the kernel needs SSSE3, so this is a runtime check.
+#[must_use]
+pub fn fast_builder() -> bool {
+    #[cfg(target_arch = "aarch64")]
+    {
+        true
+    }
+    #[cfg(target_arch = "x86_64")]
+    {
+        has_ssse3()
+    }
+    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
+    {
+        false
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+fn has_ssse3() -> bool {
+    use std::sync::atomic::{AtomicU8, Ordering};
+    static CACHED: AtomicU8 = AtomicU8::new(0);
+    match CACHED.load(Ordering::Relaxed) {
+        0 => {
+            let yes = std::arch::is_x86_feature_detected!("ssse3");
+            CACHED.store(1 + u8::from(yes), Ordering::Relaxed);
+            yes
+        }
+        n => n == 2,
+    }
+}
 
 pub(crate) const CONT: u8 = 15; // Atom::Cont
 pub(crate) const CODE_CONT: u8 = 7; // every grammar's dense code for a continuation byte
@@ -86,6 +116,13 @@ pub(crate) fn build_block<const CJK: bool>(
     if len == 64 {
         // SAFETY: `len == 64` means `base + 64 <= text.len() == tags.len()`.
         return unsafe { crate::simd::build64::<CJK>(text, tags, base, lut, cur_code, cur_cjk) };
+    }
+    #[cfg(target_arch = "x86_64")]
+    if len == 64 && has_ssse3() {
+        // SAFETY: `len == 64` bounds both reads, and SSSE3 is checked above.
+        return unsafe {
+            crate::simd_x86::build64::<CJK>(text, tags, base, lut, cur_code, cur_cjk)
+        };
     }
     build_block_scalar::<CJK>(text, tags, base, len, lut, cur_code, cur_cjk)
 }
