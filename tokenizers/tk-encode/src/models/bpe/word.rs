@@ -84,6 +84,11 @@ impl std::fmt::Debug for Word {
 }
 
 impl Word {
+    /// Live heap bytes of the symbol buffer.
+    pub fn heap_bytes(&self) -> usize {
+        self.symbols.capacity() * std::mem::size_of::<Symbol>()
+    }
+
     pub fn new() -> Self {
         Word { symbols: vec![] }
     }

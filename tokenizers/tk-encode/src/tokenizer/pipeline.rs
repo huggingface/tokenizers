@@ -646,6 +646,33 @@ impl PipelineTokenizer {
         &self.model
     }
 
+    /// Live heap bytes per structure, largest first, so the memory phase of the
+    /// benchmark can say *what* it is holding rather than only how much.
+    ///
+    /// Everything walked here is what the pipeline owns after construction plus
+    /// whatever the scratch pool has grown to. Enum-shaped components with no heap
+    /// of their own (the normalizer, the pre-tokenizer's FSM tables, the
+    /// post-processor) contribute their inline size only — the bench's allocator
+    /// total is what catches anything this walk misses.
+    pub fn mem_report(&self) -> Vec<(String, usize)> {
+        let mut out = self.added_vocabulary.heap_bytes();
+        out.extend(self.model.heap_bytes());
+        for scratch in self.scratch_pool.0.lock().unwrap().iter() {
+            if let PipelineModelScratch::BPE(bpe) = scratch {
+                out.extend(bpe.heap_bytes());
+            }
+        }
+        out.push((
+            "inline (normalizer, pre-tokenizer, post-processor)".into(),
+            std::mem::size_of_val(&self.normalizer)
+                + std::mem::size_of_val(&self.pre_tokenizer)
+                + std::mem::size_of_val(&self.post_processor),
+        ));
+        out.retain(|(_, bytes)| *bytes != 0);
+        out.sort_by_key(|(_, bytes)| std::cmp::Reverse(*bytes));
+        out
+    }
+
     /// Encode `input` into token ids.
     ///
     /// Special tokens are matched in two passes:
@@ -1085,6 +1112,17 @@ pub enum PipelineModel {
     Unigram(Unigram),
     WordLevel(WordLevel),
     WordPiece(PipelineWordPiece),
+}
+
+impl PipelineModel {
+    /// Live heap bytes per structure. Only BPE is broken down so far; the other
+    /// engines report nothing rather than a wrong number.
+    pub fn heap_bytes(&self) -> Vec<(String, usize)> {
+        match self {
+            Self::BPE(bpe) => bpe.heap_bytes(),
+            _ => Vec::new(),
+        }
+    }
 }
 
 impl Model for PipelineModel {

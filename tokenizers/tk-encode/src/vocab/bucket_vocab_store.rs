@@ -87,6 +87,15 @@ impl Default for BucketVocabStore {
 }
 
 impl BucketVocabStore {
+    /// Live heap bytes. Excludes the MPHF's pilot table — `ptr_hash` exposes no size
+    /// accessor; it is ~1 byte per 3 tokens, so it rounds to nothing next to `bytes`.
+    pub fn heap_bytes(&self, at: &str) -> Vec<(String, usize)> {
+        vec![
+            (format!("{at}.token bytes"), self.bytes.len()),
+            (format!("{at}.entries"), std::mem::size_of_val(&*self.entries)),
+            (format!("{at}.id_to_slot"), std::mem::size_of_val(&*self.id_to_slot)),
+        ]
+    }
     pub fn build(tokens: Vec<(Vec<u8>, u32)>) -> Self {
         let n = tokens.len();
 

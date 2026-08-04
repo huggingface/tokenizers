@@ -185,6 +185,16 @@ impl fmt::Debug for AddedVocabulary {
     }
 }
 impl AddedVocabulary {
+    /// Live heap bytes, split between the raw and the normalized matcher.
+    pub fn heap_bytes(&self) -> Vec<(String, usize)> {
+        let mut out = vec![(
+            "added_vocab.token metadata".to_string(),
+            std::mem::size_of_val(&*self.token_metadata),
+        )];
+        out.extend(self.vocab.heap_bytes("added_vocab.raw"));
+        out.extend(self.normalized_vocab.heap_bytes("added_vocab.normalized"));
+        out
+    }
     pub fn new() -> Self {
         Self {
             encode_special_tokens: false,

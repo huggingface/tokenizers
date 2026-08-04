@@ -697,6 +697,17 @@ enum Atoms {
 }
 
 impl PipelineBPE {
+    /// Live heap bytes, per structure. `merges` is a `hashbrown` table: `capacity()`
+    /// slots of `(Pair, (u32, u32))` plus one control byte each.
+    pub fn heap_bytes(&self) -> Vec<(String, usize)> {
+        let mut out = self.vocab.heap_bytes("model.vocab");
+        out.push((
+            "model.merges".into(),
+            self.merges.capacity() * (std::mem::size_of::<(Pair, (u32, u32))>() + 1),
+        ));
+        out
+    }
+
     pub fn from_bpe(model: BPE, with_byte_level: bool) -> Result<Self> {
         if matches!(&model.continuing_subword_prefix, Some(prefix) if !prefix.is_empty()) {
             return Err("BPE models with continuing_subword_prefix are not supported yet".into());
@@ -982,6 +993,23 @@ pub struct BpeScratch {
     /// Outlives the encode call that fills it, or it would never see a word twice.
     pub(crate) word_cache: Option<WordCache>,
 }
+impl BpeScratch {
+    /// Live heap bytes of one scratch. There is one per thread that has encoded,
+    /// so the pool multiplies this.
+    pub fn heap_bytes(&self) -> Vec<(String, usize)> {
+        let mut out = vec![(
+            "scratch.merge queue + skip + word".into(),
+            self.merge_queue.capacity() * std::mem::size_of::<Merge>()
+                + self.skip.capacity() * std::mem::size_of::<Merge>()
+                + self.word.heap_bytes(),
+        )];
+        if let Some(cache) = &self.word_cache {
+            out.extend(cache.heap_bytes());
+        }
+        out
+    }
+}
+
 impl ModelScratch for BpeScratch {}
 
 #[cfg(test)]

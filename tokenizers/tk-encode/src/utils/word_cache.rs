@@ -340,6 +340,16 @@ pub struct WordCache {
 }
 
 impl WordCache {
+    /// Live heap bytes. The slot table is allocated up front from the requested
+    /// capacity; the two arenas grow with the words actually cached.
+    pub fn heap_bytes(&self) -> Vec<(String, usize)> {
+        vec![
+            ("scratch.cache slots".into(), std::mem::size_of_val(&*self.cached_words)),
+            ("scratch.cache tags".into(), self.tags.len()),
+            ("scratch.cache word arena".into(), self.word_bytes_arena.heap_bytes()),
+            ("scratch.cache ids arena".into(), self.token_ids_arena.heap_bytes()),
+        ]
+    }
     /// `capacity` is rounded up to a power of two, and to at least one full window.
     pub fn new(capacity: usize) -> Self {
         let n_slots = capacity.next_power_of_two().max(WALK_WINDOW);
@@ -753,6 +763,12 @@ struct Arena<T> {
 }
 
 impl<T: Copy + Default> Arena<T> {
+    fn heap_bytes(&self) -> usize {
+        self.data.capacity() * std::mem::size_of::<T>()
+            + std::mem::size_of_val(&*self.free)
+            + self.free.iter().map(|f| f.capacity() * 4).sum::<usize>()
+    }
+
     fn new(budget: usize) -> Self {
         Self {
             data: Vec::new(),

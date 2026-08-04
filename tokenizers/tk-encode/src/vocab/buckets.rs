@@ -90,6 +90,25 @@ pub struct Buckets {
 }
 
 impl Buckets {
+    /// Live heap bytes of the buckets themselves plus the vocab store they point into.
+    pub fn heap_bytes(&self, at: &str) -> Vec<(String, usize)> {
+        let mut out = vec![
+            (format!("{at}.buckets"), std::mem::size_of_val(&*self.buckets)),
+            (
+                format!("{at}.bucket prefixes + length lists"),
+                self.buckets
+                    .iter()
+                    .map(|b| {
+                        b.prefix.len()
+                            + std::mem::size_of_val(&*b.length_list)
+                            + b.length_list.iter().map(|l| std::mem::size_of_val(&**l)).sum::<usize>()
+                    })
+                    .sum(),
+            ),
+        ];
+        out.extend(self.vocab.heap_bytes(at));
+        out
+    }
     pub fn new() -> Self {
         Self {
             first_byte_to_bucket_id: [0xFF; 256], // 0xFF = no bucket for this first byte

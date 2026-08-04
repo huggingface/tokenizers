@@ -914,16 +914,42 @@ fn memory_sample() -> Vec<String> {
 /// `{load_bytes, encode_bytes, decode_bytes, peak_bytes}`. One implementation per
 /// process so the deltas attribute cleanly. `decode_bytes` is `null` when the
 /// implementation can't decode yet (the pipeline's loud stub).
+/// Heap held by the ids the child keeps for the decode pass — not the tokenizer's,
+/// so it comes out of the encode figure.
+/// `PipelineTokenizer::mem_report` as JSON rows. Taken twice by the memory child:
+/// once right after construction (so `breakdown` reconciles against `live_load`)
+/// and once after the encode pass (whose extra rows are the scratch pool, which
+/// belongs to `live_encode`).
+fn mem_rows(pipeline: &PipelineTokenizer) -> Vec<Value> {
+    pipeline
+        .mem_report()
+        .into_iter()
+        .map(|(what, bytes)| json!({"what": what, "bytes": bytes}))
+        .collect()
+}
+
+fn ids_bytes(ids: &Vec<Vec<u32>>) -> usize {
+    ids.iter().map(|i| i.capacity() * 4).sum::<usize>()
+        + ids.capacity() * std::mem::size_of::<Vec<u32>>()
+}
+
 fn memory_child(which: &str, model: &Path) {
     let chunks = memory_sample();
 
     let rss0 = rss_now().unwrap_or(0);
+    let live0 = counting_alloc::live();
+    counting_alloc::reset_peak();
+    let mut live_load = 0usize;
+    let mut live_encode = 0usize;
+    let mut breakdown: Vec<Value> = Vec::new();
+    let mut breakdown_after_encode: Vec<Value> = Vec::new();
     let mut n = 0usize;
     let mut ids: Vec<Vec<u32>> = Vec::new();
     let (after_load, after_encode, decode_bytes) = match which {
         "baseline" => {
             let mut tok = BaselineTokenizer::from_file(model).unwrap();
             inject_added_tokens_baseline(&mut tok);
+            live_load = counting_alloc::live() - live0;
             let after_load = rss_now().unwrap_or(0);
             for c in &chunks {
                 let enc = tok.encode_fast(c.as_str(), true).unwrap();
@@ -931,6 +957,7 @@ fn memory_child(which: &str, model: &Path) {
                 ids.push(enc.get_ids().to_vec());
             }
             let after_encode = rss_now().unwrap_or(0);
+            live_encode = counting_alloc::live() - live0 - live_load - ids_bytes(&ids);
             for i in &ids {
                 n += tok.decode(i, false).map(|s| s.len()).unwrap_or(0);
             }
@@ -945,6 +972,8 @@ fn memory_child(which: &str, model: &Path) {
             // Tokenizer still shows in peak_bytes, which is honest — building a
             // pipeline currently requires one.
             drop(tok);
+            live_load = counting_alloc::live() - live0;
+            breakdown = mem_rows(&pipeline);
             let after_load = rss_now().unwrap_or(0);
             for c in &chunks {
                 let enc = pipeline.encode(c, true).unwrap();
@@ -952,6 +981,8 @@ fn memory_child(which: &str, model: &Path) {
                 ids.push(enc.iter().map(|t| t.id).collect());
             }
             let after_encode = rss_now().unwrap_or(0);
+            live_encode = counting_alloc::live() - live0 - live_load - ids_bytes(&ids);
+            breakdown_after_encode = mem_rows(&pipeline);
             // Decode is a loud stub today → skip the pass and report null, so the
             // decode memory bar reads "pending" rather than a bogus 0.
             let decode_bytes = if ids
@@ -978,6 +1009,15 @@ fn memory_child(which: &str, model: &Path) {
             "encode_bytes": after_encode - after_load,
             "decode_bytes": decode_bytes,
             "peak_bytes": rss_peak().map(|p| p - rss0),
+            // Allocation, not RSS: `live_*` are exact and comparable across impls,
+            // while the `*_bytes` RSS deltas above still carry the source tokenizer's
+            // freed-but-not-returned pages. `breakdown` attributes `live_load` to the
+            // structures holding it; `unattributed` is what the walk does not reach.
+            "live_load_bytes": live_load,
+            "live_encode_bytes": live_encode,
+            "live_peak_bytes": counting_alloc::peak() - live0,
+            "breakdown": breakdown,
+            "breakdown_after_encode": breakdown_after_encode,
         })
     );
 }
@@ -1090,6 +1130,59 @@ fn pretok_regexes(path: &Path) -> Vec<String> {
         _ => vec![],
     }
 }
+
+/// Counts live heap bytes so the memory phase can report allocation rather than RSS.
+///
+/// RSS cannot answer this question: building a pipeline goes through a source
+/// `Tokenizer` and dropping it does not hand the pages back to the OS, so an
+/// RSS delta charges the pipeline for a structure it no longer holds — which is
+/// how the pipeline came to look *larger* than the baseline it halves.
+mod counting_alloc {
+    use std::alloc::{GlobalAlloc, Layout, System};
+    use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
+
+    static LIVE: AtomicUsize = AtomicUsize::new(0);
+    static PEAK: AtomicUsize = AtomicUsize::new(0);
+
+    pub struct Counting;
+
+    unsafe impl GlobalAlloc for Counting {
+        unsafe fn alloc(&self, l: Layout) -> *mut u8 {
+            let p = unsafe { System.alloc(l) };
+            if !p.is_null() {
+                let live = LIVE.fetch_add(l.size(), Relaxed) + l.size();
+                PEAK.fetch_max(live, Relaxed);
+            }
+            p
+        }
+        unsafe fn dealloc(&self, p: *mut u8, l: Layout) {
+            LIVE.fetch_sub(l.size(), Relaxed);
+            unsafe { System.dealloc(p, l) }
+        }
+        unsafe fn realloc(&self, p: *mut u8, l: Layout, new: usize) -> *mut u8 {
+            let q = unsafe { System.realloc(p, l, new) };
+            if !q.is_null() {
+                let live = LIVE.fetch_add(new, Relaxed) - l.size() + new;
+                LIVE.fetch_sub(l.size(), Relaxed);
+                PEAK.fetch_max(live, Relaxed);
+            }
+            q
+        }
+    }
+
+    pub fn live() -> usize {
+        LIVE.load(Relaxed)
+    }
+    pub fn peak() -> usize {
+        PEAK.load(Relaxed)
+    }
+    pub fn reset_peak() {
+        PEAK.store(LIVE.load(Relaxed), Relaxed);
+    }
+}
+
+#[global_allocator]
+static ALLOC: counting_alloc::Counting = counting_alloc::Counting;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
