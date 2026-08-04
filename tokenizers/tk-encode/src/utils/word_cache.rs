@@ -319,6 +319,7 @@ pub struct WordCache {
     /// Hashes a slot's key: the packed word when it is short enough, the word's
     /// bytes when it is not. See [`WordCache::make_word_key`].
     hasher: RandomState,
+    key_seed: u32,
 
     /// `cached_words.len() - 1`. Masks a hash down to its bottom bits, which give the
     /// word's home slot.
@@ -342,8 +343,11 @@ impl WordCache {
     /// `capacity` is rounded up to a power of two, and to at least one full window.
     pub fn new(capacity: usize) -> Self {
         let n_slots = capacity.next_power_of_two().max(WALK_WINDOW);
+        let hasher = RandomState::new();
+        let key_seed = hasher.hash_one(0xC0FF_EEu64) as u32;
         Self {
-            hasher: RandomState::new(),
+            hasher,
+            key_seed,
             cached_words: vec![CachedWord::default(); n_slots].into_boxed_slice(),
             tags: vec![EMPTY; n_slots].into_boxed_slice(),
             word_bytes_arena: Arena::new(n_slots * 48),
@@ -362,14 +366,58 @@ impl WordCache {
         let (key, hash) = self.make_word_key(word);
         match self.find_word_in_cache(key, hash, word) {
             Walk::Found(index) => {
-                let slot = self.cached_words[index];
+                let slot = &self.cached_words[index];
                 Lookup::Hit(if slot.ids_stored_in_arena() {
                     self.token_ids_arena.get(slot.ids_off(), slot.ids_len())
                 } else {
-                    &self.cached_words[index].word_ids[..slot.inline_id_count as usize]
+                    &slot.word_ids[..slot.inline_id_count as usize]
                 })
             }
             Walk::Absent(placement) => Lookup::Miss(Some(placement)),
+        }
+    }
+
+    /// Probe and emit in one step: on an inline hit the ids are written straight to `dst` and the
+    /// count returned, so nothing goes back to the slot and nothing crosses a borrow.
+    ///
+    /// This is the shape the hot path wants. [`Self::lookup`] hands back a `&[u32]`, which means
+    /// the caller re-reads the slot to build a fat pointer and then copies a run whose length it
+    /// only learns at run time -- three trips over one 32-byte line that a single load already
+    /// brought in. Here that line is read once, all [`MAX_INLINE_IDS`] lanes are stored
+    /// unconditionally, and the cursor advances by the count: no branch on the length, no second
+    /// load, no slice.
+    ///
+    /// Falls back to the full walk for anything that is not an inline hit in the home slot, which
+    /// on real text is a few percent of words.
+    ///
+    /// # Safety
+    /// `dst` must have room for [`MAX_INLINE_IDS`] writes.
+    #[inline]
+    pub unsafe fn probe_emit<'c, 'w>(
+        &'c self,
+        word: &'w [u8],
+        dst: *mut u32,
+    ) -> ProbeEmit<'c, 'w> {
+        if word.len() <= MAX_WORD_BYTES
+            && let Some(key) = pack_word(word)
+        {
+            let home = self.hash_packed(key) as usize & self.index_mask;
+            // SAFETY: `index_mask` is `n_slots - 1` for a power-of-two `n_slots`.
+            let slot = unsafe { &*self.cached_words.as_ptr().add(home) };
+            if slot.word_bytes_or_hash == key && slot.inline_id_count != SPILLED {
+                // SAFETY: the caller guarantees room for `MAX_INLINE_IDS`; lanes past the count
+                // are dead, overwritten by the next word or cut off by the final `set_len`.
+                unsafe {
+                    for lane in 0..MAX_INLINE_IDS {
+                        dst.add(lane).write(slot.word_ids[lane]);
+                    }
+                }
+                return ProbeEmit::Wrote(slot.inline_id_count as usize);
+            }
+        }
+        match self.lookup(word) {
+            Lookup::Hit(ids) => ProbeEmit::Hit(ids),
+            Lookup::Miss(at) => ProbeEmit::Miss(at),
         }
     }
 
@@ -399,12 +447,27 @@ impl WordCache {
     /// decide. The key already carries the length, so nothing is lost.
     fn make_word_key(&self, word: &[u8]) -> (u128, u64) {
         match pack_word(word) {
-            Some(packed) => (packed, self.hasher.hash_one(packed)),
+            Some(packed) => (packed, self.hash_packed(packed)),
             None => {
                 let hash = self.hasher.hash_one(word);
                 ((hash as u128) | KEY_IS_HASH, hash)
             }
         }
+    }
+
+    #[inline]
+    fn hash_packed(&self, packed: u128) -> u64 {
+        #[cfg(all(target_arch = "aarch64", target_feature = "crc"))]
+        {
+            // SAFETY: gated on the `crc` target feature.
+            let folded = unsafe {
+                use std::arch::aarch64::__crc32cd;
+                __crc32cd(__crc32cd(self.key_seed, packed as u64), (packed >> 64) as u64)
+            };
+            return u64::from(folded).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+        }
+        #[cfg(not(all(target_arch = "aarch64", target_feature = "crc")))]
+        self.hasher.hash_one(packed)
     }
 
     /// One walk over `word`'s window, from its home slot, answering both
@@ -423,6 +486,13 @@ impl WordCache {
         // whether this one is hashed is settled before the walk starts, since the
         // caller built the key out of the word it is looking for.
         let hashed = key & KEY_IS_HASH != 0;
+        // Nearly every hit is in the home slot, and a slot whose key equals ours holds our word:
+        // for a short word the key IS the word, so the tag has nothing left to rule out.
+        // SAFETY: `index_mask` is `n_slots - 1` for a power-of-two `n_slots`.
+        let home_slot = unsafe { &*self.cached_words.as_ptr().add(home) };
+        if !hashed && home_slot.word_bytes_or_hash == key && self.tags[home] != EMPTY {
+            return Walk::Found(home);
+        }
         let mut free = None;
         for step in 0..WALK_WINDOW {
             let index = (home + step) & self.index_mask;
@@ -512,6 +582,15 @@ impl WordCache {
 
 // ---------------------------------------------------------------- what a lookup returns
 
+/// What [`WordCache::probe_emit`] found.
+pub enum ProbeEmit<'c, 'w> {
+    /// The ids are already at the cursor; advance by this many.
+    Wrote(usize),
+    /// An arena-backed hit, which the caller copies itself.
+    Hit(&'c [u32]),
+    Miss(Option<Placement<'w>>),
+}
+
 /// What [`WordCache::lookup`] found.
 pub enum Lookup<'c, 'w> {
     /// The ids the word encoded to last time.
@@ -564,7 +643,7 @@ enum Walk<'w> {
 /// [`WordCache::token_ids_arena`]. Three is enough for most words in an alphabetic
 /// script, and for far fewer of them in Chinese or Korean, where a word turns into
 /// more ids.
-const MAX_INLINE_IDS: usize = 3;
+pub(crate) const MAX_INLINE_IDS: usize = 3;
 
 /// A sentinel value stored in [`CachedWord::word_bytes_or_hash`] when it holds the hash of a long word instead of the word itself.
 const KEY_IS_HASH: u128 = 1 << 127;
@@ -642,9 +721,17 @@ fn pack_word(word: &[u8]) -> Option<u128> {
     if len == 0 || len > 15 {
         return None;
     }
-    let mut lanes = [0u8; 16];
-    lanes[..len].copy_from_slice(word);
-    Some(u128::from_le_bytes(lanes) | ((len as u128) << 120))
+    let ptr = word.as_ptr();
+    let raw = if ptr as usize & 0xFFF <= 0x1000 - 16 {
+        // SAFETY: the read stays inside one page, and that page is mapped because `word` is not
+        // empty. The bytes past `len` are masked off below.
+        u128::from_le(unsafe { ptr.cast::<u128>().read_unaligned() })
+    } else {
+        let mut lanes = [0u8; 16];
+        lanes[..len].copy_from_slice(word);
+        u128::from_le_bytes(lanes)
+    };
+    Some((raw & (u128::MAX >> (8 * (16 - len)))) | ((len as u128) << 120))
 }
 
 // ---------------------------------------------------------------- overflow storage

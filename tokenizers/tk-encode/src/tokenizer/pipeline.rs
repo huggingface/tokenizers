@@ -44,20 +44,79 @@ pub(crate) fn classify_into_spans(
     out: &mut Vec<Span>,
 ) {
     thread_local! {
-        static SCRATCH: RefCell<(Vec<u8>, Vec<Span>)> = const { RefCell::new((Vec::new(), Vec::new())) };
+        static TAGS: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
     }
     let n = bytes.len();
-    SCRATCH.with(|cell| {
-        let (tags, spans) = &mut *cell.borrow_mut();
+    TAGS.with(|cell| {
+        let tags = &mut *cell.borrow_mut();
         if tags.len() < n {
             tags.resize(n, 0); // grow-only: after the largest segment, no realloc / no re-zeroing
         }
-        if spans.len() < n + 1 {
-            spans.resize(n + 1, Span::default());
+        classify(bytes, &mut tags[..n]);
+        // The fsm writes its spans straight into `out`. It used to fill a thread-local buffer
+        // that was then copied here, which cost a second `Span` write for every pre-token -- and
+        // a buffer as large as the input, since the fsm's worst case is one span per byte.
+        // `out` is caller-owned scratch reused across calls, so it is the same memory either way.
+        let base = out.len();
+        out.reserve(n + 1);
+        // SAFETY: `reserve` gives `n + 1` slots past `base`, which is the fsm's worst case (one
+        // span per byte, plus one). `Span` is `Copy` with no drop glue, so uninitialised slots are
+        // sound to hand over, and `set_len` below only counts the `k` the fsm actually wrote.
+        let k = unsafe {
+            fsm(
+                bytes,
+                &tags[..n],
+                std::slice::from_raw_parts_mut(out.as_mut_ptr().add(base), n + 1),
+            )
+        };
+        debug_assert!(k <= n + 1);
+        // SAFETY: the fsm wrote `k <= n + 1` spans from `base`.
+        unsafe { out.set_len(base + k) };
+    });
+}
+
+/// [`classify_into_spans`] for a splitter that works off bitstreams: it needs two `u64` bitmaps
+/// (token starts, and the flags its scalar escapes key on) alongside the tags.
+pub(crate) fn classify_into_spans_bits(
+    bytes: &[u8],
+    split: impl FnOnce(&[u8], &[u8], &mut [u64], &mut [u64], &mut [Span]) -> usize,
+    out: &mut Vec<Span>,
+) {
+    thread_local! {
+        static SCRATCH: RefCell<(Vec<u8>, Vec<u64>, Vec<u64>)> =
+            const { RefCell::new((Vec::new(), Vec::new(), Vec::new())) };
+    }
+    let n = bytes.len();
+    if n == 0 {
+        return;
+    }
+    SCRATCH.with(|cell| {
+        let (tags, starts, flags) = &mut *cell.borrow_mut();
+        if tags.len() < n {
+            tags.resize(n, 0);
+        }
+        let words = n.div_ceil(64) + 1;
+        if starts.len() < words {
+            starts.resize(words, 0);
+            flags.resize(words, 0);
         }
         classify(bytes, &mut tags[..n]);
-        let k = fsm(bytes, &tags[..n], &mut spans[..n + 1]);
-        out.extend_from_slice(&spans[..k]); // same type now: plain memcpy, no per-token conversion
+        let base = out.len();
+        out.reserve(n + 1);
+        // SAFETY: as in `classify_into_spans` -- `reserve` covers the splitter's worst case of one
+        // span per byte plus one, `Span` has no drop glue, and `set_len` counts only what was written.
+        let k = unsafe {
+            split(
+                bytes,
+                &tags[..n],
+                &mut starts[..words],
+                &mut flags[..words],
+                std::slice::from_raw_parts_mut(out.as_mut_ptr().add(base), n + 1),
+            )
+        };
+        debug_assert!(k <= n + 1);
+        // SAFETY: the splitter wrote `k <= n + 1` spans from `base`.
+        unsafe { out.set_len(base + k) };
     });
 }
 
@@ -707,14 +766,12 @@ impl PipelineTokenizer {
                                     self.pre_tokenizer
                                         .pre_tokenize(normalized_chunk, pre_tokens)?;
                                     if STAGE >= Self::STAGE_MODEL {
-                                        // Tokenize each chunk
-                                        for pre_token in pre_tokens.iter() {
-                                            self.model.tokenize_pipeline(
-                                                &normalized_chunk[pre_token.range()],
-                                                scratch,
-                                                output,
-                                            )?;
-                                        }
+                                        self.model.tokenize_spans(
+                                            normalized_chunk,
+                                            pre_tokens,
+                                            scratch,
+                                            output,
+                                        )?;
                                     }
                                 }
                             }
@@ -997,6 +1054,25 @@ pub trait Model {
         output: &mut Vec<PipelineToken>,
     ) -> Result<()>;
 
+    /// Every pre-token of a chunk at once.
+    ///
+    /// The pipeline has the whole span list before the model runs, so handing them over one at a
+    /// time buys nothing and costs a virtual call, a slice, a `Result` and an output capacity
+    /// check per pre-token -- on English that is one round trip per 5.8 bytes. The default is the
+    /// loop it replaces, so a model only overrides this if it has something to hoist out of it.
+    fn tokenize_spans(
+        &self,
+        chunk: &str,
+        spans: &[Span],
+        scratch: &mut Self::Scratch,
+        output: &mut Vec<PipelineToken>,
+    ) -> Result<()> {
+        for span in spans {
+            self.tokenize_pipeline(&chunk[span.range()], scratch, output)?;
+        }
+        Ok(())
+    }
+
     fn init_scratch(&self) -> Self::Scratch;
 }
 
@@ -1013,6 +1089,30 @@ pub enum PipelineModel {
 
 impl Model for PipelineModel {
     type Scratch = PipelineModelScratch;
+
+    fn tokenize_spans(
+        &self,
+        chunk: &str,
+        spans: &[Span],
+        scratch: &mut Self::Scratch,
+        output: &mut Vec<PipelineToken>,
+    ) -> Result<()> {
+        match (self, scratch) {
+            (Self::BPE(model), PipelineModelScratch::BPE(scratch)) => {
+                model.tokenize_spans(chunk, spans, scratch, output)
+            }
+            (Self::Unigram(model), PipelineModelScratch::Unigram(scratch)) => {
+                model.tokenize_spans(chunk, spans, scratch, output)
+            }
+            (Self::WordPiece(model), PipelineModelScratch::WordPiece(scratch)) => {
+                model.tokenize_spans(chunk, spans, scratch, output)
+            }
+            (Self::WordLevel(model), PipelineModelScratch::WordLevel(scratch)) => {
+                model.tokenize_spans(chunk, spans, scratch, output)
+            }
+            _ => Err("pipeline model and scratch are of different kinds".into()),
+        }
+    }
 
     fn tokenize_pipeline(
         &self,

@@ -164,17 +164,35 @@ impl pipeline::PreTokenizer for Split {
             .fsm
             .filter(|_| !self.invert && self.behavior == SplitDelimiterBehavior::Isolated)
         {
-            pipeline::classify_into_spans(
-                text.as_bytes(),
-                |bytes, tags, spans| match fsm {
-                    GptFsm::Cl100k { digit_cap } => {
-                        atomsplit::fsm::fsm_cl100k_cap(bytes, tags, spans, digit_cap)
-                    }
-                    GptFsm::Gpt2 => atomsplit::fsm::fsm_byte_level(bytes, tags, spans),
-                    GptFsm::O200k => atomsplit::fsm::fsm_o200k(bytes, tags, spans),
-                },
-                out,
-            );
+            // gpt2 and cl100k-with-the-standard-digit-cap have bitstream splitters, which decide
+            // 64 bytes per register op instead of one token per unpredictable branch.
+            match fsm {
+                GptFsm::Gpt2 => {
+                    pipeline::classify_into_spans_bits(
+                        text.as_bytes(),
+                        bitsplit::bitsplit_byte_level,
+                        out,
+                    );
+                }
+                GptFsm::Cl100k { digit_cap: 3 } => {
+                    pipeline::classify_into_spans_bits(
+                        text.as_bytes(),
+                        bitsplit::bitsplit_cl100k,
+                        out,
+                    );
+                }
+                _ => pipeline::classify_into_spans(
+                    text.as_bytes(),
+                    |bytes, tags, spans| match fsm {
+                        GptFsm::Cl100k { digit_cap } => {
+                            atomsplit::fsm::fsm_cl100k_cap(bytes, tags, spans, digit_cap)
+                        }
+                        GptFsm::Gpt2 => atomsplit::fsm::fsm_byte_level(bytes, tags, spans),
+                        GptFsm::O200k => atomsplit::fsm::fsm_o200k(bytes, tags, spans),
+                    },
+                    out,
+                ),
+            }
             return Ok(());
         }
         // Not a natively-routed GPT regex: fall back to the system-regex backend.
