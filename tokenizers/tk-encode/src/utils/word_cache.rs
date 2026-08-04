@@ -319,6 +319,8 @@ pub struct WordCache {
     /// Hashes a slot's key: the packed word when it is short enough, the word's
     /// bytes when it is not. See [`WordCache::make_word_key`].
     hasher: RandomState,
+    /// Seeds the packed-key hash, so the table stays as randomised as `hasher` makes it.
+    key_seed: u32,
 
     /// `cached_words.len() - 1`. Masks a hash down to its bottom bits, which give the
     /// word's home slot.
@@ -342,8 +344,11 @@ impl WordCache {
     /// `capacity` is rounded up to a power of two, and to at least one full window.
     pub fn new(capacity: usize) -> Self {
         let n_slots = capacity.next_power_of_two().max(WALK_WINDOW);
+        let hasher = RandomState::new();
+        let key_seed = hasher.hash_one(0xC0FF_EEu64) as u32;
         Self {
-            hasher: RandomState::new(),
+            hasher,
+            key_seed,
             cached_words: vec![CachedWord::default(); n_slots].into_boxed_slice(),
             tags: vec![EMPTY; n_slots].into_boxed_slice(),
             word_bytes_arena: Arena::new(n_slots * 48),
@@ -362,11 +367,11 @@ impl WordCache {
         let (key, hash) = self.make_word_key(word);
         match self.find_word_in_cache(key, hash, word) {
             Walk::Found(index) => {
-                let slot = self.cached_words[index];
+                let slot = &self.cached_words[index];
                 Lookup::Hit(if slot.ids_stored_in_arena() {
                     self.token_ids_arena.get(slot.ids_off(), slot.ids_len())
                 } else {
-                    &self.cached_words[index].word_ids[..slot.inline_id_count as usize]
+                    &slot.word_ids[..slot.inline_id_count as usize]
                 })
             }
             Walk::Absent(placement) => Lookup::Miss(Some(placement)),
@@ -399,12 +404,30 @@ impl WordCache {
     /// decide. The key already carries the length, so nothing is lost.
     fn make_word_key(&self, word: &[u8]) -> (u128, u64) {
         match pack_word(word) {
-            Some(packed) => (packed, self.hasher.hash_one(packed)),
+            Some(packed) => (packed, self.hash_packed(packed)),
             None => {
                 let hash = self.hasher.hash_one(word);
                 ((hash as u128) | KEY_IS_HASH, hash)
             }
         }
+    }
+
+    /// The packed key is a fixed 16 bytes, so hardware CRC folds it in two instructions where a
+    /// general hasher runs its whole mixing schedule. CRC gives 32 bits; one multiply spreads them
+    /// over 64, so the low bits still choose the slot and the high bits still make the tag.
+    #[inline]
+    fn hash_packed(&self, packed: u128) -> u64 {
+        #[cfg(all(target_arch = "aarch64", target_feature = "crc"))]
+        {
+            // SAFETY: gated on the `crc` target feature.
+            let folded = unsafe {
+                use std::arch::aarch64::__crc32cd;
+                __crc32cd(__crc32cd(self.key_seed, packed as u64), (packed >> 64) as u64)
+            };
+            return u64::from(folded).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+        }
+        #[cfg(not(all(target_arch = "aarch64", target_feature = "crc")))]
+        self.hasher.hash_one(packed)
     }
 
     /// One walk over `word`'s window, from its home slot, answering both
@@ -423,6 +446,15 @@ impl WordCache {
         // whether this one is hashed is settled before the walk starts, since the
         // caller built the key out of the word it is looking for.
         let hashed = key & KEY_IS_HASH != 0;
+        // Nearly every hit is in the home slot. Answer that without entering the walk: a slot
+        // whose key equals ours holds our word, because for a short word the key IS the word, so
+        // the tag has nothing left to rule out. One masked index, one load, one 16-byte compare.
+        // SAFETY: `index_mask` is `n_slots - 1` for a power-of-two `n_slots`, so the masked index
+        // is in range.
+        let home_slot = unsafe { &*self.cached_words.as_ptr().add(home) };
+        if !hashed && home_slot.word_bytes_or_hash == key && self.tags[home] != EMPTY {
+            return Walk::Found(home);
+        }
         let mut free = None;
         for step in 0..WALK_WINDOW {
             let index = (home + step) & self.index_mask;
