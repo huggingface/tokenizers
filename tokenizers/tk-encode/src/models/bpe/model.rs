@@ -1438,6 +1438,24 @@ mod tests {
             assert!(pipeline_ids(&pipeline, "").is_empty());
         }
 
+        // The pool hands the SAME scratch to successive encodes. State left behind by one
+        // call — an undrained merge queue, a stale word buffer — would corrupt every call
+        // after it. Drive several inputs through one scratch and check each still matches
+        // the reference model.
+        #[test]
+        fn reused_scratch_matches_fresh() {
+            let bpe = hello_builder().build().unwrap();
+            let reference = bpe.clone();
+            let model = PipelineBPE::from_bpe(bpe, false).unwrap();
+            let mut scratch = model.init_scratch();
+            for input in ["hello", "hell", "helo", "oleh", "hello", "", "hxe"] {
+                let mut out = Vec::new();
+                pipeline::Model::tokenize_pipeline(&model, input, &mut scratch, &mut out).unwrap();
+                let got: Vec<u32> = out.iter().map(|t| t.id).collect();
+                assert_eq!(got, reference_ids(&reference, input), "{input:?}");
+            }
+        }
+
         #[test]
         fn unknown_char_without_unk_is_dropped() {
             let bpe = hello_builder().build().unwrap();
