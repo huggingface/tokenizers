@@ -12,10 +12,20 @@ use crate::{
 /// `Zwj` (0x26) matches no alternative at all so it is a gap char.
 pub(crate) const LUT: [u8; 64] = {
     let mut t = [6u8; 64]; // gap
-    t[0x00] = 0; t[0x10] = 0; t[0x20] = 0; t[0x06] = 0; // Letter (+case) | Mark
-    t[0x01] = 1; t[0x02] = 1;                           // \p{N}
-    t[0x07] = 2; t[0x08] = 2; t[0x09] = 2; t[0x0A] = 2; t[0x16] = 2; // \p{P} ∪ \p{S}
-    t[0x03] = 3; t[0x04] = 4; t[0x05] = 5;              // Newline | Space | WsOther
+    t[0x00] = 0;
+    t[0x10] = 0;
+    t[0x20] = 0;
+    t[0x06] = 0; // Letter (+case) | Mark
+    t[0x01] = 1;
+    t[0x02] = 1; // \p{N}
+    t[0x07] = 2;
+    t[0x08] = 2;
+    t[0x09] = 2;
+    t[0x0A] = 2;
+    t[0x16] = 2; // \p{P} ∪ \p{S}
+    t[0x03] = 3;
+    t[0x04] = 4;
+    t[0x05] = 5; // Newline | Space | WsOther
     t[0x0F] = CODE_CONT;
     t
 };
@@ -118,7 +128,11 @@ pub fn bitsplit_deepseek(text: &[u8], tags: &[u8], starts: &mut [u64], out: &mut
         } else {
             let q = base + len;
             let is_lead = tags[q] != CONT;
-            let bits = if is_lead { bits_at(text, tags, q) } else { last_bits };
+            let bits = if is_lead {
+                bits_at(text, tags, q)
+            } else {
+                last_bits
+            };
             (bits, is_lead, text[q].is_ascii_alphabetic())
         };
         let has = |v: u16, s: u16| v & s != 0;
@@ -157,8 +171,7 @@ pub fn bitsplit_deepseek(text: &[u8], tags: &[u8], starts: &mut [u64], out: &mut
             & !p1(prefix, (has(pb, S_WS) && !has(pb, S_NL)) || pb_gap);
         let ws_start = s_ws & lead & !p1(s_ws, has(pb, S_WS));
         let gap_start = gap & lead & !p1(gap, pb_gap);
-        let ps_start =
-            ps & lead & !p1(ps, has(pb, S_PS) && !pb_cjk) & !p1(s_sp, has(pb, S_SP));
+        let ps_start = ps & lead & !p1(ps, has(pb, S_PS) && !pb_cjk) & !p1(s_sp, has(pb, S_SP));
         let cjk_start = (cjk_l & lead & !p1(cjk_l, pb_cjk && has(pb, S_LM)))
             | (cjk_p & lead & !p1(cjk_p, pb_cjk && !has(pb, S_LM)));
 
@@ -232,7 +245,8 @@ pub fn bitsplit_deepseek(text: &[u8], tags: &[u8], starts: &mut [u64], out: &mut
         let aa_e = scanthru(aa_m, aa as u128);
         let aa_span = aa_e.wrapping_sub(aa_m);
         // ── a punct run's `[\r\n]*` tail swallows the newlines directly behind it.
-        let nl_m = ((p1(ps, has(pb, S_PS) && !pb_cjk) & s_nl & lead) as u128) | u128::from(cy.nl_run);
+        let nl_m =
+            ((p1(ps, has(pb, S_PS) && !pb_cjk) & s_nl & lead) as u128) | u128::from(cy.nl_run);
         let nl_e = scanthru(nl_m, s_nl as u128);
         let nl_span = nl_e.wrapping_sub(nl_m);
 
@@ -303,4 +317,3 @@ pub fn bitsplit_deepseek(text: &[u8], tags: &[u8], starts: &mut [u64], out: &mut
 
     emit(starts, nblk, ntext, out)
 }
-

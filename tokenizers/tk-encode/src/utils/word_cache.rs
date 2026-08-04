@@ -344,7 +344,7 @@ impl WordCache {
     pub fn new(capacity: usize) -> Self {
         let n_slots = capacity.next_power_of_two().max(WALK_WINDOW);
         let hasher = RandomState::new();
-        let key_seed = hasher.hash_one(0xC0FF_EEu64) as u32;
+        let key_seed = hasher.hash_one(0x00C0_FFEE_u64) as u32;
         Self {
             hasher,
             key_seed,
@@ -393,11 +393,7 @@ impl WordCache {
     /// # Safety
     /// `dst` must have room for [`MAX_INLINE_IDS`] writes.
     #[inline]
-    pub unsafe fn probe_emit<'c, 'w>(
-        &'c self,
-        word: &'w [u8],
-        dst: *mut u32,
-    ) -> ProbeEmit<'c, 'w> {
+    pub unsafe fn probe_emit<'c, 'w>(&'c self, word: &'w [u8], dst: *mut u32) -> ProbeEmit<'c, 'w> {
         if word.len() <= MAX_WORD_BYTES
             && let Some(key) = pack_word(word)
         {
@@ -462,12 +458,17 @@ impl WordCache {
             // SAFETY: gated on the `crc` target feature.
             let folded = unsafe {
                 use std::arch::aarch64::__crc32cd;
-                __crc32cd(__crc32cd(self.key_seed, packed as u64), (packed >> 64) as u64)
+                __crc32cd(
+                    __crc32cd(self.key_seed, packed as u64),
+                    (packed >> 64) as u64,
+                )
             };
-            return u64::from(folded).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+            u64::from(folded).wrapping_mul(0x9E37_79B9_7F4A_7C15)
         }
         #[cfg(not(all(target_arch = "aarch64", target_feature = "crc")))]
-        self.hasher.hash_one(packed)
+        {
+            self.hasher.hash_one(packed)
+        }
     }
 
     /// One walk over `word`'s window, from its home slot, answering both

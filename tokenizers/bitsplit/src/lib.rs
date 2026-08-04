@@ -34,6 +34,11 @@ mod simd;
 pub use deepseek::bitsplit_deepseek;
 pub use gpt::{bitsplit_byte_level, bitsplit_cl100k};
 
+/// Whether this target has the SIMD block builder. Without it the builder is the portable
+/// byte-at-a-time reference, which is slower than the FSM this replaces -- so a caller should
+/// keep its FSM path on those targets rather than route here.
+pub const FAST_BUILDER: bool = cfg!(target_arch = "aarch64");
+
 pub(crate) const CONT: u8 = 15; // Atom::Cont
 pub(crate) const CODE_CONT: u8 = 7; // every grammar's dense code for a continuation byte
 
@@ -58,8 +63,9 @@ pub(crate) fn is_cjk_at(text: &[u8], p: usize) -> bool {
     if !(0xE3..=0xE9).contains(&b) || p + 2 >= text.len() {
         return false;
     }
-    let cp =
-        ((b as u32 & 0x0F) << 12) | ((text[p + 1] as u32 & 0x3F) << 6) | (text[p + 2] as u32 & 0x3F);
+    let cp = ((b as u32 & 0x0F) << 12)
+        | ((text[p + 1] as u32 & 0x3F) << 6)
+        | (text[p + 2] as u32 & 0x3F);
     (0x4E00..=0x9FA5).contains(&cp) || (0x3040..=0x30FF).contains(&cp)
 }
 
@@ -165,7 +171,11 @@ pub(crate) fn fill_to_last(m: u64, c: u64) -> u64 {
 #[inline]
 pub(crate) fn lead_run(x: u64, valid: u64) -> u64 {
     let z = !x & valid;
-    if z == 0 { valid } else { (z & z.wrapping_neg()) - 1 }
+    if z == 0 {
+        valid
+    } else {
+        (z & z.wrapping_neg()) - 1
+    }
 }
 
 /// Run of `x` that ends at bit `len - 1` (0 if that bit is clear).
@@ -188,8 +198,8 @@ pub(crate) fn trail_run(x: u64, valid: u64, len: usize) -> u64 {
 /// walks them at ~3 ops per token.
 pub(crate) fn emit(starts: &[u64], nblk: usize, n: usize, out: &mut [Span]) -> usize {
     let (mut w, mut open) = (0usize, u32::MAX);
-    for bi in 0..nblk {
-        let mut m = starts[bi];
+    for (bi, &word) in starts.iter().enumerate().take(nblk) {
+        let mut m = word;
         while m != 0 {
             let pos = (bi * 64 + m.trailing_zeros() as usize) as u32;
             if open != u32::MAX {

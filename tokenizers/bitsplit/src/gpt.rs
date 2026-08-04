@@ -96,7 +96,9 @@ pub fn bitsplit_byte_level(
         return 0;
     }
     let nblk = ntext.div_ceil(64);
-    assert!(tags.len() >= ntext && starts.len() >= nblk && flag.len() >= nblk && out.len() >= ntext);
+    assert!(
+        tags.len() >= ntext && starts.len() >= nblk && flag.len() >= nblk && out.len() >= ntext
+    );
     let (mut code, mut prev_cont) = (CODE_CONT, 0u64);
 
     for bi in 0..nblk {
@@ -177,7 +179,9 @@ pub fn bitsplit_cl100k(
         return 0;
     }
     let nblk = ntext.div_ceil(64);
-    assert!(tags.len() >= ntext && starts.len() >= nblk && flag.len() >= nblk && out.len() >= ntext);
+    assert!(
+        tags.len() >= ntext && starts.len() >= nblk && flag.len() >= nblk && out.len() >= ntext
+    );
     let (mut code, mut prev_cont) = (CODE_CONT, 0u64);
     let (mut nl_run, mut dig_run, mut dig_since) = (false, false, 0u32);
     let mut prev_osf = false; // previous block's last byte belonged to a token-opening "other" char
@@ -216,10 +220,7 @@ pub fn bitsplit_cl100k(
         let eof_bit = if last_blk { 1u64 << (len - 1) } else { 0 };
 
         // ── run starts ─────────────────────────────────────────────────────────────────────────
-        let o_start = c.other
-            & lead
-            & !p1(c.other, has(pb, C_O))
-            & !p1(c.sp, has(pb, C_SP)); // ` ?[^\s\p{L}\p{N}]+`
+        let o_start = c.other & lead & !p1(c.other, has(pb, C_O)) & !p1(c.sp, has(pb, C_SP)); // ` ?[^\s\p{L}\p{N}]+`
         let ws_start = c.ws & lead & !p1(c.ws, has(pb, C_WS));
         // `\s+(?!\S)`: the run's last char opens a token — but not a newline, which `\s*[\r\n]+`
         // has already swallowed.

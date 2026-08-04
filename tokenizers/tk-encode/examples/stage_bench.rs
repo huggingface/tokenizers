@@ -29,7 +29,8 @@ fn main() {
             "corpus", "cache", "frame", "normal", "split", "model", "post", "total MB/s"
         );
         for corpus in corpora {
-            let Ok(text) = std::fs::read_to_string(root.join("corpora").join(format!("{corpus}.txt")))
+            let Ok(text) =
+                std::fs::read_to_string(root.join("corpora").join(format!("{corpus}.txt")))
             else {
                 continue;
             };
@@ -37,7 +38,10 @@ fn main() {
             let n = one.len();
             let reps = (400_000_000 / n as u64).clamp(2, 20) as u32;
 
-            let cap: usize = std::env::var("TK_CACHE").ok().and_then(|v| v.parse().ok()).unwrap_or(10_000);
+            let cap: usize = std::env::var("TK_CACHE")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(10_000);
             for capacity in [cap] {
                 let mut tok = Tokenizer::from_file(&path).expect("load");
                 if let ModelWrapper::BPE(bpe) = tok.get_model_mut() {
@@ -53,15 +57,27 @@ fn main() {
                         for _ in 0..2 {
                             pre.clear();
                             out.clear();
-                            pipe.encode_generic::<$s>(&one, false, &mut pre, &mut scratch, &mut out)
-                                .unwrap();
+                            pipe.encode_generic::<$s>(
+                                &one,
+                                false,
+                                &mut pre,
+                                &mut scratch,
+                                &mut out,
+                            )
+                            .unwrap();
                         }
                         let t = Instant::now();
                         for _ in 0..reps {
                             pre.clear();
                             out.clear();
-                            pipe.encode_generic::<$s>(&one, false, &mut pre, &mut scratch, &mut out)
-                                .unwrap();
+                            pipe.encode_generic::<$s>(
+                                &one,
+                                false,
+                                &mut pre,
+                                &mut scratch,
+                                &mut out,
+                            )
+                            .unwrap();
                             black_box((&pre, &out));
                         }
                         t.elapsed().as_secs_f64() / f64::from(reps) * 1e9 / n as f64
