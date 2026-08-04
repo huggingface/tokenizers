@@ -1786,4 +1786,48 @@ mod tests {
         }
         assert_eq!(pipeline.scratch_pool.len(), after_burst);
     }
+
+    // ScratchGuard::drop moves the scratch to the pool with mem::take, which leaves the
+    // default None variant behind in the guard. The pool must end up holding the scratch
+    // the model used: if the None leftover were pushed instead, the pool would still
+    // count one scratch, and the next encode would take it and panic in
+    // PipelineModel::tokenize_pipeline.
+    #[test]
+    fn the_pool_gets_back_the_used_scratch_not_the_none_leftover() {
+        let pipeline = hello_pipeline();
+        pipeline.encode("hello", false).wait().unwrap();
+        assert_eq!(pipeline.scratch_pool.len(), 1);
+        let scratch = pipeline.scratch_pool.get(&pipeline.model);
+        assert!(
+            matches!(*scratch, PipelineModelScratch::BPE(_)),
+            "the pooled scratch is not the BPE scratch the model used"
+        );
+    }
+
+    // Pooling is only worth it if a scratch keeps the state it built up across calls.
+    // A fresh BpeScratch has room for 64 symbols; encoding a longer sequence grows it.
+    // After a second, short encode the pooled scratch must still be the grown one,
+    // not a fresh replacement built somewhere along the way.
+    #[test]
+    fn a_reused_scratch_keeps_its_grown_buffers() {
+        let pipeline = hello_pipeline();
+        let long_input = "hello".repeat(50);
+        pipeline.encode(&long_input, false).wait().unwrap();
+        assert_eq!(pipeline.scratch_pool.len(), 1);
+
+        pipeline.encode("hello", false).wait().unwrap();
+        assert_eq!(pipeline.scratch_pool.len(), 1);
+
+        let scratch = pipeline.scratch_pool.get(&pipeline.model);
+        let PipelineModelScratch::BPE(bpe_scratch) = &*scratch else {
+            panic!("the pooled scratch is not a BPE scratch");
+        };
+        assert!(
+            bpe_scratch.word.capacity() >= long_input.len(),
+            "the pooled scratch is not the one grown by the long input: \
+             room for {} symbols after a {}-byte input",
+            bpe_scratch.word.capacity(),
+            long_input.len()
+        );
+    }
 }
