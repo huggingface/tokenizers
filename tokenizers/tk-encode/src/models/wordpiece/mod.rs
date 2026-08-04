@@ -446,9 +446,8 @@ impl pipeline::Model for PipelineWordPiece {
 
         let start = output.len();
         self.tokenize_word(sequence, candidate_str, output)?;
-        if let Some(at) = placement {
-            word_cache.insert(at, output[start..].iter().map(|token| token.id));
-        }
+
+        word_cache.insert(placement, output[start..].iter().map(|token| token.id));
         Ok(())
     }
 }

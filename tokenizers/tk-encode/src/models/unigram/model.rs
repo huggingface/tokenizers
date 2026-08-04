@@ -555,7 +555,7 @@ impl pipeline::Model for Unigram {
                     output.extend(ids.iter().map(|&id| PipelineToken { id }));
                     return Ok(());
                 }
-                Lookup::Miss(at) => placement = at,
+                Lookup::Miss(at) => placement = Some(at),
             }
         }
 
