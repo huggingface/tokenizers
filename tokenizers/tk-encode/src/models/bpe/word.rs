@@ -102,6 +102,11 @@ impl Word {
         self.symbols.len()
     }
 
+    #[cfg(test)]
+    pub(crate) fn capacity(&self) -> usize {
+        self.symbols.capacity()
+    }
+
     pub fn add(&mut self, c: u32, byte_len: usize) {
         let (prev, next) = {
             let len = self.symbols.len() as isize;
