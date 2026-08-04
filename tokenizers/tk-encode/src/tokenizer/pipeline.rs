@@ -1745,11 +1745,26 @@ impl PipelineTokenizer {
     /// [`encode`](Self::encode) — including the post-processor's framing — with no
     /// job, no pool and no handle. For a single short input that is all overhead;
     /// `encode` is the batched/parallel face of the same work.
+    /// Goes through the fused [`encode_generic`](Self::encode_generic) rather than the
+    /// worker kernel `encode_one_with`: the worker path splits frame/normalize from
+    /// pre-tokenize/model across two functions so a worker can enter at either, and paying
+    /// that call boundary costs ~5-8% on a whole sequence.
     pub fn encode_one(&self, input: &str, add_special_tokens: bool) -> Result<Vec<PipelineToken>> {
         SCRATCH.with(|st| {
             let state = &mut *st.borrow_mut();
-            self.encode_one_with(input, state)
-                .map(|tokens| self.frame(tokens, add_special_tokens))
+            state.reset();
+            // ~4.3 input bytes per token measured on English corpora; /4 is a conservative
+            // reserve that avoids most growth reallocations.
+            let mut output = Vec::with_capacity(input.len() / 4);
+            let (pre_tokens, scratch) = state.scratch_for(self.inner.id, &self.inner.model);
+            self.encode_generic::<{ Self::STAGE_POSTPROCESS }>(
+                input,
+                add_special_tokens,
+                pre_tokens,
+                scratch,
+                &mut output,
+            )?;
+            Ok(output)
         })
     }
 
