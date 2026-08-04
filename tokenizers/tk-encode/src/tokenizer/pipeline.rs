@@ -649,6 +649,10 @@ impl PipelineTokenizer {
     /// Live heap bytes per structure, largest first, so the memory phase of the
     /// benchmark can say *what* it is holding rather than only how much.
     ///
+    /// Rows are prefixed by owner (`model.`, `added_vocab.`, `scratch.`) so a caller
+    /// can compare like for like — notably the `scratch.cache *` rows, which the
+    /// reference model allocates at load and this one on first encode.
+    ///
     /// Everything walked here is what the pipeline owns after construction plus
     /// whatever the scratch pool has grown to. Enum-shaped components with no heap
     /// of their own (the normalizer, the pre-tokenizer's FSM tables, the
