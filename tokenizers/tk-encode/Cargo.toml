@@ -57,6 +57,8 @@ ahash = { version = "0.8.11", features = ["serde"] }
 dary_heap = { version = "0.3.6", features = ["serde"] }
 compact_str = { version = "0.9", features = ["serde"] }
 ptr_hash = { version = "2.0.1", default-features = false }
+# `ptr_hash` derives `MemSize`, which is how the MPHF reports its pilot table.
+mem_dbg = "0.4"
 memchr = "2.8.2"
 unicode-normalization = "0.1.25"
 yada = "0.7.0"

@@ -920,12 +920,22 @@ fn memory_sample() -> Vec<String> {
 /// once right after construction (so `breakdown` reconciles against `live_load`)
 /// and once after the encode pass (whose extra rows are the scratch pool, which
 /// belongs to `live_encode`).
-fn mem_rows(pipeline: &PipelineTokenizer) -> Vec<Value> {
-    pipeline
-        .mem_report()
+fn mem_rows(pipeline: &PipelineTokenizer, live: usize) -> Vec<Value> {
+    let report = pipeline.mem_report();
+    let walked: usize = report.iter().map(|(_, bytes)| bytes).sum();
+    let mut rows: Vec<Value> = report
         .into_iter()
         .map(|(what, bytes)| json!({"what": what, "bytes": bytes}))
-        .collect()
+        .collect();
+    // What `mem_report` does not reach, so the rows always add up to the allocator's
+    // figure. It tracks pre-tokenizer complexity — 0.37 MB for a model with no
+    // pre-tokenizer, 1.45 MB for cl100k's regex FSM — so that is where it lives,
+    // along with the normalizer and post-processor heaps.
+    rows.push(json!({
+        "what": "not walked (pre-tokenizer FSM, normalizer, post-processor)",
+        "bytes": live.saturating_sub(walked),
+    }));
+    rows
 }
 
 fn ids_bytes(ids: &Vec<Vec<u32>>) -> usize {
@@ -973,7 +983,7 @@ fn memory_child(which: &str, model: &Path) {
             // pipeline currently requires one.
             drop(tok);
             live_load = counting_alloc::live() - live0;
-            breakdown = mem_rows(&pipeline);
+            breakdown = mem_rows(&pipeline, live_load);
             let after_load = rss_now().unwrap_or(0);
             for c in &chunks {
                 let enc = pipeline.encode(c, true).unwrap();
@@ -982,7 +992,7 @@ fn memory_child(which: &str, model: &Path) {
             }
             let after_encode = rss_now().unwrap_or(0);
             live_encode = counting_alloc::live() - live0 - live_load - ids_bytes(&ids);
-            breakdown_after_encode = mem_rows(&pipeline);
+            breakdown_after_encode = mem_rows(&pipeline, live_load + live_encode);
             // Decode is a loud stub today → skip the pass and report null, so the
             // decode memory bar reads "pending" rather than a bogus 0.
             let decode_bytes = if ids
