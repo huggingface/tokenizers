@@ -43,6 +43,14 @@ fn check_model(name: &str, path: &str) {
     };
     let pipeline = PipelineTokenizer::try_from(&oracle)
         .unwrap_or_else(|e| panic!("{name}: pipeline construction failed: {e}"));
+    // The *oracle* is the legacy path, which splits with the system-regex backend. Some
+    // configs the pipeline covers natively (deepseek: its `Sequence` members are driven by
+    // `fsm_deepseek` and are not standalone regexes) leave the legacy path with nothing to
+    // search with unless `fancy-regex` is on -- then there is no reference to compare to.
+    if let Err(e) = oracle.encode("probe 123", false) {
+        eprintln!("bpe oracle: skip {name} -- legacy reference can't encode it: {e}");
+        return;
+    }
 
     let mut checked = 0usize;
     for (corpus, corpus_path) in CORPORA {
@@ -62,7 +70,7 @@ fn check_model(name: &str, path: &str) {
             }
             let expected = oracle.encode(chunk.as_str(), false).unwrap();
             let got: Vec<u32> = pipeline
-                .encode(&chunk, false)
+                .encode_one(&chunk, false)
                 .unwrap()
                 .iter()
                 .map(|t| t.id)

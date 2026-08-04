@@ -59,7 +59,7 @@ fn main() {
                     black_box(legacy.encode_fast(one.as_str(), false).unwrap());
                 });
                 let p = run(&|| {
-                    black_box(pipe.encode(one.as_str(), false).unwrap());
+                    black_box(pipe.encode_one(one.as_str(), false).unwrap());
                 });
                 print!("  │ {t:>2}t legacy {l:>5.0} ours {p:>6.0}");
             }

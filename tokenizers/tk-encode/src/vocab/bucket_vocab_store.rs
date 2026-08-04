@@ -88,6 +88,11 @@ impl Default for BucketVocabStore {
 
 impl BucketVocabStore {
     pub fn build(tokens: Vec<(Vec<u8>, u32)>) -> Self {
+        // An empty vocab has no max id to size the reverse table with. `BPE::default()`
+        // is one, and the parallel-plan tests build pipelines from it without encoding.
+        if tokens.is_empty() {
+            return Self::new();
+        }
         let n = tokens.len();
 
         let hasher = RandomState::with_seeds(SEEDS[0], SEEDS[1], SEEDS[2], SEEDS[3]);

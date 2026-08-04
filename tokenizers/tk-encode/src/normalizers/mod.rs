@@ -239,6 +239,31 @@ impl pipeline::Normalizer for NormalizerWrapper {
     }
 }
 
+impl NormalizerWrapper {
+    /// checks if the following is possible for the given normalizer:
+    /// ```rs
+    /// let (a, b) = input.split_at(n);
+    /// assert!(normalizer.normalize(a) + normalizer.normalize(b), normalizer.normalize(input));
+    /// ```
+    pub(crate) fn preserves_stride_boundaries(&self) -> bool {
+        match self {
+            NormalizerWrapper::NFC(_)
+            | NormalizerWrapper::NFD(_)
+            | NormalizerWrapper::NFKC(_)
+            | NormalizerWrapper::NFKD(_)
+            | NormalizerWrapper::Lowercase(_)
+            | NormalizerWrapper::BertNormalizer(_)
+            | NormalizerWrapper::StripAccents(_) => true,
+            NormalizerWrapper::Sequence(seq) => {
+                seq.as_ref().iter().all(Self::preserves_stride_boundaries)
+            }
+            // Strip, Prepend, Replace, Precompiled, Nmt, ByteLevel: may cross
+            // chunk boundaries.
+            _ => false,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

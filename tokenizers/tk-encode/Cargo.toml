@@ -72,6 +72,10 @@ onig = { version = "6.5.1", optional = true }
 pcre2 = { version = "0.2", optional = true }
 logos = { version = "0.15", optional = true } # compile-time DFA lexer reference (pure Rust)
 
+[target.'cfg(unix)'.dependencies]
+# pthread_atfork registration for the fork-safe encode pool (poison-and-rebuild).
+libc = "0.2"
+
 [features]
 # `fancy-regex` is the OPTIONAL system-regex backend, needed ONLY for a *regex* pattern in a `Split`
 # pre-tokenizer or a `Replace` normalizer — the atomsplit-native pre-tokenizers (GPT-2, cl100k,
