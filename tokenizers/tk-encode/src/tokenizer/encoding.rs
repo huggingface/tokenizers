@@ -1,4 +1,5 @@
-use crate::parallelism::*;
+#[cfg(feature = "parallelism")]
+use crate::parallelism::MaybeParallelRefMutIterator;
 use crate::tokenizer::{Offsets, Token};
 use crate::utils::padding::PaddingDirection;
 use crate::utils::truncation::TruncationDirection;
@@ -475,7 +476,12 @@ impl Encoding {
         direction: PaddingDirection,
     ) {
         // Dispatch call to all the overflowings first
+        #[cfg(feature = "parallelism")]
         self.overflowing.maybe_par_iter_mut().for_each(|encoding| {
+            encoding.pad(target_length, pad_id, pad_type_id, pad_token, direction)
+        });
+        #[cfg(not(feature = "parallelism"))]
+        self.overflowing.iter_mut().for_each(|encoding| {
             encoding.pad(target_length, pad_id, pad_type_id, pad_token, direction)
         });
 

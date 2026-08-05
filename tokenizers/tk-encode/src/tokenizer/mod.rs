@@ -20,7 +20,8 @@ use std::{
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
-use crate::utils::parallelism::*;
+#[cfg(feature = "parallelism")]
+use crate::utils::parallelism::MaybeParallelIterator;
 
 mod added_vocabulary;
 mod encoding;
@@ -1356,8 +1357,14 @@ where
     where
         E: Into<EncodeInput<'s>> + Send,
     {
+        #[cfg(feature = "parallelism")]
         let mut encodings = inputs
             .into_maybe_par_iter()
+            .map(|input| self.encode(input, add_special_tokens))
+            .collect::<Result<Vec<Encoding>>>()?;
+        #[cfg(not(feature = "parallelism"))]
+        let mut encodings = inputs
+            .into_iter()
             .map(|input| self.encode(input, add_special_tokens))
             .collect::<Result<Vec<Encoding>>>()?;
 
@@ -1379,8 +1386,14 @@ where
     where
         E: Into<EncodeInput<'s>> + Send,
     {
+        #[cfg(feature = "parallelism")]
         let mut encodings = inputs
             .into_maybe_par_iter()
+            .map(|input| self.encode_char_offsets(input, add_special_tokens))
+            .collect::<Result<Vec<Encoding>>>()?;
+        #[cfg(not(feature = "parallelism"))]
+        let mut encodings = inputs
+            .into_iter()
             .map(|input| self.encode_char_offsets(input, add_special_tokens))
             .collect::<Result<Vec<Encoding>>>()?;
 
@@ -1401,8 +1414,14 @@ where
     where
         E: Into<EncodeInput<'s>> + Send,
     {
+        #[cfg(feature = "parallelism")]
         let mut encodings = inputs
             .into_maybe_par_iter()
+            .map(|input| self.encode_fast(input, add_special_tokens))
+            .collect::<Result<Vec<Encoding>>>()?;
+        #[cfg(not(feature = "parallelism"))]
+        let mut encodings = inputs
+            .into_iter()
             .map(|input| self.encode_fast(input, add_special_tokens))
             .collect::<Result<Vec<Encoding>>>()?;
 
@@ -1423,10 +1442,20 @@ where
     where
         M: Send + Sync,
     {
-        sentences
-            .into_maybe_par_iter()
-            .map(|sentence| self.decode(sentence, skip_special_tokens))
-            .collect()
+        #[cfg(feature = "parallelism")]
+        {
+            sentences
+                .into_maybe_par_iter()
+                .map(|sentence| self.decode(sentence, skip_special_tokens))
+                .collect()
+        }
+        #[cfg(not(feature = "parallelism"))]
+        {
+            sentences
+                .into_iter()
+                .map(|sentence| self.decode(sentence, skip_special_tokens))
+                .collect()
+        }
     }
 }
 
