@@ -133,8 +133,17 @@ impl<'a> WordCache {
         for candidate in candidates {
             // Must validate that a candidate is indeed a match
             let slot = &self.cached_words[candidate];
-            if slot.key == key && !slot.is_stale(self.spilled_generation) {
-                return Lookup::Hit(self.get_cached_ids(slot));
+            if slot.key == key {
+                if slot.is_stale(self.spilled_generation) {
+                    // The entry is stale: replace it with fresh ids
+                    return Lookup::Miss(InsertPlacement {
+                        index: candidate,
+                        key,
+                        tag,
+                    });
+                } else {
+                    return Lookup::Hit(self.get_cached_ids(slot));
+                }
             }
         }
 
