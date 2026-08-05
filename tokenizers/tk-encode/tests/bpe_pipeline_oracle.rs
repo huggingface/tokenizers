@@ -63,6 +63,9 @@ fn check_model(name: &str, path: &str) {
             let expected = oracle.encode(chunk.as_str(), false).unwrap();
             let got: Vec<u32> = pipeline
                 .encode(&chunk, false)
+                .wait()
+                .unwrap()
+                .first()
                 .unwrap()
                 .iter()
                 .map(|t| t.id)

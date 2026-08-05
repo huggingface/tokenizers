@@ -59,7 +59,7 @@ use logos::Logos;
 use rayon::ThreadPoolBuilder;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde_json::{Value, json};
-use tk_encode::pipeline::{Model, PipelineTokenizer};
+use tk_encode::pipeline::PipelineTokenizer;
 use tk_encode::{AddedToken, ModelWrapper, Tokenizer};
 use tokenizers_release::{AddedToken as BaselineAddedToken, Tokenizer as BaselineTokenizer};
 
@@ -233,7 +233,15 @@ fn bench_throughput(
     let pipeline = PipelineTokenizer::try_from(oracle).expect("probed at model load");
     let base = baseline.cloned();
 
-    let pipe_enc = |s: &str| pipeline.encode(s, true).unwrap().len();
+    let pipe_enc = |s: &str| {
+        pipeline
+            .encode(s, true)
+            .wait()
+            .unwrap()
+            .first()
+            .unwrap()
+            .len()
+    };
     let base_enc = base
         .as_ref()
         .map(|b| move |s: &str| b.encode_fast(s, true).unwrap().len());
@@ -241,6 +249,9 @@ fn bench_throughput(
     let pipe_ids = |c: &String, add_special_tokens: bool| -> Vec<u32> {
         pipeline
             .encode(c, add_special_tokens)
+            .wait()
+            .unwrap()
+            .first()
             .unwrap()
             .iter()
             .map(|t| t.id)
@@ -306,21 +317,10 @@ fn bench_throughput(
 /// work, `pre_tokens` anchors the split stage, so under fat LTO no dead partial stage
 /// gets optimized away. The `black_box` lives here, in the bench — never in the library.
 fn stage_secs<const STAGE: u8>(pipeline: &PipelineTokenizer, chunks: &[String]) -> f64 {
-    let mut out = Vec::new();
-    let mut pre_tokens = Vec::new();
-    let mut scratch = pipeline.get_model().init_scratch();
-    let mut run = || {
+    let run = || {
         for chunk in chunks {
-            out.clear();
-            let _ = pipeline.encode_generic::<STAGE>(
-                chunk,
-                true,
-                &mut pre_tokens,
-                &mut scratch,
-                &mut out,
-            );
-            black_box(&out);
-            black_box(&pre_tokens);
+            let out = pipeline.encode_generic::<STAGE>(chunk, true);
+            black_box(out);
         }
     };
     run(); // warm-up
@@ -646,7 +646,15 @@ fn bench_threads(
         let b =
             baseline.map(|b| par_mbps(|s| b.encode_fast(s, true).unwrap().len(), chunks, bytes, n));
         let p = par_mbps(
-            |s| pipeline.encode(s, true).unwrap().len(),
+            |s| {
+                pipeline
+                    .encode(s, true)
+                    .wait()
+                    .unwrap()
+                    .first()
+                    .unwrap()
+                    .len()
+            },
             chunks,
             bytes,
             n,
@@ -904,7 +912,8 @@ fn memory_child(which: &str, model: &Path) {
             drop(tok);
             let after_load = rss_now().unwrap_or(0);
             for c in &chunks {
-                let enc = pipeline.encode(c, true).unwrap();
+                let results = pipeline.encode(c, true).wait().unwrap();
+                let enc = results.first().unwrap();
                 n += enc.len();
                 ids.push(enc.iter().map(|t| t.id).collect());
             }
@@ -1111,7 +1120,7 @@ fn main() {
         // and has no range-based impl. Probe once and downgrade to "unsupported"
         // (with the reason) instead of panicking partway through the bench.
         let pipeline = match PipelineTokenizer::try_from(&tok) {
-            Ok(p) => match p.encode(PROBE, false) {
+            Ok(p) => match p.encode(PROBE, false).wait() {
                 Ok(_) => p,
                 Err(e) => {
                     eprintln!("  pipeline builds but can't encode yet ({shape}): {e}");
