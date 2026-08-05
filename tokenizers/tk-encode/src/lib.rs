@@ -104,6 +104,7 @@ pub mod vocab_store;
 pub use tokenizer::*;
 
 // Re-export also parallelism utils
+#[cfg(feature = "parallelism")]
 pub use utils::parallelism;
 
 // Re-export ProgressFormat for trainer configuration

@@ -1,4 +1,6 @@
-use crate::parallelism::*;
+#[cfg(feature = "parallelism")]
+use crate::parallelism::{MaybeParallelRefIterator, MaybeParallelRefMutIterator};
+
 use crate::tokenizer::{Encoding, Result};
 use serde::{Deserialize, Serialize};
 
@@ -54,11 +56,20 @@ pub fn pad_encodings(encodings: &mut [Encoding], params: &PaddingParams) -> Resu
 
     let mut pad_length = match params.strategy {
         PaddingStrategy::Fixed(size) => size,
-        PaddingStrategy::BatchLongest => encodings
-            .maybe_par_iter()
-            .map(|e| e.get_ids().len())
-            .max()
-            .unwrap(),
+        PaddingStrategy::BatchLongest => {
+            #[cfg(feature = "parallelism")]
+            {
+                encodings
+                    .maybe_par_iter()
+                    .map(|e| e.get_ids().len())
+                    .max()
+                    .unwrap()
+            }
+            #[cfg(not(feature = "parallelism"))]
+            {
+                encodings.iter().map(|e| e.get_ids().len()).max().unwrap()
+            }
+        }
     };
 
     if let Some(multiple) = params.pad_to_multiple_of
@@ -68,15 +79,30 @@ pub fn pad_encodings(encodings: &mut [Encoding], params: &PaddingParams) -> Resu
         pad_length += multiple - pad_length % multiple;
     }
 
-    encodings.maybe_par_iter_mut().for_each(|encoding| {
-        encoding.pad(
-            pad_length,
-            params.pad_id,
-            params.pad_type_id,
-            &params.pad_token,
-            params.direction,
-        )
-    });
+    #[cfg(feature = "parallelism")]
+    {
+        encodings.maybe_par_iter_mut().for_each(|encoding| {
+            encoding.pad(
+                pad_length,
+                params.pad_id,
+                params.pad_type_id,
+                &params.pad_token,
+                params.direction,
+            )
+        });
+    }
+    #[cfg(not(feature = "parallelism"))]
+    {
+        encodings.iter_mut().for_each(|encoding| {
+            encoding.pad(
+                pad_length,
+                params.pad_id,
+                params.pad_type_id,
+                &params.pad_token,
+                params.direction,
+            )
+        });
+    }
 
     Ok(())
 }
