@@ -923,7 +923,7 @@ impl PipelineTokenizer {
         add_special_tokens: bool,
     ) -> Result<Vec<PipelineToken>> {
         let mut output = Vec::with_capacity(input.len() / 4);
-        let mut scratch = self.model.init_scratch();
+        let mut scratch = self.scratch_pool.get(&self.model);
         let PipelinePostProcessor { prefix, suffix } = &self.post_processor;
         // Prepend prefix tokens, if any
         // todo: handle post-processing when encoding a pair of sequences (currently unsupported by the PipelineTokenizer)
