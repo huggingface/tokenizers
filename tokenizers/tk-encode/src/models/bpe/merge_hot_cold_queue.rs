@@ -13,12 +13,7 @@ pub fn build_byte_to_gate() -> [u16; 256] {
     b2g
 }
 
-/// Byte offset of the first byte that describes a word's script, skipping the delimiter a
-/// pre-tokenizer prepended.
-///
-/// The gate table is indexed by a single byte, so it has to be given one that actually says
-/// something about the word. A pre-tokenizer hands the model its delimiter attached to the front,
-/// and that delimiter says nothing about what follows: ByteLevel produces `" word"` or `"Ġword"`,
+/// ByteLevel produces `" word"` or `"Ġword"`,
 /// Metaspace produces `"▁word"`. Indexing byte 0 classifies the delimiter instead of the content.
 ///
 /// The miss is worst for Metaspace. `▁` is U+2581 (`E2 96 81`), so on a SentencePiece-style
