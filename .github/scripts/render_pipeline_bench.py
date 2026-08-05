@@ -7,8 +7,9 @@ only builds the pipeline) and `pipeline` (the experimental PipelineTokenizer,
 blue). `ids_match` compares the pipeline's ids against the release's. Leads with
 the always-visible charts — per-model geomean ×speedup, its per-fixture twin (the
 same speedups decomposed by workload instead of by model), memory footprint, binary
-size — then one collapsed <details> per model (per-fixture speedup, thread scaling
-per fixture group, numbers table). Models the pipeline can't build yet
+size — then one collapsed <details> per model (per-fixture speedup, input-size
+response, thread scaling per fixture group, numbers table). Models the pipeline
+can't build yet
 render as "not supported" roadmap cards. Emits light-theme SVGs + pipeline_bench.md;
 the CI workflow rasterizes and uploads the SVGs. Input schema: see fixture_bench.rs.
 
@@ -698,6 +699,70 @@ def threads_svg(sweep, meta, baseline_label, title="Thread scaling", subtitle_ba
                    subtitle, grid + "".join(body) + legend, meta, subtitle_base)
 
 
+def has_sizes(m):
+    t = m.get("input_sizes")
+    return isinstance(t, dict) and bool(t.get("bytes"))
+
+
+def size_label(b):
+    return f"{b} B" if b < 1024 else f"{b // 1024} kB"
+
+
+def sizes_svg(sweep, meta, baseline_label, subtitle_base=""):
+    """Input-size response: single-thread throughput of both implementations at
+    chunk sizes from chat-message (~256 B, per-call overhead dominates) to whole
+    document (~256 kB), over one fixed corpus sample re-chunked per size. The
+    headline charts measure at ~10 kB; this curve shows how much of that speedup
+    survives at either end. Same row layout as the thread sweep; the right column
+    carries the pipeline MB/s and the ×speedup at that size."""
+    ink, sink = INK, SERIES_INK
+    bts, pipe, base = sweep["bytes"], sweep["pipeline_mbps"], sweep["baseline_mbps"]
+    vals = [v for v in pipe if v] + [v for v in base if v]
+    max_mb = (max(vals) if vals else 1.0) * 1.08
+
+    def x(v):
+        return OV_GUTTER + v / max_mb * OV_PLOT_W
+
+    top, bar_h, gap = 78, 11, 3
+    row_h = 2 * (bar_h + gap) + 16
+    col_x = CHART_W - 16
+    body = [f'<text x="{col_x}" y="{top - 14}" fill="{ink["muted"]}" font-size="11" '
+            f'text-anchor="end">Pipeline MB/s · ×speedup</text>',
+            f'<text x="{OV_GUTTER}" y="{top - 14}" fill="{ink["muted"]}" font-size="11">'
+            f'higher is better · top bar {escape(baseline_label)}, bottom Pipeline</text>']
+    y = top
+    for i, bsize in enumerate(bts):
+        cy = y + row_h / 2
+        body.append(f'<text x="{OV_GUTTER - 14}" y="{cy + 4:.1f}" fill="{ink["primary"]}" '
+                    f'font-size="12.5" font-weight="600" text-anchor="end">{size_label(bsize)}</text>')
+        base_y, pipe_y = y + 8, y + 8 + bar_h + gap
+        b = base[i] if i < len(base) else None
+        if b is not None:
+            body.append(hbar(x(0), x(b), base_y, bar_h, sink["baseline"]))
+        p = pipe[i] if i < len(pipe) else None
+        if p is not None:
+            body.append(hbar(x(0), x(p), pipe_y, bar_h, sink["pipeline"]))
+        if p is not None and b:
+            right = f"{p:.0f} · ×{p / b:.2f}"
+        else:
+            right = f"{p:.0f}" if p is not None else "—"
+        body.append(f'<text x="{col_x}" y="{cy + 4:.1f}" fill="{ink["secondary"]}" font-size="12" '
+                    f'text-anchor="end" style="font-variant-numeric:tabular-nums">{right}</text>')
+        y += row_h
+
+    grid = linear_axis(ink, x, nice_ticks(max_mb), top, y, " MB/s")
+    y += 30
+    legend = legend_row(ink, sink, y, [
+        ("swatch", "baseline", baseline_label),
+        ("swatch", "pipeline", "PipelineTokenizer"),
+    ])
+    height = y + 34
+    subtitle = (f"single-thread throughput per chunk size vs {baseline_label} · one corpus "
+                f"sample re-chunked per size · headline charts measure ~10 kB")
+    return svg_doc(ink, height, "Input-size response",
+                   subtitle, grid + "".join(body) + legend, meta, subtitle_base)
+
+
 def render_markdown(data, subtitle_base, meta, base, run_id, sizes,
                     base_lookup=None, base_ref=None):
     """Overview charts inline; everything per-model inside one <details> block, so
@@ -742,6 +807,9 @@ def render_markdown(data, subtitle_base, meta, base, run_id, sizes,
         md += [f"<details><summary><b>{escape(m['model'])}</b> — {escape(desc)} · "
                f"{summary}{flag}</summary>", ""]
         md += [picture(base, run_id, slug, f"{m['model']} speedup", 860), ""]
+        if has_sizes(m):
+            md += [picture(base, run_id, f"{slug}-sizes",
+                           f"{m['model']} input-size response", 860), ""]
         for gkey, _ in group_sweeps(m):
             md += [picture(base, run_id, f"{slug}-threads-{gkey}",
                            f"{m['model']} thread scaling ({gkey})", 860), ""]
@@ -847,6 +915,10 @@ def main():
         svg = (chart_svg(m, args.subtitle, meta, lo, hi, baseline_label)
                if m["results"] else card_svg(m))
         (out / f"pipeline_bench_{slug}.svg").write_text(svg)
+        if has_sizes(m):
+            (out / f"pipeline_bench_{slug}-sizes.svg").write_text(
+                sizes_svg(m["input_sizes"], meta, baseline_label,
+                          subtitle_base=args.subtitle))
         group_label = dict(GROUPS)
         for gkey, sweep in group_sweeps(m):
             (out / f"pipeline_bench_{slug}-threads-{gkey}.svg").write_text(

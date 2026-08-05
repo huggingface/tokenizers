@@ -25,13 +25,17 @@
 //! used to measure) is not a workload either implementation serves, and it
 //! flattered whichever side caches more.
 //!
-//! # Two isolated phases per model
+//! # Three isolated phases per model
 //!
 //! 1. **Throughput**: single-thread MB/s per fixture, the median of `REPS` cold
 //!    passes, both implementations alternating so frequency drift hits them
 //!    equally. Both sides encode with `add_special_tokens` on, so the headline
 //!    includes the post-process cost.
-//! 2. **Scaling & memory**: a multi-thread throughput sweep (1/2/4/8/max) per
+//! 2. **Input-size response**: the same comparison at chunk sizes from ~256 B
+//!    (chat messages, dominated by per-call overhead) to ~256 kB (whole
+//!    documents), over one fixed sample mixing every fixture, so the report
+//!    shows how much of the ~10 kB headline speedup survives at either end.
+//! 3. **Scaling & memory**: a multi-thread throughput sweep (1/2/4/8/max) per
 //!    fixture group (`lang`, `modalities`), cold instance per pass, and
 //!    resident-set deltas measured by re-spawning this binary as
 //!    `--memory <impl> <model.json>` children; one implementation per process,
@@ -79,6 +83,14 @@ const PROBE: &str = "The quick brown fox jumps 123.";
 // The fixture groups under `data/fixtures/`, also the granularity of the
 // multi-thread sweeps and of the report's thread-scaling charts.
 const GROUPS: [&str; 2] = ["lang", "modalities"];
+// Chunk sizes for the input-size sweep: ~256 B chat messages up to ~256 kB
+// documents. The ~10 kB headline regime sits inside the range, so the curve
+// shows how much of the headline speedup survives at either end.
+const SIZE_SWEEP: &[usize] = &[256, 1024, 4096, 16 * 1024, 64 * 1024, 256 * 1024];
+// Total text the size sweep re-chunks, spread evenly across fixtures: enough for
+// tens of thousands of calls at the smallest size, small enough that six sizes
+// cost about one extra phase-1 pass.
+const SIZE_SAMPLE_BYTES: usize = 8 * 1024 * 1024;
 
 // Added tokens injected into every loaded tokenizer so the `added_*` fixtures exercise
 // the added-token split for whichever model is benched — no bespoke tokenizer config.
@@ -191,11 +203,11 @@ fn median_secs(mut samples: Vec<f64>) -> f64 {
     samples[samples.len() / 2]
 }
 
-fn time_pass(encode: &dyn Fn(&str) -> usize, chunks: &[String]) -> f64 {
+fn time_pass<S: AsRef<str>>(encode: &dyn Fn(&str) -> usize, chunks: &[S]) -> f64 {
     let start = Instant::now();
     let mut n = 0usize;
     for chunk in chunks {
-        n += encode(chunk);
+        n += encode(chunk.as_ref());
     }
     black_box(n);
     start.elapsed().as_secs_f64()
@@ -275,7 +287,98 @@ fn bench_throughput(
     })
 }
 
-// ── phase 2: multi-thread scaling + memory ──────────────────────────────────
+// ── phase 2: input-size response ────────────────────────────────────────────
+
+/// A corpus sample for the input-size sweep: up to an equal share of every
+/// fixture (the whole fixture when it is smaller), so the mix matches the suite
+/// without paying six full-corpus passes. The share is drawn as chunks spread
+/// evenly across the whole fixture, never its head alone, so the sample is real
+/// varied text from end to end: no fixture's opening boilerplate is overweighted
+/// and nothing is repeated.
+fn size_sample(fixtures: &[Fixture]) -> String {
+    let budget = SIZE_SAMPLE_BYTES / fixtures.len().max(1);
+    let mut sample = String::new();
+    for f in fixtures {
+        let step = (f.bytes / budget.max(1)).max(1);
+        let mut taken = 0;
+        for c in f.chunks.iter().step_by(step) {
+            if taken >= budget {
+                break;
+            }
+            let mut e = (budget - taken).min(c.len());
+            while e < c.len() && !c.is_char_boundary(e) {
+                e += 1;
+            }
+            sample.push_str(&c[..e]);
+            taken += e;
+        }
+    }
+    sample
+}
+
+/// Cut `text` into `size`-byte chunks, each cut moved forward to the next char
+/// boundary. The line-boundary chunker can't serve the small sizes: one long
+/// line would blow a 256-byte target.
+fn sized_chunks(text: &str, size: usize) -> Vec<&str> {
+    let mut chunks = Vec::with_capacity(text.len() / size + 1);
+    let mut s = 0;
+    while s < text.len() {
+        let mut e = (s + size).min(text.len());
+        while e < text.len() && !text.is_char_boundary(e) {
+            e += 1;
+        }
+        chunks.push(&text[s..e]);
+        s = e;
+    }
+    chunks
+}
+
+fn size_label(bytes: usize) -> String {
+    if bytes < 1024 {
+        format!("{bytes} B")
+    } else {
+        format!("{} kB", bytes / 1024)
+    }
+}
+
+/// Throughput of both implementations at every `SIZE_SWEEP` chunk size, over the
+/// same `sample`, single thread. Cold instance per pass and interleaved reps,
+/// exactly like phase 1; only the chunk size varies, so the curve isolates how
+/// per-call overhead and amortization move the headline comparison.
+fn bench_sizes(baseline: Option<&BaselineTokenizer>, oracle: &Tokenizer, sample: &str) -> Value {
+    let (mut pipe, mut base) = (Vec::new(), Vec::new());
+    for &size in SIZE_SWEEP {
+        let chunks = sized_chunks(sample, size);
+        let (mut base_s, mut pipe_s) = (Vec::new(), Vec::new());
+        for _ in 0..REPS {
+            if let Some(b) = baseline {
+                let cold = b.clone();
+                base_s.push(time_pass(
+                    &|s| cold.encode_fast(s, true).unwrap().len(),
+                    &chunks,
+                ));
+            }
+            let cold = PipelineTokenizer::try_from(oracle).expect("probed at model load");
+            pipe_s.push(time_pass(
+                &|s| cold.encode(s, true).wait().unwrap().first().unwrap().len(),
+                &chunks,
+            ));
+        }
+        let mbps = |secs: f64| sample.len() as f64 / secs / 1e6;
+        let b = (!base_s.is_empty()).then(|| mbps(median_secs(base_s)));
+        let p = mbps(median_secs(pipe_s));
+        eprintln!(
+            "    {}: pipeline {p:.1} MB/s{}",
+            size_label(size),
+            b.map_or(String::new(), |v| format!(", baseline {v:.1} MB/s"))
+        );
+        pipe.push(p);
+        base.push(b);
+    }
+    json!({ "bytes": SIZE_SWEEP, "pipeline_mbps": pipe, "baseline_mbps": base })
+}
+
+// ── phase 3: multi-thread scaling + memory ──────────────────────────────────
 
 /// Thread counts for the scaling sweep: 1 (the single-thread anchor) + 2/4/8 + the device max,
 /// deduped and capped at max (so an 8-core box reports `[1,2,4,8]`, a 6-core `[1,2,4,6]`).
@@ -589,6 +692,7 @@ fn main() {
             (*g, chunks)
         })
         .collect();
+    let sample = size_sample(&fixtures);
 
     let mut models: Vec<Value> = Vec::new();
     for entry in manifest {
@@ -666,6 +770,9 @@ fn main() {
             .map(|f| bench_throughput(baseline.as_ref(), &tok, f))
             .collect();
 
+        eprintln!("  input-size sweep:");
+        let input_sizes = bench_sizes(baseline.as_ref(), &tok, &sample);
+
         let memory = measure_memory(&path, baseline.is_some());
         let threads = Value::Object(
             group_chunks
@@ -683,6 +790,7 @@ fn main() {
         models.push(json!({
             "model": name, "desc": desc, "shape": shape,
             "results": rows, "memory": memory, "threads": threads,
+            "input_sizes": input_sizes,
         }));
     }
 
