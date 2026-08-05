@@ -388,11 +388,37 @@ impl LookupKey {
 
     /// The key of a word of fifteen bytes or fewer: the word is its own key.
     pub fn new_inline(word: &[u8]) -> Self {
-        assert!(word.len() <= 15);
-        let mut payload = [0u8; 16];
-        payload[..word.len()].copy_from_slice(word);
-        payload[15] = word.len() as u8;
-        Self(u128::from_le_bytes(payload))
+        let len = word.len();
+        assert!(len <= 15);
+        // yes, this is a bit weird :)
+        //
+        // We used to do this:
+        // ```rust
+        //  payload[..word.len()].copy_from_slice(word);
+        //  payload[15] = word.len() as u8;
+        //  Self(u128::from_le_bytes(payload))
+        // ```
+        // But that would compile into a memcpy call, probably because the len is only known at runtime.
+        // memcpy turned out to be quite slow and inefficient.
+        //
+        // The head / tail with fixed size compiles into plain register loads which are way faster
+        let raw = if len >= 8 {
+            let head = u64::from_le_bytes(word[..8].try_into().unwrap()) as u128;
+            let tail = u64::from_le_bytes(word[len - 8..].try_into().unwrap()) as u128;
+            head | tail << (8 * (len - 8))
+        } else if len >= 4 {
+            let head = u32::from_le_bytes(word[..4].try_into().unwrap()) as u128;
+            let tail = u32::from_le_bytes(word[len - 4..].try_into().unwrap()) as u128;
+            head | tail << (8 * (len - 4))
+        } else if len >= 1 {
+            let first = word[0] as u128;
+            let middle = (word[len / 2] as u128) << (8 * (len / 2));
+            let last = (word[len - 1] as u128) << (8 * (len - 1));
+            first | middle | last
+        } else {
+            0
+        };
+        Self(raw | (len as u128) << 120)
     }
 
     /// The key of a longer word: 127 bits of hash stand in for the word's bytes.
@@ -609,6 +635,25 @@ mod tests {
         assert_ne!(key(b"aaaaaaaaaaaaaa\x7f"), key(b"aaaaaaaaaaaaaa\xff"));
         assert_ne!(key(b"abcd"), key(b"abcd\0"));
         assert_eq!(key(b"aaaaaaaaaaaaaa\xff").0 & LookupKey::TAG_MASK, 0);
+    }
+
+    /// Every inline length, with a different value in every byte position, so a
+    /// packing that drops, duplicates or misplaces a byte fails. The reference is
+    /// the construction the packing must be equivalent to: the bytes copied into
+    /// a zeroed array, the length written in the top byte.
+    #[test]
+    fn an_inline_key_is_the_words_bytes_with_the_length_on_top() {
+        for len in 0..=15usize {
+            let word: Vec<u8> = (1..=len as u8).collect();
+            let mut padded = [0u8; 16];
+            padded[..len].copy_from_slice(&word);
+            padded[15] = len as u8;
+            assert_eq!(
+                LookupKey::new_inline(&word),
+                LookupKey(u128::from_le_bytes(padded)),
+                "len={len}"
+            );
+        }
     }
 
     /// A nonzero start, since every spill after the first has one and offsets that
