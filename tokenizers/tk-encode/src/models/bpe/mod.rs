@@ -1,12 +1,13 @@
 //! [Byte Pair Encoding](https://www.aclweb.org/anthology/P16-1162/) model.
 use std::{iter, mem};
 mod bpe_scratch;
-mod bytelevel_folding;
 mod convert;
+mod fold;
 mod legacy;
 mod merge_hot_cold_queue;
 mod merge_multipass;
 mod model;
+mod pair_map;
 mod tables;
 
 #[cfg(test)]
