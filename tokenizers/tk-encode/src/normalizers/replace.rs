@@ -6,10 +6,12 @@ use crate::tokenizer::pattern::Pattern;
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 use crate::utils::SysRegex;
 use atomsplit::literal::Literal;
+#[cfg(feature = "config")]
 use serde::{Deserialize, Serialize};
 
 /// Represents the different patterns that `Replace` can use
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq)]
+#[cfg_attr(feature = "config", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReplacePattern {
     String(String),
     Regex(String),
@@ -29,8 +31,8 @@ impl From<&str> for ReplacePattern {
 
 /// We use this custom deserializer to build the search for `Replace`
 #[doc(hidden)]
-#[derive(Deserialize)]
-#[serde(tag = "type")]
+#[cfg_attr(feature = "config", derive(Deserialize))]
+#[cfg_attr(feature = "config", serde(tag = "type"))]
 struct ReplaceDeserializer {
     pattern: ReplacePattern,
     content: String,
@@ -67,12 +69,13 @@ impl Search {
 
 /// This normalizer will take a `pattern` (for now only a String)
 /// and replace every occurrence with `content`.
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(tag = "type", try_from = "ReplaceDeserializer")]
+#[cfg_attr(feature = "config", derive(Serialize, Deserialize))]
+#[derive(Debug)]
+#[cfg_attr(feature = "config", serde(tag = "type", try_from = "ReplaceDeserializer"))]
 pub struct Replace {
     pattern: ReplacePattern,
     pub content: String,
-    #[serde(skip)]
+    #[cfg_attr(feature = "config", serde(skip))]
     search: Search,
 }
 

@@ -1,6 +1,7 @@
 use crate::normalizer::Range;
 use crate::pipeline;
 use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result};
+#[cfg(feature = "config")]
 use serde::{Deserialize, Serialize};
 
 use crate::utils::macro_rules_attribute;
@@ -8,7 +9,7 @@ use crate::utils::macro_rules_attribute;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[macro_rules_attribute(impl_serde_type!)]
 pub struct FixedLength {
-    #[serde(default = "default_length")]
+    #[cfg_attr(feature = "config", serde(default = "default_length"))]
     pub length: usize,
 }
 

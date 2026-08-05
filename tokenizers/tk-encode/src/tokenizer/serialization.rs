@@ -1,5 +1,6 @@
 use std::marker::PhantomData;
 
+#[cfg(feature = "config")]
 use serde::{
     self, Deserialize, Deserializer, Serialize, Serializer,
     de::{Error, MapAccess, Visitor},
@@ -12,6 +13,7 @@ use crate::{Decoder, Model, Normalizer, PostProcessor, PreTokenizer, TokenizerBu
 
 static SERIALIZATION_VERSION: &str = "1.0";
 
+#[cfg(feature = "config")]
 impl<M, N, PT, PP, D> Serialize for TokenizerImpl<M, N, PT, PP, D>
 where
     M: Serialize,
@@ -47,6 +49,7 @@ where
     }
 }
 
+#[cfg(feature = "config")]
 impl<'de, M, N, PT, PP, D> Deserialize<'de> for TokenizerImpl<M, N, PT, PP, D>
 where
     M: Deserialize<'de> + Model,

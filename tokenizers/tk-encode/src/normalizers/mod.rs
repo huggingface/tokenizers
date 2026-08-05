@@ -15,13 +15,15 @@ pub use crate::normalizers::replace::Replace;
 pub use crate::normalizers::strip::{Strip, StripAccents};
 pub use crate::normalizers::unicode::{NFC, NFD, NFKC, NFKD, Nmt};
 pub use crate::normalizers::utils::{Lowercase, Sequence};
+#[cfg(feature = "config")]
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::{NormalizedString, Normalizer, pipeline};
 
 /// Wrapper for known Normalizers.
-#[derive(Clone, Debug, Serialize)]
-#[serde(untagged)]
+#[cfg_attr(feature = "config", derive(Serialize))]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "config", serde(untagged))]
 pub enum NormalizerWrapper {
     BertNormalizer(BertNormalizer),
     StripNormalizer(Strip),
@@ -39,19 +41,22 @@ pub enum NormalizerWrapper {
     ByteLevel(ByteLevel),
 }
 
+#[cfg(feature = "config")]
 impl<'de> Deserialize<'de> for NormalizerWrapper {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
-        #[derive(Debug, Deserialize)]
+        #[cfg_attr(feature = "config", derive(Deserialize))]
+        #[derive(Debug)]
         pub struct Tagged {
-            #[serde(rename = "type")]
+            #[cfg_attr(feature = "config", serde(rename = "type"))]
             variant: EnumType,
-            #[serde(flatten)]
+            #[cfg_attr(feature = "config", serde(flatten))]
             rest: serde_json::Value,
         }
-        #[derive(Debug, Serialize, Deserialize)]
+        #[cfg_attr(feature = "config", derive(Serialize, Deserialize))]
+        #[derive(Debug)]
         pub enum EnumType {
             Bert,
             Strip,
@@ -69,15 +74,15 @@ impl<'de> Deserialize<'de> for NormalizerWrapper {
             ByteLevel,
         }
 
-        #[derive(Deserialize)]
-        #[serde(untagged)]
+        #[cfg_attr(feature = "config", derive(Deserialize))]
+        #[cfg_attr(feature = "config", serde(untagged))]
         pub enum NormalizerHelper {
             Tagged(Tagged),
             Legacy(serde_json::Value),
         }
 
-        #[derive(Deserialize)]
-        #[serde(untagged)]
+        #[cfg_attr(feature = "config", derive(Deserialize))]
+        #[cfg_attr(feature = "config", serde(untagged))]
         pub enum NormalizerUntagged {
             BertNormalizer(BertNormalizer),
             StripNormalizer(Strip),

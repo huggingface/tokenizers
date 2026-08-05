@@ -2,12 +2,14 @@ use super::OrderedVocabIter;
 use crate::pipeline::{self, ModelScratch, PipelineToken};
 use crate::tokenizer::{Model, Result, Token};
 use ahash::AHashMap;
+#[cfg(feature = "config")]
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 
+#[cfg(feature = "config")]
 mod serialization;
 
 type Vocab = AHashMap<String, u32>;
@@ -73,6 +75,7 @@ impl WordLevelBuilder {
 
     /// Constructs a `WordLevel` model that uses the `WordLevelBuilder`'s configuration.
     pub fn build(mut self) -> Result<WordLevel> {
+        #[cfg(feature = "config")]
         if let Some(vocab) = self.config.files {
             self.config.vocab = WordLevel::read_file(&vocab)?;
         }
@@ -113,6 +116,7 @@ impl WordLevel {
         WordLevelBuilder::new()
     }
 
+#[cfg(feature = "config")]
     pub fn read_file(vocab_path: &str) -> Result<Vocab> {
         let vocab_file = File::open(vocab_path)?;
         let mut vocab_file = BufReader::new(vocab_file);
@@ -137,6 +141,7 @@ impl WordLevel {
     }
 
     /// Initialize a WordLevel model from vocab and merges file.
+    #[cfg(feature = "config")]
     pub fn from_file(vocab_path: &str, unk_token: String) -> Result<WordLevel> {
         let vocab = WordLevel::read_file(vocab_path)?;
         Self::builder().vocab(vocab).unk_token(unk_token).build()
@@ -188,6 +193,7 @@ impl Model for WordLevel {
         self.vocab.keys().len()
     }
 
+    #[cfg(feature = "config")]
     fn save(&self, folder: &Path, name: Option<&str>) -> Result<Vec<PathBuf>> {
         let vocab_file_name = match name {
             Some(name) => format!("{name}-vocab.json"),

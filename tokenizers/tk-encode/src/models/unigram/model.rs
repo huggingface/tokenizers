@@ -399,6 +399,7 @@ impl Unigram {
     ///
     /// let model = Unigram::load("mymodel-unigram.json").unwrap();
     /// ```
+    #[cfg(feature = "config")]
     pub fn load<P: AsRef<Path>>(path: P) -> Result<Unigram> {
         let string = read_to_string(path)?;
         Ok(serde_json::from_str(&string)?)
@@ -489,6 +490,7 @@ impl Model for Unigram {
         self.vocab.get(id as usize).map(|item| item.0.clone())
     }
 
+    #[cfg(feature = "config")]
     fn save(&self, folder: &Path, name: Option<&str>) -> Result<Vec<PathBuf>> {
         let name = match name {
             Some(name) => format!("{name}-unigram.json"),

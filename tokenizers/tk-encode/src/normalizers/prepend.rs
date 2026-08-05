@@ -2,10 +2,12 @@ use std::borrow::Cow;
 
 use crate::pipeline;
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
+#[cfg(feature = "config")]
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(tag = "type")]
+#[cfg_attr(feature = "config", derive(Deserialize, Serialize))]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "config", serde(tag = "type"))]
 pub struct Prepend {
     pub prepend: String,
 }

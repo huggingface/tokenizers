@@ -17,6 +17,7 @@ use std::{
 use yada::DoubleArray;
 use yada::builder::DoubleArrayBuilder;
 
+#[cfg(feature = "config")]
 mod serialization;
 
 #[derive(thiserror::Error, Debug)]
@@ -186,6 +187,7 @@ impl WordPiece {
         Ok(vocab)
     }
 
+    #[cfg(feature = "config")]
     pub fn from_bytes<P: AsRef<[u8]>>(bytes: P) -> Result<Self> {
         let tokenizer = serde_json::from_slice(bytes.as_ref())?;
         Ok(tokenizer)
@@ -290,6 +292,7 @@ impl Model for WordPiece {
         self.vocab_r.get(&id).cloned()
     }
 
+    #[cfg(feature = "config")]
     fn save(&self, folder: &Path, name: Option<&str>) -> Result<Vec<PathBuf>> {
         let vocab_file_name = match name {
             Some(name) => format!("{name}-vocab.txt"),

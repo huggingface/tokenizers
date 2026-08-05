@@ -9,6 +9,7 @@ use ahash::AHashMap;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+#[cfg(feature = "config")]
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::models::bpe::BPE;
@@ -29,6 +30,7 @@ impl<'a> OrderedVocabIter<'a> {
     }
 }
 
+#[cfg(feature = "config")]
 impl Serialize for OrderedVocabIter<'_> {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
@@ -59,8 +61,9 @@ impl Serialize for OrderedVocabIter<'_> {
     }
 }
 
-#[derive(Serialize, Debug, PartialEq, Clone)]
-#[serde(untagged)]
+#[cfg_attr(feature = "config", derive(Serialize))]
+#[derive(Debug, PartialEq, Clone)]
+#[cfg_attr(feature = "config", serde(untagged))]
 pub enum ModelWrapper {
     BPE(BPE),
     // WordPiece must stay before WordLevel here for deserialization (for retrocompatibility
@@ -70,19 +73,20 @@ pub enum ModelWrapper {
     Unigram(Unigram),
 }
 
+#[cfg(feature = "config")]
 impl<'de> Deserialize<'de> for ModelWrapper {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
-        #[derive(Deserialize)]
+        #[cfg_attr(feature = "config", derive(Deserialize))]
         pub struct Tagged {
-            #[serde(rename = "type")]
+            #[cfg_attr(feature = "config", serde(rename = "type"))]
             variant: EnumType,
-            #[serde(flatten)]
+            #[cfg_attr(feature = "config", serde(flatten))]
             rest: serde_json::Value,
         }
-        #[derive(Deserialize)]
+        #[cfg_attr(feature = "config", derive(Deserialize))]
         pub enum EnumType {
             BPE,
             WordPiece,
@@ -90,15 +94,15 @@ impl<'de> Deserialize<'de> for ModelWrapper {
             Unigram,
         }
 
-        #[derive(Deserialize)]
-        #[serde(untagged)]
+        #[cfg_attr(feature = "config", derive(Deserialize))]
+        #[cfg_attr(feature = "config", serde(untagged))]
         pub enum ModelHelper {
             Tagged(Tagged),
             Legacy(serde_json::Value),
         }
 
-        #[derive(Deserialize)]
-        #[serde(untagged)]
+        #[cfg_attr(feature = "config", derive(Deserialize))]
+        #[cfg_attr(feature = "config", serde(untagged))]
         pub enum ModelUntagged {
             BPE(BPE),
             // WordPiece must stay before WordLevel here for deserialization (for retrocompatibility
@@ -188,6 +192,7 @@ impl Model for ModelWrapper {
         }
     }
 
+    #[cfg(feature = "config")]
     fn save(&self, folder: &Path, name: Option<&str>) -> Result<Vec<PathBuf>> {
         match self {
             Self::WordLevel(t) => t.save(folder, name),

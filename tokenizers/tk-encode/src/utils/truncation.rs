@@ -1,9 +1,11 @@
 use crate::tokenizer::{Encoding, Result};
+#[cfg(feature = "config")]
 use serde::{Deserialize, Serialize};
 use std::cmp;
 use std::mem;
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Eq, Default)]
+#[cfg_attr(feature = "config", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TruncationDirection {
     Left,
     #[default]
@@ -19,9 +21,10 @@ impl std::convert::AsRef<str> for TruncationDirection {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "config", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone)]
 pub struct TruncationParams {
-    #[serde(default)]
+    #[cfg_attr(feature = "config", serde(default))]
     pub direction: TruncationDirection,
     pub max_length: usize,
     pub strategy: TruncationStrategy,
@@ -49,7 +52,8 @@ pub enum TruncationError {
     SequenceTooShort,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Eq, Default)]
+#[cfg_attr(feature = "config", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TruncationStrategy {
     #[default]
     LongestFirst,

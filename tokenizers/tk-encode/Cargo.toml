@@ -31,10 +31,10 @@ atomsplit = { path = "../atomsplit" }
 tk-serialization = { path = "../tk-serialization" }
 rand = "0.9"
 regex = "1.10"
-rayon = "1.10"
-rayon-cond = "0.4"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+rayon = { version = "1.10", optional = true }
+rayon-cond = { version = "0.4", optional = true }
+serde = { version = "1.0", features = ["derive"], optional = true }
+serde_json = { version = "1.0", optional = true }
 unicode-normalization-alignments = "0.1"
 unicode_categories = "0.1"
 unicode-segmentation = "1.11"
@@ -53,9 +53,9 @@ thiserror = "2"
 fancy-regex = { version = "0.17", optional = true }
 getrandom = { version = "0.3" }
 monostate = "0.1.12"
-ahash = { version = "0.8.11", features = ["serde"] }
-dary_heap = { version = "0.3.6", features = ["serde"] }
-compact_str = { version = "0.9", features = ["serde"] }
+ahash = { version = "0.8.11" }
+dary_heap = { version = "0.3.6" }
+compact_str = { version = "0.9" }
 ptr_hash = { version = "2.0.1", default-features = false }
 memchr = "2.8.2"
 unicode-normalization = "0.1.25"
@@ -83,7 +83,15 @@ logos = { version = "0.15", optional = true } # compile-time DFA lexer reference
 # leaves the crate able to load a `.tok` and nothing else, which drops ~200 KB of Unicode tables
 # that only unreachable enum arms were keeping alive.
 default = ["progressbar", "config"]
-config = []
+config = [
+  "dep:serde",
+  "dep:serde_json",
+  "dep:rayon",
+  "dep:rayon-cond",
+  "ahash/serde",
+  "dary_heap/serde",
+  "compact_str/serde",
+]
 # Writing a `.tok`. Only `tk-convert` needs it; an inference build reads and never writes.
 tok-write = ["tk-serialization/write"]
 progressbar = ["indicatif"]

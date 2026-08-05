@@ -1,10 +1,12 @@
 use crate::tokenizer::{Encoding, PostProcessor, Result};
 use ahash::AHashMap;
+#[cfg(feature = "config")]
 use serde::{Deserialize, Serialize};
 use std::iter::FromIterator;
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-#[serde(tag = "type")]
+#[cfg_attr(feature = "config", derive(Serialize, Deserialize))]
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "config", serde(tag = "type"))]
 pub struct BertProcessing {
     pub sep: (String, u32),
     pub cls: (String, u32),

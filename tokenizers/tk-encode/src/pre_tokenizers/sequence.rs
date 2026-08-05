@@ -4,6 +4,7 @@ use crate::pipeline::{self, PipelinePreTokenizer};
 use crate::pre_tokenizers::PreTokenizerWrapper;
 use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result};
 use crate::utils::macro_rules_attribute;
+#[cfg(feature = "config")]
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq)]

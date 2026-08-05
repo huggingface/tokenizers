@@ -5,6 +5,7 @@ use super::{
 use ahash::{AHashMap, AHashSet};
 use daachorse::{DoubleArrayAhoCorasick, DoubleArrayAhoCorasickBuilder, MatchKind};
 use regex::Regex;
+#[cfg(feature = "config")]
 use serde::{Deserialize, Serialize, Serializer, ser::SerializeSeq};
 use std::sync::LazyLock;
 
@@ -13,7 +14,8 @@ use std::sync::LazyLock;
 /// like:
 ///   - Whether they should only match single words
 ///   - Whether to include any whitespace on its left or right
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "config", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AddedToken {
     /// The content of the added token (original, as provided by the user)
     pub content: String,
@@ -570,15 +572,17 @@ impl Default for AddedVocabulary {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "config", derive(Serialize, Deserialize))]
+#[derive(Debug)]
 pub(super) struct AddedTokenWithId {
     /// The id assigned to this token
     pub id: u32,
-    #[serde(flatten)]
+    #[cfg_attr(feature = "config", serde(flatten))]
     /// The target AddedToken
     pub token: AddedToken,
 }
 
+#[cfg(feature = "config")]
 impl Serialize for AddedVocabulary {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
@@ -614,7 +618,7 @@ mod tests {
     use std::collections::HashMap;
     use std::path::{Path, PathBuf};
 
-    #[derive(Serialize, Deserialize)]
+    #[cfg_attr(feature = "config", derive(Serialize, Deserialize))]
     struct ModelMock {
         vocab: AHashMap<String, u32>,
         vocab_r: AHashMap<u32, String>,

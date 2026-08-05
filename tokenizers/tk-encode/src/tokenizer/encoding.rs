@@ -1,13 +1,16 @@
+#[cfg(feature = "config")]
 use crate::parallelism::*;
 use crate::tokenizer::{Offsets, Token};
 use crate::utils::padding::PaddingDirection;
 use crate::utils::truncation::TruncationDirection;
 use ahash::AHashMap;
+#[cfg(feature = "config")]
 use serde::{Deserialize, Serialize};
 use std::ops::Range;
 
 /// Represents the output of a `Tokenizer`.
-#[derive(Default, PartialEq, Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "config", derive(Serialize, Deserialize))]
+#[derive(Default, PartialEq, Debug, Clone)]
 pub struct Encoding {
     /// IDs produced by the `Tokenizer`
     ids: Vec<u32>,
@@ -475,7 +478,11 @@ impl Encoding {
         direction: PaddingDirection,
     ) {
         // Dispatch call to all the overflowings first
-        self.overflowing.maybe_par_iter_mut().for_each(|encoding| {
+        #[cfg(feature = "config")]
+        let overflowing = self.overflowing.maybe_par_iter_mut();
+        #[cfg(not(feature = "config"))]
+        let overflowing = self.overflowing.iter_mut();
+        overflowing.for_each(|encoding| {
             encoding.pad(target_length, pad_id, pad_type_id, pad_token, direction)
         });
 

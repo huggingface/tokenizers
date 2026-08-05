@@ -1,5 +1,6 @@
 use crate::utils::byte_level::{BYTES_CHAR_LOOKUP, CHAR_BYTES_LOOKUP, byte_level_transform};
 use crate::utils::{GptFsm, GptFsmPattern};
+#[cfg(feature = "config")]
 use serde::{Deserialize, Serialize};
 
 use crate::tokenizer::{
@@ -23,7 +24,7 @@ pub struct ByteLevel {
 
     /// Whether to use the standard GPT2 regex for whitespace splitting
     /// Set it to False if you want to use your own splitting.
-    #[serde(default = "default_true")]
+    #[cfg_attr(feature = "config", serde(default = "default_true"))]
     pub use_regex: bool,
 }
 

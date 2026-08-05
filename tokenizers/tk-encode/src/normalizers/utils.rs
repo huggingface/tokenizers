@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 
+#[cfg(feature = "config")]
 use serde::{Deserialize, Serialize};
 
 use crate::normalizers::NormalizerWrapper;
@@ -7,8 +8,9 @@ use crate::pipeline;
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 use crate::utils::macro_rules_attribute;
 
-#[derive(Clone, Deserialize, Debug, Serialize)]
-#[serde(tag = "type")]
+#[cfg_attr(feature = "config", derive(Deserialize, Serialize))]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "config", serde(tag = "type"))]
 /// Allows concatenating multiple other Normalizer as a Sequence.
 /// All the normalizers run in sequence in the given order against the same NormalizedString.
 pub struct Sequence {

@@ -1,11 +1,13 @@
 use crate::processors::byte_level::process_offsets;
 use crate::tokenizer::{Encoding, PostProcessor, Result};
 use ahash::AHashMap;
+#[cfg(feature = "config")]
 use serde::{Deserialize, Serialize};
 use std::iter::FromIterator;
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-#[serde(tag = "type")]
+#[cfg_attr(feature = "config", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "config", serde(tag = "type"))]
 pub struct RobertaProcessing {
     pub sep: (String, u32),
     pub cls: (String, u32),

@@ -17,9 +17,12 @@ use std::{
     path::{Path, PathBuf},
 };
 
+#[cfg(feature = "config")]
 use serde::de::DeserializeOwned;
+#[cfg(feature = "config")]
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "config")]
 use crate::utils::parallelism::*;
 
 mod added_vocabulary;
@@ -29,6 +32,7 @@ pub mod pattern;
 pub mod pipeline;
 pub mod tok;
 pub mod pre_tokenizer;
+#[cfg(feature = "config")]
 mod serialization;
 
 // Re-export wrappers
@@ -40,7 +44,9 @@ pub use crate::processors::PostProcessorWrapper;
 // And some other types
 pub use crate::tokenizer::added_vocabulary::{AddedToken, AddedVocabulary};
 pub use crate::utils::iter::LinesWithEnding;
-pub use crate::utils::padding::{PaddingDirection, PaddingParams, PaddingStrategy, pad_encodings};
+pub use crate::utils::padding::{
+    PaddingDirection, PaddingParams, PaddingStrategy, pad_encodings,
+};
 pub use crate::utils::truncation::{
     TruncationDirection, TruncationParams, TruncationStrategy, truncate_encodings,
 };
@@ -80,7 +86,8 @@ pub trait Model {
     /// Retrieve the size of the vocabulary
     fn get_vocab_size(&self) -> usize;
     /// Save the current `Model` in the given folder, using the given `prefix` for the various
-    /// files that need to be saved.
+    /// files that need to be saved. Writes the legacy JSON artefacts, so it travels with `config`.
+    #[cfg(feature = "config")]
     fn save(&self, folder: &Path, prefix: Option<&str>) -> Result<Vec<PathBuf>>;
 
     /// Tokenize every pre-token within a `PreTokenizedString` in one call.
@@ -415,7 +422,10 @@ where
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+// `TokenizerImpl`'s serde impls live in the gated `serialization` module, so the newtype's derive
+// follows them: without the config layer there is nothing to (de)serialize a tokenizer from.
+#[cfg_attr(feature = "config", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone)]
 pub struct Tokenizer(
     TokenizerImpl<
         ModelWrapper,
@@ -444,17 +454,20 @@ impl Tokenizer {
     > {
         self.0
     }
+#[cfg(feature = "config")]
     pub fn from_file<P: AsRef<Path>>(file: P) -> Result<Self> {
         let content = read_to_string(file)?;
         let tokenizer = serde_json::from_str(&content)?;
         Ok(tokenizer)
     }
+#[cfg(feature = "config")]
     pub fn from_bytes<P: AsRef<[u8]>>(bytes: P) -> Result<Self> {
         let tokenizer = serde_json::from_slice(bytes.as_ref())?;
         Ok(tokenizer)
     }
     #[cfg(feature = "http")]
     #[cfg_attr(docsrs, doc(cfg(feature = "http")))]
+#[cfg(feature = "config")]
     pub fn from_pretrained<S: AsRef<str>>(
         identifier: S,
         params: Option<crate::utils::from_pretrained::FromPretrainedParameters>,
@@ -464,6 +477,7 @@ impl Tokenizer {
     }
 }
 
+#[cfg(feature = "config")]
 impl std::str::FromStr for Tokenizer {
     type Err = Box<dyn std::error::Error + Send + Sync>;
 
@@ -1349,6 +1363,7 @@ where
     D: Decoder + Send + Sync,
 {
     /// Encode all the sentences in parallel, using multiple threads
+    #[cfg(feature = "config")]
     pub fn encode_batch<'s, E>(
         &self,
         inputs: Vec<E>,
@@ -1372,6 +1387,7 @@ where
 
     /// Encode all the sentences in parallel, using multiple threads.
     /// The offsets on each `Encoding` will be relative to chars instead of bytes.
+    #[cfg(feature = "config")]
     pub fn encode_batch_char_offsets<'s, E>(
         &self,
         inputs: Vec<E>,
@@ -1394,6 +1410,7 @@ where
     }
 
     /// Encode all the sentences in parallel, using multiple threads
+    #[cfg(feature = "config")]
     pub fn encode_batch_fast<'s, E>(
         &self,
         inputs: Vec<E>,
@@ -1416,6 +1433,7 @@ where
     }
 
     /// Decode all sentences in parallel
+    #[cfg(feature = "config")]
     pub fn decode_batch(
         &self,
         sentences: &[&[u32]],
@@ -1431,6 +1449,7 @@ where
     }
 }
 
+#[cfg(feature = "config")]
 impl<M, N, PT, PP, D> std::str::FromStr for TokenizerImpl<M, N, PT, PP, D>
 where
     M: for<'de> Deserialize<'de> + Model,
@@ -1446,6 +1465,7 @@ where
     }
 }
 
+#[cfg(feature = "config")]
 impl<M, N, PT, PP, D> TokenizerImpl<M, N, PT, PP, D>
 where
     M: DeserializeOwned + Model,
@@ -1455,6 +1475,7 @@ where
     D: DeserializeOwned + Decoder,
 {
     /// Instantiate a new Tokenizer from the given file
+#[cfg(feature = "config")]
     pub fn from_file<P: AsRef<Path>>(file: P) -> Result<Self> {
         let content = read_to_string(file)?;
         let tokenizer = serde_json::from_str(&content)?;
@@ -1462,6 +1483,7 @@ where
     }
 }
 
+#[cfg(feature = "config")]
 impl<M, N, PT, PP, D> TokenizerImpl<M, N, PT, PP, D>
 where
     M: DeserializeOwned + Model,
@@ -1471,12 +1493,14 @@ where
     D: DeserializeOwned + Decoder,
 {
     /// Instantiate a new Tokenizer from bytes
+#[cfg(feature = "config")]
     pub fn from_bytes<P: AsRef<[u8]>>(bytes: P) -> Result<Self> {
         let tokenizer = serde_json::from_slice(bytes.as_ref())?;
         Ok(tokenizer)
     }
 }
 
+#[cfg(feature = "config")]
 impl<M, N, PT, PP, D> TokenizerImpl<M, N, PT, PP, D>
 where
     M: DeserializeOwned + Model,
@@ -1493,6 +1517,7 @@ where
     #[cfg_attr(docsrs, doc(cfg(feature = "http")))]
     /// Instantiate a new Tokenizer from a file hosted on the Hugging Face Hub.
     /// It expects the `identifier` of a model that includes a `tokenizer.json` file.
+#[cfg(feature = "config")]
     pub fn from_pretrained<S: AsRef<str>>(
         identifier: S,
         params: Option<crate::utils::from_pretrained::FromPretrainedParameters>,
@@ -1502,6 +1527,7 @@ where
     }
 }
 
+#[cfg(feature = "config")]
 impl<M, N, PT, PP, D> TokenizerImpl<M, N, PT, PP, D>
 where
     M: Serialize,
@@ -1511,6 +1537,7 @@ where
     D: Serialize,
 {
     /// Serialize the current tokenizer as a String
+#[cfg(feature = "config")]
     pub fn to_string(&self, pretty: bool) -> Result<String> {
         Ok(if pretty {
             serde_json::to_string_pretty(self)?
@@ -1520,6 +1547,7 @@ where
     }
 
     /// Save the current tokenizer at the given path
+#[cfg(feature = "config")]
     pub fn save<P: AsRef<Path>>(&self, path: P, pretty: bool) -> Result<()> {
         let serialized = self.to_string(pretty)?;
 

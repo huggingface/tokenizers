@@ -1,6 +1,7 @@
 use crate::processors::PostProcessorWrapper;
 use crate::tokenizer::{Encoding, PostProcessor, Result};
 use crate::utils::macro_rules_attribute;
+#[cfg(feature = "config")]
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Eq)]

@@ -5,6 +5,7 @@ use crate::utils::iter::ResultShunt;
 use crate::vocab_store::VocabStore;
 use ahash::AHashMap;
 use dary_heap::QuaternaryHeap;
+#[cfg(feature = "config")]
 use serde_json::Value;
 use std::borrow::Cow;
 use std::cell::RefCell;
@@ -220,7 +221,9 @@ impl BpeBuilder {
             return Err(Error::InvalidDropout.into());
         }
 
-        // Read files if necessary
+        // Read files if necessary. `vocab.json` + `merges.txt` are legacy JSON artefacts, so
+        // without the config layer there is nothing that can have set `files` in the first place.
+        #[cfg(feature = "config")]
         if let Some((vocab, merges)) = self.config.files {
             let (v, m) = BPE::read_file(&vocab, &merges)?;
             self.config.vocab = v;
@@ -408,6 +411,7 @@ impl BPE {
     }
 
     /// Read the given files to extract the vocab and merges
+#[cfg(feature = "config")]
     pub fn read_file(vocab: &str, merges: &str) -> Result<(Vocab, Merges)> {
         // Read vocab.json
         let vocab_file = File::open(vocab)?;
@@ -620,6 +624,7 @@ impl Model for BPE {
         self.vocab.id_to_token(id)
     }
 
+    #[cfg(feature = "config")]
     fn save(&self, folder: &Path, name: Option<&str>) -> Result<Vec<PathBuf>> {
         let vocab_r: VocabR = self
             .vocab

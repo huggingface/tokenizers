@@ -1,11 +1,13 @@
 use crate::tokenizer::{Decoder, Result};
 
+#[cfg(feature = "config")]
 use serde::{Deserialize, Serialize};
 
-#[derive(Deserialize, Clone, Debug, Serialize)]
+#[cfg_attr(feature = "config", derive(Deserialize, Serialize))]
+#[derive(Clone, Debug)]
 /// The WordPiece decoder takes care of decoding a list of wordpiece tokens
 /// back into a readable string.
-#[serde(tag = "type")]
+#[cfg_attr(feature = "config", serde(tag = "type"))]
 #[non_exhaustive]
 pub struct WordPiece {
     /// The prefix to be used for continuing subwords

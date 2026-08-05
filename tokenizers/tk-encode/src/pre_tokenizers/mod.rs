@@ -10,6 +10,7 @@ pub mod split;
 pub mod unicode_scripts;
 pub mod whitespace;
 
+#[cfg(feature = "config")]
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::pre_tokenizers::bert::BertPreTokenizer;
@@ -25,8 +26,9 @@ use crate::pre_tokenizers::unicode_scripts::UnicodeScripts;
 use crate::pre_tokenizers::whitespace::{Whitespace, WhitespaceSplit};
 use crate::{PreTokenizedString, PreTokenizer};
 
-#[derive(Serialize, Clone, Debug, PartialEq)]
-#[serde(untagged)]
+#[cfg_attr(feature = "config", derive(Serialize))]
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "config", serde(untagged))]
 #[allow(clippy::large_enum_variant)] // Split holds a compiled regex; boxing it would churn the API
 pub enum PreTokenizerWrapper {
     BertPreTokenizer(BertPreTokenizer),
@@ -62,19 +64,20 @@ impl PreTokenizer for PreTokenizerWrapper {
     }
 }
 
+#[cfg(feature = "config")]
 impl<'de> Deserialize<'de> for PreTokenizerWrapper {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
-        #[derive(Deserialize)]
+        #[cfg_attr(feature = "config", derive(Deserialize))]
         pub struct Tagged {
-            #[serde(rename = "type")]
+            #[cfg_attr(feature = "config", serde(rename = "type"))]
             variant: EnumType,
-            #[serde(flatten)]
+            #[cfg_attr(feature = "config", serde(flatten))]
             rest: serde_json::Value,
         }
-        #[derive(Deserialize, Serialize)]
+        #[cfg_attr(feature = "config", derive(Deserialize, Serialize))]
         pub enum EnumType {
             BertPreTokenizer,
             ByteLevel,
@@ -90,15 +93,15 @@ impl<'de> Deserialize<'de> for PreTokenizerWrapper {
             FixedLength,
         }
 
-        #[derive(Deserialize)]
-        #[serde(untagged)]
+        #[cfg_attr(feature = "config", derive(Deserialize))]
+        #[cfg_attr(feature = "config", serde(untagged))]
         pub enum PreTokenizerHelper {
             Tagged(Tagged),
             Legacy(serde_json::Value),
         }
 
-        #[derive(Deserialize)]
-        #[serde(untagged)]
+        #[cfg_attr(feature = "config", derive(Deserialize))]
+        #[cfg_attr(feature = "config", serde(untagged))]
         #[allow(clippy::large_enum_variant)]
         pub enum PreTokenizerUntagged {
             BertPreTokenizer(BertPreTokenizer),

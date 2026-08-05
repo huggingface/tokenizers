@@ -1,10 +1,12 @@
 use super::model::Unigram;
+#[cfg(feature = "config")]
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
     de::{Error, MapAccess, Visitor},
     ser::SerializeStruct,
 };
 
+#[cfg(feature = "config")]
 impl Serialize for Unigram {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -21,6 +23,7 @@ impl Serialize for Unigram {
     }
 }
 
+#[cfg(feature = "config")]
 impl<'de> Deserialize<'de> for Unigram {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where

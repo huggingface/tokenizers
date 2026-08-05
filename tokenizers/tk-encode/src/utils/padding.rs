@@ -1,9 +1,12 @@
+#[cfg(feature = "config")]
 use crate::parallelism::*;
 use crate::tokenizer::{Encoding, Result};
+#[cfg(feature = "config")]
 use serde::{Deserialize, Serialize};
 
 /// The various possible padding directions.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[cfg_attr(feature = "config", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, Copy)]
 pub enum PaddingDirection {
     Left,
     Right,
@@ -18,7 +21,8 @@ impl std::convert::AsRef<str> for PaddingDirection {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "config", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone)]
 pub struct PaddingParams {
     pub strategy: PaddingStrategy,
     pub direction: PaddingDirection,
@@ -41,7 +45,8 @@ impl Default for PaddingParams {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "config", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone)]
 pub enum PaddingStrategy {
     BatchLongest,
     Fixed(usize),
@@ -54,11 +59,13 @@ pub fn pad_encodings(encodings: &mut [Encoding], params: &PaddingParams) -> Resu
 
     let mut pad_length = match params.strategy {
         PaddingStrategy::Fixed(size) => size,
-        PaddingStrategy::BatchLongest => encodings
-            .maybe_par_iter()
-            .map(|e| e.get_ids().len())
-            .max()
-            .unwrap(),
+        PaddingStrategy::BatchLongest => {
+            #[cfg(feature = "config")]
+            let lengths = encodings.maybe_par_iter();
+            #[cfg(not(feature = "config"))]
+            let lengths = encodings.iter();
+            lengths.map(|e| e.get_ids().len()).max().unwrap()
+        }
     };
 
     if let Some(multiple) = params.pad_to_multiple_of
@@ -68,7 +75,11 @@ pub fn pad_encodings(encodings: &mut [Encoding], params: &PaddingParams) -> Resu
         pad_length += multiple - pad_length % multiple;
     }
 
-    encodings.maybe_par_iter_mut().for_each(|encoding| {
+    #[cfg(feature = "config")]
+    let targets = encodings.maybe_par_iter_mut();
+    #[cfg(not(feature = "config"))]
+    let targets = encodings.iter_mut();
+    targets.for_each(|encoding| {
         encoding.pad(
             pad_length,
             params.pad_id,

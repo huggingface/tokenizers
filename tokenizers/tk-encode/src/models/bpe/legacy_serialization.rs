@@ -1,11 +1,13 @@
 use super::{super::OrderedVocabIter, BPE, BpeBuilder, Pair, convert_merges_to_hashmap};
 use ahash::AHashMap;
+#[cfg(feature = "config")]
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
     de::{Error, MapAccess, Visitor},
     ser::SerializeStruct,
 };
 
+#[cfg(feature = "config")]
 impl Serialize for BPE {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -50,6 +52,7 @@ impl Serialize for BPE {
     }
 }
 
+#[cfg(feature = "config")]
 impl<'de> Deserialize<'de> for BPE {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -89,8 +92,9 @@ impl<'de> Visitor<'de> for BPEVisitor {
         let mut builder = BpeBuilder::new();
         let mut vocab: Option<AHashMap<String, u32>> = None;
 
-        #[derive(Debug, Deserialize)]
-        #[serde(untagged)]
+        #[cfg_attr(feature = "config", derive(Deserialize))]
+        #[derive(Debug)]
+        #[cfg_attr(feature = "config", serde(untagged))]
         enum MergeType {
             Tuple(Vec<(String, String)>),
             Legacy(Vec<String>),

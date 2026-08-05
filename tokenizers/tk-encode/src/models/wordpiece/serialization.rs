@@ -1,11 +1,13 @@
 use super::{super::OrderedVocabIter, WordPiece, WordPieceBuilder};
 use ahash::{AHashMap, AHashSet};
+#[cfg(feature = "config")]
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
     de::{MapAccess, Visitor},
     ser::SerializeStruct,
 };
 
+#[cfg(feature = "config")]
 impl Serialize for WordPiece {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -27,6 +29,7 @@ impl Serialize for WordPiece {
     }
 }
 
+#[cfg(feature = "config")]
 impl<'de> Deserialize<'de> for WordPiece {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where

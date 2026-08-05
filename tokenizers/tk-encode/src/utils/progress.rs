@@ -1,10 +1,12 @@
+#[cfg(feature = "config")]
 use serde::{Deserialize, Serialize};
 
 /// Progress output format for training operations.
 ///
 /// Controls how progress information is reported during tokenizer training.
 /// Default is `Indicatif` which shows interactive terminal progress bars.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "config", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ProgressFormat {
     /// Interactive terminal progress bars using indicatif (default behavior)
     #[default]

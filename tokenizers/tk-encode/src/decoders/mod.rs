@@ -10,6 +10,7 @@ pub mod wordpiece;
 pub use super::pre_tokenizers::byte_level;
 pub use super::pre_tokenizers::metaspace;
 
+#[cfg(feature = "config")]
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::decoders::bpe::BPEDecoder;
@@ -24,8 +25,9 @@ use crate::pre_tokenizers::byte_level::ByteLevel;
 use crate::pre_tokenizers::metaspace::Metaspace;
 use crate::{Decoder, Result};
 
-#[derive(Serialize, Clone, Debug)]
-#[serde(untagged)]
+#[cfg_attr(feature = "config", derive(Serialize))]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "config", serde(untagged))]
 pub enum DecoderWrapper {
     BPE(BPEDecoder),
     ByteLevel(ByteLevel),
@@ -39,19 +41,20 @@ pub enum DecoderWrapper {
     ByteFallback(ByteFallback),
 }
 
+#[cfg(feature = "config")]
 impl<'de> Deserialize<'de> for DecoderWrapper {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
-        #[derive(Deserialize)]
+        #[cfg_attr(feature = "config", derive(Deserialize))]
         pub struct Tagged {
-            #[serde(rename = "type")]
+            #[cfg_attr(feature = "config", serde(rename = "type"))]
             variant: EnumType,
-            #[serde(flatten)]
+            #[cfg_attr(feature = "config", serde(flatten))]
             rest: serde_json::Value,
         }
-        #[derive(Serialize, Deserialize)]
+        #[cfg_attr(feature = "config", derive(Serialize, Deserialize))]
         pub enum EnumType {
             BPEDecoder,
             ByteLevel,
@@ -65,15 +68,15 @@ impl<'de> Deserialize<'de> for DecoderWrapper {
             ByteFallback,
         }
 
-        #[derive(Deserialize)]
-        #[serde(untagged)]
+        #[cfg_attr(feature = "config", derive(Deserialize))]
+        #[cfg_attr(feature = "config", serde(untagged))]
         pub enum DecoderHelper {
             Tagged(Tagged),
             Legacy(serde_json::Value),
         }
 
-        #[derive(Deserialize)]
-        #[serde(untagged)]
+        #[cfg_attr(feature = "config", derive(Deserialize))]
+        #[cfg_attr(feature = "config", serde(untagged))]
         pub enum DecoderUntagged {
             BPE(BPEDecoder),
             ByteLevel(ByteLevel),

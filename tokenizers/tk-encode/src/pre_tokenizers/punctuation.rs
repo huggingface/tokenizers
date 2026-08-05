@@ -1,3 +1,4 @@
+#[cfg(feature = "config")]
 use serde::{Deserialize, Serialize};
 
 use crate::pipeline;
@@ -12,7 +13,7 @@ pub(crate) fn is_punc(x: char) -> bool {
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[macro_rules_attribute(impl_serde_type!)]
 pub struct Punctuation {
-    #[serde(default = "default_split")]
+    #[cfg_attr(feature = "config", serde(default = "default_split"))]
     pub behavior: SplitDelimiterBehavior,
 }
 

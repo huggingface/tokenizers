@@ -1,6 +1,7 @@
 use crate::decoders::DecoderWrapper;
 use crate::tokenizer::{Decoder, Result};
 use crate::utils::macro_rules_attribute;
+#[cfg(feature = "config")]
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug)]

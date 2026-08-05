@@ -3,6 +3,7 @@ use crate::{Offsets, Result};
 use std::ops::{Bound, RangeBounds};
 use unicode_normalization_alignments::UnicodeNormalization;
 
+#[cfg(feature = "config")]
 use serde::{Deserialize, Serialize};
 
 /// The possible offsets referential
@@ -78,7 +79,8 @@ where
 ///  - MergedWithPrevious => `[ "the-", "final-", "-", "countdown" ]`
 ///  - MergedWithNext => `[ "the", "-final", "-", "-countdown" ]`
 ///  - Contiguous => `[ "the", "-", "final", "--", "countdown" ]`
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Eq)]
+#[cfg_attr(feature = "config", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SplitDelimiterBehavior {
     Removed,
     Isolated,
@@ -89,7 +91,15 @@ pub enum SplitDelimiterBehavior {
 
 impl std::fmt::Display for SplitDelimiterBehavior {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.serialize(f)
+        // Spelled out rather than routed through the serializer, so the name survives a build
+        // with no serde. No `rename_all` on this enum, so the serialized name is the variant name verbatim.
+        f.write_str(match self {
+            Self::Removed => "Removed",
+            Self::Isolated => "Isolated",
+            Self::MergedWithPrevious => "MergedWithPrevious",
+            Self::MergedWithNext => "MergedWithNext",
+            Self::Contiguous => "Contiguous",
+        })
     }
 }
 

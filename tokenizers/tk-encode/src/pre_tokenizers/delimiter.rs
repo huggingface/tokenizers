@@ -1,3 +1,4 @@
+#[cfg(feature = "config")]
 use serde::{Deserialize, Serialize};
 
 use crate::pipeline;

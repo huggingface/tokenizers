@@ -3,11 +3,13 @@ use std::borrow::Cow;
 use crate::pipeline;
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 use crate::utils::macro_rules_attribute;
+#[cfg(feature = "config")]
 use serde::{Deserialize, Serialize};
 use unicode_normalization_alignments::char::is_combining_mark;
 
-#[derive(Copy, Clone, Debug, Deserialize, Serialize)]
-#[serde(tag = "type")]
+#[cfg_attr(feature = "config", derive(Deserialize, Serialize))]
+#[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "config", serde(tag = "type"))]
 #[non_exhaustive]
 pub struct Strip {
     pub strip_left: bool,

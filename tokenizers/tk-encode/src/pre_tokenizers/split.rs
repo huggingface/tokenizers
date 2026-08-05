@@ -1,6 +1,7 @@
 use crate::pipeline;
 use crate::utils::{GptFsm, GptFsmPattern, SysRegex, gpt_fsm};
 use atomsplit::literal::Literal;
+#[cfg(feature = "config")]
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::tokenizer::{
@@ -9,7 +10,8 @@ use crate::tokenizer::{
 };
 
 /// Represents the different patterns that `Split` can use
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq)]
+#[cfg_attr(feature = "config", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SplitPattern {
     String(String),
     Regex(String),
@@ -39,36 +41,38 @@ pub enum Search {
     Unavailable,
 }
 
-#[derive(Debug, Serialize)]
-#[serde(tag = "type")]
+#[cfg_attr(feature = "config", derive(Serialize))]
+#[derive(Debug)]
+#[cfg_attr(feature = "config", serde(tag = "type"))]
 pub struct Split {
     pub pattern: SplitPattern,
     /// How the pattern is found. A plain string never needs a backend; a regex does, unless it is one
     /// of the GPT patterns the native FSM below covers.
-    #[serde(skip)]
+    #[cfg_attr(feature = "config", serde(skip))]
     pub search: Search,
     pub behavior: SplitDelimiterBehavior,
     pub invert: bool,
     /// Native `atomsplit` FSM for a recognized GPT regex (gpt2 / cl100k-Llama-3 / o200k), used on the
     /// pipeline path when `behavior == Isolated && !invert` (how these regexes always ship). Byte-exact
     /// with `regex`; `None` falls back to `regex`.
-    #[serde(skip)]
+    #[cfg_attr(feature = "config", serde(skip))]
     fsm: Option<GptFsm>,
 }
 
+#[cfg(feature = "config")]
 impl<'de> Deserialize<'de> for Split {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
-        #[derive(Deserialize)]
+        #[cfg_attr(feature = "config", derive(Deserialize))]
         enum Type {
             Split,
         }
 
-        #[derive(Deserialize)]
+        #[cfg_attr(feature = "config", derive(Deserialize))]
         pub struct SplitHelper {
-            #[serde(rename = "type")]
+            #[cfg_attr(feature = "config", serde(rename = "type"))]
             _type: Type,
             pattern: SplitPattern,
             behavior: SplitDelimiterBehavior,

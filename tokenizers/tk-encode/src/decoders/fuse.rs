@@ -1,15 +1,17 @@
 use crate::tokenizer::{Decoder, Result};
 use monostate::MustBe;
+#[cfg(feature = "config")]
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "config", derive(Serialize, Deserialize))]
+#[derive(Clone, Debug, Default)]
 /// Fuse simply fuses all tokens into one big string.
 /// It's usually the last decoding step anyway, but this
 /// decoder exists incase some decoders need to happen after that
 /// step
 #[non_exhaustive]
 pub struct Fuse {
-    #[serde(rename = "type")]
+    #[cfg_attr(feature = "config", serde(rename = "type"))]
     type_: MustBe!("Fuse"),
 }
 

@@ -1,12 +1,14 @@
 use crate::tokenizer::{Decoder, Result};
 
+#[cfg(feature = "config")]
 use serde::{Deserialize, Serialize};
 
-#[derive(Deserialize, Clone, Debug, Serialize, Default)]
+#[cfg_attr(feature = "config", derive(Deserialize, Serialize))]
+#[derive(Clone, Debug, Default)]
 /// Strip is a simple trick which converts tokens looking like `<0x61>`
 /// to pure bytes, and attempts to make them into a string. If the tokens
 /// cannot be decoded you will get � instead for each inconvertible byte token
-#[serde(tag = "type")]
+#[cfg_attr(feature = "config", serde(tag = "type"))]
 #[non_exhaustive]
 pub struct Strip {
     pub content: char,

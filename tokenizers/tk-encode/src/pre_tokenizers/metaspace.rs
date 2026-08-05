@@ -2,11 +2,13 @@ use crate::normalizers::metaspace::MetaspaceNormalizer;
 use crate::pre_tokenizers::PreTokenizerWrapper;
 use crate::pre_tokenizers::split::Split;
 use crate::tokenizer::{Decoder, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
+#[cfg(feature = "config")]
 use serde::{Deserialize, Deserializer, Serialize, de};
 
 /// Enum representing options for the metaspace prepending scheme.
-#[derive(Debug, Clone, PartialEq, Serialize, Eq, Deserialize, Copy)]
-#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "config", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, PartialEq, Eq, Copy)]
+#[cfg_attr(feature = "config", serde(rename_all = "snake_case"))]
 pub enum PrependScheme {
     /// Specifies that the scheme should be prepended only once, on the first split.
     First,
@@ -18,28 +20,36 @@ pub enum PrependScheme {
 
 impl std::fmt::Display for PrependScheme {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.serialize(f)
+        // Spelled out rather than routed through the serializer, so the name survives a build
+        // with no serde. These must stay identical to the `serde(rename_all)` spelling.
+        f.write_str(match self {
+            Self::First => "first",
+            Self::Never => "never",
+            Self::Always => "always",
+        })
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Eq)]
+#[cfg_attr(feature = "config", derive(Serialize))]
+#[derive(Debug, Clone, PartialEq, Eq)]
 /// Replaces all the whitespaces by the provided meta character and then
 /// splits on this character
-#[serde(tag = "type")]
+#[cfg_attr(feature = "config", serde(tag = "type"))]
 pub struct Metaspace {
     replacement: char,
     pub prepend_scheme: PrependScheme,
     pub split: bool,
-    #[serde(skip)]
+    #[cfg_attr(feature = "config", serde(skip))]
     str_rep: String,
 }
 
+#[cfg(feature = "config")]
 impl<'de> Deserialize<'de> for Metaspace {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
-        #[derive(Deserialize)]
+        #[cfg_attr(feature = "config", derive(Deserialize))]
         enum Type {
             Metaspace,
         }
@@ -48,17 +58,17 @@ impl<'de> Deserialize<'de> for Metaspace {
             PrependScheme::Always
         }
 
-        #[derive(Deserialize)]
+        #[cfg_attr(feature = "config", derive(Deserialize))]
         pub struct MetaspaceHelper {
-            #[serde(rename = "type")]
+            #[cfg_attr(feature = "config", serde(rename = "type"))]
             _type: Type,
             replacement: char,
 
             pub add_prefix_space: Option<bool>,
-            #[serde(default = "default_prepend_scheme_value")]
+            #[cfg_attr(feature = "config", serde(default = "default_prepend_scheme_value"))]
             pub prepend_scheme: PrependScheme,
             pub split: Option<bool>,
-            #[serde(rename = "str_rep")]
+            #[cfg_attr(feature = "config", serde(rename = "str_rep"))]
             _str_rep: Option<String>,
         }
 

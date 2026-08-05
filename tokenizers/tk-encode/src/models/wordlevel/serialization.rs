@@ -1,11 +1,13 @@
 use super::{super::OrderedVocabIter, WordLevel, WordLevelBuilder};
 use ahash::AHashSet;
+#[cfg(feature = "config")]
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
     de::{MapAccess, Visitor},
     ser::SerializeStruct,
 };
 
+#[cfg(feature = "config")]
 impl Serialize for WordLevel {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -20,6 +22,7 @@ impl Serialize for WordLevel {
     }
 }
 
+#[cfg(feature = "config")]
 impl<'de> Deserialize<'de> for WordLevel {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where

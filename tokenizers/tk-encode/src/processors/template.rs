@@ -59,12 +59,14 @@
 use crate::{Encoding, PostProcessor, Result};
 use ahash::{AHashMap, AHashSet};
 use itertools::Itertools;
+#[cfg(feature = "config")]
 use serde::{Deserialize, Serialize};
 use std::convert::{TryFrom, TryInto};
 use std::result::Result as StdResult;
 
 /// Represents any sequences received as input of the PostProcessor
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq)]
+#[cfg_attr(feature = "config", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Sequence {
     /// This is the first sequence, the one that is always specified
     A,
@@ -92,7 +94,8 @@ pub enum Sequence {
 ///
 /// [`SpecialToken`]: struct.SpecialToken.html
 ///
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq)]
+#[cfg_attr(feature = "config", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Piece {
     Sequence { id: Sequence, type_id: u32 },
     SpecialToken { id: String, type_id: u32 },
@@ -189,7 +192,8 @@ impl TryFrom<&str> for Piece {
 ///     vec!["A".into(), "complex".into(), "special".into(), "token".into(), ":".into()]
 /// ).unwrap();
 /// ```
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq)]
+#[cfg_attr(feature = "config", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SpecialToken {
     /// A unique id used to identify this SpecialToken in the template
     id: String,
@@ -254,8 +258,9 @@ impl SpecialToken {
 ///
 /// [`Piece`]: enum.Piece.html
 ///
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq)]
-#[serde(transparent)]
+#[cfg_attr(feature = "config", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "config", serde(transparent))]
 pub struct Template(Vec<Piece>);
 
 impl Template {
@@ -300,10 +305,12 @@ impl TryFrom<&str> for Template {
 /// from a HashMap or a Vec<[`SpecialToken`]>.
 ///
 /// [`SpecialToken`]: struct.SpecialToken.html
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, Eq)]
-#[serde(transparent)]
+#[cfg_attr(feature = "config", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, PartialEq, Default, Eq)]
+#[cfg_attr(feature = "config", serde(transparent))]
 pub struct Tokens(
-    #[serde(serialize_with = "crate::utils::ordered_map")] pub AHashMap<String, SpecialToken>,
+    #[cfg_attr(feature = "config", serde(serialize_with = "crate::utils::ordered_map"))]
+    pub AHashMap<String, SpecialToken>,
 );
 
 impl<T: Into<SpecialToken>> From<Vec<T>> for Tokens {
@@ -343,8 +350,9 @@ impl From<AHashMap<String, SpecialToken>> for Tokens {
 ///     .unwrap();
 /// ```
 ///
-#[derive(Debug, Clone, PartialEq, Builder, Serialize, Deserialize, Eq)]
-#[serde(tag = "type", from = "TemplateProcessingDeserializer")]
+#[cfg_attr(feature = "config", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, PartialEq, Builder, Eq)]
+#[cfg_attr(feature = "config", serde(tag = "type", from = "TemplateProcessingDeserializer"))]
 #[builder(build_fn(validate = "Self::validate"))]
 pub struct TemplateProcessing {
     #[builder(try_setter, default = "\"$0\".try_into().unwrap()")]
@@ -352,10 +360,10 @@ pub struct TemplateProcessing {
     #[builder(try_setter, default = "\"$A:0 $B:1\".try_into().unwrap()")]
     pair: Template,
     #[builder(setter(skip), default = "self.default_added(true)")]
-    #[serde(skip)]
+    #[cfg_attr(feature = "config", serde(skip))]
     added_single: usize,
     #[builder(setter(skip), default = "self.default_added(false)")]
-    #[serde(skip)]
+    #[cfg_attr(feature = "config", serde(skip))]
     added_pair: usize,
     #[builder(setter(into), default)]
     special_tokens: Tokens,
@@ -428,8 +436,8 @@ impl PartialEq for TemplateProcessingBuilderError {
 /// We use this custom deserializer to provided the values for `added_single`
 /// and `added_pair` during deserialization, while not having to serialize them
 #[doc(hidden)]
-#[derive(Deserialize)]
-#[serde(tag = "type")]
+#[cfg_attr(feature = "config", derive(Deserialize))]
+#[cfg_attr(feature = "config", serde(tag = "type"))]
 struct TemplateProcessingDeserializer {
     single: Template,
     pair: Template,

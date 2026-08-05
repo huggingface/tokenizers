@@ -24,6 +24,7 @@ pub use unrolled_regex::{
 pub mod byte_level;
 pub mod iter;
 pub mod padding;
+#[cfg(feature = "config")]
 pub mod parallelism;
 pub mod progress;
 pub mod truncation;
@@ -32,9 +33,11 @@ pub mod truncation;
 pub use progress::ProgressFormat;
 
 use ahash::AHashMap;
+#[cfg(feature = "config")]
 use serde::{Serialize, Serializer};
 use std::collections::BTreeMap;
 
+#[cfg(feature = "config")]
 pub(crate) fn ordered_map<S, K, V>(
     value: &AHashMap<K, V>,
     serializer: S,
@@ -146,8 +149,8 @@ macro_rules! impl_serde_type{
     ) => {
         paste::paste!{
             $(#[$meta])*
-            #[derive(Serialize, Deserialize)]
-            #[serde(tag = "type", from = $struct_name "Deserializer")]
+            #[cfg_attr(feature = "config", derive(Serialize, Deserialize))]
+            #[cfg_attr(feature = "config", serde(tag = "type", from = $struct_name "Deserializer"))]
             $vis struct $struct_name{
                 $(
                     $(#[$field_meta])*
@@ -157,8 +160,8 @@ macro_rules! impl_serde_type{
 
             #[doc(hidden)]
             $(#[$meta])*
-            #[derive(Deserialize)]
-            #[serde(tag = "type", remote = $struct_name "")]
+            #[cfg_attr(feature = "config", derive(Deserialize))]
+            #[cfg_attr(feature = "config", serde(tag = "type", remote = $struct_name ""))]
             struct [<$struct_name Def>]{
                 $(
                     $(#[$field_meta])*
@@ -167,17 +170,17 @@ macro_rules! impl_serde_type{
             }
 
             #[doc(hidden)]
-            #[derive(Deserialize)]
+            #[cfg_attr(feature = "config", derive(Deserialize))]
             enum [<$struct_name Type>] {
                 $struct_name,
             }
 
             #[doc(hidden)]
-            #[derive(Deserialize)]
+            #[cfg_attr(feature = "config", derive(Deserialize))]
             struct [<$struct_name Deserializer>] {
                 #[allow(dead_code)]
                 r#type: [<$struct_name Type>],
-                #[serde(flatten, with = $struct_name "Def")]
+                #[cfg_attr(feature = "config", serde(flatten, with = $struct_name "Def"))]
                 r#struct: $struct_name,
             }
 
@@ -197,6 +200,7 @@ macro_rules! impl_serde_type{
             $(#[$meta])*
             $vis struct $struct_name;
 
+            #[cfg(feature = "config")]
             impl serde::Serialize for $struct_name {
                 fn serialize<S>(&self, serializer: S)  -> std::result::Result<S::Ok, S::Error> where
                     S: serde::ser::Serializer {
@@ -205,6 +209,7 @@ macro_rules! impl_serde_type{
                 }
             }
 
+            #[cfg(feature = "config")]
             impl<'de> serde::Deserialize<'de> for $struct_name {
                 fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
                 where
@@ -215,11 +220,13 @@ macro_rules! impl_serde_type{
                 }
             }
 
+            #[cfg(feature = "config")]
             #[derive(serde::Serialize, serde::Deserialize)]
             enum [<$struct_name Type>] {
                 $struct_name,
             }
 
+            #[cfg(feature = "config")]
             #[derive(serde::Serialize, serde::Deserialize)]
             struct [<$struct_name Helper>] {
                 #[allow(dead_code)]

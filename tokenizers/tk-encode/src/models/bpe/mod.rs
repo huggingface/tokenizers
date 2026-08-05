@@ -6,6 +6,7 @@ mod bpe_pretoken_to_rank;
 mod bpe_scratch;
 mod bytelevel_folding;
 mod legacy_model;
+#[cfg(feature = "config")]
 mod legacy_serialization;
 pub mod legacy_word;
 mod merge_hot_cold_queue;
@@ -22,7 +23,9 @@ pub enum Error {
     /// An error encountered while reading files mainly.
     #[error("IoError: {0}")]
     Io(#[from] std::io::Error),
-    /// An error forwarded from Serde, while parsing JSON
+    /// An error forwarded from Serde, while parsing JSON. Behind `config`: without it nothing
+    /// here parses JSON, and the variant alone would keep the whole parser linked.
+    #[cfg(feature = "config")]
     #[error("JsonError: {0}")]
     JsonError(#[from] serde_json::Error),
     /// When the vocab.json file is in the wrong format
