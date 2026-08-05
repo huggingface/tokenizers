@@ -5,7 +5,7 @@ use crate::pipeline::ModelScratch;
 
 pub struct BpeScratch {
     /// Symbols of the word being merged. Reused across words so tokenizing allocates nothing.
-    pub(crate) to_merge: Vec<u32>,
+    pub(crate) symbols: Vec<u32>,
     /// Entry arena and the two queue tiers, likewise reused.
     pub(crate) merge: MergeScratch,
 }
