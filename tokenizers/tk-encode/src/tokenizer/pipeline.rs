@@ -790,6 +790,13 @@ impl IntoIterator for EncodeHandle {
     }
 }
 
+thread_local! {
+    /// Persistent state across encode calls
+    ///
+    /// This avoids having to reallocate pre-tokens buffers, reusing is cheaper
+    static PRE_TOKENS_SCRATCH: RefCell<Vec<Span>> = const { RefCell::new(Vec::new()) };
+}
+
 impl PipelineTokenizer {
     /// Stage gates for [`encode_generic`](Self::encode_generic), in execution order.
     /// Each level runs every stage up to and including itself; `STAGE_POSTPROCESS` is
@@ -915,9 +922,8 @@ impl PipelineTokenizer {
         input: &str,
         add_special_tokens: bool,
     ) -> Result<Vec<PipelineToken>> {
-        let mut pre_tokens = Vec::with_capacity(input.len() / 4);
         let mut output = Vec::with_capacity(input.len() / 4);
-        let mut scratch = self.scratch_pool.get(&self.model);
+        let mut scratch = self.model.init_scratch();
         let PipelinePostProcessor { prefix, suffix } = &self.post_processor;
         // Prepend prefix tokens, if any
         // todo: handle post-processing when encoding a pair of sequences (currently unsupported by the PipelineTokenizer)
@@ -948,19 +954,23 @@ impl PipelineTokenizer {
                             Segment::Text(normalized_chunk) => {
                                 if STAGE >= Self::STAGE_SPLIT {
                                     // Pre-tokenize the chunk of normalized text
-                                    pre_tokens.clear();
-                                    self.pre_tokenizer
-                                        .pre_tokenize(normalized_chunk, &mut pre_tokens)?;
-                                    if STAGE >= Self::STAGE_MODEL {
-                                        // Tokenize each chunk
-                                        for pre_token in pre_tokens.iter() {
-                                            self.model.tokenize_pipeline(
-                                                &normalized_chunk[pre_token.range()],
-                                                &mut scratch,
-                                                &mut output,
-                                            )?;
+                                    PRE_TOKENS_SCRATCH.with(|cell| -> Result<()> {
+                                        let mut pre_tokens = cell.borrow_mut();
+                                        pre_tokens.clear();
+                                        self.pre_tokenizer
+                                            .pre_tokenize(normalized_chunk, &mut pre_tokens)?;
+                                        if STAGE >= Self::STAGE_MODEL {
+                                            // Tokenize each chunk
+                                            for pre_token in pre_tokens.iter() {
+                                                self.model.tokenize_pipeline(
+                                                    &normalized_chunk[pre_token.range()],
+                                                    &mut scratch,
+                                                    &mut output,
+                                                )?;
+                                            }
                                         }
-                                    }
+                                        Ok(())
+                                    })?;
                                 }
                             }
                         }
