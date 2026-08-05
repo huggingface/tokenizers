@@ -16,17 +16,6 @@ pub fn build_byte_to_gate() -> [u16; 256] {
 /// ByteLevel produces `" word"` or `"Ġword"`,
 /// Metaspace produces `"▁word"`. Indexing byte 0 classifies the delimiter instead of the content.
 ///
-/// The miss is worst for Metaspace. `▁` is U+2581 (`E2 96 81`), so on a SentencePiece-style
-/// tokenizer -- llama-2, or any `Prepend` + `Replace(" " -> "▁")` config -- *every* word begins
-/// `0xE2` and takes `GATE_MULTI`, including the pure-ASCII English words that belong on
-/// `GATE_ASCII`. The whitespace special-case above shows the same hazard was already known for a
-/// literal leading space; `▁` simply never got the same treatment.
-///
-/// A word that is only a delimiter keeps offset 0: there is no content to classify, and the
-/// multibyte gate is the right conservative answer for it.
-///
-/// This cannot change the token stream. The gate only chooses which of two byte-exact merge
-/// engines runs (multipass or the two-tier queue), so it is purely a throughput decision.
 #[inline]
 pub fn content_start(bytes: &[u8]) -> usize {
     match bytes {
