@@ -1,6 +1,7 @@
 pub(crate) mod cache;
 #[cfg(feature = "http")]
 pub(crate) mod from_pretrained;
+pub(crate) mod word_cache;
 
 // Optional system-regex backend, needed only for a *regex* pattern that atomsplit does not cover.
 // With `fancy-regex` off a stub compiles and those patterns error at load. Everything else works

@@ -5,7 +5,6 @@
 use rayon::iter::IterBridge;
 use rayon::prelude::*;
 use rayon_cond::CondIterator;
-use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::MutexGuard;
