@@ -1,3 +1,5 @@
+import { describe, it, before, beforeEach } from 'node:test'
+
 import {
   PaddingDirection,
   WordPiece,
@@ -5,12 +7,13 @@ import {
   sequencePreTokenizer,
   whitespacePreTokenizer,
   Encoding,
-  EncodeOptions,
   Tokenizer,
-} from '../../'
-import { InputSequence } from '../../types'
+} from '../../index.js'
+import type { EncodeOptions } from '../../index.js'
+import type { InputSequence } from '../../types.ts'
+import { expect } from '../expect.ts'
 
-const MOCKS_DIR = __dirname + '/__mocks__'
+const MOCKS_DIR = import.meta.dirname + '/__mocks__'
 
 describe('Can modify pretokenizers on the fly', () => {
   let encoding: Encoding
@@ -21,7 +24,7 @@ describe('Can modify pretokenizers on the fly', () => {
   ) => Promise<Encoding>
   let tokenizer: Tokenizer
 
-  beforeAll(async () => {
+  before(async () => {
     const model = await WordPiece.fromFile(`${MOCKS_DIR}/vocab.txt`, {
       continuingSubwordPrefix: '##',
     })
@@ -56,7 +59,7 @@ describe('Encoding', () => {
     options?: EncodeOptions | null,
   ) => Promise<Encoding>
 
-  beforeAll(async () => {
+  before(async () => {
     const model = await WordPiece.fromFile(`${MOCKS_DIR}/vocab.txt`, {
       continuingSubwordPrefix: '##',
     })
