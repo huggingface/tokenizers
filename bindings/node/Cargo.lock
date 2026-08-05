@@ -1459,6 +1459,7 @@ dependencies = [
  "getrandom 0.3.4",
  "indicatif",
  "itertools 0.14.0",
+ "libc",
  "log",
  "macro_rules_attribute",
  "memchr",
