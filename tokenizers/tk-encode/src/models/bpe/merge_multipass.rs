@@ -35,8 +35,7 @@
 //! A pass builds the new word in the same array that holds the old one, using two cursors that both start at index 0.
 //! The read cursor marks the start of what is left of the old word.
 //! The write cursor marks the end of the new word built so far.
-//! Every step writes exactly one symbol: a copy moves both cursors by one, and a merge writes one symbol but consumes two, so the read cursor moves ahead.
-//! The write cursor never gets ahead of the read cursor, so a write only ever lands on a slot that was already read.
+//! Every step writes exactly one symbol: a copy (a no merge for a pair just results in copying the id that was just read) moves both cursors by one, and a merge writes one symbol but consumes two, so the read cursor moves by 2.
 //! The pass needs no second array and no allocation, and each merge makes the new word one symbol shorter.
 //!
 //! ## Illustrated
@@ -75,11 +74,13 @@
 //!                  ^w       read is now ahead of write; the leftover l was already
 //!                      ^r   read, so the next write may overwrite it
 //!
-//!   ┌───┬───┬────┬───┐
-//!   │ h │ e │ ll │ o │
-//!   └───┴───┴────┴───┘
-//!                           the last symbol has no pair left: copy it as is,
-//!                           and rank (ll,o): rank 2. 5 symbols in, 4 out.
+//!   ┌───┬───┬────┬───┬───┐
+//!   │ h │ e │ ll │ o │ ▒ │
+//!   └───┴───┴────┴───┴───┘
+//!                     ^^^   the last symbol has no pair left: copy it as is,
+//!                           and rank (ll,o): rank 2. 5 symbols in, 4 out, so the
+//!                           5th slot is now dead: it sits past the new length and
+//!                           still holds the stale o the copy read from.
 //!                           The lowest pair ranked during the sweep was (h,e),
 //!                           so (h,e) is pass 2's target
 //! ```
@@ -87,9 +88,13 @@
 //! Each later pass repeats this, merging the target the previous pass found:
 //!
 //! ```text
-//!   pass 2  target (h,e):     [ h │ e │ ll │ o ]   ->   [ he │ ll │ o ]   lowest written pair: (ll,o)
-//!   pass 3  target (ll,o):    [ he │ ll │ o ]      ->   [ he │ llo ]      lowest written pair: (he,llo)
-//!   pass 4  target (he,llo):  [ he │ llo ]         ->   [ hello ]         no pair left to rank: done
+//!   pass 2  target (h,e):    [ h  │ e   │ ll │ o │ ▒ ]  ->  [ he    │ ll  │ o │ ▒ │ ▒ ]  lowest written pair: (ll,o)
+//!   pass 3  target (ll,o):   [ he │ ll  │ o  │ ▒ │ ▒ ]  ->  [ he    │ llo │ ▒ │ ▒ │ ▒ ]  lowest written pair: (he,llo)
+//!   pass 4  target (he,llo): [ he │ llo │ ▒  │ ▒ │ ▒ ]  ->  [ hello │ ▒   │ ▒ │ ▒ │ ▒ ]  no pair left to rank: done
+//!
+//!   ▒ = dead slot: past the pass's new length, so the next pass never reads it.
+//!       The array itself never shrinks, only the length does, and the trailing
+//!       dead slots are dropped once by the final truncate.
 //! ```
 //!
 //! Recording the lowest-ranked pair happens while writing the symbols: after each write, we take
@@ -102,9 +107,9 @@
 //!
 //! # Batching and the `SAFE` bit
 //!
-//! The target can occur several times in the word. When its merge is `SAFE`, one pass merges every occurrence.
-//! Batch merges are only legal when the produced id (merged symbol) does not take part in other merges with lower rank (higher priority).
-//! This is enforced when building the lookup table and encoded in the SAFE bit.
+//! The target merge can occur several times in the word (for example "hello lots", the pair "lo" appears twice). When its merge is `SAFE`, one pass merges every occurrence.
+//! The merge is safe to batch merge only if the produced id (merged symbol) does not take part in other merges with lower rank (higher priority).
+//! This is enforced when building the lookup table and encoded in the `SAFE` bit.
 //!
 use crate::models::bpe::bpe_build_tables::{BpeTables, ID_MASK, SAFE_MASK};
 use std::cmp;
@@ -146,6 +151,87 @@ fn batch_merging_is_safe(tables: &BpeTables, target_merge: u64) -> bool {
     !tables.any_unsafe || (target_merge & SAFE_MASK != 0)
 }
 
+/// One pass's cursors and running result.
+///
+/// The read cursor marks the start of what is left of the old word, the write cursor
+/// the end of the new word built so far (see the module docs).
+struct MergeState {
+    read_cursor: usize,
+    write_cursor: usize,
+    target_merge: u64,
+    batched: bool,
+    was_merged: bool,
+    next_merge: u64,
+}
+
+impl MergeState {
+    fn new(target_merge: u64, batched: bool) -> Self {
+        Self {
+            read_cursor: 0,
+            write_cursor: 0,
+            target_merge,
+            batched,
+            was_merged: false,
+            next_merge: NOT_LEGAL,
+        }
+    }
+
+    /// Looks up the pair at the read cursor and writes one symbol: the pair's product id when
+    /// its value equals the target and the pair may still merge, the left symbol otherwise. A
+    /// merge consumes both symbols of the pair, a copy only the left one.
+    ///
+    /// The returned value is the next call's `cached_pair_value`, and it is what keeps a step
+    /// down to a single table lookup. A copy has already paid for the lookup of
+    /// (`left_symbol`, `right_symbol`), and that is exactly the pair the next write has to
+    /// rank, so handing the value forward wins that second lookup back. A merge returns `None`
+    /// instead: it writes a product id that no pair has been looked up against yet, so the
+    /// next write has to pay for its own lookup.
+    #[inline(always)]
+    fn step(
+        &mut self,
+        tables: &BpeTables,
+        symbols: &mut [u32],
+        cached_pair_value: Option<u64>,
+    ) -> Option<u64> {
+        let (left_symbol, right_symbol) =
+            (symbols[self.read_cursor], symbols[self.read_cursor + 1]);
+        let pair_value = tables.get_value(&left_symbol, &right_symbol);
+        let should_merge = pair_value == self.target_merge && (self.batched || !self.was_merged);
+        if should_merge {
+            self.was_merged = true;
+            self.read_cursor += 2;
+            let merged_symbol = (pair_value & ID_MASK) as u32;
+            self.write(tables, symbols, merged_symbol, None);
+            None
+        } else {
+            self.read_cursor += 1;
+            self.write(tables, symbols, left_symbol, cached_pair_value);
+            Some(pair_value)
+        }
+    }
+
+    /// Writes one symbol at the write cursor and ranks the pair it forms with the previously
+    /// written symbol as a candidate for the next pass's target: `next_merge` keeps the lowest
+    /// value seen. `Some` reuses the value the caller already looked up, `None` pays for a
+    /// lookup here. The first written symbol has no left neighbour and nothing to rank.
+    #[inline(always)]
+    fn write(
+        &mut self,
+        tables: &BpeTables,
+        symbols: &mut [u32],
+        symbol: u32,
+        cached_pair_value: Option<u64>,
+    ) {
+        symbols[self.write_cursor] = symbol;
+        if self.write_cursor > 0 {
+            let rank = cached_pair_value
+                .unwrap_or_else(|| tables.get_value(&symbols[self.write_cursor - 1], &symbol));
+            self.next_merge = cmp::min(self.next_merge, rank);
+        }
+        self.write_cursor += 1;
+    }
+}
+
 struct MergeOnceOutput {
     next_merge: u64,
     merged_length: usize,
@@ -167,105 +253,17 @@ fn merge_once(
     // every read and write of the sweep.
     let symbols = &mut symbols[..len];
     let mut state = MergeState::new(target_merge, batched);
-    let mut known_pair_value = None;
+    let mut cached_pair_value = None;
     while state.read_cursor + 1 < len {
-        known_pair_value = state.step(tables, symbols, known_pair_value);
+        cached_pair_value = state.step(tables, symbols, cached_pair_value);
     }
     if state.read_cursor < len {
-        state.copy_last(tables, symbols, known_pair_value);
+        // The sweep's final symbol has no right neighbour to pair with, so it is copied as is.
+        let last_symbol = symbols[state.read_cursor];
+        state.write(tables, symbols, last_symbol, cached_pair_value);
     }
     MergeOnceOutput {
         next_merge: state.next_merge,
         merged_length: state.write_cursor,
-    }
-}
-/// One pass's cursors and running result.
-///
-/// The read cursor marks the start of what is left of the old word, the write cursor
-/// the end of the new word built so far (see the module docs).
-struct MergeState {
-    read_cursor: usize,
-    write_cursor: usize,
-    target_merge: u64,
-    batched: bool,
-    has_merged: bool,
-    next_merge: u64,
-}
-
-impl MergeState {
-    fn new(target_merge: u64, batched: bool) -> Self {
-        Self {
-            read_cursor: 0,
-            write_cursor: 0,
-            target_merge,
-            batched,
-            has_merged: false,
-            next_merge: NOT_LEGAL,
-        }
-    }
-
-    /// Looks up the pair at the read cursor and writes one symbol: the pair's product id when
-    /// its value equals the target and the pair may still merge, the left symbol otherwise. A
-    /// merge consumes both symbols of the pair, a copy only the left one.
-    ///
-    /// The return value becomes the next call's `known_pair_value`. After two copies in a row,
-    /// the pair the second write ranks is the (`left_symbol`, `right_symbol`) the first call
-    /// already looked up, so the second write reuses that value instead of looking it up again.
-    /// A merge returns `None`: the product id it writes is a new symbol, and no pair containing
-    /// it has been looked up yet.
-    #[inline(always)]
-    fn step(
-        &mut self,
-        tables: &BpeTables,
-        symbols: &mut [u32],
-        known_pair_value: Option<u64>,
-    ) -> Option<u64> {
-        let (left_symbol, right_symbol) =
-            (symbols[self.read_cursor], symbols[self.read_cursor + 1]);
-        let pair_value = tables.get_value(&left_symbol, &right_symbol);
-        let should_merge = pair_value == self.target_merge && (self.batched || !self.has_merged);
-        if should_merge {
-            self.has_merged = true;
-            self.read_cursor += 2;
-            let merged_symbol = (pair_value & ID_MASK) as u32;
-            self.write(tables, symbols, merged_symbol, None);
-            None
-        } else {
-            self.read_cursor += 1;
-            self.write(tables, symbols, left_symbol, known_pair_value);
-            Some(pair_value)
-        }
-    }
-
-    /// Copies the sweep's final symbol, which has no right neighbour to pair with.
-    fn copy_last(
-        &mut self,
-        tables: &BpeTables,
-        symbols: &mut [u32],
-        known_pair_value: Option<u64>,
-    ) {
-        let last_symbol = symbols[self.read_cursor];
-        self.write(tables, symbols, last_symbol, known_pair_value);
-    }
-
-    /// Writes one symbol at the write cursor and ranks the pair it forms with the previously
-    /// written symbol as a candidate for the next pass's target: `next_merge` keeps the lowest
-    /// value seen. The value is `known_pair_value` when the caller already knows it, and is
-    /// looked up otherwise. The first written symbol has no left neighbour and nothing to rank.
-    #[inline(always)]
-    fn write(
-        &mut self,
-        tables: &BpeTables,
-        symbols: &mut [u32],
-        symbol: u32,
-        known_pair_value: Option<u64>,
-    ) {
-        symbols[self.write_cursor] = symbol;
-        if self.write_cursor > 0 {
-            let rank = known_pair_value
-                .unwrap_or_else(|| tables.get_value(&symbols[self.write_cursor - 1], &symbol));
-            self.next_merge = cmp::min(self.next_merge, rank);
-        }
-        self.write_cursor += 1;
     }
 }
