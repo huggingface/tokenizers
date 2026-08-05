@@ -71,6 +71,7 @@ tokenizers-release = { package = "tokenizers", version = "=0.23.1", optional = t
 onig = { version = "6.5.1", optional = true }
 pcre2 = { version = "0.2", optional = true }
 logos = { version = "0.15", optional = true } # compile-time DFA lexer reference (pure Rust)
+wide = "1.6.0"
 
 [features]
 # `fancy-regex` is the OPTIONAL system-regex backend, needed ONLY for a *regex* pattern in a `Split`

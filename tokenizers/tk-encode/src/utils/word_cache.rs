@@ -53,6 +53,7 @@ use std::{fmt::Debug, ops::Range};
 
 use ahash::RandomState;
 use std::iter::Iterator;
+use wide::i8x16;
 
 /// Hashes a word to the 64 bits its home slot and tag are taken from, and to the
 /// bottom half of a long word's key ([`LookupKey::new_hash`]).
@@ -126,38 +127,23 @@ impl<'a> WordCache {
             tag,
         } = make_lookup_key(word, self.placement_mask);
 
-        // Check a window of 16 tags (u8) from the home index
         let tag_window = self.tag_window(home);
-        for candidate in tag_window.matching(tag) {
-            // If any tag matches in the window, check the keys of the slot matches and it's not a stale spilled slot
+        let (candidates, first_empty) = tag_window.find_matches_and_first_empty(tag);
+
+        for candidate in candidates {
+            // Must validate that a candidate is indeed a match
             let slot = &self.cached_words[candidate];
             if slot.key == key && !slot.is_stale(self.spilled_generation) {
                 return Lookup::Hit(self.get_cached_ids(slot));
             }
         }
 
-        // If no match: its's a miss.
-        // Compute where to insert the encoded ids: first empty or stale slot in the window
-        // Or the home slot if all slots in the window are taken
-        if let Some(empty_index) = tag_window.matching(Self::EMPTY).next() {
-            Lookup::Miss(InsertPlacement {
-                index: empty_index,
-                key,
-                tag,
-            })
-        } else {
-            // slow path: walk the slots to see if there is a stale one, or default to the home slot
-            for index in tag_window.indices() {
-                if self.cached_words[index].is_stale(self.spilled_generation) {
-                    return Lookup::Miss(InsertPlacement { index, key, tag });
-                }
-            }
-            Lookup::Miss(InsertPlacement {
-                index: home,
-                key,
-                tag,
-            })
-        }
+        // No match: it's a miss. The ids go in the window's first empty slot or to the home slot
+        Lookup::Miss(InsertPlacement {
+            index: first_empty.unwrap_or(home),
+            key,
+            tag,
+        })
     }
 
     /// Insert a new (word, ids) pair in the cache
@@ -379,7 +365,8 @@ fn make_lookup_key(word: &[u8], placement_mask: u64) -> InsertPlacement {
     InsertPlacement {
         key,
         index: (placement_hash & placement_mask) as usize,
-        tag: (placement_hash >> (64 - 8)) as u8,
+        tag: ((placement_hash >> (64 - 8)) as u8).max(WordCache::EMPTY + 1),
+        // ^ must be at least 0x01, otherwise can be mistaken for an EMPTY slot
     }
 }
 
@@ -479,19 +466,24 @@ impl Window {
         }
     }
 
-    fn matching(&self, needle: u8) -> SlotSet {
-        let mut mask = 0u16;
-        for (i, &byte) in self.window.iter().enumerate() {
-            mask |= ((byte == needle) as u16) << i;
-        }
-        SlotSet {
-            mask,
-            offset: self.offset,
-        }
-    }
+    /// Finds all candidates in the window that match the needle, and the leftmost 0x00 (empty slot)
+    fn find_matches_and_first_empty(&self, needle: u8) -> (SlotSet, Option<usize>) {
+        let window = i8x16::from(self.window.map(|byte| byte as i8));
+        let matches_bitmask = window.simd_eq(i8x16::from([needle as i8; 16])).to_bitmask() as u16;
+        let empty_bitmask = window
+            .simd_eq(i8x16::from([WordCache::EMPTY as i8; 16]))
+            .to_bitmask() as u16;
 
-    fn indices(&self) -> Range<usize> {
-        self.offset..self.offset + WordCache::WINDOW_SIZE
+        // a trick to truncate matches to before the first empty
+        let before_first_empty = !empty_bitmask & empty_bitmask.wrapping_sub(1);
+
+        let candidates = SlotSet {
+            mask: matches_bitmask & before_first_empty,
+            offset: self.offset,
+        };
+        let first_empty =
+            (empty_bitmask != 0).then(|| self.offset + empty_bitmask.trailing_zeros() as usize);
+        (candidates, first_empty)
     }
 }
 
@@ -635,6 +627,82 @@ mod tests {
         assert_ne!(key(b"aaaaaaaaaaaaaa\x7f"), key(b"aaaaaaaaaaaaaa\xff"));
         assert_ne!(key(b"abcd"), key(b"abcd\0"));
         assert_eq!(key(b"aaaaaaaaaaaaaa\xff").0 & LookupKey::TAG_MASK, 0);
+    }
+
+    /// One window shape per row: the needle in various lanes, an empty slot in
+    /// the middle, at the edges, or absent. Candidates past the first empty
+    /// lane must not be reported (no entry can live there, see
+    /// [`Window::tag_and_empty`]) and the empty lane itself is the placement.
+    #[test]
+    fn the_scan_reports_matches_before_the_first_empty_and_the_empty_itself() {
+        let offset = 3;
+        let cases: &[(&[u8], u16, Option<usize>)] = &[
+            // needle at lanes 0 and 2, empty at 3: lane 5's match is out of reach
+            (
+                &[
+                    0xA7, 0x31, 0xA7, 0x00, 0x5F, 0xA7, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
+                    0x18, 0x19, 0x1A,
+                ],
+                0b101,
+                Some(3),
+            ),
+            // no empty slot: every match is reachable, no placement
+            (
+                &[
+                    0xA7, 0x31, 0xA7, 0x22, 0x5F, 0xA7, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
+                    0x18, 0x19, 0xA7,
+                ],
+                0b1000000000100101,
+                None,
+            ),
+            // empty in lane 0: nothing is reachable
+            (
+                &[
+                    0x00, 0xA7, 0xA7, 0xA7, 0xA7, 0xA7, 0xA7, 0xA7, 0xA7, 0xA7, 0xA7, 0xA7, 0xA7,
+                    0xA7, 0xA7, 0xA7,
+                ],
+                0,
+                Some(0),
+            ),
+            // every lane matches, empty in the last lane
+            (
+                &[
+                    0xA7, 0xA7, 0xA7, 0xA7, 0xA7, 0xA7, 0xA7, 0xA7, 0xA7, 0xA7, 0xA7, 0xA7, 0xA7,
+                    0xA7, 0xA7, 0x00,
+                ],
+                0b0111_1111_1111_1111,
+                Some(15),
+            ),
+        ];
+        for (lanes, want_mask, want_empty) in cases {
+            let mut table = vec![0xEEu8; offset];
+            table.extend_from_slice(lanes);
+            let window = Window::new(&table, offset);
+            let (candidates, first_empty) = window.find_matches_and_first_empty(0xA7);
+            let found: Vec<usize> = candidates.collect();
+            let want: Vec<usize> = (0..16)
+                .filter(|i| want_mask >> i & 1 == 1)
+                .map(|i| i + offset)
+                .collect();
+            assert_eq!(found, want, "lanes {lanes:?}");
+            assert_eq!(
+                first_empty,
+                want_empty.map(|i| i + offset),
+                "lanes {lanes:?}"
+            );
+        }
+    }
+
+    /// The tag row marks a free slot with 0x00, so no live entry may carry that
+    /// tag: the scan stops looking at the first 0x00 it sees, and an insert
+    /// treats the slot as free space. Enough words that a tag built from a raw
+    /// hash byte would land on 0x00 hundreds of times.
+    #[test]
+    fn a_live_tag_is_never_the_empty_marker() {
+        for i in 0..100_000u32 {
+            let placement = make_lookup_key(&i.to_le_bytes(), u64::MAX);
+            assert_ne!(placement.tag, WordCache::EMPTY, "word {i}");
+        }
     }
 
     /// Every inline length, with a different value in every byte position, so a
