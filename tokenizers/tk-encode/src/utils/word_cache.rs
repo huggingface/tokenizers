@@ -54,9 +54,6 @@ use std::{fmt::Debug, ops::Range};
 use ahash::RandomState;
 use std::iter::Iterator;
 
-/// How much spilled token ids (u32) we can store before flushing the buffer
-pub const SPILLED_BUDGET: usize = 1 << 16;
-
 /// Hashes a word to the 64 bits its home slot and tag are taken from, and to the
 /// bottom half of a long word's key ([`LookupKey::new_hash`]).
 static PLACEMENT_HASHER: RandomState = RandomState::with_seeds(
@@ -83,13 +80,13 @@ pub struct WordCache {
     /// A quick lookup table to find candidates in [`Self::cached_words`] quickly
     quick_lookup: Box<[u8]>,
 
-    /// An additional buffer to store ids that don't fit in a [`WordCacheSlot`]
-    spilled_buffer: Vec<u32>,
-
     placement_mask: u64,
 
     /// Controls eviction mechanism for spilled_buffer
     spilled_generation: u32,
+    spilled_budget: usize,
+    /// An additional buffer to store ids that don't fit in a [`WordCacheSlot`]
+    spilled_buffer: Vec<u32>,
 }
 
 impl<'a> WordCache {
@@ -107,12 +104,14 @@ impl<'a> WordCache {
             // todo: warn the user the capacity has been rounded up
         }
         let n: usize = next_pow2 + Self::WINDOW_SIZE;
+        let spilled_budget = 16 * n;
         Self {
             cached_words: vec![WordCacheSlot::default(); n].into_boxed_slice(),
             quick_lookup: vec![0; n].into_boxed_slice(),
-            spilled_buffer: Vec::with_capacity(SPILLED_BUDGET),
+            spilled_buffer: Vec::with_capacity(spilled_budget),
             placement_mask: (next_pow2 as u64) - 1,
             spilled_generation: 0,
+            spilled_budget,
         }
     }
 
@@ -170,7 +169,7 @@ impl<'a> WordCache {
         let word = if len <= 3 {
             WordCacheSlot::new_self_contained(key, ids)
         } else {
-            if self.spilled_buffer.len() + len > SPILLED_BUDGET {
+            if self.spilled_buffer.len() + len > self.spilled_budget {
                 // Spilled buffer budget passed: we clear it
                 self.spilled_buffer.clear();
                 // Bump the generation to invalidate previous spilled slots
@@ -491,6 +490,8 @@ impl Iterator for SlotSet {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const SPILLED_BUDGET: usize = 1 << 16;
 
     impl<'a> Lookup<'a> {
         pub fn hit(self) -> Option<&'a [u32]> {
