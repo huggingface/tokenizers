@@ -1824,10 +1824,10 @@ mod tests {
             panic!("the pooled scratch is not a BPE scratch");
         };
         assert!(
-            bpe_scratch.merge.entries.capacity() >= long_input.len(),
+            bpe_scratch.queue.entries.capacity() >= long_input.len(),
             "the pooled scratch is not the one grown by the long input: \
              room for {} merge entries after a {}-byte input",
-            bpe_scratch.merge.entries.capacity(),
+            bpe_scratch.queue.entries.capacity(),
             long_input.len()
         );
     }

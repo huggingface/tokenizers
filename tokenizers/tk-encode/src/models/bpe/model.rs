@@ -5,7 +5,7 @@ use crate::models::bpe::At;
 use crate::models::bpe::Error;
 use crate::models::bpe::convert::{AFFIX_BUF, Affixes};
 use crate::models::bpe::legacy::model::BPE;
-use crate::models::bpe::merge_hot_cold_queue::{MergeScratch, two_tier_queue_merge};
+use crate::models::bpe::merge_hot_cold_queue::{QueueScratch, merge_hot_cold_queue};
 use crate::models::bpe::merge_multipass::merge_multipass;
 use crate::models::bpe::tables::BpeTables;
 use crate::pipeline::{self, PipelineToken};
@@ -17,7 +17,7 @@ const GATE_MULTI: u16 = 8;
 const GATE_ASCII: u16 = 24;
 
 /// The gate, indexed by a word's first content byte: words no longer than their gate go to
-/// multipass, longer ones to the two-tier queue.
+/// multipass, longer ones to the hot/cold queue.
 fn build_byte_to_gate() -> [u16; 256] {
     let mut b2g = [GATE_MULTI; 256];
     b2g[..0x80].fill(GATE_ASCII);
@@ -50,7 +50,7 @@ pub struct PipelineBPE {
     pub(super) affixes: Option<Affixes>,
     pub(super) vocab: BucketVocabStore,
     ignore_merges: bool,
-    byte_to_mode: [u16; 256],
+    byte_to_gate: [u16; 256],
 }
 
 // A `PipelineBPE` holds exactly one `Atoms`, so `Chars`' 1 KB byte-fallback table costs nothing.
@@ -154,35 +154,35 @@ impl PipelineBPE {
             affixes,
             ignore_merges,
             vocab,
-            byte_to_mode: build_byte_to_gate(),
+            byte_to_gate: build_byte_to_gate(),
         })
     }
 
     /// Converts a word to symbols and merges it. The gate, indexed by the word's first *content*
     /// byte (past any delimiter the pre-tokenizer prepended -- see [`content_start`]), says
-    /// which engine gets it: short words go to multipass, longer ones to the two-tier queue.
-    /// `to_merge` is the caller's reusable symbol buffer -- it lives in the scratch so that a word
+    /// which engine gets it: short words go to multipass, longer ones to the hot/cold queue.
+    /// `symbols` is the caller's reusable symbol buffer -- it lives in the scratch so that a word
     /// costs no allocation. On return it holds the merged word as internal ids, which the caller
     /// maps to external ids through `unmap`.
     pub(super) fn merge_word(
         &self,
         sequence: &str,
         symbols: &mut Vec<u32>,
-        merge_scratch: &mut MergeScratch,
+        queue_scratch: &mut QueueScratch,
     ) {
         let bytes = sequence.as_bytes();
         // Classify on the first content byte, not on the delimiter the pre-tokenizer prepended.
-        let gate: u16 = self.byte_to_mode[bytes[content_start(bytes)] as usize];
+        let gate: u16 = self.byte_to_gate[bytes[content_start(bytes)] as usize];
 
         if sequence.len() > gate as usize {
-            // conversion writes the entries and cold keys directly: no intermediate rank array
+            // conversion writes the entries and cold keys directly: no intermediate symbol array
             self.convert_queue(
                 sequence,
                 symbols,
-                &mut merge_scratch.entries,
-                &mut merge_scratch.cold,
+                &mut queue_scratch.entries,
+                &mut queue_scratch.cold,
             );
-            two_tier_queue_merge(&self.tables, symbols, merge_scratch);
+            merge_hot_cold_queue(&self.tables, symbols, queue_scratch);
         } else {
             let first_merge = self.convert_multipass(sequence, symbols);
             merge_multipass(&self.tables, symbols, first_merge);
@@ -196,7 +196,7 @@ pub struct BpeScratch {
     /// Symbols of the word being merged.
     pub(crate) symbols: Vec<u32>,
     /// Entry arena and the two queue tiers.
-    pub(crate) merge: MergeScratch,
+    pub(crate) queue: QueueScratch,
 }
 
 impl pipeline::ModelScratch for BpeScratch {}
@@ -221,13 +221,9 @@ impl pipeline::Model for PipelineBPE {
             return Ok(());
         }
 
-        let BpeScratch {
-            symbols,
-            merge: merge_scratch,
-            ..
-        } = scratch;
+        let BpeScratch { symbols, queue } = scratch;
 
-        self.merge_word(sequence, symbols, merge_scratch);
+        self.merge_word(sequence, symbols, queue);
         // the merge engines work in internal ids; `unmap` takes them back to the vocab's own ids
         output.extend(symbols.iter().map(|&symbol| PipelineToken {
             id: self.tables.unmap.at(symbol as usize),
@@ -239,7 +235,7 @@ impl pipeline::Model for PipelineBPE {
     fn init_scratch(&self) -> Self::Scratch {
         Self::Scratch {
             symbols: Vec::with_capacity(64),
-            merge: MergeScratch::default(),
+            queue: QueueScratch::default(),
         }
     }
 }

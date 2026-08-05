@@ -1,13 +1,40 @@
+//! The hot/cold queue: the merge engine for longer words.
+//!
+//! Multipass (see `merge_multipass`) re-sweeps the whole word once per target merge, which gets
+//! expensive as words grow. This engine instead applies pairs in rank order straight away, from a
+//! priority queue split in two tiers:
+//!
+//! - **cold**: the pairs the word starts with. They are all known before the first merge, so a
+//!   plain vector sorted once and consumed front to back beats a heap.
+//! - **hot**: the pairs each merge creates with its new neighbours. Only these need a live
+//!   priority queue, a small binary min-heap.
+//!
+//! Each step takes the lower of the next cold key and the top hot key. A key packs
+//! `rank << 32 | entry index`, so comparing keys compares ranks first; entries are created in
+//! word order and updated in place, so on equal ranks the smaller index is the leftmost pair,
+//! which is the order BPE prescribes.
+//!
+//! The word itself is the `entries` arena: one [`Entry`] per adjacent pair, doubly linked through
+//! `l`/`r`. A merge rewrites its neighbour entries in place and pushes their new keys to hot; the
+//! keys already queued for those neighbours go stale, and are recognized and skipped because
+//! their rank half no longer matches the entry's current rank. When the queue runs dry, the
+//! merged word is read back by walking the links from the leftmost live entry.
 use crate::models::bpe::tables::{BpeTables, ID_MASK, RANK_MASK};
+
 #[derive(Clone, Copy)]
 #[repr(C)]
 pub(crate) struct Entry {
-    pub rank: u32, // the rank of the merge? but this should be the internal ID.
-    pub prod: u32, // the internal ID of the merge (unique as its a product and not a merge)
-    pub a: u32,    // the merge is (a,b) these are the internal ids of them
+    /// Rank of the merge (a, b), `DEAD_RANK` when the pair does not merge or was consumed.
+    pub rank: u32,
+    /// Internal id of the token (a, b) merges into.
+    pub prod: u32,
+    /// The pair's symbols, as internal ids.
+    pub a: u32,
     pub b: u32,
-    pub l: u32, // index of the left entry in the cold table
-    pub r: u32, // index of the rigthh entry
+    /// Arena index of the pair to the left, `NONE` at the word's start.
+    pub l: u32,
+    /// Arena index of the pair to the right, `NONE` at the word's end.
+    pub r: u32,
 }
 
 const DEAD_RANK: u32 = u32::MAX;
@@ -91,19 +118,23 @@ fn hot_pop(hot: &mut Vec<u64>) -> u64 {
 }
 
 #[derive(Default)]
-pub struct MergeScratch {
+pub struct QueueScratch {
+    /// One [`Entry`] per adjacent pair of the word, linked left/right.
     pub(crate) entries: Vec<Entry>,
-    pub cold: Vec<u64>, // even though the values stored can be u32, this makes it simpler to pack the
-    // rank and the entry index
+    /// The initial pairs' keys, sorted once; see the module docs.
+    pub cold: Vec<u64>,
+    /// The merge-created pairs' keys, kept as a binary min-heap.
     pub hot: Vec<u64>,
 }
 
-pub fn two_tier_queue_merge(
+/// Merges the word whose pair entries and cold keys `scratch` holds (filled by `convert_queue`),
+/// writing the merged word into `symbols` as internal ids.
+pub fn merge_hot_cold_queue(
     tables: &BpeTables,
-    to_merge: &mut Vec<u32>,
-    merge_scratch: &mut MergeScratch,
+    symbols: &mut Vec<u32>,
+    scratch: &mut QueueScratch,
 ) {
-    let MergeScratch { entries, cold, hot } = merge_scratch;
+    let QueueScratch { entries, cold, hot } = scratch;
     if entries.is_empty() {
         return;
     }
@@ -138,15 +169,15 @@ pub fn two_tier_queue_merge(
         entry.update(tables, entries, hot);
     }
 
-    to_merge.clear();
+    symbols.clear();
     if head == NONE {
-        to_merge.push(single);
+        symbols.push(single);
         return;
     }
     let mut index = head as usize;
-    to_merge.push(entries[index].a);
+    symbols.push(entries[index].a);
     loop {
-        to_merge.push(entries[index].b);
+        symbols.push(entries[index].b);
         match entries[index].r {
             NONE => break,
             next => index = next as usize,

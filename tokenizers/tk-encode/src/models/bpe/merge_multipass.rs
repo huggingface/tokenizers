@@ -1,4 +1,4 @@
-//! Multipass merging, for short words (pre tokens)
+//! Multipass merging, for short words (pretokens)
 //!
 //! For short words, running BPE naively can be faster than using a more complex data structure.
 //!

@@ -1,5 +1,5 @@
-//! Turning a pretokenized word into merge ranks, which are then processed in `merge_multipass` or
-//! `merge_hot_cold_queue`.
+//! Converting a pretoken into internal symbols, in the shape the merge engine that will process
+//! it (`merge_multipass` or `merge_hot_cold_queue`) wants to start from.
 use crate::models::bpe::At;
 use crate::models::bpe::merge_hot_cold_queue::Entry;
 use crate::models::bpe::model::{Atoms, PipelineBPE};
@@ -40,7 +40,7 @@ const UTF8_LEN: [u8; 256] = {
     l
 };
 
-/// Collects the converted ranks of a sequence into whatever the engine that merges it needs.
+/// Collects the converted symbols of a sequence into whatever the engine that merges it needs.
 /// The implementing type picks which: [`MultipassSink`] or [`QueueSink`]. The mode is a type
 /// rather than a runtime flag so the conversion loops are compiled once per engine, without a
 /// per-symbol test.
@@ -51,7 +51,7 @@ trait SinkMode {
     fn push_symbol(&mut self, symbol: u32);
 }
 
-/// A flat rank array plus the lowest-ranked adjacent pair, which is the first merge multipass
+/// The flat symbol array plus the lowest-ranked adjacent pair, which is the first merge multipass
 /// applies.
 struct MultipassSink<'a> {
     symbols: &'a mut Vec<u32>,
@@ -69,7 +69,7 @@ impl SinkMode for MultipassSink<'_> {
     }
 }
 
-/// The pair entries and cold queue keys, built as the ranks are produced, so the two-tier queue
+/// The pair entries and cold queue keys, built as the symbols are produced, so the hot/cold queue
 /// needs no intermediate array to read back.
 struct QueueSink<'a> {
     entries: &'a mut Vec<Entry>,
@@ -122,7 +122,7 @@ impl PipelineBPE {
     /// `u64::MAX` when no pair merges.
     pub(super) fn convert_multipass(&self, sequence: &str, symbols: &mut Vec<u32>) -> u64 {
         symbols.clear();
-        // a word never has more ranks than bytes, so one reserve covers every push
+        // a word never has more symbols than bytes, so one reserve covers every push
         symbols.reserve(sequence.len());
         let mut sink = SymbolSink {
             mode: MultipassSink {
@@ -135,10 +135,10 @@ impl PipelineBPE {
         sink.mode.lowest_merge
     }
 
-    /// Converts one pretoken to pair entries and cold queue keys for the two-tier queue.
+    /// Converts one pretoken to pair entries and cold queue keys for the hot/cold queue.
     ///
-    /// A pretoken of fewer than two ranks has no pairs and so no entries; its single rank is left
-    /// in `symbols` instead, and the queue engine sees an empty entry list.
+    /// A pretoken of fewer than two symbols has no pairs and so no entries; its single symbol is
+    /// left in `symbols` instead, and the queue engine sees an empty entry list.
     pub(super) fn convert_queue(
         &self,
         sequence: &str,
@@ -149,7 +149,7 @@ impl PipelineBPE {
         symbols.clear();
         entries.clear();
         cold.clear();
-        // a word never has more ranks than bytes, so one reserve covers every push
+        // a word never has more symbols than bytes, so one reserve covers every push
         entries.reserve(sequence.len());
         cold.reserve(sequence.len());
         let mut sink = SymbolSink {
