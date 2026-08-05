@@ -12,11 +12,11 @@ HF ?= hf
 
 # Format source code automatically
 style:
-	npm run lint
+	npm run format
 
 # Check the source code is formatted correctly
 check-style:
-	npm run lint-check
+	npm run lint
 
 TESTS_RESOURCES = $(DATA_DIR)/small.txt $(DATA_DIR)/roberta.json $(DATA_DIR)/tokenizer-wiki.json $(DATA_DIR)/bert-wiki.json
 
