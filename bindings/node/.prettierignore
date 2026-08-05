@@ -1,6 +1,9 @@
 target
 .yarn
 
+# napi regenerates these per-platform stubs; formatting them only creates churn
+npm
+
 # docs/source/*.rst pull snippets out of these with :start-after:/:end-before:
 # and :dedent: 4. Reformatting them (quotes, semicolons, indent width) silently
 # rewrites the published documentation, so leave them exactly as authored.
