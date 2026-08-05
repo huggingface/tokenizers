@@ -11,5 +11,5 @@ name = "tk-convert"
 path = "src/main.rs"
 
 [dependencies]
-tk-encode = { path = "../tk-encode", default-features = false, features = ["tok-write", "fancy-regex"] }
+tk-encode = { path = "../tk-encode", default-features = false, features = ["tok-write", "fancy-regex", "config"] }
 tk-serialization = { path = "../tk-serialization" }

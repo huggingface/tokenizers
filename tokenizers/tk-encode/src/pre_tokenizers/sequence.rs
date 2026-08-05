@@ -86,6 +86,7 @@ impl PipelineSequence {
     }
 }
 
+#[cfg(feature = "config")]
 impl TryFrom<Sequence> for PipelineSequence {
     type Error = crate::Error;
     fn try_from(value: Sequence) -> Result<Self> {

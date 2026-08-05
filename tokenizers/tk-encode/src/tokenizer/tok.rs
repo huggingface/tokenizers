@@ -22,7 +22,7 @@ use crate::tokenizer::pipeline::{
     PipelineTokenizer,
 };
 use crate::tokenizer::{Result, SplitDelimiterBehavior};
-use crate::utils::cl100k_pattern;
+use crate::utils::{DEEPSEEK_PATTERNS, cl100k_pattern};
 use crate::vocab::bucket_added_vocabulary::{AddedToken, AddedVocabulary as BucketAddedVocabulary};
 
 // ── read ───────────────────────────────────────────────────────────────────────────────────────
@@ -204,7 +204,7 @@ fn read_added_tokens(reader: &Reader<'_>) -> Result<Vec<AddedToken>> {
 /// it would link all of them.
 fn read_pre_tokenizer(reader: &Reader<'_>, config: &Config) -> Result<PipelinePreTokenizer> {
     let regex = |pattern: &str| -> Result<PipelinePreTokenizer> {
-        Ok(PipelinePreTokenizer::Split(Split::new(
+        Ok(PipelinePreTokenizer::Split(Split::native(
             SplitPattern::Regex(pattern.to_owned()),
             SplitDelimiterBehavior::Isolated,
             false,
@@ -224,7 +224,7 @@ fn read_pre_tokenizer(reader: &Reader<'_>, config: &Config) -> Result<PipelinePr
         // The three deepseek regexes as a sequence, which the pipeline recognises and runs as one
         // native pass.
         pretok::DEEPSEEK => PipelinePreTokenizer::Sequence(PipelineSequence::new(
-            atomsplit::regexes::DEEPSEEK
+            DEEPSEEK_PATTERNS
                 .iter()
                 .map(|r| regex(r))
                 .collect::<Result<Vec<_>>>()?,
@@ -236,7 +236,7 @@ fn read_pre_tokenizer(reader: &Reader<'_>, config: &Config) -> Result<PipelinePr
             else {
                 return Err("corrupt .tok: a literal split needs exactly one pattern".into());
             };
-            PipelinePreTokenizer::Split(Split::new(
+            PipelinePreTokenizer::Split(Split::native(
                 SplitPattern::String(pattern.to_owned()),
                 read_behavior(config.pretok_param)?,
                 config.flags & flag::PRETOK_INVERT != 0,

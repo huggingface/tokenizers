@@ -126,6 +126,35 @@ impl Split {
         })
     }
 
+    /// A `Split` that is known to be driven natively, so no regex backend is compiled.
+    ///
+    /// `Split::new` asks the system regex to compile every regex pattern, which a read-only build
+    /// has no engine for. Two cases do not need one: a pattern `gpt_fsm` recognises, and a member
+    /// of a composition the pipeline runs as a single native pass (deepseek's three regexes are
+    /// individually unrecognised but never individually run). A literal pattern is searched for
+    /// directly and never needed an engine either.
+    pub fn native(
+        pattern: SplitPattern,
+        behavior: SplitDelimiterBehavior,
+        invert: bool,
+    ) -> Result<Self> {
+        let fsm = match &pattern {
+            SplitPattern::String(_) => None,
+            SplitPattern::Regex(r) => gpt_fsm(r),
+        };
+        let search = match &pattern {
+            SplitPattern::String(s) => Search::Literal(Literal::new(s.as_bytes())?),
+            SplitPattern::Regex(_) => Search::Unavailable,
+        };
+        Ok(Self {
+            pattern,
+            search,
+            behavior,
+            invert,
+            fsm,
+        })
+    }
+
     /// The native FSM family this pattern was recognised as, if any. A `.tok` names the family
     /// rather than carrying the regex source, so the converter needs to read it back out.
     pub fn gpt_fsm(&self) -> Option<GptFsm> {

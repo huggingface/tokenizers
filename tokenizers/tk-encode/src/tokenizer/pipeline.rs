@@ -105,10 +105,13 @@ pub(crate) fn normalize_all<'a, N: Normalizer>(
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub(crate) enum PipelineNormalizer {
-    /// The `normalizer` field of the config, as-is. Only the JSON path produces this: it holds
-    /// every normalizer variant, so anything that can construct it links all of them.
+    /// The `normalizer` field of the config, as-is. Only the config layer produces this: it holds
+    /// every normalizer variant, so anything that can construct it links all of them — and a match
+    /// arm counts, which is why this is a `cfg` and not just an unused variant.
+    #[cfg(feature = "config")]
     Declared(NormalizerWrapper),
     /// The text-rewriting half of a `Metaspace` pre-tokenizer.
+    #[cfg(feature = "config")]
     Metaspace(MetaspaceNormalizer),
     /// A literal `Replace`, which is the only normalizer a `.tok` can carry.
     Replace(Replace),
@@ -117,7 +120,9 @@ pub(crate) enum PipelineNormalizer {
 impl Normalizer for PipelineNormalizer {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
         match self {
+            #[cfg(feature = "config")]
             Self::Declared(normalizer) => normalizer.normalize(input),
+            #[cfg(feature = "config")]
             Self::Metaspace(normalizer) => normalizer.normalize(input),
             Self::Replace(normalizer) => normalizer.normalize(input),
         }
@@ -135,17 +140,27 @@ pub trait PreTokenizer {
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq)]
 pub enum PipelinePreTokenizer {
-    Bert(BertPreTokenizer),
-    Delimiter(CharDelimiterSplit),
-    Digits(Digits),
-    FixedLength(FixedLength),
-    Punctuation(Punctuation),
     Sequence(PipelineSequence),
     Split(SplitPretok),
-    UnicodeScripts(UnicodeScripts),
-    Whitespace(Whitespace),
-    WhitespaceSplit(WhitespaceSplit),
     None,
+    // The rest classify Unicode, which is a static table each. A `.tok` names an FSM family or a
+    // literal, so it can hold none of them and a read-only build should not carry their tables.
+    #[cfg(feature = "config")]
+    Bert(BertPreTokenizer),
+    #[cfg(feature = "config")]
+    Delimiter(CharDelimiterSplit),
+    #[cfg(feature = "config")]
+    Digits(Digits),
+    #[cfg(feature = "config")]
+    FixedLength(FixedLength),
+    #[cfg(feature = "config")]
+    Punctuation(Punctuation),
+    #[cfg(feature = "config")]
+    UnicodeScripts(UnicodeScripts),
+    #[cfg(feature = "config")]
+    Whitespace(Whitespace),
+    #[cfg(feature = "config")]
+    WhitespaceSplit(WhitespaceSplit),
 }
 
 impl PreTokenizer for PipelinePreTokenizer {
@@ -158,20 +173,29 @@ impl PreTokenizer for PipelinePreTokenizer {
                 });
                 Ok(())
             }
-            Self::Bert(pretok) => pretok.pre_tokenize(text, out),
-            Self::Delimiter(pretok) => pretok.pre_tokenize(text, out),
-            Self::Digits(pretok) => pretok.pre_tokenize(text, out),
-            Self::FixedLength(pretok) => pretok.pre_tokenize(text, out),
-            Self::Punctuation(pretok) => pretok.pre_tokenize(text, out),
             Self::Sequence(pretok) => pretok.pre_tokenize(text, out),
             Self::Split(pretok) => pretok.pre_tokenize(text, out),
+            #[cfg(feature = "config")]
+            Self::Bert(pretok) => pretok.pre_tokenize(text, out),
+            #[cfg(feature = "config")]
+            Self::Delimiter(pretok) => pretok.pre_tokenize(text, out),
+            #[cfg(feature = "config")]
+            Self::Digits(pretok) => pretok.pre_tokenize(text, out),
+            #[cfg(feature = "config")]
+            Self::FixedLength(pretok) => pretok.pre_tokenize(text, out),
+            #[cfg(feature = "config")]
+            Self::Punctuation(pretok) => pretok.pre_tokenize(text, out),
+            #[cfg(feature = "config")]
             Self::UnicodeScripts(pretok) => pretok.pre_tokenize(text, out),
+            #[cfg(feature = "config")]
             Self::Whitespace(pretok) => pretok.pre_tokenize(text, out),
+            #[cfg(feature = "config")]
             Self::WhitespaceSplit(pretok) => pretok.pre_tokenize(text, out),
         }
     }
 }
 
+#[cfg(feature = "config")]
 impl TryFrom<PreTokenizerWrapper> for PipelinePreTokenizer {
     type Error = crate::Error;
 
@@ -266,6 +290,7 @@ impl PipelinePostProcessor {
     }
 }
 
+#[cfg(feature = "config")]
 impl TryFrom<&PostProcessorWrapper> for PipelinePostProcessor {
     type Error = crate::Error;
 
@@ -485,6 +510,7 @@ pub struct PipelineTokenizer {
     pub(crate) post_processor: PipelinePostProcessor,
 }
 
+#[cfg(feature = "config")]
 impl TryFrom<&Tokenizer> for PipelineTokenizer {
     type Error = super::Error;
 
@@ -1053,8 +1079,11 @@ pub trait Model {
 )]
 pub enum PipelineModel {
     BPE(PipelineBPE),
+    #[cfg(feature = "config")]
     Unigram(Unigram),
+    #[cfg(feature = "config")]
     WordLevel(WordLevel),
+    #[cfg(feature = "config")]
     WordPiece(PipelineWordPiece),
 }
 
@@ -1071,15 +1100,19 @@ impl Model for PipelineModel {
             (Self::BPE(model), PipelineModelScratch::BPE(scratch)) => {
                 model.tokenize_pipeline(sequence, scratch, output)
             }
+            #[cfg(feature = "config")]
             (Self::Unigram(model), PipelineModelScratch::Unigram(scratch)) => {
                 model.tokenize_pipeline(sequence, scratch, output)
             }
+            #[cfg(feature = "config")]
             (Self::WordLevel(model), PipelineModelScratch::WordLevel(scratch)) => {
                 model.tokenize_pipeline(sequence, scratch, output)
             }
+            #[cfg(feature = "config")]
             (Self::WordPiece(model), PipelineModelScratch::WordPiece(scratch)) => {
                 model.tokenize_pipeline(sequence, scratch, output)
             }
+            #[cfg(feature = "config")]
             _ => unreachable!(),
         }
     }
@@ -1087,8 +1120,11 @@ impl Model for PipelineModel {
     fn init_scratch(&self) -> Self::Scratch {
         match self {
             Self::BPE(bpe) => PipelineModelScratch::BPE(bpe.init_scratch()),
+            #[cfg(feature = "config")]
             Self::WordLevel(_) => Self::Scratch::WordLevel(()),
+            #[cfg(feature = "config")]
             Self::WordPiece(wordpiece) => Self::Scratch::WordPiece(wordpiece.init_scratch()),
+            #[cfg(feature = "config")]
             Self::Unigram(unigram) => Self::Scratch::Unigram(unigram.init_scratch()),
         }
     }
@@ -1096,8 +1132,11 @@ impl Model for PipelineModel {
 
 pub enum PipelineModelScratch {
     BPE(BpeScratch),
+    #[cfg(feature = "config")]
     WordLevel(()),
+    #[cfg(feature = "config")]
     WordPiece(WordPieceScratch),
+    #[cfg(feature = "config")]
     Unigram(UnigramScratch),
 }
 

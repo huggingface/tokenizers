@@ -78,7 +78,12 @@ logos = { version = "0.15", optional = true } # compile-time DFA lexer reference
 # deepseek, the class family, char-delimiter) need no backend, and a plain string pattern is searched
 # for directly. Without it a stub compiles and those regex paths error at load. Enable with
 # `--features fancy-regex`.
-default = ["progressbar"]
+# `config` is the layer that turns a parsed `tokenizer.json` into a pipeline: the wrapper enums,
+# and every model / normalizer / pre-tokenizer variant they can hold. Default on. Turning it off
+# leaves the crate able to load a `.tok` and nothing else, which drops ~200 KB of Unicode tables
+# that only unreachable enum arms were keeping alive.
+default = ["progressbar", "config"]
+config = []
 # Writing a `.tok`. Only `tk-convert` needs it; an inference build reads and never writes.
 tok-write = ["tk-serialization/write"]
 progressbar = ["indicatif"]
@@ -108,6 +113,10 @@ harness = false
 name = "bpe_model_benchmark"
 required-features = ["http"]
 harness = false
+
+[[example]]
+name = "binsize_tok"
+required-features = []
 
 [[example]]
 name = "fixture_bench"

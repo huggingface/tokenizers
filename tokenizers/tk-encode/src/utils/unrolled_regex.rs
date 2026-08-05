@@ -119,6 +119,12 @@ const DS_BIG: &str = concat!(
     r##"]+|\s+(?!\S)|\s+"##,
 );
 
+/// deepseek's three patterns, in order, exactly as the shipped config spells them. A `.tok` names
+/// the family rather than the source, so the loader spells them back out from here — the copies in
+/// `atomsplit::regexes` escape CR/LF instead of embedding it, so they are *not* interchangeable and
+/// [`is_deepseek`] would reject them.
+pub const DEEPSEEK_PATTERNS: [&str; 3] = [DS_NUM, DS_CJK, DS_BIG];
+
 /// True iff three `Split` patterns are exactly deepseek's `[\p{N}{1,3}, CJK-range, big-regex]` prefix →
 /// `atomsplit::fsm::fsm_deepseek` reproduces the whole composed Isolated split in one pass.
 pub fn is_deepseek(p0: &str, p1: &str, p2: &str) -> bool {

@@ -12,6 +12,8 @@ crate-type = ["cdylib"]
 [dependencies]
 napi = { version = "3", default-features = false, features = ["napi6"] }
 napi-derive = "3"
+# No `config`: this binding loads `.tok` and nothing else, so the JSON layer and every
+# enum arm that only it can construct stay out of the binary.
 tk-encode = { path = "../../tokenizers/tk-encode", default-features = false }
 tk-serialization = { path = "../../tokenizers/tk-serialization" }
 
