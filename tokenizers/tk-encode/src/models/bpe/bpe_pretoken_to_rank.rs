@@ -202,8 +202,36 @@ fn convert_chars<M: SinkMode>(
     sink: &mut SymbolSink<M>,
 ) {
     let mut in_unk_run = false;
-    for character in sequence.chars() {
-        let symbol = tables.fold.get_char(character);
+    // ASCII fast path, mirroring `convert_bytes`. Without it a char-atom model
+    // pays UTF-8 decoding plus the two-dimensional `get_char` lookup on every
+    // character, where a byte-atom model indexes a 128-entry table once. That
+    // asymmetry is the whole gap on Latin text: llama-2's model stage measures
+    // 40.5 ns/B against gpt2's 4.5 on the same corpus.
+    //
+    // An ASCII character is one symbol and cannot decompose, so the only extra
+    // condition is a miss (`u32::MAX`), which falls through to the general path
+    // below exactly as before.
+    let bytes = sequence.as_bytes();
+    let mut pos = 0usize;
+    while pos < bytes.len() {
+        let byte = bytes[pos];
+        if byte < 0x80 {
+            let symbol = tables.fold.get_ascii(byte);
+            if symbol != u32::MAX {
+                in_unk_run = false;
+                sink.push(tables, symbol);
+                pos += 1;
+                continue;
+            }
+        }
+        // SAFETY-free: `pos` is on a char boundary, so this yields that char.
+        let character = sequence[pos..].chars().next().unwrap();
+        pos += character.len_utf8();
+        let symbol = if byte < 0x80 {
+            u32::MAX
+        } else {
+            tables.fold.get_char(character)
+        };
         if symbol != u32::MAX {
             in_unk_run = false;
             sink.push(tables, symbol);
