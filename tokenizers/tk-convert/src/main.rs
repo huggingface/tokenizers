@@ -4,8 +4,6 @@
 //! reachable from a serving binary: that side calls `PipelineTokenizer::from_tok` and links no
 //! parser at all.
 
-use tk_encode::Tokenizer;
-use tk_encode::tokenizer::tok::to_tok;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -36,8 +34,7 @@ fn main() {
 }
 
 fn convert(input: &str, output: &str) -> Result<(u64, usize), Box<dyn std::error::Error + Send + Sync>> {
-    let tokenizer = Tokenizer::from_file(input)?;
-    let bytes = to_tok(&tokenizer)?;
+    let bytes = tk_convert::convert_file(input)?;
     std::fs::write(output, &bytes)?;
     Ok((std::fs::metadata(input)?.len(), bytes.len()))
 }

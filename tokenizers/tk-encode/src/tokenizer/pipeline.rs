@@ -663,6 +663,10 @@ impl PipelineTokenizer {
         &self.pre_tokenizer
     }
 
+    pub fn get_post_processor(&self) -> &PipelinePostProcessor {
+        &self.post_processor
+    }
+
     /// Encode `input` into token ids.
     ///
     /// Special tokens are matched in two passes:

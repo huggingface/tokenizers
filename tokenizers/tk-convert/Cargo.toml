@@ -6,10 +6,14 @@ authors = ["Arthur Zucker <arthur@huggingface.co>"]
 license = "Apache-2.0"
 description = "Converts a legacy `tokenizer.json` into a `.tok` v1 file. Build-time only."
 
+[lib]
+name = "tk_convert"
+path = "src/lib.rs"
+
 [[bin]]
 name = "tk-convert"
 path = "src/main.rs"
 
 [dependencies]
-tk-encode = { path = "../tk-encode", default-features = false, features = ["tok-write", "fancy-regex", "config"] }
-tk-serialization = { path = "../tk-serialization" }
+tk-encode = { path = "../tk-encode", default-features = false, features = ["fancy-regex", "config"] }
+tk-serialization = { path = "../tk-serialization", features = ["write"] }

@@ -78,11 +78,11 @@ logos = { version = "0.15", optional = true } # compile-time DFA lexer reference
 # deepseek, the class family, char-delimiter) need no backend, and a plain string pattern is searched
 # for directly. Without it a stub compiles and those regex paths error at load. Enable with
 # `--features fancy-regex`.
-# `config` is the layer that turns a parsed `tokenizer.json` into a pipeline: the wrapper enums,
-# and every model / normalizer / pre-tokenizer variant they can hold. Default on. Turning it off
-# leaves the crate able to load a `.tok` and nothing else, which drops ~200 KB of Unicode tables
-# that only unreachable enum arms were keeping alive.
-default = ["progressbar", "config"]
+# Default is the v1 crate: reads a `.tok`, encodes, and links no parser.
+default = ["progressbar"]
+# `config` is the v0 layer — the legacy `tokenizer.json` reader, the wrapper enums, and every
+# model / normalizer / pre-tokenizer variant they can hold. `tk-convert` turns it on to convert;
+# nothing else should need it.
 config = [
   "dep:serde",
   "dep:serde_json",
@@ -93,7 +93,7 @@ config = [
   "compact_str/serde",
 ]
 # Writing a `.tok`. Only `tk-convert` needs it; an inference build reads and never writes.
-tok-write = ["tk-serialization/write"]
+
 progressbar = ["indicatif"]
 http = ["hf-hub"]
 unstable_wasm = ["fancy-regex", "getrandom/wasm_js"]

@@ -10,7 +10,7 @@ use std::time::Instant;
 
 use tk_encode::Tokenizer;
 use tk_encode::pipeline::PipelineTokenizer;
-use tk_encode::tokenizer::tok::to_tok;
+use tk_convert::to_tok;
 
 const CORPORA: &[&str] = &[
     "english", "chinese", "code", "dense", "russian", "arabic", "korean", "greek", "hindi", "thai",
