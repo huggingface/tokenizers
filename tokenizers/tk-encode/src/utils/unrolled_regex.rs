@@ -28,11 +28,24 @@ pub enum GptFsm {
 /// The cl100k-family template is fixed except rule 3's digit rule. If `pattern` is that template, return
 /// the `\p{N}{1,cap}` bound (`\p{N}{1,3}`→3, `\p{N}{1,2}`→2, `\p{N}`→1, `\p{N}+`→`MAX`); else `None`.
 /// This is what makes Qwen2 (cl100k with `\p{N}`) unroll without a per-tokenizer exact-string entry.
+/// The inverse of [`cl100k_digit_cap`]: rebuild the cl100k-family pattern for a digit cap. A
+/// `.tok` names the FSM family and its cap rather than carrying the regex source, so the loader
+/// needs to spell the pattern back out for `Split::new` to recognise.
+pub fn cl100k_pattern(digit_cap: usize) -> String {
+    let digits = match digit_cap {
+        1 => r"\p{N}".to_string(),
+        usize::MAX => r"\p{N}+".to_string(),
+        cap => format!(r"\p{{N}}{{1,{cap}}}"),
+    };
+    format!("{CL100K_PRE}{digits}{CL100K_SUF}")
+}
+
+/// cl100k rules 1-2 (contraction + word) and 4-7 (other + whitespace); rule 3 is the digit rule.
+const CL100K_PRE: &str = r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|";
+const CL100K_SUF: &str = r"| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+";
+
 fn cl100k_digit_cap(pattern: &str) -> Option<usize> {
-    // cl100k rules 1-2 (contraction + word) … <DIGIT RULE> … rules 4-7 (other + whitespace).
-    const PRE: &str = r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|";
-    const SUF: &str = r"| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+";
-    match pattern.strip_prefix(PRE)?.strip_suffix(SUF)? {
+    match pattern.strip_prefix(CL100K_PRE)?.strip_suffix(CL100K_SUF)? {
         r"\p{N}{1,3}" => Some(3),
         r"\p{N}{1,2}" => Some(2),
         r"\p{N}" => Some(1),

@@ -1,0 +1,24 @@
+[package]
+name = "tk-serialization"
+version = "0.23.2-dev.0"
+edition = "2024"
+authors = ["Arthur Zucker <arthur@huggingface.co>"]
+homepage = "https://github.com/huggingface/tokenizers"
+repository = "https://github.com/huggingface/tokenizers"
+license = "Apache-2.0"
+keywords = ["tokenizer", "nlp", "format", "serialization"]
+categories = ["text-processing", "encoding"]
+description = """
+The `.tok` v1 container: header, section table and aligned reader for a tokenizer file that needs
+no parser. Zero dependencies; the write half is behind the `write` feature.
+"""
+
+[lib]
+name = "tk_serialization"
+path = "src/lib.rs"
+
+[features]
+# Reading is the whole inference path, so it is unconditional. Writing a `.tok` is a build-time
+# job for `tk-convert` and has no business in a serving binary.
+default = []
+write = []

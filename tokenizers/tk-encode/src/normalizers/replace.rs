@@ -89,6 +89,11 @@ impl PartialEq for Replace {
 }
 
 impl Replace {
+    /// What this rewrites. A `.tok` stores the literal form directly, so the converter reads it.
+    pub fn pattern(&self) -> &ReplacePattern {
+        &self.pattern
+    }
+
     pub fn new<I: Into<ReplacePattern>, C: Into<String>>(pattern: I, content: C) -> Result<Self> {
         let pattern: ReplacePattern = pattern.into();
         let search = match &pattern {

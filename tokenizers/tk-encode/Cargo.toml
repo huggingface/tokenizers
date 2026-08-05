@@ -28,6 +28,7 @@ path = "src/lib.rs"
 
 [dependencies]
 atomsplit = { path = "../atomsplit" }
+tk-serialization = { path = "../tk-serialization" }
 rand = "0.9"
 regex = "1.10"
 rayon = "1.10"
@@ -78,6 +79,8 @@ logos = { version = "0.15", optional = true } # compile-time DFA lexer reference
 # for directly. Without it a stub compiles and those regex paths error at load. Enable with
 # `--features fancy-regex`.
 default = ["progressbar"]
+# Writing a `.tok`. Only `tk-convert` needs it; an inference build reads and never writes.
+tok-write = ["tk-serialization/write"]
 progressbar = ["indicatif"]
 http = ["hf-hub"]
 unstable_wasm = ["fancy-regex", "getrandom/wasm_js"]

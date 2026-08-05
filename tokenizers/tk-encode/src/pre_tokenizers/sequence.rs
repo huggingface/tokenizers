@@ -62,7 +62,12 @@ impl PipelineSequence {
     /// Isolated, non-inverted `Split`s carrying deepseek's `[\p{N}{1,3}, CJK, big]` regexes (the trailing
     /// byte-map `ByteLevel` converts to `PipelinePreTokenizer::None`). Routes the whole split to one
     /// `fsm_deepseek` pass.
-    fn is_deepseek(&self) -> bool {
+    /// The converted members, in order.
+    pub fn members(&self) -> &[PipelinePreTokenizer] {
+        &self.pre_tokenizers
+    }
+
+    pub fn is_deepseek(&self) -> bool {
         use crate::pre_tokenizers::split::SplitPattern;
         use crate::tokenizer::SplitDelimiterBehavior::Isolated;
         let regex = |i: usize| match self.pre_tokenizers.get(i) {

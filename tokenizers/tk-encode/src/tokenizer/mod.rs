@@ -27,6 +27,7 @@ mod encoding;
 pub mod normalizer;
 pub mod pattern;
 pub mod pipeline;
+pub mod tok;
 pub mod pre_tokenizer;
 mod serialization;
 

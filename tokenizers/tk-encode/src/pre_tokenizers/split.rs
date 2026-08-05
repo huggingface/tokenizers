@@ -126,6 +126,12 @@ impl Split {
         })
     }
 
+    /// The native FSM family this pattern was recognised as, if any. A `.tok` names the family
+    /// rather than carrying the regex source, so the converter needs to read it back out.
+    pub fn gpt_fsm(&self) -> Option<GptFsm> {
+        self.fsm
+    }
+
     /// Pipeline canonicalization. A recognized whole-covering GPT regex shipped
     /// as `(invert=true, behavior=Removed)` — the tiktoken-conversion convention
     /// used by cl100k/o200k — is byte-exactly equivalent to `(invert=false,

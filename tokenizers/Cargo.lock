@@ -2266,6 +2266,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
+name = "tk-convert"
+version = "0.23.2-dev.0"
+dependencies = [
+ "tk-encode",
+ "tk-serialization",
+]
+
+[[package]]
 name = "tk-encode"
 version = "0.23.2-dev.0"
 dependencies = [
@@ -2300,6 +2308,7 @@ dependencies = [
  "spm_precompiled",
  "tempfile",
  "thiserror",
+ "tk-serialization",
  "tokenizers 0.23.1",
  "tracing",
  "tracing-subscriber",
@@ -2309,6 +2318,10 @@ dependencies = [
  "unicode_categories",
  "yada",
 ]
+
+[[package]]
+name = "tk-serialization"
+version = "0.23.2-dev.0"
 
 [[package]]
 name = "tk-train"

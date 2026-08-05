@@ -104,7 +104,7 @@ pub(crate) fn normalize_all<'a, N: Normalizer>(
 // `NormalizerWrapper` is the big variant, and there are only ever a couple of these per tokenizer.
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
-enum PipelineNormalizer {
+pub(crate) enum PipelineNormalizer {
     /// The `normalizer` field of the config, as-is.
     Declared(NormalizerWrapper),
     /// The text-rewriting half of a `Metaspace` pre-tokenizer.
@@ -232,6 +232,36 @@ pub struct PipelinePostProcessor {
     suffix: Box<[PipelineToken]>,
 }
 
+impl PipelinePostProcessor {
+    /// The two id lists are all a `.tok` stores of a post-processor, so this is how one comes back.
+    pub fn from_ids(prefix: &[u32], suffix: &[u32]) -> Self {
+        let tokens = |ids: &[u32]| ids.iter().map(|&id| PipelineToken { id }).collect();
+        Self {
+            prefix: tokens(prefix),
+            suffix: tokens(suffix),
+        }
+    }
+
+    /// Ids emitted before the sequence.
+    pub fn prefix_ids(&self) -> &[u32] {
+        Self::ids(&self.prefix)
+    }
+
+    /// Ids emitted after it.
+    pub fn suffix_ids(&self) -> &[u32] {
+        Self::ids(&self.suffix)
+    }
+
+    /// `PipelineToken` is a `#[repr(transparent)]`-shaped wrapper over its id, so a slice of them
+    /// is already a slice of ids and the view costs nothing.
+    fn ids(tokens: &[PipelineToken]) -> &[u32] {
+        const _: () = assert!(size_of::<PipelineToken>() == size_of::<u32>());
+        // SAFETY: `PipelineToken` is `#[repr(C)]` with a single `u32` field, so it has the same
+        // size and alignment as `u32` and every bit pattern is valid for both.
+        unsafe { core::slice::from_raw_parts(tokens.as_ptr().cast::<u32>(), tokens.len()) }
+    }
+}
+
 impl TryFrom<&PostProcessorWrapper> for PipelinePostProcessor {
     type Error = crate::Error;
 
@@ -325,6 +355,7 @@ impl TryFrom<&PostProcessorWrapper> for PipelinePostProcessor {
 
 /// An output token. Carries only the vocabulary `id` — offsets and the token
 /// string are dropped, which is all an encode-only caller needs.
+#[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct PipelineToken {
     pub id: u32,
@@ -443,11 +474,11 @@ impl<'a, 'b, PatternMatcher: PipelinePatternMatcher> Iterator
 /// Experimental encode-only pipeline built from a [`Tokenizer`]. Runs the same
 /// stages over borrowed ranges to avoid the reference path's allocations.
 pub struct PipelineTokenizer {
-    added_vocabulary: BucketAddedVocabulary,
-    normalizers: Vec<PipelineNormalizer>,
-    pre_tokenizer: PipelinePreTokenizer,
-    model: PipelineModel,
-    post_processor: PipelinePostProcessor,
+    pub(crate) added_vocabulary: BucketAddedVocabulary,
+    pub(crate) normalizers: Vec<PipelineNormalizer>,
+    pub(crate) pre_tokenizer: PipelinePreTokenizer,
+    pub(crate) model: PipelineModel,
+    pub(crate) post_processor: PipelinePostProcessor,
 }
 
 impl TryFrom<&Tokenizer> for PipelineTokenizer {
@@ -461,7 +492,12 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
     /// rest keep their dense order), so the pipeline emits the same ids as the reference tokenizer.
     fn try_from(tok: &Tokenizer) -> Result<Self> {
         let mut normalizers = Vec::new();
-        if let Some(declared) = tok.get_normalizer() {
+        // An empty `Sequence` is how a config spells "no normalization" (deepseek ships one), so
+        // drop it rather than calling into a no-op for every segment.
+        let declared = tok.get_normalizer().filter(|declared| {
+            !matches!(declared, NormalizerWrapper::Sequence(seq) if seq.as_ref().is_empty())
+        });
+        if let Some(declared) = declared {
             normalizers.push(PipelineNormalizer::Declared(declared.clone()));
         }
 
@@ -586,6 +622,15 @@ impl PipelineTokenizer {
 
     pub fn get_model(&self) -> &PipelineModel {
         &self.model
+    }
+
+    /// Whether any normalization step runs before the pre-tokenizer.
+    pub fn has_normalizer(&self) -> bool {
+        !self.normalizers.is_empty()
+    }
+
+    pub fn get_pre_tokenizer(&self) -> &PipelinePreTokenizer {
+        &self.pre_tokenizer
     }
 
     /// Encode `input` into token ids.

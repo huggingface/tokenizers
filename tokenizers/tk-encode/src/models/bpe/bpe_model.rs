@@ -51,6 +51,11 @@ pub(super) enum Atoms {
 }
 
 impl PipelineBPE {
+    /// Whether the model seeds on the 256 bytes rather than on characters.
+    pub fn is_byte_level(&self) -> bool {
+        matches!(self.atoms, Atoms::Bytes)
+    }
+
     pub fn from_bpe(model: BPE, with_byte_level: bool) -> Result<Self> {
         if matches!(&model.dropout, Some(dropout) if *dropout > 0.0) {
             return Err("BPE models with dropout not supported yet".into());
