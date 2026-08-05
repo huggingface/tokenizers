@@ -1,4 +1,6 @@
-use super::{super::OrderedVocabIter, BPE, BpeBuilder, Pair, convert_merges_to_hashmap};
+use super::model::{BPE, BpeBuilder, convert_merges_to_hashmap};
+use crate::models::OrderedVocabIter;
+use crate::models::bpe::Pair;
 use ahash::AHashMap;
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer,

@@ -1,4 +1,6 @@
-use super::{super::OrderedVocabIter, Error, Pair, Word};
+use super::word::Word;
+use crate::models::OrderedVocabIter;
+use crate::models::bpe::{Error, Pair};
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::cache::{DEFAULT_CACHE_CAPACITY, MAX_LENGTH};
 use crate::utils::iter::ResultShunt;

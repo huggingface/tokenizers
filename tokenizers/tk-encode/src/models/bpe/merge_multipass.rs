@@ -111,7 +111,7 @@
 //! The merge is safe to batch merge only if the produced id (merged symbol) does not take part in other merges with lower rank (higher priority).
 //! This is enforced when building the lookup table and encoded in the `SAFE` bit.
 //!
-use crate::models::bpe::bpe_build_tables::{BpeTables, ID_MASK, SAFE_MASK};
+use crate::models::bpe::tables::{BpeTables, ID_MASK, SAFE_MASK};
 use std::cmp;
 
 const NOT_LEGAL: u64 = u64::MAX;

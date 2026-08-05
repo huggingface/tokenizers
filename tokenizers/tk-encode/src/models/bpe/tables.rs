@@ -567,7 +567,7 @@ mod test {
 
     use crate::models::bpe::{
         MergeMap,
-        bpe_build_tables::{BpeTables, MphfMap, SAFE_MASK},
+        tables::{BpeTables, MphfMap, SAFE_MASK},
     };
     #[test]
     pub fn test_mphf() {

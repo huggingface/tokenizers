@@ -1,4 +1,4 @@
-use super::Pair;
+use crate::models::bpe::Pair;
 use ahash::AHashMap;
 use dary_heap::QuaternaryHeap;
 use rand::{Rng, rng};

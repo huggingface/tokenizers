@@ -1,8 +1,8 @@
 //! Turning a pretokenized word into merge ranks, which are then processed in `merge_multipass` or
 //! `merge_hot_cold_queue`.
-use crate::models::bpe::bpe_build_tables::{At, BpeTables, ID_MASK, RANK_MASK, UTF8_LEN};
-use crate::models::bpe::bpe_model::{AFFIX_BUF, Affixes, Atoms, PipelineBPE};
 use crate::models::bpe::merge_hot_cold_queue::Entry;
+use crate::models::bpe::model::{AFFIX_BUF, Affixes, Atoms, PipelineBPE};
+use crate::models::bpe::tables::{At, BpeTables, ID_MASK, RANK_MASK, UTF8_LEN};
 use crate::vocab::bucket_vocab_store::BucketVocabStore;
 
 /// Collects the converted ranks of a sequence into whatever the engine that merges it needs.
