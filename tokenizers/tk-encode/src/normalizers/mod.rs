@@ -1,18 +1,26 @@
+#[cfg(feature = "normalizers")]
 pub mod bert;
 pub mod byte_level;
 pub mod metaspace;
+#[cfg(feature = "normalizers")]
 pub mod precompiled;
 pub mod prepend;
 pub mod replace;
 pub mod strip;
+#[cfg(feature = "normalizers")]
 pub mod unicode;
 pub mod utils;
+#[cfg(feature = "normalizers")]
 pub use crate::normalizers::bert::BertNormalizer;
 pub use crate::normalizers::byte_level::ByteLevel;
+#[cfg(feature = "normalizers")]
 pub use crate::normalizers::precompiled::Precompiled;
 pub use crate::normalizers::prepend::Prepend;
 pub use crate::normalizers::replace::Replace;
-pub use crate::normalizers::strip::{Strip, StripAccents};
+pub use crate::normalizers::strip::Strip;
+#[cfg(feature = "normalizers")]
+pub use crate::normalizers::strip::StripAccents;
+#[cfg(feature = "normalizers")]
 pub use crate::normalizers::unicode::{NFC, NFD, NFKC, NFKD, Nmt};
 pub use crate::normalizers::utils::{Lowercase, Sequence};
 #[cfg(feature = "config")]
@@ -25,16 +33,24 @@ use crate::{NormalizedString, Normalizer, pipeline};
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "config", serde(untagged))]
 pub enum NormalizerWrapper {
+    #[cfg(feature = "normalizers")]
     BertNormalizer(BertNormalizer),
     StripNormalizer(Strip),
+    #[cfg(feature = "normalizers")]
     StripAccents(StripAccents),
+    #[cfg(feature = "normalizers")]
     NFC(NFC),
+    #[cfg(feature = "normalizers")]
     NFD(NFD),
+    #[cfg(feature = "normalizers")]
     NFKC(NFKC),
+    #[cfg(feature = "normalizers")]
     NFKD(NFKD),
     Sequence(Sequence),
     Lowercase(Lowercase),
+    #[cfg(feature = "normalizers")]
     Nmt(Nmt),
+    #[cfg(feature = "normalizers")]
     Precompiled(Precompiled),
     Replace(Replace),
     Prepend(Prepend),
@@ -190,16 +206,24 @@ impl<'de> Deserialize<'de> for NormalizerWrapper {
 impl Normalizer for NormalizerWrapper {
     fn normalize(&self, normalized: &mut NormalizedString) -> crate::Result<()> {
         match self {
+            #[cfg(feature = "normalizers")]
             Self::BertNormalizer(bn) => bn.normalize(normalized),
             Self::StripNormalizer(sn) => sn.normalize(normalized),
+            #[cfg(feature = "normalizers")]
             Self::StripAccents(sn) => sn.normalize(normalized),
+            #[cfg(feature = "normalizers")]
             Self::NFC(nfc) => nfc.normalize(normalized),
+            #[cfg(feature = "normalizers")]
             Self::NFD(nfd) => nfd.normalize(normalized),
+            #[cfg(feature = "normalizers")]
             Self::NFKC(nfkc) => nfkc.normalize(normalized),
+            #[cfg(feature = "normalizers")]
             Self::NFKD(nfkd) => nfkd.normalize(normalized),
             Self::Sequence(sequence) => sequence.normalize(normalized),
             Self::Lowercase(lc) => lc.normalize(normalized),
+            #[cfg(feature = "normalizers")]
             Self::Nmt(lc) => lc.normalize(normalized),
+            #[cfg(feature = "normalizers")]
             Self::Precompiled(lc) => lc.normalize(normalized),
             Self::Replace(lc) => lc.normalize(normalized),
             Self::Prepend(lc) => lc.normalize(normalized),
@@ -208,16 +232,24 @@ impl Normalizer for NormalizerWrapper {
     }
 }
 
+#[cfg(feature = "normalizers")]
 impl_enum_from!(BertNormalizer, NormalizerWrapper, BertNormalizer);
+#[cfg(feature = "normalizers")]
 impl_enum_from!(NFKD, NormalizerWrapper, NFKD);
+#[cfg(feature = "normalizers")]
 impl_enum_from!(NFKC, NormalizerWrapper, NFKC);
+#[cfg(feature = "normalizers")]
 impl_enum_from!(NFC, NormalizerWrapper, NFC);
+#[cfg(feature = "normalizers")]
 impl_enum_from!(NFD, NormalizerWrapper, NFD);
 impl_enum_from!(Strip, NormalizerWrapper, StripNormalizer);
+#[cfg(feature = "normalizers")]
 impl_enum_from!(StripAccents, NormalizerWrapper, StripAccents);
 impl_enum_from!(Sequence, NormalizerWrapper, Sequence);
 impl_enum_from!(Lowercase, NormalizerWrapper, Lowercase);
+#[cfg(feature = "normalizers")]
 impl_enum_from!(Nmt, NormalizerWrapper, Nmt);
+#[cfg(feature = "normalizers")]
 impl_enum_from!(Precompiled, NormalizerWrapper, Precompiled);
 impl_enum_from!(Replace, NormalizerWrapper, Replace);
 impl_enum_from!(Prepend, NormalizerWrapper, Prepend);
@@ -226,16 +258,24 @@ impl_enum_from!(ByteLevel, NormalizerWrapper, ByteLevel);
 impl pipeline::Normalizer for NormalizerWrapper {
     fn normalize<'a>(&self, input: &'a str) -> crate::Result<std::borrow::Cow<'a, str>> {
         match self {
+            #[cfg(feature = "normalizers")]
             Self::BertNormalizer(bn) => pipeline::Normalizer::normalize(bn, input),
             Self::StripNormalizer(sn) => pipeline::Normalizer::normalize(sn, input),
+            #[cfg(feature = "normalizers")]
             Self::StripAccents(sn) => pipeline::Normalizer::normalize(sn, input),
+            #[cfg(feature = "normalizers")]
             Self::NFC(nfc) => pipeline::Normalizer::normalize(nfc, input),
+            #[cfg(feature = "normalizers")]
             Self::NFD(nfd) => pipeline::Normalizer::normalize(nfd, input),
+            #[cfg(feature = "normalizers")]
             Self::NFKC(nfkc) => pipeline::Normalizer::normalize(nfkc, input),
+            #[cfg(feature = "normalizers")]
             Self::NFKD(nfkd) => pipeline::Normalizer::normalize(nfkd, input),
             Self::Sequence(sequence) => pipeline::Normalizer::normalize(sequence, input),
             Self::Lowercase(lc) => pipeline::Normalizer::normalize(lc, input),
+            #[cfg(feature = "normalizers")]
             Self::Nmt(nmt) => pipeline::Normalizer::normalize(nmt, input),
+            #[cfg(feature = "normalizers")]
             Self::Precompiled(pc) => pipeline::Normalizer::normalize(pc, input),
             Self::Replace(rp) => pipeline::Normalizer::normalize(rp, input),
             Self::Prepend(pp) => pipeline::Normalizer::normalize(pp, input),

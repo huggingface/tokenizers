@@ -113,3 +113,8 @@ debug = true
 [[example]]
 name = "encode_batch"
 required-features = ["http"]
+
+# ptr_hash's rayon and serde are mandatory upstream; both are optional on this branch.
+# https://github.com/RagnarGrootKoerkamp/PtrHash/pull/32 — drop once it lands.
+[patch.crates-io]
+ptr_hash = { git = "https://github.com/ArthurZucker/PtrHash", branch = "feat/optional-rayon" }

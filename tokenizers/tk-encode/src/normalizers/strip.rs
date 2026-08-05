@@ -5,6 +5,7 @@ use crate::tokenizer::{NormalizedString, Normalizer, Result};
 use crate::utils::macro_rules_attribute;
 #[cfg(feature = "config")]
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "normalizers")]
 use unicode_normalization_alignments::char::is_combining_mark;
 
 #[cfg_attr(feature = "config", derive(Deserialize, Serialize))]
@@ -62,8 +63,10 @@ impl pipeline::Normalizer for Strip {
 // non ascii languages.
 #[derive(Copy, Clone, Debug)]
 #[macro_rules_attribute(impl_serde_type!)]
+#[cfg(feature = "normalizers")]
 pub struct StripAccents;
 
+#[cfg(feature = "normalizers")]
 impl Normalizer for StripAccents {
     /// Strip the normalized string inplace
     fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
@@ -72,6 +75,7 @@ impl Normalizer for StripAccents {
     }
 }
 
+#[cfg(feature = "normalizers")]
 impl pipeline::Normalizer for StripAccents {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
         if input.chars().any(is_combining_mark) {
@@ -90,7 +94,8 @@ mod tests {
     use crate::normalizer::NormalizedString;
     use crate::normalizers::Lowercase;
     use crate::normalizers::NFKD;
-    use unicode_normalization_alignments::UnicodeNormalization;
+    #[cfg(feature = "normalizers")]
+use unicode_normalization_alignments::UnicodeNormalization;
 
     #[test]
     fn test_strip_accents() {

@@ -26,3 +26,8 @@ strip = true
 panic = "abort"
 codegen-units = 1
 opt-level = "z"
+
+# This package is outside the workspace, so it needs the patch spelled out again.
+# https://github.com/RagnarGrootKoerkamp/PtrHash/pull/32 — drop once it lands.
+[patch.crates-io]
+ptr_hash = { git = "https://github.com/ArthurZucker/PtrHash", branch = "feat/optional-rayon" }
