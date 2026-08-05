@@ -9,8 +9,7 @@ mod byte_level;
 use ahash::AHashMap;
 use byte_level::{ByteLevelFold, Fold};
 
-use crate::models::bpe::MergeMap;
-use crate::models::bpe::tables::At;
+use crate::models::bpe::{At, MergeMap};
 
 /// A bitmap of which codepoints fold, plus the symbols they fold to.
 ///

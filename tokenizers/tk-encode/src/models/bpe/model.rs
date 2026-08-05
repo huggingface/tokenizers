@@ -1,33 +1,48 @@
 //! The pipeline BPE model: its tables, how it is built from a [`BPE`], and how a pretokenized
 //! sequence is turned into tokens. Conversion to symbols lives in `convert`; the merge engines
 //! are `merge_multipass` and `merge_hot_cold_queue`.
-use crate::models::bpe::bpe_scratch::BpeScratch;
+use crate::models::bpe::At;
+use crate::models::bpe::Error;
+use crate::models::bpe::convert::{AFFIX_BUF, Affixes};
 use crate::models::bpe::legacy::model::BPE;
-use crate::models::bpe::merge_hot_cold_queue::{
-    MergeScratch, build_byte_to_gate, content_start, two_tier_queue_merge,
-};
+use crate::models::bpe::merge_hot_cold_queue::{MergeScratch, two_tier_queue_merge};
 use crate::models::bpe::merge_multipass::merge_multipass;
 use crate::models::bpe::tables::BpeTables;
-use crate::models::bpe::{Error, tables::At};
 use crate::pipeline::{self, PipelineToken};
 use crate::tokenizer::Result;
 use crate::utils::byte_level::{self};
 use crate::vocab::bucket_vocab_store::BucketVocabStore;
 
-/// Set only for the few models that decorate their atoms: `end_of_word_suffix` (CLIP, openai-gpt,
-/// XLM) and `continuing_subword_prefix`. A character's atom then depends on its position in the
-/// word, so those models take a slow path that looks each decorated character up in the vocab.
-pub(super) struct Affixes {
-    pub(super) prefix: String,
-    pub(super) suffix: String,
-    /// Dense `external vocab id -> internal symbol id`, `u32::MAX` where there is none. Dense
-    /// beats a hash here because external ids are `0..vocab_size`: 4 bytes a slot and one load,
-    /// against 8-16 for any map. It is the array `BpeTables::build` makes anyway.
-    pub(super) to_internal: Box<[u32]>,
+const GATE_MULTI: u16 = 8;
+const GATE_ASCII: u16 = 24;
+
+/// The gate, indexed by a word's first content byte: words no longer than their gate go to
+/// multipass, longer ones to the two-tier queue.
+fn build_byte_to_gate() -> [u16; 256] {
+    let mut b2g = [GATE_MULTI; 256];
+    b2g[..0x80].fill(GATE_ASCII);
+    // Kept for a word that is *only* a delimiter (a run of spaces), where there is no content to
+    // classify. Words with content are indexed past their delimiter -- see [`content_start`].
+    for ws in *b" \t\n\r" {
+        b2g[ws as usize] = GATE_MULTI;
+    }
+    b2g
 }
 
-/// Longest `prefix + one character + suffix` the stack buffer holds.
-pub(super) const AFFIX_BUF: usize = 64;
+/// ByteLevel produces `" word"` or `"Ġword"`, Metaspace produces `"▁word"`. Indexing byte 0
+/// classifies the delimiter instead of the content.
+#[inline]
+fn content_start(bytes: &[u8]) -> usize {
+    match bytes {
+        // Metaspace `▁` (U+2581).
+        [0xE2, 0x96, 0x81, rest @ ..] if !rest.is_empty() => 3,
+        // ByteLevel `Ġ` (U+0120) -- the byte-level spelling of a leading space.
+        [0xC4, 0xA0, rest @ ..] if !rest.is_empty() => 2,
+        // A literal leading space, which a ByteLevel pre-tokenizer also hands over.
+        [ws, rest @ ..] if ws.is_ascii_whitespace() && !rest.is_empty() => 1,
+        _ => 0,
+    }
+}
 
 pub struct PipelineBPE {
     pub(super) atoms: Atoms,
@@ -174,6 +189,17 @@ impl PipelineBPE {
         }
     }
 }
+
+/// Per-thread scratch for BPE. Every buffer here is cleared, never reallocated, so tokenizing a
+/// sequence does not allocate.
+pub struct BpeScratch {
+    /// Symbols of the word being merged.
+    pub(crate) symbols: Vec<u32>,
+    /// Entry arena and the two queue tiers.
+    pub(crate) merge: MergeScratch,
+}
+
+impl pipeline::ModelScratch for BpeScratch {}
 
 impl pipeline::Model for PipelineBPE {
     type Scratch = BpeScratch;

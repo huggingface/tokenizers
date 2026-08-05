@@ -1,9 +1,44 @@
 //! Turning a pretokenized word into merge ranks, which are then processed in `merge_multipass` or
 //! `merge_hot_cold_queue`.
+use crate::models::bpe::At;
 use crate::models::bpe::merge_hot_cold_queue::Entry;
-use crate::models::bpe::model::{AFFIX_BUF, Affixes, Atoms, PipelineBPE};
-use crate::models::bpe::tables::{At, BpeTables, ID_MASK, RANK_MASK, UTF8_LEN};
+use crate::models::bpe::model::{Atoms, PipelineBPE};
+use crate::models::bpe::tables::{BpeTables, ID_MASK, RANK_MASK};
 use crate::vocab::bucket_vocab_store::BucketVocabStore;
+
+/// Set only for the few models that decorate their atoms: `end_of_word_suffix` (CLIP, openai-gpt,
+/// XLM) and `continuing_subword_prefix`. A character's atom then depends on its position in the
+/// word, so those models take a slow path that looks each decorated character up in the vocab.
+pub(super) struct Affixes {
+    pub(super) prefix: String,
+    pub(super) suffix: String,
+    /// Dense `external vocab id -> internal symbol id`, `u32::MAX` where there is none. Dense
+    /// beats a hash here because external ids are `0..vocab_size`: 4 bytes a slot and one load,
+    /// against 8-16 for any map. It is the array `BpeTables::build` makes anyway.
+    pub(super) to_internal: Box<[u32]>,
+}
+
+/// Longest `prefix + one character + suffix` the stack buffer holds.
+pub(super) const AFFIX_BUF: usize = 64;
+
+/// UTF-8 sequence length by lead byte.
+const UTF8_LEN: [u8; 256] = {
+    let mut l = [1u8; 256];
+    let mut b = 0xC0usize;
+    while b < 0xE0 {
+        l[b] = 2;
+        b += 1;
+    }
+    while b < 0xF0 {
+        l[b] = 3;
+        b += 1;
+    }
+    while b < 0xF8 {
+        l[b] = 4;
+        b += 1;
+    }
+    l
+};
 
 /// Collects the converted ranks of a sequence into whatever the engine that merges it needs.
 /// The implementing type picks which: [`MultipassSink`] or [`QueueSink`]. The mode is a type

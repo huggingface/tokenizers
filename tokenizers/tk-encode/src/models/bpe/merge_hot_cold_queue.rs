@@ -1,34 +1,4 @@
 use crate::models::bpe::tables::{BpeTables, ID_MASK, RANK_MASK};
-const GATE_MULTI: u16 = 8;
-const GATE_ASCII: u16 = 24;
-
-pub fn build_byte_to_gate() -> [u16; 256] {
-    let mut b2g = [GATE_MULTI; 256];
-    b2g[..0x80].fill(GATE_ASCII);
-    // Kept for a word that is *only* a delimiter (a run of spaces), where there is no content to
-    // classify. Words with content are indexed past their delimiter -- see [`content_start`].
-    for ws in *b" \t\n\r" {
-        b2g[ws as usize] = GATE_MULTI;
-    }
-    b2g
-}
-
-/// ByteLevel produces `" word"` or `"Ġword"`,
-/// Metaspace produces `"▁word"`. Indexing byte 0 classifies the delimiter instead of the content.
-///
-#[inline]
-pub fn content_start(bytes: &[u8]) -> usize {
-    match bytes {
-        // Metaspace `▁` (U+2581).
-        [0xE2, 0x96, 0x81, rest @ ..] if !rest.is_empty() => 3,
-        // ByteLevel `Ġ` (U+0120) -- the byte-level spelling of a leading space.
-        [0xC4, 0xA0, rest @ ..] if !rest.is_empty() => 2,
-        // A literal leading space, which a ByteLevel pre-tokenizer also hands over.
-        [ws, rest @ ..] if ws.is_ascii_whitespace() && !rest.is_empty() => 1,
-        _ => 0,
-    }
-}
-
 #[derive(Clone, Copy)]
 #[repr(C)]
 pub(crate) struct Entry {

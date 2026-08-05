@@ -1,6 +1,6 @@
 //! [Byte Pair Encoding](https://www.aclweb.org/anthology/P16-1162/) model.
-use std::{iter, mem};
-mod bpe_scratch;
+use ahash::AHashMap;
+
 mod convert;
 mod fold;
 mod legacy;
@@ -14,6 +14,14 @@ mod tables;
 mod tests;
 
 pub type Pair = (u32, u32);
+/// Token string -> external id, as the model file declares it.
+pub type Vocab = AHashMap<String, u32>;
+/// External id -> token string.
+pub type VocabR = AHashMap<u32, String>;
+/// Merge pairs as token strings, highest priority first.
+pub type Merges = Vec<(String, String)>;
+/// Merge pair (external ids) -> (rank, external id of the merged token).
+pub type MergeMap = AHashMap<Pair, (u32, u32)>;
 
 /// Errors that can be encountered while using or constructing a `BPE` model.
 #[derive(thiserror::Error, Debug)]
@@ -48,49 +56,27 @@ pub enum Error {
     ByteAtomOutOfVocabulary(u8),
 }
 
-/// Provides access to the `FirstLastIterator` to any Iterator
-pub trait WithFirstLastIterator: Iterator + Sized {
-    fn with_first_and_last(self) -> FirstLastIterator<Self>;
+/// NOTE: Unchecked indexing, justified once instead of everywhere we do it.
+///
+/// Every use of `.at()` in the fold and conversion paths is safe: the
+/// bytes come from a `&str`, so a sequence length taken from a lead byte cannot run past the end;
+/// and every table index is masked to that table's fixed size (`& 0x0F` << 6 | `& 0x3F` <= 1023,
+/// `& 0x3F` < 64, a `u8` into `[_; 256]`). It exists because bounds-checked indexing measured
+/// 25-44% slower on conversion.
+pub trait At {
+    type Out;
+    fn at(&self, index: usize) -> Self::Out;
 }
 
-impl<I> WithFirstLastIterator for I
-where
-    I: Iterator,
-{
-    fn with_first_and_last(self) -> FirstLastIterator<Self> {
-        FirstLastIterator {
-            first: true,
-            iter: self.peekable(),
-        }
-    }
-}
-
-/// Provides information about whether an item is the first and/or the last of the iterator
-pub struct FirstLastIterator<I>
-where
-    I: Iterator,
-{
-    first: bool,
-    iter: iter::Peekable<I>,
-}
-
-impl<I> Iterator for FirstLastIterator<I>
-where
-    I: Iterator,
-{
-    /// (is_first, is_last, item)
-    type Item = (bool, bool, I::Item);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let first = mem::replace(&mut self.first, false);
-        self.iter
-            .next()
-            .map(|e| (first, self.iter.peek().is_none(), e))
+impl<T: Copy> At for [T] {
+    type Out = T;
+    #[inline(always)]
+    fn at(&self, index: usize) -> T {
+        unsafe { *self.get_unchecked(index) }
     }
 }
 
 // Re-export
-pub use bpe_scratch::*;
 pub use legacy::model::*;
 pub use legacy::word::*;
 pub use model::*;

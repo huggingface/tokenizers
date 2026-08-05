@@ -35,9 +35,9 @@
 use ahash::{AHashMap, HashSet};
 use std::cmp;
 
-use crate::models::bpe::MergeMap;
 use crate::models::bpe::fold::{self, SparseFold};
 use crate::models::bpe::pair_map::MphfMap;
+use crate::models::bpe::{At, MergeMap};
 
 /// The rank half of a packed merge value, for reusing a rank as the high half of a queue key.
 /// It keeps the rank alone: everything below bit 32 is dropped, flags and product id together, and
@@ -54,6 +54,7 @@ pub(super) const ID_MASK: u64 = (1 << 30) - 1;
 /// due before the pair's remaining occurrences, and the sweep has to stop at the first one.
 /// gpt2 and deepseek have no unsafe merges at all; llama-2 and llama-3 have ~22%.
 pub(super) const SAFE_MASK: u64 = 1 << 30;
+
 pub(crate) struct BpeTables {
     pub unmap: Box<[u32]>,   // unmap[internal_id] -> external_id
     pub pair_table: MphfMap, // MPHF! because memory efficiency + bitwise makes check not costly
@@ -68,45 +69,6 @@ pub(crate) struct BpeTables {
     /// False when every merge is safe, which lets multipass skip the per-pass SAFE test entirely.
     pub any_unsafe: bool,
 }
-
-/// NOTE: Unchecked indexing, justified once instead of everywhere we do it.
-///
-/// Every use of `.at()` in the fold and conversion paths is safe: the
-/// bytes come from a `&str`, so a sequence length taken from a lead byte cannot run past the end;
-/// and every table index is masked to that table's fixed size (`& 0x0F` << 6 | `& 0x3F` <= 1023,
-/// `& 0x3F` < 64, a `u8` into `[_; 256]`). It exists because bounds-checked indexing measured
-/// 25-44% slower on conversion.
-pub trait At {
-    type Out;
-    fn at(&self, index: usize) -> Self::Out;
-}
-
-impl<T: Copy> At for [T] {
-    type Out = T;
-    #[inline(always)]
-    fn at(&self, index: usize) -> T {
-        unsafe { *self.get_unchecked(index) }
-    }
-}
-
-/// UTF-8 sequence length by lead byte.
-pub const UTF8_LEN: [u8; 256] = {
-    let mut l = [1u8; 256];
-    let mut b = 0xC0usize;
-    while b < 0xE0 {
-        l[b] = 2;
-        b += 1;
-    }
-    while b < 0xF0 {
-        l[b] = 3;
-        b += 1;
-    }
-    while b < 0xF8 {
-        l[b] = 4;
-        b += 1;
-    }
-    l
-};
 
 impl BpeTables {
     /// Returns the tables plus the dense `external id -> internal id` map built along the way.
