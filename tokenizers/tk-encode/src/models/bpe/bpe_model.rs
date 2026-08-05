@@ -5,7 +5,7 @@ use crate::models::bpe::bpe_build_tables::BpeTables;
 use crate::models::bpe::bpe_scratch::BpeScratch;
 use crate::models::bpe::legacy_model::BPE;
 use crate::models::bpe::merge_hot_cold_queue::{
-    MergeScratch, build_byte_to_gate, two_tier_queue_merge,
+    MergeScratch, build_byte_to_gate, content_start, two_tier_queue_merge,
 };
 use crate::models::bpe::merge_multipass::merge_multipass;
 use crate::models::bpe::{Error, bpe_build_tables::At};
@@ -143,7 +143,8 @@ impl PipelineBPE {
         })
     }
 
-    /// Converts a word to symbols and merges it. The gate, indexed by the word's first byte, says
+    /// Converts a word to symbols and merges it. The gate, indexed by the word's first *content*
+    /// byte (past any delimiter the pre-tokenizer prepended -- see [`content_start`]), says
     /// which engine gets it: short words go to multipass, longer ones to the two-tier queue.
     /// `to_merge` is the caller's reusable symbol buffer -- it lives in the scratch so that a word
     /// costs no allocation. On return it holds the merged word as internal ids, which the caller
@@ -154,7 +155,9 @@ impl PipelineBPE {
         symbols: &mut Vec<u32>,
         merge_scratch: &mut MergeScratch,
     ) {
-        let gate: u16 = self.byte_to_mode[sequence.as_bytes()[0] as usize];
+        let bytes = sequence.as_bytes();
+        // Classify on the first content byte, not on the delimiter the pre-tokenizer prepended.
+        let gate: u16 = self.byte_to_mode[bytes[content_start(bytes)] as usize];
 
         if sequence.len() > gate as usize {
             // conversion writes the entries and cold keys directly: no intermediate rank array

@@ -5,12 +5,44 @@ const GATE_ASCII: u16 = 24;
 pub fn build_byte_to_gate() -> [u16; 256] {
     let mut b2g = [GATE_MULTI; 256];
     b2g[..0x80].fill(GATE_ASCII);
-    // A ByteLevel pre-tokenizer hands us the leading space (" word"), so the first byte says
-    // nothing about the script of the rest: " <greek>" would read as ASCII and take the long gate.
+    // Kept for a word that is *only* a delimiter (a run of spaces), where there is no content to
+    // classify. Words with content are indexed past their delimiter -- see [`content_start`].
     for ws in *b" \t\n\r" {
         b2g[ws as usize] = GATE_MULTI;
     }
     b2g
+}
+
+/// Byte offset of the first byte that describes a word's script, skipping the delimiter a
+/// pre-tokenizer prepended.
+///
+/// The gate table is indexed by a single byte, so it has to be given one that actually says
+/// something about the word. A pre-tokenizer hands the model its delimiter attached to the front,
+/// and that delimiter says nothing about what follows: ByteLevel produces `" word"` or `"Ġword"`,
+/// Metaspace produces `"▁word"`. Indexing byte 0 classifies the delimiter instead of the content.
+///
+/// The miss is worst for Metaspace. `▁` is U+2581 (`E2 96 81`), so on a SentencePiece-style
+/// tokenizer -- llama-2, or any `Prepend` + `Replace(" " -> "▁")` config -- *every* word begins
+/// `0xE2` and takes `GATE_MULTI`, including the pure-ASCII English words that belong on
+/// `GATE_ASCII`. The whitespace special-case above shows the same hazard was already known for a
+/// literal leading space; `▁` simply never got the same treatment.
+///
+/// A word that is only a delimiter keeps offset 0: there is no content to classify, and the
+/// multibyte gate is the right conservative answer for it.
+///
+/// This cannot change the token stream. The gate only chooses which of two byte-exact merge
+/// engines runs (multipass or the two-tier queue), so it is purely a throughput decision.
+#[inline]
+pub fn content_start(bytes: &[u8]) -> usize {
+    match bytes {
+        // Metaspace `▁` (U+2581).
+        [0xE2, 0x96, 0x81, rest @ ..] if !rest.is_empty() => 3,
+        // ByteLevel `Ġ` (U+0120) -- the byte-level spelling of a leading space.
+        [0xC4, 0xA0, rest @ ..] if !rest.is_empty() => 2,
+        // A literal leading space, which a ByteLevel pre-tokenizer also hands over.
+        [ws, rest @ ..] if ws.is_ascii_whitespace() && !rest.is_empty() => 1,
+        _ => 0,
+    }
 }
 
 #[derive(Clone, Copy)]
