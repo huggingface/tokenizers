@@ -8,10 +8,13 @@
 use ahash::AHashMap;
 
 use tk_serialization::{
-    AddedEntry, Config, Entry, Reader, added_flag, behavior, flag, kind, pretok, strings,
+    AddedEntry, Config, Entry, Reader, added_flag, behavior, flag, kind, model, pretok, strings,
 };
 
 use crate::models::bpe::{BPE, PipelineBPE};
+use crate::models::unigram::Unigram;
+use crate::models::wordlevel::WordLevel;
+use crate::models::wordpiece::{PipelineWordPiece, WordPiece};
 use crate::normalizers::replace::{Replace, ReplacePattern};
 use crate::pre_tokenizers::sequence::PipelineSequence;
 use crate::pre_tokenizers::split::{Split, SplitPattern};
@@ -33,7 +36,7 @@ impl PipelineTokenizer {
         let reader = Reader::new(bytes).map_err(|e| e.to_string())?;
         let config = reader.config;
 
-        let bpe = read_model(&reader, config)?;
+        let vocab = Vocabulary::read(&reader)?;
         let normalizer = read_normalizer(&reader)?;
 
         // Added tokens are written in id order, and `add_tokens` reuses a model id when the token
@@ -41,8 +44,31 @@ impl PipelineTokenizer {
         // assignment. The model is passed as a concrete `BPE` and the normalizer as a concrete
         // `Replace`: routing either through its wrapper enum would make every other variant
         // reachable, which is most of what this format exists to avoid.
+        let added = read_added_tokens(&reader)?;
         let mut added_vocabulary = BucketAddedVocabulary::new();
-        added_vocabulary.add_tokens(read_added_tokens(&reader)?, &bpe, normalizer.as_ref())?;
+        // `add_tokens` needs the model only to ask whether a token is already in the vocabulary,
+        // so it gets the pre-pipeline form and a concrete normalizer — never a wrapper.
+        let model = match read_model(&reader, config, vocab)? {
+            Built::Bpe(bpe) => {
+                added_vocabulary.add_tokens(added, &bpe, normalizer.as_ref())?;
+                PipelineModel::BPE(PipelineBPE::from_bpe(
+                    bpe,
+                    config.flags & flag::BYTE_LEVEL != 0,
+                )?)
+            }
+            Built::Unigram(unigram) => {
+                added_vocabulary.add_tokens(added, &unigram, normalizer.as_ref())?;
+                PipelineModel::Unigram(unigram)
+            }
+            Built::WordPiece(wordpiece) => {
+                added_vocabulary.add_tokens(added, &wordpiece, normalizer.as_ref())?;
+                PipelineModel::WordPiece(wordpiece.try_into()?)
+            }
+            Built::WordLevel(wordlevel) => {
+                added_vocabulary.add_tokens(added, &wordlevel, normalizer.as_ref())?;
+                PipelineModel::WordLevel(wordlevel)
+            }
+        };
         added_vocabulary
             .set_encode_special_tokens(config.flags & flag::ENCODE_SPECIAL_TOKENS != 0);
 
@@ -50,10 +76,7 @@ impl PipelineTokenizer {
             added_vocabulary,
             normalizers: normalizer.map(PipelineNormalizer::Replace).into_iter().collect(),
             pre_tokenizer: read_pre_tokenizer(&reader, config)?,
-            model: PipelineModel::BPE(PipelineBPE::from_bpe(
-                bpe,
-                config.flags & flag::BYTE_LEVEL != 0,
-            )?),
+            model,
             post_processor: PipelinePostProcessor::from_ids(
                 reader.section::<u32>(kind::POST_PREFIX).map_err(|e| e.to_string())?,
                 reader.section::<u32>(kind::POST_SUFFIX).map_err(|e| e.to_string())?,
@@ -62,66 +85,146 @@ impl PipelineTokenizer {
     }
 }
 
-fn read_model(reader: &Reader<'_>, config: &Config) -> Result<BPE> {
-    let slab: &[u8] = reader.require(kind::VOCAB_SLAB).map_err(|e| e.to_string())?;
-    let entries: &[Entry] = reader.require(kind::VOCAB_ENTRY).map_err(|e| e.to_string())?;
-    let pairs: &[u32] = reader.section(kind::MERGE_PAIRS).map_err(|e| e.to_string())?;
-    if pairs.len() % 2 != 0 {
-        return Err("corrupt .tok: MERGE_PAIRS holds an odd number of ids".into());
+/// The vocabulary as the file stores it: a byte slab plus one entry per token, and — for Unigram —
+/// one score each. Decoded once and shared by all four model builders.
+struct Vocabulary {
+    /// `(token, id)` in the file's order, which is id order.
+    tokens: Vec<(String, u32)>,
+    /// Parallel to `tokens`; empty unless the model is Unigram.
+    scores: Vec<f64>,
+}
+
+impl Vocabulary {
+    fn read(reader: &Reader<'_>) -> Result<Self> {
+        let slab: &[u8] = reader.require(kind::VOCAB_SLAB).map_err(|e| e.to_string())?;
+        let entries: &[Entry] = reader.require(kind::VOCAB_ENTRY).map_err(|e| e.to_string())?;
+        let scores: &[f64] = reader.section(kind::VOCAB_SCORES).map_err(|e| e.to_string())?;
+        if !scores.is_empty() && scores.len() != entries.len() {
+            return Err("corrupt .tok: VOCAB_SCORES and VOCAB_ENTRY disagree in length".into());
+        }
+
+        let mut tokens = Vec::with_capacity(entries.len());
+        for entry in entries {
+            let end = entry.start as usize + entry.len as usize;
+            let bytes = slab
+                .get(entry.start as usize..end)
+                .ok_or("corrupt .tok: vocabulary entry points outside the slab")?;
+            let text = std::str::from_utf8(bytes)
+                .map_err(|_| "corrupt .tok: vocabulary token is not valid UTF-8")?;
+            tokens.push((text.to_owned(), entry.id));
+        }
+        Ok(Self {
+            tokens,
+            scores: scores.to_vec(),
+        })
     }
+
+    fn map(&self) -> AHashMap<String, u32> {
+        self.tokens.iter().cloned().collect()
+    }
+
+    /// `id -> token`, for naming merge operands. Sparse ids leave `None` holes.
+    fn by_id(&self) -> Vec<Option<&str>> {
+        let max = self.tokens.iter().map(|(_, id)| *id).max().unwrap_or(0);
+        let mut out = vec![None; max as usize + 1];
+        for (text, id) in &self.tokens {
+            out[*id as usize] = Some(text.as_str());
+        }
+        out
+    }
+}
+
+/// A model in its pre-pipeline form. `add_tokens` wants one of these to ask whether an added token
+/// is already in the vocabulary, so the dispatch happens before the pipeline conversion.
+enum Built {
+    Bpe(BPE),
+    Unigram(Unigram),
+    WordPiece(WordPiece),
+    WordLevel(WordLevel),
+}
+
+fn read_model(reader: &Reader<'_>, config: &Config, vocab: Vocabulary) -> Result<Built> {
     let [unk, prefix, suffix] = read_model_strings(reader)?;
+    match config.model {
+        model::BPE => {
+            let pairs: &[u32] = reader.section(kind::MERGE_PAIRS).map_err(|e| e.to_string())?;
+            if pairs.len() % 2 != 0 {
+                return Err("corrupt .tok: MERGE_PAIRS holds an odd number of ids".into());
+            }
+            let by_id = vocab.by_id();
+            let name = |id: u32| -> Result<String> {
+                by_id
+                    .get(id as usize)
+                    .copied()
+                    .flatten()
+                    .map(str::to_owned)
+                    .ok_or_else(|| "corrupt .tok: a merge names an id with no vocabulary entry".into())
+            };
+            // Merges are stored in rank order, so a pair's rank is its index — nothing to sort.
+            let mut merges = Vec::with_capacity(pairs.len() / 2);
+            for pair in pairs.chunks_exact(2) {
+                merges.push((name(pair[0])?, name(pair[1])?));
+            }
 
-    let token = |e: &Entry| -> Result<String> {
-        let end = e.start as usize + e.len as usize;
-        let bytes = slab
-            .get(e.start as usize..end)
-            .ok_or("corrupt .tok: vocabulary entry points outside the slab")?;
-        String::from_utf8(bytes.to_vec())
-            .map_err(|_| "corrupt .tok: vocabulary token is not valid UTF-8".into())
-    };
-
-    // `id_to_token` is only needed to name the merge operands, which the builder wants as strings.
-    let mut vocab: AHashMap<String, u32> = AHashMap::with_capacity(entries.len());
-    let mut by_id: Vec<&Entry> = Vec::new();
-    for entry in entries {
-        let text = token(entry)?;
-        if entry.id as usize >= by_id.len() {
-            by_id.resize(entry.id as usize + 1, entry);
+            let mut builder = BPE::builder()
+                .vocab_and_merges(vocab.map(), merges)
+                .fuse_unk(config.flags & flag::FUSE_UNK != 0)
+                .byte_fallback(config.flags & flag::BYTE_FALLBACK != 0)
+                .ignore_merges(config.flags & flag::IGNORE_MERGES != 0);
+            if let Some(unk) = unk {
+                builder = builder.unk_token(unk);
+            }
+            if let Some(prefix) = prefix {
+                builder = builder.continuing_subword_prefix(prefix);
+            }
+            if let Some(suffix) = suffix {
+                builder = builder.end_of_word_suffix(suffix);
+            }
+            Ok(Built::Bpe(builder.build()?))
         }
-        by_id[entry.id as usize] = entry;
-        vocab.insert(text, entry.id);
-    }
-    let name = |id: u32| -> Result<String> {
-        let entry = by_id
-            .get(id as usize)
-            .ok_or("corrupt .tok: a merge names an id outside the vocabulary")?;
-        if entry.id != id {
-            return Err("corrupt .tok: a merge names an id with no vocabulary entry".into());
+        model::UNIGRAM => {
+            if vocab.scores.len() != vocab.tokens.len() {
+                return Err("corrupt .tok: a Unigram model needs one score per token".into());
+            }
+            // Unigram's vocabulary is positional: a piece's index *is* its id, which is why the
+            // writer refuses a sparse one.
+            let pieces: Vec<(String, f64)> = vocab
+                .tokens
+                .iter()
+                .map(|(text, _)| text.clone())
+                .zip(vocab.scores.iter().copied())
+                .collect();
+            let unk_id = match config.model_param {
+                u32::MAX => None,
+                id => Some(id as usize),
+            };
+            Ok(Built::Unigram(Unigram::from(
+                pieces,
+                unk_id,
+                config.flags & flag::BYTE_FALLBACK != 0,
+            )?))
         }
-        token(entry)
-    };
-
-    // Merges are stored in rank order, so a pair's rank is its index — nothing to sort.
-    let mut merges = Vec::with_capacity(pairs.len() / 2);
-    for pair in pairs.chunks_exact(2) {
-        merges.push((name(pair[0])?, name(pair[1])?));
+        model::WORDPIECE => {
+            let mut builder = WordPiece::builder()
+                .vocab(vocab.map())
+                .max_input_chars_per_word(config.model_param as usize);
+            if let Some(unk) = unk {
+                builder = builder.unk_token(unk);
+            }
+            if let Some(prefix) = prefix {
+                builder = builder.continuing_subword_prefix(prefix);
+            }
+            Ok(Built::WordPiece(builder.build()?))
+        }
+        model::WORDLEVEL => {
+            let mut builder = WordLevel::builder().vocab(vocab.map());
+            if let Some(unk) = unk {
+                builder = builder.unk_token(unk);
+            }
+            Ok(Built::WordLevel(builder.build()?))
+        }
+        other => Err(format!("corrupt .tok: unknown model id {other}").into()),
     }
-
-    let mut builder = BPE::builder()
-        .vocab_and_merges(vocab, merges)
-        .fuse_unk(config.flags & flag::FUSE_UNK != 0)
-        .byte_fallback(config.flags & flag::BYTE_FALLBACK != 0)
-        .ignore_merges(config.flags & flag::IGNORE_MERGES != 0);
-    if let Some(unk) = unk {
-        builder = builder.unk_token(unk);
-    }
-    if let Some(prefix) = prefix {
-        builder = builder.continuing_subword_prefix(prefix);
-    }
-    if let Some(suffix) = suffix {
-        builder = builder.end_of_word_suffix(suffix);
-    }
-    builder.build()
 }
 
 /// `MODEL_STRINGS` is three length-prefixed strings: unk, continuing prefix, end-of-word suffix.

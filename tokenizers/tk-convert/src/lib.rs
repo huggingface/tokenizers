@@ -11,7 +11,9 @@
 use tk_encode::pre_tokenizers::split::SplitPattern;
 use tk_encode::tokenizer::pipeline::{PipelineModel, PipelinePreTokenizer, PipelineTokenizer};
 use tk_encode::tokenizer::{ModelWrapper, NormalizerWrapper, Result, SplitDelimiterBehavior, Tokenizer};
-use tk_serialization::{AddedEntry, Config, Entry, Writer, added_flag, behavior, flag, kind, pretok, strings};
+use tk_serialization::{
+    AddedEntry, Config, Entry, Writer, added_flag, behavior, flag, kind, model, pretok, strings,
+};
 
 /// Read a `tokenizer.json` and return the equivalent `.tok` v1 image.
 pub fn convert_file(path: impl AsRef<std::path::Path>) -> Result<Vec<u8>> {
@@ -31,21 +33,9 @@ pub fn to_tok(tokenizer: &Tokenizer) -> Result<Vec<u8>> {
     // file, and it also reduces the post-processor to the two id lists the file stores.
     let pipeline = PipelineTokenizer::try_from(tokenizer)?;
     let normalizer = normalizer_strings(&pipeline, tokenizer)?;
-    let ModelWrapper::BPE(bpe) = tokenizer.get_model() else {
-        return Err(".tok v1 only carries BPE".into());
-    };
     let (pretok_id, pretok_param, pretok_pattern) = pretokenizer_id(&pipeline)?;
 
     let mut flags = 0;
-    if bpe.ignore_merges {
-        flags |= flag::IGNORE_MERGES;
-    }
-    if bpe.byte_fallback {
-        flags |= flag::BYTE_FALLBACK;
-    }
-    if bpe.fuse_unk {
-        flags |= flag::FUSE_UNK;
-    }
     if matches!(pipeline.get_model(), PipelineModel::BPE(m) if m.is_byte_level()) {
         flags |= flag::BYTE_LEVEL;
     }
@@ -58,11 +48,26 @@ pub fn to_tok(tokenizer: &Tokenizer) -> Result<Vec<u8>> {
         flags |= flag::PRETOK_INVERT;
     }
 
-    // ── vocabulary ────────────────────────────────────────────────────────────────────────
-    let mut vocab = bpe.vocab.get_vocab();
+    // ── the model ─────────────────────────────────────────────────────────────────────────
+    let Model {
+        id: model_id,
+        param: model_param,
+        mut vocab,
+        scores,
+        merges: merge_source,
+        strings: model_string_values,
+        flags: model_flags,
+    } = read_model(tokenizer.get_model())?;
+    flags |= model_flags;
+
     // Sorted by id so the file is deterministic: the same tokenizer always converts to the
     // same bytes, which is what makes a checksum meaningful.
     vocab.sort_unstable_by_key(|(_, id)| *id);
+    if model_id == model::UNIGRAM
+        && vocab.iter().enumerate().any(|(i, (_, id))| i as u32 != *id)
+    {
+        return Err("Unigram vocabularies are positional; this one has gaps or reordered ids".into());
+    }
     let mut slab = Vec::new();
     let mut entries = Vec::with_capacity(vocab.len());
     for (token, id) in &vocab {
@@ -75,8 +80,7 @@ pub fn to_tok(tokenizer: &Tokenizer) -> Result<Vec<u8>> {
     }
 
     // ── merges, written in rank order so the rank is the index ────────────────────────────
-    let mut ranked: Vec<(u32, (u32, u32))> = bpe
-        .merges
+    let mut ranked: Vec<(u32, (u32, u32))> = merge_source
         .iter()
         .map(|(&(left, right), &(rank, _))| (rank, (left, right)))
         .collect();
@@ -129,12 +133,8 @@ pub fn to_tok(tokenizer: &Tokenizer) -> Result<Vec<u8>> {
     }
 
     let mut model_strings = Vec::new();
-    for value in [
-        &bpe.unk_token,
-        &bpe.continuing_subword_prefix,
-        &bpe.end_of_word_suffix,
-    ] {
-        strings::push(&mut model_strings, value.as_deref().unwrap_or(""));
+    for value in &model_string_values {
+        strings::push(&mut model_strings, value);
     }
     let mut normalizer_bytes = Vec::new();
     for part in &normalizer {
@@ -146,6 +146,8 @@ pub fn to_tok(tokenizer: &Tokenizer) -> Result<Vec<u8>> {
     }
 
     let config = Config {
+        model: model_id,
+        model_param,
         pretok: pretok_id,
         pretok_param,
         flags,
@@ -157,6 +159,7 @@ pub fn to_tok(tokenizer: &Tokenizer) -> Result<Vec<u8>> {
     w.push_one(kind::CONFIG, &config);
     w.push(kind::VOCAB_SLAB, &slab);
     w.push(kind::VOCAB_ENTRY, &entries);
+    w.push(kind::VOCAB_SCORES, &scores);
     w.push(kind::MERGE_PAIRS, &pairs);
     w.push(kind::ADDED_SLAB, &added_slab);
     w.push(kind::ADDED_ENTRY, &added_entries);
@@ -166,6 +169,101 @@ pub fn to_tok(tokenizer: &Tokenizer) -> Result<Vec<u8>> {
     w.push(kind::NORMALIZER, &normalizer_bytes);
     w.push(kind::PRETOK_STRINGS, &pretok_bytes);
     Ok(w.finish())
+}
+
+/// Everything a `.tok` needs to know about a model, pulled out of the v0 wrapper.
+struct Model<'a> {
+    id: u32,
+    param: u32,
+    vocab: Vec<(String, u32)>,
+    /// Unigram only, parallel to `vocab` once it is sorted by id.
+    scores: Vec<f64>,
+    /// BPE only.
+    merges: std::borrow::Cow<'a, tk_encode::models::bpe::MergeMap>,
+    /// `unk_token`, `continuing_subword_prefix`, `end_of_word_suffix` — empty where absent.
+    strings: [String; 3],
+    flags: u32,
+}
+
+fn read_model(wrapper: &ModelWrapper) -> Result<Model<'_>> {
+    use std::borrow::Cow;
+    let none = || Cow::Owned(tk_encode::models::bpe::MergeMap::default());
+    match wrapper {
+        ModelWrapper::BPE(bpe) => {
+            let mut flags = 0;
+            if bpe.ignore_merges {
+                flags |= flag::IGNORE_MERGES;
+            }
+            if bpe.byte_fallback {
+                flags |= flag::BYTE_FALLBACK;
+            }
+            if bpe.fuse_unk {
+                flags |= flag::FUSE_UNK;
+            }
+            Ok(Model {
+                id: model::BPE,
+                param: 0,
+                vocab: bpe.vocab.get_vocab(),
+                scores: Vec::new(),
+                merges: Cow::Borrowed(&bpe.merges),
+                strings: [
+                    bpe.unk_token.clone().unwrap_or_default(),
+                    bpe.continuing_subword_prefix.clone().unwrap_or_default(),
+                    bpe.end_of_word_suffix.clone().unwrap_or_default(),
+                ],
+                flags,
+            })
+        }
+        ModelWrapper::Unigram(unigram) => {
+            // A Unigram vocabulary is positional, so it comes back out in piece order with its
+            // score alongside; the id is the index.
+            let mut vocab = Vec::with_capacity(unigram.len());
+            let mut scores = Vec::with_capacity(unigram.len());
+            for id in 0..unigram.len() {
+                let (piece, score) = unigram
+                    .iter()
+                    .nth(id)
+                    .ok_or("Unigram vocabulary is shorter than it reports")?;
+                vocab.push((piece.to_owned(), id as u32));
+                scores.push(*score);
+            }
+            Ok(Model {
+                id: model::UNIGRAM,
+                param: unigram.unk_id().map(|id| id as u32).unwrap_or(u32::MAX),
+                vocab,
+                scores,
+                merges: none(),
+                strings: [String::new(), String::new(), String::new()],
+                flags: if unigram.byte_fallback() {
+                    flag::BYTE_FALLBACK
+                } else {
+                    0
+                },
+            })
+        }
+        ModelWrapper::WordPiece(wordpiece) => Ok(Model {
+            id: model::WORDPIECE,
+            param: wordpiece.max_input_chars_per_word as u32,
+            vocab: wordpiece.vocab.iter().map(|(t, id)| (t.clone(), *id)).collect(),
+            scores: Vec::new(),
+            merges: none(),
+            strings: [
+                wordpiece.unk_token.clone(),
+                wordpiece.continuing_subword_prefix.clone(),
+                String::new(),
+            ],
+            flags: 0,
+        }),
+        ModelWrapper::WordLevel(wordlevel) => Ok(Model {
+            id: model::WORDLEVEL,
+            param: 0,
+            vocab: wordlevel.vocab.iter().map(|(t, id)| (t.clone(), *id)).collect(),
+            scores: Vec::new(),
+            merges: none(),
+            strings: [wordlevel.unk_token.clone(), String::new(), String::new()],
+            flags: 0,
+        }),
+    }
 }
 
 /// The normalizer as a string list, or empty when there is none. v1 carries a literal

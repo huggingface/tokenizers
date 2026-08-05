@@ -81,8 +81,10 @@ pub mod kind {
     pub const VOCAB_SLAB: u32 = 2;
     /// [`crate::Entry`] — one per vocabulary token.
     pub const VOCAB_ENTRY: u32 = 3;
-    /// `u32` pairs — `(left id, right id)` in rank order, so a merge's rank is its index.
+    /// `u32` pairs — `(left id, right id)` in rank order, so a merge's rank is its index. BPE only.
     pub const MERGE_PAIRS: u32 = 4;
+    /// `f64` — one score per vocabulary entry, in the same order. Unigram only.
+    pub const VOCAB_SCORES: u32 = 12;
     /// `u8` — added and special token bytes.
     pub const ADDED_SLAB: u32 = 5;
     /// [`crate::AddedEntry`].
@@ -102,6 +104,22 @@ pub mod kind {
     /// `u8` — [`crate::strings`] form, one entry: the literal pattern of a
     /// [`crate::pretok::LITERAL`] split. Its behaviour is in [`crate::Config::pretok_param`].
     pub const PRETOK_STRINGS: u32 = 11;
+}
+
+/// Which model runs. Stored in [`Config::model`].
+///
+/// v1 carries all four: the format describes a tokenizer, not one family of them.
+pub mod model {
+    /// Byte-pair encoding. Uses [`crate::kind::MERGE_PAIRS`].
+    pub const BPE: u32 = 0;
+    /// Unigram. Uses [`crate::kind::VOCAB_SCORES`], and [`crate::Config::model_param`] is the
+    /// unknown token's id (`u32::MAX` for none).
+    pub const UNIGRAM: u32 = 1;
+    /// WordPiece. [`crate::Config::model_param`] is `max_input_chars_per_word`, and the unknown
+    /// token and continuing-subword prefix come from [`crate::kind::MODEL_STRINGS`].
+    pub const WORDPIECE: u32 = 2;
+    /// WordLevel — a plain vocabulary lookup, unknown token from `MODEL_STRINGS`.
+    pub const WORDLEVEL: u32 = 3;
 }
 
 /// Which pre-tokenizer FSM to run. Stored in [`Config::pretok`].
@@ -212,6 +230,11 @@ pub struct Section {
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Config {
+    /// One of [`model`].
+    pub model: u32,
+    /// Model parameter. Unigram: the unknown token's id, `u32::MAX` for none. WordPiece:
+    /// `max_input_chars_per_word`. 0 elsewhere.
+    pub model_param: u32,
     /// One of [`pretok`].
     pub pretok: u32,
     /// Pre-tokenizer parameter. Only [`pretok::CL100K`] uses it: rule 3's `\p{N}{1,cap}` bound
@@ -366,6 +389,8 @@ impl<'a> Reader<'a> {
             // Placeholder: replaced immediately below, and `new` is the only way to build a
             // `Reader`, so no caller can observe it.
             config: &Config {
+                model: 0,
+                model_param: 0,
                 pretok: 0,
                 pretok_param: 0,
                 flags: 0,
@@ -436,6 +461,8 @@ mod tests {
         let words: Vec<u64> = (0..37).map(|i| i * 0x0101_0101_0101_0101).collect();
         let halves: Vec<u16> = (0..999u16).collect();
         let config = Config {
+            model: model::BPE,
+            model_param: 0,
             pretok: pretok::CL100K,
             pretok_param: 3,
             flags: flag::IGNORE_MERGES,

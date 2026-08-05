@@ -102,6 +102,11 @@ impl Unigram {
     /// unk_id, is the index within the vocabulary.
     /// For now `Unigram` *requires* at least `unk` because we might find a never seen char.
     /// Further versions might allow that part to be hidden.
+    /// The unknown token's id, if the model has one. Read back by `tk-convert`.
+    pub fn unk_id(&self) -> Option<usize> {
+        self.unk_id
+    }
+
     pub fn from(
         vocab: Vec<(String, f64)>,
         unk_id: Option<usize>,

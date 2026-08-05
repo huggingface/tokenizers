@@ -8,7 +8,7 @@ use crate::{Header, MAGIC, SECTION_ALIGN, Section, VERSION};
 // and pin that none of them has implicit padding — `as_bytes` reads every byte of one.
 const _: () = assert!(size_of::<Header>() == 16);
 const _: () = assert!(size_of::<Section>() == 16);
-const _: () = assert!(size_of::<crate::Config>() == 48);
+const _: () = assert!(size_of::<crate::Config>() == 56);
 const _: () = assert!(size_of::<crate::Entry>() == 12);
 const _: () = assert!(size_of::<crate::AddedEntry>() == 16);
 

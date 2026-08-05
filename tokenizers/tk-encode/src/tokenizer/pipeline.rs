@@ -1083,11 +1083,8 @@ pub trait Model {
 )]
 pub enum PipelineModel {
     BPE(PipelineBPE),
-    #[cfg(feature = "config")]
     Unigram(Unigram),
-    #[cfg(feature = "config")]
     WordLevel(WordLevel),
-    #[cfg(feature = "config")]
     WordPiece(PipelineWordPiece),
 }
 
@@ -1104,19 +1101,15 @@ impl Model for PipelineModel {
             (Self::BPE(model), PipelineModelScratch::BPE(scratch)) => {
                 model.tokenize_pipeline(sequence, scratch, output)
             }
-            #[cfg(feature = "config")]
             (Self::Unigram(model), PipelineModelScratch::Unigram(scratch)) => {
                 model.tokenize_pipeline(sequence, scratch, output)
             }
-            #[cfg(feature = "config")]
             (Self::WordLevel(model), PipelineModelScratch::WordLevel(scratch)) => {
                 model.tokenize_pipeline(sequence, scratch, output)
             }
-            #[cfg(feature = "config")]
             (Self::WordPiece(model), PipelineModelScratch::WordPiece(scratch)) => {
                 model.tokenize_pipeline(sequence, scratch, output)
             }
-            #[cfg(feature = "config")]
             _ => unreachable!(),
         }
     }
@@ -1124,11 +1117,8 @@ impl Model for PipelineModel {
     fn init_scratch(&self) -> Self::Scratch {
         match self {
             Self::BPE(bpe) => PipelineModelScratch::BPE(bpe.init_scratch()),
-            #[cfg(feature = "config")]
             Self::WordLevel(_) => Self::Scratch::WordLevel(()),
-            #[cfg(feature = "config")]
             Self::WordPiece(wordpiece) => Self::Scratch::WordPiece(wordpiece.init_scratch()),
-            #[cfg(feature = "config")]
             Self::Unigram(unigram) => Self::Scratch::Unigram(unigram.init_scratch()),
         }
     }
@@ -1136,11 +1126,8 @@ impl Model for PipelineModel {
 
 pub enum PipelineModelScratch {
     BPE(BpeScratch),
-    #[cfg(feature = "config")]
     WordLevel(()),
-    #[cfg(feature = "config")]
     WordPiece(WordPieceScratch),
-    #[cfg(feature = "config")]
     Unigram(UnigramScratch),
 }
 
