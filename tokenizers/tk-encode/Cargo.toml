@@ -80,7 +80,12 @@ libc = "0.2"
 # arbitrary (non-GPT) regex or the `Replace` normalizer — the atomsplit-native pre-tokenizers (GPT-2,
 # cl100k, deepseek, the class family, char-delimiter) need no backend. Without it a stub compiles and
 # those arbitrary-regex paths error at load. Enable with `--features fancy-regex`.
-default = ["progressbar"]
+# `parallel` is in the default set: the encode pool is on unless you opt out with
+# --no-default-features. Note this does NOT make rayon optional — `ptr_hash` declares it
+# unconditionally for the MPHF build, so rayon is linked either way. What the flag controls is
+# whether we spin up a pool and compile the job-splitting machinery.
+default = ["progressbar", "parallel"]
+parallel = []
 progressbar = ["indicatif"]
 http = ["hf-hub"]
 unstable_wasm = ["fancy-regex", "getrandom/wasm_js"]

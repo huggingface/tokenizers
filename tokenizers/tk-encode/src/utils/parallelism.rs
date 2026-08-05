@@ -15,6 +15,10 @@
 //! This module also defines the `Maybe*` helpers the legacy paths use for
 //! optional Rayon usage.
 
+// `mark_parallelism_used` and `num_threads_override` exist for the pool, which is not
+// compiled without the `parallel` feature.
+#![cfg_attr(not(feature = "parallel"), allow(dead_code))]
+
 use rayon::iter::IterBridge;
 use rayon::prelude::*;
 use rayon_cond::CondIterator;
@@ -100,6 +104,9 @@ pub fn set_parallelism(val: bool) {
 /// leaked — bounded by the number of calls, so don't call this in a loop).
 pub fn set_num_threads(num_threads: usize) {
     NUM_THREADS.store(num_threads, Ordering::SeqCst);
+    // Nothing to invalidate without the `parallel` feature: there is no pool. The stored value
+    // is still kept so the setter stays callable and a later build with the feature sees it.
+    #[cfg(feature = "parallel")]
     crate::tokenizer::pool::invalidate();
 }
 

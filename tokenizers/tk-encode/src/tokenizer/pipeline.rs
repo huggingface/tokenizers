@@ -26,12 +26,19 @@
 //! **Fork safety** lives in `pool`: a `pthread_atfork` child abandons the
 //! stale pool without touching it and lazily rebuilds.
 
+// Without the `parallel` feature the job-splitting machinery in this file — `ParallelPlan`,
+// `JobCore`, striding, segment planning — has no caller. It is left compiled-but-unused
+// rather than gated item by item: those helpers reference each other densely, and LTO drops
+// all of it from the binary regardless, so cfg-ing each one would be churn for no bytes.
+#![cfg_attr(not(feature = "parallel"), allow(dead_code))]
+
 use std::cell::{RefCell, UnsafeCell};
 use std::convert::TryInto;
 use std::ops::Range;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 
+#[cfg(feature = "parallel")]
 use rayon::prelude::*;
 use std::{borrow::Cow, convert::TryFrom};
 
@@ -61,7 +68,9 @@ use crate::{
     ModelWrapper, PostProcessorWrapper, PreTokenizerWrapper, Tokenizer,
 };
 
-use super::{pool, Result, SplitDelimiterBehavior};
+use super::{Result, SplitDelimiterBehavior};
+#[cfg(feature = "parallel")]
+use super::pool;
 
 pub use atomsplit::fsm::Span;
 
@@ -1024,45 +1033,52 @@ impl JobCore {
         }
         let total: usize = chunks.iter().map(Vec::len).sum();
 
-        // Small enough (or no pool): serial concat.
-        const PAR_COMMIT_MIN: usize = 64 * 1024;
-        let Some(pool) = (total >= PAR_COMMIT_MIN).then(pool::rayon).flatten() else {
-            let mut out = Vec::with_capacity(total);
-            for c in &chunks {
-                out.extend_from_slice(c);
-            }
-            return Ok(out);
-        };
-
-        // Parallel scatter. Prefix-sum offsets, then each chunk copies into its
-        // own disjoint window of the output.
-        let mut offsets = Vec::with_capacity(chunks.len());
-        let mut acc = 0usize;
-        for c in &chunks {
-            offsets.push(acc);
-            acc += c.len();
-        }
-        let mut out: Vec<PipelineToken> = Vec::with_capacity(total);
-        let base = out.as_mut_ptr() as usize;
-        pool.install(|| {
-            chunks
-                .par_iter()
-                .zip(offsets.par_iter())
-                .for_each(|(chunk, &off)| {
-                    // SAFETY: offsets are a prefix sum of the chunk lengths, so
-                    // the windows are disjoint and all lie within `total`
-                    // (reserved above); no two tasks touch the same element.
-                    unsafe {
-                        std::ptr::copy_nonoverlapping(
-                            chunk.as_ptr(),
-                            (base as *mut PipelineToken).add(off),
-                            chunk.len(),
-                        );
-                    }
+        // Parallel scatter when the result is big enough and a pool exists. Without the
+        // `parallel` feature none of this is compiled and the serial concat below is the only
+        // path. Nested `if let` rather than a let-chain: this crate is edition 2018.
+        #[cfg(feature = "parallel")]
+        {
+            const PAR_COMMIT_MIN: usize = 64 * 1024;
+            if total >= PAR_COMMIT_MIN {
+                if let Some(pool) = pool::rayon() {
+                // Parallel scatter. Prefix-sum offsets, then each chunk copies into its
+                // own disjoint window of the output.
+                let mut offsets = Vec::with_capacity(chunks.len());
+                let mut acc = 0usize;
+                for c in &chunks {
+                    offsets.push(acc);
+                    acc += c.len();
+                }
+                let mut out: Vec<PipelineToken> = Vec::with_capacity(total);
+                let base = out.as_mut_ptr() as usize;
+                pool.install(|| {
+                    chunks
+                        .par_iter()
+                        .zip(offsets.par_iter())
+                        .for_each(|(chunk, &off)| {
+                            // SAFETY: offsets are a prefix sum of the chunk lengths, so
+                            // the windows are disjoint and all lie within `total`
+                            // (reserved above); no two tasks touch the same element.
+                            unsafe {
+                                std::ptr::copy_nonoverlapping(
+                                    chunk.as_ptr(),
+                                    (base as *mut PipelineToken).add(off),
+                                    chunk.len(),
+                                );
+                            }
+                        });
                 });
-        });
-        // SAFETY: the scatter wrote every element of `0..total`.
-        unsafe { out.set_len(total) };
+                // SAFETY: the scatter wrote every element of `0..total`.
+                unsafe { out.set_len(total) };
+                return Ok(out);
+                }
+            }
+        }
+
+        let mut out = Vec::with_capacity(total);
+        for c in &chunks {
+            out.extend_from_slice(c);
+        }
         Ok(out)
     }
 
@@ -1306,6 +1322,29 @@ impl PipelineTokenizer {
         if total_bytes < PARALLEL_MIN_TOTAL_BYTES {
             return EncodeHandle::ready(self.encode_serial(&refs));
         }
+        // Without `parallel` there is no pool at all, so every batch goes down the serial path
+        // a small batch already takes.
+        #[cfg(not(feature = "parallel"))]
+        return EncodeHandle::ready(self.encode_serial(&refs));
+
+        #[cfg(feature = "parallel")]
+        {
+            drop(refs);
+            self.encode_parallel(storage)
+        }
+    }
+
+    /// The parallel batch path: inputs are split into `Item`s behind one atomic cursor which
+    /// pool workers and the consuming thread both drain. Compiled only with the `parallel`
+    /// feature; without it `encode` goes straight to `encode_serial`.
+    ///
+    /// Takes the owned storage rather than a slice because `JobCore` ends up owning it, which is
+    /// also why `refs` is rebuilt here.
+    #[cfg(feature = "parallel")]
+    fn encode_parallel(&self, storage: impl Inputs + 'static) -> EncodeHandle {
+        let n_inputs = storage.len();
+        let refs: Vec<&str> = (0..n_inputs).map(|i| storage.get(i)).collect();
+        let total_bytes: usize = refs.iter().map(|s| s.len()).sum();
         let Some(pool) = pool::rayon() else {
             return EncodeHandle::ready(self.encode_serial(&refs));
         };

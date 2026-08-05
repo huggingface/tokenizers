@@ -27,6 +27,7 @@ mod encoding;
 pub mod normalizer;
 pub mod pattern;
 pub mod pipeline;
+#[cfg(feature = "parallel")]
 pub(crate) mod pool;
 pub mod pre_tokenizer;
 mod serialization;

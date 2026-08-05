@@ -1,3 +1,6 @@
+// `preserves_stride_boundaries` is consulted only when planning a parallel stride.
+#![cfg_attr(not(feature = "parallel"), allow(dead_code))]
+
 pub mod bert;
 pub mod byte_level;
 pub mod precompiled;
