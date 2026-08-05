@@ -108,7 +108,7 @@ jobs:
       # datasets cache used by the test suite at runtime) so CI doesn't
       # re-download from the Hub (and get rate-limited) on every run.
       - name: Cache HF test data
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
         with:
           path: |
             bindings/python/data
@@ -168,4 +168,4 @@ jobs:
         run: cargo generate-lockfile --manifest-path ./bindings/python/Cargo.toml
 
       - name: Run Audit
-        run: cargo audit -D warnings -f ./bindings/python/Cargo.lock --ignore RUSTSEC-2024-0436 --ignore RUSTSEC-2025-0014 --ignore RUSTSEC-2025-0119
+        run: cargo audit -D warnings -f ./bindings/python/Cargo.lock --ignore RUSTSEC-2024-0436 --ignore RUSTSEC-2025-0119
