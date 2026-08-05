@@ -84,6 +84,7 @@ pub struct WordCache {
 
     /// Controls eviction mechanism for spilled_buffer
     spilled_generation: u32,
+    /// The maximum capacity, in number of elements, allowed for spilled_buffer
     spilled_budget: usize,
     /// An additional buffer to store ids that don't fit in a [`WordCacheSlot`]
     spilled_buffer: Vec<u32>,
@@ -108,10 +109,10 @@ impl<'a> WordCache {
         Self {
             cached_words: vec![WordCacheSlot::default(); n].into_boxed_slice(),
             quick_lookup: vec![0; n].into_boxed_slice(),
-            spilled_buffer: Vec::with_capacity(spilled_budget),
             placement_mask: (next_pow2 as u64) - 1,
             spilled_generation: 0,
             spilled_budget,
+            spilled_buffer: Vec::new(),
         }
     }
 
