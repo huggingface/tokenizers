@@ -9,7 +9,8 @@
 //! matches the slot's 128 bit key ([`LookupKey`]) confirms whether it's a match or not.
 //!
 //! On miss, we return where the cache should insert ([`WordCache::insert`]) the ids;
-//! Either the first empty (0x00) slot in the window or the home slot if the window is full.
+//! Either the slot already holding a stale copy of the word ([`WordCacheSlot::is_stale`]),
+//! the first empty (0x00) slot in the window, or the home slot if the window is full.
 //!
 //! ```text
 //!    lookup "hat":  tag A7, home slot 5
@@ -49,7 +50,7 @@
 //! [gigatoken]: https://github.com/marcelroed/gigatoken
 //! [huggingface/tokenizers#2234]: https://github.com/huggingface/tokenizers/pull/2234
 
-use std::{fmt::Debug, ops::Range};
+use std::fmt::Debug;
 
 use ahash::RandomState;
 use std::iter::Iterator;
@@ -640,8 +641,8 @@ mod tests {
 
     /// One window shape per row: the needle in various lanes, an empty slot in
     /// the middle, at the edges, or absent. Candidates past the first empty
-    /// lane must not be reported (no entry can live there, see
-    /// [`Window::tag_and_empty`]) and the empty lane itself is the placement.
+    /// lane must not be reported (no entry can live there, since inserts always
+    /// fill the first empty lane) and the empty lane itself is the placement.
     #[test]
     fn the_scan_reports_matches_before_the_first_empty_and_the_empty_itself() {
         let offset = 3;
@@ -820,6 +821,44 @@ mod tests {
             cache.lookup(b"a-spilled-word").hit(),
             Some(&[5, 6, 7, 8][..])
         );
+    }
+
+    /// An evict leaves the word's slot behind, key and tag intact. The miss the
+    /// word's lookup then returns must place the fresh ids back into that slot,
+    /// not into an empty one: the window stays clean of stale copies, which is
+    /// what lets the walk stop at the first key match.
+    #[test]
+    fn a_miss_reuses_the_slot_of_its_stale_copy() {
+        let mut cache = WordCache::new(1 << 6);
+        let slot = match cache.lookup(b"a-spilled-word") {
+            Lookup::Miss(at) => at.index,
+            Lookup::Hit(_) => panic!("the cache is empty, this must be a miss"),
+        };
+        store(&mut cache, b"a-spilled-word", &[1, 2, 3, 4]);
+        store(&mut cache, b"the-filler-word", &vec![9; SPILLED_BUDGET]);
+        match cache.lookup(b"a-spilled-word") {
+            Lookup::Miss(at) => assert_eq!(at.index, slot),
+            Lookup::Hit(_) => panic!("the ids were evicted, this must be a miss"),
+        }
+    }
+
+    /// Five evict cycles on the same word: it must end up holding exactly one
+    /// slot. A placement that preferred an empty slot would leave one more
+    /// stale copy behind per cycle.
+    #[test]
+    fn an_evicted_word_never_occupies_two_slots() {
+        let mut cache = WordCache::new(1 << 6);
+        for round in 0..5u32 {
+            store(&mut cache, b"a-spilled-word", &[round; 4]);
+            store(&mut cache, b"the-filler-word", &vec![9; SPILLED_BUDGET]);
+        }
+        let key = make_lookup_key(b"a-spilled-word", cache.placement_mask).key;
+        let copies = cache
+            .cached_words
+            .iter()
+            .filter(|slot| slot.key == key)
+            .count();
+        assert_eq!(copies, 1);
     }
 
     /// A self-contained word keeps its ids in the slot, not in the buffer, so
