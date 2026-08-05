@@ -247,6 +247,17 @@ pub enum PipelinePreTokenizer {
     UnicodeScripts(UnicodeScripts),
     Whitespace(Whitespace),
     WhitespaceSplit(WhitespaceSplit),
+    /// Cuts before each *run* of `▁`, keeping the run attached to the word it
+    /// opens (`▁▁▁word` is one pre-token). Installed for configs that write the
+    /// delimiter in a normalizer but declare no pre-tokenizer -- llama-2 -- see
+    /// [`PipelineTokenizer::try_from`].
+    ///
+    /// A `Split` on the literal `▁` cannot express this: it cuts before every
+    /// delimiter and so breaks the multi-delimiter pieces such a vocabulary
+    /// carries. A `Split` on the regex `▁+` would express it but needs a regex
+    /// backend, which is both an optional feature and far slower than one
+    /// `memchr` pass.
+    MetaspaceRuns,
     None,
 }
 
@@ -270,7 +281,59 @@ impl PreTokenizer for PipelinePreTokenizer {
             Self::UnicodeScripts(pretok) => pretok.pre_tokenize(text, out),
             Self::Whitespace(pretok) => pretok.pre_tokenize(text, out),
             Self::WhitespaceSplit(pretok) => pretok.pre_tokenize(text, out),
+            Self::MetaspaceRuns => {
+                metaspace_runs(text, out);
+                Ok(())
+            }
         }
+    }
+}
+
+/// `▁` is U+2581 = `E2 96 81`.
+const METASPACE_BYTES: &[u8; 3] = b"\xe2\x96\x81";
+
+/// Index of the next `▁` at or after `from`.
+///
+/// `memchr` on the lead byte is vectorised, so non-delimiter text is skipped a
+/// register at a time rather than tested three bytes at a position.
+#[inline]
+fn next_metaspace(bytes: &[u8], from: usize) -> Option<usize> {
+    let mut i = from;
+    while let Some(off) = memchr::memchr(METASPACE_BYTES[0], &bytes[i..]) {
+        let at = i + off;
+        if bytes[at..].starts_with(METASPACE_BYTES) {
+            return Some(at);
+        }
+        i = at + 1;
+    }
+    None
+}
+
+/// Emits one span per `[run of ▁][following text]` unit.
+///
+/// The cut lands at the start of a run, never inside one, which is what keeps a
+/// vocabulary's multi-delimiter pieces formable.
+fn metaspace_runs(text: &str, out: &mut Vec<Span>) {
+    let bytes = text.as_bytes();
+    let mut start = 0usize;
+    let mut i = 0usize;
+    while let Some(at) = next_metaspace(bytes, i) {
+        let continues_run = at >= METASPACE_BYTES.len()
+            && &bytes[at - METASPACE_BYTES.len()..at] == METASPACE_BYTES.as_slice();
+        if !continues_run && at > start {
+            out.push(Span {
+                start: start as u32,
+                end: at as u32,
+            });
+            start = at;
+        }
+        i = at + METASPACE_BYTES.len();
+    }
+    if start < bytes.len() {
+        out.push(Span {
+            start: start as u32,
+            end: bytes.len() as u32,
+        });
     }
 }
 
@@ -283,6 +346,10 @@ impl PipelinePreTokenizer {
     /// ```
     pub(crate) fn stride_boundary(&self) -> Option<StrideBoundary> {
         match self {
+            // A `Prepend` normalizer writes a delimiter only at the very start of
+            // the text it is handed, so a stride cut would add a second one.
+            // Disqualify striding rather than reason about it.
+            Self::MetaspaceRuns => None,
             // Whitespace-delimiting: whitespace is a dropped delimiter, so any
             // whitespace character is a safe cut (see [`boundary_at_whitespace`]).
             Self::Whitespace(_) | Self::WhitespaceSplit(_) | Self::Bert(_) => {
@@ -1456,6 +1523,44 @@ impl Drop for EncodeHandle {
     }
 }
 
+/// SentencePiece's word delimiter, U+2581.
+const METASPACE: char = '\u{2581}';
+
+/// Does the normalizer chain rewrite spaces into `▁`?
+///
+/// Probed rather than pattern-matched on normalizer types: a probe cannot go
+/// stale when another normalizer that writes the delimiter is added, and it
+/// costs one normalization of a two-byte string at load.
+fn writes_metaspace<N: Normalizer>(normalizers: &[N]) -> bool {
+    normalize_all(normalizers, " a").is_ok_and(|out| out.contains(METASPACE))
+}
+
+/// Whether cutting at every `▁` can change the token stream, decided from the
+/// vocabulary alone.
+///
+/// BPE only ever emits pieces that are in the vocabulary, so a merge can span a
+/// `▁` boundary only if some piece contains a `▁` after a non-`▁` character. If
+/// none does, no merge can cross a boundary and per-word BPE is identical to
+/// merging the whole text -- which is what makes installing the split above
+/// byte-exact rather than an approximation.
+///
+/// One scan at load. Measured: llama-2, llama-3, mistral-nemo and gpt2 all have
+/// zero such pieces. A vocabulary that never uses the delimiter returns false,
+/// since there would be nothing to cut on.
+fn metaspace_cuts_are_safe(tok: &Tokenizer) -> bool {
+    let mut saw_delimiter = false;
+    for piece in tok.get_vocab(false).keys() {
+        let body = piece.trim_start_matches(METASPACE);
+        if body.len() != piece.len() {
+            saw_delimiter = true;
+        }
+        if body.contains(METASPACE) {
+            return false;
+        }
+    }
+    saw_delimiter
+}
+
 impl TryFrom<&Tokenizer> for PipelineTokenizer {
     type Error = super::Error;
 
@@ -1484,12 +1589,41 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
                 PipelinePreTokenizer::Split(split)
             }
             // Every other pre-tokenizer converts on its own.
-            None => tok
+            None => match tok
                 .get_pre_tokenizer()
                 .cloned()
                 .map(TryInto::try_into)
                 .transpose()?
-                .unwrap_or(PipelinePreTokenizer::None),
+            {
+                Some(declared) => declared,
+                // No pre-tokenizer at all. `PipelinePreTokenizer::None` then hands
+                // the model ONE span covering the whole document, and two things go
+                // wrong at once: the merge runs over ~10 kB of symbols instead of a
+                // word, and the `WordCache` keys on that whole span, so it can only
+                // ever hit on a byte-identical repeat of the document. llama-2 ships
+                // exactly this shape (`pre_tokenizer: null` plus a
+                // `Prepend`+`Replace` normalizer that writes the delimiters).
+                //
+                // Measured on llama-2/english: 129 ns per token against gpt2's 7.2
+                // for token counts within 16% of each other -- an 18x gap that is
+                // span length, not merge quality.
+                //
+                // So when the normalizer writes `▁` and the vocabulary proves a cut
+                // at `▁` cannot change the result, install the very same `Split` a
+                // declared Metaspace pre-tokenizer would have produced above. No new
+                // splitter: this is the existing pre-tokenizer path, so the cuts land
+                // in `pre_tokens` and the word cache starts keying on words.
+                None if writes_metaspace(&normalizers) && metaspace_cuts_are_safe(tok) => {
+                    // Runs, not single delimiters. Cutting before every `▁` breaks
+                    // the 15 multi-delimiter pieces llama-2 carries (`▁▁` through
+                    // `▁▁▁▁▁▁▁▁▁▁▁`): indentation then tokenizes as N separate `▁`
+                    // where the reference emits one piece. Measured on the code
+                    // corpus before the fix, id 1678 (`▁▁▁▁`) came out as
+                    // 29871,29871,29871.
+                    PipelinePreTokenizer::MetaspaceRuns
+                }
+                None => PipelinePreTokenizer::None,
+            },
         };
 
         let legacy_av = tok.get_added_vocabulary();
