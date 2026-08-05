@@ -8,8 +8,18 @@ SHARED_RESOURCES = $(DATA_DIR)/gpt2-vocab.json $(DATA_DIR)/gpt2-merges.txt $(DAT
 BENCHMARK_RESOURCES = $(SHARED_RESOURCES) $(DATA_DIR)/unigram_wagahaiwa_nekodearu.txt $(DATA_DIR)/bert-wiki.json $(DATA_DIR)/fixtures/modalities/agentic-traces.txt
 TESTS_RESOURCES = $(SHARED_RESOURCES) $(DATA_DIR)/unigram.json $(DATA_DIR)/unigram_wagahaiwa_nekodearu.txt $(DATA_DIR)/roberta.json $(DATA_DIR)/tokenizer-wiki.json $(DATA_DIR)/bert-wiki.json $(DATA_DIR)/fixtures/modalities/agentic-traces.txt
 
-FIXTURE_LANGS = amh_Ethi arb_Arab ben_Beng cmn_Hani ell_Grek eng_Latn heb_Hebr hin_Deva jpn_Jpan kat_Geor kor_Hang rus_Cyrl tam_Taml tha_Thai
-FIXTURE_MODALITIES = agentic_swe agentic-traces code_mixed math_latex added_special_sparse added_special_dense added_normalized_sparse added_normalized_dense
+# One language per encode regime (script structure × vocab coverage), not one per
+# script: eng is the vocab-native anchor, rus the 2-byte European alphabet, arb the
+# 2-byte RTL abjad, hin mainstream Indic, tam the extreme-fertility stress probe,
+# amh the poorly-covered 3-byte script, cmn the Han inventory, jpn script mixing,
+# tha spaceless text. Structural near-twins (ell/heb/ben/kat/kor) were cut: they
+# tracked their representative on every model and only diluted the aggregates.
+FIXTURE_LANGS = amh_Ethi arb_Arab cmn_Hani eng_Latn hin_Deva jpn_Jpan rus_Cyrl tam_Taml tha_Thai
+# Only the sparse added-token corpora: realistic marker density (text sprinkled with
+# specials, like chat-template traffic), covering both the raw-special and the
+# normalized-added scan paths. The dense variants were marker soup that skewed every
+# aggregate while measuring nothing the sparse ones don't.
+FIXTURE_MODALITIES = agentic_swe agentic-traces code_mixed math_latex added_special_sparse added_normalized_sparse
 FIXTURES_RESOURCES = $(FIXTURE_LANGS:%=$(DATA_DIR)/fixtures/lang/%.txt) $(FIXTURE_MODALITIES:%=$(DATA_DIR)/fixtures/modalities/%.txt)
 
 # Models benched by tk-encode/examples/fixture_bench.rs; the manifest is the

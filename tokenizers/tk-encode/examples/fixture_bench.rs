@@ -1,48 +1,53 @@
 //! Comparative benchmark of the experimental `PipelineTokenizer` against the
-//! latest *released* `tokenizers` crate (the bar to beat — the in-tree legacy
+//! latest *released* `tokenizers` crate (the bar to beat; the in-tree legacy
 //! `Tokenizer` is on its way out, so the release is the reference), for every
 //! model in `examples/bench_models.json` across every corpus in `data/fixtures/`.
-//! The baseline is always driven through `encode_fast` — its offset-free path —
+//! The baseline is always driven through `encode_fast`, its offset-free path,
 //! because the pipeline's `encode` computes no offsets either; timing the
 //! baseline's offset-tracking `encode` would flatter the pipeline.
 //!
-//! Four isolated phases per model:
+//! # Measurement regime: whole corpus, cold caches
 //!
-//! 1. **Throughput** — single-thread warm MB/s per fixture on ~10 kB inputs
-//!    (the regime where per-input overhead is amortized — see
-//!    `pipeline_benchmark.rs` for the size sweep). Every fixture starts from a
-//!    cold cache on both sides: the pipeline is rebuilt (fresh scratch pool →
-//!    fresh BPE word cache) and the baseline is cloned (the released BPE's
-//!    `Clone` starts with an empty cache). The warm-up pass then fills each
-//!    cache from that corpus alone — the state a plain `.encode()` loop over
-//!    the corpus reaches — so per-fixture numbers don't depend on which
-//!    fixtures ran before them. Both sides encode with `add_special_tokens`
-//!    on, so the headline includes the post-process stage the ladder charges.
-//! 2. **Stage breakdown** — the `encode_generic::<STAGE>` ablation ladder plus
-//!    the pre-tokenize-vs-regex-engine references, on fresh caller-owned
-//!    scratches, fully separate from the phase-1 timings.
-//! 3. **Scaling & memory** — a multi-thread throughput sweep (1/2/4/8/max) over
-//!    the whole corpus on fresh instances, and resident-set deltas measured by
-//!    re-spawning this binary as `--memory <impl> <model.json>` children — one
-//!    implementation per process, so allocator page reuse can't blur the
-//!    attribution.
-//! 4. **Decode** — the inverse direction, anchored on the RELEASED crate (never
-//!    the in-tree legacy `Tokenizer`, which is being removed — oracles must not
-//!    depend on it). The release's `encode_fast` produces the id stream; pipeline
-//!    and released `decode` then consume the SAME ids (single-thread throughput +
-//!    the 1/2/4/8/max sweep + a decode-pass RSS delta), gated by `text_match`
-//!    (pipeline decode == released decode). While `PipelineTokenizer::decode` is a
-//!    loud stub the pipeline decode series is `null` (rendered "pending"); the
-//!    released baseline is measured regardless. No released baseline → no decode
-//!    oracle → the phase is skipped for that model.
+//! Every fixture is benched **in full**: the file is cut into ~10 kB chunks at
+//! line boundaries (concatenating the chunks reproduces the file byte for byte)
+//! and one pass encodes every chunk once. ~10 kB is the regime where per-call
+//! overhead is amortized; see `pipeline_benchmark.rs` for the size sweep.
+//!
+//! Every timed pass starts **cold**: the pipeline is rebuilt and the baseline
+//! re-cloned before the pass, and thrown away after it. The released BPE and
+//! Unigram keep a per-instance word cache and their `Clone` resets it (checked
+//! against the released sources), so no pass re-encodes text its cache has
+//! already seen; the pipeline's BPE and Unigram engines keep theirs in a
+//! scratch pool on the pipeline instance, and the rebuild resets that pool the
+//! same way. Within a pass, caches fill from the corpus stream, which is
+//! exactly what a plain `.encode()` loop over that much fresh text reaches.
+//! Re-encoding the same corpus against an already-warm cache (what this bench
+//! used to measure) is not a workload either implementation serves, and it
+//! flattered whichever side caches more.
+//!
+//! # Two isolated phases per model
+//!
+//! 1. **Throughput**: single-thread MB/s per fixture, the median of `REPS` cold
+//!    passes, both implementations alternating so frequency drift hits them
+//!    equally. Both sides encode with `add_special_tokens` on, so the headline
+//!    includes the post-process cost.
+//! 2. **Scaling & memory**: a multi-thread throughput sweep (1/2/4/8/max) per
+//!    fixture group (`lang`, `modalities`), cold instance per pass, and
+//!    resident-set deltas measured by re-spawning this binary as
+//!    `--memory <impl> <model.json>` children; one implementation per process,
+//!    so allocator page reuse can't blur the attribution.
+//!
+//! Decode is not benched: `PipelineTokenizer::decode` is a loud stub, so there
+//! is nothing to compare yet. When it lands, decode gets its own phase judged
+//! the same way (release-produced ids, both decoders consuming the same stream).
 //!
 //! Correctness is judged against the released crate, never the in-tree
 //! `Tokenizer` (which is being removed and only *builds* the pipeline here):
-//! `ids_match` (encode ids) and `text_match` (decode text) both compare against
-//! the release and both fail CI. They are `null` when the release can't load the
-//! model — no reference, so no gate. Models the pipeline can't build (or encode)
+//! `ids_match` compares the pipeline's encode ids against the release and fails
+//! CI. It is `null` when the release can't load the
+//! model (no reference, so no gate). Models the pipeline can't build (or encode)
 //! yet are reported with empty `results` (plus the failure `reason`) and their
-//! pipeline shape rather than benched — the CI grid renders those as roadmap
+//! pipeline shape rather than benched; the CI grid renders those as roadmap
 //! cards. Each manifest entry carries a `desc`: a one-line label of the workload
 //! archetype the model exercises, passed through to the report.
 //!
@@ -55,7 +60,6 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Instant;
 
-use logos::Logos;
 use rayon::ThreadPoolBuilder;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde_json::{Value, json};
@@ -68,12 +72,13 @@ const MANIFEST: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/examples/bench_mode
 // Keep in sync with the `tokenizers-release` pin in Cargo.toml.
 const BASELINE_VERSION: &str = "0.23.1";
 const CHUNK_BYTES: usize = 10 * 1024;
-const MAX_CHUNKS: usize = 100;
+// Timed passes per number. Every pass runs on a cold instance, so the median is
+// over independent cold runs, not over re-encodes of an already-seen corpus.
 const REPS: usize = 5;
 const PROBE: &str = "The quick brown fox jumps 123.";
-// Chunks per fixture for the memory children's encode pass: enough to warm the
-// lazy structures and grow the output buffers, small enough to stay cheap.
-const MEM_CHUNKS_PER_FIXTURE: usize = 2;
+// The fixture groups under `data/fixtures/`, also the granularity of the
+// multi-thread sweeps and of the report's thread-scaling charts.
+const GROUPS: [&str; 2] = ["lang", "modalities"];
 
 // Added tokens injected into every loaded tokenizer so the `added_*` fixtures exercise
 // the added-token split for whichever model is benched — no bespoke tokenizer config.
@@ -127,19 +132,16 @@ struct Fixture {
     bytes: usize,
 }
 
+/// Cut `text` into ~10 kB chunks at line boundaries. Lossless: concatenating the
+/// chunks reproduces `text` byte for byte, so the benched input is exactly the
+/// corpus, blank lines and trailing newlines included.
 fn make_chunks(text: &str) -> Vec<String> {
     let mut chunks = Vec::new();
     let mut cur = String::new();
-    for line in text.lines().filter(|l| !l.trim().is_empty()) {
-        if !cur.is_empty() {
-            cur.push('\n');
-        }
+    for line in text.split_inclusive('\n') {
         cur.push_str(line);
         if cur.len() >= CHUNK_BYTES {
             chunks.push(std::mem::take(&mut cur));
-            if chunks.len() == MAX_CHUNKS {
-                return chunks;
-            }
         }
     }
     if !cur.is_empty() {
@@ -151,7 +153,7 @@ fn make_chunks(text: &str) -> Vec<String> {
 /// The sorted `.txt` fixtures under `data/fixtures/{lang,modalities}`, tagged with group.
 fn fixture_paths() -> Vec<(&'static str, PathBuf)> {
     let mut out = Vec::new();
-    for group in ["lang", "modalities"] {
+    for group in GROUPS {
         let dir = Path::new(DATA_DIR).join("fixtures").join(group);
         let mut paths: Vec<_> = std::fs::read_dir(&dir)
             .unwrap_or_else(|e| panic!("{}: {e} — run `make fixtures` first", dir.display()))
@@ -164,7 +166,7 @@ fn fixture_paths() -> Vec<(&'static str, PathBuf)> {
     out
 }
 
-/// Every corpus in `data/fixtures/{lang,modalities}`, read and chunked once.
+/// Every corpus in `data/fixtures/{lang,modalities}`, read and chunked once, in full.
 fn load_fixtures() -> Vec<Fixture> {
     fixture_paths()
         .into_iter()
@@ -199,70 +201,37 @@ fn time_pass(encode: &dyn Fn(&str) -> usize, chunks: &[String]) -> f64 {
     start.elapsed().as_secs_f64()
 }
 
-/// Median ns/byte of a warmed-up `run` over `len` bytes (`run` returns a value that's
-/// `black_box`'d so the work isn't optimized away).
-fn timed_ns(len: usize, mut run: impl FnMut() -> usize) -> f64 {
-    if len == 0 {
-        return 0.0;
-    }
-    run(); // warm-up
-    let mut s = Vec::with_capacity(REPS);
-    for _ in 0..REPS {
-        let t = Instant::now();
-        black_box(run());
-        s.push(t.elapsed().as_secs_f64());
-    }
-    median_secs(s) * 1e9 / len as f64
-}
-
 // ── phase 1: throughput ─────────────────────────────────────────────────────
 
-/// Warm single-thread throughput + the id gates for one fixture.
+/// Cold single-thread throughput + the id gate for one fixture.
 ///
-/// Both implementations start this fixture cold: a rebuilt pipeline (fresh
-/// scratch pool → fresh BPE word cache) and a cloned baseline (the released
-/// BPE's `Clone` starts with an empty cache). The id checks and the warm-up
-/// pass then fill the caches from this corpus alone — what a plain `.encode()`
-/// loop over it reaches — and the REPS passes measure that warm steady state.
-/// The two impls are interleaved so frequency/thermal drift hits them equally.
+/// Each of the `REPS` timed passes runs on an instance that has never seen the
+/// corpus: the baseline is re-cloned (the released models' `Clone` starts with an
+/// empty cache) and the pipeline rebuilt from `oracle`, both outside the timed
+/// region. The two implementations alternate so frequency and thermal drift hit
+/// them equally. The id gate runs first, on instances of its own, so its encodes
+/// cannot warm anything a timed pass sees.
 fn bench_throughput(
     baseline: Option<&BaselineTokenizer>,
     oracle: &Tokenizer,
     f: &Fixture,
 ) -> Value {
-    let pipeline = PipelineTokenizer::try_from(oracle).expect("probed at model load");
-    let base = baseline.cloned();
-
-    let pipe_enc = |s: &str| {
-        pipeline
-            .encode(s, true)
-            .wait()
-            .unwrap()
-            .first()
-            .unwrap()
-            .len()
-    };
-    let base_enc = base
-        .as_ref()
-        .map(|b| move |s: &str| b.encode_fast(s, true).unwrap().len());
-
-    let pipe_ids = |c: &String, add_special_tokens: bool| -> Vec<u32> {
-        pipeline
-            .encode(c, add_special_tokens)
-            .wait()
-            .unwrap()
-            .first()
-            .unwrap()
-            .iter()
-            .map(|t| t.id)
-            .collect()
-    };
     // The correctness gate CI fails on: pipeline ids == the released crate's ids,
     // for both `add_special_tokens` values (`true` exercises the post-process
     // stage). The in-tree `Tokenizer` only *builds* the pipeline here — never the
     // reference, since it is on its way out. `None` when the release can't load
     // this model (no reference to compare against).
-    let ids_match = base.as_ref().map(|b| {
+    let gate = PipelineTokenizer::try_from(oracle).expect("probed at model load");
+    let pipe_ids = |c: &String, add_special_tokens: bool| -> Vec<u32> {
+        gate.encode(c, add_special_tokens)
+            .wait()
+            .unwrap()
+            .iter()
+            .flatten()
+            .map(|t| t.id)
+            .collect()
+    };
+    let ids_match = baseline.map(|b| {
         [false, true].into_iter().all(|add_special_tokens| {
             f.chunks.iter().take(3).all(|c| {
                 b.encode_fast(c.as_str(), add_special_tokens)
@@ -273,16 +242,20 @@ fn bench_throughput(
         })
     });
 
-    if let Some(be) = &base_enc {
-        time_pass(be, &f.chunks); // warm-up
-    }
-    time_pass(&pipe_enc, &f.chunks); // warm-up
     let (mut base_s, mut pipe_s) = (Vec::new(), Vec::new());
     for _ in 0..REPS {
-        if let Some(be) = &base_enc {
-            base_s.push(time_pass(be, &f.chunks));
+        if let Some(b) = baseline {
+            let cold = b.clone();
+            base_s.push(time_pass(
+                &|s| cold.encode_fast(s, true).unwrap().len(),
+                &f.chunks,
+            ));
         }
-        pipe_s.push(time_pass(&pipe_enc, &f.chunks));
+        let cold = PipelineTokenizer::try_from(oracle).expect("probed at model load");
+        pipe_s.push(time_pass(
+            &|s| cold.encode(s, true).wait().unwrap().first().unwrap().len(),
+            &f.chunks,
+        ));
     }
     let mbps = |secs: f64| f.bytes as f64 / secs / 1e6;
     let base_mbps = (!base_s.is_empty()).then(|| mbps(median_secs(base_s)));
@@ -302,300 +275,7 @@ fn bench_throughput(
     })
 }
 
-// ── phase 2: stage breakdown + pre-tokenize references ─────────────────────
-
-/// Median wall-time (seconds) of one pass over `chunks` through the shared encode core
-/// `PipelineTokenizer::encode_generic::<STAGE>`. `STAGE` is a const generic, so each
-/// level is a branchless specialization with the later stages compiled out — timing
-/// successive levels and subtracting gives each stage's marginal cost (the ablation
-/// ladder), no profiler and no per-segment instrumentation.
-///
-/// The scratch is created fresh here (never taken from the pipeline's pool), so the
-/// stage numbers are warmed on this fixture alone and can't perturb — or be flattered
-/// by — the phase-1 cache state. Both caller-owned buffers are reused across chunks
-/// and `black_box`'d each iteration: `output` anchors the special-scan/normalize/model
-/// work, `pre_tokens` anchors the split stage, so under fat LTO no dead partial stage
-/// gets optimized away. The `black_box` lives here, in the bench — never in the library.
-fn stage_secs<const STAGE: u8>(pipeline: &PipelineTokenizer, chunks: &[String]) -> f64 {
-    let run = || {
-        for chunk in chunks {
-            let out = pipeline.encode_generic::<STAGE>(chunk, true);
-            black_box(out);
-        }
-    };
-    run(); // warm-up
-    let mut samples = Vec::with_capacity(REPS);
-    for _ in 0..REPS {
-        let start = Instant::now();
-        run();
-        samples.push(start.elapsed().as_secs_f64());
-    }
-    median_secs(samples)
-}
-
-/// Stage decomposition + regex-engine references for one fixture: the
-/// `stage_ns_per_byte` and `pretok_vs_regex` objects of its report row.
-fn bench_stages(pipeline: &PipelineTokenizer, f: &Fixture, regexes: &[String]) -> (Value, Value) {
-    let t_frame = stage_secs::<{ PipelineTokenizer::STAGE_FRAME }>(pipeline, &f.chunks);
-    let t_norm = stage_secs::<{ PipelineTokenizer::STAGE_NORMALIZE }>(pipeline, &f.chunks);
-    let t_split = stage_secs::<{ PipelineTokenizer::STAGE_SPLIT }>(pipeline, &f.chunks);
-    let t_model = stage_secs::<{ PipelineTokenizer::STAGE_MODEL }>(pipeline, &f.chunks);
-    let t_post = stage_secs::<{ PipelineTokenizer::STAGE_POSTPROCESS }>(pipeline, &f.chunks);
-    // Two distinct "split" costs: `added_split` is the added/special-token scan (the
-    // SpecialSegmentIterator over the AddedVocabulary, captured by the FRAME level),
-    // `pre_tokenize` is the pre-tokenizer split, `post` the special-token id-frame
-    // splice. All five stages sum exactly to `total`.
-    let nspb = |secs: f64| secs * 1e9 / f.bytes as f64;
-    let (ns_added, ns_norm, ns_split, ns_model, ns_post) = (
-        nspb(t_frame.max(0.0)),
-        nspb((t_norm - t_frame).max(0.0)),
-        nspb((t_split - t_norm).max(0.0)),
-        nspb((t_model - t_split).max(0.0)),
-        nspb((t_post - t_model).max(0.0)),
-    );
-    eprintln!(
-        "  {} stages ns/byte: added-split {ns_added:.2}, norm {ns_norm:.2}, pre-split {ns_split:.2}, model {ns_model:.2}, post {ns_post:.2}",
-        f.name
-    );
-
-    // pre_tokenize (= classify SIMD + fsm) vs classify-scalar and vs real regex engines
-    // over the same corpus, so the report shows the split beating a regex engine both
-    // WITH and WITHOUT SIMD. `scalar_pipe` = pre_tokenize + (cls_scalar − cls_simd):
-    // fsm is the scalar jump-table in both pipes, SIMD/scalar is the classify pass only.
-    let corpus: String = f.chunks.concat();
-    let cls_simd = classify_ns(corpus.as_bytes(), false);
-    let cls_scalar = classify_ns(corpus.as_bytes(), true);
-    let onig_ns = regex_reference_ns::<onig::Regex>(&corpus, regexes);
-    let fancy_ns = regex_reference_ns::<fancy_regex::Regex>(&corpus, regexes);
-    let pcre2_ns = regex_reference_ns::<pcre2::bytes::Regex>(&corpus, regexes);
-    let logos_ns = logos_reference_ns(regexes, &corpus);
-    if [onig_ns, fancy_ns, pcre2_ns, logos_ns]
-        .iter()
-        .any(Option::is_some)
-    {
-        let scalar_pipe = ns_split + (cls_scalar - cls_simd).max(0.0);
-        let vs = |r: Option<f64>| {
-            r.map_or("—".into(), |v| {
-                format!(
-                    "{:.1}×/{:.1}×",
-                    v / ns_split.max(1e-9),
-                    v / scalar_pipe.max(1e-9)
-                )
-            })
-        };
-        eprintln!(
-            "  {} pre-tok: SIMD-cls {ns_split:.2} / scalar-cls {scalar_pipe:.2} ns/B · vs onig {} · vs fancy {} · vs pcre2 {} · vs logos {}",
-            f.name,
-            vs(onig_ns),
-            vs(fancy_ns),
-            vs(pcre2_ns),
-            vs(logos_ns)
-        );
-    }
-
-    (
-        json!({
-            "added_split": ns_added,
-            "normalize": ns_norm,
-            "pre_tokenize": ns_split,
-            "model": ns_model,
-            "post": ns_post,
-            "total": nspb(t_post),
-        }),
-        json!({
-            "cls_simd": cls_simd,
-            "cls_scalar": cls_scalar,
-            "onig": onig_ns,
-            "fancy": fancy_ns,
-            "pcre2": pcre2_ns,
-            "logos": logos_ns,
-        }),
-    )
-}
-
-/// Median ns/byte to classify `bytes` once via the SIMD or scalar path.
-fn classify_ns(bytes: &[u8], scalar: bool) -> f64 {
-    let mut tags = vec![0u8; bytes.len()];
-    timed_ns(bytes.len(), || {
-        if scalar {
-            atomsplit::classify::classify_scalar(bytes, &mut tags);
-        } else {
-            atomsplit::classify::classify(bytes, &mut tags);
-        }
-        tags[bytes.len() / 2] as usize
-    })
-}
-
-// ── regex-engine references ─────────────────────────────────────────────────
-// The pipeline's `pre_tokenize` stage is `classify (SIMD) + fsm`; these reference
-// numbers time the model's own pre-tokenizer regex(es) — the split a regex-based
-// tokenizer actually pays for — under three real engines. Each engine only needs to
-// enumerate matches; the composed Isolated split chain is shared.
-
-/// A regex engine timed through the composed split chain.
-trait SplitEngine: Sized {
-    fn compile(pattern: &str) -> Option<Self>;
-    /// Call `on_match(start, end)` for every match in `hay`, in order.
-    fn for_each_match(&self, hay: &str, on_match: impl FnMut(usize, usize));
-}
-
-/// Oniguruma (C) — what the reference tokenizer itself uses.
-impl SplitEngine for onig::Regex {
-    fn compile(pattern: &str) -> Option<Self> {
-        onig::Regex::new(pattern).ok()
-    }
-    fn for_each_match(&self, hay: &str, mut on_match: impl FnMut(usize, usize)) {
-        for (s, e) in self.find_iter(hay) {
-            on_match(s, e);
-        }
-    }
-}
-
-/// fancy-regex (pure Rust). `find_iter` yields `Result<Match, _>`; a match error
-/// aborts that piece's pass (rare, backtrack-limit) and it is left un-split.
-impl SplitEngine for fancy_regex::Regex {
-    fn compile(pattern: &str) -> Option<Self> {
-        fancy_regex::Regex::new(pattern).ok()
-    }
-    fn for_each_match(&self, hay: &str, mut on_match: impl FnMut(usize, usize)) {
-        for m in self.find_iter(hay) {
-            let Ok(m) = m else { break };
-            on_match(m.start(), m.end());
-        }
-    }
-}
-
-/// PCRE2 (C) — built with `utf(true).ucp(true)` so `\p{L}`/`\p{N}`/`\s` are
-/// Unicode-aware and byte offsets land on char boundaries, matching the other
-/// engines, and **JIT-compiled** so PCRE2 is benched at its best.
-impl SplitEngine for pcre2::bytes::Regex {
-    fn compile(pattern: &str) -> Option<Self> {
-        pcre2::bytes::RegexBuilder::new()
-            .utf(true)
-            .ucp(true)
-            .jit_if_available(true)
-            .build(pattern)
-            .ok()
-    }
-    fn for_each_match(&self, hay: &str, mut on_match: impl FnMut(usize, usize)) {
-        for m in self.find_iter(hay.as_bytes()) {
-            let Ok(m) = m else { break };
-            on_match(m.start(), m.end());
-        }
-    }
-}
-
-/// ns/byte for the composed Isolated split chain under engine `E` — each regex splits
-/// the previous pieces (gaps + matches), exactly how the reference tokenizer applies a
-/// `Sequence` of Splits. `None` when the model has no regex pre-tokenizer, or the
-/// engine rejects a pattern.
-fn regex_reference_ns<E: SplitEngine>(text: &str, patterns: &[String]) -> Option<f64> {
-    if patterns.is_empty() || text.is_empty() {
-        return None;
-    }
-    let engines: Vec<E> = patterns
-        .iter()
-        .map(|p| E::compile(p))
-        .collect::<Option<_>>()?;
-    Some(timed_ns(text.len(), || {
-        let mut pieces = vec![(0usize, text.len())];
-        for re in &engines {
-            let mut next = Vec::with_capacity(pieces.len() * 2);
-            for (s, e) in pieces.drain(..) {
-                let mut prev = 0usize;
-                re.for_each_match(&text[s..e], |ms, me| {
-                    if ms > prev {
-                        next.push((s + prev, s + ms));
-                    }
-                    next.push((s + ms, s + me));
-                    prev = me;
-                });
-                if prev < e - s {
-                    next.push((s + prev, e));
-                }
-            }
-            pieces = next;
-        }
-        pieces.len()
-    }))
-}
-
-// logos DFA lexers approximating the GPT splits (no look-ahead / case-insensitive →
-// boundaries differ slightly; a raw-throughput reference like fancy, not a byte-exact
-// oracle). Only families logos can express get a number; deepseek / variants /
-// non-regex pretoks report null.
-#[derive(Logos)]
-enum LGpt2 {
-    #[regex(r"'s|'t|'re|'ve|'m|'ll|'d")]
-    Contraction,
-    #[regex(r" ?\p{L}+")]
-    Word,
-    #[regex(r" ?\p{N}+")]
-    Num,
-    #[regex(r" ?[^\s\p{L}\p{N}]+")]
-    Other,
-    #[regex(r"\s+")]
-    Space,
-}
-#[derive(Logos)]
-enum LCl100k {
-    #[regex(r"'s|'t|'re|'ve|'m|'ll|'d", priority = 5)]
-    Contraction,
-    #[regex(r"[^\r\n\p{L}\p{N}]?\p{L}+", priority = 4)]
-    Word,
-    #[regex(r"\p{N}\p{N}?\p{N}?")]
-    Num,
-    #[regex(r" ?[^\s\p{L}\p{N}]+[\r\n]*", priority = 2)]
-    Other,
-    #[regex(r"\s+")]
-    Space,
-}
-#[derive(Logos)]
-enum LO200k {
-    #[regex(r"[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]*[\p{Ll}\p{Lm}\p{Lo}\p{M}]+('s|'t|'re|'ve|'m|'ll|'d)?", priority = 6)]
-    LettersA,
-    #[regex(r"[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]+[\p{Ll}\p{Lm}\p{Lo}\p{M}]*('s|'t|'re|'ve|'m|'ll|'d)?", priority = 5)]
-    LettersB,
-    #[regex(r"\p{N}\p{N}?\p{N}?")]
-    Num,
-    #[regex(r" ?[^\s\p{L}\p{N}]+[\r\n/]*", priority = 2)]
-    Other,
-    #[regex(r"\s+")]
-    Space,
-}
-
-fn lex_count<'s, T: Logos<'s, Source = str>>(s: &'s str) -> usize
-where
-    T::Extras: Default,
-{
-    let mut lex = T::lexer(s);
-    let mut n = 0;
-    while lex.next().is_some() {
-        n += 1;
-    }
-    n
-}
-
-/// logos throughput (ns/byte) when the model's pre-tokenizer is a single regex logos can
-/// express (matched against the canonical gpt2/cl100k/o200k specs); `None` otherwise.
-fn logos_reference_ns(regexes: &[String], text: &str) -> Option<f64> {
-    if text.is_empty() || regexes.len() != 1 {
-        return None;
-    }
-    let r = regexes[0].as_str();
-    let f: fn(&str) -> usize = if r == atomsplit::regexes::GPT2 {
-        |s| lex_count::<LGpt2>(s)
-    } else if r == atomsplit::regexes::CL100K {
-        |s| lex_count::<LCl100k>(s)
-    } else if r == atomsplit::regexes::O200K {
-        |s| lex_count::<LO200k>(s)
-    } else {
-        return None;
-    };
-    Some(timed_ns(text.len(), || f(text)))
-}
-
-// ── phase 3: multi-thread scaling + memory ──────────────────────────────────
+// ── phase 2: multi-thread scaling + memory ──────────────────────────────────
 
 /// Thread counts for the scaling sweep: 1 (the single-thread anchor) + 2/4/8 + the device max,
 /// deduped and capped at max (so an 8-core box reports `[1,2,4,8]`, a 6-core `[1,2,4,6]`).
@@ -609,51 +289,61 @@ fn thread_counts() -> Vec<usize> {
     c
 }
 
-/// Median MB/s of encoding `chunks` across `n` threads in a *private* rayon pool (so the sweep can't
-/// perturb — or be perturbed by — the global pool). One `encode` call per chunk; the sum is `black_box`'d
-/// so the work can't be elided.
-fn par_mbps(
-    encode: impl Fn(&str) -> usize + Sync,
-    chunks: &[String],
+/// Median MB/s of encoding `chunks` across `n` threads in a *private* rayon pool
+/// (so the sweep can't perturb — or be perturbed by — the global pool). Each timed
+/// pass encodes through a cold instance built by `fresh`, outside the timed
+/// region; one throwaway pass on its own instance first forces the pool to spawn
+/// its threads. One `encode` call per chunk; the sum is `black_box`'d so the work
+/// can't be elided.
+fn par_mbps<E: Fn(&str) -> usize + Sync>(
+    fresh: impl Fn() -> E,
+    chunks: &[&String],
     bytes: usize,
     n: usize,
 ) -> f64 {
     let pool = ThreadPoolBuilder::new().num_threads(n).build().unwrap();
-    let run = || pool.install(|| chunks.par_iter().map(|c| encode(c.as_str())).sum::<usize>());
-    black_box(run()); // warm the pool + lazy structures
+    let pass = |enc: &E| pool.install(|| chunks.par_iter().map(|c| enc(c.as_str())).sum::<usize>());
+    black_box(pass(&fresh()));
     let mut samples = Vec::with_capacity(REPS);
     for _ in 0..REPS {
+        let cold = fresh();
         let t = Instant::now();
-        black_box(run());
+        black_box(pass(&cold));
         samples.push(t.elapsed().as_secs_f64());
     }
     bytes as f64 / median_secs(samples) / 1e6
 }
 
-/// Multi-thread throughput sweep for one model — pipeline vs the released crate at 1/2/4/8/max threads
-/// over the whole fixture corpus (thread-spawn/scheduling overhead amortized). Both impls encode the same
-/// chunk list through a fresh pool per count; interleaved so thermal drift hits them equally. Per-thread
-/// caches here fill from the whole mixed stream — the normal `.encode()` regime for a parallel workload.
+/// Multi-thread throughput sweep over one fixture group's corpus: pipeline vs the
+/// released crate at 1/2/4/8/max threads. Every timed pass gets a cold instance,
+/// same as the single-thread phase; within a pass the per-thread caches fill from
+/// the mixed stream, which is what a parallel `.encode()` run over fresh text
+/// reaches. The two implementations alternate per thread count so thermal drift
+/// hits them equally.
 fn bench_threads(
     baseline: Option<&BaselineTokenizer>,
-    pipeline: &PipelineTokenizer,
-    chunks: &[String],
+    oracle: &Tokenizer,
+    chunks: &[&String],
 ) -> Value {
-    let bytes: usize = chunks.iter().map(String::len).sum();
+    let bytes: usize = chunks.iter().map(|c| c.len()).sum();
     let counts = thread_counts();
     let (mut pipe, mut base) = (Vec::new(), Vec::new());
     for &n in &counts {
-        let b =
-            baseline.map(|b| par_mbps(|s| b.encode_fast(s, true).unwrap().len(), chunks, bytes, n));
+        let b = baseline.map(|b| {
+            par_mbps(
+                || {
+                    let cold = b.clone();
+                    move |s: &str| cold.encode_fast(s, true).unwrap().len()
+                },
+                chunks,
+                bytes,
+                n,
+            )
+        });
         let p = par_mbps(
-            |s| {
-                pipeline
-                    .encode(s, true)
-                    .wait()
-                    .unwrap()
-                    .first()
-                    .unwrap()
-                    .len()
+            || {
+                let cold = PipelineTokenizer::try_from(oracle).expect("probed at model load");
+                move |s: &str| cold.encode(s, true).wait().unwrap().first().unwrap().len()
             },
             chunks,
             bytes,
@@ -662,154 +352,6 @@ fn bench_threads(
         eprintln!(
             "    {n} thread(s): pipeline {p:.1} MB/s{}",
             b.map_or(String::new(), |v| format!(", baseline {v:.1} MB/s"))
-        );
-        pipe.push(p);
-        base.push(b);
-    }
-    json!({ "counts": counts, "pipeline_mbps": pipe, "baseline_mbps": base })
-}
-
-// ── decode: throughput + scaling ─────────────────────────────────────────────
-// Mirror of the encode phases, over the inverse direction, anchored on the
-// RELEASED crate — never the in-tree legacy `Tokenizer` (which is being removed;
-// oracles must not depend on it). The id stream is produced by the release's
-// `encode_fast`, and both decoders — pipeline and released baseline — consume
-// those SAME ids, so decode is a clean apples-to-apples judged against the
-// release. No released baseline → no decode oracle, so the whole phase is null.
-// `pipeline_ok` is the once-probed "can the pipeline decode yet" flag: while
-// `PipelineTokenizer::decode` is a loud stub it is false, so the pipeline series
-// is `null` (rendered "pending") and only the baseline bar is drawn.
-
-/// Encode every chunk with the released crate into its id stream (untimed input;
-/// specials included, so decode sees the frame tokens a real stream carries).
-fn ids_of(baseline: &BaselineTokenizer, chunks: &[String]) -> Vec<Vec<u32>> {
-    chunks
-        .iter()
-        .map(|c| {
-            baseline
-                .encode_fast(c.as_str(), true)
-                .unwrap()
-                .get_ids()
-                .to_vec()
-        })
-        .collect()
-}
-
-/// Warm single-thread decode throughput + the `text_match` gate for one fixture.
-/// `text_match` = pipeline decode == released decode (the gate CI fails on). All
-/// null when there is no released baseline to judge against.
-fn bench_decode(
-    baseline: Option<&BaselineTokenizer>,
-    pipeline: &PipelineTokenizer,
-    f: &Fixture,
-    pipeline_ok: bool,
-) -> Value {
-    let null = json!({
-        "decode_mbps": { "baseline": Value::Null, "pipeline": Value::Null },
-        "text_match": Value::Null,
-    });
-    let Some(baseline) = baseline else {
-        return null;
-    };
-    let ids = ids_of(baseline, &f.chunks);
-    // Throughput basis: bytes of text decode emits, measured once via the release.
-    let dec_bytes: usize = ids
-        .iter()
-        .map(|i| baseline.decode(i, false).unwrap().len())
-        .sum();
-    if dec_bytes == 0 {
-        return null;
-    }
-
-    let one_pass = |dec: &dyn Fn(&[u32]) -> usize| -> f64 {
-        let start = Instant::now();
-        let mut n = 0usize;
-        for i in &ids {
-            n += dec(i);
-        }
-        black_box(n);
-        start.elapsed().as_secs_f64()
-    };
-    let mbps = |secs: f64| dec_bytes as f64 / secs / 1e6;
-
-    // Correctness gate (first 3 chunks): pipeline decode == released decode.
-    let text_match = pipeline_ok.then(|| {
-        ids.iter()
-            .take(3)
-            .all(|i| pipeline.decode(i, false).unwrap() == baseline.decode(i, false).unwrap())
-    });
-
-    // Interleaved warm-up + REPS so thermal drift hits both equally.
-    one_pass(&|i| baseline.decode(i, false).unwrap().len());
-    if pipeline_ok {
-        one_pass(&|i| pipeline.decode(i, false).unwrap().len());
-    }
-    let (mut base_s, mut pipe_s) = (Vec::new(), Vec::new());
-    for _ in 0..REPS {
-        base_s.push(one_pass(&|i| baseline.decode(i, false).unwrap().len()));
-        if pipeline_ok {
-            pipe_s.push(one_pass(&|i| pipeline.decode(i, false).unwrap().len()));
-        }
-    }
-    let base_mbps = mbps(median_secs(base_s));
-    let pipe_mbps = (!pipe_s.is_empty()).then(|| mbps(median_secs(pipe_s)));
-
-    eprintln!(
-        "  {} decode: baseline {base_mbps:.1} MB/s, pipeline {}",
-        f.name,
-        pipe_mbps.map_or("pending".into(), |v: f64| format!("{v:.1} MB/s")),
-    );
-
-    json!({
-        "decode_mbps": { "baseline": base_mbps, "pipeline": pipe_mbps },
-        "text_match": text_match,
-    })
-}
-
-/// Median MB/s of decoding `ids` across `n` threads in a private rayon pool.
-fn par_decode_mbps(
-    decode: impl Fn(&[u32]) -> usize + Sync,
-    ids: &[Vec<u32>],
-    bytes: usize,
-    n: usize,
-) -> f64 {
-    let pool = ThreadPoolBuilder::new().num_threads(n).build().unwrap();
-    let run = || pool.install(|| ids.par_iter().map(|i| decode(i.as_slice())).sum::<usize>());
-    black_box(run());
-    let mut samples = Vec::with_capacity(REPS);
-    for _ in 0..REPS {
-        let t = Instant::now();
-        black_box(run());
-        samples.push(t.elapsed().as_secs_f64());
-    }
-    bytes as f64 / median_secs(samples) / 1e6
-}
-
-/// Multi-thread decode throughput sweep — pipeline vs the released crate at
-/// 1/2/4/8/max threads over the whole fixture corpus's id stream (release-produced).
-fn bench_decode_threads(
-    baseline: Option<&BaselineTokenizer>,
-    pipeline: &PipelineTokenizer,
-    all_chunks: &[String],
-    pipeline_ok: bool,
-) -> Value {
-    let Some(baseline) = baseline else {
-        return json!({ "counts": [], "pipeline_mbps": [], "baseline_mbps": [] });
-    };
-    let ids = ids_of(baseline, all_chunks);
-    let bytes: usize = ids
-        .iter()
-        .map(|i| baseline.decode(i, false).unwrap().len())
-        .sum();
-    let counts = thread_counts();
-    let (mut pipe, mut base) = (Vec::new(), Vec::new());
-    for &n in &counts {
-        let b = par_decode_mbps(|i| baseline.decode(i, false).unwrap().len(), &ids, bytes, n);
-        let p = pipeline_ok
-            .then(|| par_decode_mbps(|i| pipeline.decode(i, false).unwrap().len(), &ids, bytes, n));
-        eprintln!(
-            "    decode {n} thread(s): pipeline {}, baseline {b:.1} MB/s",
-            p.map_or("pending".into(), |v: f64| format!("{v:.1} MB/s")),
         );
         pipe.push(p);
         base.push(b);
@@ -838,6 +380,14 @@ fn rss_peak() -> Option<i64> {
     proc_status_bytes("VmHWM:")
 }
 
+/// Reset the peak-RSS watermark to the current RSS, so `rss_peak` reflects only
+/// what happens afterwards. Writing `5` to `/proc/self/clear_refs` is the
+/// documented reset (see proc(5)); a silent no-op elsewhere, matching `rss_peak`
+/// being Linux-only.
+fn reset_rss_peak() {
+    let _ = std::fs::write("/proc/self/clear_refs", "5");
+}
+
 fn proc_status_bytes(key: &str) -> Option<i64> {
     let status = std::fs::read_to_string("/proc/self/status").ok()?;
     let kb: i64 = status
@@ -850,88 +400,60 @@ fn proc_status_bytes(key: &str) -> Option<i64> {
     Some(kb * 1024)
 }
 
-/// A small text sample for the memory child: the first `MEM_CHUNKS_PER_FIXTURE`
-/// chunks of each fixture, read as a bounded prefix instead of slurping the whole
-/// (~90 MB) corpus. Loading it all would spike the transient allocation well above
-/// the tokenizer itself, polluting `rss0` and `VmHWM` — corrupting the very numbers
-/// this child measures. The prefix contains those first chunks, so the encode pass
-/// is byte-for-byte what a full load would have produced.
-fn memory_sample() -> Vec<String> {
-    use std::io::Read;
-    let cap = (CHUNK_BYTES * (MEM_CHUNKS_PER_FIXTURE + 1)) as u64;
-    let mut chunks = Vec::new();
-    for (_, path) in fixture_paths() {
-        let mut buf = Vec::new();
-        std::fs::File::open(&path)
-            .unwrap()
-            .take(cap)
-            .read_to_end(&mut buf)
-            .unwrap();
-        let valid = std::str::from_utf8(&buf).map_or_else(|e| e.valid_up_to(), |_| buf.len());
-        let text = std::str::from_utf8(&buf[..valid]).unwrap();
-        chunks.extend(make_chunks(text).into_iter().take(MEM_CHUNKS_PER_FIXTURE));
-    }
-    chunks
-}
-
-/// `--memory <impl> <model.json>` child entry: load one implementation, encode a
-/// capped pass over the fixtures, then decode that pass's ids, printing
-/// `{load_bytes, encode_bytes, decode_bytes, peak_bytes}`. One implementation per
-/// process so the deltas attribute cleanly. `decode_bytes` is `null` when the
-/// implementation can't decode yet (the pipeline's loud stub).
+/// `--memory <impl> <model.json>` child entry: load one implementation and
+/// encode the whole fixture corpus, printing
+/// `{load_bytes, encode_bytes, peak_bytes}`. One implementation per process so
+/// the deltas attribute cleanly.
+///
+/// Two rules keep the RSS deltas attributable:
+/// - The corpus is loaded (and the peak watermark reset) before the first
+///   measurement, so the fixture text cancels out of every delta.
+/// - Nothing is freed between measurements. Freed memory tends to stay resident
+///   in the allocator, where the next allocation grows into it instead of into
+///   new pages, smearing one delta into the next. That is why the pipeline's
+///   source `Tokenizer` stays alive to the end (its size is bracketed out by
+///   measuring around the pipeline build; it still shows in `peak_bytes`, which
+///   is honest — building a pipeline currently requires one), and why the encode
+///   pass drops each encoding instead of keeping every id: `encode_bytes` is the
+///   tokenizer's own growth over the corpus, not the size of the output ids.
 fn memory_child(which: &str, model: &Path) {
-    let chunks = memory_sample();
-
+    let fixtures = load_fixtures();
+    reset_rss_peak();
     let rss0 = rss_now().unwrap_or(0);
     let mut n = 0usize;
-    let mut ids: Vec<Vec<u32>> = Vec::new();
-    let (after_load, after_encode, decode_bytes) = match which {
+
+    let (load_bytes, encode_bytes) = match which {
         "baseline" => {
             let mut tok = BaselineTokenizer::from_file(model).unwrap();
             inject_added_tokens_baseline(&mut tok);
             let after_load = rss_now().unwrap_or(0);
-            for c in &chunks {
-                let enc = tok.encode_fast(c.as_str(), true).unwrap();
-                n += enc.len();
-                ids.push(enc.get_ids().to_vec());
+            for f in &fixtures {
+                for c in &f.chunks {
+                    n += tok.encode_fast(c.as_str(), true).unwrap().len();
+                }
             }
             let after_encode = rss_now().unwrap_or(0);
-            for i in &ids {
-                n += tok.decode(i, false).map(|s| s.len()).unwrap_or(0);
-            }
-            let decode_bytes = rss_now().unwrap_or(0) - after_encode;
-            (after_load, after_encode, Some(decode_bytes))
+            (after_load - rss0, after_encode - after_load)
         }
         "pipeline" => {
             let mut tok = Tokenizer::from_file(model).unwrap();
             inject_added_tokens(&mut tok);
+            let before_build = rss_now().unwrap_or(0);
             let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
-            // Count only the pipeline's own structures; the transient source
-            // Tokenizer still shows in peak_bytes, which is honest — building a
-            // pipeline currently requires one.
-            drop(tok);
-            let after_load = rss_now().unwrap_or(0);
-            for c in &chunks {
-                let results = pipeline.encode(c, true).wait().unwrap();
-                let enc = results.first().unwrap();
-                n += enc.len();
-                ids.push(enc.iter().map(|t| t.id).collect());
+            let after_build = rss_now().unwrap_or(0);
+            for f in &fixtures {
+                for c in &f.chunks {
+                    n += pipeline
+                        .encode(c, true)
+                        .wait()
+                        .unwrap()
+                        .first()
+                        .unwrap()
+                        .len();
+                }
             }
             let after_encode = rss_now().unwrap_or(0);
-            // Decode is a loud stub today → skip the pass and report null, so the
-            // decode memory bar reads "pending" rather than a bogus 0.
-            let decode_bytes = if ids
-                .first()
-                .is_some_and(|i| pipeline.decode(i, false).is_ok())
-            {
-                for i in &ids {
-                    n += pipeline.decode(i, false).map(|s| s.len()).unwrap_or(0);
-                }
-                Some(rss_now().unwrap_or(0) - after_encode)
-            } else {
-                None
-            };
-            (after_load, after_encode, decode_bytes)
+            (after_build - before_build, after_encode - after_build)
         }
         other => panic!("unknown impl {:?}", other),
     };
@@ -940,9 +462,8 @@ fn memory_child(which: &str, model: &Path) {
     println!(
         "{}",
         json!({
-            "load_bytes": after_load - rss0,
-            "encode_bytes": after_encode - after_load,
-            "decode_bytes": decode_bytes,
+            "load_bytes": load_bytes,
+            "encode_bytes": encode_bytes,
             "peak_bytes": rss_peak().map(|p| p - rss0),
         })
     );
@@ -1024,39 +545,6 @@ fn pretok_label(path: &Path) -> String {
     }
 }
 
-fn split_regex(p: &Value) -> Option<String> {
-    (p["type"].as_str() == Some("Split"))
-        .then(|| p["pattern"]["Regex"].as_str().map(str::to_string))
-        .flatten()
-}
-
-/// The ordered Split regexes a model's pre-tokenizer applies (deepseek → 3; a lone `Split` → 1; a
-/// byte-map `ByteLevel` with no Split → GPT-2's implicit regex, the canonical spec in atomsplit).
-/// Empty → no regex reference (Bert, Metaspace, WhitespaceSplit, …) → engines report null.
-fn pretok_regexes(path: &Path) -> Vec<String> {
-    let v: Value = std::fs::read_to_string(path)
-        .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or(Value::Null);
-    let pt = &v["pre_tokenizer"];
-    match pt["type"].as_str() {
-        Some("Split") => split_regex(pt).into_iter().collect(),
-        Some("ByteLevel") => vec![atomsplit::regexes::GPT2.to_string()],
-        Some("Sequence") => {
-            let arr = pt["pretokenizers"].as_array().cloned().unwrap_or_default();
-            let res: Vec<String> = arr.iter().filter_map(split_regex).collect();
-            if !res.is_empty() {
-                res
-            } else if arr.iter().any(|p| p["type"] == "ByteLevel") {
-                vec![atomsplit::regexes::GPT2.to_string()]
-            } else {
-                vec![]
-            }
-        }
-        _ => vec![],
-    }
-}
-
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.get(1).map(String::as_str) == Some("--memory") {
@@ -1086,9 +574,21 @@ fn main() {
         full.len()
     );
     let fixtures = load_fixtures();
-    // The whole corpus, flattened once: the multi-thread sweep runs over all fixtures so
-    // thread-spawn/scheduling overhead is amortized and the scaling curve is stable.
-    let all_chunks: Vec<String> = fixtures.iter().flat_map(|f| f.chunks.clone()).collect();
+    // The corpus per fixture group, flattened once: the multi-thread sweeps run
+    // over a whole group so thread-spawn/scheduling overhead is amortized and the
+    // scaling curve is stable, and per group so the report can show how scaling
+    // differs between natural language and the code/math/added-token workloads.
+    let group_chunks: Vec<(&str, Vec<&String>)> = GROUPS
+        .iter()
+        .map(|g| {
+            let chunks = fixtures
+                .iter()
+                .filter(|f| f.group == *g)
+                .flat_map(|f| f.chunks.iter())
+                .collect();
+            (*g, chunks)
+        })
+        .collect();
 
     let mut models: Vec<Value> = Vec::new();
     for entry in manifest {
@@ -1119,9 +619,9 @@ fn main() {
         // *encode* time — e.g. a Sequence containing ByteLevel, which rewrites bytes
         // and has no range-based impl. Probe once and downgrade to "unsupported"
         // (with the reason) instead of panicking partway through the bench.
-        let pipeline = match PipelineTokenizer::try_from(&tok) {
+        match PipelineTokenizer::try_from(&tok) {
             Ok(p) => match p.encode(PROBE, false).wait() {
-                Ok(_) => p,
+                Ok(_) => {}
                 Err(e) => {
                     eprintln!("  pipeline builds but can't encode yet ({shape}): {e}");
                     models.push(json!({
@@ -1140,7 +640,7 @@ fn main() {
                 }));
                 continue;
             }
-        };
+        }
 
         // The released crate may not load (or encode) a config that needs
         // features newer than the release — bench without it rather than fail.
@@ -1161,44 +661,28 @@ fn main() {
             }
         };
 
-        let mut rows: Vec<Value> = fixtures
+        let rows: Vec<Value> = fixtures
             .iter()
             .map(|f| bench_throughput(baseline.as_ref(), &tok, f))
             .collect();
-        let regexes = pretok_regexes(&path);
-        for (row, f) in rows.iter_mut().zip(&fixtures) {
-            let (stages, pretok) = bench_stages(&pipeline, f, &regexes);
-            let row = row.as_object_mut().unwrap();
-            row.insert("stage_ns_per_byte".into(), stages);
-            row.insert("pretok_vs_regex".into(), pretok);
-        }
-        // Decode: probe once whether the pipeline can decode yet (a loud stub
-        // today → the pipeline decode series is `null`, rendered "pending"). The
-        // probe uses a bare id slice so it never touches the legacy encode path.
-        let (decode_ok, decode_reason) = match pipeline.decode(&[0], false) {
-            Ok(_) => (true, None),
-            Err(e) => {
-                eprintln!("  pipeline decode pending ({shape}): {e}");
-                (false, Some(format!("{e}")))
-            }
-        };
-        for (row, f) in rows.iter_mut().zip(&fixtures) {
-            let dec = bench_decode(baseline.as_ref(), &pipeline, f, decode_ok);
-            let row = row.as_object_mut().unwrap();
-            for (k, v) in dec.as_object().unwrap() {
-                row.insert(k.clone(), v.clone());
-            }
-        }
-        let decode_threads =
-            bench_decode_threads(baseline.as_ref(), &pipeline, &all_chunks, decode_ok);
 
         let memory = measure_memory(&path, baseline.is_some());
-        let threads = bench_threads(baseline.as_ref(), &pipeline, &all_chunks);
+        let threads = Value::Object(
+            group_chunks
+                .iter()
+                .map(|(g, chunks)| {
+                    eprintln!("  encode thread sweep ({g}):");
+                    (
+                        g.to_string(),
+                        bench_threads(baseline.as_ref(), &tok, chunks),
+                    )
+                })
+                .collect(),
+        );
 
         models.push(json!({
             "model": name, "desc": desc, "shape": shape,
             "results": rows, "memory": memory, "threads": threads,
-            "decode_threads": decode_threads, "decode_reason": decode_reason,
         }));
     }
 

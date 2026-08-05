@@ -2,14 +2,14 @@ name: Pipeline Benchmark
 
 # Comparative benchmark: the experimental `PipelineTokenizer` vs the latest
 # *released* tokenizers crate — both the baseline to beat AND the correctness
-# reference (`ids_match`/`text_match`). The in-tree legacy `Tokenizer` is being
+# reference (`ids_match`). The in-tree legacy `Tokenizer` is being
 # phased out, so it only *builds* the pipeline and is never benched or trusted as
 # an oracle. Runs for every model in tk-encode/examples/bench_models.json across
 # every corpus in data/fixtures/.
-# Measures single- and multi-thread throughput (1/2/4/8/device-max), per-
-# implementation memory footprint (RSS), and stripped minimal-binary size. The
-# release dep is behind tk-encode's `bench-baseline` feature, so production
-# builds never pull it.
+# Measures single-thread throughput (whole corpus, cold instance per pass), a
+# multi-thread sweep (1/2/4/8/device-max) per fixture group, per-implementation
+# memory footprint (RSS), and stripped minimal-binary size. The release dep is
+# behind tk-encode's `bench-baseline` feature, so production builds never pull it.
 #
 # A `build` job compiles the bench + binsize example binaries ONCE (each with its
 # exact per-example feature set) and uploads them; the work is then fanned out across
@@ -47,6 +47,8 @@ on:
     paths:
       - "tokenizers/tk-encode/**"
       - "tokenizers/src/**"
+      - "tokenizers/atomsplit/**"
+      - "tokenizers/Cargo.lock"
       - ".github/workflows/pipeline-bench.yml"
       - ".github/scripts/render_pipeline_bench.py"
       - "tokenizers/tk-encode/examples/bench_models.json"
@@ -103,8 +105,9 @@ jobs:
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@v0.0.9
 
-      # `onig_sys` (a `bench-baseline` reference-regex dep) generates its bindings with bindgen,
-      # which needs libclang. pcre2/fancy-regex don't. The runner image doesn't ship it.
+      # `onig_sys` comes in through the released crate (the `bench-baseline` dep): the
+      # release ships with Oniguruma as its default regex backend, and onig_sys generates
+      # its bindings with bindgen, which needs libclang. The runner image doesn't ship it.
       - name: Install libclang (onig_sys → bindgen)
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libclang-dev
 
@@ -113,8 +116,8 @@ jobs:
       #   • fixture_bench + binsize_baseline WITH `bench-baseline` → link the released crate
       #     (fixture_bench = the throughput/memory bench; binsize_baseline = "cost of the
       #     released lib" size number).
-      #   • binsize_pipeline WITHOUT it → the real shipping config whose size we report (none
-      #     of the benchmark-only reference-regex deps the feature drags in).
+      #   • binsize_pipeline WITHOUT it → the real shipping config whose size we report (no
+      #     released crate linked in).
       # These are byte-for-byte the same cargo invocations the shards / report ran before.
       - name: Build bench + binsize binaries
         run: |
@@ -151,7 +154,8 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
-      # onig_sys (a bench-baseline dep) generates bindings via bindgen → needs libclang.
+      # onig_sys (the released crate's regex backend, via bench-baseline) generates
+      # bindings with bindgen → needs libclang.
       - name: Install libclang (onig_sys → bindgen)
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libclang-dev
 
@@ -381,7 +385,7 @@ jobs:
           fi
           python3 ${{ github.workspace }}/.github/scripts/render_pipeline_bench.py \
             pipeline_bench.json \
-            --subtitle "~10 kB inputs · add_special_tokens on · single thread + 1/2/4/8/max-thread sweep" \
+            --subtitle "whole corpus · ~10 kB chunks · cold caches · add_special_tokens on · 1/2/4/8/max-thread sweep per group" \
             --revision "${{ github.event.pull_request.head.sha || github.sha }}" \
             --img-base "$base_url" \
             --run-id "${{ github.run_id }}" \
@@ -446,22 +450,16 @@ jobs:
           gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/labels/run-pipeline-bench" \
             -X DELETE || true
 
-      # Pipeline encode ids (`ids_match`) AND decode text (`text_match`) must match
-      # the released crate. Both are null when the release can't load a model (no
-      # reference), and `text_match` is null while decode is a stub → inert until
-      # the pipeline can decode.
-      - name: Fail on id / decode mismatches
+      # Pipeline encode ids (`ids_match`) must match the released crate. Null when
+      # the release can't load a model (no reference, so no gate).
+      - name: Fail on id mismatches
         run: |
           python3 -c "
           import json, sys
           models = json.load(open('pipeline_bench.json'))['models']
           ids = [f\"{m['model']}/{r['fixture']}\" for m in models
                  for r in m['results'] if r.get('ids_match') is False]
-          text = [f\"{m['model']}/{r['fixture']}\" for m in models
-                  for r in m['results'] if r.get('text_match') is False]
-          errs = ([f'ids diverge on: {ids}'] if ids else []) + \
-                 ([f'decode diverges on: {text}'] if text else [])
-          sys.exit(' · '.join(errs) if errs else 0)
+          sys.exit(f'ids diverge on: {ids}' if ids else 0)
           "
 
       # Establish/refresh the base-branch baseline: on a push to
