@@ -13,17 +13,17 @@ use tk_serialization::{
     AddedEntry, Config, Entry, Reader, added_flag, behavior, flag, kind, pretok, strings,
 };
 
-use crate::models::bpe::BPE;
-use crate::pre_tokenizers::byte_level::ByteLevel;
-use crate::pre_tokenizers::sequence::Sequence;
+use crate::models::bpe::{BPE, PipelineBPE};
 use crate::normalizers::replace::{Replace, ReplacePattern};
+use crate::pre_tokenizers::sequence::PipelineSequence;
 use crate::pre_tokenizers::split::{Split, SplitPattern};
-use crate::tokenizer::pipeline::{PipelineModel, PipelinePostProcessor, PipelineTokenizer};
-use crate::tokenizer::{
-    AddedToken, ModelWrapper, NormalizerWrapper, PreTokenizerWrapper, Result,
-    SplitDelimiterBehavior, Tokenizer,
+use crate::tokenizer::pipeline::{
+    PipelineModel, PipelineNormalizer, PipelinePostProcessor, PipelinePreTokenizer,
+    PipelineTokenizer,
 };
+use crate::tokenizer::{Result, SplitDelimiterBehavior};
 use crate::utils::cl100k_pattern;
+use crate::vocab::bucket_added_vocabulary::{AddedToken, AddedVocabulary as BucketAddedVocabulary};
 
 // ── read ───────────────────────────────────────────────────────────────────────────────────────
 
@@ -35,31 +35,32 @@ impl PipelineTokenizer {
         let reader = Reader::new(bytes).map_err(|e| e.to_string())?;
         let config = reader.config;
 
-        let model = read_model(&reader, config)?;
-        let pre_tokenizer = read_pre_tokenizer(&reader, config)?;
+        let bpe = read_model(&reader, config)?;
+        let normalizer = read_normalizer(&reader)?;
 
-        // Route through `Tokenizer` so added tokens get the same id assignment and the same
-        // "already in the model vocabulary" reuse they get on the JSON path. This costs one
-        // wrapper and keeps a second implementation of that rule from existing.
-        let mut tokenizer = Tokenizer::new(ModelWrapper::BPE(model));
-        tokenizer.with_pre_tokenizer(pre_tokenizer);
-        tokenizer.with_normalizer(read_normalizer(&reader)?)?;
-        let added = read_added_tokens(&reader)?;
-        if !added.is_empty() {
-            tokenizer.add_tokens(added)?;
-        }
-
-        let mut pipeline = Self::try_from(&tokenizer)?;
-        pipeline
-            .added_vocabulary
+        // Added tokens are written in id order, and `add_tokens` reuses a model id when the token
+        // is already in the vocabulary, so replaying them in order reproduces the JSON path's
+        // assignment. The model is passed as a concrete `BPE` and the normalizer as a concrete
+        // `Replace`: routing either through its wrapper enum would make every other variant
+        // reachable, which is most of what this format exists to avoid.
+        let mut added_vocabulary = BucketAddedVocabulary::new();
+        added_vocabulary.add_tokens(read_added_tokens(&reader)?, &bpe, normalizer.as_ref())?;
+        added_vocabulary
             .set_encode_special_tokens(config.flags & flag::ENCODE_SPECIAL_TOKENS != 0);
-        // The post-processor reduces to two id lists, so that is what the file carries; there is
-        // no `PostProcessorWrapper` to rebuild.
-        pipeline.post_processor = PipelinePostProcessor::from_ids(
-            reader.section::<u32>(kind::POST_PREFIX).map_err(|e| e.to_string())?,
-            reader.section::<u32>(kind::POST_SUFFIX).map_err(|e| e.to_string())?,
-        );
-        Ok(pipeline)
+
+        Ok(Self {
+            added_vocabulary,
+            normalizers: normalizer.map(PipelineNormalizer::Replace).into_iter().collect(),
+            pre_tokenizer: read_pre_tokenizer(&reader, config)?,
+            model: PipelineModel::BPE(PipelineBPE::from_bpe(
+                bpe,
+                config.flags & flag::BYTE_LEVEL != 0,
+            )?),
+            post_processor: PipelinePostProcessor::from_ids(
+                reader.section::<u32>(kind::POST_PREFIX).map_err(|e| e.to_string())?,
+                reader.section::<u32>(kind::POST_SUFFIX).map_err(|e| e.to_string())?,
+            ),
+        })
     }
 }
 
@@ -156,17 +157,17 @@ fn read_model_strings(reader: &Reader<'_>) -> Result<[Option<String>; 3]> {
 
 /// The normalizer, if the file carries one. v1 knows a single literal `Replace`, which is what
 /// SentencePiece-derived configs (the gemma family) use for their ` ` -> `U+2581` rewrite.
-fn read_normalizer(reader: &Reader<'_>) -> Result<Option<NormalizerWrapper>> {
+fn read_normalizer(reader: &Reader<'_>) -> Result<Option<Replace>> {
     let raw: &[u8] = reader.section(kind::NORMALIZER).map_err(|e| e.to_string())?;
     if raw.is_empty() {
         return Ok(None);
     }
     let parts = strings::parse(raw).ok_or("corrupt .tok: malformed NORMALIZER section")?;
     match parts.as_slice() {
-        ["replace", pattern, content] => Ok(Some(NormalizerWrapper::Replace(Replace::new(
+        ["replace", pattern, content] => Ok(Some(Replace::new(
             ReplacePattern::String((*pattern).to_owned()),
             *content,
-        )?))),
+        )?)),
         [other, ..] => Err(format!("corrupt .tok: unknown normalizer kind `{other}`").into()),
         [] => Ok(None),
     }
@@ -194,48 +195,40 @@ fn read_added_tokens(reader: &Reader<'_>) -> Result<Vec<AddedToken>> {
     Ok(out)
 }
 
-/// Spell the pre-tokenizer back out from its family id. The file names the FSM rather than
-/// carrying a regex, so a `.tok` never needs a regex engine to load: every pattern produced here
-/// is one `gpt_fsm` recognises, and `Split::new` falls back to the native FSM without a backend.
-fn read_pre_tokenizer(reader: &Reader<'_>, config: &Config) -> Result<Option<PreTokenizerWrapper>> {
-    let split = |pattern: String| -> Result<PreTokenizerWrapper> {
-        Ok(PreTokenizerWrapper::Split(Split::new(
-            SplitPattern::Regex(pattern),
+/// Spell the pre-tokenizer back out from its family id.
+///
+/// The file names the FSM family rather than carrying a regex, so loading a `.tok` never needs a
+/// regex engine: every pattern produced here is one `gpt_fsm` recognises and drives natively, and
+/// a literal pattern is searched for directly. This builds `PipelinePreTokenizer` rather than the
+/// config-level `PreTokenizerWrapper` — the wrapper holds every pre-tokenizer variant, so touching
+/// it would link all of them.
+fn read_pre_tokenizer(reader: &Reader<'_>, config: &Config) -> Result<PipelinePreTokenizer> {
+    let regex = |pattern: &str| -> Result<PipelinePreTokenizer> {
+        Ok(PipelinePreTokenizer::Split(Split::new(
+            SplitPattern::Regex(pattern.to_owned()),
             SplitDelimiterBehavior::Isolated,
             false,
         )?))
     };
-    // A trailing `ByteLevel` with `use_regex: false` is the byte-map half: it does no splitting,
-    // it tells the pipeline the model seeds on bytes.
-    let byte_map = PreTokenizerWrapper::ByteLevel(ByteLevel::new(false, true, false));
-    let with_byte_map = |mut parts: Vec<PreTokenizerWrapper>| -> Option<PreTokenizerWrapper> {
-        if config.flags & flag::BYTE_LEVEL != 0 {
-            parts.push(byte_map);
-        }
-        match parts.len() {
-            0 => None,
-            1 => parts.pop(),
-            _ => Some(PreTokenizerWrapper::Sequence(Sequence::new(parts))),
-        }
-    };
 
     Ok(match config.pretok {
-        // GPT-2 ships as a single `ByteLevel` that both splits and byte-maps.
-        pretok::BYTE_LEVEL => Some(PreTokenizerWrapper::ByteLevel(ByteLevel::new(
-            false, true, true,
-        ))),
-        pretok::CL100K => with_byte_map(vec![split(cl100k_pattern(match config.pretok_param {
+        // The byte-map half of a byte-level pre-tokenizer splits nothing, so it does not appear
+        // here at all — `Config::flags` carries it as `BYTE_LEVEL` and the model reads it there.
+        pretok::BYTE_LEVEL => regex(atomsplit::regexes::GPT2)?,
+        pretok::CL100K => regex(&cl100k_pattern(match config.pretok_param {
             u32::MAX => usize::MAX,
             cap => cap as usize,
-        }))?]),
-        pretok::O200K => with_byte_map(vec![split(atomsplit::regexes::O200K.to_owned())?]),
-        pretok::TEKKEN => with_byte_map(vec![split(atomsplit::regexes::TEKKEN.to_owned())?]),
-        pretok::DEEPSEEK => with_byte_map(
+        }))?,
+        pretok::O200K => regex(atomsplit::regexes::O200K)?,
+        pretok::TEKKEN => regex(atomsplit::regexes::TEKKEN)?,
+        // The three deepseek regexes as a sequence, which the pipeline recognises and runs as one
+        // native pass.
+        pretok::DEEPSEEK => PipelinePreTokenizer::Sequence(PipelineSequence::new(
             atomsplit::regexes::DEEPSEEK
                 .iter()
-                .map(|r| split((*r).to_owned()))
+                .map(|r| regex(r))
                 .collect::<Result<Vec<_>>>()?,
-        ),
+        )),
         pretok::LITERAL => {
             let raw: &[u8] = reader.section(kind::PRETOK_STRINGS).map_err(|e| e.to_string())?;
             let [pattern] = strings::parse(raw)
@@ -243,13 +236,13 @@ fn read_pre_tokenizer(reader: &Reader<'_>, config: &Config) -> Result<Option<Pre
             else {
                 return Err("corrupt .tok: a literal split needs exactly one pattern".into());
             };
-            with_byte_map(vec![PreTokenizerWrapper::Split(Split::new(
+            PipelinePreTokenizer::Split(Split::new(
                 SplitPattern::String(pattern.to_owned()),
                 read_behavior(config.pretok_param)?,
                 config.flags & flag::PRETOK_INVERT != 0,
-            )?)])
+            )?)
         }
-        pretok::NONE => with_byte_map(Vec::new()),
+        pretok::NONE => PipelinePreTokenizer::None,
         other => return Err(format!("corrupt .tok: unknown pre-tokenizer id {other}").into()),
     })
 }
@@ -271,6 +264,10 @@ fn read_behavior(value: u32) -> Result<SplitDelimiterBehavior> {
 mod write {
     use super::*;
     use tk_serialization::Writer;
+
+    // The config-level wrappers are named only here. They hold every model / normalizer variant,
+    // so the read half must never touch them.
+    use crate::tokenizer::{ModelWrapper, NormalizerWrapper, Tokenizer};
 
     /// Serialise `tokenizer` as a `.tok` v1 image.
     ///

@@ -16,7 +16,7 @@ use crate::vocab::bucket_added_vocabulary::{
 };
 use crate::{
     ModelWrapper, PostProcessorWrapper, PreTokenizerWrapper, Token, Tokenizer,
-    normalizers::{NormalizerWrapper, metaspace::MetaspaceNormalizer},
+    normalizers::{NormalizerWrapper, metaspace::MetaspaceNormalizer, replace::Replace},
     pre_tokenizers::{
         bert::BertPreTokenizer,
         delimiter::CharDelimiterSplit,
@@ -105,10 +105,13 @@ pub(crate) fn normalize_all<'a, N: Normalizer>(
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub(crate) enum PipelineNormalizer {
-    /// The `normalizer` field of the config, as-is.
+    /// The `normalizer` field of the config, as-is. Only the JSON path produces this: it holds
+    /// every normalizer variant, so anything that can construct it links all of them.
     Declared(NormalizerWrapper),
     /// The text-rewriting half of a `Metaspace` pre-tokenizer.
     Metaspace(MetaspaceNormalizer),
+    /// A literal `Replace`, which is the only normalizer a `.tok` can carry.
+    Replace(Replace),
 }
 
 impl Normalizer for PipelineNormalizer {
@@ -116,6 +119,7 @@ impl Normalizer for PipelineNormalizer {
         match self {
             Self::Declared(normalizer) => normalizer.normalize(input),
             Self::Metaspace(normalizer) => normalizer.normalize(input),
+            Self::Replace(normalizer) => normalizer.normalize(input),
         }
     }
 }
