@@ -115,6 +115,15 @@ impl<M: SinkMode> SymbolSink<M> {
         self.previous_symbol = symbol;
         self.mode.push_symbol(symbol);
     }
+
+    /// Pushes `character` as its bytes, each mapped to a symbol through `byte_symbols`.
+    #[inline(always)]
+    fn push_char_bytes(&mut self, tables: &BpeTables, byte_symbols: &[u32; 256], character: char) {
+        let mut buf = [0u8; 4];
+        for &byte in character.encode_utf8(&mut buf).as_bytes() {
+            self.push(tables, byte_symbols.at(byte as usize));
+        }
+    }
 }
 
 impl PipelineBPE {
@@ -245,10 +254,7 @@ fn convert_chars<M: SinkMode>(
             continue;
         }
         if let Some(fallback) = byte_fallback {
-            let mut buf = [0u8; 4];
-            for &byte in character.encode_utf8(&mut buf).as_bytes() {
-                sink.push(tables, fallback.at(byte as usize));
-            }
+            sink.push_char_bytes(tables, fallback, character);
             in_unk_run = false;
             continue;
         }
@@ -313,22 +319,14 @@ fn push_unknown<M: SinkMode>(
     sink: &mut SymbolSink<M>,
 ) {
     match atoms {
-        Atoms::Bytes => {
-            let mut buf = [0u8; 4];
-            for &byte in character.encode_utf8(&mut buf).as_bytes() {
-                sink.push(tables, tables.byte_internal.at(byte as usize));
-            }
-        }
+        Atoms::Bytes => sink.push_char_bytes(tables, &tables.byte_internal, character),
         Atoms::Chars {
             byte_fallback,
             unk_token,
             ..
         } => {
             if let Some(fallback) = byte_fallback {
-                let mut buf = [0u8; 4];
-                for &byte in character.encode_utf8(&mut buf).as_bytes() {
-                    sink.push(tables, fallback.at(byte as usize));
-                }
+                sink.push_char_bytes(tables, fallback, character);
             } else if let Some(unk) = unk_token {
                 sink.push(tables, *unk);
             }
