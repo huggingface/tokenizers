@@ -160,7 +160,27 @@ impl PipelineBPE {
         symbols: &mut Vec<u32>,
         merge_scratch: &mut MergeScratch,
     ) {
-        let gate: u16 = self.byte_to_mode[sequence.as_bytes()[0] as usize];
+        // Index the gate by the first *content* byte, not the first byte of the
+        // word. A ByteLevel pre-tokenizer writes a leading space as `Ġ`
+        // (C4 A0) and Metaspace writes `▁` (E2 96 81). Both are >= 0x80, so
+        // indexing the raw first byte handed every space-prefixed word the
+        // multibyte gate -- the one meant for CJK, at 8 bytes -- and sent any
+        // English word longer than that to the two-tier queue, which is the
+        // wrong engine for a short word.
+        //
+        // `build_byte_to_gate` already makes this argument for the ASCII space
+        // and maps " \t\n\r" to the multibyte gate, precisely because a
+        // leading delimiter says nothing about the script of the rest. The
+        // conclusion was right and the remedy was backwards: what follows the
+        // delimiter is what should choose, so look past it.
+        let bytes = sequence.as_bytes();
+        let first = match bytes {
+            [0xC4, 0xA0, rest @ ..] if !rest.is_empty() => rest[0],
+            [0xE2, 0x96, 0x81, rest @ ..] if !rest.is_empty() => rest[0],
+            [ws, rest @ ..] if ws.is_ascii_whitespace() && !rest.is_empty() => rest[0],
+            _ => bytes[0],
+        };
+        let gate: u16 = self.byte_to_mode[first as usize];
 
         if sequence.len() > gate as usize {
             // conversion writes the entries and cold keys directly: no intermediate rank array
@@ -335,6 +355,50 @@ impl pipeline::Model for PipelineBPE {
             symbols: Vec::with_capacity(64),
             merge: MergeScratch::default(),
             word_cache: self.cache_capacity.map(WordCache::new),
+        }
+    }
+}
+
+#[cfg(test)]
+mod gate_tests {
+    use crate::pipeline::PipelineTokenizer;
+    use crate::Tokenizer;
+
+    /// The gate picks which merge engine handles a word; both must produce the
+    /// same ids, so a change to the gate is only ever a performance change.
+    ///
+    /// This is the case that made the gate wrong: with a ByteLevel
+    /// pre-tokenizer the leading space becomes `Ġ` (C4 A0), so the raw first
+    /// byte is >= 0x80 and every space-prefixed word took the multibyte gate.
+    /// The words below straddle that 8-byte boundary in both directions, so
+    /// they exercise both engines, and any future change to the gate that also
+    /// changes an id fails here rather than in a benchmark.
+    #[test]
+    fn the_gate_never_changes_the_ids() {
+        let reference = Tokenizer::from_file("../data/gpt2.json").unwrap();
+        let pipe = PipelineTokenizer::try_from(&reference).unwrap();
+
+        // Short and long, space-prefixed and not, plus scripts whose own first
+        // byte is genuinely multibyte.
+        let cases = [
+            " a", " the", " short", " straddle", " understanding",
+            " internationalisation", "unprefixed", " ", "  ", "\tindented",
+            " 语言模型", " ελληνικά", " naïve café", " 🎉 emoji",
+            "mixed ascii and 中文 in one word",
+        ];
+        for text in cases {
+            let want: Vec<u32> = reference
+                .encode_fast(text, false)
+                .unwrap()
+                .get_ids()
+                .to_vec();
+            let got: Vec<u32> = pipe
+                .encode_one(text, false)
+                .unwrap()
+                .iter()
+                .map(|t| t.id)
+                .collect();
+            assert_eq!(want, got, "gate changed the ids for {text:?}");
         }
     }
 }
