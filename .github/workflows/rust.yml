@@ -64,8 +64,12 @@ jobs:
         run: make test HF="uvx --from huggingface_hub hf"
 
       # Windows skips the integration tests (and their fixture downloads); run lib + doc tests instead.
+      # bash so the step fails on the first failing command. The default pwsh
+      # only propagates the last command's exit code, which let a lib-test
+      # failure hide behind passing doc tests.
       - name: Run lib & doc tests on Windows
         if: matrix.os == 'windows-latest'
+        shell: bash
         run: |
           cargo test --workspace --verbose --lib
           cargo test --workspace --verbose --doc
