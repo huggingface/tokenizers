@@ -72,6 +72,11 @@ impl Entry {
     }
 }
 
+// Binary heap vendored from `std::collections::BinaryHeap`, in min-order over a raw u64 key
+// (rank in the high bits, entry index in the low): std is a max-heap, and wrapping in Reverse
+// would cost us the packed key. Same algorithm as std — sift-up on push, sift-down with early
+// exit on pop (`sift_up` / `sift_down_range`) — and the same "hole" form: the parent/child is
+// shifted into the hole and the key written once at the end, instead of a swap per level.
 #[inline(always)]
 fn hot_push(hot: &mut Vec<u64>, key: u64) {
     hot.push(key);
