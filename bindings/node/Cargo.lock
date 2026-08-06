@@ -1494,7 +1494,6 @@ dependencies = [
  "indicatif",
  "itertools 0.14.0",
  "log",
- "rayon",
  "serde",
  "serde_json",
  "thiserror",

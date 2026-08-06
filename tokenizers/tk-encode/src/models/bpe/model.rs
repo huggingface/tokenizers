@@ -300,16 +300,17 @@ impl pipeline::Model for PipelineBPE {
         } = scratch;
 
         // A word seen before costs a probe instead of a merge.
-        let mut placement = None;
-        if let Some(cache) = word_cache.as_mut() {
+        let insert_at = if let Some(cache) = word_cache.as_mut() {
             match cache.lookup(sequence.as_bytes()) {
                 Lookup::Hit(ids) => {
                     output.extend(ids.iter().map(|&id| PipelineToken { id }));
                     return Ok(());
                 }
-                Lookup::Miss(at) => placement = Some(at),
+                Lookup::Miss(at) => Some(at),
             }
-        }
+        } else {
+            None
+        };
 
         let start = output.len();
         self.merge_word(sequence, symbols, queue);
@@ -318,7 +319,7 @@ impl pipeline::Model for PipelineBPE {
             id: self.tables.unmap.at(symbol as usize),
         }));
         if let Some(cache) = word_cache.as_mut()
-            && let Some(at) = placement
+            && let Some(at) = insert_at
         {
             cache.insert(at, output[start..].iter().map(|token| token.id));
         }
