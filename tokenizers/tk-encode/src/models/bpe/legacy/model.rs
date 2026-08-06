@@ -302,7 +302,7 @@ pub struct BPE {
     /// Contains the mapping between Pairs and their (rank, new_id).
     pub merges: MergeMap,
     /// Contains the cache for optimizing the encoding step.
-    pub(super) cache: Option<BpeCache>,
+    pub(in crate::models::bpe) cache: Option<BpeCache>,
     /// Dropout probability for merges. 0.0 = no dropout is the default. At 1.0, tokenization will
     /// perform no merges, so the result will just be characters.
     pub dropout: Option<f32>,

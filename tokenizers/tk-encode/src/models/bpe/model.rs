@@ -11,6 +11,7 @@ use crate::models::bpe::tables::BpeTables;
 use crate::pipeline::{self, PipelineToken};
 use crate::tokenizer::Result;
 use crate::utils::byte_level::{self};
+use crate::utils::word_cache::{Lookup, WordCache};
 use crate::vocab::bucket_vocab_store::BucketVocabStore;
 
 const GATE_MULTI: u16 = 8;
@@ -55,6 +56,8 @@ pub struct PipelineBPE {
     /// See [`PipelineBPE::prove_fold`].
     fold_by_flag: bool,
     byte_to_gate: [u16; 256],
+    /// Slots for the per-scratch word cache, from the config. `None` disables it.
+    cache_capacity: Option<usize>,
 }
 
 // A `PipelineBPE` holds exactly one `Atoms`, so `Chars`' 1 KB byte-fallback table costs nothing.
@@ -83,8 +86,11 @@ impl PipelineBPE {
             fuse_unk,
             continuing_subword_prefix,
             end_of_word_suffix,
+            cache,
             ..
         } = model;
+        // A capacity of zero means "no cache"; anything else sizes the per-scratch table.
+        let cache_capacity = cache.map(|cache| cache.capacity).filter(|&c| c > 0);
         let prefix = continuing_subword_prefix.unwrap_or_default();
         let suffix = end_of_word_suffix.unwrap_or_default();
         if prefix.len() + 4 + suffix.len() > AFFIX_BUF {
@@ -158,6 +164,7 @@ impl PipelineBPE {
             affixes,
             ignore_merges,
             fold_by_flag: false,
+            cache_capacity,
             vocab,
             byte_to_gate: build_byte_to_gate(),
         };
@@ -261,6 +268,9 @@ pub struct BpeScratch {
     pub(crate) symbols: Vec<u32>,
     /// Entry arena and the two queue tiers.
     pub(crate) queue: QueueScratch,
+    /// Words already seen, so a repeat costs a probe instead of a merge. It lives in the scratch
+    /// so it outlives the encode call that fills it -- otherwise it would never see a word twice.
+    pub(crate) word_cache: Option<WordCache>,
 }
 
 impl pipeline::ModelScratch for BpeScratch {}
@@ -283,13 +293,35 @@ impl pipeline::Model for PipelineBPE {
             return Ok(());
         }
 
-        let BpeScratch { symbols, queue } = scratch;
+        let BpeScratch {
+            symbols,
+            queue,
+            word_cache,
+        } = scratch;
 
+        // A word seen before costs a probe instead of a merge.
+        let mut placement = None;
+        if let Some(cache) = word_cache.as_mut() {
+            match cache.lookup(sequence.as_bytes()) {
+                Lookup::Hit(ids) => {
+                    output.extend(ids.iter().map(|&id| PipelineToken { id }));
+                    return Ok(());
+                }
+                Lookup::Miss(at) => placement = Some(at),
+            }
+        }
+
+        let start = output.len();
         self.merge_word(sequence, symbols, queue);
         // the merge engines work in internal ids; `unmap` takes them back to the vocab's own ids
         output.extend(symbols.iter().map(|&symbol| PipelineToken {
             id: self.tables.unmap.at(symbol as usize),
         }));
+        if let Some(cache) = word_cache.as_mut()
+            && let Some(at) = placement
+        {
+            cache.insert(at, output[start..].iter().map(|token| token.id));
+        }
 
         Ok(())
     }
@@ -298,6 +330,7 @@ impl pipeline::Model for PipelineBPE {
         Self::Scratch {
             symbols: Vec::with_capacity(64),
             queue: QueueScratch::default(),
+            word_cache: self.cache_capacity.map(WordCache::new),
         }
     }
 }
