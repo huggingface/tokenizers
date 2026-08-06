@@ -8,7 +8,7 @@ use crate::models::bpe::legacy::model::BPE;
 use crate::models::bpe::merge_hot_cold_queue::{QueueScratch, merge_hot_cold_queue};
 use crate::models::bpe::merge_multipass::merge_multipass;
 use crate::models::bpe::tables::BpeTables;
-use crate::pipeline::{self, PipelineToken};
+use crate::pipeline::{self, PipelineToken, Span};
 use crate::tokenizer::Result;
 use crate::utils::byte_level::{self};
 use crate::vocab::bucket_vocab_store::BucketVocabStore;
@@ -291,6 +291,43 @@ impl pipeline::Model for PipelineBPE {
             id: self.tables.unmap.at(symbol as usize),
         }));
 
+        Ok(())
+    }
+
+    /// Every pre-token of a chunk in one call.
+    ///
+    /// Same work per word as [`Self::tokenize_pipeline`]; what changes is what is *not* repeated.
+    /// The scratch is destructured once instead of once per word, the output is grown once for the
+    /// whole batch instead of being capacity-checked on every push, and the virtual call, the
+    /// slice and the `Result` happen once per chunk rather than once per pre-token.
+    fn tokenize_spans(
+        &self,
+        chunk: &str,
+        spans: &[Span],
+        scratch: &mut Self::Scratch,
+        output: &mut Vec<PipelineToken>,
+    ) -> Result<()> {
+        let BpeScratch { symbols, queue } = scratch;
+        // One reservation for the batch. Most pre-tokens are a single token, so the span count is
+        // a close lower bound on what the batch emits; anything past it grows as usual.
+        output.reserve(spans.len());
+
+        for span in spans {
+            // SAFETY: the pre-tokenizer cuts on char boundaries, so a span is always a valid slice
+            // of this chunk. Bounds- and UTF-8-checking it again per word measured worth removing.
+            let sequence = unsafe { chunk.get_unchecked(span.range()) };
+            if sequence.is_empty() {
+                continue;
+            }
+            if let Some(id) = self.fold_id(sequence) {
+                output.push(PipelineToken { id });
+                continue;
+            }
+            self.merge_word(sequence, symbols, queue);
+            output.extend(symbols.iter().map(|&symbol| PipelineToken {
+                id: self.tables.unmap.at(symbol as usize),
+            }));
+        }
         Ok(())
     }
 
