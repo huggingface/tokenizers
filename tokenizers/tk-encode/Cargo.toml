@@ -60,18 +60,11 @@ memchr = "2.8.2"
 unicode-normalization = "0.1.25"
 yada = "0.7.0"
 libc = "0.2"
+wide = "1.6.0"
 
 # Latest released tokenizers, used as the comparison baseline by the CI benchmark
 # (examples gated on `bench-baseline`). Optional so production builds never pull it.
 tokenizers-release = { package = "tokenizers", version = "=0.23.1", optional = true }
-# Reference regex engines `fixture_bench` times the classify+fsm pre-tokenize against: Oniguruma and
-# PCRE2 (both C) alongside the pure-Rust `fancy-regex` (optional, above). All three are pulled in by
-# `bench-baseline` — optional + behind that feature so the C builds happen ONLY for the CI benchmark,
-# never for `cargo test`/production.
-onig = { version = "6.5.1", optional = true }
-pcre2 = { version = "0.2", optional = true }
-logos = { version = "0.15", optional = true } # compile-time DFA lexer reference (pure Rust)
-wide = "1.6.0"
 
 [features]
 # `fancy-regex` is the OPTIONAL system-regex backend, needed ONLY for a *regex* pattern in a `Split`
@@ -84,13 +77,7 @@ progressbar = ["indicatif"]
 http = ["hf-hub"]
 unstable_wasm = ["fancy-regex", "getrandom/wasm_js"]
 rustls-tls = ["hf-hub?/rustls-tls"]
-bench-baseline = [
-  "dep:tokenizers-release",
-  "dep:onig",
-  "dep:pcre2",
-  "dep:logos",
-  "fancy-regex",
-]
+bench-baseline = ["dep:tokenizers-release", "fancy-regex"]
 parallelism = ["dep:rayon", "dep:rayon-cond"]
 
 [dev-dependencies]
