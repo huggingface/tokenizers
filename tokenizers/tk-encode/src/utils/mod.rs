@@ -1,6 +1,7 @@
 pub(crate) mod cache;
 #[cfg(feature = "http")]
 pub(crate) mod from_pretrained;
+pub(crate) mod word_cache;
 
 // Optional system-regex backend, needed only for a *regex* pattern that atomsplit does not cover.
 // With `fancy-regex` off a stub compiles and those patterns error at load. Everything else works
@@ -22,6 +23,7 @@ pub use unrolled_regex::{GptFsm, GptFsmPattern, gpt_fsm, is_deepseek};
 pub mod byte_level;
 pub mod iter;
 pub mod padding;
+#[cfg(feature = "parallelism")]
 pub mod parallelism;
 pub mod progress;
 pub mod truncation;

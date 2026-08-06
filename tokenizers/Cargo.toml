@@ -78,7 +78,9 @@ name = "ci_benchmark"
 harness = false
 
 [dependencies]
-tk-encode = { path = "tk-encode", version = "0.23.2-dev.0", default-features = false }
+tk-encode = { path = "tk-encode", version = "0.23.2-dev.0", default-features = false, features = [
+  "parallelism",
+] }
 tk-train = { path = "tk-train", version = "0.23.2-dev.0", default-features = false, optional = true }
 
 [features]
@@ -108,7 +110,3 @@ lto = "fat"
 [profile.profiling]
 inherits = "release"
 debug = true
-
-[[example]]
-name = "encode_batch"
-required-features = ["http"]

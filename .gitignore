@@ -16,7 +16,6 @@ __pycache__
 pip-wheel-metadata
 *.egg-info
 *.so
-/bindings/python/examples/.ipynb_checkpoints
 /bindings/python/build
 /bindings/python/dist
 
