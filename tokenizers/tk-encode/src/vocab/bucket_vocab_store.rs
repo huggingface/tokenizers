@@ -156,7 +156,10 @@ impl BucketVocabStore {
                 s.len() <= u16::MAX as usize,
                 "token longer than 65535 bytes"
             );
-            assert!(*id <= VOCAB_ID_MASK, "token id {id} needs bit 31, which holds FOLD_BIT");
+            assert!(
+                *id <= VOCAB_ID_MASK,
+                "token id {id} needs bit 31, which holds FOLD_BIT"
+            );
             let slot = mphf.index(&hasher.hash_one(s.as_slice()));
             entries[slot] = Entry {
                 start: bytes.len() as u32,
