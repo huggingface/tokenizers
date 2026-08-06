@@ -326,6 +326,7 @@ impl pipeline::ModelScratch for WordPieceScratch {}
 
 pub struct PipelineWordPiece {
     vocab_trie: yada::DoubleArray<Vec<u8>>,
+    vocab_r: Box<[Option<Box<str>>]>,
     unk_token: Option<u32>,
     continuing_subword_prefix: String,
     max_input_chars_per_word: usize,
@@ -347,12 +348,18 @@ impl TryFrom<WordPiece> for PipelineWordPiece {
         let mut keyset: Vec<_> = vocab.into_iter().collect();
         keyset.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
         let vocab_trie = DoubleArray::new(DoubleArrayBuilder::build(&keyset)?)?;
+        let max_id = keyset.iter().map(|&(_, id)| id).max().unwrap_or(0) as usize;
+        let mut vocab_r = vec![None; max_id + 1];
+        for (token, id) in keyset {
+            vocab_r[id as usize] = Some(token.into_boxed_str());
+        }
 
         Ok(Self {
             continuing_subword_prefix,
             max_input_chars_per_word,
             unk_token,
             vocab_trie,
+            vocab_r: vocab_r.into_boxed_slice()
         })
     }
 }
@@ -407,6 +414,10 @@ impl PipelineWordPiece {
             start += match_len - prefix_len;
         }
         Ok(())
+    }
+
+    pub fn id_to_token(&self, id: u32) -> Option<String> {
+        self.vocab_r.get(id as usize)?.as_deref().map(str::to_owned)
     }
 }
 
