@@ -455,11 +455,7 @@ pub struct PipelineTokenizer {
     post_processor: PipelinePostProcessor,
     decoder: Option<DecoderWrapper>,
     /// Lowest id owned by the added vocabulary, or `u32::MAX` when there is none.
-    ///
-    /// Decode consults the added vocabulary only for ids at or above this, which is exact (every
-    /// added id is >= the minimum) and turns the per-token added-token probe -- two vocab-store
-    /// lookups and a `String` on a hit -- into one comparison. Added tokens sit at the top of the
-    /// id space in practice, so the gate rejects nearly every model token.
+    /// Allows to skip the added vocabulary lookup if the token id is lower than this value.
     added_id_min: u32,
     scratch_pool: ScratchPool,
 }
@@ -644,7 +640,6 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
             ModelWrapper::WordPiece(model) => PipelineModel::WordPiece(model.try_into()?),
         };
 
-        // Before `added_vocabulary` is moved into the struct.
         let added_id_min = added_vocabulary
             .get_added_tokens_decoder()
             .keys()
@@ -909,13 +904,17 @@ impl PipelineTokenizer {
 
         let tokens = ids
             .iter()
-            .filter_map(|id| {
-                self.added_vocabulary
-                    .simple_id_to_token(*id)
-                    .or_else(|| self.model.id_to_token(*id))
-                    .filter(|token| {
-                        !skip_special_tokens || !self.added_vocabulary.is_special_token(token)
-                    })
+            .filter_map(|&id| {
+                if id > self.added_id_min {
+                    self.added_vocabulary
+                        .simple_id_to_token(id)
+                        .or_else(|| self.model.id_to_token(id))
+                        .filter(|token| {
+                            !skip_special_tokens || !self.added_vocabulary.is_special_token(token)
+                        })
+                } else {
+                    self.model.id_to_token(id)
+                }
             })
             .collect::<Vec<_>>();
 
@@ -926,33 +925,15 @@ impl PipelineTokenizer {
     }
 
     /// Decode for a byte-level BPE, whose vocab entries are already decoded raw bytes.
-    ///
-    /// Appending each entry's bytes *is* the decode, so there is no per-token UTF-8 validation,
-    /// no `char` iteration and no char->byte table: that work was all done once at load time.
-    /// Running the `ByteLevel` decoder here would be wrong, not just slow -- it would map an
-    /// already-decoded entry a second time.
-    ///
-    /// The output buffer is built once and **moved** into the `String`, so a successful decode
-    /// copies the bytes exactly once. A reusable scratch buffer would be slower, not faster: the
-    /// result is owned by the caller, so reuse trades one allocation for a full copy of the
-    /// output.
-    ///
-    /// An individual entry is often not valid UTF-8 on its own (a multi-byte character is split
-    /// across several vocabulary entries), and callers may pass any ids at all, so the
-    /// concatenation is validated rather than assumed -- `decode_stream` in particular feeds
-    /// deliberately partial sequences whose bytes end mid-character.
     fn decode_byte_level(
         &self,
         bpe: &PipelineBPE,
         ids: &[u32],
         skip_special_tokens: bool,
     ) -> String {
-        // Byte-level tokens average ~4 bytes; growing from here is amortized and cheap next to
-        // the per-token lookups, and over-reserving a long id sequence is not.
+        // Byte-level tokens average ~4 bytes
         let mut out: Vec<u8> = Vec::with_capacity(ids.len() * 4);
         for &id in ids {
-            // An added token's content is stored as written, never byte-level encoded, so its
-            // own UTF-8 bytes go straight out. `added_id_min` keeps the probe off the hot path.
             if id >= self.added_id_min
                 && let Some(token) = self.added_vocabulary.simple_id_to_token(id)
             {
