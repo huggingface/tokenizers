@@ -592,6 +592,35 @@ mod pipeline_bpe {
         }
     }
 
+    // A cache may forget a word, but it must never change one. Run every word twice
+    // through one scratch, the second time answered from the cache, against a model
+    // built with no cache at all.
+    #[test]
+    fn cached_ids_match_uncached() {
+        let cached = PipelineBPE::from_bpe(hello_builder().build().unwrap(), false).unwrap();
+        let uncached =
+            PipelineBPE::from_bpe(hello_builder().cache_capacity(0).build().unwrap(), false)
+                .unwrap();
+
+        let mut scratch = cached.init_scratch();
+        assert!(scratch.word_cache.is_some(), "nothing is being cached");
+        for _ in 0..2 {
+            for word in [
+                "hello",
+                "hell",
+                "o",
+                "hellohello",
+                "hello-a-word-past-fifteen-bytes",
+                "hxe",
+            ] {
+                let mut out = Vec::new();
+                pipeline::Model::tokenize_pipeline(&cached, word, &mut scratch, &mut out).unwrap();
+                let got: Vec<u32> = out.iter().map(|t| t.id).collect();
+                assert_eq!(got, pipeline_ids(&uncached, word), "{word:?}");
+            }
+        }
+    }
+
     #[test]
     fn unknown_char_without_unk_is_dropped() {
         let bpe = hello_builder().build().unwrap();

@@ -1841,4 +1841,23 @@ mod tests {
             long_input.len()
         );
     }
+
+    // A scratch coming back out of the pool has to still know the words of the last
+    // encode: a cache emptied between calls would never hit.
+    //
+    // "helo" and not "hello": a whole word that is itself a vocabulary entry is answered
+    // by the fold in one probe, before the cache is ever consulted, so it would never be
+    // stored. Only words that reach the merge engines land in the cache.
+    #[test]
+    fn the_word_cache_outlives_the_encode_call() {
+        let pipeline = hello_pipeline();
+        pipeline.encode("helo", false).wait().unwrap();
+
+        let mut scratch = pipeline.scratch_pool.get(&pipeline.model);
+        let PipelineModelScratch::BPE(bpe) = &mut *scratch else {
+            panic!("a BPE pipeline encodes with a BPE scratch");
+        };
+        let cache = bpe.word_cache.as_mut().expect("BPE encodes with a cache");
+        assert_eq!(cache.lookup(b"helo").hit(), Some(&[5u32, 3][..]));
+    }
 }
