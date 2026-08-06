@@ -6,9 +6,14 @@ name: Pipeline Benchmark
 # phased out, so it only *builds* the pipeline and is never benched or trusted as
 # an oracle. Runs for every model in tk-encode/examples/bench_models.json across
 # every corpus in data/fixtures/.
-# Measures single-thread throughput (whole corpus, cold instance per pass), a
-# multi-thread sweep (1/2/4/8/device-max) per fixture group, per-implementation
-# memory footprint (RSS), and stripped minimal-binary size. The release dep is
+# Measures single-thread throughput (whole corpus, cold instance per pass), an
+# input-size sweep, a multi-thread sweep (1/2/4/8/device-max) per fixture group,
+# per-implementation memory footprint (RSS), stripped minimal-binary size, and two
+# deterministic work lanes: instructions retired per fixture (callgrind children;
+# needs the valgrind install below) and exact allocation counts (a counting global
+# allocator read by the memory children). The lanes resolve ~1% regressions that
+# wall time on shared runners cannot, and the report diffs them against the base
+# branch with a "work vs base" verdict. The release dep is
 # behind tk-encode's `bench-baseline` feature, so production builds never pull it.
 #
 # A `build` job compiles the bench + binsize example binaries ONCE (each with its
@@ -108,8 +113,11 @@ jobs:
       # `onig_sys` comes in through the released crate (the `bench-baseline` dep): the
       # release ships with Oniguruma as its default regex backend, and onig_sys generates
       # its bindings with bindgen, which needs libclang. The runner image doesn't ship it.
-      - name: Install libclang (onig_sys → bindgen)
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libclang-dev
+      # valgrind is here for its *headers*: crabgrind (fixture_bench's instruction lane)
+      # compiles its client-request shim against them; built without, the lane would
+      # panic at runtime in the shards.
+      - name: Install libclang (onig_sys → bindgen) + valgrind headers (crabgrind)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libclang-dev valgrind
 
       # The per-example feature sets are load-bearing and MUST stay distinct — collapsing
       # them would corrupt what's measured:
@@ -219,6 +227,11 @@ jobs:
           name: bench-binaries
           path: tokenizers/target/release/examples
 
+      # The instruction lane re-runs the bench binary under callgrind; without
+      # valgrind the bench skips that lane and reports everything else.
+      - name: Install valgrind (instruction lane)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends valgrind
+
       - name: Run comparative benchmark (shard ${{ matrix.shard }} of ${{ env.SHARDS }})
         run: |
           chmod +x target/release/examples/fixture_bench
@@ -286,7 +299,9 @@ jobs:
           for f in parts:
               d = json.load(open(f))
               if merged is None:
-                  merged = {"baseline": d["baseline"], "models": []}
+                  # `env` (cpu/glibc/valgrind stamp) from the first shard: the shards
+                  # share a runner group, so one stamp stands for the run.
+                  merged = {"baseline": d["baseline"], "env": d.get("env"), "models": []}
               merged["models"].extend(d["models"])
           if merged is None:
               raise SystemExit("no shard partials found")

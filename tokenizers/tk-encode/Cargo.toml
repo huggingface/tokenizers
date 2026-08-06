@@ -87,6 +87,13 @@ assert_approx_eq = "1.1"
 tracing = "0.1"
 tracing-subscriber = "0.3.18"
 
+# Callgrind client requests for fixture_bench's instruction lane. Linux-only:
+# it needs the valgrind headers at build time (absent on macOS, where valgrind
+# does not run anyway). Built WITHOUT headers it still compiles, but the
+# requests panic at runtime, so the CI build job installs valgrind.
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+crabgrind = "0.3"
+
 [[bench]]
 name = "pipeline_benchmark"
 harness = false
