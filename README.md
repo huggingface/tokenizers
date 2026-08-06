@@ -88,5 +88,5 @@ print(output.tokens)
 # ["Hello", ",", "y", "'", "all", "!", "How", "are", "you", "[UNK]", "?"]
 ```
 
-Check the [documentation](https://huggingface.co/docs/tokenizers/index)
+Check the [documentation](404 Not Found)
 or the [quicktour](https://huggingface.co/docs/tokenizers/quicktour) to learn more!
