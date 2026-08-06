@@ -359,7 +359,7 @@ impl TryFrom<WordPiece> for PipelineWordPiece {
             max_input_chars_per_word,
             unk_token,
             vocab_trie,
-            vocab_r: vocab_r.into_boxed_slice()
+            vocab_r: vocab_r.into_boxed_slice(),
         })
     }
 }
