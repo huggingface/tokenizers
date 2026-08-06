@@ -179,23 +179,7 @@ impl PipelineBPE {
     /// One bit per vocabulary id: can a pretoken equal to this entry be emitted as this entry,
     /// without running the merge loop?
     ///
-    /// # Why prove it rather than trust the flag
-    ///
-    /// `ignore_merges` is declared in the config, and models trained expecting it (llama-3) set
-    /// it. gpt2 does not, so every word goes through the merge loop -- including the ~93% of
-    /// English pretokens that are a single vocabulary entry and provably cannot come out as
-    /// anything else. The property is checkable, so it need not be assumed: run the merge engine
-    /// on each entry's own text and record whether it reduces to itself.
-    ///
-    /// # Why per entry and not one flag
-    ///
-    /// A single flag has to be all-or-nothing, and one entry is enough to lose it. On gpt2
-    /// exactly one of 50,257 entries disagrees -- `<|endoftext|>`, which decomposes to seven
-    /// tokens -- so a global flag reads "not provable" and the other 50,256 entries keep paying
-    /// for it. That entry is a special token, matched by the added-vocabulary frame before the
-    /// model, so in practice it never even reaches this path; but "in practice" is not a proof,
-    /// and a per-entry answer does not need one. The answer is a bit of the entry's own id, so it
-    /// costs no memory and no extra load, and a disagreeing entry costs only itself.
+    /// We replace the old "ignore_merges" with something that actually ignores whether or not the flag was set.
     fn prove_fold(&self) -> Vec<bool> {
         let len = self.vocab.len();
         let mut proven = vec![false; len];
