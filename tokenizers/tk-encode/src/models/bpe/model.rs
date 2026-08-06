@@ -338,8 +338,8 @@ impl pipeline::Model for PipelineBPE {
 
 #[cfg(test)]
 mod fold_tests {
-    use crate::pipeline::PipelineTokenizer;
     use crate::Tokenizer;
+    use crate::pipeline::PipelineTokenizer;
 
     /// The proven fold emits a vocabulary entry without merging, so it is only valid if the merge
     /// loop would have produced that same entry. gpt2 does not declare `ignore_merges`, so here

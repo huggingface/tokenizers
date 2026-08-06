@@ -167,7 +167,7 @@ jobs:
       - name: Download fixtures and model tokenizers
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: make fixtures bench-models HF="uvx --from huggingface_hub hf"
+        run: make fixtures models HF="uvx --from huggingface_hub hf"
 
       - name: Run pipeline oracle tests (parity vs the released crate)
         run: cargo test -p tk-encode --features bench-baseline --test pipeline_oracle --test pipeline_decode_oracle
@@ -207,7 +207,7 @@ jobs:
       - name: Download fixtures and model tokenizers
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: make fixtures bench-models HF="uvx --from huggingface_hub hf"
+        run: make fixtures models HF="uvx --from huggingface_hub hf"
 
       - name: Download prebuilt bench binary
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8
@@ -263,7 +263,7 @@ jobs:
       - name: Download model tokenizers
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: make bench-models HF="uvx --from huggingface_hub hf"
+        run: make models HF="uvx --from huggingface_hub hf"
 
       - name: Download shard partials
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8
