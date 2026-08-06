@@ -19,7 +19,7 @@ use crate::vocab::bucket_added_vocabulary::{
     AddedToken as BucketAddedToken, AddedVocabulary as BucketAddedVocabulary,
 };
 use crate::{
-    ModelWrapper, PostProcessorWrapper, PreTokenizerWrapper, Token, Tokenizer,
+    DecoderWrapper, ModelWrapper, PostProcessorWrapper, PreTokenizerWrapper, Token, Tokenizer,
     normalizers::{NormalizerWrapper, metaspace::MetaspaceNormalizer},
     pre_tokenizers::{
         bert::BertPreTokenizer,
@@ -34,6 +34,7 @@ use crate::{
         whitespace::{Whitespace, WhitespaceSplit},
     },
     processors::template::Piece,
+    tokenizer::{Decoder as _, Model as _},
 };
 
 use super::{Result, SplitDelimiterBehavior};
@@ -452,6 +453,14 @@ pub struct PipelineTokenizer {
     pre_tokenizer: PipelinePreTokenizer,
     model: PipelineModel,
     post_processor: PipelinePostProcessor,
+    decoder: Option<DecoderWrapper>,
+    /// Lowest id owned by the added vocabulary, or `u32::MAX` when there is none.
+    ///
+    /// Decode consults the added vocabulary only for ids at or above this, which is exact (every
+    /// added id is >= the minimum) and turns the per-token added-token probe -- two vocab-store
+    /// lookups and a `String` on a hit -- into one comparison. Added tokens sit at the top of the
+    /// id space in practice, so the gate rejects nearly every model token.
+    added_id_min: u32,
     scratch_pool: ScratchPool,
 }
 
@@ -635,6 +644,14 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
             ModelWrapper::WordPiece(model) => PipelineModel::WordPiece(model.try_into()?),
         };
 
+        // Before `added_vocabulary` is moved into the struct.
+        let added_id_min = added_vocabulary
+            .get_added_tokens_decoder()
+            .keys()
+            .copied()
+            .min()
+            .unwrap_or(u32::MAX);
+
         Ok(Self {
             added_vocabulary,
             normalizers,
@@ -645,6 +662,8 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
                 .map(PipelinePostProcessor::try_from)
                 .transpose()?
                 .unwrap_or_default(),
+            decoder: tok.get_decoder().cloned(),
+            added_id_min,
             scratch_pool: ScratchPool::new(),
         })
     }
@@ -867,13 +886,89 @@ impl PipelineTokenizer {
 
     /// Decode token ids back to a `String`.
     ///
-    /// Not implemented yet: the pipeline decode path is being built. It fails
-    /// loud (rather than returning a plausible-but-wrong string) so the oracle
-    /// test and the comparative benchmark report decode as *pending* instead of
-    /// silently validating garbage. Implementing this flips the ignored
-    /// `pipeline_decode_oracle` test on and lights up the decode charts.
-    pub fn decode(&self, _ids: &[u32], _skip_special_tokens: bool) -> Result<String> {
-        Err("PipelineTokenizer::decode is not implemented yet".into())
+    /// Two routes, picked by what the model's vocab store actually holds:
+    ///
+    /// * **byte-level BPE** -- [`byte_level::transform_vocab`] already replaced every entry with
+    ///   its decoded raw bytes when the model was built, so decoding is a concatenation of
+    ///   borrowed slices. See [`Self::decode_byte_level`].
+    /// * **everything else** -- the store holds the token strings as written, so the configured
+    ///   [`DecoderWrapper`] still has to invert whatever the pre-tokenizer did. Same shape as the
+    ///   released `Tokenizer::decode`.
+    ///
+    /// [`byte_level::transform_vocab`]: crate::utils::byte_level::transform_vocab
+    pub fn decode(&self, ids: &[u32], skip_special_tokens: bool) -> Result<String> {
+        if let PipelineModel::BPE(bpe) = &self.model
+            && bpe.is_byte_level()
+        {
+            return Ok(self.decode_byte_level(bpe, ids, skip_special_tokens));
+        }
+        if matches!(self.model, PipelineModel::WordPiece(_)) {
+            // Fail loud instead of dropping every id and returning "".
+            return Err("PipelineTokenizer::decode: WordPiece keeps no id -> token map yet".into());
+        }
+
+        let tokens = ids
+            .iter()
+            .filter_map(|id| {
+                self.added_vocabulary
+                    .simple_id_to_token(*id)
+                    .or_else(|| self.model.id_to_token(*id))
+                    .filter(|token| {
+                        !skip_special_tokens || !self.added_vocabulary.is_special_token(token)
+                    })
+            })
+            .collect::<Vec<_>>();
+
+        match &self.decoder {
+            Some(decoder) => decoder.decode(tokens),
+            None => Ok(tokens.join(" ")),
+        }
+    }
+
+    /// Decode for a byte-level BPE, whose vocab entries are already decoded raw bytes.
+    ///
+    /// Appending each entry's bytes *is* the decode, so there is no per-token UTF-8 validation,
+    /// no `char` iteration and no char->byte table: that work was all done once at load time.
+    /// Running the `ByteLevel` decoder here would be wrong, not just slow -- it would map an
+    /// already-decoded entry a second time.
+    ///
+    /// The output buffer is built once and **moved** into the `String`, so a successful decode
+    /// copies the bytes exactly once. A reusable scratch buffer would be slower, not faster: the
+    /// result is owned by the caller, so reuse trades one allocation for a full copy of the
+    /// output.
+    ///
+    /// An individual entry is often not valid UTF-8 on its own (a multi-byte character is split
+    /// across several vocabulary entries), and callers may pass any ids at all, so the
+    /// concatenation is validated rather than assumed -- `decode_stream` in particular feeds
+    /// deliberately partial sequences whose bytes end mid-character.
+    fn decode_byte_level(
+        &self,
+        bpe: &PipelineBPE,
+        ids: &[u32],
+        skip_special_tokens: bool,
+    ) -> String {
+        // Byte-level tokens average ~4 bytes; growing from here is amortized and cheap next to
+        // the per-token lookups, and over-reserving a long id sequence is not.
+        let mut out: Vec<u8> = Vec::with_capacity(ids.len() * 4);
+        for &id in ids {
+            // An added token's content is stored as written, never byte-level encoded, so its
+            // own UTF-8 bytes go straight out. `added_id_min` keeps the probe off the hot path.
+            if id >= self.added_id_min
+                && let Some(token) = self.added_vocabulary.simple_id_to_token(id)
+            {
+                if !skip_special_tokens || !self.added_vocabulary.is_special_token(&token) {
+                    out.extend_from_slice(token.as_bytes());
+                }
+                continue;
+            }
+            if let Some(bytes) = bpe.id_to_token_bytes(id) {
+                out.extend_from_slice(bytes);
+            }
+        }
+        match String::from_utf8(out) {
+            Ok(decoded) => decoded,
+            Err(invalid) => String::from_utf8_lossy(invalid.as_bytes()).into_owned(),
+        }
     }
 
     /// Decode several id sequences at once, one `String` per input. Mirrors the
@@ -1264,6 +1359,22 @@ pub enum PipelineModel {
     Unigram(Unigram),
     WordLevel(WordLevel),
     WordPiece(PipelineWordPiece),
+}
+
+impl PipelineModel {
+    /// `id -> token`, for the decoder-chain route in [`PipelineTokenizer::decode`].
+    ///
+    /// `None` for [`PipelineWordPiece`], which keeps only the forward `vocab_trie` and so has no
+    /// id -> token direction to answer with. `decode` refuses that model up front rather than
+    /// letting every id drop out and returning an empty string.
+    fn id_to_token(&self, id: u32) -> Option<String> {
+        match self {
+            Self::BPE(model) => model.id_to_token(id),
+            Self::Unigram(model) => model.id_to_token(id),
+            Self::WordLevel(model) => model.id_to_token(id),
+            Self::WordPiece(_) => None,
+        }
+    }
 }
 
 impl Model for PipelineModel {

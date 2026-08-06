@@ -23,9 +23,9 @@
 //! survive `skip_special_tokens = true`. It's built by adding the same token to both
 //! sides, so it stays an honest release-vs-pipeline parity check.
 //!
-//! Behind `bench-baseline`. These FAIL until `PipelineTokenizer::decode` applies the
-//! decoder and distinguishes special from non-special added vocab — on purpose: CI
-//! stays red until decode lands, rather than hiding the gap behind a skipped test.
+//! Behind `bench-baseline`. `bert_wiki` still FAILS: `PipelineWordPiece` keeps only its
+//! forward `vocab_trie`, so it has no id → token direction to decode with — on purpose: CI
+//! stays red until that lands, rather than hiding the gap behind a skipped test.
 //!   cargo test -p tk-encode --features bench-baseline --test pipeline_decode_oracle
 
 #![cfg(feature = "bench-baseline")]
@@ -174,7 +174,6 @@ fn stream_decode(
 /// containing it. Byte-level gpt2 decodes this ASCII round-trip correctly, so the
 /// only thing under test here is the special-vs-non-special distinction.
 #[test]
-#[ignore = "PipelineTokenizer::decode is not implemented yet"]
 fn non_special_added_token_survives_skip() {
     let path = Path::new(DATA).join("gpt2.json");
     let Ok(mut tree) = Tokenizer::from_file(&path) else {
