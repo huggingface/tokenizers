@@ -25,7 +25,7 @@
 //! used to measure) is not a workload either implementation serves, and it
 //! flattered whichever side caches more.
 //!
-//! # Three isolated phases per model
+//! # Four isolated phases per model
 //!
 //! 1. **Throughput**: single-thread MB/s per fixture, the median of `REPS` cold
 //!    passes, both implementations alternating so frequency drift hits them
@@ -41,7 +41,14 @@
 //!    `--memory <impl> <model.json>` children; one implementation per process,
 //!    so allocator page reuse can't blur the attribution. The children also
 //!    report exact allocation counts, read from the counting global allocator
-//!    ([`CountingAlloc`]) around the same load and per-fixture encode brackets.
+//!    ([`CountingAlloc`]) around the same load and per-fixture brackets, for the
+//!    encode pass and phase 4's decode pass alike.
+//! 4. **Decode**: the inverse direction, over an id stream the *release* mints
+//!    (see below), so both decoders consume exactly the same ids and decode is
+//!    judged on decode alone even where the pipeline's encode diverges —
+//!    single-thread MB/s per fixture, the same 2/4-thread sweep per group, and
+//!    a decode leg in the memory children, all gated by `text_match`. No
+//!    released baseline means no id stream, so the whole phase is `null`.
 //!
 //! # Why the allocation lane
 //!
@@ -57,15 +64,27 @@
 //! more coverage, but a callgrind pass over the corpus cost 10+ minutes per
 //! model where this lane is free.)
 //!
+//! The counting is confined to the `--memory` children ([`COUNTING`]) because it
+//! is not free under threads: the counters are shared atomics, and with them on
+//! the sweeps reported the released crate *losing* throughput from 2 to 4 threads.
+//! Measured on gpt2, baseline MB/s at 2 → 4 threads, counting off vs on:
+//! encode 9.5 → 17.6 vs 4.8 → 3.1, decode 37.5 → 64.8 vs 13.1 → 7.5. The
+//! pipeline's own numbers moved by noise (219 → 222 at 2 threads), because the
+//! contention scales with how often an implementation allocates and the release
+//! allocates ~3000× more per decode — so the lane was silently distorting exactly
+//! the comparison the sweeps exist to draw. Single-thread numbers were unaffected;
+//! uncontended atomics are cheap, it is the cross-core traffic that bites.
+//!
 //! # Cached baseline numbers (`--baseline-from`)
 //!
 //! The released crate is pinned, so its numbers only move when the machine
 //! changes, yet timing it dominates a full run: it encodes at a few MB/s where
 //! the pipeline does tens. `--baseline-from <merged bench JSON>` skips every
 //! baseline timing lane and copies the release's numbers (phase-1 MB/s, size
-//! sweep, thread sweep, memory) from that file, a previous run of this bench
-//! that did measure them; CI caches one per bench-input hash. The release is
-//! still loaded: the id gate still compares real encodes, and one **canary**
+//! sweep, thread sweep, memory, decode) from that file, a previous run of this
+//! bench that did measure them; CI caches one per bench-input hash. The release
+//! is still loaded — it is the oracle both gates compare against, and the only
+//! thing that may mint the decode phase's ids — and one **canary**
 //! fixture ([`CANARY_FIXTURE`]) re-measures baseline throughput in the phase-1
 //! regime. Each model's output pairs the canary's measured and cached MB/s so
 //! the report can tell whether the cached numbers still describe this machine.
@@ -74,14 +93,30 @@
 //! `--model <name>` benches a single manifest entry; CI fans out one job per
 //! model and concatenates the partial JSONs in manifest order.
 //!
-//! Decode is not benched: `PipelineTokenizer::decode` is a loud stub, so there
-//! is nothing to compare yet. When it lands, decode gets its own phase judged
-//! the same way (release-produced ids, both decoders consuming the same stream).
+//! # The decode sample ([`DECODE_SAMPLE_BYTES`])
+//!
+//! Decode replays a capped prefix of each fixture, not the whole corpus.
+//! Minting the ids runs at *release encode* speed — the slowest thing in the
+//! bench, and exactly what `--baseline-from` exists to skip — while decoding
+//! them is two orders of magnitude faster, so a full-corpus stream would cost
+//! far more to prepare than to measure. Throughput is reported over the *input*
+//! bytes those ids came from: the same denominator the encode phases use, so
+//! decode and encode MB/s are directly comparable, and it costs no extra pass
+//! to obtain (measuring the decoded bytes instead would need a whole released
+//! decode pass that cached-baseline mode has no other reason to run).
+//!
+//! Decode passes reuse one instance per implementation rather than re-instancing
+//! per rep like the encode phases: neither decoder caches anything (both are
+//! `&self` lookups), so a cold instance measures the same thing and the rebuild
+//! would cost more than the pass. `PipelineWordPiece` keeps no id → token map,
+//! so `PipelineTokenizer::decode` still fails loudly there — those models report
+//! a `null` pipeline decode series (rendered "pending") while the release's is
+//! measured regardless.
 //!
 //! Correctness is judged against the released crate, never the in-tree
 //! `Tokenizer` (which is being removed and only *builds* the pipeline here):
-//! `ids_match` compares the pipeline's encode ids against the release and fails
-//! CI. It is `null` when the release can't load the
+//! `ids_match` (encode ids) and `text_match` (decode text) both compare against
+//! the release and fail CI. They are `null` when the release can't load the
 //! model (no reference, so no gate). Models the pipeline can't build (or encode)
 //! yet are reported with empty `results` (plus the failure `reason`) and their
 //! pipeline shape rather than benched; the CI grid renders those as roadmap
@@ -97,7 +132,7 @@ use std::convert::TryFrom;
 use std::hint::black_box;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::atomic::{AtomicI64, AtomicU64, Ordering::Relaxed};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering::Relaxed};
 use std::time::Instant;
 
 use rayon::ThreadPoolBuilder;
@@ -134,6 +169,12 @@ const SIZE_SWEEP: &[usize] = &[256, 1024, 4096, 16 * 1024, 64 * 1024, 256 * 1024
 // tens of thousands of calls at the smallest size, small enough that six sizes
 // cost about one extra phase-1 pass.
 const SIZE_SAMPLE_BYTES: usize = 8 * 1024 * 1024;
+// How much of each fixture the decode phase replays (see the module docs). The
+// cost driver is minting the ids at release encode speed, so this trades decode
+// pass length against that: enough that a multi-thread pass over a whole fixture
+// group stays well clear of pool-scheduling noise, and small enough that the mint
+// stays a fraction of one phase-1 pass.
+const DECODE_SAMPLE_BYTES: usize = 2 * 1024 * 1024;
 
 // Added tokens injected into every loaded tokenizer so the `added_*` fixtures exercise
 // the added-token split for whichever model is benched — no bespoke tokenizer config.
@@ -185,19 +226,42 @@ static ALLOC_BYTES: AtomicU64 = AtomicU64::new(0);
 static LIVE_BYTES: AtomicI64 = AtomicI64::new(0);
 static PEAK_LIVE_BYTES: AtomicI64 = AtomicI64::new(0);
 
-/// The binary's global allocator: [`System`] plus four counters. Encoding a
-/// fixed corpus single-threaded allocates a deterministic number of times, so
-/// the counts diff exactly across commits where wall time can only be fenced
-/// with noise margins; the `--memory` children snapshot them per fixture.
-/// The counters are relaxed atomics, two adds per heap call: far below timing
-/// noise for the wall-time phases running in the same binary.
+/// Set at the top of `main` in a `--memory` child, never in the parent. The
+/// counters are four shared atomic read-modify-writes per heap call, which two or
+/// more threads hammering the allocator serialize on hard enough to *invert* a
+/// scaling curve — the implementation that allocates more per byte loses the
+/// most, which is exactly the comparison the thread sweeps exist to make. So the
+/// process that measures wall time does not count, and the process that counts
+/// does not measure wall time. Reading one uncontended relaxed bool per call is
+/// what the parent pays instead.
+///
+/// The handful of allocations made before the flag is set (runtime startup, argv)
+/// are freed while it is set, so `LIVE_BYTES` carries a few KB of negative drift
+/// against a peak of ~100 MB. It is the same drift on every run of a given model,
+/// so the counts still diff exactly across commits.
+static COUNTING: AtomicBool = AtomicBool::new(false);
+
+/// The binary's global allocator: [`System`] plus four counters, live only in the
+/// `--memory` children (see [`COUNTING`]). Encoding a fixed corpus
+/// single-threaded allocates a deterministic number of times, so the counts diff
+/// exactly across commits where wall time can only be fenced with noise margins;
+/// the children snapshot them per fixture.
 struct CountingAlloc;
 
 fn count_alloc(size: usize) {
+    if !COUNTING.load(Relaxed) {
+        return;
+    }
     ALLOC_COUNT.fetch_add(1, Relaxed);
     ALLOC_BYTES.fetch_add(size as u64, Relaxed);
     let live = LIVE_BYTES.fetch_add(size as i64, Relaxed) + size as i64;
     PEAK_LIVE_BYTES.fetch_max(live, Relaxed);
+}
+
+fn uncount_alloc(size: usize) {
+    if COUNTING.load(Relaxed) {
+        LIVE_BYTES.fetch_sub(size as i64, Relaxed);
+    }
 }
 
 unsafe impl GlobalAlloc for CountingAlloc {
@@ -213,11 +277,11 @@ unsafe impl GlobalAlloc for CountingAlloc {
     // live count. Both sizes are momentarily live, matching an alloc-copy-free.
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
         count_alloc(new_size);
-        LIVE_BYTES.fetch_sub(layout.size() as i64, Relaxed);
+        uncount_alloc(layout.size());
         unsafe { System.realloc(ptr, layout, new_size) }
     }
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        LIVE_BYTES.fetch_sub(layout.size() as i64, Relaxed);
+        uncount_alloc(layout.size());
         unsafe { System.dealloc(ptr, layout) }
     }
 }
@@ -313,6 +377,22 @@ fn load_fixtures() -> Vec<Fixture> {
             }
         })
         .collect()
+}
+
+/// The prefix of `f`'s chunks the decode phase replays — whole chunks totalling
+/// at most [`DECODE_SAMPLE_BYTES`]. A single chunk over the cap (one very long
+/// line) is still taken, so the sample is never empty for a non-empty fixture.
+fn decode_chunks(f: &Fixture) -> &[String] {
+    let mut total = 0;
+    let n = f
+        .chunks
+        .iter()
+        .position(|c| {
+            total += c.len();
+            total > DECODE_SAMPLE_BYTES
+        })
+        .unwrap_or(f.chunks.len());
+    &f.chunks[..n.max(1).min(f.chunks.len())]
 }
 
 // ── timing helpers ──────────────────────────────────────────────────────────
@@ -510,20 +590,22 @@ fn bench_sizes(
 
 // ── phase 3: multi-thread scaling + memory ──────────────────────────────────
 
-/// Median MB/s of encoding `chunks` across `n` threads in a *private* rayon pool
+/// Median MB/s of running `items` across `n` threads in a *private* rayon pool
 /// (so the sweep can't perturb — or be perturbed by — the global pool). Each timed
-/// pass encodes through a cold instance built by `fresh`, outside the timed
+/// pass works through a fresh instance built by `fresh`, outside the timed
 /// region; one throwaway pass on its own instance first forces the pool to spawn
-/// its threads. One `encode` call per chunk; the sum is `black_box`'d so the work
-/// can't be elided.
-fn par_mbps<E: Fn(&str) -> usize + Sync>(
+/// its threads. One call per item; the sum is `black_box`'d so the work can't be
+/// elided. Both directions share this: the encode sweep passes text chunks and a
+/// `fresh` that rebuilds a cold tokenizer, the decode sweep id slices and a
+/// `fresh` that hands back the one stateless instance.
+fn par_mbps<T: Sync, E: Fn(&T) -> usize + Sync>(
     fresh: impl Fn() -> E,
-    chunks: &[&String],
+    items: &[T],
     bytes: usize,
     n: usize,
 ) -> f64 {
     let pool = ThreadPoolBuilder::new().num_threads(n).build().unwrap();
-    let pass = |enc: &E| pool.install(|| chunks.par_iter().map(|c| enc(c.as_str())).sum::<usize>());
+    let pass = |run: &E| pool.install(|| items.par_iter().map(run).sum::<usize>());
     black_box(pass(&fresh()));
     let mut samples = Vec::with_capacity(REPS);
     for _ in 0..REPS {
@@ -556,7 +638,7 @@ fn bench_threads(
             par_mbps(
                 || {
                     let cold = b.clone();
-                    move |s: &str| cold.encode_fast(s, true).unwrap().len()
+                    move |s: &&String| cold.encode_fast(s.as_str(), true).unwrap().len()
                 },
                 chunks,
                 bytes,
@@ -566,7 +648,14 @@ fn bench_threads(
         let p = par_mbps(
             || {
                 let cold = PipelineTokenizer::try_from(oracle).expect("probed at model load");
-                move |s: &str| cold.encode(s, true).wait().unwrap().first().unwrap().len()
+                move |s: &&String| {
+                    cold.encode(s.as_str(), true)
+                        .wait()
+                        .unwrap()
+                        .first()
+                        .unwrap()
+                        .len()
+                }
             },
             chunks,
             bytes,
@@ -574,6 +663,162 @@ fn bench_threads(
         );
         eprintln!(
             "    {n} thread(s): pipeline {p:.1} MB/s{}",
+            b.map_or(String::new(), |v| format!(", baseline {v:.1} MB/s"))
+        );
+        pipe.push(p);
+        base.push(b);
+    }
+    json!({ "counts": counts, "pipeline_mbps": pipe, "baseline_mbps": base })
+}
+
+// ── phase 4: decode ─────────────────────────────────────────────────────────
+
+/// One fixture's decode workload: the ids to replay and the input bytes they were
+/// minted from, which is also the throughput denominator (see the module docs).
+struct DecodeSample {
+    ids: Vec<Vec<u32>>,
+    bytes: usize,
+}
+
+/// Mint the decode phase's id stream with the *release*, one entry per fixture in
+/// `fixtures` order. Both decoders then consume these same ids, so the phase
+/// measures decode alone — a pipeline whose encode diverges still gets a fair
+/// decode number (and `ids_match` fails the run separately). `add_special_tokens`
+/// is on, matching phase 1, so decode sees the frame tokens a real stream carries.
+fn decode_samples(baseline: &BaselineTokenizer, fixtures: &[Fixture]) -> Vec<DecodeSample> {
+    fixtures
+        .iter()
+        .map(|f| {
+            let chunks = decode_chunks(f);
+            DecodeSample {
+                ids: chunks
+                    .iter()
+                    .map(|c| {
+                        baseline
+                            .encode_fast(c.as_str(), true)
+                            .unwrap()
+                            .get_ids()
+                            .to_vec()
+                    })
+                    .collect(),
+                bytes: chunks.iter().map(String::len).sum(),
+            }
+        })
+        .collect()
+}
+
+/// Single-thread decode throughput + the `text_match` gate for one fixture.
+///
+/// `text_match` = pipeline decode == released decode over the sample's first
+/// chunks: the gate CI fails on. It is `null` while `pipeline_ok` is false (the
+/// pipeline can't decode this model at all), which is also when the pipeline
+/// series stays `null` and renders as "pending". With `time_baseline` false the
+/// baseline is never timed; `main` copies its MB/s from the cache.
+fn bench_decode(
+    baseline: &BaselineTokenizer,
+    pipeline: &PipelineTokenizer,
+    f: &Fixture,
+    sample: &DecodeSample,
+    pipeline_ok: bool,
+    time_baseline: bool,
+) -> Value {
+    let text_match = pipeline_ok.then(|| {
+        sample
+            .ids
+            .iter()
+            .take(3)
+            .all(|i| pipeline.decode(i, false).unwrap() == baseline.decode(i, false).unwrap())
+    });
+
+    let one_pass = |dec: &dyn Fn(&[u32]) -> usize| -> f64 {
+        let start = Instant::now();
+        let mut n = 0usize;
+        for i in &sample.ids {
+            n += dec(i);
+        }
+        black_box(n);
+        start.elapsed().as_secs_f64()
+    };
+    let base_pass = |i: &[u32]| baseline.decode(i, false).unwrap().len();
+    let pipe_pass = |i: &[u32]| pipeline.decode(i, false).unwrap().len();
+
+    // One throwaway pass each, then the reps alternate, so thermal drift hits
+    // both equally — the same interleaving phase 1 uses.
+    if time_baseline {
+        one_pass(&base_pass);
+    }
+    if pipeline_ok {
+        one_pass(&pipe_pass);
+    }
+    let (mut base_s, mut pipe_s) = (Vec::new(), Vec::new());
+    for _ in 0..REPS {
+        if time_baseline {
+            base_s.push(one_pass(&base_pass));
+        }
+        if pipeline_ok {
+            pipe_s.push(one_pass(&pipe_pass));
+        }
+    }
+    let mbps = |secs: f64| sample.bytes as f64 / secs / 1e6;
+    let base_mbps = (!base_s.is_empty()).then(|| mbps(median_secs(base_s)));
+    let pipe_mbps = (!pipe_s.is_empty()).then(|| mbps(median_secs(pipe_s)));
+
+    eprintln!(
+        "  {} decode: baseline {}, pipeline {}",
+        f.name,
+        base_mbps.map_or("—".into(), |v: f64| format!("{v:.1} MB/s")),
+        pipe_mbps.map_or("pending".into(), |v: f64| format!("{v:.1} MB/s")),
+    );
+
+    json!({
+        "decode_mbps": { "baseline": base_mbps, "pipeline": pipe_mbps },
+        "text_match": text_match,
+    })
+}
+
+/// The decode fields of a fixture row when there is no decode phase to run: the
+/// release can't load this model, so there is no id stream and no oracle.
+fn decode_null() -> Value {
+    json!({
+        "decode_mbps": { "baseline": Value::Null, "pipeline": Value::Null },
+        "text_match": Value::Null,
+    })
+}
+
+/// Multi-thread decode sweep over one fixture group's id stream — the decode twin
+/// of [`bench_threads`], same `THREAD_COUNTS` and same output shape, so the report
+/// renders both with one chart. `fresh` hands back the same instance every rep:
+/// decode keeps no state, so there is nothing to reset between passes.
+fn bench_decode_threads(
+    baseline: &BaselineTokenizer,
+    pipeline: &PipelineTokenizer,
+    ids: &[&Vec<u32>],
+    bytes: usize,
+    pipeline_ok: bool,
+    time_baseline: bool,
+) -> Value {
+    let counts = THREAD_COUNTS;
+    let (mut pipe, mut base) = (Vec::new(), Vec::new());
+    for &n in &counts {
+        let b = time_baseline.then(|| {
+            par_mbps(
+                || |i: &&Vec<u32>| baseline.decode(i, false).unwrap().len(),
+                ids,
+                bytes,
+                n,
+            )
+        });
+        let p = pipeline_ok.then(|| {
+            par_mbps(
+                || |i: &&Vec<u32>| pipeline.decode(i, false).unwrap().len(),
+                ids,
+                bytes,
+                n,
+            )
+        });
+        eprintln!(
+            "    decode {n} thread(s): pipeline {}{}",
+            p.map_or("pending".into(), |v: f64| format!("{v:.1} MB/s")),
             b.map_or(String::new(), |v| format!(", baseline {v:.1} MB/s"))
         );
         pipe.push(p);
@@ -646,12 +891,58 @@ fn encode_counting_allocs(encode: &dyn Fn(&str) -> usize, fixtures: &[Fixture]) 
     rows
 }
 
+/// The `--memory` children's decode pass, the twin of [`encode_counting_allocs`]:
+/// replay the capped decode sample with the counters snapshotted per fixture, and
+/// return the pass's RSS delta alongside the rows.
+///
+/// The ids are minted *before* the bracketing RSS reading, so holding them lands
+/// in neither `encode_bytes` (which must stay the tokenizer's own growth over the
+/// corpus, not the size of the output) nor `decode_bytes`; they still show in
+/// `peak_bytes`, which is honest — decoding a stream requires having one. Each
+/// child mints with its own encoder instead of sharing one stream: `ids_match`
+/// already requires the two to be identical, and CI fails when they are not.
+fn decode_counting_allocs(
+    encode_ids: &dyn Fn(&str) -> Vec<u32>,
+    decode: &dyn Fn(&[u32]) -> usize,
+    fixtures: &[Fixture],
+) -> (i64, Vec<Value>) {
+    let minted: Vec<(&str, usize, Vec<Vec<u32>>)> = fixtures
+        .iter()
+        .map(|f| {
+            let chunks = decode_chunks(f);
+            (
+                f.name.as_str(),
+                chunks.iter().map(String::len).sum(),
+                chunks.iter().map(|c| encode_ids(c)).collect(),
+            )
+        })
+        .collect();
+
+    let before_pass = rss_now().unwrap_or(0);
+    let mut rows = Vec::with_capacity(minted.len());
+    let mut n = 0usize;
+    for (name, bytes, ids) in &minted {
+        let before = alloc_snap();
+        for i in ids {
+            n += decode(i);
+        }
+        let mut row = before.delta_json();
+        row["fixture"] = json!(name);
+        row["input_bytes"] = json!(bytes);
+        rows.push(row);
+    }
+    black_box(n);
+    (rss_now().unwrap_or(0) - before_pass, rows)
+}
+
 /// `--memory <impl> <model.json>` child entry: load one implementation and
-/// encode the whole fixture corpus, printing
-/// `{load_bytes, encode_bytes, peak_bytes, allocs}`. One implementation per
-/// process so the deltas attribute cleanly. `allocs` carries the exact
-/// allocator traffic from [`CountingAlloc`]: the load phase, per-fixture encode
-/// rows ([`encode_counting_allocs`]), and the peak of live heap bytes.
+/// encode the whole fixture corpus then decode the capped sample, printing
+/// `{load_bytes, encode_bytes, decode_bytes, peak_bytes, allocs}`. One
+/// implementation per process so the deltas attribute cleanly. `allocs` carries
+/// the exact allocator traffic from [`CountingAlloc`]: the load phase,
+/// per-fixture encode and decode rows ([`encode_counting_allocs`],
+/// [`decode_counting_allocs`]), and the peak of live heap bytes. The decode
+/// entries are `null` for a model this implementation can't decode.
 ///
 /// Two rules keep the RSS deltas attributable:
 /// - The corpus is loaded (and the peak watermark reset) before the first
@@ -670,7 +961,7 @@ fn memory_child(which: &str, model: &Path) {
     let live0 = reset_peak_live();
     let rss0 = rss_now().unwrap_or(0);
 
-    let (load_bytes, encode_bytes, load_allocs, encode_allocs) = match which {
+    let (load_bytes, encode_bytes, load_allocs, encode_allocs, decode) = match which {
         "baseline" => {
             let before_load = alloc_snap();
             let mut tok = BaselineTokenizer::from_file(model).unwrap();
@@ -680,11 +971,17 @@ fn memory_child(which: &str, model: &Path) {
             let rows =
                 encode_counting_allocs(&|s| tok.encode_fast(s, true).unwrap().len(), &fixtures);
             let after_encode = rss_now().unwrap_or(0);
+            let decode = decode_counting_allocs(
+                &|s| tok.encode_fast(s, true).unwrap().get_ids().to_vec(),
+                &|i| tok.decode(i, false).unwrap().len(),
+                &fixtures,
+            );
             (
                 after_load - rss0,
                 after_encode - after_load,
                 load_allocs,
                 rows,
+                Some(decode),
             )
         }
         "pipeline" => {
@@ -708,11 +1005,31 @@ fn memory_child(which: &str, model: &Path) {
                 &fixtures,
             );
             let after_encode = rss_now().unwrap_or(0);
+            // Same probe the timing phases use: a model the pipeline can't decode
+            // reports `null` here rather than a bogus 0.
+            let decode = pipeline.decode(&[0], false).is_ok().then(|| {
+                decode_counting_allocs(
+                    &|s| {
+                        pipeline
+                            .encode(s, true)
+                            .wait()
+                            .unwrap()
+                            .first()
+                            .unwrap()
+                            .iter()
+                            .map(|t| t.id)
+                            .collect()
+                    },
+                    &|i| pipeline.decode(i, false).unwrap().len(),
+                    &fixtures,
+                )
+            });
             (
                 after_build - before_build,
                 after_encode - after_build,
                 load_allocs,
                 rows,
+                decode,
             )
         }
         other => panic!("unknown impl {:?}", other),
@@ -723,10 +1040,12 @@ fn memory_child(which: &str, model: &Path) {
         json!({
             "load_bytes": load_bytes,
             "encode_bytes": encode_bytes,
+            "decode_bytes": decode.as_ref().map(|(bytes, _)| *bytes),
             "peak_bytes": rss_peak().map(|p| p - rss0),
             "allocs": {
                 "load": load_allocs,
                 "encode": encode_allocs,
+                "decode": decode.map(|(_, rows)| rows),
                 "peak_live_bytes": PEAK_LIVE_BYTES.load(Relaxed) - live0,
             },
         })
@@ -833,15 +1152,15 @@ impl BaselineCache {
             .unwrap_or_else(|| panic!("model {name:?} is not in the cached baseline"))
     }
 
-    /// The cached phase-1 MB/s for one fixture; `Null` when the release could
-    /// not bench it.
-    fn fixture_mbps(&self, model: &str, fixture: &str) -> Value {
+    /// The cached baseline MB/s for one fixture, from the phase-1 (`mbps`) or the
+    /// decode (`decode_mbps`) lane; `Null` when the release could not bench it.
+    fn fixture_mbps(&self, model: &str, fixture: &str, lane: &str) -> Value {
         self.model(model)["results"]
             .as_array()
             .into_iter()
             .flatten()
             .find(|r| r["fixture"] == fixture)
-            .map_or(Value::Null, |r| r["mbps"]["baseline"].clone())
+            .map_or(Value::Null, |r| r[lane]["baseline"].clone())
     }
 }
 
@@ -894,6 +1213,8 @@ fn pretok_label(path: &Path) -> String {
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.get(1).map(String::as_str) == Some("--memory") {
+        // Only the children count; see `COUNTING`.
+        COUNTING.store(true, Relaxed);
         memory_child(&args[2], Path::new(&args[3]));
         return;
     }
@@ -1040,7 +1361,7 @@ fn main() {
                 ));
             }
             let measured = f.bytes as f64 / median_secs(samples) / 1e6;
-            let cached = cache.fixture_mbps(&name, &f.name);
+            let cached = cache.fixture_mbps(&name, &f.name, "mbps");
             eprintln!(
                 "  canary {}: baseline measured {measured:.1} MB/s, cached {cached} MB/s",
                 f.name
@@ -1071,17 +1392,72 @@ fn main() {
                 .collect(),
         );
 
+        // Phase 4. The id stream is minted by the release, so a model it can't
+        // load gets no decode phase either. One pipeline instance serves the whole
+        // phase — decode keeps no state to reset between passes.
+        let decode_pipeline = PipelineTokenizer::try_from(&tok).expect("probed at model load");
+        let (decode_ok, decode_reason) = match decode_pipeline.decode(&[0], false) {
+            Ok(_) => (true, None),
+            Err(e) => {
+                eprintln!("  pipeline can't decode this model ({shape}): {e}");
+                (false, Some(format!("{e}")))
+            }
+        };
+        let samples = baseline.as_ref().map(|b| decode_samples(b, &fixtures));
+        let decode_input = baseline.as_ref().zip(samples.as_ref());
+        for (i, (row, f)) in rows.iter_mut().zip(&fixtures).enumerate() {
+            let dec = decode_input.map_or_else(decode_null, |(b, s)| {
+                bench_decode(b, &decode_pipeline, f, &s[i], decode_ok, time_baseline)
+            });
+            let row = row.as_object_mut().unwrap();
+            for (k, v) in dec.as_object().unwrap() {
+                row.insert(k.clone(), v.clone());
+            }
+        }
+        let mut decode_threads = decode_input.map_or(Value::Null, |(b, samples)| {
+            Value::Object(
+                GROUPS
+                    .iter()
+                    .map(|g| {
+                        eprintln!("  decode thread sweep ({g}):");
+                        let group: Vec<&DecodeSample> = fixtures
+                            .iter()
+                            .zip(samples)
+                            .filter(|(f, _)| f.group == *g)
+                            .map(|(_, s)| s)
+                            .collect();
+                        let ids: Vec<&Vec<u32>> = group.iter().flat_map(|s| s.ids.iter()).collect();
+                        let bytes = group.iter().map(|s| s.bytes).sum();
+                        let sweep = bench_decode_threads(
+                            b,
+                            &decode_pipeline,
+                            &ids,
+                            bytes,
+                            decode_ok,
+                            time_baseline,
+                        );
+                        (g.to_string(), sweep)
+                    })
+                    .collect(),
+            )
+        });
+
         // Stitch the cached baseline numbers into the shapes the measuring run
         // would have produced, so the merged JSON and the report never care
         // where they came from.
         if let Some(cache) = &cache {
             let cached = cache.model(&name);
             for (row, f) in rows.iter_mut().zip(&fixtures) {
-                row["mbps"]["baseline"] = cache.fixture_mbps(&name, &f.name);
+                row["mbps"]["baseline"] = cache.fixture_mbps(&name, &f.name, "mbps");
+                row["decode_mbps"]["baseline"] = cache.fixture_mbps(&name, &f.name, "decode_mbps");
             }
             input_sizes["baseline_mbps"] = cached["input_sizes"]["baseline_mbps"].clone();
             for (g, _) in &group_chunks {
                 threads[*g]["baseline_mbps"] = cached["threads"][*g]["baseline_mbps"].clone();
+                if decode_threads.is_object() {
+                    decode_threads[*g]["baseline_mbps"] =
+                        cached["decode_threads"][*g]["baseline_mbps"].clone();
+                }
             }
             memory["baseline"] = cached["memory"]["baseline"].clone();
         }
@@ -1090,6 +1466,7 @@ fn main() {
             "model": name, "desc": desc, "shape": shape,
             "results": rows, "memory": memory, "threads": threads,
             "input_sizes": input_sizes, "baseline_canary": canary,
+            "decode_threads": decode_threads, "decode_reason": decode_reason,
         }));
     }
 

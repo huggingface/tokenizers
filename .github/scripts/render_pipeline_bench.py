@@ -4,15 +4,20 @@
 Two series: `baseline` (the latest released `tokenizers` crate — the bar to beat
 AND the correctness reference, drawn gray; the in-tree `Tokenizer`, being removed,
 only builds the pipeline) and `pipeline` (the experimental PipelineTokenizer,
-blue). `ids_match` compares the pipeline's ids against the release's. Leads with
+blue). `ids_match` compares the pipeline's encode ids against the release's,
+`text_match` its decoded text. Leads with
 the always-visible charts — per-model geomean ×speedup, its per-fixture twin (the
-same speedups decomposed by workload instead of by model), the deterministic work
+same speedups decomposed by workload instead of by model), the decode twin of the
+overview, the deterministic work
 lane (exact allocation counts from the counting allocator) plus a "work vs base"
 verdict block naming exactly where work
 moved, memory footprint, binary size — then one collapsed <details> per model
-(per-fixture speedup, input-size response, thread scaling per fixture group, numbers
+(per-fixture speedup, input-size response, thread scaling per fixture group, the
+decode chart and its own thread sweeps, numbers
 table with an allocs/MB column). Models the pipeline can't build yet
-render as "not supported" roadmap cards. Emits light-theme SVGs + pipeline_bench.md;
+render as "not supported" roadmap cards; a model it can build but not *decode*
+yet (WordPiece keeps no id → token map) renders its decode series as "pending"
+while the release's is still drawn. Emits light-theme SVGs + pipeline_bench.md;
 the CI workflow rasterizes and uploads the SVGs. Input schema: see fixture_bench.rs.
 
 No single cross-model number anywhere on purpose: the models exercise different
@@ -112,6 +117,22 @@ def model_speedups(model):
     return [v for v in (speedup(r) for r in model["results"]) if v]
 
 
+def decode_speedup(row):
+    m = row.get("decode_mbps") or {}
+    b, p = m.get("baseline"), m.get("pipeline")
+    return p / b if b and p else None
+
+
+def decode_model_speedups(model):
+    return [v for v in (decode_speedup(r) for r in model["results"]) if v]
+
+
+def has_decode_baseline(model):
+    """True once any fixture carries a released-crate decode number — the decode
+    lane ran for this model, whether or not the pipeline can decode it yet."""
+    return any((r.get("decode_mbps") or {}).get("baseline") for r in model["results"])
+
+
 def base_speedup(row, base_lookup, model_name):
     """This PR's pipeline throughput ÷ the base branch's, for the same (model,
     fixture) — the "did this PR help vs base" ratio. `None` when the base branch
@@ -126,26 +147,28 @@ def base_model_speedups(model, base_lookup):
                         for r in model["results"]) if v]
 
 
-def alloc_encode_rows(model, impl):
+def alloc_rows(model, impl, lane="encode"):
     """fixture -> that fixture's exact allocation row ({count, bytes,
-    input_bytes}) from one implementation's memory child; {} without the lane."""
+    input_bytes}) from one implementation's memory child, for the encode or the
+    decode pass; {} without the lane (an older run, or a decode the impl can't do)."""
     mem = model.get("memory")
     d = mem.get(impl) if isinstance(mem, dict) else None
     allocs = d.get("allocs") if isinstance(d, dict) else None
-    rows = allocs.get("encode") if isinstance(allocs, dict) else None
+    rows = allocs.get(lane) if isinstance(allocs, dict) else None
     return {r["fixture"]: r for r in rows} if rows else {}
 
 
-def alloc_ratio(model, fixture):
+def alloc_ratio(model, fixture, lane="encode"):
     """Release allocation count over pipeline allocation count for one fixture:
     ×2 means the pipeline allocates half as often."""
-    b = alloc_encode_rows(model, "baseline").get(fixture)
-    p = alloc_encode_rows(model, "pipeline").get(fixture)
+    b = alloc_rows(model, "baseline", lane).get(fixture)
+    p = alloc_rows(model, "pipeline", lane).get(fixture)
     return b["count"] / p["count"] if b and p and p["count"] else None
 
 
-def model_alloc_ratios(model):
-    return [v for v in (alloc_ratio(model, r["fixture"]) for r in model["results"]) if v]
+def model_alloc_ratios(model, lane="encode"):
+    return [v for v in (alloc_ratio(model, r["fixture"], lane)
+                        for r in model["results"]) if v]
 
 
 def scale(models, speedups_of=model_speedups):
@@ -246,13 +269,17 @@ def overview_svg(models, subtitle_base, meta, lo, hi, baseline_label,
                  speedups_of=model_speedups, title=None, ref_label=None,
                  mark_regressions=False, no_cmp_msg=None,
                  hints=("← slower", "faster →"), quantity="×speedup",
-                 tick_set=TICKS):
+                 tick_set=TICKS, gate_key="ids_match", gate_word="ids",
+                 pending_of=None):
     """Headline chart: one row per model — name + workload desc, geomean ×speedup vs
     the reference (×1.0) with a min–max whisker across fixtures. Unsupported models
     show as muted status rows so the overview is the complete state of the world.
     `mark_regressions=True` (the "vs base branch" twin) turns slower-than-base bars red.
     `speedups_of`/`hints`/`quantity`/`tick_set` let the allocation ratio chart
-    reuse the layout: any per-fixture "×higher is better" ratio plots here."""
+    reuse the layout: any per-fixture "×higher is better" ratio plots here.
+    `gate_key`/`gate_word` name the correctness gate counted in the right column
+    (encode ids, or decoded text); `pending_of` returns a per-model status line for
+    a lane that hasn't landed for that model — the decode twin's "pending" row."""
     ink, sink = INK, SERIES_INK
     title = title or "PipelineTokenizer vs latest release — encode throughput"
     ref_label = ref_label or baseline_label
@@ -288,13 +315,14 @@ def overview_svg(models, subtitle_base, meta, lo, hi, baseline_label,
             body.append(f'<text x="{lx:.1f}" y="{cy + 4:.1f}" fill="{ink["primary"]}" font-size="12" '
                         f'font-weight="600" text-anchor="{anchor}" '
                         f'style="font-variant-numeric:tabular-nums">{ratio_label(g)}</text>')
-            bad = sum(1 for r in m["results"] if r["ids_match"] is False)
-            right, fill = ((f"⚠ {bad} ids differ", ink["critical"]) if bad
+            bad = sum(1 for r in m["results"] if r.get(gate_key) is False)
+            right, fill = ((f"⚠ {bad} {gate_word} differ", ink["critical"]) if bad
                            else (quartile_cell(vals), ink["secondary"]))
             body.append(f'<text x="{col_x}" y="{cy + 4:.1f}" fill="{fill}" font-size="12" '
                         f'text-anchor="end" style="font-variant-numeric:tabular-nums">{right}</text>')
         elif m["results"]:
-            msg = no_cmp_msg or f"benched, but {baseline_label} can’t load this model — no comparison"
+            msg = ((pending_of(m) if pending_of else None) or no_cmp_msg
+                   or f"benched, but {baseline_label} can’t load this model — no comparison")
             body.append(f'<text x="{x(1.0) + 8:.1f}" y="{cy + 4:.1f}" fill="{ink["muted"]}" '
                         f'font-size="11.5" font-style="italic">{escape(msg)}</text>')
         else:
@@ -392,11 +420,14 @@ def fixture_overview_svg(models, subtitle_base, meta, lo, hi, baseline_label):
                    subtitle, axis + "".join(body) + legend, meta, subtitle_base)
 
 
-def memory_svg(models, meta, baseline_label, subtitle_base=""):
+def memory_svg(models, meta, baseline_label, subtitle_base="",
+               pass_key="encode_bytes", pass_label="encode",
+               title="Memory footprint"):
     """Per model: resident-set delta of each implementation — load footprint plus
-    the encode-pass delta as stacked segments, peak RSS as a tick. An impl whose
-    child failed draws no bar and totals "—"; a model where neither impl ran is
-    dropped."""
+    the measured pass's delta as stacked segments, peak RSS as a tick. `pass_key`
+    picks the encode or the decode pass (same chart, both directions). An impl
+    whose child failed — or that can't decode yet — draws no bar and totals "—";
+    a model where neither impl ran is dropped."""
     ink, sink = INK, SERIES_INK
     models = [m for m in models if isinstance(m.get("memory"), dict)]
 
@@ -404,7 +435,7 @@ def memory_svg(models, meta, baseline_label, subtitle_base=""):
         d = m["memory"].get(impl)
         if not isinstance(d, dict):
             return None
-        pick = {"load_bytes": "load_bytes", "pass": "encode_bytes", "peak_bytes": "peak_bytes"}
+        pick = {"load_bytes": "load_bytes", "pass": pass_key, "peak_bytes": "peak_bytes"}
         return {k: max(0, d[src]) / 1e6 if d.get(src) is not None else None
                 for k, src in pick.items()}
 
@@ -432,7 +463,8 @@ def memory_svg(models, meta, baseline_label, subtitle_base=""):
     body = [f'<text x="{col_x}" y="{top - 14}" fill="{ink["muted"]}" font-size="11" '
             f'text-anchor="end">MB: {escape(baseline_label)} → Pipeline</text>',
             f'<text x="{OV_GUTTER}" y="{top - 14}" fill="{ink["muted"]}" font-size="11">'
-            f'smaller is better · solid: after load · translucent: encode-pass delta</text>']
+            f'smaller is better · solid: after load · translucent: '
+            f'{escape(pass_label)}-pass delta</text>']
     y = top
     for m in models:
         cy = y + row_h / 2
@@ -472,15 +504,21 @@ def memory_svg(models, meta, baseline_label, subtitle_base=""):
         ("tick", ink["primary"], "peak RSS (VmHWM)"),
     ])
     height = y + 34
-    subtitle = "resident-set delta per implementation, one process each · load + encode pass"
-    return svg_doc(ink, height, "Memory footprint", subtitle, grid + "".join(body) + legend, meta,
+    subtitle = ("resident-set delta per implementation, one process each · "
+                f"load + {pass_label} pass")
+    return svg_doc(ink, height, title, subtitle, grid + "".join(body) + legend, meta,
                    subtitle_base)
 
 
-def chart_svg(model, subtitle_base, meta, lo, hi, baseline_label):
+def chart_svg(model, subtitle_base, meta, lo, hi, baseline_label, lane="encode"):
     """Full-size per-fixture chart: the pipeline's ×speedup vs the release, with the
-    `MB/s: release → Pipeline` throughput column."""
+    `MB/s: release → Pipeline` throughput column. `lane` picks encode or decode —
+    same layout, the other direction's numbers and correctness gate."""
     ink, sink = INK, SERIES_INK
+    decode = lane == "decode"
+    mbps_key, gate_key, gate_word = (("decode_mbps", "text_match", "decode") if decode
+                                     else ("mbps", "ids_match", "ids"))
+    speedup_of = decode_speedup if decode else speedup
     rows = model["results"]
     x = log_x(GUTTER, PLOT_W, lo, hi)
     ticks = thin_ticks([t for t in TICKS if lo <= t <= hi], x, min_px=34, keep=1.0)
@@ -503,14 +541,14 @@ def chart_svg(model, subtitle_base, meta, lo, hi, baseline_label):
         for r in group_rows:
             body.append(f'<text x="{GUTTER - 10}" y="{y + ROW_H / 2 + 4}" fill="{ink["secondary"]}" '
                         f'font-size="12.5" text-anchor="end">{escape(r["fixture"])}</text>')
-            v = speedup(r)
+            v = speedup_of(r)
             by = y + (ROW_H - BAR_H) / 2
             if v:
                 body.append(hbar(x(1.0), x(v), by, BAR_H, sink["pipeline"]))
                 txt = f"×{v:.2f}"
                 fill = ink["primary"]
-                if r["ids_match"] is False:
-                    txt += "  ⚠ ids differ"
+                if r.get(gate_key) is False:
+                    txt += f"  ⚠ {gate_word} differ"
                     fill = ink["critical"]
                 anchor, lx = ("start", max(x(1.0), x(v)) + 6) if v >= 1 else ("end", min(x(1.0), x(v)) - 6)
                 # a long label left of a slow bar would run into the fixture
@@ -520,7 +558,7 @@ def chart_svg(model, subtitle_base, meta, lo, hi, baseline_label):
                 body.append(f'<text x="{lx:.1f}" y="{y + ROW_H / 2 + 4}" fill="{fill}" '
                             f'font-size="12" font-weight="600" text-anchor="{anchor}" '
                             f'style="font-variant-numeric:tabular-nums">{txt}</text>')
-            mb = r["mbps"]
+            mb = r.get(mbps_key) or {}
             body.append(f'<text x="{col_x}" y="{y + ROW_H / 2 + 4}" fill="{ink["secondary"]}" '
                         f'font-size="12" text-anchor="end" style="font-variant-numeric:tabular-nums">'
                         f'{chain([mb.get("baseline"), mb.get("pipeline")])}</text>')
@@ -530,18 +568,23 @@ def chart_svg(model, subtitle_base, meta, lo, hi, baseline_label):
     axis = speedup_axis(ink, x, ticks, top, y)
     y += 26
     legend = legend_row(ink, sink, y, [
-        ("swatch", "pipeline", "PipelineTokenizer"),
+        ("swatch", "pipeline", f"PipelineTokenizer{' decode' if decode else ''}"),
         ("tick", ink["baseline"], f"×1.0 = {baseline_label}"),
     ])
     height = y + 44
 
     parts = [model["shape"]]
-    vals = model_speedups(model)
+    vals = decode_model_speedups(model) if decode else model_speedups(model)
     if vals:
         parts.append(f"geomean ×{geomean(vals):.2f} vs {baseline_label}")
+    elif decode and model.get("decode_reason"):
+        parts.append(f"decode pending — {model['decode_reason']}")
     else:
         parts.append(f"{baseline_label} can’t load this model — no comparison")
-    return svg_doc(ink, height, f'{model["model"]} — PipelineTokenizer encode throughput',
+    if decode:
+        parts.append("release-minted ids to both decoders · MB/s over the input bytes")
+    return svg_doc(ink, height,
+                   f'{model["model"]} — PipelineTokenizer {lane} throughput',
                    " · ".join(parts), axis + "".join(body) + legend, meta, subtitle_base)
 
 
@@ -603,8 +646,9 @@ def mem_line(model, baseline_label):
         if not isinstance(d, dict):
             return f"{label} —"
         cell = lambda k: ("—" if d.get(k) is None else f"{max(0, d[k]) / 1e6:.0f}")
-        return f"{label} {cell('load_bytes')}+{cell('encode_bytes')} (peak {cell('peak_bytes')})"
-    return ("**Memory** (RSS MB, load+encode): "
+        return (f"{label} {cell('load_bytes')}+{cell('encode_bytes')}+{cell('decode_bytes')} "
+                f"(peak {cell('peak_bytes')})")
+    return ("**Memory** (RSS MB, load+encode+decode): "
             + " · ".join(part(i, l) for i, l in
                          (("baseline", baseline_label), ("pipeline", "Pipeline"))))
 
@@ -621,20 +665,24 @@ def ratio_label(v):
     return f"×{v:,.0f}" if v >= 100 else f"×{v:.2f}"
 
 
-def alloc_line(model, baseline_label):
-    """One exact-allocations line per model: encode-pass totals plus the live-heap
-    peak, per implementation. Deterministic, so any movement here is a real change."""
+def alloc_line(model, baseline_label, lane="encode"):
+    """One exact-allocations line per model and pass: totals over what that pass
+    measured, per implementation, plus the live-heap peak on the encode line (it is
+    one number per child process, not per pass). Deterministic, so any movement
+    here is a real change."""
     def part(impl, label):
-        mem = model.get("memory") or {}
-        d = mem.get(impl) if isinstance(mem.get(impl), dict) else None
-        a = d.get("allocs") if isinstance(d, dict) else None
-        if not isinstance(a, dict):
+        rows = alloc_rows(model, impl, lane)
+        if not rows:
             return f"{label}: —"
-        count = sum(r["count"] for r in a["encode"])
-        alloc_gb = sum(r["bytes"] for r in a["encode"]) / 1e9
-        return (f"{label}: {human_count(count)} allocs, {alloc_gb:.2f} GB allocated, "
-                f"peak live {a['peak_live_bytes'] / 1e6:.0f} MB")
-    return ("**Allocations** (encode pass, whole corpus): "
+        count = sum(r["count"] for r in rows.values())
+        alloc_gb = sum(r["bytes"] for r in rows.values()) / 1e9
+        cell = f"{label}: {human_count(count)} allocs, {alloc_gb:.2f} GB allocated"
+        if lane == "encode":
+            a = ((model.get("memory") or {}).get(impl) or {}).get("allocs") or {}
+            cell += f", peak live {a['peak_live_bytes'] / 1e6:.0f} MB"
+        return cell
+    scope = "whole corpus" if lane == "encode" else "decode sample"
+    return (f"**Allocations** ({lane} pass, {scope}): "
             + "; ".join(part(i, l) for i, l in
                         (("baseline", baseline_label), ("pipeline", "Pipeline"))))
 
@@ -675,53 +723,49 @@ def canary_lines(data, benched):
 
 
 def base_work_lookup(base_data):
-    """(model, fixture) -> the base run's pipeline allocation row. Feeds
-    `work_verdict`; entries hold whatever the base run measured (older runs
-    carry no allocation lane)."""
+    """(model, fixture) -> the base run's pipeline allocation rows, one per pass.
+    Feeds `work_verdict`; entries hold whatever the base run measured (older runs
+    carry no allocation lane, and runs before decode landed no decode rows)."""
     out = {}
     for bm in base_data["models"]:
-        pallocs = alloc_encode_rows(bm, "pipeline")
+        lanes = {lane: alloc_rows(bm, "pipeline", lane) for lane in ("encode", "decode")}
         for r in bm.get("results") or []:
             out[(bm["model"], r["fixture"])] = {
-                "allocs": pallocs.get(r["fixture"]),
+                lane: rows.get(r["fixture"]) for lane, rows in lanes.items()
             }
     return out
 
 
 def work_verdict(benched, base_work, base_ref):
-    """The allocation lane's vs-base verdict line: clear the PR in one glance
-    or name exactly where work moved. Allocation counts are exact, so any
-    difference is a change."""
-    alloc_moves = []
-    alloc_seen = 0
-    for m in benched:
-        pallocs = alloc_encode_rows(m, "pipeline")
-        for r in m["results"]:
-            prev = base_work.get((m["model"], r["fixture"]))
-            if not prev:
-                continue
-            name = f"{m['model']}/{r['fixture']}"
-            cura, olda = pallocs.get(r["fixture"]), prev["allocs"]
-            if cura and olda:
-                alloc_seen += 1
-                if (cura["count"], cura["bytes"]) != (olda["count"], olda["bytes"]):
-                    pct = ((cura["count"] / olda["count"] - 1) * 100
-                           if olda["count"] else float("inf"))
-                    alloc_moves.append((pct, name))
-
+    """The allocation lane's vs-base verdict, one line per pass: clear the PR in
+    one glance or name exactly where work moved. Allocation counts are exact, so
+    any difference is a change."""
     def listing(moves):
         moves.sort(key=lambda t: -abs(t[0]))
         shown = ", ".join(f"{n} {p:+.2f}%" for p, n in moves[:6])
         return shown + (f", and {len(moves) - 6} more" if len(moves) > 6 else "")
 
     lines = [f"**Work vs base** (`{base_ref}`, allocation lane):", ""]
-    if not alloc_seen:
-        lines.append("- allocations: no data in the base run yet")
-    elif alloc_moves:
-        lines.append(f"- allocations: ⚠ counts changed on {len(alloc_moves)} of "
-                     f"{alloc_seen} fixtures: {listing(alloc_moves)}")
-    else:
-        lines.append(f"- allocations: ✓ exactly identical on all {alloc_seen} fixtures")
+    for lane in ("encode", "decode"):
+        moves, seen = [], 0
+        for m in benched:
+            rows = alloc_rows(m, "pipeline", lane)
+            for r in m["results"]:
+                prev = base_work.get((m["model"], r["fixture"])) or {}
+                cura, olda = rows.get(r["fixture"]), prev.get(lane)
+                if cura and olda:
+                    seen += 1
+                    if (cura["count"], cura["bytes"]) != (olda["count"], olda["bytes"]):
+                        pct = ((cura["count"] / olda["count"] - 1) * 100
+                               if olda["count"] else float("inf"))
+                        moves.append((pct, f"{m['model']}/{r['fixture']}"))
+        if not seen:
+            lines.append(f"- {lane} allocations: no data in the base run yet")
+        elif moves:
+            lines.append(f"- {lane} allocations: ⚠ counts changed on {len(moves)} of "
+                         f"{seen} fixtures: {listing(moves)}")
+        else:
+            lines.append(f"- {lane} allocations: ✓ exactly identical on all {seen} fixtures")
     return lines
 
 
@@ -920,7 +964,11 @@ def render_markdown(data, subtitle_base, meta, base, run_id, sizes,
     unsupported = [m for m in models if not m["results"]]
     mismatches = [f"{m['model']}/{r['fixture']}"
                   for m in benched for r in m["results"] if r["ids_match"] is False]
+    text_mismatches = [f"{m['model']}/{r['fixture']}"
+                       for m in benched for r in m["results"]
+                       if r.get("text_match") is False]
     has_allocs = any(model_alloc_ratios(m) for m in benched)
+    has_decode = any(has_decode_baseline(m) for m in benched)
 
     md = ["## PipelineTokenizer benchmark", "",
           f"**{len(benched)} / {len(models)} models supported** — PipelineTokenizer vs "
@@ -930,6 +978,14 @@ def render_markdown(data, subtitle_base, meta, base, run_id, sizes,
           picture(base, run_id, "fixtures",
                   "Per-fixture encode throughput vs latest release, across models", 860), ""]
     md += canary_lines(data, benched)
+    if has_decode:
+        md += ["**Decode** — the release encodes each fixture's decode sample "
+               "(`add_special_tokens=true`) and both implementations decode those "
+               "SAME ids with `skip_special_tokens=false`, so the comparison is "
+               "decode alone. MB/s counts the input bytes the ids came from, the "
+               "same denominator as the encode charts.", "",
+               picture(base, run_id, "decode-overview",
+                       "Per-model decode throughput vs latest release", 860), ""]
     if base_lookup:
         md += [f"**vs base branch** (`{escape(base_ref or 'base')}`) — per-model geomean ×speedup of "
                f"this PR's PipelineTokenizer against the base branch's; **regressions in red**.", "",
@@ -944,12 +1000,19 @@ def render_markdown(data, subtitle_base, meta, base, run_id, sizes,
             if bits:
                 md += [f"<sub>allocation lane measured on: {escape(bits)}</sub>", ""]
     md += [picture(base, run_id, "memory", "Per-model memory footprint", 860), ""]
+    if has_decode:
+        md += [picture(base, run_id, "decode-memory",
+                       "Per-model decode memory footprint", 860), ""]
     if sizes:
         md += [picture(base, run_id, "binsize", "Minimal encode binary size", 860), ""]
 
     if mismatches:
         md += [f"> ⚠️ **Pipeline token ids diverge from `tokenizers` {baseline_label} on: "
                f"{', '.join(mismatches)}** — speedups there are meaningless until fixed.", ""]
+    if text_mismatches:
+        md += [f"> ⚠️ **Pipeline decode diverges from `tokenizers` {baseline_label} on: "
+               f"{', '.join(text_mismatches)}** — decode speedups there are meaningless "
+               f"until fixed.", ""]
 
     for m in benched:
         slug = slugify(m["model"])
@@ -961,7 +1024,14 @@ def render_markdown(data, subtitle_base, meta, base, run_id, sizes,
             bvals = base_model_speedups(m, base_lookup)
             if bvals:
                 summary += f" · ×{geomean(bvals):.2f} vs base"
+        dvals = decode_model_speedups(m)
+        if dvals:
+            summary += f" · decode ×{geomean(dvals):.2f}"
+        elif m.get("decode_reason"):
+            summary += " · decode pending"
         flag = " · ⚠ ids differ" if any(r["ids_match"] is False for r in m["results"]) else ""
+        if any(r.get("text_match") is False for r in m["results"]):
+            flag += " · ⚠ decode differs"
         md += [f"<details><summary><b>{escape(m['model'])}</b> — {escape(desc)} · "
                f"{summary}{flag}</summary>", ""]
         md += [picture(base, run_id, slug, f"{m['model']} speedup", 860), ""]
@@ -971,15 +1041,26 @@ def render_markdown(data, subtitle_base, meta, base, run_id, sizes,
         for gkey, _ in group_sweeps(m):
             md += [picture(base, run_id, f"{slug}-threads-{gkey}",
                            f"{m['model']} thread scaling ({gkey})", 860), ""]
+        if has_decode_baseline(m):
+            md += [picture(base, run_id, f"{slug}-decode",
+                           f"{m['model']} decode speedup", 860), ""]
+            for gkey, _ in group_sweeps(m, "decode_threads"):
+                md += [picture(base, run_id, f"{slug}-decode-threads-{gkey}",
+                               f"{m['model']} decode thread scaling ({gkey})", 860), ""]
         md += [mem_line(m, baseline_label), ""]
-        p_allocs = alloc_encode_rows(m, "pipeline")
+        p_allocs = alloc_rows(m, "pipeline")
         if p_allocs:
             md += [alloc_line(m, baseline_label), ""]
+        if alloc_rows(m, "pipeline", "decode"):
+            md += [alloc_line(m, baseline_label, "decode"), ""]
         # Columns beyond the throughput core appear only when their lane ran, so
         # a local render without the memory children matches the old table exactly.
         cols = [("Fixture", "---"), ("Group", "---"),
                 (f"{baseline_label} MB/s", "---:"), ("Pipeline MB/s", "---:"),
                 ("Speedup", "---:")]
+        show_decode = has_decode_baseline(m)
+        if show_decode:
+            cols.append(("Decode", "---:"))
         if p_allocs:
             cols.append(("allocs/MB", "---:"))
         if base_lookup:
@@ -991,6 +1072,10 @@ def render_markdown(data, subtitle_base, meta, base, run_id, sizes,
             mb = r["mbps"]
             cells = [r["fixture"], r["group"], fnum(mb.get("baseline")),
                      fnum(mb.get("pipeline")), fnum(speedup(r), "×{:.2f}")]
+            if show_decode:
+                dv = decode_speedup(r)
+                cells.append("⚠️ ≠ release" if r.get("text_match") is False
+                             else fnum(dv, "×{:.2f}") if dv else "pending")
             if p_allocs:
                 a, ar = p_allocs.get(r["fixture"]), alloc_ratio(m, r["fixture"])
                 cells.append("—" if not a else
@@ -1080,6 +1165,22 @@ def main():
                          no_cmp_msg="not benched on the base branch"))
     (out / "pipeline_bench_memory.svg").write_text(
         memory_svg(models, meta, baseline_label, subtitle_base=args.subtitle))
+    # Decode: the lane ran wherever the release could mint an id stream. A model
+    # the pipeline can't decode yet still plots — baseline bar, "pending" pipeline.
+    dlo, dhi = scale(benched, decode_model_speedups)
+    if any(has_decode_baseline(m) for m in benched):
+        (out / "pipeline_bench_decode-overview.svg").write_text(
+            overview_svg(models, args.subtitle, meta, dlo, dhi, baseline_label,
+                         speedups_of=decode_model_speedups,
+                         title="PipelineTokenizer vs latest release — decode throughput",
+                         gate_key="text_match", gate_word="decode",
+                         pending_of=lambda m: (f"decode pending — {m['decode_reason']}"
+                                               if m.get("decode_reason") else None),
+                         no_cmp_msg=f"{baseline_label} can’t decode this model — no comparison"))
+        (out / "pipeline_bench_decode-memory.svg").write_text(
+            memory_svg(models, meta, baseline_label, subtitle_base=args.subtitle,
+                       pass_key="decode_bytes", pass_label="decode",
+                       title="Memory footprint — decode"))
     if sizes:
         (out / "pipeline_bench_binsize.svg").write_text(
             binsize_svg(sizes, meta, baseline_label))
@@ -1111,6 +1212,14 @@ def main():
                 threads_svg(sweep, meta, baseline_label,
                             title=f"Thread scaling — {group_label[gkey]}",
                             subtitle_base=args.subtitle))
+        if has_decode_baseline(m):
+            (out / f"pipeline_bench_{slug}-decode.svg").write_text(
+                chart_svg(m, args.subtitle, meta, dlo, dhi, baseline_label, lane="decode"))
+            for gkey, sweep in group_sweeps(m, "decode_threads"):
+                (out / f"pipeline_bench_{slug}-decode-threads-{gkey}.svg").write_text(
+                    threads_svg(sweep, meta, baseline_label,
+                                title=f"Decode thread scaling — {group_label[gkey]}",
+                                subtitle_base=args.subtitle))
 
     (out / "pipeline_bench.md").write_text(
         render_markdown(data, args.subtitle, meta, args.img_base, args.run_id, sizes,
@@ -1123,6 +1232,11 @@ def main():
         for m in benched if model_speedups(m))
     print(f"{len(benched)}/{len(models)} supported"
           + (f" · vs {baseline_label}: {per_model}" if per_model else ""))
+    per_model_decode = " · ".join(
+        f"{m['model']} x{geomean(decode_model_speedups(m)):.3f}"
+        for m in benched if decode_model_speedups(m))
+    if per_model_decode:
+        print(f"decode vs {baseline_label}: {per_model_decode}")
     if base_lookup:
         vs_base = " · ".join(
             f"{m['model']} x{geomean(base_speedups_of(m)):.3f}"

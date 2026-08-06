@@ -8,11 +8,12 @@ name: Pipeline Benchmark
 # every corpus in data/fixtures/.
 # Measures single-thread throughput (whole corpus, cold instance per pass), an
 # input-size sweep, a multi-thread sweep (2/4 threads) per fixture group,
-# per-implementation memory footprint (RSS), stripped minimal-binary size, and a
-# deterministic work lane: exact allocation counts (a counting global allocator
-# read by the memory children). The lane resolves regressions that wall time on
-# shared runners cannot, and the report diffs it against the base branch with a
-# "work vs base" verdict. The release dep is
+# per-implementation memory footprint (RSS), stripped minimal-binary size, a
+# decode phase over a release-minted id stream (`text_match` is its gate), and a
+# deterministic work lane: exact allocation counts for both directions (a counting
+# global allocator read by the memory children). The lane resolves regressions
+# that wall time on shared runners cannot, and the report diffs it against the
+# base branch with a "work vs base" verdict. The release dep is
 # behind tk-encode's `bench-baseline` feature, so production builds never pull it.
 #
 # The released crate's numbers are CACHED, not re-measured every run: the release
@@ -204,8 +205,9 @@ jobs:
   # Pipeline oracle tests: encode + decode parity of the pipeline against the
   # released crate. They live behind `bench-baseline` (they link the released
   # crate), so a plain `cargo test` skips them — this is where they run. Same
-  # fixtures + models as the bench jobs; the decode oracle is #[ignore]d until
-  # PipelineTokenizer::decode lands, so only encode parity runs today.
+  # fixtures + models as the bench jobs. Both directions run; the WordPiece decode
+  # tests fail on purpose (`PipelineWordPiece` keeps no id → token map) so the gap
+  # stays visible instead of hiding behind a skipped test.
   oracle:
     name: pipeline oracle tests
     if: github.event_name != 'pull_request' || github.event.label.name == 'run-pipeline-bench'
@@ -546,16 +548,23 @@ jobs:
           gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/labels/run-pipeline-bench" \
             -X DELETE || true
 
-      # Pipeline encode ids (`ids_match`) must match the released crate. Null when
-      # the release can't load a model (no reference, so no gate).
-      - name: Fail on id mismatches
+      # Pipeline encode ids (`ids_match`) and decoded text (`text_match`) must both
+      # match the released crate. Null when the release can't load a model (no
+      # reference, so no gate) or when the pipeline can't decode it yet — those
+      # render as "pending" rather than failing here.
+      - name: Fail on parity mismatches
         run: |
           python3 -c "
           import json, sys
           models = json.load(open('pipeline_bench.json'))['models']
-          ids = [f\"{m['model']}/{r['fixture']}\" for m in models
-                 for r in m['results'] if r.get('ids_match') is False]
-          sys.exit(f'ids diverge on: {ids}' if ids else 0)
+          bad = lambda gate: [f\"{m['model']}/{r['fixture']}\" for m in models
+                              for r in m['results'] if r.get(gate) is False]
+          msg = []
+          for gate, what in (('ids_match', 'ids'), ('text_match', 'decoded text')):
+              names = bad(gate)
+              if names:
+                  msg.append(f'{what} diverges from the release on: {names}')
+          sys.exit('; '.join(msg) if msg else 0)
           "
 
       # Establish/refresh the base-branch baseline: on a push to
