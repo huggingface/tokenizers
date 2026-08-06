@@ -35,8 +35,8 @@
 //!    (chat messages, dominated by per-call overhead) to ~256 kB (whole
 //!    documents), over one fixed sample mixing every fixture, so the report
 //!    shows how much of the ~10 kB headline speedup survives at either end.
-//! 3. **Scaling & memory**: a multi-thread throughput sweep (1/2/4/8/max) per
-//!    fixture group (`lang`, `modalities`), cold instance per pass, and
+//! 3. **Scaling & memory**: a multi-thread throughput sweep (2 and 4 threads)
+//!    per fixture group (`lang`, `modalities`), cold instance per pass, and
 //!    resident-set deltas measured by re-spawning this binary as
 //!    `--memory <impl> <model.json>` children; one implementation per process,
 //!    so allocator page reuse can't blur the attribution. The children also
@@ -57,6 +57,23 @@
 //! more coverage, but a callgrind pass over the corpus cost 10+ minutes per
 //! model where this lane is free.)
 //!
+//! # Cached baseline numbers (`--baseline-from`)
+//!
+//! The released crate is pinned, so its numbers only move when the machine
+//! changes, yet timing it dominates a full run: it encodes at a few MB/s where
+//! the pipeline does tens. `--baseline-from <merged bench JSON>` skips every
+//! baseline timing lane and copies the release's numbers (phase-1 MB/s, size
+//! sweep, thread sweep, memory) from that file, a previous run of this bench
+//! that did measure them; CI caches one per bench-input hash. The release is
+//! still loaded: the id gate still compares real encodes, and one **canary**
+//! fixture ([`CANARY_FIXTURE`]) re-measures baseline throughput in the phase-1
+//! regime. Each model's output pairs the canary's measured and cached MB/s so
+//! the report can tell whether the cached numbers still describe this machine.
+//! Allocation counts are exact, so the copied ones need no canary.
+//!
+//! `--model <name>` benches a single manifest entry; CI fans out one job per
+//! model and concatenates the partial JSONs in manifest order.
+//!
 //! Decode is not benched: `PipelineTokenizer::decode` is a loud stub, so there
 //! is nothing to compare yet. When it lands, decode gets its own phase judged
 //! the same way (release-produced ids, both decoders consuming the same stream).
@@ -75,6 +92,7 @@
 //! `.github/scripts/render_pipeline_bench.py` in CI.
 
 use std::alloc::{GlobalAlloc, Layout, System};
+use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::hint::black_box;
 use std::path::{Path, PathBuf};
@@ -96,11 +114,18 @@ const BASELINE_VERSION: &str = "0.23.1";
 const CHUNK_BYTES: usize = 10 * 1024;
 // Timed passes per number. Every pass runs on a cold instance, so the median is
 // over independent cold runs, not over re-encodes of an already-seen corpus.
-const REPS: usize = 5;
+const REPS: usize = 3;
 const PROBE: &str = "The quick brown fox jumps 123.";
 // The fixture groups under `data/fixtures/`, also the granularity of the
 // multi-thread sweeps and of the report's thread-scaling charts.
 const GROUPS: [&str; 2] = ["lang", "modalities"];
+// Thread counts for the scaling sweep. Two points show the scaling shape;
+// phase 1 already anchors single-thread, and every extra count costs `REPS`
+// cold passes over a whole fixture group per implementation.
+const THREAD_COUNTS: [usize; 2] = [2, 4];
+// The fixture the cached-baseline canary re-measures (see the module docs).
+// Present in every fixture set and representative of the headline workload.
+const CANARY_FIXTURE: &str = "eng_Latn";
 // Chunk sizes for the input-size sweep: ~256 B chat messages up to ~256 kB
 // documents. The ~10 kB headline regime sits inside the range, so the curve
 // shows how much of the headline speedup survives at either end.
@@ -317,10 +342,14 @@ fn time_pass<S: AsRef<str>>(encode: &dyn Fn(&str) -> usize, chunks: &[S]) -> f64
 /// region. The two implementations alternate so frequency and thermal drift hit
 /// them equally. The id gate runs first, on instances of its own, so its encodes
 /// cannot warm anything a timed pass sees.
+///
+/// With `time_baseline` false (cached-baseline mode) the id gate still runs but
+/// the baseline is never timed; `main` copies its MB/s from the cache.
 fn bench_throughput(
     baseline: Option<&BaselineTokenizer>,
     oracle: &Tokenizer,
     f: &Fixture,
+    time_baseline: bool,
 ) -> Value {
     // The correctness gate CI fails on: pipeline ids == the released crate's ids,
     // for both `add_special_tokens` values (`true` exercises the post-process
@@ -350,7 +379,7 @@ fn bench_throughput(
 
     let (mut base_s, mut pipe_s) = (Vec::new(), Vec::new());
     for _ in 0..REPS {
-        if let Some(b) = baseline {
+        if let Some(b) = baseline.filter(|_| time_baseline) {
             let cold = b.clone();
             base_s.push(time_pass(
                 &|s| cold.encode_fast(s, true).unwrap().len(),
@@ -438,14 +467,21 @@ fn size_label(bytes: usize) -> String {
 /// Throughput of both implementations at every `SIZE_SWEEP` chunk size, over the
 /// same `sample`, single thread. Cold instance per pass and interleaved reps,
 /// exactly like phase 1; only the chunk size varies, so the curve isolates how
-/// per-call overhead and amortization move the headline comparison.
-fn bench_sizes(baseline: Option<&BaselineTokenizer>, oracle: &Tokenizer, sample: &str) -> Value {
+/// per-call overhead and amortization move the headline comparison. With
+/// `time_baseline` false the baseline series is left empty for `main` to fill
+/// from the cache.
+fn bench_sizes(
+    baseline: Option<&BaselineTokenizer>,
+    oracle: &Tokenizer,
+    sample: &str,
+    time_baseline: bool,
+) -> Value {
     let (mut pipe, mut base) = (Vec::new(), Vec::new());
     for &size in SIZE_SWEEP {
         let chunks = sized_chunks(sample, size);
         let (mut base_s, mut pipe_s) = (Vec::new(), Vec::new());
         for _ in 0..REPS {
-            if let Some(b) = baseline {
+            if let Some(b) = baseline.filter(|_| time_baseline) {
                 let cold = b.clone();
                 base_s.push(time_pass(
                     &|s| cold.encode_fast(s, true).unwrap().len(),
@@ -474,18 +510,6 @@ fn bench_sizes(baseline: Option<&BaselineTokenizer>, oracle: &Tokenizer, sample:
 
 // ── phase 3: multi-thread scaling + memory ──────────────────────────────────
 
-/// Thread counts for the scaling sweep: 1 (the single-thread anchor) + 2/4/8 + the device max,
-/// deduped and capped at max (so an 8-core box reports `[1,2,4,8]`, a 6-core `[1,2,4,6]`).
-fn thread_counts() -> Vec<usize> {
-    let max = std::thread::available_parallelism().map_or(1, |n| n.get());
-    let mut c: Vec<usize> = IntoIterator::into_iter([1usize, 2, 4, 8, max])
-        .filter(|&n| n <= max)
-        .collect();
-    c.sort_unstable();
-    c.dedup();
-    c
-}
-
 /// Median MB/s of encoding `chunks` across `n` threads in a *private* rayon pool
 /// (so the sweep can't perturb — or be perturbed by — the global pool). Each timed
 /// pass encodes through a cold instance built by `fresh`, outside the timed
@@ -512,21 +536,23 @@ fn par_mbps<E: Fn(&str) -> usize + Sync>(
 }
 
 /// Multi-thread throughput sweep over one fixture group's corpus: pipeline vs the
-/// released crate at 1/2/4/8/max threads. Every timed pass gets a cold instance,
-/// same as the single-thread phase; within a pass the per-thread caches fill from
-/// the mixed stream, which is what a parallel `.encode()` run over fresh text
-/// reaches. The two implementations alternate per thread count so thermal drift
-/// hits them equally.
+/// released crate at each `THREAD_COUNTS` entry. Every timed pass gets a cold
+/// instance, same as the single-thread phase; within a pass the per-thread caches
+/// fill from the mixed stream, which is what a parallel `.encode()` run over fresh
+/// text reaches. The two implementations alternate per thread count so thermal
+/// drift hits them equally. With `time_baseline` false the baseline series is
+/// left empty for `main` to fill from the cache.
 fn bench_threads(
     baseline: Option<&BaselineTokenizer>,
     oracle: &Tokenizer,
     chunks: &[&String],
+    time_baseline: bool,
 ) -> Value {
     let bytes: usize = chunks.iter().map(|c| c.len()).sum();
-    let counts = thread_counts();
+    let counts = THREAD_COUNTS;
     let (mut pipe, mut base) = (Vec::new(), Vec::new());
     for &n in &counts {
-        let b = baseline.map(|b| {
+        let b = baseline.filter(|_| time_baseline).map(|b| {
             par_mbps(
                 || {
                     let cold = b.clone();
@@ -770,6 +796,55 @@ fn measure_memory(model: &Path, baseline_ok: bool) -> Value {
     Value::Object(out)
 }
 
+// ── cached baseline numbers ─────────────────────────────────────────────────
+
+/// A previous merged bench JSON, one that measured the release, indexed by model
+/// name. `--baseline-from` mode copies the release's numbers out of it instead
+/// of re-timing them; see the module docs.
+struct BaselineCache {
+    models: HashMap<String, Value>,
+}
+
+impl BaselineCache {
+    fn load(path: &Path) -> Self {
+        let data: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        // The CI cache key covers the pinned version, but numbers from another
+        // release would silently corrupt every chart; check it outright.
+        assert_eq!(
+            data["baseline"]["version"].as_str(),
+            Some(BASELINE_VERSION),
+            "cached baseline numbers are for another release"
+        );
+        let models = data["models"]
+            .as_array()
+            .expect("no models in the cached bench JSON")
+            .iter()
+            .map(|m| (m["model"].as_str().unwrap().to_string(), m.clone()))
+            .collect();
+        Self { models }
+    }
+
+    /// The cached entry for one model. A missing model means the cache key
+    /// failed to cover a manifest change; refuse rather than bench without a
+    /// baseline.
+    fn model(&self, name: &str) -> &Value {
+        self.models
+            .get(name)
+            .unwrap_or_else(|| panic!("model {name:?} is not in the cached baseline"))
+    }
+
+    /// The cached phase-1 MB/s for one fixture; `Null` when the release could
+    /// not bench it.
+    fn fixture_mbps(&self, model: &str, fixture: &str) -> Value {
+        self.model(model)["results"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|r| r["fixture"] == fixture)
+            .map_or(Value::Null, |r| r["mbps"]["baseline"].clone())
+    }
+}
+
 // ── model manifest helpers ──────────────────────────────────────────────────
 
 /// Local path to a manifest entry's config: `data/<file>`, else `data/<name>.json`.
@@ -822,26 +897,42 @@ fn main() {
         memory_child(&args[2], Path::new(&args[3]));
         return;
     }
-    // Optional model sharding for CI matrix fan-out: `--shard <i> <n>` benches only the i-th of `n`
-    // contiguous manifest chunks, so the models split across parallel isolated runners and the partial
-    // JSONs are concatenated downstream. Without it, `(0, 1)` = the whole manifest, unchanged.
-    let (shard, nshards): (usize, usize) =
-        match (args.get(1).map(String::as_str), args.get(2), args.get(3)) {
-            (Some("--shard"), Some(i), Some(n)) => {
-                (i.parse().unwrap(), n.parse::<usize>().unwrap().max(1))
-            }
-            _ => (0, 1),
-        };
+    // `--model <name>` benches one manifest entry (CI runs one job per model);
+    // `--baseline-from <json>` copies the release's numbers from a cached run
+    // instead of re-timing them (see the module docs). No flags = the whole
+    // manifest, everything measured.
+    let mut model_filter: Option<String> = None;
+    let mut baseline_from: Option<PathBuf> = None;
+    let mut rest = args[1..].iter();
+    while let Some(arg) = rest.next() {
+        let mut value = || rest.next().unwrap_or_else(|| panic!("{arg} needs a value"));
+        match arg.as_str() {
+            "--model" => model_filter = Some(value().clone()),
+            "--baseline-from" => baseline_from = Some(PathBuf::from(value())),
+            other => panic!("unknown argument {other:?}"),
+        }
+    }
+    let cache = baseline_from.as_deref().map(BaselineCache::load);
+
     let full: Vec<Value> =
         serde_json::from_str(&std::fs::read_to_string(MANIFEST).unwrap()).unwrap();
-    let (lo, hi) = (
-        shard * full.len() / nshards,
-        (shard + 1) * full.len() / nshards,
-    );
-    let manifest = &full[lo.min(full.len())..hi.min(full.len())];
+    let manifest: Vec<&Value> = match &model_filter {
+        Some(name) => {
+            let picked: Vec<&Value> = full.iter().filter(|e| e["name"] == name.as_str()).collect();
+            assert!(!picked.is_empty(), "model {name:?} is not in the manifest");
+            picked
+        }
+        None => full.iter().collect(),
+    };
     eprintln!(
-        "shard {shard}/{nshards}: models {lo}..{hi} of {}",
-        full.len()
+        "benching {} of {} model(s){}",
+        manifest.len(),
+        full.len(),
+        if cache.is_some() {
+            ", baseline numbers from cache"
+        } else {
+            ""
+        }
     );
     let fixtures = load_fixtures();
     // The corpus per fixture group, flattened once: the multi-thread sweeps run
@@ -932,37 +1023,82 @@ fn main() {
             }
         };
 
-        let rows: Vec<Value> = fixtures
+        // The canary, before any timed phase: re-measure the baseline on one
+        // fixture in the phase-1 regime and pair it with the cached number, so
+        // the report can tell whether the cache still describes this machine.
+        let canary = cache.as_ref().zip(baseline.as_ref()).map(|(cache, b)| {
+            let f = fixtures
+                .iter()
+                .find(|f| f.name == CANARY_FIXTURE)
+                .expect("canary fixture missing from data/fixtures");
+            let mut samples = Vec::with_capacity(REPS);
+            for _ in 0..REPS {
+                let cold = b.clone();
+                samples.push(time_pass(
+                    &|s| cold.encode_fast(s, true).unwrap().len(),
+                    &f.chunks,
+                ));
+            }
+            let measured = f.bytes as f64 / median_secs(samples) / 1e6;
+            let cached = cache.fixture_mbps(&name, &f.name);
+            eprintln!(
+                "  canary {}: baseline measured {measured:.1} MB/s, cached {cached} MB/s",
+                f.name
+            );
+            json!({ "fixture": f.name, "measured_mbps": measured, "cached_mbps": cached })
+        });
+
+        let time_baseline = cache.is_none();
+        let mut rows: Vec<Value> = fixtures
             .iter()
-            .map(|f| bench_throughput(baseline.as_ref(), &tok, f))
+            .map(|f| bench_throughput(baseline.as_ref(), &tok, f, time_baseline))
             .collect();
 
         eprintln!("  input-size sweep:");
-        let input_sizes = bench_sizes(baseline.as_ref(), &tok, &sample);
+        let mut input_sizes = bench_sizes(baseline.as_ref(), &tok, &sample, time_baseline);
 
-        let memory = measure_memory(&path, baseline.is_some());
-        let threads = Value::Object(
+        let mut memory = measure_memory(&path, baseline.is_some() && time_baseline);
+        let mut threads = Value::Object(
             group_chunks
                 .iter()
                 .map(|(g, chunks)| {
                     eprintln!("  encode thread sweep ({g}):");
                     (
                         g.to_string(),
-                        bench_threads(baseline.as_ref(), &tok, chunks),
+                        bench_threads(baseline.as_ref(), &tok, chunks, time_baseline),
                     )
                 })
                 .collect(),
         );
 
+        // Stitch the cached baseline numbers into the shapes the measuring run
+        // would have produced, so the merged JSON and the report never care
+        // where they came from.
+        if let Some(cache) = &cache {
+            let cached = cache.model(&name);
+            for (row, f) in rows.iter_mut().zip(&fixtures) {
+                row["mbps"]["baseline"] = cache.fixture_mbps(&name, &f.name);
+            }
+            input_sizes["baseline_mbps"] = cached["input_sizes"]["baseline_mbps"].clone();
+            for (g, _) in &group_chunks {
+                threads[*g]["baseline_mbps"] = cached["threads"][*g]["baseline_mbps"].clone();
+            }
+            memory["baseline"] = cached["memory"]["baseline"].clone();
+        }
+
         models.push(json!({
             "model": name, "desc": desc, "shape": shape,
             "results": rows, "memory": memory, "threads": threads,
-            "input_sizes": input_sizes,
+            "input_sizes": input_sizes, "baseline_canary": canary,
         }));
     }
 
     let out = json!({
-        "baseline": { "crate": "tokenizers", "version": BASELINE_VERSION },
+        "baseline": {
+            "crate": "tokenizers",
+            "version": BASELINE_VERSION,
+            "cached": cache.is_some(),
+        },
         "env": env_stamp(),
         "models": models,
     });

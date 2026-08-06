@@ -7,7 +7,7 @@ name: Pipeline Benchmark
 # an oracle. Runs for every model in tk-encode/examples/bench_models.json across
 # every corpus in data/fixtures/.
 # Measures single-thread throughput (whole corpus, cold instance per pass), an
-# input-size sweep, a multi-thread sweep (1/2/4/8/device-max) per fixture group,
+# input-size sweep, a multi-thread sweep (2/4 threads) per fixture group,
 # per-implementation memory footprint (RSS), stripped minimal-binary size, and a
 # deterministic work lane: exact allocation counts (a counting global allocator
 # read by the memory children). The lane resolves regressions that wall time on
@@ -15,13 +15,25 @@ name: Pipeline Benchmark
 # "work vs base" verdict. The release dep is
 # behind tk-encode's `bench-baseline` feature, so production builds never pull it.
 #
+# The released crate's numbers are CACHED, not re-measured every run: the release
+# is pinned, so they only move when the machine does, yet timing its few-MB/s
+# encodes used to dominate the run. The `plan` job hashes the bench inputs
+# (fixture_bench.rs, the model manifest, the Makefile fixture lists) and looks for
+# baselines/release-<runner group>-<hash>.json on the HF Hub dataset. Hit: the
+# bench jobs run `--baseline-from` that file, skip all baseline timing, and
+# re-measure one canary fixture per model so the report can flag a machine that
+# drifted from the cache. Miss (any bench-input change): this run measures the
+# baseline itself and the report job seeds the cache for the runs after it.
+#
 # A `build` job compiles the bench + binsize example binaries ONCE (each with its
-# exact per-example feature set) and uploads them; the work is then fanned out across
-# a matrix: each `bench` shard downloads that binary and benches a slice of the models
-# on its own isolated 8-vCPU runner (so the multi-thread sweep is accurate and the
-# shards run in parallel), emitting a partial JSON; the single `report` job then
-# concatenates the partials and renders/uploads/updates once. Fixture corpora + model
-# tokenizers are cached across jobs (keyed on the Makefile fixture lists + manifest).
+# exact per-example feature set) and uploads them; the work is then fanned out,
+# ONE JOB PER MODEL in the manifest: each downloads that binary and benches its
+# model on its own isolated 8-vCPU runner (so the multi-thread sweep is accurate,
+# the jobs run in parallel, and wall clock is the slowest model, not the slowest
+# hand-packed shard), emitting a partial JSON; the single `report` job then
+# concatenates the partials in manifest order and renders/uploads/updates once.
+# Fixture corpora + model tokenizers are cached across jobs (keyed on the
+# Makefile fixture lists + manifest).
 #
 # Triggers:
 #   • push to feat/train_encode_split → benches and updates PR #2119's description.
@@ -79,15 +91,65 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  # Keep in sync with the matrix.shard list below (and passed to `--shard <i> N`).
-  # sccache is scoped to the `build` job — the only job that compiles.
-  SHARDS: "4"
-
 jobs:
-  # Compile the bench + binsize example binaries ONCE here, instead of every shard
-  # (and the report job) recompiling them. Uploaded as an artifact the other jobs
-  # download and run — so a code change is compiled a single time per run, not 5-6×.
+  # Reads the model manifest into the bench matrix (one job per model) and
+  # resolves the cached release-baseline numbers. The cache key hashes every
+  # input that shapes the numbers — bench code, model manifest, fixture lists —
+  # so any change to what is measured starts a fresh measuring run; the runner
+  # group is in the file name (keep it in sync with `runs-on` below). On a hit
+  # the JSON is re-published as a run artifact for the bench jobs.
+  plan:
+    name: plan (models + baseline cache)
+    if: github.event_name != 'pull_request' || github.event.label.name == 'run-pipeline-bench'
+    runs-on: ubuntu-latest
+    outputs:
+      models: ${{ steps.models.outputs.models }}
+      baseline_path: ${{ steps.key.outputs.path }}
+      have_baseline: ${{ steps.fetch.outputs.have }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Read the model matrix
+        id: models
+        run: |
+          echo "models=$(jq -c '[.[].name]' tokenizers/tk-encode/examples/bench_models.json)" \
+            >> "$GITHUB_OUTPUT"
+
+      - name: Compute the baseline cache key
+        id: key
+        run: |
+          hash="${{ hashFiles('tokenizers/tk-encode/examples/fixture_bench.rs', 'tokenizers/tk-encode/examples/bench_models.json', 'tokenizers/Makefile') }}"
+          echo "path=baselines/release-aws-general-8-plus-${hash}.json" >> "$GITHUB_OUTPUT"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Fetch cached baseline numbers
+        id: fetch
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          if uvx --from huggingface_hub hf download hf-internal-testing/tokenizers-bench \
+               "${{ steps.key.outputs.path }}" --repo-type dataset --local-dir cache_dir; then
+            mv "cache_dir/${{ steps.key.outputs.path }}" baseline_cache.json
+            echo "have=true" >> "$GITHUB_OUTPUT"
+            echo "Baseline cache hit: ${{ steps.key.outputs.path }}"
+          else
+            echo "have=false" >> "$GITHUB_OUTPUT"
+            echo "No cached baseline for this key — this run measures the release."
+          fi
+
+      - name: Publish the cache to this run's jobs
+        if: steps.fetch.outputs.have == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: baseline-cache
+          path: baseline_cache.json
+          retention-days: 3
+
+  # Compile the bench + binsize example binaries ONCE here, instead of every bench
+  # job (and the report job) recompiling them. Uploaded as an artifact the other jobs
+  # download and run — so a code change is compiled a single time per run, not 11-12×.
   build:
     name: build bench binaries
     # push / dispatch always run; a labeled PR runs only for our label.
@@ -122,7 +184,7 @@ jobs:
       #     released lib" size number).
       #   • binsize_pipeline WITHOUT it → the real shipping config whose size we report (no
       #     released crate linked in).
-      # These are byte-for-byte the same cargo invocations the shards / report ran before.
+      # These are byte-for-byte the same cargo invocations the bench jobs / report ran before.
       - name: Build bench + binsize binaries
         run: |
           cargo build --release -p tk-encode --features tk-encode/bench-baseline \
@@ -142,7 +204,7 @@ jobs:
   # Pipeline oracle tests: encode + decode parity of the pipeline against the
   # released crate. They live behind `bench-baseline` (they link the released
   # crate), so a plain `cargo test` skips them — this is where they run. Same
-  # fixtures + models as the shards; the decode oracle is #[ignore]d until
+  # fixtures + models as the bench jobs; the decode oracle is #[ignore]d until
   # PipelineTokenizer::decode lands, so only encode parity runs today.
   oracle:
     name: pipeline oracle tests
@@ -180,17 +242,18 @@ jobs:
       - name: Run pipeline oracle tests (parity vs the released crate)
         run: cargo test -p tk-encode --features bench-baseline --test pipeline_oracle --test pipeline_decode_oracle
 
-  # Fan-out: each shard benches the i-th of SHARDS contiguous manifest slices on its
-  # own 8-vCPU runner (isolated + parallel), running the prebuilt binary, and uploads
-  # its partial JSON. No toolchain here — the shards only fetch data + the binary.
+  # Fan-out: one job per manifest model, on its own 8-vCPU runner (isolated +
+  # parallel), running the prebuilt binary, uploading a partial JSON. No
+  # toolchain here — these jobs only fetch data + the binary. With a baseline
+  # cache hit the binary skips all release timing (`--baseline-from`).
   bench:
-    name: bench shard ${{ matrix.shard }}
-    needs: build
+    name: bench ${{ matrix.model }}
+    needs: [plan, build]
     if: github.event_name != 'pull_request' || github.event.label.name == 'run-pipeline-bench'
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3]
+        model: ${{ fromJson(needs.plan.outputs.models) }}
     runs-on:
       group: aws-general-8-plus
     defaults:
@@ -223,25 +286,34 @@ jobs:
           name: bench-binaries
           path: tokenizers/target/release/examples
 
-      - name: Run comparative benchmark (shard ${{ matrix.shard }} of ${{ env.SHARDS }})
+      - name: Download cached baseline numbers
+        if: needs.plan.outputs.have_baseline == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8
+        with:
+          name: baseline-cache
+          path: tokenizers
+
+      - name: Run comparative benchmark (${{ matrix.model }})
         run: |
           chmod +x target/release/examples/fixture_bench
-          ./target/release/examples/fixture_bench --shard ${{ matrix.shard }} ${{ env.SHARDS }} \
-            > "pipeline_bench_${{ matrix.shard }}.json"
-          cat "pipeline_bench_${{ matrix.shard }}.json"
+          args=(--model "${{ matrix.model }}")
+          [ -f baseline_cache.json ] && args+=(--baseline-from baseline_cache.json)
+          ./target/release/examples/fixture_bench "${args[@]}" \
+            > "pipeline_bench_${{ matrix.model }}.json"
+          cat "pipeline_bench_${{ matrix.model }}.json"
 
-      - name: Upload shard partial
+      - name: Upload model partial
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
-          name: partial-${{ matrix.shard }}
-          path: tokenizers/pipeline_bench_${{ matrix.shard }}.json
+          name: partial-${{ matrix.model }}
+          path: tokenizers/pipeline_bench_${{ matrix.model }}.json
           retention-days: 3
 
-  # Fan-in: concatenate the shard partials (in shard order = manifest order),
-  # then render + upload charts + update the PR, once.
+  # Fan-in: concatenate the model partials in manifest order, then render +
+  # upload charts + update the PR, once.
   report:
     name: PipelineTokenizer vs latest release
-    needs: bench
+    needs: [plan, bench]
     if: github.event_name != 'pull_request' || github.event.label.name == 'run-pipeline-bench'
     runs-on:
       group: aws-general-8-plus
@@ -259,9 +331,9 @@ jobs:
       - name: Install libcairo
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libcairo2
 
-      # Same data cache as the shards. Only the model tokenizers are needed here
+      # Same data cache as the bench jobs. Only the model tokenizers are needed here
       # (gpt2.json for the binsize check); the fixture corpora aren't — the numbers
-      # already live in the shard JSONs, but restoring the shared cache is a no-op fetch.
+      # already live in the partial JSONs, but restoring the shared cache is a no-op fetch.
       - name: Cache fixtures + model tokenizers
         uses: actions/cache@v4
         with:
@@ -273,33 +345,51 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: make models HF="uvx --from huggingface_hub hf"
 
-      - name: Download shard partials
+      - name: Download model partials
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8
         with:
           pattern: partial-*
           merge-multiple: true
           path: tokenizers/partials
 
-      - name: Merge shard partials
+      - name: Merge model partials
         run: |
           python3 - <<'PY'
           import glob, json
+          order = [e["name"] for e in
+                   json.load(open('tk-encode/examples/bench_models.json'))]
+          model_of = lambda f: f.rsplit('/', 1)[-1][len('pipeline_bench_'):-len('.json')]
           parts = sorted(glob.glob('partials/**/pipeline_bench_*.json', recursive=True),
-                         key=lambda f: int(f.rsplit('_', 1)[1].split('.')[0]))
+                         key=lambda f: order.index(model_of(f)))
           merged = None
           for f in parts:
               d = json.load(open(f))
               if merged is None:
-                  # `env` (cpu/glibc stamp) from the first shard: the shards
+                  # `env` (cpu/glibc stamp) from the first partial: the jobs
                   # share a runner group, so one stamp stands for the run.
                   merged = {"baseline": d["baseline"], "env": d.get("env"), "models": []}
               merged["models"].extend(d["models"])
           if merged is None:
-              raise SystemExit("no shard partials found")
+              raise SystemExit("no model partials found")
           json.dump(merged, open('pipeline_bench.json', 'w'))
-          print(f"merged {len(parts)} shard(s) -> {len(merged['models'])} models")
+          print(f"merged {len(parts)} partial(s) -> {len(merged['models'])} models")
           PY
           head -c 300 pipeline_bench.json; echo
+
+      # Seed the release-baseline cache: this run had no cached numbers, so it
+      # measured the release itself; publish the merged JSON under the plan
+      # job's key so every following run skips the baseline timing. The full
+      # bench JSON is stored as-is — cached-mode runs read only its baseline
+      # fields.
+      - name: Publish release-baseline cache
+        if: needs.plan.outputs.have_baseline == 'false'
+        continue-on-error: true
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          uvx --from huggingface_hub hf upload hf-internal-testing/tokenizers-bench \
+            pipeline_bench.json "${{ needs.plan.outputs.baseline_path }}" --repo-type dataset \
+            --commit-message "release baseline: ${{ needs.plan.outputs.baseline_path }}"
 
       - name: Download prebuilt binaries
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8
@@ -391,7 +481,7 @@ jobs:
           fi
           python3 ${{ github.workspace }}/.github/scripts/render_pipeline_bench.py \
             pipeline_bench.json \
-            --subtitle "whole corpus · ~10 kB chunks · cold caches · add_special_tokens on · 1/2/4/8/max-thread sweep per group" \
+            --subtitle "whole corpus · ~10 kB chunks · cold caches · add_special_tokens on · 2/4-thread sweep per group" \
             --revision "${{ github.event.pull_request.head.sha || github.sha }}" \
             --img-base "$base_url" \
             --run-id "${{ github.run_id }}" \

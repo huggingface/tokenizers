@@ -639,6 +639,41 @@ def alloc_line(model, baseline_label):
                         (("baseline", baseline_label), ("pipeline", "Pipeline"))))
 
 
+# How far the canary may drift from its cached number before the report warns
+# that the machines no longer match the cached baseline run. Single-number
+# medians on shared runners carry a few percent of noise on their own.
+CANARY_FENCE_PCT = 10.0
+
+
+def canary_lines(data, benched):
+    """The cached-baseline trust note: when the release's numbers were copied
+    from a cached run, each model job re-measured one canary fixture; compare
+    every canary against its cached number and clear or warn in one line.
+    Empty when this run measured the release itself."""
+    if not (data.get("baseline") or {}).get("cached"):
+        return []
+    drifts, fixture = [], None
+    for m in benched:
+        c = m.get("baseline_canary") or {}
+        cur, old = c.get("measured_mbps"), c.get("cached_mbps")
+        if cur and old:
+            drifts.append(((cur / old - 1) * 100, m["model"]))
+            fixture = c.get("fixture", fixture)
+    if not drifts:
+        return ["<sub>release numbers from the cached baseline run (no canary data)</sub>", ""]
+    pct, model = max(drifts, key=lambda t: abs(t[0]))
+    if abs(pct) > CANARY_FENCE_PCT:
+        return [f"> ⚠️ **Release numbers are reused from a cached baseline run, and the "
+                f"canary ({fixture}, re-measured by every model job) drifted {pct:+.1f}% on "
+                f"{model}, beyond ±{CANARY_FENCE_PCT:g}%.** The runners changed since the "
+                f"cache was seeded; read the vs-release throughput comparisons with "
+                f"suspicion (allocation counts are unaffected). Any edit to "
+                f"fixture_bench.rs re-keys the cache and re-measures.", ""]
+    return [f"<sub>release numbers from the cached baseline run · canary ({fixture}) "
+            f"re-measured by {len(drifts)} model job(s): max drift {pct:+.1f}% "
+            f"(fence ±{CANARY_FENCE_PCT:g}%)</sub>", ""]
+
+
 def base_work_lookup(base_data):
     """(model, fixture) -> the base run's pipeline allocation row. Feeds
     `work_verdict`; entries hold whatever the base run measured (older runs
@@ -742,15 +777,16 @@ def has_threads(m, key="threads"):
 
 
 def threads_svg(sweep, meta, baseline_label, title="Thread scaling", subtitle_base=""):
-    """One fixture group's sweep: throughput (MB/s) at 1/2/4/8/device-max threads —
-    pipeline vs the release — with a per-row *ideal linear* tick (single-thread × N)
-    on the pipeline bar, so linear vs sub-linear scaling is visible at a glance
-    alongside the pipeline↔release gap; the right column carries self-scaling % of
-    linear."""
+    """One fixture group's sweep: throughput (MB/s) at each swept thread count —
+    pipeline vs the release — with a per-row *ideal linear* tick (the first sweep
+    point scaled by the thread ratio) on the pipeline bar, so linear vs sub-linear
+    scaling is visible at a glance alongside the pipeline↔release gap; the right
+    column carries self-scaling % of linear."""
     ink, sink = INK, SERIES_INK
     counts, pipe, base = sweep["counts"], sweep["pipeline_mbps"], sweep["baseline_mbps"]
-    p1 = pipe[0] if pipe and pipe[0] else None  # single-thread anchor for the linear reference
-    ideal = [p1 * n for n in counts] if p1 else []
+    n0 = counts[0] if counts else 1  # the sweep's first count anchors the linear reference
+    p1 = pipe[0] if pipe and pipe[0] else None
+    ideal = [p1 * n / n0 for n in counts] if p1 else []
     vals = [v for v in pipe if v] + [v for v in base if v] + ideal
     max_mb = (max(vals) if vals else 1.0) * 1.08
 
@@ -777,14 +813,14 @@ def threads_svg(sweep, meta, baseline_label, title="Thread scaling", subtitle_ba
         p = pipe[i] if i < len(pipe) else None
         if p is not None:
             body.append(hbar(x(0), x(p), pipe_y, bar_h, sink["pipeline"]))
-        # Ideal-linear reference for the pipeline (single-thread × N): the bar reaching this tick == linear.
-        if p1 is not None and n > 1:
-            ix = x(p1 * n)
+        # Ideal-linear reference for the pipeline: the bar reaching this tick == linear.
+        if p1 is not None and n > n0:
+            ix = x(p1 * n / n0)
             body.append(f'<line x1="{ix:.1f}" y1="{pipe_y - 2:.1f}" x2="{ix:.1f}" '
                         f'y2="{pipe_y + bar_h + 2:.1f}" stroke="{ink["primary"]}" stroke-width="1.5"/>')
         if p is not None and p1:
             sc = p / p1
-            right = f"{p:.0f} · {sc:.1f}× ({sc / n * 100:.0f}%)"
+            right = f"{p:.0f} · {sc:.1f}× ({sc / (n / n0) * 100:.0f}%)"
         else:
             right = f"{p:.0f}" if p is not None else "—"
         body.append(f'<text x="{col_x}" y="{cy + 4:.1f}" fill="{ink["secondary"]}" font-size="12" '
@@ -796,15 +832,16 @@ def threads_svg(sweep, meta, baseline_label, title="Thread scaling", subtitle_ba
     legend = legend_row(ink, sink, y, [
         ("swatch", "baseline", baseline_label),
         ("swatch", "pipeline", "PipelineTokenizer"),
-        ("tick", ink["primary"], "ideal linear (T₁ × N)"),
+        ("tick", ink["primary"], f"ideal linear from {n0} threads"),
     ])
     height = y + 34
     scaling = ""
     if p1 and len(pipe) >= 2 and pipe[-1]:
         sc = pipe[-1] / p1
-        scaling = f" · pipeline {sc:.1f}× on {counts[-1]} threads ({sc / counts[-1] * 100:.0f}% of linear)"
-    subtitle = (f"throughput at N threads vs {baseline_label}; tick = linear scaling from T₁, "
-                f"an upper bound where vCPUs share physical cores{scaling}")
+        scaling = (f" · pipeline {sc:.1f}× from {n0} to {counts[-1]} threads "
+                   f"({sc / (counts[-1] / n0) * 100:.0f}% of linear)")
+    subtitle = (f"throughput at N threads vs {baseline_label}; tick = linear scaling from "
+                f"the {n0}-thread point, an upper bound where vCPUs share physical cores{scaling}")
     return svg_doc(ink, height, title,
                    subtitle, grid + "".join(body) + legend, meta, subtitle_base)
 
@@ -892,6 +929,7 @@ def render_markdown(data, subtitle_base, meta, base, run_id, sizes,
           picture(base, run_id, "overview", "Per-model encode throughput vs latest release", 860), "",
           picture(base, run_id, "fixtures",
                   "Per-fixture encode throughput vs latest release, across models", 860), ""]
+    md += canary_lines(data, benched)
     if base_lookup:
         md += [f"**vs base branch** (`{escape(base_ref or 'base')}`) — per-model geomean ×speedup of "
                f"this PR's PipelineTokenizer against the base branch's; **regressions in red**.", "",
