@@ -45,16 +45,16 @@ fn content_start(bytes: &[u8]) -> usize {
     }
 }
 
+// The fused cache probe stores ids straight at a `*mut u32` pointing into the `Vec<PipelineToken>`
+// the caller is filling. That is only sound while a token is layout-identical to its id.
+const _: () = assert!(size_of::<PipelineToken>() == size_of::<u32>());
+const _: () = assert!(align_of::<PipelineToken>() == align_of::<u32>());
+
 pub struct PipelineBPE {
     pub(super) atoms: Atoms,
     pub(super) tables: BpeTables,
     pub(super) affixes: Option<Affixes>,
     pub(super) vocab: BucketVocabStore,
-    ignore_merges: bool,
-    /// Whether the fold is decided per entry, by the bit each vocabulary entry carries in its id.
-    /// False when the config declares `ignore_merges`, which folds every hit unconditionally.
-    /// See [`PipelineBPE::prove_fold`].
-    fold_by_flag: bool,
     byte_to_gate: [u16; 256],
     /// Slots for the per-scratch word cache, from the config. `None` disables it.
     cache_capacity: Option<usize>,
@@ -184,23 +184,26 @@ impl PipelineBPE {
             atoms,
             tables,
             affixes,
-            ignore_merges,
-            fold_by_flag: false,
             cache_capacity,
             vocab,
             byte_to_gate: build_byte_to_gate(),
         };
-        // A config that already declares `ignore_merges` folds every hit and needs no proof.
-        if !built.ignore_merges {
-            // Two phases because the proof runs the merge engine, which borrows `built`: work out
-            // the answers first, then set the bit on each entry that earned it.
-            let proven = built.prove_fold();
-            for (id, foldable) in proven.iter().enumerate() {
-                if *foldable {
-                    built.vocab.set_foldable(id as u32);
-                }
+        // Every entry carries a foldable bit, so the encode path is one probe and one bit test
+        // with no policy left in it. The policy is decided here, once: a config that declares
+        // `ignore_merges` asks for every hit to fold, so every entry gets the bit; otherwise only
+        // the entries that prove they reduce to themselves earn it.
+        //
+        // Two phases because the proof runs the merge engine, which borrows `built`: work out the
+        // answers first, then set the bit on each entry that earned it.
+        let proven = if ignore_merges {
+            vec![true; built.vocab.id_space()]
+        } else {
+            built.prove_fold()
+        };
+        for (id, foldable) in proven.iter().enumerate() {
+            if *foldable {
+                built.vocab.set_foldable(id as u32);
             }
-            built.fold_by_flag = true;
         }
         Ok(built)
     }
@@ -210,7 +213,9 @@ impl PipelineBPE {
     ///
     /// We replace the old "ignore_merges" with something that actually ignores whether or not the flag was set.
     fn prove_fold(&self) -> Vec<bool> {
-        let len = self.vocab.len();
+        // The id space, not the entry count: ids may be sparse, and bounding the walk by
+        // `vocab.len()` would leave every entry above it unproven.
+        let len = self.vocab.id_space();
         let mut proven = vec![false; len];
         let mut symbols = Vec::with_capacity(64);
         let mut scratch = QueueScratch::default();
@@ -239,16 +244,10 @@ impl PipelineBPE {
     /// entry that may be folded. `None` sends the word to the merge engines.
     #[inline(always)]
     fn fold_id(&self, sequence: &str) -> Option<u32> {
-        if self.fold_by_flag {
-            // One probe; the proven bit is part of the id that probe already returned.
-            let (id, foldable) = self.vocab.get_bytes_foldable(sequence.as_bytes())?;
-            return foldable.then_some(id);
-        }
-        // The config declared `ignore_merges`: fold every hit, as it asks.
-        if self.ignore_merges {
-            return self.vocab.get_bytes(sequence.as_bytes());
-        }
-        None
+        // One probe; the foldable bit is part of the id that probe already returned. Which entries
+        // carry it was settled at load -- see `from_bpe`.
+        let (id, foldable) = self.vocab.get_bytes_foldable(sequence.as_bytes())?;
+        foldable.then_some(id)
     }
 
     /// Converts a word to symbols and merges it. The gate, indexed by the word's first *content*
