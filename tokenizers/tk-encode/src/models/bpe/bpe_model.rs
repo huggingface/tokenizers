@@ -159,7 +159,7 @@ impl PipelineBPE {
             let proven = built.prove_fold();
             for (id, foldable) in proven.iter().enumerate() {
                 if *foldable {
-                    built.vocab.set_foldable(id as u32, true);
+                    built.vocab.set_foldable(id as u32);
                 }
             }
             built.fold_by_flag = true;
@@ -187,9 +187,10 @@ impl PipelineBPE {
     /// by the added-vocabulary frame before the model, so in practice it never even reaches this
     /// path; but "in practice" is not a proof, and a per-entry answer does not need one.
     ///
-    /// The answer is stored on the vocabulary entry itself rather than in a side table, because
-    /// the lookup already loads that entry to verify the key and the entry has spare padding. So
-    /// the flag costs no memory and no extra load. See [`BucketVocabStore::get_bytes_foldable`].
+    /// The answer is a bit of the entry's own id rather than a side table: an id needs 31 bits at
+    /// most, and this crate already packs a flag beside an id (a merge value is a product id with
+    /// `SAFE_MASK` above it). The lookup already loads that entry to verify the key, so the flag
+    /// costs no memory and no extra load. See [`BucketVocabStore::get_bytes_foldable`].
     fn prove_fold(&self) -> Vec<bool> {
         let len = self.vocab.len();
         let mut proven = vec![false; len];
