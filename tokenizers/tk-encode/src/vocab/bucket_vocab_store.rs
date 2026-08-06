@@ -19,6 +19,14 @@ const SEEDS: [u64; 4] = [
 struct Entry {
     start: u32,
     len: u16,
+    /// Whether a pretoken equal to this token can be emitted as this token without running the
+    /// merge loop. Set after the model proves it; see `PipelineBPE::prove_fold`.
+    ///
+    /// It lives here rather than in a side table because `get_bytes` already loads this entry to
+    /// verify the key, and `start`/`len`/`id` leave two bytes of padding inside the 12-byte
+    /// entry. So the answer arrives on a line that was fetched anyway: no second table, no second
+    /// load, and the struct does not grow.
+    foldable: bool,
     id: u32,
 }
 
@@ -139,6 +147,7 @@ impl BucketVocabStore {
             Entry {
                 start: 0,
                 len: 0,
+                foldable: false,
                 id: 0
             };
             n_slots
@@ -153,6 +162,7 @@ impl BucketVocabStore {
             entries[slot] = Entry {
                 start: bytes.len() as u32,
                 len: s.len() as u16,
+                foldable: false,
                 id: *id,
             };
             id_to_slot[*id as usize] = slot as u32;
@@ -201,6 +211,32 @@ impl BucketVocabStore {
             Some(e.id)
         } else {
             None
+        }
+    }
+
+    /// The id for `q`, together with whether that entry may be folded. One probe, one entry load:
+    /// the flag rides along on the line `get_bytes` already reads.
+    #[inline]
+    pub fn get_bytes_foldable(&self, q: &[u8]) -> Option<(u32, bool)> {
+        if self.entries.is_empty() {
+            return None;
+        }
+        let slot = self.mphf.index(&self.hasher.hash_one(q));
+        let e = self.entries[slot];
+        let (start, len) = (e.start as usize, e.len as usize);
+        if len == q.len() && self.bytes[start..start + len] == *q {
+            Some((e.id, e.foldable))
+        } else {
+            None
+        }
+    }
+
+    /// Records that this token folds to itself. Called once per entry at load, after the proof.
+    pub fn set_foldable(&mut self, id: u32, foldable: bool) {
+        if let Some(&slot) = self.id_to_slot.get(id as usize)
+            && slot != u32::MAX
+        {
+            self.entries[slot as usize].foldable = foldable;
         }
     }
 
