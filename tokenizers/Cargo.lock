@@ -401,18 +401,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "crabgrind"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "035c801dc4b418e1d857a6536dc88b4d1929c7a1fd163389766e18d322d34a84"
-dependencies = [
- "bindgen",
- "cc",
- "pkg-config",
- "rustversion",
-]
-
-[[package]]
 name = "crc32fast"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2300,7 +2288,6 @@ dependencies = [
  "assert_approx_eq",
  "atomsplit",
  "compact_str",
- "crabgrind",
  "criterion 0.6.0",
  "daachorse 3.0.2",
  "dary_heap",

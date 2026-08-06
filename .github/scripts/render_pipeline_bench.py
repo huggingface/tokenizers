@@ -7,11 +7,11 @@ only builds the pipeline) and `pipeline` (the experimental PipelineTokenizer,
 blue). `ids_match` compares the pipeline's ids against the release's. Leads with
 the always-visible charts — per-model geomean ×speedup, its per-fixture twin (the
 same speedups decomposed by workload instead of by model), the deterministic work
-lanes (instructions per byte under callgrind; exact allocation counts from the
-counting allocator) plus a "work vs base" verdict block naming exactly where work
+lane (exact allocation counts from the counting allocator) plus a "work vs base"
+verdict block naming exactly where work
 moved, memory footprint, binary size — then one collapsed <details> per model
 (per-fixture speedup, input-size response, thread scaling per fixture group, numbers
-table with Ir/B and allocs/MB columns). Models the pipeline can't build yet
+table with an allocs/MB column). Models the pipeline can't build yet
 render as "not supported" roadmap cards. Emits light-theme SVGs + pipeline_bench.md;
 the CI workflow rasterizes and uploads the SVGs. Input schema: see fixture_bench.rs.
 
@@ -126,29 +126,6 @@ def base_model_speedups(model, base_lookup):
                         for r in model["results"]) if v]
 
 
-# The instruction lane's significance fence, in percent. Callgrind Ir counts are
-# deterministic per environment but shift up to ~1% with the C library or CPU
-# dispatch, so only a delta beyond this is called a change (allocation counts
-# need no fence: they are exact).
-IR_FENCE_PCT = 1.0
-
-
-def ir_per_byte(row, impl):
-    d = row.get("ir_per_byte") or {}
-    return d.get(impl)
-
-
-def ir_ratio(row):
-    """Release Ir/B over pipeline Ir/B for one fixture: ×2 means the pipeline
-    retires half the instructions. `None` when the instruction lane didn't run."""
-    b, p = ir_per_byte(row, "baseline"), ir_per_byte(row, "pipeline")
-    return b / p if b and p else None
-
-
-def model_ir_ratios(model):
-    return [v for v in (ir_ratio(r) for r in model["results"]) if v]
-
-
 def alloc_encode_rows(model, impl):
     """fixture -> that fixture's exact allocation row ({count, bytes,
     input_bytes}) from one implementation's memory child; {} without the lane."""
@@ -160,8 +137,8 @@ def alloc_encode_rows(model, impl):
 
 
 def alloc_ratio(model, fixture):
-    """Release allocation count over pipeline allocation count for one fixture,
-    same reading as `ir_ratio`: ×2 means the pipeline allocates half as often."""
+    """Release allocation count over pipeline allocation count for one fixture:
+    ×2 means the pipeline allocates half as often."""
     b = alloc_encode_rows(model, "baseline").get(fixture)
     p = alloc_encode_rows(model, "pipeline").get(fixture)
     return b["count"] / p["count"] if b and p and p["count"] else None
@@ -274,8 +251,8 @@ def overview_svg(models, subtitle_base, meta, lo, hi, baseline_label,
     the reference (×1.0) with a min–max whisker across fixtures. Unsupported models
     show as muted status rows so the overview is the complete state of the world.
     `mark_regressions=True` (the "vs base branch" twin) turns slower-than-base bars red.
-    `speedups_of`/`hints`/`quantity`/`tick_set` let the instruction and allocation
-    ratio charts reuse the layout: any per-fixture "×higher is better" ratio plots here."""
+    `speedups_of`/`hints`/`quantity`/`tick_set` let the allocation ratio chart
+    reuse the layout: any per-fixture "×higher is better" ratio plots here."""
     ink, sink = INK, SERIES_INK
     title = title or "PipelineTokenizer vs latest release — encode throughput"
     ref_label = ref_label or baseline_label
@@ -663,30 +640,25 @@ def alloc_line(model, baseline_label):
 
 
 def base_work_lookup(base_data):
-    """(model, fixture) -> the base run's deterministic-lane numbers: the
-    `ir_per_byte` pair and the pipeline's exact allocation row. Feeds
-    `work_verdict` and the per-fixture `Δ base Ir` column; entries hold whatever
-    the base run measured (older runs carry neither lane)."""
+    """(model, fixture) -> the base run's pipeline allocation row. Feeds
+    `work_verdict`; entries hold whatever the base run measured (older runs
+    carry no allocation lane)."""
     out = {}
     for bm in base_data["models"]:
         pallocs = alloc_encode_rows(bm, "pipeline")
         for r in bm.get("results") or []:
             out[(bm["model"], r["fixture"])] = {
-                "ir": r.get("ir_per_byte") or {},
                 "allocs": pallocs.get(r["fixture"]),
             }
     return out
 
 
 def work_verdict(benched, base_work, base_ref):
-    """The deterministic lanes' vs-base verdict lines: clear the PR in one glance
-    or name exactly where work moved. Ir deltas are fenced at `IR_FENCE_PCT`;
-    allocation counts compare exactly. The pinned release doubles as a canary:
-    this PR cannot change its code, so its Ir moving means the *environment*
-    moved (runner image, C library, CPU model) and wall-time deltas are suspect."""
-    ir_moves, alloc_moves, canary = [], [], []
-    ir_seen = alloc_seen = 0
-    max_ir = 0.0
+    """The allocation lane's vs-base verdict line: clear the PR in one glance
+    or name exactly where work moved. Allocation counts are exact, so any
+    difference is a change."""
+    alloc_moves = []
+    alloc_seen = 0
     for m in benched:
         pallocs = alloc_encode_rows(m, "pipeline")
         for r in m["results"]:
@@ -694,16 +666,6 @@ def work_verdict(benched, base_work, base_ref):
             if not prev:
                 continue
             name = f"{m['model']}/{r['fixture']}"
-            cur, old = ir_per_byte(r, "pipeline"), prev["ir"].get("pipeline")
-            if cur and old:
-                ir_seen += 1
-                pct = (cur / old - 1) * 100
-                max_ir = max(max_ir, abs(pct))
-                if abs(pct) > IR_FENCE_PCT:
-                    ir_moves.append((pct, name))
-            curb, oldb = ir_per_byte(r, "baseline"), prev["ir"].get("baseline")
-            if curb and oldb and abs(curb / oldb - 1) * 100 > IR_FENCE_PCT:
-                canary.append(((curb / oldb - 1) * 100, name))
             cura, olda = pallocs.get(r["fixture"]), prev["allocs"]
             if cura and olda:
                 alloc_seen += 1
@@ -717,15 +679,7 @@ def work_verdict(benched, base_work, base_ref):
         shown = ", ".join(f"{n} {p:+.2f}%" for p, n in moves[:6])
         return shown + (f", and {len(moves) - 6} more" if len(moves) > 6 else "")
 
-    lines = [f"**Work vs base** (`{base_ref}`, deterministic lanes):", ""]
-    if not ir_seen:
-        lines.append("- instructions: no data in the base run yet")
-    elif ir_moves:
-        lines.append(f"- instructions: ⚠ pipeline Ir/B moved beyond ±{IR_FENCE_PCT:g}% "
-                     f"on {len(ir_moves)} of {ir_seen} fixtures: {listing(ir_moves)}")
-    else:
-        lines.append(f"- instructions: ✓ unchanged within ±{IR_FENCE_PCT:g}% on all "
-                     f"{ir_seen} fixtures (max |Δ| {max_ir:.2f}%)")
+    lines = [f"**Work vs base** (`{base_ref}`, allocation lane):", ""]
     if not alloc_seen:
         lines.append("- allocations: no data in the base run yet")
     elif alloc_moves:
@@ -733,13 +687,6 @@ def work_verdict(benched, base_work, base_ref):
                      f"{alloc_seen} fixtures: {listing(alloc_moves)}")
     else:
         lines.append(f"- allocations: ✓ exactly identical on all {alloc_seen} fixtures")
-    if canary:
-        canary.sort(key=lambda t: -abs(t[0]))
-        n = len(canary)
-        lines.append(f"- ⚠ canary: the pinned release's own Ir/B moved on {n} "
-                     f"fixture{'s' if n > 1 else ''} (max {canary[0][0]:+.2f}%). The "
-                     f"environment changed between the runs; read wall-time deltas "
-                     f"with suspicion.")
     return lines
 
 
@@ -936,7 +883,6 @@ def render_markdown(data, subtitle_base, meta, base, run_id, sizes,
     unsupported = [m for m in models if not m["results"]]
     mismatches = [f"{m['model']}/{r['fixture']}"
                   for m in benched for r in m["results"] if r["ids_match"] is False]
-    has_ir = any(model_ir_ratios(m) for m in benched)
     has_allocs = any(model_alloc_ratios(m) for m in benched)
 
     md = ["## PipelineTokenizer benchmark", "",
@@ -952,16 +898,13 @@ def render_markdown(data, subtitle_base, meta, base, run_id, sizes,
                picture(base, run_id, "base-overview", "Per-model encode throughput vs base branch", 860), ""]
     if base_work is not None:
         md += work_verdict(benched, base_work, base_ref or "base") + [""]
-    if has_ir:
-        md += [picture(base, run_id, "instructions",
-                       "Instructions per byte vs latest release", 860), ""]
     if has_allocs:
         md += [picture(base, run_id, "allocs",
                        "Encode allocations vs latest release", 860), ""]
-    if (has_ir or has_allocs) and isinstance(env, dict):
-        bits = " · ".join(str(env[k]) for k in ("valgrind", "cpu", "glibc") if env.get(k))
-        if bits:
-            md += [f"<sub>deterministic lanes measured on: {escape(bits)}</sub>", ""]
+        if isinstance(env, dict):
+            bits = " · ".join(str(env[k]) for k in ("cpu", "glibc") if env.get(k))
+            if bits:
+                md += [f"<sub>allocation lane measured on: {escape(bits)}</sub>", ""]
     md += [picture(base, run_id, "memory", "Per-model memory footprint", 860), ""]
     if sizes:
         md += [picture(base, run_id, "binsize", "Minimal encode binary size", 860), ""]
@@ -980,9 +923,6 @@ def render_markdown(data, subtitle_base, meta, base, run_id, sizes,
             bvals = base_model_speedups(m, base_lookup)
             if bvals:
                 summary += f" · ×{geomean(bvals):.2f} vs base"
-        ivals = model_ir_ratios(m)
-        if ivals:
-            summary += f" · {ratio_label(geomean(ivals))} Ir"
         flag = " · ⚠ ids differ" if any(r["ids_match"] is False for r in m["results"]) else ""
         md += [f"<details><summary><b>{escape(m['model'])}</b> — {escape(desc)} · "
                f"{summary}{flag}</summary>", ""]
@@ -998,22 +938,14 @@ def render_markdown(data, subtitle_base, meta, base, run_id, sizes,
         if p_allocs:
             md += [alloc_line(m, baseline_label), ""]
         # Columns beyond the throughput core appear only when their lane ran, so
-        # a local (valgrind-less) render matches the old table exactly. Pipeline
-        # Ir alone (release can't load the model) still earns the column: it
-        # diffs against base even without a release ratio.
-        has_ir_m = any(ir_per_byte(r, "pipeline") for r in m["results"])
+        # a local render without the memory children matches the old table exactly.
         cols = [("Fixture", "---"), ("Group", "---"),
                 (f"{baseline_label} MB/s", "---:"), ("Pipeline MB/s", "---:"),
                 ("Speedup", "---:")]
-        if has_ir_m:
-            cols.append(("Ir/B", "---:"))
         if p_allocs:
             cols.append(("allocs/MB", "---:"))
         if base_lookup:
             cols.append(("Δ base", "---:"))
-        show_base_ir = base_work is not None and has_ir_m
-        if show_base_ir:
-            cols.append(("Δ base Ir", "---:"))
         cols.append(("Ids", ":--"))
         md += ["| " + " | ".join(h for h, _ in cols) + " |",
                "|" + "|".join(a for _, a in cols) + "|"]
@@ -1021,10 +953,6 @@ def render_markdown(data, subtitle_base, meta, base, run_id, sizes,
             mb = r["mbps"]
             cells = [r["fixture"], r["group"], fnum(mb.get("baseline")),
                      fnum(mb.get("pipeline")), fnum(speedup(r), "×{:.2f}")]
-            if has_ir_m:
-                p, ratio = ir_per_byte(r, "pipeline"), ir_ratio(r)
-                cells.append("—" if p is None else
-                             f"{p:.1f}" + (f" ({ratio_label(ratio)})" if ratio else ""))
             if p_allocs:
                 a, ar = p_allocs.get(r["fixture"]), alloc_ratio(m, r["fixture"])
                 cells.append("—" if not a else
@@ -1032,14 +960,6 @@ def render_markdown(data, subtitle_base, meta, base, run_id, sizes,
                              + (f" ({ratio_label(ar)})" if ar else ""))
             if base_lookup:
                 cells.append(fnum(base_speedup(r, base_lookup, m["model"]), "×{:.2f}"))
-            if show_base_ir:
-                prev = (base_work.get((m["model"], r["fixture"])) or {}).get("ir") or {}
-                cur, old = ir_per_byte(r, "pipeline"), prev.get("pipeline")
-                if cur and old:
-                    pct = (cur / old - 1) * 100
-                    cells.append(f"{pct:+.2f}%" + (" ⚠" if abs(pct) > IR_FENCE_PCT else ""))
-                else:
-                    cells.append("—")
             cells.append("⚠️ ≠ release" if r["ids_match"] is False else "match")
             md.append("| " + " | ".join(cells) + " |")
         md += ["", "</details>", ""]
@@ -1095,7 +1015,7 @@ def main():
 
     # "vs base branch": join the PR results against the base branch's cached run by
     # (model, fixture). base_lookup[(model, fixture)] = base pipeline MB/s;
-    # base_work carries the deterministic lanes (Ir/B, allocation rows).
+    # base_work carries the allocation lane's rows.
     base_lookup, base_speedups_of, blo, bhi, base_work = None, None, lo, hi, None
     if args.base_bench and Path(args.base_bench).exists():
         base_data = json.loads(Path(args.base_bench).read_text())
@@ -1125,17 +1045,8 @@ def main():
     if sizes:
         (out / "pipeline_bench_binsize.svg").write_text(
             binsize_svg(sizes, meta, baseline_label))
-    # The deterministic lanes' overviews, only when the lanes ran (they need
-    # valgrind and the counting-allocator children, so local renders skip them).
-    if any(model_ir_ratios(m) for m in benched):
-        ilo, ihi = scale(benched, model_ir_ratios)
-        (out / "pipeline_bench_instructions.svg").write_text(
-            overview_svg(models, args.subtitle, meta, ilo, ihi, baseline_label,
-                         speedups_of=model_ir_ratios,
-                         title="PipelineTokenizer vs latest release — instructions per byte",
-                         quantity="×fewer instructions",
-                         hints=("← more instructions", "fewer →"),
-                         no_cmp_msg="instruction lane didn't run for this model"))
+    # The allocation lane's overview, only when the lane ran (it needs the
+    # counting-allocator children, so local renders may skip it).
     if any(model_alloc_ratios(m) for m in benched):
         alo, ahi = scale(benched, model_alloc_ratios)
         (out / "pipeline_bench_allocs.svg").write_text(
