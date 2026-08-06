@@ -54,6 +54,7 @@ name = "atomsplit"
 version = "0.1.0"
 dependencies = [
  "memchr",
+ "wide",
 ]
 
 [[package]]

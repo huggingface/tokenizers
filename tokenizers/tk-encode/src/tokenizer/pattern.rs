@@ -1,6 +1,6 @@
 use crate::utils::SysRegex;
 use crate::{Offsets, Result};
-use atomsplit::literal::Literal;
+use atomsplit::literal::{InvalidPattern, Literal};
 use regex::Regex;
 
 /// Pattern used to split a NormalizedString
@@ -73,7 +73,8 @@ impl Pattern for &str {
         match Literal::new(self.as_bytes()) {
             Ok(literal) => (&literal).find_matches(inside),
             // An empty pattern would match everywhere, so it matches nowhere instead.
-            Err(_) => Ok(vec![((0, inside.len()), false)]),
+            Err(InvalidPattern::Empty) => Ok(vec![((0, inside.len()), false)]),
+            Err(e @ InvalidPattern::TooLong) => Err(e.into()),
         }
     }
 }

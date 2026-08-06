@@ -26,6 +26,7 @@ path = "src/lib.rs"
 
 [dependencies]
 memchr = "2.8.2" # SIMD search: used for single-byte  search in CharDelimiterSplit (1.4–23× vs scalar), or multi-byte string pattern search in `literal`.
+wide = "1.6.0"
 # NOTE: classify tables live in src/atom_tables.rs (committed, generated). Regenerate after any atom
 # scheme change with `cargo run -p bitmap_gen`. No build script / build-dep — atomsplit builds clean.
 # onig is C (Oniguruma) and fancy-regex pulls it in transitively for benches only — neither
