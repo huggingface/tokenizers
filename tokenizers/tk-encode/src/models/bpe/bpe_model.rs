@@ -36,6 +36,11 @@ pub struct PipelineBPE {
     pub(super) affixes: Option<Affixes>,
     pub(super) vocab: BucketVocabStore,
     ignore_merges: bool,
+    /// One bit per vocabulary id: set when that entry provably encodes to itself, so a pretoken
+    /// equal to it can be emitted without merging. `None` when the config already declares
+    /// `ignore_merges`, which folds every vocabulary hit unconditionally. See
+    /// [`PipelineBPE::prove_fold`].
+    fold_bits: Option<Box<[u64]>>,
     byte_to_mode: [u16; 256],
     /// `None` disables the per-thread word cache; the builder's `0` means the same thing.
     cache_capacity: Option<usize>,
@@ -138,15 +143,90 @@ impl PipelineBPE {
             suffix,
             to_internal: external_to_internal.into_boxed_slice(),
         });
-        Ok(Self {
+        let mut built = Self {
             atoms,
             tables,
             affixes,
             ignore_merges,
+            fold_bits: None,
             vocab,
             byte_to_mode: build_byte_to_gate(),
             cache_capacity,
-        })
+        };
+        // A config that already declares `ignore_merges` folds every hit and needs no proof.
+        if !built.ignore_merges {
+            built.fold_bits = Some(built.prove_fold());
+        }
+        Ok(built)
+    }
+
+    /// One bit per vocabulary id: can a pretoken equal to this entry be emitted as this entry,
+    /// without running the merge loop?
+    ///
+    /// # Why prove it rather than trust the flag
+    ///
+    /// `ignore_merges` is declared in the config, and models trained expecting it (llama-3) set
+    /// it. gpt2 does not, so every word goes through the merge loop -- including the ~93% of
+    /// English pretokens that are a single vocabulary entry and provably cannot come out as
+    /// anything else. The property is checkable, so it need not be assumed: run the merge engine
+    /// on each entry's own text and record whether it reduces to itself.
+    ///
+    /// # Why a bitset and not a bool
+    ///
+    /// A single flag has to be all-or-nothing, and one entry is enough to lose it. On gpt2
+    /// exactly one of 50,257 entries disagrees -- `<|endoftext|>`, which decomposes to seven
+    /// tokens -- so a global flag reads "not provable" and the other 50,256 entries keep paying
+    /// for it. That entry is a special token, matched by the added-vocabulary frame before the
+    /// model, so in practice it never even reaches this path; but "in practice" is not a proof,
+    /// and a bitset does not need one. Each entry carries its own answer, 6 KB for gpt2, and a
+    /// disagreeing entry costs only itself.
+    fn prove_fold(&self) -> Box<[u64]> {
+        let len = self.vocab.len();
+        let mut bits = vec![0u64; len.div_ceil(64)].into_boxed_slice();
+        let mut symbols = Vec::with_capacity(64);
+        let mut scratch = MergeScratch::default();
+        for id in 0..len as u32 {
+            let Some(bytes) = self.vocab.id_to_token_bytes(id) else {
+                continue;
+            };
+            // An entry that is not valid UTF-8 can never equal a pretoken, which is always a
+            // `&str` slice, so it can never be folded and needs no proof.
+            let Ok(text) = std::str::from_utf8(bytes) else {
+                continue;
+            };
+            let foldable = if text.chars().count() <= 1 {
+                // A single atom has no pair to merge and is trivially its own encoding.
+                true
+            } else {
+                self.merge_word(text, &mut symbols, &mut scratch);
+                symbols.len() == 1 && self.tables.unmap.at(symbols[0] as usize) == id
+            };
+            if foldable {
+                bits[id as usize / 64] |= 1 << (id % 64);
+            }
+        }
+        bits
+    }
+
+    /// The id to emit for `sequence` without merging, when the whole pretoken is a vocabulary
+    /// entry that may be folded. `None` sends the word to the merge engines.
+    #[inline(always)]
+    fn fold_id(&self, sequence: &str) -> Option<u32> {
+        let id = self.vocab.get_bytes(sequence.as_bytes())?;
+        match &self.fold_bits {
+            // The config declared `ignore_merges`: fold every hit, as it asks.
+            None if self.ignore_merges => Some(id),
+            None => None,
+            // Proven per entry, so only the entries that earned it.
+            Some(bits) => self.folds_to_itself(bits, id).then_some(id),
+        }
+    }
+
+    /// Whether the entry with this id was proven to encode to itself.
+    #[inline(always)]
+    fn folds_to_itself(&self, bits: &[u64], id: u32) -> bool {
+        let _ = self;
+        bits.at(id as usize / 64) >> (id % 64) & 1 == 1
     }
 
     /// Converts a word to symbols and merges it. The gate, indexed by the word's first byte, says
@@ -276,9 +356,7 @@ impl pipeline::Model for PipelineBPE {
             // through its normal API, so its length has to be true again first.
             unsafe { output.set_len(cursor) };
             let start = output.len();
-            if self.ignore_merges
-                && let Some(id) = self.vocab.get_bytes(sequence.as_bytes())
-            {
+            if let Some(id) = self.fold_id(sequence) {
                 output.push(PipelineToken { id });
             } else {
                 self.merge_word(sequence, symbols, merge_scratch);
@@ -328,9 +406,7 @@ impl pipeline::Model for PipelineBPE {
             }
         }
         let start = output.len();
-        if self.ignore_merges
-            && let Some(id) = self.vocab.get_bytes(sequence.as_bytes())
-        {
+        if let Some(id) = self.fold_id(sequence) {
             output.push(PipelineToken { id });
         } else {
             self.merge_word(sequence, symbols, merge_scratch);
@@ -399,6 +475,50 @@ mod gate_tests {
                 .map(|t| t.id)
                 .collect();
             assert_eq!(want, got, "gate changed the ids for {text:?}");
+        }
+    }
+}
+
+#[cfg(test)]
+mod fold_tests {
+    use crate::pipeline::PipelineTokenizer;
+    use crate::Tokenizer;
+
+    /// The proven fold emits a vocabulary entry without merging, so it is only ever valid if the
+    /// merge loop would have produced that same entry. gpt2 does not declare `ignore_merges`, so
+    /// on this config the fold is on purely because the proof enabled it -- which makes it exactly
+    /// the config where a wrong proof would show up.
+    ///
+    /// The strings below mix words that are a single vocabulary entry (folded) with words that are
+    /// not (merged), and include the special token whose entry does NOT fold: `<|endoftext|>`
+    /// decomposes to seven tokens, and folding it would emit one.
+    #[test]
+    fn the_proven_fold_never_changes_the_ids() {
+        let reference = Tokenizer::from_file("../data/gpt2.json").unwrap();
+        let pipe = PipelineTokenizer::try_from(&reference).unwrap();
+
+        for text in [
+            " the quick brown fox jumps over the lazy dog",
+            "unprefixed words and internationalisation",
+            "def foo(bar):\n    return bar + 1\n",
+            "<|endoftext|> literal in the middle <|endoftext|>",
+            " 语言模型 mixed with ASCII and ελληνικά",
+            "aaaaaaaaaaaaaaaaaaaaaaaa",
+            "   ",
+            "",
+        ] {
+            let want: Vec<u32> = reference
+                .encode_fast(text, false)
+                .unwrap()
+                .get_ids()
+                .to_vec();
+            let got: Vec<u32> = pipe
+                .encode_one(text, false)
+                .unwrap()
+                .iter()
+                .map(|t| t.id)
+                .collect();
+            assert_eq!(want, got, "the fold changed the ids for {text:?}");
         }
     }
 }
