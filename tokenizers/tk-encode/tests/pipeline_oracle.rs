@@ -31,7 +31,7 @@ fn check_model(tok_file: &str) {
     // The legacy `Tokenizer` only *builds* the pipeline (its sole constructor
     // today); it is never an encode reference. Drops out once a direct loader exists.
     let Ok(tree) = Tokenizer::from_file(&path) else {
-        eprintln!("skip {tok_file}: not present (fetch with `make bench-models`)");
+        eprintln!("skip {tok_file}: not present (fetch with `make models`)");
         return;
     };
     let Ok(pipeline) = PipelineTokenizer::try_from(&tree) else {

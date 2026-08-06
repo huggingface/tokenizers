@@ -981,7 +981,7 @@ fn measure_memory(model: &Path, baseline_ok: bool) -> Value {
 // ── model manifest helpers ──────────────────────────────────────────────────
 
 /// Local path to a manifest entry's config: `data/<file>`, else `data/<name>.json`.
-/// Both come from the test-data dataset (see the Makefile `bench-models` target).
+/// Both come from the test-data dataset (see the Makefile `models` target).
 fn model_path(entry: &Value) -> PathBuf {
     let name = entry["name"].as_str().unwrap();
     let file = entry

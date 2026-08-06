@@ -53,16 +53,22 @@ all-checks : lint test doc
 bench : $(BENCHMARK_RESOURCES)
 	cargo bench -- --verbose
 
+# Every file the tests and benches read (corpora, vocabs, tokenizer configs),
+# plus the fixture corpora. Model tokenizers from the bench manifest have
+# their own target: `models`.
+.PHONY : data
+data : $(TESTS_RESOURCES) $(BENCHMARK_RESOURCES) $(FIXTURES_RESOURCES)
+
 # Multilingual + modality corpora for cross-language benchmarks; see
 # fixtures/FIXTURES.md in $(HF_TEST_REPO) for provenance.
 .PHONY : fixtures
 fixtures : $(FIXTURES_RESOURCES)
 
 # Fetch each bench model's tokenizer config (the `file` listed in the manifest)
-# from the test-data dataset via the generic data/% rule — same controlled
+# from the test-data dataset via the generic data/% rule. Same controlled
 # mirror as the fixtures, so no direct pulls from model repos (supply chain).
-.PHONY : bench-models
-bench-models :
+.PHONY : models
+models :
 	@python3 -c "import json; [print(m.get('file') or m['name'] + '.json') for m in json.load(open('$(BENCH_MODELS)'))]" \
 	| while read -r file; do \
 	    $(MAKE) $(DATA_DIR)/$$file; \
