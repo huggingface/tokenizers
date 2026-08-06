@@ -52,28 +52,17 @@
 
 use std::fmt::Debug;
 
-use ahash::RandomState;
 use std::iter::Iterator;
 use wide::i8x16;
 
-/// Hashes a word to the 64 bits its home slot and tag are taken from, and to the
-/// bottom half of a long word's key ([`LookupKey::new_hash`]).
-static PLACEMENT_HASHER: RandomState = RandomState::with_seeds(
-    0x243f_6a88_85a3_08d3,
-    0x1319_8a2e_0370_7344,
-    0xa409_3822_299f_31d0,
-    0x082e_fa98_ec4e_6c89,
-);
+use crate::vocab::bucket_vocab_store::key_and_hash;
 
-/// Hashes a long word a second time, to fill the half of its key that
-/// [`PLACEMENT_HASHER`] does not reach. The two hashes must be independent, or the
-/// key would carry 64 bits of information instead of 127.
-static DISCRIMINANT_HASHER: RandomState = RandomState::with_seeds(
-    0x4528_21e6_38d0_1377,
-    0xbe54_66cf_34e9_0c6c,
-    0xc0ac_29b7_c97c_50dd,
-    0x3f84_d5b5_b547_0917,
-);
+// One hash pass, not two, and shared with the vocabulary.
+//
+// This used to hash a long word twice -- `PLACEMENT_HASHER` for its slot and `DISCRIMINANT_HASHER`
+// for the other half of its key -- which is why long pretokens paid for the key. It now keys through
+// `bucket_vocab_store::key_and_hash`, the same function the fold probes with, so a word that misses
+// the fold and falls through to this table is hashed once for both rather than once each.
 
 /// How many ids a [`WordCacheSlot`] holds inline before it has to spill. A probe writes this
 /// many lanes unconditionally, so it is also the headroom [`WordCache::probe_emit`] needs.
@@ -130,6 +119,14 @@ impl<'a> WordCache {
         self.lookup_placed(make_lookup_key(word, self.placement_mask))
     }
 
+    /// [`Self::lookup`] for a caller that already has the word's key and hash from
+    /// [`key_and_hash`] -- the fold probes the vocabulary with the same pair, so sharing it means a
+    /// word that misses the fold and falls through to here is hashed once, not twice.
+    #[inline]
+    pub fn lookup_keyed(&'a self, key: u128, hash: u64) -> Lookup<'a> {
+        self.lookup_placed(placement_from(LookupKey(key), hash, self.placement_mask))
+    }
+
     /// Probe and emit in one step: on an inline hit in the home slot the ids are written straight
     /// to `dst` and the count returned, so nothing goes back to the slot and nothing becomes a
     /// slice.
@@ -151,7 +148,17 @@ impl<'a> WordCache {
     #[inline]
     pub unsafe fn probe_emit(&'a self, word: &[u8], dst: *mut u32) -> ProbeEmit<'a> {
         debug_assert!(!word.is_empty(), "probe_emit needs a non-empty word");
-        let placement = make_lookup_key(word, self.placement_mask);
+        let (key, hash) = key_and_hash(word);
+        unsafe { self.probe_emit_keyed(key, hash, dst) }
+    }
+
+    /// [`Self::probe_emit`] for a caller that already has the word's key and hash.
+    ///
+    /// # Safety
+    /// As [`Self::probe_emit`]: `dst` must have room for [`MAX_INLINE_IDS`] `u32` writes.
+    #[inline]
+    pub unsafe fn probe_emit_keyed(&'a self, key: u128, hash: u64, dst: *mut u32) -> ProbeEmit<'a> {
+        let placement = placement_from(LookupKey(key), hash, self.placement_mask);
         // SAFETY: `index` is masked with `placement_mask` (`next_pow2 - 1`), and the table is
         // `next_pow2 + WINDOW_SIZE` long, so the home slot is always in bounds.
         let slot = unsafe { *self.cached_words.as_ptr().add(placement.index) };
@@ -421,17 +428,22 @@ impl<'a> SelfContained<'a> {
 pub struct LookupKey(u128);
 
 /// The key, home slot and tag of a word.
+///
+/// The key and its hash come from [`key_and_hash`], which is also what the vocabulary store keys on
+/// -- one scheme, so a word that is probed in both tables can be hashed once. See
+/// [`WordCache::lookup_keyed`].
+#[inline]
 fn make_lookup_key(word: &[u8], placement_mask: u64) -> InsertPlacement {
-    let placement_hash = PLACEMENT_HASHER.hash_one(word);
-    let key = if word.len() <= 15 {
-        LookupKey::new_inline(word)
-    } else {
-        LookupKey::new_hash(DISCRIMINANT_HASHER.hash_one(word), placement_hash)
-    };
+    let (key, hash) = key_and_hash(word);
+    placement_from(LookupKey(key), hash, placement_mask)
+}
+
+#[inline]
+fn placement_from(key: LookupKey, hash: u64, placement_mask: u64) -> InsertPlacement {
     InsertPlacement {
         key,
-        index: (placement_hash & placement_mask) as usize,
-        tag: ((placement_hash >> (64 - 8)) as u8).max(WordCache::EMPTY + 1),
+        index: (hash & placement_mask) as usize,
+        tag: ((hash >> (64 - 8)) as u8).max(WordCache::EMPTY + 1),
         // ^ must be at least 0x01, otherwise can be mistaken for an EMPTY slot
     }
 }

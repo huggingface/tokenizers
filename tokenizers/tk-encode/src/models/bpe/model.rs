@@ -12,10 +12,17 @@ use crate::pipeline::{self, PipelineToken, Span};
 use crate::tokenizer::Result;
 use crate::utils::byte_level::{self};
 use crate::utils::word_cache::{Lookup, MAX_INLINE_IDS, ProbeEmit, WordCache};
-use crate::vocab::bucket_vocab_store::BucketVocabStore;
+use crate::vocab::bucket_vocab_store::{BucketVocabStore, key_and_hash};
 
 const GATE_MULTI: u16 = 8;
 const GATE_ASCII: u16 = 24;
+
+/// Slots for the word cache when the config does not say.
+///
+/// A config that omits `cache` is not asking for the cache to be off -- only an explicit capacity
+/// of zero is. Defaulting a missing field to `None` silently disabled the cache for anything that
+/// did not come through `BpeBuilder`, which is the whole gain on repetitive text.
+const DEFAULT_CACHE_SLOTS: usize = u16::MAX as usize;
 
 /// The gate, indexed by a word's first content byte: words no longer than their gate go to
 /// multipass, longer ones to the hot/cold queue.
@@ -90,8 +97,12 @@ impl PipelineBPE {
             cache,
             ..
         } = model;
-        // A capacity of zero means "no cache"; anything else sizes the per-scratch table.
-        let cache_capacity = cache.map(|cache| cache.capacity).filter(|&c| c > 0);
+        let cache_capacity = match cache {
+            // An explicit zero is the only way to ask for no cache; anything else sizes the
+            // per-scratch table.
+            Some(cache) => (cache.capacity > 0).then_some(cache.capacity),
+            None => Some(DEFAULT_CACHE_SLOTS),
+        };
         let prefix = continuing_subword_prefix.unwrap_or_default();
         let suffix = end_of_word_suffix.unwrap_or_default();
         if prefix.len() + 4 + suffix.len() > AFFIX_BUF {
@@ -223,9 +234,19 @@ impl PipelineBPE {
     /// entry that may be folded. `None` sends the word to the merge engines.
     #[inline(always)]
     fn fold_id(&self, sequence: &str) -> Option<u32> {
+        let (key, hash) = key_and_hash(sequence.as_bytes());
+        self.fold_id_keyed(key, hash)
+    }
+
+    /// [`Self::fold_id`] for a caller that already hashed the word.
+    ///
+    /// The word cache keys words the same way, so a pretoken that misses the fold and goes on to the
+    /// cache is hashed once for both rather than once each.
+    #[inline(always)]
+    fn fold_id_keyed(&self, key: u128, hash: u64) -> Option<u32> {
         // One probe; the foldable bit is part of the id that probe already returned. Which entries
         // carry it was settled at load -- see `from_bpe`.
-        let (id, foldable) = self.vocab.get_bytes_foldable(sequence.as_bytes())?;
+        let (id, foldable) = self.vocab.get_keyed_foldable(key, hash)?;
         foldable.then_some(id)
     }
 
@@ -291,7 +312,8 @@ impl pipeline::Model for PipelineBPE {
         // The fold goes first: it answers a word that is itself a vocabulary entry in one probe,
         // which is cheaper than a cache probe. Folded words therefore never enter the cache --
         // they are already as cheap as a hit.
-        if let Some(id) = self.fold_id(sequence) {
+        let (key, hash) = key_and_hash(sequence.as_bytes());
+        if let Some(id) = self.fold_id_keyed(key, hash) {
             output.push(PipelineToken { id });
             return Ok(());
         }
@@ -304,7 +326,7 @@ impl pipeline::Model for PipelineBPE {
 
         // A word seen before costs a probe instead of a merge.
         let insert_at = if let Some(cache) = word_cache.as_mut() {
-            match cache.lookup(sequence.as_bytes()) {
+            match cache.lookup_keyed(key, hash) {
                 Lookup::Hit(ids) => {
                     output.extend(ids.iter().map(|&id| PipelineToken { id }));
                     return Ok(());
@@ -370,8 +392,11 @@ impl pipeline::Model for PipelineBPE {
                 output.reserve(spans.len() + MAX_INLINE_IDS);
                 capacity = output.capacity();
             }
+            // Hashed once for both probes: the fold asks the vocabulary and, on a miss, the cache
+            // asks its own table, and both key words identically.
+            let (key, hash) = key_and_hash(sequence.as_bytes());
             // The fold goes first -- see `tokenize_pipeline` for why.
-            if let Some(id) = self.fold_id(sequence) {
+            if let Some(id) = self.fold_id_keyed(key, hash) {
                 // SAFETY: the check above leaves at least `MAX_INLINE_IDS >= 1` slots past `cursor`.
                 unsafe { output.as_mut_ptr().add(cursor).write(PipelineToken { id }) };
                 cursor += 1;
@@ -385,10 +410,7 @@ impl pipeline::Model for PipelineBPE {
                 // SAFETY: the check above leaves `MAX_INLINE_IDS` slots past `cursor`, and
                 // `PipelineToken` is a single `u32` (asserted below), so the cast is sound.
                 let found = unsafe {
-                    cache.probe_emit(
-                        sequence.as_bytes(),
-                        output.as_mut_ptr().add(cursor).cast::<u32>(),
-                    )
+                    cache.probe_emit_keyed(key, hash, output.as_mut_ptr().add(cursor).cast::<u32>())
                 };
                 match found {
                     ProbeEmit::Wrote(n) => {
