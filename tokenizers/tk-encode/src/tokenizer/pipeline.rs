@@ -257,7 +257,10 @@ pub enum PipelinePreTokenizer {
     /// carries. A `Split` on the regex `▁+` would express it but needs a regex
     /// backend, which is both an optional feature and far slower than one
     /// `memchr` pass.
-    MetaspaceRuns,
+    /// Synthesised at load, not declared by the config: `blocked_prev` is the 256-bit set of
+    /// bytes after which a cut is unsafe, baked in when the splitter is built rather than checked
+    /// as a special case later. See [`metaspace_cut_guard`].
+    MetaspaceRuns { blocked_prev: [u64; 4] },
     None,
 }
 
@@ -281,8 +284,8 @@ impl PreTokenizer for PipelinePreTokenizer {
             Self::UnicodeScripts(pretok) => pretok.pre_tokenize(text, out),
             Self::Whitespace(pretok) => pretok.pre_tokenize(text, out),
             Self::WhitespaceSplit(pretok) => pretok.pre_tokenize(text, out),
-            Self::MetaspaceRuns => {
-                metaspace_runs(text, out);
+            Self::MetaspaceRuns { blocked_prev } => {
+                metaspace_runs(text, out, blocked_prev);
                 Ok(())
             }
         }
@@ -313,14 +316,21 @@ fn next_metaspace(bytes: &[u8], from: usize) -> Option<usize> {
 ///
 /// The cut lands at the start of a run, never inside one, which is what keeps a
 /// vocabulary's multi-delimiter pieces formable.
-fn metaspace_runs(text: &str, out: &mut Vec<Span>) {
+fn metaspace_runs(text: &str, out: &mut Vec<Span>, blocked_prev: &[u64; 4]) {
     let bytes = text.as_bytes();
     let mut start = 0usize;
     let mut i = 0usize;
     while let Some(at) = next_metaspace(bytes, i) {
         let continues_run = at >= METASPACE_BYTES.len()
             && &bytes[at - METASPACE_BYTES.len()..at] == METASPACE_BYTES.as_slice();
-        if !continues_run && at > start {
+        // A vocabulary piece may span this boundary, in which case cutting would change the
+        // ids -- skip the cut and let the two words merge as one span, which is what the
+        // reference does everywhere. The set was computed from the vocabulary at load.
+        let blocked = at > 0 && {
+            let b = bytes[at - 1];
+            blocked_prev[(b >> 6) as usize] >> (b & 63) & 1 == 1
+        };
+        if !continues_run && !blocked && at > start {
             out.push(Span {
                 start: start as u32,
                 end: at as u32,
@@ -349,7 +359,7 @@ impl PipelinePreTokenizer {
             // A `Prepend` normalizer writes a delimiter only at the very start of
             // the text it is handed, so a stride cut would add a second one.
             // Disqualify striding rather than reason about it.
-            Self::MetaspaceRuns => None,
+            Self::MetaspaceRuns { .. } => None,
             // Whitespace-delimiting: whitespace is a dropped delimiter, so any
             // whitespace character is a safe cut (see [`boundary_at_whitespace`]).
             Self::Whitespace(_) | Self::WhitespaceSplit(_) | Self::Bert(_) => {
@@ -1526,6 +1536,39 @@ impl Drop for EncodeHandle {
 /// SentencePiece's word delimiter, U+2581.
 const METASPACE: char = '\u{2581}';
 
+/// Whether a *declared* pre-tokenizer actually cuts text the normalizer has
+/// already rewritten.
+///
+/// gemma-3 declares `Split` on the literal `" "`, and its normalizer replaces
+/// every space with `▁` before that splitter ever runs. So the splitter is
+/// installed, executes, and matches nothing: the model receives the whole
+/// document as one span, exactly as if no pre-tokenizer had been declared.
+/// `tokenizers` 0.23.1 does the same, so the ids are right -- but every word in
+/// the document merges as one span, and the word cache can only hit on a
+/// byte-identical repeat of the whole document.
+///
+/// It cannot be decided from the pre-tokenizer alone, because whether it can
+/// match depends on what the normalizer did first, so probe the pair. A
+/// declared splitter that yields one span for a multi-word sample cannot cut
+/// anything, and the `None` case below applies to it too.
+///
+/// Errs toward "it cuts": a probe that fails leaves the declared pre-tokenizer
+/// exactly as configured, so this can only ever replace a splitter that
+/// provably does nothing.
+fn declared_pre_tokenizer_cuts<N: Normalizer>(
+    normalizers: &[N],
+    declared: &PipelinePreTokenizer,
+) -> bool {
+    let Ok(probe) = normalize_all(normalizers, " one two three") else {
+        return true;
+    };
+    let mut spans = Vec::new();
+    if declared.pre_tokenize(&probe, &mut spans).is_err() {
+        return true;
+    }
+    spans.len() > 1
+}
+
 /// Does the normalizer chain rewrite spaces into `▁`?
 ///
 /// Probed rather than pattern-matched on normalizer types: a probe cannot go
@@ -1535,30 +1578,46 @@ fn writes_metaspace<N: Normalizer>(normalizers: &[N]) -> bool {
     normalize_all(normalizers, " a").is_ok_and(|out| out.contains(METASPACE))
 }
 
-/// Whether cutting at every `▁` can change the token stream, decided from the
-/// vocabulary alone.
+/// The guard a synthesised metaspace splitter needs, decided from the vocabulary alone.
 ///
-/// BPE only ever emits pieces that are in the vocabulary, so a merge can span a
-/// `▁` boundary only if some piece contains a `▁` after a non-`▁` character. If
-/// none does, no merge can cross a boundary and per-word BPE is identical to
-/// merging the whole text -- which is what makes installing the split above
-/// byte-exact rather than an approximation.
+/// BPE only ever emits pieces that are in the vocabulary, so a merge can span a `▁` boundary only
+/// if some piece holds a `▁` after a non-`▁` character. Returns the set of bytes that may precede
+/// such an interior `▁`, as a 256-bit set indexed by byte; `None` when this is not a metaspace
+/// vocabulary at all (no piece even starts with `▁`), in which case no splitter is synthesised.
 ///
-/// One scan at load. Measured: llama-2, llama-3, mistral-nemo and gpt2 all have
-/// zero such pieces. A vocabulary that never uses the delimiter returns false,
-/// since there would be nothing to cut on.
-fn metaspace_cuts_are_safe(tok: &Tokenizer) -> bool {
+/// # Why a set and not a yes/no
+///
+/// This used to answer "is cutting safe anywhere", and one piece could take the answer away from
+/// the whole vocabulary. gemma-3 has exactly one such piece out of 262,144 -- `>▁</` -- so the
+/// splitter was never installed and every document reached the model as a single span. llama-2 has
+/// none, which is the only reason it worked there.
+///
+/// A set does not have that failure mode. The exception is carried by the splitter itself: cut at
+/// a `▁` run unless the byte before it could begin one of those pieces. For gemma-3 that is the
+/// single byte `>`, so the cut happens everywhere except immediately after a `>`.
+///
+/// Skipping a cut is always sound. Not cutting is what the reference does -- it merges the whole
+/// span -- so any subset of the safe cuts gives the reference's ids. Only cutting where a piece
+/// spans the boundary can change them, and that is exactly what this set forbids.
+fn metaspace_cut_guard(tok: &Tokenizer) -> Option<[u64; 4]> {
+    let mut blocked = [0u64; 4];
     let mut saw_delimiter = false;
     for piece in tok.get_vocab(false).keys() {
         let body = piece.trim_start_matches(METASPACE);
         if body.len() != piece.len() {
             saw_delimiter = true;
         }
-        if body.contains(METASPACE) {
-            return false;
+        // Every interior `▁` blocks a cut after whatever byte precedes it.
+        let offset = piece.len() - body.len();
+        let mut from = 0usize;
+        while let Some(rel) = body[from..].find(METASPACE) {
+            let at = offset + from + rel;
+            let before = piece.as_bytes()[at - 1];
+            blocked[(before >> 6) as usize] |= 1 << (before & 63);
+            from += rel + METASPACE.len_utf8();
         }
     }
-    saw_delimiter
+    saw_delimiter.then_some(blocked)
 }
 
 impl TryFrom<&Tokenizer> for PipelineTokenizer {
@@ -1580,6 +1639,9 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
         // then cuts on them. The pipeline keeps rewriting and cutting apart, so we rebuild it as a
         // normalizer plus a `Split`. That normalizer runs after the declared one, matching the order
         // the config asks for: the whole normalizer first, then the pre-tokenizer.
+        // Computed once: the guard a synthesised metaspace splitter would need, or `None` when
+        // this is not a metaspace vocabulary and no splitter can be synthesised.
+        let synthesised = metaspace_cut_guard(tok);
         let pre_tokenizer = match metaspace::to_normalizer_and_split(tok.get_pre_tokenizer()) {
             Some((metaspace_normalizer, split)) => {
                 // One shift this brings: added tokens flagged `normalized` are matched against text
@@ -1595,6 +1657,19 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
                 .map(TryInto::try_into)
                 .transpose()?
             {
+                // A declared splitter that provably cannot cut is the `None` case
+                // wearing a different hat -- see `declared_pre_tokenizer_cuts`.
+                // A declared splitter that provably cannot cut is the `None` case wearing a
+                // different hat -- see `declared_pre_tokenizer_cuts`.
+                Some(declared)
+                    if !declared_pre_tokenizer_cuts(&normalizers, &declared)
+                        && writes_metaspace(&normalizers)
+                        && synthesised.is_some() =>
+                {
+                    PipelinePreTokenizer::MetaspaceRuns {
+                        blocked_prev: synthesised.expect("checked above"),
+                    }
+                }
                 Some(declared) => declared,
                 // No pre-tokenizer at all. `PipelinePreTokenizer::None` then hands
                 // the model ONE span covering the whole document, and two things go
@@ -1613,14 +1688,16 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
                 // declared Metaspace pre-tokenizer would have produced above. No new
                 // splitter: this is the existing pre-tokenizer path, so the cuts land
                 // in `pre_tokens` and the word cache starts keying on words.
-                None if writes_metaspace(&normalizers) && metaspace_cuts_are_safe(tok) => {
+                None if writes_metaspace(&normalizers) && synthesised.is_some() => {
                     // Runs, not single delimiters. Cutting before every `▁` breaks
                     // the 15 multi-delimiter pieces llama-2 carries (`▁▁` through
                     // `▁▁▁▁▁▁▁▁▁▁▁`): indentation then tokenizes as N separate `▁`
                     // where the reference emits one piece. Measured on the code
                     // corpus before the fix, id 1678 (`▁▁▁▁`) came out as
                     // 29871,29871,29871.
-                    PipelinePreTokenizer::MetaspaceRuns
+                    PipelinePreTokenizer::MetaspaceRuns {
+                        blocked_prev: synthesised.expect("checked above"),
+                    }
                 }
                 None => PipelinePreTokenizer::None,
             },
@@ -3864,6 +3941,46 @@ mod tests {
             .build()
             .unwrap();
         PipelineTokenizer::try_from(&Tokenizer::new(bpe)).unwrap()
+    }
+
+    /// The synthesised splitter cuts where the config declared no usable pre-tokenizer, so it can
+    /// only ever be correct if those cuts cannot change a single id.
+    ///
+    /// Two shapes matter, and the vocabulary decides which:
+    ///
+    /// * llama-2 declares `pre_tokenizer: null` and no piece holds an interior `▁`, so every run
+    ///   is a cut.
+    /// * gemma-3 declares a `Split` on a literal `" "` that its own normalizer has already erased,
+    ///   and holds exactly one piece with an interior `▁` (`>▁</`) out of 262,144. The guard bakes
+    ///   that single byte into the splitter instead of abandoning the split, which is what the old
+    ///   all-or-nothing check did.
+    ///
+    /// The text below deliberately contains `>▁</` after normalization, so a splitter that ignored
+    /// the guard would cut inside that piece and emit different ids.
+    #[test]
+    fn the_synthesised_splitter_never_changes_the_ids() {
+        for path in ["../data/llama-2.json", "../data/gpt2.json"] {
+            let reference = Tokenizer::from_file(path).unwrap();
+            let pipe = PipelineTokenizer::try_from(&reference).unwrap();
+            for text in [
+                "the quick brown fox",
+                "  indentation   and    runs of spaces",
+                "<div> </div> markup with > before a space",
+                "语言模型 mixed with ASCII",
+                " ",
+                "",
+            ] {
+                let want: Vec<u32> =
+                    reference.encode_fast(text, false).unwrap().get_ids().to_vec();
+                let got: Vec<u32> = pipe
+                    .encode_one(text, false)
+                    .unwrap()
+                    .iter()
+                    .map(|t| t.id)
+                    .collect();
+                assert_eq!(want, got, "{path}: synthesised splitter changed ids for {text:?}");
+            }
+        }
     }
 
     // The pool exists so ONE `&self` tokenizer can be shared across rayon workers. Encode
