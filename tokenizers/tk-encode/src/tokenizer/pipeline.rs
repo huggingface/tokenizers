@@ -64,6 +64,51 @@ pub(crate) fn classify_into_spans(
     });
 }
 
+/// [`classify_into_spans`] for a splitter that works off bitstreams: it needs two `u64` bitmaps
+/// (token starts, and the flags its scalar escapes key on) alongside the tags.
+pub(crate) fn classify_into_spans_bits(
+    bytes: &[u8],
+    split: impl FnOnce(&[u8], &[u8], &mut [u64], &mut [u64], &mut [Span]) -> usize,
+    out: &mut Vec<Span>,
+) {
+    thread_local! {
+        static SCRATCH: RefCell<(Vec<u8>, Vec<u64>, Vec<u64>)> =
+            const { RefCell::new((Vec::new(), Vec::new(), Vec::new())) };
+    }
+    let n = bytes.len();
+    if n == 0 {
+        return;
+    }
+    SCRATCH.with(|cell| {
+        let (tags, starts, flags) = &mut *cell.borrow_mut();
+        if tags.len() < n {
+            tags.resize(n, 0);
+        }
+        let words = n.div_ceil(64) + 1;
+        if starts.len() < words {
+            starts.resize(words, 0);
+            flags.resize(words, 0);
+        }
+        classify(bytes, &mut tags[..n]);
+        let base = out.len();
+        out.reserve(n + 1);
+        // SAFETY: as in `classify_into_spans` -- `reserve` covers the splitter's worst case of one
+        // span per byte plus one, `Span` has no drop glue, and `set_len` counts only what was written.
+        let k = unsafe {
+            split(
+                bytes,
+                &tags[..n],
+                &mut starts[..words],
+                &mut flags[..words],
+                std::slice::from_raw_parts_mut(out.as_mut_ptr().add(base), n + 1),
+            )
+        };
+        debug_assert!(k <= n + 1);
+        // SAFETY: the splitter wrote `k <= n + 1` spans from `base`.
+        unsafe { out.set_len(base + k) };
+    });
+}
+
 pub trait Normalizer {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>>;
 }

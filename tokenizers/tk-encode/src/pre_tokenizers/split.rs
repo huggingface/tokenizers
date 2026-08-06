@@ -187,6 +187,29 @@ impl pipeline::PreTokenizer for Split {
             .fsm
             .filter(|_| !self.invert && self.behavior == SplitDelimiterBehavior::Isolated)
         {
+            // gpt2 and cl100k-with-the-standard-digit-cap have bitstream splitters, which decide
+            // 64 bytes per register op instead of one token per unpredictable branch -- but only
+            // where the bitstream build is SIMD. Its portable builder is slower than the FSM, so
+            // everything else keeps the FSM.
+            match fsm {
+                GptFsm::Gpt2 if bitsplit::fast_builder() => {
+                    pipeline::classify_into_spans_bits(
+                        text.as_bytes(),
+                        bitsplit::bitsplit_byte_level,
+                        out,
+                    );
+                    return Ok(());
+                }
+                GptFsm::Cl100k { digit_cap: 3 } if bitsplit::fast_builder() => {
+                    pipeline::classify_into_spans_bits(
+                        text.as_bytes(),
+                        bitsplit::bitsplit_cl100k,
+                        out,
+                    );
+                    return Ok(());
+                }
+                _ => {}
+            }
             pipeline::classify_into_spans(
                 text.as_bytes(),
                 |bytes, tags, spans| match fsm {

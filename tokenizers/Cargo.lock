@@ -166,6 +166,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "bitsplit"
+version = "0.1.0"
+dependencies = [
+ "ahash",
+ "atomsplit",
+]
+
+[[package]]
 name = "bitvec"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2287,6 +2295,7 @@ dependencies = [
  "ahash",
  "assert_approx_eq",
  "atomsplit",
+ "bitsplit",
  "compact_str",
  "criterion 0.6.0",
  "daachorse 3.0.2",

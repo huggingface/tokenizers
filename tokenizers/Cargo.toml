@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["bitmap_gen", "atomsplit", "tk-encode", "tk-train"]
+members = ["bitmap_gen", "atomsplit", "bitsplit", "tk-encode", "tk-train"]
 
 [package]
 authors = [
