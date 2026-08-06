@@ -73,6 +73,28 @@ pub(super) enum Atoms {
 }
 
 impl PipelineBPE {
+    /// True when this model was built with `with_byte_level`, which means
+    /// [`byte_level::transform_vocab`] already turned every vocabulary entry into its
+    /// **decoded raw bytes** at load time. Decoding is then a concatenation, and running a
+    /// `ByteLevel` decoder over these entries would decode a second time.
+    pub(crate) fn is_byte_level(&self) -> bool {
+        matches!(self.atoms, Atoms::Bytes)
+    }
+
+    /// A token's bytes, borrowed from the vocab store's slab. For a byte-level model these are
+    /// the decoded bytes (see [`Self::is_byte_level`]) and a single entry is not necessarily
+    /// valid UTF-8 on its own -- only the concatenation of a whole id sequence usually is.
+    pub(crate) fn id_to_token_bytes(&self, id: u32) -> Option<&[u8]> {
+        self.vocab.id_to_token_bytes(id)
+    }
+
+    /// A token as a `String`, for the decoder-chain route. Only meaningful when the entries are
+    /// the token strings as written, i.e. when [`Self::is_byte_level`] is false; a byte-level
+    /// model decodes through [`Self::id_to_token_bytes`] instead.
+    pub(crate) fn id_to_token(&self, id: u32) -> Option<String> {
+        self.vocab.id_to_token(id)
+    }
+
     pub fn from_bpe(model: BPE, with_byte_level: bool) -> Result<Self> {
         if matches!(&model.dropout, Some(dropout) if *dropout > 0.0) {
             return Err("BPE models with dropout not supported yet".into());
