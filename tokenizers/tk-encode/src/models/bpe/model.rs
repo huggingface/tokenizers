@@ -11,6 +11,7 @@ use crate::models::bpe::tables::BpeTables;
 use crate::pipeline::{self, PipelineToken, Span};
 use crate::tokenizer::Result;
 use crate::utils::byte_level::{self};
+use crate::utils::word_cache::{Lookup, MAX_INLINE_IDS, ProbeEmit, WordCache};
 use crate::vocab::bucket_vocab_store::BucketVocabStore;
 
 const GATE_MULTI: u16 = 8;
@@ -44,17 +45,20 @@ fn content_start(bytes: &[u8]) -> usize {
     }
 }
 
+// `tokenize_spans` hands the word cache a `*mut u32` pointing into the `Vec<PipelineToken>` it is
+// filling, so the probe can store ids straight at the cursor. That is only sound while a token is
+// layout-identical to its id.
+const _: () = assert!(size_of::<PipelineToken>() == size_of::<u32>());
+const _: () = assert!(align_of::<PipelineToken>() == align_of::<u32>());
+
 pub struct PipelineBPE {
     pub(super) atoms: Atoms,
     pub(super) tables: BpeTables,
     pub(super) affixes: Option<Affixes>,
     pub(super) vocab: BucketVocabStore,
-    ignore_merges: bool,
-    /// Whether the fold is decided per entry, by the bit each vocabulary entry carries in its id.
-    /// False when the config declares `ignore_merges`, which folds every hit unconditionally.
-    /// See [`PipelineBPE::prove_fold`].
-    fold_by_flag: bool,
     byte_to_gate: [u16; 256],
+    /// Slots for the per-scratch word cache, from the config. `None` disables it.
+    cache_capacity: Option<usize>,
 }
 
 // A `PipelineBPE` holds exactly one `Atoms`, so `Chars`' 1 KB byte-fallback table costs nothing.
@@ -83,8 +87,11 @@ impl PipelineBPE {
             fuse_unk,
             continuing_subword_prefix,
             end_of_word_suffix,
+            cache,
             ..
         } = model;
+        // A capacity of zero means "no cache"; anything else sizes the per-scratch table.
+        let cache_capacity = cache.map(|cache| cache.capacity).filter(|&c| c > 0);
         let prefix = continuing_subword_prefix.unwrap_or_default();
         let suffix = end_of_word_suffix.unwrap_or_default();
         if prefix.len() + 4 + suffix.len() > AFFIX_BUF {
@@ -156,22 +163,26 @@ impl PipelineBPE {
             atoms,
             tables,
             affixes,
-            ignore_merges,
-            fold_by_flag: false,
             vocab,
             byte_to_gate: build_byte_to_gate(),
+            cache_capacity,
         };
-        // A config that already declares `ignore_merges` folds every hit and needs no proof.
-        if !built.ignore_merges {
-            // Two phases because the proof runs the merge engine, which borrows `built`: work out
-            // the answers first, then set the bit on each entry that earned it.
-            let proven = built.prove_fold();
-            for (id, foldable) in proven.iter().enumerate() {
-                if *foldable {
-                    built.vocab.set_foldable(id as u32);
-                }
+        // Every entry carries a foldable bit, so the encode path is one probe and one bit test
+        // with no policy left in it. The policy is decided here, once: a config that declares
+        // `ignore_merges` asks for every hit to fold, so every entry gets the bit; otherwise only
+        // the entries that prove they reduce to themselves earn it.
+        //
+        // Two phases because the proof runs the merge engine, which borrows `built`: work out the
+        // answers first, then set the bit on each entry that earned it.
+        let proven = if ignore_merges {
+            vec![true; built.vocab.id_space()]
+        } else {
+            built.prove_fold()
+        };
+        for (id, foldable) in proven.iter().enumerate() {
+            if *foldable {
+                built.vocab.set_foldable(id as u32);
             }
-            built.fold_by_flag = true;
         }
         Ok(built)
     }
@@ -181,7 +192,9 @@ impl PipelineBPE {
     ///
     /// We replace the old "ignore_merges" with something that actually ignores whether or not the flag was set.
     fn prove_fold(&self) -> Vec<bool> {
-        let len = self.vocab.len();
+        // The id space, not the entry count: ids may be sparse, and bounding the walk by
+        // `vocab.len()` would leave every entry above it unproven.
+        let len = self.vocab.id_space();
         let mut proven = vec![false; len];
         let mut symbols = Vec::with_capacity(64);
         let mut scratch = QueueScratch::default();
@@ -210,16 +223,10 @@ impl PipelineBPE {
     /// entry that may be folded. `None` sends the word to the merge engines.
     #[inline(always)]
     fn fold_id(&self, sequence: &str) -> Option<u32> {
-        if self.fold_by_flag {
-            // One probe; the proven bit is part of the id that probe already returned.
-            let (id, foldable) = self.vocab.get_bytes_foldable(sequence.as_bytes())?;
-            return foldable.then_some(id);
-        }
-        // The config declared `ignore_merges`: fold every hit, as it asks.
-        if self.ignore_merges {
-            return self.vocab.get_bytes(sequence.as_bytes());
-        }
-        None
+        // One probe; the foldable bit is part of the id that probe already returned. Which entries
+        // carry it was settled at load -- see `from_bpe`.
+        let (id, foldable) = self.vocab.get_bytes_foldable(sequence.as_bytes())?;
+        foldable.then_some(id)
     }
 
     /// Converts a word to symbols and merges it. The gate, indexed by the word's first *content*
@@ -261,6 +268,9 @@ pub struct BpeScratch {
     pub(crate) symbols: Vec<u32>,
     /// Entry arena and the two queue tiers.
     pub(crate) queue: QueueScratch,
+    /// Words already seen, so a repeat costs a probe instead of a merge. It lives in the scratch
+    /// so it outlives the encode call that fills it -- otherwise it would never see a word twice.
+    pub(crate) word_cache: Option<WordCache>,
 }
 
 impl pipeline::ModelScratch for BpeScratch {}
@@ -278,18 +288,44 @@ impl pipeline::Model for PipelineBPE {
             return Ok(());
         }
 
+        // The fold goes first: it answers a word that is itself a vocabulary entry in one probe,
+        // which is cheaper than a cache probe. Folded words therefore never enter the cache --
+        // they are already as cheap as a hit.
         if let Some(id) = self.fold_id(sequence) {
             output.push(PipelineToken { id });
             return Ok(());
         }
 
-        let BpeScratch { symbols, queue } = scratch;
+        let BpeScratch {
+            symbols,
+            queue,
+            word_cache,
+        } = scratch;
 
+        // A word seen before costs a probe instead of a merge.
+        let insert_at = if let Some(cache) = word_cache.as_mut() {
+            match cache.lookup(sequence.as_bytes()) {
+                Lookup::Hit(ids) => {
+                    output.extend(ids.iter().map(|&id| PipelineToken { id }));
+                    return Ok(());
+                }
+                Lookup::Miss(at) => Some(at),
+            }
+        } else {
+            None
+        };
+
+        let start = output.len();
         self.merge_word(sequence, symbols, queue);
         // the merge engines work in internal ids; `unmap` takes them back to the vocab's own ids
         output.extend(symbols.iter().map(|&symbol| PipelineToken {
             id: self.tables.unmap.at(symbol as usize),
         }));
+        if let Some(cache) = word_cache.as_mut()
+            && let Some(at) = insert_at
+        {
+            cache.insert(at, output[start..].iter().map(|token| token.id));
+        }
 
         Ok(())
     }
@@ -307,10 +343,17 @@ impl pipeline::Model for PipelineBPE {
         scratch: &mut Self::Scratch,
         output: &mut Vec<PipelineToken>,
     ) -> Result<()> {
-        let BpeScratch { symbols, queue } = scratch;
-        // One reservation for the batch. Most pre-tokens are a single token, so the span count is
-        // a close lower bound on what the batch emits; anything past it grows as usual.
-        output.reserve(spans.len());
+        let BpeScratch {
+            symbols,
+            queue,
+            word_cache,
+        } = scratch;
+        // 92% of English pre-tokens are one id and 98% are at most two, so reserve for two apiece
+        // plus the probe's headroom. `spans.len()` alone is a *lower* bound, which would make the
+        // buffer grow -- and memcpy what it already holds -- partway through most chunks.
+        output.reserve(2 * spans.len() + MAX_INLINE_IDS);
+        let mut capacity = output.capacity();
+        let mut cursor = output.len();
 
         for span in spans {
             // SAFETY: the pre-tokenizer cuts on char boundaries, so a span is always a valid slice
@@ -319,15 +362,70 @@ impl pipeline::Model for PipelineBPE {
             if sequence.is_empty() {
                 continue;
             }
+            // One capacity check per word, covering both the fold's single write and the probe's
+            // `MAX_INLINE_IDS` lanes. After it, writing that many past `cursor` is in bounds.
+            if cursor + MAX_INLINE_IDS > capacity {
+                // SAFETY: `cursor` counts what has been written so far.
+                unsafe { output.set_len(cursor) };
+                output.reserve(spans.len() + MAX_INLINE_IDS);
+                capacity = output.capacity();
+            }
+            // The fold goes first -- see `tokenize_pipeline` for why.
             if let Some(id) = self.fold_id(sequence) {
-                output.push(PipelineToken { id });
+                // SAFETY: the check above leaves at least `MAX_INLINE_IDS >= 1` slots past `cursor`.
+                unsafe { output.as_mut_ptr().add(cursor).write(PipelineToken { id }) };
+                cursor += 1;
                 continue;
             }
+            let mut placement = None;
+            if let Some(cache) = word_cache.as_mut() {
+                // The probe writes the ids at the cursor itself, so a hit is one load of the slot
+                // and one unconditional store of its lanes -- the ids never become a slice and the
+                // line is never read twice.
+                // SAFETY: the check above leaves `MAX_INLINE_IDS` slots past `cursor`, and
+                // `PipelineToken` is a single `u32` (asserted below), so the cast is sound.
+                let found = unsafe {
+                    cache.probe_emit(
+                        sequence.as_bytes(),
+                        output.as_mut_ptr().add(cursor).cast::<u32>(),
+                    )
+                };
+                match found {
+                    ProbeEmit::Wrote(n) => {
+                        cursor += n;
+                        continue;
+                    }
+                    // A hit the fast path could not serve: the probe already found the ids, so
+                    // copy those rather than probing a second time.
+                    ProbeEmit::Hit(ids) => {
+                        // SAFETY: `cursor` counts what has been written so far.
+                        unsafe { output.set_len(cursor) };
+                        output.extend(ids.iter().map(|&id| PipelineToken { id }));
+                        cursor = output.len();
+                        capacity = output.capacity();
+                        continue;
+                    }
+                    ProbeEmit::Miss(at) => placement = Some(at),
+                }
+            }
+            // SAFETY: `cursor` counts what the fast paths wrote; the merge below uses `output`
+            // through its normal API, so its length has to be true again first.
+            unsafe { output.set_len(cursor) };
+            let start = output.len();
             self.merge_word(sequence, symbols, queue);
             output.extend(symbols.iter().map(|&symbol| PipelineToken {
                 id: self.tables.unmap.at(symbol as usize),
             }));
+            if let Some(cache) = word_cache.as_mut()
+                && let Some(at) = placement
+            {
+                cache.insert(at, output[start..].iter().map(|token| token.id));
+            }
+            cursor = output.len();
+            capacity = output.capacity();
         }
+        // SAFETY: `cursor` counts every token written above.
+        unsafe { output.set_len(cursor) };
         Ok(())
     }
 
@@ -335,6 +433,7 @@ impl pipeline::Model for PipelineBPE {
         Self::Scratch {
             symbols: Vec::with_capacity(64),
             queue: QueueScratch::default(),
+            word_cache: self.cache_capacity.map(WordCache::new),
         }
     }
 }

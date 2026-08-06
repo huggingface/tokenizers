@@ -75,6 +75,10 @@ static DISCRIMINANT_HASHER: RandomState = RandomState::with_seeds(
     0x3f84_d5b5_b547_0917,
 );
 
+/// How many ids a [`WordCacheSlot`] holds inline before it has to spill. A probe writes this
+/// many lanes unconditionally, so it is also the headroom [`WordCache::probe_emit`] needs.
+pub const MAX_INLINE_IDS: usize = 3;
+
 /// A table mapping words (`[u8]`) to the token ids they encode to (`[u32]`)
 pub struct WordCache {
     /// The cache slots as a contiguous table. See [`WordCacheSlot`] for more details.
@@ -121,12 +125,64 @@ impl<'a> WordCache {
     /// Looks up a word in the cache.
     /// On [Lookup::Hit], returns the ids it encodes to.
     /// On [Lookup::Miss], returns the location in [Self::cached_words] where it should be inserted
+    #[inline]
     pub fn lookup(&'a self, word: &[u8]) -> Lookup<'a> {
+        self.lookup_placed(make_lookup_key(word, self.placement_mask))
+    }
+
+    /// Probe and emit in one step: on an inline hit in the home slot the ids are written straight
+    /// to `dst` and the count returned, so nothing goes back to the slot and nothing becomes a
+    /// slice.
+    ///
+    /// This is the shape the hot path wants. [`Self::lookup`] hands back a `&[u32]`, which means
+    /// the caller re-reads the slot to build a fat pointer and then copies a run whose length it
+    /// only learns at run time -- three trips over one 32-byte line that a single load already
+    /// brought in. Here that line is read once, all [`MAX_INLINE_IDS`] lanes are stored
+    /// unconditionally, and the caller advances its cursor by the count: no branch on the length,
+    /// no second load, no slice.
+    ///
+    /// Falls back to the full window walk for anything else. The table is sized well above its
+    /// load, so a word's home slot is usually the one it was placed in and the walk is a few
+    /// percent of words.
+    ///
+    /// # Safety
+    /// `dst` must have room for [`MAX_INLINE_IDS`] `u32` writes. `word` must not be empty --
+    /// an empty word keys to zero, which is also what an untouched slot holds.
+    #[inline]
+    pub unsafe fn probe_emit(&'a self, word: &[u8], dst: *mut u32) -> ProbeEmit<'a> {
+        debug_assert!(!word.is_empty(), "probe_emit needs a non-empty word");
+        let placement = make_lookup_key(word, self.placement_mask);
+        // SAFETY: `index` is masked with `placement_mask` (`next_pow2 - 1`), and the table is
+        // `next_pow2 + WINDOW_SIZE` long, so the home slot is always in bounds.
+        let slot = unsafe { *self.cached_words.as_ptr().add(placement.index) };
+        // An untouched slot holds `LookupKey(0)`, which no non-empty word can key to, so a key
+        // match here is a real hit -- the same 127-bit argument the window walk makes.
+        if slot.key == placement.key && !slot.is_spilled() {
+            // SAFETY: the caller guarantees room for `MAX_INLINE_IDS`. Lanes past `ids_len` are
+            // dead: the caller advances its cursor by `ids_len` only, so the next word overwrites
+            // them or the final `set_len` cuts them off.
+            unsafe {
+                for lane in 0..MAX_INLINE_IDS {
+                    dst.add(lane).write(slot.payload[lane]);
+                }
+            }
+            return ProbeEmit::Wrote(slot.ids_len as usize);
+        }
+        match self.lookup_placed(placement) {
+            Lookup::Hit(ids) => ProbeEmit::Hit(ids),
+            Lookup::Miss(at) => ProbeEmit::Miss(at),
+        }
+    }
+
+    /// The window walk, once a word has been keyed and placed. Split out of [`Self::lookup`] so
+    /// [`Self::probe_emit`] can fall back to it without hashing the word a second time.
+    #[inline]
+    fn lookup_placed(&'a self, placement: InsertPlacement) -> Lookup<'a> {
         let InsertPlacement {
             key,
             index: home,
             tag,
-        } = make_lookup_key(word, self.placement_mask);
+        } = placement;
 
         let tag_window = self.tag_window(home);
         let (candidates, first_empty) = tag_window.find_matches_and_first_empty(tag);
@@ -163,7 +219,7 @@ impl<'a> WordCache {
         let len = ids.len();
         let InsertPlacement { index, key, tag } = placement;
 
-        let word = if len <= 3 {
+        let word = if len <= MAX_INLINE_IDS {
             WordCacheSlot::new_self_contained(key, ids)
         } else {
             if self.spilled_buffer.len() + len > self.spilled_budget {
@@ -264,7 +320,7 @@ impl WordCacheSlot {
     }
 
     pub fn new_self_contained(key: LookupKey, ids: impl ExactSizeIterator<Item = u32>) -> Self {
-        assert!(ids.len() <= 3);
+        assert!(ids.len() <= MAX_INLINE_IDS);
         let ids_len = ids.len() as u8;
         let mut payload = [0u32; 3];
         for (slot, id) in payload.iter_mut().zip(ids) {
@@ -457,6 +513,18 @@ pub struct InsertPlacement {
 }
 
 pub enum Lookup<'a> {
+    Hit(&'a [u32]),
+    Miss(InsertPlacement),
+}
+
+/// What [`WordCache::probe_emit`] found. `Wrote` is the fast path: the ids are already at the
+/// caller's cursor and only the count comes back.
+pub enum ProbeEmit<'a> {
+    /// An inline hit in the home slot. [`MAX_INLINE_IDS`] lanes were written at `dst`; this many
+    /// of them are live.
+    Wrote(usize),
+    /// A hit the fast path could not serve -- a spilled entry, or one placed off its home slot.
+    /// The ids were found, so the caller copies these rather than probing again.
     Hit(&'a [u32]),
     Miss(InsertPlacement),
 }
