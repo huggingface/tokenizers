@@ -18,7 +18,7 @@ jobs:
       max-parallel: 1
       matrix:
         version: ${{ fromJson(github.event.inputs.versions) }}
-    uses: huggingface/doc-builder/.github/workflows/build_main_documentation.yml@main
+    uses: huggingface/doc-builder/.github/workflows/build_main_documentation.yml@e60a538eea9817ab312196d0d233604b01697265
     with:
       commit_sha: ${{ matrix.version }}
       package: tokenizers

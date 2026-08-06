@@ -1,5 +1,9 @@
+import { createRequire } from 'node:module'
+import { describe, it } from 'node:test'
+
+import { expect } from '../../lib/expect.ts'
 /* eslint-disable */
-var globRequire = require;
+var globRequire = createRequire(import.meta.url)
 
 describe("pipelineExample", () => {
     // This is a hack to let us require using path similar to what the user has to use

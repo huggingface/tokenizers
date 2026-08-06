@@ -1,2 +1,15 @@
 target
 .yarn
+
+# napi regenerates these per-platform stubs; formatting them only creates churn
+npm
+
+# napi rewrites these two on every `yarn build`, and CI builds before it lints,
+# so prettier sees the freshly generated output rather than what we committed
+index.js
+index.d.ts
+
+# docs/source/*.rst pull snippets out of these with :start-after:/:end-before:
+# and :dedent: 4. Reformatting them (quotes, semicolons, indent width) silently
+# rewrites the published documentation, so leave them exactly as authored.
+examples/documentation

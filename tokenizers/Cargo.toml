@@ -110,7 +110,3 @@ lto = "fat"
 [profile.profiling]
 inherits = "release"
 debug = true
-
-[[example]]
-name = "encode_batch"
-required-features = ["http"]
