@@ -11,8 +11,9 @@
 //!    the character ends: if a left neighbour can merge with our first symbol at a lower rank,
 //!    it fires first and the assembly never happens.
 //!
-//! Fail either test and the character simply gets no entry: the encoder emits its bytes and the
+//! Fail either test and the character gets no entry: the encoder emits its bytes and the
 //! merge loop assembles them, which is always exact. The fold is a shortcut, never a
+//! requirement; a missing entry only costs speed.
 
 use ahash::AHashMap;
 use std::cmp;

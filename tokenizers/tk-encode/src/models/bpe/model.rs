@@ -1,33 +1,48 @@
 //! The pipeline BPE model: its tables, how it is built from a [`BPE`], and how a pretokenized
-//! sequence is turned into tokens. The merge engines themselves live in `bpe_pretoken_to_rank`, `merge_multipass`
-//! and `merge_hot_cold_queue`.
-use crate::models::bpe::bpe_build_tables::BpeTables;
-use crate::models::bpe::bpe_scratch::BpeScratch;
-use crate::models::bpe::legacy_model::BPE;
-use crate::models::bpe::merge_hot_cold_queue::{
-    MergeScratch, build_byte_to_gate, content_start, two_tier_queue_merge,
-};
+//! sequence is turned into tokens. Conversion to symbols lives in `convert`; the merge engines
+//! are `merge_multipass` and `merge_hot_cold_queue`.
+use crate::models::bpe::At;
+use crate::models::bpe::Error;
+use crate::models::bpe::convert::{AFFIX_BUF, Affixes};
+use crate::models::bpe::legacy::model::BPE;
+use crate::models::bpe::merge_hot_cold_queue::{QueueScratch, merge_hot_cold_queue};
 use crate::models::bpe::merge_multipass::merge_multipass;
-use crate::models::bpe::{Error, bpe_build_tables::At};
+use crate::models::bpe::tables::BpeTables;
 use crate::pipeline::{self, PipelineToken};
 use crate::tokenizer::Result;
 use crate::utils::byte_level::{self};
 use crate::vocab::bucket_vocab_store::BucketVocabStore;
 
-/// Set only for the few models that decorate their atoms: `end_of_word_suffix` (CLIP, openai-gpt,
-/// XLM) and `continuing_subword_prefix`. A character's atom then depends on its position in the
-/// word, so those models take a slow path that looks each decorated character up in the vocab.
-pub(super) struct Affixes {
-    pub(super) prefix: String,
-    pub(super) suffix: String,
-    /// Dense `external vocab id -> internal symbol id`, `u32::MAX` where there is none. Dense
-    /// beats a hash here because external ids are `0..vocab_size`: 4 bytes a slot and one load,
-    /// against 8-16 for any map. It is the array `BpeTables::build` makes anyway.
-    pub(super) to_internal: Box<[u32]>,
+const GATE_MULTI: u16 = 8;
+const GATE_ASCII: u16 = 24;
+
+/// The gate, indexed by a word's first content byte: words no longer than their gate go to
+/// multipass, longer ones to the hot/cold queue.
+fn build_byte_to_gate() -> [u16; 256] {
+    let mut b2g = [GATE_MULTI; 256];
+    b2g[..0x80].fill(GATE_ASCII);
+    // Kept for a word that is *only* a delimiter (a run of spaces), where there is no content to
+    // classify. Words with content are indexed past their delimiter -- see [`content_start`].
+    for ws in *b" \t\n\r" {
+        b2g[ws as usize] = GATE_MULTI;
+    }
+    b2g
 }
 
-/// Longest `prefix + one character + suffix` the stack buffer holds.
-pub(super) const AFFIX_BUF: usize = 64;
+/// ByteLevel produces `" word"` or `"Ġword"`, Metaspace produces `"▁word"`. Indexing byte 0
+/// classifies the delimiter instead of the content.
+#[inline]
+fn content_start(bytes: &[u8]) -> usize {
+    match bytes {
+        // Metaspace `▁` (U+2581).
+        [0xE2, 0x96, 0x81, rest @ ..] if !rest.is_empty() => 3,
+        // ByteLevel `Ġ` (U+0120) -- the byte-level spelling of a leading space.
+        [0xC4, 0xA0, rest @ ..] if !rest.is_empty() => 2,
+        // A literal leading space, which a ByteLevel pre-tokenizer also hands over.
+        [ws, rest @ ..] if ws.is_ascii_whitespace() && !rest.is_empty() => 1,
+        _ => 0,
+    }
+}
 
 pub struct PipelineBPE {
     pub(super) atoms: Atoms,
@@ -35,7 +50,7 @@ pub struct PipelineBPE {
     pub(super) affixes: Option<Affixes>,
     pub(super) vocab: BucketVocabStore,
     ignore_merges: bool,
-    byte_to_mode: [u16; 256],
+    byte_to_gate: [u16; 256],
 }
 
 // A `PipelineBPE` holds exactly one `Atoms`, so `Chars`' 1 KB byte-fallback table costs nothing.
@@ -139,41 +154,52 @@ impl PipelineBPE {
             affixes,
             ignore_merges,
             vocab,
-            byte_to_mode: build_byte_to_gate(),
+            byte_to_gate: build_byte_to_gate(),
         })
     }
 
     /// Converts a word to symbols and merges it. The gate, indexed by the word's first *content*
     /// byte (past any delimiter the pre-tokenizer prepended -- see [`content_start`]), says
-    /// which engine gets it: short words go to multipass, longer ones to the two-tier queue.
-    /// `to_merge` is the caller's reusable symbol buffer -- it lives in the scratch so that a word
+    /// which engine gets it: short words go to multipass, longer ones to the hot/cold queue.
+    /// `symbols` is the caller's reusable symbol buffer -- it lives in the scratch so that a word
     /// costs no allocation. On return it holds the merged word as internal ids, which the caller
     /// maps to external ids through `unmap`.
     pub(super) fn merge_word(
         &self,
         sequence: &str,
         symbols: &mut Vec<u32>,
-        merge_scratch: &mut MergeScratch,
+        queue_scratch: &mut QueueScratch,
     ) {
         let bytes = sequence.as_bytes();
         // Classify on the first content byte, not on the delimiter the pre-tokenizer prepended.
-        let gate: u16 = self.byte_to_mode[bytes[content_start(bytes)] as usize];
+        let gate: u16 = self.byte_to_gate[bytes[content_start(bytes)] as usize];
 
         if sequence.len() > gate as usize {
-            // conversion writes the entries and cold keys directly: no intermediate rank array
+            // conversion writes the entries and cold keys directly: no intermediate symbol array
             self.convert_queue(
                 sequence,
                 symbols,
-                &mut merge_scratch.entries,
-                &mut merge_scratch.cold,
+                &mut queue_scratch.entries,
+                &mut queue_scratch.cold,
             );
-            two_tier_queue_merge(&self.tables, symbols, merge_scratch);
+            merge_hot_cold_queue(&self.tables, symbols, queue_scratch);
         } else {
             let first_merge = self.convert_multipass(sequence, symbols);
             merge_multipass(&self.tables, symbols, first_merge);
         }
     }
 }
+
+/// Per-thread scratch for BPE. Every buffer here is cleared, never reallocated, so tokenizing a
+/// sequence does not allocate.
+pub struct BpeScratch {
+    /// Symbols of the word being merged.
+    pub(crate) symbols: Vec<u32>,
+    /// Entry arena and the two queue tiers.
+    pub(crate) queue: QueueScratch,
+}
+
+impl pipeline::ModelScratch for BpeScratch {}
 
 impl pipeline::Model for PipelineBPE {
     type Scratch = BpeScratch;
@@ -195,13 +221,9 @@ impl pipeline::Model for PipelineBPE {
             return Ok(());
         }
 
-        let BpeScratch {
-            symbols,
-            merge: merge_scratch,
-            ..
-        } = scratch;
+        let BpeScratch { symbols, queue } = scratch;
 
-        self.merge_word(sequence, symbols, merge_scratch);
+        self.merge_word(sequence, symbols, queue);
         // the merge engines work in internal ids; `unmap` takes them back to the vocab's own ids
         output.extend(symbols.iter().map(|&symbol| PipelineToken {
             id: self.tables.unmap.at(symbol as usize),
@@ -213,7 +235,7 @@ impl pipeline::Model for PipelineBPE {
     fn init_scratch(&self) -> Self::Scratch {
         Self::Scratch {
             symbols: Vec::with_capacity(64),
-            merge: MergeScratch::default(),
+            queue: QueueScratch::default(),
         }
     }
 }

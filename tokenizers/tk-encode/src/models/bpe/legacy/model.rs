@@ -1,4 +1,6 @@
-use super::{super::OrderedVocabIter, Error, Pair, Word};
+use super::word::Word;
+use crate::models::OrderedVocabIter;
+use crate::models::bpe::{Error, MergeMap, Merges, Pair, Vocab, VocabR};
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::cache::{DEFAULT_CACHE_CAPACITY, MAX_LENGTH};
 use crate::utils::iter::ResultShunt;
@@ -18,10 +20,6 @@ use std::{
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
 };
-
-pub type Vocab = AHashMap<String, u32>;
-pub type VocabR = AHashMap<u32, String>;
-pub type MergeMap = AHashMap<Pair, (u32, u32)>;
 
 /// Process-wide monotonic counter used to assign a unique generation id
 /// to every `BpeCache`, so per-instance thread-local caches never collide.
@@ -90,8 +88,6 @@ thread_local! {
     static BPE_LOCAL_CACHE: RefCell<AHashMap<u64, AHashMap<String, Word>>> =
         RefCell::new(AHashMap::new());
 }
-pub type Merges = Vec<(String, String)>;
-
 struct Config {
     files: Option<(String, String)>,
     vocab: Vocab,

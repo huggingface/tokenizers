@@ -1,11 +1,46 @@
-//! Turning a pretokenized word into merge ranks, which are then processed in `merge_multipass` or
-//! `merge_hot_cold_queue`.
-use crate::models::bpe::bpe_build_tables::{At, BpeTables, ID_MASK, RANK_MASK, UTF8_LEN};
-use crate::models::bpe::bpe_model::{AFFIX_BUF, Affixes, Atoms, PipelineBPE};
+//! Converting a pretoken into internal symbols, in the shape the merge engine that will process
+//! it (`merge_multipass` or `merge_hot_cold_queue`) wants to start from.
+use crate::models::bpe::At;
 use crate::models::bpe::merge_hot_cold_queue::Entry;
+use crate::models::bpe::model::{Atoms, PipelineBPE};
+use crate::models::bpe::tables::{BpeTables, ID_MASK, RANK_MASK};
 use crate::vocab::bucket_vocab_store::BucketVocabStore;
 
-/// Collects the converted ranks of a sequence into whatever the engine that merges it needs.
+/// Set only for the few models that decorate their atoms: `end_of_word_suffix` (CLIP, openai-gpt,
+/// XLM) and `continuing_subword_prefix`. A character's atom then depends on its position in the
+/// word, so those models take a slow path that looks each decorated character up in the vocab.
+pub(super) struct Affixes {
+    pub(super) prefix: String,
+    pub(super) suffix: String,
+    /// Dense `external vocab id -> internal symbol id`, `u32::MAX` where there is none. Dense
+    /// beats a hash here because external ids are `0..vocab_size`: 4 bytes a slot and one load,
+    /// against 8-16 for any map. It is the array `BpeTables::build` makes anyway.
+    pub(super) to_internal: Box<[u32]>,
+}
+
+/// Longest `prefix + one character + suffix` the stack buffer holds.
+pub(super) const AFFIX_BUF: usize = 64;
+
+/// UTF-8 sequence length by lead byte.
+const UTF8_LEN: [u8; 256] = {
+    let mut l = [1u8; 256];
+    let mut b = 0xC0usize;
+    while b < 0xE0 {
+        l[b] = 2;
+        b += 1;
+    }
+    while b < 0xF0 {
+        l[b] = 3;
+        b += 1;
+    }
+    while b < 0xF8 {
+        l[b] = 4;
+        b += 1;
+    }
+    l
+};
+
+/// Collects the converted symbols of a sequence into whatever the engine that merges it needs.
 /// The implementing type picks which: [`MultipassSink`] or [`QueueSink`]. The mode is a type
 /// rather than a runtime flag so the conversion loops are compiled once per engine, without a
 /// per-symbol test.
@@ -16,7 +51,7 @@ trait SinkMode {
     fn push_symbol(&mut self, symbol: u32);
 }
 
-/// A flat rank array plus the lowest-ranked adjacent pair, which is the first merge multipass
+/// The flat symbol array plus the lowest-ranked adjacent pair, which is the first merge multipass
 /// applies.
 struct MultipassSink<'a> {
     symbols: &'a mut Vec<u32>,
@@ -34,7 +69,7 @@ impl SinkMode for MultipassSink<'_> {
     }
 }
 
-/// The pair entries and cold queue keys, built as the ranks are produced, so the two-tier queue
+/// The pair entries and cold queue keys, built as the symbols are produced, so the hot/cold queue
 /// needs no intermediate array to read back.
 struct QueueSink<'a> {
     entries: &'a mut Vec<Entry>,
@@ -80,6 +115,15 @@ impl<M: SinkMode> SymbolSink<M> {
         self.previous_symbol = symbol;
         self.mode.push_symbol(symbol);
     }
+
+    /// Pushes `character` as its bytes, each mapped to a symbol through `byte_symbols`.
+    #[inline(always)]
+    fn push_char_bytes(&mut self, tables: &BpeTables, byte_symbols: &[u32; 256], character: char) {
+        let mut buf = [0u8; 4];
+        for &byte in character.encode_utf8(&mut buf).as_bytes() {
+            self.push(tables, byte_symbols.at(byte as usize));
+        }
+    }
 }
 
 impl PipelineBPE {
@@ -87,7 +131,7 @@ impl PipelineBPE {
     /// `u64::MAX` when no pair merges.
     pub(super) fn convert_multipass(&self, sequence: &str, symbols: &mut Vec<u32>) -> u64 {
         symbols.clear();
-        // a word never has more ranks than bytes, so one reserve covers every push
+        // a word never has more symbols than bytes, so one reserve covers every push
         symbols.reserve(sequence.len());
         let mut sink = SymbolSink {
             mode: MultipassSink {
@@ -100,10 +144,10 @@ impl PipelineBPE {
         sink.mode.lowest_merge
     }
 
-    /// Converts one pretoken to pair entries and cold queue keys for the two-tier queue.
+    /// Converts one pretoken to pair entries and cold queue keys for the hot/cold queue.
     ///
-    /// A pretoken of fewer than two ranks has no pairs and so no entries; its single rank is left
-    /// in `symbols` instead, and the queue engine sees an empty entry list.
+    /// A pretoken of fewer than two symbols has no pairs and so no entries; its single symbol is
+    /// left in `symbols` instead, and the queue engine sees an empty entry list.
     pub(super) fn convert_queue(
         &self,
         sequence: &str,
@@ -114,7 +158,7 @@ impl PipelineBPE {
         symbols.clear();
         entries.clear();
         cold.clear();
-        // a word never has more ranks than bytes, so one reserve covers every push
+        // a word never has more symbols than bytes, so one reserve covers every push
         entries.reserve(sequence.len());
         cold.reserve(sequence.len());
         let mut sink = SymbolSink {
@@ -210,10 +254,7 @@ fn convert_chars<M: SinkMode>(
             continue;
         }
         if let Some(fallback) = byte_fallback {
-            let mut buf = [0u8; 4];
-            for &byte in character.encode_utf8(&mut buf).as_bytes() {
-                sink.push(tables, fallback.at(byte as usize));
-            }
+            sink.push_char_bytes(tables, fallback, character);
             in_unk_run = false;
             continue;
         }
@@ -278,22 +319,14 @@ fn push_unknown<M: SinkMode>(
     sink: &mut SymbolSink<M>,
 ) {
     match atoms {
-        Atoms::Bytes => {
-            let mut buf = [0u8; 4];
-            for &byte in character.encode_utf8(&mut buf).as_bytes() {
-                sink.push(tables, tables.byte_internal.at(byte as usize));
-            }
-        }
+        Atoms::Bytes => sink.push_char_bytes(tables, &tables.byte_internal, character),
         Atoms::Chars {
             byte_fallback,
             unk_token,
             ..
         } => {
             if let Some(fallback) = byte_fallback {
-                let mut buf = [0u8; 4];
-                for &byte in character.encode_utf8(&mut buf).as_bytes() {
-                    sink.push(tables, fallback.at(byte as usize));
-                }
+                sink.push_char_bytes(tables, fallback, character);
             } else if let Some(unk) = unk_token {
                 sink.push(tables, *unk);
             }

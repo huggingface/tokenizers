@@ -1,4 +1,4 @@
-//! Multipass merging, for short words (pre tokens)
+//! Multipass merging, for short words (pretokens)
 //!
 //! For short words, running BPE naively can be faster than using a more complex data structure.
 //!
@@ -19,16 +19,8 @@
 //! | (he,llo)   | `0x00000003_40000007` | 3                 | yes  | 7 (hello)        |
 //! | any other  | `0xFFFFFFFF_FFFFFFFF` | not a legal merge |      |                  |
 //!
-//! The values are `u64` packed as follows:
-//!
-//!  ```text
-//! bit 63                              32    31     30   29                           0
-//!    ┌──────────────────────────────────┬──────┬────┬──────────────────────────────┐
-//!    │            rank : u32            │unused│SAFE│      product id : 30 bits    │
-//!    │      (merge priority, 0 = best)  │      │    │   (internal id of the token  │
-//!    │                                  │      │    │      this pair merges into)  │
-//!    └──────────────────────────────────┴──────┴────┴──────────────────────────────┘
-//! ```
+//! The values are `u64`s packed as documented in `tables`: the rank in the high half, the SAFE
+//! bit, and the internal id of the token the pair merges into in the low 30 bits.
 //!
 //! Then we repeatedly merge symbols with "passes", until there is no legal merge left.
 //!
@@ -111,7 +103,7 @@
 //! The merge is safe to batch merge only if the produced id (merged symbol) does not take part in other merges with lower rank (higher priority).
 //! This is enforced when building the lookup table and encoded in the `SAFE` bit.
 //!
-use crate::models::bpe::bpe_build_tables::{BpeTables, ID_MASK, SAFE_MASK};
+use crate::models::bpe::tables::{BpeTables, ID_MASK, SAFE_MASK};
 use std::cmp;
 
 const NOT_LEGAL: u64 = u64::MAX;
