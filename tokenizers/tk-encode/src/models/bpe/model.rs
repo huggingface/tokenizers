@@ -351,11 +351,7 @@ mod fold_tests {
     /// decomposes to seven tokens, and folding it would emit one.
     #[test]
     fn the_proven_fold_never_changes_the_ids() {
-        let path = "../data/gpt2.json";
-        if !std::path::Path::new(path).exists() {
-            return; // fixture not downloaded in this environment
-        }
-        let reference = Tokenizer::from_file(path).unwrap();
+        let reference = Tokenizer::from_file("../data/gpt2.json").unwrap();
         let pipe = PipelineTokenizer::try_from(&reference).unwrap();
 
         for text in [

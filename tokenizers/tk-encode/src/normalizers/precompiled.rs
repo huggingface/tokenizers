@@ -113,10 +113,8 @@ impl pipeline::Normalizer for Precompiled {
 mod tests {
     use super::*;
 
-    const ALBERT: &str = "../data/albert-base-v1-tokenizer.json";
-
     fn albert_precompiled() -> Precompiled {
-        let json = std::fs::read_to_string(ALBERT).unwrap();
+        let json = std::fs::read_to_string("../data/albert-base-v1-tokenizer.json").unwrap();
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
         let precompiled = value["normalizer"]["normalizers"]
             .as_array()
@@ -132,9 +130,6 @@ mod tests {
 
     #[test]
     fn pipeline_precompiled_matches_legacy() {
-        if !std::path::Path::new(ALBERT).exists() {
-            return; // fixture not downloaded in this environment
-        }
         let n = albert_precompiled();
         let mut any_modified = false;
         for input in &[

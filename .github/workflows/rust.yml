@@ -53,7 +53,6 @@ jobs:
       # Provides `uvx`, used to run the huggingface_hub CLI that downloads
       # test fixtures (see the Makefile) without a separate install step.
       - name: Install uv
-        if: matrix.os != 'windows-latest'
         uses: astral-sh/setup-uv@v6
 
       - name: Run tests
@@ -63,10 +62,20 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: make test HF="uvx --from huggingface_hub hf"
 
-      # Windows skips the integration tests (and their fixture downloads); run lib + doc tests instead.
-      # bash so the step fails on the first failing command. The default pwsh
-      # only propagates the last command's exit code, which let a lib-test
-      # failure hide behind passing doc tests.
+      # Windows skips the integration tests and the full fixture set, but the
+      # tk-encode lib tests load these two tokenizer files and fail without
+      # them (on purpose: a missing fixture must not silently skip a test).
+      # The runner has no GNU make, so this fetches them without the Makefile.
+      - name: Download lib-test fixtures on Windows
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: uvx --from huggingface_hub hf download hf-internal-testing/tokenizers-test-data gpt2.json albert-base-v1-tokenizer.json --repo-type dataset --local-dir data
+
+      # Windows runs lib + doc tests only. bash so the step fails on the first
+      # failing command. The default pwsh only propagates the last command's
+      # exit code, which let a lib-test failure hide behind passing doc tests.
       - name: Run lib & doc tests on Windows
         if: matrix.os == 'windows-latest'
         shell: bash
