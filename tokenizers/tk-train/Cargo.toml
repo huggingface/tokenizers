@@ -23,8 +23,9 @@ name = "tk_train"
 path = "src/lib.rs"
 
 [dependencies]
-tk-encode = { path = "../tk-encode", default-features = false }
-rayon = "1.10"
+tk-encode = { path = "../tk-encode", default-features = false, features = [
+  "parallelism",
+] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 ahash = { version = "0.8.11", features = ["serde"] }

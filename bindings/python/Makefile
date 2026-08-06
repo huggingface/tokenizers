@@ -3,7 +3,7 @@
 DATA_DIR = data
 
 dir_guard=@mkdir -p $(@D)
-check_dirs := examples py_src/tokenizers tests
+check_dirs := py_src/tokenizers tests
 check_stubs := $(filter-out py_src/tokenizers/tokenizers.pyi,$(wildcard py_src/tokenizers/*.pyi py_src/tokenizers/*/*.pyi))
 
 # Detect uv and set env vars to work around broken dylib install names

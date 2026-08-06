@@ -31,8 +31,8 @@ bitsplit = { path = "../bitsplit" }
 atomsplit = { path = "../atomsplit" }
 rand = "0.9"
 regex = "1.10"
-rayon = "1.10"
-rayon-cond = "0.4"
+rayon = { version = "1.10", optional = true }
+rayon-cond = { version = "0.4", optional = true }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 unicode-normalization-alignments = "0.1"
@@ -71,6 +71,7 @@ tokenizers-release = { package = "tokenizers", version = "=0.23.1", optional = t
 onig = { version = "6.5.1", optional = true }
 pcre2 = { version = "0.2", optional = true }
 logos = { version = "0.15", optional = true } # compile-time DFA lexer reference (pure Rust)
+wide = "1.6.0"
 
 [target.'cfg(unix)'.dependencies]
 # pthread_atfork registration for the fork-safe encode pool (poison-and-rebuild).
@@ -82,7 +83,7 @@ libc = "0.2"
 # deepseek, the class family, char-delimiter) need no backend, and a plain string pattern is searched
 # for directly. Without it a stub compiles and those regex paths error at load. Enable with
 # `--features fancy-regex`.
-default = ["progressbar"]
+default = ["parallelism", "progressbar"]
 progressbar = ["indicatif"]
 http = ["hf-hub"]
 unstable_wasm = ["fancy-regex", "getrandom/wasm_js"]
@@ -94,6 +95,7 @@ bench-baseline = [
   "dep:logos",
   "fancy-regex",
 ]
+parallelism = ["dep:rayon", "dep:rayon-cond"]
 
 [dev-dependencies]
 criterion = "0.6"
