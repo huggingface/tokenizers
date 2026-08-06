@@ -897,11 +897,6 @@ impl PipelineTokenizer {
         {
             return Ok(self.decode_byte_level(bpe, ids, skip_special_tokens));
         }
-        if matches!(self.model, PipelineModel::WordPiece(_)) {
-            // Fail loud instead of dropping every id and returning "".
-            return Err("PipelineTokenizer::decode: WordPiece keeps no id -> token map yet".into());
-        }
-
         let tokens = ids
             .iter()
             .filter_map(|&id| {
@@ -1344,16 +1339,12 @@ pub enum PipelineModel {
 
 impl PipelineModel {
     /// `id -> token`, for the decoder-chain route in [`PipelineTokenizer::decode`].
-    ///
-    /// `None` for [`PipelineWordPiece`], which keeps only the forward `vocab_trie` and so has no
-    /// id -> token direction to answer with. `decode` refuses that model up front rather than
-    /// letting every id drop out and returning an empty string.
     fn id_to_token(&self, id: u32) -> Option<String> {
         match self {
             Self::BPE(model) => model.id_to_token(id),
             Self::Unigram(model) => model.id_to_token(id),
             Self::WordLevel(model) => model.id_to_token(id),
-            Self::WordPiece(_) => None,
+            Self::WordPiece(model) => model.id_to_token(id),
         }
     }
 }
