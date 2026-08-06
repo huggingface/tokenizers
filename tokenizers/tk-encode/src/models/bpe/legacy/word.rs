@@ -1,8 +1,50 @@
-use super::Pair;
+use crate::models::bpe::Pair;
 use ahash::AHashMap;
 use dary_heap::QuaternaryHeap;
 use rand::{Rng, rng};
 use std::cmp::Ordering;
+use std::{iter, mem};
+
+/// Provides access to the `FirstLastIterator` to any Iterator
+pub trait WithFirstLastIterator: Iterator + Sized {
+    fn with_first_and_last(self) -> FirstLastIterator<Self>;
+}
+
+impl<I> WithFirstLastIterator for I
+where
+    I: Iterator,
+{
+    fn with_first_and_last(self) -> FirstLastIterator<Self> {
+        FirstLastIterator {
+            first: true,
+            iter: self.peekable(),
+        }
+    }
+}
+
+/// Provides information about whether an item is the first and/or the last of the iterator
+pub struct FirstLastIterator<I>
+where
+    I: Iterator,
+{
+    first: bool,
+    iter: iter::Peekable<I>,
+}
+
+impl<I> Iterator for FirstLastIterator<I>
+where
+    I: Iterator,
+{
+    /// (is_first, is_last, item)
+    type Item = (bool, bool, I::Item);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let first = mem::replace(&mut self.first, false);
+        self.iter
+            .next()
+            .map(|e| (first, self.iter.peek().is_none(), e))
+    }
+}
 
 #[derive(Debug, Eq)]
 pub struct Merge {
@@ -51,14 +93,6 @@ impl Symbol {
         self.len += other.len;
         self.next = other.next;
     }
-
-    pub fn id(&self) -> u32 {
-        self.c
-    }
-
-    pub fn add_len(&mut self, rhs: usize) {
-        self.len += rhs;
-    }
 }
 
 #[derive(Clone, Default)]
@@ -102,11 +136,6 @@ impl Word {
         self.symbols.len()
     }
 
-    #[cfg(test)]
-    pub(crate) fn capacity(&self) -> usize {
-        self.symbols.capacity()
-    }
-
     pub fn add(&mut self, c: u32, byte_len: usize) {
         let (prev, next) = {
             let len = self.symbols.len() as isize;
@@ -126,6 +155,7 @@ impl Word {
         });
     }
 
+    // this is a training only function, should potentially be feature gated.
     pub fn merge(
         &mut self,
         c1: u32,
@@ -191,12 +221,15 @@ impl Word {
         queue.clear();
         skip.clear();
 
+        // this is O(n)
         queue.extend(
             self.symbols
                 .windows(2)
                 .enumerate()
                 .filter_map(|(index, window)| {
+                    // this could be a u64 adress
                     let pair = (window[0].c, window[1].c);
+                    // merges is close-adressing
                     merges.get(&pair).map(|m| Merge {
                         pos: index,
                         rank: m.0,
@@ -293,10 +326,6 @@ impl Word {
             pos = new_pos;
             offset
         })
-    }
-
-    pub(crate) fn last_mut(&mut self) -> Option<&mut Symbol> {
-        self.symbols.last_mut()
     }
 }
 

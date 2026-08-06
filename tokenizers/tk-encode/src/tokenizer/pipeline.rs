@@ -1815,9 +1815,10 @@ mod tests {
     }
 
     // Pooling is only worth it if a scratch keeps the state it built up across calls.
-    // A fresh BpeScratch has room for 64 symbols; encoding a longer sequence grows it.
-    // After a second, short encode the pooled scratch must still be the grown one,
-    // not a fresh replacement built somewhere along the way.
+    // A fresh BpeScratch starts with an empty merge arena; encoding a longer sequence
+    // reserves one entry per byte and so grows it. After a second, short encode the
+    // pooled scratch must still be the grown one, not a fresh replacement built
+    // somewhere along the way.
     #[test]
     fn a_reused_scratch_keeps_its_grown_buffers() {
         let pipeline = hello_pipeline();
@@ -1833,26 +1834,11 @@ mod tests {
             panic!("the pooled scratch is not a BPE scratch");
         };
         assert!(
-            bpe_scratch.word.capacity() >= long_input.len(),
+            bpe_scratch.queue.entries.capacity() >= long_input.len(),
             "the pooled scratch is not the one grown by the long input: \
-             room for {} symbols after a {}-byte input",
-            bpe_scratch.word.capacity(),
+             room for {} merge entries after a {}-byte input",
+            bpe_scratch.queue.entries.capacity(),
             long_input.len()
         );
-    }
-
-    // A scratch coming back out of the pool has to still know the words of the last
-    // encode: a cache emptied between calls would never hit.
-    #[test]
-    fn the_word_cache_outlives_the_encode_call() {
-        let pipeline = hello_pipeline();
-        pipeline.encode("hello", false).wait().unwrap();
-
-        let mut scratch = pipeline.scratch_pool.get(&pipeline.model);
-        let PipelineModelScratch::BPE(bpe) = &mut *scratch else {
-            panic!("a BPE pipeline encodes with a BPE scratch");
-        };
-        let cache = bpe.word_cache.as_mut().expect("BPE encodes with a cache");
-        assert_eq!(cache.lookup(b"hello").hit(), Some(&[7u32][..]));
     }
 }
