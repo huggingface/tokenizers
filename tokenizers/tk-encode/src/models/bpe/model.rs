@@ -11,7 +11,7 @@ use crate::models::bpe::tables::BpeTables;
 use crate::pipeline::{self, PipelineToken, Span};
 use crate::tokenizer::Result;
 use crate::utils::byte_level::{self};
-use crate::utils::word_cache::{Lookup, WordCache};
+use crate::utils::word_cache::{Lookup, MAX_INLINE_IDS, ProbeEmit, WordCache};
 use crate::vocab::bucket_vocab_store::{BucketVocabStore, key_and_hash};
 
 const GATE_MULTI: u16 = 8;
@@ -389,9 +389,12 @@ impl pipeline::Model for PipelineBPE {
             word_cache,
         } = scratch;
 
-        // One reservation for the batch. Most pre-tokens are a single token, so the span count is
-        // a close lower bound on what the batch emits; anything past it grows as usual.
-        output.reserve(spans.len());
+        // 92% of english pre-tokens are one id and 98% at most two, so reserve for two apiece plus
+        // the probe's headroom. `spans.len()` alone is a *lower* bound, which would make the buffer
+        // grow -- and memcpy what it already holds -- partway through most chunks.
+        output.reserve(2 * spans.len() + MAX_INLINE_IDS);
+        let mut capacity = output.capacity();
+        let mut cursor = output.len();
 
         for span in spans {
             // SAFETY: the pre-tokenizer cuts on char boundaries, so a span is always a valid slice
@@ -401,6 +404,15 @@ impl pipeline::Model for PipelineBPE {
                 continue;
             }
 
+            // One capacity check per word, covering both the fold's single write and the probe's
+            // `MAX_INLINE_IDS` lanes. After it, writing that many past `cursor` is in bounds.
+            if cursor + MAX_INLINE_IDS > capacity {
+                // SAFETY: `cursor` counts what has been written so far.
+                unsafe { output.set_len(cursor) };
+                output.reserve(spans.len() + MAX_INLINE_IDS);
+                capacity = output.capacity();
+            }
+
             // Same order as `tokenize_pipeline`, and it has to stay that way: the fold answers a
             // word that is itself a foldable vocabulary entry in one probe, and those words never
             // reach the cache. Probing the cache first would populate it with words the fold
@@ -408,21 +420,48 @@ impl pipeline::Model for PipelineBPE {
             let bytes = sequence.as_bytes();
             let (key, hash) = key_and_hash(bytes);
             if let Some(id) = self.fold_id_keyed(bytes, key, hash) {
-                output.push(PipelineToken { id });
+                // SAFETY: the check above leaves at least `MAX_INLINE_IDS >= 1` slots past `cursor`.
+                unsafe { output.as_mut_ptr().add(cursor).write(PipelineToken { id }) };
+                cursor += 1;
                 continue;
             }
 
             let mut placement = None;
             if let Some(cache) = word_cache.as_mut() {
-                match cache.lookup_hashed(bytes, hash) {
-                    Lookup::Hit(ids) => {
-                        output.extend(ids.iter().map(|&id| PipelineToken { id }));
+                // The probe writes the ids at the cursor itself, so a hit is one load of the slot
+                // and one unconditional store of its lanes -- the ids never become a slice and the
+                // line is never read twice.
+                // SAFETY: the capacity check above leaves `MAX_INLINE_IDS` slots past `cursor`, and
+                // `PipelineToken` is layout-identical to `u32` (asserted at the top of this file).
+                let found = unsafe {
+                    cache.probe_emit_hashed(
+                        bytes,
+                        hash,
+                        output.as_mut_ptr().add(cursor).cast::<u32>(),
+                    )
+                };
+                match found {
+                    ProbeEmit::Wrote(n) => {
+                        cursor += n;
                         continue;
                     }
-                    Lookup::Miss(at) => placement = Some(at),
+                    // A hit the fast path could not serve: the probe already found the ids, so copy
+                    // those rather than probing a second time.
+                    ProbeEmit::Hit(ids) => {
+                        // SAFETY: `cursor` counts what has been written so far.
+                        unsafe { output.set_len(cursor) };
+                        output.extend(ids.iter().map(|&id| PipelineToken { id }));
+                        cursor = output.len();
+                        capacity = output.capacity();
+                        continue;
+                    }
+                    ProbeEmit::Miss(at) => placement = Some(at),
                 }
             }
 
+            // SAFETY: `cursor` counts what the fast paths wrote; the merge below uses `output`
+            // through its normal API, so its length has to be true again first.
+            unsafe { output.set_len(cursor) };
             let start = output.len();
             self.merge_word(sequence, symbols, queue, ranks, prods);
             // the merge engines work in internal ids; `unmap` takes them back to the vocab's own ids
@@ -434,7 +473,11 @@ impl pipeline::Model for PipelineBPE {
             {
                 cache.insert(at, output[start..].iter().map(|token| token.id));
             }
+            cursor = output.len();
+            capacity = output.capacity();
         }
+        // SAFETY: `cursor` counts every token written, by the fast paths and the slow one alike.
+        unsafe { output.set_len(cursor) };
         Ok(())
     }
 

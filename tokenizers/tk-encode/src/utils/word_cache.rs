@@ -126,11 +126,66 @@ impl<'a> WordCache {
             placement_hash_of(word),
             "placement hash does not belong to this word"
         );
+        self.lookup_placed(make_lookup_key_hashed(word, placement_hash, self.placement_mask))
+    }
+
+    /// A hit written straight to `dst`, skipping the tag window.
+    ///
+    /// The common case is a word cached in its own home slot with at most [`MAX_INLINE_IDS`] ids.
+    /// `lookup` reaches that through the tag row -- one load of 16 control bytes, a SIMD compare,
+    /// then the slot itself -- and hands back a slice the caller walks. Both are avoidable: read
+    /// the home slot directly and store all [`MAX_INLINE_IDS`] lanes unconditionally, so the line
+    /// is touched once and the ids never become a slice.
+    ///
+    /// Lanes past `ids_len` are dead. The caller advances its cursor by `ids_len` only, so the next
+    /// word overwrites them, or the final `set_len` cuts them off.
+    ///
+    /// # Safety
+    ///
+    /// `dst` must have room for [`MAX_INLINE_IDS`] `u32` writes.
+    #[inline]
+    pub unsafe fn probe_emit_hashed(
+        &'a self,
+        word: &[u8],
+        placement_hash: u64,
+        dst: *mut u32,
+    ) -> ProbeEmit<'a> {
+        debug_assert_eq!(
+            placement_hash,
+            placement_hash_of(word),
+            "placement hash does not belong to this word"
+        );
+        let placement = make_lookup_key_hashed(word, placement_hash, self.placement_mask);
+        // SAFETY: `index` is masked with `placement_mask` (`next_pow2 - 1`) and the table is
+        // `next_pow2 + WINDOW_SIZE` long, so the home slot is always in bounds.
+        let slot = unsafe { *self.cached_words.as_ptr().add(placement.index) };
+        // An untouched slot holds `LookupKey(0)`, which no word keys to, so a key match here is a
+        // real hit -- the same argument the window walk makes. A spilled slot is excluded because
+        // its payload holds offsets, not ids, and only spilled slots can be stale.
+        if slot.key == placement.key && !slot.is_spilled() {
+            // SAFETY: the caller guarantees room for `MAX_INLINE_IDS`.
+            unsafe {
+                for lane in 0..MAX_INLINE_IDS {
+                    dst.add(lane).write(slot.payload[lane]);
+                }
+            }
+            return ProbeEmit::Wrote(slot.ids_len as usize);
+        }
+        match self.lookup_placed(placement) {
+            Lookup::Hit(ids) => ProbeEmit::Hit(ids),
+            Lookup::Miss(at) => ProbeEmit::Miss(at),
+        }
+    }
+
+    /// The window walk, once a word has been keyed and placed. Split out of [`Self::lookup_hashed`]
+    /// so [`Self::probe_emit_hashed`] can fall back to it without re-keying the word.
+    #[inline]
+    fn lookup_placed(&'a self, placement: InsertPlacement) -> Lookup<'a> {
         let InsertPlacement {
             key,
             index: home,
             tag,
-        } = make_lookup_key_hashed(word, placement_hash, self.placement_mask);
+        } = placement;
 
         let tag_window = self.tag_window(home);
         let (candidates, first_empty) = tag_window.find_matches_and_first_empty(tag);
@@ -167,7 +222,7 @@ impl<'a> WordCache {
         let len = ids.len();
         let InsertPlacement { index, key, tag } = placement;
 
-        let word = if len <= 3 {
+        let word = if len <= MAX_INLINE_IDS {
             WordCacheSlot::new_self_contained(key, ids)
         } else {
             if self.spilled_buffer.len() + len > self.spilled_budget {
@@ -482,6 +537,22 @@ pub struct InsertPlacement {
     index: usize,
     key: LookupKey,
     tag: u8,
+}
+
+/// How many ids a slot holds inline. A slot is 32 bytes: a `u128` key, three `u32` ids and a
+/// length, so three is what fits beside the key.
+pub const MAX_INLINE_IDS: usize = 3;
+
+/// What [`WordCache::probe_emit_hashed`] found. `Wrote` is the fast path: the ids are already at
+/// `dst` and only the count comes back.
+pub enum ProbeEmit<'a> {
+    /// An inline hit in the home slot. [`MAX_INLINE_IDS`] lanes were written at `dst`; this many
+    /// of them are live.
+    Wrote(usize),
+    /// A hit the fast path could not serve -- a spilled entry, or one placed off its home slot.
+    /// The ids were found, so the caller copies these rather than probing again.
+    Hit(&'a [u32]),
+    Miss(InsertPlacement),
 }
 
 pub enum Lookup<'a> {
