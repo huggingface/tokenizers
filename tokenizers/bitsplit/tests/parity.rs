@@ -12,7 +12,8 @@
 use bitsplit::Span;
 use bitsplit::classify::classify;
 use bitsplit::regexes::{
-    CL100K, DEEPSEEK_BIG as DS_BIG, DEEPSEEK_CJK as DS_CJK, DEEPSEEK_NUM as DS_NUM, GPT2,
+    CL100K, DEEPSEEK_BIG as DS_BIG, DEEPSEEK_CJK as DS_CJK, DEEPSEEK_NUM as DS_NUM, GPT2, KIMI_K2,
+    O200K, TEKKEN,
 };
 use onig::Regex;
 
@@ -38,6 +39,15 @@ fn bs_byte_level(t: &[u8], g: &[u8], s: &mut [u64], f: &mut [u64], o: &mut [Span
 }
 fn bs_cl100k(t: &[u8], g: &[u8], s: &mut [u64], f: &mut [u64], o: &mut [Span]) -> usize {
     bitsplit::bitsplit_cl100k(t, g, s, f, o)
+}
+fn bs_o200k(t: &[u8], g: &[u8], s: &mut [u64], f: &mut [u64], o: &mut [Span]) -> usize {
+    bitsplit::bitsplit_o200k(t, g, s, f, o)
+}
+fn bs_tekken(t: &[u8], g: &[u8], s: &mut [u64], f: &mut [u64], o: &mut [Span]) -> usize {
+    bitsplit::bitsplit_tekken(t, g, s, f, o)
+}
+fn bs_kimi(t: &[u8], g: &[u8], s: &mut [u64], f: &mut [u64], o: &mut [Span]) -> usize {
+    bitsplit::bitsplit_kimi(t, g, s, f, o)
 }
 
 fn spans(f: Split, s: &str) -> Vec<Span> {
@@ -204,6 +214,32 @@ fn cl100k_parity() {
 fn deepseek_parity() {
     check("deepseek", bs_deepseek, &Oracle::DeepSeek);
     check_fuzz("deepseek", bs_deepseek, &Oracle::DeepSeek);
+}
+
+/// o200k_base / GPT-4o — and byte-for-byte the regex Llama-4, gpt-oss and MiniMax-M2 ship, so this
+/// one test covers four families.
+#[test]
+#[ignore = "o200k: \\p{M} is in BOTH the letter classes and rule 4's [^\\s\\p{L}\\p{N}]; whether a mark joins the other-run or the letter run depends on if the punctuation before it STARTED that run, and a swallowed mark must not suppress the letter start after it. Not modelled yet."]
+fn o200k_parity() {
+    let o = Oracle::Whole(Regex::new(O200K).unwrap());
+    check("o200k", bs_o200k, &o);
+    check_fuzz("o200k", bs_o200k, &o);
+}
+
+#[test]
+#[ignore = "o200k: \\p{M} is in BOTH the letter classes and rule 4's [^\\s\\p{L}\\p{N}]; whether a mark joins the other-run or the letter run depends on if the punctuation before it STARTED that run, and a swallowed mark must not suppress the letter start after it. Not modelled yet."]
+fn tekken_parity() {
+    let o = Oracle::Whole(Regex::new(TEKKEN).unwrap());
+    check("tekken", bs_tekken, &o);
+    check_fuzz("tekken", bs_tekken, &o);
+}
+
+#[test]
+#[ignore = "o200k: \\p{M} is in BOTH the letter classes and rule 4's [^\\s\\p{L}\\p{N}]; whether a mark joins the other-run or the letter run depends on if the punctuation before it STARTED that run, and a swallowed mark must not suppress the letter start after it. Not modelled yet."]
+fn kimi_parity() {
+    let o = Oracle::Whole(Regex::new(KIMI_K2).unwrap());
+    check("kimi", bs_kimi, &o);
+    check_fuzz("kimi", bs_kimi, &o);
 }
 
 /// Negative control: the gate above only means something if it can fail. gpt2 and cl100k disagree

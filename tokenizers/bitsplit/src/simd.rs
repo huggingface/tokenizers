@@ -10,7 +10,7 @@
 //! on all of its bytes. That is what lets the bitstream program read "previous char's class" as a
 //! plain `<< 1` with no char-width arithmetic.
 
-use crate::{Blk, lead_run};
+use crate::{AUX_HAN, AUX_NONE, AUX_SLASH, Blk, lead_run};
 use core::arch::aarch64::*;
 
 const POW: [u8; 16] = [1, 2, 4, 8, 16, 32, 64, 128, 1, 2, 4, 8, 16, 32, 64, 128];
@@ -34,13 +34,13 @@ unsafe fn mm64(v: [uint8x16_t; 4], pow: uint8x16_t) -> u64 {
 /// # Safety
 /// `base + 64 <= tags.len()` and `base + 64 <= text.len()`.
 #[target_feature(enable = "neon")]
-pub(crate) unsafe fn build64<const CJK: bool>(
+pub(crate) unsafe fn build64<const AUX: u8, const P3: bool>(
     text: &[u8],
     tags: &[u8],
     base: usize,
     lut: &[u8; 64],
     cur_code: u8,
-    cur_cjk: bool,
+    cur_aux: bool,
 ) -> (Blk, u8) {
     unsafe {
         let pow = vld1q_u8(POW.as_ptr());
@@ -89,12 +89,13 @@ pub(crate) unsafe fn build64<const CJK: bool>(
             p0: plane(1),
             p1: plane(2),
             p2: plane(4),
-            cjk: 0,
+            p3: if P3 { plane(8) } else { 0 },
+            aux: 0,
         };
-        if !CJK {
+        if AUX == AUX_NONE {
             return (b, last_code);
         }
-        // ── text is loaded only for the (deepseek-only) CJK range test.
+        // ── text is loaded only for the aux (text-derived) stream.
         let ntext = text.len();
         let tv = [
             vld1q_u8(text.as_ptr().add(base)),
@@ -102,6 +103,37 @@ pub(crate) unsafe fn build64<const CJK: bool>(
             vld1q_u8(text.as_ptr().add(base + 32)),
             vld1q_u8(text.as_ptr().add(base + 48)),
         ];
+
+        if AUX == AUX_SLASH {
+            // single ASCII byte — no fill needed, `/` is its own char
+            let sl = vdupq_n_u8(b'/');
+            b.aux = mm64(
+                [
+                    vceqq_u8(tv[0], sl),
+                    vceqq_u8(tv[1], sl),
+                    vceqq_u8(tv[2], sl),
+                    vceqq_u8(tv[3], sl),
+                ],
+                pow,
+            );
+            return (b, last_code);
+        }
+        if AUX == AUX_HAN {
+            // ponytail: scalar Han range test; vectorise like the CJK path below if kimi ever
+            // shows up on a throughput bench.
+            let lim = ntext.min(base + 64);
+            let mut leads = 0u64;
+            for p in base..lim {
+                if tags[p] != crate::CONT && crate::han::is_han_at(text, p) {
+                    leads |= 1u64 << (p - base);
+                }
+            }
+            b.aux = leads | (leads << 1) | (leads << 2);
+            if cur_aux {
+                b.aux |= lead_run(b.cont, !0);
+            }
+            return (b, last_code);
+        }
 
         // ── the CJK range test lives in the raw bytes, not the tags. It is a 3-byte predicate, so
         // it runs in vector space on `vext`-aligned b1/b2 and extracts ONE mask — testing the 9
@@ -165,11 +197,11 @@ pub(crate) unsafe fn build64<const CJK: bool>(
                 leads &= (1u64 << lim) - 1;
             }
             // every CJK char is 3 bytes → fill by two shifts; a char cut by the block edge is
-            // picked up on the other side by `cur_cjk` (its continuation bytes lead that block).
-            b.cjk = leads | (leads << 1) | (leads << 2);
+            // picked up on the other side by `cur_aux` (its continuation bytes lead that block).
+            b.aux = leads | (leads << 1) | (leads << 2);
         }
-        if cur_cjk {
-            b.cjk |= lead_run(b.cont, !0);
+        if cur_aux {
+            b.aux |= lead_run(b.cont, !0);
         }
         (b, last_code)
     }

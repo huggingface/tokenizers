@@ -10,7 +10,7 @@
 //! alternation in bit algebra.
 
 use crate::{
-    CODE_CONT, CONT, Span, adv, build_block, emit_contr, fill_to_last, lead_run, scanthru, to_lead,
+    AUX_NONE, CODE_CONT, CONT, Span, adv, build_block, emit_contr, fill_to_last, lead_run, scanthru, to_lead,
     trail_run,
 };
 
@@ -107,7 +107,7 @@ pub fn bitsplit_byte_level(
         let valid = if len == 64 { !0u64 } else { (1u64 << len) - 1 };
         let last_blk = base + len == ntext;
 
-        let (b, last_code) = build_block::<false>(text, tags, base, len, &LUT, code, false);
+        let (b, last_code) = build_block::<{ AUX_NONE }, false>(text, tags, base, len, &LUT, code, false);
         let c = decode(b.p0, b.p1, b.p2, valid);
 
         let pb = if base == 0 { 0 } else { code_bits(code) };
@@ -193,7 +193,7 @@ pub fn bitsplit_cl100k(
         let valid = if len == 64 { !0u64 } else { (1u64 << len) - 1 };
         let last_blk = base + len == ntext;
 
-        let (b, last_code) = build_block::<false>(text, tags, base, len, &LUT, code, false);
+        let (b, last_code) = build_block::<{ AUX_NONE }, false>(text, tags, base, len, &LUT, code, false);
         let c = decode(b.p0, b.p1, b.p2, valid);
 
         let pb = if base == 0 { 0 } else { code_bits(code) };
