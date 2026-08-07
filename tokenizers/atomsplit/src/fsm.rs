@@ -95,36 +95,7 @@ pub(crate) fn contraction(text: &[u8], i: usize) -> usize {
     }
 }
 
-/// A token span: byte offsets `[start, end)` into the input. `#[repr(C)]` so the FSM output buffer has a
-/// stable `[start, end]` layout — the pipeline reuses it with zero conversion, and it can be reinterpreted
-/// as bytes / handed across the crate boundary.
-#[repr(C)]
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Hash, PartialOrd, Ord)]
-pub struct Span {
-    pub start: u32,
-    pub end: u32,
-}
-
-impl Span {
-    #[inline]
-    pub const fn new(start: u32, end: u32) -> Self {
-        Self { start, end }
-    }
-
-    /// `[start, end)` as a `usize` range — for slicing the input text.
-    #[inline]
-    pub fn range(self) -> core::ops::Range<usize> {
-        self.start as usize..self.end as usize
-    }
-}
-
-/// Compare against a bare `(start, end)` tuple — convenience for tests/interop.
-impl PartialEq<(u32, u32)> for Span {
-    #[inline]
-    fn eq(&self, o: &(u32, u32)) -> bool {
-        self.start == o.0 && self.end == o.1
-    }
-}
+pub use bitsplit::Span;
 
 /// No-`push` class-family pre-tokenizer core: writes spans into the preallocated `out` slice and returns
 /// the count. ONE shape covers the whole class family via `<DROP, ISOLATE, KEEP_A>`:

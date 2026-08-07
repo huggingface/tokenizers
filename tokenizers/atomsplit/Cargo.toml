@@ -25,9 +25,8 @@ name = "atomsplit"
 path = "src/lib.rs"
 
 [dependencies]
-memchr = "2.8.2" # SIMD search: used for single-byte  search in CharDelimiterSplit (1.4–23× vs scalar), or multi-byte string pattern search in `literal`.
-# NOTE: classify tables live in src/atom_tables.rs (committed, generated). Regenerate after any atom
-# scheme change with `cargo run -p bitmap_gen`. No build script / build-dep — atomsplit builds clean.
+bitsplit = { path = "../bitsplit" } # classify / literal / regexes moved there; this crate is transitional
+memchr = "2.8.2" # SIMD search: used for single-byte  search in CharDelimiterSplit (1.4–23× vs scalar).
 # onig is C (Oniguruma) and fancy-regex pulls it in transitively for benches only — neither
 # cross-compiles to wasm32 (no wasi libc for the C build), so gate them off wasm.
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]

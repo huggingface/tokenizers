@@ -18,16 +18,9 @@
 //! Inputs are `&[u8]` (not `&str`) for zero-copy, but **must be well-formed UTF-8**: a buffer that ends
 //! mid-codepoint is a precondition violation and may panic. `tags`/`out` scratch buffers must be
 //! `≥ text.len()` (asserted in [`classify`]; documented per-fsm).
-mod atom_tables;
-pub mod classify;
+// TRANSITIONAL: classify / literal / regexes now live in `bitsplit`; this crate is down to the
+// scalar FSMs the bitstream grammars are replacing and is deleted once every caller is rewired.
+pub use bitsplit::{classify, literal, regexes};
+
 pub mod fsm;
-pub mod literal;
-pub mod regexes;
-#[cfg(target_arch = "x86_64")]
-mod simd_avx_classify;
-#[cfg(target_arch = "aarch64")]
-mod simd_classify;
 mod simd_fsm;
-#[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
-mod simd_wasm_classify;
-pub mod tables;

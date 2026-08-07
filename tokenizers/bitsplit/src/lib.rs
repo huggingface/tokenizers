@@ -17,24 +17,64 @@
 //! visited in order, so those dependencies are carried in a handful of scalar registers and, for
 //! the one genuinely backward-in-time rule, patched into the already-written bitmap.
 //!
-//! We do not re-derive character classes: `atomsplit::classify` already emits one `Atom` tag per
-//! byte. The builder folds those 16 atoms into a grammar-specific **dense 3-bit code** and extracts
-//! 3 bit-planes of it; every class stream is then a 2–3 op boolean function of the planes.
+//! We do not re-derive character classes: [`classify`] already emits one `Atom` tag per byte. The
+//! builder folds those 16 atoms into a grammar-specific **dense 3-bit code** and extracts 3
+//! bit-planes of it; every class stream is then a 2–3 op boolean function of the planes.
 //!
 //! Grammars: [`bitsplit_deepseek`], [`bitsplit_byte_level`] (GPT-2), [`bitsplit_cl100k`]. All three
-//! byte-exact with their `atomsplit::fsm` counterparts — see `src/bin/verify.rs`.
+//! byte-exact with the oniguruma oracle over a block-phase sweep — see `tests/parity.rs`.
 
-pub(crate) use atomsplit::fsm::Span;
-
+mod atom_tables;
+pub mod classify;
 pub mod deepseek;
 pub mod gpt;
+pub mod literal;
+pub mod regexes;
 #[cfg(target_arch = "aarch64")]
 mod simd;
+#[cfg(target_arch = "aarch64")]
+mod simd_classify;
+#[cfg(target_arch = "x86_64")]
+mod simd_avx_classify;
+#[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
+mod simd_wasm_classify;
 #[cfg(target_arch = "x86_64")]
 mod simd_x86;
+mod tables;
 
 pub use deepseek::bitsplit_deepseek;
 pub use gpt::{bitsplit_byte_level, bitsplit_cl100k};
+
+/// A token span: byte offsets `[start, end)` into the input. `#[repr(C)]` so the output buffer has a
+/// stable `[start, end]` layout — the pipeline reuses it with zero conversion, and it can be
+/// reinterpreted as bytes / handed across the crate boundary.
+#[repr(C)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Hash, PartialOrd, Ord)]
+pub struct Span {
+    pub start: u32,
+    pub end: u32,
+}
+
+impl Span {
+    #[inline]
+    #[must_use]
+    pub const fn new(start: u32, end: u32) -> Self {
+        Self { start, end }
+    }
+
+    /// `[start, end)` as a `usize` range — for slicing the input text.
+    #[inline]
+    #[must_use]
+    pub fn range(self) -> core::ops::Range<usize> {
+        self.start as usize..self.end as usize
+    }
+}
+
+impl PartialEq<(u32, u32)> for Span {
+    fn eq(&self, other: &(u32, u32)) -> bool {
+        self.start == other.0 && self.end == other.1
+    }
+}
 
 /// Whether this target builds its bitstreams with SIMD. Without it the builder is the portable
 /// byte-at-a-time reference, which is slower than the FSM this replaces -- so a caller should keep
@@ -368,6 +408,6 @@ pub fn build_only(text: &[u8], tags: &[u8]) -> u64 {
 /// Convenience wrapper: classify + deepseek bitsplit over caller-owned scratch.
 #[must_use]
 pub fn pre_tokenize(text: &[u8], tags: &mut [u8], starts: &mut [u64], out: &mut [Span]) -> usize {
-    atomsplit::classify::classify(text, tags);
+    classify::classify(text, tags);
     bitsplit_deepseek(text, tags, starts, out)
 }
