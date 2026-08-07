@@ -12,7 +12,7 @@ use crate::pipeline::{self, PipelineToken};
 use crate::tokenizer::Result;
 use crate::utils::byte_level::{self};
 use crate::utils::word_cache::{Lookup, WordCache};
-use crate::vocab::bucket_vocab_store::BucketVocabStore;
+use crate::vocab::bucket_vocab_store::{BucketVocabStore, key_and_hash};
 
 const GATE_MULTI: u16 = 8;
 const GATE_ASCII: u16 = 24;
@@ -248,16 +248,16 @@ impl PipelineBPE {
     #[inline(always)]
     fn fold_id(&self, sequence: &str) -> Option<u32> {
         let bytes = sequence.as_bytes();
-        self.fold_id_hashed(bytes, self.vocab.hash_word(bytes))
+        let (key, hash) = key_and_hash(bytes);
+        self.fold_id_keyed(bytes, key, hash)
     }
 
-    /// [`Self::fold_id`] for a caller that already hashed the word with
-    /// [`BucketVocabStore::hash_word`].
+    /// [`Self::fold_id`] for a caller that already ran [`key_and_hash`] on the word.
     #[inline(always)]
-    fn fold_id_hashed(&self, bytes: &[u8], hash: u64) -> Option<u32> {
+    fn fold_id_keyed(&self, bytes: &[u8], key: u64, hash: u64) -> Option<u32> {
         // One probe; the foldable bit is part of the id that probe already returned. Which entries
         // carry it was settled at load -- see `from_bpe`.
-        let (id, foldable) = self.vocab.get_bytes_foldable_hashed(bytes, hash)?;
+        let (id, foldable) = self.vocab.get_bytes_foldable_keyed(bytes, key, hash)?;
         foldable.then_some(id)
     }
 
@@ -326,8 +326,8 @@ impl pipeline::Model for PipelineBPE {
         // way -- the vocabulary compares the entry's bytes, the cache compares its key -- so this
         // shares the hash and nothing else.
         let bytes = sequence.as_bytes();
-        let hash = self.vocab.hash_word(bytes);
-        if let Some(id) = self.fold_id_hashed(bytes, hash) {
+        let (key, hash) = key_and_hash(bytes);
+        if let Some(id) = self.fold_id_keyed(bytes, key, hash) {
             output.push(PipelineToken { id });
             return Ok(());
         }
