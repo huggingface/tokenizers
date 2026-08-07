@@ -87,16 +87,25 @@ pub fn key_and_hash(word: &[u8]) -> (u64, u64) {
     (key, mix(key))
 }
 
-/// One probe entry: a digest to confirm the slot, and the id to return. **8 bytes.**
+/// One probe entry: the whole hash to confirm the slot, and the id to return. **16 bytes.**
+///
+/// A 32-bit digest cut from `hash >> 32` was not enough. The MPHF slot comes from the same `hash`,
+/// so slot and digest are correlated rather than independent, and nothing else confirms the hit --
+/// there is no byte comparison against the token. A pretoken that is *not* in the vocabulary can
+/// therefore land on a slot whose digest also matches and be answered with another token's id.
+/// Not hypothetical: with a different (weaker) key hash it fired on the first corpus tried, emitting
+/// `Ġsignifies` for the pretoken ` dignified`, both ten bytes long. This is a silent-wrong-answer
+/// path, so it is worth eight bytes an entry to make a false positive 2^-64 -- the standard the word
+/// cache already holds long words to.
 #[derive(Clone, Copy, Debug, Default)]
 #[repr(C)]
 struct Entry {
-    digest: u32,
+    hash: u64,
     /// The token id in the low 31 bits, [`FOLD_BIT`] in the top.
     id: u32,
 }
 
-const _: () = assert!(size_of::<Entry>() == 8);
+const _: () = assert!(size_of::<Entry>() == 16);
 
 /// `KEY_MASK[len]` keeps the low `len` bytes; `LEN_TAG[len]` is the length in the top byte.
 static KEY_MASK: [u64; 8] = [
@@ -119,13 +128,6 @@ static LEN_TAG: [u64; 8] = [
     6 << 56,
     7 << 56,
 ];
-
-/// The 32 bits an entry stores to reject an out-of-vocabulary query. Derived from the key by a
-#[inline(always)]
-/// The 32 bits that confirm a slot really holds the queried token.
-fn digest_of(hash: u64) -> u32 {
-    (hash >> 32) as u32
-}
 
 /// `slot -> (offset into `bytes`, length)`. Off the probe path on purpose: only the reverse lookup
 #[derive(Clone, Copy, Debug, Default)]
@@ -240,7 +242,7 @@ impl BucketVocabStore {
             let (key, hash) = key_and_hash(s.as_slice());
             let slot = mphf.index(&hash);
             entries[slot] = Entry {
-                digest: digest_of(hash),
+                hash,
                 id: *id,
             };
             spans[slot] = Span {
@@ -282,7 +284,7 @@ impl BucketVocabStore {
         let (key, hash) = key_and_hash(q);
         let slot = self.mphf.index(&hash);
         let e = self.entries[slot];
-        (e.digest == digest_of(hash)).then_some(e.id & VOCAB_ID_MASK)
+        (e.hash == hash).then_some(e.id & VOCAB_ID_MASK)
     }
 
     /// The id for `q`, together with whether that entry may be folded. One probe and one entry
@@ -300,16 +302,16 @@ impl BucketVocabStore {
 
     /// The `(key, id)` at a slot, without deciding anything.
     #[inline(always)]
-    pub fn entry_at(&self, slot: usize) -> (u32, u32) {
+    pub fn entry_at(&self, slot: usize) -> (u64, u32) {
         let e = self.entries[slot];
-        (e.digest, e.id)
+        (e.hash, e.id)
     }
 
     /// Decide a probe from what [`Self::entry_at`] already loaded.
     #[inline(always)]
-    pub fn resolve_foldable(hash: u64, entry: (u32, u32)) -> Option<(u32, bool)> {
-        let (edigest, eid) = entry;
-        (edigest == digest_of(hash)).then_some((eid & VOCAB_ID_MASK, eid & FOLD_BIT != 0))
+    pub fn resolve_foldable(hash: u64, entry: (u64, u32)) -> Option<(u32, bool)> {
+        let (ehash, eid) = entry;
+        (ehash == hash).then_some((eid & VOCAB_ID_MASK, eid & FOLD_BIT != 0))
     }
 
     /// [`Self::get_bytes_foldable`] for a caller that already has the word's key and hash.
@@ -321,7 +323,7 @@ impl BucketVocabStore {
         }
         let slot = self.mphf.index(&hash);
         let e = self.entries[slot];
-        (e.digest == digest_of(hash)).then_some((e.id & VOCAB_ID_MASK, e.id & FOLD_BIT != 0))
+        (e.hash == hash).then_some((e.id & VOCAB_ID_MASK, e.id & FOLD_BIT != 0))
     }
 
     /// Records that this token folds to itself. Called once per entry at load, after the proof.
