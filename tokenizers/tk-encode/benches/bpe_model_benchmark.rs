@@ -298,7 +298,7 @@ fn bench_pipeline(c: &mut Criterion) {
                         |b, chunks| {
                             b.iter(|| {
                                 for chunk in chunks {
-                                    black_box(pipeline.encode(chunk, false).unwrap());
+                                    black_box(pipeline.encode(chunk, false).wait().unwrap());
                                 }
                             })
                         },

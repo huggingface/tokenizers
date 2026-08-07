@@ -11,6 +11,7 @@ use crate::models::bpe::tables::BpeTables;
 use crate::pipeline::{self, PipelineToken, Span};
 use crate::tokenizer::Result;
 use crate::utils::byte_level::{self};
+use crate::utils::word_cache::{Lookup, WordCache};
 use crate::vocab::bucket_vocab_store::BucketVocabStore;
 
 const GATE_MULTI: u16 = 8;
@@ -44,17 +45,19 @@ fn content_start(bytes: &[u8]) -> usize {
     }
 }
 
+// The fused cache probe stores ids straight at a `*mut u32` pointing into the `Vec<PipelineToken>`
+// the caller is filling. That is only sound while a token is layout-identical to its id.
+const _: () = assert!(size_of::<PipelineToken>() == size_of::<u32>());
+const _: () = assert!(align_of::<PipelineToken>() == align_of::<u32>());
+
 pub struct PipelineBPE {
     pub(super) atoms: Atoms,
     pub(super) tables: BpeTables,
     pub(super) affixes: Option<Affixes>,
     pub(super) vocab: BucketVocabStore,
-    ignore_merges: bool,
-    /// Whether the fold is decided per entry, by the bit each vocabulary entry carries in its id.
-    /// False when the config declares `ignore_merges`, which folds every hit unconditionally.
-    /// See [`PipelineBPE::prove_fold`].
-    fold_by_flag: bool,
     byte_to_gate: [u16; 256],
+    /// Slots for the per-scratch word cache, from the config. `None` disables it.
+    cache_capacity: Option<usize>,
 }
 
 // A `PipelineBPE` holds exactly one `Atoms`, so `Chars`' 1 KB byte-fallback table costs nothing.
@@ -70,6 +73,28 @@ pub(super) enum Atoms {
 }
 
 impl PipelineBPE {
+    /// True when this model was built with `with_byte_level`, which means
+    /// [`byte_level::transform_vocab`] already turned every vocabulary entry into its
+    /// **decoded raw bytes** at load time. Decoding is then a concatenation, and running a
+    /// `ByteLevel` decoder over these entries would decode a second time.
+    pub(crate) fn is_byte_level(&self) -> bool {
+        matches!(self.atoms, Atoms::Bytes)
+    }
+
+    /// A token's bytes, borrowed from the vocab store's slab. For a byte-level model these are
+    /// the decoded bytes (see [`Self::is_byte_level`]) and a single entry is not necessarily
+    /// valid UTF-8 on its own -- only the concatenation of a whole id sequence usually is.
+    pub(crate) fn id_to_token_bytes(&self, id: u32) -> Option<&[u8]> {
+        self.vocab.id_to_token_bytes(id)
+    }
+
+    /// A token as a `String`, for the decoder-chain route. Only meaningful when the entries are
+    /// the token strings as written, i.e. when [`Self::is_byte_level`] is false; a byte-level
+    /// model decodes through [`Self::id_to_token_bytes`] instead.
+    pub(crate) fn id_to_token(&self, id: u32) -> Option<String> {
+        self.vocab.id_to_token(id)
+    }
+
     pub fn from_bpe(model: BPE, with_byte_level: bool) -> Result<Self> {
         if matches!(&model.dropout, Some(dropout) if *dropout > 0.0) {
             return Err("BPE models with dropout not supported yet".into());
@@ -83,8 +108,11 @@ impl PipelineBPE {
             fuse_unk,
             continuing_subword_prefix,
             end_of_word_suffix,
+            cache,
             ..
         } = model;
+        // A capacity of zero means "no cache"; anything else sizes the per-scratch table.
+        let cache_capacity = cache.map(|cache| cache.capacity).filter(|&c| c > 0);
         let prefix = continuing_subword_prefix.unwrap_or_default();
         let suffix = end_of_word_suffix.unwrap_or_default();
         if prefix.len() + 4 + suffix.len() > AFFIX_BUF {
@@ -156,22 +184,26 @@ impl PipelineBPE {
             atoms,
             tables,
             affixes,
-            ignore_merges,
-            fold_by_flag: false,
+            cache_capacity,
             vocab,
             byte_to_gate: build_byte_to_gate(),
         };
-        // A config that already declares `ignore_merges` folds every hit and needs no proof.
-        if !built.ignore_merges {
-            // Two phases because the proof runs the merge engine, which borrows `built`: work out
-            // the answers first, then set the bit on each entry that earned it.
-            let proven = built.prove_fold();
-            for (id, foldable) in proven.iter().enumerate() {
-                if *foldable {
-                    built.vocab.set_foldable(id as u32);
-                }
+        // Every entry carries a foldable bit, so the encode path is one probe and one bit test
+        // with no policy left in it. The policy is decided here, once: a config that declares
+        // `ignore_merges` asks for every hit to fold, so every entry gets the bit; otherwise only
+        // the entries that prove they reduce to themselves earn it.
+        //
+        // Two phases because the proof runs the merge engine, which borrows `built`: work out the
+        // answers first, then set the bit on each entry that earned it.
+        let proven = if ignore_merges {
+            vec![true; built.vocab.id_space()]
+        } else {
+            built.prove_fold()
+        };
+        for (id, foldable) in proven.iter().enumerate() {
+            if *foldable {
+                built.vocab.set_foldable(id as u32);
             }
-            built.fold_by_flag = true;
         }
         Ok(built)
     }
@@ -181,7 +213,9 @@ impl PipelineBPE {
     ///
     /// We replace the old "ignore_merges" with something that actually ignores whether or not the flag was set.
     fn prove_fold(&self) -> Vec<bool> {
-        let len = self.vocab.len();
+        // The id space, not the entry count: ids may be sparse, and bounding the walk by
+        // `vocab.len()` would leave every entry above it unproven.
+        let len = self.vocab.id_space();
         let mut proven = vec![false; len];
         let mut symbols = Vec::with_capacity(64);
         let mut scratch = QueueScratch::default();
@@ -210,16 +244,10 @@ impl PipelineBPE {
     /// entry that may be folded. `None` sends the word to the merge engines.
     #[inline(always)]
     fn fold_id(&self, sequence: &str) -> Option<u32> {
-        if self.fold_by_flag {
-            // One probe; the proven bit is part of the id that probe already returned.
-            let (id, foldable) = self.vocab.get_bytes_foldable(sequence.as_bytes())?;
-            return foldable.then_some(id);
-        }
-        // The config declared `ignore_merges`: fold every hit, as it asks.
-        if self.ignore_merges {
-            return self.vocab.get_bytes(sequence.as_bytes());
-        }
-        None
+        // One probe; the foldable bit is part of the id that probe already returned. Which entries
+        // carry it was settled at load -- see `from_bpe`.
+        let (id, foldable) = self.vocab.get_bytes_foldable(sequence.as_bytes())?;
+        foldable.then_some(id)
     }
 
     /// Converts a word to symbols and merges it. The gate, indexed by the word's first *content*
@@ -261,6 +289,9 @@ pub struct BpeScratch {
     pub(crate) symbols: Vec<u32>,
     /// Entry arena and the two queue tiers.
     pub(crate) queue: QueueScratch,
+    /// Words already seen, so a repeat costs a probe instead of a merge. It lives in the scratch
+    /// so it outlives the encode call that fills it -- otherwise it would never see a word twice.
+    pub(crate) word_cache: Option<WordCache>,
 }
 
 impl pipeline::ModelScratch for BpeScratch {}
@@ -283,14 +314,99 @@ impl pipeline::Model for PipelineBPE {
             return Ok(());
         }
 
-        let BpeScratch { symbols, queue } = scratch;
+        let BpeScratch {
+            symbols,
+            queue,
+            word_cache,
+        } = scratch;
 
+        // A word seen before costs a probe instead of a merge.
+        let insert_at = if let Some(cache) = word_cache.as_mut() {
+            match cache.lookup(sequence.as_bytes()) {
+                Lookup::Hit(ids) => {
+                    output.extend(ids.iter().map(|&id| PipelineToken { id }));
+                    return Ok(());
+                }
+                Lookup::Miss(at) => Some(at),
+            }
+        } else {
+            None
+        };
+
+        let start = output.len();
         self.merge_word(sequence, symbols, queue);
         // the merge engines work in internal ids; `unmap` takes them back to the vocab's own ids
         output.extend(symbols.iter().map(|&symbol| PipelineToken {
             id: self.tables.unmap.at(symbol as usize),
         }));
+        if let Some(cache) = word_cache.as_mut()
+            && let Some(at) = insert_at
+        {
+            cache.insert(at, output[start..].iter().map(|token| token.id));
+        }
 
+        Ok(())
+    }
+
+    /// Every pre-token of a chunk in one call.
+    ///
+    /// Same work per word as [`Self::tokenize_pipeline`]; what changes is what is *not* repeated.
+    /// The scratch is destructured once instead of once per word, the output is grown once for the
+    /// whole batch instead of being capacity-checked on every push, and the virtual call, the
+    /// slice and the `Result` happen once per chunk rather than once per pre-token.
+    fn tokenize_spans(
+        &self,
+        chunk: &str,
+        spans: &[Span],
+        scratch: &mut Self::Scratch,
+        output: &mut Vec<PipelineToken>,
+    ) -> Result<()> {
+        let BpeScratch {
+            merge_queue,
+            skip,
+            word,
+            word_cache,
+        } = scratch;
+
+        // One reservation for the batch. Most pre-tokens are a single token, so the span count is
+        // a close lower bound on what the batch emits; anything past it grows as usual.
+        output.reserve(spans.len());
+
+        for span in spans {
+            // SAFETY: the pre-tokenizer cuts on char boundaries, so a span is always a valid slice
+            // of this chunk. Bounds- and UTF-8-checking it again per word measured worth removing.
+            let sequence = unsafe { chunk.get_unchecked(span.range()) };
+            if sequence.is_empty() {
+                continue;
+            }
+
+            let mut placement = None;
+            if let Some(cache) = word_cache.as_mut() {
+                match cache.lookup(sequence.as_bytes()) {
+                    Lookup::Hit(ids) => {
+                        output.extend(ids.iter().map(|&id| PipelineToken { id }));
+                        continue;
+                    }
+                    Lookup::Miss(at) => placement = Some(at),
+                }
+            }
+            let start = output.len();
+            if self.ignore_merges
+                && let Some(id) = self.vocab.get_bytes(sequence.as_bytes())
+            {
+                output.push(PipelineToken { id });
+            } else {
+                self.merge_word(sequence, merge_queue, skip, word);
+                output.extend(word.get_chars_iter().map(|id| PipelineToken { id }));
+            }
+            // The ids come back out of `output` because that is the only place both branches
+            // above leave them: `ignore_merges` never touches `word`.
+            if let Some(cache) = word_cache.as_mut()
+                && let Some(at) = placement
+            {
+                cache.insert(at, output[start..].iter().map(|token| token.id));
+            }
+        }
         Ok(())
     }
 
@@ -335,14 +451,15 @@ impl pipeline::Model for PipelineBPE {
         Self::Scratch {
             symbols: Vec::with_capacity(64),
             queue: QueueScratch::default(),
+            word_cache: self.cache_capacity.map(WordCache::new),
         }
     }
 }
 
 #[cfg(test)]
 mod fold_tests {
-    use crate::pipeline::PipelineTokenizer;
     use crate::Tokenizer;
+    use crate::pipeline::PipelineTokenizer;
 
     /// The proven fold emits a vocabulary entry without merging, so it is only valid if the merge
     /// loop would have produced that same entry. gpt2 does not declare `ignore_merges`, so here

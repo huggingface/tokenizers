@@ -156,7 +156,10 @@ impl BucketVocabStore {
                 s.len() <= u16::MAX as usize,
                 "token longer than 65535 bytes"
             );
-            assert!(*id <= VOCAB_ID_MASK, "token id {id} needs bit 31, which holds FOLD_BIT");
+            assert!(
+                *id <= VOCAB_ID_MASK,
+                "token id {id} needs bit 31, which holds FOLD_BIT"
+            );
             let slot = mphf.index(&hasher.hash_one(s.as_slice()));
             entries[slot] = Entry {
                 start: bytes.len() as u32,
@@ -264,6 +267,15 @@ impl BucketVocabStore {
 
     pub fn len(&self) -> usize {
         self.n
+    }
+
+    /// One past the highest id this vocabulary can hold.
+    ///
+    /// Ids are not dense: a config may leave gaps, so [`Self::len`] counts entries and is *not* an
+    /// id bound. Anything that walks ids has to bound itself by this and skip the holes, which
+    /// [`Self::id_to_token_bytes`] reports as `None`.
+    pub fn id_space(&self) -> usize {
+        self.id_to_slot.len()
     }
 
     pub fn is_empty(&self) -> bool {

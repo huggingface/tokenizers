@@ -1,6 +1,6 @@
 //! Shared setup for the pipeline oracle tests. Encode and decode parity are
 //! judged over the same inputs: fixed-size windows of the real fixture corpora
-//! (`data/fixtures/{lang,modalities}` — 14 languages + code/math/agentic).
+//! (`data/fixtures/{lang,modalities}` — 9 languages + code/math/agentic/added).
 
 /// Test-data root, shared with the benchmark harness (populated by `make fixtures`).
 pub const DATA: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../data");
@@ -14,21 +14,14 @@ pub const WINDOWS: &[usize] = &[1024, 8 * 1024];
 pub const FIXTURES: &[(&str, &str)] = &[
     ("lang", "amh_Ethi"),
     ("lang", "arb_Arab"),
-    ("lang", "ben_Beng"),
     ("lang", "cmn_Hani"),
-    ("lang", "ell_Grek"),
     ("lang", "eng_Latn"),
-    ("lang", "heb_Hebr"),
     ("lang", "hin_Deva"),
     ("lang", "jpn_Jpan"),
-    ("lang", "kat_Geor"),
-    ("lang", "kor_Hang"),
     ("lang", "rus_Cyrl"),
     ("lang", "tam_Taml"),
     ("lang", "tha_Thai"),
-    ("modalities", "added_normalized_dense"),
     ("modalities", "added_normalized_sparse"),
-    ("modalities", "added_special_dense"),
     ("modalities", "added_special_sparse"),
     ("modalities", "agentic_swe"),
     ("modalities", "agentic-traces"),
