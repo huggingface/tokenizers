@@ -269,6 +269,15 @@ impl BucketVocabStore {
         self.n
     }
 
+    /// One past the highest id this vocabulary can hold.
+    ///
+    /// Ids are not dense: a config may leave gaps, so [`Self::len`] counts entries and is *not* an
+    /// id bound. Anything that walks ids has to bound itself by this and skip the holes, which
+    /// [`Self::id_to_token_bytes`] reports as `None`.
+    pub fn id_space(&self) -> usize {
+        self.id_to_slot.len()
+    }
+
     pub fn is_empty(&self) -> bool {
         self.n == 0
     }
