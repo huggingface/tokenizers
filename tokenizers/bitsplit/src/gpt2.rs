@@ -6,7 +6,7 @@
 //! literal alternation that outranks every other arm is miserable in bit algebra and trivial there.
 
 use crate::{
-    AUX_NONE, CODE_CONT, CONT, Span, build_block, emit_contr, fill_to_last, lead_run, to_lead,
+    AUX_NONE, CODE_CONT, CONT, Span, build_block, emit_contr, to_lead,
 };
 
 /// Atom tag → dense 3-bit code, shared by both grammars. Unlike deepseek's table, `Mark` is NOT a

@@ -43,6 +43,23 @@ unsafe fn sel(mask: __m128i, a: __m128i, b: __m128i) -> __m128i {
     unsafe { _mm_or_si128(_mm_and_si128(mask, a), _mm_andnot_si128(mask, b)) }
 }
 
+/// 64 bytes of `text[base..]` compared against `b`, as a bitmap.
+///
+/// # Safety
+/// `base + 64 <= text.len()`; the caller has checked for SSSE3.
+#[target_feature(enable = "ssse3")]
+pub(crate) unsafe fn eq64(text: &[u8], base: usize, b: u8) -> u64 {
+    unsafe {
+        let n = _mm_set1_epi8(b as i8);
+        let mut m = 0u64;
+        for k in 0..4 {
+            let v = _mm_loadu_si128(text.as_ptr().add(base + k * 16).cast());
+            m |= (_mm_movemask_epi8(_mm_cmpeq_epi8(v, n)) as u16 as u64) << (16 * k);
+        }
+        m
+    }
+}
+
 /// Build one **full** 64-byte block. `cur_code`/`cur_aux` describe the byte before it.
 ///
 /// # Safety

@@ -375,12 +375,12 @@ fn step(
         }
         p
     };
-    let mut emit1 = |a: usize, b: usize, out: &mut [Span], w: &mut usize| {
+    let emit1 = |a: usize, b: usize, out: &mut [Span], w: &mut usize| {
         out[*w] = Span::new(a as u32, b as u32);
         *w += 1;
     };
     // the letter alternatives, with the case split and the optional contraction suffix
-    let mut letters = |pfx: usize, ls: usize, out: &mut [Span], w: &mut usize| -> usize {
+    let letters = |pfx: usize, ls: usize, out: &mut [Span], w: &mut usize| -> usize {
         let re = letter_end(ls);
         let (mut p, mut first, mut cursor) = (ls, true, re);
         while p < re {

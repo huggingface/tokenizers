@@ -107,7 +107,7 @@ pub fn fast_builder() -> bool {
 }
 
 #[cfg(target_arch = "x86_64")]
-fn has_ssse3() -> bool {
+pub(crate) fn has_ssse3() -> bool {
     use std::sync::atomic::{AtomicU8, Ordering};
     static CACHED: AtomicU8 = AtomicU8::new(0);
     match CACHED.load(Ordering::Relaxed) {

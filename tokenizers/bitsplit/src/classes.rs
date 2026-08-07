@@ -180,41 +180,29 @@ impl Bert {
 /// delimiter's byte pattern only matches on char boundaries.
 pub struct CharDelimiterSplit(pub char);
 impl CharDelimiterSplit {
-    /// Split on the literal char (Removed); writes spans into `out` (len ≥ `text.len()`), returns count.
+    /// Split on the literal char (`Removed`): writes the gaps between delimiters into `out`
+    /// (len >= `text.len()`) and returns the count. Straight off [`crate::literal`] — no atom
+    /// classification, UTF-8 is self-synchronising so the char's bytes only match on boundaries.
     #[inline]
     #[must_use]
     pub fn pre_tokenize(&self, text: &[u8], _tags: &mut [u8], out: &mut [Span]) -> usize {
         debug_assert!(out.len() >= text.len());
         let mut buf = [0u8; 4];
         let delim = self.0.encode_utf8(&mut buf).as_bytes();
+        let Ok(lit) = crate::literal::Literal::new(delim) else {
+            return 0;
+        };
         let (n, dl) = (text.len(), delim.len());
-        let (mut start, mut i, mut w) = (0usize, 0usize, 0usize);
-        while i + dl <= n {
-            // memchr the first delimiter byte, then confirm the full pattern. memchr (already a
-            // workspace dep) beats a scalar scan 1.4–23× here — the gap widening as the delimiter
-            // gets rarer over large inputs, since its SIMD skips whole 16/32/64-byte strides.
-            match memchr::memchr(delim[0], &text[i..n - dl + 1]) {
-                Some(off) if text[i + off..i + off + dl] == *delim => {
-                    let m = i + off;
-                    if m > start {
-                        out[w] = Span {
-                            start: start as u32,
-                            end: m as u32,
-                        }; // gap before the delimiter (Removed)
-                        w += 1;
-                    }
-                    i = m + dl;
-                    start = i;
-                }
-                Some(off) => i += off + 1, // first byte matched mid-pattern; keep scanning
-                None => break,
+        let (mut start, mut w) = (0usize, 0usize);
+        for m in lit.matches(text) {
+            if m > start {
+                out[w] = Span::new(start as u32, m as u32);
+                w += 1;
             }
+            start = m + dl;
         }
         if start < n {
-            out[w] = Span {
-                start: start as u32,
-                end: n as u32,
-            };
+            out[w] = Span::new(start as u32, n as u32);
             w += 1;
         }
         w

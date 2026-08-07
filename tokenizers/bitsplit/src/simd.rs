@@ -27,6 +27,27 @@ unsafe fn mm64(v: [uint8x16_t; 4], pow: uint8x16_t) -> u64 {
     }
 }
 
+/// 64 bytes of `text[base..]` compared against `b`, as a bitmap. Same fold the block builder uses.
+///
+/// # Safety
+/// `base + 64 <= text.len()`.
+#[target_feature(enable = "neon")]
+pub(crate) unsafe fn eq64(text: &[u8], base: usize, b: u8) -> u64 {
+    unsafe {
+        let pow = vld1q_u8(POW.as_ptr());
+        let n = vdupq_n_u8(b);
+        mm64(
+            [
+                vceqq_u8(vld1q_u8(text.as_ptr().add(base)), n),
+                vceqq_u8(vld1q_u8(text.as_ptr().add(base + 16)), n),
+                vceqq_u8(vld1q_u8(text.as_ptr().add(base + 32)), n),
+                vceqq_u8(vld1q_u8(text.as_ptr().add(base + 48)), n),
+            ],
+            pow,
+        )
+    }
+}
+
 /// Build one **full** 64-byte block, folding tags through `lut` into dense codes.
 /// Build one **full** 64-byte block. `cur_code` / `cur_cjk` describe the byte just before it, so a
 /// block opening mid-char keeps inheriting its lead's class. Returns the block's last filled code.

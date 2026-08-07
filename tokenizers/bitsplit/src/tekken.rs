@@ -320,12 +320,12 @@ fn tekken(
             0
         } else {
             let g = groups & tn;
-            let counted = if g == 0 {
+            let _counted = if g == 0 {
                 dig_since + (c.n & lead & tn).count_ones()
             } else {
                 (c.n & lead & tn & !((1u64 << (63 - g.leading_zeros())) - 1)).count_ones()
             };
-            counted % 1
+            0 // digit cap 1: every digit is its own group, so nothing carries
         };
         let tws = trail_run(c.ws, valid, len);
         if tws != 0 && has(nb, C_WS) {
@@ -377,12 +377,12 @@ fn step(
         }
         p
     };
-    let mut emit1 = |a: usize, b: usize, out: &mut [Span], w: &mut usize| {
+    let emit1 = |a: usize, b: usize, out: &mut [Span], w: &mut usize| {
         out[*w] = Span::new(a as u32, b as u32);
         *w += 1;
     };
     // the letter alternatives, with the case split and the optional contraction suffix
-    let mut letters = |pfx: usize, ls: usize, out: &mut [Span], w: &mut usize| -> usize {
+    let letters = |pfx: usize, ls: usize, out: &mut [Span], w: &mut usize| -> usize {
         let re = letter_end(ls);
         let (mut p, mut first, mut cursor) = (ls, true, re);
         while p < re {

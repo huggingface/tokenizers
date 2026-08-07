@@ -5,7 +5,7 @@
 //! GLM, 1 = **Qwen** (`\p{N}`), 0 or >= 64 = an unbounded `\p{N}+`.
 
 use crate::{
-    AUX_NONE, CODE_CONT, CONT, Span, adv, build_block, digit_groups, emit_contr, fill_to_last,
+    AUX_NONE, CODE_CONT, CONT, Span, build_block, digit_groups, emit_contr, fill_to_last,
     lead_run, scanthru, to_lead, trail_run,
 };
 
