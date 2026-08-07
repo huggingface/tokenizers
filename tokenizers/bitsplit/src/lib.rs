@@ -304,15 +304,16 @@ pub(crate) fn trail_run(x: u64, valid: u64, len: usize) -> u64 {
     }
 }
 
-/// `\p{N}{1,CAP}` — a group boundary every `CAP` chars from the run start. The one non-local rule
+/// `\p{N}{1,cap}` — a group boundary every `cap` chars from the run start. The one non-local rule
 /// in every tiktoken-family grammar, so it lives here rather than three times over.
 ///
-/// `CAP == 0` or `>= 64` means an unbounded `\p{N}+`: the run is one token and there is nothing to
+/// `cap == 0` or `>= 64` means an unbounded `\p{N}+`: the run is one token and there is nothing to
 /// do (and the shifts below would be UB). `dig_since` resumes a run that crossed the block edge —
 /// re-masking with `n` at every hop matters, because the carry only says the byte *at* the edge was
 /// a digit, not that the run survived it.
 #[inline]
-pub(crate) fn digit_groups<const CAP: usize>(
+pub(crate) fn digit_groups(
+    cap: usize,
     n: u64,
     lead: u64,
     cont: u64,
@@ -321,13 +322,13 @@ pub(crate) fn digit_groups<const CAP: usize>(
     dig_since: u32,
 ) -> u64 {
     let mut m = n & lead & !((n << 1) | u64::from(prev_is_digit));
-    if CAP == 0 || CAP >= 64 {
-        return m;
+    if cap == 0 || cap >= 64 {
+        return m; // an unbounded `\p{N}+`: the run is one token
     }
-    let cap = CAP as u32;
+    let capu = cap as u32;
     if dig_run && prev_is_digit {
         let mut s = lead & lead.wrapping_neg() & n; // first lead of the block
-        for _ in 0..((cap - dig_since % cap) % cap) {
+        for _ in 0..((capu - dig_since % capu) % capu) {
             s = adv(s, cont) & n & lead;
         }
         m |= s;
@@ -338,18 +339,18 @@ pub(crate) fn digit_groups<const CAP: usize>(
         // mask asking that the skipped positions were digits too — what the `adv` chain checks.
         let mut nk = n;
         let mut k = 1;
-        while k < CAP {
+        while k < cap {
             nk &= n << k;
             k += 1;
         }
         while m != 0 {
-            m = (m << CAP) & nk;
+            m = (m << cap) & nk;
             groups |= m;
         }
     } else {
         while m != 0 {
             let mut e = m;
-            for _ in 0..CAP {
+            for _ in 0..cap {
                 e = adv(e, cont) & n & lead;
             }
             if e == 0 {

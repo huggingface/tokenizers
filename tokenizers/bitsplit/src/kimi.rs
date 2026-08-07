@@ -202,6 +202,7 @@ fn kimi(
         let o_prev = c.oth & !(nl_span as u64);
         let o_start = c.oth
             & lead
+            & !(nl_span as u64) // a char INSIDE the tail never opens a run
             & !p1(o_prev, has(pb, C_OTH) && !prev_absorbed)
             & !p1(c.sp, has(pb, C_SP));
         let ws_start = c.ws & lead & !p1(c.ws, has(pb, C_WS));
@@ -259,7 +260,7 @@ fn kimi(
 
         // ── rule 3 `\p{N}{1,DIGIT_CAP}`
         let groups =
-            digit_groups::<3>(c.n, lead, b.cont, has(pb, C_N), dig_run, dig_since);
+            digit_groups(3, c.n, lead, b.cont, has(pb, C_N), dig_run, dig_since);
 
         // ── the other-run's `[\r\n/]*` tail (`/` only for the o200k line; kimi has `[\r\n]*`).
         // ── the one backward-in-time rule, exactly as in cl100k/deepseek: a newline arriving now
@@ -297,8 +298,15 @@ fn kimi(
         if st != 0 {
             prev_start = Some(base + 63 - st.leading_zeros() as usize);
         }
-        if trig && bi > 0 {
-            flag[bi - 1] |= starts[bi - 1] & pfx_patch;
+        if trig {
+            if bi > 0 {
+                flag[bi - 1] |= starts[bi - 1] & pfx_patch;
+            }
+            // the trigger can land in a LATER block than the token it belongs to (`\u{d55c}` ends
+            // block k, its `'s` opens block k+1), so always re-flag the last letter token seen.
+            if let Some(p) = last_lt {
+                flag[p / 64] |= 1u64 << (p % 64);
+            }
         }
         if bi > 0 {
             starts[bi - 1] |= steal_patch;

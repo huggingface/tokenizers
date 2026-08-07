@@ -191,7 +191,7 @@ fn fuzz_texts(n: usize) -> Vec<String> {
 }
 
 fn check_fuzz(name: &str, f: Split, oracle: &Oracle) {
-    for (i, t) in fuzz_texts(2000).iter().enumerate() {
+    for (i, t) in fuzz_texts(4000).iter().enumerate() {
         assert_eq!(spans(f, t), oracle.spans(t), "{name}: fuzz #{i} {t:?}");
     }
 }
