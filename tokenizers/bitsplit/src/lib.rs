@@ -30,7 +30,9 @@ pub mod deepseek;
 pub mod gpt;
 mod han;
 pub mod literal;
+pub mod kimi;
 pub mod o200k;
+pub mod tekken;
 pub mod regexes;
 #[cfg(target_arch = "aarch64")]
 mod simd;
@@ -46,7 +48,9 @@ mod tables;
 
 pub use deepseek::bitsplit_deepseek;
 pub use gpt::{bitsplit_byte_level, bitsplit_cl100k};
-pub use o200k::{bitsplit_kimi, bitsplit_o200k, bitsplit_tekken};
+pub use kimi::bitsplit_kimi;
+pub use o200k::bitsplit_o200k;
+pub use tekken::bitsplit_tekken;
 
 /// A token span: byte offsets `[start, end)` into the input. `#[repr(C)]` so the output buffer has a
 /// stable `[start, end]` layout — the pipeline reuses it with zero conversion, and it can be
@@ -357,6 +361,84 @@ pub(crate) fn digit_groups<const CAP: usize>(
     }
     groups
 }
+
+// ── scalar helpers, shared by the grammars that need an escape ──────────────────────────────
+use crate::classify::{Atom, in_mask, mask};
+
+
+pub(crate) const LET: u8 = 0x00; // coarse Atom::Letter (low nibble)
+pub(crate) const MRK: u8 = 0x06; // coarse Atom::Mark
+pub(crate) const ASM: u8 = 0x16; // AlphaSymMark — coarse Mark, categorically \p{S}
+pub(crate) const ZWJ: u8 = 0x26; // ZWJ/ZWNJ — coarse Mark, categorically \p{Cf}
+pub(crate) const NW: u8 = 0x01;
+pub(crate) const NO: u8 = 0x02;
+pub(crate) const NLN: u8 = 0x03;
+pub(crate) const SPC: u8 = 0x04;
+pub(crate) const WSO: u8 = 0x05;
+
+/// A real `[\p{L}\p{M}]` member. ALPHA_SYM and ZWJ are coarse `Mark` but neither `\p{L}` nor
+/// `\p{M}`, so they are NOT letters — that is what keeps them on the rule-4 path.
+#[inline]
+pub(crate) fn member(t: u8) -> bool {
+    let c = t & 0x0F;
+    c == LET || (c == MRK && t != ASM && t != ZWJ)
+}
+
+#[inline]
+pub(crate) fn run_end(tags: &[u8], mut i: usize, end: usize, m: u16) -> usize {
+    let m = m | Atom::Cont.bit();
+    while i < end && in_mask(tags[i], m) {
+        i += 1;
+    }
+    i
+}
+
+/// `\s*[\r\n]+ | \s+(?!\S) | \s+`: through the last `\r\n` if any, else the whole run at EOF, else
+/// give the final ws char back to whatever follows.
+#[inline]
+pub(crate) fn ws_tail(text: &[u8], tags: &[u8], i: usize, end: usize) -> usize {
+    let re = run_end(tags, i, end, mask::WS);
+    if let Some(r) = text[i..re].iter().rposition(|&x| x == 0x0A || x == 0x0D) {
+        i + r + 1
+    } else if re == end {
+        re
+    } else {
+        let mut last = re - 1;
+        while last > i && text[last] & 0xC0 == 0x80 {
+            last -= 1;
+        }
+        if last > i { last } else { re }
+    }
+}
+
+/// One letter sub-token from `p` within `[.., re)`: alt-1 `[UC]*[LC]+` (tried first), else alt-2
+/// `[UC]+[LC]*` for an all-upper run. `[UC]*` gives back to the last C so `[LC]+` can take one.
+#[inline]
+pub(crate) fn letter_match(tags: &[u8], p: usize, re: usize) -> usize {
+    let (mut q, mut last_c) = (p, usize::MAX);
+    while q < re && tags[q] != 0x20 {
+        if tags[q] != CONT && tags[q] != 0x10 {
+            last_c = q;
+        }
+        q += 1;
+    }
+    if q < re {
+        let mut e = q;
+        while e < re && tags[e] != 0x10 {
+            e += 1;
+        }
+        return e;
+    }
+    if last_c == usize::MAX {
+        return re; // all upper → alt-2 takes the whole run
+    }
+    let mut e = last_c;
+    while e < re && tags[e] != 0x10 {
+        e += 1;
+    }
+    e
+}
+
 
 // ── emit ────────────────────────────────────────────────────────────────────────────────────────
 

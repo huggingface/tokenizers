@@ -1,9 +1,11 @@
-//! o200k_base / GPT-4o — byte-for-byte the regex **Llama-4, gpt-oss and MiniMax-M2** also ship:
+//! Mistral **tekken** (mistral-small-4 / mistral-4):
 //! `[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]*[\p{Ll}\p{Lm}\p{Lo}\p{M}]+(?i:'s|…)?`
-//! `|` same with `+`/`*` swapped `| \p{N}{1,3} | ?[^\s\p{L}\p{N}]+[\r\n/]* | \s*[\r\n]+ | \s+(?!\S) | \s+`
+//! `|` same with `+`/`*` swapped `| \p{N} | ?[^\s\p{L}\p{N}]+[\r\n/]* | \s*[\r\n]+ | \s+(?!\S) | \s+`
 //!
-//! Same skeleton as cl100k; only the letter half differs. Tekken and kimi are separate files —
-//! they are separate regexes, and folding them in here is what made every fix a three-way risk.
+//! o200k's grammar with two changes: letter tokens take NO contraction suffix, and the digit rule
+//! is a bare `\p{N}` — one token per digit.
+//!
+
 //!
 //! Two things are worth knowing before reading the algebra:
 //!
@@ -18,7 +20,7 @@
 //!
 use crate::classify::{char_len, in_mask, mask};
 use crate::{
-    AUX_SLASH, CODE_CONT, CONT, Span, build_block, contr_len, digit_groups, fill_to_last,
+    AUX_SLASH, CODE_CONT, CONT, Span, build_block, digit_groups, fill_to_last,
     lead_run, letter_match, member, run_end, scanthru, to_lead, trail_run, ws_tail,
 };
 
@@ -100,19 +102,19 @@ const fn code_bits(code: u8) -> u16 {
     }
 }
 
-/// o200k_base / GPT-4o — and byte-for-byte the same regex Llama-4, gpt-oss and MiniMax-M2 ship.
+/// Mistral tekken.
 #[must_use]
-pub fn bitsplit_o200k(
+pub fn bitsplit_tekken(
     text: &[u8],
     tags: &[u8],
     starts: &mut [u64],
     flag: &mut [u64],
     out: &mut [Span],
 ) -> usize {
-    o200k(text, tags, starts, flag, out)
+    tekken(text, tags, starts, flag, out)
 }
 
-fn o200k(
+fn tekken(
     text: &[u8],
     tags: &[u8],
     starts: &mut [u64],
@@ -237,7 +239,7 @@ fn o200k(
         // ── the escape gate (see the header). An interior upper, or an apostrophe closing the
         // run, means some letter token in this block needs the scalar case/contraction pass.
         let interior_u = cu & lead & p1(letter, pb_let);
-        let apo_after = c.apo & lead & p1(letter, pb_let);
+        // no contraction suffix here, so an apostrophe after a letter is nothing special
         // `\p{M}` is in BOTH the letter classes and rule 4's `[^\s\p{L}\p{N}]`, and which one wins
         // depends on whether the punctuation before it STARTED the run (`!\u{301}a` is one token,
         // `!!\u{301}a` is two). Adjacency is the gate; the scalar pass resolves it. Real text hits
@@ -247,7 +249,7 @@ fn o200k(
 
         // ── rule 3 `\p{N}{1,DIGIT_CAP}`
         let groups =
-            digit_groups::<3>(c.n, lead, b.cont, has(pb, C_N), dig_run, dig_since);
+            digit_groups::<1>(c.n, lead, b.cont, has(pb, C_N), dig_run, dig_since);
 
         // ── the other-run's `[\r\n/]*` tail (`/` only for the o200k line; kimi has `[\r\n]*`).
         // ── the one backward-in-time rule, exactly as in cl100k/deepseek: a newline arriving now
@@ -272,7 +274,7 @@ fn o200k(
         // Conservative: flag every letter token in a block that shows either trigger. A false
         // positive only costs a rescan of that token, so erring wide is free; missing one is not.
         let lt = st & l_start_tok;
-        let trig = (interior_u | apo_after) != 0;
+        let trig = interior_u != 0;
         flag[bi] = if trig { lt } else { 0 };
         // mark_adj is rare, so be blunt: escape every token in the block, plus the one still open
         // from an earlier block (rule 4's ` ?` means the token can have started on a space).
@@ -315,7 +317,7 @@ fn o200k(
             } else {
                 (c.n & lead & tn & !((1u64 << (63 - g.leading_zeros())) - 1)).count_ones()
             };
-            counted % 3
+            counted % 1
         };
         let tws = trail_run(c.ws, valid, len);
         if tws != 0 && has(nb, C_WS) {
@@ -334,7 +336,7 @@ fn o200k(
 
     }
 
-    emit_o200k(text, tags, starts, flag, nblk, ntext, out)
+    emit_tekken(text, tags, starts, flag, nblk, ntext, out)
 }
 
 // ── the scalar escape ───────────────────────────────────────────────────────────────────────────
@@ -378,11 +380,7 @@ fn step(
         while p < re {
             let e = letter_match(tags, p, re);
             let start = if first { pfx } else { p };
-            let te = if e == re {
-                e + contr_len(text, e, true)
-            } else {
-                e
-            };
+            let te = e; // tekken has no contraction suffix
             out[*w] = Span::new(start as u32, te as u32);
             *w += 1;
             first = false;
@@ -396,7 +394,7 @@ fn step(
     match tags[i] & 0x0F {
         crate::NW | crate::NO => {
             let (mut p, mut cnt) = (i, 0usize);
-            while p < end && cnt < 3 && in_mask(tags[p], mask::NUMBER) {
+            while p < end && cnt < 1 && in_mask(tags[p], mask::NUMBER) {
                 p += char_len(text[p]);
                 cnt += 1;
             }
@@ -453,7 +451,7 @@ fn step(
 
 /// `emit` plus the escape: at a flagged start, hand over to the scalar dispatch and take back
 /// control at the first position that is a start bit again.
-fn emit_o200k(
+fn emit_tekken(
     text: &[u8],
     tags: &[u8],
     starts: &[u64],

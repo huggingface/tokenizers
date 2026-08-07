@@ -191,7 +191,7 @@ fn fuzz_texts(n: usize) -> Vec<String> {
 }
 
 fn check_fuzz(name: &str, f: Split, oracle: &Oracle) {
-    for (i, t) in fuzz_texts(400).iter().enumerate() {
+    for (i, t) in fuzz_texts(2000).iter().enumerate() {
         assert_eq!(spans(f, t), oracle.spans(t), "{name}: fuzz #{i} {t:?}");
     }
 }
@@ -219,7 +219,6 @@ fn deepseek_parity() {
 /// o200k_base / GPT-4o — and byte-for-byte the regex Llama-4, gpt-oss and MiniMax-M2 ship, so this
 /// one test covers four families.
 #[test]
-#[ignore = "o200k: \\p{M} is in BOTH the letter classes and rule 4's [^\\s\\p{L}\\p{N}]; whether a mark joins the other-run or the letter run depends on if the punctuation before it STARTED that run, and a swallowed mark must not suppress the letter start after it. Not modelled yet."]
 fn o200k_parity() {
     let o = Oracle::Whole(Regex::new(O200K).unwrap());
     check("o200k", bs_o200k, &o);
@@ -227,7 +226,6 @@ fn o200k_parity() {
 }
 
 #[test]
-#[ignore = "o200k: \\p{M} is in BOTH the letter classes and rule 4's [^\\s\\p{L}\\p{N}]; whether a mark joins the other-run or the letter run depends on if the punctuation before it STARTED that run, and a swallowed mark must not suppress the letter start after it. Not modelled yet."]
 fn tekken_parity() {
     let o = Oracle::Whole(Regex::new(TEKKEN).unwrap());
     check("tekken", bs_tekken, &o);
@@ -235,7 +233,6 @@ fn tekken_parity() {
 }
 
 #[test]
-#[ignore = "o200k: \\p{M} is in BOTH the letter classes and rule 4's [^\\s\\p{L}\\p{N}]; whether a mark joins the other-run or the letter run depends on if the punctuation before it STARTED that run, and a swallowed mark must not suppress the letter start after it. Not modelled yet."]
 fn kimi_parity() {
     let o = Oracle::Whole(Regex::new(KIMI_K2).unwrap());
     check("kimi", bs_kimi, &o);

@@ -1,9 +1,9 @@
-//! o200k_base / GPT-4o — byte-for-byte the regex **Llama-4, gpt-oss and MiniMax-M2** also ship:
-//! `[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]*[\p{Ll}\p{Lm}\p{Lo}\p{M}]+(?i:'s|…)?`
-//! `|` same with `+`/`*` swapped `| \p{N}{1,3} | ?[^\s\p{L}\p{N}]+[\r\n/]* | \s*[\r\n]+ | \s+(?!\S) | \s+`
+//! **kimi-k2 / k3** (`moonshotai/Kimi-K2-Instruct`, `tokenization_kimi.py`'s `pat_str`):
+//! `[\p{Han}]+ | [^\r\n\p{L}\p{N}]?[\p{Lu}…&&[^\p{Han}]]*[\p{Ll}…&&[^\p{Han}]]+(?i:'s|…)? | …`
+//! `| \p{N}{1,3} | ?[^\s\p{L}\p{N}]+[\r\n]* | \s*[\r\n]+ | \s+(?!\S) | \s+`
 //!
-//! Same skeleton as cl100k; only the letter half differs. Tekken and kimi are separate files —
-//! they are separate regexes, and folding them in here is what made every fix a three-way risk.
+//! o200k plus a leading `[\p{Han}]+` arm, Han subtracted from both letter classes, and a plain
+//! `[\r\n]*` rule-4 tail (o200k has `[\r\n/]*`). Ships tiktoken.model, not a tokenizer.json.
 //!
 //! Two things are worth knowing before reading the algebra:
 //!
@@ -18,8 +18,8 @@
 //!
 use crate::classify::{char_len, in_mask, mask};
 use crate::{
-    AUX_SLASH, CODE_CONT, CONT, Span, build_block, contr_len, digit_groups, fill_to_last,
-    lead_run, letter_match, member, run_end, scanthru, to_lead, trail_run, ws_tail,
+    AUX_HAN, CODE_CONT, CONT, Span, build_block, contr_len, digit_groups, fill_to_last, lead_run,
+    letter_match, member, run_end, scanthru, to_lead, trail_run, ws_tail,
 };
 
 /// Atom tag → dense 4-bit code. Unlike cl100k, `\p{M}` IS a letter here (both alt classes list
@@ -82,6 +82,7 @@ const C_SP: u16 = 1 << 5;
 const C_WSO: u16 = 1 << 6;
 const C_OTH: u16 = 1 << 7;
 const C_MARK: u16 = 1 << 8;
+const C_HAN: u16 = 1 << 9;
 const C_WS: u16 = C_NL | C_SP | C_WSO;
 const C_LET: u16 = C_U | C_L | C_C | C_MARK;
 
@@ -100,19 +101,19 @@ const fn code_bits(code: u8) -> u16 {
     }
 }
 
-/// o200k_base / GPT-4o — and byte-for-byte the same regex Llama-4, gpt-oss and MiniMax-M2 ship.
+/// kimi-k2 / k3.
 #[must_use]
-pub fn bitsplit_o200k(
+pub fn bitsplit_kimi(
     text: &[u8],
     tags: &[u8],
     starts: &mut [u64],
     flag: &mut [u64],
     out: &mut [Span],
 ) -> usize {
-    o200k(text, tags, starts, flag, out)
+    kimi(text, tags, starts, flag, out)
 }
 
-fn o200k(
+fn kimi(
     text: &[u8],
     tags: &[u8],
     starts: &mut [u64],
@@ -129,7 +130,7 @@ fn o200k(
     );
     
     let (mut code, mut prev_cont) = (CODE_CONT, 0u64);
-    let (mut nl_run, mut prev_osf) = (false, false);
+    let (mut prev_han, mut nl_run, mut prev_osf) = (false, false, false);
     let mut prev_absorbed = false; // the block's last byte was eaten by a `[\r\n/]*` tail
     let (mut dig_run, mut dig_since) = (false, 0u32);
     let mut anl: Option<usize> = None;
@@ -143,15 +144,17 @@ fn o200k(
         let last_blk = base + len == ntext;
 
         let (b, last_code) =
-            build_block::<{ AUX_SLASH }, true>(text, tags, base, len, &LUT, code, false);
+            build_block::<{ AUX_HAN }, true>(text, tags, base, len, &LUT, code, prev_han);
         let c = decode(b.p0, b.p1, b.p2, b.p3, valid);
 
-        let slash = b.aux;
-        
+        let han = b.aux & valid;
+        let slash = 0; // kimi's rule-4 tail is a plain `[\r\n]*`
+        let last_han = han >> (len - 1) & 1 != 0;
+
         let pb = if base == 0 {
             0
         } else {
-            code_bits(code)
+            code_bits(code) | if prev_han { C_HAN } else { 0 }
         };
         let (nb, nb_lead) = if last_blk {
             (0u16, true)
@@ -160,8 +163,13 @@ fn o200k(
             let is_lead = tags[q] != CONT;
             let bits = if is_lead {
                 code_bits(LUT[tags[q] as usize])
+                    | if crate::aux_at::<{ AUX_HAN }>(text, q) {
+                        C_HAN
+                    } else {
+                        0
+                    }
             } else {
-                code_bits(last_code)
+                code_bits(last_code) | if last_han { C_HAN } else { 0 }
             };
             (bits, is_lead)
         };
@@ -175,9 +183,9 @@ fn o200k(
 
         // ── Han is peeled off the letter classes first: kimi's alt-1 outranks the letter alts, and
         // its letter classes are literally `[…&&[^\p{Han}]]`. With AUX != HAN this is all zero.
-        let (cu, cl, cc) = (c.u, c.l, c.c);
+        let (cu, cl, cc) = (c.u & !han, c.l & !han, c.c & !han);
         let letter = cu | cl | cc | c.mark;
-        let pb_let = has(pb, C_LET);
+        let pb_let = has(pb, C_LET) && !has(pb, C_HAN);
 
         // Rule 4's `[\r\n/]*` tail. `/` is in BOTH the `+` body and the tail, so one tail run can
         // collect SEVERAL markers (`!\n/\n`: the `\n` after `!` and the `\n` after `/`). That is
@@ -227,6 +235,7 @@ fn o200k(
         let l_run = letter & lead & !p1(letter, pb_let);
         let next_l_run = nb_lead
             && has(nb, C_LET)
+            && !has(nb, C_HAN)
             && letter >> (len - 1) & 1 == 0;
         // `n1` only reads the NEXT char at a char's last byte, so mark there and walk back to the
         // lead — a 3-byte prefix char (ZWJ, `—`, `½`) otherwise reads its own middle byte.
@@ -245,6 +254,9 @@ fn o200k(
         let mark_adj = (c.mark & lead & p1(c.oth, has(pb, C_OTH)))
             | (c.oth & lead & p1(c.mark, has(pb, C_MARK)));
 
+        // ── kimi's `[\p{Han}]+`
+        let han_start = han & lead & !p1(han, has(pb, C_HAN));
+
         // ── rule 3 `\p{N}{1,DIGIT_CAP}`
         let groups =
             digit_groups::<3>(c.n, lead, b.cont, has(pb, C_N), dig_run, dig_since);
@@ -261,7 +273,7 @@ fn o200k(
             anl = None;
         }
 
-        let mut st = groups | l_start | o_start | ws_start | after_nl | steal;
+        let mut st = groups | l_start | han_start | o_start | ws_start | after_nl | steal;
         st &= !(nl_span as u64);
         st |= nl_e as u64;
         st &= lead;
@@ -329,12 +341,13 @@ fn o200k(
             anl = None;
         }
         prev_osf = osf >> (len - 1) & 1 != 0;
+        prev_han = last_han;
         code = last_code;
         prev_cont = b.cont;
 
     }
 
-    emit_o200k(text, tags, starts, flag, nblk, ntext, out)
+    emit_kimi(text, tags, starts, flag, nblk, ntext, out)
 }
 
 // ── the scalar escape ───────────────────────────────────────────────────────────────────────────
@@ -351,9 +364,11 @@ fn step(
     out: &mut [Span],
     w: &mut usize,
 ) -> usize {
-    let is_lm = |p: usize| p < end && member(tags[p]);
+    let han = |p: usize| crate::aux_at::<{ AUX_HAN }>(text, p);
+    // kimi subtracts Han from both letter classes and isolates it in its own arm
+    let is_lm = |p: usize| p < end && member(tags[p]) && !han(p);
     let letter_end = |mut p: usize| {
-        while p < end && (tags[p] == CONT || member(tags[p])) {
+        while p < end && (tags[p] == CONT || (member(tags[p]) && !han(p))) {
             p += 1;
         }
         p
@@ -361,7 +376,9 @@ fn step(
     let other = |sp0: usize| {
         let mut p = run_end(tags, sp0, end, mask::NOT_WS_L_N);
         if p > sp0 {
-            while p < end && (tags[p] == crate::NLN || text[p] == b'/') {
+            while p < end
+                && (tags[p] == crate::NLN)
+            {
                 p += char_len(text[p]);
             }
         }
@@ -371,6 +388,18 @@ fn step(
         out[*w] = Span::new(a as u32, b as u32);
         *w += 1;
     };
+    // `[\p{Han}]+` — kimi's alternative 1, ahead of everything else
+    if han(i) {
+        let mut p = i;
+        while p < end && (tags[p] == CONT || han(p)) {
+            if tags[p] != CONT && !han(p) {
+                break;
+            }
+            p += 1;
+        }
+        emit1(i, p, out, w);
+        return p;
+    }
     // the letter alternatives, with the case split and the optional contraction suffix
     let mut letters = |pfx: usize, ls: usize, out: &mut [Span], w: &mut usize| -> usize {
         let re = letter_end(ls);
@@ -404,7 +433,7 @@ fn step(
             p
         }
         crate::LET | crate::MRK => {
-            if member(tags[i]) {
+            if member(tags[i]) && !han(i) {
                 return letters(i, i, out, w);
             }
             let a = i + char_len(b);
@@ -453,7 +482,7 @@ fn step(
 
 /// `emit` plus the escape: at a flagged start, hand over to the scalar dispatch and take back
 /// control at the first position that is a start bit again.
-fn emit_o200k(
+fn emit_kimi(
     text: &[u8],
     tags: &[u8],
     starts: &[u64],
