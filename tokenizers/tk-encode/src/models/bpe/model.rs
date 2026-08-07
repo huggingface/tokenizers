@@ -426,43 +426,6 @@ impl pipeline::Model for PipelineBPE {
         Ok(())
     }
 
-    /// Every pre-token of a chunk in one call.
-    ///
-    /// Same work per word as [`Self::tokenize_pipeline`]; what changes is what is *not* repeated.
-    /// The scratch is destructured once instead of once per word, the output is grown once for the
-    /// whole batch instead of being capacity-checked on every push, and the virtual call, the
-    /// slice and the `Result` happen once per chunk rather than once per pre-token.
-    fn tokenize_spans(
-        &self,
-        chunk: &str,
-        spans: &[Span],
-        scratch: &mut Self::Scratch,
-        output: &mut Vec<PipelineToken>,
-    ) -> Result<()> {
-        let BpeScratch { symbols, queue } = scratch;
-        // One reservation for the batch. Most pre-tokens are a single token, so the span count is
-        // a close lower bound on what the batch emits; anything past it grows as usual.
-        output.reserve(spans.len());
-
-        for span in spans {
-            // SAFETY: the pre-tokenizer cuts on char boundaries, so a span is always a valid slice
-            // of this chunk. Bounds- and UTF-8-checking it again per word measured worth removing.
-            let sequence = unsafe { chunk.get_unchecked(span.range()) };
-            if sequence.is_empty() {
-                continue;
-            }
-            if let Some(id) = self.fold_id(sequence) {
-                output.push(PipelineToken { id });
-                continue;
-            }
-            self.merge_word(sequence, symbols, queue);
-            output.extend(symbols.iter().map(|&symbol| PipelineToken {
-                id: self.tables.unmap.at(symbol as usize),
-            }));
-        }
-        Ok(())
-    }
-
     fn init_scratch(&self) -> Self::Scratch {
         Self::Scratch {
             symbols: Vec::with_capacity(64),
