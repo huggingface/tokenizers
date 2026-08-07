@@ -1,4 +1,16 @@
-use crate::atom_tables::ATOM_TABLES;
+//! SIMD Unicode classification: one pass mapping every codepoint to a tiny "atom" alphabet, which
+//! is what every grammar in `models/` consumes. The per-arch kernels are siblings; `atom_tables.rs`
+//! is generated (`cargo run -p bitmap_gen`) and `tables.rs` is the layout it bakes into.
+mod atom_tables;
+#[cfg(target_arch = "x86_64")]
+mod avx;
+#[cfg(target_arch = "aarch64")]
+mod neon;
+mod tables;
+#[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
+mod wasm;
+
+use atom_tables::ATOM_TABLES;
 
 /// The per-codepoint "atom" categories or "tags" that are used by the finite state machine to emit
 /// spit boundaries.
@@ -125,14 +137,14 @@ pub fn classify(text: &[u8], tags: &mut [u8]) {
     #[cfg(target_arch = "aarch64")]
     // SAFETY: `tags.len() >= text.len()` (asserted above); NEON vld1q/vst1q are alignment-free.
     unsafe {
-        crate::simd_classify::classify_neon(text, tags)
+        neon::classify_neon(text, tags)
     }
     #[cfg(target_arch = "x86_64")]
-    crate::simd_avx_classify::dispatch(text, tags);
+    avx::dispatch(text, tags);
     #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
     // SAFETY: `tags.len() >= text.len()` (asserted above); wasm v128 load/store are alignment-free.
     unsafe {
-        crate::simd_wasm_classify::classify_wasm(text, tags)
+        wasm::classify_wasm(text, tags)
     }
     #[cfg(not(any(
         target_arch = "aarch64",

@@ -24,37 +24,24 @@
 //! Grammars: [`bitsplit_deepseek`], [`bitsplit_byte_level`] (GPT-2), [`bitsplit_cl100k`]. All three
 //! byte-exact with the oniguruma oracle over a block-phase sweep — see `tests/parity.rs`.
 
-mod atom_tables;
 pub mod classes;
 pub mod classify;
-pub mod cl100k;
-pub mod deepseek;
-pub mod gpt2;
 mod han;
-pub mod kimi;
 pub mod literal;
-pub mod o200k;
+pub mod models;
 pub mod regexes;
 #[cfg(target_arch = "aarch64")]
 mod simd;
 mod simd_classes;
-#[cfg(target_arch = "aarch64")]
-mod simd_classify;
-#[cfg(target_arch = "x86_64")]
-mod simd_avx_classify;
 #[cfg(target_arch = "x86_64")]
 mod simd_x86;
-#[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
-mod simd_wasm_classify;
-mod tables;
-pub mod tekken;
 
-pub use deepseek::bitsplit_deepseek;
-pub use cl100k::{bitsplit_cl100k, bitsplit_qwen};
-pub use gpt2::bitsplit_byte_level;
-pub use kimi::bitsplit_kimi;
-pub use o200k::bitsplit_o200k;
-pub use tekken::bitsplit_tekken;
+pub use models::deepseek::bitsplit_deepseek;
+pub use models::cl100k::{bitsplit_cl100k, bitsplit_qwen};
+pub use models::gpt2::bitsplit_byte_level;
+pub use models::kimi::bitsplit_kimi;
+pub use models::o200k::bitsplit_o200k;
+pub use models::tekken::bitsplit_tekken;
 
 /// A token span: byte offsets `[start, end)` into the input. `#[repr(C)]` so the output buffer has a
 /// stable `[start, end]` layout — the pipeline reuses it with zero conversion, and it can be
@@ -574,7 +561,7 @@ pub fn build_only(text: &[u8], tags: &[u8]) -> u64 {
     let (mut acc, mut code, mut cjk) = (0u64, CODE_CONT, false);
     for base in (0..text.len()).step_by(64) {
         let len = (text.len() - base).min(64);
-        let (b, c) = build_block::<{ AUX_CJK }, false>(text, tags, base, len, &deepseek::LUT, code, cjk);
+        let (b, c) = build_block::<{ AUX_CJK }, false>(text, tags, base, len, &models::deepseek::LUT, code, cjk);
         code = c;
         cjk = b.aux >> (len - 1) & 1 != 0;
         acc ^= b.cont ^ b.p0 ^ b.p1 ^ b.p2 ^ b.aux;
