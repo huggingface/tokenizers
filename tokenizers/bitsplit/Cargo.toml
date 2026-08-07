@@ -26,10 +26,9 @@ path = "src/lib.rs"
 
 [dependencies]
 ahash = "0.8"
-# NOTE: classify tables live in src/atom_tables.rs (committed, generated). Regenerate after any atom
+# NOTE: classify tables live in src/classify/atom_tables.rs (committed, generated). Regenerate after any atom
 # scheme change with `cargo run -p bitmap_gen`. No build script / build-dep — bitsplit builds clean.
 
 # onig is C (Oniguruma) and has no wasi libc to build against, so the parity oracle is gated off wasm32.
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 onig = "6.5.1"
-memchr = "2.8.2" # baseline for the literal bench only

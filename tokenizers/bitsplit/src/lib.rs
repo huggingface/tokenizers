@@ -30,11 +30,7 @@ mod han;
 pub mod literal;
 pub mod models;
 pub mod regexes;
-#[cfg(target_arch = "aarch64")]
 mod simd;
-mod simd_classes;
-#[cfg(target_arch = "x86_64")]
-mod simd_x86;
 
 pub use models::deepseek::bitsplit_deepseek;
 pub use models::cl100k::{bitsplit_cl100k, bitsplit_qwen};
@@ -177,14 +173,14 @@ pub(crate) fn build_block<const AUX: u8, const P3: bool>(
     if len == 64 {
         // SAFETY: `len == 64` means `base + 64 <= text.len() == tags.len()`.
         return unsafe {
-            crate::simd::build64::<AUX, P3>(text, tags, base, lut, cur_code, cur_aux)
+            crate::simd::neon::build64::<AUX, P3>(text, tags, base, lut, cur_code, cur_aux)
         };
     }
     #[cfg(target_arch = "x86_64")]
     if len == 64 && has_ssse3() {
         // SAFETY: `len == 64` bounds both reads, and SSSE3 is checked above.
         return unsafe {
-            crate::simd_x86::build64::<AUX, P3>(text, tags, base, lut, cur_code, cur_aux)
+            crate::simd::x86::build64::<AUX, P3>(text, tags, base, lut, cur_code, cur_aux)
         };
     }
     build_block_scalar::<AUX, P3>(text, tags, base, len, lut, cur_code, cur_aux)

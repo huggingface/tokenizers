@@ -138,7 +138,6 @@ name = "bitsplit"
 version = "0.1.0"
 dependencies = [
  "ahash",
- "memchr",
  "onig",
 ]
 

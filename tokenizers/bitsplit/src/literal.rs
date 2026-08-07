@@ -100,11 +100,11 @@ fn eq_bits(text: &[u8], base: usize, b: u8) -> u64 {
     if base + 64 <= text.len() {
         #[cfg(target_arch = "aarch64")]
         // SAFETY: bounds checked directly above.
-        return unsafe { crate::simd::eq64(text, base, b) };
+        return unsafe { crate::simd::neon::eq64(text, base, b) };
         #[cfg(target_arch = "x86_64")]
         if crate::has_ssse3() {
             // SAFETY: bounds checked above, SSSE3 checked here.
-            return unsafe { crate::simd_x86::eq64(text, base, b) };
+            return unsafe { crate::simd::x86::eq64(text, base, b) };
         }
     }
     let mut m = 0u64;

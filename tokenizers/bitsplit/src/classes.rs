@@ -26,11 +26,11 @@ pub fn class_runs_into<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>(
     debug_assert!(out.len() >= text.len() && tags.len() >= text.len());
     #[cfg(target_arch = "aarch64")]
     {
-        crate::simd_classes::class_runs_neon::<DROP, ISOLATE, KEEP_A>(text, tags, out)
+        crate::simd::classes::class_runs_neon::<DROP, ISOLATE, KEEP_A>(text, tags, out)
     }
     #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
     {
-        crate::simd_classes::class_runs_wasm::<DROP, ISOLATE, KEEP_A>(text, tags, out)
+        crate::simd::classes::class_runs_wasm::<DROP, ISOLATE, KEEP_A>(text, tags, out)
     }
     #[cfg(not(any(
         target_arch = "aarch64",
