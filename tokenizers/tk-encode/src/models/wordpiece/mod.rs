@@ -380,7 +380,7 @@ impl PipelineWordPiece {
         let char_len = sequence.chars().count();
         if char_len > self.max_input_chars_per_word {
             let unk_id = self.unk_token.ok_or(Error::MissingUnkToken)?;
-            output.push(PipelineToken { id: unk_id });
+            output.push(PipelineToken::from(unk_id));
             return Ok(());
         }
 
@@ -407,10 +407,10 @@ impl PipelineWordPiece {
             else {
                 let unk_id = self.unk_token.ok_or(Error::MissingUnkToken)?;
                 output.truncate(checkpoint);
-                output.push(PipelineToken { id: unk_id });
+                output.push(PipelineToken::from(unk_id));
                 return Ok(());
             };
-            output.push(PipelineToken { id: token_id });
+            output.push(PipelineToken::from(token_id));
             start += match_len - prefix_len;
         }
         Ok(())
@@ -449,7 +449,7 @@ impl pipeline::Model for PipelineWordPiece {
 
         let placement = match word_cache.lookup(sequence.as_bytes()) {
             Lookup::Hit(ids) => {
-                output.extend(ids.iter().map(|&id| PipelineToken { id }));
+                output.extend(ids.iter().copied().map(PipelineToken::from));
                 return Ok(());
             }
             Lookup::Miss(at) => at,
@@ -458,7 +458,7 @@ impl pipeline::Model for PipelineWordPiece {
         let start = output.len();
         self.tokenize_word(sequence, candidate_str, output)?;
 
-        word_cache.insert(placement, output[start..].iter().map(|token| token.id));
+        word_cache.insert(placement, output[start..].iter().map(|token| token.id()));
         Ok(())
     }
 }
@@ -501,7 +501,7 @@ mod tests {
     ) -> Vec<u32> {
         let mut output = vec![];
         pipeline::Model::tokenize_pipeline(model, sequence, scratch, &mut output).unwrap();
-        output.iter().map(|token| token.id).collect()
+        output.iter().map(|token| token.id()).collect()
     }
 
     #[test]
@@ -556,7 +556,7 @@ mod tests {
         pipeline::Model::tokenize_pipeline(&model, "hello", &mut scratch, &mut output).unwrap();
         pipeline::Model::tokenize_pipeline(&model, "world", &mut scratch, &mut output).unwrap();
 
-        let ids: Vec<u32> = output.iter().map(|token| token.id).collect();
+        let ids: Vec<u32> = output.iter().map(|token| token.id()).collect();
         assert_eq!(ids, [3, 4]);
         assert_eq!(scratch.word_cache.lookup(b"world").hit(), Some(&[4u32][..]));
     }

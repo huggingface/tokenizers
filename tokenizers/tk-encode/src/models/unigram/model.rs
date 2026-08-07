@@ -2,12 +2,14 @@ use super::{
     lattice::Lattice,
     trie::{Trie, TrieBuilder},
 };
-use crate::utils::cache::{Cache, MAX_LENGTH};
 use crate::utils::word_cache::{Lookup, WordCache};
-use crate::vocab_store::VocabStore;
 use crate::{
     pipeline::{self, PipelineToken},
     tokenizer::{Model, Result, Token},
+};
+use crate::{
+    utils::cache::{Cache, MAX_LENGTH},
+    vocab::bucket_vocab_store::BucketVocabStore,
 };
 use std::collections::HashMap;
 
@@ -19,7 +21,7 @@ type Vocab = Vec<(String, f64)>;
 
 /// A `Unigram` model to encode sentences.
 pub struct Unigram {
-    token_to_ids: VocabStore,
+    token_to_ids: BucketVocabStore,
     pub(crate) vocab: Vocab,
     cache: Cache<String, Vec<String>>,
     trie: Trie<u8>,
@@ -132,9 +134,9 @@ impl Unigram {
             }
         }
         let token_to_ids = if pairs.is_empty() {
-            VocabStore::new()
+            BucketVocabStore::new()
         } else {
-            VocabStore::build(pairs)
+            BucketVocabStore::build(pairs)
         };
         let trie = builder.build();
         let fuse_unk = true;
@@ -552,7 +554,7 @@ impl pipeline::Model for Unigram {
         {
             match cache.lookup(sequence.as_bytes()) {
                 Lookup::Hit(ids) => {
-                    output.extend(ids.iter().map(|&id| PipelineToken { id }));
+                    output.extend(ids.iter().copied().map(PipelineToken::from));
                     return Ok(());
                 }
                 Lookup::Miss(at) => placement = Some(at),
@@ -563,7 +565,7 @@ impl pipeline::Model for Unigram {
         for string in self.encode_uncached(sequence)? {
             match self.token_to_ids.token_to_id(&string) {
                 Some(id) => {
-                    output.push(PipelineToken { id });
+                    output.push(PipelineToken::from(id));
                 }
                 None => {
                     if self.byte_fallback {
@@ -575,13 +577,13 @@ impl pipeline::Model for Unigram {
                             })
                             .collect();
                         if let Some(token_ids) = byte_token_ids {
-                            output.extend(token_ids.iter().map(|&id| PipelineToken { id }));
+                            output.extend(token_ids.iter().copied().map(PipelineToken::from));
                             continue;
                         }
                     }
-                    output.push(PipelineToken {
-                        id: self.unk_id.ok_or(UnigramError::MissingUnkId)? as u32,
-                    });
+                    output.push(PipelineToken::from(
+                        self.unk_id.ok_or(UnigramError::MissingUnkId)? as u32,
+                    ));
                 }
             };
         }
@@ -591,7 +593,7 @@ impl pipeline::Model for Unigram {
         if let Some(cache) = scratch.word_cache.as_mut()
             && let Some(at) = placement
         {
-            cache.insert(at, output[start..].iter().map(|token| token.id));
+            cache.insert(at, output[start..].iter().map(|token| token.id()));
         }
         Ok(())
     }
@@ -775,7 +777,7 @@ mod tests {
     fn pipeline_ids(model: &Unigram, sequence: &str, scratch: &mut UnigramScratch) -> Vec<u32> {
         let mut output = vec![];
         pipeline::Model::tokenize_pipeline(model, sequence, scratch, &mut output).unwrap();
-        output.iter().map(|token| token.id).collect()
+        output.iter().map(|token| token.id()).collect()
     }
 
     #[test]
@@ -828,7 +830,7 @@ mod tests {
         pipeline::Model::tokenize_pipeline(&model, "ab", &mut scratch, &mut output).unwrap();
         pipeline::Model::tokenize_pipeline(&model, "cd", &mut scratch, &mut output).unwrap();
 
-        let ids: Vec<u32> = output.iter().map(|token| token.id).collect();
+        let ids: Vec<u32> = output.iter().map(|token| token.id()).collect();
         assert_eq!(ids, [6, 5]);
         let cache = scratch.word_cache.as_mut().unwrap();
         assert_eq!(cache.lookup(b"cd").hit(), Some(&[5u32][..]));

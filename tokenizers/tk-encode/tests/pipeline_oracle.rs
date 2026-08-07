@@ -84,7 +84,7 @@ fn check_model(tok_file: &str) {
                     .first()
                     .unwrap()
                     .iter()
-                    .map(|t| t.id)
+                    .map(|t| t.id())
                     .collect();
                 if expected != got {
                     let at = expected

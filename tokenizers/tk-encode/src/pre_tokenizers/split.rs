@@ -178,8 +178,18 @@ impl PreTokenizer for Split {
     }
 }
 
-impl pipeline::PreTokenizer for Split {
-    fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Span>) -> Result<()> {
+// SAFETY: both routes cut only at character boundaries of `text`. The native route is an `atomsplit`
+// fsm, see "What the spans guarantee" in its docs. The search route forwards the offsets of
+// `Pattern::find_matches` through `pipeline::split_matches`, and every `Pattern` here reports
+// boundaries: a regex matches on a `&str`, and `Literal` holds the bytes of a `&str` pattern, which
+// well-formed UTF-8 can only contain starting and ending on a boundary.
+unsafe impl pipeline::PreTokenizer for Split {
+    fn pre_tokenize(
+        &self,
+        text: &str,
+        scratch: &mut pipeline::PreTokenizerScratch,
+        out: &mut Vec<pipeline::Span>,
+    ) -> Result<()> {
         // A recognized GPT regex (gpt2 / cl100k-Llama-3) in its only real usage — `Isolated`, not
         // inverted — routes straight to the native atomsplit FSM. These regexes cover the whole input,
         // so `Isolated` == the match list, and the FSM is byte-exact with `regex` (see the tests).
@@ -187,7 +197,7 @@ impl pipeline::PreTokenizer for Split {
             .fsm
             .filter(|_| !self.invert && self.behavior == SplitDelimiterBehavior::Isolated)
         {
-            pipeline::classify_into_spans(
+            scratch.split_on_tags(
                 text.as_bytes(),
                 |bytes, tags, spans| match fsm {
                     GptFsm::Cl100k { digit_cap } => {
@@ -316,8 +326,10 @@ mod tests {
         text: &str,
     ) -> Vec<(&str, (u32, u32))> {
         let pretok = Split::new(pattern, behavior, invert).unwrap();
+        let mut scratch = pipeline::PreTokenizerScratch::default();
         let mut splits = Vec::with_capacity(text.len() / 5);
-        crate::pipeline::PreTokenizer::pre_tokenize(&pretok, text, &mut splits).unwrap();
+        crate::pipeline::PreTokenizer::pre_tokenize(&pretok, text, &mut scratch, &mut splits)
+            .unwrap();
         splits
             .iter()
             .map(|s| (&text[s.range()], (s.start, s.end)))

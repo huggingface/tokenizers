@@ -1,7 +1,7 @@
 //! Converting a pretoken into internal symbols, in the shape the merge engine that will process
 //! it (`merge_multipass` or `merge_hot_cold_queue`) wants to start from.
 use crate::models::bpe::At;
-use crate::models::bpe::merge_hot_cold_queue::Entry;
+use crate::models::bpe::merge_hot_cold_queue::{Entry, MergeQueue, QueueScratch};
 use crate::models::bpe::model::{Atoms, PipelineBPE};
 use crate::models::bpe::tables::{BpeTables, ID_MASK, RANK_MASK};
 use crate::vocab::bucket_vocab_store::BucketVocabStore;
@@ -73,7 +73,7 @@ impl SinkMode for MultipassSink<'_> {
 /// needs no intermediate array to read back.
 struct QueueSink<'a> {
     entries: &'a mut Vec<Entry>,
-    cold: &'a mut Vec<u64>,
+    queue: &'a mut MergeQueue,
 }
 
 impl SinkMode for QueueSink<'_> {
@@ -82,14 +82,14 @@ impl SinkMode for QueueSink<'_> {
         let index = self.entries.len() as u32;
         self.entries.push(Entry {
             rank: (merge >> 32) as u32,
-            prod: (merge & ID_MASK) as u32,
-            a: previous,
-            b: symbol,
-            l: index.wrapping_sub(1), // u32::MAX at index 0, which is NONE
-            r: index + 1,             // the final entry is patched in `convert_queue`
+            merged_symbol: (merge & ID_MASK) as u32,
+            left_symbol: previous,
+            right_symbol: symbol,
+            left_pair_index: index.wrapping_sub(1), // u32::MAX at index 0, which is NONE
+            right_pair_index: index + 1,            // the final entry is patched in `convert_queue`
         });
         if merge != u64::MAX {
-            self.cold.push((merge & RANK_MASK) | index as u64);
+            self.queue.push_cold((merge & RANK_MASK) | index as u64);
         }
     }
     #[inline(always)]
@@ -152,23 +152,22 @@ impl PipelineBPE {
         &self,
         sequence: &str,
         symbols: &mut Vec<u32>,
-        entries: &mut Vec<Entry>,
-        cold: &mut Vec<u64>,
+        scratch: &mut QueueScratch,
     ) {
+        let QueueScratch { entries, queue } = scratch;
         symbols.clear();
         entries.clear();
-        cold.clear();
         // a word never has more symbols than bytes, so one reserve covers every push
         entries.reserve(sequence.len());
-        cold.reserve(sequence.len());
+        queue.clear(sequence.len());
         let mut sink = SymbolSink {
-            mode: QueueSink { entries, cold },
+            mode: QueueSink { entries, queue },
             previous_symbol: u32::MAX,
         };
         self.convert(sequence, &mut sink);
         let last = sink.previous_symbol;
         match entries.last_mut() {
-            Some(entry) => entry.r = u32::MAX, // NONE: nothing right of the final pair
+            Some(entry) => entry.right_pair_index = u32::MAX, // NONE: nothing right of the final pair
             None if last != u32::MAX => symbols.push(last),
             None => {}
         }

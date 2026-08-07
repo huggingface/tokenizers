@@ -461,6 +461,9 @@ mod tests {
             "  both  ",
             "one\ttab\nand a newline",
             "\tleading tab",
+            // A gap that is whitespace to `char::is_whitespace` but not to an ASCII scan:
+            // a no-break space and an ideographic space.
+            "nbsp\u{a0}gap and\u{3000}an ideographic space",
             "▁already marked",
             "a▁b c",
             "▁▁▁a b",
@@ -488,8 +491,10 @@ mod tests {
                     .collect();
 
                 let normalized = pipeline::Normalizer::normalize(&normalizer, text).unwrap();
+                let mut scratch = pipeline::PreTokenizerScratch::default();
                 let mut spans = Vec::new();
-                pipeline::PreTokenizer::pre_tokenize(&split, &normalized, &mut spans).unwrap();
+                pipeline::PreTokenizer::pre_tokenize(&split, &normalized, &mut scratch, &mut spans)
+                    .unwrap();
                 let words: Vec<&str> = spans.iter().map(|s| &normalized[s.range()]).collect();
                 assert_eq!(words, expected, "{text:?}");
             }

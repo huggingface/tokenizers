@@ -1,17 +1,13 @@
-use std::cell::RefCell;
 use std::convert::TryInto;
 use std::iter::Enumerate;
-use std::mem;
-use std::sync::{Mutex, PoisonError};
 use std::vec::IntoIter;
 use std::{borrow::Cow, convert::TryFrom};
-
-use atomsplit::classify::classify;
 
 use crate::models::bpe::{BpeScratch, PipelineBPE};
 use crate::models::unigram::{Unigram, UnigramScratch};
 use crate::models::wordlevel::WordLevel;
 use crate::models::wordpiece::{PipelineWordPiece, WordPieceScratch};
+use crate::pipeline::scratch_pool::{EncodeScratch, ScratchPool};
 use crate::processors::bert::BertProcessing;
 use crate::processors::roberta::RobertaProcessing;
 use crate::utils::byte_level::GPT2_REGEX_STR;
@@ -19,7 +15,7 @@ use crate::vocab::bucket_added_vocabulary::{
     AddedToken as BucketAddedToken, AddedVocabulary as BucketAddedVocabulary,
 };
 use crate::{
-    DecoderWrapper, ModelWrapper, PostProcessorWrapper, PreTokenizerWrapper, Token, Tokenizer,
+    DecoderWrapper, ModelWrapper, PostProcessorWrapper, PreTokenizerWrapper, Tokenizer,
     normalizers::{NormalizerWrapper, metaspace::MetaspaceNormalizer},
     pre_tokenizers::{
         bert::BertPreTokenizer,
@@ -39,31 +35,12 @@ use crate::{
 
 use super::{Result, SplitDelimiterBehavior};
 
+use atomsplit::classify::classify;
 pub use atomsplit::fsm::Span;
 
-/// We use a thread local scratch for the tags (per byte class) and for the split spans.
-pub(crate) fn classify_into_spans(
-    bytes: &[u8],
-    fsm: impl FnOnce(&[u8], &[u8], &mut [Span]) -> usize,
-    out: &mut Vec<Span>,
-) {
-    thread_local! {
-        static SCRATCH: RefCell<(Vec<u8>, Vec<Span>)> = const { RefCell::new((Vec::new(), Vec::new())) };
-    }
-    let n = bytes.len();
-    SCRATCH.with(|cell| {
-        let (tags, spans) = &mut *cell.borrow_mut();
-        if tags.len() < n {
-            tags.resize(n, 0); // grow-only: after the largest segment, no realloc / no re-zeroing
-        }
-        if spans.len() < n + 1 {
-            spans.resize(n + 1, Span::default());
-        }
-        classify(bytes, &mut tags[..n]);
-        let k = fsm(bytes, &tags[..n], &mut spans[..n + 1]);
-        out.extend_from_slice(&spans[..k]); // same type now: plain memcpy, no per-token conversion
-    });
-}
+mod scratch_pool;
+
+pub use scratch_pool::ModelScratch;
 
 pub trait Normalizer {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>>;
@@ -127,9 +104,94 @@ impl Normalizer for PipelineNormalizer {
 
 /// Range-based pre-tokenization: yields spans into the input rather than owned
 /// substrings, so the pipeline can pre-tokenize without allocating.
-pub trait PreTokenizer {
+///
+/// # Safety
+///
+/// [`PreTokenizer::pre_tokenize`] produces [`Span`] objects that are later consumed by [`PipelineTokenizer::encode_sequence`].
+/// For performance reasons, [`PipelineTokenizer::encode_sequence`] turns every span into a `&str` with [`str::get_unchecked`].
+/// As a consequence, every implementation of this trait *MUST* ensure the following invariants for each [`Span`]:
+///
+/// * `span.end <= text.len()`: the span is inside the text
+/// * `span.start <= span.end`: the span is not reversed
+/// * `text.is_char_boundary(start)` and `text.is_char_boundary(end)`: the start and end offset must be UTF-8 char boundaries
+/// * The offsets are relative to the `text`.
+pub unsafe trait PreTokenizer {
     /// Split `text` into pre-tokens, appending to `out`. Ranges are into `text`.
-    fn pre_tokenize(&self, text: &str, out: &mut Vec<Span>) -> Result<()>;
+    /// `scratch` holds the working buffers, see [`PreTokenizerScratch`].
+    fn pre_tokenize(
+        &self,
+        text: &str,
+        scratch: &mut PreTokenizerScratch,
+        out: &mut Vec<Span>,
+    ) -> Result<()>;
+}
+
+/// The working buffers a [`PreTokenizer`] needs to split a text into pre-tokens.
+#[derive(Default)]
+pub struct PreTokenizerScratch {
+    /// One [`atomsplit`] atom tag per input byte, what [`atomsplit::classify::classify`] writes
+    /// and the FSMs read.
+    tags: Vec<u8>,
+    /// An intermediate buffer in which the FSM writes the Span before they get appended to the output
+    spans: Vec<Span>,
+    /// The two buffers a [`PipelineSequence`] reads and writes as each of its children subdivides
+    /// the spans the child before it produced. Handed out by [`Self::take_pair`] rather than
+    /// borrowed, so the sequence can pass the rest of the scratch to its children while it holds
+    /// them.
+    pair: [Vec<Span>; 2],
+}
+
+impl PreTokenizerScratch {
+    /// Tag every byte of `bytes` with its [`atomsplit`] atom class, run `fsm` over the tags, and
+    /// append the spans to `out`.
+    pub fn split_on_tags(
+        &mut self,
+        bytes: &[u8],
+        fsm: impl FnOnce(&[u8], &[u8], &mut [Span]) -> usize,
+        out: &mut Vec<Span>,
+    ) {
+        let n = bytes.len();
+        let Self { tags, spans, .. } = self;
+        if tags.len() < n {
+            tags.resize(n, 0);
+        }
+        if spans.len() < n + 1 {
+            spans.resize(n + 1, Span::default());
+        }
+        // Assign a tag to each byte
+        classify(bytes, &mut tags[..n]);
+        // Run the fsm on the tags to determine where to cut
+        let k = fsm(bytes, &tags[..n], &mut spans[..n + 1]);
+        // Copy spans to output
+        out.extend_from_slice(&spans[..k]);
+    }
+
+    /// Run `fsm` over `bytes` and append the spans it cut to `out`, for an FSM that scans the bytes
+    /// itself and so has no use for the atom tags. Skips the [`classify`]
+    pub fn split_on_bytes(
+        &mut self,
+        bytes: &[u8],
+        fsm: impl FnOnce(&[u8], &mut [Span]) -> usize,
+        out: &mut Vec<Span>,
+    ) {
+        let n = bytes.len();
+        let spans = &mut self.spans;
+        if spans.len() < n + 1 {
+            spans.resize(n + 1, Span::default());
+        }
+        let k = fsm(bytes, &mut spans[..n + 1]);
+        out.extend_from_slice(&spans[..k]);
+    }
+
+    /// Take the sequence's two buffers, leaving empty ones behind.
+    pub fn take_pair(&mut self) -> [Vec<Span>; 2] {
+        std::mem::take(&mut self.pair)
+    }
+
+    /// Give back what [`Self::take_pair`] handed out, so the next sequence reuses the allocations.
+    pub fn put_pair(&mut self, pair: [Vec<Span>; 2]) {
+        self.pair = pair;
+    }
 }
 
 /// The pre-tokenizers a [`PipelineTokenizer`] can run.
@@ -149,8 +211,15 @@ pub enum PipelinePreTokenizer {
     None,
 }
 
-impl PreTokenizer for PipelinePreTokenizer {
-    fn pre_tokenize(&self, text: &str, out: &mut Vec<Span>) -> Result<()> {
+// SAFETY: every arm but `None` forwards to another `PreTokenizer`, which upholds the contract itself.
+// `None` emits the single span covering all of `text`, whose ends are `0` and `text.len()`.
+unsafe impl PreTokenizer for PipelinePreTokenizer {
+    fn pre_tokenize(
+        &self,
+        text: &str,
+        scratch: &mut PreTokenizerScratch,
+        out: &mut Vec<Span>,
+    ) -> Result<()> {
         match self {
             Self::None => {
                 out.push(Span {
@@ -159,16 +228,16 @@ impl PreTokenizer for PipelinePreTokenizer {
                 });
                 Ok(())
             }
-            Self::Bert(pretok) => pretok.pre_tokenize(text, out),
-            Self::Delimiter(pretok) => pretok.pre_tokenize(text, out),
-            Self::Digits(pretok) => pretok.pre_tokenize(text, out),
-            Self::FixedLength(pretok) => pretok.pre_tokenize(text, out),
-            Self::Punctuation(pretok) => pretok.pre_tokenize(text, out),
-            Self::Sequence(pretok) => pretok.pre_tokenize(text, out),
-            Self::Split(pretok) => pretok.pre_tokenize(text, out),
-            Self::UnicodeScripts(pretok) => pretok.pre_tokenize(text, out),
-            Self::Whitespace(pretok) => pretok.pre_tokenize(text, out),
-            Self::WhitespaceSplit(pretok) => pretok.pre_tokenize(text, out),
+            Self::Bert(pretok) => pretok.pre_tokenize(text, scratch, out),
+            Self::Delimiter(pretok) => pretok.pre_tokenize(text, scratch, out),
+            Self::Digits(pretok) => pretok.pre_tokenize(text, scratch, out),
+            Self::FixedLength(pretok) => pretok.pre_tokenize(text, scratch, out),
+            Self::Punctuation(pretok) => pretok.pre_tokenize(text, scratch, out),
+            Self::Sequence(pretok) => pretok.pre_tokenize(text, scratch, out),
+            Self::Split(pretok) => pretok.pre_tokenize(text, scratch, out),
+            Self::UnicodeScripts(pretok) => pretok.pre_tokenize(text, scratch, out),
+            Self::Whitespace(pretok) => pretok.pre_tokenize(text, scratch, out),
+            Self::WhitespaceSplit(pretok) => pretok.pre_tokenize(text, scratch, out),
         }
     }
 }
@@ -246,16 +315,16 @@ impl TryFrom<&PostProcessorWrapper> for PipelinePostProcessor {
                 cls: (_, cls_id),
                 sep: (_, sep_id),
             }) => Ok(Self {
-                prefix: vec![PipelineToken { id: *cls_id }].into_boxed_slice(),
-                suffix: vec![PipelineToken { id: *sep_id }].into_boxed_slice(),
+                prefix: vec![PipelineToken::from(*cls_id)].into_boxed_slice(),
+                suffix: vec![PipelineToken::from(*sep_id)].into_boxed_slice(),
             }),
             PostProcessorWrapper::Roberta(RobertaProcessing {
                 cls: (_, cls_id),
                 sep: (_, sep_id),
                 ..
             }) => Ok(Self {
-                prefix: vec![PipelineToken { id: *cls_id }].into_boxed_slice(),
-                suffix: vec![PipelineToken { id: *sep_id }].into_boxed_slice(),
+                prefix: vec![PipelineToken::from(*cls_id)].into_boxed_slice(),
+                suffix: vec![PipelineToken::from(*sep_id)].into_boxed_slice(),
             }),
             PostProcessorWrapper::Template(pp) => {
                 // todo: handle pair template
@@ -281,7 +350,7 @@ impl TryFrom<&PostProcessorWrapper> for PipelinePostProcessor {
                                     "post-processor not supported: Template references unknown special token `{token_string}`"
                                 )
                             })?;
-                            let token_ids = special.ids().iter().map(|&id| PipelineToken { id });
+                            let token_ids = special.ids().iter().copied().map(PipelineToken::from);
                             if seen_sequence {
                                 suffix.extend(token_ids);
                             } else {
@@ -330,14 +399,40 @@ impl TryFrom<&PostProcessorWrapper> for PipelinePostProcessor {
 
 /// An output token. Carries only the vocabulary `id`, since offsets and the token
 /// string are dropped, which is all an encode-only caller needs.
-#[derive(Debug, Clone, Copy)]
-pub struct PipelineToken {
-    pub id: u32,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct PipelineToken(u32);
+
+impl PipelineToken {
+    /// The vocabulary id this token stands for.
+    pub const fn id(self) -> u32 {
+        self.0
+    }
 }
 
-impl From<Token> for PipelineToken {
-    fn from(value: Token) -> Self {
-        Self { id: value.id }
+impl From<u32> for PipelineToken {
+    fn from(value: u32) -> Self {
+        Self(value)
+    }
+}
+
+impl From<PipelineToken> for u32 {
+    fn from(value: PipelineToken) -> Self {
+        value.0
+    }
+}
+
+/// Compares a token against a bare id, so a caller can assert against `[u32]`
+/// without mapping the ids out first.
+impl PartialEq<u32> for PipelineToken {
+    fn eq(&self, id: &u32) -> bool {
+        self.0 == *id
+    }
+}
+
+impl PartialEq<PipelineToken> for u32 {
+    fn eq(&self, token: &PipelineToken) -> bool {
+        *self == token.0
     }
 }
 
@@ -458,77 +553,6 @@ pub struct PipelineTokenizer {
     /// Allows to skip the added vocabulary lookup if the token id is lower than this value.
     added_id_min: u32,
     scratch_pool: ScratchPool,
-}
-
-/// A pool of [`PipelineModelScratch`].
-///
-/// When calling [`PipelineTokenizer::encode`], an instance of [`PipelineModelScratch`] is taken out of this pool
-/// and given to the tokenizer. When the encoding is done, the scratch buffer is returned to the pool and can be
-/// reused by later calls.
-///
-/// The reusability matters because the scratch buffer may hold cache structures which are more useful when reused,
-/// and less importantly it saves an extra allocation for an fresh buffer every time.
-struct ScratchPool(Mutex<Vec<PipelineModelScratch>>);
-
-impl ScratchPool {
-    fn new() -> Self {
-        Self(Mutex::new(Vec::new()))
-    }
-
-    /// Get a scratch buffer from the pool, wrapped in a [`ScratchGuard`].
-    /// When the [`ScratchGuard`] gets dropped, the scratch buffer is pushed back to the pool.
-    fn get<'a>(&'a self, model: &PipelineModel) -> ScratchGuard<'a> {
-        // The Mutex lock is held just long enough to pop the scratch out of the pool
-        let taken = self.0.lock().unwrap_or_else(PoisonError::into_inner).pop();
-        ScratchGuard {
-            // If there was no scratch buffer available in the pool, we build.a fresh one
-            scratch: taken.unwrap_or_else(|| model.init_scratch()),
-            pool: self,
-        }
-    }
-
-    #[cfg(test)]
-    fn len(&self) -> usize {
-        self.0.lock().unwrap_or_else(PoisonError::into_inner).len()
-    }
-}
-
-/// A wrapper around [`PipelineModelScratch`].
-/// Implements [`Deref`] and [`DerefMut`], so it behaves as [`PipelineModelScratch`].
-///
-/// When it gets dropped, it pushes [`Self::scratch`] back into the shared [`Self::pool`] so it can
-/// get reused by a later call to [`PipelineTokenizer::encode`].
-///
-/// TODO @McPatate : The Mutex can create contention, to be replaced by a better access pattern
-struct ScratchGuard<'a> {
-    scratch: PipelineModelScratch,
-    pool: &'a ScratchPool,
-}
-
-impl Drop for ScratchGuard<'_> {
-    fn drop(&mut self) {
-        // Steals the scratch buffer from self, replaces it with PipelineModelScratch::default()
-        let scratch = mem::take(&mut self.scratch);
-        // Push the scratch back in the pool
-        self.pool
-            .0
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(scratch);
-    }
-}
-
-impl std::ops::Deref for ScratchGuard<'_> {
-    type Target = PipelineModelScratch;
-    fn deref(&self) -> &PipelineModelScratch {
-        &self.scratch
-    }
-}
-
-impl std::ops::DerefMut for ScratchGuard<'_> {
-    fn deref_mut(&mut self) -> &mut PipelineModelScratch {
-        &mut self.scratch
-    }
 }
 
 impl TryFrom<&Tokenizer> for PipelineTokenizer {
@@ -804,24 +828,7 @@ impl IntoIterator for EncodeHandle {
     }
 }
 
-thread_local! {
-    /// Persistent state across encode calls
-    ///
-    /// This avoids having to reallocate pre-tokens buffers, reusing is cheaper
-    static PRE_TOKENS_SCRATCH: RefCell<Vec<Span>> = const { RefCell::new(Vec::new()) };
-}
-
 impl PipelineTokenizer {
-    /// Stage gates for [`encode_generic`](Self::encode_generic), in execution order.
-    /// Each level runs every stage up to and including itself; `STAGE_POSTPROCESS` is
-    /// a full encode. `STAGE_FRAME` is the special-token scan + iteration only (the
-    /// "other" slice in the decomposition).
-    pub const STAGE_FRAME: u8 = 0;
-    pub const STAGE_NORMALIZE: u8 = 1;
-    pub const STAGE_SPLIT: u8 = 2;
-    pub const STAGE_MODEL: u8 = 3;
-    pub const STAGE_POSTPROCESS: u8 = 4;
-
     pub fn get_model(&self) -> &PipelineModel {
         &self.model
     }
@@ -839,27 +846,19 @@ impl PipelineTokenizer {
 
         match inputs {
             Inputs::Single(s) => {
-                let output =
-                    self.encode_generic::<{ Self::STAGE_POSTPROCESS }>(&s, add_special_tokens);
+                let output = self.encode_sequence(&s, add_special_tokens);
                 EncodeHandle::blocking(vec![output])
             }
             // TODO: proper post-processor logic, this is temporary
             Inputs::Pair(s1, s2) => {
-                let p1 =
-                    self.encode_generic::<{ Self::STAGE_POSTPROCESS }>(&s1, add_special_tokens);
-                let p2 =
-                    self.encode_generic::<{ Self::STAGE_POSTPROCESS }>(&s2, add_special_tokens);
+                let p1 = self.encode_sequence(&s1, add_special_tokens);
+                let p2 = self.encode_sequence(&s2, add_special_tokens);
                 EncodeHandle::blocking(vec![p1, p2])
             }
             Inputs::Batch(b) => {
                 let mut output = Vec::with_capacity(b.len());
                 for seq in b {
-                    output.push(
-                        self.encode_generic::<{ Self::STAGE_POSTPROCESS }>(
-                            &seq,
-                            add_special_tokens,
-                        ),
-                    );
+                    output.push(self.encode_sequence(&seq, add_special_tokens));
                 }
                 EncodeHandle::blocking(output)
             }
@@ -867,16 +866,98 @@ impl PipelineTokenizer {
             Inputs::PairBatch(pb) => {
                 let mut output = Vec::with_capacity(pb.len() * 2);
                 for (s1, s2) in pb {
-                    output.push(
-                        self.encode_generic::<{ Self::STAGE_POSTPROCESS }>(&s1, add_special_tokens),
-                    );
-                    output.push(
-                        self.encode_generic::<{ Self::STAGE_POSTPROCESS }>(&s2, add_special_tokens),
-                    );
+                    output.push(self.encode_sequence(&s1, add_special_tokens));
+                    output.push(self.encode_sequence(&s2, add_special_tokens));
                 }
                 EncodeHandle::blocking(output)
             }
         }
+    }
+
+    pub fn encode_sequence(
+        &self,
+        input: &str,
+        add_special_tokens: bool,
+    ) -> Result<Vec<PipelineToken>> {
+        let mut output = Vec::with_capacity(input.len() / 4);
+        let mut scratch = self.scratch_pool.get(&self.model);
+        let PipelinePostProcessor { prefix, suffix } = &self.post_processor;
+        // Prepend prefix tokens, if any
+        // todo: handle post-processing when encoding a pair of sequences (currently unsupported by the PipelineTokenizer)
+        if add_special_tokens {
+            output.extend_from_slice(prefix);
+        }
+        // First, we extract all special tokens from the non-normalized input
+        for segment in SpecialSegmentIterator::new(input, &self.added_vocabulary, false) {
+            match segment {
+                Segment::SpecialToken(token) => {
+                    output.push(PipelineToken::from(token));
+                }
+                Segment::Text(chunk) => {
+                    let normalized = normalize_all(&self.normalizers, chunk)?;
+
+                    // Extract special tokens from the normalized input
+                    for segment in
+                        SpecialSegmentIterator::new(&normalized, &self.added_vocabulary, true)
+                    {
+                        match segment {
+                            Segment::SpecialToken(token) => {
+                                output.push(PipelineToken::from(token));
+                            }
+                            Segment::Text(normalized_chunk) => {
+                                // A [`Span`] holds `u32` offsets, which breaks the `PreTokenizer` contract the
+                                // `str::get_unchecked` below relies on.
+                                // Normalization can grow the text (`Metaspace` widens every space to a 3-byte delimiter),
+                                // which is why this is checked here and not on `input`.
+                                if normalized_chunk.len() > u32::MAX as usize {
+                                    return Err(format!(
+                                        "sequence too long to pre-tokenize: {} bytes after normalization, the limit is {}",
+                                        normalized_chunk.len(),
+                                        u32::MAX
+                                    )
+                                    .into());
+                                }
+                                // Pre-tokenize the chunk of normalized text
+                                let EncodeScratch {
+                                    model: model_scratch,
+                                    pre_tokens,
+                                    split: pre_tokenizer_scratch,
+                                } = &mut *scratch;
+                                pre_tokens.clear();
+                                self.pre_tokenizer.pre_tokenize(
+                                    normalized_chunk,
+                                    pre_tokenizer_scratch,
+                                    pre_tokens,
+                                )?;
+                                output.reserve(pre_tokens.len());
+                                for pre_token in pre_tokens {
+                                    let range = pre_token.range();
+                                    debug_assert!(
+                                        range.start <= range.end
+                                            && normalized_chunk.is_char_boundary(range.start)
+                                            && normalized_chunk.is_char_boundary(range.end),
+                                        "{:?} broke the PreTokenizer contract: emitted {pre_token:?} for {normalized_chunk:?}",
+                                        self.pre_tokenizer,
+                                    );
+                                    // SAFETY: `PreTokenizer` guarantees every span is a valid range of `normalized_chunk`
+                                    let sequence = unsafe { normalized_chunk.get_unchecked(range) };
+                                    self.model.tokenize_pipeline(
+                                        sequence,
+                                        model_scratch,
+                                        &mut output,
+                                    )?;
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+        }
+        // Append suffix tokens, if any
+        if add_special_tokens {
+            output.extend_from_slice(suffix);
+        }
+        Ok(output)
     }
 
     /// Decode token ids back to a `String`.
@@ -900,7 +981,7 @@ impl PipelineTokenizer {
         let tokens = ids
             .iter()
             .filter_map(|&id| {
-                if id > self.added_id_min {
+                if id >= self.added_id_min {
                     self.added_vocabulary
                         .simple_id_to_token(id)
                         .or_else(|| self.model.id_to_token(id))
@@ -972,87 +1053,6 @@ impl PipelineTokenizer {
             prefix: String::new(),
             prefix_index: 0,
         }
-    }
-
-    /// Single source of truth for the encode pipeline, generic over how many stages
-    /// run. `STAGE` is a **const generic**, so `if STAGE >= …` folds at compile time and
-    /// the disabled stages are compiled out, so the full specialization
-    /// ([`STAGE_POSTPROCESS`], which [`encode`](Self::encode) calls) is branchless and
-    /// identical to a hand-written full pipeline, while the benchmark drives lower
-    /// `STAGE` values to time each stage's marginal cost (the ablation ladder), e.g.
-    /// `model = t(MODEL) − t(SPLIT)`. No runtime gate, no `Instant` in the loop.
-    ///
-    /// [`STAGE_POSTPROCESS`]: Self::STAGE_POSTPROCESS
-    ///
-    /// `output` and the `pre_tokens` scratch are caller-owned so a benchmark can reuse
-    /// them across calls and observe both buffers to anchor the ablation levels. The
-    /// library itself stays free of any `black_box`/timing artifact.
-    #[doc(hidden)] // public only so `examples/fixture_bench.rs` can drive partial stages
-    pub fn encode_generic<const STAGE: u8>(
-        &self,
-        input: &str,
-        add_special_tokens: bool,
-    ) -> Result<Vec<PipelineToken>> {
-        let mut output = Vec::with_capacity(input.len() / 4);
-        let mut scratch = self.scratch_pool.get(&self.model);
-        let PipelinePostProcessor { prefix, suffix } = &self.post_processor;
-        // Prepend prefix tokens, if any
-        // todo: handle post-processing when encoding a pair of sequences (currently unsupported by the PipelineTokenizer)
-        if add_special_tokens && STAGE >= Self::STAGE_POSTPROCESS {
-            output.extend_from_slice(prefix);
-        }
-        // First, we extract all special tokens from the non-normalized input
-        for segment in SpecialSegmentIterator::new(input, &self.added_vocabulary, false) {
-            match segment {
-                Segment::SpecialToken(token) => {
-                    output.push(PipelineToken { id: token });
-                }
-                Segment::Text(chunk) => {
-                    let normalized: Cow<str> = if STAGE >= Self::STAGE_NORMALIZE {
-                        normalize_all(&self.normalizers, chunk)?
-                    } else {
-                        Cow::Borrowed(chunk)
-                    };
-
-                    // Extract special tokens from the normalized input
-                    for segment in
-                        SpecialSegmentIterator::new(&normalized, &self.added_vocabulary, true)
-                    {
-                        match segment {
-                            Segment::SpecialToken(token) => {
-                                output.push(PipelineToken { id: token });
-                            }
-                            Segment::Text(normalized_chunk) => {
-                                if STAGE >= Self::STAGE_SPLIT {
-                                    // Pre-tokenize the chunk of normalized text
-                                    PRE_TOKENS_SCRATCH.with(|cell| -> Result<()> {
-                                        let mut pre_tokens = cell.borrow_mut();
-                                        pre_tokens.clear();
-                                        self.pre_tokenizer
-                                            .pre_tokenize(normalized_chunk, &mut pre_tokens)?;
-                                        if STAGE >= Self::STAGE_MODEL {
-                                            // The whole span list at once; see Model::tokenize_spans.
-                                            self.model.tokenize_spans(
-                                                normalized_chunk,
-                                                &pre_tokens,
-                                                &mut scratch,
-                                                &mut output,
-                                            )?;
-                                        }
-                                        Ok(())
-                                    })?;
-                                }
-                            }
-                        }
-                    }
-                }
-            };
-        }
-        // Append suffix tokens, if any
-        if add_special_tokens && STAGE >= Self::STAGE_POSTPROCESS {
-            output.extend_from_slice(suffix);
-        }
-        Ok(output)
     }
 }
 
@@ -1310,8 +1310,6 @@ pub fn split_matches(
     }
 }
 
-pub trait ModelScratch {}
-
 pub trait Model {
     type Scratch: ModelScratch;
 
@@ -1321,27 +1319,6 @@ pub trait Model {
         scratch: &mut Self::Scratch,
         output: &mut Vec<PipelineToken>,
     ) -> Result<()>;
-
-    /// Every pre-token of a chunk in one call.
-    ///
-    /// The pipeline has the whole span list before the model runs, so handing them over one at a
-    /// time bought nothing and cost a virtual call, a slice, a `Result` and an output capacity
-    /// check per pre-token -- on English that is one round trip per ~5 bytes.
-    ///
-    /// The default is the loop it replaces, so a model only overrides this if it has per-chunk
-    /// work to hoist out of the loop.
-    fn tokenize_spans(
-        &self,
-        chunk: &str,
-        spans: &[Span],
-        scratch: &mut Self::Scratch,
-        output: &mut Vec<PipelineToken>,
-    ) -> Result<()> {
-        for span in spans {
-            self.tokenize_pipeline(&chunk[span.range()], scratch, output)?;
-        }
-        Ok(())
-    }
 
     fn init_scratch(&self) -> Self::Scratch;
 }
@@ -1369,6 +1346,23 @@ impl PipelineModel {
     }
 }
 
+/// A set of buffers and other state the model needs to encode efficiently,
+/// reused among calls to [`PipelineTokenizer::encode`].
+///
+/// Each model gets its own variant.
+#[derive(Default)]
+pub enum PipelineModelScratch {
+    BPE(BpeScratch),
+    WordLevel(()),
+    WordPiece(WordPieceScratch),
+    Unigram(UnigramScratch),
+    /// We need a default value to be able to use [`mem::take`] in [`ScratchGuard::drop`]
+    #[default]
+    None,
+}
+
+impl ModelScratch for PipelineModelScratch {}
+
 impl Model for PipelineModel {
     type Scratch = PipelineModelScratch;
 
@@ -1395,30 +1389,6 @@ impl Model for PipelineModel {
         }
     }
 
-    fn tokenize_spans(
-        &self,
-        chunk: &str,
-        spans: &[Span],
-        scratch: &mut Self::Scratch,
-        output: &mut Vec<PipelineToken>,
-    ) -> Result<()> {
-        match (self, scratch) {
-            (Self::BPE(model), PipelineModelScratch::BPE(scratch)) => {
-                model.tokenize_spans(chunk, spans, scratch, output)
-            }
-            (Self::Unigram(model), PipelineModelScratch::Unigram(scratch)) => {
-                model.tokenize_spans(chunk, spans, scratch, output)
-            }
-            (Self::WordLevel(model), PipelineModelScratch::WordLevel(scratch)) => {
-                model.tokenize_spans(chunk, spans, scratch, output)
-            }
-            (Self::WordPiece(model), PipelineModelScratch::WordPiece(scratch)) => {
-                model.tokenize_spans(chunk, spans, scratch, output)
-            }
-            _ => unreachable!(),
-        }
-    }
-
     fn init_scratch(&self) -> Self::Scratch {
         match self {
             Self::BPE(bpe) => PipelineModelScratch::BPE(bpe.init_scratch()),
@@ -1429,23 +1399,6 @@ impl Model for PipelineModel {
     }
 }
 
-/// A set of buffers and other state the model needs to encode efficiently,
-/// reused among calls to [`PipelineTokenizer::encode`].
-///
-/// Each model gets its own variant.
-#[derive(Default)]
-pub enum PipelineModelScratch {
-    BPE(BpeScratch),
-    WordLevel(()),
-    WordPiece(WordPieceScratch),
-    Unigram(UnigramScratch),
-    /// We need a default value to be able to use [`mem::take`] in [`ScratchGuard::drop`]
-    #[default]
-    None,
-}
-
-impl ModelScratch for PipelineModelScratch {}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1453,6 +1406,137 @@ mod tests {
     use crate::models::wordpiece::WordPiece;
     use crate::pre_tokenizers::byte_level::ByteLevel;
     use crate::pre_tokenizers::sequence::Sequence;
+    fn variant_name(pre_tokenizer: &PipelinePreTokenizer) -> &'static str {
+        match pre_tokenizer {
+            PipelinePreTokenizer::Bert(_) => "Bert",
+            PipelinePreTokenizer::Delimiter(_) => "Delimiter",
+            PipelinePreTokenizer::Digits(_) => "Digits",
+            PipelinePreTokenizer::FixedLength(_) => "FixedLength",
+            PipelinePreTokenizer::Punctuation(_) => "Punctuation",
+            PipelinePreTokenizer::Sequence(_) => "Sequence",
+            PipelinePreTokenizer::Split(_) => "Split",
+            PipelinePreTokenizer::UnicodeScripts(_) => "UnicodeScripts",
+            PipelinePreTokenizer::Whitespace(_) => "Whitespace",
+            PipelinePreTokenizer::WhitespaceSplit(_) => "WhitespaceSplit",
+            PipelinePreTokenizer::None => "None",
+        }
+    }
+
+    const HOSTILE: &[&str] = &[
+        "",
+        " ",
+        "\r",
+        "\r\n\n",
+        "hello world",
+        "café naïve",
+        "a\u{0301}b\u{0301}\u{0301}c",
+        "中文分词。ひらがな 한글",
+        "😀👍🏽 👨‍👩‍👧‍👦 x",
+        "\u{FEFF}leading bom",
+        "مرحبا\u{200F} العربية",
+        "नरेंद्र मोदी",
+        "hello▁world▁▁",
+        "a1b22c333d4444 42 ½²¼ Ⅷ",
+        "!!!...?! a, b; c",
+        "  \t  trailing   ",
+        "Ⓘ\u{200D}x_y a-b'c",
+    ];
+
+    /// Every variant must produce spans that [`PipelineTokenizer::encode_sequence`] can hand to `str::get_unchecked`
+    #[test]
+    fn every_pre_tokenizer_emits_sliceable_spans() {
+        use crate::pre_tokenizers::digits::Digits;
+        use crate::pre_tokenizers::fixed_length::FixedLength;
+        use crate::pre_tokenizers::punctuation::Punctuation;
+        use crate::pre_tokenizers::split::SplitPattern;
+        use SplitDelimiterBehavior::*;
+
+        let literal_split = |pattern: &str, behavior| {
+            SplitPretok::new(SplitPattern::String(pattern.to_owned()), behavior, false).unwrap()
+        };
+        // The gpt2 regex is recognized, so this routes to `fsm_byte_level` with no regex backend.
+        let gpt2_split = SplitPretok::new(
+            SplitPattern::Regex(GPT2_REGEX_STR.to_owned()),
+            Isolated,
+            false,
+        )
+        .unwrap();
+
+        let cases = vec![
+            PipelinePreTokenizer::Bert(BertPreTokenizer),
+            PipelinePreTokenizer::Delimiter(CharDelimiterSplit::new(' ')),
+            PipelinePreTokenizer::Delimiter(CharDelimiterSplit::new('▁')),
+            PipelinePreTokenizer::Digits(Digits::new(true)),
+            PipelinePreTokenizer::Digits(Digits::new(false)),
+            PipelinePreTokenizer::FixedLength(FixedLength::new(3)),
+            PipelinePreTokenizer::FixedLength(FixedLength::new(0)),
+            PipelinePreTokenizer::Punctuation(Punctuation::new(Removed)),
+            PipelinePreTokenizer::Punctuation(Punctuation::new(Isolated)),
+            PipelinePreTokenizer::Punctuation(Punctuation::new(Contiguous)),
+            PipelinePreTokenizer::Punctuation(Punctuation::new(MergedWithPrevious)),
+            PipelinePreTokenizer::Punctuation(Punctuation::new(MergedWithNext)),
+            PipelinePreTokenizer::Sequence(PipelineSequence::new(vec![
+                PipelinePreTokenizer::WhitespaceSplit(WhitespaceSplit),
+                PipelinePreTokenizer::Punctuation(Punctuation::new(Isolated)),
+            ])),
+            PipelinePreTokenizer::Split(gpt2_split),
+            PipelinePreTokenizer::Split(literal_split("▁", MergedWithPrevious)),
+            PipelinePreTokenizer::Split(literal_split("▁", MergedWithNext)),
+            PipelinePreTokenizer::Split(literal_split(" ", Removed)),
+            PipelinePreTokenizer::UnicodeScripts(UnicodeScripts::new()),
+            PipelinePreTokenizer::Whitespace(Whitespace),
+            PipelinePreTokenizer::WhitespaceSplit(WhitespaceSplit),
+            PipelinePreTokenizer::None,
+        ];
+
+        let mut covered: Vec<&str> = cases.iter().map(variant_name).collect();
+        covered.sort_unstable();
+        covered.dedup();
+        assert_eq!(
+            covered,
+            [
+                "Bert",
+                "Delimiter",
+                "Digits",
+                "FixedLength",
+                "None",
+                "Punctuation",
+                "Sequence",
+                "Split",
+                "UnicodeScripts",
+                "Whitespace",
+                "WhitespaceSplit",
+            ],
+            "every PipelinePreTokenizer variant needs a case above",
+        );
+
+        let mut scratch = PreTokenizerScratch::default();
+        let mut spans = Vec::new();
+        for pre_tokenizer in &cases {
+            for text in HOSTILE {
+                spans.clear();
+                pre_tokenizer
+                    .pre_tokenize(text, &mut scratch, &mut spans)
+                    .unwrap();
+                for span in &spans {
+                    let range = span.range();
+                    assert!(
+                        range.start <= range.end,
+                        "{} reversed {span:?} on {text:?}",
+                        variant_name(pre_tokenizer),
+                    );
+                    assert!(
+                        text.is_char_boundary(range.start) && text.is_char_boundary(range.end),
+                        "{} cut {span:?} off a character boundary of {text:?}",
+                        variant_name(pre_tokenizer),
+                    );
+                    // What the pipeline does with the span. Slicing checked here is the point: it
+                    // panics on exactly the ranges `get_unchecked` would turn into undefined behavior.
+                    assert!(text.get(range).is_some());
+                }
+            }
+        }
+    }
 
     struct FixedMatcher(Vec<((usize, usize), u32)>);
     impl PipelinePatternMatcher for FixedMatcher {
@@ -1485,18 +1569,13 @@ mod tests {
         tok.with_normalizer(Some(normalizer)).unwrap();
         tok.with_pre_tokenizer(Some(pre_tokenizer));
 
-        let ids: Vec<u32> = PipelineTokenizer::try_from(&tok)
+        let encoded = PipelineTokenizer::try_from(&tok)
             .unwrap()
             .encode("hello world", false)
             .wait()
-            .unwrap()
-            .first()
-            .unwrap()
-            .iter()
-            .map(|t| t.id)
-            .collect();
+            .unwrap();
         // Not the unk id: both the `Replace` and the `Split` really ran on the literal path.
-        assert_eq!(ids, [1, 2]);
+        assert_eq!(*encoded.first().unwrap(), [1, 2]);
         assert_pipeline_matches_reference(&tok, "hello world");
     }
 
@@ -1583,6 +1662,54 @@ mod tests {
         tok
     }
 
+    fn pipeline_ids(pipeline: &PipelineTokenizer, input: &str) -> Vec<u32> {
+        pipeline
+            .encode(input, false)
+            .wait()
+            .unwrap()
+            .remove(0)
+            .iter()
+            .map(|t| t.id())
+            .collect()
+    }
+
+    // A single `&self` tokenizer is meant to be shared across rayon workers, and the scratch it
+    // hands each of them carries the pre-token spans of the chunk being encoded. So the workers
+    // must not be able to reach each other's: every thread encodes a different input here, and
+    // has to get back the answer that input produces on its own.
+    //
+    // The inputs disagree on both how many tokens they produce and which, so another input's
+    // spans cannot yield the right ids by luck. This also only compiles if
+    // `PipelineTokenizer: Sync`.
+    #[test]
+    fn concurrent_encodes_of_different_inputs_stay_independent() {
+        use rayon::prelude::*;
+
+        let tok = wordlevel_tokenizer(vec![("<unk>", 0), ("hello", 1), ("world", 2)], None);
+        let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
+
+        let inputs = [
+            "hello".to_string(),
+            "hello world".to_string(),
+            "world hello world".to_string(),
+            "hello world ".repeat(25),
+        ];
+        let want: Vec<Vec<u32>> = inputs
+            .iter()
+            .map(|input| pipeline_ids(&pipeline, input))
+            .collect();
+        assert_eq!(
+            want,
+            vec![vec![1], vec![1, 2], vec![2, 1, 2], [1, 2].repeat(25)]
+        );
+
+        let all_match = (0..10_000usize).into_par_iter().all(|i| {
+            let case = i % inputs.len();
+            pipeline_ids(&pipeline, &inputs[case]) == want[case]
+        });
+        assert!(all_match);
+    }
+
     fn assert_pipeline_matches_reference(tok: &Tokenizer, input: &str) {
         let pipeline = PipelineTokenizer::try_from(tok).unwrap();
         for add_special_tokens in [false, true] {
@@ -1598,7 +1725,7 @@ mod tests {
                 .first()
                 .unwrap()
                 .iter()
-                .map(|t| t.id)
+                .map(|t| t.id())
                 .collect();
             assert_eq!(expected, got, "add_special_tokens={add_special_tokens}");
         }
@@ -1622,7 +1749,7 @@ mod tests {
             enc.first()
                 .unwrap()
                 .iter()
-                .map(|t| t.id)
+                .map(|t| t.id())
                 .collect::<Vec<_>>()
         };
         assert_eq!(
@@ -1713,7 +1840,7 @@ mod tests {
             .first()
             .unwrap()
             .iter()
-            .map(|t| t.id)
+            .map(|t| t.id())
             .collect();
         assert_eq!(ids, vec![102, 100, 2, 3, 101, 103]);
     }
@@ -1821,170 +1948,5 @@ mod tests {
         );
         let err = conversion_error(&tok);
         assert!(err.contains("not supported"), "{}", err);
-    }
-
-    /// A BPE pipeline that merges "hello" into the single id 7.
-    fn hello_pipeline() -> PipelineTokenizer {
-        use crate::models::bpe::{BpeBuilder, Merges, Vocab};
-
-        let vocab: Vocab = [
-            ("h", 0u32),
-            ("e", 1),
-            ("l", 2),
-            ("o", 3),
-            ("he", 4),
-            ("hel", 5),
-            ("hell", 6),
-            ("hello", 7),
-        ]
-        .into_iter()
-        .map(|(s, i)| (s.to_string(), i))
-        .collect();
-        let merges: Merges = vec![
-            ("h".to_string(), "e".to_string()),
-            ("he".to_string(), "l".to_string()),
-            ("hel".to_string(), "l".to_string()),
-            ("hell".to_string(), "o".to_string()),
-        ];
-        let bpe = BpeBuilder::default()
-            .vocab_and_merges(vocab, merges)
-            .build()
-            .unwrap();
-        PipelineTokenizer::try_from(&Tokenizer::new(bpe)).unwrap()
-    }
-
-    // The pool exists so ONE `&self` tokenizer can be shared across rayon workers. Encode
-    // the same input from thousands of threads through a single instance; each must get a
-    // private scratch and produce the sequential result. Two threads sharing a scratch
-    // would corrupt some of them. This only compiles if `PipelineTokenizer: Sync`,
-    // which the pool has to preserve.
-    #[test]
-    fn encode_shared_across_threads() {
-        use rayon::prelude::*;
-
-        let pipeline = hello_pipeline();
-
-        let want: Vec<u32> = pipeline
-            .encode("hello", false)
-            .wait()
-            .unwrap()
-            .remove(0)
-            .iter()
-            .map(|t| t.id)
-            .collect();
-        assert_eq!(want, vec![7]);
-
-        let all_match = (0..10_000u32).into_par_iter().all(|_| {
-            pipeline
-                .encode("hello", false)
-                .wait()
-                .unwrap()
-                .remove(0)
-                .iter()
-                .map(|t| t.id)
-                .collect::<Vec<_>>()
-                == want
-        });
-        assert!(all_match);
-    }
-
-    // Reusing scratches is the whole point of the pool, so it must not build one per call:
-    // one thread encoding in a loop has to keep coming back to the same scratch, and a
-    // burst of N threads must leave at most N behind for later calls to use.
-    #[test]
-    fn scratches_are_reused_rather_than_piling_up() {
-        use std::sync::Barrier;
-
-        let pipeline = hello_pipeline();
-        for _ in 0..1000 {
-            pipeline.encode("hello", false).wait().unwrap();
-        }
-        assert_eq!(pipeline.scratch_pool.len(), 1);
-
-        let threads = 64;
-        let all_holding = Barrier::new(threads);
-        std::thread::scope(|scope| {
-            for _ in 0..threads {
-                scope.spawn(|| {
-                    let scratch = pipeline.scratch_pool.get(&pipeline.model);
-                    all_holding.wait();
-                    drop(scratch);
-                });
-            }
-        });
-
-        let after_burst = pipeline.scratch_pool.len();
-        assert!(
-            after_burst <= threads,
-            "{after_burst} scratches kept for {threads} threads"
-        );
-        for _ in 0..1000 {
-            pipeline.encode("hello", false).wait().unwrap();
-        }
-        assert_eq!(pipeline.scratch_pool.len(), after_burst);
-    }
-
-    // ScratchGuard::drop moves the scratch to the pool with mem::take, which leaves the
-    // default None variant behind in the guard. The pool must end up holding the scratch
-    // the model used: if the None leftover were pushed instead, the pool would still
-    // count one scratch, and the next encode would take it and panic in
-    // PipelineModel::tokenize_pipeline.
-    #[test]
-    fn the_pool_gets_back_the_used_scratch_not_the_none_leftover() {
-        let pipeline = hello_pipeline();
-        pipeline.encode("hello", false).wait().unwrap();
-        assert_eq!(pipeline.scratch_pool.len(), 1);
-        let scratch = pipeline.scratch_pool.get(&pipeline.model);
-        assert!(
-            matches!(*scratch, PipelineModelScratch::BPE(_)),
-            "the pooled scratch is not the BPE scratch the model used"
-        );
-    }
-
-    // Pooling is only worth it if a scratch keeps the state it built up across calls.
-    // A fresh BpeScratch starts with an empty merge arena; encoding a longer sequence
-    // reserves one entry per byte and so grows it. After a second, short encode the
-    // pooled scratch must still be the grown one, not a fresh replacement built
-    // somewhere along the way.
-    #[test]
-    fn a_reused_scratch_keeps_its_grown_buffers() {
-        let pipeline = hello_pipeline();
-        let long_input = "hello".repeat(50);
-        pipeline.encode(&long_input, false).wait().unwrap();
-        assert_eq!(pipeline.scratch_pool.len(), 1);
-
-        pipeline.encode("hello", false).wait().unwrap();
-        assert_eq!(pipeline.scratch_pool.len(), 1);
-
-        let scratch = pipeline.scratch_pool.get(&pipeline.model);
-        let PipelineModelScratch::BPE(bpe_scratch) = &*scratch else {
-            panic!("the pooled scratch is not a BPE scratch");
-        };
-        assert!(
-            bpe_scratch.queue.entries.capacity() >= long_input.len(),
-            "the pooled scratch is not the one grown by the long input: \
-             room for {} merge entries after a {}-byte input",
-            bpe_scratch.queue.entries.capacity(),
-            long_input.len()
-        );
-    }
-
-    // A scratch coming back out of the pool has to still know the words of the last
-    // encode: a cache emptied between calls would never hit.
-    //
-    // "helo" and not "hello": a whole word that is itself a vocabulary entry is answered
-    // by the fold in one probe, before the cache is ever consulted, so it would never be
-    // stored. Only words that reach the merge engines land in the cache.
-    #[test]
-    fn the_word_cache_outlives_the_encode_call() {
-        let pipeline = hello_pipeline();
-        pipeline.encode("helo", false).wait().unwrap();
-
-        let mut scratch = pipeline.scratch_pool.get(&pipeline.model);
-        let PipelineModelScratch::BPE(bpe) = &mut *scratch else {
-            panic!("a BPE pipeline encodes with a BPE scratch");
-        };
-        let cache = bpe.word_cache.as_mut().expect("BPE encodes with a cache");
-        assert_eq!(cache.lookup(b"helo").hit(), Some(&[5u32, 3][..]));
     }
 }

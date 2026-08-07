@@ -8,6 +8,18 @@
 //! regex-shaped ones ([`fsm_cl100k`] / [`fsm_o200k`] / [`fsm_tekken`] / [`fsm_deepseek`] /
 //! [`fsm_byte_level`]) are scalar jump-tables (only the class family's [`class_runs_into`] has a SIMD
 //! path).
+//!
+//! # Safety
+//!
+//! On well-formed UTF-8 input, every fsm emits spans where `start <= end <= text.len()`, and both
+//! offsets fall on a character boundary. Callers slice `text` with those spans, and `tk-encode`'s
+//! pipeline does it without checking, so a new fsm has to follow the same three rules:
+//!
+//! * Scan runs with `run_end`. It folds [`crate::classify::Atom::Cont`] into every mask, so a run
+//!   never stops between the bytes of one character.
+//! * Advance by `char_len` when emitting one character as its own span, never by one byte.
+//! * Walk back over continuation bytes when handing bytes back to the next token, never subtract
+//!   a fixed count. `ws_tail` does this to return the final whitespace character.
 
 pub(crate) use crate::classify::{Atom, char_len, classify, in_mask, mask};
 // Atom-tag aliases, shared with the per-tokenizer FSM submodules (`fsm/*.rs`) via `use super::*`.

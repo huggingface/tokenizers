@@ -480,7 +480,7 @@ fn bench_throughput(
             .unwrap()
             .iter()
             .flatten()
-            .map(|t| t.id)
+            .map(|t| t.id())
             .collect()
     };
     let ids_match = baseline.map(|b| {
@@ -1039,7 +1039,7 @@ fn memory_child(which: &str, model: &Path) {
                             .first()
                             .unwrap()
                             .iter()
-                            .map(|t| t.id)
+                            .map(|t| t.id())
                             .collect()
                     },
                     &|i| pipeline.decode(i, false).unwrap().len(),
