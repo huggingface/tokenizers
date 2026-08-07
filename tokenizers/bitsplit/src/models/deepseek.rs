@@ -3,7 +3,7 @@
 //! `atomsplit::fsm::fsm_deepseek`.
 
 use crate::{
-    CODE_CONT, CONT, Span, adv, build_block, emit, fill_to_last, is_cjk_at, lead_run, scanthru,
+    AUX_CJK, CODE_CONT, CONT, Span, adv, build_block, emit, fill_to_last, is_cjk_at, lead_run, scanthru,
     to_lead, trail_run,
 };
 
@@ -105,14 +105,14 @@ pub fn bitsplit_deepseek(text: &[u8], tags: &[u8], starts: &mut [u64], out: &mut
         let valid = if len == 64 { !0u64 } else { (1u64 << len) - 1 };
         let last_blk = base + len == ntext;
 
-        let (b, last_code) = build_block::<true>(text, tags, base, len, &LUT, cy.code, cy.cjk);
+        let (b, last_code) = build_block::<{ AUX_CJK }, false>(text, tags, base, len, &LUT, cy.code, cy.cjk);
         // planes → classes: 3 extractions instead of 7 one-hot masks (see `LUT`). Only `lm`
         // needs the `valid` mask — past the block end every plane reads 0, i.e. code 0.
         let (pa, pc, pd) = (!b.p2 & !b.p1, !b.p2 & b.p1, b.p2 & !b.p1);
         let (s_lm, s_n) = (pa & !b.p0 & valid, pa & b.p0);
         let (s_ps, s_nl) = (pc & !b.p0, pc & b.p0);
         let (s_sp, s_ws) = (pd & !b.p0, pd | (pc & b.p0));
-        let last_cjk = b.cjk >> (len - 1) & 1 != 0;
+        let last_cjk = b.aux >> (len - 1) & 1 != 0;
         let last_bits = code_bits(last_code) | if last_cjk { S_CJK } else { 0 };
 
         // ── edges. The byte before the block is carried; the one after is peeked. One char of
@@ -138,7 +138,7 @@ pub fn bitsplit_deepseek(text: &[u8], tags: &[u8], starts: &mut [u64], out: &mut
         let has = |v: u16, s: u16| v & s != 0;
         // Split precedence: CJK (Split-2) outranks the big regex, and `fsm_deepseek` tests it ahead
         // of the digit arm too — so peel CJK off every other class first.
-        let cjk = b.cjk;
+        let cjk = b.aux;
         let num = s_n & !cjk;
         let lm = s_lm & !cjk;
         let ps = s_ps & !cjk;

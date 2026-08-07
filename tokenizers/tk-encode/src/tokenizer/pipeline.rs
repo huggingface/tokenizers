@@ -6,7 +6,7 @@ use std::sync::{Mutex, PoisonError};
 use std::vec::IntoIter;
 use std::{borrow::Cow, convert::TryFrom};
 
-use atomsplit::classify::classify;
+use bitsplit::classify::classify;
 
 use crate::models::bpe::{BpeScratch, PipelineBPE};
 use crate::models::unigram::{Unigram, UnigramScratch};
@@ -39,7 +39,7 @@ use crate::{
 
 use super::{Result, SplitDelimiterBehavior};
 
-pub use atomsplit::fsm::Span;
+pub use bitsplit::Span;
 
 /// We use a thread local scratch for the tags (per byte class) and for the split spans.
 pub(crate) fn classify_into_spans(

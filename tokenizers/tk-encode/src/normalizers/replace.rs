@@ -5,7 +5,7 @@ use crate::tokenizer::Decoder;
 use crate::tokenizer::pattern::Pattern;
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 use crate::utils::SysRegex;
-use atomsplit::literal::Literal;
+use bitsplit::literal::Literal;
 use serde::{Deserialize, Serialize};
 
 /// Represents the different patterns that `Replace` can use

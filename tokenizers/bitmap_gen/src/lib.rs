@@ -213,7 +213,7 @@ fn generate_tables(struct_name: &str, kind: &str, classify: &dyn Fn(u32) -> u8) 
     )
     .unwrap();
     o.push_str("//! `Tables::classify_char`. `bitmap_gen` self-validates all 1.1M codepoints. Spec §1/§7.\n");
-    o.push_str("use crate::tables::Tables;\n\n");
+    o.push_str("use super::tables::Tables;\n\n");
 
     let emit_u8 = |o: &mut String, name: &str, t: &[u8]| {
         write!(o, "#[rustfmt::skip]\nstatic {name}: [u8; {}] = [", t.len()).unwrap();

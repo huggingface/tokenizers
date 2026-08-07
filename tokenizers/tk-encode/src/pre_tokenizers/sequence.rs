@@ -107,7 +107,11 @@ impl pipeline::PreTokenizer for PipelineSequence {
         // deepseek's 3-Split composition → one native FSM pass (also lets the Sequence handle the
         // trailing byte-map ByteLevel, which the generic child loop can't range-split).
         if self.is_deepseek() {
-            pipeline::classify_into_spans(text.as_bytes(), atomsplit::fsm::fsm_deepseek, out);
+            pipeline::classify_into_spans_bits(
+                text.as_bytes(),
+                |t, tags, starts, _flag, out| bitsplit::bitsplit_deepseek(t, tags, starts, out),
+                out,
+            );
             return Ok(());
         }
 

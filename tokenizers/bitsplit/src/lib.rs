@@ -17,24 +17,58 @@
 //! visited in order, so those dependencies are carried in a handful of scalar registers and, for
 //! the one genuinely backward-in-time rule, patched into the already-written bitmap.
 //!
-//! We do not re-derive character classes: `atomsplit::classify` already emits one `Atom` tag per
-//! byte. The builder folds those 16 atoms into a grammar-specific **dense 3-bit code** and extracts
-//! 3 bit-planes of it; every class stream is then a 2–3 op boolean function of the planes.
+//! We do not re-derive character classes: [`classify`] already emits one `Atom` tag per byte. The
+//! builder folds those 16 atoms into a grammar-specific **dense 3-bit code** and extracts 3
+//! bit-planes of it; every class stream is then a 2–3 op boolean function of the planes.
 //!
 //! Grammars: [`bitsplit_deepseek`], [`bitsplit_byte_level`] (GPT-2), [`bitsplit_cl100k`]. All three
-//! byte-exact with their `atomsplit::fsm` counterparts — see `src/bin/verify.rs`.
+//! byte-exact with the oniguruma oracle over a block-phase sweep — see `tests/parity.rs`.
 
-pub(crate) use atomsplit::fsm::Span;
-
-pub mod deepseek;
-pub mod gpt;
-#[cfg(target_arch = "aarch64")]
+pub mod classes;
+pub mod classify;
+mod han;
+pub mod literal;
+pub mod models;
+pub mod regexes;
 mod simd;
-#[cfg(target_arch = "x86_64")]
-mod simd_x86;
 
-pub use deepseek::bitsplit_deepseek;
-pub use gpt::{bitsplit_byte_level, bitsplit_cl100k};
+pub use models::deepseek::bitsplit_deepseek;
+pub use models::cl100k::{bitsplit_cl100k, bitsplit_qwen};
+pub use models::gpt2::bitsplit_byte_level;
+pub use models::kimi::bitsplit_kimi;
+pub use models::o200k::bitsplit_o200k;
+pub use models::tekken::bitsplit_tekken;
+
+/// A token span: byte offsets `[start, end)` into the input. `#[repr(C)]` so the output buffer has a
+/// stable `[start, end]` layout — the pipeline reuses it with zero conversion, and it can be
+/// reinterpreted as bytes / handed across the crate boundary.
+#[repr(C)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Hash, PartialOrd, Ord)]
+pub struct Span {
+    pub start: u32,
+    pub end: u32,
+}
+
+impl Span {
+    #[inline]
+    #[must_use]
+    pub const fn new(start: u32, end: u32) -> Self {
+        Self { start, end }
+    }
+
+    /// `[start, end)` as a `usize` range — for slicing the input text.
+    #[inline]
+    #[must_use]
+    pub fn range(self) -> core::ops::Range<usize> {
+        self.start as usize..self.end as usize
+    }
+}
+
+impl PartialEq<(u32, u32)> for Span {
+    fn eq(&self, other: &(u32, u32)) -> bool {
+        self.start == other.0 && self.end == other.1
+    }
+}
 
 /// Whether this target builds its bitstreams with SIMD. Without it the builder is the portable
 /// byte-at-a-time reference, which is slower than the FSM this replaces -- so a caller should keep
@@ -56,7 +90,7 @@ pub fn fast_builder() -> bool {
 }
 
 #[cfg(target_arch = "x86_64")]
-fn has_ssse3() -> bool {
+pub(crate) fn has_ssse3() -> bool {
     use std::sync::atomic::{AtomicU8, Ordering};
     static CACHED: AtomicU8 = AtomicU8::new(0);
     match CACHED.load(Ordering::Relaxed) {
@@ -72,17 +106,29 @@ fn has_ssse3() -> bool {
 pub(crate) const CONT: u8 = 15; // Atom::Cont
 pub(crate) const CODE_CONT: u8 = 7; // every grammar's dense code for a continuation byte
 
-/// The bitstreams for one 64-byte block. `p0`/`p1`/`p2` are the bit-planes of the **filled** dense
+/// What a grammar wants in the text-derived `Blk::aux` stream. Tag-derived classes go through the
+/// LUT; these three need the raw bytes, so they are the one thing the builder reads `text` for.
+pub(crate) const AUX_NONE: u8 = 0;
+pub(crate) const AUX_CJK: u8 = 1; // deepseek Split-2: Han U+4E00..9FA5 ∪ kana U+3040..30FF
+pub(crate) const AUX_SLASH: u8 = 2; // o200k rule 4's `[\r\n/]*` tail
+pub(crate) const AUX_HAN: u8 = 3; // kimi-k2's leading `[\p{Han}]+` arm
+
+/// The bitstreams for one 64-byte block. `p0`..`p3` are the bit-planes of the **filled** dense
 /// code — filled meaning a multi-byte char sets its bits on *all* of its bytes, so "previous char's
 /// class" is a plain `<< 1` and no rule does char-width arithmetic. `cont` is the one un-filled
-/// stream (it defines the fill); `cjk` is text-derived and only built when a grammar asks for it.
+/// stream (it defines the fill); `aux` is text-derived and only built when a grammar asks for it.
+///
+/// `p3` exists because o200k needs 9 tag classes (U/L/C/N/NL/SP/WSO/OTHER + cont) and code 7 is
+/// reserved — the SIMD kernels find continuation lanes by testing `lut[tag] == 7`, so "other"
+/// cannot be the leftover code. It is const-gated off for the 3-plane grammars.
 #[derive(Default, Clone, Copy)]
 pub(crate) struct Blk {
     pub cont: u64,
     pub p0: u64,
     pub p1: u64,
     pub p2: u64,
-    pub cjk: u64,
+    pub p3: u64,
+    pub aux: u64,
 }
 
 /// deepseek Split-2's isolated range: Han U+4E00..9FA5 ∪ Hiragana/Katakana U+3040..30FF (all
@@ -99,43 +145,56 @@ pub(crate) fn is_cjk_at(text: &[u8], p: usize) -> bool {
     (0x4E00..=0x9FA5).contains(&cp) || (0x3040..=0x30FF).contains(&cp)
 }
 
+/// The `AUX` predicate at a lead byte.
+#[inline]
+pub(crate) fn aux_at<const AUX: u8>(text: &[u8], p: usize) -> bool {
+    match AUX {
+        AUX_CJK => is_cjk_at(text, p),
+        AUX_SLASH => text[p] == b'/',
+        AUX_HAN => crate::han::is_han_at(text, p),
+        _ => false,
+    }
+}
+
 /// Build one block. Full blocks go through the NEON kernel; the ragged tail (and every other
 /// target) uses the portable byte-at-a-time reference. Both produce the identical `Blk`.
-/// `CJK` asks for the (deepseek-only) range stream; `lut` is the grammar's tag → dense code table.
+/// `lut` is the grammar's tag → dense code table.
 #[inline]
-pub(crate) fn build_block<const CJK: bool>(
+pub(crate) fn build_block<const AUX: u8, const P3: bool>(
     text: &[u8],
     tags: &[u8],
     base: usize,
     len: usize,
     lut: &[u8; 64],
     cur_code: u8,
-    cur_cjk: bool,
+    cur_aux: bool,
 ) -> (Blk, u8) {
     #[cfg(target_arch = "aarch64")]
     if len == 64 {
         // SAFETY: `len == 64` means `base + 64 <= text.len() == tags.len()`.
-        return unsafe { crate::simd::build64::<CJK>(text, tags, base, lut, cur_code, cur_cjk) };
+        return unsafe {
+            crate::simd::neon::build64::<AUX, P3>(text, tags, base, lut, cur_code, cur_aux)
+        };
     }
     #[cfg(target_arch = "x86_64")]
     if len == 64 && has_ssse3() {
         // SAFETY: `len == 64` bounds both reads, and SSSE3 is checked above.
         return unsafe {
-            crate::simd_x86::build64::<CJK>(text, tags, base, lut, cur_code, cur_cjk)
+            crate::simd::x86::build64::<AUX, P3>(text, tags, base, lut, cur_code, cur_aux)
         };
     }
-    build_block_scalar::<CJK>(text, tags, base, len, lut, cur_code, cur_cjk)
+    build_block_scalar::<AUX, P3>(text, tags, base, len, lut, cur_code, cur_aux)
 }
 
 /// Portable reference builder: one byte at a time.
-pub(crate) fn build_block_scalar<const CJK: bool>(
+pub(crate) fn build_block_scalar<const AUX: u8, const P3: bool>(
     text: &[u8],
     tags: &[u8],
     base: usize,
     len: usize,
     lut: &[u8; 64],
     mut cur_code: u8,
-    mut cur_cjk: bool,
+    mut cur_aux: bool,
 ) -> (Blk, u8) {
     let mut b = Blk::default();
     for i in 0..len {
@@ -145,12 +204,15 @@ pub(crate) fn build_block_scalar<const CJK: bool>(
             b.cont |= bit;
         } else {
             cur_code = lut[tags[p] as usize];
-            cur_cjk = CJK && is_cjk_at(text, p);
+            cur_aux = AUX != AUX_NONE && aux_at::<AUX>(text, p);
         }
         b.p0 |= bit * u64::from(cur_code & 1 != 0);
         b.p1 |= bit * u64::from(cur_code & 2 != 0);
         b.p2 |= bit * u64::from(cur_code & 4 != 0);
-        b.cjk |= bit * u64::from(cur_cjk);
+        if P3 {
+            b.p3 |= bit * u64::from(cur_code & 8 != 0);
+        }
+        b.aux |= bit * u64::from(cur_aux);
     }
     (b, cur_code)
 }
@@ -228,6 +290,143 @@ pub(crate) fn trail_run(x: u64, valid: u64, len: usize) -> u64 {
         valid & !((1u64 << (64 - z.leading_zeros())) - 1)
     }
 }
+
+/// `\p{N}{1,cap}` — a group boundary every `cap` chars from the run start. The one non-local rule
+/// in every tiktoken-family grammar, so it lives here rather than three times over.
+///
+/// `cap == 0` or `>= 64` means an unbounded `\p{N}+`: the run is one token and there is nothing to
+/// do (and the shifts below would be UB). `dig_since` resumes a run that crossed the block edge —
+/// re-masking with `n` at every hop matters, because the carry only says the byte *at* the edge was
+/// a digit, not that the run survived it.
+#[inline]
+pub(crate) fn digit_groups(
+    cap: usize,
+    n: u64,
+    lead: u64,
+    cont: u64,
+    prev_is_digit: bool,
+    dig_run: bool,
+    dig_since: u32,
+) -> u64 {
+    let mut m = n & lead & !((n << 1) | u64::from(prev_is_digit));
+    if cap == 0 || cap >= 64 {
+        return m; // an unbounded `\p{N}+`: the run is one token
+    }
+    let capu = cap as u32;
+    if dig_run && prev_is_digit {
+        let mut s = lead & lead.wrapping_neg() & n; // first lead of the block
+        for _ in 0..((capu - dig_since % capu) % capu) {
+            s = adv(s, cont) & n & lead;
+        }
+        m |= s;
+    }
+    let mut groups = m;
+    if n & cont == 0 {
+        // Fast path: every digit here is single-byte, so "CAP chars on" is a plain shift against a
+        // mask asking that the skipped positions were digits too — what the `adv` chain checks.
+        let mut nk = n;
+        let mut k = 1;
+        while k < cap {
+            nk &= n << k;
+            k += 1;
+        }
+        while m != 0 {
+            m = (m << cap) & nk;
+            groups |= m;
+        }
+    } else {
+        while m != 0 {
+            let mut e = m;
+            for _ in 0..cap {
+                e = adv(e, cont) & n & lead;
+            }
+            if e == 0 {
+                break;
+            }
+            groups |= e;
+            m = e;
+        }
+    }
+    groups
+}
+
+// ── scalar helpers, shared by the grammars that need an escape ──────────────────────────────
+use crate::classify::{Atom, in_mask, mask};
+
+
+pub(crate) const LET: u8 = 0x00; // coarse Atom::Letter (low nibble)
+pub(crate) const MRK: u8 = 0x06; // coarse Atom::Mark
+pub(crate) const ASM: u8 = 0x16; // AlphaSymMark — coarse Mark, categorically \p{S}
+pub(crate) const ZWJ: u8 = 0x26; // ZWJ/ZWNJ — coarse Mark, categorically \p{Cf}
+pub(crate) const NW: u8 = 0x01;
+pub(crate) const NO: u8 = 0x02;
+pub(crate) const NLN: u8 = 0x03;
+pub(crate) const SPC: u8 = 0x04;
+pub(crate) const WSO: u8 = 0x05;
+
+/// A real `[\p{L}\p{M}]` member. ALPHA_SYM and ZWJ are coarse `Mark` but neither `\p{L}` nor
+/// `\p{M}`, so they are NOT letters — that is what keeps them on the rule-4 path.
+#[inline]
+pub(crate) fn member(t: u8) -> bool {
+    let c = t & 0x0F;
+    c == LET || (c == MRK && t != ASM && t != ZWJ)
+}
+
+#[inline]
+pub(crate) fn run_end(tags: &[u8], mut i: usize, end: usize, m: u16) -> usize {
+    let m = m | Atom::Cont.bit();
+    while i < end && in_mask(tags[i], m) {
+        i += 1;
+    }
+    i
+}
+
+/// `\s*[\r\n]+ | \s+(?!\S) | \s+`: through the last `\r\n` if any, else the whole run at EOF, else
+/// give the final ws char back to whatever follows.
+#[inline]
+pub(crate) fn ws_tail(text: &[u8], tags: &[u8], i: usize, end: usize) -> usize {
+    let re = run_end(tags, i, end, mask::WS);
+    if let Some(r) = text[i..re].iter().rposition(|&x| x == 0x0A || x == 0x0D) {
+        i + r + 1
+    } else if re == end {
+        re
+    } else {
+        let mut last = re - 1;
+        while last > i && text[last] & 0xC0 == 0x80 {
+            last -= 1;
+        }
+        if last > i { last } else { re }
+    }
+}
+
+/// One letter sub-token from `p` within `[.., re)`: alt-1 `[UC]*[LC]+` (tried first), else alt-2
+/// `[UC]+[LC]*` for an all-upper run. `[UC]*` gives back to the last C so `[LC]+` can take one.
+#[inline]
+pub(crate) fn letter_match(tags: &[u8], p: usize, re: usize) -> usize {
+    let (mut q, mut last_c) = (p, usize::MAX);
+    while q < re && tags[q] != 0x20 {
+        if tags[q] != CONT && tags[q] != 0x10 {
+            last_c = q;
+        }
+        q += 1;
+    }
+    if q < re {
+        let mut e = q;
+        while e < re && tags[e] != 0x10 {
+            e += 1;
+        }
+        return e;
+    }
+    if last_c == usize::MAX {
+        return re; // all upper → alt-2 takes the whole run
+    }
+    let mut e = last_c;
+    while e < re && tags[e] != 0x10 {
+        e += 1;
+    }
+    e
+}
+
 
 // ── emit ────────────────────────────────────────────────────────────────────────────────────────
 
@@ -329,10 +528,11 @@ pub(crate) fn emit_contr(
     w
 }
 
+
 /// Byte length of the contraction at `i` (2 or 3), or 0. `ci` picks cl100k/o200k's `(?i:)` form
 /// over GPT-2's case-sensitive one.
 #[inline]
-fn contr_len(text: &[u8], i: usize, ci: bool) -> usize {
+pub(crate) fn contr_len(text: &[u8], i: usize, ci: bool) -> usize {
     let n = text.len();
     if i + 1 >= n || text[i] != b'\'' || text[i + 1] >= 0x80 {
         return 0;
@@ -357,10 +557,10 @@ pub fn build_only(text: &[u8], tags: &[u8]) -> u64 {
     let (mut acc, mut code, mut cjk) = (0u64, CODE_CONT, false);
     for base in (0..text.len()).step_by(64) {
         let len = (text.len() - base).min(64);
-        let (b, c) = build_block::<true>(text, tags, base, len, &deepseek::LUT, code, cjk);
+        let (b, c) = build_block::<{ AUX_CJK }, false>(text, tags, base, len, &models::deepseek::LUT, code, cjk);
         code = c;
-        cjk = b.cjk >> (len - 1) & 1 != 0;
-        acc ^= b.cont ^ b.p0 ^ b.p1 ^ b.p2 ^ b.cjk;
+        cjk = b.aux >> (len - 1) & 1 != 0;
+        acc ^= b.cont ^ b.p0 ^ b.p1 ^ b.p2 ^ b.aux;
     }
     acc
 }
@@ -368,6 +568,6 @@ pub fn build_only(text: &[u8], tags: &[u8]) -> u64 {
 /// Convenience wrapper: classify + deepseek bitsplit over caller-owned scratch.
 #[must_use]
 pub fn pre_tokenize(text: &[u8], tags: &mut [u8], starts: &mut [u64], out: &mut [Span]) -> usize {
-    atomsplit::classify::classify(text, tags);
+    classify::classify(text, tags);
     bitsplit_deepseek(text, tags, starts, out)
 }
