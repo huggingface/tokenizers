@@ -40,6 +40,9 @@ fn bs_byte_level(t: &[u8], g: &[u8], s: &mut [u64], f: &mut [u64], o: &mut [Span
 fn bs_cl100k(t: &[u8], g: &[u8], s: &mut [u64], f: &mut [u64], o: &mut [Span]) -> usize {
     bitsplit::bitsplit_cl100k(t, g, s, f, o)
 }
+fn bs_qwen(t: &[u8], g: &[u8], s: &mut [u64], f: &mut [u64], o: &mut [Span]) -> usize {
+    bitsplit::bitsplit_qwen(t, g, s, f, o)
+}
 fn bs_o200k(t: &[u8], g: &[u8], s: &mut [u64], f: &mut [u64], o: &mut [Span]) -> usize {
     bitsplit::bitsplit_o200k(t, g, s, f, o)
 }
@@ -208,6 +211,15 @@ fn cl100k_parity() {
     let o = Oracle::Whole(Regex::new(CL100K).unwrap());
     check("cl100k", bs_cl100k, &o);
     check_fuzz("cl100k", bs_cl100k, &o);
+}
+
+/// Qwen2 / Qwen3: cl100k with a bare `\p{N}`.
+#[test]
+fn qwen_parity() {
+    let qwen = CL100K.replace(r"\p{N}{1,3}", r"\p{N}");
+    let o = Oracle::Whole(Regex::new(&qwen).unwrap());
+    check("qwen", bs_qwen, &o);
+    check_fuzz("qwen", bs_qwen, &o);
 }
 
 #[test]

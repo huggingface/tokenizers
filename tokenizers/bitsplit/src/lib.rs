@@ -26,8 +26,9 @@
 
 mod atom_tables;
 pub mod classify;
+pub mod cl100k;
 pub mod deepseek;
-pub mod gpt;
+pub mod gpt2;
 mod han;
 pub mod literal;
 pub mod kimi;
@@ -47,7 +48,8 @@ mod simd_x86;
 mod tables;
 
 pub use deepseek::bitsplit_deepseek;
-pub use gpt::{bitsplit_byte_level, bitsplit_cl100k};
+pub use cl100k::{bitsplit_cl100k, bitsplit_qwen};
+pub use gpt2::bitsplit_byte_level;
 pub use kimi::bitsplit_kimi;
 pub use o200k::bitsplit_o200k;
 pub use tekken::bitsplit_tekken;
