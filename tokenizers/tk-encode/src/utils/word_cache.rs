@@ -56,17 +56,8 @@ use ahash::RandomState;
 use std::iter::Iterator;
 use wide::i8x16;
 
-/// Hashes a word to the 64 bits its home slot and tag are taken from, and to the
-/// bottom half of a long word's key ([`LookupKey::new_hash`]).
-static PLACEMENT_HASHER: RandomState = RandomState::with_seeds(
-    0x243f_6a88_85a3_08d3,
-    0x1319_8a2e_0370_7344,
-    0xa409_3822_299f_31d0,
-    0x082e_fa98_ec4e_6c89,
-);
-
 /// Hashes a long word a second time, to fill the half of its key that
-/// [`PLACEMENT_HASHER`] does not reach. The two hashes must be independent, or the
+/// [`placement_hash_of`] does not reach. The two hashes must be independent, or the
 /// key would carry 64 bits of information instead of 127.
 static DISCRIMINANT_HASHER: RandomState = RandomState::with_seeds(
     0x4528_21e6_38d0_1377,
@@ -122,11 +113,24 @@ impl<'a> WordCache {
     /// On [Lookup::Hit], returns the ids it encodes to.
     /// On [Lookup::Miss], returns the location in [Self::cached_words] where it should be inserted
     pub fn lookup(&'a self, word: &[u8]) -> Lookup<'a> {
+        self.lookup_hashed(word, placement_hash_of(word))
+    }
+
+    /// [`Self::lookup`] for a caller that already hashed the word with [`placement_hash_of`].
+    ///
+    /// Only the placement hash is handed in. The key still decides a hit, so a word of fifteen
+    /// bytes or fewer is compared to the slot exactly, as before.
+    pub fn lookup_hashed(&'a self, word: &[u8], placement_hash: u64) -> Lookup<'a> {
+        debug_assert_eq!(
+            placement_hash,
+            placement_hash_of(word),
+            "placement hash does not belong to this word"
+        );
         let InsertPlacement {
             key,
             index: home,
             tag,
-        } = make_lookup_key(word, self.placement_mask);
+        } = make_lookup_key_hashed(word, placement_hash, self.placement_mask);
 
         let tag_window = self.tag_window(home);
         let (candidates, first_empty) = tag_window.find_matches_and_first_empty(tag);
@@ -364,9 +368,33 @@ impl<'a> SelfContained<'a> {
 #[repr(transparent)]
 pub struct LookupKey(u128);
 
-/// The key, home slot and tag of a word.
+/// The 64 bits a word's home slot and tag are taken from.
+///
+/// This *is* [`crate::vocab::bucket_vocab_store::word_hash`], not a second function that happens to
+/// agree with it. The BPE path probes the vocabulary and this cache for the same word, so it computes
+/// the value once and hands it to [`WordCache::lookup_hashed`]; two definitions could drift and the
+/// cache would place a word under one value and look it up under another.
+///
+/// It also means a word of seven bytes or fewer is not hashed at all: the bytes and the length pack
+/// into a `u64` and one multiply spreads them.
+#[inline]
+pub fn placement_hash_of(word: &[u8]) -> u64 {
+    crate::vocab::bucket_vocab_store::word_hash(word)
+}
+
+/// The key, home slot and tag of a word. Test-only: [`WordCache::lookup`] hashes the word itself
+/// and goes straight to [`make_lookup_key_hashed`].
+#[cfg(test)]
 fn make_lookup_key(word: &[u8], placement_mask: u64) -> InsertPlacement {
-    let placement_hash = PLACEMENT_HASHER.hash_one(word);
+    make_lookup_key_hashed(word, placement_hash_of(word), placement_mask)
+}
+
+/// [`make_lookup_key`] for a caller that already has the word's placement hash.
+fn make_lookup_key_hashed(
+    word: &[u8],
+    placement_hash: u64,
+    placement_mask: u64,
+) -> InsertPlacement {
     let key = if word.len() <= 15 {
         LookupKey::new_inline(word)
     } else {

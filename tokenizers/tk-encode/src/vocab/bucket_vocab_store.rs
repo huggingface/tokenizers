@@ -6,14 +6,107 @@ use std::fmt;
 
 type Mphf = FastPtrHash<NoHash, u64>;
 
-// Fixed seeds so a given vocab always hashes identically (the hasher is also stored on the struct,
-// so build and query are guaranteed consistent regardless).
+// Fixed seeds so a given vocab always hashes identically. Build and query both go through
+// `word_hash`, which is the only place these are used, so they cannot drift apart.
 const SEEDS: [u64; 4] = [
     0x243F_6A88_85A3_08D3,
     0x1319_8A2E_0370_7344,
     0xA409_3822_299F_31D0,
     0x082E_FA98_EC4E_6C89,
 ];
+
+/// Hashes a word too long for the packed key. See [`word_hash`].
+static KEY_HASHER: RandomState =
+    RandomState::with_seeds(SEEDS[0], SEEDS[1], SEEDS[2], SEEDS[3]);
+
+/// How many bytes of a word fit in the packed key that replaces a hash pass.
+///
+/// Seven, so the length still fits in the top byte of the same `u64`. That covers most pretokens:
+/// english averages 4.83 bytes per pretoken, code 4.08, and the `<|...|>` shapes in
+/// `added-special-dense` average 2.29.
+const INLINE_KEY_BYTES: usize = 7;
+
+/// `KEY_MASK[len]` keeps the low `len` bytes of a `u64`; `LEN_TAG[len]` is the length in the top
+/// byte. Tables rather than `u64::MAX >> (64 - 8 * len)` and `len << 56`: both loads are independent
+/// of the word's bytes, so they overlap that load instead of queueing behind a shift chain.
+const KEY_MASK: [u64; INLINE_KEY_BYTES + 1] = {
+    let mut m = [0u64; INLINE_KEY_BYTES + 1];
+    let mut len = 1;
+    while len <= INLINE_KEY_BYTES {
+        m[len] = u64::MAX >> (64 - 8 * len);
+        len += 1;
+    }
+    m
+};
+const LEN_TAG: [u64; INLINE_KEY_BYTES + 1] = {
+    let mut t = [0u64; INLINE_KEY_BYTES + 1];
+    let mut len = 0;
+    while len <= INLINE_KEY_BYTES {
+        // `len + 1`, not `len`, so the top byte is never zero and no real key can be 0. A phantom
+        // slot's key is 0, which is what lets one compare reject it without a second load.
+        t[len] = (len as u64 + 1) << 56;
+        len += 1;
+    }
+    t
+};
+
+/// Mixes a packed short key into the well-distributed `u64` the MPHF and the cache's placement want.
+///
+/// One multiply and one shift. This does not have to be a strong hash: nothing verifies with it. The
+/// vocabulary still compares the entry's bytes and the cache still compares its key, so `mix` only
+/// has to spread well enough to separate keys -- aHash's rounds are wasted on that. Dropping the
+/// mixing entirely does *not* work: packed short keys share their high bytes, and MPHF construction
+/// fails outright with "indistinguishable hashes in bucket".
+#[inline(always)]
+fn mix(z: u64) -> u64 {
+    let z = z.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    z ^ (z >> 29)
+}
+
+/// The `u64` a word is keyed by, in one pass and without a hash for a short word.
+///
+/// Up to [`INLINE_KEY_BYTES`] bytes the word is packed into a `u64` with its length in the top byte
+/// -- so `"ab"` cannot collide with `"ab\0"` -- and mixed with one multiply. Longer words fall back
+/// to aHash, which mixes the length in itself.
+///
+/// This is the single definition both `BucketVocabStore::build` and every probe go through, and
+/// [`crate::utils::word_cache`] keys through it too, so a pretoken probed in both tables is hashed
+/// once for the pair. It must stay one function: two copies could drift and the cache would place a
+/// word under one value and look it up under another.
+#[inline]
+pub fn word_hash(word: &[u8]) -> u64 {
+    key_and_hash(word).1
+}
+
+/// The key a slot is verified by, and the `u64` the MPHF is indexed by.
+///
+/// Up to [`INLINE_KEY_BYTES`] bytes the key *is* the word, so comparing it to a slot's key is
+/// proof of identity and the byte slab never has to be read. Longer words key by aHash, which is
+/// not proof, so those still confirm against the slab.
+#[inline]
+pub fn key_and_hash(word: &[u8]) -> (u64, u64) {
+    let len = word.len();
+    if len > INLINE_KEY_BYTES {
+        let hash = KEY_HASHER.hash_one(word);
+        return (hash, hash);
+    }
+    // Reading past the word is not allowed, so read a head and a tail that overlap and stitch them:
+    // still register-only, no `memcpy`.
+    let raw = if len >= 4 {
+        let head = u32::from_le_bytes(word[..4].try_into().unwrap()) as u64;
+        let tail = u32::from_le_bytes(word[len - 4..].try_into().unwrap()) as u64;
+        head | tail << (8 * (len - 4))
+    } else if len >= 1 {
+        let first = word[0] as u64;
+        let middle = (word[len / 2] as u64) << (8 * (len / 2));
+        let last = (word[len - 1] as u64) << (8 * (len - 1));
+        first | middle | last
+    } else {
+        0
+    };
+    let key = (raw & KEY_MASK[len]) | LEN_TAG[len];
+    (key, mix(key))
+}
 
 /// Bit 31 of a stored id: the token provably encodes to itself, so a pretoken equal to it can be
 /// emitted without running the merge loop. See `PipelineBPE::prove_fold`.
@@ -26,12 +119,25 @@ const FOLD_BIT: u32 = 1 << 31;
 /// The id half. 2^31 ids is far past any vocabulary.
 const VOCAB_ID_MASK: u32 = FOLD_BIT - 1;
 
-#[derive(Clone, Copy, Debug)]
+/// Everything a probe reads, and nothing it does not.
+///
+/// The key used to live in the byte slab, so verifying a slot meant a third dependent load after
+/// the MPHF pilot and this entry. Holding it here makes the probe two loads. `(start, len)` moved
+/// to [`Span`]: only the reverse lookup and enumeration want them, and keeping them here made
+/// every probe drag six dead bytes through cache.
+#[derive(Clone, Copy, Debug, Default)]
 struct Entry {
-    start: u32,
-    len: u16,
+    /// 0 for a phantom slot, which no real key can be -- see [`LEN_TAG`].
+    key: u64,
     /// The token id in the low 31 bits, [`FOLD_BIT`] in the top.
     id: u32,
+}
+
+/// `slot -> (offset into `bytes`, length)`. Off the probe path on purpose.
+#[derive(Clone, Copy, Debug, Default)]
+struct Span {
+    start: u32,
+    len: u16,
 }
 
 /// The BucketVocabStore optimizes for space and speed. We don't use a HashMap to prevent duplicating the
@@ -55,11 +161,13 @@ struct Entry {
 #[derive(Clone)]
 pub struct BucketVocabStore {
     mphf: Mphf,
-    hasher: RandomState,
     /// All token bytes, concatenated. Ordered by MPHF slot.
     bytes: Box<[u8]>,
-    /// `entries[slot]` -> (offset into `bytes`, length, id). Ordered by MPHF slot.
+    /// `entries[slot]` -> (key, id). Ordered by MPHF slot.
     entries: Box<[Entry]>,
+    /// `spans[slot]` -> where the token's bytes live. Parallel to `entries`, read only by the
+    /// reverse lookup and by enumeration.
+    spans: Box<[Span]>,
     /// `id_to_slot[token_id] -> entry_idx` -> index into entries as the entries are not really sorted.
     id_to_slot: Box<[u32]>,
     /// Number of real tokens. Cached at build so `len()` is O(1): `entries` is sized to the
@@ -102,12 +210,10 @@ impl BucketVocabStore {
     pub fn build(tokens: Vec<(Vec<u8>, u32)>) -> Self {
         let n = tokens.len();
 
-        let hasher = RandomState::with_seeds(SEEDS[0], SEEDS[1], SEEDS[2], SEEDS[3]);
-
         // 1. Pre-hash token bytes -> u64 keys using near perfect hash func
         let keys: Vec<u64> = tokens
             .iter()
-            .map(|(s, _)| hasher.hash_one(s.as_slice()))
+            .map(|(s, _)| word_hash(s.as_slice()))
             .collect();
 
         // 2. A perfect hash needs distinct keys. Collisions are astronomically unlikely
@@ -142,14 +248,8 @@ impl BucketVocabStore {
         let total: usize = tokens.iter().map(|(s, _)| s.len()).sum();
         let max_id = tokens.iter().map(|(_, id)| *id).max().unwrap();
         let mut bytes = Vec::with_capacity(total);
-        let mut entries = vec![
-            Entry {
-                start: 0,
-                len: 0,
-                id: 0
-            };
-            n_slots
-        ];
+        let mut entries = vec![Entry::default(); n_slots];
+        let mut spans = vec![Span::default(); n_slots];
         let mut id_to_slot = vec![u32::MAX; max_id as usize + 1];
         for (s, id) in &tokens {
             assert!(
@@ -160,11 +260,12 @@ impl BucketVocabStore {
                 *id <= VOCAB_ID_MASK,
                 "token id {id} needs bit 31, which holds FOLD_BIT"
             );
-            let slot = mphf.index(&hasher.hash_one(s.as_slice()));
-            entries[slot] = Entry {
+            let (key, hash) = key_and_hash(s.as_slice());
+            let slot = mphf.index(&hash);
+            entries[slot] = Entry { key, id: *id };
+            spans[slot] = Span {
                 start: bytes.len() as u32,
                 len: s.len() as u16,
-                id: *id,
             };
             id_to_slot[*id as usize] = slot as u32;
             bytes.extend_from_slice(s);
@@ -172,9 +273,9 @@ impl BucketVocabStore {
 
         Self {
             mphf,
-            hasher,
             bytes: bytes.into_boxed_slice(),
             entries: entries.into_boxed_slice(),
+            spans: spans.into_boxed_slice(),
             id_to_slot: id_to_slot.into_boxed_slice(),
             n,
         }
@@ -185,9 +286,9 @@ impl BucketVocabStore {
         let empty: [u64; 0] = [];
         Self {
             mphf: FastPtrHash::<NoHash, u64>::new(&empty, PtrHashParams::default_fast()),
-            hasher: RandomState::new(),
             bytes: Box::new([]),
             entries: Box::new([]),
+            spans: Box::new([]),
             id_to_slot: Box::new([]),
             n: 0,
         }
@@ -202,34 +303,67 @@ impl BucketVocabStore {
         if self.entries.is_empty() {
             return None;
         }
-        let slot = self.mphf.index(&self.hasher.hash_one(q));
-
+        let (key, hash) = key_and_hash(q);
+        let slot = self.mphf.index(&hash);
         let e = self.entries[slot];
-        let (start, len) = (e.start as usize, e.len as usize);
-        // Byte equality: confirms `q` really is the token at this slot (perfect hashing only
-        // guarantees a valid slot for in-vocab keys; this rejects collisions and Out Of Vocab queries).
-        if len == q.len() && self.bytes[start..start + len] == *q {
-            Some(e.id & VOCAB_ID_MASK)
-        } else {
-            None
+        // Perfect hashing only promises a valid slot for in-vocab keys, so the slot still has to be
+        // verified; this rejects collisions, phantom slots and out-of-vocabulary queries.
+        if e.key != key || !self.confirm(slot, q) {
+            return None;
         }
+        Some(e.id & VOCAB_ID_MASK)
+    }
+
+    /// Whether the token at `slot` really is `q`.
+    ///
+    /// A word of [`INLINE_KEY_BYTES`] bytes or fewer has already proved it: its key *is* its bytes
+    /// and its length, so the caller's key compare was exact and this is free. Only a longer word,
+    /// whose key is a hash, reads the byte slab -- the load the probe used to pay unconditionally.
+    #[inline(always)]
+    fn confirm(&self, slot: usize, q: &[u8]) -> bool {
+        if q.len() <= INLINE_KEY_BYTES {
+            return true;
+        }
+        let s = self.spans[slot];
+        let start = s.start as usize;
+        self.bytes.get(start..start + s.len as usize) == Some(q)
     }
 
     /// The id for `q`, together with whether that entry may be folded. One probe and one entry
     /// load: the flag is a bit of the id the probe already read.
     #[inline]
     pub fn get_bytes_foldable(&self, q: &[u8]) -> Option<(u32, bool)> {
+        let (key, hash) = key_and_hash(q);
+        self.get_bytes_foldable_keyed(q, key, hash)
+    }
+
+    /// The hash this store keys `q` by. Exposed so a caller that also has to hash the same word for
+    /// another table can pay for one pass instead of two; see [`Self::get_bytes_foldable_hashed`].
+    #[inline]
+    pub fn hash_word(&self, q: &[u8]) -> u64 {
+        word_hash(q)
+    }
+
+    /// [`Self::get_bytes_foldable`] for a caller that already ran [`key_and_hash`] on the word.
+    ///
+    /// Verification is unchanged: the MPHF hands back a slot for *any* query, so the entry's bytes
+    /// are still compared to `q` in full. Only the hashing is shared, never the check.
+    #[inline]
+    pub fn get_bytes_foldable_keyed(&self, q: &[u8], key: u64, hash: u64) -> Option<(u32, bool)> {
         if self.entries.is_empty() {
             return None;
         }
-        let slot = self.mphf.index(&self.hasher.hash_one(q));
+        debug_assert_eq!(
+            (key, hash),
+            key_and_hash(q),
+            "key/hash pair does not belong to this word"
+        );
+        let slot = self.mphf.index(&hash);
         let e = self.entries[slot];
-        let (start, len) = (e.start as usize, e.len as usize);
-        if len == q.len() && self.bytes[start..start + len] == *q {
-            Some((e.id & VOCAB_ID_MASK, e.id & FOLD_BIT != 0))
-        } else {
-            None
+        if e.key != key || !self.confirm(slot, q) {
+            return None;
         }
+        Some((e.id & VOCAB_ID_MASK, e.id & FOLD_BIT != 0))
     }
 
     /// Records that this token folds to itself. Called once per entry at load, after the proof.
@@ -253,9 +387,9 @@ impl BucketVocabStore {
         if slot == u32::MAX {
             return None; // id is within range but absent from the vocab
         }
-        let e = self.entries[slot as usize];
-        let start = e.start as usize;
-        self.bytes.get(start..start + e.len as usize)
+        let s = self.spans[slot as usize];
+        let start = s.start as usize;
+        self.bytes.get(start..start + s.len as usize)
     }
 
     #[inline]
@@ -283,11 +417,12 @@ impl BucketVocabStore {
     }
 
     pub fn content(&self) -> Vec<(String, u32)> {
-        self.entries
+        self.spans
             .iter()
-            .filter(|e| e.len > 0)
+            .zip(self.entries.iter())
+            .filter(|(s, _)| s.len > 0)
             // Mask: the stored id carries FOLD_BIT, which must never escape this type.
-            .map(|m| m.id & VOCAB_ID_MASK)
+            .map(|(_, m)| m.id & VOCAB_ID_MASK)
             .filter_map(|id| self.id_to_token(id).map(|token| (token, id)))
             .collect()
     }
@@ -299,11 +434,12 @@ impl BucketVocabStore {
 
     /// convenient when we want to re-build a vocab
     pub fn byte_content(&self) -> Vec<(Vec<u8>, u32)> {
-        self.entries
+        self.spans
             .iter()
-            .filter(|e| e.len > 0)
+            .zip(self.entries.iter())
+            .filter(|(s, _)| s.len > 0)
             // Mask: the stored id carries FOLD_BIT, which must never escape this type.
-            .map(|m| m.id & VOCAB_ID_MASK)
+            .map(|(_, m)| m.id & VOCAB_ID_MASK)
             .filter_map(|id| self.id_to_token_bytes(id).map(|token| (token.to_vec(), id)))
             .collect()
     }
@@ -312,6 +448,92 @@ impl BucketVocabStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The BPE fast path hashes a word once and hands that one value to both the vocabulary probe
+    /// and the word cache, which is only sound while both seed `ahash` identically. If someone
+    /// re-seeds either side, the cache would place a word under one hash and look it up under
+    /// another: no wrong ids, but every lookup would miss and the cache would silently stop
+    /// working. This pins the two together so that change fails here instead.
+    #[test]
+    fn vocab_and_word_cache_hash_a_word_identically() {
+        let vocab = BucketVocabStore::build(vec![(b"Hel".to_vec(), 0)]);
+        for w in [
+            &b""[..],
+            b"a",
+            b"Hel",
+            b"the",
+            b" the",
+            b"fifteen bytes!!",
+            b"sixteen bytes ..",
+            b"a considerably longer word than the inline key can hold",
+        ] {
+            assert_eq!(
+                vocab.hash_word(w),
+                crate::utils::word_cache::placement_hash_of(w),
+                "hashers disagree on {w:?}"
+            );
+        }
+    }
+
+    /// A slot is verified by comparing its key. For a word of [`INLINE_KEY_BYTES`] bytes or fewer
+    /// the key *is* the bytes and the length, so that compare is proof and the byte slab is never
+    /// read; a longer word's key is a hash, so it still confirms against the slab. Both lengths
+    /// have to reject an out-of-vocabulary word, including ones that differ only in length.
+    #[test]
+    fn out_of_vocabulary_words_are_rejected() {
+        let words: [&[u8]; 7] = [
+            b"a",
+            b"ab",
+            b"the",
+            b" the",
+            b"abcdefg",  // exactly INLINE_KEY_BYTES: key is proof
+            b"abcdefgh", // one over: key is a hash, slab confirms
+            b"a much longer token than the inline key can hold",
+        ];
+        let toks: Vec<(Vec<u8>, u32)> = words
+            .iter()
+            .enumerate()
+            .map(|(i, w)| (w.to_vec(), i as u32))
+            .collect();
+        let vocab = BucketVocabStore::build(toks.clone());
+
+        for (bytes, id) in &toks {
+            assert_eq!(vocab.get_bytes(bytes), Some(*id), "{bytes:?} should be found");
+        }
+        for miss in [
+            &b""[..],
+            b"b",
+            b"ba",
+            b"abc",
+            b"abcdef",   // prefix of a present token
+            b"abcdefi",  // same length as a present short token
+            b"abcdefghi",// same length class as a present long token
+            b"a much longer token than the inline key can hold!",
+        ] {
+            assert_eq!(vocab.get_bytes(miss), None, "{miss:?} is not in the vocab");
+        }
+    }
+
+    /// `Entry::default()` leaves key 0 in the padding slots a non-minimal MPHF returns, and the
+    /// probe rejects those with the same single compare it uses for everything else. That only
+    /// works while no real word can key to 0 -- which is why [`LEN_TAG`] biases the length by one.
+    #[test]
+    fn no_real_key_is_zero() {
+        for w in [
+            &b""[..],
+            b"a",
+            b"\0",
+            b"\0\0\0\0\0\0\0", // seven zero bytes: only the length tag keeps this off 0
+            b"1234567",
+            b"12345678",
+        ] {
+            assert_ne!(
+                key_and_hash(w).0,
+                0,
+                "key of {w:?} collides with the phantom-slot sentinel"
+            );
+        }
+    }
 
     #[test]
     fn single_token() {
