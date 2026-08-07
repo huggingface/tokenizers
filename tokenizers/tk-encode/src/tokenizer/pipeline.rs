@@ -897,11 +897,6 @@ impl PipelineTokenizer {
         {
             return Ok(self.decode_byte_level(bpe, ids, skip_special_tokens));
         }
-        if matches!(self.model, PipelineModel::WordPiece(_)) {
-            // Fail loud instead of dropping every id and returning "".
-            return Err("PipelineTokenizer::decode: WordPiece keeps no id -> token map yet".into());
-        }
-
         let tokens = ids
             .iter()
             .filter_map(|&id| {
@@ -1036,14 +1031,13 @@ impl PipelineTokenizer {
                                         self.pre_tokenizer
                                             .pre_tokenize(normalized_chunk, &mut pre_tokens)?;
                                         if STAGE >= Self::STAGE_MODEL {
-                                            // Tokenize each chunk
-                                            for pre_token in pre_tokens.iter() {
-                                                self.model.tokenize_pipeline(
-                                                    &normalized_chunk[pre_token.range()],
-                                                    &mut scratch,
-                                                    &mut output,
-                                                )?;
-                                            }
+                                            // The whole span list at once; see Model::tokenize_spans.
+                                            self.model.tokenize_spans(
+                                                normalized_chunk,
+                                                &pre_tokens,
+                                                &mut scratch,
+                                                &mut output,
+                                            )?;
                                         }
                                         Ok(())
                                     })?;
@@ -1328,6 +1322,27 @@ pub trait Model {
         output: &mut Vec<PipelineToken>,
     ) -> Result<()>;
 
+    /// Every pre-token of a chunk in one call.
+    ///
+    /// The pipeline has the whole span list before the model runs, so handing them over one at a
+    /// time bought nothing and cost a virtual call, a slice, a `Result` and an output capacity
+    /// check per pre-token -- on English that is one round trip per ~5 bytes.
+    ///
+    /// The default is the loop it replaces, so a model only overrides this if it has per-chunk
+    /// work to hoist out of the loop.
+    fn tokenize_spans(
+        &self,
+        chunk: &str,
+        spans: &[Span],
+        scratch: &mut Self::Scratch,
+        output: &mut Vec<PipelineToken>,
+    ) -> Result<()> {
+        for span in spans {
+            self.tokenize_pipeline(&chunk[span.range()], scratch, output)?;
+        }
+        Ok(())
+    }
+
     fn init_scratch(&self) -> Self::Scratch;
 }
 
@@ -1344,16 +1359,12 @@ pub enum PipelineModel {
 
 impl PipelineModel {
     /// `id -> token`, for the decoder-chain route in [`PipelineTokenizer::decode`].
-    ///
-    /// `None` for [`PipelineWordPiece`], which keeps only the forward `vocab_trie` and so has no
-    /// id -> token direction to answer with. `decode` refuses that model up front rather than
-    /// letting every id drop out and returning an empty string.
     fn id_to_token(&self, id: u32) -> Option<String> {
         match self {
             Self::BPE(model) => model.id_to_token(id),
             Self::Unigram(model) => model.id_to_token(id),
             Self::WordLevel(model) => model.id_to_token(id),
-            Self::WordPiece(_) => None,
+            Self::WordPiece(model) => model.id_to_token(id),
         }
     }
 }
@@ -1379,6 +1390,30 @@ impl Model for PipelineModel {
             }
             (Self::WordPiece(model), PipelineModelScratch::WordPiece(scratch)) => {
                 model.tokenize_pipeline(sequence, scratch, output)
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    fn tokenize_spans(
+        &self,
+        chunk: &str,
+        spans: &[Span],
+        scratch: &mut Self::Scratch,
+        output: &mut Vec<PipelineToken>,
+    ) -> Result<()> {
+        match (self, scratch) {
+            (Self::BPE(model), PipelineModelScratch::BPE(scratch)) => {
+                model.tokenize_spans(chunk, spans, scratch, output)
+            }
+            (Self::Unigram(model), PipelineModelScratch::Unigram(scratch)) => {
+                model.tokenize_spans(chunk, spans, scratch, output)
+            }
+            (Self::WordLevel(model), PipelineModelScratch::WordLevel(scratch)) => {
+                model.tokenize_spans(chunk, spans, scratch, output)
+            }
+            (Self::WordPiece(model), PipelineModelScratch::WordPiece(scratch)) => {
+                model.tokenize_spans(chunk, spans, scratch, output)
             }
             _ => unreachable!(),
         }

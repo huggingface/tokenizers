@@ -2,22 +2,38 @@ name: Pipeline Benchmark
 
 # Comparative benchmark: the experimental `PipelineTokenizer` vs the latest
 # *released* tokenizers crate — both the baseline to beat AND the correctness
-# reference (`ids_match`/`text_match`). The in-tree legacy `Tokenizer` is being
+# reference (`ids_match`). The in-tree legacy `Tokenizer` is being
 # phased out, so it only *builds* the pipeline and is never benched or trusted as
 # an oracle. Runs for every model in tk-encode/examples/bench_models.json across
 # every corpus in data/fixtures/.
-# Measures single- and multi-thread throughput (1/2/4/8/device-max), per-
-# implementation memory footprint (RSS), and stripped minimal-binary size. The
-# release dep is behind tk-encode's `bench-baseline` feature, so production
-# builds never pull it.
+# Measures single-thread throughput (cold instance per pass; the pipeline over
+# the whole corpus, the release over a ~2 MB spread sample per fixture), an
+# input-size sweep, a multi-thread sweep (2/4 threads) per fixture group,
+# per-implementation memory footprint (RSS), stripped minimal-binary size, a
+# decode phase over a release-minted id stream (`text_match` is its gate), and a
+# deterministic work lane: exact allocation counts for both directions (a counting
+# global allocator read by the memory children). The lane resolves regressions
+# that wall time on shared runners cannot, and the report diffs it against the
+# base branch with a "work vs base" verdict. The release dep is
+# behind tk-encode's `bench-baseline` feature, so production builds never pull it.
+#
+# The released crate is timed LIVE in every job, over a ~2 MB sample per
+# fixture (see fixture_bench.rs): sampling makes the release cheap enough that
+# nothing is cached across runs, so every vs-release ratio divides two numbers
+# measured seconds apart on the same machine. (Earlier revisions cached the
+# release's numbers on the Hub; jobs in the same runner group differ by tens of
+# percent in raw speed, so every ratio against a cached number moved with
+# whichever host the job landed on.)
 #
 # A `build` job compiles the bench + binsize example binaries ONCE (each with its
-# exact per-example feature set) and uploads them; the work is then fanned out across
-# a matrix: each `bench` shard downloads that binary and benches a slice of the models
-# on its own isolated 8-vCPU runner (so the multi-thread sweep is accurate and the
-# shards run in parallel), emitting a partial JSON; the single `report` job then
-# concatenates the partials and renders/uploads/updates once. Fixture corpora + model
-# tokenizers are cached across jobs (keyed on the Makefile fixture lists + manifest).
+# exact per-example feature set) and uploads them; the work is then fanned out,
+# ONE JOB PER MODEL in the manifest: each downloads that binary and benches its
+# model on its own isolated 8-vCPU runner (so the multi-thread sweep is accurate,
+# the jobs run in parallel, and wall clock is the slowest model, not the slowest
+# hand-packed shard), emitting a partial JSON; the single `report` job then
+# concatenates the partials in manifest order and renders/uploads/updates once.
+# Fixture corpora + model tokenizers are cached across jobs (keyed on the
+# Makefile fixture lists + manifest).
 #
 # Triggers:
 #   • push to feat/train_encode_split → benches and updates PR #2119's description.
@@ -34,12 +50,18 @@ name: Pipeline Benchmark
 # vs base branch: besides the "vs latest release" charts, the report shows a
 # "vs base branch" overview — this run's PipelineTokenizer against the base
 # branch's, per fixture, so a PR's own wins/regressions are visible (regressions
-# in red). The base's numbers are cached: a push to feat/train_encode_split
-# uploads its merged JSON to the HF Hub dataset as baselines/pipeline-<sha>.json
-# and force-moves the lightweight `pipeline-baseline` git tag to that commit
-# ("add the tag if not there"). A PR run resolves that tag, downloads the cached
-# JSON, and diffs against it ("otherwise read the data and plot the diff"). No
-# tag yet (or no cached JSON) → the base overview is skipped, release charts stay.
+# in red). The base's numbers are measured IN THIS RUN, on the same runners: a
+# push to feat/train_encode_split uploads its merged JSON and its fixture_bench
+# binary to the HF Hub dataset (baselines/pipeline-<sha>.json and
+# baselines/fixture_bench-<sha>) and force-moves the lightweight
+# `pipeline-baseline` git tag to that commit. A PR run downloads the base
+# binary, and each bench job runs it with `--pipeline-only` right before the PR
+# binary, so base and PR pipeline numbers come from the same machine and
+# per-host speed differences cancel in the ratio. No base binary yet (the tag
+# predates this workflow) → fall back to the base JSON from the tag, else to
+# the newest successful base-branch bench artifact — cross-run numbers, which
+# the report only wall-time-diffs when both runs measured under the same
+# regime. Neither → the base overview is skipped, release charts stay.
 
 on:
   push:
@@ -47,6 +69,8 @@ on:
     paths:
       - "tokenizers/tk-encode/**"
       - "tokenizers/src/**"
+      - "tokenizers/atomsplit/**"
+      - "tokenizers/Cargo.lock"
       - ".github/workflows/pipeline-bench.yml"
       - ".github/scripts/render_pipeline_bench.py"
       - "tokenizers/tk-encode/examples/bench_models.json"
@@ -73,15 +97,63 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  # Keep in sync with the matrix.shard list below (and passed to `--shard <i> N`).
-  # sccache is scoped to the `build` job — the only job that compiles.
-  SHARDS: "4"
-
 jobs:
-  # Compile the bench + binsize example binaries ONCE here, instead of every shard
-  # (and the report job) recompiling them. Uploaded as an artifact the other jobs
-  # download and run — so a code change is compiled a single time per run, not 5-6×.
+  # Reads the model manifest into the bench matrix (one job per model) and, on
+  # PR runs, fetches the base branch's prebuilt bench binary so every bench job
+  # can measure the base pipeline on its own runner, beside the PR's numbers.
+  plan:
+    name: plan (models + base binary)
+    if: github.event_name != 'pull_request' || github.event.label.name == 'run-pipeline-bench'
+    runs-on: ubuntu-latest
+    outputs:
+      models: ${{ steps.models.outputs.models }}
+      base_sha: ${{ steps.base.outputs.sha }}
+      have_base_bin: ${{ steps.base.outputs.have }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Read the model matrix
+        id: models
+        run: |
+          echo "models=$(jq -c '[.[].name]' tokenizers/tk-encode/examples/bench_models.json)" \
+            >> "$GITHUB_OUTPUT"
+
+      - name: Install uv
+        if: github.event_name == 'pull_request'
+        uses: astral-sh/setup-uv@v6
+
+      # The binary the last base-branch run published (see "Publish base-branch
+      # baseline"). Missing until the first base push after this workflow lands;
+      # the report then falls back to the base bench JSON.
+      - name: Fetch the base-branch bench binary
+        id: base
+        if: github.event_name == 'pull_request'
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          sha=$(git ls-remote origin refs/tags/pipeline-baseline | awk '{print $1}' | head -1)
+          if [ -n "$sha" ] && uvx --from huggingface_hub hf download hf-internal-testing/tokenizers-bench \
+               "baselines/fixture_bench-$sha" --repo-type dataset --local-dir base_bin; then
+            mv "base_bin/baselines/fixture_bench-$sha" fixture_bench_base
+            echo "have=true" >> "$GITHUB_OUTPUT"
+            echo "sha=$sha" >> "$GITHUB_OUTPUT"
+            echo "Base binary from the pipeline-baseline tag ($sha)."
+          else
+            echo "have=false" >> "$GITHUB_OUTPUT"
+            echo "No base binary — the report falls back to the base bench JSON."
+          fi
+
+      - name: Publish the base binary to this run's jobs
+        if: steps.base.outputs.have == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: base-binary
+          path: fixture_bench_base
+          retention-days: 3
+
+  # Compile the bench + binsize example binaries ONCE here, instead of every bench
+  # job (and the report job) recompiling them. Uploaded as an artifact the other jobs
+  # download and run — so a code change is compiled a single time per run, not 11-12×.
   build:
     name: build bench binaries
     # push / dispatch always run; a labeled PR runs only for our label.
@@ -103,8 +175,9 @@ jobs:
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@v0.0.9
 
-      # `onig_sys` (a `bench-baseline` reference-regex dep) generates its bindings with bindgen,
-      # which needs libclang. pcre2/fancy-regex don't. The runner image doesn't ship it.
+      # `onig_sys` comes in through the released crate (the `bench-baseline` dep): the
+      # release ships with Oniguruma as its default regex backend, and onig_sys generates
+      # its bindings with bindgen, which needs libclang. The runner image doesn't ship it.
       - name: Install libclang (onig_sys → bindgen)
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libclang-dev
 
@@ -113,9 +186,9 @@ jobs:
       #   • fixture_bench + binsize_baseline WITH `bench-baseline` → link the released crate
       #     (fixture_bench = the throughput/memory bench; binsize_baseline = "cost of the
       #     released lib" size number).
-      #   • binsize_pipeline WITHOUT it → the real shipping config whose size we report (none
-      #     of the benchmark-only reference-regex deps the feature drags in).
-      # These are byte-for-byte the same cargo invocations the shards / report ran before.
+      #   • binsize_pipeline WITHOUT it → the real shipping config whose size we report (no
+      #     released crate linked in).
+      # These are byte-for-byte the same cargo invocations the bench jobs / report ran before.
       - name: Build bench + binsize binaries
         run: |
           cargo build --release -p tk-encode --features tk-encode/bench-baseline \
@@ -135,8 +208,9 @@ jobs:
   # Pipeline oracle tests: encode + decode parity of the pipeline against the
   # released crate. They live behind `bench-baseline` (they link the released
   # crate), so a plain `cargo test` skips them — this is where they run. Same
-  # fixtures + models as the shards; the decode oracle is #[ignore]d until
-  # PipelineTokenizer::decode lands, so only encode parity runs today.
+  # fixtures + models as the bench jobs. Both directions run; the WordPiece decode
+  # tests fail on purpose (`PipelineWordPiece` keeps no id → token map) so the gap
+  # stays visible instead of hiding behind a skipped test.
   oracle:
     name: pipeline oracle tests
     if: github.event_name != 'pull_request' || github.event.label.name == 'run-pipeline-bench'
@@ -151,7 +225,8 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
-      # onig_sys (a bench-baseline dep) generates bindings via bindgen → needs libclang.
+      # onig_sys (the released crate's regex backend, via bench-baseline) generates
+      # bindings with bindgen → needs libclang.
       - name: Install libclang (onig_sys → bindgen)
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libclang-dev
 
@@ -172,17 +247,19 @@ jobs:
       - name: Run pipeline oracle tests (parity vs the released crate)
         run: cargo test -p tk-encode --features bench-baseline --test pipeline_oracle --test pipeline_decode_oracle
 
-  # Fan-out: each shard benches the i-th of SHARDS contiguous manifest slices on its
-  # own 8-vCPU runner (isolated + parallel), running the prebuilt binary, and uploads
-  # its partial JSON. No toolchain here — the shards only fetch data + the binary.
+  # Fan-out: one job per manifest model, on its own 8-vCPU runner (isolated +
+  # parallel), running the prebuilt binary, uploading a partial JSON. No
+  # toolchain here — these jobs only fetch data + the binaries. On PR runs the
+  # job also runs the base branch's binary (`--pipeline-only`) on this same
+  # runner, so the vs-base ratio never mixes machines.
   bench:
-    name: bench shard ${{ matrix.shard }}
-    needs: build
+    name: bench ${{ matrix.model }}
+    needs: [plan, build]
     if: github.event_name != 'pull_request' || github.event.label.name == 'run-pipeline-bench'
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3]
+        model: ${{ fromJson(needs.plan.outputs.models) }}
     runs-on:
       group: aws-general-8-plus
     defaults:
@@ -215,25 +292,55 @@ jobs:
           name: bench-binaries
           path: tokenizers/target/release/examples
 
-      - name: Run comparative benchmark (shard ${{ matrix.shard }} of ${{ env.SHARDS }})
+      - name: Download the base bench binary
+        if: needs.plan.outputs.have_base_bin == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8
+        with:
+          name: base-binary
+          path: tokenizers
+
+      # The base branch's pipeline, measured on THIS job's runner right before
+      # the PR's numbers. A base binary that predates a manifest or fixture
+      # change may fail on this model; drop its partial and keep the run — the
+      # report skips what is missing.
+      - name: Bench the base-branch pipeline (${{ matrix.model }})
+        if: needs.plan.outputs.have_base_bin == 'true'
+        run: |
+          chmod +x fixture_bench_base
+          if ! ./fixture_bench_base --pipeline-only --model "${{ matrix.model }}" \
+              > "base_bench_${{ matrix.model }}.json"; then
+            rm -f "base_bench_${{ matrix.model }}.json"
+            echo "Base binary failed on this model — vs-base will skip it."
+          fi
+
+      - name: Run comparative benchmark (${{ matrix.model }})
         run: |
           chmod +x target/release/examples/fixture_bench
-          ./target/release/examples/fixture_bench --shard ${{ matrix.shard }} ${{ env.SHARDS }} \
-            > "pipeline_bench_${{ matrix.shard }}.json"
-          cat "pipeline_bench_${{ matrix.shard }}.json"
+          ./target/release/examples/fixture_bench --model "${{ matrix.model }}" \
+            > "pipeline_bench_${{ matrix.model }}.json"
+          cat "pipeline_bench_${{ matrix.model }}.json"
 
-      - name: Upload shard partial
+      - name: Upload base partial
+        if: needs.plan.outputs.have_base_bin == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
-          name: partial-${{ matrix.shard }}
-          path: tokenizers/pipeline_bench_${{ matrix.shard }}.json
+          name: base-partial-${{ matrix.model }}
+          path: tokenizers/base_bench_${{ matrix.model }}.json
+          retention-days: 3
+          if-no-files-found: ignore
+
+      - name: Upload model partial
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: partial-${{ matrix.model }}
+          path: tokenizers/pipeline_bench_${{ matrix.model }}.json
           retention-days: 3
 
-  # Fan-in: concatenate the shard partials (in shard order = manifest order),
-  # then render + upload charts + update the PR, once.
+  # Fan-in: concatenate the model partials in manifest order, then render +
+  # upload charts + update the PR, once.
   report:
     name: PipelineTokenizer vs latest release
-    needs: bench
+    needs: [plan, bench]
     if: github.event_name != 'pull_request' || github.event.label.name == 'run-pipeline-bench'
     runs-on:
       group: aws-general-8-plus
@@ -251,9 +358,9 @@ jobs:
       - name: Install libcairo
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libcairo2
 
-      # Same data cache as the shards. Only the model tokenizers are needed here
+      # Same data cache as the bench jobs. Only the model tokenizers are needed here
       # (gpt2.json for the binsize check); the fixture corpora aren't — the numbers
-      # already live in the shard JSONs, but restoring the shared cache is a no-op fetch.
+      # already live in the partial JSONs, but restoring the shared cache is a no-op fetch.
       - name: Cache fixtures + model tokenizers
         uses: actions/cache@v4
         with:
@@ -265,29 +372,50 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: make models HF="uvx --from huggingface_hub hf"
 
-      - name: Download shard partials
+      - name: Download model partials
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8
         with:
           pattern: partial-*
           merge-multiple: true
           path: tokenizers/partials
 
-      - name: Merge shard partials
+      # Base partials exist only on PR runs where the plan job found a base
+      # binary, and only for the models it could still bench.
+      - name: Download base partials
+        continue-on-error: true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8
+        with:
+          pattern: base-partial-*
+          merge-multiple: true
+          path: tokenizers/base_partials
+
+      - name: Merge model partials
         run: |
           python3 - <<'PY'
           import glob, json
-          parts = sorted(glob.glob('partials/**/pipeline_bench_*.json', recursive=True),
-                         key=lambda f: int(f.rsplit('_', 1)[1].split('.')[0]))
-          merged = None
-          for f in parts:
-              d = json.load(open(f))
-              if merged is None:
-                  merged = {"baseline": d["baseline"], "models": []}
-              merged["models"].extend(d["models"])
-          if merged is None:
-              raise SystemExit("no shard partials found")
-          json.dump(merged, open('pipeline_bench.json', 'w'))
-          print(f"merged {len(parts)} shard(s) -> {len(merged['models'])} models")
+          order = [e["name"] for e in
+                   json.load(open('tk-encode/examples/bench_models.json'))]
+          def merge(pattern, prefix, out):
+              model_of = lambda f: f.rsplit('/', 1)[-1][len(prefix):-len('.json')]
+              parts = sorted(glob.glob(pattern, recursive=True),
+                             key=lambda f: order.index(model_of(f)))
+              merged = None
+              for f in parts:
+                  d = json.load(open(f))
+                  if merged is None:
+                      # `env` (cpu/glibc stamp) from the first partial: the jobs
+                      # share a runner group, so one stamp stands for the run.
+                      merged = {"baseline": d["baseline"], "env": d.get("env"),
+                                "regime": d.get("regime"), "models": []}
+                  merged["models"].extend(d["models"])
+              if merged is not None:
+                  json.dump(merged, open(out, 'w'))
+              print(f"{out}: merged {len(parts)} partial(s)")
+              return merged
+          if merge('partials/**/pipeline_bench_*.json', 'pipeline_bench_',
+                   'pipeline_bench.json') is None:
+              raise SystemExit("no model partials found")
+          merge('base_partials/**/base_bench_*.json', 'base_bench_', 'base_bench.json')
           PY
           head -c 300 pipeline_bench.json; echo
 
@@ -320,21 +448,36 @@ jobs:
           cat binary_sizes.json
 
       # "vs base branch": find the base branch's bench to diff this run against.
-      #   1. Primary — the `pipeline-baseline` tag pins a base commit whose merged
-      #      bench is cached on HF Hub (durable, survives artifact expiry).
+      #   0. Primary — this run's own base partials: the bench jobs ran the base
+      #      binary beside the PR binary, so the numbers share each job's runner.
+      #   1. Fallback — the `pipeline-baseline` tag pins a base commit whose
+      #      merged bench is cached on HF Hub (durable, survives artifact
+      #      expiry). Cross-run numbers: the report wall-time-diffs them only
+      #      when the two runs measured under the same regime.
       #   2. Fallback — before that tag exists (e.g. on this very PR, or any PR
       #      before the feature has merged + a base push), use the newest
       #      successful base-branch bench *artifact*. Always available, so the
       #      comparison shows up without any manual seeding.
-      # Skipped (has_base=false) only when neither exists or both point at this
-      # same commit; the release charts render regardless.
+      # Skipped (has_base=false) only when none exists or the fallbacks point at
+      # this same commit; the release charts render regardless.
       - name: Resolve base-branch baseline
         id: base
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CUR_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          BASE_SHA: ${{ needs.plan.outputs.base_sha }}
         run: |
+          # 0. base partials measured in this run's own jobs
+          if [ -f base_bench.json ]; then
+            {
+              echo "has_base=true"
+              echo "base_json=base_bench.json"
+              echo "base_ref=${BASE_SHA:0:9}"
+              echo "same_run=true"
+            } >> "$GITHUB_OUTPUT"
+            echo "Base baseline measured in this run (base binary from $BASE_SHA)."; exit 0
+          fi
           # 1. tag -> HF Hub JSON
           base_sha=$(git ls-remote origin refs/tags/pipeline-baseline | awk '{print $1}' | head -1)
           if [ -n "$base_sha" ] && [ "$base_sha" != "$CUR_SHA" ]; then
@@ -378,10 +521,13 @@ jobs:
           base_args=""
           if [ "${{ steps.base.outputs.has_base }}" = "true" ]; then
             base_args="--base-bench ${{ steps.base.outputs.base_json }} --base-ref ${{ steps.base.outputs.base_ref }}"
+            if [ "${{ steps.base.outputs.same_run }}" = "true" ]; then
+              base_args="$base_args --base-same-run"
+            fi
           fi
           python3 ${{ github.workspace }}/.github/scripts/render_pipeline_bench.py \
             pipeline_bench.json \
-            --subtitle "~10 kB inputs · add_special_tokens on · single thread + 1/2/4/8/max-thread sweep" \
+            --subtitle "pipeline: whole corpus · release: ~2 MB/fixture sample · ~10 kB chunks · cold caches · add_special_tokens on · 2/4-thread sweep per group" \
             --revision "${{ github.event.pull_request.head.sha || github.sha }}" \
             --img-base "$base_url" \
             --run-id "${{ github.run_id }}" \
@@ -446,30 +592,33 @@ jobs:
           gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/labels/run-pipeline-bench" \
             -X DELETE || true
 
-      # Pipeline encode ids (`ids_match`) AND decode text (`text_match`) must match
-      # the released crate. Both are null when the release can't load a model (no
-      # reference), and `text_match` is null while decode is a stub → inert until
-      # the pipeline can decode.
-      - name: Fail on id / decode mismatches
+      # Pipeline encode ids (`ids_match`) and decoded text (`text_match`) must both
+      # match the released crate. Null when the release can't load a model (no
+      # reference, so no gate) or when the pipeline can't decode it yet — those
+      # render as "pending" rather than failing here.
+      - name: Fail on parity mismatches
         run: |
           python3 -c "
           import json, sys
           models = json.load(open('pipeline_bench.json'))['models']
-          ids = [f\"{m['model']}/{r['fixture']}\" for m in models
-                 for r in m['results'] if r.get('ids_match') is False]
-          text = [f\"{m['model']}/{r['fixture']}\" for m in models
-                  for r in m['results'] if r.get('text_match') is False]
-          errs = ([f'ids diverge on: {ids}'] if ids else []) + \
-                 ([f'decode diverges on: {text}'] if text else [])
-          sys.exit(' · '.join(errs) if errs else 0)
+          bad = lambda gate: [f\"{m['model']}/{r['fixture']}\" for m in models
+                              for r in m['results'] if r.get(gate) is False]
+          msg = []
+          for gate, what in (('ids_match', 'ids'), ('text_match', 'decoded text')):
+              names = bad(gate)
+              if names:
+                  msg.append(f'{what} diverges from the release on: {names}')
+          sys.exit('; '.join(msg) if msg else 0)
           "
 
       # Establish/refresh the base-branch baseline: on a push to
-      # feat/train_encode_split, cache this commit's merged bench on HF Hub and
-      # force-move the `pipeline-baseline` tag to it. Runs only after the id check
-      # passes, so a broken base never becomes the baseline. The tag push is a
-      # refs/tags update — it does NOT match the `push: branches` trigger, so no
-      # re-run loop. Uses the checkout's persisted GITHUB_TOKEN (contents: write).
+      # feat/train_encode_split, upload this commit's merged bench JSON and its
+      # fixture_bench binary to HF Hub, and force-move the `pipeline-baseline`
+      # tag to it. PR runs then bench that binary (`--pipeline-only`) beside
+      # their own. Runs only after the id check passes, so a broken base never
+      # becomes the baseline. The tag push is a refs/tags update — it does NOT
+      # match the `push: branches` trigger, so no re-run loop. Uses the
+      # checkout's persisted GITHUB_TOKEN (contents: write).
       - name: Publish base-branch baseline
         if: github.event_name == 'push'
         env:
@@ -478,9 +627,11 @@ jobs:
           sha="${{ github.sha }}"
           uvx --from huggingface_hub hf upload hf-internal-testing/tokenizers-bench \
             pipeline_bench.json "baselines/pipeline-$sha.json" --repo-type dataset
+          uvx --from huggingface_hub hf upload hf-internal-testing/tokenizers-bench \
+            target/release/examples/fixture_bench "baselines/fixture_bench-$sha" --repo-type dataset
           git tag -f pipeline-baseline "$sha"
           git push -f origin "refs/tags/pipeline-baseline"
-          echo "Published baseline for $sha and moved the pipeline-baseline tag."
+          echo "Published baseline JSON + binary for $sha and moved the pipeline-baseline tag."
 
       - name: Upload results artifact
         if: always()
