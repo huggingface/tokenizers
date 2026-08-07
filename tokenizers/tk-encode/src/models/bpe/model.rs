@@ -240,19 +240,11 @@ impl PipelineBPE {
         proven
     }
 
-    /// The id to emit for `sequence` without merging, when the whole pretoken is a vocabulary
-    /// entry that may be folded. `None` sends the word to the merge engines.
-    // Dead on this branch only: the batched `tokenize_spans` is its caller and this stack is based
-    // on a tip that predates it. Rebasing onto a base that has the batched path uses it again.
-    #[allow(dead_code)]
-    #[inline(always)]
-    fn fold_id(&self, sequence: &str) -> Option<u32> {
-        let bytes = sequence.as_bytes();
-        let (key, hash) = key_and_hash(bytes);
-        self.fold_id_keyed(bytes, key, hash)
-    }
-
-    /// [`Self::fold_id`] for a caller that already ran [`key_and_hash`] on the word.
+    /// The id to emit for a pretoken without merging, when the whole word is a vocabulary entry
+    /// that may be folded. `None` sends the word to the merge engines.
+    ///
+    /// Takes the key and hash rather than the word alone: both call sites also probe the cache for
+    /// the same bytes, so they run [`key_and_hash`] once and share it.
     #[inline(always)]
     fn fold_id_keyed(&self, bytes: &[u8], key: u64, hash: u64) -> Option<u32> {
         // One probe; the foldable bit is part of the id that probe already returned. Which entries
@@ -401,14 +393,16 @@ impl pipeline::Model for PipelineBPE {
             // word that is itself a foldable vocabulary entry in one probe, and those words never
             // reach the cache. Probing the cache first would populate it with words the fold
             // already serves for free, and the two paths would disagree about what it holds.
-            if let Some(id) = self.fold_id(sequence) {
+            let bytes = sequence.as_bytes();
+            let (key, hash) = key_and_hash(bytes);
+            if let Some(id) = self.fold_id_keyed(bytes, key, hash) {
                 output.push(PipelineToken { id });
                 continue;
             }
 
             let mut placement = None;
             if let Some(cache) = word_cache.as_mut() {
-                match cache.lookup(sequence.as_bytes()) {
+                match cache.lookup_hashed(bytes, hash) {
                     Lookup::Hit(ids) => {
                         output.extend(ids.iter().map(|&id| PipelineToken { id }));
                         continue;
