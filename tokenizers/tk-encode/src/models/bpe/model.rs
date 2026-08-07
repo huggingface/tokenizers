@@ -12,7 +12,7 @@ use crate::pipeline::{self, PipelineToken, Span};
 use crate::tokenizer::Result;
 use crate::utils::byte_level::{self};
 use crate::utils::word_cache::{Lookup, MAX_INLINE_IDS, ProbeEmit, WordCache};
-use crate::vocab::bucket_vocab_store::{BucketVocabStore, key_and_hash};
+use crate::vocab::bucket_vocab_store::{BucketVocabStore, key_and_hash, key_and_hash_readable};
 
 const GATE_MULTI: u16 = 8;
 const GATE_ASCII: u16 = 24;
@@ -390,10 +390,12 @@ impl pipeline::Model for PipelineBPE {
             word_cache,
         } = scratch;
 
-        // 92% of english pre-tokens are one id and 98% at most two, so reserve for two apiece plus
-        // the probe's headroom. `spans.len()` alone is a *lower* bound, which would make the buffer
-        // grow -- and memcpy what it already holds -- partway through most chunks.
-        output.reserve(2 * spans.len() + MAX_INLINE_IDS);
+        // One id per span plus the probe's headroom. Reserving *two* apiece was measured worse, not
+        // better: the allocating entry point sizes its buffer at `len/4`, which is about one id per
+        // span, so asking for two forced a reallocation on every call that would not otherwise have
+        // happened. Anything past this grows amortised, and a caller that wants no growth at all
+        // should reserve once and use `encode_generic_into`.
+        output.reserve(spans.len() + MAX_INLINE_IDS);
         let mut capacity = output.capacity();
         let mut cursor = output.len();
 
@@ -418,8 +420,10 @@ impl pipeline::Model for PipelineBPE {
             // word that is itself a foldable vocabulary entry in one probe, and those words never
             // reach the cache. Probing the cache first would populate it with words the fold
             // already serves for free, and the two paths would disagree about what it holds.
-            let bytes = sequence.as_bytes();
-            let (key, hash) = key_and_hash(bytes);
+            // The span is inside `chunk`, so everything up to the chunk's end is readable and a
+            // short word's key can be one unaligned masked load rather than a head/tail stitch.
+            let (key, hash) =
+                key_and_hash_readable(sequence.as_bytes(), chunk.len() - span.start as usize);
             if let Some(id) = self.fold_id_keyed(key, hash) {
                 // SAFETY: the check above leaves at least `MAX_INLINE_IDS >= 1` slots past `cursor`.
                 unsafe { output.as_mut_ptr().add(cursor).write(PipelineToken { id }) };
