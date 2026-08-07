@@ -378,23 +378,26 @@ impl pipeline::Model for PipelineBPE {
             if sequence.is_empty() {
                 continue;
             }
+
+            // Same order as `tokenize_pipeline`, and it has to stay that way: the fold answers a
+            // word that is itself a foldable vocabulary entry in one probe, and those words never
+            // reach the cache. Probing the cache first would populate it with words the fold
+            // already serves for free, and the two paths would disagree about what it holds.
             if let Some(id) = self.fold_id(sequence) {
                 output.push(PipelineToken { id });
                 continue;
             }
 
-            // A word seen before costs a probe instead of a merge.
-            let insert_at = if let Some(cache) = word_cache.as_mut() {
+            let mut placement = None;
+            if let Some(cache) = word_cache.as_mut() {
                 match cache.lookup(sequence.as_bytes()) {
                     Lookup::Hit(ids) => {
                         output.extend(ids.iter().map(|&id| PipelineToken { id }));
                         continue;
                     }
-                    Lookup::Miss(at) => Some(at),
+                    Lookup::Miss(at) => placement = Some(at),
                 }
-            } else {
-                None
-            };
+            }
 
             let start = output.len();
             self.merge_word(sequence, symbols, queue);
@@ -403,7 +406,7 @@ impl pipeline::Model for PipelineBPE {
                 id: self.tables.unmap.at(symbol as usize),
             }));
             if let Some(cache) = word_cache.as_mut()
-                && let Some(at) = insert_at
+                && let Some(at) = placement
             {
                 cache.insert(at, output[start..].iter().map(|token| token.id));
             }
