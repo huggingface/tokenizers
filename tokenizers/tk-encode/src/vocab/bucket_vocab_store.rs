@@ -219,10 +219,28 @@ impl BucketVocabStore {
     /// load: the flag is a bit of the id the probe already read.
     #[inline]
     pub fn get_bytes_foldable(&self, q: &[u8]) -> Option<(u32, bool)> {
+        self.get_bytes_foldable_hashed(q, self.hash_word(q))
+    }
+
+    /// The hash this store keys `q` by. Exposed so a caller that also has to hash the same word for
+    /// another table can pay for one pass instead of two; see [`Self::get_bytes_foldable_hashed`].
+    #[inline]
+    pub fn hash_word(&self, q: &[u8]) -> u64 {
+        self.hasher.hash_one(q)
+    }
+
+    /// [`Self::get_bytes_foldable`] for a caller that already hashed the word with
+    /// [`Self::hash_word`].
+    ///
+    /// Verification is unchanged: the MPHF hands back a slot for *any* query, so the entry's bytes
+    /// are still compared to `q` in full. Only the hashing is shared, never the check.
+    #[inline]
+    pub fn get_bytes_foldable_hashed(&self, q: &[u8], hash: u64) -> Option<(u32, bool)> {
         if self.entries.is_empty() {
             return None;
         }
-        let slot = self.mphf.index(&self.hasher.hash_one(q));
+        debug_assert_eq!(hash, self.hash_word(q), "hash does not belong to this word");
+        let slot = self.mphf.index(&hash);
         let e = self.entries[slot];
         let (start, len) = (e.start as usize, e.len as usize);
         if len == q.len() && self.bytes[start..start + len] == *q {
@@ -312,6 +330,32 @@ impl BucketVocabStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The BPE fast path hashes a word once and hands that one value to both the vocabulary probe
+    /// and the word cache, which is only sound while both seed `ahash` identically. If someone
+    /// re-seeds either side, the cache would place a word under one hash and look it up under
+    /// another: no wrong ids, but every lookup would miss and the cache would silently stop
+    /// working. This pins the two together so that change fails here instead.
+    #[test]
+    fn vocab_and_word_cache_hash_a_word_identically() {
+        let vocab = BucketVocabStore::build(vec![(b"Hel".to_vec(), 0)]);
+        for w in [
+            &b""[..],
+            b"a",
+            b"Hel",
+            b"the",
+            b" the",
+            b"fifteen bytes!!",
+            b"sixteen bytes ..",
+            b"a considerably longer word than the inline key can hold",
+        ] {
+            assert_eq!(
+                vocab.hash_word(w),
+                crate::utils::word_cache::placement_hash_of(w),
+                "hashers disagree on {w:?}"
+            );
+        }
+    }
 
     #[test]
     fn single_token() {

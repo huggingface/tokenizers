@@ -244,9 +244,17 @@ impl PipelineBPE {
     /// entry that may be folded. `None` sends the word to the merge engines.
     #[inline(always)]
     fn fold_id(&self, sequence: &str) -> Option<u32> {
+        let bytes = sequence.as_bytes();
+        self.fold_id_hashed(bytes, self.vocab.hash_word(bytes))
+    }
+
+    /// [`Self::fold_id`] for a caller that already hashed the word with
+    /// [`BucketVocabStore::hash_word`].
+    #[inline(always)]
+    fn fold_id_hashed(&self, bytes: &[u8], hash: u64) -> Option<u32> {
         // One probe; the foldable bit is part of the id that probe already returned. Which entries
         // carry it was settled at load -- see `from_bpe`.
-        let (id, foldable) = self.vocab.get_bytes_foldable(sequence.as_bytes())?;
+        let (id, foldable) = self.vocab.get_bytes_foldable_hashed(bytes, hash)?;
         foldable.then_some(id)
     }
 
@@ -309,7 +317,14 @@ impl pipeline::Model for PipelineBPE {
             return Ok(());
         }
 
-        if let Some(id) = self.fold_id(sequence) {
+        // Hashed once for both probes. The fold asks the vocabulary and, on a miss, the cache asks
+        // its own table; `BucketVocabStore` and `WordCache` seed the same `ahash` state, so the two
+        // probes were hashing the same word to the same 64 bits twice. Both still verify their own
+        // way -- the vocabulary compares the entry's bytes, the cache compares its key -- so this
+        // shares the hash and nothing else.
+        let bytes = sequence.as_bytes();
+        let hash = self.vocab.hash_word(bytes);
+        if let Some(id) = self.fold_id_hashed(bytes, hash) {
             output.push(PipelineToken { id });
             return Ok(());
         }
@@ -322,7 +337,7 @@ impl pipeline::Model for PipelineBPE {
 
         // A word seen before costs a probe instead of a merge.
         let insert_at = if let Some(cache) = word_cache.as_mut() {
-            match cache.lookup(sequence.as_bytes()) {
+            match cache.lookup_hashed(bytes, hash) {
                 Lookup::Hit(ids) => {
                     output.extend(ids.iter().map(|&id| PipelineToken { id }));
                     return Ok(());
