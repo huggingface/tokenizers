@@ -103,159 +103,199 @@
 //! The merge is safe to batch merge only if the produced id (merged symbol) does not take part in other merges with lower rank (higher priority).
 //! This is enforced when building the lookup table and encoded in the `SAFE` bit.
 //!
-use crate::models::bpe::tables::{BpeTables, ID_MASK, SAFE_MASK};
-use std::cmp;
+use crate::models::bpe::tables::{BpeTables, ID_MASK};
 
-const NOT_LEGAL: u64 = u64::MAX;
 
-/// Iteratively merges a word in place until it has no legal merge left
-pub(super) fn merge_multipass(tables: &BpeTables, symbols: &mut Vec<u32>, mut target_merge: u64) {
-    let mut len = symbols.len();
-    if len < 2 || target_merge == NOT_LEGAL {
-        return;
+/// Iteratively merges a word in place until it has no legal merge left.
+///
+/// `ranks[i]` is the value of the pair `(symbols[i], symbols[i + 1])`, seeded by
+/// `convert_multipass` and carried across passes. That is the whole point: a pass used to re-look-up
+/// every pair it walked over, so the passes summed to O(n^2) table lookups -- measured at 41.9 per
+/// merged word. Only the pairs touching a merge's product actually change, so a pass now copies the
+/// ranks it did not invalidate and pays `get_value` twice per merge instead of once per symbol.
+/// Finding the next target is then a scan of `ranks`, with no lookups at all.
+/// Wave merging is not an option here, and it is worth saying why: applying every *local* minimum in
+/// one pass, rather than the one *global* minimum, is not byte-exact. Measured on 4 MB of english it
+/// produced 1,473,346 tokens against the correct 944,838 -- a different tokenisation -- and was
+/// slower besides (316 vs 525 MB/s). That closes chunk-wide bit-sliced rank comparison as a
+/// direction: comparing all positions at once only helps if all the winners can be applied at once.
+///
+/// 24 symbols: `GATE_ASCII` is 24 bytes and a word never has more symbols than bytes.
+///
+/// Widening this to 64 (on a `u64` live mask) so the gate could move was tried, on the reasoning that
+/// the gate existed because multipass searched a compacting array. It does not pay: routing long
+/// words here instead of the hot/cold queue measured chinese 101 -> 93 MB/s and russian 152 -> 145 at
+/// `GATE_MULTI = 64`. Multipass is O(n) search x O(n) merges against the queue's O(n log n), and by
+/// n = 12 the queue is already ahead -- so the gate is not a leftover, it is the crossover. Keeping
+/// the bound at 24 also keeps the three stack arrays to a 96-byte fill per word rather than 768.
+const MAX_MP: usize = 24;
+
+
+pub fn merge_multipass(
+    tables: &BpeTables,
+    symbols: &mut Vec<u32>,
+    ranks: &mut Vec<u32>,
+    prods: &mut Vec<u32>,
+    _first_merge: u64,
+) {
+    let n = symbols.len();
+    if n < 2 || n > MAX_MP {
+        return merge_multipass_vec(tables, symbols, ranks, prods);
     }
+    debug_assert_eq!(ranks.len(), n - 1, "one rank per adjacent pair");
+
+    // Symbols keep their ORIGINAL positions for the whole merge; nothing is ever compacted.
+    //
+    // A merge used to splice: write the product, then `copy_within` symbols, ranks and products to
+    // close the gap -- three memmoves per merge, on every merge. Instead the word carries a `live`
+    // bitmap of which slots still hold a symbol, and a merge just clears one bit. Finding the symbol
+    // to the left or right of a position is then two bit ops rather than an index that shifted.
+    //
+    // The bound is what makes this work: it puts the live set in one `u64`, so "previous live" and
+    // "next live" are `leading_zeros` / `trailing_zeros`. Dead pair slots hold `u32::MAX`, which is
+    // also "does not merge", so the minimum search skips them for free and needs no mask of its own.
+    // The search runs to `n`, the word's real length -- padding it out to the bound was measured 3%
+    // slower, because the bound is 24 and the size is ~9.
+    //
+    // And it runs on the caller's buffers. Copying into `[u32; MAX_MP]` stack arrays first, which is
+    // what this did, compiled to a 288-byte `stp q` fill of all three arrays plus THREE out-of-line
+    // `memcpy` calls through the PLT per word, for at most 96 bytes each -- the bound only ever
+    // constrained `n`, never where the symbols had to live.
+    // Padding these out to `MAX_MP` so their length is a compile-time constant was tried, to let the
+    // bounds checks fold away and to hand the search a fixed-size reduction: 814 instructions instead
+    // of 640, and slower everywhere (english 3.40 -> 3.62 ns/B), because LLVM does not vectorise an
+    // argmin -- the index half of the reduction defeats it -- so the scan simply walked 23 padded
+    // lanes instead of 7.
+    let sym = &mut symbols[..];
+    let rank = &mut ranks[..];
+    let prod = &mut prods[..];
+
+    // Bit i set means slot i still holds a symbol. `n <= 24`, so this never overflows.
+    let mut live: u64 = (1u64 << n) - 1;
+
+    #[inline(always)]
+    fn next_live(live: u64, from: usize) -> Option<usize> {
+        if from + 1 >= 64 {
+            return None;
+        }
+        let above = live >> (from + 1);
+        (above != 0).then(|| from + 1 + above.trailing_zeros() as usize)
+    }
+    #[inline(always)]
+    fn prev_live(live: u64, before: usize) -> Option<usize> {
+        let below = live & ((1u64 << before) - 1);
+        (below != 0).then(|| 63 - below.leading_zeros() as usize)
+    }
+
+    // The loop below indexes the caller's slices, so LLVM cannot see the bound and emits a
+    // bounds-check panic per access: 26 of them and 81 branches in a 640-instruction function. Every
+    // index is provably in range -- the scan gives `at < n - 1`, and `live` only ever has bits below
+    // `n` set -- so `get_unchecked` is sound here, and it takes the function to 555 instructions, 67
+    // branches and 16 panics. It is still not worth the `unsafe`: measured 1.0031x over tokbench's 29
+    // gpt2 cells, inside a +-0.8% noise floor. Whatever makes an iteration cost ~66 cycles -- for a
+    // scan over <= 8 `u32`, two bit ops, and two lookups that are demonstrably hot, since doubling
+    // `get_value` in place costs +2.1 ns of ~19 -- it is neither the bounds checks nor memory.
     loop {
-        let MergeOnceOutput {
-            next_merge,
-            merged_length,
-        } = merge_once(
-            tables,
-            symbols,
-            len,
-            target_merge,
-            batch_merging_is_safe(tables, target_merge),
-        );
-        len = merged_length;
-        if next_merge == NOT_LEGAL {
+        // Lowest rank, leftmost on a tie, over the word's real length. Dead slots are `u32::MAX`.
+        //
+        // This scan is already branchless: LLVM emits `cmp` + two `csel` (best, and the index), so
+        // the only branch is the perfectly-predicted loop-back. Packing the index into the low bits
+        // to turn the argmin into a plain min-reduction -- on the theory that the branch was the
+        // cost and that the index half was what blocked vectorisation -- measured **0.9836x** over
+        // tokbench's 29 gpt2 cells (english 3.26 -> 3.44), byte-exact. It backfired precisely
+        // because it succeeded: LLVM then vectorises the reduction, and the vector prologue (lane
+        // index vectors, four accumulators, a scalar epilogue) costs far more than the ~9 elements
+        // it processes. Do not retry either half of that idea without also pinning the trip count.
+        let mut best = u32::MAX;
+        let mut at = 0usize;
+        for (i, &r) in rank[..n - 1].iter().enumerate() {
+            if r < best {
+                best = r;
+                at = i;
+            }
+        }
+        if best == u32::MAX {
             break;
         }
-        target_merge = next_merge;
+
+        // The pair is (at, next_live(at)). The product lands in `at`; the right symbol dies.
+        let Some(right) = next_live(live, at) else { break };
+        sym[at] = prod[at];
+        live &= !(1u64 << right);
+        // No pair starts at the last symbol, so there is no rank slot for it; in the padded array
+        // this wrote `u32::MAX` over `u32::MAX`.
+        if right + 1 < n {
+            rank[right] = u32::MAX; // its pair is gone with it
+        }
+        rank[at] = u32::MAX; // recomputed below if a right neighbour remains
+
+        // Only the pairs either side of the new symbol changed.
+        if let Some(pv) = prev_live(live, at) {
+            let v = tables.get_value(&sym[pv], &sym[at]);
+            rank[pv] = (v >> 32) as u32;
+            prod[pv] = (v & ID_MASK) as u32;
+        }
+        if let Some(nx) = next_live(live, at) {
+            let v = tables.get_value(&sym[at], &sym[nx]);
+            rank[at] = (v >> 32) as u32;
+            prod[at] = (v & ID_MASK) as u32;
+        }
+    }
+
+    // Compact the survivors to the front, in position order. The write index never passes the read
+    // index, so this is safe in place and needs no second buffer.
+    let mut kept = 0usize;
+    let mut m = live;
+    while m != 0 {
+        let i = m.trailing_zeros() as usize;
+        sym[kept] = sym[i];
+        kept += 1;
+        m &= m - 1;
+    }
+    symbols.truncate(kept);
+    ranks.clear();
+    prods.clear();
+}
+
+/// The compacting version, for the rare word longer than [`MAX_MP`] that still routes here.
+fn merge_multipass_vec(
+    tables: &BpeTables,
+    symbols: &mut Vec<u32>,
+    ranks: &mut Vec<u32>,
+    prods: &mut Vec<u32>,
+) {
+    let mut len = symbols.len();
+    while len >= 2 {
+        let mut best = u32::MAX;
+        let mut at = 0usize;
+        for (i, &rank) in ranks[..len - 1].iter().enumerate() {
+            if rank < best {
+                best = rank;
+                at = i;
+            }
+        }
+        if best == u32::MAX {
+            break;
+        }
+        symbols[at] = prods[at];
+        symbols.copy_within(at + 2..len, at + 1);
+        len -= 1;
+        if len >= 2 {
+            ranks.copy_within(at + 1..len, at);
+            prods.copy_within(at + 1..len, at);
+        }
+        if at > 0 {
+            let v = tables.get_value(&symbols[at - 1], &symbols[at]);
+            ranks[at - 1] = (v >> 32) as u32;
+            prods[at - 1] = (v & ID_MASK) as u32;
+        }
+        if at + 1 < len {
+            let v = tables.get_value(&symbols[at], &symbols[at + 1]);
+            ranks[at] = (v >> 32) as u32;
+            prods[at] = (v & ID_MASK) as u32;
+        }
     }
     symbols.truncate(len);
-}
-
-/// Whether one pass may merge every occurrence of the target, or only the first occurrence.
-#[inline(always)]
-fn batch_merging_is_safe(tables: &BpeTables, target_merge: u64) -> bool {
-    // A NOT_LEGAL merge has the SAFE bit set, it would incorrectly return true here
-    // The caller is responsible for checking NOT_LEGAL does not reach this
-    debug_assert!(target_merge != NOT_LEGAL);
-    !tables.any_unsafe || (target_merge & SAFE_MASK != 0)
-}
-
-/// One pass's cursors and running result.
-///
-/// The read cursor marks the start of what is left of the old word, the write cursor
-/// the end of the new word built so far (see the module docs).
-struct MergeState {
-    read_cursor: usize,
-    write_cursor: usize,
-    target_merge: u64,
-    batched: bool,
-    was_merged: bool,
-    next_merge: u64,
-}
-
-impl MergeState {
-    fn new(target_merge: u64, batched: bool) -> Self {
-        Self {
-            read_cursor: 0,
-            write_cursor: 0,
-            target_merge,
-            batched,
-            was_merged: false,
-            next_merge: NOT_LEGAL,
-        }
-    }
-
-    /// Looks up the pair at the read cursor and writes one symbol: the pair's product id when
-    /// its value equals the target and the pair may still merge, the left symbol otherwise. A
-    /// merge consumes both symbols of the pair, a copy only the left one.
-    ///
-    /// The returned value is the next call's `cached_pair_value`, and it is what keeps a step
-    /// down to a single table lookup. A copy has already paid for the lookup of
-    /// (`left_symbol`, `right_symbol`), and that is exactly the pair the next write has to
-    /// rank, so handing the value forward wins that second lookup back. A merge returns `None`
-    /// instead: it writes a product id that no pair has been looked up against yet, so the
-    /// next write has to pay for its own lookup.
-    #[inline(always)]
-    fn step(
-        &mut self,
-        tables: &BpeTables,
-        symbols: &mut [u32],
-        cached_pair_value: Option<u64>,
-    ) -> Option<u64> {
-        let (left_symbol, right_symbol) =
-            (symbols[self.read_cursor], symbols[self.read_cursor + 1]);
-        let pair_value = tables.get_value(&left_symbol, &right_symbol);
-        let should_merge = pair_value == self.target_merge && (self.batched || !self.was_merged);
-        if should_merge {
-            self.was_merged = true;
-            self.read_cursor += 2;
-            let merged_symbol = (pair_value & ID_MASK) as u32;
-            self.write(tables, symbols, merged_symbol, None);
-            None
-        } else {
-            self.read_cursor += 1;
-            self.write(tables, symbols, left_symbol, cached_pair_value);
-            Some(pair_value)
-        }
-    }
-
-    /// Writes one symbol at the write cursor and ranks the pair it forms with the previously
-    /// written symbol as a candidate for the next pass's target: `next_merge` keeps the lowest
-    /// value seen. `Some` reuses the value the caller already looked up, `None` pays for a
-    /// lookup here. The first written symbol has no left neighbour and nothing to rank.
-    #[inline(always)]
-    fn write(
-        &mut self,
-        tables: &BpeTables,
-        symbols: &mut [u32],
-        symbol: u32,
-        cached_pair_value: Option<u64>,
-    ) {
-        symbols[self.write_cursor] = symbol;
-        if self.write_cursor > 0 {
-            let rank = cached_pair_value
-                .unwrap_or_else(|| tables.get_value(&symbols[self.write_cursor - 1], &symbol));
-            self.next_merge = cmp::min(self.next_merge, rank);
-        }
-        self.write_cursor += 1;
-    }
-}
-
-struct MergeOnceOutput {
-    next_merge: u64,
-    merged_length: usize,
-}
-
-/// One pass: walk the first `len` elements of `symbols` and merge occurrences of `target_merge`.
-///
-/// Returns the next pass's target (`u64::MAX` when no pair in the rewritten word merges), and the number of symbols written.
-/// Symbols past `len` are leftovers of earlier passes and should be truncated.
-fn merge_once(
-    tables: &BpeTables,
-    symbols: &mut [u32],
-    len: usize,
-    target_merge: u64,
-    batched: bool,
-) -> MergeOnceOutput {
-    // Resliced so the loop bound and the slice length are the same value. Without this the
-    // compiler cannot connect `len` to the length of `symbols` and keeps a bounds check on
-    // every read and write of the sweep.
-    let symbols = &mut symbols[..len];
-    let mut state = MergeState::new(target_merge, batched);
-    let mut cached_pair_value = None;
-    while state.read_cursor + 1 < len {
-        cached_pair_value = state.step(tables, symbols, cached_pair_value);
-    }
-    if state.read_cursor < len {
-        // The sweep's final symbol has no right neighbour to pair with, so it is copied as is.
-        let last_symbol = symbols[state.read_cursor];
-        state.write(tables, symbols, last_symbol, cached_pair_value);
-    }
-    MergeOnceOutput {
-        next_merge: state.next_merge,
-        merged_length: state.write_cursor,
-    }
+    ranks.truncate(len.saturating_sub(1));
+    prods.truncate(len.saturating_sub(1));
 }

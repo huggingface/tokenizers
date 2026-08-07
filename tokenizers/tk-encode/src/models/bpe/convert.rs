@@ -55,12 +55,22 @@ trait SinkMode {
 /// applies.
 struct MultipassSink<'a> {
     symbols: &'a mut Vec<u32>,
+    /// `ranks[i]` is the value of the pair `(symbols[i], symbols[i + 1])`.
+    ///
+    /// Conversion already looks every pair up, so seeding this costs one store per pair and no
+    /// extra lookup. It is what lets the merge passes stop re-ranking pairs they did not touch.
+    ranks: &'a mut Vec<u32>,
+    /// The product id of each pair, kept apart from its rank so the merge loop's search array stays
+    /// a dense `u32` of ranks alone.
+    prods: &'a mut Vec<u32>,
     lowest_merge: u64,
 }
 
 impl SinkMode for MultipassSink<'_> {
     #[inline(always)]
     fn record_pair(&mut self, merge: u64, _previous: u32, _symbol: u32) {
+        self.ranks.push((merge >> 32) as u32);
+        self.prods.push((merge & ID_MASK) as u32);
         self.lowest_merge = self.lowest_merge.min(merge);
     }
     #[inline(always)]
@@ -129,13 +139,25 @@ impl<M: SinkMode> SymbolSink<M> {
 impl PipelineBPE {
     /// Converts one pretoken to internal IDs, returning the lowest-ranked adjacent pair,
     /// `u64::MAX` when no pair merges.
-    pub(super) fn convert_multipass(&self, sequence: &str, symbols: &mut Vec<u32>) -> u64 {
+    pub(super) fn convert_multipass(
+        &self,
+        sequence: &str,
+        symbols: &mut Vec<u32>,
+        ranks: &mut Vec<u32>,
+        prods: &mut Vec<u32>,
+    ) -> u64 {
         symbols.clear();
+        ranks.clear();
+        prods.clear();
         // a word never has more symbols than bytes, so one reserve covers every push
         symbols.reserve(sequence.len());
+        ranks.reserve(sequence.len());
+        prods.reserve(sequence.len());
         let mut sink = SymbolSink {
             mode: MultipassSink {
                 symbols,
+                ranks,
+                prods,
                 lowest_merge: u64::MAX,
             },
             previous_symbol: u32::MAX,

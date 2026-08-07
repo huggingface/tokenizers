@@ -219,6 +219,8 @@ impl PipelineBPE {
         let mut proven = vec![false; len];
         let mut symbols = Vec::with_capacity(64);
         let mut scratch = QueueScratch::default();
+        let mut ranks = Vec::with_capacity(64);
+        let mut prods = Vec::with_capacity(64);
         for id in 0..len as u32 {
             let Some(bytes) = self.vocab.id_to_token_bytes(id) else {
                 continue;
@@ -232,7 +234,7 @@ impl PipelineBPE {
                 // A single atom has no pair to merge and is trivially its own encoding.
                 true
             } else {
-                self.merge_word(text, &mut symbols, &mut scratch);
+                self.merge_word(text, &mut symbols, &mut scratch, &mut ranks, &mut prods);
                 symbols.len() == 1 && self.tables.unmap.at(symbols[0] as usize) == id
             };
             proven[id as usize] = foldable;
@@ -264,6 +266,8 @@ impl PipelineBPE {
         sequence: &str,
         symbols: &mut Vec<u32>,
         queue_scratch: &mut QueueScratch,
+        ranks: &mut Vec<u32>,
+        prods: &mut Vec<u32>,
     ) {
         let bytes = sequence.as_bytes();
         // Classify on the first content byte, not on the delimiter the pre-tokenizer prepended.
@@ -279,8 +283,8 @@ impl PipelineBPE {
             );
             merge_hot_cold_queue(&self.tables, symbols, queue_scratch);
         } else {
-            let first_merge = self.convert_multipass(sequence, symbols);
-            merge_multipass(&self.tables, symbols, first_merge);
+            let first_merge = self.convert_multipass(sequence, symbols, ranks, prods);
+            merge_multipass(&self.tables, symbols, ranks, prods, first_merge);
         }
     }
 }
@@ -292,6 +296,10 @@ pub struct BpeScratch {
     pub(crate) symbols: Vec<u32>,
     /// Entry arena and the two queue tiers.
     pub(crate) queue: QueueScratch,
+    /// One rank per adjacent pair of the word being merged; see `merge_multipass`.
+    pub(crate) ranks: Vec<u32>,
+    /// The matching product ids, kept apart so the merge loop's search array is ranks alone.
+    pub(crate) prods: Vec<u32>,
     /// Words already seen, so a repeat costs a probe instead of a merge. It lives in the scratch
     /// so it outlives the encode call that fills it -- otherwise it would never see a word twice.
     pub(crate) word_cache: Option<WordCache>,
@@ -327,6 +335,8 @@ impl pipeline::Model for PipelineBPE {
         let BpeScratch {
             symbols,
             queue,
+            ranks,
+            prods,
             word_cache,
         } = scratch;
 
@@ -344,7 +354,7 @@ impl pipeline::Model for PipelineBPE {
         };
 
         let start = output.len();
-        self.merge_word(sequence, symbols, queue);
+        self.merge_word(sequence, symbols, queue, ranks, prods);
         // the merge engines work in internal ids; `unmap` takes them back to the vocab's own ids
         output.extend(symbols.iter().map(|&symbol| PipelineToken {
             id: self.tables.unmap.at(symbol as usize),
@@ -374,6 +384,8 @@ impl pipeline::Model for PipelineBPE {
         let BpeScratch {
             symbols,
             queue,
+            ranks,
+            prods,
             word_cache,
         } = scratch;
 
@@ -412,7 +424,7 @@ impl pipeline::Model for PipelineBPE {
             }
 
             let start = output.len();
-            self.merge_word(sequence, symbols, queue);
+            self.merge_word(sequence, symbols, queue, ranks, prods);
             // the merge engines work in internal ids; `unmap` takes them back to the vocab's own ids
             output.extend(symbols.iter().map(|&symbol| PipelineToken {
                 id: self.tables.unmap.at(symbol as usize),
@@ -430,6 +442,8 @@ impl pipeline::Model for PipelineBPE {
         Self::Scratch {
             symbols: Vec::with_capacity(64),
             queue: QueueScratch::default(),
+            ranks: Vec::with_capacity(64),
+            prods: Vec::with_capacity(64),
             word_cache: self.cache_capacity.map(WordCache::new),
         }
     }
