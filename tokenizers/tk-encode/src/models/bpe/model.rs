@@ -242,6 +242,9 @@ impl PipelineBPE {
 
     /// The id to emit for `sequence` without merging, when the whole pretoken is a vocabulary
     /// entry that may be folded. `None` sends the word to the merge engines.
+    // Dead on this branch only: the batched `tokenize_spans` is its caller and this stack is based
+    // on a tip that predates it. Rebasing onto a base that has the batched path uses it again.
+    #[allow(dead_code)]
     #[inline(always)]
     fn fold_id(&self, sequence: &str) -> Option<u32> {
         let bytes = sequence.as_bytes();
