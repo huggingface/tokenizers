@@ -97,8 +97,6 @@ pub mod pre_tokenizers;
 pub mod processors;
 pub mod tokenizer;
 pub mod vocab;
-/// Legacy map-backed token store; drop-in twin of the fast `bucket_vocab_store::BucketVocabStore`.
-pub mod vocab_store;
 
 // Re-export from tokenizer
 pub use tokenizer::*;

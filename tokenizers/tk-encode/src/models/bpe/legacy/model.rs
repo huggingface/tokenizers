@@ -4,7 +4,7 @@ use crate::models::bpe::{Error, MergeMap, Merges, Pair, Vocab, VocabR};
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::cache::{DEFAULT_CACHE_CAPACITY, MAX_LENGTH};
 use crate::utils::iter::ResultShunt;
-use crate::vocab_store::VocabStore;
+use crate::vocab::bucket_vocab_store::BucketVocabStore;
 use ahash::AHashMap;
 use dary_heap::QuaternaryHeap;
 use serde_json::Value;
@@ -269,9 +269,9 @@ impl BpeBuilder {
         // merges.insert(pair, (rank as u32, *new_id));
 
         let vocab = if vocab.is_empty() {
-            VocabStore::new()
+            BucketVocabStore::new()
         } else {
-            VocabStore::build(
+            BucketVocabStore::build(
                 vocab
                     .into_iter()
                     .map(|(k, v)| (k.into_bytes(), v))
@@ -298,7 +298,7 @@ impl BpeBuilder {
 #[derive(PartialEq)]
 pub struct BPE {
     /// The vocabulary, mapping tokens <-> ids both ways.
-    pub vocab: VocabStore,
+    pub vocab: BucketVocabStore,
     /// Contains the mapping between Pairs and their (rank, new_id).
     pub merges: MergeMap,
     /// Contains the cache for optimizing the encoding step.
