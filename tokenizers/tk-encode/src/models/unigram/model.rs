@@ -2,9 +2,8 @@ use super::{
     lattice::Lattice,
     trie::{Trie, TrieBuilder},
 };
-use crate::utils::cache::{Cache, MAX_LENGTH};
+use crate::{utils::cache::{Cache, MAX_LENGTH}, vocab::bucket_vocab_store::BucketVocabStore};
 use crate::utils::word_cache::{Lookup, WordCache};
-use crate::vocab_store::VocabStore;
 use crate::{
     pipeline::{self, PipelineToken},
     tokenizer::{Model, Result, Token},
@@ -19,7 +18,7 @@ type Vocab = Vec<(String, f64)>;
 
 /// A `Unigram` model to encode sentences.
 pub struct Unigram {
-    token_to_ids: VocabStore,
+    token_to_ids: BucketVocabStore,
     pub(crate) vocab: Vocab,
     cache: Cache<String, Vec<String>>,
     trie: Trie<u8>,
@@ -132,9 +131,9 @@ impl Unigram {
             }
         }
         let token_to_ids = if pairs.is_empty() {
-            VocabStore::new()
+            BucketVocabStore::new()
         } else {
-            VocabStore::build(pairs)
+            BucketVocabStore::build(pairs)
         };
         let trie = builder.build();
         let fuse_unk = true;

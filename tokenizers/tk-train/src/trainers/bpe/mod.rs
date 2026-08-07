@@ -15,7 +15,7 @@ use std::collections::HashSet;
 use tk_encode::models::bpe::{BPE, Pair, WithFirstLastIterator, Word};
 use tk_encode::parallelism::*;
 use tk_encode::utils::progress::{ProgressBar, ProgressFormat, ProgressStyle};
-use tk_encode::vocab_store::VocabStore;
+use tk_encode::vocab::bucket_vocab_store::BucketVocabStore;
 use tk_encode::{AddedToken, Result};
 
 #[derive(Debug, Eq)]
@@ -614,7 +614,7 @@ impl BpeTrainer {
         self.finalize_progress(&progress, merges.len(), "Compute merges");
 
         // Transfer new vocab & options to model
-        model.vocab = VocabStore::build(
+        model.vocab = BucketVocabStore::build(
             word_to_id
                 .into_iter()
                 // we have to look up the string in id_to_word because the key in word_to_id is a hash

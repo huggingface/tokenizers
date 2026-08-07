@@ -4,11 +4,11 @@ use compact_str::CompactString;
 use dary_heap::OctonaryHeap;
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
+use tk_encode::vocab::bucket_vocab_store::BucketVocabStore;
 use std::cmp::Ordering;
 use std::collections::{HashSet, VecDeque};
 use tk_encode::parallelism::*;
 use tk_encode::utils::progress::{ProgressBar, ProgressStyle};
-use tk_encode::vocab_store::VocabStore;
 use tk_encode::{AddedToken, Result};
 
 #[derive(Debug, Eq)]
@@ -1459,7 +1459,7 @@ impl ParityBpeTrainer {
             .collect();
 
         // Transfer to model
-        model.vocab = VocabStore::build(
+        model.vocab = BucketVocabStore::build(
             word_to_id
                 .into_iter()
                 .map(|(_key, val)| (id_to_word[val as usize].to_string().into_bytes(), val))
