@@ -44,8 +44,8 @@ impl pipeline::PreTokenizer for Punctuation {
         // atom `PUNCT` == `is_punc` (ASCII-punct ∪ \p{P}), so Isolated/Removed map to the class-runs FSM
         // byte-exactly. The merge/contiguous behaviors aren't a class-runs shape → keep the scalar split.
         if matches!(self.behavior, Isolated | Removed) {
-            use atomsplit::classify::mask;
-            use atomsplit::fsm::class_runs_into;
+            use bitsplit::classify::mask;
+            use bitsplit::classes::class_runs_into;
             pipeline::classify_into_spans(
                 text.as_bytes(),
                 |b, t, s| {

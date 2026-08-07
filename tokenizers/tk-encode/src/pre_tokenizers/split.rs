@@ -1,6 +1,6 @@
 use crate::pipeline;
-use crate::utils::{GptFsm, GptFsmPattern, SysRegex, gpt_fsm};
-use atomsplit::literal::Literal;
+use crate::utils::{Grammar, GrammarPattern, SysRegex, recognize};
+use bitsplit::literal::Literal;
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::tokenizer::{
@@ -53,7 +53,7 @@ pub struct Split {
     /// pipeline path when `behavior == Isolated && !invert` (how these regexes always ship). Byte-exact
     /// with `regex`; `None` falls back to `regex`.
     #[serde(skip)]
-    fsm: Option<GptFsm>,
+    fsm: Option<Grammar>,
 }
 
 impl<'de> Deserialize<'de> for Split {
@@ -103,7 +103,7 @@ impl Split {
         let pattern: SplitPattern = pattern.into();
         let fsm = match &pattern {
             SplitPattern::String(_) => None,
-            SplitPattern::Regex(r) => gpt_fsm(r),
+            SplitPattern::Regex(r) => recognize(r),
         };
         let search = match &pattern {
             SplitPattern::String(s) => Search::Literal(Literal::new(s.as_bytes())?),
@@ -173,30 +173,23 @@ impl PreTokenizer for Split {
                     .into()
             })?;
         pretokenized.split(|_, normalized| {
-            normalized.split(GptFsmPattern(fsm), SplitDelimiterBehavior::Isolated)
+            normalized.split(GrammarPattern(fsm), SplitDelimiterBehavior::Isolated)
         })
     }
 }
 
 impl pipeline::PreTokenizer for Split {
     fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Span>) -> Result<()> {
-        // A recognized GPT regex (gpt2 / cl100k-Llama-3) in its only real usage — `Isolated`, not
-        // inverted — routes straight to the native atomsplit FSM. These regexes cover the whole input,
-        // so `Isolated` == the match list, and the FSM is byte-exact with `regex` (see the tests).
-        if let Some(fsm) = self
+        // A recognized GPT regex in its only real usage — `Isolated`, not inverted — routes
+        // straight to the native bitsplit grammar. These regexes cover the whole input, so
+        // `Isolated` == the match list, and the grammar is byte-exact with `regex` (see the tests).
+        if let Some(grammar) = self
             .fsm
             .filter(|_| !self.invert && self.behavior == SplitDelimiterBehavior::Isolated)
         {
-            pipeline::classify_into_spans(
+            pipeline::classify_into_spans_bits(
                 text.as_bytes(),
-                |bytes, tags, spans| match fsm {
-                    GptFsm::Cl100k { digit_cap } => {
-                        atomsplit::fsm::fsm_cl100k_cap(bytes, tags, spans, digit_cap)
-                    }
-                    GptFsm::Gpt2 => atomsplit::fsm::fsm_byte_level(bytes, tags, spans),
-                    GptFsm::O200k => atomsplit::fsm::fsm_o200k(bytes, tags, spans),
-                    GptFsm::Tekken => atomsplit::fsm::fsm_tekken(bytes, tags, spans),
-                },
+                |t, tags, starts, flag, out| grammar.split(t, tags, starts, flag, out),
                 out,
             );
             return Ok(());
@@ -419,7 +412,7 @@ mod tests {
     fn pipeline_gpt2_uses_fsm_and_matches_legacy() {
         // The gpt2 pattern is recognized -> the pipeline path routes to the native
         // atomsplit FSM; its output must equal the legacy fancy-regex path.
-        let gpt2 = atomsplit::regexes::GPT2;
+        let gpt2 = bitsplit::regexes::GPT2;
         let corpus = "The quick brown fox 123!!!  double  spaces\tand tabs. don't Naïve café. ";
         let pretok = Split::new(SplitPattern::Regex(gpt2.into()), Isolated, false).unwrap();
         assert!(pretok.fsm.is_some(), "gpt2 pattern should be recognized");
@@ -443,7 +436,7 @@ mod tests {
     fn pipeline_cl100k_llama3_uses_fsm_and_matches_legacy() {
         // Llama-3's EXACT pre_tokenizer regex (from data/llama-3-tokenizer.json) → recognized → routes
         // to fsm_cl100k. Output must equal the legacy SysRegex Isolated split, byte-for-byte.
-        let cl100k = atomsplit::regexes::CL100K;
+        let cl100k = bitsplit::regexes::CL100K;
         let corpus =
             "The quick brown fox 123!!!  double  spaces\tand tabs. don't Naïve café.\n\n世界 안녕 ";
         let pretok = Split::new(SplitPattern::Regex(cl100k.into()), Isolated, false).unwrap();
@@ -471,7 +464,7 @@ mod tests {
         // GPT-4o's EXACT pre_tokenization regex → recognized → routes to fsm_o200k. Output must equal the
         // legacy SysRegex Isolated split, byte-for-byte. Corpus stresses the case-aware letter split:
         // camelCase, ALLCAPS→word, McDonald's-style, contractions, accented Ll (é/ß), CJK (caseless).
-        let o200k = atomsplit::regexes::O200K;
+        let o200k = bitsplit::regexes::O200K;
         let corpus = "McDonald's iPhone SQLite HELLOWorld camelCase don't I'll We've 3.14 café Straße 世界 안녕\n\n  Mixed CASE end.";
         let pretok = Split::new(SplitPattern::Regex(o200k.into()), Isolated, false).unwrap();
         assert!(
@@ -498,12 +491,12 @@ mod tests {
         // Mistral's tekken regex (mistral-small-4) → recognized → routes to fsm_tekken. Same corpus
         // shape as o200k, whose grammar it shares: the differences it must get right are apostrophes
         // (no contraction suffix, so `'s` starts a new token) and one token per digit.
-        let tekken = atomsplit::regexes::TEKKEN;
+        let tekken = bitsplit::regexes::TEKKEN;
         let corpus = "McDonald's iPhone SQLite HELLOWorld camelCase don't I'll We've 3.14159 café Straße 世界 안녕\n\n  path/to/file Mixed CASE end.";
         let pretok = Split::new(SplitPattern::Regex(tekken.into()), Isolated, false).unwrap();
         assert_eq!(
             pretok.fsm,
-            Some(crate::utils::GptFsm::Tekken),
+            Some(crate::utils::Grammar::Tekken),
             "tekken / mistral pattern should route to the native FSM"
         );
 
@@ -531,7 +524,7 @@ mod tests {
         let pretok = Split::new(SplitPattern::Regex(qwen2.into()), Isolated, false).unwrap();
         assert_eq!(
             pretok.fsm,
-            Some(crate::utils::GptFsm::Cl100k { digit_cap: 1 }),
+            Some(crate::utils::Grammar::Cl100k { digit_cap: 1 }),
             "Qwen2 pattern should route to the cl100k FSM with digit cap 1"
         );
 

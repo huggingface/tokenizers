@@ -1,5 +1,5 @@
 use crate::utils::byte_level::{BYTES_CHAR_LOOKUP, CHAR_BYTES_LOOKUP, byte_level_transform};
-use crate::utils::{GptFsm, GptFsmPattern};
+use crate::utils::{Grammar, GrammarPattern};
 use serde::{Deserialize, Serialize};
 
 use crate::tokenizer::{
@@ -85,7 +85,7 @@ impl PreTokenizer for ByteLevel {
             if self.use_regex {
                 // GPT-2 byte-level split via the native atomsplit FSM (byte-exact, no regex backend).
                 normalized.split(
-                    GptFsmPattern(GptFsm::Gpt2),
+                    GrammarPattern(Grammar::Gpt2),
                     SplitDelimiterBehavior::Isolated,
                 )
             } else {

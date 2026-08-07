@@ -32,7 +32,7 @@ impl pipeline::PreTokenizer for CharDelimiterSplit {
         // keeps the runs between, no empty spans. Byte-exact with the char-predicate split.
         let bytes = text.as_bytes();
         let mut spans = vec![pipeline::Span::default(); bytes.len() + 1];
-        let n = atomsplit::fsm::CharDelimiterSplit(self.delimiter).pre_tokenize(
+        let n = bitsplit::classes::CharDelimiterSplit(self.delimiter).pre_tokenize(
             bytes,
             &mut [],
             &mut spans,

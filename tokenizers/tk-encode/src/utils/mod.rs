@@ -6,7 +6,7 @@ pub(crate) mod word_cache;
 // Optional system-regex backend, needed only for a *regex* pattern that atomsplit does not cover.
 // With `fancy-regex` off a stub compiles and those patterns error at load. Everything else works
 // regardless: the atomsplit-native pre-tokenizers, and any `Split` or `Replace` whose pattern is a
-// plain string (searched for directly, see `atomsplit::literal`).
+// plain string (searched for directly, see `bitsplit::literal`).
 #[cfg(feature = "fancy-regex")]
 mod fancy;
 #[cfg(feature = "fancy-regex")]
@@ -18,7 +18,7 @@ pub use no_regex::SysRegex;
 
 // Recognize known GPT pre-tokenization regexes and route them to atomsplit's native (unrolled) FSM.
 mod unrolled_regex;
-pub use unrolled_regex::{GptFsm, GptFsmPattern, gpt_fsm, is_deepseek};
+pub use unrolled_regex::{Grammar, GrammarPattern, recognize, is_deepseek};
 
 pub mod byte_level;
 pub mod iter;
