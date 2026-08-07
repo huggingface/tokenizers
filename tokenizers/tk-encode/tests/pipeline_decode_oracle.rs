@@ -23,9 +23,9 @@
 //! survive `skip_special_tokens = true`. It's built by adding the same token to both
 //! sides, so it stays an honest release-vs-pipeline parity check.
 //!
-//! Behind `bench-baseline`. These FAIL until `PipelineTokenizer::decode` applies the
-//! decoder and distinguishes special from non-special added vocab — on purpose: CI
-//! stays red until decode lands, rather than hiding the gap behind a skipped test.
+//! Behind `bench-baseline`. `bert_wiki` still FAILS: `PipelineWordPiece` keeps only its
+//! forward `vocab_trie`, so it has no id → token direction to decode with — on purpose: CI
+//! stays red until that lands, rather than hiding the gap behind a skipped test.
 //!   cargo test -p tk-encode --features bench-baseline --test pipeline_decode_oracle
 
 #![cfg(feature = "bench-baseline")]
@@ -45,7 +45,7 @@ fn check_model(tok_file: &str) {
     // The legacy `Tokenizer` only *builds* the pipeline (its sole constructor
     // today); it is never a decode reference. Drops out once a direct loader exists.
     let Ok(tree) = Tokenizer::from_file(&path) else {
-        eprintln!("skip {tok_file}: not present (fetch with `make bench-models`)");
+        eprintln!("skip {tok_file}: not present (fetch with `make models`)");
         return;
     };
     let Ok(pipeline) = PipelineTokenizer::try_from(&tree) else {
@@ -177,7 +177,7 @@ fn stream_decode(
 fn non_special_added_token_survives_skip() {
     let path = Path::new(DATA).join("gpt2.json");
     let Ok(mut tree) = Tokenizer::from_file(&path) else {
-        eprintln!("skip: gpt2.json not present (fetch with `make bench-models`)");
+        eprintln!("skip: gpt2.json not present (fetch with `make models`)");
         return;
     };
     let Ok(mut released) = Released::from_file(&path) else {

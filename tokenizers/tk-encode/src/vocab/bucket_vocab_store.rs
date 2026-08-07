@@ -15,10 +15,22 @@ const SEEDS: [u64; 4] = [
     0x082E_FA98_EC4E_6C89,
 ];
 
+/// Bit 31 of a stored id: the token provably encodes to itself, so a pretoken equal to it can be
+/// emitted without running the merge loop. See `PipelineBPE::prove_fold`.
+///
+/// Packed into the id rather than kept beside it, following the same convention as a packed merge
+/// value, where the low bits are the product id and the high bits are a flag field (`SAFE_MASK`).
+/// The lookup already loads this entry to verify the key, so the flag costs no memory, no extra
+/// load, and no second structure to keep in step with the vocabulary.
+const FOLD_BIT: u32 = 1 << 31;
+/// The id half. 2^31 ids is far past any vocabulary.
+const VOCAB_ID_MASK: u32 = FOLD_BIT - 1;
+
 #[derive(Clone, Copy, Debug)]
 struct Entry {
     start: u32,
     len: u16,
+    /// The token id in the low 31 bits, [`FOLD_BIT`] in the top.
     id: u32,
 }
 
@@ -144,6 +156,10 @@ impl BucketVocabStore {
                 s.len() <= u16::MAX as usize,
                 "token longer than 65535 bytes"
             );
+            assert!(
+                *id <= VOCAB_ID_MASK,
+                "token id {id} needs bit 31, which holds FOLD_BIT"
+            );
             let slot = mphf.index(&hasher.hash_one(s.as_slice()));
             entries[slot] = Entry {
                 start: bytes.len() as u32,
@@ -193,9 +209,35 @@ impl BucketVocabStore {
         // Byte equality: confirms `q` really is the token at this slot (perfect hashing only
         // guarantees a valid slot for in-vocab keys; this rejects collisions and Out Of Vocab queries).
         if len == q.len() && self.bytes[start..start + len] == *q {
-            Some(e.id)
+            Some(e.id & VOCAB_ID_MASK)
         } else {
             None
+        }
+    }
+
+    /// The id for `q`, together with whether that entry may be folded. One probe and one entry
+    /// load: the flag is a bit of the id the probe already read.
+    #[inline]
+    pub fn get_bytes_foldable(&self, q: &[u8]) -> Option<(u32, bool)> {
+        if self.entries.is_empty() {
+            return None;
+        }
+        let slot = self.mphf.index(&self.hasher.hash_one(q));
+        let e = self.entries[slot];
+        let (start, len) = (e.start as usize, e.len as usize);
+        if len == q.len() && self.bytes[start..start + len] == *q {
+            Some((e.id & VOCAB_ID_MASK, e.id & FOLD_BIT != 0))
+        } else {
+            None
+        }
+    }
+
+    /// Records that this token folds to itself. Called once per entry at load, after the proof.
+    pub fn set_foldable(&mut self, id: u32) {
+        if let Some(&slot) = self.id_to_slot.get(id as usize)
+            && slot != u32::MAX
+        {
+            self.entries[slot as usize].id |= FOLD_BIT;
         }
     }
 
@@ -227,6 +269,15 @@ impl BucketVocabStore {
         self.n
     }
 
+    /// One past the highest id this vocabulary can hold.
+    ///
+    /// Ids are not dense: a config may leave gaps, so [`Self::len`] counts entries and is *not* an
+    /// id bound. Anything that walks ids has to bound itself by this and skip the holes, which
+    /// [`Self::id_to_token_bytes`] reports as `None`.
+    pub fn id_space(&self) -> usize {
+        self.id_to_slot.len()
+    }
+
     pub fn is_empty(&self) -> bool {
         self.n == 0
     }
@@ -235,7 +286,9 @@ impl BucketVocabStore {
         self.entries
             .iter()
             .filter(|e| e.len > 0)
-            .filter_map(|m| self.id_to_token(m.id).map(|token| (token, m.id)))
+            // Mask: the stored id carries FOLD_BIT, which must never escape this type.
+            .map(|m| m.id & VOCAB_ID_MASK)
+            .filter_map(|id| self.id_to_token(id).map(|token| (token, id)))
             .collect()
     }
 
@@ -249,10 +302,9 @@ impl BucketVocabStore {
         self.entries
             .iter()
             .filter(|e| e.len > 0)
-            .filter_map(|m| {
-                self.id_to_token_bytes(m.id)
-                    .map(|token| (token.to_vec(), m.id))
-            })
+            // Mask: the stored id carries FOLD_BIT, which must never escape this type.
+            .map(|m| m.id & VOCAB_ID_MASK)
+            .filter_map(|id| self.id_to_token_bytes(id).map(|token| (token.to_vec(), id)))
             .collect()
     }
 }
