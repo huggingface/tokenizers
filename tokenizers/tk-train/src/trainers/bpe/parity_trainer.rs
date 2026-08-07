@@ -4,11 +4,11 @@ use compact_str::CompactString;
 use dary_heap::OctonaryHeap;
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
-use tk_encode::vocab::bucket_vocab_store::BucketVocabStore;
 use std::cmp::Ordering;
 use std::collections::{HashSet, VecDeque};
 use tk_encode::parallelism::*;
 use tk_encode::utils::progress::{ProgressBar, ProgressStyle};
+use tk_encode::vocab::bucket_vocab_store::BucketVocabStore;
 use tk_encode::{AddedToken, Result};
 
 #[derive(Debug, Eq)]

@@ -2,11 +2,14 @@ use super::{
     lattice::Lattice,
     trie::{Trie, TrieBuilder},
 };
-use crate::{utils::cache::{Cache, MAX_LENGTH}, vocab::bucket_vocab_store::BucketVocabStore};
 use crate::utils::word_cache::{Lookup, WordCache};
 use crate::{
     pipeline::{self, PipelineToken},
     tokenizer::{Model, Result, Token},
+};
+use crate::{
+    utils::cache::{Cache, MAX_LENGTH},
+    vocab::bucket_vocab_store::BucketVocabStore,
 };
 use std::collections::HashMap;
 
