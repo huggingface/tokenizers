@@ -38,7 +38,14 @@ fn mix(z: u64) -> u64 {
 ///
 ///
 /// # Safety
-#[inline]
+/// `inline(always)`, and the long-word arm is a separate `inline(never)` function, because plain
+/// `#[inline]` left this outlined: a profile of warm english had 8.3% of self time inside
+/// `key_and_hash`, for what should be a masked load, an `or` and a multiply. LLVM weighs the whole
+/// body when it decides, and the body used to contain the ahash call for a word too long to pack, so
+/// the cheap path paid for the expensive one's size. Splitting them lets the pack inline into the
+/// span loop while the hash stays a call -- which is also the shape it wants, since the long arm is
+/// already dominated by hashing rather than by call overhead.
+#[inline(always)]
 pub fn key_and_hash_readable(word: &[u8], readable: usize) -> (u64, u64) {
     let len = word.len();
     if len > INLINE_KEY_BYTES || readable < 8 {
@@ -53,12 +60,21 @@ pub fn key_and_hash_readable(word: &[u8], readable: usize) -> (u64, u64) {
     (key, mix(key))
 }
 
-#[inline]
+/// A word too long to pack into the key: hash it for real. Kept out of line so that the packing
+/// path above and in [`key_and_hash`] can be inlined without dragging ahash in with them. Not
+/// `#[cold]` on purpose -- for CJK this is the *common* arm, and telling the predictor otherwise
+/// would cost more than the call.
+#[inline(never)]
+fn key_and_hash_long(word: &[u8]) -> (u64, u64) {
+    let hash = KEY_HASHER.hash_one(word);
+    (hash, hash)
+}
+
+#[inline(always)]
 pub fn key_and_hash(word: &[u8]) -> (u64, u64) {
     let len = word.len();
     if len > INLINE_KEY_BYTES {
-        let hash = KEY_HASHER.hash_one(word);
-        return (hash, hash);
+        return key_and_hash_long(word);
     }
     let raw = if len >= 4 {
         let head = u32::from_le_bytes(word[..4].try_into().unwrap()) as u64;
