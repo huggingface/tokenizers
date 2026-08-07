@@ -687,41 +687,6 @@ def alloc_line(model, baseline_label, lane="encode"):
                         (("baseline", baseline_label), ("pipeline", "Pipeline"))))
 
 
-# How far the canary may drift from its cached number before the report warns
-# that the machines no longer match the cached baseline run. Single-number
-# medians on shared runners carry a few percent of noise on their own.
-CANARY_FENCE_PCT = 10.0
-
-
-def canary_lines(data, benched):
-    """The cached-baseline trust note: when the release's numbers were copied
-    from a cached run, each model job re-measured one canary fixture; compare
-    every canary against its cached number and clear or warn in one line.
-    Empty when this run measured the release itself."""
-    if not (data.get("baseline") or {}).get("cached"):
-        return []
-    drifts, fixture = [], None
-    for m in benched:
-        c = m.get("baseline_canary") or {}
-        cur, old = c.get("measured_mbps"), c.get("cached_mbps")
-        if cur and old:
-            drifts.append(((cur / old - 1) * 100, m["model"]))
-            fixture = c.get("fixture", fixture)
-    if not drifts:
-        return ["<sub>release numbers from the cached baseline run (no canary data)</sub>", ""]
-    pct, model = max(drifts, key=lambda t: abs(t[0]))
-    if abs(pct) > CANARY_FENCE_PCT:
-        return [f"> ⚠️ **Release numbers are reused from a cached baseline run, and the "
-                f"canary ({fixture}, re-measured by every model job) drifted {pct:+.1f}% on "
-                f"{model}, beyond ±{CANARY_FENCE_PCT:g}%.** The runners changed since the "
-                f"cache was seeded; read the vs-release throughput comparisons with "
-                f"suspicion (allocation counts are unaffected). Any edit to "
-                f"fixture_bench.rs re-keys the cache and re-measures.", ""]
-    return [f"<sub>release numbers from the cached baseline run · canary ({fixture}) "
-            f"re-measured by {len(drifts)} model job(s): max drift {pct:+.1f}% "
-            f"(fence ±{CANARY_FENCE_PCT:g}%)</sub>", ""]
-
-
 def base_work_lookup(base_data):
     """(model, fixture) -> the base run's pipeline allocation rows, one per pass.
     Feeds `work_verdict`; entries hold whatever the base run measured (older runs
@@ -955,7 +920,8 @@ def sizes_svg(sweep, meta, baseline_label, subtitle_base=""):
 
 
 def render_markdown(data, subtitle_base, meta, base, run_id, sizes,
-                    base_lookup=None, base_ref=None, base_work=None, env=None):
+                    base_lookup=None, base_ref=None, base_work=None, env=None,
+                    base_note=None):
     """Overview charts inline; everything per-model inside one <details> block, so
     the PR description stays a single screen."""
     models = data["models"]
@@ -977,7 +943,6 @@ def render_markdown(data, subtitle_base, meta, base, run_id, sizes,
           picture(base, run_id, "overview", "Per-model encode throughput vs latest release", 860), "",
           picture(base, run_id, "fixtures",
                   "Per-fixture encode throughput vs latest release, across models", 860), ""]
-    md += canary_lines(data, benched)
     if has_decode:
         md += ["**Decode** — the release encodes each fixture's decode sample "
                "(`add_special_tokens=true`) and both implementations decode those "
@@ -990,6 +955,10 @@ def render_markdown(data, subtitle_base, meta, base, run_id, sizes,
         md += [f"**vs base branch** (`{escape(base_ref or 'base')}`) — per-model geomean ×speedup of "
                f"this PR's PipelineTokenizer against the base branch's; **regressions in red**.", "",
                picture(base, run_id, "base-overview", "Per-model encode throughput vs base branch", 860), ""]
+        if base_note:
+            md += [f"<sub>{base_note}</sub>", ""]
+    elif base_note:
+        md += [f"> ⚠️ {base_note}", ""]
     if base_work is not None:
         md += work_verdict(benched, base_work, base_ref or "base") + [""]
     if has_allocs:
@@ -1107,16 +1076,20 @@ def main():
     ap.add_argument("results")
     ap.add_argument("--out-dir", default=".")
     ap.add_argument("--subtitle",
-                    default="whole corpus · ~10 kB chunks · cold caches · add_special_tokens on")
+                    default="pipeline: whole corpus · release: ~2 MB/fixture sample · "
+                            "~10 kB chunks · cold caches · add_special_tokens on")
     ap.add_argument("--revision", default="")
     ap.add_argument("--img-base", default="", help="base URL for uploaded PNGs")
     ap.add_argument("--run-id", default="local")
     ap.add_argument("--binary-sizes", default="",
                     help="JSON file {baseline, pipeline} of stripped binary bytes")
     ap.add_argument("--base-bench", default="",
-                    help="base branch's cached fixture_bench JSON — enables the 'vs base branch' chart")
+                    help="base branch's fixture_bench JSON — enables the 'vs base branch' chart")
     ap.add_argument("--base-ref", default="",
                     help="label for the base branch baseline (e.g. short sha)")
+    ap.add_argument("--base-same-run", action="store_true",
+                    help="the base JSON was measured in this run's own jobs, "
+                         "on the same runners as the PR's numbers")
     args = ap.parse_args()
 
     rev = args.revision
@@ -1136,20 +1109,36 @@ def main():
     benched = [m for m in models if m["results"]]
     lo, hi = scale(benched)
 
-    # "vs base branch": join the PR results against the base branch's cached run by
+    # "vs base branch": join the PR results against the base branch's run by
     # (model, fixture). base_lookup[(model, fixture)] = base pipeline MB/s;
     # base_work carries the allocation lane's rows.
     base_lookup, base_speedups_of, blo, bhi, base_work = None, None, lo, hi, None
+    base_note = None
     if args.base_bench and Path(args.base_bench).exists():
         base_data = json.loads(Path(args.base_bench).read_text())
-        base_lookup = {(bm["model"], r["fixture"]): r["mbps"].get("pipeline")
-                       for bm in base_data["models"] for r in bm["results"]}
         base_work = base_work_lookup(base_data)
-        if any(base_lookup.values()):
-            base_speedups_of = lambda m: base_model_speedups(m, base_lookup)  # noqa: E731
-            blo, bhi = scale(benched, base_speedups_of)
+        # Wall time is only diffed between runs that measured under the same
+        # rules: a regime change (chunking, sample size, reps) moves every
+        # number for reasons that are not the PR's doing. Allocation counts
+        # come from full-corpus passes that the regime stamp does not describe,
+        # so the work verdict below survives the skip.
+        if base_data.get("regime") != data.get("regime"):
+            base_note = (f"vs-base throughput is not shown: the base run "
+                         f"(`{escape(args.base_ref or 'base')}`) measured under a different "
+                         f"regime, so its wall-time numbers are not comparable with this "
+                         f"run's. The allocation verdict below still applies.")
         else:
-            base_lookup = None
+            base_lookup = {(bm["model"], r["fixture"]): r["mbps"].get("pipeline")
+                           for bm in base_data["models"] for r in bm["results"]}
+            if any(base_lookup.values()):
+                base_speedups_of = lambda m: base_model_speedups(m, base_lookup)  # noqa: E731
+                blo, bhi = scale(benched, base_speedups_of)
+                base_note = ("base numbers measured in this run's jobs, on the same "
+                             "runners as the PR's" if args.base_same_run else
+                             "base numbers come from an earlier run on other machines; "
+                             "read differences within a few percent with suspicion")
+            else:
+                base_lookup = None
 
     out = Path(args.out_dir)
     (out / "pipeline_bench_overview.svg").write_text(
@@ -1224,7 +1213,8 @@ def main():
     (out / "pipeline_bench.md").write_text(
         render_markdown(data, args.subtitle, meta, args.img_base, args.run_id, sizes,
                         base_lookup=base_lookup, base_ref=args.base_ref,
-                        base_work=base_work, env=data.get("env")))
+                        base_work=base_work, env=data.get("env"),
+                        base_note=base_note))
 
     # per-model geomeans only — a cross-model aggregate would average unrelated modes
     per_model = " · ".join(
