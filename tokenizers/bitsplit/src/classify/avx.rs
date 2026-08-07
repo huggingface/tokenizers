@@ -14,8 +14,8 @@
 //! x86_64 (SSE4.1 and, if available, AVX-512 VBMI) hardware before trusting it.
 #![allow(unsafe_op_in_unsafe_fn)]
 
-use crate::atom_tables::ATOM_TABLES;
-use crate::classify::{Atom, CONT, MB, char_len, classify_scalar};
+use super::atom_tables::ATOM_TABLES;
+use super::{Atom, CONT, MB, char_len, classify_scalar};
 use core::arch::x86_64::*;
 
 const CJK_TAG: u8 = Atom::Letter as u8;

@@ -1,17 +1,12 @@
-//! The two tiktoken-family grammars as bitstream programs.
+//! **cl100k_base** (tiktoken) / Llama-3 -- and byte-for-byte the regex **GLM-4.6** ships:
+//! `(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+`
 //!
-//! * [`bitsplit_byte_level`] — GPT-2 / Llama / Qwen:
-//!   `'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+`
-//! * [`bitsplit_cl100k`] — cl100k_base / Llama-3:
-//!   `(?i:'s|…)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+`
-//!
-//! Both share one dense code table, and both hand contractions to the scalar escape in
-//! [`crate::emit_contr`] rather than trying to express a variable-length case-optional literal
-//! alternation in bit algebra.
+//! Rule 3's digit cap is the family's only knob, so it is a plain argument: 3 = cl100k / Llama-3 /
+//! GLM, 1 = **Qwen** (`\p{N}`), 0 or >= 64 = an unbounded `\p{N}+`.
 
 use crate::{
-    CODE_CONT, CONT, Span, adv, build_block, emit_contr, fill_to_last, lead_run, scanthru, to_lead,
-    trail_run,
+    AUX_NONE, CODE_CONT, CONT, Span, build_block, digit_groups, emit_contr, fill_to_last,
+    lead_run, scanthru, to_lead, trail_run,
 };
 
 /// Atom tag → dense 3-bit code, shared by both grammars. Unlike deepseek's table, `Mark` is NOT a
@@ -81,91 +76,7 @@ const fn code_bits(code: u8) -> u8 {
     }
 }
 
-/// GPT-2 / byte-level pre-tokenization. `starts` and `flag` are scratch bitmaps
-/// (len ≥ `text.len().div_ceil(64)`); byte-exact with `atomsplit::fsm::fsm_byte_level`.
-#[must_use]
-pub fn bitsplit_byte_level(
-    text: &[u8],
-    tags: &[u8],
-    starts: &mut [u64],
-    flag: &mut [u64],
-    out: &mut [Span],
-) -> usize {
-    let ntext = text.len();
-    if ntext == 0 {
-        return 0;
-    }
-    let nblk = ntext.div_ceil(64);
-    assert!(
-        tags.len() >= ntext && starts.len() >= nblk && flag.len() >= nblk && out.len() >= ntext
-    );
-    let (mut code, mut prev_cont) = (CODE_CONT, 0u64);
-
-    for bi in 0..nblk {
-        let base = bi * 64;
-        let len = (ntext - base).min(64);
-        let valid = if len == 64 { !0u64 } else { (1u64 << len) - 1 };
-        let last_blk = base + len == ntext;
-
-        let (b, last_code) = build_block::<false>(text, tags, base, len, &LUT, code, false);
-        let c = decode(b.p0, b.p1, b.p2, valid);
-
-        let pb = if base == 0 { 0 } else { code_bits(code) };
-        let (nb, nb_lead) = if last_blk {
-            (0u8, true)
-        } else {
-            let q = base + len;
-            let is_lead = tags[q] != CONT;
-            (
-                if is_lead {
-                    code_bits(LUT[tags[q] as usize])
-                } else {
-                    code_bits(last_code)
-                },
-                is_lead,
-            )
-        };
-        let has = |v: u8, s: u8| v & s != 0;
-        let p1 = |x: u64, k: bool| (x << 1) | u64::from(k);
-        let n1 = |x: u64, k: bool| (x >> 1) | (u64::from(k) << 63);
-
-        let lead = valid & !b.cont;
-        let lb = ((lead >> 1) & valid) | (u64::from(nb_lead) << (len - 1));
-
-        // ── every alternative but the contraction is ` ?X+` over a class run, so a token opens at
-        // each run start — pushed back one char when a literal space sits in front of it (` ?`).
-        let sp_pfx = p1(c.sp, has(pb, C_SP));
-        let l_start = c.l & lead & !p1(c.l, has(pb, C_L)) & !sp_pfx;
-        let n_start = c.n & lead & !p1(c.n, has(pb, C_N)) & !sp_pfx;
-        let o_start = c.other & lead & !p1(c.other, has(pb, C_O)) & !sp_pfx;
-        let ws_start = c.ws & lead & !p1(c.ws, has(pb, C_WS));
-        // `\s+(?!\S)` hands the run's LAST whitespace char to whatever follows: as a ` ?` prefix if
-        // it is a space, else as a token of its own. Either way it opens a token — unless the run
-        // ends the input, where plain `\s+` takes the lot. GPT-2 has no `[\r\n]` rule, so unlike
-        // cl100k a newline is ordinary whitespace here and can be the stolen char.
-        let eof_bit = if last_blk { 1u64 << (len - 1) } else { 0 };
-        let (steal, patch) = to_lead(
-            c.ws & lb & !eof_bit & !n1(c.ws, has(nb, C_WS)),
-            b.cont,
-            prev_cont,
-        );
-
-        let mut st = (l_start | n_start | o_start | ws_start | steal) & lead;
-        if bi == 0 {
-            st |= 1;
-        }
-        starts[bi] = st;
-        flag[bi] = st & c.apo; // apostrophes that open a token → contraction escape
-        if bi > 0 {
-            starts[bi - 1] |= patch;
-        }
-        code = last_code;
-        prev_cont = b.cont;
-    }
-    emit_contr(text, starts, flag, nblk, ntext, false, out)
-}
-
-/// cl100k_base / Llama-3 pre-tokenization. Byte-exact with `atomsplit::fsm::fsm_cl100k`.
+/// cl100k_base / Llama-3 / GLM-4.6 — rule 3 is `\p{N}{1,3}`.
 #[must_use]
 pub fn bitsplit_cl100k(
     text: &[u8],
@@ -173,6 +84,29 @@ pub fn bitsplit_cl100k(
     starts: &mut [u64],
     flag: &mut [u64],
     out: &mut [Span],
+) -> usize {
+    cl100k(text, tags, starts, flag, out, 3)
+}
+
+/// Qwen2 / Qwen3 — cl100k character-for-character except rule 3 is a bare `\p{N}`.
+#[must_use]
+pub fn bitsplit_qwen(
+    text: &[u8],
+    tags: &[u8],
+    starts: &mut [u64],
+    flag: &mut [u64],
+    out: &mut [Span],
+) -> usize {
+    cl100k(text, tags, starts, flag, out, 1)
+}
+
+fn cl100k(
+    text: &[u8],
+    tags: &[u8],
+    starts: &mut [u64],
+    flag: &mut [u64],
+    out: &mut [Span],
+    digit_cap: usize,
 ) -> usize {
     let ntext = text.len();
     if ntext == 0 {
@@ -193,7 +127,7 @@ pub fn bitsplit_cl100k(
         let valid = if len == 64 { !0u64 } else { (1u64 << len) - 1 };
         let last_blk = base + len == ntext;
 
-        let (b, last_code) = build_block::<false>(text, tags, base, len, &LUT, code, false);
+        let (b, last_code) = build_block::<{ AUX_NONE }, false>(text, tags, base, len, &LUT, code, false);
         let c = decode(b.p0, b.p1, b.p2, valid);
 
         let pb = if base == 0 { 0 } else { code_bits(code) };
@@ -257,33 +191,16 @@ pub fn bitsplit_cl100k(
             & !p1(c.ws & !c.nl, has(pb, C_WS) && !has(pb, C_NL))
             & !p1(osf, prev_osf);
 
-        // ── `\p{N}{1,3}`: a group boundary every 3 chars from the run start.
-        let mut m = c.n & lead & !p1(c.n, has(pb, C_N));
-        if dig_run && has(pb, C_N) {
-            let mut s = lead & lead.wrapping_neg() & c.n;
-            for _ in 0..((3 - dig_since % 3) % 3) {
-                s = adv(s, b.cont) & c.n & lead;
-            }
-            m |= s;
-        }
-        let mut groups = m;
-        if c.n & b.cont == 0 {
-            let n3 = c.n & (c.n << 1) & (c.n << 2);
-            while m != 0 {
-                m = (m << 3) & n3;
-                groups |= m;
-            }
-        } else {
-            while m != 0 {
-                let a = adv(m, b.cont) & c.n & lead;
-                let e = adv(adv(a, b.cont) & c.n & lead, b.cont) & c.n & lead;
-                if e == 0 {
-                    break;
-                }
-                groups |= e;
-                m = e;
-            }
-        }
+        // ── rule 3 `\p{N}{1,digit_cap}`
+        let groups = digit_groups(
+            digit_cap,
+            c.n,
+            lead,
+            b.cont,
+            has(pb, C_N),
+            dig_run,
+            dig_since,
+        );
 
         // ── the other-run's `[\r\n]*` tail swallows the newlines directly behind it.
         let nl_m = ((p1(c.other, has(pb, C_O)) & c.nl & lead) as u128) | u128::from(nl_run);
@@ -327,7 +244,11 @@ pub fn bitsplit_cl100k(
             } else {
                 (c.n & lead & tn & !((1u64 << (63 - g.leading_zeros())) - 1)).count_ones()
             };
-            counted % 3
+            if digit_cap == 0 || digit_cap >= 64 {
+                counted
+            } else {
+                counted % digit_cap as u32
+            }
         };
         let tws = trail_run(c.ws, valid, len);
         if tws != 0 && has(nb, C_WS) {

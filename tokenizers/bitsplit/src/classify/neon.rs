@@ -1,5 +1,5 @@
-use crate::atom_tables::ATOM_TABLES;
-use crate::classify::{Atom, CONT, MB};
+use super::atom_tables::ATOM_TABLES;
+use super::{Atom, CONT, MB};
 const CJK_TAG: u8 = Atom::Letter as u8;
 
 // ================================================================================================
@@ -98,7 +98,7 @@ unsafe fn any(mask: core::arch::aarch64::uint8x16_t) -> bool {
 /// TLDR removing the utf8 headers to get the unicode.
 fn decode(t: &[u8], i: usize) -> u32 {
     let b = t[i] as u32;
-    match super::classify::char_len(t[i]) {
+    match super::char_len(t[i]) {
         1 => b,
         2 => ((b & 0x1F) << 6) | (t[i + 1] as u32 & 0x3F),
         3 => ((b & 0x0F) << 12) | ((t[i + 1] as u32 & 0x3F) << 6) | (t[i + 2] as u32 & 0x3F),
@@ -156,7 +156,7 @@ fn decode(t: &[u8], i: usize) -> u32 {
 #[cfg(target_arch = "aarch64")]
 #[allow(unsafe_op_in_unsafe_fn, non_snake_case)]
 pub unsafe fn classify_neon(text: &[u8], tags: &mut [u8]) {
-    use super::classify::char_len;
+    use super::char_len;
     use core::arch::aarch64::*;
     let n = text.len();
     let mut i = 0;

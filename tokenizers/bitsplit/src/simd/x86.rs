@@ -15,7 +15,7 @@
 //! and run under Rosetta, which reports SSSE3, so this path is the one that executes. The scalar
 //! builder in `lib.rs` stays the reference it is compared against.
 
-use crate::{Blk, lead_run};
+use crate::{AUX_CJK, AUX_HAN, AUX_NONE, AUX_SLASH, Blk, lead_run};
 use core::arch::x86_64::*;
 
 /// `x <= k`, unsigned, in the absence of an unsigned byte compare.
@@ -43,18 +43,35 @@ unsafe fn sel(mask: __m128i, a: __m128i, b: __m128i) -> __m128i {
     unsafe { _mm_or_si128(_mm_and_si128(mask, a), _mm_andnot_si128(mask, b)) }
 }
 
-/// Build one **full** 64-byte block. `cur_code`/`cur_cjk` describe the byte before it.
+/// 64 bytes of `text[base..]` compared against `b`, as a bitmap.
+///
+/// # Safety
+/// `base + 64 <= text.len()`; the caller has checked for SSSE3.
+#[target_feature(enable = "ssse3")]
+pub(crate) unsafe fn eq64(text: &[u8], base: usize, b: u8) -> u64 {
+    unsafe {
+        let n = _mm_set1_epi8(b as i8);
+        let mut m = 0u64;
+        for k in 0..4 {
+            let v = _mm_loadu_si128(text.as_ptr().add(base + k * 16).cast());
+            m |= (_mm_movemask_epi8(_mm_cmpeq_epi8(v, n)) as u16 as u64) << (16 * k);
+        }
+        m
+    }
+}
+
+/// Build one **full** 64-byte block. `cur_code`/`cur_aux` describe the byte before it.
 ///
 /// # Safety
 /// `base + 64 <= tags.len()` and `base + 64 <= text.len()`; the caller has checked for SSSE3.
 #[target_feature(enable = "ssse3")]
-pub(crate) unsafe fn build64<const CJK: bool>(
+pub(crate) unsafe fn build64<const AUX: u8, const P3: bool>(
     text: &[u8],
     tags: &[u8],
     base: usize,
     lut: &[u8; 64],
     cur_code: u8,
-    cur_cjk: bool,
+    cur_aux: bool,
 ) -> (Blk, u8) {
     unsafe {
         let low_nibble = _mm_set1_epi8(0x0F);
@@ -115,9 +132,38 @@ pub(crate) unsafe fn build64<const CJK: bool>(
             p0: plane!(7),
             p1: plane!(6),
             p2: plane!(5),
-            cjk: 0,
+            p3: if P3 { plane!(4) } else { 0 },
+            aux: 0,
         };
-        if !CJK {
+        if AUX == AUX_NONE {
+            return (b, last_code);
+        }
+
+        if AUX == AUX_SLASH {
+            // single ASCII byte — no fill needed, `/` is its own char
+            let sl = _mm_set1_epi8(b'/' as i8);
+            b.aux = gather([
+                _mm_cmpeq_epi8(_mm_loadu_si128(text.as_ptr().add(base).cast()), sl),
+                _mm_cmpeq_epi8(_mm_loadu_si128(text.as_ptr().add(base + 16).cast()), sl),
+                _mm_cmpeq_epi8(_mm_loadu_si128(text.as_ptr().add(base + 32).cast()), sl),
+                _mm_cmpeq_epi8(_mm_loadu_si128(text.as_ptr().add(base + 48).cast()), sl),
+            ]);
+            return (b, last_code);
+        }
+        if AUX == AUX_HAN {
+            // ponytail: scalar Han range test; vectorise like the CJK path below if kimi ever
+            // shows up on a throughput bench.
+            let lim = text.len().min(base + 64);
+            let mut leads = 0u64;
+            for p in base..lim {
+                if tags[p] != crate::CONT && crate::han::is_han_at(text, p) {
+                    leads |= 1u64 << (p - base);
+                }
+            }
+            b.aux = leads | (leads << 1) | (leads << 2);
+            if cur_aux {
+                b.aux |= lead_run(b.cont, !0);
+            }
             return (b, last_code);
         }
 
@@ -134,8 +180,8 @@ pub(crate) unsafe fn build64<const CJK: bool>(
             .iter()
             .any(|v| _mm_movemask_epi8(in_range(*v, 0xE3, 6)) != 0);
         if !any {
-            if cur_cjk {
-                b.cjk |= lead_run(b.cont, !0);
+            if cur_aux {
+                b.aux |= lead_run(b.cont, !0);
             }
             return (b, last_code);
         }
@@ -182,10 +228,10 @@ pub(crate) unsafe fn build64<const CJK: bool>(
             leads &= (1u64 << lim) - 1;
         }
         // every CJK char is 3 bytes, so two shifts fill it; one cut by the block edge is picked up
-        // on the other side by `cur_cjk`.
-        b.cjk = leads | (leads << 1) | (leads << 2);
-        if cur_cjk {
-            b.cjk |= lead_run(b.cont, !0);
+        // on the other side by `cur_aux`.
+        b.aux = leads | (leads << 1) | (leads << 2);
+        if cur_aux {
+            b.aux |= lead_run(b.cont, !0);
         }
         (b, last_code)
     }
