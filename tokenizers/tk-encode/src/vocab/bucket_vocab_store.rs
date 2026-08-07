@@ -25,13 +25,68 @@ const FOLD_BIT: u32 = 1 << 31;
 /// The id half. 2^31 ids is far past any vocabulary.
 const VOCAB_ID_MASK: u32 = FOLD_BIT - 1;
 
+/// A word this long or shorter packs into the *cheap* tier: eight-byte masked load, one multiply.
 pub(crate) const INLINE_KEY_BYTES: usize = 7;
+/// ...and this long or shorter into the wide tier: sixteen-byte masked load, wyhash fold. Still
+/// exact -- the key is the word -- so a cache hit on anything up to this length cannot be wrong.
+///
+/// Two tiers rather than one, because collapsing them lost: making every length take the wide path
+/// (`mix128` is a 64x64->128 multiply where `mix` is one multiply, and the wide masked load needs 16
+/// readable bytes so short words near a chunk's end fall back to the stitched pack) cost the corpora
+/// whose pretokens are *already* under seven bytes -- hindi 0.857, tamil 0.868, bengali 0.870, whose
+/// pretokens are one or two three-byte characters. The wide tier only has to serve the range that
+/// was paying ahash: 8..15 bytes, which is where ASCII words live.
+pub(crate) const WIDE_KEY_BYTES: usize = 15;
+
+/// Set on the key of a word too long even for the wide tier, where the key is 64 bits of hash rather
+/// than the word. Neither packed tier can set it: the cheap tier leaves bits 64.. clear and the wide
+/// tier puts a length of at most 15 at bits 120..=126.
+pub(crate) const KEY_IS_HASH: u128 = 1 << 127;
 
 #[inline(always)]
 fn mix(z: u64) -> u64 {
     let z = z.wrapping_mul(0x9E37_79B9_7F4A_7C15);
     z ^ (z >> 29)
 }
+
+/// Fold a wide packed key to the 64 bits the placement and the digest come from: one 64x64->128
+/// multiply of the halves, then xor the product's halves -- wyhash's core.
+///
+/// **Do not "simplify" this to `lo ^ hi`.** That fold is linear, so the same xor delta at the same
+/// byte offset in each half cancels: ` dignified` and ` signifies` differ only at bytes 1 and 9, both
+/// `d` vs `s`, so they folded to one hash and a vocabulary holding one answered a query for the
+/// other. Regression test: `the_fold_separates_words_whose_halves_cancel`.
+#[inline(always)]
+fn mix128(key: u128) -> u64 {
+    const A: u64 = 0xA076_1D64_78BD_642F;
+    const B: u64 = 0xE703_7ED1_A0B4_28DB;
+    let lo = key as u64;
+    let hi = (key >> 64) as u64;
+    let product = ((lo ^ A) as u128).wrapping_mul((hi ^ B) as u128);
+    (product as u64) ^ ((product >> 64) as u64)
+}
+
+/// `KEY_MASK_WIDE[len]` keeps the low `len` bytes of a sixteen-byte load; `LEN_TAG_WIDE[len]` is the
+/// length that goes on top. Spelled as loops because sixteen 128-bit literals are harder to check
+/// than the rule they follow.
+static KEY_MASK_WIDE: [u128; WIDE_KEY_BYTES + 1] = {
+    let mut mask = [0u128; WIDE_KEY_BYTES + 1];
+    let mut len = 1;
+    while len <= WIDE_KEY_BYTES {
+        mask[len] = (1u128 << (8 * len)) - 1;
+        len += 1;
+    }
+    mask
+};
+static LEN_TAG_WIDE: [u128; WIDE_KEY_BYTES + 1] = {
+    let mut tag = [0u128; WIDE_KEY_BYTES + 1];
+    let mut len = 0;
+    while len <= WIDE_KEY_BYTES {
+        tag[len] = (len as u128) << 120;
+        len += 1;
+    }
+    tag
+};
 
 ///
 ///
@@ -46,18 +101,39 @@ fn mix(z: u64) -> u64 {
 /// span loop while the hash stays a call -- which is also the shape it wants, since the long arm is
 /// already dominated by hashing rather than by call overhead.
 #[inline(always)]
-pub fn key_and_hash_readable(word: &[u8], readable: usize) -> (u64, u64) {
+pub fn key_and_hash_readable(word: &[u8], readable: usize) -> (u128, u64) {
     let len = word.len();
-    if len > INLINE_KEY_BYTES || readable < 8 {
-        return key_and_hash(word);
+    // Cheap tier first: it is the common case for every script whose characters are multi-byte, and
+    // it is strictly less work than the wide one.
+    if len <= INLINE_KEY_BYTES && readable >= 8 {
+        // SAFETY: `readable >= 8` bytes exist from `word.as_ptr()`, and `len <= 7 < 8`.
+        let raw = unsafe { word.as_ptr().cast::<u64>().read_unaligned() };
+        // SAFETY: `len <= INLINE_KEY_BYTES == 7`, and both tables have 8 entries.
+        let (mask, tag) = unsafe { (*KEY_MASK.get_unchecked(len), *LEN_TAG.get_unchecked(len)) };
+        let key = (raw & mask) | tag;
+        debug_assert_eq!(
+            key as u128,
+            key_and_hash(word).0,
+            "masked load must match the stitched pack"
+        );
+        return (key as u128, mix(key));
     }
-    // SAFETY: `readable >= 8` bytes exist from `word.as_ptr()`, and `len <= 7 < 8`.
-    let raw = unsafe { word.as_ptr().cast::<u64>().read_unaligned() };
-    // SAFETY: `len <= INLINE_KEY_BYTES == 7`, and both tables have 8 entries.
-    let (mask, tag) = unsafe { (*KEY_MASK.get_unchecked(len), *LEN_TAG.get_unchecked(len)) };
-    let key = (raw & mask) | tag;
-    debug_assert_eq!(key, key_and_hash(word).0, "masked load must match the stitched pack");
-    (key, mix(key))
+    // Wide tier: an ASCII word of 8..15 bytes used to reach ahash from here.
+    if len <= WIDE_KEY_BYTES && readable >= 16 {
+        // SAFETY: `readable >= 16` bytes exist from `word.as_ptr()`, and `len <= 15 < 16`.
+        let raw = unsafe { word.as_ptr().cast::<u128>().read_unaligned() };
+        // SAFETY: `len <= WIDE_KEY_BYTES == 15`, and both tables have 16 entries.
+        let (mask, tag) = unsafe {
+            (
+                *KEY_MASK_WIDE.get_unchecked(len),
+                *LEN_TAG_WIDE.get_unchecked(len),
+            )
+        };
+        let key = (raw & mask) | tag;
+        debug_assert_eq!(key, key_and_hash(word).0, "masked load must match the stitched pack");
+        return (key, mix128(key));
+    }
+    key_and_hash(word)
 }
 
 /// A word too long to pack into the key: hash it for real. Kept out of line so that the packing
@@ -65,16 +141,24 @@ pub fn key_and_hash_readable(word: &[u8], readable: usize) -> (u64, u64) {
 /// `#[cold]` on purpose -- for CJK this is the *common* arm, and telling the predictor otherwise
 /// would cost more than the call.
 #[inline(never)]
-fn key_and_hash_long(word: &[u8]) -> (u64, u64) {
+fn key_and_hash_long(word: &[u8]) -> (u128, u64) {
     let hash = KEY_HASHER.hash_one(word);
-    (hash, hash)
+    ((hash as u128) | KEY_IS_HASH, hash)
 }
 
 #[inline(always)]
-pub fn key_and_hash(word: &[u8]) -> (u64, u64) {
+pub fn key_and_hash(word: &[u8]) -> (u128, u64) {
     let len = word.len();
-    if len > INLINE_KEY_BYTES {
+    if len > WIDE_KEY_BYTES {
         return key_and_hash_long(word);
+    }
+    // Wide tier, stitched (no 16 readable bytes to load from): head and tail overlap and the bytes
+    // they share are the same bytes, so the `|` cannot lose one.
+    if len > INLINE_KEY_BYTES {
+        let head = u64::from_le_bytes(word[..8].try_into().unwrap()) as u128;
+        let tail = u64::from_le_bytes(word[len - 8..].try_into().unwrap()) as u128;
+        let key = (head | tail << (8 * (len - 8))) | (len as u128) << 120;
+        return (key, mix128(key));
     }
     let raw = if len >= 4 {
         let head = u32::from_le_bytes(word[..4].try_into().unwrap()) as u64;
@@ -89,7 +173,7 @@ pub fn key_and_hash(word: &[u8]) -> (u64, u64) {
         0
     };
     let key = raw | (len as u64) << 56;
-    (key, mix(key))
+    (key as u128, mix(key))
 }
 
 ///
@@ -248,7 +332,7 @@ impl BucketVocabStore {
                 "token longer than 65535 bytes"
             );
             assert!(*id <= VOCAB_ID_MASK, "token id {id} needs bit 31, which holds FOLD_BIT");
-            let (key, hash) = key_and_hash(s.as_slice());
+            let (_, hash) = key_and_hash(s.as_slice());
             let slot = mphf.index(&hash);
             entries[slot] = Entry {
                 digest: digest_of(hash),
@@ -294,7 +378,7 @@ impl BucketVocabStore {
         if self.entries.is_empty() {
             return None;
         }
-        let (key, hash) = key_and_hash(q);
+        let (_, hash) = key_and_hash(q);
         let slot = self.mphf.index(&hash);
         let e = self.entries[slot];
         (e.digest == digest_of(hash)).then_some(e.id & VOCAB_ID_MASK)
@@ -304,8 +388,8 @@ impl BucketVocabStore {
     /// load: the flag is a bit of the id the probe already read.
     #[inline]
     pub fn get_bytes_foldable(&self, q: &[u8]) -> Option<(u32, bool)> {
-        let (key, hash) = key_and_hash(q);
-        self.get_keyed_foldable(key, hash)
+        let (_, hash) = key_and_hash(q);
+        self.get_keyed_foldable(hash)
     }
 
     #[inline(always)]
@@ -326,8 +410,7 @@ impl BucketVocabStore {
     }
 
     #[inline]
-    pub fn get_keyed_foldable(&self, key: u64, hash: u64) -> Option<(u32, bool)> {
-        let _ = key;
+    pub fn get_keyed_foldable(&self, hash: u64) -> Option<(u32, bool)> {
         if self.entries.is_empty() {
             return None;
         }
@@ -418,6 +501,60 @@ impl BucketVocabStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The pair a linear `lo ^ hi` fold could not separate: same length, and the only two bytes that
+    /// differ sit one in each half at the same offset, so their xor deltas cancelled and a vocabulary
+    /// holding one answered a query for the other. This is why `mix128` multiplies.
+    #[test]
+    fn the_fold_separates_words_whose_halves_cancel() {
+        let (dignified, signifies) = (b" dignified", b" signifies");
+        assert_ne!(
+            key_and_hash(dignified).1,
+            key_and_hash(signifies).1,
+            "the halves' deltas cancelled -- mix128 must not fold linearly"
+        );
+        assert_ne!(key_and_hash(dignified).0, key_and_hash(signifies).0);
+        let vocab = BucketVocabStore::build(vec![(signifies.to_vec(), 7)]);
+        assert_eq!(vocab.get_bytes(signifies), Some(7));
+        assert_eq!(vocab.get_bytes(dignified), None);
+    }
+
+    /// Every offset, not just the one that bit us: the same bit flipped in byte `i` of each half must
+    /// still land on two hashes.
+    #[test]
+    fn no_paired_byte_delta_cancels() {
+        for i in 0..7usize {
+            let a = *b"0123456789abcde";
+            let mut b = a;
+            b[i] ^= 0x17;
+            b[i + 8] ^= 0x17;
+            assert_ne!(
+                key_and_hash(&a).1,
+                key_and_hash(&b).1,
+                "paired delta at byte {i} cancelled"
+            );
+        }
+    }
+
+    /// A packed key *is* the word, in both tiers, so no two words up to `WIDE_KEY_BYTES` may share
+    /// one -- that is what makes a cache hit on a short word exact rather than probabilistic. The two
+    /// tiers must not collide with each other either: the cheap one leaves bits 64.. clear, the wide
+    /// one always sets a length of at least 8 at bits 120...
+    #[test]
+    fn both_tiers_pack_words_uniquely() {
+        use std::collections::HashMap;
+        let mut seen: HashMap<u128, Vec<u8>> = HashMap::new();
+        for len in 1..=WIDE_KEY_BYTES {
+            for b in [b'a', b'b', 0x00, 0xFF] {
+                let word = vec![b; len];
+                let key = key_and_hash(&word).0;
+                assert_eq!(key & KEY_IS_HASH, 0, "a packed key must not look hashed");
+                if let Some(prev) = seen.insert(key, word.clone()) {
+                    panic!("{prev:?} and {word:?} packed to the same key");
+                }
+            }
+        }
+    }
 
     #[test]
     fn single_token() {

@@ -55,7 +55,7 @@ use std::fmt::Debug;
 use std::iter::Iterator;
 use wide::i8x16;
 
-use crate::vocab::bucket_vocab_store::key_and_hash;
+use crate::vocab::bucket_vocab_store::{KEY_IS_HASH, key_and_hash};
 #[cfg(test)]
 use crate::vocab::bucket_vocab_store::INLINE_KEY_BYTES;
 
@@ -114,7 +114,7 @@ impl<'a> WordCache {
     }
 
     #[inline]
-    pub fn lookup_keyed(&'a self, key: u64, hash: u64) -> Lookup<'a> {
+    pub fn lookup_keyed(&'a self, key: u128, hash: u64) -> Lookup<'a> {
         self.lookup_placed(placement_from(LookupKey(key), hash, self.placement_mask))
     }
 
@@ -132,7 +132,7 @@ impl<'a> WordCache {
     ///
     /// # Safety
     #[inline]
-    pub unsafe fn probe_emit_keyed(&'a self, key: u64, hash: u64, dst: *mut u32) -> ProbeEmit<'a> {
+    pub unsafe fn probe_emit_keyed(&'a self, key: u128, hash: u64, dst: *mut u32) -> ProbeEmit<'a> {
         let placement = placement_from(LookupKey(key), hash, self.placement_mask);
         // SAFETY: `index` is masked with `placement_mask` (`next_pow2 - 1`), and the table is
         let slot = unsafe { *self.cached_words.as_ptr().add(placement.index) };
@@ -393,7 +393,7 @@ impl<'a> SelfContained<'a> {
 /// ```
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 #[repr(transparent)]
-pub struct LookupKey(u64);
+pub struct LookupKey(u128);
 
 /// The key, home slot and tag of a word.
 #[inline]
@@ -414,14 +414,16 @@ fn placement_from(key: LookupKey, hash: u64, placement_mask: u64) -> InsertPlace
 
 impl std::fmt::Debug for LookupKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let len = (self.0 >> 56) as usize;
-        if len <= 7 {
+        // The two packed tiers put the length in different places.
+        let wide = (self.0 >> 120) as usize;
+        let len = if wide != 0 { wide } else { (self.0 >> 56) as usize };
+        if self.0 & KEY_IS_HASH == 0 {
             let bytes = self.0.to_le_bytes();
             f.debug_tuple("LookupKey")
                 .field(&String::from_utf8_lossy(&bytes[..len]).into_owned())
                 .finish()
         } else {
-            write!(f, "LookupKey(hash {:#018x})", self.0)
+            write!(f, "LookupKey(hash {:#018x})", self.0 as u64)
         }
     }
 }
@@ -711,9 +713,10 @@ mod tests {
             let mut padded = [0u8; 8];
             padded[..len].copy_from_slice(&word);
             padded[7] = len as u8;
+            // the cheap tier's key is its u64 pack widened, so bits 64.. stay clear
             assert_eq!(
                 key_and_hash(&word).0,
-                u64::from_le_bytes(padded),
+                u64::from_le_bytes(padded) as u128,
                 "len={len}"
             );
         }

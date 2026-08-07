@@ -241,9 +241,9 @@ impl PipelineBPE {
     }
 
     #[inline(always)]
-    fn fold_id_keyed(&self, key: u64, hash: u64) -> Option<u32> {
+    fn fold_id_keyed(&self, hash: u64) -> Option<u32> {
         // One probe; the foldable bit is part of the id that probe already returned. Which entries
-        let (id, foldable) = self.vocab.get_keyed_foldable(key, hash)?;
+        let (id, foldable) = self.vocab.get_keyed_foldable(hash)?;
         foldable.then_some(id)
     }
 
@@ -329,7 +329,7 @@ impl pipeline::Model for PipelineBPE {
             None
         };
 
-        if let Some(id) = self.fold_id_keyed(key, hash) {
+        if let Some(id) = self.fold_id_keyed(hash) {
             output.push(PipelineToken { id });
             if let Some(cache) = word_cache.as_mut()
                 && let Some(at) = insert_at
@@ -465,7 +465,7 @@ impl pipeline::Model for PipelineBPE {
 
             // Cache miss. The fold still answers a word that is its own vocabulary entry in one
             // probe, which beats running the merge engine for it.
-            if let Some(id) = self.fold_id_keyed(key, hash) {
+            if let Some(id) = self.fold_id_keyed(hash) {
                 // SAFETY: the check above leaves at least `MAX_INLINE_IDS >= 1` slots past `cursor`.
                 unsafe { dst.write(PipelineToken { id }) };
                 cursor += 1;
