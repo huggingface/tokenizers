@@ -27,7 +27,6 @@ name = "tk_encode"
 path = "src/lib.rs"
 
 [dependencies]
-atomsplit = { path = "../atomsplit" }
 bitsplit = { path = "../bitsplit" }
 rand = "0.9"
 regex = "1.10"

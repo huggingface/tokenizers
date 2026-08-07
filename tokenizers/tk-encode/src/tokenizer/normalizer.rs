@@ -1022,7 +1022,7 @@ impl From<&str> for NormalizedString {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use atomsplit::literal::Literal;
+    use bitsplit::literal::Literal;
     use regex::Regex;
     use unicode_categories::UnicodeCategories;
 

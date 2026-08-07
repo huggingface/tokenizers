@@ -8,7 +8,8 @@
 // the non-selected arch some items/imports (char_len, emit_class_spans, ...) are legitimately unused
 
 use crate::classify::{Atom, char_len};
-use crate::fsm::{Span, emit_class_spans};
+use crate::Span;
+use crate::classes::emit_class_spans;
 
 /// Class LookUpTable: tag → 0 drop / 1 isolate / 2 keep-A / 3 keep-B; Cont → 0xFF (fill sentinel).
 /// This lookup table is built per parameter DROP, ISOLATE and KEEP_A. These as

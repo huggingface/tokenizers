@@ -4,7 +4,7 @@ use std::sync::LazyLock;
 
 // The GPT-2 pre-tokenize regex is the canonical spec in atomsplit (single source of truth); re-export
 // under the historical name so call sites are unchanged.
-pub(crate) use atomsplit::regexes::GPT2 as GPT2_REGEX_STR;
+pub(crate) use bitsplit::regexes::GPT2 as GPT2_REGEX_STR;
 
 /// Maps each byte to its GPT-2 byte-level unicode character, indexed by the byte value.
 ///

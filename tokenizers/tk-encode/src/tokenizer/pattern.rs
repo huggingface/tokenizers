@@ -1,6 +1,6 @@
 use crate::utils::SysRegex;
 use crate::{Offsets, Result};
-use atomsplit::literal::Literal;
+use bitsplit::literal::Literal;
 use regex::Regex;
 
 /// Pattern used to split a NormalizedString
