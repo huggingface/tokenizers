@@ -308,10 +308,6 @@ impl pipeline::Model for PipelineBPE {
 
         let bytes = sequence.as_bytes();
         let (key, hash) = key_and_hash(bytes);
-        if let Some(id) = self.fold_id_keyed(key, hash) {
-            output.push(PipelineToken { id });
-            return Ok(());
-        }
 
         let BpeScratch {
             symbols,
@@ -319,7 +315,8 @@ impl pipeline::Model for PipelineBPE {
             word_cache,
         } = scratch;
 
-        // A word seen before costs a probe instead of a merge.
+        // Cache before fold, for the reason given in `tokenize_spans`: the cache is one load and
+        // the fold is an MPHF probe, so the fold must not run ahead of it.
         let insert_at = if let Some(cache) = word_cache.as_mut() {
             match cache.lookup_keyed(key, hash) {
                 Lookup::Hit(ids) => {
@@ -331,6 +328,16 @@ impl pipeline::Model for PipelineBPE {
         } else {
             None
         };
+
+        if let Some(id) = self.fold_id_keyed(key, hash) {
+            output.push(PipelineToken { id });
+            if let Some(cache) = word_cache.as_mut()
+                && let Some(at) = insert_at
+            {
+                cache.insert(at, std::iter::once(id));
+            }
+            return Ok(());
+        }
 
         let start = output.len();
         self.merge_word(sequence, symbols, queue);
@@ -385,18 +392,17 @@ impl pipeline::Model for PipelineBPE {
                 capacity = output.capacity();
             }
 
-            // Same order as `tokenize_pipeline`, and it has to stay that way: the fold answers a
-            // word that is itself a foldable vocabulary entry in one probe, and those words never
-            // reach the cache. Probing the cache first would populate it with words the fold
-            // already serves for free, and the two paths would disagree about what it holds.
+            // The cache goes first. It is one direct-mapped load; the fold is an MPHF probe, which
+            // is a pilot load plus a dependent entry load into the whole vocabulary. Running the
+            // fold ahead of the cache paid that on every pre-token including the ones the cache
+            // was about to answer, and on a warm cache that is nearly all of them.
+            //
+            // The two still agree on ids: `prove_fold` only sets the bit for an entry that merging
+            // its own text reproduces, so a folded word and a merged word give the same answer.
+            // What changes is that a foldable word now gets *inserted*, so its second and later
+            // occurrences come off the cache instead of re-probing the vocabulary.
             let (key, hash) =
                 key_and_hash_readable(sequence.as_bytes(), chunk.len() - span.start as usize);
-            if let Some(id) = self.fold_id_keyed(key, hash) {
-                // SAFETY: the check above leaves at least `MAX_INLINE_IDS >= 1` slots past `cursor`.
-                unsafe { output.as_mut_ptr().add(cursor).write(PipelineToken { id }) };
-                cursor += 1;
-                continue;
-            }
 
             let mut placement = None;
             if let Some(cache) = word_cache.as_mut() {
@@ -423,6 +429,20 @@ impl pipeline::Model for PipelineBPE {
                     }
                     ProbeEmit::Miss(at) => placement = Some(at),
                 }
+            }
+
+            // Cache miss. The fold still answers a word that is its own vocabulary entry in one
+            // probe, which beats running the merge engine for it.
+            if let Some(id) = self.fold_id_keyed(key, hash) {
+                // SAFETY: the check above leaves at least `MAX_INLINE_IDS >= 1` slots past `cursor`.
+                unsafe { output.as_mut_ptr().add(cursor).write(PipelineToken { id }) };
+                cursor += 1;
+                if let Some(cache) = word_cache.as_mut()
+                    && let Some(at) = placement
+                {
+                    cache.insert(at, std::iter::once(id));
+                }
+                continue;
             }
 
             // SAFETY: `cursor` counts what the fast paths wrote; the merge below uses `output`
