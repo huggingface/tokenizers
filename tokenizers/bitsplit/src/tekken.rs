@@ -274,7 +274,22 @@ fn tekken(
         starts[bi] = st;
         // Conservative: flag every letter token in a block that shows either trigger. A false
         // positive only costs a rescan of that token, so erring wide is free; missing one is not.
-        let lt = st & l_start_tok;
+        // Only the letter RUNS that actually need the escape, not every letter token in the block:
+        // one `'s` in a paragraph would otherwise drag every word through the scalar pass.
+        // `apo_after` sits on the apostrophe, one byte past the run, so shift it back inside.
+        let needs = interior_u;
+        let runs_needing = if needs == 0 {
+            0
+        } else {
+            fill_to_last(needs.reverse_bits(), letter.reverse_bits()).reverse_bits()
+        };
+        let (pfx_need, _) = to_lead(
+            prefix_cls & lb & n1(runs_needing & l_run, false),
+            b.cont,
+            prev_cont,
+        );
+        let lt_all = st & l_start_tok; // every letter token — what the cross-block patch tracks
+        let lt = lt_all & (runs_needing | pfx_need);
         let trig = interior_u != 0;
         flag[bi] = if trig { lt } else { 0 };
         // mark_adj is rare, so be blunt: escape every token in the block, plus the one still open
@@ -302,8 +317,8 @@ fn tekken(
             starts[bi - 1] |= steal_patch;
         }
         // a run open at the block edge may meet its trigger in a later block, so flag it now
-        if lt != 0 {
-            last_lt = Some(base + 63 - lt.leading_zeros() as usize);
+        if lt_all != 0 {
+            last_lt = Some(base + 63 - lt_all.leading_zeros() as usize);
         }
         // ...ending on the run's `?` prefix char counts too — the token opened there.
         let open_at_edge = (letter | l_start_tok) >> (len - 1) & 1 != 0;
