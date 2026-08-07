@@ -8,7 +8,7 @@ use crate::models::bpe::legacy::model::BPE;
 use crate::models::bpe::merge_hot_cold_queue::{QueueScratch, merge_hot_cold_queue};
 use crate::models::bpe::merge_multipass::merge_multipass;
 use crate::models::bpe::tables::BpeTables;
-use crate::pipeline::{self, PipelineToken};
+use crate::pipeline::{self, PipelineToken, Span};
 use crate::tokenizer::Result;
 use crate::utils::byte_level::{self};
 use crate::utils::word_cache::{Lookup, WordCache};
@@ -362,9 +362,8 @@ impl pipeline::Model for PipelineBPE {
         output: &mut Vec<PipelineToken>,
     ) -> Result<()> {
         let BpeScratch {
-            merge_queue,
-            skip,
-            word,
+            symbols,
+            queue,
             word_cache,
         } = scratch;
 
@@ -380,6 +379,15 @@ impl pipeline::Model for PipelineBPE {
                 continue;
             }
 
+            // Same order as `tokenize_pipeline`, and it has to stay that way: the fold answers a
+            // word that is itself a foldable vocabulary entry in one probe, and those words never
+            // reach the cache. Probing the cache first would populate it with words the fold
+            // already serves for free, and the two paths would disagree about what it holds.
+            if let Some(id) = self.fold_id(sequence) {
+                output.push(PipelineToken { id });
+                continue;
+            }
+
             let mut placement = None;
             if let Some(cache) = word_cache.as_mut() {
                 match cache.lookup(sequence.as_bytes()) {
@@ -390,17 +398,13 @@ impl pipeline::Model for PipelineBPE {
                     Lookup::Miss(at) => placement = Some(at),
                 }
             }
+
             let start = output.len();
-            if self.ignore_merges
-                && let Some(id) = self.vocab.get_bytes(sequence.as_bytes())
-            {
-                output.push(PipelineToken { id });
-            } else {
-                self.merge_word(sequence, merge_queue, skip, word);
-                output.extend(word.get_chars_iter().map(|id| PipelineToken { id }));
-            }
-            // The ids come back out of `output` because that is the only place both branches
-            // above leave them: `ignore_merges` never touches `word`.
+            self.merge_word(sequence, symbols, queue);
+            // the merge engines work in internal ids; `unmap` takes them back to the vocab's own ids
+            output.extend(symbols.iter().map(|&symbol| PipelineToken {
+                id: self.tables.unmap.at(symbol as usize),
+            }));
             if let Some(cache) = word_cache.as_mut()
                 && let Some(at) = placement
             {
@@ -462,5 +466,47 @@ mod fold_tests {
                 .collect();
             assert_eq!(want, got, "the fold changed the ids for {text:?}");
         }
+    }
+
+    /// `PipelineBPE::tokenize_spans` is an override of a trait method whose default is the
+    /// `tokenize_pipeline` loop, so the two can drift apart without anything failing to build --
+    /// which is how it came to destructure a `BpeScratch` that no longer had those fields.
+    ///
+    /// The short strings above pass through the batch loop a handful of spans at a time. This one
+    /// gives it thousands in a single chunk, with the traffic that separates the two paths:
+    /// repeats (so the word cache both fills and hits), words the fold serves, words that must
+    /// merge, punctuation runs, multi-byte scripts, and a long unbroken run.
+    #[test]
+    fn the_batched_path_matches_the_reference() {
+        let reference = Tokenizer::from_file("../data/gpt2.json").unwrap();
+        let pipe = PipelineTokenizer::try_from(&reference).unwrap();
+
+        let mut text = String::new();
+        for i in 0..400 {
+            text.push_str(" the quick brown fox jumps over the lazy dog");
+            text.push_str(" internationalisation unfortunately");
+            text.push_str(" def foo(bar): return bar + 1");
+            text.push_str(" <|xs0|> <|xs1|> <|endoftext|>");
+            text.push_str(" 语言模型 ελληνικά");
+            if i % 3 == 0 {
+                text.push_str(" aaaaaaaaaaaaaaaaaaaaaaaa ");
+            }
+        }
+
+        let want: Vec<u32> = reference
+            .encode_fast(text.as_str(), false)
+            .unwrap()
+            .get_ids()
+            .to_vec();
+        let got: Vec<u32> = pipe
+            .encode(text.as_str(), false)
+            .wait()
+            .unwrap()
+            .remove(0)
+            .iter()
+            .map(|t| t.id)
+            .collect();
+        assert_eq!(want.len(), got.len(), "token count differs");
+        assert_eq!(want, got, "the batched path changed the ids");
     }
 }
