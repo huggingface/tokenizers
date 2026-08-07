@@ -34,7 +34,7 @@ mod simd;
 
 pub use models::deepseek::bitsplit_deepseek;
 pub use models::cl100k::{bitsplit_cl100k, bitsplit_qwen};
-pub use models::gpt2::bitsplit_byte_level;
+pub use models::gpt2::{bitsplit_byte_level, bitsplit_byte_level_tiled};
 pub use models::kimi::bitsplit_kimi;
 pub use models::o200k::bitsplit_o200k;
 pub use models::tekken::bitsplit_tekken;
@@ -428,6 +428,81 @@ pub(crate) fn letter_match(tags: &[u8], p: usize, re: usize) -> usize {
 }
 
 
+/// Where the emit loop puts the spans it finds.
+///
+/// Two implementations, and the reason this is a trait at all: the whole-chunk sink writes into one
+/// array sized for the worst case, which for a 1 MB input is ~230k spans = 1.8 MB written and then
+/// read back by the consumer -- 3.5 bytes of span traffic per input byte, none of which stays in
+/// cache. The tiled sink hands each small batch straight to the consumer instead, so the array never
+/// grows past L1 and nothing materialises per document. Both share one emit implementation, because
+/// the emit's control flow (contractions especially) is the last thing worth duplicating.
+pub trait SpanSink {
+    fn push(&mut self, span: Span);
+}
+
+/// The whole-chunk sink: `out` must hold the worst case of one span per byte, plus one.
+pub struct SliceSink<'a> {
+    out: &'a mut [Span],
+    written: usize,
+}
+
+impl<'a> SliceSink<'a> {
+    #[inline(always)]
+    pub fn new(out: &'a mut [Span]) -> Self {
+        Self { out, written: 0 }
+    }
+    #[inline(always)]
+    pub fn written(&self) -> usize {
+        self.written
+    }
+}
+
+impl SpanSink for SliceSink<'_> {
+    #[inline(always)]
+    fn push(&mut self, span: Span) {
+        self.out[self.written] = span;
+        self.written += 1;
+    }
+}
+
+/// A fixed tile handed to `consume` whenever it fills. Flushing from inside the emit's own control
+/// flow is what makes this need no resumable state: a contraction chain (`y'all'd've`) can emit an
+/// unbounded run of spans from a single block, so a caller-driven "emit N then return" API would
+/// have to be resumable *mid-chain*, and getting that wrong changes tokenization.
+pub struct TileSink<'a, F: FnMut(&[Span])> {
+    tile: &'a mut [Span],
+    len: usize,
+    consume: F,
+}
+
+impl<'a, F: FnMut(&[Span])> TileSink<'a, F> {
+    #[inline(always)]
+    pub fn new(tile: &'a mut [Span], consume: F) -> Self {
+        assert!(!tile.is_empty(), "a tile needs room for at least one span");
+        Self { tile, len: 0, consume }
+    }
+
+    /// Hand over whatever is buffered. Must be called once the emit returns, for the tail.
+    #[inline]
+    pub fn flush(&mut self) {
+        if self.len > 0 {
+            (self.consume)(&self.tile[..self.len]);
+            self.len = 0;
+        }
+    }
+}
+
+impl<F: FnMut(&[Span])> SpanSink for TileSink<'_, F> {
+    #[inline(always)]
+    fn push(&mut self, span: Span) {
+        self.tile[self.len] = span;
+        self.len += 1;
+        if self.len == self.tile.len() {
+            self.flush();
+        }
+    }
+}
+
 // ── emit ────────────────────────────────────────────────────────────────────────────────────────
 
 /// `starts` bitmap → spans. Each set bit closes the previous token and opens the next; `tzcnt`
@@ -460,16 +535,16 @@ pub(crate) fn emit(starts: &[u64], nblk: usize, n: usize, out: &mut [Span]) -> u
 ///
 /// A matched contraction overrides the algebra outright: it emits its own span and skips every
 /// start bit inside it, which is how the letter alternative loses the tie (`'sx` → `'s`, `x`).
-pub(crate) fn emit_contr(
+pub(crate) fn emit_contr<S: SpanSink>(
     text: &[u8],
     starts: &[u64],
     flag: &[u64],
     nblk: usize,
     n: usize,
     ci: bool,
-    out: &mut [Span],
-) -> usize {
-    let (mut w, mut open, mut skip) = (0usize, u32::MAX, 0usize);
+    sink: &mut S,
+) {
+    let (mut open, mut skip) = (u32::MAX, 0usize);
     for bi in 0..nblk {
         let mut m = starts[bi];
         let f = flag[bi];
@@ -477,8 +552,7 @@ pub(crate) fn emit_contr(
             while m != 0 {
                 let pos = (bi * 64 + m.trailing_zeros() as usize) as u32;
                 if open != u32::MAX {
-                    out[w] = Span::new(open, pos);
-                    w += 1;
+                    sink.push(Span::new(open, pos));
                 }
                 open = pos;
                 m &= m - 1;
@@ -493,8 +567,7 @@ pub(crate) fn emit_contr(
                 continue;
             }
             if open != u32::MAX {
-                out[w] = Span::new(open, pos as u32);
-                w += 1;
+                sink.push(Span::new(open, pos as u32));
             }
             open = pos as u32;
             if f >> j & 1 != 0 {
@@ -507,8 +580,7 @@ pub(crate) fn emit_contr(
                     if l == 0 {
                         break;
                     }
-                    out[w] = Span::new(p as u32, (p + l) as u32);
-                    w += 1;
+                    sink.push(Span::new(p as u32, (p + l) as u32));
                     p += l;
                 }
                 if p > pos {
@@ -522,10 +594,8 @@ pub(crate) fn emit_contr(
         }
     }
     if open != u32::MAX {
-        out[w] = Span::new(open, n as u32);
-        w += 1;
+        sink.push(Span::new(open, n as u32));
     }
-    w
 }
 
 

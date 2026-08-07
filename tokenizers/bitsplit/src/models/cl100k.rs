@@ -265,5 +265,7 @@ fn cl100k(
         code = last_code;
         prev_cont = b.cont;
     }
-    emit_contr(text, starts, flag, nblk, ntext, true, out)
+    let mut sink = crate::SliceSink::new(out);
+    emit_contr(text, starts, flag, nblk, ntext, true, &mut sink);
+    sink.written()
 }

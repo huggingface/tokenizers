@@ -94,6 +94,25 @@ impl TryFrom<Sequence> for PipelineSequence {
     }
 }
 
+impl PipelineSequence {
+    /// The single real child, when the `Sequence[Split(regex), ByteLevel]` shape has collapsed to
+    /// one (a byte-map `ByteLevel` converts to `PipelinePreTokenizer::None`, a pure identity pass).
+    /// Same test `pre_tokenize` makes before delegating.
+    pub(crate) fn lone_child(&self) -> Option<&pipeline::PipelinePreTokenizer> {
+        if self.is_deepseek() {
+            return None;
+        }
+        let mut work = self
+            .pre_tokenizers
+            .iter()
+            .filter(|c| !matches!(c, pipeline::PipelinePreTokenizer::None));
+        match (work.next(), work.next()) {
+            (Some(only), None) => Some(only),
+            _ => None,
+        }
+    }
+}
+
 impl pipeline::PreTokenizer for PipelineSequence {
     /// Runs each child in turn, where every child subdivides the spans produced
     /// so far. A child sees only the text of a span (`&text[span]`) and returns

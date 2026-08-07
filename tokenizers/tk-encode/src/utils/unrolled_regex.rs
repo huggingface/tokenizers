@@ -49,6 +49,34 @@ impl Grammar {
             Grammar::Kimi => bitsplit::bitsplit_kimi(text, tags, starts, flag, out),
         }
     }
+
+    /// Whether [`Self::split_tiled`] can drive this grammar. Ask *before* classifying: the tiled
+    /// driver classifies first and would otherwise leave the fallback to classify the same bytes a
+    /// second time, which is a straight regression for every grammar without a tiled emit.
+    pub fn supports_tiled(self) -> bool {
+        matches!(self, Grammar::Gpt2)
+    }
+
+    /// Emit into small tiles handed to `consume`, instead of one span array per document. Returns
+    /// `false` for a grammar that has no tiled emit yet, so the caller keeps the whole-chunk path
+    /// rather than silently taking a slower or different route.
+    pub fn split_tiled<F: FnMut(&[Span])>(
+        self,
+        text: &[u8],
+        tags: &[u8],
+        starts: &mut [u64],
+        flag: &mut [u64],
+        tile: &mut [Span],
+        consume: F,
+    ) -> bool {
+        match self {
+            Grammar::Gpt2 => {
+                bitsplit::bitsplit_byte_level_tiled(text, tags, starts, flag, tile, consume);
+                true
+            }
+            _ => false,
+        }
+    }
 }
 
 /// The cl100k-family template is fixed except rule 3's digit rule. If `pattern` is that template,

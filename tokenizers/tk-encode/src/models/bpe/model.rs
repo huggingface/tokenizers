@@ -373,7 +373,18 @@ impl pipeline::Model for PipelineBPE {
             word_cache,
         } = scratch;
 
-        output.reserve(spans.len() + MAX_INLINE_IDS);
+        // Reserve what the *fast* path could write, so the emit loop's capacity test almost never
+        // fires: a cache hit writes at most `MAX_INLINE_IDS` lanes, so `spans.len() *
+        // MAX_INLINE_IDS` covers every one of them. Only for a batch small enough to be a tile,
+        // though -- applying it to a whole chunk reserves three tokens per span where english
+        // produces about one (2.7 MB of buffer for 0.94 MB of tokens), and that over-allocation cost
+        // 3-5% on the models with no tiled emit, which are exactly the ones that see whole chunks.
+        const TILE_LIKE: usize = 8192;
+        output.reserve(if spans.len() <= TILE_LIKE {
+            spans.len() * MAX_INLINE_IDS + MAX_INLINE_IDS
+        } else {
+            spans.len() + MAX_INLINE_IDS
+        });
         let mut capacity = output.capacity();
         let mut cursor = output.len();
         // A raw write cursor held across the whole chunk. `output.as_mut_ptr()` inside the loop had

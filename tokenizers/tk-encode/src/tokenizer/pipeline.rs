@@ -110,6 +110,69 @@ pub(crate) fn classify_into_spans_bits(
     });
 }
 
+/// How many spans a tile holds. 256 spans is 2 KB, so the tile and the cache slots it probes both
+/// stay in L1; the whole-chunk array it replaces is ~1.8 MB for a 1 MB input, written and then read
+/// back. Big enough that the per-tile call is amortised over hundreds of pretokens.
+const SPAN_TILE_DEFAULT: usize = 1024;
+const SPAN_TILE_MAX: usize = 1 << 16;
+
+/// `TK_SPAN_TILE=<n>` sweeps it without a rebuild. The tradeoff has two sides and they pull opposite
+/// ways: a smaller tile keeps the spans in L1, a larger one amortises the per-tile call -- and that
+/// call is not free, because handing tiles through a closure pushed `tokenize_spans` out of line, so
+/// each tile now re-pays the model enum dispatch, `output.reserve`, and the cursor setup.
+fn span_tile() -> usize {
+    static N: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    *N.get_or_init(|| {
+        std::env::var("TK_SPAN_TILE")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(SPAN_TILE_DEFAULT)
+            .clamp(1, SPAN_TILE_MAX)
+    })
+}
+
+/// Pre-tokenize and consume in tiles: the spans go straight from the emit to `consume` in small
+/// batches, so no per-document span array is ever built. `false` if this grammar has no tiled emit,
+/// in which case the caller should use [`classify_into_spans_bits`] instead.
+pub(crate) fn classify_into_spans_bits_tiled(
+    bytes: &[u8],
+    grammar: crate::utils::Grammar,
+    consume: impl FnMut(&[Span]),
+) -> bool {
+    thread_local! {
+        static SCRATCH: RefCell<(Vec<u8>, Vec<u64>, Vec<u64>, Vec<Span>)> =
+            const { RefCell::new((Vec::new(), Vec::new(), Vec::new(), Vec::new())) };
+    }
+    let n = bytes.len();
+    if n == 0 {
+        return true;
+    }
+    SCRATCH.with(|cell| {
+        let (tags, starts, flags, tile) = &mut *cell.borrow_mut();
+        if tags.len() < n {
+            tags.resize(n, 0);
+        }
+        let words = n.div_ceil(64) + 1;
+        if starts.len() < words {
+            starts.resize(words, 0);
+            flags.resize(words, 0);
+        }
+        let tile_len = span_tile();
+        if tile.len() < tile_len {
+            tile.resize(tile_len, Span { start: 0, end: 0 });
+        }
+        classify(bytes, &mut tags[..n]);
+        grammar.split_tiled(
+            bytes,
+            &tags[..n],
+            &mut starts[..words],
+            &mut flags[..words],
+            &mut tile[..tile_len],
+            consume,
+        )
+    })
+}
+
 pub trait Normalizer {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>>;
 }
@@ -192,6 +255,19 @@ pub enum PipelinePreTokenizer {
     Whitespace(Whitespace),
     WhitespaceSplit(WhitespaceSplit),
     None,
+}
+
+impl PipelinePreTokenizer {
+    /// The native grammar behind this pre-tokenizer, if the pipeline can drive it in tiles.
+    /// A `Sequence` is included because the dominant `Sequence[Split(regex), ByteLevel]` shape
+    /// collapses to a single real child (see `PipelineSequence::pre_tokenize`).
+    pub(crate) fn native_grammar(&self) -> Option<crate::utils::Grammar> {
+        match self {
+            Self::Split(split) => split.native_grammar(),
+            Self::Sequence(seq) => seq.lone_child()?.native_grammar(),
+            _ => None,
+        }
+    }
 }
 
 impl PreTokenizer for PipelinePreTokenizer {
@@ -1086,6 +1162,47 @@ impl PipelineTokenizer {
                                 output.push(PipelineToken { id: token });
                             }
                             Segment::Text(normalized_chunk) => {
+                                // Fused: hand each tile of spans straight to the model, so the
+                                // ~1.8 MB span array a 1 MB chunk would otherwise write and read
+                                // back never exists. Only for a natively-routed grammar with a
+                                // tiled emit; anything else takes the two-phase path below.
+                                // The model is resolved to its concrete type ONCE, outside the tile
+                                // loop. Handing tiles to `PipelineModel::tokenize_spans` instead put
+                                // the enum dispatch on the per-tile path and, worse, kept the probe
+                                // loop from inlining into the consumer: a profile showed
+                                // `<PipelineModel as Model>::tokenize_spans` newly *outlined* at 58%
+                                // of self time, called once per tile rather than once per chunk.
+                                // gigatoken's equivalent consumer is monomorphic for the same reason.
+                                if STAGE >= Self::STAGE_MODEL
+                                    && let Some(grammar) = self.pre_tokenizer.native_grammar()
+                                    && grammar.supports_tiled()
+                                    && let PipelineModel::BPE(bpe) = &self.model
+                                    && let PipelineModelScratch::BPE(bpe_scratch) = &mut *scratch
+                                {
+                                    let mut err = None;
+                                    let fused = classify_into_spans_bits_tiled(
+                                        normalized_chunk.as_bytes(),
+                                        grammar,
+                                        |spans| {
+                                            if err.is_none() {
+                                                if let Err(e) = bpe.tokenize_spans(
+                                                    normalized_chunk,
+                                                    spans,
+                                                    bpe_scratch,
+                                                    output,
+                                                ) {
+                                                    err = Some(e);
+                                                }
+                                            }
+                                        },
+                                    );
+                                    if let Some(e) = err {
+                                        return Err(e);
+                                    }
+                                    if fused {
+                                        continue;
+                                    }
+                                }
                                 if STAGE >= Self::STAGE_SPLIT {
                                     // Pre-tokenize the chunk of normalized text
                                     PRE_TOKENS_SCRATCH.with(|cell| -> Result<()> {

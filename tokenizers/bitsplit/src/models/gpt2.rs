@@ -6,7 +6,7 @@
 //! literal alternation that outranks every other arm is miserable in bit algebra and trivial there.
 
 use crate::{
-    AUX_NONE, CODE_CONT, CONT, Span, build_block, emit_contr, to_lead,
+    AUX_NONE, CODE_CONT, CONT, SliceSink, Span, SpanSink, TileSink, build_block, emit_contr, to_lead,
 };
 
 /// Atom tag → dense 3-bit code, shared by both grammars. Unlike deepseek's table, `Mark` is NOT a
@@ -86,14 +86,42 @@ pub fn bitsplit_byte_level(
     flag: &mut [u64],
     out: &mut [Span],
 ) -> usize {
+    let mut sink = SliceSink::new(out);
+    bitsplit_byte_level_sink(text, tags, starts, flag, &mut sink);
+    sink.written()
+}
+
+/// GPT-2 / byte-level pre-tokenization into a [`TileSink`]: the spans go to the consumer in small
+/// batches instead of one per-document array. See [`SpanSink`] for why that is worth a function.
+///
+/// The mask build is unchanged and still one pass over the chunk -- only where the spans *go*
+/// differs, so the grammar (contractions, the `\s+(?!\S)` steal, block-edge carry) is untouched.
+pub fn bitsplit_byte_level_tiled<F: FnMut(&[Span])>(
+    text: &[u8],
+    tags: &[u8],
+    starts: &mut [u64],
+    flag: &mut [u64],
+    tile: &mut [Span],
+    consume: F,
+) {
+    let mut sink = TileSink::new(tile, consume);
+    bitsplit_byte_level_sink(text, tags, starts, flag, &mut sink);
+    sink.flush();
+}
+
+fn bitsplit_byte_level_sink<S: SpanSink>(
+    text: &[u8],
+    tags: &[u8],
+    starts: &mut [u64],
+    flag: &mut [u64],
+    sink: &mut S,
+) {
     let ntext = text.len();
     if ntext == 0 {
-        return 0;
+        return;
     }
     let nblk = ntext.div_ceil(64);
-    assert!(
-        tags.len() >= ntext && starts.len() >= nblk && flag.len() >= nblk && out.len() >= ntext
-    );
+    assert!(tags.len() >= ntext && starts.len() >= nblk && flag.len() >= nblk);
     let (mut code, mut prev_cont) = (CODE_CONT, 0u64);
 
     for bi in 0..nblk {
@@ -157,6 +185,6 @@ pub fn bitsplit_byte_level(
         code = last_code;
         prev_cont = b.cont;
     }
-    emit_contr(text, starts, flag, nblk, ntext, false, out)
+    emit_contr(text, starts, flag, nblk, ntext, false, sink);
 }
 

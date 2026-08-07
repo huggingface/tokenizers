@@ -178,6 +178,15 @@ impl PreTokenizer for Split {
     }
 }
 
+impl Split {
+    /// The native grammar this `Split` would route to, if any. Same condition `pre_tokenize` uses,
+    /// named so the pipeline can ask before choosing between the tiled and whole-chunk paths.
+    pub(crate) fn native_grammar(&self) -> Option<crate::utils::Grammar> {
+        self.fsm
+            .filter(|_| !self.invert && self.behavior == SplitDelimiterBehavior::Isolated)
+    }
+}
+
 impl pipeline::PreTokenizer for Split {
     fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Span>) -> Result<()> {
         // A recognized GPT regex in its only real usage — `Isolated`, not inverted — routes
