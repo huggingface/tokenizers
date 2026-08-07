@@ -333,14 +333,23 @@ impl Buckets {
                 // needle = the bucket's shared first byte. Assumes a non-empty prefix
                 // (false only if a lone 1-byte token is the sole holder of its first byte); store
                 // the first byte explicitly if that case ever appears.
-                let needle = self.buckets[0].prefix[0];
-                let mut search = 0usize;
-                while let Some(off) = memchr::memchr(needle, &bytes[search..]) {
-                    let pos = search + off;
+                // Search for the bucket's whole shared prefix, not just its first byte.
+                //
+                // One byte of a long needle is a poor filter on text that is dense in that byte and
+                // holds no match: `<|endoftext|>` over a corpus full of `<|xs0|>` stops at every `<`
+                // and dies at the third byte. Restarting `memchr` on `&bytes[pos + 1..]` per
+                // candidate then pays its prologue again each time. Measured over the same
+                // one-bucket vocabulary in one process, that cost 0.58 ns/B on a 9.8%-`<` corpus
+                // that matches nothing, against 0.12 for `memmem`, which picks a *rare* byte of the
+                // needle instead. Where candidates are already sparse it costs at most 0.015 ns/B.
+                //
+                // `nibble_mask_match` already avoids this for two or more buckets and calls it the
+                // restart penalty. Same positions in the same order, so the leftmost match is
+                // unchanged and `match_fast` still confirms the length sub-list.
+                for pos in memchr::memmem::find_iter(bytes, &self.buckets[0].prefix) {
                     if let Some((id, len)) = self.match_fast(bytes, pos, 0) {
                         return Some((id, pos as u32, len));
                     }
-                    search = pos + 1;
                 }
                 None
             }
