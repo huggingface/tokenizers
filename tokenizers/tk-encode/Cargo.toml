@@ -60,7 +60,7 @@ memchr = "2.8.2"
 unicode-normalization = "0.1.25"
 yada = "0.7.0"
 libc = "0.2"
-wide = "1.6.0"
+wide = "1.5.0"
 
 # Latest released tokenizers, used as the comparison baseline by the CI benchmark
 # (examples gated on `bench-baseline`). Optional so production builds never pull it.

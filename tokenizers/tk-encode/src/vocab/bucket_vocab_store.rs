@@ -4,16 +4,15 @@ use ahash::RandomState;
 use ptr_hash::{FastPtrHash, PtrHashParams, hash::NoHash};
 use std::fmt;
 
-type Mphf = FastPtrHash<NoHash, u64>;
-
-// Fixed seeds so a given vocab always hashes identically (the hasher is also stored on the struct,
-// so build and query are guaranteed consistent regardless).
-const SEEDS: [u64; 4] = [
+static KEY_HASHER: RandomState = RandomState::with_seeds(
     0x243F_6A88_85A3_08D3,
     0x1319_8A2E_0370_7344,
     0xA409_3822_299F_31D0,
     0x082E_FA98_EC4E_6C89,
-];
+);
+
+type Mphf = FastPtrHash<NoHash, u64>;
+
 
 /// Bit 31 of a stored id: the token provably encodes to itself, so a pretoken equal to it can be
 /// emitted without running the merge loop. See `PipelineBPE::prove_fold`.
@@ -26,12 +25,98 @@ const FOLD_BIT: u32 = 1 << 31;
 /// The id half. 2^31 ids is far past any vocabulary.
 const VOCAB_ID_MASK: u32 = FOLD_BIT - 1;
 
-#[derive(Clone, Copy, Debug)]
+pub(crate) const INLINE_KEY_BYTES: usize = 7;
+
+#[inline(always)]
+fn mix(z: u64) -> u64 {
+    let z = z.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    z ^ (z >> 29)
+}
+
+///
+///
+///
+///
+/// # Safety
+#[inline]
+pub fn key_and_hash_readable(word: &[u8], readable: usize) -> (u64, u64) {
+    let len = word.len();
+    if len > INLINE_KEY_BYTES || readable < 8 {
+        return key_and_hash(word);
+    }
+    // SAFETY: `readable >= 8` bytes exist from `word.as_ptr()`, and `len <= 7 < 8`.
+    let raw = unsafe { word.as_ptr().cast::<u64>().read_unaligned() };
+    // SAFETY: `len <= INLINE_KEY_BYTES == 7`, and both tables have 8 entries.
+    let (mask, tag) = unsafe { (*KEY_MASK.get_unchecked(len), *LEN_TAG.get_unchecked(len)) };
+    let key = (raw & mask) | tag;
+    debug_assert_eq!(key, key_and_hash(word).0, "masked load must match the stitched pack");
+    (key, mix(key))
+}
+
+#[inline]
+pub fn key_and_hash(word: &[u8]) -> (u64, u64) {
+    let len = word.len();
+    if len > INLINE_KEY_BYTES {
+        let hash = KEY_HASHER.hash_one(word);
+        return (hash, hash);
+    }
+    let raw = if len >= 4 {
+        let head = u32::from_le_bytes(word[..4].try_into().unwrap()) as u64;
+        let tail = u32::from_le_bytes(word[len - 4..].try_into().unwrap()) as u64;
+        head | tail << (8 * (len - 4))
+    } else if len >= 1 {
+        let first = word[0] as u64;
+        let middle = (word[len / 2] as u64) << (8 * (len / 2));
+        let last = (word[len - 1] as u64) << (8 * (len - 1));
+        first | middle | last
+    } else {
+        0
+    };
+    let key = raw | (len as u64) << 56;
+    (key, mix(key))
+}
+
+///
+#[derive(Clone, Copy, Debug, Default)]
+#[repr(C)]
 struct Entry {
-    start: u32,
-    len: u16,
+    digest: u32,
     /// The token id in the low 31 bits, [`FOLD_BIT`] in the top.
     id: u32,
+}
+
+const _: () = assert!(size_of::<Entry>() == 8);
+
+static KEY_MASK: [u64; 8] = [
+    0x0000_0000_0000_0000,
+    0x0000_0000_0000_00FF,
+    0x0000_0000_0000_FFFF,
+    0x0000_0000_00FF_FFFF,
+    0x0000_0000_FFFF_FFFF,
+    0x0000_00FF_FFFF_FFFF,
+    0x0000_FFFF_FFFF_FFFF,
+    0x00FF_FFFF_FFFF_FFFF,
+];
+static LEN_TAG: [u64; 8] = [
+    0 << 56,
+    1 << 56,
+    2 << 56,
+    3 << 56,
+    4 << 56,
+    5 << 56,
+    6 << 56,
+    7 << 56,
+];
+
+#[inline(always)]
+fn digest_of(hash: u64) -> u32 {
+    (hash >> 32) as u32
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct Span {
+    start: u32,
+    len: u16,
 }
 
 /// The BucketVocabStore optimizes for space and speed. We don't use a HashMap to prevent duplicating the
@@ -55,11 +140,10 @@ struct Entry {
 #[derive(Clone)]
 pub struct BucketVocabStore {
     mphf: Mphf,
-    hasher: RandomState,
     /// All token bytes, concatenated. Ordered by MPHF slot.
     bytes: Box<[u8]>,
-    /// `entries[slot]` -> (offset into `bytes`, length, id). Ordered by MPHF slot.
     entries: Box<[Entry]>,
+    spans: Box<[Span]>,
     /// `id_to_slot[token_id] -> entry_idx` -> index into entries as the entries are not really sorted.
     id_to_slot: Box<[u32]>,
     /// Number of real tokens. Cached at build so `len()` is O(1): `entries` is sized to the
@@ -102,12 +186,9 @@ impl BucketVocabStore {
     pub fn build(tokens: Vec<(Vec<u8>, u32)>) -> Self {
         let n = tokens.len();
 
-        let hasher = RandomState::with_seeds(SEEDS[0], SEEDS[1], SEEDS[2], SEEDS[3]);
-
-        // 1. Pre-hash token bytes -> u64 keys using near perfect hash func
         let keys: Vec<u64> = tokens
             .iter()
-            .map(|(s, _)| hasher.hash_one(s.as_slice()))
+            .map(|(s, _)| key_and_hash(s.as_slice()).1)
             .collect();
 
         // 2. A perfect hash needs distinct keys. Collisions are astronomically unlikely
@@ -142,29 +223,24 @@ impl BucketVocabStore {
         let total: usize = tokens.iter().map(|(s, _)| s.len()).sum();
         let max_id = tokens.iter().map(|(_, id)| *id).max().unwrap();
         let mut bytes = Vec::with_capacity(total);
-        let mut entries = vec![
-            Entry {
-                start: 0,
-                len: 0,
-                id: 0
-            };
-            n_slots
-        ];
+        let mut entries = vec![Entry::default(); n_slots];
+        let mut spans = vec![Span::default(); n_slots];
         let mut id_to_slot = vec![u32::MAX; max_id as usize + 1];
         for (s, id) in &tokens {
             assert!(
                 s.len() <= u16::MAX as usize,
                 "token longer than 65535 bytes"
             );
-            assert!(
-                *id <= VOCAB_ID_MASK,
-                "token id {id} needs bit 31, which holds FOLD_BIT"
-            );
-            let slot = mphf.index(&hasher.hash_one(s.as_slice()));
+            assert!(*id <= VOCAB_ID_MASK, "token id {id} needs bit 31, which holds FOLD_BIT");
+            let (key, hash) = key_and_hash(s.as_slice());
+            let slot = mphf.index(&hash);
             entries[slot] = Entry {
+                digest: digest_of(hash),
+                id: *id,
+            };
+            spans[slot] = Span {
                 start: bytes.len() as u32,
                 len: s.len() as u16,
-                id: *id,
             };
             id_to_slot[*id as usize] = slot as u32;
             bytes.extend_from_slice(s);
@@ -172,9 +248,9 @@ impl BucketVocabStore {
 
         Self {
             mphf,
-            hasher,
             bytes: bytes.into_boxed_slice(),
             entries: entries.into_boxed_slice(),
+            spans: spans.into_boxed_slice(),
             id_to_slot: id_to_slot.into_boxed_slice(),
             n,
         }
@@ -185,9 +261,9 @@ impl BucketVocabStore {
         let empty: [u64; 0] = [];
         Self {
             mphf: FastPtrHash::<NoHash, u64>::new(&empty, PtrHashParams::default_fast()),
-            hasher: RandomState::new(),
             bytes: Box::new([]),
             entries: Box::new([]),
+            spans: Box::new([]),
             id_to_slot: Box::new([]),
             n: 0,
         }
@@ -202,34 +278,46 @@ impl BucketVocabStore {
         if self.entries.is_empty() {
             return None;
         }
-        let slot = self.mphf.index(&self.hasher.hash_one(q));
-
+        let (key, hash) = key_and_hash(q);
+        let slot = self.mphf.index(&hash);
         let e = self.entries[slot];
-        let (start, len) = (e.start as usize, e.len as usize);
-        // Byte equality: confirms `q` really is the token at this slot (perfect hashing only
-        // guarantees a valid slot for in-vocab keys; this rejects collisions and Out Of Vocab queries).
-        if len == q.len() && self.bytes[start..start + len] == *q {
-            Some(e.id & VOCAB_ID_MASK)
-        } else {
-            None
-        }
+        (e.digest == digest_of(hash)).then_some(e.id & VOCAB_ID_MASK)
     }
 
     /// The id for `q`, together with whether that entry may be folded. One probe and one entry
     /// load: the flag is a bit of the id the probe already read.
     #[inline]
     pub fn get_bytes_foldable(&self, q: &[u8]) -> Option<(u32, bool)> {
+        let (key, hash) = key_and_hash(q);
+        self.get_keyed_foldable(key, hash)
+    }
+
+    #[inline(always)]
+    pub fn probe_slot(&self, hash: u64) -> usize {
+        self.mphf.index(&hash)
+    }
+
+    #[inline(always)]
+    pub fn entry_at(&self, slot: usize) -> (u32, u32) {
+        let e = self.entries[slot];
+        (e.digest, e.id)
+    }
+
+    #[inline(always)]
+    pub fn resolve_foldable(hash: u64, entry: (u32, u32)) -> Option<(u32, bool)> {
+        let (edigest, eid) = entry;
+        (edigest == digest_of(hash)).then_some((eid & VOCAB_ID_MASK, eid & FOLD_BIT != 0))
+    }
+
+    #[inline]
+    pub fn get_keyed_foldable(&self, key: u64, hash: u64) -> Option<(u32, bool)> {
+        let _ = key;
         if self.entries.is_empty() {
             return None;
         }
-        let slot = self.mphf.index(&self.hasher.hash_one(q));
+        let slot = self.mphf.index(&hash);
         let e = self.entries[slot];
-        let (start, len) = (e.start as usize, e.len as usize);
-        if len == q.len() && self.bytes[start..start + len] == *q {
-            Some((e.id & VOCAB_ID_MASK, e.id & FOLD_BIT != 0))
-        } else {
-            None
-        }
+        (e.digest == digest_of(hash)).then_some((e.id & VOCAB_ID_MASK, e.id & FOLD_BIT != 0))
     }
 
     /// Records that this token folds to itself. Called once per entry at load, after the proof.
@@ -253,9 +341,9 @@ impl BucketVocabStore {
         if slot == u32::MAX {
             return None; // id is within range but absent from the vocab
         }
-        let e = self.entries[slot as usize];
-        let start = e.start as usize;
-        self.bytes.get(start..start + e.len as usize)
+        let sp = self.spans[slot as usize];
+        let start = sp.start as usize;
+        self.bytes.get(start..start + sp.len as usize)
     }
 
     #[inline]
@@ -285,9 +373,10 @@ impl BucketVocabStore {
     pub fn content(&self) -> Vec<(String, u32)> {
         self.entries
             .iter()
-            .filter(|e| e.len > 0)
+            .zip(self.spans.iter())
+            .filter(|(_, sp)| sp.len > 0)
             // Mask: the stored id carries FOLD_BIT, which must never escape this type.
-            .map(|m| m.id & VOCAB_ID_MASK)
+            .map(|(e, _)| e.id & VOCAB_ID_MASK)
             .filter_map(|id| self.id_to_token(id).map(|token| (token, id)))
             .collect()
     }
@@ -301,9 +390,10 @@ impl BucketVocabStore {
     pub fn byte_content(&self) -> Vec<(Vec<u8>, u32)> {
         self.entries
             .iter()
-            .filter(|e| e.len > 0)
+            .zip(self.spans.iter())
+            .filter(|(_, sp)| sp.len > 0)
             // Mask: the stored id carries FOLD_BIT, which must never escape this type.
-            .map(|m| m.id & VOCAB_ID_MASK)
+            .map(|(e, _)| e.id & VOCAB_ID_MASK)
             .filter_map(|id| self.id_to_token_bytes(id).map(|token| (token.to_vec(), id)))
             .collect()
     }

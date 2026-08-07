@@ -11,8 +11,8 @@ use crate::models::bpe::tables::BpeTables;
 use crate::pipeline::{self, PipelineToken, Span};
 use crate::tokenizer::Result;
 use crate::utils::byte_level::{self};
-use crate::utils::word_cache::{Lookup, WordCache};
-use crate::vocab::bucket_vocab_store::BucketVocabStore;
+use crate::utils::word_cache::{Lookup, MAX_INLINE_IDS, ProbeEmit, WordCache};
+use crate::vocab::bucket_vocab_store::{BucketVocabStore, key_and_hash, key_and_hash_readable};
 
 const GATE_MULTI: u16 = 8;
 const GATE_ASCII: u16 = 24;
@@ -240,13 +240,10 @@ impl PipelineBPE {
         proven
     }
 
-    /// The id to emit for `sequence` without merging, when the whole pretoken is a vocabulary
-    /// entry that may be folded. `None` sends the word to the merge engines.
     #[inline(always)]
-    fn fold_id(&self, sequence: &str) -> Option<u32> {
+    fn fold_id_keyed(&self, key: u64, hash: u64) -> Option<u32> {
         // One probe; the foldable bit is part of the id that probe already returned. Which entries
-        // carry it was settled at load -- see `from_bpe`.
-        let (id, foldable) = self.vocab.get_bytes_foldable(sequence.as_bytes())?;
+        let (id, foldable) = self.vocab.get_keyed_foldable(key, hash)?;
         foldable.then_some(id)
     }
 
@@ -309,10 +306,8 @@ impl pipeline::Model for PipelineBPE {
             return Ok(());
         }
 
-        if let Some(id) = self.fold_id(sequence) {
-            output.push(PipelineToken { id });
-            return Ok(());
-        }
+        let bytes = sequence.as_bytes();
+        let (key, hash) = key_and_hash(bytes);
 
         let BpeScratch {
             symbols,
@@ -320,9 +315,10 @@ impl pipeline::Model for PipelineBPE {
             word_cache,
         } = scratch;
 
-        // A word seen before costs a probe instead of a merge.
+        // Cache before fold, for the reason given in `tokenize_spans`: the cache is one load and
+        // the fold is an MPHF probe, so the fold must not run ahead of it.
         let insert_at = if let Some(cache) = word_cache.as_mut() {
-            match cache.lookup(sequence.as_bytes()) {
+            match cache.lookup_keyed(key, hash) {
                 Lookup::Hit(ids) => {
                     output.extend(ids.iter().map(|&id| PipelineToken { id }));
                     return Ok(());
@@ -332,6 +328,16 @@ impl pipeline::Model for PipelineBPE {
         } else {
             None
         };
+
+        if let Some(id) = self.fold_id_keyed(key, hash) {
+            output.push(PipelineToken { id });
+            if let Some(cache) = word_cache.as_mut()
+                && let Some(at) = insert_at
+            {
+                cache.insert(at, std::iter::once(id));
+            }
+            return Ok(());
+        }
 
         let start = output.len();
         self.merge_word(sequence, symbols, queue);
@@ -367,9 +373,9 @@ impl pipeline::Model for PipelineBPE {
             word_cache,
         } = scratch;
 
-        // One reservation for the batch. Most pre-tokens are a single token, so the span count is
-        // a close lower bound on what the batch emits; anything past it grows as usual.
-        output.reserve(spans.len());
+        output.reserve(spans.len() + MAX_INLINE_IDS);
+        let mut capacity = output.capacity();
+        let mut cursor = output.len();
 
         for span in spans {
             // SAFETY: the pre-tokenizer cuts on char boundaries, so a span is always a valid slice
@@ -379,26 +385,68 @@ impl pipeline::Model for PipelineBPE {
                 continue;
             }
 
-            // Same order as `tokenize_pipeline`, and it has to stay that way: the fold answers a
-            // word that is itself a foldable vocabulary entry in one probe, and those words never
-            // reach the cache. Probing the cache first would populate it with words the fold
-            // already serves for free, and the two paths would disagree about what it holds.
-            if let Some(id) = self.fold_id(sequence) {
-                output.push(PipelineToken { id });
-                continue;
+            if cursor + MAX_INLINE_IDS > capacity {
+                // SAFETY: `cursor` counts what has been written so far.
+                unsafe { output.set_len(cursor) };
+                output.reserve(spans.len() + MAX_INLINE_IDS);
+                capacity = output.capacity();
             }
+
+            // The cache goes first. It is one direct-mapped load; the fold is an MPHF probe, which
+            // is a pilot load plus a dependent entry load into the whole vocabulary. Running the
+            // fold ahead of the cache paid that on every pre-token including the ones the cache
+            // was about to answer, and on a warm cache that is nearly all of them.
+            //
+            // The two still agree on ids: `prove_fold` only sets the bit for an entry that merging
+            // its own text reproduces, so a folded word and a merged word give the same answer.
+            // What changes is that a foldable word now gets *inserted*, so its second and later
+            // occurrences come off the cache instead of re-probing the vocabulary.
+            let (key, hash) =
+                key_and_hash_readable(sequence.as_bytes(), chunk.len() - span.start as usize);
 
             let mut placement = None;
             if let Some(cache) = word_cache.as_mut() {
-                match cache.lookup(sequence.as_bytes()) {
-                    Lookup::Hit(ids) => {
-                        output.extend(ids.iter().map(|&id| PipelineToken { id }));
+                // SAFETY: the capacity check above leaves `MAX_INLINE_IDS` slots past `cursor`, and
+                let found = unsafe {
+                    cache.probe_emit_keyed(
+                        key,
+                        hash,
+                        output.as_mut_ptr().add(cursor).cast::<u32>(),
+                    )
+                };
+                match found {
+                    ProbeEmit::Wrote(n) => {
+                        cursor += n;
                         continue;
                     }
-                    Lookup::Miss(at) => placement = Some(at),
+                    ProbeEmit::Hit(ids) => {
+                        // SAFETY: `cursor` counts what has been written so far.
+                        unsafe { output.set_len(cursor) };
+                        output.extend(ids.iter().map(|&id| PipelineToken { id }));
+                        cursor = output.len();
+                        capacity = output.capacity();
+                        continue;
+                    }
+                    ProbeEmit::Miss(at) => placement = Some(at),
                 }
             }
 
+            // Cache miss. The fold still answers a word that is its own vocabulary entry in one
+            // probe, which beats running the merge engine for it.
+            if let Some(id) = self.fold_id_keyed(key, hash) {
+                // SAFETY: the check above leaves at least `MAX_INLINE_IDS >= 1` slots past `cursor`.
+                unsafe { output.as_mut_ptr().add(cursor).write(PipelineToken { id }) };
+                cursor += 1;
+                if let Some(cache) = word_cache.as_mut()
+                    && let Some(at) = placement
+                {
+                    cache.insert(at, std::iter::once(id));
+                }
+                continue;
+            }
+
+            // SAFETY: `cursor` counts what the fast paths wrote; the merge below uses `output`
+            unsafe { output.set_len(cursor) };
             let start = output.len();
             self.merge_word(sequence, symbols, queue);
             // the merge engines work in internal ids; `unmap` takes them back to the vocab's own ids
@@ -410,7 +458,11 @@ impl pipeline::Model for PipelineBPE {
             {
                 cache.insert(at, output[start..].iter().map(|token| token.id));
             }
+            cursor = output.len();
+            capacity = output.capacity();
         }
+        // SAFETY: `cursor` counts every token written, by the fast paths and the slow one alike.
+        unsafe { output.set_len(cursor) };
         Ok(())
     }
 
@@ -466,5 +518,39 @@ mod fold_tests {
                 .collect();
             assert_eq!(want, got, "the fold changed the ids for {text:?}");
         }
+    }
+
+    #[test]
+    fn the_batched_path_matches_the_reference() {
+        let reference = Tokenizer::from_file("../data/gpt2.json").unwrap();
+        let pipe = PipelineTokenizer::try_from(&reference).unwrap();
+
+        let mut text = String::new();
+        for i in 0..400 {
+            text.push_str(" the quick brown fox jumps over the lazy dog");
+            text.push_str(" internationalisation unfortunately");
+            text.push_str(" def foo(bar): return bar + 1");
+            text.push_str(" <|xs0|> <|xs1|> <|endoftext|>");
+            text.push_str(" 语言模型 ελληνικά");
+            if i % 3 == 0 {
+                text.push_str(" aaaaaaaaaaaaaaaaaaaaaaaa ");
+            }
+        }
+
+        let want: Vec<u32> = reference
+            .encode_fast(text.as_str(), false)
+            .unwrap()
+            .get_ids()
+            .to_vec();
+        let got: Vec<u32> = pipe
+            .encode(text.as_str(), false)
+            .wait()
+            .unwrap()
+            .remove(0)
+            .iter()
+            .map(|t| t.id)
+            .collect();
+        assert_eq!(want.len(), got.len(), "token count differs");
+        assert_eq!(want, got, "the batched path changed the ids");
     }
 }
