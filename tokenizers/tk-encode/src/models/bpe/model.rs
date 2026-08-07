@@ -248,10 +248,11 @@ impl PipelineBPE {
     /// Takes the key and hash rather than the word alone: both call sites also probe the cache for
     /// the same bytes, so they run [`key_and_hash`] once and share it.
     #[inline(always)]
-    fn fold_id_keyed(&self, bytes: &[u8], key: u64, hash: u64) -> Option<u32> {
+    fn fold_id_keyed(&self, key: u64, hash: u64) -> Option<u32> {
         // One probe; the foldable bit is part of the id that probe already returned. Which entries
-        // carry it was settled at load -- see `from_bpe`.
-        let (id, foldable) = self.vocab.get_bytes_foldable_keyed(bytes, key, hash)?;
+        // carry it was settled at load -- see `from_bpe`. The key verifies the slot, so the bytes
+        // are not needed here at all.
+        let (id, foldable) = self.vocab.get_keyed_foldable(key, hash)?;
         foldable.then_some(id)
     }
 
@@ -327,7 +328,7 @@ impl pipeline::Model for PipelineBPE {
         // shares the hash and nothing else.
         let bytes = sequence.as_bytes();
         let (key, hash) = key_and_hash(bytes);
-        if let Some(id) = self.fold_id_keyed(bytes, key, hash) {
+        if let Some(id) = self.fold_id_keyed(key, hash) {
             output.push(PipelineToken { id });
             return Ok(());
         }
@@ -342,7 +343,7 @@ impl pipeline::Model for PipelineBPE {
 
         // A word seen before costs a probe instead of a merge.
         let insert_at = if let Some(cache) = word_cache.as_mut() {
-            match cache.lookup_hashed(bytes, hash) {
+            match cache.lookup_keyed(key, hash) {
                 Lookup::Hit(ids) => {
                     output.extend(ids.iter().map(|&id| PipelineToken { id }));
                     return Ok(());
@@ -419,7 +420,7 @@ impl pipeline::Model for PipelineBPE {
             // already serves for free, and the two paths would disagree about what it holds.
             let bytes = sequence.as_bytes();
             let (key, hash) = key_and_hash(bytes);
-            if let Some(id) = self.fold_id_keyed(bytes, key, hash) {
+            if let Some(id) = self.fold_id_keyed(key, hash) {
                 // SAFETY: the check above leaves at least `MAX_INLINE_IDS >= 1` slots past `cursor`.
                 unsafe { output.as_mut_ptr().add(cursor).write(PipelineToken { id }) };
                 cursor += 1;
@@ -434,8 +435,8 @@ impl pipeline::Model for PipelineBPE {
                 // SAFETY: the capacity check above leaves `MAX_INLINE_IDS` slots past `cursor`, and
                 // `PipelineToken` is layout-identical to `u32` (asserted at the top of this file).
                 let found = unsafe {
-                    cache.probe_emit_hashed(
-                        bytes,
+                    cache.probe_emit_keyed(
+                        key,
                         hash,
                         output.as_mut_ptr().add(cursor).cast::<u32>(),
                     )

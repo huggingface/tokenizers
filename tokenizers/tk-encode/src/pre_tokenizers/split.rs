@@ -193,6 +193,11 @@ impl pipeline::PreTokenizer for Split {
             // everything else keeps the FSM.
             match fsm {
                 GptFsm::Gpt2 if bitsplit::fast_builder() => {
+                    // SCRATCH -- NOT FOR COMMIT: prove which splitter actually runs.
+                    if std::env::var_os("TK_ROUTE").is_some() {
+                        static ONCE: std::sync::Once = std::sync::Once::new();
+                        ONCE.call_once(|| eprintln!("[route] gpt2 -> bitsplit (SIMD)"));
+                    }
                     pipeline::classify_into_spans_bits(
                         text.as_bytes(),
                         bitsplit::bitsplit_byte_level,
@@ -208,7 +213,12 @@ impl pipeline::PreTokenizer for Split {
                     );
                     return Ok(());
                 }
-                _ => {}
+                _ => {
+                    if std::env::var_os("TK_ROUTE").is_some() {
+                        static ONCE2: std::sync::Once = std::sync::Once::new();
+                        ONCE2.call_once(|| eprintln!("[route] fell through to the FSM"));
+                    }
+                }
             }
             pipeline::classify_into_spans(
                 text.as_bytes(),

@@ -52,19 +52,23 @@
 
 use std::fmt::Debug;
 
-use ahash::RandomState;
 use std::iter::Iterator;
 use wide::i8x16;
 
-/// Hashes a long word a second time, to fill the half of its key that
-/// [`placement_hash_of`] does not reach. The two hashes must be independent, or the
-/// key would carry 64 bits of information instead of 127.
-static DISCRIMINANT_HASHER: RandomState = RandomState::with_seeds(
-    0x4528_21e6_38d0_1377,
-    0xbe54_66cf_34e9_0c6c,
-    0xc0ac_29b7_c97c_50dd,
-    0x3f84_d5b5_b547_0917,
-);
+use crate::vocab::bucket_vocab_store::key_and_hash;
+#[cfg(test)]
+use crate::vocab::bucket_vocab_store::INLINE_KEY_BYTES;
+
+// One hash pass, not two, and shared with the vocabulary.
+//
+// This used to hash a long word twice -- `PLACEMENT_HASHER` for its slot and `DISCRIMINANT_HASHER`
+// for the other half of its key -- which is why long pretokens paid for the key. It now keys through
+// `bucket_vocab_store::key_and_hash`, the same function the fold probes with, so a word that misses
+// the fold and falls through to this table is hashed once for both rather than once each.
+
+/// How many ids a [`WordCacheSlot`] holds inline before it has to spill. A probe writes this
+/// many lanes unconditionally, so it is also the headroom [`WordCache::probe_emit`] needs.
+pub const MAX_INLINE_IDS: usize = 3;
 
 /// A table mapping words (`[u8]`) to the token ids they encode to (`[u32]`)
 pub struct WordCache {
@@ -112,58 +116,60 @@ impl<'a> WordCache {
     /// Looks up a word in the cache.
     /// On [Lookup::Hit], returns the ids it encodes to.
     /// On [Lookup::Miss], returns the location in [Self::cached_words] where it should be inserted
+    #[inline]
     pub fn lookup(&'a self, word: &[u8]) -> Lookup<'a> {
-        self.lookup_hashed(word, placement_hash_of(word))
+        self.lookup_placed(make_lookup_key(word, self.placement_mask))
     }
 
-    /// [`Self::lookup`] for a caller that already hashed the word with [`placement_hash_of`].
-    ///
-    /// Only the placement hash is handed in. The key still decides a hit, so a word of fifteen
-    /// bytes or fewer is compared to the slot exactly, as before.
-    pub fn lookup_hashed(&'a self, word: &[u8], placement_hash: u64) -> Lookup<'a> {
-        debug_assert_eq!(
-            placement_hash,
-            placement_hash_of(word),
-            "placement hash does not belong to this word"
-        );
-        self.lookup_placed(make_lookup_key_hashed(word, placement_hash, self.placement_mask))
+    /// [`Self::lookup`] for a caller that already has the word's key and hash from
+    /// [`key_and_hash`] -- the fold probes the vocabulary with the same pair, so sharing it means a
+    /// word that misses the fold and falls through to here is hashed once, not twice.
+    #[inline]
+    pub fn lookup_keyed(&'a self, key: u64, hash: u64) -> Lookup<'a> {
+        self.lookup_placed(placement_from(LookupKey(key), hash, self.placement_mask))
     }
 
-    /// A hit written straight to `dst`, skipping the tag window.
+    /// Probe and emit in one step: on an inline hit in the home slot the ids are written straight
+    /// to `dst` and the count returned, so nothing goes back to the slot and nothing becomes a
+    /// slice.
     ///
-    /// The common case is a word cached in its own home slot with at most [`MAX_INLINE_IDS`] ids.
-    /// `lookup` reaches that through the tag row -- one load of 16 control bytes, a SIMD compare,
-    /// then the slot itself -- and hands back a slice the caller walks. Both are avoidable: read
-    /// the home slot directly and store all [`MAX_INLINE_IDS`] lanes unconditionally, so the line
-    /// is touched once and the ids never become a slice.
+    /// This is the shape the hot path wants. [`Self::lookup`] hands back a `&[u32]`, which means
+    /// the caller re-reads the slot to build a fat pointer and then copies a run whose length it
+    /// only learns at run time -- three trips over one 32-byte line that a single load already
+    /// brought in. Here that line is read once, all [`MAX_INLINE_IDS`] lanes are stored
+    /// unconditionally, and the caller advances its cursor by the count: no branch on the length,
+    /// no second load, no slice.
     ///
-    /// Lanes past `ids_len` are dead. The caller advances its cursor by `ids_len` only, so the next
-    /// word overwrites them, or the final `set_len` cuts them off.
+    /// Falls back to the full window walk for anything else. The table is sized well above its
+    /// load, so a word's home slot is usually the one it was placed in and the walk is a few
+    /// percent of words.
     ///
     /// # Safety
-    ///
-    /// `dst` must have room for [`MAX_INLINE_IDS`] `u32` writes.
+    /// `dst` must have room for [`MAX_INLINE_IDS`] `u32` writes. `word` must not be empty --
+    /// an empty word keys to zero, which is also what an untouched slot holds.
     #[inline]
-    pub unsafe fn probe_emit_hashed(
-        &'a self,
-        word: &[u8],
-        placement_hash: u64,
-        dst: *mut u32,
-    ) -> ProbeEmit<'a> {
-        debug_assert_eq!(
-            placement_hash,
-            placement_hash_of(word),
-            "placement hash does not belong to this word"
-        );
-        let placement = make_lookup_key_hashed(word, placement_hash, self.placement_mask);
-        // SAFETY: `index` is masked with `placement_mask` (`next_pow2 - 1`) and the table is
+    pub unsafe fn probe_emit(&'a self, word: &[u8], dst: *mut u32) -> ProbeEmit<'a> {
+        debug_assert!(!word.is_empty(), "probe_emit needs a non-empty word");
+        let (key, hash) = key_and_hash(word);
+        unsafe { self.probe_emit_keyed(key, hash, dst) }
+    }
+
+    /// [`Self::probe_emit`] for a caller that already has the word's key and hash.
+    ///
+    /// # Safety
+    /// As [`Self::probe_emit`]: `dst` must have room for [`MAX_INLINE_IDS`] `u32` writes.
+    #[inline]
+    pub unsafe fn probe_emit_keyed(&'a self, key: u64, hash: u64, dst: *mut u32) -> ProbeEmit<'a> {
+        let placement = placement_from(LookupKey(key), hash, self.placement_mask);
+        // SAFETY: `index` is masked with `placement_mask` (`next_pow2 - 1`), and the table is
         // `next_pow2 + WINDOW_SIZE` long, so the home slot is always in bounds.
         let slot = unsafe { *self.cached_words.as_ptr().add(placement.index) };
-        // An untouched slot holds `LookupKey(0)`, which no word keys to, so a key match here is a
-        // real hit -- the same argument the window walk makes. A spilled slot is excluded because
-        // its payload holds offsets, not ids, and only spilled slots can be stale.
+        // An untouched slot holds `LookupKey(0)`, which no non-empty word can key to, so a key
+        // match here is a real hit -- the same 127-bit argument the window walk makes.
         if slot.key == placement.key && !slot.is_spilled() {
-            // SAFETY: the caller guarantees room for `MAX_INLINE_IDS`.
+            // SAFETY: the caller guarantees room for `MAX_INLINE_IDS`. Lanes past `ids_len` are
+            // dead: the caller advances its cursor by `ids_len` only, so the next word overwrites
+            // them or the final `set_len` cuts them off.
             unsafe {
                 for lane in 0..MAX_INLINE_IDS {
                     dst.add(lane).write(slot.payload[lane]);
@@ -177,8 +183,8 @@ impl<'a> WordCache {
         }
     }
 
-    /// The window walk, once a word has been keyed and placed. Split out of [`Self::lookup_hashed`]
-    /// so [`Self::probe_emit_hashed`] can fall back to it without re-keying the word.
+    /// The window walk, once a word has been keyed and placed. Split out of [`Self::lookup`] so
+    /// [`Self::probe_emit`] can fall back to it without hashing the word a second time.
     #[inline]
     fn lookup_placed(&'a self, placement: InsertPlacement) -> Lookup<'a> {
         let InsertPlacement {
@@ -323,7 +329,7 @@ impl WordCacheSlot {
     }
 
     pub fn new_self_contained(key: LookupKey, ids: impl ExactSizeIterator<Item = u32>) -> Self {
-        assert!(ids.len() <= 3);
+        assert!(ids.len() <= MAX_INLINE_IDS);
         let ids_len = ids.len() as u8;
         let mut payload = [0u32; 3];
         for (slot, id) in payload.iter_mut().zip(ids) {
@@ -421,115 +427,42 @@ impl<'a> SelfContained<'a> {
 /// ```
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 #[repr(transparent)]
-pub struct LookupKey(u128);
+pub struct LookupKey(u64);
 
-/// The 64 bits a word's home slot and tag are taken from.
+/// The key, home slot and tag of a word.
 ///
-/// This *is* [`crate::vocab::bucket_vocab_store::word_hash`], not a second function that happens to
-/// agree with it. The BPE path probes the vocabulary and this cache for the same word, so it computes
-/// the value once and hands it to [`WordCache::lookup_hashed`]; two definitions could drift and the
-/// cache would place a word under one value and look it up under another.
-///
-/// It also means a word of seven bytes or fewer is not hashed at all: the bytes and the length pack
-/// into a `u64` and one multiply spreads them.
+/// The key and its hash come from [`key_and_hash`], which is also what the vocabulary store keys on
+/// -- one scheme, so a word that is probed in both tables can be hashed once. See
+/// [`WordCache::lookup_keyed`].
 #[inline]
-pub fn placement_hash_of(word: &[u8]) -> u64 {
-    crate::vocab::bucket_vocab_store::word_hash(word)
-}
-
-/// The key, home slot and tag of a word. Test-only: [`WordCache::lookup`] hashes the word itself
-/// and goes straight to [`make_lookup_key_hashed`].
-#[cfg(test)]
 fn make_lookup_key(word: &[u8], placement_mask: u64) -> InsertPlacement {
-    make_lookup_key_hashed(word, placement_hash_of(word), placement_mask)
+    let (key, hash) = key_and_hash(word);
+    placement_from(LookupKey(key), hash, placement_mask)
 }
 
-/// [`make_lookup_key`] for a caller that already has the word's placement hash.
-fn make_lookup_key_hashed(
-    word: &[u8],
-    placement_hash: u64,
-    placement_mask: u64,
-) -> InsertPlacement {
-    let key = if word.len() <= 15 {
-        LookupKey::new_inline(word)
-    } else {
-        LookupKey::new_hash(DISCRIMINANT_HASHER.hash_one(word), placement_hash)
-    };
+#[inline]
+fn placement_from(key: LookupKey, hash: u64, placement_mask: u64) -> InsertPlacement {
     InsertPlacement {
         key,
-        index: (placement_hash & placement_mask) as usize,
-        tag: ((placement_hash >> (64 - 8)) as u8).max(WordCache::EMPTY + 1),
+        index: (hash & placement_mask) as usize,
+        tag: ((hash >> (64 - 8)) as u8).max(WordCache::EMPTY + 1),
         // ^ must be at least 0x01, otherwise can be mistaken for an EMPTY slot
-    }
-}
-
-impl LookupKey {
-    pub const TAG_MASK: u128 = 1 << 127;
-
-    /// The key of a word of fifteen bytes or fewer: the word is its own key.
-    pub fn new_inline(word: &[u8]) -> Self {
-        let len = word.len();
-        assert!(len <= 15);
-        // yes, this is a bit weird :)
-        //
-        // We used to do this:
-        // ```rust
-        //  payload[..word.len()].copy_from_slice(word);
-        //  payload[15] = word.len() as u8;
-        //  Self(u128::from_le_bytes(payload))
-        // ```
-        // But that would compile into a memcpy call, probably because the len is only known at runtime.
-        // memcpy turned out to be quite slow and inefficient.
-        //
-        // The head / tail with fixed size compiles into plain register loads which are way faster
-        let raw = if len >= 8 {
-            let head = u64::from_le_bytes(word[..8].try_into().unwrap()) as u128;
-            let tail = u64::from_le_bytes(word[len - 8..].try_into().unwrap()) as u128;
-            head | tail << (8 * (len - 8))
-        } else if len >= 4 {
-            let head = u32::from_le_bytes(word[..4].try_into().unwrap()) as u128;
-            let tail = u32::from_le_bytes(word[len - 4..].try_into().unwrap()) as u128;
-            head | tail << (8 * (len - 4))
-        } else if len >= 1 {
-            let first = word[0] as u128;
-            let middle = (word[len / 2] as u128) << (8 * (len / 2));
-            let last = (word[len - 1] as u128) << (8 * (len - 1));
-            first | middle | last
-        } else {
-            0
-        };
-        Self(raw | (len as u128) << 120)
-    }
-
-    /// The key of a longer word: 127 bits of hash stand in for the word's bytes.
-    pub fn new_hash(discriminant: u64, placement: u64) -> Self {
-        Self(Self::TAG_MASK | (discriminant as u128) << 64 | placement as u128)
     }
 }
 
 impl std::fmt::Debug for LookupKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut debug = f.debug_struct("LookupKey");
-        if self.0 & Self::TAG_MASK == 0 {
+        // An inline key carries its length in the top byte and its bytes below; anything else is a
+        // hash and has nothing readable in it.
+        let len = (self.0 >> 56) as usize;
+        if len <= 7 {
             let bytes = self.0.to_le_bytes();
-            let len = bytes[15] as usize;
-            debug
-                .field("type", &"inline")
-                .field("word_len", &len)
-                .field("word", &bytes[..len].escape_ascii().to_string());
+            f.debug_tuple("LookupKey")
+                .field(&String::from_utf8_lossy(&bytes[..len]).into_owned())
+                .finish()
         } else {
-            debug
-                .field("type", &"hashed")
-                .field(
-                    "discriminant",
-                    &format!("{:#x}", ((self.0 & !Self::TAG_MASK) >> 64) as u64),
-                )
-                .field(
-                    "placement",
-                    &format!("{:#x}", (self.0 & u64::MAX as u128) as u64),
-                );
+            write!(f, "LookupKey(hash {:#018x})", self.0)
         }
-        debug.finish()
     }
 }
 
@@ -539,23 +472,19 @@ pub struct InsertPlacement {
     tag: u8,
 }
 
-/// How many ids a slot holds inline. A slot is 32 bytes: a `u128` key, three `u32` ids and a
-/// length, so three is what fits beside the key.
-pub const MAX_INLINE_IDS: usize = 3;
+pub enum Lookup<'a> {
+    Hit(&'a [u32]),
+    Miss(InsertPlacement),
+}
 
-/// What [`WordCache::probe_emit_hashed`] found. `Wrote` is the fast path: the ids are already at
-/// `dst` and only the count comes back.
+/// What [`WordCache::probe_emit`] found. `Wrote` is the fast path: the ids are already at the
+/// caller's cursor and only the count comes back.
 pub enum ProbeEmit<'a> {
     /// An inline hit in the home slot. [`MAX_INLINE_IDS`] lanes were written at `dst`; this many
     /// of them are live.
     Wrote(usize),
     /// A hit the fast path could not serve -- a spilled entry, or one placed off its home slot.
     /// The ids were found, so the caller copies these rather than probing again.
-    Hit(&'a [u32]),
-    Miss(InsertPlacement),
-}
-
-pub enum Lookup<'a> {
     Hit(&'a [u32]),
     Miss(InsertPlacement),
 }
@@ -733,9 +662,19 @@ mod tests {
     fn packed_keys_are_unique_per_word() {
         let cache = WordCache::new(1 << 8);
         let key = |word: &[u8]| make_lookup_key(word, cache.placement_mask).key;
+        // Past the inline range these are hashes, so distinctness is the hash's job, not the
+        // packing's -- but they must still not collide.
         assert_ne!(key(b"aaaaaaaaaaaaaa\x7f"), key(b"aaaaaaaaaaaaaa\xff"));
+        // Inside it, the length is part of the key, so a trailing NUL cannot be lost.
         assert_ne!(key(b"abcd"), key(b"abcd\0"));
-        assert_eq!(key(b"aaaaaaaaaaaaaa\xff").0 & LookupKey::TAG_MASK, 0);
+        // Every distinct word within the inline range gets a distinct key, by construction.
+        let mut seen = std::collections::HashSet::new();
+        for len in 1..=INLINE_KEY_BYTES {
+            for b in 0..=255u8 {
+                let word: Vec<u8> = (0..len).map(|i| b.wrapping_add(i as u8)).collect();
+                assert!(seen.insert(key(&word).0), "collision at len={len} b={b}");
+            }
+        }
     }
 
     /// One window shape per row: the needle in various lanes, an empty slot in
@@ -815,19 +754,21 @@ mod tests {
     }
 
     /// Every inline length, with a different value in every byte position, so a
-    /// packing that drops, duplicates or misplaces a byte fails. The reference is
-    /// the construction the packing must be equivalent to: the bytes copied into
-    /// a zeroed array, the length written in the top byte.
+    /// packing that drops, duplicates or misplaces a byte fails. The reference is the construction
+    /// the packing must be equivalent to: the bytes in a zeroed `u64`, the length in the top byte.
+    ///
+    /// Only up to [`INLINE_KEY_BYTES`]; past that the key is a hash and there are no bytes in it to
+    /// check.
     #[test]
     fn an_inline_key_is_the_words_bytes_with_the_length_on_top() {
-        for len in 0..=15usize {
+        for len in 0..=INLINE_KEY_BYTES {
             let word: Vec<u8> = (1..=len as u8).collect();
-            let mut padded = [0u8; 16];
+            let mut padded = [0u8; 8];
             padded[..len].copy_from_slice(&word);
-            padded[15] = len as u8;
+            padded[7] = len as u8;
             assert_eq!(
-                LookupKey::new_inline(&word),
-                LookupKey(u128::from_le_bytes(padded)),
+                key_and_hash(&word).0,
+                u64::from_le_bytes(padded),
                 "len={len}"
             );
         }
@@ -866,7 +807,7 @@ mod tests {
         assert_ne!(tag, WordCache::EMPTY, "pick a word with a nonzero tag");
         cache.quick_lookup[index] = tag;
         cache.cached_words[index] =
-            WordCacheSlot::new_self_contained(LookupKey::new_inline(b"decoy"), [7].into_iter());
+            WordCacheSlot::new_self_contained(LookupKey(key_and_hash(b"decoy").0), [7].into_iter());
 
         assert_eq!(cache.lookup(b"beta").hit(), None);
         store(&mut cache, b"beta", &[2]);
