@@ -6,14 +6,93 @@ use std::fmt;
 
 type Mphf = FastPtrHash<NoHash, u64>;
 
-// Fixed seeds so a given vocab always hashes identically (the hasher is also stored on the struct,
-// so build and query are guaranteed consistent regardless).
+// Fixed seeds so a given vocab always hashes identically. Build and query both go through
+// `word_hash`, which is the only place these are used, so they cannot drift apart.
 const SEEDS: [u64; 4] = [
     0x243F_6A88_85A3_08D3,
     0x1319_8A2E_0370_7344,
     0xA409_3822_299F_31D0,
     0x082E_FA98_EC4E_6C89,
 ];
+
+/// Hashes a word too long for the packed key. See [`word_hash`].
+static KEY_HASHER: RandomState =
+    RandomState::with_seeds(SEEDS[0], SEEDS[1], SEEDS[2], SEEDS[3]);
+
+/// How many bytes of a word fit in the packed key that replaces a hash pass.
+///
+/// Seven, so the length still fits in the top byte of the same `u64`. That covers most pretokens:
+/// english averages 4.83 bytes per pretoken, code 4.08, and the `<|...|>` shapes in
+/// `added-special-dense` average 2.29.
+const INLINE_KEY_BYTES: usize = 7;
+
+/// `KEY_MASK[len]` keeps the low `len` bytes of a `u64`; `LEN_TAG[len]` is the length in the top
+/// byte. Tables rather than `u64::MAX >> (64 - 8 * len)` and `len << 56`: both loads are independent
+/// of the word's bytes, so they overlap that load instead of queueing behind a shift chain.
+const KEY_MASK: [u64; INLINE_KEY_BYTES + 1] = {
+    let mut m = [0u64; INLINE_KEY_BYTES + 1];
+    let mut len = 1;
+    while len <= INLINE_KEY_BYTES {
+        m[len] = u64::MAX >> (64 - 8 * len);
+        len += 1;
+    }
+    m
+};
+const LEN_TAG: [u64; INLINE_KEY_BYTES + 1] = {
+    let mut t = [0u64; INLINE_KEY_BYTES + 1];
+    let mut len = 0;
+    while len <= INLINE_KEY_BYTES {
+        t[len] = (len as u64) << 56;
+        len += 1;
+    }
+    t
+};
+
+/// Mixes a packed short key into the well-distributed `u64` the MPHF and the cache's placement want.
+///
+/// One multiply and one shift. This does not have to be a strong hash: nothing verifies with it. The
+/// vocabulary still compares the entry's bytes and the cache still compares its key, so `mix` only
+/// has to spread well enough to separate keys -- aHash's rounds are wasted on that. Dropping the
+/// mixing entirely does *not* work: packed short keys share their high bytes, and MPHF construction
+/// fails outright with "indistinguishable hashes in bucket".
+#[inline(always)]
+fn mix(z: u64) -> u64 {
+    let z = z.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    z ^ (z >> 29)
+}
+
+/// The `u64` a word is keyed by, in one pass and without a hash for a short word.
+///
+/// Up to [`INLINE_KEY_BYTES`] bytes the word is packed into a `u64` with its length in the top byte
+/// -- so `"ab"` cannot collide with `"ab\0"` -- and mixed with one multiply. Longer words fall back
+/// to aHash, which mixes the length in itself.
+///
+/// This is the single definition both `BucketVocabStore::build` and every probe go through, and
+/// [`crate::utils::word_cache`] keys through it too, so a pretoken probed in both tables is hashed
+/// once for the pair. It must stay one function: two copies could drift and the cache would place a
+/// word under one value and look it up under another.
+#[inline]
+pub fn word_hash(word: &[u8]) -> u64 {
+    let len = word.len();
+    if len > INLINE_KEY_BYTES {
+        return KEY_HASHER.hash_one(word);
+    }
+    // Reading past the word is not allowed, so read a head and a tail that overlap and stitch them:
+    // still register-only, no `memcpy`.
+    let raw = if len >= 4 {
+        let head = u32::from_le_bytes(word[..4].try_into().unwrap()) as u64;
+        let tail = u32::from_le_bytes(word[len - 4..].try_into().unwrap()) as u64;
+        head | tail << (8 * (len - 4))
+    } else if len >= 1 {
+        let first = word[0] as u64;
+        let middle = (word[len / 2] as u64) << (8 * (len / 2));
+        let last = (word[len - 1] as u64) << (8 * (len - 1));
+        first | middle | last
+    } else {
+        0
+    };
+    mix((raw & KEY_MASK[len]) | LEN_TAG[len])
+}
 
 /// Bit 31 of a stored id: the token provably encodes to itself, so a pretoken equal to it can be
 /// emitted without running the merge loop. See `PipelineBPE::prove_fold`.
@@ -55,7 +134,6 @@ struct Entry {
 #[derive(Clone)]
 pub struct BucketVocabStore {
     mphf: Mphf,
-    hasher: RandomState,
     /// All token bytes, concatenated. Ordered by MPHF slot.
     bytes: Box<[u8]>,
     /// `entries[slot]` -> (offset into `bytes`, length, id). Ordered by MPHF slot.
@@ -102,12 +180,10 @@ impl BucketVocabStore {
     pub fn build(tokens: Vec<(Vec<u8>, u32)>) -> Self {
         let n = tokens.len();
 
-        let hasher = RandomState::with_seeds(SEEDS[0], SEEDS[1], SEEDS[2], SEEDS[3]);
-
         // 1. Pre-hash token bytes -> u64 keys using near perfect hash func
         let keys: Vec<u64> = tokens
             .iter()
-            .map(|(s, _)| hasher.hash_one(s.as_slice()))
+            .map(|(s, _)| word_hash(s.as_slice()))
             .collect();
 
         // 2. A perfect hash needs distinct keys. Collisions are astronomically unlikely
@@ -160,7 +236,7 @@ impl BucketVocabStore {
                 *id <= VOCAB_ID_MASK,
                 "token id {id} needs bit 31, which holds FOLD_BIT"
             );
-            let slot = mphf.index(&hasher.hash_one(s.as_slice()));
+            let slot = mphf.index(&word_hash(s.as_slice()));
             entries[slot] = Entry {
                 start: bytes.len() as u32,
                 len: s.len() as u16,
@@ -172,7 +248,6 @@ impl BucketVocabStore {
 
         Self {
             mphf,
-            hasher,
             bytes: bytes.into_boxed_slice(),
             entries: entries.into_boxed_slice(),
             id_to_slot: id_to_slot.into_boxed_slice(),
@@ -185,7 +260,6 @@ impl BucketVocabStore {
         let empty: [u64; 0] = [];
         Self {
             mphf: FastPtrHash::<NoHash, u64>::new(&empty, PtrHashParams::default_fast()),
-            hasher: RandomState::new(),
             bytes: Box::new([]),
             entries: Box::new([]),
             id_to_slot: Box::new([]),
@@ -202,7 +276,7 @@ impl BucketVocabStore {
         if self.entries.is_empty() {
             return None;
         }
-        let slot = self.mphf.index(&self.hasher.hash_one(q));
+        let slot = self.mphf.index(&word_hash(q));
 
         let e = self.entries[slot];
         let (start, len) = (e.start as usize, e.len as usize);
@@ -226,7 +300,7 @@ impl BucketVocabStore {
     /// another table can pay for one pass instead of two; see [`Self::get_bytes_foldable_hashed`].
     #[inline]
     pub fn hash_word(&self, q: &[u8]) -> u64 {
-        self.hasher.hash_one(q)
+        word_hash(q)
     }
 
     /// [`Self::get_bytes_foldable`] for a caller that already hashed the word with
