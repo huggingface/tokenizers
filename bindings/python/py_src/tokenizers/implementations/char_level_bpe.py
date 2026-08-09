@@ -90,7 +90,7 @@ class CharBPETokenizer(BaseTokenizer):
         super().__init__(tokenizer, parameters)
 
     @staticmethod
-    def from_file(vocab_filename: str, merges_filename: str, **kwargs):
+    def from_file(vocab_filename: str, merges_filename: str, **kwargs) -> "CharBPETokenizer":
         vocab, merges = BPE.read_file(vocab_filename, merges_filename)
         return CharBPETokenizer(vocab, merges, **kwargs)
 
@@ -104,7 +104,7 @@ class CharBPETokenizer(BaseTokenizer):
         initial_alphabet: List[str] = [],
         suffix: Optional[str] = "</w>",
         show_progress: bool = True,
-    ):
+    ) -> None:
         """Train the model using the given files"""
 
         trainer = trainers.BpeTrainer(
@@ -131,7 +131,7 @@ class CharBPETokenizer(BaseTokenizer):
         suffix: Optional[str] = "</w>",
         show_progress: bool = True,
         length: Optional[int] = None,
-    ):
+    ) -> None:
         """Train the model using the given iterator"""
 
         trainer = trainers.BpeTrainer(
