@@ -461,6 +461,9 @@ mod tests {
             "  both  ",
             "one\ttab\nand a newline",
             "\tleading tab",
+            // A gap that is whitespace to `char::is_whitespace` but not to an ASCII scan:
+            // a no-break space and an ideographic space.
+            "nbsp\u{a0}gap and\u{3000}an ideographic space",
             "▁already marked",
             "a▁b c",
             "▁▁▁a b",

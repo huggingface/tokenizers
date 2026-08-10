@@ -51,20 +51,7 @@ impl pipeline::Normalizer for MetaspaceNormalizer {
         // The delimiter is 3 bytes where a space is 1, so the rewrite grows by 2 bytes per space, hence we allocate a bit more space
         let mut rewritten = String::with_capacity(input.len() + input.len() / 2);
         if self.drop_whitespace {
-            // Whitespace is thrown away, so cut the text where `WhitespaceSplit` would and write the
-            // words back one after the other, each with its own delimiter.
-            let mut words = Vec::new();
-            // A normalizer runs before the pipeline reaches its pre-tokenizer, so there is no
-            // scratch to borrow here and this one is built and thrown away per call.
-            let mut scratch = pipeline::PreTokenizerScratch::default();
-            pipeline::PreTokenizer::pre_tokenize(
-                &WhitespaceSplit,
-                input,
-                &mut scratch,
-                &mut words,
-            )?;
-            for span in &words {
-                let word = &input[span.range()];
+            for word in input.split_whitespace() {
                 // The text may already hold delimiters of its own — never write a second one.
                 if self.prepend && !word.starts_with(self.delimiter) {
                     rewritten.push(self.delimiter);
