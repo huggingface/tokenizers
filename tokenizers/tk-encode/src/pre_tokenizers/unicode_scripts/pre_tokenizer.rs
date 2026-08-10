@@ -83,7 +83,9 @@ static BMP_SCRIPT: LazyLock<[Script; 0x10000]> = LazyLock::new(|| {
     std::array::from_fn(|i| char::from_u32(i as u32).map_or(Script::Common, fixed_script))
 });
 
-impl pipeline::PreTokenizer for UnicodeScripts {
+// SAFETY: every offset is one `str::char_indices` yielded, or `text.len()`, and they are pushed in
+// increasing order.
+unsafe impl pipeline::PreTokenizer for UnicodeScripts {
     fn pre_tokenize(
         &self,
         text: &str,

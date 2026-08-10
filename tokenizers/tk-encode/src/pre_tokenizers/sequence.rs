@@ -94,7 +94,14 @@ impl TryFrom<Sequence> for PipelineSequence {
     }
 }
 
-impl pipeline::PreTokenizer for PipelineSequence {
+// SAFETY: a `Sequence` runs its children in order. A child splits the spans emitted by the previous child.
+// `Sequence` is safe because:
+// - all of its children are safe
+// - offsets added by the sequence are correct and land on character boundaries
+//
+// The deepseek fast path has no children to run: it calls an `atomsplit` fsm, which splits only at
+// character boundaries of `text`. See the `atomsplit::fsm` docs.
+unsafe impl pipeline::PreTokenizer for PipelineSequence {
     /// Runs each child in turn, where every child subdivides the spans produced
     /// so far. A child sees only the text of a span (`&text[span]`) and returns
     /// offsets relative to it, which we rebase to absolute mirroring how the

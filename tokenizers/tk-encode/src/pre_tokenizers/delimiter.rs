@@ -27,7 +27,10 @@ impl PreTokenizer for CharDelimiterSplit {
     }
 }
 
-impl pipeline::PreTokenizer for CharDelimiterSplit {
+// SAFETY: the spans come from `atomsplit::fsm::CharDelimiterSplit`, which splits only at character
+// boundaries of `text`. It scans for the delimiter's own UTF-8 bytes and confirms the whole encoding
+// before cutting.
+unsafe impl pipeline::PreTokenizer for CharDelimiterSplit {
     fn pre_tokenize(
         &self,
         text: &str,

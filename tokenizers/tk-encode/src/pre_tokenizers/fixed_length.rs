@@ -50,7 +50,9 @@ impl PreTokenizer for FixedLength {
     }
 }
 
-impl pipeline::PreTokenizer for FixedLength {
+// SAFETY: every offset is one `str::char_indices` yielded, or `text.len()`, and they are pushed in
+// increasing order.
+unsafe impl pipeline::PreTokenizer for FixedLength {
     fn pre_tokenize(
         &self,
         text: &str,

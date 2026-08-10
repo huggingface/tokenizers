@@ -43,7 +43,9 @@ impl PreTokenizer for WhitespaceSplit {
     }
 }
 
-impl pipeline::PreTokenizer for WhitespaceSplit {
+// SAFETY: the spans come from an `atomsplit` fsm, which cuts only at character boundaries of `text`.
+// See "What the spans guarantee" in the `atomsplit::fsm` docs.
+unsafe impl pipeline::PreTokenizer for WhitespaceSplit {
     fn pre_tokenize(
         &self,
         text: &str,
@@ -75,7 +77,9 @@ pub fn is_word_char(ch: char) -> bool {
         || ch == '\u{200d}' // Zero-Width Joiner
 }
 
-impl pipeline::PreTokenizer for Whitespace {
+// SAFETY: the spans come from an `atomsplit` fsm, which splits only at character boundaries of `text`.
+// See `atomsplit::fsm` docs.
+unsafe impl pipeline::PreTokenizer for Whitespace {
     #[inline(never)]
     fn pre_tokenize(
         &self,

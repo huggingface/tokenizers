@@ -17,7 +17,9 @@ impl PreTokenizer for BertPreTokenizer {
     }
 }
 
-impl pipeline::PreTokenizer for BertPreTokenizer {
+// SAFETY: the spans come from an `atomsplit` fsm, which splits only at character boundaries of `text`.
+// See `atomsplit::fsm` docs.
+unsafe impl pipeline::PreTokenizer for BertPreTokenizer {
     #[inline(never)]
     fn pre_tokenize(
         &self,

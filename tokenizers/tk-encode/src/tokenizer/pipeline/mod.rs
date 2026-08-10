@@ -104,7 +104,18 @@ impl Normalizer for PipelineNormalizer {
 
 /// Range-based pre-tokenization: yields spans into the input rather than owned
 /// substrings, so the pipeline can pre-tokenize without allocating.
-pub trait PreTokenizer {
+///
+/// # Safety
+///
+/// [`PreTokenizer::pre_tokenize`] produces [`Span`] objects that are later consumed by [`PipelineTokenizer::encode_sequence`].
+/// For performance reasons, [`PipelineTokenizer::encode_sequence`] turns every span into a `&str` with [`str::get_unchecked`].
+/// As a consequence, every implementation of this trait *MUST* ensure the following invariants for each [`Span`]:
+///
+/// * `span.end <= text.len()`: the span is inside the text
+/// * `span.start <= span.end`: the span is not reversed
+/// * `text.is_char_boundary(start)` and `text.is_char_boundary(end)`: the start and end offset must be UTF-8 char boundaries
+/// * The offsets are relative to the `text`.
+pub unsafe trait PreTokenizer {
     /// Split `text` into pre-tokens, appending to `out`. Ranges are into `text`.
     /// `scratch` holds the working buffers, see [`PreTokenizerScratch`].
     fn pre_tokenize(
@@ -200,7 +211,9 @@ pub enum PipelinePreTokenizer {
     None,
 }
 
-impl PreTokenizer for PipelinePreTokenizer {
+// SAFETY: every arm but `None` forwards to another `PreTokenizer`, which upholds the contract itself.
+// `None` emits the single span covering all of `text`, whose ends are `0` and `text.len()`.
+unsafe impl PreTokenizer for PipelinePreTokenizer {
     fn pre_tokenize(
         &self,
         text: &str,
@@ -892,6 +905,18 @@ impl PipelineTokenizer {
                                 output.push(PipelineToken::from(token));
                             }
                             Segment::Text(normalized_chunk) => {
+                                // A [`Span`] holds `u32` offsets, which breaks the `PreTokenizer` contract the
+                                // `str::get_unchecked` below relies on.
+                                // Normalization can grow the text (`Metaspace` widens every space to a 3-byte delimiter),
+                                // which is why this is checked here and not on `input`.
+                                if normalized_chunk.len() > u32::MAX as usize {
+                                    return Err(format!(
+                                        "sequence too long to pre-tokenize: {} bytes after normalization, the limit is {}",
+                                        normalized_chunk.len(),
+                                        u32::MAX
+                                    )
+                                    .into());
+                                }
                                 // Pre-tokenize the chunk of normalized text
                                 let EncodeScratch {
                                     model: model_scratch,
@@ -906,11 +931,16 @@ impl PipelineTokenizer {
                                 )?;
                                 output.reserve(pre_tokens.len());
                                 for pre_token in pre_tokens {
-                                    // The get_unchecked saves us a UTF-8 boundary check
-                                    // SAFETY: the pre-tokenizer must return a range that ends on utf-8 character boundaries
-                                    let sequence = unsafe {
-                                        normalized_chunk.get_unchecked(pre_token.range())
-                                    };
+                                    let range = pre_token.range();
+                                    debug_assert!(
+                                        range.start <= range.end
+                                            && normalized_chunk.is_char_boundary(range.start)
+                                            && normalized_chunk.is_char_boundary(range.end),
+                                        "{:?} broke the PreTokenizer contract: emitted {pre_token:?} for {normalized_chunk:?}",
+                                        self.pre_tokenizer,
+                                    );
+                                    // SAFETY: `PreTokenizer` guarantees every span is a valid range of `normalized_chunk`
+                                    let sequence = unsafe { normalized_chunk.get_unchecked(range) };
                                     self.model.tokenize_pipeline(
                                         sequence,
                                         model_scratch,
@@ -1376,6 +1406,137 @@ mod tests {
     use crate::models::wordpiece::WordPiece;
     use crate::pre_tokenizers::byte_level::ByteLevel;
     use crate::pre_tokenizers::sequence::Sequence;
+    fn variant_name(pre_tokenizer: &PipelinePreTokenizer) -> &'static str {
+        match pre_tokenizer {
+            PipelinePreTokenizer::Bert(_) => "Bert",
+            PipelinePreTokenizer::Delimiter(_) => "Delimiter",
+            PipelinePreTokenizer::Digits(_) => "Digits",
+            PipelinePreTokenizer::FixedLength(_) => "FixedLength",
+            PipelinePreTokenizer::Punctuation(_) => "Punctuation",
+            PipelinePreTokenizer::Sequence(_) => "Sequence",
+            PipelinePreTokenizer::Split(_) => "Split",
+            PipelinePreTokenizer::UnicodeScripts(_) => "UnicodeScripts",
+            PipelinePreTokenizer::Whitespace(_) => "Whitespace",
+            PipelinePreTokenizer::WhitespaceSplit(_) => "WhitespaceSplit",
+            PipelinePreTokenizer::None => "None",
+        }
+    }
+
+    const HOSTILE: &[&str] = &[
+        "",
+        " ",
+        "\r",
+        "\r\n\n",
+        "hello world",
+        "café naïve",
+        "a\u{0301}b\u{0301}\u{0301}c",
+        "中文分词。ひらがな 한글",
+        "😀👍🏽 👨‍👩‍👧‍👦 x",
+        "\u{FEFF}leading bom",
+        "مرحبا\u{200F} العربية",
+        "नरेंद्र मोदी",
+        "hello▁world▁▁",
+        "a1b22c333d4444 42 ½²¼ Ⅷ",
+        "!!!...?! a, b; c",
+        "  \t  trailing   ",
+        "Ⓘ\u{200D}x_y a-b'c",
+    ];
+
+    /// Every variant must produce spans that [`PipelineTokenizer::encode_sequence`] can hand to `str::get_unchecked`
+    #[test]
+    fn every_pre_tokenizer_emits_sliceable_spans() {
+        use crate::pre_tokenizers::digits::Digits;
+        use crate::pre_tokenizers::fixed_length::FixedLength;
+        use crate::pre_tokenizers::punctuation::Punctuation;
+        use crate::pre_tokenizers::split::SplitPattern;
+        use SplitDelimiterBehavior::*;
+
+        let literal_split = |pattern: &str, behavior| {
+            SplitPretok::new(SplitPattern::String(pattern.to_owned()), behavior, false).unwrap()
+        };
+        // The gpt2 regex is recognized, so this routes to `fsm_byte_level` with no regex backend.
+        let gpt2_split = SplitPretok::new(
+            SplitPattern::Regex(GPT2_REGEX_STR.to_owned()),
+            Isolated,
+            false,
+        )
+        .unwrap();
+
+        let cases = vec![
+            PipelinePreTokenizer::Bert(BertPreTokenizer),
+            PipelinePreTokenizer::Delimiter(CharDelimiterSplit::new(' ')),
+            PipelinePreTokenizer::Delimiter(CharDelimiterSplit::new('▁')),
+            PipelinePreTokenizer::Digits(Digits::new(true)),
+            PipelinePreTokenizer::Digits(Digits::new(false)),
+            PipelinePreTokenizer::FixedLength(FixedLength::new(3)),
+            PipelinePreTokenizer::FixedLength(FixedLength::new(0)),
+            PipelinePreTokenizer::Punctuation(Punctuation::new(Removed)),
+            PipelinePreTokenizer::Punctuation(Punctuation::new(Isolated)),
+            PipelinePreTokenizer::Punctuation(Punctuation::new(Contiguous)),
+            PipelinePreTokenizer::Punctuation(Punctuation::new(MergedWithPrevious)),
+            PipelinePreTokenizer::Punctuation(Punctuation::new(MergedWithNext)),
+            PipelinePreTokenizer::Sequence(PipelineSequence::new(vec![
+                PipelinePreTokenizer::WhitespaceSplit(WhitespaceSplit),
+                PipelinePreTokenizer::Punctuation(Punctuation::new(Isolated)),
+            ])),
+            PipelinePreTokenizer::Split(gpt2_split),
+            PipelinePreTokenizer::Split(literal_split("▁", MergedWithPrevious)),
+            PipelinePreTokenizer::Split(literal_split("▁", MergedWithNext)),
+            PipelinePreTokenizer::Split(literal_split(" ", Removed)),
+            PipelinePreTokenizer::UnicodeScripts(UnicodeScripts::new()),
+            PipelinePreTokenizer::Whitespace(Whitespace),
+            PipelinePreTokenizer::WhitespaceSplit(WhitespaceSplit),
+            PipelinePreTokenizer::None,
+        ];
+
+        let mut covered: Vec<&str> = cases.iter().map(variant_name).collect();
+        covered.sort_unstable();
+        covered.dedup();
+        assert_eq!(
+            covered,
+            [
+                "Bert",
+                "Delimiter",
+                "Digits",
+                "FixedLength",
+                "None",
+                "Punctuation",
+                "Sequence",
+                "Split",
+                "UnicodeScripts",
+                "Whitespace",
+                "WhitespaceSplit",
+            ],
+            "every PipelinePreTokenizer variant needs a case above",
+        );
+
+        let mut scratch = PreTokenizerScratch::default();
+        let mut spans = Vec::new();
+        for pre_tokenizer in &cases {
+            for text in HOSTILE {
+                spans.clear();
+                pre_tokenizer
+                    .pre_tokenize(text, &mut scratch, &mut spans)
+                    .unwrap();
+                for span in &spans {
+                    let range = span.range();
+                    assert!(
+                        range.start <= range.end,
+                        "{} reversed {span:?} on {text:?}",
+                        variant_name(pre_tokenizer),
+                    );
+                    assert!(
+                        text.is_char_boundary(range.start) && text.is_char_boundary(range.end),
+                        "{} cut {span:?} off a character boundary of {text:?}",
+                        variant_name(pre_tokenizer),
+                    );
+                    // What the pipeline does with the span. Slicing checked here is the point: it
+                    // panics on exactly the ranges `get_unchecked` would turn into undefined behavior.
+                    assert!(text.get(range).is_some());
+                }
+            }
+        }
+    }
 
     struct FixedMatcher(Vec<((usize, usize), u32)>);
     impl PipelinePatternMatcher for FixedMatcher {

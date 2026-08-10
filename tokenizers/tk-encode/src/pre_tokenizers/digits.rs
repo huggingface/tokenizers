@@ -41,7 +41,9 @@ impl PreTokenizer for Digits {
     }
 }
 
-impl pipeline::PreTokenizer for Digits {
+// SAFETY: the spans come from an `atomsplit` fsm, which splits only at character boundaries of `text`.
+// See `atomsplit::fsm` docs.
+unsafe impl pipeline::PreTokenizer for Digits {
     fn pre_tokenize(
         &self,
         text: &str,

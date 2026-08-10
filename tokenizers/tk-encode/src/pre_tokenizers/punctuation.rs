@@ -41,7 +41,10 @@ impl PreTokenizer for Punctuation {
     }
 }
 
-impl pipeline::PreTokenizer for Punctuation {
+// SAFETY: both routes cut only at character boundaries of `text`.
+// The class-runs route is an `atomsplit` fsm.
+// the merge behaviors go through `pipeline::split_delimiter`, which takes its offsets from `str::char_indices`.
+unsafe impl pipeline::PreTokenizer for Punctuation {
     fn pre_tokenize(
         &self,
         text: &str,
