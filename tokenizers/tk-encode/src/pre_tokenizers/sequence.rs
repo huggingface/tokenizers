@@ -129,14 +129,12 @@ impl pipeline::PreTokenizer for PipelineSequence {
             return pipeline::PreTokenizer::pre_tokenize(only, text, scratch, out);
         }
 
-        let cap = text.len() / 5;
-
-        let mut current: Vec<pipeline::Span> = Vec::with_capacity(cap);
+        let [mut current, mut next] = scratch.take_pair();
+        current.clear();
         current.push(pipeline::Span {
             start: 0,
             end: text.len() as u32,
         });
-        let mut next: Vec<pipeline::Span> = Vec::with_capacity(cap);
 
         for child in &self.pre_tokenizers {
             next.clear();
@@ -161,7 +159,16 @@ impl pipeline::PreTokenizer for PipelineSequence {
             std::mem::swap(&mut current, &mut next);
         }
 
-        out.extend_from_slice(&current);
+        // Every call the pipeline makes arrives with `out` empty, since `encode_sequence` clears
+        // `pre_tokens` before pre-tokenizing: hand it the buffer the loop just filled instead of
+        // copying. `current` takes `out`'s allocation in exchange and goes back to the scratch,
+        // and both are pooled, so which buffer ends up where does not matter.
+        if out.is_empty() {
+            std::mem::swap(out, &mut current);
+        } else {
+            out.extend_from_slice(&current);
+        }
+        scratch.put_pair([current, next]);
         Ok(())
     }
 }

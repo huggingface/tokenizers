@@ -123,6 +123,11 @@ pub struct PreTokenizerScratch {
     tags: Vec<u8>,
     /// An intermediate buffer in which the FSM writes the Span before they get appended to the output
     spans: Vec<Span>,
+    /// The two buffers a [`PipelineSequence`] reads and writes as each of its children subdivides
+    /// the spans the child before it produced. Handed out by [`Self::take_pair`] rather than
+    /// borrowed, so the sequence can pass the rest of the scratch to its children while it holds
+    /// them.
+    pair: [Vec<Span>; 2],
 }
 
 impl PreTokenizerScratch {
@@ -135,7 +140,7 @@ impl PreTokenizerScratch {
         out: &mut Vec<Span>,
     ) {
         let n = bytes.len();
-        let Self { tags, spans } = self;
+        let Self { tags, spans, .. } = self;
         if tags.len() < n {
             tags.resize(n, 0);
         }
@@ -165,6 +170,16 @@ impl PreTokenizerScratch {
         }
         let k = fsm(bytes, &mut spans[..n + 1]);
         out.extend_from_slice(&spans[..k]);
+    }
+
+    /// Take the sequence's two buffers, leaving empty ones behind.
+    pub fn take_pair(&mut self) -> [Vec<Span>; 2] {
+        std::mem::take(&mut self.pair)
+    }
+
+    /// Give back what [`Self::take_pair`] handed out, so the next sequence reuses the allocations.
+    pub fn put_pair(&mut self, pair: [Vec<Span>; 2]) {
+        self.pair = pair;
     }
 }
 

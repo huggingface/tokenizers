@@ -97,13 +97,14 @@ impl std::ops::DerefMut for ScratchGuard<'_> {
 #[cfg(test)]
 mod tests {
     use std::cell::Cell;
+    use std::collections::BTreeSet;
     use std::sync::Barrier;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use super::*;
-    use crate::Tokenizer;
     use crate::pipeline::PipelineTokenizer;
     use crate::pre_tokenizers::whitespace::Whitespace;
+    use crate::{PreTokenizerWrapper, Tokenizer};
 
     /// A BPE tokenizer that merges "hello" into the single id 7.
     fn hello_tokenizer() -> Tokenizer {
@@ -145,6 +146,22 @@ mod tests {
     fn hello_pipeline_split_on_words() -> PipelineTokenizer {
         let mut tok = hello_tokenizer();
         tok.with_pre_tokenizer(Some(Whitespace));
+        PipelineTokenizer::try_from(&tok).unwrap()
+    }
+
+    /// The same tokenizer, with a `Sequence` of two real children: the shape that runs
+    /// [`PipelineSequence`]'s child loop, where a single child or a recognized deepseek
+    /// composition would take a fast path above it instead.
+    fn hello_pipeline_sequence() -> PipelineTokenizer {
+        use crate::pre_tokenizers::digits::Digits;
+        use crate::pre_tokenizers::sequence::Sequence;
+        use crate::pre_tokenizers::whitespace::WhitespaceSplit;
+
+        let mut tok = hello_tokenizer();
+        tok.with_pre_tokenizer(Some(Sequence::new(vec![
+            PreTokenizerWrapper::WhitespaceSplit(WhitespaceSplit),
+            PreTokenizerWrapper::Digits(Digits::default()),
+        ])));
         PipelineTokenizer::try_from(&tok).unwrap()
     }
 
@@ -296,6 +313,47 @@ mod tests {
             pooled_buffers(&pipeline),
             warm,
             "a warm encode did not write into the buffers the pool handed it"
+        );
+    }
+
+    /// The addresses of the three span buffers a sequence encode rotates between.
+    fn pooled_span_buffers(pipeline: &PipelineTokenizer) -> BTreeSet<usize> {
+        let scratch = pipeline.scratch_pool.get(&pipeline.model);
+        let [first, second] = &scratch.split.pair;
+        [&scratch.pre_tokens, first, second]
+            .map(|spans| spans.as_ptr() as usize)
+            .into_iter()
+            .collect()
+    }
+
+    // `PipelineSequence` swaps its two buffers with `pre_tokens` rather than copying out of them,
+    // so no one buffer keeps the same allocation from call to call and the per-buffer comparison
+    // above would not hold here. What must hold is that the three allocations a warm pipeline
+    // rotates are still the three it uses: a call that allocated a fresh buffer instead of taking
+    // the pooled one would show an address the warm set does not have.
+    #[test]
+    fn a_warm_sequence_reuses_the_same_span_buffers() {
+        let pipeline = hello_pipeline_sequence();
+        let input = "helo ".repeat(50);
+
+        // The buffers rotate, so they take a few encodes to all have been grown once.
+        for _ in 0..4 {
+            pipeline.encode(input.as_str(), false).wait().unwrap();
+        }
+        let warm = pooled_span_buffers(&pipeline);
+        assert_eq!(
+            warm.len(),
+            3,
+            "the encodes left buffers this test cannot compare: a `Vec` that never allocated \
+             reports the same dangling address as every other one, so a set smaller than three \
+             is comparing addresses that prove nothing"
+        );
+
+        pipeline.encode(input.as_str(), false).wait().unwrap();
+        assert_eq!(
+            pooled_span_buffers(&pipeline),
+            warm,
+            "a warm sequence encode allocated a span buffer instead of reusing the pooled ones"
         );
     }
 
