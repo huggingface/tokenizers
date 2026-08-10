@@ -900,7 +900,7 @@ impl PipelineTokenizer {
         let tokens = ids
             .iter()
             .filter_map(|&id| {
-                if id > self.added_id_min {
+                if id >= self.added_id_min {
                     self.added_vocabulary
                         .simple_id_to_token(id)
                         .or_else(|| self.model.id_to_token(id))
