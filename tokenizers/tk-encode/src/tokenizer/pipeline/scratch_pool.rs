@@ -33,14 +33,17 @@ impl ScratchPool {
     /// Get a scratch buffer from the pool, wrapped in a [`ScratchGuard`].
     /// When the [`ScratchGuard`] gets dropped, the scratch buffer is pushed back to the pool.
     pub(crate) fn get<'a>(&'a self, model: &PipelineModel) -> ScratchGuard<'a> {
+        self.get_with(|| EncodeScratch {
+            model: model.init_scratch(),
+            pre_tokens: Vec::new(),
+        })
+    }
+
+    pub(crate) fn get_with<'a>(&'a self, init: impl FnOnce() -> EncodeScratch) -> ScratchGuard<'a> {
         // The Mutex lock is held just long enough to pop the scratch out of the pool
         let taken = self.0.lock().unwrap_or_else(PoisonError::into_inner).pop();
         ScratchGuard {
-            // If there was no scratch buffer available in the pool, we build.a fresh one
-            scratch: taken.unwrap_or_else(|| EncodeScratch {
-                model: model.init_scratch(),
-                pre_tokens: Vec::new(),
-            }),
+            scratch: taken.unwrap_or_else(init),
             pool: self,
         }
     }
@@ -91,9 +94,14 @@ impl std::ops::DerefMut for ScratchGuard<'_> {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::Cell;
+    use std::sync::Barrier;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
     use super::*;
     use crate::Tokenizer;
     use crate::pipeline::PipelineTokenizer;
+    use crate::pre_tokenizers::whitespace::Whitespace;
 
     /// A BPE tokenizer that merges "hello" into the single id 7.
     fn hello_tokenizer() -> Tokenizer {
@@ -129,75 +137,93 @@ mod tests {
         PipelineTokenizer::try_from(&hello_tokenizer()).unwrap()
     }
 
-    // The pool exists so ONE `&self` tokenizer can be shared across rayon workers. Encode
-    // the same input from thousands of threads through a single instance; each must get a
-    // private scratch and produce the sequential result. Two threads sharing a scratch
-    // would corrupt some of them. This only compiles if `PipelineTokenizer: Sync`,
-    // which the pool has to preserve.
-    #[test]
-    fn encode_shared_across_threads() {
-        use rayon::prelude::*;
-
-        let pipeline = hello_pipeline();
-
-        let want: Vec<u32> = pipeline
-            .encode("hello", false)
-            .wait()
-            .unwrap()
-            .remove(0)
-            .iter()
-            .map(|t| t.id())
-            .collect();
-        assert_eq!(want, vec![7]);
-
-        let all_match = (0..10_000u32).into_par_iter().all(|_| {
-            pipeline
-                .encode("hello", false)
-                .wait()
-                .unwrap()
-                .remove(0)
-                .iter()
-                .map(|t| t.id())
-                .collect::<Vec<_>>()
-                == want
-        });
-        assert!(all_match);
+    /// The same tokenizer, with a pre-tokenizer that cuts one span per word. A pipeline with no
+    /// pre-tokenizer leaves the whole chunk as a single span, which barely exercises
+    /// [`EncodeScratch::pre_tokens`].
+    fn hello_pipeline_split_on_words() -> PipelineTokenizer {
+        let mut tok = hello_tokenizer();
+        tok.with_pre_tokenizer(Some(Whitespace));
+        PipelineTokenizer::try_from(&tok).unwrap()
     }
 
-    // Reusing scratches is the whole point of the pool, so it must not build one per call:
-    // one thread encoding in a loop has to keep coming back to the same scratch, and a
-    // burst of N threads must leave at most N behind for later calls to use.
-    #[test]
-    fn scratches_are_reused_rather_than_piling_up() {
-        use std::sync::Barrier;
+    /// Builds a default scratch and counts the call, for the tests that assert the pool reuses
+    /// what it has instead of building.
+    fn counting_init(built: &AtomicUsize) -> EncodeScratch {
+        built.fetch_add(1, Ordering::Relaxed);
+        EncodeScratch::default()
+    }
 
-        let pipeline = hello_pipeline();
+    // Reusing scratches is the whole point of the pool, so one caller coming back a thousand
+    // times must keep getting the one scratch the first call built.
+    #[test]
+    fn builds_one_scratch_and_reuses_it() {
+        let pool = ScratchPool::new();
+        let built = Cell::new(0);
+
         for _ in 0..1000 {
-            pipeline.encode("hello", false).wait().unwrap();
+            drop(pool.get_with(|| {
+                built.set(built.get() + 1);
+                EncodeScratch::default()
+            }));
         }
-        assert_eq!(pipeline.scratch_pool.len(), 1);
+
+        assert_eq!(built.get(), 1);
+    }
+
+    // N callers holding at once need N scratches, and the pool must keep no more than that: it is
+    // there to hand scratches back out, not to grow. The barrier makes all N hold before any of
+    // them drops, so all N really are live at the same time.
+    #[test]
+    fn keeps_at_most_one_scratch_per_concurrent_holder() {
+        let pool = ScratchPool::new();
+        let built = AtomicUsize::new(0);
 
         let threads = 64;
         let all_holding = Barrier::new(threads);
         std::thread::scope(|scope| {
             for _ in 0..threads {
                 scope.spawn(|| {
-                    let scratch = pipeline.scratch_pool.get(&pipeline.model);
+                    let scratch = pool.get_with(|| counting_init(&built));
                     all_holding.wait();
                     drop(scratch);
                 });
             }
         });
-
-        let after_burst = pipeline.scratch_pool.len();
+        let after_burst = pool.len();
         assert!(
             after_burst <= threads,
             "{after_burst} scratches kept for {threads} threads"
         );
-        for _ in 0..1000 {
-            pipeline.encode("hello", false).wait().unwrap();
-        }
-        assert_eq!(pipeline.scratch_pool.len(), after_burst);
+
+        drop(pool.get_with(|| counting_init(&built)));
+        assert_eq!(
+            built.load(Ordering::Relaxed),
+            threads,
+            "the pool built a fresh scratch while it had {after_burst} to hand out"
+        );
+    }
+
+    // `Drop` runs while a panic unwinds, so an encode that blows up half way through still hands
+    // its scratch back rather than taking it with it.
+    //
+    // The panic message on stderr during this test is the one raised here on purpose.
+    #[test]
+    fn a_panicking_holder_still_returns_its_scratch() {
+        let pool = ScratchPool::new();
+        let built = AtomicUsize::new(0);
+
+        let holder = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _scratch = pool.get_with(|| counting_init(&built));
+            panic!("encode blew up while holding a scratch");
+        }));
+        assert!(holder.is_err(), "the holder was supposed to panic");
+
+        drop(pool.get_with(|| counting_init(&built)));
+        assert_eq!(
+            built.load(Ordering::Relaxed),
+            1,
+            "the panicking holder's scratch never made it back to the pool"
+        );
     }
 
     // ScratchGuard::drop moves the scratch to the pool with mem::take, which leaves a default
@@ -217,58 +243,57 @@ mod tests {
         );
     }
 
-    // Pooling is only worth it if a scratch keeps the state it built up across calls.
-    // A fresh BpeScratch starts with an empty merge arena; encoding a longer sequence
-    // reserves one entry per byte and so grows it. After a second, short encode the
-    // pooled scratch must still be the grown one, not a fresh replacement built
-    // somewhere along the way.
-    #[test]
-    fn a_reused_scratch_keeps_its_grown_buffers() {
-        let pipeline = hello_pipeline();
-        let long_input = "hello".repeat(50);
-        pipeline.encode(&long_input, false).wait().unwrap();
-        assert_eq!(pipeline.scratch_pool.len(), 1);
-
-        pipeline.encode("hello", false).wait().unwrap();
-        assert_eq!(pipeline.scratch_pool.len(), 1);
-
-        let scratch = pipeline.scratch_pool.get(&pipeline.model);
-        let PipelineModelScratch::BPE(bpe_scratch) = &scratch.model else {
-            panic!("the pooled scratch is not a BPE scratch");
-        };
-        assert!(
-            bpe_scratch.queue.entries.capacity() >= long_input.len(),
-            "the pooled scratch is not the one grown by the long input: \
-             room for {} merge entries after a {}-byte input",
-            bpe_scratch.queue.entries.capacity(),
-            long_input.len()
-        );
+    /// Where the buffers of the pooled scratch live, and how much room each has. The capacities
+    /// are what keep the addresses honest: a `Vec` that never allocated owns no buffer, and every
+    /// one of those reports the same dangling address.
+    #[derive(Debug, PartialEq)]
+    struct Buffers {
+        pre_tokens: (usize, usize),
+        symbols: (usize, usize),
     }
 
-    // The pre-token spans travel in the same EncodeScratch as the model state, for the same
-    // reason: the buffer a call grows is the buffer the next call writes into. The tokenizer
-    // gets a Whitespace pre-tokenizer here so the input is cut into many spans, where the
-    // pipelines above leave the whole chunk as one.
-    #[test]
-    fn a_reused_scratch_keeps_its_pre_token_buffer() {
-        use crate::pre_tokenizers::whitespace::Whitespace;
-
-        let mut tok = hello_tokenizer();
-        tok.with_pre_tokenizer(Some(Whitespace));
-        let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
-
-        let words = 50;
-        pipeline
-            .encode("hello ".repeat(words).as_str(), false)
-            .wait()
-            .unwrap();
-
+    fn pooled_buffers(pipeline: &PipelineTokenizer) -> Buffers {
         let scratch = pipeline.scratch_pool.get(&pipeline.model);
+        let PipelineModelScratch::BPE(bpe) = &scratch.model else {
+            panic!("a BPE pipeline encodes with a BPE scratch");
+        };
+        Buffers {
+            pre_tokens: (
+                scratch.pre_tokens.as_ptr() as usize,
+                scratch.pre_tokens.capacity(),
+            ),
+            symbols: (bpe.symbols.as_ptr() as usize, bpe.symbols.capacity()),
+        }
+    }
+
+    // What pooling buys is the allocation the previous call already made, for the pre-token spans
+    // as much as for the model's own buffers. A warm scratch must therefore come back with the
+    // same buffers, not merely with buffers large enough: an address moves when a `Vec`
+    // reallocates, so this catches a call that replaces or regrows what the last one left.
+    //
+    // "helo " and not "hello ": a word that is itself a vocabulary entry is answered by the fold,
+    // and the merge engines that write the symbols never run.
+    #[test]
+    fn a_warm_scratch_reuses_the_same_allocations() {
+        let pipeline = hello_pipeline_split_on_words();
+        let words = 50;
+        let input = "helo ".repeat(words);
+
+        // The first encode grows the buffers to what this input needs, the second runs inside
+        // them. Anything from there on has nothing left to grow.
+        pipeline.encode(input.as_str(), false).wait().unwrap();
+        pipeline.encode(input.as_str(), false).wait().unwrap();
+        let warm = pooled_buffers(&pipeline);
         assert!(
-            scratch.pre_tokens.capacity() >= words,
-            "the pooled pre-token buffer is not the one grown by the {words} words: \
-             room for {} spans",
-            scratch.pre_tokens.capacity()
+            warm.pre_tokens.1 >= words && warm.symbols.1 > 0,
+            "the encodes left buffers this test cannot compare: {warm:?}"
+        );
+
+        pipeline.encode(input.as_str(), false).wait().unwrap();
+        assert_eq!(
+            pooled_buffers(&pipeline),
+            warm,
+            "a warm encode did not write into the buffers the pool handed it"
         );
     }
 

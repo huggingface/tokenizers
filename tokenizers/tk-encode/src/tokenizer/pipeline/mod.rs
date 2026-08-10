@@ -1444,6 +1444,54 @@ mod tests {
         tok
     }
 
+    fn pipeline_ids(pipeline: &PipelineTokenizer, input: &str) -> Vec<u32> {
+        pipeline
+            .encode(input, false)
+            .wait()
+            .unwrap()
+            .remove(0)
+            .iter()
+            .map(|t| t.id())
+            .collect()
+    }
+
+    // A single `&self` tokenizer is meant to be shared across rayon workers, and the scratch it
+    // hands each of them carries the pre-token spans of the chunk being encoded. So the workers
+    // must not be able to reach each other's: every thread encodes a different input here, and
+    // has to get back the answer that input produces on its own.
+    //
+    // The inputs disagree on both how many tokens they produce and which, so another input's
+    // spans cannot yield the right ids by luck. This also only compiles if
+    // `PipelineTokenizer: Sync`.
+    #[test]
+    fn concurrent_encodes_of_different_inputs_stay_independent() {
+        use rayon::prelude::*;
+
+        let tok = wordlevel_tokenizer(vec![("<unk>", 0), ("hello", 1), ("world", 2)], None);
+        let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
+
+        let inputs = [
+            "hello".to_string(),
+            "hello world".to_string(),
+            "world hello world".to_string(),
+            "hello world ".repeat(25),
+        ];
+        let want: Vec<Vec<u32>> = inputs
+            .iter()
+            .map(|input| pipeline_ids(&pipeline, input))
+            .collect();
+        assert_eq!(
+            want,
+            vec![vec![1], vec![1, 2], vec![2, 1, 2], [1, 2].repeat(25)]
+        );
+
+        let all_match = (0..10_000usize).into_par_iter().all(|i| {
+            let case = i % inputs.len();
+            pipeline_ids(&pipeline, &inputs[case]) == want[case]
+        });
+        assert!(all_match);
+    }
+
     fn assert_pipeline_matches_reference(tok: &Tokenizer, input: &str) {
         let pipeline = PipelineTokenizer::try_from(tok).unwrap();
         for add_special_tokens in [false, true] {
