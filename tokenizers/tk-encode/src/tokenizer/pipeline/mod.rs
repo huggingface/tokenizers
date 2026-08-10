@@ -1,5 +1,9 @@
+use std::cell::UnsafeCell;
 use std::convert::TryInto;
 use std::iter::Enumerate;
+use std::ops::Range;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::vec::IntoIter;
 use std::{borrow::Cow, convert::TryFrom};
 
@@ -7,6 +11,7 @@ use crate::models::bpe::{BpeScratch, PipelineBPE};
 use crate::models::unigram::{Unigram, UnigramScratch};
 use crate::models::wordlevel::WordLevel;
 use crate::models::wordpiece::{PipelineWordPiece, WordPieceScratch};
+use crate::parallelism::pool;
 use crate::pipeline::scratch_pool::{EncodeScratch, ScratchPool};
 use crate::processors::bert::BertProcessing;
 use crate::processors::roberta::RobertaProcessing;
@@ -32,6 +37,7 @@ use crate::{
     processors::template::Piece,
     tokenizer::{Decoder as _, Model as _},
 };
+use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
 
 use super::{Result, SplitDelimiterBehavior};
 
@@ -454,7 +460,8 @@ pub trait PipelinePatternMatcher {
 /// A piece of the input produced by [`SpecialSegmentIterator`].
 pub enum Segment<'a> {
     /// Ordinary text still to be (optonally normalized), pre-tokenized and run through the model.
-    Text(&'a str),
+    /// input_offset is the start position of `text` in the input
+    Text { text: &'a str, input_offset: usize },
     /// A matched special token, identified by its vocabulary id.
     SpecialToken(u32),
 }
@@ -525,24 +532,30 @@ impl<'a, 'b, PatternMatcher: PipelinePatternMatcher> Iterator
         {
             // `extract_next` positions are absolute in `input`, not relative to `offset`.
             let before_token = &self.input[self.offset..start];
+            let input_offset = self.offset;
             self.offset = end;
             if !before_token.is_empty() {
                 // The iterator returns segments in order: we need to return the chunk of text and then the special token.
                 // Store the special token to return in the next call and return a [`Segment::Text`]
                 self.pending = Some(token);
-                return Some(Segment::Text(before_token));
+                return Some(Segment::Text {
+                    text: before_token,
+                    input_offset,
+                });
             } else {
                 return Some(Segment::SpecialToken(token));
             }
         }
+        let input_offset = self.offset;
         self.offset = self.input.len();
-        Some(Segment::Text(remaining_input))
+        Some(Segment::Text {
+            text: remaining_input,
+            input_offset,
+        })
     }
 }
 
-/// Experimental encode-only pipeline built from a [`Tokenizer`]. Runs the same
-/// stages over borrowed ranges to avoid the reference path's allocations.
-pub struct PipelineTokenizer {
+struct TokenizerInner {
     added_vocabulary: BucketAddedVocabulary,
     normalizers: Vec<PipelineNormalizer>,
     pre_tokenizer: PipelinePreTokenizer,
@@ -555,6 +568,18 @@ pub struct PipelineTokenizer {
     scratch_pool: ScratchPool,
 }
 
+/// Experimental encode-only pipeline built from a [`Tokenizer`]. Runs the same
+/// stages over borrowed ranges to avoid the reference path's allocations.
+#[derive(Clone)]
+pub struct PipelineTokenizer {
+    inner: Arc<TokenizerInner>,
+}
+
+// comptime verification that PipelineTokenizer is Send + Sync
+const _: fn() = || {
+    fn assert_send_sync<T: Send + Sync>() {}
+    assert_send_sync::<PipelineTokenizer>();
+};
 impl TryFrom<&Tokenizer> for PipelineTokenizer {
     type Error = super::Error;
 
@@ -672,103 +697,264 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
             .unwrap_or(u32::MAX);
 
         Ok(Self {
-            added_vocabulary,
-            normalizers,
-            pre_tokenizer,
-            model,
-            post_processor: tok
-                .get_post_processor()
-                .map(PipelinePostProcessor::try_from)
-                .transpose()?
-                .unwrap_or_default(),
-            decoder: tok.get_decoder().cloned(),
-            added_id_min,
-            scratch_pool: ScratchPool::new(),
+            inner: Arc::new(TokenizerInner {
+                added_vocabulary,
+                normalizers,
+                pre_tokenizer,
+                model,
+                post_processor: tok
+                    .get_post_processor()
+                    .map(PipelinePostProcessor::try_from)
+                    .transpose()?
+                    .unwrap_or_default(),
+                decoder: tok.get_decoder().cloned(),
+                added_id_min,
+                scratch_pool: ScratchPool::new(),
+            }),
         })
     }
 }
 
-pub enum Inputs {
+pub enum Input {
     Single(String),
     Pair(String, String),
-    Batch(Vec<String>),
-    PairBatch(Vec<(String, String)>),
+}
+
+impl Input {
+    fn len(&self) -> usize {
+        match self {
+            Self::Single(s) => s.len(),
+            Self::Pair(s1, s2) => s1.len() + s2.len(),
+        }
+    }
+}
+
+pub enum Inputs {
+    Single(Input),
+    Batch(Vec<Input>),
+}
+
+impl Inputs {
+    fn as_slice(&self) -> &[Input] {
+        match self {
+            Self::Single(s) => std::slice::from_ref(s),
+            Self::Batch(b) => b,
+        }
+    }
+
+    fn size_bytes(&self) -> usize {
+        self.as_slice().iter().map(Input::len).sum()
+    }
+
+    fn get(&self, i: usize) -> Option<&Input> {
+        self.as_slice().get(i)
+    }
+
+    fn len(&self) -> usize {
+        self.as_slice().len()
+    }
+}
+
+impl<'a> IntoIterator for &'a Inputs {
+    type Item = &'a Input;
+    type IntoIter = std::slice::Iter<'a, Input>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.as_slice().iter()
+    }
 }
 
 impl From<String> for Inputs {
     fn from(s: String) -> Self {
-        Inputs::Single(s)
+        Self::Single(Input::Single(s))
     }
 }
 
 impl From<&str> for Inputs {
     fn from(s: &str) -> Self {
-        Inputs::Single(s.to_owned())
+        Self::Single(Input::Single(s.to_owned()))
     }
 }
 
 impl From<&String> for Inputs {
     fn from(s: &String) -> Self {
-        Inputs::Single(s.to_owned())
+        Self::Single(Input::Single(s.to_owned()))
     }
 }
 
 impl From<Vec<String>> for Inputs {
     fn from(b: Vec<String>) -> Self {
-        Inputs::Batch(b)
+        Self::Batch(b.into_iter().map(Input::Single).collect())
     }
 }
 
 impl From<&[&str]> for Inputs {
     fn from(b: &[&str]) -> Self {
-        Inputs::Batch(b.iter().map(|s| (*s).to_owned()).collect())
-    }
-}
-
-impl From<(String, String)> for Inputs {
-    fn from(p: (String, String)) -> Self {
-        Inputs::Pair(p.0, p.1)
-    }
-}
-
-impl From<(&str, &str)> for Inputs {
-    fn from(p: (&str, &str)) -> Self {
-        Inputs::Pair(p.0.to_owned(), p.1.to_owned())
-    }
-}
-
-impl From<(&String, &String)> for Inputs {
-    fn from(p: (&String, &String)) -> Self {
-        Inputs::Pair(p.0.to_owned(), p.1.to_owned())
-    }
-}
-
-impl From<Vec<(String, String)>> for Inputs {
-    fn from(b: Vec<(String, String)>) -> Self {
-        Inputs::PairBatch(b)
-    }
-}
-
-impl From<&[(&str, &str)]> for Inputs {
-    fn from(b: &[(&str, &str)]) -> Self {
-        Inputs::PairBatch(
-            b.iter()
-                .map(|(s1, s2)| ((*s1).to_owned(), (*s2).to_owned()))
-                .collect(),
-        )
+        Self::Batch(b.iter().map(|s| Input::Single((*s).to_owned())).collect())
     }
 }
 
 impl From<Vec<&str>> for Inputs {
     fn from(b: Vec<&str>) -> Self {
-        Inputs::Batch(b.into_iter().map(|s| s.to_owned()).collect())
+        Self::Batch(b.into_iter().map(|s| Input::Single(s.to_owned())).collect())
+    }
+}
+
+impl From<(String, String)> for Inputs {
+    fn from(p: (String, String)) -> Self {
+        Self::Single(Input::Pair(p.0, p.1))
+    }
+}
+
+impl From<(&str, &str)> for Inputs {
+    fn from(p: (&str, &str)) -> Self {
+        Self::Single(Input::Pair(p.0.to_owned(), p.1.to_owned()))
+    }
+}
+
+impl From<(&String, &String)> for Inputs {
+    fn from(p: (&String, &String)) -> Self {
+        Self::Single(Input::Pair(p.0.to_owned(), p.1.to_owned()))
+    }
+}
+
+impl From<Vec<(String, String)>> for Inputs {
+    fn from(b: Vec<(String, String)>) -> Self {
+        Self::Batch(b.into_iter().map(|p| Input::Pair(p.0, p.1)).collect())
+    }
+}
+
+impl From<&[(&str, &str)]> for Inputs {
+    fn from(b: &[(&str, &str)]) -> Self {
+        Self::Batch(
+            b.iter()
+                .map(|(s1, s2)| Input::Pair((*s1).to_owned(), (*s2).to_owned()))
+                .collect(),
+        )
+    }
+}
+
+/// TODO: benchmark with and without to validate usefulness
+/// Isolate an atomic in its own cache line to avoid excessive invalidation when multiple threads
+/// access the value
+#[repr(align(64))]
+struct CachePadded<T>(T);
+
+struct UnitResult(UnsafeCell<Option<Result<Vec<PipelineToken>>>>);
+
+/// SAFETY: we make sure each unit's result is set by only one given thread at a time thanks to
+/// [`Job::next_unit`]
+unsafe impl Sync for UnitResult {}
+
+impl UnitResult {
+    fn new(tokens: Option<Result<Vec<PipelineToken>>>) -> Self {
+        Self(UnsafeCell::new(tokens))
+    }
+
+    unsafe fn set(&self, tokens: Result<Vec<PipelineToken>>) {
+        unsafe { *self.0.get() = Some(tokens) };
+    }
+
+    // TODO: safety doc
+    fn take(&self) -> Option<Result<Vec<PipelineToken>>> {
+        unsafe { &mut *self.0.get() }.take()
+    }
+}
+
+struct Job {
+    inputs: Box<Inputs>,
+    units: Vec<Unit>,
+    outputs: Vec<Vec<UnitResult>>,
+    cancelled: AtomicBool,
+    /// Cursor for threads to pick up the next [`Unit`] to work on
+    next_unit: CachePadded<AtomicUsize>,
+    tokenizer: PipelineTokenizer,
+    add_special_tokens: bool,
+    /// Completion queue containing the list of units (inserted as their sequence idx) that have finished, in completion order
+    /// this enables us to increment a counter consumer side so that when collected[seq] == unit_count[seq], we know we can return a result
+    completion_queue: Vec<AtomicUsize>,
+    /// Cursor that each thread increments to add a completed unit to the completion queue
+    next_completed: CachePadded<AtomicUsize>,
+    /// Number of units per sequence (accessed via `unit_count[seq]`)
+    unit_count: Vec<usize>,
+}
+
+impl Job {
+    const NOT_DONE: usize = usize::MAX;
+
+    fn len(&self) -> usize {
+        self.outputs.len()
+    }
+
+    fn encode_unit(&self) -> bool {
+        if self.cancelled.load(Ordering::Relaxed) {
+            return false;
+        }
+        let i = self.next_unit.0.fetch_add(1, Ordering::Relaxed);
+        if i >= self.units.len() {
+            return false;
+        }
+
+        let unit = &self.units[i];
+        let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let input = self
+                .inputs
+                .get(unit.seq)
+                .ok_or_else(|| format!("invalid unit index: {}", unit.seq))?;
+            let Input::Single(seq) = input else {
+                todo!("handle input pair")
+            };
+            self.tokenizer
+                .encode_sequence(&seq[unit.range.clone()], self.add_special_tokens)
+        }))
+        .unwrap_or_else(|_| Err("encode worker panicked".into()));
+        // SAFETY: no two threads can share the same unit of work because of the atomic fetch_add
+        // call on the cursor
+        unsafe { self.outputs[unit.seq][unit.idx].set(res) };
+
+        let next = self.next_completed.0.fetch_add(1, Ordering::Relaxed);
+        self.completion_queue[next].store(unit.seq, Ordering::Release);
+
+        true
+    }
+
+    fn take_result(&self, seq: usize) -> Result<Vec<PipelineToken>> {
+        let unit_results = &self.outputs[seq];
+        if unit_results.len() == 1 {
+            return unit_results[0].take().unwrap_or_else(|| {
+                unreachable!("failed to take the unit's result when we expect it to be present")
+            });
+        }
+        let mut chunks = Vec::with_capacity(unit_results.len());
+        for res in unit_results {
+            match res.take() {
+                Some(Ok(tokens)) => chunks.push(tokens),
+                Some(Err(e)) => return Err(e),
+                None => {
+                    unreachable!("failed to take the unit's result when we expect it to be present")
+                }
+            }
+        }
+        let total_tokens = chunks.iter().map(Vec::len).sum();
+        let mut out = Vec::with_capacity(total_tokens);
+        for c in &chunks {
+            out.extend_from_slice(c);
+        }
+
+        // NOTE: in a previous implementation, we implemented the reconstruction in parallel on the
+        // thread pool; perhaps something to reconsider if the reconstruction shows up in profiling
+
+        Ok(out)
+    }
+
+    fn cancel(&self) {
+        self.cancelled.store(true, Ordering::Relaxed);
     }
 }
 
 enum HandleState {
     Blocking(Enumerate<IntoIter<Result<Vec<PipelineToken>>>>),
-    // TODO:
-    // Streaming
+    Streaming(Arc<Job>),
 }
 
 pub struct EncodeHandle {
@@ -783,9 +969,16 @@ impl EncodeHandle {
         }
     }
 
+    fn streaming(job: Arc<Job>) -> Self {
+        Self {
+            state: HandleState::Streaming(job),
+        }
+    }
+
     fn len(&self) -> usize {
         match &self.state {
             HandleState::Blocking(it) => it.len(),
+            HandleState::Streaming(job) => job.len(),
         }
     }
 }
@@ -807,6 +1000,9 @@ impl EncodeHandle {
 /// Iterator yields results in completion order
 pub struct HandleIter {
     handle: EncodeHandle,
+    next_unit: usize,
+    collected: Vec<usize>,
+    completed: usize,
 }
 
 impl Iterator for HandleIter {
@@ -815,6 +1011,29 @@ impl Iterator for HandleIter {
     fn next(&mut self) -> Option<Self::Item> {
         match &mut self.handle.state {
             HandleState::Blocking(it) => it.next(),
+            HandleState::Streaming(job) => {
+                if self.completed == job.len() {
+                    return None;
+                }
+                loop {
+                    let seq = job.completion_queue[self.next_unit].load(Ordering::Acquire);
+                    if seq == Job::NOT_DONE {
+                        // XXX: caller has to wait for results regardless: instead of implementing some parking or
+                        // just empty spinning, we actually do useful work
+                        // it's also very simple to implement
+                        if !job.encode_unit() {
+                            std::hint::spin_loop();
+                        }
+                        continue;
+                    }
+                    self.next_unit += 1;
+                    self.collected[seq] += 1;
+                    if self.collected[seq] == job.unit_count[seq] {
+                        self.completed += 1;
+                        return Some((seq, job.take_result(seq)));
+                    }
+                }
+            }
         }
     }
 }
@@ -824,13 +1043,84 @@ impl IntoIterator for EncodeHandle {
     type IntoIter = HandleIter;
 
     fn into_iter(self) -> Self::IntoIter {
-        Self::IntoIter { handle: self }
+        Self::IntoIter {
+            next_unit: 0,
+            collected: vec![0; self.len()],
+            completed: 0,
+            handle: self,
+        }
     }
 }
 
+impl Drop for EncodeHandle {
+    fn drop(&mut self) {
+        if let HandleState::Streaming(job) = &self.state {
+            job.cancel()
+        }
+    }
+}
+
+const PARALLEL_MIN_BYTES: usize = 8 * 1024;
+
+struct Unit {
+    /// Sequence index in the [`Inputs`] batch
+    seq: usize,
+    /// The unit's index within a sequence, because a given sequence can be split into multiple units for better parallelism
+    idx: usize,
+    /// The range within the input sequence to encode
+    range: Range<usize>,
+}
+
+struct Plan {
+    /// Units of work created based on the inputs
+    units: Vec<Unit>,
+    /// Empty pre-allocated output buffer
+    outputs: Vec<Vec<UnitResult>>,
+}
 impl PipelineTokenizer {
     pub fn get_model(&self) -> &PipelineModel {
-        &self.model
+        &self.inner.model
+    }
+
+    fn plan_work(&self, inputs: &Inputs) -> Plan {
+        let mut units = Vec::with_capacity(inputs.len());
+        let mut outputs = Vec::with_capacity(inputs.len());
+        for (seq_idx, input) in inputs.into_iter().enumerate() {
+            let Input::Single(input) = input else {
+                todo!("handle pair input")
+            };
+            // XXX: if input is not at least twice the size of the minimum meaningful parallel
+            // chunk's size, we emit the full input as its own chunk because splitting would be inefficient
+            if input.len() < 2 * PARALLEL_MIN_BYTES {
+                units.push(Unit {
+                    seq: seq_idx,
+                    idx: 0,
+                    range: 0..input.len(),
+                });
+                outputs.push(vec![UnitResult::new(None)]);
+                continue;
+            }
+            let mut seq_outputs = vec![];
+            for segment in SpecialSegmentIterator::new(input, &self.inner.added_vocabulary, false) {
+                let idx = seq_outputs.len();
+                let (segment, offset) = match segment {
+                    Segment::SpecialToken(id) => {
+                        let token = PipelineToken::from(id);
+                        seq_outputs.push(UnitResult::new(Some(Ok(vec![token]))));
+                        continue;
+                    }
+                    Segment::Text { text, input_offset } => (text, input_offset),
+                };
+                units.push(Unit {
+                    seq: seq_idx,
+                    idx,
+                    range: offset..offset + segment.len(),
+                });
+                seq_outputs.push(UnitResult::new(None));
+            }
+            outputs.push(seq_outputs);
+        }
+        Plan { units, outputs }
     }
 
     /// Encode `input` into token ids.
@@ -844,32 +1134,67 @@ impl PipelineTokenizer {
     pub fn encode(&self, inputs: impl Into<Inputs>, add_special_tokens: bool) -> EncodeHandle {
         let inputs = inputs.into();
 
+        if inputs.size_bytes() < PARALLEL_MIN_BYTES {
+            EncodeHandle::blocking(self.encode_serial(inputs, add_special_tokens))
+        } else {
+            let Some(pool) = pool() else {
+                // XXX: unable to get a pool, handle, reverting to single threaded
+                return EncodeHandle::blocking(self.encode_serial(inputs, add_special_tokens));
+            };
+            let Plan { units, outputs } = self.plan_work(&inputs);
+            if units.len() < 2 {
+                return EncodeHandle::blocking(self.encode_serial(inputs, add_special_tokens));
+            }
+            let threads = units.len().min(pool.current_num_threads());
+            let job = Arc::new(Job {
+                inputs: Box::new(inputs),
+                cancelled: AtomicBool::new(false),
+                next_unit: CachePadded(AtomicUsize::new(0)),
+                add_special_tokens,
+                tokenizer: self.clone(),
+                completion_queue: (0..units.len())
+                    .map(|_| AtomicUsize::new(Job::NOT_DONE))
+                    .collect(),
+                next_completed: CachePadded(AtomicUsize::new(0)),
+                unit_count: units.iter().fold(vec![0; outputs.len()], |mut uc, u| {
+                    uc[u.seq] += 1;
+                    uc
+                }),
+                outputs,
+                units,
+            });
+            for _ in 0..threads {
+                let job = job.clone();
+                pool.spawn(move || while job.encode_unit() {});
+            }
+            EncodeHandle {
+                state: HandleState::Streaming(job),
+            }
+        }
+    }
+
+    fn encode_serial(
+        &self,
+        inputs: Inputs,
+        add_special_tokens: bool,
+    ) -> Vec<Result<Vec<PipelineToken>>> {
         match inputs {
-            Inputs::Single(s) => {
-                let output = self.encode_sequence(&s, add_special_tokens);
-                EncodeHandle::blocking(vec![output])
+            Inputs::Single(seq) => {
+                let Input::Single(seq) = seq else {
+                    todo!("handle input pairs")
+                };
+                let output = self.encode_sequence(&seq, add_special_tokens);
+                vec![output]
             }
-            // TODO: proper post-processor logic, this is temporary
-            Inputs::Pair(s1, s2) => {
-                let p1 = self.encode_sequence(&s1, add_special_tokens);
-                let p2 = self.encode_sequence(&s2, add_special_tokens);
-                EncodeHandle::blocking(vec![p1, p2])
-            }
-            Inputs::Batch(b) => {
-                let mut output = Vec::with_capacity(b.len());
-                for seq in b {
+            Inputs::Batch(batch) => {
+                let mut output = Vec::with_capacity(batch.len());
+                for seq in batch {
+                    let Input::Single(seq) = seq else {
+                        todo!("handle input pairs")
+                    };
                     output.push(self.encode_sequence(&seq, add_special_tokens));
                 }
-                EncodeHandle::blocking(output)
-            }
-            // TODO: proper post-processor logic, this is temporary
-            Inputs::PairBatch(pb) => {
-                let mut output = Vec::with_capacity(pb.len() * 2);
-                for (s1, s2) in pb {
-                    output.push(self.encode_sequence(&s1, add_special_tokens));
-                    output.push(self.encode_sequence(&s2, add_special_tokens));
-                }
-                EncodeHandle::blocking(output)
+                output
             }
         }
     }
@@ -880,31 +1205,34 @@ impl PipelineTokenizer {
         add_special_tokens: bool,
     ) -> Result<Vec<PipelineToken>> {
         let mut output = Vec::with_capacity(input.len() / 4);
-        let mut scratch = self.scratch_pool.get(&self.model);
-        let PipelinePostProcessor { prefix, suffix } = &self.post_processor;
+        let mut scratch = self.inner.scratch_pool.get(&self.inner.model);
+        let PipelinePostProcessor { prefix, suffix } = &self.inner.post_processor;
         // Prepend prefix tokens, if any
         // todo: handle post-processing when encoding a pair of sequences (currently unsupported by the PipelineTokenizer)
         if add_special_tokens {
-            output.extend_from_slice(prefix);
+            output.extend_from_slice(prefix.as_ref());
         }
         // First, we extract all special tokens from the non-normalized input
-        for segment in SpecialSegmentIterator::new(input, &self.added_vocabulary, false) {
+        for segment in SpecialSegmentIterator::new(input, &self.inner.added_vocabulary, false) {
             match segment {
                 Segment::SpecialToken(token) => {
                     output.push(PipelineToken::from(token));
                 }
-                Segment::Text(chunk) => {
-                    let normalized = normalize_all(&self.normalizers, chunk)?;
+                Segment::Text { text: chunk, .. } => {
+                    let normalized = normalize_all(&self.inner.normalizers, chunk)?;
 
                     // Extract special tokens from the normalized input
                     for segment in
-                        SpecialSegmentIterator::new(&normalized, &self.added_vocabulary, true)
+                        SpecialSegmentIterator::new(&normalized, &self.inner.added_vocabulary, true)
                     {
                         match segment {
                             Segment::SpecialToken(token) => {
                                 output.push(PipelineToken::from(token));
                             }
-                            Segment::Text(normalized_chunk) => {
+                            Segment::Text {
+                                text: normalized_chunk,
+                                ..
+                            } => {
                                 // A [`Span`] holds `u32` offsets, which breaks the `PreTokenizer` contract the
                                 // `str::get_unchecked` below relies on.
                                 // Normalization can grow the text (`Metaspace` widens every space to a 3-byte delimiter),
@@ -924,7 +1252,7 @@ impl PipelineTokenizer {
                                     split: pre_tokenizer_scratch,
                                 } = &mut *scratch;
                                 pre_tokens.clear();
-                                self.pre_tokenizer.pre_tokenize(
+                                self.inner.pre_tokenizer.pre_tokenize(
                                     normalized_chunk,
                                     pre_tokenizer_scratch,
                                     pre_tokens,
@@ -937,11 +1265,11 @@ impl PipelineTokenizer {
                                             && normalized_chunk.is_char_boundary(range.start)
                                             && normalized_chunk.is_char_boundary(range.end),
                                         "{:?} broke the PreTokenizer contract: emitted {pre_token:?} for {normalized_chunk:?}",
-                                        self.pre_tokenizer,
+                                        self.inner.pre_tokenizer,
                                     );
                                     // SAFETY: `PreTokenizer` guarantees every span is a valid range of `normalized_chunk`
                                     let sequence = unsafe { normalized_chunk.get_unchecked(range) };
-                                    self.model.tokenize_pipeline(
+                                    self.inner.model.tokenize_pipeline(
                                         sequence,
                                         model_scratch,
                                         &mut output,
@@ -973,7 +1301,7 @@ impl PipelineTokenizer {
     ///
     /// [`byte_level::transform_vocab`]: crate::utils::byte_level::transform_vocab
     pub fn decode(&self, ids: &[u32], skip_special_tokens: bool) -> Result<String> {
-        if let PipelineModel::BPE(bpe) = &self.model
+        if let PipelineModel::BPE(bpe) = &self.inner.model
             && bpe.is_byte_level()
         {
             return Ok(self.decode_byte_level(bpe, ids, skip_special_tokens));
@@ -981,20 +1309,22 @@ impl PipelineTokenizer {
         let tokens = ids
             .iter()
             .filter_map(|&id| {
-                if id >= self.added_id_min {
-                    self.added_vocabulary
+                if id >= self.inner.added_id_min {
+                    self.inner
+                        .added_vocabulary
                         .simple_id_to_token(id)
-                        .or_else(|| self.model.id_to_token(id))
+                        .or_else(|| self.inner.model.id_to_token(id))
                         .filter(|token| {
-                            !skip_special_tokens || !self.added_vocabulary.is_special_token(token)
+                            !skip_special_tokens
+                                || !self.inner.added_vocabulary.is_special_token(token)
                         })
                 } else {
-                    self.model.id_to_token(id)
+                    self.inner.model.id_to_token(id)
                 }
             })
             .collect::<Vec<_>>();
 
-        match &self.decoder {
+        match &self.inner.decoder {
             Some(decoder) => decoder.decode(tokens),
             None => Ok(tokens.join(" ")),
         }
@@ -1010,10 +1340,10 @@ impl PipelineTokenizer {
         // Byte-level tokens average ~4 bytes
         let mut out: Vec<u8> = Vec::with_capacity(ids.len() * 4);
         for &id in ids {
-            if id >= self.added_id_min
-                && let Some(token) = self.added_vocabulary.simple_id_to_token(id)
+            if id >= self.inner.added_id_min
+                && let Some(token) = self.inner.added_vocabulary.simple_id_to_token(id)
             {
-                if !skip_special_tokens || !self.added_vocabulary.is_special_token(&token) {
+                if !skip_special_tokens || !self.inner.added_vocabulary.is_special_token(&token) {
                     out.extend_from_slice(token.as_bytes());
                 }
                 continue;
@@ -1586,7 +1916,7 @@ mod tests {
 
         let segments: Vec<_> = SpecialSegmentIterator::new(input, &matcher, false)
             .map(|segment| match segment {
-                Segment::Text(text) => (Some(text), None),
+                Segment::Text { text, .. } => (Some(text), None),
                 Segment::SpecialToken(id) => (None, Some(id)),
             })
             .collect();
