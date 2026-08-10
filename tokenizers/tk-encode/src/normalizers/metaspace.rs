@@ -15,7 +15,6 @@
 
 use std::borrow::Cow;
 
-use crate::pre_tokenizers::whitespace::WhitespaceSplit;
 use crate::tokenizer::{Result, pipeline};
 
 /// Writes the delimiter where words start (after a space)
