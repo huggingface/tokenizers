@@ -8,7 +8,7 @@ use crate::models::bpe::legacy::model::BPE;
 use crate::models::bpe::merge_hot_cold_queue::{QueueScratch, merge_hot_cold_queue};
 use crate::models::bpe::merge_multipass::merge_multipass;
 use crate::models::bpe::tables::BpeTables;
-use crate::pipeline::{self, PipelineToken, Span};
+use crate::pipeline::{self, PipelineToken};
 use crate::tokenizer::Result;
 use crate::utils::byte_level::{self};
 use crate::utils::word_cache::{Lookup, WordCache};
@@ -347,74 +347,6 @@ impl pipeline::Model for PipelineBPE {
             cache.insert(at, output[start..].iter().map(|token| token.id()));
         }
 
-        Ok(())
-    }
-
-    /// Every pre-token of a chunk in one call.
-    ///
-    /// Same work per word as [`Self::tokenize_pipeline`]; what changes is what is *not* repeated.
-    /// The scratch is destructured once instead of once per word, the output is grown once for the
-    /// whole batch instead of being capacity-checked on every push, and the virtual call, the
-    /// slice and the `Result` happen once per chunk rather than once per pre-token.
-    fn tokenize_spans(
-        &self,
-        chunk: &str,
-        spans: &[Span],
-        scratch: &mut Self::Scratch,
-        output: &mut Vec<PipelineToken>,
-    ) -> Result<()> {
-        let BpeScratch {
-            symbols,
-            queue,
-            word_cache,
-        } = scratch;
-
-        // One reservation for the batch. Most pre-tokens are a single token, so the span count is
-        // a close lower bound on what the batch emits; anything past it grows as usual.
-        output.reserve(spans.len());
-
-        for span in spans {
-            // SAFETY: the pre-tokenizer cuts on char boundaries, so a span is always a valid slice
-            // of this chunk. Bounds- and UTF-8-checking it again per word measured worth removing.
-            let sequence = unsafe { chunk.get_unchecked(span.range()) };
-            if sequence.is_empty() {
-                continue;
-            }
-
-            // Same order as `tokenize_pipeline`, and it has to stay that way: the fold answers a
-            // word that is itself a foldable vocabulary entry in one probe, and those words never
-            // reach the cache. Probing the cache first would populate it with words the fold
-            // already serves for free, and the two paths would disagree about what it holds.
-            if let Some(id) = self.fold_id(sequence) {
-                output.push(PipelineToken::from(id));
-                continue;
-            }
-
-            let mut placement = None;
-            if let Some(cache) = word_cache.as_mut() {
-                match cache.lookup(sequence.as_bytes()) {
-                    Lookup::Hit(ids) => {
-                        output.extend(ids.iter().copied().map(PipelineToken::from));
-                        continue;
-                    }
-                    Lookup::Miss(at) => placement = Some(at),
-                }
-            }
-
-            let start = output.len();
-            self.merge_word(sequence, symbols, queue);
-            // the merge engines work in internal ids; `unmap` takes them back to the vocab's own ids
-            output.extend(
-                symbols
-                    .iter()
-                    .map(|&symbol| PipelineToken::from(self.tables.unmap.at(symbol as usize))),
-            );
-            if let Some(cache) = word_cache.as_mut()
-                && let Some(at) = placement
-            {
-                cache.insert(at, output[start..].iter().map(|token| token.id()));
-            }
-        }
         Ok(())
     }
 
