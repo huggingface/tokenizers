@@ -5,7 +5,7 @@ use crate::models::bpe::At;
 use crate::models::bpe::Error;
 use crate::models::bpe::convert::{AFFIX_BUF, Affixes};
 use crate::models::bpe::legacy::model::BPE;
-use crate::models::bpe::merge_hot_cold_queue::{QueueScratch, merge_hot_cold_queue};
+use crate::models::bpe::merge_hot_cold_queue::{QueueScratch, merge_with_queue};
 use crate::models::bpe::merge_multipass::merge_multipass;
 use crate::models::bpe::tables::BpeTables;
 use crate::pipeline::{self, PipelineToken};
@@ -268,13 +268,8 @@ impl PipelineBPE {
 
         if sequence.len() > gate as usize {
             // conversion writes the entries and cold keys directly: no intermediate symbol array
-            self.convert_queue(
-                sequence,
-                symbols,
-                &mut queue_scratch.entries,
-                &mut queue_scratch.cold,
-            );
-            merge_hot_cold_queue(&self.tables, symbols, queue_scratch);
+            self.convert_queue(sequence, symbols, queue_scratch);
+            merge_with_queue(&self.tables, symbols, queue_scratch);
         } else {
             let first_merge = self.convert_multipass(sequence, symbols);
             merge_multipass(&self.tables, symbols, first_merge);
