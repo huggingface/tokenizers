@@ -838,16 +838,6 @@ thread_local! {
 }
 
 impl PipelineTokenizer {
-    /// Stage gates for [`encode_generic`](Self::encode_generic), in execution order.
-    /// Each level runs every stage up to and including itself; `STAGE_POSTPROCESS` is
-    /// a full encode. `STAGE_FRAME` is the special-token scan + iteration only (the
-    /// "other" slice in the decomposition).
-    pub const STAGE_FRAME: u8 = 0;
-    pub const STAGE_NORMALIZE: u8 = 1;
-    pub const STAGE_SPLIT: u8 = 2;
-    pub const STAGE_MODEL: u8 = 3;
-    pub const STAGE_POSTPROCESS: u8 = 4;
-
     pub fn get_model(&self) -> &PipelineModel {
         &self.model
     }
@@ -865,27 +855,19 @@ impl PipelineTokenizer {
 
         match inputs {
             Inputs::Single(s) => {
-                let output =
-                    self.encode_generic::<{ Self::STAGE_POSTPROCESS }>(&s, add_special_tokens);
+                let output = self.encode_sequence(&s, add_special_tokens);
                 EncodeHandle::blocking(vec![output])
             }
             // TODO: proper post-processor logic, this is temporary
             Inputs::Pair(s1, s2) => {
-                let p1 =
-                    self.encode_generic::<{ Self::STAGE_POSTPROCESS }>(&s1, add_special_tokens);
-                let p2 =
-                    self.encode_generic::<{ Self::STAGE_POSTPROCESS }>(&s2, add_special_tokens);
+                let p1 = self.encode_sequence(&s1, add_special_tokens);
+                let p2 = self.encode_sequence(&s2, add_special_tokens);
                 EncodeHandle::blocking(vec![p1, p2])
             }
             Inputs::Batch(b) => {
                 let mut output = Vec::with_capacity(b.len());
                 for seq in b {
-                    output.push(
-                        self.encode_generic::<{ Self::STAGE_POSTPROCESS }>(
-                            &seq,
-                            add_special_tokens,
-                        ),
-                    );
+                    output.push(self.encode_sequence(&seq, add_special_tokens));
                 }
                 EncodeHandle::blocking(output)
             }
@@ -893,16 +875,71 @@ impl PipelineTokenizer {
             Inputs::PairBatch(pb) => {
                 let mut output = Vec::with_capacity(pb.len() * 2);
                 for (s1, s2) in pb {
-                    output.push(
-                        self.encode_generic::<{ Self::STAGE_POSTPROCESS }>(&s1, add_special_tokens),
-                    );
-                    output.push(
-                        self.encode_generic::<{ Self::STAGE_POSTPROCESS }>(&s2, add_special_tokens),
-                    );
+                    output.push(self.encode_sequence(&s1, add_special_tokens));
+                    output.push(self.encode_sequence(&s2, add_special_tokens));
                 }
                 EncodeHandle::blocking(output)
             }
         }
+    }
+
+    pub fn encode_sequence(
+        &self,
+        input: &str,
+        add_special_tokens: bool,
+    ) -> Result<Vec<PipelineToken>> {
+        let mut output = Vec::with_capacity(input.len() / 4);
+        let mut scratch = self.scratch_pool.get(&self.model);
+        let PipelinePostProcessor { prefix, suffix } = &self.post_processor;
+        // Prepend prefix tokens, if any
+        // todo: handle post-processing when encoding a pair of sequences (currently unsupported by the PipelineTokenizer)
+        if add_special_tokens {
+            output.extend_from_slice(prefix);
+        }
+        // First, we extract all special tokens from the non-normalized input
+        for segment in SpecialSegmentIterator::new(input, &self.added_vocabulary, false) {
+            match segment {
+                Segment::SpecialToken(token) => {
+                    output.push(PipelineToken::from(token));
+                }
+                Segment::Text(chunk) => {
+                    let normalized = normalize_all(&self.normalizers, chunk)?;
+
+                    // Extract special tokens from the normalized input
+                    for segment in
+                        SpecialSegmentIterator::new(&normalized, &self.added_vocabulary, true)
+                    {
+                        match segment {
+                            Segment::SpecialToken(token) => {
+                                output.push(PipelineToken::from(token));
+                            }
+                            Segment::Text(normalized_chunk) => {
+                                // Pre-tokenize the chunk of normalized text
+                                PRE_TOKENS_SCRATCH.with(|cell| -> Result<()> {
+                                    let mut pre_tokens = cell.borrow_mut();
+                                    pre_tokens.clear();
+                                    self.pre_tokenizer
+                                        .pre_tokenize(normalized_chunk, &mut pre_tokens)?;
+                                    // The whole span list at once; see Model::tokenize_spans.
+                                    self.model.tokenize_spans(
+                                        normalized_chunk,
+                                        &pre_tokens,
+                                        &mut scratch,
+                                        &mut output,
+                                    )?;
+                                    Ok(())
+                                })?;
+                            }
+                        }
+                    }
+                }
+            };
+        }
+        // Append suffix tokens, if any
+        if add_special_tokens {
+            output.extend_from_slice(suffix);
+        }
+        Ok(output)
     }
 
     /// Decode token ids back to a `String`.
@@ -998,87 +1035,6 @@ impl PipelineTokenizer {
             prefix: String::new(),
             prefix_index: 0,
         }
-    }
-
-    /// Single source of truth for the encode pipeline, generic over how many stages
-    /// run. `STAGE` is a **const generic**, so `if STAGE >= …` folds at compile time and
-    /// the disabled stages are compiled out, so the full specialization
-    /// ([`STAGE_POSTPROCESS`], which [`encode`](Self::encode) calls) is branchless and
-    /// identical to a hand-written full pipeline, while the benchmark drives lower
-    /// `STAGE` values to time each stage's marginal cost (the ablation ladder), e.g.
-    /// `model = t(MODEL) − t(SPLIT)`. No runtime gate, no `Instant` in the loop.
-    ///
-    /// [`STAGE_POSTPROCESS`]: Self::STAGE_POSTPROCESS
-    ///
-    /// `output` and the `pre_tokens` scratch are caller-owned so a benchmark can reuse
-    /// them across calls and observe both buffers to anchor the ablation levels. The
-    /// library itself stays free of any `black_box`/timing artifact.
-    #[doc(hidden)] // public only so `examples/fixture_bench.rs` can drive partial stages
-    pub fn encode_generic<const STAGE: u8>(
-        &self,
-        input: &str,
-        add_special_tokens: bool,
-    ) -> Result<Vec<PipelineToken>> {
-        let mut output = Vec::with_capacity(input.len() / 4);
-        let mut scratch = self.scratch_pool.get(&self.model);
-        let PipelinePostProcessor { prefix, suffix } = &self.post_processor;
-        // Prepend prefix tokens, if any
-        // todo: handle post-processing when encoding a pair of sequences (currently unsupported by the PipelineTokenizer)
-        if add_special_tokens && STAGE >= Self::STAGE_POSTPROCESS {
-            output.extend_from_slice(prefix);
-        }
-        // First, we extract all special tokens from the non-normalized input
-        for segment in SpecialSegmentIterator::new(input, &self.added_vocabulary, false) {
-            match segment {
-                Segment::SpecialToken(token) => {
-                    output.push(PipelineToken::from(token));
-                }
-                Segment::Text(chunk) => {
-                    let normalized: Cow<str> = if STAGE >= Self::STAGE_NORMALIZE {
-                        normalize_all(&self.normalizers, chunk)?
-                    } else {
-                        Cow::Borrowed(chunk)
-                    };
-
-                    // Extract special tokens from the normalized input
-                    for segment in
-                        SpecialSegmentIterator::new(&normalized, &self.added_vocabulary, true)
-                    {
-                        match segment {
-                            Segment::SpecialToken(token) => {
-                                output.push(PipelineToken::from(token));
-                            }
-                            Segment::Text(normalized_chunk) => {
-                                if STAGE >= Self::STAGE_SPLIT {
-                                    // Pre-tokenize the chunk of normalized text
-                                    PRE_TOKENS_SCRATCH.with(|cell| -> Result<()> {
-                                        let mut pre_tokens = cell.borrow_mut();
-                                        pre_tokens.clear();
-                                        self.pre_tokenizer
-                                            .pre_tokenize(normalized_chunk, &mut pre_tokens)?;
-                                        if STAGE >= Self::STAGE_MODEL {
-                                            // The whole span list at once; see Model::tokenize_spans.
-                                            self.model.tokenize_spans(
-                                                normalized_chunk,
-                                                &pre_tokens,
-                                                &mut scratch,
-                                                &mut output,
-                                            )?;
-                                        }
-                                        Ok(())
-                                    })?;
-                                }
-                            }
-                        }
-                    }
-                }
-            };
-        }
-        // Append suffix tokens, if any
-        if add_special_tokens && STAGE >= Self::STAGE_POSTPROCESS {
-            output.extend_from_slice(suffix);
-        }
-        Ok(output)
     }
 }
 
