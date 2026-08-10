@@ -1,8 +1,10 @@
 use serde::{Deserialize, Serialize};
 
-use crate::pipeline;
+use crate::pipeline::{self, PreTokenizerScratch};
 use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
 use crate::utils::macro_rules_attribute;
+use atomsplit::classify::mask;
+use atomsplit::fsm::class_runs_into;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 /// Pre tokenizes the numbers into single tokens. If individual_digits is set
@@ -40,23 +42,29 @@ impl PreTokenizer for Digits {
 }
 
 impl pipeline::PreTokenizer for Digits {
-    fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Span>) -> Result<()> {
+    fn pre_tokenize(
+        &self,
+        text: &str,
+        scratch: &mut PreTokenizerScratch,
+        out: &mut Vec<pipeline::Span>,
+    ) -> Result<()> {
         // isolate each numeric char (`individual_digits`) or keep numeric runs — atomsplit classify +
         // class-runs FSM. atom `NUMERIC` == `char::is_numeric`, so byte-exact with the scalar path.
-        use atomsplit::classify::{classify, mask};
-        use atomsplit::fsm::class_runs_into;
-        let bytes = text.as_bytes();
-        let mut tags = vec![0u8; bytes.len()];
-        classify(bytes, &mut tags);
-        let mut spans = vec![pipeline::Span::default(); bytes.len() + 1];
-        let n = if self.individual_digits {
-            class_runs_into::<0, { mask::NUMERIC }, 0>(bytes, &tags, &mut spans)
-        // isolate each digit
+        if self.individual_digits {
+            // isolate each digit
+            scratch.split_on_tags(
+                text.as_bytes(),
+                class_runs_into::<0, { mask::NUMERIC }, 0>,
+                out,
+            );
         } else {
-            class_runs_into::<0, 0, { mask::NUMERIC }>(bytes, &tags, &mut spans)
             // keep digit runs
-        };
-        out.extend_from_slice(&spans[..n]);
+            scratch.split_on_tags(
+                text.as_bytes(),
+                class_runs_into::<0, 0, { mask::NUMERIC }>,
+                out,
+            );
+        }
         Ok(())
     }
 }
@@ -69,7 +77,9 @@ mod tests {
     fn pretokenize(individual_digits: bool, text: &str) -> Vec<(&str, (u32, u32))> {
         let pretok = Digits::new(individual_digits);
         let mut splits = Vec::new();
-        crate::pipeline::PreTokenizer::pre_tokenize(&pretok, text, &mut splits).unwrap();
+        let mut scratch = PreTokenizerScratch::default();
+        crate::pipeline::PreTokenizer::pre_tokenize(&pretok, text, &mut scratch, &mut splits)
+            .unwrap();
         splits
             .iter()
             .map(|s| (&text[s.range()], (s.start, s.end)))

@@ -99,7 +99,12 @@ impl pipeline::PreTokenizer for PipelineSequence {
     /// so far. A child sees only the text of a span (`&text[span]`) and returns
     /// offsets relative to it, which we rebase to absolute mirroring how the
     /// legacy path worked.
-    fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Span>) -> Result<()> {
+    fn pre_tokenize(
+        &self,
+        text: &str,
+        scratch: &mut pipeline::PreTokenizerScratch,
+        out: &mut Vec<pipeline::Span>,
+    ) -> Result<()> {
         if text.is_empty() {
             return Ok(());
         }
@@ -107,7 +112,7 @@ impl pipeline::PreTokenizer for PipelineSequence {
         // deepseek's 3-Split composition → one native FSM pass (also lets the Sequence handle the
         // trailing byte-map ByteLevel, which the generic child loop can't range-split).
         if self.is_deepseek() {
-            pipeline::classify_into_spans(text.as_bytes(), atomsplit::fsm::fsm_deepseek, out);
+            scratch.split_on_tags(text.as_bytes(), atomsplit::fsm::fsm_deepseek, out);
             return Ok(());
         }
 
@@ -121,7 +126,7 @@ impl pipeline::PreTokenizer for PipelineSequence {
             .iter()
             .filter(|c| !matches!(c, PipelinePreTokenizer::None));
         if let (Some(only), None) = (work.next(), work.next()) {
-            return pipeline::PreTokenizer::pre_tokenize(only, text, out);
+            return pipeline::PreTokenizer::pre_tokenize(only, text, scratch, out);
         }
 
         let cap = text.len() / 5;
@@ -140,7 +145,12 @@ impl pipeline::PreTokenizer for PipelineSequence {
                 // The child appends span-relative spans straight into `next`;
                 // rebase just those to absolute in place — no scratch buffer.
                 let from = next.len();
-                pipeline::PreTokenizer::pre_tokenize(child, &text[span.range()], &mut next)?;
+                pipeline::PreTokenizer::pre_tokenize(
+                    child,
+                    &text[span.range()],
+                    scratch,
+                    &mut next,
+                )?;
                 // FIXME: do we want to add an `offset` param to `pre_tokenize` so we don't have to
                 // rebase?
                 for s in &mut next[from..] {
@@ -168,8 +178,9 @@ mod tests {
 
     /// Run the pipeline path and return `(piece, (start, end))` for each split.
     fn pipeline_pretokenize(seq: &PipelineSequence, text: &str) -> Vec<(String, (usize, usize))> {
+        let mut scratch = pipeline::PreTokenizerScratch::default();
         let mut out = Vec::new();
-        crate::pipeline::PreTokenizer::pre_tokenize(seq, text, &mut out).unwrap();
+        crate::pipeline::PreTokenizer::pre_tokenize(seq, text, &mut scratch, &mut out).unwrap();
         out.iter()
             .map(|s| {
                 (
@@ -435,8 +446,10 @@ mod tests {
             "中文 text 123, mixed! 🤗",
             "I'm sure it's fine   ",
         ] {
+            let mut scratch = pipeline::PreTokenizerScratch::default();
             let mut out = Vec::new();
-            crate::pipeline::PreTokenizer::pre_tokenize(&pipe_seq, text, &mut out).unwrap();
+            crate::pipeline::PreTokenizer::pre_tokenize(&pipe_seq, text, &mut scratch, &mut out)
+                .unwrap();
             let pipeline: Vec<(String, (usize, usize))> = out
                 .iter()
                 .map(|s| {

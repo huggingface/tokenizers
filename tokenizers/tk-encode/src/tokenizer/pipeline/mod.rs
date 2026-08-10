@@ -1,10 +1,7 @@
-use std::cell::RefCell;
 use std::convert::TryInto;
 use std::iter::Enumerate;
 use std::vec::IntoIter;
 use std::{borrow::Cow, convert::TryFrom};
-
-use atomsplit::classify::classify;
 
 use crate::models::bpe::{BpeScratch, PipelineBPE};
 use crate::models::unigram::{Unigram, UnigramScratch};
@@ -38,35 +35,12 @@ use crate::{
 
 use super::{Result, SplitDelimiterBehavior};
 
+use atomsplit::classify::classify;
 pub use atomsplit::fsm::Span;
 
 mod scratch_pool;
 
 pub use scratch_pool::ModelScratch;
-
-/// We use a thread local scratch for the tags (per byte class) and for the split spans.
-pub(crate) fn classify_into_spans(
-    bytes: &[u8],
-    fsm: impl FnOnce(&[u8], &[u8], &mut [Span]) -> usize,
-    out: &mut Vec<Span>,
-) {
-    thread_local! {
-        static SCRATCH: RefCell<(Vec<u8>, Vec<Span>)> = const { RefCell::new((Vec::new(), Vec::new())) };
-    }
-    let n = bytes.len();
-    SCRATCH.with(|cell| {
-        let (tags, spans) = &mut *cell.borrow_mut();
-        if tags.len() < n {
-            tags.resize(n, 0); // grow-only: after the largest segment, no realloc / no re-zeroing
-        }
-        if spans.len() < n + 1 {
-            spans.resize(n + 1, Span::default());
-        }
-        classify(bytes, &mut tags[..n]);
-        let k = fsm(bytes, &tags[..n], &mut spans[..n + 1]);
-        out.extend_from_slice(&spans[..k]); // same type now: plain memcpy, no per-token conversion
-    });
-}
 
 pub trait Normalizer {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>>;
@@ -132,7 +106,66 @@ impl Normalizer for PipelineNormalizer {
 /// substrings, so the pipeline can pre-tokenize without allocating.
 pub trait PreTokenizer {
     /// Split `text` into pre-tokens, appending to `out`. Ranges are into `text`.
-    fn pre_tokenize(&self, text: &str, out: &mut Vec<Span>) -> Result<()>;
+    /// `scratch` holds the working buffers, see [`PreTokenizerScratch`].
+    fn pre_tokenize(
+        &self,
+        text: &str,
+        scratch: &mut PreTokenizerScratch,
+        out: &mut Vec<Span>,
+    ) -> Result<()>;
+}
+
+/// The working buffers a [`PreTokenizer`] needs to split a text into pre-tokens.
+#[derive(Default)]
+pub struct PreTokenizerScratch {
+    /// One [`atomsplit`] atom tag per input byte, what [`atomsplit::classify::classify`] writes
+    /// and the FSMs read.
+    tags: Vec<u8>,
+    /// An intermediate buffer in which the FSM writes the Span before they get appended to the output
+    spans: Vec<Span>,
+}
+
+impl PreTokenizerScratch {
+    /// Tag every byte of `bytes` with its [`atomsplit`] atom class, run `fsm` over the tags, and
+    /// append the spans to `out`.
+    pub fn split_on_tags(
+        &mut self,
+        bytes: &[u8],
+        fsm: impl FnOnce(&[u8], &[u8], &mut [Span]) -> usize,
+        out: &mut Vec<Span>,
+    ) {
+        let n = bytes.len();
+        let Self { tags, spans } = self;
+        if tags.len() < n {
+            tags.resize(n, 0);
+        }
+        if spans.len() < n + 1 {
+            spans.resize(n + 1, Span::default());
+        }
+        // Assign a tag to each byte
+        classify(bytes, &mut tags[..n]);
+        // Run the fsm on the tags to determine where to cut
+        let k = fsm(bytes, &tags[..n], &mut spans[..n + 1]);
+        // Copy spans to output
+        out.extend_from_slice(&spans[..k]);
+    }
+
+    /// Run `fsm` over `bytes` and append the spans it cut to `out`, for an FSM that scans the bytes
+    /// itself and so has no use for the atom tags. Skips the [`classify`]
+    pub fn split_on_bytes(
+        &mut self,
+        bytes: &[u8],
+        fsm: impl FnOnce(&[u8], &mut [Span]) -> usize,
+        out: &mut Vec<Span>,
+    ) {
+        let n = bytes.len();
+        let spans = &mut self.spans;
+        if spans.len() < n + 1 {
+            spans.resize(n + 1, Span::default());
+        }
+        let k = fsm(bytes, &mut spans[..n + 1]);
+        out.extend_from_slice(&spans[..k]);
+    }
 }
 
 /// The pre-tokenizers a [`PipelineTokenizer`] can run.
@@ -153,7 +186,12 @@ pub enum PipelinePreTokenizer {
 }
 
 impl PreTokenizer for PipelinePreTokenizer {
-    fn pre_tokenize(&self, text: &str, out: &mut Vec<Span>) -> Result<()> {
+    fn pre_tokenize(
+        &self,
+        text: &str,
+        scratch: &mut PreTokenizerScratch,
+        out: &mut Vec<Span>,
+    ) -> Result<()> {
         match self {
             Self::None => {
                 out.push(Span {
@@ -162,16 +200,16 @@ impl PreTokenizer for PipelinePreTokenizer {
                 });
                 Ok(())
             }
-            Self::Bert(pretok) => pretok.pre_tokenize(text, out),
-            Self::Delimiter(pretok) => pretok.pre_tokenize(text, out),
-            Self::Digits(pretok) => pretok.pre_tokenize(text, out),
-            Self::FixedLength(pretok) => pretok.pre_tokenize(text, out),
-            Self::Punctuation(pretok) => pretok.pre_tokenize(text, out),
-            Self::Sequence(pretok) => pretok.pre_tokenize(text, out),
-            Self::Split(pretok) => pretok.pre_tokenize(text, out),
-            Self::UnicodeScripts(pretok) => pretok.pre_tokenize(text, out),
-            Self::Whitespace(pretok) => pretok.pre_tokenize(text, out),
-            Self::WhitespaceSplit(pretok) => pretok.pre_tokenize(text, out),
+            Self::Bert(pretok) => pretok.pre_tokenize(text, scratch, out),
+            Self::Delimiter(pretok) => pretok.pre_tokenize(text, scratch, out),
+            Self::Digits(pretok) => pretok.pre_tokenize(text, scratch, out),
+            Self::FixedLength(pretok) => pretok.pre_tokenize(text, scratch, out),
+            Self::Punctuation(pretok) => pretok.pre_tokenize(text, scratch, out),
+            Self::Sequence(pretok) => pretok.pre_tokenize(text, scratch, out),
+            Self::Split(pretok) => pretok.pre_tokenize(text, scratch, out),
+            Self::UnicodeScripts(pretok) => pretok.pre_tokenize(text, scratch, out),
+            Self::Whitespace(pretok) => pretok.pre_tokenize(text, scratch, out),
+            Self::WhitespaceSplit(pretok) => pretok.pre_tokenize(text, scratch, out),
         }
     }
 }
@@ -843,10 +881,14 @@ impl PipelineTokenizer {
                                 let EncodeScratch {
                                     model: model_scratch,
                                     pre_tokens,
+                                    split: pre_tokenizer_scratch,
                                 } = &mut *scratch;
                                 pre_tokens.clear();
-                                self.pre_tokenizer
-                                    .pre_tokenize(normalized_chunk, pre_tokens)?;
+                                self.pre_tokenizer.pre_tokenize(
+                                    normalized_chunk,
+                                    pre_tokenizer_scratch,
+                                    pre_tokens,
+                                )?;
                                 output.reserve(pre_tokens.len());
                                 for pre_token in pre_tokens {
                                     // The get_unchecked saves us a UTF-8 boundary check

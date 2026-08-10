@@ -2,7 +2,7 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
-use crate::pipeline;
+use crate::pipeline::{self, PreTokenizerScratch};
 use crate::tokenizer::{
     PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior, pattern::Invert,
 };
@@ -11,6 +11,8 @@ use crate::utils::macro_rules_attribute;
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[macro_rules_attribute(impl_serde_type!)]
 pub struct Whitespace;
+
+use atomsplit::classify::mask;
 
 impl Default for Whitespace {
     fn default() -> Self {
@@ -42,11 +44,15 @@ impl PreTokenizer for WhitespaceSplit {
 }
 
 impl pipeline::PreTokenizer for WhitespaceSplit {
-    fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Span>) -> Result<()> {
+    fn pre_tokenize(
+        &self,
+        text: &str,
+        scratch: &mut PreTokenizerScratch,
+        out: &mut Vec<pipeline::Span>,
+    ) -> Result<()> {
         // drop whitespace runs, keep everything else as runs — atomsplit SIMD classify + class-runs FSM.
         // atom `WS` == `char::is_whitespace`, so byte-exact with the scalar path.
-        use atomsplit::classify::mask;
-        pipeline::classify_into_spans(
+        scratch.split_on_tags(
             text.as_bytes(),
             atomsplit::fsm::class_runs_into::<{ mask::WS }, 0, 0>,
             out,
@@ -71,11 +77,15 @@ pub fn is_word_char(ch: char) -> bool {
 
 impl pipeline::PreTokenizer for Whitespace {
     #[inline(never)]
-    fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Span>) -> Result<()> {
+    fn pre_tokenize(
+        &self,
+        text: &str,
+        scratch: &mut PreTokenizerScratch,
+        out: &mut Vec<pipeline::Span>,
+    ) -> Result<()> {
         // `\w+|[^\w\s]+`: drop whitespace, cut at the word↔symbol boundary, each run one token —
         // atomsplit classify + class-runs FSM (`WORD` = `\w`; keep-A = word, keep-B = symbol).
-        use atomsplit::classify::mask;
-        pipeline::classify_into_spans(
+        scratch.split_on_tags(
             text.as_bytes(),
             atomsplit::fsm::class_runs_into::<{ mask::WS }, 0, { mask::WORD }>,
             out,
@@ -91,8 +101,10 @@ mod tests {
 
     fn pretokenize(text: &str) -> Vec<(&str, (u32, u32))> {
         let pretok = Whitespace;
+        let mut scratch = PreTokenizerScratch::default();
         let mut splits = Vec::new();
-        crate::pipeline::PreTokenizer::pre_tokenize(&pretok, text, &mut splits).unwrap();
+        crate::pipeline::PreTokenizer::pre_tokenize(&pretok, text, &mut scratch, &mut splits)
+            .unwrap();
         splits
             .iter()
             .map(|s| (&text[s.range()], (s.start, s.end)))
@@ -149,8 +161,10 @@ mod tests {
 
     fn pretokenize_split(text: &str) -> Vec<(&str, (u32, u32))> {
         let pretok = WhitespaceSplit;
+        let mut scratch = PreTokenizerScratch::default();
         let mut splits = Vec::new();
-        crate::pipeline::PreTokenizer::pre_tokenize(&pretok, text, &mut splits).unwrap();
+        crate::pipeline::PreTokenizer::pre_tokenize(&pretok, text, &mut scratch, &mut splits)
+            .unwrap();
         splits
             .iter()
             .map(|s| (&text[s.range()], (s.start, s.end)))

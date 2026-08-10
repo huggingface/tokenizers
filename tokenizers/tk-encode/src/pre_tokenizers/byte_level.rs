@@ -532,8 +532,10 @@ mod tests {
             crate::PreTokenizerWrapper::ByteLevel(byte_level),
         )
         .unwrap();
+        let mut scratch = crate::pipeline::PreTokenizerScratch::default();
         let mut out = Vec::new();
-        crate::pipeline::PreTokenizer::pre_tokenize(&converted, text, &mut out).unwrap();
+        crate::pipeline::PreTokenizer::pre_tokenize(&converted, text, &mut scratch, &mut out)
+            .unwrap();
         out.iter()
             .map(|s| {
                 let transformed = text[s.range()]

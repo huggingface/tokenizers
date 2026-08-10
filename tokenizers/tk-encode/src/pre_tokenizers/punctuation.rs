@@ -1,8 +1,11 @@
 use serde::{Deserialize, Serialize};
 
-use crate::pipeline;
+use crate::pipeline::{self, PreTokenizerScratch};
 use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
 use crate::utils::macro_rules_attribute;
+use SplitDelimiterBehavior::{Isolated, Removed};
+use atomsplit::classify::mask;
+use atomsplit::fsm::class_runs_into;
 use unicode_categories::UnicodeCategories;
 
 pub(crate) fn is_punc(x: char) -> bool {
@@ -39,22 +42,26 @@ impl PreTokenizer for Punctuation {
 }
 
 impl pipeline::PreTokenizer for Punctuation {
-    fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Span>) -> Result<()> {
-        use SplitDelimiterBehavior::{Isolated, Removed};
+    fn pre_tokenize(
+        &self,
+        text: &str,
+        scratch: &mut PreTokenizerScratch,
+        out: &mut Vec<pipeline::Span>,
+    ) -> Result<()> {
         // atom `PUNCT` == `is_punc` (ASCII-punct ∪ \p{P}), so Isolated/Removed map to the class-runs FSM
         // byte-exactly. The merge/contiguous behaviors aren't a class-runs shape → keep the scalar split.
-        if matches!(self.behavior, Isolated | Removed) {
-            use atomsplit::classify::mask;
-            use atomsplit::fsm::class_runs_into;
-            pipeline::classify_into_spans(
+        if self.behavior == Removed {
+            // drop punct
+            scratch.split_on_tags(
                 text.as_bytes(),
-                |b, t, s| {
-                    if self.behavior == Removed {
-                        class_runs_into::<{ mask::PUNCT }, 0, 0>(b, t, s) // drop punct
-                    } else {
-                        class_runs_into::<0, { mask::PUNCT }, 0>(b, t, s) // isolate each punct
-                    }
-                },
+                class_runs_into::<{ mask::PUNCT }, 0, 0>,
+                out,
+            );
+        } else if self.behavior == Isolated {
+            // isolate each punct
+            scratch.split_on_tags(
+                text.as_bytes(),
+                class_runs_into::<0, { mask::PUNCT }, 0>,
                 out,
             );
         } else {
@@ -94,7 +101,9 @@ mod tests {
     fn pretokenize(behavior: SplitDelimiterBehavior, text: &str) -> Vec<(&str, (u32, u32))> {
         let pretok = Punctuation::new(behavior);
         let mut splits = Vec::new();
-        crate::pipeline::PreTokenizer::pre_tokenize(&pretok, text, &mut splits).unwrap();
+        let mut scratch = PreTokenizerScratch::default();
+        crate::pipeline::PreTokenizer::pre_tokenize(&pretok, text, &mut scratch, &mut splits)
+            .unwrap();
         splits
             .iter()
             .map(|s| (&text[s.range()], (s.start, s.end)))

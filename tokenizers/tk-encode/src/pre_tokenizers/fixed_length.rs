@@ -51,7 +51,12 @@ impl PreTokenizer for FixedLength {
 }
 
 impl pipeline::PreTokenizer for FixedLength {
-    fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Span>) -> Result<()> {
+    fn pre_tokenize(
+        &self,
+        text: &str,
+        _scratch: &mut pipeline::PreTokenizerScratch,
+        out: &mut Vec<pipeline::Span>,
+    ) -> Result<()> {
         if text.is_empty() {
             return Ok(());
         }
@@ -91,8 +96,10 @@ mod tests {
 
     fn pretokenize(length: usize, text: &str) -> Vec<(&str, (u32, u32))> {
         let pretok = FixedLength { length };
+        let mut scratch = pipeline::PreTokenizerScratch::default();
         let mut splits = Vec::new();
-        crate::pipeline::PreTokenizer::pre_tokenize(&pretok, text, &mut splits).unwrap();
+        crate::pipeline::PreTokenizer::pre_tokenize(&pretok, text, &mut scratch, &mut splits)
+            .unwrap();
         splits
             .iter()
             .map(|s| (&text[s.range()], (s.start, s.end)))

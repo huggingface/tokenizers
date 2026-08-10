@@ -5,13 +5,14 @@ use std::{
 
 use atomsplit::fsm::Span;
 
-use crate::pipeline::{Model, PipelineModel, PipelineModelScratch};
+use crate::pipeline::{Model, PipelineModel, PipelineModelScratch, PreTokenizerScratch};
 
 pub trait ModelScratch {}
 
 #[derive(Default)]
 pub(crate) struct EncodeScratch {
     pub(crate) model: PipelineModelScratch,
+    pub(crate) split: PreTokenizerScratch,
     pub(crate) pre_tokens: Vec<Span>,
 }
 
@@ -35,6 +36,7 @@ impl ScratchPool {
     pub(crate) fn get<'a>(&'a self, model: &PipelineModel) -> ScratchGuard<'a> {
         self.get_with(|| EncodeScratch {
             model: model.init_scratch(),
+            split: PreTokenizerScratch::default(),
             pre_tokens: Vec::new(),
         })
     }
