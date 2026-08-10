@@ -310,7 +310,7 @@ impl pipeline::Model for PipelineBPE {
         }
 
         if let Some(id) = self.fold_id(sequence) {
-            output.push(PipelineToken { id });
+            output.push(PipelineToken::from(id));
             return Ok(());
         }
 
@@ -324,7 +324,7 @@ impl pipeline::Model for PipelineBPE {
         let insert_at = if let Some(cache) = word_cache.as_mut() {
             match cache.lookup(sequence.as_bytes()) {
                 Lookup::Hit(ids) => {
-                    output.extend(ids.iter().map(|&id| PipelineToken { id }));
+                    output.extend(ids.iter().copied().map(PipelineToken::from));
                     return Ok(());
                 }
                 Lookup::Miss(at) => Some(at),
@@ -336,13 +336,15 @@ impl pipeline::Model for PipelineBPE {
         let start = output.len();
         self.merge_word(sequence, symbols, queue);
         // the merge engines work in internal ids; `unmap` takes them back to the vocab's own ids
-        output.extend(symbols.iter().map(|&symbol| PipelineToken {
-            id: self.tables.unmap.at(symbol as usize),
-        }));
+        output.extend(
+            symbols
+                .iter()
+                .map(|&symbol| PipelineToken::from(self.tables.unmap.at(symbol as usize))),
+        );
         if let Some(cache) = word_cache.as_mut()
             && let Some(at) = insert_at
         {
-            cache.insert(at, output[start..].iter().map(|token| token.id));
+            cache.insert(at, output[start..].iter().map(|token| token.id()));
         }
 
         Ok(())
@@ -384,7 +386,7 @@ impl pipeline::Model for PipelineBPE {
             // reach the cache. Probing the cache first would populate it with words the fold
             // already serves for free, and the two paths would disagree about what it holds.
             if let Some(id) = self.fold_id(sequence) {
-                output.push(PipelineToken { id });
+                output.push(PipelineToken::from(id));
                 continue;
             }
 
@@ -392,7 +394,7 @@ impl pipeline::Model for PipelineBPE {
             if let Some(cache) = word_cache.as_mut() {
                 match cache.lookup(sequence.as_bytes()) {
                     Lookup::Hit(ids) => {
-                        output.extend(ids.iter().map(|&id| PipelineToken { id }));
+                        output.extend(ids.iter().copied().map(PipelineToken::from));
                         continue;
                     }
                     Lookup::Miss(at) => placement = Some(at),
@@ -402,13 +404,15 @@ impl pipeline::Model for PipelineBPE {
             let start = output.len();
             self.merge_word(sequence, symbols, queue);
             // the merge engines work in internal ids; `unmap` takes them back to the vocab's own ids
-            output.extend(symbols.iter().map(|&symbol| PipelineToken {
-                id: self.tables.unmap.at(symbol as usize),
-            }));
+            output.extend(
+                symbols
+                    .iter()
+                    .map(|&symbol| PipelineToken::from(self.tables.unmap.at(symbol as usize))),
+            );
             if let Some(cache) = word_cache.as_mut()
                 && let Some(at) = placement
             {
-                cache.insert(at, output[start..].iter().map(|token| token.id));
+                cache.insert(at, output[start..].iter().map(|token| token.id()));
             }
         }
         Ok(())
@@ -462,7 +466,7 @@ mod fold_tests {
                 .unwrap()
                 .remove(0)
                 .iter()
-                .map(|t| t.id)
+                .map(|t| t.id())
                 .collect();
             assert_eq!(want, got, "the fold changed the ids for {text:?}");
         }
@@ -504,7 +508,7 @@ mod fold_tests {
             .unwrap()
             .remove(0)
             .iter()
-            .map(|t| t.id)
+            .map(|t| t.id())
             .collect();
         assert_eq!(want.len(), got.len(), "token count differs");
         assert_eq!(want, got, "the batched path changed the ids");

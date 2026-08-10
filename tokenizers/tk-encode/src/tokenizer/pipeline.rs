@@ -19,7 +19,7 @@ use crate::vocab::bucket_added_vocabulary::{
     AddedToken as BucketAddedToken, AddedVocabulary as BucketAddedVocabulary,
 };
 use crate::{
-    DecoderWrapper, ModelWrapper, PostProcessorWrapper, PreTokenizerWrapper, Token, Tokenizer,
+    DecoderWrapper, ModelWrapper, PostProcessorWrapper, PreTokenizerWrapper, Tokenizer,
     normalizers::{NormalizerWrapper, metaspace::MetaspaceNormalizer},
     pre_tokenizers::{
         bert::BertPreTokenizer,
@@ -246,16 +246,16 @@ impl TryFrom<&PostProcessorWrapper> for PipelinePostProcessor {
                 cls: (_, cls_id),
                 sep: (_, sep_id),
             }) => Ok(Self {
-                prefix: vec![PipelineToken { id: *cls_id }].into_boxed_slice(),
-                suffix: vec![PipelineToken { id: *sep_id }].into_boxed_slice(),
+                prefix: vec![PipelineToken::from(*cls_id)].into_boxed_slice(),
+                suffix: vec![PipelineToken::from(*sep_id)].into_boxed_slice(),
             }),
             PostProcessorWrapper::Roberta(RobertaProcessing {
                 cls: (_, cls_id),
                 sep: (_, sep_id),
                 ..
             }) => Ok(Self {
-                prefix: vec![PipelineToken { id: *cls_id }].into_boxed_slice(),
-                suffix: vec![PipelineToken { id: *sep_id }].into_boxed_slice(),
+                prefix: vec![PipelineToken::from(*cls_id)].into_boxed_slice(),
+                suffix: vec![PipelineToken::from(*sep_id)].into_boxed_slice(),
             }),
             PostProcessorWrapper::Template(pp) => {
                 // todo: handle pair template
@@ -281,7 +281,7 @@ impl TryFrom<&PostProcessorWrapper> for PipelinePostProcessor {
                                     "post-processor not supported: Template references unknown special token `{token_string}`"
                                 )
                             })?;
-                            let token_ids = special.ids().iter().map(|&id| PipelineToken { id });
+                            let token_ids = special.ids().iter().copied().map(PipelineToken::from);
                             if seen_sequence {
                                 suffix.extend(token_ids);
                             } else {
@@ -330,14 +330,40 @@ impl TryFrom<&PostProcessorWrapper> for PipelinePostProcessor {
 
 /// An output token. Carries only the vocabulary `id`, since offsets and the token
 /// string are dropped, which is all an encode-only caller needs.
-#[derive(Debug, Clone, Copy)]
-pub struct PipelineToken {
-    pub id: u32,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct PipelineToken(u32);
+
+impl PipelineToken {
+    /// The vocabulary id this token stands for.
+    pub const fn id(self) -> u32 {
+        self.0
+    }
 }
 
-impl From<Token> for PipelineToken {
-    fn from(value: Token) -> Self {
-        Self { id: value.id }
+impl From<u32> for PipelineToken {
+    fn from(value: u32) -> Self {
+        Self(value)
+    }
+}
+
+impl From<PipelineToken> for u32 {
+    fn from(value: PipelineToken) -> Self {
+        value.0
+    }
+}
+
+/// Compares a token against a bare id, so a caller can assert against `[u32]`
+/// without mapping the ids out first.
+impl PartialEq<u32> for PipelineToken {
+    fn eq(&self, id: &u32) -> bool {
+        self.0 == *id
+    }
+}
+
+impl PartialEq<PipelineToken> for u32 {
+    fn eq(&self, token: &PipelineToken) -> bool {
+        *self == token.0
     }
 }
 
@@ -1005,7 +1031,7 @@ impl PipelineTokenizer {
         for segment in SpecialSegmentIterator::new(input, &self.added_vocabulary, false) {
             match segment {
                 Segment::SpecialToken(token) => {
-                    output.push(PipelineToken { id: token });
+                    output.push(PipelineToken::from(token));
                 }
                 Segment::Text(chunk) => {
                     let normalized: Cow<str> = if STAGE >= Self::STAGE_NORMALIZE {
@@ -1020,7 +1046,7 @@ impl PipelineTokenizer {
                     {
                         match segment {
                             Segment::SpecialToken(token) => {
-                                output.push(PipelineToken { id: token });
+                                output.push(PipelineToken::from(token));
                             }
                             Segment::Text(normalized_chunk) => {
                                 if STAGE >= Self::STAGE_SPLIT {
@@ -1485,18 +1511,13 @@ mod tests {
         tok.with_normalizer(Some(normalizer)).unwrap();
         tok.with_pre_tokenizer(Some(pre_tokenizer));
 
-        let ids: Vec<u32> = PipelineTokenizer::try_from(&tok)
+        let encoded = PipelineTokenizer::try_from(&tok)
             .unwrap()
             .encode("hello world", false)
             .wait()
-            .unwrap()
-            .first()
-            .unwrap()
-            .iter()
-            .map(|t| t.id)
-            .collect();
+            .unwrap();
         // Not the unk id: both the `Replace` and the `Split` really ran on the literal path.
-        assert_eq!(ids, [1, 2]);
+        assert_eq!(*encoded.first().unwrap(), [1, 2]);
         assert_pipeline_matches_reference(&tok, "hello world");
     }
 
@@ -1598,7 +1619,7 @@ mod tests {
                 .first()
                 .unwrap()
                 .iter()
-                .map(|t| t.id)
+                .map(|t| t.id())
                 .collect();
             assert_eq!(expected, got, "add_special_tokens={add_special_tokens}");
         }
@@ -1622,7 +1643,7 @@ mod tests {
             enc.first()
                 .unwrap()
                 .iter()
-                .map(|t| t.id)
+                .map(|t| t.id())
                 .collect::<Vec<_>>()
         };
         assert_eq!(
@@ -1713,7 +1734,7 @@ mod tests {
             .first()
             .unwrap()
             .iter()
-            .map(|t| t.id)
+            .map(|t| t.id())
             .collect();
         assert_eq!(ids, vec![102, 100, 2, 3, 101, 103]);
     }
@@ -1870,7 +1891,7 @@ mod tests {
             .unwrap()
             .remove(0)
             .iter()
-            .map(|t| t.id)
+            .map(|t| t.id())
             .collect();
         assert_eq!(want, vec![7]);
 
@@ -1881,7 +1902,7 @@ mod tests {
                 .unwrap()
                 .remove(0)
                 .iter()
-                .map(|t| t.id)
+                .map(|t| t.id())
                 .collect::<Vec<_>>()
                 == want
         });

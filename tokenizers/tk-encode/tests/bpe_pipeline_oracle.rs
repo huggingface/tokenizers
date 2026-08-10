@@ -68,7 +68,7 @@ fn check_model(name: &str, path: &str) {
                 .first()
                 .unwrap()
                 .iter()
-                .map(|t| t.id)
+                .map(|t| t.id())
                 .collect();
             assert_eq!(
                 expected.get_ids(),

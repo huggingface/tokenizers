@@ -220,9 +220,9 @@ impl pipeline::Model for WordLevel {
         output: &mut Vec<pipeline::PipelineToken>,
     ) -> Result<()> {
         if let Some(&id) = self.vocab.get(sequence) {
-            output.push(PipelineToken { id })
+            output.push(PipelineToken::from(id))
         } else if let Some(&unk_id) = self.vocab.get(&self.unk_token) {
-            output.push(PipelineToken { id: unk_id });
+            output.push(PipelineToken::from(unk_id));
         } else {
             return Err(Box::new(Error::MissingUnkToken));
         }
