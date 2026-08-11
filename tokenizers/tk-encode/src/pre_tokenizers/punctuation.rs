@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::pipeline::{self, PreTokenizerScratch};
-use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
+use crate::tokenizer::{PreTokenizer, Result, SplitDelimiterBehavior};
 use crate::utils::macro_rules_attribute;
 use SplitDelimiterBehavior::{Isolated, Removed};
 use atomsplit::classify::mask;
@@ -35,11 +35,7 @@ impl Default for Punctuation {
     }
 }
 
-impl PreTokenizer for Punctuation {
-    fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
-        pretokenized.split(|_, s| s.split(is_punc, self.behavior))
-    }
-}
+impl PreTokenizer for Punctuation {}
 
 // SAFETY: both routes cut only at character boundaries of `text`.
 // The class-runs route is an `atomsplit` fsm.
@@ -77,29 +73,6 @@ unsafe impl pipeline::PreTokenizer for Punctuation {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{OffsetReferential, OffsetType};
-
-    #[test]
-    fn punctuation_basic() {
-        let pretok = Punctuation::default();
-        let mut pretokenized: PreTokenizedString = "Hey friend!     How are you?!?".into();
-        pretok.pre_tokenize(&mut pretokenized).unwrap();
-        assert_eq!(
-            pretokenized
-                .get_splits(OffsetReferential::Original, OffsetType::Byte)
-                .into_iter()
-                .map(|(s, o, _)| (s, o))
-                .collect::<Vec<_>>(),
-            vec![
-                ("Hey friend", (0, 10)),
-                ("!", (10, 11)),
-                ("     How are you", (11, 27)),
-                ("?", (27, 28)),
-                ("!", (28, 29)),
-                ("?", (29, 30)),
-            ]
-        );
-    }
 
     fn pretokenize(behavior: SplitDelimiterBehavior, text: &str) -> Vec<(&str, (u32, u32))> {
         let pretok = Punctuation::new(behavior);

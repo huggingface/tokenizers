@@ -1,10 +1,10 @@
 use crate::pipeline;
-use crate::utils::{GptFsm, GptFsmPattern, SysRegex, gpt_fsm};
+use crate::utils::{GptFsm, SysRegex, gpt_fsm};
 use atomsplit::literal::Literal;
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::tokenizer::{
-    PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior,
+    PreTokenizer, Result, SplitDelimiterBehavior,
     pattern::{Invert, Pattern},
 };
 
@@ -142,41 +142,7 @@ impl Split {
     }
 }
 
-impl PreTokenizer for Split {
-    fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
-        match &self.search {
-            Search::Literal(literal) => {
-                return if self.invert {
-                    pretokenized
-                        .split(|_, normalized| normalized.split(Invert(literal), self.behavior))
-                } else {
-                    pretokenized.split(|_, normalized| normalized.split(literal, self.behavior))
-                };
-            }
-            Search::Regex(regex) => {
-                return if self.invert {
-                    pretokenized
-                        .split(|_, normalized| normalized.split(Invert(regex), self.behavior))
-                } else {
-                    pretokenized.split(|_, normalized| normalized.split(regex, self.behavior))
-                };
-            }
-            Search::Unavailable => {}
-        }
-        // No way to search for the pattern: only a recognized GPT pattern in its canonical usage
-        // (Isolated, not inverted — how these regexes always ship) can split, via the native FSM.
-        let fsm = self
-            .fsm
-            .filter(|_| !self.invert && self.behavior == SplitDelimiterBehavior::Isolated)
-            .ok_or_else(|| -> crate::tokenizer::Error {
-                "this `Split` pattern needs a system-regex backend; enable the `fancy-regex` feature"
-                    .into()
-            })?;
-        pretokenized.split(|_, normalized| {
-            normalized.split(GptFsmPattern(fsm), SplitDelimiterBehavior::Isolated)
-        })
-    }
-}
+impl PreTokenizer for Split {}
 
 // SAFETY: both routes cut only at character boundaries of `text`. The native route is an `atomsplit`
 // fsm, see "What the spans guarantee" in its docs. The search route forwards the offsets of
@@ -232,92 +198,155 @@ unsafe impl pipeline::PreTokenizer for Split {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{OffsetReferential, OffsetType, PreTokenizer};
+
     use SplitDelimiterBehavior::*;
 
-    #[cfg(feature = "fancy-regex")] // needs a system-regex backend
-    #[test]
-    fn basic() {
-        let tests = vec![
-            (
-                Removed,
-                "How are you doing?",
-                vec![
-                    ("How", (0, 3)),
-                    ("are", (4, 7)),
-                    ("you", (8, 11)),
-                    ("doing", (12, 17)),
-                    ("?", (17, 18)),
-                ],
-            ),
-            (
-                Isolated,
-                "How are you doing?",
-                vec![
-                    ("How", (0, 3)),
-                    (" ", (3, 4)),
-                    ("are", (4, 7)),
-                    (" ", (7, 8)),
-                    ("you", (8, 11)),
-                    (" ", (11, 12)),
-                    ("doing", (12, 17)),
-                    ("?", (17, 18)),
-                ],
-            ),
-            (
-                MergedWithPrevious,
-                "How are you doing?",
-                vec![
-                    ("How ", (0, 4)),
-                    ("are ", (4, 8)),
-                    ("you ", (8, 12)),
-                    ("doing", (12, 17)),
-                    ("?", (17, 18)),
-                ],
-            ),
-            (
-                MergedWithNext,
-                "How are you doing?",
-                vec![
-                    ("How", (0, 3)),
-                    (" are", (3, 7)),
-                    (" you", (7, 11)),
-                    (" doing", (11, 17)),
-                    ("?", (17, 18)),
-                ],
-            ),
-            (
-                Contiguous,
-                "How are you doing?",
-                vec![
-                    ("How", (0, 3)),
-                    (" ", (3, 4)),
-                    ("are", (4, 7)),
-                    (" ", (7, 8)),
-                    ("you", (8, 11)),
-                    (" ", (11, 12)),
-                    ("doing?", (12, 18)),
-                ],
-            ),
-        ];
-
-        // use whitespace regex
-        let regex = SplitPattern::Regex(r"\w+|[^\w\s]+".into());
-
-        for (behavior, s, res) in tests {
-            let mut pretokenized = PreTokenizedString::from(s);
-            let pretok = Split::new(regex.clone(), behavior, true).unwrap();
-            pretok.pre_tokenize(&mut pretokenized).unwrap();
-            assert_eq!(
-                pretokenized
-                    .get_splits(OffsetReferential::Original, OffsetType::Byte)
-                    .into_iter()
-                    .map(|(s, o, _)| (s, o))
-                    .collect::<Vec<_>>(),
-                res
-            );
-        }
-    }
+    const GPT2_GOLDEN: &[(&str, (u32, u32))] = &[
+        ("The", (0, 3)),
+        (" quick", (3, 9)),
+        (" brown", (9, 15)),
+        (" fox", (15, 19)),
+        (" 123", (19, 23)),
+        ("!!!", (23, 26)),
+        (" ", (26, 27)),
+        (" double", (27, 34)),
+        (" ", (34, 35)),
+        (" spaces", (35, 42)),
+        ("\t", (42, 43)),
+        ("and", (43, 46)),
+        (" tabs", (46, 51)),
+        (".", (51, 52)),
+        (" don", (52, 56)),
+        ("'t", (56, 58)),
+        (" Naïve", (58, 65)),
+        (" café", (65, 71)),
+        (".", (71, 72)),
+        (" ", (72, 73)),
+    ];
+    const CL100K_GOLDEN: &[(&str, (u32, u32))] = &[
+        ("The", (0, 3)),
+        (" quick", (3, 9)),
+        (" brown", (9, 15)),
+        (" fox", (15, 19)),
+        (" ", (19, 20)),
+        ("123", (20, 23)),
+        ("!!!", (23, 26)),
+        (" ", (26, 27)),
+        (" double", (27, 34)),
+        (" ", (34, 35)),
+        (" spaces", (35, 42)),
+        ("\tand", (42, 46)),
+        (" tabs", (46, 51)),
+        (".", (51, 52)),
+        (" don", (52, 56)),
+        ("'t", (56, 58)),
+        (" Naïve", (58, 65)),
+        (" café", (65, 71)),
+        (".\n\n", (71, 74)),
+        ("世界", (74, 80)),
+        (" 안녕", (80, 87)),
+        (" ", (87, 88)),
+    ];
+    const O200K_GOLDEN: &[(&str, (u32, u32))] = &[
+        ("Mc", (0, 2)),
+        ("Donald's", (2, 10)),
+        (" i", (10, 12)),
+        ("Phone", (12, 17)),
+        (" SQLite", (17, 24)),
+        (" HELLOWorld", (24, 35)),
+        (" camel", (35, 41)),
+        ("Case", (41, 45)),
+        (" don't", (45, 51)),
+        (" I'll", (51, 56)),
+        (" We've", (56, 62)),
+        (" ", (62, 63)),
+        ("3", (63, 64)),
+        (".", (64, 65)),
+        ("14", (65, 67)),
+        (" café", (67, 73)),
+        (" Straße", (73, 81)),
+        (" 世界", (81, 88)),
+        (" 안녕", (88, 95)),
+        ("\n\n", (95, 97)),
+        (" ", (97, 98)),
+        (" Mixed", (98, 104)),
+        (" CASE", (104, 109)),
+        (" end", (109, 113)),
+        (".", (113, 114)),
+    ];
+    const TEKKEN_GOLDEN: &[(&str, (u32, u32))] = &[
+        ("Mc", (0, 2)),
+        ("Donald", (2, 8)),
+        ("'s", (8, 10)),
+        (" i", (10, 12)),
+        ("Phone", (12, 17)),
+        (" SQLite", (17, 24)),
+        (" HELLOWorld", (24, 35)),
+        (" camel", (35, 41)),
+        ("Case", (41, 45)),
+        (" don", (45, 49)),
+        ("'t", (49, 51)),
+        (" I", (51, 53)),
+        ("'ll", (53, 56)),
+        (" We", (56, 59)),
+        ("'ve", (59, 62)),
+        (" ", (62, 63)),
+        ("3", (63, 64)),
+        (".", (64, 65)),
+        ("1", (65, 66)),
+        ("4", (66, 67)),
+        ("1", (67, 68)),
+        ("5", (68, 69)),
+        ("9", (69, 70)),
+        (" café", (70, 76)),
+        (" Straße", (76, 84)),
+        (" 世界", (84, 91)),
+        (" 안녕", (91, 98)),
+        ("\n\n", (98, 100)),
+        (" ", (100, 101)),
+        (" path", (101, 106)),
+        ("/to", (106, 109)),
+        ("/file", (109, 114)),
+        (" Mixed", (114, 120)),
+        (" CASE", (120, 125)),
+        (" end", (125, 129)),
+        (".", (129, 130)),
+    ];
+    const QWEN2_GOLDEN: &[(&str, (u32, u32))] = &[
+        ("abc", (0, 3)),
+        (" ", (3, 4)),
+        ("1", (4, 5)),
+        ("2", (5, 6)),
+        ("3", (6, 7)),
+        ("4", (7, 8)),
+        ("5", (8, 9)),
+        (" don", (9, 13)),
+        ("'t", (13, 15)),
+        (" A", (15, 17)),
+        ("1", (17, 18)),
+        ("B", (18, 19)),
+        ("2", (19, 20)),
+        (" ", (20, 21)),
+        ("3", (21, 22)),
+        (".", (22, 23)),
+        ("1", (23, 24)),
+        ("4", (24, 25)),
+        (" ", (25, 26)),
+        ("1", (26, 27)),
+        ("0", (27, 28)),
+        ("0", (28, 29)),
+        ("%%", (29, 31)),
+        (" ", (31, 32)),
+        (" double", (32, 39)),
+        (" ", (39, 40)),
+        (" spaces", (40, 47)),
+        ("\ttab", (47, 51)),
+        (".\n\n", (51, 54)),
+        ("世界", (54, 60)),
+        (" ", (60, 61)),
+        ("4", (61, 62)),
+        ("2", (62, 63)),
+    ];
 
     fn pipeline_split(
         pattern: SplitPattern,
@@ -338,7 +367,7 @@ mod tests {
 
     #[cfg(feature = "fancy-regex")] // needs a system-regex backend
     #[test]
-    fn pipeline_matches_legacy() {
+    fn splits_by_behavior() {
         let regex = SplitPattern::Regex(r"\w+|[^\w\s]+".into());
         #[allow(clippy::type_complexity)]
         let cases: Vec<(SplitDelimiterBehavior, Vec<(&str, (u32, u32))>)> = vec![
@@ -428,7 +457,7 @@ mod tests {
     }
 
     #[test]
-    fn pipeline_gpt2_uses_fsm_and_matches_legacy() {
+    fn pipeline_gpt2_uses_fsm_and_matches_golden() {
         // The gpt2 pattern is recognized -> the pipeline path routes to the native
         // atomsplit FSM; its output must equal the legacy fancy-regex path.
         let gpt2 = atomsplit::regexes::GPT2;
@@ -436,23 +465,14 @@ mod tests {
         let pretok = Split::new(SplitPattern::Regex(gpt2.into()), Isolated, false).unwrap();
         assert!(pretok.fsm.is_some(), "gpt2 pattern should be recognized");
 
-        // legacy reference
-        let mut pre = PreTokenizedString::from(corpus);
-        pretok.pre_tokenize(&mut pre).unwrap();
-        let legacy: Vec<(&str, (u32, u32))> = pre
-            .get_splits(OffsetReferential::Original, OffsetType::Byte)
-            .into_iter()
-            .map(|(s, o, _)| (s, (o.0 as u32, o.1 as u32)))
-            .collect();
-
         assert_eq!(
             pipeline_split(SplitPattern::Regex(gpt2.into()), Isolated, false, corpus),
-            legacy,
+            GPT2_GOLDEN,
         );
     }
 
     #[test]
-    fn pipeline_cl100k_llama3_uses_fsm_and_matches_legacy() {
+    fn pipeline_cl100k_llama3_uses_fsm_and_matches_golden() {
         // Llama-3's EXACT pre_tokenizer regex (from data/llama-3-tokenizer.json) → recognized → routes
         // to fsm_cl100k. Output must equal the legacy SysRegex Isolated split, byte-for-byte.
         let cl100k = atomsplit::regexes::CL100K;
@@ -464,22 +484,14 @@ mod tests {
             "cl100k / Llama-3 pattern should route to the native FSM"
         );
 
-        let mut pre = PreTokenizedString::from(corpus);
-        pretok.pre_tokenize(&mut pre).unwrap();
-        let legacy: Vec<(&str, (u32, u32))> = pre
-            .get_splits(OffsetReferential::Original, OffsetType::Byte)
-            .into_iter()
-            .map(|(s, o, _)| (s, (o.0 as u32, o.1 as u32)))
-            .collect();
-
         assert_eq!(
             pipeline_split(SplitPattern::Regex(cl100k.into()), Isolated, false, corpus),
-            legacy,
+            CL100K_GOLDEN,
         );
     }
 
     #[test]
-    fn pipeline_o200k_uses_fsm_and_matches_legacy() {
+    fn pipeline_o200k_uses_fsm_and_matches_golden() {
         // GPT-4o's EXACT pre_tokenization regex → recognized → routes to fsm_o200k. Output must equal the
         // legacy SysRegex Isolated split, byte-for-byte. Corpus stresses the case-aware letter split:
         // camelCase, ALLCAPS→word, McDonald's-style, contractions, accented Ll (é/ß), CJK (caseless).
@@ -491,22 +503,14 @@ mod tests {
             "o200k / GPT-4o pattern should route to the native FSM"
         );
 
-        let mut pre = PreTokenizedString::from(corpus);
-        pretok.pre_tokenize(&mut pre).unwrap();
-        let legacy: Vec<(&str, (u32, u32))> = pre
-            .get_splits(OffsetReferential::Original, OffsetType::Byte)
-            .into_iter()
-            .map(|(s, o, _)| (s, (o.0 as u32, o.1 as u32)))
-            .collect();
-
         assert_eq!(
             pipeline_split(SplitPattern::Regex(o200k.into()), Isolated, false, corpus),
-            legacy,
+            O200K_GOLDEN,
         );
     }
 
     #[test]
-    fn pipeline_tekken_uses_fsm_and_matches_legacy() {
+    fn pipeline_tekken_uses_fsm_and_matches_golden() {
         // Mistral's tekken regex (mistral-small-4) → recognized → routes to fsm_tekken. Same corpus
         // shape as o200k, whose grammar it shares: the differences it must get right are apostrophes
         // (no contraction suffix, so `'s` starts a new token) and one token per digit.
@@ -519,22 +523,14 @@ mod tests {
             "tekken / mistral pattern should route to the native FSM"
         );
 
-        let mut pre = PreTokenizedString::from(corpus);
-        pretok.pre_tokenize(&mut pre).unwrap();
-        let legacy: Vec<(&str, (u32, u32))> = pre
-            .get_splits(OffsetReferential::Original, OffsetType::Byte)
-            .into_iter()
-            .map(|(s, o, _)| (s, (o.0 as u32, o.1 as u32)))
-            .collect();
-
         assert_eq!(
             pipeline_split(SplitPattern::Regex(tekken.into()), Isolated, false, corpus),
-            legacy,
+            TEKKEN_GOLDEN,
         );
     }
 
     #[test]
-    fn pipeline_qwen2_uses_fsm_and_matches_legacy() {
+    fn pipeline_qwen2_uses_fsm_and_matches_golden() {
         // Qwen2's regex is cl100k character-for-character EXCEPT rule 3 is `\p{N}` (each digit its own
         // token) instead of `\p{N}{1,3}`. The structural recognizer extracts digit_cap=1 → fsm_cl100k_cap,
         // so it unrolls (no per-tokenizer exact-string entry). Corpus stresses multi-digit runs.
@@ -547,33 +543,15 @@ mod tests {
             "Qwen2 pattern should route to the cl100k FSM with digit cap 1"
         );
 
-        let mut pre = PreTokenizedString::from(corpus);
-        pretok.pre_tokenize(&mut pre).unwrap();
-        let legacy: Vec<(&str, (u32, u32))> = pre
-            .get_splits(OffsetReferential::Original, OffsetType::Byte)
-            .into_iter()
-            .map(|(s, o, _)| (s, (o.0 as u32, o.1 as u32)))
-            .collect();
-
         assert_eq!(
             pipeline_split(SplitPattern::Regex(qwen2.into()), Isolated, false, corpus),
-            legacy,
+            QWEN2_GOLDEN,
         );
     }
 
-    /// The goal of the literal path: a plain string pattern splits with no regex backend, on both the
-    /// legacy and the pipeline path.
+    /// The goal of the literal path: a plain string pattern splits with no regex backend.
     #[test]
     fn a_string_pattern_needs_no_backend() {
-        let pretok = Split::new("-", SplitDelimiterBehavior::Removed, false).unwrap();
-        let mut legacy = PreTokenizedString::from("a-b--c");
-        pretok.pre_tokenize(&mut legacy).unwrap();
-        let words: Vec<&str> = legacy
-            .get_splits(OffsetReferential::Original, OffsetType::Byte)
-            .iter()
-            .map(|(word, _, _)| *word)
-            .collect();
-        assert_eq!(words, ["a", "b", "c"]);
         assert_eq!(
             pipeline_split(
                 SplitPattern::String("-".into()),
@@ -596,47 +574,46 @@ mod tests {
         assert_eq!(serde_json::to_string(&split).unwrap(), split_s);
     }
 
+    // A `Regex` pattern and the `String` pattern it is equivalent to must split alike: on a
+    // single-space input `\s+` and " " match the same spans, so the literal path and the regex
+    // path have to agree.
     #[cfg(feature = "fancy-regex")] // needs a system-regex backend
     #[test]
     fn regex_string() {
-        let mut pretok_str_for_regex = PreTokenizedString::from("Hey, man!");
-        let mut pretok_str_for_string = pretok_str_for_regex.clone();
-
-        // pre-tokenizer splits on " " - one from Regex, one from string
-        let pretokenizer_regex = Split::new(
-            SplitPattern::Regex(r"\s+".into()),
-            SplitDelimiterBehavior::Removed,
-            false,
-        )
-        .unwrap();
-        let pretokenizer_string = Split::new(" ", SplitDelimiterBehavior::Removed, false).unwrap();
-
-        pretokenizer_regex
-            .pre_tokenize(&mut pretok_str_for_regex)
-            .unwrap();
-        pretokenizer_string
-            .pre_tokenize(&mut pretok_str_for_string)
-            .unwrap();
-
-        assert_eq!(pretok_str_for_regex, pretok_str_for_string);
+        assert_eq!(
+            pipeline_split(
+                SplitPattern::Regex(r"\s+".into()),
+                SplitDelimiterBehavior::Removed,
+                false,
+                "Hey, man!"
+            ),
+            pipeline_split(
+                SplitPattern::String(" ".into()),
+                SplitDelimiterBehavior::Removed,
+                false,
+                "Hey, man!"
+            ),
+        );
     }
 
+    // Splitting on " " and inverted-splitting on "Hello" carve the same input the same way:
+    // what one treats as delimiter the other treats as content.
     #[test]
     fn invert() {
-        let mut pretok_str = PreTokenizedString::from("Hello Hello Hello");
-        let mut pretok_str_for_invert = pretok_str.clone();
-
-        // one pre-tokenizer splits on " " - one splits inverted on "Hello"
-        let pretokenizer = Split::new(" ", SplitDelimiterBehavior::Removed, false).unwrap();
-        let pretokenizer_invert =
-            Split::new("Hello", SplitDelimiterBehavior::Removed, true).unwrap();
-
-        pretokenizer.pre_tokenize(&mut pretok_str).unwrap();
-        pretokenizer_invert
-            .pre_tokenize(&mut pretok_str_for_invert)
-            .unwrap();
-
-        assert_eq!(pretok_str, pretok_str_for_invert);
+        assert_eq!(
+            pipeline_split(
+                SplitPattern::String(" ".into()),
+                SplitDelimiterBehavior::Removed,
+                false,
+                "Hello Hello Hello"
+            ),
+            pipeline_split(
+                SplitPattern::String("Hello".into()),
+                SplitDelimiterBehavior::Removed,
+                true,
+                "Hello Hello Hello"
+            ),
+        );
     }
 
     #[cfg(feature = "fancy-regex")] // needs a system-regex backend

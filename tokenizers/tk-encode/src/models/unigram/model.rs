@@ -5,7 +5,7 @@ use super::{
 use crate::utils::word_cache::{Lookup, WordCache};
 use crate::{
     pipeline::{self, PipelineToken},
-    tokenizer::{Model, Result, Token},
+    tokenizer::{Model, Result},
 };
 use crate::{
     utils::cache::{Cache, MAX_LENGTH},
@@ -458,42 +458,6 @@ impl Model for Unigram {
         self.vocab.len()
     }
 
-    fn tokenize(&self, sentence: &str) -> Result<Vec<Token>> {
-        let str_tokens = self.encode(sentence)?;
-        let mut offset = 0;
-        let mut tokens = Vec::with_capacity(str_tokens.len());
-        for string in str_tokens {
-            let len = string.len();
-            let offsets = (offset, offset + len);
-            let id: u32 = match self.token_to_ids.token_to_id(&string) {
-                Some(id) => id,
-                None => {
-                    if self.byte_fallback {
-                        let byte_tokens: Option<Vec<_>> = string
-                            .bytes()
-                            .map(|byte| -> Option<Token> {
-                                let byte_string = format!("<0x{byte:02X}>");
-                                let id = self.token_to_ids.token_to_id(&byte_string);
-                                id.map(|id| Token::new(id, byte_string, (offset, offset + len)))
-                            })
-                            .collect();
-                        if let Some(byte_tokens) = byte_tokens {
-                            for token in byte_tokens {
-                                tokens.push(token);
-                            }
-                            offset += len;
-                            continue;
-                        }
-                    }
-                    self.unk_id.ok_or(UnigramError::MissingUnkId)? as u32
-                }
-            };
-            offset += len;
-            tokens.push(Token::new(id, string, offsets));
-        }
-        Ok(tokens)
-    }
-
     fn token_to_id(&self, token: &str) -> Option<u32> {
         self.token_to_ids.token_to_id(token)
     }
@@ -738,25 +702,11 @@ mod tests {
             ("<0xA9>".to_string(), -0.03),
         ];
         let unigram = Unigram::from(sentencepieces, Some(0), true).unwrap();
-        let tokens: Vec<Token> = unigram.tokenize("é").unwrap();
-        assert_eq!(
-            tokens,
-            [
-                Token {
-                    id: 1,
-                    value: "<0xC3>".to_string(),
-                    offsets: (0, 2)
-                },
-                Token {
-                    id: 2,
-                    value: "<0xA9>".to_string(),
-                    offsets: (0, 2)
-                }
-            ]
-        );
+        let mut scratch = pipeline::Model::init_scratch(&unigram);
+        assert_eq!(pipeline_ids(&unigram, "é", &mut scratch), vec![1, 2]);
 
-        let tokens = unigram.tokenize("?é").unwrap();
-        assert_eq!(tokens[0].id, 0);
+        // '?' is not in the vocab and has no byte token either, so it takes the unk
+        assert_eq!(pipeline_ids(&unigram, "?é", &mut scratch)[0], 0);
     }
 
     /// Ids 0..=8 are `<unk>`, `a`, `b`, `c`, `d`, `cd`, `ab`, `abc`, `abcd`.

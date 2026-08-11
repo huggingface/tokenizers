@@ -1,8 +1,6 @@
-use crate::{Normalizer, pipeline};
+use crate::pipeline;
 
-use super::{
-    Model, NormalizedString, Offsets, PreTokenizedString, Result, Token, normalizer::Range,
-};
+use super::{Model, NormalizedString, Offsets, Result, Token, normalizer::Range};
 use ahash::{AHashMap, AHashSet};
 use daachorse::{DoubleArrayAhoCorasick, DoubleArrayAhoCorasickBuilder, MatchKind};
 use regex::Regex;
@@ -510,55 +508,6 @@ impl AddedVocabulary {
             })
             .collect()
     }
-
-    /// Extract the additional vocabulary from the given sentence, normalizing it along the way.
-    ///
-    /// Some tokens should match against their normalized representation, as well as the
-    /// non-normalized one. For example, when we expect to extract the token `yesterday` in the
-    /// input sentence `I read a book Yesterday`, if the normalizer is supposed to lowercase
-    /// everything, we expect a match.
-    pub fn extract_and_normalize<N: Normalizer>(
-        &self,
-        normalizer: Option<&N>,
-        sequence: &str,
-    ) -> PreTokenizedString {
-        let mut pretokenized: PreTokenizedString = sequence.into();
-
-        // 1. We extract all the non-normalized tokens from the non-normalized string
-        pretokenized
-            .split(|_, sequence| Ok(self.split_with_indices(sequence, &self.split_trie)))
-            .expect("AddedVocabulary bad split");
-
-        // <s> normalized = False
-        // "I read a book   <s>Hey" -> "I read a book", "   <s>", "Hey"
-
-        // </s> normalized = True -> "▁</s>"
-        // "I read a book</s>Hey" -> "I read a book</s>Hey"
-
-        // Day normalized = True -> "Day"
-        // "I read a book monday" -> "I read a book monday"
-
-        // [DAY] normalized = False -> "Day"
-        // "I read a [DAY] monday" -> "I read a " "[DAY]", "book monday"
-        //                                         320055
-        // 2. Then extract the normalized tokens from the normalized pieces of the string
-        pretokenized
-            .split(|_, mut sequence| {
-                normalizer.map(|n| n.normalize(&mut sequence));
-                Ok(self.split_with_indices(sequence, &self.split_normalized_trie))
-            })
-            .expect("AddedVocabulary bad split");
-
-        // ["I read a book", "   <s>", "Hey"] -> ["▁I read a book", "▁   <s>", "▁Hey"]
-        // ["▁I read a book", "▁   <s>", "▁Hey"] -> [.., "▁   ", "<s>", "▁Hey"]
-
-        // </s> normalized = True -> "▁</s>"
-        // "I read a book</s>Hey" -> ["▁I read a book", "<","/","s",">", "Hey"]
-
-        // "I read a " "[DAY]", "book monday" -> "i read a " "[day]", "book monday"
-
-        pretokenized
-    }
 }
 
 impl Default for AddedVocabulary {
@@ -605,9 +554,9 @@ impl Serialize for AddedVocabulary {
 mod tests {
     use super::*;
     use crate::normalizers::NormalizerWrapper;
-    use crate::normalizers::byte_level::ByteLevel as ByteLevelNormalizer;
+
+    use crate::Result;
     use crate::normalizers::utils::Lowercase;
-    use crate::{OffsetReferential, OffsetType, Result, Token};
     use std::collections::HashMap;
     use std::path::{Path, PathBuf};
 
@@ -635,25 +584,7 @@ mod tests {
         }
     }
 
-    fn simplify_output(result: &'_ PreTokenizedString) -> Vec<(&'_ str, Option<Vec<u32>>)> {
-        result
-            .get_splits(OffsetReferential::Original, OffsetType::Byte)
-            .into_iter()
-            .map(|(s, _, tokens)| {
-                (
-                    s,
-                    tokens
-                        .as_ref()
-                        .map(|t| t.iter().map(|t| t.id).collect::<Vec<_>>()),
-                )
-            })
-            .collect::<Vec<_>>()
-    }
-
     impl Model for ModelMock {
-        fn tokenize(&self, _sequence: &str) -> Result<Vec<Token>> {
-            unimplemented!()
-        }
         fn token_to_id(&self, token: &str) -> Option<u32> {
             self.vocab.get(token).copied()
         }
@@ -808,269 +739,12 @@ mod tests {
     }
 
     #[test]
-    fn can_extract_added_tokens() {
-        // Is able to extract both normal and special tokens
-        let model = ModelMock::new(&[]);
-        let mut vocab = AddedVocabulary::new();
-        let normalizer: Option<&NormalizerWrapper> = None;
-
-        vocab
-            .add_tokens(
-                [
-                    AddedToken::from("my", false),
-                    AddedToken::from("name", false),
-                ],
-                &model,
-                normalizer,
-            )
-            .unwrap();
-        vocab
-            .add_special_tokens(
-                [
-                    AddedToken::from("[CLS]", true),
-                    AddedToken::from("[SEP]", true),
-                ],
-                &model,
-                normalizer,
-            )
-            .unwrap();
-
-        let result = vocab.extract_and_normalize(normalizer, "[CLS] My name is Anthony [SEP]");
-        assert_eq!(
-            result
-                .get_splits(OffsetReferential::Original, OffsetType::Byte)
-                .into_iter()
-                .map(|(s, _, tokens)| (
-                    s,
-                    tokens
-                        .as_ref()
-                        .map(|t| t.iter().map(|t| t.id).collect::<Vec<_>>())
-                ))
-                .collect::<Vec<_>>(),
-            vec![
-                ("[CLS]", Some(vec![2])),
-                (" My ", None),
-                ("name", Some(vec![1])),
-                (" is Anthony ", None),
-                ("[SEP]", Some(vec![3]))
-            ]
-        );
-    }
-
-    #[test]
-    fn options_use_cases() {
-        // Is able to extract both normal and special tokens, with various options (lstrip, rstrip,
-        // single_word, normalized)
-        let model = ModelMock::new(&[]);
-        let normalizer = Lowercase;
-        let mut vocab = AddedVocabulary::new();
-
-        vocab
-            .add_tokens(
-                [
-                    AddedToken::from("my", false).lstrip(true).rstrip(true),
-                    AddedToken::from("name", false),
-                    AddedToken::from("ony", false).single_word(true),
-                ],
-                &model,
-                Some(&normalizer),
-            )
-            .unwrap();
-        vocab
-            .add_special_tokens(
-                [
-                    AddedToken::from("[CLS]", true),
-                    AddedToken::from("[SEP]", true),
-                ],
-                &model,
-                Some(&normalizer),
-            )
-            .unwrap();
-
-        let result =
-            vocab.extract_and_normalize(Some(&normalizer), "[CLS] My name is Anthony [SEP]");
-
-        assert_eq!(
-            simplify_output(&result),
-            vec![
-                ("[CLS]", Some(vec![3])),
-                // This one includes both spaces because of the lstrip & rstrip
-                // And it matches because normalized == true
-                (" my ", Some(vec![0])),
-                ("name", Some(vec![1])),
-                // `ony` is not extracted here thanks to single_word
-                (" is anthony ", None),
-                ("[SEP]", Some(vec![4])),
-            ]
-        );
-    }
-
-    #[test]
     fn empty_matches() {
         let vocab = AddedVocabulary::new();
         let matches = vocab.find_matches("", &vocab.split_trie);
         assert_eq!(matches, vec![(None, (0, 0))]);
     }
 
-    #[test]
-    fn test_single_word_is_correct() {
-        // Is able to extract both normal and special tokens, with various options (lstrip, rstrip,
-        // single_word, normalized)
-        let model = ModelMock::new(&[]);
-        let mut vocab = AddedVocabulary::new();
-        let normalizer = Lowercase;
-
-        vocab
-            .add_tokens(
-                [AddedToken::from("<mask>", false).single_word(true)],
-                &model,
-                Some(&normalizer),
-            )
-            .unwrap();
-        // Left, in the middle, non single world left, non single word right, end of sentence valid
-        let result = vocab.extract_and_normalize(
-            Some(&normalizer),
-            "<mask> My name <mask> A<mask> <mask>ony <mask>",
-        );
-        assert_eq!(
-            simplify_output(&result),
-            vec![
-                ("<mask>", Some(vec![0])),
-                (" my name ", None),
-                ("<mask>", Some(vec![0])),
-                (" a<mask> <mask>ony ", None),
-                ("<mask>", Some(vec![0]))
-            ]
-        );
-    }
-
-    #[test]
-    fn test_single_word_is_unicode_correct() {
-        let model = ModelMock::new(&[]);
-        let mut vocab = AddedVocabulary::new();
-        let normalizer = Lowercase;
-
-        assert_eq!(vocab.len(), 0);
-
-        vocab
-            .add_tokens(
-                [AddedToken::from("<mask>", false).single_word(true)],
-                &model,
-                Some(&normalizer),
-            )
-            .unwrap();
-        let result = vocab.extract_and_normalize(Some(&normalizer), "<mask>, <mask>- ◌̰<mask>");
-        assert_eq!(
-            simplify_output(&result),
-            vec![
-                // Punctuation is not word
-                ("<mask>", Some(vec![0])),
-                (", ", None),
-                // dash is not word
-                ("<mask>", Some(vec![0])),
-                // This is unicode combining mark character and is word: https://en.wikipedia.org/wiki/Combining_Diacritical_Marks
-                ("- ◌̰<mask>", None),
-            ]
-        );
-    }
-
-    #[test]
-    fn test_lstrip_unicode_space() {
-        let model = ModelMock::new(&[]);
-        let mut vocab = AddedVocabulary::new();
-        let normalizer = Lowercase;
-
-        vocab
-            .add_tokens(
-                [AddedToken::from("<mask>", false)
-                    .lstrip(true)
-                    .rstrip(true)
-                    .single_word(true)],
-                &model,
-                Some(&normalizer),
-            )
-            .unwrap();
-        let result = vocab
-            .extract_and_normalize(Some(&normalizer), "Hi <mask> there\t<mask>\t<mask>\u{2000}");
-        assert_eq!(
-            simplify_output(&result),
-            vec![
-                ("hi", None),
-                // Regular space
-                (" <mask> ", Some(vec![0])),
-                ("there", None),
-                // \t is a spacing character
-                ("\t<mask>\t", Some(vec![0])),
-                // Non overlapping
-                // \u{2000} is mongolian vowel separator: https://jkorpela.fi/chars/spaces.html
-                ("<mask>\u{2000}", Some(vec![0])),
-            ]
-        );
-    }
-
-    #[test]
-    fn test_encode_special_tokens() {
-        let model = ModelMock::new(&[]);
-        let mut vocab = AddedVocabulary::new();
-        let normalizer = Lowercase;
-
-        vocab
-            .add_tokens(
-                [
-                    AddedToken::from("<mask>", true)
-                        .lstrip(true)
-                        .rstrip(true)
-                        .single_word(true),
-                    AddedToken::from("ask>", false),
-                    AddedToken::from("<pad>", true),
-                ],
-                &model,
-                Some(&normalizer),
-            )
-            .unwrap();
-        vocab.set_encode_special_tokens(true);
-
-        let result = vocab.extract_and_normalize(
-            Some(&normalizer),
-            "Hi <mask> there\t<mask>\t<mask>\u{2000} <pad> <mask><pad><pad>",
-        );
-
-        assert_eq!(
-            simplify_output(&result),
-            vec![
-                ("hi <m", None),
-                ("ask>", Some(vec![1])),
-                (" there\t<m", None),
-                ("ask>", Some(vec![1])),
-                ("\t<m", None),
-                ("ask>", Some(vec![1])),
-                ("\u{2000} <pad> <m", None),
-                ("ask>", Some(vec![1])),
-                ("<pad><pad>", None)
-            ]
-        );
-
-        vocab.set_encode_special_tokens(false);
-
-        let result = vocab.extract_and_normalize(
-            Some(&normalizer),
-            "Hi <mask> there\t<mask>\t<mask>\u{2000} <pad> <mask><pad><pad>",
-        );
-        assert_eq!(
-            simplify_output(&result),
-            vec![
-                ("hi", None),
-                (" <mask> ", Some(vec![0])),
-                ("there", None),
-                ("\t<mask>\t", Some(vec![0])),
-                ("<mask>\u{2000} ", Some(vec![0])),
-                ("<pad>", Some(vec![2])),
-                (" <mask>", Some(vec![0])),
-                ("<pad>", Some(vec![2])),
-                ("<pad>", Some(vec![2]))
-            ]
-        );
-    }
     #[test]
     fn content_preserved_with_normalizer() {
         // Verify that AddedToken.content always holds the original user-provided string,
@@ -1102,69 +776,5 @@ mod tests {
         assert_eq!(vocab.simple_id_to_token(hello_id).unwrap(), "hello");
         // normalized=false → decode returns original content "[CLS]"
         assert_eq!(vocab.simple_id_to_token(cls_id).unwrap(), "[CLS]");
-    }
-
-    #[test]
-    fn refresh_normalized_tokens_on_normalizer_change() {
-        // Tokens added without a normalizer should get their normalized_content populated
-        // when the normalizer is set later via refresh_normalized_tokens.
-        let model = ModelMock::new(&[]);
-        let mut vocab = AddedVocabulary::new();
-        let normalizer = Lowercase;
-
-        // Add tokens with NO normalizer first
-        vocab
-            .add_tokens(
-                [AddedToken::from("Hello", false)],
-                &model,
-                None::<&NormalizerWrapper>,
-            )
-            .unwrap();
-
-        // Without a normalizer, simple_id_to_token returns the original content
-        let hello_id = vocab.added_tokens_map["Hello"];
-        assert_eq!(vocab.simple_id_to_token(hello_id).unwrap(), "Hello");
-
-        // Now attach a normalizer and refresh
-        vocab.refresh_normalized_tokens(Some(&normalizer)).unwrap();
-
-        // After refresh, simple_id_to_token returns the cached normalized form
-        assert_eq!(vocab.simple_id_to_token(hello_id).unwrap(), "hello");
-
-        // And the vocabulary should still match correctly (splits use normalized form)
-        let result = vocab.extract_and_normalize(Some(&normalizer), "Hello world");
-        let splits = simplify_output(&result);
-        assert_eq!(splits[0], ("hello", Some(vec![0])));
-    }
-
-    #[test]
-    fn byte_level_normalizer() {
-        // Is able to extract both normal and special tokens
-        let model = ModelMock::new(&[]);
-        let mut vocab = AddedVocabulary::new();
-        let from = NormalizerWrapper::from(ByteLevelNormalizer::new());
-        let normalizer: Option<&NormalizerWrapper> = Some(&from);
-
-        vocab
-            .add_tokens(
-                [AddedToken::from("my", false), AddedToken::from("今", false)],
-                &model,
-                normalizer,
-            )
-            .unwrap();
-        let result = vocab.extract_and_normalize(normalizer, "my今");
-        assert_eq!(
-            result
-                .get_splits(OffsetReferential::Original, OffsetType::Byte)
-                .into_iter()
-                .map(|(s, _, tokens)| (
-                    s,
-                    tokens
-                        .as_ref()
-                        .map(|t| t.iter().map(|t| t.id).collect::<Vec<_>>())
-                ))
-                .collect::<Vec<_>>(),
-            vec![("my", Some(vec![0])), ("ä»Ĭ", Some(vec![1])),]
-        );
     }
 }

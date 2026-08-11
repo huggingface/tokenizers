@@ -3,14 +3,13 @@
 
 use crate::models::bpe::BPE;
 use crate::pipeline::{self, PipelineToken};
-use crate::tokenizer::{Model, Result, Token};
+use crate::tokenizer::{Model, Result};
 use crate::utils::cache::DEFAULT_CACHE_CAPACITY;
 use crate::utils::word_cache::{Lookup, WordCache};
 use ahash::AHashMap;
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::{
-    borrow::Cow,
     fs::File,
     io::prelude::*,
     io::{BufRead, BufReader},
@@ -221,67 +220,6 @@ impl Model for WordPiece {
 
     fn get_vocab_size(&self) -> usize {
         self.vocab.len()
-    }
-
-    fn tokenize(&self, sequence: &str) -> Result<Vec<Token>> {
-        let char_len = sequence.chars().count();
-        if char_len > self.max_input_chars_per_word {
-            return Ok(vec![Token {
-                value: self.unk_token.clone(),
-                id: *self
-                    .vocab
-                    .get(&self.unk_token)
-                    .ok_or(Error::MissingUnkToken)?,
-                offsets: (0, sequence.len()),
-            }]);
-        }
-
-        let mut is_bad = false;
-        let mut start = 0;
-        let mut sub_tokens: Vec<Token> = vec![];
-
-        while start < sequence.len() {
-            let mut end = sequence.len();
-            let mut cur_str = None;
-
-            while start < end {
-                let mut substr: Cow<str> = Cow::Borrowed(&sequence[start..end]);
-
-                if start > 0 {
-                    substr = Cow::Owned(format!("{}{}", self.continuing_subword_prefix, substr));
-                }
-                if self.vocab.contains_key(substr.as_ref()) {
-                    cur_str = Some(Token {
-                        id: self.vocab[substr.as_ref()],
-                        value: substr.to_string(),
-                        offsets: (start, end),
-                    });
-                    break;
-                }
-                end -= substr.chars().last().map_or(1, |c| c.len_utf8());
-            }
-
-            if cur_str.is_none() {
-                is_bad = true;
-                break;
-            }
-
-            sub_tokens.push(cur_str.unwrap());
-            start = end;
-        }
-
-        if is_bad {
-            Ok(vec![Token {
-                value: self.unk_token.clone(),
-                id: *self
-                    .vocab
-                    .get(&self.unk_token)
-                    .ok_or(Error::MissingUnkToken)?,
-                offsets: (0, sequence.len()),
-            }])
-        } else {
-            Ok(sub_tokens)
-        }
     }
 
     fn token_to_id(&self, token: &str) -> Option<u32> {

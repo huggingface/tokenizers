@@ -15,7 +15,7 @@ use crate::models::bpe::BPE;
 use crate::models::unigram::Unigram;
 use crate::models::wordlevel::WordLevel;
 use crate::models::wordpiece::WordPiece;
-use crate::{Model, Result, Token};
+use crate::{Model, Result};
 
 /// Wraps a vocab mapping (ID -> token) to a struct that will be serialized in order
 /// of token ID, smallest to largest.
@@ -143,15 +143,6 @@ impl_enum_from!(BPE, ModelWrapper, BPE);
 impl_enum_from!(Unigram, ModelWrapper, Unigram);
 
 impl Model for ModelWrapper {
-    fn tokenize(&self, tokens: &str) -> Result<Vec<Token>> {
-        match self {
-            Self::WordLevel(t) => t.tokenize(tokens),
-            Self::WordPiece(t) => t.tokenize(tokens),
-            Self::BPE(t) => t.tokenize(tokens),
-            Self::Unigram(t) => t.tokenize(tokens),
-        }
-    }
-
     fn token_to_id(&self, token: &str) -> Option<u32> {
         match self {
             Self::WordLevel(t) => t.token_to_id(token),

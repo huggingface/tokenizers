@@ -1,7 +1,7 @@
 use crate::normalizers::metaspace::MetaspaceNormalizer;
 use crate::pre_tokenizers::PreTokenizerWrapper;
 use crate::pre_tokenizers::split::Split;
-use crate::tokenizer::{Decoder, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
+use crate::tokenizer::{Decoder, PreTokenizer, Result, SplitDelimiterBehavior};
 use serde::{Deserialize, Deserializer, Serialize, de};
 
 /// Enum representing options for the metaspace prepending scheme.
@@ -122,33 +122,7 @@ impl Default for Metaspace {
     }
 }
 
-impl PreTokenizer for Metaspace {
-    fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
-        pretokenized.split(|_, mut normalized| {
-            normalized.replace(' ', &self.str_rep)?;
-            match self.prepend_scheme {
-                PrependScheme::Always => {
-                    if !normalized.get().starts_with(self.replacement) {
-                        normalized.prepend(&self.str_rep);
-                    }
-                }
-                PrependScheme::First => {
-                    if !normalized.get().starts_with(self.replacement)
-                        && normalized.offsets_original().0 == 0
-                    {
-                        normalized.prepend(&self.str_rep);
-                    }
-                }
-                PrependScheme::Never => {}
-            };
-            if self.split {
-                normalized.split(self.replacement, SplitDelimiterBehavior::MergedWithNext)
-            } else {
-                Ok(vec![normalized])
-            }
-        })
-    }
-}
+impl PreTokenizer for Metaspace {}
 
 impl Decoder for Metaspace {
     fn decode_chain(&self, tokens: Vec<String>) -> Result<Vec<String>> {
@@ -240,10 +214,8 @@ fn normalizer_and_split(
 
 #[cfg(test)]
 mod tests {
-    use regex::Regex;
 
     use super::*;
-    use crate::{OffsetReferential, OffsetType};
 
     #[test]
     fn serialization() {
@@ -274,151 +246,6 @@ mod tests {
         assert_eq!(metaspace_parsed, metaspace);
     }
 
-    #[test]
-    fn basic() {
-        let pretok = Metaspace::new('▁', PrependScheme::Always, true);
-        let mut pretokenized = PreTokenizedString::from("Hey friend!");
-        pretok.pre_tokenize(&mut pretokenized).unwrap();
-        assert_eq!(
-            pretokenized
-                .get_splits(OffsetReferential::Normalized, OffsetType::Byte)
-                .into_iter()
-                .map(|(s, o, _)| (s, o))
-                .collect::<Vec<_>>(),
-            vec![("▁Hey", (0, 6)), ("▁friend!", (6, 16))]
-        );
-        assert_eq!(
-            pretokenized
-                .get_splits(OffsetReferential::Original, OffsetType::Byte)
-                .into_iter()
-                .map(|(s, o, _)| (s, o))
-                .collect::<Vec<_>>(),
-            vec![("▁Hey", (0, 3)), ("▁friend!", (3, 11))]
-        );
-    }
-
-    #[test]
-    fn multiple_spaces() {
-        let pretok = Metaspace::new('▁', PrependScheme::Always, true);
-        let mut pretokenized = PreTokenizedString::from("Hey   friend!");
-        pretok.pre_tokenize(&mut pretokenized).unwrap();
-        assert_eq!(
-            pretokenized
-                .get_splits(OffsetReferential::Normalized, OffsetType::Byte)
-                .into_iter()
-                .map(|(s, o, _)| (s, o))
-                .collect::<Vec<_>>(),
-            vec![
-                ("▁Hey", (0, 6)),
-                ("▁", (6, 9)),
-                ("▁", (9, 12)),
-                ("▁friend!", (12, 22)),
-            ]
-        );
-        assert_eq!(
-            pretokenized
-                .get_splits(OffsetReferential::Original, OffsetType::Byte)
-                .into_iter()
-                .map(|(s, o, _)| (s, o))
-                .collect::<Vec<_>>(),
-            vec![
-                ("▁Hey", (0, 3)),
-                ("▁", (3, 4)),
-                ("▁", (4, 5)),
-                ("▁friend!", (5, 13)),
-            ]
-        );
-    }
-
-    #[test]
-    fn non_legacy_meta_space() {
-        let mut pretok = Metaspace::new('▁', PrependScheme::Always, true);
-        pretok.set_prepend_scheme(PrependScheme::Always);
-        assert_eq!(pretok, Metaspace::new('▁', PrependScheme::Always, true));
-
-        pretok.set_prepend_scheme(PrependScheme::Never);
-        assert_eq!(pretok, Metaspace::new('▁', PrependScheme::Never, true));
-
-        pretok.set_prepend_scheme(PrependScheme::First);
-        assert_eq!(pretok, Metaspace::new('▁', PrependScheme::First, true));
-
-        let pretok = Metaspace::new('▁', PrependScheme::First, false);
-        let mut pretokenized = PreTokenizedString::from("Hey my friend <s>how▁are you");
-        let re_ref = Regex::new(r"(<s>)").unwrap();
-        pretokenized
-            .split(|_, sequence| sequence.split(&re_ref, SplitDelimiterBehavior::Isolated))
-            .expect("Bad split");
-
-        pretok.pre_tokenize(&mut pretokenized).unwrap();
-        assert_eq!(
-            pretokenized
-                .get_splits(OffsetReferential::Normalized, OffsetType::Byte)
-                .into_iter()
-                .map(|(s, o, _)| (s, o))
-                .collect::<Vec<_>>(),
-            vec![
-                ("▁Hey▁my▁friend▁", (0, 23)),
-                ("<s>", (23, 26)),
-                ("how▁are▁you", (26, 41))
-            ]
-        );
-        let pretok = Metaspace::new('▁', PrependScheme::Always, true);
-        pretok.pre_tokenize(&mut pretokenized).unwrap();
-        assert_eq!(
-            pretokenized
-                .get_splits(OffsetReferential::Normalized, OffsetType::Byte)
-                .into_iter()
-                .map(|(s, o, _)| (s, o))
-                .collect::<Vec<_>>(),
-            vec![
-                ("▁Hey", (0, 6)),
-                ("▁my", (6, 11)),
-                ("▁friend", (11, 20)),
-                ("▁", (20, 23)),
-                ("▁<s>", (23, 29)),
-                ("▁how", (29, 35)),
-                ("▁are", (35, 41)),
-                ("▁you", (41, 47))
-            ]
-        );
-
-        let pretok = Metaspace::new('▁', PrependScheme::First, false);
-        let mut pretokenized = PreTokenizedString::from(" Hey <s>how"); // test with prefix
-        pretokenized
-            .split(|_, sequence| sequence.split(&re_ref, SplitDelimiterBehavior::Isolated))
-            .expect("Bad split");
-        pretok.pre_tokenize(&mut pretokenized).unwrap();
-        assert_eq!(
-            pretokenized
-                .get_splits(OffsetReferential::Normalized, OffsetType::Byte)
-                .into_iter()
-                .map(|(s, o, _)| (s, o))
-                .collect::<Vec<_>>(),
-            vec![("▁Hey▁", (0, 9)), ("<s>", (9, 12)), ("how", (12, 15))]
-        );
-
-        let mut pretokenized = PreTokenizedString::from(" Hey <s>how <s>are <s> you"); // test with many splits
-        pretokenized
-            .split(|_, sequence| sequence.split(&re_ref, SplitDelimiterBehavior::Isolated))
-            .expect("Bad split");
-        pretok.pre_tokenize(&mut pretokenized).unwrap();
-        assert_eq!(
-            pretokenized
-                .get_splits(OffsetReferential::Normalized, OffsetType::Byte)
-                .into_iter()
-                .map(|(s, o, _)| (s, o))
-                .collect::<Vec<_>>(),
-            vec![
-                ("▁Hey▁", (0, 9)),
-                ("<s>", (9, 12)),
-                ("how▁", (12, 18)),
-                ("<s>", (18, 21)),
-                ("are▁", (21, 27)),
-                ("<s>", (27, 30)),
-                ("▁you", (30, 36))
-            ]
-        );
-    }
     #[test]
     fn decode() {
         let decoder = Metaspace::new('▁', PrependScheme::Always, true);
@@ -474,45 +301,92 @@ mod tests {
             "",
         ];
 
-        /// Normalizing and then splitting must produce exactly the words the `Metaspace`
-        /// pre-tokenizer produces on its own: it is the behaviour being rebuilt, so it is the
-        /// reference.
-        fn assert_words_match_the_pre_tokenizer(json: &str) {
+        /// The words `normalize` + `split` carve out of each of [`TEXTS`], frozen from the
+        /// `Metaspace` pre-tokenizer this shape was built to reproduce.
+        fn assert_words_match(json: &str, expected: &[&[&str]]) {
             let declared = pre_tokenizer_from(json);
             let (normalizer, split) =
                 to_normalizer_and_split(Some(&declared)).expect("this shape is supported");
-            for text in TEXTS {
-                let mut legacy = PreTokenizedString::from(*text);
-                declared.pre_tokenize(&mut legacy).unwrap();
-                let expected: Vec<&str> = legacy
-                    .get_splits(OffsetReferential::Normalized, OffsetType::Byte)
-                    .iter()
-                    .map(|(word, _, _)| *word)
-                    .collect();
-
+            assert_eq!(expected.len(), TEXTS.len(), "one expectation per text");
+            for (text, expected) in TEXTS.iter().zip(expected) {
                 let normalized = pipeline::Normalizer::normalize(&normalizer, text).unwrap();
                 let mut scratch = pipeline::PreTokenizerScratch::default();
                 let mut spans = Vec::new();
                 pipeline::PreTokenizer::pre_tokenize(&split, &normalized, &mut scratch, &mut spans)
                     .unwrap();
                 let words: Vec<&str> = spans.iter().map(|s| &normalized[s.range()]).collect();
-                assert_eq!(words, expected, "{text:?}");
+                assert_eq!(words, *expected, "{text:?}");
             }
         }
 
+        const T5_WORDS: &[&[&str]] = &[
+            &["▁hello", "▁world"],
+            &["▁hello", "▁world"],
+            &["▁leading"],
+            &["▁trailing"],
+            &["▁both"],
+            &["▁one", "▁tab", "▁and", "▁a", "▁newline"],
+            &["▁leading", "▁tab"],
+            &["▁nbsp", "▁gap", "▁and", "▁an", "▁ideographic", "▁space"],
+            &["▁already", "▁marked"],
+            &["▁a", "▁b", "▁c"],
+            &["▁", "▁", "▁a", "▁b"],
+            &["▁"],
+            &["▁_underscored_", "▁text"],
+            &["▁single"],
+            &[],
+            &[],
+        ];
+        const BARE_WORDS: &[&[&str]] = &[
+            &["▁hello", "▁world"],
+            &["▁hello", "▁", "▁", "▁world"],
+            &["▁leading"],
+            &["▁trailing", "▁"],
+            &["▁", "▁both", "▁", "▁"],
+            &["▁one\ttab\nand", "▁a", "▁newline"],
+            &["▁\tleading", "▁tab"],
+            &["▁nbsp\u{a0}gap", "▁and\u{3000}an", "▁ideographic", "▁space"],
+            &["▁already", "▁marked"],
+            &["▁a", "▁b", "▁c"],
+            &["▁", "▁", "▁a", "▁b"],
+            &["▁"],
+            &["▁_underscored_", "▁text"],
+            &["▁single"],
+            &["▁", "▁", "▁"],
+            &[],
+        ];
+        const ASCII_DELIMITER_WORDS: &[&[&str]] = &[
+            &["_hello", "_world"],
+            &["_hello", "_", "_", "_world"],
+            &["_leading"],
+            &["_trailing", "_"],
+            &["_", "_both", "_", "_"],
+            &["_one\ttab\nand", "_a", "_newline"],
+            &["_\tleading", "_tab"],
+            &["_nbsp\u{a0}gap", "_and\u{3000}an", "_ideographic", "_space"],
+            &["_▁already", "_marked"],
+            &["_a▁b", "_c"],
+            &["_▁▁▁a", "_b"],
+            &["_▁"],
+            &["_underscored", "_", "_text"],
+            &["_single"],
+            &["_", "_", "_"],
+            &[],
+        ];
+
         #[test]
         fn t5_shape_matches_its_pre_tokenizer() {
-            assert_words_match_the_pre_tokenizer(T5);
+            assert_words_match(T5, T5_WORDS);
         }
 
         #[test]
         fn bare_metaspace_matches_its_pre_tokenizer() {
-            assert_words_match_the_pre_tokenizer(BARE);
+            assert_words_match(BARE, BARE_WORDS);
         }
 
         #[test]
         fn ascii_delimiter_matches_its_pre_tokenizer() {
-            assert_words_match_the_pre_tokenizer(ASCII_DELIMITER);
+            assert_words_match(ASCII_DELIMITER, ASCII_DELIMITER_WORDS);
         }
 
         #[test]

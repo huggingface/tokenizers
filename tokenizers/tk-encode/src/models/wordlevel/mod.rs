@@ -1,6 +1,6 @@
 use super::OrderedVocabIter;
 use crate::pipeline::{self, ModelScratch, PipelineToken};
-use crate::tokenizer::{Model, Result, Token};
+use crate::tokenizer::{Model, Result};
 use ahash::AHashMap;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -154,24 +154,6 @@ impl Default for WordLevel {
 }
 
 impl Model for WordLevel {
-    fn tokenize(&self, token: &str) -> Result<Vec<Token>> {
-        if let Some(&id) = self.vocab.get(token) {
-            Ok(vec![Token {
-                id,
-                value: token.to_owned(),
-                offsets: (0, token.len()),
-            }])
-        } else if let Some(&unk_id) = self.vocab.get(&self.unk_token) {
-            Ok(vec![Token {
-                id: unk_id,
-                value: self.unk_token.to_owned(),
-                offsets: (0, token.len()),
-            }])
-        } else {
-            Err(Box::new(Error::MissingUnkToken))
-        }
-    }
-
     fn token_to_id(&self, token: &str) -> Option<u32> {
         self.vocab.get(token).copied()
     }
@@ -234,6 +216,13 @@ impl pipeline::Model for WordLevel {
 mod tests {
     use super::*;
 
+    fn pipeline_ids(model: &WordLevel, sequence: &str) -> Result<Vec<u32>> {
+        let mut output = vec![];
+        let mut scratch = pipeline::Model::init_scratch(model);
+        pipeline::Model::tokenize_pipeline(model, sequence, &mut scratch, &mut output)?;
+        Ok(output.iter().map(|token| token.id()).collect())
+    }
+
     #[test]
     fn test_tokenize_unk() {
         let vocab: Vocab = [("<unk>".into(), 0), ("a".into(), 1), ("b".into(), 2)]
@@ -245,21 +234,17 @@ mod tests {
             .unk_token("<unk>".to_string())
             .build()
             .unwrap();
-        let tokens = wordlevel.tokenize("c").unwrap();
-        assert_eq!(tokens, vec![Token::new(0u32, "<unk>".into(), (0, 1)),]);
-
-        let tokens = wordlevel.tokenize("a").unwrap();
-        assert_eq!(tokens, vec![Token::new(1u32, "a".into(), (0, 1)),]);
+        assert_eq!(pipeline_ids(&wordlevel, "c").unwrap(), vec![0]);
+        assert_eq!(pipeline_ids(&wordlevel, "a").unwrap(), vec![1]);
     }
 
     #[test]
     fn test_tokenize_missing_unk_token() {
         let vocab: Vocab = [("a".into(), 0), ("b".into(), 1)].iter().cloned().collect();
         let wordlevel = WordLevelBuilder::default().vocab(vocab).build().unwrap();
-        let tokens = wordlevel.tokenize("a").unwrap();
-        assert_eq!(tokens, vec![Token::new(0u32, "a".into(), (0, 1)),]);
+        assert_eq!(pipeline_ids(&wordlevel, "a").unwrap(), vec![0]);
 
-        let error = wordlevel.tokenize("c").err().unwrap();
+        let error = pipeline_ids(&wordlevel, "c").err().unwrap();
         assert!(error.is::<Error>());
     }
 }

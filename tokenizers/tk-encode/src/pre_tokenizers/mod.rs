@@ -12,6 +12,7 @@ pub mod whitespace;
 
 use serde::{Deserialize, Deserializer, Serialize};
 
+use crate::PreTokenizer;
 use crate::pre_tokenizers::bert::BertPreTokenizer;
 use crate::pre_tokenizers::byte_level::ByteLevel;
 use crate::pre_tokenizers::delimiter::CharDelimiterSplit;
@@ -23,7 +24,6 @@ use crate::pre_tokenizers::sequence::Sequence;
 use crate::pre_tokenizers::split::Split;
 use crate::pre_tokenizers::unicode_scripts::UnicodeScripts;
 use crate::pre_tokenizers::whitespace::{Whitespace, WhitespaceSplit};
-use crate::{PreTokenizedString, PreTokenizer};
 
 #[derive(Serialize, Clone, Debug, PartialEq)]
 #[serde(untagged)]
@@ -43,24 +43,7 @@ pub enum PreTokenizerWrapper {
     FixedLength(FixedLength),
 }
 
-impl PreTokenizer for PreTokenizerWrapper {
-    fn pre_tokenize(&self, normalized: &mut PreTokenizedString) -> crate::Result<()> {
-        match self {
-            Self::BertPreTokenizer(bpt) => bpt.pre_tokenize(normalized),
-            Self::ByteLevel(bpt) => bpt.pre_tokenize(normalized),
-            Self::Delimiter(dpt) => dpt.pre_tokenize(normalized),
-            Self::Metaspace(mspt) => mspt.pre_tokenize(normalized),
-            Self::Whitespace(wspt) => wspt.pre_tokenize(normalized),
-            Self::Punctuation(tok) => tok.pre_tokenize(normalized),
-            Self::Sequence(tok) => tok.pre_tokenize(normalized),
-            Self::Split(tok) => tok.pre_tokenize(normalized),
-            Self::WhitespaceSplit(wspt) => wspt.pre_tokenize(normalized),
-            Self::Digits(wspt) => wspt.pre_tokenize(normalized),
-            Self::UnicodeScripts(us) => us.pre_tokenize(normalized),
-            Self::FixedLength(fl) => fl.pre_tokenize(normalized),
-        }
-    }
-}
+impl PreTokenizer for PreTokenizerWrapper {}
 
 impl<'de> Deserialize<'de> for PreTokenizerWrapper {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>

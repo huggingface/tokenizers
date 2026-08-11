@@ -1,11 +1,7 @@
-use crate::utils::byte_level::{BYTES_CHAR_LOOKUP, CHAR_BYTES_LOOKUP, byte_level_transform};
-use crate::utils::{GptFsm, GptFsmPattern};
+use crate::utils::byte_level::{BYTES_CHAR_LOOKUP, CHAR_BYTES_LOOKUP};
 use serde::{Deserialize, Serialize};
 
-use crate::tokenizer::{
-    Decoder, Encoding, PostProcessor, PreTokenizedString, PreTokenizer, Result,
-    SplitDelimiterBehavior,
-};
+use crate::tokenizer::{Decoder, Encoding, PostProcessor, PreTokenizer, Result};
 use crate::utils::macro_rules_attribute;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -76,29 +72,7 @@ impl ByteLevel {
 /// As a `PreTokenizer`, `ByteLevel` is in charge of transforming all the unicode characters into
 /// their byte-level counterpart. It also splits the input according to the configured regex.
 // TODO: Give the ability to modify this regex
-impl PreTokenizer for ByteLevel {
-    fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
-        pretokenized.split(|_, mut normalized| {
-            if self.add_prefix_space && !normalized.get().starts_with(' ') {
-                normalized.prepend(" ");
-            }
-            if self.use_regex {
-                // GPT-2 byte-level split via the native atomsplit FSM (byte-exact, no regex backend).
-                normalized.split(
-                    GptFsmPattern(GptFsm::Gpt2),
-                    SplitDelimiterBehavior::Isolated,
-                )
-            } else {
-                Ok(vec![normalized])
-            }
-        })?;
-        pretokenized.normalize(|normalized| {
-            let s = normalized.get();
-            normalized.transform(byte_level_transform(s), 0);
-            Ok(())
-        })
-    }
-}
+impl PreTokenizer for ByteLevel {}
 
 /// As a `Decoder`, `ByteLevel` is in charge of converting any byte-level characters to their
 /// unicode counterpart, before merging everything back into a single String.
@@ -190,25 +164,24 @@ pub fn process_offsets(encoding: &mut Encoding, add_prefix_space: bool) {
 mod tests {
 
     use super::*;
-    use crate::tokenizer::{
-        Decoder, Encoding, OffsetReferential, OffsetType, PostProcessor, PreTokenizedString,
-        PreTokenizer,
-    };
+    use crate::tokenizer::{Decoder, Encoding, PostProcessor};
     use ahash::AHashMap;
     use std::iter::FromIterator;
 
+    /// Compares against readable literals; `pipeline_splits` hands back owned strings.
+    fn assert_splits(got: Vec<(String, (usize, usize))>, want: &[(&str, (usize, usize))]) {
+        let got: Vec<(&str, (usize, usize))> = got.iter().map(|(s, o)| (s.as_str(), *o)).collect();
+        assert_eq!(got, want);
+    }
+
     #[test]
     fn pre_tokenization() {
-        let bytelevel = ByteLevel::default().add_prefix_space(false);
-        let mut pretokenized: PreTokenizedString = "Hello my friend, how is your day going?".into();
-        bytelevel.pre_tokenize(&mut pretokenized).unwrap();
-        assert_eq!(
-            pretokenized
-                .get_splits(OffsetReferential::Original, OffsetType::Byte)
-                .into_iter()
-                .map(|(s, o, _)| (s, o))
-                .collect::<Vec<_>>(),
-            vec![
+        assert_splits(
+            pipeline_splits(
+                ByteLevel::default().add_prefix_space(false),
+                "Hello my friend, how is your day going?",
+            ),
+            &[
                 ("Hello", (0, 5)),
                 ("Ġmy", (5, 8)),
                 ("Ġfriend", (8, 15)),
@@ -218,23 +191,21 @@ mod tests {
                 ("Ġyour", (23, 28)),
                 ("Ġday", (28, 32)),
                 ("Ġgoing", (32, 38)),
-                ("?", (38, 39))
-            ]
+                ("?", (38, 39)),
+            ],
         );
     }
 
     #[test]
     fn pre_tokenization_no_regex() {
-        let bytelevel = ByteLevel::default().use_regex(false);
-        let mut pretokenized: PreTokenizedString = "Hello my friend, how is your day going?".into();
-        bytelevel.pre_tokenize(&mut pretokenized).unwrap();
-        assert_eq!(
-            pretokenized
-                .get_splits(OffsetReferential::Original, OffsetType::Byte)
-                .into_iter()
-                .map(|(s, o, _)| (s, o))
-                .collect::<Vec<_>>(),
-            vec![("ĠHelloĠmyĠfriend,ĠhowĠisĠyourĠdayĠgoing?", (0, 39))]
+        assert_splits(
+            pipeline_splits(
+                ByteLevel::default()
+                    .add_prefix_space(false)
+                    .use_regex(false),
+                "Hello my friend, how is your day going?",
+            ),
+            &[("HelloĠmyĠfriend,ĠhowĠisĠyourĠdayĠgoing?", (0, 39))],
         );
     }
 
@@ -258,37 +229,6 @@ mod tests {
     }
 
     #[test]
-    fn add_prefix_space() {
-        let bytelevel = ByteLevel::default().add_prefix_space(true);
-        for s in &[
-            " Hello my friend, how is your day going?",
-            "Hello my friend, how is your day going?",
-        ] {
-            let mut pretokenized = PreTokenizedString::from(*s);
-            bytelevel.pre_tokenize(&mut pretokenized).unwrap();
-            assert_eq!(
-                pretokenized
-                    .get_splits(OffsetReferential::Normalized, OffsetType::Byte)
-                    .into_iter()
-                    .map(|(s, o, _)| (s, o))
-                    .collect::<Vec<_>>(),
-                vec![
-                    ("ĠHello", (0, 7)),
-                    ("Ġmy", (7, 11)),
-                    ("Ġfriend", (11, 19)),
-                    (",", (19, 20)),
-                    ("Ġhow", (20, 25)),
-                    ("Ġis", (25, 29)),
-                    ("Ġyour", (29, 35)),
-                    ("Ġday", (35, 40)),
-                    ("Ġgoing", (40, 47)),
-                    ("?", (47, 48))
-                ]
-            );
-        }
-    }
-
-    #[test]
     fn decode_works_on_separated_tokens() {
         let samples = vec![
             "A Nuskhuri abbreviation of იესუ ქრისტე ( iesu kriste ) \" Jesus Christ \"",
@@ -298,12 +238,9 @@ mod tests {
 
         let bytelevel = ByteLevel::default().add_prefix_space(false);
         for sample in samples {
-            let mut pretokenized = PreTokenizedString::from(sample);
-            bytelevel.pre_tokenize(&mut pretokenized).unwrap();
-            let separated_tokens = pretokenized
-                .get_splits(OffsetReferential::Original, OffsetType::Byte)
+            let separated_tokens = pipeline_splits(bytelevel, sample)
                 .iter()
-                .flat_map(|(s, _, _)| s.split("").map(|t| t.into()))
+                .flat_map(|(s, _)| s.split("").map(|t| t.into()))
                 .collect::<Vec<_>>();
             assert_eq!(
                 sample,
@@ -314,75 +251,51 @@ mod tests {
 
     #[test]
     fn handling_of_newlines() {
-        let mut pretokenized = PreTokenizedString::from("Hello there\nHello there");
-        let bytelevel = ByteLevel::default().add_prefix_space(false);
-        bytelevel.pre_tokenize(&mut pretokenized).unwrap();
-
-        assert_eq!(
-            pretokenized
-                .get_splits(OffsetReferential::Original, OffsetType::Byte)
-                .into_iter()
-                .map(|(s, o, _)| (s, o))
-                .collect::<Vec<_>>(),
-            vec![
+        assert_splits(
+            pipeline_splits(
+                ByteLevel::default().add_prefix_space(false),
+                "Hello there\nHello there",
+            ),
+            &[
                 ("Hello", (0, 5)),
                 ("Ġthere", (5, 11)),
                 ("Ċ", (11, 12)),
                 ("Hello", (12, 17)),
-                ("Ġthere", (17, 23))
-            ]
+                ("Ġthere", (17, 23)),
+            ],
         );
     }
 
     #[test]
     fn handling_of_multiple_whitespaces() {
-        let mut pretokenized = PreTokenizedString::from("Hello there       dear");
-        let bytelevel = ByteLevel::default().add_prefix_space(false);
-        bytelevel.pre_tokenize(&mut pretokenized).unwrap();
-
-        assert_eq!(
-            pretokenized
-                .get_splits(OffsetReferential::Original, OffsetType::Byte)
-                .into_iter()
-                .map(|(s, o, _)| (s, o))
-                .collect::<Vec<_>>(),
-            vec![
+        assert_splits(
+            pipeline_splits(
+                ByteLevel::default().add_prefix_space(false),
+                "Hello there       dear",
+            ),
+            &[
                 ("Hello", (0, 5)),
                 ("Ġthere", (5, 11)),
                 ("ĠĠĠĠĠĠ", (11, 17)),
-                ("Ġdear", (17, 22))
-            ]
+                ("Ġdear", (17, 22)),
+            ],
         );
     }
 
     #[test]
     fn offsets_when_char_split_up() {
         let input = "i⭢j";
-        let mut pretokenized = PreTokenizedString::from(input);
-        let bytelevel = ByteLevel::default().add_prefix_space(false);
-        bytelevel.pre_tokenize(&mut pretokenized).unwrap();
-
-        assert_eq!(
-            pretokenized
-                .get_splits(OffsetReferential::Original, OffsetType::Byte)
-                .into_iter()
-                .map(|(s, o, _)| (s, o))
-                .collect::<Vec<_>>(),
-            vec![("i", (0, 1)), ("âŃ¢", (1, 4)), ("j", (4, 5))]
+        let splits = pipeline_splits(ByteLevel::default().add_prefix_space(false), input);
+        // the projected piece is 6 bytes wide, its span stays the 3 raw bytes of '⭢'
+        assert_splits(
+            splits.clone(),
+            &[("i", (0, 1)), ("âŃ¢", (1, 4)), ("j", (4, 5))],
         );
+        // spans still index the original text
         assert_eq!(
-            pretokenized
-                .get_splits(OffsetReferential::Normalized, OffsetType::Byte)
-                .into_iter()
-                .map(|(s, o, _)| (s, o))
-                .collect::<Vec<_>>(),
-            vec![("i", (0, 1)), ("âŃ¢", (1, 7)), ("j", (7, 8))]
-        );
-        assert_eq!(
-            pretokenized
-                .get_splits(OffsetReferential::Original, OffsetType::Byte)
-                .into_iter()
-                .map(|(_, o, _)| &input[o.0..o.1])
+            splits
+                .iter()
+                .map(|(_, o)| &input[o.0..o.1])
                 .collect::<Vec<_>>(),
             vec!["i", "⭢", "j"]
         );
@@ -547,37 +460,102 @@ mod tests {
             .collect()
     }
 
-    fn legacy_splits(byte_level: ByteLevel, text: &str) -> Vec<(String, (usize, usize))> {
-        let mut pre = PreTokenizedString::from(text);
-        byte_level.pre_tokenize(&mut pre).unwrap();
-        pre.get_splits(OffsetReferential::Original, OffsetType::Byte)
-            .into_iter()
-            .map(|(s, o, _)| (s.to_string(), o))
-            .collect()
-    }
+    const CONVERSION_GOLDEN: &[&[(&str, (usize, usize))]] = &[
+        &[
+            ("Hello", (0, 5)),
+            ("Ġmy", (5, 8)),
+            ("Ġfriend", (8, 15)),
+            (",", (15, 16)),
+            ("Ġhow", (16, 20)),
+            ("Ġis", (20, 23)),
+            ("Ġyour", (23, 28)),
+            ("Ġday", (28, 32)),
+            ("Ġgoing", (32, 38)),
+            ("?", (38, 39)),
+        ],
+        &[
+            ("Hello", (0, 5)),
+            ("Ġthere", (5, 11)),
+            ("Ċ", (11, 12)),
+            ("Hello", (12, 17)),
+            ("Ġthere", (17, 23)),
+        ],
+        &[
+            ("Hello", (0, 5)),
+            ("Ġthere", (5, 11)),
+            ("ĠĠĠĠĠĠ", (11, 17)),
+            ("Ġdear", (17, 22)),
+        ],
+        &[("Ġleading", (0, 8)), ("Ġspace", (8, 14))],
+        &[("trailing", (0, 8)), ("Ġspace", (8, 14)), ("ĠĠĠ", (14, 17))],
+        &[("i", (0, 1)), ("âŃ¢", (1, 4)), ("j", (4, 5))],
+        &[
+            ("ä¸Ńæĸĩ", (0, 6)),
+            ("Ġtext", (6, 11)),
+            ("Ġ123", (11, 15)),
+            (",", (15, 16)),
+            ("Ġmixed", (16, 22)),
+            ("!", (22, 23)),
+            ("ĠðŁ¤Ĺ", (23, 28)),
+            ("Ġemoji", (28, 34)),
+        ],
+        &[
+            ("I", (0, 1)),
+            ("'m", (1, 3)),
+            ("Ġcan", (3, 7)),
+            ("'t", (7, 9)),
+            ("Ġwe", (9, 12)),
+            ("'ve", (12, 15)),
+            ("Ġthey", (15, 20)),
+            ("'ll", (20, 23)),
+            ("Ġit", (23, 26)),
+            ("'s", (26, 28)),
+        ],
+        &[
+            ("tabs", (0, 4)),
+            ("ĉ", (4, 5)),
+            ("and", (5, 8)),
+            ("č", (8, 9)),
+            ("Ċ", (9, 10)),
+            ("newlines", (10, 18)),
+        ],
+        &[
+            ("cafÃ©", (0, 5)),
+            ("ĠÃ¼ber", (5, 11)),
+            ("ĠnaÃ¯ve", (11, 18)),
+        ],
+        &[("!!!???...", (0, 9))],
+        &[("single", (0, 6))],
+    ];
+
+    const CONVERSION_TEXTS: &[&str] = &[
+        "Hello my friend, how is your day going?",
+        "Hello there\nHello there",
+        "Hello there       dear",
+        " leading space",
+        "trailing space   ",
+        "i⭢j",
+        "中文 text 123, mixed! 🤗 emoji",
+        "I'm can't we've they'll it's",
+        "tabs\tand\r\nnewlines",
+        "café über naïve",
+        "!!!???...",
+        "single",
+    ];
 
     #[test]
-    fn pipeline_conversion_matches_legacy_splits() {
+    fn pipeline_conversion_matches_golden_splits() {
         let byte_level = ByteLevel::default().add_prefix_space(false);
-        for text in [
-            "Hello my friend, how is your day going?",
-            "Hello there\nHello there",
-            "Hello there       dear",
-            " leading space",
-            "trailing space   ",
-            "i⭢j",
-            "中文 text 123, mixed! 🤗 emoji",
-            "I'm can't we've they'll it's",
-            "tabs\tand\r\nnewlines",
-            "café über naïve",
-            "!!!???...",
-            "single",
-        ] {
-            assert_eq!(
-                pipeline_splits(byte_level, text),
-                legacy_splits(byte_level, text),
-                "diverged on {text:?}",
-            );
+        assert_eq!(
+            CONVERSION_GOLDEN.len(),
+            CONVERSION_TEXTS.len(),
+            "one expectation per text"
+        );
+        for (text, want) in CONVERSION_TEXTS.iter().zip(CONVERSION_GOLDEN) {
+            let splits = pipeline_splits(byte_level, text);
+            let got: Vec<(&str, (usize, usize))> =
+                splits.iter().map(|(s, o)| (s.as_str(), *o)).collect();
+            assert_eq!(got.as_slice(), *want, "diverged on {text:?}");
         }
     }
 
@@ -587,9 +565,9 @@ mod tests {
             .add_prefix_space(false)
             .use_regex(false);
         let text = "Hello my friend, how is your day going?";
-        assert_eq!(
+        assert_splits(
             pipeline_splits(byte_level, text),
-            legacy_splits(byte_level, text),
+            &[("HelloĠmyĠfriend,ĠhowĠisĠyourĠdayĠgoing?", (0, 39))],
         );
     }
 

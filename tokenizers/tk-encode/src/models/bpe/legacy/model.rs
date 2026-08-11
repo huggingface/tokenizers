@@ -595,19 +595,6 @@ impl Model for BPE {
         self.vocab.len()
     }
 
-    fn tokenize(&self, sequence: &str) -> Result<Vec<Token>> {
-        if sequence.is_empty() {
-            return Ok(vec![]);
-        }
-
-        if self.dropout.is_none() || self.dropout == Some(0.0) {
-            self.tokenize_with_cache(sequence)
-        } else {
-            let word = self.merge_word(sequence)?;
-            Ok(self.word_to_tokens(&word).collect())
-        }
-    }
-
     fn token_to_id(&self, token: &str) -> Option<u32> {
         self.vocab.token_to_id(token)
     }

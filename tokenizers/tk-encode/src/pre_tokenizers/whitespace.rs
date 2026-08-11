@@ -1,11 +1,5 @@
-use std::sync::LazyLock;
-
-use regex::Regex;
-
 use crate::pipeline::{self, PreTokenizerScratch};
-use crate::tokenizer::{
-    PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior, pattern::Invert,
-};
+use crate::tokenizer::{PreTokenizer, Result};
 use crate::utils::macro_rules_attribute;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -20,28 +14,13 @@ impl Default for Whitespace {
     }
 }
 
-impl PreTokenizer for Whitespace {
-    fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
-        static RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\w+|[^\w\s]+").unwrap());
-        let re_ref: &Regex = &RE;
-
-        pretokenized.split(|_, normalized| {
-            normalized.split(Invert(re_ref), SplitDelimiterBehavior::Removed)
-        })
-    }
-}
+impl PreTokenizer for Whitespace {}
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[macro_rules_attribute(impl_serde_type!)]
 pub struct WhitespaceSplit;
 
-impl PreTokenizer for WhitespaceSplit {
-    fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
-        pretokenized.split(|_, normalized| {
-            normalized.split(char::is_whitespace, SplitDelimiterBehavior::Removed)
-        })
-    }
-}
+impl PreTokenizer for WhitespaceSplit {}
 
 // SAFETY: the spans come from an `atomsplit` fsm, which cuts only at character boundaries of `text`.
 // See "What the spans guarantee" in the `atomsplit::fsm` docs.
@@ -101,7 +80,6 @@ unsafe impl pipeline::PreTokenizer for Whitespace {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{OffsetReferential, OffsetType, PreTokenizedString, PreTokenizer};
 
     fn pretokenize(text: &str) -> Vec<(&str, (u32, u32))> {
         let pretok = Whitespace;
@@ -136,30 +114,6 @@ mod tests {
         ];
         for (s, res) in tests {
             assert_eq!(pretokenize(s), res, "input: {s:?}");
-        }
-    }
-
-    #[test]
-    fn whitespace_split() {
-        let tests = vec![
-            ("Hey man!", vec![("Hey", (0, 3)), ("man!", (4, 8))]),
-            (
-                "Hey, man, Good?",
-                vec![("Hey,", (0, 4)), ("man,", (5, 9)), ("Good?", (10, 15))],
-            ),
-        ];
-        let pretok = WhitespaceSplit;
-        for (s, res) in tests {
-            let mut pretokenized = PreTokenizedString::from(s);
-            pretok.pre_tokenize(&mut pretokenized).unwrap();
-            assert_eq!(
-                pretokenized
-                    .get_splits(OffsetReferential::Original, OffsetType::Byte)
-                    .into_iter()
-                    .map(|(s, o, _)| (s, o))
-                    .collect::<Vec<_>>(),
-                res
-            );
         }
     }
 

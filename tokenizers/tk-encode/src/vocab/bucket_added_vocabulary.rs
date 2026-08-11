@@ -475,10 +475,10 @@ impl Serialize for AddedVocabulary {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Result;
     use crate::normalizers::NormalizerWrapper;
     use crate::normalizers::utils::Lowercase;
     use crate::pipeline::{Segment, SpecialSegmentIterator};
-    use crate::{Result, Token};
     use std::collections::HashMap;
     use std::path::{Path, PathBuf};
 
@@ -507,9 +507,6 @@ mod tests {
     }
 
     impl Model for ModelMock {
-        fn tokenize(&self, _sequence: &str) -> Result<Vec<Token>> {
-            unimplemented!()
-        }
         fn token_to_id(&self, token: &str) -> Option<u32> {
             self.vocab.get(token).copied()
         }
