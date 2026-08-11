@@ -701,7 +701,7 @@ mod tests {
         SpecialSegmentIterator::new(input, vocab, normalized)
             .map(|segment| match segment {
                 Segment::Text(text) => (Some(text.to_string()), None),
-                Segment::SpecialToken(id) => (None, Some(id)),
+                Segment::SpecialToken { id, .. } => (None, Some(id)),
             })
             .collect()
     }
@@ -731,6 +731,32 @@ mod tests {
                 (None, Some(1)),
             ]
         );
+    }
+
+    /// `Segment::SpecialToken` carries the slice the token matched, not the token's content.
+    /// `lstrip` widens the match over the preceding whitespace, and `tk-train` feeds that slice
+    /// to the trainer verbatim to stay byte-identical with the removed `get_splits` path.
+    #[test]
+    fn segment_iterator_reports_the_matched_slice_not_the_token_content() {
+        let model = ModelMock::new(&[]);
+        let mut vocab = AddedVocabulary::new();
+        let normalizer: Option<&NormalizerWrapper> = None;
+        vocab
+            .add_special_tokens(
+                [AddedToken::from("<s>", true).lstrip(true)],
+                &model,
+                normalizer,
+            )
+            .unwrap();
+
+        let matched: Vec<_> = SpecialSegmentIterator::new("I read a book   <s>Hey", &vocab, false)
+            .filter_map(|segment| match segment {
+                Segment::SpecialToken { text, .. } => Some(text.to_string()),
+                Segment::Text(_) => None,
+            })
+            .collect();
+
+        assert_eq!(matched, vec!["   <s>".to_string()]);
     }
 
     #[test]

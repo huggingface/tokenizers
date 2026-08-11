@@ -475,7 +475,14 @@ pub enum Segment<'a> {
     /// Ordinary text still to be (optonally normalized), pre-tokenized and run through the model.
     Text(&'a str),
     /// A matched special token, identified by its vocabulary id.
-    SpecialToken(u32),
+    SpecialToken {
+        id: u32,
+        /// The slice of the input the token matched. Not always the token's own content:
+        /// `lstrip`/`rstrip` pull the surrounding whitespace into the match, and a
+        /// `normalized = true` token matches its normalized form. Encoding resolves the token
+        /// by `id` and ignores this; `tk-train` feeds it to the trainer verbatim.
+        text: &'a str,
+    },
 }
 
 /// Splits `input` into [`Segment`]s, in order: runs of ordinary text
@@ -485,7 +492,7 @@ pub enum Segment<'a> {
 /// ```ignore
 /// for segment in SpecialSegmentIterator::new(input, pattern_matcher, false) {
 ///     match segment {
-///         Segment::SpecialToken(id) => { /* emit the special token */ }
+///         Segment::SpecialToken { id, .. } => { /* emit the special token */ }
 ///         Segment::Text(chunk) => { /* tokenize this chunk */ }
 ///     }
 /// }
@@ -498,7 +505,7 @@ pub struct SpecialSegmentIterator<'a, 'b, PatternMatcher: PipelinePatternMatcher
     /// Whether the input is normalized
     normalized: bool,
     offset: usize,
-    pending: Option<u32>,
+    pending: Option<(u32, std::ops::Range<usize>)>,
 }
 
 impl<'a, 'b, PatternMatcher: PipelinePatternMatcher>
@@ -506,11 +513,7 @@ impl<'a, 'b, PatternMatcher: PipelinePatternMatcher>
 {
     /// Create a new iterator over [`Segment`] of the [`input`].
     /// This iterator will yield [`Segment`] in order.
-    pub(crate) fn new(
-        input: &'a str,
-        pattern_matcher: &'b PatternMatcher,
-        normalized: bool,
-    ) -> Self {
+    pub fn new(input: &'a str, pattern_matcher: &'b PatternMatcher, normalized: bool) -> Self {
         Self {
             input,
             pattern_matcher,
@@ -529,8 +532,11 @@ impl<'a, 'b, PatternMatcher: PipelinePatternMatcher> Iterator
     /// Get the next segment of the input.
     fn next(&mut self) -> Option<Self::Item> {
         // take resets the pending option to None
-        if let Some(special_token) = self.pending.take() {
-            return Some(Segment::SpecialToken(special_token));
+        if let Some((id, matched)) = self.pending.take() {
+            return Some(Segment::SpecialToken {
+                id,
+                text: &self.input[matched],
+            });
         }
 
         let remaining_input = &self.input[self.offset..];
@@ -548,10 +554,13 @@ impl<'a, 'b, PatternMatcher: PipelinePatternMatcher> Iterator
             if !before_token.is_empty() {
                 // The iterator returns segments in order: we need to return the chunk of text and then the special token.
                 // Store the special token to return in the next call and return a [`Segment::Text`]
-                self.pending = Some(token);
+                self.pending = Some((token, start..end));
                 return Some(Segment::Text(before_token));
             } else {
-                return Some(Segment::SpecialToken(token));
+                return Some(Segment::SpecialToken {
+                    id: token,
+                    text: &self.input[start..end],
+                });
             }
         }
         self.offset = self.input.len();
@@ -928,8 +937,8 @@ impl PipelineTokenizer {
         // First, we extract all special tokens from the non-normalized input
         for segment in SpecialSegmentIterator::new(input, &self.added_vocabulary, false) {
             match segment {
-                Segment::SpecialToken(token) => {
-                    output.push(PipelineToken::from(token));
+                Segment::SpecialToken { id, .. } => {
+                    output.push(PipelineToken::from(id));
                 }
                 Segment::Text(chunk) => {
                     let normalized = normalize_all(&self.normalizers, chunk)?;
@@ -939,8 +948,8 @@ impl PipelineTokenizer {
                         SpecialSegmentIterator::new(&normalized, &self.added_vocabulary, true)
                     {
                         match segment {
-                            Segment::SpecialToken(token) => {
-                                output.push(PipelineToken::from(token));
+                            Segment::SpecialToken { id, .. } => {
+                                output.push(PipelineToken::from(id));
                             }
                             Segment::Text(normalized_chunk) => {
                                 // A [`Span`] holds `u32` offsets, which breaks the `PreTokenizer` contract the
@@ -1624,7 +1633,7 @@ mod tests {
         let segments: Vec<_> = SpecialSegmentIterator::new(input, &matcher, false)
             .map(|segment| match segment {
                 Segment::Text(text) => (Some(text), None),
-                Segment::SpecialToken(id) => (None, Some(id)),
+                Segment::SpecialToken { id, .. } => (None, Some(id)),
             })
             .collect();
 

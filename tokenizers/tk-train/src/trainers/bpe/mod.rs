@@ -5,6 +5,9 @@ pub mod parity_trainer;
 #[cfg(feature = "parity-aware-bpe")]
 pub use parity_trainer::{ParityBpeTrainer, ParityBpeTrainerBuilder, ParityVariant};
 
+mod word;
+pub use word::{WithFirstLastIterator, Word};
+
 use crate::Trainer;
 use ahash::{AHashMap, AHashSet};
 use compact_str::CompactString;
@@ -12,7 +15,7 @@ use dary_heap::OctonaryHeap;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::HashSet;
-use tk_encode::models::bpe::{BPE, Pair, WithFirstLastIterator, Word};
+use tk_encode::models::bpe::{BPE, Pair};
 use tk_encode::parallelism::*;
 use tk_encode::utils::progress::{ProgressBar, ProgressFormat, ProgressStyle};
 use tk_encode::vocab::bucket_vocab_store::BucketVocabStore;
