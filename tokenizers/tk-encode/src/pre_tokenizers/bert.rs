@@ -1,8 +1,10 @@
-use crate::pipeline;
+use crate::pipeline::{self, PreTokenizerScratch};
 use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
 use crate::utils::macro_rules_attribute;
 
 use super::punctuation::is_punc;
+use atomsplit::classify::mask;
+use atomsplit::fsm::class_runs_into;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[macro_rules_attribute(impl_serde_type!)]
@@ -15,20 +17,24 @@ impl PreTokenizer for BertPreTokenizer {
     }
 }
 
-impl pipeline::PreTokenizer for BertPreTokenizer {
+// SAFETY: the spans come from an `atomsplit` fsm, which splits only at character boundaries of `text`.
+// See `atomsplit::fsm` docs.
+unsafe impl pipeline::PreTokenizer for BertPreTokenizer {
     #[inline(never)]
-    fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Span>) -> Result<()> {
+    fn pre_tokenize(
+        &self,
+        text: &str,
+        scratch: &mut PreTokenizerScratch,
+        out: &mut Vec<pipeline::Span>,
+    ) -> Result<()> {
         // Bert pre-tokenization = drop whitespace runs, isolate each punctuation char, keep every other
         // run. One `atomsplit` SIMD classify (bytes → atom tags) + the class-runs FSM, byte-exact with
         // the legacy `char::is_whitespace` / `is_punc` split above (see the tests).
-        use atomsplit::classify::{classify, mask};
-        use atomsplit::fsm::class_runs_into;
-        let bytes = text.as_bytes();
-        let mut tags = vec![0u8; bytes.len()];
-        classify(bytes, &mut tags);
-        let mut spans = vec![pipeline::Span::default(); bytes.len() + 1];
-        let n = class_runs_into::<{ mask::WS }, { mask::PUNCT }, 0>(bytes, &tags, &mut spans);
-        out.extend_from_slice(&spans[..n]);
+        scratch.split_on_tags(
+            text.as_bytes(),
+            class_runs_into::<{ mask::WS }, { mask::PUNCT }, 0>,
+            out,
+        );
         Ok(())
     }
 }
@@ -38,10 +44,13 @@ mod tests {
     use super::BertPreTokenizer;
     use crate::{NormalizedString, OffsetReferential, OffsetType, PreTokenizedString};
 
+    use crate::pipeline::PreTokenizerScratch;
     fn pretokenize(text: &str) -> Vec<(&str, (u32, u32))> {
         let pretok = BertPreTokenizer;
+        let mut scratch = PreTokenizerScratch::default();
         let mut splits = Vec::new();
-        crate::pipeline::PreTokenizer::pre_tokenize(&pretok, text, &mut splits).unwrap();
+        crate::pipeline::PreTokenizer::pre_tokenize(&pretok, text, &mut scratch, &mut splits)
+            .unwrap();
         splits
             .iter()
             .map(|s| (&text[s.range()], (s.start, s.end)))

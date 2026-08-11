@@ -535,7 +535,7 @@ mod pipeline_bpe {
         let mut out = Vec::new();
         let mut scratch = model.init_scratch();
         pipeline::Model::tokenize_pipeline(model, sequence, &mut scratch, &mut out).unwrap();
-        out.iter().map(|t| t.id).collect()
+        out.iter().map(|t| t.id()).collect()
     }
 
     fn reference_ids(model: &BPE, sequence: &str) -> Vec<u32> {
@@ -587,7 +587,7 @@ mod pipeline_bpe {
         for input in ["hello", "hell", "helo", "oleh", "hello", "", "hxe"] {
             let mut out = Vec::new();
             pipeline::Model::tokenize_pipeline(&model, input, &mut scratch, &mut out).unwrap();
-            let got: Vec<u32> = out.iter().map(|t| t.id).collect();
+            let got: Vec<u32> = out.iter().map(|t| t.id()).collect();
             assert_eq!(got, reference_ids(&reference, input), "{input:?}");
         }
     }
@@ -615,7 +615,7 @@ mod pipeline_bpe {
             ] {
                 let mut out = Vec::new();
                 pipeline::Model::tokenize_pipeline(&cached, word, &mut scratch, &mut out).unwrap();
-                let got: Vec<u32> = out.iter().map(|t| t.id).collect();
+                let got: Vec<u32> = out.iter().map(|t| t.id()).collect();
                 assert_eq!(got, pipeline_ids(&uncached, word), "{word:?}");
             }
         }
