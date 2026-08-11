@@ -248,7 +248,10 @@ impl BpeBuilder {
         } else {
             0
         };
-        let mut buffer: Vec<u8> = vec![0; max_len];
+        // A merge concatenates two vocabulary entries, and both are looked up in
+        // the vocab before anything is written here, so the result never exceeds
+        // twice the longest single entry.
+        let mut buffer: Vec<u8> = vec![0; max_len * 2];
         let merge_map: MergeMap = self
             .config
             .merges
@@ -261,11 +264,13 @@ impl BpeBuilder {
                 let b_id = vocab
                     .get(&b)
                     .ok_or_else(|| Error::MergeTokenOutOfVocabulary(b.to_owned()))?;
+                let b_suffix = b
+                    .get(prefix_len..)
+                    .ok_or_else(|| Error::MergeTokenOutOfVocabulary(b.to_owned()))?;
                 buffer[0..a.len()].copy_from_slice(a.as_bytes());
-                let b_len = b.len() - prefix_len;
-                let merge_len = a.len() + b_len;
-                buffer[a.len()..merge_len].copy_from_slice(&b.as_bytes()[prefix_len..]);
-                // SAFETY: buffer contains a concatenation of two valid UTF-8 strings, so it is itself valid UTF-8, even considering prefix_len
+                let merge_len = a.len() + b_suffix.len();
+                buffer[a.len()..merge_len].copy_from_slice(b_suffix.as_bytes());
+                // SAFETY: buffer contains a concatenation of two valid UTF-8 strings, so it is itself valid UTF-8: `str::get` rejects a prefix_len that is not a char boundary of b
                 let new_token = unsafe { from_utf8_unchecked(&buffer[..merge_len]) };
                 let new_id = vocab
                     .get(new_token)
@@ -975,6 +980,57 @@ mod tests {
                 offsets: (0, 3)
             }]
         );
+    }
+
+    #[test]
+    // A merge whose concatenation is longer than the longest single vocab entry
+    // must be reported as out of vocabulary, not panic while building the
+    // merge map.
+    fn test_bpe_merge_longer_than_longest_vocab_token() {
+        let vocab: Vocab = [("aa".into(), 0), ("bb".into(), 1)]
+            .iter()
+            .cloned()
+            .collect();
+        let merges = vec![("aa".to_string(), "bb".to_string())];
+
+        match BpeBuilder::default()
+            .vocab_and_merges(vocab, merges)
+            .build()
+        {
+            Ok(_) => unreachable!(),
+            Err(err) => match err.downcast_ref::<Error>() {
+                Some(Error::MergeTokenOutOfVocabulary(token)) => {
+                    assert_eq!(*token, String::from("aabb"))
+                }
+                _ => unreachable!(),
+            },
+        }
+    }
+
+    #[test]
+    // A merge whose right token is shorter than the continuing subword prefix
+    // must be reported as out of vocabulary, not underflow the length
+    // computation.
+    fn test_bpe_merge_shorter_than_continuing_subword_prefix() {
+        let vocab: Vocab = [("a".into(), 0), ("b".into(), 1), ("ab".into(), 2)]
+            .iter()
+            .cloned()
+            .collect();
+        let merges = vec![("a".to_string(), "b".to_string())];
+
+        match BpeBuilder::default()
+            .vocab_and_merges(vocab, merges)
+            .continuing_subword_prefix("##".to_string())
+            .build()
+        {
+            Ok(_) => unreachable!(),
+            Err(err) => match err.downcast_ref::<Error>() {
+                Some(Error::MergeTokenOutOfVocabulary(token)) => {
+                    assert_eq!(*token, String::from("b"))
+                }
+                _ => unreachable!(),
+            },
+        }
     }
 
     #[test]
