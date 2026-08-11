@@ -44,9 +44,13 @@ lint :
 	cargo fmt -- $(BENCHMARK_DIR)/*.rs --check
 	cargo clippy --workspace --all-targets --all-features -- -D warnings
 
+# CI overrides this to test the inference and training halves in separate jobs,
+# so a tk-train that does not compile cannot abort the tk-encode tests.
+TEST_PKGS ?= --workspace
+
 .PHONY : test
 test : $(TESTS_RESOURCES)
-	cargo test --workspace
+	cargo test $(TEST_PKGS)
 
 .PHONY : doc
 doc :

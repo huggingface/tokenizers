@@ -7,8 +7,13 @@ on:
   pull_request:
 
 jobs:
+  # The inference and training halves get a job each, so a tk-train that does not
+  # compile still leaves a readable tk-encode result instead of aborting it. Only
+  # this direction is isolated: tk-train depends on tk-encode, so a broken
+  # tk-encode fails both. The umbrella `tokenizers` crate re-exports tk-train, so
+  # it is built and tested with the training half.
   build_and_test:
-    name: Build & test
+    name: Build & test ${{ matrix.half.name }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     env:
       MACOSX_DEPLOYMENT_TARGET: 10.12
@@ -16,6 +21,13 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macOS-latest]
+        half:
+          # The rest of the workspace (atomsplit, bitmap_gen) is built and tested
+          # with the inference half.
+          - name: tk-encode
+            packages: --workspace --exclude tokenizers --exclude tk-train
+          - name: tk-train
+            packages: --package tk-train --package tokenizers
     defaults:
       run:
         working-directory: tokenizers
@@ -38,7 +50,7 @@ jobs:
           cache-bin: false
 
       - name: Build
-        run: cargo build --workspace --all-targets --verbose
+        run: cargo build ${{ matrix.half.packages }} --all-targets --verbose
 
       # Test fixtures are immutable — cache them so CI doesn't re-download
       # from the Hub (and get rate-limited) on every run.
@@ -60,14 +72,15 @@ jobs:
         shell: bash
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: make test HF="uvx --from huggingface_hub hf"
+        run: make test HF="uvx --from huggingface_hub hf" TEST_PKGS="${{ matrix.half.packages }}"
 
       # Windows skips the integration tests and the full fixture set, but the
       # tk-encode lib tests load these two tokenizer files and fail without
       # them (on purpose: a missing fixture must not silently skip a test).
       # The runner has no GNU make, so this fetches them without the Makefile.
+      # No tk-train test reads a fixture, so the training half skips this.
       - name: Download lib-test fixtures on Windows
-        if: matrix.os == 'windows-latest'
+        if: matrix.os == 'windows-latest' && matrix.half.name == 'tk-encode'
         shell: bash
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
@@ -80,8 +93,8 @@ jobs:
         if: matrix.os == 'windows-latest'
         shell: bash
         run: |
-          cargo test --workspace --verbose --lib
-          cargo test --workspace --verbose --doc
+          cargo test ${{ matrix.half.packages }} --verbose --lib
+          cargo test ${{ matrix.half.packages }} --verbose --doc
 
   # Matrixed so platform-specific cfg gates and target-specific lints get coverage.
   clippy:
