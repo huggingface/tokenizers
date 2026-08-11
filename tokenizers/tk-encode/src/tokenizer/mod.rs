@@ -10,6 +10,8 @@
 //!     ...).
 
 use ahash::AHashMap;
+use std::collections::HashMap;
+
 use std::{
     fs::{File, read_to_string},
     io::prelude::*,
@@ -151,93 +153,6 @@ pub struct Token {
 impl Token {
     pub fn new(id: u32, value: String, offsets: (usize, usize)) -> Self {
         Self { id, value, offsets }
-    }
-}
-
-use std::borrow::Cow;
-use std::collections::HashMap;
-
-#[derive(Debug, Clone)]
-pub enum InputSequence<'s> {
-    Raw(Cow<'s, str>),
-    PreTokenized(Cow<'s, [&'s str]>),
-    PreTokenizedOwned(Cow<'s, [String]>),
-    PreTokenizedCow(Cow<'s, [Cow<'s, str>]>),
-}
-
-impl<'s> From<Cow<'s, str>> for InputSequence<'s> {
-    fn from(input: Cow<'s, str>) -> Self {
-        Self::Raw(input)
-    }
-}
-
-impl<'s> From<&'s str> for InputSequence<'s> {
-    fn from(input: &'s str) -> Self {
-        Self::Raw(Cow::Borrowed(input))
-    }
-}
-
-impl From<String> for InputSequence<'_> {
-    fn from(input: String) -> Self {
-        Self::Raw(Cow::Owned(input))
-    }
-}
-
-impl<'s> From<&'s [&'s str]> for InputSequence<'s> {
-    fn from(input: &'s [&'s str]) -> Self {
-        Self::PreTokenized(Cow::Borrowed(input))
-    }
-}
-
-impl<'s> From<Vec<&'s str>> for InputSequence<'s> {
-    fn from(input: Vec<&'s str>) -> Self {
-        Self::PreTokenized(Cow::Owned(input))
-    }
-}
-
-impl<'s> From<&'s [String]> for InputSequence<'s> {
-    fn from(input: &'s [String]) -> Self {
-        Self::PreTokenizedOwned(Cow::Borrowed(input))
-    }
-}
-
-impl From<Vec<String>> for InputSequence<'_> {
-    fn from(input: Vec<String>) -> Self {
-        Self::PreTokenizedOwned(Cow::Owned(input))
-    }
-}
-
-impl<'s> From<Vec<Cow<'s, str>>> for InputSequence<'s> {
-    fn from(input: Vec<Cow<'s, str>>) -> Self {
-        Self::PreTokenizedCow(Cow::Owned(input))
-    }
-}
-
-impl<'s> From<&'s [Cow<'s, str>]> for InputSequence<'s> {
-    fn from(input: &'s [Cow<'s, str>]) -> Self {
-        Self::PreTokenizedCow(Cow::Borrowed(input))
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum EncodeInput<'s> {
-    Single(InputSequence<'s>),
-    Dual(InputSequence<'s>, InputSequence<'s>),
-}
-
-impl<'s, I: Into<InputSequence<'s>>> From<I> for EncodeInput<'s> {
-    fn from(input: I) -> Self {
-        Self::Single(input.into())
-    }
-}
-
-impl<'s, I1, I2> From<(I1, I2)> for EncodeInput<'s>
-where
-    I1: Into<InputSequence<'s>>,
-    I2: Into<InputSequence<'s>>,
-{
-    fn from(input: (I1, I2)) -> Self {
-        Self::Dual(input.0.into(), input.1.into())
     }
 }
 
