@@ -22,11 +22,9 @@ pub use unrolled_regex::{GptFsm, GptFsmPattern, gpt_fsm, is_deepseek};
 
 pub mod byte_level;
 pub mod iter;
-pub mod padding;
 #[cfg(feature = "parallelism")]
 pub mod parallelism;
 pub mod progress;
-pub mod truncation;
 
 // Re-export ProgressFormat for public API
 pub use progress::ProgressFormat;

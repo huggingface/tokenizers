@@ -23,7 +23,6 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 mod added_vocabulary;
-mod encoding;
 pub mod normalizer;
 pub mod pattern;
 pub mod pipeline;
@@ -39,11 +38,6 @@ pub use crate::processors::PostProcessorWrapper;
 // And some other types
 pub use crate::tokenizer::added_vocabulary::{AddedToken, AddedVocabulary};
 pub use crate::utils::iter::LinesWithEnding;
-pub use crate::utils::padding::{PaddingDirection, PaddingParams, PaddingStrategy, pad_encodings};
-pub use crate::utils::truncation::{
-    TruncationDirection, TruncationParams, TruncationStrategy, truncate_encodings,
-};
-pub use encoding::*;
 pub use normalizer::{NormalizedString, OffsetReferential, SplitDelimiterBehavior};
 pub use pre_tokenizer::*;
 
@@ -78,12 +72,6 @@ pub trait Model {
 pub trait PostProcessor {
     /// Returns the number of tokens that will be added during the processing step
     fn added_tokens(&self, is_pair: bool) -> usize;
-}
-
-#[derive(thiserror::Error, Debug)]
-pub enum ProcessorError {
-    #[error("encodings vector length must be either 1 or 2")]
-    InvalidEncodingsVecLength,
 }
 
 /// A `Decoder` changes the raw tokens into its more readable form.
@@ -122,9 +110,6 @@ pub struct TokenizerBuilder<M, N, PT, PP, D> {
     decoder: Option<D>,
 
     added_vocabulary: AddedVocabulary,
-
-    truncation: Option<TruncationParams>,
-    padding: Option<PaddingParams>,
 }
 
 impl<M, N, PT, PP, D> Default for TokenizerBuilder<M, N, PT, PP, D>
@@ -157,8 +142,6 @@ where
             post_processor: None,
             decoder: None,
             added_vocabulary: AddedVocabulary::new(),
-            truncation: None,
-            padding: None,
         }
     }
 
@@ -177,8 +160,6 @@ where
             post_processor: self.post_processor,
             decoder: self.decoder,
             added_vocabulary: self.added_vocabulary,
-            truncation: self.truncation,
-            padding: self.padding,
         })
     }
 
@@ -220,20 +201,6 @@ where
     /// Set the added vocabulary.
     pub fn with_added_vocabulary(mut self, added_vocabulary: AddedVocabulary) -> Self {
         self.added_vocabulary = added_vocabulary;
-        self
-    }
-
-    /// Set the truncation parameters.
-    #[must_use]
-    pub fn with_truncation(mut self, trunc: Option<TruncationParams>) -> Self {
-        self.truncation = trunc;
-        self
-    }
-
-    /// Set the padding parameters.
-    #[must_use]
-    pub fn with_padding(mut self, padding: Option<PaddingParams>) -> Self {
-        self.padding = padding;
         self
     }
 }
@@ -311,8 +278,6 @@ where
             post_processor: t.post_processor.map(Into::into),
             decoder: t.decoder.map(Into::into),
             added_vocabulary: t.added_vocabulary,
-            padding: t.padding,
-            truncation: t.truncation,
         })
     }
 }
@@ -337,10 +302,6 @@ impl DerefMut for Tokenizer {
     }
 }
 
-#[derive(thiserror::Error, Debug)]
-#[error("{0}")]
-pub struct TruncationParamError(String);
-
 /// A `Tokenizer` is capable of encoding/decoding any text.
 #[derive(Clone, Debug)]
 pub struct TokenizerImpl<M, N, PT, PP, D> {
@@ -353,10 +314,6 @@ pub struct TokenizerImpl<M, N, PT, PP, D> {
 
     // Added Vocabulary capabilities
     added_vocabulary: AddedVocabulary,
-
-    // General processing parameters
-    truncation: Option<TruncationParams>,
-    padding: Option<PaddingParams>,
 }
 
 impl<M, N, PT, PP, D> TokenizerImpl<M, N, PT, PP, D>
@@ -377,9 +334,6 @@ where
             decoder: None,
 
             added_vocabulary: AddedVocabulary::new(),
-
-            truncation: None,
-            padding: None,
         }
     }
 
@@ -462,61 +416,6 @@ where
     /// Get the added vocabulary
     pub fn get_added_vocabulary(&self) -> &AddedVocabulary {
         &self.added_vocabulary
-    }
-
-    /// Set the truncation parameters
-    ///
-    /// Fails if `stride` is too high relative to `max_length` and `post_processor.added_tokens()`
-    pub fn with_truncation(&mut self, trunc: Option<TruncationParams>) -> Result<&mut Self> {
-        if let Some(trunc_params) = &trunc {
-            let n_added_tokens = self.get_n_added_tokens(false);
-            let effective_max_length = trunc_params.max_length - n_added_tokens;
-            if effective_max_length < trunc_params.stride {
-                return Err(Box::new(TruncationParamError(format!(
-                    "tokenizer stride set to {}, which is greater than or equal to its effective max length of {} (= {} original max length - {} added special tokens), ",
-                    trunc_params.stride,
-                    effective_max_length,
-                    trunc_params.max_length,
-                    n_added_tokens
-                ))));
-            }
-        }
-        self.truncation = trunc;
-        Ok(self)
-    }
-
-    fn get_n_added_tokens(&self, is_pair: bool) -> usize {
-        if let Some(processor) = &self.post_processor {
-            processor.added_tokens(is_pair)
-        } else {
-            0
-        }
-    }
-
-    /// Get the currently set truncation parameters
-    pub fn get_truncation(&self) -> Option<&TruncationParams> {
-        self.truncation.as_ref()
-    }
-
-    /// Get a mutable reference to the currently set truncation parameters
-    pub fn get_truncation_mut(&mut self) -> Option<&mut TruncationParams> {
-        self.truncation.as_mut()
-    }
-
-    /// Set the padding parameters
-    pub fn with_padding(&mut self, padding: Option<PaddingParams>) -> &mut Self {
-        self.padding = padding;
-        self
-    }
-
-    /// Get the currently set padding parameters
-    pub fn get_padding(&self) -> Option<&PaddingParams> {
-        self.padding.as_ref()
-    }
-
-    /// Get a mutable reference to the currently set padding parameters
-    pub fn get_padding_mut(&mut self) -> Option<&mut PaddingParams> {
-        self.padding.as_mut()
     }
 
     // Get the vocabulary as a plain HashMap for bindings compatibility

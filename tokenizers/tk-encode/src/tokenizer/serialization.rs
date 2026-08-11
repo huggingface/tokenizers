@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use serde::{
     self, Deserialize, Deserializer, Serialize, Serializer,
-    de::{Error, MapAccess, Visitor},
+    de::{Error, IgnoredAny, MapAccess, Visitor},
     ser::SerializeStruct,
 };
 
@@ -29,10 +29,6 @@ where
 
         // Start by adding the current version
         tokenizer.serialize_field("version", SERIALIZATION_VERSION)?;
-
-        // Params
-        tokenizer.serialize_field("truncation", &self.truncation)?;
-        tokenizer.serialize_field("padding", &self.padding)?;
 
         // Added tokens
         tokenizer.serialize_field("added_tokens", &self.added_vocabulary)?;
@@ -120,12 +116,6 @@ where
                         return Err(Error::custom(format!("Unknown tokenizer version '{v}'")));
                     }
                 }
-                "truncation" => {
-                    builder = builder.with_truncation(map.next_value()?);
-                }
-                "padding" => {
-                    builder = builder.with_padding(map.next_value()?);
-                }
                 "added_tokens" => {
                     tokens = map.next_value()?;
                 }
@@ -144,7 +134,13 @@ where
                 "post_processor" => {
                     builder = builder.with_post_processor(map.next_value()?);
                 }
-                _ => {}
+                // A key we no longer read, `truncation` and `padding` among them: every
+                // `tokenizer.json` in the wild still carries those two. The value has to be
+                // consumed either way, since `serde_json` reads a map key and its value as one
+                // step and fails on the next key otherwise.
+                _ => {
+                    map.next_value::<IgnoredAny>()?;
+                }
             };
         }
         let mut tokenizer = builder
@@ -176,8 +172,11 @@ mod tests {
     use crate::tokenizer::Tokenizer;
     use std::str::FromStr;
 
+    /// The `truncation` and `padding` keys are the ones every `tokenizer.json` in the wild carries
+    /// and this crate no longer reads. Loading has to accept them and serializing has to leave
+    /// them out, so the round trip drops the two keys instead of reproducing its input verbatim.
     #[test]
-    fn test_deserialization_serialization_invariant() {
+    fn round_trip_drops_truncation_and_padding() {
         let tok_json = r#"{
   "version": "1.0",
   "truncation": null,
@@ -225,9 +224,35 @@ mod tests {
 }"#;
         let tokenizer = Tokenizer::from_str(tok_json).unwrap();
 
-        let tok_str = serde_json::to_string_pretty(&tokenizer).unwrap();
-        // It should be exactly the same as above
-        assert_eq!(tok_str, tok_json);
+        let expected = tok_json.replace("  \"truncation\": null,\n  \"padding\": null,\n", "");
+        assert_eq!(serde_json::to_string_pretty(&tokenizer).unwrap(), expected);
+    }
+
+    /// A non-null `truncation` or `padding` block is skipped whole, not just when it is `null`.
+    #[test]
+    fn loads_a_config_that_asks_for_truncation_and_padding() {
+        let tok_json = r#"{
+  "version": "1.0",
+  "truncation": {"direction": "Right", "max_length": 512, "strategy": "LongestFirst", "stride": 0},
+  "padding": {"strategy": "BatchLongest", "direction": "Right", "pad_to_multiple_of": null,
+              "pad_id": 0, "pad_type_id": 0, "pad_token": "[PAD]"},
+  "added_tokens": [],
+  "normalizer": null,
+  "pre_tokenizer": null,
+  "post_processor": null,
+  "decoder": null,
+  "model": {
+    "type": "WordPiece",
+    "unk_token": "[UNK]",
+    "continuing_subword_prefix": "",
+    "max_input_chars_per_word": 100,
+    "vocab": {}
+  }
+}"#;
+        let tokenizer = Tokenizer::from_str(tok_json).unwrap();
+        let round_tripped = serde_json::to_string(&tokenizer).unwrap();
+        assert!(!round_tripped.contains("truncation"));
+        assert!(!round_tripped.contains("padding"));
     }
 
     #[cfg(feature = "http")]

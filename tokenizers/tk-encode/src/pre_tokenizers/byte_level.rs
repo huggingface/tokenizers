@@ -1,7 +1,7 @@
 use crate::utils::byte_level::{BYTES_CHAR_LOOKUP, CHAR_BYTES_LOOKUP};
 use serde::{Deserialize, Serialize};
 
-use crate::tokenizer::{Decoder, Encoding, PostProcessor, PreTokenizer, Result};
+use crate::tokenizer::{Decoder, PostProcessor, PreTokenizer, Result};
 use crate::utils::macro_rules_attribute;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -98,55 +98,20 @@ impl Decoder for ByteLevel {
     }
 }
 
-/// As a `PostProcessor`, `ByteLevel` is in charge of trimming the offsets if necessary.
+/// As a [`PostProcessor`], `ByteLevel` adds no token of its own. Its [`Self::trim_offsets`] used
+/// to pull each token's offsets in past the leading `Ġ`; there are no offsets to trim now, so the
+/// field is read from the config and serialized back out without being acted on.
 impl PostProcessor for ByteLevel {
     fn added_tokens(&self, _is_pair: bool) -> usize {
         0
     }
-
-}
-
-pub fn process_offsets(encoding: &mut Encoding, add_prefix_space: bool) {
-    encoding.process_tokens_with_offsets_mut(|(i, (token, offsets))| {
-        let mut leading_spaces = token
-            .chars()
-            .take_while(|c| *c == BYTES_CHAR_LOOKUP[b' ' as usize] || c.is_whitespace())
-            .count();
-        let trailing_spaces = token
-            .chars()
-            .rev()
-            .take_while(|c| *c == BYTES_CHAR_LOOKUP[b' ' as usize] || c.is_whitespace())
-            .count();
-
-        if leading_spaces > 0 || trailing_spaces > 0 {
-            if leading_spaces > 0 {
-                // If user uses `is_pretokenized=True` we might have
-                // offsets that might begin at the start of the string but are
-                // NOT the first token.
-                let is_first = i == 0 || offsets.0 == 0;
-                if is_first && add_prefix_space && leading_spaces == 1 {
-                    // If we are processing the first pair of offsets, with `add_prefix_space`,
-                    // then we shouldn't remove anything we added. If there are more than one
-                    // leading spaces though, it means we didn't add them, and they should be
-                    // removed.
-                    leading_spaces = 0;
-                }
-                offsets.0 = std::cmp::min(offsets.0 + leading_spaces, offsets.1);
-            }
-            if trailing_spaces > 0 && offsets.1 >= trailing_spaces {
-                offsets.1 = std::cmp::max(offsets.1 - trailing_spaces, offsets.0);
-            }
-        }
-    });
 }
 
 #[cfg(test)]
 mod tests {
 
     use super::*;
-    use crate::tokenizer::{Decoder, Encoding, PostProcessor};
-    use ahash::AHashMap;
-    use std::iter::FromIterator;
+    use crate::tokenizer::Decoder;
 
     /// Compares against readable literals; `pipeline_splits` hands back owned strings.
     fn assert_splits(got: Vec<(String, (usize, usize))>, want: &[(&str, (usize, usize))]) {
@@ -278,123 +243,6 @@ mod tests {
                 .map(|(_, o)| &input[o.0..o.1])
                 .collect::<Vec<_>>(),
             vec!["i", "⭢", "j"]
-        );
-    }
-
-    #[test]
-    fn processor_trims_offsets_pre_tokenized() {
-        // If user uses `is_pretokenized=True` we might have
-        // offsets that might begin at the start of the string but are
-        // NOT the first token.
-        let mut encoding = Encoding::new(
-            vec![0; 5],
-            vec![],
-            vec!["Ġl".into(), "ove".into(), "Ġl".into(), "ove".into()],
-            vec![],
-            vec![(0, 1), (1, 4), (0, 1), (1, 4)],
-            vec![],
-            vec![],
-            vec![],
-            AHashMap::new(),
-        );
-        process_offsets(&mut encoding, true);
-        assert_eq!(
-            encoding,
-            Encoding::new(
-                vec![0; 5],
-                vec![],
-                vec!["Ġl".into(), "ove".into(), "Ġl".into(), "ove".into()],
-                vec![],
-                vec![(0, 1), (1, 4), (0, 1), (1, 4)],
-                vec![],
-                vec![],
-                vec![],
-                AHashMap::new(),
-            )
-        );
-    }
-
-    #[test]
-    fn processor_trims_offsets() {
-        let start = Encoding::new(
-            vec![0; 5],
-            vec![],
-            vec![
-                "Ġ".into(),
-                "ĠĠĠĠHelloĠĠ".into(),
-                "ĠĠHello".into(),
-                "HelloĠĠ".into(),
-                "ĠĠĠĠ".into(),
-            ],
-            vec![],
-            vec![(0, 1), (0, 11), (11, 18), (18, 25), (25, 29)],
-            vec![],
-            vec![],
-            vec![],
-            AHashMap::new(),
-        );
-        let expected = Encoding::new(
-            vec![0; 5],
-            vec![0; 5],
-            vec![
-                "Ġ".into(),
-                "ĠĠĠĠHelloĠĠ".into(),
-                "ĠĠHello".into(),
-                "HelloĠĠ".into(),
-                "ĠĠĠĠ".into(),
-            ],
-            vec![],
-            vec![(0, 0), (4, 9), (13, 18), (18, 23), (29, 29)],
-            vec![],
-            vec![],
-            vec![],
-            AHashMap::from_iter(vec![(0, 0..5)]),
-        );
-
-        let bytelevel = ByteLevel::default().trim_offsets(true);
-        assert_eq!(
-            expected,
-            bytelevel.process(start.clone(), None, false).unwrap()
-        );
-
-        let pair_expected = Encoding::new(
-            vec![0; 10],
-            vec![0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
-            vec![
-                "Ġ".into(),
-                "ĠĠĠĠHelloĠĠ".into(),
-                "ĠĠHello".into(),
-                "HelloĠĠ".into(),
-                "ĠĠĠĠ".into(),
-                "Ġ".into(),
-                "ĠĠĠĠHelloĠĠ".into(),
-                "ĠĠHello".into(),
-                "HelloĠĠ".into(),
-                "ĠĠĠĠ".into(),
-            ],
-            vec![],
-            vec![
-                (0, 0),
-                (4, 9),
-                (13, 18),
-                (18, 23),
-                (29, 29),
-                (0, 0),
-                (4, 9),
-                (13, 18),
-                (18, 23),
-                (29, 29),
-            ],
-            vec![],
-            vec![],
-            vec![],
-            AHashMap::from_iter(vec![(0, 0..5), (1, 5..10)]),
-        );
-        assert_eq!(
-            pair_expected,
-            bytelevel
-                .process(start.clone(), Some(start), false)
-                .unwrap()
         );
     }
 

@@ -312,13 +312,13 @@ impl TryFrom<PreTokenizerWrapper> for PipelinePreTokenizer {
 //  - The templates the conversion below refuses (a `single` referencing the sequence twice) and
 //    the field it ignores (the `id` on `Piece::Sequence`, so `$B` reads as `$A`).
 //  - `trim_offsets`, on both `ByteLevel` and `RobertaProcessing`. There are no offsets to trim
-//    while the pipeline computes none.
-//  - The rest of `Encoding`: `tokens`, `offsets`, `words`, `special_tokens_mask`,
-//    `attention_mask` and `sequence_ranges`. `Encoding::char_to_token` and its neighbours read
-//    `sequence_ranges`, and the post-processors were careful to leave the frame tokens out of
-//    the range they record.
-//  - Truncation and padding. `truncate_encodings` and `pad_encodings` have no caller left, and
-//    `PostProcessor::added_tokens` is there to budget the frame against the truncation length.
+//    while the pipeline computes none, so both are parsed and then ignored.
+//  - Everything the released crate's `Encoding` carries besides the ids: the token strings,
+//    `offsets`, `words`, `special_tokens_mask`, `attention_mask`, and the token range recorded per
+//    input sequence. That last one is what `char_to_token`, `word_to_tokens` and `token_to_word`
+//    look up, and the post-processors were careful to leave the frame tokens outside it. Those
+//    three are the reason callers pick this crate over a plain BPE encoder, so dropping the ids-only
+//    shape is a decision to revisit, not a settled one.
 #[derive(Debug, Default)]
 pub struct PipelinePostProcessor {
     prefix: Box<[PipelineToken]>,
@@ -561,6 +561,25 @@ impl<'a, 'b, PatternMatcher: PipelinePatternMatcher> Iterator
 
 /// Experimental encode-only pipeline built from a [`Tokenizer`]. Runs the same
 /// stages over borrowed ranges to avoid the reference path's allocations.
+// todo: truncation and padding are features this crate used to have and now has nowhere to put.
+// Both rewrote the per-token arrays that went out with the reference `Encoding`, and the pipeline
+// never had them, so a `tokenizer.json` asking for either is parsed and then ignored (there is a
+// test pinning that in `crate::tokenizer::serialization`). Building them back means:
+//
+//  - Truncation config: `max_length`, `stride`, a `direction` (left or right) and, for a pair, a
+//    strategy picking which side gives up tokens (longest first, first only, second only).
+//  - A `stride` above 0 does not just cut the tail off, it emits overlapping windows of the
+//    sequence. The released crate returns the first window and hangs the rest off it as
+//    `overflowing`, which a flat `Vec<PipelineToken>` cannot express. Decide where they go before
+//    writing any of the cutting logic.
+//  - `max_length` counts the frame. The released crate subtracts `PostProcessor::added_tokens`
+//    from it first, and refuses a `stride` that no longer fits in what is left.
+//  - Padding config: a strategy (pad every sequence to a fixed length, or to the longest in the
+//    batch), a `direction`, `pad_to_multiple_of`, `pad_id`, `pad_type_id` and `pad_token`. Padding
+//    to the batch longest needs every sequence in hand at once, so it belongs where
+//    [`PipelineTokenizer::encode`] already holds the whole batch, not in `encode_sequence`.
+//  - Padding is the only thing that makes an attention mask worth returning: it is all ones until
+//    pad tokens show up. Whatever ends up carrying the ids has to carry that mask alongside.
 pub struct PipelineTokenizer {
     added_vocabulary: BucketAddedVocabulary,
     normalizers: Vec<PipelineNormalizer>,

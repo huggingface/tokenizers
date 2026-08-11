@@ -218,8 +218,8 @@ mod tests {
 
     fn pipeline_ids(model: &WordLevel, sequence: &str) -> Result<Vec<u32>> {
         let mut output = vec![];
-        let mut scratch = pipeline::Model::init_scratch(model);
-        pipeline::Model::tokenize_pipeline(model, sequence, &mut scratch, &mut output)?;
+        pipeline::Model::init_scratch(model);
+        pipeline::Model::tokenize_pipeline(model, sequence, &mut (), &mut output)?;
         Ok(output.iter().map(|token| token.id()).collect())
     }
 

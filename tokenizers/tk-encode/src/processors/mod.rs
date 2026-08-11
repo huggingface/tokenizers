@@ -8,12 +8,12 @@ pub use super::pre_tokenizers::byte_level;
 
 use serde::{Deserialize, Serialize};
 
+use crate::PostProcessor;
 use crate::pre_tokenizers::byte_level::ByteLevel;
 use crate::processors::bert::BertProcessing;
 use crate::processors::roberta::RobertaProcessing;
 use crate::processors::sequence::Sequence;
 use crate::processors::template::TemplateProcessing;
-use crate::{Encoding, PostProcessor, Result};
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Eq)]
 #[serde(untagged)]
@@ -36,7 +36,6 @@ impl PostProcessor for PostProcessorWrapper {
             Self::Sequence(bl) => bl.added_tokens(is_pair),
         }
     }
-
 }
 
 impl_enum_from!(BertProcessing, PostProcessorWrapper, Bert);
