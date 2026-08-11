@@ -1,6 +1,7 @@
 use std::fs::File;
 use std::io::BufReader;
 
+use tk_encode::pipeline;
 use tk_encode::tokenizer::{
     Decoder, Model, Normalizer, PostProcessor, PreTokenizer, TokenizerImpl,
 };
@@ -38,7 +39,7 @@ pub trait TokenizerTrainExt<M> {
 impl<M, N, PT, PP, D> TokenizerTrainExt<M> for TokenizerImpl<M, N, PT, PP, D>
 where
     M: Model + Send + Sync,
-    N: Normalizer + Send + Sync,
+    N: Normalizer + pipeline::Normalizer + Send + Sync,
     PT: PreTokenizer + Send + Sync,
     PP: PostProcessor + Send + Sync,
     D: Decoder + Send + Sync,

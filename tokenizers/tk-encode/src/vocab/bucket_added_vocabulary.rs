@@ -1,9 +1,10 @@
-use super::super::{Model, NormalizedString, Normalizer, Result};
+use super::super::{Model, Result};
 use super::buckets::{AddedTokenFlags, Buckets};
-use crate::pipeline::PipelinePatternMatcher;
+use crate::pipeline::{self, PipelinePatternMatcher};
 use crate::pre_tokenizers::whitespace::is_word_char;
 use ahash::AHashMap;
 use serde::{Deserialize, Serialize, Serializer, ser::SerializeSeq};
+use std::borrow::Cow;
 use std::fmt;
 /// Represent a token added by the user on top of the existing Model vocabulary.
 /// AddedToken can be configured to specify the behavior they should have in various situations
@@ -273,7 +274,7 @@ impl AddedVocabulary {
     }
 
     /// Add some special tokens to the vocabulary
-    pub fn add_special_tokens<N: Normalizer>(
+    pub fn add_special_tokens<N: pipeline::Normalizer>(
         &mut self,
         tokens: impl IntoIterator<Item = AddedToken>,
         model: &impl Model,
@@ -283,7 +284,7 @@ impl AddedVocabulary {
     }
 
     /// Add some tokens to the vocabulary
-    pub fn add_tokens<N: Normalizer>(
+    pub fn add_tokens<N: pipeline::Normalizer>(
         &mut self,
         tokens: impl IntoIterator<Item = AddedToken>,
         model: &impl Model,
@@ -297,11 +298,17 @@ impl AddedVocabulary {
         // space; `metadata` is indexed by id and sized to (max id + 1), so `metadata.len()` is the
         // next free dense id (no scan/alloc). Added ids start above the model vocab; a token already
         // in the model reuses the model id.
-        let mut metadata = self.token_metadata.to_vec();
+        // Taken, not copied: `into_vec` reuses the box's allocation, so the metadata table (one
+        // entry per id, so as long as the model vocabulary once added tokens sit above it) is never
+        // memcpy'd. Every return path below writes the field back.
+        let mut metadata = std::mem::take(&mut self.token_metadata).into_vec();
         let model_size = model.get_vocab_size() as u32;
         let mut next_id = (metadata.len() as u32).max(model_size);
 
-        let mut entries: AHashMap<u32, (Vec<u8>, bool)> = AHashMap::new();
+        let tokens = tokens.into_iter();
+        let incoming = tokens.size_hint().0;
+        let mut entries: AHashMap<u32, (Vec<u8>, bool)> =
+            AHashMap::with_capacity(self.vocab.len() + self.normalized_vocab.len() + incoming);
         // Because we allow changing from normalized=true to false, we need to keep track of both
         for (form, id) in self.vocab.get_vocab_bytes() {
             entries.insert(id, (form, false));
@@ -309,7 +316,7 @@ impl AddedVocabulary {
         for (form, id) in self.normalized_vocab.get_vocab_bytes() {
             entries.insert(id, (form, true));
         }
-        let mut seen: AHashMap<String, u32> = AHashMap::new();
+        let mut seen: AHashMap<String, u32> = AHashMap::with_capacity(incoming);
 
         for token in tokens {
             total += 1;
@@ -319,19 +326,15 @@ impl AddedVocabulary {
             }
             let flags = AddedTokenFlags::from(&token);
             let is_norm = flags.normalized;
-            let norm_form: String = match normalizer {
-                Some(n) => {
-                    // TODO: fix normalizer to remove allocations :)
-                    let mut s = NormalizedString::from(token.content.as_str());
-                    n.normalize(&mut s)?;
-                    s.get().to_string()
+            // Without a normalizer the normalized form *is* the content, so borrow it. A normalizer
+            // borrows too whenever it leaves the text alone.
+            let norm_form = match normalizer.map(|n| n.normalize(&token.content)) {
+                Some(Ok(form)) => form,
+                Some(Err(e)) => {
+                    self.token_metadata = metadata.into();
+                    return Err(e);
                 }
-                None => token.content.clone(),
-            };
-            let form = if is_norm {
-                norm_form.clone().into_bytes()
-            } else {
-                token.content.clone().into_bytes()
+                None => Cow::Borrowed(token.content.as_str()),
             };
             // token could be in model, in added vocab, in added vocab normalized
             let existing = seen
@@ -357,12 +360,22 @@ impl AddedVocabulary {
                 metadata.resize(id as usize + 1, AddedTokenFlags::default());
             }
             metadata[id as usize] = flags;
+            // Built only once the token is known to be kept, so the tokens dropped above cost
+            // nothing. A normalized form hands over the buffer it already owns.
+            let form = if is_norm {
+                norm_form.into_owned().into_bytes()
+            } else {
+                token.content.as_bytes().to_vec()
+            };
             entries.insert(id, (form, is_norm)); // if id existed, we overwrite it
-            seen.insert(token.content.clone(), id);
+            seen.insert(token.content, id);
         }
 
         // Partition the final set of tokens into two VocabStore and rebuild both from scratch.
-        let (mut raw_tokens, mut norm_tokens) = (Vec::new(), Vec::new());
+        let (mut raw_tokens, mut norm_tokens) = (
+            Vec::with_capacity(entries.len()),
+            Vec::with_capacity(entries.len()),
+        );
         for (id, (form, is_norm)) in entries {
             if is_norm {
                 norm_tokens.push((form, id));

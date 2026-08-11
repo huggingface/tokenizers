@@ -1,6 +1,7 @@
+use crate::{Normalizer, pipeline};
+
 use super::{
-    Model, NormalizedString, Normalizer, Offsets, PreTokenizedString, Result, Token,
-    normalizer::Range,
+    Model, NormalizedString, Offsets, PreTokenizedString, Result, Token, normalizer::Range,
 };
 use ahash::{AHashMap, AHashSet};
 use daachorse::{DoubleArrayAhoCorasick, DoubleArrayAhoCorasickBuilder, MatchKind};
@@ -260,7 +261,7 @@ impl AddedVocabulary {
     }
 
     /// Add some special tokens to the vocabulary
-    pub fn add_special_tokens<N: Normalizer>(
+    pub fn add_special_tokens<N: pipeline::Normalizer>(
         &mut self,
         tokens: impl IntoIterator<Item = AddedToken>,
         model: &impl Model,
@@ -270,7 +271,7 @@ impl AddedVocabulary {
     }
 
     /// Add some tokens to the vocabulary
-    pub fn add_tokens<N: Normalizer>(
+    pub fn add_tokens<N: pipeline::Normalizer>(
         &mut self,
         tokens: impl IntoIterator<Item = AddedToken>,
         model: &impl Model,
@@ -316,11 +317,9 @@ impl AddedVocabulary {
             if token.normalized
                 && let Some(n) = normalizer
             {
-                let mut s = NormalizedString::from(token.content.as_ref());
-                n.normalize(&mut s)?;
-                let normed = s.get().to_string();
+                let normed = n.normalize(&token.content)?;
                 if normed != token.content {
-                    self.normalized_cache.insert(new_id, normed);
+                    self.normalized_cache.insert(new_id, normed.into_owned());
                 }
             }
 
@@ -352,7 +351,7 @@ impl AddedVocabulary {
     /// can be slow; prefer setting the normalizer *before* calling `add_tokens` when
     /// constructing a tokenizer programmatically. During deserialization this is never
     /// triggered because the normalizer is set via the builder before tokens are added.
-    pub fn refresh_normalized_tokens<N: Normalizer>(
+    pub fn refresh_normalized_tokens<N: pipeline::Normalizer>(
         &mut self,
         normalizer: Option<&N>,
     ) -> Result<()> {
@@ -361,11 +360,9 @@ impl AddedVocabulary {
             if token.normalized
                 && let Some(n) = normalizer
             {
-                let mut s = NormalizedString::from(token.content.as_ref());
-                n.normalize(&mut s)?;
-                let normed = s.get().to_string();
+                let normed = n.normalize(&token.content)?;
                 if normed != token.content {
-                    self.normalized_cache.insert(*id, normed);
+                    self.normalized_cache.insert(*id, normed.into_owned());
                 }
             }
         }

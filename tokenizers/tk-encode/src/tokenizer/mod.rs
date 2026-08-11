@@ -539,7 +539,7 @@ pub struct TokenizerImpl<M, N, PT, PP, D> {
 impl<M, N, PT, PP, D> TokenizerImpl<M, N, PT, PP, D>
 where
     M: Model,
-    N: Normalizer,
+    N: Normalizer + pipeline::Normalizer,
     PT: PreTokenizer,
     PP: PostProcessor,
     D: Decoder,
@@ -1087,7 +1087,7 @@ pub enum DecodeStreamError {
 impl<'tok, M, N, PT, PP, D> DecodeStream<'tok, M, N, PT, PP, D>
 where
     M: Model,
-    N: Normalizer,
+    N: Normalizer + pipeline::Normalizer,
     PT: PreTokenizer,
     PP: PostProcessor,
     D: Decoder,
@@ -1126,7 +1126,7 @@ pub fn step_decode_stream<M, N, PT, PP, D>(
 ) -> Result<Option<String>>
 where
     M: Model,
-    N: Normalizer,
+    N: Normalizer + pipeline::Normalizer,
     PT: PreTokenizer,
     PP: PostProcessor,
     D: Decoder,
@@ -1191,26 +1191,9 @@ where
     }
 }
 
-#[allow(dead_code)]
 impl<M, N, PT, PP, D> TokenizerImpl<M, N, PT, PP, D>
 where
-    N: Normalizer,
-{
-    /// Normalization logic, go through all normalizers
-    fn do_normalize<V: Into<NormalizedString>>(&self, normalized: V) -> Result<NormalizedString> {
-        let mut normalized: NormalizedString = normalized.into();
-
-        if let Some(ref normalizer) = self.normalizer {
-            normalizer.normalize(&mut normalized)?;
-        }
-
-        Ok(normalized)
-    }
-}
-
-impl<M, N, PT, PP, D> TokenizerImpl<M, N, PT, PP, D>
-where
-    N: Normalizer,
+    N: Normalizer + pipeline::Normalizer,
     M: Model,
 {
     /// Register the given tokens as special tokens. This is especially useful for removing
@@ -1343,7 +1326,7 @@ where
 impl<M, N, PT, PP, D> TokenizerImpl<M, N, PT, PP, D>
 where
     M: Model + Send + Sync,
-    N: Normalizer + Send + Sync,
+    N: Normalizer + pipeline::Normalizer + Send + Sync,
     PT: PreTokenizer + Send + Sync,
     PP: PostProcessor + Send + Sync,
     D: Decoder + Send + Sync,
@@ -1462,7 +1445,7 @@ where
 impl<M, N, PT, PP, D> std::str::FromStr for TokenizerImpl<M, N, PT, PP, D>
 where
     M: for<'de> Deserialize<'de> + Model,
-    N: for<'de> Deserialize<'de> + Normalizer,
+    N: for<'de> Deserialize<'de> + Normalizer + pipeline::Normalizer,
     PT: for<'de> Deserialize<'de> + PreTokenizer,
     PP: for<'de> Deserialize<'de> + PostProcessor,
     D: for<'de> Deserialize<'de> + Decoder,
@@ -1477,7 +1460,7 @@ where
 impl<M, N, PT, PP, D> TokenizerImpl<M, N, PT, PP, D>
 where
     M: DeserializeOwned + Model,
-    N: DeserializeOwned + Normalizer,
+    N: DeserializeOwned + Normalizer + pipeline::Normalizer,
     PT: DeserializeOwned + PreTokenizer,
     PP: DeserializeOwned + PostProcessor,
     D: DeserializeOwned + Decoder,
@@ -1493,7 +1476,7 @@ where
 impl<M, N, PT, PP, D> TokenizerImpl<M, N, PT, PP, D>
 where
     M: DeserializeOwned + Model,
-    N: DeserializeOwned + Normalizer,
+    N: DeserializeOwned + Normalizer + pipeline::Normalizer,
     PT: DeserializeOwned + PreTokenizer,
     PP: DeserializeOwned + PostProcessor,
     D: DeserializeOwned + Decoder,
@@ -1508,7 +1491,7 @@ where
 impl<M, N, PT, PP, D> TokenizerImpl<M, N, PT, PP, D>
 where
     M: DeserializeOwned + Model,
-    N: DeserializeOwned + Normalizer,
+    N: DeserializeOwned + Normalizer + pipeline::Normalizer,
     PT: DeserializeOwned + PreTokenizer,
     PP: DeserializeOwned + PostProcessor,
     D: DeserializeOwned + Decoder,

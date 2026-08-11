@@ -2,6 +2,7 @@ use std::time::{Duration, Instant};
 
 use std::hint::black_box;
 
+use tokenizers::pipeline;
 use tokenizers::{
     Decoder, EncodeInput, Model, Normalizer, PostProcessor, PreTokenizer, TokenizerImpl,
     TokenizerTrainExt, Trainer,
@@ -15,7 +16,7 @@ pub fn iter_bench_encode<M, N, PT, PP, D>(
 ) -> Duration
 where
     M: Model,
-    N: Normalizer,
+    N: Normalizer + pipeline::Normalizer,
     PT: PreTokenizer,
     PP: PostProcessor,
     D: Decoder,
@@ -40,7 +41,7 @@ pub fn iter_bench_encode_batch<M, N, PT, PP, D>(
 ) -> Duration
 where
     M: Model + Send + Sync,
-    N: Normalizer + Send + Sync,
+    N: Normalizer + pipeline::Normalizer + Send + Sync,
     PT: PreTokenizer + Send + Sync,
     PP: PostProcessor + Send + Sync,
     D: Decoder + Send + Sync,
@@ -67,7 +68,7 @@ pub fn iter_bench_train<T, M, N, PT, PP, D>(
 where
     T: Trainer<Model = M> + Sync,
     M: Model + Send + Sync,
-    N: Normalizer + Send + Sync,
+    N: Normalizer + pipeline::Normalizer + Send + Sync,
     PT: PreTokenizer + Send + Sync,
     PP: PostProcessor + Send + Sync,
     D: Decoder + Send + Sync,
@@ -89,7 +90,7 @@ pub fn iter_bench_decode<M, N, PT, PP, D>(
 ) -> Duration
 where
     M: Model,
-    N: Normalizer,
+    N: Normalizer + pipeline::Normalizer,
     PT: PreTokenizer,
     PP: PostProcessor,
     D: Decoder,
@@ -113,7 +114,7 @@ pub fn iter_bench_decode_batch<M, N, PT, PP, D>(
 ) -> Duration
 where
     M: Model + Send + Sync,
-    N: Normalizer + Send + Sync,
+    N: Normalizer + pipeline::Normalizer + Send + Sync,
     PT: PreTokenizer + Send + Sync,
     PP: PostProcessor + Send + Sync,
     D: Decoder + Send + Sync,
@@ -137,7 +138,7 @@ pub fn iter_bench_decode_stream<M, N, PT, PP, D>(
 ) -> Duration
 where
     M: Model,
-    N: Normalizer,
+    N: Normalizer + pipeline::Normalizer,
     PT: PreTokenizer,
     PP: PostProcessor,
     D: Decoder,
