@@ -1,75 +1,11 @@
 use std::borrow::Cow;
 
 use crate::pipeline;
-use crate::tokenizer::{NormalizedString, Normalizer, Result};
+use crate::tokenizer::{Normalizer, Result};
 pub use spm_precompiled::Precompiled;
-use std::cmp::Ordering;
 use unicode_segmentation::UnicodeSegmentation;
 
-fn replace(transformations: &mut Vec<(char, isize)>, old_part: &str, new_part: &str) {
-    let old_count = old_part.chars().count() as isize;
-    let new_count = new_part.chars().count() as isize;
-    let diff = new_count - old_count;
-
-    // If we are just replacing characters, all changes should be == 0
-    transformations.extend(new_part.chars().map(|c| (c, 0)));
-
-    match diff.cmp(&0) {
-        // If we are adding some characters, the last DIFF characters should be == 1
-        Ordering::Greater => {
-            transformations
-                .iter_mut()
-                .rev()
-                .take(diff as usize)
-                .for_each(|(_, cs)| *cs = 1);
-        }
-        // If we are removing some characters, the last one should include the diff
-        Ordering::Less => {
-            if let Some((_, cs)) = transformations.last_mut() {
-                *cs += diff;
-            }
-        }
-        _ => {}
-    }
-}
-
-impl Normalizer for Precompiled {
-    fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
-        let mut transformations = Vec::with_capacity(normalized.get().len());
-        // Future reader. From @Narsil.
-        // Yes, this is weird,
-        // Yes, this seems broken
-        // No, I don't know why Google did this.
-        // If you question this code, check this normalizer against
-        // XNLI database (all languages) with Unigram model against
-        // Mbart, XLMRoberta *AND* Marian. If you don't get 100% or
-        // break a single test.
-        // You don't pass.
-        let mut modified = false;
-        normalized.get().graphemes(true).for_each(|grapheme| {
-            if grapheme.len() < 6
-                && let Some(norm) = self.transform(grapheme)
-            {
-                modified = true;
-                replace(&mut transformations, grapheme, norm);
-                return;
-            }
-            for (char_index, c) in grapheme.char_indices() {
-                let part = &grapheme[char_index..char_index + c.len_utf8()];
-                if let Some(norm) = self.transform(part) {
-                    modified = true;
-                    replace(&mut transformations, part, norm);
-                } else {
-                    transformations.push((c, 0));
-                }
-            }
-        });
-        if modified {
-            normalized.transform(transformations, 0);
-        }
-        Ok(())
-    }
-}
+impl Normalizer for Precompiled {}
 
 impl pipeline::Normalizer for Precompiled {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
@@ -112,6 +48,7 @@ impl pipeline::Normalizer for Precompiled {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::normalizers::assert_normalizes;
 
     fn albert_precompiled() -> Precompiled {
         let json = std::fs::read_to_string("../data/albert-base-v1-tokenizer.json").unwrap();
@@ -129,45 +66,22 @@ mod tests {
     }
 
     #[test]
-    fn pipeline_precompiled_matches_legacy() {
-        let n = albert_precompiled();
-        let mut any_modified = false;
-        for input in &[
-            "™\x1eg",
-            "ＫＡＤＯＫＡＷＡ",
-            "１２３",
-            "…",
-            "\u{fb01}",
-            "e\u{0301}",
-            "㍿",
-            "abc def",
-            "",
-        ] {
-            let mut ns = NormalizedString::from(*input);
-            Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
-            any_modified |= ns.get() != *input;
-            assert_eq!(
-                ns.get(),
-                &*pipeline::Normalizer::normalize(&n, input).unwrap(),
-                "pipeline output diverges from legacy for {input:?}"
-            );
-        }
-        // Guard against the oracle silently becoming a no-op on these inputs
-        assert!(any_modified);
-    }
-
-    #[test]
-    fn expansion_followed_by_removal() {
-        // Simulate transformations from "™\x1eg" to "TMg"
-        let mut transformations = vec![];
-
-        let mut n = NormalizedString::from("™\x1eg");
-        replace(&mut transformations, "™", "TM");
-        replace(&mut transformations, "\x1e", "");
-        transformations.push(('g', 0));
-
-        n.transform(transformations, 0);
-
-        assert_eq!(n.get(), "TMg");
+    fn albert_charsmap_replacements() {
+        assert_normalizes(
+            &albert_precompiled(),
+            &[
+                // "™" expands to two chars and "\x1e" is dropped, in one grapheme run
+                ("™\x1eg", "TMg"),
+                ("ＫＡＤＯＫＡＷＡ", "KADOKAWA"),
+                ("１２３", "123"),
+                ("…", "..."),
+                ("\u{fb01}", "fi"),
+                ("e\u{0301}", "é"),
+                // One grapheme standing for four characters
+                ("㍿", "株式会社"),
+                ("abc def", "abc def"),
+                ("", ""),
+            ],
+        );
     }
 }

@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::normalizers::NormalizerWrapper;
 use crate::pipeline;
-use crate::tokenizer::{NormalizedString, Normalizer, Result};
+use crate::tokenizer::{Normalizer, Result};
 use crate::utils::macro_rules_attribute;
 
 #[derive(Clone, Deserialize, Debug, Serialize)]
@@ -42,14 +42,7 @@ impl IntoIterator for Sequence {
     }
 }
 
-impl Normalizer for Sequence {
-    fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
-        for normalizer in &self.normalizers {
-            normalizer.normalize(normalized)?;
-        }
-        Ok(())
-    }
-}
+impl Normalizer for Sequence {}
 
 impl pipeline::Normalizer for Sequence {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
@@ -61,12 +54,7 @@ impl pipeline::Normalizer for Sequence {
 #[derive(Copy, Clone, Debug)]
 #[macro_rules_attribute(impl_serde_type!)]
 pub struct Lowercase;
-impl Normalizer for Lowercase {
-    fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
-        normalized.lowercase();
-        Ok(())
-    }
-}
+impl Normalizer for Lowercase {}
 
 /// Whether lowercasing `c` leaves it unchanged (a single, identical char)
 pub(crate) fn lowercases_to_self(c: char) -> bool {
@@ -89,54 +77,54 @@ impl pipeline::Normalizer for Lowercase {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::normalizers::{NFD, Strip, StripAccents};
+    use crate::normalizers::{NFD, Strip, StripAccents, assert_normalizes};
 
     #[test]
-    fn pipeline_lowercase_matches_legacy() {
-        let n = Lowercase;
-        for input in &["HELLO", "Hello World", "abc", "", "ÀÉ", "ΟΔΟΣ"] {
-            let mut ns = NormalizedString::from(*input);
-            Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
-            assert_eq!(
-                ns.get(),
-                &*pipeline::Normalizer::normalize(&n, input).unwrap()
-            );
-        }
+    fn lowercase_folds_case() {
+        assert_normalizes(
+            &Lowercase,
+            &[
+                ("HELLO", "hello"),
+                ("Hello World", "hello world"),
+                ("ÀÉ", "àé"),
+                ("ΟΔΟΣ", "οδοσ"),
+                ("abc", "abc"),
+                ("", ""),
+            ],
+        );
     }
 
     #[test]
-    fn pipeline_sequence_matches_legacy() {
+    fn sequence_runs_each_normalizer_in_order() {
         let n = Sequence::new(vec![NFD.into(), StripAccents.into(), Lowercase.into()]);
-        for input in &["Café", "HÉLLO", "abc", "", "ΟΔΟΣ"] {
-            let mut ns = NormalizedString::from(*input);
-            Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
-            assert_eq!(
-                ns.get(),
-                &*pipeline::Normalizer::normalize(&n, input).unwrap()
-            );
-        }
+        assert_normalizes(
+            &n,
+            &[
+                ("Café", "cafe"),
+                ("HÉLLO", "hello"),
+                ("ΟΔΟΣ", "οδοσ"),
+                ("abc", "abc"),
+                ("", ""),
+            ],
+        );
     }
 
     #[test]
-    fn pipeline_sequence_strip_after_owned_matches_legacy() {
-        // Strip returns a sub-borrow of the previous step's owned output —
-        // the one case where a Borrowed result must not be mistaken for a no-op
+    fn sequence_keeps_a_borrow_of_an_owned_step() {
+        // `Strip` hands back a slice of what `Lowercase` produced. That slice borrows a
+        // `String` local to the chain, so it has to be copied out before the `String` is
+        // dropped, and it must not be read as "nothing changed".
         let n = Sequence::new(vec![Lowercase.into(), Strip::new(true, true).into()]);
-        for input in &[
-            "  HELLO  ",
-            "\tMiXeD Case\n",
-            "NOPAD",
-            "  hello  ",
-            "",
-            "   ",
-        ] {
-            let mut ns = NormalizedString::from(*input);
-            Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
-            assert_eq!(
-                ns.get(),
-                &*pipeline::Normalizer::normalize(&n, input).unwrap(),
-                "input={input:?}"
-            );
-        }
+        assert_normalizes(
+            &n,
+            &[
+                ("  HELLO  ", "hello"),
+                ("\tMiXeD Case\n", "mixed case"),
+                ("NOPAD", "nopad"),
+                ("  hello  ", "hello"),
+                ("   ", ""),
+                ("", ""),
+            ],
+        );
     }
 }

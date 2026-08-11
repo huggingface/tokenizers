@@ -26,7 +26,6 @@ mod added_vocabulary;
 pub mod normalizer;
 pub mod pattern;
 pub mod pipeline;
-pub mod pre_tokenizer;
 mod serialization;
 
 // Re-export wrappers
@@ -38,17 +37,14 @@ pub use crate::processors::PostProcessorWrapper;
 // And some other types
 pub use crate::tokenizer::added_vocabulary::{AddedToken, AddedVocabulary};
 pub use crate::utils::iter::LinesWithEnding;
-pub use normalizer::{NormalizedString, OffsetReferential, SplitDelimiterBehavior};
-pub use pre_tokenizer::*;
+pub use normalizer::SplitDelimiterBehavior;
 
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
 pub type Result<T> = std::result::Result<T, Error>;
 pub type Offsets = (usize, usize);
 
 /// Takes care of pre-processing strings.
-pub trait Normalizer: Sync {
-    fn normalize(&self, normalized: &mut NormalizedString) -> Result<()>;
-}
+pub trait Normalizer: Sync {}
 
 pub trait PreTokenizer {}
 

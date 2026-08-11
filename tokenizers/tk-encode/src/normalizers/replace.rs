@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use crate::pipeline;
 use crate::tokenizer::Decoder;
 use crate::tokenizer::pattern::Pattern;
-use crate::tokenizer::{NormalizedString, Normalizer, Result};
+use crate::tokenizer::{Normalizer, Result};
 use crate::utils::SysRegex;
 use atomsplit::literal::Literal;
 use serde::{Deserialize, Serialize};
@@ -105,15 +105,7 @@ impl Replace {
     }
 }
 
-impl Normalizer for Replace {
-    fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
-        match &self.search {
-            Search::Literal(literal) => normalized.replace(literal, &self.content),
-            Search::Regex(regex) => normalized.replace(regex, &self.content),
-            Search::Nothing => Ok(()),
-        }
-    }
-}
+impl Normalizer for Replace {}
 
 /// Builds the text with every match swapped for `content`. Borrows the input back untouched when
 /// nothing matched, which is what keeps the common case free of allocation.
@@ -179,31 +171,32 @@ impl Decoder for Replace {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::normalizers::assert_normalizes;
 
     #[test]
-    fn test_replace() {
-        let original = "This is a ''test''";
-        let normalized = "This is a \"test\"";
-
-        let mut n = NormalizedString::from(original);
-        Replace::new("''", "\"").unwrap().normalize(&mut n).unwrap();
-
-        assert_eq!(&n.get(), &normalized);
+    fn replace_swaps_every_occurrence() {
+        assert_normalizes(
+            &Replace::new("''", "\"").unwrap(),
+            &[
+                ("This is a ''test''", "This is a \"test\""),
+                ("no quotes", "no quotes"),
+                ("", ""),
+            ],
+        );
     }
 
     #[test]
     #[cfg(feature = "fancy-regex")] // a regex pattern needs a system-regex backend
-    fn test_replace_regex() {
-        let original = "This     is   a         test";
-        let normalized = "This is a test";
-
-        let mut n = NormalizedString::from(original);
-        Replace::new(ReplacePattern::Regex(r"\s+".into()), ' ')
-            .unwrap()
-            .normalize(&mut n)
-            .unwrap();
-
-        assert_eq!(&n.get(), &normalized);
+    fn replace_swaps_every_regex_match() {
+        assert_normalizes(
+            &Replace::new(ReplacePattern::Regex(r"\s+".into()), " ").unwrap(),
+            &[
+                ("This     is   a         test", "This is a test"),
+                ("a   b   c", "a b c"),
+                ("single", "single"),
+                ("", ""),
+            ],
+        );
     }
 
     #[test]
@@ -259,29 +252,5 @@ mod tests {
             replace.decode_chain(original).unwrap(),
             vec!["hello", " hello"]
         );
-    }
-
-    fn assert_pipeline_matches_legacy(n: &Replace, inputs: &[&str]) {
-        for input in inputs {
-            let mut ns = NormalizedString::from(*input);
-            Normalizer::normalize(n, &mut ns).unwrap(); // legacy oracle
-            assert_eq!(
-                ns.get(),
-                &*pipeline::Normalizer::normalize(n, input).unwrap()
-            );
-        }
-    }
-
-    #[test]
-    fn pipeline_replace_matches_legacy() {
-        let n = Replace::new("''", "\"").unwrap();
-        assert_pipeline_matches_legacy(&n, &["This is a ''test''", "no quotes", ""]);
-    }
-
-    #[test]
-    #[cfg(feature = "fancy-regex")] // a regex pattern needs a system-regex backend
-    fn pipeline_replace_matches_legacy_for_a_regex() {
-        let n = Replace::new(ReplacePattern::Regex(r"\s+".into()), " ").unwrap();
-        assert_pipeline_matches_legacy(&n, &["a   b   c", "single", ""]);
     }
 }

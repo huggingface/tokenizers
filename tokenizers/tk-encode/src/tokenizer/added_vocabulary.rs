@@ -1,6 +1,6 @@
 use crate::pipeline;
 
-use super::{Model, NormalizedString, Offsets, Result, Token, normalizer::Range};
+use super::{Model, Offsets, Result};
 use ahash::{AHashMap, AHashSet};
 use daachorse::{DoubleArrayAhoCorasick, DoubleArrayAhoCorasickBuilder, MatchKind};
 use regex::Regex;
@@ -482,31 +482,6 @@ impl AddedVocabulary {
         }
 
         splits
-    }
-
-    /// Split the input sentence to extract anything we found from the `MatchingSet`, as well as
-    /// the list of corresponding IDs
-    /// The list of IDs have the exact same number of elements than the Iterator.
-    fn split_with_indices(
-        &self,
-        sentence: NormalizedString,
-        split_re: &MatchingSet,
-    ) -> Vec<(NormalizedString, Option<Vec<Token>>)> {
-        self.find_matches(sentence.get(), split_re)
-            .into_iter()
-            .map(|(id, byte_offsets)| {
-                let slice = sentence
-                    .slice(Range::Normalized(byte_offsets.0..byte_offsets.1))
-                    .expect("AddedVocabulary bad split");
-                if let Some(id) = id {
-                    let value = slice.get().to_owned();
-                    let len = value.len();
-                    (slice, Some(vec![Token::new(id, value, (0, len))]))
-                } else {
-                    (slice, None)
-                }
-            })
-            .collect()
     }
 }
 

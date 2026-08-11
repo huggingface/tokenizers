@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use crate::{
     pipeline,
-    tokenizer::{NormalizedString, Normalizer, Result},
+    tokenizer::{Normalizer, Result},
 };
 
 use super::utils::lowercases_to_self;
@@ -107,32 +107,6 @@ impl BertNormalizer {
         }
     }
 
-    fn do_clean_text(&self, normalized: &mut NormalizedString) {
-        normalized
-            .filter(|c| !clean_text_removes(c))
-            .map(clean_text_map);
-    }
-
-    fn do_handle_chinese_chars(&self, normalized: &mut NormalizedString) {
-        let mut new_chars: Vec<(char, isize)> = vec![];
-        normalized.for_each(|c| {
-            if is_chinese_char(c) {
-                new_chars.extend([(' ', 0), (c, 1), (' ', 1)]);
-            } else {
-                new_chars.push((c, 0));
-            }
-        });
-        normalized.transform(new_chars, 0);
-    }
-
-    fn do_strip_accents(&self, normalized: &mut NormalizedString) {
-        normalized.nfd().filter(|c| !c.is_mark_nonspacing());
-    }
-
-    fn do_lowercase(&self, normalized: &mut NormalizedString) {
-        normalized.lowercase();
-    }
-
     fn is_noop(&self, input: &str, strip_accents: bool) -> bool {
         if strip_accents && !matches!(is_nfd_quick(input.chars()), IsNormalized::Yes) {
             return false;
@@ -147,25 +121,7 @@ impl BertNormalizer {
     }
 }
 
-impl Normalizer for BertNormalizer {
-    fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
-        if self.clean_text {
-            self.do_clean_text(normalized);
-        }
-        if self.handle_chinese_chars {
-            self.do_handle_chinese_chars(normalized);
-        }
-        let strip_accents = self.strip_accents.unwrap_or(self.lowercase);
-        if strip_accents {
-            self.do_strip_accents(normalized);
-        }
-        if self.lowercase {
-            self.do_lowercase(normalized);
-        }
-
-        Ok(())
-    }
-}
+impl Normalizer for BertNormalizer {}
 
 impl pipeline::Normalizer for BertNormalizer {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
@@ -215,7 +171,10 @@ impl pipeline::Normalizer for BertNormalizer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::normalizers::assert_normalizes;
 
+    /// The inputs every config below is checked against: one per stage this normalizer runs,
+    /// plus the characters whose lowercase mapping is not a single identical char.
     const INPUTS: &[&str] = &[
         "Héllo World",
         "中文字",
@@ -235,35 +194,169 @@ mod tests {
         "straße",
     ];
 
-    #[test]
-    fn pipeline_bert_matches_legacy() {
-        for &clean_text in &[true, false] {
-            for &handle_chinese_chars in &[true, false] {
-                for &strip_accents in &[None, Some(true), Some(false)] {
-                    for &lowercase in &[true, false] {
-                        let n = BertNormalizer::new(
-                            clean_text,
-                            handle_chinese_chars,
-                            strip_accents,
-                            lowercase,
-                        );
-                        for input in INPUTS {
-                            let mut ns = NormalizedString::from(*input);
-                            Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
-                            assert_eq!(
-                                ns.get(),
-                                &*pipeline::Normalizer::normalize(&n, input).unwrap(),
-                                "config={n:?} input={input:?}",
-                            );
-                        }
-                    }
-                }
-            }
-        }
+    /// Pairs `INPUTS` with the output each one is expected to produce.
+    fn cases(expected: &'static [&'static str]) -> Vec<(&'static str, &'static str)> {
+        assert_eq!(expected.len(), INPUTS.len());
+        INPUTS
+            .iter()
+            .copied()
+            .zip(expected.iter().copied())
+            .collect()
     }
 
     #[test]
-    fn pipeline_bert_borrows_when_noop() {
+    fn every_stage_off_leaves_the_input_alone() {
+        let n = BertNormalizer::new(false, false, Some(false), false);
+        assert_normalizes(&n, &cases(INPUTS));
+    }
+
+    #[test]
+    fn default_config_runs_every_stage() {
+        assert_normalizes(
+            &BertNormalizer::default(),
+            &cases(&[
+                "hello world",
+                " 中  文  字 ",
+                "a 中 b 文 c",
+                "  spaced  ",
+                "abc",
+                "",
+                " tab  ",
+                "mixed cafe",
+                "e",
+                "ﬁligature",
+                "nullhere",
+                "replchar",
+                "ctrlchar",
+                "ǆ",
+                "istanbul",
+                "straße",
+            ]),
+        );
+    }
+
+    #[test]
+    fn clean_text_folds_whitespace_and_drops_controls() {
+        let n = BertNormalizer::new(true, false, Some(false), false);
+        assert_normalizes(
+            &n,
+            &cases(&[
+                "Héllo World",
+                "中文字",
+                "a中b文c",
+                "  spaced  ",
+                "abc",
+                "",
+                " Tab  ",
+                "MiXeD Café",
+                "e\u{0301}",
+                "ﬁligature",
+                "nullhere",
+                "replchar",
+                "ctrlchar",
+                "ǅ",
+                "İstanbul",
+                "straße",
+            ]),
+        );
+    }
+
+    #[test]
+    fn handle_chinese_chars_pads_cjk_with_spaces() {
+        let n = BertNormalizer::new(false, true, Some(false), false);
+        assert_normalizes(
+            &n,
+            &cases(&[
+                "Héllo World",
+                " 中  文  字 ",
+                "a 中 b 文 c",
+                "  spaced  ",
+                "abc",
+                "",
+                "\tTab\n\r",
+                "MiXeD Café",
+                "e\u{0301}",
+                "ﬁligature",
+                "null\0here",
+                "repl\u{fffd}char",
+                "ctrl\u{0007}char",
+                "ǅ",
+                "İstanbul",
+                "straße",
+            ]),
+        );
+    }
+
+    #[test]
+    fn strip_accents_decomposes_then_drops_marks() {
+        let n = BertNormalizer::new(false, false, Some(true), false);
+        assert_normalizes(
+            &n,
+            &cases(&[
+                "Hello World",
+                "中文字",
+                "a中b文c",
+                "  spaced  ",
+                "abc",
+                "",
+                "\tTab\n\r",
+                "MiXeD Cafe",
+                "e",
+                "ﬁligature",
+                "null\0here",
+                "repl\u{fffd}char",
+                "ctrl\u{0007}char",
+                "ǅ",
+                // NFD splits the dot above off "İ", and the dot is a mark
+                "Istanbul",
+                "straße",
+            ]),
+        );
+    }
+
+    #[test]
+    fn lowercase_folds_case() {
+        let n = BertNormalizer::new(false, false, Some(false), true);
+        assert_normalizes(
+            &n,
+            &cases(&[
+                "héllo world",
+                "中文字",
+                "a中b文c",
+                "  spaced  ",
+                "abc",
+                "",
+                "\ttab\n\r",
+                "mixed café",
+                "e\u{0301}",
+                "ﬁligature",
+                "null\0here",
+                "repl\u{fffd}char",
+                "ctrl\u{0007}char",
+                "ǆ",
+                // Without accent stripping, "İ" lowercases to "i" plus a combining dot
+                "i\u{307}stanbul",
+                "straße",
+            ]),
+        );
+    }
+
+    #[test]
+    fn unset_strip_accents_follows_lowercase() {
+        let stripped = &[("Héllo", "hello"), ("MiXeD Café", "mixed cafe")];
+        assert_normalizes(&BertNormalizer::new(false, false, None, true), stripped);
+        assert_normalizes(
+            &BertNormalizer::new(false, false, Some(true), true),
+            stripped,
+        );
+
+        let kept = &[("Héllo", "Héllo"), ("MiXeD Café", "MiXeD Café")];
+        assert_normalizes(&BertNormalizer::new(false, false, None, false), kept);
+        assert_normalizes(&BertNormalizer::new(false, false, Some(false), false), kept);
+    }
+
+    #[test]
+    fn borrows_the_input_when_nothing_changes() {
         let n = BertNormalizer::default();
         for input in &["hello world", "already lowercase ascii", ""] {
             assert!(matches!(

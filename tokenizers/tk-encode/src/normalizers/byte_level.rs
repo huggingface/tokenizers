@@ -1,8 +1,8 @@
 use std::borrow::Cow;
 
 use crate::pipeline;
-use crate::tokenizer::{NormalizedString, Normalizer, Result};
-use crate::utils::byte_level::{BYTES_CHAR_LOOKUP, byte_level_transform};
+use crate::tokenizer::{Normalizer, Result};
+use crate::utils::byte_level::BYTES_CHAR_LOOKUP;
 use crate::utils::macro_rules_attribute;
 use ahash::AHashSet;
 
@@ -26,16 +26,7 @@ impl ByteLevel {
     }
 }
 
-impl Normalizer for ByteLevel {
-    /// Strip the normalized string inplace
-    fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
-        if !normalized.is_empty() {
-            let s = normalized.get();
-            normalized.transform(byte_level_transform(s), 0);
-        }
-        Ok(())
-    }
-}
+impl Normalizer for ByteLevel {}
 
 impl pipeline::Normalizer for ByteLevel {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
@@ -51,17 +42,23 @@ impl pipeline::Normalizer for ByteLevel {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::normalizers::assert_normalizes;
 
     #[test]
-    fn pipeline_byte_level_matches_legacy() {
-        let n = ByteLevel::new();
-        for input in &["Hello world", "Hello 我今天", "abc", ""] {
-            let mut ns = NormalizedString::from(*input);
-            Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
-            assert_eq!(
-                ns.get(),
-                &*pipeline::Normalizer::normalize(&n, input).unwrap()
-            );
-        }
+    fn every_byte_becomes_one_printable_char() {
+        assert_normalizes(
+            &ByteLevel::new(),
+            &[
+                ("Hello world", "HelloĠworld"),
+                // A multi-byte codepoint turns into one char per byte
+                ("Hello 我今天", "HelloĠæĪĳä»Ĭå¤©"),
+                (
+                    "Hello 我今天能为你做什么",
+                    "HelloĠæĪĳä»Ĭå¤©èĥ½ä¸ºä½łåģļä»Ģä¹Ī",
+                ),
+                ("abc", "abc"),
+                ("", ""),
+            ],
+        );
     }
 }
