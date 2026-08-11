@@ -1,11 +1,9 @@
 use crate::pipeline;
 
-use super::{Model, Offsets, Result};
+use super::{Model, Result};
 use ahash::{AHashMap, AHashSet};
 use daachorse::{DoubleArrayAhoCorasick, DoubleArrayAhoCorasickBuilder, MatchKind};
-use regex::Regex;
 use serde::{Deserialize, Serialize, Serializer, ser::SerializeSeq};
-use std::sync::LazyLock;
 
 /// Represent a token added by the user on top of the existing Model vocabulary.
 /// AddedToken can be configured to specify the behavior they should have in various situations

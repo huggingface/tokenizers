@@ -31,8 +31,7 @@ impl BertProcessing {
     }
 }
 
-impl PostProcessor for BertProcessing {
-}
+impl PostProcessor for BertProcessing {}
 
 #[cfg(test)]
 mod tests {
@@ -48,5 +47,4 @@ mod tests {
             bert
         );
     }
-
 }
