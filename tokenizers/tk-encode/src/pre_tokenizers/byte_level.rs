@@ -101,11 +101,7 @@ impl Decoder for ByteLevel {
 /// As a [`PostProcessor`], `ByteLevel` adds no token of its own. Its [`Self::trim_offsets`] used
 /// to pull each token's offsets in past the leading `Ġ`; there are no offsets to trim now, so the
 /// field is read from the config and serialized back out without being acted on.
-impl PostProcessor for ByteLevel {
-    fn added_tokens(&self, _is_pair: bool) -> usize {
-        0
-    }
-}
+impl PostProcessor for ByteLevel {}
 
 #[cfg(test)]
 mod tests {

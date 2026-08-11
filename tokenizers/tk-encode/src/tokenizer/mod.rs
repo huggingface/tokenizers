@@ -65,10 +65,7 @@ pub trait Model {
 
 /// A `PostProcessor` has the responsibility to post process an encoded output of the `Tokenizer`.
 /// It adds any special tokens that a language model would require.
-pub trait PostProcessor {
-    /// Returns the number of tokens that will be added during the processing step
-    fn added_tokens(&self, is_pair: bool) -> usize;
-}
+pub trait PostProcessor {}
 
 /// A `Decoder` changes the raw tokens into its more readable form.
 pub trait Decoder {

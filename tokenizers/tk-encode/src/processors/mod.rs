@@ -26,17 +26,7 @@ pub enum PostProcessorWrapper {
     Sequence(Sequence),
 }
 
-impl PostProcessor for PostProcessorWrapper {
-    fn added_tokens(&self, is_pair: bool) -> usize {
-        match self {
-            Self::Bert(bert) => bert.added_tokens(is_pair),
-            Self::ByteLevel(bl) => bl.added_tokens(is_pair),
-            Self::Roberta(roberta) => roberta.added_tokens(is_pair),
-            Self::Template(template) => template.added_tokens(is_pair),
-            Self::Sequence(bl) => bl.added_tokens(is_pair),
-        }
-    }
-}
+impl PostProcessor for PostProcessorWrapper {}
 
 impl_enum_from!(BertProcessing, PostProcessorWrapper, Bert);
 impl_enum_from!(ByteLevel, PostProcessorWrapper, ByteLevel);

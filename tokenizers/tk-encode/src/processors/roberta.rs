@@ -51,11 +51,7 @@ impl RobertaProcessing {
     }
 }
 
-impl PostProcessor for RobertaProcessing {
-    fn added_tokens(&self, is_pair: bool) -> usize {
-        if is_pair { 4 } else { 2 }
-    }
-}
+impl PostProcessor for RobertaProcessing {}
 
 #[cfg(test)]
 mod tests {
@@ -77,12 +73,5 @@ mod tests {
             serde_json::from_str::<RobertaProcessing>(&roberta_r).unwrap(),
             roberta
         );
-    }
-
-    #[test]
-    fn counts_added_tokens() {
-        let processor = RobertaProcessing::default();
-        assert_eq!(processor.added_tokens(false), 2);
-        assert_eq!(processor.added_tokens(true), 4);
     }
 }

@@ -32,9 +32,6 @@ impl BertProcessing {
 }
 
 impl PostProcessor for BertProcessing {
-    fn added_tokens(&self, is_pair: bool) -> usize {
-        if is_pair { 3 } else { 2 }
-    }
 }
 
 #[cfg(test)]
@@ -52,10 +49,4 @@ mod tests {
         );
     }
 
-    #[test]
-    fn counts_added_tokens() {
-        let processor = BertProcessing::default();
-        assert_eq!(processor.added_tokens(false), 2);
-        assert_eq!(processor.added_tokens(true), 3);
-    }
 }

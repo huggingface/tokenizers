@@ -48,14 +48,7 @@ impl IntoIterator for Sequence {
     }
 }
 
-impl PostProcessor for Sequence {
-    fn added_tokens(&self, is_pair: bool) -> usize {
-        self.processors
-            .iter()
-            .map(|p| p.added_tokens(is_pair))
-            .sum::<usize>()
-    }
-}
+impl PostProcessor for Sequence {}
 
 #[cfg(test)]
 mod tests {
@@ -63,13 +56,4 @@ mod tests {
     use crate::processors::bert::BertProcessing;
     use crate::processors::{ByteLevel, PostProcessorWrapper};
 
-    #[test]
-    fn sums_added_tokens_of_its_members() {
-        let sequence = Sequence::new(vec![
-            PostProcessorWrapper::ByteLevel(ByteLevel::default()),
-            PostProcessorWrapper::Bert(BertProcessing::default()),
-        ]);
-        assert_eq!(sequence.added_tokens(false), 2);
-        assert_eq!(sequence.added_tokens(true), 3);
-    }
 }

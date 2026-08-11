@@ -552,15 +552,7 @@ impl TemplateProcessing {
     }
 }
 
-impl PostProcessor for TemplateProcessing {
-    fn added_tokens(&self, is_pair: bool) -> usize {
-        if is_pair {
-            self.added_pair
-        } else {
-            self.added_single
-        }
-    }
-}
+impl PostProcessor for TemplateProcessing {}
 
 #[cfg(test)]
 mod tests {
@@ -759,13 +751,6 @@ mod tests {
         let err_a = Err("Missing SpecialToken(s) with id(s) `[SEP], [CLS]`".into());
         let err_b = Err("Missing SpecialToken(s) with id(s) `[CLS], [SEP]`".into());
         assert!(processor == err_a || processor == err_b);
-    }
-
-    #[test]
-    fn counts_added_tokens() {
-        let processor = tests::get_bert_template();
-        assert_eq!(processor.added_tokens(false), 2);
-        assert_eq!(processor.added_tokens(true), 3);
     }
 
     #[test]
