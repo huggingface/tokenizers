@@ -78,55 +78,6 @@ pub trait Model {
 pub trait PostProcessor {
     /// Returns the number of tokens that will be added during the processing step
     fn added_tokens(&self, is_pair: bool) -> usize;
-    /// Process both encodings and returns a new merged one
-    fn process(
-        &self,
-        encoding: Encoding,
-        pair_encoding: Option<Encoding>,
-        add_special_tokens: bool,
-    ) -> Result<Encoding> {
-        let mut encodings = if let Some(pair_encoding) = pair_encoding {
-            vec![encoding, pair_encoding]
-        } else {
-            vec![encoding]
-        };
-        encodings.iter_mut().enumerate().for_each(|(i, encoding)| {
-            encoding.set_sequence_id(i);
-            encoding
-                .get_overflowing_mut()
-                .iter_mut()
-                .for_each(|encoding| encoding.set_sequence_id(i));
-            encoding.set_type_ids(vec![i as u32; encoding.len()]);
-        });
-
-        let encodings = self.process_encodings(encodings, add_special_tokens)?;
-        Ok(Encoding::merge(encodings, false))
-    }
-
-    /// Process any amount of encodings and returns a series of encoding (might merge them)
-    fn process_encodings(
-        &self,
-        encodings: Vec<Encoding>,
-        add_special_tokens: bool,
-    ) -> Result<Vec<Encoding>>;
-}
-impl dyn PostProcessor {
-    pub fn default_process(
-        encodings: Vec<Encoding>,
-        _add_special_tokens: bool,
-    ) -> Result<Vec<Encoding>> {
-        match encodings.len() {
-            1 => Ok(encodings),
-            _ => {
-                let mut final_encoding = Encoding::default();
-                for (i, mut encoding) in encodings.into_iter().enumerate() {
-                    encoding.set_sequence_id(i);
-                    final_encoding.merge_with(encoding, false);
-                }
-                Ok(vec![final_encoding])
-            }
-        }
-    }
 }
 
 #[derive(thiserror::Error, Debug)]

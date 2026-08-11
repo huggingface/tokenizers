@@ -37,19 +37,6 @@ impl PostProcessor for PostProcessorWrapper {
         }
     }
 
-    fn process_encodings(
-        &self,
-        encodings: Vec<Encoding>,
-        add_special_tokens: bool,
-    ) -> Result<Vec<Encoding>> {
-        match self {
-            Self::Bert(bert) => bert.process_encodings(encodings, add_special_tokens),
-            Self::ByteLevel(bl) => bl.process_encodings(encodings, add_special_tokens),
-            Self::Roberta(roberta) => roberta.process_encodings(encodings, add_special_tokens),
-            Self::Template(template) => template.process_encodings(encodings, add_special_tokens),
-            Self::Sequence(bl) => bl.process_encodings(encodings, add_special_tokens),
-        }
-    }
 }
 
 impl_enum_from!(BertProcessing, PostProcessorWrapper, Bert);

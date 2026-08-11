@@ -662,37 +662,6 @@ impl PostProcessor for TemplateProcessing {
         }
     }
 
-    fn process_encodings(
-        &self,
-        encodings: Vec<Encoding>,
-        add_special_tokens: bool,
-    ) -> Result<Vec<Encoding>> {
-        // let (encoding, pair): (Encoding, Option<Encoding>) = match encodings.len() {
-        //     1 => (
-        //         encodings
-        //             .pop()
-        //             .ok_or(ProcessorError::InvalidEncodingsVecLength)?,
-        //         None,
-        //     ),
-        //     2 => {
-        //         let pair = encodings
-        //             .pop()
-        //             .ok_or(ProcessorError::InvalidEncodingsVecLength)?;
-        //         let encoding = encodings
-        //             .pop()
-        //             .ok_or(ProcessorError::InvalidEncodingsVecLength)?;
-        //         (encoding, Some(pair))
-        //     }
-        //     _ => return Err(Box::new(ProcessorError::InvalidEncodingsVecLength)),
-        // };
-        let template = match encodings.len() {
-            2 => &self.pair.0,
-            1 => &self.single.0,
-            _ => todo!(),
-        };
-        let encodings = self.apply_template(template, encodings, add_special_tokens)?;
-        Ok(encodings)
-    }
 }
 
 #[cfg(test)]

@@ -104,26 +104,6 @@ impl PostProcessor for ByteLevel {
         0
     }
 
-    fn process_encodings(
-        &self,
-        mut encodings: Vec<Encoding>,
-        _add_special_tokens: bool,
-    ) -> Result<Vec<Encoding>> {
-        if self.trim_offsets {
-            for encoding in encodings.iter_mut() {
-                process_offsets(encoding, self.add_prefix_space);
-                encoding
-                    .get_overflowing_mut()
-                    .iter_mut()
-                    .for_each(|encoding| process_offsets(encoding, self.add_prefix_space));
-            }
-        }
-        for (i, encoding) in encodings.iter_mut().enumerate() {
-            encoding.set_sequence_id(i);
-        }
-        Ok(encodings)
-        //<dyn PostProcessor>::default_process(encodings, add_special_tokens)
-    }
 }
 
 pub fn process_offsets(encoding: &mut Encoding, add_prefix_space: bool) {

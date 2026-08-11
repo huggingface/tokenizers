@@ -55,17 +55,6 @@ impl PostProcessor for Sequence {
             .map(|p| p.added_tokens(is_pair))
             .sum::<usize>()
     }
-
-    fn process_encodings(
-        &self,
-        mut encodings: Vec<Encoding>,
-        add_special_tokens: bool,
-    ) -> Result<Vec<Encoding>> {
-        for processor in &self.processors {
-            encodings = processor.process_encodings(encodings, add_special_tokens)?;
-        }
-        Ok(encodings)
-    }
 }
 
 #[cfg(test)]

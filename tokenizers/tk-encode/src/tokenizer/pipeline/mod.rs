@@ -300,6 +300,25 @@ impl TryFrom<PreTokenizerWrapper> for PipelinePreTokenizer {
 ///   prefix |  sequence encoding | suffix
 /// ```
 ///
+// todo: the frame is all the post-processing the pipeline does today. What the post-processors in
+// `crate::processors` did and this does not, in rough order of how much it matters:
+//
+//  - Pairs. `PipelineTokenizer::encode` frames each side of an `Inputs::Pair` on its own, so a
+//    BERT pair comes out as two `[CLS] A [SEP]` sequences instead of one `[CLS] A [SEP] B [SEP]`.
+//    `RobertaProcessing` puts a `[SEP]` on both sides of its pair and `TemplateProcessing` keeps
+//    a second template for it, so neither reduces to one frame.
+//  - `type_ids`. BERT numbers the pair 1, Roberta forces every token to 0, and every template
+//    piece carries its own `type_id`. A `PipelineToken` holds an id and nothing else.
+//  - The templates the conversion below refuses (a `single` referencing the sequence twice) and
+//    the field it ignores (the `id` on `Piece::Sequence`, so `$B` reads as `$A`).
+//  - `trim_offsets`, on both `ByteLevel` and `RobertaProcessing`. There are no offsets to trim
+//    while the pipeline computes none.
+//  - The rest of `Encoding`: `tokens`, `offsets`, `words`, `special_tokens_mask`,
+//    `attention_mask` and `sequence_ranges`. `Encoding::char_to_token` and its neighbours read
+//    `sequence_ranges`, and the post-processors were careful to leave the frame tokens out of
+//    the range they record.
+//  - Truncation and padding. `truncate_encodings` and `pad_encodings` have no caller left, and
+//    `PostProcessor::added_tokens` is there to budget the frame against the truncation length.
 #[derive(Debug, Default)]
 pub struct PipelinePostProcessor {
     prefix: Box<[PipelineToken]>,
