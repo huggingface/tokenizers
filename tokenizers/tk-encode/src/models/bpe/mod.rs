@@ -78,5 +78,4 @@ impl<T: Copy> At for [T] {
 
 // Re-export
 pub use legacy::model::*;
-pub use legacy::word::*;
 pub use model::*;

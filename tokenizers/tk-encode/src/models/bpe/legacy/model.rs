@@ -1,16 +1,11 @@
-use super::word::Word;
 use crate::models::OrderedVocabIter;
 use crate::models::bpe::{Error, MergeMap, Merges, Pair, Vocab, VocabR};
-use crate::tokenizer::{Model, Result, Token};
-use crate::utils::cache::{DEFAULT_CACHE_CAPACITY, MAX_LENGTH};
+use crate::tokenizer::{Model, Result};
+use crate::utils::cache::DEFAULT_CACHE_CAPACITY;
 use crate::utils::iter::ResultShunt;
 use crate::vocab::bucket_vocab_store::BucketVocabStore;
 use ahash::AHashMap;
-use dary_heap::QuaternaryHeap;
 use serde_json::Value;
-use std::borrow::Cow;
-use std::cell::RefCell;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use std::collections::HashMap;
 use std::str::from_utf8_unchecked;
@@ -20,10 +15,6 @@ use std::{
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
 };
-
-/// Process-wide monotonic counter used to assign a unique generation id
-/// to every `BpeCache`, so per-instance thread-local caches never collide.
-static NEXT_CACHE_ID: AtomicU64 = AtomicU64::new(0);
 
 /// Per-BPE cache descriptor.
 ///
@@ -35,7 +26,6 @@ static NEXT_CACHE_ID: AtomicU64 = AtomicU64::new(0);
 /// invalidating every thread's entries for this BPE in one shot.
 #[derive(Debug)]
 pub(crate) struct BpeCache {
-    id: AtomicU64,
     pub capacity: usize,
 }
 
@@ -48,10 +38,7 @@ impl PartialEq for BpeCache {
 
 impl BpeCache {
     pub(crate) fn new(capacity: usize) -> Self {
-        Self {
-            id: AtomicU64::new(NEXT_CACHE_ID.fetch_add(1, Ordering::Relaxed)),
-            capacity,
-        }
+        Self { capacity }
     }
 
     /// Return a fresh `BpeCache` with the same capacity but a new id,
@@ -59,35 +46,8 @@ impl BpeCache {
     pub(crate) fn fresh(&self) -> Self {
         Self::new(self.capacity)
     }
-
-    /// Current generation id.  Bumped on `clear()`.
-    pub(crate) fn id(&self) -> u64 {
-        self.id.load(Ordering::Relaxed)
-    }
-
-    /// Invalidate every thread's thread-local entries for this BPE by
-    /// advancing the generation id; the next lookup re-computes.
-    pub(crate) fn clear(&self) {
-        self.id.store(
-            NEXT_CACHE_ID.fetch_add(1, Ordering::Relaxed),
-            Ordering::Relaxed,
-        );
-    }
-
-    pub(crate) fn resize(&mut self, capacity: usize) {
-        self.capacity = capacity;
-    }
 }
 
-thread_local! {
-    /// Per-thread BPE tokenization cache.  This is the only BPE cache
-    /// on the hot path: there is no shared global map, so lookups and
-    /// inserts need no atomic synchronization at all.  The outer map is
-    /// keyed by `BpeCache::id` so multiple `BPE` instances sharing the
-    /// same rayon worker thread never see each other's entries.
-    static BPE_LOCAL_CACHE: RefCell<AHashMap<u64, AHashMap<String, Word>>> =
-        RefCell::new(AHashMap::new());
-}
 struct Config {
     files: Option<(String, String)>,
     vocab: Vocab,
@@ -435,20 +395,6 @@ impl BPE {
         Ok((vocab, merges))
     }
 
-    /// Reset the cache.
-    pub fn clear_cache(&self) {
-        if let Some(ref cache) = self.cache {
-            cache.clear()
-        }
-    }
-
-    /// Resize the cache
-    pub fn resize_cache(&mut self, capacity: usize) {
-        if let Some(ref mut cache) = self.cache {
-            cache.resize(capacity);
-        }
-    }
-
     pub fn get_vocab(&self) -> HashMap<String, u32> {
         self.vocab.get_vocab().into_iter().collect()
     }
@@ -459,130 +405,6 @@ impl BPE {
 
     pub fn get_continuing_subword_prefix(&self) -> &Option<String> {
         &self.continuing_subword_prefix
-    }
-
-    pub(super) fn merge_word(&self, w: &str) -> Result<Word> {
-        let mut indices = w.char_indices().map(|(idx, _)| idx).peekable();
-        let mut word = Word::with_capacity(w.len());
-        let mut unk: Option<(u32, usize)> = None;
-        while let Some(i) = indices.next() {
-            let end = indices.peek();
-            let is_first = i == 0;
-            let is_last = end.is_none();
-
-            let mut s = if let Some(e) = end {
-                Cow::Borrowed(&w[i..*e])
-            } else {
-                Cow::Borrowed(&w[i..])
-            };
-            let byte_len = s.len();
-
-            // Add the `continuing_subword_prefix` if relevant
-            if !is_first && let Some(ref prefix) = self.continuing_subword_prefix {
-                s = format!("{prefix}{s}").into()
-            }
-            // Add the `end_of_word_suffix` if relevant
-            if is_last && let Some(ref suffix) = self.end_of_word_suffix {
-                s = format!("{s}{suffix}").into()
-            }
-
-            if let Some(id) = self.vocab.token_to_id(s.as_ref()) {
-                if let Some((unk_id, unk_len)) = unk {
-                    word.add(unk_id, unk_len);
-                    unk = None;
-                }
-                word.add(id, byte_len);
-            } else {
-                if self.byte_fallback {
-                    let tokens: Option<Vec<_>> = s
-                        .bytes()
-                        .map(|b| -> Option<u32> {
-                            let code = format!("<{b:#04X}>");
-
-                            self.vocab.token_to_id(&code)
-                        })
-                        .collect();
-                    if let Some(tokens) = tokens {
-                        for t in tokens {
-                            word.add(t, 1);
-                        }
-                        continue;
-                    }
-                }
-                if let Some(unk_token) = &self.unk_token {
-                    unk = match (unk, self.fuse_unk) {
-                        (Some((unk_id, unk_len)), true) => {
-                            // Fuse unk
-                            Some((unk_id, unk_len + byte_len))
-                        }
-                        (Some((unk_id, unk_len)), false) => {
-                            // Do not fuse unk, add the previous one
-                            word.add(unk_id, unk_len);
-                            Some((
-                                self.vocab.token_to_id(unk_token).ok_or_else(|| {
-                                    Error::UnkTokenOutOfVocabulary(unk_token.to_owned())
-                                })?,
-                                byte_len,
-                            ))
-                        }
-                        _ => Some((
-                            self.vocab.token_to_id(unk_token).ok_or_else(|| {
-                                Error::UnkTokenOutOfVocabulary(unk_token.to_owned())
-                            })?,
-                            byte_len,
-                        )),
-                    };
-                }
-            }
-        }
-        if let Some((unk_id, unk_len)) = unk {
-            word.add(unk_id, unk_len);
-        }
-
-        let mut queue = QuaternaryHeap::with_capacity(word.len_symbols());
-        let mut skip = Vec::with_capacity(queue.len());
-        word.merge_all(&self.merges, self.dropout, &mut queue, &mut skip);
-
-        Ok(word)
-    }
-
-    fn word_to_tokens<'a>(&'a self, word: &'a Word) -> impl Iterator<Item = Token> + 'a {
-        word.get_chars_iter()
-            .zip(word.get_offsets_iter())
-            .map(move |(id, offsets)| {
-                Token::new(id, self.vocab.id_to_token(id).unwrap_or_default(), offsets)
-            })
-    }
-
-    fn tokenize_with_cache(&self, sequence: &str) -> Result<Vec<Token>> {
-        if self.ignore_merges
-            && let Some(id) = self.vocab.token_to_id(sequence)
-        {
-            return Ok(vec![Token::new(
-                id,
-                sequence.to_string(),
-                (0, sequence.len()),
-            )]);
-        }
-        let Some(cache) = self.cache.as_ref() else {
-            // Cache disabled (capacity 0): fall back to the uncached path.
-            let word = self.merge_word(sequence)?;
-            return Ok(self.word_to_tokens(&word).collect());
-        };
-        let cache_id = cache.id();
-        BPE_LOCAL_CACHE.with(|cell| {
-            let mut by_bpe = cell.borrow_mut();
-            let local = by_bpe.entry(cache_id).or_default();
-            if let Some(hit) = local.get(sequence) {
-                return Ok(self.word_to_tokens(hit).collect());
-            }
-            let word = self.merge_word(sequence)?;
-            let ret: Vec<Token> = self.word_to_tokens(&word).collect();
-            if sequence.len() < MAX_LENGTH && local.len() < cache.capacity {
-                local.insert(sequence.to_owned(), word);
-            }
-            Ok(ret)
-        })
     }
 }
 

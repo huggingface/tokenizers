@@ -49,11 +49,3 @@ impl IntoIterator for Sequence {
 }
 
 impl PostProcessor for Sequence {}
-
-#[cfg(test)]
-mod tests {
-    
-    
-    
-
-}
