@@ -95,33 +95,6 @@ impl std::hash::Hash for AddedToken {
 
 type MatchingSet = Option<DoubleArrayAhoCorasick<u32>>;
 
-static STARTS_WITH_WORD: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\w").unwrap());
-static ENDS_WITH_WORD: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\w$").unwrap());
-static RIGHTMOST_SPACE_AT_START: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*").unwrap());
-static LEFTMOST_SPACE_AT_END: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s*$").unwrap());
-
-fn ends_with_word(sentence: &str) -> bool {
-    ENDS_WITH_WORD.is_match(sentence)
-}
-
-fn starts_with_word(sentence: &str) -> bool {
-    STARTS_WITH_WORD.is_match(sentence)
-}
-
-fn space_leftmost_at_end(sentence: &str) -> usize {
-    if let Some(match_) = LEFTMOST_SPACE_AT_END.find(sentence) {
-        match_.start()
-    } else {
-        sentence.len()
-    }
-}
-fn space_rightmost_at_start(sentence: &str) -> usize {
-    if let Some(match_) = RIGHTMOST_SPACE_AT_START.find(sentence) {
-        match_.end()
-    } else {
-        0
-    }
-}
 ///
 /// A vocabulary built on top of the Model
 ///
@@ -417,72 +390,6 @@ impl AddedVocabulary {
 
         Ok(())
     }
-
-    /// Find any AddedToken in the given sentence, using the provided MatchingSet.
-    /// This method returns a list "splits", each of them being a pair of Offsets
-    /// and an optional ID if it is an AddedToken.
-    /// The list of splits cover the entire input string.
-    fn find_matches(&self, sentence: &str, split_re: &MatchingSet) -> Vec<(Option<u32>, Offsets)> {
-        if sentence.is_empty() {
-            return vec![(None, (0, 0))];
-        }
-
-        let mut start_offset = 0;
-        let mut splits = vec![];
-
-        let trie = match split_re {
-            Some(t) => t,
-            None => {
-                return vec![(None, (0, sentence.len()))];
-            }
-        };
-        for mat in trie.leftmost_find_iter(sentence) {
-            let mut start = mat.start();
-            let mut stop = mat.end();
-            let id = mat.value();
-            let added_token = &self.added_tokens_map_r.get(&id).unwrap();
-
-            if self.encode_special_tokens && self.special_tokens_set.contains(&added_token.content)
-            {
-                continue;
-            }
-
-            if added_token.single_word {
-                let start_space = start == 0 || !ends_with_word(&sentence[..start]);
-                let stop_space = stop == sentence.len() || !starts_with_word(&sentence[stop..]);
-
-                if !stop_space || !start_space {
-                    // Discard not single word
-                    continue;
-                }
-            }
-            if added_token.lstrip {
-                // This will be strictly inferior to start and in correct sentence offset
-                let newstart = space_leftmost_at_end(&sentence[..start]);
-
-                // The previous match could have already matched those spaces
-                // Ignore them if it's already matched
-                start = std::cmp::max(newstart, start_offset);
-            }
-            if added_token.rstrip {
-                // This will starting a the stop+1 character, so we need
-                // to add the previous stop value
-                stop += space_rightmost_at_start(&sentence[stop..])
-            }
-            if start_offset < start {
-                splits.push((None, (start_offset, start)));
-            }
-            splits.push((Some(id), (start, stop)));
-            start_offset = stop;
-        }
-
-        let total_byte_len = sentence.len();
-        if start_offset != total_byte_len {
-            splits.push((None, (start_offset, total_byte_len)));
-        }
-
-        splits
-    }
 }
 
 impl Default for AddedVocabulary {
@@ -711,13 +618,6 @@ mod tests {
 
         token.special = true;
         assert!(token.special); // Token was already there
-    }
-
-    #[test]
-    fn empty_matches() {
-        let vocab = AddedVocabulary::new();
-        let matches = vocab.find_matches("", &vocab.split_trie);
-        assert_eq!(matches, vec![(None, (0, 0))]);
     }
 
     #[test]
