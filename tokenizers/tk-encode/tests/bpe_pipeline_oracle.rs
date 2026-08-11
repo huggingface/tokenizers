@@ -67,6 +67,7 @@ fn check_model(name: &str, path: &str) {
                 .unwrap()
                 .first()
                 .unwrap()
+                .ids()
                 .iter()
                 .map(|t| t.id())
                 .collect();

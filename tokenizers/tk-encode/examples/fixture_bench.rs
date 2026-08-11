@@ -479,7 +479,7 @@ fn bench_throughput(
             .wait()
             .unwrap()
             .iter()
-            .flatten()
+            .flat_map(|e| e.ids())
             .map(|t| t.id())
             .collect()
     };
@@ -1038,6 +1038,7 @@ fn memory_child(which: &str, model: &Path) {
                             .unwrap()
                             .first()
                             .unwrap()
+                            .ids()
                             .iter()
                             .map(|t| t.id())
                             .collect()

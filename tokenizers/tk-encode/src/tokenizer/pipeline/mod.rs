@@ -37,12 +37,13 @@ use crate::{
     processors::template::Piece,
     tokenizer::{Decoder as _, Model as _},
 };
-use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
 
 use super::{Result, SplitDelimiterBehavior};
 
 use atomsplit::classify::classify;
 pub use atomsplit::fsm::Span;
+
+use log::warn;
 
 mod scratch_pool;
 
@@ -840,23 +841,23 @@ impl From<&[(&str, &str)]> for Inputs {
 #[repr(align(64))]
 struct CachePadded<T>(T);
 
-struct UnitResult(UnsafeCell<Option<Result<Vec<PipelineToken>>>>);
+struct UnitResult(UnsafeCell<Option<Result<Encoding>>>);
 
 /// SAFETY: we make sure each unit's result is set by only one given thread at a time thanks to
 /// [`Job::next_unit`]
 unsafe impl Sync for UnitResult {}
 
 impl UnitResult {
-    fn new(tokens: Option<Result<Vec<PipelineToken>>>) -> Self {
-        Self(UnsafeCell::new(tokens))
+    fn new(encoding: Option<Result<Encoding>>) -> Self {
+        Self(UnsafeCell::new(encoding))
     }
 
-    unsafe fn set(&self, tokens: Result<Vec<PipelineToken>>) {
-        unsafe { *self.0.get() = Some(tokens) };
+    unsafe fn set(&self, encoding: Result<Encoding>) {
+        unsafe { *self.0.get() = Some(encoding) };
     }
 
     // TODO: safety doc
-    fn take(&self) -> Option<Result<Vec<PipelineToken>>> {
+    fn take(&self) -> Option<Result<Encoding>> {
         unsafe { &mut *self.0.get() }.take()
     }
 }
@@ -901,11 +902,11 @@ impl Job {
                 .inputs
                 .get(unit.seq)
                 .ok_or_else(|| format!("invalid unit index: {}", unit.seq))?;
-            let Input::Single(seq) = input else {
+            let Input::Single(input) = input else {
                 todo!("handle input pair")
             };
             self.tokenizer
-                .encode_sequence(&seq[unit.range.clone()], self.add_special_tokens)
+                .encode_sequence(&input[unit.range.clone()], self.add_special_tokens)
         }))
         .unwrap_or_else(|_| Err("encode worker panicked".into()));
         // SAFETY: no two threads can share the same unit of work because of the atomic fetch_add
@@ -918,11 +919,13 @@ impl Job {
         true
     }
 
-    fn take_result(&self, seq: usize) -> Result<Vec<PipelineToken>> {
+    fn take_result(&self, seq: usize) -> Result<Encoding> {
         let unit_results = &self.outputs[seq];
         if unit_results.len() == 1 {
             return unit_results[0].take().unwrap_or_else(|| {
-                unreachable!("failed to take the unit's result when we expect it to be present")
+                unreachable!(
+                    "[BUG] failed to take the unit's result when we expect it to be present"
+                )
             });
         }
         let mut chunks = Vec::with_capacity(unit_results.len());
@@ -931,20 +934,17 @@ impl Job {
                 Some(Ok(tokens)) => chunks.push(tokens),
                 Some(Err(e)) => return Err(e),
                 None => {
-                    unreachable!("failed to take the unit's result when we expect it to be present")
+                    unreachable!(
+                        "[BUG] failed to take the unit's result when we expect it to be present"
+                    )
                 }
             }
-        }
-        let total_tokens = chunks.iter().map(Vec::len).sum();
-        let mut out = Vec::with_capacity(total_tokens);
-        for c in &chunks {
-            out.extend_from_slice(c);
         }
 
         // NOTE: in a previous implementation, we implemented the reconstruction in parallel on the
         // thread pool; perhaps something to reconsider if the reconstruction shows up in profiling
 
-        Ok(out)
+        Ok(Encoding::concat(chunks))
     }
 
     fn cancel(&self) {
@@ -953,7 +953,7 @@ impl Job {
 }
 
 enum HandleState {
-    Blocking(Enumerate<IntoIter<Result<Vec<PipelineToken>>>>),
+    Blocking(Enumerate<IntoIter<Result<Encoding>>>),
     Streaming(Arc<Job>),
 }
 
@@ -963,7 +963,7 @@ pub struct EncodeHandle {
 
 impl EncodeHandle {
     /// Fully computed results, for the serial case
-    fn blocking(results: Vec<Result<Vec<PipelineToken>>>) -> Self {
+    fn blocking(results: Vec<Result<Encoding>>) -> Self {
         Self {
             state: HandleState::Blocking(results.into_iter().enumerate()),
         }
@@ -987,14 +987,88 @@ impl EncodeHandle {
     /// Wait for all scheduled encoding to finish
     ///
     /// Returns in input order
-    pub fn wait(self) -> Result<Vec<Vec<PipelineToken>>> {
-        // XXX: `Vec::new` does not allocate anything when capacity == 0
-        let mut out = vec![Vec::new(); self.len()];
+    pub fn wait(self) -> Result<Vec<Encoding>> {
+        // XXX: `Vec::new` does not allocate anything when capacity == 0, so creating empty
+        // Encodings should not allocate anything either
+        let mut out = vec![Encoding::empty(); self.len()];
         for (seq, res) in self {
             out[seq] = res?;
         }
         Ok(out)
     }
+}
+
+#[derive(Clone)]
+pub struct Encoding {
+    ids: Vec<PipelineToken>,
+    type_ids: Option<Vec<u8>>,
+}
+
+impl Encoding {
+    fn empty() -> Self {
+        Self {
+            ids: Vec::new(),
+            type_ids: None,
+        }
+    }
+
+    fn new(ids: Vec<PipelineToken>, type_ids: Option<Vec<u8>>) -> Self {
+        debug_assert!(type_ids.as_ref().is_none_or(|t| t.len() == ids.len()));
+        Self { ids, type_ids }
+    }
+
+    fn concat(encodings: Vec<Encoding>) -> Self {
+        let total: usize = encodings.iter().map(|e| e.ids.len()).sum();
+        let mut ids = Vec::with_capacity(total);
+        let mut type_ids = encodings
+            .iter()
+            .any(|e| e.type_ids.is_some())
+            .then(|| Vec::with_capacity(total));
+        for encoding in encodings {
+            let n = encoding.ids.len();
+            ids.extend(encoding.ids);
+            if let Some(type_ids) = type_ids.as_mut() {
+                match encoding.type_ids {
+                    Some(e) => {
+                        debug_assert_eq!(e.len(), n);
+                        type_ids.extend(e)
+                    }
+                    None => type_ids.resize(type_ids.len() + n, 0),
+                }
+            }
+        }
+        Self::new(ids, type_ids)
+    }
+}
+
+impl Encoding {
+    pub fn is_empty(&self) -> bool {
+        self.ids.len() == 0
+    }
+
+    pub fn len(&self) -> usize {
+        self.ids.len()
+    }
+
+    pub fn ids(&self) -> &[PipelineToken] {
+        &self.ids
+    }
+
+    pub fn type_ids(&self) -> Option<&[u8]> {
+        self.type_ids.as_deref()
+    }
+
+    pub fn into_parts(self) -> EncodingParts {
+        EncodingParts {
+            ids: self.ids,
+            type_ids: self.type_ids,
+        }
+    }
+}
+
+pub struct EncodingParts {
+    pub ids: Vec<PipelineToken>,
+    pub type_ids: Option<Vec<u8>>,
 }
 
 /// Iterator yields results in completion order
@@ -1006,7 +1080,7 @@ pub struct HandleIter {
 }
 
 impl Iterator for HandleIter {
-    type Item = (usize, Result<Vec<PipelineToken>>);
+    type Item = (usize, Result<Encoding>);
 
     fn next(&mut self) -> Option<Self::Item> {
         match &mut self.handle.state {
@@ -1039,7 +1113,7 @@ impl Iterator for HandleIter {
 }
 
 impl IntoIterator for EncodeHandle {
-    type Item = (usize, Result<Vec<PipelineToken>>);
+    type Item = (usize, Result<Encoding>);
     type IntoIter = HandleIter;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -1106,7 +1180,8 @@ impl PipelineTokenizer {
                 let (segment, offset) = match segment {
                     Segment::SpecialToken(id) => {
                         let token = PipelineToken::from(id);
-                        seq_outputs.push(UnitResult::new(Some(Ok(vec![token]))));
+                        seq_outputs
+                            .push(UnitResult::new(Some(Ok(Encoding::new(vec![token], None)))));
                         continue;
                     }
                     Segment::Text { text, input_offset } => (text, input_offset),
@@ -1120,6 +1195,8 @@ impl PipelineTokenizer {
             }
             outputs.push(seq_outputs);
         }
+        // Schedule encode batch by longest unit first
+        units.sort_unstable_by_key(|u| std::cmp::Reverse(u.range.len()));
         Plan { units, outputs }
     }
 
@@ -1133,15 +1210,23 @@ impl PipelineTokenizer {
     /// The remaining text is pre-tokenized and run through the model span by span.
     pub fn encode(&self, inputs: impl Into<Inputs>, add_special_tokens: bool) -> EncodeHandle {
         let inputs = inputs.into();
+        assert!(
+            inputs.len() < usize::MAX,
+            "we use usize::MAX as a sentinel value for the completion queue, we don't support batches larger than that"
+        );
 
         if inputs.size_bytes() < PARALLEL_MIN_BYTES {
             EncodeHandle::blocking(self.encode_serial(inputs, add_special_tokens))
         } else {
             let Some(pool) = pool() else {
-                // XXX: unable to get a pool, handle, reverting to single threaded
+                warn!("unable to get a pool, handle, reverting to single threaded");
                 return EncodeHandle::blocking(self.encode_serial(inputs, add_special_tokens));
             };
             let Plan { units, outputs } = self.plan_work(&inputs);
+            assert!(
+                units.len() < usize::MAX,
+                "Job::next_unit cursor will overflow messing up internals if we have more units of work than usize::MAX"
+            );
             if units.len() < 2 {
                 return EncodeHandle::blocking(self.encode_serial(inputs, add_special_tokens));
             }
@@ -1173,11 +1258,7 @@ impl PipelineTokenizer {
         }
     }
 
-    fn encode_serial(
-        &self,
-        inputs: Inputs,
-        add_special_tokens: bool,
-    ) -> Vec<Result<Vec<PipelineToken>>> {
+    fn encode_serial(&self, inputs: Inputs, add_special_tokens: bool) -> Vec<Result<Encoding>> {
         match inputs {
             Inputs::Single(seq) => {
                 let Input::Single(seq) = seq else {
@@ -1197,13 +1278,14 @@ impl PipelineTokenizer {
                 output
             }
         }
+        // TODO: post_process
     }
 
-    pub fn encode_sequence(
-        &self,
-        input: &str,
-        add_special_tokens: bool,
-    ) -> Result<Vec<PipelineToken>> {
+    fn post_process(&self, input: &Input, tokens: &[PipelineToken]) -> Encoding {
+        Encoding::empty()
+    }
+
+    pub fn encode_sequence(&self, input: &str, add_special_tokens: bool) -> Result<Encoding> {
         let mut output = Vec::with_capacity(input.len() / 4);
         let mut scratch = self.inner.scratch_pool.get(&self.inner.model);
         let PipelinePostProcessor { prefix, suffix } = &self.inner.post_processor;
@@ -1285,7 +1367,7 @@ impl PipelineTokenizer {
         if add_special_tokens {
             output.extend_from_slice(suffix);
         }
-        Ok(output)
+        Ok(Encoding::new(output, None))
     }
 
     /// Decode token ids back to a `String`.
@@ -1998,6 +2080,7 @@ mod tests {
             .wait()
             .unwrap()
             .remove(0)
+            .ids()
             .iter()
             .map(|t| t.id())
             .collect()
@@ -2054,6 +2137,7 @@ mod tests {
                 .unwrap()
                 .first()
                 .unwrap()
+                .ids
                 .iter()
                 .map(|t| t.id())
                 .collect();
@@ -2075,9 +2159,10 @@ mod tests {
         assert_pipeline_matches_reference(&tok, "hello world");
 
         let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
-        let ids = |enc: Vec<Vec<PipelineToken>>| {
+        let ids = |enc: Vec<Encoding>| {
             enc.first()
                 .unwrap()
+                .ids
                 .iter()
                 .map(|t| t.id())
                 .collect::<Vec<_>>()
@@ -2169,6 +2254,7 @@ mod tests {
             .unwrap()
             .first()
             .unwrap()
+            .ids
             .iter()
             .map(|t| t.id())
             .collect();
