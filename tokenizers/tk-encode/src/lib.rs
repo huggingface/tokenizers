@@ -24,18 +24,23 @@
 //! 4. The `PostProcessor`: in charge of post-processing the `Encoding` to add anything relevant
 //!    that, for example, a language model would need, such as special tokens.
 //!
+//! A [`Tokenizer`](tokenizer::Tokenizer) holds the configuration. Encoding runs through a
+//! [`PipelineTokenizer`](tokenizer::pipeline::PipelineTokenizer), built from it with
+//! `TryFrom`.
+//!
 //! ## Loading a pretrained tokenizer from the Hub
 //! ```
-//! use tk_encode::tokenizer::{Result, Tokenizer};
+//! use tk_encode::tokenizer::{Result, Tokenizer, pipeline::PipelineTokenizer};
 //!
 //! fn main() -> Result<()> {
 //!     # #[cfg(feature = "http")]
 //!     # {
 //!     // needs http feature enabled
 //!     let tokenizer = Tokenizer::from_pretrained("bert-base-cased", None)?;
+//!     let pipeline = PipelineTokenizer::try_from(&tokenizer)?;
 //!
-//!     let encoding = tokenizer.encode("Hey there!", false)?;
-//!     println!("{:?}", encoding.get_tokens());
+//!     let ids = pipeline.encode("Hey there!", false).wait()?;
+//!     println!("{ids:?}");
 //!     # }
 //!     Ok(())
 //! }
@@ -44,7 +49,7 @@
 //! ## Deserialization and tokenization example
 //!
 //! ```no_run
-//! use tk_encode::tokenizer::{Result, Tokenizer, EncodeInput};
+//! use tk_encode::tokenizer::{Result, Tokenizer, pipeline::PipelineTokenizer};
 //! use tk_encode::models::bpe::BPE;
 //!
 //! fn main() -> Result<()> {
@@ -54,10 +59,11 @@
 //!         .unk_token("[UNK]".into())
 //!         .build()?;
 //!
-//!     let mut tokenizer = Tokenizer::new(bpe);
+//!     let tokenizer = Tokenizer::new(bpe);
+//!     let pipeline = PipelineTokenizer::try_from(&tokenizer)?;
 //!
-//!     let encoding = tokenizer.encode("Hey there!", false)?;
-//!     println!("{:?}", encoding.get_tokens());
+//!     let ids = pipeline.encode("Hey there!", false).wait()?;
+//!     println!("{ids:?}");
 //!
 //!     Ok(())
 //! }
