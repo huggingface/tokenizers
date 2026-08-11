@@ -1,11 +1,9 @@
 use std::borrow::Cow;
 
 use crate::pipeline;
-use crate::tokenizer::{Normalizer, Result};
+use crate::tokenizer::Result;
 pub use spm_precompiled::Precompiled;
 use unicode_segmentation::UnicodeSegmentation;
-
-impl Normalizer for Precompiled {}
 
 impl pipeline::Normalizer for Precompiled {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {

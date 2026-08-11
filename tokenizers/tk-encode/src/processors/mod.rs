@@ -8,7 +8,6 @@ pub use super::pre_tokenizers::byte_level;
 
 use serde::{Deserialize, Serialize};
 
-use crate::PostProcessor;
 use crate::pre_tokenizers::byte_level::ByteLevel;
 use crate::processors::bert::BertProcessing;
 use crate::processors::roberta::RobertaProcessing;
@@ -25,8 +24,6 @@ pub enum PostProcessorWrapper {
     Template(TemplateProcessing),
     Sequence(Sequence),
 }
-
-impl PostProcessor for PostProcessorWrapper {}
 
 impl_enum_from!(BertProcessing, PostProcessorWrapper, Bert);
 impl_enum_from!(ByteLevel, PostProcessorWrapper, ByteLevel);

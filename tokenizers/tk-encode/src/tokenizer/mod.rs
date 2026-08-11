@@ -43,11 +43,6 @@ pub type Error = Box<dyn std::error::Error + Send + Sync>;
 pub type Result<T> = std::result::Result<T, Error>;
 pub type Offsets = (usize, usize);
 
-/// Takes care of pre-processing strings.
-pub trait Normalizer: Sync {}
-
-pub trait PreTokenizer {}
-
 /// Represents a model used during Tokenization (like BPE or Word or Unigram).
 pub trait Model {
     /// Find the ID associated to a string token
@@ -62,10 +57,6 @@ pub trait Model {
     /// files that need to be saved.
     fn save(&self, folder: &Path, prefix: Option<&str>) -> Result<Vec<PathBuf>>;
 }
-
-/// A `PostProcessor` has the responsibility to post process an encoded output of the `Tokenizer`.
-/// It adds any special tokens that a language model would require.
-pub trait PostProcessor {}
 
 /// A `Decoder` changes the raw tokens into its more readable form.
 pub trait Decoder {
@@ -108,9 +99,6 @@ pub struct TokenizerBuilder<M, N, PT, PP, D> {
 impl<M, N, PT, PP, D> Default for TokenizerBuilder<M, N, PT, PP, D>
 where
     M: Model,
-    N: Normalizer,
-    PT: PreTokenizer,
-    PP: PostProcessor,
     D: Decoder,
 {
     fn default() -> Self {
@@ -121,9 +109,6 @@ where
 impl<M, N, PT, PP, D> TokenizerBuilder<M, N, PT, PP, D>
 where
     M: Model,
-    N: Normalizer,
-    PT: PreTokenizer,
-    PP: PostProcessor,
     D: Decoder,
 {
     /// Get an empty TokenizerBuilder.
@@ -312,9 +297,7 @@ pub struct TokenizerImpl<M, N, PT, PP, D> {
 impl<M, N, PT, PP, D> TokenizerImpl<M, N, PT, PP, D>
 where
     M: Model,
-    N: Normalizer + pipeline::Normalizer,
-    PT: PreTokenizer,
-    PP: PostProcessor,
+    N: pipeline::Normalizer,
     D: Decoder,
 {
     /// Instantiate a new Tokenizer, with the given Model
@@ -473,7 +456,7 @@ where
 
 impl<M, N, PT, PP, D> TokenizerImpl<M, N, PT, PP, D>
 where
-    N: Normalizer + pipeline::Normalizer,
+    N: pipeline::Normalizer,
     M: Model,
 {
     /// Register the given tokens as special tokens. This is especially useful for removing
@@ -496,9 +479,9 @@ where
 impl<M, N, PT, PP, D> std::str::FromStr for TokenizerImpl<M, N, PT, PP, D>
 where
     M: for<'de> Deserialize<'de> + Model,
-    N: for<'de> Deserialize<'de> + Normalizer + pipeline::Normalizer,
-    PT: for<'de> Deserialize<'de> + PreTokenizer,
-    PP: for<'de> Deserialize<'de> + PostProcessor,
+    N: for<'de> Deserialize<'de> + pipeline::Normalizer,
+    PT: for<'de> Deserialize<'de>,
+    PP: for<'de> Deserialize<'de>,
     D: for<'de> Deserialize<'de> + Decoder,
 {
     type Err = Error;
@@ -511,9 +494,9 @@ where
 impl<M, N, PT, PP, D> TokenizerImpl<M, N, PT, PP, D>
 where
     M: DeserializeOwned + Model,
-    N: DeserializeOwned + Normalizer + pipeline::Normalizer,
-    PT: DeserializeOwned + PreTokenizer,
-    PP: DeserializeOwned + PostProcessor,
+    N: DeserializeOwned + pipeline::Normalizer,
+    PT: DeserializeOwned,
+    PP: DeserializeOwned,
     D: DeserializeOwned + Decoder,
 {
     /// Instantiate a new Tokenizer from the given file
@@ -527,9 +510,9 @@ where
 impl<M, N, PT, PP, D> TokenizerImpl<M, N, PT, PP, D>
 where
     M: DeserializeOwned + Model,
-    N: DeserializeOwned + Normalizer + pipeline::Normalizer,
-    PT: DeserializeOwned + PreTokenizer,
-    PP: DeserializeOwned + PostProcessor,
+    N: DeserializeOwned + pipeline::Normalizer,
+    PT: DeserializeOwned,
+    PP: DeserializeOwned,
     D: DeserializeOwned + Decoder,
 {
     /// Instantiate a new Tokenizer from bytes
@@ -542,9 +525,9 @@ where
 impl<M, N, PT, PP, D> TokenizerImpl<M, N, PT, PP, D>
 where
     M: DeserializeOwned + Model,
-    N: DeserializeOwned + Normalizer + pipeline::Normalizer,
-    PT: DeserializeOwned + PreTokenizer,
-    PP: DeserializeOwned + PostProcessor,
+    N: DeserializeOwned + pipeline::Normalizer,
+    PT: DeserializeOwned,
+    PP: DeserializeOwned,
     D: DeserializeOwned + Decoder,
 {
     #[deprecated(

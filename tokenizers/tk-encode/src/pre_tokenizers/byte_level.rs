@@ -1,7 +1,7 @@
 use crate::utils::byte_level::{BYTES_CHAR_LOOKUP, CHAR_BYTES_LOOKUP};
 use serde::{Deserialize, Serialize};
 
-use crate::tokenizer::{Decoder, PostProcessor, PreTokenizer, Result};
+use crate::tokenizer::{Decoder, Result};
 use crate::utils::macro_rules_attribute;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -69,11 +69,6 @@ impl ByteLevel {
     }
 }
 
-/// As a `PreTokenizer`, `ByteLevel` is in charge of transforming all the unicode characters into
-/// their byte-level counterpart. It also splits the input according to the configured regex.
-// TODO: Give the ability to modify this regex
-impl PreTokenizer for ByteLevel {}
-
 /// As a `Decoder`, `ByteLevel` is in charge of converting any byte-level characters to their
 /// unicode counterpart, before merging everything back into a single String.
 /// This decoder will consume the tokens and merge them in one step to alleviate
@@ -97,11 +92,6 @@ impl Decoder for ByteLevel {
         Ok(vec![String::from_utf8_lossy(&toks).to_string()])
     }
 }
-
-/// As a [`PostProcessor`], `ByteLevel` adds no token of its own. Its [`Self::trim_offsets`] used
-/// to pull each token's offsets in past the leading `Ġ`; there are no offsets to trim now, so the
-/// field is read from the config and serialized back out without being acted on.
-impl PostProcessor for ByteLevel {}
 
 #[cfg(test)]
 mod tests {

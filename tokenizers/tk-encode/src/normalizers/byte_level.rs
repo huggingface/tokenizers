@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use crate::pipeline;
-use crate::tokenizer::{Normalizer, Result};
+use crate::tokenizer::Result;
 use crate::utils::byte_level::BYTES_CHAR_LOOKUP;
 use crate::utils::macro_rules_attribute;
 use ahash::AHashSet;
@@ -25,8 +25,6 @@ impl ByteLevel {
         BYTES_CHAR_LOOKUP.iter().copied().collect()
     }
 }
-
-impl Normalizer for ByteLevel {}
 
 impl pipeline::Normalizer for ByteLevel {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {

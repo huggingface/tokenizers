@@ -2,7 +2,7 @@ use std::sync::LazyLock;
 
 use crate::pipeline;
 use crate::pre_tokenizers::unicode_scripts::scripts::{Script, get_script};
-use crate::tokenizer::{PreTokenizer, Result};
+use crate::tokenizer::Result;
 use crate::utils::macro_rules_attribute;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -39,8 +39,6 @@ fn fixed_script(c: char) -> Script {
         }
     }
 }
-
-impl PreTokenizer for UnicodeScripts {}
 
 static BMP_SCRIPT: LazyLock<[Script; 0x10000]> = LazyLock::new(|| {
     std::array::from_fn(|i| char::from_u32(i as u32).map_or(Script::Common, fixed_script))

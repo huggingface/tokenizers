@@ -4,7 +4,7 @@ use atomsplit::literal::Literal;
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::tokenizer::{
-    PreTokenizer, Result, SplitDelimiterBehavior,
+    Result, SplitDelimiterBehavior,
     pattern::{Invert, Pattern},
 };
 
@@ -141,8 +141,6 @@ impl Split {
         }
     }
 }
-
-impl PreTokenizer for Split {}
 
 // SAFETY: both routes cut only at character boundaries of `text`. The native route is an `atomsplit`
 // fsm, see "What the spans guarantee" in its docs. The search route forwards the offsets of

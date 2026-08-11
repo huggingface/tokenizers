@@ -1,5 +1,4 @@
 use crate::processors::PostProcessorWrapper;
-use crate::tokenizer::PostProcessor;
 use crate::utils::macro_rules_attribute;
 use serde::{Deserialize, Serialize};
 
@@ -47,5 +46,3 @@ impl IntoIterator for Sequence {
         self.processors.into_iter()
     }
 }
-
-impl PostProcessor for Sequence {}

@@ -1,9 +1,6 @@
 use std::borrow::Cow;
 
-use crate::{
-    pipeline,
-    tokenizer::{Normalizer, Result},
-};
+use crate::{Result, pipeline};
 
 use super::utils::lowercases_to_self;
 
@@ -120,8 +117,6 @@ impl BertNormalizer {
         !input.chars().any(changes)
     }
 }
-
-impl Normalizer for BertNormalizer {}
 
 impl pipeline::Normalizer for BertNormalizer {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {

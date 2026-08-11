@@ -1,5 +1,5 @@
 use crate::pipeline;
-use crate::tokenizer::{PreTokenizer, Result};
+use crate::tokenizer::Result;
 use serde::{Deserialize, Serialize};
 
 use crate::utils::macro_rules_attribute;
@@ -20,8 +20,6 @@ impl FixedLength {
 fn default_length() -> usize {
     5
 }
-
-impl PreTokenizer for FixedLength {}
 
 // SAFETY: every offset is one `str::char_indices` yielded, or `text.len()`, and they are pushed in
 // increasing order.

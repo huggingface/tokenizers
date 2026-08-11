@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::pipeline::{self, PreTokenizerScratch};
-use crate::tokenizer::{PreTokenizer, Result, SplitDelimiterBehavior};
+use crate::tokenizer::{Result, SplitDelimiterBehavior};
 use crate::utils::macro_rules_attribute;
 use SplitDelimiterBehavior::{Isolated, Removed};
 use atomsplit::classify::mask;
@@ -34,8 +34,6 @@ impl Default for Punctuation {
         Self::new(SplitDelimiterBehavior::Isolated)
     }
 }
-
-impl PreTokenizer for Punctuation {}
 
 // SAFETY: both routes cut only at character boundaries of `text`.
 // The class-runs route is an `atomsplit` fsm.

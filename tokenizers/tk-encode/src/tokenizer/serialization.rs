@@ -9,7 +9,7 @@ use serde::{
 use super::TokenizerImpl;
 use super::added_vocabulary::AddedTokenWithId;
 use crate::pipeline;
-use crate::{Decoder, Model, Normalizer, PostProcessor, PreTokenizer, TokenizerBuilder};
+use crate::{Decoder, Model, TokenizerBuilder};
 
 static SERIALIZATION_VERSION: &str = "1.0";
 
@@ -47,9 +47,9 @@ where
 impl<'de, M, N, PT, PP, D> Deserialize<'de> for TokenizerImpl<M, N, PT, PP, D>
 where
     M: Deserialize<'de> + Model,
-    N: Deserialize<'de> + Normalizer + pipeline::Normalizer,
-    PT: Deserialize<'de> + PreTokenizer,
-    PP: Deserialize<'de> + PostProcessor,
+    N: Deserialize<'de> + pipeline::Normalizer,
+    PT: Deserialize<'de>,
+    PP: Deserialize<'de>,
     D: Deserialize<'de> + Decoder,
 {
     fn deserialize<De>(deserializer: De) -> Result<Self, De::Error>
@@ -91,9 +91,9 @@ struct TokenizerVisitor<M, N, PT, PP, D>(
 impl<'de, M, N, PT, PP, D> Visitor<'de> for TokenizerVisitor<M, N, PT, PP, D>
 where
     M: Deserialize<'de> + Model,
-    N: Deserialize<'de> + Normalizer + pipeline::Normalizer,
-    PT: Deserialize<'de> + PreTokenizer,
-    PP: Deserialize<'de> + PostProcessor,
+    N: Deserialize<'de> + pipeline::Normalizer,
+    PT: Deserialize<'de>,
+    PP: Deserialize<'de>,
     D: Deserialize<'de> + Decoder,
 {
     type Value = TokenizerImpl<M, N, PT, PP, D>;

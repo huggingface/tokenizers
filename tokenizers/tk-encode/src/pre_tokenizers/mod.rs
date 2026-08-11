@@ -12,7 +12,6 @@ pub mod whitespace;
 
 use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::PreTokenizer;
 use crate::pre_tokenizers::bert::BertPreTokenizer;
 use crate::pre_tokenizers::byte_level::ByteLevel;
 use crate::pre_tokenizers::delimiter::CharDelimiterSplit;
@@ -42,8 +41,6 @@ pub enum PreTokenizerWrapper {
     UnicodeScripts(UnicodeScripts),
     FixedLength(FixedLength),
 }
-
-impl PreTokenizer for PreTokenizerWrapper {}
 
 impl<'de> Deserialize<'de> for PreTokenizerWrapper {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>

@@ -1,7 +1,7 @@
 use crate::normalizers::metaspace::MetaspaceNormalizer;
 use crate::pre_tokenizers::PreTokenizerWrapper;
 use crate::pre_tokenizers::split::Split;
-use crate::tokenizer::{Decoder, PreTokenizer, Result, SplitDelimiterBehavior};
+use crate::tokenizer::{Decoder, Result, SplitDelimiterBehavior};
 use serde::{Deserialize, Deserializer, Serialize, de};
 
 /// Enum representing options for the metaspace prepending scheme.
@@ -121,8 +121,6 @@ impl Default for Metaspace {
         Self::new('▁', PrependScheme::Always, true)
     }
 }
-
-impl PreTokenizer for Metaspace {}
 
 impl Decoder for Metaspace {
     fn decode_chain(&self, tokens: Vec<String>) -> Result<Vec<String>> {

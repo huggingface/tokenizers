@@ -1,4 +1,3 @@
-use crate::tokenizer::PostProcessor;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -30,8 +29,6 @@ impl BertProcessing {
         (self.cls.0.clone(), self.cls.1)
     }
 }
-
-impl PostProcessor for BertProcessing {}
 
 #[cfg(test)]
 mod tests {

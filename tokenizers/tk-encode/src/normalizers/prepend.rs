@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use crate::pipeline;
-use crate::tokenizer::{Normalizer, Result};
+use crate::tokenizer::Result;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -15,8 +15,6 @@ impl Prepend {
         Self { prepend }
     }
 }
-
-impl Normalizer for Prepend {}
 
 impl pipeline::Normalizer for Prepend {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {

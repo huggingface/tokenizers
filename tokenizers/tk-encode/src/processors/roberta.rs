@@ -1,4 +1,3 @@
-use crate::tokenizer::PostProcessor;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -50,8 +49,6 @@ impl RobertaProcessing {
         (self.cls.0.clone(), self.cls.1)
     }
 }
-
-impl PostProcessor for RobertaProcessing {}
 
 #[cfg(test)]
 mod tests {

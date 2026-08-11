@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::pipeline::{self, PreTokenizerScratch};
-use crate::tokenizer::{PreTokenizer, Result};
+use crate::tokenizer::Result;
 use crate::utils::macro_rules_attribute;
 use atomsplit::classify::mask;
 use atomsplit::fsm::class_runs_into;
@@ -26,8 +26,6 @@ impl Default for Digits {
         Self::new(false)
     }
 }
-
-impl PreTokenizer for Digits {}
 
 // SAFETY: the spans come from an `atomsplit` fsm, which splits only at character boundaries of `text`.
 // See `atomsplit::fsm` docs.

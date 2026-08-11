@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use crate::pipeline;
-use crate::tokenizer::{Normalizer, Result};
+use crate::tokenizer::Result;
 use crate::utils::macro_rules_attribute;
 use serde::{Deserialize, Serialize};
 use unicode_normalization_alignments::char::is_combining_mark;
@@ -23,8 +23,6 @@ impl Strip {
     }
 }
 
-impl Normalizer for Strip {}
-
 impl pipeline::Normalizer for Strip {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
         let s = if self.strip_left {
@@ -43,8 +41,6 @@ impl pipeline::Normalizer for Strip {
 #[derive(Copy, Clone, Debug)]
 #[macro_rules_attribute(impl_serde_type!)]
 pub struct StripAccents;
-
-impl Normalizer for StripAccents {}
 
 impl pipeline::Normalizer for StripAccents {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {

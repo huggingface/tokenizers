@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::normalizers::NormalizerWrapper;
 use crate::pipeline;
-use crate::tokenizer::{Normalizer, Result};
+use crate::tokenizer::Result;
 use crate::utils::macro_rules_attribute;
 
 #[derive(Clone, Deserialize, Debug, Serialize)]
@@ -42,8 +42,6 @@ impl IntoIterator for Sequence {
     }
 }
 
-impl Normalizer for Sequence {}
-
 impl pipeline::Normalizer for Sequence {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
         pipeline::normalize_all(&self.normalizers, input)
@@ -54,7 +52,6 @@ impl pipeline::Normalizer for Sequence {
 #[derive(Copy, Clone, Debug)]
 #[macro_rules_attribute(impl_serde_type!)]
 pub struct Lowercase;
-impl Normalizer for Lowercase {}
 
 /// Whether lowercasing `c` leaves it unchanged (a single, identical char)
 pub(crate) fn lowercases_to_self(c: char) -> bool {

@@ -1,5 +1,5 @@
 use crate::pipeline::{self, PreTokenizerScratch};
-use crate::tokenizer::{PreTokenizer, Result};
+use crate::tokenizer::Result;
 use crate::utils::macro_rules_attribute;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -14,13 +14,9 @@ impl Default for Whitespace {
     }
 }
 
-impl PreTokenizer for Whitespace {}
-
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[macro_rules_attribute(impl_serde_type!)]
 pub struct WhitespaceSplit;
-
-impl PreTokenizer for WhitespaceSplit {}
 
 // SAFETY: the spans come from an `atomsplit` fsm, which cuts only at character boundaries of `text`.
 // See "What the spans guarantee" in the `atomsplit::fsm` docs.

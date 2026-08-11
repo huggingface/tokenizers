@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::pipeline;
 use crate::pipeline::PreTokenizerScratch;
-use crate::tokenizer::{PreTokenizer, Result};
+use crate::tokenizer::Result;
 use crate::utils::macro_rules_attribute;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -17,8 +17,6 @@ impl CharDelimiterSplit {
         Self { delimiter }
     }
 }
-
-impl PreTokenizer for CharDelimiterSplit {}
 
 // SAFETY: the spans come from `atomsplit::fsm::CharDelimiterSplit`, which splits only at character
 // boundaries of `text`. It scans for the delimiter's own UTF-8 bytes and confirms the whole encoding

@@ -56,7 +56,7 @@
 //!
 //! [`TemplateProcessing`]: struct.TemplateProcessing.html
 //!
-use crate::{PostProcessor, Result};
+use crate::Result;
 use ahash::{AHashMap, AHashSet};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -551,8 +551,6 @@ impl TemplateProcessing {
         TemplateProcessingBuilder::default()
     }
 }
-
-impl PostProcessor for TemplateProcessing {}
 
 #[cfg(test)]
 mod tests {

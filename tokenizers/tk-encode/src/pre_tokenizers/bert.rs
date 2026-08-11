@@ -1,5 +1,5 @@
 use crate::pipeline::{self, PreTokenizerScratch};
-use crate::tokenizer::{PreTokenizer, Result};
+use crate::tokenizer::Result;
 use crate::utils::macro_rules_attribute;
 
 use atomsplit::classify::mask;
@@ -8,8 +8,6 @@ use atomsplit::fsm::class_runs_into;
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[macro_rules_attribute(impl_serde_type!)]
 pub struct BertPreTokenizer;
-
-impl PreTokenizer for BertPreTokenizer {}
 
 // SAFETY: the spans come from an `atomsplit` fsm, which splits only at character boundaries of `text`.
 // See `atomsplit::fsm` docs.

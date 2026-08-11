@@ -2,8 +2,8 @@ use std::borrow::Cow;
 
 use crate::pipeline;
 use crate::tokenizer::Decoder;
+use crate::tokenizer::Result;
 use crate::tokenizer::pattern::Pattern;
-use crate::tokenizer::{Normalizer, Result};
 use crate::utils::SysRegex;
 use atomsplit::literal::Literal;
 use serde::{Deserialize, Serialize};
@@ -104,8 +104,6 @@ impl Replace {
         })
     }
 }
-
-impl Normalizer for Replace {}
 
 /// Builds the text with every match swapped for `content`. Borrows the input back untouched when
 /// nothing matched, which is what keeps the common case free of allocation.

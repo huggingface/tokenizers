@@ -2,7 +2,7 @@ use std::convert::{TryFrom, TryInto};
 
 use crate::pipeline::{self, PipelinePreTokenizer};
 use crate::pre_tokenizers::PreTokenizerWrapper;
-use crate::tokenizer::{PreTokenizer, Result};
+use crate::tokenizer::Result;
 use crate::utils::macro_rules_attribute;
 use serde::{Deserialize, Serialize};
 
@@ -38,8 +38,6 @@ impl IntoIterator for Sequence {
         self.pretokenizers.into_iter()
     }
 }
-
-impl PreTokenizer for Sequence {}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct PipelineSequence {

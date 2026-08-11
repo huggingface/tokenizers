@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use crate::pipeline;
-use crate::tokenizer::{Normalizer, Result};
+use crate::tokenizer::Result;
 use crate::utils::macro_rules_attribute;
 
 use unicode_normalization::{
@@ -11,7 +11,7 @@ use unicode_normalization::{
 #[derive(Default, Copy, Clone, Debug)]
 #[macro_rules_attribute(impl_serde_type!)]
 pub struct NFD;
-impl Normalizer for NFD {}
+
 impl pipeline::Normalizer for NFD {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
         if let IsNormalized::Yes = is_nfd_quick(input.chars()) {
@@ -25,7 +25,7 @@ impl pipeline::Normalizer for NFD {
 #[derive(Default, Copy, Clone, Debug)]
 #[macro_rules_attribute(impl_serde_type!)]
 pub struct NFKD;
-impl Normalizer for NFKD {}
+
 impl pipeline::Normalizer for NFKD {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
         if let IsNormalized::Yes = is_nfkd_quick(input.chars()) {
@@ -39,7 +39,7 @@ impl pipeline::Normalizer for NFKD {
 #[derive(Default, Copy, Clone, Debug)]
 #[macro_rules_attribute(impl_serde_type!)]
 pub struct NFC;
-impl Normalizer for NFC {}
+
 impl pipeline::Normalizer for NFC {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
         if let IsNormalized::Yes = is_nfc_quick(input.chars()) {
@@ -53,7 +53,7 @@ impl pipeline::Normalizer for NFC {
 #[derive(Default, Copy, Clone, Debug)]
 #[macro_rules_attribute(impl_serde_type!)]
 pub struct NFKC;
-impl Normalizer for NFKC {}
+
 impl pipeline::Normalizer for NFKC {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
         if let IsNormalized::Yes = is_nfkc_quick(input.chars()) {
@@ -98,7 +98,6 @@ fn nmt_to_space(c: char) -> char {
 #[derive(Default, Copy, Clone, Debug)]
 #[macro_rules_attribute(impl_serde_type!)]
 pub struct Nmt;
-impl Normalizer for Nmt {}
 
 impl pipeline::Normalizer for Nmt {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {

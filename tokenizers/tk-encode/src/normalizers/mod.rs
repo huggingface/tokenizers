@@ -17,7 +17,7 @@ pub use crate::normalizers::unicode::{NFC, NFD, NFKC, NFKD, Nmt};
 pub use crate::normalizers::utils::{Lowercase, Sequence};
 use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::{Normalizer, pipeline};
+use crate::pipeline;
 
 /// Wrapper for known Normalizers.
 #[derive(Clone, Debug, Serialize)]
@@ -181,8 +181,6 @@ impl<'de> Deserialize<'de> for NormalizerWrapper {
         })
     }
 }
-
-impl Normalizer for NormalizerWrapper {}
 
 impl_enum_from!(BertNormalizer, NormalizerWrapper, BertNormalizer);
 impl_enum_from!(NFKD, NormalizerWrapper, NFKD);
