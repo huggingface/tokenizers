@@ -534,8 +534,26 @@ fn into_parts(template: &Template) -> Result<(Vec<Slice>, Vec<Slice>, Vec<Slice>
     ))
 }
 
-fn is_trivial_core(core: &[Slice]) -> bool {
-    core.iter().all(is_sequence)
+/// An identity core arranges the sequences exactly as the defaults: `$A` alone, or `$A $B` with
+/// the default type ids (0 then 1). Only such a core is transparent and safe to drop when composing
+/// a Sequence. Any other all-sequence core reorders or retags, so it is a real arrangement.
+fn is_identity_core(core: &[Slice]) -> bool {
+    matches!(
+        core,
+        [Slice::Sequence {
+            seq: Seq::A,
+            type_id: 0
+        }] | [
+            Slice::Sequence {
+                seq: Seq::A,
+                type_id: 0
+            },
+            Slice::Sequence {
+                seq: Seq::B,
+                type_id: 1
+            }
+        ]
+    )
 }
 
 fn compose<'a>(templates: impl Iterator<Item = &'a Template>) -> Result<Template> {
@@ -543,7 +561,7 @@ fn compose<'a>(templates: impl Iterator<Item = &'a Template>) -> Result<Template
 
     let mut core = None;
     for (_, c, _) in &parts {
-        if !is_trivial_core(c) && core.replace(c.clone()).is_some() {
+        if !is_identity_core(c) && core.replace(c.clone()).is_some() {
             return Err(
                 "post processor Sequence with multiple sequence referencing members is not supported".into(),
             );
@@ -1188,18 +1206,6 @@ impl PipelineTokenizer {
         s2: Option<Vec<PipelineToken>>,
         add_special_tokens: bool,
     ) -> Encoding {
-        if !add_special_tokens {
-            let mut ids = s1;
-            if let Some(s2) = s2 {
-                let mut type_ids = vec![0u8; ids.len()];
-                type_ids.resize(ids.len() + s2.len(), 1);
-                ids.extend(s2);
-                return Encoding::new(ids, Some(type_ids));
-            } else {
-                return Encoding::new(ids, None);
-            }
-        }
-
         let pp = &self.inner.post_processor;
         let template = if s2.is_some() { &pp.pair } else { &pp.single };
 
@@ -1213,6 +1219,9 @@ impl PipelineTokenizer {
         for slice in &template.slices {
             match slice {
                 Slice::Specials { tokens, type_id } => {
+                    if !add_special_tokens {
+                        continue;
+                    }
                     ids.extend_from_slice(tokens);
                     if let Some(tids) = type_ids.as_mut() {
                         tids.resize(tids.len() + tokens.len(), *type_id);
@@ -2227,6 +2236,77 @@ mod tests {
         );
         let err = conversion_error(&tok);
         assert!(err.contains("not supported"), "{}", err);
+    }
+
+    #[test]
+    fn roberta_pair_without_specials_keeps_type_ids_zero() {
+        use crate::processors::roberta::RobertaProcessing;
+
+        // RoBERTa tags both pair sides type 0. `add_special_tokens = false` must suppress only the
+        // special tokens, not fall back to the default A=0/B=1 tagging.
+        let tok = wordlevel_tokenizer(
+            vec![
+                ("<s>", 0),
+                ("</s>", 1),
+                ("hello", 2),
+                ("world", 3),
+                ("foo", 4),
+            ],
+            Some(PostProcessorWrapper::Roberta(RobertaProcessing::new(
+                ("</s>".to_string(), 1),
+                ("<s>".to_string(), 0),
+            ))),
+        );
+        let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
+        let batch = pipeline
+            .encode(("hello world", "foo"), false)
+            .wait()
+            .unwrap();
+        let enc = batch.first().unwrap();
+
+        assert!(
+            enc.type_ids().is_none_or(|t| t.iter().all(|&x| x == 0)),
+            "expected all-zero type ids, got {:?}",
+            enc.type_ids()
+        );
+        let expected = tok.encode(("hello world", "foo"), false).unwrap();
+        let ids: Vec<u32> = enc.ids().iter().map(|t| t.id()).collect();
+        assert_eq!(expected.get_ids(), ids.as_slice());
+    }
+
+    #[test]
+    fn sequence_keeps_reordering_member_core() {
+        use crate::pre_tokenizers::byte_level::ByteLevel;
+        use crate::processors::sequence::Sequence as ProcSequence;
+        use crate::processors::template::TemplateProcessing;
+
+        // ByteLevel has an identity core (safe to drop); the template reorders the pair to `$B $A`.
+        // Compose must keep the reordering core, not discard it as trivial.
+        let reorder = TemplateProcessing::builder()
+            .try_single("$A")
+            .unwrap()
+            .try_pair("$B $A")
+            .unwrap()
+            .build()
+            .unwrap();
+        let tok = wordlevel_tokenizer(
+            vec![("hello", 2), ("world", 3)],
+            Some(PostProcessorWrapper::Sequence(ProcSequence::new(vec![
+                PostProcessorWrapper::ByteLevel(ByteLevel::default()),
+                PostProcessorWrapper::Template(reorder),
+            ]))),
+        );
+        let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
+        let batch = pipeline.encode(("hello", "world"), false).wait().unwrap();
+        let ids: Vec<u32> = batch
+            .first()
+            .unwrap()
+            .ids()
+            .iter()
+            .map(|t| t.id())
+            .collect();
+        // `$B $A` => world (3) before hello (2)
+        assert_eq!(ids, vec![3, 2]);
     }
 
     #[test]
