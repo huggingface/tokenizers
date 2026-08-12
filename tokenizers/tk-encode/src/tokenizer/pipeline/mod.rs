@@ -2,26 +2,24 @@ use std::cell::UnsafeCell;
 use std::convert::TryInto;
 use std::iter::Enumerate;
 use std::ops::Range;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, AtomicUsize, Ordering},
+};
 use std::vec::IntoIter;
 use std::{borrow::Cow, convert::TryFrom};
 
-use crate::models::bpe::{BpeScratch, PipelineBPE};
-use crate::models::unigram::{Unigram, UnigramScratch};
-use crate::models::wordlevel::WordLevel;
-use crate::models::wordpiece::{PipelineWordPiece, WordPieceScratch};
-use crate::parallelism::pool;
-use crate::pipeline::scratch_pool::{EncodeScratch, ScratchPool};
-use crate::processors::bert::BertProcessing;
-use crate::processors::roberta::RobertaProcessing;
-use crate::utils::byte_level::GPT2_REGEX_STR;
-use crate::vocab::bucket_added_vocabulary::{
-    AddedToken as BucketAddedToken, AddedVocabulary as BucketAddedVocabulary,
-};
 use crate::{
     DecoderWrapper, ModelWrapper, PostProcessorWrapper, PreTokenizerWrapper, Tokenizer,
+    models::{
+        bpe::{BpeScratch, PipelineBPE},
+        unigram::{Unigram, UnigramScratch},
+        wordlevel::WordLevel,
+        wordpiece::{PipelineWordPiece, WordPieceScratch},
+    },
     normalizers::{NormalizerWrapper, metaspace::MetaspaceNormalizer},
+    parallelism::pool,
+    pipeline::scratch_pool::{EncodeScratch, ScratchPool},
     pre_tokenizers::{
         bert::BertPreTokenizer,
         delimiter::CharDelimiterSplit,
@@ -34,8 +32,16 @@ use crate::{
         unicode_scripts::UnicodeScripts,
         whitespace::{Whitespace, WhitespaceSplit},
     },
-    processors::template::Piece,
+    processors::{
+        bert::BertProcessing,
+        roberta::RobertaProcessing,
+        template::{Piece, Sequence, Tokens},
+    },
     tokenizer::{Decoder as _, Model as _},
+    utils::byte_level::GPT2_REGEX_STR,
+    vocab::bucket_added_vocabulary::{
+        AddedToken as BucketAddedToken, AddedVocabulary as BucketAddedVocabulary,
+    },
 };
 
 use super::{Result, SplitDelimiterBehavior};
@@ -307,98 +313,187 @@ impl TryFrom<PreTokenizerWrapper> for PipelinePreTokenizer {
 ///   prefix |  sequence encoding | suffix
 /// ```
 ///
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct PipelinePostProcessor {
-    prefix: Box<[PipelineToken]>,
-    suffix: Box<[PipelineToken]>,
+    single: Template,
+    pair: Template,
+}
+
+#[derive(Debug)]
+enum Slice {
+    Specials {
+        tokens: Box<[PipelineToken]>,
+        type_id: u8,
+    },
+    Sequence {
+        seq: Seq,
+        type_id: u8,
+    },
+}
+
+#[derive(Clone, Copy, Debug)]
+enum Seq {
+    A,
+    B,
+}
+
+#[derive(Debug)]
+struct Template {
+    slices: Box<[Slice]>,
+    n_special: usize,
+    has_type_ids: bool,
+}
+
+impl Template {
+    fn new(slices: Vec<Slice>) -> Self {
+        let n_special = slices
+            .iter()
+            .map(|s| {
+                if let Slice::Specials { tokens, .. } = s {
+                    tokens.len()
+                } else {
+                    0
+                }
+            })
+            .sum();
+        let has_type_ids = slices.iter().any(|s| match s {
+            Slice::Specials { type_id, .. } | Slice::Sequence { type_id, .. } => *type_id != 0,
+        });
+        Self {
+            slices: slices.into_boxed_slice(),
+            n_special,
+            has_type_ids,
+        }
+    }
+}
+
+fn build_slices(pieces: &[Piece], specials: &Tokens, is_pair: bool) -> Result<Vec<Slice>> {
+    let (mut seen_a, mut seen_b) = (false, false);
+    let mut slices = Vec::new();
+    for piece in pieces {
+        match piece {
+            Piece::Sequence {
+                id: Sequence::A,
+                type_id,
+            } => {
+                if seen_a {
+                    return Err("template references sequence A more than once".into());
+                }
+                seen_a = true;
+                slices.push(Slice::Sequence {
+                    seq: Seq::A,
+                    type_id: *type_id as u8,
+                });
+            }
+            Piece::Sequence {
+                id: Sequence::B,
+                type_id,
+            } => {
+                if seen_b {
+                    return Err("template references sequence B more than once".into());
+                }
+                seen_b = true;
+                slices.push(Slice::Sequence {
+                    seq: Seq::B,
+                    type_id: *type_id as u8,
+                });
+            }
+            Piece::SpecialToken {
+                id: token_string,
+                type_id,
+            } => {
+                let special = specials
+                    .0
+                    .get(token_string)
+                    .ok_or_else(|| format!("unknown special token: `{token_string}`"))?;
+                slices.push(Slice::Specials {
+                    tokens: special
+                        .ids()
+                        .iter()
+                        .map(|&id| PipelineToken::from(id))
+                        .collect(),
+                    type_id: *type_id as u8,
+                });
+            }
+        }
+    }
+    if !seen_a {
+        return Err("template does not reference sequence A".into());
+    }
+    if is_pair && !seen_b {
+        return Err("pair template does not reference sequence B".into());
+    }
+    if !is_pair && seen_b {
+        return Err("single template references sequence B (it should only refer to A)".into());
+    }
+    Ok(slices)
 }
 
 impl TryFrom<&PostProcessorWrapper> for PipelinePostProcessor {
     type Error = crate::Error;
 
     fn try_from(value: &PostProcessorWrapper) -> Result<Self> {
+        fn one(id: u32, tid: u8) -> Slice {
+            Slice::Specials {
+                tokens: Box::new([PipelineToken::from(id)]),
+                type_id: tid,
+            }
+        }
+        fn multi(ids: &[u32], tid: u8) -> Slice {
+            Slice::Specials {
+                tokens: ids.iter().map(|&id| PipelineToken::from(id)).collect(),
+                type_id: tid,
+            }
+        }
+        use Seq::{A, B};
+        let sq = |seq, type_id| Slice::Sequence { seq, type_id };
+
         match value {
             PostProcessorWrapper::Bert(BertProcessing {
                 cls: (_, cls_id),
                 sep: (_, sep_id),
             }) => Ok(Self {
-                prefix: vec![PipelineToken::from(*cls_id)].into_boxed_slice(),
-                suffix: vec![PipelineToken::from(*sep_id)].into_boxed_slice(),
+                single: Template::new(vec![one(*cls_id, 0), sq(A, 0), one(*sep_id, 0)]),
+                pair: Template::new(vec![
+                    one(*cls_id, 0),
+                    sq(A, 0),
+                    one(*sep_id, 0),
+                    sq(B, 1),
+                    one(*sep_id, 0),
+                ]),
             }),
             PostProcessorWrapper::Roberta(RobertaProcessing {
                 cls: (_, cls_id),
                 sep: (_, sep_id),
                 ..
             }) => Ok(Self {
-                prefix: vec![PipelineToken::from(*cls_id)].into_boxed_slice(),
-                suffix: vec![PipelineToken::from(*sep_id)].into_boxed_slice(),
+                single: Template::new(vec![one(*cls_id, 0), sq(A, 0), one(*sep_id, 0)]),
+                pair: Template::new(vec![
+                    one(*cls_id, 0),
+                    sq(A, 0),
+                    multi(&[*sep_id, *sep_id], 0),
+                    sq(B, 0),
+                    one(*sep_id, 0),
+                ]),
             }),
-            PostProcessorWrapper::Template(pp) => {
-                // todo: handle pair template
-                let mut prefix = vec![];
-                let mut suffix = vec![];
-                let mut seen_sequence = false;
-                for piece in pp.single.iter_pieces() {
-                    match piece {
-                        Piece::Sequence { .. } => {
-                            if seen_sequence {
-                                return Err(
-                                    "post-processor not supported: Template `single` references the sequence more than once"
-                                        .into(),
-                                );
-                            }
-                            seen_sequence = true;
-                        }
-                        Piece::SpecialToken {
-                            id: token_string, ..
-                        } => {
-                            let special = pp.get_special_tokens().0.get(token_string).ok_or_else(|| {
-                                format!(
-                                    "post-processor not supported: Template references unknown special token `{token_string}`"
-                                )
-                            })?;
-                            let token_ids = special.ids().iter().copied().map(PipelineToken::from);
-                            if seen_sequence {
-                                suffix.extend(token_ids);
-                            } else {
-                                prefix.extend(token_ids);
-                            }
-                        }
-                    }
-                }
-                if !seen_sequence {
-                    return Err(
-                        "post-processor not supported: Template `single` does not reference the sequence"
-                            .into(),
-                    );
-                }
-                Ok(Self {
-                    prefix: prefix.into_boxed_slice(),
-                    suffix: suffix.into_boxed_slice(),
-                })
-            }
-            PostProcessorWrapper::ByteLevel(_) => Ok(Self::default()),
-            PostProcessorWrapper::Sequence(sequence) => {
-                // Each member wraps the previous members' output, so later members end up
-                // outermost: prefix accumulates in reverse member order, suffix in forward.
-                let items = sequence
-                    .as_ref()
-                    .iter()
-                    .map(PipelinePostProcessor::try_from)
-                    .collect::<Result<Vec<_>>>()?;
-                let prefix: Vec<_> = items
-                    .iter()
-                    .rev()
-                    .flat_map(|item| item.prefix.iter().copied())
-                    .collect();
-                let suffix: Vec<_> = items
-                    .iter()
-                    .flat_map(|item| item.suffix.iter().copied())
-                    .collect();
-                Ok(Self {
-                    prefix: prefix.into_boxed_slice(),
-                    suffix: suffix.into_boxed_slice(),
-                })
+            PostProcessorWrapper::Template(pp) => Ok(Self {
+                single: Template::new(build_slices(
+                    pp.single.as_slice(),
+                    pp.get_special_tokens(),
+                    false,
+                )?),
+                pair: Template::new(build_slices(
+                    pp.pair.as_slice(),
+                    pp.get_special_tokens(),
+                    true,
+                )?),
+            }),
+            PostProcessorWrapper::ByteLevel(_) => Ok(Self {
+                single: Template::new(vec![sq(A, 0)]),
+                pair: Template::new(vec![sq(A, 0), sq(B, 1)]),
+            }),
+            PostProcessorWrapper::Sequence(_sequence) => {
+                todo!("sequence post processor not implemented for the moment")
             }
         }
     }
@@ -703,11 +798,12 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
                 normalizers,
                 pre_tokenizer,
                 model,
+                // TODO: get_post_processor().is_none()
                 post_processor: tok
                     .get_post_processor()
                     .map(PipelinePostProcessor::try_from)
                     .transpose()?
-                    .unwrap_or_default(),
+                    .ok_or_else(|| "post processor needs to be set".to_string())?,
                 decoder: tok.get_decoder().cloned(),
                 added_id_min,
                 scratch_pool: ScratchPool::new(),
@@ -841,23 +937,23 @@ impl From<&[(&str, &str)]> for Inputs {
 #[repr(align(64))]
 struct CachePadded<T>(T);
 
-struct UnitResult(UnsafeCell<Option<Result<Encoding>>>);
+struct UnitResult(UnsafeCell<Option<Result<Vec<PipelineToken>>>>);
 
 /// SAFETY: we make sure each unit's result is set by only one given thread at a time thanks to
 /// [`Job::next_unit`]
 unsafe impl Sync for UnitResult {}
 
 impl UnitResult {
-    fn new(encoding: Option<Result<Encoding>>) -> Self {
-        Self(UnsafeCell::new(encoding))
+    fn new(tokens: Option<Result<Vec<PipelineToken>>>) -> Self {
+        Self(UnsafeCell::new(tokens))
     }
 
-    unsafe fn set(&self, encoding: Result<Encoding>) {
-        unsafe { *self.0.get() = Some(encoding) };
+    unsafe fn set(&self, tokens: Result<Vec<PipelineToken>>) {
+        unsafe { *self.0.get() = Some(tokens) };
     }
 
     // TODO: safety doc
-    fn take(&self) -> Option<Result<Encoding>> {
+    fn take(&self) -> Option<Result<Vec<PipelineToken>>> {
         unsafe { &mut *self.0.get() }.take()
     }
 }
@@ -878,6 +974,7 @@ struct Job {
     next_completed: CachePadded<AtomicUsize>,
     /// Number of units per sequence (accessed via `unit_count[seq]`)
     unit_count: Vec<usize>,
+    side_a_len: Vec<usize>,
 }
 
 impl Job {
@@ -902,11 +999,14 @@ impl Job {
                 .inputs
                 .get(unit.seq)
                 .ok_or_else(|| format!("invalid unit index: {}", unit.seq))?;
-            let Input::Single(input) = input else {
-                todo!("handle input pair")
+            let input = match input {
+                Input::Single(s) => s,
+                Input::Pair(s1, s2) => match unit.side {
+                    Seq::A => s1,
+                    Seq::B => s2,
+                },
             };
-            self.tokenizer
-                .encode_sequence(&input[unit.range.clone()], self.add_special_tokens)
+            self.tokenizer.encode_sequence(&input[unit.range.clone()])
         }))
         .unwrap_or_else(|_| Err("encode worker panicked".into()));
         // SAFETY: no two threads can share the same unit of work because of the atomic fetch_add
@@ -920,36 +1020,44 @@ impl Job {
     }
 
     fn take_result(&self, seq: usize) -> Result<Encoding> {
-        let unit_results = &self.outputs[seq];
-        if unit_results.len() == 1 {
-            return unit_results[0].take().unwrap_or_else(|| {
-                unreachable!(
-                    "[BUG] failed to take the unit's result when we expect it to be present"
-                )
-            });
-        }
-        let mut chunks = Vec::with_capacity(unit_results.len());
-        for res in unit_results {
-            match res.take() {
-                Some(Ok(tokens)) => chunks.push(tokens),
-                Some(Err(e)) => return Err(e),
-                None => {
-                    unreachable!(
-                        "[BUG] failed to take the unit's result when we expect it to be present"
-                    )
-                }
-            }
-        }
-
         // NOTE: in a previous implementation, we implemented the reconstruction in parallel on the
         // thread pool; perhaps something to reconsider if the reconstruction shows up in profiling
 
-        Ok(Encoding::concat(chunks))
+        let unit_results = &self.outputs[seq];
+        let a_len = self.side_a_len[seq];
+
+        let a = drain(&unit_results[..a_len])?;
+        let b = (a_len < unit_results.len())
+            .then(|| drain(&unit_results[a_len..]))
+            .transpose()?;
+
+        Ok(self.tokenizer.post_process(a, b, self.add_special_tokens))
     }
 
     fn cancel(&self) {
         self.cancelled.store(true, Ordering::Relaxed);
     }
+}
+
+fn drain(results: &[UnitResult]) -> Result<Vec<PipelineToken>> {
+    if let [only] = results {
+        return only
+            .take()
+            .expect("[BUG] failed to take the unit's result when we expect it to be present");
+    }
+    let mut out = Vec::with_capacity(results.len());
+    for res in results {
+        match res.take() {
+            Some(Ok(tokens)) => out.push(tokens),
+            Some(Err(e)) => return Err(e),
+            None => {
+                unreachable!(
+                    "[BUG] failed to take the unit's result when we expect it to be present"
+                )
+            }
+        }
+    }
+    Ok(out.concat())
 }
 
 enum HandleState {
@@ -998,7 +1106,7 @@ impl EncodeHandle {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Encoding {
     ids: Vec<PipelineToken>,
     type_ids: Option<Vec<u8>>,
@@ -1015,29 +1123,6 @@ impl Encoding {
     fn new(ids: Vec<PipelineToken>, type_ids: Option<Vec<u8>>) -> Self {
         debug_assert!(type_ids.as_ref().is_none_or(|t| t.len() == ids.len()));
         Self { ids, type_ids }
-    }
-
-    fn concat(encodings: Vec<Encoding>) -> Self {
-        let total: usize = encodings.iter().map(|e| e.ids.len()).sum();
-        let mut ids = Vec::with_capacity(total);
-        let mut type_ids = encodings
-            .iter()
-            .any(|e| e.type_ids.is_some())
-            .then(|| Vec::with_capacity(total));
-        for encoding in encodings {
-            let n = encoding.ids.len();
-            ids.extend(encoding.ids);
-            if let Some(type_ids) = type_ids.as_mut() {
-                match encoding.type_ids {
-                    Some(e) => {
-                        debug_assert_eq!(e.len(), n);
-                        type_ids.extend(e)
-                    }
-                    None => type_ids.resize(type_ids.len() + n, 0),
-                }
-            }
-        }
-        Self::new(ids, type_ids)
     }
 }
 
@@ -1141,6 +1226,8 @@ struct Unit {
     seq: usize,
     /// The unit's index within a sequence, because a given sequence can be split into multiple units for better parallelism
     idx: usize,
+    /// Which member of the input pair ([`Seq::A`] for [`Input::Single`])
+    side: Seq,
     /// The range within the input sequence to encode
     range: Range<usize>,
 }
@@ -1148,6 +1235,9 @@ struct Unit {
 struct Plan {
     /// Units of work created based on the inputs
     units: Vec<Unit>,
+    /// Contains the per-sequence length of [`Seq::A`] of a pair of inputs ([`Input::Single`] is
+    /// always considered [`Seq::A`])
+    side_a_len: Vec<usize>,
     /// Empty pre-allocated output buffer
     outputs: Vec<Vec<UnitResult>>,
 }
@@ -1156,48 +1246,87 @@ impl PipelineTokenizer {
         &self.inner.model
     }
 
+    fn plan_sequence(
+        &self,
+        seq_idx: usize,
+        side: Seq,
+        input: &str,
+        units: &mut Vec<Unit>,
+        seq_outputs: &mut Vec<UnitResult>,
+    ) {
+        // XXX: if input is not at least twice the size of the minimum meaningful parallel
+        // chunk's size, we emit the full input as its own chunk because splitting would be inefficient
+        if input.len() < 2 * PARALLEL_MIN_BYTES {
+            units.push(Unit {
+                seq: seq_idx,
+                idx: 0,
+                side,
+                range: 0..input.len(),
+            });
+            seq_outputs.push(UnitResult::new(None));
+            return;
+        }
+        let current_units_len = units.len();
+        for segment in SpecialSegmentIterator::new(input, &self.inner.added_vocabulary, false) {
+            let idx = seq_outputs.len();
+            let (segment, offset) = match segment {
+                Segment::SpecialToken(id) => {
+                    let token = PipelineToken::from(id);
+                    seq_outputs.push(UnitResult::new(Some(Ok(vec![token]))));
+                    continue;
+                }
+                Segment::Text { text, input_offset } => (text, input_offset),
+            };
+            units.push(Unit {
+                seq: seq_idx,
+                idx,
+                side,
+                range: offset..offset + segment.len(),
+            });
+            seq_outputs.push(UnitResult::new(None));
+        }
+        // make sure we have at least one unit per sequence, otherwise we'll wait indefinitely
+        // for a completion event
+        if current_units_len == units.len() {
+            let idx = seq_outputs.len();
+            // sentinel unit resulting in an encode no-op since range is 0..0
+            units.push(Unit {
+                seq: seq_idx,
+                idx,
+                side,
+                range: 0..0,
+            });
+            seq_outputs.push(UnitResult::new(None));
+        }
+    }
+
     fn plan_work(&self, inputs: &Inputs) -> Plan {
         let mut units = Vec::with_capacity(inputs.len());
+        let mut side_a_len = Vec::with_capacity(inputs.len());
         let mut outputs = Vec::with_capacity(inputs.len());
         for (seq_idx, input) in inputs.into_iter().enumerate() {
-            let Input::Single(input) = input else {
-                todo!("handle pair input")
-            };
-            // XXX: if input is not at least twice the size of the minimum meaningful parallel
-            // chunk's size, we emit the full input as its own chunk because splitting would be inefficient
-            if input.len() < 2 * PARALLEL_MIN_BYTES {
-                units.push(Unit {
-                    seq: seq_idx,
-                    idx: 0,
-                    range: 0..input.len(),
-                });
-                outputs.push(vec![UnitResult::new(None)]);
-                continue;
-            }
             let mut seq_outputs = vec![];
-            for segment in SpecialSegmentIterator::new(input, &self.inner.added_vocabulary, false) {
-                let idx = seq_outputs.len();
-                let (segment, offset) = match segment {
-                    Segment::SpecialToken(id) => {
-                        let token = PipelineToken::from(id);
-                        seq_outputs
-                            .push(UnitResult::new(Some(Ok(Encoding::new(vec![token], None)))));
-                        continue;
-                    }
-                    Segment::Text { text, input_offset } => (text, input_offset),
-                };
-                units.push(Unit {
-                    seq: seq_idx,
-                    idx,
-                    range: offset..offset + segment.len(),
-                });
-                seq_outputs.push(UnitResult::new(None));
+            match input {
+                Input::Single(s) => {
+                    self.plan_sequence(seq_idx, Seq::A, s, &mut units, &mut seq_outputs);
+                    side_a_len.push(seq_outputs.len());
+                }
+                Input::Pair(s1, s2) => {
+                    self.plan_sequence(seq_idx, Seq::A, s1, &mut units, &mut seq_outputs);
+                    let a_len = seq_outputs.len();
+                    self.plan_sequence(seq_idx, Seq::B, s2, &mut units, &mut seq_outputs);
+                    side_a_len.push(a_len);
+                }
             }
             outputs.push(seq_outputs);
         }
         // Schedule encode batch by longest unit first
         units.sort_unstable_by_key(|u| std::cmp::Reverse(u.range.len()));
-        Plan { units, outputs }
+        Plan {
+            units,
+            side_a_len,
+            outputs,
+        }
     }
 
     /// Encode `input` into token ids.
@@ -1222,7 +1351,11 @@ impl PipelineTokenizer {
                 warn!("unable to get a pool, handle, reverting to single threaded");
                 return EncodeHandle::blocking(self.encode_serial(inputs, add_special_tokens));
             };
-            let Plan { units, outputs } = self.plan_work(&inputs);
+            let Plan {
+                units,
+                side_a_len,
+                outputs,
+            } = self.plan_work(&inputs);
             assert!(
                 units.len() < usize::MAX,
                 "Job::next_unit cursor will overflow messing up internals if we have more units of work than usize::MAX"
@@ -1246,6 +1379,7 @@ impl PipelineTokenizer {
                     uc
                 }),
                 outputs,
+                side_a_len,
                 units,
             });
             for _ in 0..threads {
@@ -1260,40 +1394,89 @@ impl PipelineTokenizer {
 
     fn encode_serial(&self, inputs: Inputs, add_special_tokens: bool) -> Vec<Result<Encoding>> {
         match inputs {
-            Inputs::Single(seq) => {
-                let Input::Single(seq) = seq else {
-                    todo!("handle input pairs")
-                };
-                let output = self.encode_sequence(&seq, add_special_tokens);
-                vec![output]
+            Inputs::Single(input) => {
+                vec![self.encode_one(input, add_special_tokens)]
             }
             Inputs::Batch(batch) => {
                 let mut output = Vec::with_capacity(batch.len());
-                for seq in batch {
-                    let Input::Single(seq) = seq else {
-                        todo!("handle input pairs")
-                    };
-                    output.push(self.encode_sequence(&seq, add_special_tokens));
+                for input in batch {
+                    output.push(self.encode_one(input, add_special_tokens));
                 }
                 output
             }
         }
-        // TODO: post_process
     }
 
-    fn post_process(&self, input: &Input, tokens: &[PipelineToken]) -> Encoding {
-        Encoding::empty()
+    fn encode_one(&self, input: Input, add_special_tokens: bool) -> Result<Encoding> {
+        match input {
+            Input::Single(seq) => {
+                let toks = self.encode_sequence(&seq)?;
+                Ok(self.post_process(toks, None, add_special_tokens))
+            }
+            Input::Pair(s1, s2) => {
+                let a = self.encode_sequence(&s1)?;
+                let b = self.encode_sequence(&s2)?;
+                Ok(self.post_process(a, Some(b), add_special_tokens))
+            }
+        }
     }
 
-    pub fn encode_sequence(&self, input: &str, add_special_tokens: bool) -> Result<Encoding> {
+    fn post_process(
+        &self,
+        s1: Vec<PipelineToken>,
+        s2: Option<Vec<PipelineToken>>,
+        add_special_tokens: bool,
+    ) -> Encoding {
+        if !add_special_tokens {
+            let mut ids = s1;
+            if let Some(s2) = s2 {
+                let mut type_ids = vec![0u8; ids.len()];
+                type_ids.resize(ids.len() + s2.len(), 1);
+                ids.extend(s2);
+                return Encoding::new(ids, Some(type_ids));
+            } else {
+                return Encoding::new(ids, None);
+            }
+        }
+
+        let pp = &self.inner.post_processor;
+        let template = if s2.is_some() { &pp.pair } else { &pp.single };
+
+        let seq_len = s1.len() + s2.as_ref().map_or(0, Vec::len);
+        let cap = template.n_special + seq_len;
+
+        let (mut a, mut b) = (Some(s1), s2);
+        let mut ids = Vec::with_capacity(cap);
+        let mut type_ids = template.has_type_ids.then(|| Vec::with_capacity(cap));
+
+        for slice in &template.slices {
+            match slice {
+                Slice::Specials { tokens, type_id } => {
+                    ids.extend_from_slice(tokens);
+                    if let Some(tids) = type_ids.as_mut() {
+                        tids.resize(tids.len() + tokens.len(), *type_id);
+                    }
+                }
+                Slice::Sequence { seq, type_id } => {
+                    let tokens = match seq {
+                        Seq::A => a.take(),
+                        Seq::B => b.take(),
+                    }
+                    .expect("[BUG] valid template should guarantee each referenced sequence is provided exactly once");
+                    if let Some(tids) = type_ids.as_mut() {
+                        tids.resize(tids.len() + tokens.len(), *type_id);
+                    }
+                    ids.extend(tokens);
+                }
+            }
+        }
+
+        Encoding::new(ids, type_ids)
+    }
+
+    pub fn encode_sequence(&self, input: &str) -> Result<Vec<PipelineToken>> {
         let mut output = Vec::with_capacity(input.len() / 4);
         let mut scratch = self.inner.scratch_pool.get(&self.inner.model);
-        let PipelinePostProcessor { prefix, suffix } = &self.inner.post_processor;
-        // Prepend prefix tokens, if any
-        // todo: handle post-processing when encoding a pair of sequences (currently unsupported by the PipelineTokenizer)
-        if add_special_tokens {
-            output.extend_from_slice(prefix.as_ref());
-        }
         // First, we extract all special tokens from the non-normalized input
         for segment in SpecialSegmentIterator::new(input, &self.inner.added_vocabulary, false) {
             match segment {
@@ -1363,11 +1546,7 @@ impl PipelineTokenizer {
                 }
             };
         }
-        // Append suffix tokens, if any
-        if add_special_tokens {
-            output.extend_from_slice(suffix);
-        }
-        Ok(Encoding::new(output, None))
+        Ok(output)
     }
 
     /// Decode token ids back to a `String`.
@@ -1987,7 +2166,7 @@ mod tests {
             .wait()
             .unwrap();
         // Not the unk id: both the `Replace` and the `Split` really ran on the literal path.
-        assert_eq!(*encoded.first().unwrap(), [1, 2]);
+        assert_eq!(*encoded.first().unwrap().ids(), [1, 2]);
         assert_pipeline_matches_reference(&tok, "hello world");
     }
 
