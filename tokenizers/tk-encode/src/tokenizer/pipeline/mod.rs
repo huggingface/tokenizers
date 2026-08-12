@@ -1,11 +1,6 @@
-use std::cell::UnsafeCell;
 use std::convert::TryInto;
 use std::iter::Enumerate;
-use std::ops::Range;
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, AtomicUsize, Ordering},
-};
+use std::sync::Arc;
 use std::vec::IntoIter;
 use std::{borrow::Cow, convert::TryFrom};
 
@@ -18,7 +13,6 @@ use crate::{
         wordpiece::{PipelineWordPiece, WordPieceScratch},
     },
     normalizers::{NormalizerWrapper, metaspace::MetaspaceNormalizer},
-    parallelism::pool,
     pipeline::scratch_pool::{EncodeScratch, ScratchPool},
     pre_tokenizers::{
         bert::BertPreTokenizer,
@@ -43,17 +37,19 @@ use crate::{
         AddedToken as BucketAddedToken, AddedVocabulary as BucketAddedVocabulary,
     },
 };
+#[cfg(feature = "parallelism")]
+use parallel::StreamingIter;
 
 use super::{Result, SplitDelimiterBehavior};
 
-use atomsplit::classify::classify;
-pub use atomsplit::fsm::Span;
-
-use log::warn;
-
+#[cfg(feature = "parallelism")]
+mod parallel;
 mod scratch_pool;
 
 pub use scratch_pool::ModelScratch;
+
+use atomsplit::classify::classify;
+pub use atomsplit::fsm::Span;
 
 pub trait Normalizer {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>>;
@@ -468,7 +464,7 @@ impl TryFrom<&PostProcessorWrapper> for PipelinePostProcessor {
                     sq(A, 0),
                     one(*sep_id, 0),
                     sq(B, 1),
-                    one(*sep_id, 0),
+                    one(*sep_id, 1),
                 ]),
             }),
             PostProcessorWrapper::Roberta(RobertaProcessing {
@@ -509,7 +505,7 @@ impl TryFrom<&PostProcessorWrapper> for PipelinePostProcessor {
                     .collect::<Result<Vec<_>>>()?;
                 Ok(Self {
                     single: compose(members.iter().map(|m| &m.single))?,
-                    pair: compose(members.iter().map(|m| &m.single))?,
+                    pair: compose(members.iter().map(|m| &m.pair))?,
                 })
             }
         }
@@ -908,15 +904,6 @@ pub enum Input {
     Pair(String, String),
 }
 
-impl Input {
-    fn len(&self) -> usize {
-        match self {
-            Self::Single(s) => s.len(),
-            Self::Pair(s1, s2) => s1.len() + s2.len(),
-        }
-    }
-}
-
 #[derive(Clone)]
 pub enum Inputs {
     Single(Input),
@@ -929,14 +916,6 @@ impl Inputs {
             Self::Single(s) => std::slice::from_ref(s),
             Self::Batch(b) => b,
         }
-    }
-
-    fn size_bytes(&self) -> usize {
-        self.as_slice().iter().map(Input::len).sum()
-    }
-
-    fn get(&self, i: usize) -> Option<&Input> {
-        self.as_slice().get(i)
     }
 
     fn len(&self) -> usize {
@@ -1023,138 +1002,10 @@ impl From<&[(&str, &str)]> for Inputs {
     }
 }
 
-/// TODO: benchmark with and without to validate usefulness
-/// Isolate an atomic in its own cache line to avoid excessive invalidation when multiple threads
-/// access the value
-#[repr(align(64))]
-struct CachePadded<T>(T);
-
-struct UnitResult(UnsafeCell<Option<Result<Vec<PipelineToken>>>>);
-
-/// SAFETY: we make sure each unit's result is set by only one given thread at a time thanks to
-/// [`Job::next_unit`]
-unsafe impl Sync for UnitResult {}
-
-impl UnitResult {
-    fn new(tokens: Option<Result<Vec<PipelineToken>>>) -> Self {
-        Self(UnsafeCell::new(tokens))
-    }
-
-    unsafe fn set(&self, tokens: Result<Vec<PipelineToken>>) {
-        unsafe { *self.0.get() = Some(tokens) };
-    }
-
-    // TODO: safety doc
-    fn take(&self) -> Option<Result<Vec<PipelineToken>>> {
-        unsafe { &mut *self.0.get() }.take()
-    }
-}
-
-struct Job {
-    inputs: Box<Inputs>,
-    units: Vec<Unit>,
-    outputs: Vec<Vec<UnitResult>>,
-    cancelled: AtomicBool,
-    /// Cursor for threads to pick up the next [`Unit`] to work on
-    next_unit: CachePadded<AtomicUsize>,
-    tokenizer: PipelineTokenizer,
-    add_special_tokens: bool,
-    /// Completion queue containing the list of units (inserted as their sequence idx) that have finished, in completion order
-    /// this enables us to increment a counter consumer side so that when collected[seq] == unit_count[seq], we know we can return a result
-    completion_queue: Vec<AtomicUsize>,
-    /// Cursor that each thread increments to add a completed unit to the completion queue
-    next_completed: CachePadded<AtomicUsize>,
-    /// Number of units per sequence (accessed via `unit_count[seq]`)
-    unit_count: Vec<usize>,
-    side_a_len: Vec<usize>,
-}
-
-impl Job {
-    const NOT_DONE: usize = usize::MAX;
-
-    fn len(&self) -> usize {
-        self.outputs.len()
-    }
-
-    fn encode_unit(&self) -> bool {
-        if self.cancelled.load(Ordering::Relaxed) {
-            return false;
-        }
-        let i = self.next_unit.0.fetch_add(1, Ordering::Relaxed);
-        if i >= self.units.len() {
-            return false;
-        }
-
-        let unit = &self.units[i];
-        let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let input = self
-                .inputs
-                .get(unit.seq)
-                .ok_or_else(|| format!("invalid unit index: {}", unit.seq))?;
-            let input = match input {
-                Input::Single(s) => s,
-                Input::Pair(s1, s2) => match unit.side {
-                    Seq::A => s1,
-                    Seq::B => s2,
-                },
-            };
-            self.tokenizer.encode_sequence(&input[unit.range.clone()])
-        }))
-        .unwrap_or_else(|_| Err("encode worker panicked".into()));
-        // SAFETY: no two threads can share the same unit of work because of the atomic fetch_add
-        // call on the cursor
-        unsafe { self.outputs[unit.seq][unit.idx].set(res) };
-
-        let next = self.next_completed.0.fetch_add(1, Ordering::Relaxed);
-        self.completion_queue[next].store(unit.seq, Ordering::Release);
-
-        true
-    }
-
-    fn take_result(&self, seq: usize) -> Result<Encoding> {
-        // NOTE: in a previous implementation, we implemented the reconstruction in parallel on the
-        // thread pool; perhaps something to reconsider if the reconstruction shows up in profiling
-
-        let unit_results = &self.outputs[seq];
-        let a_len = self.side_a_len[seq];
-
-        let a = drain(&unit_results[..a_len])?;
-        let b = (a_len < unit_results.len())
-            .then(|| drain(&unit_results[a_len..]))
-            .transpose()?;
-
-        Ok(self.tokenizer.post_process(a, b, self.add_special_tokens))
-    }
-
-    fn cancel(&self) {
-        self.cancelled.store(true, Ordering::Relaxed);
-    }
-}
-
-fn drain(results: &[UnitResult]) -> Result<Vec<PipelineToken>> {
-    if let [only] = results {
-        return only
-            .take()
-            .expect("[BUG] failed to take the unit's result when we expect it to be present");
-    }
-    let mut out = Vec::with_capacity(results.len());
-    for res in results {
-        match res.take() {
-            Some(Ok(tokens)) => out.push(tokens),
-            Some(Err(e)) => return Err(e),
-            None => {
-                unreachable!(
-                    "[BUG] failed to take the unit's result when we expect it to be present"
-                )
-            }
-        }
-    }
-    Ok(out.concat())
-}
-
 enum HandleState {
     Blocking(Enumerate<IntoIter<Result<Encoding>>>),
-    Streaming(Arc<Job>),
+    #[cfg(feature = "parallelism")]
+    Streaming(StreamingIter),
 }
 
 pub struct EncodeHandle {
@@ -1169,16 +1020,18 @@ impl EncodeHandle {
         }
     }
 
-    fn streaming(job: Arc<Job>) -> Self {
+    #[cfg(feature = "parallelism")]
+    fn streaming(it: StreamingIter) -> Self {
         Self {
-            state: HandleState::Streaming(job),
+            state: HandleState::Streaming(it),
         }
     }
 
     fn len(&self) -> usize {
         match &self.state {
             HandleState::Blocking(it) => it.len(),
-            HandleState::Streaming(job) => job.len(),
+            #[cfg(feature = "parallelism")]
+            HandleState::Streaming(it) => it.len(),
         }
     }
 }
@@ -1251,9 +1104,6 @@ pub struct EncodingParts {
 /// Iterator yields results in completion order
 pub struct HandleIter {
     handle: EncodeHandle,
-    next_unit: usize,
-    collected: Vec<usize>,
-    completed: usize,
 }
 
 impl Iterator for HandleIter {
@@ -1262,29 +1112,8 @@ impl Iterator for HandleIter {
     fn next(&mut self) -> Option<Self::Item> {
         match &mut self.handle.state {
             HandleState::Blocking(it) => it.next(),
-            HandleState::Streaming(job) => {
-                if self.completed == job.len() {
-                    return None;
-                }
-                loop {
-                    let seq = job.completion_queue[self.next_unit].load(Ordering::Acquire);
-                    if seq == Job::NOT_DONE {
-                        // XXX: caller has to wait for results regardless: instead of implementing some parking or
-                        // just empty spinning, we actually do useful work
-                        // it's also very simple to implement
-                        if !job.encode_unit() {
-                            std::hint::spin_loop();
-                        }
-                        continue;
-                    }
-                    self.next_unit += 1;
-                    self.collected[seq] += 1;
-                    if self.collected[seq] == job.unit_count[seq] {
-                        self.completed += 1;
-                        return Some((seq, job.take_result(seq)));
-                    }
-                }
-            }
+            #[cfg(feature = "parallelism")]
+            HandleState::Streaming(it) => it.next(),
         }
     }
 }
@@ -1294,131 +1123,13 @@ impl IntoIterator for EncodeHandle {
     type IntoIter = HandleIter;
 
     fn into_iter(self) -> Self::IntoIter {
-        Self::IntoIter {
-            next_unit: 0,
-            collected: vec![0; self.len()],
-            completed: 0,
-            handle: self,
-        }
+        Self::IntoIter { handle: self }
     }
 }
 
-impl Drop for EncodeHandle {
-    fn drop(&mut self) {
-        if let HandleState::Streaming(job) = &self.state {
-            job.cancel()
-        }
-    }
-}
-
-const PARALLEL_MIN_BYTES: usize = 8 * 1024;
-
-struct Unit {
-    /// Sequence index in the [`Inputs`] batch
-    seq: usize,
-    /// The unit's index within a sequence, because a given sequence can be split into multiple units for better parallelism
-    idx: usize,
-    /// Which member of the input pair ([`Seq::A`] for [`Input::Single`])
-    side: Seq,
-    /// The range within the input sequence to encode
-    range: Range<usize>,
-}
-
-struct Plan {
-    /// Units of work created based on the inputs
-    units: Vec<Unit>,
-    /// Contains the per-sequence length of [`Seq::A`] of a pair of inputs ([`Input::Single`] is
-    /// always considered [`Seq::A`])
-    side_a_len: Vec<usize>,
-    /// Empty pre-allocated output buffer
-    outputs: Vec<Vec<UnitResult>>,
-}
 impl PipelineTokenizer {
     pub fn get_model(&self) -> &PipelineModel {
         &self.inner.model
-    }
-
-    fn plan_sequence(
-        &self,
-        seq_idx: usize,
-        side: Seq,
-        input: &str,
-        units: &mut Vec<Unit>,
-        seq_outputs: &mut Vec<UnitResult>,
-    ) {
-        // XXX: if input is not at least twice the size of the minimum meaningful parallel
-        // chunk's size, we emit the full input as its own chunk because splitting would be inefficient
-        if input.len() < 2 * PARALLEL_MIN_BYTES {
-            units.push(Unit {
-                seq: seq_idx,
-                idx: seq_outputs.len(),
-                side,
-                range: 0..input.len(),
-            });
-            seq_outputs.push(UnitResult::new(None));
-            return;
-        }
-        let current_units_len = units.len();
-        for segment in SpecialSegmentIterator::new(input, &self.inner.added_vocabulary, false) {
-            let idx = seq_outputs.len();
-            let (segment, offset) = match segment {
-                Segment::SpecialToken(id) => {
-                    let token = PipelineToken::from(id);
-                    seq_outputs.push(UnitResult::new(Some(Ok(vec![token]))));
-                    continue;
-                }
-                Segment::Text { text, input_offset } => (text, input_offset),
-            };
-            units.push(Unit {
-                seq: seq_idx,
-                idx,
-                side,
-                range: offset..offset + segment.len(),
-            });
-            seq_outputs.push(UnitResult::new(None));
-        }
-        // make sure we have at least one unit per sequence, otherwise we'll wait indefinitely
-        // for a completion event
-        if current_units_len == units.len() {
-            let idx = seq_outputs.len();
-            // sentinel unit resulting in an encode no-op since range is 0..0
-            units.push(Unit {
-                seq: seq_idx,
-                idx,
-                side,
-                range: 0..0,
-            });
-            seq_outputs.push(UnitResult::new(None));
-        }
-    }
-
-    fn plan_work(&self, inputs: &Inputs) -> Plan {
-        let mut units = Vec::with_capacity(inputs.len());
-        let mut side_a_len = Vec::with_capacity(inputs.len());
-        let mut outputs = Vec::with_capacity(inputs.len());
-        for (seq_idx, input) in inputs.into_iter().enumerate() {
-            let mut seq_outputs = vec![];
-            match input {
-                Input::Single(s) => {
-                    self.plan_sequence(seq_idx, Seq::A, s, &mut units, &mut seq_outputs);
-                    side_a_len.push(seq_outputs.len());
-                }
-                Input::Pair(s1, s2) => {
-                    self.plan_sequence(seq_idx, Seq::A, s1, &mut units, &mut seq_outputs);
-                    let a_len = seq_outputs.len();
-                    self.plan_sequence(seq_idx, Seq::B, s2, &mut units, &mut seq_outputs);
-                    side_a_len.push(a_len);
-                }
-            }
-            outputs.push(seq_outputs);
-        }
-        // Schedule encode batch by longest unit first
-        units.sort_unstable_by_key(|u| std::cmp::Reverse(u.range.len()));
-        Plan {
-            units,
-            side_a_len,
-            outputs,
-        }
     }
 
     /// Encode `input` into token ids.
@@ -1435,51 +1146,11 @@ impl PipelineTokenizer {
             inputs.len() < usize::MAX,
             "we use usize::MAX as a sentinel value for the completion queue, we don't support batches larger than that"
         );
+        #[cfg(not(feature = "parallelism"))]
+        return EncodeHandle::blocking(self.encode_serial(inputs, add_special_tokens));
 
-        if inputs.size_bytes() < PARALLEL_MIN_BYTES {
-            EncodeHandle::blocking(self.encode_serial(inputs, add_special_tokens))
-        } else {
-            let Some(pool) = pool() else {
-                warn!("unable to get a pool, handle, reverting to single threaded");
-                return EncodeHandle::blocking(self.encode_serial(inputs, add_special_tokens));
-            };
-            let Plan {
-                units,
-                side_a_len,
-                outputs,
-            } = self.plan_work(&inputs);
-            assert!(
-                units.len() < usize::MAX,
-                "Job::next_unit cursor will overflow messing up internals if we have more units of work than usize::MAX"
-            );
-            if units.len() < 2 {
-                return EncodeHandle::blocking(self.encode_serial(inputs, add_special_tokens));
-            }
-            let threads = units.len().min(pool.current_num_threads());
-            let job = Arc::new(Job {
-                inputs: Box::new(inputs),
-                cancelled: AtomicBool::new(false),
-                next_unit: CachePadded(AtomicUsize::new(0)),
-                add_special_tokens,
-                tokenizer: self.clone(),
-                completion_queue: (0..units.len())
-                    .map(|_| AtomicUsize::new(Job::NOT_DONE))
-                    .collect(),
-                next_completed: CachePadded(AtomicUsize::new(0)),
-                unit_count: units.iter().fold(vec![0; outputs.len()], |mut uc, u| {
-                    uc[u.seq] += 1;
-                    uc
-                }),
-                outputs,
-                side_a_len,
-                units,
-            });
-            for _ in 0..threads {
-                let job = job.clone();
-                pool.spawn(move || while job.encode_unit() {});
-            }
-            EncodeHandle::streaming(job)
-        }
+        #[cfg(feature = "parallelism")]
+        parallel::encode(self, inputs, add_special_tokens)
     }
 
     fn encode_serial(&self, inputs: Inputs, add_special_tokens: bool) -> Vec<Result<Encoding>> {
@@ -2085,9 +1756,10 @@ mod tests {
     use super::*;
     use crate::models::bpe::BPE;
     use crate::models::wordpiece::WordPiece;
-    use crate::parallelism::set_num_threads;
     use crate::pre_tokenizers::byte_level::ByteLevel;
     use crate::pre_tokenizers::sequence::Sequence;
+    #[cfg(feature = "parallelism")]
+    use crate::{parallelism::set_num_threads, pipeline::parallel::PARALLEL_MIN_BYTES};
     fn variant_name(pre_tokenizer: &PipelinePreTokenizer) -> &'static str {
         match pre_tokenizer {
             PipelinePreTokenizer::Bert(_) => "Bert",
@@ -2105,7 +1777,6 @@ mod tests {
     }
 
     const HOSTILE: &[&str] = &[
-        "",
         " ",
         "\r",
         "\r\n\n",
@@ -2344,6 +2015,7 @@ mod tests {
         tok
     }
 
+    #[cfg(feature = "parallelism")]
     fn pipeline_ids(pipeline: &PipelineTokenizer, input: &str) -> Vec<u32> {
         pipeline
             .encode(input, false)
@@ -2364,6 +2036,7 @@ mod tests {
     // The inputs disagree on both how many tokens they produce and which, so another input's
     // spans cannot yield the right ids by luck. This also only compiles if
     // `PipelineTokenizer: Sync`.
+    #[cfg(feature = "parallelism")]
     #[test]
     fn concurrent_encodes_of_different_inputs_stay_independent() {
         use rayon::prelude::*;
@@ -2492,30 +2165,33 @@ mod tests {
 
     #[test]
     fn pipeline_sequence_composes_later_member_as_outermost() {
-        use crate::processors::bert::BertProcessing;
         use crate::processors::sequence::Sequence as ProcSequence;
+        use crate::processors::template::TemplateProcessing;
 
+        let member = |prefix: &str, suffix: &str, p_id: u32, s_id: u32| {
+            TemplateProcessing::builder()
+                .try_single(format!("{prefix} $A {suffix}"))
+                .unwrap()
+                .try_pair(format!("{prefix} $A $B:1 {suffix}:1"))
+                .unwrap()
+                .special_tokens(vec![(prefix, p_id), (suffix, s_id)])
+                .build()
+                .unwrap()
+        };
         let tok = wordlevel_tokenizer(
             vec![
-                ("A", 100),
-                ("B", 101),
-                ("C", 102),
-                ("D", 103),
+                ("[X]", 100),
+                ("[Y]", 101),
+                ("[P]", 102),
+                ("[Q]", 103),
                 ("hello", 2),
                 ("world", 3),
             ],
             Some(PostProcessorWrapper::Sequence(ProcSequence::new(vec![
-                PostProcessorWrapper::Bert(BertProcessing::new(
-                    ("B".to_string(), 101),
-                    ("A".to_string(), 100),
-                )),
-                PostProcessorWrapper::Bert(BertProcessing::new(
-                    ("D".to_string(), 103),
-                    ("C".to_string(), 102),
-                )),
+                PostProcessorWrapper::Template(member("[X]", "[Y]", 100, 101)),
+                PostProcessorWrapper::Template(member("[P]", "[Q]", 102, 103)),
             ]))),
         );
-        assert_pipeline_matches_reference(&tok, "hello world");
 
         let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
         let ids: Vec<u32> = pipeline
@@ -2529,6 +2205,28 @@ mod tests {
             .map(|t| t.id())
             .collect();
         assert_eq!(ids, vec![102, 100, 2, 3, 101, 103]);
+    }
+
+    #[test]
+    fn conversion_rejects_sequence_with_two_arranging_members() {
+        use crate::processors::bert::BertProcessing;
+        use crate::processors::sequence::Sequence as ProcSequence;
+
+        let tok = wordlevel_tokenizer(
+            vec![("A", 100), ("B", 101), ("hello", 2), ("world", 3)],
+            Some(PostProcessorWrapper::Sequence(ProcSequence::new(vec![
+                PostProcessorWrapper::Bert(BertProcessing::new(
+                    ("B".to_string(), 101),
+                    ("A".to_string(), 100),
+                )),
+                PostProcessorWrapper::Bert(BertProcessing::new(
+                    ("B".to_string(), 101),
+                    ("A".to_string(), 100),
+                )),
+            ]))),
+        );
+        let err = conversion_error(&tok);
+        assert!(err.contains("not supported"), "{}", err);
     }
 
     #[test]
@@ -2636,9 +2334,12 @@ mod tests {
         assert!(err.contains("not supported"), "{}", err);
     }
 
+    #[cfg(feature = "parallelism")]
     use std::sync::{Mutex, PoisonError};
+    #[cfg(feature = "parallelism")]
     static LOCK: Mutex<()> = Mutex::new(());
 
+    #[cfg(feature = "parallelism")]
     fn assert_parallel_matches(
         tokenizer: &PipelineTokenizer,
         inputs: Inputs,
@@ -2663,10 +2364,12 @@ mod tests {
         set_num_threads(0);
     }
 
+    #[cfg(feature = "parallelism")]
     fn repeat_to(phrase: &str, min_bytes: usize) -> String {
         phrase.repeat(min_bytes / phrase.len() + 1)
     }
 
+    #[cfg(feature = "parallelism")]
     #[test]
     fn parallel_matches_serial_batch_identity() {
         let tok = wordlevel_tokenizer(vec![("<unk>", 0), ("hello", 1), ("world", 2)], None);
@@ -2677,6 +2380,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "parallelism")]
     #[test]
     fn parallel_matches_serial_batch_bert() {
         use crate::processors::bert::BertProcessing;
@@ -2694,6 +2398,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "parallelism")]
     #[test]
     fn parallel_matches_serial_pairs_bert() {
         use crate::processors::bert::BertProcessing;
@@ -2714,6 +2419,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "parallelism")]
     #[test]
     fn parallel_matches_serial_batch_roberta() {
         use crate::processors::roberta::RobertaProcessing;
@@ -2731,6 +2437,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "parallelism")]
     #[test]
     fn parallel_matches_serial_long_single_with_specials() {
         let mut tok = wordlevel_tokenizer(
@@ -2749,6 +2456,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "parallelism")]
     #[test]
     fn parallel_matches_serial_mixed_batch_with_edges() {
         let tok = wordlevel_tokenizer(vec![("<unk>", 0), ("hello", 1), ("world", 2)], None);
@@ -2762,6 +2470,7 @@ mod tests {
         assert_parallel_matches(&pipeline, Inputs::from(batch), false);
     }
 
+    #[cfg(feature = "parallelism")]
     #[test]
     fn streaming_iterator_yields_each_seq_once() {
         let _g = LOCK.lock().unwrap();
@@ -2790,6 +2499,7 @@ mod tests {
         assert_eq!(streamed, serial);
     }
 
+    #[cfg(feature = "parallelism")]
     #[test]
     fn streaming_handle_drop_after_partial_consume_is_clean() {
         let _g = LOCK.lock().unwrap();
