@@ -902,6 +902,7 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
     }
 }
 
+#[derive(Clone)]
 pub enum Input {
     Single(String),
     Pair(String, String),
@@ -916,6 +917,7 @@ impl Input {
     }
 }
 
+#[derive(Clone)]
 pub enum Inputs {
     Single(Input),
     Batch(Vec<Input>),
@@ -1196,7 +1198,7 @@ impl EncodeHandle {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Encoding {
     ids: Vec<PipelineToken>,
     type_ids: Option<Vec<u8>>,
@@ -1349,7 +1351,7 @@ impl PipelineTokenizer {
         if input.len() < 2 * PARALLEL_MIN_BYTES {
             units.push(Unit {
                 seq: seq_idx,
-                idx: 0,
+                idx: seq_outputs.len(),
                 side,
                 range: 0..input.len(),
             });
@@ -1476,9 +1478,7 @@ impl PipelineTokenizer {
                 let job = job.clone();
                 pool.spawn(move || while job.encode_unit() {});
             }
-            EncodeHandle {
-                state: HandleState::Streaming(job),
-            }
+            EncodeHandle::streaming(job)
         }
     }
 
@@ -2085,6 +2085,7 @@ mod tests {
     use super::*;
     use crate::models::bpe::BPE;
     use crate::models::wordpiece::WordPiece;
+    use crate::parallelism::set_num_threads;
     use crate::pre_tokenizers::byte_level::ByteLevel;
     use crate::pre_tokenizers::sequence::Sequence;
     fn variant_name(pre_tokenizer: &PipelinePreTokenizer) -> &'static str {
@@ -2633,5 +2634,174 @@ mod tests {
         );
         let err = conversion_error(&tok);
         assert!(err.contains("not supported"), "{}", err);
+    }
+
+    use std::sync::{Mutex, PoisonError};
+    static LOCK: Mutex<()> = Mutex::new(());
+
+    fn assert_parallel_matches(
+        tokenizer: &PipelineTokenizer,
+        inputs: Inputs,
+        add_special_tokens: bool,
+    ) {
+        let _g = LOCK.lock().unwrap_or_else(PoisonError::into_inner);
+        set_num_threads(1);
+        let serial = tokenizer
+            .encode(inputs.clone(), add_special_tokens)
+            .wait()
+            .unwrap();
+        for n in [2, 4, 8] {
+            set_num_threads(n);
+            for _ in 0..3 {
+                let par = tokenizer
+                    .encode(inputs.clone(), add_special_tokens)
+                    .wait()
+                    .unwrap();
+                assert_eq!(par, serial);
+            }
+        }
+        set_num_threads(0);
+    }
+
+    fn repeat_to(phrase: &str, min_bytes: usize) -> String {
+        phrase.repeat(min_bytes / phrase.len() + 1)
+    }
+
+    #[test]
+    fn parallel_matches_serial_batch_identity() {
+        let tok = wordlevel_tokenizer(vec![("<unk>", 0), ("hello", 1), ("world", 2)], None);
+        let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
+        let inputs = Inputs::from(vec!["hello world".to_string(); 1000]);
+        for add in [false, true] {
+            assert_parallel_matches(&pipeline, inputs.clone(), add);
+        }
+    }
+
+    #[test]
+    fn parallel_matches_serial_batch_bert() {
+        use crate::processors::bert::BertProcessing;
+        let tok = wordlevel_tokenizer(
+            vec![("[CLS]", 0), ("[SEP]", 1), ("hello", 2), ("world", 3)],
+            Some(PostProcessorWrapper::Bert(BertProcessing::new(
+                ("[SEP]".to_string(), 1),
+                ("[CLS]".to_string(), 0),
+            ))),
+        );
+        let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
+        let inputs = Inputs::from(vec!["hello world".to_string(); 1000]);
+        for add in [false, true] {
+            assert_parallel_matches(&pipeline, inputs.clone(), add);
+        }
+    }
+
+    #[test]
+    fn parallel_matches_serial_pairs_bert() {
+        use crate::processors::bert::BertProcessing;
+        let tok = wordlevel_tokenizer(
+            vec![("[CLS]", 0), ("[SEP]", 1), ("hello", 2), ("world", 3)],
+            Some(PostProcessorWrapper::Bert(BertProcessing::new(
+                ("[SEP]".to_string(), 1),
+                ("[CLS]".to_string(), 0),
+            ))),
+        );
+        let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
+        let inputs = Inputs::from(vec![
+            ("hello world".to_string(), "world hello".to_string());
+            700
+        ]);
+        for add in [false, true] {
+            assert_parallel_matches(&pipeline, inputs.clone(), add);
+        }
+    }
+
+    #[test]
+    fn parallel_matches_serial_batch_roberta() {
+        use crate::processors::roberta::RobertaProcessing;
+        let tok = wordlevel_tokenizer(
+            vec![("<s>", 0), ("</s>", 1), ("hello", 2), ("world", 3)],
+            Some(PostProcessorWrapper::Roberta(RobertaProcessing::new(
+                ("</s>".to_string(), 1),
+                ("<s>".to_string(), 0),
+            ))),
+        );
+        let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
+        let inputs = Inputs::from(vec!["hello world".to_string(); 1000]);
+        for add in [false, true] {
+            assert_parallel_matches(&pipeline, inputs.clone(), add);
+        }
+    }
+
+    #[test]
+    fn parallel_matches_serial_long_single_with_specials() {
+        let mut tok = wordlevel_tokenizer(
+            vec![("<unk>", 0), ("hello", 1), ("world", 2), ("<sep>", 3)],
+            None,
+        );
+        tok.add_special_tokens([crate::tokenizer::AddedToken::from("<sep>", true)])
+            .unwrap();
+        let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
+        let inputs = Inputs::from(repeat_to(
+            "hello world <sep> ",
+            2 * PARALLEL_MIN_BYTES + 4096,
+        ));
+        for add in [false, true] {
+            assert_parallel_matches(&pipeline, inputs.clone(), add);
+        }
+    }
+
+    #[test]
+    fn parallel_matches_serial_mixed_batch_with_edges() {
+        let tok = wordlevel_tokenizer(vec![("<unk>", 0), ("hello", 1), ("world", 2)], None);
+        let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
+        let mut batch = vec![
+            String::new(),
+            "hello".to_string(),
+            "hello world".to_string(),
+        ];
+        batch.extend(vec!["hello world".to_string(); 1000]);
+        assert_parallel_matches(&pipeline, Inputs::from(batch), false);
+    }
+
+    #[test]
+    fn streaming_iterator_yields_each_seq_once() {
+        let _g = LOCK.lock().unwrap();
+        let tok = wordlevel_tokenizer(vec![("<unk>", 0), ("hello", 1), ("world", 2)], None);
+        let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
+        let inputs = Inputs::from(vec!["hello world".to_string(); 1000]);
+
+        set_num_threads(1);
+        let serial = pipeline.encode(inputs.clone(), false).wait().unwrap();
+
+        set_num_threads(4);
+        let mut streamed: Vec<Option<Encoding>> = vec![None; serial.len()];
+        for (seq, res) in pipeline.encode(inputs, false) {
+            assert!(
+                streamed[seq].is_none(),
+                "seq {seq} was yielded more than once"
+            );
+            streamed[seq] = Some(res.unwrap());
+        }
+        set_num_threads(0);
+
+        let streamed: Vec<Encoding> = streamed
+            .into_iter()
+            .map(|e| e.expect("a seq was never yielded"))
+            .collect();
+        assert_eq!(streamed, serial);
+    }
+
+    #[test]
+    fn streaming_handle_drop_after_partial_consume_is_clean() {
+        let _g = LOCK.lock().unwrap();
+        let tok = wordlevel_tokenizer(vec![("<unk>", 0), ("hello", 1), ("world", 2)], None);
+        let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
+        let inputs = Inputs::from(vec!["hello world".to_string(); 1000]);
+
+        set_num_threads(4);
+        let mut it = pipeline.encode(inputs, false).into_iter();
+        assert!(it.next().is_some());
+        assert!(it.next().is_some());
+        drop(it);
+        set_num_threads(0);
     }
 }
