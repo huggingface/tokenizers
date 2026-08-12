@@ -319,7 +319,7 @@ pub struct PipelinePostProcessor {
     pair: Template,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 enum Slice {
     Specials {
         tokens: Box<[PipelineToken]>,
@@ -377,12 +377,15 @@ fn build_slices(pieces: &[Piece], specials: &Tokens, is_pair: bool) -> Result<Ve
                 type_id,
             } => {
                 if seen_a {
-                    return Err("template references sequence A more than once".into());
+                    return Err(
+                        "not supported: template references sequence A more than once".into(),
+                    );
                 }
                 seen_a = true;
                 slices.push(Slice::Sequence {
                     seq: Seq::A,
-                    type_id: *type_id as u8,
+                    type_id: u8::try_from(*type_id)
+                        .map_err(|_| "not supported: type_id out of range")?,
                 });
             }
             Piece::Sequence {
@@ -390,41 +393,47 @@ fn build_slices(pieces: &[Piece], specials: &Tokens, is_pair: bool) -> Result<Ve
                 type_id,
             } => {
                 if seen_b {
-                    return Err("template references sequence B more than once".into());
+                    return Err(
+                        "not supported: template references sequence B more than once".into(),
+                    );
                 }
                 seen_b = true;
                 slices.push(Slice::Sequence {
                     seq: Seq::B,
-                    type_id: *type_id as u8,
+                    type_id: u8::try_from(*type_id)
+                        .map_err(|_| "not supported: type_id out of range")?,
                 });
             }
             Piece::SpecialToken {
                 id: token_string,
                 type_id,
             } => {
-                let special = specials
-                    .0
-                    .get(token_string)
-                    .ok_or_else(|| format!("unknown special token: `{token_string}`"))?;
+                let special = specials.0.get(token_string).ok_or_else(|| {
+                    format!("not supported: unknown special token: `{token_string}`")
+                })?;
                 slices.push(Slice::Specials {
                     tokens: special
                         .ids()
                         .iter()
                         .map(|&id| PipelineToken::from(id))
                         .collect(),
-                    type_id: *type_id as u8,
+                    type_id: u8::try_from(*type_id)
+                        .map_err(|_| "not supported: type_id out of range")?,
                 });
             }
         }
     }
     if !seen_a {
-        return Err("template does not reference sequence A".into());
+        return Err("not supported: template does not reference sequence A".into());
     }
     if is_pair && !seen_b {
-        return Err("pair template does not reference sequence B".into());
+        return Err("not supported: pair template does not reference sequence B".into());
     }
     if !is_pair && seen_b {
-        return Err("single template references sequence B (it should only refer to A)".into());
+        return Err(
+            "not supported: single template references sequence B (it should only refer to A)"
+                .into(),
+        );
     }
     Ok(slices)
 }
@@ -492,9 +501,91 @@ impl TryFrom<&PostProcessorWrapper> for PipelinePostProcessor {
                 single: Template::new(vec![sq(A, 0)]),
                 pair: Template::new(vec![sq(A, 0), sq(B, 1)]),
             }),
-            PostProcessorWrapper::Sequence(_sequence) => {
-                todo!("sequence post processor not implemented for the moment")
+            PostProcessorWrapper::Sequence(sequence) => {
+                let members = sequence
+                    .as_ref()
+                    .iter()
+                    .map(Self::try_from)
+                    .collect::<Result<Vec<_>>>()?;
+                Ok(Self {
+                    single: compose(members.iter().map(|m| &m.single))?,
+                    pair: compose(members.iter().map(|m| &m.single))?,
+                })
             }
+        }
+    }
+}
+
+fn is_sequence(s: &Slice) -> bool {
+    matches!(s, Slice::Sequence { .. })
+}
+
+/// Split into three groups, depending on the template's content:
+/// - [<before>], [SeqA<middle>SeqB], [<after>]
+/// - [<before>], [SeqA], [<after>]
+fn into_parts(template: &Template) -> Result<(Vec<Slice>, Vec<Slice>, Vec<Slice>)> {
+    let s = &template.slices;
+    let (Some(first), Some(last)) = (
+        s.iter().position(is_sequence),
+        s.iter().rposition(is_sequence),
+    ) else {
+        return Err("not supported: could not find any sequence in post processor template".into());
+    };
+    Ok((
+        s[..first].to_vec(),
+        s[first..=last].to_vec(),
+        s[last + 1..].to_vec(),
+    ))
+}
+
+fn is_trivial_core(core: &[Slice]) -> bool {
+    core.iter().all(is_sequence)
+}
+
+fn compose<'a>(templates: impl Iterator<Item = &'a Template>) -> Result<Template> {
+    let parts = templates.map(into_parts).collect::<Result<Vec<_>>>()?;
+
+    let mut core = None;
+    for (_, c, _) in &parts {
+        if !is_trivial_core(c) && core.replace(c.clone()).is_some() {
+            return Err(
+                "post processor Sequence with multiple sequence referencing members is not supported".into(),
+            );
+        }
+    }
+
+    let core = core
+        .or_else(|| parts.first().map(|(_, c, _)| c.clone()))
+        .ok_or("empty Sequence post processor is not supported")?;
+
+    let mut slices = Vec::new();
+    for (prefix, _, _) in parts.iter().rev() {
+        slices.extend(prefix.iter().cloned());
+    }
+    slices.extend(core);
+    for (_, _, suffix) in parts {
+        slices.extend(suffix.iter().cloned());
+    }
+    Ok(Template::new(slices))
+}
+
+impl Default for PipelinePostProcessor {
+    fn default() -> Self {
+        Self {
+            single: Template::new(vec![Slice::Sequence {
+                seq: Seq::A,
+                type_id: 0,
+            }]),
+            pair: Template::new(vec![
+                Slice::Sequence {
+                    seq: Seq::A,
+                    type_id: 0,
+                },
+                Slice::Sequence {
+                    seq: Seq::B,
+                    type_id: 1,
+                },
+            ]),
         }
     }
 }
@@ -798,12 +889,11 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
                 normalizers,
                 pre_tokenizer,
                 model,
-                // TODO: get_post_processor().is_none()
                 post_processor: tok
                     .get_post_processor()
                     .map(PipelinePostProcessor::try_from)
                     .transpose()?
-                    .ok_or_else(|| "post processor needs to be set".to_string())?,
+                    .unwrap_or_else(PipelinePostProcessor::default),
                 decoder: tok.get_decoder().cloned(),
                 added_id_min,
                 scratch_pool: ScratchPool::new(),
