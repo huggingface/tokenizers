@@ -254,8 +254,8 @@ mod tests {
     fn the_pool_gets_back_the_used_scratch_not_the_none_leftover() {
         let pipeline = hello_pipeline();
         pipeline.encode("hello", false).wait().unwrap();
-        assert_eq!(pipeline.scratch_pool.len(), 1);
-        let scratch = pipeline.scratch_pool.get(&pipeline.model);
+        assert_eq!(pipeline.inner.scratch_pool.len(), 1);
+        let scratch = pipeline.inner.scratch_pool.get(&pipeline.inner.model);
         assert!(
             matches!(scratch.model, PipelineModelScratch::BPE(_)),
             "the pooled scratch is not the BPE scratch the model used"
@@ -272,7 +272,7 @@ mod tests {
     }
 
     fn pooled_buffers(pipeline: &PipelineTokenizer) -> Buffers {
-        let scratch = pipeline.scratch_pool.get(&pipeline.model);
+        let scratch = pipeline.inner.scratch_pool.get(&pipeline.inner.model);
         let PipelineModelScratch::BPE(bpe) = &scratch.model else {
             panic!("a BPE pipeline encodes with a BPE scratch");
         };
@@ -318,7 +318,7 @@ mod tests {
 
     /// The addresses of the three span buffers a sequence encode rotates between.
     fn pooled_span_buffers(pipeline: &PipelineTokenizer) -> BTreeSet<usize> {
-        let scratch = pipeline.scratch_pool.get(&pipeline.model);
+        let scratch = pipeline.inner.scratch_pool.get(&pipeline.inner.model);
         let [first, second] = &scratch.split.pair;
         [&scratch.pre_tokens, first, second]
             .map(|spans| spans.as_ptr() as usize)
@@ -368,7 +368,7 @@ mod tests {
         let pipeline = hello_pipeline();
         pipeline.encode("helo", false).wait().unwrap();
 
-        let mut scratch = pipeline.scratch_pool.get(&pipeline.model);
+        let mut scratch = pipeline.inner.scratch_pool.get(&pipeline.inner.model);
         let PipelineModelScratch::BPE(bpe) = &mut scratch.model else {
             panic!("a BPE pipeline encodes with a BPE scratch");
         };

@@ -392,6 +392,7 @@ mod fold_tests {
                 .wait()
                 .unwrap()
                 .remove(0)
+                .ids()
                 .iter()
                 .map(|t| t.id())
                 .collect();
@@ -434,6 +435,7 @@ mod fold_tests {
             .wait()
             .unwrap()
             .remove(0)
+            .ids()
             .iter()
             .map(|t| t.id())
             .collect();

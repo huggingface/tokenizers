@@ -690,7 +690,7 @@ mod tests {
     ) -> Vec<(Option<String>, Option<u32>)> {
         SpecialSegmentIterator::new(input, vocab, normalized)
             .map(|segment| match segment {
-                Segment::Text(text) => (Some(text.to_string()), None),
+                Segment::Text { text, .. } => (Some(text.to_string()), None),
                 Segment::SpecialToken(id) => (None, Some(id)),
             })
             .collect()
