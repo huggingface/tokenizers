@@ -83,6 +83,7 @@ fn check_model(tok_file: &str) {
                     .unwrap()
                     .first()
                     .unwrap()
+                    .ids()
                     .iter()
                     .map(|t| t.id())
                     .collect();

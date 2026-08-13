@@ -259,8 +259,8 @@ impl SpecialToken {
 pub struct Template(Vec<Piece>);
 
 impl Template {
-    pub(crate) fn iter_pieces(&self) -> std::slice::Iter<'_, Piece> {
-        self.0.iter()
+    pub(crate) fn as_slice(&self) -> &[Piece] {
+        &self.0
     }
 }
 
@@ -350,7 +350,7 @@ pub struct TemplateProcessing {
     #[builder(try_setter, default = "\"$0\".try_into().unwrap()")]
     pub single: Template,
     #[builder(try_setter, default = "\"$A:0 $B:1\".try_into().unwrap()")]
-    pair: Template,
+    pub(crate) pair: Template,
     #[builder(setter(skip), default = "self.default_added(true)")]
     #[serde(skip)]
     added_single: usize,

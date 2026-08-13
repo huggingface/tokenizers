@@ -1,22 +1,19 @@
 use std::convert::TryInto;
 use std::iter::Enumerate;
+use std::sync::Arc;
 use std::vec::IntoIter;
 use std::{borrow::Cow, convert::TryFrom};
 
-use crate::models::bpe::{BpeScratch, PipelineBPE};
-use crate::models::unigram::{Unigram, UnigramScratch};
-use crate::models::wordlevel::WordLevel;
-use crate::models::wordpiece::{PipelineWordPiece, WordPieceScratch};
-use crate::pipeline::scratch_pool::{EncodeScratch, ScratchPool};
-use crate::processors::bert::BertProcessing;
-use crate::processors::roberta::RobertaProcessing;
-use crate::utils::byte_level::GPT2_REGEX_STR;
-use crate::vocab::bucket_added_vocabulary::{
-    AddedToken as BucketAddedToken, AddedVocabulary as BucketAddedVocabulary,
-};
 use crate::{
     DecoderWrapper, ModelWrapper, PostProcessorWrapper, PreTokenizerWrapper, Tokenizer,
+    models::{
+        bpe::{BpeScratch, PipelineBPE},
+        unigram::{Unigram, UnigramScratch},
+        wordlevel::WordLevel,
+        wordpiece::{PipelineWordPiece, WordPieceScratch},
+    },
     normalizers::{NormalizerWrapper, metaspace::MetaspaceNormalizer},
+    pipeline::scratch_pool::{EncodeScratch, ScratchPool},
     pre_tokenizers::{
         bert::BertPreTokenizer,
         delimiter::CharDelimiterSplit,
@@ -29,18 +26,30 @@ use crate::{
         unicode_scripts::UnicodeScripts,
         whitespace::{Whitespace, WhitespaceSplit},
     },
-    processors::template::Piece,
+    processors::{
+        bert::BertProcessing,
+        roberta::RobertaProcessing,
+        template::{Piece, Sequence, Tokens},
+    },
     tokenizer::{Decoder as _, Model as _},
+    utils::byte_level::GPT2_REGEX_STR,
+    vocab::bucket_added_vocabulary::{
+        AddedToken as BucketAddedToken, AddedVocabulary as BucketAddedVocabulary,
+    },
 };
+#[cfg(feature = "parallelism")]
+use parallel::StreamingIter;
 
 use super::{Result, SplitDelimiterBehavior};
 
-use atomsplit::classify::classify;
-pub use atomsplit::fsm::Span;
-
+#[cfg(feature = "parallelism")]
+mod parallel;
 mod scratch_pool;
 
 pub use scratch_pool::ModelScratch;
+
+use atomsplit::classify::classify;
+pub use atomsplit::fsm::Span;
 
 pub trait Normalizer {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>>;
@@ -300,99 +309,273 @@ impl TryFrom<PreTokenizerWrapper> for PipelinePreTokenizer {
 ///   prefix |  sequence encoding | suffix
 /// ```
 ///
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct PipelinePostProcessor {
-    prefix: Box<[PipelineToken]>,
-    suffix: Box<[PipelineToken]>,
+    single: Template,
+    pair: Template,
+}
+
+#[derive(Clone, Debug)]
+enum Slice {
+    Specials {
+        tokens: Box<[PipelineToken]>,
+        type_id: u8,
+    },
+    Sequence {
+        seq: Seq,
+        type_id: u8,
+    },
+}
+
+#[derive(Clone, Copy, Debug)]
+enum Seq {
+    A,
+    B,
+}
+
+#[derive(Debug)]
+struct Template {
+    slices: Box<[Slice]>,
+    n_special: usize,
+    has_type_ids: bool,
+}
+
+impl Template {
+    fn new(slices: Vec<Slice>) -> Self {
+        let n_special = slices
+            .iter()
+            .map(|s| {
+                if let Slice::Specials { tokens, .. } = s {
+                    tokens.len()
+                } else {
+                    0
+                }
+            })
+            .sum();
+        let has_type_ids = slices.iter().any(|s| match s {
+            Slice::Specials { type_id, .. } | Slice::Sequence { type_id, .. } => *type_id != 0,
+        });
+        Self {
+            slices: slices.into_boxed_slice(),
+            n_special,
+            has_type_ids,
+        }
+    }
+}
+
+fn build_slices(pieces: &[Piece], specials: &Tokens, is_pair: bool) -> Result<Vec<Slice>> {
+    let (mut seen_a, mut seen_b) = (false, false);
+    let mut slices = Vec::new();
+    for piece in pieces {
+        match piece {
+            Piece::Sequence {
+                id: Sequence::A,
+                type_id,
+            } => {
+                if seen_a {
+                    return Err(
+                        "not supported: template references sequence A more than once".into(),
+                    );
+                }
+                seen_a = true;
+                slices.push(Slice::Sequence {
+                    seq: Seq::A,
+                    type_id: u8::try_from(*type_id)
+                        .map_err(|_| "not supported: type_id out of range")?,
+                });
+            }
+            Piece::Sequence {
+                id: Sequence::B,
+                type_id,
+            } => {
+                if seen_b {
+                    return Err(
+                        "not supported: template references sequence B more than once".into(),
+                    );
+                }
+                seen_b = true;
+                slices.push(Slice::Sequence {
+                    seq: Seq::B,
+                    type_id: u8::try_from(*type_id)
+                        .map_err(|_| "not supported: type_id out of range")?,
+                });
+            }
+            Piece::SpecialToken {
+                id: token_string,
+                type_id,
+            } => {
+                let special = specials.0.get(token_string).ok_or_else(|| {
+                    format!("not supported: unknown special token: `{token_string}`")
+                })?;
+                slices.push(Slice::Specials {
+                    tokens: special
+                        .ids()
+                        .iter()
+                        .map(|&id| PipelineToken::from(id))
+                        .collect(),
+                    type_id: u8::try_from(*type_id)
+                        .map_err(|_| "not supported: type_id out of range")?,
+                });
+            }
+        }
+    }
+    if !seen_a {
+        return Err("not supported: template does not reference sequence A".into());
+    }
+    if is_pair && !seen_b {
+        return Err("not supported: pair template does not reference sequence B".into());
+    }
+    if !is_pair && seen_b {
+        return Err(
+            "not supported: single template references sequence B (it should only refer to A)"
+                .into(),
+        );
+    }
+    Ok(slices)
 }
 
 impl TryFrom<&PostProcessorWrapper> for PipelinePostProcessor {
     type Error = crate::Error;
 
     fn try_from(value: &PostProcessorWrapper) -> Result<Self> {
+        fn one(id: u32, tid: u8) -> Slice {
+            Slice::Specials {
+                tokens: Box::new([PipelineToken::from(id)]),
+                type_id: tid,
+            }
+        }
+        fn multi(ids: &[u32], tid: u8) -> Slice {
+            Slice::Specials {
+                tokens: ids.iter().map(|&id| PipelineToken::from(id)).collect(),
+                type_id: tid,
+            }
+        }
+        use Seq::{A, B};
+        let sq = |seq, type_id| Slice::Sequence { seq, type_id };
+
         match value {
             PostProcessorWrapper::Bert(BertProcessing {
                 cls: (_, cls_id),
                 sep: (_, sep_id),
             }) => Ok(Self {
-                prefix: vec![PipelineToken::from(*cls_id)].into_boxed_slice(),
-                suffix: vec![PipelineToken::from(*sep_id)].into_boxed_slice(),
+                single: Template::new(vec![one(*cls_id, 0), sq(A, 0), one(*sep_id, 0)]),
+                pair: Template::new(vec![
+                    one(*cls_id, 0),
+                    sq(A, 0),
+                    one(*sep_id, 0),
+                    sq(B, 1),
+                    one(*sep_id, 1),
+                ]),
             }),
             PostProcessorWrapper::Roberta(RobertaProcessing {
                 cls: (_, cls_id),
                 sep: (_, sep_id),
                 ..
             }) => Ok(Self {
-                prefix: vec![PipelineToken::from(*cls_id)].into_boxed_slice(),
-                suffix: vec![PipelineToken::from(*sep_id)].into_boxed_slice(),
+                single: Template::new(vec![one(*cls_id, 0), sq(A, 0), one(*sep_id, 0)]),
+                pair: Template::new(vec![
+                    one(*cls_id, 0),
+                    sq(A, 0),
+                    multi(&[*sep_id, *sep_id], 0),
+                    sq(B, 0),
+                    one(*sep_id, 0),
+                ]),
             }),
-            PostProcessorWrapper::Template(pp) => {
-                // todo: handle pair template
-                let mut prefix = vec![];
-                let mut suffix = vec![];
-                let mut seen_sequence = false;
-                for piece in pp.single.iter_pieces() {
-                    match piece {
-                        Piece::Sequence { .. } => {
-                            if seen_sequence {
-                                return Err(
-                                    "post-processor not supported: Template `single` references the sequence more than once"
-                                        .into(),
-                                );
-                            }
-                            seen_sequence = true;
-                        }
-                        Piece::SpecialToken {
-                            id: token_string, ..
-                        } => {
-                            let special = pp.get_special_tokens().0.get(token_string).ok_or_else(|| {
-                                format!(
-                                    "post-processor not supported: Template references unknown special token `{token_string}`"
-                                )
-                            })?;
-                            let token_ids = special.ids().iter().copied().map(PipelineToken::from);
-                            if seen_sequence {
-                                suffix.extend(token_ids);
-                            } else {
-                                prefix.extend(token_ids);
-                            }
-                        }
-                    }
-                }
-                if !seen_sequence {
-                    return Err(
-                        "post-processor not supported: Template `single` does not reference the sequence"
-                            .into(),
-                    );
-                }
-                Ok(Self {
-                    prefix: prefix.into_boxed_slice(),
-                    suffix: suffix.into_boxed_slice(),
-                })
-            }
-            PostProcessorWrapper::ByteLevel(_) => Ok(Self::default()),
+            PostProcessorWrapper::Template(pp) => Ok(Self {
+                single: Template::new(build_slices(
+                    pp.single.as_slice(),
+                    pp.get_special_tokens(),
+                    false,
+                )?),
+                pair: Template::new(build_slices(
+                    pp.pair.as_slice(),
+                    pp.get_special_tokens(),
+                    true,
+                )?),
+            }),
+            PostProcessorWrapper::ByteLevel(_) => Ok(Self {
+                single: Template::new(vec![sq(A, 0)]),
+                pair: Template::new(vec![sq(A, 0), sq(B, 1)]),
+            }),
             PostProcessorWrapper::Sequence(sequence) => {
-                // Each member wraps the previous members' output, so later members end up
-                // outermost: prefix accumulates in reverse member order, suffix in forward.
-                let items = sequence
+                let members = sequence
                     .as_ref()
                     .iter()
-                    .map(PipelinePostProcessor::try_from)
+                    .map(Self::try_from)
                     .collect::<Result<Vec<_>>>()?;
-                let prefix: Vec<_> = items
-                    .iter()
-                    .rev()
-                    .flat_map(|item| item.prefix.iter().copied())
-                    .collect();
-                let suffix: Vec<_> = items
-                    .iter()
-                    .flat_map(|item| item.suffix.iter().copied())
-                    .collect();
                 Ok(Self {
-                    prefix: prefix.into_boxed_slice(),
-                    suffix: suffix.into_boxed_slice(),
+                    single: compose(members.iter().map(|m| &m.single))?,
+                    pair: compose(members.iter().map(|m| &m.pair))?,
                 })
             }
+        }
+    }
+}
+
+/// A pass-through template does nothing: no special tokens, and sequences in the default
+/// arrangement (`$A`, or `$A $B` with the default type ids 0 then 1). Such a member is a no-op in a
+/// Sequence and is dropped when composing. Anything else adds tokens or reorders/retags.
+fn is_pass_through(slices: &[Slice]) -> bool {
+    matches!(
+        slices,
+        [Slice::Sequence {
+            seq: Seq::A,
+            type_id: 0
+        }] | [
+            Slice::Sequence {
+                seq: Seq::A,
+                type_id: 0
+            },
+            Slice::Sequence {
+                seq: Seq::B,
+                type_id: 1
+            }
+        ]
+    )
+}
+
+/// Compose the members of a Sequence post processor.
+///
+/// The reference applies each member in turn, and every member retags the whole previous output to
+/// its own sequence type id. A static template cannot represent that chaining, so we only support
+/// the representable case: at most one member that adds tokens or reorders/retags, wrapped by any
+/// number of pass-through members (which are no-ops and dropped). More than one is rejected.
+fn compose<'a>(templates: impl Iterator<Item = &'a Template>) -> Result<Template> {
+    let templates = templates.collect::<Vec<_>>();
+    let mut chosen: Option<&Template> = None;
+    for template in &templates {
+        if is_pass_through(&template.slices) {
+            continue;
+        }
+        if chosen.replace(template).is_some() {
+            return Err(
+                "post processor Sequence with multiple sequence referencing members is not supported".into(),
+            );
+        }
+    }
+    let chosen = chosen
+        .or_else(|| templates.first().copied())
+        .ok_or("empty Sequence post processor is not supported")?;
+    Ok(Template::new(chosen.slices.to_vec()))
+}
+
+impl Default for PipelinePostProcessor {
+    fn default() -> Self {
+        Self {
+            single: Template::new(vec![Slice::Sequence {
+                seq: Seq::A,
+                type_id: 0,
+            }]),
+            pair: Template::new(vec![
+                Slice::Sequence {
+                    seq: Seq::A,
+                    type_id: 0,
+                },
+                Slice::Sequence {
+                    seq: Seq::B,
+                    type_id: 1,
+                },
+            ]),
         }
     }
 }
@@ -454,7 +637,8 @@ pub trait PipelinePatternMatcher {
 /// A piece of the input produced by [`SpecialSegmentIterator`].
 pub enum Segment<'a> {
     /// Ordinary text still to be (optonally normalized), pre-tokenized and run through the model.
-    Text(&'a str),
+    /// input_offset is the start position of `text` in the input
+    Text { text: &'a str, input_offset: usize },
     /// A matched special token, identified by its vocabulary id.
     SpecialToken(u32),
 }
@@ -467,7 +651,7 @@ pub enum Segment<'a> {
 /// for segment in SpecialSegmentIterator::new(input, pattern_matcher, false) {
 ///     match segment {
 ///         Segment::SpecialToken(id) => { /* emit the special token */ }
-///         Segment::Text(chunk) => { /* tokenize this chunk */ }
+///         Segment::Text { text, input_offset } => { /* tokenize this chunk */ }
 ///     }
 /// }
 /// ```
@@ -525,24 +709,30 @@ impl<'a, 'b, PatternMatcher: PipelinePatternMatcher> Iterator
         {
             // `extract_next` positions are absolute in `input`, not relative to `offset`.
             let before_token = &self.input[self.offset..start];
+            let input_offset = self.offset;
             self.offset = end;
             if !before_token.is_empty() {
                 // The iterator returns segments in order: we need to return the chunk of text and then the special token.
                 // Store the special token to return in the next call and return a [`Segment::Text`]
                 self.pending = Some(token);
-                return Some(Segment::Text(before_token));
+                return Some(Segment::Text {
+                    text: before_token,
+                    input_offset,
+                });
             } else {
                 return Some(Segment::SpecialToken(token));
             }
         }
+        let input_offset = self.offset;
         self.offset = self.input.len();
-        Some(Segment::Text(remaining_input))
+        Some(Segment::Text {
+            text: remaining_input,
+            input_offset,
+        })
     }
 }
 
-/// Experimental encode-only pipeline built from a [`Tokenizer`]. Runs the same
-/// stages over borrowed ranges to avoid the reference path's allocations.
-pub struct PipelineTokenizer {
+struct TokenizerInner {
     added_vocabulary: BucketAddedVocabulary,
     normalizers: Vec<PipelineNormalizer>,
     pre_tokenizer: PipelinePreTokenizer,
@@ -555,6 +745,18 @@ pub struct PipelineTokenizer {
     scratch_pool: ScratchPool,
 }
 
+/// Experimental encode-only pipeline built from a [`Tokenizer`]. Runs the same
+/// stages over borrowed ranges to avoid the reference path's allocations.
+#[derive(Clone)]
+pub struct PipelineTokenizer {
+    inner: Arc<TokenizerInner>,
+}
+
+// comptime verification that PipelineTokenizer is Send + Sync
+const _: fn() = || {
+    fn assert_send_sync<T: Send + Sync>() {}
+    assert_send_sync::<PipelineTokenizer>();
+};
 impl TryFrom<&Tokenizer> for PipelineTokenizer {
     type Error = super::Error;
 
@@ -672,103 +874,132 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
             .unwrap_or(u32::MAX);
 
         Ok(Self {
-            added_vocabulary,
-            normalizers,
-            pre_tokenizer,
-            model,
-            post_processor: tok
-                .get_post_processor()
-                .map(PipelinePostProcessor::try_from)
-                .transpose()?
-                .unwrap_or_default(),
-            decoder: tok.get_decoder().cloned(),
-            added_id_min,
-            scratch_pool: ScratchPool::new(),
+            inner: Arc::new(TokenizerInner {
+                added_vocabulary,
+                normalizers,
+                pre_tokenizer,
+                model,
+                post_processor: tok
+                    .get_post_processor()
+                    .map(PipelinePostProcessor::try_from)
+                    .transpose()?
+                    .unwrap_or_else(PipelinePostProcessor::default),
+                decoder: tok.get_decoder().cloned(),
+                added_id_min,
+                scratch_pool: ScratchPool::new(),
+            }),
         })
     }
 }
 
-pub enum Inputs {
+#[derive(Clone)]
+pub enum Input {
     Single(String),
     Pair(String, String),
-    Batch(Vec<String>),
-    PairBatch(Vec<(String, String)>),
+}
+
+#[derive(Clone)]
+pub enum Inputs {
+    Single(Input),
+    Batch(Vec<Input>),
+}
+
+impl Inputs {
+    fn as_slice(&self) -> &[Input] {
+        match self {
+            Self::Single(s) => std::slice::from_ref(s),
+            Self::Batch(b) => b,
+        }
+    }
+
+    fn len(&self) -> usize {
+        self.as_slice().len()
+    }
+}
+
+impl<'a> IntoIterator for &'a Inputs {
+    type Item = &'a Input;
+    type IntoIter = std::slice::Iter<'a, Input>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.as_slice().iter()
+    }
 }
 
 impl From<String> for Inputs {
     fn from(s: String) -> Self {
-        Inputs::Single(s)
+        Self::Single(Input::Single(s))
     }
 }
 
 impl From<&str> for Inputs {
     fn from(s: &str) -> Self {
-        Inputs::Single(s.to_owned())
+        Self::Single(Input::Single(s.to_owned()))
     }
 }
 
 impl From<&String> for Inputs {
     fn from(s: &String) -> Self {
-        Inputs::Single(s.to_owned())
+        Self::Single(Input::Single(s.to_owned()))
     }
 }
 
 impl From<Vec<String>> for Inputs {
     fn from(b: Vec<String>) -> Self {
-        Inputs::Batch(b)
+        Self::Batch(b.into_iter().map(Input::Single).collect())
     }
 }
 
 impl From<&[&str]> for Inputs {
     fn from(b: &[&str]) -> Self {
-        Inputs::Batch(b.iter().map(|s| (*s).to_owned()).collect())
-    }
-}
-
-impl From<(String, String)> for Inputs {
-    fn from(p: (String, String)) -> Self {
-        Inputs::Pair(p.0, p.1)
-    }
-}
-
-impl From<(&str, &str)> for Inputs {
-    fn from(p: (&str, &str)) -> Self {
-        Inputs::Pair(p.0.to_owned(), p.1.to_owned())
-    }
-}
-
-impl From<(&String, &String)> for Inputs {
-    fn from(p: (&String, &String)) -> Self {
-        Inputs::Pair(p.0.to_owned(), p.1.to_owned())
-    }
-}
-
-impl From<Vec<(String, String)>> for Inputs {
-    fn from(b: Vec<(String, String)>) -> Self {
-        Inputs::PairBatch(b)
-    }
-}
-
-impl From<&[(&str, &str)]> for Inputs {
-    fn from(b: &[(&str, &str)]) -> Self {
-        Inputs::PairBatch(
-            b.iter()
-                .map(|(s1, s2)| ((*s1).to_owned(), (*s2).to_owned()))
-                .collect(),
-        )
+        Self::Batch(b.iter().map(|s| Input::Single((*s).to_owned())).collect())
     }
 }
 
 impl From<Vec<&str>> for Inputs {
     fn from(b: Vec<&str>) -> Self {
-        Inputs::Batch(b.into_iter().map(|s| s.to_owned()).collect())
+        Self::Batch(b.into_iter().map(|s| Input::Single(s.to_owned())).collect())
+    }
+}
+
+impl From<(String, String)> for Inputs {
+    fn from(p: (String, String)) -> Self {
+        Self::Single(Input::Pair(p.0, p.1))
+    }
+}
+
+impl From<(&str, &str)> for Inputs {
+    fn from(p: (&str, &str)) -> Self {
+        Self::Single(Input::Pair(p.0.to_owned(), p.1.to_owned()))
+    }
+}
+
+impl From<(&String, &String)> for Inputs {
+    fn from(p: (&String, &String)) -> Self {
+        Self::Single(Input::Pair(p.0.to_owned(), p.1.to_owned()))
+    }
+}
+
+impl From<Vec<(String, String)>> for Inputs {
+    fn from(b: Vec<(String, String)>) -> Self {
+        Self::Batch(b.into_iter().map(|p| Input::Pair(p.0, p.1)).collect())
+    }
+}
+
+impl From<&[(&str, &str)]> for Inputs {
+    fn from(b: &[(&str, &str)]) -> Self {
+        Self::Batch(
+            b.iter()
+                .map(|(s1, s2)| Input::Pair((*s1).to_owned(), (*s2).to_owned()))
+                .collect(),
+        )
     }
 }
 
 enum HandleState {
-    Blocking(Enumerate<IntoIter<Result<Vec<PipelineToken>>>>),
-    // TODO:
-    // Streaming
+    Blocking(Enumerate<IntoIter<Result<Encoding>>>),
+    #[cfg(feature = "parallelism")]
+    Streaming(StreamingIter),
 }
 
 pub struct EncodeHandle {
@@ -777,15 +1008,24 @@ pub struct EncodeHandle {
 
 impl EncodeHandle {
     /// Fully computed results, for the serial case
-    fn blocking(results: Vec<Result<Vec<PipelineToken>>>) -> Self {
+    fn blocking(results: Vec<Result<Encoding>>) -> Self {
         Self {
             state: HandleState::Blocking(results.into_iter().enumerate()),
+        }
+    }
+
+    #[cfg(feature = "parallelism")]
+    fn streaming(it: StreamingIter) -> Self {
+        Self {
+            state: HandleState::Streaming(it),
         }
     }
 
     fn len(&self) -> usize {
         match &self.state {
             HandleState::Blocking(it) => it.len(),
+            #[cfg(feature = "parallelism")]
+            HandleState::Streaming(it) => it.len(),
         }
     }
 }
@@ -794,14 +1034,65 @@ impl EncodeHandle {
     /// Wait for all scheduled encoding to finish
     ///
     /// Returns in input order
-    pub fn wait(self) -> Result<Vec<Vec<PipelineToken>>> {
-        // XXX: `Vec::new` does not allocate anything when capacity == 0
-        let mut out = vec![Vec::new(); self.len()];
+    pub fn wait(self) -> Result<Vec<Encoding>> {
+        // XXX: `Vec::new` does not allocate anything when capacity == 0, so creating empty
+        // Encodings should not allocate anything either
+        let mut out = vec![Encoding::empty(); self.len()];
         for (seq, res) in self {
             out[seq] = res?;
         }
         Ok(out)
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Encoding {
+    ids: Vec<PipelineToken>,
+    type_ids: Option<Vec<u8>>,
+}
+
+impl Encoding {
+    fn empty() -> Self {
+        Self {
+            ids: Vec::new(),
+            type_ids: None,
+        }
+    }
+
+    fn new(ids: Vec<PipelineToken>, type_ids: Option<Vec<u8>>) -> Self {
+        debug_assert!(type_ids.as_ref().is_none_or(|t| t.len() == ids.len()));
+        Self { ids, type_ids }
+    }
+}
+
+impl Encoding {
+    pub fn is_empty(&self) -> bool {
+        self.ids.len() == 0
+    }
+
+    pub fn len(&self) -> usize {
+        self.ids.len()
+    }
+
+    pub fn ids(&self) -> &[PipelineToken] {
+        &self.ids
+    }
+
+    pub fn type_ids(&self) -> Option<&[u8]> {
+        self.type_ids.as_deref()
+    }
+
+    pub fn into_parts(self) -> EncodingParts {
+        EncodingParts {
+            ids: self.ids,
+            type_ids: self.type_ids,
+        }
+    }
+}
+
+pub struct EncodingParts {
+    pub ids: Vec<PipelineToken>,
+    pub type_ids: Option<Vec<u8>>,
 }
 
 /// Iterator yields results in completion order
@@ -810,17 +1101,19 @@ pub struct HandleIter {
 }
 
 impl Iterator for HandleIter {
-    type Item = (usize, Result<Vec<PipelineToken>>);
+    type Item = (usize, Result<Encoding>);
 
     fn next(&mut self) -> Option<Self::Item> {
         match &mut self.handle.state {
             HandleState::Blocking(it) => it.next(),
+            #[cfg(feature = "parallelism")]
+            HandleState::Streaming(it) => it.next(),
         }
     }
 }
 
 impl IntoIterator for EncodeHandle {
-    type Item = (usize, Result<Vec<PipelineToken>>);
+    type Item = (usize, Result<Encoding>);
     type IntoIter = HandleIter;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -830,7 +1123,7 @@ impl IntoIterator for EncodeHandle {
 
 impl PipelineTokenizer {
     pub fn get_model(&self) -> &PipelineModel {
-        &self.model
+        &self.inner.model
     }
 
     /// Encode `input` into token ids.
@@ -843,68 +1136,114 @@ impl PipelineTokenizer {
     /// The remaining text is pre-tokenized and run through the model span by span.
     pub fn encode(&self, inputs: impl Into<Inputs>, add_special_tokens: bool) -> EncodeHandle {
         let inputs = inputs.into();
+        assert!(
+            inputs.len() < usize::MAX,
+            "we use usize::MAX as a sentinel value for the completion queue, we don't support batches larger than that"
+        );
+        #[cfg(not(feature = "parallelism"))]
+        return EncodeHandle::blocking(self.encode_serial(inputs, add_special_tokens));
 
+        #[cfg(feature = "parallelism")]
+        parallel::encode(self, inputs, add_special_tokens)
+    }
+
+    fn encode_serial(&self, inputs: Inputs, add_special_tokens: bool) -> Vec<Result<Encoding>> {
         match inputs {
-            Inputs::Single(s) => {
-                let output = self.encode_sequence(&s, add_special_tokens);
-                EncodeHandle::blocking(vec![output])
+            Inputs::Single(input) => {
+                vec![self.encode_one(input, add_special_tokens)]
             }
-            // TODO: proper post-processor logic, this is temporary
-            Inputs::Pair(s1, s2) => {
-                let p1 = self.encode_sequence(&s1, add_special_tokens);
-                let p2 = self.encode_sequence(&s2, add_special_tokens);
-                EncodeHandle::blocking(vec![p1, p2])
-            }
-            Inputs::Batch(b) => {
-                let mut output = Vec::with_capacity(b.len());
-                for seq in b {
-                    output.push(self.encode_sequence(&seq, add_special_tokens));
+            Inputs::Batch(batch) => {
+                let mut output = Vec::with_capacity(batch.len());
+                for input in batch {
+                    output.push(self.encode_one(input, add_special_tokens));
                 }
-                EncodeHandle::blocking(output)
-            }
-            // TODO: proper post-processor logic, this is temporary
-            Inputs::PairBatch(pb) => {
-                let mut output = Vec::with_capacity(pb.len() * 2);
-                for (s1, s2) in pb {
-                    output.push(self.encode_sequence(&s1, add_special_tokens));
-                    output.push(self.encode_sequence(&s2, add_special_tokens));
-                }
-                EncodeHandle::blocking(output)
+                output
             }
         }
     }
 
-    pub fn encode_sequence(
-        &self,
-        input: &str,
-        add_special_tokens: bool,
-    ) -> Result<Vec<PipelineToken>> {
-        let mut output = Vec::with_capacity(input.len() / 4);
-        let mut scratch = self.scratch_pool.get(&self.model);
-        let PipelinePostProcessor { prefix, suffix } = &self.post_processor;
-        // Prepend prefix tokens, if any
-        // todo: handle post-processing when encoding a pair of sequences (currently unsupported by the PipelineTokenizer)
-        if add_special_tokens {
-            output.extend_from_slice(prefix);
+    fn encode_one(&self, input: Input, add_special_tokens: bool) -> Result<Encoding> {
+        match input {
+            Input::Single(seq) => {
+                let toks = self.encode_sequence(&seq)?;
+                Ok(self.post_process(toks, None, add_special_tokens))
+            }
+            Input::Pair(s1, s2) => {
+                let a = self.encode_sequence(&s1)?;
+                let b = self.encode_sequence(&s2)?;
+                Ok(self.post_process(a, Some(b), add_special_tokens))
+            }
         }
+    }
+
+    fn post_process(
+        &self,
+        s1: Vec<PipelineToken>,
+        s2: Option<Vec<PipelineToken>>,
+        add_special_tokens: bool,
+    ) -> Encoding {
+        let pp = &self.inner.post_processor;
+        let template = if s2.is_some() { &pp.pair } else { &pp.single };
+
+        let seq_len = s1.len() + s2.as_ref().map_or(0, Vec::len);
+        let cap = template.n_special + seq_len;
+
+        let (mut a, mut b) = (Some(s1), s2);
+        let mut ids = Vec::with_capacity(cap);
+        let mut type_ids = template.has_type_ids.then(|| Vec::with_capacity(cap));
+
+        for slice in &template.slices {
+            match slice {
+                Slice::Specials { tokens, type_id } => {
+                    if !add_special_tokens {
+                        continue;
+                    }
+                    ids.extend_from_slice(tokens);
+                    if let Some(tids) = type_ids.as_mut() {
+                        tids.resize(tids.len() + tokens.len(), *type_id);
+                    }
+                }
+                Slice::Sequence { seq, type_id } => {
+                    let tokens = match seq {
+                        Seq::A => a.take(),
+                        Seq::B => b.take(),
+                    }
+                    .expect("[BUG] valid template should guarantee each referenced sequence is provided exactly once");
+                    if let Some(tids) = type_ids.as_mut() {
+                        tids.resize(tids.len() + tokens.len(), *type_id);
+                    }
+                    ids.extend(tokens);
+                }
+            }
+        }
+
+        Encoding::new(ids, type_ids)
+    }
+
+    pub fn encode_sequence(&self, input: &str) -> Result<Vec<PipelineToken>> {
+        let mut output = Vec::with_capacity(input.len() / 4);
+        let mut scratch = self.inner.scratch_pool.get(&self.inner.model);
         // First, we extract all special tokens from the non-normalized input
-        for segment in SpecialSegmentIterator::new(input, &self.added_vocabulary, false) {
+        for segment in SpecialSegmentIterator::new(input, &self.inner.added_vocabulary, false) {
             match segment {
                 Segment::SpecialToken(token) => {
                     output.push(PipelineToken::from(token));
                 }
-                Segment::Text(chunk) => {
-                    let normalized = normalize_all(&self.normalizers, chunk)?;
+                Segment::Text { text: chunk, .. } => {
+                    let normalized = normalize_all(&self.inner.normalizers, chunk)?;
 
                     // Extract special tokens from the normalized input
                     for segment in
-                        SpecialSegmentIterator::new(&normalized, &self.added_vocabulary, true)
+                        SpecialSegmentIterator::new(&normalized, &self.inner.added_vocabulary, true)
                     {
                         match segment {
                             Segment::SpecialToken(token) => {
                                 output.push(PipelineToken::from(token));
                             }
-                            Segment::Text(normalized_chunk) => {
+                            Segment::Text {
+                                text: normalized_chunk,
+                                ..
+                            } => {
                                 // A [`Span`] holds `u32` offsets, which breaks the `PreTokenizer` contract the
                                 // `str::get_unchecked` below relies on.
                                 // Normalization can grow the text (`Metaspace` widens every space to a 3-byte delimiter),
@@ -924,7 +1263,7 @@ impl PipelineTokenizer {
                                     split: pre_tokenizer_scratch,
                                 } = &mut *scratch;
                                 pre_tokens.clear();
-                                self.pre_tokenizer.pre_tokenize(
+                                self.inner.pre_tokenizer.pre_tokenize(
                                     normalized_chunk,
                                     pre_tokenizer_scratch,
                                     pre_tokens,
@@ -937,11 +1276,11 @@ impl PipelineTokenizer {
                                             && normalized_chunk.is_char_boundary(range.start)
                                             && normalized_chunk.is_char_boundary(range.end),
                                         "{:?} broke the PreTokenizer contract: emitted {pre_token:?} for {normalized_chunk:?}",
-                                        self.pre_tokenizer,
+                                        self.inner.pre_tokenizer,
                                     );
                                     // SAFETY: `PreTokenizer` guarantees every span is a valid range of `normalized_chunk`
                                     let sequence = unsafe { normalized_chunk.get_unchecked(range) };
-                                    self.model.tokenize_pipeline(
+                                    self.inner.model.tokenize_pipeline(
                                         sequence,
                                         model_scratch,
                                         &mut output,
@@ -952,10 +1291,6 @@ impl PipelineTokenizer {
                     }
                 }
             };
-        }
-        // Append suffix tokens, if any
-        if add_special_tokens {
-            output.extend_from_slice(suffix);
         }
         Ok(output)
     }
@@ -973,7 +1308,7 @@ impl PipelineTokenizer {
     ///
     /// [`byte_level::transform_vocab`]: crate::utils::byte_level::transform_vocab
     pub fn decode(&self, ids: &[u32], skip_special_tokens: bool) -> Result<String> {
-        if let PipelineModel::BPE(bpe) = &self.model
+        if let PipelineModel::BPE(bpe) = &self.inner.model
             && bpe.is_byte_level()
         {
             return Ok(self.decode_byte_level(bpe, ids, skip_special_tokens));
@@ -981,20 +1316,22 @@ impl PipelineTokenizer {
         let tokens = ids
             .iter()
             .filter_map(|&id| {
-                if id >= self.added_id_min {
-                    self.added_vocabulary
+                if id >= self.inner.added_id_min {
+                    self.inner
+                        .added_vocabulary
                         .simple_id_to_token(id)
-                        .or_else(|| self.model.id_to_token(id))
+                        .or_else(|| self.inner.model.id_to_token(id))
                         .filter(|token| {
-                            !skip_special_tokens || !self.added_vocabulary.is_special_token(token)
+                            !skip_special_tokens
+                                || !self.inner.added_vocabulary.is_special_token(token)
                         })
                 } else {
-                    self.model.id_to_token(id)
+                    self.inner.model.id_to_token(id)
                 }
             })
             .collect::<Vec<_>>();
 
-        match &self.decoder {
+        match &self.inner.decoder {
             Some(decoder) => decoder.decode(tokens),
             None => Ok(tokens.join(" ")),
         }
@@ -1010,10 +1347,10 @@ impl PipelineTokenizer {
         // Byte-level tokens average ~4 bytes
         let mut out: Vec<u8> = Vec::with_capacity(ids.len() * 4);
         for &id in ids {
-            if id >= self.added_id_min
-                && let Some(token) = self.added_vocabulary.simple_id_to_token(id)
+            if id >= self.inner.added_id_min
+                && let Some(token) = self.inner.added_vocabulary.simple_id_to_token(id)
             {
-                if !skip_special_tokens || !self.added_vocabulary.is_special_token(&token) {
+                if !skip_special_tokens || !self.inner.added_vocabulary.is_special_token(&token) {
                     out.extend_from_slice(token.as_bytes());
                 }
                 continue;
@@ -1406,6 +1743,8 @@ mod tests {
     use crate::models::wordpiece::WordPiece;
     use crate::pre_tokenizers::byte_level::ByteLevel;
     use crate::pre_tokenizers::sequence::Sequence;
+    #[cfg(feature = "parallelism")]
+    use crate::{parallelism::set_num_threads, pipeline::parallel::PARALLEL_MIN_BYTES};
     fn variant_name(pre_tokenizer: &PipelinePreTokenizer) -> &'static str {
         match pre_tokenizer {
             PipelinePreTokenizer::Bert(_) => "Bert",
@@ -1575,7 +1914,7 @@ mod tests {
             .wait()
             .unwrap();
         // Not the unk id: both the `Replace` and the `Split` really ran on the literal path.
-        assert_eq!(*encoded.first().unwrap(), [1, 2]);
+        assert_eq!(*encoded.first().unwrap().ids(), [1, 2]);
         assert_pipeline_matches_reference(&tok, "hello world");
     }
 
@@ -1586,7 +1925,7 @@ mod tests {
 
         let segments: Vec<_> = SpecialSegmentIterator::new(input, &matcher, false)
             .map(|segment| match segment {
-                Segment::Text(text) => (Some(text), None),
+                Segment::Text { text, .. } => (Some(text), None),
                 Segment::SpecialToken(id) => (None, Some(id)),
             })
             .collect();
@@ -1662,12 +2001,14 @@ mod tests {
         tok
     }
 
+    #[cfg(feature = "parallelism")]
     fn pipeline_ids(pipeline: &PipelineTokenizer, input: &str) -> Vec<u32> {
         pipeline
             .encode(input, false)
             .wait()
             .unwrap()
             .remove(0)
+            .ids()
             .iter()
             .map(|t| t.id())
             .collect()
@@ -1681,6 +2022,7 @@ mod tests {
     // The inputs disagree on both how many tokens they produce and which, so another input's
     // spans cannot yield the right ids by luck. This also only compiles if
     // `PipelineTokenizer: Sync`.
+    #[cfg(feature = "parallelism")]
     #[test]
     fn concurrent_encodes_of_different_inputs_stay_independent() {
         use rayon::prelude::*;
@@ -1724,6 +2066,7 @@ mod tests {
                 .unwrap()
                 .first()
                 .unwrap()
+                .ids
                 .iter()
                 .map(|t| t.id())
                 .collect();
@@ -1745,9 +2088,10 @@ mod tests {
         assert_pipeline_matches_reference(&tok, "hello world");
 
         let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
-        let ids = |enc: Vec<Vec<PipelineToken>>| {
+        let ids = |enc: Vec<Encoding>| {
             enc.first()
                 .unwrap()
+                .ids
                 .iter()
                 .map(|t| t.id())
                 .collect::<Vec<_>>()
@@ -1806,43 +2150,133 @@ mod tests {
     }
 
     #[test]
-    fn pipeline_sequence_composes_later_member_as_outermost() {
+    fn conversion_rejects_sequence_of_two_special_adding_members() {
+        use crate::processors::sequence::Sequence as ProcSequence;
+        use crate::processors::template::TemplateProcessing;
+
+        // Both members have identity cores (`$A $B`) but add their own special tokens. The
+        // reference retags the inner member's output when the outer wraps it, which a static
+        // composed template cannot represent, so this must be rejected (not silently miscompiled).
+        // Also guards that pass-through detection looks at the whole template, not just its core.
+        let member = |prefix: &str, suffix: &str, p_id: u32, s_id: u32| {
+            TemplateProcessing::builder()
+                .try_single(format!("{prefix} $A {suffix}"))
+                .unwrap()
+                .try_pair(format!("{prefix} $A $B:1 {suffix}:1"))
+                .unwrap()
+                .special_tokens(vec![(prefix, p_id), (suffix, s_id)])
+                .build()
+                .unwrap()
+        };
+        let tok = wordlevel_tokenizer(
+            vec![
+                ("[X]", 100),
+                ("[Y]", 101),
+                ("[P]", 102),
+                ("[Q]", 103),
+                ("hello", 2),
+                ("world", 3),
+            ],
+            Some(PostProcessorWrapper::Sequence(ProcSequence::new(vec![
+                PostProcessorWrapper::Template(member("[X]", "[Y]", 100, 101)),
+                PostProcessorWrapper::Template(member("[P]", "[Q]", 102, 103)),
+            ]))),
+        );
+        let err = conversion_error(&tok);
+        assert!(err.contains("not supported"), "{}", err);
+    }
+
+    #[test]
+    fn conversion_rejects_sequence_with_two_arranging_members() {
         use crate::processors::bert::BertProcessing;
         use crate::processors::sequence::Sequence as ProcSequence;
 
         let tok = wordlevel_tokenizer(
-            vec![
-                ("A", 100),
-                ("B", 101),
-                ("C", 102),
-                ("D", 103),
-                ("hello", 2),
-                ("world", 3),
-            ],
+            vec![("A", 100), ("B", 101), ("hello", 2), ("world", 3)],
             Some(PostProcessorWrapper::Sequence(ProcSequence::new(vec![
                 PostProcessorWrapper::Bert(BertProcessing::new(
                     ("B".to_string(), 101),
                     ("A".to_string(), 100),
                 )),
                 PostProcessorWrapper::Bert(BertProcessing::new(
-                    ("D".to_string(), 103),
-                    ("C".to_string(), 102),
+                    ("B".to_string(), 101),
+                    ("A".to_string(), 100),
                 )),
             ]))),
         );
-        assert_pipeline_matches_reference(&tok, "hello world");
+        let err = conversion_error(&tok);
+        assert!(err.contains("not supported"), "{}", err);
+    }
 
+    #[test]
+    fn roberta_pair_without_specials_keeps_type_ids_zero() {
+        use crate::processors::roberta::RobertaProcessing;
+
+        // RoBERTa tags both pair sides type 0. `add_special_tokens = false` must suppress only the
+        // special tokens, not fall back to the default A=0/B=1 tagging.
+        let tok = wordlevel_tokenizer(
+            vec![
+                ("<s>", 0),
+                ("</s>", 1),
+                ("hello", 2),
+                ("world", 3),
+                ("foo", 4),
+            ],
+            Some(PostProcessorWrapper::Roberta(RobertaProcessing::new(
+                ("</s>".to_string(), 1),
+                ("<s>".to_string(), 0),
+            ))),
+        );
         let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
-        let ids: Vec<u32> = pipeline
-            .encode("hello world", true)
+        let batch = pipeline
+            .encode(("hello world", "foo"), false)
             .wait()
+            .unwrap();
+        let enc = batch.first().unwrap();
+
+        assert!(
+            enc.type_ids().is_none_or(|t| t.iter().all(|&x| x == 0)),
+            "expected all-zero type ids, got {:?}",
+            enc.type_ids()
+        );
+        let expected = tok.encode(("hello world", "foo"), false).unwrap();
+        let ids: Vec<u32> = enc.ids().iter().map(|t| t.id()).collect();
+        assert_eq!(expected.get_ids(), ids.as_slice());
+    }
+
+    #[test]
+    fn sequence_keeps_reordering_member_core() {
+        use crate::pre_tokenizers::byte_level::ByteLevel;
+        use crate::processors::sequence::Sequence as ProcSequence;
+        use crate::processors::template::TemplateProcessing;
+
+        // ByteLevel has an identity core (safe to drop); the template reorders the pair to `$B $A`.
+        // Compose must keep the reordering core, not discard it as trivial.
+        let reorder = TemplateProcessing::builder()
+            .try_single("$A")
             .unwrap()
+            .try_pair("$B $A")
+            .unwrap()
+            .build()
+            .unwrap();
+        let tok = wordlevel_tokenizer(
+            vec![("hello", 2), ("world", 3)],
+            Some(PostProcessorWrapper::Sequence(ProcSequence::new(vec![
+                PostProcessorWrapper::ByteLevel(ByteLevel::default()),
+                PostProcessorWrapper::Template(reorder),
+            ]))),
+        );
+        let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
+        let batch = pipeline.encode(("hello", "world"), false).wait().unwrap();
+        let ids: Vec<u32> = batch
             .first()
             .unwrap()
+            .ids()
             .iter()
             .map(|t| t.id())
             .collect();
-        assert_eq!(ids, vec![102, 100, 2, 3, 101, 103]);
+        // `$B $A` => world (3) before hello (2)
+        assert_eq!(ids, vec![3, 2]);
     }
 
     #[test]
@@ -1948,5 +2382,186 @@ mod tests {
         );
         let err = conversion_error(&tok);
         assert!(err.contains("not supported"), "{}", err);
+    }
+
+    #[cfg(feature = "parallelism")]
+    use std::sync::{Mutex, PoisonError};
+    #[cfg(feature = "parallelism")]
+    static LOCK: Mutex<()> = Mutex::new(());
+
+    #[cfg(feature = "parallelism")]
+    fn assert_parallel_matches(
+        tokenizer: &PipelineTokenizer,
+        inputs: Inputs,
+        add_special_tokens: bool,
+    ) {
+        let _g = LOCK.lock().unwrap_or_else(PoisonError::into_inner);
+        set_num_threads(1);
+        let serial = tokenizer
+            .encode(inputs.clone(), add_special_tokens)
+            .wait()
+            .unwrap();
+        for n in [2, 4, 8] {
+            set_num_threads(n);
+            for _ in 0..3 {
+                let par = tokenizer
+                    .encode(inputs.clone(), add_special_tokens)
+                    .wait()
+                    .unwrap();
+                assert_eq!(par, serial);
+            }
+        }
+        set_num_threads(0);
+    }
+
+    #[cfg(feature = "parallelism")]
+    fn repeat_to(phrase: &str, min_bytes: usize) -> String {
+        phrase.repeat(min_bytes / phrase.len() + 1)
+    }
+
+    #[cfg(feature = "parallelism")]
+    #[test]
+    fn parallel_matches_serial_batch_identity() {
+        let tok = wordlevel_tokenizer(vec![("<unk>", 0), ("hello", 1), ("world", 2)], None);
+        let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
+        let inputs = Inputs::from(vec!["hello world".to_string(); 1000]);
+        for add in [false, true] {
+            assert_parallel_matches(&pipeline, inputs.clone(), add);
+        }
+    }
+
+    #[cfg(feature = "parallelism")]
+    #[test]
+    fn parallel_matches_serial_batch_bert() {
+        use crate::processors::bert::BertProcessing;
+        let tok = wordlevel_tokenizer(
+            vec![("[CLS]", 0), ("[SEP]", 1), ("hello", 2), ("world", 3)],
+            Some(PostProcessorWrapper::Bert(BertProcessing::new(
+                ("[SEP]".to_string(), 1),
+                ("[CLS]".to_string(), 0),
+            ))),
+        );
+        let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
+        let inputs = Inputs::from(vec!["hello world".to_string(); 1000]);
+        for add in [false, true] {
+            assert_parallel_matches(&pipeline, inputs.clone(), add);
+        }
+    }
+
+    #[cfg(feature = "parallelism")]
+    #[test]
+    fn parallel_matches_serial_pairs_bert() {
+        use crate::processors::bert::BertProcessing;
+        let tok = wordlevel_tokenizer(
+            vec![("[CLS]", 0), ("[SEP]", 1), ("hello", 2), ("world", 3)],
+            Some(PostProcessorWrapper::Bert(BertProcessing::new(
+                ("[SEP]".to_string(), 1),
+                ("[CLS]".to_string(), 0),
+            ))),
+        );
+        let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
+        let inputs = Inputs::from(vec![
+            ("hello world".to_string(), "world hello".to_string());
+            700
+        ]);
+        for add in [false, true] {
+            assert_parallel_matches(&pipeline, inputs.clone(), add);
+        }
+    }
+
+    #[cfg(feature = "parallelism")]
+    #[test]
+    fn parallel_matches_serial_batch_roberta() {
+        use crate::processors::roberta::RobertaProcessing;
+        let tok = wordlevel_tokenizer(
+            vec![("<s>", 0), ("</s>", 1), ("hello", 2), ("world", 3)],
+            Some(PostProcessorWrapper::Roberta(RobertaProcessing::new(
+                ("</s>".to_string(), 1),
+                ("<s>".to_string(), 0),
+            ))),
+        );
+        let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
+        let inputs = Inputs::from(vec!["hello world".to_string(); 1000]);
+        for add in [false, true] {
+            assert_parallel_matches(&pipeline, inputs.clone(), add);
+        }
+    }
+
+    #[cfg(feature = "parallelism")]
+    #[test]
+    fn parallel_matches_serial_long_single_with_specials() {
+        let mut tok = wordlevel_tokenizer(
+            vec![("<unk>", 0), ("hello", 1), ("world", 2), ("<sep>", 3)],
+            None,
+        );
+        tok.add_special_tokens([crate::tokenizer::AddedToken::from("<sep>", true)])
+            .unwrap();
+        let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
+        let inputs = Inputs::from(repeat_to(
+            "hello world <sep> ",
+            2 * PARALLEL_MIN_BYTES + 4096,
+        ));
+        for add in [false, true] {
+            assert_parallel_matches(&pipeline, inputs.clone(), add);
+        }
+    }
+
+    #[cfg(feature = "parallelism")]
+    #[test]
+    fn parallel_matches_serial_mixed_batch_with_edges() {
+        let tok = wordlevel_tokenizer(vec![("<unk>", 0), ("hello", 1), ("world", 2)], None);
+        let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
+        let mut batch = vec![
+            String::new(),
+            "hello".to_string(),
+            "hello world".to_string(),
+        ];
+        batch.extend(vec!["hello world".to_string(); 1000]);
+        assert_parallel_matches(&pipeline, Inputs::from(batch), false);
+    }
+
+    #[cfg(feature = "parallelism")]
+    #[test]
+    fn streaming_iterator_yields_each_seq_once() {
+        let _g = LOCK.lock().unwrap();
+        let tok = wordlevel_tokenizer(vec![("<unk>", 0), ("hello", 1), ("world", 2)], None);
+        let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
+        let inputs = Inputs::from(vec!["hello world".to_string(); 1000]);
+
+        set_num_threads(1);
+        let serial = pipeline.encode(inputs.clone(), false).wait().unwrap();
+
+        set_num_threads(4);
+        let mut streamed: Vec<Option<Encoding>> = vec![None; serial.len()];
+        for (seq, res) in pipeline.encode(inputs, false) {
+            assert!(
+                streamed[seq].is_none(),
+                "seq {seq} was yielded more than once"
+            );
+            streamed[seq] = Some(res.unwrap());
+        }
+        set_num_threads(0);
+
+        let streamed: Vec<Encoding> = streamed
+            .into_iter()
+            .map(|e| e.expect("a seq was never yielded"))
+            .collect();
+        assert_eq!(streamed, serial);
+    }
+
+    #[cfg(feature = "parallelism")]
+    #[test]
+    fn streaming_handle_drop_after_partial_consume_is_clean() {
+        let _g = LOCK.lock().unwrap();
+        let tok = wordlevel_tokenizer(vec![("<unk>", 0), ("hello", 1), ("world", 2)], None);
+        let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
+        let inputs = Inputs::from(vec!["hello world".to_string(); 1000]);
+
+        set_num_threads(4);
+        let mut it = pipeline.encode(inputs, false).into_iter();
+        assert!(it.next().is_some());
+        assert!(it.next().is_some());
+        drop(it);
+        set_num_threads(0);
     }
 }
