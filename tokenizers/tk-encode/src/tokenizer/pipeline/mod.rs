@@ -512,34 +512,12 @@ impl TryFrom<&PostProcessorWrapper> for PipelinePostProcessor {
     }
 }
 
-fn is_sequence(s: &Slice) -> bool {
-    matches!(s, Slice::Sequence { .. })
-}
-
-/// Split into three groups, depending on the template's content:
-/// - [<before>], [SeqA<middle>SeqB], [<after>]
-/// - [<before>], [SeqA], [<after>]
-fn into_parts(template: &Template) -> Result<(Vec<Slice>, Vec<Slice>, Vec<Slice>)> {
-    let s = &template.slices;
-    let (Some(first), Some(last)) = (
-        s.iter().position(is_sequence),
-        s.iter().rposition(is_sequence),
-    ) else {
-        return Err("not supported: could not find any sequence in post processor template".into());
-    };
-    Ok((
-        s[..first].to_vec(),
-        s[first..=last].to_vec(),
-        s[last + 1..].to_vec(),
-    ))
-}
-
-/// An identity core arranges the sequences exactly as the defaults: `$A` alone, or `$A $B` with
-/// the default type ids (0 then 1). Only such a core is transparent and safe to drop when composing
-/// a Sequence. Any other all-sequence core reorders or retags, so it is a real arrangement.
-fn is_identity_core(core: &[Slice]) -> bool {
+/// A pass-through template does nothing: no special tokens, and sequences in the default
+/// arrangement (`$A`, or `$A $B` with the default type ids 0 then 1). Such a member is a no-op in a
+/// Sequence and is dropped when composing. Anything else adds tokens or reorders/retags.
+fn is_pass_through(slices: &[Slice]) -> bool {
     matches!(
-        core,
+        slices,
         [Slice::Sequence {
             seq: Seq::A,
             type_id: 0
@@ -556,31 +534,29 @@ fn is_identity_core(core: &[Slice]) -> bool {
     )
 }
 
+/// Compose the members of a Sequence post processor.
+///
+/// The reference applies each member in turn, and every member retags the whole previous output to
+/// its own sequence type id. A static template cannot represent that chaining, so we only support
+/// the representable case: at most one member that adds tokens or reorders/retags, wrapped by any
+/// number of pass-through members (which are no-ops and dropped). More than one is rejected.
 fn compose<'a>(templates: impl Iterator<Item = &'a Template>) -> Result<Template> {
-    let parts = templates.map(into_parts).collect::<Result<Vec<_>>>()?;
-
-    let mut core = None;
-    for (_, c, _) in &parts {
-        if !is_identity_core(c) && core.replace(c.clone()).is_some() {
+    let templates = templates.collect::<Vec<_>>();
+    let mut chosen: Option<&Template> = None;
+    for template in &templates {
+        if is_pass_through(&template.slices) {
+            continue;
+        }
+        if chosen.replace(template).is_some() {
             return Err(
                 "post processor Sequence with multiple sequence referencing members is not supported".into(),
             );
         }
     }
-
-    let core = core
-        .or_else(|| parts.first().map(|(_, c, _)| c.clone()))
+    let chosen = chosen
+        .or_else(|| templates.first().copied())
         .ok_or("empty Sequence post processor is not supported")?;
-
-    let mut slices = Vec::new();
-    for (prefix, _, _) in parts.iter().rev() {
-        slices.extend(prefix.iter().cloned());
-    }
-    slices.extend(core);
-    for (_, _, suffix) in parts {
-        slices.extend(suffix.iter().cloned());
-    }
-    Ok(Template::new(slices))
+    Ok(Template::new(chosen.slices.to_vec()))
 }
 
 impl Default for PipelinePostProcessor {
@@ -675,7 +651,7 @@ pub enum Segment<'a> {
 /// for segment in SpecialSegmentIterator::new(input, pattern_matcher, false) {
 ///     match segment {
 ///         Segment::SpecialToken(id) => { /* emit the special token */ }
-///         Segment::Text(chunk) => { /* tokenize this chunk */ }
+///         Segment::Text { text, input_offset } => { /* tokenize this chunk */ }
 ///     }
 /// }
 /// ```
@@ -2173,10 +2149,14 @@ mod tests {
     }
 
     #[test]
-    fn pipeline_sequence_composes_later_member_as_outermost() {
+    fn conversion_rejects_sequence_of_two_special_adding_members() {
         use crate::processors::sequence::Sequence as ProcSequence;
         use crate::processors::template::TemplateProcessing;
 
+        // Both members have identity cores (`$A $B`) but add their own special tokens. The
+        // reference retags the inner member's output when the outer wraps it, which a static
+        // composed template cannot represent, so this must be rejected (not silently miscompiled).
+        // Also guards that pass-through detection looks at the whole template, not just its core.
         let member = |prefix: &str, suffix: &str, p_id: u32, s_id: u32| {
             TemplateProcessing::builder()
                 .try_single(format!("{prefix} $A {suffix}"))
@@ -2201,19 +2181,8 @@ mod tests {
                 PostProcessorWrapper::Template(member("[P]", "[Q]", 102, 103)),
             ]))),
         );
-
-        let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
-        let ids: Vec<u32> = pipeline
-            .encode("hello world", true)
-            .wait()
-            .unwrap()
-            .first()
-            .unwrap()
-            .ids
-            .iter()
-            .map(|t| t.id())
-            .collect();
-        assert_eq!(ids, vec![102, 100, 2, 3, 101, 103]);
+        let err = conversion_error(&tok);
+        assert!(err.contains("not supported"), "{}", err);
     }
 
     #[test]
