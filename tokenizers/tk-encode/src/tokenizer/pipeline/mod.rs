@@ -1762,6 +1762,7 @@ mod tests {
     }
 
     const HOSTILE: &[&str] = &[
+        "",
         " ",
         "\r",
         "\r\n\n",

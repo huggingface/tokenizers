@@ -3,8 +3,6 @@ use std::ops::Range;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-use log::warn;
-
 use crate::parallelism::pool;
 use crate::pipeline::{
     EncodeHandle, Encoding, Input, Inputs, PipelineToken, PipelineTokenizer, Segment, Seq,
@@ -347,7 +345,7 @@ pub(crate) fn encode(
         return EncodeHandle::blocking(tok.encode_serial(inputs, add_special_tokens));
     }
     let Some(pool) = pool() else {
-        warn!("unable to get a pool, handle, reverting to single threaded");
+        // unable to get a pool handle, reverting to single threaded
         return EncodeHandle::blocking(tok.encode_serial(inputs, add_special_tokens));
     };
     let Plan {
