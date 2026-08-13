@@ -39,16 +39,16 @@ impl Inputs {
 /// Isolate an atomic in its own cache line to avoid excessive invalidation when multiple threads
 /// access the value
 #[repr(align(64))]
-pub(crate) struct CachePadded<T>(pub(crate) T);
+struct CachePadded<T>(pub(crate) T);
 
-pub(crate) struct UnitResult(UnsafeCell<Option<Result<Vec<PipelineToken>>>>);
+struct UnitResult(UnsafeCell<Option<Result<Vec<PipelineToken>>>>);
 
 /// SAFETY: we make sure each unit's result is set by only one given thread at a time thanks to
 /// [`Job::next_unit`]
 unsafe impl Sync for UnitResult {}
 
 impl UnitResult {
-    pub(crate) fn new(tokens: Option<Result<Vec<PipelineToken>>>) -> Self {
+    fn new(tokens: Option<Result<Vec<PipelineToken>>>) -> Self {
         Self(UnsafeCell::new(tokens))
     }
 
@@ -62,25 +62,25 @@ impl UnitResult {
     }
 }
 
-pub(crate) struct Unit {
+struct Unit {
     /// Sequence index in the [`Inputs`] batch
-    pub(crate) seq: usize,
+    seq: usize,
     /// The unit's index within a sequence, because a given sequence can be split into multiple units for better parallelism
-    pub(crate) idx: usize,
+    idx: usize,
     /// Which member of the input pair ([`Seq::A`] for [`Input::Single`])
-    pub(crate) side: Seq,
+    side: Seq,
     /// The range within the input sequence to encode
-    pub(crate) range: Range<usize>,
+    range: Range<usize>,
 }
 
-pub(crate) struct Plan {
+struct Plan {
     /// Units of work created based on the inputs
-    pub(crate) units: Vec<Unit>,
+    units: Vec<Unit>,
     /// Contains the per-sequence length of [`Seq::A`] of a pair of inputs ([`Input::Single`] is
     /// always considered [`Seq::A`])
-    pub(crate) side_a_len: Vec<usize>,
+    side_a_len: Vec<usize>,
     /// Empty pre-allocated output buffer
-    pub(crate) outputs: Vec<Vec<UnitResult>>,
+    outputs: Vec<Vec<UnitResult>>,
 }
 
 struct Job {
