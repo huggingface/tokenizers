@@ -179,6 +179,11 @@ const GROUPS: [&str; 2] = ["lang", "modalities"];
 // phase 1 already anchors single-thread, and every extra count costs `REPS`
 // cold passes over a whole fixture group per implementation.
 const THREAD_COUNTS: [usize; 2] = [2, 4];
+
+/// Documents in the multi-document batch sweep; see [`bench_batch`]. Enough that
+/// per-document overhead dominates, small enough that a sweep over every thread
+/// count on a 128-core box stays quick.
+const BATCH_MAX_DOCS: usize = 20_000;
 // How much of each fixture the released crate's timed passes encode (see the
 // module docs); the pipeline's encode the whole fixture. Two MB is most of a
 // second of release encode per pass, enough that scheduler noise stays well
@@ -702,6 +707,127 @@ fn bench_threads(
     json!({ "counts": counts, "pipeline_mbps": pipe, "baseline_mbps": base })
 }
 
+// ── phase 3b: multi-document batches ────────────────────────────────────────
+
+/// Thread counts for the batch sweep: powers of two up to this machine's
+/// parallelism, plus the exact count when it is not a power of two.
+///
+/// [`THREAD_COUNTS`] stops at 4 and the batch shape only comes apart past that,
+/// which is precisely why nothing here caught it. On a 128-core box this walks
+/// 1, 2, 4 ... 128.
+fn batch_thread_counts() -> Vec<usize> {
+    let max = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1);
+    let mut counts = Vec::new();
+    let mut n = 1;
+    while n <= max {
+        counts.push(n);
+        n *= 2;
+    }
+    if counts.last() != Some(&max) {
+        counts.push(max);
+    }
+    counts
+}
+
+/// Documents for the batch shape: one short input per line, which is what a
+/// server holding a queue of chat turns hands to `encode`.
+fn batch_docs(fixtures: &[Fixture]) -> Vec<String> {
+    let mut docs = Vec::new();
+    for f in fixtures {
+        for chunk in &f.chunks {
+            for line in chunk.lines() {
+                let line = line.trim();
+                if !line.is_empty() {
+                    docs.push(line.to_string());
+                }
+                if docs.len() >= BATCH_MAX_DOCS {
+                    return docs;
+                }
+            }
+        }
+    }
+    docs
+}
+
+/// Throughput of one `encode(Vec<String>)` call over thousands of short
+/// documents, swept over thread counts, plus the same work through
+/// `encode_batch_flat`.
+///
+/// This is the one shape the rest of the file never reaches. Phase 3 measures
+/// *external* parallelism -- one `encode` per chunk, a tokenizer per thread --
+/// over 10 KiB chunks. Here a single call owns the whole batch and has to divide
+/// it internally, and the documents are ~100 bytes rather than 10 KiB, so
+/// per-document overhead is the whole cost instead of a rounding error.
+///
+/// Allocations are counted in a separate untimed pass: [`CountingAlloc`]'s atomics
+/// would otherwise land inside the measurement they exist to explain.
+fn bench_batch(oracle: &Tokenizer, docs: &[String]) -> Value {
+    if docs.is_empty() {
+        return Value::Null;
+    }
+    let bytes: usize = docs.iter().map(String::len).sum();
+    let counts = batch_thread_counts();
+    let refs: Vec<&str> = docs.iter().map(String::as_str).collect();
+
+    let (mut batched, mut flat) = (Vec::new(), Vec::new());
+    for &n in &counts {
+        tk_encode::utils::parallelism::set_num_threads(n);
+        // A cold instance per thread count, like phase 3.
+        let pipe = PipelineTokenizer::try_from(oracle).expect("probed at model load");
+
+        let mut samples = Vec::with_capacity(REPS);
+        for _ in 0..REPS {
+            // `encode` takes the batch by value; clone before the clock starts, or
+            // a full copy of the corpus lands inside the measurement.
+            let owned: Vec<String> = docs.to_vec();
+            let t0 = Instant::now();
+            let out = pipe.encode(owned, true).wait().expect("batch encode");
+            samples.push(t0.elapsed().as_secs_f64());
+            std::hint::black_box(&out);
+        }
+        let b = bytes as f64 / median_secs(samples) / 1e6;
+
+        let mut samples = Vec::with_capacity(REPS);
+        for _ in 0..REPS {
+            let t0 = Instant::now();
+            let out = pipe.encode_batch_flat(&refs, true).expect("flat encode");
+            samples.push(t0.elapsed().as_secs_f64());
+            std::hint::black_box(&out);
+        }
+        let f = bytes as f64 / median_secs(samples) / 1e6;
+
+        eprintln!("    {n} thread(s): batch {b:.1} MB/s, flat {f:.1} MB/s");
+        batched.push(b);
+        flat.push(f);
+    }
+    tk_encode::utils::parallelism::set_num_threads(0);
+
+    // Untimed, single-threaded: allocations per document on each path.
+    let pipe = PipelineTokenizer::try_from(oracle).expect("probed at model load");
+    // `encode` consumes the batch, so the clone must exist before counting starts;
+    // otherwise every document is charged one extra String.
+    let owned: Vec<String> = docs.to_vec();
+    let was_counting = COUNTING.swap(true, Relaxed);
+    let snap = alloc_snap();
+    std::hint::black_box(pipe.encode(owned, true).wait().expect("encode"));
+    let batch_allocs = snap.delta_json();
+    let snap = alloc_snap();
+    std::hint::black_box(pipe.encode_batch_flat(&refs, true).expect("flat"));
+    let flat_allocs = snap.delta_json();
+    COUNTING.store(was_counting, Relaxed);
+
+    json!({
+        "counts": counts,
+        "docs": docs.len(),
+        "bytes": bytes,
+        "batch_mbps": batched,
+        "flat_mbps": flat,
+        "allocs": { "batch": batch_allocs, "flat": flat_allocs },
+    })
+}
+
 // ── phase 4: decode ─────────────────────────────────────────────────────────
 
 /// One fixture's decode workload: the ids to replay and the input bytes they were
@@ -1198,6 +1324,7 @@ fn main() {
     // measured.
     let mut model_filter: Option<String> = None;
     let mut pipeline_only = false;
+    let mut parallel_only = false;
     let mut rest = args[1..].iter();
     while let Some(arg) = rest.next() {
         match arg.as_str() {
@@ -1206,8 +1333,17 @@ fn main() {
                 model_filter = Some(value.clone());
             }
             "--pipeline-only" => pipeline_only = true,
+            // Just the multi-document batch sweep: no release baseline, no size
+            // sweep, no decode, no memory children. This is the phase that has to
+            // run on a big machine, and it is the cheap one.
+            "--parallel-only" => parallel_only = true,
             other => panic!("unknown argument {other:?}"),
         }
+    }
+
+    // The batch sweep needs neither the release baseline nor the other phases.
+    if parallel_only {
+        pipeline_only = true;
     }
 
     let full: Vec<Value> =
@@ -1338,13 +1474,17 @@ fn main() {
             }
         };
 
-        let mut rows: Vec<Value> = fixtures
-            .iter()
-            .zip(&base_samples)
-            .map(|(f, (chunks, bytes))| {
-                bench_throughput(baseline.as_ref(), &tok, f, chunks, *bytes)
-            })
-            .collect();
+        let mut rows: Vec<Value> = if parallel_only {
+            Vec::new()
+        } else {
+            fixtures
+                .iter()
+                .zip(&base_samples)
+                .map(|(f, (chunks, bytes))| {
+                    bench_throughput(baseline.as_ref(), &tok, f, chunks, *bytes)
+                })
+                .collect()
+        };
 
         let input_sizes = if pipeline_only {
             Value::Null
@@ -1353,7 +1493,11 @@ fn main() {
             bench_sizes(baseline.as_ref(), &tok, &sample)
         };
 
-        let memory = measure_memory(&path, baseline.is_some());
+        let memory = if parallel_only {
+            Value::Null
+        } else {
+            measure_memory(&path, baseline.is_some())
+        };
         let threads = if pipeline_only {
             Value::Null
         } else {
@@ -1416,9 +1560,12 @@ fn main() {
             )
         });
 
+        eprintln!("  batch sweep (multi-document):");
+        let batch = bench_batch(&tok, &batch_docs(&fixtures));
+
         models.push(json!({
             "model": name, "desc": desc, "shape": shape,
-            "results": rows, "memory": memory, "threads": threads,
+            "results": rows, "memory": memory, "threads": threads, "batch": batch,
             "input_sizes": input_sizes,
             "decode_threads": decode_threads, "decode_reason": decode_reason,
         }));
