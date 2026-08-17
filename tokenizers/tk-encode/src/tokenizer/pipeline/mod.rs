@@ -1172,12 +1172,12 @@ impl PipelineTokenizer {
         match input {
             Input::Single(seq) => {
                 let toks = self.encode_sequence_with(&seq, scratch)?;
-                Ok(self.post_process(toks, None, add_special_tokens))
+                Ok(self.post_process(toks, None, add_special_tokens)?)
             }
             Input::Pair(s1, s2) => {
                 let a = self.encode_sequence_with(&s1, scratch)?;
                 let b = self.encode_sequence_with(&s2, scratch)?;
-                Ok(self.post_process(a, Some(b), add_special_tokens))
+                Ok(self.post_process(a, Some(b), add_special_tokens)?)
             }
         }
     }
@@ -1187,7 +1187,7 @@ impl PipelineTokenizer {
         s1: Vec<PipelineToken>,
         s2: Option<Vec<PipelineToken>>,
         add_special_tokens: bool,
-    ) -> Encoding {
+    ) -> Result<Encoding> {
         let pp = &self.inner.post_processor;
         let template = if s2.is_some() { &pp.pair } else { &pp.single };
 
@@ -1214,7 +1214,7 @@ impl PipelineTokenizer {
                         Seq::A => a.take(),
                         Seq::B => b.take(),
                     }
-                    .expect("[BUG] valid template should guarantee each referenced sequence is provided exactly once");
+                    .ok_or("[BUG] valid template should guarantee each referenced sequence is provided exactly once")?;
                     if let Some(tids) = type_ids.as_mut() {
                         tids.resize(tids.len() + tokens.len(), *type_id);
                     }
@@ -1223,7 +1223,7 @@ impl PipelineTokenizer {
             }
         }
 
-        Encoding::new(ids, type_ids)
+        Ok(Encoding::new(ids, type_ids))
     }
 
     fn encode_sequence_with(
