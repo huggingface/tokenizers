@@ -13,7 +13,7 @@ use crate::{
         wordpiece::{PipelineWordPiece, WordPieceScratch},
     },
     normalizers::{NormalizerWrapper, metaspace::MetaspaceNormalizer},
-    pipeline::scratch_pool::{EncodeScratch, ScratchPool},
+    pipeline::scratch_pool::{EncodeScratch, ScratchGuard, ScratchPool},
     pre_tokenizers::{
         bert::BertPreTokenizer,
         delimiter::CharDelimiterSplit,
@@ -1095,6 +1095,67 @@ pub struct EncodingParts {
     pub type_ids: Option<Vec<u8>>,
 }
 
+/// A whole batch's ids in one allocation, laid out CSR-style.
+///
+/// [`PipelineTokenizer::encode`] returns a `Vec<Encoding>`, i.e. one `Vec` per
+/// document. That is nothing for a handful of long documents and is the dominant
+/// cost for thousands of short ones: 26k chat lines cost 26k allocations plus the
+/// matching frees, which is what makes short-text batches allocator-bound on a
+/// many-core box.
+///
+/// Here the ids are contiguous and `offsets` says where each document starts, so a
+/// batch costs a fixed handful of allocations however many documents it holds. It
+/// is also the shape a serving stack wants anyway, since it has to assemble a
+/// contiguous batch for the model regardless.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BatchEncoding {
+    ids: Vec<PipelineToken>,
+    /// Row starts, `len() + 1` entries: document `i` is `offsets[i]..offsets[i + 1]`.
+    offsets: Vec<u32>,
+}
+
+impl BatchEncoding {
+    pub fn len(&self) -> usize {
+        self.offsets.len().saturating_sub(1)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Every document's ids, back to back.
+    pub fn ids(&self) -> &[PipelineToken] {
+        &self.ids
+    }
+
+    /// Row starts; `len() + 1` entries.
+    pub fn offsets(&self) -> &[u32] {
+        &self.offsets
+    }
+
+    /// Ids of document `i`, or `None` when out of range.
+    pub fn row(&self, i: usize) -> Option<&[PipelineToken]> {
+        let start = *self.offsets.get(i)? as usize;
+        let end = *self.offsets.get(i + 1)? as usize;
+        self.ids.get(start..end)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &[PipelineToken]> {
+        (0..self.len()).map(|i| {
+            self.row(i)
+                .expect("[BUG] offsets and ids disagree about the batch length")
+        })
+    }
+
+    pub fn into_parts(self) -> (Vec<PipelineToken>, Vec<u32>) {
+        (self.ids, self.offsets)
+    }
+
+    pub(crate) fn from_parts(ids: Vec<PipelineToken>, offsets: Vec<u32>) -> Self {
+        Self { ids, offsets }
+    }
+}
+
 /// Iterator yields results in completion order
 pub struct HandleIter {
     handle: EncodeHandle,
@@ -1263,7 +1324,146 @@ impl PipelineTokenizer {
 
     pub fn encode_sequence(&self, input: &str) -> Result<Vec<PipelineToken>> {
         let mut output = Vec::with_capacity(input.len() / 4);
-        let mut scratch = self.inner.scratch_pool.get(&self.inner.model);
+        self.encode_sequence_into(input, &mut output)?;
+        Ok(output)
+    }
+
+    /// [`Self::encode_sequence`], appending into a caller-owned buffer.
+    ///
+    /// Appends rather than clears, so a caller can lay many sequences end to end in
+    /// one allocation. That is the point: on a batch of short documents the
+    /// per-document `Vec` is the dominant cost, and the only way not to pay it is
+    /// not to create one. See [`Self::encode_batch_flat`].
+    pub fn encode_sequence_into(&self, input: &str, output: &mut Vec<PipelineToken>) -> Result<()> {
+        let mut scratch = self.scratch();
+        self.encode_sequence_scratched(input, &mut scratch, output)
+    }
+
+    /// Encode a batch of single sequences into **one** contiguous id buffer.
+    ///
+    /// The point is what it does not do: no `Vec` per document. On short-text
+    /// batches that per-document allocation (and its cross-thread free) is the
+    /// ceiling, so the flat layout is what makes those batches scale. See
+    /// [`BatchEncoding`].
+    ///
+    /// Falls back to [`Self::encode`] and flattens the result when the
+    /// post-processor is not a simple single-sequence template — pairs, or type
+    /// ids, still need the general path.
+    pub fn encode_batch_flat(
+        &self,
+        inputs: &[&str],
+        add_special_tokens: bool,
+    ) -> Result<BatchEncoding> {
+        let Some((prefix, suffix)) = self.flat_specials(add_special_tokens) else {
+            return self.flat_via_encode(inputs, add_special_tokens);
+        };
+
+        #[cfg(feature = "parallelism")]
+        {
+            let total: usize = inputs.iter().map(|s| s.len()).sum();
+            if total >= parallel::PARALLEL_MIN_BYTES
+                && inputs.len() > 1
+                && let Some(rows) = parallel::encode_flat(self, inputs, &prefix, &suffix)?
+            {
+                return Ok(rows);
+            }
+        }
+
+        let mut ids = Vec::with_capacity(inputs.iter().map(|s| s.len()).sum::<usize>() / 4);
+        let mut offsets = Vec::with_capacity(inputs.len() + 1);
+        let mut scratch = self.scratch();
+        for input in inputs {
+            offsets.push(ids.len() as u32);
+            ids.extend_from_slice(&prefix);
+            self.encode_sequence_scratched(input, &mut scratch, &mut ids)?;
+            ids.extend_from_slice(&suffix);
+        }
+        offsets.push(ids.len() as u32);
+        Ok(BatchEncoding { ids, offsets })
+    }
+
+    /// The specials a single-sequence template puts before and after sequence A,
+    /// or `None` when the template is not that shape (a pair template, or one that
+    /// carries type ids) and the general path has to run.
+    fn flat_specials(
+        &self,
+        add_special_tokens: bool,
+    ) -> Option<(Vec<PipelineToken>, Vec<PipelineToken>)> {
+        let template = &self.inner.post_processor.single;
+        if template.has_type_ids {
+            return None;
+        }
+        let pos = template
+            .slices
+            .iter()
+            .position(|s| matches!(s, Slice::Sequence { seq: Seq::A, .. }))?;
+        if !template
+            .slices
+            .iter()
+            .enumerate()
+            .all(|(i, s)| i == pos || matches!(s, Slice::Specials { .. }))
+        {
+            return None;
+        }
+        if !add_special_tokens {
+            return Some((Vec::new(), Vec::new()));
+        }
+        let collect = |slices: &[Slice]| -> Vec<PipelineToken> {
+            slices
+                .iter()
+                .filter_map(|s| match s {
+                    Slice::Specials { tokens, .. } => Some(tokens.iter().cloned()),
+                    Slice::Sequence { .. } => None,
+                })
+                .flatten()
+                .collect()
+        };
+        Some((
+            collect(&template.slices[..pos]),
+            collect(&template.slices[pos + 1..]),
+        ))
+    }
+
+    /// Fallback for templates the flat path does not model: run the normal encode
+    /// and copy the results into one buffer. Correct, but it pays the per-document
+    /// allocation the flat path exists to avoid.
+    fn flat_via_encode(&self, inputs: &[&str], add_special_tokens: bool) -> Result<BatchEncoding> {
+        let owned: Vec<String> = inputs.iter().map(|s| (*s).to_string()).collect();
+        let encodings = self.encode(owned, add_special_tokens).wait()?;
+        let total: usize = encodings.iter().map(Encoding::len).sum();
+        let mut ids = Vec::with_capacity(total);
+        let mut offsets = Vec::with_capacity(encodings.len() + 1);
+        for enc in &encodings {
+            offsets.push(ids.len() as u32);
+            ids.extend_from_slice(enc.ids());
+        }
+        offsets.push(ids.len() as u32);
+        Ok(BatchEncoding { ids, offsets })
+    }
+
+    /// Borrow a scratch buffer from the pool.
+    ///
+    /// Taking one costs a lock on a single process-wide `Mutex`, and returning it
+    /// costs another. That is free when the caller then spends 40 us encoding an
+    /// 8 KiB document, and it is the entire bottleneck when the caller spends 1 us
+    /// on a 200-byte one: a profile of a 26k-short-document batch on 8 threads
+    /// showed the workers parked in `rayon_core::WorkerThread::wait` with the live
+    /// samples in `pthread_mutex_firstfit_lock_slow`. Callers with many small
+    /// inputs should hold one guard across all of them — see
+    /// [`Self::encode_sequence_scratched`].
+    pub(crate) fn scratch(&self) -> ScratchGuard<'_> {
+        self.inner.scratch_pool.get(&self.inner.model)
+    }
+
+    /// [`Self::encode_sequence_into`] with the scratch buffer supplied by the
+    /// caller, so a batch of short inputs pays for the pool lock once rather than
+    /// once per input.
+    pub(crate) fn encode_sequence_scratched(
+        &self,
+        input: &str,
+        scratch: &mut EncodeScratch,
+        output: &mut Vec<PipelineToken>,
+    ) -> Result<()> {
         // First, we extract all special tokens from the non-normalized input
         for segment in SpecialSegmentIterator::new(input, &self.inner.added_vocabulary, false) {
             match segment {
@@ -1324,7 +1524,7 @@ impl PipelineTokenizer {
                                     self.inner.model.tokenize_pipeline(
                                         sequence,
                                         model_scratch,
-                                        &mut output,
+                                        output,
                                     )?;
                                 }
                             }
@@ -1333,7 +1533,7 @@ impl PipelineTokenizer {
                 }
             };
         }
-        Ok(output)
+        Ok(())
     }
 
     /// Decode token ids back to a `String`.

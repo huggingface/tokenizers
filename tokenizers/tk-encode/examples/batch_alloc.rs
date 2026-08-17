@@ -105,13 +105,24 @@ fn main() {
         // timing includes a full copy of the corpus.
         let owned = inputs.clone();
 
+        // AB_REPEAT keeps the process alive long enough to attach a profiler; the
+        // reported time is still per iteration.
+        let repeat: usize = std::env::var("AB_REPEAT")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(1);
+
         ALLOCS.store(0, Ordering::Relaxed);
         FREES.store(0, Ordering::Relaxed);
         COUNTING.store(1, Ordering::Relaxed);
         let t0 = Instant::now();
-        let out = pipe.encode(owned, false).wait().expect("encode");
-        let dt = t0.elapsed();
+        let mut out = pipe.encode(owned, false).wait().expect("encode");
+        for _ in 1..repeat {
+            out = pipe.encode(inputs.clone(), false).wait().expect("encode");
+        }
+        let dt = t0.elapsed() / repeat as u32;
         COUNTING.store(0, Ordering::Relaxed);
+        ALLOCS.store(ALLOCS.load(Ordering::Relaxed) / repeat, Ordering::Relaxed);
 
         let n = out.len();
         let toks: usize = out.iter().map(|e| e.len()).sum();
@@ -122,6 +133,30 @@ fn main() {
             dt.as_secs_f64() * 1e3,
             bytes as f64 / 1024.0 / 1024.0 / dt.as_secs_f64(),
             allocs as f64 / n as f64,
+        );
+
+        // Same work through the flat path: no Vec per document.
+        let refs: Vec<&str> = inputs.iter().map(String::as_str).collect();
+        let _ = pipe.encode_batch_flat(&refs, false).expect("warmup");
+        ALLOCS.store(0, Ordering::Relaxed);
+        COUNTING.store(1, Ordering::Relaxed);
+        let t0 = Instant::now();
+        let mut flat = pipe.encode_batch_flat(&refs, false).expect("flat");
+        for _ in 1..repeat {
+            flat = pipe.encode_batch_flat(&refs, false).expect("flat");
+        }
+        let dtf = t0.elapsed() / repeat as u32;
+        COUNTING.store(0, Ordering::Relaxed);
+        let allocs_f = ALLOCS.load(Ordering::Relaxed) / repeat;
+        assert_eq!(flat.len(), n, "flat and encode disagree on document count");
+        println!(
+            "  {:6} {:7} docs  {:9} tok  {:8.2} ms  {:8.1} MiB/s  allocs={allocs_f:9}  ({:.3} per doc)",
+            format!("{name}/flat"),
+            flat.len(),
+            flat.ids().len(),
+            dtf.as_secs_f64() * 1e3,
+            bytes as f64 / 1024.0 / 1024.0 / dtf.as_secs_f64(),
+            allocs_f as f64 / n as f64,
         );
     }
 }

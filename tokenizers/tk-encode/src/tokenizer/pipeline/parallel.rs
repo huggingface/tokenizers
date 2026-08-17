@@ -4,15 +4,43 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use crate::parallelism::pool;
+use rayon::prelude::*;
+
 use crate::pipeline::{
-    EncodeHandle, Encoding, Input, Inputs, PipelineToken, PipelineTokenizer, Segment, Seq,
-    SpecialSegmentIterator,
+    BatchEncoding, EncodeHandle, Encoding, Input, Inputs, PipelineToken, PipelineTokenizer,
+    Segment, Seq, SpecialSegmentIterator,
 };
 
 use super::Result;
 
 /// Threshold below which [`Inputs`] are encoded serially on the caller thread
 pub(crate) const PARALLEL_MIN_BYTES: usize = 8 * 1024;
+
+/// Upper bound on units claimed per cursor RMW; see [`claim_size`].
+const MAX_CLAIM: usize = 64;
+
+/// How many units one worker claims per cursor RMW.
+///
+/// Sized so a claim carries roughly [`PARALLEL_MIN_BYTES`] of text: with 8 KiB
+/// documents that is one unit and scheduling is unchanged, while with 200-byte
+/// chat lines it is tens of them.
+///
+/// The point is not really the saved atomics — claiming in runs was measured
+/// worthless on its own. It is that a worker which claims a run of short
+/// documents now *owns* those documents end to end, reconstructing each one
+/// itself, so the ids are allocated and finished on the same thread instead of
+/// being handed to the consumer to finish and free.
+///
+/// Capped so there are still several claims per thread: a claim is the
+/// granularity at which work balances.
+fn claim_size(units: &[Unit], threads: usize) -> usize {
+    debug_assert!(!units.is_empty(), "callers return early on an empty plan");
+    let total: usize = units.iter().map(|u| u.range.len()).sum();
+    let avg = (total / units.len()).max(1);
+    let by_bytes = PARALLEL_MIN_BYTES.div_ceil(avg);
+    let by_balance = units.len() / threads.max(1) / 4;
+    by_bytes.min(by_balance).clamp(1, MAX_CLAIM)
+}
 
 impl Input {
     fn len(&self) -> usize {
@@ -81,6 +109,29 @@ struct Plan {
     outputs: Vec<Vec<UnitResult>>,
 }
 
+/// A finished sequence, published by whichever worker completed its last unit.
+struct EncodingSlot(UnsafeCell<Option<Result<Encoding>>>);
+
+/// SAFETY: exactly one worker writes a given slot — the one whose `remaining`
+/// decrement returned 1 — and it does so before publishing the sequence to the
+/// completion queue with a Release store. The consumer only reads a slot after
+/// seeing that publication.
+unsafe impl Sync for EncodingSlot {}
+
+impl EncodingSlot {
+    fn new() -> Self {
+        Self(UnsafeCell::new(None))
+    }
+
+    unsafe fn set(&self, enc: Result<Encoding>) {
+        unsafe { *self.0.get() = Some(enc) };
+    }
+
+    fn take(&self) -> Option<Result<Encoding>> {
+        unsafe { &mut *self.0.get() }.take()
+    }
+}
+
 struct Job {
     inputs: Box<Inputs>,
     units: Vec<Unit>,
@@ -90,14 +141,20 @@ struct Job {
     next_unit: CachePadded<AtomicUsize>,
     tokenizer: PipelineTokenizer,
     add_special_tokens: bool,
-    /// Completion queue containing the list of units (inserted as their sequence idx) that have finished, in completion order
-    /// this enables us to increment a counter consumer side so that when collected[seq] == unit_count[seq], we know we can return a result
+    /// Completion queue of *sequences* that are finished and reconstructed, in
+    /// completion order. One entry per sequence: reconstruction now happens on the
+    /// worker that finishes a sequence, so the consumer no longer counts units.
     completion_queue: Vec<AtomicUsize>,
-    /// Cursor that each thread increments to add a completed unit to the completion queue
+    /// Cursor that each thread increments to publish a finished sequence
     next_completed: CachePadded<AtomicUsize>,
-    /// Number of units per sequence (accessed via `unit_count[seq]`)
-    unit_count: Vec<usize>,
+    /// Units still outstanding per sequence. The worker whose decrement returns 1
+    /// owns reconstruction of that sequence.
+    remaining: Vec<AtomicUsize>,
+    /// Reconstructed sequences, written by the owning worker
+    finished: Vec<EncodingSlot>,
     side_a_len: Vec<usize>,
+    /// How many units a worker takes per claim; see [`claim_size`]
+    claim: usize,
 }
 
 impl Job {
@@ -115,50 +172,74 @@ impl Job {
         }
     }
 
-    /// Number of units that make up sequence `seq`
-    fn unit_count(&self, seq: usize) -> usize {
-        self.unit_count[seq]
-    }
-
-    fn encode_unit(&self) -> bool {
+    /// Claim the next run of units, encode them, and reconstruct every sequence
+    /// this worker finishes. Returns false once the cursor is past the end.
+    ///
+    /// Reconstruction used to happen on the consumer thread, one document at a
+    /// time, which made it a serial stage that every document passed through. That
+    /// is invisible on 8 KiB documents and decisive on 200-byte ones — it is why
+    /// batches of short documents peaked at 2-4 threads and then got *slower*.
+    /// Doing it here also means the ids are allocated and freed on the same thread,
+    /// instead of the worker allocating and the consumer freeing.
+    fn encode_claim(&self) -> bool {
         if self.cancelled.load(Ordering::Relaxed) {
             return false;
         }
-        let i = self.next_unit.0.fetch_add(1, Ordering::Relaxed);
-        if i >= self.units.len() {
+        let start = self.next_unit.0.fetch_add(self.claim, Ordering::Relaxed);
+        if start >= self.units.len() {
             return false;
         }
+        let end = (start + self.claim).min(self.units.len());
 
-        let unit = &self.units[i];
-        let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let input = self
-                .inputs
-                .get(unit.seq)
-                .ok_or_else(|| format!("invalid unit index: {}", unit.seq))?;
-            let input = match input {
-                Input::Single(s) => s,
-                Input::Pair(s1, s2) => match unit.side {
-                    Seq::A => s1,
-                    Seq::B => s2,
-                },
-            };
-            self.tokenizer.encode_sequence(&input[unit.range.clone()])
-        }))
-        .unwrap_or_else(|_| Err("encode worker panicked".into()));
-        // SAFETY: no two threads can share the same unit of work because of the atomic fetch_add
-        // call on the cursor
-        unsafe { self.outputs[unit.seq][unit.idx].set(res) };
+        // One scratch buffer for the whole claim. Borrowing it costs a lock on a
+        // process-wide mutex, and `encode_sequence` used to take that lock per
+        // input: fine at 8 KiB a document, the entire bottleneck at 200 bytes.
+        let mut scratch = self.tokenizer.scratch();
 
-        let next = self.next_completed.0.fetch_add(1, Ordering::Relaxed);
-        self.completion_queue[next].store(unit.seq, Ordering::Release);
+        for unit in &self.units[start..end] {
+            let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let input = self
+                    .inputs
+                    .get(unit.seq)
+                    .ok_or_else(|| format!("invalid unit index: {}", unit.seq))?;
+                let input = match input {
+                    Input::Single(s) => s,
+                    Input::Pair(s1, s2) => match unit.side {
+                        Seq::A => s1,
+                        Seq::B => s2,
+                    },
+                };
+                let text = &input[unit.range.clone()];
+                let mut out = Vec::with_capacity(text.len() / 4);
+                self.tokenizer
+                    .encode_sequence_scratched(text, &mut scratch, &mut out)?;
+                Ok(out)
+            }))
+            .unwrap_or_else(|_| Err("encode worker panicked".into()));
+            // SAFETY: no two threads can share the same unit of work because the
+            // atomic fetch_add above hands each claimed range to exactly one thread
+            unsafe { self.outputs[unit.seq][unit.idx].set(res) };
+
+            // AcqRel: the release half publishes this unit's write to whichever
+            // thread takes the sequence; the acquire half means the thread that
+            // does take it (the one reading 1) sees every other unit's write.
+            if self.remaining[unit.seq].fetch_sub(1, Ordering::AcqRel) == 1 {
+                let enc = self.reconstruct(unit.seq);
+                // SAFETY: exactly one thread observes the 1 -> 0 transition, so
+                // exactly one thread writes this slot, and it does so before the
+                // Release store below that makes the sequence visible.
+                unsafe { self.finished[unit.seq].set(enc) };
+                let slot = self.next_completed.0.fetch_add(1, Ordering::Relaxed);
+                self.completion_queue[slot].store(unit.seq, Ordering::Release);
+            }
+        }
 
         true
     }
 
-    fn take_result(&self, seq: usize) -> Result<Encoding> {
-        // NOTE: in a previous implementation, we implemented the reconstruction in parallel on the
-        // thread pool; perhaps something to reconsider if the reconstruction shows up in profiling
-
+    /// Stitch a sequence's unit results together and post-process them. Runs on
+    /// the worker that finished the sequence.
+    fn reconstruct(&self, seq: usize) -> Result<Encoding> {
         let unit_results = &self.outputs[seq];
         let a_len = self.side_a_len[seq];
 
@@ -170,6 +251,12 @@ impl Job {
         Ok(self.tokenizer.post_process(a, b, self.add_special_tokens))
     }
 
+    fn take_finished(&self, seq: usize) -> Result<Encoding> {
+        self.finished[seq]
+            .take()
+            .expect("[BUG] sequence published to the completion queue but not reconstructed")
+    }
+
     fn cancel(&self) {
         self.cancelled.store(true, Ordering::Relaxed);
     }
@@ -177,18 +264,17 @@ impl Job {
 
 pub(crate) struct StreamingIter {
     job: Arc<Job>,
-    next_unit: usize,
-    collected: Vec<usize>,
+    /// Next completion-queue slot to read. One slot per sequence now, so the
+    /// per-sequence unit tally the consumer used to keep is gone.
+    next_slot: usize,
     completed: usize,
 }
 
 impl StreamingIter {
     fn new(job: Arc<Job>) -> Self {
-        let collected = vec![0; job.len()];
         Self {
             job,
-            next_unit: 0,
-            collected,
+            next_slot: 0,
             completed: 0,
         }
     }
@@ -206,20 +292,17 @@ impl Iterator for StreamingIter {
             return None;
         }
         loop {
-            let Some(seq) = self.job.completed_seq(self.next_unit) else {
+            let Some(seq) = self.job.completed_seq(self.next_slot) else {
                 // XXX: the caller has to wait for results regardless: instead of parking or empty
                 // spinning, we do useful work
-                if !self.job.encode_unit() {
+                if !self.job.encode_claim() {
                     std::hint::spin_loop();
                 }
                 continue;
             };
-            self.next_unit += 1;
-            self.collected[seq] += 1;
-            if self.collected[seq] == self.job.unit_count(seq) {
-                self.completed += 1;
-                return Some((seq, self.job.take_result(seq)));
-            }
+            self.next_slot += 1;
+            self.completed += 1;
+            return Some((seq, self.job.take_finished(seq)));
         }
     }
 }
@@ -336,6 +419,78 @@ impl PipelineTokenizer {
     }
 }
 
+/// Flat batch encode across the pool: each chunk of documents fills its own arena,
+/// then the arenas are concatenated once.
+///
+/// Allocations are per *chunk*, not per document — a 26k-document batch costs a
+/// couple of hundred instead of 26k, and none of them is freed by a different
+/// thread than allocated it. Returns `Ok(None)` when no pool is available so the
+/// caller can run its serial path.
+pub(crate) fn encode_flat(
+    tok: &PipelineTokenizer,
+    inputs: &[&str],
+    prefix: &[PipelineToken],
+    suffix: &[PipelineToken],
+) -> Result<Option<BatchEncoding>> {
+    let Some(pool) = pool() else {
+        return Ok(None);
+    };
+    let threads = pool.current_num_threads();
+    if threads < 2 {
+        return Ok(None);
+    }
+
+    // Chunks sized so each carries real work but every thread still gets several.
+    let total: usize = inputs.iter().map(|s| s.len()).sum();
+    let avg = (total / inputs.len().max(1)).max(1);
+    let by_bytes = PARALLEL_MIN_BYTES.div_ceil(avg);
+    let by_balance = (inputs.len() / (threads * 4).max(1)).max(1);
+    let chunk = by_bytes.min(by_balance).max(1);
+
+    let parts: Vec<Result<(Vec<PipelineToken>, Vec<u32>)>> = pool.install(|| {
+        inputs
+            .par_chunks(chunk)
+            .map(|docs| {
+                let bytes: usize = docs.iter().map(|s| s.len()).sum();
+                let mut arena =
+                    Vec::with_capacity(bytes / 4 + (prefix.len() + suffix.len()) * docs.len());
+                let mut lens = Vec::with_capacity(docs.len());
+                // One scratch for the whole chunk: see `PipelineTokenizer::scratch`.
+                let mut scratch = tok.scratch();
+                for doc in docs {
+                    let start = arena.len();
+                    arena.extend_from_slice(prefix);
+                    tok.encode_sequence_scratched(doc, &mut scratch, &mut arena)?;
+                    arena.extend_from_slice(suffix);
+                    lens.push((arena.len() - start) as u32);
+                }
+                Ok((arena, lens))
+            })
+            .collect()
+    });
+
+    let parts = parts.into_iter().collect::<Result<Vec<_>>>()?;
+
+    // Concatenate the arenas in input order, then walk the recorded per-document
+    // lengths to turn them into row starts.
+    let total_ids: usize = parts.iter().map(|(arena, _)| arena.len()).sum();
+    let mut ids = Vec::with_capacity(total_ids);
+    let mut offsets = Vec::with_capacity(inputs.len() + 1);
+    let mut at = 0u32;
+    for (arena, lens) in &parts {
+        ids.extend_from_slice(arena);
+        for len in lens {
+            offsets.push(at);
+            at += *len;
+        }
+    }
+    offsets.push(at);
+    debug_assert_eq!(offsets.len(), inputs.len() + 1);
+    debug_assert_eq!(at as usize, ids.len());
+
+    Ok(Some(BatchEncoding::from_parts(ids, offsets)))
+}
+
 pub(crate) fn encode(
     tok: &PipelineTokenizer,
     inputs: Inputs,
@@ -367,21 +522,29 @@ pub(crate) fn encode(
         next_unit: CachePadded(AtomicUsize::new(0)),
         add_special_tokens,
         tokenizer: tok.clone(),
-        completion_queue: (0..units.len())
+        // One slot per sequence, not per unit: workers publish finished sequences.
+        completion_queue: (0..outputs.len())
             .map(|_| AtomicUsize::new(Job::NOT_DONE))
             .collect(),
         next_completed: CachePadded(AtomicUsize::new(0)),
-        unit_count: units.iter().fold(vec![0; outputs.len()], |mut uc, u| {
-            uc[u.seq] += 1;
-            uc
-        }),
+        remaining: units
+            .iter()
+            .fold(vec![0usize; outputs.len()], |mut uc, u| {
+                uc[u.seq] += 1;
+                uc
+            })
+            .into_iter()
+            .map(AtomicUsize::new)
+            .collect(),
+        finished: (0..outputs.len()).map(|_| EncodingSlot::new()).collect(),
+        claim: claim_size(&units, threads),
         outputs,
         side_a_len,
         units,
     });
     for _ in 0..threads {
         let job = job.clone();
-        pool.spawn(move || while job.encode_unit() {});
+        pool.spawn(move || while job.encode_claim() {});
     }
     EncodeHandle::streaming(StreamingIter::new(job))
 }
