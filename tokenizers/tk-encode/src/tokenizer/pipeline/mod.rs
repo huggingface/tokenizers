@@ -1148,29 +1148,35 @@ impl PipelineTokenizer {
     }
 
     fn encode_serial(&self, inputs: Inputs, add_special_tokens: bool) -> Vec<Result<Encoding>> {
+        let mut scratch = self.inner.scratch_pool.get(&self.inner.model);
         match inputs {
             Inputs::Single(input) => {
-                vec![self.encode_one(input, add_special_tokens)]
+                vec![self.encode_one(input, add_special_tokens, &mut scratch)]
             }
             Inputs::Batch(batch) => {
                 let mut output = Vec::with_capacity(batch.len());
                 for input in batch {
-                    output.push(self.encode_one(input, add_special_tokens));
+                    output.push(self.encode_one(input, add_special_tokens, &mut scratch));
                 }
                 output
             }
         }
     }
 
-    fn encode_one(&self, input: Input, add_special_tokens: bool) -> Result<Encoding> {
+    fn encode_one(
+        &self,
+        input: Input,
+        add_special_tokens: bool,
+        scratch: &mut EncodeScratch,
+    ) -> Result<Encoding> {
         match input {
             Input::Single(seq) => {
-                let toks = self.encode_sequence(&seq)?;
+                let toks = self.encode_sequence_with(&seq, scratch)?;
                 Ok(self.post_process(toks, None, add_special_tokens))
             }
             Input::Pair(s1, s2) => {
-                let a = self.encode_sequence(&s1)?;
-                let b = self.encode_sequence(&s2)?;
+                let a = self.encode_sequence_with(&s1, scratch)?;
+                let b = self.encode_sequence_with(&s2, scratch)?;
                 Ok(self.post_process(a, Some(b), add_special_tokens))
             }
         }
@@ -1220,9 +1226,12 @@ impl PipelineTokenizer {
         Encoding::new(ids, type_ids)
     }
 
-    pub fn encode_sequence(&self, input: &str) -> Result<Vec<PipelineToken>> {
+    fn encode_sequence_with(
+        &self,
+        input: &str,
+        scratch: &mut EncodeScratch,
+    ) -> Result<Vec<PipelineToken>> {
         let mut output = Vec::with_capacity(input.len() / 4);
-        let mut scratch = self.inner.scratch_pool.get(&self.inner.model);
         // First, we extract all special tokens from the non-normalized input
         for segment in SpecialSegmentIterator::new(input, &self.inner.added_vocabulary, false) {
             match segment {

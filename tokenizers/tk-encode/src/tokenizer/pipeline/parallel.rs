@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use crate::parallelism::pool;
+use crate::pipeline::scratch_pool::{EncodeScratch, ScratchGuard};
 use crate::pipeline::{
     EncodeHandle, Encoding, Input, Inputs, PipelineToken, PipelineTokenizer, Segment, Seq,
     SpecialSegmentIterator,
@@ -39,26 +40,31 @@ impl Inputs {
 #[repr(align(64))]
 struct CachePadded<T>(pub(crate) T);
 
-struct UnitResult(UnsafeCell<Option<Result<Vec<PipelineToken>>>>);
+struct Slot<T>(UnsafeCell<Option<T>>);
 
-/// SAFETY: we make sure each unit's result is set by only one given thread at a time thanks to
-/// [`Job::next_unit`]
-unsafe impl Sync for UnitResult {}
-
-impl UnitResult {
-    fn new(tokens: Option<Result<Vec<PipelineToken>>>) -> Self {
-        Self(UnsafeCell::new(tokens))
+impl<T> Slot<T> {
+    fn new(value: Option<T>) -> Self {
+        Self(UnsafeCell::new(value))
     }
 
-    unsafe fn set(&self, tokens: Result<Vec<PipelineToken>>) {
-        unsafe { *self.0.get() = Some(tokens) };
+    unsafe fn set(&self, value: T) {
+        unsafe { *self.0.get() = Some(value) };
     }
 
     // TODO: safety doc
-    fn take(&self) -> Option<Result<Vec<PipelineToken>>> {
+    fn take(&self) -> Option<T> {
         unsafe { &mut *self.0.get() }.take()
     }
 }
+
+type UnitResult = Slot<Result<Vec<PipelineToken>>>;
+/// SAFETY: we make sure each unit's result is set by only one given thread thanks to
+/// [`Job::next_unit`]
+unsafe impl Sync for UnitResult {}
+
+type EncodingResult = Slot<Result<Encoding>>;
+/// TODO: safety doc + impl
+unsafe impl Sync for EncodingResult {}
 
 struct Unit {
     /// Sequence index in the [`Inputs`] batch
@@ -74,20 +80,29 @@ struct Unit {
 struct Plan {
     /// Units of work created based on the inputs
     units: Vec<Unit>,
+    /// Groups of units to be picked up by workers: this is used so that a given worker can process
+    /// a given number of bytes in one go rather than contend on [`Job`] (useful when lots of tiny units)
+    tasks: Vec<Range<usize>>,
     /// Contains the per-sequence length of [`Seq::A`] of a pair of inputs ([`Input::Single`] is
     /// always considered [`Seq::A`])
     side_a_len: Vec<usize>,
     /// Empty pre-allocated output buffer
     outputs: Vec<Vec<UnitResult>>,
+    /// Number of units per sequence (accessed via `unit_count[seq]`)
+    unit_count: Vec<usize>,
 }
 
 struct Job {
     inputs: Box<Inputs>,
     units: Vec<Unit>,
+    tasks: Vec<Range<usize>>,
     outputs: Vec<Vec<UnitResult>>,
+    encodings: Vec<EncodingResult>,
+    /// Units left to encode per sequence
+    remaining: Vec<AtomicUsize>,
     cancelled: AtomicBool,
     /// Cursor for threads to pick up the next [`Unit`] to work on
-    next_unit: CachePadded<AtomicUsize>,
+    next_task: CachePadded<AtomicUsize>,
     tokenizer: PipelineTokenizer,
     add_special_tokens: bool,
     /// Completion queue containing the list of units (inserted as their sequence idx) that have finished, in completion order
@@ -95,8 +110,6 @@ struct Job {
     completion_queue: Vec<AtomicUsize>,
     /// Cursor that each thread increments to add a completed unit to the completion queue
     next_completed: CachePadded<AtomicUsize>,
-    /// Number of units per sequence (accessed via `unit_count[seq]`)
-    unit_count: Vec<usize>,
     side_a_len: Vec<usize>,
 }
 
@@ -115,59 +128,74 @@ impl Job {
         }
     }
 
-    /// Number of units that make up sequence `seq`
-    fn unit_count(&self, seq: usize) -> usize {
-        self.unit_count[seq]
-    }
-
-    fn encode_unit(&self) -> bool {
+    fn encode_task(&self, scratch: &mut EncodeScratch) -> bool {
         if self.cancelled.load(Ordering::Relaxed) {
             return false;
         }
-        let i = self.next_unit.0.fetch_add(1, Ordering::Relaxed);
-        if i >= self.units.len() {
+        let t = self.next_task.0.fetch_add(1, Ordering::Relaxed);
+        let Some(task) = self.tasks.get(t) else {
             return false;
+        };
+
+        let mut finished = Vec::new();
+        for i in task.clone() {
+            let unit = &self.units[i];
+            let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let input = self
+                    .inputs
+                    .get(unit.seq)
+                    .ok_or_else(|| format!("invalid unit index: {}", unit.seq))?;
+                let input = match input {
+                    Input::Single(s) => s,
+                    Input::Pair(s1, s2) => match unit.side {
+                        Seq::A => s1,
+                        Seq::B => s2,
+                    },
+                };
+                self.tokenizer
+                    .encode_sequence_with(&input[unit.range.clone()], scratch)
+            }))
+            .unwrap_or_else(|_| Err("encode worker panicked".into()));
+            // SAFETY: no two threads can share the same unit of work because each unit is owned by
+            // only one task
+            unsafe { self.outputs[unit.seq][unit.idx].set(res) };
+
+            if self.remaining[unit.seq].fetch_sub(1, Ordering::AcqRel) == 1 {
+                let encoding = self.reconstruct(unit.seq);
+                // SAFETY: only the thread that decremented self.remaining[unit.seq] to 0 writes to
+                // the slot
+                unsafe { self.encodings[unit.seq].set(encoding) };
+                finished.push(unit.seq);
+            }
         }
 
-        let unit = &self.units[i];
-        let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let input = self
-                .inputs
-                .get(unit.seq)
-                .ok_or_else(|| format!("invalid unit index: {}", unit.seq))?;
-            let input = match input {
-                Input::Single(s) => s,
-                Input::Pair(s1, s2) => match unit.side {
-                    Seq::A => s1,
-                    Seq::B => s2,
-                },
-            };
-            self.tokenizer.encode_sequence(&input[unit.range.clone()])
-        }))
-        .unwrap_or_else(|_| Err("encode worker panicked".into()));
-        // SAFETY: no two threads can share the same unit of work because of the atomic fetch_add
-        // call on the cursor
-        unsafe { self.outputs[unit.seq][unit.idx].set(res) };
-
-        let next = self.next_completed.0.fetch_add(1, Ordering::Relaxed);
-        self.completion_queue[next].store(unit.seq, Ordering::Release);
+        if !finished.is_empty() {
+            let base = self
+                .next_completed
+                .0
+                .fetch_add(finished.len(), Ordering::Relaxed);
+            for (i, seq) in finished.into_iter().enumerate() {
+                self.completion_queue[base + i].store(seq, Ordering::Release);
+            }
+        }
 
         true
     }
 
-    fn take_result(&self, seq: usize) -> Result<Encoding> {
-        // NOTE: in a previous implementation, we implemented the reconstruction in parallel on the
-        // thread pool; perhaps something to reconsider if the reconstruction shows up in profiling
-
+    fn reconstruct(&self, seq: usize) -> Result<Encoding> {
         let unit_results = &self.outputs[seq];
         let a_len = self.side_a_len[seq];
-
         let a = drain(&unit_results[..a_len])?;
         let b = (a_len < unit_results.len())
             .then(|| drain(&unit_results[a_len..]))
             .transpose()?;
-
         Ok(self.tokenizer.post_process(a, b, self.add_special_tokens))
+    }
+
+    fn take_encoding(&self, seq: usize) -> Result<Encoding> {
+        self.encodings[seq]
+            .take()
+            .expect("[BUG] completion signalled before the encoding was published")
     }
 
     fn cancel(&self) {
@@ -177,18 +205,15 @@ impl Job {
 
 pub(crate) struct StreamingIter {
     job: Arc<Job>,
-    next_unit: usize,
-    collected: Vec<usize>,
+    next: usize,
     completed: usize,
 }
 
 impl StreamingIter {
     fn new(job: Arc<Job>) -> Self {
-        let collected = vec![0; job.len()];
         Self {
             job,
-            next_unit: 0,
-            collected,
+            next: 0,
             completed: 0,
         }
     }
@@ -206,19 +231,16 @@ impl Iterator for StreamingIter {
             return None;
         }
         loop {
-            let Some(seq) = self.job.completed_seq(self.next_unit) else {
-                // XXX: the caller has to wait for results regardless: instead of parking or empty
-                // spinning, we do useful work
-                if !self.job.encode_unit() {
-                    std::hint::spin_loop();
-                }
-                continue;
-            };
-            self.next_unit += 1;
-            self.collected[seq] += 1;
-            if self.collected[seq] == self.job.unit_count(seq) {
+            if let Some(seq) = self.job.completed_seq(self.next) {
+                self.next += 1;
                 self.completed += 1;
-                return Some((seq, self.job.take_result(seq)));
+                return Some((seq, self.job.take_encoding(seq)));
+            }
+            // The caller has to wait for results regardless: instead of parking or empty
+            // spinning, we do useful work
+            let mut scratch = self.job.tokenizer.get_scratch();
+            if !self.job.encode_task(&mut scratch) {
+                std::hint::spin_loop();
             }
         }
     }
@@ -252,6 +274,10 @@ fn drain(results: &[UnitResult]) -> Result<Vec<PipelineToken>> {
 }
 
 impl PipelineTokenizer {
+    fn get_scratch(&self) -> ScratchGuard<'_> {
+        self.inner.scratch_pool.get(&self.inner.model)
+    }
+
     fn plan_sequence(
         &self,
         seq_idx: usize,
@@ -328,10 +354,33 @@ impl PipelineTokenizer {
         }
         // Schedule encode batch by longest unit first
         units.sort_unstable_by_key(|u| std::cmp::Reverse(u.range.len()));
+        let unit_count = units.iter().fold(vec![0; outputs.len()], |mut uc, u| {
+            uc[u.seq] += 1;
+            uc
+        });
+        let mut tasks = Vec::new();
+        let mut start = 0;
+        let mut acc = 0;
+
+        for (i, u) in units.iter().enumerate() {
+            acc += u.range.len();
+            if acc >= PARALLEL_MIN_BYTES {
+                tasks.push(start..i + 1);
+                start = i + 1;
+                acc = 0;
+            }
+        }
+
+        if start < units.len() {
+            tasks.push(start..units.len());
+        }
+
         Plan {
             units,
+            tasks,
             side_a_len,
             outputs,
+            unit_count,
         }
     }
 }
@@ -350,38 +399,43 @@ pub(crate) fn encode(
     };
     let Plan {
         units,
+        tasks,
         side_a_len,
         outputs,
+        unit_count,
     } = tok.plan_work(&inputs);
     assert!(
-        units.len() < usize::MAX,
-        "Job::next_unit cursor will overflow messing up internals if we have more units of work than usize::MAX"
+        tasks.len() < usize::MAX,
+        "Job::next_task cursor will overflow messing up internals if we have more units of work than usize::MAX"
     );
-    if units.len() < 2 {
+    if tasks.len() < 2 {
         return EncodeHandle::blocking(tok.encode_serial(inputs, add_special_tokens));
     }
-    let threads = units.len().min(pool.current_num_threads());
+    let n_seq = outputs.len();
+    let threads = tasks.len().min(pool.current_num_threads());
     let job = Arc::new(Job {
         inputs: Box::new(inputs),
         cancelled: AtomicBool::new(false),
-        next_unit: CachePadded(AtomicUsize::new(0)),
+        next_task: CachePadded(AtomicUsize::new(0)),
         add_special_tokens,
         tokenizer: tok.clone(),
-        completion_queue: (0..units.len())
+        completion_queue: (0..n_seq)
             .map(|_| AtomicUsize::new(Job::NOT_DONE))
             .collect(),
         next_completed: CachePadded(AtomicUsize::new(0)),
-        unit_count: units.iter().fold(vec![0; outputs.len()], |mut uc, u| {
-            uc[u.seq] += 1;
-            uc
-        }),
+        remaining: unit_count.iter().map(|&uc| AtomicUsize::new(uc)).collect(),
+        encodings: (0..n_seq).map(|_| Slot::new(None)).collect(),
         outputs,
         side_a_len,
         units,
+        tasks,
     });
     for _ in 0..threads {
         let job = job.clone();
-        pool.spawn(move || while job.encode_unit() {});
+        pool.spawn(move || {
+            let mut scratch = job.tokenizer.get_scratch();
+            while job.encode_task(&mut scratch) {}
+        });
     }
     EncodeHandle::streaming(StreamingIter::new(job))
 }
