@@ -22,7 +22,7 @@ The core Rust crate lives in `tokenizers/` (not the repo root). Most `make` and
 
 - **Rust** (stable): install via [rustup](https://rustup.rs/)
 - **Python 3.9+**: for the Python bindings
-- **wget**: used by the Makefile to download test/benchmark data (`brew install wget` on macOS)
+- **huggingface_hub** (the `hf` CLI): used by the Makefile to download test/benchmark data (`pip install huggingface_hub`)
 - **maturin**: for building the Python bindings (`pip install maturin`)
 
 ## Getting started
@@ -42,7 +42,7 @@ source .venv/bin/activate
 
 ```bash
 cd tokenizers
-make test    # downloads test data automatically via wget, then runs cargo test
+make test    # downloads test data automatically via the hf CLI, then runs cargo test
 ```
 
 The first run downloads model files and corpora into `tokenizers/data/`. These

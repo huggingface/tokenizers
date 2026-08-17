@@ -3,23 +3,16 @@ import os
 
 import pytest
 
-import requests
+from huggingface_hub import hf_hub_download
 
 
 DATA_PATH = os.path.join("tests", "data")
-HF_TEST_DATA = "https://huggingface.co/datasets/hf-internal-testing/tokenizers-test-data/resolve/main"
+HF_TEST_REPO = "hf-internal-testing/tokenizers-test-data"
 
 
-def download(url, with_filename=None):
-    filename = with_filename if with_filename is not None else url.rsplit("/")[-1]
-    filepath = os.path.join(DATA_PATH, filename)
-    if not os.path.exists(filepath):
-        with open(filepath, "wb") as f:
-            response = requests.get(url, stream=True)
-            response.raise_for_status()
-            for chunk in response.iter_content(1024):
-                f.write(chunk)
-    return filepath
+def download(filename):
+    # huggingface_hub handles auth (HF_TOKEN), retry/backoff and ETag-based caching.
+    return hf_hub_download(repo_id=HF_TEST_REPO, filename=filename, repo_type="dataset")
 
 
 @pytest.fixture(scope="session")
@@ -33,30 +26,30 @@ def data_dir():
 @pytest.fixture(scope="session")
 def roberta_files(data_dir):
     return {
-        "vocab": download(f"{HF_TEST_DATA}/roberta-base-vocab.json"),
-        "merges": download(f"{HF_TEST_DATA}/roberta-base-merges.txt"),
+        "vocab": download("roberta-base-vocab.json"),
+        "merges": download("roberta-base-merges.txt"),
     }
 
 
 @pytest.fixture(scope="session")
 def bert_files(data_dir):
     return {
-        "vocab": download(f"{HF_TEST_DATA}/bert-base-uncased-vocab.txt"),
+        "vocab": download("bert-base-uncased-vocab.txt"),
     }
 
 
 @pytest.fixture(scope="session")
 def openai_files(data_dir):
     return {
-        "vocab": download(f"{HF_TEST_DATA}/openai-gpt-vocab.json"),
-        "merges": download(f"{HF_TEST_DATA}/openai-gpt-merges.txt"),
+        "vocab": download("openai-gpt-vocab.json"),
+        "merges": download("openai-gpt-merges.txt"),
     }
 
 
 @pytest.fixture(scope="session")
 def train_files(data_dir):
-    big = download(f"{HF_TEST_DATA}/big.txt")
-    small = download(f"{HF_TEST_DATA}/small.txt")
+    big = download("big.txt")
+    small = download("small.txt")
     return {
         "small": small,
         "big": big,
@@ -65,17 +58,17 @@ def train_files(data_dir):
 
 @pytest.fixture(scope="session")
 def albert_base(data_dir):
-    return download(f"{HF_TEST_DATA}/albert-base-v1-tokenizer.json")
+    return download("albert-base-v1-tokenizer.json")
 
 
 @pytest.fixture(scope="session")
 def doc_wiki_tokenizer(data_dir):
-    return download(f"{HF_TEST_DATA}/tokenizer-wiki.json")
+    return download("tokenizer-wiki.json")
 
 
 @pytest.fixture(scope="session")
 def doc_pipeline_bert_tokenizer(data_dir):
-    return download(f"{HF_TEST_DATA}/bert-wiki.json")
+    return download("bert-wiki.json")
 
 
 # On MacOS Python 3.8+ the default was modified to `spawn`, we need `fork` in tests.

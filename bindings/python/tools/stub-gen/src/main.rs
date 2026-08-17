@@ -155,18 +155,25 @@ fn generate_stubs(cdylib: &Path, out_dir: &Path) -> Result<(), Box<dyn std::erro
 
         for (rel_path, contents) in type_stubs {
             let out_path = out_dir.join(&rel_path);
-                if let Some(parent) = out_path.parent() {
-                    std::fs::create_dir_all(parent)
-                        .unwrap_or_else(|_| panic!("Failed introspection of {}", main_module_name))
-                }
+            if let Some(parent) = out_path.parent() {
+                std::fs::create_dir_all(parent)
+                    .unwrap_or_else(|_| panic!("Failed introspection of {}", main_module_name))
+            }
+            let contents = absolutize_local_imports(&contents, main_module_name);
             std::fs::write(&out_path, contents).expect("Failed to write stubs file");
-                println!("Generated stub: {}", out_path.display());
+            println!("Generated stub: {}", out_path.display());
         }
 
         Ok(())
     })?;
 
     Ok(())
+}
+
+fn absolutize_local_imports(contents: &str, root_module: &str) -> String {
+    contents
+        .replace("from . import", &format!("from {root_module} import"))
+        .replace("from .", &format!("from {root_module}."))
 }
 
 /// Walk the introspected module tree and count classes, functions, and

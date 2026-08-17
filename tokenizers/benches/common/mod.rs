@@ -79,3 +79,78 @@ where
     }
     duration
 }
+
+#[allow(dead_code)]
+pub fn iter_bench_decode<M, N, PT, PP, D>(
+    num_iterations: u64,
+    tokenizer: &TokenizerImpl<M, N, PT, PP, D>,
+    lines: &[Vec<u32>],
+) -> Duration
+where
+    M: Model,
+    N: Normalizer,
+    PT: PreTokenizer,
+    PP: PostProcessor,
+    D: Decoder,
+{
+    let mut duration = Duration::new(0, 0);
+    for _idx in 0..num_iterations {
+        for tokens in lines {
+            let start = Instant::now();
+            let _ = black_box(tokenizer.decode(tokens, false));
+            duration = duration.checked_add(start.elapsed()).unwrap();
+        }
+    }
+    duration
+}
+
+#[allow(dead_code)]
+pub fn iter_bench_decode_batch<M, N, PT, PP, D>(
+    num_iterations: u64,
+    tokenizer: &TokenizerImpl<M, N, PT, PP, D>,
+    batches: &[Vec<&[u32]>],
+) -> Duration
+where
+    M: Model + Send + Sync,
+    N: Normalizer + Send + Sync,
+    PT: PreTokenizer + Send + Sync,
+    PP: PostProcessor + Send + Sync,
+    D: Decoder + Send + Sync,
+{
+    let mut duration = Duration::new(0, 0);
+    for _idx in 0..num_iterations {
+        for batch in batches {
+            let start = Instant::now();
+            let _ = black_box(tokenizer.decode_batch(batch, false));
+            duration = duration.checked_add(start.elapsed()).unwrap();
+        }
+    }
+    duration
+}
+
+#[allow(dead_code)]
+pub fn iter_bench_decode_stream<M, N, PT, PP, D>(
+    num_iterations: u64,
+    tokenizer: &TokenizerImpl<M, N, PT, PP, D>,
+    lines: &[Vec<u32>],
+) -> Duration
+where
+    M: Model,
+    N: Normalizer,
+    PT: PreTokenizer,
+    PP: PostProcessor,
+    D: Decoder,
+{
+    let mut duration = Duration::new(0, 0);
+    for _idx in 0..num_iterations {
+        for line in lines {
+            let mut decoder = tokenizer.decode_stream(false);
+            let start = Instant::now();
+            for token_id in line {
+                let _ = black_box(decoder.step(*token_id).unwrap());
+            }
+            duration = duration.checked_add(start.elapsed()).unwrap();
+        }
+    }
+    duration
+}
