@@ -776,6 +776,16 @@ fn bench_batch(oracle: &Tokenizer, docs: &[String]) -> Value {
         // A cold instance per thread count, like phase 3.
         let pipe = PipelineTokenizer::try_from(oracle).expect("probed at model load");
 
+        // One discarded pass per thread count. Without it the first count in the
+        // sweep absorbs first-touch page faults on the document vector and any
+        // lazy init, which reads as a single-thread penalty that is really just
+        // "ran first".
+        std::hint::black_box(
+            pipe.encode(docs.to_vec(), true)
+                .wait()
+                .expect("batch warmup"),
+        );
+
         let mut samples = Vec::with_capacity(REPS);
         for _ in 0..REPS {
             // `encode` takes the batch by value; clone before the clock starts, or
