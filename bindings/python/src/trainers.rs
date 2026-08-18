@@ -430,6 +430,12 @@ impl PyBpeTrainer {
 
 /// Trainer capable of training a WordPiece model
 ///
+/// Note:
+///     This trainer builds the vocabulary with BPE, because a faithful
+///     WordPiece trainer is not implemented. Encode/decode still uses
+///     greedy WordPiece with the ``##`` continuing-subword prefix. The
+///     resulting vocab will not match Google WordPiece on the same corpus.
+///
 /// Args:
 ///     vocab_size (:obj:`int`, `optional`):
 ///         The size of the final vocabulary, including all tokens and alphabet.
