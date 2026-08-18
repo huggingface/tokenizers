@@ -62,9 +62,9 @@ pub mod test {
         // To give an idea of the first runs:
         // idx   char   ASCII     binary ASCII   & 0x01   contributes
         // ───   ────   ─────     ────────────   ──────   ───────────
-        //  0     H      0x48      01001000         0       0 << 0
-        //  1     e      0x65      01100101         1       1 << 1
-        //  2     y      0x79      01111001         1       1 << 2
+        //  0     H      0x48      01001000         0       0 << 0    -> 0u64
+        //  1     e      0x65      01100101         1       1 << 1    -> 1u64
+        //  2     y      0x79      01111001         1       1 << 2    -> 1u64 + 1u64 << 1
         //  3    ' '     0x20      00100000         0       0 << 3
         let stream = BasisBitStream::new(&input_str.as_bytes().to_vec());
         assert_eq!(stream.b0, 0b10110101100111010101100110 as u64);
