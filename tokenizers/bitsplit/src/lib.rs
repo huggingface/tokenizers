@@ -58,8 +58,14 @@ pub mod test {
 
     #[test]
     pub fn test_whitespace_split() {
-        //                   0b01100110101011100110101101
         let input_str = "Hey how are you doing sir?";
+        // To give an idea of the first runs:
+        // idx   char   ASCII     binary ASCII   & 0x01   contributes
+        // ───   ────   ─────     ────────────   ──────   ───────────
+        //  0     H      0x48      01001000         0       0 << 0
+        //  1     e      0x65      01100101         1       1 << 1
+        //  2     y      0x79      01111001         1       1 << 2
+        //  3    ' '     0x20      00100000         0       0 << 3
         let stream = BasisBitStream::new(&input_str.as_bytes().to_vec());
         assert_eq!(stream.b0, 0b10110101100111010101100110 as u64);
         // let expected_splits = vec![3, 7, 11, 15, 21];
