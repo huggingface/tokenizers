@@ -126,6 +126,40 @@ impl Split {
         })
     }
 
+    /// A `Split` that is known to be driven natively, so no regex backend is compiled.
+    ///
+    /// [`Split::new`] asks the system regex to compile every regex pattern, which a build without
+    /// `fancy-regex` has no engine for. Two cases do not need one: a pattern [`gpt_fsm`] recognises,
+    /// and a member of a composition the pipeline runs as a single native pass -- deepseek's three
+    /// regexes are individually unrecognised but never individually run, so `Split::new` would
+    /// reject them. A literal pattern is searched for directly and never needed an engine either.
+    pub fn native(
+        pattern: SplitPattern,
+        behavior: SplitDelimiterBehavior,
+        invert: bool,
+    ) -> Result<Self> {
+        let fsm = match &pattern {
+            SplitPattern::String(_) => None,
+            SplitPattern::Regex(r) => gpt_fsm(r),
+        };
+        let search = match &pattern {
+            SplitPattern::String(s) => Search::Literal(Literal::new(s.as_bytes())?),
+            SplitPattern::Regex(_) => Search::Unavailable,
+        };
+        Ok(Self {
+            pattern,
+            search,
+            behavior,
+            invert,
+            fsm,
+        })
+    }
+
+    /// The native FSM family this pattern was recognised as, if any.
+    pub fn gpt_fsm(&self) -> Option<GptFsm> {
+        self.fsm
+    }
+
     /// Pipeline canonicalization. A recognized whole-covering GPT regex shipped
     /// as `(invert=true, behavior=Removed)` — the tiktoken-conversion convention
     /// used by cl100k/o200k — is byte-exactly equivalent to `(invert=false,
@@ -232,6 +266,52 @@ unsafe impl pipeline::PreTokenizer for Split {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `Split::new` compiles every regex through the system backend, so a build without
+    /// `fancy-regex` cannot construct deepseek's three patterns -- they are individually
+    /// unrecognised by `gpt_fsm` (the pipeline runs them as one native pass). `Split::native`
+    /// never asks for an engine.
+    #[test]
+    fn native_accepts_patterns_new_would_need_an_engine_for() {
+        use crate::utils::DEEPSEEK_PATTERNS;
+
+        for pattern in DEEPSEEK_PATTERNS {
+            let split = Split::native(
+                SplitPattern::Regex(pattern.to_string()),
+                SplitDelimiterBehavior::Isolated,
+                false,
+            )
+            .expect("native must not need a regex backend");
+            assert!(
+                split.gpt_fsm().is_none(),
+                "deepseek's patterns are not individually FSM-recognised"
+            );
+        }
+
+        // The premise: with no backend compiled, `Split::new` rejects exactly these.
+        #[cfg(not(feature = "fancy-regex"))]
+        for pattern in DEEPSEEK_PATTERNS {
+            assert!(
+                Split::new(
+                    SplitPattern::Regex(pattern.to_string()),
+                    SplitDelimiterBehavior::Isolated,
+                    false,
+                )
+                .is_err(),
+                "without a backend `Split::new` must fail here -- that is why `native` exists"
+            );
+        }
+
+        // A recognised pattern still reports its family, so a caller can route it natively.
+        let gpt2 = Split::native(
+            SplitPattern::Regex(atomsplit::regexes::GPT2.to_string()),
+            SplitDelimiterBehavior::Isolated,
+            false,
+        )
+        .unwrap();
+        assert_eq!(gpt2.gpt_fsm(), Some(GptFsm::Gpt2));
+    }
+
     use crate::{OffsetReferential, OffsetType, PreTokenizer};
     use SplitDelimiterBehavior::*;
 

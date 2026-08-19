@@ -18,7 +18,14 @@ pub enum PrependScheme {
 
 impl std::fmt::Display for PrependScheme {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.serialize(f)
+        // Spelled out rather than handed to the serializer, so the name survives a build with no
+        // serde. These must stay identical to the `rename_all = "snake_case"` spelling above;
+        // `display_matches_serde` pins that.
+        f.write_str(match self {
+            Self::First => "first",
+            Self::Never => "never",
+            Self::Always => "always",
+        })
     }
 }
 
@@ -240,6 +247,20 @@ fn normalizer_and_split(
 
 #[cfg(test)]
 mod tests {
+    /// `Display` is spelled out by hand now; keep it identical to what serde emits (`snake_case`),
+    /// so the two cannot drift while both exist.
+    #[test]
+    fn display_matches_serde() {
+        for scheme in [
+            PrependScheme::First,
+            PrependScheme::Never,
+            PrependScheme::Always,
+        ] {
+            let via_serde = serde_json::to_string(&scheme).unwrap();
+            assert_eq!(format!("\"{scheme}\""), via_serde);
+        }
+    }
+
     use regex::Regex;
 
     use super::*;

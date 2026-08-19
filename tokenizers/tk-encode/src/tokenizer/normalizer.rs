@@ -89,7 +89,17 @@ pub enum SplitDelimiterBehavior {
 
 impl std::fmt::Display for SplitDelimiterBehavior {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.serialize(f)
+        // Spelled out rather than handed to the serializer, so the name survives a build with no
+        // serde -- and it is a `match` instead of abusing a `Formatter` as a `Serializer`. No
+        // `rename_all` on this enum, so the serialized name is the variant name verbatim;
+        // `display_matches_serde` pins that.
+        f.write_str(match self {
+            Self::Removed => "Removed",
+            Self::Isolated => "Isolated",
+            Self::MergedWithPrevious => "MergedWithPrevious",
+            Self::MergedWithNext => "MergedWithNext",
+            Self::Contiguous => "Contiguous",
+        })
     }
 }
 
@@ -1021,6 +1031,23 @@ impl From<&str> for NormalizedString {
 
 #[cfg(test)]
 mod tests {
+    /// `Display` is spelled out by hand now; keep it identical to what serde emits, so the two
+    /// cannot drift while both exist.
+    #[test]
+    fn display_matches_serde() {
+        use crate::tokenizer::normalizer::SplitDelimiterBehavior::*;
+        for behavior in [
+            Removed,
+            Isolated,
+            MergedWithPrevious,
+            MergedWithNext,
+            Contiguous,
+        ] {
+            let via_serde = serde_json::to_string(&behavior).unwrap();
+            assert_eq!(format!("\"{behavior}\""), via_serde);
+        }
+    }
+
     use super::*;
     use atomsplit::literal::Literal;
     use regex::Regex;

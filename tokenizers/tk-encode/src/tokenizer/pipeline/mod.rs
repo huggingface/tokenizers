@@ -768,7 +768,12 @@ impl TryFrom<&Tokenizer> for PipelineTokenizer {
     /// rest keep their dense order), so the pipeline emits the same ids as the reference tokenizer.
     fn try_from(tok: &Tokenizer) -> Result<Self> {
         let mut normalizers = Vec::new();
-        if let Some(declared) = tok.get_normalizer() {
+        // An empty `Sequence` is how a config spells "no normalization" (deepseek ships one), so drop
+        // it here instead of calling into a no-op for every segment.
+        let declared = tok.get_normalizer().filter(|declared| {
+            !matches!(declared, NormalizerWrapper::Sequence(seq) if seq.as_ref().is_empty())
+        });
+        if let Some(declared) = declared {
             normalizers.push(PipelineNormalizer::Declared(declared.clone()));
         }
 
@@ -1124,6 +1129,20 @@ impl IntoIterator for EncodeHandle {
 impl PipelineTokenizer {
     pub fn get_model(&self) -> &PipelineModel {
         &self.inner.model
+    }
+
+    /// Whether any normalization step runs before the pre-tokenizer. An empty normalizer
+    /// `Sequence` in the config counts as none, since it is elided on the way in.
+    pub fn has_normalizer(&self) -> bool {
+        !self.inner.normalizers.is_empty()
+    }
+
+    pub fn get_pre_tokenizer(&self) -> &PipelinePreTokenizer {
+        &self.inner.pre_tokenizer
+    }
+
+    pub fn get_post_processor(&self) -> &PipelinePostProcessor {
+        &self.inner.post_processor
     }
 
     /// Encode `input` into token ids.
@@ -1739,6 +1758,32 @@ impl Model for PipelineModel {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An empty normalizer `Sequence` means "no normalization" (deepseek ships one). It must be
+    /// dropped on the way in, not carried as a no-op call per segment. A non-empty one is kept.
+    #[test]
+    fn empty_normalizer_sequence_is_elided() {
+        use crate::normalizers::utils::{Lowercase, Sequence as NormSequence};
+
+        let vocab = vec![("[UNK]", 0u32), ("hello", 1)];
+
+        let mut tok = wordlevel_tokenizer(vocab.clone(), None);
+        tok.with_normalizer(Some(NormSequence::new(vec![])))
+            .unwrap();
+        assert!(
+            !PipelineTokenizer::try_from(&tok).unwrap().has_normalizer(),
+            "an empty normalizer Sequence should not survive into the pipeline"
+        );
+
+        let mut tok = wordlevel_tokenizer(vocab, None);
+        tok.with_normalizer(Some(NormSequence::new(vec![Lowercase.into()])))
+            .unwrap();
+        assert!(
+            PipelineTokenizer::try_from(&tok).unwrap().has_normalizer(),
+            "a non-empty normalizer Sequence must still be applied"
+        );
+    }
+
     use crate::models::bpe::BPE;
     use crate::models::wordpiece::WordPiece;
     use crate::pre_tokenizers::byte_level::ByteLevel;
