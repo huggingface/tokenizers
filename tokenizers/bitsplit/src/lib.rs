@@ -29,7 +29,7 @@ impl fmt::Display for BasisBitStream {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut output = "".to_string();
         for n in 0..8 {
-            output += &format!("b{n}:{:64b}\n", self.stream[n]).to_string();
+            output += &format!("b{n}:{:.>64b}\n", self.stream[n]).to_string();
         }
         write!(f, "{}", output)
     }
