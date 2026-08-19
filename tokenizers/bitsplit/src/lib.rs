@@ -70,6 +70,7 @@ pub mod test {
         let text = "Hey I'll have your's";
         let text_stream = BasisBitStream::new(&text.as_bytes().to_vec());
         println!("{:}", text_stream);
+        // The marke stream is simply 0011 0111, which is the byte representation of the input
         let mut markers = text_stream.stream[0]
             & text_stream.stream[1]
             & text_stream.stream[2]
