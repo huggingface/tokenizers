@@ -14,9 +14,9 @@ documentation = "https://docs.rs/tokenizers/"
 license = "Apache-2.0"
 keywords = ["tokenizer", "NLP", "huggingface", "BPE", "WordPiece"]
 description = """
-The reader for the canonical `tokenizer.json` format: a hand-rolled JSON parser
-and a builder that constructs `tk-encode`'s runtime pipeline directly, with no
-serde anywhere. Legacy config shapes are `tk-convert`'s job, not this crate's.
+The reader for the canonical `tokenizer.json` format: a `hifijson` parse and a
+builder that constructs `tk-encode`'s runtime pipeline directly, with no serde
+anywhere. Legacy config shapes are `tk-convert`'s job, not this crate's.
 """
 
 [package.metadata.docs.rs]
@@ -27,6 +27,11 @@ name = "tk_serialize"
 path = "src/lib.rs"
 
 [dependencies]
+# The JSON parser. Not `serde_json`, and not ours either: `hifijson` is the one parser that never
+# converts a number to a float -- its `Num` is the raw `&str` -- which is what lets `json.rs` keep
+# reproducing `serde_json`'s exact rounding instead of improving on it and moving token ids.
+# 1,644 lines, MIT, and its only dependency (`serde`) is optional and off.
+hifijson = "0.5.0"
 # The runtime this crate builds. No `config`: the whole point is that reading a canonical
 # `tokenizer.json` needs no serde layer at all.
 tk-encode = { path = "../tk-encode", default-features = false }
@@ -55,7 +60,7 @@ fancy-regex = ["tk-encode/fancy-regex"]
 parallelism = ["tk-encode/parallelism"]
 
 [dev-dependencies]
-# The hand-rolled parser is tested *against* `serde_json`: number parsing has to be bit-identical,
+# The reader is tested *against* `serde_json`: number parsing has to be bit-identical,
 # and every real config in `data/` has to parse to the same tree. A dev-dependency only, so the
 # library itself still links no serde.
 serde_json = "1.0"

@@ -3,7 +3,7 @@
 #[cfg(not(feature = "unicode-scripts"))]
 use super::needs_feature;
 use super::unsupported;
-use crate::json::Json;
+use crate::json::{Json, JsonExt};
 use tk_encode::normalizers::metaspace::MetaspaceNormalizer;
 use tk_encode::pipeline::{PipelineNormalizer, PipelinePreTokenizer};
 use tk_encode::pre_tokenizers::bert::BertPreTokenizer;

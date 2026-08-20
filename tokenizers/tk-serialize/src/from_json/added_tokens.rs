@@ -1,6 +1,6 @@
 //! The `added_tokens` array.
 
-use crate::json::Json;
+use crate::json::{Json, JsonExt};
 use tk_encode::tokenizer::Result;
 use tk_encode::vocab::bucket_added_vocabulary::AddedToken as BucketAddedToken;
 

@@ -1,13 +1,16 @@
-//! A minimal JSON reader, so the default build can load a `tokenizer.json` without linking
-//! `serde_json`.
+//! Reading a `tokenizer.json` without linking `serde_json`.
 //!
-//! This is not a general-purpose JSON library and should not grow into one. It parses the subset a
-//! `tokenizer.json` actually uses, borrows every string it can, and gives up early and loudly on
-//! anything else. `serde_json`'s parser plus the derive glue is most of what a `.node` binding pays
-//! for the config layer; a `tokenizer.json` is a fixed shape we control, so we can read it directly.
+//! The parsing itself is [`hifijson`]'s: a JSON lexer with no required dependencies, whose tree is
+//! already the shape this crate wants — insertion-ordered objects, strings that borrow from the
+//! input, and numbers left as the digits they were written with. What lives here is the thin layer
+//! on top: the accessors `from_json` walks the tree with, and the float reassembly that turns those
+//! digits into the exact `f64` `serde_json` would have produced.
 //!
-//! What it deliberately does *not* do: preserve object key order beyond insertion, deduplicate keys,
-//! accept comments or trailing commas, or parse numbers it cannot represent.
+//! Numbers are why this file is not simply a `pub use`. A Unigram score decides a Viterbi near-tie,
+//! so the arithmetic has to match `serde_json`'s default build bit for bit — being *more* accurate
+//! would move ids that ship today. `hifijson` is the parser that lets us do that, because it never
+//! parses a float itself: [`number`] and [`f64_from_parts`] below do, reproducing serde's rounding
+//! error on purpose.
 //!
 //! A `tokenizer.json` is usually fetched from the Hub, so this is a trust boundary: nesting is
 //! capped ([`MAX_DEPTH`]) because the parser recurses, and every integer accessor is checked.
@@ -15,97 +18,129 @@
 use std::borrow::Cow;
 use std::fmt;
 
+use hifijson::token::Lex as _;
+
 /// Deepest nesting accepted. A real `tokenizer.json` nests about six levels
 /// (`post_processor.special_tokens.<tok>.tokens[0]`); this leaves plenty of room while keeping a
 /// hostile file from recursing the parser off the stack.
 pub const MAX_DEPTH: usize = 64;
 
-#[derive(Debug, PartialEq)]
-pub enum Json<'a> {
-    Null,
-    Bool(bool),
-    /// Every JSON number, kept as `f64`. Unigram scores need the fraction; ids go through
-    /// [`Json::as_u32`], which rejects anything non-integral or out of range.
-    Num(f64),
-    Str(Cow<'a, str>),
-    Arr(Vec<Json<'a>>),
-    /// Insertion-ordered, because duplicate keys are not our problem to resolve and a linear scan
-    /// over the handful of keys an object has beats hashing them.
-    Obj(Vec<(Cow<'a, str>, Json<'a>)>),
-}
+/// A parsed `tokenizer.json`.
+///
+/// `hifijson`'s tree instantiated for slice input, which is why the two type parameters are what
+/// they are: a string borrows from the input unless it carries an escape (`Cow`), and a number is
+/// the `&str` it was written as, paired with the parts (`zero`/`dot`/`exp`) the lexer saw. Nothing
+/// becomes an `f64` until [`JsonExt::as_f64`] asks, which is the whole reason this parser and not
+/// another — see [`f64_from_parts`].
+pub type Json<'a> = hifijson::value::Value<&'a str, Cow<'a, str>>;
 
+/// A parse failure, and how far into the document it happened.
 #[derive(Debug, PartialEq)]
 pub struct Error {
+    /// Byte offset of the first byte the lexer had not consumed when it gave up. Worth keeping: a
+    /// `tokenizer.json` runs to tens of megabytes, so "invalid JSON" on its own says very little.
     pub at: usize,
-    pub msg: &'static str,
+    /// What `hifijson` refused.
+    pub kind: hifijson::Error,
 }
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "invalid JSON at byte {}: {}", self.at, self.msg)
+        write!(f, "invalid JSON at byte {}: {}", self.at, self.kind)
     }
 }
 
 impl std::error::Error for Error {}
 
-type R<T> = Result<T, Error>;
-
-impl<'a> Json<'a> {
+/// The lookups the reader needs, as a trait because [`Json`] is `hifijson`'s type, not ours.
+///
+/// Every accessor answers `None` for "not there or not that kind", which is what every caller
+/// wants: an absent field and a wrongly-typed one both mean "not available", and the reader turns
+/// that into its own message naming the field.
+pub trait JsonExt<'a>: Sized {
     /// Parse a whole document. Trailing content other than whitespace is an error.
-    pub fn parse(input: &'a str) -> R<Self> {
-        let mut p = Parser {
-            s: input.as_bytes(),
-            i: 0,
-            depth: 0,
-        };
-        p.ws();
-        let value = p.value()?;
-        p.ws();
-        if p.i != p.s.len() {
-            return Err(p.err("trailing content after the top-level value"));
-        }
-        Ok(value)
+    fn parse(input: &'a str) -> Result<Self, Error>;
+
+    /// Look a key up in an object. `None` for a missing key *or* a non-object.
+    fn get(&self, key: &str) -> Option<&Json<'a>>;
+
+    /// [`get`](JsonExt::get), but `null` reads as absent. `tokenizer.json` spells "no normalizer"
+    /// as `"normalizer": null`, and every caller wants that to behave like a missing key.
+    fn get_some(&self, key: &str) -> Option<&Json<'a>>;
+
+    /// The `"type"` tag, when there is one. Absent for the legacy untagged configs.
+    fn type_tag(&self) -> Option<&str>;
+
+    fn as_str(&self) -> Option<&str>;
+    fn as_bool(&self) -> Option<bool>;
+
+    /// The number as `serde_json`'s default build would have parsed it. See [`f64_from_parts`].
+    fn as_f64(&self) -> Option<f64>;
+
+    /// A token id or a count. Rejects fractions, negatives and anything past `u32::MAX`, so a
+    /// malformed file cannot silently truncate an id.
+    fn as_u32(&self) -> Option<u32>;
+
+    fn as_usize(&self) -> Option<usize>;
+    fn as_arr(&self) -> Option<&[Json<'a>]>;
+    fn as_obj(&self) -> Option<&[(Cow<'a, str>, Json<'a>)]>;
+}
+
+impl<'a> JsonExt<'a> for Json<'a> {
+    fn parse(input: &'a str) -> Result<Self, Error> {
+        let mut lexer = hifijson::SliceLexer::new(input.as_bytes());
+        // `exactly_one` is what rejects trailing content; `parse_bounded` is what caps recursion.
+        let parsed = lexer.exactly_one(hifijson::token::Lex::ws_peek, |next, lexer| {
+            hifijson::value::parse_bounded(MAX_DEPTH, next, lexer)
+        });
+        parsed.map_err(|kind| Error {
+            // What the lexer has not eaten yet, measured against the whole input.
+            at: input.len() - lexer.as_slice().len(),
+            kind,
+        })
     }
 
-    /// Look a key up in an object. `None` for a missing key *or* a non-object, which is what every
-    /// caller wants: an absent field and a wrongly-typed parent both mean "not available".
-    pub fn get(&self, key: &str) -> Option<&Json<'a>> {
+    fn get(&self, key: &str) -> Option<&Json<'a>> {
         match self {
-            Json::Obj(entries) => entries.iter().find(|(k, _)| k == key).map(|(_, v)| v),
+            // Linear, because an object here has a handful of keys and hashing them costs more.
+            Json::Object(entries) => entries.iter().find(|(k, _)| k == key).map(|(_, v)| v),
             _ => None,
         }
     }
 
-    /// `get`, but `null` reads as absent. `tokenizer.json` spells "no normalizer" as
-    /// `"normalizer": null`, and every caller wants that to behave like a missing key.
-    pub fn get_some(&self, key: &str) -> Option<&Json<'a>> {
+    fn get_some(&self, key: &str) -> Option<&Json<'a>> {
         self.get(key).filter(|v| !matches!(v, Json::Null))
     }
 
-    pub fn as_str(&self) -> Option<&str> {
+    fn type_tag(&self) -> Option<&str> {
+        self.get("type")?.as_str()
+    }
+
+    fn as_str(&self) -> Option<&str> {
         match self {
-            Json::Str(s) => Some(s),
+            Json::String(s) => Some(&**s),
             _ => None,
         }
     }
 
-    pub fn as_bool(&self) -> Option<bool> {
+    fn as_bool(&self) -> Option<bool> {
         match self {
             Json::Bool(b) => Some(*b),
             _ => None,
         }
     }
 
-    pub fn as_f64(&self) -> Option<f64> {
+    fn as_f64(&self) -> Option<f64> {
         match self {
-            Json::Num(n) => Some(*n),
+            Json::Number((digits, _)) => {
+                let (positive, significand, exponent) = number(digits);
+                Some(f64_from_parts(positive, significand, exponent))
+            }
             _ => None,
         }
     }
 
-    /// A token id or a count. Rejects fractions, negatives and anything past `u32::MAX`, so a
-    /// malformed file cannot silently truncate an id.
-    pub fn as_u32(&self) -> Option<u32> {
+    fn as_u32(&self) -> Option<u32> {
         let n = self.as_f64()?;
         if n.fract() != 0.0 || !(0.0..=f64::from(u32::MAX)).contains(&n) {
             return None;
@@ -113,7 +148,7 @@ impl<'a> Json<'a> {
         Some(n as u32)
     }
 
-    pub fn as_usize(&self) -> Option<usize> {
+    fn as_usize(&self) -> Option<usize> {
         let n = self.as_f64()?;
         if n.fract() != 0.0 || !(0.0..=9_007_199_254_740_992.0).contains(&n) {
             return None;
@@ -121,23 +156,18 @@ impl<'a> Json<'a> {
         Some(n as usize)
     }
 
-    pub fn as_arr(&self) -> Option<&[Json<'a>]> {
+    fn as_arr(&self) -> Option<&[Json<'a>]> {
         match self {
-            Json::Arr(items) => Some(items),
+            Json::Array(items) => Some(items),
             _ => None,
         }
     }
 
-    pub fn as_obj(&self) -> Option<&[(Cow<'a, str>, Json<'a>)]> {
+    fn as_obj(&self) -> Option<&[(Cow<'a, str>, Json<'a>)]> {
         match self {
-            Json::Obj(entries) => Some(entries),
+            Json::Object(entries) => Some(entries),
             _ => None,
         }
-    }
-
-    /// The `"type"` tag, when there is one. Absent for the legacy untagged configs.
-    pub fn type_tag(&self) -> Option<&str> {
-        self.get("type")?.as_str()
     }
 }
 
@@ -153,10 +183,13 @@ impl<'a> Json<'a> {
 // `tokenizer.json` without linking serde — but the *arithmetic* has to match serde's exactly, bug
 // for bug, or token ids move. See `f64_from_parts` for why.
 //
-// Known divergences from serde_json, none of which a real `tokenizer.json` exercises: an overflowing
-// exponent (`1e400`) yields infinity here where serde errors; a leading zero (`007`) and an
-// unescaped control character in a string are accepted here and rejected by serde. So the float
-// *values* are bit-identical, which is what ids depend on, but the accept/reject boundary is looser.
+// One divergence from serde_json is left, and no real `tokenizer.json` exercises it: an
+// overflowing exponent (`1e400`) yields infinity here where serde reports a range error. The two
+// others this comment used to list -- a leading zero (`007`) and an unescaped control character in
+// a string, both of which the hand-written scanner accepted -- are gone, because `hifijson` rejects
+// them. So the float *values* are bit-identical, which is what ids depend on, and the accept/reject
+// boundary now differs in exactly one place, pinned by
+// `an_overflowing_exponent_is_the_last_divergence_from_serde`.
 // ---------------------------------------------------------------------------------------------
 
 /// `10^n` for `n` in `0..=308`, as `serde_json` spells it. Rust's float-literal parsing is
@@ -256,317 +289,88 @@ fn f64_from_parts(positive: bool, significand: u64, mut exponent: i32) -> f64 {
     if positive { f } else { -f }
 }
 
-struct Parser<'a> {
-    s: &'a [u8],
-    i: usize,
-    depth: usize,
-}
+/// Split the digits `hifijson` handed back into the three parts [`f64_from_parts`] wants, exactly
+/// as `serde_json` accumulates them.
+///
+/// The input is a number `hifijson` has already validated, so it matches
+/// `-?(0|[1-9]\d*)(\.\d+)?([eE][+-]?\d+)?` and there is nothing left to reject — which is why this
+/// returns the parts rather than a `Result`. What it must get right is *where digits are dropped*:
+/// once the integer part would overflow a `u64` the remaining integer digits are dropped and the
+/// exponent bumped, while a fraction digit that would overflow is dropped with no exponent change,
+/// because it sits to the right of the point. Both are serde's behaviour, and both change the
+/// resulting float, so `numbers_are_bit_identical_to_serde_json` pins them.
+fn number(digits: &str) -> (bool, u64, i32) {
+    let s = digits.as_bytes();
+    let mut i = 0;
+    let positive = if s.first() == Some(&b'-') {
+        i = 1;
+        false
+    } else {
+        true
+    };
 
-impl<'a> Parser<'a> {
-    fn err(&self, msg: &'static str) -> Error {
-        Error { at: self.i, msg }
-    }
-
-    fn ws(&mut self) {
-        while let Some(c) = self.s.get(self.i) {
-            match c {
-                b' ' | b'\t' | b'\n' | b'\r' => self.i += 1,
-                _ => break,
-            }
-        }
-    }
-
-    fn eat(&mut self, lit: &[u8]) -> bool {
-        if self.s[self.i..].starts_with(lit) {
-            self.i += lit.len();
-            true
+    // Integer part (serde's `parse_long_integer`).
+    let mut significand: u64 = 0;
+    let mut exponent: i32 = 0;
+    let mut saturated = false;
+    while let Some(c) = s.get(i).filter(|c| c.is_ascii_digit()) {
+        let digit = u64::from(c - b'0');
+        if saturated {
+            exponent += 1;
         } else {
-            false
-        }
-    }
-
-    fn value(&mut self) -> R<Json<'a>> {
-        self.depth += 1;
-        if self.depth > MAX_DEPTH {
-            return Err(self.err("nested too deeply"));
-        }
-        let out = match self.s.get(self.i) {
-            None => Err(self.err("unexpected end of input")),
-            Some(b'{') => self.object(),
-            Some(b'[') => self.array(),
-            Some(b'"') => Ok(Json::Str(self.string()?)),
-            Some(b't') if self.eat(b"true") => Ok(Json::Bool(true)),
-            Some(b'f') if self.eat(b"false") => Ok(Json::Bool(false)),
-            Some(b'n') if self.eat(b"null") => Ok(Json::Null),
-            Some(c) if *c == b'-' || c.is_ascii_digit() => self.number(),
-            Some(_) => Err(self.err("expected a value")),
-        };
-        self.depth -= 1;
-        out
-    }
-
-    fn object(&mut self) -> R<Json<'a>> {
-        self.i += 1; // '{'
-        let mut entries = Vec::new();
-        self.ws();
-        if self.s.get(self.i) == Some(&b'}') {
-            self.i += 1;
-            return Ok(Json::Obj(entries));
-        }
-        loop {
-            self.ws();
-            if self.s.get(self.i) != Some(&b'"') {
-                return Err(self.err("expected a key"));
-            }
-            let key = self.string()?;
-            self.ws();
-            if self.s.get(self.i) != Some(&b':') {
-                return Err(self.err("expected ':'"));
-            }
-            self.i += 1;
-            self.ws();
-            let value = self.value()?;
-            entries.push((key, value));
-            self.ws();
-            match self.s.get(self.i) {
-                Some(b',') => self.i += 1,
-                Some(b'}') => {
-                    self.i += 1;
-                    return Ok(Json::Obj(entries));
-                }
-                _ => return Err(self.err("expected ',' or '}'")),
-            }
-        }
-    }
-
-    fn array(&mut self) -> R<Json<'a>> {
-        self.i += 1; // '['
-        let mut items = Vec::new();
-        self.ws();
-        if self.s.get(self.i) == Some(&b']') {
-            self.i += 1;
-            return Ok(Json::Arr(items));
-        }
-        loop {
-            self.ws();
-            items.push(self.value()?);
-            self.ws();
-            match self.s.get(self.i) {
-                Some(b',') => self.i += 1,
-                Some(b']') => {
-                    self.i += 1;
-                    return Ok(Json::Arr(items));
-                }
-                _ => return Err(self.err("expected ',' or ']'")),
-            }
-        }
-    }
-
-    /// Borrows when there is no escape to resolve, which is the overwhelmingly common case: a
-    /// 200k-entry vocab would otherwise mean 200k little allocations.
-    fn string(&mut self) -> R<Cow<'a, str>> {
-        self.i += 1; // opening quote
-        let start = self.i;
-        while let Some(c) = self.s.get(self.i) {
-            match c {
-                b'"' => {
-                    // SAFETY-free: `self.s` came from a `&str`, and we only ever stop on ASCII
-                    // delimiters, so this range is on char boundaries.
-                    let raw = std::str::from_utf8(&self.s[start..self.i])
-                        .map_err(|_| self.err("string is not valid UTF-8"))?;
-                    self.i += 1;
-                    return Ok(Cow::Borrowed(raw));
-                }
-                b'\\' => return self.string_escaped(start),
-                _ => self.i += 1,
-            }
-        }
-        Err(self.err("unterminated string"))
-    }
-
-    /// The slow path, taken only once an escape has actually been seen.
-    fn string_escaped(&mut self, start: usize) -> R<Cow<'a, str>> {
-        let mut out = String::from(
-            std::str::from_utf8(&self.s[start..self.i])
-                .map_err(|_| self.err("string is not valid UTF-8"))?,
-        );
-        while let Some(c) = self.s.get(self.i) {
-            match c {
-                b'"' => {
-                    self.i += 1;
-                    return Ok(Cow::Owned(out));
-                }
-                b'\\' => {
-                    self.i += 1;
-                    let esc = *self
-                        .s
-                        .get(self.i)
-                        .ok_or_else(|| self.err("dangling '\\'"))?;
-                    self.i += 1;
-                    match esc {
-                        b'"' => out.push('"'),
-                        b'\\' => out.push('\\'),
-                        b'/' => out.push('/'),
-                        b'b' => out.push('\u{8}'),
-                        b'f' => out.push('\u{c}'),
-                        b'n' => out.push('\n'),
-                        b'r' => out.push('\r'),
-                        b't' => out.push('\t'),
-                        b'u' => out.push(self.unicode_escape()?),
-                        _ => return Err(self.err("unknown escape")),
-                    }
-                }
-                _ => {
-                    let from = self.i;
-                    while matches!(self.s.get(self.i), Some(c) if *c != b'"' && *c != b'\\') {
-                        self.i += 1;
-                    }
-                    out.push_str(
-                        std::str::from_utf8(&self.s[from..self.i])
-                            .map_err(|_| self.err("string is not valid UTF-8"))?,
-                    );
+            match significand
+                .checked_mul(10)
+                .and_then(|v| v.checked_add(digit))
+            {
+                Some(v) => significand = v,
+                None => {
+                    saturated = true;
+                    exponent += 1;
                 }
             }
         }
-        Err(self.err("unterminated string"))
+        i += 1;
     }
 
-    /// `\uXXXX`, joining a surrogate pair when one follows. Byte-level vocabularies are full of
-    /// these, so getting the pair case wrong would corrupt real tokenizers.
-    fn unicode_escape(&mut self) -> R<char> {
-        let hi = self.hex4()?;
-        // Not a high surrogate: a standalone scalar value.
-        if !(0xD800..0xDC00).contains(&hi) {
-            return char::from_u32(hi).ok_or_else(|| self.err("escape is not a Unicode scalar"));
-        }
-        if !(self.s[self.i..].starts_with(b"\\u")) {
-            return Err(self.err("high surrogate with no low surrogate"));
-        }
-        self.i += 2;
-        let lo = self.hex4()?;
-        if !(0xDC00..0xE000).contains(&lo) {
-            return Err(self.err("expected a low surrogate"));
-        }
-        let combined = 0x1_0000 + ((hi - 0xD800) << 10) + (lo - 0xDC00);
-        char::from_u32(combined).ok_or_else(|| self.err("surrogate pair is not a scalar"))
-    }
-
-    fn hex4(&mut self) -> R<u32> {
-        let bytes = self
-            .s
-            .get(self.i..self.i + 4)
-            .ok_or_else(|| self.err("truncated \\u escape"))?;
-        let mut v = 0u32;
-        for b in bytes {
-            let d = match b {
-                b'0'..=b'9' => b - b'0',
-                b'a'..=b'f' => b - b'a' + 10,
-                b'A'..=b'F' => b - b'A' + 10,
-                _ => return Err(self.err("bad hex digit in \\u escape")),
-            };
-            v = v * 16 + u32::from(d);
-        }
-        self.i += 4;
-        Ok(v)
-    }
-
-    /// Parse a number exactly as `serde_json` does — see [`f64_from_parts`] for why bit-compatibility
-    /// matters more here than accuracy. Digits accumulate into a `u64` significand with a decimal
-    /// exponent; overflow drops digits rather than widening, which is also what serde does.
-    fn number(&mut self) -> R<Json<'a>> {
-        let positive = if self.s.get(self.i) == Some(&b'-') {
-            self.i += 1;
-            false
-        } else {
-            true
-        };
-
-        // Integer part. Once the significand would overflow, further digits are dropped and the
-        // exponent is bumped instead (serde's `parse_long_integer`).
-        let int_start = self.i;
-        let mut significand: u64 = 0;
-        let mut exponent: i32 = 0;
-        let mut saturated = false;
-        while let Some(c) = self.s.get(self.i) {
-            if !c.is_ascii_digit() {
-                break;
-            }
+    // Fraction: stop accumulating on overflow, but keep consuming.
+    if s.get(i) == Some(&b'.') {
+        i += 1;
+        while let Some(c) = s.get(i).filter(|c| c.is_ascii_digit()) {
             let digit = u64::from(c - b'0');
-            if saturated {
-                exponent += 1;
-            } else {
-                match significand
-                    .checked_mul(10)
-                    .and_then(|v| v.checked_add(digit))
-                {
-                    Some(v) => significand = v,
-                    None => {
-                        saturated = true;
-                        exponent += 1;
-                    }
-                }
+            if let Some(v) = significand
+                .checked_mul(10)
+                .and_then(|v| v.checked_add(digit))
+            {
+                significand = v;
+                exponent -= 1;
             }
-            self.i += 1;
+            i += 1;
         }
-        if self.i == int_start {
-            return Err(self.err("expected a digit"));
-        }
-
-        // Fraction. A digit that would overflow is dropped with no exponent change, because it sits
-        // to the right of the point — serde stops accumulating at that moment too.
-        if self.s.get(self.i) == Some(&b'.') {
-            self.i += 1;
-            let frac_start = self.i;
-            while let Some(c) = self.s.get(self.i) {
-                if !c.is_ascii_digit() {
-                    break;
-                }
-                let digit = u64::from(c - b'0');
-                if let Some(v) = significand
-                    .checked_mul(10)
-                    .and_then(|v| v.checked_add(digit))
-                {
-                    significand = v;
-                    exponent -= 1;
-                }
-                self.i += 1;
-            }
-            if self.i == frac_start {
-                return Err(self.err("expected a digit after '.'"));
-            }
-        }
-
-        // Explicit exponent.
-        if matches!(self.s.get(self.i), Some(b'e' | b'E')) {
-            self.i += 1;
-            let negate = match self.s.get(self.i) {
-                Some(b'-') => {
-                    self.i += 1;
-                    true
-                }
-                Some(b'+') => {
-                    self.i += 1;
-                    false
-                }
-                _ => false,
-            };
-            let exp_start = self.i;
-            let mut exp: i32 = 0;
-            while let Some(c) = self.s.get(self.i) {
-                if !c.is_ascii_digit() {
-                    break;
-                }
-                exp = exp.saturating_mul(10).saturating_add(i32::from(c - b'0'));
-                self.i += 1;
-            }
-            if self.i == exp_start {
-                return Err(self.err("expected a digit in the exponent"));
-            }
-            exponent = exponent.saturating_add(if negate { -exp } else { exp });
-        }
-
-        Ok(Json::Num(f64_from_parts(positive, significand, exponent)))
     }
+
+    // Explicit exponent.
+    if matches!(s.get(i), Some(b'e' | b'E')) {
+        i += 1;
+        let negate = match s.get(i) {
+            Some(b'-') => {
+                i += 1;
+                true
+            }
+            Some(b'+') => {
+                i += 1;
+                false
+            }
+            _ => false,
+        };
+        let mut exp: i32 = 0;
+        while let Some(c) = s.get(i).filter(|c| c.is_ascii_digit()) {
+            exp = exp.saturating_mul(10).saturating_add(i32::from(c - b'0'));
+            i += 1;
+        }
+        exponent = exponent.saturating_add(if negate { -exp } else { exp });
+    }
+
+    (positive, significand, exponent)
 }
 
 #[cfg(test)]
@@ -654,14 +458,26 @@ mod tests {
         }
     }
 
+    /// The one place this reader is still looser than `serde_json`, kept here so it is a documented
+    /// fact rather than a surprise: an exponent past the `POW10` table saturates to infinity, where
+    /// serde reports "number out of range". No `tokenizer.json` contains such a literal -- a
+    /// Unigram score is a log-probability -- and closing it would mean reintroducing a range check
+    /// that the float emulation does not otherwise need.
+    #[test]
+    fn an_overflowing_exponent_is_the_last_divergence_from_serde() {
+        assert_eq!(p("1e400").as_f64(), Some(f64::INFINITY));
+        assert_eq!(p("-1e400").as_f64(), Some(f64::NEG_INFINITY));
+        assert!(serde_json::from_str::<f64>("1e400").is_err());
+    }
+
     #[test]
     fn scalars_and_containers() {
         assert_eq!(p("null"), Json::Null);
         assert_eq!(p("true"), Json::Bool(true));
         assert_eq!(p(" false "), Json::Bool(false));
-        assert_eq!(p("0"), Json::Num(0.0));
-        assert_eq!(p("-12"), Json::Num(-12.0));
-        assert_eq!(p("1.5e2"), Json::Num(150.0));
+        assert_eq!(p("0").as_f64(), Some(0.0));
+        assert_eq!(p("-12").as_f64(), Some(-12.0));
+        assert_eq!(p("1.5e2").as_f64(), Some(150.0));
         assert_eq!(p("[]").as_arr().unwrap().len(), 0);
         assert_eq!(p("{}").as_obj().unwrap().len(), 0);
         assert_eq!(p(r#"[1,2,3]"#).as_arr().unwrap().len(), 3);
@@ -685,9 +501,9 @@ mod tests {
     #[test]
     fn strings_borrow_when_they_can() {
         let v = p(r#""plain""#);
-        assert!(matches!(v, Json::Str(Cow::Borrowed("plain"))));
+        assert!(matches!(v, Json::String(Cow::Borrowed("plain"))));
         let v = p(r#""with\nescape""#);
-        assert!(matches!(v, Json::Str(Cow::Owned(_))));
+        assert!(matches!(v, Json::String(Cow::Owned(_))));
         assert_eq!(v.as_str(), Some("with\nescape"));
     }
 
@@ -739,6 +555,11 @@ mod tests {
             "1 2",
             "{} {}",
             "nul",
+            // These three the hand-written parser used to accept, which made it looser than
+            // serde_json. `hifijson` rejects all of them.
+            "007",
+            "01",
+            "\"a\u{1}b\"", // unescaped control character
         ] {
             assert!(
                 Json::parse(bad).is_err(),
@@ -747,14 +568,16 @@ mod tests {
         }
     }
 
+    /// The cap is a stack guard, so the boundary itself is the interesting part: `MAX_DEPTH` nested
+    /// values parse and one more does not. Pinned exactly because it is `parse_bounded`'s
+    /// `depth` argument that has to keep reproducing it.
     #[test]
     fn depth_is_capped() {
-        // Well under the cap parses; far past it errors instead of overflowing the stack.
-        let ok = "[".repeat(MAX_DEPTH - 1) + &"]".repeat(MAX_DEPTH - 1);
-        assert!(Json::parse(&ok).is_ok());
-        let too_deep = "[".repeat(MAX_DEPTH + 5) + &"]".repeat(MAX_DEPTH + 5);
+        let ok = "[".repeat(MAX_DEPTH) + &"]".repeat(MAX_DEPTH);
+        assert!(Json::parse(&ok).is_ok(), "{MAX_DEPTH} levels must parse");
+        let too_deep = "[".repeat(MAX_DEPTH + 1) + &"]".repeat(MAX_DEPTH + 1);
         let err = Json::parse(&too_deep).expect_err("should refuse");
-        assert_eq!(err.msg, "nested too deeply");
+        assert_eq!(err.kind, hifijson::Error::Depth);
     }
 
     /// Structural equality against `serde_json` over every real `tokenizer.json` in `data/`.
@@ -773,20 +596,25 @@ mod tests {
                 // `serde_json`'s float rounding rather than improving on it -- see
                 // `f64_from_parts`. Comparing bits rather than `==` also catches a -0.0 vs 0.0
                 // divergence, which `==` would call equal.
-                (Json::Num(x), serde_json::Value::Number(y)) => match y.as_f64() {
-                    Some(y) if x.to_bits() == y.to_bits() => Ok(()),
-                    Some(y) => bad(&format!(
-                        "number {x} ({:016x}) vs {y} ({:016x})",
-                        x.to_bits(),
-                        y.to_bits()
-                    )),
-                    None => bad("serde_json number is not an f64"),
-                },
-                (Json::Str(x), serde_json::Value::String(y)) if x.as_ref() == y.as_str() => Ok(()),
-                (Json::Str(x), serde_json::Value::String(y)) => {
+                (Json::Number(_), serde_json::Value::Number(y)) => {
+                    let x = a.as_f64().expect("a number reads as an f64");
+                    match y.as_f64() {
+                        Some(y) if x.to_bits() == y.to_bits() => Ok(()),
+                        Some(y) => bad(&format!(
+                            "number {x} ({:016x}) vs {y} ({:016x})",
+                            x.to_bits(),
+                            y.to_bits()
+                        )),
+                        None => bad("serde_json number is not an f64"),
+                    }
+                }
+                (Json::String(x), serde_json::Value::String(y)) if x.as_ref() == y.as_str() => {
+                    Ok(())
+                }
+                (Json::String(x), serde_json::Value::String(y)) => {
                     bad(&format!("string {:?} vs {:?}", x.as_ref(), y.as_str()))
                 }
-                (Json::Arr(x), serde_json::Value::Array(y)) => {
+                (Json::Array(x), serde_json::Value::Array(y)) => {
                     if x.len() != y.len() {
                         return bad(&format!("array len {} vs {}", x.len(), y.len()));
                     }
@@ -795,7 +623,7 @@ mod tests {
                     }
                     Ok(())
                 }
-                (Json::Obj(x), serde_json::Value::Object(y)) => {
+                (Json::Object(x), serde_json::Value::Object(y)) => {
                     if x.len() != y.len() {
                         return bad(&format!("object len {} vs {}", x.len(), y.len()));
                     }

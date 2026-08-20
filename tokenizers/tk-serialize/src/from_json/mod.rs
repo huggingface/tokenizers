@@ -62,7 +62,7 @@ use self::model::read_wordpiece;
 use self::normalizers::read_normalizers;
 use self::post_processors::read_post_processor;
 use self::pre_tokenizers::read_pre_tokenizer;
-use crate::json::Json;
+use crate::json::{Json, JsonExt};
 use tk_encode::models::bpe::{PipelineBPE, Vocab};
 use tk_encode::pipeline::{
     NormalizerChain, PipelineModel, PipelineNormalizer, PipelinePreTokenizer, PipelineTokenizer,

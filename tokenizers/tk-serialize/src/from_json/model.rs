@@ -1,6 +1,6 @@
 //! The `model` object: one reader per model kind, plus the shared `{"token": id}` vocabulary.
 
-use crate::json::Json;
+use crate::json::{Json, JsonExt};
 use tk_encode::models::bpe::{Merges, PipelineBpeOptions, Vocab};
 use tk_encode::tokenizer::Result;
 
@@ -20,7 +20,7 @@ pub(super) fn read_bpe(
     for entry in merges_arr {
         match entry {
             // Canonical: ["a", "b"].
-            Json::Arr(pair) if pair.len() == 2 => {
+            Json::Array(pair) if pair.len() == 2 => {
                 let (a, b) = (pair[0].as_str(), pair[1].as_str());
                 match (a, b) {
                     (Some(a), Some(b)) => merges.push((a.to_string(), b.to_string())),
@@ -29,7 +29,7 @@ pub(super) fn read_bpe(
             }
             // Legacy: "a b". Split on the first space, the way the config path does. Ambiguous when
             // a token contains a space, which is exactly why pairs became canonical.
-            Json::Str(s) => {
+            Json::String(s) => {
                 let (a, b) = s.split_once(' ').ok_or_else(|| -> tk_encode::Error {
                     format!("legacy merge {s:?} has no space to split on").into()
                 })?;

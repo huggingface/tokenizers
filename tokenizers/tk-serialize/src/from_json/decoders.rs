@@ -3,7 +3,7 @@
 use super::normalizers::read_replace_fields;
 use super::pre_tokenizers::{read_char, read_prepend_scheme};
 use super::unsupported;
-use crate::json::Json;
+use crate::json::{Json, JsonExt};
 use tk_encode::decoders::DecoderRuntime;
 use tk_encode::decoders::bpe::BPEDecoder;
 use tk_encode::decoders::byte_fallback::ByteFallback;

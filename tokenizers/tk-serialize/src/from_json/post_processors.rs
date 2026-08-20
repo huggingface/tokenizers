@@ -1,7 +1,7 @@
 //! The `post_processor` object, lowered into the config path's `Template` IR.
 
 use super::unsupported;
-use crate::json::Json;
+use crate::json::{Json, JsonExt};
 use tk_encode::pipeline::{PipelinePostProcessor, PipelineToken, Seq, Slice, Template, compose};
 use tk_encode::tokenizer::Result;
 

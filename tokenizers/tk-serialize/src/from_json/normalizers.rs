@@ -3,7 +3,7 @@
 #[cfg(not(feature = "normalizers"))]
 use super::needs_feature;
 use super::unsupported;
-use crate::json::Json;
+use crate::json::{Json, JsonExt};
 use tk_encode::normalizers::byte_level::ByteLevel as ByteLevelNormalizer;
 use tk_encode::normalizers::prepend::Prepend;
 use tk_encode::normalizers::replace::{Replace, ReplacePattern};
