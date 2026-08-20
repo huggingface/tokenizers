@@ -1,0 +1,12 @@
+[
+  { "name": "bert-base-uncased", "file": "bert-base-uncased.json", "desc": "normalizer-heavy WordPiece" },
+  { "name": "deepseek-v4",       "file": "deepseek-v4.json",       "desc": "deepseek 3-regex split-heavy byte-level BPE" },
+  { "name": "gemma-4",           "file": "gemma-4.json",           "desc": "byte-fallback BPE, Metaspace-style split (gemma-4)" },
+  { "name": "gpt2",              "file": "gpt2.json",              "desc": "gpt2 ByteLevel regex" },
+  { "name": "gpt-oss",           "file": "gpt-oss.json",           "desc": "o200k-regex byte-level BPE (gpt-oss)" },
+  { "name": "glm-5.2",           "file": "glm-5.2.json",           "desc": "cl100k-variant regex byte-level BPE (glm-5.2)" },
+  { "name": "llama-2",           "file": "llama-2.json",           "desc": "model-bounded BPE, no pre-tokenizer" },
+  { "name": "llama-3",           "file": "llama-3-tokenizer.json", "desc": "cl100k-regex byte-level BPE (llama-3), single regex" },
+  { "name": "mistral-small-4",   "file": "mistral-small-4.json",   "desc": "tekken byte-level BPE, 1k added specials (mistral-small-4)" },
+  { "name": "t5-base",           "file": "t5-base.json",           "desc": "Unigram + Metaspace" }
+]

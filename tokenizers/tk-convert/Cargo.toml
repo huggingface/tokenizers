@@ -111,3 +111,16 @@ harness = false
 name = "bpe_model_benchmark"
 required-features = ["http"]
 harness = false
+
+# The Pipeline Benchmark's harness and its released-crate size baseline. Both link
+# `tokenizers-release`, so both are gated -- without `required-features` a plain
+# `cargo build --workspace --all-targets` (what CI runs) tries to compile them with no
+# `tokenizers_release` in scope. They live here rather than in `tk-encode` because
+# `fixture_bench` needs `Tokenizer` and `ModelWrapper`, which are this crate's now.
+[[example]]
+name = "fixture_bench"
+required-features = ["bench-baseline"]
+
+[[example]]
+name = "binsize_baseline"
+required-features = ["bench-baseline"]

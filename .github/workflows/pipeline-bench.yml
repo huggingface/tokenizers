@@ -4,7 +4,7 @@ name: Pipeline Benchmark
 # *released* tokenizers crate — both the baseline to beat AND the correctness
 # reference (`ids_match`). The in-tree legacy `Tokenizer` is being
 # phased out, so it only *builds* the pipeline and is never benched or trusted as
-# an oracle. Runs for every model in tk-encode/examples/bench_models.json across
+# an oracle. Runs for every model in tk-convert/examples/bench_models.json across
 # every corpus in data/fixtures/.
 # Measures single-thread throughput (cold instance per pass; the pipeline over
 # the whole corpus, the release over a ~2 MB spread sample per fixture), an
@@ -73,7 +73,11 @@ on:
       - "tokenizers/Cargo.lock"
       - ".github/workflows/pipeline-bench.yml"
       - ".github/scripts/render_pipeline_bench.py"
-      - "tokenizers/tk-encode/examples/bench_models.json"
+      # The bench harness itself (`fixture_bench.rs`, `binsize_baseline.rs`) and the model
+      # manifest live here now -- they need `tk-convert`'s `Tokenizer`, which `tk-encode` no
+      # longer has. Narrowed to `examples/` so an ordinary `tk-convert` change does not
+      # trigger the whole fan-out.
+      - "tokenizers/tk-convert/examples/**"
   pull_request:
     types: [labeled]
   workflow_dispatch:
@@ -115,7 +119,7 @@ jobs:
       - name: Read the model matrix
         id: models
         run: |
-          echo "models=$(jq -c '[.[].name]' tokenizers/tk-encode/examples/bench_models.json)" \
+          echo "models=$(jq -c '[.[].name]' tokenizers/tk-convert/examples/bench_models.json)" \
             >> "$GITHUB_OUTPUT"
 
       - name: Install uv
@@ -191,9 +195,9 @@ jobs:
       # These are byte-for-byte the same cargo invocations the bench jobs / report ran before.
       - name: Build bench + binsize binaries
         run: |
-          cargo build --release -p tk-encode --features tk-encode/bench-baseline \
+          cargo build --release -p tk-convert --features bench-baseline \
             --example fixture_bench --example binsize_baseline
-          cargo build --release -p tk-encode --example binsize_pipeline
+          cargo build --release -p tk-serialize --example binsize_pipeline
 
       - name: Upload bench binaries
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
@@ -237,7 +241,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: tokenizers/data
-          key: bench-data-${{ hashFiles('tokenizers/Makefile', 'tokenizers/tk-encode/examples/bench_models.json') }}
+          key: bench-data-${{ hashFiles('tokenizers/Makefile', 'tokenizers/tk-convert/examples/bench_models.json') }}
 
       - name: Download fixtures and model tokenizers
         env:
@@ -279,7 +283,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: tokenizers/data
-          key: bench-data-${{ hashFiles('tokenizers/Makefile', 'tokenizers/tk-encode/examples/bench_models.json') }}
+          key: bench-data-${{ hashFiles('tokenizers/Makefile', 'tokenizers/tk-convert/examples/bench_models.json') }}
 
       - name: Download fixtures and model tokenizers
         env:
@@ -365,7 +369,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: tokenizers/data
-          key: bench-data-${{ hashFiles('tokenizers/Makefile', 'tokenizers/tk-encode/examples/bench_models.json') }}
+          key: bench-data-${{ hashFiles('tokenizers/Makefile', 'tokenizers/tk-convert/examples/bench_models.json') }}
 
       - name: Download model tokenizers
         env:
@@ -394,7 +398,7 @@ jobs:
           python3 - <<'PY'
           import glob, json
           order = [e["name"] for e in
-                   json.load(open('tk-encode/examples/bench_models.json'))]
+                   json.load(open('tk-convert/examples/bench_models.json'))]
           def merge(pattern, prefix, out):
               model_of = lambda f: f.rsplit('/', 1)[-1][len(prefix):-len('.json')]
               parts = sorted(glob.glob(pattern, recursive=True),
