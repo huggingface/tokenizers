@@ -99,9 +99,17 @@ SLIMEST_FLAGS = -Z build-std=std,panic_abort -Z build-std-features=panic_immedia
 # The smallest build there is: `minsize` plus a `std` rebuilt without panic, unwinding or backtrace
 # symbolisation. Needs nightly and the rust-src component:
 #   rustup toolchain install nightly && rustup component add rust-src --toolchain nightly
+#
+# Same feature set as `slim-size` on purpose, so the two numbers differ by the profile alone.
+# Leaving `bpe` off here made the rungs look like they measured different programs, which is how a
+# reviewer concluded the 328k -> 195k drop partly came from dropping BPE. It does not: `bpe` is an
+# empty feature (`bpe = []` in tk-encode) and no `cfg` in the workspace reads it, so BPE is compiled
+# either way. Adding it does move the gzipped size by 24 bytes -- reproducibly -- but that is the
+# crate metadata hash changing symbol names, not code. Worth 24 bytes to stop the ladder inviting
+# that misreading.
 slimest :
 	cargo +nightly build --profile slimest $(SLIMEST_FLAGS) \
-	  -p tk-serialize --example binsize_pipeline --no-default-features --features deserialize
+	  -p tk-serialize --example binsize_pipeline --no-default-features --features bpe,deserialize
 
 .PHONY : slimest-size
 # Same, and print the gzipped size next to `slim-size`'s so the difference is visible.
