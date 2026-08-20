@@ -7,8 +7,8 @@
 //!
 //! The atom table and the class decode are shared with cl100k in [`super::family_gpt`].
 
-use super::family_gpt::cls;
-use crate::{CODE_CONT, Out, Span, blocks, emit_contr, to_lead};
+use super::family_gpt::{cls, contractions};
+use crate::{CODE_CONT, Out, Span, blocks, emit, to_lead};
 
 /// GPT-2 / byte-level pre-tokenization. `starts` and `flag` are scratch bitmaps
 /// (len ≥ `text.len().div_ceil(64)`); byte-exact with `atomsplit::fsm::fsm_byte_level`.
@@ -17,7 +17,7 @@ pub fn bitsplit_byte_level(
     text: &[u8],
     tags: &[u8],
     starts: &mut [u64],
-    flag: &mut [u64],
+    _flag: &mut [u64],
     out: &mut [Span],
 ) -> usize {
     let ntext = text.len();
@@ -26,12 +26,13 @@ pub fn bitsplit_byte_level(
     }
     let nblk = ntext.div_ceil(64);
     assert!(
-        tags.len() >= ntext && starts.len() >= nblk && flag.len() >= nblk && out.len() >= ntext
+        tags.len() >= ntext && starts.len() >= nblk && out.len() >= ntext
     );
+    let mut carry = (0u64, 0u64);
     blocks(
         ntext,
         &mut *starts,
-        Some(&mut *flag),
+        None,
         CODE_CONT,
         |base, len, seed| cls(text, tags, base, len, seed),
         |x, _| {
@@ -44,16 +45,20 @@ pub fn bitsplit_byte_level(
             let (steal, patch) = to_lead(cur.ws & x.lb & !x.eof & !x.fw.ws, cur.cont, x.pv.cont);
             // every alternative but the contraction is ` ?X+` over a class run, so a token opens
             // at each run start — pushed back one char when a literal space sits in front of it.
-            Out {
-                st: (cur.l & !bk.l & !bk.sp)
-                    | (cur.n & !bk.n & !bk.sp)
-                    | (cur.other & !bk.other & !bk.sp)
-                    | (cur.ws & !bk.ws)
-                    | steal,
-                patch,
-                flag: cur.apo, // apostrophes that open a token → contraction escape
+            let mut st = ((cur.l & !bk.l & !bk.sp)
+                | (cur.n & !bk.n & !bk.sp)
+                | (cur.other & !bk.other & !bk.sp)
+                | (cur.ws & !bk.ws)
+                | steal)
+                & cur.lead;
+            if x.bi == 0 {
+                st |= 1;
             }
+            // the contraction alternative: `'s` is its own token, so the char after it opens one
+            let (opens, inner) = contractions(text, st, cur.apo, x.base, ntext, false, &mut carry);
+            st = (st & !inner) | opens;
+            Out { st, patch, flag: 0 }
         },
     );
-    emit_contr(text, starts, flag, nblk, ntext, false, out)
+    emit(starts, nblk, ntext, out)
 }

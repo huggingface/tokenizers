@@ -6,9 +6,9 @@
 //!
 //! The atom table and the class decode are shared with GPT-2 in [`super::family_gpt`].
 
-use super::family_gpt::cls;
+use super::family_gpt::{cls, contractions};
 use crate::{
-    Anl, CODE_CONT, Digits, Out, Span, blocks, was, will, emit_contr, fill_to_last,
+    Anl, CODE_CONT, Digits, Out, Span, blocks, emit, fill_to_last, was, will,
     later_in_run, scanthru, to_lead, trail_run,
 };
 
@@ -40,7 +40,7 @@ fn cl100k(
     text: &[u8],
     tags: &[u8],
     starts: &mut [u64],
-    flag: &mut [u64],
+    _flag: &mut [u64],
     out: &mut [Span],
     digit_cap: usize,
 ) -> usize {
@@ -50,17 +50,18 @@ fn cl100k(
     }
     let nblk = ntext.div_ceil(64);
     assert!(
-        tags.len() >= ntext && starts.len() >= nblk && flag.len() >= nblk && out.len() >= ntext
+        tags.len() >= ntext && starts.len() >= nblk && out.len() >= ntext
     );
     let mut nl_run = false;
     let mut dig = Digits::default();
     let mut prev_osf = false; // previous block's last byte belonged to a token-opening "other" char
     let mut anl = Anl::default();
 
+    let mut carry = (0u64, 0u64);
     blocks(
         ntext,
         &mut *starts,
-        Some(&mut *flag),
+        None,
         CODE_CONT,
         |base, len, seed| cls(text, tags, base, len, seed),
         |x, starts| {
@@ -128,12 +129,19 @@ fn cl100k(
             anl.commit(x.base, after_nl, tws, nl_e as u64, will(x.nx.ws), was(pv.ws));
             prev_osf = osf >> (len - 1) & 1 != 0;
 
+            st &= lead;
+            if x.bi == 0 {
+                st |= 1;
+            }
+            // the contraction alternative: `'s` is its own token, so the char after it opens one
+            let (opens, inner) = contractions(text, st, cur.apo, x.base, ntext, true, &mut carry);
+            st = (st & !inner) | opens;
             Out {
                 st,
                 patch: steal_patch,
-                flag: cur.apo,
+                flag: 0,
             }
         },
     );
-    emit_contr(text, starts, flag, nblk, ntext, true, out)
+    emit(starts, nblk, ntext, out)
 }
