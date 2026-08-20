@@ -1,4 +1,5 @@
-use tk_encode::{AddedToken, Model, Result};
+use tk_convert::AddedToken;
+use tk_encode::{Model, Result};
 
 /// A `Trainer` has the responsibility to train a model. We feed it with lines/sentences
 /// and then it can train the given `Model`.

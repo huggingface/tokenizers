@@ -4,11 +4,14 @@ use crate::tokenizer::{Offsets, Token};
 use crate::utils::padding::PaddingDirection;
 use crate::utils::truncation::TruncationDirection;
 use ahash::AHashMap;
-use serde::{Deserialize, Serialize};
 use std::ops::Range;
 
 /// Represents the output of a `Tokenizer`.
-#[derive(Default, PartialEq, Debug, Clone, Serialize, Deserialize)]
+///
+/// Its serialized shape -- which `PyEncoding` pickles, so it is public API -- is mirrored in
+/// `tk-convert`'s `mirror::encoding`. The fields are private, so that mirror reads them through the
+/// getters below and rebuilds through [`Encoding::new`].
+#[derive(Default, PartialEq, Debug, Clone)]
 pub struct Encoding {
     /// IDs produced by the `Tokenizer`
     ids: Vec<u32>,
@@ -171,6 +174,12 @@ impl Encoding {
 
     pub fn get_attention_mask(&self) -> &[u32] {
         &self.attention_mask
+    }
+
+    /// The only field with no getter before the serde move; `tk-convert`'s `mirror::encoding`
+    /// needs to read it to serialize an `Encoding` from outside this crate.
+    pub fn get_sequence_ranges(&self) -> &AHashMap<usize, Range<usize>> {
+        &self.sequence_ranges
     }
 
     pub fn get_overflowing(&self) -> &Vec<Encoding> {

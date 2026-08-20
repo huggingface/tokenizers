@@ -1,11 +1,11 @@
 use crate::tokenizer::{Decoder, Result};
 
-use serde::{Deserialize, Serialize};
-
-#[derive(Deserialize, Clone, Debug, Serialize)]
+#[derive(Clone, Debug)]
 /// Allows decoding Original BPE by joining all the tokens and then replacing
 /// the suffix used to identify end-of-words by whitespaces
-#[serde(tag = "type")]
+///
+/// The `"type": "BPEDecoder"` envelope this used to derive lives in `tk-convert`'s
+/// `decoders::mirror::bpe`.
 #[non_exhaustive]
 pub struct BPEDecoder {
     pub suffix: String,

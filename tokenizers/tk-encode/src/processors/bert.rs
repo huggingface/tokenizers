@@ -1,10 +1,14 @@
 use crate::tokenizer::{Encoding, PostProcessor, Result};
 use ahash::AHashMap;
-use serde::{Deserialize, Serialize};
 use std::iter::FromIterator;
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-#[serde(tag = "type")]
+/// Wraps the first sequence in `cls` ... `sep`, and appends a second `sep` to the pair sequence.
+///
+/// The `"type": "BertProcessing"` envelope this used to derive lives in `tk-convert`'s
+/// `processors::mirror::BertProcessingDef`. Both fields are `pub`, there is no invariant between
+/// them and the type is not `#[non_exhaustive]`, so that mirror is a `remote` derive: serde drives
+/// this type directly and no hand-written conversion is needed.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BertProcessing {
     pub sep: (String, u32),
     pub cls: (String, u32),
@@ -191,17 +195,6 @@ impl PostProcessor for BertProcessing {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn serde() {
-        let bert = BertProcessing::default();
-        let bert_r = r#"{"type":"BertProcessing","sep":["[SEP]",102],"cls":["[CLS]",101]}"#;
-        assert_eq!(serde_json::to_string(&bert).unwrap(), bert_r);
-        assert_eq!(
-            serde_json::from_str::<BertProcessing>(bert_r).unwrap(),
-            bert
-        );
-    }
 
     #[test]
     fn bert_processing() {

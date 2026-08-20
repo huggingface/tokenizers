@@ -1,6 +1,6 @@
+use tk_convert::ModelWrapper;
+use tk_convert::models::bpe::BPE;
 use tk_encode::Model;
-use tk_encode::models::ModelWrapper;
-use tk_encode::models::bpe::BPE;
 use tk_encode::models::unigram::Unigram;
 use tk_encode::models::wordlevel::WordLevel;
 use tk_encode::models::wordpiece::WordPiece;

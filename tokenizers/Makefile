@@ -22,9 +22,9 @@ FIXTURE_LANGS = amh_Ethi arb_Arab cmn_Hani eng_Latn hin_Deva jpn_Jpan rus_Cyrl t
 FIXTURE_MODALITIES = agentic_swe agentic-traces code_mixed math_latex added_special_sparse added_normalized_sparse
 FIXTURES_RESOURCES = $(FIXTURE_LANGS:%=$(DATA_DIR)/fixtures/lang/%.txt) $(FIXTURE_MODALITIES:%=$(DATA_DIR)/fixtures/modalities/%.txt)
 
-# Models benched by tk-encode/examples/fixture_bench.rs; the manifest is the
+# Models benched by tk-serialization/examples/fixture_bench.rs; the manifest is the
 # single source of truth (Rust reads it too).
-BENCH_MODELS = tk-encode/examples/bench_models.json
+BENCH_MODELS = tk-serialization/examples/bench_models.json
 
 .PHONY : build
 build :
@@ -57,7 +57,54 @@ publish :
 	cargo publish
 
 .PHONY : all-checks
-all-checks : lint test doc
+all-checks : lint test doc feature-matrix
+
+# Compile, lint and test tk-encode under each meaningful feature combination.
+#
+# In `all-checks` because nothing else here can catch a combination breaking:
+# `lint` is --all-features and `test` is the default set, so both are blind to
+# the builds in between, where the per-model and `normalizers` cfg gates
+# actually interact.
+.PHONY : feature-matrix
+feature-matrix : $(SHARED_RESOURCES)
+	scripts/feature_matrix.sh
+
+# tk-encode's stripped and gzipped size per feature configuration, under
+# `--profile minsize`.
+#
+# Deliberately NOT in `all-checks`: there is no agreed size budget, so this can
+# only ever print numbers -- it has no pass/fail to contribute -- and it pays for
+# a whole separate `target/minsize` tree (one fat-LTO link per rung) to print
+# them. Run it when changing what gets compiled in, not on every check.
+.PHONY : slim-size
+# Gzipped is the only honest number: Mach-O segments are 16 KiB-quantised, so on-disk size cannot
+# resolve anything under ~16 KB (it reported 0 for a change that really removed 1,504 bytes). And
+# the largest data object in the binary is a zero-filled array: 9.4% of the file, 0.1% of the
+# download. Decide against the compressed size.
+slim-size :
+	cargo build --profile minsize -p tk-serialize --example binsize_pipeline --no-default-features --features bpe,deserialize
+	@gzip -9 -c target/minsize/examples/binsize_pipeline | wc -c | tr -d ' ' \
+	  | xargs printf 'slim tk-encode + tk-serialize: %s bytes gzipped\n'
+
+# The host triple has to be named explicitly: `-Z build-std` only applies to an explicit --target,
+# and without one cargo reuses the precompiled libstd and the flags silently do nothing.
+HOST_TRIPLE := $(shell rustc -vV | awk '/^host:/ {print $$2}')
+SLIMEST_FLAGS = -Z build-std=std,panic_abort -Z build-std-features=panic_immediate_abort \
+                --target $(HOST_TRIPLE)
+
+.PHONY : slimest
+# The smallest build there is: `minsize` plus a `std` rebuilt without panic, unwinding or backtrace
+# symbolisation. Needs nightly and the rust-src component:
+#   rustup toolchain install nightly && rustup component add rust-src --toolchain nightly
+slimest :
+	cargo +nightly build --profile slimest $(SLIMEST_FLAGS) \
+	  -p tk-serialize --example binsize_pipeline --no-default-features --features deserialize
+
+.PHONY : slimest-size
+# Same, and print the gzipped size next to `slim-size`'s so the difference is visible.
+slimest-size : slimest
+	@b=target/$(HOST_TRIPLE)/slimest/examples/binsize_pipeline; \
+	  gzip -9 -c $$b | wc -c | tr -d ' ' | xargs printf 'slimest tk-encode: %s bytes gzipped\n'
 
 .PHONY : bench
 bench : $(BENCHMARK_RESOURCES)
@@ -89,7 +136,12 @@ HF_TEST_REPO = hf-internal-testing/tokenizers-test-data
 # retry/backoff on rate limits, and caching for us. CI overrides HF with
 # `uvx --from huggingface_hub hf` to avoid a separate install step.
 HF ?= hf
-HF_REVISION ?= main
+# Pinned, not `main`. `json_oracle`'s recorded digests are only meaningful against a fixed fixture
+# set, and the `$(DATA_DIR)/%` rule below is existence-based -- it never re-downloads a file you
+# already have. Together those two facts silently pinned one developer's digests to a stale
+# `llama-2.json` and produced four spurious drifts on any fresh checkout. Bump this deliberately,
+# and re-record the digests in the same commit.
+HF_REVISION ?= e20ac5914f5ada06874e4f9d45e49b31a049904e
 
 $(DATA_DIR)/% :
 	$(dir_guard)

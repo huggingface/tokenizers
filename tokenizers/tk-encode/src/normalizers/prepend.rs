@@ -2,10 +2,8 @@ use std::borrow::Cow;
 
 use crate::pipeline;
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
-use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(tag = "type")]
+#[derive(Clone, Debug)]
 pub struct Prepend {
     pub prepend: String,
 }

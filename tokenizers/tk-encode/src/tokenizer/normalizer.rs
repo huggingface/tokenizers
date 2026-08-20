@@ -1,9 +1,8 @@
 use crate::pattern::Pattern;
 use crate::{Offsets, Result};
 use std::ops::{Bound, RangeBounds};
+#[cfg(feature = "normalizers")]
 use unicode_normalization_alignments::UnicodeNormalization;
-
-use serde::{Deserialize, Serialize};
 
 /// The possible offsets referential
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -78,7 +77,10 @@ where
 ///  - MergedWithPrevious => `[ "the-", "final-", "-", "countdown" ]`
 ///  - MergedWithNext => `[ "the", "-final", "-", "-countdown" ]`
 ///  - Contiguous => `[ "the", "-", "final", "--", "countdown" ]`
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Eq)]
+/// Its on-disk shape is `tk-convert`'s `mirror::SplitDelimiterBehaviorDef`, and the
+/// `display_matches_serde` test over there is what keeps the hand-written `Display` below from
+/// drifting away from what serde emits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SplitDelimiterBehavior {
     Removed,
     Isolated,
@@ -456,24 +458,28 @@ impl NormalizedString {
     }
 
     /// Applies NFD normalization
+    #[cfg(feature = "normalizers")]
     pub fn nfd(&mut self) -> &mut Self {
         self.transform(self.get().to_owned().nfd(), 0);
         self
     }
 
     /// Applies NFKD normalization
+    #[cfg(feature = "normalizers")]
     pub fn nfkd(&mut self) -> &mut Self {
         self.transform(self.get().to_owned().nfkd(), 0);
         self
     }
 
     /// Applies NFC normalization
+    #[cfg(feature = "normalizers")]
     pub fn nfc(&mut self) -> &mut Self {
         self.transform(self.get().to_owned().nfc(), 0);
         self
     }
 
     /// Applies NFKC normalization
+    #[cfg(feature = "normalizers")]
     pub fn nfkc(&mut self) -> &mut Self {
         self.transform(self.get().to_owned().nfkc(), 0);
         self
@@ -1031,26 +1037,13 @@ impl From<&str> for NormalizedString {
 
 #[cfg(test)]
 mod tests {
-    /// `Display` is spelled out by hand now; keep it identical to what serde emits, so the two
-    /// cannot drift while both exist.
-    #[test]
-    fn display_matches_serde() {
-        use crate::tokenizer::normalizer::SplitDelimiterBehavior::*;
-        for behavior in [
-            Removed,
-            Isolated,
-            MergedWithPrevious,
-            MergedWithNext,
-            Contiguous,
-        ] {
-            let via_serde = serde_json::to_string(&behavior).unwrap();
-            assert_eq!(format!("\"{behavior}\""), via_serde);
-        }
-    }
-
+    // `display_matches_serde` -- which pinned `SplitDelimiterBehavior`'s hand-written `Display` to
+    // what serde emits -- moved to `tk-convert`'s `mirror` module, with the serde half it compares
+    // against.
     use super::*;
     use atomsplit::literal::Literal;
     use regex::Regex;
+    #[cfg(feature = "normalizers")]
     use unicode_categories::UnicodeCategories;
 
     #[test]
@@ -1068,6 +1061,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "normalizers")]
     fn nfd_adds_new_chars() {
         let mut n = NormalizedString::from("élégant");
         n.nfd();
@@ -1104,6 +1098,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "normalizers")]
     fn remove_chars_added_by_nfd() {
         let mut n = NormalizedString::from("élégant");
         n.nfd().filter(|c| !c.is_mark_nonspacing());
@@ -1166,6 +1161,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "normalizers")]
     fn mixed_addition_and_removal() {
         let mut n = NormalizedString::from("élégant");
         n.nfd().filter(|c| !c.is_mark_nonspacing() && c != 'n');
@@ -1452,6 +1448,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "normalizers")]
     fn slice() {
         let mut s = NormalizedString::from("𝔾𝕠𝕠𝕕 𝕞𝕠𝕣𝕟𝕚𝕟𝕘");
         s.nfkc();
@@ -2308,6 +2305,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "normalizers")]
     fn transform_check() {
         let mut s = NormalizedString::from("abc…");
         s.nfkd();

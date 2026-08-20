@@ -109,52 +109,13 @@ impl pipeline::Normalizer for Precompiled {
     }
 }
 
+// `pipeline_precompiled_matches_legacy` used to live here and needed `config` as well as the
+// enclosing `normalizers`, because the only way to get a charsmap to test against is to read one
+// out of a `tokenizer.json`. It moved to `tk-convert`'s `normalizers::mirror::tests` with the
+// serde_json it depends on; what stays is the one test that needs this module's private `replace`.
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn albert_precompiled() -> Precompiled {
-        let json = std::fs::read_to_string("../data/albert-base-v1-tokenizer.json").unwrap();
-        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
-        let precompiled = value["normalizer"]["normalizers"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|n| n["type"] == "Precompiled")
-            .unwrap();
-        // Precompiled can't deserialize through serde_json::Value (the base64
-        // charsmap only decodes via the string deserializer) — same dance as
-        // NormalizerWrapper's Deserialize impl
-        serde_json::from_str(&serde_json::to_string(precompiled).unwrap()).unwrap()
-    }
-
-    #[test]
-    fn pipeline_precompiled_matches_legacy() {
-        let n = albert_precompiled();
-        let mut any_modified = false;
-        for input in &[
-            "™\x1eg",
-            "ＫＡＤＯＫＡＷＡ",
-            "１２３",
-            "…",
-            "\u{fb01}",
-            "e\u{0301}",
-            "㍿",
-            "abc def",
-            "",
-        ] {
-            let mut ns = NormalizedString::from(*input);
-            Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
-            any_modified |= ns.get() != *input;
-            assert_eq!(
-                ns.get(),
-                &*pipeline::Normalizer::normalize(&n, input).unwrap(),
-                "pipeline output diverges from legacy for {input:?}"
-            );
-        }
-        // Guard against the oracle silently becoming a no-op on these inputs
-        assert!(any_modified);
-    }
 
     #[test]
     fn expansion_followed_by_removal() {

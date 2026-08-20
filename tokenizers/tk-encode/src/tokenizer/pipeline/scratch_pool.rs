@@ -102,13 +102,17 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use super::*;
-    use crate::pipeline::PipelineTokenizer;
+    use crate::models::bpe::PipelineBPE;
+    use crate::pipeline::{
+        PipelineModel, PipelinePostProcessor, PipelinePreTokenizer, PipelineTokenizer,
+    };
+    use crate::pre_tokenizers::sequence::PipelineSequence;
     use crate::pre_tokenizers::whitespace::Whitespace;
-    use crate::{PreTokenizerWrapper, Tokenizer};
+    use crate::vocab::bucket_added_vocabulary::AddedVocabulary as BucketAddedVocabulary;
 
-    /// A BPE tokenizer that merges "hello" into the single id 7.
-    fn hello_tokenizer() -> Tokenizer {
-        use crate::models::bpe::{BpeBuilder, Merges, Vocab};
+    /// A BPE model that merges "hello" into the single id 7.
+    fn hello_bpe() -> PipelineBPE {
+        use crate::models::bpe::{Merges, PipelineBpeOptions, Vocab};
 
         let vocab: Vocab = [
             ("h", 0u32),
@@ -129,40 +133,44 @@ mod tests {
             ("hel".to_string(), "l".to_string()),
             ("hell".to_string(), "o".to_string()),
         ];
-        let bpe = BpeBuilder::default()
-            .vocab_and_merges(vocab, merges)
-            .build()
-            .unwrap();
-        Tokenizer::new(bpe)
+        PipelineBPE::from_vocab_and_merges(vocab, merges, PipelineBpeOptions::default()).unwrap()
+    }
+
+    /// Assembled through `from_parts` rather than from a `Tokenizer`: the config layer lives in
+    /// `tk-convert` now, and the scratch pool does not care which reader filled the parts.
+    fn hello_pipeline_with(pre_tokenizer: PipelinePreTokenizer) -> PipelineTokenizer {
+        PipelineTokenizer::from_parts(
+            BucketAddedVocabulary::new(),
+            Vec::new(),
+            pre_tokenizer,
+            PipelineModel::BPE(hello_bpe()),
+            PipelinePostProcessor::default(),
+            None,
+        )
     }
 
     fn hello_pipeline() -> PipelineTokenizer {
-        PipelineTokenizer::try_from(&hello_tokenizer()).unwrap()
+        hello_pipeline_with(PipelinePreTokenizer::None)
     }
 
-    /// The same tokenizer, with a pre-tokenizer that cuts one span per word. A pipeline with no
+    /// The same model, with a pre-tokenizer that cuts one span per word. A pipeline with no
     /// pre-tokenizer leaves the whole chunk as a single span, which barely exercises
     /// [`EncodeScratch::pre_tokens`].
     fn hello_pipeline_split_on_words() -> PipelineTokenizer {
-        let mut tok = hello_tokenizer();
-        tok.with_pre_tokenizer(Some(Whitespace));
-        PipelineTokenizer::try_from(&tok).unwrap()
+        hello_pipeline_with(PipelinePreTokenizer::Whitespace(Whitespace))
     }
 
-    /// The same tokenizer, with a `Sequence` of two real children: the shape that runs
+    /// The same model, with a `Sequence` of two real children: the shape that runs
     /// [`PipelineSequence`]'s child loop, where a single child or a recognized deepseek
     /// composition would take a fast path above it instead.
     fn hello_pipeline_sequence() -> PipelineTokenizer {
         use crate::pre_tokenizers::digits::Digits;
-        use crate::pre_tokenizers::sequence::Sequence;
         use crate::pre_tokenizers::whitespace::WhitespaceSplit;
 
-        let mut tok = hello_tokenizer();
-        tok.with_pre_tokenizer(Some(Sequence::new(vec![
-            PreTokenizerWrapper::WhitespaceSplit(WhitespaceSplit),
-            PreTokenizerWrapper::Digits(Digits::default()),
-        ])));
-        PipelineTokenizer::try_from(&tok).unwrap()
+        hello_pipeline_with(PipelinePreTokenizer::Sequence(PipelineSequence::new(vec![
+            PipelinePreTokenizer::WhitespaceSplit(WhitespaceSplit),
+            PipelinePreTokenizer::Digits(Digits::default()),
+        ])))
     }
 
     /// Builds a default scratch and counts the call, for the tests that assert the pool reuses

@@ -3,10 +3,8 @@ use std::sync::LazyLock;
 use crate::pipeline;
 use crate::pre_tokenizers::unicode_scripts::scripts::{Script, get_script};
 use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result, normalizer::Range};
-use crate::utils::macro_rules_attribute;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[macro_rules_attribute(impl_serde_type!)]
 pub struct UnicodeScripts;
 
 impl UnicodeScripts {

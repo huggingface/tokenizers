@@ -1,6 +1,7 @@
+use tokenizers::decoders::byte_level::ByteLevelDecoder;
 use tokenizers::decoders::wordpiece::WordPiece as WordPieceDecoder;
 use tokenizers::models::bpe::BPE;
-use tokenizers::models::wordpiece::WordPiece;
+use tokenizers::models::wordpiece::{self, WordPiece};
 use tokenizers::normalizers::bert::BertNormalizer;
 use tokenizers::pre_tokenizers::bert::BertPreTokenizer;
 use tokenizers::pre_tokenizers::byte_level::ByteLevel;
@@ -26,7 +27,7 @@ pub fn get_byte_level(add_prefix_space: bool, trim_offsets: bool) -> Tokenizer {
         .with_pre_tokenizer(Some(
             ByteLevel::default().add_prefix_space(add_prefix_space),
         ))
-        .with_decoder(Some(ByteLevel::default()))
+        .with_decoder(Some(ByteLevelDecoder::default()))
         .with_post_processor(Some(ByteLevel::default().trim_offsets(trim_offsets)));
 
     tokenizer
@@ -34,8 +35,8 @@ pub fn get_byte_level(add_prefix_space: bool, trim_offsets: bool) -> Tokenizer {
 
 #[allow(dead_code)]
 pub fn get_bert_wordpiece() -> WordPiece {
-    WordPiece::from_file("data/bert-base-uncased-vocab.txt")
-        .build()
+    wordpiece::from_file("data/bert-base-uncased-vocab.txt")
+        .and_then(|builder| builder.build())
         .expect("Files not found, run `make test` to download these files")
 }
 

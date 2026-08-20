@@ -1,18 +1,19 @@
-//! The pipeline BPE model: its tables, how it is built from a [`BPE`], and how a pretokenized
-//! sequence is turned into tokens. Conversion to symbols lives in `convert`; the merge engines
-//! are `merge_multipass` and `merge_hot_cold_queue`.
+//! The pipeline BPE model: its tables, how it is built from a vocabulary and a merge list, and how
+//! a pretokenized sequence is turned into tokens. Conversion to symbols lives in `convert`; the
+//! merge engines are `merge_multipass` and `merge_hot_cold_queue`.
 use crate::models::bpe::At;
-use crate::models::bpe::Error;
 use crate::models::bpe::convert::{AFFIX_BUF, Affixes};
-use crate::models::bpe::legacy::model::BPE;
 use crate::models::bpe::merge_hot_cold_queue::{QueueScratch, merge_with_queue};
 use crate::models::bpe::merge_multipass::merge_multipass;
 use crate::models::bpe::tables::BpeTables;
+use crate::models::bpe::{Error, MergeMap, Merges, Pair, Vocab};
 use crate::pipeline::{self, PipelineToken};
 use crate::tokenizer::Result;
 use crate::utils::byte_level::{self};
+use crate::utils::cache::DEFAULT_CACHE_CAPACITY;
 use crate::utils::word_cache::{Lookup, WordCache};
 use crate::vocab::bucket_vocab_store::BucketVocabStore;
+use std::str::from_utf8_unchecked;
 
 const GATE_MULTI: u16 = 8;
 const GATE_ASCII: u16 = 24;
@@ -49,6 +50,56 @@ fn content_start(bytes: &[u8]) -> usize {
 // the caller is filling. That is only sound while a token is layout-identical to its id.
 const _: () = assert!(size_of::<PipelineToken>() == size_of::<u32>());
 const _: () = assert!(align_of::<PipelineToken>() == align_of::<u32>());
+
+/// Everything a [`PipelineBPE`] needs besides its vocabulary and its merge list.
+///
+/// A `Default`-able struct rather than a nine-argument constructor, so a caller spells only the
+/// fields its config actually declares — which for most of the Hub is `with_byte_level` and nothing
+/// else. It carries no serde: naming these options in a config file is the readers' business, and
+/// one of those readers ([`tk-serialize`](https://docs.rs/tk-serialize)) links no serde at all.
+pub struct PipelineBpeOptions {
+    /// The token to emit for a character with no vocabulary entry. Must itself be in the vocab.
+    pub unk_token: Option<String>,
+    /// Prefix carried by every subword that is not the first of its word (WordPiece's `"##"`).
+    pub continuing_subword_prefix: Option<String>,
+    /// Suffix carried by the last subword of a word (`"</w>"`).
+    pub end_of_word_suffix: Option<String>,
+    /// Whether a run of unknown characters collapses into one unk token.
+    pub fuse_unk: bool,
+    /// SentencePiece's byte fallback: an unknown character becomes one `"<0xNN>"` token per byte,
+    /// which requires all 256 of them to be in the vocabulary.
+    pub byte_fallback: bool,
+    /// Merge dropout. Only `None` and `Some(0.0)` are runnable here: dropout makes tokenization
+    /// non-deterministic, which the tables and the word cache are both built on the assumption of.
+    /// A value outside `0.0..=1.0` is rejected as a bad config, a value above it as unsupported.
+    pub dropout: Option<f32>,
+    /// Emit any pretoken that is itself a vocabulary entry as that entry, without merging. The flag
+    /// only *widens* what folds: entries that provably reduce to themselves fold either way, which
+    /// is what `prove_fold` settles at load.
+    pub ignore_merges: bool,
+    /// Slots in the per-scratch word cache; `0` turns caching off. Defaults to
+    /// [`DEFAULT_CACHE_CAPACITY`](crate::models::bpe::DEFAULT_CACHE_CAPACITY).
+    pub cache_capacity: usize,
+    /// The vocabulary is written in the byte-level alphabet (gpt2 and everything after it), so its
+    /// entries are decoded to their raw bytes at load and every byte has to be an atom.
+    pub with_byte_level: bool,
+}
+
+impl Default for PipelineBpeOptions {
+    fn default() -> Self {
+        Self {
+            unk_token: None,
+            continuing_subword_prefix: None,
+            end_of_word_suffix: None,
+            fuse_unk: false,
+            byte_fallback: false,
+            dropout: None,
+            ignore_merges: false,
+            cache_capacity: DEFAULT_CACHE_CAPACITY,
+            with_byte_level: false,
+        }
+    }
+}
 
 pub struct PipelineBPE {
     pub(super) atoms: Atoms,
@@ -95,24 +146,112 @@ impl PipelineBPE {
         self.vocab.id_to_token(id)
     }
 
-    pub fn from_bpe(model: BPE, with_byte_level: bool) -> Result<Self> {
-        if matches!(&model.dropout, Some(dropout) if *dropout > 0.0) {
-            return Err("BPE models with dropout not supported yet".into());
+    /// Build a `PipelineBPE` from a vocabulary and a merge list, exactly as they are written in a
+    /// `tokenizer.json`.
+    ///
+    /// This is the crate boundary made concrete. `tk-serialize` reads a canonical config with a
+    /// hand-rolled parser and links no serde at all, so it cannot go through the config-shaped
+    /// `BPE` in `tk-convert` — that type is what makes an *old* serialized BPE still loadable, and
+    /// depending on it here would invert the split (`tk-serialize` -> `tk-convert`) that the whole
+    /// arrangement exists to prevent. So the runtime owns one serde-free door that takes the raw
+    /// parts, and both readers walk through it: `tk-serialize` with what it parsed, `tk-convert`
+    /// with what its builder resolved (see [`Self::from_merge_map`]).
+    ///
+    /// The work below is the merge-table derivation that used to live in `BpeBuilder::build`, moved
+    /// verbatim: each merge's two tokens are looked up in `vocab`, their concatenation (minus the
+    /// continuing-subword prefix on the right-hand token) is looked up as well, and the rank plus
+    /// that product id become the merge's value. It has to happen on this side of the line because
+    /// everything it feeds — the tables, the byte-level fold, the caches — is runtime state.
+    pub fn from_vocab_and_merges(
+        vocab: Vocab,
+        merges: Merges,
+        options: PipelineBpeOptions,
+    ) -> Result<Self> {
+        // The range check the builder used to do. It is separate from the "dropout is not
+        // supported" rejection below: 0.5 is a *valid* config that this engine cannot run, while
+        // 1.5 was never a valid config at all, and the two have to keep reporting differently.
+        if let Some(p) = options.dropout
+            && !(0.0..=1.0).contains(&p)
+        {
+            return Err(Error::InvalidDropout.into());
         }
-        let BPE {
-            vocab,
-            merges,
-            ignore_merges,
-            byte_fallback,
+
+        let mut max_len = 0;
+        for key in vocab.keys() {
+            if max_len < key.len() {
+                max_len = key.len();
+            }
+        }
+        let prefix_len = options
+            .continuing_subword_prefix
+            .as_ref()
+            .map_or(0, |prefix| prefix.len());
+        let mut buffer: Vec<u8> = vec![0; max_len];
+        let merges: MergeMap = merges
+            .into_iter()
+            .enumerate()
+            .map(|(i, (a, b))| -> Result<(Pair, (u32, u32))> {
+                let a_id = vocab
+                    .get(&a)
+                    .ok_or_else(|| Error::MergeTokenOutOfVocabulary(a.to_owned()))?;
+                let b_id = vocab
+                    .get(&b)
+                    .ok_or_else(|| Error::MergeTokenOutOfVocabulary(b.to_owned()))?;
+                buffer[0..a.len()].copy_from_slice(a.as_bytes());
+                let b_len = b.len() - prefix_len;
+                let merge_len = a.len() + b_len;
+                buffer[a.len()..merge_len].copy_from_slice(&b.as_bytes()[prefix_len..]);
+                // SAFETY: buffer contains a concatenation of two valid UTF-8 strings, so it is itself valid UTF-8, even considering prefix_len
+                let new_token = unsafe { from_utf8_unchecked(&buffer[..merge_len]) };
+                let new_id = vocab
+                    .get(new_token)
+                    .ok_or_else(|| Error::MergeTokenOutOfVocabulary(new_token.to_owned()))?;
+                Ok(((*a_id, *b_id), (i as u32, *new_id)))
+            })
+            .collect::<Result<MergeMap>>()?;
+
+        let vocab = if vocab.is_empty() {
+            BucketVocabStore::new()
+        } else {
+            BucketVocabStore::build(
+                vocab
+                    .into_iter()
+                    .map(|(k, v)| (k.into_bytes(), v))
+                    .collect(),
+            )
+        };
+
+        Self::from_merge_map(vocab, merges, options)
+    }
+
+    /// The same construction, entered from a vocabulary store and a merge map that have *already*
+    /// been resolved against each other.
+    ///
+    /// This is the door for the config-shaped `BPE` in `tk-convert`: that type keeps exactly these
+    /// two tables as its own fields, because its legacy encode path needs them, so re-deriving them
+    /// from re-inverted merge *strings* would be both slower and a second source of truth for what
+    /// a merge means. [`Self::from_vocab_and_merges`] is this function plus that derivation.
+    pub fn from_merge_map(
+        vocab: BucketVocabStore,
+        merges: MergeMap,
+        options: PipelineBpeOptions,
+    ) -> Result<Self> {
+        let PipelineBpeOptions {
             unk_token,
-            fuse_unk,
             continuing_subword_prefix,
             end_of_word_suffix,
-            cache,
-            ..
-        } = model;
+            fuse_unk,
+            byte_fallback,
+            ignore_merges,
+            dropout,
+            cache_capacity,
+            with_byte_level,
+        } = options;
+        if matches!(&dropout, Some(dropout) if *dropout > 0.0) {
+            return Err("BPE models with dropout not supported yet".into());
+        }
         // A capacity of zero means "no cache"; anything else sizes the per-scratch table.
-        let cache_capacity = cache.map(|cache| cache.capacity).filter(|&c| c > 0);
+        let cache_capacity = Some(cache_capacity).filter(|&c| c > 0);
         let prefix = continuing_subword_prefix.unwrap_or_default();
         let suffix = end_of_word_suffix.unwrap_or_default();
         if prefix.len() + 4 + suffix.len() > AFFIX_BUF {
@@ -245,7 +384,7 @@ impl PipelineBPE {
     #[inline(always)]
     fn fold_id(&self, sequence: &str) -> Option<u32> {
         // One probe; the foldable bit is part of the id that probe already returned. Which entries
-        // carry it was settled at load -- see `from_bpe`.
+        // carry it was settled at load -- see `from_merge_map`.
         let (id, foldable) = self.vocab.get_bytes_foldable(sequence.as_bytes())?;
         foldable.then_some(id)
     }
@@ -351,95 +490,5 @@ impl pipeline::Model for PipelineBPE {
             queue: QueueScratch::default(),
             word_cache: self.cache_capacity.map(WordCache::new),
         }
-    }
-}
-
-#[cfg(test)]
-mod fold_tests {
-    use crate::Tokenizer;
-    use crate::pipeline::PipelineTokenizer;
-
-    /// The proven fold emits a vocabulary entry without merging, so it is only valid if the merge
-    /// loop would have produced that same entry. gpt2 does not declare `ignore_merges`, so here
-    /// the fold is on purely because the proof enabled it -- which makes it the config where a
-    /// wrong proof would show up.
-    ///
-    /// These strings mix words that are a single vocabulary entry (folded) with words that are
-    /// not (merged), and include the special token whose entry does NOT fold: `<|endoftext|>`
-    /// decomposes to seven tokens, and folding it would emit one.
-    #[test]
-    fn the_proven_fold_never_changes_the_ids() {
-        let reference = Tokenizer::from_file("../data/gpt2.json").unwrap();
-        let pipe = PipelineTokenizer::try_from(&reference).unwrap();
-
-        for text in [
-            " the quick brown fox jumps over the lazy dog",
-            "unprefixed words and internationalisation",
-            "def foo(bar):\n    return bar + 1\n",
-            "<|endoftext|> literal in the middle <|endoftext|>",
-            " 语言模型 mixed with ASCII and ελληνικά",
-            "aaaaaaaaaaaaaaaaaaaaaaaa",
-            "   ",
-            "",
-        ] {
-            let want: Vec<u32> = reference
-                .encode_fast(text, false)
-                .unwrap()
-                .get_ids()
-                .to_vec();
-            let got: Vec<u32> = pipe
-                .encode(text, false)
-                .wait()
-                .unwrap()
-                .remove(0)
-                .ids()
-                .iter()
-                .map(|t| t.id())
-                .collect();
-            assert_eq!(want, got, "the fold changed the ids for {text:?}");
-        }
-    }
-
-    /// `PipelineBPE::tokenize_spans` is an override of a trait method whose default is the
-    /// `tokenize_pipeline` loop, so the two can drift apart without anything failing to build --
-    /// which is how it came to destructure a `BpeScratch` that no longer had those fields.
-    ///
-    /// The short strings above pass through the batch loop a handful of spans at a time. This one
-    /// gives it thousands in a single chunk, with the traffic that separates the two paths:
-    /// repeats (so the word cache both fills and hits), words the fold serves, words that must
-    /// merge, punctuation runs, multi-byte scripts, and a long unbroken run.
-    #[test]
-    fn the_batched_path_matches_the_reference() {
-        let reference = Tokenizer::from_file("../data/gpt2.json").unwrap();
-        let pipe = PipelineTokenizer::try_from(&reference).unwrap();
-
-        let mut text = String::new();
-        for i in 0..400 {
-            text.push_str(" the quick brown fox jumps over the lazy dog");
-            text.push_str(" internationalisation unfortunately");
-            text.push_str(" def foo(bar): return bar + 1");
-            text.push_str(" <|xs0|> <|xs1|> <|endoftext|>");
-            text.push_str(" 语言模型 ελληνικά");
-            if i % 3 == 0 {
-                text.push_str(" aaaaaaaaaaaaaaaaaaaaaaaa ");
-            }
-        }
-
-        let want: Vec<u32> = reference
-            .encode_fast(text.as_str(), false)
-            .unwrap()
-            .get_ids()
-            .to_vec();
-        let got: Vec<u32> = pipe
-            .encode(text.as_str(), false)
-            .wait()
-            .unwrap()
-            .remove(0)
-            .ids()
-            .iter()
-            .map(|t| t.id())
-            .collect();
-        assert_eq!(want.len(), got.len(), "token count differs");
-        assert_eq!(want, got, "the batched path changed the ids");
     }
 }

@@ -1,23 +1,20 @@
 use crate::tokenizer::{Decoder, Result};
-use monostate::MustBe;
 
-use serde::{Deserialize, Serialize};
-
-#[derive(Deserialize, Clone, Debug, Serialize, Default)]
+#[derive(Clone, Debug, Default)]
 /// ByteFallback is a simple trick which converts tokens looking like `<0x61>`
 /// to pure bytes, and attempts to make them into a string. If the tokens
 /// cannot be decoded you will get � instead for each inconvertible byte token
+///
+/// It used to carry a `monostate::MustBe!("ByteFallback")` field, which existed only so that serde
+/// would *require* the `"type"` tag -- with no other field, nothing else would have stopped `{}`
+/// from deserializing as a `ByteFallback`. That requirement now lives in `tk-convert`'s
+/// `decoders::mirror::byte_fallback`, and dropping the field is what let `monostate` go.
 #[non_exhaustive]
-pub struct ByteFallback {
-    #[serde(rename = "type")]
-    type_: MustBe!("ByteFallback"),
-}
+pub struct ByteFallback {}
 
 impl ByteFallback {
     pub fn new() -> Self {
-        Self {
-            type_: MustBe!("ByteFallback"),
-        }
+        Self {}
     }
 }
 

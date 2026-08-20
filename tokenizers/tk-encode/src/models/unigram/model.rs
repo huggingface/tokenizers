@@ -14,7 +14,6 @@ use crate::{
 use std::collections::HashMap;
 
 use std::convert::TryInto;
-use std::fs::read_to_string;
 use std::path::{Path, PathBuf};
 
 type Vocab = Vec<(String, f64)>;
@@ -404,17 +403,19 @@ impl Unigram {
         UnigramIterator { model: self, i: 0 }
     }
 
-    /// Loads a SentencePiece output model after being trained by tokenizers.
-    /// After that you can use the model with tokenizers library.
-    /// ```no_run
-    /// use tk_encode::models::unigram::Unigram;
-    /// use std::path::Path;
+    /// The id of the unknown-token entry, if this model declares one.
     ///
-    /// let model = Unigram::load("mymodel-unigram.json").unwrap();
-    /// ```
-    pub fn load<P: AsRef<Path>>(path: P) -> Result<Unigram> {
-        let string = read_to_string(path)?;
-        Ok(serde_json::from_str(&string)?)
+    /// This and [`Self::vocab`] exist for `tk-convert`'s serde mirror: the fields themselves are
+    /// crate-private, and a `unigram.json` is written from exactly these three values plus
+    /// [`Self::byte_fallback`].
+    pub fn unk_id(&self) -> Option<usize> {
+        self.unk_id
+    }
+
+    /// The `(token, score)` table, in id order. [`Self::iter`] is the same data, one entry at a
+    /// time.
+    pub fn vocab(&self) -> &[(String, f64)] {
+        &self.vocab
     }
 
     /// Clears the internal cache
@@ -502,17 +503,17 @@ impl Model for Unigram {
         self.vocab.get(id as usize).map(|item| item.0.clone())
     }
 
-    fn save(&self, folder: &Path, name: Option<&str>) -> Result<Vec<PathBuf>> {
-        let name = match name {
-            Some(name) => format!("{name}-unigram.json"),
-            None => "unigram.json".to_string(),
-        };
-        let mut fullpath = PathBuf::new();
-        fullpath.push(folder);
-        fullpath.push(name);
-        let string = serde_json::to_string_pretty(self)?;
-        std::fs::write(&fullpath, string)?;
-        Ok(vec![fullpath])
+    /// A `unigram.json` is the whole model pretty-printed by serde, and this crate links no serde,
+    /// so the writing lives in `tk_convert::models::unigram::save`. It cannot move *with* the
+    /// method: `Model` is defined here and so is `Unigram`, which puts an
+    /// `impl Model for Unigram` in another crate on the wrong side of the orphan rule. Every real
+    /// caller reaches `save` through `tk_convert::ModelWrapper`, which writes the file itself.
+    fn save(&self, _folder: &Path, _name: Option<&str>) -> Result<Vec<PathBuf>> {
+        Err(
+            "writing a Unigram model is config-layer work: use `tk_convert::ModelWrapper::save`, \
+             or `tk_convert::models::unigram::save` for a bare model"
+                .into(),
+        )
     }
 }
 

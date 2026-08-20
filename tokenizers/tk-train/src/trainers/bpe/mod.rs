@@ -12,11 +12,15 @@ use dary_heap::OctonaryHeap;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::HashSet;
-use tk_encode::models::bpe::{BPE, Pair, WithFirstLastIterator, Word};
+use tk_convert::AddedToken;
+// `BPE` and the `Word` machinery a trainer merges into moved to `tk-convert` with the rest of the
+// config-shaped model: `tk-encode`'s only BPE is the pipeline one, which trains into nothing.
+use tk_convert::models::bpe::{BPE, WithFirstLastIterator, Word};
+use tk_encode::Result;
+use tk_encode::models::bpe::Pair;
 use tk_encode::parallelism::*;
 use tk_encode::utils::progress::{ProgressBar, ProgressFormat, ProgressStyle};
 use tk_encode::vocab::bucket_vocab_store::BucketVocabStore;
-use tk_encode::{AddedToken, Result};
 
 #[derive(Debug, Eq)]
 struct Merge {
@@ -190,7 +194,7 @@ impl BpeTrainerBuilder {
 /// ```
 /// use tk_train::Trainer;
 /// use tk_train::BpeTrainer;
-/// use tk_encode::models::bpe::BPE;
+/// use tk_convert::models::bpe::BPE;
 ///
 /// let sequences = vec![ "Hello", "World" ];
 ///
@@ -210,6 +214,10 @@ pub struct BpeTrainer {
     /// Whether to show progress while training
     pub show_progress: bool,
     /// Progress output format (Indicatif, JsonLines, or Silent)
+    ///
+    /// `ProgressFormat` is a `tk-encode` type and carries no serde of its own; `tk-convert` owns its
+    /// on-disk shape, same as for every other type that crosses that line.
+    #[serde(with = "tk_convert::mirror::ProgressFormatDef")]
     pub progress_format: ProgressFormat,
     /// A list of special tokens that the model should know of
     pub special_tokens: Vec<AddedToken>,
@@ -684,7 +692,8 @@ mod tests {
     use super::BpeTrainer;
     use ahash::AHashMap;
     use compact_str::CompactString;
-    use tk_encode::models::bpe::{BPE, Pair};
+    use tk_convert::models::bpe::BPE;
+    use tk_encode::models::bpe::Pair;
 
     #[test]
     fn test_train() {

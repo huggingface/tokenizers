@@ -7,7 +7,6 @@ use crate::{
 
 use super::utils::lowercases_to_self;
 
-use serde::{Deserialize, Serialize};
 use unicode_categories::UnicodeCategories;
 use unicode_normalization::{IsNormalized, UnicodeNormalization, is_nfd_quick};
 
@@ -65,8 +64,7 @@ fn is_chinese_char(c: char) -> bool {
     )
 }
 
-#[derive(Copy, Clone, Debug, Deserialize, Serialize)]
-#[serde(tag = "type")]
+#[derive(Copy, Clone, Debug)]
 #[non_exhaustive]
 pub struct BertNormalizer {
     /// Whether to do the bert basic cleaning:

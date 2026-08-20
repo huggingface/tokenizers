@@ -1446,17 +1446,29 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
+name = "tk-convert"
+version = "0.23.2-dev.0"
+dependencies = [
+ "ahash",
+ "daachorse",
+ "log",
+ "paste",
+ "regex",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tk-encode",
+]
+
+[[package]]
 name = "tk-encode"
 version = "0.23.2-dev.0"
 dependencies = [
  "ahash",
  "atomsplit",
- "compact_str",
- "daachorse",
  "dary_heap",
  "derive_builder",
  "fancy-regex",
- "getrandom 0.3.4",
  "indicatif",
  "itertools 0.14.0",
  "libc",
@@ -1497,6 +1509,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
+ "tk-convert",
  "tk-encode",
 ]
 
@@ -1504,6 +1517,7 @@ dependencies = [
 name = "tokenizers"
 version = "0.23.2-dev.0"
 dependencies = [
+ "tk-convert",
  "tk-encode",
  "tk-train",
 ]

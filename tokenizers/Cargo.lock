@@ -2281,13 +2281,36 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
+name = "tk-convert"
+version = "0.23.2-dev.0"
+dependencies = [
+ "ahash",
+ "criterion 0.6.0",
+ "daachorse 3.0.2",
+ "dary_heap",
+ "log",
+ "paste",
+ "rand 0.9.4",
+ "rayon",
+ "regex",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tk-encode",
+ "tk-serialize",
+ "tokenizers 0.23.1",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "tk-encode"
 version = "0.23.2-dev.0"
 dependencies = [
  "ahash",
  "assert_approx_eq",
  "atomsplit",
- "compact_str",
  "criterion 0.6.0",
  "daachorse 3.0.2",
  "dary_heap",
@@ -2301,15 +2324,12 @@ dependencies = [
  "log",
  "macro_rules_attribute",
  "memchr",
- "monostate",
  "paste",
  "ptr_hash",
  "rand 0.9.4",
  "rayon",
  "rayon-cond",
  "regex",
- "serde",
- "serde_json",
  "spm_precompiled",
  "tempfile",
  "thiserror",
@@ -2322,6 +2342,15 @@ dependencies = [
  "unicode_categories",
  "wide",
  "yada",
+]
+
+[[package]]
+name = "tk-serialize"
+version = "0.23.2-dev.0"
+dependencies = [
+ "atomsplit",
+ "serde_json",
+ "tk-encode",
 ]
 
 [[package]]
@@ -2341,6 +2370,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "thiserror",
+ "tk-convert",
  "tk-encode",
 ]
 
@@ -2387,6 +2417,7 @@ dependencies = [
  "criterion 0.6.0",
  "serde_json",
  "tempfile",
+ "tk-convert",
  "tk-encode",
  "tk-train",
  "tracing",

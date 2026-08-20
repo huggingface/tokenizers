@@ -33,6 +33,10 @@ impl Task for BPEFromFilesTask {
 
 pub struct WordPieceFromFilesTask {
   pub(crate) builder: Option<WordPieceBuilder>,
+  /// The `vocab.txt` to load, read here in `compute` rather than eagerly by the caller: it used to
+  /// be `WordPieceBuilder::files`, whose read happened inside `build()`, and that kept the file I/O
+  /// off the JS thread. `files` moved to `tk-convert` with every other way of loading a vocabulary.
+  pub(crate) vocab: String,
 }
 
 impl Task for WordPieceFromFilesTask {
@@ -40,10 +44,13 @@ impl Task for WordPieceFromFilesTask {
   type JsValue = Model;
 
   fn compute(&mut self) -> Result<Self::Output> {
+    let vocab = tk::models::wordpiece::read_file(&self.vocab)
+      .map_err(|e| Error::from_reason(format!("{e}")))?;
     self
       .builder
       .take()
       .ok_or(Error::from_reason("Empty builder".to_string()))?
+      .vocab(vocab)
       .build()
       .map_err(|e| Error::from_reason(format!("{e}")))
   }
@@ -56,6 +63,8 @@ impl Task for WordPieceFromFilesTask {
 }
 pub struct WordLevelFromFilesTask {
   pub(crate) builder: Option<WordLevelBuilder>,
+  /// The `vocab.json` to load. Same reason as `WordPieceFromFilesTask::vocab` above.
+  pub(crate) vocab: String,
 }
 
 impl Task for WordLevelFromFilesTask {
@@ -63,10 +72,13 @@ impl Task for WordLevelFromFilesTask {
   type JsValue = Model;
 
   fn compute(&mut self) -> Result<Self::Output> {
+    let vocab = tk::models::wordlevel::read_file(&self.vocab)
+      .map_err(|e| Error::from_reason(format!("{e}")))?;
     self
       .builder
       .take()
       .ok_or(Error::from_reason("Empty builder".to_string()))?
+      .vocab(vocab)
       .build()
       .map_err(|e| Error::from_reason(format!("{e}")))
   }

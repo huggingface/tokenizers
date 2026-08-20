@@ -1,78 +1,24 @@
 use std::borrow::Cow;
 
 use crate::pipeline;
-use crate::tokenizer::Decoder;
-use crate::tokenizer::pattern::Pattern;
+use crate::utils::search::Search;
+
+// `ReplacePattern` moved to `utils::search` with the matcher it configures; re-exported so the
+// historical path keeps working.
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
-use crate::utils::SysRegex;
-use atomsplit::literal::Literal;
-use serde::{Deserialize, Serialize};
-
-/// Represents the different patterns that `Replace` can use
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq)]
-pub enum ReplacePattern {
-    String(String),
-    Regex(String),
-}
-
-impl From<String> for ReplacePattern {
-    fn from(v: String) -> Self {
-        Self::String(v)
-    }
-}
-
-impl From<&str> for ReplacePattern {
-    fn from(v: &str) -> Self {
-        Self::String(v.to_owned())
-    }
-}
-
-/// We use this custom deserializer to build the search for `Replace`
-#[doc(hidden)]
-#[derive(Deserialize)]
-#[serde(tag = "type")]
-struct ReplaceDeserializer {
-    pattern: ReplacePattern,
-    content: String,
-}
-
-impl std::convert::TryFrom<ReplaceDeserializer> for Replace {
-    type Error = Box<dyn std::error::Error + Send + Sync>;
-
-    fn try_from(v: ReplaceDeserializer) -> Result<Self> {
-        Self::new(v.pattern, v.content)
-    }
-}
-
-/// How a [`Replace`] looks for its pattern.
-#[derive(Debug)]
-enum Search {
-    /// A plain string, scanned for directly — no regex engine involved, so this works in every build.
-    Literal(Literal),
-    /// A real regex, which needs the system backend (the `fancy-regex` feature).
-    Regex(SysRegex),
-    /// The empty string, which matches nothing.
-    Nothing,
-}
-
-impl Search {
-    fn find_matches(&self, inside: &str) -> Result<Vec<((usize, usize), bool)>> {
-        match self {
-            Self::Literal(literal) => literal.find_matches(inside),
-            Self::Regex(regex) => regex.find_matches(inside),
-            Self::Nothing => Ok(vec![((0, inside.len()), false)]),
-        }
-    }
-}
+pub use crate::utils::search::ReplacePattern;
 
 /// This normalizer will take a `pattern` (for now only a String)
 /// and replace every occurrence with `content`.
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(tag = "type", try_from = "ReplaceDeserializer")]
+///
+/// The on-disk shape lives in `tk-convert`'s `normalizers::mirror::replace`, which is also where
+/// the `ReplaceDeserializer` + `TryFrom` pair went: `search` is derived from `pattern` by a
+/// constructor that can fail, so a config can only ever be turned into a `Replace` through
+/// `Replace::new`, never field by field.
+#[derive(Debug)]
 pub struct Replace {
     pattern: ReplacePattern,
     pub content: String,
-    #[serde(skip)]
     search: Search,
 }
 
@@ -91,17 +37,20 @@ impl PartialEq for Replace {
 impl Replace {
     pub fn new<I: Into<ReplacePattern>, C: Into<String>>(pattern: I, content: C) -> Result<Self> {
         let pattern: ReplacePattern = pattern.into();
-        let search = match &pattern {
-            ReplacePattern::String(s) if s.is_empty() => Search::Nothing,
-            ReplacePattern::String(s) => Search::Literal(Literal::new(s.as_bytes())?),
-            ReplacePattern::Regex(r) => Search::Regex(SysRegex::new(r)?),
-        };
+        let search = Search::new(&pattern)?;
 
         Ok(Self {
             pattern,
             content: content.into(),
             search,
         })
+    }
+}
+
+impl Replace {
+    /// The pattern as written in the config. Needed to write it back out.
+    pub fn pattern(&self) -> &ReplacePattern {
+        &self.pattern
     }
 }
 
@@ -156,26 +105,6 @@ impl pipeline::Normalizer for Replace {
     }
 }
 
-impl Decoder for Replace {
-    fn decode_chain(&self, tokens: Vec<String>) -> Result<Vec<String>> {
-        tokens
-            .into_iter()
-            .map(|token| -> Result<String> {
-                let mut new_token = "".to_string();
-
-                for ((start, stop), is_match) in self.search.find_matches(&token)? {
-                    if is_match {
-                        new_token.push_str(&self.content);
-                    } else {
-                        new_token.push_str(&token[start..stop]);
-                    }
-                }
-                Ok(new_token)
-            })
-            .collect()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -206,19 +135,9 @@ mod tests {
         assert_eq!(&n.get(), &normalized);
     }
 
-    #[test]
-    #[cfg(feature = "fancy-regex")] // the regex half of this needs a system-regex backend
-    fn serialization() {
-        let replace = Replace::new("Hello", "Hey").unwrap();
-        let replace_s = r#"{"type":"Replace","pattern":{"String":"Hello"},"content":"Hey"}"#;
-        assert_eq!(serde_json::to_string(&replace).unwrap(), replace_s);
-        assert_eq!(serde_json::from_str::<Replace>(replace_s).unwrap(), replace);
-
-        let replace = Replace::new(ReplacePattern::Regex(r"\s+".into()), ' ').unwrap();
-        let replace_s = r#"{"type":"Replace","pattern":{"Regex":"\\s+"},"content":" "}"#;
-        assert_eq!(serde_json::to_string(&replace).unwrap(), replace_s);
-        assert_eq!(serde_json::from_str::<Replace>(replace_s).unwrap(), replace);
-    }
+    // `serialization` and `a_string_pattern_deserializes_with_no_backend` moved to
+    // `tk-convert`'s `normalizers::mirror::tests` with the serde they exercise. What is left here
+    // is everything that tests the normalizer itself rather than its on-disk shape.
 
     /// The goal of the literal path: a plain string pattern builds and runs with no regex backend.
     #[test]
@@ -238,26 +157,6 @@ mod tests {
         assert_eq!(
             pipeline::Normalizer::normalize(&empty, "abc").unwrap(),
             "abc"
-        );
-    }
-
-    /// A config spelling its pattern as a string must also *deserialize* with no backend — the
-    /// regex half of `serialization` above can only run once one is compiled.
-    #[test]
-    fn a_string_pattern_deserializes_with_no_backend() {
-        let replace_s = r#"{"type":"Replace","pattern":{"String":"Hello"},"content":"Hey"}"#;
-        let replace = Replace::new("Hello", "Hey").unwrap();
-        assert_eq!(serde_json::from_str::<Replace>(replace_s).unwrap(), replace);
-        assert_eq!(serde_json::to_string(&replace).unwrap(), replace_s);
-    }
-
-    #[test]
-    fn test_replace_decode() {
-        let original = vec!["hello".to_string(), "_hello".to_string()];
-        let replace = Replace::new("_", " ").unwrap();
-        assert_eq!(
-            replace.decode_chain(original).unwrap(),
-            vec!["hello", " hello"]
         );
     }
 

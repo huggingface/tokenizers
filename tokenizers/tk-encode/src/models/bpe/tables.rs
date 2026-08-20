@@ -85,11 +85,14 @@ impl BpeTables {
             .map(|(_, (_, id))| *id)
             .collect::<HashSet<u32>>();
 
-        // vocab tokens that are not obtained by any merge
-        let mut alphabet: Vec<u32> = vocab
+        // vocab tokens that are not obtained by any merge. Held as u64 rather than u32 purely so
+        // that this sort is the same `[u64]` instantiation as every other load-time sort: each
+        // distinct key type costs its own ~2 KB copy of driftsort/ipnsort in the binary.
+        let mut alphabet: Vec<u64> = vocab
             .values()
             .copied()
             .filter(|id| !rev_merge.contains(id))
+            .map(|id| id as u64)
             .collect();
         alphabet.sort_unstable();
         let base: usize = alphabet.len();
@@ -103,7 +106,13 @@ impl BpeTables {
             let slot = lowest_rank.entry(*merge_id).or_insert(*rank);
             *slot = cmp::min(*slot, *rank);
         }
-        let mut products: Vec<(u32, u32)> = lowest_rank.iter().map(|(p, r)| (*r, *p)).collect();
+        // (rank, product) packed rank-high into one u64. Ascending u64 order is exactly the
+        // lexicographic order the `(u32, u32)` tuple sorted by, and it reuses the `[u64]` sort
+        // above instead of monomorphising a second one for the tuple.
+        let mut products: Vec<u64> = lowest_rank
+            .iter()
+            .map(|(p, r)| ((*r as u64) << 32) | *p as u64)
+            .collect();
         products.sort_unstable();
 
         // this one is destroyed afterwards, does not matter if its big.
@@ -111,15 +120,17 @@ impl BpeTables {
             vec![u32::MAX; *vocab.values().max().unwrap_or(&0u32) as usize + 1];
         let mut unmap = vec![u32::MAX; base + products.len()];
         // fill the first 0->base with the alphabet sorted by rank.
-        unmap[0..base].copy_from_slice(&alphabet);
         for (internal, external) in alphabet.iter().enumerate() {
-            internal_id_map[*external as usize] = internal as u32;
+            let external = *external as u32;
+            unmap[internal] = external;
+            internal_id_map[external as usize] = internal as u32;
         }
         // now fill the rest of the tables with products sorted by rank.
-        for (pos, (_, product)) in products.iter().enumerate() {
+        for (pos, packed) in products.iter().enumerate() {
             let internal = (base + pos) as u32;
-            unmap[internal as usize] = *product;
-            internal_id_map[*product as usize] = internal;
+            let product = *packed as u32;
+            unmap[internal as usize] = product;
+            internal_id_map[product as usize] = internal;
         }
         let (fold, byte_internal) =
             fold::build(&vocab, &merges, &internal_id_map, &unmap, byte_level);

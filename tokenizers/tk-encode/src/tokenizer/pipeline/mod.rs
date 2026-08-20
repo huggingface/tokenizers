@@ -1,44 +1,54 @@
-use std::convert::TryInto;
 use std::iter::Enumerate;
 use std::sync::Arc;
 use std::vec::IntoIter;
 use std::{borrow::Cow, convert::TryFrom};
 
+#[cfg(feature = "normalizers")]
+use crate::normalizers::{
+    bert::BertNormalizer,
+    precompiled::Precompiled,
+    strip::StripAccents,
+    unicode::{NFC, NFD, NFKC, NFKD, Nmt},
+};
+
+#[cfg(feature = "unigram")]
+use crate::models::unigram::{Unigram, UnigramScratch};
+#[cfg(feature = "wordlevel")]
+use crate::models::wordlevel::WordLevel;
+#[cfg(feature = "wordpiece")]
+use crate::models::wordpiece::{PipelineWordPiece, WordPieceScratch};
+// `PipelineWordPiece::id_to_token` is inherent; Unigram and WordLevel get theirs from the trait.
+#[cfg(any(feature = "unigram", feature = "wordlevel"))]
+use crate::tokenizer::Model as _;
+
 use crate::{
-    DecoderWrapper, ModelWrapper, PostProcessorWrapper, PreTokenizerWrapper, Tokenizer,
-    models::{
-        bpe::{BpeScratch, PipelineBPE},
-        unigram::{Unigram, UnigramScratch},
-        wordlevel::WordLevel,
-        wordpiece::{PipelineWordPiece, WordPieceScratch},
+    DecoderRuntime,
+    models::bpe::{BpeScratch, PipelineBPE},
+    normalizers::{
+        byte_level::ByteLevel as ByteLevelNormalizer, metaspace::MetaspaceNormalizer,
+        prepend::Prepend, replace::Replace, strip::Strip, utils::Lowercase,
     },
-    normalizers::{NormalizerWrapper, metaspace::MetaspaceNormalizer},
     pipeline::scratch_pool::{EncodeScratch, ScratchPool},
     pre_tokenizers::{
         bert::BertPreTokenizer,
         delimiter::CharDelimiterSplit,
         digits::Digits,
         fixed_length::FixedLength,
-        metaspace,
         punctuation::Punctuation,
         sequence::PipelineSequence,
-        split::{Split as SplitPretok, SplitPattern},
-        unicode_scripts::UnicodeScripts,
+        split::Split as SplitPretok,
         whitespace::{Whitespace, WhitespaceSplit},
     },
-    processors::{
-        bert::BertProcessing,
-        roberta::RobertaProcessing,
-        template::{Piece, Sequence, Tokens},
-    },
-    tokenizer::{Decoder as _, Model as _},
-    utils::byte_level::GPT2_REGEX_STR,
-    vocab::bucket_added_vocabulary::{
-        AddedToken as BucketAddedToken, AddedVocabulary as BucketAddedVocabulary,
-    },
+    processors::template::{Piece, Sequence, Tokens},
+    tokenizer::Decoder as _,
+    vocab::bucket_added_vocabulary::AddedVocabulary as BucketAddedVocabulary,
 };
 #[cfg(feature = "parallelism")]
 use parallel::StreamingIter;
+// The differential "parallel == serial" tests moved to `tk-convert` (they need a `Tokenizer`
+// to build from) and have to size an input past the threshold to reach the parallel path at all.
+#[cfg(feature = "parallelism")]
+pub use parallel::PARALLEL_MIN_BYTES;
 
 use super::{Result, SplitDelimiterBehavior};
 
@@ -64,10 +74,9 @@ pub trait Normalizer {
 /// The next normalizer may hand back a borrow of that locally owned [`String`], and that borrow cannot outlive the `String`.
 ///
 /// Text no normalizer touches is never copied: it stays a borrow of `input` throughout.
-pub(crate) fn normalize_all<'a, N: Normalizer>(
-    normalizers: &[N],
-    input: &'a str,
-) -> Result<Cow<'a, str>> {
+// `pub` because the config layer's `Sequence` normalizer (a `Vec<NormalizerWrapper>`, so it lives
+// in `tk-convert`) implements `pipeline::Normalizer` by running exactly this.
+pub fn normalize_all<'a, N: Normalizer>(normalizers: &[N], input: &'a str) -> Result<Cow<'a, str>> {
     let mut cow: Cow<'a, str> = Cow::Borrowed(input);
     for normalizer in normalizers {
         cow = match cow {
@@ -90,23 +99,120 @@ pub(crate) fn normalize_all<'a, N: Normalizer>(
 }
 
 /// One normalization step of a [`PipelineTokenizer`]. Not every step comes from the config's
-/// `normalizer` field: a `Metaspace` pre-tokenizer contributes one too, see
-/// [`PipelineTokenizer::try_from`].
-// `NormalizerWrapper` is the big variant, and there are only ever a couple of these per tokenizer.
-#[allow(clippy::large_enum_variant)]
+/// `normalizer` field: a `Metaspace` pre-tokenizer contributes one too.
+///
+/// One variant per concrete normalizer, deliberately: naming a `NormalizerWrapper` here would make
+/// every variant of it reachable — a match arm counts — and that reachability is most of what the
+/// slim build exists to remove. Both readers therefore flatten a config `Sequence` into a `Vec` of
+/// these rather than carrying the wrapper.
+// `pub` because `tk-convert` builds these when it lowers a `NormalizerWrapper`.
 #[derive(Debug)]
-enum PipelineNormalizer {
-    /// The `normalizer` field of the config, as-is.
-    Declared(NormalizerWrapper),
+pub enum PipelineNormalizer {
     /// The text-rewriting half of a `Metaspace` pre-tokenizer.
     Metaspace(MetaspaceNormalizer),
+    /// A literal `Replace`, built directly by the slim JSON reader.
+    Replace(Replace),
+    /// A `Prepend`, built directly by the slim JSON reader.
+    Prepend(Prepend),
+    // The rest are the remaining `NormalizerWrapper` variants, spelled out so the slim reader can
+    // build each one without naming the wrapper. Only the four table-backed families sit behind
+    // `normalizers`; the others carry no Unicode tables and are always available.
+    Strip(Strip),
+    Lowercase(Lowercase),
+    ByteLevel(ByteLevelNormalizer),
+    #[cfg(feature = "normalizers")]
+    Bert(BertNormalizer),
+    #[cfg(feature = "normalizers")]
+    StripAccents(StripAccents),
+    #[cfg(feature = "normalizers")]
+    NFC(NFC),
+    #[cfg(feature = "normalizers")]
+    NFD(NFD),
+    #[cfg(feature = "normalizers")]
+    NFKC(NFKC),
+    #[cfg(feature = "normalizers")]
+    NFKD(NFKD),
+    #[cfg(feature = "normalizers")]
+    Nmt(Nmt),
+    #[cfg(feature = "normalizers")]
+    Precompiled(Precompiled),
+}
+
+/// The added-token replay normalizes through the *legacy* trait (that is what
+/// `BucketAddedVocabulary::add_tokens` takes), so every variant needs both. `NormalizerChain` below
+/// applies a whole flattened chain, which is what a config's `Sequence` means.
+impl crate::Normalizer for PipelineNormalizer {
+    fn normalize(&self, normalized: &mut crate::NormalizedString) -> Result<()> {
+        match self {
+            // Deliberately a no-op: this variant is derived from a `Metaspace` *pre-tokenizer*, and
+            // the config path's added-token replay passes only the declared `normalizer`, so it
+            // never sees this either. Normalizing here would move ids relative to that path.
+            Self::Metaspace(_) => Ok(()),
+            Self::Replace(n) => crate::Normalizer::normalize(n, normalized),
+            Self::Prepend(n) => crate::Normalizer::normalize(n, normalized),
+            Self::Strip(n) => crate::Normalizer::normalize(n, normalized),
+            Self::Lowercase(n) => crate::Normalizer::normalize(n, normalized),
+            Self::ByteLevel(n) => crate::Normalizer::normalize(n, normalized),
+            #[cfg(feature = "normalizers")]
+            Self::Bert(n) => crate::Normalizer::normalize(n, normalized),
+            #[cfg(feature = "normalizers")]
+            Self::StripAccents(n) => crate::Normalizer::normalize(n, normalized),
+            #[cfg(feature = "normalizers")]
+            Self::NFC(n) => crate::Normalizer::normalize(n, normalized),
+            #[cfg(feature = "normalizers")]
+            Self::NFD(n) => crate::Normalizer::normalize(n, normalized),
+            #[cfg(feature = "normalizers")]
+            Self::NFKC(n) => crate::Normalizer::normalize(n, normalized),
+            #[cfg(feature = "normalizers")]
+            Self::NFKD(n) => crate::Normalizer::normalize(n, normalized),
+            #[cfg(feature = "normalizers")]
+            Self::Nmt(n) => crate::Normalizer::normalize(n, normalized),
+            #[cfg(feature = "normalizers")]
+            Self::Precompiled(n) => crate::Normalizer::normalize(n, normalized),
+        }
+    }
+}
+
+/// A flattened normalizer chain, as the legacy trait. Applying the members in order is exactly what
+/// the `Sequence` normalizer the slim reader flattened away did.
+// `pub` for the same reason as `PipelineNormalizer`: `tk-convert` needs it to replay added
+// tokens through a lowered chain.
+pub struct NormalizerChain<'a>(pub &'a [PipelineNormalizer]);
+
+impl crate::Normalizer for NormalizerChain<'_> {
+    fn normalize(&self, normalized: &mut crate::NormalizedString) -> Result<()> {
+        for member in self.0 {
+            crate::Normalizer::normalize(member, normalized)?;
+        }
+        Ok(())
+    }
 }
 
 impl Normalizer for PipelineNormalizer {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
         match self {
-            Self::Declared(normalizer) => normalizer.normalize(input),
             Self::Metaspace(normalizer) => normalizer.normalize(input),
+            Self::Replace(normalizer) => normalizer.normalize(input),
+            Self::Prepend(normalizer) => normalizer.normalize(input),
+            Self::Strip(normalizer) => normalizer.normalize(input),
+            Self::Lowercase(normalizer) => normalizer.normalize(input),
+            Self::ByteLevel(normalizer) => normalizer.normalize(input),
+            #[cfg(feature = "normalizers")]
+            Self::Bert(normalizer) => normalizer.normalize(input),
+            #[cfg(feature = "normalizers")]
+            Self::StripAccents(normalizer) => normalizer.normalize(input),
+            #[cfg(feature = "normalizers")]
+            Self::NFC(normalizer) => normalizer.normalize(input),
+            #[cfg(feature = "normalizers")]
+            Self::NFD(normalizer) => normalizer.normalize(input),
+            #[cfg(feature = "normalizers")]
+            Self::NFKC(normalizer) => normalizer.normalize(input),
+            #[cfg(feature = "normalizers")]
+            Self::NFKD(normalizer) => normalizer.normalize(input),
+            #[cfg(feature = "normalizers")]
+            Self::Nmt(normalizer) => normalizer.normalize(input),
+            #[cfg(feature = "normalizers")]
+            Self::Precompiled(normalizer) => normalizer.normalize(input),
         }
     }
 }
@@ -214,7 +320,8 @@ pub enum PipelinePreTokenizer {
     Punctuation(Punctuation),
     Sequence(PipelineSequence),
     Split(SplitPretok),
-    UnicodeScripts(UnicodeScripts),
+    #[cfg(feature = "unicode-scripts")]
+    UnicodeScripts(crate::pre_tokenizers::unicode_scripts::UnicodeScripts),
     Whitespace(Whitespace),
     WhitespaceSplit(WhitespaceSplit),
     None,
@@ -244,50 +351,10 @@ unsafe impl PreTokenizer for PipelinePreTokenizer {
             Self::Punctuation(pretok) => pretok.pre_tokenize(text, scratch, out),
             Self::Sequence(pretok) => pretok.pre_tokenize(text, scratch, out),
             Self::Split(pretok) => pretok.pre_tokenize(text, scratch, out),
+            #[cfg(feature = "unicode-scripts")]
             Self::UnicodeScripts(pretok) => pretok.pre_tokenize(text, scratch, out),
             Self::Whitespace(pretok) => pretok.pre_tokenize(text, scratch, out),
             Self::WhitespaceSplit(pretok) => pretok.pre_tokenize(text, scratch, out),
-        }
-    }
-}
-
-impl TryFrom<PreTokenizerWrapper> for PipelinePreTokenizer {
-    type Error = crate::Error;
-
-    fn try_from(value: PreTokenizerWrapper) -> Result<Self> {
-        match value {
-            PreTokenizerWrapper::BertPreTokenizer(p) => Ok(PipelinePreTokenizer::Bert(p)),
-            PreTokenizerWrapper::Delimiter(p) => Ok(PipelinePreTokenizer::Delimiter(p)),
-            PreTokenizerWrapper::Digits(p) => Ok(PipelinePreTokenizer::Digits(p)),
-            PreTokenizerWrapper::FixedLength(p) => Ok(PipelinePreTokenizer::FixedLength(p)),
-            PreTokenizerWrapper::Punctuation(p) => Ok(PipelinePreTokenizer::Punctuation(p)),
-            PreTokenizerWrapper::Split(p) => {
-                Ok(PipelinePreTokenizer::Split(p.canonicalized_for_pipeline()?))
-            }
-            PreTokenizerWrapper::UnicodeScripts(p) => Ok(PipelinePreTokenizer::UnicodeScripts(p)),
-            PreTokenizerWrapper::Whitespace(p) => Ok(PipelinePreTokenizer::Whitespace(p)),
-            PreTokenizerWrapper::WhitespaceSplit(p) => Ok(PipelinePreTokenizer::WhitespaceSplit(p)),
-            PreTokenizerWrapper::ByteLevel(byte_level) => {
-                if byte_level.add_prefix_space {
-                    return Err(
-                        "ByteLevel add_prefix_space=true is not supported by the pipeline yet"
-                            .into(),
-                    );
-                }
-                if byte_level.use_regex {
-                    Ok(PipelinePreTokenizer::Split(SplitPretok::new(
-                        SplitPattern::Regex(GPT2_REGEX_STR.to_owned()),
-                        SplitDelimiterBehavior::Isolated,
-                        false,
-                    )?))
-                } else {
-                    Ok(PipelinePreTokenizer::None)
-                }
-            }
-            PreTokenizerWrapper::Sequence(p) => Ok(PipelinePreTokenizer::Sequence(p.try_into()?)),
-            other => {
-                Err(format!("PipelineTokenizer does not support PreTokenizer: {other:?}").into())
-            }
         }
     }
 }
@@ -315,8 +382,29 @@ pub struct PipelinePostProcessor {
     pair: Template,
 }
 
+impl PipelinePostProcessor {
+    /// Assemble one from an already-built single and pair template.
+    ///
+    /// Exists so both readers stop at the same door: the slim reader builds the two templates from
+    /// JSON, `tk-convert` builds them from a `PostProcessorWrapper`, and neither needs the
+    /// fields.
+    pub fn new(single: Template, pair: Template) -> Self {
+        Self { single, pair }
+    }
+
+    /// The two templates back out again, for composing a `Sequence` post-processor out of the
+    /// members it lowered to. Read-only: `compose` picks one of them, it does not edit them.
+    pub fn templates(&self) -> (&Template, &Template) {
+        (&self.single, &self.pair)
+    }
+}
+
+// `Slice`, `Seq`, `Template` and the `build_slices`/`compose` helpers below are `pub` because the
+// `PostProcessorWrapper` lowering moved to `tk-convert` and is written in terms of them.
+// Keeping one set of rules beats a second copy: `compose`'s "at most one arranging member" rule and
+// `build_slices`' template validation are the parts that decide ids.
 #[derive(Clone, Debug)]
-enum Slice {
+pub enum Slice {
     Specials {
         tokens: Box<[PipelineToken]>,
         type_id: u8,
@@ -328,20 +416,20 @@ enum Slice {
 }
 
 #[derive(Clone, Copy, Debug)]
-enum Seq {
+pub enum Seq {
     A,
     B,
 }
 
 #[derive(Debug)]
-struct Template {
+pub struct Template {
     slices: Box<[Slice]>,
     n_special: usize,
     has_type_ids: bool,
 }
 
 impl Template {
-    fn new(slices: Vec<Slice>) -> Self {
+    pub fn new(slices: Vec<Slice>) -> Self {
         let n_special = slices
             .iter()
             .map(|s| {
@@ -363,7 +451,7 @@ impl Template {
     }
 }
 
-fn build_slices(pieces: &[Piece], specials: &Tokens, is_pair: bool) -> Result<Vec<Slice>> {
+pub fn build_slices(pieces: &[Piece], specials: &Tokens, is_pair: bool) -> Result<Vec<Slice>> {
     let (mut seen_a, mut seen_b) = (false, false);
     let mut slices = Vec::new();
     for piece in pieces {
@@ -434,84 +522,6 @@ fn build_slices(pieces: &[Piece], specials: &Tokens, is_pair: bool) -> Result<Ve
     Ok(slices)
 }
 
-impl TryFrom<&PostProcessorWrapper> for PipelinePostProcessor {
-    type Error = crate::Error;
-
-    fn try_from(value: &PostProcessorWrapper) -> Result<Self> {
-        fn one(id: u32, tid: u8) -> Slice {
-            Slice::Specials {
-                tokens: Box::new([PipelineToken::from(id)]),
-                type_id: tid,
-            }
-        }
-        fn multi(ids: &[u32], tid: u8) -> Slice {
-            Slice::Specials {
-                tokens: ids.iter().map(|&id| PipelineToken::from(id)).collect(),
-                type_id: tid,
-            }
-        }
-        use Seq::{A, B};
-        let sq = |seq, type_id| Slice::Sequence { seq, type_id };
-
-        match value {
-            PostProcessorWrapper::Bert(BertProcessing {
-                cls: (_, cls_id),
-                sep: (_, sep_id),
-            }) => Ok(Self {
-                single: Template::new(vec![one(*cls_id, 0), sq(A, 0), one(*sep_id, 0)]),
-                pair: Template::new(vec![
-                    one(*cls_id, 0),
-                    sq(A, 0),
-                    one(*sep_id, 0),
-                    sq(B, 1),
-                    one(*sep_id, 1),
-                ]),
-            }),
-            PostProcessorWrapper::Roberta(RobertaProcessing {
-                cls: (_, cls_id),
-                sep: (_, sep_id),
-                ..
-            }) => Ok(Self {
-                single: Template::new(vec![one(*cls_id, 0), sq(A, 0), one(*sep_id, 0)]),
-                pair: Template::new(vec![
-                    one(*cls_id, 0),
-                    sq(A, 0),
-                    multi(&[*sep_id, *sep_id], 0),
-                    sq(B, 0),
-                    one(*sep_id, 0),
-                ]),
-            }),
-            PostProcessorWrapper::Template(pp) => Ok(Self {
-                single: Template::new(build_slices(
-                    pp.single.as_slice(),
-                    pp.get_special_tokens(),
-                    false,
-                )?),
-                pair: Template::new(build_slices(
-                    pp.pair.as_slice(),
-                    pp.get_special_tokens(),
-                    true,
-                )?),
-            }),
-            PostProcessorWrapper::ByteLevel(_) => Ok(Self {
-                single: Template::new(vec![sq(A, 0)]),
-                pair: Template::new(vec![sq(A, 0), sq(B, 1)]),
-            }),
-            PostProcessorWrapper::Sequence(sequence) => {
-                let members = sequence
-                    .as_ref()
-                    .iter()
-                    .map(Self::try_from)
-                    .collect::<Result<Vec<_>>>()?;
-                Ok(Self {
-                    single: compose(members.iter().map(|m| &m.single))?,
-                    pair: compose(members.iter().map(|m| &m.pair))?,
-                })
-            }
-        }
-    }
-}
-
 /// A pass-through template does nothing: no special tokens, and sequences in the default
 /// arrangement (`$A`, or `$A $B` with the default type ids 0 then 1). Such a member is a no-op in a
 /// Sequence and is dropped when composing. Anything else adds tokens or reorders/retags.
@@ -540,7 +550,7 @@ fn is_pass_through(slices: &[Slice]) -> bool {
 /// its own sequence type id. A static template cannot represent that chaining, so we only support
 /// the representable case: at most one member that adds tokens or reorders/retags, wrapped by any
 /// number of pass-through members (which are no-ops and dropped). More than one is rejected.
-fn compose<'a>(templates: impl Iterator<Item = &'a Template>) -> Result<Template> {
+pub fn compose<'a>(templates: impl Iterator<Item = &'a Template>) -> Result<Template> {
     let templates = templates.collect::<Vec<_>>();
     let mut chosen: Option<&Template> = None;
     for template in &templates {
@@ -738,7 +748,7 @@ struct TokenizerInner {
     pre_tokenizer: PipelinePreTokenizer,
     model: PipelineModel,
     post_processor: PipelinePostProcessor,
-    decoder: Option<DecoderWrapper>,
+    decoder: Option<DecoderRuntime>,
     /// Lowest id owned by the added vocabulary, or `u32::MAX` when there is none.
     /// Allows to skip the added vocabulary lookup if the token id is lower than this value.
     added_id_min: u32,
@@ -757,146 +767,46 @@ const _: fn() = || {
     fn assert_send_sync<T: Send + Sync>() {}
     assert_send_sync::<PipelineTokenizer>();
 };
-impl TryFrom<&Tokenizer> for PipelineTokenizer {
-    type Error = super::Error;
 
-    /// Build a pipeline from an existing [`Tokenizer`], cloning its components.
+impl PipelineTokenizer {
+    /// Assemble a pipeline from parts that are already lowered.
     ///
-    /// The base [`Tokenizer`] carries the legacy [`crate::AddedVocabulary`]; the pipeline uses the
-    /// fast bucket [`BucketAddedVocabulary`], so we rebuild it from the tokenizer's added tokens.
-    /// Adding them in id order preserves ids (tokens present in the model reuse their model id, the
-    /// rest keep their dense order), so the pipeline emits the same ids as the reference tokenizer.
-    fn try_from(tok: &Tokenizer) -> Result<Self> {
-        let mut normalizers = Vec::new();
-        // An empty `Sequence` is how a config spells "no normalization" (deepseek ships one), so drop
-        // it here instead of calling into a no-op for every segment.
-        let declared = tok.get_normalizer().filter(|declared| {
-            !matches!(declared, NormalizerWrapper::Sequence(seq) if seq.as_ref().is_empty())
-        });
-        if let Some(declared) = declared {
-            normalizers.push(PipelineNormalizer::Declared(declared.clone()));
-        }
-
-        // A `Metaspace` pre-tokenizer does two jobs at once: it writes `▁` delimiters into the text,
-        // then cuts on them. The pipeline keeps rewriting and cutting apart, so we rebuild it as a
-        // normalizer plus a `Split`. That normalizer runs after the declared one, matching the order
-        // the config asks for: the whole normalizer first, then the pre-tokenizer.
-        let pre_tokenizer = match metaspace::to_normalizer_and_split(tok.get_pre_tokenizer()) {
-            Some((metaspace_normalizer, split)) => {
-                // One shift this brings: added tokens flagged `normalized` are matched against text
-                // that already carries the delimiters, so such a token containing a space would stop
-                // matching. The t5 and albert configs we test have no normalized added token at all.
-                normalizers.push(PipelineNormalizer::Metaspace(metaspace_normalizer));
-                PipelinePreTokenizer::Split(split)
-            }
-            // Every other pre-tokenizer converts on its own.
-            None => tok
-                .get_pre_tokenizer()
-                .cloned()
-                .map(TryInto::try_into)
-                .transpose()?
-                .unwrap_or(PipelinePreTokenizer::None),
-        };
-
-        let legacy_av = tok.get_added_vocabulary();
-        let mut added_tokens: Vec<_> = legacy_av.get_added_tokens_decoder().iter().collect();
-        added_tokens.sort_by_key(|(id, _)| **id);
-        let mut added_vocabulary = BucketAddedVocabulary::new();
-        added_vocabulary.add_tokens(
-            added_tokens.into_iter().map(|(_, t)| BucketAddedToken {
-                content: t.content.clone(),
-                single_word: t.single_word,
-                lstrip: t.lstrip,
-                rstrip: t.rstrip,
-                normalized: t.normalized,
-                special: t.special,
-            }),
-            tok.get_model(),
-            tok.get_normalizer(),
-        )?;
-        added_vocabulary.set_encode_special_tokens(legacy_av.get_encode_special_tokens());
-
-        let with_byte_level = {
-            if let Some(pt) = tok.get_pre_tokenizer() {
-                if let PreTokenizerWrapper::ByteLevel(_) = pt {
-                    true
-                } else if let PreTokenizerWrapper::Sequence(seq) = pt {
-                    if seq
-                        .as_ref()
-                        .iter()
-                        .any(|pt| matches!(pt, PreTokenizerWrapper::Sequence(_)))
-                    {
-                        return Err("Nesting Sequence pre tokenizers is not supported".into());
-                    }
-                    if let Some(pos) = seq
-                        .as_ref()
-                        .iter()
-                        .position(|p| matches!(p, PreTokenizerWrapper::ByteLevel(_)))
-                    {
-                        if pos != seq.as_ref().len() - 1 {
-                            return Err("ByteLevel pre tokenizer must be the last pre tokenizer in the Sequence".into());
-                        }
-                        true
-                    } else {
-                        false
-                    }
-                } else {
-                    false
-                }
-            } else {
-                false
-            }
-        };
-
-        let model = tok.get_model();
-        if with_byte_level && !matches!(&model, ModelWrapper::BPE(_)) {
-            let model_name = match model {
-                ModelWrapper::BPE(_) => "BPE",
-                ModelWrapper::Unigram(_) => "Unigram",
-                ModelWrapper::WordLevel(_) => "WordLevel",
-                ModelWrapper::WordPiece(_) => "WordPiece",
-            };
-            return Err(format!(
-                "ByteLevel pre tokenizer is not supported with model {model_name}"
-            )
-            .into());
-        }
-
-        let model = match model.clone() {
-            ModelWrapper::BPE(model) => {
-                PipelineModel::BPE(PipelineBPE::from_bpe(model, with_byte_level)?)
-            }
-            ModelWrapper::Unigram(model) => PipelineModel::Unigram(model),
-            ModelWrapper::WordLevel(model) => PipelineModel::WordLevel(model),
-            ModelWrapper::WordPiece(model) => PipelineModel::WordPiece(model.try_into()?),
-        };
-
+    /// The only constructor of a `TokenizerInner`, and therefore the only place `added_id_min` and
+    /// the scratch pool are derived — both readers go through it: the slim JSON reader in
+    /// [`from_json`](super::pipeline::from_json), and `tk-convert`'s lowering of a
+    /// `Tokenizer`. Two copies of this is how the two paths drift.
+    ///
+    /// `added_vocabulary` must already have had its tokens replayed *against the concrete model and
+    /// in id order*, because `add_tokens` reuses a model id when the token is already in the
+    /// vocabulary; doing it later, or out of order, moves ids silently.
+    pub fn from_parts(
+        added_vocabulary: BucketAddedVocabulary,
+        normalizers: Vec<PipelineNormalizer>,
+        pre_tokenizer: PipelinePreTokenizer,
+        model: PipelineModel,
+        post_processor: PipelinePostProcessor,
+        decoder: Option<DecoderRuntime>,
+    ) -> Self {
         let added_id_min = added_vocabulary
             .get_added_tokens_decoder()
             .keys()
             .copied()
             .min()
             .unwrap_or(u32::MAX);
-
-        Ok(Self {
+        Self {
             inner: Arc::new(TokenizerInner {
                 added_vocabulary,
                 normalizers,
                 pre_tokenizer,
                 model,
-                post_processor: tok
-                    .get_post_processor()
-                    .map(PipelinePostProcessor::try_from)
-                    .transpose()?
-                    .unwrap_or_else(PipelinePostProcessor::default),
-                decoder: tok.get_decoder().cloned(),
+                post_processor,
+                decoder,
                 added_id_min,
                 scratch_pool: ScratchPool::new(),
             }),
-        })
+        }
     }
 }
-
 #[derive(Clone)]
 pub enum Input {
     Single(String),
@@ -1685,8 +1595,11 @@ pub trait Model {
 )]
 pub enum PipelineModel {
     BPE(PipelineBPE),
+    #[cfg(feature = "unigram")]
     Unigram(Unigram),
+    #[cfg(feature = "wordlevel")]
     WordLevel(WordLevel),
+    #[cfg(feature = "wordpiece")]
     WordPiece(PipelineWordPiece),
 }
 
@@ -1695,8 +1608,11 @@ impl PipelineModel {
     fn id_to_token(&self, id: u32) -> Option<String> {
         match self {
             Self::BPE(model) => model.id_to_token(id),
+            #[cfg(feature = "unigram")]
             Self::Unigram(model) => model.id_to_token(id),
+            #[cfg(feature = "wordlevel")]
             Self::WordLevel(model) => model.id_to_token(id),
+            #[cfg(feature = "wordpiece")]
             Self::WordPiece(model) => model.id_to_token(id),
         }
     }
@@ -1709,8 +1625,11 @@ impl PipelineModel {
 #[derive(Default)]
 pub enum PipelineModelScratch {
     BPE(BpeScratch),
+    #[cfg(feature = "wordlevel")]
     WordLevel(()),
+    #[cfg(feature = "wordpiece")]
     WordPiece(WordPieceScratch),
+    #[cfg(feature = "unigram")]
     Unigram(UnigramScratch),
     /// We need a default value to be able to use [`mem::take`] in [`ScratchGuard::drop`]
     #[default]
@@ -1732,12 +1651,15 @@ impl Model for PipelineModel {
             (Self::BPE(model), PipelineModelScratch::BPE(scratch)) => {
                 model.tokenize_pipeline(sequence, scratch, output)
             }
+            #[cfg(feature = "unigram")]
             (Self::Unigram(model), PipelineModelScratch::Unigram(scratch)) => {
                 model.tokenize_pipeline(sequence, scratch, output)
             }
+            #[cfg(feature = "wordlevel")]
             (Self::WordLevel(model), PipelineModelScratch::WordLevel(scratch)) => {
                 model.tokenize_pipeline(sequence, scratch, output)
             }
+            #[cfg(feature = "wordpiece")]
             (Self::WordPiece(model), PipelineModelScratch::WordPiece(scratch)) => {
                 model.tokenize_pipeline(sequence, scratch, output)
             }
@@ -1748,8 +1670,11 @@ impl Model for PipelineModel {
     fn init_scratch(&self) -> Self::Scratch {
         match self {
             Self::BPE(bpe) => PipelineModelScratch::BPE(bpe.init_scratch()),
+            #[cfg(feature = "wordlevel")]
             Self::WordLevel(_) => Self::Scratch::WordLevel(()),
+            #[cfg(feature = "wordpiece")]
             Self::WordPiece(wordpiece) => Self::Scratch::WordPiece(wordpiece.init_scratch()),
+            #[cfg(feature = "unigram")]
             Self::Unigram(unigram) => Self::Scratch::Unigram(unigram.init_scratch()),
         }
     }
@@ -1758,38 +1683,9 @@ impl Model for PipelineModel {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pre_tokenizers::split::SplitPattern;
+    use crate::utils::byte_level::GPT2_REGEX_STR;
 
-    /// An empty normalizer `Sequence` means "no normalization" (deepseek ships one). It must be
-    /// dropped on the way in, not carried as a no-op call per segment. A non-empty one is kept.
-    #[test]
-    fn empty_normalizer_sequence_is_elided() {
-        use crate::normalizers::utils::{Lowercase, Sequence as NormSequence};
-
-        let vocab = vec![("[UNK]", 0u32), ("hello", 1)];
-
-        let mut tok = wordlevel_tokenizer(vocab.clone(), None);
-        tok.with_normalizer(Some(NormSequence::new(vec![])))
-            .unwrap();
-        assert!(
-            !PipelineTokenizer::try_from(&tok).unwrap().has_normalizer(),
-            "an empty normalizer Sequence should not survive into the pipeline"
-        );
-
-        let mut tok = wordlevel_tokenizer(vocab, None);
-        tok.with_normalizer(Some(NormSequence::new(vec![Lowercase.into()])))
-            .unwrap();
-        assert!(
-            PipelineTokenizer::try_from(&tok).unwrap().has_normalizer(),
-            "a non-empty normalizer Sequence must still be applied"
-        );
-    }
-
-    use crate::models::bpe::BPE;
-    use crate::models::wordpiece::WordPiece;
-    use crate::pre_tokenizers::byte_level::ByteLevel;
-    use crate::pre_tokenizers::sequence::Sequence;
-    #[cfg(feature = "parallelism")]
-    use crate::{parallelism::set_num_threads, pipeline::parallel::PARALLEL_MIN_BYTES};
     fn variant_name(pre_tokenizer: &PipelinePreTokenizer) -> &'static str {
         match pre_tokenizer {
             PipelinePreTokenizer::Bert(_) => "Bert",
@@ -1799,6 +1695,7 @@ mod tests {
             PipelinePreTokenizer::Punctuation(_) => "Punctuation",
             PipelinePreTokenizer::Sequence(_) => "Sequence",
             PipelinePreTokenizer::Split(_) => "Split",
+            #[cfg(feature = "unicode-scripts")]
             PipelinePreTokenizer::UnicodeScripts(_) => "UnicodeScripts",
             PipelinePreTokenizer::Whitespace(_) => "Whitespace",
             PipelinePreTokenizer::WhitespaceSplit(_) => "WhitespaceSplit",
@@ -1832,7 +1729,6 @@ mod tests {
         use crate::pre_tokenizers::digits::Digits;
         use crate::pre_tokenizers::fixed_length::FixedLength;
         use crate::pre_tokenizers::punctuation::Punctuation;
-        use crate::pre_tokenizers::split::SplitPattern;
         use SplitDelimiterBehavior::*;
 
         let literal_split = |pattern: &str, behavior| {
@@ -1846,7 +1742,10 @@ mod tests {
         )
         .unwrap();
 
-        let cases = vec![
+        // `mut` + a cfg'd push rather than a `#[cfg]` on a `vec!` element: attributes on
+        // expression position are not stable.
+        #[allow(unused_mut)]
+        let mut cases = vec![
             PipelinePreTokenizer::Bert(BertPreTokenizer),
             PipelinePreTokenizer::Delimiter(CharDelimiterSplit::new(' ')),
             PipelinePreTokenizer::Delimiter(CharDelimiterSplit::new('▁')),
@@ -1867,30 +1766,36 @@ mod tests {
             PipelinePreTokenizer::Split(literal_split("▁", MergedWithPrevious)),
             PipelinePreTokenizer::Split(literal_split("▁", MergedWithNext)),
             PipelinePreTokenizer::Split(literal_split(" ", Removed)),
-            PipelinePreTokenizer::UnicodeScripts(UnicodeScripts::new()),
             PipelinePreTokenizer::Whitespace(Whitespace),
             PipelinePreTokenizer::WhitespaceSplit(WhitespaceSplit),
             PipelinePreTokenizer::None,
         ];
+        #[cfg(feature = "unicode-scripts")]
+        cases.push(PipelinePreTokenizer::UnicodeScripts(
+            crate::pre_tokenizers::unicode_scripts::UnicodeScripts::new(),
+        ));
 
         let mut covered: Vec<&str> = cases.iter().map(variant_name).collect();
         covered.sort_unstable();
         covered.dedup();
+        #[allow(unused_mut)]
+        let mut expected: Vec<&str> = vec![
+            "Bert",
+            "Delimiter",
+            "Digits",
+            "FixedLength",
+            "None",
+            "Punctuation",
+            "Sequence",
+            "Split",
+            "Whitespace",
+            "WhitespaceSplit",
+        ];
+        #[cfg(feature = "unicode-scripts")]
+        expected.push("UnicodeScripts");
+        expected.sort_unstable();
         assert_eq!(
-            covered,
-            [
-                "Bert",
-                "Delimiter",
-                "Digits",
-                "FixedLength",
-                "None",
-                "Punctuation",
-                "Sequence",
-                "Split",
-                "UnicodeScripts",
-                "Whitespace",
-                "WhitespaceSplit",
-            ],
+            covered, expected,
             "every PipelinePreTokenizer variant needs a case above",
         );
 
@@ -1937,32 +1842,6 @@ mod tests {
         }
     }
 
-    /// Test the literal only replace and splits can be run without the fancy-regex feature
-    #[cfg(not(feature = "fancy-regex"))]
-    #[test]
-    fn string_pattern_config_loads_and_encodes_with_no_regex_backend() {
-        let normalizer: NormalizerWrapper =
-            serde_json::from_str(r#"{"type":"Replace","pattern":{"String":" "},"content":"▁"}"#)
-                .unwrap();
-        let pre_tokenizer: PreTokenizerWrapper = serde_json::from_str(
-            r#"{"type":"Split","pattern":{"String":"▁"},"behavior":"MergedWithPrevious","invert":false}"#,
-        )
-        .unwrap();
-
-        let mut tok = wordlevel_tokenizer(vec![("<unk>", 0), ("hello▁", 1), ("world", 2)], None);
-        tok.with_normalizer(Some(normalizer)).unwrap();
-        tok.with_pre_tokenizer(Some(pre_tokenizer));
-
-        let encoded = PipelineTokenizer::try_from(&tok)
-            .unwrap()
-            .encode("hello world", false)
-            .wait()
-            .unwrap();
-        // Not the unk id: both the `Replace` and the `Split` really ran on the literal path.
-        assert_eq!(*encoded.first().unwrap().ids(), [1, 2]);
-        assert_pipeline_matches_reference(&tok, "hello world");
-    }
-
     #[test]
     fn segment_iterator_yields_text_and_specials_in_order() {
         let input = "aa<s>bb<s>cc";
@@ -1985,628 +1864,5 @@ mod tests {
                 (Some("cc"), None),
             ]
         );
-    }
-
-    // The three rejections below guard configs the pipeline would otherwise
-    // encode with silently wrong ids (the byte-level vocab transform only
-    // applies when ByteLevel is the model's direct input). Each test pins the
-    // error message so an unrelated failure can't stand in for the guard.
-
-    fn conversion_error(tok: &Tokenizer) -> String {
-        PipelineTokenizer::try_from(tok).err().unwrap().to_string()
-    }
-
-    #[test]
-    fn conversion_rejects_nested_sequence() {
-        let mut tok = Tokenizer::new(BPE::default());
-        tok.with_pre_tokenizer(Some(Sequence::new(vec![PreTokenizerWrapper::Sequence(
-            Sequence::new(vec![PreTokenizerWrapper::WhitespaceSplit(WhitespaceSplit)]),
-        )])));
-        let err = conversion_error(&tok);
-        assert!(err.contains("Nesting Sequence"), "{}", err);
-    }
-
-    #[test]
-    fn conversion_rejects_byte_level_not_last_in_sequence() {
-        let mut tok = Tokenizer::new(BPE::default());
-        tok.with_pre_tokenizer(Some(Sequence::new(vec![
-            PreTokenizerWrapper::ByteLevel(ByteLevel::new(false, true, true)),
-            PreTokenizerWrapper::WhitespaceSplit(WhitespaceSplit),
-        ])));
-        let err = conversion_error(&tok);
-        assert!(err.contains("must be the last"), "{}", err);
-    }
-
-    #[test]
-    fn conversion_rejects_byte_level_with_non_bpe_model() {
-        let mut tok = Tokenizer::new(WordPiece::default());
-        tok.with_pre_tokenizer(Some(ByteLevel::new(false, true, true)));
-        let err = conversion_error(&tok);
-        assert!(err.contains("not supported with model"), "{}", err);
-    }
-
-    fn wordlevel_tokenizer(
-        vocab: Vec<(&str, u32)>,
-        post_processor: Option<PostProcessorWrapper>,
-    ) -> Tokenizer {
-        use crate::models::wordlevel::WordLevel;
-        use crate::pre_tokenizers::whitespace::Whitespace;
-
-        let unk = vocab[0].0.to_string();
-        let vocab: ahash::AHashMap<String, u32> =
-            vocab.into_iter().map(|(k, v)| (k.to_string(), v)).collect();
-        let model = WordLevel::builder()
-            .vocab(vocab)
-            .unk_token(unk)
-            .build()
-            .unwrap();
-        let mut tok = Tokenizer::new(model);
-        tok.with_pre_tokenizer(Some(Whitespace));
-        tok.with_post_processor(post_processor);
-        tok
-    }
-
-    #[cfg(feature = "parallelism")]
-    fn pipeline_ids(pipeline: &PipelineTokenizer, input: &str) -> Vec<u32> {
-        pipeline
-            .encode(input, false)
-            .wait()
-            .unwrap()
-            .remove(0)
-            .ids()
-            .iter()
-            .map(|t| t.id())
-            .collect()
-    }
-
-    // A single `&self` tokenizer is meant to be shared across rayon workers, and the scratch it
-    // hands each of them carries the pre-token spans of the chunk being encoded. So the workers
-    // must not be able to reach each other's: every thread encodes a different input here, and
-    // has to get back the answer that input produces on its own.
-    //
-    // The inputs disagree on both how many tokens they produce and which, so another input's
-    // spans cannot yield the right ids by luck. This also only compiles if
-    // `PipelineTokenizer: Sync`.
-    #[cfg(feature = "parallelism")]
-    #[test]
-    fn concurrent_encodes_of_different_inputs_stay_independent() {
-        use rayon::prelude::*;
-
-        let tok = wordlevel_tokenizer(vec![("<unk>", 0), ("hello", 1), ("world", 2)], None);
-        let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
-
-        let inputs = [
-            "hello".to_string(),
-            "hello world".to_string(),
-            "world hello world".to_string(),
-            "hello world ".repeat(25),
-        ];
-        let want: Vec<Vec<u32>> = inputs
-            .iter()
-            .map(|input| pipeline_ids(&pipeline, input))
-            .collect();
-        assert_eq!(
-            want,
-            vec![vec![1], vec![1, 2], vec![2, 1, 2], [1, 2].repeat(25)]
-        );
-
-        let all_match = (0..10_000usize).into_par_iter().all(|i| {
-            let case = i % inputs.len();
-            pipeline_ids(&pipeline, &inputs[case]) == want[case]
-        });
-        assert!(all_match);
-    }
-
-    fn assert_pipeline_matches_reference(tok: &Tokenizer, input: &str) {
-        let pipeline = PipelineTokenizer::try_from(tok).unwrap();
-        for add_special_tokens in [false, true] {
-            let expected = tok
-                .encode(input, add_special_tokens)
-                .unwrap()
-                .get_ids()
-                .to_vec();
-            let got: Vec<u32> = pipeline
-                .encode(input, add_special_tokens)
-                .wait()
-                .unwrap()
-                .first()
-                .unwrap()
-                .ids
-                .iter()
-                .map(|t| t.id())
-                .collect();
-            assert_eq!(expected, got, "add_special_tokens={add_special_tokens}");
-        }
-    }
-
-    #[test]
-    fn pipeline_runs_bert_post_processor_matching_reference() {
-        use crate::processors::bert::BertProcessing;
-
-        let tok = wordlevel_tokenizer(
-            vec![("[CLS]", 0), ("[SEP]", 1), ("hello", 2), ("world", 3)],
-            Some(PostProcessorWrapper::Bert(BertProcessing::new(
-                ("[SEP]".to_string(), 1),
-                ("[CLS]".to_string(), 0),
-            ))),
-        );
-        assert_pipeline_matches_reference(&tok, "hello world");
-
-        let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
-        let ids = |enc: Vec<Encoding>| {
-            enc.first()
-                .unwrap()
-                .ids
-                .iter()
-                .map(|t| t.id())
-                .collect::<Vec<_>>()
-        };
-        assert_eq!(
-            ids(pipeline.encode("hello world", true).wait().unwrap()),
-            vec![0, 2, 3, 1]
-        );
-        assert_eq!(
-            ids(pipeline.encode("hello world", false).wait().unwrap()),
-            vec![2, 3]
-        );
-    }
-
-    #[test]
-    fn pipeline_runs_roberta_post_processor_matching_reference() {
-        use crate::processors::roberta::RobertaProcessing;
-
-        let tok = wordlevel_tokenizer(
-            vec![("<s>", 0), ("</s>", 1), ("hello", 2), ("world", 3)],
-            Some(PostProcessorWrapper::Roberta(RobertaProcessing::new(
-                ("</s>".to_string(), 1),
-                ("<s>".to_string(), 0),
-            ))),
-        );
-        assert_pipeline_matches_reference(&tok, "hello world");
-    }
-
-    #[test]
-    fn pipeline_runs_template_post_processor_matching_reference() {
-        use crate::processors::template::TemplateProcessing;
-
-        let tok = wordlevel_tokenizer(
-            vec![("[CLS]", 0), ("[SEP]", 1), ("hello", 2), ("world", 3)],
-            Some(PostProcessorWrapper::Template(
-                TemplateProcessing::builder()
-                    .try_single("[CLS] $0 [SEP]")
-                    .unwrap()
-                    .special_tokens(vec![("[CLS]", 0u32), ("[SEP]", 1u32)])
-                    .build()
-                    .unwrap(),
-            )),
-        );
-        assert_pipeline_matches_reference(&tok, "hello world");
-    }
-
-    #[test]
-    fn pipeline_bytelevel_post_processor_is_noop() {
-        use crate::pre_tokenizers::byte_level::ByteLevel;
-
-        let tok = wordlevel_tokenizer(
-            vec![("hello", 2), ("world", 3)],
-            Some(PostProcessorWrapper::ByteLevel(ByteLevel::default())),
-        );
-        assert_pipeline_matches_reference(&tok, "hello world");
-    }
-
-    #[test]
-    fn conversion_rejects_sequence_of_two_special_adding_members() {
-        use crate::processors::sequence::Sequence as ProcSequence;
-        use crate::processors::template::TemplateProcessing;
-
-        // Both members have identity cores (`$A $B`) but add their own special tokens. The
-        // reference retags the inner member's output when the outer wraps it, which a static
-        // composed template cannot represent, so this must be rejected (not silently miscompiled).
-        // Also guards that pass-through detection looks at the whole template, not just its core.
-        let member = |prefix: &str, suffix: &str, p_id: u32, s_id: u32| {
-            TemplateProcessing::builder()
-                .try_single(format!("{prefix} $A {suffix}"))
-                .unwrap()
-                .try_pair(format!("{prefix} $A $B:1 {suffix}:1"))
-                .unwrap()
-                .special_tokens(vec![(prefix, p_id), (suffix, s_id)])
-                .build()
-                .unwrap()
-        };
-        let tok = wordlevel_tokenizer(
-            vec![
-                ("[X]", 100),
-                ("[Y]", 101),
-                ("[P]", 102),
-                ("[Q]", 103),
-                ("hello", 2),
-                ("world", 3),
-            ],
-            Some(PostProcessorWrapper::Sequence(ProcSequence::new(vec![
-                PostProcessorWrapper::Template(member("[X]", "[Y]", 100, 101)),
-                PostProcessorWrapper::Template(member("[P]", "[Q]", 102, 103)),
-            ]))),
-        );
-        let err = conversion_error(&tok);
-        assert!(err.contains("not supported"), "{}", err);
-    }
-
-    #[test]
-    fn conversion_rejects_sequence_with_two_arranging_members() {
-        use crate::processors::bert::BertProcessing;
-        use crate::processors::sequence::Sequence as ProcSequence;
-
-        let tok = wordlevel_tokenizer(
-            vec![("A", 100), ("B", 101), ("hello", 2), ("world", 3)],
-            Some(PostProcessorWrapper::Sequence(ProcSequence::new(vec![
-                PostProcessorWrapper::Bert(BertProcessing::new(
-                    ("B".to_string(), 101),
-                    ("A".to_string(), 100),
-                )),
-                PostProcessorWrapper::Bert(BertProcessing::new(
-                    ("B".to_string(), 101),
-                    ("A".to_string(), 100),
-                )),
-            ]))),
-        );
-        let err = conversion_error(&tok);
-        assert!(err.contains("not supported"), "{}", err);
-    }
-
-    #[test]
-    fn roberta_pair_without_specials_keeps_type_ids_zero() {
-        use crate::processors::roberta::RobertaProcessing;
-
-        // RoBERTa tags both pair sides type 0. `add_special_tokens = false` must suppress only the
-        // special tokens, not fall back to the default A=0/B=1 tagging.
-        let tok = wordlevel_tokenizer(
-            vec![
-                ("<s>", 0),
-                ("</s>", 1),
-                ("hello", 2),
-                ("world", 3),
-                ("foo", 4),
-            ],
-            Some(PostProcessorWrapper::Roberta(RobertaProcessing::new(
-                ("</s>".to_string(), 1),
-                ("<s>".to_string(), 0),
-            ))),
-        );
-        let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
-        let batch = pipeline
-            .encode(("hello world", "foo"), false)
-            .wait()
-            .unwrap();
-        let enc = batch.first().unwrap();
-
-        assert!(
-            enc.type_ids().is_none_or(|t| t.iter().all(|&x| x == 0)),
-            "expected all-zero type ids, got {:?}",
-            enc.type_ids()
-        );
-        let expected = tok.encode(("hello world", "foo"), false).unwrap();
-        let ids: Vec<u32> = enc.ids().iter().map(|t| t.id()).collect();
-        assert_eq!(expected.get_ids(), ids.as_slice());
-    }
-
-    #[test]
-    fn sequence_keeps_reordering_member_core() {
-        use crate::pre_tokenizers::byte_level::ByteLevel;
-        use crate::processors::sequence::Sequence as ProcSequence;
-        use crate::processors::template::TemplateProcessing;
-
-        // ByteLevel has an identity core (safe to drop); the template reorders the pair to `$B $A`.
-        // Compose must keep the reordering core, not discard it as trivial.
-        let reorder = TemplateProcessing::builder()
-            .try_single("$A")
-            .unwrap()
-            .try_pair("$B $A")
-            .unwrap()
-            .build()
-            .unwrap();
-        let tok = wordlevel_tokenizer(
-            vec![("hello", 2), ("world", 3)],
-            Some(PostProcessorWrapper::Sequence(ProcSequence::new(vec![
-                PostProcessorWrapper::ByteLevel(ByteLevel::default()),
-                PostProcessorWrapper::Template(reorder),
-            ]))),
-        );
-        let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
-        let batch = pipeline.encode(("hello", "world"), false).wait().unwrap();
-        let ids: Vec<u32> = batch
-            .first()
-            .unwrap()
-            .ids()
-            .iter()
-            .map(|t| t.id())
-            .collect();
-        // `$B $A` => world (3) before hello (2)
-        assert_eq!(ids, vec![3, 2]);
-    }
-
-    #[test]
-    fn pipeline_sequence_bytelevel_then_template_matches_reference() {
-        use crate::pre_tokenizers::byte_level::ByteLevel;
-        use crate::processors::sequence::Sequence as ProcSequence;
-        use crate::processors::template::TemplateProcessing;
-
-        let tok = wordlevel_tokenizer(
-            vec![("<|begin_of_text|>", 0), ("hello", 2), ("world", 3)],
-            Some(PostProcessorWrapper::Sequence(ProcSequence::new(vec![
-                PostProcessorWrapper::ByteLevel(ByteLevel::default()),
-                PostProcessorWrapper::Template(
-                    TemplateProcessing::builder()
-                        .try_single("<|begin_of_text|> $0")
-                        .unwrap()
-                        .special_tokens(vec![("<|begin_of_text|>", 0u32)])
-                        .build()
-                        .unwrap(),
-                ),
-            ]))),
-        );
-        assert_pipeline_matches_reference(&tok, "hello world");
-    }
-
-    #[test]
-    fn conversion_rejects_template_referencing_sequence_twice() {
-        use crate::processors::template::TemplateProcessing;
-
-        let tok = wordlevel_tokenizer(
-            vec![("hello", 2), ("world", 3)],
-            Some(PostProcessorWrapper::Template(
-                TemplateProcessing::builder()
-                    .try_single("$0 $0")
-                    .unwrap()
-                    .build()
-                    .unwrap(),
-            )),
-        );
-        let err = conversion_error(&tok);
-        assert!(err.contains("not supported"), "{}", err);
-    }
-
-    #[test]
-    fn conversion_rejects_template_without_sequence_piece() {
-        use crate::processors::template::TemplateProcessing;
-
-        let tok = wordlevel_tokenizer(
-            vec![("[CLS]", 0), ("hello", 2), ("world", 3)],
-            Some(PostProcessorWrapper::Template(
-                TemplateProcessing::builder()
-                    .try_single("[CLS]")
-                    .unwrap()
-                    .special_tokens(vec![("[CLS]", 0u32)])
-                    .build()
-                    .unwrap(),
-            )),
-        );
-        let err = conversion_error(&tok);
-        assert!(err.contains("not supported"), "{}", err);
-    }
-
-    #[test]
-    fn conversion_rejects_template_with_unknown_special_token() {
-        // Deserializing straight from JSON skips `TemplateProcessingBuilder::validate`,
-        // so this (unlike the builder) can reach the pipeline with a dangling reference.
-        let json = r#"{
-            "type":"TemplateProcessing",
-            "single":[
-                {"SpecialToken":{"id":"[CLS]","type_id":0}},
-                {"Sequence":{"id":"A","type_id":0}}
-            ],
-            "pair":[{"Sequence":{"id":"A","type_id":0}}],
-            "special_tokens":{}
-        }"#;
-        let processor: crate::processors::template::TemplateProcessing =
-            serde_json::from_str(json).unwrap();
-
-        let tok = wordlevel_tokenizer(
-            vec![("hello", 2), ("world", 3)],
-            Some(PostProcessorWrapper::Template(processor)),
-        );
-        let err = conversion_error(&tok);
-        assert!(err.contains("not supported"), "{}", err);
-    }
-
-    #[test]
-    fn conversion_rejects_sequence_containing_unsupported_member() {
-        use crate::processors::sequence::Sequence as ProcSequence;
-        use crate::processors::template::TemplateProcessing;
-
-        let tok = wordlevel_tokenizer(
-            vec![("hello", 2), ("world", 3)],
-            Some(PostProcessorWrapper::Sequence(ProcSequence::new(vec![
-                PostProcessorWrapper::Template(
-                    TemplateProcessing::builder()
-                        .try_single("$0 $0")
-                        .unwrap()
-                        .build()
-                        .unwrap(),
-                ),
-            ]))),
-        );
-        let err = conversion_error(&tok);
-        assert!(err.contains("not supported"), "{}", err);
-    }
-
-    #[cfg(feature = "parallelism")]
-    use std::sync::{Mutex, PoisonError};
-    #[cfg(feature = "parallelism")]
-    static LOCK: Mutex<()> = Mutex::new(());
-
-    #[cfg(feature = "parallelism")]
-    fn assert_parallel_matches(
-        tokenizer: &PipelineTokenizer,
-        inputs: Inputs,
-        add_special_tokens: bool,
-    ) {
-        let _g = LOCK.lock().unwrap_or_else(PoisonError::into_inner);
-        set_num_threads(1);
-        let serial = tokenizer
-            .encode(inputs.clone(), add_special_tokens)
-            .wait()
-            .unwrap();
-        for n in [2, 4, 8] {
-            set_num_threads(n);
-            for _ in 0..3 {
-                let par = tokenizer
-                    .encode(inputs.clone(), add_special_tokens)
-                    .wait()
-                    .unwrap();
-                assert_eq!(par, serial);
-            }
-        }
-        set_num_threads(0);
-    }
-
-    #[cfg(feature = "parallelism")]
-    fn repeat_to(phrase: &str, min_bytes: usize) -> String {
-        phrase.repeat(min_bytes / phrase.len() + 1)
-    }
-
-    #[cfg(feature = "parallelism")]
-    #[test]
-    fn parallel_matches_serial_batch_identity() {
-        let tok = wordlevel_tokenizer(vec![("<unk>", 0), ("hello", 1), ("world", 2)], None);
-        let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
-        let inputs = Inputs::from(vec!["hello world".to_string(); 1000]);
-        for add in [false, true] {
-            assert_parallel_matches(&pipeline, inputs.clone(), add);
-        }
-    }
-
-    #[cfg(feature = "parallelism")]
-    #[test]
-    fn parallel_matches_serial_batch_bert() {
-        use crate::processors::bert::BertProcessing;
-        let tok = wordlevel_tokenizer(
-            vec![("[CLS]", 0), ("[SEP]", 1), ("hello", 2), ("world", 3)],
-            Some(PostProcessorWrapper::Bert(BertProcessing::new(
-                ("[SEP]".to_string(), 1),
-                ("[CLS]".to_string(), 0),
-            ))),
-        );
-        let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
-        let inputs = Inputs::from(vec!["hello world".to_string(); 1000]);
-        for add in [false, true] {
-            assert_parallel_matches(&pipeline, inputs.clone(), add);
-        }
-    }
-
-    #[cfg(feature = "parallelism")]
-    #[test]
-    fn parallel_matches_serial_pairs_bert() {
-        use crate::processors::bert::BertProcessing;
-        let tok = wordlevel_tokenizer(
-            vec![("[CLS]", 0), ("[SEP]", 1), ("hello", 2), ("world", 3)],
-            Some(PostProcessorWrapper::Bert(BertProcessing::new(
-                ("[SEP]".to_string(), 1),
-                ("[CLS]".to_string(), 0),
-            ))),
-        );
-        let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
-        let inputs = Inputs::from(vec![
-            ("hello world".to_string(), "world hello".to_string());
-            700
-        ]);
-        for add in [false, true] {
-            assert_parallel_matches(&pipeline, inputs.clone(), add);
-        }
-    }
-
-    #[cfg(feature = "parallelism")]
-    #[test]
-    fn parallel_matches_serial_batch_roberta() {
-        use crate::processors::roberta::RobertaProcessing;
-        let tok = wordlevel_tokenizer(
-            vec![("<s>", 0), ("</s>", 1), ("hello", 2), ("world", 3)],
-            Some(PostProcessorWrapper::Roberta(RobertaProcessing::new(
-                ("</s>".to_string(), 1),
-                ("<s>".to_string(), 0),
-            ))),
-        );
-        let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
-        let inputs = Inputs::from(vec!["hello world".to_string(); 1000]);
-        for add in [false, true] {
-            assert_parallel_matches(&pipeline, inputs.clone(), add);
-        }
-    }
-
-    #[cfg(feature = "parallelism")]
-    #[test]
-    fn parallel_matches_serial_long_single_with_specials() {
-        let mut tok = wordlevel_tokenizer(
-            vec![("<unk>", 0), ("hello", 1), ("world", 2), ("<sep>", 3)],
-            None,
-        );
-        tok.add_special_tokens([crate::tokenizer::AddedToken::from("<sep>", true)])
-            .unwrap();
-        let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
-        let inputs = Inputs::from(repeat_to(
-            "hello world <sep> ",
-            2 * PARALLEL_MIN_BYTES + 4096,
-        ));
-        for add in [false, true] {
-            assert_parallel_matches(&pipeline, inputs.clone(), add);
-        }
-    }
-
-    #[cfg(feature = "parallelism")]
-    #[test]
-    fn parallel_matches_serial_mixed_batch_with_edges() {
-        let tok = wordlevel_tokenizer(vec![("<unk>", 0), ("hello", 1), ("world", 2)], None);
-        let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
-        let mut batch = vec![
-            String::new(),
-            "hello".to_string(),
-            "hello world".to_string(),
-        ];
-        batch.extend(vec!["hello world".to_string(); 1000]);
-        assert_parallel_matches(&pipeline, Inputs::from(batch), false);
-    }
-
-    #[cfg(feature = "parallelism")]
-    #[test]
-    fn streaming_iterator_yields_each_seq_once() {
-        let _g = LOCK.lock().unwrap();
-        let tok = wordlevel_tokenizer(vec![("<unk>", 0), ("hello", 1), ("world", 2)], None);
-        let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
-        let inputs = Inputs::from(vec!["hello world".to_string(); 1000]);
-
-        set_num_threads(1);
-        let serial = pipeline.encode(inputs.clone(), false).wait().unwrap();
-
-        set_num_threads(4);
-        let mut streamed: Vec<Option<Encoding>> = vec![None; serial.len()];
-        for (seq, res) in pipeline.encode(inputs, false) {
-            assert!(
-                streamed[seq].is_none(),
-                "seq {seq} was yielded more than once"
-            );
-            streamed[seq] = Some(res.unwrap());
-        }
-        set_num_threads(0);
-
-        let streamed: Vec<Encoding> = streamed
-            .into_iter()
-            .map(|e| e.expect("a seq was never yielded"))
-            .collect();
-        assert_eq!(streamed, serial);
-    }
-
-    #[cfg(feature = "parallelism")]
-    #[test]
-    fn streaming_handle_drop_after_partial_consume_is_clean() {
-        let _g = LOCK.lock().unwrap();
-        let tok = wordlevel_tokenizer(vec![("<unk>", 0), ("hello", 1), ("world", 2)], None);
-        let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
-        let inputs = Inputs::from(vec!["hello world".to_string(); 1000]);
-
-        set_num_threads(4);
-        let mut it = pipeline.encode(inputs, false).into_iter();
-        assert!(it.next().is_some());
-        assert!(it.next().is_some());
-        drop(it);
-        set_num_threads(0);
     }
 }

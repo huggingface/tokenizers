@@ -32,7 +32,7 @@ pub struct MetaspaceNormalizer {
 }
 
 impl MetaspaceNormalizer {
-    pub(crate) fn new(delimiter: char, prepend: bool, drop_whitespace: bool) -> Self {
+    pub fn new(delimiter: char, prepend: bool, drop_whitespace: bool) -> Self {
         Self {
             delimiter,
             prepend,

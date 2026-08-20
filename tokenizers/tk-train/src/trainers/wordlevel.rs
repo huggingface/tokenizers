@@ -2,9 +2,10 @@ use crate::Trainer;
 use ahash::AHashMap;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
+use tk_convert::AddedToken;
+use tk_encode::Result;
 use tk_encode::models::wordlevel::WordLevel;
 use tk_encode::utils::parallelism::*;
-use tk_encode::{AddedToken, Result};
 
 #[non_exhaustive]
 #[derive(Debug, Clone, Builder, Serialize, Deserialize)]

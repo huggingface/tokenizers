@@ -8,7 +8,7 @@ use std::io::{BufRead, BufReader};
 use std::path::Path;
 
 use criterion::{Criterion, Throughput};
-use tokenizers::models::wordpiece::{WordPiece, WordPieceTrainerBuilder};
+use tokenizers::models::wordpiece::{self, WordPiece, WordPieceTrainerBuilder};
 use tokenizers::normalizers::{BertNormalizer, NormalizerWrapper};
 use tokenizers::pre_tokenizers::bert::BertPreTokenizer;
 use tokenizers::processors::bert::BertProcessing;
@@ -47,8 +47,8 @@ fn create_bert_tokenizer(wp: WordPiece) -> BertTokenizer {
 }
 
 pub fn bench_bert(c: &mut Criterion) {
-    let wp = WordPiece::from_file("data/bert-base-uncased-vocab.txt")
-        .build()
+    let wp = wordpiece::from_file("data/bert-base-uncased-vocab.txt")
+        .and_then(|builder| builder.build())
         .unwrap();
     let tokenizer = create_bert_tokenizer(wp);
     let mut group = c.benchmark_group("bert-encode");

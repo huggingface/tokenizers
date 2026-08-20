@@ -1,18 +1,14 @@
-use crate::utils::byte_level::{BYTES_CHAR_LOOKUP, CHAR_BYTES_LOOKUP, byte_level_transform};
+use crate::utils::byte_level::{BYTES_CHAR_LOOKUP, byte_level_transform};
 use crate::utils::{GptFsm, GptFsmPattern};
-use serde::{Deserialize, Serialize};
 
 use crate::tokenizer::{
-    Decoder, Encoding, PostProcessor, PreTokenizedString, PreTokenizer, Result,
-    SplitDelimiterBehavior,
+    Encoding, PostProcessor, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior,
 };
-use crate::utils::macro_rules_attribute;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 /// Provides all the necessary steps to handle the BPE tokenization at the byte-level. Takes care
 /// of all the required processing steps to transform a UTF-8 string as needed before and after the
 /// BPE model does its job.
-#[macro_rules_attribute(impl_serde_type!)]
 #[non_exhaustive]
 pub struct ByteLevel {
     /// Whether to add a leading space to the first word. This allows to treat the leading word
@@ -23,12 +19,7 @@ pub struct ByteLevel {
 
     /// Whether to use the standard GPT2 regex for whitespace splitting
     /// Set it to False if you want to use your own splitting.
-    #[serde(default = "default_true")]
     pub use_regex: bool,
-}
-
-fn default_true() -> bool {
-    true
 }
 
 impl Default for ByteLevel {
@@ -100,29 +91,15 @@ impl PreTokenizer for ByteLevel {
     }
 }
 
-/// As a `Decoder`, `ByteLevel` is in charge of converting any byte-level characters to their
-/// unicode counterpart, before merging everything back into a single String.
-/// This decoder will consume the tokens and merge them in one step to alleviate
-/// the fact that single token decoded might be a byte not representable as
-/// as String.
-impl Decoder for ByteLevel {
-    fn decode_chain(&self, tokens: Vec<String>) -> Result<Vec<String>> {
-        let toks = tokens
-            .into_iter()
-            .flat_map(|t| {
-                t.chars()
-                    .try_fold(vec![], |mut acc, c| {
-                        CHAR_BYTES_LOOKUP.get(&c).map(|b| {
-                            acc.push(*b);
-                            acc
-                        })
-                    })
-                    .unwrap_or_else(|| t.as_bytes().to_vec())
-            })
-            .collect::<Vec<u8>>();
-        Ok(vec![String::from_utf8_lossy(&toks).to_string()])
-    }
-}
+// As a `Decoder`, `ByteLevel` is in charge of converting any byte-level characters to their
+// unicode counterpart, before merging everything back into a single String.
+// This decoder will consume the tokens and merge them in one step to alleviate
+// the fact that single token decoded might be a byte not representable as
+// as String.
+//
+// Kept as prose rather than a doc comment because there is no longer a `Decoder` impl here for it
+// to document: that role is `decoders::byte_level::ByteLevelDecoder`'s now. It described this type,
+// so it stays with this type.
 
 /// As a `PostProcessor`, `ByteLevel` is in charge of trimming the offsets if necessary.
 impl PostProcessor for ByteLevel {
@@ -239,25 +216,6 @@ mod tests {
     }
 
     #[test]
-    fn decoding() {
-        let bytelevel = ByteLevel::default().add_prefix_space(false);
-        assert_eq!(
-            bytelevel
-                .decode_chain(
-                    vec![
-                        "Hello", "Ġmy", "Ġfriend", ",", "Ġhow", "Ġis", "Ġyour", "Ġday", "Ġgoing",
-                        "?"
-                    ]
-                    .into_iter()
-                    .map(|s| s.into())
-                    .collect::<Vec<String>>()
-                )
-                .unwrap(),
-            vec!["Hello my friend, how is your day going?"]
-        );
-    }
-
-    #[test]
     fn add_prefix_space() {
         let bytelevel = ByteLevel::default().add_prefix_space(true);
         for s in &[
@@ -307,7 +265,10 @@ mod tests {
                 .collect::<Vec<_>>();
             assert_eq!(
                 sample,
-                bytelevel.decode_chain(separated_tokens).unwrap().join("")
+                crate::decoders::byte_level::ByteLevelDecoder::default()
+                    .decode_chain(separated_tokens)
+                    .unwrap()
+                    .join("")
             );
         }
     }
@@ -503,130 +464,5 @@ mod tests {
                 .process(start.clone(), Some(start), false)
                 .unwrap()
         );
-    }
-
-    #[test]
-    fn decode_unknown_characters() {
-        let byte_level = ByteLevel::default();
-        assert_eq!(
-            byte_level
-                .decode_chain(vec![
-                    "Hello".into(),
-                    "Ġthere".into(),
-                    "Ġdear".into(),
-                    "Ġfriend!".into(),
-                    "Ġ".into(),
-                    "[PA D]".into()
-                ])
-                .unwrap(),
-            vec!["Hello there dear friend! [PA D]"]
-        );
-    }
-
-    /// Splits from the pipeline conversion of `byte_level`, with the raw text of each
-    /// range transformed to the byte-level alphabet so it's comparable with the legacy
-    /// oracle's output strings.
-    fn pipeline_splits(byte_level: ByteLevel, text: &str) -> Vec<(String, (usize, usize))> {
-        use std::convert::TryFrom;
-        let converted = crate::pipeline::PipelinePreTokenizer::try_from(
-            crate::PreTokenizerWrapper::ByteLevel(byte_level),
-        )
-        .unwrap();
-        let mut scratch = crate::pipeline::PreTokenizerScratch::default();
-        let mut out = Vec::new();
-        crate::pipeline::PreTokenizer::pre_tokenize(&converted, text, &mut scratch, &mut out)
-            .unwrap();
-        out.iter()
-            .map(|s| {
-                let transformed = text[s.range()]
-                    .bytes()
-                    .map(|b| BYTES_CHAR_LOOKUP[b as usize])
-                    .collect();
-                (transformed, (s.start as usize, s.end as usize))
-            })
-            .collect()
-    }
-
-    fn legacy_splits(byte_level: ByteLevel, text: &str) -> Vec<(String, (usize, usize))> {
-        let mut pre = PreTokenizedString::from(text);
-        byte_level.pre_tokenize(&mut pre).unwrap();
-        pre.get_splits(OffsetReferential::Original, OffsetType::Byte)
-            .into_iter()
-            .map(|(s, o, _)| (s.to_string(), o))
-            .collect()
-    }
-
-    #[test]
-    fn pipeline_conversion_matches_legacy_splits() {
-        let byte_level = ByteLevel::default().add_prefix_space(false);
-        for text in [
-            "Hello my friend, how is your day going?",
-            "Hello there\nHello there",
-            "Hello there       dear",
-            " leading space",
-            "trailing space   ",
-            "i⭢j",
-            "中文 text 123, mixed! 🤗 emoji",
-            "I'm can't we've they'll it's",
-            "tabs\tand\r\nnewlines",
-            "café über naïve",
-            "!!!???...",
-            "single",
-        ] {
-            assert_eq!(
-                pipeline_splits(byte_level, text),
-                legacy_splits(byte_level, text),
-                "diverged on {text:?}",
-            );
-        }
-    }
-
-    #[test]
-    fn pipeline_conversion_no_regex_is_identity_split() {
-        let byte_level = ByteLevel::default()
-            .add_prefix_space(false)
-            .use_regex(false);
-        let text = "Hello my friend, how is your day going?";
-        assert_eq!(
-            pipeline_splits(byte_level, text),
-            legacy_splits(byte_level, text),
-        );
-    }
-
-    #[test]
-    fn pipeline_conversion_rejects_add_prefix_space() {
-        // The range-based pipeline can't prepend text; converting must fail loudly
-        // rather than silently produce different splits than the legacy path.
-        use std::convert::TryFrom;
-        let byte_level = ByteLevel::default().add_prefix_space(true);
-        assert!(
-            crate::pipeline::PipelinePreTokenizer::try_from(crate::PreTokenizerWrapper::ByteLevel(
-                byte_level
-            ))
-            .is_err()
-        );
-    }
-
-    #[test]
-    fn deserialization() {
-        // Before use_regex
-        let byte_level: ByteLevel = serde_json::from_str(
-            r#"{"type": "ByteLevel", "add_prefix_space": true, "trim_offsets": false}"#,
-        )
-        .unwrap();
-        assert!(byte_level.use_regex);
-
-        // Loading works, new future BC test.
-        let byte_level: ByteLevel = serde_json::from_str(
-            r#"{"type": "ByteLevel", "add_prefix_space": true, "trim_offsets": false, "use_regex": true}"#,
-        )
-        .unwrap();
-        assert!(byte_level.use_regex);
-
-        let byte_level: ByteLevel = serde_json::from_str(
-            r#"{"type": "ByteLevel", "add_prefix_space": true, "trim_offsets": false, "use_regex": false}"#,
-        )
-        .unwrap();
-        assert!(!byte_level.use_regex);
     }
 }

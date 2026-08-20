@@ -1,11 +1,15 @@
 use crate::processors::byte_level::process_offsets;
 use crate::tokenizer::{Encoding, PostProcessor, Result};
 use ahash::AHashMap;
-use serde::{Deserialize, Serialize};
 use std::iter::FromIterator;
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-#[serde(tag = "type")]
+/// Like [`crate::processors::bert::BertProcessing`], except every encoding keeps `type_id == 0` and
+/// the offsets can first be trimmed of the `ByteLevel` space marker.
+///
+/// The `"type": "RobertaProcessing"` envelope this used to derive lives in `tk-convert`'s
+/// `processors::mirror::RobertaProcessingDef`, a `remote` derive for the same reason as Bert's: all
+/// four fields are `pub` and the type is not `#[non_exhaustive]`.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RobertaProcessing {
     pub sep: (String, u32),
     pub cls: (String, u32),
@@ -232,24 +236,6 @@ impl PostProcessor for RobertaProcessing {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn serde() {
-        let roberta = RobertaProcessing::default();
-        let roberta_r = r#"{
-            "type":"RobertaProcessing",
-            "sep":["</s>",2],
-            "cls":["<s>",0],
-            "trim_offsets":true,
-            "add_prefix_space":true
-        }"#
-        .replace(char::is_whitespace, "");
-        assert_eq!(serde_json::to_string(&roberta).unwrap(), roberta_r);
-        assert_eq!(
-            serde_json::from_str::<RobertaProcessing>(&roberta_r).unwrap(),
-            roberta
-        );
-    }
 
     #[test]
     fn roberta_processing() {
