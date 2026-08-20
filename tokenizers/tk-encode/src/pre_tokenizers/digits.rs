@@ -1,7 +1,6 @@
-use serde::{Deserialize, Serialize};
-
 use crate::pipeline::{self, PreTokenizerScratch};
 use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
+#[cfg(feature = "serde")]
 use crate::utils::macro_rules_attribute;
 use atomsplit::classify::mask;
 use atomsplit::fsm::class_runs_into;
@@ -9,8 +8,8 @@ use atomsplit::fsm::class_runs_into;
 #[derive(Clone, Debug, PartialEq, Eq)]
 /// Pre tokenizes the numbers into single tokens. If individual_digits is set
 /// to true, then all digits are splitted into individual tokens.
+#[cfg_attr(feature = "serde", macro_rules_attribute(impl_serde_type!))]
 #[non_exhaustive]
-#[macro_rules_attribute(impl_serde_type!)]
 pub struct Digits {
     pub individual_digits: bool,
 }

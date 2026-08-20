@@ -1,25 +1,26 @@
 use crate::normalizer::Range;
 use crate::pipeline;
 use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result};
-use serde::{Deserialize, Serialize};
-
+#[cfg(feature = "serde")]
 use crate::utils::macro_rules_attribute;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[macro_rules_attribute(impl_serde_type!)]
+#[cfg_attr(feature = "serde", macro_rules_attribute(impl_serde_type!))]
 pub struct FixedLength {
-    #[serde(default = "default_length")]
+    /// Absent from a config means 5, which is also `FixedLength::default()`.
+    #[cfg_attr(feature = "serde", serde(default = "default_length"))]
     pub length: usize,
+}
+
+#[cfg(feature = "serde")]
+fn default_length() -> usize {
+    5
 }
 
 impl FixedLength {
     pub fn new(length: usize) -> Self {
         Self { length }
     }
-}
-
-fn default_length() -> usize {
-    5
 }
 
 impl PreTokenizer for FixedLength {

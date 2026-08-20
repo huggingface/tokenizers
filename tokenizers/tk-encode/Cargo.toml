@@ -29,37 +29,39 @@ path = "src/lib.rs"
 [dependencies]
 atomsplit = { path = "../atomsplit" }
 rand = "0.9"
-regex = "1.10"
 rayon = { version = "1.10", optional = true }
 rayon-cond = { version = "0.4", optional = true }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-unicode-normalization-alignments = "0.1"
+unicode-normalization-alignments = { version = "0.1", optional = true }
 unicode_categories = "0.1"
-unicode-segmentation = "1.11"
+# Only `normalizers/precompiled.rs` reaches it, which is `normalizers`-gated.
+unicode-segmentation = { version = "1.11", optional = true }
 indicatif = { version = "0.18", optional = true }
 itertools = "0.14"
 log = "0.4"
 derive_builder = "0.20"
-spm_precompiled = "0.1.3"
+spm_precompiled = { version = "0.1.3", optional = true }
 hf-hub = { version = "0.4.1", features = [
   "ureq",
 ], default-features = false, optional = true }
-daachorse = "3.0.0"
 paste = "1.0.14"
 macro_rules_attribute = "0.2.0"
 thiserror = "2"
 fancy-regex = { version = "0.17", optional = true }
-getrandom = { version = "0.3" }
-monostate = "0.1.12"
-ahash = { version = "0.8.11", features = ["serde"] }
-dary_heap = { version = "0.3.6", features = ["serde"] }
-compact_str = { version = "0.9", features = ["serde"] }
+# No source reference anywhere: this exists only so `unstable_wasm` can select the `wasm_js`
+# backend for `rand`'s entropy source on that target.
+getrandom = { version = "0.3", optional = true }
+ahash = "0.8.11"
+# The `serde` feature only. Off by default, so an encode-only build links no serde at all -- check
+# it with `cargo tree -p tk-encode -e normal -i serde`, which must show nothing but the `ptr_hash`
+# path (upstream, and not ours to fix).
+serde = { version = "1.0", features = ["derive"], optional = true }
+dary_heap = "0.3.6"
 ptr_hash = { version = "2.0.1", default-features = false }
 memchr = "2.8.2"
-unicode-normalization = "0.1.25"
-yada = "0.7.0"
-libc = "0.2"
+unicode-normalization = { version = "0.1.25", optional = true }
+yada = { version = "0.7.0", optional = true }
+# One `#[cfg(unix)]` `pthread_atfork` call in `utils/parallelism.rs`, which is `parallelism`-gated.
+libc = { version = "0.2", optional = true }
 wide = "1.6.1"
 
 # Latest released tokenizers, used as the comparison baseline by the CI benchmark
@@ -72,34 +74,70 @@ tokenizers-release = { package = "tokenizers", version = "=0.23.1", optional = t
 # deepseek, the class family, char-delimiter) need no backend, and a plain string pattern is searched
 # for directly. Without it a stub compiles and those regex paths error at load. Enable with
 # `--features fancy-regex`.
-default = ["parallelism", "progressbar"]
+# Only BPE: none of the current SOTA models use anything else, and the umbrella crate turns the
+# rest back on, so python and existing `tokenizers::…` users are unaffected.
+default = ["bpe"]
+# ponytail: BPE itself is still compiled unconditionally -- the marker exists so `default` states
+# the intent and so a BPE-less build later is a feature change rather than an API one. Gating it for
+# real means threading a cfg through `PipelineBPE`, the byte-level fold and the merge queues, which
+# buys nothing today (the ask is BPE-*only*, not BPE-optional).
+bpe = []
+unigram = []
+wordpiece = ["dep:yada"]
+wordlevel = []
+# The table-backed normalizers: NFC/NFD/NFKC/NFKD, Nmt, StripAccents, Bert, and SentencePiece's
+# precompiled charsmap. Between them they are ~150 KB of static Unicode tables, kept alive by enum
+# arms most tokenizers never construct — so they are a `cfg` on the variants, not just unused code.
+# A tokenizer naming one of these in a build without the feature fails at load, which is correct.
+normalizers = [
+  "dep:unicode-normalization",
+  "dep:unicode-normalization-alignments",
+  "dep:spm_precompiled",
+  "dep:unicode-segmentation",
+]
+# The `UnicodeScripts` pre-tokenizer. Same shape of cost as `normalizers`, and the same reason to be
+# a feature: `get_script` is ~19 KB of generated range-match code and the `BMP_SCRIPT` lookup table
+# it feeds is a `LazyLock<[Script; 0x10000]>`, i.e. another 64 KiB of `__DATA`, all kept alive by an
+# enum arm. Measured on `binsize_pipeline` under `--profile minsize`: turning it off is -84,468
+# stripped (-11.5%) and -11,559 gzipped (-3.3%). Nothing else in the crate reaches it, and no
+# `tokenizer.json` in `data/` names it -- it is a SentencePiece-era pre-tokenizer, and `unigram` is
+# already off by default too. A tokenizer naming it in a build without the feature fails at load,
+# which is correct.
+unicode-scripts = []
+# Every component's own `Serialize`/`Deserialize`: the derives on the types themselves and the
+# hand-written impls in the `serialization.rs` next to each of them. OFF by default, which is the
+# whole point -- the slim reader (`tk-serialize`) builds a pipeline from a canonical `tokenizer.json`
+# with no serde anywhere, so an encode-only build links none of this. `tk-convert` and the
+# `tokenizers` umbrella turn it on, so python, node and every existing `tokenizers::...` user get the
+# full serde surface exactly as before.
+#
+# It is a feature rather than an always-on dependency because serde is most of what an on-device
+# build was paying for: `cargo tree -p tk-encode -e normal -i serde` must show nothing through
+# `tk-encode` with the default set.
+serde = ["dep:serde", "ahash/serde"]
 progressbar = ["indicatif"]
 http = ["hf-hub"]
-unstable_wasm = ["fancy-regex", "getrandom/wasm_js"]
+unstable_wasm = ["fancy-regex", "dep:getrandom", "getrandom/wasm_js"]
 rustls-tls = ["hf-hub?/rustls-tls"]
 bench-baseline = ["dep:tokenizers-release", "fancy-regex"]
-parallelism = ["dep:rayon", "dep:rayon-cond"]
+parallelism = ["dep:rayon", "dep:rayon-cond", "dep:libc"]
 
 [dev-dependencies]
 criterion = "0.6"
+# Test-only: one `#[cfg(test)]` cross-check in `vocab/buckets.rs`.
+daachorse = "3.0.0"
+# The unit tests build `regex::Regex` values directly, in every feature rung, so the tests need
+# it even when the library itself does not link it.
+regex = "1.10"
 tempfile = "3.10"
 assert_approx_eq = "1.1"
 tracing = "0.1"
 tracing-subscriber = "0.3.18"
+# The serde round-trip tests in each `serialization.rs` assert on JSON *strings*, so they need a
+# format to write. A dev-dependency only: no library path here parses or prints JSON, and the
+# `serde` feature pulls `serde` alone.
+serde_json = "1.0"
 
-[[bench]]
-name = "pipeline_benchmark"
-harness = false
-
-[[bench]]
-name = "bpe_model_benchmark"
-required-features = ["http"]
-harness = false
-
-[[example]]
-name = "fixture_bench"
-required-features = ["bench-baseline"]
-
-[[example]]
-name = "binsize_baseline"
-required-features = ["bench-baseline"]
+# The oracles that compare against the serde read path, the benches that load a `tokenizer.json`
+# with it, and the comparative fixture bench moved to `tk-convert` with the `Tokenizer` they are
+# written against. What is left here is the components' own serde and nothing around it.

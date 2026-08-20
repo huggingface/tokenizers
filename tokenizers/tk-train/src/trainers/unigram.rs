@@ -4,10 +4,11 @@ use log::debug;
 use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
 use std::convert::TryInto;
+use tk_convert::AddedToken;
+use tk_encode::Result;
 use tk_encode::models::unigram::{lattice::Lattice, model::Unigram};
 use tk_encode::utils::parallelism::*;
 use tk_encode::utils::progress::{ProgressBar, ProgressStyle};
-use tk_encode::{AddedToken, Result};
 
 // A token and a score
 type SentencePiece = (String, f64);

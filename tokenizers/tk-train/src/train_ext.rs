@@ -1,17 +1,17 @@
 use std::fs::File;
 use std::io::BufReader;
 
-use tk_encode::tokenizer::{
-    Decoder, Model, Normalizer, PostProcessor, PreTokenizer, TokenizerImpl,
-};
+use tk_encode::tokenizer::{Decoder, Model, Normalizer, PostProcessor, PreTokenizer};
 use tk_encode::utils::iter::ResultShunt;
 use tk_encode::utils::progress::{ProgressBar, ProgressStyle};
 use tk_encode::{LinesWithEnding, Result};
 
+use tk_convert::TokenizerImpl;
+
 use crate::Trainer;
 
 /// Adds the training entry points (`train` / `train_from_files`) onto any
-/// `tk_encode` `TokenizerImpl`.
+/// `tk_convert` `TokenizerImpl`.
 ///
 /// These used to be inherent methods on `TokenizerImpl`; they now live in
 /// `tk-train` as an extension trait so the inference crate stays free of any

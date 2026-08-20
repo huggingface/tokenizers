@@ -4,9 +4,10 @@ use crate::Trainer;
 use crate::trainers::bpe::{BpeTrainer, BpeTrainerBuilder};
 use ahash::AHashSet;
 use serde::{Deserialize, Serialize};
-use tk_encode::models::bpe::BPE;
+use tk_convert::AddedToken;
+use tk_convert::models::bpe::BPE;
+use tk_encode::Result;
 use tk_encode::models::wordpiece::WordPiece;
-use tk_encode::{AddedToken, Result};
 
 /// A `WordPieceTrainerBuilder` can be used to create a `WordPieceTrainer` with a custom
 /// configuration.
@@ -171,7 +172,7 @@ impl WordPieceTrainer {
     pub fn train(&self, model: &mut WordPiece) -> Result<Vec<AddedToken>> {
         let mut bpe = BPE::default();
         let special_tokens = self.bpe_trainer.train(&mut bpe)?;
-        let new_wordpiece = WordPiece::from_bpe(&bpe);
+        let new_wordpiece = tk_convert::models::wordpiece::from_bpe(&bpe);
 
         // Transfer the vocab
         model.vocab = new_wordpiece.vocab;

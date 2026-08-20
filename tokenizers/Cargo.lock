@@ -889,6 +889,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "hifijson"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "242402749acf71e6f32f5857598b7002c4058a4e3c3b22b4c7d51cab9aea754e"
+
+[[package]]
 name = "http"
 version = "1.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2281,13 +2287,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
+name = "tk-convert"
+version = "0.23.2-dev.0"
+dependencies = [
+ "criterion 0.6.0",
+ "rayon",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tk-encode",
+ "tk-serialize",
+ "tokenizers 0.23.1",
+]
+
+[[package]]
 name = "tk-encode"
 version = "0.23.2-dev.0"
 dependencies = [
  "ahash",
  "assert_approx_eq",
  "atomsplit",
- "compact_str",
  "criterion 0.6.0",
  "daachorse 3.0.2",
  "dary_heap",
@@ -2301,7 +2320,6 @@ dependencies = [
  "log",
  "macro_rules_attribute",
  "memchr",
- "monostate",
  "paste",
  "ptr_hash",
  "rand 0.9.4",
@@ -2325,22 +2343,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "tk-train"
+name = "tk-serialize"
 version = "0.23.2-dev.0"
 dependencies = [
- "ahash",
- "assert_approx_eq",
- "compact_str",
- "dary_heap",
- "derive_builder",
- "esaxx-rs",
- "indicatif 0.18.5",
- "itertools 0.14.0",
- "log",
- "serde",
+ "atomsplit",
+ "hifijson",
  "serde_json",
- "tempfile",
- "thiserror",
  "tk-encode",
 ]
 
@@ -2387,8 +2395,8 @@ dependencies = [
  "criterion 0.6.0",
  "serde_json",
  "tempfile",
+ "tk-convert",
  "tk-encode",
- "tk-train",
  "tracing",
  "tracing-subscriber",
 ]

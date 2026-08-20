@@ -30,13 +30,15 @@ use std::ops::Deref;
 use std::sync::Arc;
 use tokenizers::Tokenizer;
 use tokenizers::decoders::byte_fallback::ByteFallback;
+use tokenizers::decoders::byte_level::ByteLevelDecoder;
 use tokenizers::decoders::fuse::Fuse;
+use tokenizers::decoders::replace::ReplaceDecoder;
 use tokenizers::decoders::sequence::Sequence;
 use tokenizers::decoders::wordpiece::WordPiece as WordPieceDecoder;
 use tokenizers::models::TrainerWrapper;
 use tokenizers::models::bpe::{BPE, BpeTrainerBuilder};
-use tokenizers::models::wordpiece::WordPiece;
-use tokenizers::normalizers::{BertNormalizer, Replace};
+use tokenizers::models::wordpiece;
+use tokenizers::normalizers::BertNormalizer;
 use tokenizers::pre_tokenizers::bert::BertPreTokenizer;
 use tokenizers::pre_tokenizers::byte_level::ByteLevel;
 use tokenizers::pre_tokenizers::whitespace::Whitespace;
@@ -73,7 +75,7 @@ fn load_data() -> (
 fn create_gpt2_tokenizer(bpe: BPE) -> Tokenizer {
     let mut tokenizer = Tokenizer::new(bpe);
     tokenizer.with_pre_tokenizer(Some(ByteLevel::default()));
-    tokenizer.with_decoder(Some(ByteLevel::default()));
+    tokenizer.with_decoder(Some(ByteLevelDecoder::default()));
     tokenizer
         .add_tokens([AddedToken::from("ing", false).single_word(false)])
         .unwrap();
@@ -266,7 +268,7 @@ fn bench_decode(c: &mut Criterion) {
 
     let mut sp_chain = Tokenizer::from_file("data/albert-base-v1-tokenizer.json").unwrap();
     sp_chain.with_decoder(Some(Sequence::new(vec![
-        Replace::new("▁", " ").unwrap().into(),
+        ReplaceDecoder::new("▁", " ").unwrap().into(),
         ByteFallback::new().into(),
         Fuse::new().into(),
     ])));
@@ -277,8 +279,8 @@ fn bench_decode(c: &mut Criterion) {
     });
 
     let mut wordpiece = Tokenizer::new(
-        WordPiece::from_file("data/bert-base-uncased-vocab.txt")
-            .build()
+        wordpiece::from_file("data/bert-base-uncased-vocab.txt")
+            .and_then(|builder| builder.build())
             .unwrap(),
     );
     wordpiece

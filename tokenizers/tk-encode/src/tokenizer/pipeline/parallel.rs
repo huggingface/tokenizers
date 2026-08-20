@@ -13,7 +13,11 @@ use crate::pipeline::{
 use super::Result;
 
 /// Threshold below which [`Inputs`] are encoded serially on the caller thread
-pub(crate) const PARALLEL_MIN_BYTES: usize = 8 * 1024;
+// `pub` (re-exported by `pipeline`): the differential "parallel == serial" tests needed a
+// `Tokenizer` to build from, so they went when it did. Nothing in the tree sizes an input past
+// this threshold any more, and this is the number anything that wants the parallel path at all
+// has to exceed.
+pub const PARALLEL_MIN_BYTES: usize = 8 * 1024;
 
 impl Input {
     fn len(&self) -> usize {

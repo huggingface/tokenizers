@@ -115,7 +115,7 @@ pub fn metaspace_decoder(
     };
   Ok(Decoder {
     decoder: Some(Arc::new(RwLock::new(
-      tk::decoders::metaspace::Metaspace::new(replacement, prepend_scheme, split).into(),
+      tk::decoders::metaspace::MetaspaceDecoder::new(replacement, prepend_scheme, split).into(),
     ))),
   })
 }
@@ -124,7 +124,9 @@ pub fn metaspace_decoder(
 pub fn replace_decoder(pattern: String, content: String) -> Result<Decoder> {
   Ok(Decoder {
     decoder: Some(Arc::new(RwLock::new(
-      tk::normalizers::replace::Replace::new(pattern, content)
+      // The `Replace` decoder is its own type now rather than the `Replace` *normalizer* wearing a
+      // second hat -- one type cannot sit in two wrappers and be given a serde mirror for only one.
+      tk::decoders::replace::ReplaceDecoder::new(pattern, content)
         .map_err(|e| Error::from_reason(e.to_string()))?
         .into(),
     ))),

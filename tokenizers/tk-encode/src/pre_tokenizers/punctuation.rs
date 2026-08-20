@@ -1,7 +1,6 @@
-use serde::{Deserialize, Serialize};
-
 use crate::pipeline::{self, PreTokenizerScratch};
 use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
+#[cfg(feature = "serde")]
 use crate::utils::macro_rules_attribute;
 use SplitDelimiterBehavior::{Isolated, Removed};
 use atomsplit::classify::mask;
@@ -13,12 +12,14 @@ pub(crate) fn is_punc(x: char) -> bool {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-#[macro_rules_attribute(impl_serde_type!)]
+#[cfg_attr(feature = "serde", macro_rules_attribute(impl_serde_type!))]
 pub struct Punctuation {
-    #[serde(default = "default_split")]
+    /// An absent `behavior` means `Isolated`, which is also `Punctuation::default()`.
+    #[cfg_attr(feature = "serde", serde(default = "default_split"))]
     pub behavior: SplitDelimiterBehavior,
 }
 
+#[cfg(feature = "serde")]
 fn default_split() -> SplitDelimiterBehavior {
     SplitDelimiterBehavior::Isolated
 }
@@ -204,22 +205,5 @@ mod tests {
             pretokenize(Isolated, "café!"),
             vec![("café", (0, 5)), ("!", (5, 6))],
         );
-    }
-
-    #[test]
-    fn deserialization() {
-        let punctuation: Punctuation = serde_json::from_str(r#"{"type": "Punctuation"}"#).unwrap();
-        assert_eq!(punctuation, Punctuation::default());
-        assert_eq!(
-            punctuation,
-            Punctuation::new(SplitDelimiterBehavior::Isolated)
-        );
-    }
-
-    #[test]
-    #[should_panic]
-    fn deserialization_erroneous() {
-        let _punctuation: Punctuation =
-            serde_json::from_str(r#"{"type": "WhitespaceSplit"}"#).unwrap();
     }
 }

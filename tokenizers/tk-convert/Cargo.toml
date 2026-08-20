@@ -1,0 +1,94 @@
+[package]
+name = "tk-convert"
+version = "0.23.2-dev.0"
+edition = "2024"
+authors = [
+  "Anthony MOI <m.anthony.moi@gmail.com>",
+  "Nicolas Patry <patry.nicolas@protonmail.com>",
+  "Arthur Zucker <arthur@huggingface.co",
+  "Luc Georges <luc@huggingface.co",
+]
+homepage = "https://github.com/huggingface/tokenizers"
+repository = "https://github.com/huggingface/tokenizers"
+documentation = "https://docs.rs/tokenizers/"
+license = "Apache-2.0"
+keywords = ["tokenizer", "NLP", "huggingface", "BPE", "WordPiece"]
+description = """
+The legacy `tokenizer.json` upgrade pass of the 🤗 Tokenizers library: a JSON→JSON
+rewrite that turns a config written by any older version into the canonical form
+`tk-serialize`'s reader accepts.
+"""
+
+[package.metadata.docs.rs]
+all-features = true
+
+[lib]
+name = "tk_convert"
+path = "src/lib.rs"
+
+[dependencies]
+# The whole crate is `convert.rs`, whose only imports are `std::path` and `serde_json` (plus the
+# `thiserror` derive below). There is no `tk-encode` here any more, and no serde: the wrapper enums
+# whose `Deserialize` named every model and normalizer are gone, and with them the reachability that
+# made this crate the expensive half.
+serde_json = "1.0"
+# `ConvertError` is a closed list a caller can match on, so it gets a real enum rather than a boxed
+# `dyn Error`.
+thiserror = "2"
+
+# Latest released tokenizers, used as the comparison baseline by the fixture bench and as the
+# independent id/decode oracle by `tests/pipeline_oracle.rs` and `tests/pipeline_decode_oracle.rs`.
+tokenizers-release = { package = "tokenizers", version = "=0.23.1", optional = true }
+
+[features]
+default = []
+# There is no `fancy-regex` forward any more, and nothing to forward it to: the shipped crate links
+# no regex engine at all. The oracles still need one -- a `Split` pre-tokenizer config (deepseek-v4,
+# xlmr) will not load without a system-regex backend -- and they get it from the `tk-serialize`
+# dev-dependency below, which asks for it unconditionally. Test-only, so the shipped crate is
+# unaffected either way.
+bench-baseline = ["dep:tokenizers-release"]
+
+[dev-dependencies]
+# The reader every test here builds a pipeline with -- this crate no longer builds one at all, so
+# `tk-serialize` is how a `tokenizer.json` becomes something that encodes.
+#
+# Every component feature is spelled out: the reader has one `cfg` arm per component, and a
+# component compiled out is a config it *refuses*. A refused config is a comparison not made rather
+# than a test that fails -- so this list is load-bearing. With the default set the gate silently
+# drops t5-base and albert (they need `normalizers` + `unigram`); without `fancy-regex` it drops
+# both deepseek-v4 files and xlmr, whose `Split` pre-tokenizer needs a system-regex backend.
+tk-serialize = { path = "../tk-serialize", features = [
+  "bpe",
+  "unigram",
+  "wordpiece",
+  "wordlevel",
+  "normalizers",
+  "unicode-scripts",
+  "fancy-regex",
+] }
+# `PipelineTokenizer` is named explicitly in the tests and benches (as a type annotation and in the
+# oracles' signatures), so it has to be in scope even though the library half no longer mentions it.
+tk-encode = { path = "../tk-encode", default-features = false, features = ["fancy-regex"] }
+criterion = "0.6"
+rayon = "1.10"
+# `canonicalize_file`'s own tests write real files.
+tempfile = "3.10"
+
+
+[[bench]]
+name = "pipeline_benchmark"
+harness = false
+
+# The Pipeline Benchmark's harness and its released-crate size baseline. Both link
+# `tokenizers-release`, so both are gated -- without `required-features` a plain
+# `cargo build --workspace --all-targets` (what CI runs) tries to compile them with no
+# `tokenizers_release` in scope. They stay here rather than moving to `tk-encode` because the
+# released crate they compare against is this crate's optional dependency.
+[[example]]
+name = "fixture_bench"
+required-features = ["bench-baseline"]
+
+[[example]]
+name = "binsize_baseline"
+required-features = ["bench-baseline"]

@@ -1,5 +1,7 @@
 use crate::pipeline::{self, PreTokenizerScratch};
 use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
+
+#[cfg(feature = "serde")]
 use crate::utils::macro_rules_attribute;
 
 use super::punctuation::is_punc;
@@ -7,7 +9,7 @@ use atomsplit::classify::mask;
 use atomsplit::fsm::class_runs_into;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-#[macro_rules_attribute(impl_serde_type!)]
+#[cfg_attr(feature = "serde", macro_rules_attribute(impl_serde_type!))]
 pub struct BertPreTokenizer;
 
 impl PreTokenizer for BertPreTokenizer {

@@ -1,7 +1,6 @@
 use crate::pipeline;
 use crate::utils::{GptFsm, GptFsmPattern, SysRegex, gpt_fsm};
 use atomsplit::literal::Literal;
-use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::tokenizer::{
     PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior,
@@ -9,7 +8,10 @@ use crate::tokenizer::{
 };
 
 /// Represents the different patterns that `Split` can use
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq)]
+///
+/// Written down externally tagged: `{"String":"..."}` / `{"Regex":"..."}`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum SplitPattern {
     String(String),
     Regex(String),
@@ -39,45 +41,23 @@ pub enum Search {
     Unavailable,
 }
 
-#[derive(Debug, Serialize)]
-#[serde(tag = "type")]
+/// Only `pattern`, `behavior` and `invert` are ever written down: `search` and `fsm` are both
+/// *derived* from `pattern` by [`Split::new`], so a config carrying them would be a config that can
+/// disagree with itself. That is also why the serde in [`super::serialization`] goes through the
+/// constructor rather than a struct literal, and why reading one can fail: compiling the pattern
+/// can.
+#[derive(Debug)]
 pub struct Split {
     pub pattern: SplitPattern,
     /// How the pattern is found. A plain string never needs a backend; a regex does, unless it is one
     /// of the GPT patterns the native FSM below covers.
-    #[serde(skip)]
     pub search: Search,
     pub behavior: SplitDelimiterBehavior,
     pub invert: bool,
     /// Native `atomsplit` FSM for a recognized GPT regex (gpt2 / cl100k-Llama-3 / o200k), used on the
     /// pipeline path when `behavior == Isolated && !invert` (how these regexes always ship). Byte-exact
     /// with `regex`; `None` falls back to `regex`.
-    #[serde(skip)]
     fsm: Option<GptFsm>,
-}
-
-impl<'de> Deserialize<'de> for Split {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        enum Type {
-            Split,
-        }
-
-        #[derive(Deserialize)]
-        pub struct SplitHelper {
-            #[serde(rename = "type")]
-            _type: Type,
-            pattern: SplitPattern,
-            behavior: SplitDelimiterBehavior,
-            invert: bool,
-        }
-
-        let helper = SplitHelper::deserialize(deserializer)?;
-        Self::new(helper.pattern, helper.behavior, helper.invert).map_err(serde::de::Error::custom)
-    }
 }
 
 impl Clone for Split {
@@ -126,13 +106,49 @@ impl Split {
         })
     }
 
+    /// A `Split` that is known to be driven natively, so no regex backend is compiled.
+    ///
+    /// [`Split::new`] asks the system regex to compile every regex pattern, which a build without
+    /// `fancy-regex` has no engine for. Two cases do not need one: a pattern [`gpt_fsm`] recognises,
+    /// and a member of a composition the pipeline runs as a single native pass -- deepseek's three
+    /// regexes are individually unrecognised but never individually run, so `Split::new` would
+    /// reject them. A literal pattern is searched for directly and never needed an engine either.
+    pub fn native(
+        pattern: SplitPattern,
+        behavior: SplitDelimiterBehavior,
+        invert: bool,
+    ) -> Result<Self> {
+        let fsm = match &pattern {
+            SplitPattern::String(_) => None,
+            SplitPattern::Regex(r) => gpt_fsm(r),
+        };
+        let search = match &pattern {
+            SplitPattern::String(s) => Search::Literal(Literal::new(s.as_bytes())?),
+            SplitPattern::Regex(_) => Search::Unavailable,
+        };
+        Ok(Self {
+            pattern,
+            search,
+            behavior,
+            invert,
+            fsm,
+        })
+    }
+
+    /// The native FSM family this pattern was recognised as, if any.
+    pub fn gpt_fsm(&self) -> Option<GptFsm> {
+        self.fsm
+    }
+
     /// Pipeline canonicalization. A recognized whole-covering GPT regex shipped
     /// as `(invert=true, behavior=Removed)` — the tiktoken-conversion convention
     /// used by cl100k/o200k — is byte-exactly equivalent to `(invert=false,
     /// Isolated)`, the form the native FSM fast path requires (the inverted match
     /// set is the gaps, and these patterns leave no gaps). Rewrite to it so
     /// cl100k/o200k route to `fsm_cl100k`/`fsm_o200k` instead of the SysRegex fallback.
-    pub(crate) fn canonicalized_for_pipeline(self) -> Result<Self> {
+    // `pub` because the only caller is `tk-serialize`, which applies it while reading a `Split`
+    // out of a config.
+    pub fn canonicalized_for_pipeline(self) -> Result<Self> {
         use crate::tokenizer::SplitDelimiterBehavior::{Isolated, Removed};
         if self.fsm.is_some() && self.invert && self.behavior == Removed {
             Split::new(self.pattern, Isolated, false)
@@ -232,6 +248,52 @@ unsafe impl pipeline::PreTokenizer for Split {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `Split::new` compiles every regex through the system backend, so a build without
+    /// `fancy-regex` cannot construct deepseek's three patterns -- they are individually
+    /// unrecognised by `gpt_fsm` (the pipeline runs them as one native pass). `Split::native`
+    /// never asks for an engine.
+    #[test]
+    fn native_accepts_patterns_new_would_need_an_engine_for() {
+        use crate::utils::DEEPSEEK_PATTERNS;
+
+        for pattern in DEEPSEEK_PATTERNS {
+            let split = Split::native(
+                SplitPattern::Regex(pattern.to_string()),
+                SplitDelimiterBehavior::Isolated,
+                false,
+            )
+            .expect("native must not need a regex backend");
+            assert!(
+                split.gpt_fsm().is_none(),
+                "deepseek's patterns are not individually FSM-recognised"
+            );
+        }
+
+        // The premise: with no backend compiled, `Split::new` rejects exactly these.
+        #[cfg(not(feature = "fancy-regex"))]
+        for pattern in DEEPSEEK_PATTERNS {
+            assert!(
+                Split::new(
+                    SplitPattern::Regex(pattern.to_string()),
+                    SplitDelimiterBehavior::Isolated,
+                    false,
+                )
+                .is_err(),
+                "without a backend `Split::new` must fail here -- that is why `native` exists"
+            );
+        }
+
+        // A recognised pattern still reports its family, so a caller can route it natively.
+        let gpt2 = Split::native(
+            SplitPattern::Regex(atomsplit::regexes::GPT2.to_string()),
+            SplitDelimiterBehavior::Isolated,
+            false,
+        )
+        .unwrap();
+        assert_eq!(gpt2.gpt_fsm(), Some(GptFsm::Gpt2));
+    }
+
     use crate::{OffsetReferential, OffsetType, PreTokenizer};
     use SplitDelimiterBehavior::*;
 
@@ -585,17 +647,6 @@ mod tests {
         );
     }
 
-    /// A config spelling its pattern as a string must also *deserialize* with no backend — the
-    /// regex half of `serialization` below can only run once one is compiled.
-    #[test]
-    fn a_string_pattern_deserializes_with_no_backend() {
-        let split_s =
-            r#"{"type":"Split","pattern":{"String":"Hello"},"behavior":"Removed","invert":true}"#;
-        let split = Split::new("Hello", SplitDelimiterBehavior::Removed, true).unwrap();
-        assert_eq!(serde_json::from_str::<Split>(split_s).unwrap(), split);
-        assert_eq!(serde_json::to_string(&split).unwrap(), split_s);
-    }
-
     #[cfg(feature = "fancy-regex")] // needs a system-regex backend
     #[test]
     fn regex_string() {
@@ -637,23 +688,5 @@ mod tests {
             .unwrap();
 
         assert_eq!(pretok_str, pretok_str_for_invert);
-    }
-
-    #[cfg(feature = "fancy-regex")] // needs a system-regex backend
-    #[test]
-    fn serialization() {
-        use SplitDelimiterBehavior::*;
-
-        let split = Split::new("Hello", Removed, true).unwrap();
-        let split_s =
-            r#"{"type":"Split","pattern":{"String":"Hello"},"behavior":"Removed","invert":true}"#;
-        assert_eq!(serde_json::to_string(&split).unwrap(), split_s);
-        assert_eq!(serde_json::from_str::<Split>(split_s).unwrap(), split);
-
-        let split = Split::new(SplitPattern::Regex(r"\s+".into()), Isolated, false).unwrap();
-        let split_s =
-            r#"{"type":"Split","pattern":{"Regex":"\\s+"},"behavior":"Isolated","invert":false}"#;
-        assert_eq!(serde_json::to_string(&split).unwrap(), split_s);
-        assert_eq!(serde_json::from_str::<Split>(split_s).unwrap(), split);
     }
 }

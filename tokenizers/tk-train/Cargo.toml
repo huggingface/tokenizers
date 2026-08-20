@@ -23,7 +23,19 @@ name = "tk_train"
 path = "src/lib.rs"
 
 [dependencies]
+# Every trainer needs its model, and the training extension goes through `Tokenizer`, so the
+# training half wants the full inference surface -- `tk-encode`'s slim defaults are for consumers
+# that only encode.
 tk-encode = { path = "../tk-encode", default-features = false, features = [
+  "parallelism",
+  "normalizers",
+  "bpe",
+  "unigram",
+  "wordpiece",
+  "wordlevel",
+] }
+# `ModelWrapper`, `TokenizerImpl` and `AddedToken` live in the config layer.
+tk-convert = { path = "../tk-convert", default-features = false, features = [
   "parallelism",
 ] }
 serde = { version = "1.0", features = ["derive"] }
@@ -41,7 +53,7 @@ indicatif = { version = "0.18", optional = true }
 [features]
 default = ["progressbar", "esaxx_fast"]
 esaxx_fast = ["esaxx-rs/cpp"]
-progressbar = ["indicatif", "tk-encode/progressbar"]
+progressbar = ["indicatif", "tk-encode/progressbar", "tk-convert/progressbar"]
 parity-aware-bpe = []
 
 [dev-dependencies]

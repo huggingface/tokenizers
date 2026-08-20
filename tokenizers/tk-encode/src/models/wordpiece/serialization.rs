@@ -1,4 +1,19 @@
-use super::{super::OrderedVocabIter, WordPiece, WordPieceBuilder};
+//! serde for [`WordPiece`].
+//!
+//! Hand-written rather than derived, and every hand-written part is load-bearing: the vocabulary
+//! goes out through [`OrderedVocabIter`] so `{token: id}` is written in id order rather than in hash
+//! order; the way in accumulates a *missing-fields* set and reports the first one that is absent,
+//! which is what `deserialization_should_fail` pins; and the model is built through its builder,
+//! which is where the invariants (a reverse vocab that matches) are established.
+//!
+//! The `"type"` tag is read when present and a wrong value is rejected, but it is **not** required:
+//! `gpt2.json` and five other fixtures in `data/` carry no tag at all. What separates `WordPiece`
+//! from `WordLevel` instead is its required fields, which is why `WordPiece` has to stay ahead of
+//! `WordLevel` in `ModelWrapper` — `WordLevel`'s fields are a subset of `WordPiece`'s, so
+//! `WordLevel` would otherwise claim a tag-less `WordPiece`.
+
+use super::{WordPiece, WordPieceBuilder};
+use crate::models::OrderedVocabIter;
 use ahash::{AHashMap, AHashSet};
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer,

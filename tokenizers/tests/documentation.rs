@@ -2,6 +2,7 @@ use std::iter::FromIterator;
 
 use ahash::AHashMap;
 use tokenizers::decoders::byte_fallback::ByteFallback;
+use tokenizers::decoders::byte_level::ByteLevelDecoder;
 use tokenizers::models::bpe::{BPE, BpeTrainerBuilder};
 use tokenizers::normalizers::{NFC, Sequence, Strip};
 use tokenizers::pre_tokenizers::byte_level::ByteLevel;
@@ -12,15 +13,23 @@ use tokenizers::{Tokenizer, TokenizerImpl, TokenizerTrainExt};
 #[test]
 fn train_tokenizer() {
     let vocab_size: usize = 100;
-    let mut tokenizer = TokenizerBuilder::new()
+    // Spelled out with the wrapper types on purpose: only the wrappers carry serde now, so a
+    // `TokenizerImpl` parameterised by concrete components has no `save`. This is what `Tokenizer`
+    // already is -- the annotation just says so.
+    let mut tokenizer: TokenizerImpl<
+        BPE,
+        NormalizerWrapper,
+        PreTokenizerWrapper,
+        PostProcessorWrapper,
+        DecoderWrapper,
+    > = TokenizerBuilder::new()
         .with_model(BPE::default())
-        .with_normalizer(Some(Sequence::new(vec![
-            Strip::new(true, true).into(),
-            NFC.into(),
-        ])))
-        .with_pre_tokenizer(Some(ByteLevel::default()))
-        .with_post_processor(Some(ByteLevel::default()))
-        .with_decoder(Some(ByteLevel::default()))
+        .with_normalizer(Some(
+            Sequence::new(vec![Strip::new(true, true).into(), NFC.into()]).into(),
+        ))
+        .with_pre_tokenizer(Some(ByteLevel::default().into()))
+        .with_post_processor(Some(ByteLevel::default().into()))
+        .with_decoder(Some(ByteLevelDecoder::default().into()))
         .build()
         .unwrap();
 

@@ -2,14 +2,14 @@ mod common;
 
 use common::*;
 use tokenizers::decoders::DecoderWrapper;
-use tokenizers::decoders::byte_level::ByteLevel;
+use tokenizers::decoders::byte_level::ByteLevelDecoder;
 use tokenizers::models::ModelWrapper;
 use tokenizers::models::bpe::BPE;
-use tokenizers::models::wordlevel::WordLevel;
+use tokenizers::models::wordlevel;
 use tokenizers::models::wordpiece::WordPiece;
 use tokenizers::normalizers::NormalizerWrapper;
 use tokenizers::normalizers::bert::BertNormalizer;
-use tokenizers::normalizers::unicode::{NFC, NFKC};
+use tokenizers::normalizers::unicode::NFC;
 use tokenizers::pre_tokenizers::PreTokenizerWrapper;
 use tokenizers::pre_tokenizers::bert::BertPreTokenizer;
 use tokenizers::pre_tokenizers::delimiter::CharDelimiterSplit;
@@ -27,9 +27,12 @@ fn bpe_serde() {
     assert_eq!(bpe, de);
 }
 
+// `WordPiece`, `WordLevel` and `Unigram` are reached through `ModelWrapper` here because that is
+// what a `tokenizer.json` names; each also carries its own serde, in the `serialization.rs` next to
+// it in `tk-encode`.
 #[test]
 fn wordpiece_serde() {
-    let wordpiece = get_bert_wordpiece();
+    let wordpiece = ModelWrapper::from(get_bert_wordpiece());
     let ser = serde_json::to_string(&wordpiece).unwrap();
     let de = serde_json::from_str(&ser).unwrap();
     assert_eq!(wordpiece, de);
@@ -37,7 +40,8 @@ fn wordpiece_serde() {
 
 #[test]
 fn wordlevel_serde() {
-    let wordlevel = WordLevel::from_file("data/gpt2-vocab.json", "<unk>".into()).unwrap();
+    let wordlevel =
+        ModelWrapper::from(wordlevel::from_file("data/gpt2-vocab.json", "<unk>".into()).unwrap());
     let ser = serde_json::to_string(&wordlevel).unwrap();
     let de = serde_json::from_str(&ser).unwrap();
     assert_eq!(wordlevel, de);
@@ -45,14 +49,15 @@ fn wordlevel_serde() {
 
 #[test]
 fn normalizers() {
+    // The wrapper is the unit under test in both directions, exactly as for the decoders below:
+    // being untagged, it serializes to precisely what the leaf serializes to. That one fieldless
+    // normalizer refuses another one's JSON is asserted in `tk-convert`'s
+    // `normalizers::tests::a_fieldless_normalizer_requires_its_tag`.
+
     // Test unit struct
-    let nfc = NFC;
+    let nfc: NormalizerWrapper = NFC.into();
     let nfc_ser = serde_json::to_string(&nfc).unwrap();
     assert_eq!(nfc_ser, r#"{"type":"NFC"}"#);
-    // empty struct can deserialize from self
-    serde_json::from_str::<NFC>(&nfc_ser).unwrap();
-    let err: Result<NFKC, _> = serde_json::from_str(&nfc_ser);
-    assert!(err.is_err(), "NFKC shouldn't be deserializable from NFC");
     // wrapper can can deserialize from inner
     let nfc_wrapped: NormalizerWrapper = serde_json::from_str(&nfc_ser).unwrap();
     match &nfc_wrapped {
@@ -63,14 +68,12 @@ fn normalizers() {
     assert_eq!(ser_wrapped, nfc_ser);
 
     // Test non-empty roundtrip
-    let bert = BertNormalizer::default();
+    let bert: NormalizerWrapper = BertNormalizer::default().into();
     let bert_ser = serde_json::to_string(&bert).unwrap();
     assert_eq!(
         bert_ser,
         r#"{"type":"BertNormalizer","clean_text":true,"handle_chinese_chars":true,"strip_accents":null,"lowercase":true}"#
     );
-    // make sure we can deserialize to self
-    serde_json::from_str::<BertNormalizer>(&bert_ser).unwrap();
     // wrapper can deserialize from inner serialization
     let bert_wrapped: NormalizerWrapper = serde_json::from_str(&bert_ser).unwrap();
     match &bert_wrapped {
@@ -84,13 +87,15 @@ fn normalizers() {
 
 #[test]
 fn processors() {
-    let bert = BertProcessing::new(("SEP".into(), 0), ("CLS".into(), 0));
+    // The wrapper is the unit under test in both directions; being untagged, it serializes to
+    // exactly what `BertProcessing` serializes to.
+    let bert: PostProcessorWrapper =
+        BertProcessing::new(("SEP".into(), 0), ("CLS".into(), 0)).into();
     let bert_ser = serde_json::to_string(&bert).unwrap();
     assert_eq!(
         bert_ser,
         r#"{"type":"BertProcessing","sep":["SEP",0],"cls":["CLS",0]}"#
     );
-    serde_json::from_str::<BertProcessing>(&bert_ser).unwrap();
     let bert_wrapped: PostProcessorWrapper = serde_json::from_str(&bert_ser).unwrap();
     match &bert_wrapped {
         PostProcessorWrapper::Bert(_) => (),
@@ -102,18 +107,22 @@ fn processors() {
 
 #[test]
 fn pretoks() {
+    // The wrapper is the unit under test in both directions, the same way `decoders` below tests
+    // `ByteLevelDecoder`.
+    //
+    // The two "X shouldn't be deserializable from Y" checks this test used to make at the leaf are
+    // made here at the real entry point: `PreTokenizerWrapper`'s legacy fallback is an *untagged*
+    // enum that tries its variants in declaration order, and `BertPreTokenizer` is declared before
+    // `Whitespace`. So a `{"type":"Whitespace"}` object arriving at the `Whitespace` variant is
+    // exactly the statement that `BertPreTokenizer` refused it first -- which is only true because
+    // every pre-tokenizer *requires* its `"type"` tag.
+
     // Test unit struct
-    let bert = BertPreTokenizer;
+    let bert: PreTokenizerWrapper = BertPreTokenizer.into();
     let bert_ser = serde_json::to_string(&bert).unwrap();
     assert_eq!(bert_ser, r#"{"type":"BertPreTokenizer"}"#);
-    // empty struct can deserialize from self
-    serde_json::from_str::<BertPreTokenizer>(&bert_ser).unwrap();
-    let err: Result<Whitespace, _> = serde_json::from_str(&bert_ser);
-    assert!(
-        err.is_err(),
-        "Whitespace shouldn't be deserializable from BertPreTokenizer"
-    );
-    // wrapper can can deserialize from inner
+    // wrapper can deserialize from inner, and lands on the Bert variant rather than any of the other
+    // field-less ones
     let bert_wrapped: PreTokenizerWrapper = serde_json::from_str(&bert_ser).unwrap();
     match &bert_wrapped {
         PreTokenizerWrapper::BertPreTokenizer(_) => (),
@@ -123,12 +132,11 @@ fn pretoks() {
     assert_eq!(ser_wrapped, bert_ser);
 
     // Test non-empty roundtrip
-    let ch = CharDelimiterSplit::new(' ');
+    let ch: PreTokenizerWrapper = CharDelimiterSplit::new(' ').into();
     let ch_ser = serde_json::to_string(&ch).unwrap();
     assert_eq!(ch_ser, r#"{"type":"CharDelimiterSplit","delimiter":" "}"#);
-    // make sure we can deserialize to self
-    serde_json::from_str::<CharDelimiterSplit>(&ch_ser).unwrap();
-    // wrapper can deserialize from inner serialization
+    // `EnumType` has no `CharDelimiterSplit` variant, so this one loads through the untagged
+    // fallback -- and still has to land on `Delimiter`.
     let ch_wrapped: PreTokenizerWrapper = serde_json::from_str(&ch_ser).unwrap();
     match &ch_wrapped {
         PreTokenizerWrapper::Delimiter(_) => (),
@@ -138,44 +146,54 @@ fn pretoks() {
     let ser_wrapped = serde_json::to_string(&ch_wrapped).unwrap();
     assert_eq!(ser_wrapped, ch_ser);
 
-    let wsp = Whitespace {};
+    let wsp: PreTokenizerWrapper = Whitespace {}.into();
     let wsp_ser = serde_json::to_string(&wsp).unwrap();
     assert_eq!(wsp_ser, r#"{"type":"Whitespace"}"#);
-    serde_json::from_str::<Whitespace>(&wsp_ser).unwrap();
-    let err: Result<BertPreTokenizer, _> = serde_json::from_str(&wsp_ser);
-    assert!(
-        err.is_err(),
-        "BertPreTokenizer shouldn't be deserializable from Whitespace"
-    );
+    let wsp_wrapped: PreTokenizerWrapper = serde_json::from_str(&wsp_ser).unwrap();
+    match &wsp_wrapped {
+        PreTokenizerWrapper::Whitespace(_) => (),
+        _ => panic!("Whitespace wrapped with incorrect variant"),
+    }
 
     let pattern: SplitPattern = "[SEP]".into();
-    let pretok = Split::new(pattern, SplitDelimiterBehavior::Isolated, false).unwrap();
+    let pretok: PreTokenizerWrapper = Split::new(pattern, SplitDelimiterBehavior::Isolated, false)
+        .unwrap()
+        .into();
     let pretok_str = serde_json::to_string(&pretok).unwrap();
     assert_eq!(
         pretok_str,
         r#"{"type":"Split","pattern":{"String":"[SEP]"},"behavior":"Isolated","invert":false}"#
     );
-    assert_eq!(serde_json::from_str::<Split>(&pretok_str).unwrap(), pretok);
+    assert_eq!(
+        serde_json::from_str::<PreTokenizerWrapper>(&pretok_str).unwrap(),
+        pretok
+    );
 
     let pattern = SplitPattern::Regex("[SEP]".to_string());
-    let pretok = Split::new(pattern, SplitDelimiterBehavior::Isolated, false).unwrap();
+    let pretok: PreTokenizerWrapper = Split::new(pattern, SplitDelimiterBehavior::Isolated, false)
+        .unwrap()
+        .into();
     let pretok_str = serde_json::to_string(&pretok).unwrap();
     assert_eq!(
         pretok_str,
         r#"{"type":"Split","pattern":{"Regex":"[SEP]"},"behavior":"Isolated","invert":false}"#
     );
-    assert_eq!(serde_json::from_str::<Split>(&pretok_str).unwrap(), pretok);
+    assert_eq!(
+        serde_json::from_str::<PreTokenizerWrapper>(&pretok_str).unwrap(),
+        pretok
+    );
 }
 
 #[test]
 fn decoders() {
-    let byte_level = ByteLevel::default();
+    // The wrapper is the unit under test in both directions; being untagged, it serializes to
+    // exactly what `ByteLevelDecoder` serializes to.
+    let byte_level: DecoderWrapper = ByteLevelDecoder::default().into();
     let byte_level_ser = serde_json::to_string(&byte_level).unwrap();
     assert_eq!(
         byte_level_ser,
         r#"{"type":"ByteLevel","add_prefix_space":true,"trim_offsets":true,"use_regex":true}"#
     );
-    serde_json::from_str::<ByteLevel>(&byte_level_ser).unwrap();
     let byte_level_wrapper: DecoderWrapper = serde_json::from_str(&byte_level_ser).unwrap();
     match &byte_level_wrapper {
         DecoderWrapper::ByteLevel(_) => (),
@@ -201,26 +219,18 @@ fn models() {
 
 #[test]
 fn tokenizer() {
+    // The model parameter is incidental here -- what is under test is the *normalizer* slot,
+    // unwrapped (NFC) versus wrapped (NormalizerWrapper). `ModelWrapper` is what a `tokenizer.json`
+    // names in the model slot, so it is what the round trip goes through.
     let wordpiece = WordPiece::default();
     let mut tokenizer = Tokenizer::new(wordpiece);
     tokenizer.with_normalizer(Some(NFC)).unwrap();
     let ser = serde_json::to_string(&tokenizer).unwrap();
     let _: Tokenizer = serde_json::from_str(&ser).unwrap();
-    let unwrapped_nfc_tok: TokenizerImpl<
-        WordPiece,
-        NFC,
-        PreTokenizerWrapper,
-        PostProcessorWrapper,
-        DecoderWrapper,
-    > = serde_json::from_str(&ser).unwrap();
-    assert_eq!(serde_json::to_string(&unwrapped_nfc_tok).unwrap(), ser);
-    let err: Result<
-        TokenizerImpl<WordPiece, NFKC, PreTokenizerWrapper, PostProcessorWrapper, DecoderWrapper>,
-        _,
-    > = serde_json::from_str(&ser);
-    assert!(err.is_err(), "NFKC shouldn't be deserializable from NFC");
+    // That `NFKC` refuses `NFC`'s JSON is asserted in `tk-convert`'s `normalizers::tests`, where the
+    // required-tag property it depends on is spelled out.
     let de: TokenizerImpl<
-        WordPiece,
+        ModelWrapper,
         NormalizerWrapper,
         PreTokenizerWrapper,
         PostProcessorWrapper,
@@ -231,8 +241,10 @@ fn tokenizer() {
 
 #[test]
 fn bpe_with_dropout_serde() {
-    let mut bpe = BPE::default();
-    bpe.dropout = Some(0.1);
+    let mut bpe = BPE {
+        dropout: Some(0.1),
+        ..Default::default()
+    };
     let ser = serde_json::to_string(&bpe).unwrap();
     let de = serde_json::from_str(&ser).unwrap();
     assert_eq!(bpe, de);

@@ -14,7 +14,6 @@ use crate::{
 use std::collections::HashMap;
 
 use std::convert::TryInto;
-use std::fs::read_to_string;
 use std::path::{Path, PathBuf};
 
 type Vocab = Vec<(String, f64)>;
@@ -404,17 +403,19 @@ impl Unigram {
         UnigramIterator { model: self, i: 0 }
     }
 
-    /// Loads a SentencePiece output model after being trained by tokenizers.
-    /// After that you can use the model with tokenizers library.
-    /// ```no_run
-    /// use tk_encode::models::unigram::Unigram;
-    /// use std::path::Path;
+    /// The id of the unknown-token entry, if this model declares one.
     ///
-    /// let model = Unigram::load("mymodel-unigram.json").unwrap();
-    /// ```
-    pub fn load<P: AsRef<Path>>(path: P) -> Result<Unigram> {
-        let string = read_to_string(path)?;
-        Ok(serde_json::from_str(&string)?)
+    /// This and [`Self::vocab`] exist because the fields themselves are crate-private: a
+    /// `unigram.json` is written from exactly these three values plus [`Self::byte_fallback`], by
+    /// the `Serialize` in the `serialization.rs` next door and by `tk-serialize`'s writer.
+    pub fn unk_id(&self) -> Option<usize> {
+        self.unk_id
+    }
+
+    /// The `(token, score)` table, in id order. [`Self::iter`] is the same data, one entry at a
+    /// time.
+    pub fn vocab(&self) -> &[(String, f64)] {
+        &self.vocab
     }
 
     /// Clears the internal cache
@@ -502,17 +503,19 @@ impl Model for Unigram {
         self.vocab.get(id as usize).map(|item| item.0.clone())
     }
 
-    fn save(&self, folder: &Path, name: Option<&str>) -> Result<Vec<PathBuf>> {
-        let name = match name {
-            Some(name) => format!("{name}-unigram.json"),
-            None => "unigram.json".to_string(),
-        };
-        let mut fullpath = PathBuf::new();
-        fullpath.push(folder);
-        fullpath.push(name);
-        let string = serde_json::to_string_pretty(self)?;
-        std::fs::write(&fullpath, string)?;
-        Ok(vec![fullpath])
+    /// A `unigram.json` is the whole model pretty-printed by serde, and this crate links no serde,
+    /// so the writing has never lived here. It cannot move *with* the method either: `Model` is
+    /// defined here and so is `Unigram`, which puts an `impl Model for Unigram` in another crate on
+    /// the wrong side of the orphan rule.
+    ///
+    /// rc0 has no writer at all: the config layer that used to own this is deleted, and
+    /// `tk_serialize::to_json` is what replaces it. See `REQUIRED_FOR_V1.md` §3 and §4.
+    fn save(&self, _folder: &Path, _name: Option<&str>) -> Result<Vec<PathBuf>> {
+        Err(
+            "writing a Unigram model is not available in rc0: the config layer that wrote one is \
+             deleted, and the replacement writer has not landed. See `REQUIRED_FOR_V1.md` §3"
+                .into(),
+        )
     }
 }
 

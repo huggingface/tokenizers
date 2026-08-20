@@ -7,7 +7,7 @@
 //! those two apart — normalizers rewrite text, pre-tokenizers cut it — so a [`Metaspace`] is rebuilt
 //! as this normalizer plus a [`Split`] on the delimiter.
 //!
-//! `to_normalizer_and_split`, in [`crate::pre_tokenizers::metaspace`], builds that pair and spells
+//! `tk-serialize`'s `read_metaspace` builds that pair as it reads a config, and spells
 //! out which [`Metaspace`] settings can be rebuilt this way.
 //!
 //! [`Metaspace`]: crate::pre_tokenizers::metaspace::Metaspace
@@ -32,12 +32,30 @@ pub struct MetaspaceNormalizer {
 }
 
 impl MetaspaceNormalizer {
-    pub(crate) fn new(delimiter: char, prepend: bool, drop_whitespace: bool) -> Self {
+    pub fn new(delimiter: char, prepend: bool, drop_whitespace: bool) -> Self {
         Self {
             delimiter,
             prepend,
             drop_whitespace,
         }
+    }
+}
+
+impl MetaspaceNormalizer {
+    /// The delimiter this writes, `\u{2581}` for every SentencePiece model we know of.
+    pub fn delimiter(&self) -> char {
+        self.delimiter
+    }
+
+    /// Whether the delimiter goes at the start of every word rather than only after a space.
+    pub fn prepend(&self) -> bool {
+        self.prepend
+    }
+
+    /// Whether whitespace is thrown away instead of becoming a delimiter, i.e. whether a
+    /// `WhitespaceSplit` ran in front of the `Metaspace` this came from.
+    pub fn drop_whitespace(&self) -> bool {
+        self.drop_whitespace
     }
 }
 

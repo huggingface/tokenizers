@@ -4,11 +4,15 @@ use crate::tokenizer::{Offsets, Token};
 use crate::utils::padding::PaddingDirection;
 use crate::utils::truncation::TruncationDirection;
 use ahash::AHashMap;
-use serde::{Deserialize, Serialize};
 use std::ops::Range;
 
 /// Represents the output of a `Tokenizer`.
-#[derive(Default, PartialEq, Debug, Clone, Serialize, Deserialize)]
+///
+/// The serialized shape is the field names below in declaration order, and it is public API rather
+/// than an internal format: `PyEncoding.__getstate__` pickles by serializing one of these, so a
+/// pickle written by an older build has to keep loading. `encoding_round_trips` pins the names.
+#[derive(Default, PartialEq, Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Encoding {
     /// IDs produced by the `Tokenizer`
     ids: Vec<u32>,
@@ -171,6 +175,11 @@ impl Encoding {
 
     pub fn get_attention_mask(&self) -> &[u32] {
         &self.attention_mask
+    }
+
+    /// The one field a caller outside this crate has no other way to read.
+    pub fn get_sequence_ranges(&self) -> &AHashMap<usize, Range<usize>> {
+        &self.sequence_ranges
     }
 
     pub fn get_overflowing(&self) -> &Vec<Encoding> {
@@ -575,6 +584,54 @@ impl std::iter::FromIterator<(u32, String, (usize, usize), Option<u32>, u32)> fo
 mod tests {
     use super::*;
     use std::iter::FromIterator;
+
+    /// The pickle format is public API, so an `Encoding` has to round-trip unchanged -- including
+    /// the recursion through `overflowing` and the `sequence_ranges` map.
+    #[test]
+    #[cfg(feature = "serde")]
+    fn encoding_round_trips() {
+        let inner = Encoding::new(
+            vec![7, 8],
+            vec![0, 0],
+            vec!["he".to_string(), "llo".to_string()],
+            vec![Some(0), Some(0)],
+            vec![(0, 2), (2, 5)],
+            vec![0, 0],
+            vec![1, 1],
+            vec![],
+            AHashMap::from_iter(vec![(0, 0..2)]),
+        );
+        let outer = Encoding::new(
+            vec![1, 2, 3],
+            vec![0, 0, 1],
+            vec!["a".to_string(), "b".to_string(), "c".to_string()],
+            vec![Some(0), Some(1), None],
+            vec![(0, 1), (1, 2), (2, 3)],
+            vec![0, 0, 1],
+            vec![1, 1, 1],
+            vec![inner],
+            AHashMap::from_iter(vec![(0, 0..2), (1, 2..3)]),
+        );
+
+        let json = serde_json::to_string(&outer).unwrap();
+        let back: Encoding = serde_json::from_str(&json).unwrap();
+        assert_eq!(outer, back);
+
+        // The field names are the pickle format; assert them rather than trusting the derive.
+        for field in [
+            "ids",
+            "type_ids",
+            "tokens",
+            "words",
+            "offsets",
+            "special_tokens_mask",
+            "attention_mask",
+            "overflowing",
+            "sequence_ranges",
+        ] {
+            assert!(json.contains(&format!("\"{field}\"")), "missing {field}");
+        }
+    }
 
     #[test]
     fn merge_encodings() {

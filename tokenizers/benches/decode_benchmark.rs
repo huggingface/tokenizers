@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use criterion::{Criterion, Throughput};
-use tokenizers::models::wordpiece::WordPiece;
+use tokenizers::models::wordpiece;
 use tokenizers::normalizers::BertNormalizer;
 use tokenizers::pre_tokenizers::bert::BertPreTokenizer;
 use tokenizers::{Tokenizer, decoders::wordpiece::WordPiece as WordPieceDecoder};
@@ -52,8 +52,8 @@ pub fn decode(c: &mut Criterion) {
             "decode-bert",
             {
                 let mut tokenizer = Tokenizer::new(
-                    WordPiece::from_file("data/bert-base-uncased-vocab.txt")
-                        .build()
+                    wordpiece::from_file("data/bert-base-uncased-vocab.txt")
+                        .and_then(|builder| builder.build())
                         .unwrap(),
                 );
                 tokenizer

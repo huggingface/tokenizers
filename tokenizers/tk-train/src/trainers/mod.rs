@@ -1,5 +1,5 @@
 //! Concrete model trainers and the [`TrainerWrapper`] enum that dispatches over
-//! them (mirroring `tk_encode::models::ModelWrapper`).
+//! them (mirroring `tk_convert::ModelWrapper`).
 
 pub mod bpe;
 pub mod unigram;
@@ -13,8 +13,9 @@ pub use wordpiece::*;
 
 use serde::{Deserialize, Serialize};
 
-use tk_encode::models::ModelWrapper;
-use tk_encode::{AddedToken, Result};
+use tk_convert::AddedToken;
+use tk_convert::ModelWrapper;
+use tk_encode::Result;
 
 use crate::Trainer;
 

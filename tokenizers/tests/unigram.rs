@@ -5,13 +5,13 @@ use std::fs::read_to_string;
 use std::path::Path;
 #[cfg(not(debug_assertions))]
 use tokenizers::models::unigram::Lattice;
-use tokenizers::models::unigram::Unigram;
 use tokenizers::models::unigram::UnigramTrainer;
+use tokenizers::models::unigram::{self, Unigram};
 use tokenizers::tokenizer::Model;
 
 #[test]
 fn test_unigram_from_file() {
-    let model = Unigram::load(Path::new("data/unigram.json")).unwrap();
+    let model = unigram::load(Path::new("data/unigram.json")).unwrap();
     let string = "吾輩《わがはい》は猫である。名前はまだ無い。";
     assert_eq!(
         model

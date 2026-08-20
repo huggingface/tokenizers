@@ -1,6 +1,8 @@
 pub(crate) mod cache;
+// `pub` because `FromPretrainedParameters` is re-exported from the crate root. The `Tokenizer`
+// that was the only caller of the download itself went with the config layer.
 #[cfg(feature = "http")]
-pub(crate) mod from_pretrained;
+pub mod from_pretrained;
 pub(crate) mod word_cache;
 
 // Optional system-regex backend, needed only for a *regex* pattern that atomsplit does not cover.
@@ -18,7 +20,7 @@ pub use no_regex::SysRegex;
 
 // Recognize known GPT pre-tokenization regexes and route them to atomsplit's native (unrolled) FSM.
 mod unrolled_regex;
-pub use unrolled_regex::{GptFsm, GptFsmPattern, gpt_fsm, is_deepseek};
+pub use unrolled_regex::{DEEPSEEK_PATTERNS, GptFsm, GptFsmPattern, gpt_fsm, is_deepseek};
 
 pub mod byte_level;
 pub mod iter;
@@ -26,113 +28,52 @@ pub mod padding;
 #[cfg(feature = "parallelism")]
 pub mod parallelism;
 pub mod progress;
+pub mod search;
 pub mod truncation;
 
 // Re-export ProgressFormat for public API
 pub use progress::ProgressFormat;
 
-use ahash::AHashMap;
-use serde::{Serialize, Serializer};
-use std::collections::BTreeMap;
-
+/// Serialize an [`AHashMap`](ahash::AHashMap) through a `BTreeMap` so the output has a
+/// deterministic key order.
+///
+/// Only ever named from a `#[serde(serialize_with = ...)]` — today just the `TemplateProcessing`
+/// special-token table. A hash map's iteration order is unspecified, and a `tokenizer.json` that
+/// reorders its keys between two saves of the same tokenizer is a diff nobody wants to read.
+#[cfg(feature = "serde")]
 pub(crate) fn ordered_map<S, K, V>(
-    value: &AHashMap<K, V>,
+    value: &ahash::AHashMap<K, V>,
     serializer: S,
 ) -> std::result::Result<S::Ok, S::Error>
 where
-    S: Serializer,
-    K: Serialize + std::cmp::Ord,
-    V: Serialize,
+    S: serde::Serializer,
+    K: serde::Serialize + std::cmp::Ord,
+    V: serde::Serialize,
 {
-    let ordered: BTreeMap<_, _> = value.iter().collect();
+    use serde::Serialize;
+    let ordered: std::collections::BTreeMap<_, _> = value.iter().collect();
     ordered.serialize(serializer)
 }
 
-macro_rules! impl_enum_from (
-    ($from_ty:ty, $enum:ty, $variant:ident) => {
-        impl From<$from_ty> for $enum {
-            fn from(from: $from_ty) -> Self {
-                <$enum>::$variant(from)
-            }
-        }
-    }
-);
-
-/// Implement `serde::{Serialize, Serializer}` with `#[serde(tag = "type")]` attribute for a given struct.
-/// Panic when a json string being deserilized misses field `type`.
+/// Declare a pipeline component struct, or a component unit struct, and — with the `serde` feature
+/// on — give it a `#[serde(tag = "type")]` envelope whose tag is *required*.
 ///
-/// # Examples
+/// The requirement is the whole point, and it is not what `#[serde(tag = "type")]` alone gives you:
+/// that attribute only *writes* the tag, and ignores it entirely on the way in. The `Def` remote
+/// plus the `Deserializer` shim below are what make a missing `"type"` an error rather than a
+/// silently-accepted bare struct, and the unit-struct arm does the same job with a `Helper` whose
+/// only field is the tag.
 ///
-/// ```
-/// # #[macro_use] extern crate tk_encode;
-/// use serde::{Serialize, Deserialize};
+/// It mattered because every wrapper enum had an *untagged* legacy fallback: a variant that is
+/// lenient about the tag will happily claim a tag-less object that should have been rejected. The
+/// wrappers went with the config layer and took those tests with them, so what is left relying on
+/// this is the per-component `serialization.rs` behind the `serde` feature.
 ///
-/// fn main() {
-///    impl_serde_type!{
-///        #[derive(Debug)]
-///        struct Point {
-///            x: i32,
-///            #[serde(default = "default_y")]
-///            y: i32,
-///        }
-///    }
-///    fn default_y() -> i32 {
-///        5
-///    }
-///
-///    let point = Point { x: 1, y: 2 };
-///    let serialized_s = r#"{"type":"Point","x":1,"y":2}"#;
-///    assert_eq!(serde_json::to_string(&point).unwrap(), serialized_s);
-/// }
-/// ```
-///
-/// ```should_panic
-/// # #[macro_use] extern crate tk_encode;
-/// use serde::{Serialize, Deserialize};
-///
-/// fn main() {
-///    impl_serde_type!{
-///        #[derive(Debug)]
-///        struct Point1D {
-///            x: i32,
-///        }
-///    }
-///
-///    let serialized_s = r#"{"x":1}"#;
-///    let deserialized: Point1D = serde_json::from_str(serialized_s).unwrap();
-/// }
-/// ```
-///
-/// # Examples (unit structs)
-///
-/// ```
-/// # #[macro_use] extern crate tk_encode;
-/// use serde::{Serialize, Deserialize};
-///
-/// fn main() {
-///    impl_serde_type!{
-///        struct Unit;
-///    }
-///
-///    let unit = Unit;
-///    let serialized_s = r#"{"type":"Unit"}"#;
-///    assert_eq!(serde_json::to_string(&unit).unwrap(), serialized_s);
-/// }
-/// ```
-///
-/// ```should_panic
-/// # #[macro_use] extern crate tk_encode;
-/// use serde::{Serialize, Deserialize};
-///
-/// fn main() {
-///    impl_serde_type!{
-///        struct Unit;
-///    }
-///
-///    let serialized_s = r#"{"some_field":1}"#;
-///    let deserialized: Unit = serde_json::from_str(serialized_s).unwrap();
-/// }
-/// ```
+/// Call sites reach it through `#[cfg_attr(feature = "serde", macro_rules_attribute(impl_serde_type!))]`,
+/// so with the feature off the struct is declared and nothing else — no serde attributes are
+/// applied to it, and none may appear inside it either. A field that needs one spells it
+/// `#[cfg_attr(feature = "serde", serde(default = "…"))]`.
+#[cfg(feature = "serde")]
 #[macro_export]
 macro_rules! impl_serde_type{
     (
@@ -146,7 +87,7 @@ macro_rules! impl_serde_type{
     ) => {
         paste::paste!{
             $(#[$meta])*
-            #[derive(Serialize, Deserialize)]
+            #[derive(serde::Serialize, serde::Deserialize)]
             #[serde(tag = "type", from = $struct_name "Deserializer")]
             $vis struct $struct_name{
                 $(
@@ -155,9 +96,11 @@ macro_rules! impl_serde_type{
                 )*
             }
 
+            // Everything below exists only to give serde something to drive: the `Def` remote, the
+            // type-tag enum, the `Deserializer` shim and the `From` that unwraps it.
             #[doc(hidden)]
             $(#[$meta])*
-            #[derive(Deserialize)]
+            #[derive(serde::Deserialize)]
             #[serde(tag = "type", remote = $struct_name "")]
             struct [<$struct_name Def>]{
                 $(
@@ -167,13 +110,13 @@ macro_rules! impl_serde_type{
             }
 
             #[doc(hidden)]
-            #[derive(Deserialize)]
+            #[derive(serde::Deserialize)]
             enum [<$struct_name Type>] {
                 $struct_name,
             }
 
             #[doc(hidden)]
-            #[derive(Deserialize)]
+            #[derive(serde::Deserialize)]
             struct [<$struct_name Deserializer>] {
                 #[allow(dead_code)]
                 r#type: [<$struct_name Type>],
@@ -198,8 +141,10 @@ macro_rules! impl_serde_type{
             $vis struct $struct_name;
 
             impl serde::Serialize for $struct_name {
-                fn serialize<S>(&self, serializer: S)  -> std::result::Result<S::Ok, S::Error> where
-                    S: serde::ser::Serializer {
+                fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+                where
+                    S: serde::ser::Serializer,
+                {
                     let helper = [<$struct_name Helper>]{r#type: [<$struct_name Type>]::$struct_name};
                     helper.serialize(serializer)
                 }
@@ -215,17 +160,54 @@ macro_rules! impl_serde_type{
                 }
             }
 
+            #[doc(hidden)]
             #[derive(serde::Serialize, serde::Deserialize)]
             enum [<$struct_name Type>] {
                 $struct_name,
             }
 
+            #[doc(hidden)]
             #[derive(serde::Serialize, serde::Deserialize)]
             struct [<$struct_name Helper>] {
                 #[allow(dead_code)]
                 r#type: [<$struct_name Type>],
             }
         }
+    }
+}
+
+/// The declaration-only half of [`impl_serde_type`], for a build with the `serde` feature off.
+///
+/// Call sites apply the macro through `cfg_attr`, so with the feature off it is never invoked at
+/// all — but it stays defined and `macro_export`ed so that the *set* of components spelled this way
+/// is one grep either way, and so a downstream crate naming the macro does not break when the
+/// feature flips.
+#[cfg(not(feature = "serde"))]
+#[macro_export]
+macro_rules! impl_serde_type{
+    (
+     $(#[$meta:meta])*
+     $vis:vis struct $struct_name:ident {
+        $(
+        $(#[$field_meta:meta])*
+        $field_vis:vis $field_name:ident : $field_type:ty
+        ),*$(,)+
+    }
+    ) => {
+        $(#[$meta])*
+        $vis struct $struct_name{
+            $(
+                $(#[$field_meta])*
+                $field_vis $field_name : $field_type,
+            )*
+        }
+    };
+    (
+     $(#[$meta:meta])*
+     $vis:vis struct $struct_name:ident;
+    ) => {
+        $(#[$meta])*
+        $vis struct $struct_name;
     }
 }
 
