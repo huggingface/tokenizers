@@ -248,8 +248,10 @@ fn tokenizer() {
 
 #[test]
 fn bpe_with_dropout_serde() {
-    let mut bpe = BPE::default();
-    bpe.dropout = Some(0.1);
+    let mut bpe = BPE {
+        dropout: Some(0.1),
+        ..Default::default()
+    };
     let ser = serde_json::to_string(&bpe).unwrap();
     let de = serde_json::from_str(&ser).unwrap();
     assert_eq!(bpe, de);

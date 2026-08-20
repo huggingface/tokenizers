@@ -77,8 +77,9 @@ where
 ///  - MergedWithPrevious => `[ "the-", "final-", "-", "countdown" ]`
 ///  - MergedWithNext => `[ "the", "-final", "-", "-countdown" ]`
 ///  - Contiguous => `[ "the", "-", "final", "--", "countdown" ]`
-/// Its on-disk shape is `tk-convert`'s `mirror::SplitDelimiterBehaviorDef`, and the
-/// `display_matches_serde` test over there is what keeps the hand-written `Display` below from
+///
+/// Its on-disk shape is written in `tokenizer/serialization.rs`, next to this type, and the
+/// `display_matches_serde` test in that file is what keeps the hand-written `Display` below from
 /// drifting away from what serde emits.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SplitDelimiterBehavior {

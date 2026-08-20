@@ -553,7 +553,7 @@ where
     /// Contrarily to `encode`, it does not compute offsets
     /// ```
     /// # use tk_convert::Tokenizer;
-    /// # use tk_encode::models::bpe::BPE;
+    /// # use tk_convert::models::bpe::BPE;
     /// # let mut tokenizer = Tokenizer::new(BPE::default());
     /// #
     /// // Sequences:
@@ -595,7 +595,7 @@ where
     ///
     /// ```
     /// # use tk_convert::Tokenizer;
-    /// # use tk_encode::models::bpe::BPE;
+    /// # use tk_convert::models::bpe::BPE;
     /// # let mut tokenizer = Tokenizer::new(BPE::default());
     /// #
     /// // Sequences:
@@ -638,7 +638,7 @@ where
     ///
     /// ```
     /// # use tk_convert::Tokenizer;
-    /// # use tk_encode::models::bpe::BPE;
+    /// # use tk_convert::models::bpe::BPE;
     /// # let mut tokenizer = Tokenizer::new(BPE::default());
     /// #
     /// // Sequences:
@@ -734,7 +734,8 @@ where
 /// a valid chunk.
 /// ```
 /// use tk_convert::{Tokenizer, TokenizerBuilder};
-/// use tk_encode::{models::bpe::BPE, decoders::byte_fallback::ByteFallback, pre_tokenizers::byte_level::ByteLevel, normalizers::unicode::NFC};
+/// use tk_convert::models::bpe::BPE;
+/// use tk_encode::{decoders::byte_fallback::ByteFallback, pre_tokenizers::byte_level::ByteLevel, normalizers::unicode::NFC};
 /// use std::collections::HashMap;
 /// use std::iter::FromIterator;
 ///
@@ -774,7 +775,8 @@ where
 /// use tk_convert::{Tokenizer, TokenizerBuilder};
 /// // `MetaspaceDecoder`, not the `Metaspace` *pre-tokenizer*: they are separate types now, and only
 /// // the decoder implements `Decoder`.
-/// use tk_encode::{models::bpe::BPE, decoders::metaspace::MetaspaceDecoder, pre_tokenizers::byte_level::ByteLevel, normalizers::unicode::NFC};
+/// use tk_convert::models::bpe::BPE;
+/// use tk_encode::{decoders::metaspace::MetaspaceDecoder, pre_tokenizers::byte_level::ByteLevel, normalizers::unicode::NFC};
 /// use std::collections::HashMap;
 /// use std::iter::FromIterator;
 ///

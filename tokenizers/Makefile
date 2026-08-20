@@ -127,10 +127,15 @@ fixtures : $(FIXTURES_RESOURCES)
 # Fetch each bench model's tokenizer config (the `file` listed in the manifest)
 # from the test-data dataset via the generic data/% rule. Same controlled
 # mirror as the fixtures, so no direct pulls from model repos (supply chain).
+#
+# Written to a temp file rather than piped into the loop. A pipeline's exit status is
+# its LAST command's, so `python3 ... | while read` reported success even when python
+# could not open the manifest -- it downloaded nothing and said nothing. `pipefail`
+# would fix it under bash but not under dash, which is `/bin/sh` on Ubuntu runners.
 .PHONY : models
 models :
 	@for file in $(BENCH_MODELS); do \
-	    $(MAKE) $(DATA_DIR)/$$file; \
+	    $(MAKE) $(DATA_DIR)/$$file || exit 1; \
 	  done
 
 HF_TEST_REPO = hf-internal-testing/tokenizers-test-data

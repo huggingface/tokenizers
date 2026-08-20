@@ -38,7 +38,7 @@ use tokenizers::decoders::wordpiece::WordPiece as WordPieceDecoder;
 use tokenizers::models::TrainerWrapper;
 use tokenizers::models::bpe::{BPE, BpeTrainerBuilder};
 use tokenizers::models::wordpiece;
-use tokenizers::normalizers::{BertNormalizer, Replace};
+use tokenizers::normalizers::BertNormalizer;
 use tokenizers::pre_tokenizers::bert::BertPreTokenizer;
 use tokenizers::pre_tokenizers::byte_level::ByteLevel;
 use tokenizers::pre_tokenizers::whitespace::Whitespace;
