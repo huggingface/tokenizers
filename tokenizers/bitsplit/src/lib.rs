@@ -24,6 +24,38 @@
 //! Grammars: [`bitsplit_deepseek`], [`bitsplit_byte_level`] (GPT-2), [`bitsplit_cl100k`]. All three
 //! byte-exact with the oniguruma oracle over a block-phase sweep — see `tests/parity.rs`.
 
+/// Declares a grammar's block-local class streams, and with them the two carried shifts every
+/// rule needs: `back` — what held one position earlier, carrying in the previous block's last
+/// bit — and `fwd`, one position later, carrying in the next block's first bit.
+///
+/// This is the whole cross-block story. Keeping the carry in the *stream* instead of passing it at
+/// every call site is what lets a rule read as plain stream algebra: "a run starts where this class
+/// holds and the position before it did not" is `x & lead & !bk.x`, exact at a block edge. Before
+/// this, each grammar rebuilt the edge byte's class into a `u16` mask (`code_bits`/`bits_at`) and
+/// threaded it through every shift by hand — so the boundary byte got classified twice, once by the
+/// builder and again scalar-side.
+macro_rules! streams {
+    ($(#[$m:meta])* $name:ident { $($f:ident),+ $(,)? }) => {
+        $(#[$m])*
+        #[derive(Clone, Copy, Default)]
+        struct $name { $($f: u64,)+ }
+
+        impl $name {
+            /// Every stream shifted one position later, carrying in `p`'s last bit.
+            #[inline]
+            fn back(&self, p: &Self) -> Self {
+                Self { $($f: (self.$f << 1) | (p.$f >> 63),)+ }
+            }
+
+            /// Every stream shifted one position earlier, carrying in `n`'s first bit.
+            #[inline]
+            fn fwd(&self, n: &Self) -> Self {
+                Self { $($f: (self.$f >> 1) | (n.$f << 63),)+ }
+            }
+        }
+    };
+}
+
 pub mod classes;
 pub mod classify;
 mod han;
