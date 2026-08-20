@@ -284,7 +284,11 @@ fn canonicalizing_first_does_not_move_ids() {
                 continue;
             }
         };
-        if text.contains("\"Unigram\"") {
+        // Read the tag off the *canonical* form, not the raw file. `albert-base-v1-tokenizer.json`
+        // is a Unigram model whose `model` object has no `"type"` at all -- inferring it is one of
+        // the things canonicalize does -- so looking in the raw text misses exactly the legacy
+        // files this test most wants to cover.
+        if canonical.contains("\"Unigram\"") {
             unigram_seen += 1;
         }
 
