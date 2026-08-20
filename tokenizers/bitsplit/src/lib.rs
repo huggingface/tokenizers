@@ -35,15 +35,15 @@ impl fmt::Display for BasisBitStream {
 }
 
 pub struct CharacterBitStream<const B: u8> {}
-impl CharacterBitStream {
-    pub fn mark<const B: u8>(stream: BasisBitStream) -> u64 {
+impl<const B: u8> CharacterBitStream<B> {
+    pub fn mark(stream: BasisBitStream) -> u64 {
         // This needs to "compile" the bytes into a series of and / not and
         // We'll do a naive version first.
-        let result = u64::MAX;
+        let mut result = u64::MAX;
         for i in 0..8 {
-            match B & (1u8 << i) {
-                0 => result &= !stream[i],
-                1 => result &= stream[i],
+            match (B >> i) & 1u8 {
+                0u8 => result &= !stream.stream[i],
+                _ => result &= stream.stream[i],
             }
         }
         result
@@ -58,7 +58,7 @@ pub fn bitstream_inverse_transpose() {} // Same, should be SIMD.
 
 #[cfg(test)]
 pub mod test {
-    use crate::BasisBitStream;
+    use crate::{BasisBitStream, CharacterBitStream};
 
     #[test]
     pub fn test_new() {
@@ -76,9 +76,9 @@ pub mod test {
     }
     #[test]
     pub fn test_appostrophe() {
-        let input = 0x27;
-        let cc = vec![input; 64];
-        println!("{:b}", input);
+        const B: u8 = 0x27 as u8;
+        let cc = vec![B; 64];
+        println!("{:b}", B);
         println!("{:?}", cc);
         let text = "Hey I'll have your's";
         let text_stream = BasisBitStream::new(&text.as_bytes().to_vec());
@@ -93,6 +93,7 @@ pub mod test {
             & !text_stream.stream[6]
             & !text_stream.stream[7];
         println!("ms:{:64b}", markers);
+        assert_eq!(markers, CharacterBitStream::<B>::mark(text_stream));
         let first_match = markers.trailing_zeros();
         markers = markers & (markers.saturating_sub(1u64));
         println!("ms:{:64b}", markers);
