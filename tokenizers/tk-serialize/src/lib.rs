@@ -6,8 +6,9 @@
 
 //! The reader for the canonical `tokenizer.json` format.
 //!
-//! Two files and no serde: [`json`] is a hand-rolled JSON parser, and [`from_json`] walks the tree
-//! it produces to build [`tk_encode::pipeline::PipelineTokenizer`] directly. Nothing here
+//! Two files and no serde: [`json`] parses with `hifijson` and reassembles floats the way
+//! `serde_json` does, and [`from_json`] walks the tree it produces to build
+//! [`tk_encode::pipeline::PipelineTokenizer`] directly. Nothing here
 //! deserializes *into* a config type, because there are no config types on this path — the reader
 //! constructs the runtime components straight away.
 //!
@@ -49,8 +50,8 @@
 
 pub mod json;
 
-// The reader proper, behind the `deserialize` feature. `json` stays unconditional: the hand-rolled
-// parser is useful on its own and the `serialize` side would want it too.
+// The reader proper, behind the `deserialize` feature. `json` stays unconditional: the accessors
+// are useful on their own and the `serialize` side would want them too.
 #[cfg(feature = "deserialize")]
 mod from_json;
 

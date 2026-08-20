@@ -482,7 +482,7 @@ fn a_decoder_reads_back_what_the_slim_path_wired_up() {
 /// what makes t5 byte-exact in `json_oracle`), and they are deliberately *not* all the
 /// correctly-rounded `f32` values — with any deviation bounded to one ULP, so a real parsing
 /// bug could not hide behind this allowance.
-/// The hand-rolled parser reads Unigram scores as `f64` from decimal text; `serde_json` reads
+/// `json.rs` reads Unigram scores as `f64` from decimal text; `serde_json` reads
 /// the same text and rounds identically. That equality is pinned directly against `serde_json`
 /// in `json.rs` (`matches_serde_not_from_str_on_a_real_unigram_score` and
 /// `numbers_are_bit_identical_to_serde_json`), so what is left to check here is the *bound* on

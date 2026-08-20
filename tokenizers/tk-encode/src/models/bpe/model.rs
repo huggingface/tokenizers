@@ -149,8 +149,8 @@ impl PipelineBPE {
     /// Build a `PipelineBPE` from a vocabulary and a merge list, exactly as they are written in a
     /// `tokenizer.json`.
     ///
-    /// This is the crate boundary made concrete. `tk-serialize` reads a canonical config with a
-    /// hand-rolled parser and links no serde at all, so it cannot go through the config-shaped
+    /// This is the crate boundary made concrete. `tk-serialize` reads a canonical config and links
+    /// no serde at all, so it cannot go through the config-shaped
     /// `BPE` in `tk-convert` — that type is what makes an *old* serialized BPE still loadable, and
     /// depending on it here would invert the split (`tk-serialize` -> `tk-convert`) that the whole
     /// arrangement exists to prevent. So the runtime owns one serde-free door that takes the raw
