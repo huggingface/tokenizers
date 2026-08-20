@@ -91,19 +91,12 @@ criterion = "0.6"
 # The `from_pretrained` smoke test in `tokenizer/serialization.rs` turns on a subscriber.
 tracing = "0.1"
 tracing-subscriber = "0.3.18"
-# `fixture_bench` runs the comparative benchmark over its own rayon pool.
 rayon = "1.10"
 tempfile = "3.10"
 
 # The oracle that gates the slim reader against this crate's serde reader. It lives here because it
 # needs both halves; its digest file sits next to it.
-[[example]]
-name = "json_oracle"
-required-features = ["fancy-regex"]
 
-[[example]]
-name = "fixture_bench"
-required-features = ["bench-baseline"]
 
 [[bench]]
 name = "pipeline_benchmark"

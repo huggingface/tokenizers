@@ -22,9 +22,12 @@ FIXTURE_LANGS = amh_Ethi arb_Arab cmn_Hani eng_Latn hin_Deva jpn_Jpan rus_Cyrl t
 FIXTURE_MODALITIES = agentic_swe agentic-traces code_mixed math_latex added_special_sparse added_normalized_sparse
 FIXTURES_RESOURCES = $(FIXTURE_LANGS:%=$(DATA_DIR)/fixtures/lang/%.txt) $(FIXTURE_MODALITIES:%=$(DATA_DIR)/fixtures/modalities/%.txt)
 
-# Models benched by tk-serialization/examples/fixture_bench.rs; the manifest is the
-# single source of truth (Rust reads it too).
-BENCH_MODELS = tk-serialization/examples/bench_models.json
+# The tokenizer configs the test suite loads. One per encode regime rather than one per
+# model family: a normalizer-heavy WordPiece, the three regex byte-level BPEs whose splits
+# differ, byte-fallback, a model with no pre-tokenizer, tekken, and a Unigram.
+BENCH_MODELS = bert-base-uncased.json deepseek-v4.json gemma-4.json gpt2.json \
+               gpt-oss.json glm-5.2.json llama-2.json llama-3-tokenizer.json \
+               mistral-small-4.json t5-base.json
 
 .PHONY : build
 build :
@@ -126,8 +129,7 @@ fixtures : $(FIXTURES_RESOURCES)
 # mirror as the fixtures, so no direct pulls from model repos (supply chain).
 .PHONY : models
 models :
-	@python3 -c "import json; [print(m.get('file') or m['name'] + '.json') for m in json.load(open('$(BENCH_MODELS)'))]" \
-	| while read -r file; do \
+	@for file in $(BENCH_MODELS); do \
 	    $(MAKE) $(DATA_DIR)/$$file; \
 	  done
 

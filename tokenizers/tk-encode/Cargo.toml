@@ -128,6 +128,3 @@ tracing-subscriber = "0.3.18"
 # read path, the benches that load a `tokenizer.json` with it, and the comparative fixture bench --
 # moved to `tk-convert` with the `Tokenizer` they are written against. What is left here needs
 # no config layer at all.
-[[example]]
-name = "binsize_baseline"
-required-features = ["bench-baseline"]
