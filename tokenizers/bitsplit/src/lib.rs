@@ -38,18 +38,18 @@ macro_rules! streams {
     ($(#[$m:meta])* $name:ident { $($f:ident),+ $(,)? }) => {
         $(#[$m])*
         #[derive(Clone, Copy, Default)]
-        struct $name { $($f: u64,)+ }
+        pub(crate) struct $name { $(pub(crate) $f: u64,)+ }
 
         impl $name {
             /// Every stream shifted one position later, carrying in `p`'s last bit.
             #[inline]
-            fn back(&self, p: &Self) -> Self {
+            pub(crate) fn back(&self, p: &Self) -> Self {
                 Self { $($f: (self.$f << 1) | (p.$f >> 63),)+ }
             }
 
             /// Every stream shifted one position earlier, carrying in `n`'s first bit.
             #[inline]
-            fn fwd(&self, n: &Self) -> Self {
+            pub(crate) fn fwd(&self, n: &Self) -> Self {
                 Self { $($f: (self.$f >> 1) | (n.$f << 63),)+ }
             }
         }
@@ -85,6 +85,7 @@ pub(crate) struct Ctx<C> {
     pub bk: C,
     /// `cur` one position earlier, carrying in `nx`'s first bit — "what holds just after here"
     pub fw: C,
+    pub bi: usize,
     pub base: usize,
     pub len: usize,
     /// bits inside this block (`!0` for a full one)
@@ -96,13 +97,14 @@ pub(crate) struct Ctx<C> {
     pub eof: u64,
 }
 
-/// What a rule returns for its block: the token-start bitmap, a patch OR-ed into the *previous*
-/// block (a char straddling the edge lands its lead in the word already written), and a mask
-/// AND-ed with the finished starts to fill the `flag` bitmap.
+/// What a rule returns for its block: the token-start bitmap, and a patch OR-ed into the
+/// *previous* block (a char straddling the edge lands its lead in the word already written).
+///
+/// A grammar with a scalar escape owns its `flag` bitmap directly — o200k's escape gate patches
+/// `flag[bi - 1]` and arbitrary earlier words, which no single mask can express.
 pub(crate) struct Out {
     pub st: u64,
     pub patch: u64,
-    pub flag: u64,
 }
 
 /// Drive a grammar block by block with one block of lookahead.
@@ -113,13 +115,8 @@ pub(crate) struct Out {
 /// rules; nothing else. `rule` also gets `starts` because one rule (deepseek's `anl`) retracts a
 /// start it committed in an earlier block.
 #[inline]
-pub(crate) fn blocks<C, B, R>(
-    ntext: usize,
-    starts: &mut [u64],
-    mut flag: Option<&mut [u64]>,
-    mut build: B,
-    mut rule: R,
-) where
+pub(crate) fn blocks<C, B, R>(ntext: usize, starts: &mut [u64], mut build: B, mut rule: R)
+where
     C: Streams,
     B: FnMut(usize, usize) -> C,
     R: FnMut(&Ctx<C>, &mut [u64]) -> Out,
@@ -149,6 +146,7 @@ pub(crate) fn blocks<C, B, R>(
             nx,
             bk,
             fw,
+            bi,
             base,
             len,
             valid,
@@ -162,9 +160,6 @@ pub(crate) fn blocks<C, B, R>(
             st |= 1; // position 0 always opens a token
         }
         starts[bi] = st;
-        if let Some(f) = flag.as_deref_mut() {
-            f[bi] = st & o.flag;
-        }
         if bi > 0 {
             starts[bi - 1] |= o.patch;
         }

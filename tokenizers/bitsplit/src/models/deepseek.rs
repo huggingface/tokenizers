@@ -124,7 +124,6 @@ pub fn bitsplit_deepseek(text: &[u8], tags: &[u8], starts: &mut [u64], out: &mut
     blocks(
         ntext,
         &mut *starts,
-        None,
         |base, len| {
             let (c, last, last_cjk) = cls(text, tags, base, len, code, cjk_in);
             code = last;
@@ -284,7 +283,6 @@ pub fn bitsplit_deepseek(text: &[u8], tags: &[u8], starts: &mut [u64], out: &mut
             Out {
                 st,
                 patch: steal_patch | gap_patch,
-                flag: 0,
             }
         },
     );
