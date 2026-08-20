@@ -28,15 +28,11 @@ pub fn bitsplit_byte_level(
     assert!(
         tags.len() >= ntext && starts.len() >= nblk && flag.len() >= nblk && out.len() >= ntext
     );
-    let mut code = CODE_CONT;
     blocks(
         ntext,
         &mut *starts,
-        |base, len| {
-            let (c, last) = cls(text, tags, base, len, code);
-            code = last;
-            c
-        },
+        CODE_CONT,
+        |base, len, seed| cls(text, tags, base, len, seed),
         |x, _| {
             let (cur, bk) = (&x.cur, &x.bk);
             // `\s+(?!\S)` hands the run's LAST whitespace char to whatever follows: as a ` ?`

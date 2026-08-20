@@ -26,10 +26,10 @@
 //!     *extends* the open token instead of opening one — the mirror image of `emit_contr`.
 
 use crate::{
-    Anl,
+    Anl, Digits,
     CONT,
-   AUX_SLASH, CODE_CONT, Out, Span, blocks, build_block, contr_len, digit_groups,
-    digits_since, fill_to_last, later_in_run, lead_run,
+   AUX_SLASH, CODE_CONT, Out, Span, blocks, build_block, contr_len,
+    fill_to_last, later_in_run, lead_run,
     scanthru, to_lead, trail_run,
 };
 
@@ -79,8 +79,7 @@ struct Carry {
     mark_oth_open: bool, // a mark stretch rule 4 took was still running at the last edge
     prev_osf: bool,
     prev_absorbed: bool, // the block's last byte was eaten by a `[\r\n/]*` tail
-    dig_run: bool,
-    dig_since: u32,
+    dig: Digits,
     anl: Anl,
     sfx_carry: u64,  // bytes of a contraction suffix that spilled past the last block edge
     force: u64,      // ...and the start it opens just past itself, if that landed past the edge
@@ -208,16 +207,12 @@ pub(crate) fn run<const AUX: u8, const CONTR: bool, const DIGITS: usize, const H
     );
     later_streams::<AUX, HAN>(text, tags, later);
     let mut cy = Carry::default();
-    let mut code = CODE_CONT;
 
     blocks(
         ntext,
         &mut *starts,
-        |base, len| {
-            let (c, last) = cls::<AUX, HAN>(text, tags, base, len, code);
-            code = last;
-            c
-        },
+        CODE_CONT,
+        |base, len, seed| cls::<AUX, HAN>(text, tags, base, len, seed),
         |x, starts| {
             let (pv, cur, bk, fw) = (&x.pv, &x.cur, &x.bk, &x.fw);
             let (valid, len, lead) = (x.valid, x.len, x.cur.lead);
@@ -402,15 +397,7 @@ pub(crate) fn run<const AUX: u8, const CONTR: bool, const DIGITS: usize, const H
             // run, means some letter token in this block needs the scalar case/contraction pass.
 
             // ── rule 3 `\p{N}{1,DIGITS}`
-            let groups = digit_groups(
-                DIGITS,
-                cur.n,
-                lead,
-                cur.cont,
-                was(pv.n),
-                cy.dig_run,
-                cy.dig_since,
-            );
+            let groups = cy.dig.starts(DIGITS, cur.n, lead, cur.cont, was(pv.n));
 
             cy.anl.retract(starts, was(pv.ws), cur.ws, cur.nl, valid);
 
@@ -428,13 +415,7 @@ pub(crate) fn run<const AUX: u8, const CONTR: bool, const DIGITS: usize, const H
             // ── carries
             cy.nl_run = nl_e >> 64 != 0;
             cy.prev_absorbed = nl_span >> (len - 1) & 1 != 0;
-            let tn = trail_run(cur.n, valid, len);
-            cy.dig_run = tn != 0 && will(x.nx.n);
-            cy.dig_since = if cy.dig_run {
-                digits_since(groups, tn, cur.n, lead, cy.dig_since, DIGITS)
-            } else {
-                0
-            };
+            cy.dig.commit(DIGITS, groups, cur.n, lead, valid, len, will(x.nx.n));
             let tws = trail_run(cur.ws, valid, len);
             cy.anl.commit(x.base, after_nl, tws, nl_e as u64, will(x.nx.ws), was(pv.ws));
             cy.prev_osf = osf >> (len - 1) & 1 != 0;

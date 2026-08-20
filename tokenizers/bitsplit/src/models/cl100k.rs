@@ -8,7 +8,7 @@
 
 use super::family_gpt::cls;
 use crate::{
-    Anl, CODE_CONT, Out, Span, blocks, digit_groups, digits_since, emit_contr, fill_to_last,
+    Anl, CODE_CONT, Digits, Out, Span, blocks, emit_contr, fill_to_last,
     later_in_run, scanthru, to_lead, trail_run,
 };
 
@@ -52,19 +52,16 @@ fn cl100k(
     assert!(
         tags.len() >= ntext && starts.len() >= nblk && flag.len() >= nblk && out.len() >= ntext
     );
-    let mut code = CODE_CONT;
-    let (mut nl_run, mut dig_run, mut dig_since) = (false, false, 0u32);
+    let mut nl_run = false;
+    let mut dig = Digits::default();
     let mut prev_osf = false; // previous block's last byte belonged to a token-opening "other" char
     let mut anl = Anl::default();
 
     blocks(
         ntext,
         &mut *starts,
-        |base, len| {
-            let (c, last) = cls(text, tags, base, len, code);
-            code = last;
-            c
-        },
+        CODE_CONT,
+        |base, len, seed| cls(text, tags, base, len, seed),
         |x, starts| {
             let (pv, cur, bk, fw) = (&x.pv, &x.cur, &x.bk, &x.fw);
             let (valid, len, lead) = (x.valid, x.len, x.cur.lead);
@@ -112,15 +109,7 @@ fn cl100k(
                 & !((osf << 1) | u64::from(prev_osf));
 
             // ── rule 3 `\p{N}{1,digit_cap}`
-            let groups = digit_groups(
-                digit_cap,
-                cur.n,
-                lead,
-                cur.cont,
-                was(pv.n),
-                dig_run,
-                dig_since,
-            );
+            let groups = dig.starts(digit_cap, cur.n, lead, cur.cont, was(pv.n));
 
             // ── the other-run's `[\r\n]*` tail swallows the newlines directly behind it.
             let nl_m = ((bk.other & cur.nl & lead) as u128) | u128::from(nl_run);
@@ -140,13 +129,7 @@ fn cl100k(
 
             // ── carries ────────────────────────────────────────────────────────────────────────
             nl_run = nl_e >> 64 != 0;
-            let tn = trail_run(cur.n, valid, len);
-            dig_run = tn != 0 && will(x.nx.n);
-            dig_since = if dig_run {
-                digits_since(groups, tn, cur.n, lead, dig_since, digit_cap)
-            } else {
-                0
-            };
+            dig.commit(digit_cap, groups, cur.n, lead, valid, len, will(x.nx.n));
             let tws = trail_run(cur.ws, valid, len);
             anl.commit(x.base, after_nl, tws, nl_e as u64, will(x.nx.ws), was(pv.ws));
             prev_osf = osf >> (len - 1) & 1 != 0;

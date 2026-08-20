@@ -3,8 +3,8 @@
 //! `atomsplit::fsm::fsm_deepseek`.
 
 use crate::{
-    Anl,
-   AUX_CJK, CODE_CONT, Out, Span, adv, blocks, build_block, emit,
+    Anl, Digits,
+   AUX_CJK, CODE_CONT, Out, Span, blocks, build_block, emit,
     later_in_run, scanthru, to_lead, trail_run,
 };
 
@@ -63,8 +63,7 @@ streams!(
 struct Carry {
     aa_run: bool,       // an alt-1 `[A-Za-z]+` run is still open
     nl_run: bool,       // a `[\p{P}\p{S}]+[\r\n]*` newline tail is still open
-    dig_run: bool,      // inside a \p{N} run
-    dig_since: u32,     // chars already consumed of the current \p{N}{1,3} group
+    dig: Digits,
     anl: Anl,
 }
 
@@ -123,16 +122,14 @@ pub fn bitsplit_deepseek(text: &[u8], tags: &[u8], starts: &mut [u64], out: &mut
     assert!(tags.len() >= ntext && starts.len() >= ntext.div_ceil(64) && out.len() >= ntext);
     let nblk = ntext.div_ceil(64);
     let mut cy = Carry::default();
-    let (mut code, mut cjk_in) = (CODE_CONT, false);
 
     blocks(
         ntext,
         &mut *starts,
-        |base, len| {
+        (CODE_CONT, false),
+        |base, len, (code, cjk_in)| {
             let (c, last, last_cjk) = cls(text, tags, base, len, code, cjk_in);
-            code = last;
-            cjk_in = last_cjk;
-            c
+            (c, (last, last_cjk))
         },
         |x, starts| {
             let (pv, cur, bk, fw) = (&x.pv, &x.cur, &x.bk, &x.fw);
@@ -146,7 +143,6 @@ pub fn bitsplit_deepseek(text: &[u8], tags: &[u8], starts: &mut [u64], out: &mut
             let aa = cur.lm_raw & ascii;
 
             // ── run starts. All purely backward-looking, so the carry alone makes them exact. ──
-            let n_start = cur.num & cur.lead & !bk.num;
             let lm_start = cur.lm & cur.lead & !bk.lm & !bk.prefix;
             let ws_start = cur.ws & cur.lead & !bk.ws;
             let gap_start = cur.gap & cur.lead & !bk.gap;
@@ -154,45 +150,9 @@ pub fn bitsplit_deepseek(text: &[u8], tags: &[u8], starts: &mut [u64], out: &mut
             let cjk_start =
                 (cur.cjk_l & cur.lead & !bk.cjk_l) | (cur.cjk_p & cur.lead & !bk.cjk_p);
 
-            // ── Split-1 `\p{N}{1,3}`: the one non-local rule — a group boundary every 3 chars
-            // from the run start. Marker iteration (the paper's bounded-repetition lowering);
-            // ≤21 rounds/block, and 0 rounds on text without digit runs.
-            let mut m = n_start;
-            if cy.dig_run && was(pv.n_raw) {
-                // resume mid-run: the next group start is (3 - since) chars into the block.
-                // Re-mask with `num` at every hop — the carry only says the char *at* the edge was
-                // a digit, the run may well have ended there (`Ⅷ` straddling the edge, then `\t`,
-                // then `456`).
-                let mut s = cur.lead & cur.lead.wrapping_neg() & cur.num; // first lead of the block
-                for _ in 0..((3 - cy.dig_since % 3) % 3) {
-                    s = adv(s, cur.cont) & cur.num & cur.lead;
-                }
-                m |= s;
-            }
-            let mut groups = m;
-            if cur.num & cur.cont == 0 {
-                // Fast path: every digit in this block is single-byte, so "3 chars on" is just
-                // `<< 3` and the three `adv`s collapse into one shift against a precomputed mask
-                // (`num3` asks that the two skipped positions are digits too, which is what the
-                // `adv` chain checked). ~3 ops per group instead of ~14 — dense-digit text is
-                // otherwise this loop's worst case.
-                let num3 = cur.num & (cur.num << 1) & (cur.num << 2);
-                while m != 0 {
-                    m = (m << 3) & num3;
-                    groups |= m;
-                }
-            } else {
-                while m != 0 {
-                    let a = adv(m, cur.cont) & cur.num & cur.lead;
-                    let c =
-                        adv(adv(a, cur.cont) & cur.num & cur.lead, cur.cont) & cur.num & cur.lead;
-                    if c == 0 {
-                        break;
-                    }
-                    groups |= c;
-                    m = c;
-                }
-            }
+            // ── Split-1 `\p{N}{1,3}` — a group boundary every 3 chars from the run start. This
+            // was `digit_groups` written out by hand, fast path included; it is the shared one now.
+            let groups = cy.dig.starts(3, cur.num, cur.lead, cur.cont, was(pv.num));
 
             // ── whitespace: `\s*[\r\n]+ | \s+(?!\S) | \s+`.
             // (a) the run's first token runs through its LAST newline → a start right after it,
@@ -247,20 +207,7 @@ pub fn bitsplit_deepseek(text: &[u8], tags: &[u8], starts: &mut [u64], out: &mut
             // ── carries ───────────────────────────────────────────────────────────────────────
             cy.aa_run = aa_e >> 64 != 0;
             cy.nl_run = nl_e >> 64 != 0;
-            let tn = trail_run(cur.num, valid, len);
-            cy.dig_run = tn != 0 && will(x.nx.num);
-            cy.dig_since = if !cy.dig_run {
-                0
-            } else {
-                let g = groups & tn;
-                let counted = if g == 0 {
-                    cy.dig_since + (cur.num & cur.lead & tn).count_ones()
-                } else {
-                    (cur.num & cur.lead & tn & !((1u64 << (63 - g.leading_zeros())) - 1))
-                        .count_ones()
-                };
-                counted % 3
-            };
+            cy.dig.commit(3, groups, cur.num, cur.lead, valid, len, will(x.nx.num));
             let tws = trail_run(cur.ws, valid, len);
             cy.anl.commit(x.base, after_nl, tws, nl_e as u64, will(x.nx.ws), was(pv.ws));
 

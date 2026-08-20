@@ -111,20 +111,29 @@ pub(crate) struct Out {
 ///
 /// This owns everything that is *not* grammar — block geometry, the fill-seed threading (inside
 /// `build`'s captures), the previous/current/next rotation, both carried shifts, `lb`, the eof bit,
-/// and the starts/flag assembly. A grammar supplies its atom table, its plane decode, and its
-/// rules; nothing else. `rule` also gets `starts` because one rule (deepseek's `anl`) retracts a
+/// and the starts assembly, plus the fill seed. A grammar supplies its atom table, its plane decode
+/// and its rules; nothing else. `rule` also gets `starts` because one rule (deepseek's `anl`) retracts a
 /// start it committed in an earlier block.
 #[inline]
-pub(crate) fn blocks<C, B, R>(ntext: usize, starts: &mut [u64], mut build: B, mut rule: R)
-where
+pub(crate) fn blocks<C, S, B, R>(
+    ntext: usize,
+    starts: &mut [u64],
+    seed0: S,
+    mut build: B,
+    mut rule: R,
+) where
     C: Streams,
-    B: FnMut(usize, usize) -> C,
+    B: FnMut(usize, usize, S) -> (C, S),
     R: FnMut(&Ctx<C>, &mut [u64]) -> Out,
 {
+    // The fill seed — the class of the byte before a block, so one opening mid-char keeps
+    // inheriting its lead's. Threaded here rather than through a mutable capture in every grammar.
+    let mut seed = seed0;
     let nblk = ntext.div_ceil(64);
     let blen = |bi: usize| (ntext - bi * 64).min(64);
     let mut pv = C::default();
-    let mut cur = build(0, blen(0));
+    let (mut cur, s) = build(0, blen(0), seed);
+    seed = s;
 
     for bi in 0..nblk {
         let base = bi * 64;
@@ -134,7 +143,9 @@ where
         let nx = if last_blk {
             C::default()
         } else {
-            build(base + 64, blen(bi + 1))
+            let (c, s) = build(base + 64, blen(bi + 1), seed);
+            seed = s;
+            c
         };
         let valid = if len == 64 { !0u64 } else { (1u64 << len) - 1 };
         let eof = if last_blk { 1u64 << (len - 1) } else { 0 };
@@ -433,7 +444,7 @@ pub(crate) fn last_pos(base: usize, x: u64) -> usize {
 /// the time it leaves this block. `groups` are this block's group starts, `tn` its trailing digit
 /// run. Identical in cl100k and the o200k family, so it lives here.
 #[inline]
-pub(crate) fn digits_since(groups: u64, tn: u64, n: u64, lead: u64, since: u32, cap: usize) -> u32 {
+fn digits_since(groups: u64, tn: u64, n: u64, lead: u64, since: u32, cap: usize) -> u32 {
     let g = groups & tn;
     let counted = if g == 0 {
         since + (n & lead & tn).count_ones()
@@ -444,6 +455,42 @@ pub(crate) fn digits_since(groups: u64, tn: u64, n: u64, lead: u64, since: u32, 
         counted
     } else {
         counted % cap as u32
+    }
+}
+
+/// `\p{N}{1,cap}` across block edges: whether a digit run is still open at the edge, and how far
+/// into its current group it got. All three grammars kept exactly this pair, recomputed it with the
+/// same `trail_run`, and two of them spelled the counter out identically.
+#[derive(Default)]
+pub(crate) struct Digits {
+    open: bool,
+    since: u32,
+}
+
+impl Digits {
+    /// This block's group starts: a boundary every `cap` chars from the run start.
+    pub(crate) fn starts(&self, cap: usize, n: u64, lead: u64, cont: u64, prev_is_digit: bool) -> u64 {
+        digit_groups(cap, n, lead, cont, prev_is_digit, self.open, self.since)
+    }
+
+    /// Carry the run into the next block. `next_is_digit` is that block's first byte.
+    pub(crate) fn commit(
+        &mut self,
+        cap: usize,
+        groups: u64,
+        n: u64,
+        lead: u64,
+        valid: u64,
+        len: usize,
+        next_is_digit: bool,
+    ) {
+        let tn = trail_run(n, valid, len);
+        self.open = tn != 0 && next_is_digit;
+        self.since = if self.open {
+            digits_since(groups, tn, n, lead, self.since, cap)
+        } else {
+            0
+        };
     }
 }
 
@@ -526,7 +573,7 @@ pub(crate) fn trail_run(x: u64, valid: u64, len: usize) -> u64 {
 /// re-masking with `n` at every hop matters, because the carry only says the byte *at* the edge was
 /// a digit, not that the run survived it.
 #[inline]
-pub(crate) fn digit_groups(
+fn digit_groups(
     cap: usize,
     n: u64,
     lead: u64,
