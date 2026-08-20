@@ -157,6 +157,11 @@ fn encode_matches_the_config_path_on_every_real_config() {
         .expect("read data/")
         .filter_map(|e| e.ok().map(|e| e.path()))
         .filter(|p| p.extension().is_some_and(|e| e == "json"))
+        // `data/tokenizer.json` is not a fixture: `tests/documentation.rs` *writes* it with
+        // `.save("data/tokenizer.json", ..)`. It is a 100-token, 20-merge toy missing byte atoms, so
+        // the pipeline rightly refuses it -- but cargo runs test binaries in parallel, so reading it
+        // here can race that write. Excluded by name rather than left to fail as a confusing skip.
+        .filter(|p| p.file_name().is_some_and(|n| n != "tokenizer.json"))
         .collect();
     files.sort();
 
@@ -251,6 +256,11 @@ fn canonicalizing_first_does_not_move_ids() {
         .expect("read data/")
         .filter_map(|e| e.ok().map(|e| e.path()))
         .filter(|p| p.extension().is_some_and(|e| e == "json"))
+        // `data/tokenizer.json` is not a fixture: `tests/documentation.rs` *writes* it with
+        // `.save("data/tokenizer.json", ..)`. It is a 100-token, 20-merge toy missing byte atoms, so
+        // the pipeline rightly refuses it -- but cargo runs test binaries in parallel, so reading it
+        // here can race that write. Excluded by name rather than left to fail as a confusing skip.
+        .filter(|p| p.file_name().is_some_and(|n| n != "tokenizer.json"))
         .collect();
     files.sort();
 
