@@ -1,9 +1,13 @@
-//! The two comparisons between `tk-encode`'s slim JSON reader and this crate's serde reader that
-//! are not covered by `examples/json_oracle` (which compares encode over the whole fixture set).
+//! Comparisons between the slim JSON reader and this crate's serde reader.
 //!
-//! Both build the pipeline both ways from the *same* file and demand identical output: the first
-//! pins the byte-level merge fold's ids against the reference `Tokenizer`, the second pins `decode`,
-//! which `json_oracle` never exercises.
+//! Every one builds the pipeline both ways from the *same* file and demands identical output: the
+//! byte-level merge fold's ids against the reference `Tokenizer`, then `decode`, then `encode` over
+//! every real config in `data/`.
+//!
+//! The encode comparison deliberately holds no recorded baseline. An earlier version of this gate
+//! was an example carrying a digest file, and the digests went stale against a newer fixture --
+//! every run "passed" while comparing against ids no longer produced. Comparing the two code paths
+//! against each other in-process has nothing to go stale.
 
 use std::convert::TryFrom;
 
@@ -94,8 +98,8 @@ fn the_batched_path_matches_the_reference() {
     assert_eq!(want, got, "the batched path changed the ids");
 }
 
-/// The gate that matters for decode: encode is compared by `json_oracle`, but nothing there
-/// exercises the decoder, so compare both paths' `decode` on the real files.
+/// The gate that matters for decode: `encode_matches_the_config_path_on_every_real_config` covers
+/// encode, but nothing there exercises the decoder, so compare both paths' `decode` too.
 ///
 /// Only the non-byte-level models, because [`PipelineTokenizer::decode`] short-circuits a
 /// byte-level BPE and never consults the decoder at all — for those the wiring is untestable
@@ -119,4 +123,95 @@ fn decode_matches_the_config_path_on_the_real_configs() {
             );
         }
     }
+}
+
+/// Encode, both paths, every real config in `data/`.
+///
+/// This is the comparison that pins ids: the slim reader constructs `PipelineTokenizer` directly
+/// while the config path lowers a deserialized `Tokenizer`, and the two constructions have to agree
+/// token for token. Replaying added tokens in the wrong order against the wrong model is the one
+/// mistake that moves ids silently, and it is only visible here.
+///
+/// The fixture list is read from the directory rather than hard-coded so a new `make models` file is
+/// covered the day it lands. A config either path refuses is skipped and named on stderr -- the
+/// refusals are real (`gpt2-vocab.json` is a bare vocab, not a tokenizer; some configs need a regex
+/// engine this crate's dev-dependencies do not turn on) -- and the `>= 1` guard is only there to
+/// stop the whole thing passing vacuously when `data/` is empty, as it is on the Windows CI leg.
+#[test]
+fn encode_matches_the_config_path_on_every_real_config() {
+    let texts = [
+        " the quick brown fox jumps over the lazy dog",
+        "def foo(bar):\n    return bar + 1\n",
+        " 语言模型 mixed with ASCII and ελληνικά",
+        "الْعَرَبِيَّة и русский текст",
+        "unprefixed internationalisation",
+        "   ",
+        "",
+    ];
+
+    let dir = std::path::Path::new("../data");
+    if !dir.exists() {
+        return;
+    }
+    let mut files: Vec<_> = std::fs::read_dir(dir)
+        .expect("read data/")
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.extension().is_some_and(|e| e == "json"))
+        .collect();
+    files.sort();
+
+    let mut compared = 0usize;
+    for path in files {
+        let name = path.file_name().unwrap().to_string_lossy().to_string();
+        // The reason is printed, not swallowed: a skip is a comparison not made, and "refused it"
+        // without a cause is how a config quietly stops being covered.
+        let declared = match Tokenizer::from_file(&path) {
+            Ok(t) => t,
+            Err(e) => {
+                eprintln!("  skip {name}: the serde reader refused it: {e}");
+                continue;
+            }
+        };
+        let config_path = match PipelineTokenizer::try_from(&declared) {
+            Ok(t) => t,
+            Err(e) => {
+                eprintln!("  skip {name}: it does not lower to a pipeline: {e}");
+                continue;
+            }
+        };
+        let slim = match tk_serialize::from_json_file(&path) {
+            Ok(t) => t,
+            Err(e) => {
+                eprintln!("  skip {name}: the slim reader refused it: {e}");
+                continue;
+            }
+        };
+
+        for text in texts {
+            for add_special in [false, true] {
+                let ids = |t: &PipelineTokenizer| -> Vec<u32> {
+                    t.encode(text, add_special)
+                        .wait()
+                        .unwrap()
+                        .remove(0)
+                        .ids()
+                        .iter()
+                        .map(|t| t.id())
+                        .collect()
+                };
+                assert_eq!(
+                    ids(&config_path),
+                    ids(&slim),
+                    "{name} add_special={add_special} text={text:?}"
+                );
+                compared += 1;
+            }
+        }
+    }
+
+    assert!(
+        compared >= 1,
+        "../data exists but nothing was comparable, so this asserted nothing"
+    );
+    eprintln!("compared {compared} encode(s) across both readers");
 }

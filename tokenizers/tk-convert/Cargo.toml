@@ -74,13 +74,14 @@ unstable_wasm = ["tk-encode/unstable_wasm"]
 bench-baseline = ["dep:tokenizers-release", "fancy-regex"]
 
 [dev-dependencies]
-# The oracle and `slim_vs_config` build the pipeline BOTH ways from the same file and demand
-# identical output, so they need the canonical reader as well as this crate's serde one.
+# `slim_vs_config` builds the pipeline BOTH ways from the same file and demands identical output, so
+# it needs the canonical reader as well as this crate's serde one.
 #
 # Every component feature is spelled out: the reader has one `cfg` arm per component, and a
-# component compiled out is a config it *refuses*. With the default set the oracle silently drops
-# to 240 of 300 comparisons (t5-base and albert need `normalizers` + `unigram`), which is a
-# comparison not made rather than a test that fails -- so this list is load-bearing.
+# component compiled out is a config it *refuses*. A refused config is a comparison not made rather
+# than a test that fails -- so this list is load-bearing. With the default set the gate silently
+# drops t5-base and albert (they need `normalizers` + `unigram`); without `fancy-regex` it drops
+# both deepseek-v4 files and xlmr, whose `Split` pre-tokenizer needs a system-regex backend.
 tk-serialize = { path = "../tk-serialize", features = [
   "bpe",
   "unigram",
@@ -88,16 +89,18 @@ tk-serialize = { path = "../tk-serialize", features = [
   "wordlevel",
   "normalizers",
   "unicode-scripts",
+  "fancy-regex",
 ] }
+# Test builds only, and only to widen the gate: `Tokenizer::from_file` refuses deepseek-v4 and xlmr
+# without a system-regex backend. Cargo unions this with the `[dependencies]` entry above when
+# building tests, so the shipped crate is unaffected.
+tk-encode = { path = "../tk-encode", features = ["fancy-regex"] }
 criterion = "0.6"
 # The `from_pretrained` smoke test in `tokenizer/serialization.rs` turns on a subscriber.
 tracing = "0.1"
 tracing-subscriber = "0.3.18"
 rayon = "1.10"
 tempfile = "3.10"
-
-# The oracle that gates the slim reader against this crate's serde reader. It lives here because it
-# needs both halves; its digest file sits next to it.
 
 
 [[bench]]
