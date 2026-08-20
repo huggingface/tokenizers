@@ -296,9 +296,10 @@ fn f64_from_parts(positive: bool, significand: u64, mut exponent: i32) -> f64 {
 /// `-?(0|[1-9]\d*)(\.\d+)?([eE][+-]?\d+)?` and there is nothing left to reject — which is why this
 /// returns the parts rather than a `Result`. What it must get right is *where digits are dropped*:
 /// once the integer part would overflow a `u64` the remaining integer digits are dropped and the
-/// exponent bumped, while a fraction digit that would overflow is dropped with no exponent change,
-/// because it sits to the right of the point. Both are serde's behaviour, and both change the
-/// resulting float, so `numbers_are_bit_identical_to_serde_json` pins them.
+/// exponent bumped, while the first fraction digit that would overflow stops accumulation for good
+/// and every digit after it is ignored, because they sit to the right of the point. Both are
+/// serde's behaviour, and both change the resulting float, so
+/// `numbers_are_bit_identical_to_serde_json` pins them.
 fn number(digits: &str) -> (bool, u64, i32) {
     let s = digits.as_bytes();
     let mut i = 0;
@@ -332,17 +333,26 @@ fn number(digits: &str) -> (bool, u64, i32) {
         i += 1;
     }
 
-    // Fraction: stop accumulating on overflow, but keep consuming.
+    // Fraction (serde's `parse_decimal`). The first digit that would overflow ends accumulation
+    // for good -- serde hands off to `parse_decimal_overflow`, which ignores every remaining digit
+    // rather than retrying them. Retrying is observably different, not a rounding difference:
+    // `significand * 10` can still fit a *smaller* later digit, and `zz`-style sweeps against
+    // serde put the disagreement in the 16th significant digit.
     if s.get(i) == Some(&b'.') {
         i += 1;
         while let Some(c) = s.get(i).filter(|c| c.is_ascii_digit()) {
             let digit = u64::from(c - b'0');
-            if let Some(v) = significand
-                .checked_mul(10)
-                .and_then(|v| v.checked_add(digit))
-            {
-                significand = v;
-                exponent -= 1;
+            if !saturated {
+                match significand
+                    .checked_mul(10)
+                    .and_then(|v| v.checked_add(digit))
+                {
+                    Some(v) => {
+                        significand = v;
+                        exponent -= 1;
+                    }
+                    None => saturated = true,
+                }
             }
             i += 1;
         }
@@ -455,6 +465,29 @@ mod tests {
                 ours.to_bits(),
                 serde.to_bits()
             );
+        }
+
+        // Where the fraction digits overflow a u64 mid-number. Swept rather than sampled because
+        // the bug this catches needed a *specific* pair of digits -- one that overflows followed by
+        // a smaller one that would still fit -- and 336 of these 4000 disagreed with serde before
+        // `number` learned to stop accumulating for good. 1844674407370955161 is the largest
+        // 19-digit significand that fits, so the 20th digit is where it tips.
+        for prefix in [
+            "1844674407370955161",
+            "1844674407370955160",
+            "9223372036854775807",
+            "1234567890123456789",
+        ] {
+            for suffix in 0..1000u32 {
+                let lit = format!("0.{prefix}{suffix:03}");
+                let ours = Json::parse(&lit).unwrap().as_f64().unwrap();
+                let serde: f64 = serde_json::from_str(&lit).unwrap();
+                assert_eq!(
+                    ours.to_bits(),
+                    serde.to_bits(),
+                    "{lit}: ours={ours:?} serde={serde:?}"
+                );
+            }
         }
     }
 
