@@ -15,7 +15,7 @@ use tk_encode::tokenizer::Result;
 #[cfg(feature = "normalizers")]
 use tk_encode::normalizers::{
     bert::BertNormalizer,
-    precompiled::Precompiled,
+    precompiled::PrecompiledNormalizer,
     strip::StripAccents,
     unicode::{NFC, NFD, NFKC, NFKD, Nmt},
 };
@@ -105,9 +105,10 @@ fn push_normalizer(cfg: &Json<'_>, out: &mut Vec<PipelineNormalizer>) -> Result<
                     "Precompiled has no `precompiled_charsmap`".into()
                 })?;
             let bytes = base64_decode(charsmap)?;
+            // The bytes go in beside the parsed value: they are the whole of this normalizer's
+            // configuration, and `spm_precompiled` publishes them only through serde.
             out.push(PipelineNormalizer::Precompiled(
-                Precompiled::from(&bytes)
-                    .map_err(|e| -> tk_encode::Error { e.to_string().into() })?,
+                PrecompiledNormalizer::from_charsmap(&bytes)?,
             ));
         }
         #[cfg(not(feature = "normalizers"))]
@@ -159,7 +160,7 @@ fn read_replace(cfg: &Json<'_>) -> Result<Replace> {
 // Only `Precompiled` needs it, so a build without `normalizers` has no caller — but its tests are
 // worth running in every build, hence the `test` arm.
 #[cfg(any(feature = "normalizers", test))]
-pub(super) fn base64_decode(s: &str) -> Result<Vec<u8>> {
+pub(crate) fn base64_decode(s: &str) -> Result<Vec<u8>> {
     fn sextet(b: u8) -> Option<u32> {
         Some(match b {
             b'A'..=b'Z' => u32::from(b - b'A'),

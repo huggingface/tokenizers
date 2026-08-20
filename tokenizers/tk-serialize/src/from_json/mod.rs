@@ -60,6 +60,10 @@ use self::model::read_wordlevel;
 #[cfg(feature = "wordpiece")]
 use self::model::read_wordpiece;
 use self::normalizers::read_normalizers;
+// The writer's base64 encoder is checked against this decoder rather than against a table of
+// expected strings, so the pair is tested as a pair.
+#[cfg(test)]
+pub(crate) use self::normalizers::base64_decode;
 use self::post_processors::read_post_processor;
 use self::pre_tokenizers::read_pre_tokenizer;
 use crate::json::{Json, JsonExt};

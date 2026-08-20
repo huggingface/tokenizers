@@ -250,6 +250,18 @@ static POW10: [f64; 309] = [
 /// differ by 1 ULP between the two algorithms, which flips a near-tie about twice per 1.25M tokens.
 /// Being *more* accurate here would silently change the ids that ship today, so the slim reader
 /// reproduces the config path bit-for-bit instead. `numbers_are_bit_identical_to_serde_json` pins it.
+/// The value this reader gives a number literal, without building a [`Json`] around it.
+///
+/// [`JsonExt::as_f64`] is this function plus a match on the variant, and a writer needs exactly
+/// this half: to check that a literal it is about to emit reads back as the `f64` it started from,
+/// it has to go through the same arithmetic, not through `f64::from_str`. Sharing the function is
+/// what makes that a tautology rather than a second implementation to keep in step.
+#[cfg(any(feature = "serialize", test))]
+pub(crate) fn f64_from_literal(digits: &str) -> f64 {
+    let (positive, significand, exponent) = number(digits);
+    f64_from_parts(positive, significand, exponent)
+}
+
 fn f64_from_parts(positive: bool, significand: u64, mut exponent: i32) -> f64 {
     let mut f = significand as f64;
     loop {

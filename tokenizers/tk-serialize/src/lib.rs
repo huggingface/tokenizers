@@ -43,17 +43,37 @@
 //!
 //! - **`deserialize`** (default) — [`from_json`] / [`from_json_file`], i.e. the whole point of the
 //!   crate. An inference build wants exactly this and nothing else.
-//! - **`serialize`** (off by default) — reserved for writing a `PipelineTokenizer` back out as a
-//!   canonical `tokenizer.json`. Nothing is gated on it yet: the authoring surface lives in
-//!   `tk-convert`, which already serializes a `Tokenizer`. The name is declared here so that an
-//!   inference build never has to opt *out* of a writer it does not want.
+//! - **`serialize`** (off by default) — [`to_json`] / [`to_json_file`], writing a
+//!   `PipelineTokenizer` back out as a canonical `tokenizer.json`. Off by default because an
+//!   inference build never writes a config, and because the writer is the half that has to keep
+//!   things alive in order to describe them: the `Precompiled` charsmap is in the pipeline for its
+//!   benefit alone.
+//!
+//! ## Writing is not the inverse of reading
+//!
+//! The reader lowers a config into runtime state, and lowering discards whatever the runtime does
+//! not read. So [`to_json`] reconstructs rather than transcribes — a BPE merge list comes back out
+//! of the merge tables, a `Metaspace` pre-tokenizer out of the normalizer it became — and what it
+//! guarantees is that the file it writes *encodes identically*, not that it is the file that was
+//! read. [`to_json`]'s own documentation lists every place the two differ.
 
 pub mod json;
 
 // The reader proper, behind the `deserialize` feature. `json` stays unconditional: the accessors
-// are useful on their own and the `serialize` side would want them too.
+// are useful on their own and the `serialize` side wants them too.
 #[cfg(feature = "deserialize")]
 mod from_json;
 
 #[cfg(feature = "deserialize")]
 pub use from_json::{from_json, from_json_file};
+
+// The writer. Compiled whenever `serialize` is on, and also in *any* test build — the `test` arm is
+// what makes `cargo test --workspace` run the writer's tests, which is where the round-trip gate
+// lives. Without it the gate would only ever run under an explicit `--features serialize`, i.e.
+// never on CI, and a gate that does not run is not a gate. Nothing escapes into a real build: the
+// public functions below stay behind the feature, so an inference build has no writer either way.
+#[cfg(any(feature = "serialize", test))]
+mod to_json;
+
+#[cfg(feature = "serialize")]
+pub use to_json::{to_json, to_json_file};

@@ -45,7 +45,8 @@ atomsplit = { path = "../atomsplit" }
 default = ["deserialize"]
 deserialize = []
 # Writing a `PipelineTokenizer` back out as a canonical `tokenizer.json`. Off by default: an
-# inference build never writes a config, and the authoring surface lives in `tk-convert`.
+# inference build never writes a config, and the writer is the only reason the pipeline has to keep
+# anything it does not read -- the `Precompiled` charsmap being the one such thing.
 serialize = []
 
 # Forwarded to `tk-encode`, because the reader has one match arm per component and a component that
