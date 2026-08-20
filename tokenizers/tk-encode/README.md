@@ -51,8 +51,11 @@ Training lives in the companion `tk-train` crate (re-exported by the
   With this feature enabled, `tk_convert`'s `Tokenizer::from_pretrained` becomes
   accessible.
 
-- **config**: The leaf components' own serde impls, which `tk-convert` turns on. Off by
-  default: the slim reader needs no serde.
+- **serde**: Every component's own `Serialize`/`Deserialize` — the derives on the types
+  themselves and the hand-written impls in the `serialization.rs` next to each of them. Off by
+  default, because the slim reader (`tk-serialize`) builds a pipeline from a canonical
+  `tokenizer.json` with no serde at all; `tk-convert` and the `tokenizers` umbrella turn it on,
+  so python, node and existing `tokenizers::…` users are unaffected.
 
 - **bpe** / **unigram** / **wordpiece** / **wordlevel**: one per model. Only `bpe` is on by
   default, because none of the current SOTA models use anything else. A `tokenizer.json` naming
@@ -75,8 +78,8 @@ Training lives in the companion `tk-train` crate (re-exported by the
 
 ## Building small
 
-The default build is the slim one: it reads a `tokenizer.json` without serde and carries only
-BPE. `make slim-size` prints its stripped and gzipped size.
+The default build is the slim one: no serde (the `serde` feature is off), and only BPE.
+`make slim-size` prints its stripped and gzipped size.
 
 The largest remaining cost is not in this crate: `std`'s panic, unwinding and
 backtrace-symbolisation machinery (`addr2line`, `gimli`, `rustc_demangle`, `object`, plus the
