@@ -56,11 +56,16 @@ const fn lut<const HAN: bool>() -> [u8; 64] {
     t
 }
 
+/// Atom -> code for [`seed_at`]. The Han row differs between the two tables, but a seed only ever
+/// reproduces a class the fill already assigned, and both tables agree on every class boundary that
+/// a continuation byte can inherit.
+const LUT_SEED: [u8; 64] = lut::<false>();
+
 streams!(
     /// `letter` is the union of the alt classes. Han needs no subtracting: with `HAN` it has its
     /// own code, so it is not in `u`/`l`/`c` to begin with (kimi's classes are literally
     /// `[…&&[^\p{Han}]]`). `han` is that code; `slash` is the only remaining AUX stream.
-    Cls { lead, cont, u, mark, n, nl, sp, ws, oth, apo, letter, slash, han }
+    Cls { lead, cont, u, l, c, mark, n, nl, sp, ws, oth, apo, letter, slash, han }
 );
 
 /// Cross-block state that is not a stream.
@@ -72,7 +77,11 @@ struct Carry {
     dig_run: bool,
     dig_since: u32,
     anl: Option<usize>,
-    last_lt: Option<usize>,
+    sfx_carry: u64,  // bytes of a contraction suffix that spilled past the last block edge
+    force: u64,      // ...and the start it opens just past itself, if that landed past the edge
+    sfx_end: usize,  // just past the last consumed suffix: the apostrophe THERE is a prefix, not
+                     // a second suffix -- `(?i:...)?` applies once (`a's's` is `a's`, `'s`)
+    lc_open: bool,   // an `lc` run was still open at the last block edge
     prev_start: Option<usize>,
 }
 
@@ -100,6 +109,8 @@ fn cls<const AUX: u8, const HAN: bool>(
         lead: valid & !b.cont,
         cont: b.cont,
         u,
+        l,
+        c,
         mark,
         n: a & p1 & p0,
         nl: w & !p1 & !p0,
@@ -114,6 +125,61 @@ fn cls<const AUX: u8, const HAN: bool>(
     (cls, last_code)
 }
 
+/// The fill seed for a block, recovered locally: only a block that opens mid-char needs one, and
+/// then the char's lead is at most three bytes back. That is what lets the backward pass below
+/// build each block on its own, with no forward dependency.
+fn seed_at(tags: &[u8], base: usize) -> u8 {
+    if base == 0 {
+        return CODE_CONT;
+    }
+    let mut p = base - 1;
+    while p > 0 && tags[p] == CONT {
+        p -= 1;
+    }
+    LUT_SEED[tags[p] as usize]
+}
+
+/// `later_in_run`: for every position, does an `l` occur at or after it inside the same letter run
+/// (`later[..nblk]`), and does a `cm` occur at or after it inside the same `uc`-run
+/// (`later[nblk..]`)?
+///
+/// These are the only questions in the family that look forward past one block: a letter run can
+/// span any number of blocks, so the answer cannot be produced by the forward pass's one-block
+/// lookahead. Resolved here once, right to left, as their own streams -- a self-contained kernel
+/// with no scalar walk in it, which is what lets the grammar stay pure bit algebra.
+pub(crate) fn later_in_run<const AUX: u8, const HAN: bool>(
+    text: &[u8],
+    tags: &[u8],
+    later: &mut [u64],
+) {
+    let ntext = text.len();
+    let nblk = ntext.div_ceil(64);
+    let (mut l_carry, mut cm_carry) = (false, false);
+    for bi in (0..nblk).rev() {
+        let base = bi * 64;
+        let len = (ntext - base).min(64);
+        let valid = if len == 64 { !0u64 } else { (1u64 << len) - 1 };
+        let (c, _) = cls::<AUX, HAN>(text, tags, base, len, seed_at(tags, base));
+        let (letter, l) = (c.letter, c.l);
+        let uc = letter & !l;
+        let cm = (c.c | c.mark) & letter;
+        let rev = |v: u64| v.reverse_bits();
+        let mut la = rev(fill_to_last(rev(l), rev(letter)));
+        let mut ca = rev(fill_to_last(rev(cm), rev(uc)));
+        // a run leaving this block to the right inherits the answer from the block after it
+        if l_carry && letter >> (len - 1) & 1 != 0 {
+            la |= trail_run(letter, valid, len);
+        }
+        if cm_carry && uc >> (len - 1) & 1 != 0 {
+            ca |= trail_run(uc, valid, len);
+        }
+        later[bi] = la;
+        later[nblk + bi] = ca;
+        l_carry = letter & 1 != 0 && la & 1 != 0;
+        cm_carry = uc & 1 != 0 && ca & 1 != 0;
+    }
+}
+
 /// Run the family grammar. `starts` and `flag` are scratch bitmaps (len ≥ `div_ceil(64)`).
 #[must_use]
 pub(crate) fn run<const AUX: u8, const CONTR: bool, const DIGITS: usize, const HAN: bool>(
@@ -121,6 +187,7 @@ pub(crate) fn run<const AUX: u8, const CONTR: bool, const DIGITS: usize, const H
     tags: &[u8],
     starts: &mut [u64],
     flag: &mut [u64],
+    later: &mut [u64],
     out: &mut [Span],
 ) -> usize {
     let ntext = text.len();
@@ -129,8 +196,13 @@ pub(crate) fn run<const AUX: u8, const CONTR: bool, const DIGITS: usize, const H
     }
     let nblk = ntext.div_ceil(64);
     assert!(
-        tags.len() >= ntext && starts.len() >= nblk && flag.len() >= nblk && out.len() >= ntext
+        tags.len() >= ntext
+            && starts.len() >= nblk
+            && flag.len() >= nblk
+            && later.len() >= 2 * nblk
+            && out.len() >= ntext
     );
+    later_in_run::<AUX, HAN>(text, tags, later);
     let mut cy = Carry::default();
     let mut code = CODE_CONT;
 
@@ -192,30 +264,92 @@ pub(crate) fn run<const AUX: u8, const CONTR: bool, const DIGITS: usize, const H
                 & !bk.letter
                 & !(bk.ws & !bk.nl)
                 & !((osf << 1) | u64::from(cy.prev_osf));
-            // the token holding a letter run may OPEN one char earlier, on the
-            // `[^\r\n\p{L}\p{N}]?` prefix — that char is the start the escape has to be handed. The
-            // class genuinely excludes `\r\n` and digits: a newline before a letter run is its own
-            // token, never a prefix.
-            let prefix_cls = cur.oth | cur.sp | (cur.ws & !cur.nl);
-            let l_run = letter & lead & !bk.letter;
-            // `fw` only reads the NEXT char at a char's last byte, so mark there and walk back to
-            // the lead — a 3-byte prefix char (ZWJ, `—`, `½`) otherwise reads its own middle byte.
-            let next_l_run = will(x.nx.letter & x.nx.lead) && letter >> (len - 1) & 1 == 0;
-            let (pfx_lead, pfx_patch) = to_lead(
-                prefix_cls & x.lb & ((l_run >> 1) | (u64::from(next_l_run) << 63)),
-                cur.cont,
-                pv.cont,
-            );
-            let l_start_tok = l_start | pfx_lead;
+            // ── the contraction suffix `(?i:'s|'t|'re|'ve|'m|'ll|'d)?`, resolved FIRST because its
+            // letters belong to the token before it: leaving them in `letter` would make the
+            // alternation below start its run on the suffix (`…'s中Ĳa中` would split after `中`).
+            let apo_after = if CONTR { cur.apo & lead & bk.letter } else { 0 };
+            let mut sfx = cy.sfx_carry;  // a suffix that spilled past the last edge
+            let mut sfx_open = cy.force; // ...and the start it opens just past itself
+            cy.sfx_carry = 0;
+            cy.force = 0;
+            if CONTR {
+                let mut a = apo_after;
+                while a != 0 {
+                    let j = a.trailing_zeros() as usize;
+                    a &= a - 1;
+                    let p = x.base + j;
+                    if p == cy.sfx_end {
+                        continue; // its predecessor is inside a suffix: `?` applies once
+                    }
+                    let k = contr_len(text, p, true);
+                    if k == 0 {
+                        continue;
+                    }
+                    cy.sfx_end = p + k;
+                    let hi = j + k;
+                    let inb = if hi >= 64 { !0u64 } else { (1u64 << hi) - 1 };
+                    sfx |= inb & !((1u64 << j) - 1);
+                    if hi > 64 {
+                        cy.sfx_carry |= (1u64 << (hi - 64)) - 1;
+                    }
+                    // the suffix ENDS its token, so the next char opens one -- nothing else would,
+                    // since it sits mid-letter-run (`a'sa` is `a's`, `a`).
+                    if p + k < ntext {
+                        if hi < 64 {
+                            sfx_open |= 1u64 << hi;
+                        } else {
+                            cy.force |= 1u64 << (hi - 64);
+                        }
+                    }
+                }
+            }
+
+            // ── the letter alternation `[UC]*[LC]+ | [UC]+[LC]*`, in bits.
+            //
+            // Ordered alternation with greedy quantifiers means every token is ONE maximal `uc`-run
+            // followed by ONE maximal `lc`-run, so a marker at a letter-run start walks the run in
+            // pairs -- the same marker iteration rule 3 uses. `c` and `mark` are in BOTH classes,
+            // which is the only subtlety: `中Qz` is one token while `aB` is two.
+            let lalt = letter & !sfx; // the suffix belongs to the token before it
+            // The gate: a letter run splits only where an uppercase sits after a letter. Without one
+            // the run is a single token whatever the classes are, so all-lowercase and Capitalised
+            // text -- most text -- skips the algebra below entirely.
+            let case_gate = cur.u & lead & bk.letter;
+            let uc = lalt & !cur.l; // [\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]
+            let lc = lalt & !cur.u; // [\p{Ll}\p{Lm}\p{Lo}\p{M}]
+            let cm = (cur.c | cur.mark) & lalt; // in both classes
+            // A token is one maximal `uc`-run followed by one maximal `lc`-run, so the phase inside
+            // a letter run flips at its first strictly-lowercase char -- a caseless char stays in the
+            // `uc` phase, because `uc*` is greedy. An uppercase after an `l` therefore opens a new
+            // token, and every `l` marker scanned through `lc` lands on exactly that uppercase. So
+            // the whole case split is one `ScanThru`: `中Qz` stays whole (its `l` is last, and lands
+            // past the run) while `aB` and `AbCd` split. The carry is one bit -- an `lc` run still
+            // open at the edge -- and a marker resumed at bit 0 behaves like any other, so there is
+            // no phase to track.
+            let mm = ((cur.l & lalt) as u128) | u128::from(cy.lc_open);
+            let f = scanthru(mm, lc as u128);
+            let lt_in = (f as u64) & lalt;
+            cy.lc_open = f >> 64 != 0;
+
+            // The one backtrack: alt-1 needs an `lc` AFTER `uc*`, so a `uc`-run that ENDS the letter
+            // run cuts after its last `cm` (`ʰABC` -> `ʰ`,`ABC`). `中Qz` is untouched because an `l`
+            // follows. "is there an X later in this run" is `fill_to_last` on reversed streams.
+            // `later_in_run` answered both "is there an X at or after me in this run?" questions
+            // for the whole text, so the cut is exact even where the run spans blocks.
+            let lt_cut = if case_gate == 0 {
+                0
+            } else {
+                uc & lead
+                    & ((cm << 1) | u64::from(was(pv.c) || was(pv.mark)))
+                    & !later[nblk + x.bi]
+                    & !later[x.bi]
+            };
 
             // ── kimi's `[\p{Han}]+`, ahead of everything else. Zero for the other two.
             let han_start = cur.han & lead & !bk.han;
 
             // ── the escape gate (see the header). An interior upper, or an apostrophe closing the
             // run, means some letter token in this block needs the scalar case/contraction pass.
-            let interior_u = cur.u & lead & bk.letter;
-            // tekken has no contraction suffix, so an apostrophe after a letter is nothing special
-            let apo_after = if CONTR { cur.apo & lead & bk.letter } else { 0 };
             // `\p{M}` is in BOTH the letter classes and rule 4's `[^\s\p{L}\p{N}]`, and which one
             // wins depends on whether the punctuation before it STARTED the run (`!\u{301}a` is one
             // token, `!!\u{301}a` is two). Adjacency is the gate; the scalar pass resolves it. Real
@@ -245,61 +379,31 @@ pub(crate) fn run<const AUX: u8, const CONTR: bool, const DIGITS: usize, const H
                 cy.anl = None;
             }
 
-            let mut st = groups | l_start | han_start | o_start | ws_start | after_nl | steal;
+            let mut st = groups | l_start | lt_in | lt_cut | han_start | o_start | ws_start | after_nl | steal;
             st &= !nl_span;
             st |= nl_e as u64;
             st &= lead;
+            st &= !sfx; // nothing inside a contraction suffix opens a token
+            st |= sfx_open;
             if x.bi == 0 {
                 st |= 1;
             }
 
-            // Only the letter RUNS that actually need the escape, not every letter token in the
-            // block: one `'s` in a paragraph would otherwise drag every word through the scalar
-            // pass. `apo_after` sits on the apostrophe, one byte past the run, so shift it back in.
-            let needs = interior_u | ((apo_after >> 1) & letter);
-            let runs_needing = if needs == 0 {
-                0
-            } else {
-                fill_to_last(needs.reverse_bits(), letter.reverse_bits()).reverse_bits()
-            };
-            let (pfx_need, _) = to_lead(
-                prefix_cls & x.lb & (runs_needing & l_run) >> 1,
-                cur.cont,
-                pv.cont,
-            );
-            let lt_all = st & l_start_tok; // every letter token — what the cross-block patch tracks
-            let lt = lt_all & (runs_needing | pfx_need);
-            let trig = (interior_u | apo_after) != 0;
-            flag[x.bi] = if trig { lt } else { 0 };
-            // mark_adj is rare, so be blunt: escape every token in the block, plus the one still
-            // open from an earlier block (rule 4's ` ?` means the token can have started on a space).
+            // ── the only escape left: `mark_adj`. `\p{M}` is in BOTH the letter classes and
+            // rule 4's `[^\s\p{L}\p{N}]`, and which one wins depends on whether the punctuation
+            // before it STARTED the run (`!\u{301}a` is one token, `!!\u{301}a` is two). Rare -- 0%
+            // of english/code/russian/chinese blocks, 28% of hindi -- so be blunt: escape every
+            // token in the block, plus the one still open from an earlier block (rule 4's ` ?` means
+            // it can have started on a space).
+            flag[x.bi] = 0;
             if mark_adj != 0 {
-                flag[x.bi] |= st;
+                flag[x.bi] = st;
                 if let Some(p) = cy.prev_start {
                     flag[p / 64] |= 1u64 << (p % 64);
                 }
             }
             if st != 0 {
                 cy.prev_start = Some(x.base + 63 - st.leading_zeros() as usize);
-            }
-            if trig {
-                if x.bi > 0 {
-                    flag[x.bi - 1] |= starts[x.bi - 1] & pfx_patch;
-                }
-                // the trigger can land in a LATER block than the token it belongs to (`\u{d55c}`
-                // ends block k, its `'s` opens block k+1), so always re-flag the last letter token.
-                if let Some(p) = cy.last_lt {
-                    flag[p / 64] |= 1u64 << (p % 64);
-                }
-            }
-            // a run open at the block edge may meet its trigger in a later block, so flag it now
-            if lt_all != 0 {
-                cy.last_lt = Some(x.base + 63 - lt_all.leading_zeros() as usize);
-            }
-            // ...ending on the run's `?` prefix char counts too — the token opened there.
-            let open_at_edge = (letter | l_start_tok) >> (len - 1) & 1 != 0;
-            if !x.last_blk && open_at_edge && let Some(p) = cy.last_lt {
-                flag[p / 64] |= 1u64 << (p % 64);
             }
 
             // ── carries

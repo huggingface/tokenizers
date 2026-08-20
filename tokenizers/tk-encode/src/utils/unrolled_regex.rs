@@ -29,13 +29,15 @@ pub enum Grammar {
 
 impl Grammar {
     /// Write the token spans into `out`, returning the count. `starts`/`flag` are `u64` scratch
-    /// bitmaps of length >= `text.len().div_ceil(64)`.
+    /// bitmaps of length >= `text.len().div_ceil(64)`; `later` is 2x that, and only the o200k family
+    /// reads it (it holds the two `later_in_run` streams).
     pub fn split(
         self,
         text: &[u8],
         tags: &[u8],
         starts: &mut [u64],
         flag: &mut [u64],
+        later: &mut [u64],
         out: &mut [Span],
     ) -> usize {
         match self {
@@ -44,9 +46,9 @@ impl Grammar {
                 bitsplit::bitsplit_qwen(text, tags, starts, flag, out)
             }
             Grammar::Cl100k { .. } => bitsplit::bitsplit_cl100k(text, tags, starts, flag, out),
-            Grammar::O200k => bitsplit::bitsplit_o200k(text, tags, starts, flag, out),
-            Grammar::Tekken => bitsplit::bitsplit_tekken(text, tags, starts, flag, out),
-            Grammar::Kimi => bitsplit::bitsplit_kimi(text, tags, starts, flag, out),
+            Grammar::O200k => bitsplit::bitsplit_o200k(text, tags, starts, flag, later, out),
+            Grammar::Tekken => bitsplit::bitsplit_tekken(text, tags, starts, flag, later, out),
+            Grammar::Kimi => bitsplit::bitsplit_kimi(text, tags, starts, flag, later, out),
         }
     }
 }
@@ -97,8 +99,9 @@ impl crate::tokenizer::pattern::Pattern for GrammarPattern {
         bitsplit::classify::classify(bytes, &mut tags);
         let words = n.div_ceil(64) + 1;
         let (mut starts, mut flag) = (vec![0u64; words], vec![0u64; words]);
+        let mut later = vec![0u64; 2 * words];
         let mut spans = vec![Span::default(); n + 1];
-        let k = self.0.split(bytes, &tags, &mut starts, &mut flag, &mut spans);
+        let k = self.0.split(bytes, &tags, &mut starts, &mut flag, &mut later, &mut spans);
         Ok(spans[..k]
             .iter()
             .map(|sp| ((sp.start as usize, sp.end as usize), true))

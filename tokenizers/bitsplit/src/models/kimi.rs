@@ -15,7 +15,8 @@ pub fn bitsplit_kimi(
     tags: &[u8],
     starts: &mut [u64],
     flag: &mut [u64],
+    later: &mut [u64],
     out: &mut [Span],
 ) -> usize {
-    super::family_o200k::run::<{ AUX_NONE }, true, 3, true>(text, tags, starts, flag, out)
+    super::family_o200k::run::<{ AUX_NONE }, true, 3, true>(text, tags, starts, flag, later, out)
 }

@@ -14,7 +14,8 @@ pub fn bitsplit_o200k(
     tags: &[u8],
     starts: &mut [u64],
     flag: &mut [u64],
+    later: &mut [u64],
     out: &mut [Span],
 ) -> usize {
-    super::family_o200k::run::<{ AUX_SLASH }, true, 3, false>(text, tags, starts, flag, out)
+    super::family_o200k::run::<{ AUX_SLASH }, true, 3, false>(text, tags, starts, flag, later, out)
 }

@@ -109,7 +109,7 @@ impl pipeline::PreTokenizer for PipelineSequence {
         if self.is_deepseek() {
             pipeline::classify_into_spans_bits(
                 text.as_bytes(),
-                |t, tags, starts, _flag, out| bitsplit::bitsplit_deepseek(t, tags, starts, out),
+                |t, tags, starts, _flag, _later, out| bitsplit::bitsplit_deepseek(t, tags, starts, out),
                 out,
             );
             return Ok(());

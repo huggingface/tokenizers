@@ -69,19 +69,19 @@ pub(crate) fn classify_into_spans(
 /// (token starts, and the flags its scalar escapes key on) alongside the tags.
 pub(crate) fn classify_into_spans_bits(
     bytes: &[u8],
-    split: impl FnOnce(&[u8], &[u8], &mut [u64], &mut [u64], &mut [Span]) -> usize,
+    split: impl FnOnce(&[u8], &[u8], &mut [u64], &mut [u64], &mut [u64], &mut [Span]) -> usize,
     out: &mut Vec<Span>,
 ) {
     thread_local! {
-        static SCRATCH: RefCell<(Vec<u8>, Vec<u64>, Vec<u64>)> =
-            const { RefCell::new((Vec::new(), Vec::new(), Vec::new())) };
+        static SCRATCH: RefCell<(Vec<u8>, Vec<u64>, Vec<u64>, Vec<u64>)> =
+            const { RefCell::new((Vec::new(), Vec::new(), Vec::new(), Vec::new())) };
     }
     let n = bytes.len();
     if n == 0 {
         return;
     }
     SCRATCH.with(|cell| {
-        let (tags, starts, flags) = &mut *cell.borrow_mut();
+        let (tags, starts, flags, later) = &mut *cell.borrow_mut();
         if tags.len() < n {
             tags.resize(n, 0);
         }
@@ -89,6 +89,7 @@ pub(crate) fn classify_into_spans_bits(
         if starts.len() < words {
             starts.resize(words, 0);
             flags.resize(words, 0);
+            later.resize(2 * words, 0);
         }
         classify(bytes, &mut tags[..n]);
         let base = out.len();
@@ -101,6 +102,7 @@ pub(crate) fn classify_into_spans_bits(
                 &tags[..n],
                 &mut starts[..words],
                 &mut flags[..words],
+                &mut later[..2 * words],
                 std::slice::from_raw_parts_mut(out.as_mut_ptr().add(base), n + 1),
             )
         };
