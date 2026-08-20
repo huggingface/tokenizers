@@ -52,6 +52,13 @@ impl<const B: u8> CharacterBitStream<B> {
 
 pub struct LexicalBitStream {}
 
+pub fn extract_match(marker: u64, output: Box<[u8]>) {
+    // we extract trailing zeros, then & with value - 1 and go again!
+    // this only works on isolated matches for chars. Let me think about for cases like:
+    // 00011111100000111111111. Maybe we need to build 00010000011000001, with each 1 being start
+    //                          or stop?
+    todo!()
+}
 pub fn advance(cursor_bits: BasisBitStream) {} // Advances cursor bits forward by one.
 pub fn scan_thru(cursor_bits: BasisBitStream, markers: BasisBitStream) {} // cursor positions and marked lexical positions. Computes (c + m) ∧¬m.
 pub fn bitstream_inverse_transpose() {} // Same, should be SIMD.
