@@ -24,7 +24,6 @@ impl BasisBitStream {
     } // This operation can be done using SIMD! ~1 cycle / byte.
     // Now let's try a SIMD implementation?
 }
-
 impl fmt::Display for BasisBitStream {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut output = "".to_string();
@@ -34,7 +33,23 @@ impl fmt::Display for BasisBitStream {
         write!(f, "{}", output)
     }
 }
-pub struct CharacterBitStream {}
+
+pub struct CharacterBitStream<const B: u8> {}
+impl CharacterBitStream {
+    pub fn mark<const B: u8>(stream: BasisBitStream) -> u64 {
+        // This needs to "compile" the bytes into a series of and / not and
+        // We'll do a naive version first.
+        let result = u64::MAX;
+        for i in 0..8 {
+            match B & (1u8 << i) {
+                0 => result &= !stream[i],
+                1 => result &= stream[i],
+            }
+        }
+        result
+    }
+}
+
 pub struct LexicalBitStream {}
 
 pub fn advance(cursor_bits: BasisBitStream) {} // Advances cursor bits forward by one.
@@ -63,9 +78,7 @@ pub mod test {
     pub fn test_appostrophe() {
         let input = 0x27;
         let cc = vec![input; 64];
-        let input_cc = BasisBitStream::new(&cc);
         println!("{:b}", input);
-        println!("{}", input_cc);
         println!("{:?}", cc);
         let text = "Hey I'll have your's";
         let text_stream = BasisBitStream::new(&text.as_bytes().to_vec());
