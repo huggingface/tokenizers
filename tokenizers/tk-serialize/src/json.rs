@@ -141,6 +141,24 @@ impl<'a> Json<'a> {
     }
 }
 
+// ---------------------------------------------------------------------------------------------
+// The float reassembly below (`POW10` and `f64_from_parts`) is ported from `serde_json` 1.0,
+// `src/de.rs` — its `#[cfg(not(feature = "float_roundtrip"))]` path, which is the default build.
+//
+//     Copyright (c) Erick Tryzelaar and David Tolnay
+//     Licensed under either of Apache License, Version 2.0 or MIT license, at your option.
+//     https://github.com/serde-rs/json
+//
+// Ported rather than depended upon because this crate's whole purpose is to read a
+// `tokenizer.json` without linking serde — but the *arithmetic* has to match serde's exactly, bug
+// for bug, or token ids move. See `f64_from_parts` for why.
+//
+// Known divergences from serde_json, none of which a real `tokenizer.json` exercises: an overflowing
+// exponent (`1e400`) yields infinity here where serde errors; a leading zero (`007`) and an
+// unescaped control character in a string are accepted here and rejected by serde. So the float
+// *values* are bit-identical, which is what ids depend on, but the accept/reject boundary is looser.
+// ---------------------------------------------------------------------------------------------
+
 /// `10^n` for `n` in `0..=308`, as `serde_json` spells it. Rust's float-literal parsing is
 /// correctly rounded, so these are bit-identical to its table.
 #[rustfmt::skip]
