@@ -68,3 +68,7 @@ serde_json = "1.0"
 
 [[example]]
 name = "binsize_pipeline"
+# It calls `from_json_file`, so it cannot build without the reader. Declared rather than left
+# to fail, so that a build with `serialize` but not `deserialize` -- a writer with no reader --
+# is a configuration `cargo clippy --all-targets` can actually check.
+required-features = ["deserialize"]

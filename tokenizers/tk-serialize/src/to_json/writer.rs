@@ -5,7 +5,10 @@
 //! container — whether it is still empty — which is all a comma needs, and it is what stops every
 //! writer above from threading "is this the first member" through its own code.
 
+// Both exist for the float path alone, which is `unigram`-only -- see `Out::f64`.
+#[cfg(any(feature = "unigram", test))]
 use crate::json::f64_from_literal;
+#[cfg(any(feature = "unigram", test))]
 use tk_encode::tokenizer::Result;
 
 /// A JSON document under construction.
@@ -116,6 +119,11 @@ impl Out {
 
     /// A float, spelled so that this crate's own parser reads it back unchanged. See
     /// [`float_literal`], which is where all the difficulty is.
+    ///
+    /// Behind `unigram` because a Unigram score is the only float a `tokenizer.json` holds:
+    /// a BPE's `dropout` is written as `null` unconditionally, and every other number in the
+    /// format is an id or a count.
+    #[cfg(feature = "unigram")]
     pub(super) fn f64(&mut self, value: f64) -> Result<()> {
         let literal = float_literal(value)?;
         self.sep();
@@ -248,6 +256,7 @@ fn escape_into(out: &mut String, value: &str) {
 /// How many `{:.N e}` precisions [`float_literal`] will try before giving up. 17 significant digits
 /// is what pins an `f64` under a correctly-rounded parser, so a ladder that reaches it and beyond
 /// has run out of honest candidates.
+#[cfg(any(feature = "unigram", test))]
 const MAX_PRECISION: usize = 17;
 
 /// A float spelled so that **this crate's own parser reads it back to the identical bits**.
@@ -277,6 +286,7 @@ const MAX_PRECISION: usize = 17;
 /// A value the reader produced is reachable by construction -- the file's own literal maps to it --
 /// so failure means the ladder did not find *a* spelling, not that none exists. It is reported
 /// rather than approximated.
+#[cfg(any(feature = "unigram", test))]
 pub(super) fn float_literal(value: f64) -> Result<String> {
     if !value.is_finite() {
         // Neither has a JSON spelling, and a score that is one is a broken model rather than a
@@ -313,6 +323,7 @@ pub(super) fn float_literal(value: f64) -> Result<String> {
 ///
 /// Safe by construction — appending `.0` to a decimal integer names the same value — and the caller
 /// re-checks the result through the parser regardless.
+#[cfg(any(feature = "unigram", test))]
 fn keep_it_a_float(literal: String) -> String {
     if literal.contains(['.', 'e', 'E']) {
         literal

@@ -165,17 +165,16 @@ pub(super) fn base64_encode(bytes: &[u8]) -> String {
     out
 }
 
-// The round-trip check needs the reader's decoder, which only exists in a build that has the
-// reader.
-#[cfg(all(test, feature = "deserialize"))]
+#[cfg(test)]
 mod tests {
     use super::*;
-    use crate::from_json::base64_decode;
 
-    /// Every tail length, so both padding cases are covered, plus the round-trip that is the
-    /// property actually needed: a charsmap must survive write-then-read unchanged.
+    /// The reference vectors from RFC 4648 section 10, which cover all three padding cases.
+    ///
+    /// Not gated on the reader, deliberately: `base64_encode` carries a `test` arm on its own `cfg`,
+    /// and that arm is only truthful if there is a test exercising it in *every* configuration.
     #[test]
-    fn base64_round_trips_and_pads() {
+    fn base64_pads_every_tail_length() {
         assert_eq!(base64_encode(b""), "");
         assert_eq!(base64_encode(b"f"), "Zg==");
         assert_eq!(base64_encode(b"fo"), "Zm8=");
@@ -183,6 +182,15 @@ mod tests {
         assert_eq!(base64_encode(b"foob"), "Zm9vYg==");
         assert_eq!(base64_encode(b"fooba"), "Zm9vYmE=");
         assert_eq!(base64_encode(b"foobar"), "Zm9vYmFy");
+    }
+
+    /// The property actually needed: a charsmap must survive write-then-read unchanged. Checked
+    /// against the reader's own decoder, so the pair is tested as a pair rather than against a
+    /// table -- which needs a build that has the reader.
+    #[cfg(feature = "deserialize")]
+    #[test]
+    fn base64_round_trips_through_the_readers_decoder() {
+        use crate::from_json::base64_decode;
 
         // All 256 byte values at every tail length, decoded back with the reader's own decoder.
         let all: Vec<u8> = (0..=255u8).collect();

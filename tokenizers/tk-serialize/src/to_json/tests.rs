@@ -29,6 +29,7 @@ const TINY_BPE: &str = r#"{
 }"#;
 
 /// The `model` object of [`TINY_BPE`] verbatim, so a test can swap it for another kind.
+#[cfg(any(feature = "unigram", feature = "wordpiece"))]
 const TINY_BPE_MODEL: &str = r#"{
         "type": "BPE",
         "vocab": {"a": 0, "b": 1, "ab": 2, "abab": 3},
@@ -198,8 +199,14 @@ fn round_trip_preserves_ids_on_every_real_config() {
 /// The parser is the point. `json.rs` reproduces `serde_json`'s default arithmetic rather than being
 /// correctly rounded, deliberately, so "the shortest form that round-trips" — a property defined
 /// against a correctly-rounded parser — is not automatically true here. It is measured, not assumed.
+///
+/// Needs `normalizers` as well as `unigram`, and that is not belt-and-braces: every Unigram config
+/// in `data/` -- t5-base, albert, albert-base-v1, xlmr -- carries a SentencePiece normalizer chain
+/// (`Precompiled`, `NFKD`, `StripAccents`), so with that feature off the reader refuses all four and
+/// there is nothing to sweep. Asserting `>= 1` in that build would be asserting a feature set rather
+/// than a fixture set.
 #[test]
-#[cfg(feature = "unigram")]
+#[cfg(all(feature = "unigram", feature = "normalizers"))]
 fn every_unigram_score_survives_the_writer_bit_for_bit() {
     let files = fixtures();
     if files.is_empty() {
@@ -211,8 +218,12 @@ fn every_unigram_score_survives_the_writer_bit_for_bit() {
     for path in files {
         let name = path.file_name().unwrap().to_string_lossy().to_string();
         let text = std::fs::read_to_string(&path).expect("read a fixture");
-        let Ok(tokenizer) = from_json(&text) else {
-            continue;
+        let tokenizer = match from_json(&text) {
+            Ok(tokenizer) => tokenizer,
+            Err(e) => {
+                eprintln!("  skip {name}: the reader refused it: {e}");
+                continue;
+            }
         };
         // The model's kind from the *built pipeline*, never from the raw file. Grepping the text for
         // `"Unigram"` would miss `albert-base-v1-tokenizer.json`, whose model is a bare

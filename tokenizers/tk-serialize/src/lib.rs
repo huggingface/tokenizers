@@ -72,7 +72,7 @@ pub use from_json::{from_json, from_json_file};
 // lives. Without it the gate would only ever run under an explicit `--features serialize`, i.e.
 // never on CI, and a gate that does not run is not a gate. Nothing escapes into a real build: the
 // public functions below stay behind the feature, so an inference build has no writer either way.
-#[cfg(any(feature = "serialize", test))]
+#[cfg(any(feature = "serialize", all(test, feature = "deserialize")))]
 mod to_json;
 
 #[cfg(feature = "serialize")]

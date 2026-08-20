@@ -256,7 +256,10 @@ static POW10: [f64; 309] = [
 /// this half: to check that a literal it is about to emit reads back as the `f64` it started from,
 /// it has to go through the same arithmetic, not through `f64::from_str`. Sharing the function is
 /// what makes that a tautology rather than a second implementation to keep in step.
-#[cfg(any(feature = "serialize", test))]
+// The writer's float path is the only caller, and that path exists only when there is a model
+// with a float in it -- which is Unigram alone: a BPE writes `dropout` as `null`
+// unconditionally, and nothing else holds a number that is not an id or a count.
+#[cfg(any(all(feature = "serialize", feature = "unigram"), test))]
 pub(crate) fn f64_from_literal(digits: &str) -> f64 {
     let (positive, significand, exponent) = number(digits);
     f64_from_parts(positive, significand, exponent)
@@ -500,6 +503,32 @@ mod tests {
                     "{lit}: ours={ours:?} serde={serde:?}"
                 );
             }
+        }
+    }
+
+    /// `f64_from_literal` is the half of [`JsonExt::as_f64`] a writer needs on its own, so the two
+    /// have to agree by construction rather than by coincidence — a writer checking its output
+    /// against a *different* arithmetic than the reader uses would be checking nothing.
+    #[test]
+    fn f64_from_literal_agrees_with_the_accessor() {
+        for literal in [
+            "0",
+            "-0",
+            "1.5",
+            "-13.5321998596191",
+            // The score where this arithmetic and `f64::from_str` part company.
+            "-3.8403830528259277",
+            "1e-9",
+            "1.2345678901234567890123456789",
+        ] {
+            assert_eq!(
+                f64_from_literal(literal).to_bits(),
+                p(literal)
+                    .as_f64()
+                    .expect("a number reads as an f64")
+                    .to_bits(),
+                "{literal}"
+            );
         }
     }
 
