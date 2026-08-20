@@ -1237,6 +1237,10 @@ impl PipelineTokenizer {
     ///
     /// [`byte_level::transform_vocab`]: crate::utils::byte_level::transform_vocab
     pub fn decode(&self, ids: &[u32], skip_special_tokens: bool) -> Result<String> {
+        // Irrefutable in a `bpe`-only build, where `PipelineModel` has exactly one variant, and
+        // nightly lints a leading irrefutable pattern in a let chain. Nesting the `if` instead
+        // would trade this for `collapsible_if` on every build that has more than one model.
+        #[allow(irrefutable_let_patterns)]
         if let PipelineModel::BPE(bpe) = &self.inner.model
             && bpe.is_byte_level()
         {
