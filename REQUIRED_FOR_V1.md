@@ -4,10 +4,28 @@ Things rc0 deliberately drops. Each is a decision, not an oversight, and each ha
 before 1.0 — as pipeline-native code, not by resurrecting the config layer.
 
 **Context.** rc0 strips `tk-convert` down to `convert.rs` alone: the legacy `tokenizer.json` →
-canonical `tokenizer.json` upgrade, 1,207 lines whose only dependencies are `std::path` and
-`serde_json`. Everything else in that crate — `Tokenizer`, `TokenizerImpl`, `TokenizerBuilder`, the
-five wrapper enums, the config models, `added_vocabulary.rs`, `lowering.rs` — is deleted, about
-7,500 lines. The runtime is `tk_encode::pipeline::PipelineTokenizer`; the reader is `tk-serialize`.
+canonical `tokenizer.json` upgrade, 1,207 lines whose only dependencies are `std::path`,
+`serde_json` and a `thiserror` derive on `ConvertError`. Everything else in that crate —
+`Tokenizer`, `TokenizerImpl`, `TokenizerBuilder`, the five wrapper enums, the config models,
+`added_vocabulary.rs`, `lowering.rs` — is deleted, 9,369 lines of the crate's 12,979. The runtime is
+`tk_encode::pipeline::PipelineTokenizer`; the reader is `tk-serialize`.
+
+The crate's dependency graph goes with it: `tk-convert` no longer depends on `tk-encode`, nor on
+`serde`, `ahash`, `daachorse`, `dary_heap`, `rand`, `regex`, `log` or `paste`. `cargo tree
+-p tk-convert -e normal` is 8 nodes, of which 6 are `thiserror`'s proc-macro chain.
+
+Test count across `cargo test --workspace`: **544 → 373 passing**, 32 → 19 suites. Where the 171 went:
+
+| where | lost | how |
+|---|---:|---|
+| `tk-convert` unit tests | 65 | deleted with `src/**` (89 → 24, the 24 being `convert.rs`'s own) |
+| `tk-convert` doc tests | 7 | deleted with the module docs |
+| `tk-convert` integration tests | 54 | §9: `lowering` 26, `lowering_pre_tokenizers` 18, `bpe_pipeline_oracle` 6, `slim_vs_config` 5 → 1 |
+| `tokenizers` umbrella tests | 33 | §1: out of the build, source kept |
+| `tokenizers` umbrella doc test | 1 | its example authored a `BPE` |
+| `tk-train` unit + doc | 11 | §2: out of the workspace, source kept |
+
+§9 lists what was deleted outright; §1 and §2 list what is out of the build but still in the tree.
 
 ---
 
@@ -32,6 +50,21 @@ Python does `tokenizer.normalizer = Lowercase()`, and `PyNormalizer` &co. wrap
 **What v1 needs:** a mutable pipeline builder that the bindings' setters drive, so `PyTokenizer`
 stops holding wrapper enums. Getters exist already; the gap is entirely on the write side.
 
+**Also gone, and not just the bindings:** the umbrella crate's *own* test and bench suites. Every one
+of them authors a tokenizer in process — `Tokenizer::new(BPE::default())`, `with_pre_tokenizer`,
+`add_tokens`, `save`, the trainers — so none of them can be repointed at a read-only pipeline. That
+is all 9 benches (`tokenizers/benches/*`, 1,337 lines) and all 8 test files (`tokenizers/tests/*`,
+1,464 lines, **33 passing tests**: `added_tokens` 5, `documentation` 6, `offsets` 5, `serialization`
+11, `stream` 2, `training` 2, `unigram` 2, `from_pretrained` 0).
+
+They are **not deleted**. The umbrella package carries `autotests = false` / `autobenches = false`,
+so cargo does not discover them and `cargo build --workspace --all-targets` stays green while the
+source stays in the tree — the same treatment `tk-train` gets below. Between them they are the
+written specification for the builder this section asks for, so they should be brought back *as the
+acceptance test* for it rather than rewritten from scratch. Nothing else in the workspace covers
+`with_padding`/`with_truncation` behaviour, `save` round-trips, or `decode_stream` over an authored
+tokenizer, so until they run again those are untested.
+
 ## 2. Trainers
 
 **What breaks:** `tk-train` does not compile. It builds *config* models, importing from `tk_convert`
@@ -45,6 +78,16 @@ across 8 files:
 
 **What v1 needs:** trainers that emit pipeline models directly. Until then training is unavailable.
 This was an explicit rc0 call — inference first.
+
+**How it is wired now:** `tk-train` is out of the workspace — `exclude = ["tk-train"]` in
+`tokenizers/Cargo.toml`, not merely absent from `members`, and the umbrella's optional `tk-train`
+dependency is gone with it (the default-on `train` feature would otherwise have kept building it).
+The crate's source is untouched in the tree. Three umbrella features went with it: `train`,
+`esaxx_fast` and `parity-aware-bpe`, so `tokenizers`'s default set is now `["progressbar", "onig"]`.
+The `tokenizers::models::*::trainer` legacy module paths and `TokenizerTrainExt` no longer resolve.
+CI's readme loop still runs `cargo readme --project-root tk-train`, which works on an excluded crate
+and still matches `tk-train/README.md` byte for byte — verified, not assumed. `tk-train`'s own 10
+unit tests and 1 doc test stop running.
 
 ## 3. Writing a `tokenizer.json`
 
@@ -95,12 +138,66 @@ with bit-exact floats over all 22 configs, and the reader/writer round-trip gate
 
 **Honest accounting:** tree-equality proves the *parser*; the round-trip proves reader-against-writer.
 Neither proves the reader against an *independent implementation*, which is what the deleted oracle
-did. The nearest replacement is the released crate, already available as `tokenizers-release` behind
-`tk-convert`'s `bench-baseline` feature and used by `fixture_bench` for exactly that purpose. Wiring
-it as an id oracle is the cheapest way to get the guarantee back and is worth doing before v1.
+did.
+
+**Correction: that replacement already existed, and it survived.** `tk-convert/tests/pipeline_oracle.rs`
+(9 tests, 9 configs) and `tk-convert/tests/pipeline_decode_oracle.rs` (7) already check the pipeline's
+ids and decoded text against `tokenizers_release::Tokenizer` — the released crate, an independent
+implementation — and say so in their own headers: *"not the in-tree legacy `Tokenizer`, which is being
+removed (oracles must not depend on the thing being removed)"*. They used
+`tk_convert::Tokenizer::from_file` only as the pipeline *builder*, so both were repointed at
+`tk_serialize::from_json_file` and kept. This section's "worth doing before v1" is therefore already
+done; what is missing is only that both files sit behind the non-default `bench-baseline` feature, so
+`cargo test --workspace` does not run them:
+
+    cargo test -p tk-convert --features bench-baseline --test pipeline_oracle
+    cargo test -p tk-convert --features bench-baseline --test pipeline_decode_oracle
+
+Promoting them into the default gate needs the released crate to become a non-optional dev-dependency,
+and `pipeline_decode_oracle`'s `bert_wiki` is a known deliberate failure (`PipelineWordPiece` has no
+id→token direction), so that has to land first.
+
+**One decode-oracle test did die:** `non_special_added_token_survives_skip`, which added the same
+non-special token to both implementations via `add_tokens` before comparing `skip_special_tokens`
+behaviour. There is no way to add a token to a read-only pipeline, so it goes with §1 and comes back
+with the setters. Nothing else now covers the special-vs-non-special distinction in `decode`.
+
+**And one benchmark lost its subject:** `fixture_bench` used to inject its own added tokens
+(`<|xs0|>`-style specials plus word-shaped markers) into every model it loaded, which is what made the
+`added_special_sparse` and `added_normalized_sparse` fixtures added-token workloads. That went through
+`Tokenizer::{add_special_tokens, add_tokens}`. It is removed from *both* sides — leaving it on the
+released baseline alone would have broken the `ids_match` gate for every model — so those two fixtures
+still run and still compare fairly, but their markers are now ordinary text and the added-token scan
+path is unmeasured. Restoring it needs either the setters or a config rewrite that mints ids for the
+markers before either implementation loads the file.
 
 ## 8. The umbrella re-export surface
 
 `tokenizers/src/lib.rs` re-exports 17 groups from `tk_convert` so that `tokenizers::{Tokenizer,
 models::bpe::BPE, normalizers::NormalizerWrapper, …}` resolve at their historical paths. Those paths
 disappear. Both bindings and any downstream Rust user of the `tokenizers` facade are affected.
+
+**What the facade is now:** the `tk_encode` modules (`decoders`, `models`, `normalizers`,
+`pipeline`, `pre_tokenizers`, `processors`, `tokenizer`, `utils`, `vocab`) plus the four
+`canonicalize_*` items and `ConvertError` from `tk_convert`. The per-module merges are gone, so every
+`tokenizers::<module>::Sequence`, every `*Wrapper`, `Tokenizer`, `TokenizerImpl`, `TokenizerBuilder`,
+`AddedToken`, the config-shaped `BPE`, `models::wordpiece::{from_file, from_bpe, …}`,
+`models::wordlevel::{from_file, read_file}` and `models::unigram::load` are unresolvable. The
+umbrella keeps a `tk-convert` dependency for exactly one reason: to keep `tokenizers::canonicalize_file`
+reachable from the facade.
+
+## 9. Deleted outright (not deferred behind a flag)
+
+Everything above is dropped but recoverable from code still in the tree. These are gone:
+
+| what | lines | why it cannot come back as-is |
+|---|---:|---|
+| `tk-convert/tests/lowering.rs` | 707 | 26 tests of `lowering.rs`, the config→pipeline lowering. There is no config to lower. |
+| `tk-convert/tests/lowering_pre_tokenizers.rs` | 584 | 18 tests of `to_normalizer_and_split` over `PreTokenizerWrapper`. |
+| `tk-convert/tests/bpe_pipeline_oracle.rs` | 221 | 6 tests whose *oracle* was the legacy engine — "the legacy engine is the oracle: it is the code main runs". The oracle itself is deleted, so this is not repointable the way §7's two are. Its coverage (10 corpora × 4 BPE models, incl. llama-2's non-byte-level `Atoms::Chars` path and the unsafe-to-batch merges the `SAFE` flag exists for) is the largest single verification loss of the strip, and `pipeline_oracle.rs` does not replace it: that one runs 9 configs over fixture windows, not 400 kB per corpus. |
+| `tk-convert/benches/bpe_model_benchmark.rs` | 321 | Benched `ModelWrapper` and the config-shaped `BPE` against `PipelineModel`. Both operands are half gone. |
+
+`tk-convert/src/**` beyond `convert.rs` — 63 unit tests across the wrapper enums, the config `BPE`
+(`models/bpe/tests.rs` alone had 25, including the `legacy_parity` set pinning the two BPE engines
+against each other), `added_vocabulary.rs` (12) and the `Tokenizer` itself (6+2) — went with the code
+they test. `tk-convert`'s 7 doc tests went with the module docs.
