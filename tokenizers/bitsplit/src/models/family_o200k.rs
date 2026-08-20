@@ -28,7 +28,8 @@
 use crate::classify::{char_len, in_mask, mask};
 use crate::{
     AUX_SLASH, CODE_CONT, CONT, Out, Span, blocks, build_block, contr_len, digit_groups,
-    fill_to_last, lead_run, letter_match, member, run_end, scanthru, to_lead, trail_run, ws_tail,
+    fill_to_last, lead_run, letter_match, match_star, member, run_end, scanthru, to_lead,
+    trail_run, ws_tail,
 };
 
 /// Atom tag → dense 4-bit code. Unlike cl100k, `\p{M}` IS a letter here (both alt classes list
@@ -253,12 +254,17 @@ pub(crate) fn run<const AUX: u8, const CONTR: bool, const DIGITS: usize, const H
             // ── `[^\r\n\p{L}\p{N}]?` before a letter run: any token-opening non-newline
             // non-letter non-digit char. Smeared across its char's bytes so the test is a plain
             // shift (see cl100k).
-            let mut osf = o_start;
-            osf |= (osf << 1) & cur.cont;
-            osf |= (osf << 2) & cur.cont & (cur.cont << 1);
-            if cy.prev_osf {
-                osf |= lead_run(cur.cont, valid);
-            }
+            // `osf`: each start smeared across its char's continuation bytes, so "my predecessor
+            // opened a token" is a plain shift. That is `MatchStar` over `cont`, seeded at bit 0 as
+            // well when the char's lead sat in the previous block.
+            // A start smeared across its char's continuation bytes, so "my predecessor opened a
+            // token" is a plain shift. `MatchStar` consumes `c` from the marker, and the marker is a
+            // LEAD, so step into the run first; bit 0 is seeded too when the char's lead sat in the
+            // previous block.
+            let osf = fill_to_last(
+                ((o_start << 1) | u64::from(cy.prev_osf)) & cur.cont,
+                cur.cont,
+            ) | o_start;
             let l_start = letter
                 & lead
                 & !bk.letter

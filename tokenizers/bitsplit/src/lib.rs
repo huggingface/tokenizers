@@ -394,10 +394,27 @@ pub(crate) fn to_lead(x: u64, cont: u64, prev_cont: u64) -> (u64, u64) {
     ((y >> 64) as u64, y as u64)
 }
 
-/// In each run of `c`, fill from the run start through the LAST marker of `m` (`m ⊆ c`). Used on
-/// reversed streams, where it answers "is there a newline at-or-after me, still inside this
-/// whitespace run?". `(end - m) | m` rather than `end - m`: the latter only spans from the *first*
-/// marker when a run holds several.
+/// `MatchStar`: every position reachable from a marker in `m` by consuming zero or more `c` — the
+/// Kleene closure `c*` anchored at `m`. One add, exactly like [`scanthru`]; the difference is that
+/// `ScanThru` keeps only where a marker LANDS and this keeps the whole span it crossed, landing
+/// included. A marker not in `c` stays put (zero repetitions).
+///
+/// `c` is just a bitmask, so it can be any combination of class streams. This is the operator the
+/// grammars kept hand-rolling: rule 4's `[\r\n/]*` tail, the `osf` smear of a start across its
+/// char's continuation bytes, `\s*` before a newline run. Doing it by hand is where the cross-block
+/// carries -- and the bugs -- came from.
+#[inline]
+pub(crate) const fn match_star(m: u128, c: u128) -> u128 {
+    ((m & c).wrapping_add(c) ^ c) | m
+}
+
+/// The span from each marker of `m` forward to the END of the run of `c` it sits in, landing
+/// excluded — i.e. [`match_star`] without the position it stops on.
+///
+/// The name is historical and the old comment here had the direction backwards ("fill from the run
+/// start through the LAST marker"), which is why callers reach for it through `reverse_bits` pairs:
+/// reversed, "forward to the end of the run" reads as "is there a marker at or after me, still
+/// inside this run?".
 #[inline]
 pub(crate) fn fill_to_last(m: u64, c: u64) -> u64 {
     if m == 0 {
@@ -711,4 +728,53 @@ pub fn build_only(text: &[u8], tags: &[u8]) -> u64 {
 pub fn pre_tokenize(text: &[u8], tags: &mut [u8], starts: &mut [u64], out: &mut [Span]) -> usize {
     classify::classify(text, tags);
     bitsplit_deepseek(text, tags, starts, out)
+}
+
+#[cfg(test)]
+mod op_tests {
+    use super::{fill_to_last, match_star, scanthru};
+
+    /// Brute force: from every marker, walk forward while `c` holds, marking what we cross.
+    fn star_ref(m: u64, c: u64) -> u64 {
+        let mut out = 0u64;
+        for p in 0..64 {
+            if m >> p & 1 == 0 {
+                continue;
+            }
+            out |= 1 << p;
+            let mut q = p;
+            while q < 63 && c >> (q + 1) & 1 != 0 {
+                q += 1;
+                out |= 1 << q;
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn match_star_is_the_kleene_closure() {
+        for &(m, c) in &[
+            (0b0001u64, 0b1110u64),
+            (0b0010, 0b1110),
+            (0b0001, 0b0000),
+            (1, !0u64 >> 1),
+            (0x0000_0001_0000_0100, 0x0000_00FE_0000_FE00),
+            (0xAAAA_AAAA_AAAA_AAAA, 0x5555_5555_5555_5555),
+        ] {
+            // The shape the grammars actually want: step into the run, span to its end WITHOUT the
+            // landing, add the marker back. That is `fill_to_last`; `match_star` would also pull in
+            // the position the run stops on, which is one byte too many for a smear.
+            let stepped = ((m << 1) & c) as u64;
+            let got = fill_to_last(stepped, c) | m;
+            assert_eq!(got, star_ref(m, c), "m={m:#018x} c={c:#018x}");
+        }
+    }
+
+    #[test]
+    fn match_star_keeps_the_landing_and_scanthru_does_not() {
+        let (m, c) = (0b0010u64, 0b1110u64);
+        assert_eq!(match_star(m as u128, c as u128) as u64, 0b11110, "span incl. landing");
+        assert_eq!(scanthru(m as u128, c as u128) as u64, 0b10000, "landing only");
+        assert_eq!(fill_to_last(m, c), 0b01110, "span excl. landing");
+    }
 }

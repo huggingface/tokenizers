@@ -9,7 +9,7 @@
 use super::family_gpt::cls;
 use crate::{
     CODE_CONT, Out, Span, blocks, digit_groups, emit_contr, fill_to_last, lead_run, scanthru,
-    to_lead, trail_run,
+    match_star, to_lead, trail_run,
 };
 
 /// cl100k_base / Llama-3 / GLM-4.6 — rule 3 is `\p{N}{1,3}`.
@@ -94,12 +94,17 @@ fn cl100k(
             // is a letter"): the forward form needs an `adv`, which silently drops the marker when
             // the two chars straddle a block edge. Smearing `o_start` across its char's bytes makes
             // the test a plain shift, and the smear's only cross-block state is a shift carry.
-            let mut osf = o_start;
-            osf |= (osf << 1) & cur.cont;
-            osf |= (osf << 2) & cur.cont & (cur.cont << 1);
-            if prev_osf {
-                osf |= lead_run(cur.cont, valid); // a char whose lead sat in the previous block
-            }
+            // `osf`: each start smeared across its char's continuation bytes, so "my predecessor
+            // opened a token" is a plain shift. That is `MatchStar` over `cont`, seeded at bit 0 as
+            // well when the char's lead sat in the previous block.
+            // A start smeared across its char's continuation bytes, so "my predecessor opened a
+            // token" is a plain shift. `MatchStar` consumes `c` from the marker, and the marker is a
+            // LEAD, so step into the run first; bit 0 is seeded too when the char's lead sat in the
+            // previous block.
+            let osf = fill_to_last(
+                ((o_start << 1) | u64::from(prev_osf)) & cur.cont,
+                cur.cont,
+            ) | o_start;
             let l_start = cur.l
                 & lead
                 & !bk.l
