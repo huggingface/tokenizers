@@ -3,7 +3,7 @@
 //! `atomsplit::fsm::fsm_deepseek`.
 
 use crate::{
-    Anl, Digits,
+    Anl, was, will, Digits,
    AUX_CJK, CODE_CONT, Out, Span, blocks, build_block, emit,
     later_in_run, scanthru, to_lead, trail_run,
 };
@@ -126,6 +126,7 @@ pub fn bitsplit_deepseek(text: &[u8], tags: &[u8], starts: &mut [u64], out: &mut
     blocks(
         ntext,
         &mut *starts,
+        None,
         (CODE_CONT, false),
         |base, len, (code, cjk_in)| {
             let (c, last, last_cjk) = cls(text, tags, base, len, code, cjk_in);
@@ -134,9 +135,6 @@ pub fn bitsplit_deepseek(text: &[u8], tags: &[u8], starts: &mut [u64], out: &mut
         |x, starts| {
             let (pv, cur, bk, fw) = (&x.pv, &x.cur, &x.bk, &x.fw);
             let (valid, len) = (x.valid, x.len);
-            // the same two carries the shifts use, read as scalars for the run flags
-            let was = |v: u64| v >> 63 != 0;
-            let will = |v: u64| v & 1 != 0;
             // a char that is both its own first and last byte is single-byte, i.e. ASCII; an ASCII
             // char in `\p{L}∪\p{M}` is exactly `[A-Za-z]` (ASCII has no marks).
             let ascii = cur.lead & x.lb;
@@ -214,6 +212,7 @@ pub fn bitsplit_deepseek(text: &[u8], tags: &[u8], starts: &mut [u64], out: &mut
             Out {
                 st,
                 patch: steal_patch | gap_patch,
+                flag: 0,
             }
         },
     );

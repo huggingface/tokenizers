@@ -26,7 +26,7 @@
 //!     *extends* the open token instead of opening one — the mirror image of `emit_contr`.
 
 use crate::{
-    Anl, Digits,
+    Anl, was, will, Digits,
     CONT,
    AUX_SLASH, CODE_CONT, Out, Span, blocks, build_block, contr_len,
     fill_to_last, later_in_run, lead_run,
@@ -211,13 +211,12 @@ pub(crate) fn run<const AUX: u8, const CONTR: bool, const DIGITS: usize, const H
     blocks(
         ntext,
         &mut *starts,
+        None,
         CODE_CONT,
         |base, len, seed| cls::<AUX, HAN>(text, tags, base, len, seed),
         |x, starts| {
             let (pv, cur, bk, fw) = (&x.pv, &x.cur, &x.bk, &x.fw);
             let (valid, len, lead) = (x.valid, x.len, x.cur.lead);
-            let was = |v: u64| v >> 63 != 0;
-            let will = |v: u64| v & 1 != 0;
 
             // Rule 4's `[\r\n/]*` tail. `/` is in BOTH the `+` body and the tail, so one tail run
             // can collect SEVERAL markers (`!\n/\n`: the `\n` after `!` and the `\n` after `/`).
@@ -404,13 +403,8 @@ pub(crate) fn run<const AUX: u8, const CONTR: bool, const DIGITS: usize, const H
             let mut st = groups | l_start | lt_in | lt_cut | han_start | o_start | ws_start | after_nl | steal;
             st &= !nl_span;
             st |= nl_e as u64;
-            st &= lead;
             st &= !sfx; // nothing inside a contraction suffix opens a token
             st |= sfx_open;
-            if x.bi == 0 {
-                st |= 1;
-            }
-
 
             // ── carries
             cy.nl_run = nl_e >> 64 != 0;
@@ -426,6 +420,7 @@ pub(crate) fn run<const AUX: u8, const CONTR: bool, const DIGITS: usize, const H
             Out {
                 st,
                 patch: steal_patch,
+                flag: 0,
             }
         },
     );

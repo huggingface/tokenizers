@@ -31,6 +31,7 @@ pub fn bitsplit_byte_level(
     blocks(
         ntext,
         &mut *starts,
+        Some(&mut *flag),
         CODE_CONT,
         |base, len, seed| cls(text, tags, base, len, seed),
         |x, _| {
@@ -43,17 +44,15 @@ pub fn bitsplit_byte_level(
             let (steal, patch) = to_lead(cur.ws & x.lb & !x.eof & !x.fw.ws, cur.cont, x.pv.cont);
             // every alternative but the contraction is ` ?X+` over a class run, so a token opens
             // at each run start — pushed back one char when a literal space sits in front of it.
-            let mut st = ((cur.l & !bk.l & !bk.sp)
-                | (cur.n & !bk.n & !bk.sp)
-                | (cur.other & !bk.other & !bk.sp)
-                | (cur.ws & !bk.ws)
-                | steal)
-                & cur.lead;
-            if x.bi == 0 {
-                st |= 1;
+            Out {
+                st: (cur.l & !bk.l & !bk.sp)
+                    | (cur.n & !bk.n & !bk.sp)
+                    | (cur.other & !bk.other & !bk.sp)
+                    | (cur.ws & !bk.ws)
+                    | steal,
+                patch,
+                flag: cur.apo, // apostrophes that open a token → contraction escape
             }
-            flag[x.bi] = st & cur.apo; // apostrophes that open a token → contraction escape
-            Out { st, patch }
         },
     );
     emit_contr(text, starts, flag, nblk, ntext, false, out)

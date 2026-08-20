@@ -97,14 +97,27 @@ pub(crate) struct Ctx<C> {
     pub eof: u64,
 }
 
-/// What a rule returns for its block: the token-start bitmap, and a patch OR-ed into the
-/// *previous* block (a char straddling the edge lands its lead in the word already written).
-///
-/// A grammar with a scalar escape owns its `flag` bitmap directly — o200k's escape gate patches
-/// `flag[bi - 1]` and arbitrary earlier words, which no single mask can express.
+/// What a rule returns for its block: the token-start bitmap, a patch OR-ed into the *previous*
+/// block (a char straddling the edge lands its lead in the word already written), and a mask
+/// AND-ed with the FINISHED starts to fill the `flag` bitmap. Returning the mask rather than
+/// writing `flag` keeps `& lead` and the "position 0 always opens a token" rule in one place —
+/// three grammars were redoing both just to see the final `st`.
 pub(crate) struct Out {
     pub st: u64,
     pub patch: u64,
+    pub flag: u64,
+}
+
+/// The edge bits of a carried stream: `was` is the previous block's last, `will` the next block's
+/// first. Every grammar defined these as local closures.
+#[inline]
+pub(crate) fn was(v: u64) -> bool {
+    v >> 63 != 0
+}
+
+#[inline]
+pub(crate) fn will(v: u64) -> bool {
+    v & 1 != 0
 }
 
 /// Drive a grammar block by block with one block of lookahead.
@@ -118,6 +131,7 @@ pub(crate) struct Out {
 pub(crate) fn blocks<C, S, B, R>(
     ntext: usize,
     starts: &mut [u64],
+    mut flag: Option<&mut [u64]>,
     seed0: S,
     mut build: B,
     mut rule: R,
@@ -171,6 +185,9 @@ pub(crate) fn blocks<C, S, B, R>(
             st |= 1; // position 0 always opens a token
         }
         starts[bi] = st;
+        if let Some(f) = flag.as_deref_mut() {
+            f[bi] = st & o.flag;
+        }
         if bi > 0 {
             starts[bi - 1] |= o.patch;
         }

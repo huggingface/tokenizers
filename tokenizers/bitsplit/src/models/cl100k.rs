@@ -8,7 +8,7 @@
 
 use super::family_gpt::cls;
 use crate::{
-    Anl, CODE_CONT, Digits, Out, Span, blocks, emit_contr, fill_to_last,
+    Anl, CODE_CONT, Digits, Out, Span, blocks, was, will, emit_contr, fill_to_last,
     later_in_run, scanthru, to_lead, trail_run,
 };
 
@@ -60,13 +60,12 @@ fn cl100k(
     blocks(
         ntext,
         &mut *starts,
+        Some(&mut *flag),
         CODE_CONT,
         |base, len, seed| cls(text, tags, base, len, seed),
         |x, starts| {
             let (pv, cur, bk, fw) = (&x.pv, &x.cur, &x.bk, &x.fw);
             let (valid, len, lead) = (x.valid, x.len, x.cur.lead);
-            let was = |v: u64| v >> 63 != 0;
-            let will = |v: u64| v & 1 != 0;
 
             // ── run starts ─────────────────────────────────────────────────────────────────────
             let o_start = cur.other & lead & !bk.other & !bk.sp; // ` ?[^\s\p{L}\p{N}]+`
@@ -121,11 +120,6 @@ fn cl100k(
             let mut st = groups | l_start | o_start | ws_start | after_nl | steal;
             st &= !(nl_span as u64);
             st |= nl_e as u64;
-            st &= lead;
-            if x.bi == 0 {
-                st |= 1;
-            }
-            flag[x.bi] = st & cur.apo;
 
             // ── carries ────────────────────────────────────────────────────────────────────────
             nl_run = nl_e >> 64 != 0;
@@ -137,6 +131,7 @@ fn cl100k(
             Out {
                 st,
                 patch: steal_patch,
+                flag: cur.apo,
             }
         },
     );
