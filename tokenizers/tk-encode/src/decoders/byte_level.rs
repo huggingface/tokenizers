@@ -10,14 +10,28 @@
 use crate::tokenizer::{Decoder, Result};
 use crate::utils::byte_level::CHAR_BYTES_LOOKUP;
 
+#[cfg(feature = "serde")]
+fn default_true() -> bool {
+    true
+}
+
 /// Maps the byte-level alphabet back to the bytes it stands for.
+///
+/// `rename` because the tag on disk is `ByteLevel`: the decoder used to *be* the pre-tokenizer type,
+/// and splitting them into two types must not change what a `tokenizer.json` says.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(tag = "type", rename = "ByteLevel"))]
 pub struct ByteLevelDecoder {
     /// Carried for round-tripping only; decoding does not read it.
     pub add_prefix_space: bool,
     /// Carried for round-tripping only; decoding does not read it.
     pub trim_offsets: bool,
     /// Carried for round-tripping only; decoding does not read it.
+    ///
+    /// The one decoder field with a serde default, and it is `true`: configs written before
+    /// `use_regex` existed have to keep loading with the regex on.
+    #[cfg_attr(feature = "serde", serde(default = "default_true"))]
     pub use_regex: bool,
 }
 

@@ -5,13 +5,13 @@
 //! `merges` -- `["a b"]` as well as `[["a", "b"]]`.
 
 use super::{BPE, BpeBuilder, convert_merges_to_hashmap};
-use crate::models::OrderedVocabIter;
 use ahash::AHashMap;
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
     de::{Error, MapAccess, Visitor},
     ser::SerializeStruct,
 };
+use tk_encode::models::OrderedVocabIter;
 use tk_encode::models::bpe::Pair;
 
 impl Serialize for BPE {

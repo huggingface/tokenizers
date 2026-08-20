@@ -1,7 +1,6 @@
 //! `DecoderWrapper`: the `decoder` field of a `tokenizer.json`, plus the `Sequence` decoder that
 //! holds a `Vec` of them, and the lowering into `tk-encode`'s serde-free `DecoderRuntime`.
 
-pub mod mirror;
 pub mod sequence;
 
 pub use sequence::Sequence as SequenceDecoder;
@@ -22,29 +21,20 @@ use tk_encode::{Decoder, DecoderRuntime, Result};
 use crate::decoders::sequence::Sequence;
 use crate::macros::impl_enum_from;
 
-/// Every variant now names a mirror in [`mirror`]: `tk-encode` defines the ten decoder types and
-/// derives serde on none of them, so the on-disk shape of each one is described here.
+/// Each variant's on-disk shape belongs to the decoder itself: `tk-encode` carries the derive or the
+/// hand-written impl next to every type, behind its `serde` feature.
 #[derive(Clone, Debug, Serialize)]
 #[serde(untagged)]
 pub enum DecoderWrapper {
-    #[serde(with = "mirror::bpe")]
     BPE(BPEDecoder),
-    #[serde(with = "mirror::ByteLevelDecoderDef")]
     ByteLevel(ByteLevelDecoder),
-    #[serde(with = "mirror::wordpiece")]
     WordPiece(WordPiece),
-    #[serde(with = "mirror::metaspace")]
     Metaspace(MetaspaceDecoder),
-    #[serde(with = "mirror::ctc")]
     CTC(CTC),
     Sequence(Sequence),
-    #[serde(with = "mirror::replace")]
     Replace(ReplaceDecoder),
-    #[serde(with = "mirror::fuse")]
     Fuse(Fuse),
-    #[serde(with = "mirror::strip")]
     Strip(Strip),
-    #[serde(with = "mirror::byte_fallback")]
     ByteFallback(ByteFallback),
 }
 
@@ -84,24 +74,15 @@ impl<'de> Deserialize<'de> for DecoderWrapper {
         #[derive(Deserialize)]
         #[serde(untagged)]
         pub enum DecoderUntagged {
-            #[serde(with = "mirror::bpe")]
             BPE(BPEDecoder),
-            #[serde(with = "mirror::ByteLevelDecoderDef")]
             ByteLevel(ByteLevelDecoder),
-            #[serde(with = "mirror::wordpiece")]
             WordPiece(WordPiece),
-            #[serde(with = "mirror::metaspace")]
             Metaspace(MetaspaceDecoder),
-            #[serde(with = "mirror::ctc")]
             CTC(CTC),
             Sequence(Sequence),
-            #[serde(with = "mirror::replace")]
             Replace(ReplaceDecoder),
-            #[serde(with = "mirror::fuse")]
             Fuse(Fuse),
-            #[serde(with = "mirror::strip")]
             Strip(Strip),
-            #[serde(with = "mirror::byte_fallback")]
             ByteFallback(ByteFallback),
         }
 
@@ -115,41 +96,38 @@ impl<'de> Deserialize<'de> for DecoderWrapper {
                     serde_json::to_value(&model.variant).map_err(serde::de::Error::custom)?,
                 );
                 let values = serde_json::Value::Object(values);
-                // Every arm goes through a `mirror` entry point now, because the leaf types no
-                // longer implement `Deserialize` themselves -- `serde_json::from_value` would have
-                // nothing to call. `Sequence` is the exception: it is this crate's own type.
+                // Every arm is a plain `from_value` on the leaf type, which carries its own
+                // `Deserialize`. `Sequence` is this crate's own type and no different here.
                 match model.variant {
                     EnumType::BPEDecoder => DecoderWrapper::BPE(
-                        mirror::bpe::deserialize(values).map_err(serde::de::Error::custom)?,
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                     ),
                     EnumType::ByteLevel => DecoderWrapper::ByteLevel(
-                        mirror::ByteLevelDecoderDef::deserialize(values)
-                            .map_err(serde::de::Error::custom)?,
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                     ),
                     EnumType::WordPiece => DecoderWrapper::WordPiece(
-                        mirror::wordpiece::deserialize(values).map_err(serde::de::Error::custom)?,
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                     ),
                     EnumType::Metaspace => DecoderWrapper::Metaspace(
-                        mirror::metaspace::deserialize(values).map_err(serde::de::Error::custom)?,
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                     ),
                     EnumType::CTC => DecoderWrapper::CTC(
-                        mirror::ctc::deserialize(values).map_err(serde::de::Error::custom)?,
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                     ),
                     EnumType::Sequence => DecoderWrapper::Sequence(
                         serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                     ),
                     EnumType::Replace => DecoderWrapper::Replace(
-                        mirror::replace::deserialize(values).map_err(serde::de::Error::custom)?,
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                     ),
                     EnumType::Fuse => DecoderWrapper::Fuse(
-                        mirror::fuse::deserialize(values).map_err(serde::de::Error::custom)?,
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                     ),
                     EnumType::Strip => DecoderWrapper::Strip(
-                        mirror::strip::deserialize(values).map_err(serde::de::Error::custom)?,
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                     ),
                     EnumType::ByteFallback => DecoderWrapper::ByteFallback(
-                        mirror::byte_fallback::deserialize(values)
-                            .map_err(serde::de::Error::custom)?,
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                     ),
                 }
             }

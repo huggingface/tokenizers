@@ -1,8 +1,11 @@
 use crate::pipeline::{self, PreTokenizerScratch};
 use crate::tokenizer::pattern::{Invert, Pattern};
 use crate::tokenizer::{Offsets, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
+#[cfg(feature = "serde")]
+use crate::utils::macro_rules_attribute;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", macro_rules_attribute(impl_serde_type!))]
 pub struct Whitespace;
 
 use atomsplit::classify::mask;
@@ -115,6 +118,7 @@ impl PreTokenizer for Whitespace {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", macro_rules_attribute(impl_serde_type!))]
 pub struct WhitespaceSplit;
 
 impl PreTokenizer for WhitespaceSplit {

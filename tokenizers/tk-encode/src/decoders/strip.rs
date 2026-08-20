@@ -4,9 +4,8 @@ use crate::tokenizer::{Decoder, Result};
 /// Strip is a simple trick which converts tokens looking like `<0x61>`
 /// to pure bytes, and attempts to make them into a string. If the tokens
 /// cannot be decoded you will get � instead for each inconvertible byte token
-///
-/// The `"type": "Strip"` envelope this used to derive lives in `tk-convert`'s
-/// `decoders::mirror::strip`.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(tag = "type"))]
 #[non_exhaustive]
 pub struct Strip {
     pub content: char,

@@ -14,7 +14,7 @@ use serde_json::Value;
 use tk_encode::Result;
 use tk_encode::models::wordlevel::{Error, WordLevel};
 
-use super::OrderedVocabIter;
+use tk_encode::models::OrderedVocabIter;
 
 /// Read the given file to extract the vocab.
 pub fn read_file(vocab_path: &str) -> Result<AHashMap<String, u32>> {

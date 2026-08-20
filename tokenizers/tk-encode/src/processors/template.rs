@@ -64,10 +64,9 @@ use std::result::Result as StdResult;
 
 /// Represents any sequences received as input of the PostProcessor
 ///
-/// Serialized as the bare variant name (`"A"` / `"B"`) by `tk-convert`'s
-/// `processors::mirror::SequenceMirror`; see that module for why the whole template family is
-/// mirrored with owned local types rather than serde's `remote` derive.
+/// Serialized as the bare variant name: `"A"` / `"B"`.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Sequence {
     /// This is the first sequence, the one that is always specified
     A,
@@ -95,7 +94,12 @@ pub enum Sequence {
 ///
 /// [`SpecialToken`]: struct.SpecialToken.html
 ///
+/// Externally tagged on disk: `{"Sequence":{"id":"A","type_id":0}}` and
+/// `{"SpecialToken":{"id":"[CLS]","type_id":0}}`. The `TryFrom<&str>` above plays **no** part in the
+/// JSON shape -- a template written as a *string* is parsed by that impl, a template read from a
+/// `tokenizer.json` is always this object form, and the string spelling never reaches disk.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Piece {
     Sequence { id: Sequence, type_id: u32 },
     SpecialToken { id: String, type_id: u32 },
@@ -192,7 +196,12 @@ impl TryFrom<&str> for Piece {
 ///     vec!["A".into(), "complex".into(), "special".into(), "token".into(), ":".into()]
 /// ).unwrap();
 /// ```
+/// The derive builds a struct literal and so does **not** go through [`SpecialToken::new`], which
+/// rejects `ids.len() != tokens.len()`. That is deliberate: a `tokenizer.json` with three `ids` and
+/// two `tokens` loads today and only misbehaves later, when the template is applied, and it has to
+/// keep loading. `special_token_length_mismatch_still_loads` is the test that says so.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SpecialToken {
     /// A unique id used to identify this SpecialToken in the template
     id: String,
@@ -283,6 +292,8 @@ impl SpecialToken {
 /// [`Piece`]: enum.Piece.html
 ///
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(transparent))]
 pub struct Template(Vec<Piece>);
 
 impl Template {
@@ -339,12 +350,17 @@ impl TryFrom<&str> for Template {
 ///
 /// [`SpecialToken`]: struct.SpecialToken.html
 ///
-/// The map used to be written out through `crate::utils::ordered_map`, which sorts the keys so that
-/// two saves of the same tokenizer produce the same bytes. That is the only caller that function
-/// ever had, and it moved to `tk-convert`'s `mirror::ordered_map` along with the serde it serves;
-/// `tk-convert`'s `processors::mirror::TokensMirror` still names it.
+/// `ordered_map` on the way out is load-bearing and not a nicety: the field is an `AHashMap`, whose
+/// iteration order is unspecified, so without it two saves of the same tokenizer would emit
+/// `special_tokens` in different orders. The way *in* is a plain map, as it always was -- key order
+/// is irrelevant when reading. This is `ordered_map`'s only caller.
 #[derive(Debug, Clone, PartialEq, Default, Eq)]
-pub struct Tokens(pub AHashMap<String, SpecialToken>);
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(transparent))]
+pub struct Tokens(
+    #[cfg_attr(feature = "serde", serde(serialize_with = "crate::utils::ordered_map"))]
+    pub  AHashMap<String, SpecialToken>,
+);
 
 impl<T: Into<SpecialToken>> From<Vec<T>> for Tokens {
     fn from(v: Vec<T>) -> Self {
@@ -383,19 +399,33 @@ impl From<AHashMap<String, SpecialToken>> for Tokens {
 ///     .unwrap();
 /// ```
 ///
+/// The serialized tag is `"TemplateProcessing"`, while the type serde actually *deserializes* is
+/// `TemplateProcessingDeserializer` in [`super::serialization`] -- harmless only because serde
+/// ignores an internally-tagged struct's tag value on the way in. All three written fields are
+/// required, which is what stops a `{"sep":...,"cls":...}` Bert object from being read as an empty
+/// template by the untagged wrapper.
 #[derive(Debug, Clone, PartialEq, Builder, Eq)]
 #[builder(build_fn(validate = "Self::validate"))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(
+    feature = "serde",
+    serde(
+        tag = "type",
+        from = "super::serialization::TemplateProcessingDeserializer"
+    )
+)]
 pub struct TemplateProcessing {
     #[builder(try_setter, default = "\"$0\".try_into().unwrap()")]
     pub single: Template,
     #[builder(try_setter, default = "\"$A:0 $B:1\".try_into().unwrap()")]
     pub(crate) pair: Template,
     // `added_single` and `added_pair` are derived from the other three fields by `count_added`, so
-    // they were never written to disk (they carried `#[serde(skip)]`) and never read back from it.
-    // `tk-convert`'s mirror recomputes them through `TemplateProcessing::from_parts`.
+    // they are never written to disk and never read back from it: `from_parts` recomputes them.
     #[builder(setter(skip), default = "self.default_added(true)")]
+    #[cfg_attr(feature = "serde", serde(skip))]
     added_single: usize,
     #[builder(setter(skip), default = "self.default_added(false)")]
+    #[cfg_attr(feature = "serde", serde(skip))]
     added_pair: usize,
     #[builder(setter(into), default)]
     special_tokens: Tokens,
@@ -405,9 +435,8 @@ impl TemplateProcessing {
     /// Assemble a `TemplateProcessing` from the three fields that appear in a `tokenizer.json`,
     /// deriving `added_single` and `added_pair` from them.
     ///
-    /// This is what the `#[doc(hidden)] TemplateProcessingDeserializer` helper struct and its `From`
-    /// impl used to do: provide the values for `added_single` and `added_pair` during
-    /// deserialization, while not having to serialize them.
+    /// This is what `TemplateProcessingDeserializer`'s `From` impl calls: it provides the values for
+    /// `added_single` and `added_pair` during deserialization, while not having to serialize them.
     ///
     /// It deliberately does **not** run [`TemplateProcessingBuilder::validate`]. Loading a config is
     /// not the same thing as building a template by hand: a `single` template that names a special

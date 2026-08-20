@@ -64,7 +64,20 @@ fn is_chinese_char(c: char) -> bool {
     )
 }
 
+/// All four fields are required -- including `strip_accents`, which is an `Option<bool>` but has no
+/// `#[serde(default)]`, so a config has to spell it, if only as `null`. That is not an oversight to
+/// tidy: `null` and *absent* would mean the same thing to the type (`None`, meaning "follow
+/// `lowercase`"), but they do not mean the same thing to serde, and `tk-serialize`'s slim reader
+/// rejects the absent case with a message of its own.
+///
+/// `#[serde(tag = "type")]` on a struct of this name writes `"type":"BertNormalizer"`, which is what
+/// every real config on disk says -- while `NormalizerWrapper`'s `EnumType` spells the variant
+/// `Bert`. Both spellings load, and only because a bare `tag` attribute *ignores* the tag's value on
+/// the way in. `bert_loads_under_both_tag_spellings` is the test that stops a tidy-up from giving
+/// this a required tag and quietly breaking one of them.
 #[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(tag = "type"))]
 #[non_exhaustive]
 pub struct BertNormalizer {
     /// Whether to do the bert basic cleaning:

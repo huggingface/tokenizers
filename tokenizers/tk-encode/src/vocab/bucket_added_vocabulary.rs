@@ -9,10 +9,8 @@ use std::fmt;
 /// like:
 ///   - Whether they should only match single words
 ///   - Whether to include any whitespace on its left or right
-///
-/// Its on-disk shape -- and the `added_tokens` array an `AddedVocabulary` becomes -- is mirrored in
-/// `tk-convert`'s `mirror` module.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct AddedToken {
     /// The content of the added token (original, as provided by the user)
     pub content: String,
@@ -430,11 +428,9 @@ impl Default for AddedVocabulary {
     }
 }
 
-// `AddedTokenWithId` and `impl Serialize for AddedVocabulary` moved to `tk-convert`'s `mirror`
-// module. Serializing an added vocabulary means writing its *logical* token list -- id, content and
-// flags, ordered by id -- and never the derived `Buckets`/`VocabStore`, which `add_tokens` rebuilds
-// from that list on the way back in. `get_added_tokens_decoder` is the public accessor that lets the
-// mirror do it from outside this crate.
+// `AddedTokenWithId` and `impl Serialize for AddedVocabulary` are in `super::serialization`, next to
+// this file -- an added vocabulary writes its *logical* token list and never the derived
+// `Buckets`/`VocabStore`, so that impl is hand-written rather than a derive.
 
 #[cfg(test)]
 mod tests {

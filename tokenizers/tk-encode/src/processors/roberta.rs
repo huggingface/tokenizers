@@ -6,10 +6,12 @@ use std::iter::FromIterator;
 /// Like [`crate::processors::bert::BertProcessing`], except every encoding keeps `type_id == 0` and
 /// the offsets can first be trimmed of the `ByteLevel` space marker.
 ///
-/// The `"type": "RobertaProcessing"` envelope this used to derive lives in `tk-convert`'s
-/// `processors::mirror::RobertaProcessingDef`, a `remote` derive for the same reason as Bert's: all
-/// four fields are `pub` and the type is not `#[non_exhaustive]`.
+/// Note there is no `#[serde(default)]` on `trim_offsets` or `add_prefix_space`: all four fields are
+/// required, and that is the whole reason `Roberta` can be told apart from `Bert` by an untagged
+/// enum. The tag itself is optional here too -- see [`super::bert::BertProcessing`].
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(tag = "type"))]
 pub struct RobertaProcessing {
     pub sep: (String, u32),
     pub cls: (String, u32),

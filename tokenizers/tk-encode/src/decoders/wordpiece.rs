@@ -3,9 +3,8 @@ use crate::tokenizer::{Decoder, Result};
 #[derive(Clone, Debug)]
 /// The WordPiece decoder takes care of decoding a list of wordpiece tokens
 /// back into a readable string.
-///
-/// The `"type": "WordPiece"` envelope this used to derive lives in `tk-convert`'s
-/// `decoders::mirror::wordpiece`.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(tag = "type"))]
 #[non_exhaustive]
 pub struct WordPiece {
     /// The prefix to be used for continuing subwords

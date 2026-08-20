@@ -3,7 +3,7 @@
 //! A different type from the `Replace` *normalizer*, deliberately. They read the same JSON and do
 //! the same substitution, but a decoder and a normalizer are different roles, and having one type
 //! implement both is what used to make `DecoderWrapper` and `NormalizerWrapper` share a variant —
-//! which in turn meant neither could be given a serde mirror without the other. One type, one
+//! which in turn meant one type had to answer for both on-disk shapes. One type, one
 //! role: the shared part is the matcher in [`crate::utils::search`], not the component.
 
 use crate::tokenizer::{Decoder, Result};

@@ -3,6 +3,7 @@ use std::cmp;
 use std::mem;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum TruncationDirection {
     Left,
     #[default]
@@ -19,9 +20,11 @@ impl std::convert::AsRef<str> for TruncationDirection {
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TruncationParams {
-    /// Defaulted when absent from a `truncation` block; the mirror in `tk-convert` is where that
-    /// `#[serde(default)]` lives now.
+    /// `#[serde(default)]` because a `truncation` block written before this field existed has to
+    /// keep loading; `test_deserialize_defaults` is the test that says so.
+    #[cfg_attr(feature = "serde", serde(default))]
     pub direction: TruncationDirection,
     pub max_length: usize,
     pub strategy: TruncationStrategy,
@@ -50,6 +53,7 @@ pub enum TruncationError {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum TruncationStrategy {
     #[default]
     LongestFirst,
@@ -166,6 +170,18 @@ mod tests {
     use super::*;
     use crate::tokenizer::Encoding;
     use ahash::AHashMap;
+
+    /// A `truncation` block written before `direction` existed still has to load, with `direction`
+    /// defaulting to `Right`.
+    #[test]
+    #[cfg(feature = "serde")]
+    fn test_deserialize_defaults() {
+        let old_truncation_params = r#"{"max_length":256,"strategy":"LongestFirst","stride":0}"#;
+
+        let params: TruncationParams = serde_json::from_str(old_truncation_params).unwrap();
+
+        assert_eq!(params.direction, TruncationDirection::Right);
+    }
 
     fn get_empty() -> Encoding {
         Encoding::new(

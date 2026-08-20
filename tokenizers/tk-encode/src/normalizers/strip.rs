@@ -2,10 +2,18 @@ use std::borrow::Cow;
 
 use crate::pipeline;
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
+// `StripAccents` is the only user in this file and it is `normalizers`-gated, so the import needs
+// both gates -- `--features serde` alone would otherwise leave it unused.
+#[cfg(all(feature = "serde", feature = "normalizers"))]
+use crate::utils::macro_rules_attribute;
 #[cfg(feature = "normalizers")]
 use unicode_normalization_alignments::char::is_combining_mark;
 
+/// Both fields are required, which is the *only* thing that rejects a tag-less object here: a bare
+/// `#[serde(tag = "type")]` ignores the tag entirely on the way in.
 #[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(tag = "type"))]
 #[non_exhaustive]
 pub struct Strip {
     pub strip_left: bool,
@@ -58,6 +66,7 @@ impl pipeline::Normalizer for Strip {
 // non ascii languages.
 #[cfg(feature = "normalizers")]
 #[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "serde", macro_rules_attribute(impl_serde_type!))]
 pub struct StripAccents;
 
 #[cfg(feature = "normalizers")]

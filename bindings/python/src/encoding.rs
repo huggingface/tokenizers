@@ -48,11 +48,10 @@ impl PyEncoding {
         }
     }
 
-    // `Encoding` is a `tk-encode` type and carries no serde of its own; `EncodingRef`/`EncodingOwned`
-    // are the mirrors in `tk-convert`. The bytes on the wire are unchanged -- same field names, same
-    // order -- because this IS the pickle format and an old pickle has to keep loading.
+    // These bytes ARE the pickle format, so the field names and their order are public API: an old
+    // pickle has to keep loading. `Encoding`'s own derive is what writes them.
     fn __getstate__(&self, py: Python) -> PyResult<Py<PyAny>> {
-        let data = serde_json::to_string(&tk::mirror::EncodingRef(&self.encoding)).map_err(|e| {
+        let data = serde_json::to_string(&self.encoding).map_err(|e| {
             exceptions::PyException::new_err(format!(
                 "Error while attempting to pickle Encoding: {e}"
             ))
@@ -63,13 +62,11 @@ impl PyEncoding {
     fn __setstate__(&mut self, py: Python, state: Py<PyAny>) -> PyResult<()> {
         match state.extract::<&[u8]>(py) {
             Ok(s) => {
-                let owned: tk::mirror::EncodingOwned =
-                    serde_json::from_slice(s).map_err(|e| {
-                        exceptions::PyException::new_err(format!(
-                            "Error while attempting to unpickle Encoding: {e}"
-                        ))
-                    })?;
-                self.encoding = owned.0;
+                self.encoding = serde_json::from_slice(s).map_err(|e| {
+                    exceptions::PyException::new_err(format!(
+                        "Error while attempting to unpickle Encoding: {e}"
+                    ))
+                })?;
                 Ok(())
             }
             Err(e) => Err(e.into()),

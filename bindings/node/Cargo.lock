@@ -820,28 +820,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
 
 [[package]]
-name = "monostate"
-version = "0.1.18"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3341a273f6c9d5bef1908f17b7267bbab0e95c9bf69a0d4dcf8e9e1b2c76ef67"
-dependencies = [
- "monostate-impl",
- "serde",
- "serde_core",
-]
-
-[[package]]
-name = "monostate-impl"
-version = "0.1.18"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e4db6d5580af57bf992f59068d4ea26fd518574ff48d7639b255a36f9de6e7e9"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
 name = "nanorand"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1451,8 +1429,10 @@ version = "0.23.2-dev.0"
 dependencies = [
  "ahash",
  "daachorse",
+ "dary_heap",
  "log",
  "paste",
+ "rand 0.9.4",
  "regex",
  "serde",
  "serde_json",
@@ -1475,15 +1455,12 @@ dependencies = [
  "log",
  "macro_rules_attribute",
  "memchr",
- "monostate",
  "paste",
  "ptr_hash",
  "rand 0.9.4",
  "rayon",
  "rayon-cond",
- "regex",
  "serde",
- "serde_json",
  "spm_precompiled",
  "thiserror",
  "unicode-normalization",

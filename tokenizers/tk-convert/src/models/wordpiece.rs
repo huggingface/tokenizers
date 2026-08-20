@@ -2,9 +2,8 @@
 //!
 //! The model itself stays in `tk-encode` — unlike `BPE` it *is* the runtime model, taken straight
 //! through into the pipeline. What moved here is everything about getting one out of a file: a
-//! `vocab.txt` is a config artifact, and `from_bytes` needs serde, which the runtime crate does not
-//! link. They are free functions rather than associated ones because an inherent `impl` has to live
-//! with the type.
+//! `vocab.txt` is a config artifact and reading one is not the runtime's business. They are free
+//! functions rather than associated ones because an inherent `impl` has to live with the type.
 
 use ahash::AHashMap;
 use std::fs::File;
@@ -14,7 +13,6 @@ use tk_encode::Result;
 use tk_encode::models::wordpiece::{WordPiece, WordPieceBuilder};
 
 use super::BPE;
-use super::mirror;
 
 /// Read the given file to extract the vocab: one token per line, id = line number.
 pub fn read_file(vocab: &str) -> Result<AHashMap<String, u32>> {
@@ -44,8 +42,7 @@ pub fn from_file(vocab: &str) -> Result<WordPieceBuilder> {
 
 /// Read a `WordPiece` from its serialized form.
 pub fn from_bytes<P: AsRef<[u8]>>(bytes: P) -> Result<WordPiece> {
-    let mut de = serde_json::Deserializer::from_slice(bytes.as_ref());
-    Ok(mirror::wordpiece::deserialize(&mut de)?)
+    Ok(serde_json::from_slice(bytes.as_ref())?)
 }
 
 /// Create a `WordPiece` model from a `BPE` model.

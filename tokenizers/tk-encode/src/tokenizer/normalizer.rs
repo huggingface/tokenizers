@@ -78,10 +78,11 @@ where
 ///  - MergedWithNext => `[ "the", "-final", "-", "-countdown" ]`
 ///  - Contiguous => `[ "the", "-", "final", "--", "countdown" ]`
 ///
-/// Its on-disk shape is written in `tokenizer/serialization.rs`, next to this type, and the
-/// `display_matches_serde` test in that file is what keeps the hand-written `Display` below from
-/// drifting away from what serde emits.
+/// On disk it is the bare variant name — no `rename_all` — which the `display_matches_serde` test
+/// below pins against the hand-written `Display`, so the two cannot drift. This one needs no
+/// `serialization.rs` of its own: the derive on the type is the whole on-disk shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum SplitDelimiterBehavior {
     Removed,
     Isolated,
@@ -1038,14 +1039,31 @@ impl From<&str> for NormalizedString {
 
 #[cfg(test)]
 mod tests {
-    // `display_matches_serde` -- which pinned `SplitDelimiterBehavior`'s hand-written `Display` to
-    // what serde emits -- moved to `tk-convert`'s `mirror` module, with the serde half it compares
-    // against.
     use super::*;
     use atomsplit::literal::Literal;
     use regex::Regex;
     #[cfg(feature = "normalizers")]
     use unicode_categories::UnicodeCategories;
+
+    /// `Display` is spelled out by hand so the name survives a build with no serde in it. This is
+    /// what stops the two from drifting: every variant has to print exactly what serde writes.
+    #[test]
+    #[cfg(feature = "serde")]
+    fn display_matches_serde() {
+        use SplitDelimiterBehavior::*;
+
+        for behavior in [
+            Removed,
+            Isolated,
+            MergedWithPrevious,
+            MergedWithNext,
+            Contiguous,
+        ] {
+            let via_serde = serde_json::to_string(&behavior).unwrap();
+            // `to_string` of a unit variant is a quoted string; `Display` is the bare name.
+            assert_eq!(via_serde, format!("\"{behavior}\""));
+        }
+    }
 
     #[test]
     fn test_len_range_inclusive() {

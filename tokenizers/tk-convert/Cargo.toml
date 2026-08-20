@@ -30,17 +30,19 @@ path = "src/lib.rs"
 [dependencies]
 # The whole point of this crate is to be the serde half, so `tk-encode` is pulled with everything
 # the wrapper enums can hold: a wrapper's `Deserialize` names every variant, so every model and
-# normalizer has to exist. There is no `config` feature to ask for any more -- `tk-encode` links no
-# serde at all, and every component's on-disk shape is a mirror in this crate instead.
+# normalizer has to exist -- and with `serde`, which is what puts the components' own
+# `Serialize`/`Deserialize` (the derives on the types and the `serialization.rs` next to each of
+# them) into the build. It is off by default over there so an encode-only build links no serde; here
+# it is the point.
 tk-encode = { path = "../tk-encode", default-features = false, features = [
+  "serde",
   "bpe",
   "unigram",
   "wordpiece",
   "wordlevel",
   "normalizers",
   # `PreTokenizerWrapper` has a `UnicodeScripts` variant and `lowering` has a match arm for it, so
-  # the pre-tokenizer has to exist. The deleted `config` feature used to imply this; spelling it out
-  # is what that implication becomes. Workspace-wide feature unification hid its absence -- a
+  # the pre-tokenizer has to exist. Workspace-wide feature unification hid its absence -- a
   # dev-dependency asks for it -- and only building `bindings/python` on its own caught it.
   "unicode-scripts",
 ] }

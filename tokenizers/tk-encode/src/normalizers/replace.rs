@@ -11,8 +11,7 @@ pub use crate::utils::search::ReplacePattern;
 /// This normalizer will take a `pattern` (for now only a String)
 /// and replace every occurrence with `content`.
 ///
-/// The on-disk shape lives in `tk-convert`'s `normalizers::mirror::replace`, which is also where
-/// the `ReplaceDeserializer` + `TryFrom` pair went: `search` is derived from `pattern` by a
+/// The on-disk shape is in [`super::serialization`]: `search` is derived from `pattern` by a
 /// constructor that can fail, so a config can only ever be turned into a `Replace` through
 /// `Replace::new`, never field by field.
 #[derive(Debug)]
@@ -135,9 +134,8 @@ mod tests {
         assert_eq!(&n.get(), &normalized);
     }
 
-    // `serialization` and `a_string_pattern_deserializes_with_no_backend` moved to
-    // `tk-convert`'s `normalizers::mirror::tests` with the serde they exercise. What is left here
-    // is everything that tests the normalizer itself rather than its on-disk shape.
+    // The two JSON round-trip tests are in `super::serialization`, with the serde they exercise.
+    // What is left here tests the normalizer itself rather than its on-disk shape.
 
     /// The goal of the literal path: a plain string pattern builds and runs with no regex backend.
     #[test]

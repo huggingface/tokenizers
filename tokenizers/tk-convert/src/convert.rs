@@ -88,7 +88,7 @@ pub enum ConvertError {
     MergesNotArray { found: &'static str },
 
     /// Reproduced verbatim from both existing read paths, because a caller may well be matching on
-    /// the text: `tk-convert/src/decoders/mirror.rs`'s `metaspace::deserialize` and
+    /// the text: `tk-encode/src/decoders/serialization.rs`'s `MetaspaceDecoder` impl and
     /// `tk-serialize/src/from_json.rs`'s `read_prepend_scheme` both raise this exact string.
     #[error("add_prefix_space does not match declared prepend_scheme")]
     PrefixSpaceMismatch,
@@ -470,7 +470,7 @@ fn canonicalize_component(node: &mut Value) -> Result<(), ConvertError> {
 
 /// `Metaspace`, the one component whose spelling changed in a way that is not a rename.
 ///
-/// The rule is reproduced from `tk-convert/src/decoders/mirror.rs`'s `metaspace` module and
+/// The rule is reproduced from `tk-encode/src/decoders/serialization.rs`'s `MetaspaceDecoder` and
 /// `tk-serialize/src/from_json.rs`'s `read_prepend_scheme`, which already agree with each other,
 /// quirks included:
 ///

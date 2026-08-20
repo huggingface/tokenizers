@@ -7,8 +7,7 @@ use crate::tokenizer::{Decoder, Result};
 /// step
 ///
 /// Like `ByteFallback`, it used to carry a `monostate::MustBe!("Fuse")` field whose only job was to
-/// make serde *require* the `"type"` tag. That requirement now lives in `tk-convert`'s
-/// `decoders::mirror::fuse`.
+/// make serde *require* the `"type"` tag; `super::serialization` does that with a tag enum.
 #[non_exhaustive]
 pub struct Fuse {}
 

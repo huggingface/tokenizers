@@ -7,8 +7,8 @@ use crate::tokenizer::{Decoder, Result};
 ///
 /// It used to carry a `monostate::MustBe!("ByteFallback")` field, which existed only so that serde
 /// would *require* the `"type"` tag -- with no other field, nothing else would have stopped `{}`
-/// from deserializing as a `ByteFallback`. That requirement now lives in `tk-convert`'s
-/// `decoders::mirror::byte_fallback`, and dropping the field is what let `monostate` go.
+/// from deserializing as a `ByteFallback`. `super::serialization` does that job with a one-variant
+/// tag enum instead, which is what let `monostate` go.
 #[non_exhaustive]
 pub struct ByteFallback {}
 

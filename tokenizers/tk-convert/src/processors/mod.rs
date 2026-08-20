@@ -3,7 +3,6 @@
 //! Untagged, and the variant order is load-bearing: serde does not validate a `"type"` tag against
 //! an untagged enum, so `Roberta` must stay before `Bert` (a Roberta config satisfies Bert's shape).
 
-pub mod mirror;
 pub mod sequence;
 
 pub use sequence::Sequence as SequenceProcessor;
@@ -19,27 +18,19 @@ use tk_encode::{Encoding, PostProcessor, Result};
 use crate::macros::impl_enum_from;
 use crate::processors::sequence::Sequence;
 
-/// Three of the five variants now name a mirror in [`mirror`]: `tk-encode` defines the processor
-/// types and derives serde on none of them, so the on-disk shape of each one is described there.
-///
-/// The two that do not: `Sequence` is this crate's own type, so the orphan rule never applied to it;
-/// `ByteLevel` is a *pre-tokenizer* that doubles as a post-processor, and its serde still lives in
-/// `tk-encode` because it belongs to the `pre_tokenizers` half of the migration — one type, one
-/// mirror, wherever that mirror ends up.
+/// Each variant's on-disk shape belongs to the processor itself, in `tk-encode` behind its `serde`
+/// feature; `Sequence` is this crate's own type. `ByteLevel` is a *pre-tokenizer* that doubles as a
+/// post-processor, so its shape is the pre-tokenizer's — one type, one description of it.
 #[derive(PartialEq, Debug, Clone, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum PostProcessorWrapper {
     // Roberta must be before Bert for deserialization (serde does not validate tags)
-    #[serde(with = "mirror::RobertaProcessingDef")]
     Roberta(RobertaProcessing),
-    #[serde(with = "mirror::BertProcessingDef")]
     Bert(BertProcessing),
     // The same type as the `ByteLevel` *pre-tokenizer* (`tk_encode::processors` re-exports
-    // `pre_tokenizers::byte_level`), so it shares that one's mirror rather than growing a second
+    // `pre_tokenizers::byte_level`), so it shares that one's serde rather than growing a second
     // description of the same three fields.
-    #[serde(with = "crate::pre_tokenizers::mirror::byte_level")]
     ByteLevel(ByteLevel),
-    #[serde(with = "mirror::template")]
     Template(TemplateProcessing),
     Sequence(Sequence),
 }
@@ -76,15 +67,12 @@ impl_enum_from!(RobertaProcessing, PostProcessorWrapper, Roberta);
 impl_enum_from!(TemplateProcessing, PostProcessorWrapper, Template);
 impl_enum_from!(Sequence, PostProcessorWrapper, Sequence);
 
-// Every test in here round-trips a wrapper through serde, so the module goes with `config`.
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// `BertProcessing` and `RobertaProcessing` carry no serde themselves — `tk-encode` links none,
-    /// and their shapes are owned by `mirror::{BertProcessingDef, RobertaProcessingDef}`. So the
-    /// wrapper is the unit under test in both directions; being untagged, it serializes to exactly
-    /// what the leaf used to serialize to.
+    /// The wrapper is the unit under test in both directions; being untagged, it serializes to
+    /// exactly what the leaf serializes to.
     #[test]
     fn deserialize_bert_roberta_correctly() {
         let roberta = RobertaProcessing::default();

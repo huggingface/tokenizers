@@ -8,8 +8,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use ahash::AHashMap;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use tk_encode::models::unigram::Unigram;
 use tk_encode::models::wordlevel::WordLevel;
@@ -19,16 +18,14 @@ use tk_encode::{Model, Result, Token};
 use crate::macros::impl_enum_from;
 
 pub mod bpe;
-pub mod mirror;
 pub mod unigram;
 pub mod wordlevel;
 pub mod wordpiece;
 
 pub use bpe::BPE;
 
-/// `BPE` is this crate's own type, so it carries its serde directly (see [`bpe::serialization`]).
-/// The other three are `tk-encode`'s, and a foreign crate cannot implement `Serialize` for a foreign
-/// type — so each names a mirror of its on-disk shape in [`mirror`].
+/// Every variant carries its own serde: `BPE`'s is [`bpe::serialization`] here, and the other three
+/// have a `serialization.rs` next to them in `tk-encode`.
 #[derive(Debug, PartialEq, Clone, Serialize)]
 #[serde(untagged)]
 // BPE is the big variant (~472 B of merge/fold state) and the only one that is always
@@ -39,58 +36,9 @@ pub enum ModelWrapper {
     BPE(BPE),
     // WordPiece must stay before WordLevel here for deserialization (for retrocompatibility
     // with the versions not including the "type"), since WordLevel is a subset of WordPiece
-    #[serde(with = "mirror::wordpiece")]
     WordPiece(WordPiece),
-    #[serde(with = "mirror::wordlevel")]
     WordLevel(WordLevel),
-    #[serde(with = "mirror::unigram")]
     Unigram(Unigram),
-}
-
-/// Wraps a vocab mapping (ID -> token) to a struct that will be serialized in order
-/// of token ID, smallest to largest.
-///
-/// Moved here from `tk-encode` with the `Serialize` impls that are its only callers: it exists to
-/// give a `{token: id}` object a *deterministic* order, which is a property of the file being
-/// written, not of the model doing the encoding.
-pub(crate) struct OrderedVocabIter<'a> {
-    vocab_r: &'a AHashMap<u32, String>,
-}
-
-impl<'a> OrderedVocabIter<'a> {
-    pub(crate) fn new(vocab_r: &'a AHashMap<u32, String>) -> Self {
-        Self { vocab_r }
-    }
-}
-
-impl Serialize for OrderedVocabIter<'_> {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        // There could be holes so max + 1 is more correct than vocab_r.len()
-        let mut holes = vec![];
-        let result = if let Some(max) = self.vocab_r.keys().max() {
-            let iter = (0..*max + 1).filter_map(|i| {
-                if let Some(token) = self.vocab_r.get(&i) {
-                    Some((token, i))
-                } else {
-                    holes.push(i);
-                    None
-                }
-            });
-            serializer.collect_map(iter)
-        } else {
-            serializer.collect_map(std::iter::empty::<(&str, u32)>())
-        };
-
-        if !holes.is_empty() {
-            warn!(
-                "The OrderedVocab you are attempting to serialize contains holes for indices {holes:?}, your vocabulary could be corrupted!"
-            );
-        }
-        result
-    }
 }
 
 impl<'de> Deserialize<'de> for ModelWrapper {
@@ -127,11 +75,8 @@ impl<'de> Deserialize<'de> for ModelWrapper {
             BPE(BPE),
             // WordPiece must stay before WordLevel here for deserialization (for retrocompatibility
             // with the versions not including the "type"), since WordLevel is a subset of WordPiece
-            #[serde(with = "mirror::wordpiece")]
             WordPiece(WordPiece),
-            #[serde(with = "mirror::wordlevel")]
             WordLevel(WordLevel),
-            #[serde(with = "mirror::unigram")]
             Unigram(Unigram),
         }
 
@@ -141,18 +86,17 @@ impl<'de> Deserialize<'de> for ModelWrapper {
                 EnumType::BPE => ModelWrapper::BPE(
                     serde_json::from_value(model.rest).map_err(serde::de::Error::custom)?,
                 ),
-                // `model.rest` deliberately does *not* get its `"type"` key put back: the three
-                // model mirrors treat the tag as optional, exactly as the impls they replaced did,
-                // and re-inserting it would only make the tagged path stricter than the untagged
-                // one it shares its visitors with.
+                // `model.rest` deliberately does *not* get its `"type"` key put back: all three
+                // models treat the tag as optional, and re-inserting it would only make the tagged
+                // path stricter than the untagged one it shares its visitors with.
                 EnumType::WordPiece => ModelWrapper::WordPiece(
-                    mirror::wordpiece::deserialize(model.rest).map_err(serde::de::Error::custom)?,
+                    serde_json::from_value(model.rest).map_err(serde::de::Error::custom)?,
                 ),
                 EnumType::WordLevel => ModelWrapper::WordLevel(
-                    mirror::wordlevel::deserialize(model.rest).map_err(serde::de::Error::custom)?,
+                    serde_json::from_value(model.rest).map_err(serde::de::Error::custom)?,
                 ),
                 EnumType::Unigram => ModelWrapper::Unigram(
-                    mirror::unigram::deserialize(model.rest).map_err(serde::de::Error::custom)?,
+                    serde_json::from_value(model.rest).map_err(serde::de::Error::custom)?,
                 ),
             },
             ModelHelper::Legacy(value) => {
@@ -262,6 +206,8 @@ impl ModelWrapper {
 mod tests {
     use super::*;
     use crate::models::bpe::BpeBuilder;
+    use ahash::AHashMap;
+    use tk_encode::models::OrderedVocabIter;
     use tk_encode::models::bpe::Vocab;
 
     #[test]

@@ -9,9 +9,9 @@ use crate::tokenizer::{
 
 /// Represents the different patterns that `Split` can use
 ///
-/// Written down externally tagged (`{"String":"..."}` / `{"Regex":"..."}`), which is
-/// `tk-convert`'s `pre_tokenizers::mirror::SplitPatternDef`; this crate links no serde.
+/// Written down externally tagged: `{"String":"..."}` / `{"Regex":"..."}`.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum SplitPattern {
     String(String),
     Regex(String),
@@ -43,9 +43,9 @@ pub enum Search {
 
 /// Only `pattern`, `behavior` and `invert` are ever written down: `search` and `fsm` are both
 /// *derived* from `pattern` by [`Split::new`], so a config carrying them would be a config that can
-/// disagree with itself. That is also why the JSON shape -- `tk-convert`'s
-/// `pre_tokenizers::mirror::split` -- has to go through the constructor rather than a struct
-/// literal, and why building one can fail: compiling the pattern can.
+/// disagree with itself. That is also why the serde in [`super::serialization`] goes through the
+/// constructor rather than a struct literal, and why reading one can fail: compiling the pattern
+/// can.
 #[derive(Debug)]
 pub struct Split {
     pub pattern: SplitPattern,

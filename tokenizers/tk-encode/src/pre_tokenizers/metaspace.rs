@@ -4,11 +4,11 @@ use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result, SplitDelimiterB
 
 /// Enum representing options for the metaspace prepending scheme.
 ///
-/// The JSON spelling is `snake_case` (`"first"` / `"never"` / `"always"`) and lives in
-/// `tk-convert`'s `pre_tokenizers::mirror::PrependSchemeDef` -- not here, because this crate links
-/// no serde. `tk_encode::decoders::metaspace` re-exports this very type, so that one mirror is what
-/// the decoder's mirror names too.
+/// The JSON spelling is `snake_case`: `"first"` / `"never"` / `"always"`. `decoders::metaspace`
+/// re-exports this very type, so the decoder and the pre-tokenizer read and write it identically.
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum PrependScheme {
     /// Specifies that the scheme should be prepended only once, on the first split.
     First,
@@ -20,10 +20,9 @@ pub enum PrependScheme {
 
 impl std::fmt::Display for PrependScheme {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // Spelled out rather than handed to the serializer: this crate has no serializer. These
-        // must stay identical to the `rename_all = "snake_case"` spelling of `tk-convert`'s
-        // `PrependSchemeDef`; `display_matches_serde`, which moved over there with the mirror,
-        // pins that.
+        // Spelled out rather than handed to the serializer, so the name survives a build with no
+        // serde in it. These must stay identical to the `rename_all = "snake_case"` spelling above;
+        // `display_matches_serde` pins that.
         f.write_str(match self {
             Self::First => "first",
             Self::Never => "never",
@@ -37,10 +36,9 @@ impl std::fmt::Display for PrependScheme {
 /// splits on this character
 ///
 /// The JSON shape -- including the backwards-compatible `add_prefix_space` / `str_rep` reading,
-/// whose rule decides ids and so must not be "fixed" -- is `tk-convert`'s
-/// `pre_tokenizers::mirror::metaspace`. `str_rep` is derived from `replacement` and never written
-/// out; that is why `replacement` is private, and why the mirror has to build through
-/// [`Metaspace::new`] rather than with a struct literal.
+/// whose rule decides ids and so must not be "fixed" -- is in [`super::serialization`]. `str_rep` is
+/// derived from `replacement` and never written out; that is why `replacement` is private, and why
+/// reading one has to go through [`Metaspace::new`] rather than a struct literal.
 pub struct Metaspace {
     replacement: char,
     pub prepend_scheme: PrependScheme,

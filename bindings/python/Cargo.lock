@@ -1613,6 +1613,7 @@ dependencies = [
  "rand 0.9.4",
  "rayon",
  "rayon-cond",
+ "serde",
  "spm_precompiled",
  "thiserror",
  "unicode-normalization",

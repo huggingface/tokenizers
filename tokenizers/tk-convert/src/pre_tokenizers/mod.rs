@@ -1,7 +1,6 @@
 //! `PreTokenizerWrapper`: the `pre_tokenizer` field of a `tokenizer.json`, as an enum over every
 //! pre-tokenizer, plus the `Sequence` pre-tokenizer that holds a `Vec` of them.
 
-pub mod mirror;
 pub mod sequence;
 
 pub use sequence::Sequence;
@@ -22,35 +21,24 @@ use tk_encode::{PreTokenizedString, PreTokenizer, Result};
 
 use crate::macros::impl_enum_from;
 
-/// Every variant now names a mirror in [`mirror`]: `tk-encode` defines the twelve pre-tokenizer
-/// types and derives serde on none of them, so the on-disk shape of each one is described there.
-/// `Sequence` is the exception, being this crate's own type.
+/// Each variant's on-disk shape belongs to the pre-tokenizer itself: `tk-encode` carries the
+/// `impl_serde_type!` envelope or the hand-written impl next to every type, behind its `serde`
+/// feature. `Sequence` is this crate's own type, and no different here.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(untagged)]
 #[allow(clippy::large_enum_variant)] // Split holds a compiled regex; boxing it would churn the API
 pub enum PreTokenizerWrapper {
-    #[serde(with = "mirror::bert")]
     BertPreTokenizer(BertPreTokenizer),
-    #[serde(with = "mirror::byte_level")]
     ByteLevel(ByteLevel),
-    #[serde(with = "mirror::delimiter")]
     Delimiter(CharDelimiterSplit),
-    #[serde(with = "mirror::metaspace")]
     Metaspace(Metaspace),
-    #[serde(with = "mirror::whitespace")]
     Whitespace(Whitespace),
     Sequence(Sequence),
-    #[serde(with = "mirror::split")]
     Split(Split),
-    #[serde(with = "mirror::punctuation")]
     Punctuation(Punctuation),
-    #[serde(with = "mirror::whitespace_split")]
     WhitespaceSplit(WhitespaceSplit),
-    #[serde(with = "mirror::digits")]
     Digits(Digits),
-    #[serde(with = "mirror::unicode_scripts")]
     UnicodeScripts(UnicodeScripts),
-    #[serde(with = "mirror::fixed_length")]
     FixedLength(FixedLength),
 }
 
@@ -112,28 +100,17 @@ impl<'de> Deserialize<'de> for PreTokenizerWrapper {
         #[serde(untagged)]
         #[allow(clippy::large_enum_variant)]
         pub enum PreTokenizerUntagged {
-            #[serde(with = "mirror::bert")]
             BertPreTokenizer(BertPreTokenizer),
-            #[serde(with = "mirror::byte_level")]
             ByteLevel(ByteLevel),
-            #[serde(with = "mirror::delimiter")]
             Delimiter(CharDelimiterSplit),
-            #[serde(with = "mirror::metaspace")]
             Metaspace(Metaspace),
-            #[serde(with = "mirror::whitespace")]
             Whitespace(Whitespace),
             Sequence(Sequence),
-            #[serde(with = "mirror::split")]
             Split(Split),
-            #[serde(with = "mirror::punctuation")]
             Punctuation(Punctuation),
-            #[serde(with = "mirror::whitespace_split")]
             WhitespaceSplit(WhitespaceSplit),
-            #[serde(with = "mirror::digits")]
             Digits(Digits),
-            #[serde(with = "mirror::unicode_scripts")]
             UnicodeScripts(UnicodeScripts),
-            #[serde(with = "mirror::fixed_length")]
             FixedLength(FixedLength),
         }
 
@@ -148,57 +125,46 @@ impl<'de> Deserialize<'de> for PreTokenizerWrapper {
                     serde_json::to_value(&pretok.variant).map_err(serde::de::Error::custom)?,
                 );
                 let values = serde_json::Value::Object(values);
-                // Every arm goes through a `mirror` entry point now, because the leaf types no
-                // longer implement `Deserialize` themselves -- `serde_json::from_value` would have
-                // nothing to call. `Sequence` is the exception: it is this crate's own type.
-                //
                 // Note `EnumType::Delimiter` re-inserts `"type":"Delimiter"`, which
-                // `mirror::delimiter` rejects: the tag `CharDelimiterSplit` writes and accepts is
-                // its own name. That was already true of `from_value::<CharDelimiterSplit>` and is
-                // deliberately left alone -- such a config loads through the untagged fallback
+                // `CharDelimiterSplit` rejects: the tag it writes and accepts is its own name. That
+                // is deliberately left alone -- such a config loads through the untagged fallback
                 // below, and "fixing" it here would start accepting a spelling nothing emits.
                 match pretok.variant {
                     EnumType::BertPreTokenizer => PreTokenizerWrapper::BertPreTokenizer(
-                        mirror::bert::deserialize(values).map_err(serde::de::Error::custom)?,
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                     ),
                     EnumType::ByteLevel => PreTokenizerWrapper::ByteLevel(
-                        mirror::byte_level::deserialize(values)
-                            .map_err(serde::de::Error::custom)?,
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                     ),
                     EnumType::Delimiter => PreTokenizerWrapper::Delimiter(
-                        mirror::delimiter::deserialize(values).map_err(serde::de::Error::custom)?,
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                     ),
                     EnumType::Metaspace => PreTokenizerWrapper::Metaspace(
-                        mirror::metaspace::deserialize(values).map_err(serde::de::Error::custom)?,
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                     ),
                     EnumType::Whitespace => PreTokenizerWrapper::Whitespace(
-                        mirror::whitespace::deserialize(values)
-                            .map_err(serde::de::Error::custom)?,
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                     ),
                     EnumType::Sequence => PreTokenizerWrapper::Sequence(
                         serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                     ),
                     EnumType::Split => PreTokenizerWrapper::Split(
-                        mirror::split::deserialize(values).map_err(serde::de::Error::custom)?,
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                     ),
                     EnumType::Punctuation => PreTokenizerWrapper::Punctuation(
-                        mirror::punctuation::deserialize(values)
-                            .map_err(serde::de::Error::custom)?,
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                     ),
                     EnumType::WhitespaceSplit => PreTokenizerWrapper::WhitespaceSplit(
-                        mirror::whitespace_split::deserialize(values)
-                            .map_err(serde::de::Error::custom)?,
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                     ),
                     EnumType::Digits => PreTokenizerWrapper::Digits(
-                        mirror::digits::deserialize(values).map_err(serde::de::Error::custom)?,
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                     ),
                     EnumType::UnicodeScripts => PreTokenizerWrapper::UnicodeScripts(
-                        mirror::unicode_scripts::deserialize(values)
-                            .map_err(serde::de::Error::custom)?,
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                     ),
                     EnumType::FixedLength => PreTokenizerWrapper::FixedLength(
-                        mirror::fixed_length::deserialize(values)
-                            .map_err(serde::de::Error::custom)?,
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                     ),
                 }
             }

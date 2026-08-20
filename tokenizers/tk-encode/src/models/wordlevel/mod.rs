@@ -4,6 +4,9 @@ use ahash::AHashMap;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+#[cfg(feature = "serde")]
+mod serialization;
+
 /// Only the tests name this now: reading a `vocab.json` into one is `tk-convert`'s job.
 #[cfg(test)]
 type Vocab = AHashMap<String, u32>;

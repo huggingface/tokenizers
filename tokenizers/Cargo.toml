@@ -82,13 +82,15 @@ harness = false
 # the full surface, so `tk-encode`'s slim defaults never reach them.
 tk-encode = { path = "tk-encode", version = "0.23.2-dev.0", default-features = false, features = [
   "parallelism",
+  # The components' own serde. `tk-convert` asks for it as well; spelled out here too because this
+  # crate's whole job is the full surface, and `PyEncoding`'s pickling reaches it directly.
+  "serde",
   "normalizers",
   "bpe",
   "unigram",
   "wordpiece",
   "wordlevel",
-  # `tokenizers::pre_tokenizers::unicode_scripts` predates the split and is public API. The deleted
-  # `config` feature used to imply it.
+  # `tokenizers::pre_tokenizers::unicode_scripts` predates the split and is public API.
   "unicode-scripts",
 ] }
 # The config/BC layer. Non-optional: `tokenizers::Tokenizer` and the five wrapper enums live here,

@@ -4,7 +4,6 @@
 //! As with every wrapper here, the `Deserialize` impl is hand-written so that a tagged config is
 //! routed by its tag and an untagged (pre-`"type"`) one still loads.
 
-pub mod mirror;
 pub mod utils;
 
 pub use utils::Sequence;
@@ -25,38 +24,25 @@ use crate::macros::impl_enum_from;
 
 /// Wrapper for known Normalizers.
 ///
-/// Every variant but two names a mirror in [`mirror`]: `tk-encode` defines the normalizer types and
-/// derives serde on none of them, so the on-disk shape of each one is described there. The two
-/// exceptions are `Sequence`, which is this crate's own type, and `Precompiled`, whose serde comes
-/// from the `spm_precompiled` crate that defines it.
+/// Each variant's on-disk shape belongs to the normalizer itself: `tk-encode` carries the derive or
+/// the hand-written impl next to every type, behind its `serde` feature. `Sequence` is this crate's
+/// own type, and `Precompiled`'s serde comes from the `spm_precompiled` crate that defines it.
 #[derive(Clone, Debug, Serialize)]
 #[serde(untagged)]
 pub enum NormalizerWrapper {
-    #[serde(with = "mirror::bert")]
     BertNormalizer(BertNormalizer),
-    #[serde(with = "mirror::strip")]
     StripNormalizer(Strip),
-    #[serde(with = "mirror::strip_accents")]
     StripAccents(StripAccents),
-    #[serde(with = "mirror::nfc")]
     NFC(NFC),
-    #[serde(with = "mirror::nfd")]
     NFD(NFD),
-    #[serde(with = "mirror::nfkc")]
     NFKC(NFKC),
-    #[serde(with = "mirror::nfkd")]
     NFKD(NFKD),
     Sequence(Sequence),
-    #[serde(with = "mirror::lowercase")]
     Lowercase(Lowercase),
-    #[serde(with = "mirror::nmt")]
     Nmt(Nmt),
     Precompiled(Precompiled),
-    #[serde(with = "mirror::replace")]
     Replace(Replace),
-    #[serde(with = "mirror::PrependDef")]
     Prepend(Prepend),
-    #[serde(with = "mirror::byte_level")]
     ByteLevel(ByteLevel),
 }
 
@@ -100,35 +86,23 @@ impl<'de> Deserialize<'de> for NormalizerWrapper {
         // The legacy fallback, and the reason the `"type"` tag being *required* matters per
         // normalizer: an untagged enum tries each variant in order and takes the first that fits,
         // so a variant lenient about its tag will claim an object that should have been rejected.
-        // See `mirror`'s docs for which normalizers require it and why.
+        // `tk_encode::normalizers::serialization`'s docs say which normalizers require it and why.
         #[derive(Deserialize)]
         #[serde(untagged)]
         pub enum NormalizerUntagged {
-            #[serde(with = "mirror::bert")]
             BertNormalizer(BertNormalizer),
-            #[serde(with = "mirror::strip")]
             StripNormalizer(Strip),
-            #[serde(with = "mirror::strip_accents")]
             StripAccents(StripAccents),
-            #[serde(with = "mirror::nfc")]
             NFC(NFC),
-            #[serde(with = "mirror::nfd")]
             NFD(NFD),
-            #[serde(with = "mirror::nfkc")]
             NFKC(NFKC),
-            #[serde(with = "mirror::nfkd")]
             NFKD(NFKD),
             Sequence(Sequence),
-            #[serde(with = "mirror::lowercase")]
             Lowercase(Lowercase),
-            #[serde(with = "mirror::nmt")]
             Nmt(Nmt),
             Precompiled(Precompiled),
-            #[serde(with = "mirror::replace")]
             Replace(Replace),
-            #[serde(with = "mirror::PrependDef")]
             Prepend(Prepend),
-            #[serde(with = "mirror::byte_level")]
             ByteLevel(ByteLevel),
         }
 
@@ -142,41 +116,40 @@ impl<'de> Deserialize<'de> for NormalizerWrapper {
                     serde_json::to_value(&model.variant).expect("Reinsert"),
                 );
                 let values = serde_json::Value::Object(values);
-                // Every arm goes through a `mirror` entry point now, because the leaf types no
-                // longer implement `Deserialize` themselves -- `serde_json::from_value` would have
-                // nothing to call. Two arms are unchanged: `Sequence` is this crate's own type, and
-                // `Precompiled` comes with its own serde and its own `from_str` dance.
+                // Every arm is a plain `from_value` on the leaf type, which carries its own
+                // `Deserialize`. `Precompiled` is the exception, and not because of the orphan rule:
+                // its base64 charsmap only decodes through the *string* deserializer, hence the
+                // re-serialise-then-`from_str` dance below.
                 match model.variant {
                     EnumType::Bert => NormalizerWrapper::BertNormalizer(
-                        mirror::bert::deserialize(values).map_err(serde::de::Error::custom)?,
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                     ),
                     EnumType::Strip => NormalizerWrapper::StripNormalizer(
-                        mirror::strip::deserialize(values).map_err(serde::de::Error::custom)?,
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                     ),
                     EnumType::StripAccents => NormalizerWrapper::StripAccents(
-                        mirror::strip_accents::deserialize(values)
-                            .map_err(serde::de::Error::custom)?,
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                     ),
                     EnumType::NFC => NormalizerWrapper::NFC(
-                        mirror::nfc::deserialize(values).map_err(serde::de::Error::custom)?,
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                     ),
                     EnumType::NFD => NormalizerWrapper::NFD(
-                        mirror::nfd::deserialize(values).map_err(serde::de::Error::custom)?,
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                     ),
                     EnumType::NFKC => NormalizerWrapper::NFKC(
-                        mirror::nfkc::deserialize(values).map_err(serde::de::Error::custom)?,
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                     ),
                     EnumType::NFKD => NormalizerWrapper::NFKD(
-                        mirror::nfkd::deserialize(values).map_err(serde::de::Error::custom)?,
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                     ),
                     EnumType::Sequence => NormalizerWrapper::Sequence(
                         serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                     ),
                     EnumType::Lowercase => NormalizerWrapper::Lowercase(
-                        mirror::lowercase::deserialize(values).map_err(serde::de::Error::custom)?,
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                     ),
                     EnumType::Nmt => NormalizerWrapper::Nmt(
-                        mirror::nmt::deserialize(values).map_err(serde::de::Error::custom)?,
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                     ),
                     EnumType::Precompiled => NormalizerWrapper::Precompiled(
                         serde_json::from_str(
@@ -186,15 +159,13 @@ impl<'de> Deserialize<'de> for NormalizerWrapper {
                         .expect("Precompiled"),
                     ),
                     EnumType::Replace => NormalizerWrapper::Replace(
-                        mirror::replace::deserialize(values).map_err(serde::de::Error::custom)?,
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                     ),
                     EnumType::Prepend => NormalizerWrapper::Prepend(
-                        mirror::PrependDef::deserialize(values)
-                            .map_err(serde::de::Error::custom)?,
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                     ),
                     EnumType::ByteLevel => NormalizerWrapper::ByteLevel(
-                        mirror::byte_level::deserialize(values)
-                            .map_err(serde::de::Error::custom)?,
+                        serde_json::from_value(values).map_err(serde::de::Error::custom)?,
                     ),
                 }
             }
@@ -283,10 +254,77 @@ impl pipeline::Normalizer for NormalizerWrapper {
     }
 }
 
-// Every test in here round-trips a wrapper through serde, so the module goes with `config`.
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn from_json(json: &str) -> NormalizerWrapper {
+        serde_json::from_str(json).unwrap()
+    }
+
+    /// The eight field-less normalizers reject an object with no tag, which is the whole reason
+    /// `impl_serde_type!`'s unit arm gives them a one-variant tag enum rather than nothing at all.
+    /// Were they lenient, `NormalizerUntagged` would match `{}` as the first field-less variant it
+    /// tried.
+    #[test]
+    fn a_fieldless_normalizer_requires_its_tag() {
+        for tag in [
+            "NFD",
+            "NFKD",
+            "NFC",
+            "NFKC",
+            "Nmt",
+            "StripAccents",
+            "Lowercase",
+            "ByteLevel",
+        ] {
+            let json = format!("{{\"type\":\"{tag}\"}}");
+            // Round-trips to exactly the object it came from, tag and all.
+            assert_eq!(serde_json::to_string(&from_json(&json)).unwrap(), json);
+        }
+
+        let err = serde_json::from_str::<NormalizerWrapper>("{}").unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "data did not match any variant of untagged enum NormalizerUntagged"
+        );
+
+        // And one is not interchangeable with another: the tag enum has a single variant, so the
+        // wrong spelling is an unknown variant rather than an ignored field.
+        assert!(serde_json::from_str::<NFD>("{\"type\":\"NFC\"}").is_err());
+        assert!(serde_json::from_str::<NFD>("{\"type\":\"NFD\"}").is_ok());
+        assert!(serde_json::from_str::<NFD>("{}").is_err());
+    }
+
+    /// `BertNormalizer` is written `"type":"BertNormalizer"` by every real config, but
+    /// `NormalizerWrapper`'s `EnumType` spells the variant `Bert`. Both have to keep loading: the
+    /// on-disk spelling goes through the *untagged* legacy fallback, because `EnumType` has no
+    /// `BertNormalizer` variant to match, while the `Bert` spelling takes the tagged path and works
+    /// only because a bare `#[serde(tag = "type")]` ignores the tag that path re-inserts. This is
+    /// what stops a future tidy-up from giving `BertNormalizer` a required tag and quietly breaking
+    /// one of them.
+    #[test]
+    fn bert_loads_under_both_tag_spellings() {
+        let fields = "\"clean_text\":true,\"handle_chinese_chars\":true,\"strip_accents\":null,\"lowercase\":true";
+
+        let on_disk = format!("{{\"type\":\"BertNormalizer\",{fields}}}");
+        assert!(matches!(
+            from_json(&on_disk),
+            NormalizerWrapper::BertNormalizer(_)
+        ));
+        // Whichever path it took, it writes itself back out the way configs spell it.
+        assert_eq!(
+            serde_json::to_string(&from_json(&on_disk)).unwrap(),
+            on_disk
+        );
+
+        let enum_spelling = format!("{{\"type\":\"Bert\",{fields}}}");
+        assert!(matches!(
+            from_json(&enum_spelling),
+            NormalizerWrapper::BertNormalizer(_)
+        ));
+    }
+
     #[test]
     fn post_processor_deserialization_no_type() {
         let json = r#"{"strip_left":false, "strip_right":true}"#;

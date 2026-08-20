@@ -27,7 +27,8 @@
 //! A wrapper enum's `Deserialize` names every variant, so *mentioning the wrapper* makes every
 //! model and normalizer reachable — a match arm is enough. That reachability was most of what an
 //! on-device build was paying for, so it now lives on this side of the line and an encode-only build
-//! links none of it: `tk-encode`'s default feature set has no serde at all.
+//! links none of it: `tk-encode`'s `serde` feature is off by default, and this crate is what turns
+//! it on.
 //!
 //! Backwards compatibility lives here too, all of it. Configs written before the `"type"` tag
 //! existed, merges spelled `"a b"` rather than `["a", "b"]`, a `Metaspace` spelled with
@@ -48,9 +49,9 @@
 //!
 //! What used to be here as well, and no longer is:
 //!
-//! - **the leaf models' serde**. A foreign crate cannot implement `serde::Deserialize` for a type
-//!   defined in another crate, but it can declare a local *mirror* of the JSON shape and convert —
-//!   see [`models::mirror`]. `BPE` needed no mirror: it moved here outright.
+//! - **the leaf components' serde**. Every component's `Serialize`/`Deserialize` sits next to the
+//!   type in `tk-encode`, behind that crate's off-by-default `serde` feature, which this crate turns
+//!   on. `BPE` is the exception only because the *type* moved here.
 //! - **`BPE::read_file` and friends**. They were said to have to stay because the bindings call them
 //!   as inherent associated functions; the bindings were changed to follow the types instead.
 //!   `BPE`'s came along with `BPE` and are still spelled `BPE::read_file(..)`; `WordPiece`'s and
@@ -66,9 +67,6 @@ pub mod convert;
 pub mod decoders;
 pub mod lowering;
 mod macros;
-/// serde for the shared runtime types that are not components of a pipeline: the padding and
-/// truncation parameters, `SplitDelimiterBehavior`, `AddedToken`, `Encoding`, `ProgressFormat`.
-pub mod mirror;
 pub mod models;
 pub mod normalizers;
 pub mod pre_tokenizers;

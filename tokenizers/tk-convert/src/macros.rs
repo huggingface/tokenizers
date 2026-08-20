@@ -1,10 +1,11 @@
 //! The two macros the moved code is written against.
 //!
-//! Both exist in `tk-encode` too, and deliberately are not reused from there: `tk-encode`'s copies
-//! are written with `#[cfg(feature = "config")]` gates all through them, because over there serde is
-//! optional. A `macro_rules!` expands in the *calling* crate, so those `cfg`s would be read against
-//! this crate's features — and this crate has no `config` feature, being the config layer itself.
-//! Rather than declare a feature that is always on, the gates are simply gone from these copies.
+//! Both exist in `tk-encode` too, and deliberately are not reused from there: over there serde is a
+//! feature, so `tk-encode`'s `impl_serde_type!` is defined twice under a `#[cfg]` and its call sites
+//! reach it through `cfg_attr`. A `macro_rules!` expands in the *calling* crate, so importing that
+//! one would read the cfg against *this* crate's features — and this crate has no `serde` feature,
+//! being the serde layer itself. Rather than declare a feature that is always on, these copies have
+//! no gates.
 
 /// `impl From<$from_ty> for $enum` for one variant of a wrapper enum.
 macro_rules! impl_enum_from (

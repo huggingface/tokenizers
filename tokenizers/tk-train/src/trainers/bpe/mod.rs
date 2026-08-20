@@ -217,7 +217,6 @@ pub struct BpeTrainer {
     ///
     /// `ProgressFormat` is a `tk-encode` type and carries no serde of its own; `tk-convert` owns its
     /// on-disk shape, same as for every other type that crosses that line.
-    #[serde(with = "tk_convert::mirror::ProgressFormatDef")]
     pub progress_format: ProgressFormat,
     /// A list of special tokens that the model should know of
     pub special_tokens: Vec<AddedToken>,

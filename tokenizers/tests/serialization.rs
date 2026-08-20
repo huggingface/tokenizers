@@ -27,9 +27,9 @@ fn bpe_serde() {
     assert_eq!(bpe, de);
 }
 
-// `WordPiece`, `WordLevel` and `Unigram` no longer carry serde themselves -- their JSON shape is
-// described by a mirror in `tk-convert` and reached through `ModelWrapper`, so a round trip goes
-// through the wrapper. `BPE` still has its own, which is why `bpe_serde` above is unchanged.
+// `WordPiece`, `WordLevel` and `Unigram` are reached through `ModelWrapper` here because that is
+// what a `tokenizer.json` names; each also carries its own serde, in the `serialization.rs` next to
+// it in `tk-encode`.
 #[test]
 fn wordpiece_serde() {
     let wordpiece = ModelWrapper::from(get_bert_wordpiece());
@@ -49,12 +49,10 @@ fn wordlevel_serde() {
 
 #[test]
 fn normalizers() {
-    // The normalizer types themselves carry no serde: `tk-encode` links none, and their shapes are
-    // owned by `tk-convert`'s `normalizers::mirror`. So the wrapper is the unit under test in both
-    // directions, exactly as for the decoders below. The two properties that used to be asserted
-    // here against the concrete types moved with the serde: that one fieldless normalizer refuses
-    // another one's JSON is now
-    // `tk-convert`'s `normalizers::mirror::tests::a_fieldless_normalizer_requires_its_tag`.
+    // The wrapper is the unit under test in both directions, exactly as for the decoders below:
+    // being untagged, it serializes to precisely what the leaf serializes to. That one fieldless
+    // normalizer refuses another one's JSON is asserted in `tk-convert`'s
+    // `normalizers::tests::a_fieldless_normalizer_requires_its_tag`.
 
     // Test unit struct
     let nfc: NormalizerWrapper = NFC.into();
@@ -89,8 +87,8 @@ fn normalizers() {
 
 #[test]
 fn processors() {
-    // `BertProcessing` itself carries no serde: `tk-encode` links none, and the shape is owned by
-    // `tk-convert`'s mirror. So the wrapper is the unit under test in both directions.
+    // The wrapper is the unit under test in both directions; being untagged, it serializes to
+    // exactly what `BertProcessing` serializes to.
     let bert: PostProcessorWrapper =
         BertProcessing::new(("SEP".into(), 0), ("CLS".into(), 0)).into();
     let bert_ser = serde_json::to_string(&bert).unwrap();
@@ -109,16 +107,15 @@ fn processors() {
 
 #[test]
 fn pretoks() {
-    // None of these pre-tokenizers carries serde any more: `tk-encode` links none, and the shape of
-    // each one is owned by `tk-convert`'s `pre_tokenizers::mirror`. So the wrapper is the unit under
-    // test in both directions, the same way `decoders` below tests `ByteLevelDecoder`.
+    // The wrapper is the unit under test in both directions, the same way `decoders` below tests
+    // `ByteLevelDecoder`.
     //
     // The two "X shouldn't be deserializable from Y" checks this test used to make at the leaf are
-    // still made, and at the real entry point: `PreTokenizerWrapper`'s legacy fallback is an
-    // *untagged* enum that tries its variants in declaration order, and `BertPreTokenizer` is
-    // declared before `Whitespace`. So a `{"type":"Whitespace"}` object arriving at the `Whitespace`
-    // variant is exactly the statement that `BertPreTokenizer`'s mirror refused it first -- which is
-    // only true because every pre-tokenizer mirror *requires* its `"type"` tag.
+    // made here at the real entry point: `PreTokenizerWrapper`'s legacy fallback is an *untagged*
+    // enum that tries its variants in declaration order, and `BertPreTokenizer` is declared before
+    // `Whitespace`. So a `{"type":"Whitespace"}` object arriving at the `Whitespace` variant is
+    // exactly the statement that `BertPreTokenizer` refused it first -- which is only true because
+    // every pre-tokenizer *requires* its `"type"` tag.
 
     // Test unit struct
     let bert: PreTokenizerWrapper = BertPreTokenizer.into();
@@ -189,8 +186,8 @@ fn pretoks() {
 
 #[test]
 fn decoders() {
-    // `ByteLevelDecoder` itself carries no serde: `tk-encode` links none, and the shape is owned
-    // by `tk-convert`'s mirror. So the wrapper is the unit under test in both directions.
+    // The wrapper is the unit under test in both directions; being untagged, it serializes to
+    // exactly what `ByteLevelDecoder` serializes to.
     let byte_level: DecoderWrapper = ByteLevelDecoder::default().into();
     let byte_level_ser = serde_json::to_string(&byte_level).unwrap();
     assert_eq!(
@@ -222,20 +219,16 @@ fn models() {
 
 #[test]
 fn tokenizer() {
-    // The model parameter is incidental here -- what is under test is the *normalizer* slot, unwrapped
-    // (NFC) versus wrapped (NormalizerWrapper) versus wrong (NFKC). It is `ModelWrapper` rather than
-    // `WordPiece` because a bare `WordPiece` no longer implements serde; its shape is a mirror in
-    // `tk-convert`, reached through the wrapper.
+    // The model parameter is incidental here -- what is under test is the *normalizer* slot,
+    // unwrapped (NFC) versus wrapped (NormalizerWrapper). `ModelWrapper` is what a `tokenizer.json`
+    // names in the model slot, so it is what the round trip goes through.
     let wordpiece = WordPiece::default();
     let mut tokenizer = Tokenizer::new(wordpiece);
     tokenizer.with_normalizer(Some(NFC)).unwrap();
     let ser = serde_json::to_string(&tokenizer).unwrap();
     let _: Tokenizer = serde_json::from_str(&ser).unwrap();
-    // A `TokenizerImpl` parameterised by a *concrete* normalizer used to be spelled out here, both
-    // to round-trip it and to assert that `NFKC` refuses `NFC`'s JSON. Neither is expressible any
-    // more, and not because the coverage was dropped: no concrete normalizer implements serde now,
-    // so `NormalizerWrapper` is the only normalizer type a `TokenizerImpl` can be deserialized
-    // with. `tk-convert`'s `normalizers::mirror::tests` is where the refusal is asserted.
+    // That `NFKC` refuses `NFC`'s JSON is asserted in `tk-convert`'s `normalizers::tests`, where the
+    // required-tag property it depends on is spelled out.
     let de: TokenizerImpl<
         ModelWrapper,
         NormalizerWrapper,

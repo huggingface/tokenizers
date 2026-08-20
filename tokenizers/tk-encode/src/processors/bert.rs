@@ -4,11 +4,15 @@ use std::iter::FromIterator;
 
 /// Wraps the first sequence in `cls` ... `sep`, and appends a second `sep` to the pair sequence.
 ///
-/// The `"type": "BertProcessing"` envelope this used to derive lives in `tk-convert`'s
-/// `processors::mirror::BertProcessingDef`. Both fields are `pub`, there is no invariant between
-/// them and the type is not `#[non_exhaustive]`, so that mirror is a `remote` derive: serde drives
-/// this type directly and no hand-written conversion is needed.
+/// The tag is *optional* on the way in, and that is a documented requirement rather than an
+/// accident: `PostProcessorWrapper` is untagged in both directions, and
+/// `post_processor_deserialization_no_type` asserts that `{"sep":["[SEP]",102],"cls":["[CLS]",101]}`
+/// loads as a `Bert`. What discriminates the variants is the set of *required fields*, which is also
+/// why `Roberta` has to stay ahead of `Bert` in the enum: a Roberta object satisfies Bert's shape
+/// but not the other way round.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(tag = "type"))]
 pub struct BertProcessing {
     pub sep: (String, u32),
     pub cls: (String, u32),

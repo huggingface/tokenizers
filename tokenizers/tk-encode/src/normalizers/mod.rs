@@ -6,6 +6,8 @@ pub mod metaspace;
 pub mod precompiled;
 pub mod prepend;
 pub mod replace;
+#[cfg(feature = "serde")]
+mod serialization;
 pub mod strip;
 #[cfg(feature = "normalizers")]
 pub mod unicode;

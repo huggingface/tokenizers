@@ -8,8 +8,6 @@ use serde::{
 
 use tk_encode::{Decoder, Model, Normalizer, PostProcessor, PreTokenizer};
 
-use crate::mirror::{PaddingParamsMirror, TruncationParamsMirror};
-
 use super::added_vocabulary::AddedTokenWithId;
 use super::{TokenizerBuilder, TokenizerImpl};
 
@@ -32,17 +30,9 @@ where
         // Start by adding the current version
         tokenizer.serialize_field("version", SERIALIZATION_VERSION)?;
 
-        // Params. `TruncationParams`/`PaddingParams` are `tk-encode` types with no serde of their
-        // own, so they go out through the mirrors in `crate::mirror` -- mapped inside the `Option`,
-        // because `#[serde(with = ...)]` cannot reach through one.
-        tokenizer.serialize_field(
-            "truncation",
-            &self.truncation.as_ref().map(TruncationParamsMirror::from),
-        )?;
-        tokenizer.serialize_field(
-            "padding",
-            &self.padding.as_ref().map(PaddingParamsMirror::from),
-        )?;
+        // Params
+        tokenizer.serialize_field("truncation", &self.truncation)?;
+        tokenizer.serialize_field("padding", &self.padding)?;
 
         // Added tokens
         tokenizer.serialize_field("added_tokens", &self.added_vocabulary)?;
@@ -131,12 +121,10 @@ where
                     }
                 }
                 "truncation" => {
-                    let params: Option<TruncationParamsMirror> = map.next_value()?;
-                    builder = builder.with_truncation(params.map(Into::into));
+                    builder = builder.with_truncation(map.next_value()?);
                 }
                 "padding" => {
-                    let params: Option<PaddingParamsMirror> = map.next_value()?;
-                    builder = builder.with_padding(params.map(Into::into));
+                    builder = builder.with_padding(map.next_value()?);
                 }
                 "added_tokens" => {
                     tokens = map.next_value()?;

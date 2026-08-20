@@ -58,10 +58,6 @@ pub use tk_convert::{
     DecoderWrapper, ModelWrapper, NormalizerWrapper, PostProcessorWrapper, PreTokenizerWrapper,
 };
 
-// The serde mirrors for `tk-encode`'s own types. `tk-encode` links no serde, so anything that needs
-// to write one of its types out -- `PyEncoding`'s pickling, most visibly -- goes through here.
-pub use tk_convert::mirror;
-
 #[cfg(feature = "http")]
 pub use tk_encode::FromPretrainedParameters;
 

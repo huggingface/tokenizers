@@ -2336,6 +2336,8 @@ dependencies = [
  "rayon",
  "rayon-cond",
  "regex",
+ "serde",
+ "serde_json",
  "spm_precompiled",
  "tempfile",
  "thiserror",

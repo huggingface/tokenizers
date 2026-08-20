@@ -35,7 +35,7 @@ use tk_encode::utils::iter::ResultShunt;
 use tk_encode::vocab::bucket_vocab_store::BucketVocabStore;
 use tk_encode::{Model, Result, Token};
 
-use crate::models::OrderedVocabIter;
+use tk_encode::models::OrderedVocabIter;
 
 pub mod serialization;
 pub mod word;

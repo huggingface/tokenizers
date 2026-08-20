@@ -51,6 +51,10 @@ MATRIX=(
   $'bpe + wordlevel\t--features wordlevel'
   $'bpe + normalizers\t--features normalizers'
   $'bpe + all three models\t--features unigram,wordpiece,wordlevel'
+  # `serde` is a cfg gate on the components' own impls, and each `serialization.rs`
+  # sits behind a model or normalizer gate as well -- so serde with the *minimum*
+  # of everything else is the rung where a missing inner gate shows up.
+  $'bpe + serde\t--features serde'
   $'all-features\t--all-features'
 )
 

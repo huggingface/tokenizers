@@ -1,5 +1,7 @@
 pub mod bert;
 pub mod roberta;
+#[cfg(feature = "serde")]
+pub(crate) mod serialization;
 pub mod template;
 
 // Re-export these as processors
