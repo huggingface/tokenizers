@@ -447,6 +447,52 @@ pub(crate) fn digits_since(groups: u64, tn: u64, n: u64, lead: u64, since: u32, 
     }
 }
 
+/// `\s*[\r\n]+` versus `\s+(?!\S)`: the one backward-in-time rule these grammars have. `\s*[\r\n]+`
+/// runs through a whitespace run's LAST newline, so a token opens right after it — but a newline
+/// arriving in a LATER block moves which newline is last, retracting a start already written. All
+/// three grammars carried this verbatim, comments included; it lives here instead.
+#[derive(Default)]
+pub(crate) struct Anl(Option<usize>);
+
+impl Anl {
+    /// Top of a block: a newline has arrived inside the run that was open at the edge, so the start
+    /// committed for it is no longer after the last newline.
+    pub(crate) fn retract(&mut self, starts: &mut [u64], prev_ws: bool, ws: u64, nl: u64, valid: u64) {
+        if let Some(p) = self.0
+            && prev_ws
+            && ws & 1 != 0
+            && nl & lead_run(ws, valid) != 0
+        {
+            starts[p / 64] &= !(1u64 << (p % 64));
+            self.0 = None;
+        }
+    }
+
+    /// Bottom of a block: remember the start a later newline could still retract. `absorbed` is what
+    /// a punct run's `[\r\n]*` tail already claimed — a bit that tail made a run start cannot be
+    /// reached back past, because the absorption cut the whitespace run.
+    pub(crate) fn commit(
+        &mut self,
+        base: usize,
+        after_nl: u64,
+        tws: u64,
+        absorbed: u64,
+        ws_next: bool,
+        prev_ws: bool,
+    ) {
+        if tws != 0 && ws_next {
+            let a = after_nl & tws & !absorbed;
+            if a != 0 {
+                self.0 = Some(last_pos(base, a));
+            } else if !(tws & 1 != 0 && prev_ws) {
+                self.0 = None; // a fresh run with no newline yet — nothing left to retract
+            }
+        } else {
+            self.0 = None;
+        }
+    }
+}
+
 /// Run of `x` that starts at bit 0.
 #[inline]
 pub(crate) fn lead_run(x: u64, valid: u64) -> u64 {
@@ -532,7 +578,7 @@ pub(crate) fn digit_groups(
 }
 
 // ── scalar helpers, shared by the grammars that need an escape ──────────────────────────────
-use crate::classify::{Atom, in_mask, mask};
+use crate::classify::{Atom, in_mask};
 
 
 

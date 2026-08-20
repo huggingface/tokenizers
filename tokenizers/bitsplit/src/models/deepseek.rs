@@ -3,8 +3,9 @@
 //! `atomsplit::fsm::fsm_deepseek`.
 
 use crate::{
-   AUX_CJK, CODE_CONT, Out, Span, adv, blocks, build_block, emit, last_pos,
-    later_in_run, lead_run, scanthru, to_lead, trail_run,
+    Anl,
+   AUX_CJK, CODE_CONT, Out, Span, adv, blocks, build_block, emit,
+    later_in_run, scanthru, to_lead, trail_run,
 };
 
 /// Atom tag → dense 3-bit code. Letter and Mark share a code because deepseek's letter run is
@@ -64,7 +65,7 @@ struct Carry {
     nl_run: bool,       // a `[\p{P}\p{S}]+[\r\n]*` newline tail is still open
     dig_run: bool,      // inside a \p{N} run
     dig_since: u32,     // chars already consumed of the current \p{N}{1,3} group
-    anl: Option<usize>, // a committed "start after the last newline" a later newline may retract
+    anl: Anl,
 }
 
 /// Build one block's streams. `code`/`cjk_in` describe the byte just before it, so a block opening
@@ -229,16 +230,7 @@ pub fn bitsplit_deepseek(text: &[u8], tags: &[u8], starts: &mut [u64], out: &mut
             let nl_e = scanthru(nl_m, cur.nl as u128);
             let nl_span = nl_e.wrapping_sub(nl_m);
 
-            // ── the one backward-in-time dependency: a newline arriving now retracts the "start
-            // after the last newline" already committed for a whitespace run open at the last edge.
-            if let Some(p) = cy.anl
-                && was(pv.ws)
-                && cur.ws & 1 != 0
-                && cur.nl & lead_run(cur.ws, valid) != 0
-            {
-                starts[p / 64] &= !(1u64 << (p % 64));
-                cy.anl = None;
-            }
+            cy.anl.retract(starts, was(pv.ws), cur.ws, cur.nl, valid);
 
             let mut st = groups
                 | lm_start
@@ -270,18 +262,7 @@ pub fn bitsplit_deepseek(text: &[u8], tags: &[u8], starts: &mut [u64], out: &mut
                 counted % 3
             };
             let tws = trail_run(cur.ws, valid, len);
-            if tws != 0 && will(x.nx.ws) {
-                // ...but not a bit that a punct tail's `[\r\n]*` already made a *run start*: the
-                // absorption cut the whitespace run, so a later newline cannot reach back past it.
-                let a = after_nl & tws & !(nl_e as u64);
-                if a != 0 {
-                    cy.anl = Some(last_pos(x.base, a));
-                } else if !(tws & 1 != 0 && was(pv.ws)) {
-                    cy.anl = None; // a fresh run with no newline yet — nothing left to retract
-                }
-            } else {
-                cy.anl = None;
-            }
+            cy.anl.commit(x.base, after_nl, tws, nl_e as u64, will(x.nx.ws), was(pv.ws));
 
             Out {
                 st,

@@ -26,9 +26,10 @@
 //!     *extends* the open token instead of opening one — the mirror image of `emit_contr`.
 
 use crate::{
+    Anl,
     CONT,
    AUX_SLASH, CODE_CONT, Out, Span, blocks, build_block, contr_len, digit_groups,
-    digits_since, fill_to_last, last_pos, later_in_run, lead_run,
+    digits_since, fill_to_last, later_in_run, lead_run,
     scanthru, to_lead, trail_run,
 };
 
@@ -80,13 +81,12 @@ struct Carry {
     prev_absorbed: bool, // the block's last byte was eaten by a `[\r\n/]*` tail
     dig_run: bool,
     dig_since: u32,
-    anl: Option<usize>,
+    anl: Anl,
     sfx_carry: u64,  // bytes of a contraction suffix that spilled past the last block edge
     force: u64,      // ...and the start it opens just past itself, if that landed past the edge
     sfx_end: usize,  // just past the last consumed suffix: the apostrophe THERE is a prefix, not
                      // a second suffix -- `(?i:...)?` applies once (`a's's` is `a's`, `'s`)
     lc_open: bool,   // an `lc` run was still open at the last block edge
-    prev_start: Option<usize>,
 }
 
 /// Build one block's streams; returns the fill seed and the Han carry for the block after.
@@ -183,13 +183,15 @@ pub(crate) fn later_streams<const AUX: u8, const HAN: bool>(
     }
 }
 
-/// Run the family grammar. `starts` and `flag` are scratch bitmaps (len ≥ `div_ceil(64)`).
+/// Run the family grammar. `starts` is a scratch bitmap (len ≥ `div_ceil(64)`), `later` twice
+/// that; `_flag` is unused here — the scalar escape it fed is gone — and kept only so the family
+/// keeps one shape with its siblings.
 #[must_use]
 pub(crate) fn run<const AUX: u8, const CONTR: bool, const DIGITS: usize, const HAN: bool>(
     text: &[u8],
     tags: &[u8],
     starts: &mut [u64],
-    flag: &mut [u64],
+    _flag: &mut [u64],
     later: &mut [u64],
     out: &mut [Span],
 ) -> usize {
@@ -201,7 +203,6 @@ pub(crate) fn run<const AUX: u8, const CONTR: bool, const DIGITS: usize, const H
     assert!(
         tags.len() >= ntext
             && starts.len() >= nblk
-            && flag.len() >= nblk
             && later.len() >= 2 * nblk
             && out.len() >= ntext
     );
@@ -411,17 +412,7 @@ pub(crate) fn run<const AUX: u8, const CONTR: bool, const DIGITS: usize, const H
                 cy.dig_since,
             );
 
-            // ── the one backward-in-time rule, exactly as in cl100k/deepseek: a newline arriving
-            // now retracts an "after the last newline" start committed for a run still open at the
-            // edge.
-            if let Some(p) = cy.anl
-                && was(pv.ws)
-                && cur.ws & 1 != 0
-                && cur.nl & lead_run(cur.ws, valid) != 0
-            {
-                starts[p / 64] &= !(1u64 << (p % 64));
-                cy.anl = None;
-            }
+            cy.anl.retract(starts, was(pv.ws), cur.ws, cur.nl, valid);
 
             let mut st = groups | l_start | lt_in | lt_cut | han_start | o_start | ws_start | after_nl | steal;
             st &= !nl_span;
@@ -433,7 +424,6 @@ pub(crate) fn run<const AUX: u8, const CONTR: bool, const DIGITS: usize, const H
                 st |= 1;
             }
 
-            flag[x.bi] = 0; // no escape: every ambiguity is bit algebra now
 
             // ── carries
             cy.nl_run = nl_e >> 64 != 0;
@@ -446,16 +436,7 @@ pub(crate) fn run<const AUX: u8, const CONTR: bool, const DIGITS: usize, const H
                 0
             };
             let tws = trail_run(cur.ws, valid, len);
-            if tws != 0 && will(x.nx.ws) {
-                let a = after_nl & tws & !(nl_e as u64);
-                if a != 0 {
-                    cy.anl = Some(last_pos(x.base, a));
-                } else if !(tws & 1 != 0 && was(pv.ws)) {
-                    cy.anl = None;
-                }
-            } else {
-                cy.anl = None;
-            }
+            cy.anl.commit(x.base, after_nl, tws, nl_e as u64, will(x.nx.ws), was(pv.ws));
             cy.prev_osf = osf >> (len - 1) & 1 != 0;
             cy.oth_edge = oth >> (len - 1) & 1 != 0;
             cy.letter_edge = letter >> (len - 1) & 1 != 0;

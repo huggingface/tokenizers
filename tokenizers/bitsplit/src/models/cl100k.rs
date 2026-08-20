@@ -8,8 +8,8 @@
 
 use super::family_gpt::cls;
 use crate::{
-   CODE_CONT, Out, Span, blocks, digit_groups, digits_since, emit_contr, fill_to_last, last_pos, later_in_run,
-    lead_run, scanthru, to_lead, trail_run,
+    Anl, CODE_CONT, Out, Span, blocks, digit_groups, digits_since, emit_contr, fill_to_last,
+    later_in_run, scanthru, to_lead, trail_run,
 };
 
 /// cl100k_base / Llama-3 / GLM-4.6 — rule 3 is `\p{N}{1,3}`.
@@ -55,7 +55,7 @@ fn cl100k(
     let mut code = CODE_CONT;
     let (mut nl_run, mut dig_run, mut dig_since) = (false, false, 0u32);
     let mut prev_osf = false; // previous block's last byte belonged to a token-opening "other" char
-    let mut anl: Option<usize> = None;
+    let mut anl = Anl::default();
 
     blocks(
         ntext,
@@ -127,17 +127,7 @@ fn cl100k(
             let nl_e = scanthru(nl_m, cur.nl as u128);
             let nl_span = nl_e.wrapping_sub(nl_m);
 
-            // ── the one backward-in-time dependency (see deepseek): a newline arriving now
-            // retracts an "after the last newline" start committed for a run that was still open at
-            // the last edge.
-            if let Some(p) = anl
-                && was(pv.ws)
-                && cur.ws & 1 != 0
-                && cur.nl & lead_run(cur.ws, valid) != 0
-            {
-                starts[p / 64] &= !(1u64 << (p % 64));
-                anl = None;
-            }
+            anl.retract(starts, was(pv.ws), cur.ws, cur.nl, valid);
 
             let mut st = groups | l_start | o_start | ws_start | after_nl | steal;
             st &= !(nl_span as u64);
@@ -158,16 +148,7 @@ fn cl100k(
                 0
             };
             let tws = trail_run(cur.ws, valid, len);
-            if tws != 0 && will(x.nx.ws) {
-                let a = after_nl & tws & !(nl_e as u64);
-                if a != 0 {
-                    anl = Some(last_pos(x.base, a));
-                } else if !(tws & 1 != 0 && was(pv.ws)) {
-                    anl = None;
-                }
-            } else {
-                anl = None;
-            }
+            anl.commit(x.base, after_nl, tws, nl_e as u64, will(x.nx.ws), was(pv.ws));
             prev_osf = osf >> (len - 1) & 1 != 0;
 
             Out {
