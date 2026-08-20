@@ -215,3 +215,111 @@ fn encode_matches_the_config_path_on_every_real_config() {
     );
     eprintln!("compared {compared} encode(s) across both readers");
 }
+
+/// Canonicalizing first must not move ids -- the path with a known float perturbation.
+///
+/// `canonicalize` parses with `serde_json`, whose default float path is 1 ULP wrong on some
+/// literals, then writes the shortest form of the double it got. So a round-trip through it shifts
+/// about a quarter of a Unigram model's scores by exactly one ULP:
+///
+/// ```text
+/// -3.8403830528259277  ->  -3.840383052825928     c00eb91ac0000000 -> c00eb91ac0000001
+/// -9.008880615234375   ->  -9.008880615234377     c022048c00000000 -> c022048c00000001
+/// ```
+///
+/// The second is a dyadic rational, exact in binary, and it still moves -- so this is a real change
+/// of value, not a reformat. It is `serde_json`'s documented behaviour rather than a defect here, and
+/// `float_roundtrip` is not the fix: it was measured to change shipped ids.
+///
+/// A one-ULP change to a log-probability almost never flips a Viterbi path, which is exactly why this
+/// needs a gate rather than an argument -- "almost never" is not "never", and t5 and albert are the
+/// two configs where it could bite.
+#[test]
+fn canonicalizing_first_does_not_move_ids() {
+    let texts = [
+        " the quick brown fox jumps over the lazy dog",
+        "unprefixed internationalisation and tokenisation",
+        " 语言模型 mixed with ASCII",
+        "The Sphinx of black quartz, judge my vow.",
+    ];
+
+    let dir = std::path::Path::new("../data");
+    if !dir.exists() {
+        return;
+    }
+    let mut files: Vec<_> = std::fs::read_dir(dir)
+        .expect("read data/")
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.extension().is_some_and(|e| e == "json"))
+        .collect();
+    files.sort();
+
+    let mut compared = 0usize;
+    // Whether a Unigram config was among those compared. Byte-inequality would be useless here --
+    // canonicalize reformats every file it accepts, so "it rewrote something" is trivially true. The
+    // scores are the only values it perturbs, so a Unigram model is what makes this test mean
+    // anything; without the guard it would keep passing if `unigram` ever left the dev-dependencies,
+    // silently retiring the case it exists for.
+    let mut unigram_seen = 0usize;
+    for path in files {
+        let name = path.file_name().unwrap().to_string_lossy().to_string();
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        // Only the files both paths accept; the refusals are covered by the encode gate above.
+        let Ok(direct) = tk_serialize::from_json(&text) else {
+            continue;
+        };
+        let canonical = match tk_convert::canonicalize_str(&text) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("  skip {name}: canonicalize refused it: {e}");
+                continue;
+            }
+        };
+        let via_canonical = match tk_serialize::from_json(&canonical) {
+            Ok(t) => t,
+            Err(e) => {
+                eprintln!("  skip {name}: the reader refused the canonical form: {e}");
+                continue;
+            }
+        };
+        if text.contains("\"Unigram\"") {
+            unigram_seen += 1;
+        }
+
+        for text in texts {
+            for add_special in [false, true] {
+                let ids = |t: &tk_encode::pipeline::PipelineTokenizer| -> Vec<u32> {
+                    t.encode(text, add_special)
+                        .wait()
+                        .unwrap()
+                        .remove(0)
+                        .ids()
+                        .iter()
+                        .map(|t| t.id())
+                        .collect()
+                };
+                assert_eq!(
+                    ids(&direct),
+                    ids(&via_canonical),
+                    "{name} moved ids through canonicalize: add_special={add_special} text={text:?}"
+                );
+                compared += 1;
+            }
+        }
+    }
+
+    assert!(
+        compared >= 1,
+        "../data exists but nothing was comparable, so this asserted nothing"
+    );
+    assert!(
+        unigram_seen >= 1,
+        "no Unigram config was compared, so the score round-trip -- the only thing canonicalize \
+         perturbs -- was never exercised"
+    );
+    eprintln!(
+        "compared {compared} encode(s) raw vs canonicalized ({unigram_seen} Unigram config(s))"
+    );
+}
