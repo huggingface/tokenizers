@@ -87,7 +87,7 @@ Which collapses three families onto one emit:
 | family | how `starts` is produced |
 |---|---|
 | class runs (WhitespaceSplit, Punctuation, Digits, Whitespace, Bert) | `c & !(c<<1)` per class; DROP/ISOLATE/KEEP_A are 3 bit ops |
-| regex grammars (gpt2, cl100k, o200k, tekken, deepseek) | the algebra of §6 |
+| regex grammars (gpt2, cl100k/qwen, o200k/tekken/kimi, deepseek) | the algebra of §6 |
 | literals (Metaspace `▁`, CharDelimiterSplit) | shifted-AND chain of byte compares |
 
 And `SplitDelimiterBehavior` stops being per-grammar code — it is a post-pass on the mask:
@@ -105,8 +105,17 @@ And `SplitDelimiterBehavior` stops being per-grammar code — it is a post-pass 
 
 ## 4. Operator set
 
-Parabix names, because they are the literature standard. Every operator takes a `&mut Carry` so
-cross-block state is explicit and never forgotten.
+Parabix names, because they are the literature standard. Cross-block state is explicit and never
+forgotten, but it is **not** an argument on every operator: it lives in the streams themselves.
+`streams!` declares a grammar's class-stream set and generates `back`/`fwd` — the whole set shifted
+one position, carrying in the previous block's last bit and the next block's first bit. So a rule
+that asks "what held just before here?" is `bk.x`, exact at a block edge, with no re-derivation of
+the boundary byte. Only state that is genuinely not a stream (an open run flag, a mod-N counter,
+the retractable `anl`) stays in a `Carry` struct.
+
+The `blocks` driver owns everything that is not grammar: block geometry, the fill-seed threading,
+the previous/current/next rotation with one block of lookahead, both carried shifts, `lb`, the eof
+bit, and the `starts` assembly. A grammar supplies its atom table, its plane decode and its rules.
 
 | operator | meaning | cost |
 |---|---|---|
@@ -118,6 +127,8 @@ cross-block state is explicit and never forgotten.
 | `fill_to_last(m, c)` | in each `c`-run, fill from run start through the LAST marker | 2 ops |
 | `to_lead(x, cont)` | move each bit back to its char's lead byte | ≤3 steps |
 | `run_start(c)` | `c & !(c<<1)` | 2 ops |
+| `back(pv)` | every stream one position later, carry-in from the previous block | 2 ops/stream |
+| `fwd(nx)` | every stream one position earlier, carry-in from the next block | 2 ops/stream |
 
 Do all of these in `u128` and read bit 64 as the carry-out. That one habit removes an entire class
 of bug: a run reaching bit 63 puts its landing bit at 64 instead of vanishing, and `e - m` still
@@ -310,27 +321,57 @@ Non-negotiable, because every one of these caught a real bug:
 
 ```
   src/
-    lib.rs        Blk, primitives, builders, emit, emit_contr
-    simd.rs       NEON transpose  (x86 sibling slots in beside it)
-    ops.rs        the Parabix operator set + Carry
-    grammar/
-      byte_level.rs   cl100k.rs   o200k.rs   deepseek.rs   class_runs.rs   literal.rs
-  bin/
-    verify.rs     byte-exactness oracle vs atomsplit FSMs
-    bench.rs      per-grammar throughput
+    lib.rs           Blk, streams!/Streams, Ctx/Out, the blocks driver, primitives, emit, emit_contr
+    classify/        atom tags: neon / avx / wasm kernels + the generated atom_tables
+    simd/            the block builder (tags -> bitstreams): neon / x86 / portable
+    models/
+      family_gpt.rs     atom table + class decode shared by gpt2 and cl100k
+      gpt2.rs           rules only
+      cl100k.rs         rules only (digit cap 3 = cl100k, 1 = qwen)
+      family_o200k.rs   ONE grammar for o200k / tekken / kimi + their scalar escape
+      o200k.rs  tekken.rs  kimi.rs    entry points: three knob settings each
+      deepseek.rs       rules only (its own grammar)
+  tests/
+    parity.rs      byte-exactness vs the oniguruma oracle, over a block-phase sweep
 ```
 
-Each grammar is independently testable against its reference FSM, which is what keeps the shared
-layer honest.
+o200k, tekken and kimi are one parameterised grammar because they were three files whose bitstream
+halves were 97%/91% identical and whose atom table, decode and entire scalar escape were
+byte-identical — a fix had to be applied three times to be a fix. The knobs are `CONTR` (letter
+tokens take a contraction suffix), `DIGITS` (rule-3 cap) and `HAN` (Script=Han gets its own LUT
+code, kimi's alternative 1). deepseek, cl100k and gpt2 stay separate: their grammars diverge.
+
+Each grammar is independently testable against the oracle, which is what keeps the shared layer
+honest.
 
 ---
 
 ## 13. Open
 
-- **Does the library own classification?** Currently depends on `atomsplit::classify`. Fusing buys
-  ~0.07 ns/B on English but up to ~0.3 on CJK, where classify (0.57) now exceeds the split (0.24).
-  Design the block builder so classify can be fused later without changing the operator API.
+- **Fusing classify into the builder: measured, not worth it.** The two passes are joined by an
+  N-byte `tags` array, and the obvious guess is that the round-trip costs something. It does not:
+  per corpus the gap between `classify + split` and the fused end-to-end is 0–3.4%, and a
+  16 KiB → 5 MiB working-set sweep holds it flat at 0–2%. The sequential store/load streams fine.
+  (An earlier 10% estimate here was an arithmetic error — geomeans added as if they were additive.)
 - **x86 builder.** The scalar path covers it correctly but slowly; the `vpaddq` reduction has a
   natural `movemask` equivalent.
-- **o200k / tekken.** Case-refined letter runs; the case refinement is already in the Atom tags
-  (`0x10`/`0x20`), so it is a code-table change, not new machinery.
+- **Predicates that live in raw text should become atoms.** Script=Han used to be an `AUX` stream
+  computed by a scalar loop that decoded each codepoint and binary-searched a 20-range table, inside
+  an otherwise SIMD kernel — and the boundary byte got classified twice, once by the builder and
+  again scalar-side. It is now refinement 3 of whichever coarse class it lands in (Han is orthogonal
+  to the general category: 98682 `Lo`, 329 `So`, 13 `Nl`, 2 `Lm`), so the bit half sees one LUT code
+  and the scalar escape sees `tag & 0xF0 == 0x30`. That deleted `han.rs`, `AUX_HAN` and the seed
+  threading — and fixed a real bug, because a LUT is a partition and the hand-rolled version had
+  left non-letter Han in two arms at once.
+  Atom-slot budget, if more of these follow: the tag is `coarse | refinement << 4` with
+  `vqtbl4q_u8` indexing 0..63, so **16 coarse classes x 4 refinements**. Letter has one refinement
+  slot left; most other coarse classes have three. deepseek's CJK range cannot become an atom under
+  that budget — it needs a *second* Letter refinement (it spans Letter, Mark, Punct, SymOther and
+  unassigned) — so it stays a range test, which is fine: it is two contiguous ranges and the
+  builder's path for it is already vectorised. Going past this needs a 128-entry LUT
+  (2 x `vqtbl4q_u8` + a select on bit 6).
+- **The letter case split is not non-local.** `[UC]*[LC]+ | [UC]+[LC]*` currently escapes to a
+  scalar walker on the grounds that whether `中Qz` is one token turns on whether a lowercase appears
+  LATER in the run. But "does a marker appear later in this run" is exactly `fill_to_last` on
+  reversed streams, which this file already uses four lines away to compute `runs_needing`. The
+  walker and its gate are ~250 of `family_o200k`'s ~410 lines; they should collapse.
