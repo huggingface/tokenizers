@@ -225,6 +225,41 @@ impl BpeTables {
             internal_id_map,
         )
     }
+    /// Every merge these tables hold, as `(rank, left internal id, right internal id)`, in rank
+    /// order.
+    ///
+    /// The inverse of the loop in [`Self::build`], and it is exact rather than a reconstruction:
+    /// the dense grid encodes the pair in the slot index (`ia << 9 | ib`) and the perfect-hash map
+    /// stores each key beside its value, so both halves of the split can be walked. Ranks are the
+    /// positions the merge list was read in, so sorting by rank returns that list.
+    ///
+    /// Merges the build dropped -- a pair naming a token outside the vocabulary -- stay dropped,
+    /// and a pair repeated in the source collapsed to one entry on the way in. Neither can change
+    /// what the rebuilt tables do.
+    pub(crate) fn merge_list(&self) -> Vec<(u32, u32, u32)> {
+        let mut out = Vec::with_capacity(self.top_values.len() + self.pair_table.iter().count());
+        for (slot, &index) in self.top_index.iter().enumerate() {
+            if index != u16::MAX {
+                let value = self.top_values[index as usize];
+                out.push((
+                    (value >> 32) as u32,
+                    (slot >> 9) as u32,
+                    (slot & 511) as u32,
+                ));
+            }
+        }
+        for (key, value) in self.pair_table.iter() {
+            out.push(((value >> 32) as u32, (key >> 32) as u32, key as u32));
+        }
+        out.sort_unstable();
+        out
+    }
+
+    /// `internal id -> external vocabulary id`.
+    pub(crate) fn external(&self, internal: u32) -> Option<u32> {
+        self.unmap.get(internal as usize).copied()
+    }
+
     #[inline(always)]
     pub fn get_value(&self, a: &u32, b: &u32) -> u64 {
         if (a | b) < 512 {

@@ -359,6 +359,30 @@ impl PipelineWordPiece {
     pub fn id_to_token(&self, id: u32) -> Option<String> {
         self.vocab_r.get(id as usize)?.as_deref().map(str::to_owned)
     }
+
+    /// `{"token": id}`, in id order. For a writer; the reverse table is dense over the ids, so the
+    /// holes a config left are the `None`s that get skipped.
+    pub fn vocab(&self) -> Vec<(String, u32)> {
+        self.vocab_r
+            .iter()
+            .enumerate()
+            .filter_map(|(id, token)| Some((token.as_deref()?.to_string(), id as u32)))
+            .collect()
+    }
+
+    /// The unknown token, or `None` when the config named one that is not in the vocabulary -- the
+    /// lowering keeps the id, so a name it could not resolve is not recoverable.
+    pub fn unk_token(&self) -> Option<&str> {
+        self.vocab_r.get(self.unk_token? as usize)?.as_deref()
+    }
+
+    pub fn continuing_subword_prefix(&self) -> &str {
+        &self.continuing_subword_prefix
+    }
+
+    pub fn max_input_chars_per_word(&self) -> usize {
+        self.max_input_chars_per_word
+    }
 }
 
 impl pipeline::Model for PipelineWordPiece {

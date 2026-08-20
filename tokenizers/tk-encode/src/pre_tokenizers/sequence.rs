@@ -15,6 +15,11 @@ impl PipelineSequence {
         Self { pre_tokenizers }
     }
 
+    /// The members, in order. For a writer, which has to spell the `Sequence` back out.
+    pub fn pre_tokenizers(&self) -> &[PipelinePreTokenizer] {
+        &self.pre_tokenizers
+    }
+
     /// Same recognition as [`crate::utils::is_deepseek`], on the converted children: the first three are
     /// Isolated, non-inverted `Split`s carrying deepseek's `[\p{N}{1,3}, CJK, big]` regexes (the trailing
     /// byte-map `ByteLevel` converts to `PipelinePreTokenizer::None`). Routes the whole split to one

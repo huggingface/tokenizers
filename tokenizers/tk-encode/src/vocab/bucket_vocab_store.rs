@@ -282,6 +282,19 @@ impl BucketVocabStore {
         self.n == 0
     }
 
+    /// Whether every entry carries the fold bit.
+    ///
+    /// A BPE model built with `ignore_merges` gets the bit on all of them unconditionally, where
+    /// otherwise only the entries that proved they reduce to themselves earn it. That makes this
+    /// the question a writer asks to decide whether to spell the flag: if every entry folds, either
+    /// answer rebuilds the same table, and if any does not, the flag was off.
+    pub fn all_foldable(&self) -> bool {
+        self.entries
+            .iter()
+            .filter(|e| e.len > 0)
+            .all(|e| e.id & FOLD_BIT != 0)
+    }
+
     pub fn content(&self) -> Vec<(String, u32)> {
         self.entries
             .iter()

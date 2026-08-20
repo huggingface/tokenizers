@@ -6,7 +6,7 @@ use std::{borrow::Cow, convert::TryFrom};
 #[cfg(feature = "normalizers")]
 use crate::normalizers::{
     bert::BertNormalizer,
-    precompiled::Precompiled,
+    precompiled::PrecompiledNormalizer,
     strip::StripAccents,
     unicode::{NFC, NFD, NFKC, NFKD, Nmt},
 };
@@ -135,7 +135,7 @@ pub enum PipelineNormalizer {
     #[cfg(feature = "normalizers")]
     Nmt(Nmt),
     #[cfg(feature = "normalizers")]
-    Precompiled(Precompiled),
+    Precompiled(PrecompiledNormalizer),
 }
 
 /// The added-token replay normalizes through the *legacy* trait (that is what
@@ -448,6 +448,13 @@ impl Template {
             n_special,
             has_type_ids,
         }
+    }
+
+    /// The slices, for a writer that has to spell this template back out as a
+    /// `TemplateProcessing`. `n_special` and `has_type_ids` are both derived from them, so this is
+    /// the whole of the template's content.
+    pub fn slices(&self) -> &[Slice] {
+        &self.slices
     }
 }
 
@@ -1055,6 +1062,25 @@ impl PipelineTokenizer {
         &self.inner.post_processor
     }
 
+    /// The whole flattened normalizer chain, in the order it runs.
+    ///
+    /// [`Self::has_normalizer`] answers the only question the encode path asks; this is for a
+    /// writer, which needs the members themselves. A config `Sequence` was flattened on the way in,
+    /// so what comes back is the concatenation, not the nesting.
+    pub fn get_normalizers(&self) -> &[PipelineNormalizer] {
+        &self.inner.normalizers
+    }
+
+    /// The decoder, if the config declared one.
+    pub fn get_decoder(&self) -> Option<&DecoderRuntime> {
+        self.inner.decoder.as_ref()
+    }
+
+    /// The added vocabulary, whose `get_added_tokens_decoder` is the `added_tokens` array.
+    pub fn get_added_vocabulary(&self) -> &BucketAddedVocabulary {
+        &self.inner.added_vocabulary
+    }
+
     /// Encode `input` into token ids.
     ///
     /// Special tokens are matched in two passes:
@@ -1608,8 +1634,14 @@ pub enum PipelineModel {
 }
 
 impl PipelineModel {
-    /// `id -> token`, for the decoder-chain route in [`PipelineTokenizer::decode`].
-    fn id_to_token(&self, id: u32) -> Option<String> {
+    /// `id -> token`, for the decoder-chain route in [`PipelineTokenizer::decode`] and for a writer,
+    /// which needs it to name the special tokens a post-processor template refers to by id.
+    ///
+    /// A byte-level BPE answers with its *decoded* bytes, lossily -- see
+    /// [`PipelineBPE::id_to_token`]. That is the right answer for a printable special token, which
+    /// byte-level leaves alone, and the wrong one for a token with a space in it. A writer should
+    /// prefer the added vocabulary, where such tokens actually live.
+    pub fn id_to_token(&self, id: u32) -> Option<String> {
         match self {
             Self::BPE(model) => model.id_to_token(id),
             #[cfg(feature = "unigram")]

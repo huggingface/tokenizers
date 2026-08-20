@@ -111,6 +111,26 @@ pub struct PipelineBPE {
     cache_capacity: Option<usize>,
 }
 
+/// A [`PipelineBPE`] in the shape a `tokenizer.json` spells it, as returned by
+/// [`PipelineBPE::to_config`]. Plain owned data with no serde on it: the crate that writes the
+/// JSON is the one that knows the format.
+#[derive(Debug, Clone)]
+pub struct BpeConfig {
+    /// `{"token": id}`, in no particular order.
+    pub vocab: Vec<(String, u32)>,
+    /// The merge list in rank order.
+    pub merges: Merges,
+    /// Whether the model applies the byte-level map, i.e. whether the config had a `ByteLevel`
+    /// pre-tokenizer. Not a `model` field itself, but the writer needs it to spell the vocabulary.
+    pub byte_level: bool,
+    pub unk_token: Option<String>,
+    pub continuing_subword_prefix: Option<String>,
+    pub end_of_word_suffix: Option<String>,
+    pub fuse_unk: bool,
+    pub byte_fallback: bool,
+    pub ignore_merges: bool,
+}
+
 // A `PipelineBPE` holds exactly one `Atoms`, so `Chars`' 1 KB byte-fallback table costs nothing.
 #[allow(clippy::large_enum_variant)]
 pub(super) enum Atoms {
@@ -128,8 +148,105 @@ impl PipelineBPE {
     /// [`byte_level::transform_vocab`] already turned every vocabulary entry into its
     /// **decoded raw bytes** at load time. Decoding is then a concatenation, and running a
     /// `ByteLevel` decoder over these entries would decode a second time.
-    pub(crate) fn is_byte_level(&self) -> bool {
+    pub fn is_byte_level(&self) -> bool {
         matches!(self.atoms, Atoms::Bytes)
+    }
+
+    /// The model as a `tokenizer.json` spells it, recovered from the runtime tables.
+    ///
+    /// ## Why this is a recovery and not a getter
+    ///
+    /// Nothing here is stored in config shape. The merge list was consumed into a perfect-hash map
+    /// plus a dense grid at load; the vocabulary became a [`BucketVocabStore`] whose entries are the
+    /// *decoded* bytes when the model is byte-level; and every option was folded into
+    /// [`Atoms`], [`Affixes`] or a per-entry bit. So a writer cannot ask this type what it was built
+    /// from -- it has to run the construction backwards, which is what this does.
+    ///
+    /// It is exact for everything that can change an id, and deliberately not exact for the rest:
+    ///
+    /// - **Merges** come back in rank order, with the pairs the build dropped still dropped and a
+    ///   pair repeated in the source collapsed to one. See [`BpeTables::merge_list`].
+    /// - **A byte-level vocabulary** is re-encoded into byte-level characters, which is the
+    ///   canonical spelling and not necessarily the file's: a token written with a character
+    ///   outside the byte-level alphabet decoded to that character's UTF-8 bytes on the way in, and
+    ///   comes back as the byte-level spelling of those same bytes. Both decode identically, so the
+    ///   rebuilt model is the same model.
+    /// - **`unk_token`, `fuse_unk` and `byte_fallback` on a byte-level model** are gone, because
+    ///   the load path never keeps them: every byte is an atom there, so none of the three can
+    ///   affect anything. They come back as `None`/`false`.
+    /// - **`dropout`** is gone for the same reason, having been rejected at load unless it was
+    ///   absent or zero.
+    /// - **`ignore_merges`** is answered by [`BucketVocabStore::all_foldable`], which is equivalent:
+    ///   see that method.
+    pub fn to_config(&self) -> Result<BpeConfig> {
+        let byte_level = self.is_byte_level();
+        // A byte-level store holds decoded bytes, so spelling one back out is the byte-level
+        // encoding of those bytes. Everything else holds the token as written.
+        let spell = |bytes: &[u8]| -> Result<String> {
+            if byte_level {
+                Ok(bytes
+                    .iter()
+                    .map(|&b| byte_level::BYTES_CHAR_LOOKUP[b as usize])
+                    .collect())
+            } else {
+                String::from_utf8(bytes.to_vec())
+                    .map_err(|_| "a BPE vocabulary entry is not valid UTF-8".into())
+            }
+        };
+
+        let mut vocab = Vec::with_capacity(self.vocab.len());
+        for (bytes, id) in self.vocab.byte_content() {
+            vocab.push((spell(&bytes)?, id));
+        }
+
+        let token = |internal: u32| -> Result<String> {
+            let external = self
+                .tables
+                .external(internal)
+                .ok_or_else(|| -> crate::Error { "a merge names an unknown symbol".into() })?;
+            let bytes = self
+                .vocab
+                .id_to_token_bytes(external)
+                .ok_or_else(|| -> crate::Error {
+                    "a merge names an id outside the vocabulary".into()
+                })?;
+            spell(bytes)
+        };
+        let list = self.tables.merge_list();
+        let mut merges = Merges::with_capacity(list.len());
+        for (_rank, left, right) in list {
+            merges.push((token(left)?, token(right)?));
+        }
+
+        let (unk_token, fuse_unk, byte_fallback) = match &self.atoms {
+            Atoms::Bytes => (None, false, false),
+            Atoms::Chars {
+                unk_token,
+                fuse_unk,
+                byte_fallback,
+            } => {
+                let unk = match *unk_token {
+                    Some(internal) => Some(token(internal)?),
+                    None => None,
+                };
+                (unk, *fuse_unk, byte_fallback.is_some())
+            }
+        };
+        // `Affixes` is absent when both halves were empty, and each half is empty rather than
+        // absent when only the other was given -- the same collapse the builder does, so an empty
+        // affix and a missing one are the same model either way.
+        let affix = |s: &str| (!s.is_empty()).then(|| s.to_string());
+        Ok(BpeConfig {
+            vocab,
+            merges,
+            byte_level,
+            unk_token,
+            continuing_subword_prefix: self.affixes.as_ref().and_then(|a| affix(&a.prefix)),
+            end_of_word_suffix: self.affixes.as_ref().and_then(|a| affix(&a.suffix)),
+            fuse_unk,
+            byte_fallback,
+            ignore_merges: self.vocab.all_foldable(),
+        })
     }
 
     /// A token's bytes, borrowed from the vocab store's slab. For a byte-level model these are

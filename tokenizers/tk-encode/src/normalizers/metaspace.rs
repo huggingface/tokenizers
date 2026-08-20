@@ -41,6 +41,24 @@ impl MetaspaceNormalizer {
     }
 }
 
+impl MetaspaceNormalizer {
+    /// The delimiter this writes, `\u{2581}` for every SentencePiece model we know of.
+    pub fn delimiter(&self) -> char {
+        self.delimiter
+    }
+
+    /// Whether the delimiter goes at the start of every word rather than only after a space.
+    pub fn prepend(&self) -> bool {
+        self.prepend
+    }
+
+    /// Whether whitespace is thrown away instead of becoming a delimiter, i.e. whether a
+    /// `WhitespaceSplit` ran in front of the `Metaspace` this came from.
+    pub fn drop_whitespace(&self) -> bool {
+        self.drop_whitespace
+    }
+}
+
 impl pipeline::Normalizer for MetaspaceNormalizer {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
         // Return empty input as is
