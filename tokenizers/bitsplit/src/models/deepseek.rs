@@ -3,8 +3,8 @@
 //! `atomsplit::fsm::fsm_deepseek`.
 
 use crate::{
-    AUX_CJK, CODE_CONT, Out, Span, adv, blocks, build_block, emit, fill_to_last, lead_run,
-    scanthru, to_lead, trail_run,
+   AUX_CJK, CODE_CONT, Out, Span, adv, blocks, build_block, emit, last_pos,
+    later_in_run, lead_run, scanthru, to_lead, trail_run,
 };
 
 /// Atom tag → dense 3-bit code. Letter and Mark share a code because deepseek's letter run is
@@ -199,7 +199,7 @@ pub fn bitsplit_deepseek(text: &[u8], tags: &[u8], starts: &mut [u64], out: &mut
             //     the reversal).
             let anl = bk.nl & cur.ws & cur.lead;
             let later_nl =
-                fill_to_last(cur.nl.reverse_bits(), cur.ws.reverse_bits()).reverse_bits();
+                later_in_run(cur.nl, cur.ws);
             let after_nl = anl & !later_nl;
             // (b) the run's last char is handed to whatever follows, as its `[^…]?` / ` ?` prefix
             //     — unless the run ends the input or the next piece is Split-1/2-isolated (`(?!\S)`).
@@ -275,7 +275,7 @@ pub fn bitsplit_deepseek(text: &[u8], tags: &[u8], starts: &mut [u64], out: &mut
                 // absorption cut the whitespace run, so a later newline cannot reach back past it.
                 let a = after_nl & tws & !(nl_e as u64);
                 if a != 0 {
-                    cy.anl = Some(x.base + 63 - a.leading_zeros() as usize);
+                    cy.anl = Some(last_pos(x.base, a));
                 } else if !(tws & 1 != 0 && was(pv.ws)) {
                     cy.anl = None; // a fresh run with no newline yet — nothing left to retract
                 }

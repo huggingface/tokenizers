@@ -8,8 +8,8 @@
 
 use super::family_gpt::cls;
 use crate::{
-    CODE_CONT, Out, Span, blocks, digit_groups, emit_contr, fill_to_last, lead_run, scanthru,
-    match_star, to_lead, trail_run,
+   CODE_CONT, Out, Span, blocks, digit_groups, digits_since, emit_contr, fill_to_last, last_pos, later_in_run,
+    lead_run, scanthru, to_lead, trail_run,
 };
 
 /// cl100k_base / Llama-3 / GLM-4.6 — rule 3 is `\p{N}{1,3}`.
@@ -83,7 +83,7 @@ fn cl100k(
             let after_nl = bk.nl
                 & cur.ws
                 & lead
-                & !fill_to_last(cur.nl.reverse_bits(), cur.ws.reverse_bits()).reverse_bits();
+                & !later_in_run(cur.nl, cur.ws);
 
             // ── `[^\r\n\p{L}\p{N}]?\p{L}+`: the prefix is ANY non-newline non-letter non-digit
             // char, not just a space — so a punctuation char that opens a token is swallowed by a
@@ -152,26 +152,16 @@ fn cl100k(
             nl_run = nl_e >> 64 != 0;
             let tn = trail_run(cur.n, valid, len);
             dig_run = tn != 0 && will(x.nx.n);
-            dig_since = if !dig_run {
-                0
+            dig_since = if dig_run {
+                digits_since(groups, tn, cur.n, lead, dig_since, digit_cap)
             } else {
-                let g = groups & tn;
-                let counted = if g == 0 {
-                    dig_since + (cur.n & lead & tn).count_ones()
-                } else {
-                    (cur.n & lead & tn & !((1u64 << (63 - g.leading_zeros())) - 1)).count_ones()
-                };
-                if digit_cap == 0 || digit_cap >= 64 {
-                    counted
-                } else {
-                    counted % digit_cap as u32
-                }
+                0
             };
             let tws = trail_run(cur.ws, valid, len);
             if tws != 0 && will(x.nx.ws) {
                 let a = after_nl & tws & !(nl_e as u64);
                 if a != 0 {
-                    anl = Some(x.base + 63 - a.leading_zeros() as usize);
+                    anl = Some(last_pos(x.base, a));
                 } else if !(tws & 1 != 0 && was(pv.ws)) {
                     anl = None;
                 }

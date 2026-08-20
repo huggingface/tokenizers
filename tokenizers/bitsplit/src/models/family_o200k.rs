@@ -27,9 +27,9 @@
 
 use crate::classify::{char_len, in_mask, mask};
 use crate::{
-    AUX_SLASH, CODE_CONT, CONT, Out, Span, blocks, build_block, contr_len, digit_groups,
-    fill_to_last, lead_run, letter_match, match_star, member, run_end, scanthru, to_lead,
-    trail_run, ws_tail,
+   AUX_SLASH, CODE_CONT, CONT, Out, Span, blocks, build_block, contr_len, digit_groups,
+    digits_since, fill_to_last, last_pos, later_in_run, lead_run, letter_match, member, run_end,
+    scanthru, to_lead, trail_run, ws_tail,
 };
 
 /// Atom tag → dense 4-bit code. Unlike cl100k, `\p{M}` IS a letter here (both alt classes list
@@ -140,7 +140,7 @@ fn seed_at(tags: &[u8], base: usize) -> u8 {
     LUT_SEED[tags[p] as usize]
 }
 
-/// `later_in_run`: for every position, does an `l` occur at or after it inside the same letter run
+/// `later_streams`: for every position, does an `l` occur at or after it inside the same letter run
 /// (`later[..nblk]`), and does a `cm` occur at or after it inside the same `uc`-run
 /// (`later[nblk..]`)?
 ///
@@ -148,7 +148,7 @@ fn seed_at(tags: &[u8], base: usize) -> u8 {
 /// span any number of blocks, so the answer cannot be produced by the forward pass's one-block
 /// lookahead. Resolved here once, right to left, as their own streams -- a self-contained kernel
 /// with no scalar walk in it, which is what lets the grammar stay pure bit algebra.
-pub(crate) fn later_in_run<const AUX: u8, const HAN: bool>(
+pub(crate) fn later_streams<const AUX: u8, const HAN: bool>(
     text: &[u8],
     tags: &[u8],
     later: &mut [u64],
@@ -164,9 +164,8 @@ pub(crate) fn later_in_run<const AUX: u8, const HAN: bool>(
         let (letter, l) = (c.letter, c.l);
         let uc = letter & !l;
         let cm = (c.c | c.mark) & letter;
-        let rev = |v: u64| v.reverse_bits();
-        let mut la = rev(fill_to_last(rev(l), rev(letter)));
-        let mut ca = rev(fill_to_last(rev(cm), rev(uc)));
+        let mut la = later_in_run(l, letter);
+        let mut ca = later_in_run(cm, uc);
         // a run leaving this block to the right inherits the answer from the block after it
         if l_carry && letter >> (len - 1) & 1 != 0 {
             la |= trail_run(letter, valid, len);
@@ -203,7 +202,7 @@ pub(crate) fn run<const AUX: u8, const CONTR: bool, const DIGITS: usize, const H
             && later.len() >= 2 * nblk
             && out.len() >= ntext
     );
-    later_in_run::<AUX, HAN>(text, tags, later);
+    later_streams::<AUX, HAN>(text, tags, later);
     let mut cy = Carry::default();
     let mut code = CODE_CONT;
 
@@ -249,7 +248,7 @@ pub(crate) fn run<const AUX: u8, const CONTR: bool, const DIGITS: usize, const H
             let after_nl = bk.nl
                 & cur.ws
                 & lead
-                & !fill_to_last(cur.nl.reverse_bits(), cur.ws.reverse_bits()).reverse_bits();
+                & !later_in_run(cur.nl, cur.ws);
 
             // ── `[^\r\n\p{L}\p{N}]?` before a letter run: any token-opening non-newline
             // non-letter non-digit char. Smeared across its char's bytes so the test is a plain
@@ -409,7 +408,7 @@ pub(crate) fn run<const AUX: u8, const CONTR: bool, const DIGITS: usize, const H
                 }
             }
             if st != 0 {
-                cy.prev_start = Some(x.base + 63 - st.leading_zeros() as usize);
+                cy.prev_start = Some(last_pos(x.base, st));
             }
 
             // ── carries
@@ -417,22 +416,16 @@ pub(crate) fn run<const AUX: u8, const CONTR: bool, const DIGITS: usize, const H
             cy.prev_absorbed = nl_span >> (len - 1) & 1 != 0;
             let tn = trail_run(cur.n, valid, len);
             cy.dig_run = tn != 0 && will(x.nx.n);
-            cy.dig_since = if !cy.dig_run {
-                0
+            cy.dig_since = if cy.dig_run {
+                digits_since(groups, tn, cur.n, lead, cy.dig_since, DIGITS)
             } else {
-                let g = groups & tn;
-                let counted = if g == 0 {
-                    cy.dig_since + (cur.n & lead & tn).count_ones()
-                } else {
-                    (cur.n & lead & tn & !((1u64 << (63 - g.leading_zeros())) - 1)).count_ones()
-                };
-                counted % DIGITS as u32
+                0
             };
             let tws = trail_run(cur.ws, valid, len);
             if tws != 0 && will(x.nx.ws) {
                 let a = after_nl & tws & !(nl_e as u64);
                 if a != 0 {
-                    cy.anl = Some(x.base + 63 - a.leading_zeros() as usize);
+                    cy.anl = Some(last_pos(x.base, a));
                 } else if !(tws & 1 != 0 && was(pv.ws)) {
                     cy.anl = None;
                 }
