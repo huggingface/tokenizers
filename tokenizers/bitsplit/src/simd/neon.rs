@@ -48,6 +48,26 @@ pub(crate) unsafe fn eq64(text: &[u8], base: usize, b: u8) -> u64 {
     }
 }
 
+/// Is `b` anywhere in `text[base..base + 64]`? The cheap gate in front of [`eq64`]: the bitmap fold
+/// is three serial `vpaddq` rounds, so on a block that holds nothing, skipping the fold is worth
+/// more than the compares themselves.
+///
+/// # Safety
+/// `base + 64 <= text.len()`.
+#[target_feature(enable = "neon")]
+pub(crate) unsafe fn any64(text: &[u8], base: usize, b: u8) -> bool {
+    unsafe {
+        let n = vdupq_n_u8(b);
+        let p = text.as_ptr().add(base);
+        let a = vorrq_u8(vceqq_u8(vld1q_u8(p), n), vceqq_u8(vld1q_u8(p.add(16)), n));
+        let c = vorrq_u8(
+            vceqq_u8(vld1q_u8(p.add(32)), n),
+            vceqq_u8(vld1q_u8(p.add(48)), n),
+        );
+        vmaxvq_u8(vorrq_u8(a, c)) != 0
+    }
+}
+
 /// Build one **full** 64-byte block, folding tags through `lut` into dense codes.
 /// Build one **full** 64-byte block. `cur_code` / `cur_cjk` describe the byte just before it, so a
 /// block opening mid-char keeps inheriting its lead's class. Returns the block's last filled code.

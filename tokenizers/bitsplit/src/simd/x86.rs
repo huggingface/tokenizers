@@ -60,6 +60,25 @@ pub(crate) unsafe fn eq64(text: &[u8], base: usize, b: u8) -> u64 {
     }
 }
 
+/// Is `b` anywhere in `text[base..base + 64]`? The gate in front of [`eq64`]. Marginal here --
+/// x86's fold is one `movemask` per 16 bytes, not NEON's three-round `vpaddq` chain -- but it keeps
+/// the two paths byte-identical.
+///
+/// # Safety
+/// `base + 64 <= text.len()`; the caller has checked for SSSE3.
+#[target_feature(enable = "ssse3")]
+pub(crate) unsafe fn any64(text: &[u8], base: usize, b: u8) -> bool {
+    unsafe {
+        let n = _mm_set1_epi8(b as i8);
+        let mut acc = _mm_setzero_si128();
+        for k in 0..4 {
+            let v = _mm_loadu_si128(text.as_ptr().add(base + k * 16).cast());
+            acc = _mm_or_si128(acc, _mm_cmpeq_epi8(v, n));
+        }
+        _mm_movemask_epi8(acc) != 0
+    }
+}
+
 /// Build one **full** 64-byte block. `cur_code`/`cur_aux` describe the byte before it.
 ///
 /// # Safety

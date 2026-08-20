@@ -64,37 +64,45 @@ impl Literal {
 /// depend on bytes past it — the shift-and simply reads them from `text`, which is why this takes
 /// the whole slice rather than a block.
 fn match_bits(text: &[u8], needle: &[u8], base: usize) -> u64 {
-    let n = text.len();
-    // positions in this block that could still fit the needle
-    let span = n.saturating_sub(base).min(64);
-    let last = n.saturating_sub(needle.len() - 1); // one past the last possible match start
-    let room = last.saturating_sub(base).min(span);
+    let last = text.len().saturating_sub(needle.len() - 1); // one past the last possible start
+    let room = last.saturating_sub(base).min(64);
     if room == 0 {
         return 0;
     }
-    let valid = if room == 64 {
+    // The bitmap of `needle[k]` at position `i + k` is just the compare taken at `base + k`, so a
+    // multi-byte needle is k folds AND-ed together -- no shifts, and no per-candidate byte check.
+    // That is what makes it constant-time in the number of candidates: this used to test the first
+    // byte in SIMD and then scalar-verify every survivor, which grinds when `needle[0]` is a common
+    // byte (`'the'` stopped at every `'t'` in the text).
+    let mut m = if room == 64 {
         !0u64
     } else {
         (1u64 << room) - 1
     };
-    // First byte in SIMD -- this is the whole cost, everything after it runs on the survivors.
-    let mut m = eq_bits(text, base, needle[0]) & valid;
-    for (k, &b) in needle.iter().enumerate().skip(1) {
-        let mut eq = 0u64;
-        let mut bits = m;
-        while bits != 0 {
-            let i = bits.trailing_zeros() as usize;
-            bits &= bits - 1;
-            if text[base + i + k] == b {
-                eq |= 1u64 << i;
-            }
-        }
-        m &= eq;
+    for (k, &b) in needle.iter().enumerate() {
+        m &= eq_bits(text, base + k, b);
         if m == 0 {
-            return 0;
+            break;
         }
     }
     m
+}
+
+/// Cheap "is `b` in this block at all", the gate in front of [`match_bits`]. Answers `true` on a
+/// ragged tail and on targets with no kernel -- it may only ever be pessimistic, never miss.
+#[inline]
+fn any_bits(text: &[u8], base: usize, b: u8) -> bool {
+    if base + 64 <= text.len() {
+        #[cfg(target_arch = "aarch64")]
+        // SAFETY: bounds checked directly above.
+        return unsafe { crate::simd::neon::any64(text, base, b) };
+        #[cfg(target_arch = "x86_64")]
+        if crate::has_ssse3() {
+            // SAFETY: bounds checked above, SSSE3 checked here.
+            return unsafe { crate::simd::x86::any64(text, base, b) };
+        }
+    }
+    true
 }
 
 /// `text[base..base + 64] == b`, as a bitmap. Falls back to a byte loop on a ragged tail (and on
@@ -149,7 +157,10 @@ impl Iterator for Matches<'_> {
             }
             self.base = self.next_block;
             self.next_block += 64;
-            self.word = match_bits(self.text, self.needle, self.base);
+            // A match can only start where `needle[0]` is, so a block without it needs no bitmap.
+            if any_bits(self.text, self.base, self.needle[0]) {
+                self.word = match_bits(self.text, self.needle, self.base);
+            }
         }
     }
 }
@@ -204,6 +215,64 @@ mod tests {
             let hay = format!("{}{needle}{}", "q".repeat(off), "q".repeat(180 - off));
             assert_eq!(find(needle, &hay), vec![off], "offset {off}");
         }
+    }
+
+    /// Real corpora: whole blocks get skipped by the gate and the k-fold AND reads across block
+    /// edges, neither of which the short cases above reach.
+    #[test]
+    fn corpora_match_a_naive_scan() {
+        let dir = std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../tokbench/data/fixtures"
+        ));
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            eprintln!("skip: no fixtures at {}", dir.display());
+            return;
+        };
+        let mut files: Vec<_> = entries
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|x| x == "txt"))
+            .collect();
+        files.sort();
+        // dense single byte, sparse single, dense multi-byte, absent multi-byte, and a needle whose
+        // FIRST byte is common but which is itself rare -- the case the old scalar verify ground on.
+        let needles = [" ", "\n", "\u{2581}", "</s>", "the", "\u{2591}\u{2592}"];
+        let mut cells = 0;
+        for path in &files {
+            let Ok(text) = std::fs::read_to_string(path) else {
+                continue;
+            };
+            let end = (0..=(1 << 20).min(text.len()))
+                .rev()
+                .find(|&i| text.is_char_boundary(i))
+                .unwrap();
+            let h = &text.as_bytes()[..end];
+            for pat in needles {
+                let p = pat.as_bytes();
+                let mut want = Vec::new();
+                let mut i = 0;
+                while i + p.len() <= h.len() {
+                    if &h[i..i + p.len()] == p {
+                        want.push(i);
+                        i += p.len();
+                    } else {
+                        i += 1;
+                    }
+                }
+                let got: Vec<usize> = Literal::new(p).unwrap().matches(h).collect();
+                assert_eq!(
+                    got,
+                    want,
+                    "{pat:?} in {} ({} bytes)",
+                    path.file_name().unwrap().to_string_lossy(),
+                    h.len()
+                );
+                cells += 1;
+            }
+        }
+        assert!(cells > 0, "fixture dir exists but nothing was compared");
+        eprintln!("{cells} corpus x needle pairs match a naive scan");
     }
 
     #[test]
