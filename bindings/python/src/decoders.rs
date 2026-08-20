@@ -899,7 +899,7 @@ mod test {
 
     use pyo3::prelude::*;
     use tk::decoders::DecoderWrapper;
-    use tk::decoders::metaspace::Metaspace;
+    use tk::decoders::metaspace::MetaspaceDecoder as Metaspace;
 
     use crate::decoders::{CustomDecoder, PyDecoder, PyDecoderWrapper};
 

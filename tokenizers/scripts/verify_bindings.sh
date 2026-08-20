@@ -33,6 +33,14 @@ fi
 
 cd "${PY_DIR}"
 
+# Lint every target in this crate before building the wheel. `cargo clippy` at the workspace root
+# does not reach it -- `bindings/python` is not a member of the `tokenizers` workspace -- and
+# `maturin develop` compiles the lib but not its `#[cfg(test)]` modules. So a stale import inside one
+# of those test modules stays green in every workspace-level check and fails only in CI. That is
+# exactly how `tk::decoders::metaspace::Metaspace` survived a rename.
+echo "==> clippy --all-targets on the bindings crate"
+cargo clippy --all-targets -- -D warnings
+
 echo "==> building the extension module"
 VIRTUAL_ENV="${VENV}" maturin develop
 
