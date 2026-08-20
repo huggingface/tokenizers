@@ -3,8 +3,8 @@
 //! `atomsplit::fsm::fsm_deepseek`.
 
 use crate::{
-    AUX_CJK, CODE_CONT, Span, adv, build_block, emit, fill_to_last, lead_run, scanthru, to_lead,
-    trail_run,
+    AUX_CJK, CODE_CONT, Out, Span, adv, blocks, build_block, emit, fill_to_last, lead_run,
+    scanthru, to_lead, trail_run,
 };
 
 /// Atom tag → dense 3-bit code. Letter and Mark share a code because deepseek's letter run is
@@ -119,182 +119,175 @@ pub fn bitsplit_deepseek(text: &[u8], tags: &[u8], starts: &mut [u64], out: &mut
     assert!(tags.len() >= ntext && starts.len() >= ntext.div_ceil(64) && out.len() >= ntext);
     let nblk = ntext.div_ceil(64);
     let mut cy = Carry::default();
-    let blen = |bi: usize| (ntext - bi * 64).min(64);
+    let (mut code, mut cjk_in) = (CODE_CONT, false);
 
-    // One block of lookahead. Block `bi+1` is built before `bi` is processed, so every "what does
-    // the next char do?" rule is a carry-in from a real stream rather than a re-classification of
-    // the boundary byte. The fill seed is threaded the way the builder always needed it — the cont
-    // code seeds block 0 so a text opening with a stray continuation byte classifies as gap under
-    // both builders instead of as `Letter` (code 0).
-    let mut pv = Cls::default();
-    let (mut cur, mut code, mut cjk_in) = cls(text, tags, 0, blen(0), CODE_CONT, false);
+    blocks(
+        ntext,
+        &mut *starts,
+        None,
+        |base, len| {
+            let (c, last, last_cjk) = cls(text, tags, base, len, code, cjk_in);
+            code = last;
+            cjk_in = last_cjk;
+            c
+        },
+        |x, starts| {
+            let (pv, cur, bk, fw) = (&x.pv, &x.cur, &x.bk, &x.fw);
+            let (valid, len) = (x.valid, x.len);
+            // the same two carries the shifts use, read as scalars for the run flags
+            let was = |v: u64| v >> 63 != 0;
+            let will = |v: u64| v & 1 != 0;
+            // a char that is both its own first and last byte is single-byte, i.e. ASCII; an ASCII
+            // char in `\p{L}∪\p{M}` is exactly `[A-Za-z]` (ASCII has no marks).
+            let ascii = cur.lead & x.lb;
+            let aa = cur.lm_raw & ascii;
 
-    for bi in 0..nblk {
-        let base = bi * 64;
-        let len = blen(bi);
-        let valid = if len == 64 { !0u64 } else { (1u64 << len) - 1 };
-        let last_blk = base + len == ntext;
-        let (nx, ncode, ncjk) = if last_blk {
-            (Cls::default(), code, cjk_in)
-        } else {
-            cls(text, tags, base + 64, blen(bi + 1), code, cjk_in)
-        };
-        // the previous / next byte, as streams: `bk.x` is "x held one position back", `fw.x` is
-        // "x holds one position on" — both exact across the block edge.
-        let bk = cur.back(&pv);
-        let fw = cur.fwd(&nx);
-        // the same two carries read as scalars, for the run flags.
-        let was = |x: u64| x >> 63 != 0;
-        let will = |x: u64| x & 1 != 0;
+            // ── run starts. All purely backward-looking, so the carry alone makes them exact. ──
+            let n_start = cur.num & cur.lead & !bk.num;
+            let lm_start = cur.lm & cur.lead & !bk.lm & !bk.prefix;
+            let ws_start = cur.ws & cur.lead & !bk.ws;
+            let gap_start = cur.gap & cur.lead & !bk.gap;
+            let ps_start = cur.ps & cur.lead & !bk.ps & !bk.sp;
+            let cjk_start =
+                (cur.cjk_l & cur.lead & !bk.cjk_l) | (cur.cjk_p & cur.lead & !bk.cjk_p);
 
-        // a char that is both its own first and last byte is single-byte, i.e. ASCII; an ASCII char
-        // in `\p{L}∪\p{M}` is exactly `[A-Za-z]` (ASCII has no marks). Both streams for 2 ops.
-        let lb = (fw.lead & valid) | if last_blk { 1u64 << (len - 1) } else { 0 };
-        let ascii = cur.lead & lb;
-        let aa = cur.lm_raw & ascii;
-
-        // ── run starts. All purely backward-looking, so the carry alone makes them exact. ───────
-        let n_start = cur.num & cur.lead & !bk.num;
-        let lm_start = cur.lm & cur.lead & !bk.lm & !bk.prefix;
-        let ws_start = cur.ws & cur.lead & !bk.ws;
-        let gap_start = cur.gap & cur.lead & !bk.gap;
-        let ps_start = cur.ps & cur.lead & !bk.ps & !bk.sp;
-        let cjk_start = (cur.cjk_l & cur.lead & !bk.cjk_l) | (cur.cjk_p & cur.lead & !bk.cjk_p);
-
-        // ── Split-1 `\p{N}{1,3}`: the one non-local rule — a group boundary every 3 chars from the
-        // run start. Marker iteration (the paper's bounded-repetition lowering); ≤21 rounds/block,
-        // and 0 rounds on text without digit runs.
-        let mut m = n_start;
-        if cy.dig_run && was(pv.n_raw) {
-            // resume mid-run: the next group start is (3 - since) chars into the block. Re-mask
-            // with `num` at every hop — the carry only says the char *at* the edge was a digit, the
-            // run may well have ended there (`Ⅷ` straddling the edge, then `\t`, then `456`).
-            let mut s = cur.lead & cur.lead.wrapping_neg() & cur.num; // first lead of the block
-            for _ in 0..((3 - cy.dig_since % 3) % 3) {
-                s = adv(s, cur.cont) & cur.num & cur.lead;
-            }
-            m |= s;
-        }
-        let mut groups = m;
-        if cur.num & cur.cont == 0 {
-            // Fast path: every digit in this block is single-byte, so "3 chars on" is just `<< 3`
-            // and the three `adv`s collapse into one shift against a precomputed mask (`num3` asks
-            // that the two skipped positions are digits too, which is what the `adv` chain checked).
-            // ~3 ops per group instead of ~14 — dense-digit text is otherwise this loop's worst case.
-            let num3 = cur.num & (cur.num << 1) & (cur.num << 2);
-            while m != 0 {
-                m = (m << 3) & num3;
-                groups |= m;
-            }
-        } else {
-            while m != 0 {
-                let a = adv(m, cur.cont) & cur.num & cur.lead;
-                let c = adv(adv(a, cur.cont) & cur.num & cur.lead, cur.cont) & cur.num & cur.lead;
-                if c == 0 {
-                    break;
+            // ── Split-1 `\p{N}{1,3}`: the one non-local rule — a group boundary every 3 chars
+            // from the run start. Marker iteration (the paper's bounded-repetition lowering);
+            // ≤21 rounds/block, and 0 rounds on text without digit runs.
+            let mut m = n_start;
+            if cy.dig_run && was(pv.n_raw) {
+                // resume mid-run: the next group start is (3 - since) chars into the block.
+                // Re-mask with `num` at every hop — the carry only says the char *at* the edge was
+                // a digit, the run may well have ended there (`Ⅷ` straddling the edge, then `\t`,
+                // then `456`).
+                let mut s = cur.lead & cur.lead.wrapping_neg() & cur.num; // first lead of the block
+                for _ in 0..((3 - cy.dig_since % 3) % 3) {
+                    s = adv(s, cur.cont) & cur.num & cur.lead;
                 }
-                groups |= c;
-                m = c;
+                m |= s;
             }
-        }
-
-        // ── whitespace: `\s*[\r\n]+ | \s+(?!\S) | \s+`.
-        // (a) the run's first token runs through its LAST newline → a start right after it, unless
-        //     a further newline still follows inside the run (a backward scan, hence the reversal).
-        let anl = bk.nl & cur.ws & cur.lead;
-        let later_nl = fill_to_last(cur.nl.reverse_bits(), cur.ws.reverse_bits()).reverse_bits();
-        let after_nl = anl & !later_nl;
-        // (b) the run's last char is handed to whatever follows, as its `[^…]?` / ` ?` prefix —
-        //     unless the run ends the input or the next piece is Split-1/2-isolated (`(?!\S)`).
-        let eof_bit = if last_blk { 1u64 << (len - 1) } else { 0 };
-        let steal_lb = cur.ws & !cur.nl & lb & !eof_bit & !fw.ws & !(fw.n_raw | fw.cjk);
-        let (steal, steal_patch) = to_lead(steal_lb, cur.cont, pv.cont);
-        // (c) the same one-char give-back out of a gap run (Control / NumericOther / ZWJ match no
-        // alternative, so the run is one piece minus the char a following letter run claims).
-        let (gap_steal, gap_patch) = to_lead(cur.gap & lb & fw.lm, cur.cont, pv.cont);
-
-        // ── alt-1 `[ascii_punct][A-Za-z]+`: fires only where the scan is actually positioned, i.e.
-        // at a punct-run start no space swallowed. Its `[A-Za-z]+` run then has no interior starts
-        // and forces one at its end — which the letter rule alone would suppress (`!c` reads `!ab`,
-        // `c` after it is a fresh token even though its predecessor is a letter).
-        //
-        // The one raw-byte peek left: `aa` needs `lb`, which needs the block *after* next, so asking
-        // "is the next char an ASCII letter?" stays a byte test rather than a third carry level.
-        let nb_aa = !last_blk && text[base + len].is_ascii_alphabetic();
-        let alt1 = ps_start & ascii & ((aa >> 1) | (u64::from(nb_aa) << 63));
-        let aa_m = ((alt1 as u128) << 1) | u128::from(cy.aa_run);
-        let aa_e = scanthru(aa_m, aa as u128);
-        let aa_span = aa_e.wrapping_sub(aa_m);
-        // ── a punct run's `[\r\n]*` tail swallows the newlines directly behind it.
-        let nl_m = ((bk.ps & cur.nl & cur.lead) as u128) | u128::from(cy.nl_run);
-        let nl_e = scanthru(nl_m, cur.nl as u128);
-        let nl_span = nl_e.wrapping_sub(nl_m);
-
-        // ── the one backward-in-time dependency: a newline arriving now retracts the "start after
-        // the last newline" already committed for a whitespace run that was open at the last edge.
-        if let Some(p) = cy.anl
-            && was(pv.ws)
-            && cur.ws & 1 != 0
-            && cur.nl & lead_run(cur.ws, valid) != 0
-        {
-            starts[p / 64] &= !(1u64 << (p % 64));
-            cy.anl = None;
-        }
-
-        let mut st = groups
-            | lm_start
-            | ws_start
-            | gap_start
-            | ps_start
-            | cjk_start
-            | after_nl
-            | steal
-            | gap_steal;
-        st &= !(aa_span as u64) & !(nl_span as u64);
-        st |= aa_e as u64 | nl_e as u64;
-        st &= cur.lead;
-        if bi == 0 {
-            st |= 1; // position 0 always opens a token
-        }
-        starts[bi] = st;
-        if bi > 0 {
-            starts[bi - 1] |= steal_patch | gap_patch;
-        }
-
-        // ── carries ────────────────────────────────────────────────────────────────────────────
-        cy.aa_run = aa_e >> 64 != 0;
-        cy.nl_run = nl_e >> 64 != 0;
-        let tn = trail_run(cur.num, valid, len);
-        cy.dig_run = tn != 0 && will(nx.num);
-        cy.dig_since = if !cy.dig_run {
-            0
-        } else {
-            let g = groups & tn;
-            let counted = if g == 0 {
-                cy.dig_since + (cur.num & cur.lead & tn).count_ones()
+            let mut groups = m;
+            if cur.num & cur.cont == 0 {
+                // Fast path: every digit in this block is single-byte, so "3 chars on" is just
+                // `<< 3` and the three `adv`s collapse into one shift against a precomputed mask
+                // (`num3` asks that the two skipped positions are digits too, which is what the
+                // `adv` chain checked). ~3 ops per group instead of ~14 — dense-digit text is
+                // otherwise this loop's worst case.
+                let num3 = cur.num & (cur.num << 1) & (cur.num << 2);
+                while m != 0 {
+                    m = (m << 3) & num3;
+                    groups |= m;
+                }
             } else {
-                (cur.num & cur.lead & tn & !((1u64 << (63 - g.leading_zeros())) - 1)).count_ones()
-            };
-            counted % 3
-        };
-        let tws = trail_run(cur.ws, valid, len);
-        if tws != 0 && will(nx.ws) {
-            // ...but not a bit that a punct tail's `[\r\n]*` already made a *run start*: the
-            // absorption cut the whitespace run, so a later newline cannot reach back past it.
-            let a = after_nl & tws & !(nl_e as u64);
-            if a != 0 {
-                cy.anl = Some(base + 63 - a.leading_zeros() as usize);
-            } else if !(tws & 1 != 0 && was(pv.ws)) {
-                cy.anl = None; // a fresh run with no newline yet — nothing left to retract
+                while m != 0 {
+                    let a = adv(m, cur.cont) & cur.num & cur.lead;
+                    let c =
+                        adv(adv(a, cur.cont) & cur.num & cur.lead, cur.cont) & cur.num & cur.lead;
+                    if c == 0 {
+                        break;
+                    }
+                    groups |= c;
+                    m = c;
+                }
             }
-        } else {
-            cy.anl = None;
-        }
-        pv = cur;
-        cur = nx;
-        code = ncode;
-        cjk_in = ncjk;
-    }
+
+            // ── whitespace: `\s*[\r\n]+ | \s+(?!\S) | \s+`.
+            // (a) the run's first token runs through its LAST newline → a start right after it,
+            //     unless a further newline still follows inside the run (a backward scan, hence
+            //     the reversal).
+            let anl = bk.nl & cur.ws & cur.lead;
+            let later_nl =
+                fill_to_last(cur.nl.reverse_bits(), cur.ws.reverse_bits()).reverse_bits();
+            let after_nl = anl & !later_nl;
+            // (b) the run's last char is handed to whatever follows, as its `[^…]?` / ` ?` prefix
+            //     — unless the run ends the input or the next piece is Split-1/2-isolated (`(?!\S)`).
+            let steal_lb =
+                cur.ws & !cur.nl & x.lb & !x.eof & !fw.ws & !(fw.n_raw | fw.cjk);
+            let (steal, steal_patch) = to_lead(steal_lb, cur.cont, pv.cont);
+            // (c) the same one-char give-back out of a gap run (Control / NumericOther / ZWJ match
+            // no alternative, so the run is one piece minus the char a following letter run claims).
+            let (gap_steal, gap_patch) = to_lead(cur.gap & x.lb & fw.lm, cur.cont, pv.cont);
+
+            // ── alt-1 `[ascii_punct][A-Za-z]+`: fires only where the scan is actually positioned,
+            // i.e. at a punct-run start no space swallowed. Its `[A-Za-z]+` run then has no
+            // interior starts and forces one at its end — which the letter rule alone would
+            // suppress (`!c` reads `!ab`, `c` after it is a fresh token even though its
+            // predecessor is a letter).
+            //
+            // The one raw-byte peek left: `aa` needs `lb`, which needs the block *after* next, so
+            // asking "is the next char an ASCII letter?" stays a byte test rather than a third
+            // carry level.
+            let nb_aa = !x.last_blk && text[x.base + len].is_ascii_alphabetic();
+            let alt1 = ps_start & ascii & ((aa >> 1) | (u64::from(nb_aa) << 63));
+            let aa_m = ((alt1 as u128) << 1) | u128::from(cy.aa_run);
+            let aa_e = scanthru(aa_m, aa as u128);
+            let aa_span = aa_e.wrapping_sub(aa_m);
+            // ── a punct run's `[\r\n]*` tail swallows the newlines directly behind it.
+            let nl_m = ((bk.ps & cur.nl & cur.lead) as u128) | u128::from(cy.nl_run);
+            let nl_e = scanthru(nl_m, cur.nl as u128);
+            let nl_span = nl_e.wrapping_sub(nl_m);
+
+            // ── the one backward-in-time dependency: a newline arriving now retracts the "start
+            // after the last newline" already committed for a whitespace run open at the last edge.
+            if let Some(p) = cy.anl
+                && was(pv.ws)
+                && cur.ws & 1 != 0
+                && cur.nl & lead_run(cur.ws, valid) != 0
+            {
+                starts[p / 64] &= !(1u64 << (p % 64));
+                cy.anl = None;
+            }
+
+            let mut st = groups
+                | lm_start
+                | ws_start
+                | gap_start
+                | ps_start
+                | cjk_start
+                | after_nl
+                | steal
+                | gap_steal;
+            st &= !(aa_span as u64) & !(nl_span as u64);
+            st |= aa_e as u64 | nl_e as u64;
+
+            // ── carries ───────────────────────────────────────────────────────────────────────
+            cy.aa_run = aa_e >> 64 != 0;
+            cy.nl_run = nl_e >> 64 != 0;
+            let tn = trail_run(cur.num, valid, len);
+            cy.dig_run = tn != 0 && will(x.nx.num);
+            cy.dig_since = if !cy.dig_run {
+                0
+            } else {
+                let g = groups & tn;
+                let counted = if g == 0 {
+                    cy.dig_since + (cur.num & cur.lead & tn).count_ones()
+                } else {
+                    (cur.num & cur.lead & tn & !((1u64 << (63 - g.leading_zeros())) - 1))
+                        .count_ones()
+                };
+                counted % 3
+            };
+            let tws = trail_run(cur.ws, valid, len);
+            if tws != 0 && will(x.nx.ws) {
+                // ...but not a bit that a punct tail's `[\r\n]*` already made a *run start*: the
+                // absorption cut the whitespace run, so a later newline cannot reach back past it.
+                let a = after_nl & tws & !(nl_e as u64);
+                if a != 0 {
+                    cy.anl = Some(x.base + 63 - a.leading_zeros() as usize);
+                } else if !(tws & 1 != 0 && was(pv.ws)) {
+                    cy.anl = None; // a fresh run with no newline yet — nothing left to retract
+                }
+            } else {
+                cy.anl = None;
+            }
+
+            Out {
+                st,
+                patch: steal_patch | gap_patch,
+                flag: 0,
+            }
+        },
+    );
 
     emit(starts, nblk, ntext, out)
 }
