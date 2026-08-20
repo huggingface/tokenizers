@@ -55,10 +55,9 @@ use std::fmt::Debug;
 use std::iter::Iterator;
 use wide::i8x16;
 
-use crate::vocab::bucket_vocab_store::key_and_hash;
 #[cfg(test)]
 use crate::vocab::bucket_vocab_store::INLINE_KEY_BYTES;
-
+use crate::vocab::bucket_vocab_store::key_and_hash;
 
 pub const MAX_INLINE_IDS: usize = 3;
 

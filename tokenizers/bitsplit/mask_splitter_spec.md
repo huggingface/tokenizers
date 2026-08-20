@@ -90,6 +90,14 @@ Which collapses three families onto one emit:
 | regex grammars (gpt2, cl100k/qwen, o200k/tekken/kimi, deepseek) | the algebra of §6 |
 | literals (Metaspace `▁`, CharDelimiterSplit) | shifted-AND chain of byte compares |
 
+The class-run row is **done**: `classes.rs` is now a 4-code grammar on the shared `blocks` driver
+(`3` DROP, `2` ISOLATE, `1` KEEP_A, `0` other -- two planes, one run-start each), and the 205-line
+NEON/wasm run extractor it replaced is deleted. A dropped run still opens a start so the token
+before it closes there; `emit`'s `fake` bitmap says that start is a boundary, not a token. Measured
+**2.03x geomean faster** than the hand-written extractor (worst 1.79x, best 2.53x; 6 corpora x 2
+mask combos at 1 MiB), byte-exact on 30 corpora x 4 lengths x 7 combos plus a per-char-boundary
+block-phase sweep (`tests/classes.rs`).
+
 And `SplitDelimiterBehavior` stops being per-grammar code — it is a post-pass on the mask:
 
 ```

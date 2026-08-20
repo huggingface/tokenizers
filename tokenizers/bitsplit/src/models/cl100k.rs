@@ -8,8 +8,8 @@
 
 use super::family_gpt::{cls, contractions};
 use crate::{
-    Anl, CODE_CONT, Digits, Out, Span, blocks, emit, fill_to_last, was, will,
-    later_in_run, scanthru, to_lead, trail_run,
+    Anl, CODE_CONT, Digits, Out, Span, blocks, emit, fill_to_last, later_in_run, scanthru, to_lead,
+    trail_run, was, will,
 };
 
 /// cl100k_base / Llama-3 / GLM-4.6 — rule 3 is `\p{N}{1,3}`.
@@ -49,9 +49,7 @@ fn cl100k(
         return 0;
     }
     let nblk = ntext.div_ceil(64);
-    assert!(
-        tags.len() >= ntext && starts.len() >= nblk && out.len() >= ntext
-    );
+    assert!(tags.len() >= ntext && starts.len() >= nblk && out.len() >= ntext);
     let mut nl_run = false;
     let mut dig = Digits::default();
     let mut prev_osf = false; // previous block's last byte belonged to a token-opening "other" char
@@ -77,10 +75,7 @@ fn cl100k(
                 to_lead(cur.ws & !cur.nl & x.lb & !x.eof & !fw.ws, cur.cont, pv.cont);
             // `\s*[\r\n]+` runs through the run's LAST newline, so a token opens right after it
             // unless a further newline still follows inside the run (backward scan → reversal).
-            let after_nl = bk.nl
-                & cur.ws
-                & lead
-                & !later_in_run(cur.nl, cur.ws);
+            let after_nl = bk.nl & cur.ws & lead & !later_in_run(cur.nl, cur.ws);
 
             // ── `[^\r\n\p{L}\p{N}]?\p{L}+`: the prefix is ANY non-newline non-letter non-digit
             // char, not just a space — so a punctuation char that opens a token is swallowed by a
@@ -98,15 +93,10 @@ fn cl100k(
             // token" is a plain shift. `MatchStar` consumes `c` from the marker, and the marker is a
             // LEAD, so step into the run first; bit 0 is seeded too when the char's lead sat in the
             // previous block.
-            let osf = fill_to_last(
-                ((o_start << 1) | u64::from(prev_osf)) & cur.cont,
-                cur.cont,
-            ) | o_start;
-            let l_start = cur.l
-                & lead
-                & !bk.l
-                & !(bk.ws & !bk.nl)
-                & !((osf << 1) | u64::from(prev_osf));
+            let osf =
+                fill_to_last(((o_start << 1) | u64::from(prev_osf)) & cur.cont, cur.cont) | o_start;
+            let l_start =
+                cur.l & lead & !bk.l & !(bk.ws & !bk.nl) & !((osf << 1) | u64::from(prev_osf));
 
             // ── rule 3 `\p{N}{1,digit_cap}`
             let groups = dig.starts(digit_cap, cur.n, lead, cur.cont, was(pv.n));
@@ -126,7 +116,14 @@ fn cl100k(
             nl_run = nl_e >> 64 != 0;
             dig.commit(digit_cap, groups, cur.n, lead, valid, len, will(x.nx.n));
             let tws = trail_run(cur.ws, valid, len);
-            anl.commit(x.base, after_nl, tws, nl_e as u64, will(x.nx.ws), was(pv.ws));
+            anl.commit(
+                x.base,
+                after_nl,
+                tws,
+                nl_e as u64,
+                will(x.nx.ws),
+                was(pv.ws),
+            );
             prev_osf = osf >> (len - 1) & 1 != 0;
 
             st &= lead;
@@ -143,5 +140,5 @@ fn cl100k(
             }
         },
     );
-    emit(starts, nblk, ntext, out)
+    emit(starts, &[], nblk, ntext, out)
 }

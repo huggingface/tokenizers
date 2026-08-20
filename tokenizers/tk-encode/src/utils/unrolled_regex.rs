@@ -101,7 +101,9 @@ impl crate::tokenizer::pattern::Pattern for GrammarPattern {
         let (mut starts, mut flag) = (vec![0u64; words], vec![0u64; words]);
         let mut later = vec![0u64; 2 * words];
         let mut spans = vec![Span::default(); n + 1];
-        let k = self.0.split(bytes, &tags, &mut starts, &mut flag, &mut later, &mut spans);
+        let k = self
+            .0
+            .split(bytes, &tags, &mut starts, &mut flag, &mut later, &mut spans);
         Ok(spans[..k]
             .iter()
             .map(|sp| ((sp.start as usize, sp.end as usize), true))
@@ -155,7 +157,10 @@ mod tests {
             })
         );
         // Out of family → None (fancy-regex fallback): a foreign digit rule, and a totally unrelated regex.
-        assert_eq!(recognize(&CL100K.replace(r"\p{N}{1,3}", r"\p{N}{2,4}")), None);
+        assert_eq!(
+            recognize(&CL100K.replace(r"\p{N}{1,3}", r"\p{N}{2,4}")),
+            None
+        );
         assert_eq!(recognize(r"\w+|\s+"), None);
     }
 }

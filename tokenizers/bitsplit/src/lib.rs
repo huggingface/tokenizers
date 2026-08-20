@@ -203,8 +203,8 @@ pub mod models;
 pub mod regexes;
 mod simd;
 
-pub use models::deepseek::bitsplit_deepseek;
 pub use models::cl100k::{bitsplit_cl100k, bitsplit_qwen};
+pub use models::deepseek::bitsplit_deepseek;
 pub use models::gpt2::bitsplit_byte_level;
 pub use models::kimi::bitsplit_kimi;
 pub use models::o200k::bitsplit_o200k;
@@ -486,7 +486,14 @@ pub(crate) struct Digits {
 
 impl Digits {
     /// This block's group starts: a boundary every `cap` chars from the run start.
-    pub(crate) fn starts(&self, cap: usize, n: u64, lead: u64, cont: u64, prev_is_digit: bool) -> u64 {
+    pub(crate) fn starts(
+        &self,
+        cap: usize,
+        n: u64,
+        lead: u64,
+        cont: u64,
+        prev_is_digit: bool,
+    ) -> u64 {
         digit_groups(cap, n, lead, cont, prev_is_digit, self.open, self.since)
     }
 
@@ -521,7 +528,14 @@ pub(crate) struct Anl(Option<usize>);
 impl Anl {
     /// Top of a block: a newline has arrived inside the run that was open at the edge, so the start
     /// committed for it is no longer after the last newline.
-    pub(crate) fn retract(&mut self, starts: &mut [u64], prev_ws: bool, ws: u64, nl: u64, valid: u64) {
+    pub(crate) fn retract(
+        &mut self,
+        starts: &mut [u64],
+        prev_ws: bool,
+        ws: u64,
+        nl: u64,
+        valid: u64,
+    ) {
         if let Some(p) = self.0
             && prev_ws
             && ws & 1 != 0
@@ -641,39 +655,28 @@ fn digit_groups(
     groups
 }
 
-// ── scalar helpers, shared by the grammars that need an escape ──────────────────────────────
-use crate::classify::{Atom, in_mask};
-
-
-
-
-#[inline]
-pub(crate) fn run_end(tags: &[u8], mut i: usize, end: usize, m: u16) -> usize {
-    let m = m | Atom::Cont.bit();
-    while i < end && in_mask(tags[i], m) {
-        i += 1;
-    }
-    i
-}
-
-
-
-
 // ── emit ────────────────────────────────────────────────────────────────────────────────────────
 
 /// `starts` bitmap → spans. Each set bit closes the previous token and opens the next; `tzcnt`
-/// walks them at ~3 ops per token.
-pub(crate) fn emit(starts: &[u64], nblk: usize, n: usize, out: &mut [Span]) -> usize {
+/// walks them at ~3 ops per token. A bit also set in `fake` closes but opens nothing — that is how
+/// the class-run family expresses a *dropped* run: it is a boundary, not a token. Pass `&[]` when
+/// every start is a real one.
+pub(crate) fn emit(starts: &[u64], fake: &[u64], nblk: usize, n: usize, out: &mut [Span]) -> usize {
     let (mut w, mut open) = (0usize, u32::MAX);
     for (bi, &word) in starts.iter().enumerate().take(nblk) {
         let mut m = word;
         while m != 0 {
-            let pos = (bi * 64 + m.trailing_zeros() as usize) as u32;
+            let t = m.trailing_zeros() as usize;
+            let pos = (bi * 64 + t) as u32;
             if open != u32::MAX {
                 out[w] = Span::new(open, pos);
                 w += 1;
             }
-            open = pos;
+            open = if fake.get(bi).is_some_and(|f| f >> t & 1 != 0) {
+                u32::MAX
+            } else {
+                pos
+            };
             m &= m - 1;
         }
     }
@@ -683,8 +686,6 @@ pub(crate) fn emit(starts: &[u64], nblk: usize, n: usize, out: &mut [Span]) -> u
     }
     w
 }
-
-
 
 /// Byte length of the contraction at `i` (2 or 3), or 0. `ci` picks cl100k/o200k's `(?i:)` form
 /// over GPT-2's case-sensitive one.
@@ -714,7 +715,15 @@ pub fn build_only(text: &[u8], tags: &[u8]) -> u64 {
     let (mut acc, mut code, mut cjk) = (0u64, CODE_CONT, false);
     for base in (0..text.len()).step_by(64) {
         let len = (text.len() - base).min(64);
-        let (b, c) = build_block::<{ AUX_CJK }, false>(text, tags, base, len, &models::deepseek::LUT, code, cjk);
+        let (b, c) = build_block::<{ AUX_CJK }, false>(
+            text,
+            tags,
+            base,
+            len,
+            &models::deepseek::LUT,
+            code,
+            cjk,
+        );
         code = c;
         cjk = b.aux >> (len - 1) & 1 != 0;
         acc ^= b.cont ^ b.p0 ^ b.p1 ^ b.p2 ^ b.aux;
@@ -761,7 +770,7 @@ mod op_tests {
             (0x0000_0001_0000_0100, 0x0000_00FE_0000_FE00),
             (0xAAAA_AAAA_AAAA_AAAA, 0x5555_5555_5555_5555),
         ] {
-            let stepped = ((m << 1) & c) as u64;
+            let stepped = (m << 1) & c;
             let got = fill_to_last(stepped, c) | m;
             assert_eq!(got, star_ref(m, c), "m={m:#018x} c={c:#018x}");
         }
@@ -771,7 +780,11 @@ mod op_tests {
     #[test]
     fn scanthru_lands_and_fill_to_last_spans() {
         let (m, c) = (0b0010u64, 0b1110u64);
-        assert_eq!(scanthru(m as u128, c as u128) as u64, 0b10000, "landing only");
+        assert_eq!(
+            scanthru(m as u128, c as u128) as u64,
+            0b10000,
+            "landing only"
+        );
         assert_eq!(fill_to_last(m, c), 0b01110, "span, landing excluded");
     }
 }

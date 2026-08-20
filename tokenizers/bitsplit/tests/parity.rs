@@ -32,25 +32,74 @@ const EDGE: &str = "IT'S O'Brien can't 'quoted' l'été rock'n'roll\r\n\
 /// o200k family reads `later`, and deepseek ignores `flag` too).
 type Split = fn(&[u8], &[u8], &mut [u64], &mut [u64], &mut [u64], &mut [Span]) -> usize;
 
-fn bs_deepseek(t: &[u8], g: &[u8], s: &mut [u64], _f: &mut [u64], _l: &mut [u64], o: &mut [Span]) -> usize {
+fn bs_deepseek(
+    t: &[u8],
+    g: &[u8],
+    s: &mut [u64],
+    _f: &mut [u64],
+    _l: &mut [u64],
+    o: &mut [Span],
+) -> usize {
     bitsplit::bitsplit_deepseek(t, g, s, o)
 }
-fn bs_byte_level(t: &[u8], g: &[u8], s: &mut [u64], f: &mut [u64], _l: &mut [u64], o: &mut [Span]) -> usize {
+fn bs_byte_level(
+    t: &[u8],
+    g: &[u8],
+    s: &mut [u64],
+    f: &mut [u64],
+    _l: &mut [u64],
+    o: &mut [Span],
+) -> usize {
     bitsplit::bitsplit_byte_level(t, g, s, f, o)
 }
-fn bs_cl100k(t: &[u8], g: &[u8], s: &mut [u64], f: &mut [u64], _l: &mut [u64], o: &mut [Span]) -> usize {
+fn bs_cl100k(
+    t: &[u8],
+    g: &[u8],
+    s: &mut [u64],
+    f: &mut [u64],
+    _l: &mut [u64],
+    o: &mut [Span],
+) -> usize {
     bitsplit::bitsplit_cl100k(t, g, s, f, o)
 }
-fn bs_qwen(t: &[u8], g: &[u8], s: &mut [u64], f: &mut [u64], _l: &mut [u64], o: &mut [Span]) -> usize {
+fn bs_qwen(
+    t: &[u8],
+    g: &[u8],
+    s: &mut [u64],
+    f: &mut [u64],
+    _l: &mut [u64],
+    o: &mut [Span],
+) -> usize {
     bitsplit::bitsplit_qwen(t, g, s, f, o)
 }
-fn bs_o200k(t: &[u8], g: &[u8], s: &mut [u64], f: &mut [u64], _l: &mut [u64], o: &mut [Span]) -> usize {
+fn bs_o200k(
+    t: &[u8],
+    g: &[u8],
+    s: &mut [u64],
+    f: &mut [u64],
+    _l: &mut [u64],
+    o: &mut [Span],
+) -> usize {
     bitsplit::bitsplit_o200k(t, g, s, f, _l, o)
 }
-fn bs_tekken(t: &[u8], g: &[u8], s: &mut [u64], f: &mut [u64], _l: &mut [u64], o: &mut [Span]) -> usize {
+fn bs_tekken(
+    t: &[u8],
+    g: &[u8],
+    s: &mut [u64],
+    f: &mut [u64],
+    _l: &mut [u64],
+    o: &mut [Span],
+) -> usize {
     bitsplit::bitsplit_tekken(t, g, s, f, _l, o)
 }
-fn bs_kimi(t: &[u8], g: &[u8], s: &mut [u64], f: &mut [u64], _l: &mut [u64], o: &mut [Span]) -> usize {
+fn bs_kimi(
+    t: &[u8],
+    g: &[u8],
+    s: &mut [u64],
+    f: &mut [u64],
+    _l: &mut [u64],
+    o: &mut [Span],
+) -> usize {
     bitsplit::bitsplit_kimi(t, g, s, f, _l, o)
 }
 

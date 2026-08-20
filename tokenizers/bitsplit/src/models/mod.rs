@@ -8,9 +8,9 @@
 //! that actually differ are named in `family_o200k`'s header. deepseek, cl100k and gpt2 stay separate:
 //! their grammars genuinely diverge.
 pub mod cl100k;
+pub mod deepseek;
 mod family_gpt;
 mod family_o200k;
-pub mod deepseek;
 pub mod gpt2;
 pub mod kimi;
 pub mod o200k;

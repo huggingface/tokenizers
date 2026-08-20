@@ -72,7 +72,11 @@ fn match_bits(text: &[u8], needle: &[u8], base: usize) -> u64 {
     if room == 0 {
         return 0;
     }
-    let valid = if room == 64 { !0u64 } else { (1u64 << room) - 1 };
+    let valid = if room == 64 {
+        !0u64
+    } else {
+        (1u64 << room) - 1
+    };
     // First byte in SIMD -- this is the whole cost, everything after it runs on the survivors.
     let mut m = eq_bits(text, base, needle[0]) & valid;
     for (k, &b) in needle.iter().enumerate().skip(1) {

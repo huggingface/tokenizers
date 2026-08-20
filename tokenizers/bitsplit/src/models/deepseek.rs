@@ -3,9 +3,8 @@
 //! `atomsplit::fsm::fsm_deepseek`.
 
 use crate::{
-    Anl, was, will, Digits,
-   AUX_CJK, CODE_CONT, Out, Span, blocks, build_block, emit,
-    later_in_run, scanthru, to_lead, trail_run,
+    AUX_CJK, Anl, CODE_CONT, Digits, Out, Span, blocks, build_block, emit, later_in_run, scanthru,
+    to_lead, trail_run, was, will,
 };
 
 /// Atom tag → dense 3-bit code. Letter and Mark share a code because deepseek's letter run is
@@ -61,8 +60,8 @@ streams!(
 /// Everything a rule asks about a neighbouring byte now rides in the streams themselves.
 #[derive(Default)]
 struct Carry {
-    aa_run: bool,       // an alt-1 `[A-Za-z]+` run is still open
-    nl_run: bool,       // a `[\p{P}\p{S}]+[\r\n]*` newline tail is still open
+    aa_run: bool, // an alt-1 `[A-Za-z]+` run is still open
+    nl_run: bool, // a `[\p{P}\p{S}]+[\r\n]*` newline tail is still open
     dig: Digits,
     anl: Anl,
 }
@@ -145,8 +144,7 @@ pub fn bitsplit_deepseek(text: &[u8], tags: &[u8], starts: &mut [u64], out: &mut
             let ws_start = cur.ws & cur.lead & !bk.ws;
             let gap_start = cur.gap & cur.lead & !bk.gap;
             let ps_start = cur.ps & cur.lead & !bk.ps & !bk.sp;
-            let cjk_start =
-                (cur.cjk_l & cur.lead & !bk.cjk_l) | (cur.cjk_p & cur.lead & !bk.cjk_p);
+            let cjk_start = (cur.cjk_l & cur.lead & !bk.cjk_l) | (cur.cjk_p & cur.lead & !bk.cjk_p);
 
             // ── Split-1 `\p{N}{1,3}` — a group boundary every 3 chars from the run start. This
             // was `digit_groups` written out by hand, fast path included; it is the shared one now.
@@ -157,13 +155,11 @@ pub fn bitsplit_deepseek(text: &[u8], tags: &[u8], starts: &mut [u64], out: &mut
             //     unless a further newline still follows inside the run (a backward scan, hence
             //     the reversal).
             let anl = bk.nl & cur.ws & cur.lead;
-            let later_nl =
-                later_in_run(cur.nl, cur.ws);
+            let later_nl = later_in_run(cur.nl, cur.ws);
             let after_nl = anl & !later_nl;
             // (b) the run's last char is handed to whatever follows, as its `[^…]?` / ` ?` prefix
             //     — unless the run ends the input or the next piece is Split-1/2-isolated (`(?!\S)`).
-            let steal_lb =
-                cur.ws & !cur.nl & x.lb & !x.eof & !fw.ws & !(fw.n_raw | fw.cjk);
+            let steal_lb = cur.ws & !cur.nl & x.lb & !x.eof & !fw.ws & !(fw.n_raw | fw.cjk);
             let (steal, steal_patch) = to_lead(steal_lb, cur.cont, pv.cont);
             // (c) the same one-char give-back out of a gap run (Control / NumericOther / ZWJ match
             // no alternative, so the run is one piece minus the char a following letter run claims).
@@ -205,9 +201,17 @@ pub fn bitsplit_deepseek(text: &[u8], tags: &[u8], starts: &mut [u64], out: &mut
             // ── carries ───────────────────────────────────────────────────────────────────────
             cy.aa_run = aa_e >> 64 != 0;
             cy.nl_run = nl_e >> 64 != 0;
-            cy.dig.commit(3, groups, cur.num, cur.lead, valid, len, will(x.nx.num));
+            cy.dig
+                .commit(3, groups, cur.num, cur.lead, valid, len, will(x.nx.num));
             let tws = trail_run(cur.ws, valid, len);
-            cy.anl.commit(x.base, after_nl, tws, nl_e as u64, will(x.nx.ws), was(pv.ws));
+            cy.anl.commit(
+                x.base,
+                after_nl,
+                tws,
+                nl_e as u64,
+                will(x.nx.ws),
+                was(pv.ws),
+            );
 
             Out {
                 st,
@@ -217,5 +221,5 @@ pub fn bitsplit_deepseek(text: &[u8], tags: &[u8], starts: &mut [u64], out: &mut
         },
     );
 
-    emit(starts, nblk, ntext, out)
+    emit(starts, &[], nblk, ntext, out)
 }

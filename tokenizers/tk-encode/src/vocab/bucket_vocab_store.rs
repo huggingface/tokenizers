@@ -13,7 +13,6 @@ static KEY_HASHER: RandomState = RandomState::with_seeds(
 
 type Mphf = FastPtrHash<NoHash, u64>;
 
-
 /// Bit 31 of a stored id: the token provably encodes to itself, so a pretoken equal to it can be
 /// emitted without running the merge loop. See `PipelineBPE::prove_fold`.
 ///
@@ -56,7 +55,11 @@ pub fn key_and_hash_readable(word: &[u8], readable: usize) -> (u64, u64) {
     // SAFETY: `len <= INLINE_KEY_BYTES == 7`, and both tables have 8 entries.
     let (mask, tag) = unsafe { (*KEY_MASK.get_unchecked(len), *LEN_TAG.get_unchecked(len)) };
     let key = (raw & mask) | tag;
-    debug_assert_eq!(key, key_and_hash(word).0, "masked load must match the stitched pack");
+    debug_assert_eq!(
+        key,
+        key_and_hash(word).0,
+        "masked load must match the stitched pack"
+    );
     (key, mix(key))
 }
 
@@ -247,7 +250,10 @@ impl BucketVocabStore {
                 s.len() <= u16::MAX as usize,
                 "token longer than 65535 bytes"
             );
-            assert!(*id <= VOCAB_ID_MASK, "token id {id} needs bit 31, which holds FOLD_BIT");
+            assert!(
+                *id <= VOCAB_ID_MASK,
+                "token id {id} needs bit 31, which holds FOLD_BIT"
+            );
             let (key, hash) = key_and_hash(s.as_slice());
             let slot = mphf.index(&hash);
             entries[slot] = Entry {

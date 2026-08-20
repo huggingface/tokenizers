@@ -46,9 +46,11 @@ impl pipeline::PreTokenizer for WhitespaceSplit {
         // drop whitespace runs, keep everything else as runs — atomsplit SIMD classify + class-runs FSM.
         // atom `WS` == `char::is_whitespace`, so byte-exact with the scalar path.
         use bitsplit::classify::mask;
-        pipeline::classify_into_spans(
+        pipeline::classify_into_spans_bits(
             text.as_bytes(),
-            bitsplit::classes::class_runs_into::<{ mask::WS }, 0, 0>,
+            |b, t, st, fk, _, o| {
+                bitsplit::classes::class_runs_into::<{ mask::WS }, 0, 0>(b, t, st, fk, o)
+            },
             out,
         );
         Ok(())
@@ -75,9 +77,13 @@ impl pipeline::PreTokenizer for Whitespace {
         // `\w+|[^\w\s]+`: drop whitespace, cut at the word↔symbol boundary, each run one token —
         // atomsplit classify + class-runs FSM (`WORD` = `\w`; keep-A = word, keep-B = symbol).
         use bitsplit::classify::mask;
-        pipeline::classify_into_spans(
+        pipeline::classify_into_spans_bits(
             text.as_bytes(),
-            bitsplit::classes::class_runs_into::<{ mask::WS }, 0, { mask::WORD }>,
+            |b, t, st, fk, _, o| {
+                bitsplit::classes::class_runs_into::<{ mask::WS }, 0, { mask::WORD }>(
+                    b, t, st, fk, o,
+                )
+            },
             out,
         );
         Ok(())

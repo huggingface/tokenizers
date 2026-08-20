@@ -427,9 +427,7 @@ impl pipeline::Model for PipelineBPE {
             let mut placement = None;
             if let Some(cache) = cache_slot.as_deref_mut() {
                 // SAFETY: the capacity check above leaves `MAX_INLINE_IDS` slots past `cursor`, and
-                let found = unsafe {
-                    cache.probe_emit_keyed(key, hash, dst.cast::<u32>())
-                };
+                let found = unsafe { cache.probe_emit_keyed(key, hash, dst.cast::<u32>()) };
                 match found {
                     ProbeEmit::Wrote(n) => {
                         cursor += n;

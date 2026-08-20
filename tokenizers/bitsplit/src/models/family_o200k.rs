@@ -26,11 +26,8 @@
 //!     *extends* the open token instead of opening one — the mirror image of `emit_contr`.
 
 use crate::{
-    Anl, was, will, Digits,
-    CONT,
-   AUX_SLASH, CODE_CONT, Out, Span, blocks, build_block, contr_len,
-    fill_to_last, later_in_run, lead_run,
-    scanthru, to_lead, trail_run,
+    AUX_SLASH, Anl, CODE_CONT, CONT, Digits, Out, Span, blocks, build_block, contr_len,
+    fill_to_last, later_in_run, lead_run, scanthru, to_lead, trail_run, was, will,
 };
 
 /// Atom tag → dense 4-bit code. Unlike cl100k, `\p{M}` IS a letter here (both alt classes list
@@ -74,18 +71,18 @@ streams!(
 #[derive(Default)]
 struct Carry {
     nl_run: bool,
-    oth_edge: bool,     // rule 4's effective `oth` at the previous block's last byte
-    letter_edge: bool,  // ...and the adjusted `letter` there
+    oth_edge: bool,      // rule 4's effective `oth` at the previous block's last byte
+    letter_edge: bool,   // ...and the adjusted `letter` there
     mark_oth_open: bool, // a mark stretch rule 4 took was still running at the last edge
     prev_osf: bool,
     prev_absorbed: bool, // the block's last byte was eaten by a `[\r\n/]*` tail
     dig: Digits,
     anl: Anl,
-    sfx_carry: u64,  // bytes of a contraction suffix that spilled past the last block edge
-    force: u64,      // ...and the start it opens just past itself, if that landed past the edge
-    sfx_end: usize,  // just past the last consumed suffix: the apostrophe THERE is a prefix, not
-                     // a second suffix -- `(?i:...)?` applies once (`a's's` is `a's`, `'s`)
-    lc_open: bool,   // an `lc` run was still open at the last block edge
+    sfx_carry: u64, // bytes of a contraction suffix that spilled past the last block edge
+    force: u64,     // ...and the start it opens just past itself, if that landed past the edge
+    sfx_end: usize, // just past the last consumed suffix: the apostrophe THERE is a prefix, not
+    // a second suffix -- `(?i:...)?` applies once (`a's's` is `a's`, `'s`)
+    lc_open: bool, // an `lc` run was still open at the last block edge
 }
 
 /// Build one block's streams; returns the fill seed and the Han carry for the block after.
@@ -296,11 +293,8 @@ pub(crate) fn run<const AUX: u8, const CONTR: bool, const DIGITS: usize, const H
             let bk_letter = (letter << 1) | u64::from(cy.letter_edge);
 
             let ws_start = cur.ws & lead & !bk.ws;
-            let (steal, steal_patch) = to_lead(
-                cur.ws & !cur.nl & x.lb & !x.eof & !fw.ws,
-                cur.cont,
-                pv.cont,
-            );
+            let (steal, steal_patch) =
+                to_lead(cur.ws & !cur.nl & x.lb & !x.eof & !fw.ws, cur.cont, pv.cont);
             let after_nl = bk.nl & cur.ws & lead & !later_in_run(cur.nl, cur.ws);
 
             let l_start = letter
@@ -312,7 +306,7 @@ pub(crate) fn run<const AUX: u8, const CONTR: bool, const DIGITS: usize, const H
             // letters belong to the token before it: leaving them in `letter` would make the
             // alternation below start its run on the suffix (`…'s中Ĳa中` would split after `中`).
             let apo_after = if CONTR { cur.apo & lead & bk_letter } else { 0 };
-            let mut sfx = cy.sfx_carry;  // a suffix that spilled past the last edge
+            let mut sfx = cy.sfx_carry; // a suffix that spilled past the last edge
             let mut sfx_open = cy.force; // ...and the start it opens just past itself
             cy.sfx_carry = 0;
             cy.force = 0;
@@ -400,7 +394,15 @@ pub(crate) fn run<const AUX: u8, const CONTR: bool, const DIGITS: usize, const H
 
             cy.anl.retract(starts, was(pv.ws), cur.ws, cur.nl, valid);
 
-            let mut st = groups | l_start | lt_in | lt_cut | han_start | o_start | ws_start | after_nl | steal;
+            let mut st = groups
+                | l_start
+                | lt_in
+                | lt_cut
+                | han_start
+                | o_start
+                | ws_start
+                | after_nl
+                | steal;
             st &= !nl_span;
             st |= nl_e as u64;
             st &= !sfx; // nothing inside a contraction suffix opens a token
@@ -409,9 +411,17 @@ pub(crate) fn run<const AUX: u8, const CONTR: bool, const DIGITS: usize, const H
             // ── carries
             cy.nl_run = nl_e >> 64 != 0;
             cy.prev_absorbed = nl_span >> (len - 1) & 1 != 0;
-            cy.dig.commit(DIGITS, groups, cur.n, lead, valid, len, will(x.nx.n));
+            cy.dig
+                .commit(DIGITS, groups, cur.n, lead, valid, len, will(x.nx.n));
             let tws = trail_run(cur.ws, valid, len);
-            cy.anl.commit(x.base, after_nl, tws, nl_e as u64, will(x.nx.ws), was(pv.ws));
+            cy.anl.commit(
+                x.base,
+                after_nl,
+                tws,
+                nl_e as u64,
+                will(x.nx.ws),
+                was(pv.ws),
+            );
             cy.prev_osf = osf >> (len - 1) & 1 != 0;
             cy.oth_edge = oth >> (len - 1) & 1 != 0;
             cy.letter_edge = letter >> (len - 1) & 1 != 0;
@@ -425,5 +435,5 @@ pub(crate) fn run<const AUX: u8, const CONTR: bool, const DIGITS: usize, const H
         },
     );
 
-    crate::emit(starts, nblk, ntext, out)
+    crate::emit(starts, &[], nblk, ntext, out)
 }

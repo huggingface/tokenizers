@@ -43,20 +43,20 @@ impl pipeline::PreTokenizer for Digits {
     fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Span>) -> Result<()> {
         // isolate each numeric char (`individual_digits`) or keep numeric runs — atomsplit classify +
         // class-runs FSM. atom `NUMERIC` == `char::is_numeric`, so byte-exact with the scalar path.
-        use bitsplit::classify::{classify, mask};
         use bitsplit::classes::class_runs_into;
-        let bytes = text.as_bytes();
-        let mut tags = vec![0u8; bytes.len()];
-        classify(bytes, &mut tags);
-        let mut spans = vec![pipeline::Span::default(); bytes.len() + 1];
-        let n = if self.individual_digits {
-            class_runs_into::<0, { mask::NUMERIC }, 0>(bytes, &tags, &mut spans)
-        // isolate each digit
-        } else {
-            class_runs_into::<0, 0, { mask::NUMERIC }>(bytes, &tags, &mut spans)
-            // keep digit runs
-        };
-        out.extend_from_slice(&spans[..n]);
+        use bitsplit::classify::mask;
+        let individual = self.individual_digits;
+        pipeline::classify_into_spans_bits(
+            text.as_bytes(),
+            |b, t, st, fk, _, s| {
+                if individual {
+                    class_runs_into::<0, { mask::NUMERIC }, 0>(b, t, st, fk, s) // isolate each digit
+                } else {
+                    class_runs_into::<0, 0, { mask::NUMERIC }>(b, t, st, fk, s) // keep digit runs
+                }
+            },
+            out,
+        );
         Ok(())
     }
 }

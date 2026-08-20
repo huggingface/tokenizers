@@ -189,7 +189,9 @@ impl pipeline::PreTokenizer for Split {
         {
             pipeline::classify_into_spans_bits(
                 text.as_bytes(),
-                |t, tags, starts, flag, later, out| grammar.split(t, tags, starts, flag, later, out),
+                |t, tags, starts, flag, later, out| {
+                    grammar.split(t, tags, starts, flag, later, out)
+                },
                 out,
             );
             return Ok(());

@@ -25,9 +25,7 @@ pub fn bitsplit_byte_level(
         return 0;
     }
     let nblk = ntext.div_ceil(64);
-    assert!(
-        tags.len() >= ntext && starts.len() >= nblk && out.len() >= ntext
-    );
+    assert!(tags.len() >= ntext && starts.len() >= nblk && out.len() >= ntext);
     let mut carry = (0u64, 0u64);
     blocks(
         ntext,
@@ -60,5 +58,5 @@ pub fn bitsplit_byte_level(
             Out { st, patch, flag: 0 }
         },
     );
-    emit(starts, nblk, ntext, out)
+    emit(starts, &[], nblk, ntext, out)
 }
