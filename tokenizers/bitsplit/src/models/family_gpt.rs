@@ -15,12 +15,15 @@ pub(crate) const LUT: [u8; 64] = {
     let mut t = [2u8; 64]; // other = [^\s\p{L}\p{N}]
     t[0x00] = 0;
     t[0x10] = 0;
-    t[0x20] = 0; // Letter (+ case refinements)
+    t[0x20] = 0;
+    t[0x30] = 0; // Letter (+ case refinements; Script=Han is an ordinary letter here)
     t[0x01] = 1;
-    t[0x02] = 1; // \p{N} = Nd ∪ Nl ∪ No
+    t[0x02] = 1;
+    t[0x31] = 1; // \p{N} = Nd ∪ Nl ∪ No (Han Nl included)
     t[0x03] = 3; // Newline
     t[0x04] = 4; // Space
     t[0x05] = 5; // WsOther
+    t[0x3A] = 2; // Han \p{S} — "other", like every other symbol
     t[0x09] = 6; // Apostrophe
     t[0x0F] = CODE_CONT;
     t

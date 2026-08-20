@@ -14,5 +14,5 @@ pub fn bitsplit_tekken(
     flag: &mut [u64],
     out: &mut [Span],
 ) -> usize {
-    super::family_o200k::run::<{ AUX_SLASH }, false, 1>(text, tags, starts, flag, out)
+    super::family_o200k::run::<{ AUX_SLASH }, false, 1, false>(text, tags, starts, flag, out)
 }

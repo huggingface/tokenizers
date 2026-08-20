@@ -15,7 +15,7 @@
 //! and run under Rosetta, which reports SSSE3, so this path is the one that executes. The scalar
 //! builder in `lib.rs` stays the reference it is compared against.
 
-use crate::{AUX_CJK, AUX_HAN, AUX_NONE, AUX_SLASH, Blk, lead_run};
+use crate::{AUX_CJK, AUX_NONE, AUX_SLASH, Blk, lead_run};
 use core::arch::x86_64::*;
 
 /// `x <= k`, unsigned, in the absence of an unsigned byte compare.
@@ -148,22 +148,6 @@ pub(crate) unsafe fn build64<const AUX: u8, const P3: bool>(
                 _mm_cmpeq_epi8(_mm_loadu_si128(text.as_ptr().add(base + 32).cast()), sl),
                 _mm_cmpeq_epi8(_mm_loadu_si128(text.as_ptr().add(base + 48).cast()), sl),
             ]);
-            return (b, last_code);
-        }
-        if AUX == AUX_HAN {
-            // ponytail: scalar Han range test; vectorise like the CJK path below if kimi ever
-            // shows up on a throughput bench.
-            let lim = text.len().min(base + 64);
-            let mut leads = 0u64;
-            for p in base..lim {
-                if tags[p] != crate::CONT && crate::han::is_han_at(text, p) {
-                    leads |= 1u64 << (p - base);
-                }
-            }
-            b.aux = leads | (leads << 1) | (leads << 2);
-            if cur_aux {
-                b.aux |= lead_run(b.cont, !0);
-            }
             return (b, last_code);
         }
 

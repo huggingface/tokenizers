@@ -170,7 +170,6 @@ where
 
 pub mod classes;
 pub mod classify;
-mod han;
 pub mod literal;
 pub mod models;
 pub mod regexes;
@@ -255,7 +254,6 @@ pub(crate) const CODE_CONT: u8 = 7; // every grammar's dense code for a continua
 pub(crate) const AUX_NONE: u8 = 0;
 pub(crate) const AUX_CJK: u8 = 1; // deepseek Split-2: Han U+4E00..9FA5 ∪ kana U+3040..30FF
 pub(crate) const AUX_SLASH: u8 = 2; // o200k rule 4's `[\r\n/]*` tail
-pub(crate) const AUX_HAN: u8 = 3; // kimi-k2's leading `[\p{Han}]+` arm
 
 /// The bitstreams for one 64-byte block. `p0`..`p3` are the bit-planes of the **filled** dense
 /// code — filled meaning a multi-byte char sets its bits on *all* of its bytes, so "previous char's
@@ -295,7 +293,6 @@ pub(crate) fn aux_at<const AUX: u8>(text: &[u8], p: usize) -> bool {
     match AUX {
         AUX_CJK => is_cjk_at(text, p),
         AUX_SLASH => text[p] == b'/',
-        AUX_HAN => crate::han::is_han_at(text, p),
         _ => false,
     }
 }

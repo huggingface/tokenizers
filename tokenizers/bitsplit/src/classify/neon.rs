@@ -1,6 +1,7 @@
 use super::atom_tables::ATOM_TABLES;
 use super::{Atom, CONT, MB};
 const CJK_TAG: u8 = Atom::Letter as u8;
+const HAN_TAG: u8 = Atom::HanLetter as u8;
 
 // ================================================================================================
 // The smallest load we can do in neon is vld1q_u8, which handles 16bytes.
@@ -264,6 +265,10 @@ pub unsafe fn classify_neon(text: &[u8], tags: &mut [u8]) {
 
             let is_cjk_letter = vorrq_u8(vorrq_u8(han, hangul), kana);
             out = vbslq_u8(is_cjk_letter, vdupq_n_u8(CJK_TAG), out);
+            // Han carries the Script=Han refinement; Hangul and Kana are plain caseless letters.
+            // `han` is a subset of `is_cjk_letter` and disjoint from the other two, so one more
+            // blend is the whole difference.
+            out = vbslq_u8(han, vdupq_n_u8(HAN_TAG), out);
             resolved = vorrq_u8(resolved, is_cjk_letter);
         }
 

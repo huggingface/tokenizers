@@ -3,10 +3,10 @@
 //! (o200k has `[\r\n/]*`). Kimi ships `tiktoken.model` rather than a `tokenizer.json`, so this is
 //! the pattern as a converted tokenizer would spell it.
 //!
-//! The grammar lives in [`super::family_o200k`]; this is o200k's regex at `AUX = AUX_HAN`, which both
-//! turns on the Han arm and drops `/` from the rule-4 tail.
+//! The grammar lives in [`super::family_o200k`]; this is o200k's regex with `HAN = true`, which
+//! routes Script=Han (atom refinement 3) to its own LUT code and drops `/` from the rule-4 tail.
 
-use crate::{AUX_HAN, Span};
+use crate::{AUX_NONE, Span};
 
 /// kimi-k2 pre-tokenization.
 #[must_use]
@@ -17,5 +17,5 @@ pub fn bitsplit_kimi(
     flag: &mut [u64],
     out: &mut [Span],
 ) -> usize {
-    super::family_o200k::run::<{ AUX_HAN }, true, 3>(text, tags, starts, flag, out)
+    super::family_o200k::run::<{ AUX_NONE }, true, 3, true>(text, tags, starts, flag, out)
 }

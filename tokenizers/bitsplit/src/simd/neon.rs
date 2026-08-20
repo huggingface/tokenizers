@@ -10,7 +10,7 @@
 //! on all of its bytes. That is what lets the bitstream program read "previous char's class" as a
 //! plain `<< 1` with no char-width arithmetic.
 
-use crate::{AUX_HAN, AUX_NONE, AUX_SLASH, Blk, lead_run};
+use crate::{AUX_NONE, AUX_SLASH, Blk, lead_run};
 use core::arch::aarch64::*;
 
 const POW: [u8; 16] = [1, 2, 4, 8, 16, 32, 64, 128, 1, 2, 4, 8, 16, 32, 64, 128];
@@ -137,22 +137,6 @@ pub(crate) unsafe fn build64<const AUX: u8, const P3: bool>(
                 ],
                 pow,
             );
-            return (b, last_code);
-        }
-        if AUX == AUX_HAN {
-            // ponytail: scalar Han range test; vectorise like the CJK path below if kimi ever
-            // shows up on a throughput bench.
-            let lim = ntext.min(base + 64);
-            let mut leads = 0u64;
-            for p in base..lim {
-                if tags[p] != crate::CONT && crate::han::is_han_at(text, p) {
-                    leads |= 1u64 << (p - base);
-                }
-            }
-            b.aux = leads | (leads << 1) | (leads << 2);
-            if cur_aux {
-                b.aux |= lead_run(b.cont, !0);
-            }
             return (b, last_code);
         }
 

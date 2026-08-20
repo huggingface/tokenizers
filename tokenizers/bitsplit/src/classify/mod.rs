@@ -52,6 +52,13 @@ pub enum Atom {
     // `\p{Ll}` → 0x20, caseless `\p{Lm}\p{Lo}` → 0x00.
     UpperLetter = 0x10,
     LowerLetter = 0x20,
+    /// Script=Han, refinement 3 of whichever coarse class it lands in. Han is orthogonal to the
+    /// general category (98682 `Lo`, 329 `So`, 13 `Nl`, 2 `Lm`), so it needs one refinement per
+    /// coarse class it touches. Nothing else uses high nibble 3, which is what lets kimi's
+    /// `[\p{Han}]+` arm be `tag & 0xF0 == 0x30` instead of a per-byte range search.
+    HanLetter = 0x30,
+    HanNum = 0x31,
+    HanSym = 0x3A,
 }
 
 impl Atom {

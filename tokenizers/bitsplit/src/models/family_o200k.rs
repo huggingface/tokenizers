@@ -27,14 +27,17 @@
 
 use crate::classify::{char_len, in_mask, mask};
 use crate::{
-    AUX_HAN, AUX_SLASH, CODE_CONT, CONT, Out, Span, blocks, build_block, contr_len, digit_groups,
+    AUX_SLASH, CODE_CONT, CONT, Out, Span, blocks, build_block, contr_len, digit_groups,
     fill_to_last, lead_run, letter_match, member, run_end, scanthru, to_lead, trail_run, ws_tail,
 };
 
 /// Atom tag → dense 4-bit code. Unlike cl100k, `\p{M}` IS a letter here (both alt classes list
 /// `\p{M}`) — but only a true mark: `AlphaSymMark` (0x16, categorically `\p{S}`) and `Zwj` (0x26,
 /// `\p{Cf}`) stay "other", which is what keeps `[\p{L}\p{M}]+` off them.
-const LUT: [u8; 64] = {
+/// `HAN` routes Script=Han to code 11 — kimi's alternative 1, which outranks every other arm.
+/// Without it Han is an ordinary caseless letter / number / symbol, which is what o200k and tekken
+/// see. This is the whole of kimi's divergence: three table rows, not a second code path.
+const fn lut<const HAN: bool>() -> [u8; 64] {
     let mut t = [8u8; 64]; // other = [^\s\p{L}\p{N}] (incl. Connector/Punct/Sym/Control/ASM/ZWJ)
     t[0x10] = 0; // \p{Lu} ∪ \p{Lt}
     t[0x20] = 1; // \p{Ll}
@@ -46,14 +49,17 @@ const LUT: [u8; 64] = {
     t[0x04] = 5; // Space
     t[0x05] = 6; // WsOther
     t[0x09] = 9; // Apostrophe — "other" for every run rule, split out for the contraction flag
+    t[0x30] = if HAN { 11 } else { 2 }; // Script=Han letter
+    t[0x31] = if HAN { 11 } else { 3 }; // Script=Han \p{N} (Nl)
+    t[0x3A] = if HAN { 11 } else { 8 }; // Script=Han \p{S} (So)
     t[0x0F] = CODE_CONT;
     t
-};
+}
 
 streams!(
-    /// `letter` is the union of the alt classes with Han already subtracted (kimi's classes are
-    /// literally `[…&&[^\p{Han}]]`), so `bk.letter` answers "was the previous char a letter?" for
-    /// all three regexes. `slash` and `han` are the two AUX streams; exactly one is ever non-zero.
+    /// `letter` is the union of the alt classes. Han needs no subtracting: with `HAN` it has its
+    /// own code, so it is not in `u`/`l`/`c` to begin with (kimi's classes are literally
+    /// `[…&&[^\p{Han}]]`). `han` is that code; `slash` is the only remaining AUX stream.
     Cls { lead, cont, u, mark, n, nl, sp, ws, oth, apo, letter, slash, han }
 );
 
@@ -71,39 +77,29 @@ struct Carry {
 }
 
 /// Build one block's streams; returns the fill seed and the Han carry for the block after.
-fn cls<const AUX: u8>(
+fn cls<const AUX: u8, const HAN: bool>(
     text: &[u8],
     tags: &[u8],
     base: usize,
     len: usize,
     code: u8,
-    han_in: bool,
-) -> (Cls, u8, bool) {
+) -> (Cls, u8) {
     let valid = if len == 64 { !0u64 } else { (1u64 << len) - 1 };
-    let (b, last_code) = build_block::<AUX, true>(
-        text,
-        tags,
-        base,
-        len,
-        &LUT,
-        code,
-        AUX == AUX_HAN && han_in,
-    );
+    let (b, last_code) =
+        build_block::<AUX, true>(text, tags, base, len, &lut::<HAN>(), code, false);
     let (p0, p1, p2, p3) = (b.p0, b.p1, b.p2, b.p3);
     let low = !p3;
     let a = low & !p2;
     let w = low & p2;
-    // Han is peeled off the letter classes first: kimi's alt-1 outranks the letter alts, and its
-    // letter classes are literally `[…&&[^\p{Han}]]`. With AUX != HAN this is all zero.
-    let han = if AUX == AUX_HAN { b.aux & valid } else { 0 };
     let u = a & !p1 & !p0 & valid; // code 0 — past the block end every plane reads 0, hence `valid`
     let l = a & !p1 & p0;
     let c = a & p1 & !p0;
-    let mark = p3 & p1; // code 10
+    let mark = p3 & p1 & !p0; // code 10
+    let han = p3 & p1 & p0 & valid; // code 11 — kimi only; zero for the other two
     let cls = Cls {
         lead: valid & !b.cont,
         cont: b.cont,
-        u: u & !han,
+        u,
         mark,
         n: a & p1 & p0,
         nl: w & !p1 & !p0,
@@ -111,17 +107,16 @@ fn cls<const AUX: u8>(
         ws: w & !(p1 & p0), // codes 4,5,6 — cont (7) excluded
         oth: p3 & !p1,      // codes 8,9 — the apostrophe is "other" for run purposes
         apo: p3 & p0 & !p1, // code 9
-        letter: (u | l | c | mark) & !han,
+        letter: u | l | c | mark,
         slash: if AUX == AUX_SLASH { b.aux } else { 0 },
         han,
     };
-    let last_han = AUX == AUX_HAN && han >> (len - 1) & 1 != 0;
-    (cls, last_code, last_han)
+    (cls, last_code)
 }
 
 /// Run the family grammar. `starts` and `flag` are scratch bitmaps (len ≥ `div_ceil(64)`).
 #[must_use]
-pub(crate) fn run<const AUX: u8, const CONTR: bool, const DIGITS: usize>(
+pub(crate) fn run<const AUX: u8, const CONTR: bool, const DIGITS: usize, const HAN: bool>(
     text: &[u8],
     tags: &[u8],
     starts: &mut [u64],
@@ -137,15 +132,14 @@ pub(crate) fn run<const AUX: u8, const CONTR: bool, const DIGITS: usize>(
         tags.len() >= ntext && starts.len() >= nblk && flag.len() >= nblk && out.len() >= ntext
     );
     let mut cy = Carry::default();
-    let (mut code, mut han_in) = (CODE_CONT, false);
+    let mut code = CODE_CONT;
 
     blocks(
         ntext,
         &mut *starts,
         |base, len| {
-            let (c, last, last_han) = cls::<AUX>(text, tags, base, len, code, han_in);
+            let (c, last) = cls::<AUX, HAN>(text, tags, base, len, code);
             code = last;
-            han_in = last_han;
             c
         },
         |x, starts| {
@@ -344,7 +338,7 @@ pub(crate) fn run<const AUX: u8, const CONTR: bool, const DIGITS: usize>(
         },
     );
 
-    emit::<AUX, CONTR, DIGITS>(text, tags, starts, flag, nblk, ntext, out)
+    emit::<HAN, CONTR, DIGITS>(text, tags, starts, flag, nblk, ntext, out)
 }
 
 // ── the scalar escape ───────────────────────────────────────────────────────────────────────────
@@ -353,7 +347,7 @@ pub(crate) fn run<const AUX: u8, const CONTR: bool, const DIGITS: usize>(
 // divergent region costs a short scalar walk and nothing downstream.
 
 /// Emit ONE token starting at `i` (letters emit several) and return the cursor past it.
-fn step<const AUX: u8, const CONTR: bool, const DIGITS: usize>(
+fn step<const HAN: bool, const CONTR: bool, const DIGITS: usize>(
     text: &[u8],
     tags: &[u8],
     i: usize,
@@ -361,8 +355,10 @@ fn step<const AUX: u8, const CONTR: bool, const DIGITS: usize>(
     out: &mut [Span],
     w: &mut usize,
 ) -> usize {
-    // kimi subtracts Han from both letter classes and isolates it in its own arm
-    let han = |p: usize| AUX == AUX_HAN && crate::aux_at::<{ AUX_HAN }>(text, p);
+    // kimi subtracts Han from both letter classes and isolates it in its own arm. Script=Han is
+    // refinement 3 of whichever coarse class it lands in (0x30 letter / 0x31 Nl / 0x3A So) and
+    // nothing else uses that nibble, so this is one mask instead of a per-byte range search.
+    let han = |p: usize| HAN && p < end && tags[p] & 0xF0 == 0x30;
     let is_lm = |p: usize| p < end && member(tags[p]) && !han(p);
     let letter_end = |mut p: usize| {
         while p < end && (tags[p] == CONT || (member(tags[p]) && !han(p))) {
@@ -374,7 +370,7 @@ fn step<const AUX: u8, const CONTR: bool, const DIGITS: usize>(
         let mut p = run_end(tags, sp0, end, mask::NOT_WS_L_N);
         if p > sp0 {
             // `/` is in the tail for o200k and tekken; kimi's tail is a plain `[\r\n]*`
-            while p < end && (tags[p] == crate::NLN || (AUX == AUX_SLASH && text[p] == b'/')) {
+            while p < end && (tags[p] == crate::NLN || (!HAN && text[p] == b'/')) {
                 p += char_len(text[p]);
             }
         }
@@ -406,7 +402,7 @@ fn step<const AUX: u8, const CONTR: bool, const DIGITS: usize>(
     };
 
     // `[\p{Han}]+` — kimi's alternative 1, ahead of everything else
-    if AUX == AUX_HAN && han(i) {
+    if HAN && han(i) {
         let mut p = i;
         while p < end && (tags[p] == CONT || han(p)) {
             if tags[p] != CONT && !han(p) {
@@ -479,7 +475,7 @@ fn step<const AUX: u8, const CONTR: bool, const DIGITS: usize>(
 
 /// `emit` plus the escape: at a flagged start, hand over to the scalar dispatch and take back
 /// control at the first position that is a start bit again.
-fn emit<const AUX: u8, const CONTR: bool, const DIGITS: usize>(
+fn emit<const HAN: bool, const CONTR: bool, const DIGITS: usize>(
     text: &[u8],
     tags: &[u8],
     starts: &[u64],
@@ -506,7 +502,7 @@ fn emit<const AUX: u8, const CONTR: bool, const DIGITS: usize>(
                 }
                 let mut c = pos;
                 loop {
-                    c = step::<AUX, CONTR, DIGITS>(text, tags, c, n, out, &mut w);
+                    c = step::<HAN, CONTR, DIGITS>(text, tags, c, n, out, &mut w);
                     if c >= n || starts[c / 64] >> (c % 64) & 1 != 0 {
                         break;
                     }

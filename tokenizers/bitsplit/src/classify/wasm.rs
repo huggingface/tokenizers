@@ -24,6 +24,7 @@ use super::{Atom, CONT, MB, char_len};
 use core::arch::wasm32::*;
 
 const CJK_TAG: u8 = Atom::Letter as u8;
+const HAN_TAG: u8 = Atom::HanLetter as u8;
 
 #[inline]
 fn decode(t: &[u8], i: usize) -> u32 {
@@ -195,7 +196,7 @@ pub unsafe fn classify_wasm(text: &[u8], tags: &mut [u8]) {
         }
 
         // CJK fast path (leads E3..ED = U+3000..U+DFFF). The current scheme folds all of CJK to a
-        // single tag (`CJK_TAG = Atom::Letter`), so this is always on. It is the OPTIMISTIC bulk: it flags only lanes that
+        // two tags (`CJK_TAG` for Hangul/Kana, `HAN_TAG` for Script=Han), so this is always on. It is the OPTIMISTIC bulk: it flags only lanes that
         // are DEFINITELY that tag; boundary/hole codepoints it leaves unresolved, so they fall through
         // to the exact 3-byte tables below. It never over-claims, so the result stays byte-exact.
         let in_cjk_leads = in_range(b0, 0xE3, 0xED);
@@ -238,6 +239,8 @@ pub unsafe fn classify_wasm(text: &[u8], tags: &mut [u8]) {
 
             let is_cjk_letter = v128_or(v128_or(han, hangul), kana);
             out = v128_bitselect(u8x16_splat(CJK_TAG), out, is_cjk_letter);
+            // Han carries the Script=Han refinement; Hangul and Kana stay plain caseless letters.
+            out = v128_bitselect(u8x16_splat(HAN_TAG), out, han);
             resolved = v128_or(resolved, is_cjk_letter);
         }
 
