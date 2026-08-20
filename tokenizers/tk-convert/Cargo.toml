@@ -94,7 +94,7 @@ tk-serialize = { path = "../tk-serialize", features = [
 # Test builds only, and only to widen the gate: `Tokenizer::from_file` refuses deepseek-v4 and xlmr
 # without a system-regex backend. Cargo unions this with the `[dependencies]` entry above when
 # building tests, so the shipped crate is unaffected.
-tk-encode = { path = "../tk-encode", features = ["fancy-regex"] }
+tk-encode = { path = "../tk-encode", default-features = false, features = ["fancy-regex"] }
 criterion = "0.6"
 # The `from_pretrained` smoke test in `tokenizer/serialization.rs` turns on a subscriber.
 tracing = "0.1"
