@@ -25,11 +25,11 @@
 //!     o200k glues it onto the letter token before it. So this uses `emit_contr_suffix`, which
 //!     *extends* the open token instead of opening one — the mirror image of `emit_contr`.
 
-use crate::classify::{char_len, in_mask, mask};
 use crate::{
-   AUX_SLASH, CODE_CONT, CONT, Out, Span, blocks, build_block, contr_len, digit_groups,
-    digits_since, fill_to_last, last_pos, later_in_run, lead_run, letter_match, member, run_end,
-    scanthru, to_lead, trail_run, ws_tail,
+    CONT,
+   AUX_SLASH, CODE_CONT, Out, Span, blocks, build_block, contr_len, digit_groups,
+    digits_since, fill_to_last, last_pos, later_in_run, lead_run,
+    scanthru, to_lead, trail_run,
 };
 
 /// Atom tag → dense 4-bit code. Unlike cl100k, `\p{M}` IS a letter here (both alt classes list
@@ -73,6 +73,9 @@ streams!(
 #[derive(Default)]
 struct Carry {
     nl_run: bool,
+    oth_edge: bool,     // rule 4's effective `oth` at the previous block's last byte
+    letter_edge: bool,  // ...and the adjusted `letter` there
+    mark_oth_open: bool, // a mark stretch rule 4 took was still running at the last edge
     prev_osf: bool,
     prev_absorbed: bool, // the block's last byte was eaten by a `[\r\n/]*` tail
     dig_run: bool,
@@ -219,60 +222,101 @@ pub(crate) fn run<const AUX: u8, const CONTR: bool, const DIGITS: usize, const H
             let (valid, len, lead) = (x.valid, x.len, x.cur.lead);
             let was = |v: u64| v >> 63 != 0;
             let will = |v: u64| v & 1 != 0;
-            let letter = cur.letter;
 
             // Rule 4's `[\r\n/]*` tail. `/` is in BOTH the `+` body and the tail, so one tail run
             // can collect SEVERAL markers (`!\n/\n`: the `\n` after `!` and the `\n` after `/`).
             // That is exactly what `fill_to_last` is for -- `nl_e - nl_m` would span only from the
             // last one.
             let tail_cls = cur.nl | cur.slash;
-            let nl_m64 = ((bk.oth & cur.nl & lead) | u64::from(cy.nl_run)) & tail_cls;
-            let nl_e = scanthru(nl_m64 as u128, tail_cls as u128);
-            let nl_span = fill_to_last(nl_m64, tail_cls);
 
             // ── rule 4 ` ?[^\s\p{L}\p{N}]+[\r\n/]*` and rules 5-7 — identical to cl100k.
-            // A char absorbed by a `[\r\n/]*` tail is NOT part of the `+` body, so an "other" after
-            // it opens a fresh run (`\u{1f600}\r\n/#` is the tail, then `#` starts again).
-            let o_prev = cur.oth & !nl_span;
-            let o_start = cur.oth
-                & lead
-                & !nl_span // a char INSIDE the tail never opens a run
-                & !((o_prev << 1) | u64::from(was(pv.oth) && !cy.prev_absorbed))
-                & !bk.sp;
+            //
+            // `oth` is a fixpoint because `\p{M}` is in BOTH the letter classes and rule 4's, so a
+            // mark rule 4 keeps joins its run, which can suppress a later `o_start` and demote
+            // further marks. Monotone (`oth` only grows) and bounded by the marks in the block; with
+            // no marks it settles on the first pass.
+            let mut oth = cur.oth;
+            let mut o_start;
+            let mut osf;
+            let mut mark_oth;
+            let (mut nl_e, mut nl_span);
+            loop {
+                let bk_oth = (oth << 1) | u64::from(cy.oth_edge);
+                // The carried marker must NOT be masked with `tail_cls`: the carry says a tail was
+                // in flight at the edge, so if bit 0 is not in the class the tail LANDED there and
+                // that position opens a token. Masking it dropped the start whenever a tail ended
+                // exactly on a block edge (`…!\n` | ` \r`). `nl_span` still masks, because a landing
+                // is not *inside* the tail.
+                let nl_m64 = (bk_oth & cur.nl & lead) | u64::from(cy.nl_run);
+                nl_e = scanthru(nl_m64 as u128, tail_cls as u128);
+                nl_span = fill_to_last(nl_m64 & tail_cls, tail_cls);
+
+                // A char absorbed by a `[\r\n/]*` tail is NOT part of the `+` body, so an "other"
+                // after it opens a fresh run (`\u{1f600}\r\n/#` is the tail, then `#` starts again).
+                let o_prev = oth & !nl_span;
+                o_start = oth
+                    & lead
+                    & !nl_span // a char INSIDE the tail never opens a run
+                    & !((o_prev << 1) | u64::from(cy.oth_edge && !cy.prev_absorbed))
+                    & !bk.sp;
+
+                // `[^\r\n\p{L}\p{N}]?` before a letter run: any token-opening non-newline
+                // non-letter non-digit char, smeared across its char's continuation bytes so the
+                // test downstream is a plain shift (see cl100k).
+                osf = fill_to_last(
+                    ((o_start << 1) | u64::from(cy.prev_osf)) & cur.cont,
+                    cur.cont,
+                ) | o_start;
+
+                // Which arm claims a `\p{M}`? Two observations settle it:
+                //
+                //  * only a mark INSIDE rule 4's `+` body is contested at all. One after a letter is
+                //    just part of the letter run (`a\u{301}`) -- `[LC]+` is greedy and marks are in
+                //    `LC`. One after a char already absorbed by a `[\r\n/]*` tail is not contested
+                //    either, because that run has closed (`!\n/\u{301}`), hence `o_prev`.
+                //  * alt-1 takes at most ONE char as its `[^\r\n\p{L}\p{N}]?` prefix, so it can only
+                //    claim a stretch sitting immediately after the run's FIRST char: `!\u{301}a` is
+                //    one token, `!!\u{301}a` is `!!\u{301}` then `a`.
+                let contested = fill_to_last(
+                    ((o_prev << 1) | u64::from(cy.oth_edge && !cy.prev_absorbed)) & cur.mark & lead,
+                    cur.mark,
+                );
+                let claimed = fill_to_last(
+                    ((osf << 1) | u64::from(cy.prev_osf)) & cur.mark & lead,
+                    cur.mark,
+                );
+                mark_oth = contested & !claimed;
+                if cy.mark_oth_open {
+                    // a stretch rule 4 already took, still running at the last edge: its lead is in
+                    // the previous block, so `contested`'s `& lead` cannot see it
+                    mark_oth |= lead_run(cur.mark, valid);
+                }
+                let grown = cur.oth | mark_oth;
+                if grown == oth {
+                    break;
+                }
+                oth = grown;
+            }
+            let letter = cur.letter & !mark_oth;
+            let bk_letter = (letter << 1) | u64::from(cy.letter_edge);
+
             let ws_start = cur.ws & lead & !bk.ws;
             let (steal, steal_patch) = to_lead(
                 cur.ws & !cur.nl & x.lb & !x.eof & !fw.ws,
                 cur.cont,
                 pv.cont,
             );
-            let after_nl = bk.nl
-                & cur.ws
-                & lead
-                & !later_in_run(cur.nl, cur.ws);
+            let after_nl = bk.nl & cur.ws & lead & !later_in_run(cur.nl, cur.ws);
 
-            // ── `[^\r\n\p{L}\p{N}]?` before a letter run: any token-opening non-newline
-            // non-letter non-digit char. Smeared across its char's bytes so the test is a plain
-            // shift (see cl100k).
-            // `osf`: each start smeared across its char's continuation bytes, so "my predecessor
-            // opened a token" is a plain shift. That is `MatchStar` over `cont`, seeded at bit 0 as
-            // well when the char's lead sat in the previous block.
-            // A start smeared across its char's continuation bytes, so "my predecessor opened a
-            // token" is a plain shift. `MatchStar` consumes `c` from the marker, and the marker is a
-            // LEAD, so step into the run first; bit 0 is seeded too when the char's lead sat in the
-            // previous block.
-            let osf = fill_to_last(
-                ((o_start << 1) | u64::from(cy.prev_osf)) & cur.cont,
-                cur.cont,
-            ) | o_start;
             let l_start = letter
                 & lead
-                & !bk.letter
+                & !bk_letter
                 & !(bk.ws & !bk.nl)
                 & !((osf << 1) | u64::from(cy.prev_osf));
             // ── the contraction suffix `(?i:'s|'t|'re|'ve|'m|'ll|'d)?`, resolved FIRST because its
             // letters belong to the token before it: leaving them in `letter` would make the
             // alternation below start its run on the suffix (`…'s中Ĳa中` would split after `中`).
-            let apo_after = if CONTR { cur.apo & lead & bk.letter } else { 0 };
+            let apo_after = if CONTR { cur.apo & lead & bk_letter } else { 0 };
             let mut sfx = cy.sfx_carry;  // a suffix that spilled past the last edge
             let mut sfx_open = cy.force; // ...and the start it opens just past itself
             cy.sfx_carry = 0;
@@ -319,7 +363,7 @@ pub(crate) fn run<const AUX: u8, const CONTR: bool, const DIGITS: usize, const H
             // The gate: a letter run splits only where an uppercase sits after a letter. Without one
             // the run is a single token whatever the classes are, so all-lowercase and Capitalised
             // text -- most text -- skips the algebra below entirely.
-            let case_gate = cur.u & lead & bk.letter;
+            let case_gate = cur.u & lead & bk_letter;
             let uc = lalt & !cur.l; // [\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]
             let lc = lalt & !cur.u; // [\p{Ll}\p{Lm}\p{Lo}\p{M}]
             let cm = (cur.c | cur.mark) & lalt; // in both classes
@@ -355,11 +399,6 @@ pub(crate) fn run<const AUX: u8, const CONTR: bool, const DIGITS: usize, const H
 
             // ── the escape gate (see the header). An interior upper, or an apostrophe closing the
             // run, means some letter token in this block needs the scalar case/contraction pass.
-            // `\p{M}` is in BOTH the letter classes and rule 4's `[^\s\p{L}\p{N}]`, and which one
-            // wins depends on whether the punctuation before it STARTED the run (`!\u{301}a` is one
-            // token, `!!\u{301}a` is two). Adjacency is the gate; the scalar pass resolves it. Real
-            // text hits this via emoji + variation selector (U+FE0F is \p{Mn}).
-            let mark_adj = (cur.mark & lead & bk.oth) | (cur.oth & lead & bk.mark);
 
             // ── rule 3 `\p{N}{1,DIGITS}`
             let groups = digit_groups(
@@ -394,22 +433,7 @@ pub(crate) fn run<const AUX: u8, const CONTR: bool, const DIGITS: usize, const H
                 st |= 1;
             }
 
-            // ── the only escape left: `mark_adj`. `\p{M}` is in BOTH the letter classes and
-            // rule 4's `[^\s\p{L}\p{N}]`, and which one wins depends on whether the punctuation
-            // before it STARTED the run (`!\u{301}a` is one token, `!!\u{301}a` is two). Rare -- 0%
-            // of english/code/russian/chinese blocks, 28% of hindi -- so be blunt: escape every
-            // token in the block, plus the one still open from an earlier block (rule 4's ` ?` means
-            // it can have started on a space).
-            flag[x.bi] = 0;
-            if mark_adj != 0 {
-                flag[x.bi] = st;
-                if let Some(p) = cy.prev_start {
-                    flag[p / 64] |= 1u64 << (p % 64);
-                }
-            }
-            if st != 0 {
-                cy.prev_start = Some(last_pos(x.base, st));
-            }
+            flag[x.bi] = 0; // no escape: every ambiguity is bit algebra now
 
             // ── carries
             cy.nl_run = nl_e >> 64 != 0;
@@ -433,6 +457,9 @@ pub(crate) fn run<const AUX: u8, const CONTR: bool, const DIGITS: usize, const H
                 cy.anl = None;
             }
             cy.prev_osf = osf >> (len - 1) & 1 != 0;
+            cy.oth_edge = oth >> (len - 1) & 1 != 0;
+            cy.letter_edge = letter >> (len - 1) & 1 != 0;
+            cy.mark_oth_open = mark_oth >> (len - 1) & 1 != 0;
 
             Out {
                 st,
@@ -441,189 +468,5 @@ pub(crate) fn run<const AUX: u8, const CONTR: bool, const DIGITS: usize, const H
         },
     );
 
-    emit::<HAN, CONTR, DIGITS>(text, tags, starts, flag, nblk, ntext, out)
-}
-
-// ── the scalar escape ───────────────────────────────────────────────────────────────────────────
-// Ported from the FSM this replaces, which is the proven reading of the alternatives. It runs from
-// a flagged token start and RESYNCS the moment it lands on an algebra start bit again, so a
-// divergent region costs a short scalar walk and nothing downstream.
-
-/// Emit ONE token starting at `i` (letters emit several) and return the cursor past it.
-fn step<const HAN: bool, const CONTR: bool, const DIGITS: usize>(
-    text: &[u8],
-    tags: &[u8],
-    i: usize,
-    end: usize,
-    out: &mut [Span],
-    w: &mut usize,
-) -> usize {
-    // kimi subtracts Han from both letter classes and isolates it in its own arm. Script=Han is
-    // refinement 3 of whichever coarse class it lands in (0x30 letter / 0x31 Nl / 0x3A So) and
-    // nothing else uses that nibble, so this is one mask instead of a per-byte range search.
-    let han = |p: usize| HAN && p < end && tags[p] & 0xF0 == 0x30;
-    let is_lm = |p: usize| p < end && member(tags[p]) && !han(p);
-    let letter_end = |mut p: usize| {
-        while p < end && (tags[p] == CONT || (member(tags[p]) && !han(p))) {
-            p += 1;
-        }
-        p
-    };
-    let other = |sp0: usize| {
-        let mut p = run_end(tags, sp0, end, mask::NOT_WS_L_N);
-        if p > sp0 {
-            // `/` is in the tail for o200k and tekken; kimi's tail is a plain `[\r\n]*`
-            while p < end && (tags[p] == crate::NLN || (!HAN && text[p] == b'/')) {
-                p += char_len(text[p]);
-            }
-        }
-        p
-    };
-    let emit1 = |a: usize, b: usize, out: &mut [Span], w: &mut usize| {
-        out[*w] = Span::new(a as u32, b as u32);
-        *w += 1;
-    };
-    // the letter alternatives, with the case split and the optional contraction suffix
-    let letters = |pfx: usize, ls: usize, out: &mut [Span], w: &mut usize| -> usize {
-        let re = letter_end(ls);
-        let (mut p, mut first, mut cursor) = (ls, true, re);
-        while p < re {
-            let e = letter_match(tags, p, re);
-            let start = if first { pfx } else { p };
-            let te = if CONTR && e == re {
-                e + contr_len(text, e, true)
-            } else {
-                e
-            };
-            out[*w] = Span::new(start as u32, te as u32);
-            *w += 1;
-            first = false;
-            cursor = te;
-            p = e;
-        }
-        cursor
-    };
-
-    // `[\p{Han}]+` — kimi's alternative 1, ahead of everything else
-    if HAN && han(i) {
-        let mut p = i;
-        while p < end && (tags[p] == CONT || han(p)) {
-            if tags[p] != CONT && !han(p) {
-                break;
-            }
-            p += 1;
-        }
-        emit1(i, p, out, w);
-        return p;
-    }
-
-    let b = text[i];
-    match tags[i] & 0x0F {
-        crate::NW | crate::NO => {
-            let (mut p, mut cnt) = (i, 0usize);
-            while p < end && cnt < DIGITS && in_mask(tags[p], mask::NUMBER) {
-                p += char_len(text[p]);
-                cnt += 1;
-            }
-            emit1(i, p, out, w);
-            p
-        }
-        crate::LET | crate::MRK => {
-            if member(tags[i]) && !han(i) {
-                return letters(i, i, out, w);
-            }
-            let a = i + char_len(b);
-            if is_lm(a) {
-                return letters(i, a, out, w);
-            }
-            let p = other(i);
-            emit1(i, p, out, w);
-            p
-        }
-        crate::SPC => {
-            let a = i + 1;
-            if is_lm(a) {
-                return letters(i, a, out, w);
-            }
-            let p = other(a);
-            let e = if p > a { p } else { ws_tail(text, tags, i, end) };
-            emit1(i, e, out, w);
-            e
-        }
-        crate::WSO => {
-            let a = i + char_len(b);
-            if is_lm(a) {
-                return letters(i, a, out, w);
-            }
-            let e = ws_tail(text, tags, i, end);
-            emit1(i, e, out, w);
-            e
-        }
-        crate::NLN => {
-            let e = ws_tail(text, tags, i, end);
-            emit1(i, e, out, w);
-            e
-        }
-        _ => {
-            let a = i + char_len(b);
-            if is_lm(a) {
-                return letters(i, a, out, w);
-            }
-            let p = other(i);
-            emit1(i, p, out, w);
-            p
-        }
-    }
-}
-
-/// `emit` plus the escape: at a flagged start, hand over to the scalar dispatch and take back
-/// control at the first position that is a start bit again.
-fn emit<const HAN: bool, const CONTR: bool, const DIGITS: usize>(
-    text: &[u8],
-    tags: &[u8],
-    starts: &[u64],
-    flag: &[u64],
-    nblk: usize,
-    n: usize,
-    out: &mut [Span],
-) -> usize {
-    let (mut w, mut open, mut skip) = (0usize, usize::MAX, 0usize);
-    for bi in 0..nblk {
-        let mut m = starts[bi];
-        let f = flag[bi];
-        while m != 0 {
-            let j = m.trailing_zeros() as usize;
-            let pos = bi * 64 + j;
-            m &= m - 1;
-            if pos < skip {
-                continue;
-            }
-            if f >> j & 1 != 0 {
-                if open != usize::MAX && open < pos {
-                    out[w] = Span::new(open as u32, pos as u32);
-                    w += 1;
-                }
-                let mut c = pos;
-                loop {
-                    c = step::<HAN, CONTR, DIGITS>(text, tags, c, n, out, &mut w);
-                    if c >= n || starts[c / 64] >> (c % 64) & 1 != 0 {
-                        break;
-                    }
-                }
-                open = usize::MAX;
-                skip = c;
-                continue;
-            }
-            if open != usize::MAX {
-                out[w] = Span::new(open as u32, pos as u32);
-                w += 1;
-            }
-            open = pos;
-        }
-    }
-    if open != usize::MAX {
-        out[w] = Span::new(open as u32, n as u32);
-        w += 1;
-    }
-    w
+    crate::emit(starts, nblk, ntext, out)
 }
