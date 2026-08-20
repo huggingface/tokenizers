@@ -62,6 +62,20 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: make test HF="uvx --from huggingface_hub hf"
 
+      # The only gate that checks the slim reader against an *independent* implementation: both
+      # oracles encode/decode through `tk_serialize::from_json` and compare against the released
+      # `tokenizers` crate. They sit behind `bench-baseline` because that pulls the released crate in
+      # as a dependency, which means `cargo test --workspace` skips them -- so they need their own
+      # step or the guarantee is not actually being checked. 16 tests.
+      - name: Run the release-crate id oracles
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          cargo test -p tk-convert --features bench-baseline \
+            --test pipeline_oracle --test pipeline_decode_oracle
+
       # Windows skips the integration tests and the full fixture set, but the
       # tk-encode lib tests load these two tokenizer files and fail without
       # them (on purpose: a missing fixture must not silently skip a test).
