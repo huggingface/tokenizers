@@ -2290,24 +2290,14 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 name = "tk-convert"
 version = "0.23.2-dev.0"
 dependencies = [
- "ahash",
  "criterion 0.6.0",
- "daachorse 3.0.2",
- "dary_heap",
- "log",
- "paste",
- "rand 0.9.4",
  "rayon",
- "regex",
- "serde",
  "serde_json",
  "tempfile",
  "thiserror",
  "tk-encode",
  "tk-serialize",
  "tokenizers 0.23.1",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -2363,27 +2353,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tk-train"
-version = "0.23.2-dev.0"
-dependencies = [
- "ahash",
- "assert_approx_eq",
- "compact_str",
- "dary_heap",
- "derive_builder",
- "esaxx-rs",
- "indicatif 0.18.5",
- "itertools 0.14.0",
- "log",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror",
- "tk-convert",
- "tk-encode",
-]
-
-[[package]]
 name = "tokenizers"
 version = "0.23.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2428,7 +2397,6 @@ dependencies = [
  "tempfile",
  "tk-convert",
  "tk-encode",
- "tk-train",
  "tracing",
  "tracing-subscriber",
 ]

@@ -18,10 +18,12 @@
 //! `<0xNN>`, Metaspace) only fire on the non-ASCII language fixtures — run
 //! `make fixtures` or every fixture skips.
 //!
-//! `non_special_added_token_survives_skip` covers the one case the corpus can't: a
+//! `non_special_added_token_survives_skip` used to cover the one case the corpus can't: a
 //! *non-special* added token (every fixture's added tokens are `special: true`) must
-//! survive `skip_special_tokens = true`. It's built by adding the same token to both
-//! sides, so it stays an honest release-vs-pipeline parity check.
+//! survive `skip_special_tokens = true`. It built that case by adding the same token to
+//! both sides -- and rc0 has no way to add a token to a pipeline, which is read-only, so
+//! the test is gone and that distinction is currently unchecked. See `REQUIRED_FOR_V1.md`
+//! §1 and §7; it comes back with the setters.
 //!
 //! Behind `bench-baseline`. `bert_wiki` still FAILS: `PipelineWordPiece` keeps only its
 //! forward `vocab_trie`, so it has no id → token direction to decode with — on purpose: CI
@@ -32,24 +34,22 @@
 
 mod common;
 
-use std::convert::TryFrom;
 use std::path::Path;
 
 use common::{DATA, FIXTURES, WINDOWS, window};
-use tk_convert::Tokenizer;
 use tk_encode::pipeline::PipelineTokenizer;
 use tokenizers_release::Tokenizer as Released;
 
 fn check_model(tok_file: &str) {
     let path = Path::new(DATA).join(tok_file);
-    // The legacy `Tokenizer` only *builds* the pipeline (its sole constructor
-    // today); it is never a decode reference. Drops out once a direct loader exists.
-    let Ok(tree) = Tokenizer::from_file(&path) else {
+    // `tk_serialize` builds the pipeline straight from the file -- the direct loader
+    // this used to wait for. The decode reference is, and always was, `Released`.
+    if !path.exists() {
         eprintln!("skip {tok_file}: not present (fetch with `make models`)");
         return;
-    };
-    let Ok(pipeline) = PipelineTokenizer::try_from(&tree) else {
-        eprintln!("skip {tok_file}: not supported by PipelineTokenizer");
+    }
+    let Ok(pipeline) = tk_serialize::from_json_file(&path) else {
+        eprintln!("skip {tok_file}: not supported by the slim reader");
         return;
     };
     let released = match Released::from_file(&path) {
@@ -165,55 +165,6 @@ fn stream_decode(
         }
     }
     Ok(out)
-}
-
-/// A non-special *added* token must survive `skip_special_tokens = true` — that
-/// flag drops only tokens marked `special`. Every fixture's added tokens are
-/// `special: true`, so this can't come from the corpus: add the same non-special
-/// token to both the reference and the pipeline's source, then round-trip a string
-/// containing it. Byte-level gpt2 decodes this ASCII round-trip correctly, so the
-/// only thing under test here is the special-vs-non-special distinction.
-#[test]
-fn non_special_added_token_survives_skip() {
-    let path = Path::new(DATA).join("gpt2.json");
-    let Ok(mut tree) = Tokenizer::from_file(&path) else {
-        eprintln!("skip: gpt2.json not present (fetch with `make models`)");
-        return;
-    };
-    let Ok(mut released) = Released::from_file(&path) else {
-        eprintln!("skip: released crate can't load gpt2.json");
-        return;
-    };
-
-    let content = "<|mytok|>";
-    tree.add_tokens([tk_convert::AddedToken::from(content, false)])
-        .unwrap();
-    released
-        .add_tokens([tokenizers_release::AddedToken::from(content, false)])
-        .unwrap();
-    let pipeline = PipelineTokenizer::try_from(&tree).unwrap();
-
-    let text = format!("hello {content} world");
-    let ids = released
-        .encode_fast(text.as_str(), false)
-        .unwrap()
-        .get_ids()
-        .to_vec();
-    let tok_id = released.token_to_id(content).unwrap();
-    assert!(
-        ids.contains(&tok_id),
-        "added token not present in id stream"
-    );
-
-    for skip_special_tokens in [false, true] {
-        let expected = released.decode(&ids, skip_special_tokens).unwrap();
-        let got = pipeline.decode(&ids, skip_special_tokens).unwrap();
-        assert_eq!(expected, got, "skip_special_tokens={skip_special_tokens}");
-        assert!(
-            got.contains(content),
-            "non-special added token dropped at skip_special_tokens={skip_special_tokens}: {got:?}",
-        );
-    }
 }
 
 // One model per distinct decoder so every `DecoderWrapper` variant a fixture can

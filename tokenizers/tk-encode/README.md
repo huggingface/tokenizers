@@ -27,12 +27,13 @@ like. Reading one is `tk-serialize`'s job — `tk_serialize::from_json_file` ret
 [`pipeline::PipelineTokenizer`] built here, from a hand-rolled JSON reader with no serde
 anywhere. (The example lives there, because only that crate can compile it.)
 
-The `Tokenizer` orchestration, `from_pretrained`, `save`, and every backwards-compatible config
-shape live one crate further out again, in `tk-convert` (both re-exported by the `tokenizers`
-umbrella crate), so an encode-only build links none of it.
+The `Tokenizer` orchestration, `from_pretrained`, `save` and the component setters are **not** in
+this release: [`pipeline::PipelineTokenizer`] is read-only. Upgrading a config written by an older
+version is `tk-convert`'s one remaining job (`canonicalize_file`, re-exported by the `tokenizers`
+umbrella crate). See `REQUIRED_FOR_V1.md` at the repository root.
 
-Training lives in the companion `tk-train` crate (re-exported by the
-`tokenizers` umbrella crate behind the `train` feature).
+Training is not in this release either; the `tk-train` crate is still in the tree but is out of
+the workspace until its trainers stop building config models.
 
 ## Additional information
 
@@ -48,14 +49,15 @@ Training lives in the companion `tk-train` crate (re-exported by the
   dependency of the [indicatif](https://crates.io/crates/indicatif) progress bar.
 
 - **http**: This feature enables downloading the tokenizer via HTTP. It is disabled by default.
-  With this feature enabled, `tk_convert`'s `Tokenizer::from_pretrained` becomes
-  accessible.
+  It compiles `utils::from_pretrained`, the download half; the `from_pretrained` *constructor*
+  that used to sit on top of it went with the config layer (`REQUIRED_FOR_V1.md` §5).
 
 - **serde**: Every component's own `Serialize`/`Deserialize` — the derives on the types
   themselves and the hand-written impls in the `serialization.rs` next to each of them. Off by
   default, because the slim reader (`tk-serialize`) builds a pipeline from a canonical
-  `tokenizer.json` with no serde at all; `tk-convert` and the `tokenizers` umbrella turn it on,
-  so python, node and existing `tokenizers::…` users are unaffected.
+  `tokenizer.json` with no serde at all. Nothing in the workspace turns it on any more: the
+  wrapper enums whose `Deserialize` named every variant are gone, and with them the only reason
+  a shipped build linked serde.
 
 - **bpe** / **unigram** / **wordpiece** / **wordlevel**: one per model. Only `bpe` is on by
   default, because none of the current SOTA models use anything else. A `tokenizer.json` naming

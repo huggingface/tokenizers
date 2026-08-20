@@ -146,10 +146,10 @@ impl WordPiece {
         WordPieceBuilder::new()
     }
 
-    // Loading a vocabulary is `tk-convert`'s job now, in every spelling: `read_file` /
-    // `read_bytes` / `from_file` for a `vocab.txt`, `from_bytes` for a serialized model (which
-    // needs serde), and `from_bpe`, which cannot be here at all because the config-shaped `BPE` it
-    // names is not in this crate any more. See `tk_convert::models::wordpiece`.
+    // There is no way to load a vocabulary from its own files in rc0, in any spelling: `read_file` /
+    // `read_bytes` / `from_file` for a `vocab.txt`, `from_bytes` for a serialized model (which needs
+    // serde), and `from_bpe` all lived in the config layer, which is deleted. A `tokenizer.json`
+    // read by `tk-serialize` is the only route to a model now. See `REQUIRED_FOR_V1.md` §4.
 }
 
 impl Model for WordPiece {

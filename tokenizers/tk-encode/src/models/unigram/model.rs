@@ -504,14 +504,16 @@ impl Model for Unigram {
     }
 
     /// A `unigram.json` is the whole model pretty-printed by serde, and this crate links no serde,
-    /// so the writing lives in `tk_convert::models::unigram::save`. It cannot move *with* the
-    /// method: `Model` is defined here and so is `Unigram`, which puts an
-    /// `impl Model for Unigram` in another crate on the wrong side of the orphan rule. Every real
-    /// caller reaches `save` through `tk_convert::ModelWrapper`, which writes the file itself.
+    /// so the writing has never lived here. It cannot move *with* the method either: `Model` is
+    /// defined here and so is `Unigram`, which puts an `impl Model for Unigram` in another crate on
+    /// the wrong side of the orphan rule.
+    ///
+    /// rc0 has no writer at all: the config layer that used to own this is deleted, and
+    /// `tk_serialize::to_json` is what replaces it. See `REQUIRED_FOR_V1.md` §3 and §4.
     fn save(&self, _folder: &Path, _name: Option<&str>) -> Result<Vec<PathBuf>> {
         Err(
-            "writing a Unigram model is config-layer work: use `tk_convert::ModelWrapper::save`, \
-             or `tk_convert::models::unigram::save` for a bare model"
+            "writing a Unigram model is not available in rc0: the config layer that wrote one is \
+             deleted, and the replacement writer has not landed. See `REQUIRED_FOR_V1.md` §3"
                 .into(),
         )
     }

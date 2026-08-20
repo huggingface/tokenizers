@@ -9,12 +9,9 @@
 #[macro_use]
 extern crate criterion;
 
-use std::convert::TryFrom;
 use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, Throughput};
-use tk_convert::Tokenizer;
-use tk_encode::pipeline::PipelineTokenizer;
 
 // (name, tokenizer.json): bert-wiki exercises the Bert/WordPiece path; dsv4 exercises the deepseek
 // pre-tokenizer unroll (`fsm_deepseek`) + BPE end-to-end.
@@ -55,14 +52,12 @@ fn make_chunks(lines: &[&str], target_bytes: usize) -> Vec<String> {
 
 fn bench_pipeline(c: &mut Criterion) {
     for (tok_name, tok_path) in TOKENIZERS {
-        let Ok(oracle) = Tokenizer::from_file(tok_path) else {
-            eprintln!("pipeline bench: skip {tok_name} — {tok_path} not found");
-            continue;
-        };
-        let pipeline = match PipelineTokenizer::try_from(&oracle) {
+        // The slim reader builds the pipeline directly, so loading and lowering are one
+        // step now: a missing file and an unsupported config both land in the same arm.
+        let pipeline = match tk_serialize::from_json_file(tok_path) {
             Ok(p) => p,
             Err(e) => {
-                eprintln!("pipeline bench: skip {tok_name} — not pipeline-supported: {e}");
+                eprintln!("pipeline bench: skip {tok_name} — {tok_path}: {e}");
                 continue;
             }
         };

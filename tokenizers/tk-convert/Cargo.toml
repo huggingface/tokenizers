@@ -14,10 +14,9 @@ documentation = "https://docs.rs/tokenizers/"
 license = "Apache-2.0"
 keywords = ["tokenizer", "NLP", "huggingface", "BPE", "WordPiece"]
 description = """
-The `tokenizer.json` config layer of the 🤗 Tokenizers library: the component
-wrapper enums and their serde impls, the `Tokenizer` orchestration, every
-backwards-compatible config shape, and the lowering from a config into
-`tk-encode`'s runtime pipeline.
+The legacy `tokenizer.json` upgrade pass of the 🤗 Tokenizers library: a JSON→JSON
+rewrite that turns a config written by any older version into the canonical form
+`tk-serialize`'s reader accepts.
 """
 
 [package.metadata.docs.rs]
@@ -28,54 +27,31 @@ name = "tk_convert"
 path = "src/lib.rs"
 
 [dependencies]
-# The whole point of this crate is to be the serde half, so `tk-encode` is pulled with everything
-# the wrapper enums can hold: a wrapper's `Deserialize` names every variant, so every model and
-# normalizer has to exist -- and with `serde`, which is what puts the components' own
-# `Serialize`/`Deserialize` (the derives on the types and the `serialization.rs` next to each of
-# them) into the build. It is off by default over there so an encode-only build links no serde; here
-# it is the point.
-tk-encode = { path = "../tk-encode", default-features = false, features = [
-  "serde",
-  "bpe",
-  "unigram",
-  "wordpiece",
-  "wordlevel",
-  "normalizers",
-  # `PreTokenizerWrapper` has a `UnicodeScripts` variant and `lowering` has a match arm for it, so
-  # the pre-tokenizer has to exist. Workspace-wide feature unification hid its absence -- a
-  # dev-dependency asks for it -- and only building `bindings/python` on its own caught it.
-  "unicode-scripts",
-] }
-ahash = { version = "0.8.11", features = ["serde"] }
-# The legacy `AddedVocabulary`'s matcher and its single-word regex guard.
-daachorse = "3.0.0"
-# The config-shaped `BPE`'s own merge loop: `Word::merge_all` runs a 4-ary heap of pending merges,
-# and `rand` is what its dropout draws from. Both came over with the model.
-dary_heap = "0.3.6"
-rand = "0.9"
-regex = "1.10"
-log = "0.4"
-paste = "1.0.14"
-serde = { version = "1.0", features = ["derive"] }
+# The whole crate is `convert.rs`, whose only imports are `std::path` and `serde_json` (plus the
+# `thiserror` derive below). There is no `tk-encode` here any more, and no serde: the wrapper enums
+# whose `Deserialize` named every model and normalizer are gone, and with them the reachability that
+# made this crate the expensive half.
 serde_json = "1.0"
+# `ConvertError` is a closed list a caller can match on, so it gets a real enum rather than a boxed
+# `dyn Error`.
 thiserror = "2"
 
-# Latest released tokenizers, used as the comparison baseline by the fixture bench.
+# Latest released tokenizers, used as the comparison baseline by the fixture bench and as the
+# independent id/decode oracle by `tests/pipeline_oracle.rs` and `tests/pipeline_decode_oracle.rs`.
 tokenizers-release = { package = "tokenizers", version = "=0.23.1", optional = true }
 
 [features]
 default = []
-parallelism = ["tk-encode/parallelism"]
-progressbar = ["tk-encode/progressbar"]
-fancy-regex = ["tk-encode/fancy-regex"]
-http = ["tk-encode/http"]
-rustls-tls = ["tk-encode/rustls-tls"]
-unstable_wasm = ["tk-encode/unstable_wasm"]
-bench-baseline = ["dep:tokenizers-release", "fancy-regex"]
+# There is no `fancy-regex` forward any more, and nothing to forward it to: the shipped crate links
+# no regex engine at all. The oracles still need one -- a `Split` pre-tokenizer config (deepseek-v4,
+# xlmr) will not load without a system-regex backend -- and they get it from the `tk-serialize`
+# dev-dependency below, which asks for it unconditionally. Test-only, so the shipped crate is
+# unaffected either way.
+bench-baseline = ["dep:tokenizers-release"]
 
 [dev-dependencies]
-# `slim_vs_config` builds the pipeline BOTH ways from the same file and demands identical output, so
-# it needs the canonical reader as well as this crate's serde one.
+# The reader every test here builds a pipeline with -- this crate no longer builds one at all, so
+# `tk-serialize` is how a `tokenizer.json` becomes something that encodes.
 #
 # Every component feature is spelled out: the reader has one `cfg` arm per component, and a
 # component compiled out is a config it *refuses*. A refused config is a comparison not made rather
@@ -91,15 +67,12 @@ tk-serialize = { path = "../tk-serialize", features = [
   "unicode-scripts",
   "fancy-regex",
 ] }
-# Test builds only, and only to widen the gate: `Tokenizer::from_file` refuses deepseek-v4 and xlmr
-# without a system-regex backend. Cargo unions this with the `[dependencies]` entry above when
-# building tests, so the shipped crate is unaffected.
+# `PipelineTokenizer` is named explicitly in the tests and benches (as a type annotation and in the
+# oracles' signatures), so it has to be in scope even though the library half no longer mentions it.
 tk-encode = { path = "../tk-encode", default-features = false, features = ["fancy-regex"] }
 criterion = "0.6"
-# The `from_pretrained` smoke test in `tokenizer/serialization.rs` turns on a subscriber.
-tracing = "0.1"
-tracing-subscriber = "0.3.18"
 rayon = "1.10"
+# `canonicalize_file`'s own tests write real files.
 tempfile = "3.10"
 
 
@@ -107,16 +80,11 @@ tempfile = "3.10"
 name = "pipeline_benchmark"
 harness = false
 
-[[bench]]
-name = "bpe_model_benchmark"
-required-features = ["http"]
-harness = false
-
 # The Pipeline Benchmark's harness and its released-crate size baseline. Both link
 # `tokenizers-release`, so both are gated -- without `required-features` a plain
 # `cargo build --workspace --all-targets` (what CI runs) tries to compile them with no
-# `tokenizers_release` in scope. They live here rather than in `tk-encode` because
-# `fixture_bench` needs `Tokenizer` and `ModelWrapper`, which are this crate's now.
+# `tokenizers_release` in scope. They stay here rather than moving to `tk-encode` because the
+# released crate they compare against is this crate's optional dependency.
 [[example]]
 name = "fixture_bench"
 required-features = ["bench-baseline"]

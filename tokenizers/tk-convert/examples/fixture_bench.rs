@@ -149,7 +149,6 @@
 //! consumed by `.github/scripts/render_pipeline_bench.py` in CI.
 
 use std::alloc::{GlobalAlloc, Layout, System};
-use std::convert::TryFrom;
 use std::hint::black_box;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -159,9 +158,8 @@ use std::time::Instant;
 use rayon::ThreadPoolBuilder;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde_json::{Value, json};
-use tk_convert::{AddedToken, ModelWrapper, Tokenizer};
 use tk_encode::pipeline::PipelineTokenizer;
-use tokenizers_release::{AddedToken as BaselineAddedToken, Tokenizer as BaselineTokenizer};
+use tokenizers_release::Tokenizer as BaselineTokenizer;
 
 const DATA_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../data");
 const MANIFEST: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/examples/bench_models.json");
@@ -200,48 +198,21 @@ const SIZE_SAMPLE_BYTES: usize = 8 * 1024 * 1024;
 // stays a fraction of one phase-1 pass.
 const DECODE_SAMPLE_BYTES: usize = 2 * 1024 * 1024;
 
-// Added tokens injected into every loaded tokenizer so the `added_*` fixtures exercise
-// the added-token split for whichever model is benched — no bespoke tokenizer config.
-// `ADDED_SPECIAL` (normalized:false) is matched on the raw pass; `ADDED_NORMALIZED`
-// (normalized:true) on the normalized pass. The strings are distinctive markers that do
-// not occur in the language/modality corpora, so they leave those results untouched. The
-// `added_*` fixtures are built from exactly these strings (see the dataset FIXTURES.md).
-const ADDED_SPECIAL: &[&str] = &["<|xs0|>", "<|xs1|>", "<|xs2|>", "<|xs3|>", "<|xs4|>"];
-const ADDED_NORMALIZED: &[&str] = &[
-    "widgetron",
-    "flibberjast",
-    "zorptastic",
-    "quibblenaut",
-    "snorlaxian",
-    "blorptronic",
-    "wuzzlefang",
-    "crungledorf",
-];
-
-/// Inject the benchmark's added tokens into `tok` before the pipeline is built from it,
-/// so both the oracle and the pipeline see them (and stay id-for-id identical).
-fn inject_added_tokens(tok: &mut Tokenizer) {
-    let special = ADDED_SPECIAL
-        .iter()
-        .map(|s| AddedToken::from(*s, true).normalized(false));
-    let normalized = ADDED_NORMALIZED
-        .iter()
-        .map(|s| AddedToken::from(*s, false).normalized(true));
-    let _ = tok.add_special_tokens(special);
-    let _ = tok.add_tokens(normalized);
-}
-
-/// Same injection through the released crate's `AddedToken`.
-fn inject_added_tokens_baseline(tok: &mut BaselineTokenizer) {
-    let special = ADDED_SPECIAL
-        .iter()
-        .map(|s| BaselineAddedToken::from(*s, true).normalized(false));
-    let normalized = ADDED_NORMALIZED
-        .iter()
-        .map(|s| BaselineAddedToken::from(*s, false).normalized(true));
-    let _ = tok.add_special_tokens(special);
-    let _ = tok.add_tokens(normalized);
-}
+// NOTE (rc0): the benchmark used to inject its own added tokens into every loaded
+// tokenizer — `<|xs0|>`-style specials on the raw pass, word-shaped markers on the
+// normalized pass — so that the `added_*` fixtures exercised the added-token split for
+// whichever model was benched, without a bespoke config. That injection went through
+// `Tokenizer::{add_special_tokens, add_tokens}`, and rc0 has no such surface:
+// `PipelineTokenizer` is read-only and can only be handed a `tokenizer.json` that already
+// declares its added tokens (`REQUIRED_FOR_V1.md` §1).
+//
+// It is removed from BOTH sides rather than just ours, because leaving it on the baseline
+// alone would break `ids_match` — the gate CI fails on — for every model. The consequence
+// is that the `added_normalized_sparse` and `added_special_sparse` fixtures no longer
+// measure what their names say: their marker strings are now just ordinary text on both
+// implementations. They are still a fair comparison, and still a real corpus; they are no
+// longer an added-token benchmark. Restoring the injection needs the authoring surface, or
+// a config rewrite that mints ids for the markers before either side loads it.
 
 // ── counting allocator ──────────────────────────────────────────────────────
 
@@ -463,7 +434,7 @@ fn time_pass<S: AsRef<str>>(encode: &dyn Fn(&str) -> usize, chunks: &[S]) -> f64
 /// its encodes cannot warm anything a timed pass sees.
 fn bench_throughput(
     baseline: Option<&BaselineTokenizer>,
-    oracle: &Tokenizer,
+    oracle: &str,
     f: &Fixture,
     base_chunks: &[&String],
     base_bytes: usize,
@@ -473,7 +444,7 @@ fn bench_throughput(
     // stage). The in-tree `Tokenizer` only *builds* the pipeline here — never the
     // reference, since it is on its way out. `None` when the release can't load
     // this model (no reference to compare against).
-    let gate = PipelineTokenizer::try_from(oracle).expect("probed at model load");
+    let gate = tk_serialize::from_json(oracle).expect("probed at model load");
     let pipe_ids = |c: &String, add_special_tokens: bool| -> Vec<u32> {
         gate.encode(c, add_special_tokens)
             .wait()
@@ -503,7 +474,7 @@ fn bench_throughput(
                 base_chunks,
             ));
         }
-        let cold = PipelineTokenizer::try_from(oracle).expect("probed at model load");
+        let cold = tk_serialize::from_json(oracle).expect("probed at model load");
         pipe_s.push(time_pass(
             &|s| cold.encode(s, true).wait().unwrap().first().unwrap().len(),
             &f.chunks,
@@ -584,7 +555,7 @@ fn size_label(bytes: usize) -> String {
 /// same `sample`, single thread. Cold instance per pass and interleaved reps,
 /// exactly like phase 1; only the chunk size varies, so the curve isolates how
 /// per-call overhead and amortization move the headline comparison.
-fn bench_sizes(baseline: Option<&BaselineTokenizer>, oracle: &Tokenizer, sample: &str) -> Value {
+fn bench_sizes(baseline: Option<&BaselineTokenizer>, oracle: &str, sample: &str) -> Value {
     let (mut pipe, mut base) = (Vec::new(), Vec::new());
     for &size in SIZE_SWEEP {
         let chunks = sized_chunks(sample, size);
@@ -597,7 +568,7 @@ fn bench_sizes(baseline: Option<&BaselineTokenizer>, oracle: &Tokenizer, sample:
                     &chunks,
                 ));
             }
-            let cold = PipelineTokenizer::try_from(oracle).expect("probed at model load");
+            let cold = tk_serialize::from_json(oracle).expect("probed at model load");
             pipe_s.push(time_pass(
                 &|s| cold.encode(s, true).wait().unwrap().first().unwrap().len(),
                 &chunks,
@@ -656,7 +627,7 @@ fn par_mbps<T: Sync, E: Fn(&T) -> usize + Sync>(
 /// alternate per thread count so thermal drift hits them equally.
 fn bench_threads(
     baseline: Option<&BaselineTokenizer>,
-    oracle: &Tokenizer,
+    oracle: &str,
     chunks: &[&String],
     base_chunks: &[&String],
 ) -> Value {
@@ -678,7 +649,7 @@ fn bench_threads(
         });
         let p = par_mbps(
             || {
-                let cold = PipelineTokenizer::try_from(oracle).expect("probed at model load");
+                let cold = tk_serialize::from_json(oracle).expect("probed at model load");
                 move |s: &&String| {
                     cold.encode(s.as_str(), true)
                         .wait()
@@ -986,8 +957,7 @@ fn memory_child(which: &str, model: &Path) {
     let (load_bytes, encode_bytes, load_allocs, encode_allocs, decode) = match which {
         "baseline" => {
             let before_load = alloc_snap();
-            let mut tok = BaselineTokenizer::from_file(model).unwrap();
-            inject_added_tokens_baseline(&mut tok);
+            let tok = BaselineTokenizer::from_file(model).unwrap();
             let load_allocs = before_load.delta_json();
             let after_load = rss_now().unwrap_or(0);
             let rows =
@@ -1007,11 +977,10 @@ fn memory_child(which: &str, model: &Path) {
             )
         }
         "pipeline" => {
-            let mut tok = Tokenizer::from_file(model).unwrap();
-            inject_added_tokens(&mut tok);
+            let text = std::fs::read_to_string(model).unwrap();
             let before_build = rss_now().unwrap_or(0);
             let before_build_allocs = alloc_snap();
-            let pipeline = PipelineTokenizer::try_from(&tok).unwrap();
+            let pipeline = tk_serialize::from_json(&text).unwrap();
             let load_allocs = before_build_allocs.delta_json();
             let after_build = rss_now().unwrap_or(0);
             let rows = encode_counting_allocs(
@@ -1152,13 +1121,15 @@ fn model_path(entry: &Value) -> PathBuf {
     Path::new(DATA_DIR).join(file)
 }
 
-fn model_kind(tok: &Tokenizer) -> &'static str {
-    match tok.get_model() {
-        ModelWrapper::BPE(_) => "BPE",
-        ModelWrapper::WordPiece(_) => "WordPiece",
-        ModelWrapper::WordLevel(_) => "WordLevel",
-        ModelWrapper::Unigram(_) => "Unigram",
-    }
+/// The model's `type`, read off the raw json — the same trick as [`pretok_label`]
+/// below. It used to match on `ModelWrapper`, which no longer exists; a canonical
+/// config always carries the tag, and `?` is the honest answer when it does not.
+fn model_kind(path: &Path) -> String {
+    let v: Value = std::fs::read_to_string(path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or(Value::Null);
+    v["model"]["type"].as_str().unwrap_or("?").to_string()
 }
 
 /// A short pre-tokenizer descriptor read from the raw json — its `type`, and for
@@ -1269,7 +1240,7 @@ fn main() {
         let path = model_path(entry);
         eprintln!("== {name} ({repo}) ==");
 
-        let mut tok = match Tokenizer::from_file(&path) {
+        let tok = match std::fs::read_to_string(&path) {
             Ok(t) => t,
             Err(e) => {
                 eprintln!("  load failed: {e}");
@@ -1281,16 +1252,13 @@ fn main() {
                 continue;
             }
         };
-        // Give every model the benchmark's added tokens so the `added_*` fixtures have
-        // something to match, before any pipeline is derived from `tok`.
-        inject_added_tokens(&mut tok);
-        let shape = format!("{} · {}", model_kind(&tok), pretok_label(&path));
+        let shape = format!("{} · {}", model_kind(&path), pretok_label(&path));
 
         // A model can satisfy the pipeline's *build* constraints yet still fail at
         // *encode* time — e.g. a Sequence containing ByteLevel, which rewrites bytes
         // and has no range-based impl. Probe once and downgrade to "unsupported"
         // (with the reason) instead of panicking partway through the bench.
-        match PipelineTokenizer::try_from(&tok) {
+        match tk_serialize::from_json(&tok) {
             Ok(p) => match p.encode(PROBE, false).wait() {
                 Ok(_) => {}
                 Err(e) => {
@@ -1321,16 +1289,13 @@ fn main() {
             None
         } else {
             match BaselineTokenizer::from_file(&path) {
-                Ok(mut b) => {
-                    inject_added_tokens_baseline(&mut b);
-                    match b.encode_fast(PROBE, false) {
-                        Ok(_) => Some(b),
-                        Err(e) => {
-                            eprintln!("  baseline v{BASELINE_VERSION} loads but can't encode: {e}");
-                            None
-                        }
+                Ok(b) => match b.encode_fast(PROBE, false) {
+                    Ok(_) => Some(b),
+                    Err(e) => {
+                        eprintln!("  baseline v{BASELINE_VERSION} loads but can't encode: {e}");
+                        None
                     }
-                }
+                },
                 Err(e) => {
                     eprintln!("  baseline v{BASELINE_VERSION} can't load this config: {e}");
                     None
@@ -1375,7 +1340,7 @@ fn main() {
         // Phase 4. The id stream is minted by the release, so a model it can't
         // load gets no decode phase either. One pipeline instance serves the whole
         // phase — decode keeps no state to reset between passes.
-        let decode_pipeline = PipelineTokenizer::try_from(&tok).expect("probed at model load");
+        let decode_pipeline = tk_serialize::from_json(&tok).expect("probed at model load");
         let (decode_ok, decode_reason) = match decode_pipeline.decode(&[0], false) {
             Ok(_) => (true, None),
             Err(e) => {

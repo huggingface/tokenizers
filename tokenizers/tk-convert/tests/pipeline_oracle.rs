@@ -16,26 +16,23 @@
 
 mod common;
 
-use std::convert::TryFrom;
 use std::path::Path;
 
 use common::{DATA, FIXTURES, WINDOWS, window};
-use tk_convert::Tokenizer;
-use tk_encode::pipeline::PipelineTokenizer;
 use tokenizers_release::Tokenizer as Released;
 
 const PROBE: &str = "The quick brown fox jumps 123.";
 
 fn check_model(tok_file: &str) {
     let path = Path::new(DATA).join(tok_file);
-    // The legacy `Tokenizer` only *builds* the pipeline (its sole constructor
-    // today); it is never an encode reference. Drops out once a direct loader exists.
-    let Ok(tree) = Tokenizer::from_file(&path) else {
+    // `tk_serialize` builds the pipeline straight from the file -- the direct loader
+    // this used to wait for. The encode reference is, and always was, `Released`.
+    if !path.exists() {
         eprintln!("skip {tok_file}: not present (fetch with `make models`)");
         return;
-    };
-    let Ok(pipeline) = PipelineTokenizer::try_from(&tree) else {
-        eprintln!("skip {tok_file}: not supported by PipelineTokenizer");
+    }
+    let Ok(pipeline) = tk_serialize::from_json_file(&path) else {
+        eprintln!("skip {tok_file}: not supported by the slim reader");
         return;
     };
     // Build constraints can be met while encode is still unimplemented for this shape.
