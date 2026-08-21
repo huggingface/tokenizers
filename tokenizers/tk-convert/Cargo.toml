@@ -52,4 +52,3 @@ tk-encode = { path = "../tk-encode", default-features = false, features = [
 ] }
 criterion = "0.8"
 rayon = "1.12"
-tempfile = "3.27"

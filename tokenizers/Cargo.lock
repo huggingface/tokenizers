@@ -3166,7 +3166,6 @@ dependencies = [
  "criterion 0.8.2",
  "rayon",
  "serde_json",
- "tempfile",
  "thiserror",
  "tk-encode",
  "tk-serialize",
