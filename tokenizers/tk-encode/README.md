@@ -80,7 +80,7 @@ the workspace until its trainers stop building config models.
 
 ## Building small
 
-The default build is the slim one: no serde (the `serde` feature is off), and only BPE.
+The default build is the slim one: no serde at all, and only BPE.
 `make slim-size` prints its stripped and gzipped size.
 
 The largest remaining cost is not in this crate: `std`'s panic, unwinding and
@@ -94,7 +94,7 @@ cargo +nightly build --profile minsize \
   -Z build-std-features=panic_immediate_abort ...
 ```
 
-Measured, same features and profile: 360,045 -> 213,744 bytes gzipped (-40.6%). The trade is
+Measured, same features and profile: 327,819 -> 194,860 bytes gzipped (-40.6%). The trade is
 real: every panic becomes an immediate `abort` with no message, unwinding or backtrace, so a
 panicking input looks like any other crash. Usually fine on-device, rarely fine on a server.
 Worth pairing with `--remap-path-prefix` — not for size (~175 bytes compressed) but because a
