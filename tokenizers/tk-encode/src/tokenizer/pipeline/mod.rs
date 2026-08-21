@@ -1,4 +1,3 @@
-/// TODO: This file is fucking huge.
 use std::iter::Enumerate;
 use std::sync::Arc;
 use std::vec::IntoIter;
@@ -45,9 +44,11 @@ use crate::{
     vocab::bucket_added_vocabulary::AddedVocabulary as BucketAddedVocabulary,
 };
 #[cfg(feature = "parallelism")]
-pub use parallel::PARALLEL_MIN_BYTES;
-#[cfg(feature = "parallelism")]
 use parallel::StreamingIter;
+// The differential "parallel == serial" tests moved to `tk-convert` (they need a `Tokenizer`
+// to build from) and have to size an input past the threshold to reach the parallel path at all.
+#[cfg(feature = "parallelism")]
+pub use parallel::PARALLEL_MIN_BYTES;
 
 use super::{Result, SplitDelimiterBehavior};
 
@@ -97,6 +98,14 @@ pub fn normalize_all<'a, N: Normalizer>(normalizers: &[N], input: &'a str) -> Re
     Ok(cow)
 }
 
+/// One normalization step of a [`PipelineTokenizer`]. Not every step comes from the config's
+/// `normalizer` field: a `Metaspace` pre-tokenizer contributes one too.
+///
+/// One variant per concrete normalizer, deliberately: naming a `NormalizerWrapper` here would make
+/// every variant of it reachable — a match arm counts — and that reachability is most of what the
+/// slim build exists to remove. Both readers therefore flatten a config `Sequence` into a `Vec` of
+/// these rather than carrying the wrapper.
+// `pub` because `tk-convert` builds these when it lowers a `NormalizerWrapper`.
 #[derive(Debug)]
 pub enum PipelineNormalizer {
     /// The text-rewriting half of a `Metaspace` pre-tokenizer.
@@ -129,52 +138,16 @@ pub enum PipelineNormalizer {
     Precompiled(PrecompiledNormalizer),
 }
 
-/// TODO: The added-token replay normalizes through the *legacy* trait (that is what
-/// `BucketAddedVocabulary::add_tokens` takes), so every variant needs both.
-impl crate::Normalizer for PipelineNormalizer {
-    fn normalize(&self, normalized: &mut crate::NormalizedString) -> Result<()> {
-        match self {
-            // Deliberately a no-op: this variant is derived from a `Metaspace` *pre-tokenizer*, and
-            // the config path's added-token replay passes only the declared `normalizer`, so it
-            // never sees this either. Normalizing here would move ids relative to that path.
-            Self::Metaspace(_) => Ok(()),
-            Self::Replace(n) => crate::Normalizer::normalize(n, normalized),
-            Self::Prepend(n) => crate::Normalizer::normalize(n, normalized),
-            Self::Strip(n) => crate::Normalizer::normalize(n, normalized),
-            Self::Lowercase(n) => crate::Normalizer::normalize(n, normalized),
-            Self::ByteLevel(n) => crate::Normalizer::normalize(n, normalized),
-            #[cfg(feature = "normalizers")]
-            Self::Bert(n) => crate::Normalizer::normalize(n, normalized),
-            #[cfg(feature = "normalizers")]
-            Self::StripAccents(n) => crate::Normalizer::normalize(n, normalized),
-            #[cfg(feature = "normalizers")]
-            Self::NFC(n) => crate::Normalizer::normalize(n, normalized),
-            #[cfg(feature = "normalizers")]
-            Self::NFD(n) => crate::Normalizer::normalize(n, normalized),
-            #[cfg(feature = "normalizers")]
-            Self::NFKC(n) => crate::Normalizer::normalize(n, normalized),
-            #[cfg(feature = "normalizers")]
-            Self::NFKD(n) => crate::Normalizer::normalize(n, normalized),
-            #[cfg(feature = "normalizers")]
-            Self::Nmt(n) => crate::Normalizer::normalize(n, normalized),
-            #[cfg(feature = "normalizers")]
-            Self::Precompiled(n) => crate::Normalizer::normalize(n, normalized),
-        }
-    }
-}
-
-/// A flattened normalizer chain, as the legacy trait. Applying the members in order is exactly what
+/// A flattened normalizer chain. Applying the members in order is exactly what
 /// the `Sequence` normalizer the slim reader flattened away did.
 // `pub` for the same reason as `PipelineNormalizer`: `tk-convert` needs it to replay added
 // tokens through a lowered chain.
 pub struct NormalizerChain<'a>(pub &'a [PipelineNormalizer]);
 
-impl crate::Normalizer for NormalizerChain<'_> {
-    fn normalize(&self, normalized: &mut crate::NormalizedString) -> Result<()> {
-        for member in self.0 {
-            crate::Normalizer::normalize(member, normalized)?;
-        }
-        Ok(())
+
+impl Normalizer for NormalizerChain<'_> {
+    fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
+        normalize_all(self.0, input)
     }
 }
 
@@ -766,7 +739,12 @@ const _: fn() = || {
 };
 
 impl PipelineTokenizer {
-    /// Assemble a pipeline Tokenizer.
+    /// Assemble a pipeline from parts that are already lowered.
+    ///
+    /// The only constructor of a `TokenizerInner`, and therefore the only place `added_id_min` and
+    /// the scratch pool are derived — both readers go through it: the slim JSON reader in
+    /// [`from_json`](super::pipeline::from_json), and `tk-convert`'s lowering of a
+    /// `Tokenizer`. Two copies of this is how the two paths drift.
     ///
     /// `added_vocabulary` must already have had its tokens replayed *against the concrete model and
     /// in id order*, because `add_tokens` reuses a model id when the token is already in the
