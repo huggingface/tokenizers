@@ -2,7 +2,7 @@ use crate::Trainer;
 use ahash::AHashMap;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
-use tk_convert::AddedToken;
+use tk_encode::vocab::bucket_added_vocabulary::AddedToken;
 use std::convert::Infallible;
 use tk_encode::Result;
 use tk_encode::models::wordlevel::WordLevel;

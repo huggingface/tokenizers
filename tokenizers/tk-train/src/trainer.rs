@@ -1,4 +1,4 @@
-use tk_convert::AddedToken;
+use tk_encode::vocab::bucket_added_vocabulary::AddedToken;
 use tk_encode::{Model, Result};
 
 /// A `Trainer` has the responsibility to train a model. We feed it with lines/sentences

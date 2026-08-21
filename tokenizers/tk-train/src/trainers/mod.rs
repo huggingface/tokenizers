@@ -13,7 +13,7 @@ pub use wordpiece::*;
 
 use serde::{Deserialize, Serialize};
 
-use tk_convert::AddedToken;
+use tk_encode::vocab::bucket_added_vocabulary::AddedToken;
 use tk_convert::ModelWrapper;
 use tk_encode::Result;
 

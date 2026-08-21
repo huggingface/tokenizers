@@ -4,7 +4,7 @@ use crate::Trainer;
 use crate::trainers::bpe::{BpeTrainer, BpeTrainerBuilder};
 use ahash::AHashSet;
 use serde::{Deserialize, Serialize};
-use tk_convert::AddedToken;
+use tk_encode::vocab::bucket_added_vocabulary::AddedToken;
 use tk_convert::models::bpe::BPE;
 use tk_encode::Result;
 use tk_encode::models::wordpiece::WordPiece;
