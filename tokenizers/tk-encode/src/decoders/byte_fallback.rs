@@ -4,11 +4,6 @@ use crate::tokenizer::{Decoder, Result};
 /// ByteFallback is a simple trick which converts tokens looking like `<0x61>`
 /// to pure bytes, and attempts to make them into a string. If the tokens
 /// cannot be decoded you will get � instead for each inconvertible byte token
-///
-/// It used to carry a `monostate::MustBe!("ByteFallback")` field, which existed only so that serde
-/// would *require* the `"type"` tag -- with no other field, nothing else would have stopped `{}`
-/// from deserializing as a `ByteFallback`. `super::serialization` does that job with a one-variant
-/// tag enum instead, which is what let `monostate` go.
 #[non_exhaustive]
 pub struct ByteFallback {}
 
