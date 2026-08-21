@@ -3,7 +3,6 @@ pub mod byte_level;
 pub mod delimiter;
 pub mod digits;
 pub mod fixed_length;
-pub mod metaspace;
 pub mod punctuation;
 pub mod sequence;
 #[cfg(feature = "serde")]
