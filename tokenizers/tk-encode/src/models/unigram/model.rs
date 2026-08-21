@@ -418,10 +418,6 @@ impl Unigram {
     }
 
     /// The id of the unknown-token entry, if this model declares one.
-    ///
-    /// This and [`Self::vocab`] exist for `tk-convert`'s serde mirror: the fields themselves are
-    /// crate-private, and a `unigram.json` is written from exactly these three values plus
-    /// [`Self::byte_fallback`].
     pub fn unk_id(&self) -> Option<usize> {
         self.unk_id
     }

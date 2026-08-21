@@ -7,19 +7,8 @@ use std::cmp::Ordering;
 use unicode_segmentation::UnicodeSegmentation;
 
 /// A [`Precompiled`] together with the `precompiled_charsmap` bytes it was parsed from.
-///
-/// The bytes are kept because `spm_precompiled` holds its `precompiled_charsmap` in a private field
-/// and publishes it only through its `Serialize` impl. A serde-free writer therefore has no way to
-/// ask the value what it was built from, and this is the one normalizer whose configuration *is*
-/// that blob — so either the pipeline remembers it or the normalizer cannot be written back out.
-///
-/// Remembering it costs a second copy of the map: 237 KB for the SentencePiece charsmap that t5,
-/// albert and xlm-roberta all ship. Only a config that has a `Precompiled` pays it, and the copy
-/// goes away the day upstream grows a three-line getter.
-///
-/// [`charsmap`](Self::charsmap) is an `Option` because not every producer has the bytes to hand:
-/// a value lowered from an already-parsed [`Precompiled`] can only pass [`Self::from_parsed`],
-/// which records `None`, and a writer then reports that rather than inventing a blob.
+/// TODO: I think this has an extra copy, but once we move this to bitmapgen we can get rid of the
+/// upstream library entirely.
 #[derive(Debug, Clone)]
 pub struct PrecompiledNormalizer {
     parsed: Precompiled,
