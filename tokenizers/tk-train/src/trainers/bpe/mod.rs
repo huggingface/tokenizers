@@ -29,25 +29,48 @@ use tk_encode::utils::progress::{ProgressBar, ProgressFormat, ProgressStyle};
 
 /// The default for [`BpeTrainer::parallel_merge_threshold`].
 ///
-/// High deliberately. On a 6.5 MB corpus the merge loop averaged 101 words a merge
-/// and its widest single merge touched 10768, and across that whole range the parallel path lost --
-/// at a 1024 cut it still measured 117 ms against 55 ms serial. So the crossover, if there is one,
-/// is somewhere above the largest fan-out that corpus can produce, and picking a number from
-/// nothing would be guessing. Training on tens of GB reaches fan-outs orders of magnitude larger,
-/// which is what this exists for.
+/// 1000, chosen from measurements at two scales rather than from a guess. Training a 32 k vocabulary
+/// over a 588 MB corpus of code and prose:
 ///
-/// `TOKENIZERS_TRAIN_PARALLEL_MIN` overrides it, read once per process; setting the field beats the
-/// environment. `0` forces the parallel path, which is how `parallel_merges_agree_with_serial`
-/// checks that the two produce the same vocabulary and merges.
+/// | threshold | 588 MB corpus | 6.5 MB corpus |
+/// |-----------|---------------|---------------|
+/// | serial    | 29.10 s       | 72 ms         |
+/// | 10000     | 21.94 s       | --            |
+/// | 4000      | 20.17 s       | 83 ms         |
+/// | 1000      | 18.90 s       | 98 ms         |
+/// | 0         | 18.92 s       | 280 ms        |
+///
+/// The two want opposite things -- a big corpus wants to fan out sooner, a small one later -- but
+/// the asymmetry settles it: 1000 costs the small corpus 26 ms and saves the large one 10.2 s.
+///
+/// Fan-out is a proxy for the work a merge represents, and an imperfect one: it counts words, not
+/// their lengths, which is why the two corpora disagree at all -- the large one's words are longer,
+/// so the same fan-out is more work. Weighting by symbol count would discriminate better; it is not
+/// worth the bookkeeping until a corpus is found that this number handles badly.
+///
 pub fn default_parallel_merge_threshold() -> usize {
     static THRESHOLD: OnceLock<usize> = OnceLock::new();
     *THRESHOLD.get_or_init(|| {
         std::env::var("TOKENIZERS_TRAIN_PARALLEL_MIN")
             .ok()
             .and_then(|v| v.parse().ok())
-            .unwrap_or(200_000)
+            .unwrap_or(1_000)
     })
 }
+
+/// The two scratch buffers one worker reuses across every merge it handles.
+///
+/// `scratch` takes a single word's pair deltas from `Word::merge`; `deltas` accumulates the whole
+/// chunk's, tagged with the word they came from, to be folded in once the workers are done.
+#[derive(Default)]
+struct ChunkBuffers {
+    scratch: Vec<(Pair, i32)>,
+    deltas: Vec<(Pair, i32, u32)>,
+}
+
+/// One worker's share: its words, the index that slice starts at, the word indices to merge, and
+/// its buffers.
+type Task<'a> = (&'a mut [Word], u32, &'a [u32], &'a mut ChunkBuffers);
 
 /// Appends `iw` to a word list unless it is already the last entry.
 ///
@@ -648,6 +671,10 @@ impl BpeTrainer {
         let mut merges: Vec<(Pair, u32)> = vec![];
         // Reused by every `Word::merge` below; see the note in the loop.
         let mut changes: Vec<(Pair, i32)> = Vec::new();
+        // One set of buffers per worker, reused for every merge that takes the parallel path.
+        let threads = current_num_threads().max(1);
+        let mut chunk_buffers: Vec<ChunkBuffers> =
+            (0..threads).map(|_| ChunkBuffers::default()).collect();
         loop {
             // Stop as soon as we have a big enough vocabulary
             if word_to_id.len() >= self.vocab_size {
@@ -729,47 +756,59 @@ impl BpeTrainer {
                 // Cut `pos` into runs, then peel the matching `&mut [Word]` off the front for each.
                 // `base` is the word index the peeled slice starts at, so a worker indexes with
                 // `iw - base`.
-                let run = top.pos.len().div_ceil(current_num_threads().max(1));
-                let mut tasks: Vec<(&mut [Word], u32, &[u32])> = Vec::new();
+                let run = top.pos.len().div_ceil(threads);
+
+                // Each worker gets a real `&mut [Word]`, peeled off the front, plus the two buffers
+                // it reuses. `base` is the word index its slice starts at, so it indexes with
+                // `iw - base`.
+                //
+                // The buffers live outside the merge loop. Allocating them per merge cost 38.4 GB of
+                // churn against the serial path's 7.2 GB on a 588 MB corpus -- the per-chunk lists
+                // are short-lived but there are two of them per chunk per merge.
+                // Every buffer, not just the ones this merge hands out: a merge with fewer chunks
+                // than threads would otherwise leave the tail holding the previous merge's deltas,
+                // and the fold below walks all of them.
+                for buf in chunk_buffers.iter_mut() {
+                    buf.deltas.clear();
+                }
+
+                let mut tasks: Vec<Task<'_>> = Vec::with_capacity(threads);
                 let mut rest: &mut [Word] = &mut words[..];
+                let mut buffers: &mut [ChunkBuffers] = &mut chunk_buffers[..];
                 let mut base: u32 = 0;
                 for chunk in top.pos.chunks(run) {
                     // +1 because the run has to include the last word it names.
                     let take = (chunk[chunk.len() - 1] + 1 - base) as usize;
-                    let (head, tail) = rest.split_at_mut(take);
-                    tasks.push((head, base, chunk));
-                    rest = tail;
+                    let (words_head, words_tail) = rest.split_at_mut(take);
+                    let (buf_head, buf_tail) = buffers.split_at_mut(1);
+                    tasks.push((words_head, base, chunk, &mut buf_head[0]));
+                    rest = words_tail;
+                    buffers = buf_tail;
                     base += take as u32;
                 }
 
-                // Each worker keeps its own delta list: per chunk, not per word, so this is a
-                // handful of allocations for the whole merge rather than one per word.
-                let per_chunk: Vec<Vec<(Pair, i32, u32)>> = tasks
+                tasks
                     .into_maybe_par_iter()
-                    .map(|(slice, base, chunk)| {
-                        let mut local = Vec::new();
-                        let mut scratch = Vec::new();
+                    .for_each(|(slice, base, chunk, buf)| {
                         for &iw in chunk {
-                            scratch.clear();
+                            buf.scratch.clear();
                             slice[(iw - base) as usize].merge(
                                 top.pair.0,
                                 top.pair.1,
                                 new_token_id,
                                 max_token_length,
-                                &mut scratch,
+                                &mut buf.scratch,
                             );
-                            for &(pair, change) in scratch.iter() {
-                                local.push((pair, change, iw));
+                            for &(pair, change) in buf.scratch.iter() {
+                                buf.deltas.push((pair, change, iw));
                             }
                         }
-                        local
-                    })
-                    .collect();
+                    });
 
                 // Folded back in chunk order, which is `pos` order, so each word's appends stay
                 // contiguous and `push_word` stays exact.
-                for local in &per_chunk {
-                    for &(pair, change, iw) in local {
+                for buf in chunk_buffers.iter() {
+                    for &(pair, change, iw) in buf.deltas.iter() {
                         *pair_counts.entry(pair).or_default() += change * counts[iw as usize] as i32;
                         if change > 0 {
                             push_word(where_to_update.entry(pair).or_default(), iw);
