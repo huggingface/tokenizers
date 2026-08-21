@@ -1,33 +1,20 @@
 //! The `Metaspace` **decoder**.
-//!
-//! There is no `Metaspace` *pre-tokenizer* to be a different type from any more: the encode half is
-//! a [`MetaspaceNormalizer`] plus a `Split`, which is what reading one builds. Decoding stays a
-//! component of its own — see [`crate::decoders::replace`] for why.
-//!
-//! `PrependScheme` lives here because this is the only component left that holds one; the JSON layer
-//! reads it for both halves. It is plain data describing a setting, not a component playing a role.
-//!
-//! [`MetaspaceNormalizer`]: crate::normalizers::metaspace::MetaspaceNormalizer
+//! To use in conjunction with the
+//! [`MetaspaceNormalizer`]: crate::normalizers::metaspace::MetaspaceNormalizer.
 
 use crate::tokenizer::{Decoder, Result};
 
 /// Enum representing options for the metaspace prepending scheme.
-///
-/// The JSON spelling is `snake_case`: `"first"` / `"never"` / `"always"`.
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
 pub enum PrependScheme {
     /// Specifies that the scheme should be prepended only once, on the first split.
     First,
-    /// Specifies that the space should not be prepended.
     Never,
-    /// Specifies that the scheme should always be prepended.
     Always,
 }
 
 impl std::fmt::Display for PrependScheme {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // Spelled out rather than handed to a serializer, so the name survives a build with no
-        // serde in it. These must stay identical to the spelling `tk-serialize` reads and writes.
         f.write_str(match self {
             Self::First => "first",
             Self::Never => "never",
@@ -41,8 +28,6 @@ impl std::fmt::Display for PrependScheme {
 pub struct MetaspaceDecoder {
     replacement: char,
     pub prepend_scheme: PrependScheme,
-    /// Carried for round-tripping only; decoding does not read it.
-    pub split: bool,
 }
 
 impl MetaspaceDecoder {
