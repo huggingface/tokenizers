@@ -20,7 +20,7 @@ use tk_encode::vocab::bucket_added_vocabulary::AddedToken;
 // inference crate. `PipelineBPE` is the only BPE left; a trainer reaches it through
 // `from_vocab_and_merges`, the same serde-free door a reader walks through, because its fields are
 // private to `tk-encode`.
-use word::{WithFirstLastIterator, Word};
+use word::{Symbol, WithFirstLastIterator, WordArena, merge_run};
 
 use tk_encode::Result;
 use tk_encode::models::bpe::{Merges, Pair, PipelineBPE, BpeConfig, Vocab};
@@ -68,9 +68,19 @@ struct ChunkBuffers {
     deltas: Vec<(Pair, i32, u32)>,
 }
 
-/// One worker's share: its words, the index that slice starts at, the word indices to merge, and
-/// its buffers.
-type Task<'a> = (&'a mut [Word], u32, &'a [u32], &'a mut ChunkBuffers);
+/// One worker's share of a merge.
+///
+/// `syms` and `lives` are disjoint slices peeled off the arena, so no two workers can touch the same
+/// word. The two bases translate a global word index into this slice: word `iw` has its length at
+/// `lives[iw - word_base]` and its run starting at `start[iw] - sym_base` within `syms`.
+struct Task<'a> {
+    syms: &'a mut [Symbol],
+    lives: &'a mut [u32],
+    word_base: u32,
+    sym_base: usize,
+    chunk: &'a [u32],
+    buf: &'a mut ChunkBuffers,
+}
 
 /// Appends `iw` to a word list unless it is already the last entry.
 ///
@@ -479,17 +489,18 @@ impl BpeTrainer {
         w2id: &mut AHashMap<CompactString, u32>,
         id2w: &mut Vec<CompactString>,
         p: &Option<ProgressBar>,
-    ) -> (Vec<Word>, Vec<u64>) {
-        let mut words: Vec<Word> = Vec::with_capacity(wc.len());
+    ) -> (WordArena, Vec<u64>) {
+        // One buffer for every word's symbols instead of a `Vec` each. `wc` keys are `CompactString`
+        // so their byte length bounds their character count, which bounds the symbols a word can
+        // ever hold -- runs only shrink from there, so neither `Vec` grows while filling.
+        let symbol_upper_bound = wc.keys().map(|w| w.len()).sum();
+        let mut words = WordArena::with_capacity(wc.len(), symbol_upper_bound);
         // Reused whenever a character needs a prefix/suffix; see the note below.
         let mut decorated = String::new();
         let mut counts: Vec<u64> = Vec::with_capacity(wc.len());
 
         for (word, count) in wc {
-            // Sized up front: the symbol count starts at one per character and only shrinks as
-            // merges apply, so the character count is an exact upper bound and the `Vec` never
-            // grows. Starting empty cost one allocation per doubling, per unique word.
-            let mut current_word = Word::with_capacity(word.chars().count());
+            words.open_word();
             counts.push(*count);
 
             for (is_first, is_last, c) in word.chars().with_first_and_last() {
@@ -543,9 +554,9 @@ impl BpeTrainer {
                         id
                     }
                 };
-                current_word.add(id, 1); // We do not care about the len here
+                words.push_symbol(id, 1); // We do not care about the len here
             }
-            words.push(current_word);
+            words.close_word();
 
             if let Some(p) = p {
                 p.inc(1);
@@ -557,7 +568,7 @@ impl BpeTrainer {
 
     fn count_pairs(
         &self,
-        words: &[Word],
+        words: &WordArena,
         counts: &[u64],
         p: &Option<ProgressBar>,
     ) -> (AHashMap<Pair, i32>, AHashMap<Pair, Vec<u32>>) {
@@ -571,10 +582,10 @@ impl BpeTrainer {
         let mut pair_counts: AHashMap<Pair, i32> = AHashMap::new();
         let mut where_to_update: AHashMap<Pair, Vec<u32>> = AHashMap::new();
 
-        for (i, word) in words.iter().enumerate() {
+        for i in 0..words.len() {
             let count = counts[i] as i32;
             let iw = i as u32;
-            for pair in word.get_chars_iter().tuple_windows::<(u32, u32)>() {
+            for pair in words.chars(i).tuple_windows::<(u32, u32)>() {
                 *pair_counts.entry(pair).or_default() += count;
                 // `push_word` keeps `pos` duplicate-free; a pair can repeat inside one word.
                 push_word(where_to_update.entry(pair).or_default(), iw);
@@ -736,7 +747,8 @@ impl BpeTrainer {
                 for &iw in &top.pos {
                     let i = iw as usize;
                     changes.clear();
-                    words[i].merge(
+                    words.merge(
+                        i,
                         top.pair.0,
                         top.pair.1,
                         new_token_id,
@@ -772,38 +784,77 @@ impl BpeTrainer {
                     buf.deltas.clear();
                 }
 
+                // Destructured so the layout stays readable while the storage is carved up: three
+                // separate field borrows, not one borrow of the arena.
+                let WordArena {
+                    symbols,
+                    start,
+                    live,
+                } = &mut words;
+                let starts: &[u32] = start;
+
                 let mut tasks: Vec<Task<'_>> = Vec::with_capacity(threads);
-                let mut rest: &mut [Word] = &mut words[..];
+                let mut sym_rest: &mut [Symbol] = symbols;
+                let mut live_rest: &mut [u32] = live;
                 let mut buffers: &mut [ChunkBuffers] = &mut chunk_buffers[..];
-                let mut base: u32 = 0;
+                let mut word_base: u32 = 0;
+                let mut sym_base: usize = 0;
                 for chunk in top.pos.chunks(run) {
-                    // +1 because the run has to include the last word it names.
-                    let take = (chunk[chunk.len() - 1] + 1 - base) as usize;
-                    let (words_head, words_tail) = rest.split_at_mut(take);
+                    // +1 because the run has to reach past the last word it names. `start` is
+                    // indexed one past that, which is why it carries a sentinel.
+                    let upto = chunk[chunk.len() - 1] + 1;
+                    let take_words = (upto - word_base) as usize;
+                    let take_syms = starts[upto as usize] as usize - sym_base;
+
+                    let (sym_head, sym_tail) = sym_rest.split_at_mut(take_syms);
+                    let (live_head, live_tail) = live_rest.split_at_mut(take_words);
                     let (buf_head, buf_tail) = buffers.split_at_mut(1);
-                    tasks.push((words_head, base, chunk, &mut buf_head[0]));
-                    rest = words_tail;
+                    tasks.push(Task {
+                        syms: sym_head,
+                        lives: live_head,
+                        word_base,
+                        sym_base,
+                        chunk,
+                        buf: &mut buf_head[0],
+                    });
+
+                    sym_rest = sym_tail;
+                    live_rest = live_tail;
                     buffers = buf_tail;
-                    base += take as u32;
+                    sym_base += take_syms;
+                    word_base = upto;
                 }
 
-                tasks
-                    .into_maybe_par_iter()
-                    .for_each(|(slice, base, chunk, buf)| {
-                        for &iw in chunk {
-                            buf.scratch.clear();
-                            slice[(iw - base) as usize].merge(
-                                top.pair.0,
-                                top.pair.1,
-                                new_token_id,
-                                max_token_length,
-                                &mut buf.scratch,
-                            );
-                            for &(pair, change) in buf.scratch.iter() {
-                                buf.deltas.push((pair, change, iw));
-                            }
+                tasks.into_maybe_par_iter().for_each(|task| {
+                    let Task {
+                        syms,
+                        lives,
+                        word_base,
+                        sym_base,
+                        chunk,
+                        buf,
+                    } = task;
+                    for &iw in chunk {
+                        let local = (iw - word_base) as usize;
+                        let begin = starts[iw as usize] as usize - sym_base;
+                        let live = &mut lives[local];
+                        let run = &mut syms[begin..begin + *live as usize];
+
+                        buf.scratch.clear();
+                        merge_run(
+                            run,
+                            live,
+                            top.pair.0,
+                            top.pair.1,
+                            new_token_id,
+                            max_token_length,
+                            &mut buf.scratch,
+                        );
+                        for &(pair, change) in buf.scratch.iter() {
+                            buf.deltas.push((pair, change, iw));
                         }
-                    });
+                    }
+                });
 
                 // Folded back in chunk order, which is `pos` order, so each word's appends stay
                 // contiguous and `push_word` stays exact.
