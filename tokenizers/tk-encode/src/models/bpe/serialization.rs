@@ -1,70 +1,71 @@
-//! The config-shaped door in and out of [`PipelineBPE`], and nothing else.
-//!
-//! The other three models put their `Serialize`/`Deserialize` impls here. `PipelineBPE` has none:
-//! it is built from, and recovered into, plain owned data ([`BpeConfig`]) with no serde on it,
-//! because one of its readers ([`tk-serialize`](https://docs.rs/tk-serialize)) links no serde at
-//! all. Same role in the module, one layer lower down.
+//! The different functions used to go from the serialized json vocab / merges to building the BPE.
 
-use super::model::{Atoms, PipelineBPE, PipelineBpeOptions, build_byte_to_gate};
+use super::model::{Atoms, PipelineBPE, build_byte_to_gate};
 use crate::models::bpe::convert::{AFFIX_BUF, Affixes};
 use crate::models::bpe::tables::BpeTables;
 use crate::models::bpe::{Error, MergeMap, Merges, Pair, Vocab};
 use crate::tokenizer::Result;
 use crate::utils::byte_level::{self};
+use crate::utils::cache::DEFAULT_CACHE_CAPACITY;
 use crate::vocab::bucket_vocab_store::BucketVocabStore;
 use std::str::from_utf8_unchecked;
 
-/// A [`PipelineBPE`] in the shape a `tokenizer.json` spells it, as returned by
-/// [`PipelineBPE::to_config`]. Plain owned data with no serde on it: the crate that writes the
-/// JSON is the one that knows the format.
-#[derive(Debug, Clone)]
 pub struct BpeConfig {
     /// `{"token": id}`, in no particular order.
-    pub vocab: Vec<(String, u32)>,
+    pub vocab: Vocab,
     /// The merge list in rank order.
     pub merges: Merges,
-    /// Whether the model applies the byte-level map, i.e. whether the config had a `ByteLevel`
-    /// pre-tokenizer. Not a `model` field itself, but the writer needs it to spell the vocabulary.
+    /// The vocabulary is written in the byte-level alphabet (gpt2 and everything after it), so its
+    /// entries are decoded to their raw bytes at load and every byte has to be an atom. Not a
+    /// `model` field itself, but the writer needs it to spell the vocabulary.
     pub byte_level: bool,
+    /// The token to emit for a character with no vocabulary entry. Must itself be in the vocab.
     pub unk_token: Option<String>,
+    /// Prefix carried by every subword that is not the first of its word (WordPiece's `"##"`).
     pub continuing_subword_prefix: Option<String>,
+    /// Suffix carried by the last subword of a word (`"</w>"`).
     pub end_of_word_suffix: Option<String>,
+    /// Whether a run of unknown characters collapses into one unk token.
     pub fuse_unk: bool,
+    /// SentencePiece's byte fallback: an unknown character becomes one `"<0xNN>"` token per byte,
+    /// which requires all 256 of them to be in the vocabulary.
     pub byte_fallback: bool,
+    /// Emit any pretoken that is itself a vocabulary entry as that entry, without merging. The flag
+    /// only *widens* what folds: entries that provably reduce to themselves fold either way, which
+    /// is what `prove_fold` settles at load.
     pub ignore_merges: bool,
+    /// Merge dropout. Only `None` and `Some(0.0)` are runnable here: dropout makes tokenization
+    /// non-deterministic, which the tables and the word cache are both built on the assumption of.
+    /// A value outside `0.0..=1.0` is rejected as a bad config, a value above it as unsupported.
+    pub dropout: Option<f32>,
+    /// Slots in the per-scratch word cache; `0` turns caching off. Defaults to
+    /// [`DEFAULT_CACHE_CAPACITY`](crate::models::bpe::DEFAULT_CACHE_CAPACITY).
+    pub cache_capacity: usize,
+}
+
+impl Default for BpeConfig {
+    fn default() -> Self {
+        Self {
+            vocab: Vocab::default(),
+            merges: Merges::default(),
+            byte_level: false,
+            unk_token: None,
+            continuing_subword_prefix: None,
+            end_of_word_suffix: None,
+            fuse_unk: false,
+            byte_fallback: false,
+            ignore_merges: false,
+            dropout: None,
+            cache_capacity: DEFAULT_CACHE_CAPACITY,
+        }
+    }
 }
 
 impl PipelineBPE {
-    /// The model as a `tokenizer.json` spells it, recovered from the runtime tables.
-    ///
-    /// ## Why this is a recovery and not a getter
-    ///
-    /// Nothing here is stored in config shape. The merge list was consumed into a perfect-hash map
-    /// plus a dense grid at load; the vocabulary became a [`BucketVocabStore`] whose entries are the
-    /// *decoded* bytes when the model is byte-level; and every option was folded into
-    /// [`Atoms`], [`Affixes`] or a per-entry bit. So a writer cannot ask this type what it was built
-    /// from -- it has to run the construction backwards, which is what this does.
-    ///
-    /// It is exact for everything that can change an id, and deliberately not exact for the rest:
-    ///
-    /// - **Merges** come back in rank order, with the pairs the build dropped still dropped and a
-    ///   pair repeated in the source collapsed to one. See [`BpeTables::merge_list`].
-    /// - **A byte-level vocabulary** is re-encoded into byte-level characters, which is the
-    ///   canonical spelling and not necessarily the file's: a token written with a character
-    ///   outside the byte-level alphabet decoded to that character's UTF-8 bytes on the way in, and
-    ///   comes back as the byte-level spelling of those same bytes. Both decode identically, so the
-    ///   rebuilt model is the same model.
-    /// - **`unk_token`, `fuse_unk` and `byte_fallback` on a byte-level model** are gone, because
-    ///   the load path never keeps them: every byte is an atom there, so none of the three can
-    ///   affect anything. They come back as `None`/`false`.
-    /// - **`dropout`** is gone for the same reason, having been rejected at load unless it was
-    ///   absent or zero.
-    /// - **`ignore_merges`** is answered by [`BucketVocabStore::all_foldable`], which is equivalent:
-    ///   see that method.
     pub fn to_config(&self) -> Result<BpeConfig> {
         let byte_level = self.is_byte_level();
-        // A byte-level store holds decoded bytes, so spelling one back out is the byte-level
-        // encoding of those bytes. Everything else holds the token as written.
+        // TODO: For now we keep serializing the old "printable" chars, but this costs nothing to
+        // drop on serialize.
         let spell = |bytes: &[u8]| -> Result<String> {
             if byte_level {
                 Ok(bytes
@@ -115,12 +116,9 @@ impl PipelineBPE {
                 (unk, *fuse_unk, byte_fallback.is_some())
             }
         };
-        // `Affixes` is absent when both halves were empty, and each half is empty rather than
-        // absent when only the other was given -- the same collapse the builder does, so an empty
-        // affix and a missing one are the same model either way.
         let affix = |s: &str| (!s.is_empty()).then(|| s.to_string());
         Ok(BpeConfig {
-            vocab,
+            vocab: vocab.into_iter().collect(),
             merges,
             byte_level,
             unk_token,
@@ -129,34 +127,21 @@ impl PipelineBPE {
             fuse_unk,
             byte_fallback,
             ignore_merges: self.vocab.all_foldable(),
+            dropout: None,
+            cache_capacity: self.cache_capacity.unwrap_or(0),
         })
     }
 
     /// Build a `PipelineBPE` from a vocabulary and a merge list, exactly as they are written in a
     /// `tokenizer.json`.
     ///
-    /// This is the crate boundary made concrete. `tk-serialize` reads a canonical config and links
-    /// no serde at all, so it cannot go through the config-shaped
-    /// `BPE` in `tk-convert` — that type is what makes an *old* serialized BPE still loadable, and
-    /// depending on it here would invert the split (`tk-serialize` -> `tk-convert`) that the whole
-    /// arrangement exists to prevent. So the runtime owns one serde-free door that takes the raw
-    /// parts, and both readers walk through it: `tk-serialize` with what it parsed, `tk-convert`
-    /// with what its builder resolved (see [`Self::from_merge_map`]).
-    ///
-    /// The work below is the merge-table derivation that used to live in `BpeBuilder::build`, moved
-    /// verbatim: each merge's two tokens are looked up in `vocab`, their concatenation (minus the
+    /// Each merge's two tokens are looked up in `vocab`, their concatenation (minus the
     /// continuing-subword prefix on the right-hand token) is looked up as well, and the rank plus
-    /// that product id become the merge's value. It has to happen on this side of the line because
-    /// everything it feeds — the tables, the byte-level fold, the caches — is runtime state.
-    pub fn from_vocab_and_merges(
-        vocab: Vocab,
-        merges: Merges,
-        options: PipelineBpeOptions,
-    ) -> Result<Self> {
-        // The range check the builder used to do. It is separate from the "dropout is not
-        // supported" rejection below: 0.5 is a *valid* config that this engine cannot run, while
-        // 1.5 was never a valid config at all, and the two have to keep reporting differently.
-        if let Some(p) = options.dropout
+    /// that product id become the merge's value.
+    pub fn from_config(mut config: BpeConfig) -> Result<Self> {
+        let vocab = std::mem::take(&mut config.vocab);
+        let merges = std::mem::take(&mut config.merges);
+        if let Some(p) = config.dropout
             && !(0.0..=1.0).contains(&p)
         {
             return Err(Error::InvalidDropout.into());
@@ -168,7 +153,7 @@ impl PipelineBPE {
                 max_len = key.len();
             }
         }
-        let prefix_len = options
+        let prefix_len = config
             .continuing_subword_prefix
             .as_ref()
             .map_or(0, |prefix| prefix.len());
@@ -207,22 +192,17 @@ impl PipelineBPE {
             )
         };
 
-        Self::from_merge_map(vocab, merges, options)
+        Self::from_merge_map(vocab, merges, config)
     }
 
     /// The same construction, entered from a vocabulary store and a merge map that have *already*
     /// been resolved against each other.
-    ///
-    /// This is the door for the config-shaped `BPE` in `tk-convert`: that type keeps exactly these
-    /// two tables as its own fields, because its legacy encode path needs them, so re-deriving them
-    /// from re-inverted merge *strings* would be both slower and a second source of truth for what
-    /// a merge means. [`Self::from_vocab_and_merges`] is this function plus that derivation.
-    pub fn from_merge_map(
+    fn from_merge_map(
         vocab: BucketVocabStore,
         merges: MergeMap,
-        options: PipelineBpeOptions,
+        config: BpeConfig,
     ) -> Result<Self> {
-        let PipelineBpeOptions {
+        let BpeConfig {
             unk_token,
             continuing_subword_prefix,
             end_of_word_suffix,
@@ -231,8 +211,9 @@ impl PipelineBPE {
             ignore_merges,
             dropout,
             cache_capacity,
-            with_byte_level,
-        } = options;
+            byte_level,
+            ..
+        } = config;
         if matches!(&dropout, Some(dropout) if *dropout > 0.0) {
             return Err("BPE models with dropout not supported yet".into());
         }
@@ -244,11 +225,8 @@ impl PipelineBPE {
             return Err("BPE affixes too long: raise AFFIX_BUF".into());
         }
 
-        let (tables, external_to_internal) = BpeTables::build(
-            vocab.get_vocab().into_iter().collect(),
-            merges,
-            with_byte_level,
-        );
+        let (tables, external_to_internal) =
+            BpeTables::build(vocab.get_vocab().into_iter().collect(), merges, byte_level);
         // the symbol stream is internal ids, mapped back through `unmap` at the very end
         let to_internal = |external: u32| -> Option<u32> {
             external_to_internal
@@ -256,7 +234,7 @@ impl PipelineBPE {
                 .copied()
                 .filter(|&internal| internal != u32::MAX)
         };
-        let (vocab, atoms) = if with_byte_level {
+        let (vocab, atoms) = if byte_level {
             let mut vocab = BucketVocabStore::build(vocab.byte_content());
             vocab = byte_level::transform_vocab(vocab);
             // every byte has to be an atom, or a word containing it could not be encoded at all

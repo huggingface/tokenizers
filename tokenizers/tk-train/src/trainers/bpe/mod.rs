@@ -21,7 +21,7 @@ use tk_encode::vocab::bucket_added_vocabulary::AddedToken;
 use word::{WithFirstLastIterator, Word};
 
 use tk_encode::Result;
-use tk_encode::models::bpe::{Merges, Pair, PipelineBPE, PipelineBpeOptions, Vocab};
+use tk_encode::models::bpe::{Merges, Pair, PipelineBPE, BpeConfig, Vocab};
 use tk_encode::parallelism::*;
 use tk_encode::utils::progress::{ProgressBar, ProgressFormat, ProgressStyle};
 use tk_encode::vocab::bucket_vocab_store::BucketVocabStore;
@@ -198,7 +198,7 @@ impl BpeTrainerBuilder {
 /// ```
 /// use tk_train::BpeTrainer;
 /// use tk_train::Trainer;
-/// use tk_encode::models::bpe::{PipelineBPE, PipelineBpeOptions};
+/// use tk_encode::models::bpe::{PipelineBPE, BpeConfig};
 ///
 /// let sequences = vec![ "Hello", "World" ];
 ///
@@ -208,7 +208,7 @@ impl BpeTrainerBuilder {
 /// // `PipelineBPE` has no empty state to train *into* -- it only exists once there is a
 /// // vocabulary and a merge list -- so take the parts and build it.
 /// let (vocab, merges, special_tokens) = trainer.train_vocab().unwrap();
-/// let model = PipelineBPE::from_vocab_and_merges(vocab, merges, PipelineBpeOptions::default()).unwrap();
+/// let model = PipelineBPE::from_config(BpeConfig { vocab: vocab, merges: merges, ..BpeConfig::default() }).unwrap();
 /// ```
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq)]
@@ -485,10 +485,10 @@ impl BpeTrainer {
     /// The runtime options a trained model is built with.
     ///
     /// The two affixes are the only settings a BPE trainer decides: everything else in
-    /// [`PipelineBpeOptions`] describes how to *read* a model (unknown-token handling, dropout,
+    /// [`BpeConfig`] describes how to *read* a model (unknown-token handling, dropout,
     /// caching) and is the reader's business, not the trainer's, so it stays at its default.
-    fn model_options(&self) -> PipelineBpeOptions {
-        PipelineBpeOptions {
+    fn model_options(&self) -> BpeConfig {
+        BpeConfig {
             continuing_subword_prefix: self.continuing_subword_prefix.clone(),
             end_of_word_suffix: self.end_of_word_suffix.clone(),
             ..Default::default()
@@ -687,7 +687,7 @@ impl Trainer for BpeTrainer {
     /// Train a BPE model
     fn train(&self, model: &mut PipelineBPE) -> Result<Vec<AddedToken>> {
         let (vocab, merges, special_tokens) = self.do_train(&self.words)?;
-        *model = PipelineBPE::from_vocab_and_merges(vocab, merges, self.model_options())?;
+        *model = PipelineBPE::from_config(BpeConfig { vocab: vocab, merges: merges, ..self.model_options() })?;
         Ok(special_tokens)
     }
 

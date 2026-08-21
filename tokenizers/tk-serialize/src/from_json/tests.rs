@@ -255,11 +255,11 @@ fn byte_level_without_use_regex_is_the_identity_split() {
     );
     let doc = Json::parse(&json).unwrap();
     let mut normalizers = Vec::new();
-    let (pretok, with_byte_level) =
+    let (pretok, byte_level) =
         read_pre_tokenizer(doc.get_some("pre_tokenizer"), &mut normalizers).unwrap();
     assert!(matches!(pretok, PipelinePreTokenizer::None));
     // Still byte-level for the *model*, which is a separate switch.
-    assert!(with_byte_level);
+    assert!(byte_level);
 }
 
 #[test]
@@ -279,9 +279,9 @@ fn metaspace_becomes_a_normalizer_plus_a_split() {
     );
     let doc = Json::parse(&json).unwrap();
     let mut normalizers = Vec::new();
-    let (pretok, with_byte_level) =
+    let (pretok, byte_level) =
         read_pre_tokenizer(doc.get_some("pre_tokenizer"), &mut normalizers).unwrap();
-    assert!(!with_byte_level);
+    assert!(!byte_level);
     assert!(matches!(pretok, PipelinePreTokenizer::Split(_)));
     assert!(matches!(
         normalizers.as_slice(),

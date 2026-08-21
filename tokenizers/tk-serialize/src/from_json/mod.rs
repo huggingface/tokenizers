@@ -67,7 +67,7 @@ pub(crate) use self::normalizers::base64_decode;
 use self::post_processors::read_post_processor;
 use self::pre_tokenizers::read_pre_tokenizer;
 use crate::json::{Json, JsonExt};
-use tk_encode::models::bpe::{PipelineBPE, Vocab};
+use tk_encode::models::bpe::{BpeConfig, PipelineBPE, Vocab};
 use tk_encode::pipeline::{
     NormalizerChain, PipelineModel, PipelineNormalizer, PipelinePreTokenizer, PipelineTokenizer,
 };
@@ -118,14 +118,14 @@ fn from_json_value(doc: &Json<'_>) -> Result<PipelineTokenizer> {
     // Takes `normalizers` because a `Metaspace` pre-tokenizer contributes one, and it has to
     // land *after* the declared normalizer — the config asks for the whole normalizer first,
     // then the pre-tokenizer.
-    let (pre_tokenizer, with_byte_level) =
+    let (pre_tokenizer, byte_level) =
         read_pre_tokenizer(doc.get_some("pre_tokenizer"), &mut normalizers)?;
 
     let model_cfg = doc
         .get_some("model")
         .ok_or_else(|| -> tk_encode::Error { "config has no `model`".into() })?;
     let kind = model_kind(model_cfg);
-    if with_byte_level && kind != "BPE" {
+    if byte_level && kind != "BPE" {
         return Err(format!("ByteLevel pre tokenizer is not supported with model {kind}").into());
     }
     if model_cfg.get("files").is_some() {
@@ -138,11 +138,9 @@ fn from_json_value(doc: &Json<'_>) -> Result<PipelineTokenizer> {
         // must not depend on. `build` gets the vocabulary instead -- see [`VocabOnly`] -- and
         // lowers it into the model afterwards, which keeps the replay-then-lower order intact.
         "BPE" => {
-            let (vocab, merges, options) = read_bpe(model_cfg, with_byte_level)?;
+            let (vocab, merges, options) = read_bpe(model_cfg, byte_level)?;
             build(doc, normalizers, pre_tokenizer, VocabOnly(vocab), |vocab| {
-                Ok(PipelineModel::BPE(PipelineBPE::from_vocab_and_merges(
-                    vocab.0, merges, options,
-                )?))
+                Ok(PipelineModel::BPE(PipelineBPE::from_config(BpeConfig { vocab: vocab.0, merges, ..options })?))
             })
         }
         #[cfg(feature = "wordpiece")]

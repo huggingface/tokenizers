@@ -1,15 +1,16 @@
 //! The `model` object: one reader per model kind, plus the shared `{"token": id}` vocabulary.
 
 use crate::json::{Json, JsonExt};
-use tk_encode::models::bpe::{Merges, PipelineBpeOptions, Vocab};
+use tk_encode::models::bpe::{BpeConfig, Merges, Vocab};
 use tk_encode::tokenizer::Result;
 
-/// The three parts [`PipelineBPE::from_vocab_and_merges`] takes, read out of the config. They are
-/// returned rather than consumed here so that the vocabulary can serve as [`VocabOnly`] first.
+/// The three parts a `BpeConfig` is assembled from, read out of the config. The vocabulary and
+/// the merge list are returned beside it rather than filled in, so the vocabulary can serve as
+/// [`VocabOnly`] first.
 pub(super) fn read_bpe(
     cfg: &Json<'_>,
-    with_byte_level: bool,
-) -> Result<(Vocab, Merges, PipelineBpeOptions)> {
+    byte_level: bool,
+) -> Result<(Vocab, Merges, BpeConfig)> {
     let vocab = read_vocab_object(cfg)?;
 
     let merges_arr = cfg
@@ -42,7 +43,7 @@ pub(super) fn read_bpe(
     // Each option is left at its default unless the config names it, which is what the builder's
     // `if let Some(..)` chain used to say. A key that is present but null reads as absent, exactly
     // as it did.
-    let options = PipelineBpeOptions {
+    let options = BpeConfig {
         dropout: cfg
             .get_some("dropout")
             .and_then(Json::as_f64)
@@ -71,8 +72,8 @@ pub(super) fn read_bpe(
             .get_some("ignore_merges")
             .and_then(Json::as_bool)
             .unwrap_or_default(),
-        with_byte_level,
-        ..PipelineBpeOptions::default()
+        byte_level,
+        ..BpeConfig::default()
     };
     Ok((vocab, merges, options))
 }
