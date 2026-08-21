@@ -30,7 +30,7 @@ path = "src/lib.rs"
 atomsplit = { path = "../atomsplit" }
 rand = "0.10"
 ptr_hash = { version = "2.0.1", default-features = false }
-unicode_caaegories = "0.1"
+unicode_categories = "0.1"
 itertools = "0.14"
 log = "0.4"
 paste = "1.0.14"
