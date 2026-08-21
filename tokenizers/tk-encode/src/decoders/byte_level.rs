@@ -1,23 +1,14 @@
 //! The `ByteLevel` **decoder**.
+//! It just takes the printable character and converts it to the real character. This used to be
+//! the default as we wanted to make sure serialized vocabulary was "readable" as such non
+//! printable ascii were replace with the next printable.
 //!
-//! A different type from the `ByteLevel` *pre-tokenizer*, deliberately — see
-//! [`crate::decoders::replace`] for why. `decoders/mod.rs` used to `pub use` the pre-tokenizer
-//! "as a decoder", which is how one type came to sit in three wrappers at once.
-//!
-//! Decoding needs none of the pre-tokenizer's flags: it is a fixed inverse of the byte→char map.
-//! `add_prefix_space`, `trim_offsets` and `use_regex` used to be carried here so a config could be
-//! read and written back unchanged; nothing read them, so they are gone and the decoder is now
-//! field-less. The pre-tokenizer keeps its own copies, where they are functional.
+//! This is the whole reason you see 'Ġ' everywhere! It's the encode " " char.
 
 use crate::tokenizer::{Decoder, Result};
 use crate::utils::byte_level::CHAR_BYTES_LOOKUP;
 
 /// Maps the byte-level alphabet back to the bytes it stands for.
-///
-/// The tag on disk is `ByteLevel`, not the type name: the decoder used to *be* the pre-tokenizer
-/// type, and splitting them into two types must not change what a `tokenizer.json` says. Being
-/// field-less, its serde lives in `super::serialization` -- the tag has to be *required*, or an
-/// untagged `DecoderWrapper` would let this variant claim any object at all.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct ByteLevelDecoder {}
 
@@ -68,7 +59,6 @@ mod tests {
             vec!["Hello my friend, how is your day going?"]
         );
     }
-
 
     /// A token outside the byte-level alphabet is passed through as its own bytes rather than
     /// dropped -- which is what keeps an added token like `[PA D]` readable.
