@@ -1,10 +1,5 @@
 //! The `Replace` **decoder**.
-//!
-//! A different type from the `Replace` *normalizer*, deliberately. They read the same JSON and do
-//! the same substitution, but a decoder and a normalizer are different roles, and having one type
-//! implement both is what used to make `DecoderWrapper` and `NormalizerWrapper` share a variant —
-//! which in turn meant one type had to answer for both on-disk shapes. One type, one
-//! role: the shared part is the matcher in [`crate::utils::search`], not the component.
+//! It is convenient to do the inverse operation of a Replace normalizer.
 
 use crate::tokenizer::{Decoder, Result};
 use crate::utils::search::{ReplacePattern, Search};
@@ -28,7 +23,6 @@ impl ReplaceDecoder {
         })
     }
 
-    /// The pattern as written in the config. Needed to write it back out.
     pub fn pattern(&self) -> &ReplacePattern {
         &self.pattern
     }

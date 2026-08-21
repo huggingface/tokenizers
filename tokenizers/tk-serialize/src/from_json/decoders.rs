@@ -71,12 +71,11 @@ pub(super) fn read_one_decoder(cfg: &Json<'_>) -> Result<DecoderRuntime> {
         "WordPiece" => {
             DecoderRuntime::WordPiece(WordPieceDecoder::new(text("prefix")?, flag("cleanup")?))
         }
+        // `split` is read and thrown away: it says how the *pre-tokenizer* cut the text, and
+        // decoding never looks at it.
         "Metaspace" => DecoderRuntime::Metaspace(MetaspaceDecoder::new(
             read_char(cfg, "replacement")?,
             read_prepend_scheme(cfg)?,
-            cfg.get_some("split")
-                .and_then(Json::as_bool)
-                .unwrap_or(true),
         )),
         "CTC" => DecoderRuntime::CTC(CTC::new(
             text("pad_token")?,

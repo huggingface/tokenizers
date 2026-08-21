@@ -82,7 +82,9 @@ fn write_one(out: &mut Out, decoder: &DecoderRuntime) {
                     PrependScheme::Never => "never",
                 },
             );
-            out.field_bool("split", metaspace.split);
+            // Not carried on the decoder, because decoding never reads it. `true` is what every
+            // real config spells here, and the reader throws it away either way.
+            out.field_bool("split", true);
             out.obj_close();
         }
         DecoderRuntime::CTC(ctc) => {
