@@ -326,6 +326,7 @@ pub struct ParityBpeTrainer {
     /// Whether to show progress while training
     pub(crate) show_progress: bool,
     /// A list of special tokens that the model should know of
+    #[serde(with = "crate::added_token_serde")]
     pub(crate) special_tokens: Vec<AddedToken>,
     /// Whether to limit the number of initial tokens that can be kept before computing merges
     pub(crate) limit_alphabet: Option<usize>,

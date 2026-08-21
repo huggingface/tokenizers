@@ -1,10 +1,16 @@
+use tk_encode::Result;
 use tk_encode::vocab::bucket_added_vocabulary::AddedToken;
-use tk_encode::{Model, Result};
 
 /// A `Trainer` has the responsibility to train a model. We feed it with lines/sentences
 /// and then it can train the given `Model`.
 pub trait Trainer {
-    type Model: Model + Sized;
+    /// The model this trainer fills in.
+    ///
+    /// Deliberately *not* bound by `tk_encode::Model`: `PipelineBPE` is the only BPE left and it
+    /// implements the pipeline's model trait, not that one -- the config-shaped `BPE` that did went
+    /// with `tk-convert`'s strip. Nothing here calls a `Model` method on it anyway; a trainer only
+    /// ever writes one.
+    type Model: Sized;
     /// Whether we should show progress during the training.
     fn should_show_progress(&self) -> bool;
     /// The actual training method. This will return a new trained Model as well as a list

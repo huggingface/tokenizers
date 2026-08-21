@@ -10,10 +10,11 @@
 //! replaces that type -- the pipeline tokenizer hands out its model by shared
 //! reference only. Drive a trainer directly instead: `feed`, then `train`.
 
+pub mod added_token_serde;
 mod trainable;
 mod trainer;
 pub mod trainers;
 
-pub use trainable::Trainable;
+pub use trainable::{ModelWrapper, Trainable};
 pub use trainer::Trainer;
 pub use trainers::*;

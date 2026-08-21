@@ -54,6 +54,7 @@ pub struct UnigramTrainer {
     pub vocab_size: u32,
     pub n_sub_iterations: u32,
     pub shrinking_factor: f64,
+    #[serde(with = "crate::added_token_serde")]
     pub special_tokens: Vec<AddedToken>,
     pub initial_alphabet: AHashSet<char>,
 

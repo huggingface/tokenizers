@@ -18,6 +18,7 @@ pub struct WordLevelTrainer {
     /// Whether to show progress while training
     pub show_progress: bool,
     /// A list of special tokens that the model should know of
+    #[serde(with = "crate::added_token_serde")]
     pub special_tokens: Vec<AddedToken>,
 
     words: AHashMap<String, u64>,
