@@ -778,11 +778,13 @@ fn decoders_keep_their_fields() {
             // normalizer, so `first` survives where the pre-tokenizer's does not.
             r#"{"type": "Metaspace", "replacement": "▁",
                 "prepend_scheme": "first", "split": false}"#,
+            // `split` does not survive: the decoder does not carry it, because decoding never
+            // reads it. It is read, thrown away, and written back as `true`.
             serde_json::json!({
                 "type": "Metaspace",
                 "replacement": "\u{2581}",
                 "prepend_scheme": "first",
-                "split": false
+                "split": true
             }),
         ),
         (
