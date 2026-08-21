@@ -2,7 +2,6 @@ use crate::pipeline::{self, ModelScratch, PipelineToken};
 use crate::tokenizer::{Model, Result, Token};
 use ahash::AHashMap;
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
 
 
 /// Only the tests name this now: reading a `vocab.json` into one is `tk-convert`'s job.
@@ -143,17 +142,6 @@ impl Model for WordLevel {
         self.vocab.keys().len()
     }
 
-    /// A `vocab.json` is serde output — a `{token: id}` object in id order — and this crate links
-    /// no serde, so the writing lives in `tk_convert::models::wordlevel::save`. It cannot move
-    /// *with* the method, because `Model` and `WordLevel` are both defined here and the orphan rule
-    /// forbids another crate from writing `impl Model for WordLevel`. Every real caller reaches
-    /// `save` through `tk_convert::ModelWrapper`, which writes the file itself.
-    fn save(&self, _folder: &Path, _name: Option<&str>) -> Result<Vec<PathBuf>> {
-        Err("writing a WordLevel vocabulary is config-layer work: use \
-             `tk_convert::ModelWrapper::save`, or `tk_convert::models::wordlevel::save` for a bare \
-             model"
-            .into())
-    }
 }
 
 type WordLevelScratch = ();

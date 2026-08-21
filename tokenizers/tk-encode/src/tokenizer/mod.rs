@@ -10,7 +10,6 @@
 //!     ...).
 
 // The `Path` types are reachable only from `Model::save`.
-use std::path::{Path, PathBuf};
 
 mod encoding;
 pub mod normalizer;
@@ -63,19 +62,6 @@ pub trait Model {
     fn get_vocab(&self) -> HashMap<String, u32>;
     /// Retrieve the size of the vocabulary
     fn get_vocab_size(&self) -> usize;
-    /// Save the current `Model` in the given folder, using the given `prefix` for the various
-    /// files that need to be saved.
-    ///
-    /// Writing files is config-layer work and would rather live in `tk-convert`, but it
-    /// cannot: this is a *trait method*, and both bindings write their own `save` inside
-    /// `impl Model for PyModel` / `impl tk::Model for Model`. Removing it from the trait breaks
-    /// them, and an extension trait would only work where it is imported — which would silently
-    /// route those `save` calls to a different method. So it stays.
-    ///
-    /// It used to sit behind `config`, which was really a proxy for "serde". It needs no serde at
-    /// all -- only `std::path` -- so with that feature gone it is simply unconditional.
-    fn save(&self, folder: &Path, prefix: Option<&str>) -> Result<Vec<PathBuf>>;
-
     /// Tokenize every pre-token within a `PreTokenizedString` in one call.
     ///
     /// When `truncation` is `Some((max_tokens, direction))`, the

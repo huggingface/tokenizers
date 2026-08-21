@@ -280,12 +280,4 @@ impl tk_encode::Model for VocabOnly {
     fn tokenize(&self, _sequence: &str) -> Result<Vec<tk_encode::Token>> {
         Err("this is a vocabulary lookup for added tokens, not an encoder".into())
     }
-
-    fn save(
-        &self,
-        _folder: &std::path::Path,
-        _prefix: Option<&str>,
-    ) -> Result<Vec<std::path::PathBuf>> {
-        Err("this is a vocabulary lookup for added tokens, not a model".into())
-    }
 }

@@ -9,9 +9,6 @@ use ahash::AHashMap;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::convert::TryFrom;
-use std::fs::File;
-use std::io::prelude::*;
-use std::path::{Path, PathBuf};
 use yada::DoubleArray;
 use yada::builder::DoubleArrayBuilder;
 
@@ -228,30 +225,6 @@ impl Model for WordPiece {
         self.vocab_r.get(&id).cloned()
     }
 
-    /// The one model whose file is not serde output: a `vocab.txt` is one token per line, so this
-    /// stays where the model is.
-    fn save(&self, folder: &Path, name: Option<&str>) -> Result<Vec<PathBuf>> {
-        let vocab_file_name = match name {
-            Some(name) => format!("{name}-vocab.txt"),
-            None => "vocab.txt".to_string(),
-        };
-
-        // Write vocab.txt
-        let vocab_path: PathBuf = [folder, Path::new(vocab_file_name.as_str())]
-            .iter()
-            .collect();
-        let mut vocab_file = File::create(&vocab_path)?;
-        let mut vocab: Vec<(&String, &u32)> = self.vocab.iter().collect();
-        vocab.sort_unstable_by_key(|k| *k.1);
-        vocab_file.write_all(
-            &vocab
-                .into_iter()
-                .flat_map(|(token, _)| format!("{token}\n").as_bytes().to_owned())
-                .collect::<Vec<_>>()[..],
-        )?;
-
-        Ok(vec![vocab_path])
-    }
 }
 
 pub struct WordPieceScratch {
