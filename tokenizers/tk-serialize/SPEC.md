@@ -4,7 +4,7 @@ What this crate reads and writes. Anything not drawn here is refused.
 
 ## Shape
 
-```
+```text
 {                                        ← key order is exact, as written
   "version"        : "1.0"
   "truncation"     : null                  encode-time settings, never read
@@ -20,7 +20,7 @@ What this crate reads and writes. Anything not drawn here is refused.
 
 ## Pipeline
 
-```
+```text
              normalizer      pre_tokenizer        model       post_processor
   text  ──▶  rewrite text ──▶ cut into words ──▶ words→ids ──▶ add specials  ──▶ ids
 
@@ -32,7 +32,7 @@ What this crate reads and writes. Anything not drawn here is refused.
 
 Every component, at every depth, is an object tagged with `"type"`.
 
-```
+```text
 { "type": "Split", … }                    a component
 
 { "type": "Sequence", "<children>": [ … ] }    nests, one key per family:
@@ -50,14 +50,14 @@ Every component, at every depth, is an object tagged with `"type"`.
 
 `Metaspace` is the one tag with no component behind it — it is two, and folds back on write:
 
-```
+```text
   "pre_tokenizer": {"type":"Metaspace"}   ─read─▶   MetaspaceNormalizer + Split
                                           ◀─write─
 ```
 
 ## Model
 
-```
+```text
 BPE        { "type", "dropout":null, "unk_token":str|null,
              "continuing_subword_prefix":str|null, "end_of_word_suffix":str|null,
              "fuse_unk":bool, "byte_fallback":bool, "ignore_merges":bool,
@@ -76,7 +76,7 @@ WordLevel  { "type", "unk_token":str, "vocab": {token: id} }
 
 ## AddedToken
 
-```
+```text
 { "id":0, "content":"<s>", "single_word":false, "lstrip":false,
   "rstrip":false, "normalized":false, "special":true }
 ```
@@ -85,7 +85,7 @@ WordLevel  { "type", "unk_token":str, "vocab": {token: id} }
 
 Each is an error naming what to convert.
 
-```
+```text
   a "model" with no "type"                 ─┐
   "merges" spelled "a b" not ["a","b"]      ├──▶ tk-convert ──▶ canonical ──▶ here
   a Metaspace spelled "add_prefix_space"   ─┘

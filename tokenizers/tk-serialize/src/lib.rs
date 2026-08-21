@@ -57,6 +57,7 @@
 //! of the merge tables, a `Metaspace` pre-tokenizer out of the normalizer it became — and what it
 //! guarantees is that the file it writes *encodes identically*, not that it is the file that was
 //! read. [`to_json`]'s own documentation lists every place the two differ.
+#![doc = include_str!("../SPEC.md")]
 
 pub mod json;
 
