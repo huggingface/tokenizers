@@ -467,7 +467,6 @@ mod tests {
     use crate::pipeline::{Segment, SpecialSegmentIterator};
     use crate::{Result, Token};
     use std::collections::HashMap;
-    use std::path::{Path, PathBuf};
 
     #[derive(Serialize, Deserialize)]
     struct ModelMock {
@@ -508,9 +507,6 @@ mod tests {
         }
         fn get_vocab_size(&self) -> usize {
             self.vocab.len()
-        }
-        fn save(&self, _folder: &Path, _name: Option<&str>) -> Result<Vec<PathBuf>> {
-            unimplemented!()
         }
     }
 

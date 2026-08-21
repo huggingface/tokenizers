@@ -2,7 +2,7 @@ mod common;
 
 use common::*;
 use tokenizers::decoders::DecoderWrapper;
-use tokenizers::decoders::byte_level::ByteLevel;
+use tokenizers::pre_tokenizers::byte_level::ByteLevel;
 use tokenizers::models::ModelWrapper;
 use tokenizers::models::bpe::BPE;
 use tokenizers::models::wordlevel::WordLevel;

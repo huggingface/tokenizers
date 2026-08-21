@@ -73,6 +73,12 @@ tokenizers-release = { package = "tokenizers", version = "=0.23.1", optional = t
 # for directly. Without it a stub compiles and those regex paths error at load. Enable with
 # `--features fancy-regex`.
 default = ["parallelism", "progressbar"]
+bpe = []
+unigram = []
+wordpiece = []
+wordlevel = []
+normalizers = []
+unicode-scripts = []
 progressbar = ["indicatif"]
 http = ["hf-hub"]
 unstable_wasm = ["fancy-regex", "getrandom/wasm_js"]
@@ -86,19 +92,6 @@ tempfile = "3.10"
 assert_approx_eq = "1.1"
 tracing = "0.1"
 tracing-subscriber = "0.3.18"
-
-[[bench]]
-name = "pipeline_benchmark"
-harness = false
-
-[[bench]]
-name = "bpe_model_benchmark"
-required-features = ["http"]
-harness = false
-
-[[example]]
-name = "fixture_bench"
-required-features = ["bench-baseline"]
 
 [[example]]
 name = "binsize_baseline"

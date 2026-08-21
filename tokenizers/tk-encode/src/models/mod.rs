@@ -7,7 +7,6 @@ pub mod wordpiece;
 
 use ahash::AHashMap;
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -185,15 +184,6 @@ impl Model for ModelWrapper {
             Self::WordPiece(t) => t.get_vocab_size(),
             Self::BPE(t) => t.get_vocab_size(),
             Self::Unigram(t) => t.get_vocab_size(),
-        }
-    }
-
-    fn save(&self, folder: &Path, name: Option<&str>) -> Result<Vec<PathBuf>> {
-        match self {
-            Self::WordLevel(t) => t.save(folder, name),
-            Self::WordPiece(t) => t.save(folder, name),
-            Self::BPE(t) => t.save(folder, name),
-            Self::Unigram(t) => t.save(folder, name),
         }
     }
 }

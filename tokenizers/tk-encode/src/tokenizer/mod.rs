@@ -14,7 +14,7 @@ use std::{
     fs::{File, read_to_string},
     io::prelude::*,
     ops::{Deref, DerefMut},
-    path::{Path, PathBuf},
+    path::Path,
 };
 
 use serde::de::DeserializeOwned;
@@ -32,6 +32,7 @@ pub mod pre_tokenizer;
 mod serialization;
 
 // Re-export wrappers
+pub use crate::decoders::DecoderRuntime;
 pub use crate::decoders::DecoderWrapper;
 pub use crate::models::ModelWrapper;
 pub use crate::normalizers::NormalizerWrapper;
@@ -79,9 +80,6 @@ pub trait Model {
     fn get_vocab(&self) -> HashMap<String, u32>;
     /// Retrieve the size of the vocabulary
     fn get_vocab_size(&self) -> usize;
-    /// Save the current `Model` in the given folder, using the given `prefix` for the various
-    /// files that need to be saved.
-    fn save(&self, folder: &Path, prefix: Option<&str>) -> Result<Vec<PathBuf>>;
 
     /// Tokenize every pre-token within a `PreTokenizedString` in one call.
     ///

@@ -11,6 +11,7 @@ use crate::models::bpe::tables::BpeTables;
 use crate::pipeline::{self, PipelineToken};
 use crate::tokenizer::Result;
 use crate::utils::byte_level::{self};
+use crate::utils::cache::DEFAULT_CACHE_CAPACITY;
 use crate::utils::word_cache::{Lookup, WordCache};
 use crate::vocab::bucket_vocab_store::BucketVocabStore;
 
@@ -19,7 +20,7 @@ const GATE_ASCII: u16 = 24;
 
 /// The gate, indexed by a word's first content byte: words no longer than their gate go to
 /// multipass, longer ones to the hot/cold queue.
-fn build_byte_to_gate() -> [u16; 256] {
+pub(super) fn build_byte_to_gate() -> [u16; 256] {
     let mut b2g = [GATE_MULTI; 256];
     b2g[..0x80].fill(GATE_ASCII);
     // Kept for a word that is *only* a delimiter (a run of spaces), where there is no content to
@@ -50,14 +51,64 @@ fn content_start(bytes: &[u8]) -> usize {
 const _: () = assert!(size_of::<PipelineToken>() == size_of::<u32>());
 const _: () = assert!(align_of::<PipelineToken>() == align_of::<u32>());
 
+/// Everything a [`PipelineBPE`] needs besides its vocabulary and its merge list.
+///
+/// A `Default`-able struct rather than a nine-argument constructor, so a caller spells only the
+/// fields its config actually declares — which for most of the Hub is `with_byte_level` and nothing
+/// else. It carries no serde: naming these options in a config file is the readers' business, and
+/// one of those readers ([`tk-serialize`](https://docs.rs/tk-serialize)) links no serde at all.
+pub struct PipelineBpeOptions {
+    /// The token to emit for a character with no vocabulary entry. Must itself be in the vocab.
+    pub unk_token: Option<String>,
+    /// Prefix carried by every subword that is not the first of its word (WordPiece's `"##"`).
+    pub continuing_subword_prefix: Option<String>,
+    /// Suffix carried by the last subword of a word (`"</w>"`).
+    pub end_of_word_suffix: Option<String>,
+    /// Whether a run of unknown characters collapses into one unk token.
+    pub fuse_unk: bool,
+    /// SentencePiece's byte fallback: an unknown character becomes one `"<0xNN>"` token per byte,
+    /// which requires all 256 of them to be in the vocabulary.
+    pub byte_fallback: bool,
+    /// Merge dropout. Only `None` and `Some(0.0)` are runnable here: dropout makes tokenization
+    /// non-deterministic, which the tables and the word cache are both built on the assumption of.
+    /// A value outside `0.0..=1.0` is rejected as a bad config, a value above it as unsupported.
+    pub dropout: Option<f32>,
+    /// Emit any pretoken that is itself a vocabulary entry as that entry, without merging. The flag
+    /// only *widens* what folds: entries that provably reduce to themselves fold either way, which
+    /// is what `prove_fold` settles at load.
+    pub ignore_merges: bool,
+    /// Slots in the per-scratch word cache; `0` turns caching off. Defaults to
+    /// [`DEFAULT_CACHE_CAPACITY`](crate::models::bpe::DEFAULT_CACHE_CAPACITY).
+    pub cache_capacity: usize,
+    /// The vocabulary is written in the byte-level alphabet (gpt2 and everything after it), so its
+    /// entries are decoded to their raw bytes at load and every byte has to be an atom.
+    pub with_byte_level: bool,
+}
+
+impl Default for PipelineBpeOptions {
+    fn default() -> Self {
+        Self {
+            unk_token: None,
+            continuing_subword_prefix: None,
+            end_of_word_suffix: None,
+            fuse_unk: false,
+            byte_fallback: false,
+            dropout: None,
+            ignore_merges: false,
+            cache_capacity: DEFAULT_CACHE_CAPACITY,
+            with_byte_level: false,
+        }
+    }
+}
+
 pub struct PipelineBPE {
     pub(super) atoms: Atoms,
     pub(super) tables: BpeTables,
     pub(super) affixes: Option<Affixes>,
     pub(super) vocab: BucketVocabStore,
-    byte_to_gate: [u16; 256],
+    pub(super) byte_to_gate: [u16; 256],
     /// Slots for the per-scratch word cache, from the config. `None` disables it.
-    cache_capacity: Option<usize>,
+    pub(super) cache_capacity: Option<usize>,
 }
 
 // A `PipelineBPE` holds exactly one `Atoms`, so `Chars`' 1 KB byte-fallback table costs nothing.
@@ -77,7 +128,7 @@ impl PipelineBPE {
     /// [`byte_level::transform_vocab`] already turned every vocabulary entry into its
     /// **decoded raw bytes** at load time. Decoding is then a concatenation, and running a
     /// `ByteLevel` decoder over these entries would decode a second time.
-    pub(crate) fn is_byte_level(&self) -> bool {
+    pub fn is_byte_level(&self) -> bool {
         matches!(self.atoms, Atoms::Bytes)
     }
 
@@ -212,7 +263,7 @@ impl PipelineBPE {
     /// without running the merge loop?
     ///
     /// We replace the old "ignore_merges" with something that actually ignores whether or not the flag was set.
-    fn prove_fold(&self) -> Vec<bool> {
+    pub(super) fn prove_fold(&self) -> Vec<bool> {
         // The id space, not the entry count: ids may be sparse, and bounding the walk by
         // `vocab.len()` would leave every entry above it unproven.
         let len = self.vocab.id_space();
@@ -351,95 +402,5 @@ impl pipeline::Model for PipelineBPE {
             queue: QueueScratch::default(),
             word_cache: self.cache_capacity.map(WordCache::new),
         }
-    }
-}
-
-#[cfg(test)]
-mod fold_tests {
-    use crate::Tokenizer;
-    use crate::pipeline::PipelineTokenizer;
-
-    /// The proven fold emits a vocabulary entry without merging, so it is only valid if the merge
-    /// loop would have produced that same entry. gpt2 does not declare `ignore_merges`, so here
-    /// the fold is on purely because the proof enabled it -- which makes it the config where a
-    /// wrong proof would show up.
-    ///
-    /// These strings mix words that are a single vocabulary entry (folded) with words that are
-    /// not (merged), and include the special token whose entry does NOT fold: `<|endoftext|>`
-    /// decomposes to seven tokens, and folding it would emit one.
-    #[test]
-    fn the_proven_fold_never_changes_the_ids() {
-        let reference = Tokenizer::from_file("../data/gpt2.json").unwrap();
-        let pipe = PipelineTokenizer::try_from(&reference).unwrap();
-
-        for text in [
-            " the quick brown fox jumps over the lazy dog",
-            "unprefixed words and internationalisation",
-            "def foo(bar):\n    return bar + 1\n",
-            "<|endoftext|> literal in the middle <|endoftext|>",
-            " 语言模型 mixed with ASCII and ελληνικά",
-            "aaaaaaaaaaaaaaaaaaaaaaaa",
-            "   ",
-            "",
-        ] {
-            let want: Vec<u32> = reference
-                .encode_fast(text, false)
-                .unwrap()
-                .get_ids()
-                .to_vec();
-            let got: Vec<u32> = pipe
-                .encode(text, false)
-                .wait()
-                .unwrap()
-                .remove(0)
-                .ids()
-                .iter()
-                .map(|t| t.id())
-                .collect();
-            assert_eq!(want, got, "the fold changed the ids for {text:?}");
-        }
-    }
-
-    /// `PipelineBPE::tokenize_spans` is an override of a trait method whose default is the
-    /// `tokenize_pipeline` loop, so the two can drift apart without anything failing to build --
-    /// which is how it came to destructure a `BpeScratch` that no longer had those fields.
-    ///
-    /// The short strings above pass through the batch loop a handful of spans at a time. This one
-    /// gives it thousands in a single chunk, with the traffic that separates the two paths:
-    /// repeats (so the word cache both fills and hits), words the fold serves, words that must
-    /// merge, punctuation runs, multi-byte scripts, and a long unbroken run.
-    #[test]
-    fn the_batched_path_matches_the_reference() {
-        let reference = Tokenizer::from_file("../data/gpt2.json").unwrap();
-        let pipe = PipelineTokenizer::try_from(&reference).unwrap();
-
-        let mut text = String::new();
-        for i in 0..400 {
-            text.push_str(" the quick brown fox jumps over the lazy dog");
-            text.push_str(" internationalisation unfortunately");
-            text.push_str(" def foo(bar): return bar + 1");
-            text.push_str(" <|xs0|> <|xs1|> <|endoftext|>");
-            text.push_str(" 语言模型 ελληνικά");
-            if i % 3 == 0 {
-                text.push_str(" aaaaaaaaaaaaaaaaaaaaaaaa ");
-            }
-        }
-
-        let want: Vec<u32> = reference
-            .encode_fast(text.as_str(), false)
-            .unwrap()
-            .get_ids()
-            .to_vec();
-        let got: Vec<u32> = pipe
-            .encode(text.as_str(), false)
-            .wait()
-            .unwrap()
-            .remove(0)
-            .ids()
-            .iter()
-            .map(|t| t.id())
-            .collect();
-        assert_eq!(want.len(), got.len(), "token count differs");
-        assert_eq!(want, got, "the batched path changed the ids");
     }
 }

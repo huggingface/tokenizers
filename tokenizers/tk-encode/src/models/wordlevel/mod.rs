@@ -1,12 +1,10 @@
-use super::OrderedVocabIter;
 use crate::pipeline::{self, ModelScratch, PipelineToken};
 use crate::tokenizer::{Model, Result, Token};
 use ahash::AHashMap;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{BufReader, Read, Write};
-use std::path::{Path, PathBuf};
+use std::io::{BufReader, Read};
 
 mod serialization;
 
@@ -186,24 +184,6 @@ impl Model for WordLevel {
 
     fn get_vocab_size(&self) -> usize {
         self.vocab.keys().len()
-    }
-
-    fn save(&self, folder: &Path, name: Option<&str>) -> Result<Vec<PathBuf>> {
-        let vocab_file_name = match name {
-            Some(name) => format!("{name}-vocab.json"),
-            None => "vocab.json".to_string(),
-        };
-
-        // Write vocab.json
-        let vocab_path: PathBuf = [folder, Path::new(vocab_file_name.as_str())]
-            .iter()
-            .collect();
-        let mut vocab_file = File::create(&vocab_path)?;
-        let order_vocab_iter = OrderedVocabIter::new(&self.vocab_r);
-        let serialized = serde_json::to_string(&order_vocab_iter)?;
-        vocab_file.write_all(serialized.as_bytes())?;
-
-        Ok(vec![vocab_path])
     }
 }
 

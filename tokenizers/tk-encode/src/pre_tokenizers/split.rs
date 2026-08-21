@@ -126,13 +126,44 @@ impl Split {
         })
     }
 
+    /// A `Split` that is known to be driven natively, so no regex backend is compiled.
+    ///
+    /// [`Split::new`] asks the system regex to compile every regex pattern, which a build without
+    /// `fancy-regex` has no engine for. Two cases do not need one: a pattern [`gpt_fsm`] recognises,
+    /// and a member of a composition the pipeline runs as a single native pass -- deepseek's three
+    /// regexes are individually unrecognised but never individually run, so `Split::new` would
+    /// reject them. A literal pattern is searched for directly and never needed an engine either.
+    pub fn native(
+        pattern: SplitPattern,
+        behavior: SplitDelimiterBehavior,
+        invert: bool,
+    ) -> Result<Self> {
+        let fsm = match &pattern {
+            SplitPattern::String(_) => None,
+            SplitPattern::Regex(r) => gpt_fsm(r),
+        };
+        let search = match &pattern {
+            SplitPattern::String(s) => Search::Literal(Literal::new(s.as_bytes())?),
+            SplitPattern::Regex(_) => Search::Unavailable,
+        };
+        Ok(Self {
+            pattern,
+            search,
+            behavior,
+            invert,
+            fsm,
+        })
+    }
+
     /// Pipeline canonicalization. A recognized whole-covering GPT regex shipped
     /// as `(invert=true, behavior=Removed)` — the tiktoken-conversion convention
     /// used by cl100k/o200k — is byte-exactly equivalent to `(invert=false,
     /// Isolated)`, the form the native FSM fast path requires (the inverted match
     /// set is the gaps, and these patterns leave no gaps). Rewrite to it so
     /// cl100k/o200k route to `fsm_cl100k`/`fsm_o200k` instead of the SysRegex fallback.
-    pub(crate) fn canonicalized_for_pipeline(self) -> Result<Self> {
+    // `pub` because the `PreTokenizerWrapper` -> `PipelinePreTokenizer` lowering, which is the only
+    // caller, lives in `tk-convert`.
+    pub fn canonicalized_for_pipeline(self) -> Result<Self> {
         use crate::tokenizer::SplitDelimiterBehavior::{Isolated, Removed};
         if self.fsm.is_some() && self.invert && self.behavior == Removed {
             Split::new(self.pattern, Isolated, false)

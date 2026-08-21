@@ -1,6 +1,5 @@
 use super::word::Word;
-use crate::models::OrderedVocabIter;
-use crate::models::bpe::{Error, MergeMap, Merges, Pair, Vocab, VocabR};
+use crate::models::bpe::{Error, MergeMap, Merges, Pair, Vocab};
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::cache::{DEFAULT_CACHE_CAPACITY, MAX_LENGTH};
 use crate::utils::iter::ResultShunt;
@@ -18,7 +17,6 @@ use std::{
     fs::File,
     io::prelude::*,
     io::{BufRead, BufReader},
-    path::{Path, PathBuf},
 };
 
 /// Process-wide monotonic counter used to assign a unique generation id
@@ -614,55 +612,5 @@ impl Model for BPE {
 
     fn id_to_token(&self, id: u32) -> Option<String> {
         self.vocab.id_to_token(id)
-    }
-
-    fn save(&self, folder: &Path, name: Option<&str>) -> Result<Vec<PathBuf>> {
-        let vocab_r: VocabR = self
-            .vocab
-            .get_vocab()
-            .into_iter()
-            .map(|(s, id)| (id, s))
-            .collect();
-        let vocab_file_name = match name {
-            Some(name) => format!("{name}-vocab.json"),
-            None => "vocab.json".to_string(),
-        };
-
-        // Write vocab.json
-        let vocab_path: PathBuf = [folder, Path::new(vocab_file_name.as_str())]
-            .iter()
-            .collect();
-        let mut vocab_file = File::create(&vocab_path)?;
-        let order_vocab_iter = OrderedVocabIter::new(&vocab_r);
-        let serialized = serde_json::to_string(&order_vocab_iter)?;
-        vocab_file.write_all(serialized.as_bytes())?;
-
-        // Write merges.txt
-        let merges_file_name = match name {
-            Some(name) => format!("{name}-merges.txt"),
-            None => "merges.txt".to_string(),
-        };
-
-        let merges_path: PathBuf = [folder, Path::new(merges_file_name.as_str())]
-            .iter()
-            .collect();
-        let mut merges_file = File::create(&merges_path)?;
-        let mut merges: Vec<(&Pair, &u32)> = self
-            .merges
-            .iter()
-            .map(|(pair, (rank, _))| (pair, rank))
-            .collect();
-        merges.sort_unstable_by_key(|k| *k.1);
-        merges_file.write_all(b"#version: 0.2\n")?;
-        merges_file.write_all(
-            &merges
-                .into_iter()
-                .flat_map(|(pair, _)| {
-                    format!("{} {}\n", vocab_r[&pair.0], vocab_r[&pair.1]).into_bytes()
-                })
-                .collect::<Vec<_>>()[..],
-        )?;
-
-        Ok(vec![vocab_path, merges_path])
     }
 }
