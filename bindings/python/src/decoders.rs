@@ -1,6 +1,5 @@
 use std::sync::{Arc, RwLock};
 
-use crate::pre_tokenizers::from_string;
 use crate::tokenizer::PyTokenizer;
 use crate::utils::PyPattern;
 use pyo3::exceptions;
@@ -401,6 +400,22 @@ impl PyStrip {
         PyClassInitializer::<PyDecoder>::from(PyDecoder::from(Strip::new(content, left, right)))
             .add_subclass(PyStrip {})
     }
+}
+
+/// The `prepend_scheme` spelling used by the `Metaspace` decoder. There is no `Metaspace`
+/// pre-tokenizer any more, so this lives with its only caller.
+pub(crate) fn from_string(string: String) -> Result<PrependScheme, PyErr> {
+    let scheme = match string.as_str() {
+        "first" => PrependScheme::First,
+        "never" => PrependScheme::Never,
+        "always" => PrependScheme::Always,
+        _ => {
+            return Err(exceptions::PyValueError::new_err(format!(
+                "{string} is an unknown variant, should be one of ['first', 'never', 'always']"
+            )));
+        }
+    };
+    Ok(scheme)
 }
 
 /// Metaspace Decoder
