@@ -53,7 +53,6 @@ bench = false
 [dependencies]
 tk-encode = { path = "tk-encode", version = "1.0.0-rc.0", default-features = false, features = [
   "parallelism",
-  "serde",
   "normalizers",
   "bpe",
   "unigram",

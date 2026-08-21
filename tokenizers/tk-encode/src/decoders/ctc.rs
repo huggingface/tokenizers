@@ -8,8 +8,6 @@ use itertools::Itertools;
 /// of sanitizing a list of inputs token.
 /// Due to some alignment problem the output of some models can come
 /// with duplicated token.
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "serde", serde(tag = "type"))]
 #[non_exhaustive]
 pub struct CTC {
     /// The pad token used by CTC to delimit a new token.

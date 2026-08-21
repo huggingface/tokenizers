@@ -69,21 +69,6 @@ mod tests {
         );
     }
 
-    /// The `"type"` tag is *required*, which matters only now that the decoder is field-less: a
-    /// bare `#[serde(tag = "type")]` derive would add the tag on the way out but not demand it on
-    /// the way in, so any object at all -- `{}` included, or another decoder's -- would deserialize
-    /// as a `ByteLevelDecoder`. The one-variant tag enum in `super::serialization` is what stops it.
-    #[test]
-    #[cfg(feature = "serde")]
-    fn the_tag_is_required() {
-        assert_eq!(
-            serde_json::to_string(&ByteLevelDecoder::new()).unwrap(),
-            r#"{"type":"ByteLevel"}"#
-        );
-        serde_json::from_str::<ByteLevelDecoder>(r#"{"type":"ByteLevel"}"#).unwrap();
-        assert!(serde_json::from_str::<ByteLevelDecoder>("{}").is_err());
-        assert!(serde_json::from_str::<ByteLevelDecoder>(r#"{"type":"Fuse"}"#).is_err());
-    }
 
     /// A token outside the byte-level alphabet is passed through as its own bytes rather than
     /// dropped -- which is what keeps an added token like `[PA D]` readable.

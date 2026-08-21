@@ -11,8 +11,6 @@ use std::iter::FromIterator;
 /// why `Roberta` has to stay ahead of `Bert` in the enum: a Roberta object satisfies Bert's shape
 /// but not the other way round.
 #[derive(Clone, Debug, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "serde", serde(tag = "type"))]
 pub struct BertProcessing {
     pub sep: (String, u32),
     pub cls: (String, u32),

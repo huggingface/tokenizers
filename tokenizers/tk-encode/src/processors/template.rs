@@ -66,7 +66,6 @@ use std::result::Result as StdResult;
 ///
 /// Serialized as the bare variant name: `"A"` / `"B"`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Sequence {
     /// This is the first sequence, the one that is always specified
     A,
@@ -99,7 +98,6 @@ pub enum Sequence {
 /// JSON shape -- a template written as a *string* is parsed by that impl, a template read from a
 /// `tokenizer.json` is always this object form, and the string spelling never reaches disk.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Piece {
     Sequence { id: Sequence, type_id: u32 },
     SpecialToken { id: String, type_id: u32 },
@@ -201,7 +199,6 @@ impl TryFrom<&str> for Piece {
 /// two `tokens` loads today and only misbehaves later, when the template is applied, and it has to
 /// keep loading. `special_token_length_mismatch_still_loads` is the test that says so.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SpecialToken {
     /// A unique id used to identify this SpecialToken in the template
     id: String,
@@ -292,8 +289,6 @@ impl SpecialToken {
 /// [`Piece`]: enum.Piece.html
 ///
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "serde", serde(transparent))]
 pub struct Template(Vec<Piece>);
 
 impl Template {
@@ -355,10 +350,7 @@ impl TryFrom<&str> for Template {
 /// `special_tokens` in different orders. The way *in* is a plain map, as it always was -- key order
 /// is irrelevant when reading. This is `ordered_map`'s only caller.
 #[derive(Debug, Clone, PartialEq, Default, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "serde", serde(transparent))]
 pub struct Tokens(
-    #[cfg_attr(feature = "serde", serde(serialize_with = "crate::utils::ordered_map"))]
     pub  AHashMap<String, SpecialToken>,
 );
 
@@ -399,28 +391,15 @@ impl From<AHashMap<String, SpecialToken>> for Tokens {
 ///     .unwrap();
 /// ```
 ///
-/// The serialized tag is `"TemplateProcessing"`, while the type serde actually *deserializes* is
-/// `TemplateProcessingDeserializer` in [`super::serialization`] -- harmless only because serde
-/// ignores an internally-tagged struct's tag value on the way in. All three written fields are
-/// required, which is what stops a `{"sep":...,"cls":...}` Bert object from being read as an empty
-/// template by the untagged wrapper.
+/// The serialized tag is `"TemplateProcessing"`. All three written fields are required, which is
+/// what stops a `{"sep":...,"cls":...}` Bert object from being read as an empty template.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(
-    feature = "serde",
-    serde(
-        tag = "type",
-        from = "super::serialization::TemplateProcessingDeserializer"
-    )
-)]
 pub struct TemplateProcessing {
     pub single: Template,
     pub(crate) pair: Template,
     // `added_single` and `added_pair` are derived from the other three fields by `count_added`, so
     // they are never written to disk and never read back from it: `from_parts` recomputes them.
-    #[cfg_attr(feature = "serde", serde(skip))]
     added_single: usize,
-    #[cfg_attr(feature = "serde", serde(skip))]
     added_pair: usize,
     special_tokens: Tokens,
 }

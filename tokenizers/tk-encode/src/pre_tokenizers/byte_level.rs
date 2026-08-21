@@ -4,14 +4,11 @@ use crate::utils::{GptFsm, GptFsmPattern};
 use crate::tokenizer::{
     Encoding, PostProcessor, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior,
 };
-#[cfg(feature = "serde")]
-use crate::utils::macro_rules_attribute;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 /// Provides all the necessary steps to handle the BPE tokenization at the byte-level. Takes care
 /// of all the required processing steps to transform a UTF-8 string as needed before and after the
 /// BPE model does its job.
-#[cfg_attr(feature = "serde", macro_rules_attribute(impl_serde_type!))]
 #[non_exhaustive]
 pub struct ByteLevel {
     /// Whether to add a leading space to the first word. This allows to treat the leading word
@@ -25,14 +22,9 @@ pub struct ByteLevel {
     ///
     /// The one pre-tokenizer field with a serde default, and it is `true`: configs written before
     /// `use_regex` existed have to keep loading with the regex on.
-    #[cfg_attr(feature = "serde", serde(default = "default_true"))]
     pub use_regex: bool,
 }
 
-#[cfg(feature = "serde")]
-fn default_true() -> bool {
-    true
-}
 
 impl Default for ByteLevel {
     fn default() -> Self {

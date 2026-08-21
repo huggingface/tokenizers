@@ -10,8 +10,6 @@ use std::iter::FromIterator;
 /// required, and that is the whole reason `Roberta` can be told apart from `Bert` by an untagged
 /// enum. The tag itself is optional here too -- see [`super::bert::BertProcessing`].
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "serde", serde(tag = "type"))]
 pub struct RobertaProcessing {
     pub sep: (String, u32),
     pub cls: (String, u32),

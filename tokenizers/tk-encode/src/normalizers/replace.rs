@@ -134,7 +134,7 @@ mod tests {
         assert_eq!(&n.get(), &normalized);
     }
 
-    // The two JSON round-trip tests are in `super::serialization`, with the serde they exercise.
+    // The two JSON round-trip tests went with `super::serialization` and the serde they exercised.
     // What is left here tests the normalizer itself rather than its on-disk shape.
 
     /// The goal of the literal path: a plain string pattern builds and runs with no regex backend.

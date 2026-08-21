@@ -15,8 +15,6 @@ use std::path::{Path, PathBuf};
 use yada::DoubleArray;
 use yada::builder::DoubleArrayBuilder;
 
-#[cfg(feature = "serde")]
-mod serialization;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {

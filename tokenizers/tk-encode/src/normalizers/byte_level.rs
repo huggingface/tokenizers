@@ -3,12 +3,9 @@ use std::borrow::Cow;
 use crate::pipeline;
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 use crate::utils::byte_level::{BYTES_CHAR_LOOKUP, byte_level_transform};
-#[cfg(feature = "serde")]
-use crate::utils::macro_rules_attribute;
 use ahash::AHashSet;
 
 #[derive(Clone, Debug)]
-#[cfg_attr(feature = "serde", macro_rules_attribute(impl_serde_type!))]
 pub struct ByteLevel;
 
 impl Default for ByteLevel {

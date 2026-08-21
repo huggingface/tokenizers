@@ -2,15 +2,12 @@ use std::borrow::Cow;
 
 use crate::pipeline;
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
-#[cfg(feature = "serde")]
-use crate::utils::macro_rules_attribute;
 
 // The `Sequence` normalizer is a `Vec<NormalizerWrapper>`, so it lives in `tk-convert` with
 // the wrapper it is parameterised by.
 
 /// Lowercases the input
 #[derive(Copy, Clone, Debug)]
-#[cfg_attr(feature = "serde", macro_rules_attribute(impl_serde_type!))]
 pub struct Lowercase;
 impl Normalizer for Lowercase {
     fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {

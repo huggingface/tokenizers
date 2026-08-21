@@ -8,8 +8,6 @@ use crate::tokenizer::{Decoder, Result};
 /// of this name writes, and what `DecoderWrapper`'s `EnumType` matches. The tag is *not* required on
 /// the way in: a bare `#[serde(tag = ...)]` only adds it on the way out, and what rejects a tag-less
 /// object here is the missing `suffix` field.
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "serde", serde(tag = "type"))]
 #[non_exhaustive]
 pub struct BPEDecoder {
     pub suffix: String,

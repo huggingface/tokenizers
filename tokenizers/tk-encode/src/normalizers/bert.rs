@@ -76,8 +76,6 @@ fn is_chinese_char(c: char) -> bool {
 /// the way in. `bert_loads_under_both_tag_spellings` is the test that stops a tidy-up from giving
 /// this a required tag and quietly breaking one of them.
 #[derive(Copy, Clone, Debug)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "serde", serde(tag = "type"))]
 #[non_exhaustive]
 pub struct BertNormalizer {
     /// Whether to do the bert basic cleaning:

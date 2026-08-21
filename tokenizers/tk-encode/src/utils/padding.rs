@@ -5,7 +5,6 @@ use crate::tokenizer::{Encoding, Result};
 
 /// The various possible padding directions.
 #[derive(Debug, Clone, Copy)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum PaddingDirection {
     Left,
     Right,
@@ -21,7 +20,6 @@ impl std::convert::AsRef<str> for PaddingDirection {
 }
 
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PaddingParams {
     pub strategy: PaddingStrategy,
     pub direction: PaddingDirection,
@@ -45,7 +43,6 @@ impl Default for PaddingParams {
 }
 
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum PaddingStrategy {
     BatchLongest,
     Fixed(usize),

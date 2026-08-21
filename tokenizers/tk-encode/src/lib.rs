@@ -56,13 +56,6 @@
 //!   It compiles `utils::from_pretrained`, the download half; the `from_pretrained` *constructor*
 //!   that used to sit on top of it went with the config layer (`REQUIRED_FOR_V1.md` §5).
 //!
-//! - **serde**: Every component's own `Serialize`/`Deserialize` — the derives on the types
-//!   themselves and the hand-written impls in the `serialization.rs` next to each of them. Off by
-//!   default, because the slim reader (`tk-serialize`) builds a pipeline from a canonical
-//!   `tokenizer.json` with no serde at all. Nothing in the workspace turns it on any more: the
-//!   wrapper enums whose `Deserialize` named every variant are gone, and with them the only reason
-//!   a shipped build linked serde.
-//!
 //! - **bpe** / **unigram** / **wordpiece** / **wordlevel**: one per model. Only `bpe` is on by
 //!   default, because none of the current SOTA models use anything else. A `tokenizer.json` naming
 //!   a model whose feature is off is refused at load rather than mis-read.
@@ -84,7 +77,7 @@
 //!
 //! # Building small
 //!
-//! The default build is the slim one: no serde (the `serde` feature is off), and only BPE.
+//! The default build is the slim one: no serde at all, and only BPE.
 //! `make slim-size` prints its stripped and gzipped size.
 //!
 //! The largest remaining cost is not in this crate: `std`'s panic, unwinding and

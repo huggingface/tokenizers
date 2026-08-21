@@ -15,8 +15,6 @@ use crate::tokenizer::{Decoder, Result};
 ///
 /// The JSON spelling is `snake_case`: `"first"` / `"never"` / `"always"`.
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum PrependScheme {
     /// Specifies that the scheme should be prepended only once, on the first split.
     First,
@@ -28,9 +26,8 @@ pub enum PrependScheme {
 
 impl std::fmt::Display for PrependScheme {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // Spelled out rather than handed to the serializer, so the name survives a build with no
-        // serde in it. These must stay identical to the `rename_all = "snake_case"` spelling above;
-        // `display_matches_serde` pins that.
+        // Spelled out rather than handed to a serializer, so the name survives a build with no
+        // serde in it. These must stay identical to the spelling `tk-serialize` reads and writes.
         f.write_str(match self {
             Self::First => "first",
             Self::Never => "never",
@@ -100,21 +97,6 @@ impl Decoder for MetaspaceDecoder {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// `PrependScheme`'s `Display` is spelled out by hand so the name survives a build with no serde
-    /// in it. This is what stops it drifting from the `rename_all = "snake_case"` derive.
-    #[test]
-    #[cfg(feature = "serde")]
-    fn display_matches_serde() {
-        for scheme in [
-            PrependScheme::First,
-            PrependScheme::Never,
-            PrependScheme::Always,
-        ] {
-            let via_serde = serde_json::to_string(&scheme).unwrap();
-            assert_eq!(format!("\"{scheme}\""), via_serde);
-        }
-    }
 
     #[test]
     fn decode() {

@@ -78,11 +78,9 @@ where
 ///  - MergedWithNext => `[ "the", "-final", "-", "-countdown" ]`
 ///  - Contiguous => `[ "the", "-", "final", "--", "countdown" ]`
 ///
-/// On disk it is the bare variant name — no `rename_all` — which the `display_matches_serde` test
-/// below pins against the hand-written `Display`, so the two cannot drift. This one needs no
-/// `serialization.rs` of its own: the derive on the type is the whole on-disk shape.
+/// On disk it is the bare variant name, which the hand-written `Display` below spells verbatim.
+/// This one needs no `serialization.rs` of its own: those five names are the whole on-disk shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum SplitDelimiterBehavior {
     Removed,
     Isolated,
@@ -94,9 +92,8 @@ pub enum SplitDelimiterBehavior {
 impl std::fmt::Display for SplitDelimiterBehavior {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // Spelled out rather than handed to the serializer, so the name survives a build with no
-        // serde -- and it is a `match` instead of abusing a `Formatter` as a `Serializer`. No
-        // `rename_all` on this enum, so the serialized name is the variant name verbatim;
-        // `display_matches_serde` pins that.
+        // serde -- and it is a `match` instead of abusing a `Formatter` as a `Serializer`. The
+        // name `tk-serialize` reads and writes is the variant name verbatim.
         f.write_str(match self {
             Self::Removed => "Removed",
             Self::Isolated => "Isolated",
@@ -1045,25 +1042,6 @@ mod tests {
     #[cfg(feature = "normalizers")]
     use unicode_categories::UnicodeCategories;
 
-    /// `Display` is spelled out by hand so the name survives a build with no serde in it. This is
-    /// what stops the two from drifting: every variant has to print exactly what serde writes.
-    #[test]
-    #[cfg(feature = "serde")]
-    fn display_matches_serde() {
-        use SplitDelimiterBehavior::*;
-
-        for behavior in [
-            Removed,
-            Isolated,
-            MergedWithPrevious,
-            MergedWithNext,
-            Contiguous,
-        ] {
-            let via_serde = serde_json::to_string(&behavior).unwrap();
-            // `to_string` of a unit variant is a quoted string; `Display` is the bare name.
-            assert_eq!(via_serde, format!("\"{behavior}\""));
-        }
-    }
 
     #[test]
     fn test_len_range_inclusive() {

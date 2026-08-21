@@ -5,8 +5,6 @@ pub mod digits;
 pub mod fixed_length;
 pub mod punctuation;
 pub mod sequence;
-#[cfg(feature = "serde")]
-mod serialization;
 pub mod split;
 #[cfg(feature = "unicode-scripts")]
 pub mod unicode_scripts;

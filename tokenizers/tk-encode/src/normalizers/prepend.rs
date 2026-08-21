@@ -4,8 +4,6 @@ use crate::pipeline;
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
 
 #[derive(Clone, Debug)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "serde", serde(tag = "type"))]
 pub struct Prepend {
     pub prepend: String,
 }

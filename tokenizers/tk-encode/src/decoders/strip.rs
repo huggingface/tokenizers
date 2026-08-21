@@ -2,8 +2,6 @@ use crate::tokenizer::{Decoder, Result};
 
 #[derive(Clone, Debug, Default)]
 /// Strip just removes the `content` when it appears at the start position up until the stop position.
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "serde", serde(tag = "type"))]
 #[non_exhaustive]
 pub struct Strip {
     pub content: char,

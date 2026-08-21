@@ -6,8 +6,6 @@ pub mod fuse;
 pub mod metaspace;
 pub mod replace;
 pub mod runtime;
-#[cfg(feature = "serde")]
-mod serialization;
 pub mod strip;
 pub mod wordpiece;
 

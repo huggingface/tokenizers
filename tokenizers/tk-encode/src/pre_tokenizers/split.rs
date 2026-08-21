@@ -11,7 +11,6 @@ use crate::tokenizer::{
 ///
 /// Written down externally tagged: `{"String":"..."}` / `{"Regex":"..."}`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum SplitPattern {
     String(String),
     Regex(String),

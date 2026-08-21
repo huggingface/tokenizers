@@ -10,7 +10,6 @@ use std::fmt;
 ///   - Whether they should only match single words
 ///   - Whether to include any whitespace on its left or right
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct AddedToken {
     /// The content of the added token (original, as provided by the user)
     pub content: String,

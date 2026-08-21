@@ -1,7 +1,5 @@
 use crate::pipeline::{self, PreTokenizerScratch};
 use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
-#[cfg(feature = "serde")]
-use crate::utils::macro_rules_attribute;
 use SplitDelimiterBehavior::{Isolated, Removed};
 use atomsplit::classify::mask;
 use atomsplit::fsm::class_runs_into;
@@ -12,17 +10,11 @@ pub(crate) fn is_punc(x: char) -> bool {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", macro_rules_attribute(impl_serde_type!))]
 pub struct Punctuation {
     /// An absent `behavior` means `Isolated`, which is also `Punctuation::default()`.
-    #[cfg_attr(feature = "serde", serde(default = "default_split"))]
     pub behavior: SplitDelimiterBehavior,
 }
 
-#[cfg(feature = "serde")]
-fn default_split() -> SplitDelimiterBehavior {
-    SplitDelimiterBehavior::Isolated
-}
 
 impl Punctuation {
     pub fn new(behavior: SplitDelimiterBehavior) -> Self {

@@ -16,7 +16,6 @@ use crate::utils::SysRegex;
 /// Externally tagged on disk — `{"String":"…"}` / `{"Regex":"…"}` — which is what the bare derive
 /// gives and what is in every `tokenizer.json` that has one.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum ReplacePattern {
     String(String),
     Regex(String),

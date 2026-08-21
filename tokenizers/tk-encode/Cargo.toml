@@ -35,7 +35,6 @@ unicode_categories = "0.1"
 itertools = "0.15"
 log = "0.4"
 paste = "1.0.15"
-macro_rules_attribute = "0.2.3"
 thiserror = "2"
 ahash = "0.8.12"
 dary_heap = "0.3.9"
@@ -54,7 +53,6 @@ hf-hub = { version = "1.0.0", features = [
   "rustls-tls",
 ], default-features = false, optional = true }
 fancy-regex = { version = "0.19", optional = true }
-serde = { version = "1.0", features = ["derive"], optional = true }
 unicode-normalization = { version = "0.1.25", optional = true }
 yada = { version = "0.7.0", optional = true }
 # One `#[cfg(unix)]` `pthread_atfork` call in `utils/parallelism.rs`, which is `parallelism`-gated.
@@ -76,7 +74,6 @@ normalizers = [
   "dep:unicode-segmentation",
 ]
 unicode-scripts = []
-serde = ["dep:serde", "ahash/serde"]
 progressbar = ["indicatif"]
 http = ["hf-hub"]
 unstable_wasm = ["fancy-regex"]
