@@ -138,53 +138,16 @@ pub enum PipelineNormalizer {
     Precompiled(PrecompiledNormalizer),
 }
 
-/// The added-token replay normalizes through the *legacy* trait (that is what
-/// `BucketAddedVocabulary::add_tokens` takes), so every variant needs both. `NormalizerChain` below
-/// applies a whole flattened chain, which is what a config's `Sequence` means.
-impl crate::Normalizer for PipelineNormalizer {
-    fn normalize(&self, normalized: &mut crate::NormalizedString) -> Result<()> {
-        match self {
-            // Deliberately a no-op: this variant is derived from a `Metaspace` *pre-tokenizer*, and
-            // the config path's added-token replay passes only the declared `normalizer`, so it
-            // never sees this either. Normalizing here would move ids relative to that path.
-            Self::Metaspace(_) => Ok(()),
-            Self::Replace(n) => crate::Normalizer::normalize(n, normalized),
-            Self::Prepend(n) => crate::Normalizer::normalize(n, normalized),
-            Self::Strip(n) => crate::Normalizer::normalize(n, normalized),
-            Self::Lowercase(n) => crate::Normalizer::normalize(n, normalized),
-            Self::ByteLevel(n) => crate::Normalizer::normalize(n, normalized),
-            #[cfg(feature = "normalizers")]
-            Self::Bert(n) => crate::Normalizer::normalize(n, normalized),
-            #[cfg(feature = "normalizers")]
-            Self::StripAccents(n) => crate::Normalizer::normalize(n, normalized),
-            #[cfg(feature = "normalizers")]
-            Self::NFC(n) => crate::Normalizer::normalize(n, normalized),
-            #[cfg(feature = "normalizers")]
-            Self::NFD(n) => crate::Normalizer::normalize(n, normalized),
-            #[cfg(feature = "normalizers")]
-            Self::NFKC(n) => crate::Normalizer::normalize(n, normalized),
-            #[cfg(feature = "normalizers")]
-            Self::NFKD(n) => crate::Normalizer::normalize(n, normalized),
-            #[cfg(feature = "normalizers")]
-            Self::Nmt(n) => crate::Normalizer::normalize(n, normalized),
-            #[cfg(feature = "normalizers")]
-            Self::Precompiled(n) => crate::Normalizer::normalize(n, normalized),
-        }
-    }
-}
-
-/// A flattened normalizer chain, as the legacy trait. Applying the members in order is exactly what
+/// A flattened normalizer chain. Applying the members in order is exactly what
 /// the `Sequence` normalizer the slim reader flattened away did.
 // `pub` for the same reason as `PipelineNormalizer`: `tk-convert` needs it to replay added
 // tokens through a lowered chain.
 pub struct NormalizerChain<'a>(pub &'a [PipelineNormalizer]);
 
-impl crate::Normalizer for NormalizerChain<'_> {
-    fn normalize(&self, normalized: &mut crate::NormalizedString) -> Result<()> {
-        for member in self.0 {
-            crate::Normalizer::normalize(member, normalized)?;
-        }
-        Ok(())
+
+impl Normalizer for NormalizerChain<'_> {
+    fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
+        normalize_all(self.0, input)
     }
 }
 

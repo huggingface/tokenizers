@@ -193,9 +193,18 @@ fn build<M: tk_encode::Model>(
     let added = read_added_tokens(doc.get_some("added_tokens"))?;
 
     let mut added_vocabulary = BucketAddedVocabulary::new();
-    // The whole chain, not just the first member: a config `Sequence` was flattened into
+    // The whole *declared* chain, not just the first member: a config `Sequence` was flattened into
     // `normalizers`, and a `normalized: true` added token has to see all of it or its id moves.
-    let chain = NormalizerChain(&normalizers);
+    //
+    // The trailing `Metaspace` is the exception, and it is dropped here rather than ignored further
+    // down: it is not a declared normalizer at all but the rewriting half of a `Metaspace`
+    // *pre-tokenizer*, appended by `read_metaspace`. Writing `▁` into an added token's content
+    // would move its id.
+    let declared = match normalizers.last() {
+        Some(PipelineNormalizer::Metaspace(_)) => &normalizers[..normalizers.len() - 1],
+        _ => &normalizers[..],
+    };
+    let chain = NormalizerChain(declared);
     added_vocabulary.add_tokens(added, &concrete, Some(&chain))?;
     // `encode_special_tokens` is deliberately not read: it is runtime state, not one of the nine
     // fields a `tokenizer.json` carries, so the config path never sets it from a file either. Both

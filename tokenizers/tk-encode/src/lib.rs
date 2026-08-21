@@ -28,16 +28,30 @@
 //!
 //! This crate is the runtime only: it knows how to *encode*, not what a `tokenizer.json` looks
 //! like. Reading one is `tk-serialize`'s job — `tk_serialize::from_json_file` returns the
-//! [`pipeline::PipelineTokenizer`] built here, from a hand-rolled JSON reader with no serde
-//! anywhere. (The example lives there, because only that crate can compile it.)
+//! [`pipeline::PipelineTokenizer`] built here, parsed with `hifijson`, a JSON lexer with no
+//! required dependencies, rather than `serde_json`. (The example lives there, because only that
+//! crate can compile it.)
 //!
-//! The `Tokenizer` orchestration, `from_pretrained`, `save` and the component setters are **not** in
-//! this release: [`pipeline::PipelineTokenizer`] is read-only. Upgrading a config written by an older
-//! version is `tk-convert`'s one remaining job (`canonicalize_file`, re-exported by the `tokenizers`
-//! umbrella crate). See `REQUIRED_FOR_V1.md` at the repository root.
+//! Two separate reasons, and they are worth keeping apart. `serde_json` is out on *weight*: it
+//! pulls `serde`, `serde_core`, `itoa` and `memchr`, and the whole point of splitting these crates
+//! is that an inference build links no serde at all. `hifijson` has no dependencies whatsoever.
 //!
-//! Training is not in this release either; the `tk-train` crate is still in the tree but is out of
-//! the workspace until its trainers stop building config models.
+//! `hifijson` rather than any other small parser is out of *arithmetic*. A Unigram's `vocab` scores
+//! decide the Viterbi lattice, and `serde_json`'s rounding is already baked into ids that ship
+//! today — so a parser that converts numbers to floats its own way moves them, and being more
+//! accurate is a bug, not a fix. `hifijson` never parses a float at all: its `Num` is the raw
+//! `&str`, which is what lets `tk-serialize` reassemble the `f64` to match `serde_json` bit for bit.
+//!
+//! There is no `Tokenizer` type here to build up and mutate. What you get is a finished
+//! [`pipeline::PipelineTokenizer`] — from `tk_serialize::from_json_file`, or from
+//! [`pipeline::PipelineTokenizer::from_parts`] if you assemble the components yourself — and once
+//! built it is read-only: getters, `encode` and `decode`, but no setters, no `save`, and no
+//! `from_pretrained` constructor. Upgrading a config written by an older version is `tk-convert`'s
+//! one remaining job (`canonicalize_file`, re-exported by the `tokenizers` umbrella crate). What an
+//! authoring surface would have to add back is `REQUIRED_FOR_V1.md` at the repository root.
+//!
+//! Training is not part of the shipped crate either. `tk-train` is in the tree and builds on its
+//! own, but it is `exclude`d from the workspace and nothing in `tokenizers` depends on it.
 //!
 //! # Additional information
 //!

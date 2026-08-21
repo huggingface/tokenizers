@@ -1,4 +1,5 @@
-use super::super::{Model, NormalizedString, Normalizer, Result};
+use super::super::{Model, Result};
+use crate::pipeline::Normalizer;
 use super::buckets::{AddedTokenFlags, Buckets};
 use crate::pipeline::PipelinePatternMatcher;
 use crate::pre_tokenizers::whitespace::is_word_char;
@@ -319,12 +320,7 @@ impl AddedVocabulary {
             let flags = AddedTokenFlags::from(&token);
             let is_norm = flags.normalized;
             let norm_form: String = match normalizer {
-                Some(n) => {
-                    // TODO: fix normalizer to remove allocations :)
-                    let mut s = NormalizedString::from(token.content.as_str());
-                    n.normalize(&mut s)?;
-                    s.get().to_string()
-                }
+                Some(n) => n.normalize(&token.content)?.into_owned(),
                 None => token.content.clone(),
             };
             let form = if is_norm {
