@@ -14,6 +14,7 @@ use dary_heap::OctonaryHeap;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::HashSet;
+use std::sync::OnceLock;
 use tk_encode::vocab::bucket_added_vocabulary::AddedToken;
 // The `Word` machinery a trainer merges into is training-only, so it lives here rather than in the
 // inference crate. `PipelineBPE` is the only BPE left; a trainer reaches it through
@@ -25,6 +26,28 @@ use tk_encode::Result;
 use tk_encode::models::bpe::{Merges, Pair, PipelineBPE, BpeConfig, Vocab};
 use tk_encode::parallelism::*;
 use tk_encode::utils::progress::{ProgressBar, ProgressFormat, ProgressStyle};
+
+/// The default for [`BpeTrainer::parallel_merge_threshold`].
+///
+/// High deliberately. On a 6.5 MB corpus the merge loop averaged 101 words a merge
+/// and its widest single merge touched 10768, and across that whole range the parallel path lost --
+/// at a 1024 cut it still measured 117 ms against 55 ms serial. So the crossover, if there is one,
+/// is somewhere above the largest fan-out that corpus can produce, and picking a number from
+/// nothing would be guessing. Training on tens of GB reaches fan-outs orders of magnitude larger,
+/// which is what this exists for.
+///
+/// `TOKENIZERS_TRAIN_PARALLEL_MIN` overrides it, read once per process; setting the field beats the
+/// environment. `0` forces the parallel path, which is how `parallel_merges_agree_with_serial`
+/// checks that the two produce the same vocabulary and merges.
+pub fn default_parallel_merge_threshold() -> usize {
+    static THRESHOLD: OnceLock<usize> = OnceLock::new();
+    *THRESHOLD.get_or_init(|| {
+        std::env::var("TOKENIZERS_TRAIN_PARALLEL_MIN")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(200_000)
+    })
+}
 
 /// Appends `iw` to a word list unless it is already the last entry.
 ///
@@ -86,6 +109,7 @@ struct Config {
     continuing_subword_prefix: Option<String>,
     end_of_word_suffix: Option<String>,
     max_token_length: Option<usize>,
+    parallel_merge_threshold: usize,
 }
 
 /// A `BpeTrainerBuilder` can be used to create a `BpeTrainer` with a custom
@@ -108,6 +132,7 @@ impl Default for BpeTrainerBuilder {
                 continuing_subword_prefix: None,
                 end_of_word_suffix: None,
                 max_token_length: None,
+                parallel_merge_threshold: default_parallel_merge_threshold(),
             },
         }
     }
@@ -195,6 +220,15 @@ impl BpeTrainerBuilder {
         self
     }
 
+    /// Fan-out at or above which one merge is spread across threads.
+    ///
+    /// See [`default_parallel_merge_threshold`] for why the default is high.
+    #[must_use]
+    pub fn parallel_merge_threshold(mut self, threshold: usize) -> Self {
+        self.config.parallel_merge_threshold = threshold;
+        self
+    }
+
     /// Constructs the final BpeTrainer
     pub fn build(self) -> BpeTrainer {
         BpeTrainer {
@@ -208,6 +242,7 @@ impl BpeTrainerBuilder {
             continuing_subword_prefix: self.config.continuing_subword_prefix,
             end_of_word_suffix: self.config.end_of_word_suffix,
             max_token_length: self.config.max_token_length,
+            parallel_merge_threshold: self.config.parallel_merge_threshold,
             words: AHashMap::new(),
         }
     }
@@ -248,6 +283,14 @@ pub struct BpeTrainer {
     /// so it is skipped rather than given a shape here, and falls back to its `Default`.
     #[serde(skip)]
     pub progress_format: ProgressFormat,
+    /// Fan-out at or above which one merge is spread across threads. See
+    /// [`default_parallel_merge_threshold`].
+    ///
+    /// Skipped by serde for the same reason as `progress_format`: it tunes how the training runs,
+    /// not what it produces, and a serialized `0` would silently force the parallel path. The
+    /// explicit `default` is what stops that.
+    #[serde(skip, default = "default_parallel_merge_threshold")]
+    pub parallel_merge_threshold: usize,
     /// A list of special tokens that the model should know of
     #[serde(with = "crate::added_token_serde")]
     pub special_tokens: Vec<AddedToken>,
@@ -647,46 +690,90 @@ impl BpeTrainer {
             }
             merges.push((top.pair, new_token_id));
 
-            // Merge the new pair into every word that contains it, and fold each word's pair
-            // deltas in as they are produced.
+            // Merge the new pair into every word that contains it, then fold in the pair deltas.
             //
-            // Serial, deliberately. Fanning this out measured *8.5x slower* than not: on a 6.5 MB
-            // corpus the merge loop went 55 ms -> 460 ms and training 300 ms -> 740 ms, for the same
-            // vocabulary and merges. Two reasons, and neither goes away with a bigger corpus:
+            // Two paths, chosen by fan-out. `pos` is ascending and duplicate-free, so a contiguous
+            // run of it addresses a contiguous run of `words` -- which is what lets the parallel
+            // path hand each worker a real `&mut [Word]` from `split_at_mut` instead of the raw
+            // pointer this code used to smuggle past rayon's `Sync` bound.
             //
-            // * the fan-out is small. 7910 merges visited 800632 words here, ~101 words a merge, and
-            //   the widest single merge touched 10768 -- a few microseconds of work to dispatch.
-            // * `pos` is an `AHashSet`, which rayon can only split by walking buckets. Thresholding
-            //   the set size does not rescue it: at a 1024 cut it was still 117 ms against 55 ms.
+            // The serial path is allocation-free: one reused `changes` buffer for every word, and
+            // the deltas applied inline. It used to take a fresh `Vec` from `Word::merge`, collect a
+            // second to attach the word index and a third for all of them -- two allocations for
+            // each of 800632 word-visits.
             //
-            // `feed` keeps its parallelism -- that one is a real win (84 ms against 101 ms), because
-            // it splits a contiguous corpus into big chunks.
-            //
-            // Being serial is also what makes this allocation-free. It used to hand each word a
-            // fresh `Vec` from `Word::merge`, collect a second one on top of it to attach the word
-            // index, and collect all of those into a third -- two allocations for every one of the
-            // 800632 word-visits. One reused buffer replaces all of it, and applying the deltas
-            // inline drops the third. Ordering does not matter: both accumulations (`+=` into
-            // `pair_counts`, `insert` into a set) are commutative.
-            //
-            // The raw-pointer `WordPtr` dance this replaced existed only to get `&mut words[i]` past
-            // rayon's `Sync` bound. Without rayon, plain indexing does it safely.
-            for &iw in &top.pos {
-                let i = iw as usize;
-                changes.clear();
-                words[i].merge(
-                    top.pair.0,
-                    top.pair.1,
-                    new_token_id,
-                    max_token_length,
-                    &mut changes,
-                );
+            // Applying deltas in any order is safe: `+=` into `pair_counts` and `push_word` into a
+            // word list are both commutative, and `push_word`'s dedup only needs each *word*'s
+            // appends to be contiguous, which every path preserves.
+            if top.pos.len() < self.parallel_merge_threshold {
+                for &iw in &top.pos {
+                    let i = iw as usize;
+                    changes.clear();
+                    words[i].merge(
+                        top.pair.0,
+                        top.pair.1,
+                        new_token_id,
+                        max_token_length,
+                        &mut changes,
+                    );
 
-                let word_count = counts[i] as i32;
-                for &(pair, change) in changes.iter() {
-                    *pair_counts.entry(pair).or_default() += change * word_count;
-                    if change > 0 {
-                        push_word(where_to_update.entry(pair).or_default(), iw);
+                    let word_count = counts[i] as i32;
+                    for &(pair, change) in changes.iter() {
+                        *pair_counts.entry(pair).or_default() += change * word_count;
+                        if change > 0 {
+                            push_word(where_to_update.entry(pair).or_default(), iw);
+                        }
+                    }
+                }
+            } else {
+                // Cut `pos` into runs, then peel the matching `&mut [Word]` off the front for each.
+                // `base` is the word index the peeled slice starts at, so a worker indexes with
+                // `iw - base`.
+                let run = top.pos.len().div_ceil(current_num_threads().max(1));
+                let mut tasks: Vec<(&mut [Word], u32, &[u32])> = Vec::new();
+                let mut rest: &mut [Word] = &mut words[..];
+                let mut base: u32 = 0;
+                for chunk in top.pos.chunks(run) {
+                    // +1 because the run has to include the last word it names.
+                    let take = (chunk[chunk.len() - 1] + 1 - base) as usize;
+                    let (head, tail) = rest.split_at_mut(take);
+                    tasks.push((head, base, chunk));
+                    rest = tail;
+                    base += take as u32;
+                }
+
+                // Each worker keeps its own delta list: per chunk, not per word, so this is a
+                // handful of allocations for the whole merge rather than one per word.
+                let per_chunk: Vec<Vec<(Pair, i32, u32)>> = tasks
+                    .into_maybe_par_iter()
+                    .map(|(slice, base, chunk)| {
+                        let mut local = Vec::new();
+                        let mut scratch = Vec::new();
+                        for &iw in chunk {
+                            scratch.clear();
+                            slice[(iw - base) as usize].merge(
+                                top.pair.0,
+                                top.pair.1,
+                                new_token_id,
+                                max_token_length,
+                                &mut scratch,
+                            );
+                            for &(pair, change) in scratch.iter() {
+                                local.push((pair, change, iw));
+                            }
+                        }
+                        local
+                    })
+                    .collect();
+
+                // Folded back in chunk order, which is `pos` order, so each word's appends stay
+                // contiguous and `push_word` stays exact.
+                for local in &per_chunk {
+                    for &(pair, change, iw) in local {
+                        *pair_counts.entry(pair).or_default() += change * counts[iw as usize] as i32;
+                        if change > 0 {
+                            push_word(where_to_update.entry(pair).or_default(), iw);
+                        }
                     }
                 }
             }
@@ -854,6 +941,44 @@ mod tests {
         ];
         assert_eq!(merges, expected_merges);
     }
+    /// The parallel merge path has to produce the same vocabulary and the same merge list, in the
+    /// same order, as the serial one. It splits `words` with `split_at_mut` over runs of an
+    /// ascending `pos` and folds each run's deltas back in run order, so `push_word`'s
+    /// "duplicates can only be adjacent" invariant has to survive the split -- this is what checks
+    /// that it does.
+    #[test]
+    fn parallel_merges_agree_with_serial() {
+        let word_counts: AHashMap<CompactString, u64> = [
+            ("roses", 3), ("are", 5), ("red", 2), ("violets", 3), ("blue", 4),
+            ("bert", 6), ("is", 7), ("big", 2), ("and", 4), ("so", 3),
+            ("rosier", 2), ("reddish", 2), ("bluer", 2), ("bigger", 3), ("blurred", 2),
+            ("aaaa", 4), ("aaab", 3), ("abab", 3), ("baba", 2), ("bbbb", 2),
+        ]
+        .iter()
+        .map(|(w, c)| (CompactString::from(*w), *c as u64))
+        .collect();
+
+        let train_with = |threshold: usize| {
+            BpeTrainer::builder()
+                .show_progress(false)
+                .min_frequency(0)
+                .vocab_size(120)
+                .parallel_merge_threshold(threshold)
+                .build()
+                .do_train(&word_counts)
+                .unwrap()
+        };
+
+        // `0` forces every merge through the parallel path; `usize::MAX` forces every one serial.
+        let (par_vocab, par_merges, _) = train_with(0);
+        let (ser_vocab, ser_merges, _) = train_with(usize::MAX);
+
+        assert_eq!(par_vocab, ser_vocab, "vocabularies differ");
+        assert_eq!(par_merges, ser_merges, "merge lists differ");
+        // Guard against the test passing because nothing was learned.
+        assert!(!ser_merges.is_empty(), "no merges were produced");
+    }
+
     #[test]
     fn bpe_test_max_token_length_16() {
         /* bpe_test_max_token_length series of tests test the max_token_length flag of bpetrainer
