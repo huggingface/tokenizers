@@ -14,8 +14,8 @@
 //!   Its base64 charsmap also only decodes through the *string* deserializer, which is why
 //!   `NormalizerWrapper` re-serialises the value and calls `from_str` for that one variant;
 //! * `MetaspaceNormalizer` has none at all, and needs none: it never appears in a `tokenizer.json`.
-//!   It is half of what a `Metaspace` *pre-tokenizer* lowers into, built by `to_normalizer_and_split`
-//!   and never read from a config.
+//!   It is half of what a `Metaspace` *pre-tokenizer* lowers into, built by `read_metaspace` and
+//!   never read from a config.
 //!
 //! Whether the tag is required is decided per normalizer and it is load-bearing, because
 //! `NormalizerWrapper`'s legacy fallback is an *untagged* enum: a lenient variant will claim a

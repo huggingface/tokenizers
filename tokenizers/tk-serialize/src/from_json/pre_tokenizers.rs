@@ -10,7 +10,7 @@ use tk_encode::pre_tokenizers::bert::BertPreTokenizer;
 use tk_encode::pre_tokenizers::delimiter::CharDelimiterSplit;
 use tk_encode::pre_tokenizers::digits::Digits;
 use tk_encode::pre_tokenizers::fixed_length::FixedLength;
-use tk_encode::pre_tokenizers::metaspace::PrependScheme;
+use tk_encode::decoders::metaspace::PrependScheme;
 use tk_encode::pre_tokenizers::punctuation::Punctuation;
 use tk_encode::pre_tokenizers::sequence::PipelineSequence;
 use tk_encode::pre_tokenizers::split::{Split as SplitPretok, SplitPattern};
@@ -168,8 +168,8 @@ fn byte_level_pre_tokenizer(cfg: &Json<'_>) -> Result<PipelinePreTokenizer> {
 
 /// A `Metaspace` pre-tokenizer does two jobs at once: it writes `▁` delimiters into the text, then
 /// cuts on them. The pipeline keeps rewriting and cutting apart, so it is rebuilt as a normalizer
-/// plus a `Split` — the same decomposition `metaspace::to_normalizer_and_split` performs for the
-/// config path, and the same settings are refused.
+/// plus a `Split`. There is no `Metaspace` pre-tokenizer type left to build: this is the only place
+/// the decomposition happens.
 ///
 /// `drop_whitespace` is the `WhitespaceSplit` that t5 and albert run in front of theirs.
 fn read_metaspace(

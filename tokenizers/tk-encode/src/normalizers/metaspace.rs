@@ -2,15 +2,15 @@
 //!
 //! SentencePiece tokenizers have no token for a space: a space is folded into the word that follows
 //! it and written `▁`. That character therefore marks where a word starts *and* separates words —
-//! which is why the code below calls it the delimiter. In a tokenizer config, one [`Metaspace`]
+//! which is why the code below calls it the delimiter. In a tokenizer config, one `Metaspace`
 //! pre-tokenizer does the whole job: it rewrites the text and cuts it into words. The pipeline keeps
-//! those two apart — normalizers rewrite text, pre-tokenizers cut it — so a [`Metaspace`] is rebuilt
-//! as this normalizer plus a [`Split`] on the delimiter.
+//! those two apart — normalizers rewrite text, pre-tokenizers cut it — so a `Metaspace` is rebuilt
+//! as this normalizer plus a [`Split`] on the delimiter. There is no `Metaspace` pre-tokenizer type:
+//! this pair *is* what one lowers to.
 //!
-//! `to_normalizer_and_split`, in [`crate::pre_tokenizers::metaspace`], builds that pair and spells
-//! out which [`Metaspace`] settings can be rebuilt this way.
+//! `read_metaspace`, in `tk-serialize`'s `from_json::pre_tokenizers`, builds that pair and spells
+//! out which `Metaspace` settings can be rebuilt this way.
 //!
-//! [`Metaspace`]: crate::pre_tokenizers::metaspace::Metaspace
 //! [`Split`]: crate::pre_tokenizers::split::Split
 
 use std::borrow::Cow;

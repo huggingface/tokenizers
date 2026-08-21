@@ -4,7 +4,7 @@ use super::decoders::read_one_decoder;
 use super::normalizers::base64_decode;
 use super::pre_tokenizers::read_prepend_scheme;
 use super::*;
-use tk_encode::pre_tokenizers::metaspace::PrependScheme;
+use tk_encode::decoders::metaspace::PrependScheme;
 
 /// A minimal BPE that needs no data files: two merges over a four-token vocab.
 const TINY_BPE: &str = r#"{

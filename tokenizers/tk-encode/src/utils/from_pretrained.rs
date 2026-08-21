@@ -76,3 +76,26 @@ pub fn from_pretrained<S: AsRef<str>>(
         .revision(params.revision)
         .send()?)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Salvaged from the umbrella crate's `tests/from_pretrained.rs`, which `autotests = false`
+    /// meant was never compiled. Neither case reaches the network: both are refused by the
+    /// character checks above, before a client is ever built.
+    #[test]
+    fn invalid_characters_are_refused_before_any_request() {
+        assert!(from_pretrained("docs?", None).is_err());
+        assert!(
+            from_pretrained(
+                "bert-base-cased",
+                Some(FromPretrainedParameters {
+                    revision: "gpt?".to_string(),
+                    ..Default::default()
+                }),
+            )
+            .is_err()
+        );
+    }
+}

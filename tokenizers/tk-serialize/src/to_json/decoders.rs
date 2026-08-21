@@ -7,7 +7,7 @@
 use super::normalizers::write_replace_pattern;
 use super::writer::Out;
 use tk_encode::decoders::DecoderRuntime;
-use tk_encode::pre_tokenizers::metaspace::PrependScheme;
+use tk_encode::decoders::metaspace::PrependScheme;
 use tk_encode::tokenizer::Result;
 
 pub(super) fn write_decoder(out: &mut Out, decoder: Option<&DecoderRuntime>) -> Result<()> {
