@@ -1,17 +1,14 @@
-//! The pipeline BPE model: its tables, how it is built from a [`BPE`], and how a pretokenized
-//! sequence is turned into tokens. Conversion to symbols lives in `convert`; the merge engines
-//! are `merge_multipass` and `merge_hot_cold_queue`.
+//! The pipeline BPE model: its tables, and how a pretokenized sequence is turned into tokens.
+//! Building it from a vocabulary and a merge list, and recovering the config back out of it, live
+//! in `serialization`. Conversion to symbols lives in `convert`; the merge engines are
+//! `merge_multipass` and `merge_hot_cold_queue`.
 use crate::models::bpe::At;
-use crate::models::bpe::Error;
-use crate::models::bpe::convert::{AFFIX_BUF, Affixes};
-use crate::models::bpe::legacy::model::BPE;
+use crate::models::bpe::convert::Affixes;
 use crate::models::bpe::merge_hot_cold_queue::{QueueScratch, merge_with_queue};
 use crate::models::bpe::merge_multipass::merge_multipass;
 use crate::models::bpe::tables::BpeTables;
 use crate::pipeline::{self, PipelineToken};
 use crate::tokenizer::Result;
-use crate::utils::byte_level::{self};
-use crate::utils::cache::DEFAULT_CACHE_CAPACITY;
 use crate::utils::word_cache::{Lookup, WordCache};
 use crate::vocab::bucket_vocab_store::BucketVocabStore;
 
@@ -51,56 +48,6 @@ fn content_start(bytes: &[u8]) -> usize {
 const _: () = assert!(size_of::<PipelineToken>() == size_of::<u32>());
 const _: () = assert!(align_of::<PipelineToken>() == align_of::<u32>());
 
-/// Everything a [`PipelineBPE`] needs besides its vocabulary and its merge list.
-///
-/// A `Default`-able struct rather than a nine-argument constructor, so a caller spells only the
-/// fields its config actually declares — which for most of the Hub is `with_byte_level` and nothing
-/// else. It carries no serde: naming these options in a config file is the readers' business, and
-/// one of those readers ([`tk-serialize`](https://docs.rs/tk-serialize)) links no serde at all.
-pub struct PipelineBpeOptions {
-    /// The token to emit for a character with no vocabulary entry. Must itself be in the vocab.
-    pub unk_token: Option<String>,
-    /// Prefix carried by every subword that is not the first of its word (WordPiece's `"##"`).
-    pub continuing_subword_prefix: Option<String>,
-    /// Suffix carried by the last subword of a word (`"</w>"`).
-    pub end_of_word_suffix: Option<String>,
-    /// Whether a run of unknown characters collapses into one unk token.
-    pub fuse_unk: bool,
-    /// SentencePiece's byte fallback: an unknown character becomes one `"<0xNN>"` token per byte,
-    /// which requires all 256 of them to be in the vocabulary.
-    pub byte_fallback: bool,
-    /// Merge dropout. Only `None` and `Some(0.0)` are runnable here: dropout makes tokenization
-    /// non-deterministic, which the tables and the word cache are both built on the assumption of.
-    /// A value outside `0.0..=1.0` is rejected as a bad config, a value above it as unsupported.
-    pub dropout: Option<f32>,
-    /// Emit any pretoken that is itself a vocabulary entry as that entry, without merging. The flag
-    /// only *widens* what folds: entries that provably reduce to themselves fold either way, which
-    /// is what `prove_fold` settles at load.
-    pub ignore_merges: bool,
-    /// Slots in the per-scratch word cache; `0` turns caching off. Defaults to
-    /// [`DEFAULT_CACHE_CAPACITY`](crate::models::bpe::DEFAULT_CACHE_CAPACITY).
-    pub cache_capacity: usize,
-    /// The vocabulary is written in the byte-level alphabet (gpt2 and everything after it), so its
-    /// entries are decoded to their raw bytes at load and every byte has to be an atom.
-    pub with_byte_level: bool,
-}
-
-impl Default for PipelineBpeOptions {
-    fn default() -> Self {
-        Self {
-            unk_token: None,
-            continuing_subword_prefix: None,
-            end_of_word_suffix: None,
-            fuse_unk: false,
-            byte_fallback: false,
-            dropout: None,
-            ignore_merges: false,
-            cache_capacity: DEFAULT_CACHE_CAPACITY,
-            with_byte_level: false,
-        }
-    }
-}
-
 pub struct PipelineBPE {
     pub(super) atoms: Atoms,
     pub(super) tables: BpeTables,
@@ -124,7 +71,7 @@ pub(super) enum Atoms {
 }
 
 impl PipelineBPE {
-    /// True when this model was built with `with_byte_level`, which means
+    /// True when this model was built with `byte_level`, which means
     /// [`byte_level::transform_vocab`] already turned every vocabulary entry into its
     /// **decoded raw bytes** at load time. Decoding is then a concatenation, and running a
     /// `ByteLevel` decoder over these entries would decode a second time.
@@ -144,119 +91,6 @@ impl PipelineBPE {
     /// model decodes through [`Self::id_to_token_bytes`] instead.
     pub(crate) fn id_to_token(&self, id: u32) -> Option<String> {
         self.vocab.id_to_token(id)
-    }
-
-    pub fn from_bpe(model: BPE, with_byte_level: bool) -> Result<Self> {
-        if matches!(&model.dropout, Some(dropout) if *dropout > 0.0) {
-            return Err("BPE models with dropout not supported yet".into());
-        }
-        let BPE {
-            vocab,
-            merges,
-            ignore_merges,
-            byte_fallback,
-            unk_token,
-            fuse_unk,
-            continuing_subword_prefix,
-            end_of_word_suffix,
-            cache,
-            ..
-        } = model;
-        // A capacity of zero means "no cache"; anything else sizes the per-scratch table.
-        let cache_capacity = cache.map(|cache| cache.capacity).filter(|&c| c > 0);
-        let prefix = continuing_subword_prefix.unwrap_or_default();
-        let suffix = end_of_word_suffix.unwrap_or_default();
-        if prefix.len() + 4 + suffix.len() > AFFIX_BUF {
-            return Err("BPE affixes too long: raise AFFIX_BUF".into());
-        }
-
-        let (tables, external_to_internal) = BpeTables::build(
-            vocab.get_vocab().into_iter().collect(),
-            merges,
-            with_byte_level,
-        );
-        // the symbol stream is internal ids, mapped back through `unmap` at the very end
-        let to_internal = |external: u32| -> Option<u32> {
-            external_to_internal
-                .get(external as usize)
-                .copied()
-                .filter(|&internal| internal != u32::MAX)
-        };
-        let (vocab, atoms) = if with_byte_level {
-            let mut vocab = BucketVocabStore::build(vocab.byte_content());
-            vocab = byte_level::transform_vocab(vocab);
-            // every byte has to be an atom, or a word containing it could not be encoded at all
-            for b in 0u8..=255 {
-                vocab
-                    .get_bytes(&[b])
-                    .ok_or(Error::ByteAtomOutOfVocabulary(b))?;
-            }
-            (vocab, Atoms::Bytes)
-        } else {
-            let vocab = BucketVocabStore::build(vocab.byte_content());
-            let unk_token = if let Some(unk_str) = unk_token {
-                let token_id = vocab
-                    .token_to_id(&unk_str)
-                    .ok_or_else(|| Error::UnkTokenOutOfVocabulary(unk_str.clone()))?;
-                Some(token_id)
-            } else {
-                None
-            };
-            let unk_token = unk_token.map(|external| to_internal(external).unwrap_or(u32::MAX));
-            let fallback_lookup = if byte_fallback {
-                let mut fallback_lookup = [0u32; 256];
-                for b in 0u8..=255 {
-                    let code = format!("<{b:#04X}>");
-                    let external = vocab
-                        .token_to_id(&code)
-                        .ok_or(Error::ByteFallbackOutOfVocabulary(b))?;
-                    fallback_lookup[b as usize] =
-                        to_internal(external).ok_or(Error::ByteFallbackOutOfVocabulary(b))?;
-                }
-                Some(fallback_lookup)
-            } else {
-                None
-            };
-            (
-                vocab,
-                Atoms::Chars {
-                    fuse_unk,
-                    unk_token,
-                    byte_fallback: fallback_lookup,
-                },
-            )
-        };
-        let affixes = (!prefix.is_empty() || !suffix.is_empty()).then(|| Affixes {
-            prefix,
-            suffix,
-            to_internal: external_to_internal.into_boxed_slice(),
-        });
-        let mut built = Self {
-            atoms,
-            tables,
-            affixes,
-            cache_capacity,
-            vocab,
-            byte_to_gate: build_byte_to_gate(),
-        };
-        // Every entry carries a foldable bit, so the encode path is one probe and one bit test
-        // with no policy left in it. The policy is decided here, once: a config that declares
-        // `ignore_merges` asks for every hit to fold, so every entry gets the bit; otherwise only
-        // the entries that prove they reduce to themselves earn it.
-        //
-        // Two phases because the proof runs the merge engine, which borrows `built`: work out the
-        // answers first, then set the bit on each entry that earned it.
-        let proven = if ignore_merges {
-            vec![true; built.vocab.id_space()]
-        } else {
-            built.prove_fold()
-        };
-        for (id, foldable) in proven.iter().enumerate() {
-            if *foldable {
-                built.vocab.set_foldable(id as u32);
-            }
-        }
-        Ok(built)
     }
 
     /// One bit per vocabulary id: can a pretoken equal to this entry be emitted as this entry,
@@ -296,7 +130,7 @@ impl PipelineBPE {
     #[inline(always)]
     fn fold_id(&self, sequence: &str) -> Option<u32> {
         // One probe; the foldable bit is part of the id that probe already returned. Which entries
-        // carry it was settled at load -- see `from_bpe`.
+        // carry it was settled at load -- see `from_merge_map`.
         let (id, foldable) = self.vocab.get_bytes_foldable(sequence.as_bytes())?;
         foldable.then_some(id)
     }
