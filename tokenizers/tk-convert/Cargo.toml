@@ -1,0 +1,54 @@
+[package]
+name = "tk-convert"
+version = "1.0.0-rc.0"
+edition = "2024"
+authors = [
+  "Arthur Zucker <arthur@huggingface.co",
+  "Luc Georges <luc@huggingface.co",
+  "Simon Brandeis <simon@huggingface.co",
+]
+homepage = "https://github.com/huggingface/tokenizers"
+repository = "https://github.com/huggingface/tokenizers"
+documentation = "https://docs.rs/tokenizers/"
+license = "Apache-2.0"
+keywords = ["tokenizer", "NLP", "huggingface", "BPE", "WordPiece"]
+description = """
+The legacy `tokenizer.json` upgrade pass of the 🤗 Tokenizers library: a JSON→JSON
+rewrite that turns a config written by any older version into the canonical form
+`tk-serialize`'s reader accepts.
+"""
+
+[package.metadata.docs.rs]
+all-features = true
+
+[lib]
+name = "tk_convert"
+path = "src/lib.rs"
+
+[dependencies]
+serde_json = "1.0"
+thiserror = "2"
+
+# Latest released tokenizers, used as the comparison baseline by the fixture bench and as the
+# independent id/decode oracle by `tests/pipeline_oracle.rs` and `tests/pipeline_decode_oracle.rs`.
+tokenizers-release = { package = "tokenizers", version = "=0.23.1", optional = true }
+
+[features]
+default = []
+bench-baseline = ["dep:tokenizers-release"]
+
+[dev-dependencies]
+tk-serialize = { path = "../tk-serialize", features = [
+  "bpe",
+  "unigram",
+  "wordpiece",
+  "wordlevel",
+  "normalizers",
+  "unicode-scripts",
+  "fancy-regex",
+] }
+tk-encode = { path = "../tk-encode", default-features = false, features = [
+  "fancy-regex",
+] }
+criterion = "0.8"
+rayon = "1.12"
