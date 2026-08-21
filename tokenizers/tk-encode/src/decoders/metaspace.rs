@@ -31,11 +31,10 @@ pub struct MetaspaceDecoder {
 }
 
 impl MetaspaceDecoder {
-    pub fn new(replacement: char, prepend_scheme: PrependScheme, split: bool) -> Self {
+    pub fn new(replacement: char, prepend_scheme: PrependScheme) -> Self {
         Self {
             replacement,
             prepend_scheme,
-            split,
         }
     }
 
@@ -50,7 +49,7 @@ impl MetaspaceDecoder {
 
 impl Default for MetaspaceDecoder {
     fn default() -> Self {
-        Self::new('▁', PrependScheme::Always, true)
+        Self::new('▁', PrependScheme::Always)
     }
 }
 
@@ -85,13 +84,13 @@ mod tests {
 
     #[test]
     fn decode() {
-        let decoder = MetaspaceDecoder::new('▁', PrependScheme::Always, true);
+        let decoder = MetaspaceDecoder::new('▁', PrependScheme::Always);
         let res = decoder
             .decode_chain(vec!["▁Hey".into(), "▁friend!".into()])
             .unwrap();
         assert_eq!(res, vec!["Hey", " friend!"]);
 
-        let decoder = MetaspaceDecoder::new('▁', PrependScheme::Never, true);
+        let decoder = MetaspaceDecoder::new('▁', PrependScheme::Never);
         let res = decoder
             .decode_chain(vec!["▁Hey".into(), "▁friend!".into()])
             .unwrap();
