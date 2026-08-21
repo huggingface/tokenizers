@@ -9,6 +9,7 @@ pub use parity_trainer::{ParityBpeTrainer, ParityBpeTrainerBuilder, ParityVarian
 use crate::Trainer;
 use ahash::{AHashMap, AHashSet};
 use compact_str::CompactString;
+use itertools::Itertools;
 use dary_heap::OctonaryHeap;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
@@ -24,7 +25,6 @@ use tk_encode::Result;
 use tk_encode::models::bpe::{Merges, Pair, PipelineBPE, BpeConfig, Vocab};
 use tk_encode::parallelism::*;
 use tk_encode::utils::progress::{ProgressBar, ProgressFormat, ProgressStyle};
-use tk_encode::vocab::bucket_vocab_store::BucketVocabStore;
 
 #[derive(Debug, Eq)]
 struct Merge {
@@ -393,33 +393,69 @@ impl BpeTrainer {
         p: &Option<ProgressBar>,
     ) -> (Vec<Word>, Vec<u64>) {
         let mut words: Vec<Word> = Vec::with_capacity(wc.len());
+        // Reused whenever a character needs a prefix/suffix; see the note below.
+        let mut decorated = String::new();
         let mut counts: Vec<u64> = Vec::with_capacity(wc.len());
 
         for (word, count) in wc {
-            let mut current_word = Word::new();
+            // Sized up front: the symbol count starts at one per character and only shrinks as
+            // merges apply, so the character count is an exact upper bound and the `Vec` never
+            // grows. Starting empty cost one allocation per doubling, per unique word.
+            let mut current_word = Word::with_capacity(word.chars().count());
             counts.push(*count);
 
             for (is_first, is_last, c) in word.chars().with_first_and_last() {
-                let mut s = c.to_string();
-                if w2id.contains_key(&CompactString::from(&s)) {
-                    // Found the initial char in the authorized alphabet
+                // The character as a `&str` in a stack buffer. This used to be `c.to_string()` --
+                // one heap allocation per character of every unique word, which was the single
+                // largest source of allocation in a training run (~925k of 1.08M) even though it
+                // was only 5% of the time. The four `CompactString::from(&s)` rebuilds that
+                // followed it are gone the same way: `AHashMap<CompactString, _>` is `Borrow<str>`,
+                // so it can be probed with the `&str` directly, once.
+                let mut buf = [0u8; 4];
+                let plain: &str = c.encode_utf8(&mut buf);
 
-                    // Add the `continuing_subword_prefix` if relevant
-                    if !is_first && let Some(prefix) = &self.continuing_subword_prefix {
-                        s.insert_str(0, prefix);
-                    }
-                    // Add the `end_of_word_suffix` if relevant
-                    if is_last && let Some(suffix) = &self.end_of_word_suffix {
-                        s.push_str(suffix);
-                    }
-
-                    // Insert the new formed string if necessary
-                    if !w2id.contains_key(&CompactString::from(&s)) {
-                        id2w.push(CompactString::from(&s));
-                        w2id.insert(CompactString::from(&s), (id2w.len() - 1) as u32);
-                    }
-                    current_word.add(w2id[&CompactString::from(&s)], 1); // We do not care about the len here
+                // Found the initial char in the authorized alphabet
+                if !w2id.contains_key(plain) {
+                    continue;
                 }
+
+                // Add the `continuing_subword_prefix` / `end_of_word_suffix` if relevant
+                let prefix = if is_first {
+                    None
+                } else {
+                    self.continuing_subword_prefix.as_deref()
+                };
+                let suffix = if is_last {
+                    self.end_of_word_suffix.as_deref()
+                } else {
+                    None
+                };
+
+                let key: &str = if prefix.is_some() || suffix.is_some() {
+                    decorated.clear();
+                    if let Some(prefix) = prefix {
+                        decorated.push_str(prefix);
+                    }
+                    decorated.push_str(plain);
+                    if let Some(suffix) = suffix {
+                        decorated.push_str(suffix);
+                    }
+                    &decorated
+                } else {
+                    plain
+                };
+
+                // Insert the new formed string if necessary
+                let id = match w2id.get(key) {
+                    Some(&id) => id,
+                    None => {
+                        let id = id2w.len() as u32;
+                        id2w.push(CompactString::from(key));
+                        w2id.insert(CompactString::from(key), id);
+                        id
+                    }
+                };
+                current_word.add(id, 1); // We do not care about the len here
             }
             words.push(current_word);
 
@@ -437,40 +473,29 @@ impl BpeTrainer {
         counts: &[u64],
         p: &Option<ProgressBar>,
     ) -> (AHashMap<Pair, i32>, AHashMap<Pair, AHashSet<usize>>) {
-        words
-            .maybe_par_iter()
-            .enumerate()
-            .map(|(i, word)| {
-                let mut pair_counts = AHashMap::new();
-                let mut where_to_update: AHashMap<Pair, AHashSet<usize>> = AHashMap::new();
+        // Counted straight into one pair of maps, serially.
+        //
+        // It used to build a `Pair -> count` map and a `Pair -> {word}` map *per word* and reduce
+        // them in parallel, which meant the combine step merged hash maps all the way up the
+        // reduction tree -- more work than the counting it was spreading out. Measured on a 6.5 MB
+        // corpus, the parallel version cost 48 ms of a 244 ms training run. Accumulating in place
+        // also drops one map pair, and one `get_chars` `Vec`, per word.
+        let mut pair_counts: AHashMap<Pair, i32> = AHashMap::new();
+        let mut where_to_update: AHashMap<Pair, AHashSet<usize>> = AHashMap::new();
 
-                for window in word.get_chars().windows(2) {
-                    let cur_pair: Pair = (window[0], window[1]);
+        for (i, word) in words.iter().enumerate() {
+            let count = counts[i] as i32;
+            for pair in word.get_chars_iter().tuple_windows::<(u32, u32)>() {
+                *pair_counts.entry(pair).or_default() += count;
+                where_to_update.entry(pair).or_default().insert(i);
+            }
 
-                    // Initialize pair_counts and where_to_update for this pair if we just saw it
-                    // Then update counts
-                    *pair_counts.entry(cur_pair).or_default() += counts[i] as i32;
-                    where_to_update.entry(cur_pair).or_default().insert(i);
-                }
+            if let Some(p) = &p {
+                p.inc(1);
+            }
+        }
 
-                if let Some(p) = &p {
-                    p.inc(1);
-                }
-
-                (pair_counts, where_to_update)
-            })
-            .reduce(
-                || (AHashMap::new(), AHashMap::new()),
-                |(mut pair_counts, mut where_to_update), (pc, wtu)| {
-                    for (k, v) in pc {
-                        *pair_counts.entry(k).or_default() += v;
-                    }
-                    for (k, v) in wtu {
-                        where_to_update.entry(k).or_default().extend(v);
-                    }
-                    (pair_counts, where_to_update)
-                },
-            )
+        (pair_counts, where_to_update)
     }
 
     /// Train and hand back the raw parts, for a caller that wants them rather than a built model.
@@ -554,6 +579,8 @@ impl BpeTrainer {
         //
         self.update_progress(&progress, self.vocab_size, "Compute merges");
         let mut merges: Vec<(Pair, u32)> = vec![];
+        // Reused by every `Word::merge` below; see the note in the loop.
+        let mut changes: Vec<(Pair, i32)> = Vec::new();
         loop {
             // Stop as soon as we have a big enough vocabulary
             if word_to_id.len() >= self.vocab_size {
@@ -596,49 +623,49 @@ impl BpeTrainer {
             }
             merges.push((top.pair, new_token_id));
 
-            // Merge the new pair in every words
-            // Safety: This is just a type assertion, the code below may no longer be safe
-            // if the type of `pos` changes
-            let pos: &AHashSet<usize> = &top.pos;
+            // Merge the new pair into every word that contains it, and fold each word's pair
+            // deltas in as they are produced.
+            //
+            // Serial, deliberately. Fanning this out measured *8.5x slower* than not: on a 6.5 MB
+            // corpus the merge loop went 55 ms -> 460 ms and training 300 ms -> 740 ms, for the same
+            // vocabulary and merges. Two reasons, and neither goes away with a bigger corpus:
+            //
+            // * the fan-out is small. 7910 merges visited 800632 words here, ~101 words a merge, and
+            //   the widest single merge touched 10768 -- a few microseconds of work to dispatch.
+            // * `pos` is an `AHashSet`, which rayon can only split by walking buckets. Thresholding
+            //   the set size does not rescue it: at a 1024 cut it was still 117 ms against 55 ms.
+            //
+            // `feed` keeps its parallelism -- that one is a real win (84 ms against 101 ms), because
+            // it splits a contiguous corpus into big chunks.
+            //
+            // Being serial is also what makes this allocation-free. It used to hand each word a
+            // fresh `Vec` from `Word::merge`, collect a second one on top of it to attach the word
+            // index, and collect all of those into a third -- two allocations for every one of the
+            // 800632 word-visits. One reused buffer replaces all of it, and applying the deltas
+            // inline drops the third. Ordering does not matter: both accumulations (`+=` into
+            // `pair_counts`, `insert` into a set) are commutative.
+            //
+            // The raw-pointer `WordPtr` dance this replaced existed only to get `&mut words[i]` past
+            // rayon's `Sync` bound. Without rayon, plain indexing does it safely.
+            for &i in &top.pos {
+                changes.clear();
+                words[i].merge(
+                    top.pair.0,
+                    top.pair.1,
+                    new_token_id,
+                    max_token_length,
+                    &mut changes,
+                );
 
-            let words_len = words.len();
-            // FIXME: doesn't look great
-            struct WordPtr(*mut Word);
-            // Safety: We do not actually use this for concurrent access to the same memory,
-            // only to different chunks within the same allocation.
-            unsafe impl Sync for WordPtr {}
-            let word_start = WordPtr(words.as_mut_ptr());
-
-            let changes = pos
-                .maybe_par_iter()
-                .flat_map(|&i| {
-                    // We can merge each of these words in parallel here because each position
-                    // can be there only once (AHashSet). So this is safe.
-                    unsafe {
-                        // Edition ≥2021 closures capture the `.0` field (a non-Sync raw
-                        // pointer) unless we force whole-struct capture of the Sync wrapper.
-                        let word_start = &word_start;
-                        assert!(i < words_len);
-                        // This is words[i], but avoids needing to go through &T (which triggers UB)
-                        let word = word_start.0.add(i);
-                        // let word: &mut Word = &mut (*word);
-                        (*word)
-                            .merge(top.pair.0, top.pair.1, new_token_id, max_token_length)
-                            .into_iter()
-                            .map(|c| (c, i))
-                            .collect::<Vec<_>>()
+                let word_count = counts[i] as i32;
+                for &(pair, change) in changes.iter() {
+                    *pair_counts.entry(pair).or_default() += change * word_count;
+                    if change > 0 {
+                        where_to_update.entry(pair).or_default().insert(i);
                     }
-                })
-                .collect::<Vec<_>>();
-
-            // Introduce new formed pairs
-            for ((pair, change), iw) in changes {
-                let count = change * counts[iw] as i32;
-                *pair_counts.entry(pair).or_default() += count;
-                if change > 0 {
-                    where_to_update.entry(pair).or_default().insert(iw);
                 }
             }
+
             where_to_update.drain().for_each(|(pair, pos)| {
                 let count = pair_counts[&pair];
                 if count > 0 {

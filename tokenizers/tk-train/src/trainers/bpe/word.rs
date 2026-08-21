@@ -1,4 +1,3 @@
-use ahash::AHashMap;
 use std::{iter, mem};
 use tk_encode::models::bpe::Pair;
 
@@ -43,22 +42,17 @@ where
     }
 }
 
+/// 8 bytes, and every one of them is read.
+///
+/// It used to carry `prev`/`next` as well, an intrusive doubly-linked list that only the
+/// dropout-aware `merge_all` ever walked. With that gone the two fields were written on every `add`
+/// and every `merge` and read by nobody, at 4x the width: the merge loop sweeps these symbols once
+/// per affected word per merge, so their size is the loop's memory traffic.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Symbol {
     c: u32,
-    prev: isize,
-    next: isize,
-    len: usize,
-}
-impl Symbol {
-    /// Merges the current Symbol with the other one.
-    /// In order to update prev/next, we consider Self to be the Symbol on the left,
-    /// and other to be the next one on the right.
-    pub fn merge_with(&mut self, other: &Self, new_c: u32) {
-        self.c = new_c;
-        self.len += other.len;
-        self.next = other.next;
-    }
+    /// How many of the original characters this symbol stands for, for `max_token_length`.
+    len: u32,
 }
 
 #[derive(Clone, Default)]
@@ -84,6 +78,9 @@ impl std::fmt::Debug for Word {
 }
 
 impl Word {
+    // `new` and `get_chars` are used by the `parity-aware-bpe` trainer and by the tests below, so a
+    // default build sees no caller for them.
+    #[allow(dead_code)]
     pub fn new() -> Self {
         Word { symbols: vec![] }
     }
@@ -94,89 +91,82 @@ impl Word {
         }
     }
 
-    pub fn clear(&mut self) {
-        self.symbols.clear();
-    }
-
-    pub fn len_symbols(&self) -> usize {
-        self.symbols.len()
-    }
-
     pub fn add(&mut self, c: u32, byte_len: usize) {
-        let (prev, next) = {
-            let len = self.symbols.len() as isize;
-            if let Some(last) = self.symbols.last_mut() {
-                // Update `next` on the previous one
-                last.next = len;
-                (len - 1, -1)
-            } else {
-                (-1, -1)
-            }
-        };
         self.symbols.push(Symbol {
             c,
-            prev,
-            next,
-            len: byte_len,
+            len: byte_len as u32,
         });
     }
 
     // this is a training only function, should potentially be feature gated.
+    ///
+    /// Rewrites the symbols in one forward pass, reading at `i` and writing at `write`.
+    ///
+    /// It used to `insert` the merged symbol then `remove` the two it replaced -- three `Vec`
+    /// memmoves of the whole tail per occurrence, to turn two symbols into one. Since `write` never
+    /// runs ahead of `i`, everything at or after `i` is still untouched when it is read, so the
+    /// compaction needs no shifting at all.
+    ///
+    /// The reported changes are identical to the shifting version's: the left neighbour is the last
+    /// symbol *written* (which may itself be a symbol merged earlier in this same pass, exactly as
+    /// `symbols[i - 1]` was after the removals), and the right neighbour is the first symbol past
+    /// the pair.
+    ///
+    /// Changes are *appended* to `changes` rather than returned in a fresh `Vec`: the caller visits
+    /// hundreds of thousands of words per training run and reuses one buffer for all of them.
     pub fn merge(
         &mut self,
         c1: u32,
         c2: u32,
         replacement: u32,
         max_length: usize,
-    ) -> Vec<(Pair, i32)> {
-        let mut changes: Vec<(Pair, i32)> = vec![];
+        changes: &mut Vec<(Pair, i32)>,
+    ) {
+        let mut write = 0;
         let mut i = 0;
-        loop {
-            if i >= self.symbols.len() {
-                break;
-            }
-
-            // Found a pair
-            if self.symbols[i].c == c1 && i + 1 < self.symbols.len() && self.symbols[i + 1].c == c2
+        while i < self.symbols.len() {
+            if self.symbols[i].c == c1
+                && i + 1 < self.symbols.len()
+                && self.symbols[i + 1].c == c2
             {
-                let first = self.symbols[i];
-                let second = self.symbols[i + 1];
-
-                // Remove in place
-                let new_s = Symbol {
-                    c: replacement,
-                    prev: first.prev,
-                    next: second.next,
-                    len: first.len + second.len,
-                };
+                let merged_len = self.symbols[i].len + self.symbols[i + 1].len;
 
                 // If there are other characters before the pair
-                if i > 0 {
-                    changes.push(((self.symbols[i - 1].c, first.c), -1));
-                    if self.symbols[i - 1].len + new_s.len < max_length {
-                        changes.push(((self.symbols[i - 1].c, replacement), 1));
+                if write > 0 {
+                    let left = self.symbols[write - 1];
+                    changes.push(((left.c, c1), -1));
+                    if ((left.len + merged_len) as usize) < max_length {
+                        changes.push(((left.c, replacement), 1));
                     }
                 }
-
-                self.symbols.insert(i, new_s); // Insert replacement before first char of pair
-                self.symbols.remove(i + 1); // Remove first char of pair
-                self.symbols.remove(i + 1); // And then the second
 
                 // If there are other characters after the pair
-                if i < self.symbols.len() - 1 {
-                    changes.push(((second.c, self.symbols[i + 1].c), -1));
-                    if self.symbols[i + 1].len + new_s.len < max_length {
-                        changes.push(((replacement, self.symbols[i + 1].c), 1));
+                if i + 2 < self.symbols.len() {
+                    let right = self.symbols[i + 2];
+                    changes.push(((c2, right.c), -1));
+                    if ((right.len + merged_len) as usize) < max_length {
+                        changes.push(((replacement, right.c), 1));
                     }
                 }
+
+                self.symbols[write] = Symbol {
+                    c: replacement,
+                    len: merged_len,
+                };
+                write += 1;
+                // Both consumed. The merged symbol is not offered to a second merge in this pass,
+                // which is what advancing past it did before.
+                i += 2;
+            } else {
+                self.symbols[write] = self.symbols[i];
+                write += 1;
+                i += 1;
             }
-
-            i += 1;
         }
-
-        changes
+        self.symbols.truncate(write);
     }
 
+    #[allow(dead_code)]
     pub fn get_chars(&self) -> Vec<u32> {
         self.get_chars_iter().collect()
     }
@@ -185,15 +175,6 @@ impl Word {
         self.symbols.iter().map(|s| s.c)
     }
 
-    pub fn get_offsets_iter(&self) -> impl Iterator<Item = (usize, usize)> + '_ {
-        let mut pos = 0;
-        self.symbols.iter().map(move |symbol| {
-            let new_pos = pos + symbol.len;
-            let offset = (pos, new_pos);
-            pos = new_pos;
-            offset
-        })
-    }
 }
 
 #[cfg(test)]
@@ -213,7 +194,8 @@ mod tests {
 
         // We're going to perform a merge on the pair ('l', 'l') ~= (2, 2). Let's
         // say that 'll' has the ID of 4 in the updated word-to-id vocab.
-        let changes = word.merge(2, 2, 4, usize::MAX);
+        let mut changes = Vec::new();
+        word.merge(2, 2, 4, usize::MAX, &mut changes);
 
         // So the word should now look like this:
         assert_eq!(
@@ -257,7 +239,8 @@ mod tests {
 
         // We're going to perform a merge on the pair ('l', 'l') ~= (2, 2). Let's
         // say that 'll' has the ID of 4 in the updated word-to-id vocab.
-        let changes = word.merge(2, 2, 4, 2);
+        let mut changes = Vec::new();
+        word.merge(2, 2, 4, 2, &mut changes);
         assert_eq!(
             word.get_chars(),
             &[
