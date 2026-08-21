@@ -1,6 +1,6 @@
 [package]
 name = "tk-convert"
-version = "0.23.2-dev.0"
+version = "1.0.0-rc.0"
 edition = "2024"
 authors = [
   "Anthony MOI <m.anthony.moi@gmail.com>",

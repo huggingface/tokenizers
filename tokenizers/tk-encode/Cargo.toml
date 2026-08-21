@@ -1,6 +1,6 @@
 [package]
 name = "tk-encode"
-version = "0.23.2-dev.0"
+version = "1.0.0-rc.0"
 edition = "2024"
 authors = [
   "Anthony MOI <m.anthony.moi@gmail.com>",
@@ -28,9 +28,9 @@ path = "src/lib.rs"
 
 [dependencies]
 atomsplit = { path = "../atomsplit" }
-rand = "0.9"
+rand = "0.10"
 ptr_hash = { version = "2.0.1", default-features = false }
-unicode_categories = "0.1"
+unicode_caaegories = "0.1"
 itertools = "0.14"
 log = "0.4"
 paste = "1.0.14"
@@ -111,7 +111,7 @@ unicode-scripts = []
 serde = ["dep:serde", "ahash/serde"]
 progressbar = ["indicatif"]
 http = ["hf-hub"]
-unstable_wasm = ["fancy-regex", "dep:getrandom", "getrandom/wasm_js"]
+unstable_wasm = ["fancy-regex"]
 rustls-tls = ["hf-hub?/rustls-tls"]
 bench-baseline = ["dep:tokenizers-release", "fancy-regex"]
 parallelism = ["dep:rayon", "dep:rayon-cond", "dep:libc"]
