@@ -26,11 +26,33 @@ use tk_encode::models::bpe::{Merges, Pair, PipelineBPE, BpeConfig, Vocab};
 use tk_encode::parallelism::*;
 use tk_encode::utils::progress::{ProgressBar, ProgressFormat, ProgressStyle};
 
+/// Appends `iw` to a word list unless it is already the last entry.
+///
+/// Both callers append every index for one word before moving to the next, so an index can only
+/// repeat as the immediately preceding entry -- which makes this exactly as strong as the set
+/// membership test it replaces, at one comparison instead of a hash and an allocation.
+#[inline]
+fn push_word(pos: &mut Vec<u32>, iw: u32) {
+    if pos.last() != Some(&iw) {
+        pos.push(iw);
+    }
+}
+
 #[derive(Debug, Eq)]
 struct Merge {
     pair: Pair,
     count: u64,
-    pos: AHashSet<usize>,
+    /// Indices of the words containing `pair`, ascending and without duplicates.
+    ///
+    /// A `Vec<u32>` rather than an `AHashSet<usize>`: the set cost one allocation per pair per
+    /// merge, and rayon can only split a hash set by walking its buckets, which is why fanning the
+    /// merge loop out measured slower at every threshold. A slice splits in constant time.
+    ///
+    /// Ascending comes free -- both producers visit words in index order -- and duplicates cannot
+    /// appear because every append for one word is contiguous, so comparing against the last entry
+    /// is exact. Neither `Ord` nor `PartialEq` for `Merge` looks at this field, so the change cannot
+    /// move an id.
+    pos: Vec<u32>,
 }
 impl PartialEq for Merge {
     fn eq(&self, other: &Self) -> bool {
@@ -472,7 +494,7 @@ impl BpeTrainer {
         words: &[Word],
         counts: &[u64],
         p: &Option<ProgressBar>,
-    ) -> (AHashMap<Pair, i32>, AHashMap<Pair, AHashSet<usize>>) {
+    ) -> (AHashMap<Pair, i32>, AHashMap<Pair, Vec<u32>>) {
         // Counted straight into one pair of maps, serially.
         //
         // It used to build a `Pair -> count` map and a `Pair -> {word}` map *per word* and reduce
@@ -481,13 +503,15 @@ impl BpeTrainer {
         // corpus, the parallel version cost 48 ms of a 244 ms training run. Accumulating in place
         // also drops one map pair, and one `get_chars` `Vec`, per word.
         let mut pair_counts: AHashMap<Pair, i32> = AHashMap::new();
-        let mut where_to_update: AHashMap<Pair, AHashSet<usize>> = AHashMap::new();
+        let mut where_to_update: AHashMap<Pair, Vec<u32>> = AHashMap::new();
 
         for (i, word) in words.iter().enumerate() {
             let count = counts[i] as i32;
+            let iw = i as u32;
             for pair in word.get_chars_iter().tuple_windows::<(u32, u32)>() {
                 *pair_counts.entry(pair).or_default() += count;
-                where_to_update.entry(pair).or_default().insert(i);
+                // `push_word` keeps `pos` duplicate-free; a pair can repeat inside one word.
+                push_word(where_to_update.entry(pair).or_default(), iw);
             }
 
             if let Some(p) = &p {
@@ -647,7 +671,8 @@ impl BpeTrainer {
             //
             // The raw-pointer `WordPtr` dance this replaced existed only to get `&mut words[i]` past
             // rayon's `Sync` bound. Without rayon, plain indexing does it safely.
-            for &i in &top.pos {
+            for &iw in &top.pos {
+                let i = iw as usize;
                 changes.clear();
                 words[i].merge(
                     top.pair.0,
@@ -661,7 +686,7 @@ impl BpeTrainer {
                 for &(pair, change) in changes.iter() {
                     *pair_counts.entry(pair).or_default() += change * word_count;
                     if change > 0 {
-                        where_to_update.entry(pair).or_default().insert(i);
+                        push_word(where_to_update.entry(pair).or_default(), iw);
                     }
                 }
             }
