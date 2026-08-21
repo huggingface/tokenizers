@@ -1,13 +1,11 @@
-use serde::{Deserialize, Serialize};
-
 use crate::pipeline;
 use crate::pipeline::PreTokenizerScratch;
 use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
-use crate::utils::macro_rules_attribute;
 
+/// The tag is spelled `CharDelimiterSplit`, not `Delimiter` -- that is what this macro on a struct
+/// of this name produces, so it is what is on disk and what has to keep loading.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
-#[macro_rules_attribute(impl_serde_type!)]
 pub struct CharDelimiterSplit {
     pub delimiter: char,
 }

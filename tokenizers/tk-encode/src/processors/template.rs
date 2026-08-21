@@ -59,12 +59,13 @@
 use crate::{Encoding, PostProcessor, Result};
 use ahash::{AHashMap, AHashSet};
 use itertools::Itertools;
-use serde::{Deserialize, Serialize};
 use std::convert::{TryFrom, TryInto};
 use std::result::Result as StdResult;
 
 /// Represents any sequences received as input of the PostProcessor
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq)]
+///
+/// Serialized as the bare variant name: `"A"` / `"B"`.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Sequence {
     /// This is the first sequence, the one that is always specified
     A,
@@ -92,7 +93,11 @@ pub enum Sequence {
 ///
 /// [`SpecialToken`]: struct.SpecialToken.html
 ///
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq)]
+/// Externally tagged on disk: `{"Sequence":{"id":"A","type_id":0}}` and
+/// `{"SpecialToken":{"id":"[CLS]","type_id":0}}`. The `TryFrom<&str>` above plays **no** part in the
+/// JSON shape -- a template written as a *string* is parsed by that impl, a template read from a
+/// `tokenizer.json` is always this object form, and the string spelling never reaches disk.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Piece {
     Sequence { id: Sequence, type_id: u32 },
     SpecialToken { id: String, type_id: u32 },
@@ -189,7 +194,11 @@ impl TryFrom<&str> for Piece {
 ///     vec!["A".into(), "complex".into(), "special".into(), "token".into(), ":".into()]
 /// ).unwrap();
 /// ```
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq)]
+/// The derive builds a struct literal and so does **not** go through [`SpecialToken::new`], which
+/// rejects `ids.len() != tokens.len()`. That is deliberate: a `tokenizer.json` with three `ids` and
+/// two `tokens` loads today and only misbehaves later, when the template is applied, and it has to
+/// keep loading. `special_token_length_mismatch_still_loads` is the test that says so.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SpecialToken {
     /// A unique id used to identify this SpecialToken in the template
     id: String,
@@ -233,8 +242,33 @@ impl SpecialToken {
         }
     }
 
-    pub(crate) fn ids(&self) -> &[u32] {
+    /// Assemble the three fields with **no** length check, which is what the `Deserialize` derive
+    /// this type used to carry did.
+    ///
+    /// It is tempting to route `tk-convert`'s mirror through [`SpecialToken::new`] instead and get
+    /// the check for free, but that would be a behaviour change: a `tokenizer.json` whose
+    /// `special_tokens` entry has three `ids` and two `tokens` loads today (and only misbehaves
+    /// later, when the template is applied), and it has to keep loading. The check belongs to the
+    /// *builder* path, where a caller is constructing a template in Rust and can be told off; the
+    /// config path only ever reported "ids and tokens must be of the same length" when someone
+    /// called `new` by hand.
+    pub fn from_parts(id: String, ids: Vec<u32>, tokens: Vec<String>) -> Self {
+        Self { id, ids, tokens }
+    }
+
+    /// The key this token is filed under in [`Tokens`], and the `id` a [`Piece::SpecialToken`]
+    /// names. `pub` because `tk-convert`'s mirror has to write it back out.
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    pub fn ids(&self) -> &[u32] {
         &self.ids
+    }
+
+    /// `pub` for the same reason as [`SpecialToken::id`].
+    pub fn tokens(&self) -> &[String] {
+        &self.tokens
     }
 }
 
@@ -254,12 +288,22 @@ impl SpecialToken {
 ///
 /// [`Piece`]: enum.Piece.html
 ///
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq)]
-#[serde(transparent)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Template(Vec<Piece>);
 
 impl Template {
-    pub(crate) fn as_slice(&self) -> &[Piece] {
+    /// The pieces, in order, with no parsing in between.
+    ///
+    /// `pub` because `tk-convert` needs it twice over: its `PostProcessorWrapper` lowering hands
+    /// these pieces to `pipeline::build_slices`, and its mirror writes them back out as the JSON
+    /// array this type used to be `#[serde(transparent)]` over.
+    pub fn new(pieces: Vec<Piece>) -> Self {
+        Self(pieces)
+    }
+
+    // `pub` because `tk-convert`'s `PostProcessorWrapper` lowering hands these pieces to
+    // `pipeline::build_slices`.
+    pub fn as_slice(&self) -> &[Piece] {
         &self.0
     }
 }
@@ -300,10 +344,14 @@ impl TryFrom<&str> for Template {
 /// from a HashMap or a Vec<[`SpecialToken`]>.
 ///
 /// [`SpecialToken`]: struct.SpecialToken.html
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, Eq)]
-#[serde(transparent)]
+///
+/// `ordered_map` on the way out is load-bearing and not a nicety: the field is an `AHashMap`, whose
+/// iteration order is unspecified, so without it two saves of the same tokenizer would emit
+/// `special_tokens` in different orders. The way *in* is a plain map, as it always was -- key order
+/// is irrelevant when reading. This is `ordered_map`'s only caller.
+#[derive(Debug, Clone, PartialEq, Default, Eq)]
 pub struct Tokens(
-    #[serde(serialize_with = "crate::utils::ordered_map")] pub AHashMap<String, SpecialToken>,
+    pub  AHashMap<String, SpecialToken>,
 );
 
 impl<T: Into<SpecialToken>> From<Vec<T>> for Tokens {
@@ -343,25 +391,45 @@ impl From<AHashMap<String, SpecialToken>> for Tokens {
 ///     .unwrap();
 /// ```
 ///
-#[derive(Debug, Clone, PartialEq, Builder, Serialize, Deserialize, Eq)]
-#[serde(tag = "type", from = "TemplateProcessingDeserializer")]
-#[builder(build_fn(validate = "Self::validate"))]
+/// The serialized tag is `"TemplateProcessing"`. All three written fields are required, which is
+/// what stops a `{"sep":...,"cls":...}` Bert object from being read as an empty template.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TemplateProcessing {
-    #[builder(try_setter, default = "\"$0\".try_into().unwrap()")]
     pub single: Template,
-    #[builder(try_setter, default = "\"$A:0 $B:1\".try_into().unwrap()")]
     pub(crate) pair: Template,
-    #[builder(setter(skip), default = "self.default_added(true)")]
-    #[serde(skip)]
+    // `added_single` and `added_pair` are derived from the other three fields by `count_added`, so
+    // they are never written to disk and never read back from it: `from_parts` recomputes them.
     added_single: usize,
-    #[builder(setter(skip), default = "self.default_added(false)")]
-    #[serde(skip)]
     added_pair: usize,
-    #[builder(setter(into), default)]
     special_tokens: Tokens,
 }
 
 impl TemplateProcessing {
+    /// Assemble a `TemplateProcessing` from the three fields that appear in a `tokenizer.json`,
+    /// deriving `added_single` and `added_pair` from them.
+    ///
+    /// This is what `TemplateProcessingDeserializer`'s `From` impl calls: it provides the values for
+    /// `added_single` and `added_pair` during deserialization, while not having to serialize them.
+    ///
+    /// It deliberately does **not** run [`TemplateProcessingBuilder::validate`]. Loading a config is
+    /// not the same thing as building a template by hand: a `single` template that names a special
+    /// token missing from `special_tokens`, or a `pair` template that only uses sequence A, has
+    /// always been accepted here and rejected later, when the template is lowered into the pipeline
+    /// (`conversion_rejects_template_with_unknown_special_token` in `tk-convert`'s `lowering` tests
+    /// is the test that pins that down). Validating here would turn a "not supported" conversion
+    /// error into a parse error and change which files load at all.
+    pub fn from_parts(single: Template, pair: Template, special_tokens: Tokens) -> Self {
+        let added_single = count_added(&single, Some(&special_tokens));
+        let added_pair = count_added(&pair, Some(&special_tokens));
+        Self {
+            single,
+            pair,
+            added_single,
+            added_pair,
+            special_tokens,
+        }
+    }
+
     // Getter for `single`
     pub fn get_single(&self) -> String {
         format!("{:?}", self.single)
@@ -413,6 +481,82 @@ impl TemplateProcessing {
     }
 }
 
+/// Builds a [`TemplateProcessing`], validating the templates against `special_tokens` first.
+///
+/// Every field has a default, so the only way `build` can fail is [`Self::validate`].
+#[derive(Debug, Clone, Default)]
+pub struct TemplateProcessingBuilder {
+    single: Option<Template>,
+    pair: Option<Template>,
+    special_tokens: Option<Tokens>,
+}
+
+/// The error [`TemplateProcessingBuilder::build`] returns: a validation message, verbatim.
+#[derive(Debug)]
+pub struct TemplateProcessingBuilderError(String);
+
+impl std::fmt::Display for TemplateProcessingBuilderError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for TemplateProcessingBuilderError {}
+
+impl From<String> for TemplateProcessingBuilderError {
+    fn from(e: String) -> Self {
+        Self(e)
+    }
+}
+
+impl TemplateProcessingBuilder {
+    pub fn single(&mut self, single: Template) -> &mut Self {
+        self.single = Some(single);
+        self
+    }
+
+    pub fn try_single<T: TryInto<Template>>(&mut self, single: T) -> StdResult<&mut Self, T::Error> {
+        self.single = Some(single.try_into()?);
+        Ok(self)
+    }
+
+    pub fn pair(&mut self, pair: Template) -> &mut Self {
+        self.pair = Some(pair);
+        self
+    }
+
+    pub fn try_pair<T: TryInto<Template>>(&mut self, pair: T) -> StdResult<&mut Self, T::Error> {
+        self.pair = Some(pair.try_into()?);
+        Ok(self)
+    }
+
+    pub fn special_tokens<T: Into<Tokens>>(&mut self, special_tokens: T) -> &mut Self {
+        self.special_tokens = Some(special_tokens.into());
+        self
+    }
+
+    pub fn build(&self) -> StdResult<TemplateProcessing, TemplateProcessingBuilderError> {
+        self.validate()?;
+        // `added_single`/`added_pair` are counted off the *builder's* fields, before the defaults
+        // below are substituted -- an unset `single` counts 0 rather than counting `"$0"`. That is
+        // what the `default = "self.default_added(..)"` attribute did, and both agree anyway,
+        // because neither default template names a special token.
+        Ok(TemplateProcessing {
+            added_single: self.default_added(true),
+            added_pair: self.default_added(false),
+            single: self
+                .single
+                .clone()
+                .unwrap_or_else(|| "$0".try_into().unwrap()),
+            pair: self
+                .pair
+                .clone()
+                .unwrap_or_else(|| "$A:0 $B:1".try_into().unwrap()),
+            special_tokens: self.special_tokens.clone().unwrap_or_default(),
+        })
+    }
+}
+
 impl From<&str> for TemplateProcessingBuilderError {
     fn from(e: &str) -> Self {
         e.to_string().into()
@@ -422,30 +566,6 @@ impl From<&str> for TemplateProcessingBuilderError {
 impl PartialEq for TemplateProcessingBuilderError {
     fn eq(&self, other: &Self) -> bool {
         self.to_string() == other.to_string()
-    }
-}
-
-/// We use this custom deserializer to provided the values for `added_single`
-/// and `added_pair` during deserialization, while not having to serialize them
-#[doc(hidden)]
-#[derive(Deserialize)]
-#[serde(tag = "type")]
-struct TemplateProcessingDeserializer {
-    single: Template,
-    pair: Template,
-    special_tokens: Tokens,
-}
-impl From<TemplateProcessingDeserializer> for TemplateProcessing {
-    fn from(t: TemplateProcessingDeserializer) -> Self {
-        let added_single = count_added(&t.single, Some(&t.special_tokens));
-        let added_pair = count_added(&t.pair, Some(&t.special_tokens));
-        Self {
-            single: t.single,
-            pair: t.pair,
-            added_single,
-            added_pair,
-            special_tokens: t.special_tokens,
-        }
     }
 }
 
@@ -702,34 +822,6 @@ mod tests {
     use std::iter::FromIterator;
 
     #[test]
-    fn piece_serde() {
-        let seq_0 = Piece::Sequence {
-            id: Sequence::A,
-            type_id: 0,
-        };
-        let seq_0_s = r#"{"Sequence":{"id":"A","type_id":0}}"#;
-
-        assert_eq!(serde_json::to_string(&seq_0).unwrap(), seq_0_s);
-        assert_eq!(serde_json::from_str::<Piece>(seq_0_s).unwrap(), seq_0);
-
-        let seq_1 = Piece::Sequence {
-            id: Sequence::B,
-            type_id: 1,
-        };
-        let seq_1_s = r#"{"Sequence":{"id":"B","type_id":1}}"#;
-        assert_eq!(serde_json::to_string(&seq_1).unwrap(), seq_1_s);
-        assert_eq!(serde_json::from_str::<Piece>(seq_1_s).unwrap(), seq_1);
-
-        let spe = Piece::SpecialToken {
-            id: "[CLS]".into(),
-            type_id: 0,
-        };
-        let spe_s = r#"{"SpecialToken":{"id":"[CLS]","type_id":0}}"#;
-        assert_eq!(serde_json::to_string(&spe).unwrap(), spe_s);
-        assert_eq!(serde_json::from_str::<Piece>(spe_s).unwrap(), spe);
-    }
-
-    #[test]
     fn piece() {
         assert_eq!(
             Ok(Piece::Sequence {
@@ -770,29 +862,12 @@ mod tests {
         assert!(Piece::try_from("$A:").is_err());
     }
 
+    /// The other half of what used to be `special_token_serde`: the JSON round-trip moved to
+    /// `tk-convert`'s mirror, but the length check belongs to [`SpecialToken::new`] and stays here.
+    /// Note that [`SpecialToken::from_parts`], which the config path uses, deliberately has no such
+    /// check -- see its docs.
     #[test]
-    fn special_token_serde() {
-        let simple = SpecialToken::from(("[CLS]", 0));
-        let simple_s = r#"{"id":"[CLS]","ids":[0],"tokens":["[CLS]"]}"#;
-        assert_eq!(serde_json::to_string(&simple).unwrap(), simple_s);
-        assert_eq!(
-            serde_json::from_str::<SpecialToken>(simple_s).unwrap(),
-            simple
-        );
-
-        let complete = SpecialToken::new(
-            "[2FR]".into(),
-            vec![1, 2, 3],
-            vec!["convert".into(), "to".into(), "FR".into()],
-        )
-        .unwrap();
-        let complete_s = r#"{"id":"[2FR]","ids":[1,2,3],"tokens":["convert","to","FR"]}"#;
-        assert_eq!(serde_json::to_string(&complete).unwrap(), complete_s);
-        assert_eq!(
-            serde_json::from_str::<SpecialToken>(complete_s).unwrap(),
-            complete
-        );
-
+    fn special_token_ids_and_tokens_must_match() {
         let malformed = SpecialToken::new(
             "[2FR]".into(),
             vec![1, 2],
@@ -807,36 +882,6 @@ mod tests {
         assert!(malformed.is_err());
     }
 
-    #[test]
-    fn template_serde() {
-        let template = Template(vec![
-            Piece::Sequence {
-                id: Sequence::A,
-                type_id: 0,
-            },
-            Piece::SpecialToken {
-                id: "[CLS]".into(),
-                type_id: 0,
-            },
-        ]);
-        let template_s =
-            r#"[{"Sequence":{"id":"A","type_id":0}},{"SpecialToken":{"id":"[CLS]","type_id":0}}]"#;
-        assert_eq!(serde_json::to_string(&template).unwrap(), template_s);
-        assert_eq!(
-            serde_json::from_str::<Template>(template_s).unwrap(),
-            template
-        );
-    }
-
-    #[test]
-    fn tokens_serde() {
-        let tokens = Tokens::from(vec![("[CLS]", 1), ("[SEP]", 0)]);
-        let tokens_s = r#"{"[CLS]":{"id":"[CLS]","ids":[1],"tokens":["[CLS]"]},"[SEP]":{"id":"[SEP]","ids":[0],"tokens":["[SEP]"]}}"#;
-        let tokens_ser = serde_json::to_string(&tokens).unwrap();
-        assert_eq!(tokens_ser, tokens_s);
-        assert_eq!(serde_json::from_str::<Tokens>(tokens_s).unwrap(), tokens);
-    }
-
     fn get_bert_template() -> TemplateProcessing {
         TemplateProcessing::builder()
             .try_single(vec!["[CLS]", "$0", "[SEP]"])
@@ -846,39 +891,6 @@ mod tests {
             .special_tokens(vec![("[CLS]", 1), ("[SEP]", 0)])
             .build()
             .unwrap()
-    }
-
-    #[test]
-    fn template_processing_serde() {
-        let template = tests::get_bert_template();
-        let template_s = "{\
-            \"type\":\"TemplateProcessing\",\
-            \"single\":[\
-                {\"SpecialToken\":{\"id\":\"[CLS]\",\"type_id\":0}},\
-                {\"Sequence\":{\"id\":\"A\",\"type_id\":0}},\
-                {\"SpecialToken\":{\"id\":\"[SEP]\",\"type_id\":0}}\
-            ],\
-            \"pair\":[\
-                {\"SpecialToken\":{\"id\":\"[CLS]\",\"type_id\":0}},\
-                {\"Sequence\":{\"id\":\"A\",\"type_id\":0}},\
-                {\"SpecialToken\":{\"id\":\"[SEP]\",\"type_id\":0}},\
-                {\"Sequence\":{\"id\":\"B\",\"type_id\":1}},\
-                {\"SpecialToken\":{\"id\":\"[SEP]\",\"type_id\":1}}\
-            ],\
-            \"special_tokens\":{\
-                \"[CLS]\":{\
-                    \"id\":\"[CLS]\",\"ids\":[1],\"tokens\":[\"[CLS]\"]\
-                },\
-                \"[SEP]\":{\
-                    \"id\":\"[SEP]\",\"ids\":[0],\"tokens\":[\"[SEP]\"]\
-                }\
-            }}";
-        let template_ser = serde_json::to_string(&template).unwrap();
-        assert_eq!(template_ser, template_s);
-        assert_eq!(
-            serde_json::from_str::<TemplateProcessing>(template_s).unwrap(),
-            template
-        );
     }
 
     #[test]

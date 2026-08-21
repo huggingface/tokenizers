@@ -17,38 +17,28 @@
 
 The 🤗 Tokenizers library.
 
-Starting with `0.23`, the implementation is split across two public crates (each built on internal
-engines — `tk_encode` on the `atomsplit` SIMD pre-tokenizer, and the shared `bitmap_gen` tables):
+The implementation is split across crates (each built on internal engines — `tk_encode` on the
+`atomsplit` SIMD pre-tokenizer, and the shared `bitmap_gen` tables):
 
-- [`tk_encode`] — inference: the model engines, the full pipeline components
-  ([`Normalizer`], [`PreTokenizer`], [`Model`], [`PostProcessor`],
-  [`Decoder`]) and the [`Tokenizer`] orchestration (encode / decode).
-- [`tk_train`] — training: the [`Trainer`] trait, every concrete `*Trainer`,
-  and the [`TokenizerTrainExt`] extension that adds `train` /
-  `train_from_files` onto a [`Tokenizer`].
+- [`tk_encode`] — inference: the model engines and the full pipeline components
+  ([`Normalizer`], [`PreTokenizer`], [`Model`], [`PostProcessor`], [`Decoder`]).
+- `tk_serialize` — the reader: `from_json_file` turns a canonical `tokenizer.json` into a
+  [`pipeline::PipelineTokenizer`], with no serde anywhere.
+- [`tk_convert`] — the upgrade pass: [`canonicalize_file`] rewrites a `tokenizer.json` written by
+  an older version into the canonical form that reader accepts.
 
-This `tokenizers` crate is a thin umbrella that re-exports both so existing
-`tokenizers::…` paths keep working. Training lives behind the (default-on)
-`train` feature; disable default features for an inference-only build.
+This `tokenizers` crate is a thin umbrella that re-exports them so existing `tokenizers::…`
+paths keep working.
 
-### Deserialization and tokenization example
+### What rc0 does not have
 
-```rust
-use tokenizers::tokenizer::{Result, Tokenizer, EncodeInput};
-use tokenizers::models::bpe::BPE;
+The `Tokenizer` object model — `Tokenizer::new`, the component setters, `add_tokens`,
+`save`, `from_pretrained`, truncation and padding — and the trainers are **not** in this
+release. [`pipeline::PipelineTokenizer`] is read-only: it encodes and decodes what a
+`tokenizer.json` describes and has no way to be built up or written back out. See
+`REQUIRED_FOR_V1.md` at the repository root for the full list and why each one is deferred.
 
-fn main() -> Result<()> {
-    let bpe_builder = BPE::from_file("./path/to/vocab.json", "./path/to/merges.txt");
-    let bpe = bpe_builder
-        .dropout(0.1)
-        .unk_token("[UNK]".into())
-        .build()?;
+### Tokenization example
 
-    let mut tokenizer = Tokenizer::new(bpe);
-
-    let encoding = tokenizer.encode("Hey there!", false)?;
-    println!("{:?}", encoding.get_tokens());
-
-    Ok(())
-}
-```
+Read a config and encode with it. The example lives in `tk-serialize`, which is the only crate
+that can compile it.

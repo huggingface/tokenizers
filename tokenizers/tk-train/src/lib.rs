@@ -2,20 +2,19 @@
 //!
 //! This crate builds on top of [`tk_encode`] and provides everything related to
 //! *training* a tokenizer: the [`Trainer`] trait, every concrete `*Trainer`, the
-//! [`TrainerWrapper`] enum, the [`Trainable`] extension (the `get_trainer`
-//! association that used to live on `tk_encode::Model`), and the
-//! [`TokenizerTrainExt`] extension that adds `train` / `train_from_files` back
-//! onto `tk_encode`'s `Tokenizer`.
+//! [`TrainerWrapper`] enum and the [`Trainable`] extension (the `get_trainer`
+//! association that used to live on `tk_encode::Model`).
+//!
+//! There is no tokenizer-level `train` / `train_from_files` entry point: it was an
+//! extension trait on `tk_convert`'s `TokenizerImpl`, and nothing in `tk-encode`
+//! replaces that type -- the pipeline tokenizer hands out its model by shared
+//! reference only. Drive a trainer directly instead: `feed`, then `train`.
 
-#[macro_use]
-extern crate derive_builder;
-
-mod train_ext;
+pub mod added_token_serde;
 mod trainable;
 mod trainer;
 pub mod trainers;
 
-pub use train_ext::TokenizerTrainExt;
-pub use trainable::Trainable;
+pub use trainable::{ModelWrapper, Trainable};
 pub use trainer::Trainer;
 pub use trainers::*;

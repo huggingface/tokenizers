@@ -1,9 +1,8 @@
 use crate::tokenizer::{Encoding, Result};
-use serde::{Deserialize, Serialize};
 use std::cmp;
 use std::mem;
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TruncationDirection {
     Left,
     #[default]
@@ -19,9 +18,10 @@ impl std::convert::AsRef<str> for TruncationDirection {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct TruncationParams {
-    #[serde(default)]
+    /// `#[serde(default)]` because a `truncation` block written before this field existed has to
+    /// keep loading; `test_deserialize_defaults` is the test that says so.
     pub direction: TruncationDirection,
     pub max_length: usize,
     pub strategy: TruncationStrategy,
@@ -49,7 +49,7 @@ pub enum TruncationError {
     SequenceTooShort,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TruncationStrategy {
     #[default]
     LongestFirst,
@@ -166,6 +166,7 @@ mod tests {
     use super::*;
     use crate::tokenizer::Encoding;
     use ahash::AHashMap;
+
 
     fn get_empty() -> Encoding {
         Encoding::new(
@@ -313,14 +314,5 @@ mod tests {
         truncate_and_assert(get_empty(), get_short(), &params, 0, 0);
         truncate_and_assert(get_medium(), get_medium(), &params, 0, 0);
         truncate_and_assert(get_long(), get_long(), &params, 0, 0);
-    }
-
-    #[test]
-    fn test_deserialize_defaults() {
-        let old_truncation_params = r#"{"max_length":256,"strategy":"LongestFirst","stride":0}"#;
-
-        let params: TruncationParams = serde_json::from_str(old_truncation_params).unwrap();
-
-        assert_eq!(params.direction, TruncationDirection::Right);
     }
 }

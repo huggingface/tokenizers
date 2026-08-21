@@ -20,7 +20,7 @@ impl SysRegex {
     }
 }
 
-pub struct Matches<'r, 't>(fancy_regex::Matches<'r, 't>);
+pub struct Matches<'r, 't>(fancy_regex::Matches<'r, 't, str>);
 
 impl Iterator for Matches<'_, '_> {
     type Item = (usize, usize);

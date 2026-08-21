@@ -165,13 +165,17 @@ impl Buckets {
                     next_byte_to_length_id[post_byte] as usize
                 };
                 let l = t.len() as u16;
-                if !length_list[list_index].contains(&l) {
-                    length_list[list_index].push(l);
+                // Insert straight into place, longest first. The scan that used to only answer
+                // "is `l` already in here?" now also says where `l` belongs, which retires the
+                // descending sort that followed -- and with it a whole `[u16]` copy of
+                // core::slice::sort in the binary. These lists are one entry per distinct token
+                // length behind one byte, so a handful of entries at most.
+                let list = &mut length_list[list_index];
+                match list.iter().position(|&x| x <= l) {
+                    Some(p) if list[p] == l => {} // already present
+                    Some(p) => list.insert(p, l),
+                    None => list.push(l),
                 }
-            }
-            // finally sort by longest first
-            for list in length_list.iter_mut() {
-                list.sort_unstable_by(|a, b| b.cmp(a)); // longest first
             }
             debug_assert!(buckets.len() < 0xFF, "more than 254 distinct first bytes");
             first_byte_to_bucket_id[first_b] = buckets.len() as u8;

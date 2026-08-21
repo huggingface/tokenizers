@@ -4,13 +4,13 @@
 #![doc(html_favicon_url = "https://huggingface.co/favicon.ico")]
 #![doc(html_logo_url = "https://huggingface.co/landing/assets/huggingface_logo.svg")]
 
-//! The core of `tokenizers`, written in Rust.
+//! The inference half of `tokenizers`, written in Rust.
 //! Provides an implementation of today's most used tokenizers, with a focus on performance and
 //! versatility.
 //!
 //! # What is a Tokenizer
 //!
-//! A Tokenizer works as a pipeline, it processes some raw text as input and outputs an `Encoding`.
+//! A tokenizer works as a pipeline, it processes some raw text as input and outputs an `Encoding`.
 //! The various steps of the pipeline are:
 //!
 //! 1. The `Normalizer`: in charge of normalizing the text. Common examples of normalization are
@@ -24,47 +24,34 @@
 //! 4. The `PostProcessor`: in charge of post-processing the `Encoding` to add anything relevant
 //!    that, for example, a language model would need, such as special tokens.
 //!
-//! ## Loading a pretrained tokenizer from the Hub
-//! ```
-//! use tk_encode::tokenizer::{Result, Tokenizer};
+//! ## Loading a tokenizer and encoding
 //!
-//! fn main() -> Result<()> {
-//!     # #[cfg(feature = "http")]
-//!     # {
-//!     // needs http feature enabled
-//!     let tokenizer = Tokenizer::from_pretrained("bert-base-cased", None)?;
+//! This crate is the runtime only: it knows how to *encode*, not what a `tokenizer.json` looks
+//! like. Reading one is `tk-serialize`'s job — `tk_serialize::from_json_file` returns the
+//! [`pipeline::PipelineTokenizer`] built here, parsed with `hifijson`, a JSON lexer with no
+//! required dependencies, rather than `serde_json`. (The example lives there, because only that
+//! crate can compile it.)
 //!
-//!     let encoding = tokenizer.encode("Hey there!", false)?;
-//!     println!("{:?}", encoding.get_tokens());
-//!     # }
-//!     Ok(())
-//! }
-//! ```
+//! Two separate reasons, and they are worth keeping apart. `serde_json` is out on *weight*: it
+//! pulls `serde`, `serde_core`, `itoa` and `memchr`, and the whole point of splitting these crates
+//! is that an inference build links no serde at all. `hifijson` has no dependencies whatsoever.
 //!
-//! ## Deserialization and tokenization example
+//! `hifijson` rather than any other small parser is out of *arithmetic*. A Unigram's `vocab` scores
+//! decide the Viterbi lattice, and `serde_json`'s rounding is already baked into ids that ship
+//! today — so a parser that converts numbers to floats its own way moves them, and being more
+//! accurate is a bug, not a fix. `hifijson` never parses a float at all: its `Num` is the raw
+//! `&str`, which is what lets `tk-serialize` reassemble the `f64` to match `serde_json` bit for bit.
 //!
-//! ```no_run
-//! use tk_encode::tokenizer::{Result, Tokenizer, EncodeInput};
-//! use tk_encode::models::bpe::BPE;
+//! There is no `Tokenizer` type here to build up and mutate. What you get is a finished
+//! [`pipeline::PipelineTokenizer`] — from `tk_serialize::from_json_file`, or from
+//! [`pipeline::PipelineTokenizer::from_parts`] if you assemble the components yourself — and once
+//! built it is read-only: getters, `encode` and `decode`, but no setters, no `save`, and no
+//! `from_pretrained` constructor. Upgrading a config written by an older version is `tk-convert`'s
+//! one remaining job (`canonicalize_file`, re-exported by the `tokenizers` umbrella crate). What an
+//! authoring surface would have to add back is `REQUIRED_FOR_V1.md` at the repository root.
 //!
-//! fn main() -> Result<()> {
-//!     let bpe_builder = BPE::from_file("./path/to/vocab.json", "./path/to/merges.txt");
-//!     let bpe = bpe_builder
-//!         .dropout(0.1)
-//!         .unk_token("[UNK]".into())
-//!         .build()?;
-//!
-//!     let mut tokenizer = Tokenizer::new(bpe);
-//!
-//!     let encoding = tokenizer.encode("Hey there!", false)?;
-//!     println!("{:?}", encoding.get_tokens());
-//!
-//!     Ok(())
-//! }
-//! ```
-//!
-//! Training lives in the companion `tk-train` crate (re-exported by the
-//! `tokenizers` umbrella crate behind the `train` feature).
+//! Training is not part of the shipped crate either. `tk-train` is in the tree and builds on its
+//! own, but it is `exclude`d from the workspace and nothing in `tokenizers` depends on it.
 //!
 //! # Additional information
 //!
@@ -80,13 +67,52 @@
 //!   dependency of the [indicatif](https://crates.io/crates/indicatif) progress bar.
 //!
 //! - **http**: This feature enables downloading the tokenizer via HTTP. It is disabled by default.
-//!   With this feature enabled, `Tokenizer::from_pretrained` becomes accessible.
+//!   It compiles `utils::from_pretrained`, the download half; the `from_pretrained` *constructor*
+//!   that used to sit on top of it went with the config layer (`REQUIRED_FOR_V1.md` §5).
+//!
+//! - **bpe** / **unigram** / **wordpiece** / **wordlevel**: one per model. Only `bpe` is on by
+//!   default, because none of the current SOTA models use anything else. A `tokenizer.json` naming
+//!   a model whose feature is off is refused at load rather than mis-read.
+//!
+//! - **normalizers**: the table-backed normalizers (NFC/NFD/NFKC/NFKD, `Nmt`, `StripAccents`,
+//!   `Bert`, SentencePiece's precompiled charsmap) and the ~150 KB of static Unicode tables behind
+//!   them.
+//!
+//! - **unicode-scripts**: the `UnicodeScripts` pre-tokenizer. Its script table is a 64 KiB
+//!   `LazyLock` plus ~19 KB of generated range matching, and no widely-used `tokenizer.json`
+//!   declares it — hence off by default.
+//!
+//! - **parallelism**: rayon-backed batch encoding.
+//!
+//! - **fancy-regex**: the optional system-regex backend, needed *only* for a genuine regex pattern
+//!   in a `Split` pre-tokenizer or a `Replace` normalizer. The atomsplit-native pre-tokenizers
+//!   (GPT-2, cl100k, o200k, tekken, deepseek, the class family, char-delimiter) need no backend,
+//!   and a literal pattern is searched for directly.
+//!
+//! # Building small
+//!
+//! The default build is the slim one: no serde at all, and only BPE.
+//! `make slim-size` prints its stripped and gzipped size.
+//!
+//! The largest remaining cost is not in this crate: `std`'s panic, unwinding and
+//! backtrace-symbolisation machinery (`addr2line`, `gimli`, `rustc_demangle`, `object`, plus the
+//! build machine's source paths baked into `__cstring`) is about 40% of the gzipped binary. A stable
+//! toolchain cannot drop it; a nightly one can:
+//!
+//! ```text
+//! cargo +nightly build --profile minsize \
+//!   -Z build-std=std,panic_abort \
+//!   -Z build-std-features=panic_immediate_abort ...
+//! ```
+//!
+//! Measured, same features and profile: 360,045 -> 213,744 bytes gzipped (-40.6%). The trade is
+//! real: every panic becomes an immediate `abort` with no message, unwinding or backtrace, so a
+//! panicking input looks like any other crash. Usually fine on-device, rarely fine on a server.
+//! Worth pairing with `--remap-path-prefix` — not for size (~175 bytes compressed) but because a
+//! shipped binary should not contain a developer's home directory.
 
 #[macro_use]
 extern crate log;
-
-#[macro_use]
-extern crate derive_builder;
 
 #[macro_use]
 pub mod utils;

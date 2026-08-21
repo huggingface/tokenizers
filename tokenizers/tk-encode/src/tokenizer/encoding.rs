@@ -4,11 +4,14 @@ use crate::tokenizer::{Offsets, Token};
 use crate::utils::padding::PaddingDirection;
 use crate::utils::truncation::TruncationDirection;
 use ahash::AHashMap;
-use serde::{Deserialize, Serialize};
 use std::ops::Range;
 
 /// Represents the output of a `Tokenizer`.
-#[derive(Default, PartialEq, Debug, Clone, Serialize, Deserialize)]
+///
+/// The serialized shape is the field names below in declaration order, and it is public API rather
+/// than an internal format: `PyEncoding.__getstate__` pickles by serializing one of these, so a
+/// pickle written by an older build has to keep loading. `encoding_round_trips` pins the names.
+#[derive(Default, PartialEq, Debug, Clone)]
 pub struct Encoding {
     /// IDs produced by the `Tokenizer`
     ids: Vec<u32>,
@@ -171,6 +174,11 @@ impl Encoding {
 
     pub fn get_attention_mask(&self) -> &[u32] {
         &self.attention_mask
+    }
+
+    /// The one field a caller outside this crate has no other way to read.
+    pub fn get_sequence_ranges(&self) -> &AHashMap<usize, Range<usize>> {
+        &self.sequence_ranges
     }
 
     pub fn get_overflowing(&self) -> &Vec<Encoding> {
@@ -575,6 +583,7 @@ impl std::iter::FromIterator<(u32, String, (usize, usize), Option<u32>, u32)> fo
 mod tests {
     use super::*;
     use std::iter::FromIterator;
+
 
     #[test]
     fn merge_encodings() {

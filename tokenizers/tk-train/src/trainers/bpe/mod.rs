@@ -2,6 +2,7 @@
 
 #[cfg(feature = "parity-aware-bpe")]
 pub mod parity_trainer;
+mod word;
 #[cfg(feature = "parity-aware-bpe")]
 pub use parity_trainer::{ParityBpeTrainer, ParityBpeTrainerBuilder, ParityVariant};
 
@@ -12,11 +13,18 @@ use dary_heap::OctonaryHeap;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::HashSet;
-use tk_encode::models::bpe::{BPE, Pair, WithFirstLastIterator, Word};
+use tk_encode::vocab::bucket_added_vocabulary::AddedToken;
+// The `Word` machinery a trainer merges into is training-only, so it lives here rather than in the
+// inference crate. `PipelineBPE` is the only BPE left; a trainer reaches it through
+// `from_vocab_and_merges`, the same serde-free door a reader walks through, because its fields are
+// private to `tk-encode`.
+use word::{WithFirstLastIterator, Word};
+
+use tk_encode::Result;
+use tk_encode::models::bpe::{Merges, Pair, PipelineBPE, BpeConfig, Vocab};
 use tk_encode::parallelism::*;
 use tk_encode::utils::progress::{ProgressBar, ProgressFormat, ProgressStyle};
 use tk_encode::vocab::bucket_vocab_store::BucketVocabStore;
-use tk_encode::{AddedToken, Result};
 
 #[derive(Debug, Eq)]
 struct Merge {
@@ -188,17 +196,19 @@ impl BpeTrainerBuilder {
 /// # Examples
 ///
 /// ```
-/// use tk_train::Trainer;
 /// use tk_train::BpeTrainer;
-/// use tk_encode::models::bpe::BPE;
+/// use tk_train::Trainer;
+/// use tk_encode::models::bpe::{PipelineBPE, BpeConfig};
 ///
 /// let sequences = vec![ "Hello", "World" ];
 ///
 /// let mut trainer = BpeTrainer::default();
 /// trainer.feed(sequences.iter(), |s| Ok(vec![s.to_owned()]));
 ///
-/// let mut model = BPE::default();
-/// let special_tokens = trainer.train(&mut model).unwrap();
+/// // `PipelineBPE` has no empty state to train *into* -- it only exists once there is a
+/// // vocabulary and a merge list -- so take the parts and build it.
+/// let (vocab, merges, special_tokens) = trainer.train_vocab().unwrap();
+/// let model = PipelineBPE::from_config(BpeConfig { vocab: vocab, merges: merges, ..BpeConfig::default() }).unwrap();
 /// ```
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq)]
@@ -210,8 +220,14 @@ pub struct BpeTrainer {
     /// Whether to show progress while training
     pub show_progress: bool,
     /// Progress output format (Indicatif, JsonLines, or Silent)
+    ///
+    /// `ProgressFormat` is a `tk-encode` type and carries no serde of its own; `tk-convert` used to
+    /// own its on-disk shape, and that layer is gone. It only decides how progress is *displayed*,
+    /// so it is skipped rather than given a shape here, and falls back to its `Default`.
+    #[serde(skip)]
     pub progress_format: ProgressFormat,
     /// A list of special tokens that the model should know of
+    #[serde(with = "crate::added_token_serde")]
     pub special_tokens: Vec<AddedToken>,
     /// Whether to limit the number of initial tokens that can be kept before computing merges
     pub limit_alphabet: Option<usize>,
@@ -457,11 +473,39 @@ impl BpeTrainer {
             )
     }
 
+    /// Train and hand back the raw parts, for a caller that wants them rather than a built model.
+    ///
+    /// The WordPiece trainer is the one caller: it trains a BPE and reinterprets the vocabulary as
+    /// WordPiece pieces, so building a `PipelineBPE` first -- merge tables and all -- would be work
+    /// thrown away.
+    pub fn train_vocab(&self) -> Result<(Vocab, Merges, Vec<AddedToken>)> {
+        self.do_train(&self.words)
+    }
+
+    /// The runtime options a trained model is built with.
+    ///
+    /// The two affixes are the only settings a BPE trainer decides: everything else in
+    /// [`BpeConfig`] describes how to *read* a model (unknown-token handling, dropout,
+    /// caching) and is the reader's business, not the trainer's, so it stays at its default.
+    fn model_options(&self) -> BpeConfig {
+        BpeConfig {
+            continuing_subword_prefix: self.continuing_subword_prefix.clone(),
+            end_of_word_suffix: self.end_of_word_suffix.clone(),
+            ..Default::default()
+        }
+    }
+
+    /// Runs the training and returns the vocabulary and merge list it produced, plus the special
+    /// tokens the caller has to add alongside them.
+    ///
+    /// It hands back `(Vocab, Merges)` rather than filling in a model because that pair *is* what a
+    /// `tokenizer.json` stores, and `PipelineBPE` can only be built from it -- see
+    /// [`PipelineBPE::from_vocab_and_merges`]. The WordPiece trainer wants the vocabulary alone, so
+    /// splitting the two also saves it building merge tables it would throw away.
     pub fn do_train(
         &self,
         word_counts: &AHashMap<CompactString, u64>,
-        model: &mut BPE,
-    ) -> Result<Vec<AddedToken>> {
+    ) -> Result<(Vocab, Merges, Vec<AddedToken>)> {
         let mut word_to_id: AHashMap<CompactString, u32> = AHashMap::with_capacity(self.vocab_size);
         let mut id_to_word: Vec<CompactString> = Vec::with_capacity(self.vocab_size);
         let max_token_length: usize = self.max_token_length.unwrap_or(usize::MAX);
@@ -613,33 +657,38 @@ impl BpeTrainer {
         }
         self.finalize_progress(&progress, merges.len(), "Compute merges");
 
-        // Transfer new vocab & options to model
-        model.vocab = BucketVocabStore::build(
-            word_to_id
-                .into_iter()
-                // we have to look up the string in id_to_word because the key in word_to_id is a hash
-                .map(|(_key, val)| (id_to_word[val as usize].to_string().into_bytes(), val))
-                .collect(),
-        );
-        model.merges = merges
+        // The vocabulary, keyed by the token string rather than by `word_to_id`'s hash: we have to
+        // look the string up in `id_to_word` either way.
+        let vocab: Vocab = word_to_id
             .into_iter()
-            .enumerate()
-            .map(|(i, (pair, new_token_id))| (pair, (i as u32, new_token_id)))
+            .map(|(_key, val)| (id_to_word[val as usize].to_string(), val))
             .collect();
 
-        model.continuing_subword_prefix = self.continuing_subword_prefix.clone();
-        model.end_of_word_suffix = self.end_of_word_suffix.clone();
+        // `merges` holds id pairs, highest priority first; the on-disk form is the two token
+        // strings, which is also what `from_vocab_and_merges` re-derives its ranks from. Order is
+        // the rank, so it has to be preserved.
+        let merges: Merges = merges
+            .into_iter()
+            .map(|(pair, _new_token_id)| {
+                (
+                    id_to_word[pair.0 as usize].to_string(),
+                    id_to_word[pair.1 as usize].to_string(),
+                )
+            })
+            .collect();
 
-        Ok(self.special_tokens.clone())
+        Ok((vocab, merges, self.special_tokens.clone()))
     }
 }
 
 impl Trainer for BpeTrainer {
-    type Model = BPE;
+    type Model = PipelineBPE;
 
     /// Train a BPE model
-    fn train(&self, model: &mut BPE) -> Result<Vec<AddedToken>> {
-        self.do_train(&self.words, model)
+    fn train(&self, model: &mut PipelineBPE) -> Result<Vec<AddedToken>> {
+        let (vocab, merges, special_tokens) = self.do_train(&self.words)?;
+        *model = PipelineBPE::from_config(BpeConfig { vocab: vocab, merges: merges, ..self.model_options() })?;
+        Ok(special_tokens)
     }
 
     /// Whether we should show progress
@@ -681,10 +730,9 @@ impl Trainer for BpeTrainer {
 
 #[cfg(test)]
 mod tests {
-    use super::BpeTrainer;
+    use super::{BpeTrainer, Merges};
     use ahash::AHashMap;
     use compact_str::CompactString;
-    use tk_encode::models::bpe::{BPE, Pair};
 
     #[test]
     fn test_train() {
@@ -708,8 +756,7 @@ mod tests {
             .show_progress(false)
             .min_frequency(2)
             .build();
-        let mut model = BPE::default();
-        trainer.do_train(&word_counts, &mut model).unwrap();
+        let (trained_vocab, merges, _special_tokens) = trainer.do_train(&word_counts).unwrap();
 
         // Vocab should contain all of the characters from the `word_counts` mapping
         // as well as three merges: 're', 'are', and 'is'.
@@ -743,22 +790,17 @@ mod tests {
         .iter()
         .cloned()
         .collect();
-        let trained_vocab: AHashMap<String, u32> = model.get_vocab().into_iter().collect();
         assert_eq!(trained_vocab, expected_vocab);
 
-        // The keys in `merges` are pairs of symbols, the values are tuples of (rank, id),
-        // where 'rank' determines the order in which this merge will be applied during
-        // tokenization, and 'id' is the vocab id of the symbol resulting from merging
-        // the pair of symbols in the corresponding key.
-        let expected_merges: AHashMap<Pair, (u32, u32)> = [
-            ((17, 11), (0, 22)), // 'r' + 'e'  -> 're'
-            ((8, 22), (1, 23)),  // 'a' + 're' -> 'are'
-            ((13, 18), (2, 24)), // 'i' + 's'  -> 'is'
-        ]
-        .iter()
-        .cloned()
-        .collect();
-        assert_eq!(model.merges, expected_merges);
+        // `merges` is the pair of symbol *strings* per merge, highest priority first -- the on-disk
+        // form, and what `PipelineBPE::from_vocab_and_merges` re-derives its ranks from. Position in
+        // the list is the rank, so the order is part of what is being asserted.
+        let expected_merges: Merges = vec![
+            ("r".into(), "e".into()),  // 'r' + 'e'  -> 're'
+            ("a".into(), "re".into()), // 'a' + 're' -> 'are'
+            ("i".into(), "s".into()),  // 'i' + 's'  -> 'is'
+        ];
+        assert_eq!(merges, expected_merges);
     }
     #[test]
     fn bpe_test_max_token_length_16() {
@@ -790,9 +832,7 @@ mod tests {
             .show_progress(false)
             .min_frequency(0)
             .build();
-        let mut model = BPE::default();
-        trainer.do_train(&long_word_counts, &mut model).unwrap();
-        let vocab = model.get_vocab();
+        let (vocab, _merges, _special_tokens) = trainer.do_train(&long_word_counts).unwrap();
         for token in vocab.keys() {
             assert!(
                 token.chars().count() <= max_token_length,
@@ -830,9 +870,8 @@ mod tests {
             .show_progress(false)
             .min_frequency(0)
             .build();
-        let mut model = BPE::default();
-        trainer.do_train(&long_word_counts, &mut model).unwrap();
-        let trained_vocab: AHashMap<String, u32> = model.get_vocab().into_iter().collect();
+        let (trained_vocab, _merges, _special_tokens) =
+            trainer.do_train(&long_word_counts).unwrap();
         let expected_vocab: AHashMap<String, u32> = [
             ("短", 12),
             ("n", 6),
