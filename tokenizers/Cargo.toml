@@ -10,14 +10,15 @@ exclude = ["tk-train"]
 
 [package]
 authors = [
-  "Anthony MOI <m.anthony.moi@gmail.com>",
-  "Nicolas Patry <patry.nicolas@protonmail.com>",
   "Arthur Zucker <arthur@huggingface.co",
   "Luc Georges <luc@huggingface.co",
+  "Simon Brandeis <simon@huggingface.co",
+  "Anthony MOI <m.anthony.moi@gmail.com>",
+  "Nicolas Patry <patry.nicolas@protonmail.com>",
 ]
 edition = "2024"
 name = "tokenizers"
-version = "0.23.2-dev.0"
+version = "1.0.0-rc.0"
 homepage = "https://github.com/huggingface/tokenizers"
 repository = "https://github.com/huggingface/tokenizers"
 documentation = "https://docs.rs/tokenizers/"
@@ -25,10 +26,7 @@ license = "Apache-2.0"
 keywords = ["tokenizer", "NLP", "huggingface", "BPE", "WordPiece"]
 readme = "./README.md"
 description = """
-Provides an implementation of today's most used tokenizers,
-with a focus on performances and versatility. Umbrella crate re-exporting
-`tk-encode` (inference).
-"""
+Fastest implementation of the most used tokenizers in AI. """
 # Every test and bench in this crate drives the *authoring* surface -- `Tokenizer::new`,
 # `with_pre_tokenizer`, `add_tokens`, `save`, the trainers -- which rc0 does not have:
 # `PipelineTokenizer` is read-only and has 0 setters (`REQUIRED_FOR_V1.md` §1). So all 9 benches and
@@ -60,30 +58,22 @@ bench = false
 [dependencies]
 # The umbrella is the "everything on" crate: existing `tokenizers::…` users and both bindings get
 # the full surface, so `tk-encode`'s slim defaults never reach them.
-tk-encode = { path = "tk-encode", version = "0.23.2-dev.0", default-features = false, features = [
+tk-encode = { path = "tk-encode", version = "1.0.0-rc.0", default-features = false, features = [
   "parallelism",
-  # The components' own serde. `tk-convert` asks for it as well; spelled out here too because this
-  # crate's whole job is the full surface, and `PyEncoding`'s pickling reaches it directly.
   "serde",
   "normalizers",
   "bpe",
   "unigram",
   "wordpiece",
   "wordlevel",
-  # `tokenizers::pre_tokenizers::unicode_scripts` predates the split and is public API.
   "unicode-scripts",
 ] }
-# The legacy-config upgrade pass, all that is left of the config layer. It forwards no features any
-# more -- it depends on neither `tk-encode` nor serde -- so it is named here for one reason: to keep
-# `tokenizers::canonicalize_file` and friends reachable from the facade.
-tk-convert = { path = "tk-convert", version = "0.23.2-dev.0", default-features = false }
+tk-convert = { path = "tk-convert", version = "1.0.0-rc.0", default-features = false }
 
 [features]
-# `train` and `esaxx_fast` are gone with `tk-train` (excluded from the workspace above), and
-# `parity-aware-bpe` was a trainer knob. Everything left forwards to `tk-encode` alone.
-default = ["progressbar", "onig"]
+default = ["progressbar"]
 progressbar = ["tk-encode/progressbar"]
-onig = ["tk-encode/fancy-regex"]
+regex = ["tk-encode/fancy-regex"]
 http = ["tk-encode/http"]
 unstable_wasm = ["tk-encode/unstable_wasm"]
 rustls-tls = ["tk-encode/rustls-tls"]
