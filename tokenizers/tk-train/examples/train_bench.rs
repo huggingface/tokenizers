@@ -14,6 +14,7 @@
 //! to 1.25 s while barely touching an optimised one, i.e. it flatters every speedup measured with
 //! it. Time with the default features; count with the feature on.
 
+use std::io::BufRead;
 use std::time::Instant;
 
 use tk_train::{BpeTrainer, Trainer};
@@ -78,11 +79,15 @@ fn main() {
     let vocab_size: usize = args.next().map_or(8000, |a| a.parse().unwrap());
     let corpus = args.next().unwrap_or_else(|| "../data/big.txt".to_string());
 
-    let text = std::fs::read_to_string(&corpus).expect("corpus");
+    // Streamed, not slurped: `read_to_string` on a 10 GB corpus is 10 GB resident before training
+    // even starts, which dwarfs what the trainer itself holds.
+    let file = std::fs::File::open(&corpus).expect("corpus");
+    let bytes = file.metadata().map(|m| m.len()).unwrap_or(0);
     println!(
         "corpus {corpus}: {:.1} MB, vocab_size {vocab_size}",
-        text.len() as f64 / 1e6
+        bytes as f64 / 1e6
     );
+    let reader = std::io::BufReader::with_capacity(1 << 20, file);
 
     let mut trainer = BpeTrainer::builder()
         .show_progress(false)
@@ -92,7 +97,7 @@ fn main() {
     // Whitespace split, so the measurement is the trainer and not a pre-tokenizer.
     let t = Instant::now();
     trainer
-        .feed(text.lines(), |line| {
+        .feed(reader.lines().map(|l| l.expect("read")), |line| {
             Ok(line.split_whitespace().map(str::to_owned).collect())
         })
         .expect("feed");
