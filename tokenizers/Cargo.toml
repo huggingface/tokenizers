@@ -80,13 +80,13 @@ rustls-tls = ["tk-encode/rustls-tls"]
 
 
 [dev-dependencies]
-criterion = "0.6"
+criterion = "0.8"
 serde_json = "1.0"
-ahash = "0.8.11"
-tempfile = "3.10"
+ahash = "0.8.12"
+tempfile = "3.27"
 assert_approx_eq = "1.1"
 tracing = "0.1"
-tracing-subscriber = "0.3.18"
+tracing-subscriber = "0.3.23"
 
 [profile.release]
 lto = "fat"

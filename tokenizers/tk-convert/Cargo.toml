@@ -70,10 +70,10 @@ tk-serialize = { path = "../tk-serialize", features = [
 # `PipelineTokenizer` is named explicitly in the tests and benches (as a type annotation and in the
 # oracles' signatures), so it has to be in scope even though the library half no longer mentions it.
 tk-encode = { path = "../tk-encode", default-features = false, features = ["fancy-regex"] }
-criterion = "0.6"
-rayon = "1.10"
+criterion = "0.8"
+rayon = "1.12"
 # `canonicalize_file`'s own tests write real files.
-tempfile = "3.10"
+tempfile = "3.27"
 
 
 [[bench]]
