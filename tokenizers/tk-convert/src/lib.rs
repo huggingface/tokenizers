@@ -11,10 +11,10 @@
 //! [`canonicalize_value`] — and it depends on nothing but `std::path` and `serde_json`.
 //!
 //! Configs written before the `"type"` tag existed, merges spelled `"a b"` rather than
-//! `["a", "b"]`, a `Metaspace` spelled with `add_prefix_space`, a vocabulary given as a file path,
-//! a `Unigram` identified only by the shape of its vocab: every one of those is recognised here and
-//! rewritten into the one spelling the slim reader accepts. Anything genuinely ambiguous is
-//! *refused* with a [`ConvertError`] naming what a human has to decide, rather than guessed at.
+//! `["a", "b"]`, a `Metaspace` spelled with `add_prefix_space`, a `Unigram` identified only by the
+//! shape of its vocab: every one of those is recognised here and rewritten into the one spelling
+//! the slim reader accepts. Anything genuinely ambiguous is *refused* with a [`ConvertError`]
+//! naming what a human has to decide, rather than guessed at.
 //!
 pub mod convert;
 

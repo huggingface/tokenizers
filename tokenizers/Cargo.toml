@@ -6,10 +6,10 @@ exclude = ["tk-train"]
 [package]
 authors = [
   "Arthur Zucker <arthur@huggingface.co",
+  "Nicolas Patry <patry.nicolas@protonmail.com>",
+  "Anthony MOI <m.anthony.moi@gmail.com>",
   "Luc Georges <luc@huggingface.co",
   "Simon Brandeis <simon@huggingface.co",
-  "Anthony MOI <m.anthony.moi@gmail.com>",
-  "Nicolas Patry <patry.nicolas@protonmail.com>",
 ]
 edition = "2024"
 name = "tokenizers"
