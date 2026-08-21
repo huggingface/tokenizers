@@ -404,8 +404,7 @@ impl From<AHashMap<String, SpecialToken>> for Tokens {
 /// ignores an internally-tagged struct's tag value on the way in. All three written fields are
 /// required, which is what stops a `{"sep":...,"cls":...}` Bert object from being read as an empty
 /// template by the untagged wrapper.
-#[derive(Debug, Clone, PartialEq, Builder, Eq)]
-#[builder(build_fn(validate = "Self::validate"))]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(
     feature = "serde",
@@ -415,19 +414,14 @@ impl From<AHashMap<String, SpecialToken>> for Tokens {
     )
 )]
 pub struct TemplateProcessing {
-    #[builder(try_setter, default = "\"$0\".try_into().unwrap()")]
     pub single: Template,
-    #[builder(try_setter, default = "\"$A:0 $B:1\".try_into().unwrap()")]
     pub(crate) pair: Template,
     // `added_single` and `added_pair` are derived from the other three fields by `count_added`, so
     // they are never written to disk and never read back from it: `from_parts` recomputes them.
-    #[builder(setter(skip), default = "self.default_added(true)")]
     #[cfg_attr(feature = "serde", serde(skip))]
     added_single: usize,
-    #[builder(setter(skip), default = "self.default_added(false)")]
     #[cfg_attr(feature = "serde", serde(skip))]
     added_pair: usize,
-    #[builder(setter(into), default)]
     special_tokens: Tokens,
 }
 
@@ -505,6 +499,82 @@ impl TemplateProcessing {
     // Setter for `special_tokens`
     pub fn set_special_tokens(&mut self, special_tokens: Tokens) {
         self.special_tokens = special_tokens;
+    }
+}
+
+/// Builds a [`TemplateProcessing`], validating the templates against `special_tokens` first.
+///
+/// Every field has a default, so the only way `build` can fail is [`Self::validate`].
+#[derive(Debug, Clone, Default)]
+pub struct TemplateProcessingBuilder {
+    single: Option<Template>,
+    pair: Option<Template>,
+    special_tokens: Option<Tokens>,
+}
+
+/// The error [`TemplateProcessingBuilder::build`] returns: a validation message, verbatim.
+#[derive(Debug)]
+pub struct TemplateProcessingBuilderError(String);
+
+impl std::fmt::Display for TemplateProcessingBuilderError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for TemplateProcessingBuilderError {}
+
+impl From<String> for TemplateProcessingBuilderError {
+    fn from(e: String) -> Self {
+        Self(e)
+    }
+}
+
+impl TemplateProcessingBuilder {
+    pub fn single(&mut self, single: Template) -> &mut Self {
+        self.single = Some(single);
+        self
+    }
+
+    pub fn try_single<T: TryInto<Template>>(&mut self, single: T) -> StdResult<&mut Self, T::Error> {
+        self.single = Some(single.try_into()?);
+        Ok(self)
+    }
+
+    pub fn pair(&mut self, pair: Template) -> &mut Self {
+        self.pair = Some(pair);
+        self
+    }
+
+    pub fn try_pair<T: TryInto<Template>>(&mut self, pair: T) -> StdResult<&mut Self, T::Error> {
+        self.pair = Some(pair.try_into()?);
+        Ok(self)
+    }
+
+    pub fn special_tokens<T: Into<Tokens>>(&mut self, special_tokens: T) -> &mut Self {
+        self.special_tokens = Some(special_tokens.into());
+        self
+    }
+
+    pub fn build(&self) -> StdResult<TemplateProcessing, TemplateProcessingBuilderError> {
+        self.validate()?;
+        // `added_single`/`added_pair` are counted off the *builder's* fields, before the defaults
+        // below are substituted -- an unset `single` counts 0 rather than counting `"$0"`. That is
+        // what the `default = "self.default_added(..)"` attribute did, and both agree anyway,
+        // because neither default template names a special token.
+        Ok(TemplateProcessing {
+            added_single: self.default_added(true),
+            added_pair: self.default_added(false),
+            single: self
+                .single
+                .clone()
+                .unwrap_or_else(|| "$0".try_into().unwrap()),
+            pair: self
+                .pair
+                .clone()
+                .unwrap_or_else(|| "$A:0 $B:1".try_into().unwrap()),
+            special_tokens: self.special_tokens.clone().unwrap_or_default(),
+        })
     }
 }
 

@@ -108,9 +108,6 @@
 extern crate log;
 
 #[macro_use]
-extern crate derive_builder;
-
-#[macro_use]
 pub mod utils;
 pub mod decoders;
 pub mod models;

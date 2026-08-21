@@ -1,11 +1,6 @@
 [workspace]
 resolver = "3"
 members = ["bitmap_gen", "atomsplit", "tk-encode", "tk-serialize", "tk-convert"]
-# `tk-train` builds *config* models: it imports `TokenizerImpl`, `ModelWrapper`, `AddedToken` and the
-# config-shaped `BPE` from `tk-convert` across 8 files, none of which exist in rc0. Excluded rather
-# than deleted -- the trainers are v1 work (`REQUIRED_FOR_V1.md` §2) and this code is where they
-# start -- and excluded rather than left in `members`, because a member that does not build turns
-# `cargo build --workspace` red, which is the one gate rc0 keeps green.
 exclude = ["tk-train"]
 
 [package]
@@ -23,19 +18,19 @@ homepage = "https://github.com/huggingface/tokenizers"
 repository = "https://github.com/huggingface/tokenizers"
 documentation = "https://docs.rs/tokenizers/"
 license = "Apache-2.0"
-keywords = ["tokenizer", "NLP", "huggingface", "BPE", "WordPiece"]
+keywords = [
+  "tokenizer",
+  "NLP",
+  "huggingface",
+  "BPE",
+  "WordPiece",
+  "SIMD",
+  "bitstream",
+  "regex",
+]
 readme = "./README.md"
 description = """
 Fastest implementation of the most used tokenizers in AI. """
-# Every test and bench in this crate drives the *authoring* surface -- `Tokenizer::new`,
-# `with_pre_tokenizer`, `add_tokens`, `save`, the trainers -- which rc0 does not have:
-# `PipelineTokenizer` is read-only and has 0 setters (`REQUIRED_FOR_V1.md` §1). So all 9 benches and
-# all 8 test files are out of the build rather than deleted; they are the specification for the
-# builder v1 has to grow, and they come back with it.
-#
-# Autodiscovery has to be turned off explicitly, not just left un-listed: cargo finds `tests/*.rs`
-# and `benches/*.rs` on its own, so dropping the `[[bench]]` entries alone would not have stopped
-# `cargo build --workspace --all-targets` from compiling them.
 autotests = false
 autobenches = false
 exclude = [
@@ -56,8 +51,6 @@ path = "src/lib.rs"
 bench = false
 
 [dependencies]
-# The umbrella is the "everything on" crate: existing `tokenizers::…` users and both bindings get
-# the full surface, so `tk-encode`'s slim defaults never reach them.
 tk-encode = { path = "tk-encode", version = "1.0.0-rc.0", default-features = false, features = [
   "parallelism",
   "serde",
@@ -76,7 +69,6 @@ progressbar = ["tk-encode/progressbar"]
 regex = ["tk-encode/fancy-regex"]
 http = ["tk-encode/http"]
 unstable_wasm = ["tk-encode/unstable_wasm"]
-rustls-tls = ["tk-encode/rustls-tls"]
 
 
 [dev-dependencies]
@@ -91,9 +83,7 @@ tracing-subscriber = "0.3.23"
 [profile.release]
 lto = "fat"
 
-# What an on-device / edge build actually uses, and the profile the binary-size numbers are quoted
-# under. Kept separate from `release` on purpose: `opt-level = "z"` would wreck the throughput
-# benchmarks, which measure under `release`.
+# This is for a slim, on edge build. Perfs are bound to be worst than the normal release, but it reduces the crate size.
 [profile.minsize]
 inherits = "release"
 opt-level = "z"
@@ -102,19 +92,12 @@ panic = "abort"
 lto = "fat"
 strip = true
 
-# `slimest` is `minsize` plus a rebuilt `std`. It exists because the largest single cost in an
-# encode-only binary is not our code: `std`'s panic, unwinding and backtrace-symbolisation machinery
-# (`addr2line`, `gimli`, `rustc_demangle`, `object`, and the build machine's source paths baked into
-# `__cstring`) is about 40% of the gzipped output. `panic = "abort"` alone does not remove it —
-# libstd ships precompiled with those tables — so it takes `-Z build-std-features=panic_immediate_abort`
-# and therefore nightly.
+# `slimest` is `minsize` plus a rebuilt `std` (about 40% of the gzipped output)
+# Needs `-Z build-std-features=panic_immediate_abort` and therefore nightly version of rust.
 #
-# Use it through `make slimest` / `make slimest-size`, which pass the required `-Z` flags; a bare
+# Used in `make slimest` / `make slimest-size`, which pass the required `-Z` flags; a bare
 # `cargo build --profile slimest` on stable is just `minsize` with a different directory name.
 #
-# The trade is real and deliberate: every panic becomes an immediate `abort` with no message, no
-# unwinding and no backtrace, so a panicking input is indistinguishable from any other crash. That is
-# usually fine on-device and rarely fine on a server.
 [profile.slimest]
 inherits = "minsize"
 

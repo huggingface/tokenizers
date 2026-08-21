@@ -27,6 +27,7 @@ name = "tk_encode"
 path = "src/lib.rs"
 
 [dependencies]
+############ Required dependencies ###############################
 atomsplit = { path = "../atomsplit" }
 rand = "0.10"
 ptr_hash = { version = "2.0.2", default-features = false }
@@ -36,7 +37,6 @@ log = "0.4"
 paste = "1.0.15"
 macro_rules_attribute = "0.2.3"
 thiserror = "2"
-derive_builder = "0.20"
 ahash = "0.8.12"
 dary_heap = "0.3.9"
 memchr = "2.8.3"
@@ -63,56 +63,22 @@ libc = { version = "0.2", optional = true }
 tokenizers-release = { package = "tokenizers", version = "=0.23.1", optional = true }
 
 [features]
-# `fancy-regex` is the OPTIONAL system-regex backend, needed ONLY for a *regex* pattern in a `Split`
-# pre-tokenizer or a `Replace` normalizer — the atomsplit-native pre-tokenizers (GPT-2, cl100k,
-# deepseek, the class family, char-delimiter) need no backend, and a plain string pattern is searched
-# for directly. Without it a stub compiles and those regex paths error at load. Enable with
-# `--features fancy-regex`.
-# Only BPE: none of the current SOTA models use anything else, and the umbrella crate turns the
-# rest back on, so python and existing `tokenizers::…` users are unaffected.
 default = ["bpe"]
-# ponytail: BPE itself is still compiled unconditionally -- the marker exists so `default` states
-# the intent and so a BPE-less build later is a feature change rather than an API one. Gating it for
-# real means threading a cfg through `PipelineBPE`, the byte-level fold and the merge queues, which
-# buys nothing today (the ask is BPE-*only*, not BPE-optional).
 bpe = []
 unigram = []
 wordpiece = ["dep:yada"]
 wordlevel = []
-# The table-backed normalizers: NFC/NFD/NFKC/NFKD, Nmt, StripAccents, Bert, and SentencePiece's
-# precompiled charsmap. Between them they are ~150 KB of static Unicode tables, kept alive by enum
-# arms most tokenizers never construct — so they are a `cfg` on the variants, not just unused code.
-# A tokenizer naming one of these in a build without the feature fails at load, which is correct.
 normalizers = [
   "dep:unicode-normalization",
   "dep:unicode-normalization-alignments",
   "dep:spm_precompiled",
   "dep:unicode-segmentation",
 ]
-# The `UnicodeScripts` pre-tokenizer. Same shape of cost as `normalizers`, and the same reason to be
-# a feature: `get_script` is ~19 KB of generated range-match code and the `BMP_SCRIPT` lookup table
-# it feeds is a `LazyLock<[Script; 0x10000]>`, i.e. another 64 KiB of `__DATA`, all kept alive by an
-# enum arm. Measured on `binsize_pipeline` under `--profile minsize`: turning it off is -84,468
-# stripped (-11.5%) and -11,559 gzipped (-3.3%). Nothing else in the crate reaches it, and no
-# `tokenizer.json` in `data/` names it -- it is a SentencePiece-era pre-tokenizer, and `unigram` is
-# already off by default too. A tokenizer naming it in a build without the feature fails at load,
-# which is correct.
 unicode-scripts = []
-# Every component's own `Serialize`/`Deserialize`: the derives on the types themselves and the
-# hand-written impls in the `serialization.rs` next to each of them. OFF by default, which is the
-# whole point -- the slim reader (`tk-serialize`) builds a pipeline from a canonical `tokenizer.json`
-# with no serde anywhere, so an encode-only build links none of this. `tk-convert` and the
-# `tokenizers` umbrella turn it on, so python, node and every existing `tokenizers::...` user get the
-# full serde surface exactly as before.
-#
-# It is a feature rather than an always-on dependency because serde is most of what an on-device
-# build was paying for: `cargo tree -p tk-encode -e normal -i serde` must show nothing through
-# `tk-encode` with the default set.
 serde = ["dep:serde", "ahash/serde"]
 progressbar = ["indicatif"]
 http = ["hf-hub"]
 unstable_wasm = ["fancy-regex"]
-rustls-tls = ["hf-hub?/rustls-tls"]
 bench-baseline = ["dep:tokenizers-release", "fancy-regex"]
 parallelism = ["dep:rayon", "dep:rayon-cond", "dep:libc"]
 
@@ -127,11 +93,4 @@ tempfile = "3.27"
 assert_approx_eq = "1.1"
 tracing = "0.1"
 tracing-subscriber = "0.3.23"
-# The serde round-trip tests in each `serialization.rs` assert on JSON *strings*, so they need a
-# format to write. A dev-dependency only: no library path here parses or prints JSON, and the
-# `serde` feature pulls `serde` alone.
 serde_json = "1.0"
-
-# The oracles that compare against the serde read path, the benches that load a `tokenizer.json`
-# with it, and the comparative fixture bench moved to `tk-convert` with the `Tokenizer` they are
-# written against. What is left here is the components' own serde and nothing around it.
