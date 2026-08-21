@@ -55,14 +55,9 @@ pub(super) fn read_one_decoder(cfg: &Json<'_>) -> Result<DecoderRuntime> {
     };
 
     Ok(match kind {
-        "ByteLevel" => DecoderRuntime::ByteLevel(ByteLevelDecoder::new(
-            flag("add_prefix_space")?,
-            flag("trim_offsets")?,
-            // The one decoder field with a serde default, and it is `true`.
-            cfg.get_some("use_regex")
-                .and_then(Json::as_bool)
-                .unwrap_or(true),
-        )),
+        // `add_prefix_space`, `trim_offsets` and `use_regex` are read past: the decoder is a fixed
+        // inverse of the byte map and never used them. Older configs still carry them.
+        "ByteLevel" => DecoderRuntime::ByteLevel(ByteLevelDecoder::new()),
         "Replace" => DecoderRuntime::Replace(read_replace_decoder(cfg)?),
         "ByteFallback" => DecoderRuntime::ByteFallback(ByteFallback::new()),
         "Fuse" => DecoderRuntime::Fuse(Fuse::new()),

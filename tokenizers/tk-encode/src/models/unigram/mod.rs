@@ -5,5 +5,8 @@ pub mod model;
 mod serialization;
 mod trie;
 
+#[cfg(test)]
+mod tests;
+
 pub use lattice::*;
 pub use model::*;

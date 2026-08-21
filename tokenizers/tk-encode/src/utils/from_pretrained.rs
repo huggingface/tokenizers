@@ -1,5 +1,5 @@
 use crate::Result;
-use hf_hub::{Repo, RepoType, api::sync::ApiBuilder};
+use hf_hub::{HFClientBuilder, split_id};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -57,12 +57,22 @@ pub fn from_pretrained<S: AsRef<str>>(
         .into());
     }
 
-    let mut builder = ApiBuilder::from_env();
+    // `HFClientBuilder::new()` is the `ApiBuilder::from_env()` of hf-hub 1.x: endpoint, cache dir
+    // and token all fall back to the environment (`HF_ENDPOINT`, `HF_HOME`, `HF_TOKEN`) and to the
+    // token file `huggingface-cli login` writes, and only at `build` time.
+    let mut builder = HFClientBuilder::new();
     if let Some(token) = params.token {
-        builder = builder.with_token(Some(token));
+        builder = builder.token(token);
     }
-    let api = builder.build()?;
-    let repo = Repo::with_revision(identifier, RepoType::Model, params.revision);
-    let api = api.repo(repo);
-    Ok(api.get("tokenizer.json")?)
+    let client = builder.build_sync()?;
+
+    // hf-hub 1.x addresses a repo as owner + name rather than one string. `split_id` yields an
+    // empty owner for a short-form id like `gpt2`, which the repo handle accepts as-is.
+    let (owner, name) = split_id(&identifier);
+    Ok(client
+        .model(owner, name)
+        .download_file()
+        .filename("tokenizer.json")
+        .revision(params.revision)
+        .send()?)
 }

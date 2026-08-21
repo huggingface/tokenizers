@@ -7,6 +7,7 @@ mod merge_hot_cold_queue;
 mod merge_multipass;
 mod model;
 mod pair_map;
+mod serialization;
 mod tables;
 
 #[cfg(test)]
@@ -81,3 +82,4 @@ impl<T: Copy> At for [T] {
 
 // Re-export
 pub use model::*;
+pub use serialization::BpeConfig;

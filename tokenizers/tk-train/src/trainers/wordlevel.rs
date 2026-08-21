@@ -3,28 +3,66 @@ use ahash::AHashMap;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use tk_convert::AddedToken;
+use std::convert::Infallible;
 use tk_encode::Result;
 use tk_encode::models::wordlevel::WordLevel;
 use tk_encode::utils::parallelism::*;
 
 #[non_exhaustive]
-#[derive(Debug, Clone, Builder, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WordLevelTrainer {
     /// The minimum frequency a word must have to be part of the vocabulary
-    #[builder(default = "0")]
     pub min_frequency: u64,
     /// The target vocabulary size
-    #[builder(default = "30_000")]
     pub vocab_size: usize,
     /// Whether to show progress while training
-    #[builder(default = "true")]
     pub show_progress: bool,
     /// A list of special tokens that the model should know of
-    #[builder(default)]
     pub special_tokens: Vec<AddedToken>,
 
-    #[builder(default, private)]
     words: AHashMap<String, u64>,
+}
+
+/// Builds a [`WordLevelTrainer`]. Every field has a default, so `build` cannot fail -- the
+/// [`Infallible`] error is kept only so callers can go on writing `.build().unwrap()`.
+#[derive(Debug, Clone, Default)]
+pub struct WordLevelTrainerBuilder {
+    min_frequency: Option<u64>,
+    vocab_size: Option<usize>,
+    show_progress: Option<bool>,
+    special_tokens: Option<Vec<AddedToken>>,
+}
+
+impl WordLevelTrainerBuilder {
+    pub fn min_frequency(&mut self, min_frequency: u64) -> &mut Self {
+        self.min_frequency = Some(min_frequency);
+        self
+    }
+
+    pub fn vocab_size(&mut self, vocab_size: usize) -> &mut Self {
+        self.vocab_size = Some(vocab_size);
+        self
+    }
+
+    pub fn show_progress(&mut self, show_progress: bool) -> &mut Self {
+        self.show_progress = Some(show_progress);
+        self
+    }
+
+    pub fn special_tokens(&mut self, special_tokens: Vec<AddedToken>) -> &mut Self {
+        self.special_tokens = Some(special_tokens);
+        self
+    }
+
+    pub fn build(&self) -> std::result::Result<WordLevelTrainer, Infallible> {
+        Ok(WordLevelTrainer {
+            min_frequency: self.min_frequency.unwrap_or(0),
+            vocab_size: self.vocab_size.unwrap_or(30_000),
+            show_progress: self.show_progress.unwrap_or(true),
+            special_tokens: self.special_tokens.clone().unwrap_or_default(),
+            words: AHashMap::new(),
+        })
+    }
 }
 
 impl Default for WordLevelTrainer {

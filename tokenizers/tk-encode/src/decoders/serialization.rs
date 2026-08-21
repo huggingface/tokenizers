@@ -1,13 +1,13 @@
 //! The decoders whose serde cannot be a derive on the type.
 //!
-//! Six of the ten decoders are plain data and carry `#[cfg_attr(feature = "serde", derive(…))]` in
-//! their own file, next to the struct. The four here need a hand-written impl:
+//! Five of the ten decoders are plain data and carry `#[cfg_attr(feature = "serde", derive(…))]` in
+//! their own file, next to the struct. The five here need a hand-written impl:
 //!
 //! * `MetaspaceDecoder` and `ReplaceDecoder`, because a field is private behind a getter and the
 //!   value can only be rebuilt through a constructor — `ReplaceDecoder`'s can fail, on a pattern the
 //!   regex backend rejects;
-//! * `Fuse` and `ByteFallback`, because they have no fields at all, and something has to make the
-//!   `"type"` tag *required*.
+//! * `Fuse`, `ByteFallback` and `ByteLevelDecoder`, because they have no fields at all, and
+//!   something has to make the `"type"` tag *required*.
 //!
 //! ## Whether the `"type"` tag is required is per-decoder, and it is load-bearing
 //!
@@ -19,8 +19,9 @@
 //! * **optional** for `BPEDecoder`, `CTC`, `Strip` and `WordPiece`, which carry that bare attribute.
 //!   They are still rejected for a tag-less object in practice, but by a *missing required field*,
 //!   not by the tag.
-//! * **required** for `Metaspace`, `Replace`, `Fuse` and `ByteFallback`, spelled here as a
-//!   one-variant tag enum in a mandatory field. For the two field-less ones nothing else would stop
+//! * **required** for `Metaspace`, `Replace`, `Fuse`, `ByteFallback` and `ByteLevelDecoder`,
+//!   spelled here as a one-variant tag enum in a mandatory field. For the field-less ones nothing
+//!   else would stop
 //!   `{}` from deserializing as a `Fuse`, and `decoder_serialization_no_decode` is the test that
 //!   catches it. That trick is also what keeps `monostate` out of this crate: the field-less
 //!   decoders used to carry a `monostate::MustBe!("Fuse")` for exactly this job.
@@ -32,6 +33,7 @@ use serde::de::Error as _;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::byte_fallback::ByteFallback;
+use super::byte_level::ByteLevelDecoder;
 use super::fuse::Fuse;
 use super::metaspace::{MetaspaceDecoder, PrependScheme};
 use super::replace::ReplaceDecoder;
@@ -155,17 +157,18 @@ impl<'de> Deserialize<'de> for ReplaceDecoder {
 }
 
 // ---------------------------------------------------------------------------------------------
-// ByteFallback and Fuse — no fields, so the tag is the only thing on the wire
+// ByteFallback, Fuse and ByteLevel — no fields, so the tag is the only thing on the wire
 // ---------------------------------------------------------------------------------------------
 
 /// One `Serialize`/`Deserialize` pair for a field-less decoder, where the required tag is all there
-/// is. The type name doubles as the tag's variant name, so `Fuse` becomes `{"type":"Fuse"}`.
+/// is. The tag is spelled out rather than taken from the type name, because the two differ for
+/// `ByteLevelDecoder`, whose tag on disk is `ByteLevel`.
 macro_rules! tag_only {
-    ($ty:ident, $ctor:expr) => {
+    ($ty:ident, $tag:ident, $ctor:expr) => {
         paste::paste! {
             #[derive(Serialize, Deserialize)]
             enum [<$ty Tag>] {
-                $ty,
+                $tag,
             }
 
             #[derive(Serialize, Deserialize)]
@@ -176,7 +179,7 @@ macro_rules! tag_only {
 
             impl Serialize for $ty {
                 fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-                    [<$ty Helper>] { _type: [<$ty Tag>]::$ty }.serialize(s)
+                    [<$ty Helper>] { _type: [<$ty Tag>]::$tag }.serialize(s)
                 }
             }
 
@@ -190,5 +193,6 @@ macro_rules! tag_only {
     };
 }
 
-tag_only!(Fuse, Fuse::new());
-tag_only!(ByteFallback, ByteFallback::new());
+tag_only!(Fuse, Fuse, Fuse::new());
+tag_only!(ByteFallback, ByteFallback, ByteFallback::new());
+tag_only!(ByteLevelDecoder, ByteLevel, ByteLevelDecoder::new());

@@ -7,9 +7,6 @@
 //! [`TokenizerTrainExt`] extension that adds `train` / `train_from_files` back
 //! onto `tk_encode`'s `Tokenizer`.
 
-#[macro_use]
-extern crate derive_builder;
-
 mod train_ext;
 mod trainable;
 mod trainer;

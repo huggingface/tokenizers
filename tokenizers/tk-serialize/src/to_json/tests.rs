@@ -767,14 +767,11 @@ fn decoders_keep_their_fields() {
             }),
         ),
         (
+            // The three flags are read past rather than carried, so they do not come back out --
+            // the decoder is a fixed inverse of the byte map and never used them.
             r#"{"type": "ByteLevel", "add_prefix_space": true,
                 "trim_offsets": false, "use_regex": false}"#,
-            serde_json::json!({
-                "type": "ByteLevel",
-                "add_prefix_space": true,
-                "trim_offsets": false,
-                "use_regex": false
-            }),
+            serde_json::json!({"type": "ByteLevel"}),
         ),
         (
             // A decoder keeps all three prepend schemes: nothing here has to be expressible as a

@@ -21,12 +21,9 @@ pub(super) fn write_decoder(out: &mut Out, decoder: Option<&DecoderRuntime>) -> 
 
 fn write_one(out: &mut Out, decoder: &DecoderRuntime) {
     match decoder {
-        DecoderRuntime::ByteLevel(byte_level) => {
+        DecoderRuntime::ByteLevel(_) => {
             out.obj_open();
             out.type_tag("ByteLevel");
-            out.field_bool("add_prefix_space", byte_level.add_prefix_space);
-            out.field_bool("trim_offsets", byte_level.trim_offsets);
-            out.field_bool("use_regex", byte_level.use_regex);
             out.obj_close();
         }
         DecoderRuntime::Replace(replace) => {

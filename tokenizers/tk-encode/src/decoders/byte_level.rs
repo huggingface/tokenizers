@@ -4,50 +4,26 @@
 //! [`crate::decoders::replace`] for why. `decoders/mod.rs` used to `pub use` the pre-tokenizer
 //! "as a decoder", which is how one type came to sit in three wrappers at once.
 //!
-//! Decoding needs none of the three flags: it is a fixed inverse of the byte→char map. They are
-//! carried anyway so that reading a config and writing it back is lossless.
+//! Decoding needs none of the pre-tokenizer's flags: it is a fixed inverse of the byte→char map.
+//! `add_prefix_space`, `trim_offsets` and `use_regex` used to be carried here so a config could be
+//! read and written back unchanged; nothing read them, so they are gone and the decoder is now
+//! field-less. The pre-tokenizer keeps its own copies, where they are functional.
 
 use crate::tokenizer::{Decoder, Result};
 use crate::utils::byte_level::CHAR_BYTES_LOOKUP;
 
-#[cfg(feature = "serde")]
-fn default_true() -> bool {
-    true
-}
-
 /// Maps the byte-level alphabet back to the bytes it stands for.
 ///
-/// `rename` because the tag on disk is `ByteLevel`: the decoder used to *be* the pre-tokenizer type,
-/// and splitting them into two types must not change what a `tokenizer.json` says.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "serde", serde(tag = "type", rename = "ByteLevel"))]
-pub struct ByteLevelDecoder {
-    /// Carried for round-tripping only; decoding does not read it.
-    pub add_prefix_space: bool,
-    /// Carried for round-tripping only; decoding does not read it.
-    pub trim_offsets: bool,
-    /// Carried for round-tripping only; decoding does not read it.
-    ///
-    /// The one decoder field with a serde default, and it is `true`: configs written before
-    /// `use_regex` existed have to keep loading with the regex on.
-    #[cfg_attr(feature = "serde", serde(default = "default_true"))]
-    pub use_regex: bool,
-}
+/// The tag on disk is `ByteLevel`, not the type name: the decoder used to *be* the pre-tokenizer
+/// type, and splitting them into two types must not change what a `tokenizer.json` says. Being
+/// field-less, its serde lives in `super::serialization` -- the tag has to be *required*, or an
+/// untagged `DecoderWrapper` would let this variant claim any object at all.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub struct ByteLevelDecoder {}
 
 impl ByteLevelDecoder {
-    pub fn new(add_prefix_space: bool, trim_offsets: bool, use_regex: bool) -> Self {
-        Self {
-            add_prefix_space,
-            trim_offsets,
-            use_regex,
-        }
-    }
-}
-
-impl Default for ByteLevelDecoder {
-    fn default() -> Self {
-        Self::new(true, true, true)
+    pub fn new() -> Self {
+        Self {}
     }
 }
 
@@ -91,6 +67,22 @@ mod tests {
                 .unwrap(),
             vec!["Hello my friend, how is your day going?"]
         );
+    }
+
+    /// The `"type"` tag is *required*, which matters only now that the decoder is field-less: a
+    /// bare `#[serde(tag = "type")]` derive would add the tag on the way out but not demand it on
+    /// the way in, so any object at all -- `{}` included, or another decoder's -- would deserialize
+    /// as a `ByteLevelDecoder`. The one-variant tag enum in `super::serialization` is what stops it.
+    #[test]
+    #[cfg(feature = "serde")]
+    fn the_tag_is_required() {
+        assert_eq!(
+            serde_json::to_string(&ByteLevelDecoder::new()).unwrap(),
+            r#"{"type":"ByteLevel"}"#
+        );
+        serde_json::from_str::<ByteLevelDecoder>(r#"{"type":"ByteLevel"}"#).unwrap();
+        assert!(serde_json::from_str::<ByteLevelDecoder>("{}").is_err());
+        assert!(serde_json::from_str::<ByteLevelDecoder>(r#"{"type":"Fuse"}"#).is_err());
     }
 
     /// A token outside the byte-level alphabet is passed through as its own bytes rather than
