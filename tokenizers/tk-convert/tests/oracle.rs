@@ -23,12 +23,22 @@ const MODELS: &[&str] = &[
     "meta-llama/Llama-3.2-1B",
 ];
 
-/// Short inputs that still reach the byte and delimiter paths: ASCII, accents, CJK, and leading
-/// whitespace.
+/// One line per script the old fixture corpora covered, plus the two modalities that stress the
+/// byte and delimiter paths hardest. Short on purpose -- these exercise the encoders' branches, not
+/// their throughput.
 const TEXTS: &[&str] = &[
     "The quick brown fox jumps 123.",
-    " héllo wörld ",
-    "你好世界",
+    " héllo wörld ",                     // accents, leading and trailing space
+    "你好世界",                          // Han
+    "こんにちは世界",                    // Japanese, mixed scripts
+    "Привет мир",                        // Cyrillic
+    "مرحبا بالعالم",                     // Arabic, RTL
+    "नमस्ते दुनिया",                        // Devanagari, combining marks
+    "வணக்கம் உலகம்",                        // Tamil
+    "สวัสดีชาวโลก",                        // Thai, no word spaces
+    "ሰላም ዓለም",                           // Ethiopic
+    "fn main() { let x = vec![1, 2]; }", // code
+    r"\frac{1}{2} \sum_{i=0}^{n}",       // math
 ];
 
 #[test]
