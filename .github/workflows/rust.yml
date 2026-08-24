@@ -229,7 +229,7 @@ jobs:
   # a match that gained an unreachable `_ => ()` arm (a warning, hence a
   # -D warnings failure, only where every variant is present), and a
   # `use Model as _` import needed by two of the three model gates and therefore
-  # unused in the third. So every combination gets its own check + clippy + test.
+  # unused in the third. So every combination gets its own clippy, and every feature its own tests.
   feature_matrix:
     name: Feature matrix
     runs-on: ubuntu-latest
@@ -276,5 +276,21 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: uvx --from huggingface_hub hf download hf-internal-testing/tokenizers-test-data gpt2.json albert-base-v1-tokenizer.json --repo-type dataset --revision e20ac5914f5ada06874e4f9d45e49b31a049904e --local-dir data
 
-      - name: Check every feature combination
-        run: scripts/feature_matrix.sh
+      - name: Install cargo-hack
+        uses: taiki-e/install-action@cargo-hack
+
+      # `--feature-powerset --depth 2` is every one of those features alone and every pair, each
+      # built with `--no-default-features` -- so it covers a model feature *without* `bpe`, which
+      # the hand-rolled matrix this replaced never tried. 15 configurations.
+      - name: Clippy every feature combination
+        run: |
+          cargo hack --package tk-encode --feature-powerset --depth 2 \
+            --include-features bpe,unigram,wordpiece,wordlevel,normalizers \
+            clippy --all-targets -- -D warnings
+
+      # Compiling is most of the gate, so the tests run per single feature rather than per pair.
+      - name: Test each feature on its own
+        run: |
+          cargo hack --package tk-encode --each-feature \
+            --include-features bpe,unigram,wordpiece,wordlevel,normalizers \
+            test --lib

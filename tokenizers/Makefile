@@ -59,6 +59,9 @@ doc :
 publish :
 	cargo publish
 
+# The features that are `cfg` gates on enum variants, so a combination of them can break on its own.
+MODEL_FEATURES = bpe,unigram,wordpiece,wordlevel,normalizers
+
 .PHONY : all-checks
 all-checks : lint test doc feature-matrix
 
@@ -68,9 +71,13 @@ all-checks : lint test doc feature-matrix
 # `lint` is --all-features and `test` is the default set, so both are blind to
 # the builds in between, where the per-model and `normalizers` cfg gates
 # actually interact.
+# Needs cargo-hack: `cargo install cargo-hack`.
 .PHONY : feature-matrix
 feature-matrix : $(SHARED_RESOURCES)
-	scripts/feature_matrix.sh
+	cargo hack --package tk-encode --feature-powerset --depth 2 \
+	  --include-features $(MODEL_FEATURES) clippy --all-targets -- -D warnings
+	cargo hack --package tk-encode --each-feature \
+	  --include-features $(MODEL_FEATURES) test --lib
 
 # tk-encode's stripped and gzipped size per feature configuration, under
 # `--profile minsize`.
