@@ -1,5 +1,5 @@
 use crate::pipeline::Model;
-use crate::tokenizer::{Model as _, Token};
+use crate::tokenizer::Token;
 
 use super::*;
 #[test]

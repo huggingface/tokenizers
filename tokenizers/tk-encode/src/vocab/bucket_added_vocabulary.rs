@@ -1,4 +1,4 @@
-use super::super::{Model, Result};
+use super::super::Result;
 use super::buckets::{AddedTokenFlags, Buckets};
 use crate::pipeline::Normalizer;
 use crate::pipeline::PipelinePatternMatcher;
@@ -237,7 +237,7 @@ impl AddedVocabulary {
     }
 
     /// Get the id matching one of our token if it exists
-    pub fn token_to_id(&self, token: &str, _model: &dyn Model) -> Option<u32> {
+    pub fn token_to_id(&self, token: &str) -> Option<u32> {
         self.vocab
             .token_to_id(token)
             .or_else(|| self.normalized_vocab.token_to_id(token))
@@ -434,12 +434,9 @@ mod tests {
     use super::*;
     use crate::normalizers::utils::Lowercase;
     use crate::pipeline::{Segment, SpecialSegmentIterator};
-    use crate::{Result, Token};
-    use std::collections::HashMap;
 
     struct ModelMock {
         vocab: AHashMap<String, u32>,
-        vocab_r: AHashMap<u32, String>,
     }
     impl ModelMock {
         pub fn new<I>(iter: I) -> Self
@@ -450,28 +447,11 @@ mod tests {
                 .into_iter()
                 .map(|&(tok, id)| (tok.to_string(), id))
                 .collect();
-            Self {
-                vocab_r: vocab
-                    .iter()
-                    .map(|(tok, id)| (*id, tok.to_owned()))
-                    .collect(),
-                vocab,
-            }
+            Self { vocab }
         }
-    }
 
-    impl Model for ModelMock {
-        fn tokenize(&self, _sequence: &str) -> Result<Vec<Token>> {
-            unimplemented!()
-        }
         fn token_to_id(&self, token: &str) -> Option<u32> {
             self.vocab.get(token).copied()
-        }
-        fn id_to_token(&self, id: u32) -> Option<String> {
-            self.vocab_r.get(&id).cloned()
-        }
-        fn get_vocab(&self) -> HashMap<String, u32> {
-            self.vocab.clone().into_iter().collect()
         }
         fn get_vocab_size(&self) -> usize {
             self.vocab.len()

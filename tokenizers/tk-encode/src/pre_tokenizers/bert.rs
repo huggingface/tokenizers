@@ -1,19 +1,11 @@
 use crate::pipeline::{self, PreTokenizerScratch};
-use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
+use crate::tokenizer::Result;
 
-use super::punctuation::is_punc;
 use atomsplit::classify::mask;
 use atomsplit::fsm::class_runs_into;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct BertPreTokenizer;
-
-impl PreTokenizer for BertPreTokenizer {
-    fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
-        pretokenized.split(|_, s| s.split(char::is_whitespace, SplitDelimiterBehavior::Removed))?;
-        pretokenized.split(|_, s| s.split(is_punc, SplitDelimiterBehavior::Isolated))
-    }
-}
 
 // SAFETY: the spans come from an `atomsplit` fsm, which splits only at character boundaries of `text`.
 // See `atomsplit::fsm` docs.
@@ -40,7 +32,6 @@ unsafe impl pipeline::PreTokenizer for BertPreTokenizer {
 #[cfg(test)]
 mod tests {
     use super::BertPreTokenizer;
-    use crate::{NormalizedString, OffsetReferential, OffsetType, PreTokenizedString};
 
     use crate::pipeline::PreTokenizerScratch;
     fn pretokenize(text: &str) -> Vec<(&str, (u32, u32))> {
@@ -53,68 +44,6 @@ mod tests {
             .iter()
             .map(|s| (&text[s.range()], (s.start, s.end)))
             .collect()
-    }
-
-    #[test]
-    fn basic() {
-        use crate::PreTokenizer;
-
-        let pretok = BertPreTokenizer;
-        let mut pretokenized: PreTokenizedString = "Hey friend!     How are you?!?".into();
-        pretok.pre_tokenize(&mut pretokenized).unwrap();
-        assert_eq!(
-            pretokenized
-                .get_splits(OffsetReferential::Original, OffsetType::Byte)
-                .into_iter()
-                .map(|(s, o, _)| (s, o))
-                .collect::<Vec<_>>(),
-            vec![
-                ("Hey", (0, 3)),
-                ("friend", (4, 10)),
-                ("!", (10, 11)),
-                ("How", (16, 19)),
-                ("are", (20, 23)),
-                ("you", (24, 27)),
-                ("?", (27, 28)),
-                ("!", (28, 29)),
-                ("?", (29, 30)),
-            ]
-        );
-    }
-
-    #[test]
-    fn chinese_chars() {
-        use crate::PreTokenizer;
-
-        let mut n = NormalizedString::from("野口里佳 Noguchi Rika");
-        n.transform(
-            n.get().to_owned().chars().flat_map(|c| {
-                if (c as usize) > 0x4E00 {
-                    vec![(' ', 0), (c, 1), (' ', 1)]
-                } else {
-                    vec![(c, 0)]
-                }
-            }),
-            0,
-        );
-        let mut pretokenized = n.into();
-        let pretok = BertPreTokenizer;
-        pretok.pre_tokenize(&mut pretokenized).unwrap();
-        assert_eq!(
-            pretokenized
-                .get_splits(OffsetReferential::Original, OffsetType::Byte)
-                .into_iter()
-                .map(|(s, o, _)| (s, o))
-                .collect::<Vec<_>>(),
-            vec![
-                ("野", (0, 3)),
-                ("口", (3, 6)),
-                ("里", (6, 9)),
-                ("佳", (9, 12)),
-                ("Noguchi", (13, 20)),
-                ("Rika", (21, 25))
-            ]
-        );
     }
 
     #[test]
@@ -131,32 +60,6 @@ mod tests {
                 ("?", (30, 31)),
                 ("!", (31, 32)),
                 ("?", (32, 33)),
-            ],
-        );
-    }
-
-    #[test]
-    fn chinese_chars_new() {
-        let mut n = NormalizedString::from("野口里佳 Noguchi Rika");
-        n.transform(
-            n.get().to_owned().chars().flat_map(|c| {
-                if (c as usize) > 0x4E00 {
-                    vec![(' ', 0), (c, 1), (' ', 1)]
-                } else {
-                    vec![(c, 0)]
-                }
-            }),
-            0,
-        );
-        assert_eq!(
-            pretokenize(n.get()),
-            vec![
-                ("野", (1, 4)),
-                ("口", (6, 9)),
-                ("里", (11, 14)),
-                ("佳", (16, 19)),
-                ("Noguchi", (21, 28)),
-                ("Rika", (29, 33)),
             ],
         );
     }

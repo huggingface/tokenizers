@@ -2,7 +2,7 @@
 //! model.
 
 use crate::pipeline::{self, PipelineToken};
-use crate::tokenizer::{Model, Result, Token};
+use crate::tokenizer::{Result, Token};
 use crate::utils::cache::DEFAULT_CACHE_CAPACITY;
 use crate::utils::word_cache::{Lookup, WordCache};
 use ahash::AHashMap;
@@ -146,16 +146,19 @@ impl WordPiece {
     // read by `tk-serialize` is the only route to a model now. See `REQUIRED_FOR_V1.md` §4.
 }
 
-impl Model for WordPiece {
-    fn get_vocab(&self) -> HashMap<String, u32> {
+/// The model methods the pipeline and the readers call. These used to be the legacy
+/// `Model` trait; that trait had no implementor left that needed polymorphism, so they are
+/// plain inherent methods now and every call site is unchanged.
+impl WordPiece {
+    pub fn get_vocab(&self) -> HashMap<String, u32> {
         self.vocab.clone().into_iter().collect()
     }
 
-    fn get_vocab_size(&self) -> usize {
+    pub fn get_vocab_size(&self) -> usize {
         self.vocab.len()
     }
 
-    fn tokenize(&self, sequence: &str) -> Result<Vec<Token>> {
+    pub fn tokenize(&self, sequence: &str) -> Result<Vec<Token>> {
         let char_len = sequence.chars().count();
         if char_len > self.max_input_chars_per_word {
             return Ok(vec![Token {
@@ -216,11 +219,11 @@ impl Model for WordPiece {
         }
     }
 
-    fn token_to_id(&self, token: &str) -> Option<u32> {
+    pub fn token_to_id(&self, token: &str) -> Option<u32> {
         self.vocab.get(token).copied()
     }
 
-    fn id_to_token(&self, id: u32) -> Option<String> {
+    pub fn id_to_token(&self, id: u32) -> Option<String> {
         self.vocab_r.get(&id).cloned()
     }
 }

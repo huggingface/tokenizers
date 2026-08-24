@@ -8,10 +8,6 @@ use crate::models::unigram::{Unigram, UnigramScratch};
 use crate::models::wordlevel::WordLevel;
 #[cfg(feature = "wordpiece")]
 use crate::models::wordpiece::{PipelineWordPiece, WordPieceScratch};
-// `PipelineWordPiece::id_to_token` is inherent; Unigram and WordLevel get theirs from the trait.
-#[cfg(any(feature = "unigram", feature = "wordlevel"))]
-use crate::tokenizer::Model as _;
-
 use crate::{
     DecoderRuntime,
     models::bpe::{BpeScratch, PipelineBPE},
@@ -449,7 +445,6 @@ impl Encoding {
     pub fn type_ids(&self) -> Option<&[u8]> {
         self.type_ids.as_deref()
     }
-
 }
 /// Iterator yields results in completion order
 pub struct HandleIter {
@@ -879,22 +874,6 @@ impl PipelineModel {
 /// reused among calls to [`PipelineTokenizer::encode`].
 ///
 /// Each model gets its own variant.
-#[derive(Default)]
-pub enum PipelineModelScratch {
-    BPE(BpeScratch),
-    #[cfg(feature = "wordlevel")]
-    WordLevel(()),
-    #[cfg(feature = "wordpiece")]
-    WordPiece(WordPieceScratch),
-    #[cfg(feature = "unigram")]
-    Unigram(UnigramScratch),
-    /// We need a default value to be able to use [`mem::take`] in [`ScratchGuard::drop`]
-    #[default]
-    None,
-}
-
-impl ModelScratch for PipelineModelScratch {}
-
 impl Model for PipelineModel {
     type Scratch = PipelineModelScratch;
 
@@ -936,6 +915,22 @@ impl Model for PipelineModel {
         }
     }
 }
+
+#[derive(Default)]
+pub enum PipelineModelScratch {
+    BPE(BpeScratch),
+    #[cfg(feature = "wordlevel")]
+    WordLevel(()),
+    #[cfg(feature = "wordpiece")]
+    WordPiece(WordPieceScratch),
+    #[cfg(feature = "unigram")]
+    Unigram(UnigramScratch),
+    /// We need a default value to be able to use [`mem::take`] in [`ScratchGuard::drop`]
+    #[default]
+    None,
+}
+
+impl ModelScratch for PipelineModelScratch {}
 
 #[cfg(test)]
 mod tests {

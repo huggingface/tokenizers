@@ -1,6 +1,6 @@
 use crate::pipeline;
 use crate::pipeline::PreTokenizerScratch;
-use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
+use crate::tokenizer::Result;
 
 /// The tag is spelled `CharDelimiterSplit`, not `Delimiter` -- that is what this macro on a struct
 /// of this name produces, so it is what is on disk and what has to keep loading.
@@ -13,15 +13,6 @@ pub struct CharDelimiterSplit {
 impl CharDelimiterSplit {
     pub fn new(delimiter: char) -> Self {
         Self { delimiter }
-    }
-}
-
-impl PreTokenizer for CharDelimiterSplit {
-    fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
-        // TODO: Maybe add the option to specify the behavior
-        pretokenized.split(|_, normalized| {
-            normalized.split(self.delimiter, SplitDelimiterBehavior::Removed)
-        })
     }
 }
 

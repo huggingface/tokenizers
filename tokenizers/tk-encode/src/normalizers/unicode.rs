@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use crate::pipeline;
-use crate::tokenizer::{NormalizedString, Normalizer, Result};
+use crate::tokenizer::Result;
 
 use unicode_normalization::{
     IsNormalized, UnicodeNormalization, is_nfc_quick, is_nfd_quick, is_nfkc_quick, is_nfkd_quick,
@@ -9,12 +9,6 @@ use unicode_normalization::{
 
 #[derive(Default, Copy, Clone, Debug)]
 pub struct NFD;
-impl Normalizer for NFD {
-    fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
-        normalized.nfd();
-        Ok(())
-    }
-}
 impl pipeline::Normalizer for NFD {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
         if let IsNormalized::Yes = is_nfd_quick(input.chars()) {
@@ -27,12 +21,6 @@ impl pipeline::Normalizer for NFD {
 
 #[derive(Default, Copy, Clone, Debug)]
 pub struct NFKD;
-impl Normalizer for NFKD {
-    fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
-        normalized.nfkd();
-        Ok(())
-    }
-}
 impl pipeline::Normalizer for NFKD {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
         if let IsNormalized::Yes = is_nfkd_quick(input.chars()) {
@@ -45,12 +33,6 @@ impl pipeline::Normalizer for NFKD {
 
 #[derive(Default, Copy, Clone, Debug)]
 pub struct NFC;
-impl Normalizer for NFC {
-    fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
-        normalized.nfc();
-        Ok(())
-    }
-}
 impl pipeline::Normalizer for NFC {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
         if let IsNormalized::Yes = is_nfc_quick(input.chars()) {
@@ -63,12 +45,6 @@ impl pipeline::Normalizer for NFC {
 
 #[derive(Default, Copy, Clone, Debug)]
 pub struct NFKC;
-impl Normalizer for NFKC {
-    fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
-        normalized.nfkc();
-        Ok(())
-    }
-}
 impl pipeline::Normalizer for NFKC {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
         if let IsNormalized::Yes = is_nfkc_quick(input.chars()) {
@@ -110,18 +86,8 @@ fn nmt_to_space(c: char) -> char {
     }
 }
 
-fn do_nmt(normalized: &mut NormalizedString) {
-    normalized.filter(|c| !nmt_removes(c)).map(nmt_to_space);
-}
-
 #[derive(Default, Copy, Clone, Debug)]
 pub struct Nmt;
-impl Normalizer for Nmt {
-    fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
-        do_nmt(normalized);
-        Ok(())
-    }
-}
 
 impl pipeline::Normalizer for Nmt {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
@@ -145,82 +111,103 @@ impl pipeline::Normalizer for Nmt {
 mod tests {
     use super::*;
 
+    /// Expectations come from Python's `unicodedata.normalize` -- an implementation independent
+    /// of both this crate and the legacy normalizer this test used to compare against, so it
+    /// pins NFD instead of just agreeing with another of our own code paths.
     #[test]
-    fn test_nfkc() {
-        let original = "\u{fb01}".to_string();
-        let normalized = "fi".to_string();
-        let mut n = NormalizedString::from(original.clone());
-        NFKC.normalize(&mut n).unwrap();
-
-        assert_eq!(
-            n,
-            NormalizedString::new(original, normalized, vec![(0, 3), (0, 3)], 0)
-        );
-
-        assert_eq!(n.alignments_original(), vec![(0, 2), (0, 2), (0, 2)]);
-    }
-
-    #[test]
-    fn pipeline_nfd_matches_legacy() {
-        let n = NFD;
-        for input in &["é", "café", "abc", "", "Å"] {
-            let mut ns = NormalizedString::from(*input);
-            Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
+    fn pipeline_nfd() {
+        for (input, expected) in [
+            ("\u{e9}", "e\u{301}"),
+            ("caf\u{e9}", "cafe\u{301}"),
+            ("abc", "abc"),
+            ("", ""),
+            ("\u{c5}", "A\u{30a}"),
+        ] {
             assert_eq!(
-                ns.get(),
-                &*pipeline::Normalizer::normalize(&n, input).unwrap()
+                &*pipeline::Normalizer::normalize(&NFD, input).unwrap(),
+                expected,
+                "input={input:?}"
             );
         }
     }
 
+    /// Expectations come from Python's `unicodedata.normalize` -- an implementation independent
+    /// of both this crate and the legacy normalizer this test used to compare against, so it
+    /// pins NFKD instead of just agreeing with another of our own code paths.
     #[test]
-    fn pipeline_nfkd_matches_legacy() {
-        let n = NFKD;
-        for input in &["\u{fb01}", "²", "café", "abc", ""] {
-            let mut ns = NormalizedString::from(*input);
-            Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
+    fn pipeline_nfkd() {
+        for (input, expected) in [
+            ("\u{fb01}", "fi"),
+            ("\u{b2}", "2"),
+            ("caf\u{e9}", "cafe\u{301}"),
+            ("abc", "abc"),
+            ("", ""),
+        ] {
             assert_eq!(
-                ns.get(),
-                &*pipeline::Normalizer::normalize(&n, input).unwrap()
+                &*pipeline::Normalizer::normalize(&NFKD, input).unwrap(),
+                expected,
+                "input={input:?}"
             );
         }
     }
 
+    /// Expectations come from Python's `unicodedata.normalize` -- an implementation independent
+    /// of both this crate and the legacy normalizer this test used to compare against, so it
+    /// pins NFC instead of just agreeing with another of our own code paths.
     #[test]
-    fn pipeline_nfc_matches_legacy() {
-        let n = NFC;
-        for input in &["e\u{0301}", "abc", "", "cafe\u{0301}"] {
-            let mut ns = NormalizedString::from(*input);
-            Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
+    fn pipeline_nfc() {
+        for (input, expected) in [
+            ("e\u{301}", "\u{e9}"),
+            ("abc", "abc"),
+            ("", ""),
+            ("cafe\u{301}", "caf\u{e9}"),
+        ] {
             assert_eq!(
-                ns.get(),
-                &*pipeline::Normalizer::normalize(&n, input).unwrap()
+                &*pipeline::Normalizer::normalize(&NFC, input).unwrap(),
+                expected,
+                "input={input:?}"
             );
         }
     }
 
+    /// Expectations come from Python's `unicodedata.normalize` -- an implementation independent
+    /// of both this crate and the legacy normalizer this test used to compare against, so it
+    /// pins NFKC instead of just agreeing with another of our own code paths.
     #[test]
-    fn pipeline_nfkc_matches_legacy() {
-        let n = NFKC;
-        for input in &["\u{fb01}", "²", "e\u{0301}", "abc", ""] {
-            let mut ns = NormalizedString::from(*input);
-            Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
+    fn pipeline_nfkc() {
+        for (input, expected) in [
+            ("\u{fb01}", "fi"),
+            ("\u{b2}", "2"),
+            ("e\u{301}", "\u{e9}"),
+            ("abc", "abc"),
+            ("", ""),
+        ] {
             assert_eq!(
-                ns.get(),
-                &*pipeline::Normalizer::normalize(&n, input).unwrap()
+                &*pipeline::Normalizer::normalize(&NFKC, input).unwrap(),
+                expected,
+                "input={input:?}"
             );
         }
     }
 
+    /// Expected values were captured from the legacy `NormalizedString` normalizer this test used
+    /// to compare against, on the commit that removed it -- so they still pin exactly what the two
+    /// implementations agreed on, without keeping the legacy code alive to ask.
     #[test]
-    fn pipeline_nmt_matches_legacy() {
+    fn pipeline_nmt() {
         let n = Nmt;
-        for input in &["a\tb", "x\u{200b}y", "abc", "", "\u{feff}hi", "c\u{0007}d"] {
-            let mut ns = NormalizedString::from(*input);
-            Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
+        for (input, expected) in [
+            ("a\tb", "a b"),
+            ("x\u{200b}y", "x y"),
+            ("abc", "abc"),
+            ("", ""),
+            ("\u{feff}hi", " hi"),
+            ("c\u{7}d", "cd"),
+        ] {
             assert_eq!(
-                ns.get(),
-                &*pipeline::Normalizer::normalize(&n, input).unwrap()
+                &*pipeline::Normalizer::normalize(&n, input).unwrap(),
+                expected,
+                "input={input:?}"
             );
         }
     }

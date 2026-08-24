@@ -1,143 +1,30 @@
 //! Represents a tokenization pipeline.
 //!
-//! A [`Tokenizer`](struct.Tokenizer.html) is composed of some of the following parts.
-//!   - [`Normalizer`](trait.Normalizer.html): Takes care of the text normalization (like unicode normalization).
-//!   - [`PreTokenizer`](trait.PreTokenizer.html): Takes care of the pre tokenization (ie. How to split tokens and pre-process
-//!     them.
-//!   - [`Model`](trait.Model.html): A model encapsulates the tokenization algorithm (like BPE, Word base, character
-//!     based, ...).
-//!   - [`PostProcessor`](trait.PostProcessor.html): Takes care of the processing after tokenization (like truncating, padding,
-//!     ...).
+//! The components a [`pipeline::PipelineTokenizer`] is built out of. Normalization,
+//! pre-tokenization and post-processing are defined by the traits in [`pipeline`]; what stays here
+//! is the input/output vocabulary they are written against.
 
 // The `Path` types are reachable only from `Model::save`.
 
 mod encoding;
-pub mod normalizer;
 pub mod pattern;
 pub mod pipeline;
-pub mod pre_tokenizer;
 
 // `Tokenizer`, `TokenizerImpl`, `TokenizerBuilder`, `DecodeStream`, the legacy `AddedVocabulary`
 // (and its `AddedToken`) and the whole serde load/save surface live in `tk-convert`. What
 // stays here is the vocabulary of traits every component implements, plus the input/output types
 // they are written against.
-pub use crate::decoders::DecoderRuntime;
+pub use crate::decoders::{Decoder, DecoderRuntime};
 pub use crate::utils::iter::LinesWithEnding;
 pub use crate::utils::padding::{PaddingDirection, PaddingParams, PaddingStrategy, pad_encodings};
 pub use crate::utils::truncation::{
     TruncationDirection, TruncationParams, TruncationStrategy, truncate_encodings,
 };
 pub use encoding::*;
-pub use normalizer::{NormalizedString, OffsetReferential, SplitDelimiterBehavior};
-pub use pre_tokenizer::*;
 
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
 pub type Result<T> = std::result::Result<T, Error>;
 pub type Offsets = (usize, usize);
-
-/// Takes care of pre-processing strings.
-pub trait Normalizer: Sync {
-    fn normalize(&self, normalized: &mut NormalizedString) -> Result<()>;
-}
-
-/// The `PreTokenizer` is in charge of doing the pre-segmentation step. It splits the given string
-/// in multiple substrings, keeping track of the offsets of said substrings from the
-/// `NormalizedString`. In some occasions, the `PreTokenizer` might need to modify the given
-/// `NormalizedString` to ensure we can entirely keep track of the offsets and the mapping with
-/// the original string.
-pub trait PreTokenizer {
-    fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()>;
-}
-
-/// Represents a model used during Tokenization (like BPE or Word or Unigram).
-pub trait Model {
-    /// Tokenize the given sequence into multiple underlying `Token`. The `offsets` on the `Token`
-    /// are expected to be relative to the given sequence.
-    fn tokenize(&self, sequence: &str) -> Result<Vec<Token>>;
-    /// Find the ID associated to a string token
-    fn token_to_id(&self, token: &str) -> Option<u32>;
-    /// Find the string token associated to an ID
-    fn id_to_token(&self, id: u32) -> Option<String>;
-    /// Retrieve the entire vocabulary mapping (token -> ID)
-    fn get_vocab(&self) -> HashMap<String, u32>;
-    /// Retrieve the size of the vocabulary
-    fn get_vocab_size(&self) -> usize;
-    /// Tokenize every pre-token within a `PreTokenizedString` in one call.
-    ///
-    /// When `truncation` is `Some((max_tokens, direction))`, the
-    /// `tokenize_with_limit` early-exit path is taken; otherwise every
-    /// pre-token is tokenized.
-    ///
-    /// The default calls `self.tokenize()` per pre-token, which is correct
-    /// for self-contained `Model` implementations.  Implementations that
-    /// wrap their inner model behind a lock (e.g. the `PyModel` and Node
-    /// `Model` bindings, both `Arc<RwLock<_>>`) can override this to
-    /// acquire the lock once for the whole sequence of pre-tokens; that
-    /// removes ~one atomic load/store pair per pre-token from the hot path
-    /// (~1 500 pre-tokens per ~10 KB document).  Both the truncated and
-    /// non-truncated paths benefit from the override because they share
-    /// this entry point.
-    fn tokenize_in_pretokenized(
-        &self,
-        pretokenized: &mut PreTokenizedString,
-        truncation: Option<(usize, TruncationDirection)>,
-    ) -> Result<()> {
-        match truncation {
-            Some((max_tokens, direction)) => pretokenized.tokenize_with_limit(
-                |normalized| self.tokenize(normalized.get()),
-                max_tokens,
-                direction,
-            ),
-            None => pretokenized.tokenize(|normalized| self.tokenize(normalized.get())),
-        }
-    }
-}
-
-/// A `PostProcessor` has the responsibility to post process an encoded output of the `Tokenizer`.
-/// It adds any special tokens that a language model would require.
-pub trait PostProcessor {
-    /// Returns the number of tokens that will be added during the processing step
-    fn added_tokens(&self, is_pair: bool) -> usize;
-    /// Process both encodings and returns a new merged one
-    fn process(
-        &self,
-        encoding: Encoding,
-        pair_encoding: Option<Encoding>,
-        add_special_tokens: bool,
-    ) -> Result<Encoding> {
-        let mut encodings = if let Some(pair_encoding) = pair_encoding {
-            vec![encoding, pair_encoding]
-        } else {
-            vec![encoding]
-        };
-        encodings.iter_mut().enumerate().for_each(|(i, encoding)| {
-            encoding.set_sequence_id(i);
-            encoding
-                .get_overflowing_mut()
-                .iter_mut()
-                .for_each(|encoding| encoding.set_sequence_id(i));
-            encoding.set_type_ids(vec![i as u32; encoding.len()]);
-        });
-
-        let encodings = self.process_encodings(encodings, add_special_tokens)?;
-        Ok(Encoding::merge(encodings, false))
-    }
-
-    /// Process any amount of encodings and returns a series of encoding (might merge them)
-    fn process_encodings(
-        &self,
-        encodings: Vec<Encoding>,
-        add_special_tokens: bool,
-    ) -> Result<Vec<Encoding>>;
-}
-/// A `Decoder` changes the raw tokens into its more readable form.
-pub trait Decoder {
-    fn decode(&self, tokens: Vec<String>) -> Result<String> {
-        let results = self.decode_chain(tokens)?;
-        Ok(results.join(""))
-    }
-    fn decode_chain(&self, tokens: Vec<String>) -> Result<Vec<String>>;
-}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Token {
@@ -152,7 +39,6 @@ impl Token {
 }
 
 use std::borrow::Cow;
-use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub enum InputSequence<'s> {
@@ -235,5 +121,39 @@ where
 {
     fn from(input: (I1, I2)) -> Self {
         Self::Dual(input.0.into(), input.1.into())
+    }
+}
+
+/// Defines the expected behavior for the delimiter of a Split Pattern
+/// When splitting on `'-'` for example, with input `the-final--countdown`:
+///  - Removed => `[ "the", "final", "countdown" ]`
+///  - Isolated => `[ "the", "-", "final", "-", "-", "countdown" ]`
+///  - MergedWithPrevious => `[ "the-", "final-", "-", "countdown" ]`
+///  - MergedWithNext => `[ "the", "-final", "-", "-countdown" ]`
+///  - Contiguous => `[ "the", "-", "final", "--", "countdown" ]`
+///
+/// On disk it is the bare variant name, which the hand-written `Display` below spells verbatim.
+/// This one needs no `serialization.rs` of its own: those five names are the whole on-disk shape.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SplitDelimiterBehavior {
+    Removed,
+    Isolated,
+    MergedWithPrevious,
+    MergedWithNext,
+    Contiguous,
+}
+
+impl std::fmt::Display for SplitDelimiterBehavior {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Spelled out rather than handed to the serializer, so the name survives a build with no
+        // serde -- and it is a `match` instead of abusing a `Formatter` as a `Serializer`. The
+        // name `tk-serialize` reads and writes is the variant name verbatim.
+        f.write_str(match self {
+            Self::Removed => "Removed",
+            Self::Isolated => "Isolated",
+            Self::MergedWithPrevious => "MergedWithPrevious",
+            Self::MergedWithNext => "MergedWithNext",
+            Self::Contiguous => "Contiguous",
+        })
     }
 }
