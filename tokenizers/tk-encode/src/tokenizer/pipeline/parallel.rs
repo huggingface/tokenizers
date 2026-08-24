@@ -13,7 +13,10 @@ use crate::pipeline::{
 use super::Result;
 
 /// Threshold below which [`Inputs`] are encoded serially on the caller thread
-pub(crate) const PARALLEL_MIN_BYTES: usize = 8 * 1024;
+// `pub` (re-exported by `pipeline`): the differential "parallel == serial" tests live in
+// `tk-convert` now — they need a `Tokenizer` to build from — and have to size an input past
+// this threshold to reach the parallel path at all.
+pub const PARALLEL_MIN_BYTES: usize = 8 * 1024;
 
 impl Input {
     fn len(&self) -> usize {

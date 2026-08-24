@@ -1,5 +1,6 @@
-use super::super::{Model, NormalizedString, Normalizer, Result};
+use super::super::{Model, Result};
 use super::buckets::{AddedTokenFlags, Buckets};
+use crate::pipeline::Normalizer;
 use crate::pipeline::PipelinePatternMatcher;
 use crate::pre_tokenizers::whitespace::is_word_char;
 use ahash::AHashMap;
@@ -276,17 +277,19 @@ impl AddedVocabulary {
     pub fn add_special_tokens<N: Normalizer>(
         &mut self,
         tokens: impl IntoIterator<Item = AddedToken>,
-        model: &impl Model,
+        model_vocab_size: usize,
+        model_token_to_id: impl Fn(&str) -> Option<u32>,
         normalizer: Option<&N>,
     ) -> Result<usize> {
-        self.add_tokens(tokens, model, normalizer)
+        self.add_tokens(tokens, model_vocab_size, model_token_to_id, normalizer)
     }
 
     /// Add some tokens to the vocabulary
     pub fn add_tokens<N: Normalizer>(
         &mut self,
         tokens: impl IntoIterator<Item = AddedToken>,
-        model: &impl Model,
+        model_vocab_size: usize,
+        model_token_to_id: impl Fn(&str) -> Option<u32>,
         normalizer: Option<&N>,
     ) -> Result<usize> {
         let mut ignored = 0;
@@ -298,7 +301,7 @@ impl AddedVocabulary {
         // next free dense id (no scan/alloc). Added ids start above the model vocab; a token already
         // in the model reuses the model id.
         let mut metadata = self.token_metadata.to_vec();
-        let model_size = model.get_vocab_size() as u32;
+        let model_size = model_vocab_size as u32;
         let mut next_id = (metadata.len() as u32).max(model_size);
 
         let mut entries: AHashMap<u32, (Vec<u8>, bool)> = AHashMap::new();
@@ -320,12 +323,7 @@ impl AddedVocabulary {
             let flags = AddedTokenFlags::from(&token);
             let is_norm = flags.normalized;
             let norm_form: String = match normalizer {
-                Some(n) => {
-                    // TODO: fix normalizer to remove allocations :)
-                    let mut s = NormalizedString::from(token.content.as_str());
-                    n.normalize(&mut s)?;
-                    s.get().to_string()
-                }
+                Some(n) => n.normalize(&token.content)?.into_owned(),
                 None => token.content.clone(),
             };
             let form = if is_norm {
@@ -337,7 +335,7 @@ impl AddedVocabulary {
             let existing = seen
                 .get(&token.content)
                 .copied()
-                .or_else(|| model.token_to_id(&token.content))
+                .or_else(|| model_token_to_id(&token.content))
                 .or_else(|| self.vocab.token_to_id(&token.content))
                 .or_else(|| self.normalized_vocab.token_to_id(&norm_form));
             // Already present with the exact same flags AND matcher -> nothing to do.
@@ -467,7 +465,6 @@ mod tests {
     use crate::pipeline::{Segment, SpecialSegmentIterator};
     use crate::{Result, Token};
     use std::collections::HashMap;
-    use std::path::{Path, PathBuf};
 
     #[derive(Serialize, Deserialize)]
     struct ModelMock {
@@ -509,9 +506,6 @@ mod tests {
         fn get_vocab_size(&self) -> usize {
             self.vocab.len()
         }
-        fn save(&self, _folder: &Path, _name: Option<&str>) -> Result<Vec<PathBuf>> {
-            unimplemented!()
-        }
     }
 
     #[test]
@@ -525,7 +519,8 @@ mod tests {
             vocab
                 .add_tokens(
                     [AddedToken::from("added_token_1", false)],
-                    &model,
+                    model.get_vocab_size(),
+                    |t| model.token_to_id(t),
                     normalizer
                 )
                 .unwrap(),
@@ -543,7 +538,8 @@ mod tests {
                         AddedToken::from("added_token_2", false),
                         AddedToken::from("added_token_2", false)
                     ],
-                    &model,
+                    model.get_vocab_size(),
+                    |t| model.token_to_id(t),
                     normalizer
                 )
                 .unwrap(),
@@ -555,7 +551,12 @@ mod tests {
         let added_token = AddedToken::from("test", false);
         assert_eq!(
             vocab
-                .add_tokens([added_token.clone()], &model, normalizer)
+                .add_tokens(
+                    [added_token.clone()],
+                    model.get_vocab_size(),
+                    |t| model.token_to_id(t),
+                    normalizer
+                )
                 .unwrap(),
             1
         );
@@ -574,7 +575,8 @@ mod tests {
             vocab
                 .add_special_tokens(
                     [AddedToken::from("added_token_1", true)],
-                    &model,
+                    model.get_vocab_size(),
+                    |t| model.token_to_id(t),
                     normalizer
                 )
                 .unwrap(),
@@ -591,7 +593,8 @@ mod tests {
                         AddedToken::from("added_token_2", true),
                         AddedToken::from("added_token_2", true)
                     ],
-                    &model,
+                    model.get_vocab_size(),
+                    |t| model.token_to_id(t),
                     normalizer
                 )
                 .unwrap(),
@@ -602,7 +605,12 @@ mod tests {
         // Can add tokens already covered by the model
         assert_eq!(
             vocab
-                .add_special_tokens([AddedToken::from("test", true)], &model, normalizer)
+                .add_special_tokens(
+                    [AddedToken::from("test", true)],
+                    model.get_vocab_size(),
+                    |t| model.token_to_id(t),
+                    normalizer
+                )
                 .unwrap(),
             1
         );
@@ -626,7 +634,8 @@ mod tests {
                     AddedToken::from("tost", true),
                     AddedToken::from("another_two", false),
                 ],
-                &model,
+                model.get_vocab_size(),
+                |t| model.token_to_id(t),
                 normalizer,
             )
             .unwrap();
@@ -636,7 +645,12 @@ mod tests {
         // Let's add an already added token again, but change normalized
         assert_eq!(
             vocab
-                .add_special_tokens([AddedToken::from("another_two", true)], &model, normalizer)
+                .add_special_tokens(
+                    [AddedToken::from("another_two", true)],
+                    model.get_vocab_size(),
+                    |t| model.token_to_id(t),
+                    normalizer
+                )
                 .unwrap(),
             1
         );
@@ -666,7 +680,8 @@ mod tests {
                     AddedToken::from("Hello", false),
                     AddedToken::from("[CLS]", true),
                 ],
-                &model,
+                model.get_vocab_size(),
+                |t| model.token_to_id(t),
                 Some(&normalizer),
             )
             .unwrap();
@@ -707,7 +722,8 @@ mod tests {
                     AddedToken::from("[CLS]", true),
                     AddedToken::from("[SEP]", true),
                 ],
-                &model,
+                model.get_vocab_size(),
+                |t| model.token_to_id(t),
                 normalizer,
             )
             .unwrap();
@@ -733,7 +749,8 @@ mod tests {
                 [AddedToken::from("mask", false)
                     .normalized(false)
                     .single_word(true)],
-                &model,
+                model.get_vocab_size(),
+                |t| model.token_to_id(t),
                 normalizer,
             )
             .unwrap();
@@ -760,7 +777,8 @@ mod tests {
                     .normalized(false)
                     .lstrip(true)
                     .rstrip(true)],
-                &model,
+                model.get_vocab_size(),
+                |t| model.token_to_id(t),
                 normalizer,
             )
             .unwrap();
@@ -783,7 +801,12 @@ mod tests {
         let mut vocab = AddedVocabulary::new();
         let normalizer: Option<&NormalizerWrapper> = None;
         vocab
-            .add_special_tokens([AddedToken::from("[CLS]", true)], &model, normalizer)
+            .add_special_tokens(
+                [AddedToken::from("[CLS]", true)],
+                model.get_vocab_size(),
+                |t| model.token_to_id(t),
+                normalizer,
+            )
             .unwrap();
 
         // Default: the special token is carved out.
@@ -807,7 +830,12 @@ mod tests {
         let normalizer = Lowercase;
         // Non-special token, normalized by default → stored in the normalized matcher.
         vocab
-            .add_tokens([AddedToken::from("mask", false)], &model, Some(&normalizer))
+            .add_tokens(
+                [AddedToken::from("mask", false)],
+                model.get_vocab_size(),
+                |t| model.token_to_id(t),
+                Some(&normalizer),
+            )
             .unwrap();
 
         // Raw pass: the token lives in the normalized matcher, so nothing is carved.

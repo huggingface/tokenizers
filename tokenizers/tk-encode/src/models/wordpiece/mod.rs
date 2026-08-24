@@ -12,9 +12,7 @@ use std::convert::TryFrom;
 use std::{
     borrow::Cow,
     fs::File,
-    io::prelude::*,
     io::{BufRead, BufReader},
-    path::{Path, PathBuf},
 };
 use yada::DoubleArray;
 use yada::builder::DoubleArrayBuilder;
@@ -291,29 +289,6 @@ impl Model for WordPiece {
     fn id_to_token(&self, id: u32) -> Option<String> {
         self.vocab_r.get(&id).cloned()
     }
-
-    fn save(&self, folder: &Path, name: Option<&str>) -> Result<Vec<PathBuf>> {
-        let vocab_file_name = match name {
-            Some(name) => format!("{name}-vocab.txt"),
-            None => "vocab.txt".to_string(),
-        };
-
-        // Write vocab.txt
-        let vocab_path: PathBuf = [folder, Path::new(vocab_file_name.as_str())]
-            .iter()
-            .collect();
-        let mut vocab_file = File::create(&vocab_path)?;
-        let mut vocab: Vec<(&String, &u32)> = self.vocab.iter().collect();
-        vocab.sort_unstable_by_key(|k| *k.1);
-        vocab_file.write_all(
-            &vocab
-                .into_iter()
-                .flat_map(|(token, _)| format!("{token}\n").as_bytes().to_owned())
-                .collect::<Vec<_>>()[..],
-        )?;
-
-        Ok(vec![vocab_path])
-    }
 }
 
 pub struct WordPieceScratch {
@@ -418,6 +393,30 @@ impl PipelineWordPiece {
 
     pub fn id_to_token(&self, id: u32) -> Option<String> {
         self.vocab_r.get(id as usize)?.as_deref().map(str::to_owned)
+    }
+
+    /// `{"token": id}`, in id order. For a writer; the reverse table is dense over the ids, so the
+    /// holes a config left are the `None`s that get skipped.
+    pub fn vocab(&self) -> Vec<(String, u32)> {
+        self.vocab_r
+            .iter()
+            .enumerate()
+            .filter_map(|(id, token)| Some((token.as_deref()?.to_string(), id as u32)))
+            .collect()
+    }
+
+    /// The unknown token, or `None` when the config named one that is not in the vocabulary -- the
+    /// lowering keeps the id, so a name it could not resolve is not recoverable.
+    pub fn unk_token(&self) -> Option<&str> {
+        self.vocab_r.get(self.unk_token? as usize)?.as_deref()
+    }
+
+    pub fn continuing_subword_prefix(&self) -> &str {
+        &self.continuing_subword_prefix
+    }
+
+    pub fn max_input_chars_per_word(&self) -> usize {
+        self.max_input_chars_per_word
     }
 }
 

@@ -1,16 +1,14 @@
-//! The pipeline BPE model: its tables, how it is built from a [`BPE`], and how a pretokenized
-//! sequence is turned into tokens. Conversion to symbols lives in `convert`; the merge engines
-//! are `merge_multipass` and `merge_hot_cold_queue`.
+//! The pipeline BPE model: its tables, and how a pretokenized sequence is turned into tokens.
+//! Building it from a vocabulary and a merge list, and recovering the config back out of it, live
+//! in `serialization`. Conversion to symbols lives in `convert`; the merge engines are
+//! `merge_multipass` and `merge_hot_cold_queue`.
 use crate::models::bpe::At;
-use crate::models::bpe::Error;
-use crate::models::bpe::convert::{AFFIX_BUF, Affixes};
-use crate::models::bpe::legacy::model::BPE;
+use crate::models::bpe::convert::Affixes;
 use crate::models::bpe::merge_hot_cold_queue::{QueueScratch, merge_with_queue};
 use crate::models::bpe::merge_multipass::merge_multipass;
 use crate::models::bpe::tables::BpeTables;
 use crate::pipeline::{self, PipelineToken};
 use crate::tokenizer::Result;
-use crate::utils::byte_level::{self};
 use crate::utils::word_cache::{Lookup, WordCache};
 use crate::vocab::bucket_vocab_store::BucketVocabStore;
 
@@ -19,7 +17,7 @@ const GATE_ASCII: u16 = 24;
 
 /// The gate, indexed by a word's first content byte: words no longer than their gate go to
 /// multipass, longer ones to the hot/cold queue.
-fn build_byte_to_gate() -> [u16; 256] {
+pub(super) fn build_byte_to_gate() -> [u16; 256] {
     let mut b2g = [GATE_MULTI; 256];
     b2g[..0x80].fill(GATE_ASCII);
     // Kept for a word that is *only* a delimiter (a run of spaces), where there is no content to
@@ -55,9 +53,9 @@ pub struct PipelineBPE {
     pub(super) tables: BpeTables,
     pub(super) affixes: Option<Affixes>,
     pub(super) vocab: BucketVocabStore,
-    byte_to_gate: [u16; 256],
+    pub(super) byte_to_gate: [u16; 256],
     /// Slots for the per-scratch word cache, from the config. `None` disables it.
-    cache_capacity: Option<usize>,
+    pub(super) cache_capacity: Option<usize>,
 }
 
 // A `PipelineBPE` holds exactly one `Atoms`, so `Chars`' 1 KB byte-fallback table costs nothing.
@@ -73,11 +71,11 @@ pub(super) enum Atoms {
 }
 
 impl PipelineBPE {
-    /// True when this model was built with `with_byte_level`, which means
+    /// True when this model was built with `byte_level`, which means
     /// [`byte_level::transform_vocab`] already turned every vocabulary entry into its
     /// **decoded raw bytes** at load time. Decoding is then a concatenation, and running a
     /// `ByteLevel` decoder over these entries would decode a second time.
-    pub(crate) fn is_byte_level(&self) -> bool {
+    pub fn is_byte_level(&self) -> bool {
         matches!(self.atoms, Atoms::Bytes)
     }
 
@@ -95,124 +93,11 @@ impl PipelineBPE {
         self.vocab.id_to_token(id)
     }
 
-    pub fn from_bpe(model: BPE, with_byte_level: bool) -> Result<Self> {
-        if matches!(&model.dropout, Some(dropout) if *dropout > 0.0) {
-            return Err("BPE models with dropout not supported yet".into());
-        }
-        let BPE {
-            vocab,
-            merges,
-            ignore_merges,
-            byte_fallback,
-            unk_token,
-            fuse_unk,
-            continuing_subword_prefix,
-            end_of_word_suffix,
-            cache,
-            ..
-        } = model;
-        // A capacity of zero means "no cache"; anything else sizes the per-scratch table.
-        let cache_capacity = cache.map(|cache| cache.capacity).filter(|&c| c > 0);
-        let prefix = continuing_subword_prefix.unwrap_or_default();
-        let suffix = end_of_word_suffix.unwrap_or_default();
-        if prefix.len() + 4 + suffix.len() > AFFIX_BUF {
-            return Err("BPE affixes too long: raise AFFIX_BUF".into());
-        }
-
-        let (tables, external_to_internal) = BpeTables::build(
-            vocab.get_vocab().into_iter().collect(),
-            merges,
-            with_byte_level,
-        );
-        // the symbol stream is internal ids, mapped back through `unmap` at the very end
-        let to_internal = |external: u32| -> Option<u32> {
-            external_to_internal
-                .get(external as usize)
-                .copied()
-                .filter(|&internal| internal != u32::MAX)
-        };
-        let (vocab, atoms) = if with_byte_level {
-            let mut vocab = BucketVocabStore::build(vocab.byte_content());
-            vocab = byte_level::transform_vocab(vocab);
-            // every byte has to be an atom, or a word containing it could not be encoded at all
-            for b in 0u8..=255 {
-                vocab
-                    .get_bytes(&[b])
-                    .ok_or(Error::ByteAtomOutOfVocabulary(b))?;
-            }
-            (vocab, Atoms::Bytes)
-        } else {
-            let vocab = BucketVocabStore::build(vocab.byte_content());
-            let unk_token = if let Some(unk_str) = unk_token {
-                let token_id = vocab
-                    .token_to_id(&unk_str)
-                    .ok_or_else(|| Error::UnkTokenOutOfVocabulary(unk_str.clone()))?;
-                Some(token_id)
-            } else {
-                None
-            };
-            let unk_token = unk_token.map(|external| to_internal(external).unwrap_or(u32::MAX));
-            let fallback_lookup = if byte_fallback {
-                let mut fallback_lookup = [0u32; 256];
-                for b in 0u8..=255 {
-                    let code = format!("<{b:#04X}>");
-                    let external = vocab
-                        .token_to_id(&code)
-                        .ok_or(Error::ByteFallbackOutOfVocabulary(b))?;
-                    fallback_lookup[b as usize] =
-                        to_internal(external).ok_or(Error::ByteFallbackOutOfVocabulary(b))?;
-                }
-                Some(fallback_lookup)
-            } else {
-                None
-            };
-            (
-                vocab,
-                Atoms::Chars {
-                    fuse_unk,
-                    unk_token,
-                    byte_fallback: fallback_lookup,
-                },
-            )
-        };
-        let affixes = (!prefix.is_empty() || !suffix.is_empty()).then(|| Affixes {
-            prefix,
-            suffix,
-            to_internal: external_to_internal.into_boxed_slice(),
-        });
-        let mut built = Self {
-            atoms,
-            tables,
-            affixes,
-            cache_capacity,
-            vocab,
-            byte_to_gate: build_byte_to_gate(),
-        };
-        // Every entry carries a foldable bit, so the encode path is one probe and one bit test
-        // with no policy left in it. The policy is decided here, once: a config that declares
-        // `ignore_merges` asks for every hit to fold, so every entry gets the bit; otherwise only
-        // the entries that prove they reduce to themselves earn it.
-        //
-        // Two phases because the proof runs the merge engine, which borrows `built`: work out the
-        // answers first, then set the bit on each entry that earned it.
-        let proven = if ignore_merges {
-            vec![true; built.vocab.id_space()]
-        } else {
-            built.prove_fold()
-        };
-        for (id, foldable) in proven.iter().enumerate() {
-            if *foldable {
-                built.vocab.set_foldable(id as u32);
-            }
-        }
-        Ok(built)
-    }
-
     /// One bit per vocabulary id: can a pretoken equal to this entry be emitted as this entry,
     /// without running the merge loop?
     ///
     /// We replace the old "ignore_merges" with something that actually ignores whether or not the flag was set.
-    fn prove_fold(&self) -> Vec<bool> {
+    pub(super) fn prove_fold(&self) -> Vec<bool> {
         // The id space, not the entry count: ids may be sparse, and bounding the walk by
         // `vocab.len()` would leave every entry above it unproven.
         let len = self.vocab.id_space();
@@ -245,7 +130,7 @@ impl PipelineBPE {
     #[inline(always)]
     fn fold_id(&self, sequence: &str) -> Option<u32> {
         // One probe; the foldable bit is part of the id that probe already returned. Which entries
-        // carry it was settled at load -- see `from_bpe`.
+        // carry it was settled at load -- see `from_merge_map`.
         let (id, foldable) = self.vocab.get_bytes_foldable(sequence.as_bytes())?;
         foldable.then_some(id)
     }
@@ -351,95 +236,5 @@ impl pipeline::Model for PipelineBPE {
             queue: QueueScratch::default(),
             word_cache: self.cache_capacity.map(WordCache::new),
         }
-    }
-}
-
-#[cfg(test)]
-mod fold_tests {
-    use crate::Tokenizer;
-    use crate::pipeline::PipelineTokenizer;
-
-    /// The proven fold emits a vocabulary entry without merging, so it is only valid if the merge
-    /// loop would have produced that same entry. gpt2 does not declare `ignore_merges`, so here
-    /// the fold is on purely because the proof enabled it -- which makes it the config where a
-    /// wrong proof would show up.
-    ///
-    /// These strings mix words that are a single vocabulary entry (folded) with words that are
-    /// not (merged), and include the special token whose entry does NOT fold: `<|endoftext|>`
-    /// decomposes to seven tokens, and folding it would emit one.
-    #[test]
-    fn the_proven_fold_never_changes_the_ids() {
-        let reference = Tokenizer::from_file("../data/gpt2.json").unwrap();
-        let pipe = PipelineTokenizer::try_from(&reference).unwrap();
-
-        for text in [
-            " the quick brown fox jumps over the lazy dog",
-            "unprefixed words and internationalisation",
-            "def foo(bar):\n    return bar + 1\n",
-            "<|endoftext|> literal in the middle <|endoftext|>",
-            " 语言模型 mixed with ASCII and ελληνικά",
-            "aaaaaaaaaaaaaaaaaaaaaaaa",
-            "   ",
-            "",
-        ] {
-            let want: Vec<u32> = reference
-                .encode_fast(text, false)
-                .unwrap()
-                .get_ids()
-                .to_vec();
-            let got: Vec<u32> = pipe
-                .encode(text, false)
-                .wait()
-                .unwrap()
-                .remove(0)
-                .ids()
-                .iter()
-                .map(|t| t.id())
-                .collect();
-            assert_eq!(want, got, "the fold changed the ids for {text:?}");
-        }
-    }
-
-    /// `PipelineBPE::tokenize_spans` is an override of a trait method whose default is the
-    /// `tokenize_pipeline` loop, so the two can drift apart without anything failing to build --
-    /// which is how it came to destructure a `BpeScratch` that no longer had those fields.
-    ///
-    /// The short strings above pass through the batch loop a handful of spans at a time. This one
-    /// gives it thousands in a single chunk, with the traffic that separates the two paths:
-    /// repeats (so the word cache both fills and hits), words the fold serves, words that must
-    /// merge, punctuation runs, multi-byte scripts, and a long unbroken run.
-    #[test]
-    fn the_batched_path_matches_the_reference() {
-        let reference = Tokenizer::from_file("../data/gpt2.json").unwrap();
-        let pipe = PipelineTokenizer::try_from(&reference).unwrap();
-
-        let mut text = String::new();
-        for i in 0..400 {
-            text.push_str(" the quick brown fox jumps over the lazy dog");
-            text.push_str(" internationalisation unfortunately");
-            text.push_str(" def foo(bar): return bar + 1");
-            text.push_str(" <|xs0|> <|xs1|> <|endoftext|>");
-            text.push_str(" 语言模型 ελληνικά");
-            if i % 3 == 0 {
-                text.push_str(" aaaaaaaaaaaaaaaaaaaaaaaa ");
-            }
-        }
-
-        let want: Vec<u32> = reference
-            .encode_fast(text.as_str(), false)
-            .unwrap()
-            .get_ids()
-            .to_vec();
-        let got: Vec<u32> = pipe
-            .encode(text.as_str(), false)
-            .wait()
-            .unwrap()
-            .remove(0)
-            .ids()
-            .iter()
-            .map(|t| t.id())
-            .collect();
-        assert_eq!(want.len(), got.len(), "token count differs");
-        assert_eq!(want, got, "the batched path changed the ids");
     }
 }
