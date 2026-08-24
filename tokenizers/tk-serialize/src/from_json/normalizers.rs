@@ -3,7 +3,9 @@
 #[cfg(not(feature = "normalizers"))]
 use super::needs_feature;
 use super::unsupported;
-use crate::json::{Json, JsonExt};
+use crate::json::Json;
+#[cfg(feature = "normalizers")]
+use base64::Engine as _;
 use tk_encode::normalizers::byte_level::ByteLevel as ByteLevelNormalizer;
 use tk_encode::normalizers::prepend::Prepend;
 use tk_encode::normalizers::replace::{Replace, ReplacePattern};
@@ -32,16 +34,12 @@ fn push_normalizer(cfg: &Json<'_>, out: &mut Vec<PipelineNormalizer>) -> Result<
     let kind = cfg
         .type_tag()
         .ok_or_else(|| unsupported("a normalizer with no `type`"))?;
-    let flag = |name: &str| -> Result<bool> {
-        cfg.get_some(name)
-            .and_then(Json::as_bool)
-            .ok_or_else(|| format!("the `{kind}` normalizer has no `{name}`").into())
-    };
+    let owner = format!("the `{kind}` normalizer");
     match kind {
         "Sequence" => {
             for member in cfg
-                .get_some("normalizers")
-                .and_then(Json::as_arr)
+                .field("normalizers")
+                .and_then(Json::as_array)
                 .unwrap_or(&[])
             {
                 push_normalizer(member, out)?;
@@ -50,7 +48,7 @@ fn push_normalizer(cfg: &Json<'_>, out: &mut Vec<PipelineNormalizer>) -> Result<
         "Replace" => out.push(PipelineNormalizer::Replace(read_replace(cfg)?)),
         "Prepend" => {
             let prepend = cfg
-                .get_some("prepend")
+                .field("prepend")
                 .and_then(Json::as_str)
                 .ok_or_else(|| -> tk_encode::Error { "Prepend has no `prepend` field".into() })?;
             out.push(PipelineNormalizer::Prepend(Prepend::new(
@@ -58,8 +56,8 @@ fn push_normalizer(cfg: &Json<'_>, out: &mut Vec<PipelineNormalizer>) -> Result<
             )));
         }
         "Strip" => out.push(PipelineNormalizer::Strip(Strip::new(
-            flag("strip_left")?,
-            flag("strip_right")?,
+            cfg.need(&owner, "strip_left", Json::as_bool)?,
+            cfg.need(&owner, "strip_right", Json::as_bool)?,
         ))),
         "Lowercase" => out.push(PipelineNormalizer::Lowercase(Lowercase)),
         "ByteLevel" => out.push(PipelineNormalizer::ByteLevel(ByteLevelNormalizer)),
@@ -75,10 +73,10 @@ fn push_normalizer(cfg: &Json<'_>, out: &mut Vec<PipelineNormalizer>) -> Result<
                 })?
                 .as_bool();
             out.push(PipelineNormalizer::Bert(BertNormalizer::new(
-                flag("clean_text")?,
-                flag("handle_chinese_chars")?,
+                cfg.need(&owner, "clean_text", Json::as_bool)?,
+                cfg.need(&owner, "handle_chinese_chars", Json::as_bool)?,
                 strip_accents,
-                flag("lowercase")?,
+                cfg.need(&owner, "lowercase", Json::as_bool)?,
             )));
         }
         #[cfg(feature = "normalizers")]
@@ -96,12 +94,16 @@ fn push_normalizer(cfg: &Json<'_>, out: &mut Vec<PipelineNormalizer>) -> Result<
         #[cfg(feature = "normalizers")]
         "Precompiled" => {
             let charsmap = cfg
-                .get_some("precompiled_charsmap")
+                .field("precompiled_charsmap")
                 .and_then(Json::as_str)
                 .ok_or_else(|| -> tk_encode::Error {
                     "Precompiled has no `precompiled_charsmap`".into()
                 })?;
-            let bytes = base64_decode(charsmap)?;
+            let bytes = crate::BASE64
+                .decode(charsmap)
+                .map_err(|e| -> tk_encode::Error {
+                    format!("`precompiled_charsmap` is not valid base64: {e}").into()
+                })?;
             // The bytes go in beside the parsed value: they are the whole of this normalizer's
             // configuration, and `spm_precompiled` publishes them only through serde.
             out.push(PipelineNormalizer::Precompiled(
@@ -122,23 +124,17 @@ fn push_normalizer(cfg: &Json<'_>, out: &mut Vec<PipelineNormalizer>) -> Result<
 }
 
 /// Shared by the `Replace` normalizer and the `Replace` decoder — the same type in both roles.
-///
-/// A regex pattern is forwarded rather than refused: `Replace::new` compiles it with the system
-/// backend, and the build without one already errors with a message naming `fancy-regex`. Refusing
-/// here would only replace that message with a worse one.
-/// The two fields a `Replace` is spelled with, shared by the normalizer and the decoder -- which
-/// are separate types with the same JSON shape, so the *parsing* is shared rather than the type.
 pub(super) fn read_replace_fields<'a>(cfg: &'a Json<'a>) -> Result<(ReplacePattern, &'a str)> {
     let pattern = cfg
-        .get_some("pattern")
+        .field("pattern")
         .ok_or_else(|| -> tk_encode::Error { "Replace has no `pattern`".into() })?;
     let content = cfg
-        .get_some("content")
+        .field("content")
         .and_then(Json::as_str)
         .ok_or_else(|| -> tk_encode::Error { "Replace has no `content`".into() })?;
-    let pattern = if let Some(s) = pattern.get_some("String").and_then(Json::as_str) {
+    let pattern = if let Some(s) = pattern.field("String").and_then(Json::as_str) {
         ReplacePattern::String(s.to_string())
-    } else if let Some(r) = pattern.get_some("Regex").and_then(Json::as_str) {
+    } else if let Some(r) = pattern.field("Regex").and_then(Json::as_str) {
         ReplacePattern::Regex(r.to_string())
     } else {
         return Err("Replace `pattern` is neither `String` nor `Regex`".into());
@@ -149,46 +145,4 @@ pub(super) fn read_replace_fields<'a>(cfg: &'a Json<'a>) -> Result<(ReplacePatte
 fn read_replace(cfg: &Json<'_>) -> Result<Replace> {
     let (pattern, content) = read_replace_fields(cfg)?;
     Replace::new(pattern, content)
-}
-
-/// Standard-alphabet base64, for `Precompiled`'s charsmap — the one place a `tokenizer.json` holds
-/// binary. Written out rather than pulled in as a dependency: it is 20 lines, and the slim path
-/// exists to shed dependencies.
-// Only `Precompiled` needs it, so a build without `normalizers` has no caller — but its tests are
-// worth running in every build, hence the `test` arm.
-#[cfg(any(feature = "normalizers", test))]
-pub(crate) fn base64_decode(s: &str) -> Result<Vec<u8>> {
-    fn sextet(b: u8) -> Option<u32> {
-        Some(match b {
-            b'A'..=b'Z' => u32::from(b - b'A'),
-            b'a'..=b'z' => u32::from(b - b'a') + 26,
-            b'0'..=b'9' => u32::from(b - b'0') + 52,
-            b'+' => 62,
-            b'/' => 63,
-            _ => return None,
-        })
-    }
-    let mut out = Vec::with_capacity(s.len() / 4 * 3);
-    let (mut acc, mut bits) = (0u32, 0u32);
-    for &byte in s.as_bytes() {
-        // Padding only ever trails, so the first `=` ends the data.
-        if byte == b'=' {
-            break;
-        }
-        let Some(six) = sextet(byte) else {
-            return Err("`precompiled_charsmap` is not valid base64".into());
-        };
-        acc = (acc << 6) | six;
-        bits += 6;
-        if bits >= 8 {
-            bits -= 8;
-            out.push((acc >> bits) as u8);
-        }
-    }
-    // A whole group leaves 0 bits over, a 3- or 2-character tail 2 or 4. Six means a lone trailing
-    // character, which encodes nothing and can only be a truncated file.
-    if bits >= 6 {
-        return Err("`precompiled_charsmap` ends mid-group".into());
-    }
-    Ok(out)
 }

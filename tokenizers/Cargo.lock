@@ -2335,6 +2335,7 @@ name = "tk-serialize"
 version = "1.0.0-rc.0"
 dependencies = [
  "atomsplit",
+ "base64 0.22.1",
  "hifijson",
  "serde_json",
  "tk-encode",

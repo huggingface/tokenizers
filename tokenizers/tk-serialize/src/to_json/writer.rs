@@ -159,7 +159,7 @@ impl Out {
 
     /// `"key": "value"` when there is one, `"key": null` when there is not.
     ///
-    /// Spelled rather than omitted because the reader's `get_some` treats an explicit `null` as
+    /// Spelled rather than omitted because the reader's `field` treats an explicit `null` as
     /// absent, so the two are the same document to it, and a present key says out loud that the
     /// writer considered the field.
     pub(super) fn field_opt_str(&mut self, key: &str, value: Option<&str>) {
@@ -335,7 +335,7 @@ fn keep_it_a_float(literal: String) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::json::{Json, JsonExt};
+    use crate::json::Json;
 
     /// Round-trip through the *public* accessor, not just `f64_from_literal`, so the test covers
     /// the path a reader really takes.

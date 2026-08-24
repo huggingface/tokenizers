@@ -1,10 +1,10 @@
-use crate::json::{Json, JsonExt};
+use crate::json::Json;
 use tk_encode::tokenizer::Result;
 use tk_encode::vocab::bucket_added_vocabulary::AddedToken as BucketAddedToken;
 
 /// Added tokens, in ascending id order — `add_tokens` depends on that order
 pub(super) fn read_added_tokens(cfg: Option<&Json<'_>>) -> Result<Vec<BucketAddedToken>> {
-    let Some(arr) = cfg.and_then(Json::as_arr) else {
+    let Some(arr) = cfg.and_then(Json::as_array) else {
         return Ok(Vec::new());
     };
     // The ids alone decide the order, so only the ids get sorted: each key is its token's id in
@@ -28,19 +28,14 @@ pub(super) fn read_added_tokens(cfg: Option<&Json<'_>>) -> Result<Vec<BucketAdde
             .and_then(Json::as_str)
             .ok_or_else(|| -> tk_encode::Error { "an added token has no `content`".into() })?;
         // `AddedToken` has no serde defaults on the config path either: all six flags are required.
-        let flag = |name: &str| -> Result<bool> {
-            entry
-                .get(name)
-                .and_then(Json::as_bool)
-                .ok_or_else(|| format!("added token {content:?} has no `{name}`").into())
-        };
+        let owner = format!("added token {content:?}");
         out.push(BucketAddedToken {
             content: content.to_string(),
-            single_word: flag("single_word")?,
-            lstrip: flag("lstrip")?,
-            rstrip: flag("rstrip")?,
-            normalized: flag("normalized")?,
-            special: flag("special")?,
+            single_word: entry.need(&owner, "single_word", Json::as_bool)?,
+            lstrip: entry.need(&owner, "lstrip", Json::as_bool)?,
+            rstrip: entry.need(&owner, "rstrip", Json::as_bool)?,
+            normalized: entry.need(&owner, "normalized", Json::as_bool)?,
+            special: entry.need(&owner, "special", Json::as_bool)?,
         });
     }
     Ok(out)

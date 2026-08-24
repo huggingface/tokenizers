@@ -3,14 +3,14 @@
 #[cfg(not(feature = "unicode-scripts"))]
 use super::needs_feature;
 use super::unsupported;
-use crate::json::{Json, JsonExt};
+use crate::json::Json;
+use tk_encode::decoders::metaspace::PrependScheme;
 use tk_encode::normalizers::metaspace::MetaspaceNormalizer;
 use tk_encode::pipeline::{PipelineNormalizer, PipelinePreTokenizer};
 use tk_encode::pre_tokenizers::bert::BertPreTokenizer;
 use tk_encode::pre_tokenizers::delimiter::CharDelimiterSplit;
 use tk_encode::pre_tokenizers::digits::Digits;
 use tk_encode::pre_tokenizers::fixed_length::FixedLength;
-use tk_encode::decoders::metaspace::PrependScheme;
 use tk_encode::pre_tokenizers::punctuation::Punctuation;
 use tk_encode::pre_tokenizers::sequence::PipelineSequence;
 use tk_encode::pre_tokenizers::split::{Split as SplitPretok, SplitPattern};
@@ -19,11 +19,6 @@ use tk_encode::pre_tokenizers::unicode_scripts::UnicodeScripts;
 use tk_encode::pre_tokenizers::whitespace::{Whitespace, WhitespaceSplit};
 use tk_encode::tokenizer::{Result, SplitDelimiterBehavior};
 
-/// The pre-tokenizer, plus whether a `ByteLevel` is in play — the model needs to know, and the
-/// config path derives the same flag the same way.
-///
-/// `normalizers` is appended to for the one pre-tokenizer that is also a rewrite: see
-/// [`read_metaspace`].
 pub(super) fn read_pre_tokenizer(
     cfg: Option<&Json<'_>>,
     normalizers: &mut Vec<PipelineNormalizer>,
@@ -41,8 +36,8 @@ pub(super) fn read_pre_tokenizer(
 
     if kind == "Sequence" {
         let members = cfg
-            .get_some("pretokenizers")
-            .and_then(Json::as_arr)
+            .field("pretokenizers")
+            .and_then(Json::as_array)
             .unwrap_or(&[]);
         // t5 and albert: throw the whitespace away first, then mark where words start. The config
         // path recognises this exact pair and collapses it to a single `Split`, so a `Sequence`
@@ -84,11 +79,7 @@ fn read_one_pre_tokenizer(cfg: &Json<'_>) -> Result<PipelinePreTokenizer> {
     let kind = cfg
         .type_tag()
         .ok_or_else(|| unsupported("a pre-tokenizer with no `type`"))?;
-    let b = |name: &str, default: bool| {
-        cfg.get_some(name)
-            .and_then(Json::as_bool)
-            .unwrap_or(default)
-    };
+    let b = |name: &str, default: bool| cfg.field(name).and_then(Json::as_bool).unwrap_or(default);
 
     Ok(match kind {
         "ByteLevel" => byte_level_pre_tokenizer(cfg)?,
@@ -112,7 +103,7 @@ fn read_one_pre_tokenizer(cfg: &Json<'_>) -> Result<PipelinePreTokenizer> {
         )?)),
         "CharDelimiterSplit" => {
             let d = cfg
-                .get_some("delimiter")
+                .field("delimiter")
                 .and_then(Json::as_str)
                 .and_then(|s| s.chars().next())
                 .ok_or_else(|| -> tk_encode::Error {
@@ -121,10 +112,7 @@ fn read_one_pre_tokenizer(cfg: &Json<'_>) -> Result<PipelinePreTokenizer> {
             PipelinePreTokenizer::Delimiter(CharDelimiterSplit::new(d))
         }
         "FixedLength" => {
-            let n = cfg
-                .get_some("length")
-                .and_then(Json::as_usize)
-                .ok_or_else(|| -> tk_encode::Error { "FixedLength has no `length`".into() })?;
+            let n = cfg.need("FixedLength", "length", Json::as_usize)?;
             PipelinePreTokenizer::FixedLength(FixedLength::new(n))
         }
         // Only the two shapes `read_pre_tokenizer` intercepts can be rebuilt as normalizer + split;
@@ -145,14 +133,14 @@ fn read_one_pre_tokenizer(cfg: &Json<'_>) -> Result<PipelinePreTokenizer> {
 /// `PipelineSequence` relies on seeing a `None` there to fuse the pair.
 fn byte_level_pre_tokenizer(cfg: &Json<'_>) -> Result<PipelinePreTokenizer> {
     if cfg
-        .get_some("add_prefix_space")
+        .field("add_prefix_space")
         .and_then(Json::as_bool)
         .unwrap_or(false)
     {
         return Err("ByteLevel add_prefix_space=true is not supported by the pipeline yet".into());
     }
     let use_regex = cfg
-        .get_some("use_regex")
+        .field("use_regex")
         .and_then(Json::as_bool)
         .unwrap_or(true);
     if !use_regex {
@@ -180,11 +168,7 @@ fn read_metaspace(
     let replacement = read_char(cfg, "replacement")?;
     // `split: false` writes the delimiters but never cuts the text, so there is no `Split` to hand
     // back, and no way to express "rewrite only" as a pre-tokenizer.
-    if !cfg
-        .get_some("split")
-        .and_then(Json::as_bool)
-        .unwrap_or(true)
-    {
+    if !cfg.field("split").and_then(Json::as_bool).unwrap_or(true) {
         return Err(unsupported(
             "a `Metaspace` pre-tokenizer with `split: false`",
         ));
@@ -233,14 +217,14 @@ fn read_metaspace(
 ///
 /// Surprising, and reproduced rather than fixed, because ids depend on it.
 pub(super) fn read_prepend_scheme(cfg: &Json<'_>) -> Result<PrependScheme> {
-    let mut scheme = match cfg.get_some("prepend_scheme").and_then(Json::as_str) {
+    let mut scheme = match cfg.field("prepend_scheme").and_then(Json::as_str) {
         None => PrependScheme::Always,
         Some("always") => PrependScheme::Always,
         Some("first") => PrependScheme::First,
         Some("never") => PrependScheme::Never,
         Some(other) => return Err(format!("unknown metaspace prepend_scheme {other:?}").into()),
     };
-    if cfg.get_some("add_prefix_space").and_then(Json::as_bool) == Some(false) {
+    if cfg.field("add_prefix_space").and_then(Json::as_bool) == Some(false) {
         if scheme != PrependScheme::Never {
             return Err("add_prefix_space does not match declared prepend_scheme".into());
         }
@@ -253,7 +237,7 @@ pub(super) fn read_prepend_scheme(cfg: &Json<'_>) -> Result<PrependScheme> {
 /// rejects anything else; a two-character `replacement` must not silently become its first char.
 pub(super) fn read_char(cfg: &Json<'_>, key: &str) -> Result<char> {
     let s = cfg
-        .get_some(key)
+        .field(key)
         .and_then(Json::as_str)
         .ok_or_else(|| -> tk_encode::Error { format!("missing `{key}`").into() })?;
     let mut chars = s.chars();
@@ -265,16 +249,13 @@ pub(super) fn read_char(cfg: &Json<'_>, key: &str) -> Result<char> {
 
 fn read_split(cfg: &Json<'_>) -> Result<SplitPretok> {
     let pattern = cfg
-        .get_some("pattern")
+        .field("pattern")
         .ok_or_else(|| -> tk_encode::Error { "Split has no `pattern`".into() })?;
     let behavior = read_behavior(cfg, SplitDelimiterBehavior::Isolated)?;
-    let invert = cfg
-        .get_some("invert")
-        .and_then(Json::as_bool)
-        .unwrap_or(false);
-    let pattern = if let Some(s) = pattern.get_some("String").and_then(Json::as_str) {
+    let invert = cfg.field("invert").and_then(Json::as_bool).unwrap_or(false);
+    let pattern = if let Some(s) = pattern.field("String").and_then(Json::as_str) {
         SplitPattern::String(s.to_string())
-    } else if let Some(r) = pattern.get_some("Regex").and_then(Json::as_str) {
+    } else if let Some(r) = pattern.field("Regex").and_then(Json::as_str) {
         SplitPattern::Regex(r.to_string())
     } else {
         return Err("Split `pattern` is neither `String` nor `Regex`".into());
@@ -288,7 +269,7 @@ fn read_behavior(
     cfg: &Json<'_>,
     default: SplitDelimiterBehavior,
 ) -> Result<SplitDelimiterBehavior> {
-    let Some(name) = cfg.get_some("behavior").and_then(Json::as_str) else {
+    let Some(name) = cfg.field("behavior").and_then(Json::as_str) else {
         return Ok(default);
     };
     // Spelled out to match the serialized names exactly; `Display for SplitDelimiterBehavior` is

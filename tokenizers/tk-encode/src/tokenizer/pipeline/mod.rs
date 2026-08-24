@@ -144,7 +144,6 @@ pub enum PipelineNormalizer {
 // tokens through a lowered chain.
 pub struct NormalizerChain<'a>(pub &'a [PipelineNormalizer]);
 
-
 impl Normalizer for NormalizerChain<'_> {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
         normalize_all(self.0, input)

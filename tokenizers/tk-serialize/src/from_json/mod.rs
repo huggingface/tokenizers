@@ -1,31 +1,4 @@
-//! Build a [`PipelineTokenizer`] straight from a `tokenizer.json`, with no serde anywhere.
-//!
-//! This is the slim read path. It parses the config with [`tk_encode::tokenizer::json`] and constructs
-//! the pipeline-native types directly, because naming a wrapper enum makes every variant of it
-//! reachable, and that reachability is most of what this exercise exists to remove. In particular
-//! neither `ModelWrapper` nor `NormalizerWrapper` is ever named: the concrete model goes straight
-//! into a [`PipelineModel`], and each normalizer into its own [`PipelineNormalizer`] variant.
-//!
-//! The decoder is the single exception, and a deliberate one: it is off the encode path and all of
-//! its variants are small, so the reader builds a [`DecoderRuntime`] directly. See [`read_decoder`].
-//!
-//! A child module of `pipeline` on purpose: `Slice` and `Template` are reused rather than copied, so
-//! the post-processor is lowered by exactly the same code the config path uses rather than a second
-//! copy of the rules. The pipeline itself is assembled through
-//! [`PipelineTokenizer::from_parts`], which both readers share.
-//!
-//! ## Construction order is load-bearing
-//!
-//! Added tokens must be replayed into the vocabulary **before** the model is lowered to a
-//! [`PipelineModel`], against the *concrete* model, and in id order. `add_tokens` reuses a model id
-//! when the token is already in the vocabulary, so replaying in order is what reproduces the id
-//! assignment the config path produces. Getting this wrong drifts ids silently — `json_oracle` is
-//! the gate that catches it.
-//!
-//! The concrete model differs per model kind, which is exactly why [`build`] is generic over it:
-//! the shared tail is written once and each kind hands it its own model plus the closure that
-//! lowers it. That avoids a `ModelWrapper` — the one type whose mere mention drags in every model's
-//! deserializer.
+//! Build a [`PipelineTokenizer`] from a `tokenizer.json`.
 //!
 //! ## Legacy shapes accepted
 //!
@@ -37,9 +10,7 @@
 //!   and albert still ship (see [`read_prepend_scheme`] for the exact rule, quirk included)
 //!
 //! Everything else legacy — vocab-as-file-path, an untagged component object — is refused with a
-//! message naming what to convert. That is the whole point of the split: the BC lives in the
-//! offline crate.
-
+//! message naming what to convert.
 mod added_tokens;
 mod decoders;
 mod model;
@@ -60,13 +31,9 @@ use self::model::read_wordlevel;
 #[cfg(feature = "wordpiece")]
 use self::model::read_wordpiece;
 use self::normalizers::read_normalizers;
-// The writer's base64 encoder is checked against this decoder rather than against a table of
-// expected strings, so the pair is tested as a pair.
-#[cfg(test)]
-pub(crate) use self::normalizers::base64_decode;
 use self::post_processors::read_post_processor;
 use self::pre_tokenizers::read_pre_tokenizer;
-use crate::json::{Json, JsonExt};
+use crate::json::Json;
 use tk_encode::models::bpe::{BpeConfig, PipelineBPE, Vocab};
 use tk_encode::pipeline::{
     NormalizerChain, PipelineModel, PipelineNormalizer, PipelinePreTokenizer, PipelineTokenizer,
@@ -74,7 +41,6 @@ use tk_encode::pipeline::{
 use tk_encode::tokenizer::Result;
 use tk_encode::vocab::bucket_added_vocabulary::AddedVocabulary as BucketAddedVocabulary;
 
-/// What the reader will not do, phrased as an instruction rather than a complaint.
 fn unsupported(what: &str) -> tk_encode::Error {
     format!(
         "the slim JSON reader does not support {what}. Convert the config offline \
@@ -108,21 +74,21 @@ pub fn from_json_file(path: impl AsRef<std::path::Path>) -> Result<PipelineToken
 fn from_json_value(doc: &Json<'_>) -> Result<PipelineTokenizer> {
     // The config path gates on this exact string, so a future format bump is a loud failure
     // rather than a silently mis-read file.
-    if let Some(v) = doc.get_some("version").and_then(Json::as_str)
+    if let Some(v) = doc.field("version").and_then(Json::as_str)
         && v != "1.0"
     {
         return Err(format!("unknown tokenizer version '{v}'").into());
     }
 
-    let mut normalizers = read_normalizers(doc.get_some("normalizer"))?;
+    let mut normalizers = read_normalizers(doc.field("normalizer"))?;
     // Takes `normalizers` because a `Metaspace` pre-tokenizer contributes one, and it has to
     // land *after* the declared normalizer — the config asks for the whole normalizer first,
     // then the pre-tokenizer.
     let (pre_tokenizer, byte_level) =
-        read_pre_tokenizer(doc.get_some("pre_tokenizer"), &mut normalizers)?;
+        read_pre_tokenizer(doc.field("pre_tokenizer"), &mut normalizers)?;
 
     let model_cfg = doc
-        .get_some("model")
+        .field("model")
         .ok_or_else(|| -> tk_encode::Error { "config has no `model`".into() })?;
     let kind = model_kind(model_cfg);
     if byte_level && kind != "BPE" {
@@ -135,13 +101,21 @@ fn from_json_value(doc: &Json<'_>) -> Result<PipelineTokenizer> {
     match kind {
         "BPE" => {
             let (vocab, merges, options) = read_bpe(model_cfg, byte_level)?;
-            build(doc, normalizers, pre_tokenizer, VocabOnly(vocab), |vocab| {
-                Ok(PipelineModel::BPE(PipelineBPE::from_config(BpeConfig {
-                    vocab: vocab.0,
-                    merges,
-                    ..options
-                })?))
-            })
+            build(
+                doc,
+                normalizers,
+                pre_tokenizer,
+                vocab,
+                |v| v.len(),
+                |v, t| v.get(t).copied(),
+                |vocab| {
+                    Ok(PipelineModel::BPE(PipelineBPE::from_config(BpeConfig {
+                        vocab,
+                        merges,
+                        ..options
+                    })?))
+                },
+            )
         }
         #[cfg(feature = "wordpiece")]
         "WordPiece" => build(
@@ -149,6 +123,8 @@ fn from_json_value(doc: &Json<'_>) -> Result<PipelineTokenizer> {
             normalizers,
             pre_tokenizer,
             read_wordpiece(model_cfg)?,
+            tk_encode::Model::get_vocab_size,
+            |m, t| tk_encode::Model::token_to_id(m, t),
             |wp| Ok(PipelineModel::WordPiece(wp.try_into()?)),
         ),
         #[cfg(feature = "unigram")]
@@ -157,6 +133,8 @@ fn from_json_value(doc: &Json<'_>) -> Result<PipelineTokenizer> {
             normalizers,
             pre_tokenizer,
             read_unigram(model_cfg)?,
+            tk_encode::Model::get_vocab_size,
+            |m, t| tk_encode::Model::token_to_id(m, t),
             |u| Ok(PipelineModel::Unigram(u)),
         ),
         #[cfg(feature = "wordlevel")]
@@ -165,6 +143,8 @@ fn from_json_value(doc: &Json<'_>) -> Result<PipelineTokenizer> {
             normalizers,
             pre_tokenizer,
             read_wordlevel(model_cfg)?,
+            tk_encode::Model::get_vocab_size,
+            |m, t| tk_encode::Model::token_to_id(m, t),
             |wl| Ok(PipelineModel::WordLevel(wl)),
         ),
         // Covers both an unrecognised `"type"` and a known one whose per-model feature is off,
@@ -178,14 +158,16 @@ fn from_json_value(doc: &Json<'_>) -> Result<PipelineTokenizer> {
     }
 }
 
-fn build<M: tk_encode::Model>(
+fn build<M>(
     doc: &Json<'_>,
     normalizers: Vec<PipelineNormalizer>,
     pre_tokenizer: PipelinePreTokenizer,
     concrete: M,
+    vocab_size: impl FnOnce(&M) -> usize,
+    token_to_id: impl Fn(&M, &str) -> Option<u32>,
     lower: impl FnOnce(M) -> Result<PipelineModel>,
 ) -> Result<PipelineTokenizer> {
-    let added = read_added_tokens(doc.get_some("added_tokens"))?;
+    let added = read_added_tokens(doc.field("added_tokens"))?;
 
     let mut added_vocabulary = BucketAddedVocabulary::new();
     // TODO: this has nothing to do here.
@@ -194,7 +176,12 @@ fn build<M: tk_encode::Model>(
         _ => &normalizers[..],
     };
     let chain = NormalizerChain(declared);
-    added_vocabulary.add_tokens(added, &concrete, Some(&chain))?;
+    added_vocabulary.add_tokens(
+        added,
+        vocab_size(&concrete),
+        |t| token_to_id(&concrete, t),
+        Some(&chain),
+    )?;
     // TODO: we need to read encode_special_tokens from the config as well.
     let model = lower(concrete)?;
 
@@ -203,8 +190,8 @@ fn build<M: tk_encode::Model>(
         normalizers,
         pre_tokenizer,
         model,
-        read_post_processor(doc.get_some("post_processor"))?,
-        read_decoder(doc.get_some("decoder"))?,
+        read_post_processor(doc.field("post_processor"))?,
+        read_decoder(doc.field("decoder"))?,
     ))
 }
 
@@ -222,50 +209,12 @@ fn model_kind(cfg: &Json<'_>) -> &'static str {
     }
     if cfg.get("merges").is_some() {
         "BPE"
-    } else if cfg.get("vocab").and_then(Json::as_arr).is_some() {
+    } else if cfg.get("vocab").and_then(Json::as_array).is_some() {
         // Unigram's vocab is an array of [token, score] pairs; everyone else's is an object.
         "Unigram"
     } else if cfg.get("continuing_subword_prefix").is_some() {
         "WordPiece"
     } else {
         "WordLevel"
-    }
-}
-
-/// TODO: I want this gone it's stupid.
-/// [`BucketAddedVocabulary::add_tokens`] wants a [`tk_encode::Model`], and it asks exactly two
-/// things of it: how many entries the vocabulary has, and whether it already contains a given
-/// token. Every model but BPE hands over its own value, which implements that trait. `PipelineBPE`
-/// cannot: it implements the *pipeline* `Model` trait instead, and -- decisively -- a byte-level one
-/// has already decoded its vocabulary at load, so asking it for `"\u{120}the"` would miss where the
-/// config's own vocabulary hits, and every added token after it would get a different id.
-///
-/// So the reader keeps the vocabulary object it parsed and answers from that. The other four methods
-/// are never reached; they are here because the trait requires them.
-struct VocabOnly(Vocab);
-
-impl tk_encode::Model for VocabOnly {
-    fn get_vocab_size(&self) -> usize {
-        self.0.len()
-    }
-
-    fn token_to_id(&self, token: &str) -> Option<u32> {
-        self.0.get(token).copied()
-    }
-
-    fn get_vocab(&self) -> std::collections::HashMap<String, u32> {
-        self.0.iter().map(|(k, &v)| (k.clone(), v)).collect()
-    }
-
-    /// A scan, because this direction is not what the type is for -- see the note above.
-    fn id_to_token(&self, id: u32) -> Option<String> {
-        self.0
-            .iter()
-            .find(|&(_, &v)| v == id)
-            .map(|(token, _)| token.clone())
-    }
-
-    fn tokenize(&self, _sequence: &str) -> Result<Vec<tk_encode::Token>> {
-        Err("this is a vocabulary lookup for added tokens, not an encoder".into())
     }
 }

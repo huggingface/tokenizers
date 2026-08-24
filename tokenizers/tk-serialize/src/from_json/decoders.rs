@@ -3,7 +3,7 @@
 use super::normalizers::read_replace_fields;
 use super::pre_tokenizers::{read_char, read_prepend_scheme};
 use super::unsupported;
-use crate::json::{Json, JsonExt};
+use crate::json::Json;
 use tk_encode::decoders::DecoderRuntime;
 use tk_encode::decoders::bpe::BPEDecoder;
 use tk_encode::decoders::byte_fallback::ByteFallback;
@@ -33,22 +33,7 @@ pub(super) fn read_one_decoder(cfg: &Json<'_>) -> Result<DecoderRuntime> {
     let kind = cfg
         .type_tag()
         .ok_or_else(|| unsupported("a decoder with no `type`"))?;
-    let flag = |name: &str| -> Result<bool> {
-        cfg.get_some(name)
-            .and_then(Json::as_bool)
-            .ok_or_else(|| format!("the `{kind}` decoder has no `{name}`").into())
-    };
-    let text = |name: &str| -> Result<String> {
-        cfg.get_some(name)
-            .and_then(Json::as_str)
-            .map(str::to_string)
-            .ok_or_else(|| format!("the `{kind}` decoder has no `{name}`").into())
-    };
-    let count = |name: &str| -> Result<usize> {
-        cfg.get_some(name)
-            .and_then(Json::as_usize)
-            .ok_or_else(|| format!("the `{kind}` decoder has no `{name}`").into())
-    };
+    let owner = format!("the `{kind}` decoder");
 
     Ok(match kind {
         "ByteLevel" => DecoderRuntime::ByteLevel(ByteLevelDecoder::new()),
@@ -57,14 +42,17 @@ pub(super) fn read_one_decoder(cfg: &Json<'_>) -> Result<DecoderRuntime> {
         "Fuse" => DecoderRuntime::Fuse(Fuse::new()),
         "Strip" => DecoderRuntime::Strip(StripDecoder::new(
             read_char(cfg, "content")?,
-            count("start")?,
-            count("stop")?,
+            cfg.need(&owner, "start", Json::as_usize)?,
+            cfg.need(&owner, "stop", Json::as_usize)?,
         )),
         // Spelled `BPEDecoder` in the file, unlike every other tag, which matches its type name.
-        "BPEDecoder" => DecoderRuntime::BPE(BPEDecoder::new(text("suffix")?)),
-        "WordPiece" => {
-            DecoderRuntime::WordPiece(WordPieceDecoder::new(text("prefix")?, flag("cleanup")?))
-        }
+        "BPEDecoder" => DecoderRuntime::BPE(BPEDecoder::new(
+            cfg.need(&owner, "suffix", Json::as_str)?.to_string(),
+        )),
+        "WordPiece" => DecoderRuntime::WordPiece(WordPieceDecoder::new(
+            cfg.need(&owner, "prefix", Json::as_str)?.to_string(),
+            cfg.need(&owner, "cleanup", Json::as_bool)?,
+        )),
         // `split` is read and thrown away: it says how the *pre-tokenizer* cut the text, and
         // decoding never looks at it.
         "Metaspace" => DecoderRuntime::Metaspace(MetaspaceDecoder::new(
@@ -72,14 +60,15 @@ pub(super) fn read_one_decoder(cfg: &Json<'_>) -> Result<DecoderRuntime> {
             read_prepend_scheme(cfg)?,
         )),
         "CTC" => DecoderRuntime::CTC(CTC::new(
-            text("pad_token")?,
-            text("word_delimiter_token")?,
-            flag("cleanup")?,
+            cfg.need(&owner, "pad_token", Json::as_str)?.to_string(),
+            cfg.need(&owner, "word_delimiter_token", Json::as_str)?
+                .to_string(),
+            cfg.need(&owner, "cleanup", Json::as_bool)?,
         )),
         "Sequence" => {
             let members = cfg
-                .get_some("decoders")
-                .and_then(Json::as_arr)
+                .field("decoders")
+                .and_then(Json::as_array)
                 .unwrap_or(&[]);
             DecoderRuntime::Sequence(
                 members

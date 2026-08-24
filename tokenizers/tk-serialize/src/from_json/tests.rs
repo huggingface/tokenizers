@@ -1,7 +1,6 @@
 //! The reader's own tests: `TINY_BPE` plus one case per component it reads.
 
 use super::decoders::read_one_decoder;
-use super::normalizers::base64_decode;
 use super::pre_tokenizers::read_prepend_scheme;
 use super::*;
 use tk_encode::decoders::metaspace::PrependScheme;
@@ -74,39 +73,20 @@ fn reads_a_tiny_bpe() {
 
 // ---- base64, the one piece of parsing that is not a field read ------------------------------
 
+/// `crate::BASE64` is a spelled-out engine rather than `STANDARD`, purely so that decoding stays
+/// indifferent to padding the way `spm_precompiled`'s `base64` 0.13 was. That is the only decision
+/// left here, so it is the only thing worth a test -- swap the engine for `STANDARD` and this fails.
 #[test]
-fn base64_round_trips_every_tail_length() {
-    // Reference vectors from RFC 4648 §10, which cover all three padding cases.
-    for (encoded, decoded) in [
-        ("", ""),
-        ("Zg==", "f"),
-        ("Zm8=", "fo"),
-        ("Zm9v", "foo"),
-        ("Zm9vYg==", "foob"),
-        ("Zm9vYmE=", "fooba"),
-        ("Zm9vYmFy", "foobar"),
-    ] {
-        assert_eq!(
-            base64_decode(encoded).unwrap(),
-            decoded.as_bytes(),
-            "{encoded}"
-        );
-    }
-}
+fn a_charsmap_decodes_padded_or_not() {
+    use base64::Engine as _;
 
-#[test]
-fn base64_decodes_without_padding_and_covers_the_alphabet() {
-    // The same three bytes, padded and not: `spm_precompiled`'s own decoder is lenient here.
-    assert_eq!(base64_decode("Zg").unwrap(), b"f");
-    // `+` and `/` are the two non-alphanumeric symbols, and the ones a URL-safe alphabet moves.
-    assert_eq!(base64_decode("++//").unwrap(), [0xfb, 0xef, 0xff]);
-}
-
-#[test]
-fn base64_rejects_junk_and_truncation() {
-    assert!(base64_decode("Zm9v!").is_err(), "an illegal character");
-    assert!(base64_decode("Z").is_err(), "a lone trailing character");
-    assert!(base64_decode("Zm9vZ").is_err(), "a truncated final group");
+    assert_eq!(crate::BASE64.decode("Zm9v").unwrap(), b"foo");
+    assert_eq!(crate::BASE64.decode("Zg==").unwrap(), b"f");
+    assert_eq!(crate::BASE64.decode("Zg").unwrap(), b"f", "unpadded");
+    assert!(
+        crate::BASE64.decode("Zm9v!").is_err(),
+        "an illegal character"
+    );
 }
 
 // ---- models ---------------------------------------------------------------------------------
@@ -198,15 +178,12 @@ fn flattens_a_normalizer_sequence_and_drops_an_empty_one() {
         ]}"#,
     );
     let doc = Json::parse(&seq).unwrap();
-    assert_eq!(
-        read_normalizers(doc.get_some("normalizer")).unwrap().len(),
-        2
-    );
+    assert_eq!(read_normalizers(doc.field("normalizer")).unwrap().len(), 2);
 
     let empty = with_component("normalizer", r#"{"type": "Sequence", "normalizers": []}"#);
     let doc = Json::parse(&empty).unwrap();
     assert!(
-        read_normalizers(doc.get_some("normalizer"))
+        read_normalizers(doc.field("normalizer"))
             .unwrap()
             .is_empty()
     );
@@ -256,7 +233,7 @@ fn byte_level_without_use_regex_is_the_identity_split() {
     let doc = Json::parse(&json).unwrap();
     let mut normalizers = Vec::new();
     let (pretok, byte_level) =
-        read_pre_tokenizer(doc.get_some("pre_tokenizer"), &mut normalizers).unwrap();
+        read_pre_tokenizer(doc.field("pre_tokenizer"), &mut normalizers).unwrap();
     assert!(matches!(pretok, PipelinePreTokenizer::None));
     // Still byte-level for the *model*, which is a separate switch.
     assert!(byte_level);
@@ -280,7 +257,7 @@ fn metaspace_becomes_a_normalizer_plus_a_split() {
     let doc = Json::parse(&json).unwrap();
     let mut normalizers = Vec::new();
     let (pretok, byte_level) =
-        read_pre_tokenizer(doc.get_some("pre_tokenizer"), &mut normalizers).unwrap();
+        read_pre_tokenizer(doc.field("pre_tokenizer"), &mut normalizers).unwrap();
     assert!(!byte_level);
     assert!(matches!(pretok, PipelinePreTokenizer::Split(_)));
     assert!(matches!(
@@ -300,7 +277,7 @@ fn t5_shape_collapses_to_one_split_not_a_sequence() {
     );
     let doc = Json::parse(&json).unwrap();
     let mut normalizers = Vec::new();
-    let (pretok, _) = read_pre_tokenizer(doc.get_some("pre_tokenizer"), &mut normalizers).unwrap();
+    let (pretok, _) = read_pre_tokenizer(doc.field("pre_tokenizer"), &mut normalizers).unwrap();
     // A `Sequence` here would run the whitespace split again over already-marked text.
     assert!(matches!(pretok, PipelinePreTokenizer::Split(_)));
     assert_eq!(normalizers.len(), 1);
@@ -314,8 +291,8 @@ fn the_metaspace_normalizer_lands_after_the_declared_one() {
         r#""pre_tokenizer": {"type": "Metaspace", "replacement": "▁", "add_prefix_space": true}"#,
     );
     let doc = Json::parse(&json).unwrap();
-    let mut normalizers = read_normalizers(doc.get_some("normalizer")).unwrap();
-    read_pre_tokenizer(doc.get_some("pre_tokenizer"), &mut normalizers).unwrap();
+    let mut normalizers = read_normalizers(doc.field("normalizer")).unwrap();
+    read_pre_tokenizer(doc.field("pre_tokenizer"), &mut normalizers).unwrap();
     // The config asks for the whole normalizer first, then the pre-tokenizer.
     assert!(matches!(
         normalizers.as_slice(),
@@ -498,7 +475,7 @@ fn unigram_scores_stay_within_one_ulp_of_the_f32_the_file_encodes() {
     }
     let text = std::fs::read_to_string(path).unwrap();
     let doc = Json::parse(&text).unwrap();
-    let slim = read_unigram(doc.get_some("model").unwrap()).unwrap();
+    let slim = read_unigram(doc.field("model").unwrap()).unwrap();
 
     let mut off_by_one_ulp = 0usize;
     for (tok, score) in slim.iter() {

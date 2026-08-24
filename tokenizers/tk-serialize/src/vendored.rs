@@ -79,7 +79,7 @@ static POW10: [f64; 309] = [
 /// reproduces the config path bit-for-bit instead. `numbers_are_bit_identical_to_serde_json` pins it.
 /// The value this reader gives a number literal, without building a [`Json`] around it.
 ///
-/// [`JsonExt::as_f64`] is this function plus a match on the variant, and a writer needs exactly
+/// [`Json::as_f64`] is this function plus a match on the variant, and a writer needs exactly
 /// this half: to check that a literal it is about to emit reads back as the `f64` it started from,
 /// it has to go through the same arithmetic, not through `f64::from_str`. Sharing the function is
 /// what makes that a tautology rather than a second implementation to keep in step.
@@ -228,7 +228,7 @@ pub(crate) fn number(digits: &str) -> (bool, u64, i32) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::json::{Json, JsonExt};
+    use crate::json::Json;
 
     fn p(s: &str) -> Json<'_> {
         Json::parse(s).expect("should parse")
@@ -334,7 +334,7 @@ mod tests {
         }
     }
 
-    /// `f64_from_literal` is the half of [`JsonExt::as_f64`] a writer needs on its own, so the two
+    /// `f64_from_literal` is the half of [`Json::as_f64`] a writer needs on its own, so the two
     /// have to agree by construction rather than by coincidence — a writer checking its output
     /// against a *different* arithmetic than the reader uses would be checking nothing.
     #[test]

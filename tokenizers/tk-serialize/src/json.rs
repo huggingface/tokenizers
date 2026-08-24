@@ -16,14 +16,21 @@ use crate::vendored::{f64_from_parts, number};
 /// hostile file from recursing the parser off the stack.
 pub const MAX_DEPTH: usize = 64;
 
-/// A parsed `tokenizer.json`.
-///
 /// `hifijson`'s tree instantiated for slice input, which is why the two type parameters are what
 /// they are: a string borrows from the input unless it carries an escape (`Cow`), and a number is
-/// the `&str` it was written as, paired with the parts (`zero`/`dot`/`exp`) the lexer saw. Nothing
-/// becomes an `f64` until [`JsonExt::as_f64`] asks, which is the whole reason this parser and not
-/// another — see [`f64_from_parts`].
-pub type Json<'a> = hifijson::value::Value<&'a str, Cow<'a, str>>;
+/// the `&str` it was written as, paired with the parts (`zero`/`dot`/`exp`) the lexer saw.
+type Raw<'a> = hifijson::value::Value<&'a str, Cow<'a, str>>;
+
+/// A parsed `tokenizer.json`.
+///
+/// Nothing becomes an `f64` until [`Json::as_f64`] asks, which is the whole reason this parser and
+/// not another -- see [`crate::vendored`].
+///
+/// A newtype rather than an alias so the accessors below are inherent methods: no trait to import
+/// at every reader, and `hifijson` stays an implementation detail of this module.
+#[repr(transparent)]
+#[derive(Debug, PartialEq)]
+pub struct Json<'a>(Raw<'a>);
 
 /// A parse failure, and how far into the document it happened.
 #[derive(Debug, PartialEq)]
@@ -43,87 +50,77 @@ impl fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
-/// The lookups the reader needs, as a trait because [`Json`] is `hifijson`'s type, not ours.
+/// The lookups the reader needs.
 ///
-/// Every accessor answers `None` for "not there or not that kind", which is what every caller
-/// wants: an absent field and a wrongly-typed one both mean "not available", and the reader turns
-/// that into its own message naming the field.
-pub trait JsonExt<'a>: Sized {
+/// Every accessor here answers `None` for "not there or not that kind", which is what an optional
+/// field wants: an absent field and a wrongly-typed one both mean "not available". A *required*
+/// field goes through [`Json::fields`] instead, which turns the same `None` into an error naming
+/// the field and what was reading it.
+impl<'a> Json<'a> {
     /// Parse a whole document. Trailing content other than whitespace is an error.
-    fn parse(input: &'a str) -> Result<Self, Error>;
-
-    /// Look a key up in an object. `None` for a missing key *or* a non-object.
-    fn get(&self, key: &str) -> Option<&Json<'a>>;
-
-    /// [`get`](JsonExt::get), but `null` reads as absent. `tokenizer.json` spells "no normalizer"
-    /// as `"normalizer": null`, and every caller wants that to behave like a missing key.
-    fn get_some(&self, key: &str) -> Option<&Json<'a>>;
-
-    /// The `"type"` tag, when there is one. Absent for the legacy untagged configs.
-    fn type_tag(&self) -> Option<&str>;
-
-    fn as_str(&self) -> Option<&str>;
-    fn as_bool(&self) -> Option<bool>;
-
-    /// The number as `serde_json`'s default build would have parsed it. See [`f64_from_parts`].
-    fn as_f64(&self) -> Option<f64>;
-
-    /// A token id or a count. Rejects fractions, negatives and anything past `u32::MAX`, so a
-    /// malformed file cannot silently truncate an id.
-    fn as_u32(&self) -> Option<u32>;
-
-    fn as_usize(&self) -> Option<usize>;
-    fn as_arr(&self) -> Option<&[Json<'a>]>;
-    fn as_obj(&self) -> Option<&[(Cow<'a, str>, Json<'a>)]>;
-}
-
-impl<'a> JsonExt<'a> for Json<'a> {
-    fn parse(input: &'a str) -> Result<Self, Error> {
+    pub fn parse(input: &'a str) -> Result<Self, Error> {
         let mut lexer = hifijson::SliceLexer::new(input.as_bytes());
         // `exactly_one` is what rejects trailing content; `parse_bounded` is what caps recursion.
         let parsed = lexer.exactly_one(hifijson::token::Lex::ws_peek, |next, lexer| {
             hifijson::value::parse_bounded(MAX_DEPTH, next, lexer)
         });
-        parsed.map_err(|kind| Error {
+        parsed.map(Json).map_err(|kind| Error {
             // What the lexer has not eaten yet, measured against the whole input.
             at: input.len() - lexer.as_slice().len(),
             kind,
         })
     }
 
-    fn get(&self, key: &str) -> Option<&Json<'a>> {
-        match self {
+    /// A borrowed [`Raw`] is a borrowed [`Json`]: the newtype is `#[repr(transparent)]`, so the
+    /// two have identical layout and this is the standard newtype-reference cast.
+    #[inline]
+    fn wrap<'r>(raw: &'r Raw<'a>) -> &'r Self {
+        // SAFETY: `Json` is `#[repr(transparent)]` over exactly `Raw`.
+        unsafe { &*(raw as *const Raw<'a> as *const Self) }
+    }
+
+    /// Look a key up in an object. `None` for a missing key *or* a non-object. A `null` value
+    /// reads as present; [`Json::field`] is the one that treats it as absent.
+    pub fn get(&self, key: &str) -> Option<&Json<'a>> {
+        match &self.0 {
             // Linear, because an object here has a handful of keys and hashing them costs more.
-            Json::Object(entries) => entries.iter().find(|(k, _)| k == key).map(|(_, v)| v),
+            Raw::Object(entries) => entries
+                .iter()
+                .find(|(k, _)| k == key)
+                .map(|(_, v)| Json::wrap(v)),
             _ => None,
         }
     }
 
-    fn get_some(&self, key: &str) -> Option<&Json<'a>> {
-        self.get(key).filter(|v| !matches!(v, Json::Null))
+    /// [`get`](Json::get), but `null` reads as absent. `tokenizer.json` spells "no normalizer"
+    /// as `"normalizer": null`, and every caller wants that to behave like a missing key.
+    pub fn field(&self, key: &str) -> Option<&Json<'a>> {
+        self.get(key).filter(|v| !matches!(v.0, Raw::Null))
     }
 
-    fn type_tag(&self) -> Option<&str> {
+    /// The `"type"` tag, when there is one. Absent for the legacy untagged configs.
+    pub fn type_tag(&self) -> Option<&str> {
         self.get("type")?.as_str()
     }
 
-    fn as_str(&self) -> Option<&str> {
-        match self {
-            Json::String(s) => Some(&**s),
+    pub fn as_str(&self) -> Option<&str> {
+        match &self.0 {
+            Raw::String(s) => Some(&**s),
             _ => None,
         }
     }
 
-    fn as_bool(&self) -> Option<bool> {
-        match self {
-            Json::Bool(b) => Some(*b),
+    pub fn as_bool(&self) -> Option<bool> {
+        match &self.0 {
+            Raw::Bool(b) => Some(*b),
             _ => None,
         }
     }
 
-    fn as_f64(&self) -> Option<f64> {
-        match self {
-            Json::Number((digits, _)) => {
+    /// The number as `serde_json`'s default build would have parsed it. See [`crate::vendored`].
+    pub fn as_f64(&self) -> Option<f64> {
+        match &self.0 {
+            Raw::Number((digits, _)) => {
                 let (positive, significand, exponent) = number(digits);
                 Some(f64_from_parts(positive, significand, exponent))
             }
@@ -131,7 +128,9 @@ impl<'a> JsonExt<'a> for Json<'a> {
         }
     }
 
-    fn as_u32(&self) -> Option<u32> {
+    /// A token id or a count. Rejects fractions, negatives and anything past `u32::MAX`, so a
+    /// malformed file cannot silently truncate an id.
+    pub fn as_u32(&self) -> Option<u32> {
         let n = self.as_f64()?;
         if n.fract() != 0.0 || !(0.0..=f64::from(u32::MAX)).contains(&n) {
             return None;
@@ -139,7 +138,7 @@ impl<'a> JsonExt<'a> for Json<'a> {
         Some(n as u32)
     }
 
-    fn as_usize(&self) -> Option<usize> {
+    pub fn as_usize(&self) -> Option<usize> {
         let n = self.as_f64()?;
         if n.fract() != 0.0 || !(0.0..=9_007_199_254_740_992.0).contains(&n) {
             return None;
@@ -147,21 +146,39 @@ impl<'a> JsonExt<'a> for Json<'a> {
         Some(n as usize)
     }
 
-    fn as_arr(&self) -> Option<&[Json<'a>]> {
-        match self {
-            Json::Array(items) => Some(items),
+    pub fn as_array(&self) -> Option<&[Json<'a>]> {
+        match &self.0 {
+            // SAFETY: `Json` is `#[repr(transparent)]` over `Raw`, so `[Raw]` and `[Json]` have
+            // the same layout and element count.
+            Raw::Array(items) => {
+                Some(unsafe { &*(items.as_slice() as *const [Raw<'a>] as *const [Json<'a>]) })
+            }
             _ => None,
         }
     }
 
-    fn as_obj(&self) -> Option<&[(Cow<'a, str>, Json<'a>)]> {
-        match self {
-            Json::Object(entries) => Some(entries),
+    /// The `"key": value` pairs, in the order the file wrote them. `ExactSizeIterator` so a
+    /// caller can still size its map up front.
+    pub fn entries(&self) -> Option<impl ExactSizeIterator<Item = (&str, &Json<'a>)>> {
+        match &self.0 {
+            Raw::Object(entries) => Some(entries.iter().map(|(k, v)| (&**k, Json::wrap(v)))),
             _ => None,
         }
+    }
+
+    /// A required field: the optional accessor above, plus the one error every reader used to
+    /// spell as its own local closure -- "`<owner>` has no `<name>`".
+    pub fn need<'s, T>(
+        &'s self,
+        owner: &str,
+        name: &str,
+        as_kind: impl FnOnce(&'s Json<'a>) -> Option<T>,
+    ) -> tk_encode::Result<T> {
+        self.field(name)
+            .and_then(as_kind)
+            .ok_or_else(|| format!("{owner} has no `{name}`").into())
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -171,30 +188,29 @@ mod tests {
         Json::parse(s).expect("should parse")
     }
 
-
     #[test]
     fn scalars_and_containers() {
-        assert_eq!(p("null"), Json::Null);
-        assert_eq!(p("true"), Json::Bool(true));
-        assert_eq!(p(" false "), Json::Bool(false));
+        assert_eq!(p("null").0, Raw::Null);
+        assert_eq!(p("true").0, Raw::Bool(true));
+        assert_eq!(p(" false ").0, Raw::Bool(false));
         assert_eq!(p("0").as_f64(), Some(0.0));
         assert_eq!(p("-12").as_f64(), Some(-12.0));
         assert_eq!(p("1.5e2").as_f64(), Some(150.0));
-        assert_eq!(p("[]").as_arr().unwrap().len(), 0);
-        assert_eq!(p("{}").as_obj().unwrap().len(), 0);
-        assert_eq!(p(r#"[1,2,3]"#).as_arr().unwrap().len(), 3);
+        assert_eq!(p("[]").as_array().unwrap().len(), 0);
+        assert_eq!(p("{}").entries().unwrap().len(), 0);
+        assert_eq!(p(r#"[1,2,3]"#).as_array().unwrap().len(), 3);
     }
 
     #[test]
     fn nested_lookup() {
         let v = p(r#"{"a": {"b": [10, 20]}, "c": null}"#);
         assert_eq!(
-            v.get("a").unwrap().get("b").unwrap().as_arr().unwrap()[1].as_u32(),
+            v.get("a").unwrap().get("b").unwrap().as_array().unwrap()[1].as_u32(),
             Some(20)
         );
-        // `null` is present via `get` but absent via `get_some`.
+        // `null` is present via `get` but absent via `field`.
         assert!(v.get("c").is_some());
-        assert!(v.get_some("c").is_none());
+        assert!(v.field("c").is_none());
         assert!(v.get("nope").is_none());
         // A non-object parent reads as absent rather than panicking.
         assert!(p("42").get("a").is_none());
@@ -203,9 +219,9 @@ mod tests {
     #[test]
     fn strings_borrow_when_they_can() {
         let v = p(r#""plain""#);
-        assert!(matches!(v, Json::String(Cow::Borrowed("plain"))));
+        assert!(matches!(v.0, Raw::String(Cow::Borrowed("plain"))));
         let v = p(r#""with\nescape""#);
-        assert!(matches!(v, Json::String(Cow::Owned(_))));
+        assert!(matches!(v.0, Raw::String(Cow::Owned(_))));
         assert_eq!(v.as_str(), Some("with\nescape"));
     }
 
@@ -291,14 +307,14 @@ mod tests {
         /// `Ok(())` or the JSON path of the first difference, so a failure says *where*.
         fn same(a: &Json<'_>, b: &serde_json::Value, at: &str) -> Result<(), String> {
             let bad = |why: &str| Err(format!("{at}: {why}"));
-            match (a, b) {
-                (Json::Null, serde_json::Value::Null) => Ok(()),
-                (Json::Bool(x), serde_json::Value::Bool(y)) if x == y => Ok(()),
+            match (&a.0, b) {
+                (Raw::Null, serde_json::Value::Null) => Ok(()),
+                (Raw::Bool(x), serde_json::Value::Bool(y)) if x == y => Ok(()),
                 // Bit-exact, deliberately: ids must not move, so this reader reproduces
                 // `serde_json`'s float rounding rather than improving on it -- see
                 // `f64_from_parts`. Comparing bits rather than `==` also catches a -0.0 vs 0.0
                 // divergence, which `==` would call equal.
-                (Json::Number(_), serde_json::Value::Number(y)) => {
+                (Raw::Number(_), serde_json::Value::Number(y)) => {
                     let x = a.as_f64().expect("a number reads as an f64");
                     match y.as_f64() {
                         Some(y) if x.to_bits() == y.to_bits() => Ok(()),
@@ -310,28 +326,28 @@ mod tests {
                         None => bad("serde_json number is not an f64"),
                     }
                 }
-                (Json::String(x), serde_json::Value::String(y)) if x.as_ref() == y.as_str() => {
+                (Raw::String(x), serde_json::Value::String(y)) if x.as_ref() == y.as_str() => {
                     Ok(())
                 }
-                (Json::String(x), serde_json::Value::String(y)) => {
+                (Raw::String(x), serde_json::Value::String(y)) => {
                     bad(&format!("string {:?} vs {:?}", x.as_ref(), y.as_str()))
                 }
-                (Json::Array(x), serde_json::Value::Array(y)) => {
+                (Raw::Array(x), serde_json::Value::Array(y)) => {
                     if x.len() != y.len() {
                         return bad(&format!("array len {} vs {}", x.len(), y.len()));
                     }
                     for (i, (a, b)) in x.iter().zip(y).enumerate() {
-                        same(a, b, &format!("{at}[{i}]"))?;
+                        same(Json::wrap(a), b, &format!("{at}[{i}]"))?;
                     }
                     Ok(())
                 }
-                (Json::Object(x), serde_json::Value::Object(y)) => {
+                (Raw::Object(x), serde_json::Value::Object(y)) => {
                     if x.len() != y.len() {
                         return bad(&format!("object len {} vs {}", x.len(), y.len()));
                     }
                     for (k, v) in x {
                         match y.get(k.as_ref()) {
-                            Some(w) => same(v, w, &format!("{at}.{k}"))?,
+                            Some(w) => same(Json::wrap(v), w, &format!("{at}.{k}"))?,
                             None => return bad(&format!("key {k:?} missing on the serde side")),
                         }
                     }
@@ -396,7 +412,7 @@ mod tests {
         }"#;
         let v = p(doc);
         assert_eq!(v.get("version").unwrap().as_str(), Some("1.0"));
-        assert!(v.get_some("truncation").is_none());
+        assert!(v.field("truncation").is_none());
         assert_eq!(
             v.get("pre_tokenizer").unwrap().type_tag(),
             Some("ByteLevel")
@@ -407,12 +423,12 @@ mod tests {
             model.get("vocab").unwrap().get("b").unwrap().as_u32(),
             Some(1)
         );
-        let merge = &model.get("merges").unwrap().as_arr().unwrap()[0];
-        assert_eq!(merge.as_arr().unwrap()[0].as_str(), Some("a"));
-        let added = &v.get("added_tokens").unwrap().as_arr().unwrap()[0];
+        let merge = &model.get("merges").unwrap().as_array().unwrap()[0];
+        assert_eq!(merge.as_array().unwrap()[0].as_str(), Some("a"));
+        let added = &v.get("added_tokens").unwrap().as_array().unwrap()[0];
         assert_eq!(added.get("id").unwrap().as_u32(), Some(0));
         assert_eq!(added.get("special").unwrap().as_bool(), Some(true));
         // A `dropout: null` field reads as absent, which is how the BC default works.
-        assert!(model.get_some("dropout").is_none());
+        assert!(model.field("dropout").is_none());
     }
 }

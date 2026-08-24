@@ -32,6 +32,11 @@ path = "src/lib.rs"
 # reproducing `serde_json`'s exact rounding instead of improving on it and moving token ids.
 # 1,644 lines, MIT, and its only dependency (`serde`) is optional and off.
 hifijson = "0.5.0"
+# `Precompiled`'s charsmap is the one place a `tokenizer.json` holds binary. `base64` 0.13 is what
+# encoded every such charsmap in the wild, under `spm_precompiled`'s serde; 0.22 is the same crate
+# grown an `Engine` trait, no dependencies of its own, and already in the workspace lock. Reaching
+# for it instead of hand-rolling the alphabet is the whole point of a well-known leaf crate.
+base64 = "0.22"
 # The runtime this crate builds. No `config`: the whole point is that reading a canonical
 # `tokenizer.json` needs no serde layer at all.
 tk-encode = { path = "../tk-encode", default-features = false }

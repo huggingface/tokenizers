@@ -6,6 +6,8 @@
 //! description of what actually runs.
 
 use super::writer::Out;
+#[cfg(feature = "normalizers")]
+use base64::Engine as _;
 use tk_encode::normalizers::replace::{Replace, ReplacePattern};
 use tk_encode::pipeline::PipelineNormalizer;
 use tk_encode::tokenizer::Result;
@@ -107,7 +109,7 @@ fn write_one(out: &mut Out, normalizer: &PipelineNormalizer) -> Result<()> {
             })?;
             out.obj_open();
             out.type_tag("Precompiled");
-            out.field_str("precompiled_charsmap", &base64_encode(charsmap));
+            out.field_str("precompiled_charsmap", &crate::BASE64.encode(charsmap));
             out.obj_close();
         }
     }
@@ -132,76 +134,4 @@ pub(super) fn write_replace_pattern(out: &mut Out, pattern: &ReplacePattern) {
         ReplacePattern::Regex(r) => out.field_str("Regex", r),
     }
     out.obj_close();
-}
-
-/// Standard-alphabet base64 with padding, the inverse of the reader's `base64_decode`.
-///
-/// Written out for the same reason the decoder is: it is 20 lines, and the point of this crate is to
-/// shed dependencies rather than collect them.
-// Only `Precompiled` needs it, so a build without `normalizers` has no caller -- but the tests are
-// worth running in every build, hence the `test` arm.
-#[cfg(any(feature = "normalizers", test))]
-pub(super) fn base64_encode(bytes: &[u8]) -> String {
-    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
-    for chunk in bytes.chunks(3) {
-        // The group as a 24-bit number, short groups zero-padded on the right.
-        let mut group = 0u32;
-        for i in 0..3 {
-            group |= u32::from(chunk.get(i).copied().unwrap_or(0)) << (16 - 8 * i);
-        }
-        // A 1-byte tail encodes 2 characters and a 2-byte tail 3; `=` fills the rest, which is
-        // what the decoder stops at.
-        let characters = chunk.len() + 1;
-        for i in 0..characters {
-            out.push(char::from(
-                ALPHABET[((group >> (18 - 6 * i)) & 0x3F) as usize],
-            ));
-        }
-        for _ in characters..4 {
-            out.push('=');
-        }
-    }
-    out
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// The reference vectors from RFC 4648 section 10, which cover all three padding cases.
-    ///
-    /// Not gated on the reader, deliberately: `base64_encode` carries a `test` arm on its own `cfg`,
-    /// and that arm is only truthful if there is a test exercising it in *every* configuration.
-    #[test]
-    fn base64_pads_every_tail_length() {
-        assert_eq!(base64_encode(b""), "");
-        assert_eq!(base64_encode(b"f"), "Zg==");
-        assert_eq!(base64_encode(b"fo"), "Zm8=");
-        assert_eq!(base64_encode(b"foo"), "Zm9v");
-        assert_eq!(base64_encode(b"foob"), "Zm9vYg==");
-        assert_eq!(base64_encode(b"fooba"), "Zm9vYmE=");
-        assert_eq!(base64_encode(b"foobar"), "Zm9vYmFy");
-    }
-
-    /// The property actually needed: a charsmap must survive write-then-read unchanged. Checked
-    /// against the reader's own decoder, so the pair is tested as a pair rather than against a
-    /// table -- which needs a build that has the reader.
-    #[cfg(feature = "deserialize")]
-    #[test]
-    fn base64_round_trips_through_the_readers_decoder() {
-        use crate::from_json::base64_decode;
-
-        // All 256 byte values at every tail length, decoded back with the reader's own decoder.
-        let all: Vec<u8> = (0..=255u8).collect();
-        for len in 0..=all.len() {
-            let bytes = &all[..len];
-            let encoded = base64_encode(bytes);
-            assert_eq!(
-                base64_decode(&encoded).expect("our own base64 decodes"),
-                bytes,
-                "{len} bytes did not survive the round trip"
-            );
-        }
-    }
 }

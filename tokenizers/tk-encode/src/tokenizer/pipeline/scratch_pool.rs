@@ -112,7 +112,7 @@ mod tests {
 
     /// A BPE model that merges "hello" into the single id 7.
     fn hello_bpe() -> PipelineBPE {
-        use crate::models::bpe::{Merges, BpeConfig, Vocab};
+        use crate::models::bpe::{BpeConfig, Merges, Vocab};
 
         let vocab: Vocab = [
             ("h", 0u32),
@@ -133,7 +133,12 @@ mod tests {
             ("hel".to_string(), "l".to_string()),
             ("hell".to_string(), "o".to_string()),
         ];
-        PipelineBPE::from_config(BpeConfig { vocab: vocab, merges: merges, ..BpeConfig::default() }).unwrap()
+        PipelineBPE::from_config(BpeConfig {
+            vocab: vocab,
+            merges: merges,
+            ..BpeConfig::default()
+        })
+        .unwrap()
     }
 
     /// Assembled through `from_parts` rather than from a `Tokenizer`: the config layer lives in

@@ -62,6 +62,20 @@
 pub mod json;
 mod vendored;
 
+/// The base64 engine for `Precompiled`'s charsmap, the one place a `tokenizer.json` holds binary.
+///
+/// Standard alphabet, padded on the way out, and *indifferent* to padding on the way in -- which is
+/// what `base64` 0.13 did under `spm_precompiled`'s serde. Keeping that leniency is the point of
+/// spelling the engine out: every charsmap the serde reader accepted, this one still accepts.
+// Only `Precompiled` uses it, so a build without `normalizers` has no caller -- but the test that
+// pins the padding mode lives with the reader, hence the second arm.
+#[cfg(any(feature = "normalizers", all(test, feature = "deserialize")))]
+pub(crate) const BASE64: base64::engine::GeneralPurpose = base64::engine::GeneralPurpose::new(
+    &base64::alphabet::STANDARD,
+    base64::engine::GeneralPurposeConfig::new()
+        .with_decode_padding_mode(base64::engine::DecodePaddingMode::Indifferent),
+);
+
 // The reader proper, behind the `deserialize` feature. `json` stays unconditional: the accessors
 // are useful on their own and the `serialize` side wants them too.
 #[cfg(feature = "deserialize")]
