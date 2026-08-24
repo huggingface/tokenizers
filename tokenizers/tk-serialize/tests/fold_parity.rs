@@ -7,7 +7,14 @@
 //!
 //! Run `make data/gpt2.json` first -- the fixture is fetched, not committed.
 
-use tk_serialize::from_json_file;
+use tk_encode::pipeline::PipelineTokenizer;
+
+/// `data/gpt2.json` is still version `1.0`, so run the upgrade pass first -- the reader only
+/// accepts canonical `2.0`. Same as `benches/encode.rs`.
+fn load() -> PipelineTokenizer {
+    let canonical = tk_convert::canonicalize_file("../data/gpt2.json").unwrap();
+    tk_serialize::from_json(&canonical).unwrap()
+}
 
 /// `<|endoftext|>` is the entry that must NOT fold: it decomposes to seven tokens, and a fold
 /// would emit one. The rest mix words that are a single vocabulary entry (folded) with words
@@ -49,7 +56,7 @@ const CASES: &[(&str, &[u32])] = &[
 ,
 ];
 
-fn ids(pipe: &tk_encode::pipeline::PipelineTokenizer, text: &str) -> Vec<u32> {
+fn ids(pipe: &PipelineTokenizer, text: &str) -> Vec<u32> {
     pipe.encode(text, false)
         .wait()
         .unwrap()
@@ -62,7 +69,7 @@ fn ids(pipe: &tk_encode::pipeline::PipelineTokenizer, text: &str) -> Vec<u32> {
 
 #[test]
 fn the_proven_fold_never_changes_the_ids() {
-    let pipe = from_json_file("../data/gpt2.json").unwrap();
+    let pipe = load();
     for (text, want) in CASES {
         assert_eq!(&ids(&pipe, text)[..], *want, "the fold changed the ids for {text:?}");
     }
@@ -70,7 +77,7 @@ fn the_proven_fold_never_changes_the_ids() {
 
 #[test]
 fn the_batched_path_matches_the_reference() {
-    let pipe = from_json_file("../data/gpt2.json").unwrap();
+    let pipe = load();
 
     let mut text = String::new();
     for i in 0..400 {
