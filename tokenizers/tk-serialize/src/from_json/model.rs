@@ -1,34 +1,24 @@
+use super::unsupported;
 use crate::json::Json;
 use tk_encode::models::bpe::{BpeConfig, Merges, Vocab};
 use tk_encode::tokenizer::Result;
 
-/// TODO: for now we are forced to return the raw vocab to make sure the added tokens are properly
-/// created. This will be updated with a better flow.
 pub(super) fn read_bpe(cfg: &Json<'_>, byte_level: bool) -> Result<(Vocab, Merges, BpeConfig)> {
     let vocab = read_vocab_object(cfg)?;
 
     let merges_arr = cfg.need("BPE model", "merges", Json::as_array)?;
     let mut merges: Merges = Vec::with_capacity(merges_arr.len());
     for entry in merges_arr {
-        // Canonical: ["a", "b"].
-        if let Some(pair) = entry.as_array() {
-            match (
-                pair.len(),
-                pair.first().and_then(Json::as_str),
-                pair.get(1).and_then(Json::as_str),
-            ) {
-                (2, Some(a), Some(b)) => merges.push((a.to_string(), b.to_string())),
-                _ => return Err("a merge pair is not a pair of strings".into()),
-            }
-        // Legacy: "a b". Split on the first space, the way the config path does. Ambiguous when
-        // a token contains a space, which is exactly why pairs became canonical.
-        } else if let Some(s) = entry.as_str() {
-            let (a, b) = s.split_once(' ').ok_or_else(|| -> tk_encode::Error {
-                format!("legacy merge {s:?} has no space to split on").into()
-            })?;
-            merges.push((a.to_string(), b.to_string()));
-        } else {
-            return Err("a merge is neither a pair nor a string".into());
+        let pair = entry
+            .as_array()
+            .ok_or_else(|| unsupported("a `merges` entry that is not a [left, right] pair"))?;
+        match (
+            pair.len(),
+            pair.first().and_then(Json::as_str),
+            pair.get(1).and_then(Json::as_str),
+        ) {
+            (2, Some(a), Some(b)) => merges.push((a.to_string(), b.to_string())),
+            _ => return Err("a merge pair is not a pair of strings".into()),
         }
     }
 
@@ -108,11 +98,11 @@ pub(super) fn read_wordpiece(cfg: &Json<'_>) -> Result<tk_encode::models::wordpi
 /// Unigram's vocab is an array of `[token, score]` pairs, and the scores decide the lattice, so a
 /// score that is not a number is an error rather than a `0.0`.
 ///
-/// [`tk_encode::tokenizer::json`] parses numbers with `f64::from_str`, which is correctly rounded.
-/// `serde_json` without its `float_roundtrip` feature does not: it accumulates the digits into a
-/// `u64` and divides by a power of ten, which is off by one ULP for 8334 of t5's 32100 scores. Every
-/// score in that file is exactly an `f32` widened to `f64`, and `from_str` lands on it; `serde_json`
-/// lands next to it.
+/// The scores are read the way `serde_json` reads them, not the way `f64::from_str` does.
+/// [`crate::vendored`] accumulates the digits into a `u64` and divides by a power of ten, which
+/// lands one ULP off the correctly-rounded value for 8334 of t5's 32100 scores. Every score in that
+/// file is exactly an `f32` widened to `f64`, so `from_str` would land *on* it and this lands next
+/// to it -- deliberately, because the ids that ship today came from `serde_json`'s arithmetic.
 #[cfg(feature = "unigram")]
 pub(super) fn read_unigram(cfg: &Json<'_>) -> Result<tk_encode::models::unigram::Unigram> {
     let entries = cfg.need("Unigram model", "vocab", Json::as_array)?;

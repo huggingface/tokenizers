@@ -46,9 +46,6 @@ fn push_normalizer(cfg: &Json<'_>, out: &mut Vec<PipelineNormalizer>) -> Result<
                 push_normalizer(member, out)?;
             }
         }
-        // The delimiter half of a lowered `Metaspace`, written by this crate. Old files spell the
-        // whole thing as a `Metaspace` *pre-tokenizer* instead; `pre_tokenizers::read_metaspace`
-        // still reads those and lowers them to exactly this plus a `Split`.
         "MetaspaceNormalizer" => out.push(PipelineNormalizer::Metaspace(MetaspaceNormalizer::new(
             super::pre_tokenizers::read_char(cfg, "replacement")?,
             cfg.need(&owner, "prepend", Json::as_bool)?,
@@ -72,9 +69,6 @@ fn push_normalizer(cfg: &Json<'_>, out: &mut Vec<PipelineNormalizer>) -> Result<
         "ByteLevel" => out.push(PipelineNormalizer::ByteLevel(ByteLevelNormalizer)),
         #[cfg(feature = "normalizers")]
         "BertNormalizer" => {
-            // `strip_accents` is `Option<bool>`, and serde still demands the key be present — a
-            // `null` is what means "decide from `lowercase`". Requiring it keeps the two paths
-            // agreeing on which configs load at all.
             let strip_accents = cfg
                 .get("strip_accents")
                 .ok_or_else(|| -> tk_encode::Error {

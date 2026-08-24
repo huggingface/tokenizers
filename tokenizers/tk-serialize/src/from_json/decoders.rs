@@ -1,7 +1,7 @@
 //! The `decoder` object, built straight into a `DecoderRuntime`.
 
 use super::normalizers::read_replace_fields;
-use super::pre_tokenizers::{read_char, read_prepend_scheme};
+use super::pre_tokenizers::read_char;
 use super::unsupported;
 use crate::json::Json;
 use tk_encode::decoders::DecoderRuntime;
@@ -11,6 +11,7 @@ use tk_encode::decoders::byte_level::ByteLevelDecoder;
 use tk_encode::decoders::ctc::CTC;
 use tk_encode::decoders::fuse::Fuse;
 use tk_encode::decoders::metaspace::MetaspaceDecoder;
+use tk_encode::decoders::metaspace::PrependScheme;
 use tk_encode::decoders::replace::ReplaceDecoder;
 use tk_encode::decoders::strip::Strip as StripDecoder;
 use tk_encode::decoders::wordpiece::WordPiece as WordPieceDecoder;
@@ -26,6 +27,17 @@ pub(super) fn read_decoder(cfg: Option<&Json<'_>>) -> Result<Option<DecoderRunti
     match cfg {
         Some(cfg) => Ok(Some(read_one_decoder(cfg)?)),
         None => Ok(None),
+    }
+}
+
+/// The `Metaspace` decoder's `prepend_scheme`. Spelled out, always: `add_prefix_space` is the
+/// legacy spelling of it and tk-convert rewrites that before this reader ever sees the file.
+fn read_prepend_scheme(cfg: &Json<'_>) -> Result<PrependScheme> {
+    match cfg.need("the `Metaspace` decoder", "prepend_scheme", Json::as_str)? {
+        "always" => Ok(PrependScheme::Always),
+        "first" => Ok(PrependScheme::First),
+        "never" => Ok(PrependScheme::Never),
+        other => Err(format!("unknown metaspace prepend_scheme {other:?}").into()),
     }
 }
 

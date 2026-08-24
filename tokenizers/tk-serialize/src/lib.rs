@@ -6,8 +6,8 @@
 
 //! The reader for the canonical `tokenizer.json` format.
 //!
-//! Two files and no serde: [`json`] parses with `hifijson` and reassembles floats the way
-//! `serde_json` does, and [`from_json`] walks the tree it produces to build
+//! No serde: `json` parses with `hifijson`, `vendored` reassembles floats the way `serde_json`
+//! does, and [`from_json()`] walks the tree they produce to build
 //! [`tk_encode::pipeline::PipelineTokenizer`] directly. Nothing here
 //! deserializes *into* a config type, because there are no config types on this path — the reader
 //! constructs the runtime components straight away.
@@ -42,9 +42,9 @@
 //!
 //! ## Features
 //!
-//! - **`deserialize`** (default) — [`from_json`] / [`from_json_file`], i.e. the whole point of the
+//! - **`deserialize`** (default) — [`from_json()`] / [`from_json_file()`], i.e. the whole point of the
 //!   crate. An inference build wants exactly this and nothing else.
-//! - **`serialize`** (off by default) — [`to_json`], writing a
+//! - **`serialize`** (off by default) — [`to_json()`], writing a
 //!   `PipelineTokenizer` back out as a canonical `tokenizer.json`. Off by default because an
 //!   inference build never writes a config, and because the writer is the half that has to keep
 //!   things alive in order to describe them: the `Precompiled` charsmap is in the pipeline for its
@@ -53,10 +53,10 @@
 //! ## Writing is not the inverse of reading
 //!
 //! The reader lowers a config into runtime state, and lowering discards whatever the runtime does
-//! not read. So [`to_json`] reconstructs rather than transcribes — a BPE merge list comes back out
+//! not read. So [`to_json()`] reconstructs rather than transcribes — a BPE merge list comes back out
 //! of the merge tables, a `Metaspace` pre-tokenizer out of the normalizer it became — and what it
 //! guarantees is that the file it writes *encodes identically*, not that it is the file that was
-//! read. [`to_json`]'s own documentation lists every place the two differ.
+//! read. [`to_json()`]'s own documentation lists every place the two differ.
 #![doc = include_str!("../SPEC.md")]
 
 // The JSON tree and its accessors. `pub(crate)`: reading and writing a `tokenizer.json` is

@@ -46,7 +46,8 @@ fn is_default(single: &Template, pair: &Template) -> bool {
     )
 }
 
-/// One template as an array of pieces: `{"Sequence": {...}}` or `{"SpecialToken": {...}}`.
+/// One template as an array of pieces: `{"seq": "A"}` for a sequence, `{"ids": [...]}` for a run of
+/// special tokens, and `type_id` only when it is not the `0` a piece defaults to.
 fn write_pieces(out: &mut Out, key: &str, template: &Template) {
     out.key(key);
     out.arr_open();
@@ -54,28 +55,28 @@ fn write_pieces(out: &mut Out, key: &str, template: &Template) {
         out.obj_open();
         match slice {
             Slice::Sequence { seq, type_id } => {
-                out.key("Sequence");
-                out.obj_open();
-                out.field_str("id", if matches!(seq, Seq::A) { "A" } else { "B" });
-                out.field_u32("type_id", u32::from(*type_id));
-                out.obj_close();
+                out.field_str("seq", if matches!(seq, Seq::A) { "A" } else { "B" });
+                write_type_id(out, *type_id);
             }
             Slice::Specials { tokens, type_id } => {
-                out.key("SpecialToken");
-                out.obj_open();
-                // The ids themselves. A name would only be a key into a table of these, and the
-                // strings behind them are in the vocabulary already.
+                // The ids, which is all the pipeline kept. The strings behind them are in the
+                // vocabulary, so a name here would only repeat it -- and a name needs a table.
                 out.key("ids");
                 out.arr_open();
                 for token in tokens.iter() {
                     out.u32(token.id());
                 }
                 out.arr_close();
-                out.field_u32("type_id", u32::from(*type_id));
-                out.obj_close();
+                write_type_id(out, *type_id);
             }
         }
         out.obj_close();
     }
     out.arr_close();
+}
+
+fn write_type_id(out: &mut Out, type_id: u8) {
+    if type_id != 0 {
+        out.field_u32("type_id", u32::from(type_id));
+    }
 }

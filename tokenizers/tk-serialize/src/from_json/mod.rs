@@ -1,16 +1,26 @@
 //! Build a [`PipelineTokenizer`] from a `tokenizer.json`.
 //!
-//! ## Legacy shapes accepted
+//! Reads the canonical `2.0` format and nothing else. A legacy file is tk-convert's input, not
+//! this reader's: it produces a `2.0` file, and only then does this run.
 //!
-//! Three, because between them they cover most of the Hub (`gpt2` hits the first two):
+//! ## TODO(pr3): port to tk-convert
 //!
-//! - a `model` with no `"type"` — the kind is inferred from which keys are present
-//! - `merges` spelled as `"a b"` strings rather than `["a", "b"]` pairs
-//! - a `Metaspace` spelled with `add_prefix_space` rather than `prepend_scheme`, which is what t5
-//!   and albert still ship (see [`read_prepend_scheme`] for the exact rule, quirk included)
+//! Each of these was accepted here and is now refused. tk-convert has to rewrite them:
 //!
-//! Everything else legacy — vocab-as-file-path, an untagged component object — is refused with a
-//! message naming what to convert.
+//! - `"version": "1.0"` — everything below is what makes a file one
+//! - a `model` with no `"type"` — the kind was inferred from which keys are present: `merges` meant
+//!   BPE, an array `vocab` meant Unigram, `continuing_subword_prefix` meant WordPiece, else
+//!   WordLevel
+//! - `merges` spelled as `"a b"` strings rather than `["a", "b"]` pairs — split on the first space
+//! - a `Metaspace` *pre-tokenizer*, which is two components: it becomes a `MetaspaceNormalizer` in
+//!   the `normalizer` slot plus a `Split` on the delimiter with `MergedWithNext`
+//! - `Sequence[WhitespaceSplit, Metaspace]`, the t5/albert shape — the same, with
+//!   `drop_whitespace: true`
+//! - `add_prefix_space` on a `Metaspace`, with its quirk: `false` is an error unless
+//!   `prepend_scheme: "never"` is spelled beside it, and `true` is ignored outright
+//! - a `Metaspace` decoder with no `prepend_scheme` — it defaulted to `always`
+//!
+//! Refused by both, because nothing converts it: a vocabulary named by path (`files`).
 mod added_tokens;
 mod decoders;
 mod model;
@@ -72,25 +82,21 @@ pub fn from_json_file(path: impl AsRef<std::path::Path>) -> Result<PipelineToken
 }
 
 fn from_json_value(doc: &Json<'_>) -> Result<PipelineTokenizer> {
-    // The config path gates on this exact string, so a future format bump is a loud failure
-    // rather than a silently mis-read file.
-    if let Some(v) = doc.field("version").and_then(Json::as_str)
-        && v != "1.0"
-    {
-        return Err(format!("unknown tokenizer version '{v}'").into());
+    // `2.0` is the canonical format this crate reads and writes. A `1.0` file is a legacy file:
+    // tk-convert turns one into a `2.0` file, and this reader never sees it.
+    match doc.field("version").and_then(Json::as_str) {
+        Some("2.0") => {}
+        Some(v) => return Err(format!("tokenizer version '{v}' is not `2.0`; convert it first").into()),
+        None => return Err(unsupported("a config with no `version`")),
     }
 
     let mut normalizers = read_normalizers(doc.field("normalizer"))?;
-    // Takes `normalizers` because a `Metaspace` pre-tokenizer contributes one, and it has to
-    // land *after* the declared normalizer — the config asks for the whole normalizer first,
-    // then the pre-tokenizer.
-    let (pre_tokenizer, byte_level) =
-        read_pre_tokenizer(doc.field("pre_tokenizer"), &mut normalizers)?;
+    let (pre_tokenizer, byte_level) = read_pre_tokenizer(doc.field("pre_tokenizer"))?;
 
     let model_cfg = doc
         .field("model")
         .ok_or_else(|| -> tk_encode::Error { "config has no `model`".into() })?;
-    let kind = model_kind(model_cfg);
+    let kind = model_kind(model_cfg)?;
     if byte_level && kind != "BPE" {
         return Err(format!("ByteLevel pre tokenizer is not supported with model {kind}").into());
     }
@@ -124,7 +130,7 @@ fn from_json_value(doc: &Json<'_>) -> Result<PipelineTokenizer> {
             pre_tokenizer,
             read_wordpiece(model_cfg)?,
             tk_encode::Model::get_vocab_size,
-            |m, t| tk_encode::Model::token_to_id(m, t),
+            tk_encode::Model::token_to_id,
             |wp| Ok(PipelineModel::WordPiece(wp.try_into()?)),
         ),
         #[cfg(feature = "unigram")]
@@ -134,7 +140,7 @@ fn from_json_value(doc: &Json<'_>) -> Result<PipelineTokenizer> {
             pre_tokenizer,
             read_unigram(model_cfg)?,
             tk_encode::Model::get_vocab_size,
-            |m, t| tk_encode::Model::token_to_id(m, t),
+            tk_encode::Model::token_to_id,
             |u| Ok(PipelineModel::Unigram(u)),
         ),
         #[cfg(feature = "wordlevel")]
@@ -144,7 +150,7 @@ fn from_json_value(doc: &Json<'_>) -> Result<PipelineTokenizer> {
             pre_tokenizer,
             read_wordlevel(model_cfg)?,
             tk_encode::Model::get_vocab_size,
-            |m, t| tk_encode::Model::token_to_id(m, t),
+            tk_encode::Model::token_to_id,
             |wl| Ok(PipelineModel::WordLevel(wl)),
         ),
         // Covers both an unrecognised `"type"` and a known one whose per-model feature is off,
@@ -195,26 +201,15 @@ fn build<M>(
     ))
 }
 
-/// Which model a config declares. `"type"` when it has one, otherwise inferred from the keys —
-/// `gpt2` and a few other don't have a type, we try to still infer it from the saved keys.
-fn model_kind(cfg: &Json<'_>) -> &'static str {
-    if let Some(t) = cfg.type_tag() {
-        return match t {
-            "BPE" => "BPE",
-            "Unigram" => "Unigram",
-            "WordPiece" => "WordPiece",
-            "WordLevel" => "WordLevel",
-            _ => "unknown",
-        };
-    }
-    if cfg.get("merges").is_some() {
-        "BPE"
-    } else if cfg.get("vocab").and_then(Json::as_array).is_some() {
-        // Unigram's vocab is an array of [token, score] pairs; everyone else's is an object.
-        "Unigram"
-    } else if cfg.get("continuing_subword_prefix").is_some() {
-        "WordPiece"
-    } else {
-        "WordLevel"
-    }
+/// Which model a config declares. Canonical files tag it; inferring the kind from which keys are
+/// present is what tk-convert does to a legacy file before this reader sees it.
+fn model_kind(cfg: &Json<'_>) -> Result<&'static str> {
+    Ok(match cfg.type_tag() {
+        Some("BPE") => "BPE",
+        Some("Unigram") => "Unigram",
+        Some("WordPiece") => "WordPiece",
+        Some("WordLevel") => "WordLevel",
+        Some(_) => "unknown",
+        None => return Err(unsupported("a `model` with no `type`")),
+    })
 }

@@ -264,7 +264,7 @@ const MAX_PRECISION: usize = 17;
 /// ## Why "shortest round-trip" is the wrong rule here
 ///
 /// The usual rule is to emit the shortest decimal that round-trips, and `{}` does exactly that. But
-/// "round-trips" is defined against a *correctly-rounded* parser, and [`crate::json`]'s is
+/// "round-trips" is defined against a *correctly-rounded* parser, and [`crate::vendored`]'s is
 /// deliberately not one: it reproduces `serde_json`'s default arithmetic, a `u64` significand
 /// converted with `as f64` and then multiplied or divided by one power of ten. Above 2^53 that is
 /// two roundings, so the result can sit a ULP away from the correctly-rounded value -- which is the

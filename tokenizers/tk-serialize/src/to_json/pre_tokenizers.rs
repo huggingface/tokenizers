@@ -1,17 +1,4 @@
 //! The `pre_tokenizer` object, reassembled from the shapes the reader lowered it into.
-//!
-//! One pre-tokenizer a `tokenizer.json` can name does not survive as itself: a **`ByteLevel`**
-//! became a `Split` on the GPT-2 regex (`use_regex: true`) or nothing at all (`use_regex: false`),
-//! so which one it was is read off the model -- a byte-level `PipelineBPE` is the only thing that
-//! flag produces. That inversion is decidable because the reader requires a `ByteLevel` to be the
-//! last member of a `Sequence`, so there is exactly one place to look.
-//!
-//! A legacy `Metaspace` also lowered to two components, but it is *not* reassembled here: each half
-//! is written as itself, the delimiter one as a `MetaspaceNormalizer` in the `normalizer` slot. See
-//! SPEC.md for why that asymmetry is deliberate.
-//!
-//! `trim_offsets`, `add_prefix_space` and `split` are not written: the pipeline never held the
-//! first, and the reader refuses every value of the other two but the default it assumes.
 
 use super::writer::Out;
 use tk_encode::pipeline::PipelinePreTokenizer;
@@ -20,11 +7,7 @@ use tk_encode::tokenizer::{Result, SplitDelimiterBehavior};
 
 /// The `pre_tokenizer` value.
 ///
-/// `byte_level` is whether the model applies the byte-level map, which says which of the two
-/// rewritten forms `pretok` is, so this never has to guess.
-///
-/// A lowered `Metaspace` needs nothing here: its `Split` is written as a `Split`, and its delimiter
-/// half goes out as a `MetaspaceNormalizer` in the `normalizer` slot.
+/// `byte_level` is whether the model applies the byte-level map
 pub(super) fn write_pre_tokenizer(
     out: &mut Out,
     pretok: &PipelinePreTokenizer,

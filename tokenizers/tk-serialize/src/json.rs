@@ -1,7 +1,7 @@
-//! We decided to use `hifijson` as it has 0 dependencies and is very lightweight. Most of the
-//! code in this file is just to reproduce the previous behavior when parsing a tokenizer.json and
-//! fp64 values. As such we just vendored a small part of the serde json library with
-//! attritbution, in [`crate::vendored`].
+//! We decided to use `hifijson` as it has 0 dependencies and is very lightweight. What is left
+//! here is the tree and its accessors; the code that reproduces the previous behavior when parsing
+//! a tokenizer.json and fp64 values is a small part of the serde json library, vendored with
+//! attritbution in [`crate::vendored`].
 //!
 
 use std::borrow::Cow;
@@ -54,7 +54,7 @@ impl std::error::Error for Error {}
 ///
 /// Every accessor here answers `None` for "not there or not that kind", which is what an optional
 /// field wants: an absent field and a wrongly-typed one both mean "not available". A *required*
-/// field goes through [`Json::fields`] instead, which turns the same `None` into an error naming
+/// field goes through [`Json::need`] instead, which turns the same `None` into an error naming
 /// the field and what was reading it.
 impl<'a> Json<'a> {
     /// Parse a whole document. Trailing content other than whitespace is an error.
@@ -393,7 +393,7 @@ mod tests {
     #[test]
     fn reads_a_tokenizer_json_shaped_document() {
         let doc = r#"{
-          "version": "1.0",
+          "version": "2.0",
           "truncation": null,
           "padding": null,
           "added_tokens": [
@@ -411,7 +411,7 @@ mod tests {
                     "merges": [["a", "b"]]}
         }"#;
         let v = p(doc);
-        assert_eq!(v.get("version").unwrap().as_str(), Some("1.0"));
+        assert_eq!(v.get("version").unwrap().as_str(), Some("2.0"));
         assert!(v.field("truncation").is_none());
         assert_eq!(
             v.get("pre_tokenizer").unwrap().type_tag(),

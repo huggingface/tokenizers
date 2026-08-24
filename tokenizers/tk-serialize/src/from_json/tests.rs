@@ -1,7 +1,6 @@
 //! The reader's own tests: `TINY_BPE` plus one case per component it reads.
 
 use super::decoders::read_one_decoder;
-use super::pre_tokenizers::read_prepend_scheme;
 use super::*;
 use tk_encode::decoders::metaspace::PrependScheme;
 
@@ -20,7 +19,7 @@ fn config<'a>(overrides: &'a [(&'a str, &'a str)]) -> String {
             .map_or(default, |(_, json)| *json)
     };
     format!(
-        r#"{{"version": "1.0", "added_tokens": {}, "normalizer": {}, "pre_tokenizer": {},
+        r#"{{"version": "2.0", "added_tokens": {}, "normalizer": {}, "pre_tokenizer": {},
             "post_processor": {}, "decoder": {}, "model": {}}}"#,
         field("added_tokens", "[]"),
         field("normalizer", "null"),
@@ -81,42 +80,28 @@ fn a_charsmap_decodes_padded_or_not() {
 // ---- models ---------------------------------------------------------------------------------
 
 #[test]
-fn infers_the_model_kind_without_a_type_tag() {
-    let cases = [
-        (r#"{"merges": [], "vocab": {}}"#, "BPE"),
-        (r#"{"vocab": [["a", 0.0]]}"#, "Unigram"),
-        (
-            r#"{"vocab": {}, "continuing_subword_prefix": "@@"}"#,
-            "WordPiece",
-        ),
-        (r#"{"vocab": {}, "unk_token": "<unk>"}"#, "WordLevel"),
-        (r#"{"type": "Unigram", "vocab": []}"#, "Unigram"),
-        (r#"{"type": "Nonsense"}"#, "unknown"),
-    ];
-    for (json, want) in cases {
-        let doc = Json::parse(json).unwrap();
-        assert_eq!(model_kind(&doc), want, "{json}");
-    }
+fn refuses_a_model_with_no_type() {
+    // Inferring the kind from which keys are present is tk-convert's job, not this reader's.
+    let json = config(&[(
+        "model",
+        r#"{"vocab": {"a": 0, "b": 1}, "merges": [["a", "b"]]}"#,
+    )]);
+    assert!(read_err(&json).contains("`model` with no `type`"));
 }
 
+
 #[test]
-fn accepts_legacy_string_merges() {
+fn refuses_legacy_string_merges() {
+    // `"a b"` is the legacy spelling; tk-convert rewrites it to `["a", "b"]`.
     let legacy = config(&[(
         "model",
         r#"{"type": "BPE", "vocab": {"a": 0, "b": 1, "ab": 2, "abab": 3},
             "merges": ["a b", "ab ab"]}"#,
     )]);
-    assert_eq!(ids(&read(&legacy).unwrap(), "abab"), vec![3]);
+    assert!(read_err(&legacy).contains("[left, right] pair"));
 }
 
-#[test]
-fn refuses_a_merge_it_cannot_split() {
-    let bad = config(&[(
-        "model",
-        r#"{"type": "BPE", "vocab": {"a": 0, "b": 1, "ab": 2}, "merges": ["ab"]}"#,
-    )]);
-    assert!(read_err(&bad).contains("no space"));
-}
+
 
 #[test]
 #[cfg(feature = "unigram")]
@@ -229,9 +214,7 @@ fn byte_level_without_use_regex_is_the_identity_split() {
             "use_regex": false}"#,
     )]);
     let doc = Json::parse(&json).unwrap();
-    let mut normalizers = Vec::new();
-    let (pretok, byte_level) =
-        read_pre_tokenizer(doc.field("pre_tokenizer"), &mut normalizers).unwrap();
+    let (pretok, byte_level) = read_pre_tokenizer(doc.field("pre_tokenizer")).unwrap();
     assert!(matches!(pretok, PipelinePreTokenizer::None));
     // Still byte-level for the *model*, which is a separate switch.
     assert!(byte_level);
@@ -246,124 +229,11 @@ fn byte_level_add_prefix_space_is_refused() {
     assert!(read_err(&json).contains("add_prefix_space"));
 }
 
-#[test]
-fn metaspace_becomes_a_normalizer_plus_a_split() {
-    let json = config(&[(
-        "pre_tokenizer",
-        r#"{"type": "Metaspace", "replacement": "▁", "add_prefix_space": true}"#,
-    )]);
-    let doc = Json::parse(&json).unwrap();
-    let mut normalizers = Vec::new();
-    let (pretok, byte_level) =
-        read_pre_tokenizer(doc.field("pre_tokenizer"), &mut normalizers).unwrap();
-    assert!(!byte_level);
-    assert!(matches!(pretok, PipelinePreTokenizer::Split(_)));
-    assert!(matches!(
-        normalizers.as_slice(),
-        [PipelineNormalizer::Metaspace(_)]
-    ));
-}
 
-#[test]
-fn t5_shape_collapses_to_one_split_not_a_sequence() {
-    let json = config(&[(
-        "pre_tokenizer",
-        r#"{"type": "Sequence", "pretokenizers": [
-            {"type": "WhitespaceSplit"},
-            {"type": "Metaspace", "replacement": "▁", "add_prefix_space": true}
-        ]}"#,
-    )]);
-    let doc = Json::parse(&json).unwrap();
-    let mut normalizers = Vec::new();
-    let (pretok, _) = read_pre_tokenizer(doc.field("pre_tokenizer"), &mut normalizers).unwrap();
-    // A `Sequence` here would run the whitespace split again over already-marked text.
-    assert!(matches!(pretok, PipelinePreTokenizer::Split(_)));
-    assert_eq!(normalizers.len(), 1);
-}
 
-#[test]
-fn the_metaspace_normalizer_lands_after_the_declared_one() {
-    let json = config(&[("normalizer", r#"{"type": "Lowercase"}"#)]);
-    let json = json.replace(
-        r#""pre_tokenizer": null"#,
-        r#""pre_tokenizer": {"type": "Metaspace", "replacement": "▁", "add_prefix_space": true}"#,
-    );
-    let doc = Json::parse(&json).unwrap();
-    let mut normalizers = read_normalizers(doc.field("normalizer")).unwrap();
-    read_pre_tokenizer(doc.field("pre_tokenizer"), &mut normalizers).unwrap();
-    // The config asks for the whole normalizer first, then the pre-tokenizer.
-    assert!(matches!(
-        normalizers.as_slice(),
-        [
-            PipelineNormalizer::Lowercase(_),
-            PipelineNormalizer::Metaspace(_)
-        ]
-    ));
-}
 
-#[test]
-fn prepend_scheme_reproduces_the_config_paths_rule() {
-    let parse = |json: &str| {
-        let doc = Json::parse(json).unwrap();
-        read_prepend_scheme(&doc)
-    };
-    // Neither key: the default.
-    assert_eq!(parse("{}").unwrap(), PrependScheme::Always);
-    // The old key alone, which is what t5 and albert ship.
-    assert_eq!(
-        parse(r#"{"add_prefix_space": true}"#).unwrap(),
-        PrependScheme::Always
-    );
-    // `add_prefix_space: true` is ignored outright, so an explicit scheme wins over it — even a
-    // contradicting one.
-    assert_eq!(
-        parse(r#"{"add_prefix_space": true, "prepend_scheme": "never"}"#).unwrap(),
-        PrependScheme::Never
-    );
-    // And `false` is checked against the *defaulted* scheme, which is `Always`. So the old key
-    // alone can never spell `false`, and `false` is only accepted next to the `never` it would
-    // have set. Both quirks are the config path's, reproduced because ids depend on them.
-    assert!(parse(r#"{"add_prefix_space": false}"#).is_err());
-    assert!(parse(r#"{"add_prefix_space": false, "prepend_scheme": "always"}"#).is_err());
-    assert_eq!(
-        parse(r#"{"add_prefix_space": false, "prepend_scheme": "never"}"#).unwrap(),
-        PrependScheme::Never
-    );
-    assert!(parse(r#"{"prepend_scheme": "sometimes"}"#).is_err());
-}
 
-#[test]
-fn refuses_the_metaspace_settings_it_cannot_rebuild() {
-    for (why, pretok) in [
-        (
-            "split: false",
-            r#"{"type": "Metaspace", "replacement": "▁", "split": false}"#,
-        ),
-        (
-            "prepend_scheme: first",
-            r#"{"type": "Metaspace", "replacement": "▁", "prepend_scheme": "first"}"#,
-        ),
-        (
-            "a metaspace buried in a sequence",
-            r#"{"type": "Sequence", "pretokenizers": [
-                {"type": "Whitespace"},
-                {"type": "Metaspace", "replacement": "▁"}
-            ]}"#,
-        ),
-    ] {
-        let json = config(&[("pre_tokenizer", pretok)]);
-        assert!(read(&json).is_err(), "{why}");
-    }
-}
 
-#[test]
-fn a_multi_character_replacement_is_not_truncated() {
-    let json = config(&[(
-        "pre_tokenizer",
-        r#"{"type": "Metaspace", "replacement": "ab"}"#,
-    )]);
-    assert!(read_err(&json).contains("exactly one character"));
-}
 
 // ---- post-processors ------------------------------------------------------------------------
 
@@ -407,7 +277,7 @@ fn builds_every_decoder_variant() {
         r#"{"type": "Strip", "content": " ", "start": 1, "stop": 0}"#,
         r#"{"type": "BPEDecoder", "suffix": "</w>"}"#,
         r#"{"type": "WordPiece", "prefix": "@@", "cleanup": true}"#,
-        r#"{"type": "Metaspace", "replacement": "▁", "add_prefix_space": true}"#,
+        r#"{"type": "Metaspace", "replacement": "▁", "prepend_scheme": "always"}"#,
         r#"{"type": "CTC", "pad_token": "<pad>", "word_delimiter_token": "|", "cleanup": true}"#,
         r#"{"type": "Sequence", "decoders": [{"type": "Fuse"}, {"type": "ByteFallback"}]}"#,
     ];

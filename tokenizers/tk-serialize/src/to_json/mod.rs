@@ -43,7 +43,7 @@ pub fn to_json(tokenizer: &PipelineTokenizer) -> Result<String> {
     };
 
     out.obj_open();
-    out.field_str("version", "1.0");
+    out.field_str("version", "2.0");
     // TODO: these are REQUIRED for v1
     out.field_null("truncation");
     out.field_null("padding");

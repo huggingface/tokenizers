@@ -1,12 +1,14 @@
-# The canonical `tokenizer.json`
+# The canonical `tokenizer.json`, version `2.0`
 
 What this crate reads and writes. Anything not drawn here is refused.
+
+A `1.0` file is a *legacy* file. tk-convert turns one into a `2.0` file; this crate never reads one.
 
 ## Shape
 
 ```text
 {                                        ← key order is exact, as written
-  "version"        : "1.0"
+  "version"        : "2.0"
   "truncation"     : null                  encode-time settings, never read
   "padding"        : null
   "added_tokens"   : [ AddedToken, … ]
@@ -44,28 +46,28 @@ Every component, at every depth, is an object tagged with `"type"`.
 | slot | `"type"` |
 |---|---|
 | **normalizer** | `Sequence` `BertNormalizer` `ByteLevel` `Lowercase` `MetaspaceNormalizer` `NFC` `NFD` `NFKC` `NFKD` `Nmt` `Precompiled` `Prepend` `Replace` `Strip` `StripAccents` |
-| **pre_tokenizer** | `Sequence` `BertPreTokenizer` `ByteLevel` `CharDelimiterSplit` `Digits` `FixedLength` `Metaspace`† `Punctuation` `Split` `UnicodeScripts` `Whitespace` `WhitespaceSplit` |
-| **post_processor** | `Sequence` `BertProcessing` `ByteLevel` `RobertaProcessing` `TemplateProcessing` |
+| **pre_tokenizer** | `Sequence` `BertPreTokenizer` `ByteLevel` `CharDelimiterSplit` `Digits` `FixedLength` `Punctuation` `Split` `UnicodeScripts` `Whitespace` `WhitespaceSplit` |
+| **post_processor** | `Sequence`† `BertProcessing`† `ByteLevel`† `RobertaProcessing`† `TemplateProcessing` |
 | **decoder** | `Sequence` `BPEDecoder` `ByteFallback` `ByteLevel` `CTC` `Fuse` `Metaspace` `Replace` `Strip` `WordPiece` |
 
-† `Metaspace` is **read-only**: it is the legacy spelling of two components, and it is the one
-place where reading and writing are deliberately not symmetric.
+† **Read-only.** Accepted on the way in, never written back under that tag: every post-processor
+lowers to a template, so all four come back as `TemplateProcessing`. The pipeline does not keep the
+distinction, so there is nothing to write it from.
 
-A `Metaspace` pre-tokenizer rewrites text *and* cuts it, which the pipeline keeps apart. Reading one
-lowers it to the two components it actually is, and each is then written as itself:
+There is no `Metaspace` pre-tokenizer. One is two components — it rewrites text *and* cuts it, which
+the pipeline keeps apart — so canonically it is spelled as the two it is:
 
 ```text
-  "pre_tokenizer": {"type":"Metaspace", ...}          ← old files, still read
-             ─read─▶  MetaspaceNormalizer + Split
-             ─write─▶  "normalizer": {"type":"MetaspaceNormalizer", ...}
-                       "pre_tokenizer": {"type":"Split", ...}
+  "normalizer":    {"type":"MetaspaceNormalizer", "replacement":"▁",
+                    "prepend":bool, "drop_whitespace":bool}
+  "pre_tokenizer": {"type":"Split", "pattern":{"String":"▁"},
+                    "behavior":"MergedWithNext", "invert":false}
 ```
 
-Writing the halves rather than folding them back is a v1 decision. The fold could only emit what the
-legacy tag can say — `drop_whitespace` had to come back out as a wrapping `WhitespaceSplit`, a
-byte-level model beside a `Metaspace` was a write error, and a `Metaspace` normalizer was required
-to be last in the chain so the writer could find it. None of that survives; the cost is that a file
-this writer produces does not load in `tokenizers` before v1, which v1 does not promise.
+tk-convert rewrites a legacy `Metaspace` into that pair. Spelling it out beats folding it back: the
+legacy tag could not say `drop_whitespace` without a wrapping `WhitespaceSplit`, could not sit
+beside a byte-level model, and forced the normalizer to be last in the chain so a writer could find
+it.
 
 ## Model
 
@@ -91,13 +93,15 @@ WordLevel  { "type", "unk_token":str, "vocab": {token: id} }
 ```text
 { "type", "single": [ Piece, … ], "pair": [ Piece, … ] }
 
-Piece = { "Sequence"    : {"id":"A"|"B",    "type_id":int} }
-      | { "SpecialToken": {"ids":[int, …],  "type_id":int} }   ← the ids, not a name
+Piece = { "seq": "A"|"B"  }               one input sequence
+      | { "ids": [int, …] }               a run of special tokens, by id
+
+        + "type_id": int                  on either, and only when it is not 0
 ```
 
-A `SpecialToken` may carry `"id"` naming a `"special_tokens"` entry instead, which is what
-every file written before this crate does. The ids are read out of that table; nothing else
-in it is, and neither is written back.
+A run carries its own ids, so there is no `special_tokens` table and no placeholder names: the
+strings behind the ids are in the vocabulary already. The `1.0` spelling — a `SpecialToken`
+wrapper naming a table entry — is one more thing tk-convert rewrites.
 
 ## AddedToken
 
@@ -111,9 +115,11 @@ in it is, and neither is written back.
 Each is an error naming what to convert.
 
 ```text
-  a "model" with no "type"                 ─┐
-  "merges" spelled "a b" not ["a","b"]      ├──▶ tk-convert ──▶ canonical ──▶ here
-  a Metaspace spelled "add_prefix_space"   ─┘
+  "version" other than "2.0"               ─┐
+  a "model" with no "type"                  │
+  "merges" spelled "a b" not ["a","b"]      ├──▶ tk-convert ──▶ canonical 2.0 ──▶ here
+  a Metaspace *pre-tokenizer* (it is two)   │
+  a Metaspace with "add_prefix_space"      ─┘
 
   a vocabulary named by path ("files")     ─────▶ refused, nothing converts it
 ```

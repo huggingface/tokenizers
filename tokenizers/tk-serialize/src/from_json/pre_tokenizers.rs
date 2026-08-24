@@ -4,9 +4,7 @@
 use super::needs_feature;
 use super::unsupported;
 use crate::json::Json;
-use tk_encode::decoders::metaspace::PrependScheme;
-use tk_encode::normalizers::metaspace::MetaspaceNormalizer;
-use tk_encode::pipeline::{PipelineNormalizer, PipelinePreTokenizer};
+use tk_encode::pipeline::PipelinePreTokenizer;
 use tk_encode::pre_tokenizers::bert::BertPreTokenizer;
 use tk_encode::pre_tokenizers::delimiter::CharDelimiterSplit;
 use tk_encode::pre_tokenizers::digits::Digits;
@@ -19,10 +17,7 @@ use tk_encode::pre_tokenizers::unicode_scripts::UnicodeScripts;
 use tk_encode::pre_tokenizers::whitespace::{Whitespace, WhitespaceSplit};
 use tk_encode::tokenizer::{Result, SplitDelimiterBehavior};
 
-pub(super) fn read_pre_tokenizer(
-    cfg: Option<&Json<'_>>,
-    normalizers: &mut Vec<PipelineNormalizer>,
-) -> Result<(PipelinePreTokenizer, bool)> {
+pub(super) fn read_pre_tokenizer(cfg: Option<&Json<'_>>) -> Result<(PipelinePreTokenizer, bool)> {
     let Some(cfg) = cfg else {
         return Ok((PipelinePreTokenizer::None, false));
     };
@@ -30,21 +25,11 @@ pub(super) fn read_pre_tokenizer(
         .type_tag()
         .ok_or_else(|| unsupported("a pre-tokenizer with no `type`"))?;
 
-    if kind == "Metaspace" {
-        return Ok((read_metaspace(cfg, false, normalizers)?, false));
-    }
-
     if kind == "Sequence" {
         let members = cfg
             .field("pretokenizers")
             .and_then(Json::as_array)
             .unwrap_or(&[]);
-        if let [first, second] = members
-            && first.type_tag() == Some("WhitespaceSplit")
-            && second.type_tag() == Some("Metaspace")
-        {
-            return Ok((read_metaspace(second, true, normalizers)?, false));
-        }
         if members.iter().any(|m| m.type_tag() == Some("Sequence")) {
             return Err("Nesting Sequence pre tokenizers is not supported".into());
         }
@@ -79,6 +64,9 @@ fn read_one_pre_tokenizer(cfg: &Json<'_>) -> Result<PipelinePreTokenizer> {
     let b = |name: &str, default: bool| cfg.field(name).and_then(Json::as_bool).unwrap_or(default);
 
     Ok(match kind {
+        // Not canonical: a `Metaspace` is two components, and the canonical file spells them as
+        // what they are -- a `MetaspaceNormalizer` in the `normalizer` slot and a `Split` here.
+        "Metaspace" => return Err(unsupported("a `Metaspace` pre-tokenizer")),
         "ByteLevel" => byte_level_pre_tokenizer(cfg)?,
         "Split" => PipelinePreTokenizer::Split(read_split(cfg)?),
         "Whitespace" => PipelinePreTokenizer::Whitespace(Whitespace),
@@ -145,68 +133,6 @@ fn byte_level_pre_tokenizer(cfg: &Json<'_>) -> Result<PipelinePreTokenizer> {
         SplitDelimiterBehavior::Isolated,
         false,
     )?))
-}
-
-/// We removed the Metaspace pre tokenizer in favor of 2 normalizers as it makes more sense
-/// regarding the flow of code.
-/// `drop_whitespace` is the `WhitespaceSplit` that t5 and albert run in front of theirs.
-fn read_metaspace(
-    cfg: &Json<'_>,
-    drop_whitespace: bool,
-    normalizers: &mut Vec<PipelineNormalizer>,
-) -> Result<PipelinePreTokenizer> {
-    let replacement = read_char(cfg, "replacement")?;
-    if !cfg.field("split").and_then(Json::as_bool).unwrap_or(true) {
-        return Err(unsupported(
-            "a `Metaspace` pre-tokenizer with `split: false`",
-        ));
-    }
-    let prepend = match read_prepend_scheme(cfg)? {
-        PrependScheme::Always => true,
-        PrependScheme::Never => false,
-        // TODO: v1 probably needs to supports that?
-        PrependScheme::First => {
-            return Err(unsupported(
-                "a `Metaspace` pre-tokenizer with `prepend_scheme: first`",
-            ));
-        }
-    };
-    if drop_whitespace && !prepend {
-        return Err(unsupported(
-            "a `WhitespaceSplit` + `Metaspace` that neither keeps whitespace nor prepends \
-             (nothing would show where words begin)",
-        ));
-    }
-    normalizers.push(PipelineNormalizer::Metaspace(MetaspaceNormalizer::new(
-        replacement,
-        prepend,
-        drop_whitespace,
-    )));
-    // `MergedWithNext` keeps each delimiter attached to the word it opens (`▁hello`), which is how
-    // SentencePiece vocabularies spell their tokens. A literal needs no regex backend.
-    Ok(PipelinePreTokenizer::Split(SplitPretok::native(
-        SplitPattern::String(replacement.to_string()),
-        SplitDelimiterBehavior::MergedWithNext,
-        false,
-    )?))
-}
-
-/// Read the prepend scheme / legacy add prefix space.
-pub(super) fn read_prepend_scheme(cfg: &Json<'_>) -> Result<PrependScheme> {
-    let mut scheme = match cfg.field("prepend_scheme").and_then(Json::as_str) {
-        None => PrependScheme::Always,
-        Some("always") => PrependScheme::Always,
-        Some("first") => PrependScheme::First,
-        Some("never") => PrependScheme::Never,
-        Some(other) => return Err(format!("unknown metaspace prepend_scheme {other:?}").into()),
-    };
-    if cfg.field("add_prefix_space").and_then(Json::as_bool) == Some(false) {
-        if scheme != PrependScheme::Never {
-            return Err("add_prefix_space does not match declared prepend_scheme".into());
-        }
-        scheme = PrependScheme::Never;
-    } // add prefix space = True is ignored. IDK why exactly. FIXME:
-    Ok(scheme)
 }
 
 pub(super) fn read_char(cfg: &Json<'_>, key: &str) -> Result<char> {

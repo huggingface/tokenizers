@@ -15,7 +15,7 @@ use crate::from_json::from_json;
 
 /// A minimal non-byte-level BPE: no data files, no regex backend, two merges over four tokens.
 const TINY_BPE: &str = r#"{
-    "version": "1.0",
+    "version": "2.0",
     "added_tokens": [],
     "normalizer": null,
     "pre_tokenizer": null,
@@ -140,6 +140,9 @@ const TEXTS: &[&str] = &[
 /// The `>= 1` guard is the only count asserted. Anything stronger would encode which fixtures a
 /// given machine has downloaded, and CI's set (`TESTS_RESOURCES`, eight configs, no `t5-base.json`)
 /// is fourteen short of a full `make models`.
+// TODO(pr3): every fixture in `data/` is a legacy 1.0 file, so this gate has no input
+// until tk-convert can produce 2.0 ones. Port it there.
+#[ignore = "needs 2.0 fixtures from tk-convert (pr3)"]
 #[test]
 fn round_trip_preserves_ids_on_every_real_config() {
     let files = fixtures();
@@ -279,7 +282,7 @@ fn every_unigram_score_survives_the_writer_bit_for_bit() {
 /// whichever pair is present, and at each step only one is, so `abab` comes out as a single token
 /// whatever the ranks say. Reversing a chain is as inert as `merges.pop()`.
 const COMPETING_BPE: &str = r#"{
-    "version": "1.0",
+    "version": "2.0",
     "added_tokens": [],
     "normalizer": null,
     "pre_tokenizer": null,
@@ -382,6 +385,9 @@ fn the_weak_perturbations_really_are_inert() {
 /// Skipped per config when reversing changes nothing observable, which is a legitimate outcome for a
 /// vocabulary where `TEXTS` happens to reach no multi-merge token — but not for all of them at once,
 /// hence the `>= 1`.
+// TODO(pr3): every fixture in `data/` is a legacy 1.0 file, so this gate has no input
+// until tk-convert can produce 2.0 ones. Port it there.
+#[ignore = "needs 2.0 fixtures from tk-convert (pr3)"]
 #[test]
 fn reversing_the_written_merges_moves_ids_on_a_real_config() {
     let files = fixtures();
@@ -450,7 +456,7 @@ fn every_component_is_written_with_a_type_tag() {
         );
     }
     assert_eq!(parsed["model"]["type"], "BPE");
-    assert_eq!(parsed["version"], "1.0");
+    assert_eq!(parsed["version"], "2.0");
 }
 
 /// `with_component`, but against an already-modified config.
@@ -473,30 +479,6 @@ fn merges_are_written_as_pairs_in_rank_order() {
     );
 }
 
-/// A legacy config in, a canonical one out. `gpt2`-style files ship both of these, and the point of
-/// the writer is that reading one and writing it produces the modern spelling.
-#[test]
-fn a_legacy_config_is_written_canonically() {
-    let legacy = r#"{
-        "version": "1.0",
-        "added_tokens": [],
-        "normalizer": null,
-        "pre_tokenizer": null,
-        "post_processor": null,
-        "decoder": null,
-        "model": {
-            "vocab": {"a": 0, "b": 1, "ab": 2, "abab": 3},
-            "merges": ["a b", "ab ab"]
-        }
-    }"#;
-    let model = field_of(&rewrite(legacy), "model");
-    // The model had no `"type"` and its merges were strings. Both are canonical now.
-    assert_eq!(model["type"], "BPE");
-    assert_eq!(
-        model["merges"],
-        serde_json::json!([["a", "b"], ["ab", "ab"]])
-    );
-}
 
 // ---- components, one test each ----------------------------------------------------------------
 //
@@ -662,18 +644,15 @@ fn pre_tokenizers_keep_their_fields() {
     }
 }
 
-/// A `Metaspace` pre-tokenizer went in as a normalizer plus a `Split`; it has to come back out as a
-/// `Metaspace`, spelled the canonical way. This is the inversion most likely to break.
 #[test]
-fn a_legacy_metaspace_is_written_as_its_two_halves() {
+fn a_metaspace_normalizer_round_trips_as_itself() {
     let config = with_component(
-        "pre_tokenizer",
-        r#"{"type": "Metaspace", "replacement": "▁", "prepend_scheme": "always", "split": true}"#,
+        "normalizer",
+        r#"{"type": "MetaspaceNormalizer", "replacement": "\u2581",
+            "prepend": true, "drop_whitespace": false}"#,
     );
-    let written = rewrite(&config);
-    // The delimiter half goes to the `normalizer` slot as itself...
     assert_eq!(
-        field_of(&written, "normalizer"),
+        field_of(&rewrite(&config), "normalizer"),
         serde_json::json!({
             "type": "MetaspaceNormalizer",
             "replacement": "\u{2581}",
@@ -681,57 +660,36 @@ fn a_legacy_metaspace_is_written_as_its_two_halves() {
             "drop_whitespace": false
         })
     );
-    // ...and the cut it produced is a plain `Split`, not a `Metaspace` tag folded back.
-    let pretok = field_of(&written, "pre_tokenizer");
-    assert_eq!(pretok["type"], "Split");
-    assert_eq!(pretok["pattern"], serde_json::json!({"String": "\u{2581}"}));
 }
 
-/// `add_prefix_space` on the way in, `prepend_scheme` on the way out: the legacy key is never
-/// written, which is what "canonical" means here.
 #[test]
 fn the_legacy_metaspace_keys_never_come_back_out() {
-    let written = rewrite(&with_component(
-        "pre_tokenizer",
-        r#"{"type": "Metaspace", "replacement": "▁", "add_prefix_space": true}"#,
-    ));
-    let normalizer = field_of(&written, "normalizer");
-    assert_eq!(
-        normalizer["prepend"], true,
-        "`add_prefix_space` meant prepend"
+    let config = with_component(
+        "normalizer",
+        r#"{"type": "MetaspaceNormalizer", "replacement": "\u2581",
+            "prepend": true, "drop_whitespace": false}"#,
     );
+    let normalizer = field_of(&rewrite(&config), "normalizer");
     for legacy in ["add_prefix_space", "prepend_scheme", "split"] {
         assert!(
             normalizer.get(legacy).is_none(),
-            "the legacy key `{legacy}` was written back: {normalizer}"
+            "the legacy key `{legacy}` was written: {normalizer}"
         );
     }
 }
 
-/// t5 and albert's `Sequence[WhitespaceSplit, Metaspace]`, which the reader collapses into a single
-/// `Metaspace` normalizer carrying `drop_whitespace`. The pair has to come back, because a lone
-/// `Metaspace` is a different pipeline.
 #[test]
-fn a_whitespace_split_metaspace_pair_becomes_drop_whitespace() {
-    let written = rewrite(&with_component(
-        "pre_tokenizer",
-        r#"{"type": "Sequence", "pretokenizers": [
-            {"type": "WhitespaceSplit"},
-            {"type": "Metaspace", "replacement": "▁", "prepend_scheme": "always", "split": true}
-        ]}"#,
-    ));
-    // The `WhitespaceSplit` was never a component: it is how the legacy shape spelled
-    // `drop_whitespace`, and the pipeline holds it as the field it is.
-    assert_eq!(
-        field_of(&written, "normalizer"),
-        serde_json::json!({
-            "type": "MetaspaceNormalizer",
-            "replacement": "\u{2581}",
-            "prepend": true,
-            "drop_whitespace": true
-        })
+fn drop_whitespace_is_a_field_not_a_wrapping_whitespace_split() {
+    // The legacy `Sequence[WhitespaceSplit, Metaspace]` that t5 and albert ship is tk-convert's
+    // input, not this reader's; canonically it is one flag on the normalizer.
+    let config = with_component(
+        "normalizer",
+        r#"{"type": "MetaspaceNormalizer", "replacement": "\u2581",
+            "prepend": true, "drop_whitespace": true}"#,
     );
-    assert_eq!(field_of(&written, "pre_tokenizer")["type"], "Split");
+    let normalizer = field_of(&rewrite(&config), "normalizer");
+    assert_eq!(normalizer["drop_whitespace"], true);
+    assert_eq!(normalizer["type"], "MetaspaceNormalizer");
 }
 
 #[test]
@@ -797,30 +755,20 @@ fn decoders_keep_their_fields() {
 }
 
 /// Every post-processor becomes a `TemplateProcessing`, because that is what the pipeline holds: two
-/// templates of placeholders and resolved ids. The names are rebuilt from the ids, so this checks
-/// that the rebuilt table resolves to the same frame.
+/// templates of sequence markers and runs of ids -- so it comes back out exactly as it went in.
 #[test]
 fn a_post_processor_is_written_as_a_template() {
     assert_eq!(
         component_round_trip(
             "post_processor",
             r#"{"type": "TemplateProcessing",
-                "single": [{"SpecialToken": {"id": "a", "type_id": 0}},
-                           {"Sequence": {"id": "A", "type_id": 0}}],
-                "pair": [{"Sequence": {"id": "A", "type_id": 0}},
-                         {"Sequence": {"id": "B", "type_id": 1}}],
-                "special_tokens": {"a": {"id": "a", "ids": [0], "tokens": ["a"]}}}"#
+                "single": [{"ids": [0]}, {"seq": "A"}],
+                "pair": [{"seq": "A"}, {"seq": "B", "type_id": 1}]}"#
         ),
         serde_json::json!({
             "type": "TemplateProcessing",
-            "single": [
-                {"SpecialToken": {"ids": [0], "type_id": 0}},
-                {"Sequence": {"id": "A", "type_id": 0}}
-            ],
-            "pair": [
-                {"Sequence": {"id": "A", "type_id": 0}},
-                {"Sequence": {"id": "B", "type_id": 1}}
-            ]
+            "single": [{"ids": [0]}, {"seq": "A"}],
+            "pair": [{"seq": "A"}, {"seq": "B", "type_id": 1}]
         })
     );
 }
@@ -836,15 +784,11 @@ fn a_bert_processing_becomes_its_template() {
     assert_eq!(written["type"], "TemplateProcessing");
     assert_eq!(
         written["single"],
-        serde_json::json!([
-            {"SpecialToken": {"ids": [0], "type_id": 0}},
-            {"Sequence": {"id": "A", "type_id": 0}},
-            {"SpecialToken": {"ids": [1], "type_id": 0}}
-        ])
+        serde_json::json!([{"ids": [0]}, {"seq": "A"}, {"ids": [1]}])
     );
     assert!(
         written.get("special_tokens").is_none(),
-        "the pieces carry their ids, so there is no table: {written}"
+        "a piece carries its ids, so there is no table: {written}"
     );
 }
 
@@ -858,8 +802,8 @@ fn a_doubled_special_token_run_keeps_both_ids() {
             "trim_offsets": true, "add_prefix_space": true}"#,
     );
     assert_eq!(
-        written["pair"][2]["SpecialToken"]["ids"],
-        serde_json::json!([1, 1]),
+        written["pair"][2],
+        serde_json::json!({"ids": [1, 1]}),
         "the doubled separator lost an id: {written}"
     );
 }
