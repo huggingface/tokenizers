@@ -50,11 +50,7 @@ fn read_one_pre_tokenizer(cfg: &Json<'_>) -> Result<PipelinePreTokenizer> {
     let b = |name: &str, default: bool| cfg.field(name).and_then(Json::as_bool).unwrap_or(default);
 
     Ok(match kind {
-        // Not canonical: a `Metaspace` is two components, and the canonical file spells them as
-        // what they are -- a `MetaspaceNormalizer` in the `normalizer` slot and a `Split` here.
         "Metaspace" => return Err(unsupported("a `Metaspace` pre-tokenizer")),
-        // Not canonical: byte-level is a model property now, and the split it asked for is a
-        // plain `Split` on the GPT-2 regex (or nothing, for `use_regex: false`).
         "ByteLevel" => return Err(unsupported("a `ByteLevel` pre-tokenizer")),
         "Split" => PipelinePreTokenizer::Split(read_split(cfg)?),
         "Whitespace" => PipelinePreTokenizer::Whitespace(Whitespace),
@@ -88,13 +84,7 @@ fn read_one_pre_tokenizer(cfg: &Json<'_>) -> Result<PipelinePreTokenizer> {
             let n = cfg.need("FixedLength", "length", Json::as_usize)?;
             PipelinePreTokenizer::FixedLength(FixedLength::new(n))
         }
-        // Only the two shapes `read_pre_tokenizer` intercepts can be rebuilt as normalizer + split;
-        // a `Metaspace` anywhere else in a `Sequence` cannot, and the config path rejects it too.
-        "Metaspace" => {
-            return Err(unsupported(
-                "a `Metaspace` pre-tokenizer other than on its own or after a `WhitespaceSplit`",
-            ));
-        }
+
         other => return Err(unsupported(&format!("the `{other}` pre-tokenizer"))),
     })
 }
