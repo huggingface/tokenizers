@@ -20,9 +20,6 @@ use tk_encode::normalizers::{
     unicode::{NFC, NFD, NFKC, NFKD, Nmt},
 };
 
-/// Normalizers, flattened. A `Sequence` becomes its members in order, which is what the pipeline's
-/// `Vec<PipelineNormalizer>` already means — and an empty one (deepseek ships one) disappears
-/// instead of costing a no-op call per segment.
 pub(super) fn read_normalizers(cfg: Option<&Json<'_>>) -> Result<Vec<PipelineNormalizer>> {
     let mut out = Vec::new();
     if let Some(cfg) = cfg {
@@ -55,7 +52,7 @@ fn push_normalizer(cfg: &Json<'_>, out: &mut Vec<PipelineNormalizer>) -> Result<
             let prepend = cfg
                 .get_some("prepend")
                 .and_then(Json::as_str)
-                .ok_or_else(|| -> tk_encode::Error { "Prepend has no `prepend`".into() })?;
+                .ok_or_else(|| -> tk_encode::Error { "Prepend has no `prepend` field".into() })?;
             out.push(PipelineNormalizer::Prepend(Prepend::new(
                 prepend.to_string(),
             )));

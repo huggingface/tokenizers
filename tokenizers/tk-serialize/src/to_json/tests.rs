@@ -236,7 +236,7 @@ fn every_unigram_score_survives_the_writer_bit_for_bit() {
         for (token, score) in unigram.vocab() {
             let literal = super::writer::float_literal(*score)
                 .unwrap_or_else(|e| panic!("{name}: the score for {token:?} has no spelling: {e}"));
-            let read_back = crate::json::f64_from_literal(&literal);
+            let read_back = crate::vendored::f64_from_literal(&literal);
             assert_eq!(
                 read_back.to_bits(),
                 score.to_bits(),
@@ -930,12 +930,12 @@ fn a_unigram_model_keeps_its_scores_and_unk() {
         .expect("a Unigram vocab is an array");
     let expected = [
         0.0,
-        crate::json::f64_from_literal("-3.8403830528259277"),
-        crate::json::f64_from_literal("-13.5321998596191"),
+        crate::vendored::f64_from_literal("-3.8403830528259277"),
+        crate::vendored::f64_from_literal("-13.5321998596191"),
     ];
     for (entry, want) in tokens.iter().zip(expected) {
         let literal = entry[1].to_string();
-        let got = crate::json::f64_from_literal(&literal);
+        let got = crate::vendored::f64_from_literal(&literal);
         assert_eq!(
             got.to_bits(),
             want.to_bits(),

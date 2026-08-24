@@ -7,7 +7,7 @@
 
 // Both exist for the float path alone, which is `unigram`-only -- see `Out::f64`.
 #[cfg(any(feature = "unigram", test))]
-use crate::json::f64_from_literal;
+use crate::vendored::f64_from_literal;
 #[cfg(any(feature = "unigram", test))]
 use tk_encode::tokenizer::Result;
 

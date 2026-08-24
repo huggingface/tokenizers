@@ -60,6 +60,7 @@
 #![doc = include_str!("../SPEC.md")]
 
 pub mod json;
+mod vendored;
 
 // The reader proper, behind the `deserialize` feature. `json` stays unconditional: the accessors
 // are useful on their own and the `serialize` side wants them too.
