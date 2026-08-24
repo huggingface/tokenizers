@@ -1,23 +1,15 @@
 use crate::tokenizer::{Decoder, Result};
-use monostate::MustBe;
 
-use serde::{Deserialize, Serialize};
-
-#[derive(Deserialize, Clone, Debug, Serialize, Default)]
+#[derive(Clone, Debug, Default)]
 /// ByteFallback is a simple trick which converts tokens looking like `<0x61>`
 /// to pure bytes, and attempts to make them into a string. If the tokens
 /// cannot be decoded you will get � instead for each inconvertible byte token
 #[non_exhaustive]
-pub struct ByteFallback {
-    #[serde(rename = "type")]
-    type_: MustBe!("ByteFallback"),
-}
+pub struct ByteFallback {}
 
 impl ByteFallback {
     pub fn new() -> Self {
-        Self {
-            type_: MustBe!("ByteFallback"),
-        }
+        Self {}
     }
 }
 

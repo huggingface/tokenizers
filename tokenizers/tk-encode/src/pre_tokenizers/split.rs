@@ -1,15 +1,16 @@
 use crate::pipeline;
-use crate::utils::{GptFsm, GptFsmPattern, SysRegex, gpt_fsm};
+use crate::utils::{GptFsm, SysRegex, gpt_fsm};
 use atomsplit::literal::Literal;
-use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::tokenizer::{
-    PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior,
+    Result, SplitDelimiterBehavior,
     pattern::{Invert, Pattern},
 };
 
 /// Represents the different patterns that `Split` can use
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq)]
+///
+/// Written down externally tagged: `{"String":"..."}` / `{"Regex":"..."}`.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SplitPattern {
     String(String),
     Regex(String),
@@ -39,45 +40,23 @@ pub enum Search {
     Unavailable,
 }
 
-#[derive(Debug, Serialize)]
-#[serde(tag = "type")]
+/// Only `pattern`, `behavior` and `invert` are ever written down: `search` and `fsm` are both
+/// *derived* from `pattern` by [`Split::new`], so a config carrying them would be a config that can
+/// disagree with itself. That is also why the serde in [`super::serialization`] goes through the
+/// constructor rather than a struct literal, and why reading one can fail: compiling the pattern
+/// can.
+#[derive(Debug)]
 pub struct Split {
     pub pattern: SplitPattern,
     /// How the pattern is found. A plain string never needs a backend; a regex does, unless it is one
     /// of the GPT patterns the native FSM below covers.
-    #[serde(skip)]
     pub search: Search,
     pub behavior: SplitDelimiterBehavior,
     pub invert: bool,
     /// Native `atomsplit` FSM for a recognized GPT regex (gpt2 / cl100k-Llama-3 / o200k), used on the
     /// pipeline path when `behavior == Isolated && !invert` (how these regexes always ship). Byte-exact
     /// with `regex`; `None` falls back to `regex`.
-    #[serde(skip)]
     fsm: Option<GptFsm>,
-}
-
-impl<'de> Deserialize<'de> for Split {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        enum Type {
-            Split,
-        }
-
-        #[derive(Deserialize)]
-        pub struct SplitHelper {
-            #[serde(rename = "type")]
-            _type: Type,
-            pattern: SplitPattern,
-            behavior: SplitDelimiterBehavior,
-            invert: bool,
-        }
-
-        let helper = SplitHelper::deserialize(deserializer)?;
-        Self::new(helper.pattern, helper.behavior, helper.invert).map_err(serde::de::Error::custom)
-    }
 }
 
 impl Clone for Split {
@@ -155,6 +134,11 @@ impl Split {
         })
     }
 
+    /// The native FSM family this pattern was recognised as, if any.
+    pub fn gpt_fsm(&self) -> Option<GptFsm> {
+        self.fsm
+    }
+
     /// Pipeline canonicalization. A recognized whole-covering GPT regex shipped
     /// as `(invert=true, behavior=Removed)` — the tiktoken-conversion convention
     /// used by cl100k/o200k — is byte-exactly equivalent to `(invert=false,
@@ -170,42 +154,6 @@ impl Split {
         } else {
             Ok(self)
         }
-    }
-}
-
-impl PreTokenizer for Split {
-    fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
-        match &self.search {
-            Search::Literal(literal) => {
-                return if self.invert {
-                    pretokenized
-                        .split(|_, normalized| normalized.split(Invert(literal), self.behavior))
-                } else {
-                    pretokenized.split(|_, normalized| normalized.split(literal, self.behavior))
-                };
-            }
-            Search::Regex(regex) => {
-                return if self.invert {
-                    pretokenized
-                        .split(|_, normalized| normalized.split(Invert(regex), self.behavior))
-                } else {
-                    pretokenized.split(|_, normalized| normalized.split(regex, self.behavior))
-                };
-            }
-            Search::Unavailable => {}
-        }
-        // No way to search for the pattern: only a recognized GPT pattern in its canonical usage
-        // (Isolated, not inverted — how these regexes always ship) can split, via the native FSM.
-        let fsm = self
-            .fsm
-            .filter(|_| !self.invert && self.behavior == SplitDelimiterBehavior::Isolated)
-            .ok_or_else(|| -> crate::tokenizer::Error {
-                "this `Split` pattern needs a system-regex backend; enable the `fancy-regex` feature"
-                    .into()
-            })?;
-        pretokenized.split(|_, normalized| {
-            normalized.split(GptFsmPattern(fsm), SplitDelimiterBehavior::Isolated)
-        })
     }
 }
 
@@ -263,93 +211,56 @@ unsafe impl pipeline::PreTokenizer for Split {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{OffsetReferential, OffsetType, PreTokenizer};
-    use SplitDelimiterBehavior::*;
 
-    #[cfg(feature = "fancy-regex")] // needs a system-regex backend
+    /// `Split::new` compiles every regex through the system backend, so a build without
+    /// `fancy-regex` cannot construct deepseek's three patterns -- they are individually
+    /// unrecognised by `gpt_fsm` (the pipeline runs them as one native pass). `Split::native`
+    /// never asks for an engine.
     #[test]
-    fn basic() {
-        let tests = vec![
-            (
-                Removed,
-                "How are you doing?",
-                vec![
-                    ("How", (0, 3)),
-                    ("are", (4, 7)),
-                    ("you", (8, 11)),
-                    ("doing", (12, 17)),
-                    ("?", (17, 18)),
-                ],
-            ),
-            (
-                Isolated,
-                "How are you doing?",
-                vec![
-                    ("How", (0, 3)),
-                    (" ", (3, 4)),
-                    ("are", (4, 7)),
-                    (" ", (7, 8)),
-                    ("you", (8, 11)),
-                    (" ", (11, 12)),
-                    ("doing", (12, 17)),
-                    ("?", (17, 18)),
-                ],
-            ),
-            (
-                MergedWithPrevious,
-                "How are you doing?",
-                vec![
-                    ("How ", (0, 4)),
-                    ("are ", (4, 8)),
-                    ("you ", (8, 12)),
-                    ("doing", (12, 17)),
-                    ("?", (17, 18)),
-                ],
-            ),
-            (
-                MergedWithNext,
-                "How are you doing?",
-                vec![
-                    ("How", (0, 3)),
-                    (" are", (3, 7)),
-                    (" you", (7, 11)),
-                    (" doing", (11, 17)),
-                    ("?", (17, 18)),
-                ],
-            ),
-            (
-                Contiguous,
-                "How are you doing?",
-                vec![
-                    ("How", (0, 3)),
-                    (" ", (3, 4)),
-                    ("are", (4, 7)),
-                    (" ", (7, 8)),
-                    ("you", (8, 11)),
-                    (" ", (11, 12)),
-                    ("doing?", (12, 18)),
-                ],
-            ),
-        ];
+    fn native_accepts_patterns_new_would_need_an_engine_for() {
+        use crate::utils::DEEPSEEK_PATTERNS;
 
-        // use whitespace regex
-        let regex = SplitPattern::Regex(r"\w+|[^\w\s]+".into());
-
-        for (behavior, s, res) in tests {
-            let mut pretokenized = PreTokenizedString::from(s);
-            let pretok = Split::new(regex.clone(), behavior, true).unwrap();
-            pretok.pre_tokenize(&mut pretokenized).unwrap();
-            assert_eq!(
-                pretokenized
-                    .get_splits(OffsetReferential::Original, OffsetType::Byte)
-                    .into_iter()
-                    .map(|(s, o, _)| (s, o))
-                    .collect::<Vec<_>>(),
-                res
+        for pattern in DEEPSEEK_PATTERNS {
+            let split = Split::native(
+                SplitPattern::Regex(pattern.to_string()),
+                SplitDelimiterBehavior::Isolated,
+                false,
+            )
+            .expect("native must not need a regex backend");
+            assert!(
+                split.gpt_fsm().is_none(),
+                "deepseek's patterns are not individually FSM-recognised"
             );
         }
+
+        // The premise: with no backend compiled, `Split::new` rejects exactly these.
+        #[cfg(not(feature = "fancy-regex"))]
+        for pattern in DEEPSEEK_PATTERNS {
+            assert!(
+                Split::new(
+                    SplitPattern::Regex(pattern.to_string()),
+                    SplitDelimiterBehavior::Isolated,
+                    false,
+                )
+                .is_err(),
+                "without a backend `Split::new` must fail here -- that is why `native` exists"
+            );
+        }
+
+        // A recognised pattern still reports its family, so a caller can route it natively.
+        let gpt2 = Split::native(
+            SplitPattern::Regex(atomsplit::regexes::GPT2.to_string()),
+            SplitDelimiterBehavior::Isolated,
+            false,
+        )
+        .unwrap();
+        assert_eq!(gpt2.gpt_fsm(), Some(GptFsm::Gpt2));
     }
 
+    #[cfg(feature = "fancy-regex")]
+    use SplitDelimiterBehavior::*;
+
+    #[cfg(feature = "fancy-regex")] // only the gated tests below drive it
     fn pipeline_split(
         pattern: SplitPattern,
         behavior: SplitDelimiterBehavior,
@@ -456,235 +367,5 @@ mod tests {
             pipeline_split("-".into(), Isolated, false, "a-b"),
             vec![("a", (0, 1)), ("-", (1, 2)), ("b", (2, 3))],
         );
-    }
-
-    #[test]
-    fn pipeline_gpt2_uses_fsm_and_matches_legacy() {
-        // The gpt2 pattern is recognized -> the pipeline path routes to the native
-        // atomsplit FSM; its output must equal the legacy fancy-regex path.
-        let gpt2 = atomsplit::regexes::GPT2;
-        let corpus = "The quick brown fox 123!!!  double  spaces\tand tabs. don't Naïve café. ";
-        let pretok = Split::new(SplitPattern::Regex(gpt2.into()), Isolated, false).unwrap();
-        assert!(pretok.fsm.is_some(), "gpt2 pattern should be recognized");
-
-        // legacy reference
-        let mut pre = PreTokenizedString::from(corpus);
-        pretok.pre_tokenize(&mut pre).unwrap();
-        let legacy: Vec<(&str, (u32, u32))> = pre
-            .get_splits(OffsetReferential::Original, OffsetType::Byte)
-            .into_iter()
-            .map(|(s, o, _)| (s, (o.0 as u32, o.1 as u32)))
-            .collect();
-
-        assert_eq!(
-            pipeline_split(SplitPattern::Regex(gpt2.into()), Isolated, false, corpus),
-            legacy,
-        );
-    }
-
-    #[test]
-    fn pipeline_cl100k_llama3_uses_fsm_and_matches_legacy() {
-        // Llama-3's EXACT pre_tokenizer regex (from data/llama-3-tokenizer.json) → recognized → routes
-        // to fsm_cl100k. Output must equal the legacy SysRegex Isolated split, byte-for-byte.
-        let cl100k = atomsplit::regexes::CL100K;
-        let corpus =
-            "The quick brown fox 123!!!  double  spaces\tand tabs. don't Naïve café.\n\n世界 안녕 ";
-        let pretok = Split::new(SplitPattern::Regex(cl100k.into()), Isolated, false).unwrap();
-        assert!(
-            pretok.fsm.is_some(),
-            "cl100k / Llama-3 pattern should route to the native FSM"
-        );
-
-        let mut pre = PreTokenizedString::from(corpus);
-        pretok.pre_tokenize(&mut pre).unwrap();
-        let legacy: Vec<(&str, (u32, u32))> = pre
-            .get_splits(OffsetReferential::Original, OffsetType::Byte)
-            .into_iter()
-            .map(|(s, o, _)| (s, (o.0 as u32, o.1 as u32)))
-            .collect();
-
-        assert_eq!(
-            pipeline_split(SplitPattern::Regex(cl100k.into()), Isolated, false, corpus),
-            legacy,
-        );
-    }
-
-    #[test]
-    fn pipeline_o200k_uses_fsm_and_matches_legacy() {
-        // GPT-4o's EXACT pre_tokenization regex → recognized → routes to fsm_o200k. Output must equal the
-        // legacy SysRegex Isolated split, byte-for-byte. Corpus stresses the case-aware letter split:
-        // camelCase, ALLCAPS→word, McDonald's-style, contractions, accented Ll (é/ß), CJK (caseless).
-        let o200k = atomsplit::regexes::O200K;
-        let corpus = "McDonald's iPhone SQLite HELLOWorld camelCase don't I'll We've 3.14 café Straße 世界 안녕\n\n  Mixed CASE end.";
-        let pretok = Split::new(SplitPattern::Regex(o200k.into()), Isolated, false).unwrap();
-        assert!(
-            pretok.fsm.is_some(),
-            "o200k / GPT-4o pattern should route to the native FSM"
-        );
-
-        let mut pre = PreTokenizedString::from(corpus);
-        pretok.pre_tokenize(&mut pre).unwrap();
-        let legacy: Vec<(&str, (u32, u32))> = pre
-            .get_splits(OffsetReferential::Original, OffsetType::Byte)
-            .into_iter()
-            .map(|(s, o, _)| (s, (o.0 as u32, o.1 as u32)))
-            .collect();
-
-        assert_eq!(
-            pipeline_split(SplitPattern::Regex(o200k.into()), Isolated, false, corpus),
-            legacy,
-        );
-    }
-
-    #[test]
-    fn pipeline_tekken_uses_fsm_and_matches_legacy() {
-        // Mistral's tekken regex (mistral-small-4) → recognized → routes to fsm_tekken. Same corpus
-        // shape as o200k, whose grammar it shares: the differences it must get right are apostrophes
-        // (no contraction suffix, so `'s` starts a new token) and one token per digit.
-        let tekken = atomsplit::regexes::TEKKEN;
-        let corpus = "McDonald's iPhone SQLite HELLOWorld camelCase don't I'll We've 3.14159 café Straße 世界 안녕\n\n  path/to/file Mixed CASE end.";
-        let pretok = Split::new(SplitPattern::Regex(tekken.into()), Isolated, false).unwrap();
-        assert_eq!(
-            pretok.fsm,
-            Some(crate::utils::GptFsm::Tekken),
-            "tekken / mistral pattern should route to the native FSM"
-        );
-
-        let mut pre = PreTokenizedString::from(corpus);
-        pretok.pre_tokenize(&mut pre).unwrap();
-        let legacy: Vec<(&str, (u32, u32))> = pre
-            .get_splits(OffsetReferential::Original, OffsetType::Byte)
-            .into_iter()
-            .map(|(s, o, _)| (s, (o.0 as u32, o.1 as u32)))
-            .collect();
-
-        assert_eq!(
-            pipeline_split(SplitPattern::Regex(tekken.into()), Isolated, false, corpus),
-            legacy,
-        );
-    }
-
-    #[test]
-    fn pipeline_qwen2_uses_fsm_and_matches_legacy() {
-        // Qwen2's regex is cl100k character-for-character EXCEPT rule 3 is `\p{N}` (each digit its own
-        // token) instead of `\p{N}{1,3}`. The structural recognizer extracts digit_cap=1 → fsm_cl100k_cap,
-        // so it unrolls (no per-tokenizer exact-string entry). Corpus stresses multi-digit runs.
-        let qwen2 = r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+";
-        let corpus = "abc 12345 don't A1B2 3.14 100%%  double  spaces\ttab.\n\n世界 42";
-        let pretok = Split::new(SplitPattern::Regex(qwen2.into()), Isolated, false).unwrap();
-        assert_eq!(
-            pretok.fsm,
-            Some(crate::utils::GptFsm::Cl100k { digit_cap: 1 }),
-            "Qwen2 pattern should route to the cl100k FSM with digit cap 1"
-        );
-
-        let mut pre = PreTokenizedString::from(corpus);
-        pretok.pre_tokenize(&mut pre).unwrap();
-        let legacy: Vec<(&str, (u32, u32))> = pre
-            .get_splits(OffsetReferential::Original, OffsetType::Byte)
-            .into_iter()
-            .map(|(s, o, _)| (s, (o.0 as u32, o.1 as u32)))
-            .collect();
-
-        assert_eq!(
-            pipeline_split(SplitPattern::Regex(qwen2.into()), Isolated, false, corpus),
-            legacy,
-        );
-    }
-
-    /// The goal of the literal path: a plain string pattern splits with no regex backend, on both the
-    /// legacy and the pipeline path.
-    #[test]
-    fn a_string_pattern_needs_no_backend() {
-        let pretok = Split::new("-", SplitDelimiterBehavior::Removed, false).unwrap();
-        let mut legacy = PreTokenizedString::from("a-b--c");
-        pretok.pre_tokenize(&mut legacy).unwrap();
-        let words: Vec<&str> = legacy
-            .get_splits(OffsetReferential::Original, OffsetType::Byte)
-            .iter()
-            .map(|(word, _, _)| *word)
-            .collect();
-        assert_eq!(words, ["a", "b", "c"]);
-        assert_eq!(
-            pipeline_split(
-                SplitPattern::String("-".into()),
-                SplitDelimiterBehavior::Removed,
-                false,
-                "a-b--c"
-            ),
-            [("a", (0, 1)), ("b", (2, 3)), ("c", (5, 6))]
-        );
-    }
-
-    /// A config spelling its pattern as a string must also *deserialize* with no backend — the
-    /// regex half of `serialization` below can only run once one is compiled.
-    #[test]
-    fn a_string_pattern_deserializes_with_no_backend() {
-        let split_s =
-            r#"{"type":"Split","pattern":{"String":"Hello"},"behavior":"Removed","invert":true}"#;
-        let split = Split::new("Hello", SplitDelimiterBehavior::Removed, true).unwrap();
-        assert_eq!(serde_json::from_str::<Split>(split_s).unwrap(), split);
-        assert_eq!(serde_json::to_string(&split).unwrap(), split_s);
-    }
-
-    #[cfg(feature = "fancy-regex")] // needs a system-regex backend
-    #[test]
-    fn regex_string() {
-        let mut pretok_str_for_regex = PreTokenizedString::from("Hey, man!");
-        let mut pretok_str_for_string = pretok_str_for_regex.clone();
-
-        // pre-tokenizer splits on " " - one from Regex, one from string
-        let pretokenizer_regex = Split::new(
-            SplitPattern::Regex(r"\s+".into()),
-            SplitDelimiterBehavior::Removed,
-            false,
-        )
-        .unwrap();
-        let pretokenizer_string = Split::new(" ", SplitDelimiterBehavior::Removed, false).unwrap();
-
-        pretokenizer_regex
-            .pre_tokenize(&mut pretok_str_for_regex)
-            .unwrap();
-        pretokenizer_string
-            .pre_tokenize(&mut pretok_str_for_string)
-            .unwrap();
-
-        assert_eq!(pretok_str_for_regex, pretok_str_for_string);
-    }
-
-    #[test]
-    fn invert() {
-        let mut pretok_str = PreTokenizedString::from("Hello Hello Hello");
-        let mut pretok_str_for_invert = pretok_str.clone();
-
-        // one pre-tokenizer splits on " " - one splits inverted on "Hello"
-        let pretokenizer = Split::new(" ", SplitDelimiterBehavior::Removed, false).unwrap();
-        let pretokenizer_invert =
-            Split::new("Hello", SplitDelimiterBehavior::Removed, true).unwrap();
-
-        pretokenizer.pre_tokenize(&mut pretok_str).unwrap();
-        pretokenizer_invert
-            .pre_tokenize(&mut pretok_str_for_invert)
-            .unwrap();
-
-        assert_eq!(pretok_str, pretok_str_for_invert);
-    }
-
-    #[cfg(feature = "fancy-regex")] // needs a system-regex backend
-    #[test]
-    fn serialization() {
-        use SplitDelimiterBehavior::*;
-
-        let split = Split::new("Hello", Removed, true).unwrap();
-        let split_s =
-            r#"{"type":"Split","pattern":{"String":"Hello"},"behavior":"Removed","invert":true}"#;
-        assert_eq!(serde_json::to_string(&split).unwrap(), split_s);
-        assert_eq!(serde_json::from_str::<Split>(split_s).unwrap(), split);
-
-        let split = Split::new(SplitPattern::Regex(r"\s+".into()), Isolated, false).unwrap();
-        let split_s =
-            r#"{"type":"Split","pattern":{"Regex":"\\s+"},"behavior":"Isolated","invert":false}"#;
-        assert_eq!(serde_json::to_string(&split).unwrap(), split_s);
-        assert_eq!(serde_json::from_str::<Split>(split_s).unwrap(), split);
     }
 }

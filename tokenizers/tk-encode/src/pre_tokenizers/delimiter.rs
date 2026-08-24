@@ -1,13 +1,11 @@
-use serde::{Deserialize, Serialize};
-
 use crate::pipeline;
 use crate::pipeline::PreTokenizerScratch;
-use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
-use crate::utils::macro_rules_attribute;
+use crate::tokenizer::Result;
 
+/// The tag is spelled `CharDelimiterSplit`, not `Delimiter` -- that is what this macro on a struct
+/// of this name produces, so it is what is on disk and what has to keep loading.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
-#[macro_rules_attribute(impl_serde_type!)]
 pub struct CharDelimiterSplit {
     pub delimiter: char,
 }
@@ -15,15 +13,6 @@ pub struct CharDelimiterSplit {
 impl CharDelimiterSplit {
     pub fn new(delimiter: char) -> Self {
         Self { delimiter }
-    }
-}
-
-impl PreTokenizer for CharDelimiterSplit {
-    fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
-        // TODO: Maybe add the option to specify the behavior
-        pretokenized.split(|_, normalized| {
-            normalized.split(self.delimiter, SplitDelimiterBehavior::Removed)
-        })
     }
 }
 

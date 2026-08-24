@@ -8,10 +8,6 @@ use crate::models::unigram::{Unigram, UnigramScratch};
 use crate::models::wordlevel::WordLevel;
 #[cfg(feature = "wordpiece")]
 use crate::models::wordpiece::{PipelineWordPiece, WordPieceScratch};
-// `PipelineWordPiece::id_to_token` is inherent; Unigram and WordLevel get theirs from the trait.
-#[cfg(any(feature = "unigram", feature = "wordlevel"))]
-use crate::tokenizer::Model as _;
-
 use crate::{
     DecoderRuntime,
     models::bpe::{BpeScratch, PipelineBPE},
@@ -139,11 +135,7 @@ impl<'a, 'b, PatternMatcher: PipelinePatternMatcher>
 {
     /// Create a new iterator over [`Segment`] of the [`input`].
     /// This iterator will yield [`Segment`] in order.
-    pub(crate) fn new(
-        input: &'a str,
-        pattern_matcher: &'b PatternMatcher,
-        normalized: bool,
-    ) -> Self {
+    pub fn new(input: &'a str, pattern_matcher: &'b PatternMatcher, normalized: bool) -> Self {
         Self {
             input,
             pattern_matcher,
@@ -449,20 +441,7 @@ impl Encoding {
     pub fn type_ids(&self) -> Option<&[u8]> {
         self.type_ids.as_deref()
     }
-
-    pub fn into_parts(self) -> EncodingParts {
-        EncodingParts {
-            ids: self.ids,
-            type_ids: self.type_ids,
-        }
-    }
 }
-
-pub struct EncodingParts {
-    pub ids: Vec<PipelineToken>,
-    pub type_ids: Option<Vec<u8>>,
-}
-
 /// Iterator yields results in completion order
 pub struct HandleIter {
     handle: EncodeHandle,
@@ -494,12 +473,6 @@ impl PipelineTokenizer {
         &self.inner.model
     }
 
-    /// Whether any normalization step runs before the pre-tokenizer. An empty normalizer
-    /// `Sequence` in the config counts as none, since it is elided on the way in.
-    pub fn has_normalizer(&self) -> bool {
-        !self.inner.normalizers.is_empty()
-    }
-
     pub fn get_pre_tokenizer(&self) -> &PipelinePreTokenizer {
         &self.inner.pre_tokenizer
     }
@@ -510,9 +483,8 @@ impl PipelineTokenizer {
 
     /// The whole flattened normalizer chain, in the order it runs.
     ///
-    /// [`Self::has_normalizer`] answers the only question the encode path asks; this is for a
-    /// writer, which needs the members themselves. A config `Sequence` was flattened on the way in,
-    /// so what comes back is the concatenation, not the nesting.
+    /// This is for a writer, which needs the members themselves. A config `Sequence` was
+    /// flattened on the way in, so what comes back is the concatenation, not the nesting.
     pub fn get_normalizers(&self) -> &[PipelineNormalizer] {
         &self.inner.normalizers
     }
@@ -898,22 +870,6 @@ impl PipelineModel {
 /// reused among calls to [`PipelineTokenizer::encode`].
 ///
 /// Each model gets its own variant.
-#[derive(Default)]
-pub enum PipelineModelScratch {
-    BPE(BpeScratch),
-    #[cfg(feature = "wordlevel")]
-    WordLevel(()),
-    #[cfg(feature = "wordpiece")]
-    WordPiece(WordPieceScratch),
-    #[cfg(feature = "unigram")]
-    Unigram(UnigramScratch),
-    /// We need a default value to be able to use [`mem::take`] in [`ScratchGuard::drop`]
-    #[default]
-    None,
-}
-
-impl ModelScratch for PipelineModelScratch {}
-
 impl Model for PipelineModel {
     type Scratch = PipelineModelScratch;
 
@@ -955,6 +911,22 @@ impl Model for PipelineModel {
         }
     }
 }
+
+#[derive(Default)]
+pub enum PipelineModelScratch {
+    BPE(BpeScratch),
+    #[cfg(feature = "wordlevel")]
+    WordLevel(()),
+    #[cfg(feature = "wordpiece")]
+    WordPiece(WordPieceScratch),
+    #[cfg(feature = "unigram")]
+    Unigram(UnigramScratch),
+    /// We need a default value to be able to use [`mem::take`] in [`ScratchGuard::drop`]
+    #[default]
+    None,
+}
+
+impl ModelScratch for PipelineModelScratch {}
 
 #[cfg(test)]
 mod tests {

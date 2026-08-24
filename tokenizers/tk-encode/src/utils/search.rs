@@ -11,9 +11,27 @@ use crate::tokenizer::Result;
 use crate::tokenizer::pattern::Pattern;
 use crate::utils::SysRegex;
 
-// The enum still carries the derives `NormalizerWrapper` needs, so it stays defined next to them
-// and is re-exported here. It moves to this module with the serde removal.
-pub use crate::normalizers::replace::ReplacePattern;
+/// Represents the different patterns that a `Replace` can use.
+///
+/// Externally tagged on disk — `{"String":"…"}` / `{"Regex":"…"}` — which is what the bare derive
+/// gives and what is in every `tokenizer.json` that has one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReplacePattern {
+    String(String),
+    Regex(String),
+}
+
+impl From<String> for ReplacePattern {
+    fn from(v: String) -> Self {
+        Self::String(v)
+    }
+}
+
+impl From<&str> for ReplacePattern {
+    fn from(v: &str) -> Self {
+        Self::String(v.to_owned())
+    }
+}
 
 /// How a `Replace` looks for its pattern.
 #[derive(Debug)]

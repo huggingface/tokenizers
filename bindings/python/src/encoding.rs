@@ -48,6 +48,8 @@ impl PyEncoding {
         }
     }
 
+    // These bytes ARE the pickle format, so the field names and their order are public API: an old
+    // pickle has to keep loading. `Encoding`'s own derive is what writes them.
     fn __getstate__(&self, py: Python) -> PyResult<Py<PyAny>> {
         let data = serde_json::to_string(&self.encoding).map_err(|e| {
             exceptions::PyException::new_err(format!(

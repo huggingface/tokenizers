@@ -3,7 +3,6 @@ use ahash::AHashMap;
 
 mod convert;
 mod fold;
-mod legacy;
 mod merge_hot_cold_queue;
 mod merge_multipass;
 mod model;
@@ -37,9 +36,6 @@ pub enum Error {
     /// An error encountered while reading files mainly.
     #[error("IoError: {0}")]
     Io(#[from] std::io::Error),
-    /// An error forwarded from Serde, while parsing JSON
-    #[error("JsonError: {0}")]
-    JsonError(#[from] serde_json::Error),
     /// When the vocab.json file is in the wrong format
     #[error("Bad vocabulary json file")]
     BadVocabulary,
@@ -85,7 +81,5 @@ impl<T: Copy> At for [T] {
 }
 
 // Re-export
-pub use legacy::model::*;
-pub use legacy::word::*;
 pub use model::*;
 pub use serialization::BpeConfig;

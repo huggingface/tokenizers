@@ -1,50 +1,9 @@
 use crate::pipeline::{self, PipelinePreTokenizer};
-use crate::pre_tokenizers::PreTokenizerWrapper;
-use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result};
-use crate::utils::macro_rules_attribute;
-use serde::{Deserialize, Serialize};
+use crate::tokenizer::Result;
 
-#[derive(Clone, Debug, PartialEq)]
-#[macro_rules_attribute(impl_serde_type!)]
-pub struct Sequence {
-    pretokenizers: Vec<PreTokenizerWrapper>,
-}
-
-impl Sequence {
-    pub fn new(pretokenizers: Vec<PreTokenizerWrapper>) -> Self {
-        Self { pretokenizers }
-    }
-}
-
-impl AsRef<[PreTokenizerWrapper]> for Sequence {
-    fn as_ref(&self) -> &[PreTokenizerWrapper] {
-        &self.pretokenizers
-    }
-}
-
-impl AsMut<[PreTokenizerWrapper]> for Sequence {
-    fn as_mut(&mut self) -> &mut [PreTokenizerWrapper] {
-        &mut self.pretokenizers
-    }
-}
-
-impl IntoIterator for Sequence {
-    type Item = PreTokenizerWrapper;
-    type IntoIter = std::vec::IntoIter<Self::Item>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.pretokenizers.into_iter()
-    }
-}
-
-impl PreTokenizer for Sequence {
-    fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
-        for pretokenizer in &self.pretokenizers {
-            pretokenizer.pre_tokenize(pretokenized)?;
-        }
-        Ok(())
-    }
-}
+// The `Sequence` pre-tokenizer is a `Vec<PreTokenizerWrapper>`, so it lives in `tk-convert`
+// with the wrapper it is parameterised by, together with the `TryFrom<Sequence>` that lowers it
+// into the `PipelineSequence` below.
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct PipelineSequence {
@@ -65,7 +24,10 @@ impl PipelineSequence {
     /// Isolated, non-inverted `Split`s carrying deepseek's `[\p{N}{1,3}, CJK, big]` regexes (the trailing
     /// byte-map `ByteLevel` converts to `PipelinePreTokenizer::None`). Routes the whole split to one
     /// `fsm_deepseek` pass.
-    fn is_deepseek(&self) -> bool {
+    // `pub` because the differential test that asserts deepseek's exact 3-`Split` sequence is
+    // recognized lives in `tk-convert` now (it needs `PreTokenizerWrapper` to build the
+    // legacy oracle it compares against).
+    pub fn is_deepseek(&self) -> bool {
         use crate::pre_tokenizers::split::SplitPattern;
         use crate::tokenizer::SplitDelimiterBehavior::Isolated;
         let regex = |i: usize| match self.pre_tokenizers.get(i) {

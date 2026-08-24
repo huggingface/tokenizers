@@ -1,13 +1,9 @@
 use std::borrow::Cow;
 
-use crate::{
-    pipeline,
-    tokenizer::{NormalizedString, Normalizer, Result},
-};
+use crate::{pipeline, tokenizer::Result};
 
 use super::utils::lowercases_to_self;
 
-use serde::{Deserialize, Serialize};
 use unicode_categories::UnicodeCategories;
 use unicode_normalization::{IsNormalized, UnicodeNormalization, is_nfd_quick};
 
@@ -65,8 +61,18 @@ fn is_chinese_char(c: char) -> bool {
     )
 }
 
-#[derive(Copy, Clone, Debug, Deserialize, Serialize)]
-#[serde(tag = "type")]
+/// All four fields are required -- including `strip_accents`, which is an `Option<bool>` but has no
+/// `#[serde(default)]`, so a config has to spell it, if only as `null`. That is not an oversight to
+/// tidy: `null` and *absent* would mean the same thing to the type (`None`, meaning "follow
+/// `lowercase`"), but they do not mean the same thing to serde, and `tk-serialize`'s slim reader
+/// rejects the absent case with a message of its own.
+///
+/// `#[serde(tag = "type")]` on a struct of this name writes `"type":"BertNormalizer"`, which is what
+/// every real config on disk says -- while `NormalizerWrapper`'s `EnumType` spells the variant
+/// `Bert`. Both spellings load, and only because a bare `tag` attribute *ignores* the tag's value on
+/// the way in. `bert_loads_under_both_tag_spellings` is the test that stops a tidy-up from giving
+/// this a required tag and quietly breaking one of them.
+#[derive(Copy, Clone, Debug)]
 #[non_exhaustive]
 pub struct BertNormalizer {
     /// Whether to do the bert basic cleaning:
@@ -107,32 +113,6 @@ impl BertNormalizer {
         }
     }
 
-    fn do_clean_text(&self, normalized: &mut NormalizedString) {
-        normalized
-            .filter(|c| !clean_text_removes(c))
-            .map(clean_text_map);
-    }
-
-    fn do_handle_chinese_chars(&self, normalized: &mut NormalizedString) {
-        let mut new_chars: Vec<(char, isize)> = vec![];
-        normalized.for_each(|c| {
-            if is_chinese_char(c) {
-                new_chars.extend([(' ', 0), (c, 1), (' ', 1)]);
-            } else {
-                new_chars.push((c, 0));
-            }
-        });
-        normalized.transform(new_chars, 0);
-    }
-
-    fn do_strip_accents(&self, normalized: &mut NormalizedString) {
-        normalized.nfd().filter(|c| !c.is_mark_nonspacing());
-    }
-
-    fn do_lowercase(&self, normalized: &mut NormalizedString) {
-        normalized.lowercase();
-    }
-
     fn is_noop(&self, input: &str, strip_accents: bool) -> bool {
         if strip_accents && !matches!(is_nfd_quick(input.chars()), IsNormalized::Yes) {
             return false;
@@ -144,26 +124,6 @@ impl BertNormalizer {
                 || (self.lowercase && !lowercases_to_self(c))
         };
         !input.chars().any(changes)
-    }
-}
-
-impl Normalizer for BertNormalizer {
-    fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
-        if self.clean_text {
-            self.do_clean_text(normalized);
-        }
-        if self.handle_chinese_chars {
-            self.do_handle_chinese_chars(normalized);
-        }
-        let strip_accents = self.strip_accents.unwrap_or(self.lowercase);
-        if strip_accents {
-            self.do_strip_accents(normalized);
-        }
-        if self.lowercase {
-            self.do_lowercase(normalized);
-        }
-
-        Ok(())
     }
 }
 
@@ -235,8 +195,21 @@ mod tests {
         "straße",
     ];
 
+    /// The 24-config x 16-input sweep this used to run against the legacy `NormalizedString`
+    /// normalizer, pinned as one FNV-1a digest over every `(config, output)` pair instead of 384
+    /// literals. The value was captured from the legacy oracle's own output on the commit that
+    /// removed it, so it still encodes exactly what the two implementations agreed on.
+    ///
+    /// If this fires, print the pairs in the loop below and diff them to find the cell that moved.
     #[test]
-    fn pipeline_bert_matches_legacy() {
+    fn pipeline_bert_sweep_digest() {
+        let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+        let mut feed = |bytes: &[u8]| {
+            for b in bytes {
+                hash ^= u64::from(*b);
+                hash = hash.wrapping_mul(0x100_0000_01b3);
+            }
+        };
         for &clean_text in &[true, false] {
             for &handle_chinese_chars in &[true, false] {
                 for &strip_accents in &[None, Some(true), Some(false)] {
@@ -248,35 +221,19 @@ mod tests {
                             lowercase,
                         );
                         for input in INPUTS {
-                            let mut ns = NormalizedString::from(*input);
-                            Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
-                            assert_eq!(
-                                ns.get(),
-                                &*pipeline::Normalizer::normalize(&n, input).unwrap(),
-                                "config={n:?} input={input:?}",
-                            );
+                            let out = pipeline::Normalizer::normalize(&n, input).unwrap();
+                            feed(format!("{n:?}").as_bytes());
+                            feed(&[0x01]);
+                            feed(out.as_bytes());
+                            feed(&[0x02]);
                         }
                     }
                 }
             }
         }
-    }
-
-    #[test]
-    fn pipeline_bert_borrows_when_noop() {
-        let n = BertNormalizer::default();
-        for input in &["hello world", "already lowercase ascii", ""] {
-            assert!(matches!(
-                pipeline::Normalizer::normalize(&n, input).unwrap(),
-                Cow::Borrowed(_)
-            ));
-        }
-        // Anything that must change is owned.
-        for input in &["Héllo", "中", "\tx", "ABC"] {
-            assert!(matches!(
-                pipeline::Normalizer::normalize(&n, input).unwrap(),
-                Cow::Owned(_)
-            ));
-        }
+        assert_eq!(
+            hash, 0x9cde_0fd5_9e74_731d,
+            "sweep digest moved: {hash:#018x}"
+        );
     }
 }

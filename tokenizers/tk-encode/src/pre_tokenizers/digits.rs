@@ -1,8 +1,5 @@
-use serde::{Deserialize, Serialize};
-
 use crate::pipeline::{self, PreTokenizerScratch};
-use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
-use crate::utils::macro_rules_attribute;
+use crate::tokenizer::Result;
 use atomsplit::classify::mask;
 use atomsplit::fsm::class_runs_into;
 
@@ -10,7 +7,6 @@ use atomsplit::fsm::class_runs_into;
 /// Pre tokenizes the numbers into single tokens. If individual_digits is set
 /// to true, then all digits are splitted into individual tokens.
 #[non_exhaustive]
-#[macro_rules_attribute(impl_serde_type!)]
 pub struct Digits {
     pub individual_digits: bool,
 }
@@ -24,20 +20,6 @@ impl Digits {
 impl Default for Digits {
     fn default() -> Self {
         Self::new(false)
-    }
-}
-
-impl PreTokenizer for Digits {
-    fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
-        if self.individual_digits {
-            pretokenized.split(|_, normalized| {
-                normalized.split(char::is_numeric, SplitDelimiterBehavior::Isolated)
-            })
-        } else {
-            pretokenized.split(|_, normalized| {
-                normalized.split(char::is_numeric, SplitDelimiterBehavior::Contiguous)
-            })
-        }
     }
 }
 
@@ -74,7 +56,6 @@ unsafe impl pipeline::PreTokenizer for Digits {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{OffsetReferential, OffsetType};
 
     fn pretokenize(individual_digits: bool, text: &str) -> Vec<(&str, (u32, u32))> {
         let pretok = Digits::new(individual_digits);
@@ -161,63 +142,6 @@ mod tests {
         assert_eq!(
             pretokenize(false, "café2"),
             vec![("café", (0, 5)), ("2", (5, 6))],
-        );
-    }
-
-    #[test]
-    fn numbers() {
-        let pretok = Digits::new(false);
-        let mut pretokenized = PreTokenizedString::from("Hey 123 friend!");
-        pretok.pre_tokenize(&mut pretokenized).unwrap();
-        assert_eq!(
-            pretokenized
-                .get_splits(OffsetReferential::Normalized, OffsetType::Byte)
-                .into_iter()
-                .map(|(s, o, _)| (s, o))
-                .collect::<Vec<_>>(),
-            vec![("Hey ", (0, 4)), ("123", (4, 7)), (" friend!", (7, 15))]
-        );
-        assert_eq!(
-            pretokenized
-                .get_splits(OffsetReferential::Original, OffsetType::Byte)
-                .into_iter()
-                .map(|(s, o, _)| (s, o))
-                .collect::<Vec<_>>(),
-            vec![("Hey ", (0, 4)), ("123", (4, 7)), (" friend!", (7, 15))]
-        );
-    }
-    #[test]
-    fn individual_digits() {
-        let pretok = Digits::new(true);
-        let mut pretokenized = PreTokenizedString::from("Hey 123 friend!");
-        pretok.pre_tokenize(&mut pretokenized).unwrap();
-        assert_eq!(
-            pretokenized
-                .get_splits(OffsetReferential::Normalized, OffsetType::Byte)
-                .into_iter()
-                .map(|(s, o, _)| (s, o))
-                .collect::<Vec<_>>(),
-            vec![
-                ("Hey ", (0, 4)),
-                ("1", (4, 5)),
-                ("2", (5, 6)),
-                ("3", (6, 7)),
-                (" friend!", (7, 15))
-            ]
-        );
-        assert_eq!(
-            pretokenized
-                .get_splits(OffsetReferential::Original, OffsetType::Byte)
-                .into_iter()
-                .map(|(s, o, _)| (s, o))
-                .collect::<Vec<_>>(),
-            vec![
-                ("Hey ", (0, 4)),
-                ("1", (4, 5)),
-                ("2", (5, 6)),
-                ("3", (6, 7)),
-                (" friend!", (7, 15))
-            ]
         );
     }
 }

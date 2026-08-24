@@ -12,8 +12,8 @@ use serde::{Deserialize, Serialize};
 use tk::models::ModelWrapper;
 use tk::models::bpe::{BPE, BpeBuilder, Merges};
 use tk::models::unigram::Unigram;
-use tk::models::wordlevel::WordLevel;
-use tk::models::wordpiece::{WordPiece, WordPieceBuilder};
+use tk::models::wordlevel::{self, WordLevel};
+use tk::models::wordpiece::{self, WordPiece, WordPieceBuilder};
 use tk::tokenizer::PreTokenizedString;
 use tk::{Model, Token, Trainable};
 use tokenizers as tk;
@@ -700,7 +700,13 @@ impl PyWordPiece {
                     builder = builder.vocab(vocab);
                 }
                 PyVocab::Filename(vocab_filename) => {
-                    builder = builder.files(vocab_filename.to_string());
+                    builder = builder.vocab(
+                        wordpiece::read_file(vocab_filename.as_str()).map_err(|e| {
+                            exceptions::PyException::new_err(format!(
+                                "Error while reading WordPiece file: {e}"
+                            ))
+                        })?,
+                    );
                 }
             }
         }
@@ -724,7 +730,7 @@ impl PyWordPiece {
     #[staticmethod]
     #[pyo3(text_signature = "(vocab)")]
     fn read_file(vocab: &str) -> PyResult<HashMap<String, u32>> {
-        let vocab = WordPiece::read_file(vocab).map_err(|e| {
+        let vocab = wordpiece::read_file(vocab).map_err(|e| {
             exceptions::PyException::new_err(format!("Error while reading WordPiece file: {e}"))
         })?;
         Ok(vocab.into_iter().collect())
@@ -756,7 +762,7 @@ impl PyWordPiece {
         vocab: &str,
         kwargs: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<Py<Self>> {
-        let vocab = WordPiece::read_file(vocab).map_err(|e| {
+        let vocab = wordpiece::read_file(vocab).map_err(|e| {
             exceptions::PyException::new_err(format!("Error while reading WordPiece file: {e}"))
         })?;
         let vocab = vocab.into_iter().collect();
@@ -821,7 +827,13 @@ impl PyWordLevel {
                     builder = builder.vocab(vocab);
                 }
                 PyVocab::Filename(vocab_filename) => {
-                    builder = builder.files(vocab_filename.to_string());
+                    builder = builder.vocab(
+                        wordlevel::read_file(vocab_filename.as_str()).map_err(|e| {
+                            exceptions::PyException::new_err(format!(
+                                "Error while reading WordLevel file: {e}"
+                            ))
+                        })?,
+                    );
                 }
             };
         }
@@ -852,7 +864,7 @@ impl PyWordLevel {
     #[staticmethod]
     #[pyo3(text_signature = "(vocab)")]
     fn read_file(vocab: &str) -> PyResult<HashMap<String, u32>> {
-        let vocab = WordLevel::read_file(vocab).map_err(|e| {
+        let vocab = wordlevel::read_file(vocab).map_err(|e| {
             exceptions::PyException::new_err(format!("Error while reading WordLevel file: {e}"))
         })?;
         let vocab: HashMap<_, _> = vocab.into_iter().collect();
@@ -885,7 +897,7 @@ impl PyWordLevel {
         vocab: &str,
         unk_token: Option<String>,
     ) -> PyResult<Py<Self>> {
-        let vocab = WordLevel::read_file(vocab).map_err(|e| {
+        let vocab = wordlevel::read_file(vocab).map_err(|e| {
             exceptions::PyException::new_err(format!("Error while reading WordLevel file: {e}"))
         })?;
         let vocab = vocab.into_iter().collect();

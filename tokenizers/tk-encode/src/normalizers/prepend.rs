@@ -1,11 +1,9 @@
 use std::borrow::Cow;
 
 use crate::pipeline;
-use crate::tokenizer::{NormalizedString, Normalizer, Result};
-use serde::{Deserialize, Serialize};
+use crate::tokenizer::Result;
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(tag = "type")]
+#[derive(Clone, Debug)]
 pub struct Prepend {
     pub prepend: String,
 }
@@ -13,16 +11,6 @@ pub struct Prepend {
 impl Prepend {
     pub fn new(prepend: String) -> Self {
         Self { prepend }
-    }
-}
-
-impl Normalizer for Prepend {
-    /// Strip the normalized string inplace
-    fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
-        if !normalized.is_empty() {
-            normalized.prepend(&self.prepend);
-        }
-        Ok(())
     }
 }
 
@@ -42,48 +30,17 @@ impl pipeline::Normalizer for Prepend {
 mod tests {
     use super::*;
 
+    /// Expected values were captured from the legacy `NormalizedString` normalizer this test used
+    /// to compare against, on the commit that removed it -- so they still pin exactly what the two
+    /// implementations agreed on, without keeping the legacy code alive to ask.
     #[test]
-    fn test_prepend() {
-        let original = "Hello";
-        let normalized = "▁Hello";
-        assert_ne!(original, normalized);
-        let mut n = NormalizedString::from(original);
-        let prepend = Prepend::new("▁".to_string());
-        prepend.normalize(&mut n).unwrap();
-        assert_eq!(&n.get(), &normalized);
-        assert_eq!(
-            n,
-            NormalizedString::new(
-                original.to_string(),
-                normalized.to_string(),
-                vec![
-                    (0, 1),
-                    (0, 1),
-                    (0, 1),
-                    (0, 1),
-                    (1, 2),
-                    (2, 3),
-                    (3, 4),
-                    (4, 5)
-                ],
-                0
-            )
-        );
-        assert_eq!(
-            n.alignments_original(),
-            vec![(0, 4), (4, 5), (5, 6), (6, 7), (7, 8)]
-        );
-    }
-
-    #[test]
-    fn pipeline_prepend_matches_legacy() {
-        let n = Prepend::new("▁".to_string());
-        for input in &["Hello", "world", ""] {
-            let mut ns = NormalizedString::from(*input);
-            Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
+    fn pipeline_prepend() {
+        let n = Prepend::new("\u{2581}".to_string());
+        for (input, expected) in [("Hello", "▁Hello"), ("world", "▁world"), ("", "")] {
             assert_eq!(
-                ns.get(),
-                &*pipeline::Normalizer::normalize(&n, input).unwrap()
+                &*pipeline::Normalizer::normalize(&n, input).unwrap(),
+                expected,
+                "input={input:?}"
             );
         }
     }

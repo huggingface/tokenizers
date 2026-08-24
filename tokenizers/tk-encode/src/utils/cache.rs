@@ -1,6 +1,10 @@
+#[cfg(feature = "unigram")]
 use ahash::AHashMap;
+#[cfg(feature = "unigram")]
 use std::borrow::Borrow;
+#[cfg(feature = "unigram")]
 use std::hash::Hash;
+#[cfg(feature = "unigram")]
 use std::sync::RwLock;
 
 /// The default capacity of a model's cache, whether it is a [`Cache`] or a
@@ -14,6 +18,7 @@ pub static MAX_LENGTH: usize = 256;
 /// concurrently but won't block if another thread is writing.
 /// The goal is clearly not the accuracy of the content, both get and set
 /// are not guaranteed to actually get or set.
+#[cfg(feature = "unigram")]
 #[derive(Debug)]
 pub(crate) struct Cache<K, V>
 where
@@ -24,6 +29,7 @@ where
     pub capacity: usize,
 }
 
+#[cfg(feature = "unigram")]
 // We dont really care about Cache comparison, so let's make them always equal
 impl<K, V> PartialEq for Cache<K, V>
 where
@@ -35,6 +41,7 @@ where
     }
 }
 
+#[cfg(feature = "unigram")]
 impl<K, V> Default for Cache<K, V>
 where
     K: Eq + Hash + Clone,
@@ -45,6 +52,7 @@ where
     }
 }
 
+#[cfg(feature = "unigram")]
 impl<K, V> Cache<K, V>
 where
     K: Eq + Hash + Clone,
@@ -64,20 +72,6 @@ where
     /// Clear the cache.
     pub(crate) fn clear(&self) {
         self.map.write().unwrap().clear();
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn get_values<'a, I, Q>(&self, keys_iter: I) -> Option<Vec<Option<V>>>
-    where
-        I: Iterator<Item = &'a Q>,
-        K: Borrow<Q>,
-        Q: Hash + Eq + ?Sized + 'a,
-    {
-        if let Ok(ref mut cache) = self.map.try_read() {
-            Some(keys_iter.map(|k| cache.get(k).cloned()).collect())
-        } else {
-            None
-        }
     }
 
     pub(crate) fn get<Q>(&self, key: &Q) -> Option<V>

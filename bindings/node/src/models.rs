@@ -261,10 +261,11 @@ impl WordPiece {
     options: Option<WordPieceOptions>,
   ) -> AsyncTask<WordPieceFromFilesTask> {
     let options = options.unwrap_or_default();
-    let mut builder = tk::models::wordpiece::WordPiece::from_file(&vocab);
+    let mut builder = tk::models::wordpiece::WordPiece::builder();
     builder = options.apply_to_wordpiece_builder(builder);
     AsyncTask::new(WordPieceFromFilesTask {
       builder: Some(builder),
+      vocab,
     })
   }
 }
@@ -318,10 +319,11 @@ impl WordLevel {
     options: Option<WordLevelOptions>,
   ) -> AsyncTask<WordLevelFromFilesTask> {
     let options = options.unwrap_or_default();
-    let mut builder = tk::models::wordlevel::WordLevel::builder().files(vocab);
+    let mut builder = tk::models::wordlevel::WordLevel::builder();
     builder = options.apply_to_wordlevel_builder(builder);
     AsyncTask::new(WordLevelFromFilesTask {
       builder: Some(builder),
+      vocab,
     })
   }
 }
