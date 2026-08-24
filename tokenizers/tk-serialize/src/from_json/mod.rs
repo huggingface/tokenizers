@@ -78,7 +78,7 @@ use tk_encode::vocab::bucket_added_vocabulary::AddedVocabulary as BucketAddedVoc
 fn unsupported(what: &str) -> tk_encode::Error {
     format!(
         "the slim JSON reader does not support {what}. Convert the config offline \
-         (tk-convert), or build with the `config` feature for the full reader."
+         (tk-convert), or build with the `config` feature for the full reader. You are probably attempting to read a legacy tokenizer.json file saved before v1."
     )
     .into()
 }
@@ -140,7 +140,11 @@ fn from_json_value(doc: &Json<'_>) -> Result<PipelineTokenizer> {
         "BPE" => {
             let (vocab, merges, options) = read_bpe(model_cfg, byte_level)?;
             build(doc, normalizers, pre_tokenizer, VocabOnly(vocab), |vocab| {
-                Ok(PipelineModel::BPE(PipelineBPE::from_config(BpeConfig { vocab: vocab.0, merges, ..options })?))
+                Ok(PipelineModel::BPE(PipelineBPE::from_config(BpeConfig {
+                    vocab: vocab.0,
+                    merges,
+                    ..options
+                })?))
             })
         }
         #[cfg(feature = "wordpiece")]

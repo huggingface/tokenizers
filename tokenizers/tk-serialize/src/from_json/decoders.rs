@@ -22,10 +22,6 @@ pub(super) fn read_replace_decoder(cfg: &Json<'_>) -> Result<ReplaceDecoder> {
 }
 
 /// The decoder, as a [`DecoderRuntime`].
-///
-/// The wrapper is fine here where a `ModelWrapper` would not be: only its `Deserialize` impl pulls
-/// serde in, and building the enum by hand does not name it. Decode is not on the encode hot path
-/// and every variant is small, so there is nothing to gain from a second, pipeline-native enum.
 pub(super) fn read_decoder(cfg: Option<&Json<'_>>) -> Result<Option<DecoderRuntime>> {
     match cfg {
         Some(cfg) => Ok(Some(read_one_decoder(cfg)?)),
@@ -55,8 +51,6 @@ pub(super) fn read_one_decoder(cfg: &Json<'_>) -> Result<DecoderRuntime> {
     };
 
     Ok(match kind {
-        // `add_prefix_space`, `trim_offsets` and `use_regex` are read past: the decoder is a fixed
-        // inverse of the byte map and never used them. Older configs still carry them.
         "ByteLevel" => DecoderRuntime::ByteLevel(ByteLevelDecoder::new()),
         "Replace" => DecoderRuntime::Replace(read_replace_decoder(cfg)?),
         "ByteFallback" => DecoderRuntime::ByteFallback(ByteFallback::new()),

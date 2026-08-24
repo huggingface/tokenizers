@@ -9,10 +9,7 @@ pub(super) fn read_added_tokens(cfg: Option<&Json<'_>>) -> Result<Vec<BucketAdde
     };
     // The ids alone decide the order, so only the ids get sorted: each key is its token's id in
     // the high half and the token's position in the array in the low half, which makes ascending
-    // u64 order identical to a *stable* sort by id -- ties, if a config ever repeats an id, still
-    // come out in file order. Sorting `[u64]` rather than `[(u32, AddedToken)]` also keeps this
-    // path on the one sort instantiation the crate already pays for, instead of a second
-    // ~3 KB copy of driftsort specialised for the pair.
+    // u64 order identical to a *stable* sort by id
     let mut order: Vec<u64> = Vec::with_capacity(arr.len());
     for (i, entry) in arr.iter().enumerate() {
         let id = entry
