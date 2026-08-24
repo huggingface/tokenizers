@@ -88,7 +88,6 @@ fn refuses_a_model_with_no_type() {
     assert!(read_err(&json).contains("`model` with no `type`"));
 }
 
-
 #[test]
 fn refuses_legacy_string_merges() {
     // `"a b"` is the legacy spelling; tk-convert rewrites it to `["a", "b"]`.
@@ -99,8 +98,6 @@ fn refuses_legacy_string_merges() {
     )]);
     assert!(read_err(&legacy).contains("[left, right] pair"));
 }
-
-
 
 #[test]
 #[cfg(feature = "unigram")]
@@ -227,12 +224,6 @@ fn byte_level_add_prefix_space_is_refused() {
     )]);
     assert!(read_err(&json).contains("add_prefix_space"));
 }
-
-
-
-
-
-
 
 // ---- post-processors ------------------------------------------------------------------------
 

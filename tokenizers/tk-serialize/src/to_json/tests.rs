@@ -479,7 +479,6 @@ fn merges_are_written_as_pairs_in_rank_order() {
     );
 }
 
-
 // ---- components, one test each ----------------------------------------------------------------
 //
 // The round-trip test catches any of these as "ids moved", without saying where. These say where.

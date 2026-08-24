@@ -86,7 +86,9 @@ fn from_json_value(doc: &Json<'_>) -> Result<PipelineTokenizer> {
     // tk-convert turns one into a `2.0` file, and this reader never sees it.
     match doc.field("version").and_then(Json::as_str) {
         Some("2.0") => {}
-        Some(v) => return Err(format!("tokenizer version '{v}' is not `2.0`; convert it first").into()),
+        Some(v) => {
+            return Err(format!("tokenizer version '{v}' is not `2.0`; convert it first").into());
+        }
         None => return Err(unsupported("a config with no `version`")),
     }
 

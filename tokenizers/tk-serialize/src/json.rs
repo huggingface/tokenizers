@@ -98,7 +98,7 @@ impl<'a> Json<'a> {
         self.get(key).filter(|v| !matches!(v.0, Raw::Null))
     }
 
-    /// The `"type"` tag, when there is one. Absent for the legacy untagged configs.
+    /// The `"type"` tag. `None` when the object has none, which every canonical component has.
     pub fn type_tag(&self) -> Option<&str> {
         self.get("type")?.as_str()
     }

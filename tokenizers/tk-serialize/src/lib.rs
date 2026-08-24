@@ -27,15 +27,17 @@
 //!
 //! ## Canonical only
 //!
-//! The format is drawn in `SPEC.md`, next to this crate's `Cargo.toml`. This reader accepts it as
-//! it is written *today* and refuses anything older with a message naming what to convert:
+//! The format is drawn in `SPEC.md`, next to this crate's `Cargo.toml`. This reader accepts
+//! version `2.0` and refuses anything older with a message naming what to convert:
 //!
+//! - a `"version"` that is not `"2.0"`,
 //! - a `model` with no `"type"`,
 //! - `merges` spelled `"a b"` rather than `["a", "b"]`,
+//! - a `Metaspace` *pre-tokenizer*, which is a `MetaspaceNormalizer` plus a `Split`,
 //! - a `Metaspace` spelled with `add_prefix_space`,
 //! - a vocabulary given as a file path (`files`) — refused here and converted nowhere.
 //!
-//! The first three are [`tk_convert`](https://docs.rs/tokenizers)'s job:
+//! All but the last are [`tk_convert`](https://docs.rs/tokenizers)'s job:
 //! `tk_convert::canonicalize_str` rewrites an old `tokenizer.json` into a canonical one, which is
 //! then read here. Keeping the backwards compatibility in a JSON→JSON pass upstream is what lets
 //! this crate stay serde-free.
