@@ -92,7 +92,7 @@ pub(crate) fn f64_from_literal(digits: &str) -> f64 {
     f64_from_parts(positive, significand, exponent)
 }
 
-fn f64_from_parts(positive: bool, significand: u64, mut exponent: i32) -> f64 {
+pub(crate) fn f64_from_parts(positive: bool, significand: u64, mut exponent: i32) -> f64 {
     let mut f = significand as f64;
     loop {
         match POW10.get(exponent.unsigned_abs() as usize) {
@@ -142,7 +142,7 @@ fn f64_from_parts(positive: bool, significand: u64, mut exponent: i32) -> f64 {
 /// and every digit after it is ignored, because they sit to the right of the point. Both are
 /// serde's behaviour, and both change the resulting float, so
 /// `numbers_are_bit_identical_to_serde_json` pins them.
-fn number(digits: &str) -> (bool, u64, i32) {
+pub(crate) fn number(digits: &str) -> (bool, u64, i32) {
     let s = digits.as_bytes();
     let mut i = 0;
     let positive = if s.first() == Some(&b'-') {
@@ -228,7 +228,7 @@ fn number(digits: &str) -> (bool, u64, i32) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::json::Json;
+    use crate::json::{Json, JsonExt};
 
     fn p(s: &str) -> Json<'_> {
         Json::parse(s).expect("should parse")
