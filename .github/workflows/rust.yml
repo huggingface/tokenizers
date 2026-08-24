@@ -62,6 +62,20 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: make test HF="uvx --from huggingface_hub hf"
 
+      # The only gate that checks the slim reader against an *independent* implementation: both
+      # oracles encode/decode through `tk_serialize::from_json` and compare against the released
+      # `tokenizers` crate. They sit behind `bench-baseline` because that pulls the released crate in
+      # as a dependency, which means `cargo test --workspace` skips them -- so they need their own
+      # step or the guarantee is not actually being checked. 16 tests.
+      - name: Run the release-crate id oracles
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          cargo test -p tk-convert --features bench-baseline \
+            --test pipeline_oracle --test pipeline_decode_oracle
+
       # Windows skips the integration tests and the full fixture set, but the
       # tk-encode lib tests load these two tokenizer files and fail without
       # them (on purpose: a missing fixture must not silently skip a test).
@@ -71,7 +85,7 @@ jobs:
         shell: bash
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: uvx --from huggingface_hub hf download hf-internal-testing/tokenizers-test-data gpt2.json albert-base-v1-tokenizer.json --repo-type dataset --local-dir data
+        run: uvx --from huggingface_hub hf download hf-internal-testing/tokenizers-test-data gpt2.json albert-base-v1-tokenizer.json --repo-type dataset --revision e20ac5914f5ada06874e4f9d45e49b31a049904e --local-dir data
 
       # Windows runs lib + doc tests only. bash so the step fails on the first
       # failing command. The default pwsh only propagates the last command's
@@ -206,3 +220,61 @@ jobs:
 
       - name: Check semver
         run: cargo semver-checks --package tokenizers
+
+  # The Clippy job above runs --all-features, which is blind to the failure mode
+  # this job exists for: tk-encode's per-model features (unigram / wordpiece /
+  # wordlevel) and `normalizers` are `cfg` gates on enum variants and match arms,
+  # so a build with only SOME of them can stop compiling while both the default
+  # and the all-features builds stay green. That has already happened twice —
+  # a match that gained an unreachable `_ => ()` arm (a warning, hence a
+  # -D warnings failure, only where every variant is present), and a
+  # `use Model as _` import needed by two of the three model gates and therefore
+  # unused in the third. So every combination gets its own check + clippy + test.
+  feature_matrix:
+    name: Feature matrix
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tokenizers
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Install Rust Stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
+        with:
+          components: clippy
+
+      # Its own shared-key: this job's target dir churns through many feature
+      # sets and would otherwise keep evicting the plain build's cache.
+      - name: Cache cargo registry / git / target
+        uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc  # v2.9.1
+        with:
+          workspaces: tokenizers
+          shared-key: feature-matrix
+
+      # Test fixtures are immutable — cache them so CI doesn't re-download
+      # from the Hub (and get rate-limited) on every run.
+      - name: Cache HF test data
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
+        with:
+          path: tokenizers/data
+          key: hf-test-data-${{ hashFiles('tokenizers/Makefile') }}
+          restore-keys: hf-test-data-
+
+      # Provides `uvx`, used to run the huggingface_hub CLI that downloads
+      # test fixtures (see the Makefile) without a separate install step.
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      # The same two fixtures the Windows leg fetches, and for the same reason:
+      # tk-encode's lib tests unwrap these outright. Every other fixture is
+      # optional (those tests return early when it is missing), so the full
+      # `make data` would only buy download time.
+      - name: Download lib-test fixtures
+        shell: bash
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: uvx --from huggingface_hub hf download hf-internal-testing/tokenizers-test-data gpt2.json albert-base-v1-tokenizer.json --repo-type dataset --revision e20ac5914f5ada06874e4f9d45e49b31a049904e --local-dir data
+
+      - name: Check every feature combination
+        run: scripts/feature_matrix.sh

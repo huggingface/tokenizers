@@ -2,14 +2,12 @@ use std::borrow::Cow;
 
 use crate::pipeline;
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
-use crate::utils::macro_rules_attribute;
 
 use unicode_normalization::{
     IsNormalized, UnicodeNormalization, is_nfc_quick, is_nfd_quick, is_nfkc_quick, is_nfkd_quick,
 };
 
 #[derive(Default, Copy, Clone, Debug)]
-#[macro_rules_attribute(impl_serde_type!)]
 pub struct NFD;
 impl Normalizer for NFD {
     fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
@@ -28,7 +26,6 @@ impl pipeline::Normalizer for NFD {
 }
 
 #[derive(Default, Copy, Clone, Debug)]
-#[macro_rules_attribute(impl_serde_type!)]
 pub struct NFKD;
 impl Normalizer for NFKD {
     fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
@@ -47,7 +44,6 @@ impl pipeline::Normalizer for NFKD {
 }
 
 #[derive(Default, Copy, Clone, Debug)]
-#[macro_rules_attribute(impl_serde_type!)]
 pub struct NFC;
 impl Normalizer for NFC {
     fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
@@ -66,7 +62,6 @@ impl pipeline::Normalizer for NFC {
 }
 
 #[derive(Default, Copy, Clone, Debug)]
-#[macro_rules_attribute(impl_serde_type!)]
 pub struct NFKC;
 impl Normalizer for NFKC {
     fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
@@ -120,7 +115,6 @@ fn do_nmt(normalized: &mut NormalizedString) {
 }
 
 #[derive(Default, Copy, Clone, Debug)]
-#[macro_rules_attribute(impl_serde_type!)]
 pub struct Nmt;
 impl Normalizer for Nmt {
     fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {

@@ -1,9 +1,8 @@
 use crate::pattern::Pattern;
 use crate::{Offsets, Result};
 use std::ops::{Bound, RangeBounds};
+#[cfg(feature = "normalizers")]
 use unicode_normalization_alignments::UnicodeNormalization;
-
-use serde::{Deserialize, Serialize};
 
 /// The possible offsets referential
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -78,7 +77,10 @@ where
 ///  - MergedWithPrevious => `[ "the-", "final-", "-", "countdown" ]`
 ///  - MergedWithNext => `[ "the", "-final", "-", "-countdown" ]`
 ///  - Contiguous => `[ "the", "-", "final", "--", "countdown" ]`
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Eq)]
+///
+/// On disk it is the bare variant name, which the hand-written `Display` below spells verbatim.
+/// This one needs no `serialization.rs` of its own: those five names are the whole on-disk shape.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SplitDelimiterBehavior {
     Removed,
     Isolated,
@@ -89,7 +91,16 @@ pub enum SplitDelimiterBehavior {
 
 impl std::fmt::Display for SplitDelimiterBehavior {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.serialize(f)
+        // Spelled out rather than handed to the serializer, so the name survives a build with no
+        // serde -- and it is a `match` instead of abusing a `Formatter` as a `Serializer`. The
+        // name `tk-serialize` reads and writes is the variant name verbatim.
+        f.write_str(match self {
+            Self::Removed => "Removed",
+            Self::Isolated => "Isolated",
+            Self::MergedWithPrevious => "MergedWithPrevious",
+            Self::MergedWithNext => "MergedWithNext",
+            Self::Contiguous => "Contiguous",
+        })
     }
 }
 
@@ -446,24 +457,28 @@ impl NormalizedString {
     }
 
     /// Applies NFD normalization
+    #[cfg(feature = "normalizers")]
     pub fn nfd(&mut self) -> &mut Self {
         self.transform(self.get().to_owned().nfd(), 0);
         self
     }
 
     /// Applies NFKD normalization
+    #[cfg(feature = "normalizers")]
     pub fn nfkd(&mut self) -> &mut Self {
         self.transform(self.get().to_owned().nfkd(), 0);
         self
     }
 
     /// Applies NFC normalization
+    #[cfg(feature = "normalizers")]
     pub fn nfc(&mut self) -> &mut Self {
         self.transform(self.get().to_owned().nfc(), 0);
         self
     }
 
     /// Applies NFKC normalization
+    #[cfg(feature = "normalizers")]
     pub fn nfkc(&mut self) -> &mut Self {
         self.transform(self.get().to_owned().nfkc(), 0);
         self
@@ -1024,6 +1039,7 @@ mod tests {
     use super::*;
     use atomsplit::literal::Literal;
     use regex::Regex;
+    #[cfg(feature = "normalizers")]
     use unicode_categories::UnicodeCategories;
 
     #[test]
@@ -1041,6 +1057,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "normalizers")]
     fn nfd_adds_new_chars() {
         let mut n = NormalizedString::from("élégant");
         n.nfd();
@@ -1077,6 +1094,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "normalizers")]
     fn remove_chars_added_by_nfd() {
         let mut n = NormalizedString::from("élégant");
         n.nfd().filter(|c| !c.is_mark_nonspacing());
@@ -1139,6 +1157,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "normalizers")]
     fn mixed_addition_and_removal() {
         let mut n = NormalizedString::from("élégant");
         n.nfd().filter(|c| !c.is_mark_nonspacing() && c != 'n');
@@ -1425,6 +1444,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "normalizers")]
     fn slice() {
         let mut s = NormalizedString::from("𝔾𝕠𝕠𝕕 𝕞𝕠𝕣𝕟𝕚𝕟𝕘");
         s.nfkc();
@@ -2281,6 +2301,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "normalizers")]
     fn transform_check() {
         let mut s = NormalizedString::from("abc…");
         s.nfkd();

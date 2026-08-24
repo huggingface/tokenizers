@@ -2,12 +2,11 @@ use std::borrow::Cow;
 
 use crate::pipeline;
 use crate::tokenizer::{NormalizedString, Normalizer, Result};
-use crate::utils::macro_rules_attribute;
-use serde::{Deserialize, Serialize};
+#[cfg(feature = "normalizers")]
 use unicode_normalization_alignments::char::is_combining_mark;
 
-#[derive(Copy, Clone, Debug, Deserialize, Serialize)]
-#[serde(tag = "type")]
+/// Both fields are required, which is the *only* thing that rejects a tag-less object here.
+#[derive(Copy, Clone, Debug)]
 #[non_exhaustive]
 pub struct Strip {
     pub strip_left: bool,
@@ -58,10 +57,11 @@ impl pipeline::Normalizer for Strip {
 // This normalizer removes combining marks from a normalized string
 // It's different from unidecode as it does not attempt to modify
 // non ascii languages.
+#[cfg(feature = "normalizers")]
 #[derive(Copy, Clone, Debug)]
-#[macro_rules_attribute(impl_serde_type!)]
 pub struct StripAccents;
 
+#[cfg(feature = "normalizers")]
 impl Normalizer for StripAccents {
     /// Strip the normalized string inplace
     fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
@@ -70,6 +70,7 @@ impl Normalizer for StripAccents {
     }
 }
 
+#[cfg(feature = "normalizers")]
 impl pipeline::Normalizer for StripAccents {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
         if input.chars().any(is_combining_mark) {
@@ -82,7 +83,7 @@ impl pipeline::Normalizer for StripAccents {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "normalizers"))]
 mod tests {
     use super::*;
     use crate::normalizer::NormalizedString;

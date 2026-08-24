@@ -1,10 +1,16 @@
 use crate::tokenizer::{Encoding, PostProcessor, Result};
 use ahash::AHashMap;
-use serde::{Deserialize, Serialize};
 use std::iter::FromIterator;
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-#[serde(tag = "type")]
+/// Wraps the first sequence in `cls` ... `sep`, and appends a second `sep` to the pair sequence.
+///
+/// The tag is *optional* on the way in, and that is a documented requirement rather than an
+/// accident: `PostProcessorWrapper` is untagged in both directions, and
+/// `post_processor_deserialization_no_type` asserts that `{"sep":["[SEP]",102],"cls":["[CLS]",101]}`
+/// loads as a `Bert`. What discriminates the variants is the set of *required fields*, which is also
+/// why `Roberta` has to stay ahead of `Bert` in the enum: a Roberta object satisfies Bert's shape
+/// but not the other way round.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BertProcessing {
     pub sep: (String, u32),
     pub cls: (String, u32),
@@ -191,17 +197,6 @@ impl PostProcessor for BertProcessing {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn serde() {
-        let bert = BertProcessing::default();
-        let bert_r = r#"{"type":"BertProcessing","sep":["[SEP]",102],"cls":["[CLS]",101]}"#;
-        assert_eq!(serde_json::to_string(&bert).unwrap(), bert_r);
-        assert_eq!(
-            serde_json::from_str::<BertProcessing>(bert_r).unwrap(),
-            bert
-        );
-    }
 
     #[test]
     fn bert_processing() {
