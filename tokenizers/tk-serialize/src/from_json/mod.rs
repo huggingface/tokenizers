@@ -133,10 +133,6 @@ fn from_json_value(doc: &Json<'_>) -> Result<PipelineTokenizer> {
     }
 
     match kind {
-        // The only model with no `tk_encode::Model` of its own to hand to `build`: the
-        // config-shaped `BPE` that used to play that part lives in `tk-convert`, which this crate
-        // must not depend on. `build` gets the vocabulary instead -- see [`VocabOnly`] -- and
-        // lowers it into the model afterwards, which keeps the replay-then-lower order intact.
         "BPE" => {
             let (vocab, merges, options) = read_bpe(model_cfg, byte_level)?;
             build(doc, normalizers, pre_tokenizer, VocabOnly(vocab), |vocab| {
@@ -182,11 +178,6 @@ fn from_json_value(doc: &Json<'_>) -> Result<PipelineTokenizer> {
     }
 }
 
-/// The half of construction that does not depend on which model was read.
-///
-/// `concrete` is the model as its own type, which is what `add_tokens` has to see; `lower` turns it
-/// into a [`PipelineModel`] afterwards. Splitting it that way is what keeps the order in the module
-/// docs enforceable — the model cannot be lowered before the replay, because `lower` consumes it.
 fn build<M: tk_encode::Model>(
     doc: &Json<'_>,
     normalizers: Vec<PipelineNormalizer>,
@@ -197,24 +188,14 @@ fn build<M: tk_encode::Model>(
     let added = read_added_tokens(doc.get_some("added_tokens"))?;
 
     let mut added_vocabulary = BucketAddedVocabulary::new();
-    // The whole *declared* chain, not just the first member: a config `Sequence` was flattened into
-    // `normalizers`, and a `normalized: true` added token has to see all of it or its id moves.
-    //
-    // The trailing `Metaspace` is the exception, and it is dropped here rather than ignored further
-    // down: it is not a declared normalizer at all but the rewriting half of a `Metaspace`
-    // *pre-tokenizer*, appended by `read_metaspace`. Writing `▁` into an added token's content
-    // would move its id.
+    // TODO: this has nothing to do here.
     let declared = match normalizers.last() {
         Some(PipelineNormalizer::Metaspace(_)) => &normalizers[..normalizers.len() - 1],
         _ => &normalizers[..],
     };
     let chain = NormalizerChain(declared);
     added_vocabulary.add_tokens(added, &concrete, Some(&chain))?;
-    // `encode_special_tokens` is deliberately not read: it is runtime state, not one of the nine
-    // fields a `tokenizer.json` carries, so the config path never sets it from a file either. Both
-    // vocabularies default it to `false`, and honouring the key here would be the one way to end up
-    // with a *different* setting than the config path for the same file.
-
+    // TODO: we need to read encode_special_tokens from the config as well.
     let model = lower(concrete)?;
 
     Ok(PipelineTokenizer::from_parts(
@@ -228,7 +209,7 @@ fn build<M: tk_encode::Model>(
 }
 
 /// Which model a config declares. `"type"` when it has one, otherwise inferred from the keys —
-/// `gpt2.json` and five other fixtures in `data/` carry no `"type"` at all.
+/// `gpt2` and a few other don't have a type, we try to still infer it from the saved keys.
 fn model_kind(cfg: &Json<'_>) -> &'static str {
     if let Some(t) = cfg.type_tag() {
         return match t {
@@ -239,9 +220,6 @@ fn model_kind(cfg: &Json<'_>) -> &'static str {
             _ => "unknown",
         };
     }
-    // Key presence, not shape-matching over every variant: ~4 lines instead of the untagged
-    // machinery's ~480. The order mirrors `ModelUntagged`'s, which is what decides ties on the
-    // config path: BPE first, then WordPiece before WordLevel (WordLevel's shape is a subset).
     if cfg.get("merges").is_some() {
         "BPE"
     } else if cfg.get("vocab").and_then(Json::as_arr).is_some() {
@@ -254,8 +232,7 @@ fn model_kind(cfg: &Json<'_>) -> &'static str {
     }
 }
 
-/// A vocabulary standing in for a model, so that `build` can replay the added tokens.
-///
+/// TODO: I want this gone it's stupid.
 /// [`BucketAddedVocabulary::add_tokens`] wants a [`tk_encode::Model`], and it asks exactly two
 /// things of it: how many entries the vocabulary has, and whether it already contains a given
 /// token. Every model but BPE hands over its own value, which implements that trait. `PipelineBPE`

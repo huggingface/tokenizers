@@ -1,16 +1,10 @@
-//! The `model` object: one reader per model kind, plus the shared `{"token": id}` vocabulary.
-
 use crate::json::{Json, JsonExt};
 use tk_encode::models::bpe::{BpeConfig, Merges, Vocab};
 use tk_encode::tokenizer::Result;
 
-/// The three parts a `BpeConfig` is assembled from, read out of the config. The vocabulary and
-/// the merge list are returned beside it rather than filled in, so the vocabulary can serve as
-/// [`VocabOnly`] first.
-pub(super) fn read_bpe(
-    cfg: &Json<'_>,
-    byte_level: bool,
-) -> Result<(Vocab, Merges, BpeConfig)> {
+/// TODO: for now we are forced to return the raw vocab to make sure the added tokens are properly
+/// created. This will be updated with a better flow.
+pub(super) fn read_bpe(cfg: &Json<'_>, byte_level: bool) -> Result<(Vocab, Merges, BpeConfig)> {
     let vocab = read_vocab_object(cfg)?;
 
     let merges_arr = cfg
@@ -41,8 +35,6 @@ pub(super) fn read_bpe(
     }
 
     // Each option is left at its default unless the config names it, which is what the builder's
-    // `if let Some(..)` chain used to say. A key that is present but null reads as absent, exactly
-    // as it did.
     let options = BpeConfig {
         dropout: cfg
             .get_some("dropout")
@@ -78,7 +70,6 @@ pub(super) fn read_bpe(
     Ok((vocab, merges, options))
 }
 
-/// `{"token": id, ...}`, which is how every model but Unigram spells its vocabulary.
 fn read_vocab_object(cfg: &Json<'_>) -> Result<Vocab> {
     let vocab_obj = cfg
         .get_some("vocab")
@@ -94,8 +85,6 @@ fn read_vocab_object(cfg: &Json<'_>) -> Result<Vocab> {
     Ok(vocab)
 }
 
-/// All four fields are required, exactly as on the config path — `WordPiece`'s deserializer collects
-/// missing ones and errors, so a config that omits `unk_token` has never loaded.
 #[cfg(feature = "wordpiece")]
 pub(super) fn read_wordpiece(cfg: &Json<'_>) -> Result<tk_encode::models::wordpiece::WordPiece> {
     let vocab = read_vocab_object(cfg)?;
@@ -121,19 +110,11 @@ pub(super) fn read_wordpiece(cfg: &Json<'_>) -> Result<tk_encode::models::wordpi
 /// Unigram's vocab is an array of `[token, score]` pairs, and the scores decide the lattice, so a
 /// score that is not a number is an error rather than a `0.0`.
 ///
-/// ## The scores do not bit-match the config path, and this reader is the correct one
-///
 /// [`tk_encode::tokenizer::json`] parses numbers with `f64::from_str`, which is correctly rounded.
 /// `serde_json` without its `float_roundtrip` feature does not: it accumulates the digits into a
 /// `u64` and divides by a power of ten, which is off by one ULP for 8334 of t5's 32100 scores. Every
 /// score in that file is exactly an `f32` widened to `f64`, and `from_str` lands on it; `serde_json`
 /// lands next to it.
-///
-/// The lattice is a sum of scores, so one ULP only matters where two segmentations very nearly tie —
-/// 2 ids out of 1.25 M on the english fixture, always a run of one repeated character. `json_oracle`
-/// reports those cells as `SLIM MISMATCH`, and it is the *config* side that is imprecise. Closing it
-/// means turning on `serde_json/float_roundtrip` and re-recording the digests, which is a decision
-/// about the config path, not something to paper over here by reproducing the error.
 #[cfg(feature = "unigram")]
 pub(super) fn read_unigram(cfg: &Json<'_>) -> Result<tk_encode::models::unigram::Unigram> {
     let entries = cfg
