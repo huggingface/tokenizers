@@ -105,6 +105,13 @@ impl Replace {
     }
 }
 
+impl Replace {
+    /// The pattern as written in the config. Needed to write it back out.
+    pub fn pattern(&self) -> &ReplacePattern {
+        &self.pattern
+    }
+}
+
 impl Normalizer for Replace {
     fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
         match &self.search {

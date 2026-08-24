@@ -89,6 +89,20 @@ impl MphfMap {
         }
         new
     }
+    /// Every live entry, as `(packed key, packed value)`.
+    ///
+    /// Slot order, which is arbitrary -- a caller that wants the merge list back sorts by the rank
+    /// in the value's high half. Enumerable at all because each slot stores its own key for the
+    /// query-time check, so the perfect hash never has to be inverted.
+    pub(super) fn iter(&self) -> impl Iterator<Item = (u64, u64)> + '_ {
+        // `u64::MAX` needs both operands to be `u32::MAX`, so it is never a real key -- the same
+        // fact `build` relies on to leave unused slots empty.
+        self.entries
+            .iter()
+            .filter(|e| e.key != u64::MAX)
+            .map(|e| (e.key, e.val))
+    }
+
     #[inline]
     // from the key pair, returns the rank, the flags and the new id.
     pub fn get(&self, key: u64) -> u64 {

@@ -1,14 +1,16 @@
 pub mod bpe;
 pub mod byte_fallback;
+pub mod byte_level;
 pub mod ctc;
 pub mod fuse;
+pub mod metaspace;
+pub mod replace;
+pub mod runtime;
 pub mod sequence;
 pub mod strip;
 pub mod wordpiece;
 
-// Re-export these as decoders
-pub use super::pre_tokenizers::byte_level;
-pub use super::pre_tokenizers::metaspace;
+pub use runtime::DecoderRuntime;
 
 use serde::{Deserialize, Deserializer, Serialize};
 

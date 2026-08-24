@@ -15,7 +15,7 @@ use std::collections::HashMap;
 
 use std::convert::TryInto;
 use std::fs::read_to_string;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 type Vocab = Vec<(String, f64)>;
 
@@ -417,6 +417,17 @@ impl Unigram {
         Ok(serde_json::from_str(&string)?)
     }
 
+    /// The id of the unknown-token entry, if this model declares one.
+    pub fn unk_id(&self) -> Option<usize> {
+        self.unk_id
+    }
+
+    /// The `(token, score)` table, in id order. [`Self::iter`] is the same data, one entry at a
+    /// time.
+    pub fn vocab(&self) -> &[(String, f64)] {
+        &self.vocab
+    }
+
     /// Clears the internal cache
     pub fn clear_cache(&mut self) {
         self.cache.clear();
@@ -500,19 +511,6 @@ impl Model for Unigram {
 
     fn id_to_token(&self, id: u32) -> Option<String> {
         self.vocab.get(id as usize).map(|item| item.0.clone())
-    }
-
-    fn save(&self, folder: &Path, name: Option<&str>) -> Result<Vec<PathBuf>> {
-        let name = match name {
-            Some(name) => format!("{name}-unigram.json"),
-            None => "unigram.json".to_string(),
-        };
-        let mut fullpath = PathBuf::new();
-        fullpath.push(folder);
-        fullpath.push(name);
-        let string = serde_json::to_string_pretty(self)?;
-        std::fs::write(&fullpath, string)?;
-        Ok(vec![fullpath])
     }
 }
 
