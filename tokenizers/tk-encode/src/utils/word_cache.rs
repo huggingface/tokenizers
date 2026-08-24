@@ -112,6 +112,10 @@ impl<'a> WordCache {
     /// On [Lookup::Hit], returns the ids it encodes to.
     /// On [Lookup::Miss], returns the location in [Self::cached_words] where it should be inserted
     #[inline]
+    // Only the models that key the cache on the word itself reach this -- `unigram` and
+    // `wordpiece`. `bpe` computes the key once and goes through `lookup_keyed`, so a build with
+    // neither of those two features on has no caller.
+    #[allow(dead_code)]
     pub fn lookup(&'a self, word: &[u8]) -> Lookup<'a> {
         self.lookup_placed(make_lookup_key(word, self.placement_mask))
     }
@@ -121,8 +125,17 @@ impl<'a> WordCache {
         self.lookup_placed(placement_from(LookupKey(key), hash, self.placement_mask))
     }
 
+    /// [`Self::lookup_keyed`] that emits straight into the caller's buffer.
+    ///
+    /// An inline hit writes its ids through `dst` and reports how many count, so the caller neither
+    /// re-reads the slot nor branches on the payload. A spilled hit or a miss comes back as
+    /// [`ProbeEmit::Hit`] / [`ProbeEmit::Miss`] with nothing written.
     ///
     /// # Safety
+    ///
+    /// `dst` must be valid for writes of [`MAX_INLINE_IDS`] `u32`s. The inline path fills every
+    /// lane unconditionally -- lanes past `ids_len` are written with whatever the slot holds -- so
+    /// the room has to be there even when fewer ids end up counting.
     #[inline]
     pub unsafe fn probe_emit_keyed(&'a self, key: u64, hash: u64, dst: *mut u32) -> ProbeEmit<'a> {
         let placement = placement_from(LookupKey(key), hash, self.placement_mask);
@@ -398,6 +411,8 @@ pub struct LookupKey(u64);
 
 /// The key, home slot and tag of a word.
 #[inline]
+// Reached from `lookup` and the tests, so it is dead in exactly the configurations `lookup` is.
+#[allow(dead_code)]
 fn make_lookup_key(word: &[u8], placement_mask: u64) -> InsertPlacement {
     let (key, hash) = key_and_hash(word);
     placement_from(LookupKey(key), hash, placement_mask)

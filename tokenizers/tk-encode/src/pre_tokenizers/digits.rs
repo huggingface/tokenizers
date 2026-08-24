@@ -1,7 +1,7 @@
 use crate::pipeline::{self, PreTokenizerScratch};
 use crate::tokenizer::Result;
-use bitsplit::classify::mask;
 use bitsplit::classes::class_runs_into;
+use bitsplit::classify::mask;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 /// Pre tokenizes the numbers into single tokens. If individual_digits is set

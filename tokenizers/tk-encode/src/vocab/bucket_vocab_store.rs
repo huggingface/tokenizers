@@ -95,7 +95,11 @@ pub fn key_and_hash(word: &[u8]) -> (u64, u64) {
     (key, mix(key))
 }
 
+/// One MPHF slot: eight bytes, so a probe is a single load.
 ///
+/// The hash picks the slot and `digest` confirms it -- the key itself is never stored, which is why
+/// a query cannot tell a collision from a hit on its own and does not need to (see [`BucketVocabStore::get_bytes`]).
+/// A slot the build never wrote stays [`Default`], and occupancy is read off the parallel `spans`.
 #[derive(Clone, Copy, Debug, Default)]
 #[repr(C)]
 struct Entry {

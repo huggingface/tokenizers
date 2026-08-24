@@ -95,10 +95,14 @@ pub(crate) unsafe fn build64<const AUX: u8, const P3: bool>(
     unsafe {
         let low_nibble = _mm_set1_epi8(0x0F);
         let seven = _mm_set1_epi8(7);
-        // one table per high nibble; a tag of 0x30 or above never occurs
+        // One table per high nibble. NEON does this as a single `vqtbl4q_u8` over the whole tag
+        // byte; `pshufb` only indexes 16 lanes, so the four tables are selected by nibble here.
+        // All four are live: refinement 3 is Script=Han (`HanLetter`/`HanNum`/`HanSym`), which is
+        // what kimi's `[\p{Han}]+` arm reads.
         let t0 = _mm_loadu_si128(lut.as_ptr().cast());
         let t1 = _mm_loadu_si128(lut.as_ptr().add(16).cast());
         let t2 = _mm_loadu_si128(lut.as_ptr().add(32).cast());
+        let t3 = _mm_loadu_si128(lut.as_ptr().add(48).cast());
 
         let mut cd = [_mm_setzero_si128(); 4];
         let mut isc = [_mm_setzero_si128(); 4];
@@ -108,12 +112,16 @@ pub(crate) unsafe fn build64<const AUX: u8, const P3: bool>(
             let lo = _mm_and_si128(t, low_nibble);
             let hi = _mm_and_si128(_mm_srli_epi16(t, 4), low_nibble);
             let raw = sel(
-                _mm_cmpeq_epi8(hi, _mm_set1_epi8(2)),
-                _mm_shuffle_epi8(t2, lo),
+                _mm_cmpeq_epi8(hi, _mm_set1_epi8(3)),
+                _mm_shuffle_epi8(t3, lo),
                 sel(
-                    _mm_cmpeq_epi8(hi, _mm_set1_epi8(1)),
-                    _mm_shuffle_epi8(t1, lo),
-                    _mm_shuffle_epi8(t0, lo),
+                    _mm_cmpeq_epi8(hi, _mm_set1_epi8(2)),
+                    _mm_shuffle_epi8(t2, lo),
+                    sel(
+                        _mm_cmpeq_epi8(hi, _mm_set1_epi8(1)),
+                        _mm_shuffle_epi8(t1, lo),
+                        _mm_shuffle_epi8(t0, lo),
+                    ),
                 ),
             );
             isc[k] = _mm_cmpeq_epi8(raw, seven);

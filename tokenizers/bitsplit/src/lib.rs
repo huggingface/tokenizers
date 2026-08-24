@@ -498,6 +498,9 @@ impl Digits {
     }
 
     /// Carry the run into the next block. `next_is_digit` is that block's first byte.
+    // Every one of these is a live bitstream register at the call site; bundling them into a
+    // struct would only put an indirection between the driver and the carry it just computed.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn commit(
         &mut self,
         cap: usize,

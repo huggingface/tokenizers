@@ -1,8 +1,8 @@
 use crate::pipeline::{self, PreTokenizerScratch};
 use crate::tokenizer::{Result, SplitDelimiterBehavior};
 use SplitDelimiterBehavior::{Isolated, Removed};
-use bitsplit::classify::mask;
 use bitsplit::classes::class_runs_into;
+use bitsplit::classify::mask;
 use unicode_categories::UnicodeCategories;
 
 pub(crate) fn is_punc(x: char) -> bool {

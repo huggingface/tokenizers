@@ -31,7 +31,9 @@ const CASES: &[(&str, &[u32])] = &[
     ),
     (
         "def foo(bar):\n    return bar + 1\n",
-        &[4299, 22944, 7, 5657, 2599, 198, 220, 220, 220, 1441, 2318, 1343, 352, 198],
+        &[
+            4299, 22944, 7, 5657, 2599, 198, 220, 220, 220, 1441, 2318, 1343, 352, 198,
+        ],
     ),
     (
         "<|endoftext|> literal in the middle <|endoftext|>",
@@ -39,21 +41,17 @@ const CASES: &[(&str, &[u32])] = &[
     ),
     (
         " 语言模型 mixed with ASCII and ελληνικά",
-        &[5525, 107, 255, 164, 101, 222, 162, 101, 94, 161, 252, 233, 7668, 351, 37101, 290, 7377, 113, 39377, 39377, 138, 115, 26180, 29945, 43000, 138, 105],
+        &[
+            5525, 107, 255, 164, 101, 222, 162, 101, 94, 161, 252, 233, 7668, 351, 37101, 290,
+            7377, 113, 39377, 39377, 138, 115, 26180, 29945, 43000, 138, 105,
+        ],
     ),
     (
         "aaaaaaaaaaaaaaaaaaaaaaaa",
         &[24794, 24794, 24794, 24794, 24794, 24794],
     ),
-    (
-        "   ",
-        &[220, 220, 220],
-    ),
-    (
-        "",
-        &[],
-    )
-,
+    ("   ", &[220, 220, 220]),
+    ("", &[]),
 ];
 
 fn ids(pipe: &PipelineTokenizer, text: &str) -> Vec<u32> {
@@ -71,7 +69,11 @@ fn ids(pipe: &PipelineTokenizer, text: &str) -> Vec<u32> {
 fn the_proven_fold_never_changes_the_ids() {
     let pipe = load();
     for (text, want) in CASES {
-        assert_eq!(&ids(&pipe, text)[..], *want, "the fold changed the ids for {text:?}");
+        assert_eq!(
+            &ids(&pipe, text)[..],
+            *want,
+            "the fold changed the ids for {text:?}"
+        );
     }
 }
 
@@ -94,7 +96,11 @@ fn the_batched_path_matches_the_reference() {
     // Long enough that spelling every id out would drown the file, so the gate is the count plus
     // an order-sensitive digest -- a reordered or substituted id changes it.
     let got = ids(&pipe, text.as_str());
-    assert_eq!(got.len(), 24272, "token count differs from the 0.23.1 reference");
+    assert_eq!(
+        got.len(),
+        24272,
+        "token count differs from the 0.23.1 reference"
+    );
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
     for id in &got {
         for b in id.to_le_bytes() {

@@ -1,8 +1,8 @@
 use crate::pipeline::{self, PreTokenizerScratch};
 use crate::tokenizer::Result;
 
-use bitsplit::classify::mask;
 use bitsplit::classes::class_runs_into;
+use bitsplit::classify::mask;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct BertPreTokenizer;
