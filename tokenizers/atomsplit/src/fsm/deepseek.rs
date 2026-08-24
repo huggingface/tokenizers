@@ -29,7 +29,7 @@ fn ds_is_cjk_at(text: &[u8], p: usize) -> bool {
 /// letter run stops at CJK-range codepoints. Peeks bytes for the ASCII `[punct][A-Za-z]+` alt.
 ///
 /// Byte-exact vs the real composed Sequence (onig ×3, each Isolated) on 10 languages — see
-/// `benches/deepseek.rs` (plus Hebrew/Arabic via `tk-encode`'s corpus test). The subtleties the single
+/// `tests/parity.rs` (plus Hebrew/Arabic via `tk-encode`'s corpus test). The subtleties the single
 /// pass replicates: (1) ws *followed by* a digit/CJK is its own Sequence piece → the whole run is one
 /// token (`\s+(?!\S)`); (2) ZWJ/ZWNJ are `\p{Cf}`, not `\p{L}∪\p{M}`, so they end a letter run
 /// (`ds_breaks`); (3) Split-2 isolates a maximal CJK-range run and Split-3 re-splits it into same-kind

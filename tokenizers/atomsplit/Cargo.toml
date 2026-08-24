@@ -15,7 +15,6 @@ license = "Apache-2.0"
 keywords = ["tokenizer", "nlp", "pretokenizer", "simd", "unicode"]
 categories = ["text-processing", "parsing"]
 description = "SIMD Unicode atom classification + FSM pre-tokenization: one classify pass into byte-exact token spans (cl100k, GPT-2/ByteLevel, DeepSeek, Whitespace, Bert, ...)."
-exclude = ["benches/data/"]
 
 [package.metadata.docs.rs]
 all-features = true
@@ -28,21 +27,7 @@ path = "src/lib.rs"
 memchr = "2.8.3" # SIMD search: used for single-byte  search in CharDelimiterSplit (1.4–23× vs scalar), or multi-byte string pattern search in `literal`.
 # NOTE: classify tables live in src/atom_tables.rs (committed, generated). Regenerate after any atom
 # scheme change with `cargo run -p bitmap_gen`. No build script / build-dep — atomsplit builds clean.
-# onig is C (Oniguruma) and fancy-regex pulls it in transitively for benches only — neither
-# cross-compiles to wasm32 (no wasi libc for the C build), so gate them off wasm.
+# onig is C (Oniguruma) and does not cross-compile to wasm32 (no wasi libc for the C build), so
+# gate it off wasm.
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
-onig = "6.5.3"          # reference regex for the parity tests + benches
-fancy-regex = "0.19"    # second regex engine in the throughput benches
-logos = "0.16"          # third: a compile-time DFA lexer-generator (pure Rust)
-pcre2 = "0.2"           # fourth: PCRE2 with its JIT (C, pregenerated bindings — no libclang)
-[[bench]]
-name = "regex"        # gpt2 · cl100k · o200k · tekken · deepseek, one run per regex family
-harness = false
-
-[[bench]]
-name = "classify"
-harness = false
-
-[[bench]]
-name = "class_runs"
-harness = false
+onig = "6.5.3"          # reference regex for the parity tests

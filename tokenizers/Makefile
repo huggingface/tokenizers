@@ -1,11 +1,11 @@
 DATA_DIR = data
-BENCHMARK_DIR = benches
-TESTS_DIR = tests
 
 dir_guard=@mkdir -p $(@D)
 
 SHARED_RESOURCES = $(DATA_DIR)/gpt2-vocab.json $(DATA_DIR)/gpt2-merges.txt $(DATA_DIR)/gpt2.json $(DATA_DIR)/bert-base-uncased-vocab.txt $(DATA_DIR)/big.txt $(DATA_DIR)/small.txt $(DATA_DIR)/albert-base-v1-tokenizer.json  $(DATA_DIR)/llama-3-tokenizer.json
-BENCHMARK_RESOURCES = $(SHARED_RESOURCES) $(DATA_DIR)/unigram_wagahaiwa_nekodearu.txt $(DATA_DIR)/bert-wiki.json $(DATA_DIR)/fixtures/modalities/agentic-traces.txt
+# Exactly what tk-serialize/benches/{encode,decode}.rs read: big.txt and llama-3 come from
+# SHARED_RESOURCES, plus the Japanese corpus decode uses and the config encode profiles.
+BENCHMARK_RESOURCES = $(SHARED_RESOURCES) $(DATA_DIR)/unigram_wagahaiwa_nekodearu.txt $(DATA_DIR)/deepseek-v4.json
 TESTS_RESOURCES = $(SHARED_RESOURCES) $(DATA_DIR)/unigram.json $(DATA_DIR)/unigram_wagahaiwa_nekodearu.txt $(DATA_DIR)/roberta.json $(DATA_DIR)/tokenizer-wiki.json $(DATA_DIR)/bert-wiki.json $(DATA_DIR)/fixtures/modalities/agentic-traces.txt
 
 # One language per encode regime (script structure × vocab coverage), not one per
@@ -22,13 +22,6 @@ FIXTURE_LANGS = amh_Ethi arb_Arab cmn_Hani eng_Latn hin_Deva jpn_Jpan rus_Cyrl t
 FIXTURE_MODALITIES = agentic_swe agentic-traces code_mixed math_latex added_special_sparse added_normalized_sparse
 FIXTURES_RESOURCES = $(FIXTURE_LANGS:%=$(DATA_DIR)/fixtures/lang/%.txt) $(FIXTURE_MODALITIES:%=$(DATA_DIR)/fixtures/modalities/%.txt)
 
-# The tokenizer configs the test suite loads. One per encode regime rather than one per
-# model family: a normalizer-heavy WordPiece, the three regex byte-level BPEs whose splits
-# differ, byte-fallback, a model with no pre-tokenizer, tekken, and a Unigram.
-BENCH_MODELS = bert-base-uncased.json deepseek-v4.json gemma-4.json gpt2.json \
-               gpt-oss.json glm-5.2.json llama-2.json llama-3-tokenizer.json \
-               mistral-small-4.json t5-base.json
-
 .PHONY : build
 build :
 	cargo build --workspace --all-targets
@@ -44,7 +37,6 @@ format :
 .PHONY : lint
 lint :
 	cargo fmt --all -- --check
-	cargo fmt -- $(BENCHMARK_DIR)/*.rs --check
 	cargo clippy --workspace --all-targets --all-features -- -D warnings
 
 .PHONY : test
@@ -124,13 +116,14 @@ slimest-size : slimest
 	@b=target/$(HOST_TRIPLE)/slimest/examples/binsize_pipeline; \
 	  gzip -9 -c $$b | wc -c | tr -d ' ' | xargs printf 'slimest tk-encode: %s bytes gzipped\n'
 
+# The two benches live in tk-serialize, which is the only crate that can build a
+# `PipelineTokenizer`. The big cross-engine benchmarks live in huggingface/tokbench.
 .PHONY : bench
 bench : $(BENCHMARK_RESOURCES)
-	cargo bench -- --verbose
+	cargo bench -p tk-serialize
 
 # Every file the tests and benches read (corpora, vocabs, tokenizer configs),
-# plus the fixture corpora. Model tokenizers from the bench manifest have
-# their own target: `models`.
+# plus the fixture corpora.
 .PHONY : data
 data : $(TESTS_RESOURCES) $(BENCHMARK_RESOURCES) $(FIXTURES_RESOURCES)
 
@@ -138,20 +131,6 @@ data : $(TESTS_RESOURCES) $(BENCHMARK_RESOURCES) $(FIXTURES_RESOURCES)
 # fixtures/FIXTURES.md in $(HF_TEST_REPO) for provenance.
 .PHONY : fixtures
 fixtures : $(FIXTURES_RESOURCES)
-
-# Fetch each bench model's tokenizer config (the `file` listed in the manifest)
-# from the test-data dataset via the generic data/% rule. Same controlled
-# mirror as the fixtures, so no direct pulls from model repos (supply chain).
-#
-# Written to a temp file rather than piped into the loop. A pipeline's exit status is
-# its LAST command's, so `python3 ... | while read` reported success even when python
-# could not open the manifest -- it downloaded nothing and said nothing. `pipefail`
-# would fix it under bash but not under dash, which is `/bin/sh` on Ubuntu runners.
-.PHONY : models
-models :
-	@for file in $(BENCH_MODELS); do \
-	    $(MAKE) $(DATA_DIR)/$$file || exit 1; \
-	  done
 
 HF_TEST_REPO = hf-internal-testing/tokenizers-test-data
 # Fetch fixtures through the huggingface_hub CLI: it handles auth (HF_TOKEN),

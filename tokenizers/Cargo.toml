@@ -37,8 +37,6 @@ exclude = [
   "rust-toolchain",
   "target/*",
   "Cargo.lock",
-  "benches/*.txt",
-  "benches/*.json",
   "data/*",
 ]
 

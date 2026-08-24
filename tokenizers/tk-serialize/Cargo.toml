@@ -66,6 +66,13 @@ fancy-regex = ["tk-encode/fancy-regex"]
 parallelism = ["tk-encode/parallelism"]
 
 [dev-dependencies]
+# The two benches. `tk-serialize` hosts them because a bench needs a `PipelineTokenizer` and
+# `from_json_file` is the only way to build one -- the bigger cross-engine benchmarks live in
+# huggingface/tokbench.
+criterion = "0.8"
+# The benches load real configs from `../data`, which are all still version 1.0, so they have to
+# run the upgrade pass before the reader sees them. Not a cycle: tk-convert does not depend on us.
+tk-convert = { path = "../tk-convert" }
 # The reader is tested *against* `serde_json`: number parsing has to be bit-identical,
 # and every real config in `data/` has to parse to the same tree. A dev-dependency only, so the
 # library itself still links no serde.
@@ -76,4 +83,15 @@ name = "binsize_pipeline"
 # It calls `from_json_file`, so it cannot build without the reader. Declared rather than left
 # to fail, so that a build with `serialize` but not `deserialize` -- a writer with no reader --
 # is a configuration `cargo clippy --all-targets` can actually check.
+required-features = ["deserialize"]
+
+# Both benches read a `tokenizer.json`, so neither can build without the reader.
+[[bench]]
+name = "encode"
+harness = false
+required-features = ["deserialize"]
+
+[[bench]]
+name = "decode"
+harness = false
 required-features = ["deserialize"]
