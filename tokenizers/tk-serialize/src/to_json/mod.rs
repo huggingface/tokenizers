@@ -24,7 +24,7 @@ use self::normalizers::write_normalizer;
 use self::post_processors::write_post_processor;
 use self::pre_tokenizers::write_pre_tokenizer;
 use self::writer::Out;
-use tk_encode::pipeline::{PipelineModel, PipelineTokenizer};
+use tk_encode::pipeline::PipelineTokenizer;
 use tk_encode::tokenizer::Result;
 
 /// Write a `tokenizer.json` as a string.
