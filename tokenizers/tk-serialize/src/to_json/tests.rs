@@ -665,73 +665,73 @@ fn pre_tokenizers_keep_their_fields() {
 /// A `Metaspace` pre-tokenizer went in as a normalizer plus a `Split`; it has to come back out as a
 /// `Metaspace`, spelled the canonical way. This is the inversion most likely to break.
 #[test]
-fn a_metaspace_pre_tokenizer_is_rebuilt_from_its_normalizer() {
-    let written = component_round_trip(
-        "pre_tokenizer",
-        r#"{"type": "Metaspace", "replacement": "▁",
-            "prepend_scheme": "always", "split": true}"#,
-    );
-    assert_eq!(
-        written,
-        serde_json::json!({
-            "type": "Metaspace",
-            "replacement": "\u{2581}",
-            "prepend_scheme": "always"
-        })
-    );
-    // And the normalizer it lowered into is not *also* written, which would apply the rewrite twice.
+fn a_legacy_metaspace_is_written_as_its_two_halves() {
     let config = with_component(
         "pre_tokenizer",
         r#"{"type": "Metaspace", "replacement": "▁", "prepend_scheme": "always", "split": true}"#,
     );
+    let written = rewrite(&config);
+    // The delimiter half goes to the `normalizer` slot as itself...
     assert_eq!(
-        field_of(&rewrite(&config), "normalizer"),
-        serde_json::Value::Null,
-        "the Metaspace normalizer was written as a `normalizer` as well as a pre-tokenizer"
+        field_of(&written, "normalizer"),
+        serde_json::json!({
+            "type": "MetaspaceNormalizer",
+            "replacement": "\u{2581}",
+            "prepend": true,
+            "drop_whitespace": false
+        })
     );
+    // ...and the cut it produced is a plain `Split`, not a `Metaspace` tag folded back.
+    let pretok = field_of(&written, "pre_tokenizer");
+    assert_eq!(pretok["type"], "Split");
+    assert_eq!(pretok["pattern"], serde_json::json!({"String": "\u{2581}"}));
 }
 
 /// `add_prefix_space` on the way in, `prepend_scheme` on the way out: the legacy key is never
 /// written, which is what "canonical" means here.
 #[test]
-fn a_metaspace_never_goes_out_with_add_prefix_space() {
-    let written = component_round_trip(
+fn the_legacy_metaspace_keys_never_come_back_out() {
+    let written = rewrite(&with_component(
         "pre_tokenizer",
         r#"{"type": "Metaspace", "replacement": "▁", "add_prefix_space": true}"#,
+    ));
+    let normalizer = field_of(&written, "normalizer");
+    assert_eq!(
+        normalizer["prepend"], true,
+        "`add_prefix_space` meant prepend"
     );
-    assert_eq!(written["prepend_scheme"], "always");
-    assert!(
-        written.get("add_prefix_space").is_none(),
-        "the legacy key was written back: {written}"
-    );
+    for legacy in ["add_prefix_space", "prepend_scheme", "split"] {
+        assert!(
+            normalizer.get(legacy).is_none(),
+            "the legacy key `{legacy}` was written back: {normalizer}"
+        );
+    }
 }
 
 /// t5 and albert's `Sequence[WhitespaceSplit, Metaspace]`, which the reader collapses into a single
 /// `Metaspace` normalizer carrying `drop_whitespace`. The pair has to come back, because a lone
 /// `Metaspace` is a different pipeline.
 #[test]
-fn a_whitespace_split_metaspace_pair_comes_back_as_a_pair() {
+fn a_whitespace_split_metaspace_pair_becomes_drop_whitespace() {
+    let written = rewrite(&with_component(
+        "pre_tokenizer",
+        r#"{"type": "Sequence", "pretokenizers": [
+            {"type": "WhitespaceSplit"},
+            {"type": "Metaspace", "replacement": "▁", "prepend_scheme": "always", "split": true}
+        ]}"#,
+    ));
+    // The `WhitespaceSplit` was never a component: it is how the legacy shape spelled
+    // `drop_whitespace`, and the pipeline holds it as the field it is.
     assert_eq!(
-        component_round_trip(
-            "pre_tokenizer",
-            r#"{"type": "Sequence", "pretokenizers": [
-                {"type": "WhitespaceSplit"},
-                {"type": "Metaspace", "replacement": "▁",
-                 "prepend_scheme": "always", "split": true}
-            ]}"#
-        ),
+        field_of(&written, "normalizer"),
         serde_json::json!({
-            "type": "Sequence",
-            "pretokenizers": [
-                {"type": "WhitespaceSplit"},
-                {
-                    "type": "Metaspace",
-                    "replacement": "\u{2581}",
-                    "prepend_scheme": "always"
-                }
-            ]
+            "type": "MetaspaceNormalizer",
+            "replacement": "\u{2581}",
+            "prepend": true,
+            "drop_whitespace": true
         })
     );
+    assert_eq!(field_of(&written, "pre_tokenizer")["type"], "Split");
 }
 
 #[test]
@@ -814,14 +814,13 @@ fn a_post_processor_is_written_as_a_template() {
         serde_json::json!({
             "type": "TemplateProcessing",
             "single": [
-                {"SpecialToken": {"id": "a", "type_id": 0}},
+                {"SpecialToken": {"ids": [0], "type_id": 0}},
                 {"Sequence": {"id": "A", "type_id": 0}}
             ],
             "pair": [
                 {"Sequence": {"id": "A", "type_id": 0}},
                 {"Sequence": {"id": "B", "type_id": 1}}
-            ],
-            "special_tokens": {"a": {"ids": [0]}}
+            ]
         })
     );
 }
@@ -838,23 +837,19 @@ fn a_bert_processing_becomes_its_template() {
     assert_eq!(
         written["single"],
         serde_json::json!([
-            {"SpecialToken": {"id": "a", "type_id": 0}},
+            {"SpecialToken": {"ids": [0], "type_id": 0}},
             {"Sequence": {"id": "A", "type_id": 0}},
-            {"SpecialToken": {"id": "b", "type_id": 0}}
+            {"SpecialToken": {"ids": [1], "type_id": 0}}
         ])
     );
-    assert_eq!(
-        written["special_tokens"]["a"]["ids"],
-        serde_json::json!([0])
-    );
-    assert_eq!(
-        written["special_tokens"]["b"]["ids"],
-        serde_json::json!([1])
+    assert!(
+        written.get("special_tokens").is_none(),
+        "the pieces carry their ids, so there is no table: {written}"
     );
 }
 
-/// `RobertaProcessing` pairs with a *doubled* separator: one placeholder standing for two ids. The
-/// reconstructed name has to cover both, or the frame comes back a token short.
+/// `RobertaProcessing` pairs with a *doubled* separator: one piece standing for two ids, which has
+/// to keep both or the frame comes back a token short.
 #[test]
 fn a_doubled_special_token_run_keeps_both_ids() {
     let written = component_round_trip(
@@ -862,12 +857,8 @@ fn a_doubled_special_token_run_keeps_both_ids() {
         r#"{"type": "RobertaProcessing", "cls": ["a", 0], "sep": ["b", 1],
             "trim_offsets": true, "add_prefix_space": true}"#,
     );
-    let doubled = written["pair"][2]["SpecialToken"]["id"]
-        .as_str()
-        .expect("the doubled separator is a special-token piece")
-        .to_string();
     assert_eq!(
-        written["special_tokens"][&doubled]["ids"],
+        written["pair"][2]["SpecialToken"]["ids"],
         serde_json::json!([1, 1]),
         "the doubled separator lost an id: {written}"
     );
@@ -969,22 +960,22 @@ fn a_wordpiece_model_keeps_all_four_required_fields() {
 /// One anywhere else is a pipeline the writer must refuse rather than describe wrongly: written as a
 /// `normalizer`, it would read back as a normalizer with the `Split` gone.
 #[test]
-fn a_stray_metaspace_normalizer_is_refused() {
+fn a_metaspace_normalizer_writes_wherever_it_sits() {
     use tk_encode::normalizers::metaspace::MetaspaceNormalizer;
     use tk_encode::normalizers::utils::Lowercase;
     use tk_encode::pipeline::PipelineNormalizer;
 
+    // It used to have to be last, so the writer could fold it back into a pre-tokenizer tag.
+    // It is a normalizer like any other now, so position carries no meaning.
     let chain = vec![
         PipelineNormalizer::Metaspace(MetaspaceNormalizer::new('\u{2581}', true, false)),
         PipelineNormalizer::Lowercase(Lowercase),
     ];
     let mut out = super::writer::Out::new();
-    let error = super::normalizers::write_normalizer(&mut out, &chain)
-        .expect_err("a Metaspace that is not last cannot be written");
-    assert!(
-        error.to_string().contains("Metaspace"),
-        "the error should name the component: {error}"
-    );
+    super::normalizers::write_normalizer(&mut out, &chain).expect("a Metaspace anywhere writes");
+    let written: serde_json::Value = serde_json::from_str(&out.finish()).unwrap();
+    assert_eq!(written["normalizers"][0]["type"], "MetaspaceNormalizer");
+    assert_eq!(written["normalizers"][1]["type"], "Lowercase");
 }
 
 /// The writer's output parses with an independent parser, not only with ours. Cheap, and it is what

@@ -76,25 +76,26 @@ fn read_special_id(cfg: &Json<'_>, key: &str) -> Result<u32> {
 }
 
 fn read_template(cfg: &Json<'_>) -> Result<PipelinePostProcessor> {
-    // `special_tokens` maps a placeholder to the ids it expands to.
-    let specials = cfg
-        .field("special_tokens")
-        .ok_or_else(|| -> tk_encode::Error {
-            "TemplateProcessing has no `special_tokens`".into()
-        })?;
-
-    let ids_for = |name: &str| -> Result<Vec<u32>> {
-        let entry = specials.get(name).ok_or_else(|| -> tk_encode::Error {
-            format!("template references unknown special token {name:?}").into()
-        })?;
-        let ids = entry.need(&format!("special token {name:?}"), "ids", Json::as_array)?;
-        ids.iter()
+    let ids_of = |arr: &[Json<'_>], owner: &str| -> Result<Vec<u32>> {
+        arr.iter()
             .map(|i| {
-                i.as_u32().ok_or_else(|| -> tk_encode::Error {
-                    format!("special token {name:?} has a bad id").into()
-                })
+                i.as_u32()
+                    .ok_or_else(|| -> tk_encode::Error { format!("{owner} has a bad id").into() })
             })
             .collect()
+    };
+
+    // A piece carrying its `ids` needs no table; `special_tokens` is only there for the files that
+    // name their runs instead, which is every one written before this crate.
+    let ids_for = |name: &str| -> Result<Vec<u32>> {
+        let entry = cfg
+            .field("special_tokens")
+            .and_then(|specials| specials.get(name))
+            .ok_or_else(|| -> tk_encode::Error {
+                format!("template references unknown special token {name:?}").into()
+            })?;
+        let owner = format!("special token {name:?}");
+        ids_of(entry.need(&owner, "ids", Json::as_array)?, &owner)
     };
 
     let slices_for = |key: &str| -> Result<Vec<Slice>> {
@@ -111,10 +112,13 @@ fn read_template(cfg: &Json<'_>) -> Result<PipelinePostProcessor> {
                 };
                 out.push(Slice::Sequence { seq, type_id });
             } else if let Some(tok) = piece.field("SpecialToken") {
-                let id = tok.need("template SpecialToken", "id", Json::as_str)?;
                 let type_id = tok.field("type_id").and_then(Json::as_u32).unwrap_or(0) as u8;
+                let ids = match tok.field("ids").and_then(Json::as_array) {
+                    Some(arr) => ids_of(arr, "a template SpecialToken")?,
+                    None => ids_for(tok.need("template SpecialToken", "id", Json::as_str)?)?,
+                };
                 out.push(Slice::Specials {
-                    tokens: ids_for(id)?.into_iter().map(PipelineToken::from).collect(),
+                    tokens: ids.into_iter().map(PipelineToken::from).collect(),
                     type_id,
                 });
             } else {

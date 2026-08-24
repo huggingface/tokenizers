@@ -1,17 +1,14 @@
 //! The `pre_tokenizer` object, reassembled from the shapes the reader lowered it into.
 //!
-//! This is the component the pipeline describes least directly, because two of the pre-tokenizers a
-//! `tokenizer.json` can name do not survive as themselves:
+//! One pre-tokenizer a `tokenizer.json` can name does not survive as itself: a **`ByteLevel`**
+//! became a `Split` on the GPT-2 regex (`use_regex: true`) or nothing at all (`use_regex: false`),
+//! so which one it was is read off the model -- a byte-level `PipelineBPE` is the only thing that
+//! flag produces. That inversion is decidable because the reader requires a `ByteLevel` to be the
+//! last member of a `Sequence`, so there is exactly one place to look.
 //!
-//! * a **`Metaspace`** became a [`MetaspaceNormalizer`] plus a `Split` on the delimiter, so it has
-//!   to be recognised from the normalizer chain and written back with the `Split` dropped;
-//! * a **`ByteLevel`** became a `Split` on the GPT-2 regex (`use_regex: true`) or nothing at all
-//!   (`use_regex: false`), so which one it was is read off the model -- a byte-level `PipelineBPE`
-//!   is the only thing that flag produces.
-//!
-//! Both inversions are decidable, which is the only reason this works: the reader puts the
-//! `Metaspace` normalizer last and requires a `ByteLevel` to be the last member of a `Sequence`, so
-//! there is exactly one place to look in each case.
+//! A legacy `Metaspace` also lowered to two components, but it is *not* reassembled here: each half
+//! is written as itself, the delimiter one as a `MetaspaceNormalizer` in the `normalizer` slot. See
+//! SPEC.md for why that asymmetry is deliberate.
 //!
 //! `trim_offsets`, `add_prefix_space` and `split` are not written: the pipeline never held the
 //! first, and the reader refuses every value of the other two but the default it assumes.
@@ -46,7 +43,6 @@ pub(super) fn write_pre_tokenizer(
         other => write_one(out, other),
     }
 }
-
 
 /// A `ByteLevel` in the position the reader found it: on its own, or last in a `Sequence`.
 fn write_byte_level_form(out: &mut Out, pretok: &PipelinePreTokenizer) -> Result<()> {

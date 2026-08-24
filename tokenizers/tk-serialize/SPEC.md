@@ -43,17 +43,29 @@ Every component, at every depth, is an object tagged with `"type"`.
 
 | slot | `"type"` |
 |---|---|
-| **normalizer** | `Sequence` `BertNormalizer` `ByteLevel` `Lowercase` `NFC` `NFD` `NFKC` `NFKD` `Nmt` `Precompiled` `Prepend` `Replace` `Strip` `StripAccents` |
-| **pre_tokenizer** | `Sequence` `BertPreTokenizer` `ByteLevel` `CharDelimiterSplit` `Digits` `FixedLength` `Metaspace` `Punctuation` `Split` `UnicodeScripts` `Whitespace` `WhitespaceSplit` |
+| **normalizer** | `Sequence` `BertNormalizer` `ByteLevel` `Lowercase` `MetaspaceNormalizer` `NFC` `NFD` `NFKC` `NFKD` `Nmt` `Precompiled` `Prepend` `Replace` `Strip` `StripAccents` |
+| **pre_tokenizer** | `Sequence` `BertPreTokenizer` `ByteLevel` `CharDelimiterSplit` `Digits` `FixedLength` `Metaspace`† `Punctuation` `Split` `UnicodeScripts` `Whitespace` `WhitespaceSplit` |
 | **post_processor** | `Sequence` `BertProcessing` `ByteLevel` `RobertaProcessing` `TemplateProcessing` |
 | **decoder** | `Sequence` `BPEDecoder` `ByteFallback` `ByteLevel` `CTC` `Fuse` `Metaspace` `Replace` `Strip` `WordPiece` |
 
-`Metaspace` is the one tag with no component behind it — it is two, and folds back on write:
+† `Metaspace` is **read-only**: it is the legacy spelling of two components, and it is the one
+place where reading and writing are deliberately not symmetric.
+
+A `Metaspace` pre-tokenizer rewrites text *and* cuts it, which the pipeline keeps apart. Reading one
+lowers it to the two components it actually is, and each is then written as itself:
 
 ```text
-  "pre_tokenizer": {"type":"Metaspace"}   ─read─▶   MetaspaceNormalizer + Split
-                                          ◀─write─
+  "pre_tokenizer": {"type":"Metaspace", ...}          ← old files, still read
+             ─read─▶  MetaspaceNormalizer + Split
+             ─write─▶  "normalizer": {"type":"MetaspaceNormalizer", ...}
+                       "pre_tokenizer": {"type":"Split", ...}
 ```
+
+Writing the halves rather than folding them back is a v1 decision. The fold could only emit what the
+legacy tag can say — `drop_whitespace` had to come back out as a wrapping `WhitespaceSplit`, a
+byte-level model beside a `Metaspace` was a write error, and a `Metaspace` normalizer was required
+to be last in the chain so the writer could find it. None of that survives; the cost is that a file
+this writer produces does not load in `tokenizers` before v1, which v1 does not promise.
 
 ## Model
 
@@ -73,6 +85,19 @@ WordPiece  { "type", "unk_token":str, "continuing_subword_prefix":str,
 
 WordLevel  { "type", "unk_token":str, "vocab": {token: id} }
 ```
+
+## TemplateProcessing
+
+```text
+{ "type", "single": [ Piece, … ], "pair": [ Piece, … ] }
+
+Piece = { "Sequence"    : {"id":"A"|"B",    "type_id":int} }
+      | { "SpecialToken": {"ids":[int, …],  "type_id":int} }   ← the ids, not a name
+```
+
+A `SpecialToken` may carry `"id"` naming a `"special_tokens"` entry instead, which is what
+every file written before this crate does. The ids are read out of that table; nothing else
+in it is, and neither is written back.
 
 ## AddedToken
 

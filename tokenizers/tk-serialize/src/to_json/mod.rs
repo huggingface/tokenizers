@@ -24,7 +24,7 @@ use self::normalizers::write_normalizer;
 use self::post_processors::write_post_processor;
 use self::pre_tokenizers::write_pre_tokenizer;
 use self::writer::Out;
-use tk_encode::pipeline::{PipelineModel, PipelineNormalizer, PipelineTokenizer};
+use tk_encode::pipeline::{PipelineModel, PipelineTokenizer};
 use tk_encode::tokenizer::Result;
 
 /// Write a `tokenizer.json` as a string.
@@ -42,14 +42,6 @@ pub fn to_json(tokenizer: &PipelineTokenizer) -> Result<String> {
         PipelineModel::WordLevel(_) => false,
     };
 
-    let added_tokens = tokenizer.get_added_vocabulary().get_added_tokens_decoder();
-    let name_of = |id: u32| -> Option<String> {
-        added_tokens
-            .get(&id)
-            .map(|token| token.content.clone())
-            .or_else(|| model.id_to_token(id))
-    };
-
     out.obj_open();
     out.field_str("version", "1.0");
     // TODO: these are REQUIRED for v1
@@ -60,13 +52,9 @@ pub fn to_json(tokenizer: &PipelineTokenizer) -> Result<String> {
     out.key("normalizer");
     write_normalizer(&mut out, normalizers)?;
     out.key("pre_tokenizer");
-    write_pre_tokenizer(
-        &mut out,
-        tokenizer.get_pre_tokenizer(),
-        byte_level,
-    )?;
+    write_pre_tokenizer(&mut out, tokenizer.get_pre_tokenizer(), byte_level)?;
     out.key("post_processor");
-    write_post_processor(&mut out, tokenizer.get_post_processor(), &name_of)?;
+    write_post_processor(&mut out, tokenizer.get_post_processor())?;
     out.key("decoder");
     write_decoder(&mut out, tokenizer.get_decoder())?;
     out.key("model");
@@ -74,4 +62,3 @@ pub fn to_json(tokenizer: &PipelineTokenizer) -> Result<String> {
     out.obj_close();
     Ok(out.finish())
 }
-

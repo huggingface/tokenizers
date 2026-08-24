@@ -4,10 +4,10 @@
 use super::needs_feature;
 use super::unsupported;
 use crate::json::Json;
-use tk_encode::normalizers::metaspace::MetaspaceNormalizer;
 #[cfg(feature = "normalizers")]
 use base64::Engine as _;
 use tk_encode::normalizers::byte_level::ByteLevel as ByteLevelNormalizer;
+use tk_encode::normalizers::metaspace::MetaspaceNormalizer;
 use tk_encode::normalizers::prepend::Prepend;
 use tk_encode::normalizers::replace::{Replace, ReplacePattern};
 use tk_encode::normalizers::strip::Strip;
