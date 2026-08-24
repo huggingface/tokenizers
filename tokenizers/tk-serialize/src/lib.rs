@@ -3,19 +3,6 @@
 #![allow(clippy::upper_case_acronyms)]
 #![doc(html_favicon_url = "https://huggingface.co/favicon.ico")]
 #![doc(html_logo_url = "https://huggingface.co/landing/assets/huggingface_logo.svg")]
-
-//! The reader and writer for the canonical `tokenizer.json`, version `2.0`.
-//!
-//! ```no_run
-//! let tokenizer = tk_serialize::from_json_file("./tokenizer.json")?;
-//! let ids = tokenizer.encode("Hey there!", false).wait()?;
-//! # Ok::<(), tk_encode::Error>(())
-//! ```
-//!
-//! No serde: `json` parses with `hifijson`, and [`from_json()`] builds a
-//! [`tk_encode::pipeline::PipelineTokenizer`] straight from the tree. A `1.0` file is tk-convert's
-//! to rewrite. [`to_json()`] reconstructs a config out of the runtime, so what it guarantees is the
-//! ids the file encodes, not its bytes.
 #![doc = include_str!("../SPEC.md")]
 
 pub(crate) mod json;
