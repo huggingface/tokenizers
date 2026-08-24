@@ -2,8 +2,8 @@
 
 use super::writer::Out;
 use tk_encode::pipeline::PipelinePreTokenizer;
-use tk_encode::pre_tokenizers::split::{Split as SplitPretok, SplitPattern};
-use tk_encode::tokenizer::{Result, SplitDelimiterBehavior};
+use tk_encode::pre_tokenizers::split::SplitPattern;
+use tk_encode::tokenizer::Result;
 
 /// The `pre_tokenizer` value.
 pub(super) fn write_pre_tokenizer(out: &mut Out, pretok: &PipelinePreTokenizer) -> Result<()> {
