@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use crate::pipeline;
-use crate::tokenizer::{NormalizedString, Normalizer, Result};
+use crate::tokenizer::Result;
 
 // The `Sequence` normalizer is a `Vec<NormalizerWrapper>`, so it lives in `tk-convert` with
 // the wrapper it is parameterised by.
@@ -9,12 +9,6 @@ use crate::tokenizer::{NormalizedString, Normalizer, Result};
 /// Lowercases the input
 #[derive(Copy, Clone, Debug)]
 pub struct Lowercase;
-impl Normalizer for Lowercase {
-    fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
-        normalized.lowercase();
-        Ok(())
-    }
-}
 
 /// Whether lowercasing `c` leaves it unchanged (a single, identical char)
 pub(crate) fn lowercases_to_self(c: char) -> bool {
@@ -38,15 +32,24 @@ impl pipeline::Normalizer for Lowercase {
 mod tests {
     use super::*;
 
+    /// Expected values were captured from the legacy `NormalizedString` normalizer this test used
+    /// to compare against, on the commit that removed it -- so they still pin exactly what the two
+    /// implementations agreed on, without keeping the legacy code alive to ask.
     #[test]
-    fn pipeline_lowercase_matches_legacy() {
+    fn pipeline_lowercase() {
         let n = Lowercase;
-        for input in &["HELLO", "Hello World", "abc", "", "ÀÉ", "ΟΔΟΣ"] {
-            let mut ns = NormalizedString::from(*input);
-            Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
+        for (input, expected) in [
+            ("HELLO", "hello"),
+            ("Hello World", "hello world"),
+            ("abc", "abc"),
+            ("", ""),
+            ("ÀÉ", "àé"),
+            ("ΟΔΟΣ", "οδοσ"),
+        ] {
             assert_eq!(
-                ns.get(),
-                &*pipeline::Normalizer::normalize(&n, input).unwrap()
+                &*pipeline::Normalizer::normalize(&n, input).unwrap(),
+                expected,
+                "input={input:?}"
             );
         }
     }

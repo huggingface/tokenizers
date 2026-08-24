@@ -5,7 +5,7 @@ use super::{
 use crate::utils::word_cache::{Lookup, WordCache};
 use crate::{
     pipeline::{self, PipelineToken},
-    tokenizer::{Model, Result, Token},
+    tokenizer::{Result, Token},
 };
 use crate::{
     utils::cache::{Cache, MAX_LENGTH},
@@ -449,16 +449,19 @@ impl<'a> Iterator for UnigramIterator<'a> {
     }
 }
 
-impl Model for Unigram {
-    fn get_vocab(&self) -> HashMap<String, u32> {
+/// The model methods the pipeline and the readers call. These used to be the legacy
+/// `Model` trait; that trait had no implementor left that needed polymorphism, so they are
+/// plain inherent methods now and every call site is unchanged.
+impl Unigram {
+    pub fn get_vocab(&self) -> HashMap<String, u32> {
         self.token_to_ids.get_vocab().into_iter().collect()
     }
 
-    fn get_vocab_size(&self) -> usize {
+    pub fn get_vocab_size(&self) -> usize {
         self.vocab.len()
     }
 
-    fn tokenize(&self, sentence: &str) -> Result<Vec<Token>> {
+    pub fn tokenize(&self, sentence: &str) -> Result<Vec<Token>> {
         let str_tokens = self.encode(sentence)?;
         let mut offset = 0;
         let mut tokens = Vec::with_capacity(str_tokens.len());
@@ -494,11 +497,11 @@ impl Model for Unigram {
         Ok(tokens)
     }
 
-    fn token_to_id(&self, token: &str) -> Option<u32> {
+    pub fn token_to_id(&self, token: &str) -> Option<u32> {
         self.token_to_ids.token_to_id(token)
     }
 
-    fn id_to_token(&self, id: u32) -> Option<String> {
+    pub fn id_to_token(&self, id: u32) -> Option<String> {
         self.vocab.get(id as usize).map(|item| item.0.clone())
     }
 }

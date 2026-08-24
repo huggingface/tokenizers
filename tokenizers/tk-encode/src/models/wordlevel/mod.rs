@@ -1,5 +1,5 @@
 use crate::pipeline::{self, ModelScratch, PipelineToken};
-use crate::tokenizer::{Model, Result, Token};
+use crate::tokenizer::{Result, Token};
 use ahash::AHashMap;
 use std::collections::HashMap;
 
@@ -106,8 +106,11 @@ impl Default for WordLevel {
     }
 }
 
-impl Model for WordLevel {
-    fn tokenize(&self, token: &str) -> Result<Vec<Token>> {
+/// The model methods the pipeline and the readers call. These used to be the legacy
+/// `Model` trait; that trait had no implementor left that needed polymorphism, so they are
+/// plain inherent methods now and every call site is unchanged.
+impl WordLevel {
+    pub fn tokenize(&self, token: &str) -> Result<Vec<Token>> {
         if let Some(&id) = self.vocab.get(token) {
             Ok(vec![Token {
                 id,
@@ -125,19 +128,19 @@ impl Model for WordLevel {
         }
     }
 
-    fn token_to_id(&self, token: &str) -> Option<u32> {
+    pub fn token_to_id(&self, token: &str) -> Option<u32> {
         self.vocab.get(token).copied()
     }
 
-    fn id_to_token(&self, id: u32) -> Option<String> {
+    pub fn id_to_token(&self, id: u32) -> Option<String> {
         self.vocab_r.get(&id).cloned()
     }
 
-    fn get_vocab(&self) -> HashMap<String, u32> {
+    pub fn get_vocab(&self) -> HashMap<String, u32> {
         self.vocab.clone().into_iter().collect()
     }
 
-    fn get_vocab_size(&self) -> usize {
+    pub fn get_vocab_size(&self) -> usize {
         self.vocab.keys().len()
     }
 }
