@@ -1,5 +1,8 @@
-//! Tests for the canonicalisation pass.
-use super::*;
+//! The canonicalisation rules, and the gate that proves the point: after this pass, the canonical
+//! reader can read the file.
+
+use serde_json::{Map, Value};
+use tk_convert::{ConvertError, canonicalize_file, canonicalize_str, canonicalize_value};
 
 const DATA: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../data");
 
@@ -33,7 +36,7 @@ const BPE: &str = r#"{"vocab": {"a": 0, "b": 1, "ab": 2}, "merges": [["a", "b"]]
 fn assert_no_legacy_residue(v: &Value, what: &str) {
     assert_eq!(
         v.get("version").and_then(Value::as_str),
-        Some(VERSION),
+        Some("2.0"),
         "{what}: version"
     );
     let model = v["model"].as_object().expect("no model object");
