@@ -889,6 +889,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "hifijson"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "242402749acf71e6f32f5857598b7002c4058a4e3c3b22b4c7d51cab9aea754e"
+
+[[package]]
 name = "http"
 version = "1.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2322,6 +2328,17 @@ dependencies = [
  "unicode_categories",
  "wide",
  "yada",
+]
+
+[[package]]
+name = "tk-serialize"
+version = "1.0.0-rc.0"
+dependencies = [
+ "atomsplit",
+ "base64 0.22.1",
+ "hifijson",
+ "serde_json",
+ "tk-encode",
 ]
 
 [[package]]
