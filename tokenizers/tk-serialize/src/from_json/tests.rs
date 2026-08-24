@@ -217,11 +217,12 @@ fn byte_level_is_a_model_field_not_a_pre_tokenizer() {
 
 #[test]
 fn refuses_a_byte_level_pre_tokenizer() {
-    let json = config(&[("pre_tokenizer", r#"{"type": "ByteLevel", "use_regex": true}"#)]);
+    let json = config(&[(
+        "pre_tokenizer",
+        r#"{"type": "ByteLevel", "use_regex": true}"#,
+    )]);
     assert!(read_err(&json).contains("`ByteLevel` pre-tokenizer"));
 }
-
-
 
 // ---- post-processors ------------------------------------------------------------------------
 

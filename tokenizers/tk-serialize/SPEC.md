@@ -46,7 +46,7 @@ Every component, at every depth, is an object tagged with `"type"`.
 | slot | `"type"` |
 |---|---|
 | **normalizer** | `Sequence` `BertNormalizer` `ByteLevel` `Lowercase` `MetaspaceNormalizer` `NFC` `NFD` `NFKC` `NFKD` `Nmt` `Precompiled` `Prepend` `Replace` `Strip` `StripAccents` |
-| **pre_tokenizer** | `Sequence` `BertPreTokenizer` `ByteLevel` `CharDelimiterSplit` `Digits` `FixedLength` `Punctuation` `Split` `UnicodeScripts` `Whitespace` `WhitespaceSplit` |
+| **pre_tokenizer** | `Sequence` `BertPreTokenizer` `CharDelimiterSplit` `Digits` `FixedLength` `Punctuation` `Split` `UnicodeScripts` `Whitespace` `WhitespaceSplit` |
 | **post_processor** | `Sequence`† `BertProcessing`† `ByteLevel`† `RobertaProcessing`† `TemplateProcessing` |
 | **decoder** | `Sequence` `BPEDecoder` `ByteFallback` `ByteLevel` `CTC` `Fuse` `Metaspace` `Replace` `Strip` `WordPiece` |
 
@@ -64,7 +64,12 @@ the pipeline keeps apart — so canonically it is spelled as the two it is:
                     "behavior":"MergedWithNext", "invert":false}
 ```
 
-tk-convert rewrites a legacy `Metaspace` into that pair. Spelling it out beats folding it back: the
+There is no `ByteLevel` pre-tokenizer either. Byte-level describes how the vocabulary is encoded,
+so it is `"byte_level"` on the model; the split it used to imply is a plain `Split` on the GPT-2
+regex, or nothing at all where it said `use_regex: false`.
+
+tk-convert rewrites a legacy `Metaspace` into that pair, and a legacy `ByteLevel` into the model
+flag plus that `Split`. Spelling it out beats folding it back: the
 legacy tag could not say `drop_whitespace` without a wrapping `WhitespaceSplit`, could not sit
 beside a byte-level model, and forced the normalizer to be last in the chain so a writer could find
 it.
@@ -75,6 +80,7 @@ it.
 BPE        { "type", "unk_token":str|null,
              "continuing_subword_prefix":str|null, "end_of_word_suffix":str|null,
              "fuse_unk":bool, "byte_fallback":bool, "ignore_merges":bool,
+             "byte_level":bool,
              "vocab": {token: id},
              "merges": [ [left, right], … ] }        ← array index IS the rank
 
@@ -119,7 +125,8 @@ Each is an error naming what to convert.
   a "model" with no "type"                  │
   "merges" spelled "a b" not ["a","b"]      ├──▶ tk-convert ──▶ canonical 2.0 ──▶ here
   a Metaspace *pre-tokenizer* (it is two)   │
-  a Metaspace with "add_prefix_space"      ─┘
+  a Metaspace with "add_prefix_space"       │
+  a ByteLevel pre-tokenizer                ─┘
 
   a vocabulary named by path ("files")     ─────▶ refused, nothing converts it
 ```

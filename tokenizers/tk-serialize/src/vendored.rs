@@ -1,5 +1,4 @@
-//! The float reassembly below (`POW10` and `f64_from_parts`) is ported from `serde_json` 1.0,
-//! `src/de.rs` — its `#[cfg(not(feature = "float_roundtrip"))]` path, which is the default build.
+//! Ported from `serde_json` 1.0, `src/de.rs`, its default (non-`float_roundtrip`) path.
 //!
 //! ```text
 //! Copyright (c) Erick Tryzelaar and David Tolnay
@@ -7,20 +6,10 @@
 //! https://github.com/serde-rs/json
 //! ```
 //!
-//! Ported rather than depended upon because this crate's whole purpose is to read a
-//! `tokenizer.json` without linking serde — but the *arithmetic* has to match serde's exactly, bug
-//! for bug, or token ids move. See `f64_from_parts` for why.
-//!
-//! One divergence from serde_json is left, and no real `tokenizer.json` exercises it: an
-//! overflowing exponent (`1e400`) yields infinity here where serde reports a range error. The two
-//! others this comment used to list -- a leading zero (`007`) and an unescaped control character in
-//! a string, both of which the hand-written scanner accepted -- are gone, because `hifijson` rejects
-//! them. So the float *values* are bit-identical, which is what ids depend on, and the accept/reject
-//! boundary now differs in exactly one place, pinned by
-//! `an_overflowing_exponent_is_the_last_divergence_from_serde`.
+//! Bug-compatible on purpose, double rounding included: Unigram scores feed a Viterbi lattice, so
+//! being *more* accurate here moves ids. `1e400` is the one divergence left (infinity, not a range
+//! error). Do not "fix" the arithmetic.
 
-/// `10^n` for `n` in `0..=308`, as `serde_json` spells it. Rust's float-literal parsing is
-/// correctly rounded, so these are bit-identical to its table.
 #[rustfmt::skip]
 static POW10: [f64; 309] = [
     1e000, 1e001, 1e002, 1e003, 1e004, 1e005, 1e006, 1e007,
@@ -64,29 +53,6 @@ static POW10: [f64; 309] = [
     1e304, 1e305, 1e306, 1e307, 1e308,
 ];
 
-/// Reassemble a float the way `serde_json` does, **including its rounding error**.
-///
-/// This is deliberate bug-compatibility, not an oversight. `serde_json` (without its
-/// `float_roundtrip` feature, which is off by default and which we do not enable) accumulates the
-/// significant digits into a `u64` and then applies a single multiply or divide by a power of ten.
-/// When the significand exceeds 2^53 the `as f64` conversion rounds, and the divide rounds again —
-/// two roundings, so the result can sit 1 ULP away from the correctly-rounded value that
-/// `f64::from_str` produces.
-///
-/// That matters because Unigram scores feed a Viterbi lattice: on t5-base, 8,334 of 32,100 scores
-/// differ by 1 ULP between the two algorithms, which flips a near-tie about twice per 1.25M tokens.
-/// Being *more* accurate here would silently change the ids that ship today, so the slim reader
-/// reproduces the config path bit-for-bit instead. `numbers_are_bit_identical_to_serde_json` pins it.
-/// The value this reader gives a number literal, without building a [`crate::json::Json`] around
-/// it.
-///
-/// [`crate::json::Json::as_f64`] is this function plus a match on the variant, and a writer needs exactly
-/// this half: to check that a literal it is about to emit reads back as the `f64` it started from,
-/// it has to go through the same arithmetic, not through `f64::from_str`. Sharing the function is
-/// what makes that a tautology rather than a second implementation to keep in step.
-// The writer's float path is the only caller, and that path exists only when there is a model
-// with a float in it -- which is Unigram alone: a BPE writes `dropout` as `null`
-// unconditionally, and nothing else holds a number that is not an id or a count.
 #[cfg(any(all(feature = "serialize", feature = "unigram"), test))]
 pub(crate) fn f64_from_literal(digits: &str) -> f64 {
     let (positive, significand, exponent) = number(digits);
@@ -113,7 +79,6 @@ pub(crate) fn f64_from_parts(positive: bool, significand: u64, mut exponent: i32
                 break;
             }
             None => {
-                // The exponent is past the table; step it down in 308-sized chunks, as serde does.
                 if f == 0.0 {
                     break;
                 }
@@ -132,17 +97,6 @@ pub(crate) fn f64_from_parts(positive: bool, significand: u64, mut exponent: i32
     if positive { f } else { -f }
 }
 
-/// Split the digits `hifijson` handed back into the three parts [`f64_from_parts`] wants, exactly
-/// as `serde_json` accumulates them.
-///
-/// The input is a number `hifijson` has already validated, so it matches
-/// `-?(0|[1-9]\d*)(\.\d+)?([eE][+-]?\d+)?` and there is nothing left to reject — which is why this
-/// returns the parts rather than a `Result`. What it must get right is *where digits are dropped*:
-/// once the integer part would overflow a `u64` the remaining integer digits are dropped and the
-/// exponent bumped, while the first fraction digit that would overflow stops accumulation for good
-/// and every digit after it is ignored, because they sit to the right of the point. Both are
-/// serde's behaviour, and both change the resulting float, so
-/// `numbers_are_bit_identical_to_serde_json` pins them.
 pub(crate) fn number(digits: &str) -> (bool, u64, i32) {
     let s = digits.as_bytes();
     let mut i = 0;
@@ -153,7 +107,6 @@ pub(crate) fn number(digits: &str) -> (bool, u64, i32) {
         true
     };
 
-    // Integer part (serde's `parse_long_integer`).
     let mut significand: u64 = 0;
     let mut exponent: i32 = 0;
     let mut saturated = false;
@@ -176,11 +129,6 @@ pub(crate) fn number(digits: &str) -> (bool, u64, i32) {
         i += 1;
     }
 
-    // Fraction (serde's `parse_decimal`). The first digit that would overflow ends accumulation
-    // for good -- serde hands off to `parse_decimal_overflow`, which ignores every remaining digit
-    // rather than retrying them. Retrying is observably different, not a rounding difference:
-    // `significand * 10` can still fit a *smaller* later digit, and `zz`-style sweeps against
-    // serde put the disagreement in the 16th significant digit.
     if s.get(i) == Some(&b'.') {
         i += 1;
         while let Some(c) = s.get(i).filter(|c| c.is_ascii_digit()) {
@@ -201,7 +149,6 @@ pub(crate) fn number(digits: &str) -> (bool, u64, i32) {
         }
     }
 
-    // Explicit exponent.
     if matches!(s.get(i), Some(b'e' | b'E')) {
         i += 1;
         let negate = match s.get(i) {
@@ -235,15 +182,7 @@ mod tests {
         Json::parse(s).expect("should parse")
     }
 
-    /// The score that forced this design. `albert-base-v1` and t5 both ship
-    /// `-3.8403830528259277`. `f64::from_str` is correctly rounded and lands on
-    /// `c00eb91ac0000000`; `serde_json`'s default path lands on `...0001`.
-    ///
-    /// We match **serde**, not `from_str`. Being more accurate would move ids that ship today --
-    /// on t5-base it flips a Viterbi near-tie roughly twice per 1.25M tokens -- so
-    /// bug-compatibility is the requirement, and this test says so out loud.
     #[test]
-    // Compares against `serde_json` itself, which is a dev-dependency here.
     fn matches_serde_not_from_str_on_a_real_unigram_score() {
         let lit = "-3.8403830528259277";
         let ours = Json::parse(lit).unwrap().as_f64().unwrap();
@@ -262,10 +201,7 @@ mod tests {
         );
     }
 
-    /// Every number shape a `tokenizer.json` contains, plus the awkward ones that exercise the
-    /// significand-overflow paths.
     #[test]
-    // Compares against `serde_json` itself, which is a dev-dependency here.
     fn numbers_are_bit_identical_to_serde_json() {
         for lit in [
             "0",
@@ -285,7 +221,6 @@ mod tests {
             "1e-10",
             "1E+2",
             "-2.5e-3",
-            // Real Unigram scores -- the case that actually matters.
             "-3.8403830528259277",
             "-3.1902313232421875",
             "-10.522398948669434",
@@ -293,7 +228,6 @@ mod tests {
             "-1e-300",
             "1e308",
             "1e-320",
-            // More significant digits than a u64 holds, so drop-and-bump runs on both sides.
             "123456789012345678901234567890",
             "1.2345678901234567890123456789",
             "0.000000000000000000000000001",
@@ -311,11 +245,6 @@ mod tests {
             );
         }
 
-        // Where the fraction digits overflow a u64 mid-number. Swept rather than sampled because
-        // the bug this catches needed a *specific* pair of digits -- one that overflows followed by
-        // a smaller one that would still fit -- and 336 of these 4000 disagreed with serde before
-        // `number` learned to stop accumulating for good. 1844674407370955161 is the largest
-        // 19-digit significand that fits, so the 20th digit is where it tips.
         for prefix in [
             "1844674407370955161",
             "1844674407370955160",
@@ -335,9 +264,6 @@ mod tests {
         }
     }
 
-    /// `f64_from_literal` is the half of [`Json::as_f64`] a writer needs on its own, so the two
-    /// have to agree by construction rather than by coincidence — a writer checking its output
-    /// against a *different* arithmetic than the reader uses would be checking nothing.
     #[test]
     fn f64_from_literal_agrees_with_the_accessor() {
         for literal in [
@@ -345,7 +271,6 @@ mod tests {
             "-0",
             "1.5",
             "-13.5321998596191",
-            // The score where this arithmetic and `f64::from_str` part company.
             "-3.8403830528259277",
             "1e-9",
             "1.2345678901234567890123456789",
@@ -361,11 +286,6 @@ mod tests {
         }
     }
 
-    /// The one place this reader is still looser than `serde_json`, kept here so it is a documented
-    /// fact rather than a surprise: an exponent past the `POW10` table saturates to infinity, where
-    /// serde reports "number out of range". No `tokenizer.json` contains such a literal -- a
-    /// Unigram score is a log-probability -- and closing it would mean reintroducing a range check
-    /// that the float emulation does not otherwise need.
     #[test]
     fn an_overflowing_exponent_is_the_last_divergence_from_serde() {
         assert_eq!(p("1e400").as_f64(), Some(f64::INFINITY));

@@ -6,9 +6,7 @@ use tk_encode::pre_tokenizers::split::{Split as SplitPretok, SplitPattern};
 use tk_encode::tokenizer::{Result, SplitDelimiterBehavior};
 
 /// The `pre_tokenizer` value.
-///
 pub(super) fn write_pre_tokenizer(out: &mut Out, pretok: &PipelinePreTokenizer) -> Result<()> {
-
     match pretok {
         // No pre-tokenizer. A missing `pre_tokenizer` reads back as exactly this.
         PipelinePreTokenizer::None => {
@@ -28,15 +26,10 @@ fn write_one(out: &mut Out, pretok: &PipelinePreTokenizer) -> Result<()> {
     }
 
     match pretok {
-        // Only a `ByteLevel` with `use_regex: false` lowers to nothing, and that is handled by
-        // `write_byte_level_form` -- reaching here means the model does not think it is byte-level.
+        // `None` is the whole slot being empty, which the caller writes as `null`. A `Sequence`
+        // member cannot be one: nothing lowers to nothing inside a sequence.
         PipelinePreTokenizer::None => {
-            return Err(
-                "a pre-tokenizer lowered to nothing, which only a `ByteLevel` with \
-                        `use_regex: false` does -- but the model is not byte-level, so there is no \
-                        `ByteLevel` to write"
-                    .into(),
-            );
+            return Err("a `Sequence` pre-tokenizer has an empty member".into());
         }
         PipelinePreTokenizer::Split(split) => {
             out.obj_open();
