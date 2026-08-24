@@ -90,7 +90,7 @@ fn from_json_value(doc: &Json<'_>) -> Result<PipelineTokenizer> {
         None => return Err(unsupported("a config with no `version`")),
     }
 
-    let mut normalizers = read_normalizers(doc.field("normalizer"))?;
+    let normalizers = read_normalizers(doc.field("normalizer"))?;
     let (pre_tokenizer, byte_level) = read_pre_tokenizer(doc.field("pre_tokenizer"))?;
 
     let model_cfg = doc

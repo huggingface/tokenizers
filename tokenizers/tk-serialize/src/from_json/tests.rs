@@ -2,7 +2,6 @@
 
 use super::decoders::read_one_decoder;
 use super::*;
-use tk_encode::decoders::metaspace::PrependScheme;
 
 /// A minimal BPE that needs no data files: two merges over a four-token vocab.
 const TINY_BPE: &str = r#"{"type": "BPE", "vocab": {"a": 0, "b": 1, "ab": 2, "abab": 3},
