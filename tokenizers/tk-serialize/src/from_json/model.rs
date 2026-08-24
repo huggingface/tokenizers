@@ -3,7 +3,10 @@ use crate::json::Json;
 use tk_encode::models::bpe::{BpeConfig, Merges, Vocab};
 use tk_encode::tokenizer::Result;
 
-pub(super) fn read_bpe(cfg: &Json<'_>, byte_level: bool) -> Result<(Vocab, Merges, BpeConfig)> {
+pub(super) fn read_bpe(cfg: &Json<'_>) -> Result<(Vocab, Merges, BpeConfig)> {
+    // Stated on the model, not inferred from a `ByteLevel` pre-tokenizer: it describes how the
+    // vocabulary is encoded, which is the model's business.
+    let byte_level = cfg.need("BPE model", "byte_level", Json::as_bool)?;
     let vocab = read_vocab_object(cfg)?;
 
     let merges_arr = cfg.need("BPE model", "merges", Json::as_array)?;

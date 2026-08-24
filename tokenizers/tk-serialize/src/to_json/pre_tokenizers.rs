@@ -7,15 +7,7 @@ use tk_encode::tokenizer::{Result, SplitDelimiterBehavior};
 
 /// The `pre_tokenizer` value.
 ///
-/// `byte_level` is whether the model applies the byte-level map
-pub(super) fn write_pre_tokenizer(
-    out: &mut Out,
-    pretok: &PipelinePreTokenizer,
-    byte_level: bool,
-) -> Result<()> {
-    if byte_level {
-        return write_byte_level_form(out, pretok);
-    }
+pub(super) fn write_pre_tokenizer(out: &mut Out, pretok: &PipelinePreTokenizer) -> Result<()> {
 
     match pretok {
         // No pre-tokenizer. A missing `pre_tokenizer` reads back as exactly this.
@@ -25,60 +17,6 @@ pub(super) fn write_pre_tokenizer(
         }
         other => write_one(out, other),
     }
-}
-
-/// A `ByteLevel` in the position the reader found it: on its own, or last in a `Sequence`.
-fn write_byte_level_form(out: &mut Out, pretok: &PipelinePreTokenizer) -> Result<()> {
-    match pretok {
-        PipelinePreTokenizer::Sequence(sequence) => {
-            let members = sequence.pre_tokenizers();
-            let (last, rest) = members.split_last().ok_or_else(|| -> tk_encode::Error {
-                "a byte-level model with an empty pre-tokenizer `Sequence`".into()
-            })?;
-            out.obj_open();
-            out.type_tag("Sequence");
-            out.key("pretokenizers");
-            out.arr_open();
-            for member in rest {
-                write_one(out, member)?;
-            }
-            write_byte_level(out, last)?;
-            out.arr_close();
-            out.obj_close();
-        }
-        lone => write_byte_level(out, lone)?,
-    }
-    Ok(())
-}
-
-/// The `ByteLevel` object, from whichever of its two lowerings is in hand.
-fn write_byte_level(out: &mut Out, lowered: &PipelinePreTokenizer) -> Result<()> {
-    let use_regex = match lowered {
-        // `use_regex: false` asks only for the byte map, which the model half already applies, so
-        // the splitting step became the identity.
-        PipelinePreTokenizer::None => false,
-        // `use_regex: true` splits on the GPT-2 regex, which is what the `Split` carries.
-        PipelinePreTokenizer::Split(split) if is_gpt2_regex(split) => true,
-        other => {
-            return Err(format!(
-                "a byte-level model's last pre-tokenizer is {other:?}, which is neither of the two \
-                 forms a `ByteLevel` lowers to (a `Split` on the GPT-2 regex, or nothing)"
-            )
-            .into());
-        }
-    };
-    out.obj_open();
-    out.type_tag("ByteLevel");
-    out.field_bool("use_regex", use_regex);
-    out.obj_close();
-    Ok(())
-}
-
-/// Whether this `Split` is the one a `use_regex` `ByteLevel` lowers to.
-fn is_gpt2_regex(split: &SplitPretok) -> bool {
-    matches!(&split.pattern, SplitPattern::Regex(r) if r == atomsplit::regexes::GPT2)
-        && split.behavior == SplitDelimiterBehavior::Isolated
-        && !split.invert
 }
 
 fn write_one(out: &mut Out, pretok: &PipelinePreTokenizer) -> Result<()> {

@@ -17,9 +17,9 @@ use tk_encode::pre_tokenizers::unicode_scripts::UnicodeScripts;
 use tk_encode::pre_tokenizers::whitespace::{Whitespace, WhitespaceSplit};
 use tk_encode::tokenizer::{Result, SplitDelimiterBehavior};
 
-pub(super) fn read_pre_tokenizer(cfg: Option<&Json<'_>>) -> Result<(PipelinePreTokenizer, bool)> {
+pub(super) fn read_pre_tokenizer(cfg: Option<&Json<'_>>) -> Result<PipelinePreTokenizer> {
     let Some(cfg) = cfg else {
-        return Ok((PipelinePreTokenizer::None, false));
+        return Ok(PipelinePreTokenizer::None);
     };
     let kind = cfg
         .type_tag()
@@ -33,28 +33,14 @@ pub(super) fn read_pre_tokenizer(cfg: Option<&Json<'_>>) -> Result<(PipelinePreT
         if members.iter().any(|m| m.type_tag() == Some("Sequence")) {
             return Err("Nesting Sequence pre tokenizers is not supported".into());
         }
-        let byte_level_at = members
-            .iter()
-            .position(|m| m.type_tag() == Some("ByteLevel"));
-        if let Some(pos) = byte_level_at
-            && pos != members.len() - 1
-        {
-            return Err(
-                "ByteLevel pre tokenizer must be the last pre tokenizer in the Sequence".into(),
-            );
-        }
         let mut built = Vec::with_capacity(members.len());
         for member in members {
             built.push(read_one_pre_tokenizer(member)?);
         }
-        return Ok((
-            PipelinePreTokenizer::Sequence(PipelineSequence::new(built)),
-            byte_level_at.is_some(),
-        ));
+        return Ok(PipelinePreTokenizer::Sequence(PipelineSequence::new(built)));
     }
 
-    let one = read_one_pre_tokenizer(cfg)?;
-    Ok((one, kind == "ByteLevel"))
+    read_one_pre_tokenizer(cfg)
 }
 
 fn read_one_pre_tokenizer(cfg: &Json<'_>) -> Result<PipelinePreTokenizer> {
@@ -67,7 +53,9 @@ fn read_one_pre_tokenizer(cfg: &Json<'_>) -> Result<PipelinePreTokenizer> {
         // Not canonical: a `Metaspace` is two components, and the canonical file spells them as
         // what they are -- a `MetaspaceNormalizer` in the `normalizer` slot and a `Split` here.
         "Metaspace" => return Err(unsupported("a `Metaspace` pre-tokenizer")),
-        "ByteLevel" => byte_level_pre_tokenizer(cfg)?,
+        // Not canonical: byte-level is a model property now, and the split it asked for is a
+        // plain `Split` on the GPT-2 regex (or nothing, for `use_regex: false`).
+        "ByteLevel" => return Err(unsupported("a `ByteLevel` pre-tokenizer")),
         "Split" => PipelinePreTokenizer::Split(read_split(cfg)?),
         "Whitespace" => PipelinePreTokenizer::Whitespace(Whitespace),
         "WhitespaceSplit" => PipelinePreTokenizer::WhitespaceSplit(WhitespaceSplit),
@@ -109,30 +97,6 @@ fn read_one_pre_tokenizer(cfg: &Json<'_>) -> Result<PipelinePreTokenizer> {
         }
         other => return Err(unsupported(&format!("the `{other}` pre-tokenizer"))),
     })
-}
-
-fn byte_level_pre_tokenizer(cfg: &Json<'_>) -> Result<PipelinePreTokenizer> {
-    if cfg
-        .field("add_prefix_space")
-        .and_then(Json::as_bool)
-        .unwrap_or(false)
-    {
-        // TODO: this is something we prob want for v1 depending on the usage.
-        return Err("ByteLevel add_prefix_space=true is not supported by the pipeline yet".into());
-    }
-    let use_regex = cfg
-        .field("use_regex")
-        .and_then(Json::as_bool)
-        .unwrap_or(true);
-    if !use_regex {
-        return Ok(PipelinePreTokenizer::None);
-    }
-    // `native` rather than `new`: this pattern is FSM-recognised, so never ask for an engine.
-    Ok(PipelinePreTokenizer::Split(SplitPretok::native(
-        SplitPattern::Regex(atomsplit::regexes::GPT2.to_string()),
-        SplitDelimiterBehavior::Isolated,
-        false,
-    )?))
 }
 
 pub(super) fn read_char(cfg: &Json<'_>, key: &str) -> Result<char> {

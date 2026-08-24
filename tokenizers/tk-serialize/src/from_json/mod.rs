@@ -93,22 +93,19 @@ fn from_json_value(doc: &Json<'_>) -> Result<PipelineTokenizer> {
     }
 
     let normalizers = read_normalizers(doc.field("normalizer"))?;
-    let (pre_tokenizer, byte_level) = read_pre_tokenizer(doc.field("pre_tokenizer"))?;
+    let pre_tokenizer = read_pre_tokenizer(doc.field("pre_tokenizer"))?;
 
     let model_cfg = doc
         .field("model")
         .ok_or_else(|| -> tk_encode::Error { "config has no `model`".into() })?;
     let kind = model_kind(model_cfg)?;
-    if byte_level && kind != "BPE" {
-        return Err(format!("ByteLevel pre tokenizer is not supported with model {kind}").into());
-    }
     if model_cfg.get("files").is_some() {
         return Err(unsupported("a model whose vocab is a file path (`files`)"));
     }
 
     match kind {
         "BPE" => {
-            let (vocab, merges, options) = read_bpe(model_cfg, byte_level)?;
+            let (vocab, merges, options) = read_bpe(model_cfg)?;
             build(
                 doc,
                 normalizers,

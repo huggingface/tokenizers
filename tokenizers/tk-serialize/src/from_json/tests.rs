@@ -4,7 +4,7 @@ use super::decoders::read_one_decoder;
 use super::*;
 
 /// A minimal BPE that needs no data files: two merges over a four-token vocab.
-const TINY_BPE: &str = r#"{"type": "BPE", "vocab": {"a": 0, "b": 1, "ab": 2, "abab": 3},
+const TINY_BPE: &str = r#"{"type": "BPE", "byte_level": false, "vocab": {"a": 0, "b": 1, "ab": 2, "abab": 3},
     "merges": [["a", "b"], ["ab", "ab"]]}"#;
 
 /// A whole `tokenizer.json`. Every component is `null` and the model is [`TINY_BPE`] unless
@@ -93,7 +93,7 @@ fn refuses_legacy_string_merges() {
     // `"a b"` is the legacy spelling; tk-convert rewrites it to `["a", "b"]`.
     let legacy = config(&[(
         "model",
-        r#"{"type": "BPE", "vocab": {"a": 0, "b": 1, "ab": 2, "abab": 3},
+        r#"{"type": "BPE", "byte_level": false, "vocab": {"a": 0, "b": 1, "ab": 2, "abab": 3},
             "merges": ["a b", "ab ab"]}"#,
     )]);
     assert!(read_err(&legacy).contains("[left, right] pair"));
@@ -201,29 +201,27 @@ fn refuses_a_normalizer_it_does_not_know() {
 // ---- pre-tokenizers -------------------------------------------------------------------------
 
 #[test]
-fn byte_level_without_use_regex_is_the_identity_split() {
-    // The `Sequence[Split, ByteLevel]` idiom: the trailing ByteLevel only asks for the byte map,
-    // which the model applies, so as a *splitter* it must be a no-op.
+fn byte_level_is_a_model_field_not_a_pre_tokenizer() {
+    // `use_regex: false` lowered to no pre-tokenizer at all, and `true` to a `Split` on the GPT-2
+    // regex. Canonically both are spelled as themselves, with the flag on the model.
     let json = config(&[(
-        "pre_tokenizer",
-        r#"{"type": "ByteLevel", "add_prefix_space": false, "trim_offsets": true,
-            "use_regex": false}"#,
+        "model",
+        r#"{"type": "BPE", "byte_level": false, "byte_level": true, "vocab": {"a": 0, "b": 1, "ab": 2, "abab": 3},
+            "merges": [["a", "b"], ["ab", "ab"]]}"#,
     )]);
     let doc = Json::parse(&json).unwrap();
-    let (pretok, byte_level) = read_pre_tokenizer(doc.field("pre_tokenizer")).unwrap();
+    let pretok = read_pre_tokenizer(doc.field("pre_tokenizer")).unwrap();
     assert!(matches!(pretok, PipelinePreTokenizer::None));
-    // Still byte-level for the *model*, which is a separate switch.
-    assert!(byte_level);
+    assert!(read(&json).is_ok());
 }
 
 #[test]
-fn byte_level_add_prefix_space_is_refused() {
-    let json = config(&[(
-        "pre_tokenizer",
-        r#"{"type": "ByteLevel", "add_prefix_space": true, "trim_offsets": true}"#,
-    )]);
-    assert!(read_err(&json).contains("add_prefix_space"));
+fn refuses_a_byte_level_pre_tokenizer() {
+    let json = config(&[("pre_tokenizer", r#"{"type": "ByteLevel", "use_regex": true}"#)]);
+    assert!(read_err(&json).contains("`ByteLevel` pre-tokenizer"));
 }
+
+
 
 // ---- post-processors ------------------------------------------------------------------------
 

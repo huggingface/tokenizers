@@ -18,6 +18,10 @@ pub(super) fn write_model(out: &mut Out, model: &PipelineModel) -> Result<()> {
             out.field_bool("fuse_unk", config.fuse_unk);
             out.field_bool("byte_fallback", config.byte_fallback);
             out.field_bool("ignore_merges", config.ignore_merges);
+            // Byte-level is a property of the vocabulary encoding, so it is stated on the model.
+            // A `ByteLevel` pre-tokenizer used to be the only place it lived, which is why the
+            // reader had to work out where that tag sat in a `Sequence`.
+            out.field_bool("byte_level", bpe.is_byte_level());
             write_vocab_object(out, config.vocab.into_iter().collect());
             out.key("merges");
             out.arr_open();

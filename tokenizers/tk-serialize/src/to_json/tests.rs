@@ -22,7 +22,7 @@ const TINY_BPE: &str = r#"{
     "post_processor": null,
     "decoder": null,
     "model": {
-        "type": "BPE",
+        "type": "BPE", "byte_level": false,
         "vocab": {"a": 0, "b": 1, "ab": 2, "abab": 3},
         "merges": [["a", "b"], ["ab", "ab"]]
     }
@@ -31,7 +31,7 @@ const TINY_BPE: &str = r#"{
 /// The `model` object of [`TINY_BPE`] verbatim, so a test can swap it for another kind.
 #[cfg(any(feature = "unigram", feature = "wordpiece"))]
 const TINY_BPE_MODEL: &str = r#"{
-        "type": "BPE",
+        "type": "BPE", "byte_level": false,
         "vocab": {"a": 0, "b": 1, "ab": 2, "abab": 3},
         "merges": [["a", "b"], ["ab", "ab"]]
     }"#;
@@ -289,7 +289,7 @@ const COMPETING_BPE: &str = r#"{
     "post_processor": null,
     "decoder": null,
     "model": {
-        "type": "BPE",
+        "type": "BPE", "byte_level": false,
         "vocab": {"a": 0, "b": 1, "c": 2, "ab": 3, "bc": 4},
         "merges": [["a", "b"], ["b", "c"]]
     }

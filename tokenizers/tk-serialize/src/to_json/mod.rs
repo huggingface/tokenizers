@@ -32,16 +32,6 @@ pub fn to_json(tokenizer: &PipelineTokenizer) -> Result<String> {
     let mut out = Out::new();
     let model = tokenizer.get_model();
     let normalizers = tokenizer.get_normalizers();
-    let byte_level = match model {
-        PipelineModel::BPE(bpe) => bpe.is_byte_level(),
-        #[cfg(feature = "unigram")]
-        PipelineModel::Unigram(_) => false,
-        #[cfg(feature = "wordpiece")]
-        PipelineModel::WordPiece(_) => false,
-        #[cfg(feature = "wordlevel")]
-        PipelineModel::WordLevel(_) => false,
-    };
-
     out.obj_open();
     out.field_str("version", "2.0");
     // TODO: these are REQUIRED for v1
@@ -52,7 +42,7 @@ pub fn to_json(tokenizer: &PipelineTokenizer) -> Result<String> {
     out.key("normalizer");
     write_normalizer(&mut out, normalizers)?;
     out.key("pre_tokenizer");
-    write_pre_tokenizer(&mut out, tokenizer.get_pre_tokenizer(), byte_level)?;
+    write_pre_tokenizer(&mut out, tokenizer.get_pre_tokenizer())?;
     out.key("post_processor");
     write_post_processor(&mut out, tokenizer.get_post_processor())?;
     out.key("decoder");
