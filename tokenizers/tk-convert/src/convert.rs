@@ -344,12 +344,19 @@ fn lower_metaspace_pre_tokenizer(root: &mut Map<String, Value>) -> Result<(), Co
             (o.clone(), false)
         }
         Value::Object(o) if o.get("type").and_then(Value::as_str) == Some("Sequence") => {
-            match o.get("pretokenizers").and_then(Value::as_array).map(|m| &m[..]) {
+            match o
+                .get("pretokenizers")
+                .and_then(Value::as_array)
+                .map(|m| &m[..])
+            {
                 Some([first, second])
                     if first.get("type").and_then(Value::as_str) == Some("WhitespaceSplit")
                         && second.get("type").and_then(Value::as_str) == Some("Metaspace") =>
                 {
-                    (second.as_object().expect("matched as an object").clone(), true)
+                    (
+                        second.as_object().expect("matched as an object").clone(),
+                        true,
+                    )
                 }
                 _ => return Ok(()),
             }
@@ -423,8 +430,7 @@ fn lower_byte_level_pre_tokenizer(root: &mut Map<String, Value>) -> Result<(), C
     let Some(pretok) = root.get_mut("pre_tokenizer") else {
         return Ok(());
     };
-    let is_byte_level =
-        |v: &Value| v.get("type").and_then(Value::as_str) == Some("ByteLevel");
+    let is_byte_level = |v: &Value| v.get("type").and_then(Value::as_str) == Some("ByteLevel");
 
     // `use_regex` defaults to true, which is what gpt2 and roberta rely on.
     let split_for = |bl: &Value| -> Result<Option<Value>, ConvertError> {
@@ -521,9 +527,7 @@ fn fill_model_defaults(root: &mut Map<String, Value>) -> Result<(), ConvertError
         .ok_or(ConvertError::ModelNotObject { found })?;
     if model.get("type").and_then(Value::as_str) == Some("BPE") {
         // Only set when the `ByteLevel` lowering did not already say otherwise.
-        model
-            .entry("byte_level")
-            .or_insert(Value::Bool(false));
+        model.entry("byte_level").or_insert(Value::Bool(false));
     }
     Ok(())
 }
@@ -583,7 +587,9 @@ fn lower_template_node(node: &mut Value) -> Result<(), ConvertError> {
             if let Some(seq) = piece.get("Sequence") {
                 flat.insert(
                     "seq".to_string(),
-                    seq.get("id").cloned().ok_or(ConvertError::BadTemplatePiece)?,
+                    seq.get("id")
+                        .cloned()
+                        .ok_or(ConvertError::BadTemplatePiece)?,
                 );
                 if let Some(t) = seq.get("type_id") {
                     flat.insert("type_id".to_string(), t.clone());

@@ -56,5 +56,8 @@ tk-serialize = { path = "../tk-serialize", features = [
 tk-encode = { path = "../tk-encode", default-features = false, features = [
   "fancy-regex",
 ] }
+# The oracles fetch their tokenizer.json from the Hub instead of relying on `make models`, so each
+# one is self-contained. `hf-hub` caches under ~/.cache/huggingface, so only the first run is online.
+hf-hub = { version = "0.4.1", features = ["ureq"], default-features = false }
 criterion = "0.8"
 rayon = "1.12"
