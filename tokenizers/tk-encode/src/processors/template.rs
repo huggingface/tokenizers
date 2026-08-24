@@ -258,12 +258,6 @@ impl SpecialToken {
 #[serde(transparent)]
 pub struct Template(Vec<Piece>);
 
-impl Template {
-    pub(crate) fn as_slice(&self) -> &[Piece] {
-        &self.0
-    }
-}
-
 impl<T> TryFrom<Vec<T>> for Template
 where
     T: TryInto<Piece, Error = String>,

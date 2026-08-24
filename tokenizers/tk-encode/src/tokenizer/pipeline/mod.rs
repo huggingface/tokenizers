@@ -2,14 +2,6 @@ use std::iter::Enumerate;
 use std::sync::Arc;
 use std::vec::IntoIter;
 
-#[cfg(feature = "normalizers")]
-use crate::normalizers::{
-    bert::BertNormalizer,
-    precompiled::PrecompiledNormalizer,
-    strip::StripAccents,
-    unicode::{NFC, NFD, NFKC, NFKD, Nmt},
-};
-
 #[cfg(feature = "unigram")]
 use crate::models::unigram::{Unigram, UnigramScratch};
 #[cfg(feature = "wordlevel")]
@@ -52,7 +44,6 @@ pub use pre_tokenizer::{
     PipelinePreTokenizer, PreTokenizer, PreTokenizerScratch, SplitPolicy, split, split_delimiter,
     split_matches,
 };
-
 
 /// An output token. Carries only the vocabulary `id`, since offsets and the token
 /// string are dropped, which is all an encode-only caller needs.

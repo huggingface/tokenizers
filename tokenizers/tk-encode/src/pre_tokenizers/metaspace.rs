@@ -1,5 +1,8 @@
+#[cfg(test)]
 use crate::normalizers::metaspace::MetaspaceNormalizer;
+#[cfg(test)]
 use crate::pre_tokenizers::PreTokenizerWrapper;
+#[cfg(test)]
 use crate::pre_tokenizers::split::Split;
 use crate::tokenizer::{Decoder, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
 use serde::{Deserialize, Deserializer, Serialize, de};
@@ -185,6 +188,7 @@ impl Decoder for Metaspace {
 /// `None` when the pre-tokenizer is not a `Metaspace`, or a `Metaspace` with settings we can reproduce with a Normalizer + Split
 /// The caller then converts the pre-tokenizer the usual way, and rejects residual `Metaspace`. An unsupported config leaves
 /// the model out of the pipeline instead of quietly encoding it differently.
+#[cfg(test)]
 pub(crate) fn to_normalizer_and_split(
     pre_tokenizer: Option<&PreTokenizerWrapper>,
 ) -> Option<(MetaspaceNormalizer, Split)> {
@@ -202,6 +206,7 @@ pub(crate) fn to_normalizer_and_split(
     }
 }
 
+#[cfg(test)]
 fn normalizer_and_split(
     metaspace: &Metaspace,
     drop_whitespace: bool,

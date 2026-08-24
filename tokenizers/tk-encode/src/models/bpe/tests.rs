@@ -124,7 +124,7 @@ fn unk_replaces_unknown_chars() {
     let mut vocab = v(HELLO_VOCAB);
     vocab.insert("<unk>".into(), 8);
     let pipeline = PipelineBPE::from_config(BpeConfig {
-        vocab: vocab,
+        vocab,
         merges: m(HELLO_MERGES),
         ..BpeConfig {
             unk_token: Some("<unk>".into()),
@@ -147,7 +147,7 @@ fn fused_unk_collapses_runs() {
     let mut vocab = v(HELLO_VOCAB);
     vocab.insert("<unk>".into(), 8);
     let pipeline = PipelineBPE::from_config(BpeConfig {
-        vocab: vocab,
+        vocab,
         merges: m(HELLO_MERGES),
         ..BpeConfig {
             unk_token: Some("<unk>".into()),
@@ -336,8 +336,8 @@ fn byte_level_bpe(
         .map(|&(a, b)| (projected(a), projected(b)))
         .collect();
     PipelineBPE::from_config(BpeConfig {
-        vocab: vocab,
-        merges: merges,
+        vocab,
+        merges,
         ..BpeConfig {
             ignore_merges,
             byte_level: true,
