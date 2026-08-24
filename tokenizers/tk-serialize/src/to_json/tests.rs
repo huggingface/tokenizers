@@ -1,8 +1,11 @@
 //! The writer's tests. The gate is [`round_trip_preserves_ids_on_every_real_config`]: the contract
 //! is ids, not bytes, because the pipeline is a lowered form of the file. The rest say *where*.
 
+use super::writer::*;
 use super::*;
 use crate::from_json::from_json;
+use crate::json::Json;
+use crate::vendored::f64_from_literal;
 
 const BPE_MODEL: &str = r#"{"type": "BPE", "byte_level": false,
     "vocab": {"a": 0, "b": 1, "ab": 2, "abab": 3}, "merges": [["a", "b"], ["ab", "ab"]]}"#;
@@ -10,7 +13,11 @@ const BPE_MODEL: &str = r#"{"type": "BPE", "byte_level": false,
 /// A whole config: every component `null` and [`BPE_MODEL`], unless `slots` names one.
 fn config(slots: &[(&str, &str)]) -> String {
     let slot = |name: &str, default: &str| -> String {
-        slots.iter().find(|(n, _)| *n == name).map_or(default, |(_, json)| json).to_string()
+        slots
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map_or(default, |(_, json)| json)
+            .to_string()
     };
     format!(
         r#"{{"version": "2.0", "added_tokens": {}, "normalizer": {}, "pre_tokenizer": {},
@@ -46,8 +53,15 @@ fn json(text: &str) -> serde_json::Value {
 }
 
 fn ids(tokenizer: &PipelineTokenizer, text: &str, specials: bool) -> Vec<u32> {
-    let encoded = tokenizer.encode(text, specials).wait().expect("encoding a text");
-    encoded.iter().flat_map(|e| e.ids()).map(|token| token.id()).collect()
+    let encoded = tokenizer
+        .encode(text, specials)
+        .wait()
+        .expect("encoding a text");
+    encoded
+        .iter()
+        .flat_map(|e| e.ids())
+        .map(|token| token.id())
+        .collect()
 }
 
 /// Every `data/*.json` the reader accepts, built. A refusal is a skip; `tokenizer.json` is another
@@ -59,7 +73,10 @@ fn fixtures() -> Vec<(String, PipelineTokenizer)> {
     let mut paths: Vec<_> = entries
         .filter_map(|entry| entry.ok().map(|entry| entry.path()))
         .filter(|path| path.extension().is_some_and(|ext| ext == "json"))
-        .filter(|path| path.file_name().is_some_and(|name| name != "tokenizer.json"))
+        .filter(|path| {
+            path.file_name()
+                .is_some_and(|name| name != "tokenizer.json")
+        })
         .collect();
     paths.sort();
     paths
@@ -123,8 +140,15 @@ fn reversing_the_written_merges_moves_ids() {
     let tokenizer = from_json(&config(&[("model", COMPETING_BPE)])).expect("it reads");
     let mut parsed: serde_json::Value =
         serde_json::from_str(&to_json(&tokenizer).expect("and writes")).expect("valid JSON");
-    assert_eq!(parsed["model"]["merges"], json(r#"[["a","b"],["b","c"]]"#), "not rank order");
-    parsed["model"]["merges"].as_array_mut().expect("merges").reverse();
+    assert_eq!(
+        parsed["model"]["merges"],
+        json(r#"[["a","b"],["b","c"]]"#),
+        "not rank order"
+    );
+    parsed["model"]["merges"]
+        .as_array_mut()
+        .expect("merges")
+        .reverse();
     let perturbed = from_json(&parsed.to_string()).expect("the perturbed config still reads");
 
     // `a+b` outranks `b+c`, so `abc` is `ab` + `c`. Reversed, `b+c` wins: `a` + `bc`.
@@ -143,9 +167,17 @@ fn reversing_the_written_merges_moves_ids() {
     for pop in [true, false] {
         let mut parsed: serde_json::Value = serde_json::from_str(&text).expect("valid JSON");
         let merges = parsed["model"]["merges"].as_array_mut().expect("merges");
-        if pop { merges.pop(); } else { merges.reverse(); }
+        if pop {
+            merges.pop();
+        } else {
+            merges.reverse();
+        }
         let weak = from_json(&parsed.to_string()).expect("a weak perturbation still reads");
-        assert_eq!(ids(&weak, "abab", false), vec![3], "pop={pop} moved an id after all");
+        assert_eq!(
+            ids(&weak, "abab", false),
+            vec![3],
+            "pop={pop} moved an id after all"
+        );
     }
 }
 
@@ -227,7 +259,11 @@ const WORDPIECE: &[(&str, &str)] = &[];
 #[test]
 fn components_round_trip_to_their_canonical_spelling() {
     for (slot, spelling) in IDEMPOTENT.iter().chain(BERT).chain(WORDPIECE) {
-        assert_eq!(written(slot, spelling), json(spelling), "{slot}: {spelling}");
+        assert_eq!(
+            written(slot, spelling),
+            json(spelling),
+            "{slot}: {spelling}"
+        );
     }
     for (slot, input, expected) in REWRITTEN {
         assert_eq!(written(slot, input), json(expected), "{slot}: {input}");
@@ -237,8 +273,11 @@ fn components_round_trip_to_their_canonical_spelling() {
 #[test]
 fn the_canonical_shape_is_tagged_versioned_and_null_where_absent() {
     let text = rewrite(&config(&[
-        ("normalizer", r#"{"type": "MetaspaceNormalizer", "replacement": "▁",
-            "prepend": true, "drop_whitespace": false}"#),
+        (
+            "normalizer",
+            r#"{"type": "MetaspaceNormalizer", "replacement": "▁",
+            "prepend": true, "drop_whitespace": false}"#,
+        ),
         ("pre_tokenizer", r#"{"type": "Whitespace"}"#),
         ("decoder", r#"{"type": "Fuse"}"#),
     ]));
@@ -246,12 +285,21 @@ fn the_canonical_shape_is_tagged_versioned_and_null_where_absent() {
     assert_eq!(parsed["version"], "2.0");
     // The reader still tolerates an untagged model; the writer must never make one.
     for field in ["normalizer", "pre_tokenizer", "decoder", "model"] {
-        assert!(parsed[field]["type"].as_str().is_some(), "`{field}` has no `type`");
+        assert!(
+            parsed[field]["type"].as_str().is_some(),
+            "`{field}` has no `type`"
+        );
     }
     // Pairs in rank order, never the legacy `"a b"`, which is ambiguous when a token has a space.
-    assert_eq!(parsed["model"]["merges"], json(r#"[["a","b"],["ab","ab"]]"#));
+    assert_eq!(
+        parsed["model"]["merges"],
+        json(r#"[["a","b"],["ab","ab"]]"#)
+    );
     for legacy in ["add_prefix_space", "prepend_scheme", "split"] {
-        assert!(parsed["normalizer"].get(legacy).is_none(), "wrote `{legacy}`");
+        assert!(
+            parsed["normalizer"].get(legacy).is_none(),
+            "wrote `{legacy}`"
+        );
     }
 
     // A pass-through frame is what "no post-processor" lowers to, so it goes back out as absent.
@@ -276,12 +324,21 @@ fn a_unigram_model_keeps_its_scores_and_unk() {
     assert_eq!(model["type"], "Unigram");
     assert_eq!(model["unk_id"], 0);
     assert_eq!(model["byte_fallback"], false);
-    let vocab = model["vocab"].as_array().expect("a Unigram vocab is an array");
-    for (entry, digits) in vocab.iter().zip(["0.0", "-3.8403830528259277", "-13.5321998596191"]) {
+    let vocab = model["vocab"]
+        .as_array()
+        .expect("a Unigram vocab is an array");
+    for (entry, digits) in vocab
+        .iter()
+        .zip(["0.0", "-3.8403830528259277", "-13.5321998596191"])
+    {
         let literal = entry[1].to_string();
         let got = crate::vendored::f64_from_literal(&literal);
         let want = crate::vendored::f64_from_literal(digits);
-        assert_eq!(got.to_bits(), want.to_bits(), "{literal} reads back as {got}");
+        assert_eq!(
+            got.to_bits(),
+            want.to_bits(),
+            "{literal} reads back as {got}"
+        );
     }
     assert_eq!(vocab[0][1].to_string(), "0.0");
 }
@@ -296,4 +353,124 @@ fn the_output_is_valid_json_to_serde_too() {
     );
     assert_eq!(normalizer["pattern"]["String"], "\u{1}\t\"\\");
     assert_eq!(normalizer["content"], "\u{1f}");
+}
+
+// ---- the emitter itself ----------------------------------------------------------------------
+/// Round-trip through the *public* accessor, not just `f64_from_literal`, so the test covers
+/// the path a reader really takes.
+fn reads_back_as(literal: &str) -> f64 {
+    Json::parse(literal)
+        .expect("the writer emits parseable JSON")
+        .as_f64()
+        .expect("a number literal reads as an f64")
+}
+
+#[test]
+fn floats_round_trip_through_our_own_parser() {
+    for value in [
+        0.0,
+        -0.0,
+        1.0,
+        -1.0,
+        0.5,
+        // Two real Unigram scores rather than round numbers, both read through the parser they
+        // have to survive: `-3.8403830528259277` is the one
+        // `matches_serde_not_from_str_on_a_real_unigram_score` pins, where the value our parser
+        // gives is a ULP off the correctly-rounded one.
+        f64_from_literal("-13.5321998596191"),
+        f64_from_literal("-3.8403830528259277"),
+        f64::MIN_POSITIVE,
+        f64::MAX,
+        1e-300,
+        1e300,
+        std::f64::consts::PI,
+    ] {
+        let literal = float_literal(value).expect("every finite float has a spelling");
+        assert_eq!(
+            reads_back_as(&literal).to_bits(),
+            value.to_bits(),
+            "{value:?} was written as {literal}, which reads back as {}",
+            reads_back_as(&literal)
+        );
+    }
+}
+
+#[test]
+fn non_finite_numbers_are_refused_rather_than_mangled() {
+    for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        assert!(float_literal(value).is_err(), "{value:?} has no JSON form");
+    }
+}
+
+/// Every escape `hifijson` insists on, plus the ones it does not but a reader would find
+/// surprising. A raw control character is not legal JSON, so the `\u00XX` arm is not cosmetic.
+#[test]
+fn strings_escape_what_json_requires() {
+    let mut out = Out::new();
+    out.str("a\"b\\c\nd\te\rf\u{8}g\u{c}h\u{1}i\u{1f}j");
+    let written = out.finish();
+    // Spelled as an ordinary string literal rather than a raw one, so that every escape the
+    // writer is expected to produce is visible here instead of being a raw control byte.
+    assert_eq!(
+        written, "\"a\\\"b\\\\c\\nd\\te\\rf\\bg\\fh\\u0001i\\u001fj\"",
+        "escaping changed"
+    );
+    assert_eq!(
+        Json::parse(&written)
+            .expect("escaped output parses")
+            .as_str(),
+        Some("a\"b\\c\nd\te\rf\u{8}g\u{c}h\u{1}i\u{1f}j"),
+        "the escaped form does not read back as the original"
+    );
+}
+
+/// Non-ASCII goes out raw, which is what keeps a byte-level vocabulary readable.
+#[test]
+fn non_ascii_is_not_escaped() {
+    let mut out = Out::new();
+    out.str("Ġthe▁世界");
+    let written = out.finish();
+    assert_eq!(written, "\"Ġthe▁世界\"");
+    assert_eq!(
+        Json::parse(&written).expect("parses").as_str(),
+        Some("Ġthe▁世界")
+    );
+}
+
+#[test]
+fn containers_get_their_commas() {
+    let mut out = Out::new();
+    out.obj_open();
+    out.type_tag("Demo");
+    out.field_bool("flag", true);
+    out.field_u32("id", 7);
+    out.field_null("nothing");
+    out.key("list");
+    out.arr_open();
+    out.u32(1);
+    out.u32(2);
+    out.obj_open();
+    out.field_str("k", "v");
+    out.obj_close();
+    out.arr_close();
+    out.obj_close();
+    let written = out.finish();
+    assert_eq!(
+        written,
+        r#"{"type":"Demo","flag":true,"id":7,"nothing":null,"list":[1,2,{"k":"v"}]}"#
+    );
+    // And it is a document our own parser accepts, which is the property that matters.
+    let parsed = Json::parse(&written).expect("emitted JSON parses");
+    assert_eq!(parsed.type_tag(), Some("Demo"));
+}
+
+#[test]
+fn integers_are_written_without_a_fraction() {
+    let mut out = Out::new();
+    out.arr_open();
+    out.u32(0);
+    out.u32(u32::MAX);
+    out.usize(50256);
+    out.arr_close();
+    assert_eq!(out.finish(), "[0,4294967295,50256]");
 }

@@ -145,9 +145,7 @@ fn agrees_with_serde_json_on_every_real_config() {
                     None => bad("serde_json number is not an f64"),
                 }
             }
-            (Raw::String(x), serde_json::Value::String(y)) if x.as_ref() == y.as_str() => {
-                Ok(())
-            }
+            (Raw::String(x), serde_json::Value::String(y)) if x.as_ref() == y.as_str() => Ok(()),
             (Raw::String(x), serde_json::Value::String(y)) => {
                 bad(&format!("string {:?} vs {:?}", x.as_ref(), y.as_str()))
             }

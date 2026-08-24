@@ -30,7 +30,6 @@ pub(crate) const BASE64: base64::engine::GeneralPurpose = base64::engine::Genera
         .with_decode_padding_mode(base64::engine::DecodePaddingMode::Indifferent),
 );
 
-
 #[cfg(feature = "deserialize")]
 mod from_json;
 

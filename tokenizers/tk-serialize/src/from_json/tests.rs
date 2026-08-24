@@ -95,7 +95,11 @@ fn every_component_encodes_what_it_should() {
         .chain(WORDPIECE)
         .chain(WORDLEVEL)
     {
-        assert_eq!(ids(&config(&[(slot, json)]), text), *expected, "{slot}: {json}");
+        assert_eq!(
+            ids(&config(&[(slot, json)]), text),
+            *expected,
+            "{slot}: {json}"
+        );
     }
 }
 
@@ -181,7 +185,11 @@ fn flattens_a_normalizer_sequence_and_drops_an_empty_one() {
 
     let empty = config(&[("normalizer", r#"{"type": "Sequence", "normalizers": []}"#)]);
     let doc = Json::parse(&empty).unwrap();
-    assert!(read_normalizers(doc.field("normalizer")).unwrap().is_empty());
+    assert!(
+        read_normalizers(doc.field("normalizer"))
+            .unwrap()
+            .is_empty()
+    );
 }
 
 /// The byte-level map is a model field, and the pre-tokenizer half it used to imply is gone: with
@@ -198,7 +206,10 @@ fn byte_level_is_a_model_field_not_a_pre_tokenizer() {
     assert!(matches!(pretok, PipelinePreTokenizer::None));
     // Where the flag *does* land is the model, which then wants every byte to be an atom. The
     // four-token vocab above is not one, so this is refused for that reason and no other.
-    assert!(read_err(&json).contains("Byte atom"), "not the byte-atom refusal");
+    assert!(
+        read_err(&json).contains("Byte atom"),
+        "not the byte-atom refusal"
+    );
 }
 
 /// One config per decoder variant, so a field rename fails here rather than silently producing a
