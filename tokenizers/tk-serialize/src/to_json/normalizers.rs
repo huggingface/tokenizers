@@ -37,9 +37,6 @@ fn write_one(out: &mut Out, normalizer: &PipelineNormalizer) -> Result<()> {
     }
 
     match normalizer {
-        // The delimiter half of what a legacy `Metaspace` pre-tokenizer lowers to. Written as
-        // itself rather than folded back into that tag: the pipeline holds three plain fields, and
-        // the legacy spelling cannot say all of them -- see SPEC.md.
         PipelineNormalizer::Metaspace(metaspace) => {
             out.obj_open();
             out.type_tag("MetaspaceNormalizer");

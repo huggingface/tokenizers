@@ -149,8 +149,6 @@ fn reversing_the_written_merges_moves_ids() {
     }
 }
 
-// ---- canonical spelling, one row per component -----------------------------------------------
-
 /// `(slot, json)` for every component whose canonical spelling is what went in: read it, write it,
 /// and the same object comes back.
 #[rustfmt::skip]
@@ -265,9 +263,8 @@ fn the_canonical_shape_is_tagged_versioned_and_null_where_absent() {
     assert_eq!(field_of(&bare, "padding"), serde_json::Value::Null);
 }
 
-/// Asserted on *bits*, not text: the writer emits the shortest spelling of the double **our parser
-/// produced**, and for `-3.8403830528259277` that is a different double from the correctly-rounded
-/// reading of the same digits -- sixteen digits where the file had seventeen.
+/// On *bits*, not text: the writer emits the shortest spelling of the double **our parser
+/// produced**, which for `-3.8403830528259277` is not the correctly-rounded reading of those digits.
 #[cfg(feature = "unigram")]
 #[test]
 fn a_unigram_model_keeps_its_scores_and_unk() {
@@ -286,7 +283,6 @@ fn a_unigram_model_keeps_its_scores_and_unk() {
         let want = crate::vendored::f64_from_literal(digits);
         assert_eq!(got.to_bits(), want.to_bits(), "{literal} reads back as {got}");
     }
-    // And a score is spelled as a float, never as a bare integer.
     assert_eq!(vocab[0][1].to_string(), "0.0");
 }
 

@@ -101,11 +101,6 @@ pub(super) fn write_model(out: &mut Out, model: &PipelineModel) -> Result<()> {
 }
 
 /// `{"token": id}`, sorted by id.
-///
-/// A JSON object is unordered and the reader builds a map, so the order changes nothing it does.
-/// Sorting is for the humans and the diffs: the recovered vocabulary comes out in perfect-hash slot
-/// order, which is stable for a given build but arbitrary and unreadable, and id order is what every
-/// real `tokenizer.json` uses.
 fn write_vocab_object(out: &mut Out, mut vocab: Vec<(String, u32)>) {
     // By id, then by token, so a vocabulary that repeats an id still has one spelling.
     vocab.sort_unstable_by(|(a_token, a_id), (b_token, b_id)| {
