@@ -2346,6 +2346,7 @@ version = "1.0.0-rc.0"
 dependencies = [
  "atomsplit",
  "criterion 0.8.2",
+ "hf-hub",
  "rayon",
  "serde_json",
  "thiserror",
