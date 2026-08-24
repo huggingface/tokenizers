@@ -53,8 +53,8 @@ pub(super) fn read_one_decoder(cfg: &Json<'_>) -> Result<DecoderRuntime> {
             cfg.need(&owner, "prefix", Json::as_str)?.to_string(),
             cfg.need(&owner, "cleanup", Json::as_bool)?,
         )),
-        // `split` is read and thrown away: it says how the *pre-tokenizer* cut the text, and
-        // decoding never looks at it.
+        // `split` is ignored: it says how the *pre-tokenizer* cut the text, and decoding never
+        // looks at it.
         "Metaspace" => DecoderRuntime::Metaspace(MetaspaceDecoder::new(
             read_char(cfg, "replacement")?,
             read_prepend_scheme(cfg)?,

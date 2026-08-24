@@ -58,7 +58,7 @@ Every component, at every depth, is an object tagged with `"type"`.
 ## Model
 
 ```text
-BPE        { "type", "dropout":null, "unk_token":str|null,
+BPE        { "type", "unk_token":str|null,
              "continuing_subword_prefix":str|null, "end_of_word_suffix":str|null,
              "fuse_unk":bool, "byte_fallback":bool, "ignore_merges":bool,
              "vocab": {token: id},

@@ -1,12 +1,4 @@
 //! The `model` object, with an explicit `"type"` on every one of them.
-//!
-//! Three of the four models are written straight from their own fields, because they *are* the
-//! config-shaped types: `Unigram` keeps its `(token, score)` table, `WordPiece` and `WordLevel`
-//! their vocabularies. BPE is the exception and the reason this file has a long comment in
-//! `tk_encode::models::bpe`: nothing about it survives in config shape, so
-//! [`PipelineBPE::to_config`] runs the load backwards to get the vocabulary and the merge list out
-//! of the runtime tables again.
-
 use super::writer::Out;
 use tk_encode::pipeline::PipelineModel;
 use tk_encode::tokenizer::Result;
@@ -17,9 +9,6 @@ pub(super) fn write_model(out: &mut Out, model: &PipelineModel) -> Result<()> {
             let config = bpe.to_config()?;
             out.obj_open();
             out.type_tag("BPE");
-            // Always absent: a non-zero dropout is refused at load, so a pipeline either never had
-            // one or had a zero, and the two are the same model.
-            out.field_null("dropout");
             out.field_opt_str("unk_token", config.unk_token.as_deref());
             out.field_opt_str(
                 "continuing_subword_prefix",

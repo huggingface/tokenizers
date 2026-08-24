@@ -11,7 +11,7 @@
 //! round-trip would only report as "ids moved".
 
 use super::*;
-use crate::from_json::{from_json, from_json_file};
+use crate::from_json::from_json;
 
 /// A minimal non-byte-level BPE: no data files, no regex backend, two merges over four tokens.
 const TINY_BPE: &str = r#"{
@@ -676,8 +676,7 @@ fn a_metaspace_pre_tokenizer_is_rebuilt_from_its_normalizer() {
         serde_json::json!({
             "type": "Metaspace",
             "replacement": "\u{2581}",
-            "prepend_scheme": "always",
-            "split": true
+            "prepend_scheme": "always"
         })
     );
     // And the normalizer it lowered into is not *also* written, which would apply the rewrite twice.
@@ -728,8 +727,7 @@ fn a_whitespace_split_metaspace_pair_comes_back_as_a_pair() {
                 {
                     "type": "Metaspace",
                     "replacement": "\u{2581}",
-                    "prepend_scheme": "always",
-                    "split": true
+                    "prepend_scheme": "always"
                 }
             ]
         })
@@ -779,12 +777,11 @@ fn decoders_keep_their_fields() {
             r#"{"type": "Metaspace", "replacement": "▁",
                 "prepend_scheme": "first", "split": false}"#,
             // `split` does not survive: the decoder does not carry it, because decoding never
-            // reads it. It is read, thrown away, and written back as `true`.
+            // reads it, so it is not written back either.
             serde_json::json!({
                 "type": "Metaspace",
                 "replacement": "\u{2581}",
-                "prepend_scheme": "first",
-                "split": true
+                "prepend_scheme": "first"
             }),
         ),
         (
@@ -824,7 +821,7 @@ fn a_post_processor_is_written_as_a_template() {
                 {"Sequence": {"id": "A", "type_id": 0}},
                 {"Sequence": {"id": "B", "type_id": 1}}
             ],
-            "special_tokens": {"a": {"id": "a", "ids": [0], "tokens": ["a"]}}
+            "special_tokens": {"a": {"ids": [0]}}
         })
     );
 }

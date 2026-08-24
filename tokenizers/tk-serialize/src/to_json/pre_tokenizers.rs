@@ -13,39 +13,26 @@
 //! `Metaspace` normalizer last and requires a `ByteLevel` to be the last member of a `Sequence`, so
 //! there is exactly one place to look in each case.
 //!
-//! What is *not* recovered is `trim_offsets`, on either `ByteLevel`. The pipeline tracks no offsets,
-//! so the flag never reached it; the canonical default is written instead. It cannot move an id.
+//! `trim_offsets`, `add_prefix_space` and `split` are not written: the pipeline never held the
+//! first, and the reader refuses every value of the other two but the default it assumes.
 
 use super::writer::Out;
-use tk_encode::normalizers::metaspace::MetaspaceNormalizer;
 use tk_encode::pipeline::PipelinePreTokenizer;
 use tk_encode::pre_tokenizers::split::{Split as SplitPretok, SplitPattern};
 use tk_encode::tokenizer::{Result, SplitDelimiterBehavior};
 
 /// The `pre_tokenizer` value.
 ///
-/// `metaspace` is the normalizer [`super::split_off_metaspace`] took off the end of the chain, and
-/// `byte_level` is whether the model applies the byte-level map. Between them they say which of the
-/// two rewritten forms `pretok` is, so this never has to guess.
+/// `byte_level` is whether the model applies the byte-level map, which says which of the two
+/// rewritten forms `pretok` is, so this never has to guess.
+///
+/// A lowered `Metaspace` needs nothing here: its `Split` is written as a `Split`, and its delimiter
+/// half goes out as a `MetaspaceNormalizer` in the `normalizer` slot.
 pub(super) fn write_pre_tokenizer(
     out: &mut Out,
     pretok: &PipelinePreTokenizer,
-    metaspace: Option<&MetaspaceNormalizer>,
     byte_level: bool,
 ) -> Result<()> {
-    // A `Metaspace` outranks everything: the pre-tokenizer slot holds the `Split` it produced, and
-    // that `Split` is not a component of its own.
-    if let Some(metaspace) = metaspace {
-        if byte_level {
-            return Err(
-                "a `Metaspace` pre-tokenizer and a byte-level model cannot both be written: the \
-                 reader accepts a `ByteLevel` only with BPE and never alongside a `Metaspace`"
-                    .into(),
-            );
-        }
-        return write_metaspace(out, metaspace);
-    }
-
     if byte_level {
         return write_byte_level_form(out, pretok);
     }
@@ -60,49 +47,6 @@ pub(super) fn write_pre_tokenizer(
     }
 }
 
-/// The `Metaspace` family: on its own, or behind the `WhitespaceSplit` that `drop_whitespace` means.
-fn write_metaspace(out: &mut Out, metaspace: &MetaspaceNormalizer) -> Result<()> {
-    let metaspace_obj = |out: &mut Out| {
-        out.obj_open();
-        out.type_tag("Metaspace");
-        out.field_str(
-            "replacement",
-            metaspace.delimiter().encode_utf8(&mut [0; 4]),
-        );
-        // Canonical spelling, never the `add_prefix_space` the old files use. `first` cannot occur:
-        // the reader refuses it, so nothing in a pipeline came from one.
-        out.field_str(
-            "prepend_scheme",
-            if metaspace.prepend() {
-                "always"
-            } else {
-                "never"
-            },
-        );
-        // Always `true`: `split: false` is refused on the way in, because a rewrite with no cut
-        // cannot be expressed as a pre-tokenizer at all.
-        out.field_bool("split", true);
-        out.obj_close();
-    };
-
-    if metaspace.drop_whitespace() {
-        // The pair t5 and albert ship. The reader recognises exactly this shape and collapses it
-        // again, which is why it has to go back out as a `Sequence` rather than a lone `Metaspace`.
-        out.obj_open();
-        out.type_tag("Sequence");
-        out.key("pretokenizers");
-        out.arr_open();
-        out.obj_open();
-        out.type_tag("WhitespaceSplit");
-        out.obj_close();
-        metaspace_obj(out);
-        out.arr_close();
-        out.obj_close();
-    } else {
-        metaspace_obj(out);
-    }
-    Ok(())
-}
 
 /// A `ByteLevel` in the position the reader found it: on its own, or last in a `Sequence`.
 fn write_byte_level_form(out: &mut Out, pretok: &PipelinePreTokenizer) -> Result<()> {
@@ -146,11 +90,6 @@ fn write_byte_level(out: &mut Out, lowered: &PipelinePreTokenizer) -> Result<()>
     };
     out.obj_open();
     out.type_tag("ByteLevel");
-    // Never `true`: the reader refuses `add_prefix_space: true` outright, so no pipeline it built
-    // came from one.
-    out.field_bool("add_prefix_space", false);
-    // Not represented in the pipeline -- offsets are not tracked -- so the canonical default.
-    out.field_bool("trim_offsets", true);
     out.field_bool("use_regex", use_regex);
     out.obj_close();
     Ok(())

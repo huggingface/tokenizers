@@ -1,10 +1,4 @@
 //! The `normalizer` object, rebuilt from the pipeline's flattened `Vec<PipelineNormalizer>`.
-//!
-//! The chain went in as a tree and comes out as a list, so it goes back out as one `Sequence` --
-//! never the original nesting. The reader flattens a `Sequence` again on the way in, so both forms
-//! build the same pipeline; only the file's shape differs, and the flat one is the honest
-//! description of what actually runs.
-
 use super::writer::Out;
 #[cfg(feature = "normalizers")]
 use base64::Engine as _;
@@ -13,10 +7,6 @@ use tk_encode::pipeline::PipelineNormalizer;
 use tk_encode::tokenizer::Result;
 
 /// The `normalizer` value for a chain.
-///
-/// A `Metaspace` normalizer is *not* one of these: it is half of a `Metaspace` pre-tokenizer, and
-/// [`super::pre_tokenizers`] writes it there. The caller splits it off before calling this, so
-/// meeting one here is a bug rather than a config this writer cannot handle.
 pub(super) fn write_normalizer(out: &mut Out, chain: &[PipelineNormalizer]) -> Result<()> {
     match chain {
         // No normalizer at all. The reader reads a missing or null `normalizer` as an empty chain,
@@ -47,12 +37,19 @@ fn write_one(out: &mut Out, normalizer: &PipelineNormalizer) -> Result<()> {
     }
 
     match normalizer {
-        PipelineNormalizer::Metaspace(_) => {
-            return Err(
-                "a `Metaspace` normalizer belongs to the pre-tokenizer that produced it, \
-                        and cannot be written as a `normalizer`"
-                    .into(),
+        // The delimiter half of what a legacy `Metaspace` pre-tokenizer lowers to. Written as
+        // itself rather than folded back into that tag: the pipeline holds three plain fields, and
+        // the legacy spelling cannot say all of them -- see SPEC.md.
+        PipelineNormalizer::Metaspace(metaspace) => {
+            out.obj_open();
+            out.type_tag("MetaspaceNormalizer");
+            out.field_str(
+                "replacement",
+                metaspace.delimiter().encode_utf8(&mut [0; 4]),
             );
+            out.field_bool("prepend", metaspace.prepend());
+            out.field_bool("drop_whitespace", metaspace.drop_whitespace());
+            out.obj_close();
         }
         PipelineNormalizer::Replace(replace) => write_replace(out, replace),
         PipelineNormalizer::Prepend(prepend) => {
@@ -99,6 +96,7 @@ fn write_one(out: &mut Out, normalizer: &PipelineNormalizer) -> Result<()> {
         PipelineNormalizer::Nmt(_) => bare(out, "Nmt"),
         #[cfg(feature = "normalizers")]
         PipelineNormalizer::Precompiled(precompiled) => {
+            // TODO: this will be fixed for v1!
             // The one normalizer whose configuration is a binary blob, and the one place the
             // pipeline had to be taught to remember something purely so it could be written back:
             // `spm_precompiled` keeps the charsmap private and publishes it only through serde.

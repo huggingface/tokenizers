@@ -1,37 +1,19 @@
 //! The `post_processor` object, written back out of the two `Template`s it was lowered into.
-//!
-//! Every post-processor the reader accepts -- `TemplateProcessing`, `BertProcessing`,
-//! `RobertaProcessing`, `ByteLevel`, and a `Sequence` of them -- becomes the same thing: a `single`
-//! and a `pair` template made of sequence placeholders and runs of special-token ids. So they all
-//! come back out as a `TemplateProcessing`, which is the canonical spelling and the only one that
-//! can express an arbitrary frame.
-//!
-//! The one thing genuinely lost is the *names*. A template refers to its special tokens by a
-//! placeholder, and lowering resolves each placeholder to the ids it stands for; the placeholder
-//! itself is not kept. So the names are reconstructed from the ids, and the `special_tokens` table
-//! is emitted to match. The reader only ever reads the `ids` out of that table, so a reconstructed
-//! name rebuilds the identical template -- it just may not be the name the original file used.
-
 use super::writer::Out;
 use tk_encode::pipeline::{PipelinePostProcessor, Seq, Slice, Template};
 use tk_encode::tokenizer::Result;
 
-/// The `post_processor` value. `name_of` resolves an id to a token, for the placeholder names.
 pub(super) fn write_post_processor(
     out: &mut Out,
     post_processor: &PipelinePostProcessor,
     name_of: &dyn Fn(u32) -> Option<String>,
 ) -> Result<()> {
     let (single, pair) = post_processor.templates();
-    // A pass-through frame is what "no post-processor" lowers to, so it goes back out as absent
-    // rather than as a `TemplateProcessing` that does nothing.
     if is_default(single, pair) {
         out.null();
         return Ok(());
     }
 
-    // One table for both templates, because `special_tokens` is shared and the reader resolves
-    // every placeholder through it.
     let mut specials = Specials::default();
     let single_names = specials.name_all(single, name_of);
     let pair_names = specials.name_all(pair, name_of);
@@ -45,19 +27,10 @@ pub(super) fn write_post_processor(
     for entry in &specials.entries {
         out.key(&entry.name);
         out.obj_open();
-        // `id` repeats the key: that is how the format spells it, and the reader keys on the outer
-        // one.
-        out.field_str("id", &entry.name);
         out.key("ids");
         out.arr_open();
         for id in &entry.ids {
             out.u32(*id);
-        }
-        out.arr_close();
-        out.key("tokens");
-        out.arr_open();
-        for token in &entry.tokens {
-            out.str(token);
         }
         out.arr_close();
         out.obj_close();
@@ -96,7 +69,6 @@ fn is_default(single: &Template, pair: &Template) -> bool {
 struct SpecialEntry {
     name: String,
     ids: Vec<u32>,
-    tokens: Vec<String>,
 }
 
 /// The `special_tokens` table under construction, which is also what assigns the placeholder names.
@@ -155,7 +127,6 @@ impl Specials {
         self.entries.push(SpecialEntry {
             name: name.clone(),
             ids: ids.to_vec(),
-            tokens,
         });
         name
     }

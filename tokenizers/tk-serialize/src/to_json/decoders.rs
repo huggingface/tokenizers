@@ -1,7 +1,4 @@
-//! The `decoder` object, written straight from the `DecoderRuntime` the reader built.
-//!
-//! The easiest component of the lot: the decoder is off the encode path, so nothing about it was
-//! rewritten or fused on the way in. Every variant keeps its own fields, and this is a
+//! Every variant keeps its own fields, and this is a
 //! one-arm-per-variant transcription back out.
 
 use super::normalizers::write_replace_pattern;
@@ -51,7 +48,6 @@ fn write_one(out: &mut Out, decoder: &DecoderRuntime) {
             out.field_usize("stop", strip.stop);
             out.obj_close();
         }
-        // The one tag that is not the type's name, in the file as much as here.
         DecoderRuntime::BPE(bpe) => {
             out.obj_open();
             out.type_tag("BPEDecoder");
@@ -72,8 +68,6 @@ fn write_one(out: &mut Out, decoder: &DecoderRuntime) {
                 "replacement",
                 metaspace.get_replacement().encode_utf8(&mut [0; 4]),
             );
-            // Canonical spelling. Unlike the *pre-tokenizer*, a decoder keeps all three schemes:
-            // nothing here has to be expressible as a normalizer, so `first` survives.
             out.field_str(
                 "prepend_scheme",
                 match metaspace.prepend_scheme {
@@ -82,9 +76,6 @@ fn write_one(out: &mut Out, decoder: &DecoderRuntime) {
                     PrependScheme::Never => "never",
                 },
             );
-            // Not carried on the decoder, because decoding never reads it. `true` is what every
-            // real config spells here, and the reader throws it away either way.
-            out.field_bool("split", true);
             out.obj_close();
         }
         DecoderRuntime::CTC(ctc) => {

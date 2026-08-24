@@ -4,6 +4,7 @@
 use super::needs_feature;
 use super::unsupported;
 use crate::json::Json;
+use tk_encode::normalizers::metaspace::MetaspaceNormalizer;
 #[cfg(feature = "normalizers")]
 use base64::Engine as _;
 use tk_encode::normalizers::byte_level::ByteLevel as ByteLevelNormalizer;
@@ -45,6 +46,14 @@ fn push_normalizer(cfg: &Json<'_>, out: &mut Vec<PipelineNormalizer>) -> Result<
                 push_normalizer(member, out)?;
             }
         }
+        // The delimiter half of a lowered `Metaspace`, written by this crate. Old files spell the
+        // whole thing as a `Metaspace` *pre-tokenizer* instead; `pre_tokenizers::read_metaspace`
+        // still reads those and lowers them to exactly this plus a `Split`.
+        "MetaspaceNormalizer" => out.push(PipelineNormalizer::Metaspace(MetaspaceNormalizer::new(
+            super::pre_tokenizers::read_char(cfg, "replacement")?,
+            cfg.need(&owner, "prepend", Json::as_bool)?,
+            cfg.need(&owner, "drop_whitespace", Json::as_bool)?,
+        ))),
         "Replace" => out.push(PipelineNormalizer::Replace(read_replace(cfg)?)),
         "Prepend" => {
             let prepend = cfg
