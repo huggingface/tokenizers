@@ -11,7 +11,7 @@ Multi-Pattern Regex Matching on GPUs* (MICRO'25, doi 10.1145/3725843.3756052) fo
 model — fuse every instruction into ONE block-wise loop instead of one pass per instruction.
 
 Status: proven in `scratch/bitsplit` for three grammars, all byte-exact against their
-`atomsplit::fsm` counterparts.
+`bitsplit` grammar counterparts.
 
 ---
 
@@ -42,7 +42,7 @@ worth having.
   text  ─────────────────────────────────────────────────────────────┐
     │                                                                │
     ▼                                                                │
-  classify (atomsplit)          one Atom tag per byte                │
+  classify (bitsplit)           one Atom tag per byte                │
     │                                                                │
     ▼                                                                ▼
   ┌─────────────────────── per 64-byte block, fused ────────────────────────┐
