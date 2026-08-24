@@ -1,6 +1,6 @@
 use super::super::{Model, Result};
-use crate::pipeline::Normalizer;
 use super::buckets::{AddedTokenFlags, Buckets};
+use crate::pipeline::Normalizer;
 use crate::pipeline::PipelinePatternMatcher;
 use crate::pre_tokenizers::whitespace::is_word_char;
 use ahash::AHashMap;

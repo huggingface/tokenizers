@@ -2,7 +2,6 @@ mod common;
 
 use common::*;
 use tokenizers::decoders::DecoderWrapper;
-use tokenizers::pre_tokenizers::byte_level::ByteLevel;
 use tokenizers::models::ModelWrapper;
 use tokenizers::models::bpe::BPE;
 use tokenizers::models::wordlevel::WordLevel;
@@ -12,6 +11,7 @@ use tokenizers::normalizers::bert::BertNormalizer;
 use tokenizers::normalizers::unicode::{NFC, NFKC};
 use tokenizers::pre_tokenizers::PreTokenizerWrapper;
 use tokenizers::pre_tokenizers::bert::BertPreTokenizer;
+use tokenizers::pre_tokenizers::byte_level::ByteLevel;
 use tokenizers::pre_tokenizers::delimiter::CharDelimiterSplit;
 use tokenizers::pre_tokenizers::split::{Split, SplitPattern};
 use tokenizers::pre_tokenizers::whitespace::Whitespace;
