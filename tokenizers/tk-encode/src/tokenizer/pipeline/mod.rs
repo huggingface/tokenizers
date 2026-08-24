@@ -44,11 +44,9 @@ use crate::{
     vocab::bucket_added_vocabulary::AddedVocabulary as BucketAddedVocabulary,
 };
 #[cfg(feature = "parallelism")]
-use parallel::StreamingIter;
-// The differential "parallel == serial" tests moved to `tk-convert` (they need a `Tokenizer`
-// to build from) and have to size an input past the threshold to reach the parallel path at all.
-#[cfg(feature = "parallelism")]
 pub use parallel::PARALLEL_MIN_BYTES;
+#[cfg(feature = "parallelism")]
+use parallel::StreamingIter;
 
 use super::{Result, SplitDelimiterBehavior};
 
@@ -65,58 +63,13 @@ pub trait Normalizer {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>>;
 }
 
-/// Runs `normalizers` in order, each one seeing what the one before it produced.
-///
-/// A normalizer returns a [`Cow`] (copy-on-write): a borrow when it had nothing to change, an owned
-/// `String` when it rewrote the text.
-///
-/// Chaining them needs care, because an owned `String` produced halfway through the chain is local to this function.
-/// The next normalizer may hand back a borrow of that locally owned [`String`], and that borrow cannot outlive the `String`.
-///
-/// Text no normalizer touches is never copied: it stays a borrow of `input` throughout.
-// `pub` because the config layer's `Sequence` normalizer (a `Vec<NormalizerWrapper>`, so it lives
-// in `tk-convert`) implements `pipeline::Normalizer` by running exactly this.
-pub fn normalize_all<'a, N: Normalizer>(normalizers: &[N], input: &'a str) -> Result<Cow<'a, str>> {
-    let mut cow: Cow<'a, str> = Cow::Borrowed(input);
-    for normalizer in normalizers {
-        cow = match cow {
-            // Still `input` itself, which outlives us: pass it straight on.
-            Cow::Borrowed(s) => normalizer.normalize(s)?,
-            Cow::Owned(s) => {
-                let out = match normalizer.normalize(&s)? {
-                    // Rewritten again: keep the new `String`, drop ours.
-                    Cow::Owned(o) => Some(o),
-                    // Handed `s` back untouched: keep the `String` we already own.
-                    Cow::Borrowed(b) if b.as_ptr() == s.as_ptr() && b.len() == s.len() => None,
-                    // A borrow into `s` (for example, a substring of `s`): copy it out before `s` is dropped.
-                    Cow::Borrowed(b) => Some(b.to_owned()),
-                };
-                Cow::Owned(out.unwrap_or(s))
-            }
-        };
-    }
-    Ok(cow)
-}
-
-/// One normalization step of a [`PipelineTokenizer`]. Not every step comes from the config's
-/// `normalizer` field: a `Metaspace` pre-tokenizer contributes one too.
-///
-/// One variant per concrete normalizer, deliberately: naming a `NormalizerWrapper` here would make
-/// every variant of it reachable — a match arm counts — and that reachability is most of what the
-/// slim build exists to remove. Both readers therefore flatten a config `Sequence` into a `Vec` of
-/// these rather than carrying the wrapper.
-// `pub` because `tk-convert` builds these when it lowers a `NormalizerWrapper`.
+/// One normalization step of a [`PipelineTokenizer`].
 #[derive(Debug)]
 pub enum PipelineNormalizer {
-    /// The text-rewriting half of a `Metaspace` pre-tokenizer.
+    /// This used to be a pretokenizer, it makes more sense as a normalizer.
     Metaspace(MetaspaceNormalizer),
-    /// A literal `Replace`, built directly by the slim JSON reader.
     Replace(Replace),
-    /// A `Prepend`, built directly by the slim JSON reader.
     Prepend(Prepend),
-    // The rest are the remaining `NormalizerWrapper` variants, spelled out so the slim reader can
-    // build each one without naming the wrapper. Only the four table-backed families sit behind
-    // `normalizers`; the others carry no Unicode tables and are always available.
     Strip(Strip),
     Lowercase(Lowercase),
     ByteLevel(ByteLevelNormalizer),
@@ -138,12 +91,39 @@ pub enum PipelineNormalizer {
     Precompiled(PrecompiledNormalizer),
 }
 
-/// A flattened normalizer chain. Applying the members in order is exactly what
-/// the `Sequence` normalizer the slim reader flattened away did.
-// `pub` for the same reason as `PipelineNormalizer`: `tk-convert` needs it to replay added
-// tokens through a lowered chain.
+// This replaces the previous normalizer sequence.
 pub struct NormalizerChain<'a>(pub &'a [PipelineNormalizer]);
 
+/// Runs `normalizers` in order, each one seeing what the one before it produced.
+///
+/// A normalizer returns a [`Cow`] (copy-on-write): a borrow when it had nothing to change, an owned
+/// `String` when it rewrote the text.
+///
+/// Chaining them needs care, because an owned `String` produced halfway through the chain is local to this function.
+/// The next normalizer may hand back a borrow of that locally owned [`String`], and that borrow cannot outlive the `String`.
+///
+/// Text no normalizer touches is never copied: it stays a borrow of `input` throughout.
+pub fn normalize_all<'a, N: Normalizer>(normalizers: &[N], input: &'a str) -> Result<Cow<'a, str>> {
+    let mut cow: Cow<'a, str> = Cow::Borrowed(input);
+    for normalizer in normalizers {
+        cow = match cow {
+            // Still `input` itself, which outlives us: pass it straight on.
+            Cow::Borrowed(s) => normalizer.normalize(s)?,
+            Cow::Owned(s) => {
+                let out = match normalizer.normalize(&s)? {
+                    // Rewritten again: keep the new `String`, drop ours.
+                    Cow::Owned(o) => Some(o),
+                    // Handed `s` back untouched: keep the `String` we already own.
+                    Cow::Borrowed(b) if b.as_ptr() == s.as_ptr() && b.len() == s.len() => None,
+                    // A borrow into `s` (for example, a substring of `s`): copy it out before `s` is dropped.
+                    Cow::Borrowed(b) => Some(b.to_owned()),
+                };
+                Cow::Owned(out.unwrap_or(s))
+            }
+        };
+    }
+    Ok(cow)
+}
 
 impl Normalizer for NormalizerChain<'_> {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
@@ -323,9 +303,6 @@ unsafe impl PreTokenizer for PipelinePreTokenizer {
 }
 
 /// A post-processor compiled to a prefix and a suffix (slices of token IDs)
-/// The prefix and suffix are respectively prepended and appended to the sequence encoding:
-/// The default (both slices empty) is the no-post-processor case.
-/// Processors that don't reduce to such a frame are rejected at conversion.
 ///
 /// Example:
 /// ```text
@@ -362,10 +339,6 @@ impl PipelinePostProcessor {
     }
 }
 
-// `Slice`, `Seq`, `Template` and the `build_slices`/`compose` helpers below are `pub` because the
-// `PostProcessorWrapper` lowering moved to `tk-convert` and is written in terms of them.
-// Keeping one set of rules beats a second copy: `compose`'s "at most one arranging member" rule and
-// `build_slices`' template validation are the parts that decide ids.
 #[derive(Clone, Debug)]
 pub enum Slice {
     Specials {
@@ -413,14 +386,12 @@ impl Template {
         }
     }
 
-    /// The slices, for a writer that has to spell this template back out as a
-    /// `TemplateProcessing`. `n_special` and `has_type_ids` are both derived from them, so this is
-    /// the whole of the template's content.
     pub fn slices(&self) -> &[Slice] {
         &self.slices
     }
 }
 
+// TODO: I don't think this is as optimized as can be yet, but we'll do that post v1.
 pub fn build_slices(pieces: &[Piece], specials: &Tokens, is_pair: bool) -> Result<Vec<Slice>> {
     let (mut seen_a, mut seen_b) = (false, false);
     let mut slices = Vec::new();
@@ -514,12 +485,7 @@ fn is_pass_through(slices: &[Slice]) -> bool {
     )
 }
 
-/// Compose the members of a Sequence post processor.
-///
-/// The reference applies each member in turn, and every member retags the whole previous output to
-/// its own sequence type id. A static template cannot represent that chaining, so we only support
-/// the representable case: at most one member that adds tokens or reorders/retags, wrapped by any
-/// number of pass-through members (which are no-ops and dropped). More than one is rejected.
+// TODO: this looks unused
 pub fn compose<'a>(templates: impl Iterator<Item = &'a Template>) -> Result<Template> {
     let templates = templates.collect::<Vec<_>>();
     let mut chosen: Option<&Template> = None;
@@ -562,6 +528,9 @@ impl Default for PipelinePostProcessor {
 
 /// An output token. Carries only the vocabulary `id`, since offsets and the token
 /// string are dropped, which is all an encode-only caller needs.
+///
+/// TODO: For RC0 this is abolutely fine. For v1, we need an enum, Token or Encoding, which can
+/// both be outputed by the pipeline.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct PipelineToken(u32);
@@ -739,12 +708,7 @@ const _: fn() = || {
 };
 
 impl PipelineTokenizer {
-    /// Assemble a pipeline from parts that are already lowered.
-    ///
-    /// The only constructor of a `TokenizerInner`, and therefore the only place `added_id_min` and
-    /// the scratch pool are derived — both readers go through it: the slim JSON reader in
-    /// [`from_json`](super::pipeline::from_json), and `tk-convert`'s lowering of a
-    /// `Tokenizer`. Two copies of this is how the two paths drift.
+    /// This is the new "constructor" we expose.
     ///
     /// `added_vocabulary` must already have had its tokens replayed *against the concrete model and
     /// in id order*, because `add_tokens` reuses a model id when the token is already in the
