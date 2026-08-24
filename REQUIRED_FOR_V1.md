@@ -53,17 +53,24 @@ stops holding wrapper enums. Getters exist already; the gap is entirely on the w
 **Also gone, and not just the bindings:** the umbrella crate's *own* test and bench suites. Every one
 of them authors a tokenizer in process — `Tokenizer::new(BPE::default())`, `with_pre_tokenizer`,
 `add_tokens`, `save`, the trainers — so none of them can be repointed at a read-only pipeline. That
-is all 9 benches (`tokenizers/benches/*`, 1,337 lines) and all 8 test files (`tokenizers/tests/*`,
+was all 9 benches (`tokenizers/benches/*`, 1,337 lines) and all 8 test files (`tokenizers/tests/*`,
 1,464 lines, **33 passing tests**: `added_tokens` 5, `documentation` 6, `offsets` 5, `serialization`
 11, `stream` 2, `training` 2, `unigram` 2, `from_pretrained` 0).
 
-They are **not deleted**. The umbrella package carries `autotests = false` / `autobenches = false`,
-so cargo does not discover them and `cargo build --workspace --all-targets` stays green while the
-source stays in the tree — the same treatment `tk-train` gets below. Between them they are the
-written specification for the builder this section asks for, so they should be brought back *as the
-acceptance test* for it rather than rewritten from scratch. Nothing else in the workspace covers
+Both are now **out of the tree**: `tokenizers/tests/` went with the strip itself, and
+`tokenizers/benches/` with the bench sweep. The umbrella package still carries `autotests = false` /
+`autobenches = false`, which is why `cargo build --workspace --all-targets` stayed green in between.
+
+For the **tests** that is a debt this section owes: they are the written specification for the
+builder it asks for, so recover them from git history and bring them back *as the acceptance test*
+for it rather than rewriting from scratch. Nothing else in the workspace covers
 `with_padding`/`with_truncation` behaviour, `save` round-trips, or `decode_stream` over an authored
 tokenizer, so until they run again those are untested.
+
+For the **benches** it is not: they are not coming back in this shape. The cross-engine benchmarks
+live in [tokbench](https://github.com/huggingface/tokbench), and what stays in-tree is two criterion
+files against the pipeline (`tk-serialize/benches/{encode,decode}.rs`) — the only crate that can
+build a `PipelineTokenizer`. Nothing about them waits on the builder.
 
 ## 2. Trainers
 

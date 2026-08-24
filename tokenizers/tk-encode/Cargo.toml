@@ -57,9 +57,6 @@ unicode-normalization = { version = "0.1.25", optional = true }
 yada = { version = "0.7.0", optional = true }
 # One `#[cfg(unix)]` `pthread_atfork` call in `utils/parallelism.rs`, which is `parallelism`-gated.
 libc = { version = "0.2", optional = true }
-# Latest released tokenizers, used as the comparison baseline by the CI benchmark
-# (examples gated on `bench-baseline`). Optional so production builds never pull it.
-tokenizers-release = { package = "tokenizers", version = "=0.23.1", optional = true }
 
 [features]
 default = ["bpe"]
@@ -77,11 +74,9 @@ unicode-scripts = []
 progressbar = ["indicatif"]
 http = ["hf-hub"]
 unstable_wasm = ["fancy-regex"]
-bench-baseline = ["dep:tokenizers-release", "fancy-regex"]
 parallelism = ["dep:rayon", "dep:rayon-cond", "dep:libc"]
 
 [dev-dependencies]
-criterion = "0.8"
 # Test-only: one `#[cfg(test)]` cross-check in `vocab/buckets.rs`.
 daachorse = "5.0.0"
 # The unit tests build `regex::Regex` values directly, in every feature rung, so the tests need

@@ -139,11 +139,7 @@ impl<'a, 'b, PatternMatcher: PipelinePatternMatcher>
 {
     /// Create a new iterator over [`Segment`] of the [`input`].
     /// This iterator will yield [`Segment`] in order.
-    pub(crate) fn new(
-        input: &'a str,
-        pattern_matcher: &'b PatternMatcher,
-        normalized: bool,
-    ) -> Self {
+    pub fn new(input: &'a str, pattern_matcher: &'b PatternMatcher, normalized: bool) -> Self {
         Self {
             input,
             pattern_matcher,
@@ -449,7 +445,6 @@ impl Encoding {
     pub fn type_ids(&self) -> Option<&[u8]> {
         self.type_ids.as_deref()
     }
-
 }
 /// Iterator yields results in completion order
 pub struct HandleIter {

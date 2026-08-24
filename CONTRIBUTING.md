@@ -6,7 +6,8 @@
 tokenizers/
   tokenizers/         # Core Rust library (the main crate)
     src/              # Library source code
-    benches/          # Criterion benchmarks
+    tk-serialize/
+      benches/        # Criterion benchmarks (encode, decode)
     Makefile          # Build, test, bench, lint targets (with auto data download)
   bindings/
     python/           # PyO3 Python bindings
@@ -74,11 +75,17 @@ Benchmark results are stored in `target/criterion/` for comparison across runs.
 To run a specific benchmark:
 
 ```bash
-cargo bench --bench bpe_benchmark
-cargo bench --bench bert_benchmark
-cargo bench --bench llama3_benchmark
-cargo bench --bench layout_benchmark
+cargo bench -p tk-serialize --bench encode
+cargo bench -p tk-serialize --bench decode
 ```
+
+`encode` reports the fused pipeline plus one row per stage (added-token scan,
+normalize, pre-tokenize, model), so a regression can be attributed to a stage.
+The stage rows are single-threaded and take a `&str`, so they do not sum to the
+fused rows -- the gap is the fusion, the threading and the post-processor.
+
+The bigger benchmarks -- the cross-engine comparisons, the model matrix and the
+per-language sweeps -- live in [tokbench](https://github.com/huggingface/tokbench).
 
 ## Known issues
 
@@ -168,7 +175,7 @@ Profile from Python to see the full stack including PyO3 overhead:
 samply record python my_script.py
 ```
 
-### PipelineTokenizer oracle tests & benchmark
+### PipelineTokenizer oracle tests
 
 `PipelineTokenizer` (in `tk-encode`) is an experimental reimplementation of the
 encode/decode pipeline. It is checked for parity against the latest *released*
@@ -181,21 +188,9 @@ tokenizers, then run with the feature:
 
 ```bash
 cd tokenizers
-make fixtures bench-models   # needs HF_TOKEN
+make fixtures   # needs HF_TOKEN
 
-# encode parity: pipeline ids == released encode_fast ids
-cargo test -p tk-encode --features bench-baseline --test pipeline_oracle
-
-# decode parity
-cargo test -p tk-encode --features bench-baseline --test pipeline_decode_oracle
+cargo test -p tk-convert --features bench-baseline --test oracle
 ```
 
-The comparative benchmark (throughput, thread scaling, and memory vs the release)
-runs off the same data and renders to charts:
-
-```bash
-cargo run --release -p tk-encode --features bench-baseline --example fixture_bench > bench.json
-python3 ../.github/scripts/render_pipeline_bench.py bench.json
-```
-
-CI runs both in the **Pipeline Benchmark** workflow (`.github/workflows/pipeline-bench.yml`).
+CI runs it in the **rust** workflow (`.github/workflows/rust.yml`).

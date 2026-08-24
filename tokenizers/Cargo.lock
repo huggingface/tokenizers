@@ -121,11 +121,8 @@ checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 name = "atomsplit"
 version = "0.1.0"
 dependencies = [
- "fancy-regex",
- "logos",
  "memchr",
  "onig",
- "pcre2",
 ]
 
 [[package]]
@@ -1819,38 +1816,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ceec5bc11778974d1bcb055b18002eba7f4b3518b6a0081b3af5f21666da9ad"
 
 [[package]]
-name = "logos"
-version = "0.16.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eb2c55a318a87600ea870ff8c2012148b44bf18b74fad48d0f835c38c7d07c5f"
-dependencies = [
- "logos-derive",
-]
-
-[[package]]
-name = "logos-codegen"
-version = "0.16.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "58b3ffaa284e1350d017a57d04ada118c4583cf260c8fb01e0fe28a2e9cf8970"
-dependencies = [
- "fnv",
- "proc-macro2",
- "quote",
- "regex-automata",
- "regex-syntax",
- "syn 2.0.118",
-]
-
-[[package]]
-name = "logos-derive"
-version = "0.16.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "52d3a9855747c17eaf4383823f135220716ab49bea5fbea7dd42cc9a92f8aa31"
-dependencies = [
- "logos-codegen",
-]
-
-[[package]]
 name = "lru-slab"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2161,28 +2126,6 @@ name = "pathdiff"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df94ce210e5bc13cb6651479fa48d14f601d9858cfe0467f43ae157023b938d3"
-
-[[package]]
-name = "pcre2"
-version = "0.2.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9e970b0fcce0c7ee6ef662744ff711f21ccd6f11b7cf03cd187a80e89797fc67"
-dependencies = [
- "libc",
- "log",
- "pcre2-sys",
-]
-
-[[package]]
-name = "pcre2-sys"
-version = "0.2.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "18b9073c1a2549bd409bf4a32c94d903bb1a09bf845bc306ae148897fa0760a4"
-dependencies = [
- "cc",
- "libc",
- "pkg-config",
-]
 
 [[package]]
 name = "percent-encoding"
@@ -3261,7 +3204,6 @@ dependencies = [
  "ahash",
  "assert_approx_eq",
  "atomsplit",
- "criterion 0.8.2",
  "daachorse 5.0.0",
  "dary_heap",
  "fancy-regex",
@@ -3281,7 +3223,6 @@ dependencies = [
  "spm_precompiled",
  "tempfile",
  "thiserror",
- "tokenizers 0.23.1",
  "tracing",
  "tracing-subscriber",
  "unicode-normalization",
@@ -3298,6 +3239,7 @@ version = "1.0.0-rc.0"
 dependencies = [
  "atomsplit",
  "base64 0.22.1",
+ "criterion 0.8.2",
  "hifijson",
  "serde_json",
  "tk-encode",
