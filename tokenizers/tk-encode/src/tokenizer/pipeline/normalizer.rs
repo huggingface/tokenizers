@@ -11,8 +11,8 @@ use crate::normalizers::{
     unicode::{NFC, NFD, NFKC, NFKD, Nmt},
 };
 use crate::normalizers::{
-    byte_level::ByteLevel as ByteLevelNormalizer, metaspace::MetaspaceNormalizer,
-    prepend::Prepend, replace::Replace, strip::Strip, utils::Lowercase,
+    byte_level::ByteLevel as ByteLevelNormalizer, metaspace::MetaspaceNormalizer, prepend::Prepend,
+    replace::Replace, strip::Strip, utils::Lowercase,
 };
 use crate::tokenizer::Result;
 

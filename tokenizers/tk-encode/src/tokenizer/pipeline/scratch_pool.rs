@@ -134,8 +134,8 @@ mod tests {
             ("hell".to_string(), "o".to_string()),
         ];
         PipelineBPE::from_config(BpeConfig {
-            vocab: vocab,
-            merges: merges,
+            vocab,
+            merges,
             ..BpeConfig::default()
         })
         .unwrap()
