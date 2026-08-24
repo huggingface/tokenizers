@@ -576,7 +576,6 @@ mod tests {
     use super::*;
     use std::iter::FromIterator;
 
-
     #[test]
     fn merge_encodings() {
         let mut a = Encoding {

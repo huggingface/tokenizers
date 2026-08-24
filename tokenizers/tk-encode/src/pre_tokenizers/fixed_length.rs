@@ -8,7 +8,6 @@ pub struct FixedLength {
     pub length: usize,
 }
 
-
 impl FixedLength {
     pub fn new(length: usize) -> Self {
         Self { length }

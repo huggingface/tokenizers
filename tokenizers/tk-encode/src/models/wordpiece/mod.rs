@@ -12,7 +12,6 @@ use std::convert::TryFrom;
 use yada::DoubleArray;
 use yada::builder::DoubleArrayBuilder;
 
-
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("WordPiece error: Missing [UNK] token from the vocabulary")]
@@ -224,7 +223,6 @@ impl Model for WordPiece {
     fn id_to_token(&self, id: u32) -> Option<String> {
         self.vocab_r.get(&id).cloned()
     }
-
 }
 
 pub struct WordPieceScratch {

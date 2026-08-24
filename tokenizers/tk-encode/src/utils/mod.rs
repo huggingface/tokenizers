@@ -32,4 +32,3 @@ pub mod truncation;
 
 // Re-export ProgressFormat for public API
 pub use progress::ProgressFormat;
-

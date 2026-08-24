@@ -25,7 +25,6 @@ pub struct ByteLevel {
     pub use_regex: bool,
 }
 
-
 impl Default for ByteLevel {
     fn default() -> Self {
         Self {

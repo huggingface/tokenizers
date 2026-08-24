@@ -1015,7 +1015,6 @@ mod tests {
     #[cfg(feature = "normalizers")]
     use unicode_categories::UnicodeCategories;
 
-
     #[test]
     fn test_len_range_inclusive() {
         let range = Range::Original(3..=7);

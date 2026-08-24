@@ -7,7 +7,6 @@ use unicode_normalization::{
     IsNormalized, UnicodeNormalization, is_nfc_quick, is_nfd_quick, is_nfkc_quick, is_nfkd_quick,
 };
 
-
 #[derive(Default, Copy, Clone, Debug)]
 pub struct NFD;
 impl Normalizer for NFD {

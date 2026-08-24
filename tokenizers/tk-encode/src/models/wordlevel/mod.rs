@@ -3,7 +3,6 @@ use crate::tokenizer::{Model, Result, Token};
 use ahash::AHashMap;
 use std::collections::HashMap;
 
-
 /// Only the tests name this now: reading a `vocab.json` into one is `tk-convert`'s job.
 #[cfg(test)]
 type Vocab = AHashMap<String, u32>;
@@ -141,7 +140,6 @@ impl Model for WordLevel {
     fn get_vocab_size(&self) -> usize {
         self.vocab.keys().len()
     }
-
 }
 
 type WordLevelScratch = ();

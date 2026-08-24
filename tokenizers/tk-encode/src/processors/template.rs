@@ -350,9 +350,7 @@ impl TryFrom<&str> for Template {
 /// `special_tokens` in different orders. The way *in* is a plain map, as it always was -- key order
 /// is irrelevant when reading. This is `ordered_map`'s only caller.
 #[derive(Debug, Clone, PartialEq, Default, Eq)]
-pub struct Tokens(
-    pub  AHashMap<String, SpecialToken>,
-);
+pub struct Tokens(pub AHashMap<String, SpecialToken>);
 
 impl<T: Into<SpecialToken>> From<Vec<T>> for Tokens {
     fn from(v: Vec<T>) -> Self {
@@ -485,7 +483,10 @@ impl TemplateProcessingBuilder {
         self
     }
 
-    pub fn try_single<T: TryInto<Template>>(&mut self, single: T) -> StdResult<&mut Self, T::Error> {
+    pub fn try_single<T: TryInto<Template>>(
+        &mut self,
+        single: T,
+    ) -> StdResult<&mut Self, T::Error> {
         self.single = Some(single.try_into()?);
         Ok(self)
     }

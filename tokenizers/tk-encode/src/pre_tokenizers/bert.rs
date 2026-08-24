@@ -1,7 +1,6 @@
 use crate::pipeline::{self, PreTokenizerScratch};
 use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
 
-
 use super::punctuation::is_punc;
 use atomsplit::classify::mask;
 use atomsplit::fsm::class_runs_into;

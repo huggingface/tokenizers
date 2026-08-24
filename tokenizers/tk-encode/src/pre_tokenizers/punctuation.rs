@@ -15,7 +15,6 @@ pub struct Punctuation {
     pub behavior: SplitDelimiterBehavior,
 }
 
-
 impl Punctuation {
     pub fn new(behavior: SplitDelimiterBehavior) -> Self {
         Self { behavior }

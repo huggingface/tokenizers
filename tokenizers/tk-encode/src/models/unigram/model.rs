@@ -501,7 +501,6 @@ impl Model for Unigram {
     fn id_to_token(&self, id: u32) -> Option<String> {
         self.vocab.get(id as usize).map(|item| item.0.clone())
     }
-
 }
 
 pub struct UnigramScratch {

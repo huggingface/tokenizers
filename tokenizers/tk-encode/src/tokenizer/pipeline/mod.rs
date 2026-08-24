@@ -449,7 +449,6 @@ impl Encoding {
     pub fn type_ids(&self) -> Option<&[u8]> {
         self.type_ids.as_deref()
     }
-
 }
 
 /// Iterator yields results in completion order
