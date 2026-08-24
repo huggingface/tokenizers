@@ -101,8 +101,6 @@ pub mod mask {
     pub const WORD: u16 = Letter.bit() | NumWord.bit() | Mark.bit() | Connector.bit();
     /// `\s`: newline + 0x20 + other whitespace.
     pub const WS: u16 = Newline.bit() | Space.bit() | WsOther.bit();
-    /// `[\r\n]` only.
-    pub const NEWLINE: u16 = Newline.bit();
     /// `\p{L}`.
     pub const LETTER: u16 = Letter.bit();
     /// `\p{N}`.
@@ -139,7 +137,7 @@ pub fn classify(text: &[u8], tags: &mut [u8]) {
     // check guards every arch path below.
     assert!(
         tags.len() >= text.len(),
-        "atomsplit::classify: `tags` shorter than `text`"
+        "bitsplit::classify: `tags` shorter than `text`"
     );
     #[cfg(target_arch = "aarch64")]
     // SAFETY: `tags.len() >= text.len()` (asserted above); NEON vld1q/vst1q are alignment-free.

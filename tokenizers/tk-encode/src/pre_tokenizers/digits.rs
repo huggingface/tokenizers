@@ -1,14 +1,12 @@
-use serde::{Deserialize, Serialize};
-
-use crate::pipeline;
-use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
-use crate::utils::macro_rules_attribute;
+use crate::pipeline::{self, PreTokenizerScratch};
+use crate::tokenizer::Result;
+use bitsplit::classify::mask;
+use bitsplit::classes::class_runs_into;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 /// Pre tokenizes the numbers into single tokens. If individual_digits is set
 /// to true, then all digits are splitted into individual tokens.
 #[non_exhaustive]
-#[macro_rules_attribute(impl_serde_type!)]
 pub struct Digits {
     pub individual_digits: bool,
 }
@@ -25,28 +23,19 @@ impl Default for Digits {
     }
 }
 
-impl PreTokenizer for Digits {
-    fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
-        if self.individual_digits {
-            pretokenized.split(|_, normalized| {
-                normalized.split(char::is_numeric, SplitDelimiterBehavior::Isolated)
-            })
-        } else {
-            pretokenized.split(|_, normalized| {
-                normalized.split(char::is_numeric, SplitDelimiterBehavior::Contiguous)
-            })
-        }
-    }
-}
-
-impl pipeline::PreTokenizer for Digits {
-    fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Span>) -> Result<()> {
-        // isolate each numeric char (`individual_digits`) or keep numeric runs — atomsplit classify +
+// SAFETY: the spans come from an `bitsplit` fsm, which splits only at character boundaries of `text`.
+// See `bitsplit` docs.
+unsafe impl pipeline::PreTokenizer for Digits {
+    fn pre_tokenize(
+        &self,
+        text: &str,
+        scratch: &mut PreTokenizerScratch,
+        out: &mut Vec<pipeline::Span>,
+    ) -> Result<()> {
+        // isolate each numeric char (`individual_digits`) or keep numeric runs — bitsplit classify +
         // class-runs FSM. atom `NUMERIC` == `char::is_numeric`, so byte-exact with the scalar path.
-        use bitsplit::classes::class_runs_into;
-        use bitsplit::classify::mask;
         let individual = self.individual_digits;
-        pipeline::classify_into_spans_bits(
+        scratch.split_on_bits(
             text.as_bytes(),
             |b, t, st, fk, _, s| {
                 if individual {
@@ -64,12 +53,13 @@ impl pipeline::PreTokenizer for Digits {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{OffsetReferential, OffsetType};
 
     fn pretokenize(individual_digits: bool, text: &str) -> Vec<(&str, (u32, u32))> {
         let pretok = Digits::new(individual_digits);
         let mut splits = Vec::new();
-        crate::pipeline::PreTokenizer::pre_tokenize(&pretok, text, &mut splits).unwrap();
+        let mut scratch = PreTokenizerScratch::default();
+        crate::pipeline::PreTokenizer::pre_tokenize(&pretok, text, &mut scratch, &mut splits)
+            .unwrap();
         splits
             .iter()
             .map(|s| (&text[s.range()], (s.start, s.end)))
@@ -149,63 +139,6 @@ mod tests {
         assert_eq!(
             pretokenize(false, "café2"),
             vec![("café", (0, 5)), ("2", (5, 6))],
-        );
-    }
-
-    #[test]
-    fn numbers() {
-        let pretok = Digits::new(false);
-        let mut pretokenized = PreTokenizedString::from("Hey 123 friend!");
-        pretok.pre_tokenize(&mut pretokenized).unwrap();
-        assert_eq!(
-            pretokenized
-                .get_splits(OffsetReferential::Normalized, OffsetType::Byte)
-                .into_iter()
-                .map(|(s, o, _)| (s, o))
-                .collect::<Vec<_>>(),
-            vec![("Hey ", (0, 4)), ("123", (4, 7)), (" friend!", (7, 15))]
-        );
-        assert_eq!(
-            pretokenized
-                .get_splits(OffsetReferential::Original, OffsetType::Byte)
-                .into_iter()
-                .map(|(s, o, _)| (s, o))
-                .collect::<Vec<_>>(),
-            vec![("Hey ", (0, 4)), ("123", (4, 7)), (" friend!", (7, 15))]
-        );
-    }
-    #[test]
-    fn individual_digits() {
-        let pretok = Digits::new(true);
-        let mut pretokenized = PreTokenizedString::from("Hey 123 friend!");
-        pretok.pre_tokenize(&mut pretokenized).unwrap();
-        assert_eq!(
-            pretokenized
-                .get_splits(OffsetReferential::Normalized, OffsetType::Byte)
-                .into_iter()
-                .map(|(s, o, _)| (s, o))
-                .collect::<Vec<_>>(),
-            vec![
-                ("Hey ", (0, 4)),
-                ("1", (4, 5)),
-                ("2", (5, 6)),
-                ("3", (6, 7)),
-                (" friend!", (7, 15))
-            ]
-        );
-        assert_eq!(
-            pretokenized
-                .get_splits(OffsetReferential::Original, OffsetType::Byte)
-                .into_iter()
-                .map(|(s, o, _)| (s, o))
-                .collect::<Vec<_>>(),
-            vec![
-                ("Hey ", (0, 4)),
-                ("1", (4, 5)),
-                ("2", (5, 6)),
-                ("3", (6, 7)),
-                (" friend!", (7, 15))
-            ]
         );
     }
 }

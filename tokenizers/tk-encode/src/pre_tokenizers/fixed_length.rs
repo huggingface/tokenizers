@@ -1,14 +1,9 @@
-use crate::normalizer::Range;
 use crate::pipeline;
-use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result};
-use serde::{Deserialize, Serialize};
-
-use crate::utils::macro_rules_attribute;
+use crate::tokenizer::Result;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[macro_rules_attribute(impl_serde_type!)]
 pub struct FixedLength {
-    #[serde(default = "default_length")]
+    /// Absent from a config means 5, which is also `FixedLength::default()`.
     pub length: usize,
 }
 
@@ -18,40 +13,15 @@ impl FixedLength {
     }
 }
 
-fn default_length() -> usize {
-    5
-}
-
-impl PreTokenizer for FixedLength {
-    fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
-        pretokenized.split(|_, normalized| {
-            let text = normalized.get();
-            if text.is_empty() {
-                return Ok(vec![]);
-            }
-
-            let mut splits = Vec::new();
-            let char_positions: Vec<_> = text.char_indices().collect();
-            for chunk in char_positions.chunks(self.length) {
-                let start = chunk.first().map(|(i, _)| *i).unwrap_or(0);
-                let end = chunk
-                    .last()
-                    .map(|(i, c)| i + c.len_utf8())
-                    .unwrap_or(text.len());
-                splits.push(
-                    normalized
-                        .slice(Range::Normalized(start..end))
-                        .ok_or("Failed to slice normalized text")?,
-                );
-            }
-
-            Ok(splits)
-        })
-    }
-}
-
-impl pipeline::PreTokenizer for FixedLength {
-    fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Span>) -> Result<()> {
+// SAFETY: every offset is one `str::char_indices` yielded, or `text.len()`, and they are pushed in
+// increasing order.
+unsafe impl pipeline::PreTokenizer for FixedLength {
+    fn pre_tokenize(
+        &self,
+        text: &str,
+        _scratch: &mut pipeline::PreTokenizerScratch,
+        out: &mut Vec<pipeline::Span>,
+    ) -> Result<()> {
         if text.is_empty() {
             return Ok(());
         }
@@ -87,12 +57,13 @@ impl pipeline::PreTokenizer for FixedLength {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{OffsetReferential, OffsetType, PreTokenizer};
 
     fn pretokenize(length: usize, text: &str) -> Vec<(&str, (u32, u32))> {
         let pretok = FixedLength { length };
+        let mut scratch = pipeline::PreTokenizerScratch::default();
         let mut splits = Vec::new();
-        crate::pipeline::PreTokenizer::pre_tokenize(&pretok, text, &mut splits).unwrap();
+        crate::pipeline::PreTokenizer::pre_tokenize(&pretok, text, &mut scratch, &mut splits)
+            .unwrap();
         splits
             .iter()
             .map(|s| (&text[s.range()], (s.start, s.end)))
@@ -141,71 +112,5 @@ mod tests {
         assert_eq!(pretokenize(10, "abc"), vec![("abc", (0, 3))]);
         // length == 0 -> whole text as a single split (no panic)
         assert_eq!(pretokenize(0, "abc"), vec![("abc", (0, 3))]);
-    }
-
-    #[test]
-    fn basic() {
-        let tests = vec![
-            (
-                "Hello world",
-                vec![("Hello", (0, 5)), (" worl", (5, 10)), ("d", (10, 11))],
-            ),
-            ("Short", vec![("Short", (0, 5))]),
-            ("", vec![]),
-        ];
-        let pretok = FixedLength { length: 5 };
-        for (s, res) in tests {
-            let mut pretokenized = PreTokenizedString::from(s);
-            pretok.pre_tokenize(&mut pretokenized).unwrap();
-            assert_eq!(
-                pretokenized
-                    .get_splits(OffsetReferential::Original, OffsetType::Byte)
-                    .into_iter()
-                    .map(|(s, o, _)| (s, o))
-                    .collect::<Vec<_>>(),
-                res
-            );
-        }
-    }
-
-    #[test]
-    fn custom_length() {
-        let pretok = FixedLength { length: 3 };
-        let mut pretokenized = PreTokenizedString::from("Hello world");
-        pretok.pre_tokenize(&mut pretokenized).unwrap();
-        assert_eq!(
-            pretokenized
-                .get_splits(OffsetReferential::Original, OffsetType::Byte)
-                .into_iter()
-                .map(|(s, o, _)| (s, o))
-                .collect::<Vec<_>>(),
-            vec![
-                ("Hel", (0, 3)),
-                ("lo ", (3, 6)),
-                ("wor", (6, 9)),
-                ("ld", (9, 11)),
-            ]
-        );
-    }
-
-    #[test]
-    fn utf8_characters() {
-        let pretok = FixedLength { length: 3 };
-        let mut pretokenized = PreTokenizedString::from("Hello 👋 world");
-        pretok.pre_tokenize(&mut pretokenized).unwrap();
-        assert_eq!(
-            pretokenized
-                .get_splits(OffsetReferential::Original, OffsetType::Byte)
-                .into_iter()
-                .map(|(s, o, _)| (s, o))
-                .collect::<Vec<_>>(),
-            vec![
-                ("Hel", (0, 3)),
-                ("lo ", (3, 6)),
-                ("👋 w", (6, 12)),
-                ("orl", (12, 15)),
-                ("d", (15, 16)),
-            ]
-        );
     }
 }

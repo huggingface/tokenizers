@@ -2,11 +2,9 @@ use std::sync::LazyLock;
 
 use crate::pipeline;
 use crate::pre_tokenizers::unicode_scripts::scripts::{Script, get_script};
-use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result, normalizer::Range};
-use crate::utils::macro_rules_attribute;
+use crate::tokenizer::Result;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[macro_rules_attribute(impl_serde_type!)]
 pub struct UnicodeScripts;
 
 impl UnicodeScripts {
@@ -40,51 +38,19 @@ fn fixed_script(c: char) -> Script {
     }
 }
 
-impl PreTokenizer for UnicodeScripts {
-    fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
-        pretokenized.split(|_, normalized| {
-            let mut last_script = None;
-            let mut offset = 0;
-            let mut ranges: Vec<_> = normalized
-                .get()
-                .chars()
-                .filter_map(|c| {
-                    let script = Some(fixed_script(c));
-                    let result = if script != Some(Script::Any)
-                        && last_script != Some(Script::Any)
-                        && last_script != script
-                    {
-                        Some(offset)
-                    } else {
-                        None
-                    };
-                    offset += c.len_utf8();
-                    if script != Some(Script::Any) {
-                        last_script = script;
-                    }
-
-                    result
-                })
-                .collect();
-            ranges.push(normalized.get().len());
-            Ok(ranges
-                .windows(2)
-                .map(|item| {
-                    normalized
-                        .slice(Range::Normalized(item[0]..item[1]))
-                        .expect("NormalizedString bad split")
-                })
-                .collect::<Vec<_>>())
-        })
-    }
-}
-
 static BMP_SCRIPT: LazyLock<[Script; 0x10000]> = LazyLock::new(|| {
     std::array::from_fn(|i| char::from_u32(i as u32).map_or(Script::Common, fixed_script))
 });
 
-impl pipeline::PreTokenizer for UnicodeScripts {
-    fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Span>) -> Result<()> {
+// SAFETY: every offset is one `str::char_indices` yielded, or `text.len()`, and they are pushed in
+// increasing order.
+unsafe impl pipeline::PreTokenizer for UnicodeScripts {
+    fn pre_tokenize(
+        &self,
+        text: &str,
+        _scratch: &mut pipeline::PreTokenizerScratch,
+        out: &mut Vec<pipeline::Span>,
+    ) -> Result<()> {
         let mut start = None;
         let mut last_script = None;
 
@@ -124,59 +90,13 @@ impl pipeline::PreTokenizer for UnicodeScripts {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::OffsetReferential;
-    use crate::OffsetType;
-
-    #[test]
-    fn basic() {
-        let pretok = UnicodeScripts {};
-        let mut pretokenized = PreTokenizedString::from("どこで生れ。Yes");
-        pretok.pre_tokenize(&mut pretokenized).unwrap();
-        assert_eq!(
-            pretokenized
-                .get_splits(OffsetReferential::Normalized, OffsetType::Byte)
-                .into_iter()
-                .map(|(s, o, _)| (s, o))
-                .collect::<Vec<_>>(),
-            vec![("どこで生れ", (0, 15)), ("。", (15, 18)), ("Yes", (18, 21))]
-        );
-        assert_eq!(
-            pretokenized
-                .get_splits(OffsetReferential::Original, OffsetType::Byte)
-                .into_iter()
-                .map(|(s, o, _)| (s, o))
-                .collect::<Vec<_>>(),
-            vec![("どこで生れ", (0, 15)), ("。", (15, 18)), ("Yes", (18, 21))]
-        );
-    }
-
-    #[test]
-    fn spaces_are_included_in_every_script() {
-        let pretok = UnicodeScripts {};
-        let mut pretokenized = PreTokenizedString::from("Apples are りんご 林檎");
-        pretok.pre_tokenize(&mut pretokenized).unwrap();
-        assert_eq!(
-            pretokenized
-                .get_splits(OffsetReferential::Normalized, OffsetType::Byte)
-                .into_iter()
-                .map(|(s, o, _)| (s, o))
-                .collect::<Vec<_>>(),
-            vec![("Apples are ", (0, 11)), ("りんご 林檎", (11, 27))]
-        );
-        assert_eq!(
-            pretokenized
-                .get_splits(OffsetReferential::Original, OffsetType::Byte)
-                .into_iter()
-                .map(|(s, o, _)| (s, o))
-                .collect::<Vec<_>>(),
-            vec![("Apples are ", (0, 11)), ("りんご 林檎", (11, 27))]
-        );
-    }
 
     fn pretokenize(text: &str) -> Vec<(&str, (u32, u32))> {
         let pretok = UnicodeScripts;
+        let mut scratch = pipeline::PreTokenizerScratch::default();
         let mut splits = Vec::new();
-        crate::pipeline::PreTokenizer::pre_tokenize(&pretok, text, &mut splits).unwrap();
+        crate::pipeline::PreTokenizer::pre_tokenize(&pretok, text, &mut scratch, &mut splits)
+            .unwrap();
         splits
             .iter()
             .map(|s| (&text[s.range()], (s.start, s.end)))

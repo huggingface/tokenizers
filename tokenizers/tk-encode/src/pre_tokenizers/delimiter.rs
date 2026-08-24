@@ -1,12 +1,11 @@
-use serde::{Deserialize, Serialize};
-
 use crate::pipeline;
-use crate::tokenizer::{PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior};
-use crate::utils::macro_rules_attribute;
+use crate::pipeline::PreTokenizerScratch;
+use crate::tokenizer::Result;
 
+/// The tag is spelled `CharDelimiterSplit`, not `Delimiter` -- that is what this macro on a struct
+/// of this name produces, so it is what is on disk and what has to keep loading.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
-#[macro_rules_attribute(impl_serde_type!)]
 pub struct CharDelimiterSplit {
     pub delimiter: char,
 }
@@ -17,27 +16,30 @@ impl CharDelimiterSplit {
     }
 }
 
-impl PreTokenizer for CharDelimiterSplit {
-    fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
-        // TODO: Maybe add the option to specify the behavior
-        pretokenized.split(|_, normalized| {
-            normalized.split(self.delimiter, SplitDelimiterBehavior::Removed)
-        })
-    }
-}
-
-impl pipeline::PreTokenizer for CharDelimiterSplit {
-    fn pre_tokenize(&self, text: &str, out: &mut Vec<pipeline::Span>) -> Result<()> {
-        // native atomsplit FSM (memchr-backed single-byte scan); `Removed` — drops the delimiter,
+// SAFETY: the spans come from `bitsplit::classes::CharDelimiterSplit`, which splits only at character
+// boundaries of `text`. It scans for the delimiter's own UTF-8 bytes and confirms the whole encoding
+// before cutting.
+unsafe impl pipeline::PreTokenizer for CharDelimiterSplit {
+    fn pre_tokenize(
+        &self,
+        text: &str,
+        scratch: &mut PreTokenizerScratch,
+        out: &mut Vec<pipeline::Span>,
+    ) -> Result<()> {
+        // native bitsplit FSM (memchr-backed single-byte scan); `Removed` — drops the delimiter,
         // keeps the runs between, no empty spans. Byte-exact with the char-predicate split.
-        let bytes = text.as_bytes();
-        let mut spans = vec![pipeline::Span::default(); bytes.len() + 1];
-        let n = bitsplit::classes::CharDelimiterSplit(self.delimiter).pre_tokenize(
-            bytes,
-            &mut [],
-            &mut spans,
+        // It keys on the delimiter's own bytes rather than on an atom class, so it needs no tags.
+        scratch.split_on_bytes(
+            text.as_bytes(),
+            |bytes, spans| {
+                bitsplit::classes::CharDelimiterSplit(self.delimiter).pre_tokenize(
+                    bytes,
+                    &mut [],
+                    spans,
+                )
+            },
+            out,
         );
-        out.extend_from_slice(&spans[..n]);
         Ok(())
     }
 }
@@ -48,8 +50,10 @@ mod tests {
 
     fn pretokenize(delimiter: char, text: &str) -> Vec<(&str, (u32, u32))> {
         let pretok = CharDelimiterSplit::new(delimiter);
+        let mut scratch = pipeline::PreTokenizerScratch::default();
         let mut splits = Vec::new();
-        crate::pipeline::PreTokenizer::pre_tokenize(&pretok, text, &mut splits).unwrap();
+        crate::pipeline::PreTokenizer::pre_tokenize(&pretok, text, &mut scratch, &mut splits)
+            .unwrap();
         splits
             .iter()
             .map(|s| (&text[s.range()], (s.start, s.end)))

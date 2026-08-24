@@ -254,7 +254,7 @@ impl BucketVocabStore {
                 *id <= VOCAB_ID_MASK,
                 "token id {id} needs bit 31, which holds FOLD_BIT"
             );
-            let (key, hash) = key_and_hash(s.as_slice());
+            let (_, hash) = key_and_hash(s.as_slice());
             let slot = mphf.index(&hash);
             entries[slot] = Entry {
                 digest: digest_of(hash),
@@ -300,7 +300,7 @@ impl BucketVocabStore {
         if self.entries.is_empty() {
             return None;
         }
-        let (key, hash) = key_and_hash(q);
+        let (_, hash) = key_and_hash(q);
         let slot = self.mphf.index(&hash);
         let e = self.entries[slot];
         (e.digest == digest_of(hash)).then_some(e.id & VOCAB_ID_MASK)
@@ -390,6 +390,20 @@ impl BucketVocabStore {
 
     pub fn is_empty(&self) -> bool {
         self.n == 0
+    }
+
+    /// Whether every entry carries the fold bit.
+    ///
+    /// A BPE model built with `ignore_merges` gets the bit on all of them unconditionally, where
+    /// otherwise only the entries that proved they reduce to themselves earn it. That makes this
+    /// the question a writer asks to decide whether to spell the flag: if every entry folds, either
+    /// answer rebuilds the same table, and if any does not, the flag was off.
+    pub fn all_foldable(&self) -> bool {
+        self.entries
+            .iter()
+            .zip(self.spans.iter())
+            .filter(|(_, sp)| sp.len > 0)
+            .all(|(e, _)| e.id & FOLD_BIT != 0)
     }
 
     pub fn content(&self) -> Vec<(String, u32)> {

@@ -119,7 +119,7 @@ pub(crate) fn pool() -> Option<Arc<rayon::ThreadPool>> {
     slot.map(|slot| slot.pool.clone())
 }
 
-pub(crate) fn num_threads() -> usize {
+pub fn num_threads() -> usize {
     match NUM_THREADS.load(Ordering::Acquire) {
         // 0 == default value
         0 => std::thread::available_parallelism()
@@ -134,7 +134,7 @@ fn invalidate() {
 }
 
 /// Passing in 0 will reset to the default value
-pub(crate) fn set_num_threads(n: usize) {
+pub fn set_num_threads(n: usize) {
     NUM_THREADS.store(n, Ordering::Release);
     invalidate();
 }

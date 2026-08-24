@@ -23,3 +23,6 @@ pip-wheel-metadata
 *.code-workspace
 
 uv.lock
+# Agent worktrees: real git repos, and `git add -A` will happily commit them as gitlinks.
+.claude/worktrees/
+excalidraw.log

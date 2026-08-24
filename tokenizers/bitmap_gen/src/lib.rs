@@ -1,6 +1,6 @@
 //! Dev-time only (depends on `unicode-properties`); nothing here is linked into the runtime crate.
 //! `cargo run -p bitmap_gen` calls [`generate_atom_tables`] and writes the committed
-//! `atomsplit/src/atom_tables.rs`. It bakes the dense `Tables` layout (ascii / 2-byte group / 3-byte
+//! `bitsplit/src/classify/atom_tables.rs`. It bakes the dense `Tables` layout (ascii / 2-byte group / 3-byte
 //! fast3 / bmp_rle / astral)
 use std::fmt::Write as _;
 use unicode_properties::{GeneralCategory, UnicodeGeneralCategory};

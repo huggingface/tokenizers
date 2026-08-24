@@ -1,8 +1,8 @@
 //! Canonical GPT pre-tokenization regexes — the **specification** each `fsm` reproduces byte-for-byte
-//! under an `Isolated` split. This is the single source of truth: the benches, the parity oracle
-//! (`tests/parity.rs`), and tk-encode's runtime recognizer all reference these consts, so the pattern a
+//! under an `Isolated` split. This is the single source of truth: the parity oracle
+//! (`tests/parity.rs`) and tk-encode's runtime recognizer both reference these consts, so the pattern a
 //! tokenizer ships, the pattern the FSM is tested against, and the pattern the pipeline recognizes can
-//! never drift apart. `atomsplit` never *runs* these at runtime — it works off the tag stream; the
+//! never drift apart. `bitsplit` never *runs* these at runtime — it works off the tag stream; the
 //! consts only document (and gate the tests of) the contract the FSMs implement.
 
 /// GPT-2 / ByteLevel. Reproduced by [`crate::fsm::fsm_byte_level`].

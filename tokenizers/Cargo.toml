@@ -1,34 +1,42 @@
 [workspace]
 resolver = "3"
-members = ["bitmap_gen", "bitsplit", "tk-encode", "tk-train"]
+members = ["bitmap_gen", "bitsplit", "tk-encode", "tk-serialize", "tk-convert"]
+exclude = ["tk-train"]
 
 [package]
 authors = [
-  "Anthony MOI <m.anthony.moi@gmail.com>",
-  "Nicolas Patry <patry.nicolas@protonmail.com>",
   "Arthur Zucker <arthur@huggingface.co",
+  "Nicolas Patry <patry.nicolas@protonmail.com>",
+  "Anthony MOI <m.anthony.moi@gmail.com>",
   "Luc Georges <luc@huggingface.co",
+  "Simon Brandeis <simon@huggingface.co",
 ]
 edition = "2024"
 name = "tokenizers"
-version = "0.23.2-dev.0"
+version = "1.0.0-rc.0"
 homepage = "https://github.com/huggingface/tokenizers"
 repository = "https://github.com/huggingface/tokenizers"
 documentation = "https://docs.rs/tokenizers/"
 license = "Apache-2.0"
-keywords = ["tokenizer", "NLP", "huggingface", "BPE", "WordPiece"]
+keywords = [
+  "tokenizer",
+  "NLP",
+  "huggingface",
+  "BPE",
+  "WordPiece",
+  "SIMD",
+  "bitstream",
+  "regex",
+]
 readme = "./README.md"
 description = """
-Provides an implementation of today's most used tokenizers,
-with a focus on performances and versatility. Umbrella crate re-exporting
-`tk-encode` (inference) and `tk-train` (training).
-"""
+Fastest implementation of the most used tokenizers in AI. """
+autotests = false
+autobenches = false
 exclude = [
   "rust-toolchain",
   "target/*",
   "Cargo.lock",
-  "benches/*.txt",
-  "benches/*.json",
   "data/*",
 ]
 
@@ -40,72 +48,55 @@ name = "tokenizers"
 path = "src/lib.rs"
 bench = false
 
-[[bench]]
-name = "bpe_benchmark"
-harness = false
-
-[[bench]]
-name = "bert_benchmark"
-harness = false
-
-[[bench]]
-name = "layout_benchmark"
-harness = false
-
-[[bench]]
-name = "unigram_benchmark"
-harness = false
-
-[[bench]]
-name = "llama3_benchmark"
-harness = false
-
-[[bench]]
-name = "added_vocab_deserialize"
-required-features = ["http"]
-harness = false
-
-[[bench]]
-name = "truncation_benchmark"
-harness = false
-
-[[bench]]
-name = "decode_benchmark"
-harness = false
-
-[[bench]]
-name = "ci_benchmark"
-harness = false
-
 [dependencies]
-tk-encode = { path = "tk-encode", version = "0.23.2-dev.0", default-features = false, features = [
+tk-encode = { path = "tk-encode", version = "1.0.0-rc.0", default-features = false, features = [
   "parallelism",
+  "normalizers",
+  "bpe",
+  "unigram",
+  "wordpiece",
+  "wordlevel",
+  "unicode-scripts",
 ] }
-tk-train = { path = "tk-train", version = "0.23.2-dev.0", default-features = false, optional = true }
+tk-convert = { path = "tk-convert", version = "1.0.0-rc.0", default-features = false }
 
 [features]
-default = ["progressbar", "onig", "esaxx_fast", "train"]
-train = ["dep:tk-train"]
-esaxx_fast = ["tk-train?/esaxx_fast"]
-progressbar = ["tk-encode/progressbar", "tk-train?/progressbar"]
-onig = ["tk-encode/fancy-regex"]
+default = ["progressbar"]
+progressbar = ["tk-encode/progressbar"]
+regex = ["tk-encode/fancy-regex"]
 http = ["tk-encode/http"]
 unstable_wasm = ["tk-encode/unstable_wasm"]
-rustls-tls = ["tk-encode/rustls-tls"]
-parity-aware-bpe = ["train", "tk-train/parity-aware-bpe"]
 
 
 [dev-dependencies]
-criterion = "0.6"
+criterion = "0.8"
 serde_json = "1.0"
-ahash = "0.8.11"
-tempfile = "3.10"
+ahash = "0.8.12"
+tempfile = "3.27"
 assert_approx_eq = "1.1"
 tracing = "0.1"
-tracing-subscriber = "0.3.18"
+tracing-subscriber = "0.3.23"
 
 [profile.release]
 lto = "fat"
+
+# This is for a slim, on edge build. Perfs are bound to be worst than the normal release, but it reduces the crate size.
+[profile.minsize]
+inherits = "release"
+opt-level = "z"
+codegen-units = 1
+panic = "abort"
+lto = "fat"
+strip = true
+
+# `slimest` is `minsize` plus a rebuilt `std` (about 40% of the gzipped output)
+# Needs `-Z build-std-features=panic_immediate_abort` and therefore nightly version of rust.
+#
+# Used in `make slimest` / `make slimest-size`, which pass the required `-Z` flags; a bare
+# `cargo build --profile slimest` on stable is just `minsize` with a different directory name.
+#
+[profile.slimest]
+inherits = "minsize"
 
 [profile.profiling]
 inherits = "release"

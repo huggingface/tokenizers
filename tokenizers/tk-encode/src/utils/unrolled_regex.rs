@@ -126,6 +126,12 @@ const DS_BIG: &str = concat!(
     r##"]+|\s+(?!\S)|\s+"##,
 );
 
+/// deepseek's three patterns, in order, exactly as the shipped config spells them. The copies in
+/// `bitsplit::regexes` escape CR/LF instead of embedding it, so the two are **not**
+/// interchangeable and [`is_deepseek`] rejects the escaped form -- anything rebuilding these
+/// patterns must use this constant or it silently falls off the native FSM onto the regex fallback.
+pub const DEEPSEEK_PATTERNS: [&str; 3] = [DS_NUM, DS_CJK, DS_BIG];
+
 /// True iff three `Split` patterns are exactly deepseek's `[\p{N}{1,3}, CJK-range, big-regex]` prefix →
 /// `bitsplit::bitsplit_deepseek` reproduces the whole composed Isolated split in one pass.
 pub fn is_deepseek(p0: &str, p1: &str, p2: &str) -> bool {
@@ -135,6 +141,26 @@ pub fn is_deepseek(p0: &str, p1: &str, p2: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The trap [`DEEPSEEK_PATTERNS`] exists to close: `bitsplit::regexes::DEEPSEEK_BIG` spells
+    /// CR/LF as the two-character escape `\r\n` inside a raw string, while the shipped configs (and
+    /// so `DS_BIG`) embed real control characters. They are not interchangeable, and rebuilding from
+    /// the wrong one silently drops off the native FSM onto the regex fallback.
+    #[test]
+    fn deepseek_patterns_are_the_only_recognised_spelling() {
+        let [num, cjk, big] = DEEPSEEK_PATTERNS;
+        assert!(is_deepseek(num, cjk, big));
+
+        let escaped = bitsplit::regexes::DEEPSEEK;
+        assert!(
+            !is_deepseek(escaped[0], escaped[1], escaped[2]),
+            "bitsplit's escaped copies must NOT be mistaken for the shipped spelling"
+        );
+        // Only the big one differs; the first two are identical in both.
+        assert_eq!(num, escaped[0]);
+        assert_eq!(cjk, escaped[1]);
+        assert_ne!(big, escaped[2]);
+    }
 
     #[test]
     fn gpt_fsm_recognizes_family_and_extracts_digit_cap() {

@@ -90,7 +90,11 @@ impl<'a> WordCache {
     pub fn new(num_slots: usize) -> Self {
         let next_pow2 = num_slots.next_power_of_two();
         if next_pow2 != num_slots {
-            // todo: warn the user the capacity has been rounded up
+            warn!(
+                "WordCache: rounding cache_capacity up from {num_slots} to {next_pow2} slots \
+                 (a power of two is required for slot masking); \
+                 behavior is unchanged, the table just uses slightly more memory"
+            );
         }
         let n: usize = next_pow2 + Self::WINDOW_SIZE;
         let spilled_budget = 16 * n;
@@ -115,17 +119,6 @@ impl<'a> WordCache {
     #[inline]
     pub fn lookup_keyed(&'a self, key: u64, hash: u64) -> Lookup<'a> {
         self.lookup_placed(placement_from(LookupKey(key), hash, self.placement_mask))
-    }
-
-    ///
-    ///
-    ///
-    /// # Safety
-    #[inline]
-    pub unsafe fn probe_emit(&'a self, word: &[u8], dst: *mut u32) -> ProbeEmit<'a> {
-        debug_assert!(!word.is_empty(), "probe_emit needs a non-empty word");
-        let (key, hash) = key_and_hash(word);
-        unsafe { self.probe_emit_keyed(key, hash, dst) }
     }
 
     ///
@@ -197,7 +190,11 @@ impl<'a> WordCache {
             WordCacheSlot::new_self_contained(key, ids)
         } else {
             if self.spilled_buffer.len() + len > self.spilled_budget {
-                // Spilled buffer budget passed: we clear it
+                debug!(
+                    "WordCache: spilled-ids budget ({} ids) exhausted; evicting {} spilled ids",
+                    self.spilled_budget,
+                    self.spilled_buffer.len()
+                );
                 self.spilled_buffer.clear();
                 // Bump the generation to invalidate previous spilled slots
                 self.spilled_generation = self.spilled_generation.wrapping_add(1);
@@ -228,7 +225,12 @@ impl<'a> WordCache {
     }
 
     fn reset(&mut self) {
-        // todo: log the cache clear
+        info!(
+            "WordCache: eviction generation wrapped past u32::MAX; \
+             cleared all {} cached words to avoid stale hits \
+             (lookups will miss until the cache refills)",
+            self.cached_words.len()
+        );
         self.spilled_buffer.clear();
         self.quick_lookup = vec![0; self.quick_lookup.len()].into_boxed_slice();
         self.cached_words =

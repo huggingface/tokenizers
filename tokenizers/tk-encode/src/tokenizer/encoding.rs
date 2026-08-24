@@ -4,11 +4,14 @@ use crate::tokenizer::{Offsets, Token};
 use crate::utils::padding::PaddingDirection;
 use crate::utils::truncation::TruncationDirection;
 use ahash::AHashMap;
-use serde::{Deserialize, Serialize};
 use std::ops::Range;
 
 /// Represents the output of a `Tokenizer`.
-#[derive(Default, PartialEq, Debug, Clone, Serialize, Deserialize)]
+///
+/// The serialized shape is the field names below in declaration order, and it is public API rather
+/// than an internal format: `PyEncoding.__getstate__` pickles by serializing one of these, so a
+/// pickle written by an older build has to keep loading. `encoding_round_trips` pins the names.
+#[derive(Default, PartialEq, Debug, Clone)]
 pub struct Encoding {
     /// IDs produced by the `Tokenizer`
     ids: Vec<u32>,
@@ -131,10 +134,6 @@ impl Encoding {
         &self.words
     }
 
-    pub fn get_word_ids_mut(&mut self) -> &mut [Option<u32>] {
-        &mut self.words
-    }
-
     pub fn get_sequence_ids(&self) -> Vec<Option<usize>> {
         let mut sequences = vec![None; self.len()];
         for seq_id in 0..self.n_sequences() {
@@ -161,10 +160,6 @@ impl Encoding {
         &self.offsets
     }
 
-    pub fn get_offsets_mut(&mut self) -> &mut [Offsets] {
-        &mut self.offsets
-    }
-
     pub fn get_special_tokens_mask(&self) -> &[u32] {
         &self.special_tokens_mask
     }
@@ -172,6 +167,11 @@ impl Encoding {
     pub fn get_attention_mask(&self) -> &[u32] {
         &self.attention_mask
     }
+
+    // TODO: the mutable `words` / `offsets` accessors and `get_sequence_ranges` were dropped
+    // here as dead. The pipeline BPE will need feature-gated support for returning offsets (and
+    // word ids, sequence ranges, the rest of it); reintroduce whatever that path actually needs,
+    // behind its feature, rather than keeping unused accessors alive on the guess.
 
     pub fn get_overflowing(&self) -> &Vec<Encoding> {
         &self.overflowing

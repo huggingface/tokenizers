@@ -1,13 +1,11 @@
 use std::borrow::Cow;
 
 use crate::pipeline;
-use crate::tokenizer::{NormalizedString, Normalizer, Result};
-use crate::utils::byte_level::{BYTES_CHAR_LOOKUP, byte_level_transform};
-use crate::utils::macro_rules_attribute;
+use crate::tokenizer::Result;
+use crate::utils::byte_level::BYTES_CHAR_LOOKUP;
 use ahash::AHashSet;
 
 #[derive(Clone, Debug)]
-#[macro_rules_attribute(impl_serde_type!)]
 pub struct ByteLevel;
 
 impl Default for ByteLevel {
@@ -26,17 +24,6 @@ impl ByteLevel {
     }
 }
 
-impl Normalizer for ByteLevel {
-    /// Strip the normalized string inplace
-    fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
-        if !normalized.is_empty() {
-            let s = normalized.get();
-            normalized.transform(byte_level_transform(s), 0);
-        }
-        Ok(())
-    }
-}
-
 impl pipeline::Normalizer for ByteLevel {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
         let table = &*BYTES_CHAR_LOOKUP;
@@ -52,15 +39,22 @@ impl pipeline::Normalizer for ByteLevel {
 mod tests {
     use super::*;
 
+    /// Expected values were captured from the legacy `NormalizedString` normalizer this test used
+    /// to compare against, on the commit that removed it -- so they still pin exactly what the two
+    /// implementations agreed on, without keeping the legacy code alive to ask.
     #[test]
-    fn pipeline_byte_level_matches_legacy() {
+    fn pipeline_byte_level() {
         let n = ByteLevel::new();
-        for input in &["Hello world", "Hello 我今天", "abc", ""] {
-            let mut ns = NormalizedString::from(*input);
-            Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
+        for (input, expected) in [
+            ("Hello world", "HelloĠworld"),
+            ("Hello 我今天", "HelloĠæĪĳä»Ĭå¤©"),
+            ("abc", "abc"),
+            ("", ""),
+        ] {
             assert_eq!(
-                ns.get(),
-                &*pipeline::Normalizer::normalize(&n, input).unwrap()
+                &*pipeline::Normalizer::normalize(&n, input).unwrap(),
+                expected,
+                "input={input:?}"
             );
         }
     }

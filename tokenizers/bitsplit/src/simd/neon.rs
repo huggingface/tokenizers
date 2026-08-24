@@ -6,7 +6,7 @@
 //! of one `u64`. That is ~9 ops per stream per 64 bytes, versus 4 separate 16-bit movemasks.
 //!
 //! Continuation bytes are resolved **before** extraction (≤3 `vext`+`vbsl`, the same trick
-//! `atomsplit::simd_fsm` uses), so every stream comes out *filled* — a multi-byte char sets its bit
+//! `bitsplit::simd_fsm` uses), so every stream comes out *filled* — a multi-byte char sets its bit
 //! on all of its bytes. That is what lets the bitstream program read "previous char's class" as a
 //! plain `<< 1` with no char-width arithmetic.
 

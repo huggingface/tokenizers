@@ -11,7 +11,7 @@ use super::family_gpt::{cls, contractions};
 use crate::{CODE_CONT, Out, Span, blocks, emit, to_lead};
 
 /// GPT-2 / byte-level pre-tokenization. `starts` and `flag` are scratch bitmaps
-/// (len ≥ `text.len().div_ceil(64)`); byte-exact with `atomsplit::fsm::fsm_byte_level`.
+/// (len ≥ `text.len().div_ceil(64)`); byte-exact with `bitsplit::fsm_byte_level`.
 #[must_use]
 pub fn bitsplit_byte_level(
     text: &[u8],

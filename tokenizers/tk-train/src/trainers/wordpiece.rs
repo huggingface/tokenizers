@@ -4,9 +4,9 @@ use crate::Trainer;
 use crate::trainers::bpe::{BpeTrainer, BpeTrainerBuilder};
 use ahash::AHashSet;
 use serde::{Deserialize, Serialize};
-use tk_encode::models::bpe::BPE;
+use tk_encode::vocab::bucket_added_vocabulary::AddedToken;
+use tk_encode::Result;
 use tk_encode::models::wordpiece::WordPiece;
-use tk_encode::{AddedToken, Result};
 
 /// A `WordPieceTrainerBuilder` can be used to create a `WordPieceTrainer` with a custom
 /// configuration.
@@ -169,15 +169,18 @@ impl WordPieceTrainer {
     }
 
     pub fn train(&self, model: &mut WordPiece) -> Result<Vec<AddedToken>> {
-        let mut bpe = BPE::default();
-        let special_tokens = self.bpe_trainer.train(&mut bpe)?;
-        let new_wordpiece = WordPiece::from_bpe(&bpe);
+        // WordPiece reinterprets a trained BPE's vocabulary as its own pieces; the merge list has no
+        // meaning here and is dropped. This used to go through `tk_convert`'s `from_bpe`, which
+        // built a whole `BPE` to read its vocabulary back off -- `train_vocab` hands over the same
+        // vocabulary without building anything.
+        let (vocab, _merges, special_tokens) = self.bpe_trainer.train_vocab()?;
 
-        // Transfer the vocab
-        model.vocab = new_wordpiece.vocab;
-        model.vocab_r = new_wordpiece.vocab_r;
+        model.vocab_r = vocab.iter().map(|(t, id)| (*id, t.clone())).collect();
+        model.vocab = vocab;
         // The continuing_subword_prefix is the only other option to be overridden by the trainer
-        model.continuing_subword_prefix = new_wordpiece.continuing_subword_prefix;
+        if let Some(prefix) = &self.bpe_trainer.continuing_subword_prefix {
+            model.continuing_subword_prefix = prefix.clone();
+        }
 
         Ok(special_tokens)
     }

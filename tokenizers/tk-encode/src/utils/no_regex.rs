@@ -1,9 +1,9 @@
 //! Stub `SysRegex` for builds with **no** system-regex backend (`fancy-regex` off — the default).
 //!
 //! The type stays present so `Split` / `Replace` still compile, but construction always fails. Only a
-//! *regex* pattern ever asks for it: the atomsplit-native pre-tokenizers (GPT-2, cl100k, deepseek, the
+//! *regex* pattern ever asks for it: the bitsplit-native pre-tokenizers (GPT-2, cl100k, deepseek, the
 //! class family, char-delimiter) need no backend, and a plain string pattern is searched for directly
-//! (`bitsplit::literal`). A regex atomsplit does not cover errors at load time with a clear message.
+//! (`bitsplit::literal`). A regex bitsplit does not cover errors at load time with a clear message.
 //! Enable `fancy-regex` to get a real backend.
 use std::error::Error;
 

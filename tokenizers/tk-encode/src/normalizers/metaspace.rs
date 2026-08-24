@@ -2,20 +2,19 @@
 //!
 //! SentencePiece tokenizers have no token for a space: a space is folded into the word that follows
 //! it and written `▁`. That character therefore marks where a word starts *and* separates words —
-//! which is why the code below calls it the delimiter. In a tokenizer config, one [`Metaspace`]
+//! which is why the code below calls it the delimiter. In a tokenizer config, one `Metaspace`
 //! pre-tokenizer does the whole job: it rewrites the text and cuts it into words. The pipeline keeps
-//! those two apart — normalizers rewrite text, pre-tokenizers cut it — so a [`Metaspace`] is rebuilt
-//! as this normalizer plus a [`Split`] on the delimiter.
+//! those two apart — normalizers rewrite text, pre-tokenizers cut it — so a `Metaspace` is rebuilt
+//! as this normalizer plus a [`Split`] on the delimiter. There is no `Metaspace` pre-tokenizer type:
+//! this pair *is* what one lowers to.
 //!
-//! `to_normalizer_and_split`, in [`crate::pre_tokenizers::metaspace`], builds that pair and spells
-//! out which [`Metaspace`] settings can be rebuilt this way.
+//! `read_metaspace`, in `tk-serialize`'s `from_json::pre_tokenizers`, builds that pair and spells
+//! out which `Metaspace` settings can be rebuilt this way.
 //!
-//! [`Metaspace`]: crate::pre_tokenizers::metaspace::Metaspace
 //! [`Split`]: crate::pre_tokenizers::split::Split
 
 use std::borrow::Cow;
 
-use crate::pre_tokenizers::whitespace::WhitespaceSplit;
 use crate::tokenizer::{Result, pipeline};
 
 /// Writes the delimiter where words start (after a space)
@@ -33,12 +32,30 @@ pub struct MetaspaceNormalizer {
 }
 
 impl MetaspaceNormalizer {
-    pub(crate) fn new(delimiter: char, prepend: bool, drop_whitespace: bool) -> Self {
+    pub fn new(delimiter: char, prepend: bool, drop_whitespace: bool) -> Self {
         Self {
             delimiter,
             prepend,
             drop_whitespace,
         }
+    }
+}
+
+impl MetaspaceNormalizer {
+    /// The delimiter this writes, `\u{2581}` for every SentencePiece model we know of.
+    pub fn delimiter(&self) -> char {
+        self.delimiter
+    }
+
+    /// Whether the delimiter goes at the start of every word rather than only after a space.
+    pub fn prepend(&self) -> bool {
+        self.prepend
+    }
+
+    /// Whether whitespace is thrown away instead of becoming a delimiter, i.e. whether a
+    /// `WhitespaceSplit` ran in front of the `Metaspace` this came from.
+    pub fn drop_whitespace(&self) -> bool {
+        self.drop_whitespace
     }
 }
 
@@ -51,12 +68,7 @@ impl pipeline::Normalizer for MetaspaceNormalizer {
         // The delimiter is 3 bytes where a space is 1, so the rewrite grows by 2 bytes per space, hence we allocate a bit more space
         let mut rewritten = String::with_capacity(input.len() + input.len() / 2);
         if self.drop_whitespace {
-            // Whitespace is thrown away, so cut the text where `WhitespaceSplit` would and write the
-            // words back one after the other, each with its own delimiter.
-            let mut words = Vec::new();
-            pipeline::PreTokenizer::pre_tokenize(&WhitespaceSplit, input, &mut words)?;
-            for span in &words {
-                let word = &input[span.range()];
+            for word in input.split_whitespace() {
                 // The text may already hold delimiters of its own — never write a second one.
                 if self.prepend && !word.starts_with(self.delimiter) {
                     rewritten.push(self.delimiter);

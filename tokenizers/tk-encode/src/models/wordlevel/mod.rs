@@ -1,15 +1,10 @@
-use super::OrderedVocabIter;
 use crate::pipeline::{self, ModelScratch, PipelineToken};
-use crate::tokenizer::{Model, Result, Token};
+use crate::tokenizer::{Result, Token};
 use ahash::AHashMap;
-use serde_json::Value;
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::{BufReader, Read, Write};
-use std::path::{Path, PathBuf};
 
-mod serialization;
-
+/// Only the tests name this now: reading a `vocab.json` into one is `tk-convert`'s job.
+#[cfg(test)]
 type Vocab = AHashMap<String, u32>;
 
 #[derive(thiserror::Error, Debug)]
@@ -21,7 +16,6 @@ pub enum Error {
 }
 
 struct Config {
-    files: Option<String>,
     vocab: AHashMap<String, u32>,
     unk_token: String,
 }
@@ -36,7 +30,6 @@ impl Default for WordLevelBuilder {
     fn default() -> Self {
         Self {
             config: Config {
-                files: None,
                 vocab: AHashMap::new(),
                 unk_token: String::from("<unk>"),
             },
@@ -48,13 +41,6 @@ impl WordLevelBuilder {
     /// Construct a new `WordLevelBuilder`.
     pub fn new() -> Self {
         Self::default()
-    }
-
-    /// Set the input files.
-    #[must_use]
-    pub fn files(mut self, vocab: String) -> Self {
-        self.config.files = Some(vocab);
-        self
     }
 
     /// Set the vocab (token -> ID) mapping.
@@ -72,11 +58,7 @@ impl WordLevelBuilder {
     }
 
     /// Constructs a `WordLevel` model that uses the `WordLevelBuilder`'s configuration.
-    pub fn build(mut self) -> Result<WordLevel> {
-        if let Some(vocab) = self.config.files {
-            self.config.vocab = WordLevel::read_file(&vocab)?;
-        }
-
+    pub fn build(self) -> Result<WordLevel> {
         let vocab_r = self
             .config
             .vocab
@@ -112,35 +94,6 @@ impl WordLevel {
     pub fn builder() -> WordLevelBuilder {
         WordLevelBuilder::new()
     }
-
-    pub fn read_file(vocab_path: &str) -> Result<Vocab> {
-        let vocab_file = File::open(vocab_path)?;
-        let mut vocab_file = BufReader::new(vocab_file);
-        let mut buffer = String::new();
-        let mut vocab = AHashMap::new();
-
-        vocab_file.read_to_string(&mut buffer)?;
-        let json: Value = serde_json::from_str(&buffer)?;
-
-        match json {
-            Value::Object(m) => {
-                for (token, id) in m {
-                    if let Value::Number(id) = id {
-                        let id = id.as_u64().ok_or(Error::BadVocabulary)? as u32;
-                        vocab.insert(token, id);
-                    }
-                }
-            }
-            _ => return Err(Box::new(Error::BadVocabulary)),
-        };
-        Ok(vocab)
-    }
-
-    /// Initialize a WordLevel model from vocab and merges file.
-    pub fn from_file(vocab_path: &str, unk_token: String) -> Result<WordLevel> {
-        let vocab = WordLevel::read_file(vocab_path)?;
-        Self::builder().vocab(vocab).unk_token(unk_token).build()
-    }
 }
 
 impl Default for WordLevel {
@@ -153,8 +106,11 @@ impl Default for WordLevel {
     }
 }
 
-impl Model for WordLevel {
-    fn tokenize(&self, token: &str) -> Result<Vec<Token>> {
+/// The model methods the pipeline and the readers call. These used to be the legacy
+/// `Model` trait; that trait had no implementor left that needed polymorphism, so they are
+/// plain inherent methods now and every call site is unchanged.
+impl WordLevel {
+    pub fn tokenize(&self, token: &str) -> Result<Vec<Token>> {
         if let Some(&id) = self.vocab.get(token) {
             Ok(vec![Token {
                 id,
@@ -172,38 +128,20 @@ impl Model for WordLevel {
         }
     }
 
-    fn token_to_id(&self, token: &str) -> Option<u32> {
+    pub fn token_to_id(&self, token: &str) -> Option<u32> {
         self.vocab.get(token).copied()
     }
 
-    fn id_to_token(&self, id: u32) -> Option<String> {
+    pub fn id_to_token(&self, id: u32) -> Option<String> {
         self.vocab_r.get(&id).cloned()
     }
 
-    fn get_vocab(&self) -> HashMap<String, u32> {
+    pub fn get_vocab(&self) -> HashMap<String, u32> {
         self.vocab.clone().into_iter().collect()
     }
 
-    fn get_vocab_size(&self) -> usize {
+    pub fn get_vocab_size(&self) -> usize {
         self.vocab.keys().len()
-    }
-
-    fn save(&self, folder: &Path, name: Option<&str>) -> Result<Vec<PathBuf>> {
-        let vocab_file_name = match name {
-            Some(name) => format!("{name}-vocab.json"),
-            None => "vocab.json".to_string(),
-        };
-
-        // Write vocab.json
-        let vocab_path: PathBuf = [folder, Path::new(vocab_file_name.as_str())]
-            .iter()
-            .collect();
-        let mut vocab_file = File::create(&vocab_path)?;
-        let order_vocab_iter = OrderedVocabIter::new(&self.vocab_r);
-        let serialized = serde_json::to_string(&order_vocab_iter)?;
-        vocab_file.write_all(serialized.as_bytes())?;
-
-        Ok(vec![vocab_path])
     }
 }
 
@@ -220,9 +158,9 @@ impl pipeline::Model for WordLevel {
         output: &mut Vec<pipeline::PipelineToken>,
     ) -> Result<()> {
         if let Some(&id) = self.vocab.get(sequence) {
-            output.push(PipelineToken { id })
+            output.push(PipelineToken::from(id))
         } else if let Some(&unk_id) = self.vocab.get(&self.unk_token) {
-            output.push(PipelineToken { id: unk_id });
+            output.push(PipelineToken::from(unk_id));
         } else {
             return Err(Box::new(Error::MissingUnkToken));
         }
