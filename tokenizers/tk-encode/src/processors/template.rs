@@ -438,36 +438,6 @@ impl TemplateProcessing {
         self.single = single;
     }
 
-    // Getter for `pair`
-    pub fn get_pair(&self) -> &Template {
-        &self.pair
-    }
-
-    // Setter for `pair`
-    pub fn set_pair(&mut self, pair: Template) {
-        self.pair = pair;
-    }
-
-    // Getter for `added_single`
-    pub fn get_added_single(&self) -> usize {
-        self.added_single
-    }
-
-    // Setter for `added_single`
-    pub fn set_added_single(&mut self, added_single: usize) {
-        self.added_single = added_single;
-    }
-
-    // Getter for `added_pair`
-    pub fn get_added_pair(&self) -> usize {
-        self.added_pair
-    }
-
-    // Setter for `added_pair`
-    pub fn set_added_pair(&mut self, added_pair: usize) {
-        self.added_pair = added_pair;
-    }
-
     // Getter for `special_tokens`
     pub fn get_special_tokens(&self) -> &Tokens {
         &self.special_tokens

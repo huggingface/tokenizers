@@ -450,19 +450,7 @@ impl Encoding {
         self.type_ids.as_deref()
     }
 
-    pub fn into_parts(self) -> EncodingParts {
-        EncodingParts {
-            ids: self.ids,
-            type_ids: self.type_ids,
-        }
-    }
 }
-
-pub struct EncodingParts {
-    pub ids: Vec<PipelineToken>,
-    pub type_ids: Option<Vec<u8>>,
-}
-
 /// Iterator yields results in completion order
 pub struct HandleIter {
     handle: EncodeHandle,
@@ -494,12 +482,6 @@ impl PipelineTokenizer {
         &self.inner.model
     }
 
-    /// Whether any normalization step runs before the pre-tokenizer. An empty normalizer
-    /// `Sequence` in the config counts as none, since it is elided on the way in.
-    pub fn has_normalizer(&self) -> bool {
-        !self.inner.normalizers.is_empty()
-    }
-
     pub fn get_pre_tokenizer(&self) -> &PipelinePreTokenizer {
         &self.inner.pre_tokenizer
     }
@@ -510,9 +492,8 @@ impl PipelineTokenizer {
 
     /// The whole flattened normalizer chain, in the order it runs.
     ///
-    /// [`Self::has_normalizer`] answers the only question the encode path asks; this is for a
-    /// writer, which needs the members themselves. A config `Sequence` was flattened on the way in,
-    /// so what comes back is the concatenation, not the nesting.
+    /// This is for a writer, which needs the members themselves. A config `Sequence` was
+    /// flattened on the way in, so what comes back is the concatenation, not the nesting.
     pub fn get_normalizers(&self) -> &[PipelineNormalizer] {
         &self.inner.normalizers
     }

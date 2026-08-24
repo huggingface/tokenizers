@@ -130,31 +130,6 @@ pub trait PostProcessor {
         add_special_tokens: bool,
     ) -> Result<Vec<Encoding>>;
 }
-impl dyn PostProcessor {
-    pub fn default_process(
-        encodings: Vec<Encoding>,
-        _add_special_tokens: bool,
-    ) -> Result<Vec<Encoding>> {
-        match encodings.len() {
-            1 => Ok(encodings),
-            _ => {
-                let mut final_encoding = Encoding::default();
-                for (i, mut encoding) in encodings.into_iter().enumerate() {
-                    encoding.set_sequence_id(i);
-                    final_encoding.merge_with(encoding, false);
-                }
-                Ok(vec![final_encoding])
-            }
-        }
-    }
-}
-
-#[derive(thiserror::Error, Debug)]
-pub enum ProcessorError {
-    #[error("encodings vector length must be either 1 or 2")]
-    InvalidEncodingsVecLength,
-}
-
 /// A `Decoder` changes the raw tokens into its more readable form.
 pub trait Decoder {
     fn decode(&self, tokens: Vec<String>) -> Result<String> {

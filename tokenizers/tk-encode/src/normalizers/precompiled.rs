@@ -18,8 +18,9 @@ use unicode_segmentation::UnicodeSegmentation;
 /// goes away the day upstream grows a three-line getter.
 ///
 /// [`charsmap`](Self::charsmap) is an `Option` because not every producer has the bytes to hand:
-/// a value lowered from an already-parsed [`Precompiled`] can only pass [`Self::from_parsed`],
-/// which records `None`, and a writer then reports that rather than inventing a blob.
+/// one that only has an already-parsed [`Precompiled`] records `None`, and a writer then reports
+/// that rather than inventing a blob. `from_charsmap` is currently the only constructor, so today
+/// it is always `Some`.
 #[derive(Debug, Clone)]
 pub struct PrecompiledNormalizer {
     parsed: Precompiled,
@@ -35,14 +36,6 @@ impl PrecompiledNormalizer {
             parsed,
             charsmap: Some(charsmap.into()),
         })
-    }
-
-    /// Adopt an already-parsed value, whose bytes are gone.
-    pub fn from_parsed(parsed: Precompiled) -> Self {
-        Self {
-            parsed,
-            charsmap: None,
-        }
     }
 
     /// The bytes this was parsed from, when they are known.

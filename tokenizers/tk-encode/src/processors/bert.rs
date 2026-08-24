@@ -39,12 +39,6 @@ impl BertProcessing {
     }
 }
 
-#[derive(thiserror::Error, Debug)]
-pub enum BertProcessorError {
-    #[error("encodings vector length must be either 1 or 2")]
-    InvalidEncodingsVecLength,
-}
-
 impl PostProcessor for BertProcessing {
     fn added_tokens(&self, is_pair: bool) -> usize {
         if is_pair { 3 } else { 2 }
