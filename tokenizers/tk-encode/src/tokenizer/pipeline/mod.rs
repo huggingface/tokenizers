@@ -1561,13 +1561,7 @@ pub enum PipelineModel {
 }
 
 impl PipelineModel {
-    /// `id -> token`, for the decoder-chain route in [`PipelineTokenizer::decode`] and for a writer,
-    /// which needs it to name the special tokens a post-processor template refers to by id.
-    ///
-    /// A byte-level BPE answers with its *decoded* bytes, lossily -- see
-    /// [`PipelineBPE::id_to_token`]. That is the right answer for a printable special token, which
-    /// byte-level leaves alone, and the wrong one for a token with a space in it. A writer should
-    /// prefer the added vocabulary, where such tokens actually live.
+    /// `id -> token` used by [`PipelineTokenizer::decode`]
     pub fn id_to_token(&self, id: u32) -> Option<String> {
         match self {
             Self::BPE(model) => model.id_to_token(id),
