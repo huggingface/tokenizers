@@ -23,7 +23,9 @@ pub const TEXTS: &[&str] = &[
 
 /// `None` when the file cannot be fetched, which is the offline case.
 pub fn tokenizer_json(repo: &str) -> Option<std::path::PathBuf> {
-    match hf_hub::api::sync::Api::new().and_then(|api| api.model(repo.to_string()).get("tokenizer.json")) {
+    match hf_hub::api::sync::Api::new()
+        .and_then(|api| api.model(repo.to_string()).get("tokenizer.json"))
+    {
         Ok(path) => Some(path),
         Err(e) => {
             eprintln!("skip {repo}: cannot fetch tokenizer.json ({e})");

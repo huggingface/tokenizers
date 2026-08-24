@@ -26,7 +26,11 @@ fn decoded_text_matches_the_released_crate() {
         let released = Released::from_file(&path).expect("the released crate reads it");
 
         for text in TEXTS {
-            let ids = released.encode_fast(*text, true).unwrap().get_ids().to_vec();
+            let ids = released
+                .encode_fast(*text, true)
+                .unwrap()
+                .get_ids()
+                .to_vec();
             for skip_special in [false, true] {
                 let want = released.decode(&ids, skip_special).unwrap();
                 let got = pipeline.decode(&ids, skip_special).unwrap_or_default();
@@ -36,5 +40,9 @@ fn decoded_text_matches_the_released_crate() {
             }
         }
     }
-    assert!(diverged.is_empty(), "decoded text diverges:\n{}", diverged.join("\n"));
+    assert!(
+        diverged.is_empty(),
+        "decoded text diverges:\n{}",
+        diverged.join("\n")
+    );
 }

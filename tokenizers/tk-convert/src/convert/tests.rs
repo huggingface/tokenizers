@@ -16,52 +16,70 @@ fn done(model: &str, extra: &str) -> Value {
     v
 }
 
+/// The message a config is refused with.
+fn err(model: &str, extra: &str) -> String {
+    let mut v = config(model, extra);
+    canonicalize_value(&mut v)
+        .expect_err("expected a refusal")
+        .to_string()
+}
+
+const UNIGRAM: &str = r#"{"type": "Unigram", "vocab": [["a", 0.0]], "unk_id": 0}"#;
+
 const BPE: &str = r#"{"vocab": {"a": 0, "b": 1, "ab": 2}, "merges": [["a", "b"]]}"#;
 
 /// Not one legacy shape survived. Checkable on the JSON alone, so it does not depend on what the
 /// reader happens to tolerate -- which is what lets the reader keep no legacy branch at all.
 fn assert_no_legacy_residue(v: &Value, what: &str) {
-    let say = |cond: bool, why: &str| assert!(cond, "{what}: {why}");
-    say(
-        v.get("version").and_then(Value::as_str) == Some(VERSION),
-        "the version is not 2.0",
+    assert_eq!(
+        v.get("version").and_then(Value::as_str),
+        Some(VERSION),
+        "{what}: version"
     );
-
     let model = v["model"].as_object().expect("no model object");
-    say(model.contains_key("type"), "the model still has no `type`");
-    say(!model.contains_key("files"), "the vocabulary is still a path");
-    say(
-        !model.get("vocab").is_some_and(Value::is_string),
-        "`vocab` is still a path",
+    assert!(
+        model.contains_key("type"),
+        "{what}: the model has no `type`"
     );
-    say(
-        model.get("type").and_then(Value::as_str) != Some("BPE")
-            || model.get("byte_level").is_some(),
-        "the BPE model does not state `byte_level`",
+    assert!(
+        !model.contains_key("files"),
+        "{what}: the vocabulary is a path"
     );
-    for m in model.get("merges").and_then(Value::as_array).unwrap_or(&vec![]) {
-        say(!m.is_string(), "a merge is still a space-joined string");
+    assert!(!model["vocab"].is_string(), "{what}: `vocab` is a path");
+    if model.get("type").and_then(Value::as_str) == Some("BPE") {
+        assert!(
+            model.contains_key("byte_level"),
+            "{what}: BPE without `byte_level`"
+        );
     }
-
+    for m in model
+        .get("merges")
+        .and_then(Value::as_array)
+        .unwrap_or(&Vec::new())
+    {
+        assert!(!m.is_string(), "{what}: a merge is still space-joined");
+    }
     // Both are two components in disguise; the canonical file spells them as what they are.
     walk(&v["pre_tokenizer"], &mut |o| {
         let tag = o.get("type").and_then(Value::as_str);
-        say(
+        assert!(
             tag != Some("Metaspace") && tag != Some("ByteLevel"),
-            "a `Metaspace` or `ByteLevel` survives in the pre_tokenizer slot",
+            "{what}: a {tag:?} survives in the pre_tokenizer slot"
         );
     });
-    // What is left of a `Metaspace` is a decoder, which the writer spells with neither the legacy
-    // keys nor `split`.
+    // What is left of a `Metaspace` is a decoder, which the writer spells without the legacy keys.
     walk(v, &mut |o| {
         if o.get("type").and_then(Value::as_str) == Some("Metaspace") {
-            for dead in ["add_prefix_space", "str_rep", "split"] {
-                say(!o.contains_key(dead), &format!("a Metaspace still has `{dead}`"));
-            }
-            say(
+            assert!(
                 o.contains_key("prepend_scheme"),
-                "a Metaspace has no `prepend_scheme`",
+                "{what}: Metaspace without a scheme"
             );
+            for dead in ["add_prefix_space", "str_rep", "split"] {
+                assert!(
+                    !o.contains_key(dead),
+                    "{what}: a Metaspace still has `{dead}`"
+                );
+            }
         }
     });
 }
@@ -84,11 +102,20 @@ fn infers_a_missing_model_type() {
     // `merges` **must** beat `continuing_subword_prefix`: a serialized BPE writes that key as
     // null, so gpt2 would otherwise read as a WordPiece with no merges.
     for (model, want) in [
-        (r#"{"vocab": {}, "merges": [], "continuing_subword_prefix": null}"#, "BPE"),
-        (r###"{"vocab": {}, "continuing_subword_prefix": "##"}"###, "WordPiece"),
+        (
+            r#"{"vocab": {}, "merges": [], "continuing_subword_prefix": null}"#,
+            "BPE",
+        ),
+        (
+            r###"{"vocab": {}, "continuing_subword_prefix": "##"}"###,
+            "WordPiece",
+        ),
         (r#"{"vocab": [["a", 0.0]], "unk_id": 0}"#, "Unigram"),
         (r#"{"vocab": {}}"#, "WordLevel"),
-        (r#"{"type": "WordLevel", "vocab": {}, "merges": []}"#, "WordLevel"),
+        (
+            r#"{"type": "WordLevel", "vocab": {}, "merges": []}"#,
+            "WordLevel",
+        ),
     ] {
         assert_eq!(done(model, "")["model"]["type"], want, "{model}");
     }
@@ -117,89 +144,88 @@ fn rewrites_legacy_merges_into_pairs() {
 
 // ---- Metaspace ------------------------------------------------------------------------------
 
-/// A `Metaspace` in the slot one still lives in. The pre-tokenizer form is two components and is
-/// lowered away; the decoder keeps the tag, so it is where the field rules stay observable.
-fn decoder(spelling: &str) -> Result<Value, ConvertError> {
-    let mut v = config(BPE, &format!(r#", "decoder": {spelling}"#));
-    canonicalize_value(&mut v)?;
-    Ok(v["decoder"].clone())
-}
-
 #[test]
 fn metaspace_fields_follow_the_legacy_rules() {
-    let scheme = |s: &str| decoder(s).map(|d| d["prepend_scheme"].clone());
-    // Absent means `always`, because the old `add_prefix_space` defaulted to true.
-    assert_eq!(scheme(r#"{"type": "Metaspace", "replacement": "▁"}"#).unwrap(), "always");
+    let ms = |fields: &str| format!(r#", "decoder": {{"type": "Metaspace"{fields}}}"#);
+    let scheme = |fields: &str| done(BPE, &ms(fields))["decoder"]["prepend_scheme"].clone();
+
+    // Absent means `always`: the old `add_prefix_space` defaulted to true.
+    assert_eq!(scheme(r#", "replacement": "▁""#), "always");
     // `add_prefix_space: true` is ignored outright, so an explicit scheme always wins.
     assert_eq!(
-        scheme(r#"{"type": "Metaspace", "replacement": "▁", "add_prefix_space": true,
-                   "prepend_scheme": "never"}"#).unwrap(),
+        scheme(r#", "replacement": "▁", "add_prefix_space": true, "prepend_scheme": "never""#),
         "never"
     );
     // `false` is checked against the *defaulted* scheme, so it needs an agreeing `never`.
-    assert!(matches!(
-        scheme(r#"{"type": "Metaspace", "replacement": "▁", "add_prefix_space": false}"#),
-        Err(ConvertError::PrefixSpaceMismatch)
-    ));
     assert_eq!(
-        scheme(r#"{"type": "Metaspace", "replacement": "▁", "add_prefix_space": false,
-                   "prepend_scheme": "never"}"#).unwrap(),
+        scheme(r#", "replacement": "▁", "add_prefix_space": false, "prepend_scheme": "never""#),
         "never"
     );
-    assert!(matches!(
-        scheme(r#"{"type": "Metaspace", "replacement": "▁", "prepend_scheme": "sometimes"}"#),
-        Err(ConvertError::UnknownPrependScheme { .. })
-    ));
-    // Checked rather than truncated.
-    assert!(matches!(
-        decoder(r#"{"type": "Metaspace", "replacement": "ab"}"#),
-        Err(ConvertError::MetaspaceBadReplacement { .. })
-    ));
-    assert!(matches!(
-        decoder(r#"{"type": "Metaspace"}"#),
-        Err(ConvertError::MetaspaceNoReplacement)
-    ));
+    assert!(
+        err(
+            BPE,
+            &ms(r#", "replacement": "▁", "add_prefix_space": false"#)
+        )
+        .contains("does not match")
+    );
+    assert!(
+        err(
+            BPE,
+            &ms(r#", "replacement": "▁", "prepend_scheme": "sometimes""#)
+        )
+        .contains("unknown metaspace prepend_scheme")
+    );
+    // Checked, not truncated.
+    assert!(err(BPE, &ms(r#", "replacement": "ab""#)).contains("exactly one character"));
+    assert!(err(BPE, &ms("")).contains("no `replacement`"));
 }
 
 #[test]
 fn a_metaspace_pre_tokenizer_becomes_a_normalizer_and_a_split() {
     // Lone: the delimiter half goes to the normalizer slot, the cut stays a `Split`.
-    let v = done(BPE, r#", "pre_tokenizer": {"type": "Metaspace", "replacement": "▁"}"#);
+    let v = done(
+        BPE,
+        r#", "pre_tokenizer": {"type": "Metaspace", "replacement": "▁"}"#,
+    );
     assert_eq!(
         v["normalizer"],
         serde_json::json!({"type": "MetaspaceNormalizer", "replacement": "▁",
                            "prepend": true, "drop_whitespace": false})
     );
-    assert_eq!(v["pre_tokenizer"]["type"], "Split");
-    assert_eq!(v["pre_tokenizer"]["pattern"], serde_json::json!({"String": "▁"}));
-    assert_eq!(v["pre_tokenizer"]["behavior"], "MergedWithNext");
+    assert_eq!(
+        v["pre_tokenizer"],
+        serde_json::json!({"type": "Split", "pattern": {"String": "▁"},
+                           "behavior": "MergedWithNext", "invert": false})
+    );
 
     // The t5/albert pair: the `WhitespaceSplit` was never a component, it was `drop_whitespace`.
     let v = done(
         BPE,
         r#", "pre_tokenizer": {"type": "Sequence", "pretokenizers": [
-             {"type": "WhitespaceSplit"},
-             {"type": "Metaspace", "replacement": "▁"}]}"#,
+             {"type": "WhitespaceSplit"}, {"type": "Metaspace", "replacement": "▁"}]}"#,
     );
     assert_eq!(v["normalizer"]["drop_whitespace"], true);
     assert_eq!(v["pre_tokenizer"]["type"], "Split");
 
-    // The delimiter half lands *after* a declared normalizer, which is the order the old reader
-    // applied and the one the added-token matcher depends on.
+    // The delimiter half lands *after* a declared normalizer -- the order the old reader applied,
+    // and the one the added-token matcher depends on.
     let v = done(
         BPE,
         r#", "normalizer": {"type": "NFKC"}
            , "pre_tokenizer": {"type": "Metaspace", "replacement": "▁"}"#,
     );
-    assert_eq!(v["normalizer"]["normalizers"][0]["type"], "NFKC");
-    assert_eq!(v["normalizer"]["normalizers"][1]["type"], "MetaspaceNormalizer");
+    let chain = &v["normalizer"]["normalizers"];
+    assert_eq!(chain[0]["type"], "NFKC");
+    assert_eq!(chain[1]["type"], "MetaspaceNormalizer");
 
     // `split: false` wrote delimiters but never cut, and the pair has no way to say that.
-    let mut v = config(BPE, r#", "pre_tokenizer": {"type": "Metaspace", "replacement": "▁", "split": false}"#);
-    assert!(matches!(
-        canonicalize_value(&mut v).unwrap_err(),
-        ConvertError::MetaspaceNoSplit
-    ));
+    assert!(
+        err(
+            BPE,
+            r#", "pre_tokenizer": {"type": "Metaspace", "replacement": "▁", "split": false}"#
+        )
+        .contains("split: false")
+    );
 }
 
 // ---- ByteLevel ------------------------------------------------------------------------------
@@ -208,48 +234,44 @@ fn a_metaspace_pre_tokenizer_becomes_a_normalizer_and_a_split() {
 fn a_byte_level_pre_tokenizer_becomes_a_model_flag_and_a_split() {
     // `use_regex` defaults to true: the split it asked for is the GPT-2 regex.
     let v = done(BPE, r#", "pre_tokenizer": {"type": "ByteLevel"}"#);
+    let pretok = &v["pre_tokenizer"];
     assert_eq!(v["model"]["byte_level"], true);
-    assert_eq!(v["pre_tokenizer"]["pattern"]["Regex"], atomsplit::regexes::GPT2);
+    assert_eq!(pretok["pattern"]["Regex"], atomsplit::regexes::GPT2);
 
     // `use_regex: false` asked only for the byte map, so the member simply goes.
     let v = done(
         BPE,
         r#", "pre_tokenizer": {"type": "Sequence", "pretokenizers": [
-             {"type": "WhitespaceSplit"},
-             {"type": "ByteLevel", "use_regex": false}]}"#,
+             {"type": "WhitespaceSplit"}, {"type": "ByteLevel", "use_regex": false}]}"#,
     );
     assert_eq!(v["model"]["byte_level"], true);
-    assert_eq!(v["pre_tokenizer"]["pretokenizers"][0]["type"], "WhitespaceSplit");
-    assert_eq!(v["pre_tokenizer"]["pretokenizers"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        v["pre_tokenizer"]["pretokenizers"],
+        serde_json::json!([{"type": "WhitespaceSplit"}])
+    );
 
     // A model that never had one still has to say so.
     assert_eq!(done(BPE, "")["model"]["byte_level"], false);
 
-    // Guards the canonical reader no longer carries: it reads `byte_level` only off a BPE, so a
-    // flag anywhere else would be silently ignored rather than refused.
-    for (extra, want) in [
-        (
-            r#", "pre_tokenizer": {"type": "ByteLevel", "add_prefix_space": true}"#,
-            "add_prefix_space",
-        ),
-        (
-            r#", "pre_tokenizer": {"type": "Sequence", "pretokenizers": [
-                 {"type": "ByteLevel"}, {"type": "WhitespaceSplit"}]}"#,
-            "last member",
-        ),
-    ] {
-        let mut v = config(BPE, extra);
-        let e = canonicalize_value(&mut v).unwrap_err().to_string();
-        assert!(e.contains(want), "expected {want:?}, got {e}");
-    }
-    let mut v = config(
-        r#"{"type": "Unigram", "vocab": [["a", 0.0]], "unk_id": 0}"#,
-        r#", "pre_tokenizer": {"type": "ByteLevel"}"#,
+    // Guards the canonical reader no longer carries: it reads `byte_level` only off a BPE, so
+    // one anywhere else would be silently ignored rather than refused.
+    let bl = r#", "pre_tokenizer": {"type": "ByteLevel"}"#;
+    assert!(
+        err(
+            BPE,
+            r#", "pre_tokenizer": {"type": "ByteLevel", "add_prefix_space": true}"#
+        )
+        .contains("add_prefix_space")
     );
-    assert!(matches!(
-        canonicalize_value(&mut v).unwrap_err(),
-        ConvertError::ByteLevelOnNonBpeModel { .. }
-    ));
+    assert!(
+        err(
+            BPE,
+            r#", "pre_tokenizer": {"type": "Sequence", "pretokenizers": [
+             {"type": "ByteLevel"}, {"type": "WhitespaceSplit"}]}"#
+        )
+        .contains("last member")
+    );
+    assert!(err(UNIGRAM, bl).contains("needs a BPE model"));
 }
 
 // ---- the post-processor ------------------------------------------------------------------------
@@ -290,14 +312,14 @@ fn data_objects_are_not_mistaken_for_components() {
 
 #[test]
 fn refuses_something_that_is_not_a_tokenizer_config() {
-    for (text, matches) in [
-        ("[]", matches!(canonicalize_str("[]"), Err(ConvertError::NotAnObject { .. }))),
-        ("{}", matches!(canonicalize_str("{}"), Err(ConvertError::MissingModel))),
-        (r#"{"model": 3}"#, matches!(canonicalize_str(r#"{"model": 3}"#), Err(ConvertError::ModelNotObject { .. }))),
-        ("not json", matches!(canonicalize_str("not json"), Err(ConvertError::Json(_)))),
-    ] {
-        assert!(matches, "{text}");
-    }
+    use ConvertError::*;
+    assert!(matches!(canonicalize_str("[]"), Err(NotAnObject { .. })));
+    assert!(matches!(canonicalize_str("{}"), Err(MissingModel)));
+    assert!(matches!(
+        canonicalize_str(r#"{"model": 3}"#),
+        Err(ModelNotObject { .. })
+    ));
+    assert!(matches!(canonicalize_str("not json"), Err(Json(_))));
 }
 
 /// Safe to run unconditionally in front of a reader, which means running it twice must change
@@ -312,7 +334,11 @@ fn is_idempotent() {
         "model": {"continuing_subword_prefix": null, "vocab": {"a": 0, "b": 1, "ab": 2},
                   "merges": ["#version: 0.2", "a b"]}}"##;
     let once = canonicalize_str(legacy).unwrap();
-    assert_eq!(once, canonicalize_str(&once).unwrap(), "the pass is not idempotent");
+    assert_eq!(
+        once,
+        canonicalize_str(&once).unwrap(),
+        "the pass is not idempotent"
+    );
     assert_no_legacy_residue(&serde_json::from_str(&once).unwrap(), "the legacy literal");
 }
 
@@ -359,12 +385,18 @@ fn every_fixture_canonicalises_into_something_the_canonical_reader_accepts() {
             Err(e) => {
                 let (_, why) = listed
                     .unwrap_or_else(|| panic!("{name}: this pass refuses to convert it: {e}"));
-                assert!(e.to_string().contains(why), "{name}: not the listed reason: {e}");
+                assert!(
+                    e.to_string().contains(why),
+                    "{name}: not the listed reason: {e}"
+                );
                 unconvertible += 1;
                 continue;
             }
             Ok(c) => {
-                assert!(listed.is_none(), "{name}: listed as unconvertible, but it converted");
+                assert!(
+                    listed.is_none(),
+                    "{name}: listed as unconvertible, but it converted"
+                );
                 c
             }
         };
@@ -374,6 +406,8 @@ fn every_fixture_canonicalises_into_something_the_canonical_reader_accepts() {
         }
         read += 1;
     }
-    eprintln!("{read} converted and read; {unconvertible} with no canonical form; {skipped} not configs");
+    eprintln!(
+        "{read} converted and read; {unconvertible} with no canonical form; {skipped} not configs"
+    );
     assert!(read > 0, "no fixture was actually read");
 }

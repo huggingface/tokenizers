@@ -29,14 +29,20 @@ fn ids_match_the_released_crate() {
 
         for text in TEXTS {
             for special in [false, true] {
-                let want = released.encode_fast(*text, special).unwrap().get_ids().to_vec();
+                let want = released
+                    .encode_fast(*text, special)
+                    .unwrap()
+                    .get_ids()
+                    .to_vec();
                 let got: Vec<u32> = pipeline.encode(*text, special).wait().unwrap()[0]
                     .ids()
                     .iter()
                     .map(|t| t.id())
                     .collect();
                 if want != got {
-                    diverged.push(format!("{repo} special={special} {text:?}: {want:?} vs {got:?}"));
+                    diverged.push(format!(
+                        "{repo} special={special} {text:?}: {want:?} vs {got:?}"
+                    ));
                 }
             }
         }
