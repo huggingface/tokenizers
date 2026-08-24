@@ -15,7 +15,7 @@
 //! and run under Rosetta, which reports SSSE3, so this path is the one that executes. The scalar
 //! builder in `lib.rs` stays the reference it is compared against.
 
-use crate::{AUX_CJK, AUX_NONE, AUX_SLASH, Blk, lead_run};
+use crate::{AUX_NONE, AUX_SLASH, Blk, lead_run};
 use core::arch::x86_64::*;
 
 /// `x <= k`, unsigned, in the absence of an unsigned byte compare.
