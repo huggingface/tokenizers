@@ -297,9 +297,8 @@ fn an_absent_prepend_scheme_is_always_not_never() {
 #[test]
 fn add_prefix_space_true_is_dropped_and_never_overrides_a_scheme() {
     // Only the old key: agrees with the default.
-    let ms =
-        metaspace(r#"{"type": "Metaspace", "replacement": "▁", "add_prefix_space": true}"#)
-            .unwrap();
+    let ms = metaspace(r#"{"type": "Metaspace", "replacement": "▁", "add_prefix_space": true}"#)
+        .unwrap();
     assert_eq!(ms["prepend_scheme"], "always");
     assert!(ms.get("add_prefix_space").is_none());
 
@@ -330,9 +329,8 @@ fn add_prefix_space_false_needs_an_agreeing_never() {
     assert_eq!(ms["prepend_scheme"], "never");
 
     // Alone: checked against the *defaulted* `always`, so it is a hard error.
-    let err =
-        metaspace(r#"{"type": "Metaspace", "replacement": "▁", "add_prefix_space": false}"#)
-            .unwrap_err();
+    let err = metaspace(r#"{"type": "Metaspace", "replacement": "▁", "add_prefix_space": false}"#)
+        .unwrap_err();
     assert!(matches!(err, ConvertError::PrefixSpaceMismatch), "{err}");
 
     // Explicitly disagreeing: also a hard error.
@@ -366,19 +364,16 @@ fn str_rep_is_thrown_away() {
 /// pair has no way to say that -- the `Split` is the cut.
 #[test]
 fn a_metaspace_that_does_not_split_has_no_canonical_form() {
-    let err = lowered_metaspace(
-        r#"{"type": "Metaspace", "replacement": "▁", "split": false}"#,
-    )
-    .unwrap_err();
+    let err = lowered_metaspace(r#"{"type": "Metaspace", "replacement": "▁", "split": false}"#)
+        .unwrap_err();
     assert!(matches!(err, ConvertError::MetaspaceNoSplit), "{err}");
 }
 
 #[test]
 fn an_unknown_prepend_scheme_is_refused() {
-    let err = metaspace(
-        r#"{"type": "Metaspace", "replacement": "▁", "prepend_scheme": "sometimes"}"#,
-    )
-    .unwrap_err();
+    let err =
+        metaspace(r#"{"type": "Metaspace", "replacement": "▁", "prepend_scheme": "sometimes"}"#)
+            .unwrap_err();
     assert!(
         matches!(err, ConvertError::UnknownPrependScheme { .. }),
         "{err}"
@@ -581,9 +576,8 @@ fn every_fixture_canonicalises_into_something_the_canonical_reader_accepts() {
         let listed = UNCONVERTIBLE.iter().find(|(n, _)| *n == name);
         let canonical = match canonicalize_file(path) {
             Err(e) => {
-                let (_, why) = listed.unwrap_or_else(|| {
-                    panic!("{at} {name}: this pass refuses to convert it: {e}")
-                });
+                let (_, why) = listed
+                    .unwrap_or_else(|| panic!("{at} {name}: this pass refuses to convert it: {e}"));
                 assert!(
                     e.to_string().contains(why),
                     "{at} {name}: refused, but not for the listed reason ({why}): {e}"
