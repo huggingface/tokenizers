@@ -30,7 +30,33 @@ fn model_type(v: &Value) -> &str {
 /// input; "the output contains no legacy shape" is the property that lets those branches be
 /// deleted, and it is checkable on the JSON alone.
 fn assert_no_legacy_residue(v: &Value, what: &str) {
+    assert_eq!(
+        v.get("version").and_then(Value::as_str),
+        Some("2.0"),
+        "{what}: the config is still not version 2.0"
+    );
+    // Both are two components in disguise, and the canonical file spells them as what they are.
+    for tag in ["Metaspace", "ByteLevel"] {
+        assert!(
+            v["pre_tokenizer"].get("type").and_then(Value::as_str) != Some(tag),
+            "{what}: the pre_tokenizer slot still holds a `{tag}`"
+        );
+        assert!(
+            !v["pre_tokenizer"]["pretokenizers"]
+                .as_array()
+                .is_some_and(|m| m
+                    .iter()
+                    .any(|c| c.get("type").and_then(Value::as_str) == Some(tag))),
+            "{what}: a `{tag}` is still a member of the pre_tokenizer `Sequence`"
+        );
+    }
     let model = v["model"].as_object().expect("no model object");
+    if model.get("type").and_then(Value::as_str) == Some("BPE") {
+        assert!(
+            model.get("byte_level").and_then(Value::as_bool).is_some(),
+            "{what}: the BPE model does not say whether it is byte-level"
+        );
+    }
     assert!(
         model.get("type").and_then(Value::as_str).is_some(),
         "{what}: the model still has no `type`"
@@ -70,8 +96,9 @@ fn assert_no_legacy_residue(v: &Value, what: &str) {
                         "{what}: a Metaspace still has no `prepend_scheme`"
                     );
                     assert!(
-                        obj.get("split").and_then(Value::as_bool).is_some(),
-                        "{what}: a Metaspace still has no `split`"
+                        obj.get("split").is_none(),
+                        "{what}: a Metaspace still carries `split`, which only the \
+                         pre-tokenizer form had"
                     );
                 }
                 for v in obj.values() {
@@ -240,13 +267,25 @@ fn an_array_shaped_unigram_vocab_is_left_alone() {
 // Rule 2: Metaspace
 // ---------------------------------------------------------------------------------------------
 
+/// A `Metaspace` in the slot one still lives in. The pre-tokenizer form is two components and is
+/// lowered away; the decoder keeps the tag, so it is where the field rules stay observable.
 fn metaspace(spelling: &str) -> Result<Value, ConvertError> {
+    let mut v = config(
+        r#"{"type": "Unigram", "vocab": [["a", 0.0]], "unk_id": 0}"#,
+        &format!(r#", "decoder": {spelling}"#),
+    );
+    canonicalize_value(&mut v)?;
+    Ok(v["decoder"].clone())
+}
+
+/// A `Metaspace` pre-tokenizer, lowered. Returns `(normalizer, pre_tokenizer)`.
+fn lowered_metaspace(spelling: &str) -> Result<(Value, Value), ConvertError> {
     let mut v = config(
         r#"{"type": "Unigram", "vocab": [["a", 0.0]], "unk_id": 0}"#,
         &format!(r#", "pre_tokenizer": {spelling}"#),
     );
     canonicalize_value(&mut v)?;
-    Ok(v["pre_tokenizer"].clone())
+    Ok((v["normalizer"].clone(), v["pre_tokenizer"].clone()))
 }
 
 #[test]
@@ -313,17 +352,25 @@ fn add_prefix_space_false_needs_an_agreeing_never() {
 }
 
 #[test]
-fn str_rep_is_thrown_away_and_split_is_spelled_out() {
+fn str_rep_is_thrown_away() {
     let ms = metaspace(
         r#"{"type": "Metaspace", "replacement": "▁",
             "str_rep": "▁", "add_prefix_space": true}"#,
     )
     .unwrap();
     assert!(ms.get("str_rep").is_none());
-    assert_eq!(ms["split"], true);
-    // An explicit `split` is kept.
-    let ms = metaspace(r#"{"type": "Metaspace", "replacement": "▁", "split": false}"#).unwrap();
-    assert_eq!(ms["split"], false);
+    assert!(ms.get("add_prefix_space").is_none());
+}
+
+/// `split: false` asked the `Metaspace` to rewrite the text without cutting it, and the canonical
+/// pair has no way to say that -- the `Split` is the cut.
+#[test]
+fn a_metaspace_that_does_not_split_has_no_canonical_form() {
+    let err = lowered_metaspace(
+        r#"{"type": "Metaspace", "replacement": "▁", "split": false}"#,
+    )
+    .unwrap_err();
+    assert!(matches!(err, ConvertError::MetaspaceNoSplit), "{err}");
 }
 
 #[test]
@@ -370,11 +417,10 @@ fn every_metaspace_position_is_walked() {
 
     for found in [
         &v["normalizer"]["normalizers"][0],
-        &v["pre_tokenizer"]["pretokenizers"][1]["pretokenizers"][0],
         &v["decoder"]["decoders"][0],
     ] {
         assert_eq!(found["prepend_scheme"], "always");
-        assert_eq!(found["split"], true);
+        assert!(found.get("split").is_none());
         assert!(found.get("add_prefix_space").is_none());
         assert!(found.get("str_rep").is_none());
     }
@@ -390,9 +436,11 @@ fn data_objects_are_not_mistaken_for_components() {
         r#", "post_processor": {"type": "TemplateProcessing", "single": [],
               "pair": [], "special_tokens": {"x": {"type": "Metaspace"}}}"#,
     );
-    // No `replacement`, so if the walk reached it this would be `MetaspaceNoReplacement`.
+    // No `replacement`, so if the component walk reached it this would be
+    // `MetaspaceNoReplacement`. It does not: the table is data, and the template lowering consumes
+    // it rather than descending into it.
     canonicalize_value(&mut v).unwrap();
-    assert!(v["post_processor"]["special_tokens"]["x"]["type"] == "Metaspace");
+    assert!(v["post_processor"].get("special_tokens").is_none());
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -482,6 +530,15 @@ fn is_idempotent() {
 /// `make fixtures`, so a fresh checkout has none of it.
 #[test]
 fn every_fixture_canonicalises_into_something_the_canonical_reader_accepts() {
+    /// Fixtures with no canonical form, each with a substring its refusal must contain.
+    ///
+    /// Every entry is a limit of what the pipeline can *build*, not a gap in this pass. Listing
+    /// them here rather than skipping makes adding one a diff a reviewer sees.
+    const UNCONVERTIBLE: &[(&str, &str)] = &[
+        // A `ByteLevel` with `add_prefix_space: true`, which the pipeline cannot express.
+        ("tokenizer.json", "add_prefix_space"),
+    ];
+
     let dir = std::path::Path::new(DATA);
     let Ok(entries) = std::fs::read_dir(dir) else {
         eprintln!("skipping: no fixture directory at {DATA}");
@@ -503,7 +560,7 @@ fn every_fixture_canonicalises_into_something_the_canonical_reader_accepts() {
             .map_err(|e| e.to_string())
     };
 
-    let (mut ok, mut fixed, mut unreadable, mut skipped) = (0usize, 0usize, 0usize, 0usize);
+    let (mut ok, mut skipped, mut unconvertible) = (0usize, 0usize, 0usize);
     for (i, path) in files.iter().enumerate() {
         let at = format!("[{}/{}]", i + 1, files.len());
         let name = path.file_name().unwrap().to_string_lossy().to_string();
@@ -518,41 +575,49 @@ fn every_fixture_canonicalises_into_something_the_canonical_reader_accepts() {
             continue;
         }
 
-        let before = read(&text);
-        let canonical = canonicalize_file(path).unwrap_or_else(|e| panic!("{at} {name}: {e}"));
+        // Refusing is a legitimate outcome, but only for a listed file: some legacy spellings
+        // have no canonical form and inventing one would move ids. Both directions are checked --
+        // a stale entry fails, and a refusal for an unlisted reason fails.
+        let listed = UNCONVERTIBLE.iter().find(|(n, _)| *n == name);
+        let canonical = match canonicalize_file(path) {
+            Err(e) => {
+                let (_, why) = listed.unwrap_or_else(|| {
+                    panic!("{at} {name}: this pass refuses to convert it: {e}")
+                });
+                assert!(
+                    e.to_string().contains(why),
+                    "{at} {name}: refused, but not for the listed reason ({why}): {e}"
+                );
+                eprintln!("{at} {name}  unconvertible, as listed: {e}");
+                unconvertible += 1;
+                continue;
+            }
+            Ok(c) => {
+                assert!(
+                    listed.is_none(),
+                    "{at} {name}: listed as unconvertible, but it converted -- drop the entry"
+                );
+                c
+            }
+        };
         // The check that does not depend on what the reader currently tolerates.
         assert_no_legacy_residue(&serde_json::from_str(&canonical).unwrap(), &name);
-        let after = read(&canonical);
-
-        match (before, after) {
-            (Ok(()), Ok(())) => {
+        // Absolute, not "no worse than before": every fixture either converts and reads, or is
+        // named in `UNCONVERTIBLE`. The old before/after comparison cannot say anything any more --
+        // the reader refuses every raw 1.0 file, so "before" is the same version error every time.
+        match read(&canonical) {
+            Ok(()) => {
                 eprintln!("{at} {name}  ok");
                 ok += 1;
             }
-            (Err(was), Ok(())) => {
-                eprintln!("{at} {name}  ok (the conversion fixed it: {was})");
-                fixed += 1;
-            }
-            (Ok(()), Err(now)) => panic!(
-                "{at} {name}: the canonical reader read the ORIGINAL and refuses the \
-                 canonicalised one -- this pass broke it: {now}"
+            Err(now) => panic!(
+                "{at} {name}: canonicalised, but the canonical reader still refuses it: {now}"
             ),
-            (Err(was), Err(now)) => {
-                assert_eq!(
-                    was, now,
-                    "{at} {name}: still refused, and for a different reason than before, \
-                     so this pass left a field unfilled"
-                );
-                eprintln!("{at} {name}  refused before and after, unchanged: {now}");
-                unreadable += 1;
-            }
         }
     }
     eprintln!(
-        "{ok} already read + {fixed} fixed by this pass = {} read through the canonical \
-         reader; {unreadable} refused for a reason this pass cannot affect; {skipped} not \
-         tokenizer configs",
-        ok + fixed
+        "{ok} converted and read through the canonical reader; {unconvertible} with no canonical \
+         form; {skipped} not tokenizer configs"
     );
-    assert!(ok + fixed > 0, "no fixture was actually read");
+    assert!(ok > 0, "no fixture was actually read");
 }

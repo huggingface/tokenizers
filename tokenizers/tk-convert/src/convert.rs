@@ -51,6 +51,29 @@ pub enum ConvertError {
 
     #[error("a `Metaspace` `replacement` must be exactly one character, got {got:?}")]
     MetaspaceBadReplacement { got: String },
+
+    #[error(
+        "a `Metaspace` pre-tokenizer with `prepend_scheme: first` has no canonical spelling yet"
+    )]
+    MetaspacePrependSchemeFirst,
+
+    #[error("a `Metaspace` pre-tokenizer with `split: false` has no canonical spelling")]
+    MetaspaceNoSplit,
+
+    #[error("a `ByteLevel` pre-tokenizer with `add_prefix_space: true` is not supported")]
+    ByteLevelAddPrefixSpace,
+
+    #[error("a `ByteLevel` pre-tokenizer must be the last member of its `Sequence`")]
+    ByteLevelNotLast,
+
+    #[error("a `ByteLevel` pre-tokenizer needs a BPE model, found {model}")]
+    ByteLevelOnNonBpeModel { model: String },
+
+    #[error("a template piece is neither a `Sequence` nor a `SpecialToken`")]
+    BadTemplatePiece,
+
+    #[error("the template names the special token {name:?}, which its `special_tokens` does not")]
+    UnknownTemplateSpecial { name: String },
 }
 
 /// Canonicalise a `tokenizer.json` held as a string. Pretty-printed, because a human usually reads
@@ -79,22 +102,71 @@ pub fn canonicalize_value(value: &mut Value) -> Result<(), ConvertError> {
         .as_object_mut()
         .ok_or(ConvertError::NotAnObject { found })?;
 
-    let model = root.get_mut("model").ok_or(ConvertError::MissingModel)?;
-    let found = kind_of(model);
-    let model = model
-        .as_object_mut()
-        .ok_or(ConvertError::ModelNotObject { found })?;
-    fill_model_type(model);
-    canonicalize_merges(model)?;
+    root.insert("version".to_string(), Value::String(VERSION.to_string()));
 
-    // `Metaspace` is written down in three of these (pre-tokenizer, decoder, and the normalizer
-    // slot of a config that spells its chain out by hand), so all four are walked.
+    {
+        let model = root.get_mut("model").ok_or(ConvertError::MissingModel)?;
+        let found = kind_of(model);
+        let model = model
+            .as_object_mut()
+            .ok_or(ConvertError::ModelNotObject { found })?;
+        fill_model_type(model);
+        canonicalize_merges(model)?;
+    }
+
+    // Both read the `pre_tokenizer` slot and write elsewhere -- the normalizer chain, the model --
+    // so they run before the per-component fill below sees either.
+    lower_metaspace_pre_tokenizer(root)?;
+    lower_byte_level_pre_tokenizer(root)?;
+    lower_template_processing(root)?;
+
+    fill_model_defaults(root)?;
+
+    // `Metaspace` survives as a *decoder*, so all four slots are still walked.
     for slot in ["normalizer", "pre_tokenizer", "post_processor", "decoder"] {
         if let Some(node) = root.get_mut(slot) {
             canonicalize_component(node)?;
         }
     }
     Ok(())
+}
+
+/// The canonical format this pass emits.
+const VERSION: &str = "2.0";
+
+/// `{"type": tag, ...fields}`.
+fn tagged(tag: &str, fields: &[(&str, Value)]) -> Value {
+    let mut obj = Map::new();
+    obj.insert("type".to_string(), Value::String(tag.to_string()));
+    for (k, v) in fields {
+        obj.insert((*k).to_string(), v.clone());
+    }
+    Value::Object(obj)
+}
+
+/// Append `normalizer` to the chain, after whatever the config already declared.
+///
+/// The order matters and is the one the old reader used: a `Metaspace` pre-tokenizer rewrote the
+/// text *after* the declared normalizer had run.
+fn append_normalizer(root: &mut Map<String, Value>, normalizer: Value) {
+    let existing = root.get("normalizer").cloned().unwrap_or(Value::Null);
+    let chain = match existing {
+        Value::Null => normalizer,
+        Value::Object(ref o) if o.get("type").and_then(Value::as_str) == Some("Sequence") => {
+            let mut members = o
+                .get("normalizers")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+            members.push(normalizer);
+            tagged("Sequence", &[("normalizers", Value::Array(members))])
+        }
+        declared => tagged(
+            "Sequence",
+            &[("normalizers", Value::Array(vec![declared, normalizer]))],
+        ),
+    };
+    root.insert("normalizer".to_string(), chain);
 }
 
 /// Give the model a `"type"` if it has none, in the order both read paths use.
@@ -239,11 +311,9 @@ fn canonicalize_metaspace(obj: &mut Map<String, Value>) -> Result<(), ConvertErr
     obj.insert("prepend_scheme".to_string(), Value::String(scheme));
     obj.remove("add_prefix_space");
     obj.remove("str_rep");
-    // `split` defaults to `true` on both read paths; spelled out so the reader carries one default
-    // fewer.
-    if obj.get("split").filter(|v| !v.is_null()).is_none() {
-        obj.insert("split".to_string(), Value::Bool(true));
-    }
+    // Only the pre-tokenizer form had `split`, and that form is lowered away. What is left is a
+    // decoder, which the canonical writer spells as `{type, replacement, prepend_scheme}`.
+    obj.remove("split");
     Ok(())
 }
 
@@ -257,4 +327,290 @@ fn kind_of(value: &Value) -> &'static str {
         Value::Array(_) => "an array",
         Value::Object(_) => "an object",
     }
+}
+
+/// A `Metaspace` pre-tokenizer is two components, so it does not survive as itself.
+///
+/// It becomes a `MetaspaceNormalizer` in the `normalizer` slot (which rewrites the text) plus a
+/// `Split` on the delimiter here (which cuts it). `Sequence[WhitespaceSplit, Metaspace]` -- the
+/// shape t5 and albert ship -- is the same thing with `drop_whitespace`, and the whole `Sequence`
+/// collapses to the lone `Split`.
+fn lower_metaspace_pre_tokenizer(root: &mut Map<String, Value>) -> Result<(), ConvertError> {
+    let Some(pretok) = root.get("pre_tokenizer") else {
+        return Ok(());
+    };
+    let (metaspace, drop_whitespace) = match pretok {
+        Value::Object(o) if o.get("type").and_then(Value::as_str) == Some("Metaspace") => {
+            (o.clone(), false)
+        }
+        Value::Object(o) if o.get("type").and_then(Value::as_str) == Some("Sequence") => {
+            match o.get("pretokenizers").and_then(Value::as_array).map(|m| &m[..]) {
+                Some([first, second])
+                    if first.get("type").and_then(Value::as_str) == Some("WhitespaceSplit")
+                        && second.get("type").and_then(Value::as_str) == Some("Metaspace") =>
+                {
+                    (second.as_object().expect("matched as an object").clone(), true)
+                }
+                _ => return Ok(()),
+            }
+        }
+        _ => return Ok(()),
+    };
+
+    // `split` defaulted to true, and is read before the shared normalisation drops it.
+    // `split: false` wrote delimiters but never cut, so there is no `Split` to hand back.
+    if !metaspace
+        .get("split")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+    {
+        return Err(ConvertError::MetaspaceNoSplit);
+    }
+    // Reuse the field normalisation written for the decoder case, so the `add_prefix_space` quirk
+    // is applied in exactly one place.
+    let mut metaspace = metaspace;
+    canonicalize_metaspace(&mut metaspace)?;
+
+    let replacement = metaspace
+        .get("replacement")
+        .and_then(Value::as_str)
+        .ok_or(ConvertError::MetaspaceNoReplacement)?
+        .to_string();
+    let prepend = match metaspace.get("prepend_scheme").and_then(Value::as_str) {
+        Some("always") => true,
+        Some("never") => false,
+        // No canonical spelling: the pipeline applies a normalizer per segment and cannot know it
+        // is the first. See the `TODO(v1)` in tk-serialize's `from_json::pre_tokenizers`.
+        Some("first") => return Err(ConvertError::MetaspacePrependSchemeFirst),
+        other => {
+            return Err(ConvertError::UnknownPrependScheme {
+                scheme: other.unwrap_or_default().to_string(),
+            });
+        }
+    };
+
+    append_normalizer(
+        root,
+        tagged(
+            "MetaspaceNormalizer",
+            &[
+                ("replacement", Value::String(replacement.clone())),
+                ("prepend", Value::Bool(prepend)),
+                ("drop_whitespace", Value::Bool(drop_whitespace)),
+            ],
+        ),
+    );
+    root.insert(
+        "pre_tokenizer".to_string(),
+        tagged(
+            "Split",
+            &[
+                ("pattern", serde_json::json!({ "String": replacement })),
+                ("behavior", Value::String("MergedWithNext".to_string())),
+                ("invert", Value::Bool(false)),
+            ],
+        ),
+    );
+    Ok(())
+}
+
+/// A `ByteLevel` pre-tokenizer says two things, and only one of them is about splitting.
+///
+/// The byte map is a property of the vocabulary, so it becomes `"byte_level": true` on the model.
+/// What is left is the split it asked for: the GPT-2 regex when `use_regex` (the default), and
+/// nothing at all when not.
+fn lower_byte_level_pre_tokenizer(root: &mut Map<String, Value>) -> Result<(), ConvertError> {
+    let Some(pretok) = root.get_mut("pre_tokenizer") else {
+        return Ok(());
+    };
+    let is_byte_level =
+        |v: &Value| v.get("type").and_then(Value::as_str) == Some("ByteLevel");
+
+    // `use_regex` defaults to true, which is what gpt2 and roberta rely on.
+    let split_for = |bl: &Value| -> Result<Option<Value>, ConvertError> {
+        if bl.get("add_prefix_space").and_then(Value::as_bool) == Some(true) {
+            return Err(ConvertError::ByteLevelAddPrefixSpace);
+        }
+        Ok(
+            match bl.get("use_regex").and_then(Value::as_bool).unwrap_or(true) {
+                true => Some(tagged(
+                    "Split",
+                    &[(
+                        "pattern",
+                        serde_json::json!({ "Regex": atomsplit::regexes::GPT2 }),
+                    )],
+                )),
+                false => None,
+            },
+        )
+    };
+
+    let replacement = if is_byte_level(pretok) {
+        Some(split_for(pretok)?)
+    } else if pretok.get("type").and_then(Value::as_str) == Some("Sequence") {
+        let members = pretok
+            .get_mut("pretokenizers")
+            .and_then(Value::as_array_mut);
+        match members {
+            Some(members) if members.last().is_some_and(is_byte_level) => {
+                let bl = members.pop().expect("checked by `last`");
+                if let Some(split) = split_for(&bl)? {
+                    members.push(split);
+                }
+                // A `Sequence` whose only member was the dropped `ByteLevel` is not an empty
+                // sequence, it is no pre-tokenizer at all -- which is what `use_regex: false`
+                // lowered to before.
+                if members.is_empty() {
+                    Some(None)
+                } else {
+                    None // the `Sequence` was edited in place
+                }
+            }
+            // A `ByteLevel` anywhere but last never loaded: the byte map has to apply after every
+            // split, and guessing an order would produce a different tokenizer rather than an error.
+            Some(members) if members.iter().any(is_byte_level) => {
+                return Err(ConvertError::ByteLevelNotLast);
+            }
+            _ => return Ok(()),
+        }
+    } else {
+        return Ok(());
+    };
+
+    let kind = root
+        .get("model")
+        .and_then(|m| m.get("type"))
+        .and_then(Value::as_str)
+        .unwrap_or("an untyped model")
+        .to_string();
+    if kind != "BPE" {
+        return Err(ConvertError::ByteLevelOnNonBpeModel { model: kind });
+    }
+
+    if let Some(split) = replacement {
+        match split {
+            Some(split) => root.insert("pre_tokenizer".to_string(), split),
+            None => root.remove("pre_tokenizer"),
+        };
+    }
+    set_model_flag(root, "byte_level", true)?;
+    Ok(())
+}
+
+/// Set a boolean on the `model` object.
+fn set_model_flag(
+    root: &mut Map<String, Value>,
+    key: &str,
+    value: bool,
+) -> Result<(), ConvertError> {
+    let model = root.get_mut("model").ok_or(ConvertError::MissingModel)?;
+    let found = kind_of(model);
+    model
+        .as_object_mut()
+        .ok_or(ConvertError::ModelNotObject { found })?
+        .insert(key.to_string(), Value::Bool(value));
+    Ok(())
+}
+
+/// Everything the reader requires of a model that a legacy writer left out.
+fn fill_model_defaults(root: &mut Map<String, Value>) -> Result<(), ConvertError> {
+    let model = root.get_mut("model").ok_or(ConvertError::MissingModel)?;
+    let found = kind_of(model);
+    let model = model
+        .as_object_mut()
+        .ok_or(ConvertError::ModelNotObject { found })?;
+    if model.get("type").and_then(Value::as_str) == Some("BPE") {
+        // Only set when the `ByteLevel` lowering did not already say otherwise.
+        model
+            .entry("byte_level")
+            .or_insert(Value::Bool(false));
+    }
+    Ok(())
+}
+
+/// A `TemplateProcessing` used to name its special tokens and carry a table to look them up in.
+/// The pipeline keeps only the ids, so the canonical piece states them directly and the table goes:
+///
+/// ```text
+///   {"SpecialToken": {"id": "[CLS]", "type_id": 0}}   ->  {"ids": [2], "type_id": 0}
+///   {"Sequence":     {"id": "A",     "type_id": 0}}   ->  {"seq": "A", "type_id": 0}
+/// ```
+fn lower_template_processing(root: &mut Map<String, Value>) -> Result<(), ConvertError> {
+    let Some(pp) = root.get_mut("post_processor") else {
+        return Ok(());
+    };
+    lower_template_node(pp)
+}
+
+/// A `TemplateProcessing` can sit inside a `Sequence` post-processor -- llama-3 puts one behind a
+/// `ByteLevel` -- so the whole subtree is walked rather than just the slot.
+fn lower_template_node(node: &mut Value) -> Result<(), ConvertError> {
+    if let Value::Array(items) = node {
+        for item in items {
+            lower_template_node(item)?;
+        }
+        return Ok(());
+    }
+    let Some(pp) = node.as_object_mut() else {
+        return Ok(());
+    };
+    if pp.get("type").and_then(Value::as_str) == Some("Sequence")
+        && let Some(children) = pp.get_mut("processors")
+    {
+        return lower_template_node(children);
+    }
+    if pp.get("type").and_then(Value::as_str) != Some("TemplateProcessing") {
+        return Ok(());
+    }
+    let specials = pp.get("special_tokens").cloned().unwrap_or(Value::Null);
+    // Already canonical: the table is what a legacy file has, and the pieces are flat without it.
+    if specials.is_null() {
+        return Ok(());
+    }
+
+    for key in ["single", "pair"] {
+        let Some(pieces) = pp.get(key).and_then(Value::as_array).cloned() else {
+            continue;
+        };
+        let mut out = Vec::with_capacity(pieces.len());
+        for piece in &pieces {
+            // Already flat, so leave it: this pass has to be safe to run twice.
+            if piece.get("seq").is_some() || piece.get("ids").is_some() {
+                out.push(piece.clone());
+                continue;
+            }
+            let mut flat = Map::new();
+            if let Some(seq) = piece.get("Sequence") {
+                flat.insert(
+                    "seq".to_string(),
+                    seq.get("id").cloned().ok_or(ConvertError::BadTemplatePiece)?,
+                );
+                if let Some(t) = seq.get("type_id") {
+                    flat.insert("type_id".to_string(), t.clone());
+                }
+            } else if let Some(tok) = piece.get("SpecialToken") {
+                let name = tok
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .ok_or(ConvertError::BadTemplatePiece)?;
+                let ids = specials
+                    .get(name)
+                    .and_then(|e| e.get("ids"))
+                    .cloned()
+                    .ok_or_else(|| ConvertError::UnknownTemplateSpecial {
+                        name: name.to_string(),
+                    })?;
+                flat.insert("ids".to_string(), ids);
+                if let Some(t) = tok.get("type_id") {
+                    flat.insert("type_id".to_string(), t.clone());
+                }
+            } else {
+                return Err(ConvertError::BadTemplatePiece);
+            }
+            out.push(Value::Object(flat));
+        }
+        pp.insert(key.to_string(), Value::Array(out));
+    }
+    pp.remove("special_tokens");
+    Ok(())
 }
