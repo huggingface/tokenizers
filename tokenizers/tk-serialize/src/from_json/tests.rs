@@ -196,9 +196,9 @@ fn byte_level_is_a_model_field_not_a_pre_tokenizer() {
     let doc = Json::parse(&json).unwrap();
     let pretok = read_pre_tokenizer(doc.field("pre_tokenizer")).unwrap();
     assert!(matches!(pretok, PipelinePreTokenizer::None));
-    // What the flag *does* reach is the model, which then wants every byte to be an atom -- the
-    // four-token vocab above is not one, so the read is refused for that reason and no other.
-    println!("PROBE {}", read_err(&json));
+    // Where the flag *does* land is the model, which then wants every byte to be an atom. The
+    // four-token vocab above is not one, so this is refused for that reason and no other.
+    assert!(read_err(&json).contains("Byte atom"), "not the byte-atom refusal");
 }
 
 /// One config per decoder variant, so a field rename fails here rather than silently producing a
