@@ -422,13 +422,6 @@ impl<'a> Lattice<'a> {
         results
     }
 
-    pub fn sample_token(&self, theta: f64) -> Vec<String> {
-        self.sample(theta)
-            .iter()
-            .map(|node| self.piece(&node.borrow()))
-            .collect()
-    }
-
     pub fn sample_nbest(&mut self, n: usize, theta: f64) -> Vec<NodeRef> {
         let nbest_paths = self.nbest(n);
         if nbest_paths.is_empty() {

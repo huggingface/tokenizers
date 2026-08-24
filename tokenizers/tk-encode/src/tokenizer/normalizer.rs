@@ -952,33 +952,6 @@ pub fn get_range_of<T: RangeBounds<usize>>(s: &str, range: T) -> Option<&str> {
     }
 }
 
-/// Convert the given range from bytes to char
-pub fn bytes_to_char(s: &str, range: std::ops::Range<usize>) -> Option<std::ops::Range<usize>> {
-    let (mut start, mut end) = if range == (0..0) {
-        (Some(0), Some(0))
-    } else {
-        (None, None)
-    };
-
-    s.char_indices()
-        .enumerate()
-        .take_while(|(_, (b, _))| *b <= range.end)
-        .filter(|(_, (b, _))| *b >= range.start)
-        .for_each(|(i, (b, c))| {
-            if b == range.start {
-                start = Some(i);
-            }
-            if b == range.end {
-                end = Some(i);
-            }
-            if b + c.len_utf8() == range.end {
-                end = Some(i + 1);
-            }
-        });
-
-    Some(start?..end?)
-}
-
 /// Convert the given range from char to bytes
 pub fn char_to_bytes(s: &str, range: std::ops::Range<usize>) -> Option<std::ops::Range<usize>> {
     let (mut start, mut end) = if range == (0..0) {

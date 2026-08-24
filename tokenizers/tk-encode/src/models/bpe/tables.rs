@@ -285,7 +285,7 @@ mod test {
     };
 
     #[test]
-    pub fn test_build() {
+    fn test_build() {
         let vocab = AHashMap::from_iter(vec![
             ("a".to_string(), 0),
             ("b".to_string(), 1),

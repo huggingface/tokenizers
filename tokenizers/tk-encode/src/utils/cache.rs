@@ -74,20 +74,6 @@ where
         self.map.write().unwrap().clear();
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn get_values<'a, I, Q>(&self, keys_iter: I) -> Option<Vec<Option<V>>>
-    where
-        I: Iterator<Item = &'a Q>,
-        K: Borrow<Q>,
-        Q: Hash + Eq + ?Sized + 'a,
-    {
-        if let Ok(ref mut cache) = self.map.try_read() {
-            Some(keys_iter.map(|k| cache.get(k).cloned()).collect())
-        } else {
-            None
-        }
-    }
-
     pub(crate) fn get<Q>(&self, key: &Q) -> Option<V>
     where
         K: Borrow<Q>,

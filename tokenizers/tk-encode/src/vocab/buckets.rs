@@ -64,12 +64,6 @@ impl Bucket {
     }
 }
 
-pub enum MatcherKernel {
-    Universal,
-    SmallSet,
-    // NOTE: open to contributions to add constant nibble and unique higher and lower nibble special case variants
-} // TODO: use this
-
 /// Buckets store added tokens and the stuff needed to quickly find them in bytes.
 /// This is equivalent to a HashMap<token, id> + DoubleArrayAhoCorasick on all token but at a
 /// fraction of the memory cost for the same performance in worst cases (dense inputs) and much
@@ -424,10 +418,6 @@ impl Buckets {
     }
     pub fn is_empty(&self) -> bool {
         self.vocab.is_empty()
-    }
-    /// The bucket metadata (prefix / disc table / length lists), one entry per first-byte group.
-    pub fn get_buckets(&self) -> &[Bucket] {
-        &self.buckets
     }
     /// first byte -> bucket index (0xFF = none). The builder reads this to extend buckets.
     pub fn first_byte_to_bucket_id(&self) -> &[u8; 256] {

@@ -134,10 +134,6 @@ impl Encoding {
         &self.words
     }
 
-    pub fn get_word_ids_mut(&mut self) -> &mut [Option<u32>] {
-        &mut self.words
-    }
-
     pub fn get_sequence_ids(&self) -> Vec<Option<usize>> {
         let mut sequences = vec![None; self.len()];
         for seq_id in 0..self.n_sequences() {
@@ -162,10 +158,6 @@ impl Encoding {
 
     pub fn get_offsets(&self) -> &[Offsets] {
         &self.offsets
-    }
-
-    pub fn get_offsets_mut(&mut self) -> &mut [Offsets] {
-        &mut self.offsets
     }
 
     pub fn get_special_tokens_mask(&self) -> &[u32] {

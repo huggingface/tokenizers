@@ -117,7 +117,7 @@ mod test {
     use crate::models::bpe::{MergeMap, pair_map::MphfMap};
 
     #[test]
-    pub fn test_mphf() {
+    fn test_mphf() {
         let mut merges = MergeMap::new();
         merges.insert((1, 2), (1, 5));
         merges.insert((1, 5), (4, 1));
