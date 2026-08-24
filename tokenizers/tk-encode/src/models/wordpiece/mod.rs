@@ -1,23 +1,16 @@
 //! [WordPiece](https://static.googleusercontent.com/media/research.google.com/en//pubs/archive/37842.pdf)
 //! model.
 
-use crate::models::bpe::BPE;
 use crate::pipeline::{self, PipelineToken};
-use crate::tokenizer::{Model, Result, Token};
+use crate::tokenizer::{Result, Token};
 use crate::utils::cache::DEFAULT_CACHE_CAPACITY;
 use crate::utils::word_cache::{Lookup, WordCache};
 use ahash::AHashMap;
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::convert::TryFrom;
-use std::{
-    borrow::Cow,
-    fs::File,
-    io::{BufRead, BufReader},
-};
 use yada::DoubleArray;
 use yada::builder::DoubleArrayBuilder;
-
-mod serialization;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -29,7 +22,6 @@ type Vocab = AHashMap<String, u32>;
 type VocabR = AHashMap<u32, String>;
 
 struct Config {
-    files: Option<String>,
     vocab: Vocab,
     unk_token: String,
     continuing_subword_prefix: String,
@@ -45,7 +37,6 @@ impl Default for WordPieceBuilder {
     fn default() -> Self {
         Self {
             config: Config {
-                files: None,
                 vocab: AHashMap::new(),
                 unk_token: String::from("[UNK]"),
                 continuing_subword_prefix: String::from("##"),
@@ -59,13 +50,6 @@ impl WordPieceBuilder {
     /// Construct a new `WordPieceBuilder`.
     pub fn new() -> Self {
         Self::default()
-    }
-
-    /// Set the input files.
-    #[must_use]
-    pub fn files(mut self, vocab: String) -> Self {
-        self.config.files = Some(vocab);
-        self
     }
 
     /// Set the vocab (token -> ID) mapping.
@@ -97,11 +81,7 @@ impl WordPieceBuilder {
     }
 
     /// Constructs a `WordPiece` model that uses the `WordPieceBuilder`'s configuration.
-    pub fn build(mut self) -> Result<WordPiece> {
-        if let Some(vocab) = self.config.files {
-            self.config.vocab = WordPiece::read_file(&vocab)?;
-        }
-
+    pub fn build(self) -> Result<WordPiece> {
         let vocab_r = self
             .config
             .vocab
@@ -160,68 +140,25 @@ impl WordPiece {
         WordPieceBuilder::new()
     }
 
-    /// Read the given files to extract the vocab
-    pub fn read_file(vocab: &str) -> Result<Vocab> {
-        let file = File::open(vocab)?;
-        let file = BufReader::new(file);
-
-        let mut vocab = AHashMap::new();
-        for (index, line) in file.lines().enumerate() {
-            let line = line?;
-            vocab.insert(line.trim_end().to_owned(), index as u32);
-        }
-
-        Ok(vocab)
-    }
-
-    pub fn read_bytes(vocab: &[u8]) -> Result<Vocab> {
-        let file = BufReader::new(vocab);
-
-        let mut vocab = AHashMap::new();
-        for (index, line) in file.lines().enumerate() {
-            let line = line?;
-            vocab.insert(line.trim_end().to_owned(), index as u32);
-        }
-
-        Ok(vocab)
-    }
-
-    pub fn from_bytes<P: AsRef<[u8]>>(bytes: P) -> Result<Self> {
-        let tokenizer = serde_json::from_slice(bytes.as_ref())?;
-        Ok(tokenizer)
-    }
-
-    /// Initialize a `WordPiece` model from a vocab mapping file.
-    pub fn from_file(vocab: &str) -> WordPieceBuilder {
-        WordPiece::builder().files(vocab.to_owned())
-    }
-
-    /// Create a `WordPiece` model from a `BPE` model.
-    pub fn from_bpe(bpe: &BPE) -> Self {
-        let mut wp = Self::builder()
-            .vocab(bpe.get_vocab().into_iter().collect::<AHashMap<_, _>>())
-            .build()
-            .unwrap();
-        if let Some(unk) = bpe.get_unk_token() {
-            unk.clone_into(&mut wp.unk_token);
-        }
-        if let Some(prefix) = bpe.get_continuing_subword_prefix() {
-            prefix.clone_into(&mut wp.continuing_subword_prefix);
-        }
-        wp
-    }
+    // There is no way to load a vocabulary from its own files in rc0, in any spelling: `read_file` /
+    // `read_bytes` / `from_file` for a `vocab.txt`, `from_bytes` for a serialized model (which needs
+    // serde), and `from_bpe` all lived in the config layer, which is deleted. A `tokenizer.json`
+    // read by `tk-serialize` is the only route to a model now. See `REQUIRED_FOR_V1.md` §4.
 }
 
-impl Model for WordPiece {
-    fn get_vocab(&self) -> HashMap<String, u32> {
+/// The model methods the pipeline and the readers call. These used to be the legacy
+/// `Model` trait; that trait had no implementor left that needed polymorphism, so they are
+/// plain inherent methods now and every call site is unchanged.
+impl WordPiece {
+    pub fn get_vocab(&self) -> HashMap<String, u32> {
         self.vocab.clone().into_iter().collect()
     }
 
-    fn get_vocab_size(&self) -> usize {
+    pub fn get_vocab_size(&self) -> usize {
         self.vocab.len()
     }
 
-    fn tokenize(&self, sequence: &str) -> Result<Vec<Token>> {
+    pub fn tokenize(&self, sequence: &str) -> Result<Vec<Token>> {
         let char_len = sequence.chars().count();
         if char_len > self.max_input_chars_per_word {
             return Ok(vec![Token {
@@ -282,11 +219,11 @@ impl Model for WordPiece {
         }
     }
 
-    fn token_to_id(&self, token: &str) -> Option<u32> {
+    pub fn token_to_id(&self, token: &str) -> Option<u32> {
         self.vocab.get(token).copied()
     }
 
-    fn id_to_token(&self, id: u32) -> Option<String> {
+    pub fn id_to_token(&self, id: u32) -> Option<String> {
         self.vocab_r.get(&id).cloned()
     }
 }

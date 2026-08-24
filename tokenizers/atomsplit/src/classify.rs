@@ -82,8 +82,6 @@ pub mod mask {
     pub const WORD: u16 = Letter.bit() | NumWord.bit() | Mark.bit() | Connector.bit();
     /// `\s`: newline + 0x20 + other whitespace.
     pub const WS: u16 = Newline.bit() | Space.bit() | WsOther.bit();
-    /// `[\r\n]` only.
-    pub const NEWLINE: u16 = Newline.bit();
     /// `\p{L}`.
     pub const LETTER: u16 = Letter.bit();
     /// `\p{N}`.

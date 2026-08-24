@@ -1,6 +1,7 @@
 use crate::utils::SysRegex;
 use crate::{Offsets, Result};
 use atomsplit::literal::Literal;
+#[cfg(test)]
 use regex::Regex;
 
 /// Pattern used to split a NormalizedString
@@ -20,6 +21,12 @@ impl Pattern for char {
     }
 }
 
+/// Splitting on a [`regex::Regex`] has no caller left: every runtime `Pattern` site goes through
+/// `SysRegex` (the `fancy-regex` backend, or its stub) or straight to `atomsplit`. The impl is kept
+/// only because the unit tests below build `regex::Regex` values directly, and they get the crate
+/// from `[dev-dependencies]` in every feature rung. That is why `regex` is no longer a real
+/// dependency of `tk-encode` at all.
+#[cfg(test)]
 impl Pattern for &Regex {
     fn find_matches(&self, inside: &str) -> Result<Vec<(Offsets, bool)>> {
         if inside.is_empty() {

@@ -6,10 +6,11 @@ use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::{HashSet, VecDeque};
+use tk_encode::vocab::bucket_added_vocabulary::AddedToken;
+use tk_encode::Result;
 use tk_encode::parallelism::*;
 use tk_encode::utils::progress::{ProgressBar, ProgressStyle};
 use tk_encode::vocab::bucket_vocab_store::BucketVocabStore;
-use tk_encode::{AddedToken, Result};
 
 #[derive(Debug, Eq)]
 struct PairMerge {
@@ -325,6 +326,7 @@ pub struct ParityBpeTrainer {
     /// Whether to show progress while training
     pub(crate) show_progress: bool,
     /// A list of special tokens that the model should know of
+    #[serde(with = "crate::added_token_serde")]
     pub(crate) special_tokens: Vec<AddedToken>,
     /// Whether to limit the number of initial tokens that can be kept before computing merges
     pub(crate) limit_alphabet: Option<usize>,

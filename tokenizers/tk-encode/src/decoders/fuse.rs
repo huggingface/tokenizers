@@ -1,23 +1,19 @@
 use crate::tokenizer::{Decoder, Result};
-use monostate::MustBe;
-use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+#[derive(Clone, Debug, Default)]
 /// Fuse simply fuses all tokens into one big string.
 /// It's usually the last decoding step anyway, but this
 /// decoder exists incase some decoders need to happen after that
 /// step
+///
+/// Like `ByteFallback`, it used to carry a `monostate::MustBe!("Fuse")` field whose only job was to
+/// make serde *require* the `"type"` tag; `super::serialization` does that with a tag enum.
 #[non_exhaustive]
-pub struct Fuse {
-    #[serde(rename = "type")]
-    type_: MustBe!("Fuse"),
-}
+pub struct Fuse {}
 
 impl Fuse {
     pub fn new() -> Self {
-        Self {
-            type_: MustBe!("Fuse"),
-        }
+        Self {}
     }
 }
 

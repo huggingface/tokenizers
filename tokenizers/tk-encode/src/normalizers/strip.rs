@@ -1,13 +1,12 @@
 use std::borrow::Cow;
 
 use crate::pipeline;
-use crate::tokenizer::{NormalizedString, Normalizer, Result};
-use crate::utils::macro_rules_attribute;
-use serde::{Deserialize, Serialize};
+use crate::tokenizer::Result;
+#[cfg(feature = "normalizers")]
 use unicode_normalization_alignments::char::is_combining_mark;
 
-#[derive(Copy, Clone, Debug, Deserialize, Serialize)]
-#[serde(tag = "type")]
+/// Both fields are required, which is the *only* thing that rejects a tag-less object here.
+#[derive(Copy, Clone, Debug)]
 #[non_exhaustive]
 pub struct Strip {
     pub strip_left: bool,
@@ -20,26 +19,6 @@ impl Strip {
             strip_left,
             strip_right,
         }
-    }
-}
-
-impl Normalizer for Strip {
-    /// Strip the normalized string inplace
-    fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
-        if self.strip_left && self.strip_right {
-            // Fast path
-            normalized.strip();
-        } else {
-            if self.strip_left {
-                normalized.lstrip();
-            }
-
-            if self.strip_right {
-                normalized.rstrip();
-            }
-        }
-
-        Ok(())
     }
 }
 
@@ -58,18 +37,11 @@ impl pipeline::Normalizer for Strip {
 // This normalizer removes combining marks from a normalized string
 // It's different from unidecode as it does not attempt to modify
 // non ascii languages.
+#[cfg(feature = "normalizers")]
 #[derive(Copy, Clone, Debug)]
-#[macro_rules_attribute(impl_serde_type!)]
 pub struct StripAccents;
 
-impl Normalizer for StripAccents {
-    /// Strip the normalized string inplace
-    fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
-        normalized.filter(|c| !is_combining_mark(c));
-        Ok(())
-    }
-}
-
+#[cfg(feature = "normalizers")]
 impl pipeline::Normalizer for StripAccents {
     fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
         if input.chars().any(is_combining_mark) {
@@ -82,129 +54,76 @@ impl pipeline::Normalizer for StripAccents {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "normalizers"))]
 mod tests {
     use super::*;
-    use crate::normalizer::NormalizedString;
-    use crate::normalizers::Lowercase;
-    use crate::normalizers::NFKD;
-    use unicode_normalization_alignments::UnicodeNormalization;
 
+    /// Expected values were captured from the legacy `NormalizedString` normalizer this test used
+    /// to compare against, on the commit that removed it -- so they still pin exactly what the two
+    /// implementations agreed on, without keeping the legacy code alive to ask.
     #[test]
-    fn test_strip_accents() {
-        // Unicode combining char
-        let original: String = "Me llamó".nfkd().map(|(c, _)| c).collect();
-        let normalized = "Me llamo";
-        assert_ne!(original, normalized);
-        let mut n = NormalizedString::from(original);
-        StripAccents.normalize(&mut n).unwrap();
-        assert_eq!(&n.get(), &normalized);
-
-        // Ignores regular ascii
-        let original = "Me llamo";
-        let normalized = "Me llamo";
-        assert_eq!(original, normalized);
-        let mut n = NormalizedString::from(original);
-        StripAccents.normalize(&mut n).unwrap();
-        assert_eq!(&n.get(), &normalized);
-
-        // Does not change chinese
-        let original: String = "这很简单".nfkd().map(|(c, _)| c).collect();
-        let normalized = "这很简单";
-        assert_eq!(original, normalized);
-        let mut n = NormalizedString::from(original);
-        StripAccents.normalize(&mut n).unwrap();
-        assert_eq!(&n.get(), &normalized);
-    }
-
-    #[test]
-    fn test_vietnamese_bug() {
-        let original: String = "ậ…".to_string();
-        let normalized = "a...".to_string();
-        assert_ne!(original, normalized);
-        let mut n = NormalizedString::from(original);
-        NFKD.normalize(&mut n).unwrap();
-        StripAccents.normalize(&mut n).unwrap();
-        assert_eq!(&n.get(), &normalized);
-        Lowercase.normalize(&mut n).unwrap();
-        assert_eq!(&n.get(), &normalized);
-
-        let original: String = "Cụ thể, bạn sẽ tham gia một nhóm các giám đốc điều hành tổ chức, các nhà lãnh đạo doanh nghiệp, các học giả, chuyên gia phát triển và tình nguyện viên riêng biệt trong lĩnh vực phi lợi nhuận…".to_string();
-        let normalized = "cu the, ban se tham gia mot nhom cac giam đoc đieu hanh to chuc, cac nha lanh đao doanh nghiep, cac hoc gia, chuyen gia phat trien va tinh nguyen vien rieng biet trong linh vuc phi loi nhuan...".to_string();
-        let mut n = NormalizedString::from(original);
-        NFKD.normalize(&mut n).unwrap();
-        StripAccents.normalize(&mut n).unwrap();
-        Lowercase.normalize(&mut n).unwrap();
-        assert_eq!(&n.get(), &normalized);
-    }
-
-    #[test]
-    fn test_thai_bug() {
-        let original = "ำน\u{e49}ำ3ลำ".to_string();
-        let normalized = "านา3ลา".to_string();
-        assert_ne!(original, normalized);
-        let mut n = NormalizedString::from(original);
-        NFKD.normalize(&mut n).unwrap();
-        StripAccents.normalize(&mut n).unwrap();
-        Lowercase.normalize(&mut n).unwrap();
-        assert_eq!(&n.get(), &normalized);
-    }
-
-    #[test]
-    fn test_strip_accents_multiple() {
-        let original = "e\u{304}\u{304}\u{304}o";
-        let normalized = "eo";
-        assert_ne!(original, normalized);
-        let mut n = NormalizedString::from(original);
-        StripAccents.normalize(&mut n).unwrap();
-        assert_eq!(&n.get(), &normalized);
-        assert_eq!(
-            n,
-            NormalizedString::new(
-                original.to_string(),
-                normalized.to_string(),
-                vec![(0, 1), (7, 8)],
-                0
-            )
-        );
-        assert_eq!(
-            n.alignments_original(),
-            vec![
-                (0, 1),
-                (1, 1),
-                (1, 1),
-                (1, 1),
-                (1, 1),
-                (1, 1),
-                (1, 1),
-                (1, 2)
-            ]
-        );
-    }
-
-    #[test]
-    fn pipeline_strip_accents_matches_legacy() {
+    fn pipeline_strip_accents() {
         let n = StripAccents;
-        for input in &["café", "abc", "", "å ç ñ", "     hello"] {
-            let mut ns = NormalizedString::from(*input);
-            Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
+        for (input, expected) in [
+            ("café", "café"),
+            ("abc", "abc"),
+            ("", ""),
+            ("å ç ñ", "å ç ñ"),
+            ("     hello", "     hello"),
+        ] {
             assert_eq!(
-                ns.get(),
-                &*pipeline::Normalizer::normalize(&n, input).unwrap()
+                &*pipeline::Normalizer::normalize(&n, input).unwrap(),
+                expected,
+                "input={input:?}"
             );
         }
     }
 
+    /// Expected values were captured from the legacy `NormalizedString` normalizer this test used
+    /// to compare against, on the commit that removed it -- so they still pin exactly what the two
+    /// implementations agreed on, without keeping the legacy code alive to ask.
     #[test]
-    fn pipeline_strip_matches_legacy() {
-        for (strip_left, strip_right) in [(true, true), (true, false), (false, true)] {
+    fn pipeline_strip() {
+        #[allow(clippy::type_complexity)]
+        let cases: &[((bool, bool), &[(&str, &str)])] = &[
+            (
+                (true, true),
+                &[
+                    ("  hello  ", "hello"),
+                    ("hello", "hello"),
+                    ("", ""),
+                    ("   ", ""),
+                    ("\t hi \n", "hi"),
+                ][..],
+            ),
+            (
+                (true, false),
+                &[
+                    ("  hello  ", "hello  "),
+                    ("hello", "hello"),
+                    ("", ""),
+                    ("   ", ""),
+                    ("\t hi \n", "hi \n"),
+                ][..],
+            ),
+            (
+                (false, true),
+                &[
+                    ("  hello  ", "  hello"),
+                    ("hello", "hello"),
+                    ("", ""),
+                    ("   ", ""),
+                    ("\t hi \n", "\t hi"),
+                ][..],
+            ),
+        ];
+        for &((strip_left, strip_right), pairs) in cases {
             let n = Strip::new(strip_left, strip_right);
-            for input in &["  hello  ", "hello", "", "   ", "\t hi \n"] {
-                let mut ns = NormalizedString::from(*input);
-                Normalizer::normalize(&n, &mut ns).unwrap(); // legacy oracle
+            for &(input, expected) in pairs {
                 assert_eq!(
-                    ns.get(),
-                    &*pipeline::Normalizer::normalize(&n, input).unwrap()
+                    &*pipeline::Normalizer::normalize(&n, input).unwrap(),
+                    expected,
+                    "strip=({strip_left}, {strip_right}) input={input:?}"
                 );
             }
         }
