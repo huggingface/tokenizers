@@ -130,15 +130,6 @@ pub fn to_json(tokenizer: &PipelineTokenizer) -> Result<String> {
     Ok(out.finish())
 }
 
-/// Write a `tokenizer.json` to a file.
-pub fn to_json_file(
-    tokenizer: &PipelineTokenizer,
-    path: impl AsRef<std::path::Path>,
-) -> Result<()> {
-    std::fs::write(path, to_json(tokenizer)?)?;
-    Ok(())
-}
-
 /// The chain without its trailing `Metaspace`, and that `Metaspace` if there was one.
 ///
 /// It can only be the last member: the reader builds the declared `normalizer` first and the

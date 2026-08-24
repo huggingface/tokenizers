@@ -44,7 +44,7 @@
 //!
 //! - **`deserialize`** (default) — [`from_json`] / [`from_json_file`], i.e. the whole point of the
 //!   crate. An inference build wants exactly this and nothing else.
-//! - **`serialize`** (off by default) — [`to_json`] / [`to_json_file`], writing a
+//! - **`serialize`** (off by default) — [`to_json`], writing a
 //!   `PipelineTokenizer` back out as a canonical `tokenizer.json`. Off by default because an
 //!   inference build never writes a config, and because the writer is the half that has to keep
 //!   things alive in order to describe them: the `Precompiled` charsmap is in the pipeline for its
@@ -95,4 +95,4 @@ pub use from_json::{from_json, from_json_file};
 mod to_json;
 
 #[cfg(feature = "serialize")]
-pub use to_json::{to_json, to_json_file};
+pub use to_json::to_json;

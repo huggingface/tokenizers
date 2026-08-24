@@ -191,18 +191,7 @@ fn read_metaspace(
     )?))
 }
 
-/// `prepend_scheme`, including the pre-`prepend_scheme` `add_prefix_space` spelling.
-///
-/// The rule is the config path's, both quirks included:
-///
-/// - `add_prefix_space: true` is **ignored**. It agrees with the `Always` default when the config
-///   spells only the old key (t5, albert), and loses to `prepend_scheme` when it spells both — so
-///   `{add_prefix_space: true, prepend_scheme: "never"}` is `Never`, not a contradiction.
-/// - `add_prefix_space: false` is checked against the *already defaulted* scheme, which is `Always`.
-///   So the old key alone can never spell `false`: it is an error unless `prepend_scheme: "never"`
-///   is spelled out beside it, at which point it changes nothing.
-///
-/// Surprising, and reproduced rather than fixed, because ids depend on it.
+/// Read the prepend scheme / legacy add prefix space.
 pub(super) fn read_prepend_scheme(cfg: &Json<'_>) -> Result<PrependScheme> {
     let mut scheme = match cfg.field("prepend_scheme").and_then(Json::as_str) {
         None => PrependScheme::Always,
@@ -216,12 +205,10 @@ pub(super) fn read_prepend_scheme(cfg: &Json<'_>) -> Result<PrependScheme> {
             return Err("add_prefix_space does not match declared prepend_scheme".into());
         }
         scheme = PrependScheme::Never;
-    }
+    } // add prefix space = True is ignored. IDK why exactly. FIXME:
     Ok(scheme)
 }
 
-/// A one-character field. JSON has no char, so serde reads these as a string of length one and
-/// rejects anything else; a two-character `replacement` must not silently become its first char.
 pub(super) fn read_char(cfg: &Json<'_>, key: &str) -> Result<char> {
     let s = cfg
         .field(key)
@@ -247,8 +234,6 @@ fn read_split(cfg: &Json<'_>) -> Result<SplitPretok> {
     } else {
         return Err("Split `pattern` is neither `String` nor `Regex`".into());
     };
-    // `native`: a recognised GPT pattern, a member of a natively-run composition (deepseek's three),
-    // or a literal. `Split::new` would demand a regex engine for the middle case.
     SplitPretok::native(pattern, behavior, invert)?.canonicalized_for_pipeline()
 }
 

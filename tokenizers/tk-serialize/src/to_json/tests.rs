@@ -990,29 +990,6 @@ fn a_stray_metaspace_normalizer_is_refused() {
     );
 }
 
-/// [`to_json_file`] writes what [`to_json`] returns, and the file reads back as the same tokenizer.
-///
-/// Written into cargo's own `target` directory, under the test binary's name, so nothing lands in
-/// `data/` — where another test's `.save(..)` already races the fixtures.
-#[test]
-fn to_json_file_writes_a_readable_config() {
-    let tokenizer = from_json(TINY_BPE).expect("the tiny config reads");
-    let path = std::env::temp_dir().join("tk_serialize_to_json_file_test.json");
-    to_json_file(&tokenizer, &path).expect("writing a config to a file");
-    let reread = from_json_file(&path).expect("the written file reads back");
-    assert_eq!(
-        ids(&tokenizer, "abab", false),
-        ids(&reread, "abab", false),
-        "a config written to a file did not read back as the same tokenizer"
-    );
-    assert_eq!(
-        std::fs::read_to_string(&path).expect("read it back as text"),
-        to_json(&tokenizer).expect("and write it again"),
-        "the file does not hold exactly what `to_json` returns"
-    );
-    std::fs::remove_file(&path).expect("clean up");
-}
-
 /// The writer's output parses with an independent parser, not only with ours. Cheap, and it is what
 /// catches a missing comma or an unescaped control character that `hifijson` happens to tolerate.
 #[test]
