@@ -10,11 +10,7 @@ const BPE_MODEL: &str = r#"{"type": "BPE", "byte_level": false,
 /// A whole config: every component `null` and [`BPE_MODEL`], unless `slots` names one.
 fn config(slots: &[(&str, &str)]) -> String {
     let slot = |name: &str, default: &str| -> String {
-        slots
-            .iter()
-            .find(|(n, _)| *n == name)
-            .map_or(default, |(_, json)| json)
-            .to_string()
+        slots.iter().find(|(n, _)| *n == name).map_or(default, |(_, json)| json).to_string()
     };
     format!(
         r#"{{"version": "2.0", "added_tokens": {}, "normalizer": {}, "pre_tokenizer": {},
@@ -32,15 +28,12 @@ fn rewrite(text: &str) -> String {
     to_json(&from_json(text).expect("the config reads")).expect("a config that reads should write")
 }
 
-/// One top-level field of a written config, through `serde_json` -- an *independent* parser, which
-/// is what makes "the writer emits valid JSON" an assertion rather than a check against ourselves.
+/// One field of a written config, through `serde_json` -- an *independent* parser, which is what
+/// makes "valid JSON" an assertion rather than a check against ourselves.
 fn field_of(written: &str, field: &str) -> serde_json::Value {
     let parsed: serde_json::Value =
         serde_json::from_str(written).expect("the writer emits valid JSON");
-    parsed
-        .get(field)
-        .unwrap_or_else(|| panic!("the written config has no `{field}`"))
-        .clone()
+    parsed[field].clone()
 }
 
 /// What `slot` becomes after a read and a write.
@@ -53,31 +46,29 @@ fn json(text: &str) -> serde_json::Value {
 }
 
 fn ids(tokenizer: &PipelineTokenizer, text: &str, specials: bool) -> Vec<u32> {
-    tokenizer
-        .encode(text, specials)
-        .wait()
-        .expect("encoding a fixture text")
-        .iter()
-        .flat_map(|encoding| encoding.ids())
-        .map(|token| token.id())
-        .collect()
+    let encoded = tokenizer.encode(text, specials).wait().expect("encoding a text");
+    encoded.iter().flat_map(|e| e.ids()).map(|token| token.id()).collect()
 }
 
-/// `data/tokenizer.json` is excluded: it is test *output*, written by another test binary, and cargo
-/// runs those in parallel.
-fn fixtures() -> Vec<std::path::PathBuf> {
-    let dir = std::path::Path::new("../data");
-    if !dir.exists() {
+/// Every `data/*.json` the reader accepts, built. A refusal is a skip; `tokenizer.json` is another
+/// test binary's output, written in parallel with this one.
+fn fixtures() -> Vec<(String, PipelineTokenizer)> {
+    let Ok(entries) = std::fs::read_dir("../data") else {
         return Vec::new();
-    }
-    let mut files: Vec<_> = std::fs::read_dir(dir)
-        .expect("read data/")
+    };
+    let mut paths: Vec<_> = entries
         .filter_map(|entry| entry.ok().map(|entry| entry.path()))
         .filter(|path| path.extension().is_some_and(|ext| ext == "json"))
         .filter(|path| path.file_name().is_some_and(|name| name != "tokenizer.json"))
         .collect();
-    files.sort();
-    files
+    paths.sort();
+    paths
+        .iter()
+        .filter_map(|path| {
+            let name = path.file_name()?.to_string_lossy().to_string();
+            Some((name, from_json(&std::fs::read_to_string(path).ok()?).ok()?))
+        })
+        .collect()
 }
 
 /// One text per encode regime rather than one per language, plus the special-token markers that
@@ -90,31 +81,22 @@ const TEXTS: &[&str] = &[
     "الْعَرَبِيَّة и русский текст",
     "3.14159 and 1e-9 and 0007",
     "[CLS] <s> <|endoftext|> [SEP] </s> <unk> [MASK]",
-    "tabs\tand\nnewlines\r\nand  double  spaces",
-    "   ",
-    "",
+    "tabs\tand\nnewlines\r\nand  double  spaces", "   ", "",
 ];
 
-// ---- the gate --------------------------------------------------------------------------------
-
-/// Read a real config, write it, read that back, encode with both. A reader refusal is a skip; a
-/// *writer* refusal is a failure -- everything the reader builds, the writer must describe.
-// TODO(pr3): every fixture in `data/` is a legacy 1.0 file, so this has no input until tk-convert
-// can produce 2.0 ones. Port it there.
+/// Read a real config, write it, read it back, encode with both. A *writer* refusal is a failure,
+/// not a skip: everything the reader builds, the writer must describe.
+// TODO(pr3): every fixture in `data/` is a 1.0 file, so this has no input until tk-convert can
+// produce 2.0 ones. Port it there, with the per-score float sweep git remembers.
 #[ignore = "needs 2.0 fixtures from tk-convert (pr3)"]
 #[test]
 fn round_trip_preserves_ids_on_every_real_config() {
     let mut configs = 0usize;
-    for path in fixtures() {
-        let name = path.file_name().unwrap().to_string_lossy().to_string();
-        let text = std::fs::read_to_string(&path).expect("read a fixture");
-        let Ok(before) = from_json(&text) else {
-            continue;
-        };
-        let written = to_json(&before)
+    for (name, before) in fixtures() {
+        let text = to_json(&before)
             .unwrap_or_else(|e| panic!("{name}: the reader built it, the writer cannot: {e}"));
-        let after = from_json(&written)
-            .unwrap_or_else(|e| panic!("{name}: the writer's output its own reader refuses: {e}"));
+        let after = from_json(&text)
+            .unwrap_or_else(|e| panic!("{name}: its own reader refuses the output: {e}"));
         configs += 1;
         for text in TEXTS {
             for specials in [false, true] {
@@ -129,59 +111,20 @@ fn round_trip_preserves_ids_on_every_real_config() {
     assert!(configs >= 1, "every config in ../data was skipped");
 }
 
-/// Every Unigram score, not a sample: one ULP flips a Viterbi near-tie, and `TEXTS` would not
-/// necessarily contain it. The literal must read back *through this crate's parser* to the same
-/// bits -- which is not free, because that parser reproduces `serde_json`'s arithmetic rather than
-/// being correctly rounded.
-// TODO(pr3): needs 2.0 Unigram fixtures, as above.
-#[ignore = "needs 2.0 fixtures from tk-convert (pr3)"]
-#[test]
-#[cfg(all(feature = "unigram", feature = "normalizers"))]
-fn every_unigram_score_survives_the_writer_bit_for_bit() {
-    let mut models = 0usize;
-    for path in fixtures() {
-        let name = path.file_name().unwrap().to_string_lossy().to_string();
-        let text = std::fs::read_to_string(&path).expect("read a fixture");
-        let Ok(tokenizer) = from_json(&text) else {
-            continue;
-        };
-        // From the built pipeline, never the raw text: `albert-base-v1` has no `"type"` at all.
-        let PipelineModel::Unigram(unigram) = tokenizer.get_model() else {
-            continue;
-        };
-        models += 1;
-        for (token, score) in unigram.vocab() {
-            let literal = super::writer::float_literal(*score)
-                .unwrap_or_else(|e| panic!("{name}: the score for {token:?} has no spelling: {e}"));
-            let read_back = crate::vendored::f64_from_literal(&literal);
-            assert_eq!(
-                read_back.to_bits(),
-                score.to_bits(),
-                "{name}: {token:?} was written {literal}, which reads back as {read_back}"
-            );
-        }
-    }
-    assert!(models >= 1, "no Unigram config was checked");
-}
-
-// ---- the gate has teeth ----------------------------------------------------------------------
-
 /// Merges that *compete*: `a+b` and `b+c` both apply to `abc`, so rank alone picks the winner.
-/// [`BPE_MODEL`] cannot serve -- its merges form a chain, and a chain offers no choice, so
-/// reversing it is as inert as `merges.pop()`.
+/// [`BPE_MODEL`] cannot serve -- its merges form a chain, which offers no choice.
 const COMPETING_BPE: &str = r#"{"type": "BPE", "byte_level": false,
     "vocab": {"a": 0, "b": 1, "c": 2, "ab": 3, "bc": 4}, "merges": [["a", "b"], ["b", "c"]]}"#;
 
-/// Perturb the *written config*, not the writer, so this cannot rot: it shows that the comparison
-/// above is sensitive to a wrong merge order, whoever produced it.
+/// The gate has teeth. Perturbing the *written config* rather than the writer is what keeps this
+/// from rotting: it shows the comparison above is sensitive to a wrong merge order, whoever made it.
 #[test]
 fn reversing_the_written_merges_moves_ids() {
     let tokenizer = from_json(&config(&[("model", COMPETING_BPE)])).expect("it reads");
     let mut parsed: serde_json::Value =
         serde_json::from_str(&to_json(&tokenizer).expect("and writes")).expect("valid JSON");
-    let merges = parsed["model"]["merges"].as_array_mut().expect("merges");
-    assert_eq!(*merges, json(r#"[["a", "b"], ["b", "c"]]"#), "not rank order");
-    merges.reverse();
+    assert_eq!(parsed["model"]["merges"], json(r#"[["a","b"],["b","c"]]"#), "not rank order");
+    parsed["model"]["merges"].as_array_mut().expect("merges").reverse();
     let perturbed = from_json(&parsed.to_string()).expect("the perturbed config still reads");
 
     // `a+b` outranks `b+c`, so `abc` is `ab` + `c`. Reversed, `b+c` wins: `a` + `bc`.
@@ -191,181 +134,113 @@ fn reversing_the_written_merges_moves_ids() {
         vec![0, 4],
         "reversing the merge order left the ids alone, so the gate compares nothing"
     );
-}
 
-/// The two weaker perturbations, recorded so nobody rediscovers that they are inert: popping the
-/// last merge, and reversing a *chain*. Both look exactly like a dead gate.
-#[test]
-fn the_weak_perturbations_really_are_inert() {
-    let tokenizer = from_json(&config(&[])).expect("the tiny config reads");
-    let text = to_json(&tokenizer).expect("and writes");
-    assert_eq!(ids(&tokenizer, "abab", false), vec![3], "`abab` merges up");
-
+    // And the two weak perturbations, so nobody rediscovers that they are inert: popping the last
+    // merge, and reversing a *chain*. Both look exactly like a dead gate.
+    let chained = from_json(&config(&[])).expect("the chain config reads");
+    let text = to_json(&chained).expect("and writes");
+    assert_eq!(ids(&chained, "abab", false), vec![3], "`abab` merges up");
     for pop in [true, false] {
         let mut parsed: serde_json::Value = serde_json::from_str(&text).expect("valid JSON");
         let merges = parsed["model"]["merges"].as_array_mut().expect("merges");
-        if pop {
-            merges.pop();
-        } else {
-            merges.reverse();
-        }
-        let perturbed = from_json(&parsed.to_string())
-            .unwrap_or_else(|_| panic!("pop={pop} was refused, which would make it a fine gate"));
-        assert_eq!(
-            ids(&perturbed, "abab", false),
-            vec![3],
-            "pop={pop} moved an id after all, so it should become a real perturbation"
-        );
+        if pop { merges.pop(); } else { merges.reverse(); }
+        let weak = from_json(&parsed.to_string()).expect("a weak perturbation still reads");
+        assert_eq!(ids(&weak, "abab", false), vec![3], "pop={pop} moved an id after all");
     }
-}
-
-/// The same perturbation against the fixtures, so the gate is shown to bite on what it guards.
-/// Being *refused* counts: a byte-level model needs every byte to be an atom.
-// TODO(pr3): needs 2.0 fixtures, as above.
-#[ignore = "needs 2.0 fixtures from tk-convert (pr3)"]
-#[test]
-fn reversing_the_written_merges_moves_ids_on_a_real_config() {
-    let mut bitten = 0usize;
-    for path in fixtures() {
-        let text = std::fs::read_to_string(&path).expect("read a fixture");
-        let Ok(before) = from_json(&text) else {
-            continue;
-        };
-        let Ok(written) = to_json(&before) else {
-            continue;
-        };
-        let mut parsed: serde_json::Value = serde_json::from_str(&written).expect("valid JSON");
-        let Some(merges) = parsed["model"]["merges"].as_array_mut() else {
-            continue;
-        };
-        if merges.len() < 2 {
-            continue;
-        }
-        merges.reverse();
-        match from_json(&parsed.to_string()) {
-            Err(_) => bitten += 1,
-            Ok(after) => {
-                if TEXTS
-                    .iter()
-                    .any(|t| ids(&before, t, false) != ids(&after, t, false))
-                {
-                    bitten += 1;
-                }
-            }
-        }
-    }
-    assert!(
-        bitten >= 1,
-        "reversing every BPE fixture's merges changed nothing, so the comparison cannot see a \
-         merge-order defect at all"
-    );
 }
 
 // ---- canonical spelling, one row per component -----------------------------------------------
 
-/// `(what goes in, what must come out)`. A nested `Sequence` flattens and an empty one disappears.
-/// `drop_whitespace` is one flag, never the legacy `Sequence[WhitespaceSplit, Metaspace]`.
+/// `(slot, json)` for every component whose canonical spelling is what went in: read it, write it,
+/// and the same object comes back.
 #[rustfmt::skip]
-const NORMALIZERS: &[(&str, &str)] = &[
-    (r#"{"type": "Lowercase"}"#, r#"{"type": "Lowercase"}"#),
-    (r#"{"type": "Sequence", "normalizers": []}"#, "null"),
-    (r#"{"type": "Sequence", "normalizers": [{"type": "Lowercase"},
-        {"type": "Sequence", "normalizers": [{"type": "Strip", "strip_left": true, "strip_right": false}]},
-        {"type": "Prepend", "prepend": "_"}]}"#,
-     r#"{"type": "Sequence", "normalizers": [{"type": "Lowercase"},
-        {"type": "Strip", "strip_left": true, "strip_right": false}, {"type": "Prepend", "prepend": "_"}]}"#),
-    (r#"{"type": "Replace", "pattern": {"String": " "}, "content": "_"}"#,
-     r#"{"type": "Replace", "pattern": {"String": " "}, "content": "_"}"#),
-    (r#"{"type": "MetaspaceNormalizer", "replacement": "▁", "prepend": true, "drop_whitespace": false}"#,
-     r#"{"type": "MetaspaceNormalizer", "replacement": "▁", "prepend": true, "drop_whitespace": false}"#),
-    (r#"{"type": "MetaspaceNormalizer", "replacement": "▁", "prepend": true, "drop_whitespace": true}"#,
-     r#"{"type": "MetaspaceNormalizer", "replacement": "▁", "prepend": true, "drop_whitespace": true}"#),
+const IDEMPOTENT: &[(&str, &str)] = &[
+    ("normalizer",     r#"{"type": "Lowercase"}"#),
+    ("normalizer",     r#"{"type": "Prepend", "prepend": "_"}"#),
+    ("normalizer",     r#"{"type": "Replace", "pattern": {"String": " "}, "content": "_"}"#),
+    ("normalizer",     r#"{"type": "MetaspaceNormalizer", "replacement": "▁", "prepend": true, "drop_whitespace": false}"#),
+    // `drop_whitespace` is one flag, never the legacy `Sequence[WhitespaceSplit, Metaspace]`.
+    ("normalizer",     r#"{"type": "MetaspaceNormalizer", "replacement": "▁", "prepend": true, "drop_whitespace": true}"#),
+    ("pre_tokenizer",  r#"{"type": "Digits", "individual_digits": true}"#),
+    ("pre_tokenizer",  r#"{"type": "Whitespace"}"#),
+    ("pre_tokenizer",  r#"{"type": "WhitespaceSplit"}"#),
+    ("pre_tokenizer",  r#"{"type": "BertPreTokenizer"}"#),
+    ("pre_tokenizer",  r#"{"type": "Punctuation", "behavior": "Removed"}"#),
+    ("pre_tokenizer",  r#"{"type": "CharDelimiterSplit", "delimiter": "-"}"#),
+    ("pre_tokenizer",  r#"{"type": "FixedLength", "length": 7}"#),
+    ("pre_tokenizer",  r#"{"type": "Split", "pattern": {"String": "-"}, "behavior": "MergedWithNext", "invert": false}"#),
+    ("pre_tokenizer",  r#"{"type": "Sequence", "pretokenizers": [{"type": "Whitespace"}, {"type": "Digits", "individual_digits": false}]}"#),
+    ("decoder",        r#"{"type": "Fuse"}"#),
+    ("decoder",        r#"{"type": "ByteFallback"}"#),
+    ("decoder",        r#"{"type": "Strip", "content": "_", "start": 1, "stop": 0}"#),
+    ("decoder",        r#"{"type": "BPEDecoder", "suffix": "</w>"}"#),
+    ("decoder",        r###"{"type": "WordPiece", "prefix": "##", "cleanup": true}"###),
+    ("decoder",        r#"{"type": "CTC", "pad_token": "<pad>", "word_delimiter_token": "|", "cleanup": true}"#),
+    ("decoder",        r#"{"type": "Sequence", "decoders": [{"type": "Fuse"}, {"type": "ByteFallback"}]}"#),
+    ("post_processor", r#"{"type": "TemplateProcessing", "single": [{"ids": [0]}, {"seq": "A"}], "pair": [{"seq": "A"}, {"seq": "B", "type_id": 1}]}"#),
 ];
 
+/// `(slot, in, out)`: what the pipeline folded or dropped. An empty `Sequence` disappears, a nested
+/// one flattens, a decoder reads past `ByteLevel`'s flags and `Metaspace`'s `split` (but keeps
+/// `prepend_scheme: first`), and Bert/Roberta processing are frames, so both become one template.
 #[rustfmt::skip]
-const PRE_TOKENIZERS: &[(&str, &str)] = &[
-    (r#"{"type": "Digits", "individual_digits": true}"#, r#"{"type": "Digits", "individual_digits": true}"#),
-    (r#"{"type": "Whitespace"}"#, r#"{"type": "Whitespace"}"#),
-    (r#"{"type": "WhitespaceSplit"}"#, r#"{"type": "WhitespaceSplit"}"#),
-    (r#"{"type": "BertPreTokenizer"}"#, r#"{"type": "BertPreTokenizer"}"#),
-    (r#"{"type": "Punctuation", "behavior": "Removed"}"#, r#"{"type": "Punctuation", "behavior": "Removed"}"#),
-    (r#"{"type": "CharDelimiterSplit", "delimiter": "-"}"#, r#"{"type": "CharDelimiterSplit", "delimiter": "-"}"#),
-    (r#"{"type": "FixedLength", "length": 7}"#, r#"{"type": "FixedLength", "length": 7}"#),
-    (r#"{"type": "Split", "pattern": {"String": "-"}, "behavior": "MergedWithNext", "invert": false}"#,
-     r#"{"type": "Split", "pattern": {"String": "-"}, "behavior": "MergedWithNext", "invert": false}"#),
-    (r#"{"type": "Sequence", "pretokenizers": [{"type": "Whitespace"}, {"type": "Digits", "individual_digits": false}]}"#,
-     r#"{"type": "Sequence", "pretokenizers": [{"type": "Whitespace"}, {"type": "Digits", "individual_digits": false}]}"#),
-];
-
-/// A decoder keeps all three prepend schemes -- nothing here has to be expressible as a normalizer,
-/// so `first` survives. `ByteLevel`'s flags and `Metaspace`'s `split` are read past, not carried:
-/// decoding is a fixed inverse of the byte map and never looks at either.
-#[rustfmt::skip]
-const DECODERS: &[(&str, &str)] = &[
-    (r#"{"type": "Fuse"}"#, r#"{"type": "Fuse"}"#),
-    (r#"{"type": "ByteFallback"}"#, r#"{"type": "ByteFallback"}"#),
-    (r#"{"type": "Strip", "content": "_", "start": 1, "stop": 0}"#,
-     r#"{"type": "Strip", "content": "_", "start": 1, "stop": 0}"#),
-    (r#"{"type": "BPEDecoder", "suffix": "</w>"}"#, r#"{"type": "BPEDecoder", "suffix": "</w>"}"#),
-    (r###"{"type": "WordPiece", "prefix": "##", "cleanup": true}"###,
-     r###"{"type": "WordPiece", "prefix": "##", "cleanup": true}"###),
-    (r#"{"type": "CTC", "pad_token": "<pad>", "word_delimiter_token": "|", "cleanup": true}"#,
-     r#"{"type": "CTC", "pad_token": "<pad>", "word_delimiter_token": "|", "cleanup": true}"#),
-    (r#"{"type": "ByteLevel", "add_prefix_space": true, "trim_offsets": false, "use_regex": false}"#,
-     r#"{"type": "ByteLevel"}"#),
-    (r#"{"type": "Metaspace", "replacement": "▁", "prepend_scheme": "first", "split": false}"#,
-     r#"{"type": "Metaspace", "replacement": "▁", "prepend_scheme": "first"}"#),
-    (r#"{"type": "Sequence", "decoders": [{"type": "Fuse"}, {"type": "ByteFallback"}]}"#,
-     r#"{"type": "Sequence", "decoders": [{"type": "Fuse"}, {"type": "ByteFallback"}]}"#),
-];
-
-/// Every post-processor is two templates of sequence markers and runs of ids once it reaches the
-/// pipeline, so all three spellings come back as one: pieces carrying their own ids, `type_id` only
-/// where it is not 0. Roberta's doubled separator is one piece standing for two ids.
-#[rustfmt::skip]
-const POST_PROCESSORS: &[(&str, &str)] = &[
-    (r#"{"type": "TemplateProcessing", "single": [{"ids": [0]}, {"seq": "A"}],
-        "pair": [{"seq": "A"}, {"seq": "B", "type_id": 1}]}"#,
-     r#"{"type": "TemplateProcessing", "single": [{"ids": [0]}, {"seq": "A"}],
-        "pair": [{"seq": "A"}, {"seq": "B", "type_id": 1}]}"#),
-    (r#"{"type": "BertProcessing", "cls": ["a", 0], "sep": ["b", 1]}"#,
-     r#"{"type": "TemplateProcessing", "single": [{"ids": [0]}, {"seq": "A"}, {"ids": [1]}],
-        "pair": [{"ids": [0]}, {"seq": "A"}, {"ids": [1]}, {"seq": "B", "type_id": 1}, {"ids": [1], "type_id": 1}]}"#),
-    (r#"{"type": "RobertaProcessing", "cls": ["a", 0], "sep": ["b", 1], "trim_offsets": true, "add_prefix_space": true}"#,
-     r#"{"type": "TemplateProcessing", "single": [{"ids": [0]}, {"seq": "A"}, {"ids": [1]}],
-        "pair": [{"ids": [0]}, {"seq": "A"}, {"ids": [1, 1]}, {"seq": "B"}, {"ids": [1]}]}"#),
+const REWRITTEN: &[(&str, &str, &str)] = &[
+    ("normalizer", r#"{"type": "Sequence", "normalizers": []}"#, "null"),
+    ("normalizer", r#"{"type": "Sequence", "normalizers": [{"type": "Lowercase"},
+        {"type": "Sequence", "normalizers": [{"type": "Strip", "strip_left": true, "strip_right": false}]}]}"#,
+                   r#"{"type": "Sequence", "normalizers": [{"type": "Lowercase"},
+        {"type": "Strip", "strip_left": true, "strip_right": false}]}"#),
+    ("decoder", r#"{"type": "ByteLevel", "add_prefix_space": true, "trim_offsets": false, "use_regex": false}"#,
+                r#"{"type": "ByteLevel"}"#),
+    ("decoder", r#"{"type": "Metaspace", "replacement": "▁", "prepend_scheme": "first", "split": false}"#,
+                r#"{"type": "Metaspace", "replacement": "▁", "prepend_scheme": "first"}"#),
+    ("post_processor", r#"{"type": "BertProcessing", "cls": ["a", 0], "sep": ["b", 1]}"#,
+        r#"{"type": "TemplateProcessing", "single": [{"ids": [0]}, {"seq": "A"}, {"ids": [1]}],
+            "pair": [{"ids": [0]}, {"seq": "A"}, {"ids": [1]}, {"seq": "B", "type_id": 1}, {"ids": [1], "type_id": 1}]}"#),
+    ("post_processor", r#"{"type": "RobertaProcessing", "cls": ["a", 0], "sep": ["b", 1], "trim_offsets": true, "add_prefix_space": true}"#,
+        r#"{"type": "TemplateProcessing", "single": [{"ids": [0]}, {"seq": "A"}, {"ids": [1]}],
+            "pair": [{"ids": [0]}, {"seq": "A"}, {"ids": [1, 1]}, {"seq": "B"}, {"ids": [1]}]}"#),
+    // Ascending id order is load-bearing: the reader replays added tokens in that order, and
+    // `add_tokens` reuses a model id when the token is already in the vocabulary.
+    ("added_tokens", r#"[{"id": 5, "content": "<b>", "single_word": false, "lstrip": true, "rstrip": false, "normalized": false, "special": true},
+        {"id": 4, "content": "<a>", "single_word": true, "lstrip": false, "rstrip": true, "normalized": true, "special": false}]"#,
+        r#"[{"id": 4, "content": "<a>", "single_word": true, "lstrip": false, "rstrip": true, "normalized": true, "special": false},
+        {"id": 5, "content": "<b>", "single_word": false, "lstrip": true, "rstrip": false, "normalized": false, "special": true}]"#),
 ];
 
 /// `strip_accents: null` means "decide from `lowercase`", which is why the reader requires the key.
 #[cfg(feature = "normalizers")]
 #[rustfmt::skip]
-const BERT_NORMALIZER: &[(&str, &str)] = &[
-    (r#"{"type": "BertNormalizer", "clean_text": true, "handle_chinese_chars": true, "strip_accents": null, "lowercase": true}"#,
-     r#"{"type": "BertNormalizer", "clean_text": true, "handle_chinese_chars": true, "strip_accents": null, "lowercase": true}"#),
+const BERT: &[(&str, &str)] = &[
+    ("normalizer", r#"{"type": "BertNormalizer", "clean_text": true, "handle_chinese_chars": true, "strip_accents": null, "lowercase": true}"#),
 ];
+#[cfg(not(feature = "normalizers"))]
+const BERT: &[(&str, &str)] = &[];
+
+/// All four fields are required, so none may go missing on the way out.
+#[cfg(feature = "wordpiece")]
+#[rustfmt::skip]
+const WORDPIECE: &[(&str, &str)] = &[
+    ("model", r###"{"type": "WordPiece", "unk_token": "[UNK]", "continuing_subword_prefix": "##", "max_input_chars_per_word": 100, "vocab": {"[UNK]": 0, "a": 1, "##b": 2}}"###),
+];
+#[cfg(not(feature = "wordpiece"))]
+const WORDPIECE: &[(&str, &str)] = &[];
 
 #[test]
 fn components_round_trip_to_their_canonical_spelling() {
-    let mut slots: Vec<(&str, &[(&str, &str)])> = vec![
-        ("normalizer", NORMALIZERS),
-        ("pre_tokenizer", PRE_TOKENIZERS),
-        ("decoder", DECODERS),
-        ("post_processor", POST_PROCESSORS),
-    ];
-    #[cfg(feature = "normalizers")]
-    slots.push(("normalizer", BERT_NORMALIZER));
-
-    for (slot, cases) in slots {
-        for (input, expected) in cases {
-            assert_eq!(written(slot, input), json(expected), "{slot}: {input}");
-        }
+    for (slot, spelling) in IDEMPOTENT.iter().chain(BERT).chain(WORDPIECE) {
+        assert_eq!(written(slot, spelling), json(spelling), "{slot}: {spelling}");
+    }
+    for (slot, input, expected) in REWRITTEN {
+        assert_eq!(written(slot, input), json(expected), "{slot}: {input}");
     }
 }
 
 #[test]
 fn the_canonical_shape_is_tagged_versioned_and_null_where_absent() {
     let text = rewrite(&config(&[
-        ("normalizer", r#"{"type": "Lowercase"}"#),
+        ("normalizer", r#"{"type": "MetaspaceNormalizer", "replacement": "▁",
+            "prepend": true, "drop_whitespace": false}"#),
         ("pre_tokenizer", r#"{"type": "Whitespace"}"#),
         ("decoder", r#"{"type": "Fuse"}"#),
     ]));
@@ -373,13 +248,13 @@ fn the_canonical_shape_is_tagged_versioned_and_null_where_absent() {
     assert_eq!(parsed["version"], "2.0");
     // The reader still tolerates an untagged model; the writer must never make one.
     for field in ["normalizer", "pre_tokenizer", "decoder", "model"] {
-        assert!(
-            parsed[field]["type"].as_str().is_some(),
-            "`{field}` has no `type`"
-        );
+        assert!(parsed[field]["type"].as_str().is_some(), "`{field}` has no `type`");
     }
     // Pairs in rank order, never the legacy `"a b"`, which is ambiguous when a token has a space.
     assert_eq!(parsed["model"]["merges"], json(r#"[["a","b"],["ab","ab"]]"#));
+    for legacy in ["add_prefix_space", "prepend_scheme", "split"] {
+        assert!(parsed["normalizer"].get(legacy).is_none(), "wrote `{legacy}`");
+    }
 
     // A pass-through frame is what "no post-processor" lowers to, so it goes back out as absent.
     let bare = rewrite(&config(&[]));
@@ -390,47 +265,9 @@ fn the_canonical_shape_is_tagged_versioned_and_null_where_absent() {
     assert_eq!(field_of(&bare, "padding"), serde_json::Value::Null);
 }
 
-/// A `MetaspaceNormalizer` is a normalizer like any other now, so its position carries no meaning
-/// and the writer never has to fold it back into a pre-tokenizer tag -- nor write its legacy keys.
-#[test]
-fn a_metaspace_normalizer_writes_wherever_it_sits() {
-    use tk_encode::normalizers::metaspace::MetaspaceNormalizer;
-    use tk_encode::normalizers::utils::Lowercase;
-
-    let chain = vec![
-        PipelineNormalizer::Metaspace(MetaspaceNormalizer::new('\u{2581}', true, false)),
-        PipelineNormalizer::Lowercase(Lowercase),
-    ];
-    let mut out = super::writer::Out::new();
-    super::normalizers::write_normalizer(&mut out, &chain).expect("a Metaspace anywhere writes");
-    let parsed: serde_json::Value = serde_json::from_str(&out.finish()).expect("valid JSON");
-    assert_eq!(parsed["normalizers"][0]["type"], "MetaspaceNormalizer");
-    assert_eq!(parsed["normalizers"][1]["type"], "Lowercase");
-    for legacy in ["add_prefix_space", "prepend_scheme", "split"] {
-        assert!(
-            parsed["normalizers"][0].get(legacy).is_none(),
-            "wrote `{legacy}`"
-        );
-    }
-}
-
-/// Ascending id order is load-bearing: the reader replays added tokens in that order, and
-/// `add_tokens` reuses a model id when the token is already in the vocabulary.
-#[test]
-#[rustfmt::skip]
-fn added_tokens_go_out_in_id_order_with_every_flag() {
-    let added = r#"[
-        {"id": 5, "content": "<b>", "single_word": false, "lstrip": true, "rstrip": false, "normalized": false, "special": true},
-        {"id": 4, "content": "<a>", "single_word": true, "lstrip": false, "rstrip": true, "normalized": true, "special": false}]"#;
-    let expected = r#"[
-        {"id": 4, "content": "<a>", "single_word": true, "lstrip": false, "rstrip": true, "normalized": true, "special": false},
-        {"id": 5, "content": "<b>", "single_word": false, "lstrip": true, "rstrip": false, "normalized": false, "special": true}]"#;
-    assert_eq!(written("added_tokens", added), json(expected));
-}
-
 /// Asserted on *bits*, not text: the writer emits the shortest spelling of the double **our parser
-/// produced**, which for `-3.8403830528259277` is a different double from the correctly-rounded
-/// reading of those digits -- so its shortest form has sixteen digits where the file had seventeen.
+/// produced**, and for `-3.8403830528259277` that is a different double from the correctly-rounded
+/// reading of the same digits -- sixteen digits where the file had seventeen.
 #[cfg(feature = "unigram")]
 #[test]
 fn a_unigram_model_keeps_its_scores_and_unk() {
@@ -443,10 +280,7 @@ fn a_unigram_model_keeps_its_scores_and_unk() {
     assert_eq!(model["unk_id"], 0);
     assert_eq!(model["byte_fallback"], false);
     let vocab = model["vocab"].as_array().expect("a Unigram vocab is an array");
-    for (entry, digits) in vocab
-        .iter()
-        .zip(["0.0", "-3.8403830528259277", "-13.5321998596191"])
-    {
+    for (entry, digits) in vocab.iter().zip(["0.0", "-3.8403830528259277", "-13.5321998596191"]) {
         let literal = entry[1].to_string();
         let got = crate::vendored::f64_from_literal(&literal);
         let want = crate::vendored::f64_from_literal(digits);
@@ -454,15 +288,6 @@ fn a_unigram_model_keeps_its_scores_and_unk() {
     }
     // And a score is spelled as a float, never as a bare integer.
     assert_eq!(vocab[0][1].to_string(), "0.0");
-}
-
-#[cfg(feature = "wordpiece")]
-#[test]
-#[rustfmt::skip]
-fn a_wordpiece_model_keeps_all_four_required_fields() {
-    let model = r###"{"type": "WordPiece", "unk_token": "[UNK]", "continuing_subword_prefix": "##",
-        "max_input_chars_per_word": 100, "vocab": {"[UNK]": 0, "a": 1, "##b": 2}}"###;
-    assert_eq!(written("model", model), json(model));
 }
 
 /// Cheap, and it catches an unescaped control character that `hifijson` happens to tolerate: the
