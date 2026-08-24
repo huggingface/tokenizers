@@ -39,9 +39,6 @@ pub(super) fn read_pre_tokenizer(
             .field("pretokenizers")
             .and_then(Json::as_array)
             .unwrap_or(&[]);
-        // t5 and albert: throw the whitespace away first, then mark where words start. The config
-        // path recognises this exact pair and collapses it to a single `Split`, so a `Sequence`
-        // here would not be the same pipeline.
         if let [first, second] = members
             && first.type_tag() == Some("WhitespaceSplit")
             && second.type_tag() == Some("Metaspace")
@@ -126,17 +123,13 @@ fn read_one_pre_tokenizer(cfg: &Json<'_>) -> Result<PipelinePreTokenizer> {
     })
 }
 
-/// A `ByteLevel` pre-tokenizer is two unrelated switches. With `use_regex` it splits on the GPT-2
-/// regex, which `gpt_fsm` recognises, so it drives `atomsplit` natively and needs no regex backend.
-/// Without it, it only asks for the byte map — which the model half already applies — so the
-/// splitting step is the identity. That is the `Sequence[Split, ByteLevel]` idiom, and
-/// `PipelineSequence` relies on seeing a `None` there to fuse the pair.
 fn byte_level_pre_tokenizer(cfg: &Json<'_>) -> Result<PipelinePreTokenizer> {
     if cfg
         .field("add_prefix_space")
         .and_then(Json::as_bool)
         .unwrap_or(false)
     {
+        // TODO: this is something we prob want for v1 depending on the usage.
         return Err("ByteLevel add_prefix_space=true is not supported by the pipeline yet".into());
     }
     let use_regex = cfg
@@ -154,11 +147,8 @@ fn byte_level_pre_tokenizer(cfg: &Json<'_>) -> Result<PipelinePreTokenizer> {
     )?))
 }
 
-/// A `Metaspace` pre-tokenizer does two jobs at once: it writes `▁` delimiters into the text, then
-/// cuts on them. The pipeline keeps rewriting and cutting apart, so it is rebuilt as a normalizer
-/// plus a `Split`. There is no `Metaspace` pre-tokenizer type left to build: this is the only place
-/// the decomposition happens.
-///
+/// We removed the Metaspace pre tokenizer in favor of 2 normalizers as it makes more sense
+/// regarding the flow of code.
 /// `drop_whitespace` is the `WhitespaceSplit` that t5 and albert run in front of theirs.
 fn read_metaspace(
     cfg: &Json<'_>,
@@ -166,8 +156,6 @@ fn read_metaspace(
     normalizers: &mut Vec<PipelineNormalizer>,
 ) -> Result<PipelinePreTokenizer> {
     let replacement = read_char(cfg, "replacement")?;
-    // `split: false` writes the delimiters but never cuts the text, so there is no `Split` to hand
-    // back, and no way to express "rewrite only" as a pre-tokenizer.
     if !cfg.field("split").and_then(Json::as_bool).unwrap_or(true) {
         return Err(unsupported(
             "a `Metaspace` pre-tokenizer with `split: false`",
@@ -176,8 +164,7 @@ fn read_metaspace(
     let prepend = match read_prepend_scheme(cfg)? {
         PrependScheme::Always => true,
         PrependScheme::Never => false,
-        // `First` writes the delimiter only on the piece at the very start of the text it came
-        // from. A normalizer is handed one chunk at a time, without that context.
+        // TODO: v1 probably needs to supports that?
         PrependScheme::First => {
             return Err(unsupported(
                 "a `Metaspace` pre-tokenizer with `prepend_scheme: first`",

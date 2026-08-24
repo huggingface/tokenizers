@@ -59,7 +59,9 @@
 //! read. [`to_json`]'s own documentation lists every place the two differ.
 #![doc = include_str!("../SPEC.md")]
 
-pub mod json;
+// The JSON tree and its accessors. `pub(crate)`: reading and writing a `tokenizer.json` is
+// what this crate exposes, and the parser it does that with is nobody else's business.
+pub(crate) mod json;
 mod vendored;
 
 /// The base64 engine for `Precompiled`'s charsmap, the one place a `tokenizer.json` holds binary.
