@@ -1,26 +1,14 @@
-//! Reading a `tokenizer.json` without linking `serde_json`.
+//! We decided to use `hifijson` as it has 0 dependencies and is very lightweight. Most of the
+//! code in this file is just to reproduce the previous behavior when parsing a tokenizer.json and
+//! fp64 values. As such we just vendored a small part of the serde json library with attritbution.
 //!
-//! The parsing itself is [`hifijson`]'s: a JSON lexer with no required dependencies, whose tree is
-//! already the shape this crate wants — insertion-ordered objects, strings that borrow from the
-//! input, and numbers left as the digits they were written with. What lives here is the thin layer
-//! on top: the accessors `from_json` walks the tree with, and the float reassembly that turns those
-//! digits into the exact `f64` `serde_json` would have produced.
-//!
-//! Numbers are why this file is not simply a `pub use`. A Unigram score decides a Viterbi near-tie,
-//! so the arithmetic has to match `serde_json`'s default build bit for bit — being *more* accurate
-//! would move ids that ship today. `hifijson` is the parser that lets us do that, because it never
-//! parses a float itself: [`number`] and [`f64_from_parts`] below do, reproducing serde's rounding
-//! error on purpose.
-//!
-//! A `tokenizer.json` is usually fetched from the Hub, so this is a trust boundary: nesting is
-//! capped ([`MAX_DEPTH`]) because the parser recurses, and every integer accessor is checked.
 
 use std::borrow::Cow;
 use std::fmt;
 
 use hifijson::token::Lex as _;
 
-/// Deepest nesting accepted. A real `tokenizer.json` nests about six levels
+/// Deepest nesting accepted. A real `tokenizer.json` nests about six levels max
 /// (`post_processor.special_tokens.<tok>.tokens[0]`); this leaves plenty of room while keeping a
 /// hostile file from recursing the parser off the stack.
 pub const MAX_DEPTH: usize = 64;

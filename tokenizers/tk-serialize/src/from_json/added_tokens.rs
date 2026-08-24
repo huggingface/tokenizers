@@ -1,10 +1,8 @@
-//! The `added_tokens` array.
-
 use crate::json::{Json, JsonExt};
 use tk_encode::tokenizer::Result;
 use tk_encode::vocab::bucket_added_vocabulary::AddedToken as BucketAddedToken;
 
-/// Added tokens, in ascending id order — `add_tokens` depends on that order to reproduce ids.
+/// Added tokens, in ascending id order — `add_tokens` depends on that order
 pub(super) fn read_added_tokens(cfg: Option<&Json<'_>>) -> Result<Vec<BucketAddedToken>> {
     let Some(arr) = cfg.and_then(Json::as_arr) else {
         return Ok(Vec::new());
