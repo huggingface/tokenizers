@@ -73,8 +73,7 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          cargo test -p tk-convert --features bench-baseline \
-            --test pipeline_oracle --test pipeline_decode_oracle
+          cargo test -p tk-convert --features bench-baseline --test oracle
 
       # Windows skips the integration tests and the full fixture set, but the
       # tk-encode lib tests load these two tokenizer files and fail without
