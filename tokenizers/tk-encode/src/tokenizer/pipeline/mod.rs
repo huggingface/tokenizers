@@ -410,18 +410,18 @@ impl EncodeHandle {
     /// Wait for all scheduled encoding to finish
     ///
     /// Returns in input order
-    pub fn wait(self) -> Result<Vec<Encoding>> {
-        let padding = self.padding.clone();
-        let mut out = self.wait_inner()?;
-        if let Some(params) = &padding {
-            pad_encodings(&mut out, params)?;
-        }
-        Ok(out)
+    pub fn wait(mut self) -> Result<Vec<Encoding>> {
+        let padding = self.padding.take();
+        self.wait_with_padding(padding.as_ref())
     }
 
-    pub fn wait_with_padding(self, params: &PaddingParams) -> Result<Vec<Encoding>> {
+    /// [`wait`](Self::wait), with `params` standing in for the padding the tokenizer was built
+    /// with. `None` pads nothing, so it is how a caller turns a configured padding off.
+    pub fn wait_with_padding(self, params: Option<&PaddingParams>) -> Result<Vec<Encoding>> {
         let mut out = self.wait_inner()?;
-        pad_encodings(&mut out, params)?;
+        if let Some(params) = params {
+            pad_encodings(&mut out, params)?;
+        }
         Ok(out)
     }
 
@@ -1217,13 +1217,29 @@ mod tests {
 
         let encodings = pipeline
             .encode(vec!["hhello", "hello"], false)
-            .wait_with_padding(&PaddingParams {
+            .wait_with_padding(Some(&PaddingParams {
                 strategy: PaddingStrategy::Fixed(5),
                 ..PaddingParams::default()
-            })
+            }))
             .unwrap();
 
         assert!(encodings.iter().all(|e| e.len() == 5));
+    }
+
+    #[test]
+    fn wait_with_padding_none_turns_off_the_tokenizers_configured_padding() {
+        let pipeline = hello_pipeline_with_padding(PaddingParams {
+            strategy: PaddingStrategy::BatchLongest,
+            ..PaddingParams::default()
+        });
+
+        let encodings = pipeline
+            .encode(vec!["hhello", "hello"], false)
+            .wait_with_padding(None)
+            .unwrap();
+
+        assert_eq!(encodings[0].len(), 2);
+        assert_eq!(encodings[1].len(), 1);
     }
 
     fn hello_bpe() -> PipelineBPE {
