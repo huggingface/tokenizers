@@ -28,6 +28,7 @@ mod added_tokens;
 mod decoders;
 mod model;
 mod normalizers;
+mod padding;
 mod post_processors;
 mod pre_tokenizers;
 
@@ -44,6 +45,7 @@ use self::model::read_wordlevel;
 #[cfg(feature = "wordpiece")]
 use self::model::read_wordpiece;
 use self::normalizers::read_normalizers;
+use self::padding::read_padding;
 use self::post_processors::read_post_processor;
 use self::pre_tokenizers::read_pre_tokenizer;
 use crate::json::Json;
@@ -202,8 +204,7 @@ fn build<M>(
         read_post_processor(doc.field("post_processor"))?,
         read_decoder(doc.field("decoder"))?,
         read_role_to_token(doc.field("role_to_token"))?,
-        // TODO: read padding (and truncation) from the config once the slim reader supports them.
-        None,
+        read_padding(doc.field("padding"))?,
     ))
 }
 
