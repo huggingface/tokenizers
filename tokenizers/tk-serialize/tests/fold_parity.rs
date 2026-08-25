@@ -12,7 +12,7 @@ use tk_encode::pipeline::PipelineTokenizer;
 /// `data/gpt2.json` is still version `1.0`, so run the upgrade pass first -- the reader only
 /// accepts canonical `2.0`. Same as `benches/encode.rs`.
 fn load() -> PipelineTokenizer {
-    let canonical = tk_convert::canonicalize_file("../data/gpt2.json").unwrap();
+    let canonical = tk_convert::canonicalize_file_compact("../data/gpt2.json").unwrap();
     tk_serialize::from_json(&canonical).unwrap()
 }
 

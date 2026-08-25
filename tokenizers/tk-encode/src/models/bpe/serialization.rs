@@ -235,7 +235,12 @@ impl PipelineBPE {
                 .filter(|&internal| internal != u32::MAX)
         };
         let (vocab, atoms) = if byte_level {
-            let mut vocab = BucketVocabStore::build(vocab.byte_content());
+            // `transform_vocab` rebuilds the store itself, and the store handed in here was built
+            // from exactly this vocabulary in `from_config`. Rebuilding it from its own
+            // `byte_content()` in between produced a semantically identical store and threw it
+            // away -- one whole MPHF construction over the entire vocabulary, 129k entries on
+            // llama-3, plus the `Vec` its contents were extracted into.
+            let mut vocab = vocab;
             vocab = byte_level::transform_vocab(vocab);
             // every byte has to be an atom, or a word containing it could not be encoded at all
             for b in 0u8..=255 {
@@ -245,7 +250,8 @@ impl PipelineBPE {
             }
             (vocab, Atoms::Bytes)
         } else {
-            let vocab = BucketVocabStore::build(vocab.byte_content());
+            // Same redundant rebuild as the byte-level arm above; the store handed in is already
+            // this vocabulary.
             let unk_token = if let Some(unk_str) = unk_token {
                 let token_id = vocab
                     .token_to_id(&unk_str)

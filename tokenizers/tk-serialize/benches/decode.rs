@@ -16,7 +16,7 @@ const STREAM_TOKEN_BUDGET: usize = 300_000;
 /// Read a real config from `../data`. They are all still version `1.0`, so run the upgrade pass
 /// first -- the reader only accepts canonical `2.0`.
 fn load(path: &str) -> PipelineTokenizer {
-    let canonical = tk_convert::canonicalize_file(path).unwrap();
+    let canonical = tk_convert::canonicalize_file_compact(path).unwrap();
     tk_serialize::from_json(&canonical).unwrap()
 }
 

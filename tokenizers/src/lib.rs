@@ -49,5 +49,6 @@ pub use tk_encode::FromPretrainedParameters;
 // The legacy-config upgrade pass — all that is left of the config layer.
 // ---------------------------------------------------------------------------
 pub use tk_convert::{
-    ConvertError, canonicalize_file, canonicalize_str, canonicalize_value, convert,
+    ConvertError, canonicalize_file, canonicalize_file_compact, canonicalize_str,
+    canonicalize_str_compact, canonicalize_value, convert,
 };
