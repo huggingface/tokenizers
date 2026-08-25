@@ -21,6 +21,8 @@ const MODELS: &[&str] = &[
     "t5-base",
     "albert-base-v1",
     "meta-llama/Llama-3.2-1B",
+    "sentence-transformers/all-MiniLM-L6-v2",
+    "sentence-transformers/all-mpnet-base-v2",
 ];
 
 /// One line per script the old fixture corpora covered, plus the two modalities that stress the
@@ -63,23 +65,32 @@ fn matches_the_released_crate() {
 
         for text in TEXTS {
             for special in [false, true] {
-                let ids = released
-                    .encode_fast(*text, special)
-                    .unwrap()
-                    .get_ids()
-                    .to_vec();
-                let got: Vec<u32> = pipeline.encode(*text, special).wait().unwrap()[0]
-                    .ids()
-                    .iter()
-                    .map(|t| t.id())
-                    .collect();
+                let want = released.encode_fast(*text, special).unwrap();
+                let ids = want.get_ids().to_vec();
+                let encodings = pipeline.encode(*text, special).wait().unwrap();
+                let encoding = &encodings[0];
+                let got: Vec<u32> = encoding.ids().iter().map(|t| t.id()).collect();
                 if ids != got {
                     diverged.push(format!("{repo} encode special={special} {text:?}"));
                     continue; // decoding ids we already disagree about says nothing
                 }
+                let mask: Vec<u32> = match encoding.attention_mask() {
+                    Some(mask) => mask.iter().copied().map(u32::from).collect(),
+                    None => vec![1; got.len()],
+                };
+                if mask != want.get_attention_mask() {
+                    diverged.push(format!("{repo} attention_mask special={special} {text:?}"));
+                }
+                let type_ids: Vec<u32> = match encoding.type_ids() {
+                    Some(type_ids) => type_ids.iter().copied().map(u32::from).collect(),
+                    None => vec![0; got.len()],
+                };
+                if type_ids != want.get_type_ids() {
+                    diverged.push(format!("{repo} type_ids special={special} {text:?}"));
+                }
                 for skip in [false, true] {
-                    let want = released.decode(&ids, skip).unwrap();
-                    if pipeline.decode(&ids, skip).unwrap_or_default() != want {
+                    let decoded = released.decode(&ids, skip).unwrap();
+                    if pipeline.decode(&ids, skip).unwrap_or_default() != decoded {
                         diverged.push(format!("{repo} decode skip={skip} {text:?}"));
                     }
                 }
