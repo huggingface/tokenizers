@@ -21,13 +21,14 @@ fn config(slots: &[(&str, &str)]) -> String {
     };
     format!(
         r#"{{"version": "2.0", "added_tokens": {}, "normalizer": {}, "pre_tokenizer": {},
-            "post_processor": {}, "decoder": {}, "model": {}}}"#,
+            "post_processor": {}, "decoder": {}, "model": {}, "padding": {}}}"#,
         slot("added_tokens", "[]"),
         slot("normalizer", "null"),
         slot("pre_tokenizer", "null"),
         slot("post_processor", "null"),
         slot("decoder", "null"),
         slot("model", BPE_MODEL),
+        slot("padding", "null"),
     )
 }
 
@@ -267,6 +268,20 @@ fn components_round_trip_to_their_canonical_spelling() {
     }
     for (slot, input, expected) in REWRITTEN {
         assert_eq!(written(slot, input), json(expected), "{slot}: {input}");
+    }
+}
+
+/// Padding is state the tokenizer carries rather than a component, so no other test here would
+/// catch it being dropped. Both strategies, and `pad_to_multiple_of` in both of its states.
+#[test]
+fn padding_round_trips() {
+    for spelling in [
+        r#"{"strategy": "BatchLongest", "direction": "Right", "pad_to_multiple_of": null,
+            "pad_id": 0, "pad_type_id": 0, "pad_token": "[PAD]"}"#,
+        r#"{"strategy": {"Fixed": 128}, "direction": "Left", "pad_to_multiple_of": 8,
+            "pad_id": 3, "pad_type_id": 1, "pad_token": "<pad>"}"#,
+    ] {
+        assert_eq!(written("padding", spelling), json(spelling), "{spelling}");
     }
 }
 
