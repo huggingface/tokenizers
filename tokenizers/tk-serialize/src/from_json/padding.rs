@@ -1,5 +1,5 @@
-use crate::json::Json;
 use super::unsupported;
+use crate::json::Json;
 use tk_encode::tokenizer::Result;
 use tk_encode::{PaddingDirection, PaddingParams, PaddingStrategy};
 
