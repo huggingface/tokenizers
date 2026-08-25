@@ -90,7 +90,9 @@ struct Plan {
     /// always considered [`Seq::A`])
     side_a_len: Vec<usize>,
     /// Empty pre-allocated output buffer
-    outputs: Vec<Vec<ChunkResult>>,
+    outputs: Vec<ChunkResult>,
+    /// `outputs[seq_start[i]..seq_start[i + 1]]` is sequence `i`'s results.
+    seq_start: Vec<usize>,
     /// Number of chunks per sequence (accessed via `chunk_count[seq]`)
     chunk_count: Vec<usize>,
 }
@@ -100,7 +102,9 @@ struct EncodeBatch {
     chunks: Vec<SequenceChunk>,
     /// All the tasks to be picked up by workers: each tasks represents one or many [`SequenceChunk`]s to process
     tasks: Vec<Range<usize>>,
-    outputs: Vec<Vec<ChunkResult>>,
+    outputs: Vec<ChunkResult>,
+    /// `outputs[seq_start[i]..seq_start[i + 1]]` is sequence `i`'s results.
+    seq_start: Vec<usize>,
     encodings: Vec<EncodingResult>,
     /// Chunks left to encode per sequence (remaining[seq] == chunks_left)
     remaining: Vec<AtomicUsize>,
@@ -164,7 +168,7 @@ impl EncodeBatch {
             .unwrap_or_else(|_| Err("encode worker panicked".into()));
             // SAFETY: no two threads can share the same chunk because each chunk is owned by
             // only one task
-            unsafe { self.outputs[chunk.seq][chunk.idx].set(res) };
+            unsafe { self.outputs[self.seq_start[chunk.seq] + chunk.idx].set(res) };
 
             if self.remaining[chunk.seq].fetch_sub(1, Ordering::AcqRel) == 1 {
                 let encoding = self.reconstruct(chunk.seq);
@@ -189,7 +193,7 @@ impl EncodeBatch {
     }
 
     fn reconstruct(&self, seq: usize) -> Result<Encoding> {
-        let chunk_results = &self.outputs[seq];
+        let chunk_results = &self.outputs[self.seq_start[seq]..self.seq_start[seq + 1]];
         let a_len = self.side_a_len[seq];
         let a = drain(&chunk_results[..a_len])?;
         let b = (a_len < chunk_results.len())
@@ -292,13 +296,14 @@ impl PipelineTokenizer {
         input: &str,
         chunks: &mut Vec<SequenceChunk>,
         seq_outputs: &mut Vec<ChunkResult>,
+        seq_base: usize,
     ) {
         // If input is not at least twice the size of the minimum meaningful parallel
         // chunk's size, we emit the full input as its own chunk because splitting would be inefficient
         if input.len() < 2 * PARALLEL_MIN_BYTES {
             chunks.push(SequenceChunk {
                 seq: seq_idx,
-                idx: seq_outputs.len(),
+                idx: seq_outputs.len() - seq_base,
                 side,
                 range: 0..input.len(),
             });
@@ -307,7 +312,7 @@ impl PipelineTokenizer {
         }
         let current_chunks_len = chunks.len();
         for segment in SpecialSegmentIterator::new(input, &self.inner.added_vocabulary, false) {
-            let idx = seq_outputs.len();
+            let idx = seq_outputs.len() - seq_base;
             let (segment, offset) = match segment {
                 Segment::SpecialToken(id) => {
                     let token = PipelineToken::from(id);
@@ -327,7 +332,7 @@ impl PipelineTokenizer {
         // make sure we have at least one chunk per sequence, otherwise we'll wait indefinitely
         // for a completion event
         if current_chunks_len == chunks.len() {
-            let idx = seq_outputs.len();
+            let idx = seq_outputs.len() - seq_base;
             // sentinel chunk resulting in an encode no-op since range is 0..0
             chunks.push(SequenceChunk {
                 seq: seq_idx,
@@ -342,25 +347,41 @@ impl PipelineTokenizer {
     fn plan_work(&self, inputs: &Inputs) -> Plan {
         let mut chunks = Vec::with_capacity(inputs.len());
         let mut side_a_len = Vec::with_capacity(inputs.len());
-        let mut outputs = Vec::with_capacity(inputs.len());
+        // One flat buffer with per-sequence offsets, not a `Vec` per sequence. A batch of 20k
+        // short lines meant 20k heap allocations here, on the calling thread before any worker
+        // started, and it measured about as much as all the rest of the planning together.
+        let mut outputs: Vec<ChunkResult> = Vec::with_capacity(inputs.len());
+        let mut seq_start: Vec<usize> = Vec::with_capacity(inputs.len() + 1);
         for (seq_idx, input) in inputs.into_iter().enumerate() {
-            let mut seq_outputs = vec![];
+            let base = outputs.len();
+            seq_start.push(base);
             match input {
                 Input::Single(s) => {
-                    self.plan_sequence(seq_idx, Seq::A, s, &mut chunks, &mut seq_outputs);
-                    side_a_len.push(seq_outputs.len());
+                    self.plan_sequence(seq_idx, Seq::A, s, &mut chunks, &mut outputs, base);
+                    side_a_len.push(outputs.len() - base);
                 }
                 Input::Pair(s1, s2) => {
-                    self.plan_sequence(seq_idx, Seq::A, s1, &mut chunks, &mut seq_outputs);
-                    let a_len = seq_outputs.len();
-                    self.plan_sequence(seq_idx, Seq::B, s2, &mut chunks, &mut seq_outputs);
+                    self.plan_sequence(seq_idx, Seq::A, s1, &mut chunks, &mut outputs, base);
+                    let a_len = outputs.len() - base;
+                    self.plan_sequence(seq_idx, Seq::B, s2, &mut chunks, &mut outputs, base);
                     side_a_len.push(a_len);
                 }
             }
-            outputs.push(seq_outputs);
         }
-        // Schedule encode batch by longest chunk first
-        chunks.sort_unstable_by_key(|u| std::cmp::Reverse(u.range.len()));
+        seq_start.push(outputs.len());
+        // Scheduling wants the big chunks taken first, so one cannot be picked last and become the
+        // straggler the whole batch waits on. It does *not* need a total order: tasks are already
+        // byte-balanced, being grown until they hold `PARALLEL_MIN_BYTES`. Sorting every chunk for
+        // that cost O(n log n) on the calling thread -- 18k chunks in a 20k-line batch, ~14% of the
+        // batch's encode time, all of it before a worker starts. Partitioning the chunks that are a
+        // task by themselves to the front is O(n) and keeps the property that matters.
+        let mut boundary = 0;
+        for i in 0..chunks.len() {
+            if chunks[i].range.len() >= PARALLEL_MIN_BYTES {
+                chunks.swap(boundary, i);
+                boundary += 1;
+            }
+        }
         let chunk_count = chunks.iter().fold(vec![0; outputs.len()], |mut uc, u| {
             uc[u.seq] += 1;
             uc
@@ -387,6 +408,7 @@ impl PipelineTokenizer {
             tasks,
             side_a_len,
             outputs,
+            seq_start,
             chunk_count,
         }
     }
@@ -409,12 +431,13 @@ pub(crate) fn encode(
         tasks,
         side_a_len,
         outputs,
+        seq_start,
         chunk_count,
     } = tok.plan_work(&inputs);
     if tasks.len() < 2 {
         return EncodeHandle::blocking(tok.encode_serial(inputs, add_special_tokens));
     }
-    let n_seq = outputs.len();
+    let n_seq = seq_start.len() - 1;
     let threads = tasks.len().min(pool.current_num_threads());
     let batch = Arc::new(EncodeBatch {
         inputs: Box::new(inputs),
@@ -429,6 +452,7 @@ pub(crate) fn encode(
         remaining: chunk_count.iter().map(|&uc| AtomicUsize::new(uc)).collect(),
         encodings: (0..n_seq).map(|_| Slot::new(None)).collect(),
         outputs,
+        seq_start,
         side_a_len,
         chunks,
         tasks,
