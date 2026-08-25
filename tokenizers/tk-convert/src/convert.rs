@@ -440,7 +440,7 @@ fn lower_byte_level_pre_tokenizer(root: &mut Map<String, Value>) -> Result<(), C
                     "Split",
                     &[(
                         "pattern",
-                        serde_json::json!({ "Regex": atomsplit::regexes::GPT2 }),
+                        serde_json::json!({ "Regex": bitsplit::regexes::GPT2 }),
                     )],
                 )),
                 false => None,

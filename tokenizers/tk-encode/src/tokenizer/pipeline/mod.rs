@@ -28,7 +28,7 @@ mod scratch_pool;
 
 pub use scratch_pool::ModelScratch;
 
-pub use atomsplit::fsm::Span;
+pub use bitsplit::Span;
 
 mod normalizer;
 mod post_processor;
@@ -564,6 +564,29 @@ impl PipelineTokenizer {
         let pp = &self.inner.post_processor;
         let template = if s2.is_some() { &pp.pair } else { &pp.single };
 
+        // Fast path: when nothing has to be woven around the sequence, the sequence already *is*
+        // the encoding, and the loop below is a second full pass over every token plus a second
+        // allocation to hold it. That pass is invisible on sparse text and the dominant added cost
+        // on token-dense text, which is where it showed up: the regression against
+        // `poc/target-encode-clean` tracked tokens-per-byte, not bytes.
+        //
+        // Taken only when the template would reproduce `s1` exactly: one sequence, it is `A`, no
+        // type ids to interleave, and any `Specials` slices are being skipped anyway.
+        if s2.is_none() && !template.has_type_ids {
+            let mut sequences = 0usize;
+            let reproduces_s1 = template.slices.iter().all(|slice| match slice {
+                Slice::Specials { .. } => !add_special_tokens,
+                Slice::Sequence { seq: Seq::A, .. } => {
+                    sequences += 1;
+                    true
+                }
+                Slice::Sequence { seq: Seq::B, .. } => false,
+            });
+            if reproduces_s1 && sequences == 1 {
+                return Ok(Encoding::new(s1, None));
+            }
+        }
+
         let seq_len = s1.len() + s2.as_ref().map_or(0, Vec::len);
         let cap = template.n_special + seq_len;
 
@@ -599,12 +622,16 @@ impl PipelineTokenizer {
         Ok(Encoding::new(ids, type_ids))
     }
 
-    fn encode_sequence_with(
+    /// Encode one sequence, appending its ids to `output`.
+    ///
+    /// Takes the buffer rather than returning one, so a caller that already owns somewhere to put
+    /// the ids -- [`Self::encode_into`] -- pays neither an allocation nor a copy for them.
+    fn encode_sequence_into(
         &self,
         input: &str,
         scratch: &mut EncodeScratch,
-    ) -> Result<Vec<PipelineToken>> {
-        let mut output = Vec::with_capacity(input.len() / 4);
+        output: &mut Vec<PipelineToken>,
+    ) -> Result<()> {
         // First, we extract all special tokens from the non-normalized input
         for segment in SpecialSegmentIterator::new(input, &self.inner.added_vocabulary, false) {
             match segment {
@@ -651,7 +678,8 @@ impl PipelineTokenizer {
                                     pre_tokens,
                                 )?;
                                 output.reserve(pre_tokens.len());
-                                for pre_token in pre_tokens {
+                                #[cfg(debug_assertions)]
+                                for pre_token in pre_tokens.iter() {
                                     let range = pre_token.range();
                                     debug_assert!(
                                         range.start <= range.end
@@ -660,21 +688,74 @@ impl PipelineTokenizer {
                                         "{:?} broke the PreTokenizer contract: emitted {pre_token:?} for {normalized_chunk:?}",
                                         self.inner.pre_tokenizer,
                                     );
-                                    // SAFETY: `PreTokenizer` guarantees every span is a valid range of `normalized_chunk`
-                                    let sequence = unsafe { normalized_chunk.get_unchecked(range) };
-                                    self.inner.model.tokenize_pipeline(
-                                        sequence,
-                                        model_scratch,
-                                        &mut output,
-                                    )?;
                                 }
+                                // The whole span list at once; see Model::tokenize_spans.
+                                // SAFETY: `PreTokenizer` guarantees every span is a valid range of
+                                // `normalized_chunk`, which is what lets the model slice it unchecked.
+                                self.inner.model.tokenize_spans(
+                                    normalized_chunk,
+                                    pre_tokens,
+                                    model_scratch,
+                                    output,
+                                )?;
                             }
                         }
                     }
                 }
             };
         }
+        Ok(())
+    }
+
+    /// [`Self::encode_sequence_into`] into a fresh buffer, for the callers that want one back.
+    fn encode_sequence_with(
+        &self,
+        input: &str,
+        scratch: &mut EncodeScratch,
+    ) -> Result<Vec<PipelineToken>> {
+        let mut output = Vec::with_capacity(input.len() / 4);
+        self.encode_sequence_into(input, scratch, &mut output)?;
         Ok(output)
+    }
+
+    /// Encode `input`, appending its ids to `out`.
+    ///
+    /// The entry point that allocates nothing per call: no `Encoding`, no `Vec<Encoding>` from the
+    /// handle, and no copy out of either. [`Self::encode`] is this plus those wrappers, and an
+    /// encode-only caller in a loop -- a server, a benchmark -- wants this one.
+    ///
+    /// Falls back to the general path when the post-processor actually has something to weave
+    /// around the sequence, since that has to assemble a whole `Encoding` anyway.
+    pub fn encode_into(
+        &self,
+        input: &str,
+        add_special_tokens: bool,
+        out: &mut Vec<PipelineToken>,
+    ) -> Result<()> {
+        let mut scratch = self.inner.scratch_pool.get(&self.inner.model);
+        let template = &self.inner.post_processor.single;
+        let mut sequences = 0usize;
+        // The same question `post_process` asks: would the template just reproduce the sequence?
+        let reproduces_sequence = !template.has_type_ids
+            && template.slices.iter().all(|slice| match slice {
+                Slice::Specials { .. } => !add_special_tokens,
+                Slice::Sequence { seq: Seq::A, .. } => {
+                    sequences += 1;
+                    true
+                }
+                Slice::Sequence { seq: Seq::B, .. } => false,
+            })
+            && sequences == 1;
+        if reproduces_sequence {
+            return self.encode_sequence_into(input, &mut scratch, out);
+        }
+        let encoding = self.encode_one(
+            Input::Single(input.to_owned()),
+            add_special_tokens,
+            &mut scratch,
+        )?;
+        out.extend_from_slice(encoding.ids());
+        Ok(())
     }
 
     /// Decode token ids back to a `String`.
@@ -834,6 +915,27 @@ pub trait Model {
         output: &mut Vec<PipelineToken>,
     ) -> Result<()>;
 
+    /// Every pre-token of a chunk in one call.
+    ///
+    /// The pipeline has the whole span list before the model runs, so handing them over one at a
+    /// time bought nothing and cost a virtual call, a slice, a `Result` and an output capacity
+    /// check per pre-token -- on English that is one round trip per ~5 bytes.
+    ///
+    /// The default is the loop it replaces, so a model only overrides this if it has per-chunk
+    /// work to hoist out of the loop.
+    fn tokenize_spans(
+        &self,
+        chunk: &str,
+        spans: &[Span],
+        scratch: &mut Self::Scratch,
+        output: &mut Vec<PipelineToken>,
+    ) -> Result<()> {
+        for span in spans {
+            self.tokenize_pipeline(&chunk[span.range()], scratch, output)?;
+        }
+        Ok(())
+    }
+
     fn init_scratch(&self) -> Self::Scratch;
 }
 
@@ -894,6 +996,33 @@ impl Model for PipelineModel {
             #[cfg(feature = "wordpiece")]
             (Self::WordPiece(model), PipelineModelScratch::WordPiece(scratch)) => {
                 model.tokenize_pipeline(sequence, scratch, output)
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    fn tokenize_spans(
+        &self,
+        chunk: &str,
+        spans: &[Span],
+        scratch: &mut Self::Scratch,
+        output: &mut Vec<PipelineToken>,
+    ) -> Result<()> {
+        match (self, scratch) {
+            (Self::BPE(model), PipelineModelScratch::BPE(scratch)) => {
+                model.tokenize_spans(chunk, spans, scratch, output)
+            }
+            #[cfg(feature = "unigram")]
+            (Self::Unigram(model), PipelineModelScratch::Unigram(scratch)) => {
+                model.tokenize_spans(chunk, spans, scratch, output)
+            }
+            #[cfg(feature = "wordlevel")]
+            (Self::WordLevel(model), PipelineModelScratch::WordLevel(scratch)) => {
+                model.tokenize_spans(chunk, spans, scratch, output)
+            }
+            #[cfg(feature = "wordpiece")]
+            (Self::WordPiece(model), PipelineModelScratch::WordPiece(scratch)) => {
+                model.tokenize_spans(chunk, spans, scratch, output)
             }
             _ => unreachable!(),
         }

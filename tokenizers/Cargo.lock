@@ -118,14 +118,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
-name = "atomsplit"
-version = "0.1.0"
-dependencies = [
- "memchr",
- "onig",
-]
-
-[[package]]
 name = "autocfg"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -212,6 +204,14 @@ name = "bitmap_gen"
 version = "0.1.0"
 dependencies = [
  "unicode-properties",
+]
+
+[[package]]
+name = "bitsplit"
+version = "0.1.0"
+dependencies = [
+ "ahash",
+ "onig",
 ]
 
 [[package]]
@@ -3186,7 +3186,7 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 name = "tk-convert"
 version = "1.0.0-rc.0"
 dependencies = [
- "atomsplit",
+ "bitsplit",
  "criterion 0.8.2",
  "hf-hub 0.4.3",
  "rayon",
@@ -3203,7 +3203,7 @@ version = "1.0.0-rc.0"
 dependencies = [
  "ahash",
  "assert_approx_eq",
- "atomsplit",
+ "bitsplit",
  "daachorse 5.0.0",
  "dary_heap",
  "fancy-regex",
@@ -3237,11 +3237,12 @@ dependencies = [
 name = "tk-serialize"
 version = "1.0.0-rc.0"
 dependencies = [
- "atomsplit",
  "base64 0.22.1",
+ "bitsplit",
  "criterion 0.8.2",
  "hifijson",
  "serde_json",
+ "tk-convert",
  "tk-encode",
 ]
 

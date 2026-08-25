@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["bitmap_gen", "atomsplit", "tk-encode", "tk-serialize", "tk-convert"]
+members = ["bitmap_gen", "bitsplit", "tk-encode", "tk-serialize", "tk-convert"]
 exclude = ["tk-train"]
 
 [package]

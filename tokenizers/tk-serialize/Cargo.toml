@@ -40,9 +40,9 @@ base64 = "0.22"
 # The runtime this crate builds. No `config`: the whole point is that reading a canonical
 # `tokenizer.json` needs no serde layer at all.
 tk-encode = { path = "../tk-encode", default-features = false }
-# The GPT-2 pre-tokenizer pattern is a constant in `atomsplit`, and a `ByteLevel` pre-tokenizer is
+# The GPT-2 pre-tokenizer pattern is a constant in `bitsplit`, and a `ByteLevel` pre-tokenizer is
 # spelled as a `Split` on it. Nothing else here reaches the FSM crate directly.
-atomsplit = { path = "../atomsplit" }
+bitsplit = { path = "../bitsplit" }
 
 [features]
 # Reading a canonical `tokenizer.json` into a `PipelineTokenizer`. On by default -- it is what the

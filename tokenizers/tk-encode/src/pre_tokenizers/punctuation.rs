@@ -1,8 +1,8 @@
 use crate::pipeline::{self, PreTokenizerScratch};
 use crate::tokenizer::{Result, SplitDelimiterBehavior};
 use SplitDelimiterBehavior::{Isolated, Removed};
-use atomsplit::classify::mask;
-use atomsplit::fsm::class_runs_into;
+use bitsplit::classes::class_runs_into;
+use bitsplit::classify::mask;
 use unicode_categories::UnicodeCategories;
 
 pub(crate) fn is_punc(x: char) -> bool {
@@ -28,7 +28,7 @@ impl Default for Punctuation {
 }
 
 // SAFETY: both routes cut only at character boundaries of `text`.
-// The class-runs route is an `atomsplit` fsm.
+// The class-runs route is an `bitsplit` fsm.
 // the merge behaviors go through `pipeline::split_delimiter`, which takes its offsets from `str::char_indices`.
 unsafe impl pipeline::PreTokenizer for Punctuation {
     fn pre_tokenize(
@@ -39,18 +39,16 @@ unsafe impl pipeline::PreTokenizer for Punctuation {
     ) -> Result<()> {
         // atom `PUNCT` == `is_punc` (ASCII-punct ∪ \p{P}), so Isolated/Removed map to the class-runs FSM
         // byte-exactly. The merge/contiguous behaviors aren't a class-runs shape → keep the scalar split.
-        if self.behavior == Removed {
-            // drop punct
-            scratch.split_on_tags(
+        if matches!(self.behavior, Isolated | Removed) {
+            scratch.split_on_bits(
                 text.as_bytes(),
-                class_runs_into::<{ mask::PUNCT }, 0, 0>,
-                out,
-            );
-        } else if self.behavior == Isolated {
-            // isolate each punct
-            scratch.split_on_tags(
-                text.as_bytes(),
-                class_runs_into::<0, { mask::PUNCT }, 0>,
+                |b, t, st, fk, _, s| {
+                    if self.behavior == Removed {
+                        class_runs_into::<{ mask::PUNCT }, 0, 0>(b, t, st, fk, s) // drop punct
+                    } else {
+                        class_runs_into::<0, { mask::PUNCT }, 0>(b, t, st, fk, s) // isolate each punct
+                    }
+                },
                 out,
             );
         } else {

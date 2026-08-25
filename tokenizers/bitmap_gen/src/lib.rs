@@ -1,9 +1,39 @@
 //! Dev-time only (depends on `unicode-properties`); nothing here is linked into the runtime crate.
 //! `cargo run -p bitmap_gen` calls [`generate_atom_tables`] and writes the committed
-//! `atomsplit/src/atom_tables.rs`. It bakes the dense `Tables` layout (ascii / 2-byte group / 3-byte
+//! `bitsplit/src/classify/atom_tables.rs`. It bakes the dense `Tables` layout (ascii / 2-byte group / 3-byte
 //! fast3 / bmp_rle / astral)
 use std::fmt::Write as _;
 use unicode_properties::{GeneralCategory, UnicodeGeneralCategory};
+
+/// Script=Han, sorted and disjoint — the same table `bitsplit::han` carried, now baked into the
+/// atom scheme instead of range-tested per byte at runtime. Extensions past Ext F are included
+/// because onig's `\p{Han}` has them; the parity gate pins this to the oracle's Unicode version.
+const HAN: &[(u32, u32)] = &[
+    (0x2E80, 0x2E99),
+    (0x2E9B, 0x2EF3),
+    (0x2F00, 0x2FD5),
+    (0x3005, 0x3005),
+    (0x3007, 0x3007),
+    (0x3021, 0x3029),
+    (0x3038, 0x303B),
+    (0x3400, 0x4DBF),
+    (0x4E00, 0x9FFF),
+    (0xF900, 0xFA6D),
+    (0xFA70, 0xFAD9),
+    (0x20000, 0x2A6DF),
+    (0x2A700, 0x2B739),
+    (0x2B740, 0x2B81D),
+    (0x2B820, 0x2CEA1),
+    (0x2CEB0, 0x2EBE0),
+    (0x2EBF0, 0x2EE5D),
+    (0x2F800, 0x2FA1D),
+    (0x30000, 0x3134A),
+    (0x31350, 0x323AF),
+];
+
+fn is_han(cp: u32) -> bool {
+    HAN.iter().any(|&(lo, hi)| cp >= lo && cp <= hi)
+}
 
 // Produce the atom tag from the character.
 fn atom(c: char) -> u8 {
@@ -14,9 +44,13 @@ fn atom(c: char) -> u8 {
         // Coarse consumers mask it off (`in_mask` / SIMD `& 0x0F`); only `fsm_o200k` reads the nibble.
         UppercaseLetter | TitlecaseLetter => return 0x10,
         LowercaseLetter => return 0x20,
-        ModifierLetter | OtherLetter => return 0,
+        // Script=Han takes refinement 3 wherever it lands, so kimi's `[\p{Han}]+` arm is a LUT row
+        // instead of a per-byte range test. Han is orthogonal to the category (98682 Lo, 329 So,
+        // 13 Nl, 2 Lm), hence a refinement on each of the three coarse classes it touches.
+        ModifierLetter | OtherLetter => return if is_han(cp) { 0x30 } else { 0 },
         // \p{N}: Nd∪Nl are numeric AND `\w` (NumWord); No is numeric-only (NumOther).
-        DecimalNumber | LetterNumber => return 1,
+        DecimalNumber => return 1,
+        LetterNumber => return if is_han(cp) { 0x31 } else { 1 },
         OtherNumber => return 2,
         _ => {}
     }
@@ -73,7 +107,7 @@ fn atom(c: char) -> u8 {
         c.general_category(),
         MathSymbol | CurrencySymbol | ModifierSymbol | OtherSymbol
     ) {
-        return 10; // non-ASCII \p{S}
+        return if is_han(cp) { 0x3A } else { 10 }; // non-ASCII \p{S}
     }
     12 // control ∪ unassigned
 }
@@ -213,7 +247,7 @@ fn generate_tables(struct_name: &str, kind: &str, classify: &dyn Fn(u32) -> u8) 
     )
     .unwrap();
     o.push_str("//! `Tables::classify_char`. `bitmap_gen` self-validates all 1.1M codepoints. Spec §1/§7.\n");
-    o.push_str("use crate::tables::Tables;\n\n");
+    o.push_str("use super::tables::Tables;\n\n");
 
     let emit_u8 = |o: &mut String, name: &str, t: &[u8]| {
         write!(o, "#[rustfmt::skip]\nstatic {name}: [u8; {}] = [", t.len()).unwrap();

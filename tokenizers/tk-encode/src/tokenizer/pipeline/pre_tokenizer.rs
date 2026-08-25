@@ -13,8 +13,8 @@ use crate::pre_tokenizers::{
     whitespace::{Whitespace, WhitespaceSplit},
 };
 use crate::tokenizer::{Result, SplitDelimiterBehavior};
-use atomsplit::classify::classify;
-use atomsplit::fsm::Span;
+use bitsplit::Span;
+use bitsplit::classify::classify;
 
 /// Range-based pre-tokenization: yields spans into the input rather than owned
 /// substrings, so the pipeline can pre-tokenize without allocating.
@@ -43,11 +43,16 @@ pub unsafe trait PreTokenizer {
 /// The working buffers a [`PreTokenizer`] needs to split a text into pre-tokens.
 #[derive(Default)]
 pub struct PreTokenizerScratch {
-    /// One [`atomsplit`] atom tag per input byte, what [`atomsplit::classify::classify`] writes
-    /// and the FSMs read.
+    /// One [`bitsplit`] atom tag per input byte, what [`bitsplit::classify::classify`] writes
+    /// and the grammars read.
     tags: Vec<u8>,
     /// An intermediate buffer in which the FSM writes the Span before they get appended to the output
     spans: Vec<Span>,
+    /// The `u64` bitmaps a bitstream grammar works in: the token starts, the flags its operators
+    /// key on, and the scratch the multi-pass folds carry between blocks. One bit per input byte.
+    starts: Vec<u64>,
+    flags: Vec<u64>,
+    later: Vec<u64>,
     /// The two buffers a [`PipelineSequence`] reads and writes as each of its children subdivides
     /// the spans the child before it produced. Handed out by [`Self::take_pair`] rather than
     /// borrowed, so the sequence can pass the rest of the scratch to its children while it holds
@@ -56,7 +61,7 @@ pub struct PreTokenizerScratch {
 }
 
 impl PreTokenizerScratch {
-    /// Tag every byte of `bytes` with its [`atomsplit`] atom class, run `fsm` over the tags, and
+    /// Tag every byte of `bytes` with its [`bitsplit`] atom class, run `fsm` over the tags, and
     /// append the spans to `out`.
     pub fn split_on_tags(
         &mut self,
@@ -95,6 +100,54 @@ impl PreTokenizerScratch {
         }
         let k = fsm(bytes, &mut spans[..n + 1]);
         out.extend_from_slice(&spans[..k]);
+    }
+
+    /// [`Self::split_on_tags`] for a splitter that works off bitstreams: it needs three `u64` bitmaps
+    /// (token starts, the flags its operators key on, and the fold scratch) alongside the tags.
+    pub fn split_on_bits(
+        &mut self,
+        bytes: &[u8],
+        split: impl FnOnce(&[u8], &[u8], &mut [u64], &mut [u64], &mut [u64], &mut [Span]) -> usize,
+        out: &mut Vec<Span>,
+    ) {
+        let n = bytes.len();
+        if n == 0 {
+            return;
+        }
+        let Self {
+            tags,
+            starts,
+            flags,
+            later,
+            ..
+        } = self;
+        if tags.len() < n {
+            tags.resize(n, 0);
+        }
+        let words = n.div_ceil(64) + 1;
+        if starts.len() < words {
+            starts.resize(words, 0);
+            flags.resize(words, 0);
+            later.resize(2 * words, 0);
+        }
+        classify(bytes, &mut tags[..n]);
+        let base = out.len();
+        out.reserve(n + 1);
+        // SAFETY: as in `split_on_tags` -- `reserve` covers the splitter's worst case of one
+        // span per byte plus one, `Span` has no drop glue, and `set_len` counts only what was written.
+        let k = unsafe {
+            split(
+                bytes,
+                &tags[..n],
+                &mut starts[..words],
+                &mut flags[..words],
+                &mut later[..2 * words],
+                std::slice::from_raw_parts_mut(out.as_mut_ptr().add(base), n + 1),
+            )
+        };
+        debug_assert!(k <= n + 1);
+        // SAFETY: the splitter wrote `k <= n + 1` spans from `base`.
+        unsafe { out.set_len(base + k) };
     }
 
     /// Take the sequence's two buffers, leaving empty ones behind.

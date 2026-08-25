@@ -3,7 +3,7 @@ use std::{
     sync::{Mutex, PoisonError},
 };
 
-use atomsplit::fsm::Span;
+use bitsplit::Span;
 
 use crate::pipeline::{Model, PipelineModel, PipelineModelScratch, PreTokenizerScratch};
 

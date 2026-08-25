@@ -1,6 +1,6 @@
 use crate::pipeline;
-use crate::utils::{GptFsm, SysRegex, gpt_fsm};
-use atomsplit::literal::Literal;
+use crate::utils::{Grammar, SysRegex, recognize};
+use bitsplit::literal::Literal;
 
 use crate::tokenizer::{
     Result, SplitDelimiterBehavior,
@@ -53,10 +53,10 @@ pub struct Split {
     pub search: Search,
     pub behavior: SplitDelimiterBehavior,
     pub invert: bool,
-    /// Native `atomsplit` FSM for a recognized GPT regex (gpt2 / cl100k-Llama-3 / o200k), used on the
+    /// Native `bitsplit` FSM for a recognized GPT regex (gpt2 / cl100k-Llama-3 / o200k), used on the
     /// pipeline path when `behavior == Isolated && !invert` (how these regexes always ship). Byte-exact
     /// with `regex`; `None` falls back to `regex`.
-    fsm: Option<GptFsm>,
+    fsm: Option<Grammar>,
 }
 
 impl Clone for Split {
@@ -82,7 +82,7 @@ impl Split {
         let pattern: SplitPattern = pattern.into();
         let fsm = match &pattern {
             SplitPattern::String(_) => None,
-            SplitPattern::Regex(r) => gpt_fsm(r),
+            SplitPattern::Regex(r) => recognize(r),
         };
         let search = match &pattern {
             SplitPattern::String(s) => Search::Literal(Literal::new(s.as_bytes())?),
@@ -108,7 +108,7 @@ impl Split {
     /// A `Split` that is known to be driven natively, so no regex backend is compiled.
     ///
     /// [`Split::new`] asks the system regex to compile every regex pattern, which a build without
-    /// `fancy-regex` has no engine for. Two cases do not need one: a pattern [`gpt_fsm`] recognises,
+    /// `fancy-regex` has no engine for. Two cases do not need one: a pattern [`recognize`] recognises,
     /// and a member of a composition the pipeline runs as a single native pass -- deepseek's three
     /// regexes are individually unrecognised but never individually run, so `Split::new` would
     /// reject them. A literal pattern is searched for directly and never needed an engine either.
@@ -119,7 +119,7 @@ impl Split {
     ) -> Result<Self> {
         let fsm = match &pattern {
             SplitPattern::String(_) => None,
-            SplitPattern::Regex(r) => gpt_fsm(r),
+            SplitPattern::Regex(r) => recognize(r),
         };
         let search = match &pattern {
             SplitPattern::String(s) => Search::Literal(Literal::new(s.as_bytes())?),
@@ -135,7 +135,7 @@ impl Split {
     }
 
     /// The native FSM family this pattern was recognised as, if any.
-    pub fn gpt_fsm(&self) -> Option<GptFsm> {
+    pub fn grammar(&self) -> Option<Grammar> {
         self.fsm
     }
 
@@ -157,8 +157,8 @@ impl Split {
     }
 }
 
-// SAFETY: both routes cut only at character boundaries of `text`. The native route is an `atomsplit`
-// fsm, see "What the spans guarantee" in its docs. The search route forwards the offsets of
+// SAFETY: both routes cut only at character boundaries of `text`. The native route is a `bitsplit`
+// grammar, see "What the spans guarantee" in its docs. The search route forwards the offsets of
 // `Pattern::find_matches` through `pipeline::split_matches`, and every `Pattern` here reports
 // boundaries: a regex matches on a `&str`, and `Literal` holds the bytes of a `&str` pattern, which
 // well-formed UTF-8 can only contain starting and ending on a boundary.
@@ -169,22 +169,17 @@ unsafe impl pipeline::PreTokenizer for Split {
         scratch: &mut pipeline::PreTokenizerScratch,
         out: &mut Vec<pipeline::Span>,
     ) -> Result<()> {
-        // A recognized GPT regex (gpt2 / cl100k-Llama-3) in its only real usage — `Isolated`, not
-        // inverted — routes straight to the native atomsplit FSM. These regexes cover the whole input,
-        // so `Isolated` == the match list, and the FSM is byte-exact with `regex` (see the tests).
-        if let Some(fsm) = self
+        // A recognized GPT regex in its only real usage -- `Isolated`, not inverted -- routes
+        // straight to the native bitsplit grammar. These regexes cover the whole input, so
+        // `Isolated` == the match list, and the grammar is byte-exact with `regex` (see the tests).
+        if let Some(grammar) = self
             .fsm
             .filter(|_| !self.invert && self.behavior == SplitDelimiterBehavior::Isolated)
         {
-            scratch.split_on_tags(
+            scratch.split_on_bits(
                 text.as_bytes(),
-                |bytes, tags, spans| match fsm {
-                    GptFsm::Cl100k { digit_cap } => {
-                        atomsplit::fsm::fsm_cl100k_cap(bytes, tags, spans, digit_cap)
-                    }
-                    GptFsm::Gpt2 => atomsplit::fsm::fsm_byte_level(bytes, tags, spans),
-                    GptFsm::O200k => atomsplit::fsm::fsm_o200k(bytes, tags, spans),
-                    GptFsm::Tekken => atomsplit::fsm::fsm_tekken(bytes, tags, spans),
+                |t, tags, starts, flag, later, out| {
+                    grammar.split(t, tags, starts, flag, later, out)
                 },
                 out,
             );
@@ -214,7 +209,7 @@ mod tests {
 
     /// `Split::new` compiles every regex through the system backend, so a build without
     /// `fancy-regex` cannot construct deepseek's three patterns -- they are individually
-    /// unrecognised by `gpt_fsm` (the pipeline runs them as one native pass). `Split::native`
+    /// unrecognised by `recognize` (the pipeline runs them as one native pass). `Split::native`
     /// never asks for an engine.
     #[test]
     fn native_accepts_patterns_new_would_need_an_engine_for() {
@@ -228,7 +223,7 @@ mod tests {
             )
             .expect("native must not need a regex backend");
             assert!(
-                split.gpt_fsm().is_none(),
+                split.grammar().is_none(),
                 "deepseek's patterns are not individually FSM-recognised"
             );
         }
@@ -249,12 +244,12 @@ mod tests {
 
         // A recognised pattern still reports its family, so a caller can route it natively.
         let gpt2 = Split::native(
-            SplitPattern::Regex(atomsplit::regexes::GPT2.to_string()),
+            SplitPattern::Regex(bitsplit::regexes::GPT2.to_string()),
             SplitDelimiterBehavior::Isolated,
             false,
         )
         .unwrap();
-        assert_eq!(gpt2.gpt_fsm(), Some(GptFsm::Gpt2));
+        assert_eq!(gpt2.grammar(), Some(Grammar::Gpt2));
     }
 
     #[cfg(feature = "fancy-regex")]

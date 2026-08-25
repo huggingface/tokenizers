@@ -1,10 +1,10 @@
-name: atomsplit
+name: bitsplit
 
 on:
   push:
-    paths: ["tokenizers/atomsplit/**", "tokenizers/bitmap_gen/**", ".github/workflows/atomsplit.yml"]
+    paths: ["tokenizers/bitsplit/**", "tokenizers/bitmap_gen/**", ".github/workflows/bitsplit.yml"]
   pull_request:
-    paths: ["tokenizers/atomsplit/**", "tokenizers/bitmap_gen/**", ".github/workflows/atomsplit.yml"]
+    paths: ["tokenizers/bitsplit/**", "tokenizers/bitmap_gen/**", ".github/workflows/bitsplit.yml"]
 
 defaults:
   run:
@@ -18,11 +18,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with: { components: rustfmt, clippy }
-      - run: cargo fmt -p atomsplit -p bitmap_gen -- --check
-      - run: cargo clippy -p atomsplit --all-targets -- -D warnings
-      - run: cargo test -p atomsplit          # unit + parity gates (cl100k/deepseek/byte_level vs onig)
+      - run: cargo fmt -p bitsplit -p bitmap_gen -- --check
+      - run: cargo clippy -p bitsplit --all-targets -- -D warnings
+      - run: cargo test -p bitsplit          # unit + parity gates (cl100k/deepseek/byte_level vs onig)
       # committed classify tables must match the generator
-      - run: cargo run -p bitmap_gen && git diff --exit-code atomsplit/src/atom_tables.rs
+      - run: cargo run -p bitmap_gen && git diff --exit-code -- bitsplit/src/classify/atom_tables.rs
 
   # AVX-512 classify path — GitHub runners often lack AVX-512, so emulate it with Intel SDE and run the
   # SAME byte-exact test binaries under it.
@@ -34,12 +34,15 @@ jobs:
       - name: Install Intel SDE
         run: |
           # Pin to the current SDE release (update the version/URL as Intel publishes new builds).
-          SDE_VER=sde-external-9.44.0-2024-08-22-lin
-          curl -sSL "https://downloadmirror.intel.com/831748/${SDE_VER}.tar.xz" | tar -xJ
+          # Intel removes the object when a release is superseded -- 9.44.0 now answers 403 -- so a
+          # stale pin here fails before any test runs. The id is the one the download page lists:
+          # https://www.intel.com/content/www/us/en/download/684897/intel-software-development-emulator.html
+          SDE_VER=sde-external-10.13.1-2026-07-28-lin
+          curl -sSL --fail "https://downloadmirror.intel.com/924984/${SDE_VER}.tar.xz" | tar -xJ
           echo "$PWD/${SDE_VER}" >> "$GITHUB_PATH"
       - name: Run tests under SDE (-future = AVX-512)
         run: |
-          cargo test -p atomsplit --no-run --message-format=json \
+          cargo test -p bitsplit --no-run --message-format=json \
             | jq -r 'select(.profile.test == true) | .executable | select(. != null)' \
             | while read -r bin; do echo "SDE: $bin"; sde64 -future -- "$bin"; done
 
@@ -55,4 +58,4 @@ jobs:
         env:
           RUSTFLAGS: "-C target-feature=+simd128"
           CARGO_TARGET_WASM32_WASIP1_RUNNER: "wasmtime run --"
-        run: cargo test -p atomsplit --target wasm32-wasip1
+        run: cargo test -p bitsplit --target wasm32-wasip1

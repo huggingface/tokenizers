@@ -1,11 +1,11 @@
-//! Regenerate atomsplit's committed classify tables:
+//! Regenerate bitsplit's committed classify tables:
 //!   cargo run -p bitmap_gen [-- <out_path>]
-//! Default `out_path` = ../atomsplit/src/atom_tables.rs. `generate_atom_tables` self-validates every
+//! Default `out_path` = ../bitsplit/src/classify/atom_tables.rs. `generate_atom_tables` self-validates every
 //! codepoint against the reference `atom()`, so an inconsistent scheme change fails HERE, not at ship.
 fn main() {
     let default = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../atomsplit/src/atom_tables.rs"
+        "/../bitsplit/src/classify/atom_tables.rs"
     );
     let out = std::env::args()
         .nth(1)
