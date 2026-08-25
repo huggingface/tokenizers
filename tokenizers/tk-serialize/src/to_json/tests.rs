@@ -474,3 +474,33 @@ fn integers_are_written_without_a_fraction() {
     out.arr_close();
     assert_eq!(out.finish(), "[0,4294967295,50256]");
 }
+
+/// `role_to_token` is what lets a `tokenizer.json` carry the special-token metadata that used to
+/// need a `tokenizer_config.json`, so it has to survive a read and a write unchanged. Declaring
+/// none writes `null` rather than an empty object.
+#[test]
+fn role_to_token_survives_a_round_trip() {
+    let declared = r#"{"eos_token": "</s>", "bos_token": "<s>", "pad_token": "<pad>"}"#;
+    let text = format!(
+        r#"{{"version": "2.0", "role_to_token": {declared}, "added_tokens": [],
+            "normalizer": null, "pre_tokenizer": null, "post_processor": null,
+            "decoder": null, "model": {BPE_MODEL}}}"#
+    );
+
+    let tokenizer = from_json(&text).expect("the config reads");
+    assert_eq!(tokenizer.get_token_for_role("eos_token"), Some("</s>"));
+    assert_eq!(tokenizer.get_token_for_role("nonexistent"), None);
+
+    let written = to_json(&tokenizer).expect("a config that reads should write");
+    assert_eq!(field_of(&written, "role_to_token"), json(declared));
+
+    // Absent means no roles, and comes back out as `null`.
+    let bare = rewrite(&config(&[]));
+    assert_eq!(field_of(&bare, "role_to_token"), serde_json::Value::Null);
+    assert!(
+        from_json(&config(&[]))
+            .expect("the config reads")
+            .get_role_to_token()
+            .is_empty()
+    );
+}
