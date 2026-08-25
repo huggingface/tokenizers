@@ -2,7 +2,7 @@
 name = "bitmap_gen"
 version = "0.1.0"
 edition = "2024"
-description = "Dev tool: regenerates atomsplit's committed classify tables (uses unicode-properties). Not for publication."
+description = "Dev tool: regenerates bitsplit's committed classify tables (uses unicode-properties). Not for publication."
 license = "Apache-2.0"
 repository = "https://github.com/huggingface/tokenizers"
 authors = ["Arthur Zucker <arthur@huggingface.co>", "Luc Georges <luc@huggingface.co>"]

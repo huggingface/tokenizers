@@ -16,7 +16,7 @@ impl CharDelimiterSplit {
     }
 }
 
-// SAFETY: the spans come from `atomsplit::fsm::CharDelimiterSplit`, which splits only at character
+// SAFETY: the spans come from `bitsplit::classes::CharDelimiterSplit`, which splits only at character
 // boundaries of `text`. It scans for the delimiter's own UTF-8 bytes and confirms the whole encoding
 // before cutting.
 unsafe impl pipeline::PreTokenizer for CharDelimiterSplit {
@@ -26,13 +26,13 @@ unsafe impl pipeline::PreTokenizer for CharDelimiterSplit {
         scratch: &mut PreTokenizerScratch,
         out: &mut Vec<pipeline::Span>,
     ) -> Result<()> {
-        // native atomsplit FSM (memchr-backed single-byte scan); `Removed` — drops the delimiter,
+        // native bitsplit FSM (memchr-backed single-byte scan); `Removed` — drops the delimiter,
         // keeps the runs between, no empty spans. Byte-exact with the char-predicate split.
         // It keys on the delimiter's own bytes rather than on an atom class, so it needs no tags.
         scratch.split_on_bytes(
             text.as_bytes(),
             |bytes, spans| {
-                atomsplit::fsm::CharDelimiterSplit(self.delimiter).pre_tokenize(
+                bitsplit::classes::CharDelimiterSplit(self.delimiter).pre_tokenize(
                     bytes,
                     &mut [],
                     spans,

@@ -239,7 +239,7 @@ fn a_byte_level_pre_tokenizer_becomes_a_model_flag_and_a_split() {
     let v = done(BPE, r#", "pre_tokenizer": {"type": "ByteLevel"}"#);
     let pretok = &v["pre_tokenizer"];
     assert_eq!(v["model"]["byte_level"], true);
-    assert_eq!(pretok["pattern"]["Regex"], atomsplit::regexes::GPT2);
+    assert_eq!(pretok["pattern"]["Regex"], bitsplit::regexes::GPT2);
 
     // `use_regex: false` asked only for the byte map, so the member simply goes.
     let v = done(

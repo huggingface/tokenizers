@@ -1,6 +1,7 @@
-use crate::atom_tables::ATOM_TABLES;
-use crate::classify::{Atom, CONT, MB};
+use super::atom_tables::ATOM_TABLES;
+use super::{Atom, CONT, MB};
 const CJK_TAG: u8 = Atom::Letter as u8;
+const HAN_TAG: u8 = Atom::HanLetter as u8;
 
 // ================================================================================================
 // The smallest load we can do in neon is vld1q_u8, which handles 16bytes.
@@ -98,7 +99,7 @@ unsafe fn any(mask: core::arch::aarch64::uint8x16_t) -> bool {
 /// TLDR removing the utf8 headers to get the unicode.
 fn decode(t: &[u8], i: usize) -> u32 {
     let b = t[i] as u32;
-    match super::classify::char_len(t[i]) {
+    match super::char_len(t[i]) {
         1 => b,
         2 => ((b & 0x1F) << 6) | (t[i + 1] as u32 & 0x3F),
         3 => ((b & 0x0F) << 12) | ((t[i + 1] as u32 & 0x3F) << 6) | (t[i + 2] as u32 & 0x3F),
@@ -156,7 +157,7 @@ fn decode(t: &[u8], i: usize) -> u32 {
 #[cfg(target_arch = "aarch64")]
 #[allow(unsafe_op_in_unsafe_fn, non_snake_case)]
 pub unsafe fn classify_neon(text: &[u8], tags: &mut [u8]) {
-    use super::classify::char_len;
+    use super::char_len;
     use core::arch::aarch64::*;
     let n = text.len();
     let mut i = 0;
@@ -264,6 +265,10 @@ pub unsafe fn classify_neon(text: &[u8], tags: &mut [u8]) {
 
             let is_cjk_letter = vorrq_u8(vorrq_u8(han, hangul), kana);
             out = vbslq_u8(is_cjk_letter, vdupq_n_u8(CJK_TAG), out);
+            // Han carries the Script=Han refinement; Hangul and Kana are plain caseless letters.
+            // `han` is a subset of `is_cjk_letter` and disjoint from the other two, so one more
+            // blend is the whole difference.
+            out = vbslq_u8(han, vdupq_n_u8(HAN_TAG), out);
             resolved = vorrq_u8(resolved, is_cjk_letter);
         }
 

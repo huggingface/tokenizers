@@ -81,7 +81,7 @@ own, but it is `exclude`d from the workspace and nothing in `tokenizers` depends
 - **parallelism**: rayon-backed batch encoding.
 
 - **fancy-regex**: the optional system-regex backend, needed *only* for a genuine regex pattern
-  in a `Split` pre-tokenizer or a `Replace` normalizer. The atomsplit-native pre-tokenizers
+  in a `Split` pre-tokenizer or a `Replace` normalizer. The bitsplit-native pre-tokenizers
   (GPT-2, cl100k, o200k, tekken, deepseek, the class family, char-delimiter) need no backend,
   and a literal pattern is searched for directly.
 

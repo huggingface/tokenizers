@@ -14,11 +14,12 @@
 //! x86_64 (SSE4.1 and, if available, AVX-512 VBMI) hardware before trusting it.
 #![allow(unsafe_op_in_unsafe_fn)]
 
-use crate::atom_tables::ATOM_TABLES;
-use crate::classify::{Atom, CONT, MB, char_len, classify_scalar};
+use super::atom_tables::ATOM_TABLES;
+use super::{Atom, CONT, MB, char_len, classify_scalar};
 use core::arch::x86_64::*;
 
 const CJK_TAG: u8 = Atom::Letter as u8;
+const HAN_TAG: u8 = Atom::HanLetter as u8;
 
 /// Runtime dispatch, best-first. (Swap in memchr's cached `AtomicPtr` if `is_x86_feature_detected!`
 /// ever shows up in a profile.)
@@ -241,6 +242,9 @@ macro_rules! x86_body {
                 );
                 let cjkl = _mm_or_si128(_mm_or_si128(han, hg), kana);
                 out = _mm_blendv_epi8(out, _mm_set1_epi8(CJK_TAG as i8), cjkl);
+                // Han carries the Script=Han refinement; Hangul and Kana stay plain caseless
+                // letters. `han` is a subset of `cjkl` and disjoint from the other two.
+                out = _mm_blendv_epi8(out, _mm_set1_epi8(HAN_TAG as i8), han);
                 res = _mm_or_si128(res, cjkl);
             }
 
