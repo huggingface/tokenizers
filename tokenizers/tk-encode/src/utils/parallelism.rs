@@ -76,7 +76,7 @@ fn lock() -> MaybeLockGuard {
     }
 }
 
-pub(crate) fn pool() -> Option<Arc<rayon::ThreadPool>> {
+pub fn pool() -> Option<Arc<rayon::ThreadPool>> {
     register_fork_handler();
 
     let generation = POOL_GEN.load(Ordering::Acquire);

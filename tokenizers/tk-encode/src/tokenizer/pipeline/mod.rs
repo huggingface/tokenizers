@@ -317,8 +317,29 @@ impl From<Vec<String>> for Inputs {
     }
 }
 
+/// Above this many inputs, the copy below is worth handing to the pool.
+#[cfg(feature = "parallelism")]
+const PARALLEL_CONVERT_MIN: usize = 1024;
+
 impl From<&[&str]> for Inputs {
     fn from(b: &[&str]) -> Self {
+        // `Input` owns its text, so a borrowed batch is copied before anything else can start --
+        // and it was copied on the calling thread, ahead of every worker. On a 20k-line batch that
+        // measured 19% of the whole encode, which by itself capped the speedup however many
+        // threads were free. The copies are independent, so the pool can do them.
+        #[cfg(feature = "parallelism")]
+        if b.len() >= PARALLEL_CONVERT_MIN
+            && let Some(pool) = crate::utils::parallelism::pool()
+        {
+            use rayon::prelude::*;
+            return pool.install(|| {
+                Self::Batch(
+                    b.par_iter()
+                        .map(|s| Input::Single((*s).to_owned()))
+                        .collect(),
+                )
+            });
+        }
         Self::Batch(b.iter().map(|s| Input::Single((*s).to_owned())).collect())
     }
 }
