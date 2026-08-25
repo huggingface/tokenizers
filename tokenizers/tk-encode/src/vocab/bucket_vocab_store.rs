@@ -51,7 +51,11 @@ pub fn key_and_hash_readable(word: &[u8], readable: usize) -> (u64, u64) {
         return key_and_hash(word);
     }
     // SAFETY: `readable >= 8` bytes exist from `word.as_ptr()`, and `len <= 7 < 8`.
-    let raw = unsafe { word.as_ptr().cast::<u64>().read_unaligned() };
+    // `from_le_bytes` rather than a `cast::<u64>()` reinterpret, because the key layout is
+    // little-endian: `key_and_hash` builds it with `u32::from_le_bytes`. A native load on a
+    // big-endian host would keep `word[8-len..8]` instead of `word[0..len]` once masked, and
+    // put `LEN_TAG` over `word[0]`.
+    let raw = u64::from_le_bytes(unsafe { word.as_ptr().cast::<[u8; 8]>().read_unaligned() });
     // SAFETY: `len <= INLINE_KEY_BYTES == 7`, and both tables have 8 entries.
     let (mask, tag) = unsafe { (*KEY_MASK.get_unchecked(len), *LEN_TAG.get_unchecked(len)) };
     let key = (raw & mask) | tag;
