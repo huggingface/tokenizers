@@ -28,10 +28,10 @@ path = "src/lib.rs"
 [dependencies]
 serde_json = "1.0"
 thiserror = "2"
-# The GPT-2 pattern a `ByteLevel` lowers to. `atomsplit::regexes` is the single source of truth for
+# The GPT-2 pattern a `ByteLevel` lowers to. `bitsplit::regexes` is the single source of truth for
 # it -- tk-encode's runtime recognizer reads the same const -- so a copy here could drift and cost
 # the FSM fast path without changing any test.
-atomsplit = { path = "../atomsplit" }
+bitsplit = { path = "../bitsplit" }
 
 # Latest released tokenizers, used as the comparison baseline by the fixture bench and as the
 # independent id/decode oracle by `tests/pipeline_oracle.rs` and `tests/pipeline_decode_oracle.rs`.

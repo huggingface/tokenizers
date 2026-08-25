@@ -51,8 +51,8 @@ impl PipelineSequence {
 // - all of its children are safe
 // - offsets added by the sequence are correct and land on character boundaries
 //
-// The deepseek fast path has no children to run: it calls an `atomsplit` fsm, which splits only at
-// character boundaries of `text`. See the `atomsplit::fsm` docs.
+// The deepseek fast path has no children to run: it calls an `bitsplit` fsm, which splits only at
+// character boundaries of `text`. See the `bitsplit` docs.
 unsafe impl pipeline::PreTokenizer for PipelineSequence {
     /// Runs each child in turn, where every child subdivides the spans produced
     /// so far. A child sees only the text of a span (`&text[span]`) and returns
@@ -71,7 +71,13 @@ unsafe impl pipeline::PreTokenizer for PipelineSequence {
         // deepseek's 3-Split composition → one native FSM pass (also lets the Sequence handle the
         // trailing byte-map ByteLevel, which the generic child loop can't range-split).
         if self.is_deepseek() {
-            scratch.split_on_tags(text.as_bytes(), atomsplit::fsm::fsm_deepseek, out);
+            scratch.split_on_bits(
+                text.as_bytes(),
+                |t, tags, starts, _flags, _later, out| {
+                    bitsplit::bitsplit_deepseek(t, tags, starts, out)
+                },
+                out,
+            );
             return Ok(());
         }
 

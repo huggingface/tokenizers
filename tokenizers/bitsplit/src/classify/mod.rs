@@ -1,4 +1,16 @@
-use crate::atom_tables::ATOM_TABLES;
+//! SIMD Unicode classification: one pass mapping every codepoint to a tiny "atom" alphabet, which
+//! is what every grammar in `models/` consumes. The per-arch kernels are siblings; `atom_tables.rs`
+//! is generated (`cargo run -p bitmap_gen`) and `tables.rs` is the layout it bakes into.
+mod atom_tables;
+#[cfg(target_arch = "x86_64")]
+mod avx;
+#[cfg(target_arch = "aarch64")]
+mod neon;
+mod tables;
+#[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
+mod wasm;
+
+use atom_tables::ATOM_TABLES;
 
 /// The per-codepoint "atom" categories or "tags" that are used by the finite state machine to emit
 /// spit boundaries.
@@ -40,6 +52,13 @@ pub enum Atom {
     // `\p{Ll}` → 0x20, caseless `\p{Lm}\p{Lo}` → 0x00.
     UpperLetter = 0x10,
     LowerLetter = 0x20,
+    /// Script=Han, refinement 3 of whichever coarse class it lands in. Han is orthogonal to the
+    /// general category (98682 `Lo`, 329 `So`, 13 `Nl`, 2 `Lm`), so it needs one refinement per
+    /// coarse class it touches. Nothing else uses high nibble 3, which is what lets kimi's
+    /// `[\p{Han}]+` arm be `tag & 0xF0 == 0x30` instead of a per-byte range search.
+    HanLetter = 0x30,
+    HanNum = 0x31,
+    HanSym = 0x3A,
 }
 
 impl Atom {
@@ -118,19 +137,19 @@ pub fn classify(text: &[u8], tags: &mut [u8]) {
     // check guards every arch path below.
     assert!(
         tags.len() >= text.len(),
-        "atomsplit::classify: `tags` shorter than `text`"
+        "bitsplit::classify: `tags` shorter than `text`"
     );
     #[cfg(target_arch = "aarch64")]
     // SAFETY: `tags.len() >= text.len()` (asserted above); NEON vld1q/vst1q are alignment-free.
     unsafe {
-        crate::simd_classify::classify_neon(text, tags)
+        neon::classify_neon(text, tags)
     }
     #[cfg(target_arch = "x86_64")]
-    crate::simd_avx_classify::dispatch(text, tags);
+    avx::dispatch(text, tags);
     #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
     // SAFETY: `tags.len() >= text.len()` (asserted above); wasm v128 load/store are alignment-free.
     unsafe {
-        crate::simd_wasm_classify::classify_wasm(text, tags)
+        wasm::classify_wasm(text, tags)
     }
     #[cfg(not(any(
         target_arch = "aarch64",

@@ -28,7 +28,7 @@ path = "src/lib.rs"
 
 [dependencies]
 ############ Required dependencies ###############################
-atomsplit = { path = "../atomsplit" }
+bitsplit = { path = "../bitsplit" }
 rand = "0.10"
 ptr_hash = { version = "2.0.2", default-features = false }
 unicode_categories = "0.1"

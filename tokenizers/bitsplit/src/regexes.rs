@@ -2,7 +2,7 @@
 //! under an `Isolated` split. This is the single source of truth: the parity oracle
 //! (`tests/parity.rs`) and tk-encode's runtime recognizer both reference these consts, so the pattern a
 //! tokenizer ships, the pattern the FSM is tested against, and the pattern the pipeline recognizes can
-//! never drift apart. `atomsplit` never *runs* these at runtime — it works off the tag stream; the
+//! never drift apart. `bitsplit` never *runs* these at runtime — it works off the tag stream; the
 //! consts only document (and gate the tests of) the contract the FSMs implement.
 
 /// GPT-2 / ByteLevel. Reproduced by [`crate::fsm::fsm_byte_level`].
@@ -31,3 +31,9 @@ pub const DEEPSEEK_BIG: &str = r##"[!"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~][A-Za-z
 
 /// The deepseek chain in application order — convenience for the multi-regex reference.
 pub const DEEPSEEK: &[&str] = &[DEEPSEEK_NUM, DEEPSEEK_CJK, DEEPSEEK_BIG];
+
+/// kimi-k2 / k3 — `moonshotai/Kimi-K2-Instruct`'s `tokenization_kimi.py` `pat_str`. o200k plus a
+/// leading `[\p{Han}]+` arm, Han subtracted from both letter classes, and a `[\r\n]*` rule-4 tail
+/// (o200k has `[\r\n/]*`). Kimi ships `tiktoken.model` rather than a `tokenizer.json`, so this is
+/// the pattern as a converted tokenizer would spell it. Reproduced by [`crate::bitsplit_kimi`].
+pub const KIMI_K2: &str = r"[\p{Han}]+|[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}&&[^\p{Han}]]*[\p{Ll}\p{Lm}\p{Lo}\p{M}&&[^\p{Han}]]+(?i:'s|'t|'re|'ve|'m|'ll|'d)?|[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}&&[^\p{Han}]]+[\p{Ll}\p{Lm}\p{Lo}\p{M}&&[^\p{Han}]]*(?i:'s|'t|'re|'ve|'m|'ll|'d)?|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+";

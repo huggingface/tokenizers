@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["bitmap_gen", "atomsplit", "tk-encode", "tk-serialize", "tk-convert"]
+members = ["bitmap_gen", "bitsplit", "tk-encode", "tk-serialize", "tk-convert"]
 exclude = ["tk-train"]
 
 [package]
@@ -66,6 +66,7 @@ progressbar = ["tk-encode/progressbar"]
 regex = ["tk-encode/fancy-regex"]
 http = ["tk-encode/http"]
 unstable_wasm = ["tk-encode/unstable_wasm"]
+
 
 [dev-dependencies]
 criterion = "0.8"
