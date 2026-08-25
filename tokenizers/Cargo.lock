@@ -3242,6 +3242,7 @@ dependencies = [
  "criterion 0.8.2",
  "hifijson",
  "serde_json",
+ "tk-convert",
  "tk-encode",
 ]
 
