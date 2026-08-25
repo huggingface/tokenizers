@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::iter::Enumerate;
 use std::sync::Arc;
 use std::vec::IntoIter;
@@ -202,6 +203,10 @@ struct TokenizerInner {
     /// Lowest id owned by the added vocabulary, or `u32::MAX` when there is none.
     /// Allows to skip the added vocabulary lookup if the token id is lower than this value.
     added_id_min: u32,
+    /// Which token plays which role (`"eos_token"` -> `"</s>"`), so a `tokenizer.json` can carry
+    /// the special-token metadata that used to need a separate `tokenizer_config.json`. Empty
+    /// when the config declares none. `BTreeMap` so the writer emits a stable key order.
+    role_to_token: BTreeMap<String, String>,
     scratch_pool: ScratchPool,
 }
 
@@ -231,6 +236,7 @@ impl PipelineTokenizer {
         model: PipelineModel,
         post_processor: PipelinePostProcessor,
         decoder: Option<DecoderRuntime>,
+        role_to_token: BTreeMap<String, String>,
     ) -> Self {
         let added_id_min = added_vocabulary
             .get_added_tokens_decoder()
@@ -247,6 +253,7 @@ impl PipelineTokenizer {
                 post_processor,
                 decoder,
                 added_id_min,
+                role_to_token,
                 scratch_pool: ScratchPool::new(),
             }),
         }
@@ -497,6 +504,16 @@ impl PipelineTokenizer {
     /// The added vocabulary, whose `get_added_tokens_decoder` is the `added_tokens` array.
     pub fn get_added_vocabulary(&self) -> &BucketAddedVocabulary {
         &self.inner.added_vocabulary
+    }
+
+    /// Which token plays which role, as the config declared it. Empty when it declared none.
+    pub fn get_role_to_token(&self) -> &BTreeMap<String, String> {
+        &self.inner.role_to_token
+    }
+
+    /// The token a role points at, e.g. `get_token_for_role("eos_token")`.
+    pub fn get_token_for_role(&self, role: &str) -> Option<&str> {
+        self.inner.role_to_token.get(role).map(String::as_str)
     }
 
     /// Encode `input` into token ids.

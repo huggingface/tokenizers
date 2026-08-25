@@ -37,6 +37,18 @@ pub fn to_json(tokenizer: &PipelineTokenizer) -> Result<String> {
     // TODO: these are REQUIRED for v1
     out.field_null("truncation");
     out.field_null("padding");
+    // Which token plays which role, so this file can stand in for a `tokenizer_config.json`.
+    out.key("role_to_token");
+    let roles = tokenizer.get_role_to_token();
+    if roles.is_empty() {
+        out.null();
+    } else {
+        out.obj_open();
+        for (role, token) in roles {
+            out.field_str(role, token);
+        }
+        out.obj_close();
+    }
     out.key("added_tokens");
     write_added_tokens(&mut out, tokenizer.get_added_vocabulary());
     out.key("normalizer");
