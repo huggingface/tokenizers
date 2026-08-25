@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use crate::parallelism::pool;
+use crate::pipeline::BatchEncoding;
 use crate::pipeline::scratch_pool::{EncodeScratch, ScratchGuard};
 use crate::pipeline::{
     EncodeHandle, Encoding, Input, Inputs, PipelineToken, PipelineTokenizer, Segment, Seq,
@@ -465,4 +466,75 @@ pub(crate) fn encode(
         });
     }
     EncodeHandle::streaming(StreamingIter::new(batch))
+}
+
+/// The flat batch path: each worker takes a run of documents, encodes them into one arena of its
+/// own, and records how long each came out. Nothing is shared, so there is no plan to build, no
+/// completion queue to drain and no lock on the hot path -- the whole coordination structure the
+/// general path needs exists to hand back a `Vec` per document, which this shape does not do.
+///
+/// Returns `None` when there is no pool or only one thread, so the caller runs its serial loop.
+pub(crate) fn encode_flat(
+    tok: &PipelineTokenizer,
+    inputs: &[&str],
+    prefix: &[PipelineToken],
+    suffix: &[PipelineToken],
+) -> Result<Option<BatchEncoding>> {
+    use rayon::prelude::*;
+
+    let Some(pool) = pool() else {
+        return Ok(None);
+    };
+    let threads = pool.current_num_threads();
+    if threads < 2 {
+        return Ok(None);
+    }
+
+    // Chunks sized so each carries real work but every thread still gets several of them.
+    let total: usize = inputs.iter().map(|s| s.len()).sum();
+    let avg = (total / inputs.len().max(1)).max(1);
+    // Enough documents to be worth a task -- twice the parallel floor measured best, below which
+    // rayon's per-task cost starts to show -- but never so many that a thread gets only one run.
+    let by_bytes = (2 * PARALLEL_MIN_BYTES).div_ceil(avg);
+    let by_balance = (inputs.len() / (threads * 4).max(1)).max(1);
+    let chunk = by_bytes.min(by_balance).max(1);
+
+    let parts: Vec<Result<(Vec<PipelineToken>, Vec<u32>)>> = pool.install(|| {
+        inputs
+            .par_chunks(chunk)
+            .map(|docs| {
+                let bytes: usize = docs.iter().map(|s| s.len()).sum();
+                let mut arena =
+                    Vec::with_capacity(bytes / 4 + (prefix.len() + suffix.len()) * docs.len());
+                let mut lens = Vec::with_capacity(docs.len());
+                // One scratch for the whole run, not one per document.
+                let mut scratch = tok.scratch();
+                for doc in docs {
+                    let start = arena.len();
+                    arena.extend_from_slice(prefix);
+                    tok.encode_sequence_into(doc, &mut scratch, &mut arena)?;
+                    arena.extend_from_slice(suffix);
+                    lens.push((arena.len() - start) as u32);
+                }
+                Ok((arena, lens))
+            })
+            .collect()
+    });
+    let parts = parts.into_iter().collect::<Result<Vec<_>>>()?;
+
+    // Concatenate the arenas in input order, then walk the recorded per-document lengths to turn
+    // them into row starts.
+    let total_ids: usize = parts.iter().map(|(arena, _)| arena.len()).sum();
+    let mut ids = Vec::with_capacity(total_ids);
+    let mut offsets = Vec::with_capacity(inputs.len() + 1);
+    let mut at = 0u32;
+    for (arena, lens) in &parts {
+        ids.extend_from_slice(arena);
+        for len in lens {
+            offsets.push(at);
+            at += *len;
+        }
+    }
+    offsets.push(at);
+    Ok(Some(BatchEncoding::from_parts(ids, offsets)))
 }

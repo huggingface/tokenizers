@@ -12,7 +12,7 @@ use crate::models::wordpiece::{PipelineWordPiece, WordPieceScratch};
 use crate::{
     DecoderRuntime,
     models::bpe::{BpeScratch, PipelineBPE},
-    pipeline::scratch_pool::{EncodeScratch, ScratchPool},
+    pipeline::scratch_pool::{EncodeScratch, ScratchGuard, ScratchPool},
     tokenizer::Decoder as _,
     vocab::bucket_added_vocabulary::AddedVocabulary as BucketAddedVocabulary,
 };
@@ -433,6 +433,64 @@ impl EncodeHandle {
     }
 }
 
+/// A whole batch's ids in one allocation, laid out CSR-style.
+///
+/// [`PipelineTokenizer::encode`] returns a `Vec<Encoding>`, i.e. one `Vec` per document. That is
+/// nothing for a handful of long documents and is the dominant cost for thousands of short ones:
+/// 20k chat lines cost 20k allocations plus the matching frees, and the thread that allocates is
+/// not the thread that frees. Here the ids are contiguous and `offsets` says where each document
+/// starts, so a batch costs a fixed handful of allocations however many documents it holds. It is
+/// also the shape a serving stack wants anyway, since it has to assemble a contiguous batch for
+/// the model regardless.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BatchEncoding {
+    ids: Vec<PipelineToken>,
+    /// Row starts, `len() + 1` entries: document `i` is `offsets[i]..offsets[i + 1]`.
+    offsets: Vec<u32>,
+}
+
+impl BatchEncoding {
+    pub fn len(&self) -> usize {
+        self.offsets.len().saturating_sub(1)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Every document's ids, back to back.
+    pub fn ids(&self) -> &[PipelineToken] {
+        &self.ids
+    }
+
+    /// Row starts; `len() + 1` entries.
+    pub fn offsets(&self) -> &[u32] {
+        &self.offsets
+    }
+
+    /// Ids of document `i`, or `None` when out of range.
+    pub fn row(&self, i: usize) -> Option<&[PipelineToken]> {
+        let start = *self.offsets.get(i)? as usize;
+        let end = *self.offsets.get(i + 1)? as usize;
+        self.ids.get(start..end)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &[PipelineToken]> {
+        (0..self.len()).map(|i| {
+            self.row(i)
+                .expect("[BUG] offsets and ids disagree about the batch length")
+        })
+    }
+
+    pub fn into_parts(self) -> (Vec<PipelineToken>, Vec<u32>) {
+        (self.ids, self.offsets)
+    }
+
+    pub(crate) fn from_parts(ids: Vec<PipelineToken>, offsets: Vec<u32>) -> Self {
+        Self { ids, offsets }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Encoding {
     ids: Vec<PipelineToken>,
@@ -556,6 +614,112 @@ impl PipelineTokenizer {
 
         #[cfg(feature = "parallelism")]
         parallel::encode(self, inputs, add_special_tokens)
+    }
+
+    /// Encode a batch into one contiguous id buffer.
+    ///
+    /// [`Self::encode`] owns its inputs and returns a `Vec` per document, so a batch of short
+    /// documents spends its time in the allocator and in the planning that arranges the work --
+    /// none of which the threads can help with. This path takes the documents borrowed, gives each
+    /// worker one arena and one scratch, and concatenates the arenas at the end. There is no plan,
+    /// no completion queue and nothing shared between workers, which is what lets it scale.
+    ///
+    /// Falls back to [`Self::encode`] for a template the flat layout cannot model -- a pair
+    /// template, or one carrying type ids.
+    pub fn encode_batch_flat(
+        &self,
+        inputs: &[&str],
+        add_special_tokens: bool,
+    ) -> Result<BatchEncoding> {
+        let Some((prefix, suffix)) = self.flat_specials(add_special_tokens) else {
+            return self.flat_via_encode(inputs, add_special_tokens);
+        };
+
+        #[cfg(feature = "parallelism")]
+        {
+            let total: usize = inputs.iter().map(|s| s.len()).sum();
+            if total >= parallel::PARALLEL_MIN_BYTES
+                && inputs.len() > 1
+                && let Some(rows) = parallel::encode_flat(self, inputs, &prefix, &suffix)?
+            {
+                return Ok(rows);
+            }
+        }
+
+        let mut ids = Vec::with_capacity(inputs.iter().map(|s| s.len()).sum::<usize>() / 4);
+        let mut offsets = Vec::with_capacity(inputs.len() + 1);
+        let mut scratch = self.scratch();
+        for input in inputs {
+            offsets.push(ids.len() as u32);
+            ids.extend_from_slice(&prefix);
+            self.encode_sequence_into(input, &mut scratch, &mut ids)?;
+            ids.extend_from_slice(&suffix);
+        }
+        offsets.push(ids.len() as u32);
+        Ok(BatchEncoding { ids, offsets })
+    }
+
+    /// The specials a single-sequence template puts before and after sequence A, or `None` when
+    /// the template is not that shape and the general path has to run.
+    fn flat_specials(
+        &self,
+        add_special_tokens: bool,
+    ) -> Option<(Vec<PipelineToken>, Vec<PipelineToken>)> {
+        let template = &self.inner.post_processor.single;
+        if template.has_type_ids {
+            return None;
+        }
+        let pos = template
+            .slices
+            .iter()
+            .position(|s| matches!(s, Slice::Sequence { seq: Seq::A, .. }))?;
+        if !template
+            .slices
+            .iter()
+            .enumerate()
+            .all(|(i, s)| i == pos || matches!(s, Slice::Specials { .. }))
+        {
+            return None;
+        }
+        if !add_special_tokens {
+            return Some((Vec::new(), Vec::new()));
+        }
+        let collect = |slices: &[Slice]| -> Vec<PipelineToken> {
+            slices
+                .iter()
+                .filter_map(|s| match s {
+                    Slice::Specials { tokens, .. } => Some(tokens.iter().cloned()),
+                    Slice::Sequence { .. } => None,
+                })
+                .flatten()
+                .collect()
+        };
+        Some((
+            collect(&template.slices[..pos]),
+            collect(&template.slices[pos + 1..]),
+        ))
+    }
+
+    /// Fallback for templates the flat path does not model: run the normal encode and copy the
+    /// results into one buffer. Correct, but it pays the per-document allocation the flat path
+    /// exists to avoid.
+    fn flat_via_encode(&self, inputs: &[&str], add_special_tokens: bool) -> Result<BatchEncoding> {
+        let owned: Vec<String> = inputs.iter().map(|s| (*s).to_string()).collect();
+        let encodings = self.encode(owned, add_special_tokens).wait()?;
+        let total: usize = encodings.iter().map(Encoding::len).sum();
+        let mut ids = Vec::with_capacity(total);
+        let mut offsets = Vec::with_capacity(encodings.len() + 1);
+        for enc in &encodings {
+            offsets.push(ids.len() as u32);
+            ids.extend_from_slice(enc.ids());
+        }
+        offsets.push(ids.len() as u32);
+        Ok(BatchEncoding { ids, offsets })
+    }
+
+    /// One scratch, for a caller that will encode many documents with it.
+    pub(crate) fn scratch(&self) -> ScratchGuard<'_> {
+        self.inner.scratch_pool.get(&self.inner.model)
     }
 
     fn encode_serial(&self, inputs: Inputs, add_special_tokens: bool) -> Vec<Result<Encoding>> {
