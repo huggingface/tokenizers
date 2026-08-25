@@ -10,8 +10,9 @@ use crate::models::wordlevel::WordLevel;
 #[cfg(feature = "wordpiece")]
 use crate::models::wordpiece::{PipelineWordPiece, WordPieceScratch};
 use crate::{
-    DecoderRuntime,
+    DecoderRuntime, PaddingParams,
     models::bpe::{BpeScratch, PipelineBPE},
+    pad_encodings,
     pipeline::scratch_pool::{EncodeScratch, ScratchPool},
     tokenizer::Decoder as _,
     vocab::bucket_added_vocabulary::AddedVocabulary as BucketAddedVocabulary,
@@ -410,12 +411,20 @@ impl EncodeHandle {
         }
         Ok(out)
     }
+
+    /// [`Self::wait`], with padding
+    pub fn wait_padded(self, params: &PaddingParams) -> Result<Vec<Encoding>> {
+        let mut out = self.wait()?;
+        pad_encodings(&mut out, params)?;
+        Ok(out)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Encoding {
-    ids: Vec<PipelineToken>,
-    type_ids: Option<Vec<u8>>,
+    pub(crate) ids: Vec<PipelineToken>,
+    pub(crate) type_ids: Option<Vec<u8>>,
+    pub(crate) attention_mask: Option<Vec<u8>>,
 }
 
 impl Encoding {
@@ -423,12 +432,17 @@ impl Encoding {
         Self {
             ids: Vec::new(),
             type_ids: None,
+            attention_mask: None,
         }
     }
 
     fn new(ids: Vec<PipelineToken>, type_ids: Option<Vec<u8>>) -> Self {
         debug_assert!(type_ids.as_ref().is_none_or(|t| t.len() == ids.len()));
-        Self { ids, type_ids }
+        Self {
+            ids,
+            type_ids,
+            attention_mask: None,
+        }
     }
 }
 
@@ -447,6 +461,10 @@ impl Encoding {
 
     pub fn type_ids(&self) -> Option<&[u8]> {
         self.type_ids.as_deref()
+    }
+
+    pub fn attention_mask(&self) -> Option<&[u8]> {
+        self.attention_mask.as_deref()
     }
 }
 /// Iterator yields results in completion order
