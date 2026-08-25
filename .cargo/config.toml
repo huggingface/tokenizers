@@ -1,0 +1,4 @@
+[env]
+# Only takes effect when the optional `pcre2` feature is enabled and `pcre2-sys`
+# is built. Keeps runtime free of dynamic libpcre2 dependency.
+PCRE2_SYS_STATIC = { value = "1", force = false }
