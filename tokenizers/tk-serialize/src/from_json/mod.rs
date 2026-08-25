@@ -202,6 +202,8 @@ fn build<M>(
         read_post_processor(doc.field("post_processor"))?,
         read_decoder(doc.field("decoder"))?,
         read_role_to_token(doc.field("role_to_token"))?,
+        // TODO: read padding (and truncation) from the config once the slim reader supports them.
+        None,
     ))
 }
 

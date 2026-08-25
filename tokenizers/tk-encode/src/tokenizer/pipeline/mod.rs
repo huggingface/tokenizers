@@ -208,6 +208,8 @@ struct TokenizerInner {
     /// the special-token metadata that used to need a separate `tokenizer_config.json`. Empty
     /// when the config declares none. `BTreeMap` so the writer emits a stable key order.
     role_to_token: BTreeMap<String, String>,
+    /// Padding configuration, can be overridden at runtime with [`EncodeHandle::wait_with_padding`].
+    padding: Option<PaddingParams>,
     scratch_pool: ScratchPool,
 }
 
@@ -230,6 +232,7 @@ impl PipelineTokenizer {
     /// `added_vocabulary` must already have had its tokens replayed *against the concrete model and
     /// in id order*, because `add_tokens` reuses a model id when the token is already in the
     /// vocabulary; doing it later, or out of order, moves ids silently.
+    #[allow(clippy::too_many_arguments)]
     pub fn from_parts(
         added_vocabulary: BucketAddedVocabulary,
         normalizers: Vec<PipelineNormalizer>,
@@ -238,6 +241,7 @@ impl PipelineTokenizer {
         post_processor: PipelinePostProcessor,
         decoder: Option<DecoderRuntime>,
         role_to_token: BTreeMap<String, String>,
+        padding: Option<PaddingParams>,
     ) -> Self {
         let added_id_min = added_vocabulary
             .get_added_tokens_decoder()
@@ -255,6 +259,7 @@ impl PipelineTokenizer {
                 decoder,
                 added_id_min,
                 role_to_token,
+                padding,
                 scratch_pool: ScratchPool::new(),
             }),
         }
@@ -372,20 +377,23 @@ enum HandleState {
 
 pub struct EncodeHandle {
     state: HandleState,
+    padding: Option<PaddingParams>,
 }
 
 impl EncodeHandle {
     /// Fully computed results, for the serial case
-    fn blocking(results: Vec<Result<Encoding>>) -> Self {
+    fn blocking(results: Vec<Result<Encoding>>, padding: Option<PaddingParams>) -> Self {
         Self {
             state: HandleState::Blocking(results.into_iter().enumerate()),
+            padding,
         }
     }
 
     #[cfg(feature = "parallelism")]
-    fn streaming(it: StreamingIter) -> Self {
+    fn streaming(it: StreamingIter, padding: Option<PaddingParams>) -> Self {
         Self {
             state: HandleState::Streaming(it),
+            padding,
         }
     }
 
@@ -403,19 +411,27 @@ impl EncodeHandle {
     ///
     /// Returns in input order
     pub fn wait(self) -> Result<Vec<Encoding>> {
+        let padding = self.padding.clone();
+        let mut out = self.wait_inner()?;
+        if let Some(params) = &padding {
+            pad_encodings(&mut out, params)?;
+        }
+        Ok(out)
+    }
+
+    pub fn wait_with_padding(self, params: &PaddingParams) -> Result<Vec<Encoding>> {
+        let mut out = self.wait_inner()?;
+        pad_encodings(&mut out, params)?;
+        Ok(out)
+    }
+
+    fn wait_inner(self) -> Result<Vec<Encoding>> {
         // XXX: `Vec::new` does not allocate anything when capacity == 0, so creating empty
         // Encodings should not allocate anything either
         let mut out = vec![Encoding::empty(); self.len()];
         for (seq, res) in self {
             out[seq] = res?;
         }
-        Ok(out)
-    }
-
-    /// [`Self::wait`], with padding
-    pub fn wait_padded(self, params: &PaddingParams) -> Result<Vec<Encoding>> {
-        let mut out = self.wait()?;
-        pad_encodings(&mut out, params)?;
         Ok(out)
     }
 }
@@ -534,6 +550,10 @@ impl PipelineTokenizer {
         self.inner.role_to_token.get(role).map(String::as_str)
     }
 
+    pub fn get_padding(&self) -> Option<&PaddingParams> {
+        self.inner.padding.as_ref()
+    }
+
     /// Encode `input` into token ids.
     ///
     /// Special tokens are matched in two passes:
@@ -549,7 +569,10 @@ impl PipelineTokenizer {
             "we use usize::MAX as a sentinel value for the completion queue, we don't support batches larger than that"
         );
         #[cfg(not(feature = "parallelism"))]
-        return EncodeHandle::blocking(self.encode_serial(inputs, add_special_tokens));
+        return EncodeHandle::blocking(
+            self.encode_serial(inputs, add_special_tokens),
+            self.inner.padding.clone(),
+        );
 
         #[cfg(feature = "parallelism")]
         parallel::encode(self, inputs, add_special_tokens)
@@ -1095,6 +1118,7 @@ impl ModelScratch for PipelineModelScratch {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::PaddingStrategy;
 
     struct FixedMatcher(Vec<((usize, usize), u32)>);
     impl PipelinePatternMatcher for FixedMatcher {
@@ -1133,5 +1157,128 @@ mod tests {
                 (Some("cc"), None),
             ]
         );
+    }
+
+    #[test]
+    fn padding_defaults_to_none() {
+        let pipeline = hello_pipeline();
+
+        assert!(pipeline.get_padding().is_none());
+    }
+
+    #[test]
+    fn from_parts_padding_is_visible_through_get_padding() {
+        let pipeline = hello_pipeline_with_padding(PaddingParams {
+            pad_id: 42,
+            ..PaddingParams::default()
+        });
+
+        assert_eq!(pipeline.get_padding().unwrap().pad_id, 42);
+    }
+
+    // "hhello" tokenizes to 2 ids and "hello" to 1 (both merge down to `hello`, but the leading
+    // "h" in "hhello" has nothing left to merge with once "hello" is taken), which is exactly the
+    // uneven batch padding exists for.
+    #[test]
+    fn wait_leaves_a_batch_unpadded_with_no_padding_config() {
+        let pipeline = hello_pipeline();
+
+        let encodings = pipeline
+            .encode(vec!["hhello", "hello"], false)
+            .wait()
+            .unwrap();
+
+        assert_eq!(encodings[0].len(), 2);
+        assert_eq!(encodings[1].len(), 1);
+    }
+
+    #[test]
+    fn wait_applies_the_tokenizers_configured_padding() {
+        let pipeline = hello_pipeline_with_padding(PaddingParams {
+            strategy: PaddingStrategy::BatchLongest,
+            ..PaddingParams::default()
+        });
+
+        let encodings = pipeline
+            .encode(vec!["hhello", "hello"], false)
+            .wait()
+            .unwrap();
+
+        assert_eq!(encodings[0].len(), 2);
+        assert_eq!(encodings[1].len(), 2);
+    }
+
+    #[test]
+    fn wait_padded_overrides_the_tokenizers_configured_padding() {
+        let pipeline = hello_pipeline_with_padding(PaddingParams {
+            strategy: PaddingStrategy::BatchLongest,
+            ..PaddingParams::default()
+        });
+
+        let encodings = pipeline
+            .encode(vec!["hhello", "hello"], false)
+            .wait_with_padding(&PaddingParams {
+                strategy: PaddingStrategy::Fixed(5),
+                ..PaddingParams::default()
+            })
+            .unwrap();
+
+        assert!(encodings.iter().all(|e| e.len() == 5));
+    }
+
+    fn hello_bpe() -> PipelineBPE {
+        use crate::models::bpe::{BpeConfig, Merges, Vocab};
+
+        let vocab: Vocab = [
+            ("h", 0u32),
+            ("e", 1),
+            ("l", 2),
+            ("o", 3),
+            ("he", 4),
+            ("hel", 5),
+            ("hell", 6),
+            ("hello", 7),
+        ]
+        .into_iter()
+        .map(|(s, i)| (s.to_string(), i))
+        .collect();
+        let merges: Merges = vec![
+            ("h".to_string(), "e".to_string()),
+            ("he".to_string(), "l".to_string()),
+            ("hel".to_string(), "l".to_string()),
+            ("hell".to_string(), "o".to_string()),
+        ];
+        PipelineBPE::from_config(BpeConfig {
+            vocab,
+            merges,
+            ..BpeConfig::default()
+        })
+        .unwrap()
+    }
+
+    fn hello_pipeline() -> PipelineTokenizer {
+        PipelineTokenizer::from_parts(
+            BucketAddedVocabulary::new(),
+            Vec::new(),
+            PipelinePreTokenizer::None,
+            PipelineModel::BPE(hello_bpe()),
+            PipelinePostProcessor::default(),
+            None,
+            Default::default(),
+            None,
+        )
+    }
+
+    fn hello_pipeline_with_padding(padding: PaddingParams) -> PipelineTokenizer {
+        PipelineTokenizer::from_parts(
+            BucketAddedVocabulary::new(),
+            Vec::new(),
+            PipelinePreTokenizer::None,
+            PipelineModel::BPE(hello_bpe()),
+            PipelinePostProcessor::default(),
+            None,
+            Default::default(),
+            Some(padding),
+        )
     }
 }
