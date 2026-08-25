@@ -47,6 +47,7 @@ use self::normalizers::read_normalizers;
 use self::post_processors::read_post_processor;
 use self::pre_tokenizers::read_pre_tokenizer;
 use crate::json::Json;
+use std::collections::BTreeMap;
 use tk_encode::models::bpe::{BpeConfig, PipelineBPE};
 use tk_encode::pipeline::{
     NormalizerChain, PipelineModel, PipelineNormalizer, PipelinePreTokenizer, PipelineTokenizer,
@@ -200,7 +201,26 @@ fn build<M>(
         model,
         read_post_processor(doc.field("post_processor"))?,
         read_decoder(doc.field("decoder"))?,
+        read_role_to_token(doc.field("role_to_token"))?,
     ))
+}
+
+/// `{"eos_token": "</s>", ...}`. Absent or `null` means the config declares no roles.
+fn read_role_to_token(cfg: Option<&Json<'_>>) -> Result<BTreeMap<String, String>> {
+    let Some(cfg) = cfg else {
+        return Ok(BTreeMap::new());
+    };
+    let entries = cfg
+        .entries()
+        .ok_or_else(|| unsupported("a `role_to_token` that is not an object"))?;
+    entries
+        .map(|(role, token)| {
+            let token = token
+                .as_str()
+                .ok_or_else(|| unsupported("a `role_to_token` value that is not a string"))?;
+            Ok((role.to_string(), token.to_string()))
+        })
+        .collect()
 }
 
 /// Which model a config declares. Canonical files tag it; inferring the kind from which keys are
