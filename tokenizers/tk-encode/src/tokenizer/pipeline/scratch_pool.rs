@@ -151,6 +151,7 @@ mod tests {
             PipelineModel::BPE(hello_bpe()),
             PipelinePostProcessor::default(),
             None,
+            Default::default(),
         )
     }
 

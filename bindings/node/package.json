@@ -51,7 +51,7 @@
     "format:rs": "cargo fmt",
     "lint": "prettier . --check",
     "prepublishOnly": "napi prepublish -t npm",
-    "test": "node --test \"lib/**/*.test.ts\" \"examples/**/*.test.ts\"",
+    "test": "node --test \"test/**/*.test.ts\"",
     "version": "napi version"
   },
   "devDependencies": {
