@@ -93,7 +93,7 @@ pub trait PipelinePatternMatcher {
     /// Returns `None` if there is no special tokens in input.
     fn extract_next(
         &self,
-        full_input: &[u8],
+        full_input: &str,
         search_offset: usize,
         normalized: bool,
     ) -> Option<((usize, usize), u32)>;
@@ -166,7 +166,7 @@ impl<'a, 'b, PatternMatcher: PipelinePatternMatcher> Iterator
         }
         if let Some(((start, end), token)) =
             self.pattern_matcher
-                .extract_next(self.input.as_bytes(), self.offset, self.normalized)
+                .extract_next(self.input, self.offset, self.normalized)
         {
             // `extract_next` positions are absolute in `input`, not relative to `offset`.
             let before_token = &self.input[self.offset..start];
@@ -1082,7 +1082,7 @@ mod tests {
     impl PipelinePatternMatcher for FixedMatcher {
         fn extract_next(
             &self,
-            _bytes: &[u8],
+            _s: &str,
             search_offset: usize,
             _normalized: bool,
         ) -> Option<((usize, usize), u32)> {

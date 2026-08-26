@@ -35,11 +35,9 @@ fn is_ws(cp: u32) -> bool {
         char::from_u32(cp).is_some_and(|c| c.is_whitespace())
     }
 }
-fn is_single_word(bytes: &[u8], search: usize, match_start: usize, match_end: usize) -> bool {
-    // FIXME: we use chr conversion for now, this can be inproved by using bitmap.
-    // This is the equivalent of `\w`, so its letters, numbers and underscore
-    let s = unsafe { std::str::from_utf8_unchecked(bytes) };
-    let before_ok = s[search..match_start]
+
+fn is_single_word(s: &str, segment_start: usize, match_start: usize, match_end: usize) -> bool {
+    let before_ok = s[segment_start..match_start]
         .chars()
         .next_back()
         .is_none_or(|c| !is_word_char(c));
@@ -53,12 +51,10 @@ fn is_single_word(bytes: &[u8], search: usize, match_start: usize, match_end: us
     before_ok && after_ok
 }
 
-fn skip_whitespace_backward(bytes: &[u8], match_start: usize) -> usize {
-    let s = unsafe { std::str::from_utf8_unchecked(bytes) };
+fn skip_whitespace_backward(s: &str, match_start: usize) -> usize {
     s[..match_start].trim_end_matches(|c| is_ws(c as u32)).len()
 }
-fn skip_whitespace_forward(bytes: &[u8], match_start: usize) -> usize {
-    let s = unsafe { std::str::from_utf8_unchecked(bytes) };
+fn skip_whitespace_forward(s: &str, match_start: usize) -> usize {
     s.len()
         - s[match_start..]
             .trim_start_matches(|c| is_ws(c as u32))
@@ -377,7 +373,7 @@ impl AddedVocabulary {
 impl PipelinePatternMatcher for AddedVocabulary {
     fn extract_next(
         &self,
-        bytes: &[u8],
+        s: &str,
         search_offset: usize,
         normalized: bool,
     ) -> Option<((usize, usize), u32)> {
@@ -387,9 +383,9 @@ impl PipelinePatternMatcher for AddedVocabulary {
             &self.vocab
         };
         let mut search = search_offset;
-        while search < bytes.len() {
+        while search < s.len() {
             // since match_bytes goes to the end, no match means we reached the end.
-            let (id, start, len) = match vocab.match_bytes(&bytes[search..]) {
+            let (id, start, len) = match vocab.match_bytes(&s.as_bytes()[search..]) {
                 Some((id, start, len)) if len > 0 => (id, start, len),
                 _ => return None,
             };
@@ -400,18 +396,16 @@ impl PipelinePatternMatcher for AddedVocabulary {
                 search = match_end;
                 continue;
             }
-            // single_word: reject unless the token is a standalone word (neither neighbour
-            // char is a word char). Checked on the raw byte bounds, before any strip.
-            if metadata.single_word && !is_single_word(bytes, search, match_start, match_end) {
+            if metadata.single_word && !is_single_word(s, search_offset, match_start, match_end) {
                 search = match_start + 1;
                 continue;
             }
             if metadata.lstrip {
                 match_start =
-                    skip_whitespace_backward(&bytes[..match_end], match_start).max(search_offset)
+                    skip_whitespace_backward(&s[..match_end], match_start).max(search_offset)
             }
             if metadata.rstrip {
-                match_end = skip_whitespace_forward(bytes, match_end)
+                match_end = skip_whitespace_forward(s, match_end)
             }
             return Some(((match_start, match_end), id));
         }
@@ -797,6 +791,79 @@ mod tests {
         assert_eq!(
             segments(&vocab, "a mask", true),
             vec![(Some("a ".to_string()), None), (None, Some(0))]
+        );
+    }
+
+    #[test]
+    fn segment_iterator_checks_single_word_against_the_segment_start() {
+        let model = ModelMock::new(&[]);
+        let mut vocab = AddedVocabulary::new();
+        let normalizer: Option<&Lowercase> = None;
+        vocab
+            .add_tokens(
+                [AddedToken::from("aa", false)
+                    .normalized(false)
+                    .single_word(true)],
+                model.get_vocab_size(),
+                |t| model.token_to_id(t),
+                normalizer,
+            )
+            .unwrap();
+
+        // Both occurrences of `aa` in `xaaa` touch a letter, so neither stands alone. The one at
+        // 2..4 is only reachable after the one at 1..3 is rejected, and the char that disqualifies
+        // it is the `a` the cursor just moved past.
+        assert_eq!(
+            segments(&vocab, "xaaa", false),
+            vec![(Some("xaaa".to_string()), None)]
+        );
+    }
+
+    #[test]
+    fn segment_iterator_matches_a_single_word_overlapping_a_rejected_one() {
+        let model = ModelMock::new(&[]);
+        let mut vocab = AddedVocabulary::new();
+        let normalizer: Option<&Lowercase> = None;
+        vocab
+            .add_tokens(
+                [AddedToken::from("a a", false)
+                    .normalized(false)
+                    .single_word(true)],
+                model.get_vocab_size(),
+                |t| model.token_to_id(t),
+                normalizer,
+            )
+            .unwrap();
+
+        // `a a` occurs twice in `xa a a`, at 1..4 and at 3..6. The first is rejected because `x`
+        // precedes it; the second overlaps it and does stand alone, so the scan must still find it.
+        assert_eq!(
+            segments(&vocab, "xa a a", false),
+            vec![(Some("xa ".to_string()), None), (None, Some(0))]
+        );
+    }
+
+    #[test]
+    fn segment_iterator_scans_past_a_rejected_multibyte_token() {
+        let model = ModelMock::new(&[]);
+        let mut vocab = AddedVocabulary::new();
+        let normalizer: Option<&Lowercase> = None;
+        vocab
+            .add_tokens(
+                [AddedToken::from("\u{e9}q", false)
+                    .normalized(false)
+                    .single_word(true)],
+                model.get_vocab_size(),
+                |t| model.token_to_id(t),
+                normalizer,
+            )
+            .unwrap();
+
+        // Rejecting the match at 1..4 moves the cursor to byte 2, inside the two bytes of `\u{e9}`.
+        // Nothing may slice the text there.
+        assert_eq!(
+            segments(&vocab, "a\u{e9}q", false),
+            vec![(Some("a\u{e9}q".to_string()), None)]
         );
     }
 }
